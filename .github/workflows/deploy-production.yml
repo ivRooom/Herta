@@ -1,0 +1,85 @@
+# ============================================================
+# Deploy — Production (AWS Lightsail)
+# ------------------------------------------------------------
+# main への push、または手動実行 (workflow_dispatch) で起動します。
+# GitHub Actions から Lightsail へ SSH 接続し、
+# git pull → docker compose build → up -d → health check を実行します。
+#
+# PR ではこのワークフローは実行されません (CI のみ)。
+#
+# 必要な GitHub Secrets:
+#   LIGHTSAIL_HOST     … Lightsail の固定 IP または DNS 名
+#   LIGHTSAIL_USER     … SSH ユーザー (例: ubuntu)
+#   LIGHTSAIL_SSH_KEY  … SSH 秘密鍵 (PEM 全文)
+#   LIGHTSAIL_APP_DIR  … アプリ配置ディレクトリ (例: /app/herta)
+# ============================================================
+name: Deploy Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "デプロイするブランチ / タグ (既定: main)"
+        required: false
+        default: main
+
+# 本番デプロイは同時に 1 つだけ (進行中の実行はキャンセルしない)
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: SSH Deploy to Lightsail
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Lightsail へ SSH デプロイ
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          # 手動実行時は入力の ref、push 時は main を使用
+          envs: DEPLOY_REF
+          script_stop: true
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+
+            APP_DIR="${{ secrets.LIGHTSAIL_APP_DIR }}"
+            DEPLOY_REF="${{ github.event.inputs.ref || 'main' }}"
+            COMPOSE="docker compose -f docker-compose.prod.yml"
+
+            echo "=== Herta. 本番デプロイ開始 (ref: ${DEPLOY_REF}) ==="
+            cd "${APP_DIR}"
+
+            # 最新コードを取得
+            git fetch origin
+            git checkout "${DEPLOY_REF}"
+            git pull origin "${DEPLOY_REF}"
+
+            # イメージ更新 & 再起動
+            ${COMPOSE} pull || true
+            ${COMPOSE} build
+            ${COMPOSE} up -d
+            ${COMPOSE} ps
+
+            # --- Health check (API) ---
+            echo "=== Health check ==="
+            for i in $(seq 1 12); do
+              if curl -fsS http://localhost:3001/api/v1/health; then
+                echo ""
+                echo "API health check 成功"
+                exit 0
+              fi
+              echo "API 応答待ち... (${i}/12)"
+              sleep 5
+            done
+
+            echo "API health check に失敗しました。ログを確認してください:"
+            ${COMPOSE} logs --tail=100 api
+            exit 1

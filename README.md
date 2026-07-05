@@ -268,6 +268,31 @@ PostgreSQL が起動しているか確認:
 docker compose up -d postgres
 ```
 
+## 本番デプロイ / CI/CD
+
+本番は **AWS Lightsail** 上で **Docker Compose** により稼働し、**GitHub Actions** で CI/CD を回します。
+
+- **CI** (`.github/workflows/ci.yml`): PR / push 時に Lint・Typecheck・Build を実行 (デプロイなし)
+- **Deploy** (`.github/workflows/deploy-production.yml`): `main` への push または手動実行 (`workflow_dispatch`) で、Lightsail へ SSH 接続し `git pull` → `docker compose build` → `up -d` → health check を実行
+- 本番 compose 定義: `docker-compose.prod.yml` / 共通イメージ: `Dockerfile`
+- 運用スクリプト: `deploy/scripts/` (`setup` / `start` / `stop` / `deploy` / `health-check` / `rollback`)
+- 本番ドメイン: `herta.ivrm.jp` — API health: `GET https://herta.ivrm.jp/api/v1/health`
+
+詳細な手順は [docs/DEPLOYMENT_LIGHTSAIL.md](docs/DEPLOYMENT_LIGHTSAIL.md) を参照してください。
+
+### GitHub Secrets
+
+本番シークレットは GitHub に直接書かず、`Settings > Secrets and variables > Actions` に登録します。
+
+| Secret 名 | 説明 | 例 |
+|-----------|------|-----|
+| `LIGHTSAIL_HOST` | Lightsail の固定 IP または DNS 名 | `13.230.xx.xx` |
+| `LIGHTSAIL_USER` | SSH ユーザー | `ubuntu` |
+| `LIGHTSAIL_SSH_KEY` | SSH 秘密鍵 (PEM 全文) | `-----BEGIN OPENSSH PRIVATE KEY-----…` |
+| `LIGHTSAIL_APP_DIR` | アプリ配置ディレクトリ | `/app/herta` |
+
+アプリ自身の本番環境変数 (Discord トークン等) は GitHub Secrets ではなく、Lightsail 上の `/app/herta/.env.production` に配置します (テンプレート: `.env.production.example`)。
+
 ## セキュリティ
 
 - `.env` は `.gitignore` に含まれています — 絶対にコミットしないでください
