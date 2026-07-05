@@ -1,11 +1,15 @@
 import { createLogger } from '@herta/logger';
 import { HertaBot } from './bot.js';
 
-const logger = createLogger({ name: 'herta-bot' });
+const logger = createLogger({
+  name: 'herta-bot',
+  level: process.env['BOT_LOG_LEVEL'],
+});
 
 const bot = new HertaBot(logger);
 
 async function main() {
+  logger.info('Herta Bot を起動しています...');
   try {
     await bot.start();
   } catch (error) {

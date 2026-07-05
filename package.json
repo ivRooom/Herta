@@ -16,13 +16,15 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "turbo run clean",
-    "db:generate": "pnpm --filter @herta/db generate",
-    "db:migrate": "pnpm --filter @herta/db migrate:dev",
-    "db:push": "pnpm --filter @herta/db push",
-    "db:studio": "pnpm --filter @herta/db studio"
+    "db:generate": "dotenv -- pnpm --filter @herta/db generate",
+    "db:migrate": "dotenv -- pnpm --filter @herta/db migrate:dev",
+    "db:push": "dotenv -- pnpm --filter @herta/db push",
+    "db:studio": "dotenv -- pnpm --filter @herta/db studio",
+    "db:seed": "dotenv -- pnpm --filter @herta/db seed"
   },
   "devDependencies": {
     "@types/node": "^26.1.0",
+    "dotenv-cli": "^11.0.0",
     "prettier": "^3.4.2",
     "turbo": "^2.3.3",
     "typescript": "^5.7.2"
