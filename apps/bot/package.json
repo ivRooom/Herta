@@ -1,0 +1,32 @@
+{
+  "name": "@herta/bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "lint": "echo 'no lint configured'",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@herta/shared": "workspace:*",
+    "@herta/logger": "workspace:*",
+    "@herta/plugin-sdk": "workspace:*",
+    "@herta/rule-engine": "workspace:*",
+    "@herta/db": "workspace:*",
+    "discord.js": "^14.16.3",
+    "ioredis": "^5.4.2",
+    "pino": "^9.6.0",
+    "pino-pretty": "^13.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
+  }
+}

@@ -1,0 +1,14 @@
+export { PrismaClient } from '@prisma/client';
+export type * from '@prisma/client';
+
+import { PrismaClient } from '@prisma/client';
+
+let prisma: PrismaClient | undefined;
+
+/** シングルトン PrismaClient を取得する */
+export function getPrismaClient(): PrismaClient {
+  if (!prisma) {
+    prisma = new PrismaClient();
+  }
+  return prisma;
+}
