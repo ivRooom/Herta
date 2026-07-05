@@ -1,0 +1,29 @@
+# 依存・ビルド成果物 (イメージ内で再生成する)
+node_modules
+**/node_modules
+dist
+**/dist
+.next
+**/.next
+.turbo
+**/.turbo
+coverage
+**/coverage
+packages/db/src/generated
+
+# 環境変数 (本番シークレットは絶対にイメージへ含めない)
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# Git / CI / ドキュメント
+.git
+.github
+docs
+*.md
+
+# OS / IDE
+.DS_Store
+.vscode
+.idea

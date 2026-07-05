@@ -1,0 +1,111 @@
+# ============================================================
+# Herta. — 本番用 Docker Compose 構成 (AWS Lightsail)
+# ------------------------------------------------------------
+# 使い方:
+#   docker compose -f docker-compose.prod.yml build
+#   docker compose -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.prod.yml ps
+#
+# 環境変数は .env.production から読み込みます
+# (.env.production.example をコピーして値を設定してください)。
+# ============================================================
+
+# 全アプリサービスで共通の設定 (同一イメージを再利用)
+x-app: &app
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: herta-app:latest
+  env_file:
+    - .env.production
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  # --- インフラ ---
+  postgres:
+    image: postgres:16-alpine
+    # POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD は .env.production から注入
+    env_file:
+      - .env.production
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      # コンテナ内で展開させるため $$ でエスケープ
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-herta}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # --- DB マイグレーション (起動前に 1 回だけ実行) ---
+  migrator:
+    <<: *app
+    command: pnpm --filter @herta/db exec prisma migrate deploy
+    restart: "no"
+
+  # --- アプリケーション ---
+  api:
+    <<: *app
+    command: node apps/api/dist/main.js
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  studio:
+    <<: *app
+    command: pnpm --filter @herta/studio exec next start -p 3000
+    depends_on:
+      api:
+        condition: service_started
+
+  bot:
+    <<: *app
+    command: pnpm --filter @herta/bot exec tsx src/main.ts
+
+  worker:
+    <<: *app
+    command: pnpm --filter @herta/worker exec tsx src/main.ts
+
+  # --- リバースプロキシ ---
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      api:
+        condition: service_started
+      studio:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:

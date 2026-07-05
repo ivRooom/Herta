@@ -1,3 +1,9 @@
+# ============================================================
+# CI — Lint / Typecheck / Build
+# ------------------------------------------------------------
+# PR 時および main / develop への push 時に実行します。
+# デプロイは行いません (デプロイは deploy-production.yml が担当)。
+# ============================================================
 name: CI
 
 on:
@@ -5,6 +11,11 @@ on:
     branches: [main, develop]
   pull_request:
     branches: [main, develop]
+
+# 同一ブランチで新しい push があれば古い実行をキャンセル
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint-typecheck-build:
