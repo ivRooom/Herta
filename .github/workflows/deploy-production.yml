@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: "デプロイするブランチ / タグ (既定: main)"
+        description: 'デプロイするブランチ / タグ (既定: main)'
         required: false
         default: main
 
@@ -68,10 +68,10 @@ jobs:
             ${COMPOSE} up -d
             ${COMPOSE} ps
 
-            # --- Health check (API) ---
+            # --- Health check (Cloudflare 経由の外部経路) ---
             echo "=== Health check ==="
             for i in $(seq 1 12); do
-              if curl -fsS http://localhost:3001/api/v1/health; then
+              if curl -fsS -k --resolve herta.ivrm.jp:443:127.0.0.1 https://herta.ivrm.jp/api/v1/health; then
                 echo ""
                 echo "API health check 成功"
                 exit 0
