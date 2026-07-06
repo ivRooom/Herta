@@ -1,0 +1,23 @@
+{
+	# HTTP/1.1・HTTP/2・HTTP/3 を有効化
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+# 本番ドメイン (Cloudflare のオレンジクラウド配下)
+herta.ivrm.jp {
+	# Cloudflare Origin 証明書で TLS 終端 (Full strict 対応)
+	# 証明書は /certs に配置する (origin.pem = 証明書, origin-key.pem = 秘密鍵)
+	tls /certs/origin.pem /certs/origin-key.pem
+
+	# 内部 nginx へ HTTP でプロキシ (WebSocket は自動対応)
+	reverse_proxy nginx:80 {
+		# 元リクエストが HTTPS であることを下流に伝える
+		header_up X-Forwarded-Proto https
+		# Cloudflare が付与する実クライアント IP を引き継ぐ
+		header_up X-Real-IP {http.request.header.CF-Connecting-IP}
+	}
+
+	encode zstd gzip
+}

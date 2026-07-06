@@ -29,5 +29,9 @@ coverage/
 # Prisma
 packages/db/src/generated/
 
+# 証明書
+certs/*.pem
+certs/*.key
+
 # Logs
 *.log

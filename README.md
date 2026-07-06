@@ -27,17 +27,18 @@ herta/
 │   ├── moderation    … モデレーション (NG ワード / スパム)
 │   ├── quote         … 名言保存
 │   └── team-split    … チーム分け
-├── deploy/           … 本番デプロイ設定 (nginx, scripts)
+├── deploy/           … 本番デプロイ設定 (caddy / nginx / scripts)
+├── certs/            … Cloudflare Origin Certificate 配置先
 └── docker-compose.yml
 ```
 
 ## 必要なツール
 
-| ツール | バージョン |
-|--------|-----------|
-| Node.js | >= 22.0.0 |
-| pnpm | >= 9.15 |
-| Docker / Docker Compose | 最新推奨 |
+| ツール                  | バージョン |
+| ----------------------- | ---------- |
+| Node.js                 | >= 22.0.0  |
+| pnpm                    | >= 9.15    |
+| Docker / Docker Compose | 最新推奨   |
 
 ## クイックスタート
 
@@ -71,30 +72,30 @@ pnpm dev
 
 `.env.example` を `.env` にコピーし、以下の値を設定してください。
 
-| 変数名 | 必須 | 説明 | デフォルト値 |
-|--------|------|------|------------|
-| `NODE_ENV` | - | 実行環境 | `development` |
-| `DATABASE_URL` | Yes | PostgreSQL 接続 URL | `postgresql://postgres:postgres@localhost:5432/herta` |
-| `REDIS_URL` | Yes | Redis 接続 URL | `redis://localhost:6379` |
-| `DISCORD_CLIENT_ID` | Yes | Discord Application のクライアント ID | - |
-| `DISCORD_CLIENT_SECRET` | Yes | Discord Application のクライアントシークレット | - |
-| `DISCORD_BOT_TOKEN` | Yes | Discord Bot トークン | - |
-| `DISCORD_PUBLIC_KEY` | - | Discord Interactions 用公開鍵 | - |
-| `DISCORD_GUILD_ID_DEV` | - | 開発用 Guild ID | - |
-| `DISCORD_CALLBACK_URL` | - | OAuth2 コールバック URL | `http://localhost:3001/api/v1/auth/discord/callback` |
-| `API_PORT` | - | API サーバーポート | `3001` |
-| `API_URL` | - | API の公開 URL | `http://localhost:3001` |
-| `CORS_ORIGINS` | - | CORS 許可オリジン (カンマ区切り) | `http://localhost:3000` |
-| `STUDIO_PORT` | - | Studio ポート | `3000` |
-| `NEXTAUTH_URL` | - | NextAuth ベース URL | `http://localhost:3000` |
-| `NEXTAUTH_SECRET` | Yes* | NextAuth セッション暗号化キー | - |
-| `JWT_SECRET` | - | JWT 署名キー | 開発用デフォルト値あり |
-| `JWT_REFRESH_SECRET` | - | JWT リフレッシュ用署名キー | 開発用デフォルト値あり |
-| `JWT_EXPIRATION` | - | アクセストークン有効期間 | `15m` |
-| `JWT_REFRESH_EXPIRATION` | - | リフレッシュトークン有効期間 | `7d` |
-| `INTERNAL_JWT_SECRET` | - | Bot ↔ API 内部通信用署名キー | 開発用デフォルト値あり |
-| `BOT_LOG_LEVEL` | - | Bot ログレベル | `debug` |
-| `WORKER_LOG_LEVEL` | - | Worker ログレベル | `debug` |
+| 変数名                   | 必須 | 説明                                           | デフォルト値                                          |
+| ------------------------ | ---- | ---------------------------------------------- | ----------------------------------------------------- |
+| `NODE_ENV`               | -    | 実行環境                                       | `development`                                         |
+| `DATABASE_URL`           | Yes  | PostgreSQL 接続 URL                            | `postgresql://postgres:postgres@localhost:5432/herta` |
+| `REDIS_URL`              | Yes  | Redis 接続 URL                                 | `redis://localhost:6379`                              |
+| `DISCORD_CLIENT_ID`      | Yes  | Discord Application のクライアント ID          | -                                                     |
+| `DISCORD_CLIENT_SECRET`  | Yes  | Discord Application のクライアントシークレット | -                                                     |
+| `DISCORD_BOT_TOKEN`      | Yes  | Discord Bot トークン                           | -                                                     |
+| `DISCORD_PUBLIC_KEY`     | -    | Discord Interactions 用公開鍵                  | -                                                     |
+| `DISCORD_GUILD_ID_DEV`   | -    | 開発用 Guild ID                                | -                                                     |
+| `DISCORD_CALLBACK_URL`   | -    | OAuth2 コールバック URL                        | `http://localhost:3001/api/v1/auth/discord/callback`  |
+| `API_PORT`               | -    | API サーバーポート                             | `3001`                                                |
+| `API_URL`                | -    | API の公開 URL                                 | `http://localhost:3001`                               |
+| `CORS_ORIGINS`           | -    | CORS 許可オリジン (カンマ区切り)               | `http://localhost:3000`                               |
+| `STUDIO_PORT`            | -    | Studio ポート                                  | `3000`                                                |
+| `NEXTAUTH_URL`           | -    | NextAuth ベース URL                            | `http://localhost:3000`                               |
+| `NEXTAUTH_SECRET`        | Yes* | NextAuth セッション暗号化キー                  | -                                                     |
+| `JWT_SECRET`             | -    | JWT 署名キー                                   | 開発用デフォルト値あり                                |
+| `JWT_REFRESH_SECRET`     | -    | JWT リフレッシュ用署名キー                     | 開発用デフォルト値あり                                |
+| `JWT_EXPIRATION`         | -    | アクセストークン有効期間                       | `15m`                                                 |
+| `JWT_REFRESH_EXPIRATION` | -    | リフレッシュトークン有効期間                   | `7d`                                                  |
+| `INTERNAL_JWT_SECRET`    | -    | Bot ↔ API 内部通信用署名キー                   | 開発用デフォルト値あり                                |
+| `BOT_LOG_LEVEL`          | -    | Bot ログレベル                                 | `debug`                                               |
+| `WORKER_LOG_LEVEL`       | -    | Worker ログレベル                              | `debug`                                               |
 
 > *`NEXTAUTH_SECRET` は Studio のセッション管理で必要です。`openssl rand -base64 32` で生成できます。
 
@@ -113,10 +114,10 @@ docker compose down
 docker compose down -v
 ```
 
-| サービス | ポート | 用途 |
-|---------|--------|------|
-| postgres | 5432 | データベース |
-| redis | 6379 | キャッシュ / キュー |
+| サービス | ポート | 用途                |
+| -------- | ------ | ------------------- |
+| postgres | 5432   | データベース        |
+| redis    | 6379   | キャッシュ / キュー |
 
 ## データベース (Prisma)
 
@@ -276,7 +277,14 @@ docker compose up -d postgres
 - **Deploy** (`.github/workflows/deploy-production.yml`): `main` への push または手動実行 (`workflow_dispatch`) で、Lightsail へ SSH 接続し `git pull` → `docker compose build` → `up -d` → health check を実行
 - 本番 compose 定義: `docker-compose.prod.yml` / 共通イメージ: `Dockerfile`
 - 運用スクリプト: `deploy/scripts/` (`setup` / `start` / `stop` / `deploy` / `health-check` / `rollback`)
-- 本番ドメイン: `herta.ivrm.jp` — API health: `GET https://herta.ivrm.jp/api/v1/health`
+- 本番経路: Cloudflare → Caddy (TLS 終端, Origin 証明書) → nginx → studio / api
+- 本番ドメイン: `herta.ivrm.jp`
+- Caddy 設定: `deploy/docker/caddy/Caddyfile`
+- 証明書配置: `certs/origin.pem` / `certs/origin-key.pem`
+- 公開ポート: 80/TCP, 443/TCP, 443/UDP (HTTP/3)
+- Cloudflare SSL/TLS: `Full (strict)`
+- 対応機能: HTTP→HTTPS リダイレクト / HTTP/2 / HTTP/3 / WebSocket
+- API health: `GET https://herta.ivrm.jp/api/v1/health`
 
 詳細な手順は [docs/DEPLOYMENT_LIGHTSAIL.md](docs/DEPLOYMENT_LIGHTSAIL.md) を参照してください。
 
@@ -284,12 +292,12 @@ docker compose up -d postgres
 
 本番シークレットは GitHub に直接書かず、`Settings > Secrets and variables > Actions` に登録します。
 
-| Secret 名 | 説明 | 例 |
-|-----------|------|-----|
-| `LIGHTSAIL_HOST` | Lightsail の固定 IP または DNS 名 | `13.230.xx.xx` |
-| `LIGHTSAIL_USER` | SSH ユーザー | `ubuntu` |
-| `LIGHTSAIL_SSH_KEY` | SSH 秘密鍵 (PEM 全文) | `-----BEGIN OPENSSH PRIVATE KEY-----…` |
-| `LIGHTSAIL_APP_DIR` | アプリ配置ディレクトリ | `/app/herta` |
+| Secret 名           | 説明                              | 例                                     |
+| ------------------- | --------------------------------- | -------------------------------------- |
+| `LIGHTSAIL_HOST`    | Lightsail の固定 IP または DNS 名 | `13.230.xx.xx`                         |
+| `LIGHTSAIL_USER`    | SSH ユーザー                      | `ubuntu`                               |
+| `LIGHTSAIL_SSH_KEY` | SSH 秘密鍵 (PEM 全文)             | `-----BEGIN OPENSSH PRIVATE KEY-----…` |
+| `LIGHTSAIL_APP_DIR` | アプリ配置ディレクトリ            | `/app/herta`                           |
 
 アプリ自身の本番環境変数 (Discord トークン等) は GitHub Secrets ではなく、Lightsail 上の `/app/herta/.env.production` に配置します (テンプレート: `.env.production.example`)。
 

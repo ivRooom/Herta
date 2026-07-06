@@ -24,7 +24,10 @@ Herta. を AWS Lightsail 上で **Docker Compose** により本番稼働させ�
                  │  /app/herta (git リポジトリ)            │
                  │                                        │
                  │  docker compose -f docker-compose.prod │
-                 │   ├─ nginx   (:80)  → herta.ivrm.jp    │
+                 │   ├─ caddy   (:80/:443) → nginx(:80)    │
+                 │   │             ↓                        │
+                 │   │       herta.ivrm.jp                 │
+                 │   ├─ nginx   (:80, 内部) → studio/api   │
                  │   ├─ studio  (:3000) Next.js           │
                  │   ├─ api     (:3001) NestJS            │
                  │   ├─ bot            discord.js         │
@@ -51,8 +54,12 @@ Herta. を AWS Lightsail 上で **Docker Compose** により本番稼働させ�
 ├── .env.production             … 本番環境変数 (コミットしない / 手動作成)
 ├── .env.production.example     … テンプレート
 ├── deploy/
+│   ├── docker/caddy/Caddyfile   … Caddy TLS / リバースプロキシ設定
 │   ├── docker/nginx/default.conf … nginx リバースプロキシ設定
 │   └── scripts/                  … 運用スクリプト (setup/deploy/start/stop/…)
+├── certs/
+│   ├── origin.pem                … Cloudflare Origin 証明書
+│   └── origin-key.pem            … Cloudflare Origin 秘密鍵
 └── (apps / packages / plugins …)
 
 Docker 管理ボリューム (ホスト上ではなく Docker が管理):
@@ -69,7 +76,7 @@ Lightsail インスタンス側に以下が必要です。
 - Ubuntu 22.04 以降 (推奨)
 - Docker Engine + Docker Compose v2
 - Git
-- 22 番 (SSH) / 80 番 (HTTP) の開放。TLS を張る場合は 443 番も開放
+- 22 番 (SSH) / 80 番 (HTTP) / 443 番 (HTTPS) / 443 番 UDP (HTTP/3) の開放
 
 Docker 未導入の場合の例:
 
@@ -85,12 +92,12 @@ sudo usermod -aG docker "$USER"   # 再ログインで反映
 本番シークレットは **リポジトリに直接書かず**、GitHub Secrets を使用します。
 `Settings > Secrets and variables > Actions` で以下を登録してください。
 
-| Secret 名 | 説明 | 例 |
-|-----------|------|-----|
-| `LIGHTSAIL_HOST` | Lightsail の固定 IP または DNS 名 | `13.230.xx.xx` |
-| `LIGHTSAIL_USER` | SSH ユーザー | `ubuntu` |
-| `LIGHTSAIL_SSH_KEY` | SSH 秘密鍵 (PEM 全文) | `-----BEGIN OPENSSH PRIVATE KEY-----…` |
-| `LIGHTSAIL_APP_DIR` | アプリ配置ディレクトリ | `/app/herta` |
+| Secret 名           | 説明                              | 例                                     |
+| ------------------- | --------------------------------- | -------------------------------------- |
+| `LIGHTSAIL_HOST`    | Lightsail の固定 IP または DNS 名 | `13.230.xx.xx`                         |
+| `LIGHTSAIL_USER`    | SSH ユーザー                      | `ubuntu`                               |
+| `LIGHTSAIL_SSH_KEY` | SSH 秘密鍵 (PEM 全文)             | `-----BEGIN OPENSSH PRIVATE KEY-----…` |
+| `LIGHTSAIL_APP_DIR` | アプリ配置ディレクトリ            | `/app/herta`                           |
 
 > `LIGHTSAIL_SSH_KEY` は Lightsail のインスタンス作成時に発行される鍵、
 > もしくは `ssh-keygen` で作成し公開鍵を `~/.ssh/authorized_keys` に登録した鍵の
@@ -132,7 +139,18 @@ vi .env.production
 
 > `.env.production` は `.gitignore` 済みです。**絶対にコミットしないでください。**
 
-### 5-3. 初回起動
+### 5-3. Cloudflare Origin 証明書の配置
+
+Cloudflare ダッシュボードの `SSL/TLS` → `Origin Server` → `Create Certificate`
+から Origin 証明書を発行し、以下の名前で保存します。
+
+- `certs/origin.pem` : 証明書 PEM
+- `certs/origin-key.pem` : 秘密鍵 PEM
+
+`certs/` は Caddy に読み取り専用でマウントされます。実ファイルは
+**絶対にコミットしないでください**。
+
+### 5-4. 初回起動
 
 ```bash
 cd /app/herta
@@ -247,27 +265,31 @@ git checkout main && ./deploy/scripts/deploy.sh
 
 ---
 
-## 9. TLS / ドメイン (herta.ivrm.jp)
+## 9. Cloudflare Full (strict) + Caddy
 
 - `herta.ivrm.jp` の A レコードを Lightsail の固定 IP に向けます。
-- nginx はコンテナ内で 80 番を受けます。TLS は以下のいずれかで終端します。
-  - Cloudflare などの CDN/プロキシで TLS 終端 (推奨・簡易)
-  - もしくはホスト側 nginx / certbot、または Caddy を別途構成
-- 現状の `deploy/docker/nginx/default.conf` は 80 番のみを扱います。
-  443 番を直接終端する場合は証明書配置と `listen 443 ssl;` の追記が必要です。
+- Cloudflare の `SSL/TLS` 設定で暗号化モードを `Full (strict)` にします。
+- `SSL/TLS` → `Origin Server` で発行した Origin 証明書を
+  Lightsail 上の `/app/herta/certs/origin.pem` と
+  `/app/herta/certs/origin-key.pem` に配置します。
+- Cloudflare の `Network` 設定で `HTTP/3` を有効にします。
+- Caddy が TLS 終端を担当し、HTTP→HTTPS リダイレクト / HTTP/2 / HTTP/3 /
+  WebSocket を処理します。
+- nginx は内部専用で、Caddy から HTTP で受けます。
 
 ---
 
 ## 10. トラブルシューティング
 
-| 症状 | 確認 / 対処 |
-|------|-------------|
-| health check が失敗する | `docker compose -f docker-compose.prod.yml logs api` を確認 |
-| DB に接続できない | `POSTGRES_PASSWORD` と `DATABASE_URL` のパスワード一致を確認 |
-| bot がすぐ落ちる | `DISCORD_BOT_TOKEN` が正しく設定されているか確認 |
-| migrator が失敗する | `DATABASE_URL` と postgres の起動状態を確認 |
-| ビルドが遅い/失敗する | ディスク空き容量、`docker system prune` で不要イメージ削除 |
-| SSH デプロイが失敗する | GitHub Secrets の `LIGHTSAIL_*` を確認 |
+| 症状                       | 確認 / 対処                                                             |
+| -------------------------- | ----------------------------------------------------------------------- |
+| health check が失敗する    | `docker compose -f docker-compose.prod.yml logs caddy nginx api` を確認 |
+| TLS handshake / 526 エラー | Origin 証明書の配置と Cloudflare `Full (strict)` を確認                 |
+| DB に接続できない          | `POSTGRES_PASSWORD` と `DATABASE_URL` のパスワード一致を確認            |
+| bot がすぐ落ちる           | `DISCORD_BOT_TOKEN` が正しく設定されているか確認                        |
+| migrator が失敗する        | `DATABASE_URL` と postgres の起動状態を確認                             |
+| ビルドが遅い/失敗する      | ディスク空き容量、`docker system prune` で不要イメージ削除              |
+| SSH デプロイが失敗する     | GitHub Secrets の `LIGHTSAIL_*` を確認                                  |
 
 > `bot` / `worker` は本番シークレット (Discord トークン等) と今後の機能実装が
 > 揃うことで常駐します。現段階のスキャフォールドでは、トークン未設定時は
