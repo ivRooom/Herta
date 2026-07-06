@@ -6,16 +6,27 @@ const logger = createLogger({
   level: process.env['WORKER_LOG_LEVEL'],
 });
 
+let redis: Redis | undefined;
+let shuttingDown = false;
+
 async function main() {
   logger.info('Herta Worker を起動しています...');
 
   const redisUrl = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
 
   try {
-    const redis = new Redis(redisUrl, { maxRetriesPerRequest: 3, lazyConnect: true });
+    redis = new Redis(redisUrl, { maxRetriesPerRequest: 3, lazyConnect: true });
+    redis.on('error', (error) => {
+      logger.error({ err: error }, 'Redis エラー');
+    });
+    redis.on('ready', () => {
+      logger.info(
+        { redisUrl: redisUrl.replace(/\/\/.*@/, '//<credentials>@') },
+        'Redis 接続準備完了',
+      );
+    });
     await redis.connect();
     logger.info({ redisUrl: redisUrl.replace(/\/\/.*@/, '//<credentials>@') }, 'Redis 接続成功');
-    await redis.quit();
   } catch (error) {
     logger.error(
       { redisUrl, err: error },
@@ -34,14 +45,28 @@ async function main() {
   // - analytics: 集計処理
 }
 
-process.on('SIGINT', () => {
-  logger.info('Worker をシャットダウン中...');
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) {
+    return;
+  }
+  shuttingDown = true;
+  logger.info({ signal }, 'Worker をシャットダウン中...');
+
+  try {
+    await redis?.quit();
+  } catch (error) {
+    logger.error({ err: error }, 'Redis の終了処理に失敗しました');
+  }
+
   process.exit(0);
+}
+
+process.on('SIGINT', () => {
+  void shutdown('SIGINT');
 });
 
 process.on('SIGTERM', () => {
-  logger.info('Worker をシャットダウン中...');
-  process.exit(0);
+  void shutdown('SIGTERM');
 });
 
 main();

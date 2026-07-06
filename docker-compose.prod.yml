@@ -79,7 +79,10 @@ services:
 
   studio:
     <<: *app
-    command: pnpm --filter @herta/studio exec next start -p 3000
+    command: node apps/studio/.next/standalone/apps/studio/server.js
+    environment:
+      HOSTNAME: 0.0.0.0
+      PORT: '3000'
     depends_on:
       api:
         condition: service_started
