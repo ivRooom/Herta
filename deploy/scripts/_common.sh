@@ -24,19 +24,31 @@ require_env_file() {
   fi
 }
 
-# Caddy → nginx → API 経由で healthy になるまで待機 (最大 60 秒)
+# up -d で api 等が recreate される一方 nginx/caddy は既存コンテナのまま
+# running のため、nginx upstream が古い api コンテナ IP を掴んだままになり
+# Caddy → nginx → api の経路で 502 が発生することがある。
+# プロキシを明示的に再起動して upstream を張り直す。
+restart_proxies() {
+  echo "=== nginx / caddy 再起動 (upstream 再解決) ==="
+  ${COMPOSE} restart nginx caddy
+  sleep 5
+}
+
+# Caddy → nginx → API 経由で healthy になるまで待機 (最大 120 秒)
 wait_for_health() {
   local health_url="https://${HEALTH_DOMAIN}/api/v1/health"
   echo "=== Health check (${health_url}) ==="
-  for i in $(seq 1 12); do
+  for i in $(seq 1 24); do
     if curl -fsS -k --resolve "${HEALTH_DOMAIN}:443:127.0.0.1" "${health_url}" > /dev/null 2>&1; then
       echo "API health check 成功"
       return 0
     fi
-    echo "API 応答待ち... (${i}/12)"
+    echo "API 応答待ち... (${i}/24)"
     sleep 5
   done
   echo "ERROR: API health check に失敗しました。" >&2
   ${COMPOSE} logs --tail=100 api || true
+  ${COMPOSE} logs --tail=100 nginx || true
+  ${COMPOSE} logs --tail=100 caddy || true
   return 1
 }

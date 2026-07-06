@@ -68,18 +68,28 @@ jobs:
             ${COMPOSE} up -d
             ${COMPOSE} ps
 
+            # up -d で api 等が recreate される一方 nginx/caddy は既存コンテナのまま
+            # running のため、nginx upstream が古い api コンテナ IP を掴んだままになり
+            # Caddy → nginx → api の経路で 502 が発生することがある。
+            # プロキシを明示的に再起動して upstream を張り直す。
+            echo "=== nginx / caddy 再起動 (upstream 再解決) ==="
+            ${COMPOSE} restart nginx caddy
+            sleep 5
+
             # --- Health check (Cloudflare 経由の外部経路) ---
             echo "=== Health check ==="
-            for i in $(seq 1 12); do
+            for i in $(seq 1 24); do
               if curl -fsS -k --resolve herta.ivrm.jp:443:127.0.0.1 https://herta.ivrm.jp/api/v1/health; then
                 echo ""
                 echo "API health check 成功"
                 exit 0
               fi
-              echo "API 応答待ち... (${i}/12)"
+              echo "API 応答待ち... (${i}/24)"
               sleep 5
             done
 
             echo "API health check に失敗しました。ログを確認してください:"
             ${COMPOSE} logs --tail=100 api
+            ${COMPOSE} logs --tail=100 nginx
+            ${COMPOSE} logs --tail=100 caddy
             exit 1
