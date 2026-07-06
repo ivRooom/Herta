@@ -26,6 +26,9 @@ ${COMPOSE} build
 ${COMPOSE} up -d
 ${COMPOSE} ps
 
+# nginx/caddy を再起動して upstream を張り直す (502 防止)
+restart_proxies
+
 # 動作確認
 wait_for_health
 

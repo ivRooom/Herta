@@ -178,9 +178,13 @@ docker compose -f docker-compose.prod.yml pull || true
 docker compose -f docker-compose.prod.yml build
 docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml ps
+# up -d で api 等が recreate されると nginx upstream が古い IP を掴んだままになり
+# Caddy → nginx → api の経路で 502 になることがあるため、プロキシを再起動する
+docker compose -f docker-compose.prod.yml restart nginx caddy
 ```
 
-その後 API の health check (`/api/v1/health`) が成功すれば完了です。
+その後 API の health check (`/api/v1/health`) が成功すれば完了です
+(最大 120 秒待機し、失敗時は api / nginx / caddy のログを出力します)。
 
 ### 6-2. 手動デプロイ (workflow_dispatch)
 
@@ -284,12 +288,30 @@ git checkout main && ./deploy/scripts/deploy.sh
 | 症状                       | 確認 / 対処                                                             |
 | -------------------------- | ----------------------------------------------------------------------- |
 | health check が失敗する    | `docker compose -f docker-compose.prod.yml logs caddy nginx api` を確認 |
+| デプロイ直後に 502 が返る  | nginx/caddy の再起動で回復する可能性あり (下記参照)                     |
 | TLS handshake / 526 エラー | Origin 証明書の配置と Cloudflare `Full (strict)` を確認                 |
 | DB に接続できない          | `POSTGRES_PASSWORD` と `DATABASE_URL` のパスワード一致を確認            |
 | bot がすぐ落ちる           | `DISCORD_BOT_TOKEN` が正しく設定されているか確認                        |
 | migrator が失敗する        | `DATABASE_URL` と postgres の起動状態を確認                             |
 | ビルドが遅い/失敗する      | ディスク空き容量、`docker system prune` で不要イメージ削除              |
 | SSH デプロイが失敗する     | GitHub Secrets の `LIGHTSAIL_*` を確認                                  |
+
+### デプロイ直後の 502 (nginx upstream の張り直し)
+
+`docker compose up -d` で `api` などが recreate されると新しいコンテナ IP が
+割り当てられますが、`nginx` / `caddy` は既存コンテナのまま running のため、
+nginx が **古い api コンテナ IP を掴んだまま** になり、
+Caddy → nginx → api の経路で一時的に 502 が返ることがあります。
+
+デプロイスクリプト / GitHub Actions では `up -d` 後に nginx/caddy を自動再起動して
+upstream を張り直しますが、手動で 502 に遭遇した場合は以下で回復します。
+
+```bash
+cd /app/herta
+docker compose -f docker-compose.prod.yml restart nginx caddy
+sleep 5
+curl -f https://herta.ivrm.jp/api/v1/health
+```
 
 > `bot` / `worker` は本番シークレット (Discord トークン等) と今後の機能実装が
 > 揃うことで常駐します。現段階のスキャフォールドでは、トークン未設定時は
