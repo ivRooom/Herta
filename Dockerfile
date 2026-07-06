@@ -24,7 +24,8 @@ COPY . .
 RUN pnpm install --frozen-lockfile \
   && pnpm --filter @herta/db exec prisma generate \
   && pnpm --filter @herta/api build \
-  && pnpm --filter @herta/studio build
+  && pnpm --filter @herta/studio build \
+  && cp -r apps/studio/.next/static apps/studio/.next/standalone/apps/studio/.next/static
 
 # api=3001 / studio=3000
 EXPOSE 3000 3001

@@ -1,4 +1,5 @@
 import type { PluginManifest } from '@herta/shared';
+import type { CommandHandler } from '../command/command-provider.js';
 import type { PluginContext } from '../context/plugin-context.js';
 
 export abstract class BasePlugin {
@@ -18,4 +19,7 @@ export abstract class BasePlugin {
 
   /** Plugin の設定が変更されたとき (オプション) */
   onConfigChange?(guildId: string, oldConfig: unknown, newConfig: unknown): Promise<void>;
+
+  /** Plugin が Slash Command を提供する場合に実装する (オプション) */
+  provideCommands?(): CommandHandler[];
 }

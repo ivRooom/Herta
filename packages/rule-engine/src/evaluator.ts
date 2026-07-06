@@ -98,10 +98,7 @@ export class RuleEvaluator {
     return true;
   }
 
-  private async evaluateConditionTree(
-    node: ConditionNode,
-    context: unknown,
-  ): Promise<boolean> {
+  private async evaluateConditionTree(node: ConditionNode, context: unknown): Promise<boolean> {
     switch (node.type) {
       case 'and':
         for (const child of node.children ?? []) {
