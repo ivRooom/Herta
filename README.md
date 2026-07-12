@@ -98,6 +98,10 @@ pnpm dev
 | `WORKER_LOG_LEVEL`       | -    | Worker ログレベル                              | `debug`                                               |
 
 > *`NEXTAUTH_SECRET` は Studio のセッション管理で必要です。`openssl rand -base64 32` で生成できます。
+>
+> `DISCORD_CALLBACK_URL` は API (NestJS) 側の OAuth コールバックです。Dashboard のログインは NextAuth が `{NEXTAUTH_URL}/api/auth/callback/discord` を自動的に使用します。
+
+> 全変数の詳細は [docs/ENVIRONMENT_VARIABLES.md](docs/ENVIRONMENT_VARIABLES.md) を参照してください。
 
 ## Docker Compose
 
@@ -158,6 +162,10 @@ pnpm dev --filter @herta/studio
 ```
 
 - URL: `http://localhost:3000`
+- Discord OAuth ログイン: `http://localhost:3000/login`
+  - ログイン後、あなたが「管理者」または「サーバー管理」権限を持つ Guild のみが `/dashboard/guilds` に表示されます
+  - 必要な環境変数: `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` / `NEXTAUTH_URL` / `NEXTAUTH_SECRET`
+  - 詳細: [docs/AUTH.md](docs/AUTH.md)
 
 ### Bot
 
@@ -214,7 +222,13 @@ Bot を動作させるには、[Discord Developer Portal](https://discord.com/de
 
 3. **OAuth2 を設定**
    - `OAuth2` タブ → `Client ID` / `Client Secret` を取得 → `.env` に設定
-   - Redirects に `http://localhost:3001/api/v1/auth/discord/callback` を追加
+   - Redirects に以下を追加:
+     - Dashboard ログイン (NextAuth): `http://localhost:3000/api/auth/callback/discord`
+       - 本番: `https://herta.ivrm.jp/api/auth/callback/discord`
+     - API 側 (任意): `http://localhost:3001/api/v1/auth/discord/callback`
+   - OAuth2 スコープ: `identify` `email` `guilds`
+
+   > Dashboard ログインの詳細は [docs/AUTH.md](docs/AUTH.md) を参照してください。
 
 4. **Bot を Guild に招待**
    - `OAuth2` → `URL Generator`:
