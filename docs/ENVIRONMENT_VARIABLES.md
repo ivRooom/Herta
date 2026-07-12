@@ -1,0 +1,81 @@
+# 環境変数リファレンス
+
+Herta で使用する環境変数の一覧です。開発は `.env` (`.env.example` をコピー)、
+本番は `/app/herta/.env.production` (`.env.production.example` をコピー) を使用します。
+
+> シークレットは絶対にリポジトリへコミットしないでください。
+> `.env` / `.env.production` は `.gitignore` 済みです。
+
+## 共通
+
+| 変数名     | 必須 | 説明     | 開発デフォルト |
+| ---------- | ---- | -------- | -------------- |
+| `NODE_ENV` | -    | 実行環境 | `development`  |
+
+## データストア
+
+| 変数名         | 必須 | 説明                | 開発デフォルト                                        |
+| -------------- | ---- | ------------------- | ----------------------------------------------------- |
+| `DATABASE_URL` | Yes  | PostgreSQL 接続 URL | `postgresql://postgres:postgres@localhost:5432/herta` |
+| `REDIS_URL`    | Yes  | Redis 接続 URL      | `redis://localhost:6379`                              |
+
+本番の compose 用に `POSTGRES_DB` / `POSTGRES_USER` / `POSTGRES_PASSWORD` も使用します。
+`POSTGRES_PASSWORD` と `DATABASE_URL` のパスワードは必ず一致させてください。
+
+## Discord
+
+| 変数名                  | 必須 | 説明                                          | 用途                     |
+| ----------------------- | ---- | --------------------------------------------- | ------------------------ |
+| `DISCORD_CLIENT_ID`     | Yes  | Application のクライアント ID                 | Dashboard ログイン / API |
+| `DISCORD_CLIENT_SECRET` | Yes  | Application のクライアントシークレット        | Dashboard ログイン / API |
+| `DISCORD_BOT_TOKEN`     | Yes  | Bot トークン                                  | Bot                      |
+| `DISCORD_PUBLIC_KEY`    | -    | Interactions 用公開鍵                         | Bot                      |
+| `DISCORD_GUILD_ID_DEV`  | -    | 開発用 Guild ID (Slash Command の即時登録)    | Bot                      |
+| `DISCORD_CALLBACK_URL`  | -    | **API 側 (NestJS)** の OAuth コールバック URL | API                      |
+
+> **Dashboard ログインのコールバック URL は環境変数ではありません。**
+> NextAuth が `{NEXTAUTH_URL}/api/auth/callback/discord` を自動的に使用します。
+> Discord Developer Portal の Redirects にこの URL を登録してください。
+> OAuth2 スコープは `identify` `email` `guilds` が必要です。詳細は [AUTH.md](./AUTH.md)。
+
+## API (NestJS)
+
+| 変数名         | 必須 | 説明                             | 開発デフォルト          |
+| -------------- | ---- | -------------------------------- | ----------------------- |
+| `API_PORT`     | -    | API サーバーポート               | `3001`                  |
+| `API_URL`      | -    | API の公開 URL                   | `http://localhost:3001` |
+| `CORS_ORIGINS` | -    | CORS 許可オリジン (カンマ区切り) | `http://localhost:3000` |
+
+## Studio (Next.js Dashboard)
+
+| 変数名            | 必須 | 説明                                                       | 開発デフォルト          |
+| ----------------- | ---- | ---------------------------------------------------------- | ----------------------- |
+| `STUDIO_PORT`     | -    | Studio ポート                                              | `3000`                  |
+| `NEXTAUTH_URL`    | Yes  | Dashboard の公開 URL (Discord Redirect URI のベース)       | `http://localhost:3000` |
+| `NEXTAUTH_SECRET` | Yes  | セッション JWT の署名鍵 (`openssl rand -base64 32` で生成) | -                       |
+
+## JWT / 内部通信
+
+| 変数名                   | 必須 | 説明                         | 備考             |
+| ------------------------ | ---- | ---------------------------- | ---------------- |
+| `JWT_SECRET`             | -    | JWT 署名キー                 | 本番では必ず変更 |
+| `JWT_REFRESH_SECRET`     | -    | JWT リフレッシュ用署名キー   | 本番では必ず変更 |
+| `JWT_EXPIRATION`         | -    | アクセストークン有効期間     | `15m`            |
+| `JWT_REFRESH_EXPIRATION` | -    | リフレッシュトークン有効期間 | `7d`             |
+| `INTERNAL_JWT_SECRET`    | -    | Bot ↔ API 内部通信用署名キー | 本番では必ず変更 |
+
+## ロギング
+
+| 変数名             | 必須 | 説明              | 開発デフォルト |
+| ------------------ | ---- | ----------------- | -------------- |
+| `BOT_LOG_LEVEL`    | -    | Bot ログレベル    | `debug`        |
+| `WORKER_LOG_LEVEL` | -    | Worker ログレベル | `debug`        |
+
+## 本番で変更が必須の値
+
+`.env.production.example` のうち、以下は必ず安全な値へ変更してください。
+
+- `POSTGRES_PASSWORD` / `DATABASE_URL` のパスワード
+- `NEXTAUTH_SECRET`
+- `JWT_SECRET` / `JWT_REFRESH_SECRET` / `INTERNAL_JWT_SECRET`
+- `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` / `DISCORD_BOT_TOKEN`
