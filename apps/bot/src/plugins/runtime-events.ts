@@ -1,4 +1,4 @@
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import type { Logger } from '@herta/logger';
 import {
   PLUGIN_RUNTIME_EVENT_CHANNEL,
@@ -38,10 +38,10 @@ export class PluginRuntimeEventSubscriber {
     redis.on('reconnecting', () =>
       this.logger.warn('Plugin RuntimeイベントのRedis再接続を試行しています'),
     );
-    redis.on('error', (error) =>
+    redis.on('error', (error: unknown) =>
       this.logger.error({ err: error }, 'Plugin RuntimeイベントのRedis接続でエラーが発生しました'),
     );
-    redis.on('message', (channel, payload) => {
+    redis.on('message', (channel: string, payload: string) => {
       if (channel === PLUGIN_RUNTIME_EVENT_CHANNEL) this.handleMessage(payload);
     });
 
