@@ -80,15 +80,22 @@ Studio 内の Route Handler として以下を提供します。
 
 いずれも未認証は `401` を返します。
 
-## DB 保存
+## DB 保存と同期責務
 
-- `users`: ログイン時に upsert (`apps/studio/src/lib/users.ts`)
-- `guilds` / `guild_members`: Guild を選択 (`/dashboard/guilds/[guildId]` 表示、
-  または `GET /api/guilds/[guildId]`) した際に upsert
-  (`apps/studio/src/lib/guilds.ts` の `persistSelectedGuild()`)
+- `users`: ログイン時にupsert (`apps/studio/src/lib/users.ts`)
+- `guilds`: Guild選択時に、OAuth APIから確実に取得できる`id`、`name`、`icon`だけをupsert
+- `guilds.owner_id`: ログインユーザー本人がGuild ownerの場合のみ保存し、それ以外は`NULL`
+- `guild_members`: StudioのOAuthフローからは作成・更新しない
 
-既存の Prisma スキーマ (`users` / `guilds` / `guild_members`) をそのまま利用するため、
-新規マイグレーションは不要です。
+Discordの`/users/@me/guilds`では、ログインユーザーがownerでない場合の実owner ID、
+ログインユーザー自身のrole ID、nickname、joinedAtを取得できません。不明な値を空文字や
+空配列として保存すると、将来のRBAC・監査で正しい同期値と区別できなくなるためです。
+
+Guild member metadataの同期は、BotがGuild member情報を正規に取得できるようになった時点で、
+必要なIntent・保存範囲・保持期間をレビューした上で別の同期処理として実装します。
+Dashboardの管理権限判定はDB上のGuildMemberではなく、操作ごとにDiscord APIで再確認します。
+
+`owner_id=''`の既存データはmigrationで`NULL`へ変換します。
 
 ## セキュリティ
 
