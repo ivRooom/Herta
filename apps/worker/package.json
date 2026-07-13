@@ -16,7 +16,7 @@
     "@herta/shared": "workspace:*",
     "@herta/logger": "workspace:*",
     "@herta/queue": "workspace:*",
-    "bullmq": "^5.25.6",
+    "bullmq": "^5.80.2",
     "ioredis": "^5.4.2",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0"
