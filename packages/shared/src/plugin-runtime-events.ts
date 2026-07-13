@@ -48,7 +48,10 @@ export function parsePluginRuntimeEvent(value: string): PluginRuntimeEvent | und
   if (!Number.isSafeInteger(candidate['configVersion']) || Number(candidate['configVersion']) < 0)
     return undefined;
   if (!isPluginRuntimeEventType(candidate['eventType'])) return undefined;
-  if (!isNonEmptyString(candidate['occurredAt']) || Number.isNaN(Date.parse(candidate['occurredAt'])))
+  if (
+    !isNonEmptyString(candidate['occurredAt']) ||
+    Number.isNaN(Date.parse(candidate['occurredAt']))
+  )
     return undefined;
 
   return candidate as unknown as PluginRuntimeEvent;
