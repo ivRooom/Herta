@@ -1,34 +1,32 @@
 # ============================================================
 # Herta. — 本番用 Docker イメージ (モノレポ共通)
-# ------------------------------------------------------------
-# 1 つのイメージに全ワークスペースの依存関係とビルド成果物を含め、
-# docker-compose.prod.yml から各サービス (api / bot / worker / studio /
-# migrator) が command を切り替えて起動します。
-# 単一ホスト (AWS Lightsail) での運用を想定した構成です。
 # ============================================================
-FROM node:22-alpine
+FROM node:22-alpine AS builder
 
-# Prisma / curl (health check) / bash の実行に必要なパッケージ
-RUN apk add --no-cache libc6-compat openssl curl bash
-
-# pnpm を corepack 経由で有効化
+RUN apk add --no-cache libc6-compat openssl bash
 RUN corepack enable
-
 WORKDIR /app
 
-# ワークスペース全体をコピー (.dockerignore で node_modules 等は除外)
 COPY . .
 
-# 依存インストール → Prisma Client 生成 → API / Studio をビルド
-#   - bot / worker は tsx で TS を直接実行するためビルド不要
+# 全workspaceを事前ビルドし、本番でtsxによるTypeScript直接実行を行わない。
 RUN pnpm install --frozen-lockfile \
   && pnpm --filter @herta/db exec prisma generate \
-  && pnpm --filter @herta/api build \
-  && pnpm --filter @herta/studio build \
+  && pnpm build \
   && cp -r apps/studio/.next/static apps/studio/.next/standalone/apps/studio/.next/static
 
-# api=3001 / studio=3000
-EXPOSE 3000 3001
+FROM node:22-alpine AS runtime
 
-# デフォルトは API を起動 (各サービスの command は compose 側で上書き)
+RUN apk add --no-cache libc6-compat openssl curl bash \
+  && corepack enable
+
+ENV NODE_ENV=production
+WORKDIR /app
+
+# node公式imageの非rootユーザー(uid=1000)で全アプリを実行する。
+COPY --from=builder --chown=node:node /app /app
+
+USER node
+
+EXPOSE 3000 3001
 CMD ["node", "apps/api/dist/main.js"]

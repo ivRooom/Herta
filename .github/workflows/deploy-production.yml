@@ -1,17 +1,5 @@
 # ============================================================
 # Deploy — Production (AWS Lightsail)
-# ------------------------------------------------------------
-# main への push、または手動実行 (workflow_dispatch) で起動します。
-# GitHub Actions から Lightsail へ SSH 接続し、
-# git pull → docker compose build → up -d → health check を実行します。
-#
-# PR ではこのワークフローは実行されません (CI のみ)。
-#
-# 必要な GitHub Secrets:
-#   LIGHTSAIL_HOST     … Lightsail の固定 IP または DNS 名
-#   LIGHTSAIL_USER     … SSH ユーザー (例: ubuntu)
-#   LIGHTSAIL_SSH_KEY  … SSH 秘密鍵 (PEM 全文)
-#   LIGHTSAIL_APP_DIR  … アプリ配置ディレクトリ (例: /app/herta)
 # ============================================================
 name: Deploy Production
 
@@ -28,7 +16,6 @@ on:
 permissions:
   contents: read
 
-# 本番デプロイは同時に 1 つだけ (進行中の実行はキャンセルしない)
 concurrency:
   group: deploy-production
   cancel-in-progress: false
@@ -47,7 +34,6 @@ jobs:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          # 手動実行時は入力の ref、push 時は main を使用
           envs: DEPLOY_REF
           script_stop: true
           command_timeout: 30m
@@ -56,32 +42,33 @@ jobs:
 
             APP_DIR="${{ secrets.LIGHTSAIL_APP_DIR }}"
             DEPLOY_REF="${{ github.event.inputs.ref || 'main' }}"
-            COMPOSE="docker compose -f docker-compose.prod.yml"
+            ENV_FILE="${APP_DIR}/.env.production"
+            COMPOSE="docker compose --env-file ${ENV_FILE} -f docker-compose.prod.yml"
 
             echo "=== Herta. 本番デプロイ開始 (ref: ${DEPLOY_REF}) ==="
             cd "${APP_DIR}"
 
-            # 最新コードを取得
+            if [ ! -r "${ENV_FILE}" ]; then
+              echo "ERROR: ${ENV_FILE} が存在しないか読み取れません。" >&2
+              exit 1
+            fi
+
             git fetch --prune origin
             git checkout "${DEPLOY_REF}"
             git pull --ff-only origin "${DEPLOY_REF}"
 
-            # 公開イメージだけをpullし、共有アプリイメージは1回だけbuildする。
-            # api / studio / bot / worker / migrator は同じ herta-app:latest を利用する。
+            # 必須環境変数の展開とCompose構文をbuild前に検証する。
+            ${COMPOSE} config --quiet
+
             ${COMPOSE} pull postgres redis nginx caddy
             ${COMPOSE} build api
             ${COMPOSE} up -d --no-build --remove-orphans
             ${COMPOSE} ps
 
-            # up -d で api 等が recreate される一方 nginx/caddy は既存コンテナのまま
-            # running のため、nginx upstream が古い api コンテナ IP を掴んだままになり
-            # Caddy → nginx → api の経路で 502 が発生することがある。
-            # プロキシを明示的に再起動して upstream を張り直す。
             echo "=== nginx / caddy 再起動 (upstream 再解決) ==="
             ${COMPOSE} restart nginx caddy
             sleep 5
 
-            # Origin内部経路のHealth check。Origin CA証明書のためローカル確認では-kを使用する。
             echo "=== Origin health check ==="
             for i in $(seq 1 24); do
               if curl -fsS -k --resolve herta.ivrm.jp:443:127.0.0.1 https://herta.ivrm.jp/api/v1/health; then

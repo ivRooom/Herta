@@ -1,24 +1,24 @@
 # ============================================================
-# Herta. — 本番用 Docker Compose 構成 (AWS Lightsail / Cloudflare Full strict)
-# ------------------------------------------------------------
-# 使い方:
-#   docker compose -f docker-compose.prod.yml build
-#   docker compose -f docker-compose.prod.yml up -d
-#   docker compose -f docker-compose.prod.yml ps
+# Herta. — 本番用 Docker Compose 構成
+# AWS Lightsail / Cloudflare Full (strict)
 #
-# 環境変数は .env.production から読み込みます
-# (.env.production.example をコピーして値を設定してください)。
+# 必ず --env-file .env.production を付けて実行してください。
+# deploy/scripts と GitHub Actions はこの指定を含みます。
 # ============================================================
 
-# 全アプリサービスで共通の設定 (同一イメージを再利用)
 x-app: &app
   build:
     context: .
     dockerfile: Dockerfile
   image: herta-app:latest
-  env_file:
-    - .env.production
   restart: unless-stopped
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  tmpfs:
+    - /tmp:size=64m,mode=1777
   depends_on:
     postgres:
       condition: service_healthy
@@ -26,18 +26,17 @@ x-app: &app
       condition: service_healthy
 
 services:
-  # --- インフラ ---
   postgres:
     image: postgres:16-alpine
-    # POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD は .env.production から注入
-    env_file:
-      - .env.production
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     restart: unless-stopped
     healthcheck:
-      # コンテナ内で展開させるため $$ でエスケープ
-      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER:-postgres} -d $${POSTGRES_DB:-herta}']
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -53,16 +52,29 @@ services:
       timeout: 5s
       retries: 5
 
-  # --- DB マイグレーション (起動前に 1 回だけ実行) ---
   migrator:
     <<: *app
     command: pnpm --filter @herta/db exec prisma migrate deploy
     restart: 'no'
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
 
-  # --- アプリケーション ---
   api:
     <<: *app
     command: node apps/api/dist/main.js
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
+      API_PORT: ${API_PORT:-3001}
+      CORS_ORIGINS: ${CORS_ORIGINS:?CORS_ORIGINS is required}
+      ENABLE_SWAGGER: ${ENABLE_SWAGGER:-false}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET is required}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-15m}
+      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
+      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET:?INTERNAL_JWT_SECRET is required}
     depends_on:
       postgres:
         condition: service_healthy
@@ -81,6 +93,13 @@ services:
     <<: *app
     command: node apps/studio/.next/standalone/apps/studio/server.js
     environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      API_URL: ${API_URL:?API_URL is required}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?DISCORD_CLIENT_ID is required}
+      DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:?DISCORD_CLIENT_SECRET is required}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:?NEXTAUTH_URL is required}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?NEXTAUTH_SECRET is required}
       HOSTNAME: 0.0.0.0
       PORT: '3000'
     depends_on:
@@ -89,13 +108,25 @@ services:
 
   bot:
     <<: *app
-    command: pnpm --filter @herta/bot exec tsx src/main.ts
+    command: node apps/bot/dist/main.js
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
+      DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?DISCORD_CLIENT_ID is required}
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN is required}
+      DISCORD_GUILD_ID_DEV: ${DISCORD_GUILD_ID_DEV:-}
+      BOT_LOG_LEVEL: ${BOT_LOG_LEVEL:-info}
 
   worker:
     <<: *app
-    command: pnpm --filter @herta/worker exec tsx src/main.ts
+    command: node apps/worker/dist/main.js
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
+      WORKER_LOG_LEVEL: ${WORKER_LOG_LEVEL:-info}
 
-  # --- リバースプロキシ (Cloudflare → Caddy → nginx → アプリ) ---
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
