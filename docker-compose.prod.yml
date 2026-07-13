@@ -95,6 +95,7 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
       API_URL: ${API_URL:?API_URL is required}
       DISCORD_CLIENT_ID: ${DISCORD_CLIENT_ID:?DISCORD_CLIENT_ID is required}
       DISCORD_CLIENT_SECRET: ${DISCORD_CLIENT_SECRET:?DISCORD_CLIENT_SECRET is required}
@@ -105,6 +106,8 @@ services:
     depends_on:
       api:
         condition: service_started
+      redis:
+        condition: service_healthy
 
   bot:
     <<: *app
