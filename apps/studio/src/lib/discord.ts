@@ -60,8 +60,8 @@ export function canManageGuild(guild: DiscordPartialGuild): boolean {
 export async function fetchUserGuilds(accessToken: string): Promise<DiscordPartialGuild[]> {
   const res = await fetch(`${DISCORD_API_BASE}/users/@me/guilds`, {
     headers: { Authorization: `Bearer ${accessToken}` },
-    // Discord のレートリミットを避けるため短時間キャッシュ
-    next: { revalidate: 30 },
+    // Guild権限は認可判断に使うため、権限剥奪を即時反映できるよう共有cacheへ保存しない。
+    cache: 'no-store',
   });
 
   if (!res.ok) {
