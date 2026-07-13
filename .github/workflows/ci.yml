@@ -42,8 +42,21 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
+      - name: Generate Prettier Patch
+        run: |
+          pnpm format
+          git diff --binary > prettier.patch
+
+      - name: Upload Prettier Patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: prettier-patch
+          path: prettier.patch
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Format Check
-        run: pnpm format:check
+        run: test ! -s prettier.patch
 
       - name: Lint
         run: pnpm lint
