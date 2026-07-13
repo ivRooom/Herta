@@ -56,8 +56,8 @@ async function publish(redisUrl: string, channel: string, message: string): Prom
 
     socket.setEncoding('utf8');
     socket.once('connect', () => socket.write(commands.join('')));
-    socket.on('data', (chunk: string) => {
-      response += chunk;
+    socket.on('data', (chunk) => {
+      response += chunk.toString();
       const errorReply = response.match(/-([^\r\n]+)\r\n/);
       if (errorReply) {
         clearTimeout(timer);
