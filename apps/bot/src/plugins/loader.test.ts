@@ -147,4 +147,36 @@ describe('GuildPluginLoader', () => {
     expect(result.commands[0]?.definition.name).toBe('healthy');
     expect(logger.error).toHaveBeenCalled();
   });
+
+  it('同じGuildでの再ロードではonEnableを一度だけ呼び、無効化後に再度呼ぶ', async () => {
+    const onEnable = vi.fn(async () => undefined);
+    const onDisable = vi.fn(async () => undefined);
+    const cache = new InMemoryGuildPluginCache();
+    const loader = new GuildPluginLoader({
+      registry: new PluginRuntimeRegistry([
+        {
+          pluginId: 'lifecycle',
+          provideCommands: () => [command('lifecycle')],
+          onEnable,
+          onDisable,
+        },
+      ]),
+      cache,
+      logger,
+      fetchEnabledPlugins: vi.fn(async () => [enabled('lifecycle')]),
+    });
+
+    await loader.loadGuildPlugins('guild-a');
+    await loader.loadGuildPlugins('guild-a');
+    expect(onEnable).toHaveBeenCalledTimes(1);
+
+    cache.invalidate('guild-a');
+    await loader.loadGuildPlugins('guild-a');
+    expect(onEnable).toHaveBeenCalledTimes(2);
+
+    await loader.disableGuildPlugins('guild-a');
+    expect(onDisable).toHaveBeenCalledTimes(1);
+    await loader.loadGuildPlugins('guild-a');
+    expect(onEnable).toHaveBeenCalledTimes(3);
+  });
 });
