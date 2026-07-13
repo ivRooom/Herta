@@ -66,6 +66,16 @@ function toDiscordOption(
   }
 }
 
+export function toDiscordCommandJSON(
+  command: SlashCommand,
+): RESTPostAPIChatInputApplicationCommandsJSONBody {
+  return {
+    name: command.definition.name,
+    description: command.definition.description,
+    options: command.definition.options?.map(toDiscordOption),
+  };
+}
+
 export class CommandRegistry {
   private commands = new Map<string, SlashCommand>();
 
@@ -98,10 +108,6 @@ export class CommandRegistry {
   }
 
   toDiscordJSON(): RESTPostAPIChatInputApplicationCommandsJSONBody[] {
-    return this.getAll().map((command) => ({
-      name: command.definition.name,
-      description: command.definition.description,
-      options: command.definition.options?.map(toDiscordOption),
-    }));
+    return this.getAll().map(toDiscordCommandJSON);
   }
 }

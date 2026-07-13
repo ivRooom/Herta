@@ -42,6 +42,13 @@ Plugin の manifest は `@herta/plugin-catalog` に集約され、将来の Bot 
 `getEnabledPlugins(prisma, guildId)` で有効な Plugin と設定を取得します。詳細は
 [docs/PLUGIN_MANAGER.md](docs/PLUGIN_MANAGER.md) を参照してください。
 
+## Plugin Runtime
+
+Plugin Manager で Guild ごとに有効化された Plugin は、Bot の静的 Runtime Registry と
+Guild Plugin Runtime Loader により Command / Event provider へ安全に接続されます。DB 障害や
+個別 Plugin の障害は Core Command の動作を妨げず、設定変更時は Guild 単位で再同期できます。
+詳細は [docs/PLUGIN_RUNTIME.md](docs/PLUGIN_RUNTIME.md) を参照してください。
+
 ## 必要なツール
 
 | ツール                  | バージョン |

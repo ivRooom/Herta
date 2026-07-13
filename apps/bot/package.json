@@ -17,6 +17,7 @@
     "@herta/shared": "workspace:*",
     "@herta/logger": "workspace:*",
     "@herta/plugin-sdk": "workspace:*",
+    "@herta/plugin-catalog": "workspace:*",
     "@herta/rule-engine": "workspace:*",
     "@herta/db": "workspace:*",
     "discord.js": "^14.16.3",
