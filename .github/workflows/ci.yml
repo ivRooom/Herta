@@ -59,6 +59,13 @@ jobs:
           DISCORD_BOT_TOKEN: ci-bot-token
         run: docker compose --env-file .env.production.example -f docker-compose.prod.yml config --quiet
 
+      - name: Origin protection configuration validation
+        run: |
+          bash -n deploy/scripts/enable-origin-protection.sh
+          docker run --rm \
+            -v "$PWD/deploy/docker/caddy/Caddyfile.aop:/etc/caddy/Caddyfile:ro" \
+            caddy:2-alpine caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /dev/null
+
       - name: Production Docker Build
         run: docker build --tag herta-app:ci .
 
