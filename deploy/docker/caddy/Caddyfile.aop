@@ -1,0 +1,33 @@
+{
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+herta.ivrm.jp {
+	# Cloudflare Origin CertificateでTLS終端する。
+	# Cloudflare側でAuthenticated Origin Pullsを有効化した後に使用すること。
+	tls /certs/origin.pem /certs/origin-key.pem {
+		client_auth {
+			mode require_and_verify
+			trust_pool file /certs/cloudflare-origin-pull-ca.pem
+		}
+	}
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+
+	reverse_proxy nginx:80 {
+		header_up X-Forwarded-Proto https
+		# AOP有効時のみCloudflareが付与したIPヘッダーを下流へ渡す。
+		header_up X-Real-IP {http.request.header.CF-Connecting-IP}
+	}
+
+	encode zstd gzip
+}
