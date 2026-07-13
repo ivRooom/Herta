@@ -1,5 +1,6 @@
 import { prisma } from '@/lib/db';
 import { fetchManageableGuilds, type ManageableGuild } from '@/lib/discord';
+import { buildGuildPersistenceData } from '@/lib/guild-metadata';
 
 /** ログインユーザーが管理可能な Guild 一覧を取得する */
 export async function getManageableGuilds(accessToken: string): Promise<ManageableGuild[]> {
@@ -19,29 +20,19 @@ export async function getManageableGuild(
 }
 
 /**
- * 選択された Guild と、ログインユーザーのメンバーシップを DB へ保存する。
+ * 選択された Guild のうち、OAuth APIから確実に取得できる情報だけをDBへ保存する。
  * 呼び出し元で管理権限を検証済みであることを前提とする。
+ *
+ * `/users/@me/guilds` では、ログインユーザー自身のrole、nickname、joinedAtや、
+ * ownerでない場合の実owner IDは取得できない。これらを空値で推測保存すると
+ * 将来のRBAC・監査で誤判定を起こすため、GuildMemberはBot同期側の責務とする。
  */
 export async function persistSelectedGuild(guild: ManageableGuild, userId: string): Promise<void> {
+  const data = buildGuildPersistenceData(guild, userId);
+
   await prisma.guild.upsert({
     where: { id: guild.id },
-    create: {
-      id: guild.id,
-      name: guild.name,
-      icon: guild.icon,
-      // 実際の所有者はオーナー本人がログインしたときのみ判明する
-      ownerId: guild.owner ? userId : '',
-    },
-    update: {
-      name: guild.name,
-      icon: guild.icon,
-      ...(guild.owner ? { ownerId: userId } : {}),
-    },
-  });
-
-  await prisma.guildMember.upsert({
-    where: { guildId_userId: { guildId: guild.id, userId } },
-    create: { guildId: guild.id, userId, roles: [] },
-    update: {},
+    create: data.create,
+    update: data.update,
   });
 }
