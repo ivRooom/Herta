@@ -53,6 +53,10 @@ jobs:
         run: pnpm build
 
       - name: Production Compose Validation
+        env:
+          DISCORD_CLIENT_ID: ci-client-id
+          DISCORD_CLIENT_SECRET: ci-client-secret
+          DISCORD_BOT_TOKEN: ci-bot-token
         run: docker compose --env-file .env.production.example -f docker-compose.prod.yml config --quiet
 
       - name: Production Docker Build
