@@ -38,7 +38,7 @@ Studio の Guild 詳細画面にある **Plugin Manager** から、Guild ごと�
 （Moderation、Auto Response、Daily Content、LFG、Quote、Team Split）を有効化し、
 JSON Schema に基づく設定を管理できます。設定変更はバージョン履歴と監査ログへ記録されます。
 
-Plugin の manifest は `@herta/plugin-catalog` に集約され、将来の Bot Plugin Loader は
+Plugin の manifest は `@herta/plugin-catalog` に集約され、Bot Plugin Loader は
 `getEnabledPlugins(prisma, guildId)` で有効な Plugin と設定を取得します。詳細は
 [docs/PLUGIN_MANAGER.md](docs/PLUGIN_MANAGER.md) を参照してください。
 
@@ -103,13 +103,14 @@ pnpm dev
 | `API_PORT`               | -    | API サーバーポート                             | `3001`                                                |
 | `API_URL`                | -    | API の公開 URL                                 | `http://localhost:3001`                               |
 | `CORS_ORIGINS`           | -    | CORS 許可オリジン (カンマ区切り)               | `http://localhost:3000`                               |
+| `ENABLE_SWAGGER`         | -    | 本番で Swagger を一時的に公開する              | `false`                                               |
 | `STUDIO_PORT`            | -    | Studio ポート                                  | `3000`                                                |
 | `NEXTAUTH_URL`           | -    | NextAuth ベース URL                            | `http://localhost:3000`                               |
 | `NEXTAUTH_SECRET`        | Yes* | NextAuth セッション暗号化キー                  | -                                                     |
 | `JWT_SECRET`             | -    | JWT 署名キー                                   | 開発用デフォルト値あり                                |
 | `JWT_REFRESH_SECRET`     | -    | JWT リフレッシュ用署名キー                     | 開発用デフォルト値あり                                |
 | `JWT_EXPIRATION`         | -    | アクセストークン有効期間                       | `15m`                                                 |
-| `JWT_REFRESH_EXPIRATION` | -    | リフレッシュトークン有効期間                   | `7d`                                                  |
+| `JWT_REFRESH_EXPIRATION` | -    | JWT リフレッシュトークン有効期間               | `7d`                                                  |
 | `INTERNAL_JWT_SECRET`    | -    | Bot ↔ API 内部通信用署名キー                   | 開発用デフォルト値あり                                |
 | `BOT_LOG_LEVEL`          | -    | Bot ログレベル                                 | `debug`                                               |
 | `WORKER_LOG_LEVEL`       | -    | Worker ログレベル                              | `debug`                                               |
@@ -158,7 +159,7 @@ pnpm db:push
 pnpm db:studio
 ```
 
-> `db:*` コマンドはルートの `.env` を `dotenv-cli` 経由で読み込みます。
+> `db:*` コマンドはルートの `.env` ファイルを `dotenv-cli` 経由で読み込みます。
 
 ## 各アプリの起動
 
@@ -171,6 +172,8 @@ pnpm dev --filter @herta/api
 - URL: `http://localhost:3001`
 - Health: `GET http://localhost:3001/api/v1/health`
 - Swagger: `http://localhost:3001/api/docs`
+  - 開発環境では利用可能
+  - 本番ではデフォルト非公開。調査時のみ `ENABLE_SWAGGER=true` を一時設定
 
 ### Studio (管理ダッシュボード)
 
@@ -192,6 +195,9 @@ pnpm dev --filter @herta/bot
 
 - 起動には `DISCORD_BOT_TOKEN` が必須です
 - 起動ログ → Discord ログイン成功 → Bot ユーザー名が表示されます
+- 開発環境では `DISCORD_GUILD_ID_DEV` があればその Guild を優先同期します
+- 本番環境では Bot が参加している全 Guild を起動時に同期します
+- 現在の Slash Command Runtime が要求する Gateway Intent は `Guilds` のみです
 - `SIGINT` / `SIGTERM` で graceful shutdown します
 
 ### Worker
@@ -212,15 +218,21 @@ pnpm dev
 ## ビルド / チェック
 
 ```bash
-# ビルド
-pnpm build
+# フォーマット
+pnpm format
+pnpm format:check
+
+# Lint
+pnpm lint
 
 # 型チェック
 pnpm typecheck
 
-# フォーマット
-pnpm format
-pnpm format:check
+# テスト
+pnpm test
+
+# ビルド
+pnpm build
 ```
 
 ## Discord Developer Portal の設定
@@ -232,10 +244,8 @@ Bot を動作させるには、[Discord Developer Portal](https://discord.com/de
 
 2. **Bot を設定**
    - `Bot` タブ → `Reset Token` でトークンを取得 → `.env` の `DISCORD_BOT_TOKEN` に設定
-   - `Privileged Gateway Intents` で以下を有効化:
-     - `PRESENCE INTENT`
-     - `SERVER MEMBERS INTENT`
-     - `MESSAGE CONTENT INTENT`
+   - 現在の Slash Command Runtimeでは Privileged Gateway Intent は不要です
+   - 将来 Message Content / Guild Members 等を使う Plugin を追加する場合だけ、用途をレビューして必要な Intent を個別に有効化してください
 
 3. **OAuth2 を設定**
    - `OAuth2` タブ → `Client ID` / `Client Secret` を取得 → `.env` に設定
@@ -255,7 +265,8 @@ Bot を動作させるには、[Discord Developer Portal](https://discord.com/de
 
 5. **開発用 Guild ID**
    - Discord クライアントで開発者モードを有効化 → Guild を右クリック → `サーバー ID をコピー`
-   - `.env` の `DISCORD_GUILD_ID_DEV` に設定
+   - 開発用 `.env` の `DISCORD_GUILD_ID_DEV` に設定
+   - `NODE_ENV=production` では全参加 Guild を同期するため、この値で同期先を制限しません
 
 ## よくあるエラー
 
@@ -304,8 +315,8 @@ docker compose up -d postgres
 
 本番は **AWS Lightsail** 上で **Docker Compose** により稼働し、**GitHub Actions** で CI/CD を回します。
 
-- **CI** (`.github/workflows/ci.yml`): PR / push 時に Lint・Typecheck・Build を実行 (デプロイなし)
-- **Deploy** (`.github/workflows/deploy-production.yml`): `main` への push または手動実行 (`workflow_dispatch`) で、Lightsail へ SSH 接続し `git pull` → `docker compose build` → `up -d` → health check を実行
+- **CI** (`.github/workflows/ci.yml`): PR / push 時に Format・Lint・Typecheck・Test・Build を実行 (デプロイなし)
+- **Deploy** (`.github/workflows/deploy-production.yml`): `main` への push または手動実行 (`workflow_dispatch`) で、Lightsail へ SSH 接続し `git pull` → 共有アプリイメージを1回build → `up -d` → Origin / Cloudflare外部 health check を実行
 - 本番 compose 定義: `docker-compose.prod.yml` / 共通イメージ: `Dockerfile`
 - 運用スクリプト: `deploy/scripts/` (`setup` / `start` / `stop` / `deploy` / `health-check` / `rollback`)
 - 本番経路: Cloudflare → Caddy (TLS 終端, Origin 証明書) → nginx → studio / api
@@ -338,7 +349,5 @@ docker compose up -d postgres
 - `.env.example` にはシークレットの実値が含まれていません
 - JWT / Bot Token / Client Secret は環境変数経由で注入してください
 - 本番環境では全ての `dev-*-change-in-production` デフォルト値を変更してください
-
-## ライセンス
-
-Private — ivRooom
+- `Full (strict)`だけではOrigin直アクセスを禁止できないため、Authenticated Origin PullsまたはCloudflare IP allowlistを追加してください
+- Secretローテーション、Origin保護、OAuth、Dockerの詳細は [docs/SECURITY.md](docs/SECURITY.md) を参照してください
