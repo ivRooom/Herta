@@ -250,6 +250,25 @@ importers:
         specifier: ^5.7.2
         version: 5.9.3
 
+  examples/sample-plugin:
+    dependencies:
+      '@herta/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@herta/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      '@herta/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      discord.js:
+        specifier: ^14.16.3
+        version: 14.26.4
+    devDependencies:
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
   packages/config: {}
 
   packages/db:
@@ -320,10 +339,10 @@ importers:
       '@herta/shared':
         specifier: workspace:*
         version: link:../shared
-    devDependencies:
       pino:
         specifier: ^9.6.0
         version: 9.14.0
+    devDependencies:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3

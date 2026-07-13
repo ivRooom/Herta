@@ -49,6 +49,7 @@ export class HertaBot {
         return getEnabledPlugins(getPrismaClient(), guildId);
       },
     });
+    defaultPluginRegistry.validateAll(this.logger);
 
     this.setupEventHandlers();
   }
