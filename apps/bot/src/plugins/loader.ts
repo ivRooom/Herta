@@ -13,13 +13,18 @@ export interface GuildPluginLoaderDeps {
   coreCommandNames?: string[];
 }
 
+interface ActivatedPlugin {
+  pluginId: string;
+  config: Record<string, unknown>;
+}
+
 export class GuildPluginLoader {
   private readonly registry: PluginRuntimeRegistry;
   private readonly cache: GuildPluginCache;
   private readonly logger: Logger;
   private readonly fetchEnabledPlugins: (guildId: string) => Promise<EnabledPlugin[]>;
   private readonly coreCommandNames: Set<string>;
-  private readonly activatedPlugins = new Set<string>();
+  private readonly activatedPlugins = new Map<string, ActivatedPlugin>();
 
   constructor(deps: GuildPluginLoaderDeps) {
     this.registry = deps.registry;
@@ -89,7 +94,10 @@ export class GuildPluginLoader {
       if (!this.activatedPlugins.has(activationKey)) {
         try {
           await entry.onEnable?.(guildId, enabled.config);
-          this.activatedPlugins.add(activationKey);
+          this.activatedPlugins.set(activationKey, {
+            pluginId,
+            config: structuredClone(enabled.config),
+          });
         } catch (error) {
           const reason = 'Plugin onEnable の実行に失敗しました';
           this.logger.error({ guildId, pluginId, error }, 'Pluginの有効化に失敗しました');
@@ -117,33 +125,26 @@ export class GuildPluginLoader {
     return (await this.loadGuildPlugins(guildId)).events;
   }
 
-  /** Guild の Plugin を無効化し、SDK のライフサイクルを通知する */
+  /** Guild の有効化済みPluginを無効化し、SDKのlifecycleを通知する。 */
   async disableGuildPlugins(guildId: string): Promise<void> {
-    for (const enabled of await this.getEnabled(guildId)) {
-      const pluginId = enabled.manifest.id;
-      const activationKey = this.activationKey(guildId, pluginId);
-      if (!this.activatedPlugins.has(activationKey)) {
-        continue;
-      }
+    const prefix = `${guildId}:`;
+    const activated = [...this.activatedPlugins.entries()].filter(([key]) =>
+      key.startsWith(prefix),
+    );
 
-      const entry = this.registry.get(pluginId);
-      if (!entry) {
-        this.activatedPlugins.delete(activationKey);
-        continue;
-      }
-
+    for (const [activationKey, state] of activated) {
+      const entry = this.registry.get(state.pluginId);
       try {
-        await entry.onDisable?.(guildId, enabled.config);
+        await entry?.onDisable?.(guildId, state.config);
       } catch (error) {
         this.logger.error(
-          { guildId, pluginId, error },
+          { guildId, pluginId: state.pluginId, error },
           'Plugin の無効化に失敗しました',
         );
       } finally {
         this.activatedPlugins.delete(activationKey);
       }
     }
-    this.clearActivation(guildId);
   }
 
   private findDuplicateCommandName(
@@ -163,14 +164,5 @@ export class GuildPluginLoader {
 
   private activationKey(guildId: string, pluginId: string): string {
     return `${guildId}:${pluginId}`;
-  }
-
-  private clearActivation(guildId: string): void {
-    const prefix = `${guildId}:`;
-    for (const key of this.activatedPlugins) {
-      if (key.startsWith(prefix)) {
-        this.activatedPlugins.delete(key);
-      }
-    }
   }
 }
