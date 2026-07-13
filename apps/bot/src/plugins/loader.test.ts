@@ -65,11 +65,16 @@ describe('GuildPluginLoader', () => {
     );
   });
 
-  it('command名の重複時は後続Plugin全体をスキップする', async () => {
+  it('command名の重複時は後続Plugin全体を有効化せずスキップする', async () => {
+    const onEnable = vi.fn(async () => undefined);
     const loader = new GuildPluginLoader({
       registry: new PluginRuntimeRegistry([
         { pluginId: 'first', provideCommands: () => [command('same')] },
-        { pluginId: 'second', provideCommands: () => [command('same'), command('other')] },
+        {
+          pluginId: 'second',
+          provideCommands: () => [command('same'), command('other')],
+          onEnable,
+        },
       ]),
       cache: new InMemoryGuildPluginCache(),
       logger,
@@ -81,6 +86,33 @@ describe('GuildPluginLoader', () => {
     expect(result.loaded).toEqual(['first']);
     expect(result.commands.map((item) => item.definition.name)).toEqual(['same']);
     expect(result.skipped[0]?.pluginId).toBe('second');
+    expect(onEnable).not.toHaveBeenCalled();
+  });
+
+  it('同一Plugin内のcommand名重複を検出して有効化しない', async () => {
+    const onEnable = vi.fn(async () => undefined);
+    const loader = new GuildPluginLoader({
+      registry: new PluginRuntimeRegistry([
+        {
+          pluginId: 'duplicated',
+          provideCommands: () => [command('same'), command('same')],
+          onEnable,
+        },
+      ]),
+      cache: new InMemoryGuildPluginCache(),
+      logger,
+      fetchEnabledPlugins: vi.fn(async () => [enabled('duplicated')]),
+    });
+
+    const result = await loader.loadGuildPlugins('guild-a');
+
+    expect(result.loaded).toEqual([]);
+    expect(result.commands).toEqual([]);
+    expect(result.skipped[0]).toEqual({
+      pluginId: 'duplicated',
+      reason: 'command名 "same" が重複しています',
+    });
+    expect(onEnable).not.toHaveBeenCalled();
   });
 
   it('cache invalidate後に設定変更を反映する', async () => {
@@ -148,7 +180,7 @@ describe('GuildPluginLoader', () => {
     expect(logger.error).toHaveBeenCalled();
   });
 
-  it('同じGuildでの再ロードではonEnableを一度だけ呼び、無効化後に再度呼ぶ', async () => {
+  it('cache失効だけではonEnableを再実行せず、明示的な無効化後に再実行する', async () => {
     const onEnable = vi.fn(async () => undefined);
     const onDisable = vi.fn(async () => undefined);
     const cache = new InMemoryGuildPluginCache();
@@ -172,11 +204,11 @@ describe('GuildPluginLoader', () => {
 
     cache.invalidate('guild-a');
     await loader.loadGuildPlugins('guild-a');
-    expect(onEnable).toHaveBeenCalledTimes(2);
+    expect(onEnable).toHaveBeenCalledTimes(1);
 
     await loader.disableGuildPlugins('guild-a');
     expect(onDisable).toHaveBeenCalledTimes(1);
     await loader.loadGuildPlugins('guild-a');
-    expect(onEnable).toHaveBeenCalledTimes(3);
+    expect(onEnable).toHaveBeenCalledTimes(2);
   });
 });
