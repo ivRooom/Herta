@@ -1,28 +1,10 @@
 import { BasePlugin } from '@herta/plugin-sdk';
 import type { PluginContext } from '@herta/plugin-sdk';
-import type { PluginManifest } from '@herta/shared';
+import { dailyContentManifest } from './manifest.js';
 
 /** Daily Content Plugin */
 export class DailyContentPlugin extends BasePlugin {
-  readonly manifest: PluginManifest = {
-    id: 'daily-content',
-    name: 'Daily Content',
-    version: '1.0.0',
-    description: '毎日の定時メッセージ送信',
-    author: { name: 'Herta' },
-    category: 'utility',
-    permissions: [
-      {
-        id: 'daily-content.manage',
-        name: 'Daily Content 管理',
-        description: '定時メッセージの設定',
-      },
-    ],
-    dependencies: [],
-    configSchema: {},
-    events: [],
-    commands: [{ name: 'daily', description: '定時メッセージの管理' }],
-  };
+  readonly manifest = dailyContentManifest;
 
   private ctx!: PluginContext;
 

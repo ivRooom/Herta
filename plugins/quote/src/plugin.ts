@@ -1,28 +1,10 @@
 import { BasePlugin } from '@herta/plugin-sdk';
 import type { PluginContext } from '@herta/plugin-sdk';
-import type { PluginManifest } from '@herta/shared';
+import { quoteManifest } from './manifest.js';
 
 /** 名言 Plugin */
 export class QuotePlugin extends BasePlugin {
-  readonly manifest: PluginManifest = {
-    id: 'quote',
-    name: 'Quote',
-    version: '1.0.0',
-    description: '名言の登録・表示・管理',
-    author: { name: 'Herta' },
-    category: 'fun',
-    permissions: [
-      {
-        id: 'quote.manage',
-        name: 'Quote 管理',
-        description: '名言の追加・編集・削除',
-      },
-    ],
-    dependencies: [],
-    configSchema: {},
-    events: [],
-    commands: [{ name: 'quote', description: '名言の管理' }],
-  };
+  readonly manifest = quoteManifest;
 
   private ctx!: PluginContext;
 

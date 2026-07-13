@@ -1,28 +1,10 @@
 import { BasePlugin } from '@herta/plugin-sdk';
 import type { PluginContext } from '@herta/plugin-sdk';
-import type { PluginManifest } from '@herta/shared';
+import { lfgManifest } from './manifest.js';
 
 /** LFG (Looking For Group) Plugin */
 export class LfgPlugin extends BasePlugin {
-  readonly manifest: PluginManifest = {
-    id: 'lfg',
-    name: 'LFG',
-    version: '1.0.0',
-    description: 'メンバー募集 (Looking For Group)',
-    author: { name: 'Herta' },
-    category: 'game',
-    permissions: [
-      {
-        id: 'lfg.manage',
-        name: 'LFG 管理',
-        description: 'LFG 設定の管理',
-      },
-    ],
-    dependencies: [],
-    configSchema: {},
-    events: [],
-    commands: [{ name: 'lfg', description: 'メンバー募集' }],
-  };
+  readonly manifest = lfgManifest;
 
   private ctx!: PluginContext;
 
