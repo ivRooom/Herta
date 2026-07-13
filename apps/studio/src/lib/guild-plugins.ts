@@ -4,6 +4,7 @@ import type { PluginManifest } from '@herta/shared';
 import { getAllPluginManifests, getPluginManifest } from '@herta/plugin-catalog';
 import { prisma } from '@/lib/db';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
+import { publishPluginRuntimeEvent } from '@/lib/plugin-runtime-events';
 import { getDiscordAccessToken } from '@/lib/session';
 
 const ajv = new Ajv({ allErrors: true, useDefaults: true });
@@ -191,6 +192,15 @@ export async function updateGuildPlugin(
 
     return row;
   });
+
+  if (enabledChanged || configChanged) {
+    await publishPluginRuntimeEvent({
+      guildId,
+      pluginId,
+      configVersion: result.configVersion,
+      eventType: enabledChanged ? (result.enabled ? 'enabled' : 'disabled') : 'config_updated',
+    });
+  }
 
   return {
     manifest,
