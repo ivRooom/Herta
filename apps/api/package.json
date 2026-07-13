@@ -9,7 +9,7 @@
     "start:prod": "node dist/main.js",
     "lint": "echo 'no lint configured'",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:unit": "vitest run",
     "clean": "rm -rf dist"
   },

@@ -32,6 +32,16 @@ herta/
 └── docker-compose.yml
 ```
 
+## Plugin Manager
+
+Studio の Guild 詳細画面にある **Plugin Manager** から、Guild ごとに公式 Plugin
+（Moderation、Auto Response、Daily Content、LFG、Quote、Team Split）を有効化し、
+JSON Schema に基づく設定を管理できます。設定変更はバージョン履歴と監査ログへ記録されます。
+
+Plugin の manifest は `@herta/plugin-catalog` に集約され、将来の Bot Plugin Loader は
+`getEnabledPlugins(prisma, guildId)` で有効な Plugin と設定を取得します。詳細は
+[docs/PLUGIN_MANAGER.md](docs/PLUGIN_MANAGER.md) を参照してください。
+
 ## 必要なツール
 
 | ツール                  | バージョン |

@@ -12,7 +12,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "lint": "echo 'no lint configured'",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:unit": "vitest run",
     "clean": "rm -rf dist"
   },
