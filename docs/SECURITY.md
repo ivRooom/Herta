@@ -28,10 +28,18 @@ Secretがチャット、ログ、Issue、画面共有などへ露出した可能
 
 `Full (strict)`とCloudflare Origin Certificateは、CloudflareからOriginまでのTLSを検証するための構成であり、Originへの直接アクセスを自動的に禁止するものではない。
 
-本番では次のいずれか、または両方を実施する。
+本番では次を併用する。
 
 - Cloudflare Authenticated Origin Pullsを有効化し、CaddyでCloudflareのクライアント証明書を検証する
 - Lightsail / OS FirewallでCloudflareの公開IPレンジだけを80/443へ許可する
+
+リポジトリには以下を用意している。
+
+- `deploy/docker/caddy/Caddyfile.aop`: AOPのクライアント証明書検証設定
+- `deploy/scripts/enable-origin-protection.sh`: CA取得、設定検証、有効化、ロールバック
+- `docs/ORIGIN_PROTECTION.md`: 導入・検証・復旧手順
+
+Cloudflare管理画面とFirewall側の設定が完了するまでは、通常の`Caddyfile`から自動切替しない。順序を誤るとCloudflare経由の通信も停止するためである。
 
 Origin制限が完了するまでは、`CF-Connecting-IP`やそれを転送した`X-Real-IP`を認証・認可・厳密なレート制限の根拠にしない。Originへ直接到達できる攻撃者がヘッダーを偽装できるためである。
 
@@ -40,6 +48,7 @@ Cloudflare側では以下も確認する。
 - SSL/TLS mode: `Full (strict)`
 - Always Use HTTPS
 - Minimum TLS Version
+- Authenticated Origin Pulls
 - Managed WAF Rules
 - Bot / Rate Limiting Rules
 - DNSレコードがProxy有効になっていること
@@ -112,7 +121,7 @@ docker compose --env-file .env.production.example -f docker-compose.prod.yml con
 docker build --tag herta-app:ci .
 ```
 
-CIはさらに、Runtime UIDが0ではないことと、API / Bot / Workerのbuild成果物がimage内に存在することを確認する。
+CIはさらに、AOP用Caddyfileと有効化スクリプトの構文、Runtime UIDが0ではないこと、API / Bot / Workerのbuild成果物がimage内に存在することを確認する。
 
 DependabotでnpmとGitHub Actionsを定期更新し、PRごとに変更内容・Breaking Change・Security Advisoryを確認する。メジャー更新は他のメジャー更新と混在させず、個別に移行・検証する。
 
