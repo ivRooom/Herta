@@ -5,36 +5,33 @@
 # ============================================================
 set -euo pipefail
 
-# リポジトリルート (このスクリプトの 2 階層上) を基準に動作
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${REPO_ROOT}"
 
-# 本番用 compose ファイル
-COMPOSE="docker compose -f docker-compose.prod.yml"
-
-# Cloudflare 経由の API health check 用ドメイン
+ENV_FILE="${REPO_ROOT}/.env.production"
+COMPOSE="docker compose --env-file ${ENV_FILE} -f docker-compose.prod.yml"
 HEALTH_DOMAIN="${HEALTH_DOMAIN:-herta.ivrm.jp}"
 
 require_env_file() {
-  if [ ! -f "${REPO_ROOT}/.env.production" ]; then
+  if [ ! -f "${ENV_FILE}" ]; then
     echo "ERROR: .env.production が見つかりません。" >&2
     echo "       cp .env.production.example .env.production で作成し、値を設定してください。" >&2
     exit 1
   fi
+
+  if [ ! -r "${ENV_FILE}" ]; then
+    echo "ERROR: .env.production を読み取れません。権限を確認してください。" >&2
+    exit 1
+  fi
 }
 
-# up -d で api 等が recreate される一方 nginx/caddy は既存コンテナのまま
-# running のため、nginx upstream が古い api コンテナ IP を掴んだままになり
-# Caddy → nginx → api の経路で 502 が発生することがある。
-# プロキシを明示的に再起動して upstream を張り直す。
 restart_proxies() {
   echo "=== nginx / caddy 再起動 (upstream 再解決) ==="
   ${COMPOSE} restart nginx caddy
   sleep 5
 }
 
-# Caddy → nginx → API 経由で healthy になるまで待機 (最大 120 秒)
 wait_for_health() {
   local health_url="https://${HEALTH_DOMAIN}/api/v1/health"
   echo "=== Health check (${health_url}) ==="
