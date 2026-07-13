@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Plug, ShieldCheck } from 'lucide-react';
 import { auth } from '@/auth';
 import { getDiscordAccessToken } from '@/lib/session';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
@@ -71,6 +71,16 @@ export default async function GuildDetailPage({
           </p>
         </section>
       </div>
+      <Link
+        href={`/dashboard/guilds/${guildId}/plugins`}
+        className="mt-4 flex items-center gap-3 rounded-2xl border border-border bg-surface p-6 shadow-card transition-colors hover:border-primary/40"
+      >
+        <Plug className="h-5 w-5 text-primary" />
+        <div>
+          <h2 className="font-medium">Plugin Manager</h2>
+          <p className="mt-1 text-sm text-muted">この Guild の Plugin を有効化・設定する</p>
+        </div>
+      </Link>
     </div>
   );
 }
