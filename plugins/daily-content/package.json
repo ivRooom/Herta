@@ -22,7 +22,7 @@
     "@herta/shared": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.7.2",
-    "vitest": "^3.0.0"
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
   }
 }
