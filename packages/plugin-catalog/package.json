@@ -1,5 +1,5 @@
 {
-  "name": "@herta/rule-engine",
+  "name": "@herta/plugin-catalog",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,6 +17,13 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@herta/db": "workspace:*",
+    "@herta/plugin-auto-response": "workspace:*",
+    "@herta/plugin-daily-content": "workspace:*",
+    "@herta/plugin-lfg": "workspace:*",
+    "@herta/plugin-moderation": "workspace:*",
+    "@herta/plugin-quote": "workspace:*",
+    "@herta/plugin-team-split": "workspace:*",
     "@herta/shared": "workspace:*"
   },
   "devDependencies": {
