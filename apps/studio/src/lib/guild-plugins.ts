@@ -108,7 +108,8 @@ export async function updateGuildPlugin(
   const nextEnabled = input.enabled ?? beforeEnabled;
   const configChanged = JSON.stringify(beforeConfig) !== JSON.stringify(validation.config);
   const enabledChanged = beforeEnabled !== nextEnabled;
-  const nextVersion = (current?.configVersion ?? 0) + (configChanged ? 1 : 0);
+  const runtimeChanged = configChanged || enabledChanged;
+  const nextVersion = (current?.configVersion ?? 0) + (runtimeChanged ? 1 : 0);
 
   const result = await prisma.$transaction(async (tx) => {
     await tx.plugin.upsert({
@@ -145,7 +146,7 @@ export async function updateGuildPlugin(
       update: {
         enabled: nextEnabled,
         config: toJson(validation.config),
-        ...(configChanged ? { configVersion: nextVersion } : {}),
+        ...(runtimeChanged ? { configVersion: nextVersion } : {}),
       },
     });
 
@@ -193,7 +194,7 @@ export async function updateGuildPlugin(
     return row;
   });
 
-  if (enabledChanged || configChanged) {
+  if (runtimeChanged) {
     await publishPluginRuntimeEvent({
       guildId,
       pluginId,
