@@ -72,16 +72,31 @@ Cloudflare側では以下も確認する。
 
 ## Docker / Lightsail
 
-今後のハードニング項目:
+実装済み:
 
-- Multi-stage build
-- Production dependencyだけをRuntime imageへ含める
-- Bot / Workerを事前compileし、productionで`tsx`を使わない
-- 非rootユーザーで実行する
-- Studio / API / Bot / Worker / Migratorごとに環境変数とSecretを分離する
-- PostgreSQL / Redisを外部公開しない
-- Read-only filesystemとcapability削減を検討する
-- 定期バックアップと復元訓練を実施する
+- builder / runtimeのmulti-stage構成
+- API、Studio、Bot、Workerをbuild時にcompile
+- Bot / Workerは本番で`tsx`を使わずcompiled JavaScriptを実行
+- アプリコンテナはnode公式imageの非rootユーザーで実行
+- `no-new-privileges`と`cap_drop: ALL`をアプリコンテナへ適用
+- `/tmp`だけをtmpfsとして提供
+- API / Studio / Bot / Worker / Migratorへ必要な環境変数だけを注入
+- Compose実行時に`.env.production`を明示し、必須値不足をbuild前に検出
+- PostgreSQL / Redisはホストへポート公開しない
+
+運用上の注意:
+
+- `.env.production`はLightsail上だけに置き、権限を管理ユーザーのみに制限する
+- Composeを手動実行する場合も`--env-file .env.production`を必ず付ける
+- アプリが永続書込みを必要とする場合、root化せず専用volumeと所有権を追加する
+- Caddy / nginx / PostgreSQL / Redisの権限削減は各公式imageの要件を確認して別途行う
+
+残課題:
+
+- Runtime imageから開発依存と不要なsourceを除外する
+- read-only root filesystemの適用可否をサービスごとに検証する
+- base imageのdigest pinning、SBOM生成、image vulnerability scan
+- 定期バックアップと復元訓練
 
 ## CI / Supply chain
 
@@ -93,9 +108,13 @@ pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
+docker compose --env-file .env.production.example -f docker-compose.prod.yml config --quiet
+docker build --tag herta-app:ci .
 ```
 
-DependabotでnpmとGitHub Actionsを定期更新し、PRごとに変更内容・Breaking Change・Security Advisoryを確認する。
+CIはさらに、Runtime UIDが0ではないことと、API / Bot / Workerのbuild成果物がimage内に存在することを確認する。
+
+DependabotでnpmとGitHub Actionsを定期更新し、PRごとに変更内容・Breaking Change・Security Advisoryを確認する。メジャー更新は他のメジャー更新と混在させず、個別に移行・検証する。
 
 GitHub Actionsの`permissions`はジョブに必要な最小権限だけを明示する。
 
