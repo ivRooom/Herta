@@ -26,13 +26,8 @@ export class HertaBot {
 
   constructor(private logger: Logger) {
     this.client = new Client({
-      intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessageReactions,
-        GatewayIntentBits.MessageContent,
-      ],
+      // 現在のRuntimeはSlash Commandのみを扱うため、Privileged Intentは要求しない。
+      intents: [GatewayIntentBits.Guilds],
     });
     this.registry = new CommandRegistry(this.logger);
     this.registry.register(pingCommand);
@@ -60,14 +55,28 @@ export class HertaBot {
         { username: client.user.tag, guilds: client.guilds.cache.size },
         'Herta Bot がログインしました',
       );
-      const guildId = process.env['DISCORD_GUILD_ID_DEV'];
-      if (!guildId) {
-        this.logger.warn(
-          'DISCORD_GUILD_ID_DEVが設定されていないため、Guild Commandの登録をスキップします',
-        );
+
+      const guildIds = this.resolveInitialSyncGuildIds(client);
+      if (guildIds.length === 0) {
+        this.logger.warn('同期対象のGuildがないため、Guild Commandの登録をスキップします');
         return;
       }
-      await this.syncGuild(client, guildId);
+
+      for (const guildId of guildIds) {
+        await this.syncGuild(client, guildId);
+      }
+    });
+
+    this.client.on(Events.GuildCreate, async (guild) => {
+      this.logger.info({ guildId: guild.id, guildName: guild.name }, '新しいGuildへ参加しました');
+      await this.syncGuild(this.client, guild.id);
+    });
+
+    this.client.on(Events.GuildDelete, async (guild) => {
+      this.logger.info({ guildId: guild.id, guildName: guild.name }, 'Guildから退出しました');
+      await this.pluginLoader.disableGuildPlugins(guild.id);
+      this.pluginCache.invalidate(guild.id);
+      this.pluginCommands.delete(guild.id);
     });
 
     this.client.on('error', (error) => {
@@ -79,11 +88,18 @@ export class HertaBot {
         return;
       }
 
-      const command =
-        this.registry.get(interaction.commandName) ??
-        this.pluginCommands
-          .get(interaction.guildId ?? '')
-          ?.find((candidate) => candidate.definition.name === interaction.commandName);
+      let command = this.registry.get(interaction.commandName);
+
+      // Plugin CommandはGuild単位設定を参照する。キャッシュTTL経過後の無効化・設定変更を
+      // 実行時にも反映できるよう、GuildごとのRuntimeから再取得する。
+      if (!command && interaction.guildId) {
+        const commands = await this.pluginLoader.getGuildCommands(interaction.guildId);
+        this.pluginCommands.set(interaction.guildId, commands);
+        command = commands.find(
+          (candidate) => candidate.definition.name === interaction.commandName,
+        );
+      }
+
       if (!command) {
         this.logger.warn(
           {
@@ -91,9 +107,9 @@ export class HertaBot {
             userId: interaction.user.id,
             guildId: interaction.guildId,
           },
-          '不明な Slash Command が実行されました',
+          '不明または無効な Slash Command が実行されました',
         );
-        await this.replyEphemeral(interaction, '不明なコマンドです');
+        await this.replyEphemeral(interaction, 'このコマンドは現在利用できません');
         return;
       }
 
@@ -112,6 +128,17 @@ export class HertaBot {
         await this.replyEphemeral(interaction, 'コマンドの実行中にエラーが発生しました');
       }
     });
+  }
+
+  private resolveInitialSyncGuildIds(client: Client): string[] {
+    const cachedGuildIds = [...client.guilds.cache.keys()];
+    const devGuildId = process.env['DISCORD_GUILD_ID_DEV'];
+
+    if (process.env.NODE_ENV !== 'production' && devGuildId) {
+      return [devGuildId];
+    }
+
+    return cachedGuildIds;
   }
 
   private async syncGuild(client: Client, guildId: string): Promise<void> {
@@ -143,12 +170,24 @@ export class HertaBot {
 
   /** Bot を停止する */
   async stop(): Promise<void> {
+    const guildIds = [...this.client.guilds.cache.keys()];
+    const results = await Promise.allSettled(
+      guildIds.map((guildId) => this.pluginLoader.disableGuildPlugins(guildId)),
+    );
+    const rejected = results.filter((result) => result.status === 'rejected').length;
+    if (rejected > 0) {
+      this.logger.warn({ rejected }, '停止時に一部Pluginの無効化処理が失敗しました');
+    }
+
+    this.pluginCache.invalidateAll();
+    this.pluginCommands.clear();
     this.client.destroy();
     this.logger.info('Bot を停止しました');
   }
 
-  /** Plugin設定変更時にGuildのCommand一覧を再構築する（イベント配線は将来追加する）。 */
+  /** Plugin設定変更時にGuildのCommand一覧を再構築する。 */
   async resyncGuild(guildId: string): Promise<void> {
+    await this.pluginLoader.disableGuildPlugins(guildId);
     this.pluginCache.invalidate(guildId);
     await this.syncGuild(this.client, guildId);
   }

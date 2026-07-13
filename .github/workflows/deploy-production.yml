@@ -25,6 +25,9 @@ on:
         required: false
         default: main
 
+permissions:
+  contents: read
+
 # 本番デプロイは同時に 1 つだけ (進行中の実行はキャンセルしない)
 concurrency:
   group: deploy-production
@@ -34,6 +37,7 @@ jobs:
   deploy:
     name: SSH Deploy to Lightsail
     runs-on: ubuntu-latest
+    timeout-minutes: 35
     environment: production
 
     steps:
@@ -58,14 +62,15 @@ jobs:
             cd "${APP_DIR}"
 
             # 最新コードを取得
-            git fetch origin
+            git fetch --prune origin
             git checkout "${DEPLOY_REF}"
-            git pull origin "${DEPLOY_REF}"
+            git pull --ff-only origin "${DEPLOY_REF}"
 
-            # イメージ更新 & 再起動
-            ${COMPOSE} pull || true
-            ${COMPOSE} build
-            ${COMPOSE} up -d
+            # 公開イメージだけをpullし、共有アプリイメージは1回だけbuildする。
+            # api / studio / bot / worker / migrator は同じ herta-app:latest を利用する。
+            ${COMPOSE} pull postgres redis nginx caddy
+            ${COMPOSE} build api
+            ${COMPOSE} up -d --no-build --remove-orphans
             ${COMPOSE} ps
 
             # up -d で api 等が recreate される一方 nginx/caddy は既存コンテナのまま
@@ -76,12 +81,12 @@ jobs:
             ${COMPOSE} restart nginx caddy
             sleep 5
 
-            # --- Health check (Cloudflare 経由の外部経路) ---
-            echo "=== Health check ==="
+            # Origin内部経路のHealth check。Origin CA証明書のためローカル確認では-kを使用する。
+            echo "=== Origin health check ==="
             for i in $(seq 1 24); do
               if curl -fsS -k --resolve herta.ivrm.jp:443:127.0.0.1 https://herta.ivrm.jp/api/v1/health; then
                 echo ""
-                echo "API health check 成功"
+                echo "Origin API health check 成功"
                 exit 0
               fi
               echo "API 応答待ち... (${i}/24)"
@@ -93,3 +98,9 @@ jobs:
             ${COMPOSE} logs --tail=100 nginx
             ${COMPOSE} logs --tail=100 caddy
             exit 1
+
+      - name: Cloudflare経由の外部Health check
+        run: |
+          curl --fail --show-error --silent \
+            --retry 12 --retry-delay 5 --retry-all-errors \
+            https://herta.ivrm.jp/api/v1/health

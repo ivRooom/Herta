@@ -1,5 +1,5 @@
 # ============================================================
-# CI — Lint / Typecheck / Build
+# CI — Format / Lint / Typecheck / Test / Build
 # ------------------------------------------------------------
 # PR 時および main / develop への push 時に実行します。
 # デプロイは行いません (デプロイは deploy-production.yml が担当)。
@@ -12,15 +12,20 @@ on:
   pull_request:
     branches: [main, develop]
 
+# GitHub token はリポジトリ読み取りだけを許可する
+permissions:
+  contents: read
+
 # 同一ブランチで新しい push があれば古い実行をキャンセル
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  lint-typecheck-build:
-    name: Lint / Typecheck / Build
+  verify:
+    name: Format / Lint / Typecheck / Test / Build
     runs-on: ubuntu-latest
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v4
@@ -37,11 +42,17 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
+      - name: Format Check
+        run: pnpm format:check
+
       - name: Lint
         run: pnpm lint
 
       - name: Typecheck
         run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
 
       - name: Build
         run: pnpm build

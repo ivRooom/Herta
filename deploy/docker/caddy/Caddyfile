@@ -11,11 +11,22 @@ herta.ivrm.jp {
 	# 証明書は /certs に配置する (origin.pem = 証明書, origin-key.pem = 秘密鍵)
 	tls /certs/origin.pem /certs/origin-key.pem
 
+	# Cloudflare側の設定漏れやOrigin直アクセス時にも最低限の防御を維持する。
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+	}
+
 	# 内部 nginx へ HTTP でプロキシ (WebSocket は自動対応)
 	reverse_proxy nginx:80 {
 		# 元リクエストが HTTPS であることを下流に伝える
 		header_up X-Forwarded-Proto https
-		# Cloudflare が付与する実クライアント IP を引き継ぐ
+		# Cloudflare が付与する実クライアント IP を引き継ぐ。
+		# OriginをCloudflareに限定するまでは、アプリ側でこの値を認証根拠に使わないこと。
 		header_up X-Real-IP {http.request.header.CF-Connecting-IP}
 	}
 
