@@ -16,7 +16,7 @@
     "@herta/db": "workspace:*",
     "@herta/plugin-sdk": "workspace:*",
     "@herta/shared": "workspace:*",
-    "discord.js": "^14.16.3"
+    "discord.js": "^14.26.5"
   },
   "devDependencies": {
     "typescript": "^5.7.2"
