@@ -13,6 +13,7 @@ import { CommandRegistry } from './commands/registry.js';
 import { defaultGuildPluginCache } from './plugins/cache.js';
 import { GuildPluginLoader } from './plugins/loader.js';
 import { defaultPluginRegistry } from './plugins/registry.js';
+import { PluginRuntimeEventSubscriber } from './plugins/runtime-events.js';
 import { syncGuildCommands } from './plugins/sync.js';
 import type { SlashCommand } from './commands/registry.js';
 
@@ -23,6 +24,7 @@ export class HertaBot {
   private readonly pluginCache = defaultGuildPluginCache;
   private readonly pluginLoader: GuildPluginLoader;
   private readonly pluginCommands = new Map<string, SlashCommand[]>();
+  private readonly runtimeEvents: PluginRuntimeEventSubscriber;
 
   constructor(private logger: Logger) {
     this.client = new Client({
@@ -44,6 +46,10 @@ export class HertaBot {
         return getEnabledPlugins(getPrismaClient(), guildId);
       },
     });
+    this.runtimeEvents = new PluginRuntimeEventSubscriber(
+      (guildId) => this.resyncGuild(guildId),
+      this.logger,
+    );
     defaultPluginRegistry.validateAll(this.logger);
 
     this.setupEventHandlers();
@@ -166,10 +172,25 @@ export class HertaBot {
       throw new Error('DISCORD_BOT_TOKEN が設定されていません');
     }
     await this.client.login(token);
+
+    const redisUrl = process.env['REDIS_URL'];
+    if (!redisUrl) {
+      this.logger.warn('REDIS_URLが未設定のためPlugin Runtimeイベント購読を無効化します');
+      return;
+    }
+    try {
+      await this.runtimeEvents.start(redisUrl);
+    } catch (error) {
+      this.logger.error(
+        { err: error },
+        'Plugin Runtimeイベント購読の開始に失敗しました。TTL同期で継続します',
+      );
+    }
   }
 
   /** Bot を停止する */
   async stop(): Promise<void> {
+    await this.runtimeEvents.stop();
     const guildIds = [...this.client.guilds.cache.keys()];
     const results = await Promise.allSettled(
       guildIds.map((guildId) => this.pluginLoader.disableGuildPlugins(guildId)),
