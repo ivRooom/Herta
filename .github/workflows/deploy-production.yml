@@ -42,7 +42,7 @@ jobs:
 
     steps:
       - name: Lightsail へ SSH デプロイ
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
