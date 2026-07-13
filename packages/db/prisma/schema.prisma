@@ -15,7 +15,7 @@ model Guild {
   id        String   @id
   name      String
   icon      String?
-  ownerId   String   @map("owner_id")
+  ownerId   String?  @map("owner_id")
   plan      String   @default("free")
   locale    String   @default("ja")
   timezone  String   @default("Asia/Tokyo")
