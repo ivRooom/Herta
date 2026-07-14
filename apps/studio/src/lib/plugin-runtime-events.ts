@@ -4,7 +4,7 @@ import {
   PLUGIN_RUNTIME_EVENT_CHANNEL,
   createPluginRuntimeEvent,
   type PluginRuntimeEventType,
-} from '@herta/shared';
+} from '@herta/shared/plugin-runtime-events';
 
 export async function publishPluginRuntimeEvent(input: {
   guildId: string;
