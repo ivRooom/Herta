@@ -11,18 +11,17 @@ COPY . .
 
 # 全workspaceを事前ビルドし、本番でtsxによるTypeScript直接実行を行わない。
 # Next.js standalone出力ではPrisma Query Engineが自動追跡されない場合があるため、
-# 生成済みの .prisma/client をstandalone側のpnpm配置へ明示的にコピーする。
+# Prismaが実際に検索するStudio配下の .prisma/client へ明示的にコピーする。
 RUN pnpm install --frozen-lockfile \
   && pnpm --filter @herta/db exec prisma generate \
   && pnpm build \
   && PRISMA_SOURCE="$(find node_modules/.pnpm -path '*/node_modules/.prisma/client' -type d -print -quit)" \
-  && PRISMA_STANDALONE_CLIENT="$(find apps/studio/.next/standalone/node_modules/.pnpm -path '*/node_modules/@prisma/client' -type d -print -quit)" \
+  && PRISMA_DEST="apps/studio/.next/standalone/apps/studio/.prisma/client" \
   && test -n "${PRISMA_SOURCE}" \
-  && test -n "${PRISMA_STANDALONE_CLIENT}" \
-  && PRISMA_STANDALONE_NODE_MODULES="$(dirname "$(dirname "${PRISMA_STANDALONE_CLIENT}")")" \
-  && mkdir -p "${PRISMA_STANDALONE_NODE_MODULES}/.prisma" \
-  && cp -r "$(dirname "${PRISMA_SOURCE}")/." "${PRISMA_STANDALONE_NODE_MODULES}/.prisma/" \
-  && test -f "${PRISMA_STANDALONE_NODE_MODULES}/.prisma/client/libquery_engine-linux-musl-openssl-3.0.x.so.node" \
+  && test -f "${PRISMA_SOURCE}/libquery_engine-linux-musl-openssl-3.0.x.so.node" \
+  && mkdir -p "${PRISMA_DEST}" \
+  && cp -r "${PRISMA_SOURCE}/." "${PRISMA_DEST}/" \
+  && test -f "${PRISMA_DEST}/libquery_engine-linux-musl-openssl-3.0.x.so.node" \
   && cp -r apps/studio/.next/static apps/studio/.next/standalone/apps/studio/.next/static
 
 FROM node:22-alpine AS runtime
