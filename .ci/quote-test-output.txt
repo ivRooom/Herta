@@ -1,0 +1,252 @@
+exit_status=139
+
+
+> herta@ test /home/runner/work/Herta/Herta
+> turbo run test
+
+
+Attention:
+Turborepo now collects completely anonymous telemetry regarding usage.
+This information is used to shape the Turborepo roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://turborepo.dev/docs/telemetry
+
+
+   • Packages in scope: @herta/api, @herta/bot, @herta/config, @herta/db, @herta/example-sample-plugin, @herta/logger, @herta/plugin-auto-response, @herta/plugin-catalog, @herta/plugin-daily-content, @herta/plugin-lfg, @herta/plugin-moderation, @herta/plugin-quote, @herta/plugin-sdk, @herta/plugin-team-split, @herta/queue, @herta/rule-engine, @herta/shared, @herta/studio, @herta/ui, @herta/worker
+   • Running test in 20 packages
+   • Remote caching disabled
+
+::group::@herta/ui:build
+cache miss, executing 2ee4220f55627b72
+
+> @herta/ui@0.1.0 build /home/runner/work/Herta/Herta/packages/ui
+> echo '@herta/ui - consumed as source by Next.js'
+
+@herta/ui - consumed as source by Next.js
+::endgroup::
+::group::@herta/queue:build
+cache miss, executing f276c5f0cbc4e128
+
+> @herta/queue@0.1.0 build /home/runner/work/Herta/Herta/packages/queue
+> tsc
+
+::endgroup::
+::group::@herta/shared:build
+cache miss, executing 3a0917acfedba87d
+
+> @herta/shared@0.1.0 build /home/runner/work/Herta/Herta/packages/shared
+> tsc
+
+::endgroup::
+::group::@herta/logger:build
+cache miss, executing edb4418e765bf18d
+
+> @herta/logger@0.1.0 build /home/runner/work/Herta/Herta/packages/logger
+> tsc
+
+::endgroup::
+::group::@herta/db:build
+cache miss, executing 807ecc56dff842b7
+
+> @herta/db@0.1.0 build /home/runner/work/Herta/Herta/packages/db
+> tsc
+
+::endgroup::
+::group::@herta/rule-engine:test
+cache miss, executing d83577762a17173a
+
+> @herta/rule-engine@0.1.0 test /home/runner/work/Herta/Herta/packages/rule-engine
+> vitest run --passWithNoTests
+
+
+[1m[46m RUN [49m[22m [36mv3.2.6 [39m[90m/home/runner/work/Herta/Herta/packages/rule-engine[39m
+
+No test files found, exiting with code 0
+
+[2minclude: [22m[33m**/*.{test,spec}.?(c|m)[jt]s?(x)[39m
+[2mexclude:  [22m[33m**/node_modules/**[2m, [22m**/dist/**[2m, [22m**/cypress/**[2m, [22m**/.{idea,git,cache,output,temp}/**[2m, [22m**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*[39m
+
+::endgroup::
+::group::@herta/rule-engine:build
+cache miss, executing 61bcafef5519f8e0
+
+> @herta/rule-engine@0.1.0 build /home/runner/work/Herta/Herta/packages/rule-engine
+> tsc
+
+::endgroup::
+::group::@herta/plugin-sdk:build
+cache miss, executing 60a969e2c1e3060e
+
+> @herta/plugin-sdk@0.1.0 build /home/runner/work/Herta/Herta/packages/plugin-sdk
+> tsc
+
+::endgroup::
+::group::@herta/example-sample-plugin:test
+cache miss, executing 0156193d0b5e7e7c
+
+> @herta/example-sample-plugin@0.1.0 test /home/runner/work/Herta/Herta/examples/sample-plugin
+> echo 'no tests configured'
+
+no tests configured
+::endgroup::
+::group::@herta/plugin-auto-response:test
+cache miss, executing c37c32675b677d55
+
+> @herta/plugin-auto-response@1.0.0 test /home/runner/work/Herta/Herta/plugins/auto-response
+> vitest run --passWithNoTests
+
+
+[1m[46m RUN [49m[22m [36mv3.2.6 [39m[90m/home/runner/work/Herta/Herta/plugins/auto-response[39m
+
+No test files found, exiting with code 0
+
+[2minclude: [22m[33m**/*.{test,spec}.?(c|m)[jt]s?(x)[39m
+[2mexclude:  [22m[33m**/node_modules/**[2m, [22m**/dist/**[2m, [22m**/cypress/**[2m, [22m**/.{idea,git,cache,output,temp}/**[2m, [22m**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*[39m
+
+::endgroup::
+::group::@herta/api:test
+cache miss, executing 7ac890f4096f1bc2
+
+> @herta/api@0.1.0 test /home/runner/work/Herta/Herta/apps/api
+> vitest run --passWithNoTests
+
+
+[1m[46m RUN [49m[22m [36mv3.2.6 [39m[90m/home/runner/work/Herta/Herta/apps/api[39m
+
+No test files found, exiting with code 0
+
+[2minclude: [22m[33m**/*.{test,spec}.?(c|m)[jt]s?(x)[39m
+[2mexclude:  [22m[33m**/node_modules/**[2m, [22m**/dist/**[2m, [22m**/cypress/**[2m, [22m**/.{idea,git,cache,output,temp}/**[2m, [22m**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*[39m
+
+::endgroup::
+::group::@herta/plugin-daily-content:test
+cache miss, executing 8e752888c61abcc5
+
+> @herta/plugin-daily-content@1.0.0 test /home/runner/work/Herta/Herta/plugins/daily-content
+> vitest run --passWithNoTests
+
+
+[1m[46m RUN [49m[22m [36mv3.2.6 [39m[90m/home/runner/work/Herta/Herta/plugins/daily-content[39m
+
+No test files found, exiting with code 0
+
+[2minclude: [22m[33m**/*.{test,spec}.?(c|m)[jt]s?(x)[39m
+[2mexclude:  [22m[33m**/node_modules/**[2m, [22m**/dist/**[2m, [22m**/cypress/**[2m, [22m**/.{idea,git,cache,output,temp}/**[2m, [22m**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*[39m
+
+::endgroup::
+::group::@herta/plugin-moderation:test
+cache miss, executing b68a636272afafe6
+
+> @herta/plugin-moderation@1.0.0 test /home/runner/work/Herta/Herta/plugins/moderation
+> vitest run --passWithNoTests
+
+
+[1m[46m RUN [49m[22m [36mv3.2.6 [39m[90m/home/runner/work/Herta/Herta/plugins/moderation[39m
+
+No test files found, exiting with code 0
+
+[2minclude: [22m[33m**/*.{test,spec}.?(c|m)[jt]s?(x)[39m
+[2mexclude:  [22m[33m**/node_modules/**[2m, [22m**/dist/**[2m, [22m**/cypress/**[2m, [22m**/.{idea,git,cache,output,temp}/**[2m, [22m**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*[39m
+
+::endgroup::
+::group::@herta/plugin-lfg:test
+cache miss, executing 4ba7f5b25d95f859
+
+> @herta/plugin-lfg@1.0.0 test /home/runner/work/Herta/Herta/plugins/lfg
+> vitest run --passWithNoTests
+
+
+[1m[46m RUN [49m[22m [36mv3.2.6 [39m[90m/home/runner/work/Herta/Herta/plugins/lfg[39m
+
+No test files found, exiting with code 0
+
+[2minclude: [22m[33m**/*.{test,spec}.?(c|m)[jt]s?(x)[39m
+[2mexclude:  [22m[33m**/node_modules/**[2m, [22m**/dist/**[2m, [22m**/cypress/**[2m, [22m**/.{idea,git,cache,output,temp}/**[2m, [22m**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*[39m
+
+::endgroup::
+::group::@herta/plugin-team-split:test
+cache miss, executing cc3eefa79faaed5b
+
+> @herta/plugin-team-split@1.0.0 test /home/runner/work/Herta/Herta/plugins/team-split
+> vitest run --passWithNoTests
+
+
+[1m[46m RUN [49m[22m [36mv3.2.6 [39m[90m/home/runner/work/Herta/Herta/plugins/team-split[39m
+
+No test files found, exiting with code 0
+
+[2minclude: [22m[33m**/*.{test,spec}.?(c|m)[jt]s?(x)[39m
+[2mexclude:  [22m[33m**/node_modules/**[2m, [22m**/dist/**[2m, [22m**/cypress/**[2m, [22m**/.{idea,git,cache,output,temp}/**[2m, [22m**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*[39m
+
+::endgroup::
+::group::@herta/plugin-moderation:build
+cache miss, executing 4919acc1221d1754
+
+> @herta/plugin-moderation@1.0.0 build /home/runner/work/Herta/Herta/plugins/moderation
+> tsc
+
+::endgroup::
+::group::@herta/plugin-lfg:build
+cache miss, executing a24c7733d019cb22
+
+> @herta/plugin-lfg@1.0.0 build /home/runner/work/Herta/Herta/plugins/lfg
+> tsc
+
+::endgroup::
+[;31m@herta/plugin-quote:test[;0m
+cache miss, executing 048afd8ad9f65f67
+
+> @herta/plugin-quote@1.0.0 test /home/runner/work/Herta/Herta/plugins/quote
+> vitest run --passWithNoTests
+
+
+[1m[46m RUN [49m[22m [36mv3.2.6 [39m[90m/home/runner/work/Herta/Herta/plugins/quote[39m
+
+ [32m✓[39m src/service.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 62[2mms[22m[39m
+ [31m❯[39m src/config.test.ts [2m([22m[2m5 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[32m 198[2mms[22m[39m
+   [32m✓[39m Quote config[2m > [22m空設定へ安全な既定値を適用する[32m 17[2mms[22m[39m
+[31m   [31m×[31m Quote config[2m > [22m最大文字数を許容範囲へ丸め、Channel IDを正規化する[39m[32m 114[2mms[22m[39m
+[31m     → expected { allowMemberRegistration: true, …(4) } to match object { maxQuoteLength: 1800, …(1) }
+(3 matching properties omitted from actual)[39m
+   [32m✓[39m Quote input validation[2m > [22mタグを小文字化・重複排除する[32m 0[2mms[22m[39m
+   [32m✓[39m Quote input validation[2m > [22m空本文と上限超過を拒否する[32m 23[2mms[22m[39m
+   [32m✓[39m Quote input validation[2m > [22mタグ件数上限を超えた入力を拒否する[32m 0[2mms[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[39m[1m[41m Failed Tests 1 [49m[22m[31m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[41m[1m FAIL [22m[49m src/config.test.ts[2m > [22mQuote config[2m > [22m最大文字数を許容範囲へ丸め、Channel IDを正規化する
+[31m[1mAssertionError[22m: expected { allowMemberRegistration: true, …(4) } to match object { maxQuoteLength: 1800, …(1) }
+(3 matching properties omitted from actual)[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  {[22m
+[2m    "allowedChannelIds": [[22m
+[2m      "123",[22m
+[31m+     "123",[39m
+[2m    ],[22m
+[2m    "maxQuoteLength": 1800,[22m
+[2m  }[22m
+
+[36m [2m❯[22m src/config.test.ts:[2m22:7[22m[39m
+    [90m 20| [39m        allowedChannelIds[33m:[39m [[32m' 123 '[39m[33m,[39m [32m'123'[39m[33m,[39m [32m'invalid'[39m[33m,[39m [34m456[39m][33m,[39m
+    [90m 21| [39m      })[33m,[39m
+    [90m 22| [39m    )[33m.[39m[34mtoMatchObject[39m({
+    [90m   | [39m      [31m^[39m
+    [90m 23| [39m      maxQuoteLength[33m:[39m [33mMAX_QUOTE_LENGTH[39m[33m,[39m
+    [90m 24| [39m      allowedChannelIds[33m:[39m [[32m'123'[39m][33m,[39m
+
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m1 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[31m1 failed[39m[22m[2m | [22m[1m[32m8 passed[39m[22m[90m (9)[39m
+[2m   Start at [22m 23:22:29
+[2m   Duration [22m 4.62s[2m (transform 709ms, setup 0ms, collect 858ms, tests 260ms, environment 8ms, prepare 1.27s)[22m
+
+
+::error file=/home/runner/work/Herta/Herta/plugins/quote/src/config.test.ts,title=src/config.test.ts > Quote config > 最大文字数を許容範囲へ丸め、Channel IDを正規化する,line=22,column=7::AssertionError: expected { allowMemberRegistration: true, …(4) } to match object { maxQuoteLength: 1800, …(1) }%0A(3 matching properties omitted from actual)%0A%0A- Expected%0A+ Received%0A%0A  {%0A    "allowedChannelIds": [%0A      "123",%0A+     "123",%0A    ],%0A    "maxQuoteLength": 1800,%0A  }%0A%0A ❯ src/config.test.ts:22:7%0A%0A
+ ELIFECYCLE  Test failed. See above for more details.
+Segmentation fault (core dumped)
+ ELIFECYCLE  Test failed. See above for more details.
