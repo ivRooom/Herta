@@ -1,4 +1,5 @@
-import { getAllPluginManifests, getPluginManifest, quotePlugin } from '@herta/plugin-catalog';
+import { getAllPluginManifests, getPluginManifest } from '@herta/plugin-catalog';
+import { quotePlugin } from '@herta/plugin-catalog/quote-runtime';
 import type { Logger } from '@herta/logger';
 import { createPluginContext } from '@herta/plugin-sdk';
 import type { HertaPlugin } from '@herta/plugin-sdk';
