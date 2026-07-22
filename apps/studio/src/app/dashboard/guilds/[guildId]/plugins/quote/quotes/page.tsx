@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-react';
-import { listQuotes, type QuotePrismaClient } from '@herta/plugin-catalog';
+import { listQuotes, type QuotePrismaClient } from '@herta/plugin-catalog/quote-service';
 import { auth } from '@/auth';
 import { QuoteManager, type QuoteManagerItem } from '@/components/quote-manager';
 import { prisma } from '@/lib/db';
