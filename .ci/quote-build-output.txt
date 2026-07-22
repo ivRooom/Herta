@@ -1,0 +1,221 @@
+exit_status=1
+
+
+> herta@ build /home/runner/work/Herta/Herta
+> turbo run build
+
+
+Attention:
+Turborepo now collects completely anonymous telemetry regarding usage.
+This information is used to shape the Turborepo roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://turborepo.dev/docs/telemetry
+
+
+   • Packages in scope: @herta/api, @herta/bot, @herta/config, @herta/db, @herta/example-sample-plugin, @herta/logger, @herta/plugin-auto-response, @herta/plugin-catalog, @herta/plugin-daily-content, @herta/plugin-lfg, @herta/plugin-moderation, @herta/plugin-quote, @herta/plugin-sdk, @herta/plugin-team-split, @herta/queue, @herta/rule-engine, @herta/shared, @herta/studio, @herta/ui, @herta/worker
+   • Running build in 20 packages
+   • Remote caching disabled
+
+::group::@herta/ui:build
+cache miss, executing 2ee4220f55627b72
+
+> @herta/ui@0.1.0 build /home/runner/work/Herta/Herta/packages/ui
+> echo '@herta/ui - consumed as source by Next.js'
+
+@herta/ui - consumed as source by Next.js
+::endgroup::
+::group::@herta/config:build
+cache miss, executing 81d79fd521aafdae
+
+> @herta/config@0.1.0 build /home/runner/work/Herta/Herta/packages/config
+> echo 'config package - no build needed'
+
+config package - no build needed
+::endgroup::
+::group::@herta/shared:build
+cache miss, executing 3a0917acfedba87d
+
+> @herta/shared@0.1.0 build /home/runner/work/Herta/Herta/packages/shared
+> tsc
+
+::endgroup::
+::group::@herta/queue:build
+cache miss, executing f276c5f0cbc4e128
+
+> @herta/queue@0.1.0 build /home/runner/work/Herta/Herta/packages/queue
+> tsc
+
+::endgroup::
+::group::@herta/logger:build
+cache miss, executing edb4418e765bf18d
+
+> @herta/logger@0.1.0 build /home/runner/work/Herta/Herta/packages/logger
+> tsc
+
+::endgroup::
+::group::@herta/db:build
+cache miss, executing 807ecc56dff842b7
+
+> @herta/db@0.1.0 build /home/runner/work/Herta/Herta/packages/db
+> tsc
+
+::endgroup::
+::group::@herta/rule-engine:build
+cache miss, executing 61bcafef5519f8e0
+
+> @herta/rule-engine@0.1.0 build /home/runner/work/Herta/Herta/packages/rule-engine
+> tsc
+
+::endgroup::
+::group::@herta/plugin-sdk:build
+cache miss, executing 60a969e2c1e3060e
+
+> @herta/plugin-sdk@0.1.0 build /home/runner/work/Herta/Herta/packages/plugin-sdk
+> tsc
+
+::endgroup::
+::group::@herta/worker:build
+cache miss, executing b311b35b78a6cb1c
+
+> @herta/worker@0.1.0 build /home/runner/work/Herta/Herta/apps/worker
+> tsc
+
+::endgroup::
+::group::@herta/plugin-moderation:build
+cache miss, executing 4919acc1221d1754
+
+> @herta/plugin-moderation@1.0.0 build /home/runner/work/Herta/Herta/plugins/moderation
+> tsc
+
+::endgroup::
+::group::@herta/plugin-team-split:build
+cache miss, executing e64b8fe44d50528f
+
+> @herta/plugin-team-split@1.0.0 build /home/runner/work/Herta/Herta/plugins/team-split
+> tsc
+
+::endgroup::
+::group::@herta/plugin-daily-content:build
+cache miss, executing ae29d6852ded7597
+
+> @herta/plugin-daily-content@1.0.0 build /home/runner/work/Herta/Herta/plugins/daily-content
+> tsc
+
+::endgroup::
+::group::@herta/plugin-auto-response:build
+cache miss, executing 06d463745a1c94c8
+
+> @herta/plugin-auto-response@1.0.0 build /home/runner/work/Herta/Herta/plugins/auto-response
+> tsc
+
+::endgroup::
+::group::@herta/plugin-lfg:build
+cache miss, executing a24c7733d019cb22
+
+> @herta/plugin-lfg@1.0.0 build /home/runner/work/Herta/Herta/plugins/lfg
+> tsc
+
+::endgroup::
+::group::@herta/plugin-quote:build
+cache miss, executing 3886db16de04eeea
+
+> @herta/plugin-quote@1.0.0 build /home/runner/work/Herta/Herta/plugins/quote
+> tsc
+
+::endgroup::
+::group::@herta/example-sample-plugin:build
+cache miss, executing e55fd842c8bf1570
+
+> @herta/example-sample-plugin@0.1.0 build /home/runner/work/Herta/Herta/examples/sample-plugin
+> tsc
+
+::endgroup::
+::group::@herta/api:build
+cache miss, executing c43061a7f6576622
+
+> @herta/api@0.1.0 build /home/runner/work/Herta/Herta/apps/api
+> nest build
+
+::endgroup::
+::group::@herta/plugin-catalog:build
+cache miss, executing c11984d3024cb96f
+
+> @herta/plugin-catalog@0.1.0 build /home/runner/work/Herta/Herta/packages/plugin-catalog
+> tsc
+
+::endgroup::
+::group::@herta/bot:build
+cache miss, executing b04e86259c68d813
+
+> @herta/bot@0.1.0 build /home/runner/work/Herta/Herta/apps/bot
+> tsc
+
+::endgroup::
+[;31m@herta/studio:build[;0m
+cache miss, executing d6d427468ebc98bf
+
+> @herta/studio@0.1.0 build /home/runner/work/Herta/Herta/apps/studio
+> next build
+
+⚠ No build cache found. Please configure build caching for faster rebuilds. Read more: https://nextjs.org/docs/messages/no-cache
+Attention: Next.js now collects completely anonymous telemetry regarding usage.
+This information is used to shape Next.js' roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://nextjs.org/telemetry
+
+   ▲ Next.js 15.5.20
+
+   Creating an optimized production build ...
+Failed to compile.
+
+../../plugins/quote/src/index.ts
+Module not found: Can't resolve './plugin.js'
+
+https://nextjs.org/docs/messages/module-not-found
+
+Import trace for requested module:
+../../packages/plugin-catalog/src/index.ts
+./src/app/api/guilds/[guildId]/quotes/route.ts
+
+../../plugins/quote/src/index.ts
+Module not found: Can't resolve './manifest.js'
+
+https://nextjs.org/docs/messages/module-not-found
+
+Import trace for requested module:
+../../packages/plugin-catalog/src/index.ts
+./src/app/api/guilds/[guildId]/quotes/route.ts
+
+../../plugins/quote/src/index.ts
+Module not found: Can't resolve './config.js'
+
+https://nextjs.org/docs/messages/module-not-found
+
+Import trace for requested module:
+../../packages/plugin-catalog/src/index.ts
+./src/app/api/guilds/[guildId]/quotes/route.ts
+
+../../plugins/quote/src/index.ts
+Module not found: Can't resolve './service.js'
+
+https://nextjs.org/docs/messages/module-not-found
+
+Import trace for requested module:
+../../packages/plugin-catalog/src/index.ts
+./src/app/api/guilds/[guildId]/quotes/route.ts
+
+
+> Build failed because of webpack errors
+ ELIFECYCLE  Command failed with exit code 1.
+::error::command (/home/runner/work/Herta/Herta/apps/studio) /home/runner/setup-pnpm/node_modules/.bin/bin/pnpm run build exited (1)
+@herta/studio#build:  ERROR  command (/home/runner/work/Herta/Herta/apps/studio) /home/runner/setup-pnpm/node_modules/.bin/bin/pnpm run build exited (1)
+
+ Tasks:    19 successful, 20 total
+Cached:    0 cached, 20 total
+  Time:    43.613s 
+Failed:    @herta/studio#build
+
+ WARNING  no output files found for task @herta/config#build. Please check your `outputs` key in `turbo.json`
+ WARNING  no output files found for task @herta/ui#build. Please check your `outputs` key in `turbo.json`
+ ERROR  run failed: command  exited (1)
+ ELIFECYCLE  Command failed with exit code 1.
