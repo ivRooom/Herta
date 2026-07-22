@@ -1,5 +1,10 @@
-import { getAllPluginManifests, getPluginManifest } from '@herta/plugin-catalog';
+import {
+  getAllPluginManifests,
+  getPluginManifest,
+  quotePlugin,
+} from '@herta/plugin-catalog';
 import type { Logger } from '@herta/logger';
+import { createPluginContext } from '@herta/plugin-sdk';
 import type { HertaPlugin } from '@herta/plugin-sdk';
 import type { SlashCommand } from '../commands/registry.js';
 import type { RuntimePluginEntry } from './types.js';
@@ -9,6 +14,12 @@ export type { GuildEventHandler, RuntimePluginEntry } from './types.js';
 export interface PluginInterfaceViolation {
   pluginId: string;
   reason: string;
+}
+
+export interface DefaultPluginRegistryDeps {
+  client: unknown;
+  prisma: unknown;
+  logger: Logger;
 }
 
 const pluginIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -68,8 +79,22 @@ export function validatePluginInterface(
       add(`${hook} は関数で指定してください`);
     }
   }
+
   for (const command of manifest.commands ?? []) {
     if (!commandNamePattern.test(command.name)) add(`command名 "${command.name}" が不正です`);
+    if (command.options?.length && command.subcommands?.length) {
+      add(`command "${command.name}" はoptionsとsubcommandsを同時に指定できません`);
+    }
+    const subcommandNames = new Set<string>();
+    for (const subcommand of command.subcommands ?? []) {
+      if (!commandNamePattern.test(subcommand.name)) {
+        add(`subcommand名 "${subcommand.name}" が不正です`);
+      }
+      if (subcommandNames.has(subcommand.name)) {
+        add(`subcommand名 "${subcommand.name}" が重複しています`);
+      }
+      subcommandNames.add(subcommand.name);
+    }
   }
   return violations;
 }
@@ -194,10 +219,33 @@ const officialPluginIds = [
   'team-split',
 ] as const;
 
-// 実装を追加する際は、ここへ静的な command/event provider を登録する。
-const officialEntries: RuntimePluginEntry[] = officialPluginIds.flatMap((pluginId) => {
-  // Manifest を参照して ID の typo を早期に検出し、実行コードは動的に読み込まない。
-  return getPluginManifest(pluginId) ? [{ pluginId }] : [];
-});
+function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginEntry[] {
+  const quoteEntry = deps
+    ? toRuntimePluginEntry(quotePlugin, (plugin, guildId, config) =>
+        createPluginContext({
+          client: deps.client,
+          prisma: deps.prisma,
+          logger: deps.logger,
+          guildId,
+          config,
+          manifest: plugin.manifest,
+        }) as Parameters<NonNullable<typeof quotePlugin.onEnable>>[0],
+      )
+    : undefined;
 
-export const defaultPluginRegistry = new PluginRuntimeRegistry(officialEntries);
+  return officialPluginIds.flatMap((pluginId) => {
+    if (!getPluginManifest(pluginId)) return [];
+    if (pluginId === 'quote' && quoteEntry) return [quoteEntry];
+    return [{ pluginId }];
+  });
+}
+
+/** Bot Runtime用に公式Plugin実装を注入したRegistryを生成する。 */
+export function createDefaultPluginRegistry(
+  deps: DefaultPluginRegistryDeps,
+): PluginRuntimeRegistry {
+  return new PluginRuntimeRegistry(createOfficialEntries(deps));
+}
+
+/** テスト・catalog整合性確認用のmanifest-only Registry。 */
+export const defaultPluginRegistry = new PluginRuntimeRegistry(createOfficialEntries());
