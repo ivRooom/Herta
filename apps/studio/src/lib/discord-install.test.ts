@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  buildDiscordGuildInstallUrl,
-  DEFAULT_DISCORD_BOT_PERMISSIONS,
-} from './discord-install.ts';
+import { buildDiscordGuildInstallUrl, DEFAULT_DISCORD_BOT_PERMISSIONS } from './discord-install.ts';
 
 test('Guild Install用のscopeとinstallation contextを設定する', () => {
   const url = new URL(
