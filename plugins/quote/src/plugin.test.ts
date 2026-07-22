@@ -76,7 +76,8 @@ function createPrisma(): { prisma: QuotePrismaClient; records: QuoteRecord[]; au
   const tx: QuoteTransactionClient = { quote, auditLog };
   const prisma: QuotePrismaClient = {
     ...tx,
-    $transaction: async <T>(callback: (client: QuoteTransactionClient) => Promise<T>) => callback(tx),
+    $transaction: async <T>(callback: (client: QuoteTransactionClient) => Promise<T>) =>
+      callback(tx),
   };
   return { prisma, records, audits };
 }
