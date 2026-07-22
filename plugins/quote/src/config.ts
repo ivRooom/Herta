@@ -97,9 +97,11 @@ export function parseQuoteTags(value: unknown): string[] {
 
 function normalizeChannelIds(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return [...new Set(value.filter((item): item is string => typeof item === 'string'))]
+  const normalized = value
+    .filter((item): item is string => typeof item === 'string')
     .map((item) => item.trim())
     .filter((item) => /^\d+$/.test(item));
+  return [...new Set(normalized)];
 }
 
 function toBoolean(value: unknown, fallback: boolean): boolean {
