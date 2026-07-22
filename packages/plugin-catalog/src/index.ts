@@ -7,28 +7,6 @@ import { quoteManifest } from '@herta/plugin-quote/manifest';
 import { teamSplitManifest } from '@herta/plugin-team-split/manifest';
 import type { PluginManifest } from '@herta/shared';
 
-export {
-  createQuote,
-  deleteQuote,
-  getQuoteByNumber,
-  getRandomQuote,
-  listQuotes,
-  quotePlugin,
-  QuoteValidationError,
-  updateQuote,
-} from '@herta/plugin-quote';
-export type {
-  CreateQuoteInput,
-  DeleteQuoteInput,
-  ListQuotesInput,
-  ListQuotesResult,
-  QuoteConfig,
-  QuoteOperationSource,
-  QuotePrismaClient,
-  QuoteRecord,
-  UpdateQuoteInput,
-} from '@herta/plugin-quote';
-
 const pluginManifests: PluginManifest[] = [
   autoResponseManifest,
   dailyContentManifest,
