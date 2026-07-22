@@ -4,7 +4,7 @@ import {
   listQuotes,
   QuoteValidationError,
   type QuotePrismaClient,
-} from '@herta/plugin-catalog';
+} from '@herta/plugin-catalog/quote-service';
 import { auth } from '@/auth';
 import { authorizeGuild } from '@/lib/guild-plugins';
 import { prisma } from '@/lib/db';
