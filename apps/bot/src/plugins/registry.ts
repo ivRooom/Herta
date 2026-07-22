@@ -1,8 +1,4 @@
-import {
-  getAllPluginManifests,
-  getPluginManifest,
-  quotePlugin,
-} from '@herta/plugin-catalog';
+import { getAllPluginManifests, getPluginManifest, quotePlugin } from '@herta/plugin-catalog';
 import type { Logger } from '@herta/logger';
 import { createPluginContext } from '@herta/plugin-sdk';
 import type { HertaPlugin } from '@herta/plugin-sdk';
@@ -221,15 +217,17 @@ const officialPluginIds = [
 
 function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginEntry[] {
   const quoteEntry = deps
-    ? toRuntimePluginEntry(quotePlugin, (plugin, guildId, config) =>
-        createPluginContext({
-          client: deps.client,
-          prisma: deps.prisma,
-          logger: deps.logger,
-          guildId,
-          config,
-          manifest: plugin.manifest,
-        }) as Parameters<NonNullable<typeof quotePlugin.onEnable>>[0],
+    ? toRuntimePluginEntry(
+        quotePlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof quotePlugin.onEnable>>[0],
       )
     : undefined;
 

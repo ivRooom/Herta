@@ -239,10 +239,7 @@ export async function updateQuote(
 
     const data: Record<string, unknown> = {};
     if (input.quoteText !== undefined) {
-      data.quoteText = validateQuoteText(
-        input.quoteText,
-        input.maxQuoteLength ?? MAX_QUOTE_LENGTH,
-      );
+      data.quoteText = validateQuoteText(input.quoteText, input.maxQuoteLength ?? MAX_QUOTE_LENGTH);
     }
     if (input.sourceAuthorName !== undefined) {
       data.sourceAuthorName = normalizeOptionalText(input.sourceAuthorName, 100, '作者名');

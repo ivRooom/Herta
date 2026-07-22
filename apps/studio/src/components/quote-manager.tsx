@@ -14,13 +14,7 @@ export interface QuoteManagerItem {
   createdAt: string;
 }
 
-export function QuoteManager({
-  guildId,
-  items,
-}: {
-  guildId: string;
-  items: QuoteManagerItem[];
-}) {
+export function QuoteManager({ guildId, items }: { guildId: string; items: QuoteManagerItem[] }) {
   const router = useRouter();
   const [quoteText, setQuoteText] = useState('');
   const [sourceAuthorName, setSourceAuthorName] = useState('');
@@ -64,7 +58,9 @@ export function QuoteManager({
       <section className="rounded-2xl border border-border bg-surface p-6 shadow-card">
         <div>
           <h2 className="text-lg font-semibold">新しいQuote</h2>
-          <p className="mt-1 text-sm text-muted">Dashboardから登録した操作は監査ログへ記録されます。</p>
+          <p className="mt-1 text-sm text-muted">
+            Dashboardから登録した操作は監査ログへ記録されます。
+          </p>
         </div>
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           <label className="md:col-span-2">
@@ -205,7 +201,9 @@ function QuoteEditor({ guildId, item }: { guildId: string; item: QuoteManagerIte
         </div>
         <div className="flex gap-2 text-xs">
           <span className="rounded-full border border-border px-2 py-1">{status}</span>
-          {isNsfw ? <span className="rounded-full border border-border px-2 py-1">NSFW</span> : null}
+          {isNsfw ? (
+            <span className="rounded-full border border-border px-2 py-1">NSFW</span>
+          ) : null}
         </div>
       </div>
 

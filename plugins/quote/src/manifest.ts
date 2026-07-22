@@ -22,13 +22,15 @@ export const quoteManifest: PluginManifest = {
       allowMemberRegistration: {
         type: 'boolean',
         title: '一般メンバーの登録を許可',
-        description: '無効の場合、サーバー管理またはメッセージ管理権限を持つメンバーだけが登録できます',
+        description:
+          '無効の場合、サーバー管理またはメッセージ管理権限を持つメンバーだけが登録できます',
         default: true,
       },
       allowMemberDeletion: {
         type: 'boolean',
         title: '一般メンバーの削除を許可',
-        description: '無効の場合、サーバー管理またはメッセージ管理権限を持つメンバーだけが削除できます',
+        description:
+          '無効の場合、サーバー管理またはメッセージ管理権限を持つメンバーだけが削除できます',
         default: false,
       },
       maxQuoteLength: {

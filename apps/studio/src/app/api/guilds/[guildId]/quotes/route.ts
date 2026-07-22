@@ -11,10 +11,7 @@ import { prisma } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ guildId: string }> },
-) {
+export async function GET(request: Request, { params }: { params: Promise<{ guildId: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
 
@@ -39,10 +36,7 @@ export async function GET(
   }
 }
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ guildId: string }> },
-) {
+export async function POST(request: Request, { params }: { params: Promise<{ guildId: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
 

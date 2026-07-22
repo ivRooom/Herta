@@ -133,7 +133,11 @@ async function executeQuoteCommand(
           maxQuoteLength: config.maxQuoteLength,
           operationSource: 'discord',
         });
-        await respond(interaction, `Quote #${created.quoteNumber} を登録しました\n${formatQuote(created)}`, true);
+        await respond(
+          interaction,
+          `Quote #${created.quoteNumber} を登録しました\n${formatQuote(created)}`,
+          true,
+        );
         return;
       }
 
@@ -151,7 +155,9 @@ async function executeQuoteCommand(
         });
         await respond(
           interaction,
-          deleted ? `Quote #${quoteNumber} を削除しました` : `Quote #${quoteNumber} は見つかりません`,
+          deleted
+            ? `Quote #${quoteNumber} を削除しました`
+            : `Quote #${quoteNumber} は見つかりません`,
           true,
         );
         return;
@@ -166,7 +172,11 @@ async function executeQuoteCommand(
           tag: interaction.options.getString('tag') ?? undefined,
           status: 'public',
         });
-        await respond(interaction, formatQuoteList(result.items, result.page, result.totalPages), true);
+        await respond(
+          interaction,
+          formatQuoteList(result.items, result.page, result.totalPages),
+          true,
+        );
         return;
       }
 
@@ -194,7 +204,7 @@ async function executeQuoteCommand(
 function hasManagePermission(interaction: QuoteCommandInteraction): boolean {
   return Boolean(
     interaction.memberPermissions?.has(MANAGE_GUILD_PERMISSION) ||
-      interaction.memberPermissions?.has(MANAGE_MESSAGES_PERMISSION),
+    interaction.memberPermissions?.has(MANAGE_MESSAGES_PERMISSION),
   );
 }
 
@@ -222,7 +232,8 @@ function formatQuoteList(items: QuoteRecord[], page: number, totalPages: number)
   if (items.length === 0) return '名言はまだ登録されていません';
   const body = items
     .map((quote) => {
-      const text = quote.quoteText.length > 180 ? `${quote.quoteText.slice(0, 177)}…` : quote.quoteText;
+      const text =
+        quote.quoteText.length > 180 ? `${quote.quoteText.slice(0, 177)}…` : quote.quoteText;
       const author = quote.sourceAuthorName ? ` — ${quote.sourceAuthorName}` : '';
       return `**#${quote.quoteNumber}** ${text}${author}`;
     })

@@ -34,7 +34,10 @@ export function normalizeQuoteConfig(value: unknown): QuoteConfig {
       config.allowMemberRegistration,
       DEFAULT_QUOTE_CONFIG.allowMemberRegistration,
     ),
-    allowMemberDeletion: toBoolean(config.allowMemberDeletion, DEFAULT_QUOTE_CONFIG.allowMemberDeletion),
+    allowMemberDeletion: toBoolean(
+      config.allowMemberDeletion,
+      DEFAULT_QUOTE_CONFIG.allowMemberDeletion,
+    ),
     maxQuoteLength: Math.min(Math.max(maxQuoteLength, 1), MAX_QUOTE_LENGTH),
     randomResponseEphemeral: toBoolean(
       config.randomResponseEphemeral,
@@ -54,7 +57,11 @@ export function validateQuoteText(value: unknown, maxLength = MAX_QUOTE_LENGTH):
   return text;
 }
 
-export function normalizeOptionalText(value: unknown, maxLength: number, label: string): string | null {
+export function normalizeOptionalText(
+  value: unknown,
+  maxLength: number,
+  label: string,
+): string | null {
   if (value === undefined || value === null || value === '') return null;
   if (typeof value !== 'string') throw new QuoteValidationError(`${label}が不正です`);
   const normalized = value.trim();

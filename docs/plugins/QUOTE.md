@@ -13,13 +13,13 @@ Pluginが無効なGuildには`/quote`は登録されません。
 
 ## Slash Command
 
-| Command | 説明 |
-| --- | --- |
-| `/quote random [tag]` | 公開Quoteからランダムに1件表示します |
-| `/quote show <number>` | Quote番号を指定して表示します |
+| Command                             | 説明                                      |
+| ----------------------------------- | ----------------------------------------- |
+| `/quote random [tag]`               | 公開Quoteからランダムに1件表示します      |
+| `/quote show <number>`              | Quote番号を指定して表示します             |
 | `/quote add <text> [author] [tags]` | Quoteを登録します。タグはカンマ区切りです |
-| `/quote delete <number>` | Quoteを削除します |
-| `/quote list [page] [tag]` | 公開Quoteを5件ずつ一覧表示します |
+| `/quote delete <number>`            | Quoteを削除します                         |
+| `/quote list [page] [tag]`          | 公開Quoteを5件ずつ一覧表示します          |
 
 `add`と`delete`はPlugin設定とDiscord権限を組み合わせて制御します。管理者として扱うDiscord権限は次のいずれかです。
 
@@ -28,13 +28,13 @@ Pluginが無効なGuildには`/quote`は登録されません。
 
 ## Plugin設定
 
-| 設定 | 型 | 既定値 | 説明 |
-| --- | --- | --- | --- |
-| `allowMemberRegistration` | boolean | `true` | 一般メンバーによる登録を許可します |
-| `allowMemberDeletion` | boolean | `false` | 一般メンバーによる削除を許可します |
-| `maxQuoteLength` | integer | `1000` | 本文の最大文字数。上限は1800です |
-| `randomResponseEphemeral` | boolean | `false` | random応答を実行者だけに表示します |
-| `allowedChannelIds` | string[] | `[]` | 利用可能チャンネル。空配列は全チャンネルです |
+| 設定                      | 型       | 既定値  | 説明                                         |
+| ------------------------- | -------- | ------- | -------------------------------------------- |
+| `allowMemberRegistration` | boolean  | `true`  | 一般メンバーによる登録を許可します           |
+| `allowMemberDeletion`     | boolean  | `false` | 一般メンバーによる削除を許可します           |
+| `maxQuoteLength`          | integer  | `1000`  | 本文の最大文字数。上限は1800です             |
+| `randomResponseEphemeral` | boolean  | `false` | random応答を実行者だけに表示します           |
+| `allowedChannelIds`       | string[] | `[]`    | 利用可能チャンネル。空配列は全チャンネルです |
 
 設定はJSON Schemaで検証されます。未知のプロパティ、不正な型、不正なChannel IDは保存時に拒否されます。
 

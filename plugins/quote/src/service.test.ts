@@ -40,7 +40,9 @@ function createMemoryPrisma(options: { failTransactions?: number } = {}): Memory
       const data = readRecord(args, 'data');
       const guildId = String(data.guildId);
       const quoteNumber = Number(data.quoteNumber);
-      if (records.some((record) => record.guildId === guildId && record.quoteNumber === quoteNumber)) {
+      if (
+        records.some((record) => record.guildId === guildId && record.quoteNumber === quoteNumber)
+      ) {
         throw Object.assign(new Error('unique constraint'), { code: 'P2002' });
       }
       const now = new Date();
@@ -219,7 +221,9 @@ function matchesWhere(record: QuoteRecord, where: Record<string, unknown>): bool
   }
 
   if (Array.isArray(where.OR)) {
-    const matched = where.OR.some((condition) => isRecord(condition) && matchesOr(record, condition));
+    const matched = where.OR.some(
+      (condition) => isRecord(condition) && matchesOr(record, condition),
+    );
     if (!matched) return false;
   }
   return true;
@@ -230,7 +234,10 @@ function matchesOr(record: QuoteRecord, condition: Record<string, unknown>): boo
   if (isRecord(condition.quoteText) && typeof condition.quoteText.contains === 'string') {
     return record.quoteText.toLowerCase().includes(condition.quoteText.contains.toLowerCase());
   }
-  if (isRecord(condition.sourceAuthorName) && typeof condition.sourceAuthorName.contains === 'string') {
+  if (
+    isRecord(condition.sourceAuthorName) &&
+    typeof condition.sourceAuthorName.contains === 'string'
+  ) {
     return Boolean(
       record.sourceAuthorName
         ?.toLowerCase()
