@@ -83,7 +83,8 @@ export default async function GuildDetailPage({
             <div>
               <h2 className="font-medium">このサーバーへ Herta Bot を追加</h2>
               <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted">
-                対象サーバーを固定したGuild Install画面を開きます。Bot本体が参加すると、Guild単位のCommand同期とPlugin Runtimeが利用できます。
+                対象サーバーを固定したGuild Install画面を開きます。Bot本体が参加すると、
+                Guild単位のCommand同期とPlugin Runtimeが利用できます。
               </p>
             </div>
           </div>
