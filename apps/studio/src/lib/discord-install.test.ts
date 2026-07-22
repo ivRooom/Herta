@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  buildDiscordGuildInstallUrl,
-  DEFAULT_DISCORD_BOT_PERMISSIONS,
-} from './discord-install';
+import { buildDiscordGuildInstallUrl, DEFAULT_DISCORD_BOT_PERMISSIONS } from './discord-install';
 
 describe('buildDiscordGuildInstallUrl', () => {
   it('Guild Install用のscopeとinstallation contextを設定する', () => {

@@ -25,13 +25,13 @@ Herta Studio (管理ダッシュボード) は **Discord OAuth2** でログイ�
 
 ## 必要な環境変数
 
-| 変数名                      | 説明                                                       |
-| --------------------------- | ---------------------------------------------------------- |
-| `DISCORD_CLIENT_ID`         | Discord Application のクライアント ID                      |
-| `DISCORD_CLIENT_SECRET`     | Discord Application のクライアントシークレット             |
-| `DISCORD_BOT_PERMISSIONS`   | Guild Installで要求するBot権限bitfield（既定: `2048`）     |
-| `NEXTAUTH_URL`              | Dashboard の公開 URL (Discord Redirect URI のベース)       |
-| `NEXTAUTH_SECRET`           | セッション JWT の署名鍵 (`openssl rand -base64 32` で生成) |
+| 変数名                    | 説明                                                       |
+| ------------------------- | ---------------------------------------------------------- |
+| `DISCORD_CLIENT_ID`       | Discord Application のクライアント ID                      |
+| `DISCORD_CLIENT_SECRET`   | Discord Application のクライアントシークレット             |
+| `DISCORD_BOT_PERMISSIONS` | Guild Installで要求するBot権限bitfield（既定: `2048`）     |
+| `NEXTAUTH_URL`            | Dashboard の公開 URL (Discord Redirect URI のベース)       |
+| `NEXTAUTH_SECRET`         | セッション JWT の署名鍵 (`openssl rand -base64 32` で生成) |
 
 ## Discord Developer Portal の設定
 
@@ -76,12 +76,12 @@ Discord Developer Portalの**Installation**設定でも、Guild Installを有効
 
 ## ページ構成
 
-| パス                          | 説明                                       | 保護 |
-| ----------------------------- | ------------------------------------------ | ---- |
-| `/login`                      | Discord ログイン導線                       | -    |
-| `/dashboard`                  | ログイン後のホーム                         | 要   |
-| `/dashboard/guilds`           | 管理可能な Guild 一覧・汎用Guild Install   | 要   |
-| `/dashboard/guilds/[guildId]` | Guild詳細・対象Guild固定のGuild Install     | 要   |
+| パス                          | 説明                                     | 保護 |
+| ----------------------------- | ---------------------------------------- | ---- |
+| `/login`                      | Discord ログイン導線                     | -    |
+| `/dashboard`                  | ログイン後のホーム                       | 要   |
+| `/dashboard/guilds`           | 管理可能な Guild 一覧・汎用Guild Install | 要   |
+| `/dashboard/guilds/[guildId]` | Guild詳細・対象Guild固定のGuild Install  | 要   |
 
 `/dashboard` 配下は `apps/studio/src/middleware.ts` により保護され、
 未ログイン時は `/login` へリダイレクトされます。
