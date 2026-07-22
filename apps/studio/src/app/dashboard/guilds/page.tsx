@@ -78,7 +78,8 @@ function GuildInstallCard({ installUrl }: { installUrl: string | null }) {
           <div>
             <h2 className="font-medium">Herta Bot をサーバーへ追加</h2>
             <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted">
-              Guild InstallとしてBot本体とSlash Commandを追加します。すでに追加済みの場合は、権限の確認・更新にも利用できます。
+              Guild InstallとしてBot本体とSlash Commandを追加します。すでに追加済みの場合は、
+              権限の確認・更新にも利用できます。
             </p>
           </div>
         </div>
