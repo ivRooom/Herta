@@ -3,15 +3,17 @@ import {
   type ChatInputCommandInteraction,
   type RESTPostAPIChatInputApplicationCommandsJSONBody,
 } from 'discord.js';
-import type { CommandOption } from '@herta/shared';
+import type { CommandOption, CommandSubcommand } from '@herta/shared';
 import type { Logger } from 'pino';
 import type { CommandHandler } from '@herta/plugin-sdk';
 
 export type SlashCommand = CommandHandler<ChatInputCommandInteraction>;
 
-function toDiscordOption(
-  option: CommandOption,
-): NonNullable<RESTPostAPIChatInputApplicationCommandsJSONBody['options']>[number] {
+type DiscordCommandOption = NonNullable<
+  RESTPostAPIChatInputApplicationCommandsJSONBody['options']
+>[number];
+
+function toDiscordOption(option: CommandOption): DiscordCommandOption {
   switch (option.type) {
     case 'string':
       return {
@@ -23,7 +25,7 @@ function toDiscordOption(
           name: choice.name,
           value: choice.value.toString(),
         })),
-      } as NonNullable<RESTPostAPIChatInputApplicationCommandsJSONBody['options']>[number];
+      } as DiscordCommandOption;
     case 'integer':
       return {
         name: option.name,
@@ -34,45 +36,55 @@ function toDiscordOption(
           name: choice.name,
           value: Number(choice.value),
         })),
-      } as NonNullable<RESTPostAPIChatInputApplicationCommandsJSONBody['options']>[number];
+      } as DiscordCommandOption;
     case 'boolean':
       return {
         name: option.name,
         description: option.description,
         type: ApplicationCommandOptionType.Boolean,
         required: option.required,
-      } as NonNullable<RESTPostAPIChatInputApplicationCommandsJSONBody['options']>[number];
+      } as DiscordCommandOption;
     case 'user':
       return {
         name: option.name,
         description: option.description,
         type: ApplicationCommandOptionType.User,
         required: option.required,
-      } as NonNullable<RESTPostAPIChatInputApplicationCommandsJSONBody['options']>[number];
+      } as DiscordCommandOption;
     case 'channel':
       return {
         name: option.name,
         description: option.description,
         type: ApplicationCommandOptionType.Channel,
         required: option.required,
-      } as NonNullable<RESTPostAPIChatInputApplicationCommandsJSONBody['options']>[number];
+      } as DiscordCommandOption;
     case 'role':
       return {
         name: option.name,
         description: option.description,
         type: ApplicationCommandOptionType.Role,
         required: option.required,
-      } as NonNullable<RESTPostAPIChatInputApplicationCommandsJSONBody['options']>[number];
+      } as DiscordCommandOption;
   }
+}
+
+function toDiscordSubcommand(subcommand: CommandSubcommand): DiscordCommandOption {
+  return {
+    name: subcommand.name,
+    description: subcommand.description,
+    type: ApplicationCommandOptionType.Subcommand,
+    options: subcommand.options?.map(toDiscordOption),
+  } as DiscordCommandOption;
 }
 
 export function toDiscordCommandJSON(
   command: SlashCommand,
 ): RESTPostAPIChatInputApplicationCommandsJSONBody {
+  const subcommands = command.definition.subcommands?.map(toDiscordSubcommand);
   return {
     name: command.definition.name,
     description: command.definition.description,
-    options: command.definition.options?.map(toDiscordOption),
+    options: subcommands?.length ? subcommands : command.definition.options?.map(toDiscordOption),
   };
 }
 
