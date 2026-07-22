@@ -69,8 +69,15 @@ jobs:
       - name: Production Docker Build
         run: docker build --tag herta-app:ci .
 
-      - name: Verify non-root runtime
+      - name: Verify production runtime
         run: |
-          test "$(docker run --rm --entrypoint id herta-app:ci -u)" != "0"
-          docker run --rm --entrypoint sh herta-app:ci -c \
-            'test -f apps/api/dist/main.js && test -f apps/bot/dist/main.js && test -f apps/worker/dist/main.js'
+          docker run --rm --entrypoint sh herta-app:ci -lc '
+            set -eu
+            test "$(id -u)" != "0"
+            test -f apps/api/dist/main.js
+            test -f apps/bot/dist/main.js
+            test -f apps/worker/dist/main.js
+            test -f apps/studio/.next/standalone/apps/studio/server.js
+            test -n "$(find apps/studio/.next/standalone/apps/studio/.prisma/client \
+              -maxdepth 1 -type f -name "libquery_engine-*.so.node" -print -quit)"
+          '
