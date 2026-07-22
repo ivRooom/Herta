@@ -1,3 +1,4 @@
+revision=package-export-fix
 exit_status=1
 
 
@@ -16,14 +17,6 @@ https://turborepo.dev/docs/telemetry
    • Running build in 20 packages
    • Remote caching disabled
 
-::group::@herta/ui:build
-cache miss, executing 2ee4220f55627b72
-
-> @herta/ui@0.1.0 build /home/runner/work/Herta/Herta/packages/ui
-> echo '@herta/ui - consumed as source by Next.js'
-
-@herta/ui - consumed as source by Next.js
-::endgroup::
 ::group::@herta/config:build
 cache miss, executing 81d79fd521aafdae
 
@@ -32,12 +25,13 @@ cache miss, executing 81d79fd521aafdae
 
 config package - no build needed
 ::endgroup::
-::group::@herta/shared:build
-cache miss, executing 3a0917acfedba87d
+::group::@herta/ui:build
+cache miss, executing 2ee4220f55627b72
 
-> @herta/shared@0.1.0 build /home/runner/work/Herta/Herta/packages/shared
-> tsc
+> @herta/ui@0.1.0 build /home/runner/work/Herta/Herta/packages/ui
+> echo '@herta/ui - consumed as source by Next.js'
 
+@herta/ui - consumed as source by Next.js
 ::endgroup::
 ::group::@herta/queue:build
 cache miss, executing f276c5f0cbc4e128
@@ -50,6 +44,13 @@ cache miss, executing f276c5f0cbc4e128
 cache miss, executing edb4418e765bf18d
 
 > @herta/logger@0.1.0 build /home/runner/work/Herta/Herta/packages/logger
+> tsc
+
+::endgroup::
+::group::@herta/shared:build
+cache miss, executing 3a0917acfedba87d
+
+> @herta/shared@0.1.0 build /home/runner/work/Herta/Herta/packages/shared
 > tsc
 
 ::endgroup::
@@ -81,10 +82,10 @@ cache miss, executing b311b35b78a6cb1c
 > tsc
 
 ::endgroup::
-::group::@herta/plugin-moderation:build
-cache miss, executing 4919acc1221d1754
+::group::@herta/plugin-lfg:build
+cache miss, executing a24c7733d019cb22
 
-> @herta/plugin-moderation@1.0.0 build /home/runner/work/Herta/Herta/plugins/moderation
+> @herta/plugin-lfg@1.0.0 build /home/runner/work/Herta/Herta/plugins/lfg
 > tsc
 
 ::endgroup::
@@ -95,13 +96,6 @@ cache miss, executing e64b8fe44d50528f
 > tsc
 
 ::endgroup::
-::group::@herta/plugin-daily-content:build
-cache miss, executing ae29d6852ded7597
-
-> @herta/plugin-daily-content@1.0.0 build /home/runner/work/Herta/Herta/plugins/daily-content
-> tsc
-
-::endgroup::
 ::group::@herta/plugin-auto-response:build
 cache miss, executing 06d463745a1c94c8
 
@@ -109,15 +103,22 @@ cache miss, executing 06d463745a1c94c8
 > tsc
 
 ::endgroup::
-::group::@herta/plugin-lfg:build
-cache miss, executing a24c7733d019cb22
+::group::@herta/plugin-moderation:build
+cache miss, executing 4919acc1221d1754
 
-> @herta/plugin-lfg@1.0.0 build /home/runner/work/Herta/Herta/plugins/lfg
+> @herta/plugin-moderation@1.0.0 build /home/runner/work/Herta/Herta/plugins/moderation
+> tsc
+
+::endgroup::
+::group::@herta/plugin-daily-content:build
+cache miss, executing ae29d6852ded7597
+
+> @herta/plugin-daily-content@1.0.0 build /home/runner/work/Herta/Herta/plugins/daily-content
 > tsc
 
 ::endgroup::
 ::group::@herta/plugin-quote:build
-cache miss, executing 3886db16de04eeea
+cache miss, executing 9b80fdc487164fb9
 
 > @herta/plugin-quote@1.0.0 build /home/runner/work/Herta/Herta/plugins/quote
 > tsc
@@ -138,21 +139,21 @@ cache miss, executing c43061a7f6576622
 
 ::endgroup::
 ::group::@herta/plugin-catalog:build
-cache miss, executing c11984d3024cb96f
+cache miss, executing 57eb1afb8142eeb1
 
 > @herta/plugin-catalog@0.1.0 build /home/runner/work/Herta/Herta/packages/plugin-catalog
 > tsc
 
 ::endgroup::
 ::group::@herta/bot:build
-cache miss, executing b04e86259c68d813
+cache miss, executing 8a588e60b687da23
 
 > @herta/bot@0.1.0 build /home/runner/work/Herta/Herta/apps/bot
 > tsc
 
 ::endgroup::
 [;31m@herta/studio:build[;0m
-cache miss, executing d6d427468ebc98bf
+cache miss, executing 9122845f4fa56d88
 
 > @herta/studio@0.1.0 build /home/runner/work/Herta/Herta/apps/studio
 > next build
@@ -168,39 +169,56 @@ https://nextjs.org/telemetry
    Creating an optimized production build ...
 Failed to compile.
 
-../../plugins/quote/src/index.ts
+../../packages/plugin-sdk/src/index.ts
+Module not found: Can't resolve './base/base-plugin.js'
+
+https://nextjs.org/docs/messages/module-not-found
+
+Import trace for requested module:
+../../plugins/quote/dist/plugin.js
+../../plugins/quote/dist/index.js
+../../packages/plugin-catalog/src/index.ts
+./src/app/api/guilds/[guildId]/quotes/route.ts
+
+../../packages/plugin-sdk/src/index.ts
+Module not found: Can't resolve './context/runtime-context.js'
+
+https://nextjs.org/docs/messages/module-not-found
+
+Import trace for requested module:
+../../plugins/quote/dist/plugin.js
+../../plugins/quote/dist/index.js
+../../packages/plugin-catalog/src/index.ts
+./src/app/api/guilds/[guildId]/quotes/route.ts
+
+../../packages/plugin-sdk/src/index.ts
 Module not found: Can't resolve './plugin.js'
 
 https://nextjs.org/docs/messages/module-not-found
 
 Import trace for requested module:
+../../plugins/quote/dist/plugin.js
+../../plugins/quote/dist/index.js
 ../../packages/plugin-catalog/src/index.ts
 ./src/app/api/guilds/[guildId]/quotes/route.ts
 
-../../plugins/quote/src/index.ts
-Module not found: Can't resolve './manifest.js'
+../../packages/plugin-sdk/src/index.ts
+Module not found: Can't resolve './context/event-bus.js'
 
 https://nextjs.org/docs/messages/module-not-found
 
 Import trace for requested module:
+../../plugins/quote/dist/plugin.js
+../../plugins/quote/dist/index.js
 ../../packages/plugin-catalog/src/index.ts
 ./src/app/api/guilds/[guildId]/quotes/route.ts
 
-../../plugins/quote/src/index.ts
-Module not found: Can't resolve './config.js'
-
-https://nextjs.org/docs/messages/module-not-found
+../../plugins/quote/dist/plugin.js
+Attempted import error: 'definePlugin' is not exported from '@herta/plugin-sdk' (imported as 'definePlugin').
 
 Import trace for requested module:
-../../packages/plugin-catalog/src/index.ts
-./src/app/api/guilds/[guildId]/quotes/route.ts
-
-../../plugins/quote/src/index.ts
-Module not found: Can't resolve './service.js'
-
-https://nextjs.org/docs/messages/module-not-found
-
-Import trace for requested module:
+../../plugins/quote/dist/plugin.js
+../../plugins/quote/dist/index.js
 ../../packages/plugin-catalog/src/index.ts
 ./src/app/api/guilds/[guildId]/quotes/route.ts
 
@@ -212,7 +230,7 @@ Import trace for requested module:
 
  Tasks:    19 successful, 20 total
 Cached:    0 cached, 20 total
-  Time:    43.613s 
+  Time:    44.723s 
 Failed:    @herta/studio#build
 
  WARNING  no output files found for task @herta/config#build. Please check your `outputs` key in `turbo.json`
