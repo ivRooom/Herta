@@ -1,4 +1,4 @@
-name: Diagnose Quote Plugin Tests
+name: Diagnose Quote Plugin Build
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -27,11 +27,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
 
-      - name: テスト結果を保存
+      - name: ビルド結果を保存
         shell: bash
         run: |
           set +e
-          pnpm test > /tmp/quote-test.log 2>&1
+          pnpm build > /tmp/quote-build.log 2>&1
           status=$?
           set -e
 
@@ -39,11 +39,11 @@ jobs:
           {
             echo "exit_status=${status}"
             echo
-            tail -n 600 /tmp/quote-test.log
-          } > .ci/quote-test-output.txt
+            tail -n 800 /tmp/quote-build.log
+          } > .ci/quote-build-output.txt
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .ci/quote-test-output.txt
-          git commit -m "ci(diag): Quoteテスト結果を保存"
+          git add .ci/quote-build-output.txt
+          git commit -m "ci(diag): Quoteビルド結果を保存"
           git push origin HEAD:feat/quote-plugin-v1
