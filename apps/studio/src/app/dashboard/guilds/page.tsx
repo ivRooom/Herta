@@ -1,7 +1,8 @@
 import Link from 'next/link';
-import { ChevronRight, ServerOff } from 'lucide-react';
+import { Bot, ChevronRight, ExternalLink, ServerOff } from 'lucide-react';
 import { getDiscordAccessToken } from '@/lib/session';
 import { getManageableGuilds } from '@/lib/guilds';
+import { getDiscordGuildInstallUrl } from '@/lib/discord-install';
 import { GuildAvatar } from '@/components/guild-avatar';
 import { ReconnectNotice } from '@/components/reconnect-notice';
 
@@ -22,10 +23,12 @@ export default async function GuildsPage() {
   }
 
   const guilds = await getManageableGuilds(accessToken);
+  const installUrl = getDiscordGuildInstallUrl();
 
   return (
     <div>
       <PageHeader count={guilds.length} />
+      <GuildInstallCard installUrl={installUrl} />
 
       {guilds.length === 0 ? (
         <div className="mt-8 flex flex-col items-center justify-center rounded-2xl border border-dashed border-border py-16 text-center">
@@ -61,6 +64,41 @@ export default async function GuildsPage() {
         </ul>
       )}
     </div>
+  );
+}
+
+function GuildInstallCard({ installUrl }: { installUrl: string | null }) {
+  return (
+    <section className="mt-6 rounded-2xl border border-[#5865F2]/30 bg-[#5865F2]/10 p-5">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#5865F2] text-white">
+            <Bot className="h-5 w-5" />
+          </div>
+          <div>
+            <h2 className="font-medium">Herta Bot をサーバーへ追加</h2>
+            <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted">
+              Guild InstallとしてBot本体とSlash Commandを追加します。すでに追加済みの場合は、
+              権限の確認・更新にも利用できます。
+            </p>
+          </div>
+        </div>
+
+        {installUrl ? (
+          <a
+            href={installUrl}
+            target="_blank"
+            rel="noreferrer noopener"
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#5865F2] px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+          >
+            Discord で追加
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        ) : (
+          <span className="text-sm text-muted">Discord Application ID が未設定です</span>
+        )}
+      </div>
+    </section>
   );
 }
 
