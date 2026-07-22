@@ -13,7 +13,6 @@ concurrency:
 
 jobs:
   diagnose:
-    if: ${{ !contains(github.event.head_commit.message, 'typecheck診断ログ') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -21,17 +20,32 @@ jobs:
         with:
           ref: feat/guild-install-onboarding
 
+      - name: 診断済みなら終了
+        id: guard
+        shell: bash
+        run: |
+          if [ -f typecheck-pr-45.log ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: pnpm/action-setup@v6
+        if: steps.guard.outputs.skip != 'true'
 
       - uses: actions/setup-node@v6
+        if: steps.guard.outputs.skip != 'true'
         with:
           node-version: 22
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm db:generate
+      - if: steps.guard.outputs.skip != 'true'
+        run: pnpm install --frozen-lockfile
+      - if: steps.guard.outputs.skip != 'true'
+        run: pnpm db:generate
 
       - name: Typecheck結果を保存
+        if: steps.guard.outputs.skip != 'true'
         shell: bash
         run: |
           set +e
