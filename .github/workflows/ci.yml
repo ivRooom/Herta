@@ -11,7 +11,6 @@ on:
 
 permissions:
   contents: read
-  issues: write
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -45,28 +44,7 @@ jobs:
         run: pnpm lint
 
       - name: Typecheck
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set +e
-          pnpm typecheck > /tmp/typecheck.log 2>&1
-          status=$?
-          set -e
-          cat /tmp/typecheck.log
-
-          if [ "$status" -ne 0 ]; then
-            {
-              echo "## Typecheck診断"
-              echo
-              echo '```text'
-              tail -n 200 /tmp/typecheck.log
-              echo '```'
-            } > /tmp/typecheck-issue.md
-            gh issue edit 44 --body-file /tmp/typecheck-issue.md
-          fi
-
-          exit "$status"
+        run: pnpm typecheck
 
       - name: Test
         run: pnpm test
