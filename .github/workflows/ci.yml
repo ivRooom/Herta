@@ -11,7 +11,7 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
+  issues: write
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -62,8 +62,8 @@ jobs:
               echo '```text'
               tail -n 200 /tmp/typecheck.log
               echo '```'
-            } > /tmp/typecheck-comment.md
-            gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/typecheck-comment.md
+            } > /tmp/typecheck-issue.md
+            gh issue edit 44 --body-file /tmp/typecheck-issue.md
           fi
 
           exit "$status"
