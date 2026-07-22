@@ -25,17 +25,20 @@ Herta Studio (管理ダッシュボード) は **Discord OAuth2** でログイ�
 
 ## 必要な環境変数
 
-| 変数名                  | 説明                                                       |
-| ----------------------- | ---------------------------------------------------------- |
-| `DISCORD_CLIENT_ID`     | Discord Application のクライアント ID                      |
-| `DISCORD_CLIENT_SECRET` | Discord Application のクライアントシークレット             |
-| `NEXTAUTH_URL`          | Dashboard の公開 URL (Discord Redirect URI のベース)       |
-| `NEXTAUTH_SECRET`       | セッション JWT の署名鍵 (`openssl rand -base64 32` で生成) |
+| 変数名                      | 説明                                                       |
+| --------------------------- | ---------------------------------------------------------- |
+| `DISCORD_CLIENT_ID`         | Discord Application のクライアント ID                      |
+| `DISCORD_CLIENT_SECRET`     | Discord Application のクライアントシークレット             |
+| `DISCORD_BOT_PERMISSIONS`   | Guild Installで要求するBot権限bitfield（既定: `2048`）     |
+| `NEXTAUTH_URL`              | Dashboard の公開 URL (Discord Redirect URI のベース)       |
+| `NEXTAUTH_SECRET`           | セッション JWT の署名鍵 (`openssl rand -base64 32` で生成) |
 
 ## Discord Developer Portal の設定
 
 [Discord Developer Portal](https://discord.com/developers/applications) →
-対象アプリ → **OAuth2** で以下を設定します。
+対象アプリで以下を設定します。
+
+### OAuth2ログイン
 
 - **Redirects** に Dashboard のコールバック URL を登録:
   - 開発: `http://localhost:3000/api/auth/callback/discord`
@@ -44,6 +47,21 @@ Herta Studio (管理ダッシュボード) は **Discord OAuth2** でログイ�
 
 > `DISCORD_CALLBACK_URL`（`.env`）は API (NestJS) 側の別フロー用です。
 > Dashboard の NextAuth コールバックは `{NEXTAUTH_URL}/api/auth/callback/discord` に固定されます。
+
+### Guild Install
+
+StudioのGuild一覧・Guild詳細から開くインストールURLでは、以下を明示します。
+
+- scope: `bot applications.commands`
+- installation context: `integration_type=0`（Guild Install）
+- permissions: `DISCORD_BOT_PERMISSIONS`
+- Guild詳細から開く場合:
+  - `guild_id=<選択Guild ID>`
+  - `disable_guild_select=true`
+
+既定の`DISCORD_BOT_PERMISSIONS=2048`はSend Messagesのみです。Pluginが追加権限を必要とする場合は、必要性をレビューした上でbitfieldを更新します。Administratorを既定で要求しません。
+
+Discord Developer Portalの**Installation**設定でも、Guild Installを有効にして`applications.commands`と`bot`を許可してください。User InstallだけではSlash Commandを利用できてもBotユーザーがGuildへ参加しないため、BotのGuild Runtime・Guild Command同期・Gateway Event処理は有効になりません。
 
 ## Guild の権限判定
 
@@ -62,8 +80,8 @@ Herta Studio (管理ダッシュボード) は **Discord OAuth2** でログイ�
 | ----------------------------- | ------------------------------------------ | ---- |
 | `/login`                      | Discord ログイン導線                       | -    |
 | `/dashboard`                  | ログイン後のホーム                         | 要   |
-| `/dashboard/guilds`           | 管理可能な Guild 一覧                      | 要   |
-| `/dashboard/guilds/[guildId]` | 選択した Guild の詳細 (権限が無い場合 404) | 要   |
+| `/dashboard/guilds`           | 管理可能な Guild 一覧・汎用Guild Install   | 要   |
+| `/dashboard/guilds/[guildId]` | Guild詳細・対象Guild固定のGuild Install     | 要   |
 
 `/dashboard` 配下は `apps/studio/src/middleware.ts` により保護され、
 未ログイン時は `/login` へリダイレクトされます。
@@ -104,5 +122,6 @@ Dashboardの管理権限判定はDB上のGuildMemberではなく、操作ごと�
   (`apps/studio/src/lib/session.ts` 経由でサーバー側からのみ取得)。
 - Guild 詳細ページ / API は毎回 Discord の権限を再検証し、
   権限の無い Guild へのアクセスを拒否します (404 / 403)。
+- Guild Install URLはサーバー側で生成し、`client_id`、`guild_id`、`permissions`を数字だけに制限します。
 - `DISCORD_CLIENT_SECRET` / `NEXTAUTH_SECRET` は環境変数からのみ読み込み、
   コードにハードコードしません。
