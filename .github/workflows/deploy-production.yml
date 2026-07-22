@@ -15,37 +15,108 @@ on:
 
 permissions:
   contents: read
+  packages: write
 
 concurrency:
   group: deploy-production
   cancel-in-progress: false
 
+env:
+  IMAGE_REPOSITORY: ghcr.io/ivrooom/herta
+
 jobs:
-  deploy:
-    name: SSH Deploy to Lightsail
+  build-image:
+    name: Build and push production image
     runs-on: ubuntu-latest
     timeout-minutes: 35
-    environment: production
+    outputs:
+      image_ref: ${{ steps.image.outputs.image_ref }}
 
     steps:
-      - name: Lightsail へ SSH デプロイ
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      - name: 配布するimage参照を決定
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE_REF="${IMAGE_REPOSITORY}:$(git rev-parse HEAD)"
+          echo "image_ref=${IMAGE_REF}" >> "${GITHUB_OUTPUT}"
+          echo "HERTA_IMAGE=${IMAGE_REF}" >> "${GITHUB_ENV}"
+
+      - name: GHCRへログイン
+        run: |
+          printf '%s' '${{ github.token }}' | \
+            docker login ghcr.io --username '${{ github.actor }}' --password-stdin
+
+      - name: Production Docker imageをbuild
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build \
+            --tag "${HERTA_IMAGE}" \
+            --tag "${IMAGE_REPOSITORY}:latest" \
+            .
+
+      - name: 本番成果物を検証
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint sh "${HERTA_IMAGE}" -lc '
+            set -eu
+            test -f apps/api/dist/main.js
+            test -f apps/bot/dist/main.js
+            test -f apps/worker/dist/main.js
+            test -f apps/studio/.next/standalone/apps/studio/server.js
+            test -n "$(find apps/studio/.next/standalone/apps/studio/.prisma/client \
+              -maxdepth 1 -type f -name "libquery_engine-*.so.node" -print -quit)"
+            test "$(id -u)" != "0"
+          '
+
+      - name: GHCRへpush
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker push "${HERTA_IMAGE}"
+
+          DEPLOY_REF='${{ github.event.inputs.ref || 'main' }}'
+          if [ "${DEPLOY_REF}" = 'main' ]; then
+            docker push "${IMAGE_REPOSITORY}:latest"
+          fi
+
+  deploy:
+    name: SSH Deploy to Lightsail
+    needs: build-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    env:
+      DEPLOY_REF: ${{ github.event.inputs.ref || 'main' }}
+      HERTA_IMAGE: ${{ needs.build-image.outputs.image_ref }}
+      GHCR_USERNAME: ${{ github.actor }}
+      GHCR_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: LightsailへSSHデプロイ
         uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          envs: DEPLOY_REF
-          script_stop: true
-          command_timeout: 30m
+          envs: DEPLOY_REF,HERTA_IMAGE,GHCR_USERNAME,GHCR_TOKEN
+          command_timeout: 15m
           script: |
             set -euo pipefail
 
             APP_DIR="${{ secrets.LIGHTSAIL_APP_DIR }}"
-            DEPLOY_REF="${{ github.event.inputs.ref || 'main' }}"
             ENV_FILE="${APP_DIR}/.env.production"
             COMPOSE="docker compose --env-file ${ENV_FILE} -f docker-compose.prod.yml"
+            export HERTA_IMAGE
 
             echo "=== Herta. 本番デプロイ開始 (ref: ${DEPLOY_REF}) ==="
+            echo "配布image: ${HERTA_IMAGE}"
             cd "${APP_DIR}"
 
             if [ ! -r "${ENV_FILE}" ]; then
@@ -53,41 +124,125 @@ jobs:
               exit 1
             fi
 
-            git fetch --prune origin
-            git checkout "${DEPLOY_REF}"
-            git pull --ff-only origin "${DEPLOY_REF}"
+            if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+              echo "ERROR: tracked fileに未commitの変更があります。" >&2
+              git status --short --untracked-files=no
+              exit 1
+            fi
 
-            # 必須環境変数の展開とCompose構文をbuild前に検証する。
+            git fetch --prune --tags origin
+            if git show-ref --verify --quiet "refs/remotes/origin/${DEPLOY_REF}"; then
+              git checkout -B "${DEPLOY_REF}" "origin/${DEPLOY_REF}"
+            else
+              git checkout --detach "${DEPLOY_REF}"
+            fi
+
             ${COMPOSE} config --quiet
 
-            ${COMPOSE} pull postgres redis nginx caddy
-            ${COMPOSE} build api
+            printf '%s' "${GHCR_TOKEN}" | \
+              docker login ghcr.io --username "${GHCR_USERNAME}" --password-stdin
+
+            ${COMPOSE} pull postgres redis nginx caddy api
+
+            echo "=== 配布image内の成果物を検証 ==="
+            docker run --rm --entrypoint sh "${HERTA_IMAGE}" -lc '
+              set -eu
+              test -f apps/api/dist/main.js
+              test -f apps/bot/dist/main.js
+              test -f apps/worker/dist/main.js
+              test -f apps/studio/.next/standalone/apps/studio/server.js
+              test -n "$(find apps/studio/.next/standalone/apps/studio/.prisma/client \
+                -maxdepth 1 -type f -name "libquery_engine-*.so.node" -print -quit)"
+            '
+
             ${COMPOSE} up -d --no-build --remove-orphans
-            ${COMPOSE} ps
 
-            echo "=== nginx / caddy 再起動 (upstream 再解決) ==="
+            echo "=== nginx / caddy再起動 (upstream再解決) ==="
             ${COMPOSE} restart nginx caddy
-            sleep 5
+            sleep 10
+            ${COMPOSE} ps -a
 
-            echo "=== Origin health check ==="
-            for i in $(seq 1 24); do
-              if curl -fsS -k --resolve herta.ivrm.jp:443:127.0.0.1 https://herta.ivrm.jp/api/v1/health; then
-                echo ""
-                echo "Origin API health check 成功"
-                exit 0
+            echo "=== コンテナ稼働確認 ==="
+            for service in postgres redis api studio bot worker nginx caddy; do
+              container_id="$(${COMPOSE} ps -q "${service}")"
+              if [ -z "${container_id}" ]; then
+                echo "ERROR: ${service}コンテナが存在しません。" >&2
+                exit 1
               fi
-              echo "API 応答待ち... (${i}/24)"
-              sleep 5
+              if [ "$(docker inspect --format '{{.State.Running}}' "${container_id}")" != 'true' ]; then
+                echo "ERROR: ${service}コンテナが停止しています。" >&2
+                ${COMPOSE} logs --tail=100 "${service}"
+                exit 1
+              fi
             done
 
-            echo "API health check に失敗しました。ログを確認してください:"
-            ${COMPOSE} logs --tail=100 api
-            ${COMPOSE} logs --tail=100 nginx
-            ${COMPOSE} logs --tail=100 caddy
-            exit 1
+            migrator_id="$(${COMPOSE} ps -aq migrator)"
+            if [ -z "${migrator_id}" ] || \
+              [ "$(docker inspect --format '{{.State.ExitCode}}' "${migrator_id}")" != '0' ]; then
+              echo "ERROR: migrationが正常終了していません。" >&2
+              ${COMPOSE} logs --tail=100 migrator
+              exit 1
+            fi
+
+            echo "=== Origin API health check ==="
+            api_healthy=false
+            for i in $(seq 1 24); do
+              if curl -fsS -k \
+                --resolve herta.ivrm.jp:443:127.0.0.1 \
+                https://herta.ivrm.jp/api/v1/health > /dev/null; then
+                api_healthy=true
+                break
+              fi
+              echo "API応答待ち... (${i}/24)"
+              sleep 5
+            done
+            if [ "${api_healthy}" != 'true' ]; then
+              ${COMPOSE} logs --tail=100 api nginx caddy
+              exit 1
+            fi
+
+            echo "=== Origin Auth.js health check ==="
+            auth_healthy=false
+            for i in $(seq 1 12); do
+              if curl -fsS -k \
+                --resolve herta.ivrm.jp:443:127.0.0.1 \
+                https://herta.ivrm.jp/api/auth/providers > /dev/null; then
+                auth_healthy=true
+                break
+              fi
+              echo "Studio認証応答待ち... (${i}/12)"
+              sleep 5
+            done
+            if [ "${auth_healthy}" != 'true' ]; then
+              ${COMPOSE} logs --tail=100 studio nginx caddy
+              exit 1
+            fi
+
+            echo "=== Discord Botログイン確認 ==="
+            bot_ready=false
+            bot_container="$(${COMPOSE} ps -q bot)"
+            for i in $(seq 1 12); do
+              if docker logs --since 5m "${bot_container}" 2>&1 | \
+                grep -q 'Herta Bot がログインしました'; then
+                bot_ready=true
+                break
+              fi
+              echo "Botログイン待ち... (${i}/12)"
+              sleep 5
+            done
+            if [ "${bot_ready}" != 'true' ]; then
+              ${COMPOSE} logs --tail=100 bot
+              exit 1
+            fi
+
+            docker logout ghcr.io > /dev/null 2>&1 || true
+            echo "=== Herta. 本番デプロイ成功 ==="
 
       - name: Cloudflare経由の外部Health check
         run: |
           curl --fail --show-error --silent \
             --retry 12 --retry-delay 5 --retry-all-errors \
-            https://herta.ivrm.jp/api/v1/health
+            https://herta.ivrm.jp/api/v1/health > /dev/null
+          curl --fail --show-error --silent \
+            --retry 12 --retry-delay 5 --retry-all-errors \
+            https://herta.ivrm.jp/api/auth/providers > /dev/null

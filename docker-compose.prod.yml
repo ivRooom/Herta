@@ -4,13 +4,14 @@
 #
 # 必ず --env-file .env.production を付けて実行してください。
 # deploy/scripts と GitHub Actions はこの指定を含みます。
+# HERTA_IMAGEを指定すると、GHCR等で事前ビルドした共有imageを利用します。
 # ============================================================
 
 x-app: &app
   build:
     context: .
     dockerfile: Dockerfile
-  image: herta-app:latest
+  image: ${HERTA_IMAGE:-herta-app:latest}
   restart: unless-stopped
   init: true
   security_opt:

@@ -12,17 +12,23 @@ COPY . .
 # 全workspaceを事前ビルドし、本番でtsxによるTypeScript直接実行を行わない。
 # Next.js standalone出力ではPrisma Query Engineが自動追跡されない場合があるため、
 # Prismaが実際に検索するStudio配下の .prisma/client へ明示的にコピーする。
+# Engine名はCPUアーキテクチャごとに異なるため、固定ファイル名ではなく生成物を検出する。
 RUN pnpm install --frozen-lockfile \
   && pnpm --filter @herta/db exec prisma generate \
   && pnpm build \
   && PRISMA_SOURCE="$(find node_modules/.pnpm -path '*/node_modules/.prisma/client' -type d -print -quit)" \
   && PRISMA_DEST="apps/studio/.next/standalone/apps/studio/.prisma/client" \
   && test -n "${PRISMA_SOURCE}" \
-  && test -f "${PRISMA_SOURCE}/libquery_engine-linux-musl-openssl-3.0.x.so.node" \
+  && PRISMA_ENGINE="$(find "${PRISMA_SOURCE}" -maxdepth 1 -type f -name 'libquery_engine-*.so.node' -print -quit)" \
+  && test -n "${PRISMA_ENGINE}" \
   && mkdir -p "${PRISMA_DEST}" \
   && cp -r "${PRISMA_SOURCE}/." "${PRISMA_DEST}/" \
-  && test -f "${PRISMA_DEST}/libquery_engine-linux-musl-openssl-3.0.x.so.node" \
-  && cp -r apps/studio/.next/static apps/studio/.next/standalone/apps/studio/.next/static
+  && test -n "$(find "${PRISMA_DEST}" -maxdepth 1 -type f -name 'libquery_engine-*.so.node' -print -quit)" \
+  && cp -r apps/studio/.next/static apps/studio/.next/standalone/apps/studio/.next/static \
+  && test -f apps/api/dist/main.js \
+  && test -f apps/bot/dist/main.js \
+  && test -f apps/worker/dist/main.js \
+  && test -f apps/studio/.next/standalone/apps/studio/server.js
 
 FROM node:22-alpine AS runtime
 
