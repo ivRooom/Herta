@@ -1,0 +1,39 @@
+name: Diagnose Runtime Docker Build
+
+on:
+  push:
+    branches: [security/minimize-runtime-image]
+    paths: [.github/workflows/diagnose-runtime-build.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: security/minimize-runtime-image
+
+      - name: Docker build結果を保存
+        shell: bash
+        run: |
+          set +e
+          docker build --progress=plain --tag herta-app:diagnose . > /tmp/runtime-build.log 2>&1
+          status=$?
+          set -e
+
+          mkdir -p .ci
+          {
+            echo "exit_status=${status}"
+            echo
+            tail -n 1200 /tmp/runtime-build.log
+          } > .ci/runtime-build-output.txt
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .ci/runtime-build-output.txt
+          git commit -m "ci(diag): runtime Docker build結果を保存"
+          git push origin HEAD:security/minimize-runtime-image
