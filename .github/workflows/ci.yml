@@ -73,11 +73,65 @@ jobs:
         run: |
           docker run --rm --entrypoint sh herta-app:ci -lc '
             set -eu
+
             test "$(id -u)" != "0"
             test -f apps/api/dist/main.js
             test -f apps/bot/dist/main.js
             test -f apps/worker/dist/main.js
             test -f apps/studio/.next/standalone/apps/studio/server.js
+            test -x packages/db/node_modules/.bin/prisma
+            packages/db/node_modules/.bin/prisma --version > /dev/null
+
             test -n "$(find apps/studio/.next/standalone/apps/studio/.prisma/client \
               -maxdepth 1 -type f -name "libquery_engine-*.so.node" -print -quit)"
+
+            for source_path in \
+              apps/api/src \
+              apps/bot/src \
+              apps/worker/src \
+              apps/studio/src \
+              packages/db/src \
+              packages/logger/src \
+              packages/plugin-catalog/src \
+              packages/plugin-sdk/src \
+              packages/queue/src \
+              packages/rule-engine/src \
+              packages/shared/src \
+              plugins/auto-response/src \
+              plugins/daily-content/src \
+              plugins/lfg/src \
+              plugins/moderation/src \
+              plugins/quote/src \
+              plugins/team-split/src
+            do
+              test ! -e "$source_path"
+            done
+
+            test ! -e docs
+            test ! -e examples
+            test ! -e deploy
+            test ! -e pnpm-lock.yaml
+
+            cd apps/bot
+            node --input-type=module -e "
+              await import(\"@herta/db\");
+              await import(\"@herta/logger\");
+              await import(\"@herta/plugin-catalog\");
+              await import(\"@herta/plugin-sdk\");
+              await import(\"@herta/rule-engine\");
+              await import(\"@herta/shared\");
+            "
           '
+
+      - name: Report runtime image size
+        run: |
+          size_bytes="$(docker image inspect herta-app:ci --format '{{.Size}}')"
+          size_mib="$((size_bytes / 1024 / 1024))"
+          echo "Runtime image size: ${size_mib} MiB (${size_bytes} bytes)"
+          {
+            echo "### Production runtime image"
+            echo
+            echo "- Size: **${size_mib} MiB**"
+            echo "- Source / test / docs: excluded"
+            echo "- Runtime user: non-root"
+          } >> "$GITHUB_STEP_SUMMARY"
