@@ -1,0 +1,406 @@
+exit_status=1
+
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 4.03kB done
+#1 DONE 0.0s
+
+#2 [auth] library/node:pull token for registry-1.docker.io
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/node:22-alpine
+#3 DONE 0.5s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 454B done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 554.76kB 0.1s done
+#5 DONE 0.1s
+
+#6 [builder 1/8] FROM docker.io/library/node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2
+#6 resolve docker.io/library/node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 done
+#6 sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 6.41kB / 6.41kB done
+#6 sha256:b74031e546d7f4faf561d797ac1b76beccac856a042815ca77db4fd047581605 1.72kB / 1.72kB done
+#6 sha256:bd168dc5d9d77ba5687dc7a31cc0f507c35b66c1d6af5f910154d3881df7c0ee 6.52kB / 6.52kB done
+#6 DONE 0.1s
+
+#7 [runtime 2/7] RUN apk add --no-cache libc6-compat openssl curl
+#7 1.351 ( 1/13) Installing brotli-libs (1.2.0-r1)
+#7 1.364 ( 2/13) Installing c-ares (1.34.8-r0)
+#7 1.369 ( 3/13) Installing libunistring (1.4.2-r0)
+#7 1.384 ( 4/13) Installing libidn2 (2.3.8-r0)
+#7 1.388 ( 5/13) Installing nghttp2-libs (1.69.0-r0)
+#7 1.392 ( 6/13) Installing libpsl (0.21.5-r3)
+#7 1.396 ( 7/13) Installing zstd-libs (1.5.7-r2)
+#7 1.405 ( 8/13) Installing libcurl (8.21.0-r0)
+#7 1.414 ( 9/13) Installing curl (8.21.0-r0)
+#7 1.419 (10/13) Installing musl-obstack (1.2.3-r2)
+#7 1.422 (11/13) Installing libucontext (1.5.1-r0)
+#7 1.425 (12/13) Installing gcompat (1.1.0-r4)
+#7 1.429 (13/13) Installing openssl (3.5.7-r0)
+#7 1.438 Executing busybox-1.37.0-r31.trigger
+#7 1.461 OK: 16.8 MiB in 31 packages
+#7 DONE 3.6s
+
+#8 [builder 2/8] RUN apk add --no-cache libc6-compat openssl bash
+#8 1.370 (1/8) Installing ncurses-terminfo-base (6.6_p20260516-r0)
+#8 1.379 (2/8) Installing libncursesw (6.6_p20260516-r0)
+#8 1.386 (3/8) Installing readline (8.3.3-r1)
+#8 1.391 (4/8) Installing bash (5.3.9-r1)
+#8 1.409   Executing bash-5.3.9-r1.post-install
+#8 1.415 (5/8) Installing musl-obstack (1.2.3-r2)
+#8 1.418 (6/8) Installing libucontext (1.5.1-r0)
+#8 1.421 (7/8) Installing gcompat (1.1.0-r4)
+#8 1.424 (8/8) Installing openssl (3.5.7-r0)
+#8 1.434 Executing busybox-1.37.0-r31.trigger
+#8 1.461 OK: 13.8 MiB in 26 packages
+#8 DONE 3.6s
+
+#9 [runtime 3/7] WORKDIR /app
+#9 DONE 0.1s
+
+#10 [builder 3/8] RUN corepack enable
+#10 DONE 3.5s
+
+#11 [builder 4/8] WORKDIR /app
+#11 DONE 0.0s
+
+#12 [builder 5/8] COPY . .
+#12 DONE 0.1s
+
+#13 [builder 6/8] RUN pnpm install --frozen-lockfile   && pnpm --filter @herta/db exec prisma generate   && pnpm build   && rm -rf node_modules     apps/*/node_modules     packages/*/node_modules     plugins/*/node_modules     examples/*/node_modules   && pnpm install --prod --offline --frozen-lockfile     --filter @herta/api...     --filter @herta/bot...     --filter @herta/worker...   && pnpm --filter @herta/db add --prod --offline --lockfile=false prisma@6.2.1   && pnpm --filter @herta/db exec prisma generate
+#13 0.220 ! Corepack is about to download https://registry.npmjs.org/pnpm/-/pnpm-9.15.4.tgz
+#13 2.464 Scope: all 21 workspace projects
+#13 2.581 Lockfile is up to date, resolution step is skipped
+#13 2.673 Progress: resolved 1, reused 0, downloaded 0, added 0
+#13 2.812 Packages: +622
+#13 2.812 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+#13 3.193 
+#13 3.193    ╭───────────────────────────────────────────────────────────────────╮
+#13 3.193    │                                                                   │
+#13 3.193    │                Update available! 9.15.4 → 11.16.0.                │
+#13 3.193    │   Changelog: https://github.com/pnpm/pnpm/releases/tag/v11.16.0   │
+#13 3.193    │         Run "corepack install -g pnpm@11.16.0" to update.         │
+#13 3.193    │                                                                   │
+#13 3.193    ╰───────────────────────────────────────────────────────────────────╯
+#13 3.193 
+#13 3.674 Progress: resolved 622, reused 0, downloaded 15, added 0
+#13 4.676 Progress: resolved 622, reused 0, downloaded 42, added 29
+#13 5.677 Progress: resolved 622, reused 0, downloaded 162, added 150
+#13 6.677 Progress: resolved 622, reused 0, downloaded 213, added 199
+#13 7.678 Progress: resolved 622, reused 0, downloaded 332, added 323
+#13 8.685 Progress: resolved 622, reused 0, downloaded 423, added 409
+#13 9.685 Progress: resolved 622, reused 0, downloaded 471, added 457
+#13 10.69 Progress: resolved 622, reused 0, downloaded 476, added 466
+#13 11.69 Progress: resolved 622, reused 0, downloaded 486, added 475
+#13 13.94 Progress: resolved 622, reused 0, downloaded 487, added 475
+#13 14.95 Progress: resolved 622, reused 0, downloaded 490, added 478
+#13 15.95 Progress: resolved 622, reused 0, downloaded 492, added 478
+#13 16.95 Progress: resolved 622, reused 0, downloaded 542, added 533
+#13 17.96 Progress: resolved 622, reused 0, downloaded 565, added 553
+#13 18.96 Progress: resolved 622, reused 0, downloaded 574, added 563
+#13 19.93 Progress: resolved 622, reused 0, downloaded 620, added 622, done
+#13 20.29 .../node_modules/@scarf/scarf postinstall$ node ./report.js
+#13 20.31 .../node_modules/@nestjs/core postinstall$ opencollective || exit 0
+#13 20.31 .../sharp@0.34.5/node_modules/sharp install$ node install/check.js || npm run build
+#13 20.31 .../node_modules/msgpackr-extract install$ node-gyp-build-optional-packages
+#13 20.31 .../esbuild@0.28.1/node_modules/esbuild postinstall$ node install.js
+#13 20.54 .../sharp@0.34.5/node_modules/sharp install: Done
+#13 20.61 .../node_modules/@prisma/engines postinstall$ node scripts/postinstall.js
+#13 20.67 .../node_modules/msgpackr-extract install: Done
+#13 20.71 .../esbuild@0.28.1/node_modules/esbuild postinstall: Done
+#13 21.01 .../node_modules/@nestjs/core postinstall:                            Thanks for installing nest 
+#13 21.02 .../node_modules/@nestjs/core postinstall:                  Please consider donating to our open collective
+#13 21.03 .../node_modules/@nestjs/core postinstall:                         to help us maintain this package.
+#13 21.03 .../node_modules/@nestjs/core postinstall:                                          
+#13 21.03 .../node_modules/@nestjs/core postinstall:                         Number of contributors: undefined
+#13 21.03 .../node_modules/@nestjs/core postinstall:                              Number of backers: 1212
+#13 21.08 .../node_modules/@nestjs/core postinstall:                              Annual budget: $134,899
+#13 21.08 .../node_modules/@nestjs/core postinstall:                              Current balance: $2,613
+#13 21.08 .../node_modules/@nestjs/core postinstall:                                          
+#13 21.09 .../node_modules/@nestjs/core postinstall:              Become a partner: https://opencollective.com/nest/donate
+#13 21.09 .../node_modules/@nestjs/core postinstall:                                          
+#13 21.15 .../node_modules/@nestjs/core postinstall: Done
+#13 21.90 .../node_modules/@prisma/engines postinstall: Done
+#13 23.48 .../node_modules/@scarf/scarf postinstall: Done
+#13 23.49 .../node_modules/prisma preinstall$ node scripts/preinstall-entry.js
+#13 23.56 .../node_modules/prisma preinstall: Done
+#13 23.69 .../node_modules/@prisma/client postinstall$ node scripts/postinstall.js
+#13 26.68 .../node_modules/@prisma/client postinstall: prisma:warn We could not find your Prisma schema in the default locations (see: https://pris.ly/d/prisma-schema-location).
+#13 26.68 .../node_modules/@prisma/client postinstall: If you have a Prisma schema file in a custom path, you will need to run
+#13 26.68 .../node_modules/@prisma/client postinstall: `prisma generate --schema=./path/to/your/schema.prisma` to generate Prisma Client.
+#13 26.68 .../node_modules/@prisma/client postinstall: If you do not have a Prisma schema file yet, you can ignore this message.
+#13 26.70 .../node_modules/@prisma/client postinstall: Done
+#13 27.08 
+#13 27.08 devDependencies:
+#13 27.08 + @types/node 26.1.0
+#13 27.08 + dotenv-cli 11.0.0
+#13 27.08 + prettier 3.9.4
+#13 27.08 + turbo 2.10.3
+#13 27.08 + typescript 5.9.3
+#13 27.08 
+#13 27.14 Done in 25.4s
+#13 28.79 warn The configuration property `package.json#prisma` is deprecated and will be removed in Prisma 7. Please migrate to a Prisma config file (e.g., `prisma.config.ts`).
+#13 28.79 For more information, see: https://pris.ly/prisma-config
+#13 28.79 
+#13 29.07 Prisma schema loaded from prisma/schema.prisma
+#13 29.68 
+#13 29.68 ✔ Generated Prisma Client (v6.19.3) to ./../../node_modules/.pnpm/@prisma+client@6.19.3_prisma@6.19.3_typescript@5.9.3__typescript@5.9.3/node_modules/@prisma/client in 345ms
+#13 29.68 
+#13 29.68 Start by importing your Prisma Client (See: https://pris.ly/d/importing-client)
+#13 29.68 
+#13 29.68 Tip: Interested in query caching in just a few lines of code? Try Accelerate today! https://pris.ly/tip-3-accelerate
+#13 29.68 
+#13 30.21 
+#13 30.21 > herta@ build /app
+#13 30.21 > turbo run build
+#13 30.21 
+#13 30.26 
+#13 30.26 Attention:
+#13 30.26 Turborepo now collects completely anonymous telemetry regarding usage.
+#13 30.26 This information is used to shape the Turborepo roadmap and prioritize features.
+#13 30.26 You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+#13 30.26 https://turborepo.dev/docs/telemetry
+#13 30.26 
+#13 30.26 • turbo 2.10.3
+#13 30.31 
+#13 30.31    • Packages in scope: @herta/api, @herta/bot, @herta/config, @herta/db, @herta/example-sample-plugin, @herta/logger, @herta/plugin-auto-response, @herta/plugin-catalog, @herta/plugin-daily-content, @herta/plugin-lfg, @herta/plugin-moderation, @herta/plugin-quote, @herta/plugin-sdk, @herta/plugin-team-split, @herta/queue, @herta/rule-engine, @herta/shared, @herta/studio, @herta/ui, @herta/worker
+#13 30.31    • Running build in 20 packages
+#13 30.31    • Remote caching disabled
+#13 30.31 
+#13 30.34 @herta/ui:build: cache miss, executing 2ee4220f55627b72
+#13 30.34 @herta/shared:build: cache miss, executing fc53eebbded77edc
+#13 30.34 @herta/db:build: cache miss, executing 7627f4593a4aa429
+#13 30.34 @herta/config:build: cache miss, executing 81d79fd521aafdae
+#13 30.34 @herta/logger:build: cache miss, executing d22a6a564acab761
+#13 30.35 @herta/queue:build: cache miss, executing b9f0f93502adfb16
+#13 32.61 @herta/queue:build: 
+#13 32.61 @herta/queue:build: > @herta/queue@0.1.0 build /app/packages/queue
+#13 32.61 @herta/queue:build: > tsc
+#13 32.61 @herta/queue:build: 
+#13 32.67 @herta/logger:build: 
+#13 32.67 @herta/logger:build: > @herta/logger@0.1.0 build /app/packages/logger
+#13 32.67 @herta/logger:build: > tsc
+#13 32.67 @herta/logger:build: 
+#13 32.84 @herta/ui:build: 
+#13 32.84 @herta/ui:build: > @herta/ui@0.1.0 build /app/packages/ui
+#13 32.84 @herta/ui:build: > echo '@herta/ui - consumed as source by Next.js'
+#13 32.84 @herta/ui:build: 
+#13 32.86 @herta/ui:build: @herta/ui - consumed as source by Next.js
+#13 32.87 @herta/config:build: 
+#13 32.87 @herta/config:build: > @herta/config@0.1.0 build /app/packages/config
+#13 32.87 @herta/config:build: > echo 'config package - no build needed'
+#13 32.87 @herta/config:build: 
+#13 32.88 @herta/shared:build: 
+#13 32.88 @herta/shared:build: > @herta/shared@0.1.0 build /app/packages/shared
+#13 32.88 @herta/shared:build: > tsc
+#13 32.88 @herta/shared:build: 
+#13 32.89 @herta/config:build: config package - no build needed
+#13 32.89 @herta/db:build: 
+#13 32.89 @herta/db:build: > @herta/db@0.1.0 build /app/packages/db
+#13 32.89 @herta/db:build: > tsc
+#13 32.89 @herta/db:build: 
+#13 39.10 @herta/plugin-sdk:build: cache miss, executing 3a910b977efd3c55
+#13 39.11 @herta/rule-engine:build: cache miss, executing 278ed3fe3e54dbed
+#13 40.63 @herta/rule-engine:build: 
+#13 40.63 @herta/rule-engine:build: > @herta/rule-engine@0.1.0 build /app/packages/rule-engine
+#13 40.63 @herta/rule-engine:build: > tsc
+#13 40.63 @herta/rule-engine:build: 
+#13 40.66 @herta/worker:build: cache miss, executing c7c9a91b50f5adde
+#13 40.69 @herta/plugin-sdk:build: 
+#13 40.69 @herta/plugin-sdk:build: > @herta/plugin-sdk@0.1.0 build /app/packages/plugin-sdk
+#13 40.69 @herta/plugin-sdk:build: > tsc
+#13 40.69 @herta/plugin-sdk:build: 
+#13 42.71 @herta/worker:build: 
+#13 42.71 @herta/worker:build: > @herta/worker@0.1.0 build /app/apps/worker
+#13 42.71 @herta/worker:build: > tsc
+#13 42.71 @herta/worker:build: 
+#13 45.05 @herta/plugin-daily-content:build: cache miss, executing e5cde64d369c43a2
+#13 45.05 @herta/plugin-auto-response:build: cache miss, executing 218454228c33918f
+#13 45.05 @herta/plugin-moderation:build: cache miss, executing 7bac3a5c08deb0ab
+#13 45.05 @herta/plugin-quote:build: cache miss, executing 6988eb0fcc44b2c1
+#13 45.05 @herta/plugin-lfg:build: cache miss, executing 74c1d23158402b8f
+#13 45.06 @herta/plugin-team-split:build: cache miss, executing 15d58f32d1efb060
+#13 45.06 @herta/example-sample-plugin:build: cache miss, executing 03a98c7d49b86142
+#13 45.16 @herta/api:build: cache miss, executing a99ceb782c9da3e4
+#13 49.06 @herta/api:build: 
+#13 49.06 @herta/api:build: > @herta/api@0.1.0 build /app/apps/api
+#13 49.06 @herta/api:build: > nest build
+#13 49.06 @herta/api:build: 
+#13 49.12 @herta/plugin-team-split:build: 
+#13 49.12 @herta/plugin-team-split:build: > @herta/plugin-team-split@1.0.0 build /app/plugins/team-split
+#13 49.12 @herta/plugin-team-split:build: > tsc
+#13 49.12 @herta/plugin-team-split:build: 
+#13 49.17 @herta/plugin-auto-response:build: 
+#13 49.17 @herta/plugin-auto-response:build: > @herta/plugin-auto-response@1.0.0 build /app/plugins/auto-response
+#13 49.17 @herta/plugin-auto-response:build: > tsc
+#13 49.17 @herta/plugin-auto-response:build: 
+#13 49.18 @herta/plugin-quote:build: 
+#13 49.18 @herta/plugin-quote:build: > @herta/plugin-quote@1.0.0 build /app/plugins/quote
+#13 49.18 @herta/plugin-quote:build: > tsc
+#13 49.18 @herta/plugin-quote:build: 
+#13 49.22 @herta/plugin-moderation:build: 
+#13 49.23 @herta/plugin-moderation:build: > @herta/plugin-moderation@1.0.0 build /app/plugins/moderation
+#13 49.23 @herta/plugin-moderation:build: > tsc
+#13 49.23 @herta/plugin-moderation:build: 
+#13 49.26 @herta/plugin-daily-content:build: 
+#13 49.26 @herta/plugin-daily-content:build: > @herta/plugin-daily-content@1.0.0 build /app/plugins/daily-content
+#13 49.26 @herta/plugin-daily-content:build: > tsc
+#13 49.26 @herta/plugin-daily-content:build: 
+#13 49.27 @herta/example-sample-plugin:build: 
+#13 49.27 @herta/example-sample-plugin:build: > @herta/example-sample-plugin@0.1.0 build /app/examples/sample-plugin
+#13 49.27 @herta/example-sample-plugin:build: > tsc
+#13 49.27 @herta/example-sample-plugin:build: 
+#13 49.32 @herta/plugin-lfg:build: 
+#13 49.32 @herta/plugin-lfg:build: > @herta/plugin-lfg@1.0.0 build /app/plugins/lfg
+#13 49.33 @herta/plugin-lfg:build: > tsc
+#13 49.33 @herta/plugin-lfg:build: 
+#13 65.94 @herta/plugin-catalog:build: cache miss, executing 751206d013bf77c9
+#13 67.75 @herta/plugin-catalog:build: 
+#13 67.75 @herta/plugin-catalog:build: > @herta/plugin-catalog@0.1.0 build /app/packages/plugin-catalog
+#13 67.75 @herta/plugin-catalog:build: > tsc
+#13 67.75 @herta/plugin-catalog:build: 
+#13 70.84 @herta/studio:build: cache miss, executing f64e985510f5f8a9
+#13 70.85 @herta/bot:build: cache miss, executing c8821de4c2dbe315
+#13 71.64 @herta/bot:build: 
+#13 71.64 @herta/bot:build: > @herta/bot@0.1.0 build /app/apps/bot
+#13 71.64 @herta/bot:build: > tsc
+#13 71.64 @herta/bot:build: 
+#13 71.65 @herta/studio:build: 
+#13 71.65 @herta/studio:build: > @herta/studio@0.1.0 build /app/apps/studio
+#13 71.65 @herta/studio:build: > next build
+#13 71.65 @herta/studio:build: 
+#13 73.64 @herta/studio:build: Attention: Next.js now collects completely anonymous telemetry regarding usage.
+#13 73.64 @herta/studio:build: This information is used to shape Next.js' roadmap and prioritize features.
+#13 73.64 @herta/studio:build: You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+#13 73.64 @herta/studio:build: https://nextjs.org/telemetry
+#13 73.64 @herta/studio:build: 
+#13 73.82 @herta/studio:build:    ▲ Next.js 15.5.20
+#13 73.82 @herta/studio:build: 
+#13 73.98 @herta/studio:build:    Creating an optimized production build ...
+#13 93.01 @herta/studio:build:  ⚠ Compiled with warnings in 3.4s
+#13 93.01 @herta/studio:build: 
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/jose@6.2.3/node_modules/jose/dist/webapi/lib/deflate.js
+#13 93.01 @herta/studio:build: A Node.js API is used (CompressionStream at line: 10) which is not supported in the Edge Runtime.
+#13 93.01 @herta/studio:build: Learn more: https://nextjs.org/docs/api-reference/edge-runtime
+#13 93.01 @herta/studio:build: 
+#13 93.01 @herta/studio:build: Import trace for requested module:
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/jose@6.2.3/node_modules/jose/dist/webapi/lib/deflate.js
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/jose@6.2.3/node_modules/jose/dist/webapi/jwe/flattened/decrypt.js
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/jose@6.2.3/node_modules/jose/dist/webapi/index.js
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/@auth+core@0.41.2/node_modules/@auth/core/jwt.js
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/@auth+core@0.41.2/node_modules/@auth/core/lib/init.js
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/@auth+core@0.41.2/node_modules/@auth/core/lib/index.js
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/@auth+core@0.41.2/node_modules/@auth/core/index.js
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/next-auth@5.0.0-beta.31_next@15.5.20_react-dom@19.2.7_react@19.2.7__react@19.2.7__react@19.2.7/node_modules/next-auth/index.js
+#13 93.01 @herta/studio:build: 
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/jose@6.2.3/node_modules/jose/dist/webapi/lib/deflate.js
+#13 93.01 @herta/studio:build: A Node.js API is used (DecompressionStream at line: 26) which is not supported in the Edge Runtime.
+#13 93.01 @herta/studio:build: Learn more: https://nextjs.org/docs/api-reference/edge-runtime
+#13 93.01 @herta/studio:build: 
+#13 93.01 @herta/studio:build: Import trace for requested module:
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/jose@6.2.3/node_modules/jose/dist/webapi/lib/deflate.js
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/jose@6.2.3/node_modules/jose/dist/webapi/jwe/flattened/decrypt.js
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/jose@6.2.3/node_modules/jose/dist/webapi/index.js
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/@auth+core@0.41.2/node_modules/@auth/core/jwt.js
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/@auth+core@0.41.2/node_modules/@auth/core/lib/init.js
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/@auth+core@0.41.2/node_modules/@auth/core/lib/index.js
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/@auth+core@0.41.2/node_modules/@auth/core/index.js
+#13 93.01 @herta/studio:build: ../../node_modules/.pnpm/next-auth@5.0.0-beta.31_next@15.5.20_react-dom@19.2.7_react@19.2.7__react@19.2.7__react@19.2.7/node_modules/next-auth/index.js
+#13 93.01 @herta/studio:build: 
+#13 99.45 @herta/studio:build:  ✓ Compiled successfully in 20.9s
+#13 99.46 @herta/studio:build:    Linting and checking validity of types ...
+#13 106.4 @herta/studio:build:    Collecting page data ...
+#13 109.5 @herta/studio:build:    Generating static pages (0/4) ...
+#13 110.8 @herta/studio:build:    Generating static pages (1/4) 
+#13 110.8 @herta/studio:build:    Generating static pages (2/4) 
+#13 110.8 @herta/studio:build:    Generating static pages (3/4) 
+#13 110.8 @herta/studio:build:  ✓ Generating static pages (4/4)
+#13 111.9 @herta/studio:build:    Finalizing page optimization ...
+#13 111.9 @herta/studio:build:    Collecting build traces ...
+#13 147.0 @herta/studio:build: 
+#13 147.0 @herta/studio:build: Route (app)                                              Size  First Load JS
+#13 147.0 @herta/studio:build: ┌ ƒ /                                                   147 B         102 kB
+#13 147.0 @herta/studio:build: ├ ○ /_not-found                                         987 B         103 kB
+#13 147.0 @herta/studio:build: ├ ƒ /api/auth/[...nextauth]                             147 B         102 kB
+#13 147.0 @herta/studio:build: ├ ƒ /api/guilds                                         147 B         102 kB
+#13 147.0 @herta/studio:build: ├ ƒ /api/guilds/[guildId]                               147 B         102 kB
+#13 147.0 @herta/studio:build: ├ ƒ /api/guilds/[guildId]/plugins                       147 B         102 kB
+#13 147.0 @herta/studio:build: ├ ƒ /api/guilds/[guildId]/plugins/[pluginId]            147 B         102 kB
+#13 147.0 @herta/studio:build: ├ ƒ /api/guilds/[guildId]/quotes                        147 B         102 kB
+#13 147.0 @herta/studio:build: ├ ƒ /api/guilds/[guildId]/quotes/[quoteNumber]          147 B         102 kB
+#13 147.0 @herta/studio:build: ├ ƒ /api/me                                             147 B         102 kB
+#13 147.0 @herta/studio:build: ├ ƒ /dashboard                                          169 B         105 kB
+#13 147.0 @herta/studio:build: ├ ƒ /dashboard/guilds                                   169 B         105 kB
+#13 147.0 @herta/studio:build: ├ ƒ /dashboard/guilds/[guildId]                         169 B         105 kB
+#13 147.0 @herta/studio:build: ├ ƒ /dashboard/guilds/[guildId]/plugins                 862 B         106 kB
+#13 147.0 @herta/studio:build: ├ ƒ /dashboard/guilds/[guildId]/plugins/[pluginId]    1.28 kB         106 kB
+#13 147.0 @herta/studio:build: ├ ƒ /dashboard/guilds/[guildId]/plugins/quote/quotes  2.18 kB         107 kB
+#13 147.0 @herta/studio:build: └ ƒ /login                                              147 B         102 kB
+#13 147.0 @herta/studio:build: + First Load JS shared by all                          102 kB
+#13 147.0 @herta/studio:build:   ├ chunks/558-239c31f73a257451.js                    45.7 kB
+#13 147.0 @herta/studio:build:   ├ chunks/567e3fde-8c71b67cb98676f3.js               54.2 kB
+#13 147.0 @herta/studio:build:   └ other shared chunks (total)                        1.9 kB
+#13 147.0 @herta/studio:build: 
+#13 147.0 @herta/studio:build: 
+#13 147.0 @herta/studio:build: ƒ Middleware                                          87.6 kB
+#13 147.0 @herta/studio:build: 
+#13 147.0 @herta/studio:build: ○  (Static)   prerendered as static content
+#13 147.0 @herta/studio:build: ƒ  (Dynamic)  server-rendered on demand
+#13 147.0 @herta/studio:build: 
+#13 147.2 
+#13 147.2  Tasks:    20 successful, 20 total
+#13 147.2 Cached:    0 cached, 20 total
+#13 147.2   Time:    1m56.938s 
+#13 147.2 
+#13 147.2  WARNING  no output files found for task @herta/config#build. Please check your `outputs` key in `turbo.json`
+#13 147.2  WARNING  no output files found for task @herta/ui#build. Please check your `outputs` key in `turbo.json`
+#13 150.0 Scope: 16 of 21 workspace projects
+#13 150.1 Lockfile is up to date, resolution step is skipped
+#13 150.2 Progress: resolved 1, reused 0, downloaded 0, added 0
+#13 150.2 .                                        | +266 +++++++++++++++++++++++++++
+#13 151.2 Progress: resolved 266, reused 266, downloaded 0, added 26
+#13 151.8 Progress: resolved 266, reused 266, downloaded 0, added 266, done
+#13 152.1 Done in 2.5s
+#13 152.7 .                                        |  WARN  A pnpm-lock.yaml file exists. The current configuration prohibits to read or write a lockfile
+#13 152.8 /app/packages/db:
+#13 152.8  ERR_PNPM_NO_OFFLINE_META  Failed to resolve prisma@6.2.1 in package mirror /root/.cache/pnpm/metadata-v1.3/registry.npmjs.org/prisma.json
+#13 152.8 
+#13 152.8 This error happened while installing a direct dependency of /app/packages/db
+#13 ERROR: process "/bin/sh -c pnpm install --frozen-lockfile   && pnpm --filter @herta/db exec prisma generate   && pnpm build   && rm -rf node_modules     apps/*/node_modules     packages/*/node_modules     plugins/*/node_modules     examples/*/node_modules   && pnpm install --prod --offline --frozen-lockfile     --filter @herta/api...     --filter @herta/bot...     --filter @herta/worker...   && pnpm --filter @herta/db add --prod --offline --lockfile=false prisma@6.2.1   && pnpm --filter @herta/db exec prisma generate" did not complete successfully: exit code: 1
+------
+ > [builder 6/8] RUN pnpm install --frozen-lockfile   && pnpm --filter @herta/db exec prisma generate   && pnpm build   && rm -rf node_modules     apps/*/node_modules     packages/*/node_modules     plugins/*/node_modules     examples/*/node_modules   && pnpm install --prod --offline --frozen-lockfile     --filter @herta/api...     --filter @herta/bot...     --filter @herta/worker...   && pnpm --filter @herta/db add --prod --offline --lockfile=false prisma@6.2.1   && pnpm --filter @herta/db exec prisma generate:
+150.2 Progress: resolved 1, reused 0, downloaded 0, added 0
+150.2 .                                        | +266 +++++++++++++++++++++++++++
+151.2 Progress: resolved 266, reused 266, downloaded 0, added 26
+151.8 Progress: resolved 266, reused 266, downloaded 0, added 266, done
+152.1 Done in 2.5s
+152.7 .                                        |  WARN  A pnpm-lock.yaml file exists. The current configuration prohibits to read or write a lockfile
+152.8 /app/packages/db:
+152.8  ERR_PNPM_NO_OFFLINE_META  Failed to resolve prisma@6.2.1 in package mirror /root/.cache/pnpm/metadata-v1.3/registry.npmjs.org/prisma.json
+152.8 
+152.8 This error happened while installing a direct dependency of /app/packages/db
+------
+Dockerfile:14
+--------------------
+  13 |     # pnpm storeはbuilder内に残るため、production再インストールはofflineで完結する。
+  14 | >>> RUN pnpm install --frozen-lockfile \
+  15 | >>>   && pnpm --filter @herta/db exec prisma generate \
+  16 | >>>   && pnpm build \
+  17 | >>>   && rm -rf node_modules \
+  18 | >>>     apps/*/node_modules \
+  19 | >>>     packages/*/node_modules \
+  20 | >>>     plugins/*/node_modules \
+  21 | >>>     examples/*/node_modules \
+  22 | >>>   && pnpm install --prod --offline --frozen-lockfile \
+  23 | >>>     --filter @herta/api... \
+  24 | >>>     --filter @herta/bot... \
+  25 | >>>     --filter @herta/worker... \
+  26 | >>>   && pnpm --filter @herta/db add --prod --offline --lockfile=false prisma@6.2.1 \
+  27 | >>>   && pnpm --filter @herta/db exec prisma generate
+  28 |     
+--------------------
+ERROR: failed to build: failed to solve: process "/bin/sh -c pnpm install --frozen-lockfile   && pnpm --filter @herta/db exec prisma generate   && pnpm build   && rm -rf node_modules     apps/*/node_modules     packages/*/node_modules     plugins/*/node_modules     examples/*/node_modules   && pnpm install --prod --offline --frozen-lockfile     --filter @herta/api...     --filter @herta/bot...     --filter @herta/worker...   && pnpm --filter @herta/db add --prod --offline --lockfile=false prisma@6.2.1   && pnpm --filter @herta/db exec prisma generate" did not complete successfully: exit code: 1
