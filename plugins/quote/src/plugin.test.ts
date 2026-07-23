@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { Logger } from 'pino';
 import type { PluginRuntimeContext } from '@herta/plugin-sdk';
 import { DEFAULT_QUOTE_CONFIG, type QuoteConfig } from './config.js';
 import { quoteManifest } from './manifest.js';
@@ -92,7 +91,7 @@ function createContext(
     logger: {
       info: vi.fn(),
       error: vi.fn(),
-    } as unknown as Logger,
+    } as unknown as PluginRuntimeContext<QuoteConfig, unknown, QuotePrismaClient>['logger'],
     guildId: '100',
     config,
     manifest: quoteManifest,
