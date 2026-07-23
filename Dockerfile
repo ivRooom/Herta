@@ -23,7 +23,6 @@ RUN pnpm install --frozen-lockfile \
     --filter @herta/api... \
     --filter @herta/bot... \
     --filter @herta/worker... \
-  && pnpm --filter @herta/db add --prod --offline --lockfile=false prisma@6.2.1 \
   && pnpm --filter @herta/db exec prisma generate
 
 # Next.js standalone出力ではPrisma Query Engineが自動追跡されない場合があるため、
