@@ -79,7 +79,7 @@ jobs:
           bash -n deploy/scripts/enable-origin-protection.sh
           docker run --rm \
             -v "$PWD/deploy/docker/caddy/Caddyfile.aop:/etc/caddy/Caddyfile:ro" \
-            caddy:2-alpine caddy adapt --config /etc/caddy/Caddyfile.aop --adapter caddyfile > /dev/null
+            caddy:2-alpine caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /dev/null
 
       - name: Production Docker Build
         run: docker build --tag herta-app:ci .
