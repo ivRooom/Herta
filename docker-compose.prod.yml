@@ -55,7 +55,12 @@ services:
 
   migrator:
     <<: *app
-    command: pnpm --filter @herta/db exec prisma migrate deploy
+    command:
+      - /app/packages/db/node_modules/.bin/prisma
+      - migrate
+      - deploy
+      - --schema
+      - /app/packages/db/prisma/schema.prisma
     restart: 'no'
     environment:
       NODE_ENV: production
