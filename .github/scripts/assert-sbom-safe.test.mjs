@@ -31,18 +31,12 @@ test('有効なCycloneDX SBOMを受理する', () => {
 
 test('CycloneDX以外を拒否する', () => {
   const document = sbom({ bomFormat: 'SPDX' });
-  assert.throws(
-    () => validateSbom(document, JSON.stringify(document)),
-    /CycloneDXではありません/,
-  );
+  assert.throws(() => validateSbom(document, JSON.stringify(document)), /CycloneDXではありません/);
 });
 
 test('componentsが空のSBOMを拒否する', () => {
   const document = sbom({ components: [] });
-  assert.throws(
-    () => validateSbom(document, JSON.stringify(document)),
-    /componentsが空/,
-  );
+  assert.throws(() => validateSbom(document, JSON.stringify(document)), /componentsが空/);
 });
 
 test('Credentialを含むURLを拒否する', () => {
@@ -57,10 +51,7 @@ test('Credentialを含むURLを拒否する', () => {
     },
   });
 
-  assert.throws(
-    () => validateSbom(document, JSON.stringify(document)),
-    /Credential/,
-  );
+  assert.throws(() => validateSbom(document, JSON.stringify(document)), /Credential/);
 });
 
 test('CIで指定された禁止値を拒否する', () => {

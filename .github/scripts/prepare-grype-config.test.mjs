@@ -36,38 +36,23 @@ test('理由・期限・Issue・package条件をGrype設定へ反映する', () 
 });
 
 test('期限切れの例外を拒否する', () => {
-  assert.throws(
-    () => validateAllowlist([validEntry({ expires: '2026-07-23' })], now),
-    /期限切れ/,
-  );
+  assert.throws(() => validateAllowlist([validEntry({ expires: '2026-07-23' })], now), /期限切れ/);
 });
 
 test('90日を超える例外を拒否する', () => {
-  assert.throws(
-    () => validateAllowlist([validEntry({ expires: '2026-11-01' })], now),
-    /90日以内/,
-  );
+  assert.throws(() => validateAllowlist([validEntry({ expires: '2026-11-01' })], now), /90日以内/);
 });
 
 test('Issue URLがない例外を拒否する', () => {
-  assert.throws(
-    () => validateAllowlist([validEntry({ issue: '#123' })], now),
-    /Issue URL/,
-  );
+  assert.throws(() => validateAllowlist([validEntry({ issue: '#123' })], now), /Issue URL/);
 });
 
 test('短すぎる理由を拒否する', () => {
-  assert.throws(
-    () => validateAllowlist([validEntry({ reason: '一時許可' })], now),
-    /10文字以上/,
-  );
+  assert.throws(() => validateAllowlist([validEntry({ reason: '一時許可' })], now), /10文字以上/);
 });
 
 test('同じ脆弱性とpackage条件の重複を拒否する', () => {
-  assert.throws(
-    () => validateAllowlist([validEntry(), validEntry()], now),
-    /重複/,
-  );
+  assert.throws(() => validateAllowlist([validEntry(), validEntry()], now), /重複/);
 });
 
 test('package条件を省略したGHSA例外を許可する', () => {

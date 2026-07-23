@@ -24,8 +24,14 @@ const FORBIDDEN_PATTERNS = [
 ];
 
 export function validateSbom(document, rawText, extraForbiddenValues = []) {
-  assert(document && typeof document === 'object' && !Array.isArray(document), 'SBOMのルートはobjectである必要があります');
-  assert(document.bomFormat === 'CycloneDX', `SBOM形式がCycloneDXではありません: ${document.bomFormat ?? 'unknown'}`);
+  assert(
+    document && typeof document === 'object' && !Array.isArray(document),
+    'SBOMのルートはobjectである必要があります',
+  );
+  assert(
+    document.bomFormat === 'CycloneDX',
+    `SBOM形式がCycloneDXではありません: ${document.bomFormat ?? 'unknown'}`,
+  );
   assert(typeof document.specVersion === 'string', 'CycloneDX specVersionがありません');
   assert(Array.isArray(document.components), 'CycloneDX componentsがありません');
   assert(document.components.length > 0, 'CycloneDX componentsが空です');
@@ -36,11 +42,17 @@ export function validateSbom(document, rawText, extraForbiddenValues = []) {
   ];
 
   for (const value of literals) {
-    assert(!rawText.includes(value), `SBOMに禁止されたSecret候補が含まれています: ${value.slice(0, 16)}...`);
+    assert(
+      !rawText.includes(value),
+      `SBOMに禁止されたSecret候補が含まれています: ${value.slice(0, 16)}...`,
+    );
   }
 
   for (const pattern of FORBIDDEN_PATTERNS) {
-    assert(!pattern.test(rawText), `SBOMにCredentialを含む可能性がある文字列が含まれています: ${pattern}`);
+    assert(
+      !pattern.test(rawText),
+      `SBOMにCredentialを含む可能性がある文字列が含まれています: ${pattern}`,
+    );
   }
 
   return {
