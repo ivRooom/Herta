@@ -114,12 +114,12 @@ jobs:
 
             cd apps/bot
             node --input-type=module -e "
-              await import('@herta/db');
-              await import('@herta/logger');
-              await import('@herta/plugin-catalog');
-              await import('@herta/plugin-sdk');
-              await import('@herta/rule-engine');
-              await import('@herta/shared');
+              await import(\"@herta/db\");
+              await import(\"@herta/logger\");
+              await import(\"@herta/plugin-catalog\");
+              await import(\"@herta/plugin-sdk\");
+              await import(\"@herta/rule-engine\");
+              await import(\"@herta/shared\");
             "
           '
 
