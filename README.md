@@ -49,6 +49,13 @@ Guild Plugin Runtime Loader により Command / Event provider へ安全に接�
 個別 Plugin の障害は Core Command の動作を妨げず、設定変更時は Guild 単位で再同期できます。
 詳細は [docs/PLUGIN_RUNTIME.md](docs/PLUGIN_RUNTIME.md) を参照してください。
 
+## Quote Plugin
+
+Quote Plugin v1 は、Guild ごとに名言を登録・参照・ランダム表示・一覧・削除できる
+最初の実用公式 Plugin です。Studio からも検索・登録・編集・削除でき、作成・更新・削除は
+Audit Log へ記録されます。利用方法、設定項目、権限仕様は
+[docs/plugins/QUOTE.md](docs/plugins/QUOTE.md) を参照してください。
+
 ## 必要なツール
 
 | ツール                  | バージョン |
@@ -316,7 +323,7 @@ docker compose up -d postgres
 本番は **AWS Lightsail** 上で **Docker Compose** により稼働し、**GitHub Actions** で CI/CD を回します。
 
 - **CI** (`.github/workflows/ci.yml`): PR / push 時に Format・Lint・Typecheck・Test・Build を実行 (デプロイなし)
-- **Deploy** (`.github/workflows/deploy-production.yml`): `main` への push または手動実行 (`workflow_dispatch`) で、Lightsail へ SSH 接続し `git pull` → 共有アプリイメージを1回build → `up -d` → Origin / Cloudflare外部 health check を実行
+- **Deploy** (`.github/workflows/deploy-production.yml`): `main` への push または手動実行 (`workflow_dispatch`) で、GitHub runner 上でイメージを build して GHCR へ pushし、Lightsail で commit SHA イメージを pull・起動・検証
 - 本番 compose 定義: `docker-compose.prod.yml` / 共通イメージ: `Dockerfile`
 - 運用スクリプト: `deploy/scripts/` (`setup` / `start` / `stop` / `deploy` / `health-check` / `rollback`)
 - 本番経路: Cloudflare → Caddy (TLS 終端, Origin 証明書) → nginx → studio / api

@@ -33,9 +33,8 @@ export interface EnabledPlugin {
 }
 
 /**
- * Enabled guild plugins for the future Bot Plugin Loader.
- * The loader can use the returned manifest and config to initialize each
- * already-installed plugin without dynamically importing untrusted data.
+ * Guildで有効な公式Pluginと検証済み設定を返す。
+ * RuntimeはDB内のコードやpackage名を評価せず、静的Registryだけから実装を解決する。
  */
 export async function getEnabledPlugins(
   prisma: PrismaClient,

@@ -12,7 +12,7 @@ import { pingCommand } from './commands/ping.js';
 import { CommandRegistry } from './commands/registry.js';
 import { defaultGuildPluginCache } from './plugins/cache.js';
 import { GuildPluginLoader } from './plugins/loader.js';
-import { defaultPluginRegistry } from './plugins/registry.js';
+import { createDefaultPluginRegistry } from './plugins/registry.js';
 import { PluginRuntimeEventSubscriber } from './plugins/runtime-events.js';
 import { syncGuildCommands } from './plugins/sync.js';
 import type { SlashCommand } from './commands/registry.js';
@@ -21,6 +21,7 @@ import type { SlashCommand } from './commands/registry.js';
 export class HertaBot {
   private client: Client;
   private registry: CommandRegistry;
+  private readonly prisma = getPrismaClient();
   private readonly pluginCache = defaultGuildPluginCache;
   private readonly pluginLoader: GuildPluginLoader;
   private readonly pluginCommands = new Map<string, SlashCommand[]>();
@@ -33,8 +34,14 @@ export class HertaBot {
     });
     this.registry = new CommandRegistry(this.logger);
     this.registry.register(pingCommand);
+
+    const pluginRegistry = createDefaultPluginRegistry({
+      client: this.client,
+      prisma: this.prisma,
+      logger: this.logger,
+    });
     this.pluginLoader = new GuildPluginLoader({
-      registry: defaultPluginRegistry,
+      registry: pluginRegistry,
       cache: this.pluginCache,
       logger: this.logger,
       coreCommandNames: this.registry.getAll().map((command) => command.definition.name),
@@ -43,14 +50,15 @@ export class HertaBot {
           this.logger.warn({ guildId }, 'DATABASE_URLが未設定のためPlugin取得をスキップします');
           return [];
         }
-        return getEnabledPlugins(getPrismaClient(), guildId);
+        return getEnabledPlugins(this.prisma, guildId);
       },
     });
     this.runtimeEvents = new PluginRuntimeEventSubscriber(
       (guildId) => this.resyncGuild(guildId),
       this.logger,
     );
-    defaultPluginRegistry.validateAll(this.logger);
+    pluginRegistry.validateAll(this.logger);
+    pluginRegistry.validateAgainstCatalog(this.logger);
 
     this.setupEventHandlers();
   }

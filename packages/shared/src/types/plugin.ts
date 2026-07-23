@@ -19,6 +19,14 @@ export interface CommandDefinition {
   name: string;
   description: string;
   options?: CommandOption[];
+  subcommands?: CommandSubcommand[];
+}
+
+/** Slash Command サブコマンド定義 */
+export interface CommandSubcommand {
+  name: string;
+  description: string;
+  options?: CommandOption[];
 }
 
 /** Slash Command オプション */

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { auth } from '@/auth';
 import { getDiscordAccessToken } from '@/lib/session';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
@@ -48,6 +48,19 @@ export default async function PluginDetailPage({
           schema={plugin.manifest.configSchema}
         />
       </div>
+
+      {pluginId === 'quote' ? (
+        <Link
+          href={`/dashboard/guilds/${guildId}/plugins/quote/quotes`}
+          className="mt-4 flex items-center justify-between rounded-2xl border border-border bg-surface p-5 shadow-card transition-colors hover:border-primary/40"
+        >
+          <div>
+            <h2 className="font-medium">Quote管理</h2>
+            <p className="mt-1 text-sm text-muted">名言の検索・登録・編集・削除を行います。</p>
+          </div>
+          <ArrowRight className="h-5 w-5 text-muted" />
+        </Link>
+      ) : null}
     </div>
   );
 }
