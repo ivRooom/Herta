@@ -3,11 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
   "types": "./src/index.ts",
+  "files": ["dist"],
   "exports": {
-    ".": "./src/index.ts",
-    "./plugin-runtime-events": "./src/plugin-runtime-events.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./plugin-runtime-events": {
+      "types": "./src/plugin-runtime-events.ts",
+      "default": "./dist/plugin-runtime-events.js"
+    }
   },
   "scripts": {
     "build": "tsc",
