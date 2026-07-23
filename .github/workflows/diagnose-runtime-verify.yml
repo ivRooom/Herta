@@ -1,0 +1,71 @@
+name: Diagnose Runtime Verification
+
+on:
+  push:
+    branches: [security/minimize-runtime-image]
+    paths: [.github/workflows/diagnose-runtime-verify.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: security/minimize-runtime-image
+
+      - name: Runtime検証結果を保存
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --tag herta-app:diagnose . > /tmp/runtime-build.log 2>&1
+
+          set +e
+          docker run --rm --entrypoint sh herta-app:diagnose -lc '
+            set -eux
+            id
+            test "$(id -u)" != "0"
+            test -f apps/api/dist/main.js
+            test -f apps/bot/dist/main.js
+            test -f apps/worker/dist/main.js
+            test -f apps/studio/.next/standalone/apps/studio/server.js
+            test -x packages/db/node_modules/.bin/prisma
+            packages/db/node_modules/.bin/prisma --version
+            find apps/studio/.next/standalone/apps/studio/.prisma/client -maxdepth 1 -type f -name "libquery_engine-*.so.node" -print
+            test -n "$(find apps/studio/.next/standalone/apps/studio/.prisma/client -maxdepth 1 -type f -name "libquery_engine-*.so.node" -print -quit)"
+            for source_path in apps/api/src apps/bot/src apps/worker/src apps/studio/src packages/db/src packages/logger/src packages/plugin-catalog/src packages/plugin-sdk/src packages/queue/src packages/rule-engine/src packages/shared/src plugins/auto-response/src plugins/daily-content/src plugins/lfg/src plugins/moderation/src plugins/quote/src plugins/team-split/src; do
+              echo "checking absent: $source_path"
+              test ! -e "$source_path"
+            done
+            test ! -e docs
+            test ! -e examples
+            test ! -e deploy
+            test ! -e pnpm-lock.yaml
+            cd apps/bot
+            node --input-type=module -e "
+              await import('@herta/db');
+              await import('@herta/logger');
+              await import('@herta/plugin-catalog');
+              await import('@herta/plugin-sdk');
+              await import('@herta/rule-engine');
+              await import('@herta/shared');
+            "
+          ' > /tmp/runtime-verify.log 2>&1
+          status=$?
+          set -e
+
+          mkdir -p .ci
+          {
+            echo "exit_status=${status}"
+            echo
+            cat /tmp/runtime-verify.log
+          } > .ci/runtime-verify-output.txt
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .ci/runtime-verify-output.txt
+          git commit -m "ci(diag): 最小runtime検証結果を保存"
+          git push origin HEAD:security/minimize-runtime-image
