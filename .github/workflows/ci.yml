@@ -24,7 +24,7 @@ env:
 
 jobs:
   verify:
-    name: Format / Lint / Typecheck / Test / Build / Supply Chain
+    name: Format / Lint / Typecheck / Test / Build
     runs-on: ubuntu-latest
     timeout-minutes: 40
 
@@ -90,6 +90,10 @@ jobs:
             set -eu
 
             test "$(id -u)" != "0"
+            test ! -e /usr/local/lib/node_modules/npm
+            test ! -e /usr/local/lib/node_modules/corepack
+            test ! -e /usr/local/bin/npm
+            test ! -e /usr/local/bin/npx
             test -f apps/api/dist/main.js
             test -f apps/bot/dist/main.js
             test -f apps/worker/dist/main.js
