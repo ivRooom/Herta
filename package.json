@@ -22,6 +22,17 @@
     "db:studio": "dotenv -- pnpm --filter @herta/db studio",
     "db:seed": "dotenv -- pnpm --filter @herta/db seed"
   },
+  "pnpm": {
+    "overrides": {
+      "fast-uri": "3.1.4",
+      "js-yaml": "4.3.0",
+      "lodash": "4.18.1",
+      "multer": "2.2.0",
+      "next": "15.5.21",
+      "sharp": "0.35.0",
+      "undici": "6.27.0"
+    }
+  },
   "devDependencies": {
     "@types/node": "^26.1.0",
     "dotenv-cli": "^11.0.0",

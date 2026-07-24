@@ -86,6 +86,8 @@ Cloudflare側では以下も確認する。
 - builder / runtimeのmulti-stage構成
 - API、Studio、Bot、Workerをbuild時にcompile
 - Bot / Workerは本番で`tsx`を使わずcompiled JavaScriptを実行
+- Runtime imageはproduction依存、build成果物、Prisma migrationだけを保持
+- Runtime imageからworkspace source、test、docs、examples、開発設定を除外
 - アプリコンテナはnode公式imageの非rootユーザーで実行
 - `no-new-privileges`と`cap_drop: ALL`をアプリコンテナへ適用
 - `/tmp`だけをtmpfsとして提供
@@ -102,9 +104,8 @@ Cloudflare側では以下も確認する。
 
 残課題:
 
-- Runtime imageから開発依存と不要なsourceを除外する
 - read-only root filesystemの適用可否をサービスごとに検証する
-- base imageのdigest pinning、SBOM生成、image vulnerability scan
+- base imageのdigest pinning
 - 定期バックアップと復元訓練
 
 ## CI / Supply chain
@@ -116,16 +117,136 @@ pnpm format:check
 pnpm lint
 pnpm typecheck
 pnpm test
+node --test .github/scripts/*.test.mjs
 pnpm build
 docker compose --env-file .env.production.example -f docker-compose.prod.yml config --quiet
 docker build --tag herta-app:ci .
 ```
 
-CIはさらに、AOP用Caddyfileと有効化スクリプトの構文、Runtime UIDが0ではないこと、API / Bot / Workerのbuild成果物がimage内に存在することを確認する。
+CIはさらに、以下を検証する。
 
-DependabotでnpmとGitHub Actionsを定期更新し、PRごとに変更内容・Breaking Change・Security Advisoryを確認する。メジャー更新は他のメジャー更新と混在させず、個別に移行・検証する。
+- AOP用Caddyfileと有効化スクリプトの構文
+- Runtime UIDが0ではないこと
+- API / Bot / Worker / Studioのbuild成果物がimage内に存在すること
+- Prisma CLIとQuery EngineがRuntime image内で利用できること
+- workspace source、test、docsがRuntime imageへ含まれないこと
+- Runtime packageをcompiled JavaScriptからimportできること
+- CycloneDX SBOMを本番用imageから生成できること
+- SBOMにCredentialや既知のCI用ダミーSecretが含まれないこと
+- Grypeが既知のHigh / Critical脆弱性で失敗すること
+- 本番用imageにHigh / Critical脆弱性が残っていないこと
 
 GitHub Actionsの`permissions`はジョブに必要な最小権限だけを明示する。
+
+### SBOM
+
+CIでbuildした`herta-app:ci`をSyftでscanし、CycloneDX JSONを生成する。
+
+- ファイル名: `herta-app.cdx.json`
+- 対象: CIでbuildした本番用コンテナimage
+- Artifact保持期間: 30日
+- ArtifactにはGrypeのJSON reportとscanner version情報も含める
+- `.env.production`、証明書、秘密鍵、Token、Credential値をArtifactへ含めない
+
+SBOMは一時ディレクトリへ生成し、形式とSecret非包含の検証が成功した後だけArtifact用ディレクトリへ移動する。検証に失敗したSBOMはuploadしない。
+
+### Scannerの固定と更新
+
+SyftとGrypeはGitHub Actions内でversionを明示し、同じversionの公式release assetとchecksum fileを取得してSHA-256を検証してから実行する。
+
+現在の固定version:
+
+- Syft: `1.44.0`
+- Grype: `0.112.0`
+
+version変更時は以下を確認する。
+
+1. 公式release noteとSecurity Advisory
+2. SBOM形式の互換性
+3. Grype DB schemaの互換性
+4. 既知脆弱SBOMを使ったfailure gate自己テスト
+5. 本番image scan結果の差分
+6. Artifactの内容とSecret非包含
+
+固定versionは月1回、またはSyft / GrypeのSecurity Advisory公開時に見直す。
+
+### CVE failure gate
+
+本番用imageのGrype scanは、修正版の有無にかかわらず`High`以上をfailure対象とする。
+
+```bash
+grype herta-app:ci \
+  --config .ci/grype.yaml \
+  --fail-on high \
+  --output json \
+  --file security-artifacts/grype-report.json
+```
+
+検出結果は次の順序で対応する。
+
+1. 直接依存、base image、OS packageの更新で解消する
+2. 実際に到達可能か、使用される機能か、代替策があるかを確認する
+3. 直ちに解消できない場合だけ期限付き例外を申請する
+4. 解消後は同じPRでallowlistから削除する
+
+### 期限付きallowlist
+
+例外は`.github/security/grype-allowlist.json`で管理する。初期状態は空配列とする。
+
+```json
+[
+  {
+    "id": "CVE-2026-12345",
+    "reason": "修正版が未公開で、該当機能を本番では使用していないため一時的に許可する",
+    "expires": "2026-08-15",
+    "issue": "https://github.com/ivRooom/Herta/issues/123",
+    "package": {
+      "name": "example-package",
+      "type": "npm"
+    }
+  }
+]
+```
+
+必須条件:
+
+- `id`: `CVE-*`または`GHSA-*`
+- `reason`: 10文字以上の具体的な理由
+- `expires`: 登録時点から90日以内の未来日
+- `issue`: `ivRooom/Herta`内の追跡Issue URL
+- `package`: 同名packageへの過剰な除外を避ける場合に指定する
+
+CIはallowlistを検証し、有効な項目だけから`.ci/grype.yaml`を生成する。期限切れ、90日超過、理由不足、Issue URL不足、重複、未対応fieldがある場合はscan前にfailureとする。
+
+追跡Issueには以下を記載する。
+
+- 検出IDと対象package
+- 影響するimage / service
+- 現時点で修正できない理由
+- 到達可能性と想定される影響
+- 暫定緩和策
+- 対応担当者
+- 解消予定日
+- 再確認結果
+
+延長する場合はIssueへ再評価結果を追記し、新しい期限を設定する。理由なく期限だけを延長しない。
+
+### Dependabotとの役割分担
+
+Dependabotは次を担当する。
+
+- npm依存のversion更新PR
+- GitHub Actionsのversion更新PR
+- manifest / lockfile上で判明する依存更新
+
+SBOM / Grypeは次を担当する。
+
+- 実際にbuildされたRuntime imageの構成要素一覧
+- base imageとOS packageを含む既知脆弱性検出
+- transitive dependencyとcompiled artifactの継続監視
+- High / Criticalのmerge gate
+
+Dependabot PRが作成されていないことは、Runtime imageに脆弱性がないことを意味しない。反対にGrypeの検出だけで自動更新は行わず、Dependabotまたは修正PRで依存を更新する。
 
 ## インシデント時の初動
 

@@ -1,5 +1,5 @@
 # ============================================================
-# CI — Format / Lint / Typecheck / Test / Build
+# CI — Format / Lint / Typecheck / Test / Build / Supply Chain
 # ============================================================
 name: CI
 
@@ -16,11 +16,17 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  SYFT_VERSION: 1.44.0
+  GRYPE_VERSION: 0.112.0
+  SYFT_CHECK_FOR_APP_UPDATE: 'false'
+  GRYPE_CHECK_FOR_APP_UPDATE: 'false'
+
 jobs:
   verify:
     name: Format / Lint / Typecheck / Test / Build
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - uses: actions/checkout@v7
@@ -49,6 +55,15 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: Supply chain policy tests
+        run: node --test .github/scripts/*.test.mjs
+
+      - name: Validate vulnerability exceptions
+        run: |
+          node .github/scripts/prepare-grype-config.mjs \
+            .github/security/grype-allowlist.json \
+            .ci/grype.yaml
+
       - name: Build
         run: pnpm build
 
@@ -75,6 +90,10 @@ jobs:
             set -eu
 
             test "$(id -u)" != "0"
+            test ! -e /usr/local/lib/node_modules/npm
+            test ! -e /usr/local/lib/node_modules/corepack
+            test ! -e /usr/local/bin/npm
+            test ! -e /usr/local/bin/npx
             test -f apps/api/dist/main.js
             test -f apps/bot/dist/main.js
             test -f apps/worker/dist/main.js
@@ -135,3 +154,110 @@ jobs:
             echo "- Source / test / docs: excluded"
             echo "- Runtime user: non-root"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install pinned Syft and Grype
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          tool_dir="$RUNNER_TEMP/herta-security-tools"
+          download_dir="$RUNNER_TEMP/herta-security-downloads"
+          mkdir -p "$tool_dir" "$download_dir"
+
+          install_tool() {
+            local tool="$1"
+            local version="$2"
+            local asset="${tool}_${version}_linux_amd64.tar.gz"
+            local checksums="${tool}_${version}_checksums.txt"
+            local release_url="https://github.com/anchore/${tool}/releases/download/v${version}"
+
+            curl --fail --location --retry 3 --retry-delay 2 \
+              --output "$download_dir/$asset" \
+              "$release_url/$asset"
+            curl --fail --location --retry 3 --retry-delay 2 \
+              --output "$download_dir/$checksums" \
+              "$release_url/$checksums"
+
+            (
+              cd "$download_dir"
+              grep -E "[[:space:]]${asset}$" "$checksums" | sha256sum --check --strict -
+            )
+
+            tar -xzf "$download_dir/$asset" -C "$download_dir" "$tool"
+            install -m 0755 "$download_dir/$tool" "$tool_dir/$tool"
+          }
+
+          install_tool syft "$SYFT_VERSION"
+          install_tool grype "$GRYPE_VERSION"
+
+          echo "$tool_dir" >> "$GITHUB_PATH"
+          "$tool_dir/syft" version
+          "$tool_dir/grype" version
+
+      - name: Verify vulnerability failure gate
+        shell: bash
+        run: |
+          set +e
+          grype \
+            sbom:.github/security/fixtures/grype-known-vulnerable.cdx.json \
+            --fail-on high \
+            --output table \
+            > "$RUNNER_TEMP/grype-gate-self-test.txt" 2>&1
+          status=$?
+          set -e
+
+          cat "$RUNNER_TEMP/grype-gate-self-test.txt"
+
+          if [[ "$status" -eq 0 ]]; then
+            echo "::error::既知のHigh/Critical脆弱性でGrypeが失敗しませんでした"
+            exit 1
+          fi
+
+          if ! grep -Eq 'CVE-2021-44228|GHSA-jfh8-c2jp-5v3q' "$RUNNER_TEMP/grype-gate-self-test.txt"; then
+            echo "::error::Grype failure gateの自己テストでLog4Shellを検出できませんでした"
+            exit 1
+          fi
+
+      - name: Generate CycloneDX SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          staging_dir="$RUNNER_TEMP/herta-supply-chain"
+          artifact_dir="$GITHUB_WORKSPACE/security-artifacts"
+          mkdir -p "$staging_dir" "$artifact_dir"
+
+          syft herta-app:ci \
+            --output "cyclonedx-json=$staging_dir/herta-app.cdx.json"
+
+          node .github/scripts/assert-sbom-safe.mjs \
+            "$staging_dir/herta-app.cdx.json"
+
+          mv "$staging_dir/herta-app.cdx.json" \
+            "$artifact_dir/herta-app.cdx.json"
+
+          {
+            syft version
+            echo
+            grype version
+          } > "$artifact_dir/tool-versions.txt"
+
+      - name: Scan production image for High and Critical vulnerabilities
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          grype herta-app:ci \
+            --config .ci/grype.yaml \
+            --fail-on high \
+            --output json \
+            --file security-artifacts/grype-report.json
+
+      - name: Upload SBOM and vulnerability report
+        if: ${{ always() && hashFiles('security-artifacts/**') != '' }}
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: herta-supply-chain-${{ github.run_id }}-${{ github.run_attempt }}
+          path: security-artifacts/
+          if-no-files-found: error
+          retention-days: 30
