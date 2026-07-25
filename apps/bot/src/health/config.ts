@@ -33,9 +33,7 @@ function parseInteger(
   return parsed;
 }
 
-export function loadHealthConfig(
-  env: NodeJS.ProcessEnv = process.env,
-): HealthConfig {
+export function loadHealthConfig(env: NodeJS.ProcessEnv = process.env): HealthConfig {
   return {
     enabled: parseBoolean(env['HEALTH_ENABLED'], DEFAULTS.enabled),
     host: env['HEALTH_HOST']?.trim() || DEFAULTS.host,
