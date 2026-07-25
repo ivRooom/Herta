@@ -22,8 +22,6 @@ jobs:
       - name: Format changed health files
         run: |
           pnpm prettier --write \
-            .env.example \
-            .env.production.example \
             apps/bot/src/bot.ts \
             apps/bot/src/main.ts \
             apps/bot/src/health \
