@@ -33,6 +33,12 @@ describe('resolveOverallHealth', () => {
     expect(resolveOverallHealth(checks)).toBe('outage');
   });
 
+  it('Discord heartbeat警告ならdegradedを返す', () => {
+    const checks = healthyChecks();
+    checks.discord = { ...checks.discord, status: 'warning' };
+    expect(resolveOverallHealth(checks)).toBe('degraded');
+  });
+
   it('任意依存サービスの異常ならdegradedを返す', () => {
     const checks = healthyChecks();
     checks.redis = { status: 'error', message: 'dependency check failed' };
