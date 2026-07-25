@@ -1,8 +1,5 @@
 import { createLogger } from '@herta/logger';
-import {
-  HERTA_WORKER_HEARTBEAT_INTERVAL_MS,
-  HERTA_WORKER_HEARTBEAT_KEY,
-} from '@herta/shared';
+import { HERTA_WORKER_HEARTBEAT_INTERVAL_MS, HERTA_WORKER_HEARTBEAT_KEY } from '@herta/shared';
 import { Redis } from 'ioredis';
 
 const logger = createLogger({
