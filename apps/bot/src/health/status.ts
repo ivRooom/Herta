@@ -20,6 +20,7 @@ export function resolveOverallHealth(checks: HealthChecks): PublicServiceStatus 
   }
 
   if (
+    checks.discord.status === 'warning' ||
     checks.database.status === 'not_configured' ||
     isDegradedStatus(checks.database.status) ||
     isDegradedStatus(checks.redis.status) ||
