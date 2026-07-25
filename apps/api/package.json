@@ -44,6 +44,6 @@
     "@nestjs/schematics": "^10.2.3",
     "@types/passport-jwt": "^4.0.1",
     "typescript": "^5.7.2",
-    "vitest": "^3.0.0"
+    "vitest": "^3.2.7"
   }
 }
