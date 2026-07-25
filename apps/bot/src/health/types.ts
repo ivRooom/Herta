@@ -1,18 +1,9 @@
-export type PublicServiceStatus =
-  | 'operational'
-  | 'degraded'
-  | 'outage'
-  | 'maintenance'
-  | 'unknown';
+export type PublicServiceStatus = 'operational' | 'degraded' | 'outage' | 'maintenance' | 'unknown';
 
 export type InternalCheckStatus = 'ok' | 'warning' | 'error' | 'not_configured' | 'unknown';
 
 export type GatewayConnectionStatus =
-  | 'ready'
-  | 'connecting'
-  | 'reconnecting'
-  | 'disconnected'
-  | 'unknown';
+  'ready' | 'connecting' | 'reconnecting' | 'disconnected' | 'unknown';
 
 export interface PublicServiceIdentity {
   id: 'herta-discord-bot';
