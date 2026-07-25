@@ -5,14 +5,17 @@ on:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   format:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -22,17 +25,6 @@ jobs:
       - name: Format changed health files
         run: |
           pnpm prettier --write \
-            apps/bot/src/bot.ts \
-            apps/bot/src/main.ts \
-            apps/bot/src/health \
-            apps/worker/src/main.ts \
-            docker-compose.prod.yml \
-            docs/HEALTH.md \
-            packages/shared/src/health.ts \
-            packages/shared/src/index.ts
-      - name: Package formatted files
-        run: |
-          tar -czf formatted-health.tar.gz \
             .env.example \
             .env.production.example \
             apps/bot/src/bot.ts \
@@ -43,8 +35,25 @@ jobs:
             docs/HEALTH.md \
             packages/shared/src/health.ts \
             packages/shared/src/index.ts
-      - uses: actions/upload-artifact@v4.6.2
-        with:
-          name: formatted-health
-          path: formatted-health.tar.gz
-          retention-days: 1
+      - name: Commit formatted files
+        run: |
+          if git diff --quiet; then
+            echo "No formatting changes"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            .env.example \
+            .env.production.example \
+            apps/bot/src/bot.ts \
+            apps/bot/src/main.ts \
+            apps/bot/src/health \
+            apps/worker/src/main.ts \
+            docker-compose.prod.yml \
+            docs/HEALTH.md \
+            packages/shared/src/health.ts \
+            packages/shared/src/index.ts
+          git commit -m "style: ヘルスチェック実装を整形"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
