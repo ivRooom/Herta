@@ -119,6 +119,9 @@ services:
   bot:
     <<: *app
     command: node apps/bot/dist/main.js
+    ports:
+      # コンテナ内は0.0.0.0で待受するが、Lightsailホストではloopbackだけへ公開する。
+      - '${HEALTH_PUBLISH_HOST:-127.0.0.1}:${HEALTH_PUBLISH_PORT:-3000}:${HEALTH_PORT:-3000}'
     environment:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
@@ -127,6 +130,19 @@ services:
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN is required}
       DISCORD_GUILD_ID_DEV: ${DISCORD_GUILD_ID_DEV:-}
       BOT_LOG_LEVEL: ${BOT_LOG_LEVEL:-info}
+      HERTA_VERSION: ${HERTA_VERSION:-0.1.0}
+      HEALTH_ENABLED: ${HEALTH_ENABLED:-true}
+      HEALTH_HOST: ${HEALTH_HOST:-0.0.0.0}
+      HEALTH_PORT: ${HEALTH_PORT:-3000}
+      HEALTH_CHECK_TIMEOUT_MS: ${HEALTH_CHECK_TIMEOUT_MS:-3000}
+      HEALTH_CACHE_TTL_MS: ${HEALTH_CACHE_TTL_MS:-5000}
+      HEALTH_HEARTBEAT_STALE_MS: ${HEALTH_HEARTBEAT_STALE_MS:-120000}
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:$${HEALTH_PORT:-3000}/healthz > /dev/null']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   worker:
     <<: *app
@@ -136,6 +152,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
       WORKER_LOG_LEVEL: ${WORKER_LOG_LEVEL:-info}
+      HEALTH_HEARTBEAT_STALE_MS: ${HEALTH_HEARTBEAT_STALE_MS:-120000}
 
   caddy:
     image: caddy:2-alpine

@@ -5,8 +5,10 @@ import {
   MessageFlags,
   type ChatInputCommandInteraction,
 } from 'discord.js';
+import { Redis } from 'ioredis';
 import { getPrismaClient } from '@herta/db';
 import { getEnabledPlugins } from '@herta/plugin-catalog';
+import { HERTA_WORKER_HEARTBEAT_KEY } from '@herta/shared';
 import type { Logger } from '@herta/logger';
 import { pingCommand } from './commands/ping.js';
 import { CommandRegistry } from './commands/registry.js';
@@ -16,6 +18,8 @@ import { createDefaultPluginRegistry } from './plugins/registry.js';
 import { PluginRuntimeEventSubscriber } from './plugins/runtime-events.js';
 import { syncGuildCommands } from './plugins/sync.js';
 import type { SlashCommand } from './commands/registry.js';
+import { DiscordHealthTracker } from './health/discord-state.js';
+import type { DiscordHealthObservation } from './health/types.js';
 
 /** Herta Bot クライアント */
 export class HertaBot {
@@ -26,8 +30,19 @@ export class HertaBot {
   private readonly pluginLoader: GuildPluginLoader;
   private readonly pluginCommands = new Map<string, SlashCommand[]>();
   private readonly runtimeEvents: PluginRuntimeEventSubscriber;
+  private readonly discordHealth = new DiscordHealthTracker();
+  private readonly gatewayObservationIntervalMs: number;
+  private gatewayObservationTimer?: NodeJS.Timeout;
+  private healthRedis?: Redis;
 
-  constructor(private logger: Logger) {
+  constructor(
+    private logger: Logger,
+    heartbeatStaleMs = 120_000,
+  ) {
+    this.gatewayObservationIntervalMs = Math.max(
+      5_000,
+      Math.min(30_000, Math.floor(heartbeatStaleMs / 3)),
+    );
     this.client = new Client({
       // 現在のRuntimeはSlash Commandのみを扱うため、Privileged Intentは要求しない。
       intents: [GatewayIntentBits.Guilds],
@@ -65,6 +80,7 @@ export class HertaBot {
 
   private setupEventHandlers(): void {
     this.client.once(Events.ClientReady, async (client) => {
+      this.discordHealth.markReady();
       this.logger.info(
         { username: client.user.tag, guilds: client.guilds.cache.size },
         'Herta Bot がログインしました',
@@ -79,6 +95,19 @@ export class HertaBot {
       for (const guildId of guildIds) {
         await this.syncGuild(client, guildId);
       }
+    });
+
+    this.client.on(Events.ShardReady, () => {
+      this.discordHealth.markResumed();
+    });
+    this.client.on(Events.ShardResume, () => {
+      this.discordHealth.markResumed();
+    });
+    this.client.on(Events.ShardReconnecting, () => {
+      this.discordHealth.markReconnecting();
+    });
+    this.client.on(Events.ShardDisconnect, () => {
+      this.discordHealth.markDisconnected();
     });
 
     this.client.on(Events.GuildCreate, async (guild) => {
@@ -181,11 +210,32 @@ export class HertaBot {
     }
     await this.client.login(token);
 
+    this.discordHealth.observe(this.client);
+    this.gatewayObservationTimer = setInterval(() => {
+      this.discordHealth.observe(this.client);
+    }, this.gatewayObservationIntervalMs);
+    this.gatewayObservationTimer.unref();
+
     const redisUrl = process.env['REDIS_URL'];
     if (!redisUrl) {
       this.logger.warn('REDIS_URLが未設定のためPlugin Runtimeイベント購読を無効化します');
       return;
     }
+
+    this.healthRedis = new Redis(redisUrl, {
+      lazyConnect: true,
+      maxRetriesPerRequest: 1,
+      enableReadyCheck: true,
+    });
+    this.healthRedis.on('error', () => {
+      this.logger.warn('ヘルスチェック用Redis接続でエラーが発生しました');
+    });
+    try {
+      await this.healthRedis.connect();
+    } catch {
+      this.logger.warn('ヘルスチェック用Redisの初期接続に失敗しました');
+    }
+
     try {
       await this.runtimeEvents.start(redisUrl);
     } catch (error) {
@@ -196,8 +246,31 @@ export class HertaBot {
     }
   }
 
+  getDiscordHealthObservation(): DiscordHealthObservation {
+    return this.discordHealth.snapshot(this.client);
+  }
+
+  async probeDatabase(): Promise<void> {
+    await this.prisma.$queryRaw`SELECT 1`;
+  }
+
+  async probeRedis(): Promise<void> {
+    if (!this.healthRedis) throw new Error('Redis is not configured');
+    await this.healthRedis.ping();
+  }
+
+  async getWorkerHeartbeat(): Promise<string | null> {
+    if (!this.healthRedis) throw new Error('Redis is not configured');
+    return this.healthRedis.get(HERTA_WORKER_HEARTBEAT_KEY);
+  }
+
   /** Bot を停止する */
   async stop(): Promise<void> {
+    if (this.gatewayObservationTimer) {
+      clearInterval(this.gatewayObservationTimer);
+      this.gatewayObservationTimer = undefined;
+    }
+
     await this.runtimeEvents.stop();
     const guildIds = [...this.client.guilds.cache.keys()];
     const results = await Promise.allSettled(
@@ -210,7 +283,16 @@ export class HertaBot {
 
     this.pluginCache.invalidateAll();
     this.pluginCommands.clear();
+
+    const healthRedis = this.healthRedis;
+    this.healthRedis = undefined;
+    if (healthRedis) {
+      await healthRedis.quit().catch(() => healthRedis.disconnect());
+    }
+    await this.prisma.$disconnect().catch(() => undefined);
+
     this.client.destroy();
+    this.discordHealth.markDisconnected();
     this.logger.info('Bot を停止しました');
   }
 
