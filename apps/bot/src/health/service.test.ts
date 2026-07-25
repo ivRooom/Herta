@@ -15,7 +15,9 @@ const config: HealthConfig = {
 const logger = createLogger({ name: 'health-test', level: 'silent' });
 const now = new Date('2026-07-25T11:30:00.000Z');
 
-function discordObservation(overrides: Partial<DiscordHealthObservation> = {}): DiscordHealthObservation {
+function discordObservation(
+  overrides: Partial<DiscordHealthObservation> = {},
+): DiscordHealthObservation {
   return {
     connected: true,
     ready: true,
