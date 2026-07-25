@@ -1,0 +1,52 @@
+name: Format Health Snapshot
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format changed health files
+        run: |
+          pnpm prettier --write \
+            .env.example \
+            .env.production.example \
+            apps/bot/src/bot.ts \
+            apps/bot/src/main.ts \
+            apps/bot/src/health \
+            apps/worker/src/main.ts \
+            docker-compose.prod.yml \
+            docs/HEALTH.md \
+            packages/shared/src/health.ts \
+            packages/shared/src/index.ts
+      - name: Package formatted files
+        run: |
+          tar -czf formatted-health.tar.gz \
+            .env.example \
+            .env.production.example \
+            apps/bot/src/bot.ts \
+            apps/bot/src/main.ts \
+            apps/bot/src/health \
+            apps/worker/src/main.ts \
+            docker-compose.prod.yml \
+            docs/HEALTH.md \
+            packages/shared/src/health.ts \
+            packages/shared/src/index.ts
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: formatted-health
+          path: formatted-health.tar.gz
+          retention-days: 1
