@@ -108,11 +108,7 @@ export class HealthHttpServer {
         this.options.config.checkTimeoutMs + 250,
       );
     } catch {
-      health = createUnknownHealthResponse(
-        this.now(),
-        this.options.version,
-        this.uptimeSeconds(),
-      );
+      health = createUnknownHealthResponse(this.now(), this.options.version, this.uptimeSeconds());
     }
 
     this.sendJson(response, HTTP_STATUS_BY_HEALTH[health.status], health);
