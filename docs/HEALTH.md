@@ -33,17 +33,17 @@ Botはこの時刻を取得し、`HEALTH_HEARTBEAT_STALE_MS` を超えた場合�
 
 ## 環境変数
 
-| 変数 | 既定値 | 説明 |
-|---|---:|---|
-| `HEALTH_ENABLED` | `true` | HTTPエンドポイントを有効化する |
-| `HEALTH_HOST` | `127.0.0.1` | Botプロセスの待受アドレス |
-| `HEALTH_PORT` | `3000` | Botプロセスの待受ポート |
-| `HEALTH_CHECK_TIMEOUT_MS` | `3000` | 各依存チェックのタイムアウト |
-| `HEALTH_CACHE_TTL_MS` | `5000` | 同時・連続アクセスをまとめるキャッシュ時間 |
-| `HEALTH_HEARTBEAT_STALE_MS` | `120000` | Discord・Worker heartbeatの期限 |
-| `HERTA_VERSION` | `0.1.0` | 公開レスポンスへ返すアプリバージョン |
-| `HEALTH_PUBLISH_HOST` | `127.0.0.1` | Docker Composeでホスト側にpublishするアドレス |
-| `HEALTH_PUBLISH_PORT` | `3000` | Docker Composeでホスト側にpublishするポート |
+| 変数                        |      既定値 | 説明                                          |
+| --------------------------- | ----------: | --------------------------------------------- |
+| `HEALTH_ENABLED`            |      `true` | HTTPエンドポイントを有効化する                |
+| `HEALTH_HOST`               | `127.0.0.1` | Botプロセスの待受アドレス                     |
+| `HEALTH_PORT`               |      `3000` | Botプロセスの待受ポート                       |
+| `HEALTH_CHECK_TIMEOUT_MS`   |      `3000` | 各依存チェックのタイムアウト                  |
+| `HEALTH_CACHE_TTL_MS`       |      `5000` | 同時・連続アクセスをまとめるキャッシュ時間    |
+| `HEALTH_HEARTBEAT_STALE_MS` |    `120000` | Discord・Worker heartbeatの期限               |
+| `HERTA_VERSION`             |     `0.1.0` | 公開レスポンスへ返すアプリバージョン          |
+| `HEALTH_PUBLISH_HOST`       | `127.0.0.1` | Docker Composeでホスト側にpublishするアドレス |
+| `HEALTH_PUBLISH_PORT`       |      `3000` | Docker Composeでホスト側にpublishするポート   |
 
 `HEALTH_HOST=0.0.0.0` はDockerコンテナ内部でのみ使用してください。ホスト側は必ず `HEALTH_PUBLISH_HOST=127.0.0.1` にします。
 
@@ -128,13 +128,13 @@ Botはこの時刻を取得し、`HEALTH_HEARTBEAT_STALE_MS` を超えた場合�
 
 HTTPコードは次の通りです。
 
-| status | HTTP |
-|---|---:|
+| status        |  HTTP |
+| ------------- | ----: |
 | `operational` | `200` |
-| `degraded` | `200` |
+| `degraded`    | `200` |
 | `maintenance` | `200` |
-| `outage` | `503` |
-| `unknown` | `503` |
+| `outage`      | `503` |
+| `unknown`     | `503` |
 
 ## ローカル確認
 
