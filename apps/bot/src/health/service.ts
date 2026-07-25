@@ -148,8 +148,7 @@ export class HertaHealthService {
               heartbeat_source: 'unknown',
               message: 'dependency check failed',
             },
-      database:
-        databaseResult.status === 'fulfilled' ? databaseResult.value : unknownDependency(),
+      database: databaseResult.status === 'fulfilled' ? databaseResult.value : unknownDependency(),
       redis: redisResult.status === 'fulfilled' ? redisResult.value : unknownDependency(),
       worker: workerResult.status === 'fulfilled' ? workerResult.value : unknownDependency(),
     };
