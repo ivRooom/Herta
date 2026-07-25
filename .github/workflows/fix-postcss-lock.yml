@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Update PostCSS override and lockfile
+      - name: Set PostCSS override
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
@@ -32,8 +32,8 @@ jobs:
           packageJson.pnpm.overrides.postcss = '8.5.22';
           fs.writeFileSync(path, `${JSON.stringify(packageJson, null, 2)}\n`);
           NODE
-          pnpm install --lockfile-only --no-frozen-lockfile
-          pnpm prettier --write package.json pnpm-lock.yaml
+      - name: Update lockfile
+        run: pnpm install --lockfile-only --no-frozen-lockfile
       - name: Commit dependency fix
         run: |
           if git diff --quiet; then
