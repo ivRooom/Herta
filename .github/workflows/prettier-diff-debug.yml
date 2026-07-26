@@ -23,8 +23,13 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Prettierが要求する差分を表示
-        run: |
-          pnpm exec prettier --write docs/BACKUP_MONITORING_IAC.md
-          git diff -- docs/BACKUP_MONITORING_IAC.md
-          test -z "$(git status --short docs/BACKUP_MONITORING_IAC.md)"
+      - name: Run Prettier
+        run: pnpm exec prettier --write docs/BACKUP_MONITORING_IAC.md
+
+      - name: Upload formatted file
+        uses: actions/upload-artifact@v4
+        with:
+          name: prettier-formatted-runbook
+          path: docs/BACKUP_MONITORING_IAC.md
+          if-no-files-found: error
+          retention-days: 1
