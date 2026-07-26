@@ -68,7 +68,32 @@ export type BotHealthResult =
       fetchedAt: string;
     };
 
-const REQUEST_TIMEOUT_MS = 4_000;
+const DEFAULT_BOT_CHECK_TIMEOUT_MS = 3_000;
+const REQUEST_TIMEOUT_BUFFER_MS = 1_000;
+const MIN_REQUEST_TIMEOUT_MS = 500;
+const MAX_REQUEST_TIMEOUT_MS = 60_000;
+
+function parseTimeout(value: string | undefined): number | null {
+  if (!value?.trim()) return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < MIN_REQUEST_TIMEOUT_MS) return null;
+  return Math.min(Math.floor(parsed), MAX_REQUEST_TIMEOUT_MS);
+}
+
+/**
+ * 明示値がなければBot側の依存チェック待機時間へ余裕を足して使用する。
+ * StudioがBotの構造化された障害応答より先に接続を打ち切ることを防ぐ。
+ */
+export function resolveBotHealthRequestTimeoutMs(
+  requestTimeout = process.env['BOT_HEALTH_REQUEST_TIMEOUT_MS'],
+  botCheckTimeout = process.env['HEALTH_CHECK_TIMEOUT_MS'],
+): number {
+  const explicitTimeout = parseTimeout(requestTimeout);
+  if (explicitTimeout !== null) return explicitTimeout;
+
+  const configuredBotTimeout = parseTimeout(botCheckTimeout) ?? DEFAULT_BOT_CHECK_TIMEOUT_MS;
+  return Math.min(configuredBotTimeout + REQUEST_TIMEOUT_BUFFER_MS, MAX_REQUEST_TIMEOUT_MS);
+}
 
 export function parseBotHealthResponse(value: unknown): BotHealthResponse | null {
   const parsed = botHealthResponseSchema.safeParse(value);
@@ -88,7 +113,7 @@ export async function getBotHealth(): Promise<BotHealthResult> {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), resolveBotHealthRequestTimeoutMs());
 
   try {
     const response = await fetch(healthUrl, {
