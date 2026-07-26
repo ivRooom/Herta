@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Activity, ArrowRight, ServerCog, ShieldCheck } from 'lucide-react';
+import { Activity, ArrowRight, BarChart3, ServerCog, ShieldCheck } from 'lucide-react';
 import { auth } from '@/auth';
 import { getDiscordAccessToken } from '@/lib/session';
 import { getManageableGuilds } from '@/lib/guilds';
@@ -36,7 +36,7 @@ export default async function DashboardPage() {
         </div>
       ) : null}
 
-      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {accessToken ? (
           <Link
             href="/dashboard/guilds"
@@ -64,6 +64,20 @@ export default async function DashboardPage() {
           <h2 className="mt-4 font-medium">Bot稼働状況</h2>
           <p className="mt-1 text-sm leading-relaxed text-muted">
             Discord、DB、Redis、Workerの状態をまとめて確認します。
+          </p>
+        </Link>
+
+        <Link
+          href="/dashboard/analytics"
+          className="group rounded-2xl border border-border bg-surface p-6 shadow-card transition-colors hover:border-primary/40"
+        >
+          <div className="flex items-center justify-between">
+            <BarChart3 className="h-6 w-6 text-primary" aria-hidden="true" />
+            <ArrowRight className="h-4 w-4 text-muted transition-transform group-hover:translate-x-0.5" />
+          </div>
+          <h2 className="mt-4 font-medium">Bot利用状況</h2>
+          <p className="mt-1 text-sm leading-relaxed text-muted">
+            コマンド実行数、成功率、利用傾向、直近の失敗を確認します。
           </p>
         </Link>
 
