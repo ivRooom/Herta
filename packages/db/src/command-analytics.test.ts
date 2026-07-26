@@ -5,7 +5,7 @@ import {
   fillCommandUsageDays,
   normalizeCommandExecutionInput,
   startOfJstDay,
-} from './command-analytics.ts';
+} from './command-analytics.js';
 
 test('コマンド実行情報から不要な空白を除去し処理時間を制限する', () => {
   const normalized = normalizeCommandExecutionInput({
