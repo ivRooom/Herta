@@ -1,0 +1,12 @@
+[Unit]
+Description=Run Herta backup restore verification weekly
+Documentation=https://github.com/ivRooom/Herta/blob/main/docs/BACKUP_RESTORE_VERIFICATION.md
+
+[Timer]
+OnCalendar=Mon *-*-* 03:30:00 Asia/Tokyo
+Persistent=true
+RandomizedDelaySec=15m
+Unit=herta-backup-restore-verification.service
+
+[Install]
+WantedBy=timers.target

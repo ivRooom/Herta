@@ -1,0 +1,71 @@
+# ============================================================
+# Backup Restore Verification CI
+# ============================================================
+name: Backup Restore Verification CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'deploy/scripts/verify-backup-restore.sh'
+      - 'deploy/scripts/verify-backup-restore.test.sh'
+      - 'deploy/systemd/herta-backup-restore-verification.service'
+      - 'deploy/systemd/herta-backup-restore-verification.timer'
+      - 'deploy/systemd/backup-restore-verification.env.example'
+      - 'docs/BACKUP_RESTORE_VERIFICATION.md'
+      - '.github/workflows/backup-restore-verification-ci.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'deploy/scripts/verify-backup-restore.sh'
+      - 'deploy/scripts/verify-backup-restore.test.sh'
+      - 'deploy/systemd/herta-backup-restore-verification.service'
+      - 'deploy/systemd/herta-backup-restore-verification.timer'
+      - 'deploy/systemd/backup-restore-verification.env.example'
+      - 'docs/BACKUP_RESTORE_VERIFICATION.md'
+      - '.github/workflows/backup-restore-verification-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-restore-verification-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Shell and systemd validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Shell構文を検証
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n deploy/scripts/verify-backup-restore.sh
+          bash -n deploy/scripts/verify-backup-restore.test.sh
+
+      - name: 外部依存をモックして動作を検証
+        shell: bash
+        run: bash deploy/scripts/verify-backup-restore.test.sh
+
+      - name: systemd unitを検証
+        shell: bash
+        run: |
+          set -euo pipefail
+          systemd-analyze verify \
+            deploy/systemd/herta-backup-restore-verification.service \
+            deploy/systemd/herta-backup-restore-verification.timer
+
+      - name: 安全設定を検証
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q -- '--network none' deploy/scripts/verify-backup-restore.sh
+          grep -q 'flock -n' deploy/scripts/verify-backup-restore.sh
+          grep -q 'docker rm --force' deploy/scripts/verify-backup-restore.sh
+          grep -q 'RESTORE_MEMORY_LIMIT' deploy/scripts/verify-backup-restore.sh
+          grep -q 'RESTORE_CPU_LIMIT' deploy/scripts/verify-backup-restore.sh

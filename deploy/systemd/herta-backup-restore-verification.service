@@ -1,0 +1,24 @@
+[Unit]
+Description=Herta PostgreSQL backup restore verification
+Documentation=https://github.com/ivRooom/Herta/blob/main/docs/BACKUP_RESTORE_VERIFICATION.md
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+ConditionPathExists=/app/herta/deploy/scripts/verify-backup-restore.sh
+
+[Service]
+Type=oneshot
+User=ubuntu
+SupplementaryGroups=docker
+WorkingDirectory=/app/herta
+Environment=HOME=/home/ubuntu
+EnvironmentFile=-/etc/herta/backup-restore-verification.env
+ExecStart=/bin/bash /app/herta/deploy/scripts/verify-backup-restore.sh
+TimeoutStartSec=2h
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
