@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Activity } from 'lucide-react';
+import { Activity, BarChart3 } from 'lucide-react';
 import { redirect } from 'next/navigation';
 import { auth } from '@/auth';
 import { SignOutButton } from '@/components/sign-out-button';
@@ -45,10 +45,24 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 <Activity className="h-3.5 w-3.5" aria-hidden="true" />
                 稼働状況
               </Link>
+              <Link
+                href="/dashboard/analytics"
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-muted transition-colors hover:text-foreground"
+              >
+                <BarChart3 className="h-3.5 w-3.5" aria-hidden="true" />
+                利用状況
+              </Link>
             </nav>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Link
+              href="/dashboard/analytics"
+              className="rounded-lg p-2 text-muted transition-colors hover:bg-surface hover:text-foreground sm:hidden"
+              aria-label="Bot利用状況"
+            >
+              <BarChart3 className="h-4 w-4" aria-hidden="true" />
+            </Link>
             <Link
               href="/dashboard/operations"
               className="rounded-lg p-2 text-muted transition-colors hover:bg-surface hover:text-foreground sm:hidden"
