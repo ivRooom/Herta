@@ -45,6 +45,15 @@ grep -q 'HEALTH_URLは既定でloopback' "${TEST_ROOT}/malicious-health.stderr"
 echo 'PASS: localhostを前方一致させた外部health URLを拒否'
 
 run_invalid_url_case \
+  'http://127.0.0.1:3000@evil.example/healthz' \
+  'https://status-ingest.example.test/v1/observations' \
+  false \
+  "${TEST_ROOT}/userinfo-health"
+
+grep -q 'HEALTH_URLは既定でloopback' "${TEST_ROOT}/userinfo-health.stderr"
+echo 'PASS: userinfoでloopbackに偽装した外部health URLを拒否'
+
+run_invalid_url_case \
   'http://127.0.0.1:3000/healthz' \
   'http://localhost.evil.example:8080/v1/observations' \
   true \
@@ -53,4 +62,32 @@ run_invalid_url_case \
 grep -q 'STATUS_INGEST_URLにはHTTPS URL' "${TEST_ROOT}/malicious-ingest.stderr"
 echo 'PASS: localhostを前方一致させたHTTP ingest URLを拒否'
 
-echo 'すべてのstatus-agent URL境界テストに成功しました。'
+run_invalid_url_case \
+  'http://127.0.0.1:3000/healthz' \
+  'http://127.0.0.1:8080@evil.example/v1/observations' \
+  true \
+  "${TEST_ROOT}/userinfo-ingest"
+
+grep -q 'STATUS_INGEST_URLにはHTTPS URL' "${TEST_ROOT}/userinfo-ingest.stderr"
+echo 'PASS: userinfoでloopbackに偽装したHTTP ingest URLを拒否'
+
+set +e
+env \
+  HEALTH_URL='http://127.0.0.1:3000/healthz' \
+  STATUS_INGEST_URL='https://status-ingest.example.test/v1/observations' \
+  STATUS_SIGNING_SECRET='change-me-use-openssl-rand-hex-32' \
+  STATUS_LOCK_FILE="${TEST_ROOT}/agent.lock" \
+  STATUS_DRY_RUN=true \
+  bash "${AGENT_SCRIPT}" >"${TEST_ROOT}/placeholder.stdout" 2>"${TEST_ROOT}/placeholder.stderr"
+PLACEHOLDER_STATUS=$?
+set -e
+
+if [ "${PLACEHOLDER_STATUS}" -ne 2 ]; then
+  echo 'FAIL: 公開済みplaceholder Secretを拒否できませんでした' >&2
+  exit 1
+fi
+
+grep -q '実Secretを設定してください' "${TEST_ROOT}/placeholder.stderr"
+echo 'PASS: 公開済みplaceholder Secretを拒否'
+
+echo 'すべてのstatus-agent URL・Secret境界テストに成功しました。'
