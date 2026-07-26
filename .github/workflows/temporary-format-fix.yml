@@ -1,15 +1,14 @@
-name: Temporary Format Fix
+name: Temporary Prettier Patch
 
 on:
-  push:
-    branches: [feat/backup-restore-verification]
+  pull_request:
+    branches: [main]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  format:
-    if: github.actor != 'github-actions[bot]'
+  generate:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -25,28 +24,17 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: 追加ファイルをPrettierで整形
-        run: |
-          pnpm exec prettier --write \
-            .github/workflows/backup-restore-verification-ci.yml \
-            .github/workflows/temporary-format-fix.yml \
-            docs/BACKUP_RESTORE_VERIFICATION.md
-
-      - name: 整形結果をコミット
+      - name: Prettier差分を生成
         shell: bash
         run: |
           set -euo pipefail
+          pnpm format
+          git diff --binary > prettier.patch
 
-          if git diff --quiet; then
-            echo '整形差分はありません。'
-            exit 0
-          fi
-
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add \
-            .github/workflows/backup-restore-verification-ci.yml \
-            .github/workflows/temporary-format-fix.yml \
-            docs/BACKUP_RESTORE_VERIFICATION.md
-          git commit -m '追加ファイルをPrettierで整形'
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+      - name: Prettier差分をアップロード
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: prettier-patch
+          path: prettier.patch
+          if-no-files-found: error
+          retention-days: 1
