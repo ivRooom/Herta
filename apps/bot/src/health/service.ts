@@ -157,7 +157,8 @@ export class HertaHealthService {
 
     let guildCount = 0;
     try {
-      guildCount = Math.max(0, Math.floor(this.options.probes.guildCount()));
+      const rawGuildCount = this.options.probes.guildCount();
+      guildCount = Number.isFinite(rawGuildCount) ? Math.max(0, Math.floor(rawGuildCount)) : 0;
     } catch {
       guildCount = 0;
     }
