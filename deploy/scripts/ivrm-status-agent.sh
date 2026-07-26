@@ -74,7 +74,27 @@ require_non_negative_integer() {
 
 is_loopback_http_url() {
   local value="$1"
-  [[ "${value}" =~ ^http://(127\.0\.0\.1|localhost)(:[0-9]+)?(/|$) ]]
+
+  python3 - "${value}" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+try:
+    parsed = urlsplit(sys.argv[1])
+    port = parsed.port
+except (ValueError, IndexError):
+    raise SystemExit(1)
+
+valid = (
+    parsed.scheme.lower() == "http"
+    and parsed.hostname in {"127.0.0.1", "::1", "localhost"}
+    and parsed.username is None
+    and parsed.password is None
+    and port is not None
+    and 1 <= port <= 65535
+)
+raise SystemExit(0 if valid else 1)
+PY
 }
 
 for command_name in curl jq python3 flock mktemp date stat mkdir rm; do
@@ -86,8 +106,8 @@ require_positive_integer STATUS_MAX_TIME_SECONDS "${STATUS_MAX_TIME_SECONDS}"
 require_non_negative_integer STATUS_RETRY_COUNT "${STATUS_RETRY_COUNT}"
 require_positive_integer STATUS_MAX_HEALTH_BYTES "${STATUS_MAX_HEALTH_BYTES}"
 
-if [ "${#STATUS_SIGNING_SECRET}" -lt 32 ]; then
-  fail "STATUS_SIGNING_SECRETは32文字以上にしてください。" 2
+if [ "${#STATUS_SIGNING_SECRET}" -lt 32 ] || [ "${STATUS_SIGNING_SECRET}" = "change-me-use-openssl-rand-hex-32" ]; then
+  fail "STATUS_SIGNING_SECRETには32文字以上の実Secretを設定してください。" 2
 fi
 
 if ! [[ "${STATUS_SERVICE_ID}" =~ ^[a-z0-9][a-z0-9._-]{2,63}$ ]]; then
@@ -118,7 +138,6 @@ fi
 TEMP_DIR="$(mktemp -d /var/tmp/herta-status-agent.XXXXXX)"
 HEALTH_FILE="${TEMP_DIR}/health.json"
 PAYLOAD_FILE="${TEMP_DIR}/payload.json"
-RESPONSE_FILE="${TEMP_DIR}/response.txt"
 
 log INFO "内部ヘルスを取得します。"
 set +e
@@ -130,6 +149,7 @@ HEALTH_HTTP_CODE="$(
     --write-out '%{http_code}' \
     --connect-timeout "${STATUS_CONNECT_TIMEOUT_SECONDS}" \
     --max-time "${STATUS_MAX_TIME_SECONDS}" \
+    --max-filesize "${STATUS_MAX_HEALTH_BYTES}" \
     --header 'Accept: application/json' \
     "${HEALTH_URL}"
 )"
@@ -160,6 +180,10 @@ if ! jq -e \
     .service.id == $service_id and
     (.status | IN("operational", "degraded", "outage", "maintenance", "unknown")) and
     (.checked_at | type == "string" and length > 0) and
+    (
+      .version == null or
+      (.version | type == "string" and length >= 1 and length <= 64 and test("^[0-9A-Za-z._+-]+$"))
+    ) and
     (.checks | type == "object") and
     (.checks.process.status | IN("ok", "warning", "error", "not_configured", "unknown")) and
     (.checks.discord.status | IN("ok", "warning", "error", "not_configured", "unknown")) and
@@ -241,7 +265,7 @@ INGEST_HTTP_CODE="$(
   curl \
     --silent \
     --show-error \
-    --output "${RESPONSE_FILE}" \
+    --output /dev/null \
     --write-out '%{http_code}' \
     --request POST \
     --proto "${CURL_PROTOCOLS}" \
