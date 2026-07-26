@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { describeAuditEvent, parseAuditLogQuery } from './audit-logs.ts';
+import { describeAuditEvent, parseAuditLogQuery, resolveAuditLogPage } from './audit-logs.ts';
 
 test('監査ログ検索条件を正規化する', () => {
   const query = parseAuditLogQuery(
@@ -41,6 +41,28 @@ test('不正な検索条件を安全な既定値へ戻す', () => {
   assert.equal(query.severity, 'all');
   assert.equal(query.from, null);
   assert.equal(query.fromInput, '');
+});
+
+test('存在しないカレンダー日付を検索条件から除外する', () => {
+  const query = parseAuditLogQuery(
+    new URLSearchParams({
+      from: '2026-02-29',
+      to: '2026-04-31',
+    }),
+  );
+
+  assert.equal(query.fromInput, '');
+  assert.equal(query.toInput, '');
+  assert.equal(query.from, null);
+  assert.equal(query.toExclusive, null);
+});
+
+test('要求ページを利用可能なページ範囲へ補正する', () => {
+  assert.equal(resolveAuditLogPage(8, 3), 3);
+  assert.equal(resolveAuditLogPage(2, 3), 2);
+  assert.equal(resolveAuditLogPage(-1, 3), 1);
+  assert.equal(resolveAuditLogPage(Number.NaN, 3), 1);
+  assert.equal(resolveAuditLogPage(1, 0), 1);
 });
 
 test('Quote操作は本文を含めず安全な要約へ変換する', () => {
