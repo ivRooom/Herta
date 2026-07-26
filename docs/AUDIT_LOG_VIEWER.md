@@ -156,7 +156,7 @@ docker compose \
 
 ### 4. 既存ログの確認
 
-監査ログ件数をPostgreSQLで確認します。
+監査ログの最新20件をPostgreSQLで確認します。
 
 ```bash
 cd /app/herta
