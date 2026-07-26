@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, ServerCog, ShieldCheck } from 'lucide-react';
+import { Activity, ArrowRight, ServerCog, ShieldCheck } from 'lucide-react';
 import { auth } from '@/auth';
 import { getDiscordAccessToken } from '@/lib/session';
 import { getManageableGuilds } from '@/lib/guilds';
@@ -27,21 +27,23 @@ export default async function DashboardPage() {
         こんにちは、{session?.user?.name} さん
       </h1>
       <p className="mt-2 text-sm text-muted">
-        管理する Discord サーバーを選択して、Herta の設定を行いましょう。
+        Discordサーバーの設定とHerta Botの運用状態を管理できます。
       </p>
 
       {!accessToken ? (
         <div className="mt-8">
           <ReconnectNotice />
         </div>
-      ) : (
-        <div className="mt-8 grid gap-4 sm:grid-cols-2">
+      ) : null}
+
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {accessToken ? (
           <Link
             href="/dashboard/guilds"
             className="group rounded-2xl border border-border bg-surface p-6 shadow-card transition-colors hover:border-primary/40"
           >
             <div className="flex items-center justify-between">
-              <ServerCog className="h-6 w-6 text-primary" />
+              <ServerCog className="h-6 w-6 text-primary" aria-hidden="true" />
               <ArrowRight className="h-4 w-4 text-muted transition-transform group-hover:translate-x-0.5" />
             </div>
             <h2 className="mt-4 font-medium">管理可能なサーバー</h2>
@@ -49,16 +51,32 @@ export default async function DashboardPage() {
               {guildCount === null ? '一覧を表示' : `${guildCount} 件のサーバーを管理できます`}
             </p>
           </Link>
+        ) : null}
 
+        <Link
+          href="/dashboard/operations"
+          className="group rounded-2xl border border-border bg-surface p-6 shadow-card transition-colors hover:border-primary/40"
+        >
+          <div className="flex items-center justify-between">
+            <Activity className="h-6 w-6 text-primary" aria-hidden="true" />
+            <ArrowRight className="h-4 w-4 text-muted transition-transform group-hover:translate-x-0.5" />
+          </div>
+          <h2 className="mt-4 font-medium">Bot稼働状況</h2>
+          <p className="mt-1 text-sm leading-relaxed text-muted">
+            Discord、DB、Redis、Workerの状態をまとめて確認します。
+          </p>
+        </Link>
+
+        {accessToken ? (
           <div className="rounded-2xl border border-border bg-surface p-6 shadow-card">
-            <ShieldCheck className="h-6 w-6 text-primary" />
+            <ShieldCheck className="h-6 w-6 text-primary" aria-hidden="true" />
             <h2 className="mt-4 font-medium">権限について</h2>
             <p className="mt-1 text-sm leading-relaxed text-muted">
               「管理者」または「サーバー管理」権限を持つサーバーのみが表示されます。
             </p>
           </div>
-        </div>
-      )}
+        ) : null}
+      </div>
     </div>
   );
 }
