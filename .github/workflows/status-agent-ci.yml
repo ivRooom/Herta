@@ -1,0 +1,88 @@
+# ============================================================
+# ivrm-status-agent CI
+# ============================================================
+name: Status Agent CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'deploy/scripts/ivrm-status-agent.sh'
+      - 'deploy/scripts/ivrm-status-agent.test.sh'
+      - 'deploy/systemd/herta-status-agent.service'
+      - 'deploy/systemd/herta-status-agent.timer'
+      - 'deploy/systemd/status-agent.env.example'
+      - 'docs/STATUS_AGENT.md'
+      - 'docs/HEALTH.md'
+      - '.github/workflows/status-agent-ci.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'deploy/scripts/ivrm-status-agent.sh'
+      - 'deploy/scripts/ivrm-status-agent.test.sh'
+      - 'deploy/systemd/herta-status-agent.service'
+      - 'deploy/systemd/herta-status-agent.timer'
+      - 'deploy/systemd/status-agent.env.example'
+      - 'docs/STATUS_AGENT.md'
+      - 'docs/HEALTH.md'
+      - '.github/workflows/status-agent-ci.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: status-agent-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Shell, signature and systemd validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Shell構文を検証
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n deploy/scripts/ivrm-status-agent.sh
+          bash -n deploy/scripts/ivrm-status-agent.test.sh
+
+      - name: 署名・最小payload・異常系を検証
+        shell: bash
+        run: bash deploy/scripts/ivrm-status-agent.test.sh
+
+      - name: systemd unitを検証
+        shell: bash
+        run: |
+          set -euo pipefail
+          systemd-analyze verify \
+            deploy/systemd/herta-status-agent.service \
+            deploy/systemd/herta-status-agent.timer
+
+      - name: セキュリティ境界を静的検証
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          grep -q 'X-IVRM-Signature-Version: v1' deploy/scripts/ivrm-status-agent.sh
+          grep -q 'X-IVRM-Timestamp:' deploy/scripts/ivrm-status-agent.sh
+          grep -q 'X-IVRM-Nonce:' deploy/scripts/ivrm-status-agent.sh
+          grep -q 'X-IVRM-Signature: sha256=' deploy/scripts/ivrm-status-agent.sh
+          grep -q 'STATUS_INGEST_URLにはHTTPS URL' deploy/scripts/ivrm-status-agent.sh
+          grep -q 'HEALTH_URLは既定でloopback' deploy/scripts/ivrm-status-agent.sh
+          grep -q 'flock -n' deploy/scripts/ivrm-status-agent.sh
+
+          if grep -q 'guild_count:' deploy/scripts/ivrm-status-agent.sh; then
+            echo '::error::公開payloadへguild_countを追加しないでください'
+            exit 1
+          fi
+
+          grep -q '^User=herta-status-agent$' deploy/systemd/herta-status-agent.service
+          grep -q '^NoNewPrivileges=true$' deploy/systemd/herta-status-agent.service
+          grep -q '^ProtectSystem=strict$' deploy/systemd/herta-status-agent.service
+          grep -q '^ProtectHome=true$' deploy/systemd/herta-status-agent.service
+          grep -q '^CapabilityBoundingSet=$' deploy/systemd/herta-status-agent.service
+          grep -q '^OnUnitActiveSec=1min$' deploy/systemd/herta-status-agent.timer
