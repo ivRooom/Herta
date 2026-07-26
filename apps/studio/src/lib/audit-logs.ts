@@ -219,12 +219,7 @@ export function describeAuditEvent(
     summary: eventMeta?.summary ?? '管理対象に対する操作が記録されました。',
     category,
     targetLabel: resolveTargetLabel(targetType, targetId, quoteNumber),
-    sourceLabel:
-      operationSource === 'dashboard'
-        ? 'Herta Studio'
-        : operationSource === 'discord'
-          ? 'Discord'
-          : null,
+    sourceLabel: resolveSourceLabel(event, operationSource),
   };
 }
 
@@ -265,6 +260,13 @@ function resolveCategory(event: string): Exclude<AuditLogCategory, 'all'> {
   if (event.startsWith('plugin.')) return 'plugin';
   if (event.startsWith('quote.')) return 'quote';
   return 'other';
+}
+
+function resolveSourceLabel(event: string, operationSource: string | null): string | null {
+  if (operationSource === 'dashboard') return 'Herta Studio';
+  if (operationSource === 'discord') return 'Discord';
+  if (event.startsWith('plugin.')) return 'Herta Studio';
+  return null;
 }
 
 function resolveTargetLabel(
