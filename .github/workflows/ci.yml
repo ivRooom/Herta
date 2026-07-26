@@ -29,11 +29,11 @@ jobs:
     timeout-minutes: 40
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v4
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
@@ -245,8 +245,6 @@ jobs:
       - name: Scan production image for High and Critical vulnerabilities
         shell: bash
         run: |
-          set -euo pipefail
-
           grype herta-app:ci \
             --config .ci/grype.yaml \
             --fail-on high \

@@ -30,6 +30,11 @@ Parameters:
     Type: Number
     Default: 30
     AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365]
+  DashboardName:
+    Type: String
+    Default: herta-backup-monitoring
+    AllowedPattern: '[A-Za-z0-9-_]+'
+    Description: CloudWatch dashboard name
 
 Resources:
   BackupFreshnessDeadLetterQueue:
@@ -75,6 +80,13 @@ Resources:
                 Effect: Allow
                 Action: sns:Publish
                 Resource: !Ref AlertTopicArn
+              - Sid: PublishHertaBackupMetrics
+                Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: Herta/BackupMonitoring
       Tags:
         - Key: Application
           Value: Herta
@@ -104,6 +116,7 @@ Resources:
           S3_PREFIX: !Ref BackupPrefix
           SNS_TOPIC_ARN: !Ref AlertTopicArn
           MAX_BACKUP_AGE_HOURS: !Ref MaximumBackupAgeHours
+          MONITORING_NAMESPACE: Herta/BackupMonitoring
       Code:
         ZipFile: |
           import json
@@ -114,14 +127,42 @@ Resources:
 
           s3 = boto3.client("s3")
           sns = boto3.client("sns")
+          cloudwatch = boto3.client("cloudwatch")
           S3_BUCKET = os.environ["S3_BUCKET"]
           S3_PREFIX = os.environ.get("S3_PREFIX", "postgres").strip("/")
           SNS_TOPIC_ARN = os.environ["SNS_TOPIC_ARN"]
           MAX_BACKUP_AGE_HOURS = float(os.environ.get("MAX_BACKUP_AGE_HOURS", "25"))
+          MONITORING_NAMESPACE = os.environ.get("MONITORING_NAMESPACE", "Herta/BackupMonitoring")
 
           def notify(subject, message):
               response = sns.publish(TopicArn=SNS_TOPIC_ARN, Subject=subject, Message=message)
               return response["MessageId"]
+
+          def publish_metrics(function_name, backup_found, freshness_ok, age_hours=None):
+              metric_data = [
+                  {
+                      "MetricName": "BackupFound",
+                      "Dimensions": [{"Name": "FunctionName", "Value": function_name}],
+                      "Unit": "Count",
+                      "Value": 1 if backup_found else 0,
+                  },
+                  {
+                      "MetricName": "FreshnessOk",
+                      "Dimensions": [{"Name": "FunctionName", "Value": function_name}],
+                      "Unit": "Count",
+                      "Value": 1 if freshness_ok else 0,
+                  },
+              ]
+              if age_hours is not None:
+                  metric_data.append(
+                      {
+                          "MetricName": "LatestBackupAgeHours",
+                          "Dimensions": [{"Name": "FunctionName", "Value": function_name}],
+                          "Unit": "Count",
+                          "Value": age_hours,
+                      }
+                  )
+              cloudwatch.put_metric_data(Namespace=MONITORING_NAMESPACE, MetricData=metric_data)
 
           def latest_dump():
               latest = None
@@ -138,7 +179,10 @@ Resources:
               now = datetime.now(timezone.utc)
               latest = latest_dump()
               force_alert = isinstance(event, dict) and event.get("force_alert") is True
+              function_name = context.function_name
+
               if latest is None:
+                  publish_metrics(function_name, backup_found=False, freshness_ok=False)
                   message_id = notify(
                       "[ALERT] Herta backup was not found",
                       f"Time (UTC): {now.isoformat()}\nS3 bucket: {S3_BUCKET}\nPrefix: {S3_PREFIX}/",
@@ -147,6 +191,13 @@ Resources:
 
               latest_time = latest["LastModified"]
               age_hours = (now - latest_time).total_seconds() / 3600
+              freshness_ok = age_hours <= MAX_BACKUP_AGE_HOURS
+              publish_metrics(
+                  function_name,
+                  backup_found=True,
+                  freshness_ok=freshness_ok,
+                  age_hours=age_hours,
+              )
               result = {
                   "latest_key": latest["Key"],
                   "latest_time": latest_time.isoformat(),
@@ -159,7 +210,7 @@ Resources:
                       f"Latest backup: {latest['Key']}\nAge: {age_hours:.2f} hours",
                   )
                   return {"status": "test_alert", "message_id": message_id, **result}
-              if age_hours > MAX_BACKUP_AGE_HOURS:
+              if not freshness_ok:
                   message_id = notify(
                       "[ALERT] Herta PostgreSQL backup is stale",
                       f"Latest backup: {latest['Key']}\nLast modified: {latest_time.isoformat()}\nAge: {age_hours:.2f} hours\nMaximum: {MAX_BACKUP_AGE_HOURS:.2f} hours",
@@ -241,6 +292,120 @@ Resources:
       AlarmActions:
         - !Ref AlertTopicArn
 
+  BackupMonitoringDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: !Ref DashboardName
+      DashboardBody: !Sub |
+        {
+          "start": "-P7D",
+          "periodOverride": "inherit",
+          "widgets": [
+            {
+              "type": "text",
+              "x": 0,
+              "y": 0,
+              "width": 24,
+              "height": 2,
+              "properties": {
+                "markdown": "# Herta バックアップ監視\n最新バックアップの鮮度、Lambda実行状態、Scheduler DLQを確認します。正常基準: **${MaximumBackupAgeHours}時間以内**"
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 2,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "最新バックアップ経過時間",
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "stacked": false,
+                "period": 300,
+                "stat": "Maximum",
+                "yAxis": {"left": {"min": 0}},
+                "annotations": {
+                  "horizontal": [
+                    {"label": "鮮度上限", "value": ${MaximumBackupAgeHours}}
+                  ]
+                },
+                "metrics": [
+                  ["Herta/BackupMonitoring", "LatestBackupAgeHours", "FunctionName", "${BackupFreshnessFunction}"]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 2,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "バックアップ状態",
+                "region": "${AWS::Region}",
+                "view": "singleValue",
+                "period": 86400,
+                "stat": "Minimum",
+                "setPeriodToTimeRange": false,
+                "metrics": [
+                  ["Herta/BackupMonitoring", "BackupFound", "FunctionName", "${BackupFreshnessFunction}"],
+                  [".", "FreshnessOk", ".", "."]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 8,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Lambda 実行状況",
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "period": 300,
+                "stat": "Sum",
+                "metrics": [
+                  ["AWS/Lambda", "Invocations", "FunctionName", "${BackupFreshnessFunction}"],
+                  [".", "Errors", ".", "."],
+                  [".", "Throttles", ".", "."]
+                ]
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 8,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "title": "Scheduler DLQ メッセージ数",
+                "region": "${AWS::Region}",
+                "view": "timeSeries",
+                "period": 300,
+                "stat": "Maximum",
+                "metrics": [
+                  ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${BackupFreshnessDeadLetterQueue.QueueName}"]
+                ]
+              }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 14,
+              "width": 24,
+              "height": 7,
+              "properties": {
+                "title": "直近のLambdaログ",
+                "region": "${AWS::Region}",
+                "view": "table",
+                "query": "SOURCE '${BackupFreshnessLogGroup}' | fields @timestamp, @message | sort @timestamp desc | limit 50"
+              }
+            }
+          ]
+        }
+
 Outputs:
   FunctionName:
     Value: !Ref BackupFreshnessFunction
@@ -252,3 +417,7 @@ Outputs:
     Value: !GetAtt BackupFreshnessSchedule.Arn
   DeadLetterQueueArn:
     Value: !GetAtt BackupFreshnessDeadLetterQueue.Arn
+  DashboardName:
+    Value: !Ref BackupMonitoringDashboard
+  DashboardUrl:
+    Value: !Sub https://${AWS::Region}.console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards/dashboard/${DashboardName}
