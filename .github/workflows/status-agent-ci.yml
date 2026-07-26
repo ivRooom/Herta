@@ -44,6 +44,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Shell構文を検証
         shell: bash
@@ -60,11 +62,50 @@ jobs:
           bash deploy/scripts/ivrm-status-agent.test.sh
           bash deploy/scripts/ivrm-status-agent-url.test.sh
 
-      - name: systemd unitを検証
+      - name: systemd unitを実配置相当で検証
         shell: bash
         run: |
           set -euo pipefail
-          systemd-analyze verify \
+
+          sudo useradd \
+            --system \
+            --no-create-home \
+            --home-dir /nonexistent \
+            --shell /usr/sbin/nologin \
+            herta-status-agent
+
+          sudo install -d \
+            --owner root \
+            --group root \
+            --mode 0755 \
+            /app/herta/deploy/scripts \
+            /app/herta/docs
+          sudo install -d \
+            --owner root \
+            --group root \
+            --mode 0700 \
+            /etc/herta
+
+          sudo install \
+            --owner root \
+            --group root \
+            --mode 0644 \
+            deploy/scripts/ivrm-status-agent.sh \
+            /app/herta/deploy/scripts/ivrm-status-agent.sh
+          sudo install \
+            --owner root \
+            --group root \
+            --mode 0644 \
+            docs/STATUS_AGENT.md \
+            /app/herta/docs/STATUS_AGENT.md
+          sudo install \
+            --owner root \
+            --group root \
+            --mode 0600 \
+            deploy/systemd/status-agent.env.example \
+            /etc/herta/status-agent.env
+
+          systemd-analyze verify --recursive-errors=yes \
             deploy/systemd/herta-status-agent.service \
             deploy/systemd/herta-status-agent.timer
 
@@ -80,6 +121,8 @@ jobs:
           grep -q 'STATUS_INGEST_URLにはHTTPS URL' deploy/scripts/ivrm-status-agent.sh
           grep -q 'HEALTH_URLは既定でloopback' deploy/scripts/ivrm-status-agent.sh
           grep -q 'flock -n' deploy/scripts/ivrm-status-agent.sh
+          grep -q -- '--max-filesize' deploy/scripts/ivrm-status-agent.sh
+          grep -q -- '--output /dev/null' deploy/scripts/ivrm-status-agent.sh
 
           if grep -q 'guild_count:' deploy/scripts/ivrm-status-agent.sh; then
             echo '::error::公開payloadへguild_countを追加しないでください'
@@ -91,4 +134,6 @@ jobs:
           grep -q '^ProtectSystem=strict$' deploy/systemd/herta-status-agent.service
           grep -q '^ProtectHome=true$' deploy/systemd/herta-status-agent.service
           grep -q '^CapabilityBoundingSet=$' deploy/systemd/herta-status-agent.service
+          grep -q '^TimeoutStartSec=75s$' deploy/systemd/herta-status-agent.service
           grep -q '^OnUnitActiveSec=1min$' deploy/systemd/herta-status-agent.timer
+          grep -q '^STATUS_SIGNING_SECRET=$' deploy/systemd/status-agent.env.example
