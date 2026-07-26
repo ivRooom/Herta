@@ -18,6 +18,7 @@ const healthService = new HertaHealthService({
   version,
   probes: {
     discord: () => bot.getDiscordHealthObservation(),
+    guildCount: () => bot.getGuildCount(),
     ...(process.env['DATABASE_URL'] ? { database: () => bot.probeDatabase() } : {}),
     ...(process.env['REDIS_URL']
       ? {
