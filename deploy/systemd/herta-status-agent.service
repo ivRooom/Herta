@@ -1,7 +1,7 @@
 [Unit]
 Description=Herta ivrm-status-agent
 Documentation=file:/app/herta/docs/STATUS_AGENT.md
-After=network-online.target docker.service
+After=network-online.target
 Wants=network-online.target
 
 [Service]
@@ -11,7 +11,7 @@ Group=herta-status-agent
 WorkingDirectory=/app/herta
 EnvironmentFile=/etc/herta/status-agent.env
 ExecStart=/usr/bin/bash /app/herta/deploy/scripts/ivrm-status-agent.sh
-TimeoutStartSec=30s
+TimeoutStartSec=75s
 UMask=0077
 
 # Hardening
