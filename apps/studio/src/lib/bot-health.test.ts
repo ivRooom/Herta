@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseBotHealthResponse } from './bot-health.ts';
+import { getBotHealth, parseBotHealthResponse } from './bot-health.ts';
 
 const validHealth = {
   service: {
@@ -34,6 +34,15 @@ const validHealth = {
     },
   },
 };
+
+function restoreHealthEnvironment(originalFetch: typeof globalThis.fetch, originalHealthUrl?: string) {
+  globalThis.fetch = originalFetch;
+  if (originalHealthUrl === undefined) {
+    delete process.env['BOT_HEALTH_URL'];
+  } else {
+    process.env['BOT_HEALTH_URL'] = originalHealthUrl;
+  }
+}
 
 test('Botヘルスの正常レスポンスを受け入れる', () => {
   const parsed = parseBotHealthResponse(validHealth);
@@ -76,4 +85,40 @@ test('障害状態の503レスポンス形式も受け入れる', () => {
   assert.ok(parsed);
   assert.equal(parsed.status, 'outage');
   assert.equal(parsed.checks.discord.status, 'error');
+});
+
+test('JSONではない応答を不正なレスポンスとして分類する', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const originalHealthUrl = process.env['BOT_HEALTH_URL'];
+  t.after(() => restoreHealthEnvironment(originalFetch, originalHealthUrl));
+
+  process.env['BOT_HEALTH_URL'] = 'http://bot:3000/healthz';
+  globalThis.fetch = async () =>
+    new Response('<!doctype html><title>Bad Gateway</title>', {
+      status: 502,
+      headers: { 'Content-Type': 'text/html' },
+    });
+
+  const result = await getBotHealth();
+
+  assert.equal(result.available, false);
+  if (result.available) assert.fail('不正なレスポンスが利用可能として扱われました');
+  assert.equal(result.reason, 'invalid_response');
+});
+
+test('接続失敗を到達不能として分類する', async (t) => {
+  const originalFetch = globalThis.fetch;
+  const originalHealthUrl = process.env['BOT_HEALTH_URL'];
+  t.after(() => restoreHealthEnvironment(originalFetch, originalHealthUrl));
+
+  process.env['BOT_HEALTH_URL'] = 'http://bot:3000/healthz';
+  globalThis.fetch = async () => {
+    throw new TypeError('fetch failed');
+  };
+
+  const result = await getBotHealth();
+
+  assert.equal(result.available, false);
+  if (result.available) assert.fail('接続失敗が利用可能として扱われました');
+  assert.equal(result.reason, 'unreachable');
 });
