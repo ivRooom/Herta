@@ -72,6 +72,11 @@ require_non_negative_integer() {
   fi
 }
 
+is_loopback_http_url() {
+  local value="$1"
+  [[ "${value}" =~ ^http://(127\.0\.0\.1|localhost)(:[0-9]+)?(/|$) ]]
+}
+
 for command_name in curl jq python3 flock mktemp date stat mkdir rm; do
   require_command "${command_name}"
 done
@@ -94,13 +99,12 @@ if ! [[ "${STATUS_SOURCE}" =~ ^[a-z0-9][a-z0-9._-]{2,63}$ ]]; then
 fi
 
 if [[ "${STATUS_INGEST_URL}" != https://* ]]; then
-  if [ "${STATUS_ALLOW_HTTP_FOR_TESTS}" != "true" ] || [[ "${STATUS_INGEST_URL}" != http://127.0.0.1:* && "${STATUS_INGEST_URL}" != http://localhost:* ]]; then
+  if [ "${STATUS_ALLOW_HTTP_FOR_TESTS}" != "true" ] || ! is_loopback_http_url "${STATUS_INGEST_URL}"; then
     fail "STATUS_INGEST_URLにはHTTPS URLを設定してください。" 2
   fi
 fi
 
-if [ "${STATUS_ALLOW_NON_LOOPBACK_HEALTH_URL}" != "true" ] && \
-  [[ "${HEALTH_URL}" != http://127.0.0.1:* && "${HEALTH_URL}" != http://localhost:* && "${HEALTH_URL}" != http://[::1]:* ]]; then
+if [ "${STATUS_ALLOW_NON_LOOPBACK_HEALTH_URL}" != "true" ] && ! is_loopback_http_url "${HEALTH_URL}"; then
   fail "HEALTH_URLは既定でloopback HTTP URLだけを許可します。" 2
 fi
 
