@@ -48,9 +48,17 @@ export interface AuditEventPresentation {
   sourceLabel: string | null;
 }
 
+interface CalendarDateParts {
+  year: number;
+  month: number;
+  day: number;
+}
+
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 50;
 const MAX_SEARCH_LENGTH = 100;
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const ALLOWED_CATEGORIES = new Set<AuditLogCategory>(['all', 'plugin', 'quote', 'other']);
 const ALLOWED_SEVERITIES = new Set<AuditLogSeverity>([
   'all',
@@ -113,32 +121,40 @@ export function parseAuditLogQuery(searchParams: URLSearchParams): AuditLogQuery
   };
 }
 
+export function resolveAuditLogPage(requestedPage: number, totalPages: number): number {
+  const normalizedTotalPages = Math.max(1, Math.floor(totalPages));
+  const normalizedRequestedPage = Number.isSafeInteger(requestedPage)
+    ? Math.max(1, requestedPage)
+    : 1;
+  return Math.min(normalizedRequestedPage, normalizedTotalPages);
+}
+
 export async function listGuildAuditLogs(
   prisma: PrismaClient,
   guildId: string,
   query: AuditLogQuery,
 ): Promise<AuditLogResult> {
   const where = buildAuditLogWhere(guildId, query);
-  const [rows, total] = await Promise.all([
-    prisma.auditLog.findMany({
-      where,
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      skip: (query.page - 1) * query.pageSize,
-      take: query.pageSize,
-      select: {
-        id: true,
-        actorId: true,
-        actorType: true,
-        event: true,
-        targetType: true,
-        targetId: true,
-        metadata: true,
-        severity: true,
-        createdAt: true,
-      },
-    }),
-    prisma.auditLog.count({ where }),
-  ]);
+  const total = await prisma.auditLog.count({ where });
+  const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
+  const page = resolveAuditLogPage(query.page, totalPages);
+  const rows = await prisma.auditLog.findMany({
+    where,
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    skip: (page - 1) * query.pageSize,
+    take: query.pageSize,
+    select: {
+      id: true,
+      actorId: true,
+      actorType: true,
+      event: true,
+      targetType: true,
+      targetId: true,
+      metadata: true,
+      severity: true,
+      createdAt: true,
+    },
+  });
 
   const actorIds = [
     ...new Set(rows.filter((row) => row.actorType === 'user').map((row) => row.actorId)),
@@ -180,9 +196,9 @@ export async function listGuildAuditLogs(
       };
     }),
     total,
-    page: query.page,
+    page,
     pageSize: query.pageSize,
-    totalPages: Math.max(1, Math.ceil(total / query.pageSize)),
+    totalPages,
   };
 }
 
@@ -278,15 +294,39 @@ function resolveActorLabel(
 
 function normalizeDateInput(value: string | null): string {
   const normalized = value?.trim() ?? '';
-  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : '';
+  return parseCalendarDate(normalized) ? normalized : '';
 }
 
 function parseJstDate(value: string, endExclusive: boolean): Date | null {
-  if (!value) return null;
-  const date = new Date(`${value}T00:00:00+09:00`);
-  if (Number.isNaN(date.getTime())) return null;
-  if (endExclusive) date.setUTCDate(date.getUTCDate() + 1);
-  return date;
+  const parts = parseCalendarDate(value);
+  if (!parts) return null;
+
+  const utcMidnight = new Date(0);
+  utcMidnight.setUTCFullYear(parts.year, parts.month - 1, parts.day);
+  utcMidnight.setUTCHours(0, 0, 0, 0);
+  return new Date(utcMidnight.getTime() - JST_OFFSET_MS + (endExclusive ? DAY_MS : 0));
+}
+
+function parseCalendarDate(value: string): CalendarDateParts | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const candidate = new Date(0);
+  candidate.setUTCFullYear(year, month - 1, day);
+  candidate.setUTCHours(0, 0, 0, 0);
+
+  if (
+    candidate.getUTCFullYear() !== year ||
+    candidate.getUTCMonth() !== month - 1 ||
+    candidate.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return { year, month, day };
 }
 
 function parsePositiveInteger(value: string | null, fallback: number): number {
