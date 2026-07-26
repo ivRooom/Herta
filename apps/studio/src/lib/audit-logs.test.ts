@@ -78,6 +78,12 @@ test('Quote操作は本文を含めず安全な要約へ変換する', () => {
   assert.equal(presentation.summary.includes('画面へ出してはいけない本文'), false);
 });
 
+test('既存Plugin監査ログはmetadataがなくてもStudio操作として表示する', () => {
+  const presentation = describeAuditEvent('plugin.enable', 'plugin', 'quote', null);
+
+  assert.equal(presentation.sourceLabel, 'Herta Studio');
+});
+
 test('Plugin設定変更は設定値を含めず安全な要約へ変換する', () => {
   const presentation = describeAuditEvent('plugin.config_update', 'plugin', 'quote', {
     token: 'super-secret-token',
@@ -85,6 +91,7 @@ test('Plugin設定変更は設定値を含めず安全な要約へ変換する',
 
   assert.equal(presentation.category, 'plugin');
   assert.equal(presentation.targetLabel, 'Plugin: quote');
+  assert.equal(presentation.sourceLabel, 'Herta Studio');
   assert.equal(presentation.summary.includes('super-secret-token'), false);
 });
 
