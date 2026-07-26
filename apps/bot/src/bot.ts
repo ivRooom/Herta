@@ -6,7 +6,11 @@ import {
   type ChatInputCommandInteraction,
 } from 'discord.js';
 import { Redis } from 'ioredis';
-import { getPrismaClient } from '@herta/db';
+import {
+  getPrismaClient,
+  recordCommandExecution as persistCommandExecution,
+  type CommandExecutionInput,
+} from '@herta/db';
 import { getEnabledPlugins } from '@herta/plugin-catalog';
 import { HERTA_WORKER_HEARTBEAT_KEY } from '@herta/shared';
 import type { Logger } from '@herta/logger';
@@ -20,6 +24,11 @@ import { syncGuildCommands } from './plugins/sync.js';
 import type { SlashCommand } from './commands/registry.js';
 import { DiscordHealthTracker } from './health/discord-state.js';
 import type { DiscordHealthObservation } from './health/types.js';
+
+function resolveErrorName(error: unknown): string {
+  if (error instanceof Error && error.name.trim()) return error.name;
+  return 'UnknownError';
+}
 
 /** Herta Bot クライアント */
 export class HertaBot {
@@ -156,9 +165,15 @@ export class HertaBot {
         return;
       }
 
+      const startedAt = Date.now();
+      let status: CommandExecutionInput['status'] = 'success';
+      let errorName: string | null = null;
+
       try {
         await command.execute(interaction);
       } catch (error) {
+        status = 'failure';
+        errorName = resolveErrorName(error);
         this.logger.error(
           {
             err: error,
@@ -169,8 +184,32 @@ export class HertaBot {
           'Slash Command の実行に失敗しました',
         );
         await this.replyEphemeral(interaction, 'コマンドの実行中にエラーが発生しました');
+      } finally {
+        await this.recordCommandExecution({
+          guildId: interaction.guildId,
+          commandName: interaction.commandName,
+          status,
+          durationMs: Date.now() - startedAt,
+          errorName,
+        });
       }
     });
+  }
+
+  private async recordCommandExecution(input: CommandExecutionInput): Promise<void> {
+    try {
+      await persistCommandExecution(this.prisma, input);
+    } catch (error) {
+      this.logger.warn(
+        {
+          err: error,
+          guildId: input.guildId,
+          commandName: input.commandName,
+          status: input.status,
+        },
+        'コマンド利用状況の記録に失敗しました',
+      );
+    }
   }
 
   private resolveInitialSyncGuildIds(client: Client): string[] {
@@ -248,6 +287,10 @@ export class HertaBot {
 
   getDiscordHealthObservation(): DiscordHealthObservation {
     return this.discordHealth.snapshot(this.client);
+  }
+
+  getGuildCount(): number {
+    return this.client.guilds.cache.size;
   }
 
   async probeDatabase(): Promise<void> {
