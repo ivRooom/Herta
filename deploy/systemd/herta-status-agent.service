@@ -10,7 +10,7 @@ User=herta-status-agent
 Group=herta-status-agent
 WorkingDirectory=/app/herta
 EnvironmentFile=/etc/herta/status-agent.env
-ExecStart=/app/herta/deploy/scripts/ivrm-status-agent.sh
+ExecStart=/usr/bin/bash /app/herta/deploy/scripts/ivrm-status-agent.sh
 TimeoutStartSec=30s
 UMask=0077
 
