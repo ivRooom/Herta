@@ -97,7 +97,14 @@ export async function getBotHealth(): Promise<BotHealthResult> {
       cache: 'no-store',
       signal: controller.signal,
     });
-    const payload: unknown = await response.json();
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      return { available: false, reason: 'invalid_response', fetchedAt };
+    }
+
     const health = parseBotHealthResponse(payload);
 
     if (!health) {
