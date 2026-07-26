@@ -73,7 +73,8 @@ export default async function GuildAuditLogsPage({
   if (!guild || !session?.user) notFound();
   await persistSelectedGuild(guild, session.user.id);
 
-  const query = parseAuditLogQuery(toUrlSearchParams(await searchParams));
+  const rawSearchParams = await searchParams;
+  const query = parseAuditLogQuery(toUrlSearchParams(rawSearchParams));
   let result: Awaited<ReturnType<typeof listGuildAuditLogs>> | null = null;
   try {
     result = await listGuildAuditLogs(prisma, guildId, query);
@@ -135,7 +136,7 @@ export default async function GuildAuditLogsPage({
             guildId={guildId}
             currentPage={result.page}
             totalPages={result.totalPages}
-            searchParams={await searchParams}
+            searchParams={rawSearchParams}
           />
         </>
       )}
@@ -257,7 +258,9 @@ function AuditLogCard({ item }: { item: AuditLogItem }) {
             <span className="rounded-md border border-primary/25 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
               {CATEGORY_LABELS[item.category]}
             </span>
-            <span className={`rounded-md border px-2 py-0.5 text-xs font-medium ${severity.className}`}>
+            <span
+              className={`rounded-md border px-2 py-0.5 text-xs font-medium ${severity.className}`}
+            >
               {severity.label}
             </span>
           </div>
