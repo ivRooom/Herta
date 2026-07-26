@@ -80,6 +80,15 @@ describe('HertaHealthService', () => {
     expect(response.guild_count).toBe(0);
   });
 
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -1])(
+    '不正なGuild数 %s を0件として応答する',
+    async (invalidGuildCount) => {
+      const service = createService({ guildCount: () => invalidGuildCount });
+      const response = await service.getHealth();
+      expect(response.guild_count).toBe(0);
+    },
+  );
+
   it('Heartbeat期限超過ならoutageを返す', async () => {
     const service = createService({
       discord: discordObservation({
