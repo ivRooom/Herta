@@ -162,7 +162,21 @@ Resources:
                           "Value": age_hours,
                       }
                   )
-              cloudwatch.put_metric_data(Namespace=MONITORING_NAMESPACE, MetricData=metric_data)
+              try:
+                  cloudwatch.put_metric_data(
+                      Namespace=MONITORING_NAMESPACE,
+                      MetricData=metric_data,
+                  )
+              except Exception as error:
+                  print(
+                      json.dumps(
+                          {
+                              "level": "warning",
+                              "event": "cloudwatch_metric_publish_failed",
+                              "error": str(error),
+                          }
+                      )
+                  )
 
           def latest_dump():
               latest = None
