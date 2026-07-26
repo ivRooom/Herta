@@ -9,6 +9,7 @@ on:
     paths:
       - 'deploy/scripts/ivrm-status-agent.sh'
       - 'deploy/scripts/ivrm-status-agent.test.sh'
+      - 'deploy/scripts/ivrm-status-agent-url.test.sh'
       - 'deploy/systemd/herta-status-agent.service'
       - 'deploy/systemd/herta-status-agent.timer'
       - 'deploy/systemd/status-agent.env.example'
@@ -20,6 +21,7 @@ on:
     paths:
       - 'deploy/scripts/ivrm-status-agent.sh'
       - 'deploy/scripts/ivrm-status-agent.test.sh'
+      - 'deploy/scripts/ivrm-status-agent-url.test.sh'
       - 'deploy/systemd/herta-status-agent.service'
       - 'deploy/systemd/herta-status-agent.timer'
       - 'deploy/systemd/status-agent.env.example'
@@ -49,10 +51,14 @@ jobs:
           set -euo pipefail
           bash -n deploy/scripts/ivrm-status-agent.sh
           bash -n deploy/scripts/ivrm-status-agent.test.sh
+          bash -n deploy/scripts/ivrm-status-agent-url.test.sh
 
       - name: 署名・最小payload・異常系を検証
         shell: bash
-        run: bash deploy/scripts/ivrm-status-agent.test.sh
+        run: |
+          set -euo pipefail
+          bash deploy/scripts/ivrm-status-agent.test.sh
+          bash deploy/scripts/ivrm-status-agent-url.test.sh
 
       - name: systemd unitを検証
         shell: bash
@@ -86,34 +92,3 @@ jobs:
           grep -q '^ProtectHome=true$' deploy/systemd/herta-status-agent.service
           grep -q '^CapabilityBoundingSet=$' deploy/systemd/herta-status-agent.service
           grep -q '^OnUnitActiveSec=1min$' deploy/systemd/herta-status-agent.timer
-
-  format-diagnostics:
-    name: Prettier diagnostics
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - name: Prettierを適用
-        run: pnpm format
-
-      - name: 整形差分を保存
-        run: git diff --binary > format.patch
-
-      - name: 整形差分をアップロード
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: status-agent-format-${{ github.run_id }}-${{ github.run_attempt }}
-          path: format.patch
-          if-no-files-found: error
-          retention-days: 1
