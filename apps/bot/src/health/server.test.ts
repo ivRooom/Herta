@@ -25,6 +25,7 @@ function response(status: PublicServiceStatus): HertaHealthResponse {
     checked_at: '2026-07-25T11:30:00.000Z',
     uptime_seconds: 100,
     version: '1.0.0',
+    guild_count: 3,
     checks: {
       process: { status: 'ok' },
       discord: {
@@ -71,7 +72,10 @@ describe('GET /healthz', () => {
     const result = await fetch(`${baseUrl}/healthz`);
     expect(result.status).toBe(200);
     expect(result.headers.get('content-type')).toContain('application/json');
-    expect((await result.json()) as HertaHealthResponse).toMatchObject({ status: 'operational' });
+    expect((await result.json()) as HertaHealthResponse).toMatchObject({
+      status: 'operational',
+      guild_count: 3,
+    });
   });
 
   it('degraded時も200を返す', async () => {
