@@ -20,11 +20,11 @@ CloudShellで手作業作成したLambda、IAM Role、EventBridge SchedulerをCl
 
 Lambdaは実行ごとに`Herta/BackupMonitoring`名前空間へ以下を送信します。
 
-| メトリクス | 値 | 用途 |
-| --- | --- | --- |
-| `LatestBackupAgeHours` | 最新`.dump`の経過時間 | 鮮度上限との比較 |
-| `BackupFound` | 検出時`1`、未検出時`0` | バックアップ生成有無の確認 |
-| `FreshnessOk` | 上限以内`1`、超過または未検出`0` | 現在状態の判定 |
+| メトリクス             | 値                               | 用途                       |
+| ---------------------- | -------------------------------- | -------------------------- |
+| `LatestBackupAgeHours` | 最新`.dump`の経過時間            | 鮮度上限との比較           |
+| `BackupFound`          | 検出時`1`、未検出時`0`           | バックアップ生成有無の確認 |
+| `FreshnessOk`          | 上限以内`1`、超過または未検出`0` | 現在状態の判定             |
 
 各メトリクスには`FunctionName`ディメンションが付与されます。
 
