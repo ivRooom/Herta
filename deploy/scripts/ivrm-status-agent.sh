@@ -72,6 +72,14 @@ require_non_negative_integer() {
   fi
 }
 
+require_boolean() {
+  local variable_name="$1"
+  local value="$2"
+  if [ "${value}" != "true" ] && [ "${value}" != "false" ]; then
+    fail "${variable_name}にはtrueまたはfalseを設定してください。" 2
+  fi
+}
+
 is_loopback_http_url() {
   local value="$1"
 
@@ -105,6 +113,9 @@ require_positive_integer STATUS_CONNECT_TIMEOUT_SECONDS "${STATUS_CONNECT_TIMEOU
 require_positive_integer STATUS_MAX_TIME_SECONDS "${STATUS_MAX_TIME_SECONDS}"
 require_non_negative_integer STATUS_RETRY_COUNT "${STATUS_RETRY_COUNT}"
 require_positive_integer STATUS_MAX_HEALTH_BYTES "${STATUS_MAX_HEALTH_BYTES}"
+require_boolean STATUS_DRY_RUN "${STATUS_DRY_RUN}"
+require_boolean STATUS_ALLOW_HTTP_FOR_TESTS "${STATUS_ALLOW_HTTP_FOR_TESTS}"
+require_boolean STATUS_ALLOW_NON_LOOPBACK_HEALTH_URL "${STATUS_ALLOW_NON_LOOPBACK_HEALTH_URL}"
 
 # Bashのulimit -fは1024-byte block単位です。curlの版に依存せず、
 # Content-Lengthなしの応答も書込み中に停止させます。
@@ -181,23 +192,28 @@ if [ "${HEALTH_SIZE}" -gt "${STATUS_MAX_HEALTH_BYTES}" ]; then
   fail "内部ヘルスの応答が上限${STATUS_MAX_HEALTH_BYTES} bytesを超えています。" 3
 fi
 
+# --slurpで入力全体を配列化し、JSONドキュメントが正確に1件であることを確認する。
 if ! jq -e \
+  --slurp \
   --arg service_id "${STATUS_SERVICE_ID}" \
   '
-    type == "object" and
-    .service.id == $service_id and
-    (.status | IN("operational", "degraded", "outage", "maintenance", "unknown")) and
-    (.checked_at | type == "string" and length > 0) and
-    (
-      .version == null or
-      (.version | type == "string" and length >= 1 and length <= 64 and test("^[0-9A-Za-z._+-]+$"))
-    ) and
-    (.checks | type == "object") and
-    (.checks.process.status | IN("ok", "warning", "error", "not_configured", "unknown")) and
-    (.checks.discord.status | IN("ok", "warning", "error", "not_configured", "unknown")) and
-    (.checks.database.status | IN("ok", "warning", "error", "not_configured", "unknown")) and
-    (.checks.redis.status | IN("ok", "warning", "error", "not_configured", "unknown")) and
-    (.checks.worker.status | IN("ok", "warning", "error", "not_configured", "unknown"))
+    length == 1 and
+    (.[0] |
+      type == "object" and
+      .service.id == $service_id and
+      (.status | IN("operational", "degraded", "outage", "maintenance", "unknown")) and
+      (.checked_at | type == "string" and length > 0) and
+      (
+        .version == null or
+        (.version | type == "string" and length >= 1 and length <= 64 and test("^[0-9A-Za-z._+-]+$"))
+      ) and
+      (.checks | type == "object") and
+      (.checks.process.status | IN("ok", "warning", "error", "not_configured", "unknown")) and
+      (.checks.discord.status | IN("ok", "warning", "error", "not_configured", "unknown")) and
+      (.checks.database.status | IN("ok", "warning", "error", "not_configured", "unknown")) and
+      (.checks.redis.status | IN("ok", "warning", "error", "not_configured", "unknown")) and
+      (.checks.worker.status | IN("ok", "warning", "error", "not_configured", "unknown"))
+    )
   ' \
   "${HEALTH_FILE}" >/dev/null; then
   fail "内部ヘルスのJSON形式または値が不正です。" 3
@@ -206,9 +222,11 @@ fi
 SENT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 jq -cS \
+  --slurp \
   --arg source "${STATUS_SOURCE}" \
   --arg sent_at "${SENT_AT}" \
   '
+    .[0] |
     {
       schema_version: 1,
       service_id: .service.id,
