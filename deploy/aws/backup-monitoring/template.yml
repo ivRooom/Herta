@@ -8,6 +8,11 @@ Parameters:
   AlertTopicArn:
     Type: String
     Description: Existing SNS topic ARN for backup alerts
+  ResourceNameSuffix:
+    Type: String
+    Default: managed
+    AllowedPattern: '[a-z0-9-]+'
+    Description: Suffix used to avoid conflicts with manually created resources
   BackupPrefix:
     Type: String
     Default: postgres
@@ -30,7 +35,7 @@ Resources:
   BackupFreshnessDeadLetterQueue:
     Type: AWS::SQS::Queue
     Properties:
-      QueueName: herta-backup-freshness-scheduler-dlq
+      QueueName: !Sub herta-backup-freshness-scheduler-${ResourceNameSuffix}-dlq
       MessageRetentionPeriod: 1209600
       SqsManagedSseEnabled: true
       Tags:
@@ -42,7 +47,7 @@ Resources:
   BackupFreshnessLambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: herta-backup-freshness-lambda-role
+      RoleName: !Sub herta-backup-freshness-lambda-${ResourceNameSuffix}-role
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -79,14 +84,14 @@ Resources:
   BackupFreshnessLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: /aws/lambda/herta-backup-freshness-check
+      LogGroupName: !Sub /aws/lambda/herta-backup-freshness-check-${ResourceNameSuffix}
       RetentionInDays: !Ref LogRetentionDays
 
   BackupFreshnessFunction:
     Type: AWS::Lambda::Function
     DependsOn: BackupFreshnessLogGroup
     Properties:
-      FunctionName: herta-backup-freshness-check
+      FunctionName: !Sub herta-backup-freshness-check-${ResourceNameSuffix}
       Runtime: python3.13
       Handler: index.lambda_handler
       Role: !GetAtt BackupFreshnessLambdaRole.Arn
@@ -109,7 +114,6 @@ Resources:
 
           s3 = boto3.client("s3")
           sns = boto3.client("sns")
-
           S3_BUCKET = os.environ["S3_BUCKET"]
           S3_PREFIX = os.environ.get("S3_PREFIX", "postgres").strip("/")
           SNS_TOPIC_ARN = os.environ["SNS_TOPIC_ARN"]
@@ -134,7 +138,6 @@ Resources:
               now = datetime.now(timezone.utc)
               latest = latest_dump()
               force_alert = isinstance(event, dict) and event.get("force_alert") is True
-
               if latest is None:
                   message_id = notify(
                       "[ALERT] Herta backup was not found",
@@ -150,25 +153,18 @@ Resources:
                   "age_hours": round(age_hours, 2),
                   "maximum_age_hours": MAX_BACKUP_AGE_HOURS,
               }
-
               if force_alert:
                   message_id = notify(
                       "[TEST] Herta backup freshness monitor",
                       f"Latest backup: {latest['Key']}\nAge: {age_hours:.2f} hours",
                   )
                   return {"status": "test_alert", "message_id": message_id, **result}
-
               if age_hours > MAX_BACKUP_AGE_HOURS:
                   message_id = notify(
                       "[ALERT] Herta PostgreSQL backup is stale",
                       f"Latest backup: {latest['Key']}\nLast modified: {latest_time.isoformat()}\nAge: {age_hours:.2f} hours\nMaximum: {MAX_BACKUP_AGE_HOURS:.2f} hours",
                   )
-                  return {
-                      "status": "alert",
-                      "reason": "stale_backup",
-                      "message_id": message_id,
-                      **result,
-                  }
+                  return {"status": "alert", "reason": "stale_backup", "message_id": message_id, **result}
 
               print(json.dumps({"status": "ok", **result}))
               return {"status": "ok", **result}
@@ -181,7 +177,7 @@ Resources:
   BackupFreshnessSchedulerRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: herta-backup-freshness-scheduler-role
+      RoleName: !Sub herta-backup-freshness-scheduler-${ResourceNameSuffix}-role
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -209,7 +205,7 @@ Resources:
   BackupFreshnessSchedule:
     Type: AWS::Scheduler::Schedule
     Properties:
-      Name: herta-backup-freshness-daily
+      Name: !Sub herta-backup-freshness-daily-${ResourceNameSuffix}
       Description: Check Herta PostgreSQL backup freshness every day
       ScheduleExpression: !Ref ScheduleExpression
       ScheduleExpressionTimezone: !Ref ScheduleTimezone
@@ -229,7 +225,7 @@ Resources:
   BackupFreshnessDlqAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmName: herta-backup-freshness-scheduler-dlq-not-empty
+      AlarmName: !Sub herta-backup-freshness-scheduler-${ResourceNameSuffix}-dlq-not-empty
       AlarmDescription: EventBridge Scheduler could not invoke the backup freshness Lambda
       Namespace: AWS/SQS
       MetricName: ApproximateNumberOfMessagesVisible
@@ -246,13 +242,13 @@ Resources:
         - !Ref AlertTopicArn
 
 Outputs:
+  FunctionName:
+    Value: !Ref BackupFreshnessFunction
   FunctionArn:
     Value: !GetAtt BackupFreshnessFunction.Arn
+  ScheduleName:
+    Value: !Ref BackupFreshnessSchedule
   ScheduleArn:
     Value: !GetAtt BackupFreshnessSchedule.Arn
   DeadLetterQueueArn:
     Value: !GetAtt BackupFreshnessDeadLetterQueue.Arn
-  LambdaRoleArn:
-    Value: !GetAtt BackupFreshnessLambdaRole.Arn
-  SchedulerRoleArn:
-    Value: !GetAtt BackupFreshnessSchedulerRole.Arn
