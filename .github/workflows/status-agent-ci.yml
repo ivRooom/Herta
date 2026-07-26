@@ -12,6 +12,7 @@ on:
       - 'deploy/scripts/ivrm-status-agent-url.test.sh'
       - 'deploy/scripts/ivrm-status-agent-size.test.sh'
       - 'deploy/scripts/ivrm-status-agent-proxy.test.sh'
+      - 'deploy/scripts/ivrm-status-agent-json.test.sh'
       - 'deploy/systemd/herta-status-agent.service'
       - 'deploy/systemd/herta-status-agent.timer'
       - 'deploy/systemd/status-agent.env.example'
@@ -26,6 +27,7 @@ on:
       - 'deploy/scripts/ivrm-status-agent-url.test.sh'
       - 'deploy/scripts/ivrm-status-agent-size.test.sh'
       - 'deploy/scripts/ivrm-status-agent-proxy.test.sh'
+      - 'deploy/scripts/ivrm-status-agent-json.test.sh'
       - 'deploy/systemd/herta-status-agent.service'
       - 'deploy/systemd/herta-status-agent.timer'
       - 'deploy/systemd/status-agent.env.example'
@@ -60,6 +62,7 @@ jobs:
           bash -n deploy/scripts/ivrm-status-agent-url.test.sh
           bash -n deploy/scripts/ivrm-status-agent-size.test.sh
           bash -n deploy/scripts/ivrm-status-agent-proxy.test.sh
+          bash -n deploy/scripts/ivrm-status-agent-json.test.sh
 
       - name: 署名・最小payload・異常系を検証
         shell: bash
@@ -69,6 +72,7 @@ jobs:
           bash deploy/scripts/ivrm-status-agent-url.test.sh
           bash deploy/scripts/ivrm-status-agent-size.test.sh
           bash deploy/scripts/ivrm-status-agent-proxy.test.sh
+          bash deploy/scripts/ivrm-status-agent-json.test.sh
 
       - name: systemd unitを実配置相当で検証
         shell: bash
@@ -129,6 +133,9 @@ jobs:
           grep -q 'STATUS_INGEST_URLにはHTTPS URL' deploy/scripts/ivrm-status-agent.sh
           grep -q 'HEALTH_URLは既定でloopback' deploy/scripts/ivrm-status-agent.sh
           grep -q "NO_PROXY='\*' no_proxy='\*' curl" deploy/scripts/ivrm-status-agent.sh
+          grep -q 'require_boolean STATUS_DRY_RUN' deploy/scripts/ivrm-status-agent.sh
+          grep -q -- '--slurp' deploy/scripts/ivrm-status-agent.sh
+          grep -q 'length == 1' deploy/scripts/ivrm-status-agent.sh
           grep -q 'flock -n' deploy/scripts/ivrm-status-agent.sh
           grep -q 'ulimit -f' deploy/scripts/ivrm-status-agent.sh
           grep -q -- '--max-filesize' deploy/scripts/ivrm-status-agent.sh
