@@ -95,7 +95,10 @@ export function parseAuditLogQuery(searchParams: URLSearchParams): AuditLogQuery
 
   return {
     page: parsePositiveInteger(searchParams.get('page'), 1),
-    pageSize: Math.min(parsePositiveInteger(searchParams.get('pageSize'), DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE),
+    pageSize: Math.min(
+      parsePositiveInteger(searchParams.get('pageSize'), DEFAULT_PAGE_SIZE),
+      MAX_PAGE_SIZE,
+    ),
     search: (searchParams.get('search') ?? '').trim().slice(0, MAX_SEARCH_LENGTH),
     category: ALLOWED_CATEGORIES.has(categoryValue as AuditLogCategory)
       ? (categoryValue as AuditLogCategory)
