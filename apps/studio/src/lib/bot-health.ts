@@ -75,11 +75,7 @@ const MAX_BOT_CHECK_TIMEOUT_MS = 60_000;
 const MIN_REQUEST_TIMEOUT_MS = 500;
 const MAX_REQUEST_TIMEOUT_MS = 65_000;
 
-function parseTimeout(
-  value: string | undefined,
-  minimum: number,
-  maximum: number,
-): number | null {
+function parseTimeout(value: string | undefined, minimum: number, maximum: number): number | null {
   if (!value?.trim()) return null;
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed) || parsed < minimum || parsed > maximum) return null;
