@@ -1,3 +1,4 @@
+import { getPrismaClient, pruneCommandExecutionEvents } from '@herta/db';
 import { createLogger } from '@herta/logger';
 import { HertaBot } from './bot.js';
 import { loadHealthConfig } from './health/config.js';
@@ -39,9 +40,23 @@ const healthServer = healthConfig.enabled
 
 let shuttingDown = false;
 
+async function pruneCommandAnalytics(): Promise<void> {
+  if (!process.env['DATABASE_URL']) return;
+
+  try {
+    const deleted = await pruneCommandExecutionEvents(getPrismaClient());
+    if (deleted > 0) {
+      logger.info({ deleted, retentionDays: 90 }, '古いコマンド実行履歴を削除しました');
+    }
+  } catch (error) {
+    logger.warn({ err: error }, '古いコマンド実行履歴の整理に失敗しました');
+  }
+}
+
 async function main(): Promise<void> {
   logger.info('Herta Bot を起動しています...');
   try {
+    await pruneCommandAnalytics();
     await healthServer?.start();
     await bot.start();
   } catch (error) {
