@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getBotHealth, parseBotHealthResponse } from './bot-health.ts';
+import {
+  getBotHealth,
+  parseBotHealthResponse,
+  resolveBotHealthRequestTimeoutMs,
+} from './bot-health.ts';
 
 const validHealth = {
   service: {
@@ -88,6 +92,15 @@ test('障害状態の503レスポンス形式も受け入れる', () => {
   assert.ok(parsed);
   assert.equal(parsed.status, 'outage');
   assert.equal(parsed.checks.discord.status, 'error');
+});
+
+test('Bot側のチェック待機時間へ余裕を加えた取得タイムアウトを使う', () => {
+  assert.equal(resolveBotHealthRequestTimeoutMs(undefined, '5000'), 6000);
+  assert.equal(resolveBotHealthRequestTimeoutMs(undefined, '3000'), 4000);
+});
+
+test('Studio側の明示タイムアウトを優先する', () => {
+  assert.equal(resolveBotHealthRequestTimeoutMs('8000', '5000'), 8000);
 });
 
 test('JSONではない応答を不正なレスポンスとして分類する', async (t) => {
