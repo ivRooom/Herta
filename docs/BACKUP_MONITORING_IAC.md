@@ -28,6 +28,8 @@ Lambdaは実行ごとに`Herta/BackupMonitoring`名前空間へ以下を送信�
 
 各メトリクスには`FunctionName`ディメンションが付与されます。
 
+CloudWatchへのメトリクス送信はベストエフォートです。`PutMetricData`が失敗した場合は`cloudwatch_metric_publish_failed`を警告ログへ記録し、バックアップ未検出・鮮度超過時のSNS通知処理は継続します。
+
 ## ダッシュボード
 
 CloudWatch Dashboardには以下を表示します。

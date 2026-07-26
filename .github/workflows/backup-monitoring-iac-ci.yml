@@ -44,5 +44,7 @@ jobs:
           grep -q 'Herta/BackupMonitoring' "$template"
           grep -q 'cloudwatch:PutMetricData' "$template"
           grep -q 'LatestBackupAgeHours' "$template"
+          grep -q 'cloudwatch_metric_publish_failed' "$template"
+          grep -q 'except Exception as error:' "$template"
           grep -q 'DashboardUrl' "$template"
           grep -q 'CAPABILITY_NAMED_IAM' deploy/aws/backup-monitoring/deploy.sh
