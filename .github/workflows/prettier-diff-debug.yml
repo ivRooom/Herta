@@ -1,0 +1,30 @@
+name: Prettier Diff Debug
+
+on:
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  diff:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Prettierが要求する差分を表示
+        run: |
+          pnpm exec prettier --write docs/BACKUP_MONITORING_IAC.md
+          git diff -- docs/BACKUP_MONITORING_IAC.md
+          test -z "$(git status --short docs/BACKUP_MONITORING_IAC.md)"
