@@ -35,7 +35,10 @@ const validHealth = {
   },
 };
 
-function restoreHealthEnvironment(originalFetch: typeof globalThis.fetch, originalHealthUrl?: string) {
+function restoreHealthEnvironment(
+  originalFetch: typeof globalThis.fetch,
+  originalHealthUrl?: string,
+) {
   globalThis.fetch = originalFetch;
   if (originalHealthUrl === undefined) {
     delete process.env['BOT_HEALTH_URL'];
