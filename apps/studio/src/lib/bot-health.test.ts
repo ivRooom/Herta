@@ -97,10 +97,12 @@ test('障害状態の503レスポンス形式も受け入れる', () => {
 test('Bot側のチェック待機時間へ余裕を加えた取得タイムアウトを使う', () => {
   assert.equal(resolveBotHealthRequestTimeoutMs(undefined, '5000'), 6000);
   assert.equal(resolveBotHealthRequestTimeoutMs(undefined, '3000'), 4000);
+  assert.equal(resolveBotHealthRequestTimeoutMs(undefined, '60000'), 61000);
 });
 
-test('Studio側の明示タイムアウトを優先する', () => {
+test('Studio側の明示タイムアウトを安全な下限以上で使用する', () => {
   assert.equal(resolveBotHealthRequestTimeoutMs('8000', '5000'), 8000);
+  assert.equal(resolveBotHealthRequestTimeoutMs('3500', '5000'), 6000);
 });
 
 test('JSONではない応答を不正なレスポンスとして分類する', async (t) => {
