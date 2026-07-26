@@ -31,6 +31,7 @@ export const botHealthResponseSchema = z.object({
   checked_at: z.string().datetime(),
   uptime_seconds: z.number().nonnegative(),
   version: z.string(),
+  guild_count: z.number().int().nonnegative(),
   checks: z.object({
     process: baseCheckSchema,
     discord: baseCheckSchema.extend({
