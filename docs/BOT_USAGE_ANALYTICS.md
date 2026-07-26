@@ -98,20 +98,7 @@ docker compose \
 
 `migrator`の終了コードが`0`で、`20260727150000_add_command_execution_events`が適用済みであることを確認します。
 
-テーブルの存在確認:
-
-```bash
-cd /app/herta
-
-docker compose \
-  --env-file .env.production \
-  -f docker-compose.prod.yml \
-  exec -T postgres \
-  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-  -c '\d command_execution_events'
-```
-
-シェル側に`POSTGRES_USER`または`POSTGRES_DB`が展開されていない場合は、次を使用します。
+テーブルの存在確認は、PostgreSQLコンテナ内で環境変数を展開する次のコマンドを使用します。
 
 ```bash
 cd /app/herta
@@ -121,6 +108,17 @@ docker compose \
   -f docker-compose.prod.yml \
   exec -T postgres sh -lc \
   'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\\d command_execution_events"'
+```
+
+シェル側へ`POSTGRES_USER`と`POSTGRES_DB`を明示的にexport済みの場合に限り、次の直接実行も使用できます。
+
+```bash
+docker compose \
+  --env-file .env.production \
+  -f docker-compose.prod.yml \
+  exec -T postgres \
+  psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+  -c '\d command_execution_events'
 ```
 
 ### 4. Botヘルス
