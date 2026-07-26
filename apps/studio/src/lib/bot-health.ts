@@ -8,13 +8,7 @@ const publicServiceStatusSchema = z.enum([
   'unknown',
 ]);
 
-const internalCheckStatusSchema = z.enum([
-  'ok',
-  'warning',
-  'error',
-  'not_configured',
-  'unknown',
-]);
+const internalCheckStatusSchema = z.enum(['ok', 'warning', 'error', 'not_configured', 'unknown']);
 
 const baseCheckSchema = z
   .object({
@@ -42,13 +36,7 @@ export const botHealthResponseSchema = z.object({
     discord: baseCheckSchema.extend({
       connected: z.boolean(),
       ready: z.boolean(),
-      gateway_status: z.enum([
-        'ready',
-        'connecting',
-        'reconnecting',
-        'disconnected',
-        'unknown',
-      ]),
+      gateway_status: z.enum(['ready', 'connecting', 'reconnecting', 'disconnected', 'unknown']),
       reconnecting: z.boolean(),
       last_ready_at: z.string().datetime().nullable(),
       last_heartbeat_at: z.string().datetime().nullable(),

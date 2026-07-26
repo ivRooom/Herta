@@ -15,11 +15,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { RefreshHealthButton } from '@/components/refresh-health-button';
-import {
-  getBotHealth,
-  type BotCheckStatus,
-  type BotServiceStatus,
-} from '@/lib/bot-health';
+import { getBotHealth, type BotCheckStatus, type BotServiceStatus } from '@/lib/bot-health';
 
 export const dynamic = 'force-dynamic';
 
@@ -211,7 +207,10 @@ export default async function OperationsDashboardPage() {
       {!result.available ? (
         <section className="mt-8 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-6">
           <div className="flex items-start gap-3">
-            <WifiOff className="mt-0.5 h-5 w-5 text-amber-700 dark:text-amber-300" aria-hidden="true" />
+            <WifiOff
+              className="mt-0.5 h-5 w-5 text-amber-700 dark:text-amber-300"
+              aria-hidden="true"
+            />
             <div>
               <h2 className="font-medium text-amber-800 dark:text-amber-200">
                 {unavailableMessages[result.reason].title}
@@ -268,7 +267,10 @@ export default async function OperationsDashboardPage() {
               status={result.health.checks.process.status}
               icon={Bot}
             >
-              <Detail label="状態" value={CHECK_STATUS_META[result.health.checks.process.status].description} />
+              <Detail
+                label="状態"
+                value={CHECK_STATUS_META[result.health.checks.process.status].description}
+              />
               <Detail label="バージョン" value={result.health.version} />
               <Detail label="稼働時間" value={formatUptime(result.health.uptime_seconds)} />
             </CheckCard>
@@ -280,8 +282,14 @@ export default async function OperationsDashboardPage() {
               icon={Radio}
             >
               <Detail label="Gateway" value={result.health.checks.discord.gateway_status} />
-              <Detail label="接続" value={result.health.checks.discord.connected ? '接続済み' : '未接続'} />
-              <Detail label="Ready" value={result.health.checks.discord.ready ? '準備完了' : '未完了'} />
+              <Detail
+                label="接続"
+                value={result.health.checks.discord.connected ? '接続済み' : '未接続'}
+              />
+              <Detail
+                label="Ready"
+                value={result.health.checks.discord.ready ? '準備完了' : '未完了'}
+              />
               <Detail
                 label="最終Heartbeat"
                 value={formatDateTime(result.health.checks.discord.last_heartbeat_at)}
