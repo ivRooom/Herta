@@ -1,0 +1,254 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Herta PostgreSQL backup freshness monitoring
+
+Parameters:
+  BackupBucketName:
+    Type: String
+    Description: S3 bucket that stores Herta PostgreSQL dumps
+  AlertTopicArn:
+    Type: String
+    Description: Existing SNS topic ARN for backup alerts
+  ResourceNameSuffix:
+    Type: String
+    Default: managed
+    AllowedPattern: '[a-z0-9-]+'
+    Description: Suffix used to avoid conflicts with manually created resources
+  BackupPrefix:
+    Type: String
+    Default: postgres
+  MaximumBackupAgeHours:
+    Type: Number
+    Default: 25
+    MinValue: 1
+  ScheduleExpression:
+    Type: String
+    Default: cron(0 5 * * ? *)
+  ScheduleTimezone:
+    Type: String
+    Default: Asia/Tokyo
+  LogRetentionDays:
+    Type: Number
+    Default: 30
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365]
+
+Resources:
+  BackupFreshnessDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub herta-backup-freshness-scheduler-${ResourceNameSuffix}-dlq
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+      Tags:
+        - Key: Application
+          Value: Herta
+        - Key: Purpose
+          Value: BackupFreshnessCheck
+
+  BackupFreshnessLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub herta-backup-freshness-lambda-${ResourceNameSuffix}-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: HertaBackupFreshnessAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: ListHertaBackups
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !Sub arn:${AWS::Partition}:s3:::${BackupBucketName}
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      - !Ref BackupPrefix
+                      - !Sub ${BackupPrefix}/*
+              - Sid: PublishHertaBackupAlerts
+                Effect: Allow
+                Action: sns:Publish
+                Resource: !Ref AlertTopicArn
+      Tags:
+        - Key: Application
+          Value: Herta
+        - Key: Purpose
+          Value: BackupFreshnessCheck
+
+  BackupFreshnessLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/herta-backup-freshness-check-${ResourceNameSuffix}
+      RetentionInDays: !Ref LogRetentionDays
+
+  BackupFreshnessFunction:
+    Type: AWS::Lambda::Function
+    DependsOn: BackupFreshnessLogGroup
+    Properties:
+      FunctionName: !Sub herta-backup-freshness-check-${ResourceNameSuffix}
+      Runtime: python3.13
+      Handler: index.lambda_handler
+      Role: !GetAtt BackupFreshnessLambdaRole.Arn
+      Timeout: 30
+      MemorySize: 128
+      Architectures: [arm64]
+      Environment:
+        Variables:
+          S3_BUCKET: !Ref BackupBucketName
+          S3_PREFIX: !Ref BackupPrefix
+          SNS_TOPIC_ARN: !Ref AlertTopicArn
+          MAX_BACKUP_AGE_HOURS: !Ref MaximumBackupAgeHours
+      Code:
+        ZipFile: |
+          import json
+          import os
+          from datetime import datetime, timezone
+
+          import boto3
+
+          s3 = boto3.client("s3")
+          sns = boto3.client("sns")
+          S3_BUCKET = os.environ["S3_BUCKET"]
+          S3_PREFIX = os.environ.get("S3_PREFIX", "postgres").strip("/")
+          SNS_TOPIC_ARN = os.environ["SNS_TOPIC_ARN"]
+          MAX_BACKUP_AGE_HOURS = float(os.environ.get("MAX_BACKUP_AGE_HOURS", "25"))
+
+          def notify(subject, message):
+              response = sns.publish(TopicArn=SNS_TOPIC_ARN, Subject=subject, Message=message)
+              return response["MessageId"]
+
+          def latest_dump():
+              latest = None
+              paginator = s3.get_paginator("list_objects_v2")
+              for page in paginator.paginate(Bucket=S3_BUCKET, Prefix=f"{S3_PREFIX}/"):
+                  for obj in page.get("Contents", []):
+                      if not obj["Key"].endswith(".dump"):
+                          continue
+                      if latest is None or obj["LastModified"] > latest["LastModified"]:
+                          latest = obj
+              return latest
+
+          def lambda_handler(event, context):
+              now = datetime.now(timezone.utc)
+              latest = latest_dump()
+              force_alert = isinstance(event, dict) and event.get("force_alert") is True
+              if latest is None:
+                  message_id = notify(
+                      "[ALERT] Herta backup was not found",
+                      f"Time (UTC): {now.isoformat()}\nS3 bucket: {S3_BUCKET}\nPrefix: {S3_PREFIX}/",
+                  )
+                  return {"status": "alert", "reason": "no_backup", "message_id": message_id}
+
+              latest_time = latest["LastModified"]
+              age_hours = (now - latest_time).total_seconds() / 3600
+              result = {
+                  "latest_key": latest["Key"],
+                  "latest_time": latest_time.isoformat(),
+                  "age_hours": round(age_hours, 2),
+                  "maximum_age_hours": MAX_BACKUP_AGE_HOURS,
+              }
+              if force_alert:
+                  message_id = notify(
+                      "[TEST] Herta backup freshness monitor",
+                      f"Latest backup: {latest['Key']}\nAge: {age_hours:.2f} hours",
+                  )
+                  return {"status": "test_alert", "message_id": message_id, **result}
+              if age_hours > MAX_BACKUP_AGE_HOURS:
+                  message_id = notify(
+                      "[ALERT] Herta PostgreSQL backup is stale",
+                      f"Latest backup: {latest['Key']}\nLast modified: {latest_time.isoformat()}\nAge: {age_hours:.2f} hours\nMaximum: {MAX_BACKUP_AGE_HOURS:.2f} hours",
+                  )
+                  return {"status": "alert", "reason": "stale_backup", "message_id": message_id, **result}
+
+              print(json.dumps({"status": "ok", **result}))
+              return {"status": "ok", **result}
+      Tags:
+        - Key: Application
+          Value: Herta
+        - Key: Purpose
+          Value: BackupFreshnessCheck
+
+  BackupFreshnessSchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub herta-backup-freshness-scheduler-${ResourceNameSuffix}-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: scheduler.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InvokeHertaBackupFreshnessLambda
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt BackupFreshnessFunction.Arn
+              - Effect: Allow
+                Action: sqs:SendMessage
+                Resource: !GetAtt BackupFreshnessDeadLetterQueue.Arn
+      Tags:
+        - Key: Application
+          Value: Herta
+        - Key: Purpose
+          Value: BackupFreshnessSchedule
+
+  BackupFreshnessSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: !Sub herta-backup-freshness-daily-${ResourceNameSuffix}
+      Description: Check Herta PostgreSQL backup freshness every day
+      ScheduleExpression: !Ref ScheduleExpression
+      ScheduleExpressionTimezone: !Ref ScheduleTimezone
+      FlexibleTimeWindow:
+        Mode: 'OFF'
+      State: ENABLED
+      Target:
+        Arn: !GetAtt BackupFreshnessFunction.Arn
+        RoleArn: !GetAtt BackupFreshnessSchedulerRole.Arn
+        Input: '{}'
+        DeadLetterConfig:
+          Arn: !GetAtt BackupFreshnessDeadLetterQueue.Arn
+        RetryPolicy:
+          MaximumEventAgeInSeconds: 3600
+          MaximumRetryAttempts: 2
+
+  BackupFreshnessDlqAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub herta-backup-freshness-scheduler-${ResourceNameSuffix}-dlq-not-empty
+      AlarmDescription: EventBridge Scheduler could not invoke the backup freshness Lambda
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt BackupFreshnessDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopicArn
+
+Outputs:
+  FunctionName:
+    Value: !Ref BackupFreshnessFunction
+  FunctionArn:
+    Value: !GetAtt BackupFreshnessFunction.Arn
+  ScheduleName:
+    Value: !Ref BackupFreshnessSchedule
+  ScheduleArn:
+    Value: !GetAtt BackupFreshnessSchedule.Arn
+  DeadLetterQueueArn:
+    Value: !GetAtt BackupFreshnessDeadLetterQueue.Arn
