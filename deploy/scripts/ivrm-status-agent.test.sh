@@ -44,7 +44,7 @@ while [ "$#" -gt 0 ]; do
       data_file="${2#@}"
       shift 2
       ;;
-    --write-out|--connect-timeout|--max-time|--proto|--retry|--retry-delay|--retry-max-time)
+    --write-out|--connect-timeout|--max-time|--max-filesize|--proto|--retry|--retry-delay|--retry-max-time)
       shift 2
       ;;
     --silent|--show-error|--tlsv1.2)
@@ -149,6 +149,25 @@ cat > "${FIXTURE_DIR}/invalid.json" <<'JSON'
   "status": "operational",
   "checked_at": "2026-07-27T00:00:00.000Z",
   "checks": {}
+}
+JSON
+
+cat > "${FIXTURE_DIR}/invalid-version.json" <<'JSON'
+{
+  "service": { "id": "herta-discord-bot" },
+  "status": "operational",
+  "checked_at": "2026-07-27T00:02:00.000Z",
+  "version": {
+    "secret_token": "must-not-be-forwarded",
+    "internal_url": "https://internal.example/secret"
+  },
+  "checks": {
+    "process": { "status": "ok" },
+    "discord": { "status": "ok" },
+    "database": { "status": "ok" },
+    "redis": { "status": "ok" },
+    "worker": { "status": "ok" }
+  }
 }
 JSON
 
@@ -288,6 +307,14 @@ assert_equal 3 "${LAST_STATUS}" '不正なヘルス形式を拒否すること'
 assert_file_absent "${CAPTURE_DIR}/post-count.txt" '不正ヘルスを外部送信しないこと'
 
 echo 'PASS: 不正なヘルスレスポンスを拒否'
+
+run_agent "${FIXTURE_DIR}/invalid-version.json" 200 202
+assert_equal 3 "${LAST_STATUS}" 'object型versionを拒否すること'
+assert_file_absent "${CAPTURE_DIR}/post-count.txt" '不正versionを外部送信しないこと'
+assert_not_contains 'must-not-be-forwarded' "${LAST_STDOUT}" '不正version内容を標準出力へ表示しないこと'
+assert_not_contains 'must-not-be-forwarded' "${LAST_STDERR}" '不正version内容を標準エラーへ表示しないこと'
+
+echo 'PASS: object型versionを公開payload生成前に拒否'
 
 run_agent "${FIXTURE_DIR}/operational.json" 200 401
 assert_equal 4 "${LAST_STATUS}" 'status-ingestの非2xxを失敗扱いにすること'
