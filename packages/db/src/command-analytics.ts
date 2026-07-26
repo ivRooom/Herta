@@ -80,7 +80,9 @@ function normalizeOptionalText(value: string | null | undefined, maxLength: numb
   return normalized ? normalized.slice(0, maxLength) : null;
 }
 
-export function normalizeCommandExecutionInput(input: CommandExecutionInput): CommandExecutionInput {
+export function normalizeCommandExecutionInput(
+  input: CommandExecutionInput,
+): CommandExecutionInput {
   return {
     guildId: normalizeOptionalText(input.guildId, MAX_GUILD_ID_LENGTH),
     commandName:
