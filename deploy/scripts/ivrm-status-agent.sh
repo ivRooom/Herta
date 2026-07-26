@@ -148,10 +148,10 @@ set +e
 HEALTH_HTTP_CODE="$(
   (
     ulimit -f "${HEALTH_FILE_LIMIT_BLOCKS}"
-    curl \
+    # systemdやホストにProxy環境変数があっても、loopback healthは必ず直接取得する。
+    NO_PROXY='*' no_proxy='*' curl \
       --silent \
       --show-error \
-      --noproxy '*' \
       --output "${HEALTH_FILE}" \
       --write-out '%{http_code}' \
       --connect-timeout "${STATUS_CONNECT_TIMEOUT_SECONDS}" \
