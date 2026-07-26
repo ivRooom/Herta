@@ -38,11 +38,16 @@ const healthServer = healthConfig.enabled
     })
   : undefined;
 
+const COMMAND_ANALYTICS_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1_000;
+
 let shuttingDown = false;
+let commandAnalyticsPruneInFlight = false;
+let commandAnalyticsPruneTimer: NodeJS.Timeout | undefined;
 
 async function pruneCommandAnalytics(): Promise<void> {
-  if (!process.env['DATABASE_URL']) return;
+  if (!process.env['DATABASE_URL'] || commandAnalyticsPruneInFlight) return;
 
+  commandAnalyticsPruneInFlight = true;
   try {
     const deleted = await pruneCommandExecutionEvents(getPrismaClient());
     if (deleted > 0) {
@@ -50,7 +55,24 @@ async function pruneCommandAnalytics(): Promise<void> {
     }
   } catch (error) {
     logger.warn({ err: error }, '古いコマンド実行履歴の整理に失敗しました');
+  } finally {
+    commandAnalyticsPruneInFlight = false;
   }
+}
+
+function startCommandAnalyticsPruning(): void {
+  if (!process.env['DATABASE_URL'] || commandAnalyticsPruneTimer) return;
+
+  commandAnalyticsPruneTimer = setInterval(() => {
+    void pruneCommandAnalytics();
+  }, COMMAND_ANALYTICS_PRUNE_INTERVAL_MS);
+  commandAnalyticsPruneTimer.unref();
+}
+
+function stopCommandAnalyticsPruning(): void {
+  if (!commandAnalyticsPruneTimer) return;
+  clearInterval(commandAnalyticsPruneTimer);
+  commandAnalyticsPruneTimer = undefined;
 }
 
 async function main(): Promise<void> {
@@ -59,7 +81,9 @@ async function main(): Promise<void> {
     await pruneCommandAnalytics();
     await healthServer?.start();
     await bot.start();
+    startCommandAnalyticsPruning();
   } catch (error) {
+    stopCommandAnalyticsPruning();
     await healthServer?.stop().catch(() => undefined);
     logger.fatal(error, 'Bot の起動に失敗しました');
     process.exitCode = 1;
@@ -69,6 +93,7 @@ async function main(): Promise<void> {
 async function shutdown(signal: 'SIGINT' | 'SIGTERM'): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
+  stopCommandAnalyticsPruning();
   logger.info({ signal }, 'シャットダウン中...');
 
   const results = await Promise.allSettled([healthServer?.stop(), bot.stop()]);
