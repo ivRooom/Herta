@@ -29,14 +29,14 @@ S3へ保存された最新のPostgreSQL custom-format dump (`.dump`) が、実�
 
 ## 構成ファイル
 
-| ファイル | 用途 |
-| --- | --- |
-| `deploy/scripts/verify-backup-restore.sh` | リストア検証本体 |
-| `deploy/scripts/verify-backup-restore.test.sh` | AWS・Dockerをモックした成功/失敗テスト |
-| `deploy/systemd/herta-backup-restore-verification.service` | oneshotサービス |
-| `deploy/systemd/herta-backup-restore-verification.timer` | 毎週月曜03:30 JSTのタイマー |
-| `deploy/systemd/backup-restore-verification.env.example` | 環境変数例 |
-| `.github/workflows/backup-restore-verification-ci.yml` | シェル・systemd・安全設定のCI |
+| ファイル                                                   | 用途                                   |
+| ---------------------------------------------------------- | -------------------------------------- |
+| `deploy/scripts/verify-backup-restore.sh`                  | リストア検証本体                       |
+| `deploy/scripts/verify-backup-restore.test.sh`             | AWS・Dockerをモックした成功/失敗テスト |
+| `deploy/systemd/herta-backup-restore-verification.service` | oneshotサービス                        |
+| `deploy/systemd/herta-backup-restore-verification.timer`   | 毎週月曜03:30 JSTのタイマー            |
+| `deploy/systemd/backup-restore-verification.env.example`   | 環境変数例                             |
+| `.github/workflows/backup-restore-verification-ci.yml`     | シェル・systemd・安全設定のCI          |
 
 ## 前提条件
 
@@ -70,10 +70,7 @@ command -v flock
       "Resource": "arn:aws:s3:::HERTA_BACKUP_BUCKET",
       "Condition": {
         "StringLike": {
-          "s3:prefix": [
-            "postgres",
-            "postgres/*"
-          ]
+          "s3:prefix": ["postgres", "postgres/*"]
         }
       }
     },
@@ -259,16 +256,16 @@ sudo systemctl daemon-reload
 
 ## トラブルシューティング
 
-| 症状 | 確認事項 |
-| --- | --- |
-| S3の最新dumpを取得できない | `S3_BUCKET`、`S3_PREFIX`、`s3:ListBucket`を確認 |
-| `AccessDenied`でダウンロードできない | `s3:GetObject`と対象ARNを確認 |
-| SNS通知だけ失敗する | `SNS_TOPIC_ARN`、`sns:Publish`、リージョンを確認 |
-| Docker socketへ接続できない | `ubuntu`が`docker`グループへ所属しているか確認 |
-| PostgreSQLイメージを取得できない | Docker Hubへの疎通とディスク空き容量を確認 |
-| 120秒以内に起動しない | `docker logs <container>`、メモリ・ディスク空きを確認 |
-| テーブル数が期待値未満 | dump対象DB、dump方式、`MIN_PUBLIC_TABLES`を確認 |
-| 一時コンテナが残った | labelで特定し、原因調査後に`docker rm -f`で削除 |
+| 症状                                 | 確認事項                                              |
+| ------------------------------------ | ----------------------------------------------------- |
+| S3の最新dumpを取得できない           | `S3_BUCKET`、`S3_PREFIX`、`s3:ListBucket`を確認       |
+| `AccessDenied`でダウンロードできない | `s3:GetObject`と対象ARNを確認                         |
+| SNS通知だけ失敗する                  | `SNS_TOPIC_ARN`、`sns:Publish`、リージョンを確認      |
+| Docker socketへ接続できない          | `ubuntu`が`docker`グループへ所属しているか確認        |
+| PostgreSQLイメージを取得できない     | Docker Hubへの疎通とディスク空き容量を確認            |
+| 120秒以内に起動しない                | `docker logs <container>`、メモリ・ディスク空きを確認 |
+| テーブル数が期待値未満               | dump対象DB、dump方式、`MIN_PUBLIC_TABLES`を確認       |
+| 一時コンテナが残った                 | labelで特定し、原因調査後に`docker rm -f`で削除       |
 
 ## 注意事項
 
