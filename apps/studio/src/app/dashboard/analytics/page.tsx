@@ -78,10 +78,12 @@ function UsageChart({ analytics }: { analytics: CommandUsageAnalytics }) {
         </div>
         <div className="flex items-center gap-4 text-xs text-muted">
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />成功
+            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+            成功
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-full bg-red-500" />失敗
+            <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+            失敗
           </span>
         </div>
       </div>
@@ -102,10 +104,16 @@ function UsageChart({ analytics }: { analytics: CommandUsageAnalytics }) {
                 title={`${day.date}: 成功${day.succeeded}件 / 失敗${day.failed}件`}
               >
                 {successHeight > 0 ? (
-                  <span className="block w-full bg-emerald-500" style={{ height: `${successHeight}px` }} />
+                  <span
+                    className="block w-full bg-emerald-500"
+                    style={{ height: `${successHeight}px` }}
+                  />
                 ) : null}
                 {failureHeight > 0 ? (
-                  <span className="block w-full bg-red-500" style={{ height: `${failureHeight}px` }} />
+                  <span
+                    className="block w-full bg-red-500"
+                    style={{ height: `${failureHeight}px` }}
+                  />
                 ) : null}
               </div>
               <span className="truncate text-[11px] text-muted sm:text-xs">
@@ -125,7 +133,8 @@ function EmptyAnalytics() {
       <Command className="mx-auto h-8 w-8 text-muted" aria-hidden="true" />
       <h2 className="mt-4 font-medium">コマンド実行履歴はまだありません</h2>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-relaxed text-muted">
-        この機能を本番へ反映した後に実行されたSlash Commandから集計を開始します。過去データの自動補完は行いません。
+        この機能を本番へ反映した後に実行されたSlash
+        Commandから集計を開始します。過去データの自動補完は行いません。
       </p>
     </section>
   );
@@ -160,13 +169,17 @@ export default async function AnalyticsDashboardPage() {
       {!analytics ? (
         <section className="mt-8 rounded-2xl border border-red-500/30 bg-red-500/10 p-6">
           <div className="flex items-start gap-3">
-            <CircleAlert className="mt-0.5 h-5 w-5 text-red-700 dark:text-red-300" aria-hidden="true" />
+            <CircleAlert
+              className="mt-0.5 h-5 w-5 text-red-700 dark:text-red-300"
+              aria-hidden="true"
+            />
             <div>
               <h2 className="font-medium text-red-800 dark:text-red-200">
                 利用状況を取得できませんでした
               </h2>
               <p className="mt-1 text-sm leading-relaxed text-red-800/80 dark:text-red-200/80">
-                DB migration、PostgreSQL接続、Studioログを確認してください。Bot本体のコマンド実行には影響しません。
+                DB
+                migration、PostgreSQL接続、Studioログを確認してください。Bot本体のコマンド実行には影響しません。
               </p>
             </div>
           </div>
@@ -205,7 +218,11 @@ export default async function AnalyticsDashboardPage() {
           </div>
 
           <div className="mt-6">
-            {analytics.last7Days.total === 0 ? <EmptyAnalytics /> : <UsageChart analytics={analytics} />}
+            {analytics.last7Days.total === 0 ? (
+              <EmptyAnalytics />
+            ) : (
+              <UsageChart analytics={analytics} />
+            )}
           </div>
 
           <div className="mt-6 grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
@@ -227,7 +244,8 @@ export default async function AnalyticsDashboardPage() {
                     >
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">
-                          <span className="mr-2 text-muted">{index + 1}.</span>/{command.commandName}
+                          <span className="mr-2 text-muted">{index + 1}.</span>/
+                          {command.commandName}
                         </p>
                         <p className="mt-1 text-xs text-muted">
                           成功 {command.succeeded}件 / 失敗 {command.failed}件
@@ -266,7 +284,8 @@ export default async function AnalyticsDashboardPage() {
                         <div className="min-w-0">
                           <p className="truncate text-sm font-medium">/{failure.commandName}</p>
                           <p className="mt-1 truncate text-xs text-muted">
-                            {failure.errorName ?? 'UnknownError'} · {formatDateTime(failure.executedAt)}
+                            {failure.errorName ?? 'UnknownError'} ·{' '}
+                            {formatDateTime(failure.executedAt)}
                           </p>
                         </div>
                         <span className="text-xs tabular-nums text-muted">
