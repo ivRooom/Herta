@@ -40,4 +40,9 @@ jobs:
           grep -q 'MaximumRetryAttempts: 2' "$template"
           grep -q 'Architectures: \[arm64\]' "$template"
           grep -q 'LogRetentionDays' "$template"
+          grep -q 'AWS::CloudWatch::Dashboard' "$template"
+          grep -q 'Herta/BackupMonitoring' "$template"
+          grep -q 'cloudwatch:PutMetricData' "$template"
+          grep -q 'LatestBackupAgeHours' "$template"
+          grep -q 'DashboardUrl' "$template"
           grep -q 'CAPABILITY_NAMED_IAM' deploy/aws/backup-monitoring/deploy.sh
