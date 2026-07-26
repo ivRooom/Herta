@@ -106,6 +106,10 @@ require_positive_integer STATUS_MAX_TIME_SECONDS "${STATUS_MAX_TIME_SECONDS}"
 require_non_negative_integer STATUS_RETRY_COUNT "${STATUS_RETRY_COUNT}"
 require_positive_integer STATUS_MAX_HEALTH_BYTES "${STATUS_MAX_HEALTH_BYTES}"
 
+# Bashのulimit -fは1024-byte block単位です。curlの版に依存せず、
+# Content-Lengthなしの応答も書込み中に停止させます。
+HEALTH_FILE_LIMIT_BLOCKS=$(( (STATUS_MAX_HEALTH_BYTES + 1023) / 1024 ))
+
 if [ "${#STATUS_SIGNING_SECRET}" -lt 32 ] || [ "${STATUS_SIGNING_SECRET}" = "change-me-use-openssl-rand-hex-32" ]; then
   fail "STATUS_SIGNING_SECRETには32文字以上の実Secretを設定してください。" 2
 fi
@@ -142,16 +146,19 @@ PAYLOAD_FILE="${TEMP_DIR}/payload.json"
 log INFO "内部ヘルスを取得します。"
 set +e
 HEALTH_HTTP_CODE="$(
-  curl \
-    --silent \
-    --show-error \
-    --output "${HEALTH_FILE}" \
-    --write-out '%{http_code}' \
-    --connect-timeout "${STATUS_CONNECT_TIMEOUT_SECONDS}" \
-    --max-time "${STATUS_MAX_TIME_SECONDS}" \
-    --max-filesize "${STATUS_MAX_HEALTH_BYTES}" \
-    --header 'Accept: application/json' \
-    "${HEALTH_URL}"
+  (
+    ulimit -f "${HEALTH_FILE_LIMIT_BLOCKS}"
+    curl \
+      --silent \
+      --show-error \
+      --output "${HEALTH_FILE}" \
+      --write-out '%{http_code}' \
+      --connect-timeout "${STATUS_CONNECT_TIMEOUT_SECONDS}" \
+      --max-time "${STATUS_MAX_TIME_SECONDS}" \
+      --max-filesize "${STATUS_MAX_HEALTH_BYTES}" \
+      --header 'Accept: application/json' \
+      "${HEALTH_URL}"
+  )
 )"
 HEALTH_CURL_STATUS=$?
 set -e
