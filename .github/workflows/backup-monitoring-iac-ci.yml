@@ -25,10 +25,11 @@ jobs:
       - name: デプロイスクリプトの構文を検証
         run: bash -n deploy/aws/backup-monitoring/deploy.sh
 
+      - name: cfn-lintをインストール
+        run: pipx install cfn-lint
+
       - name: CloudFormationテンプレートを検証
-        uses: aws-cloudformation/cfn-lint-action@v2
-        with:
-          command: cfn-lint deploy/aws/backup-monitoring/template.yml
+        run: cfn-lint deploy/aws/backup-monitoring/template.yml
 
       - name: 安全設定を検証
         run: |
