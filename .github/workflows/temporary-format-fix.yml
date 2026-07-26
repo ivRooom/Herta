@@ -1,0 +1,52 @@
+name: Temporary Format Fix
+
+on:
+  push:
+    branches: [feat/backup-restore-verification]
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: 追加ファイルをPrettierで整形
+        run: |
+          pnpm exec prettier --write \
+            .github/workflows/backup-restore-verification-ci.yml \
+            .github/workflows/temporary-format-fix.yml \
+            docs/BACKUP_RESTORE_VERIFICATION.md
+
+      - name: 整形結果をコミット
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet; then
+            echo '整形差分はありません。'
+            exit 0
+          fi
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            .github/workflows/backup-restore-verification-ci.yml \
+            .github/workflows/temporary-format-fix.yml \
+            docs/BACKUP_RESTORE_VERIFICATION.md
+          git commit -m '追加ファイルをPrettierで整形'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
