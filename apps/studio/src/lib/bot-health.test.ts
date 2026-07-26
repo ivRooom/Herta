@@ -1,0 +1,79 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { parseBotHealthResponse } from './bot-health.ts';
+
+const validHealth = {
+  service: {
+    id: 'herta-discord-bot',
+    name: 'Herta',
+    type: 'discord_bot',
+  },
+  status: 'operational',
+  checked_at: '2026-07-26T13:00:00.000Z',
+  uptime_seconds: 3600,
+  version: '0.1.0',
+  checks: {
+    process: { status: 'ok' },
+    discord: {
+      status: 'ok',
+      connected: true,
+      ready: true,
+      gateway_status: 'ready',
+      reconnecting: false,
+      last_ready_at: '2026-07-26T12:00:00.000Z',
+      last_heartbeat_at: '2026-07-26T12:59:30.000Z',
+      last_disconnect_at: null,
+      heartbeat_source: 'gateway_status_observation',
+    },
+    database: { status: 'ok', latency_ms: 12 },
+    redis: { status: 'ok', latency_ms: 3 },
+    worker: {
+      status: 'ok',
+      latency_ms: 2,
+      last_heartbeat_at: '2026-07-26T12:59:50.000Z',
+    },
+  },
+};
+
+test('Botヘルスの正常レスポンスを受け入れる', () => {
+  const parsed = parseBotHealthResponse(validHealth);
+
+  assert.ok(parsed);
+  assert.equal(parsed.status, 'operational');
+  assert.equal(parsed.checks.discord.gateway_status, 'ready');
+  assert.equal(parsed.checks.database.latency_ms, 12);
+});
+
+test('必須フィールドが不足したレスポンスを拒否する', () => {
+  const parsed = parseBotHealthResponse({
+    ...validHealth,
+    checks: {
+      ...validHealth.checks,
+      discord: { status: 'ok' },
+    },
+  });
+
+  assert.equal(parsed, null);
+});
+
+test('障害状態の503レスポンス形式も受け入れる', () => {
+  const parsed = parseBotHealthResponse({
+    ...validHealth,
+    status: 'outage',
+    checks: {
+      ...validHealth.checks,
+      discord: {
+        ...validHealth.checks.discord,
+        status: 'error',
+        connected: false,
+        ready: false,
+        gateway_status: 'disconnected',
+        message: 'dependency check failed',
+      },
+    },
+  });
+
+  assert.ok(parsed);
+  assert.equal(parsed.status, 'outage');
+  assert.equal(parsed.checks.discord.status, 'error');
+});
