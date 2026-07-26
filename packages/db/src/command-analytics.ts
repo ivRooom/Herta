@@ -125,25 +125,16 @@ export async function recordCommandExecution(
 ): Promise<void> {
   const normalized = normalizeCommandExecutionInput(input);
 
-  await prisma.$executeRaw`
-    INSERT INTO "command_execution_events" (
-      "id",
-      "guild_id",
-      "command_name",
-      "status",
-      "duration_ms",
-      "error_name",
-      "executed_at"
-    ) VALUES (
-      ${randomUUID()},
-      ${normalized.guildId},
-      ${normalized.commandName},
-      ${normalized.status},
-      ${normalized.durationMs},
-      ${normalized.errorName ?? null},
-      CURRENT_TIMESTAMP
-    )
-  `;
+  await prisma.commandExecutionEvent.create({
+    data: {
+      id: randomUUID(),
+      guildId: normalized.guildId,
+      commandName: normalized.commandName,
+      status: normalized.status,
+      durationMs: normalized.durationMs,
+      errorName: normalized.errorName ?? null,
+    },
+  });
 }
 
 export async function pruneCommandExecutionEvents(
@@ -154,11 +145,11 @@ export async function pruneCommandExecutionEvents(
     MAX_RETENTION_DAYS,
     Math.max(1, Math.floor(retentionDays)),
   );
-
-  return prisma.$executeRaw`
-    DELETE FROM "command_execution_events"
-    WHERE "executed_at" < CURRENT_TIMESTAMP - (${normalizedRetentionDays} * INTERVAL '1 day')
-  `;
+  const cutoff = new Date(Date.now() - normalizedRetentionDays * DAY_MS);
+  const result = await prisma.commandExecutionEvent.deleteMany({
+    where: { executedAt: { lt: cutoff } },
+  });
+  return result.count;
 }
 
 export async function getCommandUsageAnalytics(
