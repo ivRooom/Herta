@@ -151,6 +151,7 @@ HEALTH_HTTP_CODE="$(
     curl \
       --silent \
       --show-error \
+      --noproxy '*' \
       --output "${HEALTH_FILE}" \
       --write-out '%{http_code}' \
       --connect-timeout "${STATUS_CONNECT_TIMEOUT_SECONDS}" \
