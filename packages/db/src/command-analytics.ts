@@ -72,6 +72,8 @@ const MAX_COMMAND_NAME_LENGTH = 100;
 const MAX_GUILD_ID_LENGTH = 64;
 const MAX_ERROR_NAME_LENGTH = 120;
 const MAX_DURATION_MS = 5 * 60 * 1000;
+const DEFAULT_RETENTION_DAYS = 90;
+const MAX_RETENTION_DAYS = 3_650;
 
 function normalizeOptionalText(value: string | null | undefined, maxLength: number): string | null {
   const normalized = value?.trim();
@@ -95,12 +97,7 @@ export function startOfJstDay(value: Date): Date {
 }
 
 function formatJstDate(value: Date): string {
-  return new Intl.DateTimeFormat('en-CA', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    timeZone: 'Asia/Tokyo',
-  }).format(value);
+  return new Date(value.getTime() + JST_OFFSET_MS).toISOString().slice(0, 10);
 }
 
 export function fillCommandUsageDays(
@@ -146,6 +143,21 @@ export async function recordCommandExecution(
       ${normalized.errorName ?? null},
       CURRENT_TIMESTAMP
     )
+  `;
+}
+
+export async function pruneCommandExecutionEvents(
+  prisma: PrismaClient,
+  retentionDays = DEFAULT_RETENTION_DAYS,
+): Promise<number> {
+  const normalizedRetentionDays = Math.min(
+    MAX_RETENTION_DAYS,
+    Math.max(1, Math.floor(retentionDays)),
+  );
+
+  return prisma.$executeRaw`
+    DELETE FROM "command_execution_events"
+    WHERE "executed_at" < CURRENT_TIMESTAMP - (${normalizedRetentionDays} * INTERVAL '1 day')
   `;
 }
 
