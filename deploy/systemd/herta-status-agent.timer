@@ -1,0 +1,14 @@
+[Unit]
+Description=Send Herta public status every minute
+Documentation=file:/app/herta/docs/STATUS_AGENT.md
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=5s
+RandomizedDelaySec=5s
+Persistent=false
+Unit=herta-status-agent.service
+
+[Install]
+WantedBy=timers.target
