@@ -38,7 +38,7 @@ set +e
 env \
   PATH="${MOCK_BIN}:${PATH}" \
   HEALTH_URL='http://127.0.0.1:3000/healthz' \
-  STATUS_INGEST_URL='https://stats.example.test/api/internal/status-ingest' \
+  STATUS_INGEST_URL='https://stats.ivrm.jp/api/internal/status-ingest' \
   STATUS_SIGNING_SECRET="${SIGNING_SECRET}" \
   STATUS_LOCK_FILE="${TEST_ROOT}/agent.lock" \
   STATUS_MAX_HEALTH_BYTES=65536 \
