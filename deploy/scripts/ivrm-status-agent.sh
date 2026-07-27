@@ -23,6 +23,7 @@ STATUS_DRY_RUN="${STATUS_DRY_RUN:-false}"
 STATUS_ALLOW_HTTP_FOR_TESTS="${STATUS_ALLOW_HTTP_FOR_TESTS:-false}"
 STATUS_ALLOW_NON_LOOPBACK_HEALTH_URL="${STATUS_ALLOW_NON_LOOPBACK_HEALTH_URL:-false}"
 STATUS_INGEST_PATH='/api/internal/status-ingest'
+STATUS_INGEST_HOST='stats.ivrm.jp'
 
 TEMP_DIR=""
 
@@ -109,11 +110,11 @@ validate_ingest_url() {
   local value="$1"
   local allow_http="$2"
 
-  python3 - "${value}" "${allow_http}" "${STATUS_INGEST_PATH}" <<'PY'
+  python3 - "${value}" "${allow_http}" "${STATUS_INGEST_HOST}" "${STATUS_INGEST_PATH}" <<'PY'
 import sys
 from urllib.parse import urlsplit
 
-value, allow_http, expected_path = sys.argv[1:]
+value, allow_http, expected_host, expected_path = sys.argv[1:]
 try:
     parsed = urlsplit(value)
     port = parsed.port
@@ -121,7 +122,11 @@ except (ValueError, IndexError):
     raise SystemExit(1)
 
 scheme = parsed.scheme.lower()
-is_https = scheme == "https"
+is_production_https = (
+    scheme == "https"
+    and parsed.hostname == expected_host
+    and port in {None, 443}
+)
 is_test_http = (
     allow_http == "true"
     and scheme == "http"
@@ -130,8 +135,7 @@ is_test_http = (
     and 1 <= port <= 65535
 )
 valid = (
-    (is_https or is_test_http)
-    and parsed.hostname is not None
+    (is_production_https or is_test_http)
     and parsed.username is None
     and parsed.password is None
     and parsed.path == expected_path
@@ -165,7 +169,7 @@ if [ "${STATUS_SERVICE_ID}" != "herta-discord-bot" ]; then
 fi
 
 if ! validate_ingest_url "${STATUS_INGEST_URL}" "${STATUS_ALLOW_HTTP_FOR_TESTS}"; then
-  fail "STATUS_INGEST_URLには${STATUS_INGEST_PATH}を指すHTTPS URLを設定してください。" 2
+  fail "STATUS_INGEST_URLにはhttps://${STATUS_INGEST_HOST}${STATUS_INGEST_PATH}を設定してください。" 2
 fi
 
 if [ "${STATUS_ALLOW_NON_LOOPBACK_HEALTH_URL}" != "true" ] && ! is_loopback_http_url "${HEALTH_URL}"; then
