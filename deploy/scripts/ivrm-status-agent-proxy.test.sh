@@ -78,7 +78,7 @@ env \
   https_proxy="${PROXY_URL}" HTTPS_PROXY="${PROXY_URL}" ALL_PROXY="${PROXY_URL}" \
   no_proxy='' NO_PROXY='' \
   HEALTH_URL='http://127.0.0.1:9/healthz' \
-  STATUS_INGEST_URL='https://stats.example.test/api/internal/status-ingest' \
+  STATUS_INGEST_URL='https://stats.ivrm.jp/api/internal/status-ingest' \
   STATUS_SIGNING_SECRET="${SIGNING_SECRET}" \
   STATUS_LOCK_FILE="${TEST_ROOT}/agent.lock" \
   STATUS_CONNECT_TIMEOUT_SECONDS=1 STATUS_MAX_TIME_SECONDS=2 STATUS_RETRY_COUNT=0 \
