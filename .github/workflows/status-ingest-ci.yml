@@ -54,7 +54,20 @@ jobs:
           start = workflow.index(start_marker) + len(start_marker)
           end = workflow.index(end_marker, start)
           code = textwrap.dedent(workflow[start:end])
-          exec(compile(code, '<status-ingest-review-fixes>', 'exec'))
+          try:
+              exec(compile(code, '<status-ingest-review-fixes>', 'exec'))
+          except SystemExit as error:
+              if error.code not in (None, 0):
+                  raise
+
+          source_path = Path('services/status-ingest/status_ingest.py')
+          source = source_path.read_text(encoding='utf-8')
+          old = '''                if existing_nonce is not None:\n                    connection.execute("ROLLBACK")\n                    if hmac.compare_digest(\n                        existing_nonce["request_fingerprint"],\n                        request_fingerprint,\n                    ):\n                        return False\n                    raise RequestError('''
+          new = '''                if existing_nonce is not None:\n                    if hmac.compare_digest(\n                        existing_nonce["request_fingerprint"],\n                        request_fingerprint,\n                    ):\n                        connection.execute("ROLLBACK")\n                        return False\n                    raise RequestError('''
+          if old in source:
+              source_path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          elif new not in source:
+              raise SystemExit('二重ROLLBACK修正対象が見つかりません')
           PY
 
       - name: レビュー修正をcommit
@@ -71,7 +84,7 @@ jobs:
           if git diff --cached --quiet; then
             echo 'commit対象の変更はありません。'
           else
-            git commit -m 'fix: status-ingestの再送と入力検証を強化'
+            git commit -m 'fix: Nonce再利用時の二重rollbackを防止'
             git push origin HEAD:feat/oci-status-ingest
           fi
 
