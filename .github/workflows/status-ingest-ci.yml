@@ -43,7 +43,7 @@ jobs:
         working-directory: services/status-ingest
         run: |
           set -euo pipefail
-          python -m compileall -q app.py test_app.py
+          python -m compileall -q app.py runner.py test_app.py
           python -m unittest -v test_app.py
 
       - name: ComposeとCaddy設定を検証
@@ -70,7 +70,7 @@ jobs:
             --tag herta-status-ingest:ci \
             services/status-ingest
 
-      - name: 非root runtimeとhealthを検証
+      - name: 非root runtime・health・正常終了を検証
         run: |
           set -euo pipefail
           test "$(docker run --rm --entrypoint id herta-status-ingest:ci -u)" != '0'
@@ -114,6 +114,8 @@ jobs:
           PY
 
           test "$(docker inspect herta-status-ingest-ci --format '{{.Config.User}}')" = '10001:10001'
+          docker stop --time 5 herta-status-ingest-ci >/dev/null
+          test "$(docker inspect herta-status-ingest-ci --format '{{.State.ExitCode}}')" = '0'
 
       - name: Docker Buildxを準備
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
