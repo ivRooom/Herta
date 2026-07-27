@@ -264,6 +264,7 @@ class StatusIngestTest(unittest.TestCase):
         payload = self.payload(timestamp=old_time)
         self.store.save_observation(
             nonce="abcdefabcdefabcdefabcdefabcdefab",
+            request_fingerprint="stale-fingerprint",
             request_id="test-request",
             payload=payload,
             received_at=datetime.now(UTC) - timedelta(minutes=10),
@@ -282,12 +283,14 @@ class StatusIngestTest(unittest.TestCase):
         old_payload["status"] = "outage"
         self.store.save_observation(
             nonce="11111111111111111111111111111111",
+            request_fingerprint="latest-fingerprint",
             request_id="latest",
             payload=latest_payload,
             received_at=now,
         )
         self.store.save_observation(
             nonce="22222222222222222222222222222222",
+            request_fingerprint="older-fingerprint",
             request_id="older",
             payload=old_payload,
             received_at=now + timedelta(seconds=1),
