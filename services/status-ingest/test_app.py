@@ -4,14 +4,23 @@ import hashlib
 import hmac
 import http.client
 import json
+import os
 import tempfile
 import threading
+import time
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
-from app import Config, StatusServer, StatusStore, format_rfc3339
+from status_ingest import (
+    Config,
+    ConfigurationError,
+    StatusServer,
+    StatusStore,
+    format_rfc3339,
+)
 
 
 class StatusIngestTest(unittest.TestCase):
@@ -71,10 +80,11 @@ class StatusIngestTest(unittest.TestCase):
         *,
         nonce: str = "0123456789abcdef0123456789abcdef",
         secret: bytes | None = None,
+        signature_timestamp: int | None = None,
     ) -> tuple[int, dict[str, Any]]:
         body = json.dumps(payload, separators=(",", ":")).encode()
-        timestamp = payload["sent_at"]
-        canonical = timestamp.encode() + b"\n" + nonce.encode() + b"\n" + body
+        timestamp_text = str(signature_timestamp or int(time.time()))
+        canonical = timestamp_text.encode() + b"\n" + nonce.encode() + b"\n" + body
         signature = hmac.new(secret or self.secret, canonical, hashlib.sha256).hexdigest()
         return self.request(
             "POST",
@@ -83,7 +93,7 @@ class StatusIngestTest(unittest.TestCase):
             headers={
                 "Content-Type": "application/json",
                 "X-IVRM-Signature-Version": "v1",
-                "X-IVRM-Timestamp": timestamp,
+                "X-IVRM-Timestamp": timestamp_text,
                 "X-IVRM-Nonce": nonce,
                 "X-IVRM-Signature": f"sha256={signature}",
             },
@@ -104,7 +114,7 @@ class StatusIngestTest(unittest.TestCase):
         connection.close()
         return response.status, json.loads(raw) if raw else {}
 
-    def test_accepts_signed_observation_and_returns_public_status(self) -> None:
+    def test_accepts_agent_epoch_signature_and_returns_public_status(self) -> None:
         status, response = self.signed_request(self.payload())
         self.assertEqual(202, status)
         self.assertTrue(response["accepted"])
@@ -121,10 +131,34 @@ class StatusIngestTest(unittest.TestCase):
         self.assertNotIn("request_id", public)
 
     def test_rejects_modified_body_with_invalid_signature(self) -> None:
-        payload = self.payload()
         status, response = self.signed_request(
-            payload,
+            self.payload(),
             secret=b"different-signing-secret-0123456789",
+        )
+        self.assertEqual(401, status)
+        self.assertEqual("invalid_signature", response["error"]["code"])
+
+    def test_rejects_rfc3339_signature_header_used_by_neither_agent_nor_contract(self) -> None:
+        payload = self.payload()
+        body = json.dumps(payload, separators=(",", ":")).encode()
+        nonce = "0123456789abcdef0123456789abcdef"
+        timestamp = payload["sent_at"]
+        signature = hmac.new(
+            self.secret,
+            timestamp.encode() + b"\n" + nonce.encode() + b"\n" + body,
+            hashlib.sha256,
+        ).hexdigest()
+        status, response = self.request(
+            "POST",
+            "/v1/observations",
+            body=body,
+            headers={
+                "Content-Type": "application/json",
+                "X-IVRM-Signature-Version": "v1",
+                "X-IVRM-Timestamp": timestamp,
+                "X-IVRM-Nonce": nonce,
+                "X-IVRM-Signature": f"sha256={signature}",
+            },
         )
         self.assertEqual(401, status)
         self.assertEqual("invalid_signature", response["error"]["code"])
@@ -150,11 +184,19 @@ class StatusIngestTest(unittest.TestCase):
         self.assertEqual(422, status)
         self.assertEqual("invalid_payload", response["error"]["code"])
 
-    def test_rejects_old_observation(self) -> None:
+    def test_rejects_old_observation_with_current_signature(self) -> None:
         timestamp = format_rfc3339(datetime.now(UTC) - timedelta(hours=1))
         status, response = self.signed_request(self.payload(timestamp=timestamp))
-        self.assertEqual(401, status)
-        self.assertEqual("invalid_signature", response["error"]["code"])
+        self.assertEqual(422, status)
+        self.assertEqual("stale_observation", response["error"]["code"])
+
+    def test_rejects_sent_at_far_from_signature_timestamp(self) -> None:
+        timestamp = format_rfc3339(datetime.now(UTC) - timedelta(minutes=10))
+        payload = self.payload(timestamp=timestamp)
+        payload["observed_at"] = format_rfc3339(datetime.now(UTC))
+        status, response = self.signed_request(payload)
+        self.assertEqual(422, status)
+        self.assertEqual("invalid_payload", response["error"]["code"])
 
     def test_stale_public_status_becomes_unknown(self) -> None:
         old_time = format_rfc3339(datetime.now(UTC) - timedelta(minutes=10))
@@ -171,6 +213,25 @@ class StatusIngestTest(unittest.TestCase):
         self.assertEqual("unknown", public["status"])
         self.assertEqual("operational", public["reported_status"])
         self.assertTrue(public["freshness"]["stale"])
+
+    def test_older_observation_does_not_replace_latest(self) -> None:
+        now = datetime.now(UTC)
+        latest_payload = self.payload(timestamp=format_rfc3339(now))
+        old_payload = self.payload(timestamp=format_rfc3339(now - timedelta(minutes=1)))
+        old_payload["status"] = "outage"
+        self.store.save_observation(
+            nonce="11111111111111111111111111111111",
+            request_id="latest",
+            payload=latest_payload,
+            received_at=now,
+        )
+        self.store.save_observation(
+            nonce="22222222222222222222222222222222",
+            request_id="older",
+            payload=old_payload,
+            received_at=now + timedelta(seconds=1),
+        )
+        self.assertEqual("operational", self.store.latest()["status"])
 
     def test_returns_unknown_before_first_observation(self) -> None:
         status, public = self.request("GET", "/v1/status")
@@ -198,6 +259,16 @@ class StatusIngestTest(unittest.TestCase):
         self.assertNotIn("raw_body", columns)
         self.assertNotIn("signature", columns)
         self.assertNotIn("secret", columns)
+
+    def test_rejects_nonce_retention_shorter_than_full_signature_window(self) -> None:
+        environment = {
+            "STATUS_SIGNING_SECRET": "test-signing-secret-0123456789abcdef",
+            "STATUS_TIMESTAMP_TOLERANCE_SECONDS": "600",
+            "STATUS_NONCE_RETENTION_SECONDS": "900",
+        }
+        with patch.dict(os.environ, environment, clear=True):
+            with self.assertRaises(ConfigurationError):
+                Config.from_env()
 
 
 if __name__ == "__main__":
