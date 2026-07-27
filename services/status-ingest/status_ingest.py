@@ -467,6 +467,7 @@ class StatusHandler(BaseHTTPRequestHandler):
             status = callback(request_id)
         except RequestError as error:
             status = error.status
+            self.close_connection = True
             self._send_json(
                 status,
                 {
@@ -478,6 +479,7 @@ class StatusHandler(BaseHTTPRequestHandler):
                 },
             )
         except Exception:
+            self.close_connection = True
             LOG.exception(
                 "request_failed",
                 extra={"request_id": request_id, "path": self.path.split("?", 1)[0]},

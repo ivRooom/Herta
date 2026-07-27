@@ -21,11 +21,10 @@ def main() -> int:
     try:
         config = Config.from_env()
         store = StatusStore(config)
+        server = StatusServer((config.host, config.port), config, store)
     except (ConfigurationError, OSError, sqlite3.Error) as error:
         LOG.error("startup_failed: %s", error)
         return 2
-
-    server = StatusServer((config.host, config.port), config, store)
     shutdown_started = threading.Event()
 
     def shutdown(signum: int, frame: Any) -> None:
