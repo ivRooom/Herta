@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, Bot, ExternalLink, Plug, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Bot, ExternalLink, History, Plug, ShieldCheck } from 'lucide-react';
 import { auth } from '@/auth';
 import { getDiscordAccessToken } from '@/lib/session';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
@@ -105,16 +105,29 @@ export default async function GuildDetailPage({
         </div>
       </section>
 
-      <Link
-        href={`/dashboard/guilds/${guildId}/plugins`}
-        className="mt-4 flex items-center gap-3 rounded-2xl border border-border bg-surface p-6 shadow-card transition-colors hover:border-primary/40"
-      >
-        <Plug className="h-5 w-5 text-primary" />
-        <div>
-          <h2 className="font-medium">Plugin Manager</h2>
-          <p className="mt-1 text-sm text-muted">この Guild の Plugin を有効化・設定する</p>
-        </div>
-      </Link>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <Link
+          href={`/dashboard/guilds/${guildId}/plugins`}
+          className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-6 shadow-card transition-colors hover:border-primary/40"
+        >
+          <Plug className="h-5 w-5 text-primary" />
+          <div>
+            <h2 className="font-medium">Plugin Manager</h2>
+            <p className="mt-1 text-sm text-muted">この Guild の Plugin を有効化・設定する</p>
+          </div>
+        </Link>
+
+        <Link
+          href={`/dashboard/guilds/${guildId}/audit-logs`}
+          className="flex items-center gap-3 rounded-2xl border border-border bg-surface p-6 shadow-card transition-colors hover:border-primary/40"
+        >
+          <History className="h-5 w-5 text-primary" />
+          <div>
+            <h2 className="font-medium">監査ログ</h2>
+            <p className="mt-1 text-sm text-muted">設定変更や管理操作の履歴を確認する</p>
+          </div>
+        </Link>
+      </div>
     </div>
   );
 }

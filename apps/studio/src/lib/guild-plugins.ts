@@ -172,6 +172,7 @@ export async function updateGuildPlugin(
           targetType: 'plugin',
           targetId: pluginId,
           changes: { before: { enabled: beforeEnabled }, after: { enabled: nextEnabled } },
+          metadata: { operationSource: 'dashboard' },
         },
       });
     }
@@ -187,6 +188,7 @@ export async function updateGuildPlugin(
             before: { config: beforeConfig },
             after: { config: toJson(validation.config) },
           },
+          metadata: { operationSource: 'dashboard' },
         },
       });
     }
