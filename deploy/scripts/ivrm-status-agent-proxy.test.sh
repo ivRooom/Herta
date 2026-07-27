@@ -26,7 +26,6 @@ from pathlib import Path
 
 port_file = Path(sys.argv[1])
 hit_file = Path(sys.argv[2])
-
 payload = {
     "service": {"id": "herta-discord-bot"},
     "status": "operational",
@@ -42,7 +41,6 @@ payload = {
 }
 body = json.dumps(payload).encode("utf-8")
 
-
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         hit_file.write_text(self.path, encoding="utf-8")
@@ -55,7 +53,6 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         return
 
-
 server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 port_file.write_text(str(server.server_address[1]), encoding="utf-8")
 server.serve_forever()
@@ -63,9 +60,7 @@ PY
 PROXY_PID=$!
 
 for _ in $(seq 1 50); do
-  if [ -s "${PROXY_PORT_FILE}" ]; then
-    break
-  fi
+  if [ -s "${PROXY_PORT_FILE}" ]; then break; fi
   sleep 0.1
 done
 
@@ -79,20 +74,14 @@ PROXY_URL="http://127.0.0.1:${PROXY_PORT}"
 
 set +e
 env \
-  http_proxy="${PROXY_URL}" \
-  HTTP_PROXY="${PROXY_URL}" \
-  https_proxy="${PROXY_URL}" \
-  HTTPS_PROXY="${PROXY_URL}" \
-  ALL_PROXY="${PROXY_URL}" \
-  no_proxy='' \
-  NO_PROXY='' \
+  http_proxy="${PROXY_URL}" HTTP_PROXY="${PROXY_URL}" \
+  https_proxy="${PROXY_URL}" HTTPS_PROXY="${PROXY_URL}" ALL_PROXY="${PROXY_URL}" \
+  no_proxy='' NO_PROXY='' \
   HEALTH_URL='http://127.0.0.1:9/healthz' \
-  STATUS_INGEST_URL='https://status-ingest.example.test/v1/observations' \
+  STATUS_INGEST_URL='https://stats.ivrm.jp/api/internal/status-ingest' \
   STATUS_SIGNING_SECRET="${SIGNING_SECRET}" \
   STATUS_LOCK_FILE="${TEST_ROOT}/agent.lock" \
-  STATUS_CONNECT_TIMEOUT_SECONDS=1 \
-  STATUS_MAX_TIME_SECONDS=2 \
-  STATUS_RETRY_COUNT=0 \
+  STATUS_CONNECT_TIMEOUT_SECONDS=1 STATUS_MAX_TIME_SECONDS=2 STATUS_RETRY_COUNT=0 \
   STATUS_DRY_RUN=true \
   bash "${AGENT_SCRIPT}" >"${TEST_ROOT}/stdout.txt" 2>"${TEST_ROOT}/stderr.txt"
 STATUS=$?

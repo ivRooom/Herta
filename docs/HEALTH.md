@@ -5,7 +5,7 @@
 `GET /healthz` は、`ivrm-status-agent`がHerta Discord Botの利用者影響を判定するための内部向けJSONエンドポイントです。
 CPU・メモリなどのインフラ指標ではなく、Discord Botとして主要機能を提供できるかを返します。
 
-外部送信エージェントは`docs/STATUS_AGENT.md`で管理します。OCI側のstatus-ingest APIと`stats.ivrm.jp`のUIはこのRepositoryに含みません。
+外部送信エージェントは`docs/STATUS_AGENT.md`で管理します。公開画面と受信APIは既存の`ivRooom/ivrm-stats`で管理します。
 
 ## 公開範囲
 
@@ -188,14 +188,18 @@ Workerはheartbeatタイマーを停止し、Redis上のheartbeatキーを削除
 
 ## 外部ステータス連携
 
-Lightsailホスト上の`ivrm-status-agent`が`http://127.0.0.1:3000/healthz`を定期取得し、公開許可フィールドだけをOCI側status-ingest APIへ送信します。
+Lightsailホスト上の`ivrm-status-agent`が`http://127.0.0.1:3000/healthz`を定期取得し、公開許可フィールドだけを既存`ivrm-stats`の次のEndpointへ送信します。
+
+```text
+POST https://stats.ivrm.jp/api/internal/status-ingest
+```
 
 次の詳細は`docs/STATUS_AGENT.md`を参照してください。
 
 - 公開payload
 - 送信しない情報
-- HMAC-SHA256署名
-- Timestamp・Nonceによるreplay対策
-- HTTPS制約
+- 本文SHA-256とHMAC-SHA256署名
+- Timestamp・UUID request IDによるreplay対策
+- HTTPS・固定path制約
 - 再送とタイムアウト
 - systemd導入・停止・ロールバック
