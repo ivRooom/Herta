@@ -126,11 +126,13 @@ jobs:
         run: |
           set -euo pipefail
 
-          grep -q 'X-IVRM-Signature-Version: v1' deploy/scripts/ivrm-status-agent.sh
+          grep -q 'X-IVRM-Service-Id:' deploy/scripts/ivrm-status-agent.sh
           grep -q 'X-IVRM-Timestamp:' deploy/scripts/ivrm-status-agent.sh
-          grep -q 'X-IVRM-Nonce:' deploy/scripts/ivrm-status-agent.sh
-          grep -q 'X-IVRM-Signature: sha256=' deploy/scripts/ivrm-status-agent.sh
-          grep -q 'STATUS_INGEST_URLにはHTTPS URL' deploy/scripts/ivrm-status-agent.sh
+          grep -q 'X-IVRM-Request-Id:' deploy/scripts/ivrm-status-agent.sh
+          grep -q 'X-IVRM-Body-SHA256:' deploy/scripts/ivrm-status-agent.sh
+          grep -q 'X-IVRM-Signature: v1=' deploy/scripts/ivrm-status-agent.sh
+          grep -q '/api/internal/status-ingest' deploy/scripts/ivrm-status-agent.sh
+          grep -q 'STATUS_INGEST_URLには.*を指すHTTPS URL' deploy/scripts/ivrm-status-agent.sh
           grep -q 'HEALTH_URLは既定でloopback' deploy/scripts/ivrm-status-agent.sh
           grep -q "NO_PROXY='\*' no_proxy='\*' curl" deploy/scripts/ivrm-status-agent.sh
           grep -q 'require_boolean STATUS_DRY_RUN' deploy/scripts/ivrm-status-agent.sh
@@ -143,6 +145,14 @@ jobs:
 
           if grep -q 'guild_count:' deploy/scripts/ivrm-status-agent.sh; then
             echo '::error::公開payloadへguild_countを追加しないでください'
+            exit 1
+          fi
+          if grep -q 'checks:' deploy/scripts/ivrm-status-agent.sh; then
+            echo '::error::公開payloadへ内部checksを追加しないでください'
+            exit 1
+          fi
+          if grep -q 'X-IVRM-Nonce:' deploy/scripts/ivrm-status-agent.sh; then
+            echo '::error::既存ivrm-stats契約にないNonce headerを追加しないでください'
             exit 1
           fi
 
