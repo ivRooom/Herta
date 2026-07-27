@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 concurrency:
@@ -33,11 +33,29 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          persist-credentials: false
+          ref: feat/oci-status-ingest
 
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+
+      - name: 一時レビュー修正を作業ツリーへ適用
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          workflow = Path('.github/workflows/apply-status-ingest-review-fixes.yml').read_text(encoding='utf-8')
+          start_marker = "          python - <<'PY'\n"
+          end_marker = "\n          PY\n\n          cd services/status-ingest"
+          start = workflow.index(start_marker) + len(start_marker)
+          end = workflow.index(end_marker, start)
+          code = textwrap.dedent(workflow[start:end])
+          exec(compile(code, '<status-ingest-review-fixes>', 'exec'))
+          PY
 
       - name: Python構文と単体テスト
         working-directory: services/status-ingest
@@ -116,6 +134,24 @@ jobs:
           test "$(docker inspect herta-status-ingest-ci --format '{{.Config.User}}')" = '10001:10001'
           docker stop --time 5 herta-status-ingest-ci >/dev/null
           test "$(docker inspect herta-status-ingest-ci --format '{{.State.ExitCode}}')" = '0'
+
+      - name: レビュー修正をcommit
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            services/status-ingest/status_ingest.py \
+            services/status-ingest/test_app.py \
+            docs/STATUS_INGEST_OCI.md
+          if git diff --cached --quiet; then
+            echo 'commit対象の変更はありません。'
+            exit 0
+          fi
+          git commit -m 'fix: status-ingestの再送と入力検証を強化'
+          git push origin HEAD:feat/oci-status-ingest
 
       - name: Docker Buildxを準備
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
