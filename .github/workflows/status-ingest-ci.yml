@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   packages: write
 
 concurrency:
@@ -33,62 +33,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: feat/oci-status-ingest
+          persist-credentials: false
 
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-
-      - name: 最終レビュー修正を適用
-        if: github.event_name == 'pull_request'
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-
-          source_path = Path('services/status-ingest/status_ingest.py')
-          source = source_path.read_text(encoding='utf-8')
-          old = '''        except RequestError as error:\n            status = error.status\n            self._send_json('''
-          new = '''        except RequestError as error:\n            status = error.status\n            self.close_connection = True\n            self._send_json('''
-          if old in source:
-              source = source.replace(old, new, 1)
-          elif new not in source:
-              raise SystemExit('RequestError接続終了の修正対象が見つかりません')
-
-          old = '''        except Exception:\n            LOG.exception('''
-          new = '''        except Exception:\n            self.close_connection = True\n            LOG.exception('''
-          if old in source:
-              source = source.replace(old, new, 1)
-          elif new not in source:
-              raise SystemExit('内部エラー接続終了の修正対象が見つかりません')
-          source_path.write_text(source, encoding='utf-8')
-
-          runner_path = Path('services/status-ingest/runner.py')
-          runner = runner_path.read_text(encoding='utf-8')
-          old = '''    try:\n        config = Config.from_env()\n        store = StatusStore(config)\n    except (ConfigurationError, OSError, sqlite3.Error) as error:\n        LOG.error("startup_failed: %s", error)\n        return 2\n\n    server = StatusServer((config.host, config.port), config, store)'''
-          new = '''    try:\n        config = Config.from_env()\n        store = StatusStore(config)\n        server = StatusServer((config.host, config.port), config, store)\n    except (ConfigurationError, OSError, sqlite3.Error) as error:\n        LOG.error("startup_failed: %s", error)\n        return 2'''
-          if old in runner:
-              runner = runner.replace(old, new, 1)
-          elif new not in runner:
-              raise SystemExit('Server bind例外処理の修正対象が見つかりません')
-          runner_path.write_text(runner, encoding='utf-8')
-          PY
-
-      - name: 最終レビュー修正をcommit
-        if: github.event_name == 'pull_request'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add services/status-ingest/status_ingest.py services/status-ingest/runner.py
-          if git diff --cached --quiet; then
-            echo 'commit対象の変更はありません。'
-          else
-            git commit -m 'fix: status-ingestの接続終了と起動失敗処理を強化'
-            git push origin HEAD:feat/oci-status-ingest
-          fi
 
       - name: Python構文と単体テスト
         working-directory: services/status-ingest
