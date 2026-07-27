@@ -253,7 +253,7 @@ jobs:
 
       - name: Upload SBOM and vulnerability report
         if: ${{ always() && hashFiles('security-artifacts/**') != '' }}
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: herta-supply-chain-${{ github.run_id }}-${{ github.run_attempt }}
           path: security-artifacts/
