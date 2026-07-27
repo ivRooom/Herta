@@ -3,7 +3,7 @@
 # Herta. — ivrm-status-agent
 # ------------------------------------------------------------
 # Lightsailホストの内部ヘルスエンドポイントを取得し、
-# 公開許可フィールドだけを署名付きでstatus-ingest APIへ送信します。
+# 公開許可フィールドだけを署名付きでivrm-stats APIへ送信します。
 # ============================================================
 set -euo pipefail
 
@@ -13,8 +13,7 @@ HEALTH_URL="${HEALTH_URL:-http://127.0.0.1:3000/healthz}"
 STATUS_INGEST_URL="${STATUS_INGEST_URL:?STATUS_INGEST_URLを設定してください}"
 STATUS_SIGNING_SECRET="${STATUS_SIGNING_SECRET:?STATUS_SIGNING_SECRETを設定してください}"
 STATUS_SERVICE_ID="${STATUS_SERVICE_ID:-herta-discord-bot}"
-STATUS_SOURCE="${STATUS_SOURCE:-herta-production}"
-STATUS_AGENT_USER_AGENT="${STATUS_AGENT_USER_AGENT:-ivrm-status-agent/1.0}"
+STATUS_AGENT_USER_AGENT="${STATUS_AGENT_USER_AGENT:-ivrm-status-agent/1.1}"
 STATUS_CONNECT_TIMEOUT_SECONDS="${STATUS_CONNECT_TIMEOUT_SECONDS:-5}"
 STATUS_MAX_TIME_SECONDS="${STATUS_MAX_TIME_SECONDS:-15}"
 STATUS_RETRY_COUNT="${STATUS_RETRY_COUNT:-2}"
@@ -23,6 +22,7 @@ STATUS_LOCK_FILE="${STATUS_LOCK_FILE:-/var/tmp/herta-status-agent.lock}"
 STATUS_DRY_RUN="${STATUS_DRY_RUN:-false}"
 STATUS_ALLOW_HTTP_FOR_TESTS="${STATUS_ALLOW_HTTP_FOR_TESTS:-false}"
 STATUS_ALLOW_NON_LOOPBACK_HEALTH_URL="${STATUS_ALLOW_NON_LOOPBACK_HEALTH_URL:-false}"
+STATUS_INGEST_PATH='/api/internal/status-ingest'
 
 TEMP_DIR=""
 
@@ -105,7 +105,44 @@ raise SystemExit(0 if valid else 1)
 PY
 }
 
-for command_name in curl jq python3 flock mktemp date stat mkdir rm; do
+validate_ingest_url() {
+  local value="$1"
+  local allow_http="$2"
+
+  python3 - "${value}" "${allow_http}" "${STATUS_INGEST_PATH}" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+value, allow_http, expected_path = sys.argv[1:]
+try:
+    parsed = urlsplit(value)
+    port = parsed.port
+except (ValueError, IndexError):
+    raise SystemExit(1)
+
+scheme = parsed.scheme.lower()
+is_https = scheme == "https"
+is_test_http = (
+    allow_http == "true"
+    and scheme == "http"
+    and parsed.hostname in {"127.0.0.1", "::1", "localhost"}
+    and port is not None
+    and 1 <= port <= 65535
+)
+valid = (
+    (is_https or is_test_http)
+    and parsed.hostname is not None
+    and parsed.username is None
+    and parsed.password is None
+    and parsed.path == expected_path
+    and parsed.query == ""
+    and parsed.fragment == ""
+)
+raise SystemExit(0 if valid else 1)
+PY
+}
+
+for command_name in curl jq python3 flock mktemp date stat mkdir rm sed; do
   require_command "${command_name}"
 done
 
@@ -117,26 +154,18 @@ require_boolean STATUS_DRY_RUN "${STATUS_DRY_RUN}"
 require_boolean STATUS_ALLOW_HTTP_FOR_TESTS "${STATUS_ALLOW_HTTP_FOR_TESTS}"
 require_boolean STATUS_ALLOW_NON_LOOPBACK_HEALTH_URL "${STATUS_ALLOW_NON_LOOPBACK_HEALTH_URL}"
 
-# Bashのulimit -fは1024-byte block単位です。curlの版に依存せず、
-# Content-Lengthなしの応答も書込み中に停止させます。
 HEALTH_FILE_LIMIT_BLOCKS=$(( (STATUS_MAX_HEALTH_BYTES + 1023) / 1024 ))
 
 if [ "${#STATUS_SIGNING_SECRET}" -lt 32 ] || [ "${STATUS_SIGNING_SECRET}" = "change-me-use-openssl-rand-hex-32" ]; then
   fail "STATUS_SIGNING_SECRETには32文字以上の実Secretを設定してください。" 2
 fi
 
-if ! [[ "${STATUS_SERVICE_ID}" =~ ^[a-z0-9][a-z0-9._-]{2,63}$ ]]; then
-  fail "STATUS_SERVICE_IDは3〜64文字の英小文字・数字・._-で設定してください。" 2
+if [ "${STATUS_SERVICE_ID}" != "herta-discord-bot" ]; then
+  fail "STATUS_SERVICE_IDはherta-discord-botである必要があります。" 2
 fi
 
-if ! [[ "${STATUS_SOURCE}" =~ ^[a-z0-9][a-z0-9._-]{2,63}$ ]]; then
-  fail "STATUS_SOURCEは3〜64文字の英小文字・数字・._-で設定してください。" 2
-fi
-
-if [[ "${STATUS_INGEST_URL}" != https://* ]]; then
-  if [ "${STATUS_ALLOW_HTTP_FOR_TESTS}" != "true" ] || ! is_loopback_http_url "${STATUS_INGEST_URL}"; then
-    fail "STATUS_INGEST_URLにはHTTPS URLを設定してください。" 2
-  fi
+if ! validate_ingest_url "${STATUS_INGEST_URL}" "${STATUS_ALLOW_HTTP_FOR_TESTS}"; then
+  fail "STATUS_INGEST_URLには${STATUS_INGEST_PATH}を指すHTTPS URLを設定してください。" 2
 fi
 
 if [ "${STATUS_ALLOW_NON_LOOPBACK_HEALTH_URL}" != "true" ] && ! is_loopback_http_url "${HEALTH_URL}"; then
@@ -159,7 +188,6 @@ set +e
 HEALTH_HTTP_CODE="$(
   (
     ulimit -f "${HEALTH_FILE_LIMIT_BLOCKS}"
-    # systemdやホストにProxy環境変数があっても、loopback healthは必ず直接取得する。
     NO_PROXY='*' no_proxy='*' curl \
       --silent \
       --show-error \
@@ -192,7 +220,6 @@ if [ "${HEALTH_SIZE}" -gt "${STATUS_MAX_HEALTH_BYTES}" ]; then
   fail "内部ヘルスの応答が上限${STATUS_MAX_HEALTH_BYTES} bytesを超えています。" 3
 fi
 
-# --slurpで入力全体を配列化し、JSONドキュメントが正確に1件であることを確認する。
 if ! jq -e \
   --slurp \
   --arg service_id "${STATUS_SERVICE_ID}" \
@@ -219,29 +246,29 @@ if ! jq -e \
   fail "内部ヘルスのJSON形式または値が不正です。" 3
 fi
 
-SENT_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
 jq -cS \
   --slurp \
-  --arg source "${STATUS_SOURCE}" \
-  --arg sent_at "${SENT_AT}" \
   '
     .[0] |
     {
-      schema_version: 1,
-      service_id: .service.id,
-      source: $source,
-      observed_at: .checked_at,
-      sent_at: $sent_at,
+      schema_version: "1.0",
+      service: {
+        id: .service.id,
+        name: "Herta",
+        group: "Discordサービス",
+        type: "discord_bot"
+      },
       status: .status,
+      checked_at: .checked_at,
       version: (.version // null),
-      checks: {
-        process: .checks.process.status,
-        discord: .checks.discord.status,
-        database: .checks.database.status,
-        redis: .checks.redis.status,
-        worker: .checks.worker.status
-      }
+      summary: (
+        if .status == "operational" then "正常に稼働しています"
+        elif .status == "maintenance" then "メンテナンス中です"
+        elif .status == "degraded" then "一部機能で遅延または不安定な状態です"
+        elif .status == "outage" then "サービス障害が発生しています"
+        else "稼働状態を確認できません"
+        end
+      )
     }
   ' \
   "${HEALTH_FILE}" > "${PAYLOAD_FILE}"
@@ -254,31 +281,54 @@ if [ "${STATUS_DRY_RUN}" = "true" ]; then
 fi
 
 TIMESTAMP="$(date -u +%s)"
-NONCE="$(python3 - <<'PY'
-import secrets
-print(secrets.token_hex(16))
-PY
-)"
 
-SIGNATURE="$(
-  STATUS_SIGNATURE_TIMESTAMP="${TIMESTAMP}" \
-  STATUS_SIGNATURE_NONCE="${NONCE}" \
-  STATUS_SIGNATURE_SECRET="${STATUS_SIGNING_SECRET}" \
-  STATUS_SIGNATURE_PAYLOAD_FILE="${PAYLOAD_FILE}" \
+AUTH_VALUES="$(
+  STATUS_AUTH_TIMESTAMP="${TIMESTAMP}" \
+  STATUS_AUTH_SECRET="${STATUS_SIGNING_SECRET}" \
+  STATUS_AUTH_SERVICE_ID="${STATUS_SERVICE_ID}" \
+  STATUS_AUTH_PATH="${STATUS_INGEST_PATH}" \
+  STATUS_AUTH_PAYLOAD_FILE="${PAYLOAD_FILE}" \
   python3 - <<'PY'
 import hashlib
 import hmac
 import os
 from pathlib import Path
+from uuid import uuid4
 
-timestamp = os.environ["STATUS_SIGNATURE_TIMESTAMP"]
-nonce = os.environ["STATUS_SIGNATURE_NONCE"]
-secret = os.environ["STATUS_SIGNATURE_SECRET"].encode("utf-8")
-payload = Path(os.environ["STATUS_SIGNATURE_PAYLOAD_FILE"]).read_bytes()
-canonical = timestamp.encode("ascii") + b"\n" + nonce.encode("ascii") + b"\n" + payload
-print(hmac.new(secret, canonical, hashlib.sha256).hexdigest())
+payload = Path(os.environ["STATUS_AUTH_PAYLOAD_FILE"]).read_bytes()
+body_hash = hashlib.sha256(payload).hexdigest()
+request_id = str(uuid4())
+canonical = "\n".join(
+    [
+        "POST",
+        os.environ["STATUS_AUTH_PATH"],
+        os.environ["STATUS_AUTH_TIMESTAMP"],
+        request_id,
+        os.environ["STATUS_AUTH_SERVICE_ID"],
+        body_hash,
+    ]
+)
+signature = hmac.new(
+    os.environ["STATUS_AUTH_SECRET"].encode("utf-8"),
+    canonical.encode("utf-8"),
+    hashlib.sha256,
+).hexdigest()
+print(request_id)
+print(body_hash)
+print(signature)
 PY
 )"
+
+REQUEST_ID="$(printf '%s\n' "${AUTH_VALUES}" | sed -n '1p')"
+BODY_SHA256="$(printf '%s\n' "${AUTH_VALUES}" | sed -n '2p')"
+SIGNATURE="$(printf '%s\n' "${AUTH_VALUES}" | sed -n '3p')"
+
+if ! [[ "${REQUEST_ID}" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]]; then
+  fail "request IDの生成に失敗しました。" 4
+fi
+if ! [[ "${BODY_SHA256}" =~ ^[0-9a-f]{64}$ ]] || ! [[ "${SIGNATURE}" =~ ^[0-9a-f]{64}$ ]]; then
+  fail "署名情報の生成に失敗しました。" 4
+fi
 
 CURL_PROTOCOLS='=https'
 if [ "${STATUS_ALLOW_HTTP_FOR_TESTS}" = "true" ]; then
@@ -304,10 +354,11 @@ INGEST_HTTP_CODE="$(
     --header 'Content-Type: application/json' \
     --header 'Accept: application/json' \
     --header "User-Agent: ${STATUS_AGENT_USER_AGENT}" \
-    --header 'X-IVRM-Signature-Version: v1' \
+    --header "X-IVRM-Service-Id: ${STATUS_SERVICE_ID}" \
     --header "X-IVRM-Timestamp: ${TIMESTAMP}" \
-    --header "X-IVRM-Nonce: ${NONCE}" \
-    --header "X-IVRM-Signature: sha256=${SIGNATURE}" \
+    --header "X-IVRM-Request-Id: ${REQUEST_ID}" \
+    --header "X-IVRM-Body-SHA256: ${BODY_SHA256}" \
+    --header "X-IVRM-Signature: v1=${SIGNATURE}" \
     --data-binary "@${PAYLOAD_FILE}" \
     "${STATUS_INGEST_URL}"
 )"
@@ -315,11 +366,17 @@ INGEST_CURL_STATUS=$?
 set -e
 
 if [ "${INGEST_CURL_STATUS}" -ne 0 ]; then
-  fail "status-ingest APIへの送信に失敗しました。curl exit=${INGEST_CURL_STATUS}" 4
+  fail "status APIへの送信に失敗しました。curl exit=${INGEST_CURL_STATUS}" 4
 fi
 
-if ! [[ "${INGEST_HTTP_CODE}" =~ ^2[0-9][0-9]$ ]]; then
-  fail "status-ingest APIがHTTP ${INGEST_HTTP_CODE}を返しました。" 4
+if [[ "${INGEST_HTTP_CODE}" =~ ^2[0-9][0-9]$ ]]; then
+  log INFO "ステータス送信に成功しました。HTTP ${INGEST_HTTP_CODE}"
+  exit 0
 fi
 
-log INFO "ステータス送信に成功しました。HTTP ${INGEST_HTTP_CODE}"
+if [ "${INGEST_HTTP_CODE}" = "409" ]; then
+  log INFO "同一request IDは既に処理済みです。HTTP 409"
+  exit 0
+fi
+
+fail "status APIがHTTP ${INGEST_HTTP_CODE}を返しました。" 4
