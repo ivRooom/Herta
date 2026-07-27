@@ -43,7 +43,7 @@ jobs:
         working-directory: services/status-ingest
         run: |
           set -euo pipefail
-          python -m compileall -q app.py runner.py test_app.py
+          python -m compileall -q status_ingest.py runner.py test_app.py
           python -m unittest -v test_app.py
 
       - name: ComposeとCaddy設定を検証
