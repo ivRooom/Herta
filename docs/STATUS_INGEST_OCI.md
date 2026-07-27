@@ -36,7 +36,7 @@ Header:
 
 ```text
 X-IVRM-Signature-Version: v1
-X-IVRM-Timestamp: 2026-07-27T00:00:00Z
+X-IVRM-Timestamp: 1785120000
 X-IVRM-Nonce: 32文字の小文字hex
 X-IVRM-Signature: sha256=64文字の小文字hex
 ```
@@ -109,6 +109,8 @@ HTTP 202
 - `413 payload_too_large`: Body上限超過
 - `422 invalid_payload`: JSON schema不正
 - `422 stale_observation`: 観測時刻が古い
+- `422 future_observation`: 観測時刻が未来
+- `422 unsupported_schema`: schema_versionをサポートしていない
 
 レスポンスとログにSecret、署名、raw bodyは出しません。
 
@@ -128,7 +130,7 @@ HTTP 202
 
 既定保持期間:
 
-- Nonce: 15分
+- Nonce: 15分（署名Timestamp許容差の2倍以上）
 - 観測履歴: 30日
 - 最新状態: 常時1件
 

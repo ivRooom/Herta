@@ -163,13 +163,21 @@ class StatusIngestTest(unittest.TestCase):
         self.assertEqual(401, status)
         self.assertEqual("invalid_signature", response["error"]["code"])
 
-    def test_rejects_replayed_nonce(self) -> None:
+    def test_accepts_identical_retry_idempotently(self) -> None:
         payload = self.payload()
-        first_status, _ = self.signed_request(payload)
-        second_status, response = self.signed_request(payload)
+        signature_timestamp = int(time.time())
+        first_status, first_response = self.signed_request(
+            payload,
+            signature_timestamp=signature_timestamp,
+        )
+        second_status, second_response = self.signed_request(
+            payload,
+            signature_timestamp=signature_timestamp,
+        )
         self.assertEqual(202, first_status)
-        self.assertEqual(409, second_status)
-        self.assertEqual("replayed_nonce", response["error"]["code"])
+        self.assertEqual(202, second_status)
+        self.assertFalse(first_response["duplicate"])
+        self.assertTrue(second_response["duplicate"])
 
         with self.store.connect() as connection:
             count = connection.execute(
@@ -177,12 +185,65 @@ class StatusIngestTest(unittest.TestCase):
             ).fetchone()[0]
         self.assertEqual(1, count)
 
+    def test_rejects_same_nonce_for_different_signed_request(self) -> None:
+        signature_timestamp = int(time.time())
+        first_payload = self.payload()
+        second_payload = self.payload()
+        second_payload["status"] = "degraded"
+        first_status, _ = self.signed_request(
+            first_payload,
+            signature_timestamp=signature_timestamp,
+        )
+        second_status, response = self.signed_request(
+            second_payload,
+            signature_timestamp=signature_timestamp,
+        )
+        self.assertEqual(202, first_status)
+        self.assertEqual(409, second_status)
+        self.assertEqual("replayed_nonce", response["error"]["code"])
+
     def test_rejects_extra_payload_fields(self) -> None:
         payload = self.payload()
         payload["guild_count"] = 999
         status, response = self.signed_request(payload)
         self.assertEqual(422, status)
         self.assertEqual("invalid_payload", response["error"]["code"])
+
+    def test_rejects_unhashable_status_values_as_invalid_payload(self) -> None:
+        payload = self.payload()
+        payload["status"] = ["operational"]
+        status, response = self.signed_request(payload)
+        self.assertEqual(422, status)
+        self.assertEqual("invalid_payload", response["error"]["code"])
+
+        payload = self.payload()
+        payload["checks"]["discord"] = {"status": "ok"}
+        status, response = self.signed_request(
+            payload,
+            nonce="abcdefabcdefabcdefabcdefabcdefab",
+        )
+        self.assertEqual(422, status)
+        self.assertEqual("invalid_payload", response["error"]["code"])
+
+    def test_rejects_empty_body_with_bad_request(self) -> None:
+        status, response = self.request(
+            "POST",
+            "/v1/observations",
+            body=b"",
+            headers={"Content-Type": "application/json", "Content-Length": "0"},
+        )
+        self.assertEqual(400, status)
+        self.assertEqual("invalid_content_length", response["error"]["code"])
+
+    def test_normalizes_rfc3339_timestamps_before_persistence(self) -> None:
+        now = datetime.now(UTC)
+        timestamp = now.isoformat(timespec="microseconds")
+        payload = self.payload(timestamp=timestamp)
+        status, _ = self.signed_request(payload)
+        self.assertEqual(202, status)
+        _, public = self.request("GET", "/api/status.json")
+        self.assertTrue(public["observed_at"].endswith("Z"))
+        self.assertNotIn(".", public["observed_at"])
 
     def test_rejects_old_observation_with_current_signature(self) -> None:
         timestamp = format_rfc3339(datetime.now(UTC) - timedelta(hours=1))

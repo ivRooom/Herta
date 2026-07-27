@@ -250,6 +250,7 @@ class StatusStore:
                 """
                 CREATE TABLE IF NOT EXISTS status_nonces (
                     nonce TEXT PRIMARY KEY,
+                    request_fingerprint TEXT NOT NULL,
                     received_at_epoch INTEGER NOT NULL
                 );
 
@@ -296,10 +297,11 @@ class StatusStore:
         self,
         *,
         nonce: str,
+        request_fingerprint: str,
         request_id: str,
         payload: dict[str, Any],
         received_at: datetime,
-    ) -> None:
+    ) -> bool:
         received_epoch = int(received_at.timestamp())
         nonce_cutoff = received_epoch - self.config.nonce_retention_seconds
         observation_cutoff = received_epoch - (
@@ -318,9 +320,30 @@ class StatusStore:
                     "DELETE FROM status_observations WHERE received_at_epoch < ?",
                     (observation_cutoff,),
                 )
+                existing_nonce = connection.execute(
+                    "SELECT request_fingerprint FROM status_nonces WHERE nonce = ?",
+                    (nonce,),
+                ).fetchone()
+                if existing_nonce is not None:
+                    connection.execute("ROLLBACK")
+                    if hmac.compare_digest(
+                        existing_nonce["request_fingerprint"],
+                        request_fingerprint,
+                    ):
+                        return False
+                    raise RequestError(
+                        HTTPStatus.CONFLICT,
+                        "replayed_nonce",
+                        "同じNonceを異なるリクエストへ再利用できません",
+                    )
+
                 connection.execute(
-                    "INSERT INTO status_nonces(nonce, received_at_epoch) VALUES (?, ?)",
-                    (nonce, received_epoch),
+                    """
+                    INSERT INTO status_nonces(
+                        nonce, request_fingerprint, received_at_epoch
+                    ) VALUES (?, ?, ?)
+                    """,
+                    (nonce, request_fingerprint, received_epoch),
                 )
                 connection.execute(
                     """
@@ -384,14 +407,9 @@ class StatusStore:
                     ),
                 )
                 connection.execute("COMMIT")
-            except sqlite3.IntegrityError as error:
+                return True
+            except sqlite3.IntegrityError:
                 connection.execute("ROLLBACK")
-                if "status_nonces.nonce" in str(error):
-                    raise RequestError(
-                        HTTPStatus.CONFLICT,
-                        "replayed_nonce",
-                        "同じNonceは再利用できません",
-                    ) from error
                 raise
             except Exception:
                 connection.execute("ROLLBACK")
@@ -424,6 +442,7 @@ class StatusServer(ThreadingHTTPServer):
 class StatusHandler(BaseHTTPRequestHandler):
     server: StatusServer
     protocol_version = "HTTP/1.1"
+    timeout = 30
 
     def do_POST(self) -> None:  # noqa: N802
         self._handle_request(self._post)
@@ -515,7 +534,13 @@ class StatusHandler(BaseHTTPRequestHandler):
                 "invalid_content_length",
                 "Content-Lengthが不正です",
             ) from error
-        if content_length <= 0 or content_length > self.server.config.max_body_bytes:
+        if content_length <= 0:
+            raise RequestError(
+                HTTPStatus.BAD_REQUEST,
+                "invalid_content_length",
+                "Content-Lengthが不正です",
+            )
+        if content_length > self.server.config.max_body_bytes:
             raise RequestError(
                 HTTPStatus.REQUEST_ENTITY_TOO_LARGE,
                 "payload_too_large",
@@ -530,15 +555,16 @@ class StatusHandler(BaseHTTPRequestHandler):
                 "リクエスト本文が不完全です",
             )
 
-        timestamp_epoch, nonce = self._verify_signature(body)
+        timestamp_epoch, nonce, request_fingerprint = self._verify_signature(body)
         payload = validate_payload(
             body,
             config=self.server.config,
             signature_timestamp_epoch=timestamp_epoch,
         )
         received_at = utc_now()
-        self.server.store.save_observation(
+        created = self.server.store.save_observation(
             nonce=nonce,
+            request_fingerprint=request_fingerprint,
             request_id=request_id,
             payload=payload,
             received_at=received_at,
@@ -547,13 +573,14 @@ class StatusHandler(BaseHTTPRequestHandler):
             HTTPStatus.ACCEPTED,
             {
                 "accepted": True,
+                "duplicate": not created,
                 "request_id": request_id,
                 "received_at": format_rfc3339(received_at),
             },
         )
         return HTTPStatus.ACCEPTED
 
-    def _verify_signature(self, body: bytes) -> tuple[int, str]:
+    def _verify_signature(self, body: bytes) -> tuple[int, str, str]:
         version = self.headers.get("X-IVRM-Signature-Version", "")
         timestamp_text = self.headers.get("X-IVRM-Timestamp", "")
         nonce = self.headers.get("X-IVRM-Nonce", "")
@@ -598,7 +625,8 @@ class StatusHandler(BaseHTTPRequestHandler):
                 "invalid_signature",
                 "署名を検証できません",
             )
-        return timestamp_epoch, nonce
+        request_fingerprint = hashlib.sha256(canonical).hexdigest()
+        return timestamp_epoch, nonce, request_fingerprint
 
     def _get(self, request_id: str) -> HTTPStatus:
         path = self.path.split("?", 1)[0]
@@ -743,7 +771,8 @@ def validate_payload(
             "service_not_allowed",
             "ServiceまたはSourceが許可されていません",
         )
-    if payload["status"] not in OVERALL_STATUSES:
+    status_value = payload["status"]
+    if not isinstance(status_value, str) or status_value not in OVERALL_STATUSES:
         raise RequestError(
             HTTPStatus.UNPROCESSABLE_ENTITY,
             "invalid_payload",
@@ -767,7 +796,10 @@ def validate_payload(
             "invalid_payload",
             "checksが不正です",
         )
-    if any(checks[key] not in CHECK_STATUSES for key in CHECK_KEYS):
+    if any(
+        not isinstance(checks[key], str) or checks[key] not in CHECK_STATUSES
+        for key in CHECK_KEYS
+    ):
         raise RequestError(
             HTTPStatus.UNPROCESSABLE_ENTITY,
             "invalid_payload",
@@ -802,6 +834,8 @@ def validate_payload(
             "invalid_payload",
             "observed_atはsent_at以前である必要があります",
         )
+    payload["observed_at"] = format_rfc3339(observed_at)
+    payload["sent_at"] = format_rfc3339(sent_at)
     return payload
 
 
