@@ -56,15 +56,15 @@ Herta /healthz
 https://stats.ivrm.jp/api/internal/status-ingest
 ```
 
-Agentは次を拒否します。
+Agentは次のURLだけを許可します。
 
-- `stats.ivrm.jp`以外のHost
-- HTTPS以外
-- 443以外の本番Port
-- `/api/internal/status-ingest`以外のPath
-- query、fragment、userinfo付きURL
+- scheme: `https`
+- host: `stats.ivrm.jp`
+- port: 省略または`443`
+- path: `/api/internal/status-ingest`
+- query、fragment、userinfoなし
 
-HTTPは、loopbackを使用する自動テストで明示的に許可した場合だけ利用できます。
+HTTPはloopbackを使用する自動テストで明示的に許可した場合だけ利用できます。
 
 ## HMAC認証
 
@@ -125,69 +125,86 @@ bash deploy/scripts/ivrm-status-agent-proxy.test.sh
 
 # 本番反映
 
-以前チャットやShellへ表示したSecretは使用せず、新しいSecretを設定します。Secretをコマンド引数、`sudo env`、Shell historyへ直接含めません。
+以前チャットやShellへ表示したSecretは再利用しません。Secretをコマンド引数、`sudo env`、Shell履歴へ直接含めません。
+
+## 0. LightsailのTimerを停止
+
+**OCI側Secretを変更する前に**Lightsailへ接続し、旧Secretでの自動送信を停止します。
+
+```bash
+sudo systemctl disable --now herta-status-agent.timer 2>/dev/null || true
+systemctl is-enabled herta-status-agent.timer || true
+systemctl is-active herta-status-agent.timer || true
+```
+
+期待値:
+
+```text
+disabled
+inactive
+```
+
+Timerは手動送信と公開反映が成功するまで有効化しません。
 
 ## 1. OCI側Secret
 
-既存Status APIの環境ファイルです。
+既存Status APIの環境ファイルを更新します。
 
 ```text
 /opt/ivrm/compose/ivrm-status-api/.env
 ```
 
-新しい64文字hex Secretをパスワードマネージャー等で生成し、非表示入力します。
+OCIへ接続し、次を実行します。
 
 ```bash
+set -euo pipefail
+sudo -v
+
 read -rsp '新しいHERTA_INGEST_SECRET: ' HERTA_INGEST_SECRET
 printf '\n'
 
-if [ "${#HERTA_INGEST_SECRET}" -lt 32 ]; then
-  echo 'ERROR: Secretは32文字以上必要です'
+if ! [[ "${HERTA_INGEST_SECRET}" =~ ^[0-9a-fA-F]{64}$ ]]; then
+  echo 'ERROR: Secretは64文字のhexで入力してください'
   unset HERTA_INGEST_SECRET
   return 1 2>/dev/null || exit 1
 fi
-```
 
-Secretを標準入力経由でroot処理へ渡します。値は`sudo`の引数やプロセス一覧へ現れません。
-
-```bash
-SECRET_UPDATER="$(mktemp)"
-chmod 700 "${SECRET_UPDATER}"
-
-cat > "${SECRET_UPDATER}" <<'PY'
-from pathlib import Path
-import sys
-
-path = Path(sys.argv[1])
-key = sys.argv[2]
-secret = sys.stdin.read()
-if len(secret) < 32:
-    raise SystemExit('secret must be at least 32 characters')
-
-lines = path.read_text(encoding='utf-8').splitlines() if path.exists() else []
-output = []
-found = False
-for line in lines:
-    if line.startswith(key + '='):
-        output.append(f'{key}={secret}')
-        found = True
-    else:
-        output.append(line)
-if not found:
-    output.append(f'{key}={secret}')
-path.write_text('\n'.join(output) + '\n', encoding='utf-8')
-PY
-
-printf '%s' "${HERTA_INGEST_SECRET}" |
-  sudo python3 "${SECRET_UPDATER}" \
-    /opt/ivrm/compose/ivrm-status-api/.env \
-    HERTA_INGEST_SECRET
-
-rm -f "${SECRET_UPDATER}"
+printf '%s\n' "${HERTA_INGEST_SECRET}" |
+  sudo -n sh -c 'umask 077; cat > /run/herta-ingest-secret'
 unset HERTA_INGEST_SECRET
 
-sudo chown root:root /opt/ivrm/compose/ivrm-status-api/.env
-sudo chmod 600 /opt/ivrm/compose/ivrm-status-api/.env
+sudo -n python3 - <<'PY'
+from pathlib import Path
+
+secret_path = Path('/run/herta-ingest-secret')
+env_path = Path('/opt/ivrm/compose/ivrm-status-api/.env')
+key = 'HERTA_INGEST_SECRET'
+
+try:
+    value = secret_path.read_text(encoding='utf-8').strip()
+    if len(value) != 64 or any(character not in '0123456789abcdefABCDEF' for character in value):
+        raise SystemExit('ERROR: Secret形式が不正です')
+
+    lines = env_path.read_text(encoding='utf-8').splitlines() if env_path.exists() else []
+    output = []
+    found = False
+    for line in lines:
+        if line.startswith(key + '='):
+            output.append(f'{key}={value}')
+            found = True
+        else:
+            output.append(line)
+    if not found:
+        output.append(f'{key}={value}')
+
+    env_path.write_text('\n'.join(output) + '\n', encoding='utf-8')
+finally:
+    secret_path.unlink(missing_ok=True)
+PY
+
+sudo -n chown root:root /opt/ivrm/compose/ivrm-status-api/.env
+sudo -n chmod 600 /opt/ivrm/compose/ivrm-status-api/.env
+sudo -n stat -c '%U:%G %a %n' /opt/ivrm/compose/ivrm-status-api/.env
 ```
 
 Secretを表示せず、設定有無と長さだけ確認します。
@@ -216,64 +233,68 @@ sudo docker compose \
 
 ## 2. Lightsail側Secret・送信先
 
-OCIと同じSecretを非表示入力します。
+Lightsailへ戻り、OCIと同じSecretを非表示入力します。Timerが停止していることを再確認します。
 
 ```bash
+set -euo pipefail
+sudo -v
+
+systemctl is-enabled herta-status-agent.timer || true
+systemctl is-active herta-status-agent.timer || true
+
 read -rsp 'OCIと同じHERTA_INGEST_SECRET: ' NEW_SECRET
 printf '\n'
 
-if [ "${#NEW_SECRET}" -lt 32 ]; then
-  echo 'ERROR: Secretは32文字以上必要です'
+if ! [[ "${NEW_SECRET}" =~ ^[0-9a-fA-F]{64}$ ]]; then
+  echo 'ERROR: Secretは64文字のhexで入力してください'
   unset NEW_SECRET
   return 1 2>/dev/null || exit 1
 fi
-```
 
-Secretは標準入力、Secret以外の設定値は固定値として更新します。
-
-```bash
-SECRET_UPDATER="$(mktemp)"
-chmod 700 "${SECRET_UPDATER}"
-
-cat > "${SECRET_UPDATER}" <<'PY'
-from pathlib import Path
-import sys
-
-path = Path('/etc/herta/status-agent.env')
-secret = sys.stdin.read()
-if len(secret) < 32:
-    raise SystemExit('secret must be at least 32 characters')
-
-replacements = {
-    'STATUS_INGEST_URL': 'https://stats.ivrm.jp/api/internal/status-ingest',
-    'STATUS_SIGNING_SECRET': secret,
-    'STATUS_SERVICE_ID': 'herta-discord-bot',
-    'STATUS_DRY_RUN': 'false',
-}
-lines = path.read_text(encoding='utf-8').splitlines()
-output = []
-found = set()
-for line in lines:
-    key = line.split('=', 1)[0]
-    if key in replacements:
-        output.append(f'{key}={replacements[key]}')
-        found.add(key)
-    else:
-        output.append(line)
-for key, value in replacements.items():
-    if key not in found:
-        output.append(f'{key}={value}')
-path.write_text('\n'.join(output) + '\n', encoding='utf-8')
-PY
-
-printf '%s' "${NEW_SECRET}" |
-  sudo python3 "${SECRET_UPDATER}"
-
-rm -f "${SECRET_UPDATER}"
+printf '%s\n' "${NEW_SECRET}" |
+  sudo -n sh -c 'umask 077; cat > /run/herta-status-agent-secret'
 unset NEW_SECRET
 
-sudo chown root:root /etc/herta/status-agent.env
-sudo chmod 600 /etc/herta/status-agent.env
+sudo -n python3 - <<'PY'
+from pathlib import Path
+
+secret_path = Path('/run/herta-status-agent-secret')
+env_path = Path('/etc/herta/status-agent.env')
+
+try:
+    value = secret_path.read_text(encoding='utf-8').strip()
+    if len(value) != 64 or any(character not in '0123456789abcdefABCDEF' for character in value):
+        raise SystemExit('ERROR: Secret形式が不正です')
+
+    replacements = {
+        'STATUS_INGEST_URL': 'https://stats.ivrm.jp/api/internal/status-ingest',
+        'STATUS_SIGNING_SECRET': value,
+        'STATUS_SERVICE_ID': 'herta-discord-bot',
+        'STATUS_DRY_RUN': 'false',
+    }
+
+    lines = env_path.read_text(encoding='utf-8').splitlines()
+    output = []
+    found = set()
+    for line in lines:
+        key = line.split('=', 1)[0]
+        if key in replacements:
+            output.append(f'{key}={replacements[key]}')
+            found.add(key)
+        else:
+            output.append(line)
+    for key, replacement in replacements.items():
+        if key not in found:
+            output.append(f'{key}={replacement}')
+
+    env_path.write_text('\n'.join(output) + '\n', encoding='utf-8')
+finally:
+    secret_path.unlink(missing_ok=True)
+PY
+
+sudo -n chown root:root /etc/herta/status-agent.env
+sudo -n chmod 600 /etc/herta/status-agent.env
+sudo -n stat -c '%U:%G %a %n' /etc/herta/status-agent.env
 ```
 
 Secretを伏せて確認します。
@@ -294,6 +315,8 @@ sudo awk -F= '
 
 ## 3. Agent更新
 
+PRのマージと`Deploy Production`成功後に実行します。
+
 ```bash
 cd /app/herta
 git fetch origin main
@@ -301,11 +324,11 @@ git switch main
 git pull --ff-only origin main
 
 git log -1 --oneline
-```
 
-Unit自体に変更がなくても、実配置と検証を再実行します。
+test -f deploy/scripts/ivrm-status-agent.sh
+test -f deploy/systemd/herta-status-agent.service
+test -f deploy/systemd/herta-status-agent.timer
 
-```bash
 sudo install --owner root --group root --mode 0644 \
   deploy/systemd/herta-status-agent.service \
   /etc/systemd/system/herta-status-agent.service
@@ -389,7 +412,7 @@ systemctl list-timers herta-status-agent.timer --all
 
 1〜2分後に`last_received_at`が更新されれば完了です。
 
-# 不要になったOCI試作物の整理
+## 7. 不要になったOCI試作物の整理
 
 独立status-ingestコンテナを一度も起動していないことを確認します。
 
