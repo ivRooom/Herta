@@ -15,7 +15,7 @@ RUN groupadd --gid 10001 status-ingest \
     && chown -R 10001:10001 /app /data
 
 WORKDIR /app
-COPY --chown=10001:10001 app.py runner.py /app/
+COPY --chown=10001:10001 status_ingest.py runner.py /app/
 
 USER 10001:10001
 EXPOSE 8080
