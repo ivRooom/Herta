@@ -53,6 +53,7 @@ export interface HertaHealthResponse {
   checked_at: string;
   uptime_seconds: number;
   version: string;
+  guild_count: number;
   checks: HealthChecks;
 }
 

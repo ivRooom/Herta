@@ -132,6 +132,21 @@ model AuditLog {
   @@map("audit_logs")
 }
 
+model CommandExecutionEvent {
+  id          String   @id
+  guildId     String?  @map("guild_id")
+  commandName String   @map("command_name")
+  status      String
+  durationMs  Int      @map("duration_ms")
+  errorName   String?  @map("error_name")
+  executedAt  DateTime @default(now()) @map("executed_at") @db.Timestamptz(3)
+
+  @@index([executedAt(sort: Desc)])
+  @@index([commandName, executedAt(sort: Desc)])
+  @@index([guildId, executedAt(sort: Desc)])
+  @@map("command_execution_events")
+}
+
 // ============================================================
 // Plugin System
 // ============================================================
@@ -288,10 +303,10 @@ model WordFilter {
   exemptRoles    String[] @default([]) @map("exempt_roles")
   exemptChannels String[] @default([]) @map("exempt_channels")
   enabled        Boolean  @default(true)
-  createdBy      String?  @map("created_by")
-  updatedBy      String?  @map("updated_by")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  createdBy       String?  @map("created_by")
+  updatedBy       String?  @map("updated_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
   @@index([guildId, enabled])
   @@map("word_filters")

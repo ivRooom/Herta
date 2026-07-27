@@ -25,6 +25,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "lint": "echo 'no lint configured'",
+    "test": "tsx --test src/command-analytics.test.ts",
     "seed": "tsx prisma/seed.ts",
     "clean": "rm -rf dist"
   },

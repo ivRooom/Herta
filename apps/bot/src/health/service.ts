@@ -13,6 +13,7 @@ import type {
 
 export interface HealthProbes {
   discord: () => DiscordHealthObservation;
+  guildCount: () => number;
   database?: () => Promise<void>;
   redis?: () => Promise<void>;
   workerHeartbeat?: () => Promise<string | null>;
@@ -64,6 +65,7 @@ export function createUnknownHealthResponse(
     checked_at: checkedAt.toISOString(),
     uptime_seconds: Math.max(0, Math.floor(uptimeSeconds)),
     version,
+    guild_count: 0,
     checks: {
       process: { status: 'ok' },
       discord: {
@@ -153,12 +155,21 @@ export class HertaHealthService {
       worker: workerResult.status === 'fulfilled' ? workerResult.value : unknownDependency(),
     };
 
+    let guildCount = 0;
+    try {
+      const rawGuildCount = this.options.probes.guildCount();
+      guildCount = Number.isFinite(rawGuildCount) ? Math.max(0, Math.floor(rawGuildCount)) : 0;
+    } catch {
+      guildCount = 0;
+    }
+
     return {
       service: { id: 'herta-discord-bot', name: 'Herta', type: 'discord_bot' },
       status: resolveOverallHealth(checks),
       checked_at: checkedAt.toISOString(),
       uptime_seconds: Math.max(0, Math.floor(this.uptimeSeconds())),
       version: this.options.version,
+      guild_count: guildCount,
       checks,
     };
   }

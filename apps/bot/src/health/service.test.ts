@@ -33,6 +33,7 @@ function discordObservation(
 
 function createService(options: {
   discord?: DiscordHealthObservation;
+  guildCount?: () => number;
   database?: () => Promise<void>;
   redis?: () => Promise<void>;
   workerHeartbeat?: () => Promise<string | null>;
@@ -45,6 +46,7 @@ function createService(options: {
     uptimeSeconds: () => 43_200,
     probes: {
       discord: () => options.discord ?? discordObservation(),
+      guildCount: options.guildCount ?? (() => 3),
       ...(options.database ? { database: options.database } : {}),
       ...(options.redis ? { redis: options.redis } : {}),
       ...(options.workerHeartbeat ? { workerHeartbeat: options.workerHeartbeat } : {}),
@@ -53,7 +55,7 @@ function createService(options: {
 }
 
 describe('HertaHealthService', () => {
-  it('すべて正常ならoperationalを返す', async () => {
+  it('すべて正常ならoperationalと参加Guild数を返す', async () => {
     const service = createService({
       database: async () => undefined,
       redis: async () => undefined,
@@ -62,9 +64,30 @@ describe('HertaHealthService', () => {
 
     const response = await service.getHealth();
     expect(response.status).toBe('operational');
+    expect(response.guild_count).toBe(3);
     expect(response.checks.database.status).toBe('ok');
     expect(response.checks.worker.status).toBe('ok');
   });
+
+  it('Guild数の取得に失敗しても0件として応答する', async () => {
+    const service = createService({
+      guildCount: () => {
+        throw new Error('guild cache unavailable');
+      },
+    });
+
+    const response = await service.getHealth();
+    expect(response.guild_count).toBe(0);
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, -1])(
+    '不正なGuild数 %s を0件として応答する',
+    async (invalidGuildCount) => {
+      const service = createService({ guildCount: () => invalidGuildCount });
+      const response = await service.getHealth();
+      expect(response.guild_count).toBe(0);
+    },
+  );
 
   it('Heartbeat期限超過ならoutageを返す', async () => {
     const service = createService({

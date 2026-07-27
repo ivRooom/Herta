@@ -16,6 +16,7 @@ const validHealth = {
   checked_at: '2026-07-26T13:00:00.000Z',
   uptime_seconds: 3600,
   version: '0.1.0',
+  guild_count: 4,
   checks: {
     process: { status: 'ok' },
     discord: {
@@ -56,6 +57,7 @@ test('Botヘルスの正常レスポンスを受け入れる', () => {
 
   assert.ok(parsed);
   assert.equal(parsed.status, 'operational');
+  assert.equal(parsed.guild_count, 4);
   assert.equal(parsed.checks.discord.gateway_status, 'ready');
   assert.equal(parsed.checks.database.latency_ms, 12);
 });

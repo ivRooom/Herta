@@ -1,5 +1,6 @@
 export { PrismaClient } from '@prisma/client';
 export type * from '@prisma/client';
+export * from './command-analytics.js';
 
 import { PrismaClient } from '@prisma/client';
 
