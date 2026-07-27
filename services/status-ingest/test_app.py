@@ -20,6 +20,7 @@ from status_ingest import (
     StatusServer,
     StatusStore,
     format_rfc3339,
+    read_body_with_deadline,
 )
 
 
@@ -41,6 +42,7 @@ class StatusIngestTest(unittest.TestCase):
             observation_retention_days=30,
             stale_after_seconds=180,
             max_body_bytes=16384,
+            request_body_timeout_seconds=10,
             cors_origin="https://stats.ivrm.jp",
         )
         self.store = StatusStore(self.config)
@@ -201,6 +203,43 @@ class StatusIngestTest(unittest.TestCase):
         self.assertEqual(202, first_status)
         self.assertEqual(409, second_status)
         self.assertEqual("replayed_nonce", response["error"]["code"])
+
+    def test_body_reader_enforces_total_deadline_for_trickle(self) -> None:
+        class FakeClock:
+            def __init__(self) -> None:
+                self.value = 0.0
+
+            def __call__(self) -> float:
+                return self.value
+
+        class TrickleReader:
+            def __init__(self, clock: FakeClock) -> None:
+                self.clock = clock
+
+            def read1(self, size: int) -> bytes:
+                self.clock.value += 0.6
+                return b"x"
+
+        clock = FakeClock()
+        with self.assertRaisesRegex(Exception, "時間内") as context:
+            read_body_with_deadline(
+                TrickleReader(clock),
+                lambda timeout: None,
+                3,
+                1,
+                clock=clock,
+            )
+        self.assertEqual("request_timeout", context.exception.code)
+
+    def test_requires_integer_schema_version_one(self) -> None:
+        for index, invalid_version in enumerate((True, 1.0)):
+            with self.subTest(schema_version=invalid_version):
+                payload = self.payload()
+                payload["schema_version"] = invalid_version
+                nonce = f"{index + 1:032x}"
+                status, response = self.signed_request(payload, nonce=nonce)
+                self.assertEqual(422, status)
+                self.assertEqual("unsupported_schema", response["error"]["code"])
 
     def test_rejects_extra_payload_fields(self) -> None:
         payload = self.payload()

@@ -105,6 +105,7 @@ HTTP 202
 
 - `401 invalid_signature`: 署名、Timestamp、Header形式不正
 - `403 service_not_allowed`: Service IDまたはSource不一致
+- `408 request_timeout`: Body全体の受信期限超過
 - `409 replayed_nonce`: Nonce再利用
 - `413 payload_too_large`: Body上限超過
 - `422 invalid_payload`: JSON schema不正
@@ -140,7 +141,7 @@ HTTP 202
 
 ```bash
 cd services/status-ingest
-python3 -m compileall -q app.py test_app.py
+python3 -m compileall -q status_ingest.py runner.py test_app.py
 python3 -m unittest -v test_app.py
 
 docker build -t herta-status-ingest:test .
@@ -270,6 +271,7 @@ STATUS_NONCE_RETENTION_SECONDS=900
 STATUS_OBSERVATION_RETENTION_DAYS=30
 STATUS_STALE_AFTER_SECONDS=180
 STATUS_MAX_BODY_BYTES=16384
+STATUS_REQUEST_BODY_TIMEOUT_SECONDS=10
 STATUS_PUBLIC_CORS_ORIGIN=https://stats.ivrm.jp
 LOG_LEVEL=INFO
 EOF

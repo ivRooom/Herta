@@ -80,6 +80,7 @@ class Config:
     observation_retention_days: int
     stale_after_seconds: int
     max_body_bytes: int
+    request_body_timeout_seconds: int
     cors_origin: str | None
 
     @classmethod
@@ -177,6 +178,12 @@ class Config:
                 minimum=1024,
                 maximum=65536,
             ),
+            request_body_timeout_seconds=env_int(
+                "STATUS_REQUEST_BODY_TIMEOUT_SECONDS",
+                10,
+                minimum=1,
+                maximum=60,
+            ),
             cors_origin=cors_origin,
         )
 
@@ -224,6 +231,53 @@ def parse_rfc3339(value: Any, field_name: str) -> datetime:
             f"{field_name}にはtimezoneが必要です",
         )
     return parsed.astimezone(UTC)
+
+
+def read_body_with_deadline(
+    reader: Any,
+    set_socket_timeout: Callable[[float], None],
+    content_length: int,
+    timeout_seconds: int,
+    *,
+    clock: Callable[[], float] = time.monotonic,
+) -> bytes:
+    deadline = clock() + timeout_seconds
+    remaining = content_length
+    chunks: list[bytes] = []
+
+    while remaining > 0:
+        time_left = deadline - clock()
+        if time_left <= 0:
+            raise RequestError(
+                HTTPStatus.REQUEST_TIMEOUT,
+                "request_timeout",
+                "リクエスト本文の受信が時間内に完了しませんでした",
+            )
+        set_socket_timeout(time_left)
+        try:
+            chunk = reader.read1(min(remaining, 65536))
+        except TimeoutError as error:
+            raise RequestError(
+                HTTPStatus.REQUEST_TIMEOUT,
+                "request_timeout",
+                "リクエスト本文の受信が時間内に完了しませんでした",
+            ) from error
+        if not chunk:
+            raise RequestError(
+                HTTPStatus.BAD_REQUEST,
+                "incomplete_body",
+                "リクエスト本文が不完全です",
+            )
+        if clock() > deadline:
+            raise RequestError(
+                HTTPStatus.REQUEST_TIMEOUT,
+                "request_timeout",
+                "リクエスト本文の受信が時間内に完了しませんでした",
+            )
+        chunks.append(chunk)
+        remaining -= len(chunk)
+
+    return b"".join(chunks)
 
 
 class StatusStore:
@@ -549,13 +603,15 @@ class StatusHandler(BaseHTTPRequestHandler):
                 "リクエスト本文が上限を超えています",
             )
 
-        body = self.rfile.read(content_length)
-        if len(body) != content_length:
-            raise RequestError(
-                HTTPStatus.BAD_REQUEST,
-                "incomplete_body",
-                "リクエスト本文が不完全です",
+        try:
+            body = read_body_with_deadline(
+                self.rfile,
+                self.connection.settimeout,
+                content_length,
+                self.server.config.request_body_timeout_seconds,
             )
+        finally:
+            self.connection.settimeout(self.timeout)
 
         timestamp_epoch, nonce, request_fingerprint = self._verify_signature(body)
         payload = validate_payload(
@@ -758,7 +814,7 @@ def validate_payload(
             "invalid_payload",
             "payload schemaが不正です",
         )
-    if payload["schema_version"] != 1:
+    if type(payload["schema_version"]) is not int or payload["schema_version"] != 1:
         raise RequestError(
             HTTPStatus.UNPROCESSABLE_ENTITY,
             "unsupported_schema",
