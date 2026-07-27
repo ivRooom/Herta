@@ -93,7 +93,7 @@ run_agent() {
   env PATH="${MOCK_BIN}:${PATH}" MOCK_CAPTURE_DIR="${CAPTURE_DIR}" \
     MOCK_HEALTH_BODY_FILE="${fixture}" MOCK_HEALTH_HTTP_CODE="${health_code}" \
     MOCK_INGEST_HTTP_CODE="${ingest_code}" HEALTH_URL='http://127.0.0.1:3000/healthz' \
-    STATUS_INGEST_URL='https://stats.example.test/api/internal/status-ingest' \
+    STATUS_INGEST_URL='https://stats.ivrm.jp/api/internal/status-ingest' \
     STATUS_SIGNING_SECRET="${SIGNING_SECRET}" STATUS_SERVICE_ID='herta-discord-bot' \
     STATUS_LOCK_FILE="${TEST_ROOT}/agent.lock" STATUS_RETRY_COUNT=0 "$@" \
     bash "${AGENT_SCRIPT}" >"${LAST_STDOUT}" 2>"${LAST_STDERR}"
@@ -128,7 +128,10 @@ PY
   actual_signature="${values[1]}"
   assert_equal "${actual_hash}" "${body_hash}" '本文SHA-256が一致すること'
   assert_equal "${actual_signature}" "${signature}" 'ivrm-stats HMAC署名が一致すること'
-  [[ "${request_id}" =~ ^[0-9a-f-]{36}$ ]] || { echo 'FAIL: request IDがUUIDではありません' >&2; exit 1; }
+  [[ "${request_id}" =~ ^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$ ]] || {
+    echo 'FAIL: request IDがUUID v4ではありません' >&2
+    exit 1
+  }
 }
 
 run_agent "${FIXTURE_DIR}/operational.json" 200 202
@@ -144,7 +147,7 @@ assert_not_contains 'do-not-send' "${CAPTURE_DIR}/payload.json" 'Tokenを送信�
 assert_not_contains 'postgres.internal.example' "${CAPTURE_DIR}/payload.json" '内部接続先を送信しないこと'
 assert_not_contains 'redis://secret@internal' "${CAPTURE_DIR}/payload.json" 'Redis URLを送信しないこと'
 verify_signature
-grep -qx 'https://stats.example.test/api/internal/status-ingest' "${CAPTURE_DIR}/url.txt"
+grep -qx 'https://stats.ivrm.jp/api/internal/status-ingest' "${CAPTURE_DIR}/url.txt"
 echo 'PASS: ivrm-stats互換payloadとHMAC署名で送信'
 
 run_agent "${FIXTURE_DIR}/outage.json" 503 202
@@ -158,6 +161,7 @@ assert_file_absent "${CAPTURE_DIR}/post-count.txt" '不正ヘルスを外部送�
 
 run_agent "${FIXTURE_DIR}/invalid-version.json" 200 202
 assert_equal 3 "${LAST_STATUS}" 'object型versionを拒否すること'
+assert_file_absent "${CAPTURE_DIR}/post-count.txt" '不正versionを外部送信しないこと'
 assert_not_contains 'must-not-be-forwarded' "${LAST_STDOUT}" '不正version内容を標準出力へ表示しないこと'
 assert_not_contains 'must-not-be-forwarded' "${LAST_STDERR}" '不正version内容を標準エラーへ表示しないこと'
 
@@ -180,7 +184,7 @@ reset_capture
 set +e
 env PATH="${MOCK_BIN}:${PATH}" MOCK_CAPTURE_DIR="${CAPTURE_DIR}" \
   MOCK_HEALTH_BODY_FILE="${FIXTURE_DIR}/operational.json" HEALTH_URL='http://127.0.0.1:3000/healthz' \
-  STATUS_INGEST_URL='http://stats.example.test/api/internal/status-ingest' \
+  STATUS_INGEST_URL='http://stats.ivrm.jp/api/internal/status-ingest' \
   STATUS_SIGNING_SECRET="${SIGNING_SECRET}" STATUS_LOCK_FILE="${TEST_ROOT}/agent.lock" \
   bash "${AGENT_SCRIPT}" >"${OUTPUT_DIR}/http-stdout.txt" 2>"${OUTPUT_DIR}/http-stderr.txt"
 HTTP_STATUS=$?
