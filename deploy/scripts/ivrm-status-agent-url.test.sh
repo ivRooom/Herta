@@ -35,7 +35,7 @@ run_invalid_url_case() {
 
 run_invalid_url_case \
   'http://localhost.evil.example:3000/healthz' \
-  'https://stats.example.test/api/internal/status-ingest' \
+  'https://stats.ivrm.jp/api/internal/status-ingest' \
   false \
   "${TEST_ROOT}/malicious-health"
 grep -q 'HEALTH_URLは既定でloopback' "${TEST_ROOT}/malicious-health.stderr"
@@ -43,7 +43,7 @@ echo 'PASS: localhostを前方一致させた外部health URLを拒否'
 
 run_invalid_url_case \
   'http://127.0.0.1:3000@evil.example/healthz' \
-  'https://stats.example.test/api/internal/status-ingest' \
+  'https://stats.ivrm.jp/api/internal/status-ingest' \
   false \
   "${TEST_ROOT}/userinfo-health"
 grep -q 'HEALTH_URLは既定でloopback' "${TEST_ROOT}/userinfo-health.stderr"
@@ -51,10 +51,26 @@ echo 'PASS: userinfoでloopbackに偽装した外部health URLを拒否'
 
 run_invalid_url_case \
   'http://127.0.0.1:3000/healthz' \
+  'https://evil.example/api/internal/status-ingest' \
+  false \
+  "${TEST_ROOT}/arbitrary-https-host"
+grep -q 'STATUS_INGEST_URLにはhttps://stats.ivrm.jp/api/internal/status-ingest' "${TEST_ROOT}/arbitrary-https-host.stderr"
+echo 'PASS: 固定先以外のHTTPS Hostを拒否'
+
+run_invalid_url_case \
+  'http://127.0.0.1:3000/healthz' \
+  'https://stats.ivrm.jp:444/api/internal/status-ingest' \
+  false \
+  "${TEST_ROOT}/nonstandard-port"
+grep -q 'STATUS_INGEST_URLにはhttps://stats.ivrm.jp/api/internal/status-ingest' "${TEST_ROOT}/nonstandard-port.stderr"
+echo 'PASS: 本番Hostの非標準HTTPS portを拒否'
+
+run_invalid_url_case \
+  'http://127.0.0.1:3000/healthz' \
   'http://localhost.evil.example:8080/api/internal/status-ingest' \
   true \
   "${TEST_ROOT}/malicious-ingest"
-grep -q 'STATUS_INGEST_URLには.*/api/internal/status-ingest' "${TEST_ROOT}/malicious-ingest.stderr"
+grep -q 'STATUS_INGEST_URLにはhttps://stats.ivrm.jp/api/internal/status-ingest' "${TEST_ROOT}/malicious-ingest.stderr"
 echo 'PASS: localhostを前方一致させたHTTP ingest URLを拒否'
 
 run_invalid_url_case \
@@ -62,29 +78,29 @@ run_invalid_url_case \
   'http://127.0.0.1:8080@evil.example/api/internal/status-ingest' \
   true \
   "${TEST_ROOT}/userinfo-ingest"
-grep -q 'STATUS_INGEST_URLには.*/api/internal/status-ingest' "${TEST_ROOT}/userinfo-ingest.stderr"
+grep -q 'STATUS_INGEST_URLにはhttps://stats.ivrm.jp/api/internal/status-ingest' "${TEST_ROOT}/userinfo-ingest.stderr"
 echo 'PASS: userinfoでloopbackに偽装したHTTP ingest URLを拒否'
 
 run_invalid_url_case \
   'http://127.0.0.1:3000/healthz' \
-  'https://stats.example.test/v1/observations' \
+  'https://stats.ivrm.jp/v1/observations' \
   false \
   "${TEST_ROOT}/wrong-path"
-grep -q 'STATUS_INGEST_URLには.*/api/internal/status-ingest' "${TEST_ROOT}/wrong-path.stderr"
+grep -q 'STATUS_INGEST_URLにはhttps://stats.ivrm.jp/api/internal/status-ingest' "${TEST_ROOT}/wrong-path.stderr"
 echo 'PASS: 署名対象と異なるingest pathを拒否'
 
 run_invalid_url_case \
   'http://127.0.0.1:3000/healthz' \
-  'https://stats.example.test/api/internal/status-ingest?debug=true' \
+  'https://stats.ivrm.jp/api/internal/status-ingest?debug=true' \
   false \
   "${TEST_ROOT}/query"
-grep -q 'STATUS_INGEST_URLには.*/api/internal/status-ingest' "${TEST_ROOT}/query.stderr"
+grep -q 'STATUS_INGEST_URLにはhttps://stats.ivrm.jp/api/internal/status-ingest' "${TEST_ROOT}/query.stderr"
 echo 'PASS: canonical pathを変えるquery付きURLを拒否'
 
 set +e
 env \
   HEALTH_URL='http://127.0.0.1:3000/healthz' \
-  STATUS_INGEST_URL='https://stats.example.test/api/internal/status-ingest' \
+  STATUS_INGEST_URL='https://stats.ivrm.jp/api/internal/status-ingest' \
   STATUS_SIGNING_SECRET='change-me-use-openssl-rand-hex-32' \
   STATUS_LOCK_FILE="${TEST_ROOT}/agent.lock" \
   STATUS_DRY_RUN=true \
