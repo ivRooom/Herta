@@ -133,7 +133,7 @@ jobs:
           grep -q 'X-IVRM-Request-Id:' deploy/scripts/ivrm-status-agent.sh
           grep -q 'X-IVRM-Body-SHA256:' deploy/scripts/ivrm-status-agent.sh
           grep -q 'X-IVRM-Signature: v1=' deploy/scripts/ivrm-status-agent.sh
-          grep -q 'STATUS_INGEST_URLにはhttps://.*api/internal/status-ingest' deploy/scripts/ivrm-status-agent.sh
+          grep -Fq 'STATUS_INGEST_URLにはhttps://${STATUS_INGEST_HOST}${STATUS_INGEST_PATH}を設定してください。' deploy/scripts/ivrm-status-agent.sh
           grep -q 'HEALTH_URLは既定でloopback' deploy/scripts/ivrm-status-agent.sh
           grep -q "NO_PROXY='\*' no_proxy='\*' curl" deploy/scripts/ivrm-status-agent.sh
           grep -q 'require_boolean STATUS_DRY_RUN' deploy/scripts/ivrm-status-agent.sh
