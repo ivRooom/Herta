@@ -325,11 +325,11 @@ class StatusStore:
                     (nonce,),
                 ).fetchone()
                 if existing_nonce is not None:
-                    connection.execute("ROLLBACK")
                     if hmac.compare_digest(
                         existing_nonce["request_fingerprint"],
                         request_fingerprint,
                     ):
+                        connection.execute("ROLLBACK")
                         return False
                     raise RequestError(
                         HTTPStatus.CONFLICT,
