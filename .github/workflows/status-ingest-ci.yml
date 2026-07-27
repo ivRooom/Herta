@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   packages: write
 
 concurrency:
@@ -33,76 +33,18 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: feat/oci-status-ingest
+          persist-credentials: false
 
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-
-      - name: 一時レビュー修正を作業ツリーへ適用
-        if: github.event_name == 'pull_request'
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-          import textwrap
-
-          workflow = Path('.github/workflows/apply-status-ingest-review-fixes.yml').read_text(encoding='utf-8')
-          start_marker = "          python - <<'PY'\n"
-          end_marker = "\n          PY\n\n          cd services/status-ingest"
-          start = workflow.index(start_marker) + len(start_marker)
-          end = workflow.index(end_marker, start)
-          code = textwrap.dedent(workflow[start:end])
-          try:
-              exec(compile(code, '<status-ingest-review-fixes>', 'exec'))
-          except SystemExit as error:
-              if error.code not in (None, 0):
-                  raise
-
-          source_path = Path('services/status-ingest/status_ingest.py')
-          source = source_path.read_text(encoding='utf-8')
-          old = '''                if existing_nonce is not None:\n                    connection.execute("ROLLBACK")\n                    if hmac.compare_digest(\n                        existing_nonce["request_fingerprint"],\n                        request_fingerprint,\n                    ):\n                        return False\n                    raise RequestError('''
-          new = '''                if existing_nonce is not None:\n                    if hmac.compare_digest(\n                        existing_nonce["request_fingerprint"],\n                        request_fingerprint,\n                    ):\n                        connection.execute("ROLLBACK")\n                        return False\n                    raise RequestError('''
-          if old in source:
-              source_path.write_text(source.replace(old, new, 1), encoding='utf-8')
-          elif new not in source:
-              raise SystemExit('二重ROLLBACK修正対象が見つかりません')
-          PY
-
-      - name: レビュー修正をcommit
-        if: github.event_name == 'pull_request'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add \
-            services/status-ingest/status_ingest.py \
-            services/status-ingest/test_app.py \
-            docs/STATUS_INGEST_OCI.md
-          if git diff --cached --quiet; then
-            echo 'commit対象の変更はありません。'
-          else
-            git commit -m 'fix: Nonce再利用時の二重rollbackを防止'
-            git push origin HEAD:feat/oci-status-ingest
-          fi
 
       - name: Python構文と単体テスト
         working-directory: services/status-ingest
         run: |
           set -euo pipefail
           python -m compileall -q status_ingest.py runner.py test_app.py
-          python -m unittest -v test_app.py 2>&1 | tee /tmp/status-ingest-tests.log
-
-      - name: 失敗テストログを保存
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: status-ingest-test-failure
-          path: /tmp/status-ingest-tests.log
-          if-no-files-found: error
-          retention-days: 1
+          python -m unittest -v test_app.py
 
       - name: ComposeとCaddy設定を検証
         working-directory: services/status-ingest
