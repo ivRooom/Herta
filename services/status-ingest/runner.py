@@ -6,7 +6,7 @@ import sqlite3
 import threading
 from typing import Any
 
-from app import (
+from status_ingest import (
     LOG,
     Config,
     ConfigurationError,
