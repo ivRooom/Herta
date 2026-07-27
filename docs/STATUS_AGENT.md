@@ -56,7 +56,15 @@ Herta /healthz
 https://stats.ivrm.jp/api/internal/status-ingest
 ```
 
-AgentはHTTPS以外、異なるpath、query・fragment・userinfo付きURLを拒否します。
+Agentは次を拒否します。
+
+- `stats.ivrm.jp`以外のHost
+- HTTPS以外
+- 443以外の本番Port
+- `/api/internal/status-ingest`以外のPath
+- query、fragment、userinfo付きURL
+
+HTTPは、loopbackを使用する自動テストで明示的に許可した場合だけ利用できます。
 
 ## HMAC認証
 
@@ -86,7 +94,7 @@ herta-discord-bot
 
 ## 再送
 
-- curlで一時障害を再試行
+- curlで一時的な接続障害を再試行
 - 同じrequest IDが処理済みでHTTP 409になった場合は正常終了
 - 失敗payloadは保存せず、次回timerで最新状態を再取得
 - timerは1分間隔
@@ -117,6 +125,8 @@ bash deploy/scripts/ivrm-status-agent-proxy.test.sh
 
 # 本番反映
 
+以前チャットやShellへ表示したSecretは使用せず、新しいSecretを設定します。Secretをコマンド引数、`sudo env`、Shell historyへ直接含めません。
+
 ## 1. OCI側Secret
 
 既存Status APIの環境ファイルです。
@@ -125,39 +135,69 @@ bash deploy/scripts/ivrm-status-agent-proxy.test.sh
 /opt/ivrm/compose/ivrm-status-api/.env
 ```
 
-新しい64文字hex Secretをパスワードマネージャー等で生成し、画面へ表示しない入力で取得します。
+新しい64文字hex Secretをパスワードマネージャー等で生成し、非表示入力します。
 
 ```bash
 read -rsp '新しいHERTA_INGEST_SECRET: ' HERTA_INGEST_SECRET
 printf '\n'
+
+if [ "${#HERTA_INGEST_SECRET}" -lt 32 ]; then
+  echo 'ERROR: Secretは32文字以上必要です'
+  unset HERTA_INGEST_SECRET
+  return 1 2>/dev/null || exit 1
+fi
 ```
 
-編集ソフトを使わず設定します。
+Secretを標準入力経由でroot処理へ渡します。値は`sudo`の引数やプロセス一覧へ現れません。
 
 ```bash
-sudo env HERTA_INGEST_SECRET="${HERTA_INGEST_SECRET}" python3 - <<'PY'
-import os
-from pathlib import Path
+SECRET_UPDATER="$(mktemp)"
+chmod 700 "${SECRET_UPDATER}"
 
-path = Path('/opt/ivrm/compose/ivrm-status-api/.env')
-key = 'HERTA_INGEST_SECRET'
-value = os.environ[key]
+cat > "${SECRET_UPDATER}" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+key = sys.argv[2]
+secret = sys.stdin.read()
+if len(secret) < 32:
+    raise SystemExit('secret must be at least 32 characters')
+
 lines = path.read_text(encoding='utf-8').splitlines() if path.exists() else []
 output = []
 found = False
 for line in lines:
     if line.startswith(key + '='):
-        output.append(f'{key}={value}')
+        output.append(f'{key}={secret}')
         found = True
     else:
         output.append(line)
 if not found:
-    output.append(f'{key}={value}')
+    output.append(f'{key}={secret}')
 path.write_text('\n'.join(output) + '\n', encoding='utf-8')
 PY
 
+printf '%s' "${HERTA_INGEST_SECRET}" |
+  sudo python3 "${SECRET_UPDATER}" \
+    /opt/ivrm/compose/ivrm-status-api/.env \
+    HERTA_INGEST_SECRET
+
+rm -f "${SECRET_UPDATER}"
+unset HERTA_INGEST_SECRET
+
 sudo chown root:root /opt/ivrm/compose/ivrm-status-api/.env
 sudo chmod 600 /opt/ivrm/compose/ivrm-status-api/.env
+```
+
+Secretを表示せず、設定有無と長さだけ確認します。
+
+```bash
+sudo awk -F= '
+  $1 == "HERTA_INGEST_SECRET" {
+    print $1 "=<redacted:" length($2) "文字>"
+  }
+' /opt/ivrm/compose/ivrm-status-api/.env
 ```
 
 Status APIだけを再作成します。CaddyとMinecraftは再起動しません。
@@ -167,24 +207,46 @@ sudo docker compose \
   --project-directory /opt/ivrm/compose/ivrm-status-api \
   -f /opt/ivrm/compose/ivrm-status-api/docker-compose.yml \
   up -d --force-recreate status-api
+
+sudo docker compose \
+  --project-directory /opt/ivrm/compose/ivrm-status-api \
+  -f /opt/ivrm/compose/ivrm-status-api/docker-compose.yml \
+  ps
 ```
 
-## 2. Lightsail側Secret
+## 2. Lightsail側Secret・送信先
 
-OCIと同じSecretを非表示入力し、`/etc/herta/status-agent.env`を更新します。
+OCIと同じSecretを非表示入力します。
 
 ```bash
 read -rsp 'OCIと同じHERTA_INGEST_SECRET: ' NEW_SECRET
 printf '\n'
 
-sudo env NEW_SECRET="${NEW_SECRET}" python3 - <<'PY'
-import os
+if [ "${#NEW_SECRET}" -lt 32 ]; then
+  echo 'ERROR: Secretは32文字以上必要です'
+  unset NEW_SECRET
+  return 1 2>/dev/null || exit 1
+fi
+```
+
+Secretは標準入力、Secret以外の設定値は固定値として更新します。
+
+```bash
+SECRET_UPDATER="$(mktemp)"
+chmod 700 "${SECRET_UPDATER}"
+
+cat > "${SECRET_UPDATER}" <<'PY'
 from pathlib import Path
+import sys
 
 path = Path('/etc/herta/status-agent.env')
+secret = sys.stdin.read()
+if len(secret) < 32:
+    raise SystemExit('secret must be at least 32 characters')
+
 replacements = {
     'STATUS_INGEST_URL': 'https://stats.ivrm.jp/api/internal/status-ingest',
-    'STATUS_SIGNING_SECRET': os.environ['NEW_SECRET'],
+    'STATUS_SIGNING_SECRET': secret,
     'STATUS_SERVICE_ID': 'herta-discord-bot',
     'STATUS_DRY_RUN': 'false',
 }
@@ -204,9 +266,30 @@ for key, value in replacements.items():
 path.write_text('\n'.join(output) + '\n', encoding='utf-8')
 PY
 
-unset NEW_SECRET HERTA_INGEST_SECRET
+printf '%s' "${NEW_SECRET}" |
+  sudo python3 "${SECRET_UPDATER}"
+
+rm -f "${SECRET_UPDATER}"
+unset NEW_SECRET
+
 sudo chown root:root /etc/herta/status-agent.env
 sudo chmod 600 /etc/herta/status-agent.env
+```
+
+Secretを伏せて確認します。
+
+```bash
+sudo awk -F= '
+  $1 == "STATUS_SIGNING_SECRET" {
+    print $1 "=<redacted:" length($2) "文字>"
+    next
+  }
+  $1 == "STATUS_INGEST_URL" ||
+  $1 == "STATUS_SERVICE_ID" ||
+  $1 == "STATUS_DRY_RUN" {
+    print
+  }
+' /etc/herta/status-agent.env
 ```
 
 ## 3. Agent更新
@@ -217,6 +300,12 @@ git fetch origin main
 git switch main
 git pull --ff-only origin main
 
+git log -1 --oneline
+```
+
+Unit自体に変更がなくても、実配置と検証を再実行します。
+
+```bash
 sudo install --owner root --group root --mode 0644 \
   deploy/systemd/herta-status-agent.service \
   /etc/systemd/system/herta-status-agent.service
@@ -236,9 +325,21 @@ sudo systemd-analyze verify --recursive-errors=yes \
 Timerは無効のまま実行します。
 
 ```bash
+systemctl is-enabled herta-status-agent.timer || true
+systemctl is-active herta-status-agent.timer || true
+
 sudo systemctl start herta-status-agent.service
-systemctl show herta-status-agent.service -p Result -p ExecMainStatus
-sudo journalctl -u herta-status-agent.service -n 100 --no-pager
+
+systemctl show herta-status-agent.service \
+  -p Result \
+  -p ExecMainStatus \
+  -p ActiveState \
+  -p SubState
+
+sudo journalctl \
+  -u herta-status-agent.service \
+  -n 100 \
+  --no-pager
 ```
 
 期待値:
@@ -249,13 +350,31 @@ ExecMainStatus=0
 ステータス送信に成功しました。HTTP 202
 ```
 
+oneshotの正常終了後に`ActiveState=inactive`、`SubState=dead`となるのは正常です。
+
 ## 5. 公開反映
 
 ```bash
-curl -fsS https://stats.ivrm.jp/api/status.json | python3 -m json.tool
+curl -fsS https://stats.ivrm.jp/api/status.json |
+  python3 -m json.tool
 ```
 
-`herta-discord-bot`の`status`、`checked_at`、`last_received_at`、`meta.version`を確認します。
+`herta-discord-bot`の次を確認します。
+
+- `status`が`unknown`以外
+- `checked_at`が直近時刻
+- `last_received_at`が直近時刻
+- `meta.version`がHertaのversion
+
+OCI側ログ:
+
+```bash
+sudo docker logs \
+  --since=10m \
+  ivrm-status-api
+```
+
+`status_ingest_accepted`が記録され、Secret・署名・本文全文が出ていないことを確認します。
 
 ## 6. Timer有効化
 
@@ -269,6 +388,27 @@ systemctl list-timers herta-status-agent.timer --all
 ```
 
 1〜2分後に`last_received_at`が更新されれば完了です。
+
+# 不要になったOCI試作物の整理
+
+独立status-ingestコンテナを一度も起動していないことを確認します。
+
+```bash
+sudo docker ps -a --filter name=herta-status-ingest
+```
+
+結果が空なら、ローカルBuildした試作イメージと空ディレクトリを削除できます。
+
+```bash
+sudo docker image rm \
+  herta-status-ingest:f5d82dab35861e91d43eedafbf86d48744c9f8ae \
+  herta-status-ingest:a765d1bf38d008dfcc2ce3b4ef84d0997878fa68 \
+  2>/dev/null || true
+
+sudo rm -rf /opt/ivrm-status
+```
+
+`/opt/herta-src`は調査用cloneとして残しても、削除しても既存Status APIには影響しません。
 
 # 停止
 
