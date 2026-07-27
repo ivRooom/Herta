@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   packages: write
 
 concurrency:
@@ -33,134 +33,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: feat/oci-status-ingest
+          persist-credentials: false
 
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-
-      - name: Slow POSTとschema version修正を適用
-        if: github.event_name == 'pull_request'
-        shell: bash
-        run: |
-          set -euo pipefail
-          python - <<'PY'
-          from pathlib import Path
-
-          def replace_once(text: str, old: str, new: str, label: str) -> str:
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected 1 occurrence, got {count}')
-              return text.replace(old, new, 1)
-
-          source_path = Path('services/status-ingest/status_ingest.py')
-          source = source_path.read_text(encoding='utf-8')
-          if 'request_body_timeout_seconds: int' not in source:
-              source = replace_once(
-                  source,
-                  '''    stale_after_seconds: int\n    max_body_bytes: int\n    cors_origin: str | None''',
-                  '''    stale_after_seconds: int\n    max_body_bytes: int\n    request_body_timeout_seconds: int\n    cors_origin: str | None''',
-                  'config field',
-              )
-              source = replace_once(
-                  source,
-                  '''            max_body_bytes=env_int(\n                "STATUS_MAX_BODY_BYTES",\n                16384,\n                minimum=1024,\n                maximum=65536,\n            ),\n            cors_origin=cors_origin,''',
-                  '''            max_body_bytes=env_int(\n                "STATUS_MAX_BODY_BYTES",\n                16384,\n                minimum=1024,\n                maximum=65536,\n            ),\n            request_body_timeout_seconds=env_int(\n                "STATUS_REQUEST_BODY_TIMEOUT_SECONDS",\n                10,\n                minimum=1,\n                maximum=60,\n            ),\n            cors_origin=cors_origin,''',
-                  'config env',
-              )
-              source = replace_once(
-                  source,
-                  '''    return parsed.astimezone(UTC)\n\n\nclass StatusStore:''',
-                  '''    return parsed.astimezone(UTC)\n\n\ndef read_body_with_deadline(\n    reader: Any,\n    set_socket_timeout: Callable[[float], None],\n    content_length: int,\n    timeout_seconds: int,\n    *,\n    clock: Callable[[], float] = time.monotonic,\n) -> bytes:\n    deadline = clock() + timeout_seconds\n    remaining = content_length\n    chunks: list[bytes] = []\n\n    while remaining > 0:\n        time_left = deadline - clock()\n        if time_left <= 0:\n            raise RequestError(\n                HTTPStatus.REQUEST_TIMEOUT,\n                "request_timeout",\n                "リクエスト本文の受信が時間内に完了しませんでした",\n            )\n        set_socket_timeout(time_left)\n        try:\n            chunk = reader.read1(min(remaining, 65536))\n        except TimeoutError as error:\n            raise RequestError(\n                HTTPStatus.REQUEST_TIMEOUT,\n                "request_timeout",\n                "リクエスト本文の受信が時間内に完了しませんでした",\n            ) from error\n        if not chunk:\n            raise RequestError(\n                HTTPStatus.BAD_REQUEST,\n                "incomplete_body",\n                "リクエスト本文が不完全です",\n            )\n        if clock() > deadline:\n            raise RequestError(\n                HTTPStatus.REQUEST_TIMEOUT,\n                "request_timeout",\n                "リクエスト本文の受信が時間内に完了しませんでした",\n            )\n        chunks.append(chunk)\n        remaining -= len(chunk)\n\n    return b"".join(chunks)\n\n\nclass StatusStore:''',
-                  'deadline helper',
-              )
-              source = replace_once(
-                  source,
-                  '''        body = self.rfile.read(content_length)\n        if len(body) != content_length:\n            raise RequestError(\n                HTTPStatus.BAD_REQUEST,\n                "incomplete_body",\n                "リクエスト本文が不完全です",\n            )''',
-                  '''        try:\n            body = read_body_with_deadline(\n                self.rfile,\n                self.connection.settimeout,\n                content_length,\n                self.server.config.request_body_timeout_seconds,\n            )\n        finally:\n            self.connection.settimeout(self.timeout)''',
-                  'body reader',
-              )
-              source = replace_once(
-                  source,
-                  '''    if payload["schema_version"] != 1:''',
-                  '''    if type(payload["schema_version"]) is not int or payload["schema_version"] != 1:''',
-                  'schema version type',
-              )
-              source_path.write_text(source, encoding='utf-8')
-
-          test_path = Path('services/status-ingest/test_app.py')
-          tests = test_path.read_text(encoding='utf-8')
-          if 'read_body_with_deadline' not in tests:
-              tests = replace_once(
-                  tests,
-                  '''    StatusStore,\n    format_rfc3339,''',
-                  '''    StatusStore,\n    format_rfc3339,\n    read_body_with_deadline,''',
-                  'test import',
-              )
-              tests = replace_once(
-                  tests,
-                  '''            max_body_bytes=16384,\n            cors_origin="https://stats.ivrm.jp",''',
-                  '''            max_body_bytes=16384,\n            request_body_timeout_seconds=10,\n            cors_origin="https://stats.ivrm.jp",''',
-                  'test config',
-              )
-              marker = '''    def test_rejects_extra_payload_fields(self) -> None:\n'''
-              addition = '''    def test_body_reader_enforces_total_deadline_for_trickle(self) -> None:\n        class FakeClock:\n            def __init__(self) -> None:\n                self.value = 0.0\n\n            def __call__(self) -> float:\n                return self.value\n\n        class TrickleReader:\n            def __init__(self, clock: FakeClock) -> None:\n                self.clock = clock\n\n            def read1(self, size: int) -> bytes:\n                self.clock.value += 0.6\n                return b"x"\n\n        clock = FakeClock()\n        with self.assertRaisesRegex(Exception, "時間内") as context:\n            read_body_with_deadline(\n                TrickleReader(clock),\n                lambda timeout: None,\n                3,\n                1,\n                clock=clock,\n            )\n        self.assertEqual("request_timeout", context.exception.code)\n\n    def test_requires_integer_schema_version_one(self) -> None:\n        for index, invalid_version in enumerate((True, 1.0)):\n            with self.subTest(schema_version=invalid_version):\n                payload = self.payload()\n                payload["schema_version"] = invalid_version\n                nonce = f"{index + 1:032x}"\n                status, response = self.signed_request(payload, nonce=nonce)\n                self.assertEqual(422, status)\n                self.assertEqual("unsupported_schema", response["error"]["code"])\n\n'''
-              tests = replace_once(tests, marker, addition + marker, 'new tests')
-              test_path.write_text(tests, encoding='utf-8')
-
-          env_path = Path('services/status-ingest/status-ingest.env.example')
-          env_text = env_path.read_text(encoding='utf-8')
-          if 'STATUS_REQUEST_BODY_TIMEOUT_SECONDS=' not in env_text:
-              env_text = replace_once(
-                  env_text,
-                  'STATUS_MAX_BODY_BYTES=16384\n',
-                  'STATUS_MAX_BODY_BYTES=16384\nSTATUS_REQUEST_BODY_TIMEOUT_SECONDS=10\n',
-                  'env example',
-              )
-              env_path.write_text(env_text, encoding='utf-8')
-
-          docs_path = Path('docs/STATUS_INGEST_OCI.md')
-          docs = docs_path.read_text(encoding='utf-8')
-          if '`408 request_timeout`' not in docs:
-              docs = replace_once(
-                  docs,
-                  '- `409 replayed_nonce`: Nonce再利用\n',
-                  '- `408 request_timeout`: Body全体の受信期限超過\n- `409 replayed_nonce`: Nonce再利用\n',
-                  'docs error',
-              )
-              docs = replace_once(
-                  docs,
-                  'python3 -m compileall -q app.py test_app.py',
-                  'python3 -m compileall -q status_ingest.py runner.py test_app.py',
-                  'docs compile command',
-              )
-              docs = replace_once(
-                  docs,
-                  'STATUS_MAX_BODY_BYTES=16384\nSTATUS_PUBLIC_CORS_ORIGIN=',
-                  'STATUS_MAX_BODY_BYTES=16384\nSTATUS_REQUEST_BODY_TIMEOUT_SECONDS=10\nSTATUS_PUBLIC_CORS_ORIGIN=',
-                  'docs env',
-              )
-              docs_path.write_text(docs, encoding='utf-8')
-          PY
-
-      - name: 修正をcommit
-        if: github.event_name == 'pull_request'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name github-actions[bot]
-          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add \
-            services/status-ingest/status_ingest.py \
-            services/status-ingest/test_app.py \
-            services/status-ingest/status-ingest.env.example \
-            docs/STATUS_INGEST_OCI.md
-          if git diff --cached --quiet; then
-            echo '変更はありません。'
-          else
-            git commit -m 'fix: status-ingestの総リクエスト期限を追加'
-            git push origin HEAD:feat/oci-status-ingest
-          fi
 
       - name: Python構文と単体テスト
         working-directory: services/status-ingest
@@ -189,12 +66,15 @@ jobs:
       - name: status-ingest imageをbuild
         run: |
           set -euo pipefail
-          docker build --tag herta-status-ingest:ci services/status-ingest
+          docker build \
+            --tag herta-status-ingest:ci \
+            services/status-ingest
 
       - name: 非root runtime・health・正常終了を検証
         run: |
           set -euo pipefail
           test "$(docker run --rm --entrypoint id herta-status-ingest:ci -u)" != '0'
+
           docker volume create herta-status-ingest-ci-data >/dev/null
           docker run -d \
             --name herta-status-ingest-ci \
@@ -207,23 +87,32 @@ jobs:
             -v herta-status-ingest-ci-data:/data \
             -p 127.0.0.1:18080:8080 \
             herta-status-ingest:ci
+
           cleanup() {
             docker rm -f herta-status-ingest-ci >/dev/null 2>&1 || true
             docker volume rm herta-status-ingest-ci-data >/dev/null 2>&1 || true
           }
           trap cleanup EXIT
+
           for attempt in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:18080/healthz >/tmp/status-health.json; then
               break
             fi
             sleep 1
           done
+
           python - <<'PY'
           import json
           from pathlib import Path
+
           payload = json.loads(Path('/tmp/status-health.json').read_text())
-          assert payload == {'service': 'ivrm-status-ingest', 'status': 'ok', 'database': 'ok'}
+          assert payload == {
+              'service': 'ivrm-status-ingest',
+              'status': 'ok',
+              'database': 'ok',
+          }
           PY
+
           test "$(docker inspect herta-status-ingest-ci --format '{{.Config.User}}')" = '10001:10001'
           docker stop --time 5 herta-status-ingest-ci >/dev/null
           test "$(docker inspect herta-status-ingest-ci --format '{{.State.ExitCode}}')" = '0'
