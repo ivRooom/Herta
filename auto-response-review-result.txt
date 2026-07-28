@@ -1,0 +1,13 @@
+file:///home/runner/work/Herta/Herta/.github/scripts/apply-auto-response-review-fixes.mjs:16
+    throw new Error(`${path}: ${label} の置換元が一意に見つかりません`);
+          ^
+
+Error: plugins/auto-response/src/config.ts: 量指定付きalternation拒否 の置換元が一意に見つかりません
+    at replaceOnce (file:///home/runner/work/Herta/Herta/.github/scripts/apply-auto-response-review-fixes.mjs:16:11)
+    at file:///home/runner/work/Herta/Herta/.github/scripts/apply-auto-response-review-fixes.mjs:180:1
+    at ModuleJob.run (node:internal/modules/esm/module_job:343:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:681:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+
+Node.js v22.23.1
+EXIT_CODE=1
