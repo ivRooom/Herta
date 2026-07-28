@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - feat/moderation-case-management
-    paths-ignore:
-      - '.github/workflows/moderation-format-fix.yml'
 
 permissions:
   contents: write
