@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Queue, UnrecoverableError, Worker, type Job } from 'bullmq';
 import type { PrismaClient } from '@herta/db';
 import type { Logger } from 'pino';
@@ -26,6 +27,7 @@ const DISCORD_API_BASE_URL = 'https://discord.com/api/v10';
 const DAILY_CONTENT_SCAN_LIMIT = 200;
 const BASE_RETRY_DELAY_MS = 15_000;
 const TEXT_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12]);
+const DISCORD_NONCE_MAX_LENGTH = 25;
 
 type DailyContentJobData = JobData[typeof QueueNames.DAILY_CONTENT];
 
@@ -39,6 +41,13 @@ export interface StartDailyContentRuntimeOptions {
   prisma: PrismaClient;
   logger: Logger;
   discordBotToken: string;
+}
+
+export function createDeliveryNonce(idempotencyKey: string): string {
+  return createHash('sha256')
+    .update(idempotencyKey)
+    .digest('hex')
+    .slice(0, DISCORD_NONCE_MAX_LENGTH);
 }
 
 export async function startDailyContentRuntime(
@@ -192,6 +201,7 @@ async function processDelivery(
       channelId: delivery.dailyContent.channelId,
       content: delivery.dailyContent.content,
       allowUserMentions: config.allowUserMentions,
+      nonce: createDeliveryNonce(delivery.idempotencyKey),
     });
     await markDeliverySent(prisma, {
       deliveryId: delivery.id,
@@ -233,6 +243,7 @@ async function publishDiscordMessage(input: {
   channelId: string;
   content: string;
   allowUserMentions: boolean;
+  nonce: string;
 }): Promise<string> {
   const channelResponse = await fetch(`${DISCORD_API_BASE_URL}/channels/${input.channelId}`, {
     headers: { Authorization: `Bot ${input.token}` },
@@ -254,6 +265,8 @@ async function publishDiscordMessage(input: {
     },
     body: JSON.stringify({
       content: input.content,
+      nonce: input.nonce,
+      enforce_nonce: true,
       allowed_mentions: { parse: input.allowUserMentions ? ['users'] : [] },
     }),
     signal: AbortSignal.timeout(15_000),
