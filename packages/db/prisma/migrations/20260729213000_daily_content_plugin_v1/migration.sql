@@ -9,8 +9,8 @@ ALTER TABLE "daily_contents"
   USING "last_sent_at" AT TIME ZONE 'UTC';
 
 CREATE TABLE "daily_content_deliveries" (
-  "id" UUID NOT NULL,
-  "daily_content_id" UUID NOT NULL,
+  "id" TEXT NOT NULL,
+  "daily_content_id" TEXT NOT NULL,
   "guild_id" TEXT NOT NULL,
   "idempotency_key" TEXT NOT NULL,
   "origin" TEXT NOT NULL DEFAULT 'scheduled',
@@ -36,7 +36,7 @@ CREATE TABLE "daily_content_deliveries" (
 
 ALTER TABLE "daily_contents"
   ADD CONSTRAINT "daily_contents_schedule_time_check"
-  CHECK ("schedule_time" ~ '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$') NOT VALID;
+  CHECK ("schedule_time" ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$') NOT VALID;
 
 ALTER TABLE "daily_content_deliveries"
   ADD CONSTRAINT "daily_content_deliveries_origin_check"
