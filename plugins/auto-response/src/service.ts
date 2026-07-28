@@ -187,25 +187,25 @@ export async function listAutoResponseRules(
   input: ListAutoResponseRulesInput,
 ): Promise<ListAutoResponseRulesResult> {
   assertDiscordId(input.guildId, 'Guild ID');
-  const page = positiveInteger(input.page, 1);
+  const requestedPage = positiveInteger(input.page, 1);
   const pageSize = Math.min(positiveInteger(input.pageSize, DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
   const where = buildRuleWhere(input);
-  const [items, total] = await Promise.all([
-    prisma.autoResponse.findMany({
-      where,
-      orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.autoResponse.count({ where }),
-  ]);
+  const total = await prisma.autoResponse.count({ where });
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(requestedPage, totalPages);
+  const items = await prisma.autoResponse.findMany({
+    where,
+    orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  });
 
   return {
     items,
     total,
     page,
     pageSize,
-    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    totalPages,
   };
 }
 
