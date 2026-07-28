@@ -259,3 +259,31 @@ jobs:
           path: security-artifacts/
           if-no-files-found: error
           retention-days: 30
+
+  auto-response-config-tests:
+    name: Auto Response config tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile > /dev/null
+      - run: pnpm --filter @herta/plugin-auto-response exec vitest run src/config.test.ts --reporter=verbose
+
+  auto-response-service-tests:
+    name: Auto Response service tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile > /dev/null
+      - run: pnpm --filter @herta/plugin-auto-response exec vitest run src/service.test.ts --reporter=verbose
