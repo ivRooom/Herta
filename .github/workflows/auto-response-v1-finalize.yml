@@ -40,3 +40,4 @@ jobs:
           git add .
           git commit -m 'fix(auto-response): RuntimeとStudioの最終整合性を修正'
           git push origin HEAD:feat/auto-response-plugin-v1
+          echo 'Auto Response v1 finalization completed.'
