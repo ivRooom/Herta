@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildDiscordGuildInstallUrl, DEFAULT_DISCORD_BOT_PERMISSIONS } from './discord-install.ts';
 
-test('Guild Install用のscopeとinstallation contextを設定する', () => {
+test('Guild Install用のscopeと公式Plugin最小権限を設定する', () => {
   const url = new URL(
     buildDiscordGuildInstallUrl({
       clientId: '1521451822521520128',
     }),
   );
 
+  assert.equal(DEFAULT_DISCORD_BOT_PERMISSIONS, '274877925376');
   assert.equal(url.origin, 'https://discord.com');
   assert.equal(url.pathname, '/oauth2/authorize');
   assert.equal(url.searchParams.get('client_id'), '1521451822521520128');
