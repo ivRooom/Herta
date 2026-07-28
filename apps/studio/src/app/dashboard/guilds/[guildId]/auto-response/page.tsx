@@ -66,6 +66,7 @@ export default async function AutoResponsePage({
     pageSize: 20,
     totalPages: 1,
   };
+  let guildRuleCount = 0;
   let stats: Awaited<ReturnType<typeof getAutoResponseStats>> = {
     successCount: 0,
     failureCount: 0,
@@ -74,12 +75,13 @@ export default async function AutoResponsePage({
   };
   let loadError: string | null = null;
   try {
-    [result, stats] = await Promise.all([
+    [result, stats, guildRuleCount] = await Promise.all([
       listAutoResponseRules(prisma as unknown as AutoResponsePrismaClient, {
         guildId,
         ...filters,
       }),
       getAutoResponseStats(prisma as unknown as AutoResponsePrismaClient, guildId),
+      prisma.autoResponse.count({ where: { guildId } }),
     ]);
   } catch (error) {
     console.error('Auto Response page failed to load', error);
@@ -126,7 +128,7 @@ export default async function AutoResponsePage({
           </p>
         </div>
         <span className="rounded-full border border-border px-3 py-1 text-sm text-muted">
-          {result.total} / {config.maxRules}件
+          {guildRuleCount} / {config.maxRules}件
         </span>
       </div>
 

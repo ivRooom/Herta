@@ -124,9 +124,28 @@ async function executeAutoResponse(
   }
 
   let responseCount = 0;
+  let regexEvaluationCount = 0;
+  let regexLimitLogged = false;
   for (const rule of rules) {
     if (responseCount >= config.maxRulesPerMessage) break;
     if (!isRuleInScope(rule, message)) continue;
+    if (rule.matchMode === 'regex') {
+      if (regexEvaluationCount >= config.maxRegexEvaluationsPerMessage) {
+        if (!regexLimitLogged) {
+          context.logger.warn(
+            {
+              guildId: context.guildId,
+              channelId: message.channelId,
+              maxRegexEvaluationsPerMessage: config.maxRegexEvaluationsPerMessage,
+            },
+            'Auto Responseの正規表現評価上限に達しました',
+          );
+          regexLimitLogged = true;
+        }
+        continue;
+      }
+      regexEvaluationCount += 1;
+    }
 
     const startedAt = Date.now();
     let matched = false;

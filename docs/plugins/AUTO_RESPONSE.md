@@ -45,19 +45,20 @@ StudioのGuild Install導線は、これらを含む`DISCORD_BOT_PERMISSIONS=274
 
 ## Plugin設定
 
-| 設定                         | 既定値  | 範囲・用途                |
-| ---------------------------- | ------- | ------------------------- |
-| `maxRules`                   | `100`   | Guildあたり1〜200件       |
-| `maxRulesPerMessage`         | `1`     | 1メッセージあたり1〜5応答 |
-| `guildCooldownSeconds`       | `1`     | Guild全体の送信間隔       |
-| `defaultRuleCooldownSeconds` | `5`     | 新規ルールの既定値        |
-| `maxTriggerLength`           | `100`   | 通常トリガー最大文字数    |
-| `maxResponseLength`          | `1800`  | テキスト応答最大文字数    |
-| `maxMessageLength`           | `2000`  | 評価対象本文の最大文字数  |
-| `regexEnabled`               | `true`  | 正規表現ルールを許可      |
-| `regexMaxLength`             | `100`   | 正規表現最大文字数        |
-| `regexExecutionBudgetMs`     | `10`    | VM評価の強制タイムアウト  |
-| `allowUserMentions`          | `false` | ユーザーへの通知を許可    |
+| 設定                            | 既定値  | 範囲・用途                          |
+| ------------------------------- | ------- | ----------------------------------- |
+| `maxRules`                      | `100`   | Guildあたり1〜200件                 |
+| `maxRulesPerMessage`            | `1`     | 1メッセージあたり1〜5応答           |
+| `guildCooldownSeconds`          | `1`     | Guild全体の送信間隔                 |
+| `defaultRuleCooldownSeconds`    | `5`     | 新規ルールの既定値                  |
+| `maxTriggerLength`              | `100`   | 通常トリガー最大文字数              |
+| `maxResponseLength`             | `1800`  | テキスト応答最大文字数              |
+| `maxMessageLength`              | `2000`  | 評価対象本文の最大文字数            |
+| `maxRegexEvaluationsPerMessage` | `5`     | 1メッセージあたりの正規表現評価上限 |
+| `regexEnabled`                  | `true`  | 正規表現ルールを許可                |
+| `regexMaxLength`                | `100`   | 正規表現最大文字数                  |
+| `regexExecutionBudgetMs`        | `10`    | VM評価の強制タイムアウト            |
+| `allowUserMentions`             | `false` | ユーザーへの通知を許可              |
 
 `@everyone`、`@here`、ロールメンションは設定にかかわらず保存時に拒否します。
 
@@ -75,7 +76,7 @@ v1ではJavaScript正規表現のすべてを許可せず、安全なサブセ�
 - 設定上限を超えるパターン
 - 構文エラー
 
-評価対象メッセージにも長さ上限を設定します。実行時は`node:vm`の分離Contextで評価し、`regexExecutionBudgetMs`を超えた処理を強制停止します。タイムアウトは失敗メトリクスとして記録されるため、Studioで処理時間と失敗数を監視してください。
+評価対象メッセージにも長さ上限を設定します。1メッセージで評価する正規表現ルールは既定5件・最大10件に制限します。実行時は`node:vm`の分離Contextで評価し、`regexExecutionBudgetMs`を超えた個別処理を強制停止します。タイムアウトは失敗メトリクスとして記録されるため、Studioで処理時間と失敗数を監視してください。
 
 ## Embed JSON
 

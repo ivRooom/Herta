@@ -68,6 +68,13 @@ export const autoResponseManifest: PluginManifest = {
         maximum: 4000,
         default: 2000,
       },
+      maxRegexEvaluationsPerMessage: {
+        type: 'integer',
+        title: '1メッセージあたりの正規表現評価上限',
+        minimum: 1,
+        maximum: 10,
+        default: 5,
+      },
       regexEnabled: {
         type: 'boolean',
         title: '正規表現ルールを許可',
@@ -102,6 +109,7 @@ export const autoResponseManifest: PluginManifest = {
       'maxTriggerLength',
       'maxResponseLength',
       'maxMessageLength',
+      'maxRegexEvaluationsPerMessage',
       'regexEnabled',
       'regexMaxLength',
       'regexExecutionBudgetMs',

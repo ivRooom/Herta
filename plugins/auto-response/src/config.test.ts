@@ -20,13 +20,23 @@ describe('Auto Response config', () => {
         maxRules: 9999,
         maxRulesPerMessage: 0,
         guildCooldownSeconds: -1,
+        maxRegexEvaluationsPerMessage: 999,
         regexExecutionBudgetMs: 999,
       }),
     ).toMatchObject({
       maxRules: 200,
       maxRulesPerMessage: 1,
       guildCooldownSeconds: 0,
+      maxRegexEvaluationsPerMessage: 10,
       regexExecutionBudgetMs: 50,
+    });
+  });
+
+  it('旧設定キーを現行設定へ移行する', () => {
+    expect(normalizeAutoResponseConfig({ maxResponses: 50, cooldownMs: 3000 })).toMatchObject({
+      maxRules: 50,
+      guildCooldownSeconds: 3,
+      maxRegexEvaluationsPerMessage: 5,
     });
   });
 });

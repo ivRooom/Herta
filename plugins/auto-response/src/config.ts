@@ -11,6 +11,7 @@ export interface AutoResponseConfig {
   maxTriggerLength: number;
   maxResponseLength: number;
   maxMessageLength: number;
+  maxRegexEvaluationsPerMessage: number;
   regexEnabled: boolean;
   regexMaxLength: number;
   regexExecutionBudgetMs: number;
@@ -61,6 +62,7 @@ export const DEFAULT_AUTO_RESPONSE_CONFIG: AutoResponseConfig = {
   maxTriggerLength: 100,
   maxResponseLength: 1800,
   maxMessageLength: 2000,
+  maxRegexEvaluationsPerMessage: 5,
   regexEnabled: true,
   regexMaxLength: 100,
   regexExecutionBudgetMs: 10,
@@ -84,8 +86,17 @@ export class AutoResponseValidationError extends Error {
 
 export function normalizeAutoResponseConfig(value: unknown): AutoResponseConfig {
   const config = isRecord(value) ? value : {};
+  const legacyCooldownSeconds =
+    typeof config.cooldownMs === 'number' && Number.isFinite(config.cooldownMs)
+      ? Math.ceil(config.cooldownMs / 1000)
+      : undefined;
   return {
-    maxRules: clampInteger(config.maxRules, DEFAULT_AUTO_RESPONSE_CONFIG.maxRules, 1, 200),
+    maxRules: clampInteger(
+      config.maxRules ?? config.maxResponses,
+      DEFAULT_AUTO_RESPONSE_CONFIG.maxRules,
+      1,
+      200,
+    ),
     maxRulesPerMessage: clampInteger(
       config.maxRulesPerMessage,
       DEFAULT_AUTO_RESPONSE_CONFIG.maxRulesPerMessage,
@@ -93,7 +104,7 @@ export function normalizeAutoResponseConfig(value: unknown): AutoResponseConfig 
       5,
     ),
     guildCooldownSeconds: clampInteger(
-      config.guildCooldownSeconds,
+      config.guildCooldownSeconds ?? legacyCooldownSeconds,
       DEFAULT_AUTO_RESPONSE_CONFIG.guildCooldownSeconds,
       0,
       3600,
@@ -121,6 +132,12 @@ export function normalizeAutoResponseConfig(value: unknown): AutoResponseConfig 
       DEFAULT_AUTO_RESPONSE_CONFIG.maxMessageLength,
       1,
       4000,
+    ),
+    maxRegexEvaluationsPerMessage: clampInteger(
+      config.maxRegexEvaluationsPerMessage,
+      DEFAULT_AUTO_RESPONSE_CONFIG.maxRegexEvaluationsPerMessage,
+      1,
+      10,
     ),
     regexEnabled: booleanValue(config.regexEnabled, DEFAULT_AUTO_RESPONSE_CONFIG.regexEnabled),
     regexMaxLength: clampInteger(

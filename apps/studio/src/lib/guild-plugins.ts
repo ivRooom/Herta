@@ -2,6 +2,7 @@ import Ajv, { type ErrorObject } from 'ajv';
 import type { Prisma } from '@herta/db';
 import type { PluginManifest } from '@herta/shared';
 import { getAllPluginManifests, getPluginManifest } from '@herta/plugin-catalog';
+import { normalizeAutoResponseConfig } from '@herta/plugin-catalog/auto-response-service';
 import { prisma } from '@/lib/db';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { publishPluginRuntimeEvent } from '@/lib/plugin-runtime-events';
@@ -83,7 +84,8 @@ export function validatePluginConfig(
     };
   }
 
-  const candidate = { ...config };
+  const candidate =
+    manifest.id === 'auto-response' ? { ...normalizeAutoResponseConfig(config) } : { ...config };
   const validate = ajv.compile(manifest.configSchema);
   if (!validate(candidate)) return { valid: false, errors: validate.errors ?? [] };
   return { valid: true, config: candidate };
