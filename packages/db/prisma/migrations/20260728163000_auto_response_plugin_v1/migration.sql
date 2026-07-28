@@ -6,9 +6,9 @@ ALTER TABLE "auto_responses"
   ADD COLUMN "last_triggered_at" TIMESTAMPTZ(3);
 
 CREATE TABLE "auto_response_execution_events" (
-  "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+  "id" TEXT NOT NULL DEFAULT gen_random_uuid()::text,
   "guild_id" TEXT NOT NULL,
-  "rule_id" UUID NOT NULL,
+  "rule_id" TEXT NOT NULL,
   "status" TEXT NOT NULL,
   "duration_ms" INTEGER NOT NULL,
   "error_name" TEXT,
