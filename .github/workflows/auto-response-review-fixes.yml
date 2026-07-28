@@ -13,25 +13,48 @@ permissions:
 jobs:
   apply:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
         with:
           ref: feat/auto-response-plugin-v1
+          persist-credentials: false
+
       - uses: pnpm/action-setup@v6
+
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
+
       - run: pnpm install --frozen-lockfile
-      - name: Apply review fixes
+
+      - name: Apply review fixes transactionally
         run: node .github/scripts/apply-auto-response-review-fixes.mjs
-      - name: Format repository
-        run: pnpm format
-      - name: Commit changes
+
+      - name: Format and validate
         run: |
+          pnpm format
+          pnpm db:generate
+          pnpm --filter @herta/plugin-auto-response typecheck
+          pnpm --filter @herta/plugin-auto-response test
+          pnpm --filter @herta/bot typecheck
+          pnpm --filter @herta/studio typecheck
+          pnpm format:check
+          git diff --check
+
+      - name: Remove temporary automation and push
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          rm -f \
+            .github/scripts/apply-auto-response-review-fixes.mjs \
+            .github/workflows/auto-response-review-fixes.yml \
+            auto-response-review-fixes.trigger
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add plugins/auto-response/src/config.ts plugins/auto-response/src/config.test.ts docs/plugins/AUTO_RESPONSE.md
-          git commit -m 'fix(auto-response): 正規表現評価を実タイムアウトで保護'
-          git push origin HEAD:feat/auto-response-plugin-v1
+          git add -A
+          git commit -m 'fix(auto-response): レビュー指摘と本番安全性を改善'
+          git push \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:feat/auto-response-plugin-v1
