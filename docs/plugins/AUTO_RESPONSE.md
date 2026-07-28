@@ -132,27 +132,32 @@ Rule CooldownとGuild Cooldownは、PostgreSQL Transaction Advisory LockをGuild
 
 ## 本番反映
 
-````bash
+最初にmigrationを適用します。
+
+```bash
 docker compose \
   --env-file .env.production \
   -f docker-compose.prod.yml \
   run --rm migrator
+```
 
-既存`auto_responses`への複合Indexは単一statementの`CREATE INDEX CONCURRENTLY` migrationで作成します。CHECK制約は本番反映時の全件scanを避けるため`NOT VALID`で追加し、低負荷時間帯に次を実行して検証状態へ移行します。
+既存`auto_responses`への複合Indexは、単一statementの`CREATE INDEX CONCURRENTLY` migrationで作成します。CHECK制約は本番反映時の全件scanを避けるため`NOT VALID`で追加し、低負荷時間帯に次を実行して検証状態へ移行します。
 
 ```sql
 ALTER TABLE "auto_responses" VALIDATE CONSTRAINT "auto_responses_match_mode_check";
 ALTER TABLE "auto_responses" VALIDATE CONSTRAINT "auto_responses_response_type_check";
 ALTER TABLE "auto_responses" VALIDATE CONSTRAINT "auto_responses_cooldown_seconds_check";
 ALTER TABLE "auto_responses" VALIDATE CONSTRAINT "auto_responses_priority_check";
-````
+```
 
+migrationと制約検証後、BotとStudioを起動します。
+
+```bash
 docker compose \
---env-file .env.production \
--f docker-compose.prod.yml \
-up -d bot studio
-
-````
+  --env-file .env.production \
+  -f docker-compose.prod.yml \
+  up -d bot studio
+```
 
 確認項目:
 
@@ -175,7 +180,7 @@ up -d bot studio
 
 ```dotenv
 DISCORD_ENABLE_MESSAGE_CONTENT_INTENT=false
-````
+```
 
 環境変数変更後にBotを再起動します。ルールデータを残したままイベント処理だけ停止できます。
 
