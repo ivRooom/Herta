@@ -1,0 +1,96 @@
+name: Auto Response Final Fixes
+
+on:
+  push:
+    branches:
+      - feat/auto-response-plugin-v1
+    paths:
+      - 'auto-response-final-fixes.trigger'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/auto-response-plugin-v1
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Normalize temporary patch script
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/scripts/apply-auto-response-final-fixes.mjs')
+          source = path.read_text()
+          replacements = [
+              ('  "updateAutoResponseRule\\n",', '  null,'),
+              ('  "deleteAutoResponseRule\\n",', '  null,'),
+              ("hashtext($1))', input.guildId);", "hashtext($$1))', input.guildId);"),
+              ("      '(a)\\\\1',", "      '(a)\\\\\\\\1',"),
+          ]
+          for before, after in replacements:
+              count = source.count(before)
+              if count == 0 and after in source:
+                  continue
+              if count < 1:
+                  raise SystemExit(f'normalization source not found: {before!r}')
+              source = source.replace(before, after)
+          path.write_text(source)
+          PY
+
+      - name: Apply and validate final fixes
+        id: apply
+        shell: bash
+        run: |
+          set +e
+          {
+            node .github/scripts/apply-auto-response-final-fixes.mjs &&
+            pnpm format &&
+            pnpm db:generate &&
+            pnpm --filter @herta/plugin-auto-response typecheck &&
+            pnpm --filter @herta/plugin-auto-response test &&
+            pnpm --filter @herta/bot typecheck &&
+            pnpm --filter @herta/studio typecheck &&
+            pnpm format:check &&
+            git diff --check
+          } > auto-response-final-result.txt 2>&1
+          status=$?
+          set -e
+          echo "status=${status}" >> "$GITHUB_OUTPUT"
+          echo "EXIT_CODE=${status}" >> auto-response-final-result.txt
+
+      - name: Commit result and remove temporary automation
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          rm -f \
+            .github/scripts/apply-auto-response-final-fixes.mjs \
+            .github/workflows/auto-response-final-fixes.yml \
+            auto-response-final-fixes.trigger
+          if [ "${{ steps.apply.outputs.status }}" = '0' ]; then
+            rm -f auto-response-final-result.txt auto-response-review-result.txt
+            message='fix(auto-response): レビュー指摘と本番安全性を改善'
+          else
+            message='ci(auto-response): 最終レビュー修正失敗ログを記録'
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m "$message"
+          git push \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            HEAD:feat/auto-response-plugin-v1
