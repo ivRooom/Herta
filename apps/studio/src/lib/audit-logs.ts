@@ -93,6 +93,26 @@ const EVENT_LABELS: Record<string, { label: string; summary: string }> = {
     label: 'Quoteを削除',
     summary: 'Quoteを削除しました。削除前の本文は監査画面には表示しません。',
   },
+  'auto_response.create': {
+    label: '自動応答ルールを作成',
+    summary: 'Auto Responseルールを作成しました。トリガーと応答本文は表示しません。',
+  },
+  'auto_response.update': {
+    label: '自動応答ルールを更新',
+    summary: 'Auto Responseルールの設定を更新しました。本文は表示しません。',
+  },
+  'auto_response.enable': {
+    label: '自動応答ルールを有効化',
+    summary: 'Auto Responseルールを有効化しました。',
+  },
+  'auto_response.disable': {
+    label: '自動応答ルールを無効化',
+    summary: 'Auto Responseルールを無効化しました。',
+  },
+  'auto_response.delete': {
+    label: '自動応答ルールを削除',
+    summary: 'Auto Responseルールを削除しました。削除前の本文は表示しません。',
+  },
 };
 
 export function parseAuditLogQuery(searchParams: URLSearchParams): AuditLogQuery {

@@ -251,25 +251,51 @@ model RuleExecutionLog {
 // ============================================================
 
 model AutoResponse {
-  id              String   @id @default(uuid())
-  guildId         String   @map("guild_id")
+  id              String    @id @default(uuid())
+  guildId         String    @map("guild_id")
   name            String
-  triggerType     String   @map("trigger_type")
-  triggerValue    String   @map("trigger_value")
-  matchMode       String   @default("partial") @map("match_mode")
-  responseType    String   @default("text") @map("response_type")
-  responseContent String   @map("response_content")
-  channelIds      String[] @map("channel_ids")
-  roleIds         String[] @map("role_ids")
-  cooldownSeconds Int      @default(0) @map("cooldown_seconds")
-  enabled         Boolean  @default(true)
-  createdBy       String?  @map("created_by")
-  updatedBy       String?  @map("updated_by")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  triggerType     String    @map("trigger_type")
+  triggerValue    String    @map("trigger_value")
+  matchMode       String    @default("partial") @map("match_mode")
+  responseType    String    @default("text") @map("response_type")
+  responseContent String    @map("response_content")
+  channelIds      String[]  @map("channel_ids")
+  roleIds         String[]  @map("role_ids")
+  cooldownSeconds Int       @default(0) @map("cooldown_seconds")
+  priority        Int       @default(0)
+  caseSensitive   Boolean   @default(false) @map("case_sensitive")
+  responseCount   Int       @default(0) @map("response_count")
+  failureCount    Int       @default(0) @map("failure_count")
+  lastTriggeredAt DateTime? @map("last_triggered_at") @db.Timestamptz(3)
+  enabled         Boolean   @default(true)
+  createdBy       String?   @map("created_by")
+  updatedBy       String?   @map("updated_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  executionEvents AutoResponseExecutionEvent[]
 
   @@index([guildId, enabled])
+  @@index([guildId, priority(sort: Desc), createdAt])
   @@map("auto_responses")
+}
+
+model AutoResponseExecutionEvent {
+  id         String   @id @default(uuid())
+  guildId    String   @map("guild_id")
+  ruleId     String   @map("rule_id")
+  status     String
+  durationMs Int      @map("duration_ms")
+  errorName  String?  @map("error_name")
+  executedAt DateTime @default(now()) @map("executed_at") @db.Timestamptz(3)
+
+  rule AutoResponse @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@index([executedAt(sort: Desc)])
+  @@index([guildId, executedAt(sort: Desc)])
+  @@index([ruleId, executedAt(sort: Desc)])
+  @@index([status, executedAt(sort: Desc)])
+  @@map("auto_response_execution_events")
 }
 
 // ============================================================

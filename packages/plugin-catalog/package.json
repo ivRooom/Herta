@@ -25,6 +25,14 @@
     "./quote-service": {
       "types": "./src/quote-service.ts",
       "default": "./dist/quote-service.js"
+    },
+    "./auto-response-runtime": {
+      "types": "./src/auto-response-runtime.ts",
+      "default": "./dist/auto-response-runtime.js"
+    },
+    "./auto-response-service": {
+      "types": "./src/auto-response-service.ts",
+      "default": "./dist/auto-response-service.js"
     }
   },
   "scripts": {

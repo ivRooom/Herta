@@ -76,6 +76,21 @@ export default async function PluginDetailPage({
           <ArrowRight className="h-5 w-5 text-muted" />
         </Link>
       ) : null}
+
+      {pluginId === 'auto-response' ? (
+        <Link
+          href={`/dashboard/guilds/${guildId}/auto-response`}
+          className="mt-4 flex items-center justify-between rounded-2xl border border-border bg-surface p-5 shadow-card transition-colors hover:border-primary/40"
+        >
+          <div>
+            <h2 className="font-medium">Auto Responseルール管理</h2>
+            <p className="mt-1 text-sm text-muted">
+              トリガー、応答、Cooldown、対象範囲を管理します。
+            </p>
+          </div>
+          <ArrowRight className="h-5 w-5 text-muted" />
+        </Link>
+      ) : null}
     </div>
   );
 }

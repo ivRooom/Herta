@@ -11,6 +11,7 @@
   --primary: 244 67% 60%;
   --primary-foreground: 0 0% 100%;
   --ring: 244 67% 60%;
+  --destructive: 0 72% 51%;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -23,6 +24,13 @@
     --primary: 245 80% 68%;
     --primary-foreground: 224 20% 6%;
     --ring: 245 80% 68%;
+    --destructive: 0 72% 65%;
+  }
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring;
   }
 }
 

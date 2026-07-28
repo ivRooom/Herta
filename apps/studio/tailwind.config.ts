@@ -10,6 +10,8 @@ const config: Config = {
         border: 'hsl(var(--border))',
         foreground: 'hsl(var(--foreground))',
         muted: 'hsl(var(--muted))',
+        ring: 'hsl(var(--ring))',
+        destructive: 'hsl(var(--destructive))',
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
