@@ -38,9 +38,10 @@ Botには対象チャンネルで次の権限が必要です。
 
 - View Channel
 - Send Messages
+- Send Messages in Threads（Thread内で応答する場合）
 - Embed Links（Embed応答を利用する場合）
 
-Runtimeは送信前にView ChannelとSend Messagesを確認し、Embed応答ではEmbed Linksも確認します。権限不足はルール本文を含めず失敗メトリクスへ記録します。
+StudioのGuild Install導線は、これらを含む`DISCORD_BOT_PERMISSIONS=274877926400`を既定で要求します。既存導入Guildは権限が自動追加されないため、Studioから再認可してください。Runtimeは送信前にチャンネル種別ごとの送信権限を確認し、権限不足はルール本文を含めず失敗メトリクスへ記録します。
 
 ## Plugin設定
 
@@ -128,7 +129,7 @@ Audit LogにはルールID、操作種別、一致方式、応答形式、対象
 
 Rule CooldownとGuild Cooldownは、PostgreSQL Transaction Advisory LockをGuild単位で取得し、Guild内で最後に送信権を予約した`lastTriggeredAt`を参照して判定します。複数メッセージが同時に到着しても、同じGuildで送信権を同時取得しない設計です。
 
-送信直前にRuleの`lastTriggeredAt`を更新します。Discord API送信が失敗した場合も短時間の連続再試行を防ぐためCooldownは維持し、失敗メトリクスを記録します。Studioで変更したルールはRuntimeの最大10秒キャッシュ後に反映されます。
+送信直前にRuleの`lastTriggeredAt`を更新します。Discord API送信が失敗した場合も短時間の連続再試行を防ぐためCooldownは維持し、失敗メトリクスを記録します。権限不足やEmbed構築失敗など送信準備段階の失敗は通常送信Cooldownを消費せず、同一Guild・Rule・エラー種別ごとに最低30秒間隔でのみDBへ記録します。Studioで変更したルールはRuntimeの最大10秒キャッシュ後に反映されます。
 
 ## 本番反映
 
@@ -165,12 +166,14 @@ docker compose \
 2. `auto_response_execution_events`が作成されている
 3. Developer PortalのMessage Content Intentが有効
 4. `DISCORD_ENABLE_MESSAGE_CONTENT_INTENT=true`
-5. Bot起動ログにIntent有効化が表示される
-6. Pluginを有効化したGuildだけで応答する
-7. Bot・Webhook投稿へ応答しない
-8. Cooldown中に連続送信しない
-9. Studioで成功・失敗・処理時間を確認できる
-10. Audit Logに本文が表示されない
+5. `DISCORD_BOT_PERMISSIONS=274877926400`
+6. Bot起動ログにIntent有効化が表示される
+7. Pluginを有効化したGuildだけで応答する
+8. Bot・Webhook投稿へ応答しない
+9. 通常チャンネルとThreadの両方で権限判定が正しい
+10. Cooldown中に連続送信しない
+11. Studioで成功・失敗・処理時間を確認できる
+12. Audit Logに本文が表示されない
 
 ## ロールバック
 
@@ -226,7 +229,8 @@ ALTER TABLE auto_responses
 - Developer PortalのMessage Content Intentを確認
 - Botを再起動
 - 対象チャンネル・ロールIDを確認
-- View Channel / Send Messages権限を確認
+- View Channel / Send Messages / Send Messages in Threads権限を確認
+- Embed応答ではEmbed Links権限を確認
 - RuleとGuildのCooldownを確認
 
 ### 正規表現を保存できない
@@ -235,4 +239,4 @@ ALTER TABLE auto_responses
 
 ### 失敗数が増える
 
-Botのチャンネル権限、Embed JSON、Discord APIエラーをBotログで確認します。ログには本文を出さないため、Rule IDをStudioの対象ルールと照合します。
+Botのチャンネル権限、Embed JSON、Discord APIエラーをBotログで確認します。ログには本文を出さないため、Rule IDをStudioの対象ルールと照合します。送信準備失敗は最低30秒間隔で記録されるため、権限修復後に再度メッセージを送信して確認してください。
