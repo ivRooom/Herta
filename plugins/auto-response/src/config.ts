@@ -216,7 +216,11 @@ export function parseAutoResponseEmbed(value: string): AutoResponseEmbed {
     embed.description = optionalText(parsed.description, 1800, 'Embed本文');
   }
   if (parsed.color !== undefined) {
-    if (!Number.isSafeInteger(parsed.color) || Number(parsed.color) < 0 || Number(parsed.color) > 0xffffff) {
+    if (
+      !Number.isSafeInteger(parsed.color) ||
+      Number(parsed.color) < 0 ||
+      Number(parsed.color) > 0xffffff
+    ) {
       throw new AutoResponseValidationError('Embedカラーは0〜16777215の整数で指定してください');
     }
     embed.color = Number(parsed.color);
@@ -244,7 +248,9 @@ export function parseAutoResponseEmbed(value: string): AutoResponseEmbed {
   }
 
   if (!embed.title && !embed.description && (!embed.fields || embed.fields.length === 0)) {
-    throw new AutoResponseValidationError('Embedにはタイトル、本文、フィールドのいずれかが必要です');
+    throw new AutoResponseValidationError(
+      'Embedにはタイトル、本文、フィールドのいずれかが必要です',
+    );
   }
   return embed;
 }
@@ -337,7 +343,9 @@ function assertNoBlockedMentions(value: string): void {
 function normalizeDiscordIds(value: unknown, label: string): string[] {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value) || value.length > MAX_SCOPE_IDS) {
-    throw new AutoResponseValidationError(`${label}は最大${MAX_SCOPE_IDS}件の配列で指定してください`);
+    throw new AutoResponseValidationError(
+      `${label}は最大${MAX_SCOPE_IDS}件の配列で指定してください`,
+    );
   }
   const normalized = [...new Set(value.map((item) => String(item).trim()).filter(Boolean))];
   if (normalized.some((item) => !DISCORD_ID_PATTERN.test(item))) {
@@ -359,7 +367,8 @@ function normalizeResponseType(value: unknown): AutoResponseResponseType {
 }
 
 function requiredText(value: unknown, maxLength: number, label: string): string {
-  if (typeof value !== 'string') throw new AutoResponseValidationError(`${label}を入力してください`);
+  if (typeof value !== 'string')
+    throw new AutoResponseValidationError(`${label}を入力してください`);
   const normalized = value.trim();
   if (!normalized) throw new AutoResponseValidationError(`${label}を入力してください`);
   if (normalized.length > maxLength) {

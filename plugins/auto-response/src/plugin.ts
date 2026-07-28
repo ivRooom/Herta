@@ -217,7 +217,11 @@ async function getCachedRules(
 ): Promise<AutoResponseRuleRecord[]> {
   const cached = ruleCache.get(context.guildId);
   if (cached && cached.expiresAt > Date.now()) return cached.rules;
-  const rules = await listEnabledAutoResponseRules(context.prisma, context.guildId, config.maxRules);
+  const rules = await listEnabledAutoResponseRules(
+    context.prisma,
+    context.guildId,
+    config.maxRules,
+  );
   ruleCache.set(context.guildId, { rules, expiresAt: Date.now() + RULE_CACHE_TTL_MS });
   return rules;
 }
@@ -237,10 +241,7 @@ function assertBotCanRespond(message: AutoResponseMessage): void {
   if (!botMember) throw new Error('AutoResponseBotMemberUnavailable');
   if (!message.channel.permissionsFor) return;
   const permissions = message.channel.permissionsFor(botMember);
-  if (
-    !permissions?.has(VIEW_CHANNEL_PERMISSION) ||
-    !permissions.has(SEND_MESSAGES_PERMISSION)
-  ) {
+  if (!permissions?.has(VIEW_CHANNEL_PERMISSION) || !permissions.has(SEND_MESSAGES_PERMISSION)) {
     throw new Error('AutoResponseBotPermissionDenied');
   }
 }

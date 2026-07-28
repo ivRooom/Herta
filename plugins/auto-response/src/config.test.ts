@@ -90,13 +90,25 @@ describe('Auto Response matcher', () => {
   it('exact・partial・prefixを大文字小文字を無視して評価する', () => {
     const config = DEFAULT_AUTO_RESPONSE_CONFIG;
     expect(
-      matchesAutoResponse('Hello', { triggerValue: 'hello', matchMode: 'exact', caseSensitive: false }, config),
+      matchesAutoResponse(
+        'Hello',
+        { triggerValue: 'hello', matchMode: 'exact', caseSensitive: false },
+        config,
+      ),
     ).toBe(true);
     expect(
-      matchesAutoResponse('Say HELLO!', { triggerValue: 'hello', matchMode: 'partial', caseSensitive: false }, config),
+      matchesAutoResponse(
+        'Say HELLO!',
+        { triggerValue: 'hello', matchMode: 'partial', caseSensitive: false },
+        config,
+      ),
     ).toBe(true);
     expect(
-      matchesAutoResponse('Hello world', { triggerValue: 'hello', matchMode: 'prefix', caseSensitive: false }, config),
+      matchesAutoResponse(
+        'Hello world',
+        { triggerValue: 'hello', matchMode: 'prefix', caseSensitive: false },
+        config,
+      ),
     ).toBe(true);
   });
 
@@ -119,7 +131,11 @@ describe('Auto Response matcher', () => {
   it('巨大メッセージを評価対象外にする', () => {
     const config = { ...DEFAULT_AUTO_RESPONSE_CONFIG, maxMessageLength: 5 };
     expect(
-      matchesAutoResponse('123456', { triggerValue: '1', matchMode: 'partial', caseSensitive: false }, config),
+      matchesAutoResponse(
+        '123456',
+        { triggerValue: '1', matchMode: 'partial', caseSensitive: false },
+        config,
+      ),
     ).toBe(false);
   });
 });

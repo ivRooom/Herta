@@ -30,6 +30,24 @@ function resolveErrorName(error: unknown): string {
   return 'UnknownError';
 }
 
+function messageContentIntentEnabled(): boolean {
+  const value = process.env['DISCORD_ENABLE_MESSAGE_CONTENT_INTENT']?.trim().toLowerCase();
+  return value === 'true' || value === '1';
+}
+
+function resolveGatewayIntents(logger: Logger): GatewayIntentBits[] {
+  const intents = [GatewayIntentBits.Guilds];
+  if (messageContentIntentEnabled()) {
+    intents.push(GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent);
+    logger.info('Auto Response用Message Content Intentを有効化します');
+  } else {
+    logger.warn(
+      'DISCORD_ENABLE_MESSAGE_CONTENT_INTENTが無効なためメッセージ系Pluginは実行されません',
+    );
+  }
+  return intents;
+}
+
 /** Herta Bot クライアント */
 export class HertaBot {
   private client: Client;
@@ -53,8 +71,7 @@ export class HertaBot {
       Math.min(30_000, Math.floor(heartbeatStaleMs / 3)),
     );
     this.client = new Client({
-      // 現在のRuntimeはSlash Commandのみを扱うため、Privileged Intentは要求しない。
-      intents: [GatewayIntentBits.Guilds],
+      intents: resolveGatewayIntents(this.logger),
     });
     this.registry = new CommandRegistry(this.logger);
     this.registry.register(pingCommand);
@@ -129,6 +146,27 @@ export class HertaBot {
       await this.pluginLoader.disableGuildPlugins(guild.id);
       this.pluginCache.invalidate(guild.id);
       this.pluginCommands.delete(guild.id);
+    });
+
+    this.client.on(Events.MessageCreate, async (message) => {
+      if (!message.guildId) return;
+      const events = await this.pluginLoader.getGuildEvents(message.guildId);
+      const handlers = events.filter((event) => event.event === Events.MessageCreate);
+      for (const event of handlers) {
+        try {
+          await event.handler(message);
+        } catch (error) {
+          this.logger.error(
+            {
+              err: error,
+              guildId: message.guildId,
+              channelId: message.channelId,
+              event: event.event,
+            },
+            'Plugin Event Handlerの実行に失敗しました',
+          );
+        }
+      }
     });
 
     this.client.on('error', (error) => {

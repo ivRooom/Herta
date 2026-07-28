@@ -1,4 +1,5 @@
 import { getAllPluginManifests, getPluginManifest } from '@herta/plugin-catalog';
+import { autoResponsePlugin } from '@herta/plugin-catalog/auto-response-runtime';
 import { moderationPlugin } from '@herta/plugin-catalog/moderation-runtime';
 import { quotePlugin } from '@herta/plugin-catalog/quote-runtime';
 import type { Logger } from '@herta/logger';
@@ -218,6 +219,20 @@ const officialPluginIds = [
 ] as const;
 
 function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginEntry[] {
+  const autoResponseEntry = deps
+    ? toRuntimePluginEntry(
+        autoResponsePlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof autoResponsePlugin.onEnable>>[0],
+      )
+    : undefined;
   const moderationEntry = deps
     ? toRuntimePluginEntry(
         moderationPlugin,
@@ -249,6 +264,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
 
   return officialPluginIds.flatMap((pluginId) => {
     if (!getPluginManifest(pluginId)) return [];
+    if (pluginId === 'auto-response' && autoResponseEntry) return [autoResponseEntry];
     if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];
     if (pluginId === 'quote' && quoteEntry) return [quoteEntry];
     return [{ pluginId }];
