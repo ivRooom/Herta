@@ -6,6 +6,7 @@ import {
   parseAutoResponseEmbed,
   type AutoResponseConfig,
 } from './config.js';
+import { sanitizeDiscordSendError } from './discord-error.js';
 import { recordPreparationFailureIfDue } from './failure-throttle.js';
 import { autoResponseManifest } from './manifest.js';
 import {
@@ -239,16 +240,17 @@ async function executeAutoResponse(
         'Auto Responseを送信しました',
       );
     } catch (error) {
+      const sanitizedError = sanitizeDiscordSendError(error);
       await safelyRecordExecution(context, {
         guildId: context.guildId,
         ruleId: rule.id,
         status: 'failure',
         durationMs: Date.now() - startedAt,
-        errorName: resolveErrorName(error),
+        errorName: sanitizedError.errorName,
       });
       context.logger.warn(
         {
-          err: error,
+          ...sanitizedError,
           guildId: context.guildId,
           channelId: message.channelId,
           ruleId: rule.id,
