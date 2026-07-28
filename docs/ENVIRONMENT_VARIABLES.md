@@ -43,8 +43,9 @@ Herta で使用する環境変数の一覧です。開発は `.env` (`.env.examp
 > Auto Responseを利用する場合はDiscord Developer PortalでMessage Content Intentを有効化した後、
 > `DISCORD_ENABLE_MESSAGE_CONTENT_INTENT=true`へ変更してください。通常運用では`false`のままです。
 >
-> `DISCORD_BOT_PERMISSIONS`の既定値は`274877925376`です。Send Messages、Embed Links、
-> Send Messages in Threadsを含みます。既存導入Guildで権限が不足する場合はStudioから再認可してください。
+> `DISCORD_BOT_PERMISSIONS`の既定値は`274877926400`です。View Channel、Send Messages、
+> Embed Links、Send Messages in Threadsを含みます。既存導入Guildで権限が不足する場合は
+> Studioから再認可してください。
 
 ## API (NestJS)
 
