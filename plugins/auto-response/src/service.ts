@@ -12,6 +12,11 @@ import {
 
 export type AutoResponseOperationSource = 'dashboard' | 'discord';
 export type AutoResponseExecutionStatus = 'success' | 'failure' | 'skipped';
+export type AutoResponseClaimResult =
+  | 'claimed'
+  | 'guild_cooldown'
+  | 'rule_cooldown'
+  | 'unavailable';
 
 export interface AutoResponseRuleRecord extends NormalizedAutoResponseRuleInput {
   id: string;
@@ -324,7 +329,7 @@ export async function claimAutoResponseRule(
     guildCooldownSeconds: number;
     now?: Date;
   },
-): Promise<boolean> {
+): Promise<AutoResponseClaimResult> {
   assertDiscordId(input.guildId, 'Guild ID');
   assertRuleId(input.ruleId);
   const now = input.now ?? new Date();
@@ -334,14 +339,7 @@ export async function claimAutoResponseRule(
     const rule = await tx.autoResponse.findFirst({
       where: { id: input.ruleId, guildId: input.guildId, enabled: true },
     });
-    if (!rule) return false;
-
-    if (
-      rule.lastTriggeredAt &&
-      now.getTime() - rule.lastTriggeredAt.getTime() < rule.cooldownSeconds * 1000
-    ) {
-      return false;
-    }
+    if (!rule) return 'unavailable';
 
     if (input.guildCooldownSeconds > 0) {
       const latestClaimedRule = await tx.autoResponse.findFirst({
@@ -353,15 +351,22 @@ export async function claimAutoResponseRule(
         now.getTime() - latestClaimedRule.lastTriggeredAt.getTime() <
           input.guildCooldownSeconds * 1000
       ) {
-        return false;
+        return 'guild_cooldown';
       }
+    }
+
+    if (
+      rule.lastTriggeredAt &&
+      now.getTime() - rule.lastTriggeredAt.getTime() < rule.cooldownSeconds * 1000
+    ) {
+      return 'rule_cooldown';
     }
 
     await tx.autoResponse.update({
       where: { id: rule.id },
       data: { lastTriggeredAt: now },
     });
-    return true;
+    return 'claimed';
   });
 }
 
