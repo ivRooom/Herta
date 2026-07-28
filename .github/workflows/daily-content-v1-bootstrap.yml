@@ -33,7 +33,7 @@ jobs:
       - name: Daily Content schemaと初期化処理を同期
         run: node .github/scripts/apply-daily-content-v1.mjs
       - name: Prisma Generate
-        run: pnpm --filter @herta/db prisma:generate
+        run: pnpm --filter @herta/db generate
       - name: Format
         run: pnpm format
       - name: Daily Content unit test
