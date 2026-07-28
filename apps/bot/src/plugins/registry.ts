@@ -1,4 +1,5 @@
 import { getAllPluginManifests, getPluginManifest } from '@herta/plugin-catalog';
+import { moderationPlugin } from '@herta/plugin-catalog/moderation-runtime';
 import { quotePlugin } from '@herta/plugin-catalog/quote-runtime';
 import type { Logger } from '@herta/logger';
 import { createPluginContext } from '@herta/plugin-sdk';
@@ -217,6 +218,20 @@ const officialPluginIds = [
 ] as const;
 
 function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginEntry[] {
+  const moderationEntry = deps
+    ? toRuntimePluginEntry(
+        moderationPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof moderationPlugin.onEnable>>[0],
+      )
+    : undefined;
   const quoteEntry = deps
     ? toRuntimePluginEntry(
         quotePlugin,
@@ -234,6 +249,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
 
   return officialPluginIds.flatMap((pluginId) => {
     if (!getPluginManifest(pluginId)) return [];
+    if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];
     if (pluginId === 'quote' && quoteEntry) return [quoteEntry];
     return [{ pluginId }];
   });

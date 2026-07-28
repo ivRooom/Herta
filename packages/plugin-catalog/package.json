@@ -10,6 +10,14 @@
       "types": "./src/index.ts",
       "default": "./dist/index.js"
     },
+    "./moderation-runtime": {
+      "types": "./src/moderation-runtime.ts",
+      "default": "./dist/moderation-runtime.js"
+    },
+    "./moderation-service": {
+      "types": "./src/moderation-service.ts",
+      "default": "./dist/moderation-service.js"
+    },
     "./quote-runtime": {
       "types": "./src/quote-runtime.ts",
       "default": "./dist/quote-runtime.js"
