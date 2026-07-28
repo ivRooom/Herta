@@ -6,6 +6,7 @@ import {
   parseAutoResponseEmbed,
   type AutoResponseConfig,
 } from './config.js';
+import { recordPreparationFailureIfDue } from './failure-throttle.js';
 import { autoResponseManifest } from './manifest.js';
 import {
   claimAutoResponseRule,
@@ -137,7 +138,7 @@ async function executeAutoResponse(
         ruleId: rule.id,
         status: 'failure',
         durationMs: Date.now() - startedAt,
-        errorName: errorName(error),
+        errorName: resolveErrorName(error),
       });
       context.logger.warn(
         { err: error, guildId: context.guildId, ruleId: rule.id },
@@ -152,22 +153,23 @@ async function executeAutoResponse(
       assertBotCanRespond(message, rule.responseType);
       response = buildResponse(rule, config);
     } catch (error) {
-      await safelyRecordExecution(context, {
+      const recorded = await safelyRecordPreparationFailure(context, {
         guildId: context.guildId,
         ruleId: rule.id,
-        status: 'failure',
         durationMs: Date.now() - startedAt,
-        errorName: errorName(error),
+        errorName: resolveErrorName(error),
       });
-      context.logger.warn(
-        {
-          err: error,
-          guildId: context.guildId,
-          channelId: message.channelId,
-          ruleId: rule.id,
-        },
-        'Auto Responseの送信準備に失敗しました',
-      );
+      if (recorded) {
+        context.logger.warn(
+          {
+            err: error,
+            guildId: context.guildId,
+            channelId: message.channelId,
+            ruleId: rule.id,
+          },
+          'Auto Responseの送信準備に失敗しました',
+        );
+      }
       continue;
     }
 
@@ -222,7 +224,7 @@ async function executeAutoResponse(
         ruleId: rule.id,
         status: 'failure',
         durationMs: Date.now() - startedAt,
-        errorName: errorName(error),
+        errorName: resolveErrorName(error),
       });
       context.logger.warn(
         {
@@ -296,6 +298,21 @@ function buildResponse(
   return { content: rule.responseContent, allowedMentions };
 }
 
+async function safelyRecordPreparationFailure(
+  context: AutoResponseRuntimeContext,
+  input: Parameters<typeof recordPreparationFailureIfDue>[1],
+): Promise<boolean> {
+  try {
+    return await recordPreparationFailureIfDue(context.prisma, input);
+  } catch (error) {
+    context.logger.warn(
+      { err: error, guildId: input.guildId, ruleId: input.ruleId },
+      'Auto Response送信準備失敗の間引き記録に失敗しました',
+    );
+    return false;
+  }
+}
+
 async function safelyRecordExecution(
   context: AutoResponseRuntimeContext,
   input: Parameters<typeof recordAutoResponseExecution>[1],
@@ -310,9 +327,10 @@ async function safelyRecordExecution(
   }
 }
 
-function errorName(error: unknown): string {
-  if (error instanceof Error && error.name.trim()) return error.name;
-  return 'UnknownError';
+function resolveErrorName(error: unknown): string {
+  if (!(error instanceof Error)) return 'UnknownError';
+  if (error.name.trim() && error.name !== 'Error') return error.name;
+  return error.message.trim() || 'Error';
 }
 
 export default autoResponsePlugin;
