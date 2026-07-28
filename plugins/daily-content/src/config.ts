@@ -3,7 +3,6 @@ export interface DailyContentConfig {
   maxSchedules: number;
   maxContentLength: number;
   allowUserMentions: boolean;
-  scanIntervalSeconds: number;
   staleAfterMinutes: number;
   maxAttempts: number;
 }
@@ -31,7 +30,6 @@ export const DAILY_CONTENT_DEFAULTS: DailyContentConfig = {
   maxSchedules: 100,
   maxContentLength: 2000,
   allowUserMentions: false,
-  scanIntervalSeconds: 30,
   staleAfterMinutes: 10,
   maxAttempts: 5,
 };
@@ -70,12 +68,6 @@ export function normalizeDailyContentConfig(input: unknown): DailyContentConfig 
     allowUserMentions: readBoolean(
       source['allowUserMentions'],
       DAILY_CONTENT_DEFAULTS.allowUserMentions,
-    ),
-    scanIntervalSeconds: readInteger(
-      source['scanIntervalSeconds'],
-      DAILY_CONTENT_DEFAULTS.scanIntervalSeconds,
-      10,
-      300,
     ),
     staleAfterMinutes: readInteger(
       source['staleAfterMinutes'],
