@@ -37,7 +37,7 @@ replaceOrThrow(
 );
 replaceOrThrow(
   'plugins/auto-response/src/plugin.ts',
-  `function assertBotCanRespond(message: AutoResponseMessage): void {`,
+  'function assertBotCanRespond(message: AutoResponseMessage): void {',
   `function assertBotCanRespond(
   message: AutoResponseMessage,
   responseType: AutoResponseRuleRecord['responseType'],
@@ -45,10 +45,7 @@ replaceOrThrow(
 );
 replaceOrThrow(
   'plugins/auto-response/src/plugin.ts',
-  `  if (
-    !permissions?.has(VIEW_CHANNEL_PERMISSION) ||
-    !permissions.has(SEND_MESSAGES_PERMISSION)
-  ) {
+  `  if (!permissions?.has(VIEW_CHANNEL_PERMISSION) || !permissions.has(SEND_MESSAGES_PERMISSION)) {
     throw new Error('AutoResponseBotPermissionDenied');
   }`,
   `  if (
@@ -62,7 +59,7 @@ replaceOrThrow(
 
 replaceOrThrow(
   'apps/studio/src/app/globals.css',
-  `@layer base {`,
+  '@layer base {',
   `@layer components {
   .input {
     @apply w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring;
@@ -92,7 +89,7 @@ replaceOrThrow(
 );
 replaceOrThrow(
   'docs/ENVIRONMENT_VARIABLES.md',
-  `> OAuth2 スコープは \`identify\` \`email\` \`guilds\` が必要です。詳細は [AUTH.md](./AUTH.md)。`,
+  '> OAuth2 スコープは `identify` `email` `guilds` が必要です。詳細は [AUTH.md](./AUTH.md)。',
   `> OAuth2 スコープは \`identify\` \`email\` \`guilds\` が必要です。詳細は [AUTH.md](./AUTH.md)。
 >
 > Auto Responseを利用する場合はDiscord Developer PortalでMessage Content Intentを有効化した後、
@@ -101,13 +98,13 @@ replaceOrThrow(
 
 replaceOrThrow(
   'docs/plugins/AUTO_RESPONSE.md',
-  `Runtimeは送信前にView ChannelとSend Messagesを確認します。権限不足はルール本文を含めず失敗メトリクスへ記録します。`,
-  `Runtimeは送信前にView ChannelとSend Messagesを確認し、Embed応答ではEmbed Linksも確認します。権限不足はルール本文を含めず失敗メトリクスへ記録します。`,
+  'Runtimeは送信前にView ChannelとSend Messagesを確認します。権限不足はルール本文を含めず失敗メトリクスへ記録します。',
+  'Runtimeは送信前にView ChannelとSend Messagesを確認し、Embed応答ではEmbed Linksも確認します。権限不足はルール本文を含めず失敗メトリクスへ記録します。',
 );
 replaceOrThrow(
   'docs/plugins/AUTO_RESPONSE.md',
-  `送信直前にRuleの\`lastTriggeredAt\`を更新します。Discord API送信が失敗した場合も短時間の連続再試行を防ぐためCooldownは維持し、失敗メトリクスを記録します。`,
-  `送信直前にRuleの\`lastTriggeredAt\`を更新します。Discord API送信が失敗した場合も短時間の連続再試行を防ぐためCooldownは維持し、失敗メトリクスを記録します。Studioで変更したルールはRuntimeの最大10秒キャッシュ後に反映されます。`,
+  '送信直前にRuleの`lastTriggeredAt`を更新します。Discord API送信が失敗した場合も短時間の連続再試行を防ぐためCooldownは維持し、失敗メトリクスを記録します。',
+  '送信直前にRuleの`lastTriggeredAt`を更新します。Discord API送信が失敗した場合も短時間の連続再試行を防ぐためCooldownは維持し、失敗メトリクスを記録します。Studioで変更したルールはRuntimeの最大10秒キャッシュ後に反映されます。',
 );
 
 console.log('Auto Response v1 final consistency changes applied.');
