@@ -43,6 +43,10 @@ Daily Content Pluginは、Guildごとに登録したテキストコンテンツ�
 
 Discord送信が成功した直後にDB更新だけが失敗した場合も、短時間の再試行では同じnonceを使用します。長時間経過後の手動再実行まで完全なExactly Onceを保証するものではないため、履歴のmessage IDとDiscordチャンネルを確認してから再実行してください。
 
+## Worker全体設定
+
+Workerのdue走査間隔はGuild設定ではなく環境変数`DAILY_CONTENT_SCAN_INTERVAL_SECONDS`で指定します。既定30秒、最小10秒、最大300秒です。Redis接続は段階的な再接続delayを使用し、最大30秒で再試行します。
+
 ## 再試行とstale recovery
 
 - HTTP 429、5xx、通信エラー、timeoutは指数バックオフで再試行します。
@@ -131,4 +135,4 @@ pg_restore --clean --if-exists --dbname=herta_restore herta-before-daily-content
 - `/daily preview schedule_id:<ID>`: 本人だけに本文をプレビュー
 - `/daily publish schedule_id:<ID>`: 手動配信を予約
 
-Studioではスケジュール作成・編集・停止・削除、次回配信、直近履歴、手動配信、失敗再実行を管理できます。
+Studioではスケジュール作成・編集・停止・削除、次回配信、直近履歴、手動配信、失敗再実行を管理できます。削除はSoft Deleteとして扱い、過去の配信履歴とmessage IDを保持します。v1はテキスト配信のみで、Embed・添付ファイル・外部URL取得を行わないためSSRFの入力面を持ちません。

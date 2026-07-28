@@ -2,7 +2,8 @@ ALTER TABLE "daily_contents"
   ADD COLUMN "next_run_at" TIMESTAMPTZ(3),
   ADD COLUMN "last_scheduled_at" TIMESTAMPTZ(3),
   ADD COLUMN "created_by" TEXT,
-  ADD COLUMN "updated_by" TEXT;
+  ADD COLUMN "updated_by" TEXT,
+  ADD COLUMN "deleted_at" TIMESTAMPTZ(3);
 
 ALTER TABLE "daily_contents"
   ALTER COLUMN "last_sent_at" TYPE TIMESTAMPTZ(3)
@@ -31,7 +32,7 @@ CREATE TABLE "daily_content_deliveries" (
   CONSTRAINT "daily_content_deliveries_idempotency_key_key" UNIQUE ("idempotency_key"),
   CONSTRAINT "daily_content_deliveries_daily_content_id_fkey"
     FOREIGN KEY ("daily_content_id") REFERENCES "daily_contents"("id")
-    ON DELETE CASCADE ON UPDATE CASCADE
+    ON DELETE RESTRICT ON UPDATE CASCADE
 );
 
 ALTER TABLE "daily_contents"

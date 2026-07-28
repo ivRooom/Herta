@@ -23,6 +23,7 @@ export interface DailyContentRecord {
   nextRunAt: Date | null;
   lastScheduledAt: Date | null;
   lastSentAt: Date | null;
+  deletedAt: Date | null;
   createdBy: string | null;
   updatedBy: string | null;
   createdAt: Date;
@@ -122,7 +123,9 @@ export async function createDailyContent(
 
   return prisma.$transaction(async (tx) => {
     await lockGuild(tx, input.guildId);
-    const count = await tx.dailyContent.count({ where: { guildId: input.guildId } });
+    const count = await tx.dailyContent.count({
+      where: { guildId: input.guildId, deletedAt: null },
+    });
     if (count >= input.config.maxSchedules) {
       throw new DailyContentValidationError(
         `Daily ContentはGuildごとに最大${input.config.maxSchedules}件までです`,
@@ -165,7 +168,7 @@ export async function updateDailyContent(
   return prisma.$transaction(async (tx) => {
     await lockGuild(tx, input.guildId);
     const current = await tx.dailyContent.findFirst({
-      where: { id: input.scheduleId, guildId: input.guildId },
+      where: { id: input.scheduleId, guildId: input.guildId, deletedAt: null },
     });
     if (!current) return null;
 
@@ -228,10 +231,18 @@ export async function deleteDailyContent(
   return prisma.$transaction(async (tx) => {
     await lockGuild(tx, input.guildId);
     const current = await tx.dailyContent.findFirst({
-      where: { id: input.scheduleId, guildId: input.guildId },
+      where: { id: input.scheduleId, guildId: input.guildId, deletedAt: null },
     });
     if (!current) return false;
-    await tx.dailyContent.delete({ where: { id: current.id } });
+    await tx.dailyContent.update({
+      where: { id: current.id },
+      data: {
+        enabled: false,
+        nextRunAt: null,
+        deletedAt: new Date(),
+        updatedBy: input.actorId,
+      },
+    });
     await tx.auditLog.create({
       data: {
         guildId: input.guildId,
@@ -255,7 +266,9 @@ export async function getDailyContent(
   guildId: string,
   scheduleId: string,
 ): Promise<DailyContentRecord | null> {
-  return prisma.dailyContent.findFirst({ where: { id: scheduleId, guildId } });
+  return prisma.dailyContent.findFirst({
+    where: { id: scheduleId, guildId, deletedAt: null },
+  });
 }
 
 export async function listDailyContents(
@@ -263,7 +276,7 @@ export async function listDailyContents(
   guildId: string,
 ): Promise<DailyContentRecord[]> {
   return prisma.dailyContent.findMany({
-    where: { guildId },
+    where: { guildId, deletedAt: null },
     orderBy: [{ enabled: 'desc' }, { nextRunAt: 'asc' }, { createdAt: 'desc' }],
   });
 }
@@ -274,7 +287,7 @@ export async function listDueDailyContents(
   limit = 100,
 ): Promise<DailyContentRecord[]> {
   return prisma.dailyContent.findMany({
-    where: { enabled: true, nextRunAt: { lte: now } },
+    where: { enabled: true, deletedAt: null, nextRunAt: { lte: now } },
     orderBy: { nextRunAt: 'asc' },
     take: Math.min(500, Math.max(1, limit)),
   });
@@ -287,7 +300,9 @@ export async function reserveDueDelivery(
 ): Promise<DailyContentDeliveryRecord | null> {
   return prisma.$transaction(async (tx) => {
     await lockSchedule(tx, scheduleId);
-    const schedule = await tx.dailyContent.findFirst({ where: { id: scheduleId } });
+    const schedule = await tx.dailyContent.findFirst({
+      where: { id: scheduleId, deletedAt: null },
+    });
     if (!schedule?.enabled || !schedule.nextRunAt || schedule.nextRunAt.getTime() > now.getTime()) {
       return null;
     }
@@ -340,7 +355,7 @@ export async function reserveManualDelivery(
   return prisma.$transaction(async (tx) => {
     await lockSchedule(tx, input.scheduleId);
     const schedule = await tx.dailyContent.findFirst({
-      where: { id: input.scheduleId, guildId: input.guildId },
+      where: { id: input.scheduleId, guildId: input.guildId, deletedAt: null },
     });
     if (!schedule) return null;
 

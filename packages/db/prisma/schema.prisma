@@ -466,6 +466,7 @@ model DailyContent {
   nextRunAt       DateTime? @map("next_run_at") @db.Timestamptz(3)
   lastScheduledAt DateTime? @map("last_scheduled_at") @db.Timestamptz(3)
   lastSentAt      DateTime? @map("last_sent_at") @db.Timestamptz(3)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(3)
   createdBy       String?   @map("created_by")
   updatedBy       String?   @map("updated_by")
   createdAt       DateTime  @default(now()) @map("created_at")
@@ -497,7 +498,7 @@ model DailyContentDelivery {
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  dailyContent DailyContent @relation(fields: [dailyContentId], references: [id], onDelete: Cascade)
+  dailyContent DailyContent @relation(fields: [dailyContentId], references: [id], onDelete: Restrict)
 
   @@index([guildId, createdAt(sort: Desc)])
   @@index([status, nextAttemptAt])

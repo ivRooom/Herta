@@ -17,9 +17,13 @@ import {
   markDeliverySkipped,
   nextDailyOccurrence,
   normalizeDailyContentConfig,
+  normalizeDailyContentScanIntervalSeconds,
+  redisReconnectDelay,
+  resolveDailyContentQueueJobDisposition,
   recoverStaleDelivery,
   reserveDueDelivery,
   type DailyContentConfig,
+  type DailyContentDeliveryRecord,
   type DailyContentPrismaClient,
 } from '@herta/plugin-catalog/daily-content-service';
 
@@ -57,11 +61,13 @@ export async function startDailyContentRuntime(
     maxRetriesPerRequest: null,
     enableReadyCheck: true,
     lazyConnect: true,
+    retryStrategy: redisReconnectDelay,
   });
   const workerConnection = queueConnection.duplicate({
     maxRetriesPerRequest: null,
     enableReadyCheck: true,
     lazyConnect: true,
+    retryStrategy: redisReconnectDelay,
   });
   queueConnection.on('error', () => {
     options.logger.warn('Daily Content Queue用Redis接続でエラーが発生しました');
@@ -121,22 +127,7 @@ export async function startDailyContentRuntime(
       const pending = await listPendingDeliveries(prisma, now, DAILY_CONTENT_SCAN_LIMIT);
       for (const delivery of pending) {
         const config = await resolveGuildConfig(options.prisma, delivery.guildId);
-        await queue.add(
-          'publish',
-          {
-            deliveryId: delivery.id,
-            scheduleId: delivery.dailyContentId,
-            guildId: delivery.guildId,
-            idempotencyKey: delivery.idempotencyKey,
-            scheduledFor: delivery.scheduledFor.toISOString(),
-          },
-          {
-            jobId: delivery.id,
-            attempts: config.maxAttempts,
-            backoff: { type: 'exponential', delay: BASE_RETRY_DELAY_MS },
-          },
-        );
-        await markDeliveryQueued(prisma, delivery.id, now);
+        await ensureDeliveryJob(queue, prisma, delivery, config, now);
       }
     } catch (error) {
       options.logger.error(
@@ -148,11 +139,13 @@ export async function startDailyContentRuntime(
     }
   };
 
-  const schedulerConfig = normalizeDailyContentConfig({});
+  const scanIntervalSeconds = normalizeDailyContentScanIntervalSeconds(
+    process.env['DAILY_CONTENT_SCAN_INTERVAL_SECONDS'],
+  );
   await scanNow();
   timer = setInterval(() => {
     void scanNow();
-  }, schedulerConfig.scanIntervalSeconds * 1000);
+  }, scanIntervalSeconds * 1000);
   timer.unref();
 
   return {
@@ -165,6 +158,41 @@ export async function startDailyContentRuntime(
       await Promise.allSettled([workerConnection.quit(), queueConnection.quit()]);
     },
   };
+}
+
+async function ensureDeliveryJob(
+  queue: Queue<DailyContentJobData>,
+  prisma: DailyContentPrismaClient,
+  delivery: DailyContentDeliveryRecord,
+  config: DailyContentConfig,
+  now: Date,
+): Promise<void> {
+  const existing = await queue.getJob(delivery.id);
+  const state = existing ? await existing.getState() : null;
+  const disposition = resolveDailyContentQueueJobDisposition(state);
+  if (disposition === 'keep') {
+    await markDeliveryQueued(prisma, delivery.id, now);
+    return;
+  }
+  if (disposition === 'replace' && existing) {
+    await existing.remove();
+  }
+  await queue.add(
+    'publish',
+    {
+      deliveryId: delivery.id,
+      scheduleId: delivery.dailyContentId,
+      guildId: delivery.guildId,
+      idempotencyKey: delivery.idempotencyKey,
+      scheduledFor: delivery.scheduledFor.toISOString(),
+    },
+    {
+      jobId: delivery.id,
+      attempts: config.maxAttempts,
+      backoff: { type: 'exponential', delay: BASE_RETRY_DELAY_MS },
+    },
+  );
+  await markDeliveryQueued(prisma, delivery.id, now);
 }
 
 async function processDelivery(
@@ -185,7 +213,7 @@ async function processDelivery(
     },
     select: { enabled: true, config: true },
   });
-  if (!plugin?.enabled || !delivery.dailyContent.enabled) {
+  if (!plugin?.enabled || !delivery.dailyContent.enabled || delivery.dailyContent.deletedAt) {
     await markDeliverySkipped(prisma, {
       deliveryId: delivery.id,
       errorName: plugin?.enabled ? 'DailyContentScheduleDisabled' : 'DailyContentPluginDisabled',
@@ -306,7 +334,7 @@ class DailyContentPublishError extends Error {
 
 async function initializeMissingNextRuns(prisma: PrismaClient, now: Date): Promise<void> {
   const schedules = await prisma.dailyContent.findMany({
-    where: { enabled: true, nextRunAt: null },
+    where: { enabled: true, deletedAt: null, nextRunAt: null },
     select: { id: true, scheduleTime: true, timezone: true },
     take: DAILY_CONTENT_SCAN_LIMIT,
   });
@@ -328,10 +356,12 @@ async function recoverStale(
   now: Date,
   logger: Logger,
 ): Promise<void> {
-  const config = normalizeDailyContentConfig({});
-  const staleBefore = new Date(now.getTime() - config.staleAfterMinutes * 60 * 1000);
-  const stale = await listStaleDeliveries(prisma, staleBefore, DAILY_CONTENT_SCAN_LIMIT);
+  const minimumStaleBefore = new Date(now.getTime() - 2 * 60 * 1000);
+  const stale = await listStaleDeliveries(prisma, minimumStaleBefore, DAILY_CONTENT_SCAN_LIMIT);
   for (const delivery of stale) {
+    const config = await resolveGuildConfig(prisma as unknown as PrismaClient, delivery.guildId);
+    const guildStaleBefore = now.getTime() - config.staleAfterMinutes * 60 * 1000;
+    if (!delivery.startedAt || delivery.startedAt.getTime() >= guildStaleBefore) continue;
     await recoverStaleDelivery(prisma, delivery.id, now);
     logger.warn(
       { deliveryId: delivery.id, guildId: delivery.guildId },

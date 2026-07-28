@@ -22,6 +22,7 @@ function schedule(overrides: Record<string, unknown> = {}) {
     nextRunAt: new Date('2026-07-29T00:00:00.000Z'),
     lastScheduledAt: null,
     lastSentAt: null,
+    deletedAt: null,
     createdBy: 'user-1',
     updatedBy: 'user-1',
     createdAt: new Date('2026-07-28T00:00:00.000Z'),
