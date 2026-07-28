@@ -32,12 +32,12 @@ jobs:
           pnpm build > /tmp/auto-response-build.log 2>&1
           status=$?
           set -e
-          tail -n 300 /tmp/auto-response-build.log > auto-response-build-debug.log
-          echo "BUILD_EXIT_CODE=${status}" >> auto-response-build-debug.log
-      - name: Commit debug log
+          tail -n 300 /tmp/auto-response-build.log > auto-response-build-debug.txt
+          echo "BUILD_EXIT_CODE=${status}" >> auto-response-build-debug.txt
+      - name: Commit debug output
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add auto-response-build-debug.log
+          git add auto-response-build-debug.txt
           git commit -m 'ci(auto-response): Build失敗ログを一時記録'
           git push origin HEAD:feat/auto-response-plugin-v1
