@@ -1,10 +1,18 @@
 const DISCORD_OAUTH_AUTHORIZE_URL = 'https://discord.com/oauth2/authorize';
 
+const SEND_MESSAGES_PERMISSION = 2048n;
+const EMBED_LINKS_PERMISSION = 16384n;
+const SEND_MESSAGES_IN_THREADS_PERMISSION = 274877906944n;
+
 /**
- * 既定ではSend Messagesだけを要求する。
- * Pluginごとに追加権限が必要な場合は環境変数で明示的に拡張する。
+ * 公式Pluginの通常投稿・Embed・Thread応答に必要な最小権限を要求する。
+ * 追加権限が必要な環境ではDISCORD_BOT_PERMISSIONSで明示的に上書きできる。
  */
-export const DEFAULT_DISCORD_BOT_PERMISSIONS = '2048';
+export const DEFAULT_DISCORD_BOT_PERMISSIONS = (
+  SEND_MESSAGES_PERMISSION |
+  EMBED_LINKS_PERMISSION |
+  SEND_MESSAGES_IN_THREADS_PERMISSION
+).toString();
 
 interface DiscordGuildInstallUrlOptions {
   clientId: string;
