@@ -1,4 +1,8 @@
 import { getPrismaClient, pruneCommandExecutionEvents } from '@herta/db';
+import {
+  pruneAutoResponseExecutionEvents,
+  type AutoResponsePrismaClient,
+} from '@herta/plugin-catalog/auto-response-service';
 import { createLogger } from '@herta/logger';
 import { HertaBot } from './bot.js';
 import { loadHealthConfig } from './health/config.js';
@@ -38,52 +42,65 @@ const healthServer = healthConfig.enabled
     })
   : undefined;
 
-const COMMAND_ANALYTICS_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1_000;
+const EXECUTION_ANALYTICS_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1_000;
 
 let shuttingDown = false;
-let commandAnalyticsPruneInFlight = false;
-let commandAnalyticsPruneTimer: NodeJS.Timeout | undefined;
+let executionAnalyticsPruneInFlight = false;
+let executionAnalyticsPruneTimer: NodeJS.Timeout | undefined;
 
-async function pruneCommandAnalytics(): Promise<void> {
-  if (!process.env['DATABASE_URL'] || commandAnalyticsPruneInFlight) return;
+async function pruneExecutionAnalytics(): Promise<void> {
+  if (!process.env['DATABASE_URL'] || executionAnalyticsPruneInFlight) return;
 
-  commandAnalyticsPruneInFlight = true;
+  executionAnalyticsPruneInFlight = true;
   try {
-    const deleted = await pruneCommandExecutionEvents(getPrismaClient());
-    if (deleted > 0) {
-      logger.info({ deleted, retentionDays: 90 }, '古いコマンド実行履歴を削除しました');
+    const prisma = getPrismaClient();
+    const [commandDeleted, autoResponseDeleted] = await Promise.all([
+      pruneCommandExecutionEvents(prisma),
+      pruneAutoResponseExecutionEvents(prisma as unknown as AutoResponsePrismaClient),
+    ]);
+    if (commandDeleted > 0) {
+      logger.info(
+        { deleted: commandDeleted, retentionDays: 90 },
+        '古いコマンド実行履歴を削除しました',
+      );
+    }
+    if (autoResponseDeleted > 0) {
+      logger.info(
+        { deleted: autoResponseDeleted, retentionDays: 90 },
+        '古いAuto Response実行履歴を削除しました',
+      );
     }
   } catch (error) {
-    logger.warn({ err: error }, '古いコマンド実行履歴の整理に失敗しました');
+    logger.warn({ err: error }, '古い実行履歴の整理に失敗しました');
   } finally {
-    commandAnalyticsPruneInFlight = false;
+    executionAnalyticsPruneInFlight = false;
   }
 }
 
-function startCommandAnalyticsPruning(): void {
-  if (!process.env['DATABASE_URL'] || commandAnalyticsPruneTimer) return;
+function startExecutionAnalyticsPruning(): void {
+  if (!process.env['DATABASE_URL'] || executionAnalyticsPruneTimer) return;
 
-  commandAnalyticsPruneTimer = setInterval(() => {
-    void pruneCommandAnalytics();
-  }, COMMAND_ANALYTICS_PRUNE_INTERVAL_MS);
-  commandAnalyticsPruneTimer.unref();
+  executionAnalyticsPruneTimer = setInterval(() => {
+    void pruneExecutionAnalytics();
+  }, EXECUTION_ANALYTICS_PRUNE_INTERVAL_MS);
+  executionAnalyticsPruneTimer.unref();
 }
 
-function stopCommandAnalyticsPruning(): void {
-  if (!commandAnalyticsPruneTimer) return;
-  clearInterval(commandAnalyticsPruneTimer);
-  commandAnalyticsPruneTimer = undefined;
+function stopExecutionAnalyticsPruning(): void {
+  if (!executionAnalyticsPruneTimer) return;
+  clearInterval(executionAnalyticsPruneTimer);
+  executionAnalyticsPruneTimer = undefined;
 }
 
 async function main(): Promise<void> {
   logger.info('Herta Bot を起動しています...');
   try {
-    await pruneCommandAnalytics();
+    await pruneExecutionAnalytics();
     await healthServer?.start();
     await bot.start();
-    startCommandAnalyticsPruning();
+    startExecutionAnalyticsPruning();
   } catch (error) {
-    stopCommandAnalyticsPruning();
+    stopExecutionAnalyticsPruning();
     await healthServer?.stop().catch(() => undefined);
     logger.fatal(error, 'Bot の起動に失敗しました');
     process.exitCode = 1;
@@ -93,7 +110,7 @@ async function main(): Promise<void> {
 async function shutdown(signal: 'SIGINT' | 'SIGTERM'): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
-  stopCommandAnalyticsPruning();
+  stopExecutionAnalyticsPruning();
   logger.info({ signal }, 'シャットダウン中...');
 
   const results = await Promise.allSettled([healthServer?.stop(), bot.stop()]);
