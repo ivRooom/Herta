@@ -89,7 +89,10 @@ export default async function ModerationCaseDetailPage({
                     : '期間指定なし'
                 }
               />
-              <Detail label="操作元" value={moderationCase.source === 'discord' ? 'Discord' : 'Herta Studio'} />
+              <Detail
+                label="操作元"
+                value={moderationCase.source === 'discord' ? 'Discord' : 'Herta Studio'}
+              />
             </div>
 
             <div className="mt-6 border-t border-border pt-5">
@@ -143,15 +146,7 @@ export default async function ModerationCaseDetailPage({
   );
 }
 
-function Detail({
-  label,
-  value,
-  mono = false,
-}: {
-  label: string;
-  value: string;
-  mono?: boolean;
-}) {
+function Detail({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return (
     <div>
       <dt className="text-xs text-muted">{label}</dt>

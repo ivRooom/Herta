@@ -29,14 +29,11 @@ export function ModerationCaseEditor({
     setSaving(true);
     setMessage(null);
     try {
-      const response = await fetch(
-        `/api/guilds/${guildId}/moderation/cases/${caseNumber}`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ reason, status }),
-        },
-      );
+      const response = await fetch(`/api/guilds/${guildId}/moderation/cases/${caseNumber}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reason, status }),
+      });
       const body = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(body.error ?? 'ケースを更新できませんでした');
       setMessage('ケースを更新しました');

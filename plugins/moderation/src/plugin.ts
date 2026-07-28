@@ -339,7 +339,10 @@ function assertAnyPermission(
   interaction: ModerationCommandInteraction,
   permissions: bigint[],
 ): void {
-  if (!interaction.memberPermissions || !permissions.some((value) => interaction.memberPermissions!.has(value))) {
+  if (
+    !interaction.memberPermissions ||
+    !permissions.some((value) => interaction.memberPermissions!.has(value))
+  ) {
     throw new ModerationValidationError('この操作を実行するDiscord権限がありません');
   }
 }
@@ -353,8 +356,10 @@ function assertTargetCanBeModerated(
   const actor = interaction.member;
   const bot = guild.members.me;
   if (!actor || !bot) throw new ModerationValidationError('BotのGuildメンバー情報を取得できません');
-  if (target.id === guild.ownerId) throw new ModerationValidationError('Guild Ownerは対象にできません');
-  if (target.id === interaction.user.id) throw new ModerationValidationError('自分自身は対象にできません');
+  if (target.id === guild.ownerId)
+    throw new ModerationValidationError('Guild Ownerは対象にできません');
+  if (target.id === interaction.user.id)
+    throw new ModerationValidationError('自分自身は対象にできません');
   if (target.id === bot.id) throw new ModerationValidationError('Herta Bot自身は対象にできません');
   if (target.user.bot) throw new ModerationValidationError('Botアカウントは対象にできません');
   if (actor.roles.highest.position <= target.roles.highest.position) {
@@ -454,7 +459,10 @@ function formatHistory(
       return `**#${item.caseNumber}** ${actionLabel(item.action)} / ${statusLabel(item.status)}${reason}`;
     })
     .join('\n');
-  return truncate(`ユーザー ${targetUserId} の履歴 (${page}/${totalPages})\n\n${body}`, MAX_RESPONSE_LENGTH);
+  return truncate(
+    `ユーザー ${targetUserId} の履歴 (${page}/${totalPages})\n\n${body}`,
+    MAX_RESPONSE_LENGTH,
+  );
 }
 
 function formatTargetNotification(moderationCase: ModerationCaseRecord): string {
@@ -494,10 +502,7 @@ function normalizeAction(value: string): ModerationAction {
   throw new ModerationValidationError('指定されたサブコマンドは利用できません');
 }
 
-function requiredMember(
-  interaction: ModerationCommandInteraction,
-  name: string,
-): ModerationMember {
+function requiredMember(interaction: ModerationCommandInteraction, name: string): ModerationMember {
   const member = interaction.options.getMember(name);
   if (!member) throw new ModerationValidationError('対象ユーザーがサーバー内に見つかりません');
   return member;

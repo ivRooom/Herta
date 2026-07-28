@@ -4,14 +4,14 @@ Moderation Plugin v1は、Message Content Intentを使用せず、Slash Command�
 
 ## 対応機能
 
-| コマンド | 必要な実行者権限 | Bot権限 | 動作 |
-| --- | --- | --- | --- |
-| `/mod warn user reason` | Manage Messages または Moderate Members | 不要 | 警告ケースを記録 |
-| `/mod timeout user duration reason` | Moderate Members | Moderate Members | 指定分数タイムアウト |
-| `/mod kick user reason` | Kick Members | Kick Members | GuildからKick |
-| `/mod ban user reason [delete_message_seconds]` | Ban Members | Ban Members | GuildからBAN |
-| `/mod case number` | Manage Messages または Moderate Members | 不要 | ケース詳細を表示 |
-| `/mod history user [page]` | Manage Messages または Moderate Members | 不要 | ユーザー別履歴を表示 |
+| コマンド                                        | 必要な実行者権限                        | Bot権限          | 動作                 |
+| ----------------------------------------------- | --------------------------------------- | ---------------- | -------------------- |
+| `/mod warn user reason`                         | Manage Messages または Moderate Members | 不要             | 警告ケースを記録     |
+| `/mod timeout user duration reason`             | Moderate Members                        | Moderate Members | 指定分数タイムアウト |
+| `/mod kick user reason`                         | Kick Members                            | Kick Members     | GuildからKick        |
+| `/mod ban user reason [delete_message_seconds]` | Ban Members                             | Ban Members      | GuildからBAN         |
+| `/mod case number`                              | Manage Messages または Moderate Members | 不要             | ケース詳細を表示     |
+| `/mod history user [page]`                      | Manage Messages または Moderate Members | 不要             | ユーザー別履歴を表示 |
 
 Moderation PluginがGuildで有効な場合だけ`/mod`がGuild Commandへ登録されます。
 
@@ -30,15 +30,15 @@ Discord API操作に失敗した場合は成功ケースにせず、`failed`状�
 
 ## Plugin設定
 
-| 設定 | 既定値 | 範囲・用途 |
-| --- | --- | --- |
-| `requireReason` | `true` | 理由入力を必須化 |
-| `dmTarget` | `true` | 対象ユーザーへDM通知 |
-| `logChannelId` | `null` | ケース概要を送信するDiscordチャンネルID |
-| `defaultResponseEphemeral` | `true` | Slash Command応答を実行者だけに表示 |
-| `maxReasonLength` | `500` | 1〜1000文字 |
-| `caseRetentionDays` | `365` | 30〜3650日。削除処理から利用可能 |
-| `allowedModeratorRoleIds` | `[]` | 空の場合はDiscord権限だけで判定 |
+| 設定                       | 既定値 | 範囲・用途                              |
+| -------------------------- | ------ | --------------------------------------- |
+| `requireReason`            | `true` | 理由入力を必須化                        |
+| `dmTarget`                 | `true` | 対象ユーザーへDM通知                    |
+| `logChannelId`             | `null` | ケース概要を送信するDiscordチャンネルID |
+| `defaultResponseEphemeral` | `true` | Slash Command応答を実行者だけに表示     |
+| `maxReasonLength`          | `500`  | 1〜1000文字                             |
+| `caseRetentionDays`        | `365`  | 30〜3650日。削除処理から利用可能        |
+| `allowedModeratorRoleIds`  | `[]`   | 空の場合はDiscord権限だけで判定         |
 
 StudioのPlugin ManagerはmanifestのJSON Schemaで未知プロパティ、不正なDiscord ID、範囲外数値を拒否します。
 

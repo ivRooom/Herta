@@ -73,7 +73,9 @@ export function normalizeModerationReason(
     return null;
   }
   if (reason.length > config.maxReasonLength) {
-    throw new ModerationValidationError(`理由は${config.maxReasonLength}文字以内で入力してください`);
+    throw new ModerationValidationError(
+      `理由は${config.maxReasonLength}文字以内で入力してください`,
+    );
   }
   return reason;
 }

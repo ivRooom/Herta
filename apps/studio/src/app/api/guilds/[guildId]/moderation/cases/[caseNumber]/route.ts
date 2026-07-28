@@ -60,20 +60,16 @@ export async function PATCH(request: Request, { params }: RouteContext) {
   try {
     const plugin = await getGuildPlugin(guildId, 'moderation');
     const config = normalizeModerationConfig(plugin?.config);
-    const reason =
-      'reason' in body ? normalizeModerationReason(body.reason, config) : undefined;
+    const reason = 'reason' in body ? normalizeModerationReason(body.reason, config) : undefined;
     const status = 'status' in body ? parseStatus(body.status) : undefined;
-    const moderationCase = await updateModerationCase(
-      prisma as unknown as ModerationPrismaClient,
-      {
-        guildId,
-        caseNumber: parseCaseNumber(caseNumberInput),
-        actorId: session.user.id,
-        source: 'dashboard',
-        reason,
-        status,
-      },
-    );
+    const moderationCase = await updateModerationCase(prisma as unknown as ModerationPrismaClient, {
+      guildId,
+      caseNumber: parseCaseNumber(caseNumberInput),
+      actorId: session.user.id,
+      source: 'dashboard',
+      reason,
+      status,
+    });
     if (!moderationCase) {
       return NextResponse.json({ error: 'ケースが見つかりません' }, { status: 404 });
     }
