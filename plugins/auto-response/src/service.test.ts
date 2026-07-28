@@ -197,7 +197,7 @@ describe('Auto Response cooldown', () => {
         guildCooldownSeconds: 0,
         now,
       }),
-    ).resolves.toBe(false);
+    ).resolves.toBe('rule_cooldown');
     expect(tx.autoResponse.update).not.toHaveBeenCalled();
   });
 
@@ -220,7 +220,7 @@ describe('Auto Response cooldown', () => {
         guildCooldownSeconds: 1,
         now,
       }),
-    ).resolves.toBe(false);
+    ).resolves.toBe('guild_cooldown');
     expect(tx.autoResponse.update).not.toHaveBeenCalled();
     expect(tx.autoResponseExecutionEvent.findFirst).not.toHaveBeenCalled();
   });
@@ -237,7 +237,7 @@ describe('Auto Response cooldown', () => {
         guildCooldownSeconds: 1,
         now,
       }),
-    ).resolves.toBe(true);
+    ).resolves.toBe('claimed');
     expect(tx.autoResponse.update).toHaveBeenCalledWith({
       where: { id: RULE_ID },
       data: { lastTriggeredAt: now },

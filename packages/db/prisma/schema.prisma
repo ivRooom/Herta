@@ -291,6 +291,7 @@ model AutoResponseExecutionEvent {
 
   rule AutoResponse @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 
+  @@index([executedAt(sort: Desc)])
   @@index([guildId, executedAt(sort: Desc)])
   @@index([ruleId, executedAt(sort: Desc)])
   @@index([status, executedAt(sort: Desc)])
