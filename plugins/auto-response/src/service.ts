@@ -13,10 +13,7 @@ import {
 export type AutoResponseOperationSource = 'dashboard' | 'discord';
 export type AutoResponseExecutionStatus = 'success' | 'failure' | 'skipped';
 export type AutoResponseClaimResult =
-  | 'claimed'
-  | 'guild_cooldown'
-  | 'rule_cooldown'
-  | 'unavailable';
+  'claimed' | 'guild_cooldown' | 'rule_cooldown' | 'unavailable';
 
 export interface AutoResponseRuleRecord extends NormalizedAutoResponseRuleInput {
   id: string;
