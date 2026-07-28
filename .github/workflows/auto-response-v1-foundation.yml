@@ -1,0 +1,41 @@
+name: Auto Response v1 Foundation
+
+on:
+  push:
+    branches:
+      - feat/auto-response-plugin-v1
+    paths:
+      - '.github/workflows/auto-response-v1-foundation.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/auto-response-plugin-v1
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply foundation changes
+        run: node .github/scripts/apply-auto-response-v1.mjs
+      - name: Format repository
+        run: pnpm format
+      - name: Commit changes
+        run: |
+          if git diff --quiet; then
+            echo 'No foundation changes were required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .
+          git commit -m 'feat(auto-response): Plugin基盤をRuntimeとStudioへ接続'
+          git push origin HEAD:feat/auto-response-plugin-v1
