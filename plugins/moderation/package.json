@@ -13,6 +13,18 @@
       "types": "./src/index.ts",
       "default": "./dist/index.js"
     },
+    "./runtime": {
+      "types": "./src/plugin.ts",
+      "default": "./dist/plugin.js"
+    },
+    "./service": {
+      "types": "./src/service.ts",
+      "default": "./dist/service.js"
+    },
+    "./config": {
+      "types": "./src/config.ts",
+      "default": "./dist/config.js"
+    },
     "./manifest": {
       "types": "./src/manifest.ts",
       "default": "./dist/manifest.js"
