@@ -19,8 +19,6 @@ CREATE TABLE "auto_response_execution_events" (
     ON DELETE CASCADE ON UPDATE CASCADE
 );
 
-CREATE INDEX "auto_responses_guild_id_priority_created_at_idx"
-  ON "auto_responses"("guild_id", "priority" DESC, "created_at" ASC);
 CREATE INDEX "auto_response_execution_events_guild_id_executed_at_idx"
   ON "auto_response_execution_events"("guild_id", "executed_at" DESC);
 CREATE INDEX "auto_response_execution_events_rule_id_executed_at_idx"
