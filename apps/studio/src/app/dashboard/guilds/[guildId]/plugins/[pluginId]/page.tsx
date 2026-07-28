@@ -49,6 +49,21 @@ export default async function PluginDetailPage({
         />
       </div>
 
+      {pluginId === 'moderation' ? (
+        <Link
+          href={`/dashboard/guilds/${guildId}/moderation`}
+          className="mt-4 flex items-center justify-between rounded-2xl border border-border bg-surface p-5 shadow-card transition-colors hover:border-primary/40"
+        >
+          <div>
+            <h2 className="font-medium">モデレーションケース管理</h2>
+            <p className="mt-1 text-sm text-muted">
+              警告・タイムアウト・Kick・BANの履歴を検索・確認・更新します。
+            </p>
+          </div>
+          <ArrowRight className="h-5 w-5 text-muted" />
+        </Link>
+      ) : null}
+
       {pluginId === 'quote' ? (
         <Link
           href={`/dashboard/guilds/${guildId}/plugins/quote/quotes`}
