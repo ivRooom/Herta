@@ -33,6 +33,14 @@
     "./auto-response-service": {
       "types": "./src/auto-response-service.ts",
       "default": "./dist/auto-response-service.js"
+    },
+    "./daily-content-runtime": {
+      "types": "./src/daily-content-runtime.ts",
+      "default": "./dist/daily-content-runtime.js"
+    },
+    "./daily-content-service": {
+      "types": "./src/daily-content-service.ts",
+      "default": "./dist/daily-content-service.js"
     }
   },
   "scripts": {
