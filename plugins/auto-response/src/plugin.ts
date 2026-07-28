@@ -173,9 +173,9 @@ async function executeAutoResponse(
       continue;
     }
 
-    let claimed = false;
+    let claimResult: Awaited<ReturnType<typeof claimAutoResponseRule>>;
     try {
-      claimed = await claimAutoResponseRule(context.prisma, {
+      claimResult = await claimAutoResponseRule(context.prisma, {
         guildId: context.guildId,
         ruleId: rule.id,
         guildCooldownSeconds: config.guildCooldownSeconds,
@@ -188,14 +188,15 @@ async function executeAutoResponse(
       continue;
     }
 
-    if (!claimed) {
+    if (claimResult !== 'claimed') {
       await safelyRecordExecution(context, {
         guildId: context.guildId,
         ruleId: rule.id,
         status: 'skipped',
         durationMs: Date.now() - startedAt,
-        errorName: null,
+        errorName: claimResult,
       });
+      if (claimResult === 'guild_cooldown') break;
       continue;
     }
 
