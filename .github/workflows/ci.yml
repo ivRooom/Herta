@@ -12,7 +12,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  auto-response-test:
+  test-diagnostic:
     if: github.head_ref == 'feat/auto-response-plugin-v1'
     runs-on: ubuntu-latest
     steps:
@@ -27,5 +27,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Auto Response tests
-        run: pnpm --filter @herta/plugin-auto-response exec vitest run --reporter=verbose
+      - name: Prisma Generate
+        run: pnpm db:generate
+
+      - name: Workspace tests with error-only logs
+        run: pnpm exec turbo run test --output-logs=errors-only --summarize
