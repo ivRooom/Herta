@@ -24,15 +24,16 @@ Herta で使用する環境変数の一覧です。開発は `.env` (`.env.examp
 
 ## Discord
 
-| 変数名                                  | 必須 | 説明                                          | 用途                     |
-| --------------------------------------- | ---- | --------------------------------------------- | ------------------------ |
-| `DISCORD_CLIENT_ID`                     | Yes  | Application のクライアント ID                 | Dashboard ログイン / API |
-| `DISCORD_CLIENT_SECRET`                 | Yes  | Application のクライアントシークレット        | Dashboard ログイン / API |
-| `DISCORD_BOT_TOKEN`                     | Yes  | Bot トークン                                  | Bot                      |
-| `DISCORD_ENABLE_MESSAGE_CONTENT_INTENT` | -    | Auto Response用Message Content Intentを有効化 | Bot（既定: `false`）     |
-| `DISCORD_PUBLIC_KEY`                    | -    | Interactions 用公開鍵                         | Bot                      |
-| `DISCORD_GUILD_ID_DEV`                  | -    | 開発用 Guild ID (Slash Command の即時登録)    | Bot                      |
-| `DISCORD_CALLBACK_URL`                  | -    | **API 側 (NestJS)** の OAuth コールバック URL | API                      |
+| 変数名                                  | 必須 | 説明                                                   | 用途                     |
+| --------------------------------------- | ---- | ------------------------------------------------------ | ------------------------ |
+| `DISCORD_CLIENT_ID`                     | Yes  | Application のクライアント ID                          | Dashboard ログイン / API |
+| `DISCORD_CLIENT_SECRET`                 | Yes  | Application のクライアントシークレット                 | Dashboard ログイン / API |
+| `DISCORD_BOT_TOKEN`                     | Yes  | Bot トークン                                           | Bot                      |
+| `DISCORD_ENABLE_MESSAGE_CONTENT_INTENT` | -    | Auto Response用Message Content Intentを有効化          | Bot（既定: `false`）     |
+| `DISCORD_BOT_PERMISSIONS`               | -    | Guild Installで要求するBot権限bitfield                 | Studio                   |
+| `DISCORD_PUBLIC_KEY`                    | -    | Interactions 用公開鍵                                  | Bot                      |
+| `DISCORD_GUILD_ID_DEV`                  | -    | 開発用 Guild ID (Slash Command の即時登録)             | Bot                      |
+| `DISCORD_CALLBACK_URL`                  | -    | **API 側 (NestJS)** の OAuth コールバック URL          | API                      |
 
 > **Dashboard ログインのコールバック URL は環境変数ではありません。**
 > NextAuth が `{NEXTAUTH_URL}/api/auth/callback/discord` を自動的に使用します。
@@ -41,6 +42,9 @@ Herta で使用する環境変数の一覧です。開発は `.env` (`.env.examp
 >
 > Auto Responseを利用する場合はDiscord Developer PortalでMessage Content Intentを有効化した後、
 > `DISCORD_ENABLE_MESSAGE_CONTENT_INTENT=true`へ変更してください。通常運用では`false`のままです。
+>
+> `DISCORD_BOT_PERMISSIONS`の既定値は`274877925376`です。Send Messages、Embed Links、
+> Send Messages in Threadsを含みます。既存導入Guildで権限が不足する場合はStudioから再認可してください。
 
 ## API (NestJS)
 
