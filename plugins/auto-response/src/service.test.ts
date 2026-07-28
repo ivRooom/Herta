@@ -96,6 +96,27 @@ describe('Auto Response Guild isolation', () => {
     );
   });
 
+  it('範囲外の要求ページを最終ページへ補正する', async () => {
+    const { client, tx } = mockClient();
+    vi.mocked(tx.autoResponse.count).mockResolvedValue(21);
+
+    const result = await listAutoResponseRules(client, {
+      guildId: GUILD_ID,
+      page: 99,
+      pageSize: 20,
+    });
+
+    expect(result.page).toBe(2);
+    expect(result.totalPages).toBe(2);
+    expect(tx.autoResponse.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }],
+        skip: 20,
+        take: 20,
+      }),
+    );
+  });
+
   it('別Guild IDで作成したルールを混在させない', async () => {
     const { client, tx } = mockClient();
     await createAutoResponseRule(client, {
@@ -123,6 +144,23 @@ describe('Auto Response Guild isolation', () => {
 describe('Auto Response mutation locking', () => {
   it('更新処理はGuild Advisory Lockを取得してからread/merge/writeする', async () => {
     const { client, tx } = mockClient();
+    const calls: string[] = [];
+    vi.mocked(tx.$queryRawUnsafe).mockImplementation(async () => {
+      calls.push('lock');
+      return [];
+    });
+    vi.mocked(tx.autoResponse.findFirst).mockImplementation(async () => {
+      calls.push('findFirst');
+      return rule();
+    });
+    vi.mocked(tx.autoResponse.update).mockImplementation(async () => {
+      calls.push('update');
+      return rule({ name: 'Updated greeting' });
+    });
+    vi.mocked(tx.auditLog.create).mockImplementation(async () => {
+      calls.push('auditLog.create');
+      return {};
+    });
 
     await updateAutoResponseRule(client, {
       guildId: GUILD_ID,
@@ -137,6 +175,10 @@ describe('Auto Response mutation locking', () => {
       'SELECT pg_advisory_xact_lock(hashtext($1))',
       GUILD_ID,
     );
+    expect(calls).toEqual(['lock', 'findFirst', 'update', 'auditLog.create']);
+    expect(tx.autoResponse.findFirst).toHaveBeenCalledTimes(1);
+    expect(tx.autoResponse.update).toHaveBeenCalledTimes(1);
+    expect(tx.auditLog.create).toHaveBeenCalledTimes(1);
   });
 });
 
