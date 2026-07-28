@@ -1,0 +1,42 @@
+name: Auto Response Build Debug
+
+on:
+  push:
+    branches:
+      - feat/auto-response-plugin-v1
+    paths:
+      - '.github/workflows/auto-response-build-debug.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/auto-response-plugin-v1
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - name: Capture build output
+        run: |
+          set +e
+          pnpm build > /tmp/auto-response-build.log 2>&1
+          status=$?
+          set -e
+          tail -n 300 /tmp/auto-response-build.log > auto-response-build-debug.log
+          echo "BUILD_EXIT_CODE=${status}" >> auto-response-build-debug.log
+      - name: Commit debug log
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add auto-response-build-debug.log
+          git commit -m 'ci(auto-response): Build失敗ログを一時記録'
+          git push origin HEAD:feat/auto-response-plugin-v1
