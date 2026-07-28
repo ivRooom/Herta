@@ -228,7 +228,7 @@ export async function getCommandUsageAnalytics(
     },
     daily: fillCommandUsageDays(dailyRows, now),
     ranking: rankingRows,
-    recentFailures: failureRows.map((failure) => ({
+    recentFailures: failureRows.map((failure: FailureRow) => ({
       ...failure,
       executedAt: failure.executedAt.toISOString(),
     })),
