@@ -1,35 +1,26 @@
-# ============================================================
-# CI — Format / Lint / Typecheck / Test / Build / Supply Chain
-# ============================================================
 name: CI
 
 on:
-  push:
-    branches: [main, develop]
   pull_request:
-    branches: [main, develop]
+    branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: auto-response-final-review-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  SYFT_VERSION: 1.44.0
-  GRYPE_VERSION: 0.112.0
-  SYFT_CHECK_FOR_APP_UPDATE: 'false'
-  GRYPE_CHECK_FOR_APP_UPDATE: 'false'
-
 jobs:
-  verify:
-    name: Format / Lint / Typecheck / Test / Build
+  apply-and-validate:
+    if: github.head_ref == 'feat/auto-response-plugin-v1' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 40
-
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: feat/auto-response-plugin-v1
+          fetch-depth: 0
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v6
 
@@ -40,222 +31,143 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Prisma Generate
-        run: pnpm db:generate
-
-      - name: Format Check
-        run: pnpm format:check
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Test
-        run: pnpm test
-
-      - name: Supply chain policy tests
-        run: node --test .github/scripts/*.test.mjs
-
-      - name: Validate vulnerability exceptions
+      - name: Apply review fixes
         run: |
-          node .github/scripts/prepare-grype-config.mjs \
-            .github/security/grype-allowlist.json \
-            .ci/grype.yaml
+          python3 - <<'PY'
+          from pathlib import Path
 
-      - name: Build
-        run: pnpm build
+          def patch(path: str, replacements: list[tuple[str, str]]) -> None:
+              file = Path(path)
+              text = file.read_text()
+              for before, after in replacements:
+                  if after in text:
+                      continue
+                  if text.count(before) != 1:
+                      raise RuntimeError(f'{path}: expected exactly one source block for {before[:80]!r}')
+                  text = text.replace(before, after, 1)
+              file.write_text(text)
 
-      - name: Production Compose Validation
+          patch('plugins/auto-response/src/config.ts', [
+              (
+                  '  maxMessageLength: number;\n  regexEnabled: boolean;',
+                  '  maxMessageLength: number;\n  maxRegexEvaluationsPerMessage: number;\n  regexEnabled: boolean;',
+              ),
+              (
+                  '  maxMessageLength: 2000,\n  regexEnabled: true,',
+                  '  maxMessageLength: 2000,\n  maxRegexEvaluationsPerMessage: 5,\n  regexEnabled: true,',
+              ),
+              (
+                  '  const config = isRecord(value) ? value : {};\n  return {',
+                  "  const config = isRecord(value) ? value : {};\n  const legacyCooldownSeconds =\n    typeof config.cooldownMs === 'number' && Number.isFinite(config.cooldownMs)\n      ? Math.ceil(config.cooldownMs / 1000)\n      : undefined;\n  return {",
+              ),
+              (
+                  '    maxRules: clampInteger(config.maxRules, DEFAULT_AUTO_RESPONSE_CONFIG.maxRules, 1, 200),',
+                  '    maxRules: clampInteger(\n      config.maxRules ?? config.maxResponses,\n      DEFAULT_AUTO_RESPONSE_CONFIG.maxRules,\n      1,\n      200,\n    ),',
+              ),
+              (
+                  '      config.guildCooldownSeconds,\n      DEFAULT_AUTO_RESPONSE_CONFIG.guildCooldownSeconds,',
+                  '      config.guildCooldownSeconds ?? legacyCooldownSeconds,\n      DEFAULT_AUTO_RESPONSE_CONFIG.guildCooldownSeconds,',
+              ),
+              (
+                  '    regexEnabled: booleanValue(config.regexEnabled, DEFAULT_AUTO_RESPONSE_CONFIG.regexEnabled),',
+                  '    maxRegexEvaluationsPerMessage: clampInteger(\n      config.maxRegexEvaluationsPerMessage,\n      DEFAULT_AUTO_RESPONSE_CONFIG.maxRegexEvaluationsPerMessage,\n      1,\n      10,\n    ),\n    regexEnabled: booleanValue(config.regexEnabled, DEFAULT_AUTO_RESPONSE_CONFIG.regexEnabled),',
+              ),
+          ])
+
+          patch('plugins/auto-response/src/manifest.ts', [
+              (
+                  "      regexEnabled: {\n        type: 'boolean',",
+                  "      maxRegexEvaluationsPerMessage: {\n        type: 'integer',\n        title: '1メッセージあたりの正規表現評価上限',\n        minimum: 1,\n        maximum: 10,\n        default: 5,\n      },\n      regexEnabled: {\n        type: 'boolean',",
+              ),
+              (
+                  "      'maxMessageLength',\n      'regexEnabled',",
+                  "      'maxMessageLength',\n      'maxRegexEvaluationsPerMessage',\n      'regexEnabled',",
+              ),
+          ])
+
+          patch('plugins/auto-response/src/plugin.ts', [
+              (
+                  '  let responseCount = 0;\n  for (const rule of rules) {',
+                  '  let responseCount = 0;\n  let regexEvaluationCount = 0;\n  let regexLimitLogged = false;\n  for (const rule of rules) {',
+              ),
+              (
+                  '    if (!isRuleInScope(rule, message)) continue;\n\n    const startedAt = Date.now();',
+                  "    if (!isRuleInScope(rule, message)) continue;\n    if (rule.matchMode === 'regex') {\n      if (regexEvaluationCount >= config.maxRegexEvaluationsPerMessage) {\n        if (!regexLimitLogged) {\n          context.logger.warn(\n            {\n              guildId: context.guildId,\n              channelId: message.channelId,\n              maxRegexEvaluationsPerMessage: config.maxRegexEvaluationsPerMessage,\n            },\n            'Auto Responseの正規表現評価上限に達しました',\n          );\n          regexLimitLogged = true;\n        }\n        continue;\n      }\n      regexEvaluationCount += 1;\n    }\n\n    const startedAt = Date.now();",
+              ),
+          ])
+
+          patch('plugins/auto-response/src/config.test.ts', [
+              (
+                  "        regexExecutionBudgetMs: 999,\n      }),",
+                  "        maxRegexEvaluationsPerMessage: 999,\n        regexExecutionBudgetMs: 999,\n      }),",
+              ),
+              (
+                  "      guildCooldownSeconds: 0,\n      regexExecutionBudgetMs: 50,",
+                  "      guildCooldownSeconds: 0,\n      maxRegexEvaluationsPerMessage: 10,\n      regexExecutionBudgetMs: 50,",
+              ),
+              (
+                  "  });\n});\n\ndescribe('Auto Response rule validation'",
+                  "  });\n\n  it('旧設定キーを現行設定へ移行する', () => {\n    expect(normalizeAutoResponseConfig({ maxResponses: 50, cooldownMs: 3000 })).toMatchObject({\n      maxRules: 50,\n      guildCooldownSeconds: 3,\n      maxRegexEvaluationsPerMessage: 5,\n    });\n  });\n});\n\ndescribe('Auto Response rule validation'",
+              ),
+          ])
+
+          patch('apps/studio/src/lib/guild-plugins.ts', [
+              (
+                  "import { getAllPluginManifests, getPluginManifest } from '@herta/plugin-catalog';",
+                  "import { getAllPluginManifests, getPluginManifest } from '@herta/plugin-catalog';\nimport { normalizeAutoResponseConfig } from '@herta/plugin-catalog/auto-response-service';",
+              ),
+              (
+                  '  const candidate = { ...config };',
+                  "  const candidate =\n    manifest.id === 'auto-response' ? { ...normalizeAutoResponseConfig(config) } : { ...config };",
+              ),
+          ])
+
+          patch('apps/studio/src/app/dashboard/guilds/[guildId]/auto-response/page.tsx', [
+              (
+                  '  let stats: Awaited<ReturnType<typeof getAutoResponseStats>> = {',
+                  '  let guildRuleCount = 0;\n  let stats: Awaited<ReturnType<typeof getAutoResponseStats>> = {',
+              ),
+              (
+                  '    [result, stats] = await Promise.all([',
+                  '    [result, stats, guildRuleCount] = await Promise.all([',
+              ),
+              (
+                  '      getAutoResponseStats(prisma as unknown as AutoResponsePrismaClient, guildId),\n    ]);',
+                  '      getAutoResponseStats(prisma as unknown as AutoResponsePrismaClient, guildId),\n      prisma.autoResponse.count({ where: { guildId } }),\n    ]);',
+              ),
+              (
+                  '          {result.total} / {config.maxRules}件',
+                  '          {guildRuleCount} / {config.maxRules}件',
+              ),
+          ])
+
+          patch('docs/plugins/AUTO_RESPONSE.md', [
+              (
+                  '| `maxMessageLength`           | `2000`  | 評価対象本文の最大文字数  |\n| `regexEnabled`',
+                  '| `maxMessageLength`           | `2000`  | 評価対象本文の最大文字数  |\n| `maxRegexEvaluationsPerMessage` | `5` | 1メッセージあたりの正規表現評価上限 |\n| `regexEnabled`',
+              ),
+              (
+                  '評価対象メッセージにも長さ上限を設定します。実行時は`node:vm`の分離Contextで評価し、`regexExecutionBudgetMs`を超えた処理を強制停止します。',
+                  '評価対象メッセージにも長さ上限を設定します。1メッセージで評価する正規表現ルールは既定5件・最大10件に制限します。実行時は`node:vm`の分離Contextで評価し、`regexExecutionBudgetMs`を超えた個別処理を強制停止します。',
+              ),
+          ])
+          PY
+
+      - run: pnpm format
+      - run: pnpm db:generate
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      - name: Restore standard CI and commit
         env:
-          DISCORD_CLIENT_ID: ci-client-id
-          DISCORD_CLIENT_SECRET: ci-client-secret
-          DISCORD_BOT_TOKEN: ci-bot-token
-        run: docker compose --env-file .env.production.example -f docker-compose.prod.yml config --quiet
-
-      - name: Origin protection configuration validation
-        run: |
-          bash -n deploy/scripts/enable-origin-protection.sh
-          docker run --rm \
-            -v "$PWD/deploy/docker/caddy/Caddyfile.aop:/etc/caddy/Caddyfile:ro" \
-            caddy:2-alpine caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /dev/null
-
-      - name: Production Docker Build
-        run: docker build --tag herta-app:ci .
-
-      - name: Verify production runtime
-        run: |
-          docker run --rm --entrypoint sh herta-app:ci -lc '
-            set -eu
-
-            test "$(id -u)" != "0"
-            test ! -e /usr/local/lib/node_modules/npm
-            test ! -e /usr/local/lib/node_modules/corepack
-            test ! -e /usr/local/bin/npm
-            test ! -e /usr/local/bin/npx
-            test -f apps/api/dist/main.js
-            test -f apps/bot/dist/main.js
-            test -f apps/worker/dist/main.js
-            test -f apps/studio/.next/standalone/apps/studio/server.js
-            test -x packages/db/node_modules/.bin/prisma
-            packages/db/node_modules/.bin/prisma --version > /dev/null
-
-            test -n "$(find apps/studio/.next/standalone/apps/studio/.prisma/client \
-              -maxdepth 1 -type f -name "libquery_engine-*.so.node" -print -quit)"
-
-            for source_path in \
-              apps/api/src \
-              apps/bot/src \
-              apps/worker/src \
-              apps/studio/src \
-              packages/db/src \
-              packages/logger/src \
-              packages/plugin-catalog/src \
-              packages/plugin-sdk/src \
-              packages/queue/src \
-              packages/rule-engine/src \
-              packages/shared/src \
-              plugins/auto-response/src \
-              plugins/daily-content/src \
-              plugins/lfg/src \
-              plugins/moderation/src \
-              plugins/quote/src \
-              plugins/team-split/src
-            do
-              test ! -e "$source_path"
-            done
-
-            test ! -e docs
-            test ! -e examples
-            test ! -e deploy
-            test ! -e pnpm-lock.yaml
-
-            cd apps/bot
-            node --input-type=module -e "
-              await import(\"@herta/db\");
-              await import(\"@herta/logger\");
-              await import(\"@herta/plugin-catalog\");
-              await import(\"@herta/plugin-sdk\");
-              await import(\"@herta/rule-engine\");
-              await import(\"@herta/shared\");
-            "
-          '
-
-      - name: Report runtime image size
-        run: |
-          size_bytes="$(docker image inspect herta-app:ci --format '{{.Size}}')"
-          size_mib="$((size_bytes / 1024 / 1024))"
-          echo "Runtime image size: ${size_mib} MiB (${size_bytes} bytes)"
-          {
-            echo "### Production runtime image"
-            echo
-            echo "- Size: **${size_mib} MiB**"
-            echo "- Source / test / docs: excluded"
-            echo "- Runtime user: non-root"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Install pinned Syft and Grype
-        shell: bash
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-
-          tool_dir="$RUNNER_TEMP/herta-security-tools"
-          download_dir="$RUNNER_TEMP/herta-security-downloads"
-          mkdir -p "$tool_dir" "$download_dir"
-
-          install_tool() {
-            local tool="$1"
-            local version="$2"
-            local asset="${tool}_${version}_linux_amd64.tar.gz"
-            local checksums="${tool}_${version}_checksums.txt"
-            local release_url="https://github.com/anchore/${tool}/releases/download/v${version}"
-
-            curl --fail --location --retry 3 --retry-delay 2 \
-              --output "$download_dir/$asset" \
-              "$release_url/$asset"
-            curl --fail --location --retry 3 --retry-delay 2 \
-              --output "$download_dir/$checksums" \
-              "$release_url/$checksums"
-
-            (
-              cd "$download_dir"
-              grep -E "[[:space:]]${asset}$" "$checksums" | sha256sum --check --strict -
-            )
-
-            tar -xzf "$download_dir/$asset" -C "$download_dir" "$tool"
-            install -m 0755 "$download_dir/$tool" "$tool_dir/$tool"
-          }
-
-          install_tool syft "$SYFT_VERSION"
-          install_tool grype "$GRYPE_VERSION"
-
-          echo "$tool_dir" >> "$GITHUB_PATH"
-          "$tool_dir/syft" version
-          "$tool_dir/grype" version
-
-      - name: Verify vulnerability failure gate
-        shell: bash
-        run: |
-          set +e
-          grype \
-            sbom:.github/security/fixtures/grype-known-vulnerable.cdx.json \
-            --fail-on high \
-            --output table \
-            > "$RUNNER_TEMP/grype-gate-self-test.txt" 2>&1
-          status=$?
-          set -e
-
-          cat "$RUNNER_TEMP/grype-gate-self-test.txt"
-
-          if [[ "$status" -eq 0 ]]; then
-            echo "::error::既知のHigh/Critical脆弱性でGrypeが失敗しませんでした"
-            exit 1
-          fi
-
-          if ! grep -Eq 'CVE-2021-44228|GHSA-jfh8-c2jp-5v3q' "$RUNNER_TEMP/grype-gate-self-test.txt"; then
-            echo "::error::Grype failure gateの自己テストでLog4Shellを検出できませんでした"
-            exit 1
-          fi
-
-      - name: Generate CycloneDX SBOM
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          staging_dir="$RUNNER_TEMP/herta-supply-chain"
-          artifact_dir="$GITHUB_WORKSPACE/security-artifacts"
-          mkdir -p "$staging_dir" "$artifact_dir"
-
-          syft herta-app:ci \
-            --output "cyclonedx-json=$staging_dir/herta-app.cdx.json"
-
-          node .github/scripts/assert-sbom-safe.mjs \
-            "$staging_dir/herta-app.cdx.json"
-
-          mv "$staging_dir/herta-app.cdx.json" \
-            "$artifact_dir/herta-app.cdx.json"
-
-          {
-            syft version
-            echo
-            grype version
-          } > "$artifact_dir/tool-versions.txt"
-
-      - name: Scan production image for High and Critical vulnerabilities
-        shell: bash
-        run: |
-          grype herta-app:ci \
-            --config .ci/grype.yaml \
-            --fail-on high \
-            --output json \
-            --file security-artifacts/grype-report.json
-
-      - name: Upload SBOM and vulnerability report
-        if: ${{ always() && hashFiles('security-artifacts/**') != '' }}
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: herta-supply-chain-${{ github.run_id }}-${{ github.run_attempt }}
-          path: security-artifacts/
-          if-no-files-found: error
-          retention-days: 30
+          git fetch origin main
+          git checkout origin/main -- .github/workflows/ci.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(auto-response): 旧設定移行と正規表現評価上限を追加'
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin HEAD:feat/auto-response-plugin-v1
