@@ -141,15 +141,14 @@ describe('Auto Response cooldown', () => {
   it('Guild Cooldown中は別Ruleでも実行権を取得しない', async () => {
     const now = new Date('2026-07-28T10:00:00Z');
     const { client, tx } = mockClient();
-    vi.mocked(tx.autoResponseExecutionEvent.findFirst).mockResolvedValue({
-      id: '22222222-2222-4222-8222-222222222222',
-      guildId: GUILD_ID,
-      ruleId: RULE_ID,
-      status: 'success',
-      durationMs: 2,
-      errorName: null,
-      executedAt: new Date(now.getTime() - 500),
-    });
+    vi.mocked(tx.autoResponse.findFirst)
+      .mockResolvedValueOnce(rule())
+      .mockResolvedValueOnce(
+        rule({
+          id: '33333333-3333-4333-8333-333333333333',
+          lastTriggeredAt: new Date(now.getTime() - 500),
+        }),
+      );
 
     await expect(
       claimAutoResponseRule(client, {
@@ -160,11 +159,13 @@ describe('Auto Response cooldown', () => {
       }),
     ).resolves.toBe(false);
     expect(tx.autoResponse.update).not.toHaveBeenCalled();
+    expect(tx.autoResponseExecutionEvent.findFirst).not.toHaveBeenCalled();
   });
 
-  it('Cooldown外ではlastTriggeredAtを更新して実行権を取得する', async () => {
+  it('直前の予約がない場合はlastTriggeredAtを更新して実行権を取得する', async () => {
     const now = new Date('2026-07-28T10:00:00Z');
     const { client, tx } = mockClient();
+    vi.mocked(tx.autoResponse.findFirst).mockResolvedValueOnce(rule()).mockResolvedValueOnce(null);
 
     await expect(
       claimAutoResponseRule(client, {

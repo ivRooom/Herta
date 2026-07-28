@@ -125,7 +125,7 @@ Audit LogにはルールID、操作種別、一致方式、応答形式、対象
 
 ## Cooldownと競合防止
 
-Rule CooldownとGuild Cooldownは、PostgreSQL Transaction Advisory LockをGuild単位で取得して判定します。複数メッセージが同時に到着しても、同じGuildで送信権を同時取得しない設計です。
+Rule CooldownとGuild Cooldownは、PostgreSQL Transaction Advisory LockをGuild単位で取得し、Guild内で最後に送信権を予約した`lastTriggeredAt`を参照して判定します。複数メッセージが同時に到着しても、同じGuildで送信権を同時取得しない設計です。
 
 送信直前にRuleの`lastTriggeredAt`を更新します。Discord API送信が失敗した場合も短時間の連続再試行を防ぐためCooldownは維持し、失敗メトリクスを記録します。Studioで変更したルールはRuntimeの最大10秒キャッシュ後に反映されます。
 

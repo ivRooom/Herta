@@ -342,13 +342,14 @@ export async function claimAutoResponseRule(
     }
 
     if (input.guildCooldownSeconds > 0) {
-      const latest = await tx.autoResponseExecutionEvent.findFirst({
-        where: { guildId: input.guildId, status: 'success' },
-        orderBy: { executedAt: 'desc' },
+      const latestClaimedRule = await tx.autoResponse.findFirst({
+        where: { guildId: input.guildId, lastTriggeredAt: { not: null } },
+        orderBy: { lastTriggeredAt: 'desc' },
       });
       if (
-        latest &&
-        now.getTime() - latest.executedAt.getTime() < input.guildCooldownSeconds * 1000
+        latestClaimedRule?.lastTriggeredAt &&
+        now.getTime() - latestClaimedRule.lastTriggeredAt.getTime() <
+          input.guildCooldownSeconds * 1000
       ) {
         return false;
       }

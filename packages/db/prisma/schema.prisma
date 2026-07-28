@@ -276,7 +276,7 @@ model AutoResponse {
   executionEvents AutoResponseExecutionEvent[]
 
   @@index([guildId, enabled])
-  @@index([guildId, priority, createdAt])
+  @@index([guildId, priority(sort: Desc), createdAt])
   @@map("auto_responses")
 }
 
