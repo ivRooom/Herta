@@ -5,7 +5,7 @@ on:
     branches:
       - feat/auto-response-plugin-v1
     paths:
-      - '.github/workflows/auto-response-build-debug.yml'
+      - 'auto-response-build-debug.trigger'
   workflow_dispatch:
 
 permissions:
