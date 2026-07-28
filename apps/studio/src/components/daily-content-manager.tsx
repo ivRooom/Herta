@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { cloneElement, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   CalendarClock,
@@ -52,6 +52,9 @@ interface DailyContentFormState {
   enabled: boolean;
 }
 
+const INPUT_CLASS_NAME =
+  'w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring';
+
 const EMPTY_FORM: DailyContentFormState = {
   title: '',
   channelId: '',
@@ -95,7 +98,8 @@ export function DailyContentManager({
   }, [defaultTimezone, editingId]);
 
   const scheduleNames = useMemo(
-    () => new Map(schedules.map((schedule) => [schedule.id, schedule.title || schedule.scheduleTime])),
+    () =>
+      new Map(schedules.map((schedule) => [schedule.id, schedule.title || schedule.scheduleTime])),
     [schedules],
   );
 
@@ -176,13 +180,10 @@ export function DailyContentManager({
     clearMessages();
     setBusyKey(`publish:${schedule.id}`);
     try {
-      await requestJson(
-        `/api/guilds/${guildId}/daily-content/schedules/${schedule.id}/publish`,
-        {
-          method: 'POST',
-          headers: { 'Idempotency-Key': crypto.randomUUID() },
-        },
-      );
+      await requestJson(`/api/guilds/${guildId}/daily-content/schedules/${schedule.id}/publish`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': crypto.randomUUID() },
+      });
       setNotice('手動配信をキューへ追加しました');
       router.refresh();
     } catch (requestError) {
@@ -196,10 +197,9 @@ export function DailyContentManager({
     clearMessages();
     setBusyKey(`retry:${delivery.id}`);
     try {
-      await requestJson(
-        `/api/guilds/${guildId}/daily-content/deliveries/${delivery.id}/retry`,
-        { method: 'POST' },
-      );
+      await requestJson(`/api/guilds/${guildId}/daily-content/deliveries/${delivery.id}/retry`, {
+        method: 'POST',
+      });
       setNotice('失敗配信を再実行対象へ戻しました');
       router.refresh();
     } catch (requestError) {
@@ -240,7 +240,9 @@ export function DailyContentManager({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="font-semibold">{editingId ? 'スケジュール編集' : '新規スケジュール'}</h2>
-            <p className="mt-1 text-xs text-muted">時刻は指定timezoneの壁時計として毎日評価します。</p>
+            <p className="mt-1 text-xs text-muted">
+              時刻は指定timezoneの壁時計として毎日評価します。
+            </p>
           </div>
           {editingId ? (
             <button
@@ -259,7 +261,7 @@ export function DailyContentManager({
               value={form.title}
               onChange={(event) => setForm({ ...form, title: event.target.value })}
               maxLength={100}
-              className="input"
+              className={INPUT_CLASS_NAME}
               placeholder="朝のお知らせ"
             />
           </Field>
@@ -270,7 +272,7 @@ export function DailyContentManager({
               required
               inputMode="numeric"
               pattern="\d{17,20}"
-              className="input"
+              className={INPUT_CLASS_NAME}
               placeholder="123456789012345678"
             />
           </Field>
@@ -280,7 +282,7 @@ export function DailyContentManager({
               value={form.scheduleTime}
               onChange={(event) => setForm({ ...form, scheduleTime: event.target.value })}
               required
-              className="input"
+              className={INPUT_CLASS_NAME}
             />
           </Field>
           <Field label="IANA timezone">
@@ -288,7 +290,7 @@ export function DailyContentManager({
               value={form.timezone}
               onChange={(event) => setForm({ ...form, timezone: event.target.value })}
               required
-              className="input"
+              className={INPUT_CLASS_NAME}
               placeholder="Asia/Tokyo"
             />
           </Field>
@@ -300,7 +302,7 @@ export function DailyContentManager({
               required
               maxLength={maxContentLength}
               rows={6}
-              className="input mt-1 resize-y"
+              className={`${INPUT_CLASS_NAME} mt-1 resize-y`}
               placeholder="毎日配信する内容"
             />
             <span className="mt-1 block text-right text-xs text-muted">
@@ -353,8 +355,8 @@ export function DailyContentManager({
                       <StatusBadge status={schedule.enabled ? 'enabled' : 'disabled'} />
                     </div>
                     <p className="mt-1 text-xs text-muted">
-                      <span className="font-mono">{schedule.scheduleTime}</span> {schedule.timezone} ·{' '}
-                      <span className="font-mono">#{schedule.channelId}</span>
+                      <span className="font-mono">{schedule.scheduleTime}</span> {schedule.timezone}{' '}
+                      · <span className="font-mono">#{schedule.channelId}</span>
                     </p>
                   </div>
                   <CalendarClock className="h-5 w-5 shrink-0 text-muted" />
@@ -373,7 +375,11 @@ export function DailyContentManager({
                   </div>
                 </dl>
                 <div className="mt-5 flex flex-wrap justify-end gap-2">
-                  <ActionButton onClick={() => editSchedule(schedule)} icon={<Pencil />} label="編集" />
+                  <ActionButton
+                    onClick={() => editSchedule(schedule)}
+                    icon={<Pencil />}
+                    label="編集"
+                  />
                   <ActionButton
                     onClick={() => toggleSchedule(schedule)}
                     disabled={busyKey === `toggle:${schedule.id}`}
@@ -482,7 +488,7 @@ function ActionButton({
           : 'border-border hover:bg-background'
       }`}
     >
-      {icon.type({ ...icon.props, className: 'h-3.5 w-3.5' })}
+      {cloneElement(icon, { className: 'h-3.5 w-3.5' })}
       {label}
     </button>
   );
@@ -516,7 +522,11 @@ function DeliveryIcon({ status }: { status: DailyContentDeliveryItem['status'] }
 }
 
 function EmptyState({ text }: { text: string }) {
-  return <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted">{text}</div>;
+  return (
+    <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted">
+      {text}
+    </div>
+  );
 }
 
 async function requestJson(url: string, init: RequestInit): Promise<unknown> {

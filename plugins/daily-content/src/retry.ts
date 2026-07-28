@@ -43,10 +43,7 @@ export async function retryDailyContentDelivery(
   });
 }
 
-async function lockDelivery(
-  tx: DailyContentTransactionClient,
-  deliveryId: string,
-): Promise<void> {
+async function lockDelivery(tx: DailyContentTransactionClient, deliveryId: string): Promise<void> {
   await tx.$queryRawUnsafe(
     'SELECT pg_advisory_xact_lock(hashtext($1))',
     `daily-content:delivery:${deliveryId}`,

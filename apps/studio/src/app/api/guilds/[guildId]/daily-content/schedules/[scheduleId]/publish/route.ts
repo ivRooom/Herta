@@ -22,15 +22,12 @@ export async function POST(request: Request, { params }: RouteContext) {
 
   const requestId = request.headers.get('idempotency-key')?.trim() || randomUUID();
   try {
-    const delivery = await reserveManualDelivery(
-      prisma as unknown as DailyContentPrismaClient,
-      {
-        guildId,
-        scheduleId,
-        actorId: session.user.id,
-        requestId,
-      },
-    );
+    const delivery = await reserveManualDelivery(prisma as unknown as DailyContentPrismaClient, {
+      guildId,
+      scheduleId,
+      actorId: session.user.id,
+      requestId,
+    });
     if (!delivery) {
       return NextResponse.json({ error: 'Daily Contentが見つかりません' }, { status: 404 });
     }

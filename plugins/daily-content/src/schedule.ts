@@ -77,10 +77,7 @@ export function formatDailyOccurrence(date: Date, timezone: string): string {
   return `${parts.year}-${pad(parts.month)}-${pad(parts.day)} ${pad(parts.hour)}:${pad(parts.minute)}`;
 }
 
-function resolveLocalDateTimeCandidates(
-  target: ZonedDateParts,
-  timezone: string,
-): Date[] {
+function resolveLocalDateTimeCandidates(target: ZonedDateParts, timezone: string): Date[] {
   const targetEpoch = partsAsUtcEpoch(target);
   let candidateEpoch = targetEpoch;
 

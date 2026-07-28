@@ -50,7 +50,10 @@ export class DailyContentValidationError extends Error {
 
 export function normalizeDailyContentConfig(input: unknown): DailyContentConfig {
   const source = isRecord(input) ? input : {};
-  const defaultTimezone = readString(source['defaultTimezone'], DAILY_CONTENT_DEFAULTS.defaultTimezone);
+  const defaultTimezone = readString(
+    source['defaultTimezone'],
+    DAILY_CONTENT_DEFAULTS.defaultTimezone,
+  );
   if (!isValidIanaTimezone(defaultTimezone)) {
     throw new DailyContentValidationError('defaultTimezoneに有効なIANA timezoneを指定してください');
   }

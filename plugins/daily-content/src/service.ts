@@ -7,13 +7,7 @@ import {
 import { dailyContentIdempotencyKey, nextDailyOccurrence } from './schedule.js';
 
 export type DailyContentDeliveryStatus =
-  | 'pending'
-  | 'queued'
-  | 'processing'
-  | 'retrying'
-  | 'sent'
-  | 'failed'
-  | 'skipped';
+  'pending' | 'queued' | 'processing' | 'retrying' | 'sent' | 'failed' | 'skipped';
 
 export type DailyContentDeliveryOrigin = 'scheduled' | 'manual';
 
@@ -555,10 +549,7 @@ async function lockGuild(tx: DailyContentTransactionClient, guildId: string): Pr
   );
 }
 
-async function lockSchedule(
-  tx: DailyContentTransactionClient,
-  scheduleId: string,
-): Promise<void> {
+async function lockSchedule(tx: DailyContentTransactionClient, scheduleId: string): Promise<void> {
   await tx.$queryRawUnsafe(
     'SELECT pg_advisory_xact_lock(hashtext($1))',
     `daily-content:schedule:${scheduleId}`,

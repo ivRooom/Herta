@@ -89,10 +89,8 @@ describe('Daily Content config', () => {
       'ユーザーメンションはPlugin設定で許可されていません',
     );
     expect(
-      normalizeDailyContentInput(
-        input,
-        normalizeDailyContentConfig({ allowUserMentions: true }),
-      ).content,
+      normalizeDailyContentInput(input, normalizeDailyContentConfig({ allowUserMentions: true }))
+        .content,
     ).toBe(input.content);
   });
 });

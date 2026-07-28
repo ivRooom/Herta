@@ -113,9 +113,17 @@ export default async function DailyContentPage({
       ) : null}
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">
-        <Metric icon={<CalendarClock className="h-5 w-5" />} label="スケジュール" value={schedules.length} />
+        <Metric
+          icon={<CalendarClock className="h-5 w-5" />}
+          label="スケジュール"
+          value={schedules.length}
+        />
         <Metric icon={<CheckCircle2 className="h-5 w-5" />} label="直近の成功" value={sentCount} />
-        <Metric icon={<TriangleAlert className="h-5 w-5" />} label="再確認が必要" value={failedCount} />
+        <Metric
+          icon={<TriangleAlert className="h-5 w-5" />}
+          label="再確認が必要"
+          value={failedCount}
+        />
       </div>
 
       {loadError ? (
@@ -136,7 +144,8 @@ export default async function DailyContentPage({
       )}
 
       <div className="mt-8 flex items-center gap-2 text-xs text-muted">
-        <History className="h-4 w-4" /> 配信履歴は本文を保持せず、状態・予定日時・試行回数・安全なエラー名だけを表示します。
+        <History className="h-4 w-4" />{' '}
+        配信履歴は本文を保持せず、状態・予定日時・試行回数・安全なエラー名だけを表示します。
       </div>
     </div>
   );

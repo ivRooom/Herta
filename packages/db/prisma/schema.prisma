@@ -455,18 +455,52 @@ model TeamSplitSession {
 // ============================================================
 
 model DailyContent {
-  id           String    @id @default(uuid())
-  guildId      String    @map("guild_id")
-  channelId    String    @map("channel_id")
-  title        String    @default("")
-  content      String
-  scheduleTime String    @map("schedule_time")
-  timezone     String    @default("Asia/Tokyo")
-  enabled      Boolean   @default(true)
-  lastSentAt   DateTime? @map("last_sent_at")
-  createdAt    DateTime  @default(now()) @map("created_at")
-  updatedAt    DateTime  @updatedAt @map("updated_at")
+  id              String    @id @default(uuid())
+  guildId         String    @map("guild_id")
+  channelId       String    @map("channel_id")
+  title           String    @default("")
+  content         String
+  scheduleTime    String    @map("schedule_time")
+  timezone        String    @default("Asia/Tokyo")
+  enabled         Boolean   @default(true)
+  nextRunAt       DateTime? @map("next_run_at") @db.Timestamptz(3)
+  lastScheduledAt DateTime? @map("last_scheduled_at") @db.Timestamptz(3)
+  lastSentAt      DateTime? @map("last_sent_at") @db.Timestamptz(3)
+  createdBy       String?   @map("created_by")
+  updatedBy       String?   @map("updated_by")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  deliveries DailyContentDelivery[]
 
   @@index([guildId, enabled])
+  @@index([enabled, nextRunAt])
   @@map("daily_contents")
+}
+
+model DailyContentDelivery {
+  id             String    @id @default(uuid())
+  dailyContentId String    @map("daily_content_id")
+  guildId        String    @map("guild_id")
+  idempotencyKey String    @unique @map("idempotency_key")
+  origin         String    @default("scheduled")
+  scheduledFor   DateTime  @map("scheduled_for") @db.Timestamptz(3)
+  status         String    @default("pending")
+  attemptCount   Int       @default(0) @map("attempt_count")
+  messageId      String?   @map("message_id")
+  errorName      String?   @map("error_name")
+  queuedAt       DateTime? @map("queued_at") @db.Timestamptz(3)
+  startedAt      DateTime? @map("started_at") @db.Timestamptz(3)
+  nextAttemptAt  DateTime? @map("next_attempt_at") @db.Timestamptz(3)
+  sentAt         DateTime? @map("sent_at") @db.Timestamptz(3)
+  failedAt       DateTime? @map("failed_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  dailyContent DailyContent @relation(fields: [dailyContentId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, createdAt(sort: Desc)])
+  @@index([status, nextAttemptAt])
+  @@index([dailyContentId, scheduledFor(sort: Desc)])
+  @@map("daily_content_deliveries")
 }

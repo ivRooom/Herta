@@ -14,6 +14,7 @@ import {
   markDeliveryRetrying,
   markDeliverySent,
   markDeliverySkipped,
+  nextDailyOccurrence,
   normalizeDailyContentConfig,
   recoverStaleDelivery,
   reserveDueDelivery,
@@ -101,6 +102,7 @@ export async function startDailyContentRuntime(
     if (scanning || closed) return;
     scanning = true;
     try {
+      await initializeMissingNextRuns(options.prisma, now);
       await recoverStale(prisma, now, options.logger);
       const dueSchedules = await listDueDailyContents(prisma, now, DAILY_CONTENT_SCAN_LIMIT);
       for (const schedule of dueSchedules) {
@@ -286,6 +288,25 @@ class DailyContentPublishError extends Error {
   ) {
     super(name);
     this.name = name;
+  }
+}
+
+async function initializeMissingNextRuns(prisma: PrismaClient, now: Date): Promise<void> {
+  const schedules = await prisma.dailyContent.findMany({
+    where: { enabled: true, nextRunAt: null },
+    select: { id: true, scheduleTime: true, timezone: true },
+    take: DAILY_CONTENT_SCAN_LIMIT,
+  });
+  for (const schedule of schedules) {
+    const nextRunAt = nextDailyOccurrence({
+      scheduleTime: schedule.scheduleTime,
+      timezone: schedule.timezone,
+      after: now,
+    });
+    await prisma.dailyContent.update({
+      where: { id: schedule.id },
+      data: { nextRunAt },
+    });
   }
 }
 
