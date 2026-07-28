@@ -13,9 +13,10 @@
   },
   "dependencies": {
     "@herta/db": "workspace:*",
-    "@herta/shared": "workspace:*",
     "@herta/logger": "workspace:*",
+    "@herta/plugin-catalog": "workspace:*",
     "@herta/queue": "workspace:*",
+    "@herta/shared": "workspace:*",
     "bullmq": "^5.81.2",
     "ioredis": "^5.4.2",
     "pino": "^9.6.0",
