@@ -221,7 +221,9 @@ function RuleCard({
             </p>
           </div>
           <div className="text-right text-xs text-muted">
-            <p>成功 {rule.responseCount} / 失敗 {rule.failureCount}</p>
+            <p>
+              成功 {rule.responseCount} / 失敗 {rule.failureCount}
+            </p>
             <p className="mt-1">Cooldown {rule.cooldownSeconds}秒</p>
           </div>
         </div>
@@ -238,7 +240,11 @@ function RuleCard({
               disabled={deleting || saving}
               className="inline-flex items-center gap-2 rounded-xl border border-destructive/30 px-4 py-2 text-sm font-medium text-destructive disabled:opacity-50"
             >
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              {deleting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
               削除
             </button>
             <button

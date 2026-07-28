@@ -139,7 +139,11 @@ export default async function AutoResponsePage({
       <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Metric icon={<Activity className="h-5 w-5" />} label="成功" value={stats.successCount} />
         <Metric icon={<Activity className="h-5 w-5" />} label="失敗" value={stats.failureCount} />
-        <Metric icon={<Timer className="h-5 w-5" />} label="Cooldown除外" value={stats.skippedCount} />
+        <Metric
+          icon={<Timer className="h-5 w-5" />}
+          label="Cooldown除外"
+          value={stats.skippedCount}
+        />
         <Metric
           icon={<Timer className="h-5 w-5" />}
           label="平均処理時間"
@@ -236,7 +240,15 @@ export default async function AutoResponsePage({
   );
 }
 
-function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: string | number }) {
+function Metric({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string | number;
+}) {
   return (
     <div className="rounded-2xl border border-border bg-surface p-4 shadow-card">
       <div className="flex items-center gap-2 text-muted">

@@ -204,7 +204,9 @@ pnpm dev --filter @herta/bot
 - 起動ログ → Discord ログイン成功 → Bot ユーザー名が表示されます
 - 開発環境では `DISCORD_GUILD_ID_DEV` があればその Guild を優先同期します
 - 本番環境では Bot が参加している全 Guild を起動時に同期します
-- 現在の Slash Command Runtime が要求する Gateway Intent は `Guilds` のみです
+- 通常は `Guilds` Intentだけで起動します
+- Auto Responseを使う場合はDeveloper PortalでMessage Content Intentを有効化し、`DISCORD_ENABLE_MESSAGE_CONTENT_INTENT=true`を設定します
+- Message Content Intentが無効な場合、メッセージ系Pluginは処理されません
 - `SIGINT` / `SIGTERM` で graceful shutdown します
 
 ### Worker

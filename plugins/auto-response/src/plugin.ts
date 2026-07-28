@@ -17,6 +17,7 @@ import {
 
 const VIEW_CHANNEL_PERMISSION = 1024n;
 const SEND_MESSAGES_PERMISSION = 2048n;
+const EMBED_LINKS_PERMISSION = 16384n;
 const RULE_CACHE_TTL_MS = 10_000;
 
 interface AutoResponseRoleCache {
@@ -171,7 +172,7 @@ async function executeAutoResponse(
     }
 
     try {
-      assertBotCanRespond(message);
+      assertBotCanRespond(message, rule.responseType);
       await message.channel.send(buildResponse(rule, config));
       responseCount += 1;
       await safelyRecordExecution(context, {
@@ -233,7 +234,10 @@ function isRuleInScope(rule: AutoResponseRuleRecord, message: AutoResponseMessag
   return Boolean(roles && rule.roleIds.some((roleId) => roles.has(roleId)));
 }
 
-function assertBotCanRespond(message: AutoResponseMessage): void {
+function assertBotCanRespond(
+  message: AutoResponseMessage,
+  responseType: AutoResponseRuleRecord['responseType'],
+): void {
   if (message.channel.isTextBased && !message.channel.isTextBased()) {
     throw new Error('AutoResponseChannelNotTextBased');
   }
@@ -241,7 +245,11 @@ function assertBotCanRespond(message: AutoResponseMessage): void {
   if (!botMember) throw new Error('AutoResponseBotMemberUnavailable');
   if (!message.channel.permissionsFor) return;
   const permissions = message.channel.permissionsFor(botMember);
-  if (!permissions?.has(VIEW_CHANNEL_PERMISSION) || !permissions.has(SEND_MESSAGES_PERMISSION)) {
+  if (
+    !permissions?.has(VIEW_CHANNEL_PERMISSION) ||
+    !permissions.has(SEND_MESSAGES_PERMISSION) ||
+    (responseType === 'embed' && !permissions.has(EMBED_LINKS_PERMISSION))
+  ) {
     throw new Error('AutoResponseBotPermissionDenied');
   }
 }

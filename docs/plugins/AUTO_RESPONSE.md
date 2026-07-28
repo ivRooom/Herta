@@ -4,15 +4,15 @@ Auto Response Plugin v1は、Guild内のメッセージをキーワードまた�
 
 ## 対応機能
 
-| 項目 | 内容 |
-| --- | --- |
-| 一致方式 | 完全一致、部分一致、前方一致、正規表現 |
-| 応答形式 | テキスト、制限付きEmbed JSON |
-| 対象範囲 | チャンネルID、ロールID |
-| Cooldown | Guild全体、Rule単位 |
-| 除外 | Bot、Webhook、System Message、DM |
-| 管理 | Herta Studioから作成・編集・有効化・無効化・削除 |
-| 集計 | 成功、失敗、Cooldown除外、平均処理時間 |
+| 項目     | 内容                                             |
+| -------- | ------------------------------------------------ |
+| 一致方式 | 完全一致、部分一致、前方一致、正規表現           |
+| 応答形式 | テキスト、制限付きEmbed JSON                     |
+| 対象範囲 | チャンネルID、ロールID                           |
+| Cooldown | Guild全体、Rule単位                              |
+| 除外     | Bot、Webhook、System Message、DM                 |
+| 管理     | Herta Studioから作成・編集・有効化・無効化・削除 |
+| 集計     | 成功、失敗、Cooldown除外、平均処理時間           |
 
 Studioの管理ルートは次のとおりです。
 
@@ -40,23 +40,23 @@ Botには対象チャンネルで次の権限が必要です。
 - Send Messages
 - Embed Links（Embed応答を利用する場合）
 
-Runtimeは送信前にView ChannelとSend Messagesを確認します。権限不足はルール本文を含めず失敗メトリクスへ記録します。
+Runtimeは送信前にView ChannelとSend Messagesを確認し、Embed応答ではEmbed Linksも確認します。権限不足はルール本文を含めず失敗メトリクスへ記録します。
 
 ## Plugin設定
 
-| 設定 | 既定値 | 範囲・用途 |
-| --- | --- | --- |
-| `maxRules` | `100` | Guildあたり1〜200件 |
-| `maxRulesPerMessage` | `1` | 1メッセージあたり1〜5応答 |
-| `guildCooldownSeconds` | `1` | Guild全体の送信間隔 |
-| `defaultRuleCooldownSeconds` | `5` | 新規ルールの既定値 |
-| `maxTriggerLength` | `100` | 通常トリガー最大文字数 |
-| `maxResponseLength` | `1800` | テキスト応答最大文字数 |
-| `maxMessageLength` | `2000` | 評価対象本文の最大文字数 |
-| `regexEnabled` | `true` | 正規表現ルールを許可 |
-| `regexMaxLength` | `100` | 正規表現最大文字数 |
-| `regexExecutionBudgetMs` | `10` | 評価時間の警戒値 |
-| `allowUserMentions` | `false` | ユーザーへの通知を許可 |
+| 設定                         | 既定値  | 範囲・用途                |
+| ---------------------------- | ------- | ------------------------- |
+| `maxRules`                   | `100`   | Guildあたり1〜200件       |
+| `maxRulesPerMessage`         | `1`     | 1メッセージあたり1〜5応答 |
+| `guildCooldownSeconds`       | `1`     | Guild全体の送信間隔       |
+| `defaultRuleCooldownSeconds` | `5`     | 新規ルールの既定値        |
+| `maxTriggerLength`           | `100`   | 通常トリガー最大文字数    |
+| `maxResponseLength`          | `1800`  | テキスト応答最大文字数    |
+| `maxMessageLength`           | `2000`  | 評価対象本文の最大文字数  |
+| `regexEnabled`               | `true`  | 正規表現ルールを許可      |
+| `regexMaxLength`             | `100`   | 正規表現最大文字数        |
+| `regexExecutionBudgetMs`     | `10`    | 評価時間の警戒値          |
+| `allowUserMentions`          | `false` | ユーザーへの通知を許可    |
 
 `@everyone`、`@here`、ロールメンションは設定にかかわらず保存時に拒否します。
 
@@ -85,9 +85,7 @@ v1で利用できるフィールドは次のとおりです。
   "description": "本文",
   "color": 5793266,
   "footer": { "text": "Herta" },
-  "fields": [
-    { "name": "項目", "value": "内容", "inline": true }
-  ]
+  "fields": [{ "name": "項目", "value": "内容", "inline": true }]
 }
 ```
 
@@ -129,7 +127,7 @@ Audit LogにはルールID、操作種別、一致方式、応答形式、対象
 
 Rule CooldownとGuild Cooldownは、PostgreSQL Transaction Advisory LockをGuild単位で取得して判定します。複数メッセージが同時に到着しても、同じGuildで送信権を同時取得しない設計です。
 
-送信直前にRuleの`lastTriggeredAt`を更新します。Discord API送信が失敗した場合も短時間の連続再試行を防ぐためCooldownは維持し、失敗メトリクスを記録します。
+送信直前にRuleの`lastTriggeredAt`を更新します。Discord API送信が失敗した場合も短時間の連続再試行を防ぐためCooldownは維持し、失敗メトリクスを記録します。Studioで変更したルールはRuntimeの最大10秒キャッシュ後に反映されます。
 
 ## 本番反映
 

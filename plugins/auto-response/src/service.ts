@@ -1,4 +1,5 @@
 import {
+  AutoResponseValidationError,
   assertDiscordId,
   assertRuleId,
   normalizeAutoResponseRuleInput,
@@ -134,7 +135,9 @@ export async function createAutoResponseRule(
     await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', input.guildId);
     const count = await tx.autoResponse.count({ where: { guildId: input.guildId } });
     if (count >= input.config.maxRules) {
-      throw new Error(`自動応答ルールは最大${input.config.maxRules}件までです`);
+      throw new AutoResponseValidationError(
+        `自動応答ルールは最大${input.config.maxRules}件までです`,
+      );
     }
 
     const created = await tx.autoResponse.create({
