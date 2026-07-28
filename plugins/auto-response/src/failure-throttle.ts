@@ -43,14 +43,8 @@ export async function recordPreparationFailureIfDue(
       },
       orderBy: { executedAt: 'desc' },
     });
-    const throttleSeconds = Math.max(
-      PREPARATION_FAILURE_THROTTLE_SECONDS,
-      rule.cooldownSeconds,
-    );
-    if (
-      latest &&
-      now.getTime() - latest.executedAt.getTime() < throttleSeconds * 1000
-    ) {
+    const throttleSeconds = Math.max(PREPARATION_FAILURE_THROTTLE_SECONDS, rule.cooldownSeconds);
+    if (latest && now.getTime() - latest.executedAt.getTime() < throttleSeconds * 1000) {
       return false;
     }
 
