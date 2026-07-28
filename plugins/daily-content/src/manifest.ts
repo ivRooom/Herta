@@ -47,13 +47,6 @@ export const dailyContentManifest: PluginManifest = {
         description: '@everyone、@here、ロールメンションは常に拒否します',
         default: false,
       },
-      scanIntervalSeconds: {
-        type: 'integer',
-        title: 'due判定間隔（秒）',
-        minimum: 10,
-        maximum: 300,
-        default: 30,
-      },
       staleAfterMinutes: {
         type: 'integer',
         title: 'stale判定時間（分）',
@@ -74,7 +67,6 @@ export const dailyContentManifest: PluginManifest = {
       'maxSchedules',
       'maxContentLength',
       'allowUserMentions',
-      'scanIntervalSeconds',
       'staleAfterMinutes',
       'maxAttempts',
     ],
