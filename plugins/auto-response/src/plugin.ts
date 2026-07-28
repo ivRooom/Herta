@@ -145,6 +145,30 @@ async function executeAutoResponse(
     }
     if (!matched) continue;
 
+    let response: AutoResponseSendOptions;
+    try {
+      assertBotCanRespond(message, rule.responseType);
+      response = buildResponse(rule, config);
+    } catch (error) {
+      await safelyRecordExecution(context, {
+        guildId: context.guildId,
+        ruleId: rule.id,
+        status: 'failure',
+        durationMs: Date.now() - startedAt,
+        errorName: errorName(error),
+      });
+      context.logger.warn(
+        {
+          err: error,
+          guildId: context.guildId,
+          channelId: message.channelId,
+          ruleId: rule.id,
+        },
+        'Auto Responseの送信準備に失敗しました',
+      );
+      continue;
+    }
+
     let claimed = false;
     try {
       claimed = await claimAutoResponseRule(context.prisma, {
@@ -172,8 +196,7 @@ async function executeAutoResponse(
     }
 
     try {
-      assertBotCanRespond(message, rule.responseType);
-      await message.channel.send(buildResponse(rule, config));
+      await message.channel.send(response);
       responseCount += 1;
       await safelyRecordExecution(context, {
         guildId: context.guildId,

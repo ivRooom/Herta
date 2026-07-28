@@ -43,6 +43,7 @@ const healthServer = healthConfig.enabled
   : undefined;
 
 const EXECUTION_ANALYTICS_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1_000;
+const EXECUTION_ANALYTICS_RETENTION_DAYS = 90;
 
 let shuttingDown = false;
 let executionAnalyticsPruneInFlight = false;
@@ -55,18 +56,21 @@ async function pruneExecutionAnalytics(): Promise<void> {
   try {
     const prisma = getPrismaClient();
     const [commandDeleted, autoResponseDeleted] = await Promise.all([
-      pruneCommandExecutionEvents(prisma),
-      pruneAutoResponseExecutionEvents(prisma as unknown as AutoResponsePrismaClient),
+      pruneCommandExecutionEvents(prisma, EXECUTION_ANALYTICS_RETENTION_DAYS),
+      pruneAutoResponseExecutionEvents(
+        prisma as unknown as AutoResponsePrismaClient,
+        EXECUTION_ANALYTICS_RETENTION_DAYS,
+      ),
     ]);
     if (commandDeleted > 0) {
       logger.info(
-        { deleted: commandDeleted, retentionDays: 90 },
+        { deleted: commandDeleted, retentionDays: EXECUTION_ANALYTICS_RETENTION_DAYS },
         '古いコマンド実行履歴を削除しました',
       );
     }
     if (autoResponseDeleted > 0) {
       logger.info(
-        { deleted: autoResponseDeleted, retentionDays: 90 },
+        { deleted: autoResponseDeleted, retentionDays: EXECUTION_ANALYTICS_RETENTION_DAYS },
         '古いAuto Response実行履歴を削除しました',
       );
     }

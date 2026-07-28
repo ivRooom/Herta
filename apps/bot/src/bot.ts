@@ -150,7 +150,18 @@ export class HertaBot {
 
     this.client.on(Events.MessageCreate, async (message) => {
       if (!message.guildId) return;
-      const events = await this.pluginLoader.getGuildEvents(message.guildId);
+
+      let events: Awaited<ReturnType<typeof this.pluginLoader.getGuildEvents>>;
+      try {
+        events = await this.pluginLoader.getGuildEvents(message.guildId);
+      } catch (error) {
+        this.logger.error(
+          { err: error, guildId: message.guildId, channelId: message.channelId },
+          'Guild Plugin Eventの取得に失敗しました',
+        );
+        return;
+      }
+
       const handlers = events.filter((event) => event.event === Events.MessageCreate);
       for (const event of handlers) {
         try {

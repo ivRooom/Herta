@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Plus, Save, Trash2 } from 'lucide-react';
 
@@ -41,28 +41,44 @@ interface RuleDraft {
 interface RuleManagerProps {
   guildId: string;
   initialRules: AutoResponseRuleItem[];
+  defaultRuleCooldownSeconds: number;
 }
 
-const EMPTY_RULE: RuleDraft = {
-  name: '',
-  triggerValue: '',
-  matchMode: 'partial',
-  responseType: 'text',
-  responseContent: '',
-  channelIds: '',
-  roleIds: '',
-  cooldownSeconds: 5,
-  priority: 0,
-  caseSensitive: false,
-  enabled: true,
-};
+function createEmptyRule(defaultRuleCooldownSeconds: number): RuleDraft {
+  return {
+    name: '',
+    triggerValue: '',
+    matchMode: 'partial',
+    responseType: 'text',
+    responseContent: '',
+    channelIds: '',
+    roleIds: '',
+    cooldownSeconds: defaultRuleCooldownSeconds,
+    priority: 0,
+    caseSensitive: false,
+    enabled: true,
+  };
+}
 
-export function AutoResponseRuleManager({ guildId, initialRules }: RuleManagerProps) {
+export function AutoResponseRuleManager({
+  guildId,
+  initialRules,
+  defaultRuleCooldownSeconds,
+}: RuleManagerProps) {
   const router = useRouter();
   const [rules, setRules] = useState(initialRules);
-  const [draft, setDraft] = useState<RuleDraft>(EMPTY_RULE);
+  const [draft, setDraft] = useState<RuleDraft>(() => createEmptyRule(defaultRuleCooldownSeconds));
   const [creating, setCreating] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setRules(initialRules);
+  }, [initialRules]);
+
+  useEffect(() => {
+    setDraft(createEmptyRule(defaultRuleCooldownSeconds));
+    setMessage(null);
+  }, [guildId, defaultRuleCooldownSeconds]);
 
   async function createRule() {
     setCreating(true);
@@ -76,7 +92,7 @@ export function AutoResponseRuleManager({ guildId, initialRules }: RuleManagerPr
       const body = (await response.json()) as AutoResponseRuleItem & { error?: string };
       if (!response.ok) throw new Error(body.error ?? 'ルールを作成できませんでした');
       setRules((current) => [body, ...current]);
-      setDraft(EMPTY_RULE);
+      setDraft(createEmptyRule(defaultRuleCooldownSeconds));
       setMessage('自動応答ルールを作成しました');
       router.refresh();
     } catch (error) {

@@ -55,7 +55,7 @@ Runtimeは送信前にView ChannelとSend Messagesを確認し、Embed応答で�
 | `maxMessageLength`           | `2000`  | 評価対象本文の最大文字数  |
 | `regexEnabled`               | `true`  | 正規表現ルールを許可      |
 | `regexMaxLength`             | `100`   | 正規表現最大文字数        |
-| `regexExecutionBudgetMs`     | `10`    | 評価時間の警戒値          |
+| `regexExecutionBudgetMs`     | `10`    | VM評価の強制タイムアウト  |
 | `allowUserMentions`          | `false` | ユーザーへの通知を許可    |
 
 `@everyone`、`@here`、ロールメンションは設定にかかわらず保存時に拒否します。
@@ -69,11 +69,12 @@ v1ではJavaScript正規表現のすべてを許可せず、安全なサブセ�
 - 後方参照
 - 先読み・後読み・atomic group
 - 量指定子を含むgroupへの再量指定
+- alternationを含むgroupへの量指定
 - 複数の`.*`または`.+`を組み合わせるパターン
 - 設定上限を超えるパターン
 - 構文エラー
 
-評価対象メッセージにも長さ上限を設定し、正規表現評価後に処理時間を確認します。ルール作成後も、処理時間と失敗数をStudioで監視してください。
+評価対象メッセージにも長さ上限を設定します。実行時は`node:vm`の分離Contextで評価し、`regexExecutionBudgetMs`を超えた処理を強制停止します。タイムアウトは失敗メトリクスとして記録されるため、Studioで処理時間と失敗数を監視してください。
 
 ## Embed JSON
 
@@ -131,17 +132,27 @@ Rule CooldownとGuild Cooldownは、PostgreSQL Transaction Advisory LockをGuild
 
 ## 本番反映
 
-```bash
+````bash
 docker compose \
   --env-file .env.production \
   -f docker-compose.prod.yml \
   run --rm migrator
 
+既存`auto_responses`への複合Indexは単一statementの`CREATE INDEX CONCURRENTLY` migrationで作成します。CHECK制約は本番反映時の全件scanを避けるため`NOT VALID`で追加し、低負荷時間帯に次を実行して検証状態へ移行します。
+
+```sql
+ALTER TABLE "auto_responses" VALIDATE CONSTRAINT "auto_responses_match_mode_check";
+ALTER TABLE "auto_responses" VALIDATE CONSTRAINT "auto_responses_response_type_check";
+ALTER TABLE "auto_responses" VALIDATE CONSTRAINT "auto_responses_cooldown_seconds_check";
+ALTER TABLE "auto_responses" VALIDATE CONSTRAINT "auto_responses_priority_check";
+````
+
 docker compose \
-  --env-file .env.production \
-  -f docker-compose.prod.yml \
-  up -d bot studio
-```
+--env-file .env.production \
+-f docker-compose.prod.yml \
+up -d bot studio
+
+````
 
 確認項目:
 
@@ -164,7 +175,7 @@ docker compose \
 
 ```dotenv
 DISCORD_ENABLE_MESSAGE_CONTENT_INTENT=false
-```
+````
 
 環境変数変更後にBotを再起動します。ルールデータを残したままイベント処理だけ停止できます。
 

@@ -4,6 +4,7 @@ import {
   claimAutoResponseRule,
   createAutoResponseRule,
   listAutoResponseRules,
+  updateAutoResponseRule,
   type AutoResponsePrismaClient,
   type AutoResponseRuleRecord,
   type AutoResponseTransactionClient,
@@ -115,6 +116,26 @@ describe('Auto Response Guild isolation', () => {
       expect.objectContaining({
         data: expect.objectContaining({ guildId: OTHER_GUILD_ID }),
       }),
+    );
+  });
+});
+
+describe('Auto Response mutation locking', () => {
+  it('更新処理はGuild Advisory Lockを取得してからread/merge/writeする', async () => {
+    const { client, tx } = mockClient();
+
+    await updateAutoResponseRule(client, {
+      guildId: GUILD_ID,
+      ruleId: RULE_ID,
+      actorId: USER_ID,
+      source: 'dashboard',
+      config: DEFAULT_AUTO_RESPONSE_CONFIG,
+      patch: { name: 'Updated greeting' },
+    });
+
+    expect(tx.$queryRawUnsafe).toHaveBeenCalledWith(
+      'SELECT pg_advisory_xact_lock(hashtext($1))',
+      GUILD_ID,
     );
   });
 });

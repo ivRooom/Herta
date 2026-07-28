@@ -1,3 +1,5 @@
+import { Script } from 'node:vm';
+
 export type AutoResponseMatchMode = 'exact' | 'partial' | 'prefix' | 'regex';
 export type AutoResponseResponseType = 'text' | 'embed';
 
@@ -71,6 +73,7 @@ const BLOCKED_MENTION_PATTERN = /@everyone|@here|<@&\d+>/i;
 const MAX_SCOPE_IDS = 25;
 const MAX_RULE_NAME_LENGTH = 80;
 const MAX_EMBED_FIELDS = 10;
+const REGEX_MATCH_SCRIPT = new Script('RegExp(pattern, flags).test(content)');
 
 export class AutoResponseValidationError extends Error {
   constructor(message: string) {
@@ -188,13 +191,26 @@ export function matchesAutoResponse(
     case 'regex': {
       if (!config.regexEnabled) return false;
       assertSafeRegex(rule.triggerValue, config.regexMaxLength);
-      const startedAt = Date.now();
-      const expression = new RegExp(rule.triggerValue, rule.caseSensitive ? 'u' : 'iu');
-      const matched = expression.test(content);
-      if (Date.now() - startedAt > config.regexExecutionBudgetMs) {
-        throw new AutoResponseValidationError('正規表現の評価時間が上限を超えました');
+      try {
+        return Boolean(
+          REGEX_MATCH_SCRIPT.runInNewContext(
+            {
+              pattern: rule.triggerValue,
+              flags: rule.caseSensitive ? 'u' : 'iu',
+              content,
+            },
+            {
+              timeout: config.regexExecutionBudgetMs,
+              contextCodeGeneration: { strings: false, wasm: false },
+            },
+          ),
+        );
+      } catch (error) {
+        if (isRegexExecutionTimeout(error)) {
+          throw new AutoResponseValidationError('正規表現の評価時間が上限を超えました');
+        }
+        throw error;
       }
-      return matched;
     }
   }
 }
@@ -275,6 +291,7 @@ export function assertSafeRegex(pattern: string, maxLength: number): void {
     /\\[1-9]/.test(pattern) ||
     /\(\?(?:[=!]|<[=!]|>)/.test(pattern) ||
     /\([^)]*(?:\*|\+|\{\d+(?:,\d*)?\})[^)]*\)(?:\*|\+|\{\d+(?:,\d*)?\})/.test(pattern) ||
+    /\((?:\?:)?[^()]*\|[^()]*\)(?:\*|\+|\{\d+(?:,\d*)?\})/.test(pattern) ||
     /(?:\.\*|\.\+).*(?:\.\*|\.\+)/.test(pattern)
   ) {
     throw new AutoResponseValidationError('安全でない正規表現パターンは利用できません');
@@ -284,6 +301,13 @@ export function assertSafeRegex(pattern: string, maxLength: number): void {
   } catch {
     throw new AutoResponseValidationError('正規表現の構文が不正です');
   }
+}
+
+function isRegexExecutionTimeout(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error as Error & { code?: string }).code === 'ERR_SCRIPT_EXECUTION_TIMEOUT'
+  );
 }
 
 function normalizeTrigger(

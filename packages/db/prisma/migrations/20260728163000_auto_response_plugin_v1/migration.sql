@@ -34,10 +34,10 @@ ALTER TABLE "auto_response_execution_events"
 
 ALTER TABLE "auto_responses"
   ADD CONSTRAINT "auto_responses_match_mode_check"
-  CHECK ("match_mode" IN ('exact', 'partial', 'prefix', 'regex')),
+  CHECK ("match_mode" IN ('exact', 'partial', 'prefix', 'regex')) NOT VALID,
   ADD CONSTRAINT "auto_responses_response_type_check"
-  CHECK ("response_type" IN ('text', 'embed')),
+  CHECK ("response_type" IN ('text', 'embed')) NOT VALID,
   ADD CONSTRAINT "auto_responses_cooldown_seconds_check"
-  CHECK ("cooldown_seconds" BETWEEN 0 AND 86400),
+  CHECK ("cooldown_seconds" BETWEEN 0 AND 86400) NOT VALID,
   ADD CONSTRAINT "auto_responses_priority_check"
-  CHECK ("priority" BETWEEN -1000 AND 1000);
+  CHECK ("priority" BETWEEN -1000 AND 1000) NOT VALID;

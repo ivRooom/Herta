@@ -121,7 +121,7 @@ export interface RecordAutoResponseExecutionInput {
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 const MAX_SEARCH_LENGTH = 100;
-const EXECUTION_RETENTION_DAYS = 90;
+export const AUTO_RESPONSE_EXECUTION_RETENTION_DAYS = 90;
 
 export async function createAutoResponseRule(
   prisma: AutoResponsePrismaClient,
@@ -231,6 +231,7 @@ export async function updateAutoResponseRule(
   assertRuleId(input.ruleId);
 
   return prisma.$transaction(async (tx) => {
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', input.guildId);
     const current = await tx.autoResponse.findFirst({
       where: { id: input.ruleId, guildId: input.guildId },
     });
@@ -294,6 +295,7 @@ export async function deleteAutoResponseRule(
   assertRuleId(input.ruleId);
 
   return prisma.$transaction(async (tx) => {
+    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', input.guildId);
     const current = await tx.autoResponse.findFirst({
       where: { id: input.ruleId, guildId: input.guildId },
     });
@@ -419,9 +421,11 @@ export async function getAutoResponseStats(
 
 export async function pruneAutoResponseExecutionEvents(
   prisma: AutoResponsePrismaClient,
+  retentionDays = AUTO_RESPONSE_EXECUTION_RETENTION_DAYS,
   now = new Date(),
 ): Promise<number> {
-  const before = new Date(now.getTime() - EXECUTION_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const normalizedRetentionDays = Math.min(Math.max(Math.floor(retentionDays), 1), 3650);
+  const before = new Date(now.getTime() - normalizedRetentionDays * 24 * 60 * 60 * 1000);
   const result = await prisma.autoResponseExecutionEvent.deleteMany({
     where: { executedAt: { lt: before } },
   });

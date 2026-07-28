@@ -209,7 +209,11 @@ export default async function AutoResponsePage({
         </div>
       ) : (
         <div className="mt-6">
-          <AutoResponseRuleManager guildId={guildId} initialRules={items} />
+          <AutoResponseRuleManager
+            guildId={guildId}
+            initialRules={items}
+            defaultRuleCooldownSeconds={config.defaultRuleCooldownSeconds}
+          />
         </div>
       )}
 

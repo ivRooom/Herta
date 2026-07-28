@@ -122,8 +122,53 @@ describe('Auto Response matcher', () => {
     ).toBe(true);
   });
 
-  it('ネスト量指定・後方参照・複数wildcardを拒否する', () => {
-    for (const pattern of ['(a+)+$', '(a)\\1', '.*foo.*bar.*']) {
+  it('ネスト量指定・曖昧なalternation・後方参照・複数wildcardを拒否する', () => {
+    for (const pattern of [
+      '(a+)+
+
+  it('巨大メッセージを評価対象外にする', () => {
+    const config = { ...DEFAULT_AUTO_RESPONSE_CONFIG, maxMessageLength: 5 };
+    expect(
+      matchesAutoResponse(
+        '123456',
+        { triggerValue: '1', matchMode: 'partial', caseSensitive: false },
+        config,
+      ),
+    ).toBe(false);
+  });
+});
+,
+      '(a)\\1',
+      '.*foo.*bar.*',
+      '(a|aa)+
+
+  it('巨大メッセージを評価対象外にする', () => {
+    const config = { ...DEFAULT_AUTO_RESPONSE_CONFIG, maxMessageLength: 5 };
+    expect(
+      matchesAutoResponse(
+        '123456',
+        { triggerValue: '1', matchMode: 'partial', caseSensitive: false },
+        config,
+      ),
+    ).toBe(false);
+  });
+});
+,
+      '(?:a|a)+
+
+  it('巨大メッセージを評価対象外にする', () => {
+    const config = { ...DEFAULT_AUTO_RESPONSE_CONFIG, maxMessageLength: 5 };
+    expect(
+      matchesAutoResponse(
+        '123456',
+        { triggerValue: '1', matchMode: 'partial', caseSensitive: false },
+        config,
+      ),
+    ).toBe(false);
+  });
+});
+,
+    ]) {
       expect(() => assertSafeRegex(pattern, 100)).toThrow(AutoResponseValidationError);
     }
   });
