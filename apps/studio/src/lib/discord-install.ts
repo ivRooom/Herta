@@ -1,14 +1,16 @@
 const DISCORD_OAUTH_AUTHORIZE_URL = 'https://discord.com/oauth2/authorize';
 
+const VIEW_CHANNEL_PERMISSION = 1024n;
 const SEND_MESSAGES_PERMISSION = 2048n;
 const EMBED_LINKS_PERMISSION = 16384n;
 const SEND_MESSAGES_IN_THREADS_PERMISSION = 274877906944n;
 
 /**
- * 公式Pluginの通常投稿・Embed・Thread応答に必要な最小権限を要求する。
+ * 公式Pluginの参照・通常投稿・Embed・Thread応答に必要な最小権限を要求する。
  * 追加権限が必要な環境ではDISCORD_BOT_PERMISSIONSで明示的に上書きできる。
  */
 export const DEFAULT_DISCORD_BOT_PERMISSIONS = (
+  VIEW_CHANNEL_PERMISSION |
   SEND_MESSAGES_PERMISSION |
   EMBED_LINKS_PERMISSION |
   SEND_MESSAGES_IN_THREADS_PERMISSION
