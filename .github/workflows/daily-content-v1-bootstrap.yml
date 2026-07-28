@@ -3,6 +3,8 @@ name: Daily Content v1 Bootstrap
 on:
   push:
     branches: [feat/daily-content-plugin-v1]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
