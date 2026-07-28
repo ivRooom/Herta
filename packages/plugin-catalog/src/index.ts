@@ -45,7 +45,7 @@ export async function getEnabledPlugins(
     include: { plugin: true },
   });
 
-  return rows.flatMap((row) => {
+  return rows.flatMap((row: (typeof rows)[number]) => {
     const manifest = getPluginManifest(row.pluginId);
     if (!manifest) return [];
 
