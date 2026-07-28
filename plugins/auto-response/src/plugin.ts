@@ -18,6 +18,7 @@ import {
 const VIEW_CHANNEL_PERMISSION = 1024n;
 const SEND_MESSAGES_PERMISSION = 2048n;
 const EMBED_LINKS_PERMISSION = 16384n;
+const SEND_MESSAGES_IN_THREADS_PERMISSION = 274877906944n;
 const RULE_CACHE_TTL_MS = 10_000;
 
 interface AutoResponseRoleCache {
@@ -36,6 +37,7 @@ interface AutoResponseMessage {
   guild: { members: { me: unknown | null } } | null;
   channel: {
     isTextBased?(): boolean;
+    isThread?(): boolean;
     permissionsFor?(member: unknown): { has(permission: bigint): boolean } | null;
     send(options: AutoResponseSendOptions): Promise<unknown>;
   };
@@ -268,9 +270,12 @@ function assertBotCanRespond(
   if (!botMember) throw new Error('AutoResponseBotMemberUnavailable');
   if (!message.channel.permissionsFor) return;
   const permissions = message.channel.permissionsFor(botMember);
+  const sendPermission = message.channel.isThread?.()
+    ? SEND_MESSAGES_IN_THREADS_PERMISSION
+    : SEND_MESSAGES_PERMISSION;
   if (
     !permissions?.has(VIEW_CHANNEL_PERMISSION) ||
-    !permissions.has(SEND_MESSAGES_PERMISSION) ||
+    !permissions.has(sendPermission) ||
     (responseType === 'embed' && !permissions.has(EMBED_LINKS_PERMISSION))
   ) {
     throw new Error('AutoResponseBotPermissionDenied');
