@@ -2,6 +2,7 @@ import type { PrismaClient } from '@herta/db';
 import type { Logger } from '@herta/logger';
 import {
   buildLfgDiscordMessage,
+  createLfgMessageNonce,
   expireLfgPost,
   isLfgPluginEnabled,
   listDueLfgPosts,
@@ -162,13 +163,24 @@ async function recoverMissingMessages(options: StartLfgRuntimeOptions): Promise<
 
     try {
       const messageId = await createDiscordMessage(options, post as LfgPostRecord);
-      await updateLfgMessageReference(options.prisma as unknown as LfgPrismaClient, {
+      const linked = await updateLfgMessageReference(options.prisma as unknown as LfgPrismaClient, {
         guildId: post.guildId,
         postId: post.id,
         messageId,
         actorId: 'system',
         expectedVersion: post.version,
       });
+      if (!linked || linked.messageId !== messageId) {
+        try {
+          await deleteDiscordMessage(options, post.channelId, messageId);
+        } catch (error) {
+          options.logger.warn(
+            { guildId: post.guildId, postId: post.id, errorName: resolveErrorName(error) },
+            'version競合後のLFGメッセージ削除に失敗しました',
+          );
+        }
+        continue;
+      }
       options.logger.info(
         { guildId: post.guildId, postId: post.id },
         'LFG募集メッセージを復旧しました',
@@ -218,7 +230,11 @@ async function createDiscordMessage(
       Authorization: `Bot ${options.discordBotToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(buildLfgDiscordMessage(post, participantIds, options.componentSecret)),
+    body: JSON.stringify({
+      ...buildLfgDiscordMessage(post, participantIds, options.componentSecret),
+      nonce: createLfgMessageNonce(post.id, post.version),
+      enforce_nonce: true,
+    }),
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new LfgDiscordError('LfgDiscordCreateMessageFailed', response.status);
@@ -227,6 +243,24 @@ async function createDiscordMessage(
     throw new LfgDiscordError('LfgDiscordMessageResponseInvalid', response.status);
   }
   return message.id;
+}
+
+async function deleteDiscordMessage(
+  options: StartLfgRuntimeOptions,
+  channelId: string,
+  messageId: string,
+): Promise<void> {
+  const response = await fetch(
+    `${DISCORD_API_BASE_URL}/channels/${channelId}/messages/${messageId}`,
+    {
+      method: 'DELETE',
+      headers: { Authorization: `Bot ${options.discordBotToken}` },
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
+  if (!response.ok && response.status !== 404) {
+    throw new LfgDiscordError('LfgDiscordDeleteMessageFailed', response.status);
+  }
 }
 
 async function updateDiscordMessage(

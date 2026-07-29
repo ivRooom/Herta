@@ -73,7 +73,10 @@ export function buildLfgDiscordMessage(
 
 /** Discord nonceの上限25文字内で、同じ募集versionの再投稿を同一視する。 */
 export function createLfgMessageNonce(postId: string, version: number): string {
-  const compactId = postId.replaceAll('-', '').replace(/[^0-9a-f]/gi, '').slice(0, 16);
+  const compactId = postId
+    .replaceAll('-', '')
+    .replace(/[^0-9a-f]/gi, '')
+    .slice(0, 16);
   const normalizedVersion = Number.isFinite(version) ? Math.max(0, Math.floor(version)) : 0;
   return `lfg${compactId.padEnd(16, '0')}${normalizedVersion.toString(36).slice(-6)}`.slice(0, 25);
 }
