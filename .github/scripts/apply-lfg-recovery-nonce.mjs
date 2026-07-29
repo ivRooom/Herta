@@ -10,11 +10,18 @@ function replaceOne(before, after) {
   content = content.replace(before, after);
 }
 
+function replaceLast(before, after) {
+  if (content.includes(after)) return;
+  const index = content.lastIndexOf(before);
+  if (index < 0) throw new Error('expected recovery block');
+  content = `${content.slice(0, index)}${after}${content.slice(index + before.length)}`;
+}
+
 replaceOne(
   `  buildLfgDiscordMessage,\n`,
   `  buildLfgDiscordMessage,\n  createLfgMessageNonce,\n`,
 );
-replaceOne(
+replaceLast(
   `      await updateLfgMessageReference(options.prisma as unknown as LfgPrismaClient, {\n        guildId: post.guildId,\n        postId: post.id,\n        messageId,\n        actorId: 'system',\n        expectedVersion: post.version,\n      });\n      options.logger.info(`,
   `      const linked = await updateLfgMessageReference(\n        options.prisma as unknown as LfgPrismaClient,\n        {\n          guildId: post.guildId,\n          postId: post.id,\n          messageId,\n          actorId: 'system',\n          expectedVersion: post.version,\n        },\n      );\n      if (!linked || linked.messageId !== messageId) {\n        try {\n          await deleteDiscordMessage(options, post.channelId, messageId);\n        } catch (error) {\n          options.logger.warn(\n            { guildId: post.guildId, postId: post.id, errorName: resolveErrorName(error) },\n            'version競合後のLFGメッセージ削除に失敗しました',\n          );\n        }\n        continue;\n      }\n      options.logger.info(`,
 );
