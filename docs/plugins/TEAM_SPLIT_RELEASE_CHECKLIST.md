@@ -1,5 +1,7 @@
 # Team Split Plugin v1 リリースチェックリスト
 
+PR #81（LFG）のマージ後にbaseを`main`へ変更し、最新`main`との差分で以下を確認します。
+
 ## CI
 
 - [ ] Prisma Generate
