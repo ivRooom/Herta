@@ -8,18 +8,11 @@ export {
   normalizeTeamSplitConfig,
   normalizeTeamSplitSessionInput,
 } from './config.js';
-export {
-  createTeamSplitComponentId,
-  parseTeamSplitComponentId,
-} from './component-id.js';
+export { createTeamSplitComponentId, parseTeamSplitComponentId } from './component-id.js';
 export {
   buildTeamSplitDiscordMessage,
   buildTeamSplitInteractionMessage,
   formatTeamSplitSessionText,
 } from './presentation.js';
-export {
-  createTeamSplitMessageNonce,
-  deriveTeamSplitSeedHash,
-  splitTeamMembers,
-} from './split.js';
+export { createTeamSplitMessageNonce, deriveTeamSplitSeedHash, splitTeamMembers } from './split.js';
 export * from './service.js';

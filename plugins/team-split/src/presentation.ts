@@ -89,7 +89,10 @@ function buildMessage(
     fields.push({
       name: `Team ${team.teamNumber}${session.mode === 'balanced' ? ` / 合計 ${team.totalScore}` : ''}`,
       value: team.members.length
-        ? team.members.map((member) => `<@${member.userId}>`).join('\n').slice(0, 1024)
+        ? team.members
+            .map((member) => `<@${member.userId}>`)
+            .join('\n')
+            .slice(0, 1024)
         : 'なし',
       inline: session.teamCount <= 3,
     });
@@ -141,7 +144,10 @@ function isTeamSplitTeam(value: unknown): value is TeamSplitTeam {
   if (!Number.isInteger(value['teamNumber']) || !Array.isArray(value['members'])) return false;
   if (typeof value['totalScore'] !== 'number') return false;
   return value['members'].every(
-    (member) => isRecord(member) && typeof member['userId'] === 'string' && typeof member['score'] === 'number',
+    (member) =>
+      isRecord(member) &&
+      typeof member['userId'] === 'string' &&
+      typeof member['score'] === 'number',
   );
 }
 

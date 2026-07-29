@@ -290,7 +290,10 @@ async function addFromCommand(
     return;
   }
   if (!canManageSession(session, interaction)) {
-    await respond(interaction, '作成者または「サーバーの管理」権限を持つユーザーだけが操作できます');
+    await respond(
+      interaction,
+      '作成者または「サーバーの管理」権限を持つユーザーだけが操作できます',
+    );
     return;
   }
   const result = await joinTeamSplitSession(context.prisma, {
@@ -341,7 +344,10 @@ async function removeFromCommand(
     return;
   }
   if (result.state === 'forbidden') {
-    await respond(interaction, '作成者または「サーバーの管理」権限を持つユーザーだけが操作できます');
+    await respond(
+      interaction,
+      '作成者または「サーバーの管理」権限を持つユーザーだけが操作できます',
+    );
     return;
   }
   if (result.state === 'creator_must_close') {
@@ -388,7 +394,10 @@ async function executeSessionAction(
     return;
   }
   if (result.state === 'forbidden') {
-    await respond(interaction, '作成者または「サーバーの管理」権限を持つユーザーだけが操作できます');
+    await respond(
+      interaction,
+      '作成者または「サーバーの管理」権限を持つユーザーだけが操作できます',
+    );
     return;
   }
   if (result.state === 'not_enough_participants') {
@@ -433,11 +442,7 @@ async function executeTeamSplitButton(
   interaction: TeamSplitButtonInteraction,
 ): Promise<void> {
   if (!interaction.guildId || interaction.guildId !== context.guildId) return;
-  const parsed = parseTeamSplitComponentId(
-    interaction.customId,
-    getTeamSplitSecret(),
-    new Date(),
-  );
+  const parsed = parseTeamSplitComponentId(interaction.customId, getTeamSplitSecret(), new Date());
   if (!parsed) {
     await respond(interaction, 'このTeam Splitボタンは無効または期限切れです');
     return;
