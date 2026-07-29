@@ -8,6 +8,7 @@ export {
   normalizeTeamSplitConfig,
   normalizeTeamSplitSessionInput,
 } from './config.js';
+export type { TeamSplitConfig, TeamSplitMode, TeamSplitSessionInput } from './config.js';
 export { createTeamSplitComponentId, parseTeamSplitComponentId } from './component-id.js';
 export {
   buildTeamSplitDiscordMessage,
