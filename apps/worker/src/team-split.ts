@@ -4,8 +4,6 @@ import {
   buildTeamSplitDiscordMessage,
   createTeamSplitMessageNonce,
   expireTeamSplitSession,
-  isTeamSplitPluginEnabled,
-  listDueTeamSplitSessions,
   listTeamSplitParticipants,
   markTeamSplitMessageMissing,
   markTeamSplitMessageSynchronized,
@@ -21,6 +19,7 @@ const DEFAULT_SCAN_INTERVAL_SECONDS = 30;
 const RECOVERY_RETRY_DELAY_MS = 60_000;
 const SCAN_LIMIT = 100;
 const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
+const SHUTDOWN_WAIT_MS = 10_000;
 
 export interface TeamSplitWorkerRuntime {
   close(): Promise<void>;
@@ -35,6 +34,7 @@ export interface StartTeamSplitRuntimeOptions {
 
 interface DiscordChannelPayload {
   type?: number;
+  guild_id?: string;
 }
 
 export async function startTeamSplitRuntime(
@@ -44,25 +44,30 @@ export async function startTeamSplitRuntime(
   let scanning = false;
   let lastPrunedAt = 0;
   let timer: NodeJS.Timeout | undefined;
+  let scanAbortController: AbortController | undefined;
 
   const scanNow = async () => {
     if (scanning) return;
     scanning = true;
+    scanAbortController = new AbortController();
     try {
       await expireDueSessions(options);
-      await synchronizePendingMessages(options);
-      await recoverMissingMessages(options);
+      await synchronizePendingMessages(options, scanAbortController.signal);
+      await recoverMissingMessages(options, scanAbortController.signal);
       if (Date.now() - lastPrunedAt >= PRUNE_INTERVAL_MS) {
         await pruneEndedSessions(options);
         lastPrunedAt = Date.now();
       }
     } catch (error) {
-      options.logger.error(
-        { errorName: resolveErrorName(error) },
-        'Team Split Workerの走査に失敗しました',
-      );
+      if (!scanAbortController.signal.aborted) {
+        options.logger.error(
+          { errorName: resolveErrorName(error) },
+          'Team Split Workerの走査に失敗しました',
+        );
+      }
     } finally {
       scanning = false;
+      scanAbortController = undefined;
     }
   };
 
@@ -78,7 +83,9 @@ export async function startTeamSplitRuntime(
         clearInterval(timer);
         timer = undefined;
       }
-      while (scanning) {
+      scanAbortController?.abort();
+      const deadline = Date.now() + SHUTDOWN_WAIT_MS;
+      while (scanning && Date.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
     },
@@ -87,10 +94,20 @@ export async function startTeamSplitRuntime(
 
 async function expireDueSessions(options: StartTeamSplitRuntimeOptions): Promise<void> {
   const prisma = options.prisma as unknown as TeamSplitPrismaClient;
+  const enabledGuildIds = await listEnabledGuildIds(options.prisma);
+  if (enabledGuildIds.length === 0) return;
   const now = new Date();
-  const sessions = await listDueTeamSplitSessions(prisma, now, SCAN_LIMIT);
+  const sessions = await options.prisma.teamSplitSession.findMany({
+    where: {
+      guildId: { in: enabledGuildIds },
+      status: { in: ['open', 'split'] },
+      expiresAt: { lte: now },
+      deletedAt: null,
+    },
+    orderBy: { expiresAt: 'asc' },
+    take: SCAN_LIMIT,
+  });
   for (const due of sessions) {
-    if (!(await isTeamSplitPluginEnabled(prisma, due.guildId))) continue;
     const expired = await expireTeamSplitSession(prisma, {
       guildId: due.guildId,
       sessionId: due.id,
@@ -104,10 +121,16 @@ async function expireDueSessions(options: StartTeamSplitRuntimeOptions): Promise
   }
 }
 
-async function synchronizePendingMessages(options: StartTeamSplitRuntimeOptions): Promise<void> {
+async function synchronizePendingMessages(
+  options: StartTeamSplitRuntimeOptions,
+  signal: AbortSignal,
+): Promise<void> {
+  const enabledGuildIds = await listEnabledGuildIds(options.prisma);
+  if (enabledGuildIds.length === 0) return;
   const retryBefore = new Date(Date.now() - RECOVERY_RETRY_DELAY_MS);
   const sessions = await options.prisma.teamSplitSession.findMany({
     where: {
+      guildId: { in: enabledGuildIds },
       messageId: { not: null },
       deletedAt: null,
       OR: [
@@ -120,30 +143,38 @@ async function synchronizePendingMessages(options: StartTeamSplitRuntimeOptions)
   });
 
   for (const session of sessions) {
+    if (signal.aborted) return;
     const prisma = options.prisma as unknown as TeamSplitPrismaClient;
-    if (!(await isTeamSplitPluginEnabled(prisma, session.guildId))) continue;
     try {
-      await updateDiscordMessage(options, session as TeamSplitSessionRecord);
+      await updateDiscordMessage(options, session as TeamSplitSessionRecord, signal);
       await markTeamSplitMessageSynchronized(prisma, {
         guildId: session.guildId,
         sessionId: session.id,
         expectedVersion: session.version,
       });
     } catch (error) {
+      if (signal.aborted) return;
       await recordMessageFailure(options.prisma, session as TeamSplitSessionRecord, error);
     }
   }
 }
 
-async function recoverMissingMessages(options: StartTeamSplitRuntimeOptions): Promise<void> {
+async function recoverMissingMessages(
+  options: StartTeamSplitRuntimeOptions,
+  signal: AbortSignal,
+): Promise<void> {
+  const enabledGuildIds = await listEnabledGuildIds(options.prisma);
+  if (enabledGuildIds.length === 0) return;
   const retryBefore = new Date(Date.now() - RECOVERY_RETRY_DELAY_MS);
   const sessions = await options.prisma.teamSplitSession.findMany({
     where: {
+      guildId: { in: enabledGuildIds },
       status: { in: ['open', 'split'] },
       messageId: null,
       deletedAt: null,
       OR: [
-        { messageState: { in: ['pending', 'missing'] } },
+        { messageState: 'missing' },
+        { messageState: 'pending', updatedAt: { lte: retryBefore } },
         { messageState: 'failed', updatedAt: { lte: retryBefore } },
       ],
     },
@@ -152,11 +183,11 @@ async function recoverMissingMessages(options: StartTeamSplitRuntimeOptions): Pr
   });
 
   for (const session of sessions) {
+    if (signal.aborted) return;
     const prisma = options.prisma as unknown as TeamSplitPrismaClient;
-    if (!(await isTeamSplitPluginEnabled(prisma, session.guildId))) continue;
     try {
       const record = session as TeamSplitSessionRecord;
-      const messageId = await createDiscordMessage(options, record);
+      const messageId = await createDiscordMessage(options, record, signal);
       const linked = await updateTeamSplitMessageReference(prisma, {
         guildId: record.guildId,
         sessionId: record.id,
@@ -165,7 +196,7 @@ async function recoverMissingMessages(options: StartTeamSplitRuntimeOptions): Pr
         expectedVersion: record.version,
       });
       if (!linked || linked.messageId !== messageId) {
-        await deleteDiscordMessage(options, record.channelId, messageId).catch((error) => {
+        await deleteDiscordMessage(options, record.channelId, messageId, signal).catch((error) => {
           options.logger.warn(
             {
               guildId: record.guildId,
@@ -182,9 +213,18 @@ async function recoverMissingMessages(options: StartTeamSplitRuntimeOptions): Pr
         'Team Splitメッセージを復旧しました',
       );
     } catch (error) {
+      if (signal.aborted) return;
       await recordMessageFailure(options.prisma, session as TeamSplitSessionRecord, error);
     }
   }
+}
+
+async function listEnabledGuildIds(prisma: PrismaClient): Promise<string[]> {
+  const plugins = await prisma.guildPlugin.findMany({
+    where: { pluginId: 'team-split', enabled: true },
+    select: { guildId: true },
+  });
+  return plugins.map((plugin) => plugin.guildId);
 }
 
 async function pruneEndedSessions(options: StartTeamSplitRuntimeOptions): Promise<void> {
@@ -217,8 +257,9 @@ async function pruneEndedSessions(options: StartTeamSplitRuntimeOptions): Promis
 async function createDiscordMessage(
   options: StartTeamSplitRuntimeOptions,
   session: TeamSplitSessionRecord,
+  signal: AbortSignal,
 ): Promise<string> {
-  await assertTextChannel(options.discordBotToken, session.channelId);
+  await assertTextChannel(options.discordBotToken, session.channelId, session.guildId, signal);
   const participants = await listTeamSplitParticipants(
     options.prisma as unknown as TeamSplitPrismaClient,
     session.guildId,
@@ -235,7 +276,7 @@ async function createDiscordMessage(
       nonce: createTeamSplitMessageNonce(session.id, session.version),
       enforce_nonce: true,
     }),
-    signal: AbortSignal.timeout(15_000),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
   });
   if (!response.ok) {
     throw new TeamSplitDiscordError('TeamSplitDiscordCreateMessageFailed', response.status);
@@ -250,9 +291,10 @@ async function createDiscordMessage(
 async function updateDiscordMessage(
   options: StartTeamSplitRuntimeOptions,
   session: TeamSplitSessionRecord,
+  signal: AbortSignal,
 ): Promise<void> {
   if (!session.messageId) return;
-  await assertTextChannel(options.discordBotToken, session.channelId);
+  await assertTextChannel(options.discordBotToken, session.channelId, session.guildId, signal);
   const participants = await listTeamSplitParticipants(
     options.prisma as unknown as TeamSplitPrismaClient,
     session.guildId,
@@ -267,7 +309,7 @@ async function updateDiscordMessage(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(buildTeamSplitDiscordMessage(session, participants, options.secret)),
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
     },
   );
   if (!response.ok) {
@@ -279,13 +321,14 @@ async function deleteDiscordMessage(
   options: StartTeamSplitRuntimeOptions,
   channelId: string,
   messageId: string,
+  signal: AbortSignal,
 ): Promise<void> {
   const response = await fetch(
     `${DISCORD_API_BASE_URL}/channels/${channelId}/messages/${messageId}`,
     {
       method: 'DELETE',
       headers: { Authorization: `Bot ${options.discordBotToken}` },
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
     },
   );
   if (!response.ok && response.status !== 404) {
@@ -293,15 +336,23 @@ async function deleteDiscordMessage(
   }
 }
 
-async function assertTextChannel(token: string, channelId: string): Promise<void> {
+async function assertTextChannel(
+  token: string,
+  channelId: string,
+  expectedGuildId: string,
+  signal: AbortSignal,
+): Promise<void> {
   const response = await fetch(`${DISCORD_API_BASE_URL}/channels/${channelId}`, {
     headers: { Authorization: `Bot ${token}` },
-    signal: AbortSignal.timeout(10_000),
+    signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
   });
   if (!response.ok) {
     throw new TeamSplitDiscordError('TeamSplitDiscordChannelPreflightFailed', response.status);
   }
   const channel = (await response.json()) as DiscordChannelPayload;
+  if (channel.guild_id !== expectedGuildId) {
+    throw new TeamSplitDiscordError('TeamSplitDiscordChannelGuildMismatch', 403);
+  }
   if (typeof channel.type !== 'number' || !TEXT_CHANNEL_TYPES.has(channel.type)) {
     throw new TeamSplitDiscordError('TeamSplitDiscordChannelNotTextBased', response.status);
   }
