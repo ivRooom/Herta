@@ -31,6 +31,14 @@ SET
   "created_by" = COALESCE("created_by", "creator_id"),
   "updated_by" = COALESCE("updated_by", "creator_id");
 
+-- v1以前の行は期限管理を持たないため、過去期限のopen/splitをWorkerで再処理せず終了扱いにする。
+UPDATE "team_split_sessions"
+SET
+  "status" = 'closed',
+  "closed_at" = COALESCE("closed_at", "created_at")
+WHERE "status" IN ('open', 'split')
+  AND "expires_at" <= CURRENT_TIMESTAMP;
+
 ALTER TABLE "team_split_sessions"
   ALTER COLUMN "status" SET DEFAULT 'open',
   ALTER COLUMN "expires_at" SET NOT NULL;
