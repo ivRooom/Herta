@@ -17,6 +17,7 @@ PR #81（LFG）のマージ後にbaseを`main`へ変更し、最新`main`との�
 - [ ] Production Docker Build / Runtime
 - [ ] SBOM
 - [ ] High・Critical脆弱性検査
+- [x] リポジトリ標準の`pnpm format`を最終レビュー修正へ適用
 - [x] Button・messageDeleteのPluginイベント配送を実装
 - [x] Pluginイベント配送が`matched`・`failed`を返す
 - [x] Component処理失敗時のephemeralフォールバックを実装
