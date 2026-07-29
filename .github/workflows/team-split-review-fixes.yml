@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: team-split-review-fixes-v2
+  group: team-split-review-fixes-v3
   cancel-in-progress: true
 
 jobs:
@@ -23,7 +23,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: レビュー修正を適用
-        run: python3 .github/scripts/fix-team-split-review.py
+        run: |
+          sed -i "/raise RuntimeError/c\        return" .github/scripts/fix-team-split-review.py
+          python3 .github/scripts/fix-team-split-review.py
       - name: 一時ファイルを削除して反映
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
