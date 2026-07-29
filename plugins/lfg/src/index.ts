@@ -1,2 +1,5 @@
-export { LfgPlugin } from './plugin.js';
-export { LfgPlugin as default } from './plugin.js';
+export { lfgPlugin } from './plugin.js';
+export { lfgPlugin as default } from './plugin.js';
+export * from './component-id.js';
+export * from './config.js';
+export * from './service.js';
