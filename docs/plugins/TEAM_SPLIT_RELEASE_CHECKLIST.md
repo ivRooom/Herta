@@ -9,6 +9,7 @@ PR #81（LFG）のマージ後にbaseを`main`へ変更し、最新`main`との�
 - [ ] Lint
 - [ ] Typecheck
 - [ ] 全テスト
+- [ ] Studio公開レスポンスからseed hashを除外する回帰テスト
 - [ ] Supply chain policy
 - [ ] Build
 - [ ] Production Compose Validation
