@@ -9,7 +9,9 @@ import {
 
 describe('normalizeTeamSplitConfig', () => {
   it('最大期間より長い既定期間を最大期間へ丸める', () => {
-    expect(normalizeTeamSplitConfig({ defaultDurationMinutes: 1440, maxDurationMinutes: 60 })).toMatchObject({
+    expect(
+      normalizeTeamSplitConfig({ defaultDurationMinutes: 1440, maxDurationMinutes: 60 }),
+    ).toMatchObject({
       defaultDurationMinutes: 60,
       maxDurationMinutes: 60,
     });
