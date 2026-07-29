@@ -82,12 +82,7 @@ export function normalizeTeamSplitConfig(input: unknown): TeamSplitConfig {
       2,
       500,
     ),
-    maxTeamCount: readInteger(
-      source['maxTeamCount'],
-      TEAM_SPLIT_DEFAULTS.maxTeamCount,
-      2,
-      50,
-    ),
+    maxTeamCount: readInteger(source['maxTeamCount'], TEAM_SPLIT_DEFAULTS.maxTeamCount, 2, 50),
     defaultDurationMinutes: readInteger(
       source['defaultDurationMinutes'],
       TEAM_SPLIT_DEFAULTS.defaultDurationMinutes,
@@ -106,12 +101,7 @@ export function normalizeTeamSplitConfig(input: unknown): TeamSplitConfig {
       1,
       200,
     ),
-    retentionDays: readInteger(
-      source['retentionDays'],
-      TEAM_SPLIT_DEFAULTS.retentionDays,
-      1,
-      3650,
-    ),
+    retentionDays: readInteger(source['retentionDays'], TEAM_SPLIT_DEFAULTS.retentionDays, 1, 3650),
   };
 }
 
@@ -134,8 +124,14 @@ export function normalizeTeamSplitSessionInput(
   if (input.mode !== 'random' && input.mode !== 'balanced') {
     throw new TeamSplitValidationError('modeはrandomまたはbalancedを指定してください');
   }
-  if (!Number.isInteger(input.teamCount) || input.teamCount < 2 || input.teamCount > config.maxTeamCount) {
-    throw new TeamSplitValidationError(`teamCountは2〜${config.maxTeamCount}の整数で指定してください`);
+  if (
+    !Number.isInteger(input.teamCount) ||
+    input.teamCount < 2 ||
+    input.teamCount > config.maxTeamCount
+  ) {
+    throw new TeamSplitValidationError(
+      `teamCountは2〜${config.maxTeamCount}の整数で指定してください`,
+    );
   }
   if (
     !Number.isInteger(input.maxParticipants) ||

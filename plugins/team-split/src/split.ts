@@ -78,7 +78,10 @@ export function splitTeamMembers(
 }
 
 export function createTeamSplitMessageNonce(sessionId: string, version: number): string {
-  return createHash('sha256').update(`team-split:${sessionId}:${version}`).digest('hex').slice(0, 25);
+  return createHash('sha256')
+    .update(`team-split:${sessionId}:${version}`)
+    .digest('hex')
+    .slice(0, 25);
 }
 
 function deterministicKey(seedHash: string, generation: number, userId: string): string {

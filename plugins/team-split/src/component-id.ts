@@ -56,7 +56,10 @@ export function parseTeamSplitComponentId(
 }
 
 function sign(payload: string, secret: string): string {
-  return createHmac('sha256', secret).update(payload).digest('base64url').slice(0, SIGNATURE_LENGTH);
+  return createHmac('sha256', secret)
+    .update(payload)
+    .digest('base64url')
+    .slice(0, SIGNATURE_LENGTH);
 }
 
 function assertSecret(secret: string): void {

@@ -18,8 +18,12 @@ describe('Team Split component ID', () => {
 
   it('action・session ID・署名の改ざんを拒否する', () => {
     const customId = createTeamSplitComponentId('join', SESSION_ID, EXPIRES_AT, SECRET);
-    expect(parseTeamSplitComponentId(customId.replace(':join:', ':leave:'), SECRET, NOW)).toBeNull();
-    expect(parseTeamSplitComponentId(customId.replace('123e4567', '223e4567'), SECRET, NOW)).toBeNull();
+    expect(
+      parseTeamSplitComponentId(customId.replace(':join:', ':leave:'), SECRET, NOW),
+    ).toBeNull();
+    expect(
+      parseTeamSplitComponentId(customId.replace('123e4567', '223e4567'), SECRET, NOW),
+    ).toBeNull();
     expect(parseTeamSplitComponentId(`${customId.slice(0, -1)}x`, SECRET, NOW)).toBeNull();
   });
 
