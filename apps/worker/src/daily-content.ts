@@ -8,6 +8,7 @@ import {
   checkDailyContentSendPermissions,
   computeDiscordChannelPermissions,
   getDeliveryWithSchedule,
+  isDailyContentPluginEnabled,
   listDueDailyContents,
   listPendingDeliveries,
   listStaleDeliveries,
@@ -160,6 +161,14 @@ export async function startDailyContentRuntime(
       await recoverStale(prisma, now, options.logger);
       const dueSchedules = await listDueDailyContents(prisma, now, DAILY_CONTENT_SCAN_LIMIT);
       for (const schedule of dueSchedules) {
+        const pluginEnabled = await isDailyContentPluginEnabled(prisma, schedule.guildId);
+        if (!pluginEnabled) {
+          await options.prisma.dailyContent.update({
+            where: { id: schedule.id },
+            data: { nextRunAt: null },
+          });
+          continue;
+        }
         await reserveDueDelivery(prisma, schedule.id, now);
       }
 
@@ -476,10 +485,15 @@ class DailyContentPublishError extends Error {
 async function initializeMissingNextRuns(prisma: PrismaClient, now: Date): Promise<void> {
   const schedules = await prisma.dailyContent.findMany({
     where: { enabled: true, deletedAt: null, nextRunAt: null },
-    select: { id: true, scheduleTime: true, timezone: true },
+    select: { id: true, guildId: true, scheduleTime: true, timezone: true },
     take: DAILY_CONTENT_SCAN_LIMIT,
   });
   for (const schedule of schedules) {
+    const pluginEnabled = await isDailyContentPluginEnabled(
+      prisma as unknown as DailyContentPrismaClient,
+      schedule.guildId,
+    );
+    if (!pluginEnabled) continue;
     const nextRunAt = nextDailyOccurrence({
       scheduleTime: schedule.scheduleTime,
       timezone: schedule.timezone,
