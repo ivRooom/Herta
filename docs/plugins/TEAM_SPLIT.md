@@ -1,52 +1,42 @@
 # Team Split Plugin v1 Runbook
 
-## 概要
-
-Team Split PluginはDiscord上で参加者を受け付け、`random`または`balanced`方式でチームを編成します。
-
-- `random`: HMAC由来の決定論的順序をround-robinで配置
-- `balanced`: 管理者または参加者が明示したscoreだけを使用し、score降順の蛇行配置
-- 未指定scoreは中立値`0`
-- ロール、メッセージ、プロフィール等から能力値を推測しない
-- 入力seedと内部`seed_hash`はDiscord・Audit Log・Workerログへ出さない
-
-## コマンド
-
-```text
-/team create
-/team add
-/team remove
-/team split
-/team reroll
-/team show
-/team close
-```
-
-受付中メッセージには参加・辞退Buttonを表示します。分割・終了・期限切れ後はButtonを無効化します。
+Team Split Pluginは、Discord上で参加者を集め、randomまたは明示scoreによるbalanced方式でチーム分けを行います。
 
 ## 環境変数
 
-Bot・Worker・Studioへ同じ値を設定します。
-
-```env
-TEAM_SPLIT_SECRET=<32文字以上のランダム値>
+```dotenv
+TEAM_SPLIT_SECRET=
 TEAM_SPLIT_SCAN_INTERVAL_SECONDS=30
 ```
+
+- `TEAM_SPLIT_SECRET`は32文字以上のランダム値を必須とする
+- LFGなど他用途のsecretとは分離する
+- Bot・Worker・Studioで同じ値を使用する
+- `TEAM_SPLIT_SCAN_INTERVAL_SECONDS`は10〜300秒、既定30秒
 
 生成例:
 
 ```bash
-openssl rand -base64 48
+openssl rand -base64 32
 ```
 
-`TEAM_SPLIT_SECRET`は次に使用します。
+## random / balanced
 
-- Button custom IDのHMAC署名
-- requested seedを非公開の`seed_hash`へ変換
+### random
 
-既存セッションが残っている状態で鍵を変更すると、既存Buttonは無効になります。ローテーション時は受付中セッションを終了するか、移行期間を設計してください。
+- Guild ID・Session ID・requested seedから内部seed hashをHMAC生成する
+- Discord、Studio、Audit Log、Workerログへrequested seedや内部seed hashを出さない
+- 同じ参加者・seed hash・generationでは同じ結果を再現する
+- reroll時はgenerationを増加させる
 
-## Database migration
+### balanced
+
+- 管理者または参加者が明示したscoreだけを使用する
+- 未指定scoreは中立値0
+- score降順の蛇行配置を行う
+- Discordロール、プロフィール、メッセージ、個人属性から能力値を推測しない
+
+## Migration
 
 対象migration:
 
@@ -71,34 +61,34 @@ SELECT id, guild_id, creator_id, participants
 FROM team_split_sessions
 WHERE creator_id <> ALL(participants)
    OR array_position(participants, NULL) IS NOT NULL;
+
+SELECT session.id, participant.participant_id, COUNT(*) AS duplicate_count
+FROM team_split_sessions AS session
+CROSS JOIN LATERAL unnest(session.participants) AS participant(participant_id)
+GROUP BY session.id, participant.participant_id
+HAVING COUNT(*) > 1;
 ```
 
-### 通常migration
+### 適用
 
-通常のPrisma migrationを適用します。
+通常のPrisma migrationを一度だけ適用します。
 
 ```bash
 pnpm --filter @herta/db exec prisma migrate deploy --schema prisma/schema.prisma
 ```
 
-通常migrationでは以下を行います。
+この実行で両migrationを順番に適用します。`20260729152100_team_split_expiry_index_concurrently`のSQLを手動で再実行しません。
+
+migrationでは以下を行います。
 
 - `team_split_sessions`を破壊せず拡張
 - 時刻を`TIMESTAMPTZ(3)`へ統一
+- legacyで過去期限となる`open`・`split`行を`closed`へ移行し、Workerによる再処理を防止
 - `team_split_participants`を作成
 - legacy `participants`配列と作成者から参加者を補完
 - participant countを再集計
-- status・mode・message state・人数・期限・participant scoreの制約を`NOT VALID`で追加
-
-### Concurrent index
-
-`CREATE INDEX CONCURRENTLY`はtransaction外で実行します。
-
-```bash
-psql "$DATABASE_URL" \
-  -v ON_ERROR_STOP=1 \
-  -f packages/db/prisma/migrations/20260729152100_team_split_expiry_index_concurrently/migration.sql
-```
+- status・mode・message state・人数・期限・participant status・scoreの制約を`NOT VALID`で追加
+- 期限走査用部分Indexを`CREATE INDEX CONCURRENTLY`で追加
 
 ### 適用後確認
 
@@ -118,13 +108,18 @@ SELECT participant.session_id, participant.guild_id, session.guild_id
 FROM team_split_participants AS participant
 JOIN team_split_sessions AS session ON session.id = participant.session_id
 WHERE participant.guild_id <> session.guild_id;
+
+SELECT id, status, expires_at, closed_at
+FROM team_split_sessions
+WHERE status IN ('open', 'split')
+  AND expires_at <= CURRENT_TIMESTAMP;
 ```
 
-上記不整合SQLは0件であることを確認します。
+すべての不整合確認SQLが0件であることを確認します。
 
-### CHECK制約のVALIDATE
+## CHECK制約のVALIDATE
 
-既存データ確認後に実行します。
+データ確認後に実行します。
 
 ```sql
 ALTER TABLE team_split_sessions VALIDATE CONSTRAINT team_split_sessions_status_check;
@@ -138,102 +133,46 @@ ALTER TABLE team_split_participants VALIDATE CONSTRAINT team_split_participants_
 
 ## 競合防止
 
-- Guild lock: 作成上限
-- Channel lock: チャンネル上限とCooldown
-- Session lock: join、leave、split、reroll、close、message同期
-- `(session_id, user_id)`複合主キー: 二重参加防止
-- Transaction内でjoined件数と参加者一覧を再取得
-- `version`一致時だけDiscord表示を`active`へ変更
-
-複数ユーザーが同時に最後の枠へ参加しても、Session advisory lockにより定員を超えません。
+- Guild、Channel、SessionごとにPostgreSQL Advisory Lockを取得する
+- 参加者追加・辞退後、joined一覧を再取得する
+- `participantCount`とlegacy互換`participants`配列は同じjoined一覧から更新する
+- `(session_id, user_id)`複合主キーで二重参加を防止する
+- message missing更新もTransactionとSession lock内で行う
 
 ## Discord表示同期
 
-状態変更時は`message_state = pending`となります。
+- 状態変更時に`message_state = pending`
+- Session version一致時だけ`active`へ確定
+- fresh pending行は作成直後60秒間Worker再投稿対象にしない
+- missingメッセージ再投稿はSession ID＋version由来nonceと`enforce_nonce`を使用する
+- WorkerはDiscordチャンネルの`guild_id`がSessionのGuild IDと一致することを確認する
+- 404・Unknown Messageだけをmissing扱いにし、rate limit・timeout・DBエラーはfailedで再試行する
+- Plugin無効GuildはLIMIT前に除外する
 
-Workerは以下を行います。
-
-1. `pending`または再試行可能な`failed`をPATCH
-2. `missing`またはmessage ID未設定の進行中セッションをPOST
-3. 作成時はセッションID＋version由来の25文字nonceと`enforce_nonce: true`を使用
-4. DB link時にversionが変わっていた場合、古い新規投稿を削除
-5. PATCH 404は`missing`へ戻して再投稿
-
-短時間のDiscord nonce保証を利用するため、長期間後の手動再試行を含む絶対的Exactly-onceではありません。DBのmessage IDとDiscordチャンネルを併せて確認してください。
-
-## Plugin無効化
-
-GuildでPluginを無効にすると、次が停止します。
-
-- Slash Command・Button処理
-- Workerの期限切れ
-- Discord表示同期
-- 削除メッセージ復旧
-
-再有効化後、Workerの次回走査で期限切れ・pending・missing状態を回収します。
-
-## 保持期間
-
-Workerは1時間ごとにGuild設定を確認し、`retentionDays`を超えた`closed`・`expired`セッションをSoft Deleteします。
-
-- 既定90日
-- participant rowはsession FKのため、物理削除しない限り保持
-- Studio通常一覧は`deleted_at IS NULL`のみ表示
-
-## 実Discord Guild QA
-
-### 基本操作
+## 実Guild QA
 
 1. `/team create`でrandomセッションを作成
-2. 作成者が最初の参加者として表示される
-3. Buttonで参加・辞退
-4. 同一ユーザーの二重参加を拒否
-5. 作成者の辞退を拒否
-6. 満員時に参加Buttonが無効になる
-7. `/team split`でチーム結果を表示
-8. split後に参加・辞退Buttonが無効になる
-9. `/team reroll`でgenerationが増え、結果が再計算される
-10. `/team close`で終了する
+2. join / leave Buttonを確認
+3. 同時joinで最大人数を超えないことを確認
+4. 同一ユーザーが二重登録されないことを確認
+5. `/team split`で結果を確認
+6. 同じ参加者・seedで結果を再現できることを確認
+7. `/team reroll`でgenerationと結果が変わることを確認
+8. balancedで明示scoreだけが使用されることを確認
+9. `/team add`、`/team remove`、`/team show`、`/team close`を確認
+10. 改ざん・期限切れButtonを拒否することを確認
+11. split、close、expire後にButtonが無効化されることを確認
+12. メッセージ削除後に1件だけ再投稿されることを確認
+13. 別GuildのチャンネルIDを指定しても投稿されないことを確認
+14. Plugin無効中に期限切れ・同期・復旧が停止し、再有効化後に回収されることを確認
 
-### balanced
+## Studio・Audit・プライバシー
 
-1. 明示scoreを設定して参加者を追加
-2. 未指定scoreが0として表示される
-3. チームごとの合計scoreを確認する
-4. Audit LogやWorkerログに個別score一覧やseedが不要に複製されていないことを確認する
-
-### 競合・復旧
-
-1. 定員残り1で複数アカウントから同時join
-2. joined件数が最大人数を超えないことを確認
-3. 募集メッセージを削除
-4. Workerが再投稿することを確認
-5. Workerを停止した状態でjoinし、再起動後に表示が同期されることを確認
-6. 同期中に追加joinし、古いversionがactive扱いされないことを確認
-7. Plugin無効中に期限を迎え、処理が停止することを確認
-8. 再有効化後に期限切れへ回収されることを確認
-
-## Studio QA
-
-URL:
-
-```text
-/dashboard/guilds/<guildId>/team-split
-```
-
-確認項目:
-
-- セッション作成
-- タイトル・ID検索
-- status絞り込み
-- 詳細・参加者・score・結果表示
-- 参加者追加・削除
-- split・reroll・強制終了
-- Plugin無効表示
-- message missing/failed警告
-- 他Guildのsession IDをAPIへ指定しても取得・更新できない
-
-## Audit・プライバシー
+- 各APIでAuth.jsとDiscord Manage Guild権限を再検証する
+- 別GuildのSession IDを取得・更新できないことを確認する
+- Studio APIレスポンスから`seedHash`を除外する
+- requested seed・seed hashを画面、API、Audit Log、Workerログへ出さない
+- Discord API response body、Bot token、stack traceを保存しない
 
 Audit event:
 
@@ -248,27 +187,12 @@ team_split.close
 team_split.expire
 ```
 
-保存しないもの:
+## Rollback
 
-- requested seed
-- seed hash
-- Discord API response body
-- Bot token
-- stack trace
-- チーム結果全体の不要な複製
+1. Bot・Worker・Studioを直前imageへ戻す
+2. migration前バックアップからPostgreSQLを復元する
+3. `.env.production`をバックアップ版へ戻す
+4. Production Composeを再起動する
+5. Bot health、Worker heartbeat、Studio、既存Pluginを確認する
 
-ログはGuild ID、session ID、件数、安全なerror nameを中心に記録します。
-
-## ロールバック
-
-アプリだけを戻す場合でも、新しいmigrationを適用済みなら旧アプリが拡張列を無視できることを確認します。
-
-安全な順序:
-
-1. Bot・Worker・Studioを停止
-2. migration前バックアップからDBを復元
-3. 旧imageへ切り替え
-4. Composeを起動
-5. Health・Guild同期・既存Pluginを確認
-
-拡張列と`team_split_participants`を手動DROPして巻き戻す方法は、既存データを失うため推奨しません。
+DB migrationを適用した状態で旧imageだけを長時間稼働させません。
