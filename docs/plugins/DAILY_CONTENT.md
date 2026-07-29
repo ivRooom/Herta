@@ -54,7 +54,8 @@ Workerのdue走査間隔はGuild設定ではなく環境変数`DAILY_CONTENT_SCA
 - `processing`のままGuild設定の`staleAfterMinutes`を超えた配信は`retrying`へ戻します。
 - BullMQに同じ`jobId`の`failed`・`completed` Jobが残っている場合は削除して再投入します。
 - `active`・`waiting`・`delayed`のJobは既存処理へ任せ、二重enqueueしません。
-- Pluginまたは個別スケジュールが無効の場合、送信せず`skipped`として記録します。
+- Pluginが無効なGuildはdue予約を作成せず、該当スケジュールの`next_run_at`をNULLへ退避します。再有効化後のWorker走査で未来時刻へ再初期化します。
+- 既に予約済みの配信でPluginまたは個別スケジュールが無効の場合、送信せず`skipped`として記録します。
 - Studioでは`failed`または`skipped`の履歴だけを再実行できます。
 
 ## Discord権限
@@ -118,8 +119,9 @@ ALTER TABLE daily_contents
 8. Bot権限を外し、失敗・retry・Studio再実行を確認する
 9. 通常チャンネルとThreadで事前権限判定を確認する
 10. Workerを配信中に停止し、stale recoveryを確認する
-11. Plugin無効化後に予約済みジョブが`skipped`になることを確認する
-12. スケジュール削除後も配信履歴とmessage IDが残ることを確認する
+11. Plugin無効化後に`next_run_at`がNULLになり、新しいdue履歴が作られないことを確認する
+12. Plugin再有効化後に`next_run_at`が未来時刻へ戻ることを確認する
+13. スケジュール削除後も配信履歴とmessage IDが残ることを確認する
 
 ## rollback
 
