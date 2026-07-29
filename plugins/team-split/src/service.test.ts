@@ -198,7 +198,9 @@ describe('Team Split join / leave transaction', () => {
     });
 
     expect(second.state).toBe('already_joined');
-    expect(state.participants.filter((participant) => participant.userId === 'user-2')).toHaveLength(1);
+    expect(
+      state.participants.filter((participant) => participant.userId === 'user-2'),
+    ).toHaveLength(1);
   });
 
   it('定員到達後の参加を拒否する', async () => {

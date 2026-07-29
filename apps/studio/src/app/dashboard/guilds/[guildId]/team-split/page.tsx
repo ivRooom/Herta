@@ -7,10 +7,7 @@ import {
   type TeamSplitPrismaClient,
 } from '@herta/plugin-catalog/team-split-service';
 import { auth } from '@/auth';
-import {
-  TeamSplitManager,
-  type TeamSplitSessionItem,
-} from '@/components/team-split-manager';
+import { TeamSplitManager, type TeamSplitSessionItem } from '@/components/team-split-manager';
 import { prisma } from '@/lib/db';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
@@ -18,11 +15,7 @@ import { getDiscordAccessToken } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
-export default async function TeamSplitPage({
-  params,
-}: {
-  params: Promise<{ guildId: string }>;
-}) {
+export default async function TeamSplitPage({ params }: { params: Promise<{ guildId: string }> }) {
   const { guildId } = await params;
   const session = await auth();
   const accessToken = await getDiscordAccessToken();

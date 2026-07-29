@@ -45,7 +45,10 @@ export async function GET(request: Request, { params }: RouteContext) {
     return NextResponse.json(sessions);
   } catch (error) {
     console.error('Team Split sessions API request failed', safeErrorName(error));
-    return NextResponse.json({ error: 'Team Splitセッションの取得に失敗しました' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Team Splitセッションの取得に失敗しました' },
+      { status: 500 },
+    );
   }
 }
 

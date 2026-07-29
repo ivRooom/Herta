@@ -38,7 +38,10 @@ export async function GET(_request: Request, { params }: RouteContext) {
     return NextResponse.json({ session, participants });
   } catch (error) {
     console.error('Team Split detail API request failed', safeErrorName(error));
-    return NextResponse.json({ error: 'Team Splitセッションの取得に失敗しました' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Team Splitセッションの取得に失敗しました' },
+      { status: 500 },
+    );
   }
 }
 
@@ -82,7 +85,10 @@ export async function PATCH(request: Request, { params }: RouteContext) {
 
     const userId = typeof body['userId'] === 'string' ? body['userId'].trim() : '';
     if (!/^\d{17,20}$/.test(userId)) {
-      return NextResponse.json({ error: '有効なDiscordユーザーIDを指定してください' }, { status: 400 });
+      return NextResponse.json(
+        { error: '有効なDiscordユーザーIDを指定してください' },
+        { status: 400 },
+      );
     }
     if (action === 'add') {
       const result = await joinTeamSplitSession(prisma as unknown as TeamSplitPrismaClient, {
@@ -99,7 +105,10 @@ export async function PATCH(request: Request, { params }: RouteContext) {
         return NextResponse.json({ error: 'セッションは満員です' }, { status: 409 });
       }
       if (result.state === 'locked') {
-        return NextResponse.json({ error: '現在の状態では参加者を変更できません' }, { status: 409 });
+        return NextResponse.json(
+          { error: '現在の状態では参加者を変更できません' },
+          { status: 409 },
+        );
       }
       return NextResponse.json(result.session);
     }
@@ -121,7 +130,10 @@ export async function PATCH(request: Request, { params }: RouteContext) {
         return NextResponse.json({ error: '対象ユーザーは参加していません' }, { status: 409 });
       }
       if (result.state === 'locked') {
-        return NextResponse.json({ error: '現在の状態では参加者を変更できません' }, { status: 409 });
+        return NextResponse.json(
+          { error: '現在の状態では参加者を変更できません' },
+          { status: 409 },
+        );
       }
       if (result.state === 'forbidden') {
         return NextResponse.json({ error: '操作権限がありません' }, { status: 403 });
@@ -132,7 +144,10 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: '未対応のactionです' }, { status: 400 });
   } catch (error) {
     console.error('Team Split update API request failed', safeErrorName(error));
-    return NextResponse.json({ error: 'Team Splitセッションの更新に失敗しました' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Team Splitセッションの更新に失敗しました' },
+      { status: 500 },
+    );
   }
 }
 

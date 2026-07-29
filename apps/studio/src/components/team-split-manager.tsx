@@ -124,10 +124,9 @@ export function TeamSplitManager({
       setDetailLoading(true);
       setError(null);
       try {
-        const response = await fetch(
-          `/api/guilds/${guildId}/team-split/sessions/${sessionId}`,
-          { cache: 'no-store' },
-        );
+        const response = await fetch(`/api/guilds/${guildId}/team-split/sessions/${sessionId}`, {
+          cache: 'no-store',
+        });
         const body = await response.json();
         if (!response.ok) throw new Error(readError(body));
         setDetail(body as SessionDetail);
@@ -353,7 +352,11 @@ export function TeamSplitManager({
             disabled={!pluginEnabled || loading}
             className="mt-4 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
           >
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shuffle className="h-4 w-4" />}
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Shuffle className="h-4 w-4" />
+            )}
             セッション作成
           </button>
         </form>
@@ -366,7 +369,11 @@ export function TeamSplitManager({
               onChange={(event) => setQuery(event.target.value)}
               placeholder="タイトルまたはIDで検索"
             />
-            <select className={`${inputClass} w-auto`} value={status} onChange={(event) => setStatus(event.target.value)}>
+            <select
+              className={`${inputClass} w-auto`}
+              value={status}
+              onChange={(event) => setStatus(event.target.value)}
+            >
               <option value="">全状態</option>
               <option value="open">受付中</option>
               <option value="split">分割済み</option>
@@ -385,7 +392,9 @@ export function TeamSplitManager({
 
           <div className="mt-4 space-y-3">
             {visibleSessions.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted">条件に一致するセッションはありません。</p>
+              <p className="py-8 text-center text-sm text-muted">
+                条件に一致するセッションはありません。
+              </p>
             ) : (
               visibleSessions.map((item) => (
                 <button
@@ -393,7 +402,9 @@ export function TeamSplitManager({
                   type="button"
                   onClick={() => void loadDetail(item.id)}
                   className={`w-full rounded-xl border p-4 text-left transition-colors ${
-                    selectedId === item.id ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/40'
+                    selectedId === item.id
+                      ? 'border-primary bg-primary/5'
+                      : 'border-border hover:border-primary/40'
                   }`}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -405,7 +416,9 @@ export function TeamSplitManager({
                   <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
                     <span>{item.mode}</span>
                     <span>{item.teamCount}チーム</span>
-                    <span>{item.participantCount}/{item.maxParticipants}人</span>
+                    <span>
+                      {item.participantCount}/{item.maxParticipants}人
+                    </span>
                     <span>generation {item.generation}</span>
                     <span>message: {item.messageState}</span>
                   </div>
@@ -427,9 +440,13 @@ export function TeamSplitManager({
           <div className="mt-4 space-y-5">
             <div className="space-y-1 text-sm">
               <p className="font-medium">{detail.session.title}</p>
-              <p className="text-muted">ID: <span className="font-mono">{detail.session.id}</span></p>
+              <p className="text-muted">
+                ID: <span className="font-mono">{detail.session.id}</span>
+              </p>
               <p className="text-muted">期限: {formatDate(detail.session.expiresAt)}</p>
-              <p className="text-muted">Discord message: {detail.session.messageId ?? '未投稿・復旧待ち'}</p>
+              <p className="text-muted">
+                Discord message: {detail.session.messageId ?? '未投稿・復旧待ち'}
+              </p>
               {detail.session.lastErrorName ? (
                 <p className="text-destructive">{detail.session.lastErrorName}</p>
               ) : null}
@@ -455,7 +472,9 @@ export function TeamSplitManager({
               <button
                 type="button"
                 onClick={() => void runAction('close')}
-                disabled={!pluginEnabled || loading || ['closed', 'expired'].includes(detail.session.status)}
+                disabled={
+                  !pluginEnabled || loading || ['closed', 'expired'].includes(detail.session.status)
+                }
                 className="rounded-xl border border-destructive/40 px-3 py-2 text-sm text-destructive disabled:opacity-50"
               >
                 強制終了
@@ -495,7 +514,10 @@ export function TeamSplitManager({
               <h3 className="text-sm font-medium">参加者</h3>
               <div className="mt-2 space-y-2">
                 {detail.participants.map((participant) => (
-                  <div key={participant.userId} className="flex items-center justify-between gap-3 rounded-xl border border-border p-3 text-sm">
+                  <div
+                    key={participant.userId}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-border p-3 text-sm"
+                  >
                     <div>
                       <p className="font-mono text-xs">{participant.userId}</p>
                       <p className="mt-1 text-xs text-muted">score {participant.score}</p>
@@ -503,7 +525,12 @@ export function TeamSplitManager({
                     <button
                       type="button"
                       onClick={() => void removeParticipant(participant.userId)}
-                      disabled={!pluginEnabled || loading || detail.session.status !== 'open' || participant.userId === detail.session.creatorId}
+                      disabled={
+                        !pluginEnabled ||
+                        loading ||
+                        detail.session.status !== 'open' ||
+                        participant.userId === detail.session.creatorId
+                      }
                       className="text-destructive disabled:opacity-30"
                       aria-label="参加者を削除"
                     >
@@ -519,10 +546,15 @@ export function TeamSplitManager({
                 <h3 className="text-sm font-medium">チーム結果</h3>
                 <div className="mt-2 space-y-2">
                   {teams.map((team) => (
-                    <div key={team.teamNumber} className="rounded-xl border border-border p-3 text-sm">
+                    <div
+                      key={team.teamNumber}
+                      className="rounded-xl border border-border p-3 text-sm"
+                    >
                       <div className="flex justify-between gap-2 font-medium">
                         <span>Team {team.teamNumber}</span>
-                        {detail.session.mode === 'balanced' ? <span>合計 {team.totalScore}</span> : null}
+                        {detail.session.mode === 'balanced' ? (
+                          <span>合計 {team.totalScore}</span>
+                        ) : null}
                       </div>
                       <p className="mt-2 break-words font-mono text-xs text-muted">
                         {team.members.map((member) => member.userId).join(', ')}

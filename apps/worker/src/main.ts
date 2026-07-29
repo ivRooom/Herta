@@ -4,10 +4,7 @@ import { HERTA_WORKER_HEARTBEAT_INTERVAL_MS, HERTA_WORKER_HEARTBEAT_KEY } from '
 import { Redis } from 'ioredis';
 import { startDailyContentRuntime, type DailyContentRuntime } from './daily-content.js';
 import { startLfgRuntime, type LfgRuntime } from './lfg.js';
-import {
-  startTeamSplitRuntime,
-  type TeamSplitWorkerRuntime,
-} from './team-split.js';
+import { startTeamSplitRuntime, type TeamSplitWorkerRuntime } from './team-split.js';
 
 const logger = createLogger({
   name: 'herta-worker',
