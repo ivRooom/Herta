@@ -118,7 +118,7 @@ await replaceAllExact(
   'apps/studio/src/components/lfg-manager.tsx',
   `className="input"`,
   `className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm"`,
-  5,
+  6,
 );
 await replaceOne(
   'apps/studio/src/components/lfg-manager.tsx',
