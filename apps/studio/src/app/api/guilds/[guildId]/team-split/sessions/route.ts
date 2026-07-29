@@ -11,6 +11,7 @@ import {
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { authorizeGuild, getGuildPlugin } from '@/lib/guild-plugins';
+import { toPublicTeamSplitSession } from '@/lib/team-split';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,14 +36,14 @@ export async function GET(request: Request, { params }: RouteContext) {
       status,
       take: 100,
     });
-    const sessions = query
+    const filtered = query
       ? rows.filter(
           (row) =>
             row.title.toLocaleLowerCase('ja').includes(query) ||
             row.id.toLocaleLowerCase('ja').includes(query),
         )
       : rows;
-    return NextResponse.json(sessions);
+    return NextResponse.json(filtered.map(toPublicTeamSplitSession));
   } catch (error) {
     console.error('Team Split sessions API request failed', safeErrorName(error));
     return NextResponse.json(
@@ -98,7 +99,7 @@ export async function POST(request: Request, { params }: RouteContext) {
         seed: typeof body['seed'] === 'string' ? body['seed'] : null,
       },
     });
-    return NextResponse.json(created, { status: 201 });
+    return NextResponse.json(toPublicTeamSplitSession(created), { status: 201 });
   } catch (error) {
     return errorResponse(error, 'Team Splitセッションの作成に失敗しました');
   }
