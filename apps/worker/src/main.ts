@@ -1,6 +1,8 @@
+import { getPrismaClient } from '@herta/db';
 import { createLogger } from '@herta/logger';
 import { HERTA_WORKER_HEARTBEAT_INTERVAL_MS, HERTA_WORKER_HEARTBEAT_KEY } from '@herta/shared';
 import { Redis } from 'ioredis';
+import { startDailyContentRuntime, type DailyContentRuntime } from './daily-content.js';
 
 const logger = createLogger({
   name: 'herta-worker',
@@ -9,6 +11,7 @@ const logger = createLogger({
 
 let redis: Redis | undefined;
 let heartbeatTimer: NodeJS.Timeout | undefined;
+let dailyContentRuntime: DailyContentRuntime | undefined;
 let shuttingDown = false;
 
 function resolveHeartbeatTtlMs(): number {
@@ -34,8 +37,8 @@ async function main() {
 
   try {
     redis = new Redis(redisUrl, { maxRetriesPerRequest: 3, lazyConnect: true });
-    redis.on('error', (error) => {
-      logger.error({ err: error }, 'Redis エラー');
+    redis.on('error', () => {
+      logger.error('Redis エラー');
     });
     redis.on('ready', () => {
       logger.info('Redis 接続準備完了');
@@ -51,26 +54,40 @@ async function main() {
     heartbeatTimer.unref();
   } catch (error) {
     logger.error(
-      { err: error },
+      { errorName: resolveErrorName(error) },
       'Redis 接続に失敗しました。REDIS_URL を確認してください。docker compose up -d で Redis を起動できます',
     );
     process.exit(1);
   }
 
-  logger.info('Herta Worker を起動しました');
+  const discordBotToken = process.env['DISCORD_BOT_TOKEN']?.trim();
+  if (!process.env['DATABASE_URL']) {
+    logger.warn('DATABASE_URLが未設定のためDaily Content Workerを開始しません');
+  } else if (!discordBotToken) {
+    logger.warn('DISCORD_BOT_TOKENが未設定のためDaily Content Workerを開始しません');
+  } else {
+    try {
+      dailyContentRuntime = await startDailyContentRuntime({
+        redisUrl,
+        prisma: getPrismaClient(),
+        logger,
+        discordBotToken,
+      });
+      logger.info('Daily Content Workerを開始しました');
+    } catch (error) {
+      logger.error(
+        { errorName: resolveErrorName(error) },
+        'Daily Content Workerの開始に失敗しました',
+      );
+      process.exit(1);
+    }
+  }
 
-  // BullMQ Worker の登録は Phase 5 以降で実装
-  // 以下のジョブを処理する:
-  // - scheduled: Plugin のスケジュール実行
-  // - cleanup: 古いログの削除
-  // - notification: 通知送信
-  // - analytics: 集計処理
+  logger.info('Herta Worker を起動しました');
 }
 
 async function shutdown(signal: string): Promise<void> {
-  if (shuttingDown) {
-    return;
-  }
+  if (shuttingDown) return;
   shuttingDown = true;
   logger.info({ signal }, 'Worker をシャットダウン中...');
 
@@ -80,13 +97,29 @@ async function shutdown(signal: string): Promise<void> {
   }
 
   try {
+    await dailyContentRuntime?.close();
+    dailyContentRuntime = undefined;
+  } catch (error) {
+    logger.error(
+      { errorName: resolveErrorName(error) },
+      'Daily Content Workerの終了処理に失敗しました',
+    );
+  }
+
+  try {
     await redis?.del(HERTA_WORKER_HEARTBEAT_KEY);
     await redis?.quit();
   } catch (error) {
-    logger.error({ err: error }, 'Redis の終了処理に失敗しました');
+    logger.error({ errorName: resolveErrorName(error) }, 'Redis の終了処理に失敗しました');
   }
 
   process.exit(0);
+}
+
+function resolveErrorName(error: unknown): string {
+  if (!(error instanceof Error)) return 'UnknownError';
+  if (error.name.trim() && error.name !== 'Error') return error.name.slice(0, 120);
+  return (error.message.trim() || 'Error').slice(0, 120);
 }
 
 process.on('SIGINT', () => {

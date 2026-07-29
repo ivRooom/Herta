@@ -234,6 +234,9 @@ importers:
       '@herta/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@herta/plugin-catalog':
+        specifier: workspace:*
+        version: link:../../packages/plugin-catalog
       '@herta/queue':
         specifier: workspace:*
         version: link:../../packages/queue

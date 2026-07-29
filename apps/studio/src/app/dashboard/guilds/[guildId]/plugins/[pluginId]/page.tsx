@@ -50,47 +50,59 @@ export default async function PluginDetailPage({
       </div>
 
       {pluginId === 'moderation' ? (
-        <Link
+        <ManagementLink
           href={`/dashboard/guilds/${guildId}/moderation`}
-          className="mt-4 flex items-center justify-between rounded-2xl border border-border bg-surface p-5 shadow-card transition-colors hover:border-primary/40"
-        >
-          <div>
-            <h2 className="font-medium">モデレーションケース管理</h2>
-            <p className="mt-1 text-sm text-muted">
-              警告・タイムアウト・Kick・BANの履歴を検索・確認・更新します。
-            </p>
-          </div>
-          <ArrowRight className="h-5 w-5 text-muted" />
-        </Link>
+          title="モデレーションケース管理"
+          description="警告・タイムアウト・Kick・BANの履歴を検索・確認・更新します。"
+        />
       ) : null}
 
       {pluginId === 'quote' ? (
-        <Link
+        <ManagementLink
           href={`/dashboard/guilds/${guildId}/plugins/quote/quotes`}
-          className="mt-4 flex items-center justify-between rounded-2xl border border-border bg-surface p-5 shadow-card transition-colors hover:border-primary/40"
-        >
-          <div>
-            <h2 className="font-medium">Quote管理</h2>
-            <p className="mt-1 text-sm text-muted">名言の検索・登録・編集・削除を行います。</p>
-          </div>
-          <ArrowRight className="h-5 w-5 text-muted" />
-        </Link>
+          title="Quote管理"
+          description="名言の検索・登録・編集・削除を行います。"
+        />
       ) : null}
 
       {pluginId === 'auto-response' ? (
-        <Link
+        <ManagementLink
           href={`/dashboard/guilds/${guildId}/auto-response`}
-          className="mt-4 flex items-center justify-between rounded-2xl border border-border bg-surface p-5 shadow-card transition-colors hover:border-primary/40"
-        >
-          <div>
-            <h2 className="font-medium">Auto Responseルール管理</h2>
-            <p className="mt-1 text-sm text-muted">
-              トリガー、応答、Cooldown、対象範囲を管理します。
-            </p>
-          </div>
-          <ArrowRight className="h-5 w-5 text-muted" />
-        </Link>
+          title="Auto Responseルール管理"
+          description="トリガー、応答、Cooldown、対象範囲を管理します。"
+        />
+      ) : null}
+
+      {pluginId === 'daily-content' ? (
+        <ManagementLink
+          href={`/dashboard/guilds/${guildId}/daily-content`}
+          title="Daily Content配信管理"
+          description="定時コンテンツ、次回配信、配信履歴、失敗再実行を管理します。"
+        />
       ) : null}
     </div>
+  );
+}
+
+function ManagementLink({
+  href,
+  title,
+  description,
+}: {
+  href: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="mt-4 flex items-center justify-between rounded-2xl border border-border bg-surface p-5 shadow-card transition-colors hover:border-primary/40"
+    >
+      <div>
+        <h2 className="font-medium">{title}</h2>
+        <p className="mt-1 text-sm text-muted">{description}</p>
+      </div>
+      <ArrowRight className="h-5 w-5 text-muted" />
+    </Link>
   );
 }

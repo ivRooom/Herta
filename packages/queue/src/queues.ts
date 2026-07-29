@@ -2,6 +2,8 @@
 export const QueueNames = {
   /** スケジュール実行 (cron ジョブ) */
   SCHEDULED: 'scheduled',
+  /** Daily Contentの配信 */
+  DAILY_CONTENT: 'daily-content',
   /** クリーンアップ (古いログの削除等) */
   CLEANUP: 'cleanup',
   /** 通知送信 */
@@ -18,6 +20,13 @@ export interface JobData {
     pluginId: string;
     guildId?: string;
     cronExpression: string;
+  };
+  [QueueNames.DAILY_CONTENT]: {
+    deliveryId: string;
+    scheduleId: string;
+    guildId: string;
+    idempotencyKey: string;
+    scheduledFor: string;
   };
   [QueueNames.CLEANUP]: {
     targetTable: string;

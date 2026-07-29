@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DEFAULT_AUTO_RESPONSE_CONFIG,
   AutoResponseValidationError,
+  DEFAULT_AUTO_RESPONSE_CONFIG,
   assertSafeRegex,
   matchesAutoResponse,
   normalizeAutoResponseConfig,
@@ -10,72 +10,102 @@ import {
 } from './config.js';
 
 describe('Auto Response config', () => {
-  it('空設定へ安全な既定値を適用する', () => {
+  it('既定値を適用する', () => {
     expect(normalizeAutoResponseConfig({})).toEqual(DEFAULT_AUTO_RESPONSE_CONFIG);
   });
 
-  it('数値を許容範囲へ丸める', () => {
+  it('正規表現の有効化を明示する', () => {
+    expect(normalizeAutoResponseConfig({ regexEnabled: true }).regexEnabled).toBe(true);
+  });
+
+  it('設定値を許容範囲へ丸める', () => {
     expect(
       normalizeAutoResponseConfig({
-        maxRules: 9999,
-        maxRulesPerMessage: 0,
-        guildCooldownSeconds: -1,
-        maxRegexEvaluationsPerMessage: 999,
-        regexExecutionBudgetMs: 999,
+        maxRules: 1000,
+        maxRulesPerMessage: 99,
+        maxRegexEvaluationsPerMessage: 99,
+        maxMessageLength: 10,
       }),
     ).toMatchObject({
       maxRules: 200,
-      maxRulesPerMessage: 1,
-      guildCooldownSeconds: 0,
+      maxRulesPerMessage: 5,
       maxRegexEvaluationsPerMessage: 10,
-      regexExecutionBudgetMs: 50,
+      maxMessageLength: 10,
     });
   });
 
-  it('旧設定キーを現行設定へ移行する', () => {
-    expect(normalizeAutoResponseConfig({ maxResponses: 50, cooldownMs: 3000 })).toMatchObject({
-      maxRules: 50,
-      guildCooldownSeconds: 3,
-      maxRegexEvaluationsPerMessage: 5,
+  it('旧設定を現行設定へ移行する', () => {
+    expect(
+      normalizeAutoResponseConfig({
+        maxResponses: 3,
+        cooldownMs: 12_500,
+      }),
+    ).toMatchObject({
+      maxRules: 3,
+      guildCooldownSeconds: 13,
     });
   });
 });
 
 describe('Auto Response rule validation', () => {
-  it('スコープIDを正規化して重複排除する', () => {
-    const rule = normalizeAutoResponseRuleInput(
-      {
-        name: 'Greeting',
-        triggerValue: 'hello',
-        matchMode: 'exact',
-        responseType: 'text',
-        responseContent: 'こんにちは',
-        channelIds: [' 123 ', '123', '456'],
-        roleIds: ['789'],
-      },
-      DEFAULT_AUTO_RESPONSE_CONFIG,
-    );
-    expect(rule.channelIds).toEqual(['123', '456']);
-    expect(rule.roleIds).toEqual(['789']);
-    expect(rule.cooldownSeconds).toBe(DEFAULT_AUTO_RESPONSE_CONFIG.defaultRuleCooldownSeconds);
+  const config = DEFAULT_AUTO_RESPONSE_CONFIG;
+
+  it('安全なテキスト応答を正規化する', () => {
+    expect(
+      normalizeAutoResponseRuleInput(
+        {
+          name: '  あいさつ  ',
+          triggerValue: '  hello  ',
+          matchMode: 'exact',
+          responseType: 'text',
+          responseContent: '  こんにちは  ',
+          channelIds: ['123456789012345678', '123456789012345678'],
+          roleIds: [],
+          cooldownSeconds: 5,
+          priority: 10,
+          caseSensitive: false,
+          enabled: true,
+        },
+        config,
+      ),
+    ).toEqual({
+      name: 'あいさつ',
+      triggerValue: 'hello',
+      matchMode: 'exact',
+      responseType: 'text',
+      responseContent: 'こんにちは',
+      channelIds: ['123456789012345678'],
+      roleIds: [],
+      cooldownSeconds: 5,
+      priority: 10,
+      caseSensitive: false,
+      enabled: true,
+    });
   });
 
-  it('everyone・here・ロールメンションを拒否する', () => {
-    for (const responseContent of ['@everyone', '@here', '<@&123>']) {
+  it.each(['@everyone test', '@here test', '<@&123456789012345678> test'])(
+    '危険なメンションを拒否する: %s',
+    (responseContent) => {
       expect(() =>
         normalizeAutoResponseRuleInput(
           {
-            name: 'Blocked mention',
-            triggerValue: 'hello',
-            matchMode: 'partial',
+            name: 'danger',
+            triggerValue: 'test',
+            matchMode: 'exact',
             responseType: 'text',
             responseContent,
+            channelIds: [],
+            roleIds: [],
+            cooldownSeconds: 0,
+            priority: 0,
+            caseSensitive: false,
+            enabled: true,
           },
-          DEFAULT_AUTO_RESPONSE_CONFIG,
+          config,
         ),
       ).toThrow(AutoResponseValidationError);
-    }
-  });
+    },
+  );
 
   it('Embed JSONを許可されたフィールドだけに正規化する', () => {
     expect(
@@ -123,11 +153,12 @@ describe('Auto Response matcher', () => {
   });
 
   it('安全な正規表現を評価する', () => {
+    const config = { ...DEFAULT_AUTO_RESPONSE_CONFIG, regexExecutionBudgetMs: 100 };
     expect(
       matchesAutoResponse(
         'hello-123',
         { triggerValue: '^hello-\\d+$', matchMode: 'regex', caseSensitive: false },
-        DEFAULT_AUTO_RESPONSE_CONFIG,
+        config,
       ),
     ).toBe(true);
   });
