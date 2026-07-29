@@ -559,11 +559,7 @@ async function lockChannel(
   );
 }
 
-async function lockPost(
-  tx: LfgTransactionClient,
-  guildId: string,
-  postId: string,
-): Promise<void> {
+async function lockPost(tx: LfgTransactionClient, guildId: string, postId: string): Promise<void> {
   await tx.$queryRawUnsafe(
     'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
     `lfg:post:${guildId}:${postId}`,

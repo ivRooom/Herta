@@ -76,18 +76,8 @@ export function normalizeLfgConfig(input: unknown): LfgConfig {
       0,
       3600,
     ),
-    maxPlayersLimit: readInteger(
-      source['maxPlayersLimit'],
-      LFG_DEFAULTS.maxPlayersLimit,
-      2,
-      500,
-    ),
-    maxTitleLength: readInteger(
-      source['maxTitleLength'],
-      LFG_DEFAULTS.maxTitleLength,
-      1,
-      200,
-    ),
+    maxPlayersLimit: readInteger(source['maxPlayersLimit'], LFG_DEFAULTS.maxPlayersLimit, 2, 500),
+    maxTitleLength: readInteger(source['maxTitleLength'], LFG_DEFAULTS.maxTitleLength, 1, 200),
     maxDescriptionLength: readInteger(
       source['maxDescriptionLength'],
       LFG_DEFAULTS.maxDescriptionLength,

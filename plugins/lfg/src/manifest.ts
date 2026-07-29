@@ -114,7 +114,12 @@ export const lfgManifest: PluginManifest = {
           options: [
             { name: 'game', description: 'ゲームまたはイベント名', type: 'string', required: true },
             { name: 'title', description: '募集タイトル', type: 'string', required: true },
-            { name: 'max_players', description: '作成者を含む定員', type: 'integer', required: true },
+            {
+              name: 'max_players',
+              description: '作成者を含む定員',
+              type: 'integer',
+              required: true,
+            },
             { name: 'description', description: '募集内容', type: 'string' },
             { name: 'start_time', description: '開始日時（ISO-8601）', type: 'string' },
             { name: 'duration_minutes', description: '募集期間（分）', type: 'integer' },
@@ -123,9 +128,7 @@ export const lfgManifest: PluginManifest = {
         {
           name: 'show',
           description: '募集の詳細を表示します',
-          options: [
-            { name: 'id', description: '募集ID', type: 'string', required: true },
-          ],
+          options: [{ name: 'id', description: '募集ID', type: 'string', required: true }],
         },
         {
           name: 'list',
@@ -148,16 +151,12 @@ export const lfgManifest: PluginManifest = {
         {
           name: 'close',
           description: '募集を締め切ります',
-          options: [
-            { name: 'id', description: '募集ID', type: 'string', required: true },
-          ],
+          options: [{ name: 'id', description: '募集ID', type: 'string', required: true }],
         },
         {
           name: 'cancel',
           description: '募集をキャンセルします',
-          options: [
-            { name: 'id', description: '募集ID', type: 'string', required: true },
-          ],
+          options: [{ name: 'id', description: '募集ID', type: 'string', required: true }],
         },
       ],
     },

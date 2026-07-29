@@ -1,11 +1,7 @@
 import { definePlugin } from '@herta/plugin-sdk';
 import type { CommandHandler, PluginRuntimeContext } from '@herta/plugin-sdk';
 import { createLfgComponentId, parseLfgComponentId } from './component-id.js';
-import {
-  LfgValidationError,
-  normalizeLfgConfig,
-  type LfgConfig,
-} from './config.js';
+import { LfgValidationError, normalizeLfgConfig, type LfgConfig } from './config.js';
 import { lfgManifest } from './manifest.js';
 import {
   closeLfgPost,
@@ -258,7 +254,13 @@ async function showPost(
     return;
   }
   const participants = await listLfgParticipants(context.prisma, context.guildId, post.id);
-  await respond(interaction, formatPostText(post, participants.map((item) => item.userId)));
+  await respond(
+    interaction,
+    formatPostText(
+      post,
+      participants.map((item) => item.userId),
+    ),
+  );
 }
 
 async function listPosts(
@@ -305,7 +307,10 @@ async function finalizePost(
     return;
   }
   if (result.state === 'forbidden') {
-    await respond(interaction, '募集作成者または「サーバーの管理」権限を持つユーザーだけが操作できます');
+    await respond(
+      interaction,
+      '募集作成者または「サーバーの管理」権限を持つユーザーだけが操作できます',
+    );
     return;
   }
   if (result.state === 'already_final') {
@@ -313,7 +318,10 @@ async function finalizePost(
     return;
   }
   await refreshLfgMessage(context, result.post);
-  await respond(interaction, mode === 'closed' ? '募集を締め切りました' : '募集をキャンセルしました');
+  await respond(
+    interaction,
+    mode === 'closed' ? '募集を締め切りました' : '募集をキャンセルしました',
+  );
 }
 
 async function executeLfgButton(
@@ -383,7 +391,12 @@ async function updateButtonMessage(
   post: LfgPostRecord,
 ): Promise<void> {
   const participants = await listLfgParticipants(context.prisma, context.guildId, post.id);
-  await interaction.update(renderLfgMessage(post, participants.map((item) => item.userId)));
+  await interaction.update(
+    renderLfgMessage(
+      post,
+      participants.map((item) => item.userId),
+    ),
+  );
 }
 
 async function refreshLfgMessage(context: LfgRuntimeContext, post: LfgPostRecord): Promise<void> {
@@ -394,7 +407,12 @@ async function refreshLfgMessage(context: LfgRuntimeContext, post: LfgPostRecord
     const message = await channel.messages?.fetch(post.messageId);
     if (!message) return;
     const participants = await listLfgParticipants(context.prisma, context.guildId, post.id);
-    await message.edit(renderLfgMessage(post, participants.map((item) => item.userId)));
+    await message.edit(
+      renderLfgMessage(
+        post,
+        participants.map((item) => item.userId),
+      ),
+    );
   } catch (error) {
     await markLfgMessageMissing(context.prisma, {
       guildId: context.guildId,
@@ -407,7 +425,10 @@ async function refreshLfgMessage(context: LfgRuntimeContext, post: LfgPostRecord
 function renderLfgMessage(post: LfgPostRecord, participantIds: string[]): LfgMessagePayload {
   const active = ACTIVE_STATUSES.has(post.status);
   const participantText = participantIds.length
-    ? participantIds.slice(0, 30).map((id) => `<@${id}>`).join(' ')
+    ? participantIds
+        .slice(0, 30)
+        .map((id) => `<@${id}>`)
+        .join(' ')
     : '参加者なし';
   return {
     embeds: [

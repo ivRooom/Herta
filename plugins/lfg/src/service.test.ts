@@ -164,7 +164,9 @@ describe('LFG join / leave transaction', () => {
 
     expect(result.state).toBe('joined');
     expect(state.getPost()).toMatchObject({ participantCount: 2, status: 'full' });
-    expect(state.participants.filter((participant) => participant.status === 'joined')).toHaveLength(2);
+    expect(
+      state.participants.filter((participant) => participant.status === 'joined'),
+    ).toHaveLength(2);
     expect(state.lock).toHaveBeenCalledWith(
       expect.stringContaining('pg_advisory_xact_lock'),
       'lfg:post:guild-1:post-1',
@@ -187,7 +189,9 @@ describe('LFG join / leave transaction', () => {
     });
 
     expect(second.state).toBe('already_joined');
-    expect(state.participants.filter((participant) => participant.userId === 'user-2')).toHaveLength(1);
+    expect(
+      state.participants.filter((participant) => participant.userId === 'user-2'),
+    ).toHaveLength(1);
   });
 
   it('満員後の追加参加を拒否する', async () => {

@@ -1,6 +1,7 @@
 import { getAllPluginManifests, getPluginManifest } from '@herta/plugin-catalog';
 import { autoResponsePlugin } from '@herta/plugin-catalog/auto-response-runtime';
 import { dailyContentPlugin } from '@herta/plugin-catalog/daily-content-runtime';
+import { lfgPlugin } from '@herta/plugin-catalog/lfg-runtime';
 import { moderationPlugin } from '@herta/plugin-catalog/moderation-runtime';
 import { quotePlugin } from '@herta/plugin-catalog/quote-runtime';
 import type { Logger } from '@herta/logger';
@@ -248,6 +249,20 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
           }) as Parameters<NonNullable<typeof dailyContentPlugin.onEnable>>[0],
       )
     : undefined;
+  const lfgEntry = deps
+    ? toRuntimePluginEntry(
+        lfgPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof lfgPlugin.onEnable>>[0],
+      )
+    : undefined;
   const moderationEntry = deps
     ? toRuntimePluginEntry(
         moderationPlugin,
@@ -281,6 +296,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (!getPluginManifest(pluginId)) return [];
     if (pluginId === 'auto-response' && autoResponseEntry) return [autoResponseEntry];
     if (pluginId === 'daily-content' && dailyContentEntry) return [dailyContentEntry];
+    if (pluginId === 'lfg' && lfgEntry) return [lfgEntry];
     if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];
     if (pluginId === 'quote' && quoteEntry) return [quoteEntry];
     return [{ pluginId }];

@@ -22,10 +22,7 @@ export function createLfgComponentId(
   return `${payload}:${sign(payload, secret)}`;
 }
 
-export function parseLfgComponentId(
-  value: string,
-  secret: string,
-): ParsedLfgComponentId | null {
+export function parseLfgComponentId(value: string, secret: string): ParsedLfgComponentId | null {
   try {
     assertSecret(secret);
     const [prefix, action, postId, signature, ...extra] = value.split(':');
@@ -52,7 +49,10 @@ export function parseLfgComponentId(
 }
 
 function sign(payload: string, secret: string): string {
-  return createHmac('sha256', secret).update(payload).digest('base64url').slice(0, SIGNATURE_LENGTH);
+  return createHmac('sha256', secret)
+    .update(payload)
+    .digest('base64url')
+    .slice(0, SIGNATURE_LENGTH);
 }
 
 function assertSecret(secret: string): void {
