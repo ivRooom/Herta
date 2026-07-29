@@ -109,10 +109,10 @@ ALTER TABLE "team_split_sessions"
       AND "participant_count" <= "max_participants"
     ) NOT VALID,
   ADD CONSTRAINT "team_split_sessions_expiry_check"
-    CHECK ("expires_at" >= "created_at") NOT VALID,
-  ADD CONSTRAINT "team_split_participants_score_check"
-    CHECK ("score" BETWEEN -100000 AND 100000) NOT VALID;
+    CHECK ("expires_at" >= "created_at") NOT VALID;
 
 ALTER TABLE "team_split_participants"
   ADD CONSTRAINT "team_split_participants_status_check"
-    CHECK ("status" IN ('joined', 'left')) NOT VALID;
+    CHECK ("status" IN ('joined', 'left')) NOT VALID,
+  ADD CONSTRAINT "team_split_participants_score_check"
+    CHECK ("score" BETWEEN -100000 AND 100000) NOT VALID;
