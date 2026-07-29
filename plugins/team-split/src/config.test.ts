@@ -8,6 +8,13 @@ import {
 } from './config.js';
 
 describe('normalizeTeamSplitConfig', () => {
+  it('最大期間より長い既定期間を最大期間へ丸める', () => {
+    expect(normalizeTeamSplitConfig({ defaultDurationMinutes: 1440, maxDurationMinutes: 60 })).toMatchObject({
+      defaultDurationMinutes: 60,
+      maxDurationMinutes: 60,
+    });
+  });
+
   it('不正値を既定値へ戻す', () => {
     expect(normalizeTeamSplitConfig(null)).toEqual(TEAM_SPLIT_DEFAULTS);
     expect(normalizeTeamSplitConfig({ maxTeamCount: 999, retentionDays: 0 })).toMatchObject({

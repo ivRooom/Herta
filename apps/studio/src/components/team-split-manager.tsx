@@ -108,8 +108,8 @@ export function TeamSplitManager({
         `/api/guilds/${guildId}/team-split/sessions?${params.toString()}`,
         { cache: 'no-store' },
       );
+      if (!response.ok) throw new Error(await readResponseError(response));
       const body = await response.json();
-      if (!response.ok) throw new Error(readError(body));
       setSessions(body as TeamSplitSessionItem[]);
     } catch (requestError) {
       setError(readError(requestError));
@@ -127,8 +127,8 @@ export function TeamSplitManager({
         const response = await fetch(`/api/guilds/${guildId}/team-split/sessions/${sessionId}`, {
           cache: 'no-store',
         });
+        if (!response.ok) throw new Error(await readResponseError(response));
         const body = await response.json();
-        if (!response.ok) throw new Error(readError(body));
         setDetail(body as SessionDetail);
       } catch (requestError) {
         setError(readError(requestError));
@@ -159,8 +159,8 @@ export function TeamSplitManager({
           creatorScore: mode === 'balanced' ? creatorScore : 0,
         }),
       });
+      if (!response.ok) throw new Error(await readResponseError(response));
       const body = await response.json();
-      if (!response.ok) throw new Error(readError(body));
       const created = normalizeSession(body);
       setSessions((current) => [created, ...current]);
       setTitle('');
@@ -239,8 +239,8 @@ export function TeamSplitManager({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+    if (!response.ok) throw new Error(await readResponseError(response));
     const payload = await response.json();
-    if (!response.ok) throw new Error(readError(payload));
     return payload;
   }
 
@@ -493,14 +493,17 @@ export function TeamSplitManager({
                 pattern="\d{17,20}"
                 required
               />
-              <input
-                className={`${inputClass} mt-2`}
-                type="number"
-                min={-100000}
-                max={100000}
-                value={participantScore}
-                onChange={(event) => setParticipantScore(Number(event.target.value))}
-              />
+              <label className="mt-2 block text-sm">
+                <span className="mb-1.5 block text-muted">score</span>
+                <input
+                  className={inputClass}
+                  type="number"
+                  min={-100000}
+                  max={100000}
+                  value={participantScore}
+                  onChange={(event) => setParticipantScore(Number(event.target.value))}
+                />
+              </label>
               <button
                 type="submit"
                 disabled={!pluginEnabled || loading || detail.session.status !== 'open'}
@@ -633,4 +636,13 @@ function readError(value: unknown): string {
 function formatDate(value: string): string {
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? date.toLocaleString('ja-JP') : value;
+}
+
+async function readResponseError(response: Response): Promise<string> {
+  const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    return readError(await response.json());
+  }
+  const body = (await response.text()).trim();
+  return body || `HTTP ${response.status}`;
 }

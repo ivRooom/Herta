@@ -287,12 +287,12 @@ export async function joinTeamSplitSession(
       });
     }
 
-    const nextCount = existing?.status === 'joined' ? joinedCount : joinedCount + 1;
+    const joinedUserIds = await listJoinedUserIds(tx, input.guildId, session.id);
     const updated = await tx.teamSplitSession.update({
       where: { id: session.id },
       data: {
-        participantCount: nextCount,
-        participants: await listJoinedUserIds(tx, input.guildId, session.id),
+        participantCount: joinedUserIds.length,
+        participants: joinedUserIds,
         updatedBy: input.actorId ?? input.userId,
         messageState: 'pending',
         lastErrorName: null,
@@ -304,7 +304,7 @@ export async function joinTeamSplitSession(
       actorId: input.actorId ?? input.userId,
       event: existing?.status === 'joined' ? 'team_split.score_update' : 'team_split.join',
       sessionId: session.id,
-      changes: { participantCount: nextCount, targetUserId: input.userId },
+      changes: { participantCount: joinedUserIds.length, targetUserId: input.userId },
     });
     return { state: existing?.status === 'joined' ? 'updated' : 'joined', session: updated };
   });
@@ -337,12 +337,12 @@ export async function leaveTeamSplitSession(
       where: { sessionId_userId: { sessionId: session.id, userId: input.userId } },
       data: { status: 'left', leftAt: now },
     });
-    const nextCount = Math.max(1, session.participantCount - 1);
+    const joinedUserIds = await listJoinedUserIds(tx, input.guildId, session.id);
     const updated = await tx.teamSplitSession.update({
       where: { id: session.id },
       data: {
-        participantCount: nextCount,
-        participants: await listJoinedUserIds(tx, input.guildId, session.id),
+        participantCount: joinedUserIds.length,
+        participants: joinedUserIds,
         updatedBy: input.actorId ?? input.userId,
         messageState: 'pending',
         lastErrorName: null,
@@ -354,7 +354,7 @@ export async function leaveTeamSplitSession(
       actorId: input.actorId ?? input.userId,
       event: 'team_split.leave',
       sessionId: session.id,
-      changes: { participantCount: nextCount, targetUserId: input.userId },
+      changes: { participantCount: joinedUserIds.length, targetUserId: input.userId },
     });
     return { state: 'left', session: updated };
   });
@@ -515,23 +515,28 @@ export async function markTeamSplitMessageMissing(
   prisma: TeamSplitPrismaClient,
   input: { guildId: string; messageId: string; errorName?: string },
 ): Promise<TeamSplitSessionRecord | null> {
-  const session = await prisma.teamSplitSession.findFirst({
-    where: {
-      guildId: input.guildId,
-      messageId: input.messageId,
-      status: { in: ['open', 'split'] },
-      deletedAt: null,
-    },
-  });
-  if (!session) return null;
-  return prisma.teamSplitSession.update({
-    where: { id: session.id },
-    data: {
-      messageId: null,
-      messageState: 'missing',
-      lastErrorName: input.errorName ?? 'TeamSplitMessageDeleted',
-      version: { increment: 1 },
-    },
+  return prisma.$transaction(async (tx) => {
+    const found = await tx.teamSplitSession.findFirst({
+      where: {
+        guildId: input.guildId,
+        messageId: input.messageId,
+        status: { in: ['open', 'split'] },
+        deletedAt: null,
+      },
+    });
+    if (!found) return null;
+    await lockSession(tx, input.guildId, found.id);
+    const session = await findSession(tx, input.guildId, found.id);
+    if (!session || session.messageId !== input.messageId) return session;
+    return tx.teamSplitSession.update({
+      where: { id: session.id },
+      data: {
+        messageId: null,
+        messageState: 'missing',
+        lastErrorName: input.errorName ?? 'TeamSplitMessageDeleted',
+        version: { increment: 1 },
+      },
+    });
   });
 }
 

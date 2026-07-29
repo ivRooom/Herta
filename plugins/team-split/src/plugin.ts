@@ -442,6 +442,7 @@ async function executeTeamSplitButton(
   interaction: TeamSplitButtonInteraction,
 ): Promise<void> {
   if (!interaction.guildId || interaction.guildId !== context.guildId) return;
+  if (!interaction.customId.startsWith('team:')) return;
   const parsed = parseTeamSplitComponentId(interaction.customId, getTeamSplitSecret(), new Date());
   if (!parsed) {
     await respond(interaction, 'このTeam Splitボタンは無効または期限切れです');
@@ -549,12 +550,25 @@ async function refreshTeamSplitMessage(
       expectedVersion: session.version,
     });
   } catch (error) {
-    await markTeamSplitMessageMissing(context.prisma, {
-      guildId: context.guildId,
-      messageId: session.messageId,
-      errorName: resolveErrorName(error),
+    if (isUnknownMessageError(error)) {
+      await markTeamSplitMessageMissing(context.prisma, {
+        guildId: context.guildId,
+        messageId: session.messageId,
+        errorName: resolveErrorName(error),
+      });
+      return;
+    }
+    await context.prisma.teamSplitSession.update({
+      where: { id: session.id },
+      data: { messageState: 'failed', lastErrorName: resolveErrorName(error) },
     });
   }
+}
+
+function isUnknownMessageError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const candidate = error as { code?: unknown; status?: unknown; rawError?: { code?: unknown } };
+  return candidate.code === 10008 || candidate.rawError?.code === 10008 || candidate.status === 404;
 }
 
 function canManageSession(

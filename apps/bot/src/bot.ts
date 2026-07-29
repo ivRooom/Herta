@@ -180,14 +180,20 @@ export class HertaBot {
       }
     });
 
+    this.client.on(Events.MessageDelete, async (message) => {
+      if (!message.guildId) return;
+      await this.dispatchGuildPluginEvent(message.guildId, Events.MessageDelete, message);
+    });
+
     this.client.on('error', (error) => {
       this.logger.error(error, 'Discord クライアントエラー');
     });
 
     this.client.on(Events.InteractionCreate, async (interaction) => {
-      if (!interaction.isChatInputCommand()) {
-        return;
+      if (interaction.guildId) {
+        await this.dispatchGuildPluginEvent(interaction.guildId, Events.InteractionCreate, interaction);
       }
+      if (!interaction.isChatInputCommand()) return;
 
       let command = this.registry.get(interaction.commandName);
 
@@ -243,6 +249,31 @@ export class HertaBot {
         });
       }
     });
+  }
+
+  private async dispatchGuildPluginEvent(
+    guildId: string,
+    eventName: string,
+    payload: unknown,
+  ): Promise<void> {
+    try {
+      const events = await this.pluginLoader.getGuildEvents(guildId);
+      for (const event of events.filter((candidate) => candidate.event === eventName)) {
+        try {
+          await event.handler(payload);
+        } catch (error) {
+          this.logger.error(
+            { err: error, guildId, event: eventName },
+            'Plugin Event Handlerの実行に失敗しました',
+          );
+        }
+      }
+    } catch (error) {
+      this.logger.error(
+        { err: error, guildId, event: eventName },
+        'Guild Plugin Eventの取得に失敗しました',
+      );
+    }
   }
 
   private async recordCommandExecution(input: CommandExecutionInput): Promise<void> {
