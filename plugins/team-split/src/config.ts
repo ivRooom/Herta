@@ -57,6 +57,12 @@ export class TeamSplitValidationError extends Error {
 
 export function normalizeTeamSplitConfig(input: unknown): TeamSplitConfig {
   const source = isRecord(input) ? input : {};
+  const maxDurationMinutes = readInteger(
+    source['maxDurationMinutes'],
+    TEAM_SPLIT_DEFAULTS.maxDurationMinutes,
+    5,
+    43200,
+  );
   return {
     maxOpenSessionsPerGuild: readInteger(
       source['maxOpenSessionsPerGuild'],
@@ -83,18 +89,16 @@ export function normalizeTeamSplitConfig(input: unknown): TeamSplitConfig {
       500,
     ),
     maxTeamCount: readInteger(source['maxTeamCount'], TEAM_SPLIT_DEFAULTS.maxTeamCount, 2, 50),
-    defaultDurationMinutes: readInteger(
-      source['defaultDurationMinutes'],
-      TEAM_SPLIT_DEFAULTS.defaultDurationMinutes,
-      5,
-      10080,
+    defaultDurationMinutes: Math.min(
+      maxDurationMinutes,
+      readInteger(
+        source['defaultDurationMinutes'],
+        TEAM_SPLIT_DEFAULTS.defaultDurationMinutes,
+        5,
+        10080,
+      ),
     ),
-    maxDurationMinutes: readInteger(
-      source['maxDurationMinutes'],
-      TEAM_SPLIT_DEFAULTS.maxDurationMinutes,
-      5,
-      43200,
-    ),
+    maxDurationMinutes,
     maxTitleLength: readInteger(
       source['maxTitleLength'],
       TEAM_SPLIT_DEFAULTS.maxTitleLength,
