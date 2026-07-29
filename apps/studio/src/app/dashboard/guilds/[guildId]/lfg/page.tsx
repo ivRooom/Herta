@@ -15,11 +15,7 @@ import { getDiscordAccessToken } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
-export default async function LfgPage({
-  params,
-}: {
-  params: Promise<{ guildId: string }>;
-}) {
+export default async function LfgPage({ params }: { params: Promise<{ guildId: string }> }) {
   const { guildId } = await params;
   const session = await auth();
   const accessToken = await getDiscordAccessToken();
@@ -63,7 +59,9 @@ export default async function LfgPage({
     loadError = 'LFG募集を取得できませんでした。時間をおいて再読み込みしてください。';
   }
 
-  const activeCount = posts.filter((post) => post.status === 'open' || post.status === 'full').length;
+  const activeCount = posts.filter(
+    (post) => post.status === 'open' || post.status === 'full',
+  ).length;
   const messageIssueCount = posts.filter(
     (post) => post.messageState === 'missing' || post.messageState === 'failed',
   ).length;
@@ -101,7 +99,8 @@ export default async function LfgPage({
       {messageIssueCount > 0 ? (
         <div className="mt-4 flex items-start gap-2 rounded-2xl border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
           <MessageSquareWarning className="mt-0.5 h-4 w-4 shrink-0" />
-          Discordメッセージの削除・投稿失敗が{messageIssueCount}件あります。Plugin有効時はWorkerが自動復旧します。
+          Discordメッセージの削除・投稿失敗が{messageIssueCount}
+          件あります。Plugin有効時はWorkerが自動復旧します。
         </div>
       ) : null}
 

@@ -6,6 +6,8 @@ import {
   isLfgPluginEnabled,
   listDueLfgPosts,
   listLfgParticipants,
+  markLfgMessageMissing,
+  markLfgMessageSynchronized,
   updateLfgMessageReference,
   type LfgPostRecord,
   type LfgPrismaClient,
@@ -43,6 +45,7 @@ export async function startLfgRuntime(options: StartLfgRuntimeOptions): Promise<
     scanning = true;
     try {
       await expireDuePosts(options);
+      await synchronizePendingMessages(options);
       await recoverMissingMessages(options);
     } catch (error) {
       options.logger.error(
@@ -84,15 +87,43 @@ async function expireDuePosts(options: StartLfgRuntimeOptions): Promise<void> {
       now,
     });
     if (!expired) continue;
-    if (expired.messageId) {
-      await updateDiscordMessage(options, expired).catch(async (error) => {
-        await recordMessageFailure(options.prisma, expired, error);
-      });
-    }
     options.logger.info(
       { guildId: expired.guildId, postId: expired.id },
       'LFG募集を期限切れにしました',
     );
+  }
+}
+
+async function synchronizePendingMessages(options: StartLfgRuntimeOptions): Promise<void> {
+  const retryBefore = new Date(Date.now() - RECOVERY_RETRY_DELAY_MS);
+  const posts = await options.prisma.lfgPost.findMany({
+    where: {
+      messageId: { not: null },
+      deletedAt: null,
+      OR: [
+        { messageState: 'pending' },
+        { messageState: 'failed', updatedAt: { lte: retryBefore } },
+      ],
+    },
+    orderBy: { updatedAt: 'asc' },
+    take: SCAN_LIMIT,
+  });
+
+  for (const post of posts) {
+    const pluginEnabled = await isLfgPluginEnabled(
+      options.prisma as unknown as LfgPrismaClient,
+      post.guildId,
+    );
+    if (!pluginEnabled) continue;
+    try {
+      await updateDiscordMessage(options, post as LfgPostRecord);
+      await markLfgMessageSynchronized(options.prisma as unknown as LfgPrismaClient, {
+        guildId: post.guildId,
+        postId: post.id,
+      });
+    } catch (error) {
+      await recordMessageFailure(options.prisma, post as LfgPostRecord, error);
+    }
   }
 }
 
@@ -149,9 +180,7 @@ async function createDiscordMessage(
       Authorization: `Bot ${options.discordBotToken}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify(
-      buildLfgDiscordMessage(post, participantIds, options.componentSecret),
-    ),
+    body: JSON.stringify(buildLfgDiscordMessage(post, participantIds, options.componentSecret)),
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) throw new LfgDiscordError('LfgDiscordCreateMessageFailed', response.status);
@@ -177,9 +206,7 @@ async function updateDiscordMessage(
         Authorization: `Bot ${options.discordBotToken}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(
-        buildLfgDiscordMessage(post, participantIds, options.componentSecret),
-      ),
+      body: JSON.stringify(buildLfgDiscordMessage(post, participantIds, options.componentSecret)),
       signal: AbortSignal.timeout(15_000),
     },
   );
@@ -212,6 +239,19 @@ async function recordMessageFailure(
   post: LfgPostRecord,
   error: unknown,
 ): Promise<void> {
+  if (
+    error instanceof LfgDiscordError &&
+    error.httpStatus === 404 &&
+    (post.status === 'open' || post.status === 'full') &&
+    post.messageId
+  ) {
+    await markLfgMessageMissing(prisma as unknown as LfgPrismaClient, {
+      guildId: post.guildId,
+      messageId: post.messageId,
+      errorName: error.name,
+    });
+    return;
+  }
   await prisma.lfgPost.update({
     where: { id: post.id },
     data: {
@@ -222,7 +262,10 @@ async function recordMessageFailure(
 }
 
 class LfgDiscordError extends Error {
-  constructor(name: string, readonly httpStatus: number) {
+  constructor(
+    name: string,
+    readonly httpStatus: number,
+  ) {
     super(name);
     this.name = name;
   }

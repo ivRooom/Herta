@@ -87,9 +87,7 @@ export async function POST(request: Request, { params }: RouteContext) {
 function parsePostInput(body: Record<string, unknown>): LfgPostInput {
   const startTimeValue = body['startTime'];
   const startTime =
-    typeof startTimeValue === 'string' && startTimeValue.trim()
-      ? new Date(startTimeValue)
-      : null;
+    typeof startTimeValue === 'string' && startTimeValue.trim() ? new Date(startTimeValue) : null;
   if (startTime && !Number.isFinite(startTime.getTime())) {
     throw new LfgValidationError('startTimeは有効なISO-8601日時で指定してください');
   }
@@ -101,8 +99,7 @@ function parsePostInput(body: Record<string, unknown>): LfgPostInput {
     description: typeof body['description'] === 'string' ? body['description'] : null,
     maxPlayers: typeof body['maxPlayers'] === 'number' ? body['maxPlayers'] : Number.NaN,
     startTime,
-    durationMinutes:
-      typeof body['durationMinutes'] === 'number' ? body['durationMinutes'] : null,
+    durationMinutes: typeof body['durationMinutes'] === 'number' ? body['durationMinutes'] : null,
   };
 }
 

@@ -17,7 +17,10 @@ export function buildLfgDiscordMessage(
 ): LfgDiscordMessagePayload {
   const active = ACTIVE_STATUSES.has(post.status);
   const participantText = participantIds.length
-    ? participantIds.slice(0, 30).map((id) => `<@${id}>`).join(' ')
+    ? participantIds
+        .slice(0, 30)
+        .map((id) => `<@${id}>`)
+        .join(' ')
     : '参加者なし';
   return {
     embeds: [

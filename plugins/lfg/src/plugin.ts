@@ -12,6 +12,7 @@ import {
   listLfgParticipants,
   listLfgPosts,
   markLfgMessageMissing,
+  markLfgMessageSynchronized,
   updateLfgMessageReference,
   type LfgPostRecord,
   type LfgPostStatus,
@@ -69,6 +70,7 @@ interface LfgCommandInteraction {
 interface LfgButtonInteraction {
   guildId: string | null;
   customId: string;
+  message: { id: string };
   user: { id: string };
   replied: boolean;
   deferred: boolean;
@@ -391,12 +393,26 @@ async function updateButtonMessage(
   post: LfgPostRecord,
 ): Promise<void> {
   const participants = await listLfgParticipants(context.prisma, context.guildId, post.id);
-  await interaction.update(
-    renderLfgMessage(
-      post,
-      participants.map((item) => item.userId),
-    ),
-  );
+  try {
+    await interaction.update(
+      renderLfgMessage(
+        post,
+        participants.map((item) => item.userId),
+      ),
+    );
+    await markLfgMessageSynchronized(context.prisma, {
+      guildId: context.guildId,
+      postId: post.id,
+    });
+  } catch (error) {
+    context.logger.warn(
+      { guildId: context.guildId, postId: post.id, errorName: resolveErrorName(error) },
+      'LFG Button操作後のDiscord表示更新に失敗しました。Workerで再同期します',
+    );
+    if (!interaction.replied && !interaction.deferred) {
+      await respond(interaction, '参加状態は更新されました。表示はWorkerが再同期します');
+    }
+  }
 }
 
 async function refreshLfgMessage(context: LfgRuntimeContext, post: LfgPostRecord): Promise<void> {
@@ -413,6 +429,10 @@ async function refreshLfgMessage(context: LfgRuntimeContext, post: LfgPostRecord
         participants.map((item) => item.userId),
       ),
     );
+    await markLfgMessageSynchronized(context.prisma, {
+      guildId: context.guildId,
+      postId: post.id,
+    });
   } catch (error) {
     await markLfgMessageMissing(context.prisma, {
       guildId: context.guildId,

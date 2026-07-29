@@ -270,6 +270,8 @@ export async function joinLfgPost(
         participantCount: nextCount,
         status: nextCount >= post.maxPlayers ? 'full' : 'open',
         updatedBy: input.actorId ?? input.userId,
+        messageState: 'pending',
+        lastErrorName: null,
         version: { increment: 1 },
       },
     });
@@ -323,6 +325,8 @@ export async function leaveLfgPost(
         participantCount: nextCount,
         status: 'open',
         updatedBy: input.actorId ?? input.userId,
+        messageState: 'pending',
+        lastErrorName: null,
         version: { increment: 1 },
       },
     });
@@ -367,6 +371,8 @@ export async function closeLfgPost(
         status: input.mode,
         closedAt: now,
         updatedBy: input.actorId,
+        messageState: 'pending',
+        lastErrorName: null,
         version: { increment: 1 },
       },
     });
@@ -442,6 +448,20 @@ export async function updateLfgMessageReference(
   });
 }
 
+export async function markLfgMessageSynchronized(
+  prisma: LfgPrismaClient,
+  input: { guildId: string; postId: string },
+): Promise<LfgPostRecord | null> {
+  const post = await prisma.lfgPost.findFirst({
+    where: { id: input.postId, guildId: input.guildId, deletedAt: null },
+  });
+  if (!post) return null;
+  return prisma.lfgPost.update({
+    where: { id: post.id },
+    data: { messageState: 'active', lastErrorName: null },
+  });
+}
+
 export async function markLfgMessageMissing(
   prisma: LfgPrismaClient,
   input: { guildId: string; messageId: string; errorName?: string },
@@ -497,7 +517,13 @@ export async function expireLfgPost(
     }
     const updated = await tx.lfgPost.update({
       where: { id: post.id },
-      data: { status: 'expired', closedAt: now, version: { increment: 1 } },
+      data: {
+        status: 'expired',
+        closedAt: now,
+        messageState: 'pending',
+        lastErrorName: null,
+        version: { increment: 1 },
+      },
     });
     await tx.auditLog.create({
       data: {
@@ -533,7 +559,13 @@ async function expireIfDue(
   if (post.expiresAt.getTime() > now.getTime() || isFinalStatus(post.status)) return post;
   return tx.lfgPost.update({
     where: { id: post.id },
-    data: { status: 'expired', closedAt: now, version: { increment: 1 } },
+    data: {
+      status: 'expired',
+      closedAt: now,
+      messageState: 'pending',
+      lastErrorName: null,
+      version: { increment: 1 },
+    },
   });
 }
 

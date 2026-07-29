@@ -184,7 +184,9 @@ export function LfgManager({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="font-semibold">募集一覧</h2>
-              <p className="mt-1 text-xs text-muted">募集中 {activeCount}件 / 表示 {posts.length}件</p>
+              <p className="mt-1 text-xs text-muted">
+                募集中 {activeCount}件 / 表示 {posts.length}件
+              </p>
             </div>
             <button
               type="button"
@@ -192,7 +194,11 @@ export function LfgManager({
               disabled={loading}
               className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm hover:bg-surface-elevated disabled:opacity-50"
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              {loading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
               再読み込み
             </button>
           </div>
@@ -296,7 +302,11 @@ export function LfgManager({
                 <h2 className="font-semibold">{detail.post.title}</h2>
                 <p className="mt-1 break-all text-xs text-muted">{detail.post.id}</p>
               </div>
-              <button type="button" onClick={() => setDetail(null)} className="text-sm text-muted hover:text-foreground">
+              <button
+                type="button"
+                onClick={() => setDetail(null)}
+                className="text-sm text-muted hover:text-foreground"
+              >
                 閉じる
               </button>
             </div>
@@ -305,14 +315,20 @@ export function LfgManager({
               <Detail label="チャンネル" value={detail.post.channelId} />
               <Detail label="状態" value={detail.post.status} />
               <Detail label="メッセージ" value={detail.post.messageId ?? '未投稿'} />
-              <Detail label="開始予定" value={detail.post.startTime ? formatDate(detail.post.startTime) : '未指定'} />
+              <Detail
+                label="開始予定"
+                value={detail.post.startTime ? formatDate(detail.post.startTime) : '未指定'}
+              />
               <Detail label="募集期限" value={formatDate(detail.post.expiresAt)} />
             </dl>
             <div className="mt-5">
               <h3 className="text-sm font-medium">参加者</h3>
               <div className="mt-2 flex flex-wrap gap-2">
                 {detail.participants.map((participant) => (
-                  <span key={participant.userId} className="rounded-full border border-border px-2.5 py-1 text-xs">
+                  <span
+                    key={participant.userId}
+                    className="rounded-full border border-border px-2.5 py-1 text-xs"
+                  >
                     {participant.userId}
                   </span>
                 ))}
@@ -332,35 +348,86 @@ export function LfgManager({
         </p>
         <form className="mt-5 space-y-3" onSubmit={(event) => void createPost(event)}>
           <Field label="チャンネルID">
-            <input required value={form.channelId} onChange={(event) => setForm({ ...form, channelId: event.target.value })} className="input" />
+            <input
+              required
+              value={form.channelId}
+              onChange={(event) => setForm({ ...form, channelId: event.target.value })}
+              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm"
+            />
           </Field>
           <Field label="ゲーム・イベント">
-            <input required value={form.game} onChange={(event) => setForm({ ...form, game: event.target.value })} className="input" />
+            <input
+              required
+              value={form.game}
+              onChange={(event) => setForm({ ...form, game: event.target.value })}
+              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm"
+            />
           </Field>
           <Field label="タイトル">
-            <input required value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} className="input" />
+            <input
+              required
+              value={form.title}
+              onChange={(event) => setForm({ ...form, title: event.target.value })}
+              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm"
+            />
           </Field>
           <Field label="説明">
-            <textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} className="input min-h-24 resize-y" />
+            <textarea
+              value={form.description}
+              onChange={(event) => setForm({ ...form, description: event.target.value })}
+              className="min-h-24 w-full resize-y rounded-xl border border-border bg-background px-3 py-2.5 text-sm"
+            />
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="定員">
-              <input type="number" min={2} max={maxPlayersLimit} required value={form.maxPlayers} onChange={(event) => setForm({ ...form, maxPlayers: event.target.value })} className="input" />
+              <input
+                type="number"
+                min={2}
+                max={maxPlayersLimit}
+                required
+                value={form.maxPlayers}
+                onChange={(event) => setForm({ ...form, maxPlayers: event.target.value })}
+                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm"
+              />
             </Field>
             <Field label="募集期間（分）">
-              <input type="number" min={5} required value={form.durationMinutes} onChange={(event) => setForm({ ...form, durationMinutes: event.target.value })} className="input" />
+              <input
+                type="number"
+                min={5}
+                required
+                value={form.durationMinutes}
+                onChange={(event) => setForm({ ...form, durationMinutes: event.target.value })}
+                className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm"
+              />
             </Field>
           </div>
           <Field label="開始予定">
-            <input type="datetime-local" value={form.startTime} onChange={(event) => setForm({ ...form, startTime: event.target.value })} className="input" />
+            <input
+              type="datetime-local"
+              value={form.startTime}
+              onChange={(event) => setForm({ ...form, startTime: event.target.value })}
+              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm"
+            />
           </Field>
-          <button type="submit" disabled={loading} className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-50">
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-50"
+          >
             {loading ? '処理中…' : '募集を作成'}
           </button>
         </form>
 
-        {error ? <p className="mt-4 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p> : null}
-        {notice ? <p className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300">{notice}</p> : null}
+        {error ? (
+          <p className="mt-4 rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+            {error}
+          </p>
+        ) : null}
+        {notice ? (
+          <p className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300">
+            {notice}
+          </p>
+        ) : null}
       </aside>
     </div>
   );
@@ -392,7 +459,11 @@ function StatusBadge({ status }: { status: LfgPostItem['status'] }) {
     cancelled: 'キャンセル',
     expired: '期限切れ',
   }[status];
-  return <span className="rounded-full border border-border px-2 py-0.5 text-xs font-medium">{label}</span>;
+  return (
+    <span className="rounded-full border border-border px-2 py-0.5 text-xs font-medium">
+      {label}
+    </span>
+  );
 }
 
 function formatDate(value: string): string {

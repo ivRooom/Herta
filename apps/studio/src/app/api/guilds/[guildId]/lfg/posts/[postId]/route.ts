@@ -49,7 +49,10 @@ export async function PATCH(request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: 'JSON bodyが不正です' }, { status: 400 });
   }
   if (!isRecord(body) || (body['action'] !== 'close' && body['action'] !== 'cancel')) {
-    return NextResponse.json({ error: 'actionにはcloseまたはcancelを指定してください' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'actionにはcloseまたはcancelを指定してください' },
+      { status: 400 },
+    );
   }
 
   try {
