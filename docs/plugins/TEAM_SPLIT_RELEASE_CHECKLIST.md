@@ -31,6 +31,7 @@ PR #81（LFG）のマージ後にbaseを`main`へ変更し、最新`main`との�
 
 - [ ] PostgreSQLバックアップ取得
 - [ ] 通常migration適用
+- [ ] `team_split_sessions.status`のDB既定値が`open`
 - [ ] expiry indexをtransaction外でCONCURRENTLY作成
 - [ ] legacy participants＋creatorのバックフィル結果を確認
 - [ ] participant count再集計結果を確認
