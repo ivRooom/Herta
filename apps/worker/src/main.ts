@@ -3,6 +3,7 @@ import { createLogger } from '@herta/logger';
 import { HERTA_WORKER_HEARTBEAT_INTERVAL_MS, HERTA_WORKER_HEARTBEAT_KEY } from '@herta/shared';
 import { Redis } from 'ioredis';
 import { startDailyContentRuntime, type DailyContentRuntime } from './daily-content.js';
+import { startLfgRuntime, type LfgRuntime } from './lfg.js';
 
 const logger = createLogger({
   name: 'herta-worker',
@@ -12,6 +13,7 @@ const logger = createLogger({
 let redis: Redis | undefined;
 let heartbeatTimer: NodeJS.Timeout | undefined;
 let dailyContentRuntime: DailyContentRuntime | undefined;
+let lfgRuntime: LfgRuntime | undefined;
 let shuttingDown = false;
 
 function resolveHeartbeatTtlMs(): number {
@@ -61,10 +63,11 @@ async function main() {
   }
 
   const discordBotToken = process.env['DISCORD_BOT_TOKEN']?.trim();
-  if (!process.env['DATABASE_URL']) {
-    logger.warn('DATABASE_URLが未設定のためDaily Content Workerを開始しません');
+  const databaseConfigured = Boolean(process.env['DATABASE_URL']);
+  if (!databaseConfigured) {
+    logger.warn('DATABASE_URLが未設定のためPlugin Workerを開始しません');
   } else if (!discordBotToken) {
-    logger.warn('DISCORD_BOT_TOKENが未設定のためDaily Content Workerを開始しません');
+    logger.warn('DISCORD_BOT_TOKENが未設定のためPlugin Workerを開始しません');
   } else {
     try {
       dailyContentRuntime = await startDailyContentRuntime({
@@ -81,6 +84,24 @@ async function main() {
       );
       process.exit(1);
     }
+
+    const componentSecret = process.env['LFG_COMPONENT_SECRET']?.trim();
+    if (!componentSecret || componentSecret.length < 32) {
+      logger.warn('LFG_COMPONENT_SECRETが未設定または短いためLFG Workerを開始しません');
+    } else {
+      try {
+        lfgRuntime = await startLfgRuntime({
+          prisma: getPrismaClient(),
+          logger,
+          discordBotToken,
+          componentSecret,
+        });
+        logger.info('LFG Workerを開始しました');
+      } catch (error) {
+        logger.error({ errorName: resolveErrorName(error) }, 'LFG Workerの開始に失敗しました');
+        process.exit(1);
+      }
+    }
   }
 
   logger.info('Herta Worker を起動しました');
@@ -94,6 +115,13 @@ async function shutdown(signal: string): Promise<void> {
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = undefined;
+  }
+
+  try {
+    await lfgRuntime?.close();
+    lfgRuntime = undefined;
+  } catch (error) {
+    logger.error({ errorName: resolveErrorName(error) }, 'LFG Workerの終了処理に失敗しました');
   }
 
   try {
