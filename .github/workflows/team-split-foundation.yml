@@ -1,0 +1,55 @@
+name: Team Split Foundation
+
+on:
+  push:
+    branches: [feat/team-split-plugin-v1]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: team-split-foundation
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/team-split-plugin-v1
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prismaモデルを同期
+        run: node .github/scripts/apply-team-split-schema.mjs
+      - name: Prisma Generate
+        run: pnpm --filter @herta/db generate
+      - name: Format
+        run: pnpm format
+      - name: Team Split Test
+        run: pnpm --filter @herta/plugin-team-split test
+      - name: Team Split Typecheck
+        run: pnpm --filter @herta/plugin-team-split typecheck
+      - name: 一時Workflowを削除して反映
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git rm -f .github/scripts/apply-team-split-schema.mjs
+          git rm -f .github/workflows/team-split-foundation.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'feat(team-split): Prismaモデルと基盤テストを同期'
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:feat/team-split-plugin-v1
