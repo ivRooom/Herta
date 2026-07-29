@@ -1,5 +1,11 @@
 # LFG Plugin v1 リリースチェックリスト
 
+## Stacked PR
+
+- [ ] 依存するDaily Content Plugin v1のPR #80を先にマージ
+- [ ] PR #81のbaseを`main`へ変更後、差分と競合を再確認
+- [ ] `main`最新ヘッドで標準CIを再実行
+
 ## CI
 
 - [ ] Prisma Generate
