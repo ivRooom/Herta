@@ -32,6 +32,7 @@ SET
   "updated_by" = COALESCE("updated_by", "creator_id");
 
 ALTER TABLE "team_split_sessions"
+  ALTER COLUMN "status" SET DEFAULT 'open',
   ALTER COLUMN "expires_at" SET NOT NULL;
 
 CREATE TABLE IF NOT EXISTS "team_split_participants" (
