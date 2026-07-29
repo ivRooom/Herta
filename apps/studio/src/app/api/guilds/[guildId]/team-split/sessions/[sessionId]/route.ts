@@ -12,6 +12,7 @@ import {
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { authorizeGuild } from '@/lib/guild-plugins';
+import { toPublicTeamSplitSession } from '@/lib/team-split';
 
 export const dynamic = 'force-dynamic';
 
@@ -35,7 +36,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     if (!session) {
       return NextResponse.json({ error: 'セッションが見つかりません' }, { status: 404 });
     }
-    return NextResponse.json({ session, participants });
+    return NextResponse.json({ session: toPublicTeamSplitSession(session), participants });
   } catch (error) {
     console.error('Team Split detail API request failed', safeErrorName(error));
     return NextResponse.json(
@@ -110,7 +111,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
           { status: 409 },
         );
       }
-      return NextResponse.json(result.session);
+      return NextResponse.json(toPublicTeamSplitSession(result.session));
     }
     if (action === 'remove') {
       const result = await removeTeamSplitParticipant(prisma as unknown as TeamSplitPrismaClient, {
@@ -138,7 +139,7 @@ export async function PATCH(request: Request, { params }: RouteContext) {
       if (result.state === 'forbidden') {
         return NextResponse.json({ error: '操作権限がありません' }, { status: 403 });
       }
-      return NextResponse.json(result.session);
+      return NextResponse.json(toPublicTeamSplitSession(result.session));
     }
 
     return NextResponse.json({ error: '未対応のactionです' }, { status: 400 });
@@ -168,7 +169,7 @@ function actionResult(
   if (result.state === 'invalid_state') {
     return NextResponse.json({ error: '現在の状態では操作できません' }, { status: 409 });
   }
-  return NextResponse.json(result.session);
+  return NextResponse.json(toPublicTeamSplitSession(result.session));
 }
 
 function safeErrorName(error: unknown): string {
