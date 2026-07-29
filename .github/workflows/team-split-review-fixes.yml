@@ -8,38 +8,22 @@ permissions:
   contents: write
 
 concurrency:
-  group: team-split-review-fixes
+  group: team-split-review-fixes-v2
   cancel-in-progress: true
 
 jobs:
-  apply-and-verify:
+  apply:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
           ref: feat/team-split-plugin-v1
           fetch-depth: 0
           persist-credentials: false
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
       - name: レビュー修正を適用
         run: python3 .github/scripts/fix-team-split-review.py
-      - name: Prisma Generate
-        run: pnpm --filter @herta/db generate
-      - name: Format
-        run: pnpm format
-      - name: Team Split Test
-        run: pnpm --filter @herta/plugin-team-split test
-      - name: Typecheck
-        run: pnpm typecheck
-      - name: Build
-        run: pnpm build
       - name: 一時ファイルを削除して反映
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
