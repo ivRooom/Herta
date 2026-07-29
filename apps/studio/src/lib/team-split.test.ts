@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import assert from 'node:assert/strict';
+import test from 'node:test';
 import type { TeamSplitSessionRecord } from '@herta/plugin-catalog/team-split-service';
-import { toPublicTeamSplitSession } from './team-split';
+import { toPublicTeamSplitSession } from './team-split.ts';
 
 function createSession(): TeamSplitSessionRecord {
   const now = new Date('2026-07-29T00:00:00.000Z');
@@ -34,10 +35,8 @@ function createSession(): TeamSplitSessionRecord {
   };
 }
 
-describe('toPublicTeamSplitSession', () => {
-  it('内部seed hashを公開レスポンスから除外する', () => {
-    const result = toPublicTeamSplitSession(createSession());
-    expect(result).not.toHaveProperty('seedHash');
-    expect(JSON.stringify(result)).not.toContain('internal-secret-seed-hash');
-  });
+test('Team Split公開レスポンスから内部seed hashを除外する', () => {
+  const result = toPublicTeamSplitSession(createSession());
+  assert.equal('seedHash' in result, false);
+  assert.equal(JSON.stringify(result).includes('internal-secret-seed-hash'), false);
 });
