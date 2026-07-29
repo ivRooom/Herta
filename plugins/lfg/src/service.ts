@@ -241,7 +241,13 @@ export async function joinLfgPost(
           ? post
           : await tx.lfgPost.update({
               where: { id: post.id },
-              data: { status: 'full', participantCount: joinedCount, version: { increment: 1 } },
+              data: {
+                status: 'full',
+                participantCount: joinedCount,
+                messageState: 'pending',
+                lastErrorName: null,
+                version: { increment: 1 },
+              },
             });
       return { state: 'full', post: fullPost };
     }
@@ -428,14 +434,20 @@ export async function listLfgParticipants(
 
 export async function updateLfgMessageReference(
   prisma: LfgPrismaClient,
-  input: { guildId: string; postId: string; messageId: string; actorId: string },
+  input: {
+    guildId: string;
+    postId: string;
+    messageId: string;
+    actorId: string;
+    expectedVersion: number;
+  },
 ): Promise<LfgPostRecord | null> {
   return prisma.$transaction(async (tx) => {
     await lockPost(tx, input.guildId, input.postId);
     const post = await tx.lfgPost.findFirst({
       where: { id: input.postId, guildId: input.guildId, deletedAt: null },
     });
-    if (!post) return null;
+    if (!post || post.version !== input.expectedVersion) return post;
     return tx.lfgPost.update({
       where: { id: post.id },
       data: {
@@ -450,15 +462,18 @@ export async function updateLfgMessageReference(
 
 export async function markLfgMessageSynchronized(
   prisma: LfgPrismaClient,
-  input: { guildId: string; postId: string },
+  input: { guildId: string; postId: string; expectedVersion: number },
 ): Promise<LfgPostRecord | null> {
-  const post = await prisma.lfgPost.findFirst({
-    where: { id: input.postId, guildId: input.guildId, deletedAt: null },
-  });
-  if (!post) return null;
-  return prisma.lfgPost.update({
-    where: { id: post.id },
-    data: { messageState: 'active', lastErrorName: null },
+  return prisma.$transaction(async (tx) => {
+    await lockPost(tx, input.guildId, input.postId);
+    const post = await tx.lfgPost.findFirst({
+      where: { id: input.postId, guildId: input.guildId, deletedAt: null },
+    });
+    if (!post || post.version !== input.expectedVersion) return post;
+    return tx.lfgPost.update({
+      where: { id: post.id },
+      data: { messageState: 'active', lastErrorName: null },
+    });
   });
 }
 

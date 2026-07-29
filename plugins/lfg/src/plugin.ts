@@ -124,7 +124,17 @@ export const lfgPlugin = definePlugin<LfgConfig, LfgDiscordClient, LfgPrismaClie
         async handler(context, ...args) {
           const interaction = args[0] as LfgButtonInteraction | undefined;
           if (!interaction?.isButton()) return;
-          await executeLfgButton(context, interaction);
+          try {
+            await executeLfgButton(context, interaction);
+          } catch (error) {
+            context.logger.error(
+              { guildId: context.guildId, errorName: resolveErrorName(error) },
+              'LFG Button操作に失敗しました',
+            );
+            if (!interaction.replied && !interaction.deferred) {
+              await respond(interaction, 'LFG Button操作に失敗しました');
+            }
+          }
         },
       },
       {
@@ -132,10 +142,17 @@ export const lfgPlugin = definePlugin<LfgConfig, LfgDiscordClient, LfgPrismaClie
         async handler(context, ...args) {
           const message = args[0] as LfgDeletedMessage | undefined;
           if (!message?.guildId || message.guildId !== context.guildId) return;
-          await markLfgMessageMissing(context.prisma, {
-            guildId: context.guildId,
-            messageId: message.id,
-          });
+          try {
+            await markLfgMessageMissing(context.prisma, {
+              guildId: context.guildId,
+              messageId: message.id,
+            });
+          } catch (error) {
+            context.logger.error(
+              { guildId: context.guildId, errorName: resolveErrorName(error) },
+              'LFG募集メッセージ削除状態の記録に失敗しました',
+            );
+          }
         },
       },
     ];
@@ -230,6 +247,7 @@ async function createPostFromCommand(
         postId: post.id,
         messageId,
         actorId: interaction.user.id,
+        expectedVersion: post.version,
       });
     }
   } catch (error) {
@@ -403,6 +421,7 @@ async function updateButtonMessage(
     await markLfgMessageSynchronized(context.prisma, {
       guildId: context.guildId,
       postId: post.id,
+      expectedVersion: post.version,
     });
   } catch (error) {
     context.logger.warn(
@@ -432,6 +451,7 @@ async function refreshLfgMessage(context: LfgRuntimeContext, post: LfgPostRecord
     await markLfgMessageSynchronized(context.prisma, {
       guildId: context.guildId,
       postId: post.id,
+      expectedVersion: post.version,
     });
   } catch (error) {
     await markLfgMessageMissing(context.prisma, {

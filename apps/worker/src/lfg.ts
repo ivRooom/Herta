@@ -5,6 +5,7 @@ import {
   expireLfgPost,
   isLfgPluginEnabled,
   listDueLfgPosts,
+  normalizeLfgConfig,
   listLfgParticipants,
   markLfgMessageMissing,
   markLfgMessageSynchronized,
@@ -18,6 +19,7 @@ const TEXT_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12, 15, 16]);
 const DEFAULT_SCAN_INTERVAL_SECONDS = 30;
 const RECOVERY_RETRY_DELAY_MS = 60_000;
 const SCAN_LIMIT = 100;
+const PRUNE_INTERVAL_MS = 60 * 60 * 1000;
 
 export interface LfgRuntime {
   close(): Promise<void>;
@@ -38,6 +40,7 @@ interface DiscordChannelPayload {
 export async function startLfgRuntime(options: StartLfgRuntimeOptions): Promise<LfgRuntime> {
   assertSecret(options.componentSecret);
   let scanning = false;
+  let lastPrunedAt = 0;
   let timer: NodeJS.Timeout | undefined;
 
   const scanNow = async () => {
@@ -47,6 +50,10 @@ export async function startLfgRuntime(options: StartLfgRuntimeOptions): Promise<
       await expireDuePosts(options);
       await synchronizePendingMessages(options);
       await recoverMissingMessages(options);
+      if (Date.now() - lastPrunedAt >= PRUNE_INTERVAL_MS) {
+        await pruneEndedPosts(options);
+        lastPrunedAt = Date.now();
+      }
     } catch (error) {
       options.logger.error(
         { errorName: resolveErrorName(error) },
@@ -81,6 +88,8 @@ async function expireDuePosts(options: StartLfgRuntimeOptions): Promise<void> {
   const now = new Date();
   const duePosts = await listDueLfgPosts(prisma, now, SCAN_LIMIT);
   for (const due of duePosts) {
+    const pluginEnabled = await isLfgPluginEnabled(prisma, due.guildId);
+    if (!pluginEnabled) continue;
     const expired = await expireLfgPost(prisma, {
       guildId: due.guildId,
       postId: due.id,
@@ -120,6 +129,7 @@ async function synchronizePendingMessages(options: StartLfgRuntimeOptions): Prom
       await markLfgMessageSynchronized(options.prisma as unknown as LfgPrismaClient, {
         guildId: post.guildId,
         postId: post.id,
+        expectedVersion: post.version,
       });
     } catch (error) {
       await recordMessageFailure(options.prisma, post as LfgPostRecord, error);
@@ -157,6 +167,7 @@ async function recoverMissingMessages(options: StartLfgRuntimeOptions): Promise<
         postId: post.id,
         messageId,
         actorId: 'system',
+        expectedVersion: post.version,
       });
       options.logger.info(
         { guildId: post.guildId, postId: post.id },
@@ -164,6 +175,33 @@ async function recoverMissingMessages(options: StartLfgRuntimeOptions): Promise<
       );
     } catch (error) {
       await recordMessageFailure(options.prisma, post as LfgPostRecord, error);
+    }
+  }
+}
+
+async function pruneEndedPosts(options: StartLfgRuntimeOptions): Promise<void> {
+  const plugins = await options.prisma.guildPlugin.findMany({
+    where: { pluginId: 'lfg' },
+    select: { guildId: true, config: true },
+  });
+  const now = new Date();
+  for (const plugin of plugins) {
+    const config = normalizeLfgConfig(plugin.config);
+    const before = new Date(now.getTime() - config.retentionDays * 24 * 60 * 60 * 1000);
+    const result = await options.prisma.lfgPost.updateMany({
+      where: {
+        guildId: plugin.guildId,
+        status: { in: ['closed', 'cancelled', 'expired'] },
+        deletedAt: null,
+        OR: [{ closedAt: { lte: before } }, { closedAt: null, updatedAt: { lte: before } }],
+      },
+      data: { deletedAt: now },
+    });
+    if (result.count > 0) {
+      options.logger.info(
+        { guildId: plugin.guildId, count: result.count },
+        '保持期間を超えたLFG募集をSoft Deleteしました',
+      );
     }
   }
 }
