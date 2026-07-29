@@ -30,7 +30,7 @@ describe('Auto Response config', () => {
       maxRules: 200,
       maxRulesPerMessage: 5,
       maxRegexEvaluationsPerMessage: 10,
-      maxMessageLength: 100,
+      maxMessageLength: 10,
     });
   });
 
