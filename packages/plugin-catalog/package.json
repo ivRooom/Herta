@@ -49,6 +49,14 @@
     "./lfg-service": {
       "types": "./src/lfg-service.ts",
       "default": "./dist/lfg-service.js"
+    },
+    "./team-split-runtime": {
+      "types": "./src/team-split-runtime.ts",
+      "default": "./dist/team-split-runtime.js"
+    },
+    "./team-split-service": {
+      "types": "./src/team-split-service.ts",
+      "default": "./dist/team-split-service.js"
     }
   },
   "scripts": {
