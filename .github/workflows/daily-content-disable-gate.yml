@@ -1,0 +1,59 @@
+name: Daily Content Disable Gate
+
+on:
+  push:
+    branches: [feat/daily-content-plugin-v1]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-content-disable-gate
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/daily-content-plugin-v1
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Plugin無効化ゲートを適用
+        run: node .github/scripts/apply-daily-content-disable-gate.mjs
+      - name: Prisma Generate
+        run: pnpm --filter @herta/db generate
+      - name: Format
+        run: pnpm format
+      - name: Daily Content test
+        run: pnpm --filter @herta/plugin-daily-content test
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: 全体Test
+        run: pnpm test
+      - name: 一時Workflowを削除して反映
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git rm .github/scripts/apply-daily-content-disable-gate.mjs
+          git rm .github/workflows/daily-content-disable-gate.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'fix(daily-content): Plugin無効Guildのdue予約を停止'
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:feat/daily-content-plugin-v1
