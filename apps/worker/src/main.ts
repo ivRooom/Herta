@@ -4,6 +4,10 @@ import { HERTA_WORKER_HEARTBEAT_INTERVAL_MS, HERTA_WORKER_HEARTBEAT_KEY } from '
 import { Redis } from 'ioredis';
 import { startDailyContentRuntime, type DailyContentRuntime } from './daily-content.js';
 import { startLfgRuntime, type LfgRuntime } from './lfg.js';
+import {
+  startTeamSplitRuntime,
+  type TeamSplitWorkerRuntime,
+} from './team-split.js';
 
 const logger = createLogger({
   name: 'herta-worker',
@@ -14,6 +18,7 @@ let redis: Redis | undefined;
 let heartbeatTimer: NodeJS.Timeout | undefined;
 let dailyContentRuntime: DailyContentRuntime | undefined;
 let lfgRuntime: LfgRuntime | undefined;
+let teamSplitRuntime: TeamSplitWorkerRuntime | undefined;
 let shuttingDown = false;
 
 function resolveHeartbeatTtlMs(): number {
@@ -102,6 +107,27 @@ async function main() {
         process.exit(1);
       }
     }
+
+    const teamSplitSecret = process.env['TEAM_SPLIT_SECRET']?.trim();
+    if (!teamSplitSecret || teamSplitSecret.length < 32) {
+      logger.warn('TEAM_SPLIT_SECRETが未設定または短いためTeam Split Workerを開始しません');
+    } else {
+      try {
+        teamSplitRuntime = await startTeamSplitRuntime({
+          prisma: getPrismaClient(),
+          logger,
+          discordBotToken,
+          secret: teamSplitSecret,
+        });
+        logger.info('Team Split Workerを開始しました');
+      } catch (error) {
+        logger.error(
+          { errorName: resolveErrorName(error) },
+          'Team Split Workerの開始に失敗しました',
+        );
+        process.exit(1);
+      }
+    }
   }
 
   logger.info('Herta Worker を起動しました');
@@ -115,6 +141,16 @@ async function shutdown(signal: string): Promise<void> {
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = undefined;
+  }
+
+  try {
+    await teamSplitRuntime?.close();
+    teamSplitRuntime = undefined;
+  } catch (error) {
+    logger.error(
+      { errorName: resolveErrorName(error) },
+      'Team Split Workerの終了処理に失敗しました',
+    );
   }
 
   try {
