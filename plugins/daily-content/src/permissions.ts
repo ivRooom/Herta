@@ -76,9 +76,7 @@ export function checkDailyContentSendPermissions(
   if ((permissions & DISCORD_VIEW_CHANNEL) !== DISCORD_VIEW_CHANNEL) {
     missing.push('VIEW_CHANNEL');
   }
-  const sendPermission = isThread
-    ? DISCORD_SEND_MESSAGES_IN_THREADS
-    : DISCORD_SEND_MESSAGES;
+  const sendPermission = isThread ? DISCORD_SEND_MESSAGES_IN_THREADS : DISCORD_SEND_MESSAGES;
   if ((permissions & sendPermission) !== sendPermission) {
     missing.push(isThread ? 'SEND_MESSAGES_IN_THREADS' : 'SEND_MESSAGES');
   }

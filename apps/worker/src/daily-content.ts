@@ -5,6 +5,8 @@ import type { Logger } from 'pino';
 import { Redis } from 'ioredis';
 import { QueueNames, type JobData } from '@herta/queue';
 import {
+  checkDailyContentSendPermissions,
+  computeDiscordChannelPermissions,
   getDeliveryWithSchedule,
   listDueDailyContents,
   listPendingDeliveries,
@@ -24,6 +26,9 @@ import {
   reserveDueDelivery,
   type DailyContentConfig,
   type DailyContentDeliveryRecord,
+  type DiscordPermissionMember,
+  type DiscordPermissionOverwrite,
+  type DiscordPermissionRole,
   type DailyContentPrismaClient,
 } from '@herta/plugin-catalog/daily-content-service';
 
@@ -32,8 +37,42 @@ const DAILY_CONTENT_SCAN_LIMIT = 200;
 const BASE_RETRY_DELAY_MS = 15_000;
 const TEXT_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12]);
 const DISCORD_NONCE_MAX_LENGTH = 25;
+const DISCORD_PERMISSION_CACHE_TTL_MS = 30_000;
+const THREAD_CHANNEL_TYPES = new Set([10, 11, 12]);
 
 type DailyContentJobData = JobData[typeof QueueNames.DAILY_CONTENT];
+
+interface DiscordChannelPayload {
+  id: string;
+  type: number;
+  guild_id?: string;
+  parent_id?: string | null;
+  permission_overwrites?: DiscordPermissionOverwrite[];
+  thread_metadata?: { archived?: boolean; locked?: boolean };
+}
+
+interface DiscordUserPayload {
+  id: string;
+}
+
+interface DiscordGuildMemberPayload {
+  user?: { id?: string };
+  roles?: string[];
+}
+
+interface DiscordRolePayload {
+  id?: string;
+  permissions?: string;
+}
+
+interface CachedGuildPermissionContext {
+  expiresAt: number;
+  member: DiscordPermissionMember;
+  roles: DiscordPermissionRole[];
+}
+
+let discordBotUserId: string | undefined;
+const guildPermissionCache = new Map<string, CachedGuildPermissionContext>();
 
 export interface DailyContentRuntime {
   scanNow(now?: Date): Promise<void>;
@@ -280,10 +319,14 @@ async function publishDiscordMessage(input: {
   if (!channelResponse.ok) {
     throw await createDiscordError('DailyContentChannelPreflightFailed', channelResponse);
   }
-  const channel = (await channelResponse.json()) as { type?: unknown };
+  const channel = (await channelResponse.json()) as DiscordChannelPayload;
   if (typeof channel.type !== 'number' || !TEXT_CHANNEL_TYPES.has(channel.type)) {
     throw new DailyContentPublishError('DailyContentChannelNotTextBased', channelResponse.status);
   }
+  if (THREAD_CHANNEL_TYPES.has(channel.type) && channel.thread_metadata?.archived) {
+    throw new DailyContentPublishError('DailyContentThreadArchived', 409);
+  }
+  await assertDiscordCanSend(input.token, channel);
 
   const response = await fetch(`${DISCORD_API_BASE_URL}/channels/${input.channelId}/messages`, {
     method: 'POST',
@@ -307,6 +350,104 @@ async function publishDiscordMessage(input: {
     throw new DailyContentPublishError('DailyContentDiscordResponseInvalid', response.status);
   }
   return message.id;
+}
+
+async function assertDiscordCanSend(
+  token: string,
+  targetChannel: DiscordChannelPayload,
+): Promise<void> {
+  const isThread = THREAD_CHANNEL_TYPES.has(targetChannel.type);
+  const permissionChannel =
+    isThread && targetChannel.parent_id
+      ? await fetchDiscordJson<DiscordChannelPayload>(
+          token,
+          `/channels/${targetChannel.parent_id}`,
+          'DailyContentParentChannelPreflightFailed',
+        )
+      : targetChannel;
+  const guildId = targetChannel.guild_id ?? permissionChannel.guild_id;
+  if (!guildId) {
+    throw new DailyContentPublishError('DailyContentGuildUnavailable', 400);
+  }
+
+  const botUserId = await getDiscordBotUserId(token);
+  const context = await getGuildPermissionContext(token, guildId, botUserId);
+  const permissions = computeDiscordChannelPermissions({
+    guildId,
+    member: context.member,
+    roles: context.roles,
+    overwrites: permissionChannel.permission_overwrites ?? [],
+  });
+  const check = checkDailyContentSendPermissions(permissions, isThread);
+  if (!check.allowed) {
+    throw new DailyContentPublishError(
+      `DailyContentBotPermissionDenied:${check.missing.join(',')}`,
+      403,
+    );
+  }
+}
+
+async function getDiscordBotUserId(token: string): Promise<string> {
+  if (discordBotUserId) return discordBotUserId;
+  const user = await fetchDiscordJson<DiscordUserPayload>(
+    token,
+    '/users/@me',
+    'DailyContentBotIdentityFailed',
+  );
+  if (typeof user.id !== 'string' || !user.id) {
+    throw new DailyContentPublishError('DailyContentBotIdentityInvalid', 502);
+  }
+  discordBotUserId = user.id;
+  return user.id;
+}
+
+async function getGuildPermissionContext(
+  token: string,
+  guildId: string,
+  botUserId: string,
+): Promise<CachedGuildPermissionContext> {
+  const cached = guildPermissionCache.get(guildId);
+  if (cached && cached.expiresAt > Date.now()) return cached;
+
+  const [rolePayloads, memberPayload] = await Promise.all([
+    fetchDiscordJson<DiscordRolePayload[]>(
+      token,
+      `/guilds/${guildId}/roles`,
+      'DailyContentGuildRolesPreflightFailed',
+    ),
+    fetchDiscordJson<DiscordGuildMemberPayload>(
+      token,
+      `/guilds/${guildId}/members/${botUserId}`,
+      'DailyContentBotMemberPreflightFailed',
+    ),
+  ]);
+  const roles = rolePayloads.flatMap((role) =>
+    typeof role.id === 'string' && typeof role.permissions === 'string'
+      ? [{ id: role.id, permissions: role.permissions }]
+      : [],
+  );
+  const member: DiscordPermissionMember = {
+    userId: memberPayload.user?.id ?? botUserId,
+    roleIds: Array.isArray(memberPayload.roles)
+      ? memberPayload.roles.filter((roleId): roleId is string => typeof roleId === 'string')
+      : [],
+  };
+  const context = {
+    expiresAt: Date.now() + DISCORD_PERMISSION_CACHE_TTL_MS,
+    roles,
+    member,
+  };
+  guildPermissionCache.set(guildId, context);
+  return context;
+}
+
+async function fetchDiscordJson<T>(token: string, endpoint: string, errorName: string): Promise<T> {
+  const response = await fetch(`${DISCORD_API_BASE_URL}${endpoint}`, {
+    headers: { Authorization: `Bot ${token}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw await createDiscordError(errorName, response);
+  return (await response.json()) as T;
 }
 
 async function createDiscordError(prefix: string, response: Response): Promise<Error> {

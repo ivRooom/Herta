@@ -52,9 +52,7 @@ describe('Discord permission computation', () => {
         },
       ],
     });
-    expect(checkDailyContentSendPermissions(permissions, false).missing).toContain(
-      'SEND_MESSAGES',
-    );
+    expect(checkDailyContentSendPermissions(permissions, false).missing).toContain('SEND_MESSAGES');
     expect(checkDailyContentSendPermissions(permissions, true).allowed).toBe(true);
   });
 
@@ -93,11 +91,7 @@ describe('Discord permission computation', () => {
           id: guildId,
           type: 0,
           allow: '0',
-          deny: bits(
-            DISCORD_VIEW_CHANNEL,
-            DISCORD_SEND_MESSAGES,
-            DISCORD_SEND_MESSAGES_IN_THREADS,
-          ),
+          deny: bits(DISCORD_VIEW_CHANNEL, DISCORD_SEND_MESSAGES, DISCORD_SEND_MESSAGES_IN_THREADS),
         },
       ],
     });
