@@ -399,34 +399,51 @@ model Quote {
 // ============================================================
 
 model LfgPost {
-  id          String    @id @default(uuid())
-  guildId     String    @map("guild_id")
-  creatorId   String    @map("creator_id")
-  game        String
-  title       String
-  description String?
-  maxPlayers  Int       @default(5) @map("max_players")
-  startTime   DateTime? @map("start_time")
-  channelId   String    @map("channel_id")
-  messageId   String?   @map("message_id")
-  status      String    @default("open")
-  createdAt   DateTime  @default(now()) @map("created_at")
+  id               String    @id @default(uuid())
+  guildId          String    @map("guild_id")
+  creatorId        String    @map("creator_id")
+  channelId        String    @map("channel_id")
+  messageId        String?   @map("message_id")
+  game             String
+  title            String
+  description      String    @default("")
+  maxPlayers       Int       @default(5) @map("max_players")
+  participantCount Int       @default(1) @map("participant_count")
+  startTime        DateTime? @map("start_time") @db.Timestamptz(3)
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(3)
+  status           String    @default("open")
+  messageState     String    @default("pending") @map("message_state")
+  lastErrorName    String?   @map("last_error_name")
+  closedAt         DateTime? @map("closed_at") @db.Timestamptz(3)
+  createdBy        String?   @map("created_by")
+  updatedBy        String?   @map("updated_by")
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamptz(3)
+  version          Int       @default(1)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   participants LfgParticipant[]
 
   @@index([guildId, status])
+  @@index([guildId, channelId, status])
+  @@index([guildId, creatorId, createdAt(sort: Desc)])
+  @@index([status, expiresAt])
   @@map("lfg_posts")
 }
 
 model LfgParticipant {
-  lfgId    String   @map("lfg_id")
-  userId   String   @map("user_id")
-  status   String   @default("joined")
-  joinedAt DateTime @default(now()) @map("joined_at")
+  lfgId    String    @map("lfg_id")
+  guildId  String    @map("guild_id")
+  userId   String    @map("user_id")
+  status   String    @default("joined")
+  joinedAt DateTime  @default(now()) @map("joined_at") @db.Timestamptz(3)
+  leftAt   DateTime? @map("left_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   lfgPost LfgPost @relation(fields: [lfgId], references: [id], onDelete: Cascade)
 
   @@id([lfgId, userId])
+  @@index([guildId, status])
   @@map("lfg_participants")
 }
 
