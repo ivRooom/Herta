@@ -191,7 +191,24 @@ export class HertaBot {
 
     this.client.on(Events.InteractionCreate, async (interaction) => {
       if (interaction.guildId) {
-        await this.dispatchGuildPluginEvent(interaction.guildId, Events.InteractionCreate, interaction);
+        const dispatch = await this.dispatchGuildPluginEvent(
+          interaction.guildId,
+          Events.InteractionCreate,
+          interaction,
+        );
+        if (
+          dispatch.failed &&
+          !interaction.isChatInputCommand() &&
+          interaction.isRepliable() &&
+          !interaction.replied &&
+          !interaction.deferred
+        ) {
+          await interaction.reply({
+            content: 'Plugin操作の処理中にエラーが発生しました',
+            flags: MessageFlags.Ephemeral,
+          });
+          return;
+        }
       }
       if (!interaction.isChatInputCommand()) return;
 
@@ -255,24 +272,29 @@ export class HertaBot {
     guildId: string,
     eventName: string,
     payload: unknown,
-  ): Promise<void> {
+  ): Promise<{ matched: number; failed: boolean }> {
     try {
       const events = await this.pluginLoader.getGuildEvents(guildId);
-      for (const event of events.filter((candidate) => candidate.event === eventName)) {
+      const handlers = events.filter((candidate) => candidate.event === eventName);
+      let failed = false;
+      for (const event of handlers) {
         try {
           await event.handler(payload);
         } catch (error) {
+          failed = true;
           this.logger.error(
             { err: error, guildId, event: eventName },
             'Plugin Event Handlerの実行に失敗しました',
           );
         }
       }
+      return { matched: handlers.length, failed };
     } catch (error) {
       this.logger.error(
         { err: error, guildId, event: eventName },
         'Guild Plugin Eventの取得に失敗しました',
       );
+      return { matched: 0, failed: true };
     }
   }
 
