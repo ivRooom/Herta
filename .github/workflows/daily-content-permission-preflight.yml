@@ -32,6 +32,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Discord権限事前検証を適用
         run: node .github/scripts/apply-daily-content-permission-preflight.mjs
+      - name: Prisma Generate
+        run: pnpm --filter @herta/db generate
       - name: Format
         run: pnpm format
       - name: Daily Content test
