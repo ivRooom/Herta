@@ -4,6 +4,7 @@ import { dailyContentPlugin } from '@herta/plugin-catalog/daily-content-runtime'
 import { lfgPlugin } from '@herta/plugin-catalog/lfg-runtime';
 import { moderationPlugin } from '@herta/plugin-catalog/moderation-runtime';
 import { quotePlugin } from '@herta/plugin-catalog/quote-runtime';
+import { teamSplitPlugin } from '@herta/plugin-catalog/team-split-runtime';
 import type { Logger } from '@herta/logger';
 import { createPluginContext } from '@herta/plugin-sdk';
 import type { HertaPlugin } from '@herta/plugin-sdk';
@@ -291,6 +292,20 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
           }) as Parameters<NonNullable<typeof quotePlugin.onEnable>>[0],
       )
     : undefined;
+  const teamSplitEntry = deps
+    ? toRuntimePluginEntry(
+        teamSplitPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof teamSplitPlugin.onEnable>>[0],
+      )
+    : undefined;
 
   return officialPluginIds.flatMap((pluginId) => {
     if (!getPluginManifest(pluginId)) return [];
@@ -299,6 +314,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (pluginId === 'lfg' && lfgEntry) return [lfgEntry];
     if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];
     if (pluginId === 'quote' && quoteEntry) return [quoteEntry];
+    if (pluginId === 'team-split' && teamSplitEntry) return [teamSplitEntry];
     return [{ pluginId }];
   });
 }
