@@ -51,7 +51,9 @@ Workerのdue走査間隔はGuild設定ではなく環境変数`DAILY_CONTENT_SCA
 
 - HTTP 429、5xx、通信エラー、timeoutは指数バックオフで再試行します。
 - 既定の最大試行回数は5回です。
-- `processing`のまま既定10分を超えた配信は`retrying`へ戻します。
+- `processing`のままGuild設定の`staleAfterMinutes`を超えた配信は`retrying`へ戻します。
+- BullMQに同じ`jobId`の`failed`・`completed` Jobが残っている場合は削除して再投入します。
+- `active`・`waiting`・`delayed`のJobは既存処理へ任せ、二重enqueueしません。
 - Pluginまたは個別スケジュールが無効の場合、送信せず`skipped`として記録します。
 - Studioでは`failed`または`skipped`の履歴だけを再実行できます。
 
@@ -62,6 +64,8 @@ Workerのdue走査間隔はGuild設定ではなく環境変数`DAILY_CONTENT_SCA
 - View Channel
 - Send Messages
 - Threadへ配信する場合はSend Messages in Threads
+
+Workerは送信前にBot自身のユーザーID、Guild Role、Bot Member Role、チャンネルのpermission overwriteを取得し、Discordの権限上書き順序で実効権限を計算します。Role・Member情報はGuild単位で30秒キャッシュします。Threadでは親チャンネルのpermission overwriteを使い、アーカイブ済みThreadは送信前に拒否します。
 
 権限不足、存在しないチャンネル、テキスト非対応チャンネルは失敗履歴へ安全なエラー名だけを保存します。Discord APIのresponse body、投稿本文、token、stackはログへ保存しません。
 
@@ -84,9 +88,10 @@ pnpm --filter @herta/db migrate:deploy
 
 主な変更は次のとおりです。
 
-- `daily_contents`へ`next_run_at`、`last_scheduled_at`、作成・更新ユーザーを追加
+- `daily_contents`へ`next_run_at`、`last_scheduled_at`、`deleted_at`、作成・更新ユーザーを追加
 - `last_sent_at`を`TIMESTAMPTZ(3)`へ変換
 - `daily_content_deliveries`を追加
+- 配信履歴を保持するため、スケジュールとの外部キーを`ON DELETE RESTRICT`に設定
 - due判定用Indexを単独`CREATE INDEX CONCURRENTLY` migrationで追加
 - 既存`daily_contents`の時刻CHECK制約を`NOT VALID`で追加
 
@@ -111,8 +116,10 @@ ALTER TABLE daily_contents
 6. `daily_content_deliveries.status = 'sent'`とmessage IDを確認する
 7. 同じdeliveryを再enqueueしてDiscord投稿が重複しないことを確認する
 8. Bot権限を外し、失敗・retry・Studio再実行を確認する
-9. Workerを配信中に停止し、stale recoveryを確認する
-10. Plugin無効化後に予約済みジョブが`skipped`になることを確認する
+9. 通常チャンネルとThreadで事前権限判定を確認する
+10. Workerを配信中に停止し、stale recoveryを確認する
+11. Plugin無効化後に予約済みジョブが`skipped`になることを確認する
+12. スケジュール削除後も配信履歴とmessage IDが残ることを確認する
 
 ## rollback
 
