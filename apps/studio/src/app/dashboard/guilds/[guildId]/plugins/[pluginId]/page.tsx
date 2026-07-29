@@ -80,6 +80,14 @@ export default async function PluginDetailPage({
           description="定時コンテンツ、次回配信、配信履歴、失敗再実行を管理します。"
         />
       ) : null}
+
+      {pluginId === 'lfg' ? (
+        <ManagementLink
+          href={`/dashboard/guilds/${guildId}/lfg`}
+          title="LFG募集管理"
+          description="募集作成、参加状況、期限、Discordメッセージ、強制終了を管理します。"
+        />
+      ) : null}
     </div>
   );
 }
