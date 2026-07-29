@@ -157,14 +157,14 @@ describe('Auto Response matcher', () => {
     expect(
       matchesAutoResponse(
         'hello-123',
-        { triggerValue: '^hello-\d+$', matchMode: 'regex', caseSensitive: false },
+        { triggerValue: '^hello-\\d+$', matchMode: 'regex', caseSensitive: false },
         config,
       ),
     ).toBe(true);
   });
 
   it('ネスト量指定・曖昧なalternation・後方参照・複数wildcardを拒否する', () => {
-    for (const pattern of ['(a+)+$', '(a)\1', '.*foo.*bar.*', '(a|aa)+$', '(?:a|a)+$']) {
+    for (const pattern of ['(a+)+$', '(a)\\1', '.*foo.*bar.*', '(a|aa)+$', '(?:a|a)+$']) {
       expect(() => assertSafeRegex(pattern, 100)).toThrow(AutoResponseValidationError);
     }
   });
