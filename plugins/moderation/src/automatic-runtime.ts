@@ -1,12 +1,6 @@
 import type { PluginEventHandler, PluginRuntimeContext } from '@herta/plugin-sdk';
-import {
-  normalizeModerationConfig,
-  type ModerationConfig,
-} from './config.js';
-import {
-  AutomaticModerationDetector,
-  type AutomaticModerationFinding,
-} from './detection.js';
+import { normalizeModerationConfig, type ModerationConfig } from './config.js';
+import { AutomaticModerationDetector, type AutomaticModerationFinding } from './detection.js';
 
 interface ModerationMessageRoleCache {
   has(roleId: string): boolean;
