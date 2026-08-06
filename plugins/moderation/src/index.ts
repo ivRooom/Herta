@@ -23,6 +23,23 @@ export type {
   AutomaticModerationMessageSnapshot,
 } from './detection.js';
 export {
+  createModerationDetectionIdempotencyKey,
+  getModerationDetectionStats,
+  listModerationDetections,
+  pruneModerationDetections,
+  recordModerationDetection,
+  reviewModerationDetection,
+} from './detection-history.js';
+export type {
+  ListModerationDetectionsInput,
+  ListModerationDetectionsResult,
+  ModerationDetectionRecord,
+  ModerationDetectionReviewStatus,
+  ModerationDetectionStats,
+  RecordModerationDetectionInput,
+  ReviewModerationDetectionInput,
+} from './detection-history.js';
+export {
   createModerationAutomaticEvents,
   resetModerationAutomaticDetector,
 } from './automatic-runtime.js';

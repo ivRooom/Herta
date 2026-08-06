@@ -23,12 +23,13 @@ model Guild {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  settings     GuildSettings?
-  members      GuildMember[]
-  roles        Role[]
-  auditLogs    AuditLog[]
-  guildPlugins GuildPlugin[]
-  rules        Rule[]
+  settings             GuildSettings?
+  members              GuildMember[]
+  roles                Role[]
+  auditLogs            AuditLog[]
+  guildPlugins         GuildPlugin[]
+  rules                Rule[]
+  moderationDetections ModerationDetectionEvent[]
 
   @@map("guilds")
 }
@@ -176,8 +177,8 @@ model GuildPlugin {
   installedAt   DateTime @default(now()) @map("installed_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  guild         Guild                     @relation(fields: [guildId], references: [id], onDelete: Cascade)
-  plugin        Plugin                    @relation(fields: [pluginId], references: [id])
+  guild         Guild                      @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  plugin        Plugin                     @relation(fields: [pluginId], references: [id])
   configHistory GuildPluginConfigHistory[]
 
   @@id([guildId, pluginId])
@@ -329,10 +330,10 @@ model WordFilter {
   exemptRoles    String[] @default([]) @map("exempt_roles")
   exemptChannels String[] @default([]) @map("exempt_channels")
   enabled        Boolean  @default(true)
-  createdBy       String?  @map("created_by")
-  updatedBy       String?  @map("updated_by")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdBy      String?  @map("created_by")
+  updatedBy      String?  @map("updated_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@index([guildId, enabled])
   @@map("word_filters")
@@ -365,6 +366,35 @@ model ModerationSettings {
   updatedAt          DateTime @updatedAt @map("updated_at")
 
   @@map("moderation_settings")
+}
+
+model ModerationDetectionEvent {
+  id             String    @id @default(uuid())
+  guildId        String    @map("guild_id")
+  messageId      String    @map("message_id")
+  channelId      String    @map("channel_id")
+  userId         String    @map("user_id")
+  detectionKind  String    @map("detection_kind")
+  mode           String    @default("observe")
+  messageLength  Int       @map("message_length")
+  observedCount  Int?      @map("observed_count")
+  threshold      Int?
+  ruleIndex      Int?      @map("rule_index")
+  idempotencyKey String    @unique @map("idempotency_key")
+  reviewStatus   String    @default("unreviewed") @map("review_status")
+  reviewedBy     String?   @map("reviewed_by")
+  reviewedAt     DateTime? @map("reviewed_at") @db.Timestamptz(3)
+  reviewNote     String?   @map("review_note")
+  occurredAt     DateTime  @map("occurred_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  guild          Guild     @relation(fields: [guildId], references: [id], onDelete: Cascade)
+
+  @@index([guildId, occurredAt(sort: Desc)])
+  @@index([guildId, reviewStatus, occurredAt(sort: Desc)])
+  @@index([guildId, detectionKind, occurredAt(sort: Desc)])
+  @@index([guildId, userId, occurredAt(sort: Desc)])
+  @@map("moderation_detection_events")
 }
 
 // ============================================================
@@ -432,13 +462,13 @@ model LfgPost {
 }
 
 model LfgParticipant {
-  lfgId    String    @map("lfg_id")
-  guildId  String    @map("guild_id")
-  userId   String    @map("user_id")
-  status   String    @default("joined")
-  joinedAt DateTime  @default(now()) @map("joined_at") @db.Timestamptz(3)
-  leftAt   DateTime? @map("left_at") @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  lfgId     String    @map("lfg_id")
+  guildId   String    @map("guild_id")
+  userId    String    @map("user_id")
+  status    String    @default("joined")
+  joinedAt  DateTime  @default(now()) @map("joined_at") @db.Timestamptz(3)
+  leftAt    DateTime? @map("left_at") @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   lfgPost LfgPost @relation(fields: [lfgId], references: [id], onDelete: Cascade)
 

@@ -1,12 +1,15 @@
 import type { PluginEventHandler, PluginRuntimeContext } from '@herta/plugin-sdk';
 import { normalizeModerationConfig, type ModerationConfig } from './config.js';
+import { recordModerationDetection } from './detection-history.js';
 import { AutomaticModerationDetector, type AutomaticModerationFinding } from './detection.js';
+import type { ModerationPrismaClient } from './service.js';
 
 interface ModerationMessageRoleCache {
   has(roleId: string): boolean;
 }
 
 interface ModerationMessage {
+  id: string;
   guildId: string | null;
   channelId: string;
   content: string;
@@ -22,13 +25,17 @@ interface ModerationMessage {
   };
 }
 
-type ModerationAutomaticRuntimeContext = PluginRuntimeContext<ModerationConfig, unknown, unknown>;
+type ModerationAutomaticRuntimeContext = PluginRuntimeContext<
+  ModerationConfig,
+  unknown,
+  ModerationPrismaClient
+>;
 
 const detectors = new Map<string, AutomaticModerationDetector>();
 
 export function createModerationAutomaticEvents(
   context: ModerationAutomaticRuntimeContext,
-): PluginEventHandler<ModerationConfig, unknown, unknown>[] {
+): PluginEventHandler<ModerationConfig, unknown, ModerationPrismaClient>[] {
   const config = normalizeModerationConfig(context.config);
   if (config.automaticMode !== 'observe') return [];
 
@@ -38,7 +45,7 @@ export function createModerationAutomaticEvents(
       async handler(runtimeContext, ...args) {
         const message = args[0] as ModerationMessage | undefined;
         if (!message) return;
-        observeAutomaticModeration(runtimeContext, message);
+        await observeAutomaticModeration(runtimeContext, message);
       },
     },
   ];
@@ -49,10 +56,10 @@ export function resetModerationAutomaticDetector(guildId: string): void {
   detectors.delete(guildId);
 }
 
-function observeAutomaticModeration(
+async function observeAutomaticModeration(
   context: ModerationAutomaticRuntimeContext,
   message: ModerationMessage,
-): void {
+): Promise<void> {
   if (
     !message.guildId ||
     message.guildId !== context.guildId ||
@@ -87,9 +94,31 @@ function observeAutomaticModeration(
     config,
   );
 
-  for (const finding of findings) {
-    logFinding(context, message, finding);
-  }
+  await Promise.all(
+    findings.map(async (finding) => {
+      logFinding(context, message, finding);
+      try {
+        await recordModerationDetection(context.prisma, {
+          guildId: context.guildId,
+          messageId: message.id,
+          channelId: message.channelId,
+          userId: message.author.id,
+          finding,
+          occurredAt: new Date(message.createdTimestamp),
+        });
+      } catch (error) {
+        context.logger.warn(
+          {
+            err: error,
+            guildId: context.guildId,
+            messageId: message.id,
+            detectionKind: finding.kind,
+          },
+          'Moderation自動検知履歴の保存に失敗しました',
+        );
+      }
+    }),
+  );
 }
 
 function getDetector(guildId: string): AutomaticModerationDetector {
