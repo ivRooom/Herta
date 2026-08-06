@@ -14,7 +14,9 @@ export async function PATCH(
   { params }: { params: Promise<{ guildId: string; detectionId: string }> },
 ) {
   const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
+  if (!session?.user) {
+    return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
+  }
 
   const { guildId, detectionId } = await params;
   const authorization = await authorizeGuild(guildId, session.user.id);
@@ -32,7 +34,9 @@ export async function PATCH(
         reviewNote: parseReviewNote(body.reviewNote),
       },
     );
-    if (!result) return NextResponse.json({ error: '検知履歴が見つかりません' }, { status: 404 });
+    if (!result) {
+      return NextResponse.json({ error: '検知履歴が見つかりません' }, { status: 404 });
+    }
     return NextResponse.json(result);
   } catch (error) {
     if (error instanceof SyntaxError) {
@@ -68,6 +72,8 @@ function parseReviewStatus(value: unknown): ModerationDetectionReviewStatus {
 
 function parseReviewNote(value: unknown): string | null {
   if (value === undefined || value === null || value === '') return null;
-  if (typeof value !== 'string') throw new ModerationValidationError('レビュー備考が不正です');
+  if (typeof value !== 'string') {
+    throw new ModerationValidationError('レビュー備考が不正です');
+  }
   return value;
 }
