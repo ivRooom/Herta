@@ -1,0 +1,32 @@
+name: Apply moderation detection case patches
+
+on:
+  push:
+    branches:
+      - feat/moderation-detection-case
+    paths:
+      - .github/workflows/apply-moderation-detection-case-patches.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/moderation-detection-case
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: 対象箇所を更新
+        run: node scripts/apply-moderation-detection-case-patches.mjs
+      - name: 変更をcommit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: Discordケース表示に検知フラグを追加"
+          git push origin HEAD:feat/moderation-detection-case
