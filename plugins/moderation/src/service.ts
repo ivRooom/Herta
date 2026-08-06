@@ -126,6 +126,20 @@ export async function createModerationCase(
 
   return prisma.$transaction(async (tx) => {
     await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', input.guildId);
+    if (originDetectionId) {
+      const originRows = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        `SELECT id
+         FROM moderation_detection_events
+         WHERE guild_id = $1
+           AND id = $2::uuid
+         LIMIT 1`,
+        input.guildId,
+        originDetectionId,
+      );
+      if (!originRows[0]) {
+        throw new ModerationValidationError('元検知がGuild内に見つかりません');
+      }
+    }
     const rows = await tx.$queryRawUnsafe<ModerationCaseRow[]>(
       `INSERT INTO moderation_cases (
          guild_id,

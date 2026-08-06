@@ -23,8 +23,8 @@ describe('Moderation detection case', () => {
     const auditCreate = vi.fn().mockResolvedValue({});
     const query = vi
       .fn()
-      .mockResolvedValueOnce([baseSource])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([baseSource])
       .mockResolvedValueOnce([{ id: 'case-id', case_number: 7 }]);
     const tx = {
       $queryRawUnsafe: query,
@@ -72,6 +72,7 @@ describe('Moderation detection case', () => {
     const auditCreate = vi.fn().mockResolvedValue({});
     const query = vi
       .fn()
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ ...baseSource, case_id: 'existing-case', case_number: 4 }]);
     const tx = {
       $queryRawUnsafe: query,
@@ -92,7 +93,7 @@ describe('Moderation detection case', () => {
       caseNumber: 4,
       created: false,
     });
-    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(2);
     expect(auditCreate).not.toHaveBeenCalled();
   });
 
@@ -100,8 +101,8 @@ describe('Moderation detection case', () => {
     const auditCreate = vi.fn().mockResolvedValue({});
     const query = vi
       .fn()
-      .mockResolvedValueOnce([baseSource])
       .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([baseSource])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'concurrent-case', case_number: 8 }]);
     const tx = {
@@ -134,6 +135,7 @@ describe('Moderation detection case', () => {
   it('未確認・誤検知・無視のイベントはケース化しない', async () => {
     const query = vi
       .fn()
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ ...baseSource, review_status: 'false_positive' }]);
     const tx = {
       $queryRawUnsafe: query,
@@ -149,7 +151,7 @@ describe('Moderation detection case', () => {
         actorId: '500',
       }),
     ).rejects.toThrow('正検知として保存された自動検知のみケースを作成できます');
-    expect(query).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(2);
   });
 
   it('Guild条件付きで作成元とケースリンクを検索する', async () => {

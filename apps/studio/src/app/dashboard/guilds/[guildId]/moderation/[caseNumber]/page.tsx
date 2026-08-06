@@ -99,7 +99,9 @@ export default async function ModerationCaseDetailPage({
                       {moderationCase.originDetectionId}
                     </span>
                     <Link
-                      href={`/dashboard/guilds/${guildId}/moderation/detections`}
+                      href={`/dashboard/guilds/${guildId}/moderation/detections?detectionId=${encodeURIComponent(
+                        moderationCase.originDetectionId,
+                      )}#detection-${encodeURIComponent(moderationCase.originDetectionId)}`}
                       className="text-primary hover:underline sm:ml-2"
                     >
                       自動検知レビューを開く

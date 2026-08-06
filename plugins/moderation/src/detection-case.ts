@@ -81,6 +81,7 @@ async function createInTransaction(
   tx: ModerationTransactionClient,
   input: CreateModerationCaseFromDetectionInput,
 ): Promise<ModerationDetectionCaseResult | null> {
+  await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', input.guildId);
   const sourceRows = await tx.$queryRawUnsafe<DetectionCaseSourceRow[]>(
     `SELECT
        d.id,
@@ -117,7 +118,6 @@ async function createInTransaction(
     throw new ModerationValidationError('正検知として保存された自動検知のみケースを作成できます');
   }
 
-  await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', input.guildId);
   const reason = buildCaseReason(source.detection_kind);
   const createdRows = await tx.$queryRawUnsafe<CreatedCaseRow[]>(
     `INSERT INTO moderation_cases (
