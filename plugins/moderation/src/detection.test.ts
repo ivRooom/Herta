@@ -67,10 +67,9 @@ describe('Moderation automatic detection', () => {
       autoInviteAllowlist: ['safe-code'],
     });
 
-    expect(extractInviteCodes('https://discord.gg/safe-code と discord.com/invite/BLOCK')).toEqual([
-      'safe-code',
-      'block',
-    ]);
+    expect(
+      extractInviteCodes('https://discord.gg/safe-code と discord.com/invite/BLOCK'),
+    ).toEqual(['safe-code', 'block']);
     expect(
       detector.evaluate(
         message({ content: 'https://discord.gg/safe-code https://discord.gg/BLOCK' }),
