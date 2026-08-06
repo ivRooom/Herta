@@ -12,14 +12,18 @@ ALTER TABLE moderation_cases
   ADD CONSTRAINT moderation_cases_source_check
   CHECK (source IN ('discord', 'dashboard', 'automatic'));
 
+ALTER TABLE moderation_detection_events
+  ADD CONSTRAINT moderation_detection_events_guild_id_id_key
+  UNIQUE (guild_id, id);
+
 ALTER TABLE moderation_cases
   ADD COLUMN origin_detection_id UUID;
 
 ALTER TABLE moderation_cases
-  ADD CONSTRAINT moderation_cases_origin_detection_id_fkey
-  FOREIGN KEY (origin_detection_id)
-  REFERENCES moderation_detection_events(id)
-  ON DELETE SET NULL;
+  ADD CONSTRAINT moderation_cases_origin_detection_guild_fkey
+  FOREIGN KEY (guild_id, origin_detection_id)
+  REFERENCES moderation_detection_events(guild_id, id)
+  ON DELETE SET NULL (origin_detection_id);
 
 CREATE UNIQUE INDEX moderation_cases_origin_detection_id_key
   ON moderation_cases(origin_detection_id)
