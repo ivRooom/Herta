@@ -388,7 +388,7 @@ model ModerationDetectionEvent {
   occurredAt     DateTime  @map("occurred_at") @db.Timestamptz(3)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
-  guild          Guild     @relation(fields: [guildId], references: [id])
+  guild          Guild     @relation(fields: [guildId], references: [id], onDelete: Cascade)
 
   @@index([guildId, occurredAt(sort: Desc)])
   @@index([guildId, reviewStatus, occurredAt(sort: Desc)])
