@@ -37,6 +37,7 @@ export interface RecordModerationDetectionInput {
 
 export interface ListModerationDetectionsInput {
   guildId: string;
+  detectionId?: string;
   page?: number;
   pageSize?: number;
   detectionKind?: AutomaticModerationFindingKind;
@@ -353,6 +354,10 @@ function createDetectionFilters(input: Omit<ListModerationDetectionsInput, 'page
     filters.push(sql.replace('?', `$${values.length}`));
   };
 
+  if (input.detectionId) {
+    assertUuid(input.detectionId, '検知ID');
+    addFilter('id = ?::uuid', input.detectionId);
+  }
   if (input.detectionKind) {
     addFilter('detection_kind = ?', normalizeDetectionKind(input.detectionKind));
   }

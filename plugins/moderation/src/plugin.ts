@@ -14,6 +14,7 @@ import {
   getModerationCase,
   listModerationCases,
   type ModerationAction,
+  type ModerationCaseAction,
   type ModerationCaseRecord,
   type ModerationPrismaClient,
 } from './service.js';
@@ -477,8 +478,9 @@ function formatTargetNotification(moderationCase: ModerationCaseRecord): string 
   return truncate(lines.join('\n'), MAX_RESPONSE_LENGTH);
 }
 
-function actionLabel(action: ModerationAction): string {
-  const labels: Record<ModerationAction, string> = {
+function actionLabel(action: ModerationCaseAction): string {
+  const labels: Record<ModerationCaseAction, string> = {
+    flag: '検知フラグ',
     warn: '警告',
     timeout: 'タイムアウト',
     kick: 'Kick',

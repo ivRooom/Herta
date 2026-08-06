@@ -49,6 +49,7 @@ export default async function ModerationDetectionsPage({
   const filters = {
     page: parsePositiveInteger(first(query.page)) ?? 1,
     pageSize: 20,
+    detectionId: parseUuid(first(query.detectionId)),
     detectionKind: parseDetectionKind(first(query.kind)),
     reviewStatus: parseReviewStatus(first(query.status)),
     userId: parseDiscordId(first(query.userId)),
@@ -71,6 +72,7 @@ export default async function ModerationDetectionsPage({
       }),
       getModerationDetectionStats(prisma as unknown as ModerationPrismaClient, {
         guildId,
+        detectionId: filters.detectionId,
         detectionKind: filters.detectionKind,
         reviewStatus: filters.reviewStatus,
         userId: filters.userId,
@@ -218,7 +220,11 @@ export default async function ModerationDetectionsPage({
                 </thead>
                 <tbody className="divide-y divide-border">
                   {result.items.map((item) => (
-                    <tr key={item.id} className="align-top hover:bg-background/60">
+                    <tr
+                      id={`detection-${item.id}`}
+                      key={item.id}
+                      className="align-top hover:bg-background/60"
+                    >
                       <td className="px-4 py-4">
                         <div className="font-medium">{kindLabel(item.detectionKind)}</div>
                         <div className="mt-1 whitespace-nowrap text-xs text-muted">
@@ -325,7 +331,10 @@ const EMPTY_STATS = {
 
 function DetectionMobileCard({ guildId, item }: { guildId: string; item: DetectionItem }) {
   return (
-    <article className="min-w-0 rounded-2xl border border-border bg-surface p-4 shadow-card">
+    <article
+      id={`detection-${item.id}`}
+      className="min-w-0 scroll-mt-20 rounded-2xl border border-border bg-surface p-4 shadow-card"
+    >
       <div className="flex min-w-0 items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="font-medium">{kindLabel(item.detectionKind)}</h2>
@@ -483,6 +492,14 @@ function parseReviewStatus(value: string | undefined): ModerationDetectionReview
     : undefined;
 }
 
+function parseUuid(value: string | undefined) {
+  const normalized = value?.trim();
+  return normalized &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalized)
+    ? normalized
+    : undefined;
+}
+
 function parseDiscordId(value: string | undefined) {
   const normalized = value?.trim();
   return normalized && /^\d+$/.test(normalized) ? normalized : undefined;
@@ -497,7 +514,7 @@ function parseDate(value: string | undefined, endExclusive: boolean) {
 
 function buildPageHref(guildId: string, query: SearchParams, page: number) {
   const params = new URLSearchParams();
-  for (const key of ['kind', 'status', 'userId', 'channelId', 'from', 'to']) {
+  for (const key of ['detectionId', 'kind', 'status', 'userId', 'channelId', 'from', 'to']) {
     const value = first(query[key]);
     if (value) params.set(key, value);
   }
