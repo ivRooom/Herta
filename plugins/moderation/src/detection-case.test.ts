@@ -21,14 +21,14 @@ const baseSource = {
 describe('Moderation detection case', () => {
   it('正検知を非処罰の自動検知ケースとして作成しAudit Logへ記録する', async () => {
     const auditCreate = vi.fn().mockResolvedValue({});
+    const execute = vi.fn().mockResolvedValue(0);
     const query = vi
       .fn()
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([baseSource])
       .mockResolvedValueOnce([{ id: 'case-id', case_number: 7 }]);
     const tx = {
       $queryRawUnsafe: query,
-      $executeRawUnsafe: vi.fn(),
+      $executeRawUnsafe: execute,
       auditLog: { create: auditCreate },
     } as unknown as ModerationTransactionClient;
     const prisma = transactionPrisma(tx);
@@ -45,7 +45,11 @@ describe('Moderation detection case', () => {
       caseNumber: 7,
       created: true,
     });
-    const [insertSql, ...insertValues] = query.mock.calls[2] as [string, ...unknown[]];
+    expect(execute).toHaveBeenCalledWith(
+      'SELECT pg_advisory_xact_lock(hashtext($1))',
+      '100',
+    );
+    const [insertSql, ...insertValues] = query.mock.calls[1] as [string, ...unknown[]];
     expect(insertSql).toContain("'flag'");
     expect(insertSql).toContain("'automatic'");
     expect(insertSql).toContain('origin_detection_id');
@@ -70,13 +74,13 @@ describe('Moderation detection case', () => {
 
   it('同じ検知がケース化済みなら既存ケースを返して再作成しない', async () => {
     const auditCreate = vi.fn().mockResolvedValue({});
+    const execute = vi.fn().mockResolvedValue(0);
     const query = vi
       .fn()
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ ...baseSource, case_id: 'existing-case', case_number: 4 }]);
     const tx = {
       $queryRawUnsafe: query,
-      $executeRawUnsafe: vi.fn(),
+      $executeRawUnsafe: execute,
       auditLog: { create: auditCreate },
     } as unknown as ModerationTransactionClient;
     const prisma = transactionPrisma(tx);
@@ -93,21 +97,22 @@ describe('Moderation detection case', () => {
       caseNumber: 4,
       created: false,
     });
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(1);
     expect(auditCreate).not.toHaveBeenCalled();
   });
 
   it('並行作成でINSERTが競合した場合は既存ケースを返しAudit Logを重複させない', async () => {
     const auditCreate = vi.fn().mockResolvedValue({});
+    const execute = vi.fn().mockResolvedValue(0);
     const query = vi
       .fn()
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([baseSource])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ id: 'concurrent-case', case_number: 8 }]);
     const tx = {
       $queryRawUnsafe: query,
-      $executeRawUnsafe: vi.fn(),
+      $executeRawUnsafe: execute,
       auditLog: { create: auditCreate },
     } as unknown as ModerationTransactionClient;
     const prisma = transactionPrisma(tx);
@@ -124,22 +129,23 @@ describe('Moderation detection case', () => {
       caseNumber: 8,
       created: false,
     });
-    const [insertSql] = query.mock.calls[2] as [string, ...unknown[]];
-    const [fallbackSql, ...fallbackValues] = query.mock.calls[3] as [string, ...unknown[]];
+    const [insertSql] = query.mock.calls[1] as [string, ...unknown[]];
+    const [fallbackSql, ...fallbackValues] = query.mock.calls[2] as [string, ...unknown[]];
     expect(insertSql).toContain('ON CONFLICT (origin_detection_id)');
     expect(fallbackSql).toContain('origin_detection_id = $2::uuid');
     expect(fallbackValues).toEqual(['100', detectionId]);
+    expect(execute).toHaveBeenCalledTimes(1);
     expect(auditCreate).not.toHaveBeenCalled();
   });
 
   it('未確認・誤検知・無視のイベントはケース化しない', async () => {
+    const execute = vi.fn().mockResolvedValue(0);
     const query = vi
       .fn()
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{ ...baseSource, review_status: 'false_positive' }]);
     const tx = {
       $queryRawUnsafe: query,
-      $executeRawUnsafe: vi.fn(),
+      $executeRawUnsafe: execute,
       auditLog: { create: vi.fn() },
     } as unknown as ModerationTransactionClient;
     const prisma = transactionPrisma(tx);
@@ -151,7 +157,8 @@ describe('Moderation detection case', () => {
         actorId: '500',
       }),
     ).rejects.toThrow('正検知として保存された自動検知のみケースを作成できます');
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(query).toHaveBeenCalledTimes(1);
   });
 
   it('Guild条件付きで作成元とケースリンクを検索する', async () => {
