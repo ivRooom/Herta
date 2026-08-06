@@ -76,12 +76,13 @@ export function PluginConfigForm({
           type="button"
           role="switch"
           aria-checked={enabled}
-          aria-label="Pluginを有効化"
+          aria-label={enabled ? 'Pluginを無効化' : 'Pluginを有効化'}
           onClick={() => setEnabled(!enabled)}
-          className={`relative h-6 w-11 shrink-0 rounded-full ${enabled ? 'bg-primary' : 'bg-border'}`}
+          className={`inline-flex h-7 w-12 shrink-0 items-center rounded-full p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${enabled ? 'bg-primary' : 'bg-border'}`}
         >
           <span
-            className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`}
+            aria-hidden="true"
+            className={`h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0'}`}
           />
         </button>
       </div>
