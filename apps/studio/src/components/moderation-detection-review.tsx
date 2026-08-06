@@ -18,8 +18,7 @@ export function ModerationDetectionReview({
   initialNote,
 }: ModerationDetectionReviewProps) {
   const router = useRouter();
-  const [reviewStatus, setReviewStatus] =
-    useState<ModerationDetectionReviewStatus>(initialStatus);
+  const [reviewStatus, setReviewStatus] = useState<ModerationDetectionReviewStatus>(initialStatus);
   const [reviewNote, setReviewNote] = useState(initialNote ?? '');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -28,14 +27,11 @@ export function ModerationDetectionReview({
     setSaving(true);
     setMessage(null);
     try {
-      const response = await fetch(
-        `/api/guilds/${guildId}/moderation/detections/${detectionId}`,
-        {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ reviewStatus, reviewNote }),
-        },
-      );
+      const response = await fetch(`/api/guilds/${guildId}/moderation/detections/${detectionId}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reviewStatus, reviewNote }),
+      });
       const body = (await response.json()) as { error?: string };
       if (!response.ok) {
         throw new Error(body.error ?? 'レビューを保存できませんでした');

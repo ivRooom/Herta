@@ -98,9 +98,8 @@ describe('Moderation detection history', () => {
       auditLog: { create: auditCreate },
     } as unknown as ModerationTransactionClient;
     const prisma = {
-      $transaction: async <T>(
-        callback: (client: ModerationTransactionClient) => Promise<T>,
-      ) => callback(tx),
+      $transaction: async <T>(callback: (client: ModerationTransactionClient) => Promise<T>) =>
+        callback(tx),
     } as unknown as ModerationPrismaClient;
 
     const result = await reviewModerationDetection(prisma, {

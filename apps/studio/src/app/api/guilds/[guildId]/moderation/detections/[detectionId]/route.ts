@@ -24,16 +24,13 @@ export async function PATCH(
 
   try {
     const body = await readBody(request);
-    const result = await reviewModerationDetection(
-      prisma as unknown as ModerationPrismaClient,
-      {
-        guildId,
-        detectionId,
-        actorId: session.user.id,
-        reviewStatus: parseReviewStatus(body.reviewStatus),
-        reviewNote: parseReviewNote(body.reviewNote),
-      },
-    );
+    const result = await reviewModerationDetection(prisma as unknown as ModerationPrismaClient, {
+      guildId,
+      detectionId,
+      actorId: session.user.id,
+      reviewStatus: parseReviewStatus(body.reviewStatus),
+      reviewNote: parseReviewNote(body.reviewNote),
+    });
     if (!result) {
       return NextResponse.json({ error: '検知履歴が見つかりません' }, { status: 404 });
     }

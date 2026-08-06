@@ -1,18 +1,9 @@
 import { ModerationValidationError } from './config.js';
-import type {
-  AutomaticModerationFinding,
-  AutomaticModerationFindingKind,
-} from './detection.js';
-import type {
-  ModerationPrismaClient,
-  ModerationTransactionClient,
-} from './service.js';
+import type { AutomaticModerationFinding, AutomaticModerationFindingKind } from './detection.js';
+import type { ModerationPrismaClient, ModerationTransactionClient } from './service.js';
 
 export type ModerationDetectionReviewStatus =
-  | 'unreviewed'
-  | 'confirmed'
-  | 'false_positive'
-  | 'ignored';
+  'unreviewed' | 'confirmed' | 'false_positive' | 'ignored';
 
 export interface ModerationDetectionRecord {
   id: string;
@@ -145,10 +136,7 @@ export async function recordModerationDetection(
   assertDiscordId(input.userId, 'User ID');
   const detectionKind = normalizeDetectionKind(input.finding.kind);
   const messageLength = normalizeNonNegativeInteger(input.finding.messageLength, '本文長');
-  const observedCount = normalizeNullableNonNegativeInteger(
-    input.finding.observedCount,
-    '観測数',
-  );
+  const observedCount = normalizeNullableNonNegativeInteger(input.finding.observedCount, '観測数');
   const threshold = normalizeNullableNonNegativeInteger(input.finding.threshold, '閾値');
   const ruleIndex = normalizeNullableNonNegativeInteger(input.finding.ruleIndex, 'Rule index');
   const occurredAt = normalizeDate(input.occurredAt, '検知日時');
@@ -348,9 +336,10 @@ export async function pruneModerationDetections(
   );
 }
 
-function createDetectionFilters(
-  input: Omit<ListModerationDetectionsInput, 'page' | 'pageSize'>,
-): { where: string; values: unknown[] } {
+function createDetectionFilters(input: Omit<ListModerationDetectionsInput, 'page' | 'pageSize'>): {
+  where: string;
+  values: unknown[];
+} {
   const values: unknown[] = [input.guildId];
   const filters = ['guild_id = $1'];
   const addFilter = (sql: string, value: unknown) => {
