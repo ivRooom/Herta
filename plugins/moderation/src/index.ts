@@ -40,6 +40,15 @@ export type {
   ReviewModerationDetectionInput,
 } from './detection-history.js';
 export {
+  createModerationCaseFromDetection,
+  getModerationCaseForDetection,
+} from './detection-case.js';
+export type {
+  CreateModerationCaseFromDetectionInput,
+  ModerationDetectionCaseLink,
+  ModerationDetectionCaseResult,
+} from './detection-case.js';
+export {
   createModerationAutomaticEvents,
   resetModerationAutomaticDetector,
 } from './automatic-runtime.js';
@@ -52,6 +61,7 @@ export {
 } from './service.js';
 export type {
   ModerationAction,
+  ModerationCaseAction,
   ModerationCaseRecord,
   ModerationCaseStatus,
   ModerationPrismaClient,
