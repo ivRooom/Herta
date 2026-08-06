@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   createModerationDetectionIdempotencyKey,
+  listModerationDetections,
   recordModerationDetection,
   reviewModerationDetection,
 } from './detection-history.js';
@@ -60,6 +61,31 @@ describe('Moderation detection history', () => {
     } as unknown as ModerationPrismaClient;
 
     await expect(recordModerationDetection(prisma, baseInput)).resolves.toBe(false);
+  });
+
+  it('一覧取得でGuild条件を必須にしフィルター値をparameterizeする', async () => {
+    const query = vi.fn().mockResolvedValueOnce([{ count: 0n }]).mockResolvedValueOnce([]);
+    const prisma = {
+      $queryRawUnsafe: query,
+    } as unknown as ModerationPrismaClient;
+
+    await listModerationDetections(prisma, {
+      guildId: '100',
+      reviewStatus: 'unreviewed',
+      userId: '400',
+      page: 1,
+      pageSize: 20,
+    });
+
+    const [countSql, ...countValues] = query.mock.calls[0] as [string, ...unknown[]];
+    const [listSql, ...listValues] = query.mock.calls[1] as [string, ...unknown[]];
+    expect(countSql).toContain('guild_id = $1');
+    expect(countSql).toContain('review_status = $2');
+    expect(countSql).toContain('user_id = $3');
+    expect(countSql).not.toContain("guild_id = '100'");
+    expect(countValues).toEqual(['100', 'unreviewed', '400']);
+    expect(listSql).toContain('guild_id = $1');
+    expect(listValues).toEqual(['100', 'unreviewed', '400', 20, 0]);
   });
 
   it('レビュー更新とAudit Logを同じtransactionで記録する', async () => {
