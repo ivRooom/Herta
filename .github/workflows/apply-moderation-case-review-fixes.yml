@@ -7,6 +7,10 @@ on:
     paths:
       - .github/workflows/apply-moderation-case-review-fixes.yml
 
+concurrency:
+  group: apply-moderation-case-review-fixes
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
