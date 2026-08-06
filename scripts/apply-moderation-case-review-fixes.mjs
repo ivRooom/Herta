@@ -113,7 +113,11 @@ function patchDetectionCaseTest() {
     `.mockResolvedValueOnce([{ ...baseSource, case_id: 'existing-case', case_number: 4 }]);`,
     `.mockResolvedValueOnce([])\n      .mockResolvedValueOnce([{ ...baseSource, case_id: 'existing-case', case_number: 4 }]);`,
   );
-  source = replaceOnce(source, `expect(query).toHaveBeenCalledTimes(1);`, `expect(query).toHaveBeenCalledTimes(2);`);
+  source = replaceOnce(
+    source,
+    `expect(query).toHaveBeenCalledTimes(1);\n    expect(auditCreate).not.toHaveBeenCalled();\n  });\n\n  it('並行作成`,
+    `expect(query).toHaveBeenCalledTimes(2);\n    expect(auditCreate).not.toHaveBeenCalled();\n  });\n\n  it('並行作成`,
+  );
   source = replaceOnce(
     source,
     `.mockResolvedValueOnce([baseSource])\n      .mockResolvedValueOnce([])\n      .mockResolvedValueOnce([])\n      .mockResolvedValueOnce([{ id: 'concurrent-case', case_number: 8 }]);`,
