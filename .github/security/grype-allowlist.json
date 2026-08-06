@@ -1,1 +1,22 @@
-[]
+[
+  {
+    "id": "GHSA-7p8r-x3mc-p8w7",
+    "reason": "fast-uriはAJV経由の推移依存でURL認可には未使用。修正版3.1.5の配布とintegrity確認後に更新する",
+    "expires": "2026-08-13",
+    "issue": "https://github.com/ivRooom/Herta/issues/85",
+    "package": {
+      "name": "fast-uri",
+      "type": "npm"
+    }
+  },
+  {
+    "id": "CVE-2026-58043",
+    "reason": "Node.js公式修正版22.23.2をNVDの境界誤りで検出している。Permission Modelも使用していない",
+    "expires": "2026-09-05",
+    "issue": "https://github.com/ivRooom/Herta/issues/85",
+    "package": {
+      "name": "node",
+      "type": "binary"
+    }
+  }
+]
