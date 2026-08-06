@@ -25,9 +25,7 @@ const baseInput = {
 
 describe('Moderation detection history', () => {
   it('本文を使わずに安定したidempotency keyを生成する', () => {
-    expect(createModerationDetectionIdempotencyKey(baseInput)).toBe(
-      '100:200:word_contains:3',
-    );
+    expect(createModerationDetectionIdempotencyKey(baseInput)).toBe('100:200:word_contains:3');
   });
 
   it('最小メタデータだけをINSERTし重複を無視する', async () => {
@@ -100,8 +98,9 @@ describe('Moderation detection history', () => {
       auditLog: { create: auditCreate },
     } as unknown as ModerationTransactionClient;
     const prisma = {
-      $transaction: async <T>(callback: (client: ModerationTransactionClient) => Promise<T>) =>
-        callback(tx),
+      $transaction: async <T>(
+        callback: (client: ModerationTransactionClient) => Promise<T>,
+      ) => callback(tx),
     } as unknown as ModerationPrismaClient;
 
     const result = await reviewModerationDetection(prisma, {
