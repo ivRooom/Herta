@@ -24,6 +24,27 @@ const baseInput = {
   occurredAt: new Date('2026-08-06T07:00:00.000Z'),
 };
 
+const baseDetectionRow = {
+  id: '123e4567-e89b-42d3-a456-426614174000',
+  guild_id: '100',
+  message_id: '200',
+  channel_id: '300',
+  user_id: '400',
+  detection_kind: 'word_contains',
+  mode: 'observe',
+  message_length: 24,
+  observed_count: 2,
+  threshold: 2,
+  rule_index: 3,
+  review_status: 'unreviewed',
+  reviewed_by: null,
+  reviewed_at: null,
+  review_note: null,
+  occurred_at: new Date('2026-08-06T07:00:00.000Z'),
+  created_at: new Date('2026-08-06T07:00:01.000Z'),
+  updated_at: new Date('2026-08-06T07:00:01.000Z'),
+};
+
 describe('Moderation detection history', () => {
   it('本文を使わずに安定したidempotency keyを生成する', () => {
     expect(createModerationDetectionIdempotencyKey(baseInput)).toBe('100:200:word_contains:3');
@@ -92,26 +113,7 @@ describe('Moderation detection history', () => {
   });
 
   it('レビュー更新とAudit Logを同じtransactionで記録する', async () => {
-    const row = {
-      id: '123e4567-e89b-42d3-a456-426614174000',
-      guild_id: '100',
-      message_id: '200',
-      channel_id: '300',
-      user_id: '400',
-      detection_kind: 'word_contains',
-      mode: 'observe',
-      message_length: 24,
-      observed_count: 2,
-      threshold: 2,
-      rule_index: 3,
-      review_status: 'unreviewed',
-      reviewed_by: null,
-      reviewed_at: null,
-      review_note: null,
-      occurred_at: new Date('2026-08-06T07:00:00.000Z'),
-      created_at: new Date('2026-08-06T07:00:01.000Z'),
-      updated_at: new Date('2026-08-06T07:00:01.000Z'),
-    };
+    const row = { ...baseDetectionRow };
     const updated = {
       ...row,
       review_status: 'false_positive',
@@ -149,6 +151,40 @@ describe('Moderation detection history', () => {
         }),
       }),
     );
+  });
+
+  it('変更がないレビューではUPDATEとAudit Logを実行しない', async () => {
+    const row = {
+      ...baseDetectionRow,
+      review_status: 'confirmed',
+      reviewed_by: '500',
+      reviewed_at: new Date('2026-08-06T07:05:00.000Z'),
+      review_note: '確認済み',
+    };
+    const auditCreate = vi.fn().mockResolvedValue({});
+    const query = vi.fn().mockResolvedValueOnce([row]);
+    const tx = {
+      $queryRawUnsafe: query,
+      $executeRawUnsafe: vi.fn(),
+      auditLog: { create: auditCreate },
+    } as unknown as ModerationTransactionClient;
+    const prisma = {
+      $transaction: async <T>(callback: (client: ModerationTransactionClient) => Promise<T>) =>
+        callback(tx),
+    } as unknown as ModerationPrismaClient;
+
+    const result = await reviewModerationDetection(prisma, {
+      guildId: '100',
+      detectionId: row.id,
+      actorId: '500',
+      reviewStatus: 'confirmed',
+      reviewNote: ' 確認済み ',
+    });
+
+    expect(result?.reviewStatus).toBe('confirmed');
+    expect(result?.reviewNote).toBe('確認済み');
+    expect(query).toHaveBeenCalledTimes(1);
+    expect(auditCreate).not.toHaveBeenCalled();
   });
 
   it('不正なDiscord IDとレビュー状態を拒否する', async () => {
