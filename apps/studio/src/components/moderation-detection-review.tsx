@@ -36,11 +36,9 @@ export function ModerationDetectionReview({
 }: ModerationDetectionReviewProps) {
   const router = useRouter();
   const initialNormalizedNote = normalizeNote(initialNote);
-  const [reviewStatus, setReviewStatus] =
-    useState<ModerationDetectionReviewStatus>(initialStatus);
+  const [reviewStatus, setReviewStatus] = useState<ModerationDetectionReviewStatus>(initialStatus);
   const [reviewNote, setReviewNote] = useState(initialNormalizedNote);
-  const [savedStatus, setSavedStatus] =
-    useState<ModerationDetectionReviewStatus>(initialStatus);
+  const [savedStatus, setSavedStatus] = useState<ModerationDetectionReviewStatus>(initialStatus);
   const [savedNote, setSavedNote] = useState(initialNormalizedNote);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
