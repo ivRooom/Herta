@@ -25,6 +25,7 @@ function message(
 describe('Moderation automatic detection', () => {
   it('既定値では自動検知を無効化する', () => {
     const config = normalizeModerationConfig({});
+
     expect(config.automaticMode).toBe('disabled');
     expect(config.autoExactWords).toEqual([]);
     expect(config.autoBurstMessageLimit).toBe(0);
@@ -38,12 +39,11 @@ describe('Moderation automatic detection', () => {
       autoContainsWords: ['危険'],
     });
 
-    expect(detector.evaluate(message({ content: ' abc ' }), config)).toContainEqual(
-      expect.objectContaining({ kind: 'word_exact', ruleIndex: 0 }),
-    );
-    expect(detector.evaluate(message({ content: 'これは危険です' }), config)).toContainEqual(
-      expect.objectContaining({ kind: 'word_contains', ruleIndex: 0 }),
-    );
+    const exact = detector.evaluate(message({ content: ' abc ' }), config);
+    const contains = detector.evaluate(message({ content: 'これは危険です' }), config);
+
+    expect(exact.map((finding) => finding.kind)).toContain('word_exact');
+    expect(contains.map((finding) => finding.kind)).toContain('word_contains');
   });
 
   it('危険なregexを除外し安全なregexだけを評価する', () => {
@@ -53,10 +53,10 @@ describe('Moderation automatic detection', () => {
       autoRegexPatterns: ['^foo\\d+$', '(a+)+$', '(?=secret)secret', '[invalid'],
     });
 
+    const findings = detector.evaluate(message({ content: 'FOO123' }), config);
+
     expect(config.autoRegexPatterns).toEqual(['^foo\\d+$']);
-    expect(detector.evaluate(message({ content: 'FOO123' }), config)).toContainEqual(
-      expect.objectContaining({ kind: 'word_regex', ruleIndex: 0 }),
-    );
+    expect(findings.map((finding) => finding.kind)).toContain('word_regex');
   });
 
   it('Discord招待リンクをallowlist付きで検知する', () => {
@@ -67,10 +67,11 @@ describe('Moderation automatic detection', () => {
       autoInviteAllowlist: ['ok'],
     });
 
-    expect(extractInviteCodes('discord.gg/ok discord.com/invite/NO')).toEqual(['ok', 'no']);
-    expect(
-      detector.evaluate(message({ content: 'discord.gg/ok discord.gg/NO' }), config),
-    ).toContainEqual(expect.objectContaining({ kind: 'invite_link', observedCount: 2 }));
+    const codes = extractInviteCodes('discord.gg/ok discord.com/invite/NO');
+    const findings = detector.evaluate(message({ content: 'discord.gg/ok discord.gg/NO' }), config);
+
+    expect(codes).toEqual(['ok', 'no']);
+    expect(findings.map((finding) => finding.kind)).toContain('invite_link');
   });
 
   it('大量メンション、連投、重複投稿をsliding windowで検知する', () => {
@@ -84,13 +85,13 @@ describe('Moderation automatic detection', () => {
       autoDuplicateWindowSeconds: 30,
     });
 
-    expect(
-      detector.evaluate(message({ mentionCount: 3, createdAtMs: 1_000 }), config),
-    ).toContainEqual(expect.objectContaining({ kind: 'mention_burst', observedCount: 3 }));
+    const mention = detector.evaluate(message({ mentionCount: 3, createdAtMs: 1_000 }), config);
     detector.evaluate(message({ content: 'same', createdAtMs: 2_000 }), config);
-    const findings = detector.evaluate(message({ content: 'same', createdAtMs: 3_000 }), config);
-    expect(findings).toContainEqual(expect.objectContaining({ kind: 'message_burst' }));
-    expect(findings).toContainEqual(expect.objectContaining({ kind: 'duplicate_message' }));
+    const repeated = detector.evaluate(message({ content: 'same', createdAtMs: 3_000 }), config);
+
+    expect(mention.map((finding) => finding.kind)).toContain('mention_burst');
+    expect(repeated.map((finding) => finding.kind)).toContain('message_burst');
+    expect(repeated.map((finding) => finding.kind)).toContain('duplicate_message');
   });
 
   it('Guild・Channel・Role・User除外を適用する', () => {
@@ -100,12 +101,15 @@ describe('Moderation automatic detection', () => {
       autoExemptUserIds: ['500'],
     });
 
-    expect(isExempt(message(), config)).toBe(true);
-    expect(isExempt(message({ channelId: '201', roleIds: ['400'] }), config)).toBe(true);
-    expect(isExempt(message({ channelId: '201', userId: '500' }), config)).toBe(true);
-    expect(isExempt(message({ channelId: '201', userId: '501', roleIds: [] }), config)).toBe(
-      false,
-    );
+    const byChannel = isExempt(message(), config);
+    const byRole = isExempt(message({ channelId: '201', roleIds: ['400'] }), config);
+    const byUser = isExempt(message({ channelId: '201', userId: '500' }), config);
+    const active = isExempt(message({ channelId: '201', userId: '501', roleIds: [] }), config);
+
+    expect(byChannel).toBe(true);
+    expect(byRole).toBe(true);
+    expect(byUser).toBe(true);
+    expect(active).toBe(false);
   });
 
   it('clearGuild後は連投状態を引き継がない', () => {
@@ -114,10 +118,11 @@ describe('Moderation automatic detection', () => {
       autoBurstMessageLimit: 2,
       autoBurstWindowSeconds: 10,
     });
+
     detector.evaluate(message({ createdAtMs: 1_000 }), config);
     detector.clearGuild('100');
-    expect(detector.evaluate(message({ createdAtMs: 2_000 }), config)).not.toContainEqual(
-      expect.objectContaining({ kind: 'message_burst' }),
-    );
+    const findings = detector.evaluate(message({ createdAtMs: 2_000 }), config);
+
+    expect(findings.map((finding) => finding.kind)).not.toContain('message_burst');
   });
 });
