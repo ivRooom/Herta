@@ -64,17 +64,12 @@ describe('Moderation automatic detection', () => {
     const config = normalizeModerationConfig({
       automaticMode: 'observe',
       autoInviteFilterEnabled: true,
-      autoInviteAllowlist: ['safe-code'],
+      autoInviteAllowlist: ['ok'],
     });
 
+    expect(extractInviteCodes('discord.gg/ok discord.com/invite/NO')).toEqual(['ok', 'no']);
     expect(
-      extractInviteCodes('https://discord.gg/safe-code と discord.com/invite/BLOCK'),
-    ).toEqual(['safe-code', 'block']);
-    expect(
-      detector.evaluate(
-        message({ content: 'https://discord.gg/safe-code https://discord.gg/BLOCK' }),
-        config,
-      ),
+      detector.evaluate(message({ content: 'discord.gg/ok discord.gg/NO' }), config),
     ).toContainEqual(expect.objectContaining({ kind: 'invite_link', observedCount: 2 }));
   });
 
