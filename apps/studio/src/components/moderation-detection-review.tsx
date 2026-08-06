@@ -37,7 +37,9 @@ export function ModerationDetectionReview({
         },
       );
       const body = (await response.json()) as { error?: string };
-      if (!response.ok) throw new Error(body.error ?? 'レビューを保存できませんでした');
+      if (!response.ok) {
+        throw new Error(body.error ?? 'レビューを保存できませんでした');
+      }
       setMessage('保存しました');
       router.refresh();
     } catch (error) {
