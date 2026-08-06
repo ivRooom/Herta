@@ -14,16 +14,14 @@ Message Content IntentはBot全体の既存設定`DISCORD_ENABLE_MESSAGE_CONTENT
 
 ## 検知項目
 
-| 種別 | 設定 | 動作 |
-| --- | --- | --- |
-| 完全一致 | `autoExactWords` | NFKC正規化、小文字化、空白正規化後の本文全体を比較 |
-| 部分一致 | `autoContainsWords` | 正規化後本文に含まれるか比較 |
-| 正規表現 | `autoRegexPatterns` | 最大20件、各120文字、`iu`フラグで評価 |
-| 招待リンク | `autoInviteFilterEnabled` | `discord.gg`と`discord.com/invite`を検知 |
-| 招待許可 | `autoInviteAllowlist` | 招待コード単位で検知対象外にする |
-| 大量メンション | `autoMentionLimit` | User、Role、everyoneの合計数を評価 |
-| 連投 | `autoBurstMessageLimit` | ユーザー単位のsliding windowで投稿数を評価 |
-| 重複投稿 | `autoDuplicateMessageLimit` | 正規化本文のプロセス内fingerprintで重複数を評価 |
+- 完全一致: `autoExactWords`でNFKC正規化、小文字化、空白正規化後の本文全体を比較
+- 部分一致: `autoContainsWords`で正規化後本文に含まれるか比較
+- 正規表現: `autoRegexPatterns`を最大20件、各120文字、`iu`フラグで評価
+- 招待リンク: `autoInviteFilterEnabled`で`discord.gg`と`discord.com/invite`を検知
+- 招待許可: `autoInviteAllowlist`へ登録した招待コードを検知対象外にする
+- 大量メンション: `autoMentionLimit`でUser、Role、everyoneの合計数を評価
+- 連投: `autoBurstMessageLimit`でユーザー単位のsliding window投稿数を評価
+- 重複投稿: `autoDuplicateMessageLimit`で正規化本文のプロセス内fingerprint重複数を評価
 
 `autoMentionLimit`、`autoBurstMessageLimit`、`autoDuplicateMessageLimit`は`0`で無効です。
 
