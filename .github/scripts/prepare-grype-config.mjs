@@ -134,10 +134,10 @@ function yamlString(value) {
 
 export function renderGrypeConfig(entries) {
   if (entries.length === 0) {
-    return 'ignore: []\n';
+    return 'by-cve: true\nignore: []\n';
   }
 
-  const lines = ['ignore:'];
+  const lines = ['by-cve: true', 'ignore:'];
   for (const entry of entries) {
     lines.push(`  # reason: ${entry.reason.replaceAll('\n', ' ')}`);
     lines.push(`  # expires: ${entry.expires}`);

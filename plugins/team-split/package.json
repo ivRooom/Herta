@@ -16,6 +16,14 @@
     "./manifest": {
       "types": "./src/manifest.ts",
       "default": "./dist/manifest.js"
+    },
+    "./service": {
+      "types": "./src/service.ts",
+      "default": "./dist/service.js"
+    },
+    "./presentation": {
+      "types": "./src/presentation.ts",
+      "default": "./dist/presentation.js"
     }
   },
   "scripts": {

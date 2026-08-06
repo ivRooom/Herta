@@ -88,6 +88,14 @@ export default async function PluginDetailPage({
           description="募集作成、参加状況、期限、Discordメッセージ、強制終了を管理します。"
         />
       ) : null}
+
+      {pluginId === 'team-split' ? (
+        <ManagementLink
+          href={`/dashboard/guilds/${guildId}/team-split`}
+          title="Team Split管理"
+          description="参加者、score、random・balanced分割、再抽選、Discordメッセージを管理します。"
+        />
+      ) : null}
     </div>
   );
 }
