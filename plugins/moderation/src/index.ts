@@ -16,11 +16,7 @@ export {
   normalizeDeleteMessageSeconds,
 } from './config.js';
 export type { AutomaticModerationMode, ModerationConfig } from './config.js';
-export {
-  AutomaticModerationDetector,
-  extractInviteCodes,
-  isExempt,
-} from './detection.js';
+export { AutomaticModerationDetector, extractInviteCodes, isExempt } from './detection.js';
 export type {
   AutomaticModerationFinding,
   AutomaticModerationFindingKind,
