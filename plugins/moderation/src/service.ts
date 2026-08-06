@@ -1,14 +1,15 @@
 import { ModerationValidationError } from './config.js';
 
 export type ModerationAction = 'warn' | 'timeout' | 'kick' | 'ban';
+export type ModerationCaseAction = ModerationAction | 'flag';
 export type ModerationCaseStatus = 'active' | 'completed' | 'revoked' | 'failed';
-export type ModerationOperationSource = 'discord' | 'dashboard';
+export type ModerationOperationSource = 'discord' | 'dashboard' | 'automatic';
 
 export interface ModerationCaseRecord {
   id: string;
   guildId: string;
   caseNumber: number;
-  action: ModerationAction;
+  action: ModerationCaseAction;
   targetUserId: string;
   moderatorUserId: string;
   reason: string | null;
@@ -17,6 +18,7 @@ export interface ModerationCaseRecord {
   expiresAt: Date | null;
   discordActionId: string | null;
   source: ModerationOperationSource;
+  originDetectionId: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -37,7 +39,7 @@ export interface ModerationPrismaClient extends ModerationTransactionClient {
 
 export interface CreateModerationCaseInput {
   guildId: string;
-  action: ModerationAction;
+  action: ModerationCaseAction;
   targetUserId: string;
   moderatorUserId: string;
   reason: string | null;
@@ -46,6 +48,7 @@ export interface CreateModerationCaseInput {
   expiresAt?: Date | null;
   discordActionId?: string | null;
   source: ModerationOperationSource;
+  originDetectionId?: string | null;
 }
 
 export interface ListModerationCasesInput {
@@ -53,7 +56,7 @@ export interface ListModerationCasesInput {
   page?: number;
   pageSize?: number;
   search?: string;
-  action?: ModerationAction;
+  action?: ModerationCaseAction;
   status?: ModerationCaseStatus;
   targetUserId?: string;
   from?: Date | null;
@@ -90,6 +93,7 @@ interface ModerationCaseRow {
   expires_at: Date | null;
   discord_action_id: string | null;
   source: string;
+  origin_detection_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -97,12 +101,23 @@ interface ModerationCaseRow {
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 const MAX_SEARCH_LENGTH = 100;
-const ALLOWED_ACTIONS = new Set<ModerationAction>(['warn', 'timeout', 'kick', 'ban']);
+const ALLOWED_ACTIONS = new Set<ModerationCaseAction>([
+  'warn',
+  'timeout',
+  'kick',
+  'ban',
+  'flag',
+]);
 const ALLOWED_STATUSES = new Set<ModerationCaseStatus>([
   'active',
   'completed',
   'revoked',
   'failed',
+]);
+const ALLOWED_SOURCES = new Set<ModerationOperationSource>([
+  'discord',
+  'dashboard',
+  'automatic',
 ]);
 
 export async function createModerationCase(
@@ -116,6 +131,8 @@ export async function createModerationCase(
   const status = normalizeStatus(input.status ?? defaultStatusForAction(action));
   const durationSeconds = normalizeNullablePositiveInteger(input.durationSeconds, '期間');
   const expiresAt = normalizeDate(input.expiresAt, '有効期限');
+  const source = normalizeSource(input.source);
+  const originDetectionId = normalizeNullableUuid(input.originDetectionId, '元検知ID');
 
   return prisma.$transaction(async (tx) => {
     await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', input.guildId);
@@ -131,7 +148,8 @@ export async function createModerationCase(
          duration_seconds,
          expires_at,
          discord_action_id,
-         source
+         source,
+         origin_detection_id
        )
        SELECT
          $1,
@@ -144,7 +162,8 @@ export async function createModerationCase(
          $7,
          $8,
          $9,
-         $10
+         $10,
+         $11::uuid
        FROM moderation_cases
        WHERE guild_id = $1
        RETURNING *`,
@@ -157,7 +176,8 @@ export async function createModerationCase(
       durationSeconds,
       expiresAt,
       input.discordActionId ?? null,
-      input.source,
+      source,
+      originDetectionId,
     );
     const created = rows[0];
     if (!created) throw new Error('Moderation Caseの作成に失敗しました');
@@ -174,7 +194,8 @@ export async function createModerationCase(
           caseNumber: created.case_number,
           action,
           targetUserId: input.targetUserId,
-          operationSource: input.source,
+          operationSource: source,
+          originDetectionId,
         },
         severity: action === 'ban' ? 'warning' : 'info',
       },
@@ -272,6 +293,7 @@ export async function updateModerationCase(
     throw new ModerationValidationError('更新内容を指定してください');
   }
   const status = input.status === undefined ? undefined : normalizeStatus(input.status);
+  const source = normalizeSource(input.source);
 
   return prisma.$transaction(async (tx) => {
     const currentRows = await tx.$queryRawUnsafe<ModerationCaseRow[]>(
@@ -322,7 +344,7 @@ export async function updateModerationCase(
           caseNumber: current.case_number,
           action: current.action,
           targetUserId: current.target_user_id,
-          operationSource: input.source,
+          operationSource: source,
         },
       },
     });
@@ -361,21 +383,22 @@ function toRecord(row: ModerationCaseRow): ModerationCaseRecord {
     durationSeconds: row.duration_seconds,
     expiresAt: row.expires_at,
     discordActionId: row.discord_action_id,
-    source: row.source === 'dashboard' ? 'dashboard' : 'discord',
+    source: normalizeSource(row.source),
+    originDetectionId: row.origin_detection_id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-function defaultStatusForAction(action: ModerationAction): ModerationCaseStatus {
+function defaultStatusForAction(action: ModerationCaseAction): ModerationCaseStatus {
   return action === 'kick' ? 'completed' : 'active';
 }
 
-function normalizeAction(value: unknown): ModerationAction {
-  if (typeof value !== 'string' || !ALLOWED_ACTIONS.has(value as ModerationAction)) {
+function normalizeAction(value: unknown): ModerationCaseAction {
+  if (typeof value !== 'string' || !ALLOWED_ACTIONS.has(value as ModerationCaseAction)) {
     throw new ModerationValidationError('モデレーション種別が不正です');
   }
-  return value as ModerationAction;
+  return value as ModerationCaseAction;
 }
 
 function normalizeStatus(value: unknown): ModerationCaseStatus {
@@ -383,6 +406,13 @@ function normalizeStatus(value: unknown): ModerationCaseStatus {
     throw new ModerationValidationError('ケース状態が不正です');
   }
   return value as ModerationCaseStatus;
+}
+
+function normalizeSource(value: unknown): ModerationOperationSource {
+  if (typeof value !== 'string' || !ALLOWED_SOURCES.has(value as ModerationOperationSource)) {
+    throw new ModerationValidationError('操作元が不正です');
+  }
+  return value as ModerationOperationSource;
 }
 
 function normalizeNullablePositiveInteger(value: unknown, label: string): number | null {
@@ -396,6 +426,17 @@ function normalizeNullablePositiveInteger(value: unknown, label: string): number
 function normalizeDate(value: unknown, label: string): Date | null {
   if (value === undefined || value === null) return null;
   if (!(value instanceof Date) || Number.isNaN(value.getTime())) {
+    throw new ModerationValidationError(`${label}が不正です`);
+  }
+  return value;
+}
+
+function normalizeNullableUuid(value: unknown, label: string): string | null {
+  if (value === undefined || value === null) return null;
+  if (
+    typeof value !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  ) {
     throw new ModerationValidationError(`${label}が不正です`);
   }
   return value;
