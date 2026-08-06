@@ -1,10 +1,25 @@
 import type { PluginManifest } from '@herta/shared';
 
+const discordIdArraySchema = {
+  type: 'array' as const,
+  uniqueItems: true,
+  default: [],
+  items: { type: 'string' as const, pattern: '^\\d+$' },
+};
+
+const automaticWordArraySchema = {
+  type: 'array' as const,
+  uniqueItems: true,
+  maxItems: 100,
+  default: [],
+  items: { type: 'string' as const, minLength: 1, maxLength: 120 },
+};
+
 export const moderationManifest: PluginManifest = {
   id: 'moderation',
   name: 'Moderation',
-  version: '1.0.0',
-  description: '手動モデレーション操作とGuild単位のケース管理を提供します',
+  version: '2.0.0',
+  description: '手動モデレーションとobserve-only自動検知をGuild単位で提供します',
   author: { name: 'Herta' },
   category: 'moderation',
   permissions: [
@@ -57,12 +72,107 @@ export const moderationManifest: PluginManifest = {
         default: 365,
       },
       allowedModeratorRoleIds: {
-        type: 'array',
+        ...discordIdArraySchema,
         title: '実行を許可するモデレーターロールID',
         description: '空配列の場合はDiscord権限だけで判定します',
+      },
+      automaticMode: {
+        type: 'string',
+        title: '自動検知モード',
+        description: 'observeは検知ログだけを記録し、メッセージ削除や処罰を行いません',
+        enum: ['disabled', 'observe'],
+        default: 'disabled',
+      },
+      autoExactWords: {
+        ...automaticWordArraySchema,
+        title: '完全一致ワード',
+        description: 'NFKC正規化と小文字化後の本文全体が一致した場合に検知します',
+      },
+      autoContainsWords: {
+        ...automaticWordArraySchema,
+        title: '部分一致ワード',
+        description: 'NFKC正規化と小文字化後の本文に含まれる場合に検知します',
+      },
+      autoRegexPatterns: {
+        type: 'array',
+        title: '制限付き正規表現',
+        description:
+          '最大20件・各120文字。後方参照、lookaround、ネスト量指定子などReDoSリスクの高い式は無視します',
         uniqueItems: true,
+        maxItems: 20,
         default: [],
-        items: { type: 'string', pattern: '^\\d+$' },
+        items: { type: 'string', minLength: 1, maxLength: 120 },
+      },
+      autoInviteFilterEnabled: {
+        type: 'boolean',
+        title: 'Discord招待リンクを検知する',
+        default: false,
+      },
+      autoInviteAllowlist: {
+        type: 'array',
+        title: '許可するDiscord招待コード',
+        description: 'discord.gg/以降のコードだけを入力します',
+        uniqueItems: true,
+        maxItems: 100,
+        default: [],
+        items: { type: 'string', pattern: '^[A-Za-z0-9-]{2,64}$' },
+      },
+      autoMentionLimit: {
+        type: 'integer',
+        title: '大量メンション検知数',
+        description: '0で無効。User・Role・everyoneの合計が指定数以上で検知します',
+        minimum: 0,
+        maximum: 100,
+        default: 0,
+      },
+      autoBurstMessageLimit: {
+        type: 'integer',
+        title: '連投検知メッセージ数',
+        description: '0で無効。指定時間内の同一ユーザー投稿数を監視します',
+        minimum: 0,
+        maximum: 50,
+        default: 0,
+      },
+      autoBurstWindowSeconds: {
+        type: 'integer',
+        title: '連投検知時間（秒）',
+        minimum: 1,
+        maximum: 300,
+        default: 10,
+      },
+      autoDuplicateMessageLimit: {
+        type: 'integer',
+        title: '重複投稿検知数',
+        description: '0で無効。正規化後の同一本文が指定数以上投稿された場合に検知します',
+        minimum: 0,
+        maximum: 20,
+        default: 0,
+      },
+      autoDuplicateWindowSeconds: {
+        type: 'integer',
+        title: '重複投稿検知時間（秒）',
+        minimum: 1,
+        maximum: 600,
+        default: 30,
+      },
+      autoMaxMessageLength: {
+        type: 'integer',
+        title: '自動検知する本文の最大文字数',
+        minimum: 100,
+        maximum: 4000,
+        default: 2000,
+      },
+      autoExemptChannelIds: {
+        ...discordIdArraySchema,
+        title: '自動検知から除外するチャンネルID',
+      },
+      autoExemptRoleIds: {
+        ...discordIdArraySchema,
+        title: '自動検知から除外するロールID',
+      },
+      autoExemptUserIds: {
+        ...discordIdArraySchema,
+        title: '自動検知から除外するユーザーID',
       },
     },
     required: [
@@ -75,7 +185,7 @@ export const moderationManifest: PluginManifest = {
       'allowedModeratorRoleIds',
     ],
   },
-  events: [],
+  events: ['messageCreate'],
   commands: [
     {
       name: 'mod',
