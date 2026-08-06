@@ -89,7 +89,7 @@ export function PluginConfigForm({
         <ul className="mt-5 space-y-2 text-sm">
           {Object.entries(properties).map(([key, property]) => (
             <li key={key} className="min-w-0 rounded-lg bg-background p-3">
-              <span className="font-medium">{property.title ?? key}</span>
+              <span className="break-words font-medium">{property.title ?? key}</span>
               {property.description ? (
                 <span className="ml-2 break-words text-muted">{property.description}</span>
               ) : null}
