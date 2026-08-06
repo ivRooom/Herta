@@ -1,6 +1,6 @@
 {
   "name": "@herta/plugin-moderation",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -28,6 +28,10 @@
     "./manifest": {
       "types": "./src/manifest.ts",
       "default": "./dist/manifest.js"
+    },
+    "./detection": {
+      "types": "./src/detection.ts",
+      "default": "./dist/detection.js"
     }
   },
   "scripts": {

@@ -1,3 +1,5 @@
+export type AutomaticModerationMode = 'disabled' | 'observe';
+
 export interface ModerationConfig {
   requireReason: boolean;
   dmTarget: boolean;
@@ -6,6 +8,21 @@ export interface ModerationConfig {
   maxReasonLength: number;
   caseRetentionDays: number;
   allowedModeratorRoleIds: string[];
+  automaticMode: AutomaticModerationMode;
+  autoExactWords: string[];
+  autoContainsWords: string[];
+  autoRegexPatterns: string[];
+  autoInviteFilterEnabled: boolean;
+  autoInviteAllowlist: string[];
+  autoMentionLimit: number;
+  autoBurstMessageLimit: number;
+  autoBurstWindowSeconds: number;
+  autoDuplicateMessageLimit: number;
+  autoDuplicateWindowSeconds: number;
+  autoMaxMessageLength: number;
+  autoExemptChannelIds: string[];
+  autoExemptRoleIds: string[];
+  autoExemptUserIds: string[];
 }
 
 export const DEFAULT_MODERATION_CONFIG: ModerationConfig = {
@@ -16,11 +33,30 @@ export const DEFAULT_MODERATION_CONFIG: ModerationConfig = {
   maxReasonLength: 500,
   caseRetentionDays: 365,
   allowedModeratorRoleIds: [],
+  automaticMode: 'disabled',
+  autoExactWords: [],
+  autoContainsWords: [],
+  autoRegexPatterns: [],
+  autoInviteFilterEnabled: false,
+  autoInviteAllowlist: [],
+  autoMentionLimit: 0,
+  autoBurstMessageLimit: 0,
+  autoBurstWindowSeconds: 10,
+  autoDuplicateMessageLimit: 0,
+  autoDuplicateWindowSeconds: 30,
+  autoMaxMessageLength: 2000,
+  autoExemptChannelIds: [],
+  autoExemptRoleIds: [],
+  autoExemptUserIds: [],
 };
 
 export const MAX_MODERATION_REASON_LENGTH = 1000;
 export const MAX_TIMEOUT_MINUTES = 28 * 24 * 60;
 export const MAX_BAN_DELETE_MESSAGE_SECONDS = 7 * 24 * 60 * 60;
+export const MAX_AUTOMATIC_WORD_PATTERNS = 100;
+export const MAX_AUTOMATIC_REGEX_PATTERNS = 20;
+export const MAX_AUTOMATIC_PATTERN_LENGTH = 120;
+export const MAX_AUTOMATIC_MESSAGE_LENGTH = 4000;
 
 export class ModerationValidationError extends Error {
   constructor(message: string) {
@@ -55,7 +91,75 @@ export function normalizeModerationConfig(value: unknown): ModerationConfig {
     maxReasonLength,
     caseRetentionDays,
     allowedModeratorRoleIds: normalizeDiscordIds(config.allowedModeratorRoleIds),
+    automaticMode: normalizeAutomaticModerationMode(config.automaticMode),
+    autoExactWords: normalizeAutomaticWordPatterns(config.autoExactWords),
+    autoContainsWords: normalizeAutomaticWordPatterns(config.autoContainsWords),
+    autoRegexPatterns: normalizeAutomaticRegexPatterns(config.autoRegexPatterns),
+    autoInviteFilterEnabled: booleanValue(
+      config.autoInviteFilterEnabled,
+      DEFAULT_MODERATION_CONFIG.autoInviteFilterEnabled,
+    ),
+    autoInviteAllowlist: normalizeInviteCodes(config.autoInviteAllowlist),
+    autoMentionLimit: clampInteger(
+      config.autoMentionLimit,
+      DEFAULT_MODERATION_CONFIG.autoMentionLimit,
+      0,
+      100,
+    ),
+    autoBurstMessageLimit: clampInteger(
+      config.autoBurstMessageLimit,
+      DEFAULT_MODERATION_CONFIG.autoBurstMessageLimit,
+      0,
+      50,
+    ),
+    autoBurstWindowSeconds: clampInteger(
+      config.autoBurstWindowSeconds,
+      DEFAULT_MODERATION_CONFIG.autoBurstWindowSeconds,
+      1,
+      300,
+    ),
+    autoDuplicateMessageLimit: clampInteger(
+      config.autoDuplicateMessageLimit,
+      DEFAULT_MODERATION_CONFIG.autoDuplicateMessageLimit,
+      0,
+      20,
+    ),
+    autoDuplicateWindowSeconds: clampInteger(
+      config.autoDuplicateWindowSeconds,
+      DEFAULT_MODERATION_CONFIG.autoDuplicateWindowSeconds,
+      1,
+      600,
+    ),
+    autoMaxMessageLength: clampInteger(
+      config.autoMaxMessageLength,
+      DEFAULT_MODERATION_CONFIG.autoMaxMessageLength,
+      100,
+      MAX_AUTOMATIC_MESSAGE_LENGTH,
+    ),
+    autoExemptChannelIds: normalizeDiscordIds(config.autoExemptChannelIds),
+    autoExemptRoleIds: normalizeDiscordIds(config.autoExemptRoleIds),
+    autoExemptUserIds: normalizeDiscordIds(config.autoExemptUserIds),
   };
+}
+
+export function normalizeAutomaticText(value: string): string {
+  return value.normalize('NFKC').trim().replace(/\s+/gu, ' ').toLocaleLowerCase('ja-JP');
+}
+
+export function isSafeAutomaticRegexPattern(pattern: string): boolean {
+  if (!pattern || pattern.length > MAX_AUTOMATIC_PATTERN_LENGTH) return false;
+  if (/\\[1-9]/u.test(pattern)) return false;
+  if (/\(\?[=!<]/u.test(pattern)) return false;
+  if (/\([^)]*(?:\+|\*|\{\d+,?\d*\})[^)]*\)(?:\+|\*|\{\d+,?\d*\})/u.test(pattern)) {
+    return false;
+  }
+
+  try {
+    new RegExp(pattern, 'iu');
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function normalizeModerationReason(
@@ -103,6 +207,37 @@ export function normalizeDeleteMessageSeconds(value: unknown): number {
     );
   }
   return value;
+}
+
+function normalizeAutomaticModerationMode(value: unknown): AutomaticModerationMode {
+  return value === 'observe' ? 'observe' : 'disabled';
+}
+
+function normalizeAutomaticWordPatterns(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const normalized = value
+    .filter((item): item is string => typeof item === 'string')
+    .map(normalizeAutomaticText)
+    .filter((item) => item.length > 0 && item.length <= MAX_AUTOMATIC_PATTERN_LENGTH);
+  return [...new Set(normalized)].slice(0, MAX_AUTOMATIC_WORD_PATTERNS);
+}
+
+function normalizeAutomaticRegexPatterns(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const normalized = value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(isSafeAutomaticRegexPattern);
+  return [...new Set(normalized)].slice(0, MAX_AUTOMATIC_REGEX_PATTERNS);
+}
+
+function normalizeInviteCodes(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const normalized = value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim().toLocaleLowerCase('en-US'))
+    .filter((item) => /^[a-z0-9-]{2,64}$/u.test(item));
+  return [...new Set(normalized)].slice(0, MAX_AUTOMATIC_WORD_PATTERNS);
 }
 
 function normalizeDiscordId(value: unknown): string | null {
