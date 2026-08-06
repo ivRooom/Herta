@@ -142,7 +142,11 @@ export default async function ModerationDetectionsPage({
               </option>
             ))}
           </FilterSelect>
-          <FilterSelect name="status" label="レビュー状態" defaultValue={filters.reviewStatus ?? ''}>
+          <FilterSelect
+            name="status"
+            label="レビュー状態"
+            defaultValue={filters.reviewStatus ?? ''}
+          >
             <option value="">すべて</option>
             <option value="unreviewed">未確認</option>
             <option value="confirmed">正検知</option>
@@ -150,21 +154,19 @@ export default async function ModerationDetectionsPage({
             <option value="ignored">無視</option>
           </FilterSelect>
 
-          <details
-            open={hasAdvancedFilters}
-            className="group sm:col-span-2 lg:col-span-4"
-          >
+          <details open={hasAdvancedFilters} className="group sm:col-span-2 lg:col-span-4">
             <summary className="cursor-pointer rounded-xl border border-border bg-background px-3 py-2 text-sm font-medium lg:hidden">
               詳細条件
             </summary>
             <div className="mt-3 hidden gap-3 group-open:grid sm:grid-cols-2 lg:mt-0 lg:!grid lg:grid-cols-4">
               <FilterInput name="userId" label="ユーザーID" defaultValue={filters.userId} />
+              <FilterInput name="channelId" label="チャンネルID" defaultValue={filters.channelId} />
               <FilterInput
-                name="channelId"
-                label="チャンネルID"
-                defaultValue={filters.channelId}
+                name="from"
+                label="開始日"
+                defaultValue={first(query.from)}
+                type="date"
               />
-              <FilterInput name="from" label="開始日" defaultValue={first(query.from)} type="date" />
               <FilterInput name="to" label="終了日" defaultValue={first(query.to)} type="date" />
             </div>
           </details>
@@ -342,7 +344,10 @@ function DetectionMobileCard({ guildId, item }: { guildId: string; item: Detecti
 
       <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-background p-3 text-center text-xs">
         <Metric label="本文長" value={item.messageLength} />
-        <Metric label="観測 / 閾値" value={`${item.observedCount ?? '—'} / ${item.threshold ?? '—'}`} />
+        <Metric
+          label="観測 / 閾値"
+          value={`${item.observedCount ?? '—'} / ${item.threshold ?? '—'}`}
+        />
         <Metric label="Rule" value={item.ruleIndex ?? '—'} />
       </div>
 
