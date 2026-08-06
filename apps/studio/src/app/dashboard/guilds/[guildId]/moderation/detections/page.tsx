@@ -25,6 +25,7 @@ import { getGuildPlugin } from '@/lib/guild-plugins';
 export const dynamic = 'force-dynamic';
 
 type SearchParams = Record<string, string | string[] | undefined>;
+type DetectionItem = Awaited<ReturnType<typeof listModerationDetections>>['items'][number];
 
 export default async function ModerationDetectionsPage({
   params,
@@ -55,6 +56,9 @@ export default async function ModerationDetectionsPage({
     from: parseDate(first(query.from), false),
     toExclusive: parseDate(first(query.to), true),
   };
+  const hasAdvancedFilters = Boolean(
+    filters.userId || filters.channelId || first(query.from) || first(query.to),
+  );
 
   let loadError: string | null = null;
   let result: Awaited<ReturnType<typeof listModerationDetections>> = EMPTY_RESULT;
@@ -81,36 +85,38 @@ export default async function ModerationDetectionsPage({
   }
 
   return (
-    <div>
+    <div className="min-w-0">
       <Link
         href={`/dashboard/guilds/${guildId}/plugins/moderation`}
         className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground"
       >
-        <ArrowLeft className="h-4 w-4" /> Moderation Pluginへ戻る
+        <ArrowLeft className="h-4 w-4 shrink-0" /> Moderation Pluginへ戻る
       </Link>
 
-      <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
-        <div>
+      <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <Radar className="h-6 w-6 text-primary" />
-            <h1 className="text-2xl font-semibold tracking-tight">自動検知レビュー</h1>
+            <Radar className="h-6 w-6 shrink-0 text-primary" />
+            <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">自動検知レビュー</h1>
           </div>
-          <p className="mt-2 text-sm text-muted">{guild.name} のobserve-only検知を分類します。</p>
+          <p className="mt-2 break-words text-sm text-muted">
+            {guild.name} のobserve-only検知を分類します。
+          </p>
         </div>
-        <div className="flex gap-2">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
           <Link
             href={`/dashboard/guilds/${guildId}/moderation`}
-            className="rounded-xl border border-border px-4 py-2 text-sm font-medium hover:bg-surface"
+            className="rounded-xl border border-border px-3 py-2 text-center text-sm font-medium hover:bg-surface sm:px-4"
           >
             ケース履歴
           </Link>
-          <span className="rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+          <span className="rounded-xl bg-primary px-3 py-2 text-center text-sm font-semibold text-primary-foreground sm:px-4">
             自動検知
           </span>
         </div>
       </div>
 
-      <div className="mt-6 rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm text-muted">
+      <div className="mt-6 rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm leading-6 text-muted">
         本文・一致語・正規表現・招待コードは保存していません。ID、種別、件数、長さ、レビュー結果のみ表示します。
       </div>
 
@@ -126,30 +132,48 @@ export default async function ModerationDetectionsPage({
         />
       </div>
 
-      <form className="mt-6 grid gap-3 rounded-2xl border border-border bg-surface p-5 shadow-card md:grid-cols-6">
-        <FilterSelect name="kind" label="検知種別" defaultValue={filters.detectionKind ?? ''}>
-          <option value="">すべて</option>
-          {DETECTION_KINDS.map((kind) => (
-            <option key={kind} value={kind}>
-              {kindLabel(kind)}
-            </option>
-          ))}
-        </FilterSelect>
-        <FilterSelect name="status" label="レビュー状態" defaultValue={filters.reviewStatus ?? ''}>
-          <option value="">すべて</option>
-          <option value="unreviewed">未確認</option>
-          <option value="confirmed">正検知</option>
-          <option value="false_positive">誤検知</option>
-          <option value="ignored">無視</option>
-        </FilterSelect>
-        <FilterInput name="userId" label="ユーザーID" defaultValue={filters.userId} />
-        <FilterInput name="channelId" label="チャンネルID" defaultValue={filters.channelId} />
-        <FilterInput name="from" label="開始日" defaultValue={first(query.from)} type="date" />
-        <FilterInput name="to" label="終了日" defaultValue={first(query.to)} type="date" />
-        <div className="flex items-end justify-end gap-2 md:col-span-6">
+      <form className="mt-6 rounded-2xl border border-border bg-surface p-4 shadow-card sm:p-5">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+          <FilterSelect name="kind" label="検知種別" defaultValue={filters.detectionKind ?? ''}>
+            <option value="">すべて</option>
+            {DETECTION_KINDS.map((kind) => (
+              <option key={kind} value={kind}>
+                {kindLabel(kind)}
+              </option>
+            ))}
+          </FilterSelect>
+          <FilterSelect name="status" label="レビュー状態" defaultValue={filters.reviewStatus ?? ''}>
+            <option value="">すべて</option>
+            <option value="unreviewed">未確認</option>
+            <option value="confirmed">正検知</option>
+            <option value="false_positive">誤検知</option>
+            <option value="ignored">無視</option>
+          </FilterSelect>
+
+          <details
+            open={hasAdvancedFilters}
+            className="group sm:col-span-2 lg:col-span-4"
+          >
+            <summary className="cursor-pointer rounded-xl border border-border bg-background px-3 py-2 text-sm font-medium lg:hidden">
+              詳細条件
+            </summary>
+            <div className="mt-3 hidden gap-3 group-open:grid sm:grid-cols-2 lg:mt-0 lg:!grid lg:grid-cols-4">
+              <FilterInput name="userId" label="ユーザーID" defaultValue={filters.userId} />
+              <FilterInput
+                name="channelId"
+                label="チャンネルID"
+                defaultValue={filters.channelId}
+              />
+              <FilterInput name="from" label="開始日" defaultValue={first(query.from)} type="date" />
+              <FilterInput name="to" label="終了日" defaultValue={first(query.to)} type="date" />
+            </div>
+          </details>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:flex sm:justify-end">
           <Link
             href={`/dashboard/guilds/${guildId}/moderation/detections`}
-            className="rounded-xl border border-border px-4 py-2 text-sm font-medium hover:bg-background"
+            className="rounded-xl border border-border px-4 py-2 text-center text-sm font-medium hover:bg-background"
           >
             リセット
           </Link>
@@ -167,70 +191,84 @@ export default async function ModerationDetectionsPage({
           {loadError}
         </div>
       ) : result.items.length === 0 ? (
-        <div className="mt-6 rounded-2xl border border-dashed border-border p-10 text-center text-sm text-muted">
+        <div className="mt-6 rounded-2xl border border-dashed border-border p-6 text-center text-sm text-muted sm:p-10">
           条件に一致する自動検知履歴はありません。
         </div>
       ) : (
-        <div className="mt-6 overflow-hidden rounded-2xl border border-border bg-surface shadow-card">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-border bg-background/60 text-xs text-muted">
-                <tr>
-                  <th className="px-4 py-3 font-medium">日時 / 種別</th>
-                  <th className="px-4 py-3 font-medium">対象</th>
-                  <th className="px-4 py-3 font-medium">観測値</th>
-                  <th className="px-4 py-3 font-medium">状態</th>
-                  <th className="px-4 py-3 font-medium">レビュー</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {result.items.map((item) => (
-                  <tr key={item.id} className="align-top hover:bg-background/60">
-                    <td className="px-4 py-4">
-                      <div className="font-medium">{kindLabel(item.detectionKind)}</div>
-                      <div className="mt-1 whitespace-nowrap text-xs text-muted">
-                        {formatDate(item.occurredAt)}
-                      </div>
-                    </td>
-                    <td className="px-4 py-4 font-mono text-xs">
-                      <div>User: {item.userId}</div>
-                      <div className="mt-1 text-muted">Channel: {item.channelId}</div>
-                      <div className="mt-1 text-muted">Message: {item.messageId}</div>
-                    </td>
-                    <td className="px-4 py-4 text-muted">
-                      <div>本文長: {item.messageLength}</div>
-                      <div className="mt-1 text-xs">
-                        観測: {item.observedCount ?? '—'} / 閾値: {item.threshold ?? '—'}
-                      </div>
-                      <div className="mt-1 text-xs">Rule: {item.ruleIndex ?? '—'}</div>
-                    </td>
-                    <td className="px-4 py-4">
-                      <span className={statusClassName(item.reviewStatus)}>
-                        {statusLabel(item.reviewStatus)}
-                      </span>
-                      {item.reviewedAt ? (
-                        <div className="mt-2 text-xs text-muted">{formatDate(item.reviewedAt)}</div>
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-4">
-                      <ModerationDetectionReview
-                        guildId={guildId}
-                        detectionId={item.id}
-                        initialStatus={item.reviewStatus}
-                        initialNote={item.reviewNote}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <>
+          <div className="mt-6 space-y-3 md:hidden">
+            {result.items.map((item) => (
+              <DetectionMobileCard key={item.id} guildId={guildId} item={item} />
+            ))}
           </div>
-        </div>
+
+          <div className="mt-6 hidden overflow-hidden rounded-2xl border border-border bg-surface shadow-card md:block">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-border bg-background/60 text-xs text-muted">
+                  <tr>
+                    <th className="px-4 py-3 font-medium">日時 / 種別</th>
+                    <th className="px-4 py-3 font-medium">対象</th>
+                    <th className="px-4 py-3 font-medium">観測値</th>
+                    <th className="px-4 py-3 font-medium">状態</th>
+                    <th className="px-4 py-3 font-medium">レビュー</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {result.items.map((item) => (
+                    <tr key={item.id} className="align-top hover:bg-background/60">
+                      <td className="px-4 py-4">
+                        <div className="font-medium">{kindLabel(item.detectionKind)}</div>
+                        <div className="mt-1 whitespace-nowrap text-xs text-muted">
+                          {formatDate(item.occurredAt)}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 font-mono text-xs">
+                        <div className="whitespace-nowrap">User: {item.userId}</div>
+                        <div className="mt-1 whitespace-nowrap text-muted">
+                          Channel: {item.channelId}
+                        </div>
+                        <div className="mt-1 whitespace-nowrap text-muted">
+                          Message: {item.messageId}
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 text-muted">
+                        <div>本文長: {item.messageLength}</div>
+                        <div className="mt-1 whitespace-nowrap text-xs">
+                          観測: {item.observedCount ?? '—'} / 閾値: {item.threshold ?? '—'}
+                        </div>
+                        <div className="mt-1 text-xs">Rule: {item.ruleIndex ?? '—'}</div>
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className={statusClassName(item.reviewStatus)}>
+                          {statusLabel(item.reviewStatus)}
+                        </span>
+                        {item.reviewedAt ? (
+                          <div className="mt-2 whitespace-nowrap text-xs text-muted">
+                            {formatDate(item.reviewedAt)}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="w-64 px-4 py-4">
+                        <ModerationDetectionReview
+                          guildId={guildId}
+                          detectionId={item.id}
+                          initialStatus={item.reviewStatus}
+                          initialNote={item.reviewNote}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
       )}
 
       {result.totalPages > 1 ? (
         <nav
-          className="mt-6 flex items-center justify-center gap-3"
+          className="mt-6 flex flex-wrap items-center justify-center gap-3"
           aria-label="検知履歴ページング"
         >
           {result.page > 1 ? (
@@ -283,6 +321,66 @@ const EMPTY_STATS = {
   },
 };
 
+function DetectionMobileCard({ guildId, item }: { guildId: string; item: DetectionItem }) {
+  return (
+    <article className="min-w-0 rounded-2xl border border-border bg-surface p-4 shadow-card">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="font-medium">{kindLabel(item.detectionKind)}</h2>
+          <p className="mt-1 text-xs text-muted">{formatDate(item.occurredAt)}</p>
+        </div>
+        <span className={`${statusClassName(item.reviewStatus)} shrink-0`}>
+          {statusLabel(item.reviewStatus)}
+        </span>
+      </div>
+
+      <dl className="mt-4 space-y-3 text-xs">
+        <IdRow label="User ID" value={item.userId} />
+        <IdRow label="Channel ID" value={item.channelId} />
+        <IdRow label="Message ID" value={item.messageId} />
+      </dl>
+
+      <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-background p-3 text-center text-xs">
+        <Metric label="本文長" value={item.messageLength} />
+        <Metric label="観測 / 閾値" value={`${item.observedCount ?? '—'} / ${item.threshold ?? '—'}`} />
+        <Metric label="Rule" value={item.ruleIndex ?? '—'} />
+      </div>
+
+      {item.reviewedAt ? (
+        <p className="mt-3 text-xs text-muted">最終レビュー: {formatDate(item.reviewedAt)}</p>
+      ) : null}
+
+      <div className="mt-4">
+        <ModerationDetectionReview
+          guildId={guildId}
+          detectionId={item.id}
+          initialStatus={item.reviewStatus}
+          initialNote={item.reviewNote}
+          showQuickActions
+        />
+      </div>
+    </article>
+  );
+}
+
+function IdRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <dt className="font-medium text-muted">{label}</dt>
+      <dd className="mt-1 break-all font-mono text-foreground">{value}</dd>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-muted">{label}</div>
+      <div className="mt-1 break-words font-medium text-foreground">{value}</div>
+    </div>
+  );
+}
+
 function StatCard({
   icon: Icon,
   label,
@@ -295,7 +393,7 @@ function StatCard({
   detail?: string;
 }) {
   return (
-    <div className="rounded-2xl border border-border bg-surface p-5 shadow-card">
+    <div className="rounded-2xl border border-border bg-surface p-4 shadow-card sm:p-5">
       <div className="flex items-center gap-2 text-sm text-muted">
         <Icon className="h-4 w-4" /> {label}
       </div>
@@ -304,6 +402,7 @@ function StatCard({
     </div>
   );
 }
+
 function FilterInput({
   name,
   label,
@@ -316,18 +415,19 @@ function FilterInput({
   type?: string;
 }) {
   return (
-    <label>
+    <label className="min-w-0">
       <span className="text-xs font-medium text-muted">{label}</span>
       <input
         name={name}
         type={type}
         defaultValue={defaultValue}
         inputMode={type === 'text' ? 'numeric' : undefined}
-        className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+        className="mt-1 w-full min-w-0 rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
       />
     </label>
   );
 }
+
 function FilterSelect({
   name,
   label,
@@ -340,31 +440,35 @@ function FilterSelect({
   children: React.ReactNode;
 }) {
   return (
-    <label>
+    <label className="min-w-0">
       <span className="text-xs font-medium text-muted">{label}</span>
       <select
         name={name}
         defaultValue={defaultValue}
-        className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+        className="mt-1 w-full min-w-0 rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
       >
         {children}
       </select>
     </label>
   );
 }
+
 function first(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
+
 function parsePositiveInteger(value: string | undefined) {
   if (!value) return undefined;
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
+
 function parseDetectionKind(value: string | undefined): ModerationDetectionKind | undefined {
   return DETECTION_KINDS.includes(value as ModerationDetectionKind)
     ? (value as ModerationDetectionKind)
     : undefined;
 }
+
 function parseReviewStatus(value: string | undefined): ModerationDetectionReviewStatus | undefined {
   return value === 'unreviewed' ||
     value === 'confirmed' ||
@@ -373,16 +477,19 @@ function parseReviewStatus(value: string | undefined): ModerationDetectionReview
     ? value
     : undefined;
 }
+
 function parseDiscordId(value: string | undefined) {
   const normalized = value?.trim();
   return normalized && /^\d+$/.test(normalized) ? normalized : undefined;
 }
+
 function parseDate(value: string | undefined, endExclusive: boolean) {
   if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const date = new Date(`${value}T00:00:00+09:00`);
   if (Number.isNaN(date.getTime())) return null;
   return endExclusive ? new Date(date.getTime() + 86400000) : date;
 }
+
 function buildPageHref(guildId: string, query: SearchParams, page: number) {
   const params = new URLSearchParams();
   for (const key of ['kind', 'status', 'userId', 'channelId', 'from', 'to']) {
@@ -392,6 +499,7 @@ function buildPageHref(guildId: string, query: SearchParams, page: number) {
   params.set('page', String(page));
   return `/dashboard/guilds/${guildId}/moderation/detections?${params.toString()}`;
 }
+
 function kindLabel(kind: ModerationDetectionKind) {
   return {
     word_exact: '完全一致ワード',
@@ -403,11 +511,13 @@ function kindLabel(kind: ModerationDetectionKind) {
     duplicate_message: '重複投稿',
   }[kind];
 }
+
 function statusLabel(status: ModerationDetectionReviewStatus) {
   return { unreviewed: '未確認', confirmed: '正検知', false_positive: '誤検知', ignored: '無視' }[
     status
   ];
 }
+
 function statusClassName(status: ModerationDetectionReviewStatus) {
   const base = 'inline-flex rounded-full border px-2.5 py-1 text-xs font-medium';
   if (status === 'confirmed') return `${base} border-emerald-500/30 text-emerald-600`;
@@ -415,6 +525,7 @@ function statusClassName(status: ModerationDetectionReviewStatus) {
   if (status === 'ignored') return `${base} border-border text-muted`;
   return `${base} border-primary/30 text-primary`;
 }
+
 function formatDate(value: Date) {
   return new Intl.DateTimeFormat('ja-JP', {
     dateStyle: 'medium',
