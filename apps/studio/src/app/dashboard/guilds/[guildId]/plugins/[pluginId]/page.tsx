@@ -50,11 +50,18 @@ export default async function PluginDetailPage({
       </div>
 
       {pluginId === 'moderation' ? (
-        <ManagementLink
-          href={`/dashboard/guilds/${guildId}/moderation`}
-          title="モデレーションケース管理"
-          description="警告・タイムアウト・Kick・BANの履歴を検索・確認・更新します。"
-        />
+        <>
+          <ManagementLink
+            href={`/dashboard/guilds/${guildId}/moderation`}
+            title="モデレーションケース管理"
+            description="警告・タイムアウト・Kick・BANの履歴を検索・確認・更新します。"
+          />
+          <ManagementLink
+            href={`/dashboard/guilds/${guildId}/moderation/detections`}
+            title="自動検知レビュー"
+            description="本文を保存しないobserve履歴を確認し、正検知・誤検知・無視へ分類します。"
+          />
+        </>
       ) : null}
 
       {pluginId === 'quote' ? (

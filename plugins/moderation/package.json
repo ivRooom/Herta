@@ -32,6 +32,10 @@
     "./detection": {
       "types": "./src/detection.ts",
       "default": "./dist/detection.js"
+    },
+    "./detection-history": {
+      "types": "./src/detection-history.ts",
+      "default": "./dist/detection-history.js"
     }
   },
   "scripts": {
