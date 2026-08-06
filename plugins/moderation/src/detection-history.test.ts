@@ -64,7 +64,10 @@ describe('Moderation detection history', () => {
   });
 
   it('一覧取得でGuild条件を必須にしフィルター値をparameterizeする', async () => {
-    const query = vi.fn().mockResolvedValueOnce([{ count: 0n }]).mockResolvedValueOnce([]);
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([{ count: 0n }])
+      .mockResolvedValueOnce([]);
     const prisma = {
       $queryRawUnsafe: query,
     } as unknown as ModerationPrismaClient;

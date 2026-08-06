@@ -23,12 +23,13 @@ model Guild {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  settings     GuildSettings?
-  members      GuildMember[]
-  roles        Role[]
-  auditLogs    AuditLog[]
-  guildPlugins GuildPlugin[]
-  rules        Rule[]
+  settings             GuildSettings?
+  members              GuildMember[]
+  roles                Role[]
+  auditLogs            AuditLog[]
+  guildPlugins         GuildPlugin[]
+  rules                Rule[]
+  moderationDetections ModerationDetectionEvent[]
 
   @@map("guilds")
 }
@@ -176,8 +177,8 @@ model GuildPlugin {
   installedAt   DateTime @default(now()) @map("installed_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  guild         Guild                     @relation(fields: [guildId], references: [id], onDelete: Cascade)
-  plugin        Plugin                    @relation(fields: [pluginId], references: [id])
+  guild         Guild                      @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  plugin        Plugin                     @relation(fields: [pluginId], references: [id])
   configHistory GuildPluginConfigHistory[]
 
   @@id([guildId, pluginId])
@@ -331,8 +332,8 @@ model WordFilter {
   enabled        Boolean  @default(true)
   createdBy      String?  @map("created_by")
   updatedBy      String?  @map("updated_by")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@index([guildId, enabled])
   @@map("word_filters")
@@ -387,6 +388,7 @@ model ModerationDetectionEvent {
   occurredAt     DateTime  @map("occurred_at") @db.Timestamptz(3)
   createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  guild          Guild     @relation(fields: [guildId], references: [id])
 
   @@index([guildId, occurredAt(sort: Desc)])
   @@index([guildId, reviewStatus, occurredAt(sort: Desc)])

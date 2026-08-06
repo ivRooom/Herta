@@ -18,6 +18,7 @@
     "clean": "turbo run clean",
     "db:generate": "dotenv -- pnpm --filter @herta/db generate",
     "db:migrate": "dotenv -- pnpm --filter @herta/db migrate:dev",
+    "db:migrate:deploy": "dotenv -- pnpm --filter @herta/db migrate:deploy",
     "db:push": "dotenv -- pnpm --filter @herta/db push",
     "db:studio": "dotenv -- pnpm --filter @herta/db studio",
     "db:seed": "dotenv -- pnpm --filter @herta/db seed"

@@ -18,7 +18,7 @@ const automaticWordArraySchema = {
 export const moderationManifest: PluginManifest = {
   id: 'moderation',
   name: 'Moderation',
-  version: '2.0.0',
+  version: '2.1.0',
   description: '手動モデレーションとobserve-only自動検知をGuild単位で提供します',
   author: { name: 'Herta' },
   category: 'moderation',
