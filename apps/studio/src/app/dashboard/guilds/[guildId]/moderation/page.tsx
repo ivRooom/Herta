@@ -3,7 +3,8 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, ChevronLeft, ChevronRight, ShieldAlert } from 'lucide-react';
 import {
   listModerationCases,
-  type ModerationAction,
+  type ModerationCaseAction,
+  type ModerationCaseRecord,
   type ModerationCaseStatus,
   type ModerationPrismaClient,
 } from '@herta/plugin-catalog/moderation-service';
@@ -82,7 +83,7 @@ export default async function ModerationCasesPage({
             <h1 className="text-2xl font-semibold tracking-tight">モデレーションケース</h1>
           </div>
           <p className="mt-2 text-sm text-muted">
-            {guild.name} の警告・タイムアウト・Kick・BAN履歴を確認します。
+            {guild.name} の検知フラグ・警告・タイムアウト・Kick・BAN履歴を確認します。
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -123,6 +124,7 @@ export default async function ModerationCasesPage({
             className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
           >
             <option value="">すべて</option>
+            <option value="flag">検知フラグ</option>
             <option value="warn">警告</option>
             <option value="timeout">タイムアウト</option>
             <option value="kick">Kick</option>
@@ -217,7 +219,9 @@ export default async function ModerationCasesPage({
                     </td>
                     <td className="px-4 py-4">
                       <div>{actionLabel(item.action)}</div>
-                      <div className="mt-1 text-xs text-muted">{statusLabel(item.status)}</div>
+                      <div className="mt-1 text-xs text-muted">
+                        {statusLabel(item.status)} · {sourceLabel(item.source)}
+                      </div>
                     </td>
                     <td className="px-4 py-4 font-mono text-xs">{item.targetUserId}</td>
                     <td className="max-w-xs px-4 py-4 text-muted">
@@ -285,8 +289,12 @@ function parsePositiveInteger(value: string | undefined): number | undefined {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
-function parseAction(value: string | undefined): ModerationAction | undefined {
-  return value === 'warn' || value === 'timeout' || value === 'kick' || value === 'ban'
+function parseAction(value: string | undefined): ModerationCaseAction | undefined {
+  return value === 'warn' ||
+    value === 'timeout' ||
+    value === 'kick' ||
+    value === 'ban' ||
+    value === 'flag'
     ? value
     : undefined;
 }
@@ -309,12 +317,22 @@ function parseDate(value: string | undefined, endExclusive: boolean): Date | nul
   return endExclusive ? new Date(candidate.getTime() + 24 * 60 * 60 * 1000) : candidate;
 }
 
-function actionLabel(action: ModerationAction): string {
-  return { warn: '警告', timeout: 'タイムアウト', kick: 'Kick', ban: 'BAN' }[action];
+function actionLabel(action: ModerationCaseAction): string {
+  return {
+    flag: '検知フラグ',
+    warn: '警告',
+    timeout: 'タイムアウト',
+    kick: 'Kick',
+    ban: 'BAN',
+  }[action];
 }
 
 function statusLabel(status: ModerationCaseStatus): string {
   return { active: '有効', completed: '完了', revoked: '解除済み', failed: '失敗' }[status];
+}
+
+function sourceLabel(source: ModerationCaseRecord['source']): string {
+  return { discord: 'Discord', dashboard: 'Herta Studio', automatic: '自動検知' }[source];
 }
 
 function truncate(value: string, maxLength: number): string {
