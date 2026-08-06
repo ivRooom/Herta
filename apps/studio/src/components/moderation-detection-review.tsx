@@ -131,7 +131,9 @@ export function ModerationDetectionReview({
       const resolvedCaseNumber = readCaseNumber(body);
       if (resolvedCaseNumber === null) throw new Error('作成したケース番号を取得できませんでした');
       setCaseNumber(resolvedCaseNumber);
-      setCaseMessage(body.created === false ? '作成済みのケースを表示します' : 'ケースを作成しました');
+      setCaseMessage(
+        body.created === false ? '作成済みのケースを表示します' : 'ケースを作成しました',
+      );
       router.refresh();
     } catch (error) {
       setCaseMessage(error instanceof Error ? error.message : 'ケースを作成できませんでした');

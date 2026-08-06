@@ -53,10 +53,9 @@ export async function POST(_request: Request, { params }: RouteContext) {
   }
 }
 
-async function authorizeRequest(params: RouteContext['params']): Promise<
-  | { guildId: string; detectionId: string; actorId: string }
-  | { response: NextResponse }
-> {
+async function authorizeRequest(
+  params: RouteContext['params'],
+): Promise<{ guildId: string; detectionId: string; actorId: string } | { response: NextResponse }> {
   const session = await auth();
   if (!session?.user) {
     return { response: NextResponse.json({ error: '認証が必要です' }, { status: 401 }) };

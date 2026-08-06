@@ -101,24 +101,14 @@ interface ModerationCaseRow {
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 const MAX_SEARCH_LENGTH = 100;
-const ALLOWED_ACTIONS = new Set<ModerationCaseAction>([
-  'warn',
-  'timeout',
-  'kick',
-  'ban',
-  'flag',
-]);
+const ALLOWED_ACTIONS = new Set<ModerationCaseAction>(['warn', 'timeout', 'kick', 'ban', 'flag']);
 const ALLOWED_STATUSES = new Set<ModerationCaseStatus>([
   'active',
   'completed',
   'revoked',
   'failed',
 ]);
-const ALLOWED_SOURCES = new Set<ModerationOperationSource>([
-  'discord',
-  'dashboard',
-  'automatic',
-]);
+const ALLOWED_SOURCES = new Set<ModerationOperationSource>(['discord', 'dashboard', 'automatic']);
 
 export async function createModerationCase(
   prisma: ModerationPrismaClient,

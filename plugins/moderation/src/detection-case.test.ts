@@ -70,9 +70,9 @@ describe('Moderation detection case', () => {
 
   it('同じ検知がケース化済みなら既存ケースを返して再作成しない', async () => {
     const auditCreate = vi.fn().mockResolvedValue({});
-    const query = vi.fn().mockResolvedValueOnce([
-      { ...baseSource, case_id: 'existing-case', case_number: 4 },
-    ]);
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([{ ...baseSource, case_id: 'existing-case', case_number: 4 }]);
     const tx = {
       $queryRawUnsafe: query,
       $executeRawUnsafe: vi.fn(),
@@ -97,9 +97,9 @@ describe('Moderation detection case', () => {
   });
 
   it('未確認・誤検知・無視のイベントはケース化しない', async () => {
-    const query = vi.fn().mockResolvedValueOnce([
-      { ...baseSource, review_status: 'false_positive' },
-    ]);
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([{ ...baseSource, review_status: 'false_positive' }]);
     const tx = {
       $queryRawUnsafe: query,
       $executeRawUnsafe: vi.fn(),
@@ -118,9 +118,9 @@ describe('Moderation detection case', () => {
   });
 
   it('Guild条件付きで作成元とケースリンクを検索する', async () => {
-    const query = vi.fn().mockResolvedValueOnce([
-      { detection_id: detectionId, case_id: 'case-id', case_number: 7 },
-    ]);
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([{ detection_id: detectionId, case_id: 'case-id', case_number: 7 }]);
     const prisma = {
       $queryRawUnsafe: query,
     } as unknown as ModerationPrismaClient;

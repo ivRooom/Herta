@@ -114,9 +114,7 @@ async function createInTransaction(
   }
 
   if (source.review_status !== 'confirmed') {
-    throw new ModerationValidationError(
-      '正検知として保存された自動検知のみケースを作成できます',
-    );
+    throw new ModerationValidationError('正検知として保存された自動検知のみケースを作成できます');
   }
 
   await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', input.guildId);
