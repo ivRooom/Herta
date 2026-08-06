@@ -1,7 +1,4 @@
-import {
-  normalizeAutomaticText,
-  type ModerationConfig,
-} from './config.js';
+import { normalizeAutomaticText, type ModerationConfig } from './config.js';
 
 export type AutomaticModerationFindingKind =
   | 'word_exact'
