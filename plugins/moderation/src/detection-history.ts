@@ -293,6 +293,12 @@ export async function reviewModerationDetection(
     const current = currentRows[0];
     if (!current) return null;
 
+    const currentStatus = normalizeReviewStatus(current.review_status);
+    const currentNote = normalizeReviewNote(current.review_note);
+    if (currentStatus === reviewStatus && currentNote === reviewNote) {
+      return toRecord(current);
+    }
+
     const reviewed = reviewStatus !== 'unreviewed';
     const rows = await tx.$queryRawUnsafe<ModerationDetectionRow[]>(
       `UPDATE moderation_detection_events
