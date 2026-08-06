@@ -4,7 +4,8 @@ import { ArrowLeft, Clock3, ShieldAlert, UserRound } from 'lucide-react';
 import {
   getModerationCase,
   normalizeModerationConfig,
-  type ModerationAction,
+  type ModerationCaseAction,
+  type ModerationCaseRecord,
   type ModerationCaseStatus,
   type ModerationPrismaClient,
 } from '@herta/plugin-catalog/moderation-service';
@@ -89,10 +90,23 @@ export default async function ModerationCaseDetailPage({
                     : '期間指定なし'
                 }
               />
-              <Detail
-                label="操作元"
-                value={moderationCase.source === 'discord' ? 'Discord' : 'Herta Studio'}
-              />
+              <Detail label="操作元" value={sourceLabel(moderationCase.source)} />
+              {moderationCase.originDetectionId ? (
+                <div className="min-w-0 sm:col-span-2">
+                  <dt className="text-xs text-muted">元の自動検知</dt>
+                  <dd className="mt-1 flex min-w-0 flex-col gap-1 text-sm sm:flex-row sm:items-center">
+                    <span className="break-all font-mono text-xs">
+                      {moderationCase.originDetectionId}
+                    </span>
+                    <Link
+                      href={`/dashboard/guilds/${guildId}/moderation/detections`}
+                      className="text-primary hover:underline sm:ml-2"
+                    >
+                      自動検知レビューを開く
+                    </Link>
+                  </dd>
+                </div>
+              ) : null}
             </div>
 
             <div className="mt-6 border-t border-border pt-5">
@@ -155,12 +169,22 @@ function Detail({ label, value, mono = false }: { label: string; value: string; 
   );
 }
 
-function actionLabel(action: ModerationAction): string {
-  return { warn: '警告', timeout: 'タイムアウト', kick: 'Kick', ban: 'BAN' }[action];
+function actionLabel(action: ModerationCaseAction): string {
+  return {
+    flag: '検知フラグ',
+    warn: '警告',
+    timeout: 'タイムアウト',
+    kick: 'Kick',
+    ban: 'BAN',
+  }[action];
 }
 
 function statusLabel(status: ModerationCaseStatus): string {
   return { active: '有効', completed: '完了', revoked: '解除済み', failed: '失敗' }[status];
+}
+
+function sourceLabel(source: ModerationCaseRecord['source']): string {
+  return { discord: 'Discord', dashboard: 'Herta Studio', automatic: '自動検知' }[source];
 }
 
 function formatDate(value: Date): string {
