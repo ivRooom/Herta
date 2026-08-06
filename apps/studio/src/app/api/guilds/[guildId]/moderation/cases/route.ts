@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   listModerationCases,
   ModerationValidationError,
-  type ModerationAction,
+  type ModerationCaseAction,
   type ModerationCaseStatus,
   type ModerationPrismaClient,
 } from '@herta/plugin-catalog/moderation-service';
@@ -45,8 +45,12 @@ function parsePositiveInteger(value: string | null): number | undefined {
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
-function parseAction(value: string | null): ModerationAction | undefined {
-  return value === 'warn' || value === 'timeout' || value === 'kick' || value === 'ban'
+function parseAction(value: string | null): ModerationCaseAction | undefined {
+  return value === 'warn' ||
+    value === 'timeout' ||
+    value === 'kick' ||
+    value === 'ban' ||
+    value === 'flag'
     ? value
     : undefined;
 }
