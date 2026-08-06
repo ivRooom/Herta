@@ -19,15 +19,16 @@ function validEntry(overrides = {}) {
   };
 }
 
-test('空のallowlistから有効なGrype設定を生成する', () => {
+test('空のallowlistからCVE正規化済みのGrype設定を生成する', () => {
   const entries = validateAllowlist([], now);
-  assert.equal(renderGrypeConfig(entries), 'ignore: []\n');
+  assert.equal(renderGrypeConfig(entries), 'by-cve: true\nignore: []\n');
 });
 
 test('理由・期限・Issue・package条件をGrype設定へ反映する', () => {
   const entries = validateAllowlist([validEntry()], now);
   const config = renderGrypeConfig(entries);
 
+  assert.match(config, /^by-cve: true/m);
   assert.match(config, /vulnerability: "CVE-2026-12345"/);
   assert.match(config, /name: "example-package"/);
   assert.match(config, /type: "npm"/);
