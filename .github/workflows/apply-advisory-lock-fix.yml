@@ -1,0 +1,48 @@
+name: Apply advisory lock fix
+
+on:
+  push:
+    branches:
+      - fix/moderation-advisory-lock
+    paths:
+      - .github/workflows/apply-advisory-lock-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/moderation-advisory-lock
+          fetch-depth: 0
+      - name: Advisory Lockをexecuteへ変更
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          paths = [
+              Path('plugins/moderation/src/detection-case.ts'),
+              Path('plugins/moderation/src/service.ts'),
+          ]
+          before = "await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', input.guildId);"
+          after = "await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', input.guildId);"
+
+          for path in paths:
+              text = path.read_text(encoding='utf-8')
+              count = text.count(before)
+              if count != 1:
+                  raise SystemExit(f'{path}: 置換対象が{count}件です')
+              path.write_text(text.replace(before, after), encoding='utf-8')
+
+          Path('.github/workflows/apply-advisory-lock-fix.yml').unlink()
+          PY
+      - name: 修正をcommit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: Advisory Lockの戻り値を読み取らない"
+          git push origin HEAD:fix/moderation-advisory-lock
