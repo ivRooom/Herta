@@ -45,14 +45,8 @@ describe('Moderation detection case', () => {
       caseNumber: 7,
       created: true,
     });
-    expect(execute).toHaveBeenCalledWith(
-      'SELECT pg_advisory_xact_lock(hashtext($1))',
-      '100',
-    );
-    expect(query).not.toHaveBeenCalledWith(
-      'SELECT pg_advisory_xact_lock(hashtext($1))',
-      '100',
-    );
+    expect(execute).toHaveBeenCalledWith('SELECT pg_advisory_xact_lock(hashtext($1))', '100');
+    expect(query).not.toHaveBeenCalledWith('SELECT pg_advisory_xact_lock(hashtext($1))', '100');
     const [insertSql, ...insertValues] = query.mock.calls[1] as [string, ...unknown[]];
     expect(insertSql).toContain("'flag'");
     expect(insertSql).toContain("'automatic'");
