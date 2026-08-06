@@ -63,7 +63,7 @@ async function authorizeRequest(
 
   const { guildId, detectionId } = await params;
   const authorization = await authorizeGuild(guildId, session.user.id);
-  if ('response' in authorization) return authorization;
+  if (authorization.response) return { response: authorization.response };
 
   return { guildId, detectionId, actorId: session.user.id };
 }
