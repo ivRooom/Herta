@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { ModerationDetectionReviewStatus } from '@herta/plugin-catalog/moderation-service';
 
@@ -16,6 +17,13 @@ type ReviewResponse = {
   error?: string;
   reviewStatus?: ModerationDetectionReviewStatus;
   reviewNote?: string | null;
+};
+
+type CaseResponse = {
+  error?: string;
+  case?: { caseNumber?: number } | null;
+  caseNumber?: number;
+  created?: boolean;
 };
 
 const QUICK_STATUSES: Array<{
@@ -42,9 +50,38 @@ export function ModerationDetectionReview({
   const [savedNote, setSavedNote] = useState(initialNormalizedNote);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [caseNumber, setCaseNumber] = useState<number | null>(null);
+  const [caseLoading, setCaseLoading] = useState(initialStatus === 'confirmed');
+  const [caseCreating, setCaseCreating] = useState(false);
+  const [caseMessage, setCaseMessage] = useState<string | null>(null);
 
   const normalizedNote = normalizeNote(reviewNote);
   const isDirty = reviewStatus !== savedStatus || normalizedNote !== savedNote;
+  const caseEndpoint = `/api/guilds/${guildId}/moderation/detections/${detectionId}/case`;
+
+  useEffect(() => {
+    if (savedStatus !== 'confirmed' || caseNumber !== null) {
+      setCaseLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setCaseLoading(true);
+    setCaseMessage(null);
+    void fetch(caseEndpoint, { signal: controller.signal })
+      .then(async (response) => {
+        const body = (await response.json()) as CaseResponse;
+        if (!response.ok) throw new Error(body.error ?? 'ケース情報を取得できませんでした');
+        setCaseNumber(readCaseNumber(body));
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setCaseMessage(error instanceof Error ? error.message : 'ケース情報を取得できませんでした');
+      })
+      .finally(() => setCaseLoading(false));
+
+    return () => controller.abort();
+  }, [caseEndpoint, caseNumber, savedStatus]);
 
   async function save(nextStatus: ModerationDetectionReviewStatus = reviewStatus) {
     const nextNote = normalizeNote(reviewNote);
@@ -80,6 +117,26 @@ export function ModerationDetectionReview({
       setMessage(error instanceof Error ? error.message : 'レビューを保存できませんでした');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function createCase() {
+    if (caseCreating || savedStatus !== 'confirmed') return;
+    setCaseCreating(true);
+    setCaseMessage(null);
+    try {
+      const response = await fetch(caseEndpoint, { method: 'POST' });
+      const body = (await response.json()) as CaseResponse;
+      if (!response.ok) throw new Error(body.error ?? 'ケースを作成できませんでした');
+      const resolvedCaseNumber = readCaseNumber(body);
+      if (resolvedCaseNumber === null) throw new Error('作成したケース番号を取得できませんでした');
+      setCaseNumber(resolvedCaseNumber);
+      setCaseMessage(body.created === false ? '作成済みのケースを表示します' : 'ケースを作成しました');
+      router.refresh();
+    } catch (error) {
+      setCaseMessage(error instanceof Error ? error.message : 'ケースを作成できませんでした');
+    } finally {
+      setCaseCreating(false);
     }
   }
 
@@ -154,10 +211,45 @@ export function ModerationDetectionReview({
           {saving ? '保存中…' : isDirty ? '保存' : '保存済み'}
         </button>
       </div>
+
+      {savedStatus === 'confirmed' || caseNumber !== null ? (
+        <div className="mt-3 border-t border-border pt-3">
+          <p className="text-xs text-muted">
+            Discord上の削除・警告・Timeoutは行わず、追跡用ケースだけを作成します。
+          </p>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <span className="min-h-4 break-words text-xs text-muted" aria-live="polite">
+              {caseMessage}
+            </span>
+            {caseNumber !== null ? (
+              <Link
+                href={`/dashboard/guilds/${guildId}/moderation/${caseNumber}`}
+                className="w-full rounded-lg border border-primary px-3 py-2 text-center text-xs font-semibold text-primary hover:bg-primary/10 sm:w-auto sm:py-1.5"
+              >
+                Case #{caseNumber}を開く
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={createCase}
+                disabled={caseLoading || caseCreating || savedStatus !== 'confirmed'}
+                className="w-full rounded-lg border border-primary px-3 py-2 text-xs font-semibold text-primary hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:py-1.5"
+              >
+                {caseLoading ? '確認中…' : caseCreating ? '作成中…' : 'ケースを作成'}
+              </button>
+            )}
+          </div>
+        </div>
+      ) : null}
     </details>
   );
 }
 
 function normalizeNote(value: string | null | undefined): string {
   return value?.trim() ?? '';
+}
+
+function readCaseNumber(body: CaseResponse): number | null {
+  const value = body.caseNumber ?? body.case?.caseNumber;
+  return Number.isSafeInteger(value) && (value ?? 0) > 0 ? (value as number) : null;
 }
