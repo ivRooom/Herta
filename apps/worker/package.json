@@ -17,7 +17,7 @@
     "@herta/plugin-catalog": "workspace:*",
     "@herta/queue": "workspace:*",
     "@herta/shared": "workspace:*",
-    "bullmq": "^5.81.2",
+    "bullmq": "^5.81.3",
     "ioredis": "^5.4.2",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0"
