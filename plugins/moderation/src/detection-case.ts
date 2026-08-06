@@ -81,7 +81,7 @@ async function createInTransaction(
   tx: ModerationTransactionClient,
   input: CreateModerationCaseFromDetectionInput,
 ): Promise<ModerationDetectionCaseResult | null> {
-  await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', input.guildId);
+  await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', input.guildId);
   const sourceRows = await tx.$queryRawUnsafe<DetectionCaseSourceRow[]>(
     `SELECT
        d.id,
