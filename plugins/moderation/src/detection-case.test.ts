@@ -96,6 +96,41 @@ describe('Moderation detection case', () => {
     expect(auditCreate).not.toHaveBeenCalled();
   });
 
+  it('並行作成でINSERTが競合した場合は既存ケースを返しAudit Logを重複させない', async () => {
+    const auditCreate = vi.fn().mockResolvedValue({});
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce([baseSource])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 'concurrent-case', case_number: 8 }]);
+    const tx = {
+      $queryRawUnsafe: query,
+      $executeRawUnsafe: vi.fn(),
+      auditLog: { create: auditCreate },
+    } as unknown as ModerationTransactionClient;
+    const prisma = transactionPrisma(tx);
+
+    const result = await createModerationCaseFromDetection(prisma, {
+      guildId: '100',
+      detectionId,
+      actorId: '500',
+    });
+
+    expect(result).toEqual({
+      detectionId,
+      caseId: 'concurrent-case',
+      caseNumber: 8,
+      created: false,
+    });
+    const [insertSql] = query.mock.calls[2] as [string, ...unknown[]];
+    const [fallbackSql, ...fallbackValues] = query.mock.calls[3] as [string, ...unknown[]];
+    expect(insertSql).toContain('ON CONFLICT (origin_detection_id)');
+    expect(fallbackSql).toContain('origin_detection_id = $2::uuid');
+    expect(fallbackValues).toEqual(['100', detectionId]);
+    expect(auditCreate).not.toHaveBeenCalled();
+  });
+
   it('未確認・誤検知・無視のイベントはケース化しない', async () => {
     const query = vi
       .fn()
