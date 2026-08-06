@@ -22,11 +22,7 @@ interface ModerationMessage {
   };
 }
 
-type ModerationAutomaticRuntimeContext = PluginRuntimeContext<
-  ModerationConfig,
-  unknown,
-  unknown
->;
+type ModerationAutomaticRuntimeContext = PluginRuntimeContext<ModerationConfig, unknown, unknown>;
 
 const detectors = new Map<string, AutomaticModerationDetector>();
 
