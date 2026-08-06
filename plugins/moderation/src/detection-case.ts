@@ -149,6 +149,9 @@ async function createInTransaction(
        $5::uuid
      FROM moderation_cases
      WHERE guild_id = $1
+     ON CONFLICT (origin_detection_id)
+       WHERE origin_detection_id IS NOT NULL
+       DO NOTHING
      RETURNING id, case_number`,
     input.guildId,
     source.user_id,
@@ -157,7 +160,25 @@ async function createInTransaction(
     source.id,
   );
   const created = createdRows[0];
-  if (!created) throw new Error('自動検知ケースの作成に失敗しました');
+  if (!created) {
+    const existingRows = await tx.$queryRawUnsafe<CreatedCaseRow[]>(
+      `SELECT id, case_number
+       FROM moderation_cases
+       WHERE guild_id = $1
+         AND origin_detection_id = $2::uuid
+       LIMIT 1`,
+      input.guildId,
+      source.id,
+    );
+    const existing = existingRows[0];
+    if (!existing) throw new Error('自動検知ケースの作成結果を取得できませんでした');
+    return {
+      detectionId: source.id,
+      caseId: existing.id,
+      caseNumber: existing.case_number,
+      created: false,
+    };
+  }
 
   await tx.auditLog.create({
     data: {
