@@ -30,20 +30,32 @@ function resolveErrorName(error: unknown): string {
   return 'UnknownError';
 }
 
-function messageContentIntentEnabled(): boolean {
-  const value = process.env['DISCORD_ENABLE_MESSAGE_CONTENT_INTENT']?.trim().toLowerCase();
+function envFlagEnabled(name: string): boolean {
+  const value = process.env[name]?.trim().toLowerCase();
   return value === 'true' || value === '1';
+}
+
+function messageContentIntentEnabled(): boolean {
+  return envFlagEnabled('DISCORD_ENABLE_MESSAGE_CONTENT_INTENT');
+}
+
+function guildMembersIntentEnabled(): boolean {
+  return envFlagEnabled('DISCORD_ENABLE_GUILD_MEMBERS_INTENT');
 }
 
 function resolveGatewayIntents(logger: Logger): GatewayIntentBits[] {
   const intents = [GatewayIntentBits.Guilds];
   if (messageContentIntentEnabled()) {
     intents.push(GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent);
-    logger.info('Auto Response用Message Content Intentを有効化します');
+    logger.info('Auto Response / Moderation用Message Content Intentを有効化します');
   } else {
     logger.warn(
       'DISCORD_ENABLE_MESSAGE_CONTENT_INTENTが無効なためメッセージ系Pluginは実行されません',
     );
+  }
+  if (guildMembersIntentEnabled()) {
+    intents.push(GatewayIntentBits.GuildMembers);
+    logger.info('Moderationブラックリスト再参加監視用Guild Members Intentを有効化します');
   }
   return intents;
 }
@@ -146,6 +158,10 @@ export class HertaBot {
       await this.pluginLoader.disableGuildPlugins(guild.id);
       this.pluginCache.invalidate(guild.id);
       this.pluginCommands.delete(guild.id);
+    });
+
+    this.client.on(Events.GuildMemberAdd, async (member) => {
+      await this.dispatchGuildPluginEvent(member.guild.id, Events.GuildMemberAdd, member);
     });
 
     this.client.on(Events.MessageCreate, async (message) => {
