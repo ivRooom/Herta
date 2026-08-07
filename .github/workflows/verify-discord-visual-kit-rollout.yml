@@ -57,8 +57,10 @@ jobs:
           pnpm --filter @herta/plugin-moderation test
           pnpm --filter @herta/plugin-lfg typecheck
           pnpm --filter @herta/plugin-lfg test
+          pnpm --filter @herta/plugin-lfg build
           pnpm --filter @herta/plugin-team-split typecheck
           pnpm --filter @herta/plugin-team-split test
+          pnpm --filter @herta/plugin-team-split build
 
       - name: Remove temporary workflow
         run: rm -f .github/workflows/verify-discord-visual-kit-rollout.yml
