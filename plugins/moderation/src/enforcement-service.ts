@@ -1,6 +1,6 @@
 import { createModerationDetectionIdempotencyKey } from './detection-history.js';
 import type { AutomaticModerationFinding } from './detection.js';
-import type { ModerationPrismaClient } from './service.js';
+import type { ModerationPrismaClient, ModerationTransactionClient } from './service.js';
 
 export interface ModerationBlacklistEntry {
   guildId: string;
@@ -23,6 +23,14 @@ interface ModerationBlacklistRow {
   created_at: Date;
   updated_at: Date;
 }
+
+interface BlacklistPresenceCacheEntry {
+  hasActive: boolean;
+  expiresAt: number;
+}
+
+const BLACKLIST_PRESENCE_TTL_MS = 30_000;
+const blacklistPresenceCache = new Map<string, BlacklistPresenceCacheEntry>();
 
 export async function getModerationDetectionIdForFinding(
   prisma: ModerationPrismaClient,
@@ -80,7 +88,36 @@ export async function upsertModerationBlacklistEntry(
   );
   const row = rows[0];
   if (!row) throw new Error('Moderationブラックリストの保存に失敗しました');
+  blacklistPresenceCache.set(input.guildId, {
+    hasActive: true,
+    expiresAt: Date.now() + BLACKLIST_PRESENCE_TTL_MS,
+  });
   return toBlacklistRecord(row);
+}
+
+export async function hasActiveModerationBlacklistEntries(
+  prisma: ModerationPrismaClient,
+  guildId: string,
+): Promise<boolean> {
+  const now = Date.now();
+  const cached = blacklistPresenceCache.get(guildId);
+  if (cached && cached.expiresAt > now) return cached.hasActive;
+
+  const rows = await prisma.$queryRawUnsafe<Array<{ exists: boolean }>>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM moderation_blacklist_entries
+       WHERE guild_id = $1
+         AND active = TRUE
+     ) AS exists`,
+    guildId,
+  );
+  const hasActive = rows[0]?.exists === true;
+  blacklistPresenceCache.set(guildId, {
+    hasActive,
+    expiresAt: now + BLACKLIST_PRESENCE_TTL_MS,
+  });
+  return hasActive;
 }
 
 export async function getActiveModerationBlacklistEntry(
@@ -125,34 +162,38 @@ export async function setModerationBlacklistEntryActive(
   prisma: ModerationPrismaClient,
   input: { guildId: string; userId: string; active: boolean; actorId: string },
 ): Promise<ModerationBlacklistEntry | null> {
-  const rows = await prisma.$queryRawUnsafe<ModerationBlacklistRow[]>(
-    `UPDATE moderation_blacklist_entries
-     SET active = $3,
-         updated_at = NOW()
-     WHERE guild_id = $1
-       AND user_id = $2
-     RETURNING *`,
-    input.guildId,
-    input.userId,
-    input.active,
-  );
-  const updated = rows[0];
-  if (!updated) return null;
+  const updated = await prisma.$transaction(async (tx: ModerationTransactionClient) => {
+    const rows = await tx.$queryRawUnsafe<ModerationBlacklistRow[]>(
+      `UPDATE moderation_blacklist_entries
+       SET active = $3,
+           updated_at = NOW()
+       WHERE guild_id = $1
+         AND user_id = $2
+       RETURNING *`,
+      input.guildId,
+      input.userId,
+      input.active,
+    );
+    const row = rows[0];
+    if (!row) return null;
 
-  await prisma.auditLog.create({
-    data: {
-      guildId: input.guildId,
-      actorId: input.actorId,
-      event: input.active ? 'moderation.blacklist.enable' : 'moderation.blacklist.disable',
-      targetType: 'moderation_blacklist_entry',
-      targetId: input.userId,
-      changes: { after: { active: input.active } },
-      metadata: { targetUserId: input.userId },
-      severity: input.active ? 'warning' : 'info',
-    },
+    await tx.auditLog.create({
+      data: {
+        guildId: input.guildId,
+        actorId: input.actorId,
+        event: input.active ? 'moderation.blacklist.enable' : 'moderation.blacklist.disable',
+        targetType: 'moderation_blacklist_entry',
+        targetId: input.userId,
+        changes: { after: { active: input.active } },
+        metadata: { targetUserId: input.userId },
+        severity: input.active ? 'warning' : 'info',
+      },
+    });
+    return row;
   });
 
-  return toBlacklistRecord(updated);
+  blacklistPresenceCache.delete(input.guildId);
+  return updated ? toBlacklistRecord(updated) : null;
 }
 
 export async function recordModerationAutomaticEventAudit(
