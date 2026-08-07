@@ -28,7 +28,10 @@ export async function authorizeGuild(guildId: string, userId: string) {
     const guild = await getManageableGuild(accessToken, guildId);
     if (!guild) {
       return {
-        response: Response.json({ error: 'この Guild を管理する権限がありません' }, { status: 403 }),
+        response: Response.json(
+          { error: 'この Guild を管理する権限がありません' },
+          { status: 403 },
+        ),
       };
     }
 
@@ -240,7 +243,8 @@ function discordApiErrorResponse(error: DiscordApiError): Response {
       },
       {
         status: 429,
-        headers: retryAfterSeconds === null ? undefined : { 'Retry-After': String(retryAfterSeconds) },
+        headers:
+          retryAfterSeconds === null ? undefined : { 'Retry-After': String(retryAfterSeconds) },
       },
     );
   }
