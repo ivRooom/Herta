@@ -4,6 +4,7 @@ import {
   buildAutomaticWarningEmbed,
   buildModerationCaseEmbed,
   buildModerationHistoryEmbed,
+  buildModerationStatusEmbed,
   moderationVisualImageUrl,
 } from './discord-ui.js';
 
@@ -94,9 +95,36 @@ describe('Discord visual UI', () => {
     expect(historyEmbed.description).toContain('#42');
   });
 
+  it('Status Embedのfield数と文字数をDiscord制約内へ正規化する', () => {
+    const embed = buildModerationStatusEmbed({
+      title: 'status',
+      description: 'test',
+      variant: 'info',
+      fields: Array.from({ length: 30 }, (_, index) => ({
+        name: `${index}-${'n'.repeat(300)}`,
+        value: 'v'.repeat(1200),
+        inline: index % 2 === 0,
+      })),
+    });
+
+    expect(embed.fields).toHaveLength(25);
+    expect(embed.fields?.every((field) => field.name.length <= 256)).toBe(true);
+    expect(embed.fields?.every((field) => field.value.length <= 1024)).toBe(true);
+  });
+
   it('公開Base URLを末尾slashなしで生成する', () => {
-    expect(moderationVisualImageUrl('info')).toBe(
-      'https://herta.ivrm.jp/api/discord-assets/moderation/info',
-    );
+    const previous = process.env.HERTA_PUBLIC_BASE_URL;
+    try {
+      delete process.env.HERTA_PUBLIC_BASE_URL;
+      expect(moderationVisualImageUrl('info')).toBe(
+        'https://herta.ivrm.jp/api/discord-assets/moderation/info',
+      );
+    } finally {
+      if (previous === undefined) {
+        delete process.env.HERTA_PUBLIC_BASE_URL;
+      } else {
+        process.env.HERTA_PUBLIC_BASE_URL = previous;
+      }
+    }
   });
 });
