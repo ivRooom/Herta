@@ -113,10 +113,7 @@ export function toModerationConfigDraft(value: unknown): ModerationConfigDraft {
   };
 }
 
-export function customRuleValues(
-  config: ModerationConfigDraft,
-  kind: CustomRuleKind,
-): string[] {
+export function customRuleValues(config: ModerationConfigDraft, kind: CustomRuleKind): string[] {
   return config[CUSTOM_RULE_KEYS[kind]] as string[];
 }
 
@@ -245,7 +242,9 @@ function nullableString(value: unknown): string | null {
 }
 
 function stringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
 }
 
 function unique(values: string[]): string[] {

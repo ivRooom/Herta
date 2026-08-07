@@ -129,7 +129,9 @@ export function ModerationConfigForm({
   const [ruleStatus, setRuleStatus] = useState('');
 
   const customRuleCount =
-    config.autoExactWords.length + config.autoContainsWords.length + config.autoRegexPatterns.length;
+    config.autoExactWords.length +
+    config.autoContainsWords.length +
+    config.autoRegexPatterns.length;
   const enabledBuiltInCount = BUILT_IN_RULE_META.filter((rule) =>
     isBuiltInRuleEnabled(config, rule.kind),
   ).length;
@@ -359,7 +361,9 @@ function BasicSection({
           <select
             value={config.automaticMode}
             onChange={(event) =>
-              patchConfig({ automaticMode: event.target.value === 'observe' ? 'observe' : 'disabled' })
+              patchConfig({
+                automaticMode: event.target.value === 'observe' ? 'observe' : 'disabled',
+              })
             }
             className={inputClassName}
           >
@@ -396,7 +400,10 @@ function BasicSection({
           checked={config.defaultResponseEphemeral}
           onChange={(checked) => patchConfig({ defaultResponseEphemeral: checked })}
         />
-        <SettingCard title="ログ送信先チャンネルID" description="未指定ならDiscordへの追加ログ送信を行いません。">
+        <SettingCard
+          title="ログ送信先チャンネルID"
+          description="未指定ならDiscordへの追加ログ送信を行いません。"
+        >
           <input
             value={config.logChannelId ?? ''}
             inputMode="numeric"
@@ -518,8 +525,7 @@ function RulesSection({
             customRuleValues(config, kind).map((value, index) => {
               const selector = customRuleSelector(kind, index);
               const selectedForCase = config.autoCaseOnConfirmedRules.includes(selector);
-              const isEditing =
-                editingRule?.kind === kind && editingRule.index === index;
+              const isEditing = editingRule?.kind === kind && editingRule.index === index;
               return (
                 <div key={selector} className="rounded-xl border border-border bg-background p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -587,7 +593,9 @@ function RulesSection({
               );
             }),
           )}
-          {config.autoExactWords.length + config.autoContainsWords.length + config.autoRegexPatterns.length ===
+          {config.autoExactWords.length +
+            config.autoContainsWords.length +
+            config.autoRegexPatterns.length ===
           0 ? (
             <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted">
               カスタムルールはまだありません。上のフォームから追加できます。
@@ -615,7 +623,9 @@ function RulesSection({
               values={config.autoInviteAllowlist}
               placeholder="例: abcDEF12"
               validate={(value) =>
-                /^[A-Za-z0-9-]{2,64}$/.test(value) ? null : '2〜64文字の英数字・ハイフンで入力してください'
+                /^[A-Za-z0-9-]{2,64}$/.test(value)
+                  ? null
+                  : '2〜64文字の英数字・ハイフンで入力してください'
               }
               onChange={(values) => patchConfig({ autoInviteAllowlist: values })}
             />
@@ -748,7 +758,9 @@ function AutoCaseSection({
               );
             }),
           )}
-          {config.autoExactWords.length + config.autoContainsWords.length + config.autoRegexPatterns.length ===
+          {config.autoExactWords.length +
+            config.autoContainsWords.length +
+            config.autoRegexPatterns.length ===
           0 ? (
             <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted">
               カスタムルールがありません。「検知ルール」から作成してください。
@@ -767,7 +779,9 @@ function AutoCaseSection({
                 key={rule.kind}
                 title={rule.label}
                 description={
-                  ruleEnabled ? rule.description : `${rule.description} 現在この検知ルールは無効です。`
+                  ruleEnabled
+                    ? rule.description
+                    : `${rule.description} 現在この検知ルールは無効です。`
                 }
                 checked={config.autoCaseOnConfirmedRules.includes(rule.kind)}
                 disabled={!config.autoCaseOnConfirmedEnabled || !ruleEnabled}
@@ -999,13 +1013,7 @@ function NumberSetting({
   return (
     <label className="block">
       <span className="mb-1.5 block text-xs font-medium text-muted">{label}</span>
-      <NumberInput
-        value={value}
-        min={min}
-        max={max}
-        disabled={disabled}
-        onChange={onChange}
-      />
+      <NumberInput value={value} min={min} max={max} disabled={disabled} onChange={onChange} />
     </label>
   );
 }

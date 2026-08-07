@@ -32,7 +32,12 @@ test('カスタムルール削除時に自動Case selectorのindexを詰め直�
   const config = {
     ...DEFAULT_MODERATION_CONFIG_DRAFT,
     autoContainsWords: ['a', 'b', 'c'],
-    autoCaseOnConfirmedRules: ['word_contains:0', 'word_contains:1', 'word_contains:2', 'invite_link'],
+    autoCaseOnConfirmedRules: [
+      'word_contains:0',
+      'word_contains:1',
+      'word_contains:2',
+      'invite_link',
+    ],
   };
 
   const removed = removeCustomRule(config, 'word_contains', 1);
