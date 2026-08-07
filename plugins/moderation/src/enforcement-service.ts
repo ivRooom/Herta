@@ -101,6 +101,26 @@ export async function getActiveModerationBlacklistEntry(
   return rows[0] ? toBlacklistRecord(rows[0]) : null;
 }
 
+export async function listModerationBlacklistEntries(
+  prisma: ModerationPrismaClient,
+  guildId: string,
+  options: { includeInactive?: boolean; limit?: number } = {},
+): Promise<ModerationBlacklistEntry[]> {
+  const limit = Math.min(Math.max(options.limit ?? 100, 1), 500);
+  const rows = await prisma.$queryRawUnsafe<ModerationBlacklistRow[]>(
+    `SELECT *
+     FROM moderation_blacklist_entries
+     WHERE guild_id = $1
+       AND ($2::boolean = TRUE OR active = TRUE)
+     ORDER BY active DESC, updated_at DESC, user_id ASC
+     LIMIT $3`,
+    guildId,
+    options.includeInactive ?? false,
+    limit,
+  );
+  return rows.map(toBlacklistRecord);
+}
+
 export async function setModerationBlacklistEntryActive(
   prisma: ModerationPrismaClient,
   input: { guildId: string; userId: string; active: boolean; actorId: string },
