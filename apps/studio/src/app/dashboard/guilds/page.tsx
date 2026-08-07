@@ -23,7 +23,7 @@ export default async function GuildsPage() {
     );
   }
 
-  let guilds;
+  let guilds: Awaited<ReturnType<typeof getManageableGuilds>>;
   try {
     guilds = await getManageableGuilds(accessToken);
   } catch (error) {
