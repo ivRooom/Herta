@@ -31,10 +31,7 @@ describe('Moderation Case origin detection', () => {
       }),
     ).rejects.toThrow('元検知がGuild内に見つかりません');
 
-    expect(execute).toHaveBeenCalledWith(
-      'SELECT pg_advisory_xact_lock(hashtext($1))',
-      '100',
-    );
+    expect(execute).toHaveBeenCalledWith('SELECT pg_advisory_xact_lock(hashtext($1))', '100');
     const [lookupSql, ...lookupValues] = query.mock.calls[0] as [string, ...unknown[]];
     expect(lookupSql).toContain('WHERE guild_id = $1');
     expect(lookupSql).toContain('id = $2::uuid');
