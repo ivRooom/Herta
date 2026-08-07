@@ -1,0 +1,45 @@
+name: Apply moderation enforcement formatting
+
+on:
+  push:
+    branches:
+      - feat/moderation-enforcement
+    paths:
+      - .github/workflows/apply-moderation-enforcement-format.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/moderation-enforcement
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prettierを適用
+        run: |
+          pnpm exec prettier --write \
+            'apps/studio/src/app/dashboard/guilds/[guildId]/moderation/enforcement/page.tsx' \
+            'apps/studio/src/app/dashboard/guilds/[guildId]/moderation/page.tsx' \
+            'apps/studio/src/components/moderation-enforcement-form.tsx' \
+            'apps/studio/src/lib/moderation-config-ui.ts' \
+            'plugins/moderation/src/automatic-runtime.ts' \
+            'plugins/moderation/src/enforcement-config.test.ts' \
+            'plugins/moderation/src/enforcement-config.ts' \
+            'plugins/moderation/src/service.ts'
+      - name: 一時Workflowを削除してcommit
+        run: |
+          rm -f .github/workflows/apply-moderation-enforcement-format.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "style: Moderation自動対応差分を整形"
+          git push origin HEAD:feat/moderation-enforcement
