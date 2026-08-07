@@ -47,14 +47,8 @@ describe('Moderation Case advisory lock', () => {
       source: 'dashboard',
     });
 
-    expect(execute).toHaveBeenCalledWith(
-      'SELECT pg_advisory_xact_lock(hashtext($1))',
-      '100',
-    );
-    expect(query).not.toHaveBeenCalledWith(
-      'SELECT pg_advisory_xact_lock(hashtext($1))',
-      '100',
-    );
+    expect(execute).toHaveBeenCalledWith('SELECT pg_advisory_xact_lock(hashtext($1))', '100');
+    expect(query).not.toHaveBeenCalledWith('SELECT pg_advisory_xact_lock(hashtext($1))', '100');
     expect(query).toHaveBeenCalledTimes(1);
     expect(result.caseNumber).toBe(2);
     expect(result.action).toBe('warn');
