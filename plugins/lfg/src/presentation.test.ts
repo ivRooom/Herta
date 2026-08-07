@@ -4,6 +4,7 @@ import type { LfgPostRecord } from './service.js';
 
 const postId = '11111111-1111-4111-8111-111111111111';
 const PARTICIPANT_IDS = ['223456789012345678'];
+const COMPONENT_SECRET = 'lfg-component-secret-for-tests-0123456789abcdef';
 const POST = {
   id: postId,
   guildId: '123456789012345678',
@@ -46,11 +47,7 @@ describe('LFG presentation', () => {
   });
 
   it('募集カードへHerta生成画像と安全なmention設定を付与する', () => {
-    const payload = buildLfgDiscordMessage(
-      POST,
-      PARTICIPANT_IDS,
-      'lfg-secret-for-tests-1234567890',
-    );
+    const payload = buildLfgDiscordMessage(POST, PARTICIPANT_IDS, COMPONENT_SECRET);
     expect(payload.embeds[0]?.image?.url).toBe(
       'https://herta.ivrm.jp/api/discord-assets/lfg/open',
     );
