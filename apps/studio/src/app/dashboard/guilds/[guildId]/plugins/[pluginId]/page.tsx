@@ -68,6 +68,11 @@ export default async function PluginDetailPage({
             description="検知ルールごとの危険度、警告、削除、Timeout、Role、ブラックリスト、Kick、BAN、緊急Alertを設定します。"
           />
           <ManagementLink
+            href={`/dashboard/guilds/${guildId}/moderation/blacklist`}
+            title="ブラックリスト管理"
+            description="永久排除対象を確認し、ブラックリストの解除・再有効化を行います。"
+          />
+          <ManagementLink
             href={`/dashboard/guilds/${guildId}/moderation`}
             title="モデレーションケース管理"
             description="検知フラグ・警告・削除・タイムアウト・Role・ブラックリスト・Kick・BANの履歴を検索・確認・更新します。"
