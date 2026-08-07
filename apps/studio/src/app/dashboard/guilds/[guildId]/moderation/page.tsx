@@ -83,7 +83,7 @@ export default async function ModerationCasesPage({
             <h1 className="text-2xl font-semibold tracking-tight">モデレーションケース</h1>
           </div>
           <p className="mt-2 text-sm text-muted">
-            {guild.name} の検知フラグ・警告・タイムアウト・Kick・BAN履歴を確認します。
+            {guild.name} の検知・警告・削除・Timeout・Role・ブラックリスト・Kick・BAN履歴を確認します。
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -126,7 +126,11 @@ export default async function ModerationCasesPage({
             <option value="">すべて</option>
             <option value="flag">検知フラグ</option>
             <option value="warn">警告</option>
+            <option value="delete">メッセージ削除</option>
+            <option value="warn_delete">警告 + 削除</option>
             <option value="timeout">タイムアウト</option>
+            <option value="role">Role付与</option>
+            <option value="blacklist">ブラックリスト</option>
             <option value="kick">Kick</option>
             <option value="ban">BAN</option>
           </select>
@@ -291,7 +295,11 @@ function parsePositiveInteger(value: string | undefined): number | undefined {
 
 function parseAction(value: string | undefined): ModerationCaseAction | undefined {
   return value === 'warn' ||
+    value === 'delete' ||
+    value === 'warn_delete' ||
     value === 'timeout' ||
+    value === 'role' ||
+    value === 'blacklist' ||
     value === 'kick' ||
     value === 'ban' ||
     value === 'flag'
@@ -321,7 +329,11 @@ function actionLabel(action: ModerationCaseAction): string {
   return {
     flag: '検知フラグ',
     warn: '警告',
+    delete: 'メッセージ削除',
+    warn_delete: '警告 + 削除',
     timeout: 'タイムアウト',
+    role: 'Role付与',
+    blacklist: 'ブラックリスト',
     kick: 'Kick',
     ban: 'BAN',
   }[action];
