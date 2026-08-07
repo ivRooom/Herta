@@ -1,6 +1,6 @@
 {
   "name": "@herta/plugin-moderation",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -40,6 +40,14 @@
     "./detection-case": {
       "types": "./src/detection-case.ts",
       "default": "./dist/detection-case.js"
+    },
+    "./enforcement-config": {
+      "types": "./src/enforcement-config.ts",
+      "default": "./dist/enforcement-config.js"
+    },
+    "./enforcement-service": {
+      "types": "./src/enforcement-service.ts",
+      "default": "./dist/enforcement-service.js"
     }
   },
   "scripts": {
