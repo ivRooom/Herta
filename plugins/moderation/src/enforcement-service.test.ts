@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  hasActiveModerationBlacklistEntries,
   listModerationBlacklistEntries,
   setModerationBlacklistEntryActive,
 } from './enforcement-service.js';
-import type { ModerationPrismaClient } from './service.js';
+import type {
+  ModerationPrismaClient,
+  ModerationTransactionClient,
+} from './service.js';
 
 const row = {
   guild_id: '100',
@@ -34,12 +38,19 @@ describe('Moderation blacklist service', () => {
     expect(values).toEqual(['100', true, 25]);
   });
 
-  it('解除操作をGuildとUserで限定しAudit Logへ記録する', async () => {
+  it('解除操作をtransaction内でGuildとUserに限定しAudit Logへ記録する', async () => {
     const query = vi.fn().mockResolvedValue([{ ...row, active: false }]);
     const auditCreate = vi.fn().mockResolvedValue({});
-    const prisma = {
+    const tx = {
       $queryRawUnsafe: query,
+      $executeRawUnsafe: vi.fn(),
       auditLog: { create: auditCreate },
+    } as unknown as ModerationTransactionClient;
+    const transaction = vi.fn(
+      async <T>(callback: (client: ModerationTransactionClient) => Promise<T>) => callback(tx),
+    );
+    const prisma = {
+      $transaction: transaction,
     } as unknown as ModerationPrismaClient;
 
     const result = await setModerationBlacklistEntryActive(prisma, {
@@ -50,6 +61,7 @@ describe('Moderation blacklist service', () => {
     });
 
     expect(result?.active).toBe(false);
+    expect(transaction).toHaveBeenCalledTimes(1);
     const [sql, ...values] = query.mock.calls[0] as [string, ...unknown[]];
     expect(sql).toContain('WHERE guild_id = $1');
     expect(sql).toContain('user_id = $2');
@@ -64,5 +76,23 @@ describe('Moderation blacklist service', () => {
         }),
       }),
     );
+  });
+
+  it('ブラックリストが空のGuildは短時間キャッシュして連続JOIN照会を抑える', async () => {
+    const query = vi.fn().mockResolvedValue([{ exists: false }]);
+    const prisma = {
+      $queryRawUnsafe: query,
+    } as unknown as ModerationPrismaClient;
+
+    const first = await hasActiveModerationBlacklistEntries(prisma, '401');
+    const second = await hasActiveModerationBlacklistEntries(prisma, '401');
+
+    expect(first).toBe(false);
+    expect(second).toBe(false);
+    expect(query).toHaveBeenCalledTimes(1);
+    const [sql, ...values] = query.mock.calls[0] as [string, ...unknown[]];
+    expect(sql).toContain('SELECT EXISTS');
+    expect(sql).toContain('WHERE guild_id = $1');
+    expect(values).toEqual(['401']);
   });
 });
