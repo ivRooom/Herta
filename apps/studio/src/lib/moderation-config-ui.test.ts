@@ -20,6 +20,43 @@ test('不足設定を既定値で補完する', () => {
   assert.equal(config.autoMaxMessageLength, 2000);
 });
 
+test('既存JSONの自動Case・built-in・除外設定をGUI読込時に保持する', () => {
+  const config = toModerationConfigDraft({
+    automaticMode: 'observe',
+    autoCaseOnConfirmedEnabled: true,
+    autoCaseOnConfirmedRules: ['word_contains:0', 'invite_link', 'message_burst'],
+    autoContainsWords: ['herta-auto-case-e2e-20260807'],
+    autoInviteFilterEnabled: true,
+    autoInviteAllowlist: ['trusted-code'],
+    autoMentionLimit: 7,
+    autoBurstMessageLimit: 6,
+    autoBurstWindowSeconds: 12,
+    autoDuplicateMessageLimit: 4,
+    autoDuplicateWindowSeconds: 45,
+    autoExemptChannelIds: ['111111111111111111'],
+    autoExemptRoleIds: ['222222222222222222'],
+    autoExemptUserIds: ['333333333333333333'],
+  });
+
+  assert.equal(config.autoCaseOnConfirmedEnabled, true);
+  assert.deepEqual(config.autoCaseOnConfirmedRules, [
+    'word_contains:0',
+    'invite_link',
+    'message_burst',
+  ]);
+  assert.deepEqual(config.autoContainsWords, ['herta-auto-case-e2e-20260807']);
+  assert.equal(config.autoInviteFilterEnabled, true);
+  assert.deepEqual(config.autoInviteAllowlist, ['trusted-code']);
+  assert.equal(config.autoMentionLimit, 7);
+  assert.equal(config.autoBurstMessageLimit, 6);
+  assert.equal(config.autoBurstWindowSeconds, 12);
+  assert.equal(config.autoDuplicateMessageLimit, 4);
+  assert.equal(config.autoDuplicateWindowSeconds, 45);
+  assert.deepEqual(config.autoExemptChannelIds, ['111111111111111111']);
+  assert.deepEqual(config.autoExemptRoleIds, ['222222222222222222']);
+  assert.deepEqual(config.autoExemptUserIds, ['333333333333333333']);
+});
+
 test('カスタムルールを追加・編集できる', () => {
   const added = appendCustomRule(DEFAULT_MODERATION_CONFIG_DRAFT, 'word_contains', 'foo');
   assert.deepEqual(added.autoContainsWords, ['foo']);
