@@ -397,6 +397,22 @@ model ModerationDetectionEvent {
   @@map("moderation_detection_events")
 }
 
+model ModerationBlacklistEntry {
+  guildId           String   @map("guild_id")
+  userId            String   @map("user_id")
+  reason            String?
+  originDetectionId String?  @map("origin_detection_id") @db.Uuid
+  createdBy         String   @map("created_by")
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@id([guildId, userId])
+  @@index([guildId, active, createdAt(sort: Desc)])
+  @@index([userId])
+  @@map("moderation_blacklist_entries")
+}
+
 // ============================================================
 // Plugin: Quote
 // ============================================================
