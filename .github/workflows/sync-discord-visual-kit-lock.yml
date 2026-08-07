@@ -42,6 +42,7 @@ jobs:
             plugins/moderation/src/discord-ui.ts
           pnpm --filter @herta/discord-ui typecheck
           pnpm --filter @herta/discord-ui test
+          pnpm --filter @herta/discord-ui build
           pnpm --filter @herta/plugin-moderation typecheck
           pnpm --filter @herta/plugin-moderation test
           rm -f .github/workflows/sync-discord-visual-kit-lock.yml
