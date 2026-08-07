@@ -55,6 +55,7 @@ jobs:
           pnpm --filter @herta/discord-ui build
           pnpm --filter @herta/plugin-moderation typecheck
           pnpm --filter @herta/plugin-moderation test
+          pnpm --filter @herta/plugin-moderation build
           pnpm --filter @herta/plugin-lfg typecheck
           pnpm --filter @herta/plugin-lfg test
           pnpm --filter @herta/plugin-lfg build
