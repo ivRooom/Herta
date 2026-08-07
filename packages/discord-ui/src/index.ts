@@ -8,13 +8,7 @@ export const DISCORD_EMBED_LIMITS = {
 } as const;
 
 export type DiscordVisualTone =
-  | 'info'
-  | 'success'
-  | 'warning'
-  | 'high'
-  | 'critical'
-  | 'failed'
-  | 'neutral';
+  'info' | 'success' | 'warning' | 'high' | 'critical' | 'failed' | 'neutral';
 
 export interface DiscordEmbedFieldPayload {
   name: string;
@@ -100,10 +94,7 @@ export function buildDiscordVisualEmbed(input: {
     title: truncateDiscordText(input.title, DISCORD_EMBED_LIMITS.title),
     ...(input.description
       ? {
-          description: truncateDiscordText(
-            input.description,
-            DISCORD_EMBED_LIMITS.description,
-          ),
+          description: truncateDiscordText(input.description, DISCORD_EMBED_LIMITS.description),
         }
       : {}),
     color: HERTA_DISCORD_COLORS[input.tone],
@@ -130,10 +121,12 @@ export function buildDiscordVisualEmbed(input: {
   };
 }
 
-export function safeDiscordMentions(input: {
-  roles?: string[];
-  users?: string[];
-} = {}): DiscordVisualMessagePayload['allowedMentions'] {
+export function safeDiscordMentions(
+  input: {
+    roles?: string[];
+    users?: string[];
+  } = {},
+): DiscordVisualMessagePayload['allowedMentions'] {
   return {
     parse: [],
     ...(input.roles?.length ? { roles: uniqueSnowflakes(input.roles) } : {}),
@@ -155,7 +148,10 @@ function normalizeTimestamp(value: Date | string | number | undefined): string {
 }
 
 function normalizeAssetSegment(value: string): string {
-  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9_-]+/gu, '-');
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/gu, '-');
   return normalized.replace(/^-+|-+$/gu, '') || 'generic';
 }
 
