@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "echo 'lint: skipped (ESLint config pending)'",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/lib/guild-metadata.test.ts src/lib/discord-install.test.ts src/lib/discord.test.ts src/lib/bot-health.test.ts src/lib/audit-logs.test.ts src/lib/team-split.test.ts",
+    "test": "node --experimental-strip-types --test src/lib/guild-metadata.test.ts src/lib/discord-install.test.ts src/lib/discord.test.ts src/lib/discord-api-response.test.ts src/lib/bot-health.test.ts src/lib/audit-logs.test.ts src/lib/team-split.test.ts",
     "clean": "rm -rf .next"
   },
   "dependencies": {
