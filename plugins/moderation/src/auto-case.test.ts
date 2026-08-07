@@ -1,14 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import {
-  createAutomaticCaseRuleSelector,
-  shouldAutoCreateCaseOnConfirmed,
-} from './auto-case.js';
+import { createAutomaticCaseRuleSelector, shouldAutoCreateCaseOnConfirmed } from './auto-case.js';
 
 describe('Moderation automatic case selector', () => {
   it('word系はdetection kindとrule indexでセレクタを作る', () => {
-    expect(
-      createAutomaticCaseRuleSelector({ detectionKind: 'word_contains', ruleIndex: 0 }),
-    ).toBe('word_contains:0');
+    expect(createAutomaticCaseRuleSelector({ detectionKind: 'word_contains', ruleIndex: 0 })).toBe(
+      'word_contains:0',
+    );
     expect(createAutomaticCaseRuleSelector({ detectionKind: 'word_regex', ruleIndex: 12 })).toBe(
       'word_regex:12',
     );
@@ -56,9 +53,9 @@ describe('Moderation automatic case selector', () => {
     expect(
       shouldAutoCreateCaseOnConfirmed(config, { detectionKind: 'word_contains', ruleIndex: 1 }),
     ).toBe(false);
-    expect(shouldAutoCreateCaseOnConfirmed(config, { detectionKind: 'word_regex', ruleIndex: 2 })).toBe(
-      true,
-    );
+    expect(
+      shouldAutoCreateCaseOnConfirmed(config, { detectionKind: 'word_regex', ruleIndex: 2 }),
+    ).toBe(true);
   });
 
   it('組み込み検知セレクタが一致した場合に自動Case化する', () => {
