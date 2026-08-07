@@ -5,6 +5,7 @@ import { auth } from '@/auth';
 import { getDiscordAccessToken } from '@/lib/session';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
+import { ModerationConfigForm } from '@/components/moderation-config-form';
 import { PluginConfigForm } from '@/components/plugin-config-form';
 
 export const dynamic = 'force-dynamic';
@@ -39,14 +40,24 @@ export default async function PluginDetailPage({
           v{plugin.manifest.version} · {plugin.manifest.category}
         </p>
       </div>
-      <div className="mt-8 rounded-2xl border border-border bg-surface p-6 shadow-card">
-        <PluginConfigForm
-          guildId={guildId}
-          pluginId={pluginId}
-          initialEnabled={plugin.enabled}
-          initialConfig={plugin.config}
-          schema={plugin.manifest.configSchema}
-        />
+      <div className="mt-8">
+        {pluginId === 'moderation' ? (
+          <ModerationConfigForm
+            guildId={guildId}
+            initialEnabled={plugin.enabled}
+            initialConfig={plugin.config}
+          />
+        ) : (
+          <div className="rounded-2xl border border-border bg-surface p-6 shadow-card">
+            <PluginConfigForm
+              guildId={guildId}
+              pluginId={pluginId}
+              initialEnabled={plugin.enabled}
+              initialConfig={plugin.config}
+              schema={plugin.manifest.configSchema}
+            />
+          </div>
+        )}
       </div>
 
       {pluginId === 'moderation' ? (
