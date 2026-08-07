@@ -1,14 +1,6 @@
 export type CustomRuleKind = 'word_exact' | 'word_contains' | 'word_regex';
 export type AutomaticEnforcementActionDraft =
-  | 'observe'
-  | 'warn'
-  | 'delete'
-  | 'warn_delete'
-  | 'timeout'
-  | 'role'
-  | 'blacklist'
-  | 'kick'
-  | 'ban';
+  'observe' | 'warn' | 'delete' | 'warn_delete' | 'timeout' | 'role' | 'blacklist' | 'kick' | 'ban';
 export type AutomaticModerationSeverityDraft = 'low' | 'medium' | 'high' | 'critical';
 
 export type AutomaticEnforcementPolicyDraft = {
@@ -106,12 +98,7 @@ const ENFORCEMENT_ACTIONS = new Set<AutomaticEnforcementActionDraft>([
   'kick',
   'ban',
 ]);
-const SEVERITIES = new Set<AutomaticModerationSeverityDraft>([
-  'low',
-  'medium',
-  'high',
-  'critical',
-]);
+const SEVERITIES = new Set<AutomaticModerationSeverityDraft>(['low', 'medium', 'high', 'critical']);
 
 export function toModerationConfigDraft(value: unknown): ModerationConfigDraft {
   const source = isRecord(value) ? value : {};
@@ -378,7 +365,8 @@ function actionValue(
   value: unknown,
   fallback: AutomaticEnforcementActionDraft,
 ): AutomaticEnforcementActionDraft {
-  return typeof value === 'string' && ENFORCEMENT_ACTIONS.has(value as AutomaticEnforcementActionDraft)
+  return typeof value === 'string' &&
+    ENFORCEMENT_ACTIONS.has(value as AutomaticEnforcementActionDraft)
     ? (value as AutomaticEnforcementActionDraft)
     : fallback;
 }

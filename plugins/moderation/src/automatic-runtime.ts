@@ -16,7 +16,11 @@ import {
   recordModerationAutomaticEventAudit,
   upsertModerationBlacklistEntry,
 } from './enforcement-service.js';
-import { createModerationCase, type ModerationCaseAction, type ModerationPrismaClient } from './service.js';
+import {
+  createModerationCase,
+  type ModerationCaseAction,
+  type ModerationPrismaClient,
+} from './service.js';
 
 const KICK_MEMBERS_PERMISSION = 2n;
 const BAN_MEMBERS_PERMISSION = 4n;
@@ -252,10 +256,7 @@ async function observeAutomaticModeration(
   if (
     alertFinding &&
     enforcementConfig.autoAlertChannelId &&
-    isSeverityAtLeast(
-      alertFinding.policy.severity,
-      enforcementConfig.autoAlertMinimumSeverity,
-    ) &&
+    isSeverityAtLeast(alertFinding.policy.severity, enforcementConfig.autoAlertMinimumSeverity) &&
     shouldSendAlert(
       context.guildId,
       message.author.id,
@@ -263,12 +264,14 @@ async function observeAutomaticModeration(
       enforcementConfig.autoAlertCooldownSeconds,
     )
   ) {
-    await sendUrgentAlert(context, message, alertFinding, insertedFindings, false).catch((error) => {
-      context.logger.warn(
-        { err: error, guildId: context.guildId, messageId: message.id },
-        'Moderation緊急Alertの送信に失敗しました',
-      );
-    });
+    await sendUrgentAlert(context, message, alertFinding, insertedFindings, false).catch(
+      (error) => {
+        context.logger.warn(
+          { err: error, guildId: context.guildId, messageId: message.id },
+          'Moderation緊急Alertの送信に失敗しました',
+        );
+      },
+    );
   }
 
   if (!enforcementConfig.autoEnforcementEnabled) return;
@@ -286,7 +289,10 @@ async function executeAutomaticEnforcement(
 ): Promise<void> {
   const actorId = context.client.user?.id;
   if (!actorId) {
-    context.logger.error({ guildId: context.guildId }, 'Bot User IDを取得できず自動対応を中止しました');
+    context.logger.error(
+      { guildId: context.guildId },
+      'Bot User IDを取得できず自動対応を中止しました',
+    );
     return;
   }
 
@@ -456,10 +462,18 @@ function assertAutomaticTargetCanBeModerated(
   if (message.author.id === bot.id) throw new Error('Herta Bot自身は自動対応対象にできません');
 
   const action = policy.action;
-  if ((action === 'delete' || action === 'warn_delete') && !bot.permissions.has(MANAGE_MESSAGES_PERMISSION)) {
+  if (
+    (action === 'delete' || action === 'warn_delete') &&
+    !bot.permissions.has(MANAGE_MESSAGES_PERMISSION)
+  ) {
     throw new Error('Botにメッセージ管理権限がありません');
   }
-  if (action === 'warn' || action === 'delete' || action === 'warn_delete' || action === 'observe') {
+  if (
+    action === 'warn' ||
+    action === 'delete' ||
+    action === 'warn_delete' ||
+    action === 'observe'
+  ) {
     return;
   }
 
@@ -488,7 +502,8 @@ function assertAutomaticTargetCanBeModerated(
     return;
   }
   if (action === 'role') {
-    if (!bot.permissions.has(MANAGE_ROLES_PERMISSION)) throw new Error('Botにロール管理権限がありません');
+    if (!bot.permissions.has(MANAGE_ROLES_PERMISSION))
+      throw new Error('Botにロール管理権限がありません');
     if (!policy.roleId) throw new Error('付与ロールIDが未設定です');
     const role = guild.roles.cache.get(policy.roleId);
     if (!role) throw new Error('付与ロールが見つかりません');

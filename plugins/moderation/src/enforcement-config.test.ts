@@ -72,9 +72,7 @@ describe('Moderation enforcement config', () => {
 
   it('findingからword系selectorを解決する', () => {
     const config = normalizeModerationEnforcementConfig({
-      autoEnforcementPolicies: [
-        { selector: 'word_regex:2', action: 'ban', severity: 'critical' },
-      ],
+      autoEnforcementPolicies: [{ selector: 'word_regex:2', action: 'ban', severity: 'critical' }],
     });
 
     expect(

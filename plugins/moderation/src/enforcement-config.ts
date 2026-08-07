@@ -1,4 +1,7 @@
-import { AUTOMATIC_CASE_RULE_SELECTOR_PATTERN, createAutomaticCaseRuleSelector } from './auto-case.js';
+import {
+  AUTOMATIC_CASE_RULE_SELECTOR_PATTERN,
+  createAutomaticCaseRuleSelector,
+} from './auto-case.js';
 import type { AutomaticModerationFinding } from './detection.js';
 
 export const AUTOMATIC_ENFORCEMENT_ACTIONS = [

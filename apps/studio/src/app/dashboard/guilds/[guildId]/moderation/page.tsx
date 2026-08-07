@@ -83,7 +83,8 @@ export default async function ModerationCasesPage({
             <h1 className="text-2xl font-semibold tracking-tight">モデレーションケース</h1>
           </div>
           <p className="mt-2 text-sm text-muted">
-            {guild.name} の検知・警告・削除・Timeout・Role・ブラックリスト・Kick・BAN履歴を確認します。
+            {guild.name}{' '}
+            の検知・警告・削除・Timeout・Role・ブラックリスト・Kick・BAN履歴を確認します。
           </p>
         </div>
         <div className="flex items-center gap-2">

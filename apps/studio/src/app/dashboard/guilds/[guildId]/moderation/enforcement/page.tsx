@@ -41,10 +41,12 @@ export default async function ModerationEnforcementPage({
           <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">自動対応ポリシー</h1>
         </div>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-          {guild.name} の自動検知ごとに危険度・警告・削除・Timeout・ロール付与・ブラックリスト・Kick・BANを設定します。
+          {guild.name}{' '}
+          の自動検知ごとに危険度・警告・削除・Timeout・ロール付与・ブラックリスト・Kick・BANを設定します。
         </p>
         <p className="mt-2 max-w-3xl text-xs leading-5 text-muted">
-          IP BANはDiscord Bot APIで接続元IPを取得できないため利用できません。ブラックリストはDiscord User IDを永久登録し、再参加時も自動BANします。
+          IP BANはDiscord Bot APIで接続元IPを取得できないため利用できません。ブラックリストはDiscord
+          User IDを永久登録し、再参加時も自動BANします。
         </p>
       </div>
 

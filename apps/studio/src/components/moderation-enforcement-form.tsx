@@ -24,13 +24,33 @@ const ACTION_OPTIONS: Array<{
   label: string;
   description: string;
 }> = [
-  { value: 'observe', label: '検知のみ', description: '履歴とAlertだけを残し、Discord上では操作しません。' },
+  {
+    value: 'observe',
+    label: '検知のみ',
+    description: '履歴とAlertだけを残し、Discord上では操作しません。',
+  },
   { value: 'warn', label: '警告', description: '対象ユーザーへDMで警告します。' },
   { value: 'delete', label: '削除', description: '検知したメッセージを削除します。' },
-  { value: 'warn_delete', label: '警告 + 削除', description: '警告DMを送り、検知メッセージも削除します。' },
-  { value: 'timeout', label: 'タイムアウト', description: '設定した時間だけ発言・参加を制限します。' },
-  { value: 'role', label: '指定ロール付与', description: '隔離用・BAN用など指定したロールを付与します。' },
-  { value: 'blacklist', label: 'ブラックリスト', description: 'Hertaへ永久登録し、BANして再参加時も自動BANします。' },
+  {
+    value: 'warn_delete',
+    label: '警告 + 削除',
+    description: '警告DMを送り、検知メッセージも削除します。',
+  },
+  {
+    value: 'timeout',
+    label: 'タイムアウト',
+    description: '設定した時間だけ発言・参加を制限します。',
+  },
+  {
+    value: 'role',
+    label: '指定ロール付与',
+    description: '隔離用・BAN用など指定したロールを付与します。',
+  },
+  {
+    value: 'blacklist',
+    label: 'ブラックリスト',
+    description: 'Hertaへ永久登録し、BANして再参加時も自動BANします。',
+  },
   { value: 'kick', label: 'Kick', description: 'サーバーから退出させます。再参加は可能です。' },
   { value: 'ban', label: 'BAN', description: 'DiscordサーバーからBANします。' },
 ];
@@ -61,10 +81,7 @@ export function ModerationEnforcementForm({
     setStatus('未保存の変更があります');
   }
 
-  function updatePolicy(
-    selector: string,
-    patchValue: Parameters<typeof setEnforcementPolicy>[2],
-  ) {
+  function updatePolicy(selector: string, patchValue: Parameters<typeof setEnforcementPolicy>[2]) {
     setConfig((current) => setEnforcementPolicy(current, selector, patchValue));
     setStatus('未保存の変更があります');
   }
@@ -91,9 +108,10 @@ export function ModerationEnforcementForm({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ config: payloadConfig }),
       });
-      const result = (await response.json().catch(() => null)) as
-        | { error?: unknown; config?: Record<string, unknown> }
-        | null;
+      const result = (await response.json().catch(() => null)) as {
+        error?: unknown;
+        config?: Record<string, unknown>;
+      } | null;
       if (!response.ok) {
         throw new Error(typeof result?.error === 'string' ? result.error : '保存に失敗しました');
       }
@@ -184,7 +202,9 @@ export function ModerationEnforcementForm({
           >
             <textarea
               value={config.autoAlertMentionRoleIds.join('\n')}
-              onChange={(event) => patch({ autoAlertMentionRoleIds: parseIdList(event.target.value) })}
+              onChange={(event) =>
+                patch({ autoAlertMentionRoleIds: parseIdList(event.target.value) })
+              }
               rows={3}
               className={inputClassName}
               placeholder={'111111111111111111\n222222222222222222'}
@@ -196,7 +216,9 @@ export function ModerationEnforcementForm({
               min={0}
               max={3600}
               value={config.autoAlertCooldownSeconds}
-              onChange={(event) => patch({ autoAlertCooldownSeconds: clampNumber(event.target.value, 0, 3600, 60) })}
+              onChange={(event) =>
+                patch({ autoAlertCooldownSeconds: clampNumber(event.target.value, 0, 3600, 60) })
+              }
               className={inputClassName}
             />
           </Field>
@@ -211,7 +233,8 @@ export function ModerationEnforcementForm({
           <span>
             <span className="block text-sm font-medium">本文プレビューをAlertへ含める</span>
             <span className="mt-1 block text-xs leading-5 text-muted">
-              デフォルトOFFです。OFFでも元メッセージへのJump Link、ユーザー、チャンネル、検知ルール、Actionは通知されます。
+              デフォルトOFFです。OFFでも元メッセージへのJump
+              Link、ユーザー、チャンネル、検知ルール、Actionは通知されます。
             </span>
           </span>
         </label>
@@ -267,10 +290,7 @@ function PolicyCard({
 }: {
   rule: RuleDescriptor;
   config: ModerationConfigDraft;
-  updatePolicy: (
-    selector: string,
-    patch: Parameters<typeof setEnforcementPolicy>[2],
-  ) => void;
+  updatePolicy: (selector: string, patch: Parameters<typeof setEnforcementPolicy>[2]) => void;
 }) {
   const policy = getEnforcementPolicy(config, rule.selector);
   const actionMeta = ACTION_OPTIONS.find((item) => item.value === policy.action)!;
@@ -356,7 +376,9 @@ function PolicyCard({
           <Field label="付与するRole ID" hint="Botの最高ロールより下のRoleだけ指定できます。">
             <input
               value={policy.roleId ?? ''}
-              onChange={(event) => updatePolicy(rule.selector, { roleId: numericOrNull(event.target.value) })}
+              onChange={(event) =>
+                updatePolicy(rule.selector, { roleId: numericOrNull(event.target.value) })
+              }
               inputMode="numeric"
               placeholder="123456789012345678"
               className={inputClassName}

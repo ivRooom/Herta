@@ -2,12 +2,7 @@ import { ModerationValidationError } from './config.js';
 
 export type ModerationAction = 'warn' | 'timeout' | 'kick' | 'ban';
 export type ModerationCaseAction =
-  | ModerationAction
-  | 'delete'
-  | 'warn_delete'
-  | 'role'
-  | 'blacklist'
-  | 'flag';
+  ModerationAction | 'delete' | 'warn_delete' | 'role' | 'blacklist' | 'flag';
 export type ModerationCaseStatus = 'active' | 'completed' | 'revoked' | 'failed';
 export type ModerationOperationSource = 'discord' | 'dashboard' | 'automatic';
 
