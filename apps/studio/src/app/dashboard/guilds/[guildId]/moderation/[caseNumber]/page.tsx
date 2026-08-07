@@ -175,7 +175,11 @@ function actionLabel(action: ModerationCaseAction): string {
   return {
     flag: '検知フラグ',
     warn: '警告',
+    delete: 'メッセージ削除',
+    warn_delete: '警告 + 削除',
     timeout: 'タイムアウト',
+    role: 'Role付与',
+    blacklist: 'ブラックリスト',
     kick: 'Kick',
     ban: 'BAN',
   }[action];

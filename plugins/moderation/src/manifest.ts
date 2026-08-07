@@ -1,5 +1,6 @@
 import type { PluginManifest } from '@herta/shared';
 import { AUTOMATIC_CASE_RULE_SELECTOR_PATTERN } from './auto-case.js';
+import { AUTOMATIC_ENFORCEMENT_RULE_SELECTOR_PATTERN } from './enforcement-config.js';
 
 const discordIdArraySchema = {
   type: 'array' as const,
@@ -19,9 +20,9 @@ const automaticWordArraySchema = {
 export const moderationManifest: PluginManifest = {
   id: 'moderation',
   name: 'Moderation',
-  version: '2.2.0',
+  version: '2.3.0',
   description:
-    '手動モデレーション、observe-only自動検知、確認済み検知の非処罰Case化をGuild単位で提供します',
+    '手動モデレーション、自動検知、緊急Alert、明示的に有効化する自動対応ポリシーをGuild単位で提供します',
   author: { name: 'Herta' },
   category: 'moderation',
   permissions: [
@@ -81,15 +82,120 @@ export const moderationManifest: PluginManifest = {
       automaticMode: {
         type: 'string',
         title: '自動検知モード',
-        description: 'observeは検知ログだけを記録し、メッセージ削除や処罰を行いません',
+        description:
+          'observeで自動検知エンジンを有効化します。Discord上の自動対応は別の自動対応スイッチがONの場合のみ実行します',
         enum: ['disabled', 'observe'],
         default: 'disabled',
+      },
+      autoEnforcementEnabled: {
+        type: 'boolean',
+        title: '検知後の自動対応を有効化する',
+        description:
+          'OFFではすべて検知・Alertのみです。ONでも各ルールのActionがobserveなら処罰しません',
+        default: false,
+      },
+      autoEnforcementPolicies: {
+        type: 'array',
+        title: 'ルール別の自動対応ポリシー',
+        description: '各検知ルールの危険度とActionを設定します',
+        maxItems: 200,
+        default: [],
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            selector: {
+              type: 'string',
+              pattern: AUTOMATIC_ENFORCEMENT_RULE_SELECTOR_PATTERN,
+            },
+            action: {
+              type: 'string',
+              enum: [
+                'observe',
+                'warn',
+                'delete',
+                'warn_delete',
+                'timeout',
+                'role',
+                'blacklist',
+                'kick',
+                'ban',
+              ],
+            },
+            severity: {
+              type: 'string',
+              enum: ['low', 'medium', 'high', 'critical'],
+            },
+            timeoutMinutes: {
+              type: 'integer',
+              minimum: 1,
+              maximum: 40320,
+              default: 10,
+            },
+            roleId: {
+              type: ['string', 'null'],
+              pattern: '^\\d+$',
+              default: null,
+            },
+            warningMessage: {
+              type: ['string', 'null'],
+              maxLength: 500,
+              default: null,
+            },
+            banDeleteMessageSeconds: {
+              type: 'integer',
+              minimum: 0,
+              maximum: 604800,
+              default: 0,
+            },
+          },
+          required: [
+            'selector',
+            'action',
+            'severity',
+            'timeoutMinutes',
+            'roleId',
+            'warningMessage',
+            'banDeleteMessageSeconds',
+          ],
+        },
+      },
+      autoAlertChannelId: {
+        type: ['string', 'null'],
+        title: '緊急Alert送信先チャンネルID',
+        description: '危険度が閾値以上の検知と自動対応失敗を通知します',
+        pattern: '^\\d+$',
+        default: null,
+      },
+      autoAlertMinimumSeverity: {
+        type: 'string',
+        title: '緊急Alertの最低危険度',
+        enum: ['low', 'medium', 'high', 'critical'],
+        default: 'high',
+      },
+      autoAlertMentionRoleIds: {
+        ...discordIdArraySchema,
+        title: '緊急AlertでメンションするロールID',
+        description: '@everyone/@hereは使用せず、ここで指定したRoleだけメンションします',
+      },
+      autoAlertIncludeExcerpt: {
+        type: 'boolean',
+        title: 'Alertへ本文プレビューを含める',
+        description: 'プライバシー保護のためデフォルトOFFです',
+        default: false,
+      },
+      autoAlertCooldownSeconds: {
+        type: 'integer',
+        title: '同一ユーザー・ルールのAlert Cooldown（秒）',
+        minimum: 0,
+        maximum: 3600,
+        default: 60,
       },
       autoCaseOnConfirmedEnabled: {
         type: 'boolean',
         title: '正検知確定時にCaseを自動作成する',
         description:
-          '対象ルールに一致した正検知だけを非処罰のflag Caseとして記録します。削除・警告・Timeout等は実行しません',
+          '対象ルールに一致した正検知だけを非処罰のflag Caseとして記録します。すでに自動対応Caseがある検知では重複作成しません',
         default: false,
       },
       autoCaseOnConfirmedRules: {
@@ -204,7 +310,7 @@ export const moderationManifest: PluginManifest = {
       'allowedModeratorRoleIds',
     ],
   },
-  events: ['messageCreate'],
+  events: ['messageCreate', 'guildMemberAdd'],
   commands: [
     {
       name: 'mod',

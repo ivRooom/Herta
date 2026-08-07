@@ -1,7 +1,8 @@
 import { ModerationValidationError } from './config.js';
 
 export type ModerationAction = 'warn' | 'timeout' | 'kick' | 'ban';
-export type ModerationCaseAction = ModerationAction | 'flag';
+export type ModerationCaseAction =
+  ModerationAction | 'delete' | 'warn_delete' | 'role' | 'blacklist' | 'flag';
 export type ModerationCaseStatus = 'active' | 'completed' | 'revoked' | 'failed';
 export type ModerationOperationSource = 'discord' | 'dashboard' | 'automatic';
 
@@ -101,7 +102,17 @@ interface ModerationCaseRow {
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
 const MAX_SEARCH_LENGTH = 100;
-const ALLOWED_ACTIONS = new Set<ModerationCaseAction>(['warn', 'timeout', 'kick', 'ban', 'flag']);
+const ALLOWED_ACTIONS = new Set<ModerationCaseAction>([
+  'warn',
+  'delete',
+  'warn_delete',
+  'timeout',
+  'role',
+  'blacklist',
+  'kick',
+  'ban',
+  'flag',
+]);
 const ALLOWED_STATUSES = new Set<ModerationCaseStatus>([
   'active',
   'completed',
@@ -201,7 +212,7 @@ export async function createModerationCase(
           operationSource: source,
           originDetectionId,
         },
-        severity: action === 'ban' ? 'warning' : 'info',
+        severity: action === 'ban' || action === 'blacklist' ? 'warning' : 'info',
       },
     });
 
@@ -395,7 +406,9 @@ function toRecord(row: ModerationCaseRow): ModerationCaseRecord {
 }
 
 function defaultStatusForAction(action: ModerationCaseAction): ModerationCaseStatus {
-  return action === 'kick' ? 'completed' : 'active';
+  return action === 'kick' || action === 'delete' || action === 'warn_delete'
+    ? 'completed'
+    : 'active';
 }
 
 function normalizeAction(value: unknown): ModerationCaseAction {

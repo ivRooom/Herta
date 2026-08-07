@@ -49,6 +49,32 @@ export type {
   ModerationDetectionCaseResult,
 } from './detection-case.js';
 export {
+  AUTOMATIC_ENFORCEMENT_ACTIONS,
+  AUTOMATIC_ENFORCEMENT_RULE_SELECTOR_PATTERN,
+  AUTOMATIC_MODERATION_SEVERITIES,
+  DEFAULT_MODERATION_ENFORCEMENT_CONFIG,
+  automaticEnforcementSelector,
+  isSeverityAtLeast,
+  normalizeModerationEnforcementConfig,
+  resolveAutomaticEnforcementPolicy,
+} from './enforcement-config.js';
+export type {
+  AutomaticEnforcementAction,
+  AutomaticEnforcementPolicy,
+  AutomaticModerationSeverity,
+  ModerationEnforcementConfig,
+} from './enforcement-config.js';
+export {
+  getActiveModerationBlacklistEntry,
+  getModerationDetectionIdForFinding,
+  hasActiveModerationBlacklistEntries,
+  listModerationBlacklistEntries,
+  recordModerationAutomaticEventAudit,
+  setModerationBlacklistEntryActive,
+  upsertModerationBlacklistEntry,
+} from './enforcement-service.js';
+export type { ModerationBlacklistEntry } from './enforcement-service.js';
+export {
   createModerationAutomaticEvents,
   resetModerationAutomaticDetector,
 } from './automatic-runtime.js';
