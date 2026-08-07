@@ -35,6 +35,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@herta/discord-ui": "workspace:*",
     "@herta/plugin-sdk": "workspace:*",
     "@herta/shared": "workspace:*"
   },
