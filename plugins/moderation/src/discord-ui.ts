@@ -236,9 +236,7 @@ export function buildModerationStatusEmbed(input: {
     title: truncate(input.title, DISCORD_EMBED_TITLE_LIMIT),
     description: truncate(input.description, DISCORD_EMBED_DESCRIPTION_LIMIT),
     color: VARIANT_COLORS[input.variant],
-    fields: input.fields
-      ?.slice(0, 25)
-      .map(({ name, value, inline }) => field(name, value, inline)),
+    fields: input.fields?.slice(0, 25).map(({ name, value, inline }) => field(name, value, inline)),
     footer: { text: 'Herta • Moderation' },
     timestamp: new Date().toISOString(),
     image: { url: moderationVisualImageUrl(input.variant) },
