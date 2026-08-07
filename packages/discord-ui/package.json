@@ -1,6 +1,6 @@
 {
-  "name": "@herta/plugin-team-split",
-  "version": "1.0.0",
+  "name": "@herta/discord-ui",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -12,18 +12,6 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./dist/index.js"
-    },
-    "./manifest": {
-      "types": "./src/manifest.ts",
-      "default": "./dist/manifest.js"
-    },
-    "./service": {
-      "types": "./src/service.ts",
-      "default": "./dist/service.js"
-    },
-    "./presentation": {
-      "types": "./src/presentation.ts",
-      "default": "./dist/presentation.js"
     }
   },
   "scripts": {
@@ -33,11 +21,6 @@
     "test": "vitest run --passWithNoTests",
     "test:unit": "vitest run",
     "clean": "rm -rf dist"
-  },
-  "dependencies": {
-    "@herta/discord-ui": "workspace:*",
-    "@herta/plugin-sdk": "workspace:*",
-    "@herta/shared": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

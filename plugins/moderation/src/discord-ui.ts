@@ -1,39 +1,23 @@
+import {
+  DISCORD_EMBED_LIMITS,
+  buildDiscordVisualAssetUrl,
+  discordEmbedField,
+  normalizeDiscordEmbedFields,
+  truncateDiscordText,
+  type DiscordEmbedFieldPayload,
+  type DiscordEmbedPayload,
+} from '@herta/discord-ui';
+export type {
+  DiscordEmbedFieldPayload,
+  DiscordEmbedPayload,
+  DiscordVisualMessagePayload,
+} from '@herta/discord-ui';
 import type {
   AutomaticEnforcementAction,
   AutomaticEnforcementPolicy,
   AutomaticModerationSeverity,
 } from './enforcement-config.js';
 import type { ModerationCaseAction, ModerationCaseRecord } from './service.js';
-
-const DISCORD_EMBED_DESCRIPTION_LIMIT = 4096;
-const DISCORD_EMBED_FIELD_VALUE_LIMIT = 1024;
-const DISCORD_EMBED_TITLE_LIMIT = 256;
-const DISCORD_EMBED_FOOTER_LIMIT = 2048;
-const DEFAULT_PUBLIC_BASE_URL = 'https://herta.ivrm.jp';
-
-export interface DiscordEmbedFieldPayload {
-  name: string;
-  value: string;
-  inline?: boolean;
-}
-
-export interface DiscordEmbedPayload {
-  title?: string;
-  description?: string;
-  color?: number;
-  url?: string;
-  fields?: DiscordEmbedFieldPayload[];
-  footer?: { text: string };
-  timestamp?: string;
-  image?: { url: string };
-}
-
-export interface DiscordVisualMessagePayload {
-  content?: string;
-  embeds?: DiscordEmbedPayload[];
-  allowedMentions: { parse: []; roles?: string[] };
-  flags?: number;
-}
 
 export type ModerationVisualVariant = 'info' | 'warning' | 'high' | 'critical' | 'failed' | 'case';
 
@@ -74,11 +58,11 @@ const STATUS_LABELS: Record<ModerationCaseRecord['status'], string> = {
 };
 
 export function moderationVisualImageUrl(variant: ModerationVisualVariant): string {
-  const baseUrl = (process.env.HERTA_PUBLIC_BASE_URL ?? DEFAULT_PUBLIC_BASE_URL).replace(
-    /\/+$/u,
-    '',
-  );
-  return `${baseUrl}/api/discord-assets/moderation/${variant}`;
+  return buildDiscordVisualAssetUrl({
+    plugin: 'moderation',
+    variant,
+    baseUrl: process.env.HERTA_PUBLIC_BASE_URL,
+  });
 }
 
 export function buildAutomaticAlertEmbed(input: {
@@ -113,18 +97,20 @@ export function buildAutomaticAlertEmbed(input: {
   return {
     title: truncate(
       input.failure ? '🚨 自動Moderation対応に失敗' : severityTitle(input.severity),
-      DISCORD_EMBED_TITLE_LIMIT,
+      DISCORD_EMBED_LIMITS.title,
     ),
     description: truncate(
       input.failure
         ? '自動対応を完了できませんでした。権限・ロール階層・対象ユーザーの状態を確認してください。'
         : 'ルールに一致するメッセージを検知しました。必要に応じて元メッセージとCase履歴を確認してください。',
-      DISCORD_EMBED_DESCRIPTION_LIMIT,
+      DISCORD_EMBED_LIMITS.description,
     ),
     color: VARIANT_COLORS[variant],
     url: input.jumpUrl,
     fields,
-    footer: { text: truncate('Herta • Moderation Intelligence', DISCORD_EMBED_FOOTER_LIMIT) },
+    footer: {
+      text: truncate('Herta • Moderation Intelligence', DISCORD_EMBED_LIMITS.footer),
+    },
     timestamp: new Date(input.createdTimestamp).toISOString(),
     image: { url: moderationVisualImageUrl(variant) },
   };
@@ -136,7 +122,7 @@ export function buildAutomaticWarningEmbed(
 ): DiscordEmbedPayload {
   return {
     title: '⚠️ Herta Moderationからのお知らせ',
-    description: truncate(warningMessage, DISCORD_EMBED_DESCRIPTION_LIMIT),
+    description: truncate(warningMessage, DISCORD_EMBED_LIMITS.description),
     color: VARIANT_COLORS.warning,
     fields: [
       field('対応', ACTION_LABELS[policy.action], true),
@@ -213,7 +199,7 @@ export function buildModerationHistoryEmbed(input: {
 
   return {
     title: '📚 Moderation履歴',
-    description: truncate(description, DISCORD_EMBED_DESCRIPTION_LIMIT),
+    description: truncate(description, DISCORD_EMBED_LIMITS.description),
     color: VARIANT_COLORS.case,
     fields: [
       field('対象ユーザー', `<@${input.targetUserId}>\n\`${input.targetUserId}\``),
@@ -233,10 +219,10 @@ export function buildModerationStatusEmbed(input: {
   fields?: DiscordEmbedFieldPayload[];
 }): DiscordEmbedPayload {
   return {
-    title: truncate(input.title, DISCORD_EMBED_TITLE_LIMIT),
-    description: truncate(input.description, DISCORD_EMBED_DESCRIPTION_LIMIT),
+    title: truncate(input.title, DISCORD_EMBED_LIMITS.title),
+    description: truncate(input.description, DISCORD_EMBED_LIMITS.description),
     color: VARIANT_COLORS[input.variant],
-    fields: input.fields?.slice(0, 25).map(({ name, value, inline }) => field(name, value, inline)),
+    fields: normalizeDiscordEmbedFields(input.fields),
     footer: { text: 'Herta • Moderation' },
     timestamp: new Date().toISOString(),
     image: { url: moderationVisualImageUrl(input.variant) },
@@ -262,13 +248,9 @@ function severityTitle(severity: AutomaticModerationSeverity): string {
 }
 
 function field(name: string, value: string, inline = false): DiscordEmbedFieldPayload {
-  return {
-    name: truncate(name, 256),
-    value: truncate(value || '—', DISCORD_EMBED_FIELD_VALUE_LIMIT),
-    ...(inline ? { inline: true } : {}),
-  };
+  return discordEmbedField(name, value, inline);
 }
 
 function truncate(value: string, maxLength: number): string {
-  return value.length <= maxLength ? value : `${value.slice(0, Math.max(maxLength - 1, 0))}…`;
+  return truncateDiscordText(value, maxLength);
 }

@@ -85,4 +85,11 @@ describe('Team Split presentation', () => {
     expect(text).toContain('Team 2');
     expect(text).not.toContain(SESSION.seedHash);
   });
+
+  it('結果カードへTeam Split生成画像を付与する', () => {
+    const payload = buildTeamSplitDiscordMessage(SESSION, PARTICIPANTS, SECRET);
+    expect(payload.embeds[0]?.image?.url).toBe(
+      'https://herta.ivrm.jp/api/discord-assets/team-split/result',
+    );
+  });
 });
