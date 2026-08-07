@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server';
 import {
+  createModerationCaseFromDetection,
   ModerationValidationError,
+  normalizeModerationConfig,
   reviewModerationDetection,
+  shouldAutoCreateCaseOnConfirmed,
   type ModerationDetectionReviewStatus,
   type ModerationPrismaClient,
 } from '@herta/plugin-catalog/moderation-service';
 import { auth } from '@/auth';
-import { authorizeGuild } from '@/lib/guild-plugins';
+import { authorizeGuild, getGuildPlugin } from '@/lib/guild-plugins';
 import { prisma } from '@/lib/db';
 
 export async function PATCH(
@@ -34,7 +37,13 @@ export async function PATCH(
     if (!result) {
       return NextResponse.json({ error: '検知履歴が見つかりません' }, { status: 404 });
     }
-    return NextResponse.json(result);
+
+    const automaticCase = await maybeCreateAutomaticCase({
+      guildId,
+      actorId: session.user.id,
+      detection: result,
+    });
+    return NextResponse.json({ ...result, automaticCase });
   } catch (error) {
     if (error instanceof SyntaxError) {
       return NextResponse.json({ error: 'JSON形式が不正です' }, { status: 400 });
@@ -45,6 +54,41 @@ export async function PATCH(
     console.error('Moderation detection review failed', error);
     return NextResponse.json({ error: 'レビューの保存に失敗しました' }, { status: 500 });
   }
+}
+
+async function maybeCreateAutomaticCase({
+  guildId,
+  actorId,
+  detection,
+}: {
+  guildId: string;
+  actorId: string;
+  detection: {
+    id: string;
+    detectionKind: Parameters<typeof shouldAutoCreateCaseOnConfirmed>[1]['detectionKind'];
+    ruleIndex: number | null;
+    reviewStatus: ModerationDetectionReviewStatus;
+  };
+}) {
+  if (detection.reviewStatus !== 'confirmed') return null;
+
+  const plugin = await getGuildPlugin(guildId, 'moderation');
+  if (!plugin?.enabled) return null;
+  const config = normalizeModerationConfig(plugin.config);
+  if (
+    !shouldAutoCreateCaseOnConfirmed(config, {
+      detectionKind: detection.detectionKind,
+      ruleIndex: detection.ruleIndex,
+    })
+  ) {
+    return null;
+  }
+
+  return createModerationCaseFromDetection(prisma as unknown as ModerationPrismaClient, {
+    guildId,
+    detectionId: detection.id,
+    actorId,
+  });
 }
 
 async function readBody(request: Request): Promise<Record<string, unknown>> {

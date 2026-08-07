@@ -1,3 +1,7 @@
+import { AUTOMATIC_CASE_RULE_SELECTOR_PATTERN } from './auto-case.js';
+
+export { shouldAutoCreateCaseOnConfirmed } from './auto-case.js';
+
 export type AutomaticModerationMode = 'disabled' | 'observe';
 
 export interface ModerationConfig {
@@ -19,6 +23,8 @@ export interface ModerationConfig {
   autoBurstWindowSeconds: number;
   autoDuplicateMessageLimit: number;
   autoDuplicateWindowSeconds: number;
+  autoCaseOnConfirmedEnabled: boolean;
+  autoCaseOnConfirmedRules: string[];
   autoMaxMessageLength: number;
   autoExemptChannelIds: string[];
   autoExemptRoleIds: string[];
@@ -44,6 +50,8 @@ export const DEFAULT_MODERATION_CONFIG: ModerationConfig = {
   autoBurstWindowSeconds: 10,
   autoDuplicateMessageLimit: 0,
   autoDuplicateWindowSeconds: 30,
+  autoCaseOnConfirmedEnabled: false,
+  autoCaseOnConfirmedRules: [],
   autoMaxMessageLength: 2000,
   autoExemptChannelIds: [],
   autoExemptRoleIds: [],
@@ -130,6 +138,11 @@ export function normalizeModerationConfig(value: unknown): ModerationConfig {
       1,
       600,
     ),
+    autoCaseOnConfirmedEnabled: booleanValue(
+      config.autoCaseOnConfirmedEnabled,
+      DEFAULT_MODERATION_CONFIG.autoCaseOnConfirmedEnabled,
+    ),
+    autoCaseOnConfirmedRules: normalizeAutomaticCaseRules(config.autoCaseOnConfirmedRules),
     autoMaxMessageLength: clampInteger(
       config.autoMaxMessageLength,
       DEFAULT_MODERATION_CONFIG.autoMaxMessageLength,
@@ -229,6 +242,16 @@ function normalizeAutomaticRegexPatterns(value: unknown): string[] {
     .map((item) => item.trim())
     .filter(isSafeAutomaticRegexPattern);
   return [...new Set(normalized)].slice(0, MAX_AUTOMATIC_REGEX_PATTERNS);
+}
+
+function normalizeAutomaticCaseRules(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const selectorPattern = new RegExp(AUTOMATIC_CASE_RULE_SELECTOR_PATTERN, 'u');
+  const normalized = value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => selectorPattern.test(item));
+  return [...new Set(normalized)].slice(0, MAX_AUTOMATIC_WORD_PATTERNS);
 }
 
 function normalizeInviteCodes(value: unknown): string[] {

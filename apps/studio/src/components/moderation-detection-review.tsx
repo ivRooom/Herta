@@ -17,6 +17,7 @@ type ReviewResponse = {
   error?: string;
   reviewStatus?: ModerationDetectionReviewStatus;
   reviewNote?: string | null;
+  automaticCase?: { caseNumber?: number; created?: boolean } | null;
 };
 
 type CaseResponse = {
@@ -111,6 +112,20 @@ export function ModerationDetectionReview({
       setReviewNote(resolvedNote);
       setSavedStatus(resolvedStatus);
       setSavedNote(resolvedNote);
+
+      const automaticCaseNumber = readCaseNumber(body.automaticCase ?? {});
+      if (automaticCaseNumber !== null) {
+        setCaseNumber(automaticCaseNumber);
+        setCaseMessage(
+          body.automaticCase?.created === false
+            ? `対象ルールのCase #${automaticCaseNumber}を表示します`
+            : `対象ルールのためCase #${automaticCaseNumber}を自動作成しました`,
+        );
+      } else if (resolvedStatus !== 'confirmed') {
+        setCaseNumber(null);
+        setCaseMessage(null);
+      }
+
       setMessage('保存しました');
       router.refresh();
     } catch (error) {

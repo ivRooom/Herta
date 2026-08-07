@@ -1,4 +1,5 @@
 import type { PluginManifest } from '@herta/shared';
+import { AUTOMATIC_CASE_RULE_SELECTOR_PATTERN } from './auto-case.js';
 
 const discordIdArraySchema = {
   type: 'array' as const,
@@ -18,8 +19,9 @@ const automaticWordArraySchema = {
 export const moderationManifest: PluginManifest = {
   id: 'moderation',
   name: 'Moderation',
-  version: '2.1.0',
-  description: '手動モデレーションとobserve-only自動検知をGuild単位で提供します',
+  version: '2.2.0',
+  description:
+    '手動モデレーション、observe-only自動検知、確認済み検知の非処罰Case化をGuild単位で提供します',
   author: { name: 'Herta' },
   category: 'moderation',
   permissions: [
@@ -82,6 +84,23 @@ export const moderationManifest: PluginManifest = {
         description: 'observeは検知ログだけを記録し、メッセージ削除や処罰を行いません',
         enum: ['disabled', 'observe'],
         default: 'disabled',
+      },
+      autoCaseOnConfirmedEnabled: {
+        type: 'boolean',
+        title: '正検知確定時にCaseを自動作成する',
+        description:
+          '対象ルールに一致した正検知だけを非処罰のflag Caseとして記録します。削除・警告・Timeout等は実行しません',
+        default: false,
+      },
+      autoCaseOnConfirmedRules: {
+        type: 'array',
+        title: '正検知時に自動Case化するルール',
+        description:
+          'word系は word_contains:0 のようにルール番号を付け、組み込み検知は invite_link のように指定します',
+        uniqueItems: true,
+        maxItems: 100,
+        default: [],
+        items: { type: 'string', pattern: AUTOMATIC_CASE_RULE_SELECTOR_PATTERN },
       },
       autoExactWords: {
         ...automaticWordArraySchema,

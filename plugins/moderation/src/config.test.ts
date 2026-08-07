@@ -31,6 +31,30 @@ describe('Moderation config', () => {
       allowedModeratorRoleIds: ['456'],
     });
   });
+
+  it('正検知自動ケース化を既定OFFにし、有効なルールセレクタだけを残す', () => {
+    expect(DEFAULT_MODERATION_CONFIG.autoCaseOnConfirmedEnabled).toBe(false);
+    expect(DEFAULT_MODERATION_CONFIG.autoCaseOnConfirmedRules).toEqual([]);
+
+    expect(
+      normalizeModerationConfig({
+        autoCaseOnConfirmedEnabled: true,
+        autoCaseOnConfirmedRules: [
+          ' word_contains:0 ',
+          'word_contains:0',
+          'word_regex:12',
+          'invite_link',
+          'word_exact:-1',
+          'word_contains',
+          'unknown_rule',
+          123,
+        ],
+      }),
+    ).toMatchObject({
+      autoCaseOnConfirmedEnabled: true,
+      autoCaseOnConfirmedRules: ['word_contains:0', 'word_regex:12', 'invite_link'],
+    });
+  });
 });
 
 describe('Moderation input validation', () => {
