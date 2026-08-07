@@ -1,4 +1,25 @@
 export type CustomRuleKind = 'word_exact' | 'word_contains' | 'word_regex';
+export type AutomaticEnforcementActionDraft =
+  | 'observe'
+  | 'warn'
+  | 'delete'
+  | 'warn_delete'
+  | 'timeout'
+  | 'role'
+  | 'blacklist'
+  | 'kick'
+  | 'ban';
+export type AutomaticModerationSeverityDraft = 'low' | 'medium' | 'high' | 'critical';
+
+export type AutomaticEnforcementPolicyDraft = {
+  selector: string;
+  action: AutomaticEnforcementActionDraft;
+  severity: AutomaticModerationSeverityDraft;
+  timeoutMinutes: number;
+  roleId: string | null;
+  warningMessage: string | null;
+  banDeleteMessageSeconds: number;
+};
 
 export type ModerationConfigDraft = {
   requireReason: boolean;
@@ -9,6 +30,13 @@ export type ModerationConfigDraft = {
   caseRetentionDays: number;
   allowedModeratorRoleIds: string[];
   automaticMode: 'disabled' | 'observe';
+  autoEnforcementEnabled: boolean;
+  autoEnforcementPolicies: AutomaticEnforcementPolicyDraft[];
+  autoAlertChannelId: string | null;
+  autoAlertMinimumSeverity: AutomaticModerationSeverityDraft;
+  autoAlertMentionRoleIds: string[];
+  autoAlertIncludeExcerpt: boolean;
+  autoAlertCooldownSeconds: number;
   autoCaseOnConfirmedEnabled: boolean;
   autoCaseOnConfirmedRules: string[];
   autoExactWords: string[];
@@ -36,6 +64,13 @@ export const DEFAULT_MODERATION_CONFIG_DRAFT: ModerationConfigDraft = {
   caseRetentionDays: 365,
   allowedModeratorRoleIds: [],
   automaticMode: 'disabled',
+  autoEnforcementEnabled: false,
+  autoEnforcementPolicies: [],
+  autoAlertChannelId: null,
+  autoAlertMinimumSeverity: 'high',
+  autoAlertMentionRoleIds: [],
+  autoAlertIncludeExcerpt: false,
+  autoAlertCooldownSeconds: 60,
   autoCaseOnConfirmedEnabled: false,
   autoCaseOnConfirmedRules: [],
   autoExactWords: [],
@@ -60,6 +95,24 @@ const CUSTOM_RULE_KEYS: Record<CustomRuleKind, keyof ModerationConfigDraft> = {
   word_regex: 'autoRegexPatterns',
 };
 
+const ENFORCEMENT_ACTIONS = new Set<AutomaticEnforcementActionDraft>([
+  'observe',
+  'warn',
+  'delete',
+  'warn_delete',
+  'timeout',
+  'role',
+  'blacklist',
+  'kick',
+  'ban',
+]);
+const SEVERITIES = new Set<AutomaticModerationSeverityDraft>([
+  'low',
+  'medium',
+  'high',
+  'critical',
+]);
+
 export function toModerationConfigDraft(value: unknown): ModerationConfigDraft {
   const source = isRecord(value) ? value : {};
   const defaults = DEFAULT_MODERATION_CONFIG_DRAFT;
@@ -76,6 +129,25 @@ export function toModerationConfigDraft(value: unknown): ModerationConfigDraft {
     caseRetentionDays: integerValue(source.caseRetentionDays, defaults.caseRetentionDays),
     allowedModeratorRoleIds: stringArray(source.allowedModeratorRoleIds),
     automaticMode: source.automaticMode === 'observe' ? 'observe' : 'disabled',
+    autoEnforcementEnabled: booleanValue(
+      source.autoEnforcementEnabled,
+      defaults.autoEnforcementEnabled,
+    ),
+    autoEnforcementPolicies: enforcementPolicies(source.autoEnforcementPolicies),
+    autoAlertChannelId: nullableString(source.autoAlertChannelId),
+    autoAlertMinimumSeverity: severityValue(
+      source.autoAlertMinimumSeverity,
+      defaults.autoAlertMinimumSeverity,
+    ),
+    autoAlertMentionRoleIds: stringArray(source.autoAlertMentionRoleIds),
+    autoAlertIncludeExcerpt: booleanValue(
+      source.autoAlertIncludeExcerpt,
+      defaults.autoAlertIncludeExcerpt,
+    ),
+    autoAlertCooldownSeconds: integerValue(
+      source.autoAlertCooldownSeconds,
+      defaults.autoAlertCooldownSeconds,
+    ),
     autoCaseOnConfirmedEnabled: booleanValue(
       source.autoCaseOnConfirmedEnabled,
       defaults.autoCaseOnConfirmedEnabled,
@@ -155,20 +227,20 @@ export function removeCustomRule(
   const current = config[key] as string[];
   if (index < 0 || index >= current.length) return config;
 
-  const prefix = `${kind}:`;
   const selectors = config.autoCaseOnConfirmedRules.flatMap((selector) => {
-    if (!selector.startsWith(prefix)) return [selector];
-    const selectedIndex = Number.parseInt(selector.slice(prefix.length), 10);
-    if (!Number.isInteger(selectedIndex)) return [selector];
-    if (selectedIndex === index) return [];
-    if (selectedIndex > index) return [`${kind}:${selectedIndex - 1}`];
-    return [selector];
+    const remapped = remapSelectorAfterRemoval(selector, kind, index);
+    return remapped ? [remapped] : [];
+  });
+  const policies = config.autoEnforcementPolicies.flatMap((policy) => {
+    const selector = remapSelectorAfterRemoval(policy.selector, kind, index);
+    return selector ? [{ ...policy, selector }] : [];
   });
 
   return {
     ...config,
     [key]: current.filter((_, itemIndex) => itemIndex !== index),
     autoCaseOnConfirmedRules: unique(selectors),
+    autoEnforcementPolicies: uniquePolicies(policies),
   };
 }
 
@@ -181,6 +253,34 @@ export function setAutoCaseRule(
     ? unique([...config.autoCaseOnConfirmedRules, selector])
     : config.autoCaseOnConfirmedRules.filter((item) => item !== selector);
   return { ...config, autoCaseOnConfirmedRules: selectors };
+}
+
+export function getEnforcementPolicy(
+  config: ModerationConfigDraft,
+  selector: string,
+): AutomaticEnforcementPolicyDraft {
+  return (
+    config.autoEnforcementPolicies.find((policy) => policy.selector === selector) ?? {
+      selector,
+      action: 'observe',
+      severity: 'low',
+      timeoutMinutes: 10,
+      roleId: null,
+      warningMessage: null,
+      banDeleteMessageSeconds: 0,
+    }
+  );
+}
+
+export function setEnforcementPolicy(
+  config: ModerationConfigDraft,
+  selector: string,
+  patch: Partial<Omit<AutomaticEnforcementPolicyDraft, 'selector'>>,
+): ModerationConfigDraft {
+  const next = { ...getEnforcementPolicy(config, selector), ...patch, selector };
+  const policies = config.autoEnforcementPolicies.filter((policy) => policy.selector !== selector);
+  policies.push(next);
+  return { ...config, autoEnforcementPolicies: uniquePolicies(policies) };
 }
 
 export function setBuiltInRuleEnabled(
@@ -226,6 +326,70 @@ export function isBuiltInRuleEnabled(
     case 'duplicate_message':
       return config.autoDuplicateMessageLimit > 0;
   }
+}
+
+function remapSelectorAfterRemoval(
+  selector: string,
+  kind: CustomRuleKind,
+  index: number,
+): string | null {
+  const prefix = `${kind}:`;
+  if (!selector.startsWith(prefix)) return selector;
+  const selectedIndex = Number.parseInt(selector.slice(prefix.length), 10);
+  if (!Number.isInteger(selectedIndex)) return selector;
+  if (selectedIndex === index) return null;
+  if (selectedIndex > index) return `${kind}:${selectedIndex - 1}`;
+  return selector;
+}
+
+function enforcementPolicies(value: unknown): AutomaticEnforcementPolicyDraft[] {
+  if (!Array.isArray(value)) return [];
+  return uniquePolicies(
+    value.flatMap((item) => {
+      if (!isRecord(item) || typeof item.selector !== 'string') return [];
+      const action = actionValue(item.action, 'observe');
+      const severity = severityValue(item.severity, 'low');
+      return [
+        {
+          selector: item.selector.trim(),
+          action,
+          severity,
+          timeoutMinutes: integerValue(item.timeoutMinutes, 10),
+          roleId: nullableString(item.roleId),
+          warningMessage: nullableString(item.warningMessage),
+          banDeleteMessageSeconds: integerValue(item.banDeleteMessageSeconds, 0),
+        },
+      ];
+    }),
+  );
+}
+
+function uniquePolicies(
+  policies: AutomaticEnforcementPolicyDraft[],
+): AutomaticEnforcementPolicyDraft[] {
+  const map = new Map<string, AutomaticEnforcementPolicyDraft>();
+  for (const policy of policies) {
+    if (policy.selector) map.set(policy.selector, policy);
+  }
+  return [...map.values()];
+}
+
+function actionValue(
+  value: unknown,
+  fallback: AutomaticEnforcementActionDraft,
+): AutomaticEnforcementActionDraft {
+  return typeof value === 'string' && ENFORCEMENT_ACTIONS.has(value as AutomaticEnforcementActionDraft)
+    ? (value as AutomaticEnforcementActionDraft)
+    : fallback;
+}
+
+function severityValue(
+  value: unknown,
+  fallback: AutomaticModerationSeverityDraft,
+): AutomaticModerationSeverityDraft {
+  return typeof value === 'string' && SEVERITIES.has(value as AutomaticModerationSeverityDraft)
+    ? (value as AutomaticModerationSeverityDraft)
+    : fallback;
 }
 
 function booleanValue(value: unknown, fallback: boolean): boolean {
