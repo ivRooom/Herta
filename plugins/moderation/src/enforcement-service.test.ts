@@ -4,10 +4,7 @@ import {
   listModerationBlacklistEntries,
   setModerationBlacklistEntryActive,
 } from './enforcement-service.js';
-import type {
-  ModerationPrismaClient,
-  ModerationTransactionClient,
-} from './service.js';
+import type { ModerationPrismaClient, ModerationTransactionClient } from './service.js';
 
 const row = {
   guild_id: '100',
