@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, Ban } from 'lucide-react';
+import { AlertTriangle, ArrowLeft, Ban } from 'lucide-react';
 import {
   listModerationBlacklistEntries,
   type ModerationPrismaClient,
@@ -76,6 +76,13 @@ export default async function ModerationBlacklistPage({
         >
           {includeInactive ? '有効のみ表示' : '解除済みも表示'}
         </Link>
+      </div>
+
+      <div className="mt-5 flex gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm leading-6">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+        <p>
+          Hertaのブラックリストを解除しても、すでにDiscordでBAN済みのユーザーは自動ではUnbanされません。再参加を許可する場合は、ブラックリスト解除後にDiscord側のBANも手動で解除してください。
+        </p>
       </div>
 
       {loadError ? (
