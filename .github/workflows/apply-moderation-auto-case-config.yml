@@ -1,0 +1,94 @@
+name: Apply moderation auto case config
+
+on:
+  push:
+    branches:
+      - feat/moderation-auto-case-on-confirmed
+    paths:
+      - .github/workflows/apply-moderation-auto-case-config.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/moderation-auto-case-on-confirmed
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: 設定スキーマを更新
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('plugins/moderation/src/config.ts')
+          source = path.read_text()
+          source = source.replace(
+              "export type AutomaticModerationMode = 'disabled' | 'observe';",
+              "import { AUTOMATIC_CASE_RULE_SELECTOR_PATTERN } from './auto-case.js';\n\nexport { shouldAutoCreateCaseOnConfirmed } from './auto-case.js';\n\nexport type AutomaticModerationMode = 'disabled' | 'observe';",
+              1,
+          )
+          source = source.replace(
+              "  autoDuplicateWindowSeconds: number;\n  autoMaxMessageLength: number;",
+              "  autoDuplicateWindowSeconds: number;\n  autoCaseOnConfirmedEnabled: boolean;\n  autoCaseOnConfirmedRules: string[];\n  autoMaxMessageLength: number;",
+              1,
+          )
+          source = source.replace(
+              "  autoDuplicateWindowSeconds: 30,\n  autoMaxMessageLength: 2000,",
+              "  autoDuplicateWindowSeconds: 30,\n  autoCaseOnConfirmedEnabled: false,\n  autoCaseOnConfirmedRules: [],\n  autoMaxMessageLength: 2000,",
+              1,
+          )
+          source = source.replace(
+              "    autoDuplicateWindowSeconds: clampInteger(\n      config.autoDuplicateWindowSeconds,\n      DEFAULT_MODERATION_CONFIG.autoDuplicateWindowSeconds,\n      1,\n      600,\n    ),\n    autoMaxMessageLength:",
+              "    autoDuplicateWindowSeconds: clampInteger(\n      config.autoDuplicateWindowSeconds,\n      DEFAULT_MODERATION_CONFIG.autoDuplicateWindowSeconds,\n      1,\n      600,\n    ),\n    autoCaseOnConfirmedEnabled: booleanValue(\n      config.autoCaseOnConfirmedEnabled,\n      DEFAULT_MODERATION_CONFIG.autoCaseOnConfirmedEnabled,\n    ),\n    autoCaseOnConfirmedRules: normalizeAutomaticCaseRules(config.autoCaseOnConfirmedRules),\n    autoMaxMessageLength:",
+              1,
+          )
+          marker = "function normalizeInviteCodes(value: unknown): string[] {"
+          helper = """function normalizeAutomaticCaseRules(value: unknown): string[] {\n  if (!Array.isArray(value)) return [];\n  const selectorPattern = new RegExp(AUTOMATIC_CASE_RULE_SELECTOR_PATTERN, 'u');\n  const normalized = value\n    .filter((item): item is string => typeof item === 'string')\n    .map((item) => item.trim())\n    .filter((item) => selectorPattern.test(item));\n  return [...new Set(normalized)].slice(0, MAX_AUTOMATIC_WORD_PATTERNS);\n}\n\n"""
+          if marker not in source:
+              raise SystemExit('config helper marker not found')
+          source = source.replace(marker, helper + marker, 1)
+          path.write_text(source)
+
+          path = Path('plugins/moderation/src/manifest.ts')
+          source = path.read_text()
+          source = source.replace(
+              "import type { PluginManifest } from '@herta/shared';",
+              "import type { PluginManifest } from '@herta/shared';\nimport { AUTOMATIC_CASE_RULE_SELECTOR_PATTERN } from './auto-case.js';",
+              1,
+          )
+          source = source.replace("version: '2.1.0'", "version: '2.2.0'", 1)
+          source = source.replace(
+              "description: '手動モデレーションとobserve-only自動検知をGuild単位で提供します'",
+              "description: '手動モデレーション、observe-only自動検知、確認済み検知の非処罰Case化をGuild単位で提供します'",
+              1,
+          )
+          marker = """      autoExactWords: {\n"""
+          addition = """      autoCaseOnConfirmedEnabled: {\n        type: 'boolean',\n        title: '正検知確定時にCaseを自動作成する',\n        description:\n          '対象ルールに一致した正検知だけを非処罰のflag Caseとして記録します。削除・警告・Timeout等は実行しません',\n        default: false,\n      },\n      autoCaseOnConfirmedRules: {\n        type: 'array',\n        title: '正検知時に自動Case化するルール',\n        description:\n          'word系は word_contains:0 のようにルール番号を付け、組み込み検知は invite_link のように指定します',\n        uniqueItems: true,\n        maxItems: 100,\n        default: [],\n        items: { type: 'string', pattern: AUTOMATIC_CASE_RULE_SELECTOR_PATTERN },\n      },\n"""
+          if marker not in source:
+              raise SystemExit('manifest marker not found')
+          source = source.replace(marker, addition + marker, 1)
+          path.write_text(source)
+          PY
+
+          pnpm exec prettier --write \
+            plugins/moderation/src/config.ts \
+            plugins/moderation/src/manifest.ts \
+            plugins/moderation/src/auto-case.ts
+
+          rm .github/workflows/apply-moderation-auto-case-config.yml
+      - name: 変更をcommit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: 正検知自動ケース化の設定を追加"
+          git push origin HEAD:feat/moderation-auto-case-on-confirmed
