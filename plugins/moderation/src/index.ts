@@ -67,6 +67,7 @@ export type {
 export {
   getActiveModerationBlacklistEntry,
   getModerationDetectionIdForFinding,
+  hasActiveModerationBlacklistEntries,
   listModerationBlacklistEntries,
   recordModerationAutomaticEventAudit,
   setModerationBlacklistEntryActive,
