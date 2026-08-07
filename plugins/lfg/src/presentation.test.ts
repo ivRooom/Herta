@@ -1,9 +1,34 @@
 import { describe, expect, it } from 'vitest';
-import { createLfgMessageNonce } from './presentation.js';
+import { buildLfgDiscordMessage, createLfgMessageNonce } from './presentation.js';
+import type { LfgPostRecord } from './service.js';
 
 const postId = '11111111-1111-4111-8111-111111111111';
+const POST = {
+  id: postId,
+  guildId: '123456789012345678',
+  creatorId: '223456789012345678',
+  channelId: '323456789012345678',
+  messageId: null,
+  title: 'VALORANT募集',
+  description: 'ゆるく遊びます',
+  game: 'VALORANT',
+  maxPlayers: 5,
+  participantCount: 1,
+  participants: ['223456789012345678'],
+  status: 'open',
+  startTime: null,
+  expiresAt: new Date('2026-08-07T13:00:00.000Z'),
+  messageState: 'pending',
+  lastErrorName: null,
+  createdBy: '223456789012345678',
+  updatedBy: '223456789012345678',
+  deletedAt: null,
+  version: 1,
+  createdAt: new Date('2026-08-07T12:00:00.000Z'),
+  updatedAt: new Date('2026-08-07T12:00:00.000Z'),
+} satisfies LfgPostRecord;
 
-describe('LFG message nonce', () => {
+describe('LFG presentation', () => {
   it('同じ募集versionで安定した25文字以内のnonceを返す', () => {
     const first = createLfgMessageNonce(postId, 12);
     const second = createLfgMessageNonce(postId, 12);
@@ -17,5 +42,11 @@ describe('LFG message nonce', () => {
 
   it('不正なpost IDとversionも安全な文字列へ正規化する', () => {
     expect(createLfgMessageNonce('invalid', Number.NaN)).toMatch(/^lfg[0-9a-f0]+$/);
+  });
+
+  it('募集カードへHerta生成画像と安全なmention設定を付与する', () => {
+    const payload = buildLfgDiscordMessage(POST, POST.participants, 'lfg-secret-for-tests-1234567890');
+    expect(payload.embeds[0]?.image?.url).toBe('https://herta.ivrm.jp/api/discord-assets/lfg/open');
+    expect(payload.allowed_mentions.parse).toEqual([]);
   });
 });
