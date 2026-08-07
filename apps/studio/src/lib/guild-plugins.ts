@@ -4,6 +4,7 @@ import type { PluginManifest } from '@herta/shared';
 import { getAllPluginManifests, getPluginManifest } from '@herta/plugin-catalog';
 import { normalizeAutoResponseConfig } from '@herta/plugin-catalog/auto-response-service';
 import { prisma } from '@/lib/db';
+import { DiscordApiError } from '@/lib/discord';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { publishPluginRuntimeEvent } from '@/lib/plugin-runtime-events';
 import { getDiscordAccessToken } from '@/lib/session';
@@ -23,15 +24,20 @@ export async function authorizeGuild(guildId: string, userId: string) {
       response: Response.json({ error: 'Discord の再ログインが必要です' }, { status: 401 }),
     };
 
-  const guild = await getManageableGuild(accessToken, guildId);
-  if (!guild) {
-    return {
-      response: Response.json({ error: 'この Guild を管理する権限がありません' }, { status: 403 }),
-    };
-  }
+  try {
+    const guild = await getManageableGuild(accessToken, guildId);
+    if (!guild) {
+      return {
+        response: Response.json({ error: 'この Guild を管理する権限がありません' }, { status: 403 }),
+      };
+    }
 
-  await persistSelectedGuild(guild, userId);
-  return { guild };
+    await persistSelectedGuild(guild, userId);
+    return { guild };
+  } catch (error) {
+    if (!(error instanceof DiscordApiError)) throw error;
+    return { response: discordApiErrorResponse(error) };
+  }
 }
 
 export async function listGuildPlugins(guildId: string) {
@@ -213,6 +219,40 @@ export async function updateGuildPlugin(
     config: isPluginConfig(result.config) ? result.config : {},
     configVersion: result.configVersion,
   };
+}
+
+function discordApiErrorResponse(error: DiscordApiError): Response {
+  if (error.status === 401) {
+    return Response.json({ error: 'Discord の再ログインが必要です' }, { status: 401 });
+  }
+
+  if (error.status === 403) {
+    return Response.json({ error: 'Discord API へのアクセスが拒否されました' }, { status: 403 });
+  }
+
+  if (error.status === 429) {
+    const retryAfterSeconds =
+      error.retryAfterMs === null ? null : Math.max(1, Math.ceil(error.retryAfterMs / 1_000));
+    return Response.json(
+      {
+        error: 'Discord API のレート制限中です。少し待ってから再試行してください',
+        retryAfterSeconds,
+      },
+      {
+        status: 429,
+        headers: retryAfterSeconds === null ? undefined : { 'Retry-After': String(retryAfterSeconds) },
+      },
+    );
+  }
+
+  if (error.status >= 500) {
+    return Response.json(
+      { error: 'Discord API が一時的に利用できません。しばらく待ってから再試行してください' },
+      { status: 503 },
+    );
+  }
+
+  return Response.json({ error: 'Discord API への接続に失敗しました' }, { status: 502 });
 }
 
 function isPluginConfig(value: unknown): value is PluginConfig {
