@@ -1,3 +1,8 @@
+import {
+  buildDiscordVisualEmbed,
+  discordEmbedField,
+  type DiscordEmbedPayload,
+} from '@herta/discord-ui';
 import { createLfgComponentId } from './component-id.js';
 import type { LfgPostRecord } from './service.js';
 
@@ -5,7 +10,7 @@ const ACTIVE_STATUSES = new Set(['open', 'full']);
 
 export interface LfgDiscordMessagePayload {
   content?: string;
-  embeds: Array<Record<string, unknown>>;
+  embeds: DiscordEmbedPayload[];
   components: Array<Record<string, unknown>>;
   allowed_mentions: { parse: string[] };
 }
@@ -24,27 +29,27 @@ export function buildLfgDiscordMessage(
     : '参加者なし';
   return {
     embeds: [
-      {
-        title: post.title,
+      buildDiscordVisualEmbed({
+        title: `🎮 ${post.title}`,
         description: post.description || '説明なし',
+        tone: post.status === 'open' ? 'success' : post.status === 'full' ? 'warning' : 'neutral',
+        plugin: 'lfg',
+        variant: post.status,
+        timestamp: post.updatedAt,
+        footer: `Herta • LFG • ${post.id} • v${post.version}`,
         fields: [
-          { name: 'ゲーム・イベント', value: post.game, inline: true },
-          {
-            name: '参加人数',
-            value: `${post.participantCount} / ${post.maxPlayers}`,
-            inline: true,
-          },
-          { name: '状態', value: post.status, inline: true },
-          {
-            name: '開始予定',
-            value: post.startTime ? discordTimestamp(post.startTime) : '未指定',
-            inline: true,
-          },
-          { name: '募集期限', value: discordTimestamp(post.expiresAt), inline: true },
-          { name: '参加者', value: participantText.slice(0, 1024) },
+          discordEmbedField('ゲーム・イベント', post.game, true),
+          discordEmbedField('参加人数', `${post.participantCount} / ${post.maxPlayers}`, true),
+          discordEmbedField('状態', statusLabel(post.status), true),
+          discordEmbedField(
+            '開始予定',
+            post.startTime ? discordTimestamp(post.startTime) : '未指定',
+            true,
+          ),
+          discordEmbedField('募集期限', discordTimestamp(post.expiresAt), true),
+          discordEmbedField('参加者', participantText),
         ],
-        footer: { text: `LFG ID: ${post.id} / v${post.version}` },
-      },
+      }),
     ],
     components: [
       {
@@ -92,6 +97,13 @@ export function formatLfgPostText(post: LfgPostRecord, participantIds: string[])
     `参加者: ${participantIds.length ? participantIds.map((id) => `<@${id}>`).join(' ') : 'なし'}`,
     `ID: \`${post.id}\``,
   ].join('\n');
+}
+
+function statusLabel(status: LfgPostRecord['status']): string {
+  if (status === 'open') return '🟢 募集中';
+  if (status === 'full') return '🟡 満員';
+  if (status === 'closed') return '⚪ 終了';
+  return status;
 }
 
 function discordTimestamp(value: Date): string {
