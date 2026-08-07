@@ -63,14 +63,19 @@ export default async function PluginDetailPage({
       {pluginId === 'moderation' ? (
         <>
           <ManagementLink
+            href={`/dashboard/guilds/${guildId}/moderation/enforcement`}
+            title="自動対応ポリシー"
+            description="検知ルールごとの危険度、警告、削除、Timeout、Role、ブラックリスト、Kick、BAN、緊急Alertを設定します。"
+          />
+          <ManagementLink
             href={`/dashboard/guilds/${guildId}/moderation`}
             title="モデレーションケース管理"
-            description="警告・タイムアウト・Kick・BANの履歴を検索・確認・更新します。"
+            description="検知フラグ・警告・削除・タイムアウト・Role・ブラックリスト・Kick・BANの履歴を検索・確認・更新します。"
           />
           <ManagementLink
             href={`/dashboard/guilds/${guildId}/moderation/detections`}
             title="自動検知レビュー"
-            description="本文を保存しないobserve履歴を確認し、正検知・誤検知・無視へ分類します。"
+            description="本文を保存しない検知履歴を確認し、正検知・誤検知・無視へ分類します。"
           />
         </>
       ) : null}
