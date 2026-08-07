@@ -80,11 +80,7 @@ function buildMessage(
   const fields = [
     discordEmbedField('状態', statusLabel(session.status), true),
     discordEmbedField('方式', modeLabel(session.mode), true),
-    discordEmbedField(
-      '参加人数',
-      `${session.participantCount} / ${session.maxParticipants}`,
-      true,
-    ),
+    discordEmbedField('参加人数', `${session.participantCount} / ${session.maxParticipants}`, true),
     discordEmbedField('チーム数', String(session.teamCount), true),
     discordEmbedField('受付期限', discordTimestamp(session.expiresAt), true),
     discordEmbedField('世代', String(session.generation), true),
@@ -94,7 +90,9 @@ function buildMessage(
     fields.push(
       discordEmbedField(
         `Team ${team.teamNumber}${session.mode === 'balanced' ? ` / 合計 ${team.totalScore}` : ''}`,
-        team.members.length ? team.members.map((member) => `<@${member.userId}>`).join('\n') : 'なし',
+        team.members.length
+          ? team.members.map((member) => `<@${member.userId}>`).join('\n')
+          : 'なし',
         session.teamCount <= 3,
       ),
     );
@@ -108,7 +106,8 @@ function buildMessage(
           session.status === 'open'
             ? '下のボタンから参加・辞退できます。balanced方式は未指定scoreを中立値0として扱います。'
             : 'チーム分け結果を表示しています。',
-        tone: session.status === 'open' ? 'info' : session.status === 'split' ? 'success' : 'neutral',
+        tone:
+          session.status === 'open' ? 'info' : session.status === 'split' ? 'success' : 'neutral',
         plugin: 'team-split',
         variant: session.status === 'split' ? 'result' : session.status,
         timestamp: session.updatedAt,

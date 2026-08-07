@@ -48,9 +48,7 @@ describe('LFG presentation', () => {
 
   it('募集カードへHerta生成画像と安全なmention設定を付与する', () => {
     const payload = buildLfgDiscordMessage(POST, PARTICIPANT_IDS, COMPONENT_SECRET);
-    expect(payload.embeds[0]?.image?.url).toBe(
-      'https://herta.ivrm.jp/api/discord-assets/lfg/open',
-    );
+    expect(payload.embeds[0]?.image?.url).toBe('https://herta.ivrm.jp/api/discord-assets/lfg/open');
     expect(payload.allowed_mentions.parse).toEqual([]);
   });
 });

@@ -448,6 +448,9 @@ importers:
 
   plugins/lfg:
     dependencies:
+      '@herta/discord-ui':
+        specifier: workspace:*
+        version: link:../../packages/discord-ui
       '@herta/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
@@ -499,6 +502,9 @@ importers:
 
   plugins/team-split:
     dependencies:
+      '@herta/discord-ui':
+        specifier: workspace:*
+        version: link:../../packages/discord-ui
       '@herta/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
