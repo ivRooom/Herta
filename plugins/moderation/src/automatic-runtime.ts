@@ -405,14 +405,8 @@ async function executeAutomaticDiscordAction(
       await message.delete();
       return;
     case 'warn_delete': {
-      let warningError: unknown;
-      try {
-        await sendAutomaticWarning(message, policy, reason);
-      } catch (error) {
-        warningError = error;
-      }
       await message.delete();
-      if (warningError) throw warningError;
+      await sendAutomaticWarning(message, policy, reason);
       return;
     }
     case 'timeout':
