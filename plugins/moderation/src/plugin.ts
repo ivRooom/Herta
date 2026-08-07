@@ -14,17 +14,23 @@ import {
   getModerationCase,
   listModerationCases,
   type ModerationAction,
-  type ModerationCaseAction,
   type ModerationCaseRecord,
   type ModerationPrismaClient,
 } from './service.js';
+import {
+  actionLabel,
+  buildModerationCaseEmbed,
+  buildModerationHistoryEmbed,
+  buildModerationStatusEmbed,
+  type DiscordEmbedPayload,
+  type DiscordVisualMessagePayload,
+} from './discord-ui.js';
 
 const EPHEMERAL_FLAG = 64;
 const KICK_MEMBERS_PERMISSION = 2n;
 const BAN_MEMBERS_PERMISSION = 4n;
 const MANAGE_MESSAGES_PERMISSION = 8192n;
 const MODERATE_MEMBERS_PERMISSION = 1099511627776n;
-const MAX_RESPONSE_LENGTH = 1900;
 const HISTORY_PAGE_SIZE = 5;
 
 interface PermissionSet {
@@ -91,11 +97,7 @@ interface ModerationCommandInteraction {
   followUp(options: ModerationReplyOptions): Promise<unknown>;
 }
 
-interface ModerationReplyOptions {
-  content: string;
-  flags?: number;
-  allowedMentions: { parse: [] };
-}
+type ModerationReplyOptions = DiscordVisualMessagePayload;
 
 type ModerationRuntimeContext = PluginRuntimeContext<
   ModerationConfig,
@@ -148,7 +150,13 @@ async function executeModerationCommand(
       const moderationCase = await getModerationCase(context.prisma, guildId, caseNumber);
       await respond(
         interaction,
-        moderationCase ? formatCase(moderationCase) : `Case #${caseNumber} は見つかりません`,
+        moderationCase
+          ? buildModerationCaseEmbed(moderationCase)
+          : buildModerationStatusEmbed({
+              title: 'Caseが見つかりません',
+              description: `Case #${caseNumber} は見つかりません。`,
+              variant: 'warning',
+            }),
         config.defaultResponseEphemeral,
       );
       return;
@@ -165,7 +173,12 @@ async function executeModerationCommand(
       });
       await respond(
         interaction,
-        formatHistory(target.id, result.items, result.page, result.totalPages),
+        buildModerationHistoryEmbed({
+          targetUserId: target.id,
+          items: result.items,
+          page: result.page,
+          totalPages: result.totalPages,
+        }),
         config.defaultResponseEphemeral,
       );
       return;
@@ -207,7 +220,11 @@ async function executeModerationCommand(
       );
       await respond(
         interaction,
-        'Discord上の操作に失敗しました。Bot権限とロール階層を確認してください',
+        buildModerationStatusEmbed({
+          title: '❌ Discord上の操作に失敗',
+          description: 'Bot権限・ロール階層・対象ユーザーの状態を確認してください。',
+          variant: 'failed',
+        }),
         true,
       );
       return;
@@ -233,12 +250,24 @@ async function executeModerationCommand(
 
     await respond(
       interaction,
-      `Case #${moderationCase.caseNumber} として${actionLabel(action)}を記録しました`,
+      buildModerationStatusEmbed({
+        title: '✅ Moderation操作を記録しました',
+        description: `Case #${moderationCase.caseNumber} として「${actionLabel(action)}」を記録しました。`,
+        variant: 'case',
+      }),
       config.defaultResponseEphemeral,
     );
   } catch (error) {
     if (error instanceof ModerationValidationError) {
-      await respond(interaction, error.message, true);
+      await respond(
+        interaction,
+        buildModerationStatusEmbed({
+          title: '⚠️ 操作を実行できません',
+          description: error.message,
+          variant: 'warning',
+        }),
+        true,
+      );
       return;
     }
 
@@ -246,7 +275,15 @@ async function executeModerationCommand(
       { err: error, guildId, userId: interaction.user.id, subcommand },
       'Moderation Commandの実行に失敗しました',
     );
-    await respond(interaction, 'Moderation Commandの実行中にエラーが発生しました', true);
+    await respond(
+      interaction,
+      buildModerationStatusEmbed({
+        title: '❌ Moderationエラー',
+        description: 'Moderation Commandの実行中にエラーが発生しました。',
+        variant: 'failed',
+      }),
+      true,
+    );
   }
 }
 
@@ -399,7 +436,7 @@ async function notifyTarget(
 ): Promise<void> {
   try {
     await user.send({
-      content: formatTargetNotification(moderationCase),
+      embeds: [buildModerationCaseEmbed(moderationCase, { targetNotification: true })],
       allowedMentions: { parse: [] },
     });
   } catch (error) {
@@ -420,7 +457,7 @@ async function sendModerationLog(
     const channel = guild.channels.cache.get(channelId);
     if (!channel?.isTextBased()) throw new Error('ログチャンネルが見つかりません');
     await channel.send({
-      content: formatCase(moderationCase),
+      embeds: [buildModerationCaseEmbed(moderationCase)],
       allowedMentions: { parse: [] },
     });
   } catch (error) {
@@ -429,78 +466,6 @@ async function sendModerationLog(
       'モデレーションログの送信に失敗しました',
     );
   }
-}
-
-function formatCase(moderationCase: ModerationCaseRecord): string {
-  const lines = [
-    `**Moderation Case #${moderationCase.caseNumber}**`,
-    `種別: ${actionLabel(moderationCase.action)}`,
-    `状態: ${statusLabel(moderationCase.status)}`,
-    `対象: ${moderationCase.targetUserId}`,
-    `実行者: ${moderationCase.moderatorUserId}`,
-  ];
-  if (moderationCase.durationSeconds) {
-    lines.push(`期間: ${Math.ceil(moderationCase.durationSeconds / 60)}分`);
-  }
-  if (moderationCase.reason) lines.push(`理由: ${moderationCase.reason}`);
-  lines.push(`作成日時: ${moderationCase.createdAt.toISOString()}`);
-  return truncate(lines.join('\n'), MAX_RESPONSE_LENGTH);
-}
-
-function formatHistory(
-  targetUserId: string,
-  items: ModerationCaseRecord[],
-  page: number,
-  totalPages: number,
-): string {
-  if (items.length === 0) return `ユーザー ${targetUserId} のケースはありません`;
-  const body = items
-    .map((item) => {
-      const reason = item.reason ? ` — ${truncate(item.reason, 120)}` : '';
-      return `**#${item.caseNumber}** ${actionLabel(item.action)} / ${statusLabel(item.status)}${reason}`;
-    })
-    .join('\n');
-  return truncate(
-    `ユーザー ${targetUserId} の履歴 (${page}/${totalPages})\n\n${body}`,
-    MAX_RESPONSE_LENGTH,
-  );
-}
-
-function formatTargetNotification(moderationCase: ModerationCaseRecord): string {
-  const lines = [
-    `このサーバーで${actionLabel(moderationCase.action)}が実行されました。`,
-    `Case: #${moderationCase.caseNumber}`,
-  ];
-  if (moderationCase.reason) lines.push(`理由: ${moderationCase.reason}`);
-  if (moderationCase.durationSeconds) {
-    lines.push(`期間: ${Math.ceil(moderationCase.durationSeconds / 60)}分`);
-  }
-  return truncate(lines.join('\n'), MAX_RESPONSE_LENGTH);
-}
-
-function actionLabel(action: ModerationCaseAction): string {
-  const labels: Record<ModerationCaseAction, string> = {
-    flag: '検知フラグ',
-    warn: '警告',
-    delete: 'メッセージ削除',
-    warn_delete: '警告 + 削除',
-    timeout: 'タイムアウト',
-    role: 'Role付与',
-    blacklist: 'ブラックリスト',
-    kick: 'Kick',
-    ban: 'BAN',
-  };
-  return labels[action];
-}
-
-function statusLabel(status: ModerationCaseRecord['status']): string {
-  const labels: Record<ModerationCaseRecord['status'], string> = {
-    active: '有効',
-    completed: '完了',
-    revoked: '解除済み',
-    failed: '失敗',
-  };
-  return labels[status];
 }
 
 function normalizeAction(value: string): ModerationAction {
@@ -526,17 +491,21 @@ function requiredInteger(interaction: ModerationCommandInteraction, name: string
   return value;
 }
 
-function truncate(value: string, maxLength: number): string {
-  return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
-}
-
 async function respond(
   interaction: ModerationCommandInteraction,
-  content: string,
+  message: string | DiscordEmbedPayload,
   ephemeral: boolean,
 ): Promise<void> {
+  const embed =
+    typeof message === 'string'
+      ? buildModerationStatusEmbed({
+          title: 'Herta Moderation',
+          description: message,
+          variant: 'info',
+        })
+      : message;
   const options: ModerationReplyOptions = {
-    content: truncate(content, MAX_RESPONSE_LENGTH),
+    embeds: [embed],
     allowedMentions: { parse: [] },
     ...(ephemeral ? { flags: EPHEMERAL_FLAG } : {}),
   };

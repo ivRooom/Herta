@@ -35,13 +35,7 @@ export interface DiscordVisualMessagePayload {
   flags?: number;
 }
 
-export type ModerationVisualVariant =
-  | 'info'
-  | 'warning'
-  | 'high'
-  | 'critical'
-  | 'failed'
-  | 'case';
+export type ModerationVisualVariant = 'info' | 'warning' | 'high' | 'critical' | 'failed' | 'case';
 
 const VARIANT_COLORS: Record<ModerationVisualVariant, number> = {
   info: 0x6d67e4,
@@ -80,7 +74,10 @@ const STATUS_LABELS: Record<ModerationCaseRecord['status'], string> = {
 };
 
 export function moderationVisualImageUrl(variant: ModerationVisualVariant): string {
-  const baseUrl = (process.env.HERTA_PUBLIC_BASE_URL ?? DEFAULT_PUBLIC_BASE_URL).replace(/\/+$/u, '');
+  const baseUrl = (process.env.HERTA_PUBLIC_BASE_URL ?? DEFAULT_PUBLIC_BASE_URL).replace(
+    /\/+$/u,
+    '',
+  );
   return `${baseUrl}/api/discord-assets/moderation/${variant}`;
 }
 
@@ -166,8 +163,14 @@ export function buildModerationCaseEmbed(
 
   if (!options.targetNotification) {
     fields.push(
-      field('対象ユーザー', `<@${moderationCase.targetUserId}>\n\`${moderationCase.targetUserId}\``),
-      field('実行者', `<@${moderationCase.moderatorUserId}>\n\`${moderationCase.moderatorUserId}\``),
+      field(
+        '対象ユーザー',
+        `<@${moderationCase.targetUserId}>\n\`${moderationCase.targetUserId}\``,
+      ),
+      field(
+        '実行者',
+        `<@${moderationCase.moderatorUserId}>\n\`${moderationCase.moderatorUserId}\``,
+      ),
     );
   }
   if (moderationCase.durationSeconds) {
