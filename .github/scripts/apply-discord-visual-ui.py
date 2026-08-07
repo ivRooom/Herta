@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 def replace_once(path: Path, old: str, new: str) -> None:
@@ -7,6 +8,14 @@ def replace_once(path: Path, old: str, new: str) -> None:
     if count != 1:
         raise SystemExit(f'{path}: expected exactly one match, got {count}')
     path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+
+def replace_regex_once(path: Path, pattern: str, replacement: str) -> None:
+    text = path.read_text(encoding='utf-8')
+    updated, count = re.subn(pattern, replacement, text, count=1, flags=re.DOTALL)
+    if count != 1:
+        raise SystemExit(f'{path}: regex expected exactly one match, got {count}')
+    path.write_text(updated, encoding='utf-8')
 
 
 automatic = Path('plugins/moderation/src/automatic-runtime.ts')
@@ -36,33 +45,6 @@ replace_once(
     "  await message.author.send({\n    embeds: [buildAutomaticWarningEmbed(policy, content)],\n    allowedMentions: { parse: [] },\n  });\n",
 )
 
-old_alert = """  const severity = selected.policy.severity.toUpperCase();
-  const matched = findings.map((item) => item.policy.selector).join(', ');
-  const jumpUrl = `https://discord.com/channels/${context.guildId}/${message.channelId}/${message.id}`;
-  const mentionPrefix = config.autoAlertMentionRoleIds.map((roleId) => `<@&${roleId}>`).join(' ');
-  const lines = [
-    mentionPrefix,
-    failure ? '🚨 **自動Moderation対応失敗**' : `⚠️ **Moderation緊急検知 [${severity}]**`,
-    `危険度: **${severity}**`,
-    `対象ユーザー: <@${message.author.id}> (${message.author.id})`,
-    `対象チャンネル: <#${message.channelId}>`,
-    `検知ルール: ${matched}`,
-    `Action: **${selected.policy.action}**`,
-    `メッセージ: ${jumpUrl}`,
-    `検知日時: <t:${Math.floor(message.createdTimestamp / 1000)}:F>`,
-  ].filter(Boolean);
-  if (failure) {
-    lines.push(`エラー: ${formatError(error)}`);
-  }
-  if (config.autoAlertIncludeExcerpt) {
-    lines.push(`本文プレビュー:\n\`\`\`\n${sanitizeExcerpt(message.content)}\n\`\`\``);
-  }
-
-  await channel.send({
-    content: lines.join('\n'),
-    allowedMentions: { parse: [], roles: config.autoAlertMentionRoleIds },
-  });
-"""
 new_alert = """  const jumpUrl = `https://discord.com/channels/${context.guildId}/${message.channelId}/${message.id}`;
   const mentionPrefix = config.autoAlertMentionRoleIds.map((roleId) => `<@&${roleId}>`).join(' ');
   const embed = buildAutomaticAlertEmbed({
@@ -84,7 +66,11 @@ new_alert = """  const jumpUrl = `https://discord.com/channels/${context.guildId
     allowedMentions: { parse: [], roles: config.autoAlertMentionRoleIds },
   });
 """
-replace_once(automatic, old_alert, new_alert)
+replace_regex_once(
+    automatic,
+    r"  const severity = selected\.policy\.severity\.toUpperCase\(\);.*?  await channel\.send\(\{\n    content: lines\.join\('\\n'\),\n    allowedMentions: \{ parse: \[\], roles: config\.autoAlertMentionRoleIds \},\n  \}\);\n",
+    new_alert,
+)
 
 replace_once(
     plugin,
@@ -147,9 +133,9 @@ replace_once(
     "    await channel.send({\n      embeds: [buildModerationCaseEmbed(moderationCase)],\n      allowedMentions: { parse: [] },\n    });\n",
 )
 
-start = plugin.read_text(encoding='utf-8').index('function formatCase(')
-end = plugin.read_text(encoding='utf-8').index('function normalizeAction(')
 text = plugin.read_text(encoding='utf-8')
+start = text.index('function formatCase(')
+end = text.index('function normalizeAction(')
 plugin.write_text(text[:start] + text[end:], encoding='utf-8')
 
 old_respond = """async function respond(
@@ -196,7 +182,6 @@ new_respond = """async function respond(
 """
 replace_once(plugin, old_respond, new_respond)
 
-# truncate helper is no longer needed in plugin.ts.
 text = plugin.read_text(encoding='utf-8')
 truncate_fn = """function truncate(value: string, maxLength: number): string {
   return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
