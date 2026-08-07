@@ -1,15 +1,20 @@
+import {
+  buildDiscordVisualEmbed,
+  discordEmbedField,
+  type DiscordEmbedPayload,
+} from '@herta/discord-ui';
 import { createTeamSplitComponentId } from './component-id.js';
 import type { TeamSplitParticipantRecord, TeamSplitSessionRecord } from './service.js';
 import type { TeamSplitTeam } from './split.js';
 
 export interface TeamSplitDiscordMessagePayload {
-  embeds: Array<Record<string, unknown>>;
+  embeds: DiscordEmbedPayload[];
   components: Array<Record<string, unknown>>;
   allowed_mentions: { parse: string[] };
 }
 
 export interface TeamSplitInteractionMessagePayload {
-  embeds: Array<Record<string, unknown>>;
+  embeds: DiscordEmbedPayload[];
   components: Array<Record<string, unknown>>;
   allowedMentions: { parse: string[] };
 }
@@ -58,7 +63,7 @@ function buildMessage(
   session: TeamSplitSessionRecord,
   participants: TeamSplitParticipantRecord[],
   secret: string,
-): { embeds: Array<Record<string, unknown>>; components: Array<Record<string, unknown>> } {
+): { embeds: DiscordEmbedPayload[]; components: Array<Record<string, unknown>> } {
   const active = session.status === 'open';
   const teams = readTeams(session.teams);
   const participantText = participants.length
@@ -72,43 +77,44 @@ function buildMessage(
         .join('\n')
     : '参加者なし';
 
-  const fields: Array<Record<string, unknown>> = [
-    { name: '状態', value: session.status, inline: true },
-    { name: '方式', value: session.mode, inline: true },
-    {
-      name: '参加人数',
-      value: `${session.participantCount} / ${session.maxParticipants}`,
-      inline: true,
-    },
-    { name: 'チーム数', value: String(session.teamCount), inline: true },
-    { name: '受付期限', value: discordTimestamp(session.expiresAt), inline: true },
-    { name: '世代', value: String(session.generation), inline: true },
-    { name: '参加者', value: participantText.slice(0, 1024) },
+  const fields = [
+    discordEmbedField('状態', statusLabel(session.status), true),
+    discordEmbedField('方式', modeLabel(session.mode), true),
+    discordEmbedField(
+      '参加人数',
+      `${session.participantCount} / ${session.maxParticipants}`,
+      true,
+    ),
+    discordEmbedField('チーム数', String(session.teamCount), true),
+    discordEmbedField('受付期限', discordTimestamp(session.expiresAt), true),
+    discordEmbedField('世代', String(session.generation), true),
+    discordEmbedField('参加者', participantText),
   ];
   for (const team of teams.slice(0, 10)) {
-    fields.push({
-      name: `Team ${team.teamNumber}${session.mode === 'balanced' ? ` / 合計 ${team.totalScore}` : ''}`,
-      value: team.members.length
-        ? team.members
-            .map((member) => `<@${member.userId}>`)
-            .join('\n')
-            .slice(0, 1024)
-        : 'なし',
-      inline: session.teamCount <= 3,
-    });
+    fields.push(
+      discordEmbedField(
+        `Team ${team.teamNumber}${session.mode === 'balanced' ? ` / 合計 ${team.totalScore}` : ''}`,
+        team.members.length ? team.members.map((member) => `<@${member.userId}>`).join('\n') : 'なし',
+        session.teamCount <= 3,
+      ),
+    );
   }
 
   return {
     embeds: [
-      {
-        title: session.title,
+      buildDiscordVisualEmbed({
+        title: `⚔️ ${session.title}`,
         description:
           session.status === 'open'
             ? '下のボタンから参加・辞退できます。balanced方式は未指定scoreを中立値0として扱います。'
-            : 'チーム結果は下記のとおりです。',
+            : 'チーム分け結果を表示しています。',
+        tone: session.status === 'open' ? 'info' : session.status === 'split' ? 'success' : 'neutral',
+        plugin: 'team-split',
+        variant: session.status === 'split' ? 'result' : session.status,
+        timestamp: session.updatedAt,
+        footer: `Herta • Team Split • ${session.id} • v${session.version}`,
         fields,
-        footer: { text: `Team Split ID: ${session.id} / v${session.version}` },
-      },
+      }),
     ],
     components: [
       {
@@ -132,6 +138,17 @@ function buildMessage(
       },
     ],
   };
+}
+
+function statusLabel(status: TeamSplitSessionRecord['status']): string {
+  if (status === 'open') return '🔵 受付中';
+  if (status === 'split') return '🟢 チーム分け済み';
+  if (status === 'closed') return '⚪ 終了';
+  return status;
+}
+
+function modeLabel(mode: TeamSplitSessionRecord['mode']): string {
+  return mode === 'balanced' ? 'バランス' : 'ランダム';
 }
 
 function readTeams(value: unknown): TeamSplitTeam[] {
