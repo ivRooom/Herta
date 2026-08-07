@@ -20,6 +20,30 @@ test('不足設定を既定値で補完する', () => {
   assert.equal(config.autoMaxMessageLength, 2000);
 });
 
+test('既存JSONの基本設定をGUI読込時に保持する', () => {
+  const config = toModerationConfigDraft({
+    requireReason: false,
+    dmTarget: false,
+    logChannelId: '444444444444444444',
+    defaultResponseEphemeral: false,
+    maxReasonLength: 750,
+    caseRetentionDays: 730,
+    allowedModeratorRoleIds: ['555555555555555555'],
+    automaticMode: 'observe',
+    autoMaxMessageLength: 3500,
+  });
+
+  assert.equal(config.requireReason, false);
+  assert.equal(config.dmTarget, false);
+  assert.equal(config.logChannelId, '444444444444444444');
+  assert.equal(config.defaultResponseEphemeral, false);
+  assert.equal(config.maxReasonLength, 750);
+  assert.equal(config.caseRetentionDays, 730);
+  assert.deepEqual(config.allowedModeratorRoleIds, ['555555555555555555']);
+  assert.equal(config.automaticMode, 'observe');
+  assert.equal(config.autoMaxMessageLength, 3500);
+});
+
 test('既存JSONの自動Case・built-in・除外設定をGUI読込時に保持する', () => {
   const config = toModerationConfigDraft({
     automaticMode: 'observe',
