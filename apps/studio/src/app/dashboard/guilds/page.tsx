@@ -1,7 +1,8 @@
 import Link from 'next/link';
-import { Bot, ChevronRight, ExternalLink, ServerOff } from 'lucide-react';
+import { AlertTriangle, Bot, ChevronRight, ExternalLink, ServerOff } from 'lucide-react';
 import { getDiscordAccessToken } from '@/lib/session';
 import { getManageableGuilds } from '@/lib/guilds';
+import { DiscordApiError } from '@/lib/discord';
 import { getDiscordGuildInstallUrl } from '@/lib/discord-install';
 import { GuildAvatar } from '@/components/guild-avatar';
 import { ReconnectNotice } from '@/components/reconnect-notice';
@@ -22,7 +23,29 @@ export default async function GuildsPage() {
     );
   }
 
-  const guilds = await getManageableGuilds(accessToken);
+  let guilds;
+  try {
+    guilds = await getManageableGuilds(accessToken);
+  } catch (error) {
+    if (!(error instanceof DiscordApiError)) throw error;
+    if (error.status === 401) {
+      return (
+        <div>
+          <PageHeader />
+          <div className="mt-8">
+            <ReconnectNotice />
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div>
+        <PageHeader />
+        <DiscordApiNotice error={error} />
+      </div>
+    );
+  }
+
   const installUrl = getDiscordGuildInstallUrl();
 
   return (
@@ -63,6 +86,43 @@ export default async function GuildsPage() {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+function DiscordApiNotice({ error }: { error: DiscordApiError }) {
+  const retryAfterSeconds =
+    error.retryAfterMs === null ? null : Math.max(1, Math.ceil(error.retryAfterMs / 1_000));
+  const title =
+    error.status === 429
+      ? 'Discord API のレート制限中です'
+      : error.status >= 500
+        ? 'Discord API が一時的に利用できません'
+        : 'Discord API へ接続できません';
+  const description =
+    error.status === 429
+      ? retryAfterSeconds === null
+        ? '少し待ってからサーバー一覧を再取得してください。'
+        : `約 ${retryAfterSeconds} 秒待ってからサーバー一覧を再取得してください。`
+      : error.status === 403
+        ? 'Discord からサーバー一覧を取得する権限がありません。必要に応じて再ログインしてください。'
+        : 'しばらく待ってからサーバー一覧を再取得してください。';
+
+  return (
+    <div className="mt-8 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-6">
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+        <div className="min-w-0">
+          <h2 className="font-medium">{title}</h2>
+          <p className="mt-1 text-sm leading-relaxed text-muted">{description}</p>
+          <a
+            href="/dashboard/guilds"
+            className="mt-4 inline-flex rounded-lg border border-border bg-background px-4 py-2 text-sm font-semibold transition-colors hover:bg-surface"
+          >
+            サーバー一覧を再試行
+          </a>
+        </div>
+      </div>
     </div>
   );
 }
