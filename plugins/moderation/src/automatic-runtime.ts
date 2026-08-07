@@ -13,6 +13,7 @@ import {
 import {
   getActiveModerationBlacklistEntry,
   getModerationDetectionIdForFinding,
+  hasActiveModerationBlacklistEntries,
   recordModerationAutomaticEventAudit,
   upsertModerationBlacklistEntry,
 } from './enforcement-service.js';
@@ -133,6 +134,7 @@ type InsertedFinding = {
 };
 
 const detectors = new Map<string, AutomaticModerationDetector>();
+// 現在の本番はBot単一プロセス構成。将来shard/複数process化する場合はRedis共有へ移行する。
 const alertCooldowns = new Map<string, number>();
 
 export function createModerationAutomaticEvents(
@@ -379,7 +381,15 @@ async function executeAutomaticEnforcement(
       '自動Moderation操作に失敗しました',
     );
     const enforcementConfig = normalizeModerationEnforcementConfig(context.config);
-    if (enforcementConfig.autoAlertChannelId) {
+    if (
+      enforcementConfig.autoAlertChannelId &&
+      shouldSendAlert(
+        context.guildId,
+        message.author.id,
+        `failed:${selected.policy.selector}`,
+        enforcementConfig.autoAlertCooldownSeconds,
+      )
+    ) {
       await sendUrgentAlert(context, message, selected, allFindings, true, actionError).catch(
         (error) => {
           context.logger.warn({ err: error }, '自動Moderation失敗Alertの送信に失敗しました');
@@ -399,14 +409,14 @@ async function executeAutomaticDiscordAction(
     case 'observe':
       return;
     case 'warn':
-      await sendAutomaticWarning(message, policy, reason);
+      await sendAutomaticWarning(message, policy);
       return;
     case 'delete':
       await message.delete();
       return;
     case 'warn_delete': {
       await message.delete();
-      await sendAutomaticWarning(message, policy, reason);
+      await sendAutomaticWarning(message, policy);
       return;
     }
     case 'timeout':
@@ -434,11 +444,10 @@ async function executeAutomaticDiscordAction(
 async function sendAutomaticWarning(
   message: ModerationMessage,
   policy: AutomaticEnforcementPolicy,
-  reason: string,
 ): Promise<void> {
   const content =
     policy.warningMessage ??
-    `このサーバーでルール違反の可能性があるメッセージを検知しました。\n${reason}`;
+    'このサーバーでルール違反の可能性があるメッセージを検知しました。詳細はサーバーのモデレーターへお問い合わせください。';
   await message.author.send({ content, allowedMentions: { parse: [] } });
 }
 
@@ -461,6 +470,9 @@ function assertAutomaticTargetCanBeModerated(
     !bot.permissions.has(MANAGE_MESSAGES_PERMISSION)
   ) {
     throw new Error('Botにメッセージ管理権限がありません');
+  }
+  if ((action === 'delete' || action === 'warn_delete') && message.deletable === false) {
+    throw new Error('対象メッセージを削除できません');
   }
   if (
     action === 'warn' ||
@@ -554,14 +566,30 @@ async function enforceBlacklistOnJoin(
   member: ModerationGuildMemberJoin,
 ): Promise<void> {
   if (member.user.bot) return;
+  if (!(await hasActiveModerationBlacklistEntries(context.prisma, context.guildId))) return;
   const entry = await getActiveModerationBlacklistEntry(context.prisma, context.guildId, member.id);
   if (!entry) return;
   const actorId = getBotActorId(context.client);
-  if (!actorId) return;
+  if (!actorId) {
+    context.logger.error(
+      { guildId: context.guildId, targetUserId: member.id },
+      'Bot User IDを取得できずブラックリスト再参加BANを中止しました',
+    );
+    return;
+  }
   const reason = entry.reason ?? 'Hertaブラックリストに登録されています';
   try {
     if (member.bannable === false) throw new Error('対象ユーザーをBANできません');
     await member.ban({ reason });
+  } catch (error) {
+    context.logger.error(
+      { err: error, guildId: context.guildId, targetUserId: member.id },
+      'ブラックリスト対象ユーザーの再参加BANに失敗しました',
+    );
+    return;
+  }
+
+  try {
     await recordModerationAutomaticEventAudit(context.prisma, {
       guildId: context.guildId,
       actorId,
@@ -572,9 +600,9 @@ async function enforceBlacklistOnJoin(
       severity: 'critical',
     });
   } catch (error) {
-    context.logger.error(
+    context.logger.warn(
       { err: error, guildId: context.guildId, targetUserId: member.id },
-      'ブラックリスト対象ユーザーの再参加BANに失敗しました',
+      '再参加BANのAudit Log保存に失敗しました',
     );
   }
 }
@@ -637,6 +665,11 @@ function shouldSendAlert(
     const threshold = now - Math.max(cooldownSeconds, 60) * 1000;
     for (const [candidate, at] of alertCooldowns) {
       if (at < threshold) alertCooldowns.delete(candidate);
+    }
+    while (alertCooldowns.size > 10_000) {
+      const oldestKey = alertCooldowns.keys().next().value as string | undefined;
+      if (!oldestKey) break;
+      alertCooldowns.delete(oldestKey);
     }
   }
   return true;

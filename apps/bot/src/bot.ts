@@ -56,6 +56,10 @@ function resolveGatewayIntents(logger: Logger): GatewayIntentBits[] {
   if (guildMembersIntentEnabled()) {
     intents.push(GatewayIntentBits.GuildMembers);
     logger.info('Moderationブラックリスト再参加監視用Guild Members Intentを有効化します');
+  } else {
+    logger.warn(
+      'DISCORD_ENABLE_GUILD_MEMBERS_INTENTが無効なためブラックリスト再参加BANは実行されません',
+    );
   }
   return intents;
 }
