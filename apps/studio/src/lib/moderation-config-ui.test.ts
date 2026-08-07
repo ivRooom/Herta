@@ -4,9 +4,11 @@ import {
   DEFAULT_MODERATION_CONFIG_DRAFT,
   appendCustomRule,
   customRuleSelector,
+  getEnforcementPolicy,
   removeCustomRule,
   setAutoCaseRule,
   setBuiltInRuleEnabled,
+  setEnforcementPolicy,
   toModerationConfigDraft,
   updateCustomRule,
 } from './moderation-config-ui.ts';
@@ -16,6 +18,8 @@ test('不足設定を既定値で補完する', () => {
   assert.equal(config.automaticMode, 'observe');
   assert.deepEqual(config.autoContainsWords, ['test']);
   assert.equal(config.requireReason, true);
+  assert.equal(config.autoEnforcementEnabled, false);
+  assert.equal(config.autoAlertMinimumSeverity, 'high');
   assert.equal(config.autoCaseOnConfirmedEnabled, false);
   assert.equal(config.autoMaxMessageLength, 2000);
 });
@@ -81,6 +85,36 @@ test('既存JSONの自動Case・built-in・除外設定をGUI読込時に保持�
   assert.deepEqual(config.autoExemptUserIds, ['333333333333333333']);
 });
 
+test('自動対応・緊急Alert設定をGUI読込時に保持する', () => {
+  const config = toModerationConfigDraft({
+    autoEnforcementEnabled: true,
+    autoEnforcementPolicies: [
+      {
+        selector: 'word_contains:0',
+        action: 'timeout',
+        severity: 'critical',
+        timeoutMinutes: 30,
+        roleId: null,
+        warningMessage: null,
+        banDeleteMessageSeconds: 0,
+      },
+    ],
+    autoAlertChannelId: '999999999999999999',
+    autoAlertMinimumSeverity: 'high',
+    autoAlertMentionRoleIds: ['888888888888888888'],
+    autoAlertIncludeExcerpt: true,
+    autoAlertCooldownSeconds: 90,
+  });
+
+  assert.equal(config.autoEnforcementEnabled, true);
+  assert.equal(getEnforcementPolicy(config, 'word_contains:0').action, 'timeout');
+  assert.equal(getEnforcementPolicy(config, 'word_contains:0').severity, 'critical');
+  assert.equal(config.autoAlertChannelId, '999999999999999999');
+  assert.deepEqual(config.autoAlertMentionRoleIds, ['888888888888888888']);
+  assert.equal(config.autoAlertIncludeExcerpt, true);
+  assert.equal(config.autoAlertCooldownSeconds, 90);
+});
+
 test('カスタムルールを追加・編集できる', () => {
   const added = appendCustomRule(DEFAULT_MODERATION_CONFIG_DRAFT, 'word_contains', 'foo');
   assert.deepEqual(added.autoContainsWords, ['foo']);
@@ -108,6 +142,34 @@ test('カスタムルール削除時に自動Case selectorのindexを詰め直�
     'word_contains:1',
     'invite_link',
   ]);
+});
+
+test('カスタムルール削除時に自動対応Policyも削除・再採番する', () => {
+  let config = {
+    ...DEFAULT_MODERATION_CONFIG_DRAFT,
+    autoContainsWords: ['a', 'b', 'c'],
+  };
+  config = setEnforcementPolicy(config, 'word_contains:0', {
+    action: 'warn',
+    severity: 'medium',
+  });
+  config = setEnforcementPolicy(config, 'word_contains:1', {
+    action: 'ban',
+    severity: 'critical',
+  });
+  config = setEnforcementPolicy(config, 'word_contains:2', {
+    action: 'timeout',
+    severity: 'high',
+  });
+
+  const removed = removeCustomRule(config, 'word_contains', 1);
+  assert.deepEqual(removed.autoContainsWords, ['a', 'c']);
+  assert.equal(getEnforcementPolicy(removed, 'word_contains:0').action, 'warn');
+  assert.equal(getEnforcementPolicy(removed, 'word_contains:1').action, 'timeout');
+  assert.equal(
+    removed.autoEnforcementPolicies.some((policy) => policy.action === 'ban'),
+    false,
+  );
 });
 
 test('自動Case selectorを重複なく追加・削除する', () => {
