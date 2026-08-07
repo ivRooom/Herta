@@ -29,16 +29,21 @@ jobs:
           cache: pnpm
 
       - name: Update workspace lockfile
-        run: pnpm install
+        run: pnpm install --no-frozen-lockfile
 
-      - name: Format
+      - name: Format and verify common package
         run: |
           pnpm exec prettier --write \
             packages/discord-ui/package.json \
             packages/discord-ui/tsconfig.json \
             packages/discord-ui/src/index.ts \
+            packages/discord-ui/src/index.test.ts \
             plugins/moderation/package.json \
             plugins/moderation/src/discord-ui.ts
+          pnpm --filter @herta/discord-ui typecheck
+          pnpm --filter @herta/discord-ui test
+          pnpm --filter @herta/plugin-moderation typecheck
+          pnpm --filter @herta/plugin-moderation test
           rm -f .github/workflows/sync-discord-visual-kit-lock.yml
 
       - name: Commit
