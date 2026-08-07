@@ -26,7 +26,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: |
           node scripts/add-moderation-blacklist-prisma-model.mjs
-          pnpm exec prisma format --schema packages/db/prisma/schema.prisma
+          pnpm --dir packages/db exec prisma format --schema prisma/schema.prisma
       - run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
