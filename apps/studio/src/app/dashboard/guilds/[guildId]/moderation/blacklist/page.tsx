@@ -84,7 +84,9 @@ export default async function ModerationBlacklistPage({
         </div>
       ) : entries.length === 0 ? (
         <div className="mt-6 rounded-2xl border border-dashed border-border p-10 text-center text-sm text-muted">
-          {includeInactive ? 'ブラックリスト登録はありません。' : '有効なブラックリスト登録はありません。'}
+          {includeInactive
+            ? 'ブラックリスト登録はありません。'
+            : '有効なブラックリスト登録はありません。'}
         </div>
       ) : (
         <div className="mt-6 grid gap-4">

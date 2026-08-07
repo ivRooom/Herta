@@ -34,9 +34,10 @@ export function ModerationBlacklistToggle({
           body: JSON.stringify({ active: next }),
         },
       );
-      const result = (await response.json().catch(() => null)) as
-        | { error?: unknown; entry?: { active?: boolean } }
-        | null;
+      const result = (await response.json().catch(() => null)) as {
+        error?: unknown;
+        entry?: { active?: boolean };
+      } | null;
       if (!response.ok) {
         throw new Error(typeof result?.error === 'string' ? result.error : '更新に失敗しました');
       }
