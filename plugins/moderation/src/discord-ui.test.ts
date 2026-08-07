@@ -127,4 +127,20 @@ describe('Discord visual UI', () => {
       }
     }
   });
+
+  it('公開Base URLを指定した場合は末尾slashを除去して利用する', () => {
+    const previous = process.env.HERTA_PUBLIC_BASE_URL;
+    try {
+      process.env.HERTA_PUBLIC_BASE_URL = 'https://visual.herta.example///';
+      expect(moderationVisualImageUrl('critical')).toBe(
+        'https://visual.herta.example/api/discord-assets/moderation/critical',
+      );
+    } finally {
+      if (previous === undefined) {
+        delete process.env.HERTA_PUBLIC_BASE_URL;
+      } else {
+        process.env.HERTA_PUBLIC_BASE_URL = previous;
+      }
+    }
+  });
 });
