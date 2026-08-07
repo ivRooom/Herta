@@ -125,7 +125,7 @@ export async function createModerationCase(
   const originDetectionId = normalizeNullableUuid(input.originDetectionId, '元検知ID');
 
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', input.guildId);
+    await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', input.guildId);
     if (originDetectionId) {
       const originRows = await tx.$queryRawUnsafe<Array<{ id: string }>>(
         `SELECT id

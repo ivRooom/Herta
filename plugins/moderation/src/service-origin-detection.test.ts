@@ -6,11 +6,12 @@ const detectionId = '123e4567-e89b-42d3-a456-426614174000';
 
 describe('Moderation Case origin detection', () => {
   it('別Guildまたは存在しない元検知をケースへ関連付けない', async () => {
-    const query = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    const execute = vi.fn().mockResolvedValue(0);
+    const query = vi.fn().mockResolvedValueOnce([]);
     const auditCreate = vi.fn().mockResolvedValue({});
     const tx = {
       $queryRawUnsafe: query,
-      $executeRawUnsafe: vi.fn(),
+      $executeRawUnsafe: execute,
       auditLog: { create: auditCreate },
     } as unknown as ModerationTransactionClient;
     const prisma = {
@@ -30,11 +31,12 @@ describe('Moderation Case origin detection', () => {
       }),
     ).rejects.toThrow('元検知がGuild内に見つかりません');
 
-    const [lookupSql, ...lookupValues] = query.mock.calls[1] as [string, ...unknown[]];
+    expect(execute).toHaveBeenCalledWith('SELECT pg_advisory_xact_lock(hashtext($1))', '100');
+    const [lookupSql, ...lookupValues] = query.mock.calls[0] as [string, ...unknown[]];
     expect(lookupSql).toContain('WHERE guild_id = $1');
     expect(lookupSql).toContain('id = $2::uuid');
     expect(lookupValues).toEqual(['100', detectionId]);
-    expect(query).toHaveBeenCalledTimes(2);
+    expect(query).toHaveBeenCalledTimes(1);
     expect(auditCreate).not.toHaveBeenCalled();
   });
 });
