@@ -22,6 +22,11 @@ import {
   type ModerationCaseAction,
   type ModerationPrismaClient,
 } from './service.js';
+import {
+  buildAutomaticAlertEmbed,
+  buildAutomaticWarningEmbed,
+  type DiscordVisualMessagePayload,
+} from './discord-ui.js';
 
 const KICK_MEMBERS_PERMISSION = 2n;
 const BAN_MEMBERS_PERMISSION = 4n;
@@ -47,7 +52,7 @@ interface ModerationRoleManager {
 interface ModerationAutomaticUser {
   id: string;
   bot: boolean;
-  send(options: { content: string; allowedMentions: { parse: [] } }): Promise<unknown>;
+  send(options: DiscordVisualMessagePayload): Promise<unknown>;
 }
 
 interface ModerationAutomaticMember {
@@ -64,10 +69,7 @@ interface ModerationAutomaticMember {
 
 interface ModerationTextChannel {
   isTextBased(): boolean;
-  send(options: {
-    content: string;
-    allowedMentions: { parse: []; roles?: string[] };
-  }): Promise<unknown>;
+  send(options: DiscordVisualMessagePayload): Promise<unknown>;
 }
 
 interface ModerationGuildRole {
@@ -448,7 +450,10 @@ async function sendAutomaticWarning(
   const content =
     policy.warningMessage ??
     'このサーバーでルール違反の可能性があるメッセージを検知しました。詳細はサーバーのモデレーターへお問い合わせください。';
-  await message.author.send({ content, allowedMentions: { parse: [] } });
+  await message.author.send({
+    embeds: [buildAutomaticWarningEmbed(policy, content)],
+    allowedMentions: { parse: [] },
+  });
 }
 
 function assertAutomaticTargetCanBeModerated(
@@ -533,30 +538,24 @@ async function sendUrgentAlert(
   const channel = message.guild.channels.cache.get(channelId);
   if (!channel?.isTextBased()) throw new Error('緊急Alertチャンネルが見つかりません');
 
-  const severity = selected.policy.severity.toUpperCase();
-  const matched = findings.map((item) => item.policy.selector).join(', ');
   const jumpUrl = `https://discord.com/channels/${context.guildId}/${message.channelId}/${message.id}`;
   const mentionPrefix = config.autoAlertMentionRoleIds.map((roleId) => `<@&${roleId}>`).join(' ');
-  const lines = [
-    mentionPrefix,
-    failure ? '🚨 **自動Moderation対応失敗**' : `⚠️ **Moderation緊急検知 [${severity}]**`,
-    `危険度: **${severity}**`,
-    `対象ユーザー: <@${message.author.id}> (${message.author.id})`,
-    `対象チャンネル: <#${message.channelId}>`,
-    `検知ルール: ${matched}`,
-    `Action: **${selected.policy.action}**`,
-    `メッセージ: ${jumpUrl}`,
-    `検知日時: <t:${Math.floor(message.createdTimestamp / 1000)}:F>`,
-  ].filter(Boolean);
-  if (failure) {
-    lines.push(`エラー: ${formatError(error)}`);
-  }
-  if (config.autoAlertIncludeExcerpt) {
-    lines.push(`本文プレビュー:\n\`\`\`\n${sanitizeExcerpt(message.content)}\n\`\`\``);
-  }
+  const embed = buildAutomaticAlertEmbed({
+    severity: selected.policy.severity,
+    action: selected.policy.action,
+    targetUserId: message.author.id,
+    channelId: message.channelId,
+    matchedSelectors: findings.map((item) => item.policy.selector),
+    jumpUrl,
+    createdTimestamp: message.createdTimestamp,
+    excerpt: config.autoAlertIncludeExcerpt ? sanitizeExcerpt(message.content) : null,
+    failure,
+    errorMessage: failure ? formatError(error) : null,
+  });
 
   await channel.send({
-    content: lines.join('\n'),
+    ...(mentionPrefix ? { content: mentionPrefix } : {}),
+    embeds: [embed],
     allowedMentions: { parse: [], roles: config.autoAlertMentionRoleIds },
   });
 }
