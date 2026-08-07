@@ -13,7 +13,7 @@ ALTER TABLE moderation_cases
     'kick',
     'ban',
     'flag'
-  ));
+  )) NOT VALID;
 
 CREATE TABLE moderation_blacklist_entries (
   guild_id TEXT NOT NULL,
