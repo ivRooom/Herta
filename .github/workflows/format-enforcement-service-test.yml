@@ -1,0 +1,34 @@
+name: Format enforcement service test
+
+on:
+  push:
+    branches:
+      - feat/moderation-enforcement
+    paths:
+      - .github/workflows/format-enforcement-service-test.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/moderation-enforcement
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prettier --write plugins/moderation/src/enforcement-service.test.ts
+      - run: |
+          rm -f .github/workflows/format-enforcement-service-test.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "style: ブラックリスト回帰テストを整形"
+          git push origin HEAD:feat/moderation-enforcement
