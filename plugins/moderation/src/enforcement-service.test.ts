@@ -63,6 +63,7 @@ describe('Moderation blacklist service', () => {
     expect(sql).toContain('WHERE guild_id = $1');
     expect(sql).toContain('user_id = $2');
     expect(values).toEqual(['100', '200', false]);
+    expect(auditCreate).toHaveBeenCalledTimes(1);
     expect(auditCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
