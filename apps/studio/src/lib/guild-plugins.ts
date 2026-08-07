@@ -4,6 +4,8 @@ import type { PluginManifest } from '@herta/shared';
 import { getAllPluginManifests, getPluginManifest } from '@herta/plugin-catalog';
 import { normalizeAutoResponseConfig } from '@herta/plugin-catalog/auto-response-service';
 import { prisma } from '@/lib/db';
+import { DiscordApiError } from '@/lib/discord';
+import { discordApiErrorResponse } from '@/lib/discord-api-response';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { publishPluginRuntimeEvent } from '@/lib/plugin-runtime-events';
 import { getDiscordAccessToken } from '@/lib/session';
@@ -23,15 +25,23 @@ export async function authorizeGuild(guildId: string, userId: string) {
       response: Response.json({ error: 'Discord の再ログインが必要です' }, { status: 401 }),
     };
 
-  const guild = await getManageableGuild(accessToken, guildId);
-  if (!guild) {
-    return {
-      response: Response.json({ error: 'この Guild を管理する権限がありません' }, { status: 403 }),
-    };
-  }
+  try {
+    const guild = await getManageableGuild(accessToken, guildId);
+    if (!guild) {
+      return {
+        response: Response.json(
+          { error: 'この Guild を管理する権限がありません' },
+          { status: 403 },
+        ),
+      };
+    }
 
-  await persistSelectedGuild(guild, userId);
-  return { guild };
+    await persistSelectedGuild(guild, userId);
+    return { guild };
+  } catch (error) {
+    if (!(error instanceof DiscordApiError)) throw error;
+    return { response: discordApiErrorResponse(error) };
+  }
 }
 
 export async function listGuildPlugins(guildId: string) {
