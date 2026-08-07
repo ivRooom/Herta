@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { AlertTriangle, BellRing, Save, ShieldAlert, ShieldCheck } from 'lucide-react';
 import {
   getEnforcementPolicy,
@@ -478,15 +478,7 @@ function buildRuleDescriptors(config: ModerationConfigDraft): RuleDescriptor[] {
   return [...custom, ...builtIn];
 }
 
-function Field({
-  label,
-  hint,
-  children,
-}: {
-  label: string;
-  hint?: string;
-  children: React.ReactNode;
-}) {
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
     <label className="block min-w-0">
       <span className="text-sm font-medium">{label}</span>

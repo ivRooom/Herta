@@ -122,7 +122,7 @@ interface ModerationClient {
 
 type ModerationAutomaticRuntimeContext = PluginRuntimeContext<
   ModerationConfig,
-  ModerationClient,
+  unknown,
   ModerationPrismaClient
 >;
 
@@ -137,9 +137,9 @@ const alertCooldowns = new Map<string, number>();
 
 export function createModerationAutomaticEvents(
   context: ModerationAutomaticRuntimeContext,
-): PluginEventHandler<ModerationConfig, ModerationClient, ModerationPrismaClient>[] {
+): PluginEventHandler<ModerationConfig, unknown, ModerationPrismaClient>[] {
   const config = normalizeModerationConfig(context.config);
-  const events: PluginEventHandler<ModerationConfig, ModerationClient, ModerationPrismaClient>[] = [
+  const events: PluginEventHandler<ModerationConfig, unknown, ModerationPrismaClient>[] = [
     {
       event: 'guildMemberAdd',
       async handler(runtimeContext, ...args) {
@@ -287,7 +287,7 @@ async function executeAutomaticEnforcement(
   selected: InsertedFinding,
   allFindings: InsertedFinding[],
 ): Promise<void> {
-  const actorId = context.client.user?.id;
+  const actorId = getBotActorId(context.client);
   if (!actorId) {
     context.logger.error(
       { guildId: context.guildId },
@@ -302,7 +302,6 @@ async function executeAutomaticEnforcement(
 
   try {
     assertAutomaticTargetCanBeModerated(message, selected.policy);
-    await executeAutomaticDiscordAction(message, selected.policy, reason);
     if (action === 'blacklist') {
       await upsertModerationBlacklistEntry(context.prisma, {
         guildId: context.guildId,
@@ -312,6 +311,7 @@ async function executeAutomaticEnforcement(
         createdBy: actorId,
       });
     }
+    await executeAutomaticDiscordAction(message, selected.policy, reason);
   } catch (error) {
     actionError = error;
   }
@@ -562,7 +562,7 @@ async function enforceBlacklistOnJoin(
   if (member.user.bot) return;
   const entry = await getActiveModerationBlacklistEntry(context.prisma, context.guildId, member.id);
   if (!entry) return;
-  const actorId = context.client.user?.id;
+  const actorId = getBotActorId(context.client);
   if (!actorId) return;
   const reason = entry.reason ?? 'Hertaブラックリストに登録されています';
   try {
@@ -675,6 +675,12 @@ function logFinding(
     },
     'Moderation自動検知のobserveイベントを記録しました',
   );
+}
+
+function getBotActorId(client: unknown): string | null {
+  if (typeof client !== 'object' || client === null || !('user' in client)) return null;
+  const user = (client as ModerationClient).user;
+  return typeof user?.id === 'string' && /^\d+$/.test(user.id) ? user.id : null;
 }
 
 function sanitizeExcerpt(content: string): string {
