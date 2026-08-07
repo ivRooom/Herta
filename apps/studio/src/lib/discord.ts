@@ -5,6 +5,20 @@
  */
 
 export const DISCORD_API_BASE = 'https://discord.com/api/v10';
+export const MAX_DISCORD_RATE_LIMIT_RETRY_MS = 2_000;
+
+/** Discord API のHTTPエラー。アクセストークンなどの機密情報は保持しない。 */
+export class DiscordApiError extends Error {
+  readonly status: number;
+  readonly retryAfterMs: number | null;
+
+  constructor(status: number, retryAfterMs: number | null = null) {
+    super(`Discord API request failed (status: ${status})`);
+    this.name = 'DiscordApiError';
+    this.status = status;
+    this.retryAfterMs = retryAfterMs;
+  }
+}
 
 /** Discord のパーミッションビット */
 export const DiscordPermission = {
@@ -38,6 +52,12 @@ export interface ManageableGuild {
   hasManageGuild: boolean;
 }
 
+interface FetchUserGuildsOptions {
+  fetchImpl?: typeof fetch;
+  sleep?: (ms: number) => Promise<void>;
+  maxRetryAfterMs?: number;
+}
+
 /** Discord のアイコンハッシュから画像 URL を組み立てる */
 export function guildIconUrl(guildId: string, icon: string | null): string | null {
   if (!icon) return null;
@@ -57,18 +77,28 @@ export function canManageGuild(guild: DiscordPartialGuild): boolean {
 }
 
 /** アクセストークンでログインユーザーの Guild 一覧を取得する */
-export async function fetchUserGuilds(accessToken: string): Promise<DiscordPartialGuild[]> {
-  const res = await fetch(`${DISCORD_API_BASE}/users/@me/guilds`, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-    // Guild権限は認可判断に使うため、権限剥奪を即時反映できるよう共有cacheへ保存しない。
-    cache: 'no-store',
-  });
+export async function fetchUserGuilds(
+  accessToken: string,
+  options: FetchUserGuildsOptions = {},
+): Promise<DiscordPartialGuild[]> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const sleep = options.sleep ?? defaultSleep;
+  const maxRetryAfterMs = options.maxRetryAfterMs ?? MAX_DISCORD_RATE_LIMIT_RETRY_MS;
 
-  if (!res.ok) {
-    throw new Error(`Discord Guild 一覧の取得に失敗しました (status: ${res.status})`);
+  let response = await requestUserGuilds(accessToken, fetchImpl);
+  if (response.status === 429) {
+    const retryAfterMs = await readRetryAfterMs(response);
+    if (retryAfterMs !== null && retryAfterMs <= maxRetryAfterMs) {
+      await sleep(retryAfterMs);
+      response = await requestUserGuilds(accessToken, fetchImpl);
+    }
   }
 
-  return (await res.json()) as DiscordPartialGuild[];
+  if (!response.ok) {
+    throw new DiscordApiError(response.status, await readRetryAfterMs(response));
+  }
+
+  return (await response.json()) as DiscordPartialGuild[];
 }
 
 /** 管理権限を持つ Guild だけを抽出して整形する */
@@ -92,4 +122,43 @@ export async function fetchManageableGuilds(accessToken: string): Promise<Manage
       } satisfies ManageableGuild;
     })
     .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+}
+
+async function requestUserGuilds(accessToken: string, fetchImpl: typeof fetch): Promise<Response> {
+  return fetchImpl(`${DISCORD_API_BASE}/users/@me/guilds`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    // Guild権限は認可判断に使うため、権限剥奪を即時反映できるよう共有cacheへ保存しない。
+    cache: 'no-store',
+  });
+}
+
+async function readRetryAfterMs(response: Response): Promise<number | null> {
+  if (response.status !== 429) return null;
+
+  try {
+    const body = (await response.clone().json()) as { retry_after?: unknown };
+    if (
+      typeof body.retry_after === 'number' &&
+      Number.isFinite(body.retry_after) &&
+      body.retry_after >= 0
+    ) {
+      return Math.ceil(body.retry_after * 1_000);
+    }
+  } catch {
+    // JSON本文が無い場合はRetry-Afterヘッダーへフォールバックする。
+  }
+
+  const header = response.headers.get('retry-after');
+  if (!header) return null;
+
+  const seconds = Number(header);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1_000);
+
+  const retryAt = Date.parse(header);
+  if (Number.isNaN(retryAt)) return null;
+  return Math.max(0, retryAt - Date.now());
+}
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
