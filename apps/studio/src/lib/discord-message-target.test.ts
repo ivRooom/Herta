@@ -40,10 +40,10 @@ test('Message ID単体は選択済みChannelと組み合わせる', () => {
 });
 
 test('保存済みobjectは未知キーを混ぜず正規化する', () => {
-  assert.deepEqual(
-    normalizeDiscordMessageTarget({ channelId, messageId, unexpected: true }),
-    { channelId, messageId },
-  );
+  assert.deepEqual(normalizeDiscordMessageTarget({ channelId, messageId, unexpected: true }), {
+    channelId,
+    messageId,
+  });
 });
 
 test('Guild/Channel/Messageが揃った場合だけjump URLを生成する', () => {
