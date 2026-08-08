@@ -80,8 +80,14 @@ export function PluginHubGuildPreflight({
         </div>
       ) : (
         <div className="mt-5">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Target Guild</p>
-          <div className="mt-2 flex gap-2 overflow-x-auto pb-1" role="list" aria-label="Preflight対象Guild">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+            Target Guild
+          </p>
+          <div
+            className="mt-2 flex gap-2 overflow-x-auto pb-1"
+            role="list"
+            aria-label="Preflight対象Guild"
+          >
             {guilds.map((guild) => (
               <Link
                 key={guild.id}
@@ -160,7 +166,10 @@ function PluginPreflightRow({
         {ready ? (
           <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" aria-label="依存関係Ready" />
         ) : (
-          <TriangleAlert className="h-5 w-5 shrink-0 text-amber-500" aria-label="必須依存Plugin不足" />
+          <TriangleAlert
+            className="h-5 w-5 shrink-0 text-amber-500"
+            aria-label="必須依存Plugin不足"
+          />
         )}
       </div>
 
@@ -196,7 +205,8 @@ function PluginPreflightRow({
                   : 'border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300'
               }`}
             >
-              {dependency.pluginId} · {dependency.optional ? 'optional' : dependency.enabled ? 'ready' : 'required'}
+              {dependency.pluginId} ·{' '}
+              {dependency.optional ? 'optional' : dependency.enabled ? 'ready' : 'required'}
             </span>
           ))}
         </div>
@@ -230,7 +240,11 @@ function StatusBadge({ installed, enabled }: { installed: boolean; enabled: bool
     : installed
       ? 'border-primary/30 bg-primary/10 text-primary'
       : 'border-border bg-surface text-muted';
-  return <span className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${className}`}>{label}</span>;
+  return (
+    <span className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${className}`}>
+      {label}
+    </span>
+  );
 }
 
 function CheckItem({
@@ -250,7 +264,9 @@ function CheckItem({
         <Icon className={`h-3 w-3 ${ok ? 'text-primary' : 'text-amber-500'}`} aria-hidden="true" />
         {label}
       </div>
-      <p className={`mt-1 font-semibold ${ok ? '' : 'text-amber-700 dark:text-amber-300'}`}>{value}</p>
+      <p className={`mt-1 font-semibold ${ok ? '' : 'text-amber-700 dark:text-amber-300'}`}>
+        {value}
+      </p>
     </div>
   );
 }
@@ -269,7 +285,9 @@ function Summary({
   return (
     <div className="rounded-xl border border-border bg-background px-3 py-3 text-center">
       <p className="text-[9px] font-semibold uppercase tracking-[0.12em] text-muted">{label}</p>
-      <p className={`mt-1 text-xl font-semibold ${warning ? 'text-amber-500' : accent ? 'text-primary' : ''}`}>
+      <p
+        className={`mt-1 text-xl font-semibold ${warning ? 'text-amber-500' : accent ? 'text-primary' : ''}`}
+      >
         {value}
       </p>
     </div>
