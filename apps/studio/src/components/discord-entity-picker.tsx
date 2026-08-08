@@ -26,13 +26,16 @@ export function DiscordChannelPicker({
   options,
   value,
   onChange,
+  multiple = false,
   placeholder = 'チャンネル名またはIDを検索',
 }: {
   options: GuildChannelOption[];
-  value: string | null;
-  onChange: (value: string | null) => void;
+  value: string | string[] | null;
+  onChange: (value: string | string[] | null) => void;
+  multiple?: boolean;
   placeholder?: string;
 }) {
+  const selected = Array.isArray(value) ? value : value ? [value] : [];
   const normalized = options.map((option) => ({
     id: option.id,
     name: option.name,
@@ -41,8 +44,9 @@ export function DiscordChannelPicker({
   return (
     <DiscordEntityPicker
       options={normalized}
-      value={value ? [value] : []}
-      onChange={(values) => onChange(values[0] ?? null)}
+      value={selected}
+      onChange={(values) => onChange(multiple ? values : (values[0] ?? null))}
+      multiple={multiple}
       placeholder={placeholder}
       emptyMessage="利用できるテキストチャンネルが見つかりません"
       icon="channel"
