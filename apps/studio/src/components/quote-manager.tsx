@@ -19,6 +19,7 @@ export function QuoteManager({ guildId, items }: { guildId: string; items: Quote
   const [quoteText, setQuoteText] = useState('');
   const [sourceAuthorName, setSourceAuthorName] = useState('');
   const [tags, setTags] = useState('');
+  const [tagDraft, setTagDraft] = useState('');
   const [status, setStatus] = useState('public');
   const [isNsfw, setIsNsfw] = useState(false);
   const [message, setMessage] = useState('');
@@ -28,13 +29,14 @@ export function QuoteManager({ guildId, items }: { guildId: string; items: Quote
     setBusy(true);
     setMessage('登録中…');
     try {
+      const tagsToSave = mergeTagDraft(tags, tagDraft);
       await apiRequest(`/api/guilds/${guildId}/quotes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           quoteText,
           sourceAuthorName,
-          tags,
+          tags: tagsToSave,
           status,
           isNsfw,
         }),
@@ -42,6 +44,7 @@ export function QuoteManager({ guildId, items }: { guildId: string; items: Quote
       setQuoteText('');
       setSourceAuthorName('');
       setTags('');
+      setTagDraft('');
       setStatus('public');
       setIsNsfw(false);
       setMessage('Quoteを登録しました');
@@ -86,7 +89,13 @@ export function QuoteManager({ guildId, items }: { guildId: string; items: Quote
           <div>
             <span className="text-sm font-medium">タグ</span>
             <div className="mt-2">
-              <TagEditor value={tags} onChange={setTags} ariaLabel="新しいQuoteのタグ" />
+              <TagEditor
+                value={tags}
+                onChange={setTags}
+                draft={tagDraft}
+                onDraftChange={setTagDraft}
+                ariaLabel="新しいQuoteのタグ"
+              />
             </div>
           </div>
           <div className="md:col-span-2">
@@ -142,6 +151,7 @@ function QuoteEditor({ guildId, item }: { guildId: string; item: QuoteManagerIte
   const [quoteText, setQuoteText] = useState(item.quoteText);
   const [sourceAuthorName, setSourceAuthorName] = useState(item.sourceAuthorName ?? '');
   const [tags, setTags] = useState(item.tags.join(', '));
+  const [tagDraft, setTagDraft] = useState('');
   const [status, setStatus] = useState(item.status);
   const [isNsfw, setIsNsfw] = useState(item.isNsfw);
   const [message, setMessage] = useState('');
@@ -151,11 +161,14 @@ function QuoteEditor({ guildId, item }: { guildId: string; item: QuoteManagerIte
     setBusy(true);
     setMessage('保存中…');
     try {
+      const tagsToSave = mergeTagDraft(tags, tagDraft);
       await apiRequest(`/api/guilds/${guildId}/quotes/${item.quoteNumber}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quoteText, sourceAuthorName, tags, status, isNsfw }),
+        body: JSON.stringify({ quoteText, sourceAuthorName, tags: tagsToSave, status, isNsfw }),
       });
+      setTags(tagsToSave);
+      setTagDraft('');
       setMessage('保存しました');
       router.refresh();
     } catch (error) {
@@ -217,7 +230,13 @@ function QuoteEditor({ guildId, item }: { guildId: string; item: QuoteManagerIte
           className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
           placeholder="作者・発言者"
         />
-        <TagEditor value={tags} onChange={setTags} ariaLabel={`Quote #${item.quoteNumber} タグ`} />
+        <TagEditor
+          value={tags}
+          onChange={setTags}
+          draft={tagDraft}
+          onDraftChange={setTagDraft}
+          ariaLabel={`Quote #${item.quoteNumber} タグ`}
+        />
         <VisibilityPicker
           value={status}
           onChange={setStatus}
@@ -260,6 +279,9 @@ function QuoteEditor({ guildId, item }: { guildId: string; item: QuoteManagerIte
     </article>
   );
 }
+
+const MAX_QUOTE_TAGS = 5;
+const MAX_QUOTE_TAG_LENGTH = 32;
 
 const VISIBILITY_OPTIONS = [
   {
@@ -324,22 +346,28 @@ function VisibilityPicker({
 function TagEditor({
   value,
   onChange,
+  draft,
+  onDraftChange,
   ariaLabel,
 }: {
   value: string;
   onChange(value: string): void;
+  draft: string;
+  onDraftChange(value: string): void;
   ariaLabel: string;
 }) {
-  const [draft, setDraft] = useState('');
   const tags = normalizeTags(value);
 
   function commitTag(raw: string) {
-    const normalized = raw.trim().replace(/^#/, '').slice(0, 40);
+    const normalized = normalizeTag(raw);
     if (!normalized) return;
-    if (!tags.some((tag) => tag.toLocaleLowerCase('ja') === normalized.toLocaleLowerCase('ja'))) {
-      onChange([...tags, normalized].slice(0, 20).join(', '));
+    if (
+      tags.length < MAX_QUOTE_TAGS &&
+      !tags.some((tag) => tag.toLocaleLowerCase('ja') === normalized.toLocaleLowerCase('ja'))
+    ) {
+      onChange([...tags, normalized].join(', '));
     }
-    setDraft('');
+    onDraftChange('');
   }
 
   function removeTag(tag: string) {
@@ -357,6 +385,8 @@ function TagEditor({
       removeTag(lastTag);
     }
   }
+
+  const tagLimitReached = tags.length >= MAX_QUOTE_TAGS;
 
   return (
     <div className="rounded-xl border border-border bg-background p-2 focus-within:ring-2 focus-within:ring-ring">
@@ -378,40 +408,66 @@ function TagEditor({
       <div className="flex gap-2">
         <input
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => onDraftChange(event.target.value)}
           onKeyDown={handleKeyDown}
           aria-label={ariaLabel}
-          className="min-w-0 flex-1 bg-transparent px-1 py-1 text-sm outline-none"
-          placeholder={tags.length === 0 ? 'タグを入力してEnter' : 'タグを追加'}
-          maxLength={40}
+          className="min-w-0 flex-1 bg-transparent px-1 py-1 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          placeholder={
+            tagLimitReached
+              ? 'タグ上限に達しました'
+              : tags.length === 0
+                ? 'タグを入力してEnter'
+                : 'タグを追加'
+          }
+          maxLength={MAX_QUOTE_TAG_LENGTH}
+          disabled={tagLimitReached}
         />
         <button
           type="button"
           onClick={() => commitTag(draft)}
-          disabled={!draft.trim() || tags.length >= 20}
+          disabled={!draft.trim() || tagLimitReached}
           className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium disabled:opacity-40"
         >
           追加
         </button>
       </div>
-      <p className="mt-1 px-1 text-[11px] text-muted">Enterまたはカンマで追加 · 最大20件</p>
+      <p className="mt-1 px-1 text-[11px] text-muted">
+        Enterまたはカンマで追加 · 最大{MAX_QUOTE_TAGS}件 · 1タグ{MAX_QUOTE_TAG_LENGTH}文字
+      </p>
     </div>
   );
+}
+
+function normalizeTag(value: string): string {
+  return value.trim().replace(/^#/, '').slice(0, MAX_QUOTE_TAG_LENGTH);
 }
 
 function normalizeTags(value: string): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
   for (const raw of value.split(',')) {
-    const tag = raw.trim().replace(/^#/, '').slice(0, 40);
+    const tag = normalizeTag(raw);
     if (!tag) continue;
     const key = tag.toLocaleLowerCase('ja');
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(tag);
-    if (result.length >= 20) break;
+    if (result.length >= MAX_QUOTE_TAGS) break;
   }
   return result;
+}
+
+function mergeTagDraft(value: string, draft: string): string {
+  const tags = normalizeTags(value);
+  const pending = normalizeTag(draft);
+  if (
+    pending &&
+    tags.length < MAX_QUOTE_TAGS &&
+    !tags.some((tag) => tag.toLocaleLowerCase('ja') === pending.toLocaleLowerCase('ja'))
+  ) {
+    tags.push(pending);
+  }
+  return tags.join(', ');
 }
 
 function visibilityLabel(value: string): string {
