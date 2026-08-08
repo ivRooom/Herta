@@ -1,0 +1,48 @@
+name: Config Studio User Picker
+
+on:
+  push:
+    branches:
+      - feat/config-studio-user-picker
+    paths:
+      - scripts/patch-bot-guild-member-search.py
+      - .github/workflows/config-studio-user-picker.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/config-studio-user-picker
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - name: Apply Bot member search patch
+        run: python3 scripts/patch-bot-guild-member-search.py
+      - name: Format changed files
+        run: pnpm exec prettier --write apps/bot/src/bot.ts apps/bot/src/main.ts apps/bot/src/health/server.ts apps/bot/src/health/guild-members.ts apps/bot/src/health/guild-members.test.ts apps/studio/src/lib/bot-guild-members.ts apps/studio/src/app/api/guilds/'[guildId]'/discord/members/route.ts apps/studio/src/components/discord-user-picker.tsx
+      - name: Typecheck Bot
+        run: pnpm --dir apps/bot typecheck
+      - name: Test Bot
+        run: pnpm --dir apps/bot test
+      - name: Typecheck Studio
+        run: pnpm --dir apps/studio typecheck
+      - name: Commit and remove temporary files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/patch-bot-guild-member-search.py
+          rm .github/workflows/config-studio-user-picker.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/bot apps/studio scripts/patch-bot-guild-member-search.py .github/workflows/config-studio-user-picker.yml
+          git commit -m "feat: Guild Member検索APIを追加"
+          git push origin HEAD:feat/config-studio-user-picker
