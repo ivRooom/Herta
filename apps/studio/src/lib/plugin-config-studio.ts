@@ -24,6 +24,7 @@ export type JsonSchema = {
       | 'discord-role'
       | 'discord-user'
       | 'discord-emoji'
+      | 'discord-message-target'
       | string;
     section?: string;
     placeholder?: string;

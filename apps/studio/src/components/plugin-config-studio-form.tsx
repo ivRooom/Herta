@@ -8,6 +8,7 @@ import {
   DiscordEmojiPicker,
   DiscordRolePicker,
 } from './discord-entity-picker';
+import { DiscordMessageTargetPicker } from './discord-message-target-picker';
 import { DiscordUserPicker } from './discord-user-picker';
 
 import {
@@ -363,6 +364,11 @@ function SchemaField({
   const discordMultiple = type === 'array';
   const supportsDiscordPicker =
     type === 'string' || (type === 'array' && schemaPrimaryType(schema.items ?? {}) === 'string');
+  const messageTargetProperties = schema.properties ?? {};
+  const supportsDiscordMessageTarget =
+    type === 'object' &&
+    schemaPrimaryType(messageTargetProperties.channelId ?? {}) === 'string' &&
+    schemaPrimaryType(messageTargetProperties.messageId ?? {}) === 'string';
 
   if (ui?.widget === 'discord-channel' && supportsDiscordPicker) {
     return (
@@ -416,6 +422,20 @@ function SchemaField({
           value={normalizeDiscordEntityValue(value, discordMultiple)}
           multiple={discordMultiple}
           placeholder={ui.placeholder}
+          onChange={(next) => onChange(path, next)}
+        />
+      </FieldShell>
+    );
+  }
+
+  if (ui?.widget === 'discord-message-target' && supportsDiscordMessageTarget) {
+    return (
+      <FieldShell title={title} schema={schema} required={required}>
+        <DiscordMessageTargetPicker
+          guildId={guildId}
+          channels={discordOptions?.channels ?? []}
+          value={value}
+          nullable={nullable}
           onChange={(next) => onChange(path, next)}
         />
       </FieldShell>
