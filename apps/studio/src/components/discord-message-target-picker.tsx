@@ -49,10 +49,12 @@ export function DiscordMessageTargetPicker({
           ? 'Message IDまたは同じGuildのDiscordメッセージURLを入力してください。'
           : '先にChannelを選択するか、同じGuildのDiscordメッセージURLを貼り付けてください。',
       );
+      setReferenceText(target.messageId);
       return;
     }
     if (!channelIds.has(parsed.channelId)) {
       setError('Botが閲覧・履歴参照できるテキストChannelのメッセージを指定してください。');
+      setReferenceText(target.messageId);
       return;
     }
     setError('');
