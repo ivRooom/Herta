@@ -40,6 +40,7 @@ const healthServer = healthConfig.enabled
       version,
       getHealth: () => healthService.getHealth(),
       getGuildOptions: (guildId) => bot.getGuildConfigurationOptions(guildId),
+      searchGuildMembers: (guildId, query, limit) => bot.searchGuildMembers(guildId, query, limit),
     })
   : undefined;
 

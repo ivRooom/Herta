@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 
 import type { GuildConfigurationOptions } from '@/lib/bot-guild-options';
 import { DiscordChannelPicker, DiscordRolePicker } from './discord-entity-picker';
+import { DiscordUserPicker } from './discord-user-picker';
 
 import {
   fieldMatchesSearch,
@@ -262,6 +263,7 @@ export function PluginConfigStudioForm({
                       onChange={update}
                       onRemove={remove}
                       discordOptions={discordOptions}
+                      guildId={guildId}
                     />
                   ))}
                 </div>
@@ -338,6 +340,7 @@ function SchemaField({
   onChange,
   onRemove,
   discordOptions,
+  guildId,
 }: {
   fieldKey: string;
   schema: JsonSchema;
@@ -347,6 +350,7 @@ function SchemaField({
   onChange: (path: Path, value: unknown) => void;
   onRemove: (path: Path) => void;
   discordOptions?: GuildConfigurationOptions | null;
+  guildId: string;
 }) {
   const type = schemaPrimaryType(schema);
   const nullable = schemaAllowsNull(schema);
@@ -386,6 +390,20 @@ function SchemaField({
     );
   }
 
+  if (ui?.widget === 'discord-user' && supportsDiscordPicker) {
+    return (
+      <FieldShell title={title} schema={schema} required={required}>
+        <DiscordUserPicker
+          guildId={guildId}
+          value={normalizeDiscordEntityValue(value, discordMultiple)}
+          multiple={discordMultiple}
+          placeholder={ui.placeholder}
+          onChange={(next) => onChange(path, next)}
+        />
+      </FieldShell>
+    );
+  }
+
   if (nullable && value === null) {
     return (
       <FieldShell title={title} schema={schema} required={required}>
@@ -419,6 +437,7 @@ function SchemaField({
               onChange={onChange}
               onRemove={onRemove}
               discordOptions={discordOptions}
+              guildId={guildId}
             />
           ))}
         </div>
@@ -466,6 +485,7 @@ function SchemaField({
                 onChange={onChange}
                 onRemove={onRemove}
                 discordOptions={discordOptions}
+                guildId={guildId}
               />
             </div>
           ))}
