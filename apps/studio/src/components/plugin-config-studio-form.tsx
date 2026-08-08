@@ -53,7 +53,8 @@ export function PluginConfigStudioForm({
   const [status, setStatus] = useState('');
   const [saving, setSaving] = useState(false);
 
-  const dirty = enabled !== savedEnabled || stringifyConfig(config) !== stringifyConfig(savedConfig);
+  const dirty =
+    enabled !== savedEnabled || stringifyConfig(config) !== stringifyConfig(savedConfig);
   const properties = configSchema.properties ?? {};
   const visibleEntries = Object.entries(properties).filter(([key, propertySchema]) =>
     fieldMatchesSearch(key, propertySchema, query),
@@ -299,7 +300,9 @@ export function PluginConfigStudioForm({
       <div className="sticky bottom-4 z-20 rounded-2xl border border-border bg-surface/95 p-3 shadow-2xl backdrop-blur sm:p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <p className="text-sm font-medium">{dirty ? '未保存の変更があります' : '設定は保存済みです'}</p>
+            <p className="text-sm font-medium">
+              {dirty ? '未保存の変更があります' : '設定は保存済みです'}
+            </p>
             <p className="mt-1 min-h-5 break-words text-xs text-muted" aria-live="polite">
               {status || 'GUIとJSONは同じ設定データを編集します。'}
             </p>
@@ -391,7 +394,10 @@ function SchemaField({
             </div>
           ) : null}
           {items.map((item, index) => (
-            <div key={index} className="rounded-xl border border-border bg-background/60 p-3 sm:p-4">
+            <div
+              key={index}
+              className="rounded-xl border border-border bg-background/60 p-3 sm:p-4"
+            >
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs font-medium text-muted">項目 {index + 1}</span>
                 <div className="flex gap-1">
@@ -435,7 +441,9 @@ function SchemaField({
       <FieldShell title={title} schema={schema} required={required}>
         <select
           value={serializeSelectValue(value)}
-          onChange={(event) => onChange(path, deserializeEnumValue(schema.enum ?? [], event.target.value))}
+          onChange={(event) =>
+            onChange(path, deserializeEnumValue(schema.enum ?? [], event.target.value))
+          }
           className="w-full rounded-xl border border-border bg-background px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
         >
           {schema.enum.map((option) => (
@@ -486,7 +494,10 @@ function SchemaField({
               onChange(path, null);
               return;
             }
-            const next = type === 'integer' ? Number.parseInt(event.target.value, 10) : Number(event.target.value);
+            const next =
+              type === 'integer'
+                ? Number.parseInt(event.target.value, 10)
+                : Number(event.target.value);
             if (!Number.isNaN(next)) onChange(path, next);
           }}
           className="w-full rounded-xl border border-border bg-background px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
@@ -518,7 +529,9 @@ function SchemaField({
         />
       ) : (
         <input
-          type={schema.format === 'password' ? 'password' : schema.format === 'url' ? 'url' : 'text'}
+          type={
+            schema.format === 'password' ? 'password' : schema.format === 'url' ? 'url' : 'text'
+          }
           value={stringValue}
           onChange={(event) => onChange(path, event.target.value)}
           minLength={schema.minLength}
@@ -570,12 +583,16 @@ function FieldShell({
             </span>
           ) : null}
         </div>
-        {schema.description ? <p className="mt-1 text-xs leading-5 text-muted">{schema.description}</p> : null}
+        {schema.description ? (
+          <p className="mt-1 text-xs leading-5 text-muted">{schema.description}</p>
+        ) : null}
         {schema['x-herta-ui']?.help ? (
           <p className="mt-1 text-xs leading-5 text-muted">{schema['x-herta-ui']?.help}</p>
         ) : null}
         {schema['x-herta-ui']?.destructive ? (
-          <p className="mt-2 text-xs font-medium text-red-300">この設定はユーザーやデータへ影響する可能性があります。</p>
+          <p className="mt-2 text-xs font-medium text-red-300">
+            この設定はユーザーやデータへ影響する可能性があります。
+          </p>
         ) : null}
       </div>
       <div>{children}</div>
