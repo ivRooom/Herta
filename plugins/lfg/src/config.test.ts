@@ -28,6 +28,34 @@ describe('LFG config', () => {
       maxPlayersLimit: 2,
     });
   });
+
+  it('既定定員をmaxPlayersLimit以下へ調整する', () => {
+    expect(normalizeLfgConfig({ maxPlayersLimit: 3, defaultMaxPlayers: 8 })).toMatchObject({
+      maxPlayersLimit: 3,
+      defaultMaxPlayers: 3,
+    });
+  });
+
+  it('既定募集期間をmaxDurationMinutes以下へ調整する', () => {
+    expect(
+      normalizeLfgConfig({ maxDurationMinutes: 60, defaultDurationMinutes: 180 }),
+    ).toMatchObject({
+      maxDurationMinutes: 60,
+      defaultDurationMinutes: 60,
+    });
+  });
+
+  it('ゲームPresetをtrim・重複除去して保持する', () => {
+    expect(
+      normalizeLfgConfig({
+        gamePresets: [' Minecraft ', 'VALORANT', 'Minecraft', '', 123, 'Apex Legends'],
+      }).gamePresets,
+    ).toEqual(['Minecraft', 'VALORANT', 'Apex Legends']);
+  });
+
+  it('ゲームPresetは空配列も許可する', () => {
+    expect(normalizeLfgConfig({ gamePresets: [] }).gamePresets).toEqual([]);
+  });
 });
 
 describe('LFG input validation', () => {
