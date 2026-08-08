@@ -435,6 +435,7 @@ function SchemaField({
           guildId={guildId}
           channels={discordOptions?.channels ?? []}
           value={value}
+          nullable={nullable}
           onChange={(next) => onChange(path, next)}
         />
       </FieldShell>
