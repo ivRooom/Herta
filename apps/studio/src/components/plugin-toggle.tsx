@@ -46,12 +46,14 @@ export function PluginToggle({
         role="switch"
         aria-label={ariaLabel}
         aria-checked={enabled}
+        aria-busy={status === 'saving'}
         disabled={status === 'saving'}
         onClick={toggle}
-        className={`relative h-6 w-11 rounded-full transition-colors ${enabled ? 'bg-primary' : 'bg-border'} disabled:opacity-60`}
+        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${enabled ? 'bg-primary' : 'bg-border'} disabled:opacity-60`}
       >
         <span
-          className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`}
+          aria-hidden="true"
+          className={`absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0'}`}
         />
       </button>
       <span className={`text-[11px] ${status === 'error' ? 'text-red-500' : 'text-muted'}`}>
