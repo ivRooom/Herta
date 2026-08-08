@@ -31,7 +31,14 @@ export function DiscordMessageTargetPicker({
     setReferenceText(target.messageId);
   }, [target.messageId]);
 
-  const channelIds = useMemo(() => new Set(channels.map((channel) => channel.id)), [channels]);
+  const readableChannels = useMemo(
+    () => channels.filter((channel) => channel.viewable && channel.readMessageHistory),
+    [channels],
+  );
+  const channelIds = useMemo(
+    () => new Set(readableChannels.map((channel) => channel.id)),
+    [readableChannels],
+  );
   const jumpUrl = buildDiscordMessageUrl(guildId, target);
 
   function applyReference(input: string) {
@@ -45,7 +52,7 @@ export function DiscordMessageTargetPicker({
       return;
     }
     if (!channelIds.has(parsed.channelId)) {
-      setError('Botが参照できるテキストChannelのメッセージを指定してください。');
+      setError('Botが閲覧・履歴参照できるテキストChannelのメッセージを指定してください。');
       return;
     }
     setError('');
@@ -59,13 +66,14 @@ export function DiscordMessageTargetPicker({
         <p className="text-sm font-medium">Channel</p>
         <div className="mt-2">
           <DiscordChannelPicker
-            options={channels}
+            options={readableChannels}
             value={target.channelId || null}
-            placeholder="メッセージがあるChannelを検索"
+            placeholder="Botがメッセージ履歴を参照できるChannelを検索"
             onChange={(next) => {
               const channelId = Array.isArray(next) ? (next[0] ?? '') : (next ?? '');
               setError('');
-              onChange({ channelId, messageId: target.messageId });
+              setReferenceText('');
+              onChange({ channelId, messageId: '' });
             }}
           />
         </div>
@@ -81,6 +89,10 @@ export function DiscordMessageTargetPicker({
               const next = event.target.value;
               setReferenceText(next);
               setError('');
+              if (!next.trim()) {
+                if (target.messageId) onChange({ channelId: target.channelId, messageId: '' });
+                return;
+              }
               if (next.includes('/channels/')) applyReference(next);
             }}
             onBlur={() => {
