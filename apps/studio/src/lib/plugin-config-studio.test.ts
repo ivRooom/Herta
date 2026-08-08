@@ -218,6 +218,24 @@ test('Discord message URLは同じGuildのChannel/Message IDへ変換する', ()
   );
 });
 
+test('Discord以外のURLと不完全なmessage URLを拒否する', () => {
+  const guildId = '964326043420872704';
+  const channelId = '1175075504940908635';
+  const messageId = '1175075504940908636';
+
+  assert.equal(
+    parseDiscordMessageReference(
+      `https://example.com/channels/${guildId}/${channelId}/${messageId}`,
+      guildId,
+    ),
+    null,
+  );
+  assert.equal(
+    parseDiscordMessageReference(`https://discord.com/channels/${guildId}/${channelId}`, guildId),
+    null,
+  );
+});
+
 test('Message ID単体は選択済みChannelがある場合だけ受け入れる', () => {
   const guildId = '964326043420872704';
   const channelId = '1175075504940908635';
