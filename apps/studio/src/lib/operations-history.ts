@@ -135,6 +135,7 @@ export function summarizeOperationsHistory(
   snapshots: OperationsSnapshot[],
   rangeStart: Date,
   rangeEnd: Date,
+  previousStatus?: string,
 ): OperationsHistorySummary {
   const ordered = [...snapshots].sort((a, b) => a.checkedAt.getTime() - b.checkedAt.getTime());
   const rangeMs = Math.max(1, rangeEnd.getTime() - rangeStart.getTime());
@@ -142,7 +143,7 @@ export function summarizeOperationsHistory(
   const coveragePercent = roundPercent(Math.min(100, (ordered.length / expectedSamples) * 100));
 
   let incidentCount = 0;
-  let inIncident = false;
+  let inIncident = previousStatus !== undefined && previousStatus !== 'operational';
   let nonOperationalMs = 0;
   let collectionGapMs = ordered.length === 0 ? gapBeyondExpected(rangeMs) : 0;
 
