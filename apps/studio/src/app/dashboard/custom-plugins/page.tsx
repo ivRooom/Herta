@@ -115,10 +115,7 @@ async function loadGuildPreflight(requestedGuildId: string | undefined) {
 
 async function loadManageableGuildsForPreflight(
   accessToken: string,
-): Promise<
-  | { guilds: ManageableGuild[] }
-  | { guilds: []; plugins: []; unavailableReason: string }
-> {
+): Promise<{ guilds: ManageableGuild[] } | { guilds: []; plugins: []; unavailableReason: string }> {
   try {
     return { guilds: await getManageableGuilds(accessToken) };
   } catch (error) {
