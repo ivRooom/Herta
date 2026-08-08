@@ -53,18 +53,19 @@ export function PluginCatalogGrid({
   guildId: string;
   plugins: PluginCatalogItem[];
 }) {
+  const [catalog, setCatalog] = useState(plugins);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [onlyEnabled, setOnlyEnabled] = useState(false);
 
   const categories = useMemo(() => {
-    const unique = [...new Set(plugins.map((plugin) => plugin.category))].sort();
+    const unique = [...new Set(catalog.map((plugin) => plugin.category))].sort();
     return ['all', ...unique];
-  }, [plugins]);
+  }, [catalog]);
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase('ja');
-    return plugins.filter((plugin) => {
+    return catalog.filter((plugin) => {
       if (category !== 'all' && plugin.category !== category) return false;
       if (onlyEnabled && !plugin.enabled) return false;
       if (!normalized) return true;
@@ -74,7 +75,13 @@ export function PluginCatalogGrid({
         plugin.id.toLocaleLowerCase('ja').includes(normalized)
       );
     });
-  }, [category, onlyEnabled, plugins, query]);
+  }, [catalog, category, onlyEnabled, query]);
+
+  function handleEnabledChange(pluginId: string, enabled: boolean) {
+    setCatalog((current) =>
+      current.map((plugin) => (plugin.id === pluginId ? { ...plugin, enabled } : plugin)),
+    );
+  }
 
   return (
     <div>
@@ -139,7 +146,7 @@ export function PluginCatalogGrid({
 
       <div className="mt-4 flex items-center justify-between gap-3 text-xs text-muted">
         <span>
-          {filtered.length} / {plugins.length} Plugins
+          {filtered.length} / {catalog.length} Plugins
         </span>
         {query || category !== 'all' || onlyEnabled ? (
           <button
@@ -188,6 +195,8 @@ export function PluginCatalogGrid({
                     pluginId={plugin.id}
                     initialEnabled={plugin.enabled}
                     initialConfig={plugin.config}
+                    ariaLabel={`${plugin.name}の有効状態を切り替え`}
+                    onEnabledChange={(enabled) => handleEnabledChange(plugin.id, enabled)}
                   />
                 </div>
 
