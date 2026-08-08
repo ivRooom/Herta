@@ -2,7 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { searchGuildMembers } from './bot-guild-members.ts';
 
-function restoreEnvironment(originalFetch: typeof globalThis.fetch, originalHealthUrl?: string) {
+function restoreEnvironment(
+  originalFetch: typeof globalThis.fetch,
+  originalHealthUrl?: string,
+) {
   globalThis.fetch = originalFetch;
   if (originalHealthUrl === undefined) {
     delete process.env['BOT_HEALTH_URL'];
