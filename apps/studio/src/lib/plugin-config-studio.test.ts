@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   buildDiscordMessageUrl,
+  mergeDiscordMessageTarget,
   normalizeDiscordMessageTarget,
   parseDiscordMessageReference,
 } from './discord-message-target.ts';
@@ -191,6 +192,25 @@ test('Discord Message Target metadataと保存objectを保持する', () => {
   assert.equal(messageTargetSchema['x-herta-ui']?.widget, 'discord-message-target');
   assert.deepEqual(normalizeConfigForStudio(messageTargetSchema, current), current);
   assert.deepEqual(normalizeDiscordMessageTarget({ ...current, unexpected: true }), current);
+});
+
+test('Message Target更新はsiblingを保持しnullableではnullへ戻せる', () => {
+  const current = {
+    channelId: '1175075504940908635',
+    messageId: '1175075504940908636',
+    label: 'keep-me',
+    futureSetting: { enabled: true },
+  };
+  const next = {
+    channelId: '1175075504940908637',
+    messageId: '1175075504940908638',
+  };
+
+  assert.deepEqual(mergeDiscordMessageTarget(current, next), {
+    ...current,
+    ...next,
+  });
+  assert.equal(mergeDiscordMessageTarget(current, null), null);
 });
 
 test('Discord message URLは同じGuildのChannel/Message IDへ変換する', () => {
