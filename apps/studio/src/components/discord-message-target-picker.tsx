@@ -101,6 +101,7 @@ export function DiscordMessageTargetPicker({
             onChange={(next) => {
               const channelId = Array.isArray(next) ? (next[0] ?? '') : (next ?? '');
               setError('');
+              if (channelId === target.channelId) return;
               setReferenceText('');
               emitTarget({ channelId, messageId: '' });
             }}
@@ -122,7 +123,8 @@ export function DiscordMessageTargetPicker({
                 if (target.messageId) emitTarget({ channelId: target.channelId, messageId: '' });
                 return;
               }
-              if (next.includes('/channels/')) applyReference(next);
+              const parsed = parseDiscordMessageReference(next, guildId, target.channelId);
+              if (parsed && channelIds.has(parsed.channelId)) applyReference(next);
             }}
             onBlur={() => {
               if (referenceText.trim() && referenceText.trim() !== target.messageId) {
