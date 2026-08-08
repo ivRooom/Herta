@@ -14,6 +14,7 @@ import {
   normalizeConfigForStudio,
   parseConfigJson,
   removeConfigValue,
+  resolveArrayItemBounds,
   stringifyConfig,
   updateConfigValue,
   type JsonSchema,
@@ -73,6 +74,21 @@ test('path指定でnested valueを更新できる', () => {
   assert.deepEqual(updateConfigValue(current, ['rules', 0, 'keyword'], 'hello'), {
     nested: { label: 'Herta' },
     rules: [{ keyword: 'hello' }],
+  });
+});
+
+test('array minItems/maxItemsを安全なUI境界へ解決する', () => {
+  assert.deepEqual(resolveArrayItemBounds({ type: 'array', minItems: 2, maxItems: 5 }), {
+    minItems: 2,
+    maxItems: 5,
+  });
+  assert.deepEqual(resolveArrayItemBounds({ type: 'array', minItems: 3, maxItems: 1 }), {
+    minItems: 3,
+    maxItems: 3,
+  });
+  assert.deepEqual(resolveArrayItemBounds({ type: 'array', minItems: -1, maxItems: -1 }), {
+    minItems: 0,
+    maxItems: undefined,
   });
 });
 

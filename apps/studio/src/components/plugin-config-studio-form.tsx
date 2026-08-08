@@ -18,6 +18,7 @@ import {
   normalizeConfigForStudio,
   parseConfigJson,
   removeConfigValue,
+  resolveArrayItemBounds,
   schemaAllowsNull,
   schemaPrimaryType,
   stringifyConfig,
@@ -485,6 +486,9 @@ function SchemaField({
   if (type === 'array') {
     const items = Array.isArray(value) ? value : [];
     const itemSchema = schema.items ?? {};
+    const { minItems, maxItems } = resolveArrayItemBounds(schema);
+    const atMinimum = items.length <= minItems;
+    const atMaximum = maxItems !== undefined && items.length >= maxItems;
     return (
       <FieldShell title={title} schema={schema} required={required} emphasized>
         <div className="space-y-3">
@@ -511,7 +515,12 @@ function SchemaField({
                     disabled={index === items.length - 1}
                     onClick={() => onChange(path, moveArrayItem(items, index, index + 1))}
                   />
-                  <SmallButton label="削除" danger onClick={() => onRemove([...path, index])} />
+                  <SmallButton
+                    label="削除"
+                    danger
+                    disabled={atMinimum}
+                    onClick={() => onRemove([...path, index])}
+                  />
                 </div>
               </div>
               <SchemaField
@@ -526,12 +535,21 @@ function SchemaField({
               />
             </div>
           ))}
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+            <span>現在 {items.length}件</span>
+            <span>
+              {minItems > 0 ? `最小 ${minItems}件` : '最小制限なし'}
+              {' / '}
+              {maxItems !== undefined ? `最大 ${maxItems}件` : '最大制限なし'}
+            </span>
+          </div>
           <button
             type="button"
+            disabled={atMaximum}
             onClick={() => onChange(path, [...items, makeDefaultValue(itemSchema)])}
-            className="w-full rounded-xl border border-dashed border-primary/40 bg-primary/5 px-4 py-3 text-sm font-medium text-primary transition hover:bg-primary/10"
+            className="w-full rounded-xl border border-dashed border-primary/40 bg-primary/5 px-4 py-3 text-sm font-medium text-primary transition hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-primary/5"
           >
-            ＋ 項目を追加
+            {atMaximum ? `最大 ${maxItems}件までです` : '＋ 項目を追加'}
           </button>
         </div>
       </FieldShell>

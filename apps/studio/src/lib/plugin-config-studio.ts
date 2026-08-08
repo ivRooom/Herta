@@ -14,6 +14,8 @@ export type JsonSchema = {
   properties?: Record<string, JsonSchema>;
   required?: string[];
   items?: JsonSchema;
+  minItems?: number;
+  maxItems?: number;
   oneOf?: JsonSchema[];
   anyOf?: JsonSchema[];
   ['x-herta-ui']?: {
@@ -53,6 +55,23 @@ export function schemaPrimaryType(schema: JsonSchema): string | undefined {
   if (schema.properties) return 'object';
   if (schema.items) return 'array';
   return undefined;
+}
+
+export function resolveArrayItemBounds(schema: JsonSchema): {
+  minItems: number;
+  maxItems: number | undefined;
+} {
+  const rawMin = schema.minItems;
+  const rawMax = schema.maxItems;
+  const minItems =
+    typeof rawMin === 'number' && Number.isSafeInteger(rawMin) && rawMin >= 0 ? rawMin : 0;
+  const validMax =
+    typeof rawMax === 'number' && Number.isSafeInteger(rawMax) && rawMax >= 0 ? rawMax : undefined;
+
+  return {
+    minItems,
+    maxItems: validMax === undefined ? undefined : Math.max(minItems, validMax),
+  };
 }
 
 export function makeDefaultValue(schema: JsonSchema): unknown {
