@@ -52,6 +52,7 @@ export async function listGuildPlugins(guildId: string) {
     const row = rowMap.get(manifest.id);
     return {
       manifest,
+      installed: Boolean(row),
       enabled: row?.enabled ?? false,
       config: isPluginConfig(row?.config) ? row.config : {},
       configVersion: row?.configVersion ?? 0,
@@ -69,6 +70,7 @@ export async function getGuildPlugin(guildId: string, pluginId: string) {
 
   return {
     manifest,
+    installed: Boolean(row),
     enabled: row?.enabled ?? false,
     config: isPluginConfig(row?.config) ? row.config : {},
     configVersion: row?.configVersion ?? 0,
@@ -219,6 +221,7 @@ export async function updateGuildPlugin(
 
   return {
     manifest,
+    installed: true,
     enabled: result.enabled,
     config: isPluginConfig(result.config) ? result.config : {},
     configVersion: result.configVersion,
