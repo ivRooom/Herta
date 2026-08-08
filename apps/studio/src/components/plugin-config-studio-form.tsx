@@ -58,8 +58,10 @@ export function PluginConfigStudioForm({
   const [status, setStatus] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const savedConfigText = stringifyConfig(savedConfig);
   const dirty =
-    enabled !== savedEnabled || stringifyConfig(config) !== stringifyConfig(savedConfig);
+    enabled !== savedEnabled ||
+    (mode === 'json' ? jsonText !== savedConfigText : stringifyConfig(config) !== savedConfigText);
   const properties = configSchema.properties ?? {};
   const visibleEntries = Object.entries(properties).filter(([key, propertySchema]) =>
     fieldMatchesSearch(key, propertySchema, query),
