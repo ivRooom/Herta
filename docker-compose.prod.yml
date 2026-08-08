@@ -137,7 +137,8 @@ services:
       DISCORD_ENABLE_MESSAGE_CONTENT_INTENT: ${DISCORD_ENABLE_MESSAGE_CONTENT_INTENT:-false}
       # Config Studio User Picker / Moderationの再参加監視で必要。
       # Discord Developer Portal側でもServer Members Intentを有効化する。
-      DISCORD_ENABLE_GUILD_MEMBERS_INTENT: ${DISCORD_ENABLE_GUILD_MEMBERS_INTENT:-true}
+      # 本番標準機能のため.env.productionの古いfalse設定よりこちらを優先する。
+      DISCORD_ENABLE_GUILD_MEMBERS_INTENT: 'true'
       DISCORD_GUILD_ID_DEV: ${DISCORD_GUILD_ID_DEV:-}
       BOT_LOG_LEVEL: ${BOT_LOG_LEVEL:-info}
       HERTA_VERSION: ${HERTA_VERSION:-0.1.0}
