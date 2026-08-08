@@ -77,10 +77,14 @@ export function PluginHubGuildPreflight({
         <div className="mt-5 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm leading-6 text-amber-700 dark:text-amber-300">
           {unavailableReason}
         </div>
-      ) : guilds.length === 0 ? (
-        <div className="mt-5 rounded-xl border border-dashed border-border bg-background p-5 text-sm text-muted">
-          管理可能なGuildがありません。Discord側で「管理者」または「サーバー管理」権限を持つGuildが対象です。
-        </div>
+      ) : null}
+
+      {guilds.length === 0 ? (
+        unavailableReason ? null : (
+          <div className="mt-5 rounded-xl border border-dashed border-border bg-background p-5 text-sm text-muted">
+            管理可能なGuildがありません。Discord側で「管理者」または「サーバー管理」権限を持つGuildが対象です。
+          </div>
+        )
       ) : (
         <div className="mt-5">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
@@ -130,7 +134,7 @@ export function PluginHubGuildPreflight({
             ))}
           </ul>
         </div>
-      ) : guilds.length > 0 && !unavailableReason ? (
+      ) : guilds.length > 0 ? (
         <div className="mt-6 flex items-start gap-3 rounded-xl border border-dashed border-primary/30 bg-primary/5 p-4">
           <CircleDashed className="mt-0.5 h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
           <div>
