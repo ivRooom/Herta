@@ -41,6 +41,7 @@ test('Discord User IDの完全一致検索でもBot判定を保持する', async
   assert.ok(result);
   assert.equal(result.length, 1);
   assert.equal(result[0]?.id, '123456789012345678');
+  assert.equal(result[0]?.username, 'herta-helper');
   assert.equal(result[0]?.displayName, 'Herta Helper');
   assert.equal(result[0]?.bot, true);
 });
