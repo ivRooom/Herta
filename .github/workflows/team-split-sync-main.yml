@@ -1,0 +1,36 @@
+name: Team Split Sync Main
+
+on:
+  push:
+    branches:
+      - feat/team-split-rich-config
+    paths:
+      - .github/workflows/team-split-sync-main.yml
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/team-split-rich-config
+          fetch-depth: 0
+      - name: Merge latest main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "mizzz-ivr"
+          git config user.email "mizzz._.dev@outlook.jp"
+          git fetch origin main
+          git merge --no-edit origin/main
+      - name: Remove temporary workflow and commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/team-split-sync-main.yml
+          git add .github/workflows/team-split-sync-main.yml
+          git commit -m "chore: main最新状態へ同期"
+          git push origin HEAD:feat/team-split-rich-config
