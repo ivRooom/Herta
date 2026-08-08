@@ -62,10 +62,7 @@ function toMemberOption(member: GuildMember): GuildMemberOption {
   };
 }
 
-async function searchExactMemberId(
-  guild: Guild,
-  memberId: string,
-): Promise<GuildMemberOption[]> {
+async function searchExactMemberId(guild: Guild, memberId: string): Promise<GuildMemberOption[]> {
   try {
     const member = await guild.members.fetch(memberId);
     return [toMemberOption(member)];

@@ -166,13 +166,16 @@ export function DiscordUserPicker({
               >
                 <span className="min-w-0">
                   <span className="block truncate font-medium">
-                    {member.displayName} {member.bot ? <span className="text-xs text-primary">BOT</span> : null}
+                    {member.displayName}{' '}
+                    {member.bot ? <span className="text-xs text-primary">BOT</span> : null}
                   </span>
                   <span className="block truncate text-xs text-muted">
                     @{member.username} · {member.id}
                   </span>
                 </span>
-                <span className="shrink-0 text-xs text-muted">{selected ? '選択済み' : '選択'}</span>
+                <span className="shrink-0 text-xs text-muted">
+                  {selected ? '選択済み' : '選択'}
+                </span>
               </button>
             );
           })}

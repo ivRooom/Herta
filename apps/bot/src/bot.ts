@@ -28,6 +28,7 @@ import {
   type GuildConfigurationOptions,
 } from './health/guild-options.js';
 import type { DiscordHealthObservation } from './health/types.js';
+import { searchGuildMemberOptions, type GuildMemberOption } from './health/guild-members.js';
 
 function resolveErrorName(error: unknown): string {
   if (error instanceof Error && error.name.trim()) return error.name;
@@ -413,6 +414,14 @@ export class HertaBot {
 
   async getGuildConfigurationOptions(guildId: string): Promise<GuildConfigurationOptions | null> {
     return loadGuildConfigurationOptions(this.client, guildId);
+  }
+
+  async searchGuildMembers(
+    guildId: string,
+    query: string,
+    limit: number,
+  ): Promise<GuildMemberOption[] | null> {
+    return searchGuildMemberOptions(this.client, guildId, query, limit);
   }
 
   getDiscordHealthObservation(): DiscordHealthObservation {

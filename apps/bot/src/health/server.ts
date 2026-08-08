@@ -4,6 +4,7 @@ import type { Logger } from '@herta/logger';
 import type { HealthConfig } from './config.js';
 import { createUnknownHealthResponse } from './service.js';
 import type { GuildConfigurationOptions } from './guild-options.js';
+import type { GuildMemberOption } from './guild-members.js';
 import type { HertaHealthResponse, PublicServiceStatus } from './types.js';
 
 export interface HealthHttpServerOptions {
@@ -12,6 +13,11 @@ export interface HealthHttpServerOptions {
   version: string;
   getHealth: () => Promise<HertaHealthResponse>;
   getGuildOptions?: (guildId: string) => Promise<GuildConfigurationOptions | null>;
+  searchGuildMembers?: (
+    guildId: string,
+    query: string,
+    limit: number,
+  ) => Promise<GuildMemberOption[] | null>;
   now?: () => Date;
   uptimeSeconds?: () => number;
 }
@@ -92,7 +98,45 @@ export class HealthHttpServer {
     url: string,
     response: import('node:http').ServerResponse,
   ): Promise<void> {
-    const pathname = new URL(url, 'http://localhost').pathname;
+    const requestUrl = new URL(url, 'http://localhost');
+    const pathname = requestUrl.pathname;
+    const guildMemberSearchMatch = /^\/internal\/guilds\/(\d+)\/members$/u.exec(pathname);
+    if (guildMemberSearchMatch) {
+      if (method !== 'GET') {
+        response.setHeader('Allow', 'GET');
+        this.sendJson(response, 405, { status: 'method_not_allowed' });
+        return;
+      }
+      if (!this.options.searchGuildMembers) {
+        this.sendJson(response, 404, { status: 'not_found' });
+        return;
+      }
+
+      const query = requestUrl.searchParams.get('query')?.trim() ?? '';
+      if (!/^\d{17,20}$/u.test(query) && query.length < 2) {
+        this.sendJson(response, 400, { status: 'query_too_short' });
+        return;
+      }
+      const requestedLimit = Number.parseInt(requestUrl.searchParams.get('limit') ?? '20', 10);
+      const limit = Number.isFinite(requestedLimit)
+        ? Math.max(1, Math.min(20, requestedLimit))
+        : 20;
+      try {
+        const members = await withTimeout(
+          this.options.searchGuildMembers(guildMemberSearchMatch[1]!, query, limit),
+          this.options.config.checkTimeoutMs + 2_000,
+        );
+        if (!members) {
+          this.sendJson(response, 404, { status: 'guild_not_found' });
+          return;
+        }
+        this.sendJson(response, 200, { members });
+      } catch {
+        this.sendJson(response, 503, { status: 'unavailable' });
+      }
+      return;
+    }
+
     const guildOptionsMatch = /^\/internal\/guilds\/(\d+)\/options$/u.exec(pathname);
     if (guildOptionsMatch) {
       if (method !== 'GET') {
