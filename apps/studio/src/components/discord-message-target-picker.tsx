@@ -6,6 +6,7 @@ import { ExternalLink, MessageSquareText } from 'lucide-react';
 import type { GuildChannelOption } from '@/lib/bot-guild-options';
 import {
   buildDiscordMessageUrl,
+  mergeDiscordMessageTarget,
   normalizeDiscordMessageTarget,
   parseDiscordMessageReference,
   type DiscordMessageTarget,
@@ -16,12 +17,14 @@ export function DiscordMessageTargetPicker({
   guildId,
   channels,
   value,
+  nullable = false,
   onChange,
 }: {
   guildId: string;
   channels: GuildChannelOption[];
   value: unknown;
-  onChange: (value: DiscordMessageTarget) => void;
+  nullable?: boolean;
+  onChange: (value: Record<string, unknown> | null) => void;
 }) {
   const target = useMemo(() => normalizeDiscordMessageTarget(value), [value]);
   const [referenceText, setReferenceText] = useState(target.messageId);
@@ -41,25 +44,49 @@ export function DiscordMessageTargetPicker({
   );
   const jumpUrl = buildDiscordMessageUrl(guildId, target);
 
+  function emitTarget(next: DiscordMessageTarget | null) {
+    onChange(mergeDiscordMessageTarget(value, next));
+  }
+
+  function restoreLastValidReference(message: string) {
+    setError(message);
+    setReferenceText(target.messageId);
+  }
+
   function applyReference(input: string) {
     const parsed = parseDiscordMessageReference(input, guildId, target.channelId);
     if (!parsed) {
-      setError(
+      restoreLastValidReference(
         target.channelId
           ? 'Message IDまたは同じGuildのDiscordメッセージURLを入力してください。'
           : '先にChannelを選択するか、同じGuildのDiscordメッセージURLを貼り付けてください。',
       );
-      setReferenceText(target.messageId);
       return;
     }
     if (!channelIds.has(parsed.channelId)) {
-      setError('Botが閲覧・履歴参照できるテキストChannelのメッセージを指定してください。');
-      setReferenceText(target.messageId);
+      restoreLastValidReference(
+        'Botが閲覧・履歴参照できるテキストChannelのメッセージを指定してください。',
+      );
       return;
     }
     setError('');
     setReferenceText(parsed.messageId);
-    onChange(parsed);
+    emitTarget(parsed);
+  }
+
+  if (nullable && value === null) {
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-border bg-background/60 p-3">
+        <span className="text-sm text-muted">未設定（null）</span>
+        <button
+          type="button"
+          onClick={() => emitTarget({ channelId: '', messageId: '' })}
+          className="rounded-lg border border-border px-3 py-2 text-sm hover:bg-surface"
+        >
+          Targetを設定
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -75,7 +102,7 @@ export function DiscordMessageTargetPicker({
               const channelId = Array.isArray(next) ? (next[0] ?? '') : (next ?? '');
               setError('');
               setReferenceText('');
-              onChange({ channelId, messageId: '' });
+              emitTarget({ channelId, messageId: '' });
             }}
           />
         </div>
@@ -92,7 +119,7 @@ export function DiscordMessageTargetPicker({
               setReferenceText(next);
               setError('');
               if (!next.trim()) {
-                if (target.messageId) onChange({ channelId: target.channelId, messageId: '' });
+                if (target.messageId) emitTarget({ channelId: target.channelId, messageId: '' });
                 return;
               }
               if (next.includes('/channels/')) applyReference(next);
@@ -116,20 +143,35 @@ export function DiscordMessageTargetPicker({
 
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
 
-      {jumpUrl ? (
-        <a
-          href={jumpUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
-        >
-          <ExternalLink className="h-3.5 w-3.5" /> Discordで対象メッセージを開く
-        </a>
-      ) : (
-        <p className="text-xs text-muted">
-          ChannelとMessageを指定すると、保存値はChannel ID / Message IDとして保持されます。
-        </p>
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {jumpUrl ? (
+          <a
+            href={jumpUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+          >
+            <ExternalLink className="h-3.5 w-3.5" /> Discordで対象メッセージを開く
+          </a>
+        ) : (
+          <p className="text-xs text-muted">
+            ChannelとMessageを指定すると、保存値はChannel ID / Message IDとして保持されます。
+          </p>
+        )}
+        {nullable ? (
+          <button
+            type="button"
+            onClick={() => {
+              setError('');
+              setReferenceText('');
+              emitTarget(null);
+            }}
+            className="rounded-lg border border-border px-2.5 py-1.5 text-xs text-muted hover:bg-surface hover:text-foreground"
+          >
+            未設定に戻す
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }
