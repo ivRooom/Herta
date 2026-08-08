@@ -15,6 +15,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { DiscordChannelPicker, DiscordRolePicker } from '@/components/discord-entity-picker';
+import { DiscordUserPicker } from '@/components/discord-user-picker';
 import type { GuildConfigurationOptions } from '@/lib/bot-guild-options';
 import {
   appendCustomRule,
@@ -315,6 +316,7 @@ export function ModerationConfigForm({
         ) : null}
         {activeSection === 'exemptions' ? (
           <ExemptionsSection
+            guildId={guildId}
             config={config}
             patchConfig={patchConfig}
             discordOptions={discordOptions}
@@ -819,10 +821,12 @@ function AutoCaseSection({
 }
 
 function ExemptionsSection({
+  guildId,
   config,
   patchConfig,
   discordOptions,
 }: {
+  guildId: string;
   config: ModerationConfigDraft;
   patchConfig: (patch: Partial<ModerationConfigDraft>) => void;
   discordOptions: GuildConfigurationOptions | null;
@@ -865,12 +869,23 @@ function ExemptionsSection({
             />
           </div>
         </div>
-        <IdListEditor
-          title="除外ユーザーID"
-          description="Bot・管理者など個別ユーザーを自動検知から除外します。"
-          values={config.autoExemptUserIds}
-          onChange={(values) => patchConfig({ autoExemptUserIds: values })}
-        />
+        <div className="rounded-xl border border-border bg-background p-4">
+          <p className="text-sm font-medium">除外ユーザー</p>
+          <p className="mt-1 text-xs leading-5 text-muted">
+            Bot・管理者など個別ユーザーを名前・表示名・IDで検索して自動検知から除外します。
+          </p>
+          <div className="mt-3">
+            <DiscordUserPicker
+              guildId={guildId}
+              value={config.autoExemptUserIds}
+              multiple
+              placeholder="除外するユーザーを検索"
+              onChange={(value) =>
+                patchConfig({ autoExemptUserIds: Array.isArray(value) ? value : [] })
+              }
+            />
+          </div>
+        </div>
       </div>
     </SectionPanel>
   );
