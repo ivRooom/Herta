@@ -1,35 +1,13 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import {
-  ArrowLeft,
-  ArrowRight,
-  CalendarDays,
-  Gamepad2,
-  MessageCircleReply,
-  Puzzle,
-  Quote,
-  Settings,
-  ShieldCheck,
-  Sparkles,
-  UsersRound,
-  type LucideIcon,
-} from 'lucide-react';
+import { ArrowLeft, ArrowRight, Puzzle, Sparkles } from 'lucide-react';
 import { auth } from '@/auth';
-import { PluginToggle } from '@/components/plugin-toggle';
+import { PluginCatalogGrid, type PluginCatalogItem } from '@/components/plugin-catalog-grid';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { listGuildPlugins } from '@/lib/guild-plugins';
 import { getDiscordAccessToken } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
-
-const PLUGIN_ICONS: Record<string, LucideIcon> = {
-  moderation: ShieldCheck,
-  'auto-response': MessageCircleReply,
-  'daily-content': CalendarDays,
-  lfg: UsersRound,
-  quote: Quote,
-  'team-split': Gamepad2,
-};
 
 export default async function PluginsPage({ params }: { params: Promise<{ guildId: string }> }) {
   const { guildId } = await params;
@@ -43,6 +21,15 @@ export default async function PluginsPage({ params }: { params: Promise<{ guildI
 
   const plugins = await listGuildPlugins(guildId);
   const enabledCount = plugins.filter((plugin) => plugin.enabled).length;
+  const catalog: PluginCatalogItem[] = plugins.map(({ manifest, enabled, config }) => ({
+    id: manifest.id,
+    name: manifest.name,
+    version: manifest.version,
+    description: manifest.description,
+    category: manifest.category,
+    enabled,
+    config,
+  }));
 
   return (
     <div className="space-y-7">
@@ -60,11 +47,9 @@ export default async function PluginsPage({ params }: { params: Promise<{ guildI
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
               <Sparkles className="h-3.5 w-3.5" /> Guild Feature Center
             </div>
-            <h1 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
-              Plugin Manager
-            </h1>
+            <h1 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">Plugin Manager</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-              {guild.name} に必要な機能だけを有効化し、各Pluginの設定・運用画面へ移動できます。
+              {guild.name} に必要な機能だけを有効化し、検索・カテゴリから各Pluginの設定・運用画面へ移動できます。
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:min-w-72">
@@ -77,9 +62,7 @@ export default async function PluginsPage({ params }: { params: Promise<{ guildI
       <section>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
-              Official Plugins
-            </p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Official Plugins</p>
             <h2 className="mt-2 text-xl font-semibold">利用できる機能</h2>
           </div>
           <Link
@@ -90,62 +73,9 @@ export default async function PluginsPage({ params }: { params: Promise<{ guildI
           </Link>
         </div>
 
-        <ul className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {plugins.map(({ manifest, enabled, config }) => {
-            const Icon = PLUGIN_ICONS[manifest.id] ?? Puzzle;
-            return (
-              <li
-                key={manifest.id}
-                className="group relative overflow-hidden rounded-2xl border border-border bg-surface p-5 shadow-card transition-colors hover:border-primary/40"
-              >
-                <div className="pointer-events-none absolute right-0 top-0 h-24 w-24 rounded-full bg-primary/0 blur-2xl transition-colors group-hover:bg-primary/10" />
-                <div className="relative flex items-start justify-between gap-4">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                      <Icon className="h-5 w-5" />
-                    </span>
-                    <div className="min-w-0">
-                      <Link
-                        href={`/dashboard/guilds/${guildId}/plugins/${manifest.id}`}
-                        className="font-semibold hover:text-primary"
-                      >
-                        {manifest.name}
-                      </Link>
-                      <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.12em] text-muted">
-                        {manifest.category} · v{manifest.version}
-                      </p>
-                    </div>
-                  </div>
-                  <PluginToggle
-                    guildId={guildId}
-                    pluginId={manifest.id}
-                    initialEnabled={enabled}
-                    initialConfig={config}
-                  />
-                </div>
-
-                <p className="mt-4 min-h-12 text-sm leading-6 text-muted">{manifest.description}</p>
-
-                <div className="mt-5 flex items-center justify-between border-t border-border pt-4">
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                      enabled ? 'bg-emerald-500/10 text-emerald-400' : 'bg-background text-muted'
-                    }`}
-                  >
-                    {enabled ? 'Active' : 'Disabled'}
-                  </span>
-                  <Link
-                    href={`/dashboard/guilds/${guildId}/plugins/${manifest.id}`}
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted transition-colors hover:text-foreground"
-                  >
-                    <Settings className="h-3.5 w-3.5" /> 設定
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </Link>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        <div className="mt-5">
+          <PluginCatalogGrid guildId={guildId} plugins={catalog} />
+        </div>
       </section>
 
       <section className="rounded-2xl border border-dashed border-primary/30 bg-primary/5 p-6 sm:p-7">
@@ -157,8 +87,7 @@ export default async function PluginsPage({ params }: { params: Promise<{ guildI
             <div>
               <h2 className="font-semibold">Hertaを自分たちのPluginで拡張</h2>
               <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">
-                署名付きPackage、権限宣言、Guild単位インストール、ロールバックを備えたCustom
-                Plugin基盤を次Phaseで実装します。
+                署名付きPackage、権限宣言、Guild単位インストール、ロールバックを備えたCustom Plugin基盤をIssue #111で進めます。
               </p>
             </div>
           </div>
