@@ -22,6 +22,22 @@ export interface ServiceHealthSnapshotRecord extends ServiceHealthSnapshotInput 
 
 const DEFAULT_HEALTH_SNAPSHOT_LIMIT = 10_000;
 const MAX_HEALTH_SNAPSHOT_LIMIT = 50_000;
+const HEALTH_SNAPSHOT_SELECT = {
+  id: true,
+  serviceId: true,
+  version: true,
+  status: true,
+  discordStatus: true,
+  databaseStatus: true,
+  redisStatus: true,
+  workerStatus: true,
+  databaseLatencyMs: true,
+  redisLatencyMs: true,
+  workerLatencyMs: true,
+  guildCount: true,
+  uptimeSeconds: true,
+  checkedAt: true,
+} as const;
 
 export function normalizeServiceHealthSnapshotLimit(limit: number | null | undefined): number {
   const finiteLimit =
@@ -66,21 +82,21 @@ export async function listServiceHealthSnapshots(
     },
     orderBy: { checkedAt: 'asc' },
     take: safeLimit,
-    select: {
-      id: true,
-      serviceId: true,
-      version: true,
-      status: true,
-      discordStatus: true,
-      databaseStatus: true,
-      redisStatus: true,
-      workerStatus: true,
-      databaseLatencyMs: true,
-      redisLatencyMs: true,
-      workerLatencyMs: true,
-      guildCount: true,
-      uptimeSeconds: true,
-      checkedAt: true,
+    select: HEALTH_SNAPSHOT_SELECT,
+  });
+}
+
+export async function getServiceHealthSnapshotBefore(
+  prisma: PrismaClient,
+  serviceId: string,
+  before: Date,
+): Promise<ServiceHealthSnapshotRecord | null> {
+  return prisma.serviceHealthSnapshot.findFirst({
+    where: {
+      serviceId,
+      checkedAt: { lt: before },
     },
+    orderBy: { checkedAt: 'desc' },
+    select: HEALTH_SNAPSHOT_SELECT,
   });
 }
