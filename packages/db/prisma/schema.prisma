@@ -248,6 +248,32 @@ model RuleExecutionLog {
 }
 
 // ============================================================
+// Operations / Observability
+// ============================================================
+
+model ServiceHealthSnapshot {
+  id                String   @id @default(uuid()) @db.Uuid
+  serviceId         String   @map("service_id")
+  version           String
+  status            String
+  discordStatus     String   @map("discord_status")
+  databaseStatus    String   @map("database_status")
+  redisStatus       String   @map("redis_status")
+  workerStatus      String   @map("worker_status")
+  databaseLatencyMs Int?     @map("database_latency_ms")
+  redisLatencyMs    Int?     @map("redis_latency_ms")
+  workerLatencyMs   Int?     @map("worker_latency_ms")
+  guildCount        Int      @default(0) @map("guild_count")
+  uptimeSeconds     Int      @default(0) @map("uptime_seconds")
+  checkedAt         DateTime @map("checked_at") @db.Timestamptz(3)
+  createdAt         DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([serviceId, checkedAt(sort: Desc)])
+  @@index([checkedAt(sort: Desc)])
+  @@map("service_health_snapshots")
+}
+
+// ============================================================
 // Plugin: Auto Response
 // ============================================================
 
