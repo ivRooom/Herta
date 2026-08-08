@@ -1,6 +1,7 @@
 import {
   getPrismaClient,
   pruneCommandExecutionEvents,
+  pruneServiceHealthSnapshots,
   recordServiceHealthSnapshot,
   type ServiceHealthSnapshotInput,
 } from '@herta/db';
@@ -49,31 +50,33 @@ const healthServer = healthConfig.enabled
     })
   : undefined;
 
-const EXECUTION_ANALYTICS_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1_000;
+const RETENTION_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1_000;
 const EXECUTION_ANALYTICS_RETENTION_DAYS = 90;
+const HEALTH_SNAPSHOT_RETENTION_DAYS = 31;
 const HEALTH_SNAPSHOT_INTERVAL_MS = 5 * 60 * 1_000;
 const HEALTH_SNAPSHOT_BUFFER_LIMIT = 288;
 
 let shuttingDown = false;
-let executionAnalyticsPruneInFlight = false;
-let executionAnalyticsPruneTimer: NodeJS.Timeout | undefined;
+let retentionPruneInFlight = false;
+let retentionPruneTimer: NodeJS.Timeout | undefined;
 let healthSnapshotTimer: NodeJS.Timeout | undefined;
 let healthSnapshotRun: Promise<void> | undefined;
 let healthSnapshotCollectionActive = false;
 const pendingHealthSnapshots: ServiceHealthSnapshotInput[] = [];
 
-async function pruneExecutionAnalytics(): Promise<void> {
-  if (!process.env['DATABASE_URL'] || executionAnalyticsPruneInFlight) return;
+async function pruneRetainedData(): Promise<void> {
+  if (!process.env['DATABASE_URL'] || retentionPruneInFlight) return;
 
-  executionAnalyticsPruneInFlight = true;
+  retentionPruneInFlight = true;
   try {
     const prisma = getPrismaClient();
-    const [commandDeleted, autoResponseDeleted] = await Promise.all([
+    const [commandDeleted, autoResponseDeleted, healthSnapshotDeleted] = await Promise.all([
       pruneCommandExecutionEvents(prisma, EXECUTION_ANALYTICS_RETENTION_DAYS),
       pruneAutoResponseExecutionEvents(
         prisma as unknown as AutoResponsePrismaClient,
         EXECUTION_ANALYTICS_RETENTION_DAYS,
       ),
+      pruneServiceHealthSnapshots(prisma, HEALTH_SNAPSHOT_RETENTION_DAYS),
     ]);
     if (commandDeleted > 0) {
       logger.info(
@@ -87,26 +90,32 @@ async function pruneExecutionAnalytics(): Promise<void> {
         '古いAuto Response実行履歴を削除しました',
       );
     }
+    if (healthSnapshotDeleted > 0) {
+      logger.info(
+        { deleted: healthSnapshotDeleted, retentionDays: HEALTH_SNAPSHOT_RETENTION_DAYS },
+        '古いHealth Snapshotを削除しました',
+      );
+    }
   } catch (error) {
-    logger.warn({ err: error }, '古い実行履歴の整理に失敗しました');
+    logger.warn({ err: error }, '古いTelemetryデータの整理に失敗しました');
   } finally {
-    executionAnalyticsPruneInFlight = false;
+    retentionPruneInFlight = false;
   }
 }
 
-function startExecutionAnalyticsPruning(): void {
-  if (!process.env['DATABASE_URL'] || executionAnalyticsPruneTimer) return;
+function startRetentionPruning(): void {
+  if (!process.env['DATABASE_URL'] || retentionPruneTimer) return;
 
-  executionAnalyticsPruneTimer = setInterval(() => {
-    void pruneExecutionAnalytics();
-  }, EXECUTION_ANALYTICS_PRUNE_INTERVAL_MS);
-  executionAnalyticsPruneTimer.unref();
+  retentionPruneTimer = setInterval(() => {
+    void pruneRetainedData();
+  }, RETENTION_PRUNE_INTERVAL_MS);
+  retentionPruneTimer.unref();
 }
 
-function stopExecutionAnalyticsPruning(): void {
-  if (!executionAnalyticsPruneTimer) return;
-  clearInterval(executionAnalyticsPruneTimer);
-  executionAnalyticsPruneTimer = undefined;
+function stopRetentionPruning(): void {
+  if (!retentionPruneTimer) return;
+  clearInterval(retentionPruneTimer);
+  retentionPruneTimer = undefined;
 }
 
 function bufferHealthSnapshot(snapshot: ServiceHealthSnapshotInput): void {
@@ -197,13 +206,13 @@ async function stopHealthSnapshotCollection(): Promise<void> {
 async function main(): Promise<void> {
   logger.info('Herta Bot を起動しています...');
   try {
-    await pruneExecutionAnalytics();
+    await pruneRetainedData();
     await healthServer?.start();
     await bot.start();
-    startExecutionAnalyticsPruning();
+    startRetentionPruning();
     startHealthSnapshotCollection();
   } catch (error) {
-    stopExecutionAnalyticsPruning();
+    stopRetentionPruning();
     await stopHealthSnapshotCollection();
     await healthServer?.stop().catch(() => undefined);
     logger.fatal(error, 'Bot の起動に失敗しました');
@@ -214,7 +223,7 @@ async function main(): Promise<void> {
 async function shutdown(signal: 'SIGINT' | 'SIGTERM'): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
-  stopExecutionAnalyticsPruning();
+  stopRetentionPruning();
   await stopHealthSnapshotCollection();
   logger.info({ signal }, 'シャットダウン中...');
 
