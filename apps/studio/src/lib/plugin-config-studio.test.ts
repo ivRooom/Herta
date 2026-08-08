@@ -149,6 +149,25 @@ test('Discord Picker付きSchemaでも保存済みIDを変換せず保持する'
   assert.deepEqual(parseConfigJson(stringifyConfig(current)), current);
 });
 
+test('multiple metadataはstring SchemaのJSON型を配列へ変更しない', () => {
+  const malformedUiSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+      channelId: {
+        type: 'string',
+        default: '1175075504940908635',
+        ['x-herta-ui']: { widget: 'discord-channel', multiple: true },
+      },
+    },
+  };
+
+  const normalized = normalizeConfigForStudio(malformedUiSchema, {
+    channelId: '1175075504940908635',
+  });
+  assert.equal(normalized.channelId, '1175075504940908635');
+  assert.equal(Array.isArray(normalized.channelId), false);
+});
+
 test('検索は親・子のtitle/descriptionを対象にする', () => {
   assert.equal(fieldMatchesSearch('nested', schema.properties?.nested ?? {}, '表示名'), true);
   assert.equal(fieldMatchesSearch('rules', schema.properties?.rules ?? {}, '存在しない'), false);
