@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Loader2, Plus, Save, Trash2 } from 'lucide-react';
+import type { GuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { DiscordChannelPicker, DiscordRolePicker } from './discord-entity-picker';
 
 export interface AutoResponseRuleItem {
   id: string;
@@ -30,8 +32,8 @@ interface RuleDraft {
   matchMode: AutoResponseRuleItem['matchMode'];
   responseType: AutoResponseRuleItem['responseType'];
   responseContent: string;
-  channelIds: string;
-  roleIds: string;
+  channelIds: string[];
+  roleIds: string[];
   cooldownSeconds: number;
   priority: number;
   caseSensitive: boolean;
@@ -42,6 +44,7 @@ interface RuleManagerProps {
   guildId: string;
   initialRules: AutoResponseRuleItem[];
   defaultRuleCooldownSeconds: number;
+  discordOptions?: GuildConfigurationOptions | null;
 }
 
 function createEmptyRule(defaultRuleCooldownSeconds: number): RuleDraft {
@@ -51,8 +54,8 @@ function createEmptyRule(defaultRuleCooldownSeconds: number): RuleDraft {
     matchMode: 'partial',
     responseType: 'text',
     responseContent: '',
-    channelIds: '',
-    roleIds: '',
+    channelIds: [],
+    roleIds: [],
     cooldownSeconds: defaultRuleCooldownSeconds,
     priority: 0,
     caseSensitive: false,
@@ -64,6 +67,7 @@ export function AutoResponseRuleManager({
   guildId,
   initialRules,
   defaultRuleCooldownSeconds,
+  discordOptions,
 }: RuleManagerProps) {
   const router = useRouter();
   const [rules, setRules] = useState(initialRules);
@@ -110,7 +114,7 @@ export function AutoResponseRuleManager({
           <h2 className="font-medium">新しいルール</h2>
         </div>
         <div className="mt-4">
-          <RuleFields value={draft} onChange={setDraft} />
+          <RuleFields value={draft} onChange={setDraft} discordOptions={discordOptions} />
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-xs text-muted">
@@ -150,6 +154,7 @@ export function AutoResponseRuleManager({
                 setRules((current) => current.filter((candidate) => candidate.id !== ruleId));
                 router.refresh();
               }}
+              discordOptions={discordOptions}
             />
           ))
         )}
@@ -163,11 +168,13 @@ function RuleCard({
   rule,
   onUpdated,
   onDeleted,
+  discordOptions,
 }: {
   guildId: string;
   rule: AutoResponseRuleItem;
   onUpdated(rule: AutoResponseRuleItem): void;
   onDeleted(ruleId: string): void;
+  discordOptions?: GuildConfigurationOptions | null;
 }) {
   const [draft, setDraft] = useState<RuleDraft>(() => toDraft(rule));
   const [saving, setSaving] = useState(false);
@@ -246,7 +253,7 @@ function RuleCard({
       </summary>
 
       <div className="border-t border-border p-5">
-        <RuleFields value={draft} onChange={setDraft} />
+        <RuleFields value={draft} onChange={setDraft} discordOptions={discordOptions} />
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-muted">{message}</p>
           <div className="flex gap-2">
@@ -279,7 +286,15 @@ function RuleCard({
   );
 }
 
-function RuleFields({ value, onChange }: { value: RuleDraft; onChange(value: RuleDraft): void }) {
+function RuleFields({
+  value,
+  onChange,
+  discordOptions,
+}: {
+  value: RuleDraft;
+  onChange(value: RuleDraft): void;
+  discordOptions?: GuildConfigurationOptions | null;
+}) {
   const update = <K extends keyof RuleDraft>(key: K, next: RuleDraft[K]) => {
     onChange({ ...value, [key]: next });
   };
@@ -342,20 +357,22 @@ function RuleFields({ value, onChange }: { value: RuleDraft; onChange(value: Rul
           />
         </Field>
       </div>
-      <Field label="対象チャンネルID（カンマ区切り）">
-        <input
+      <Field label="対象チャンネル">
+        <DiscordChannelPicker
+          options={discordOptions?.channels ?? []}
           value={value.channelIds}
-          onChange={(event) => update('channelIds', event.target.value)}
-          className="input font-mono"
-          placeholder="123456789, 987654321"
+          multiple
+          placeholder="対象チャンネルを検索"
+          onChange={(next) => update('channelIds', Array.isArray(next) ? next : next ? [next] : [])}
         />
       </Field>
-      <Field label="対象ロールID（カンマ区切り）">
-        <input
+      <Field label="対象ロール">
+        <DiscordRolePicker
+          options={discordOptions?.roles ?? []}
           value={value.roleIds}
-          onChange={(event) => update('roleIds', event.target.value)}
-          className="input font-mono"
-          placeholder="123456789"
+          multiple
+          placeholder="対象ロールを検索"
+          onChange={(next) => update('roleIds', Array.isArray(next) ? next : next ? [next] : [])}
         />
       </Field>
       <Field label="Cooldown（秒）">
@@ -414,8 +431,8 @@ function toDraft(rule: AutoResponseRuleItem): RuleDraft {
     matchMode: rule.matchMode,
     responseType: rule.responseType,
     responseContent: rule.responseContent,
-    channelIds: rule.channelIds.join(', '),
-    roleIds: rule.roleIds.join(', '),
+    channelIds: [...rule.channelIds],
+    roleIds: [...rule.roleIds],
     cooldownSeconds: rule.cooldownSeconds,
     priority: rule.priority,
     caseSensitive: rule.caseSensitive,
@@ -426,16 +443,9 @@ function toDraft(rule: AutoResponseRuleItem): RuleDraft {
 function toRequestBody(draft: RuleDraft) {
   return {
     ...draft,
-    channelIds: splitIds(draft.channelIds),
-    roleIds: splitIds(draft.roleIds),
+    channelIds: [...draft.channelIds],
+    roleIds: [...draft.roleIds],
   };
-}
-
-function splitIds(value: string): string[] {
-  return value
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
 }
 
 function matchModeLabel(value: AutoResponseRuleItem['matchMode']): string {
