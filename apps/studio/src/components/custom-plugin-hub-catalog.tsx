@@ -88,7 +88,9 @@ export function CustomPluginHubCatalog({ plugins }: { plugins: PluginHubCatalogI
   }, [category, plugins, query, source]);
 
   const permissionCount = useMemo(
-    () => new Set(plugins.flatMap((plugin) => plugin.permissions.map((permission) => permission.id))).size,
+    () =>
+      new Set(plugins.flatMap((plugin) => plugin.permissions.map((permission) => permission.id)))
+        .size,
     [plugins],
   );
   const commandCount = useMemo(
@@ -154,7 +156,10 @@ export function CustomPluginHubCatalog({ plugins }: { plugins: PluginHubCatalogI
             ) : null}
           </label>
 
-          <div className="flex rounded-xl border border-border bg-background p-1" aria-label="Plugin種別">
+          <div
+            className="flex rounded-xl border border-border bg-background p-1"
+            aria-label="Plugin種別"
+          >
             {(
               [
                 ['all', 'すべて'],
@@ -200,7 +205,9 @@ export function CustomPluginHubCatalog({ plugins }: { plugins: PluginHubCatalogI
 
       <div className="flex items-center justify-between gap-3 text-xs text-muted">
         <span>
-          {source === 'custom' ? '0 Custom Plugins' : `${filtered.length} / ${plugins.length} Plugins`}
+          {source === 'custom'
+            ? '0 Custom Plugins'
+            : `${filtered.length} / ${plugins.length} Plugins`}
         </span>
         {filtersActive ? (
           <button
@@ -282,7 +289,10 @@ function PluginCatalogCard({ plugin }: { plugin: PluginHubCatalogItem }) {
               </p>
             </div>
           </div>
-          <PackageCheck className="h-5 w-5 shrink-0 text-emerald-500" aria-label="静的Registry登録済み" />
+          <PackageCheck
+            className="h-5 w-5 shrink-0 text-emerald-500"
+            aria-label="静的Registry登録済み"
+          />
         </div>
 
         <p className="mt-4 text-sm leading-6 text-muted">{plugin.description}</p>
@@ -296,21 +306,29 @@ function PluginCatalogCard({ plugin }: { plugin: PluginHubCatalogItem }) {
 
         <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted">
           <span>Author: {plugin.authorName}</span>
-          <span>Herta: {plugin.minHertaVersion ? `>= ${plugin.minHertaVersion}` : '互換指定なし'}</span>
+          <span>
+            Herta: {plugin.minHertaVersion ? `>= ${plugin.minHertaVersion}` : '互換指定なし'}
+          </span>
           <span>Config: {plugin.hasConfigSchema ? 'Schemaあり' : '設定なし'}</span>
         </div>
 
         <details className="group mt-5 border-t border-border pt-4">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold">
             Manifest詳細
-            <ChevronDown className="h-4 w-4 text-muted transition-transform group-open:rotate-180" aria-hidden="true" />
+            <ChevronDown
+              className="h-4 w-4 text-muted transition-transform group-open:rotate-180"
+              aria-hidden="true"
+            />
           </summary>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <ManifestSection icon={KeyRound} title="Required permissions">
               {plugin.permissions.length > 0 ? (
                 <ul className="space-y-2">
                   {plugin.permissions.map((permission) => (
-                    <li key={permission.id} className="rounded-xl border border-border bg-background p-3">
+                    <li
+                      key={permission.id}
+                      className="rounded-xl border border-border bg-background p-3"
+                    >
                       <p className="text-xs font-semibold">{permission.name}</p>
                       <p className="mt-1 break-all text-[10px] text-muted">{permission.id}</p>
                       <p className="mt-1 text-xs leading-5 text-muted">{permission.description}</p>
@@ -326,7 +344,10 @@ function PluginCatalogCard({ plugin }: { plugin: PluginHubCatalogItem }) {
               {plugin.dependencies.length > 0 ? (
                 <ul className="space-y-2 text-xs">
                   {plugin.dependencies.map((dependency) => (
-                    <li key={dependency.pluginId} className="rounded-xl border border-border bg-background p-3">
+                    <li
+                      key={dependency.pluginId}
+                      className="rounded-xl border border-border bg-background p-3"
+                    >
                       <span className="font-medium">{dependency.pluginId}</span>
                       <span className="ml-2 text-muted">
                         {dependency.optional ? 'optional' : 'required'}
@@ -343,7 +364,10 @@ function PluginCatalogCard({ plugin }: { plugin: PluginHubCatalogItem }) {
               {plugin.commands.length > 0 ? (
                 <ul className="space-y-2">
                   {plugin.commands.map((command) => (
-                    <li key={command.name} className="rounded-xl border border-border bg-background p-3">
+                    <li
+                      key={command.name}
+                      className="rounded-xl border border-border bg-background p-3"
+                    >
                       <code className="text-xs font-semibold text-primary">/{command.name}</code>
                       <p className="mt-1 text-xs leading-5 text-muted">{command.description}</p>
                     </li>
@@ -398,7 +422,9 @@ function ManifestSection({
 }
 
 function EmptyManifestValue({ text }: { text: string }) {
-  return <p className="rounded-xl border border-dashed border-border p-3 text-xs text-muted">{text}</p>;
+  return (
+    <p className="rounded-xl border border-dashed border-border p-3 text-xs text-muted">{text}</p>
+  );
 }
 
 function SummaryMetric({ label, value }: { label: string; value: string }) {
@@ -428,16 +454,23 @@ function CustomRegistryEmptyState() {
         </span>
         <h2 className="mt-4 text-lg font-semibold">Custom Registryは安全基盤を構築中です</h2>
         <p className="mt-2 text-sm leading-6 text-muted">
-          Package署名、hash検証、要求権限の承認、互換Version、Runtime isolation、rollbackが揃うまで、外部PluginをBot本体へ直接ロードしません。
+          Package署名、hash検証、要求権限の承認、互換Version、Runtime
+          isolation、rollbackが揃うまで、外部PluginをBot本体へ直接ロードしません。
         </p>
         <div className="mt-5 flex flex-wrap gap-2 text-xs text-muted">
-          {['Package signature', 'Permission approval', 'Dependency check', 'Runtime isolation'].map(
-            (item) => (
-              <span key={item} className="rounded-lg border border-border bg-background px-2.5 py-1.5">
-                {item}
-              </span>
-            ),
-          )}
+          {[
+            'Package signature',
+            'Permission approval',
+            'Dependency check',
+            'Runtime isolation',
+          ].map((item) => (
+            <span
+              key={item}
+              className="rounded-lg border border-border bg-background px-2.5 py-1.5"
+            >
+              {item}
+            </span>
+          ))}
         </div>
       </div>
     </section>
