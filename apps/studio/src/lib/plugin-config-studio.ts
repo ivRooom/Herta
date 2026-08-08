@@ -17,11 +17,21 @@ export type JsonSchema = {
   oneOf?: JsonSchema[];
   anyOf?: JsonSchema[];
   ['x-herta-ui']?: {
-    widget?: string;
+    widget?:
+      | 'text'
+      | 'textarea'
+      | 'discord-channel'
+      | 'discord-role'
+      | 'discord-user'
+      | 'discord-emoji'
+      | string;
     section?: string;
     placeholder?: string;
     help?: string;
     destructive?: boolean;
+    multiple?: boolean;
+    editableOnly?: boolean;
+    mentionableOnly?: boolean;
   };
 };
 
