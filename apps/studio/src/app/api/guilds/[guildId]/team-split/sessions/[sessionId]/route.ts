@@ -10,6 +10,7 @@ import {
   type TeamSplitPrismaClient,
 } from '@herta/plugin-catalog/team-split-service';
 import { auth } from '@/auth';
+import { searchGuildMembers } from '@/lib/bot-guild-members';
 import { prisma } from '@/lib/db';
 import { authorizeGuild } from '@/lib/guild-plugins';
 import { toPublicTeamSplitSession } from '@/lib/team-split';
@@ -92,6 +93,24 @@ export async function PATCH(request: Request, { params }: RouteContext) {
       );
     }
     if (action === 'add') {
+      const members = await searchGuildMembers(guildId, userId, 1);
+      if (members === null) {
+        return NextResponse.json(
+          { error: 'Discordユーザー情報を確認できません。時間をおいて再試行してください' },
+          { status: 503 },
+        );
+      }
+      const targetMember = members.find((member) => member.id === userId);
+      if (!targetMember) {
+        return NextResponse.json(
+          { error: 'このDiscordサーバーに存在するユーザーを指定してください' },
+          { status: 400 },
+        );
+      }
+      if (targetMember.bot) {
+        return NextResponse.json({ error: 'BotはTeam Split参加者に追加できません' }, { status: 400 });
+      }
+
       const result = await joinTeamSplitSession(prisma as unknown as TeamSplitPrismaClient, {
         guildId,
         sessionId,
