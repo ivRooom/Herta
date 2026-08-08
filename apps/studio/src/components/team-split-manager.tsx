@@ -203,7 +203,7 @@ export function TeamSplitManager({
 
   async function addParticipant(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedId) return;
+    if (!selectedId || !participantUserId) return;
     setLoading(true);
     setError(null);
     try {
