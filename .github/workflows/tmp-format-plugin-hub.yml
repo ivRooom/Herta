@@ -1,0 +1,34 @@
+name: Temporary Plugin Hub Format
+
+on:
+  push:
+    branches:
+      - feat/custom-plugin-hub-catalog
+    paths:
+      - .github/workflows/tmp-format-plugin-hub.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/custom-plugin-hub-catalog
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prettier --write apps/studio/src/components/custom-plugin-hub-catalog.tsx apps/studio/src/app/dashboard/custom-plugins/page.tsx
+      - name: Commit formatted source and remove temporary workflow
+        run: |
+          rm .github/workflows/tmp-format-plugin-hub.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "style: Custom Plugin Hubを整形"
+          git push origin HEAD:feat/custom-plugin-hub-catalog
