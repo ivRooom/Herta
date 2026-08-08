@@ -46,7 +46,13 @@ const CATEGORY_LABELS: Record<string, string> = {
   fun: 'Fun',
 };
 
-export function PluginCatalogGrid({ guildId, plugins }: { guildId: string; plugins: PluginCatalogItem[] }) {
+export function PluginCatalogGrid({
+  guildId,
+  plugins,
+}: {
+  guildId: string;
+  plugins: PluginCatalogItem[];
+}) {
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [onlyEnabled, setOnlyEnabled] = useState(false);
@@ -116,7 +122,9 @@ export function PluginCatalogGrid({ guildId, plugins }: { guildId: string; plugi
                 type="button"
                 onClick={() => setCategory(item)}
                 className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
-                  active ? 'bg-primary text-primary-foreground' : 'bg-background text-muted hover:text-foreground'
+                  active
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-background text-muted hover:text-foreground'
                 }`}
               >
                 {CATEGORY_LABELS[item] ?? item}
@@ -127,7 +135,9 @@ export function PluginCatalogGrid({ guildId, plugins }: { guildId: string; plugi
       </div>
 
       <div className="mt-4 flex items-center justify-between gap-3 text-xs text-muted">
-        <span>{filtered.length} / {plugins.length} Plugins</span>
+        <span>
+          {filtered.length} / {plugins.length} Plugins
+        </span>
         {query || category !== 'all' || onlyEnabled ? (
           <button
             type="button"
@@ -183,7 +193,9 @@ export function PluginCatalogGrid({ guildId, plugins }: { guildId: string; plugi
                 <div className="mt-5 flex items-center justify-between border-t border-border pt-4">
                   <span
                     className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                      plugin.enabled ? 'bg-emerald-500/10 text-emerald-400' : 'bg-background text-muted'
+                      plugin.enabled
+                        ? 'bg-emerald-500/10 text-emerald-400'
+                        : 'bg-background text-muted'
                     }`}
                   >
                     {plugin.enabled ? 'Active' : 'Disabled'}
