@@ -1,0 +1,274 @@
+name: Apply Studio Dashboard Next
+
+on:
+  push:
+    branches:
+      - feat/studio-dashboard-next
+    paths:
+      - .github/workflows/apply-studio-dashboard-next.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/studio-dashboard-next
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Apply implementation patches
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str, count: int = 1):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  raise SystemExit(f'pattern not found: {path}: {old[:80]!r}')
+              p.write_text(text.replace(old, new, count))
+
+          replace(
+              'apps/bot/src/bot.ts',
+              "import type { DiscordHealthObservation } from './health/types.js';",
+              "import { loadGuildConfigurationOptions, type GuildConfigurationOptions } from './health/guild-options.js';\nimport type { DiscordHealthObservation } from './health/types.js';",
+          )
+          replace(
+              'apps/bot/src/bot.ts',
+              "  getDiscordHealthObservation(): DiscordHealthObservation {\n    return this.discordHealth.snapshot(this.client);\n  }",
+              "  async getGuildConfigurationOptions(guildId: string): Promise<GuildConfigurationOptions | null> {\n    return loadGuildConfigurationOptions(this.client, guildId);\n  }\n\n  getDiscordHealthObservation(): DiscordHealthObservation {\n    return this.discordHealth.snapshot(this.client);\n  }",
+          )
+
+          replace(
+              'apps/bot/src/health/server.ts',
+              "import type { HertaHealthResponse, PublicServiceStatus } from './types.js';",
+              "import type { GuildConfigurationOptions } from './guild-options.js';\nimport type { HertaHealthResponse, PublicServiceStatus } from './types.js';",
+          )
+          replace(
+              'apps/bot/src/health/server.ts',
+              "  getHealth: () => Promise<HertaHealthResponse>;\n  now?: () => Date;",
+              "  getHealth: () => Promise<HertaHealthResponse>;\n  getGuildOptions?: (guildId: string) => Promise<GuildConfigurationOptions | null>;\n  now?: () => Date;",
+          )
+          replace(
+              'apps/bot/src/health/server.ts',
+              "    const pathname = new URL(url, 'http://localhost').pathname;\n    if (pathname !== '/healthz') {",
+              "    const pathname = new URL(url, 'http://localhost').pathname;\n    const guildOptionsMatch = /^\\/internal\\/guilds\\/(\\d+)\\/options$/u.exec(pathname);\n    if (guildOptionsMatch) {\n      if (method !== 'GET') {\n        response.setHeader('Allow', 'GET');\n        this.sendJson(response, 405, { status: 'method_not_allowed' });\n        return;\n      }\n      if (!this.options.getGuildOptions) {\n        this.sendJson(response, 404, { status: 'not_found' });\n        return;\n      }\n      try {\n        const options = await withTimeout(\n          this.options.getGuildOptions(guildOptionsMatch[1]!),\n          this.options.config.checkTimeoutMs + 1_000,\n        );\n        if (!options) {\n          this.sendJson(response, 404, { status: 'guild_not_found' });\n          return;\n        }\n        this.sendJson(response, 200, options);\n      } catch {\n        this.sendJson(response, 503, { status: 'unavailable' });\n      }\n      return;\n    }\n    if (pathname !== '/healthz') {",
+          )
+
+          replace(
+              'apps/bot/src/main.ts',
+              "      getHealth: () => healthService.getHealth(),",
+              "      getHealth: () => healthService.getHealth(),\n      getGuildOptions: (guildId) => bot.getGuildConfigurationOptions(guildId),",
+          )
+
+          replace(
+              'apps/studio/src/components/moderation-config-form.tsx',
+              "import {\n  appendCustomRule,",
+              "import { DiscordChannelPicker, DiscordRolePicker } from '@/components/discord-entity-picker';\nimport type { GuildConfigurationOptions } from '@/lib/bot-guild-options';\nimport {\n  appendCustomRule,",
+          )
+          replace(
+              'apps/studio/src/components/moderation-config-form.tsx',
+              "export function ModerationConfigForm({\n  guildId,\n  initialEnabled,\n  initialConfig,\n}: {\n  guildId: string;\n  initialEnabled: boolean;\n  initialConfig: Record<string, unknown>;\n}) {",
+              "export function ModerationConfigForm({\n  guildId,\n  initialEnabled,\n  initialConfig,\n  discordOptions,\n}: {\n  guildId: string;\n  initialEnabled: boolean;\n  initialConfig: Record<string, unknown>;\n  discordOptions: GuildConfigurationOptions | null;\n}) {",
+          )
+          replace(
+              'apps/studio/src/components/moderation-config-form.tsx',
+              "          <BasicSection config={config} patchConfig={patchConfig} setConfig={setConfig} />",
+              "          <BasicSection\n            config={config}\n            patchConfig={patchConfig}\n            setConfig={setConfig}\n            discordOptions={discordOptions}\n          />",
+          )
+          replace(
+              'apps/studio/src/components/moderation-config-form.tsx',
+              "          <ExemptionsSection config={config} patchConfig={patchConfig} />",
+              "          <ExemptionsSection\n            config={config}\n            patchConfig={patchConfig}\n            discordOptions={discordOptions}\n          />",
+          )
+          replace(
+              'apps/studio/src/components/moderation-config-form.tsx',
+              "function BasicSection({\n  config,\n  patchConfig,\n  setConfig,\n}: {\n  config: ModerationConfigDraft;\n  patchConfig: (patch: Partial<ModerationConfigDraft>) => void;\n  setConfig: (config: ModerationConfigDraft) => void;\n}) {",
+              "function BasicSection({\n  config,\n  patchConfig,\n  setConfig,\n  discordOptions,\n}: {\n  config: ModerationConfigDraft;\n  patchConfig: (patch: Partial<ModerationConfigDraft>) => void;\n  setConfig: (config: ModerationConfigDraft) => void;\n  discordOptions: GuildConfigurationOptions | null;\n}) {",
+          )
+          replace(
+              'apps/studio/src/components/moderation-config-form.tsx',
+              '''        <SettingCard\n          title="ログ送信先チャンネルID"\n          description="未指定ならDiscordへの追加ログ送信を行いません。"\n        >\n          <input\n            value={config.logChannelId ?? ''}\n            inputMode="numeric"\n            placeholder="例: 123456789012345678"\n            onChange={(event) => patchConfig({ logChannelId: event.target.value.trim() || null })}\n            className={inputClassName}\n          />\n        </SettingCard>''',
+              '''        <SettingCard\n          title="ログ送信先チャンネル"\n          description="Discordサーバーから取得したチャンネルを名前またはIDで検索できます。"\n        >\n          <DiscordChannelPicker\n            options={discordOptions?.channels ?? []}\n            value={config.logChannelId}\n            onChange={(value) => patchConfig({ logChannelId: typeof value === 'string' ? value : null })}\n          />\n        </SettingCard>''',
+          )
+          replace(
+              'apps/studio/src/components/moderation-config-form.tsx',
+              '''      <div className="mt-4">\n        <IdListEditor\n          title="実行を許可するモデレーターロールID"\n          description="空の場合はDiscord権限だけで判定します。"\n          values={config.allowedModeratorRoleIds}\n          onChange={(values) => setConfig({ ...config, allowedModeratorRoleIds: values })}\n        />\n      </div>''',
+              '''      <div className="mt-4 rounded-xl border border-border bg-background p-4">\n        <p className="text-sm font-medium">実行を許可するモデレーターロール</p>\n        <p className="mt-1 text-xs leading-5 text-muted">空の場合はDiscord権限だけで判定します。ロール名またはIDで検索できます。</p>\n        <div className="mt-3">\n          <DiscordRolePicker\n            options={discordOptions?.roles ?? []}\n            value={config.allowedModeratorRoleIds}\n            multiple\n            onChange={(value) =>\n              setConfig({ ...config, allowedModeratorRoleIds: Array.isArray(value) ? value : [] })\n            }\n          />\n        </div>\n      </div>''',
+          )
+          replace(
+              'apps/studio/src/components/moderation-config-form.tsx',
+              "function ExemptionsSection({\n  config,\n  patchConfig,\n}: {\n  config: ModerationConfigDraft;\n  patchConfig: (patch: Partial<ModerationConfigDraft>) => void;\n}) {",
+              "function ExemptionsSection({\n  config,\n  patchConfig,\n  discordOptions,\n}: {\n  config: ModerationConfigDraft;\n  patchConfig: (patch: Partial<ModerationConfigDraft>) => void;\n  discordOptions: GuildConfigurationOptions | null;\n}) {",
+          )
+          replace(
+              'apps/studio/src/components/moderation-config-form.tsx',
+              '''        <IdListEditor\n          title="除外チャンネルID"\n          description="Botコマンド用や管理者専用など、監視しないチャンネルを登録します。"\n          values={config.autoExemptChannelIds}\n          onChange={(values) => patchConfig({ autoExemptChannelIds: values })}\n        />\n        <IdListEditor\n          title="除外ロールID"\n          description="このロールを1つでも持つユーザーを自動検知から除外します。"\n          values={config.autoExemptRoleIds}\n          onChange={(values) => patchConfig({ autoExemptRoleIds: values })}\n        />''',
+              '''        <div className="rounded-xl border border-border bg-background p-4">\n          <p className="text-sm font-medium">除外チャンネル</p>\n          <p className="mt-1 text-xs leading-5 text-muted">Botコマンド用や管理者専用など、監視しないチャンネルを選択します。</p>\n          <div className="mt-3">\n            <DiscordChannelPicker\n              options={discordOptions?.channels ?? []}\n              value={config.autoExemptChannelIds}\n              multiple\n              onChange={(value) =>\n                patchConfig({ autoExemptChannelIds: Array.isArray(value) ? value : [] })\n              }\n            />\n          </div>\n        </div>\n        <div className="rounded-xl border border-border bg-background p-4">\n          <p className="text-sm font-medium">除外ロール</p>\n          <p className="mt-1 text-xs leading-5 text-muted">このロールを1つでも持つユーザーを自動検知から除外します。</p>\n          <div className="mt-3">\n            <DiscordRolePicker\n              options={discordOptions?.roles ?? []}\n              value={config.autoExemptRoleIds}\n              multiple\n              onChange={(value) =>\n                patchConfig({ autoExemptRoleIds: Array.isArray(value) ? value : [] })\n              }\n            />\n          </div>\n        </div>''',
+          )
+
+          replace(
+              'apps/studio/src/components/moderation-enforcement-form.tsx',
+              "import { AlertTriangle, BellRing, Save, ShieldAlert, ShieldCheck } from 'lucide-react';",
+              "import { AlertTriangle, BellRing, Save, ShieldAlert, ShieldCheck } from 'lucide-react';\nimport { DiscordChannelPicker, DiscordRolePicker } from '@/components/discord-entity-picker';\nimport type { GuildConfigurationOptions } from '@/lib/bot-guild-options';",
+          )
+          replace(
+              'apps/studio/src/components/moderation-enforcement-form.tsx',
+              "export function ModerationEnforcementForm({\n  guildId,\n  initialConfig,\n}: {\n  guildId: string;\n  initialConfig: Record<string, unknown>;\n}) {",
+              "export function ModerationEnforcementForm({\n  guildId,\n  initialConfig,\n  discordOptions,\n}: {\n  guildId: string;\n  initialConfig: Record<string, unknown>;\n  discordOptions: GuildConfigurationOptions | null;\n}) {",
+          )
+          replace(
+              'apps/studio/src/components/moderation-enforcement-form.tsx',
+              "      <section className=\"rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6\">\n        <div className=\"flex items-center gap-2\">\n          <BellRing className=\"h-5 w-5 text-primary\" />",
+              "      <PermissionDiagnostics options={discordOptions} />\n\n      <section className=\"rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6\">\n        <div className=\"flex items-center gap-2\">\n          <BellRing className=\"h-5 w-5 text-primary\" />",
+          )
+          replace(
+              'apps/studio/src/components/moderation-enforcement-form.tsx',
+              '''          <Field label="通知チャンネルID" hint="未設定なら緊急Alertは送信しません。">\n            <input\n              value={config.autoAlertChannelId ?? ''}\n              onChange={(event) => patch({ autoAlertChannelId: numericOrNull(event.target.value) })}\n              inputMode="numeric"\n              placeholder="123456789012345678"\n              className={inputClassName}\n            />\n          </Field>''',
+              '''          <Field label="通知チャンネル" hint="未設定なら緊急Alertは送信しません。名前またはIDで検索できます。">\n            <DiscordChannelPicker\n              options={discordOptions?.channels ?? []}\n              value={config.autoAlertChannelId}\n              onChange={(value) => patch({ autoAlertChannelId: typeof value === 'string' ? value : null })}\n            />\n          </Field>''',
+          )
+          replace(
+              'apps/studio/src/components/moderation-enforcement-form.tsx',
+              '''          <Field\n            label="メンションするRole ID"\n            hint="カンマまたは改行区切り。@everyone/@hereは使用しません。"\n          >\n            <textarea\n              value={config.autoAlertMentionRoleIds.join('\\n')}\n              onChange={(event) =>\n                patch({ autoAlertMentionRoleIds: parseIdList(event.target.value) })\n              }\n              rows={3}\n              className={inputClassName}\n              placeholder={'111111111111111111\\n222222222222222222'}\n            />\n          </Field>''',
+              '''          <Field\n            label="メンションするRole"\n            hint="Discordサーバーから取得したRoleを複数選択できます。@everyone/@hereは使用しません。"\n          >\n            <DiscordRolePicker\n              options={discordOptions?.roles ?? []}\n              value={config.autoAlertMentionRoleIds}\n              multiple\n              onChange={(value) =>\n                patch({ autoAlertMentionRoleIds: Array.isArray(value) ? value : [] })\n              }\n            />\n          </Field>''',
+          )
+          replace(
+              'apps/studio/src/components/moderation-enforcement-form.tsx',
+              "              updatePolicy={updatePolicy}\n            />",
+              "              updatePolicy={updatePolicy}\n              discordOptions={discordOptions}\n            />",
+          )
+          replace(
+              'apps/studio/src/components/moderation-enforcement-form.tsx',
+              "function PolicyCard({\n  rule,\n  config,\n  updatePolicy,\n}: {\n  rule: RuleDescriptor;\n  config: ModerationConfigDraft;\n  updatePolicy: (selector: string, patch: Parameters<typeof setEnforcementPolicy>[2]) => void;\n}) {",
+              "function PolicyCard({\n  rule,\n  config,\n  updatePolicy,\n  discordOptions,\n}: {\n  rule: RuleDescriptor;\n  config: ModerationConfigDraft;\n  updatePolicy: (selector: string, patch: Parameters<typeof setEnforcementPolicy>[2]) => void;\n  discordOptions: GuildConfigurationOptions | null;\n}) {",
+          )
+          replace(
+              'apps/studio/src/components/moderation-enforcement-form.tsx',
+              '''          <Field label="付与するRole ID" hint="Botの最高ロールより下のRoleだけ指定できます。">\n            <input\n              value={policy.roleId ?? ''}\n              onChange={(event) =>\n                updatePolicy(rule.selector, { roleId: numericOrNull(event.target.value) })\n              }\n              inputMode="numeric"\n              placeholder="123456789012345678"\n              className={inputClassName}\n            />\n          </Field>''',
+              '''          <Field label="付与するRole" hint="Botの最高ロールより下で、Botが編集できるRoleだけ選択できます。">\n            <DiscordRolePicker\n              options={discordOptions?.roles ?? []}\n              value={policy.roleId}\n              editableOnly\n              onChange={(value) =>\n                updatePolicy(rule.selector, { roleId: typeof value === 'string' ? value : null })\n              }\n            />\n          </Field>''',
+          )
+          marker = "function buildRuleDescriptors(config: ModerationConfigDraft): RuleDescriptor[] {"
+          diagnostic = '''function PermissionDiagnostics({ options }: { options: GuildConfigurationOptions | null }) {\n  if (!options) {\n    return (\n      <section className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5 text-sm sm:p-6">\n        <div className="flex gap-3">\n          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />\n          <div>\n            <p className="font-medium">Botの実効権限を取得できません</p>\n            <p className="mt-1 leading-6 text-muted">BotがGuildへ接続済みか確認してください。権限診断が取得できない間も設定保存はできます。</p>\n          </div>\n        </div>\n      </section>\n    );\n  }\n\n  const checks = [\n    ['メッセージ削除', options.bot.manageMessages],\n    ['Role管理', options.bot.manageRoles],\n    ['Timeout', options.bot.moderateMembers],\n    ['Kick', options.bot.kickMembers],\n    ['BAN', options.bot.banMembers],\n  ] as const;\n  const missing = checks.filter(([, ok]) => !ok);\n\n  return (\n    <section className={`rounded-2xl border p-5 sm:p-6 ${missing.length ? 'border-amber-500/30 bg-amber-500/5' : 'border-emerald-500/20 bg-emerald-500/5'}`}>\n      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">\n        <div>\n          <h2 className="text-sm font-semibold">Bot実効権限チェック</h2>\n          <p className="mt-1 text-xs leading-5 text-muted">Discord Guildから現在のHerta Bot権限を直接取得しています。</p>\n        </div>\n        <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${missing.length ? 'bg-amber-500/10 text-amber-300' : 'bg-emerald-500/10 text-emerald-300'}`}>\n          {missing.length ? `${missing.length}項目を確認` : '必要権限 OK'}\n        </span>\n      </div>\n      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">\n        {checks.map(([label, ok]) => (\n          <div key={label} className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2 text-xs">\n            <span>{label}</span>\n            <span className={ok ? 'text-emerald-400' : 'font-semibold text-amber-300'}>{ok ? 'OK' : '不足'}</span>\n          </div>\n        ))}\n      </div>\n      {!options.bot.manageMessages ? (\n        <p className="mt-4 rounded-lg border border-amber-500/20 bg-background/60 px-3 py-2 text-xs leading-5 text-amber-200">\n          「メッセージ削除」が不足しているため、危険度に関係なくAction=削除 / 警告+削除は実行できません。StudioのBot再認可でManage Messagesを反映してください。\n        </p>\n      ) : null}\n    </section>\n  );\n}\n\n'''
+          replace('apps/studio/src/components/moderation-enforcement-form.tsx', marker, diagnostic + marker)
+
+          replace(
+              'plugins/moderation/src/automatic-runtime.ts',
+              "async function executeAutomaticDiscordAction(\n",
+              "export async function executeAutomaticDiscordAction(\n",
+          )
+          replace(
+              'plugins/moderation/src/automatic-runtime.ts',
+              "    await executeAutomaticDiscordAction(message, selected.policy, reason);",
+              "    await executeAutomaticDiscordAction(message, selected.policy, reason);\n    context.logger.info(\n      {\n        guildId: context.guildId,\n        messageId: message.id,\n        targetUserId: message.author.id,\n        action,\n        selector: selected.policy.selector,\n        severity: selected.policy.severity,\n      },\n      '自動Moderation Discord操作を実行しました',\n    );",
+          )
+
+          Path('plugins/moderation/src/automatic-runtime.test.ts').write_text(r'''import { describe, expect, it, vi } from 'vitest';
+import { executeAutomaticDiscordAction } from './automatic-runtime.js';
+import type { AutomaticEnforcementPolicy } from './enforcement-config.js';
+
+const BASE_POLICY: AutomaticEnforcementPolicy = {
+  selector: 'invite_link',
+  action: 'delete',
+  severity: 'medium',
+  timeoutMinutes: 10,
+  roleId: null,
+  warningMessage: null,
+  banDeleteMessageSeconds: 0,
+};
+
+describe('automatic moderation Discord action', () => {
+  it('危険度mediumかつAction=deleteで検知メッセージを削除する', async () => {
+    const deleteMessage = vi.fn(async () => undefined);
+    const message = {
+      delete: deleteMessage,
+      member: null,
+      author: { send: vi.fn(async () => undefined) },
+    };
+
+    await executeAutomaticDiscordAction(message as never, BASE_POLICY, 'test reason');
+
+    expect(deleteMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('warn_deleteでは削除後に警告DMを送る', async () => {
+    const calls: string[] = [];
+    const message = {
+      delete: vi.fn(async () => {
+        calls.push('delete');
+      }),
+      member: null,
+      author: {
+        send: vi.fn(async () => {
+          calls.push('warn');
+        }),
+      },
+    };
+
+    await executeAutomaticDiscordAction(
+      message as never,
+      { ...BASE_POLICY, action: 'warn_delete' },
+      'test reason',
+    );
+
+    expect(calls).toEqual(['delete', 'warn']);
+  });
+});
+''')
+          PY
+
+      - name: Format changed files
+        run: |
+          pnpm exec prettier --write \
+            apps/bot/src/bot.ts \
+            apps/bot/src/main.ts \
+            apps/bot/src/health/server.ts \
+            apps/bot/src/health/guild-options.ts \
+            apps/studio/src/app/globals.css \
+            apps/studio/src/app/dashboard/layout.tsx \
+            apps/studio/src/app/dashboard/page.tsx \
+            apps/studio/src/app/dashboard/custom-plugins/page.tsx \
+            'apps/studio/src/app/dashboard/guilds/[guildId]/plugins/page.tsx' \
+            'apps/studio/src/app/dashboard/guilds/[guildId]/plugins/[pluginId]/page.tsx' \
+            'apps/studio/src/app/dashboard/guilds/[guildId]/moderation/enforcement/page.tsx' \
+            apps/studio/src/components/dashboard-nav.tsx \
+            apps/studio/src/components/discord-entity-picker.tsx \
+            apps/studio/src/components/moderation-config-form.tsx \
+            apps/studio/src/components/moderation-enforcement-form.tsx \
+            apps/studio/src/lib/bot-guild-options.ts \
+            plugins/moderation/src/automatic-runtime.ts \
+            plugins/moderation/src/automatic-runtime.test.ts
+
+      - name: Typecheck and tests
+        run: |
+          pnpm --filter @herta/bot typecheck
+          pnpm --filter @herta/plugin-moderation typecheck
+          pnpm --filter @herta/plugin-moderation test
+          pnpm --filter @herta/studio typecheck
+          pnpm --filter @herta/studio test
+
+      - name: Remove temporary workflow
+        run: rm -f .github/workflows/apply-studio-dashboard-next.yml
+
+      - name: Commit verified implementation
+        run: |
+          git config user.name 'mizzz-ivr'
+          git config user.email '86910433+mizzz-ivr@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'feat: Studio Next UIとDiscordスマート設定を実装'
+          git push origin HEAD:feat/studio-dashboard-next
