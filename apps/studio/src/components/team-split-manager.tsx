@@ -2,6 +2,8 @@
 
 import { FormEvent, useCallback, useMemo, useState } from 'react';
 import { Loader2, RefreshCw, Shuffle, UserMinus, UserPlus } from 'lucide-react';
+import type { GuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { DiscordChannelPicker } from './discord-entity-picker';
 
 export interface TeamSplitSessionItem {
   id: string;
@@ -53,6 +55,7 @@ interface Props {
   pluginEnabled: boolean;
   maxParticipantsLimit: number;
   maxTeamCount: number;
+  discordOptions?: GuildConfigurationOptions | null;
 }
 
 const inputClass =
@@ -64,6 +67,7 @@ export function TeamSplitManager({
   pluginEnabled,
   maxParticipantsLimit,
   maxTeamCount,
+  discordOptions,
 }: Props) {
   const [sessions, setSessions] = useState(initialSessions);
   const [query, setQuery] = useState('');
@@ -258,16 +262,17 @@ export function TeamSplitManager({
             <h2 className="font-semibold">新しいセッション</h2>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <label className="text-sm">
-              <span className="mb-1.5 block text-muted">チャンネルID</span>
-              <input
-                className={inputClass}
-                value={channelId}
-                onChange={(event) => setChannelId(event.target.value)}
-                required
-                pattern="\d{17,20}"
+            <div className="text-sm">
+              <span className="mb-1.5 block text-muted">投稿チャンネル</span>
+              <DiscordChannelPicker
+                options={discordOptions?.channels ?? []}
+                value={channelId || null}
+                placeholder="参加募集を投稿するチャンネルを検索"
+                onChange={(next) =>
+                  setChannelId(Array.isArray(next) ? (next[0] ?? '') : (next ?? ''))
+                }
               />
-            </label>
+            </div>
             <label className="text-sm">
               <span className="mb-1.5 block text-muted">タイトル</span>
               <input
@@ -277,17 +282,23 @@ export function TeamSplitManager({
                 required
               />
             </label>
-            <label className="text-sm">
-              <span className="mb-1.5 block text-muted">方式</span>
-              <select
-                className={inputClass}
-                value={mode}
-                onChange={(event) => setMode(event.target.value as 'random' | 'balanced')}
-              >
-                <option value="random">ランダム</option>
-                <option value="balanced">明示scoreで均等化</option>
-              </select>
-            </label>
+            <div className="text-sm md:col-span-2">
+              <span className="mb-1.5 block text-muted">チーム分け方式</span>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <ModeCard
+                  active={mode === 'random'}
+                  title="ランダム"
+                  description="参加者をランダムに割り当てます。気軽な募集向けです。"
+                  onClick={() => setMode('random')}
+                />
+                <ModeCard
+                  active={mode === 'balanced'}
+                  title="バランス"
+                  description="各参加者のscoreを使い、チーム合計値が近くなるように分けます。"
+                  onClick={() => setMode('balanced')}
+                />
+              </div>
+            </div>
             <label className="text-sm">
               <span className="mb-1.5 block text-muted">チーム数</span>
               <input
@@ -631,6 +642,34 @@ function readError(value: unknown): string {
     if (typeof error === 'string') return error;
   }
   return '処理に失敗しました';
+}
+
+function ModeCard({
+  active,
+  title,
+  description,
+  onClick,
+}: {
+  active: boolean;
+  title: string;
+  description: string;
+  onClick(): void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`rounded-xl border p-3 text-left transition-colors ${
+        active
+          ? 'border-primary bg-primary/10'
+          : 'border-border bg-background hover:border-primary/40'
+      }`}
+    >
+      <span className="block font-medium">{title}</span>
+      <span className="mt-1 block text-xs leading-5 text-muted">{description}</span>
+    </button>
+  );
 }
 
 function formatDate(value: string): string {
