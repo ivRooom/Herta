@@ -28,6 +28,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: python3 scripts/tmp-moderation-decision-trace.py
       - run: pnpm exec prettier --write plugins/moderation/src/automatic-runtime.ts
+      - run: pnpm --filter @herta/discord-ui build
       - run: pnpm --dir plugins/moderation typecheck
       - run: pnpm --dir plugins/moderation test
       - name: Remove temporary files and commit
