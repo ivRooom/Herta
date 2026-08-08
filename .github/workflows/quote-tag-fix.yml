@@ -1,0 +1,37 @@
+name: Quote Tag P1 Fix
+
+on:
+  push:
+    branches: [feat/quote-rich-config]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/quote-rich-config
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: python3 scripts/fix-quote-tag-editor.py
+      - run: pnpm exec prettier --write apps/studio/src/components/quote-manager.tsx
+      - run: pnpm --dir apps/studio typecheck
+      - name: 修正をコミットして一時ファイルを削除
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'mizzz（ずーみー）/いゔる。'
+          git config user.email 'mizzz._.dev@outlook.jp'
+          git rm .github/workflows/quote-tag-fix.yml scripts/fix-quote-tag-editor.py
+          git add apps/studio/src/components/quote-manager.tsx
+          git commit -m 'fix: Quoteタグdraft保存と入力上限を修正'
+          git push origin HEAD:feat/quote-rich-config
