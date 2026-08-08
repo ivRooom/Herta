@@ -65,6 +65,7 @@ jobs:
 
       - name: Typecheck and tests
         run: |
+          pnpm --filter @herta/discord-ui build
           pnpm --filter @herta/bot typecheck
           pnpm --filter @herta/plugin-moderation typecheck
           pnpm --filter @herta/plugin-moderation test
