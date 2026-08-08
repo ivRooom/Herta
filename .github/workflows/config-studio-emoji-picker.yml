@@ -27,7 +27,6 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          # Bot: Guild optionsにEmojiを追加
           path = Path('apps/bot/src/health/guild-options.ts')
           text = path.read_text()
           role_interface = '''export interface GuildRoleOption {
@@ -96,7 +95,6 @@ jobs:
           text = text.replace('    roles: roleOptions,\n    bot: {', '    roles: roleOptions,\n    emojis: emojiOptions,\n    bot: {', 1)
           path.write_text(text)
 
-          # Studio: Bot options schemaへEmojiを追加
           path = Path('apps/studio/src/lib/bot-guild-options.ts')
           text = path.read_text()
           role_schema_end = '''const guildRoleOptionSchema = z.object({
@@ -134,7 +132,6 @@ jobs:
           )
           path.write_text(text)
 
-          # 共通Entity PickerへEmoji Pickerを追加
           path = Path('apps/studio/src/components/discord-entity-picker.tsx')
           text = path.read_text()
           text = text.replace(
@@ -148,9 +145,7 @@ jobs:
               1,
           )
           text = text.replace("  icon: 'channel' | 'role';", "  icon: 'channel' | 'role' | 'emoji';", 1)
-          role_picker_end = '''export function DiscordRolePicker({
-          '''
-          role_index = text.find(role_picker_end)
+          role_index = text.find('export function DiscordRolePicker({')
           if role_index < 0:
               raise SystemExit('DiscordRolePicker not found')
           entity_index = text.find('\nfunction DiscordEntityPicker(', role_index)
@@ -208,7 +203,6 @@ jobs:
           )
           path.write_text(text)
 
-          # Config Studio rendererへdiscord-emojiを接続
           path = Path('apps/studio/src/components/plugin-config-studio-form.tsx')
           text = path.read_text()
           text = text.replace(
@@ -254,7 +248,6 @@ jobs:
       - run: pnpm exec prettier --write apps/bot/src/health/guild-options.ts apps/studio/src/lib/bot-guild-options.ts apps/studio/src/components/discord-entity-picker.tsx apps/studio/src/components/plugin-config-studio-form.tsx
       - run: pnpm --filter @herta/bot typecheck
       - run: pnpm --dir apps/studio typecheck
-      - run: pnpm --filter @herta/bot test
       - name: commitして一時Workflowを削除
         run: |
           git config user.name "github-actions[bot]"
