@@ -1,0 +1,49 @@
+name: Team Split User Picker Bot Guard
+
+on:
+  push:
+    branches: [feat/team-split-user-picker]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/team-split-user-picker
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - name: Bot除外時は未検証ID fallbackを禁止
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('apps/studio/src/components/discord-user-picker.tsx')
+          text = path.read_text()
+          old = '''  const manualIdAvailable =
+            /^\\d{17,20}$/u.test(normalizedQuery) &&'''
+          new = '''  const manualIdAvailable =
+            includeBots &&
+            /^\\d{17,20}$/u.test(normalizedQuery) &&'''
+          if old not in text:
+              raise SystemExit('manualIdAvailable target not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - run: pnpm exec prettier --write apps/studio/src/components/discord-user-picker.tsx
+      - run: pnpm --dir apps/studio typecheck
+      - name: commitして一時Workflowを削除
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/team-split-user-picker-bot-guard.yml
+          git add apps/studio/src/components/discord-user-picker.tsx
+          git commit -m "fix: Bot除外時のUser ID直接fallbackを禁止する"
+          git push origin HEAD:feat/team-split-user-picker
