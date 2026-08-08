@@ -1,4 +1,4 @@
-import type { Client, GuildMember } from 'discord.js';
+import type { Client, Guild, GuildMember } from 'discord.js';
 
 export interface GuildMemberOption {
   id: string;
@@ -63,7 +63,7 @@ function toMemberOption(member: GuildMember): GuildMemberOption {
 }
 
 async function searchExactMemberId(
-  guild: NonNullable<Client['guilds']['cache'] extends Map<string, infer Guild> ? Guild : never>,
+  guild: Guild,
   memberId: string,
 ): Promise<GuildMemberOption[]> {
   try {
