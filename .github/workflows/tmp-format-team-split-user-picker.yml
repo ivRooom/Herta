@@ -1,0 +1,41 @@
+name: Temporary Format Team Split User Picker
+
+on:
+  push:
+    branches:
+      - feat/team-split-user-picker
+    paths:
+      - .github/workflows/tmp-format-team-split-user-picker.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/team-split-user-picker
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format changed files
+        run: |
+          pnpm exec prettier --write \
+            apps/studio/src/components/discord-user-picker.tsx \
+            apps/studio/src/components/team-split-manager.tsx \
+            'apps/studio/src/app/api/guilds/[guildId]/team-split/sessions/[sessionId]/route.ts'
+      - name: Remove temporary workflow and commit
+        run: |
+          rm .github/workflows/tmp-format-team-split-user-picker.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "style: Team Split User Picker変更を整形"
+          git push origin HEAD:feat/team-split-user-picker
