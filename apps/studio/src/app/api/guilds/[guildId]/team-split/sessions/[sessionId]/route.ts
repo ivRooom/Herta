@@ -108,7 +108,10 @@ export async function PATCH(request: Request, { params }: RouteContext) {
         );
       }
       if (targetMember.bot) {
-        return NextResponse.json({ error: 'BotはTeam Split参加者に追加できません' }, { status: 400 });
+        return NextResponse.json(
+          { error: 'BotはTeam Split参加者に追加できません' },
+          { status: 400 },
+        );
       }
 
       const result = await joinTeamSplitSession(prisma as unknown as TeamSplitPrismaClient, {
