@@ -1,0 +1,111 @@
+name: Moderation User Picker
+
+on:
+  push:
+    branches: [feat/moderation-user-picker]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/moderation-user-picker
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - name: Moderation除外Userを検索式Pickerへ移行
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/studio/src/components/moderation-config-form.tsx')
+          text = path.read_text()
+
+          import_marker = "import { DiscordChannelPicker, DiscordRolePicker } from '@/components/discord-entity-picker';"
+          user_import = "import { DiscordUserPicker } from '@/components/discord-user-picker';"
+          if user_import not in text:
+              if import_marker not in text:
+                  raise SystemExit('discord entity import marker not found')
+              text = text.replace(import_marker, import_marker + '\n' + user_import, 1)
+
+          call_old = '''          <ExemptionsSection
+            config={config}
+            patchConfig={patchConfig}
+            discordOptions={discordOptions}
+          />'''
+          call_new = '''          <ExemptionsSection
+            guildId={guildId}
+            config={config}
+            patchConfig={patchConfig}
+            discordOptions={discordOptions}
+          />'''
+          if call_old not in text:
+              raise SystemExit('ExemptionsSection call target not found')
+          text = text.replace(call_old, call_new, 1)
+
+          signature_old = '''function ExemptionsSection({
+  config,
+  patchConfig,
+  discordOptions,
+}: {
+  config: ModerationConfigDraft;'''
+          signature_new = '''function ExemptionsSection({
+  guildId,
+  config,
+  patchConfig,
+  discordOptions,
+}: {
+  guildId: string;
+  config: ModerationConfigDraft;'''
+          if signature_old not in text:
+              raise SystemExit('ExemptionsSection signature target not found')
+          text = text.replace(signature_old, signature_new, 1)
+
+          editor_old = '''        <IdListEditor
+          title="除外ユーザーID"
+          description="Bot・管理者など個別ユーザーを自動検知から除外します。"
+          values={config.autoExemptUserIds}
+          onChange={(values) => patchConfig({ autoExemptUserIds: values })}
+        />'''
+          editor_new = '''        <div className="rounded-xl border border-border bg-background p-4">
+          <p className="text-sm font-medium">除外ユーザー</p>
+          <p className="mt-1 text-xs leading-5 text-muted">
+            Bot・管理者など個別ユーザーを名前・表示名・IDで検索して自動検知から除外します。
+          </p>
+          <div className="mt-3">
+            <DiscordUserPicker
+              guildId={guildId}
+              value={config.autoExemptUserIds}
+              multiple
+              placeholder="除外するユーザーを検索"
+              onChange={(value) =>
+                patchConfig({ autoExemptUserIds: Array.isArray(value) ? value : [] })
+              }
+            />
+          </div>
+        </div>'''
+          if editor_old not in text:
+              raise SystemExit('autoExemptUserIds editor target not found')
+          text = text.replace(editor_old, editor_new, 1)
+
+          path.write_text(text)
+          PY
+      - run: pnpm exec prettier --write apps/studio/src/components/moderation-config-form.tsx
+      - run: pnpm --dir apps/studio typecheck
+      - name: commitして一時Workflowを削除
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/moderation-user-picker.yml
+          git add apps/studio/src/components/moderation-config-form.tsx
+          git commit -m "feat: Moderation除外Userを検索式Pickerへ移行"
+          git push origin HEAD:feat/moderation-user-picker
