@@ -7,6 +7,8 @@ const guildChannelOptionSchema = z.object({
   kind: z.enum(['text', 'announcement']),
   position: z.number().int(),
   parentId: z.string().regex(/^\d+$/u).nullable(),
+  viewable: z.boolean().default(false),
+  readMessageHistory: z.boolean().default(false),
 });
 
 const guildRoleOptionSchema = z.object({
