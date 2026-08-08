@@ -1,0 +1,93 @@
+name: Temporary Moderation Channel Permission
+
+on:
+  push:
+    branches:
+      - fix/moderation-enforcement-decision-trace
+    paths:
+      - .github/workflows/tmp-moderation-channel-permission.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/moderation-enforcement-decision-trace
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply channel-aware Manage Messages trace
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('plugins/moderation/src/automatic-runtime.ts')
+          text = path.read_text()
+          old = '''interface ModerationTextChannel {
+            isTextBased(): boolean;
+            send(options: DiscordVisualMessagePayload): Promise<unknown>;
+          }'''
+          new = '''interface ModerationTextChannel {
+            isTextBased(): boolean;
+            permissionsFor?(member: {
+              id: string;
+              permissions: PermissionSet;
+              roles: { highest: { position: number } };
+            }): PermissionSet | null;
+            send(options: DiscordVisualMessagePayload): Promise<unknown>;
+          }'''
+          if text.count(old) != 1:
+              raise SystemExit(f'channel interface match count={text.count(old)}')
+          text = text.replace(old, new, 1)
+          old = '''  const actorId = getBotActorId(context.client);
+            const bot = message.guild?.members.me;
+            const action = selected.policy.action;
+            const metadata = {
+              outcome,
+              action,
+              selector: selected.policy.selector,
+              severity: selected.policy.severity,
+              channelId: message.channelId,
+              messageId: message.id,
+              messageDeletable: message.deletable ?? null,
+              botCanManageMessages: bot?.permissions.has(MANAGE_MESSAGES_PERMISSION) ?? null,
+            };'''
+          new = '''  const actorId = getBotActorId(context.client);
+            const bot = message.guild?.members.me;
+            const channel = message.guild?.channels.cache.get(message.channelId);
+            const channelPermissions = bot && channel?.permissionsFor ? channel.permissionsFor(bot) : null;
+            const action = selected.policy.action;
+            const metadata = {
+              outcome,
+              action,
+              selector: selected.policy.selector,
+              severity: selected.policy.severity,
+              channelId: message.channelId,
+              messageId: message.id,
+              messageDeletable: message.deletable ?? null,
+              botCanManageMessages: channelPermissions?.has(MANAGE_MESSAGES_PERMISSION) ?? null,
+            };'''
+          if text.count(old) != 1:
+              raise SystemExit(f'decision trace match count={text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - run: pnpm exec prettier --write plugins/moderation/src/automatic-runtime.ts
+      - run: pnpm --filter @herta/discord-ui build
+      - run: pnpm --dir plugins/moderation typecheck
+      - run: pnpm --dir plugins/moderation test
+      - name: Remove temporary workflow and commit
+        run: |
+          rm .github/workflows/tmp-moderation-channel-permission.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: Moderation Decision TraceでChannel実効権限を記録"
+          git push origin HEAD:fix/moderation-enforcement-decision-trace
