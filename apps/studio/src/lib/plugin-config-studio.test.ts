@@ -96,6 +96,78 @@ test('Advanced JSON往復でもSchema外の既存キーを保持する', () => {
   assert.equal(roundTrip.retries, 8);
 });
 
+test('Discord Picker用metadataをSchema互換のまま保持できる', () => {
+  const channelSchema: JsonSchema = {
+    type: ['string', 'null'],
+    title: '通知チャンネル',
+    ['x-herta-ui']: {
+      widget: 'discord-channel',
+      placeholder: 'チャンネルを検索',
+    },
+  };
+  const roleSchema: JsonSchema = {
+    type: 'array',
+    items: { type: 'string' },
+    ['x-herta-ui']: {
+      widget: 'discord-role',
+      multiple: true,
+      editableOnly: true,
+      mentionableOnly: false,
+    },
+  };
+
+  assert.equal(channelSchema['x-herta-ui']?.widget, 'discord-channel');
+  assert.equal(channelSchema['x-herta-ui']?.placeholder, 'チャンネルを検索');
+  assert.equal(roleSchema['x-herta-ui']?.widget, 'discord-role');
+  assert.equal(roleSchema['x-herta-ui']?.multiple, true);
+  assert.equal(roleSchema['x-herta-ui']?.editableOnly, true);
+});
+
+test('Discord Picker付きSchemaでも保存済みIDを変換せず保持する', () => {
+  const discordSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+      channelId: {
+        type: ['string', 'null'],
+        default: null,
+        ['x-herta-ui']: { widget: 'discord-channel' },
+      },
+      roleIds: {
+        type: 'array',
+        items: { type: 'string' },
+        default: [],
+        ['x-herta-ui']: { widget: 'discord-role', multiple: true },
+      },
+    },
+  };
+
+  const current = {
+    channelId: '1175075504940908635',
+    roleIds: ['964326043420872706', '964326043420872707'],
+  };
+  assert.deepEqual(normalizeConfigForStudio(discordSchema, current), current);
+  assert.deepEqual(parseConfigJson(stringifyConfig(current)), current);
+});
+
+test('multiple metadataはstring SchemaのJSON型を配列へ変更しない', () => {
+  const malformedUiSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+      channelId: {
+        type: 'string',
+        default: '1175075504940908635',
+        ['x-herta-ui']: { widget: 'discord-channel', multiple: true },
+      },
+    },
+  };
+
+  const normalized = normalizeConfigForStudio(malformedUiSchema, {
+    channelId: '1175075504940908635',
+  });
+  assert.equal(normalized.channelId, '1175075504940908635');
+  assert.equal(Array.isArray(normalized.channelId), false);
+});
+
 test('検索は親・子のtitle/descriptionを対象にする', () => {
   assert.equal(fieldMatchesSearch('nested', schema.properties?.nested ?? {}, '表示名'), true);
   assert.equal(fieldMatchesSearch('rules', schema.properties?.rules ?? {}, '存在しない'), false);

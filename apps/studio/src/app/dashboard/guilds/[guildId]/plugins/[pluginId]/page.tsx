@@ -26,7 +26,7 @@ export default async function PluginDetailPage({
 
   const [plugin, discordOptions] = await Promise.all([
     getGuildPlugin(guildId, pluginId),
-    pluginId === 'moderation' ? getGuildConfigurationOptions(guildId) : Promise.resolve(null),
+    getGuildConfigurationOptions(guildId),
   ]);
   if (!plugin) notFound();
 
@@ -61,6 +61,7 @@ export default async function PluginDetailPage({
               initialEnabled={plugin.enabled}
               initialConfig={plugin.config}
               schema={plugin.manifest.configSchema}
+              discordOptions={discordOptions}
             />
           </div>
         )}

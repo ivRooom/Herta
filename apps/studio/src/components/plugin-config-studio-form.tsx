@@ -2,6 +2,9 @@
 
 import { useMemo, useState } from 'react';
 
+import type { GuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { DiscordChannelPicker, DiscordRolePicker } from './discord-entity-picker';
+
 import {
   fieldMatchesSearch,
   makeDefaultValue,
@@ -31,12 +34,14 @@ export function PluginConfigStudioForm({
   initialEnabled,
   initialConfig,
   schema,
+  discordOptions,
 }: {
   guildId: string;
   pluginId: string;
   initialEnabled: boolean;
   initialConfig: Record<string, unknown>;
   schema: Record<string, unknown>;
+  discordOptions?: GuildConfigurationOptions | null;
 }) {
   const configSchema = schema as JsonSchema;
   const initialNormalized = useMemo(
@@ -53,8 +58,10 @@ export function PluginConfigStudioForm({
   const [status, setStatus] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const savedConfigText = stringifyConfig(savedConfig);
   const dirty =
-    enabled !== savedEnabled || stringifyConfig(config) !== stringifyConfig(savedConfig);
+    enabled !== savedEnabled ||
+    (mode === 'json' ? jsonText !== savedConfigText : stringifyConfig(config) !== savedConfigText);
   const properties = configSchema.properties ?? {};
   const visibleEntries = Object.entries(properties).filter(([key, propertySchema]) =>
     fieldMatchesSearch(key, propertySchema, query),
@@ -254,6 +261,7 @@ export function PluginConfigStudioForm({
                       required={(configSchema.required ?? []).includes(key)}
                       onChange={update}
                       onRemove={remove}
+                      discordOptions={discordOptions}
                     />
                   ))}
                 </div>
@@ -329,6 +337,7 @@ function SchemaField({
   required,
   onChange,
   onRemove,
+  discordOptions,
 }: {
   fieldKey: string;
   schema: JsonSchema;
@@ -337,11 +346,45 @@ function SchemaField({
   required?: boolean;
   onChange: (path: Path, value: unknown) => void;
   onRemove: (path: Path) => void;
+  discordOptions?: GuildConfigurationOptions | null;
 }) {
   const type = schemaPrimaryType(schema);
   const nullable = schemaAllowsNull(schema);
   const title = schema.title ?? humanizeKey(fieldKey);
   const ui = schema['x-herta-ui'];
+  const discordMultiple = type === 'array';
+  const supportsDiscordPicker =
+    type === 'string' || (type === 'array' && schemaPrimaryType(schema.items ?? {}) === 'string');
+
+  if (ui?.widget === 'discord-channel' && supportsDiscordPicker) {
+    return (
+      <FieldShell title={title} schema={schema} required={required}>
+        <DiscordChannelPicker
+          options={discordOptions?.channels ?? []}
+          value={normalizeDiscordEntityValue(value, discordMultiple)}
+          multiple={discordMultiple}
+          placeholder={ui.placeholder}
+          onChange={(next) => onChange(path, next)}
+        />
+      </FieldShell>
+    );
+  }
+
+  if (ui?.widget === 'discord-role' && supportsDiscordPicker) {
+    return (
+      <FieldShell title={title} schema={schema} required={required}>
+        <DiscordRolePicker
+          options={discordOptions?.roles ?? []}
+          value={normalizeDiscordEntityValue(value, discordMultiple)}
+          multiple={discordMultiple}
+          placeholder={ui.placeholder}
+          editableOnly={ui.editableOnly}
+          mentionableOnly={ui.mentionableOnly}
+          onChange={(next) => onChange(path, next)}
+        />
+      </FieldShell>
+    );
+  }
 
   if (nullable && value === null) {
     return (
@@ -375,6 +418,7 @@ function SchemaField({
               required={(schema.required ?? []).includes(childKey)}
               onChange={onChange}
               onRemove={onRemove}
+              discordOptions={discordOptions}
             />
           ))}
         </div>
@@ -421,6 +465,7 @@ function SchemaField({
                 path={[...path, index]}
                 onChange={onChange}
                 onRemove={onRemove}
+                discordOptions={discordOptions}
               />
             </div>
           ))}
@@ -621,6 +666,15 @@ function SmallButton({
       {label}
     </button>
   );
+}
+
+function normalizeDiscordEntityValue(value: unknown, multiple: boolean): string | string[] | null {
+  if (multiple) {
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === 'string')
+      : [];
+  }
+  return typeof value === 'string' && value ? value : null;
 }
 
 function humanizeKey(key: string): string {
