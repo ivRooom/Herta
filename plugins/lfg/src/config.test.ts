@@ -36,6 +36,15 @@ describe('LFG config', () => {
     });
   });
 
+  it('既定募集期間をmaxDurationMinutes以下へ調整する', () => {
+    expect(
+      normalizeLfgConfig({ maxDurationMinutes: 60, defaultDurationMinutes: 180 }),
+    ).toMatchObject({
+      maxDurationMinutes: 60,
+      defaultDurationMinutes: 60,
+    });
+  });
+
   it('ゲームPresetをtrim・重複除去して保持する', () => {
     expect(
       normalizeLfgConfig({
