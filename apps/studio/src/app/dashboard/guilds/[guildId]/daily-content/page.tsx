@@ -16,6 +16,7 @@ import {
 import { prisma } from '@/lib/db';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
+import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
 import { getDiscordAccessToken } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
@@ -34,7 +35,10 @@ export default async function DailyContentPage({
   if (!guild) notFound();
   await persistSelectedGuild(guild, session.user.id);
 
-  const plugin = await getGuildPlugin(guildId, 'daily-content');
+  const [plugin, discordOptions] = await Promise.all([
+    getGuildPlugin(guildId, 'daily-content'),
+    getGuildConfigurationOptions(guildId),
+  ]);
   if (!plugin) notFound();
   const config = normalizeDailyContentConfig(plugin.config);
 
@@ -139,6 +143,7 @@ export default async function DailyContentPage({
             defaultTimezone={config.defaultTimezone}
             maxContentLength={config.maxContentLength}
             pluginEnabled={plugin.enabled}
+            discordOptions={discordOptions}
           />
         </div>
       )}

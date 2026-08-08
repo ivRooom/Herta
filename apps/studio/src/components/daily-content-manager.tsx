@@ -2,6 +2,8 @@
 
 import { cloneElement, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import type { GuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { DiscordChannelPicker } from './discord-entity-picker';
 import {
   CalendarClock,
   CheckCircle2,
@@ -55,6 +57,20 @@ interface DailyContentFormState {
 const INPUT_CLASS_NAME =
   'w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring';
 
+const COMMON_TIMEZONES = [
+  'Asia/Tokyo',
+  'Asia/Seoul',
+  'Asia/Singapore',
+  'UTC',
+  'Europe/London',
+  'Europe/Paris',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Australia/Sydney',
+] as const;
+
 const EMPTY_FORM: DailyContentFormState = {
   title: '',
   channelId: '',
@@ -71,6 +87,7 @@ export function DailyContentManager({
   defaultTimezone,
   maxContentLength,
   pluginEnabled,
+  discordOptions,
 }: {
   guildId: string;
   initialSchedules: DailyContentScheduleItem[];
@@ -78,6 +95,7 @@ export function DailyContentManager({
   defaultTimezone: string;
   maxContentLength: number;
   pluginEnabled: boolean;
+  discordOptions?: GuildConfigurationOptions | null;
 }) {
   const router = useRouter();
   const [schedules, setSchedules] = useState(initialSchedules);
@@ -265,16 +283,21 @@ export function DailyContentManager({
               placeholder="朝のお知らせ"
             />
           </Field>
-          <Field label="DiscordチャンネルID">
-            <input
-              value={form.channelId}
-              onChange={(event) => setForm({ ...form, channelId: event.target.value })}
-              required
-              inputMode="numeric"
-              pattern="\d{17,20}"
-              className={INPUT_CLASS_NAME}
-              placeholder="123456789012345678"
+          <Field label="配信先チャンネル">
+            <DiscordChannelPicker
+              options={discordOptions?.channels ?? []}
+              value={form.channelId || null}
+              placeholder="配信先チャンネルを検索"
+              onChange={(next) =>
+                setForm({
+                  ...form,
+                  channelId: Array.isArray(next) ? (next[0] ?? '') : (next ?? ''),
+                })
+              }
             />
+            <p className="mt-1 text-[11px] text-muted">
+              チャンネル名またはIDで検索できます。JSON/APIには従来どおりDiscord IDを保存します。
+            </p>
           </Field>
           <Field label="配信時刻">
             <input
@@ -285,14 +308,24 @@ export function DailyContentManager({
               className={INPUT_CLASS_NAME}
             />
           </Field>
-          <Field label="IANA timezone">
+          <Field label="Timezone">
             <input
+              list="daily-content-timezones"
               value={form.timezone}
               onChange={(event) => setForm({ ...form, timezone: event.target.value })}
               required
               className={INPUT_CLASS_NAME}
               placeholder="Asia/Tokyo"
+              autoComplete="off"
             />
+            <datalist id="daily-content-timezones">
+              {COMMON_TIMEZONES.map((timezone) => (
+                <option key={timezone} value={timezone} />
+              ))}
+            </datalist>
+            <p className="mt-1 text-[11px] text-muted">
+              主要Timezoneから選択するか、IANA timezoneを直接入力できます。
+            </p>
           </Field>
           <label className="md:col-span-2">
             <span className="text-xs font-medium text-muted">本文</span>
@@ -356,7 +389,7 @@ export function DailyContentManager({
                     </div>
                     <p className="mt-1 text-xs text-muted">
                       <span className="font-mono">{schedule.scheduleTime}</span> {schedule.timezone}{' '}
-                      · <span className="font-mono">#{schedule.channelId}</span>
+                      · {formatChannelLabel(schedule.channelId, discordOptions)}
                     </p>
                   </div>
                   <CalendarClock className="h-5 w-5 shrink-0 text-muted" />
@@ -453,6 +486,14 @@ export function DailyContentManager({
       </section>
     </div>
   );
+}
+
+function formatChannelLabel(
+  channelId: string,
+  discordOptions?: GuildConfigurationOptions | null,
+): string {
+  const channel = discordOptions?.channels.find((candidate) => candidate.id === channelId);
+  return channel ? `#${channel.name}` : `#${channelId}`;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
