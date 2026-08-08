@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useMemo, useState } from 'react';
 import { Loader2, RefreshCw, Shuffle, UserMinus, UserPlus } from 'lucide-react';
 import type { GuildConfigurationOptions } from '@/lib/bot-guild-options';
 import { DiscordChannelPicker } from './discord-entity-picker';
+import { DiscordUserPicker } from './discord-user-picker';
 
 export interface TeamSplitSessionItem {
   id: string;
@@ -496,14 +497,17 @@ export function TeamSplitManager({
               <div className="flex items-center gap-2 text-sm font-medium">
                 <UserPlus className="h-4 w-4" /> 参加者追加・score更新
               </div>
-              <input
-                className={`${inputClass} mt-3`}
-                value={participantUserId}
-                onChange={(event) => setParticipantUserId(event.target.value)}
-                placeholder="DiscordユーザーID"
-                pattern="\d{17,20}"
-                required
-              />
+              <div className="mt-3">
+                <DiscordUserPicker
+                  guildId={guildId}
+                  value={participantUserId || null}
+                  includeBots={false}
+                  placeholder="ユーザー名・表示名・IDで検索"
+                  onChange={(next) =>
+                    setParticipantUserId(Array.isArray(next) ? (next[0] ?? '') : (next ?? ''))
+                  }
+                />
+              </div>
               <label className="mt-2 block text-sm">
                 <span className="mb-1.5 block text-muted">score</span>
                 <input
@@ -517,7 +521,12 @@ export function TeamSplitManager({
               </label>
               <button
                 type="submit"
-                disabled={!pluginEnabled || loading || detail.session.status !== 'open'}
+                disabled={
+                  !pluginEnabled ||
+                  loading ||
+                  !participantUserId ||
+                  detail.session.status !== 'open'
+                }
                 className="mt-2 inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm disabled:opacity-50"
               >
                 <UserPlus className="h-4 w-4" /> 反映
