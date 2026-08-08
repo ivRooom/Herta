@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import type { Logger } from '@herta/logger';
 import type { HealthConfig } from './config.js';
 import { createUnknownHealthResponse } from './service.js';
+import type { GuildConfigurationOptions } from './guild-options.js';
 import type { HertaHealthResponse, PublicServiceStatus } from './types.js';
 
 export interface HealthHttpServerOptions {
@@ -10,6 +11,7 @@ export interface HealthHttpServerOptions {
   logger: Logger;
   version: string;
   getHealth: () => Promise<HertaHealthResponse>;
+  getGuildOptions?: (guildId: string) => Promise<GuildConfigurationOptions | null>;
   now?: () => Date;
   uptimeSeconds?: () => number;
 }
@@ -91,6 +93,32 @@ export class HealthHttpServer {
     response: import('node:http').ServerResponse,
   ): Promise<void> {
     const pathname = new URL(url, 'http://localhost').pathname;
+    const guildOptionsMatch = /^\/internal\/guilds\/(\d+)\/options$/u.exec(pathname);
+    if (guildOptionsMatch) {
+      if (method !== 'GET') {
+        response.setHeader('Allow', 'GET');
+        this.sendJson(response, 405, { status: 'method_not_allowed' });
+        return;
+      }
+      if (!this.options.getGuildOptions) {
+        this.sendJson(response, 404, { status: 'not_found' });
+        return;
+      }
+      try {
+        const options = await withTimeout(
+          this.options.getGuildOptions(guildOptionsMatch[1]!),
+          this.options.config.checkTimeoutMs + 1_000,
+        );
+        if (!options) {
+          this.sendJson(response, 404, { status: 'guild_not_found' });
+          return;
+        }
+        this.sendJson(response, 200, options);
+      } catch {
+        this.sendJson(response, 503, { status: 'unavailable' });
+      }
+      return;
+    }
     if (pathname !== '/healthz') {
       this.sendJson(response, 404, { status: 'not_found' });
       return;

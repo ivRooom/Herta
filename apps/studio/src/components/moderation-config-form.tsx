@@ -14,6 +14,8 @@ import {
   SlidersHorizontal,
   Trash2,
 } from 'lucide-react';
+import { DiscordChannelPicker, DiscordRolePicker } from '@/components/discord-entity-picker';
+import type { GuildConfigurationOptions } from '@/lib/bot-guild-options';
 import {
   appendCustomRule,
   customRuleSelector,
@@ -110,10 +112,12 @@ export function ModerationConfigForm({
   guildId,
   initialEnabled,
   initialConfig,
+  discordOptions,
 }: {
   guildId: string;
   initialEnabled: boolean;
   initialConfig: Record<string, unknown>;
+  discordOptions: GuildConfigurationOptions | null;
 }) {
   const initialDraft = useMemo(() => toModerationConfigDraft(initialConfig), [initialConfig]);
   const [enabled, setEnabled] = useState(initialEnabled);
@@ -282,7 +286,12 @@ export function ModerationConfigForm({
 
       <div className="mt-6">
         {activeSection === 'basic' ? (
-          <BasicSection config={config} patchConfig={patchConfig} setConfig={setConfig} />
+          <BasicSection
+            config={config}
+            patchConfig={patchConfig}
+            setConfig={setConfig}
+            discordOptions={discordOptions}
+          />
         ) : null}
         {activeSection === 'rules' ? (
           <RulesSection
@@ -305,7 +314,11 @@ export function ModerationConfigForm({
           <AutoCaseSection config={config} setConfig={setConfig} patchConfig={patchConfig} />
         ) : null}
         {activeSection === 'exemptions' ? (
-          <ExemptionsSection config={config} patchConfig={patchConfig} />
+          <ExemptionsSection
+            config={config}
+            patchConfig={patchConfig}
+            discordOptions={discordOptions}
+          />
         ) : null}
         {activeSection === 'json' ? (
           <AdvancedJsonSection
@@ -346,10 +359,12 @@ function BasicSection({
   config,
   patchConfig,
   setConfig,
+  discordOptions,
 }: {
   config: ModerationConfigDraft;
   patchConfig: (patch: Partial<ModerationConfigDraft>) => void;
   setConfig: (config: ModerationConfigDraft) => void;
+  discordOptions: GuildConfigurationOptions | null;
 }) {
   return (
     <SectionPanel
@@ -401,15 +416,15 @@ function BasicSection({
           onChange={(checked) => patchConfig({ defaultResponseEphemeral: checked })}
         />
         <SettingCard
-          title="ログ送信先チャンネルID"
-          description="未指定ならDiscordへの追加ログ送信を行いません。"
+          title="ログ送信先チャンネル"
+          description="Discordサーバーから取得したチャンネルを名前またはIDで検索できます。"
         >
-          <input
-            value={config.logChannelId ?? ''}
-            inputMode="numeric"
-            placeholder="例: 123456789012345678"
-            onChange={(event) => patchConfig({ logChannelId: event.target.value.trim() || null })}
-            className={inputClassName}
+          <DiscordChannelPicker
+            options={discordOptions?.channels ?? []}
+            value={config.logChannelId}
+            onChange={(value) =>
+              patchConfig({ logChannelId: typeof value === 'string' ? value : null })
+            }
           />
         </SettingCard>
         <SettingCard title="理由の最大文字数" description="1〜1000文字。">
@@ -429,13 +444,21 @@ function BasicSection({
           />
         </SettingCard>
       </div>
-      <div className="mt-4">
-        <IdListEditor
-          title="実行を許可するモデレーターロールID"
-          description="空の場合はDiscord権限だけで判定します。"
-          values={config.allowedModeratorRoleIds}
-          onChange={(values) => setConfig({ ...config, allowedModeratorRoleIds: values })}
-        />
+      <div className="mt-4 rounded-xl border border-border bg-background p-4">
+        <p className="text-sm font-medium">実行を許可するモデレーターロール</p>
+        <p className="mt-1 text-xs leading-5 text-muted">
+          空の場合はDiscord権限だけで判定します。ロール名またはIDで検索できます。
+        </p>
+        <div className="mt-3">
+          <DiscordRolePicker
+            options={discordOptions?.roles ?? []}
+            value={config.allowedModeratorRoleIds}
+            multiple
+            onChange={(value) =>
+              setConfig({ ...config, allowedModeratorRoleIds: Array.isArray(value) ? value : [] })
+            }
+          />
+        </div>
       </div>
     </SectionPanel>
   );
@@ -798,9 +821,11 @@ function AutoCaseSection({
 function ExemptionsSection({
   config,
   patchConfig,
+  discordOptions,
 }: {
   config: ModerationConfigDraft;
   patchConfig: (patch: Partial<ModerationConfigDraft>) => void;
+  discordOptions: GuildConfigurationOptions | null;
 }) {
   return (
     <SectionPanel
@@ -808,18 +833,38 @@ function ExemptionsSection({
       description="ここに登録した対象は自動検知から除外されます。手動モデレーションには影響しません。"
     >
       <div className="space-y-4">
-        <IdListEditor
-          title="除外チャンネルID"
-          description="Botコマンド用や管理者専用など、監視しないチャンネルを登録します。"
-          values={config.autoExemptChannelIds}
-          onChange={(values) => patchConfig({ autoExemptChannelIds: values })}
-        />
-        <IdListEditor
-          title="除外ロールID"
-          description="このロールを1つでも持つユーザーを自動検知から除外します。"
-          values={config.autoExemptRoleIds}
-          onChange={(values) => patchConfig({ autoExemptRoleIds: values })}
-        />
+        <div className="rounded-xl border border-border bg-background p-4">
+          <p className="text-sm font-medium">除外チャンネル</p>
+          <p className="mt-1 text-xs leading-5 text-muted">
+            Botコマンド用や管理者専用など、監視しないチャンネルを選択します。
+          </p>
+          <div className="mt-3">
+            <DiscordChannelPicker
+              options={discordOptions?.channels ?? []}
+              value={config.autoExemptChannelIds}
+              multiple
+              onChange={(value) =>
+                patchConfig({ autoExemptChannelIds: Array.isArray(value) ? value : [] })
+              }
+            />
+          </div>
+        </div>
+        <div className="rounded-xl border border-border bg-background p-4">
+          <p className="text-sm font-medium">除外ロール</p>
+          <p className="mt-1 text-xs leading-5 text-muted">
+            このロールを1つでも持つユーザーを自動検知から除外します。
+          </p>
+          <div className="mt-3">
+            <DiscordRolePicker
+              options={discordOptions?.roles ?? []}
+              value={config.autoExemptRoleIds}
+              multiple
+              onChange={(value) =>
+                patchConfig({ autoExemptRoleIds: Array.isArray(value) ? value : [] })
+              }
+            />
+          </div>
+        </div>
         <IdListEditor
           title="除外ユーザーID"
           description="Bot・管理者など個別ユーザーを自動検知から除外します。"

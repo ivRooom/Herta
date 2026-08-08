@@ -3,9 +3,10 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, ShieldAlert } from 'lucide-react';
 import { auth } from '@/auth';
 import { ModerationEnforcementForm } from '@/components/moderation-enforcement-form';
-import { getDiscordAccessToken } from '@/lib/session';
+import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
+import { getDiscordAccessToken } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,7 +24,10 @@ export default async function ModerationEnforcementPage({
   if (!guild) notFound();
   await persistSelectedGuild(guild, session.user.id);
 
-  const plugin = await getGuildPlugin(guildId, 'moderation');
+  const [plugin, discordOptions] = await Promise.all([
+    getGuildPlugin(guildId, 'moderation'),
+    getGuildConfigurationOptions(guildId),
+  ]);
   if (!plugin) notFound();
 
   return (
@@ -51,7 +55,11 @@ export default async function ModerationEnforcementPage({
       </div>
 
       <div className="mt-7">
-        <ModerationEnforcementForm guildId={guildId} initialConfig={plugin.config} />
+        <ModerationEnforcementForm
+          guildId={guildId}
+          initialConfig={plugin.config}
+          discordOptions={discordOptions}
+        />
       </div>
     </div>
   );

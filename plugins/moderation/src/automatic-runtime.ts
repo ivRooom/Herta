@@ -316,6 +316,17 @@ async function executeAutomaticEnforcement(
       });
     }
     await executeAutomaticDiscordAction(message, selected.policy, reason);
+    context.logger.info(
+      {
+        guildId: context.guildId,
+        messageId: message.id,
+        targetUserId: message.author.id,
+        action,
+        selector: selected.policy.selector,
+        severity: selected.policy.severity,
+      },
+      '自動Moderation Discord操作を実行しました',
+    );
   } catch (error) {
     actionError = error;
   }
@@ -401,7 +412,7 @@ async function executeAutomaticEnforcement(
   }
 }
 
-async function executeAutomaticDiscordAction(
+export async function executeAutomaticDiscordAction(
   message: ModerationMessage,
   policy: AutomaticEnforcementPolicy,
   reason: string,

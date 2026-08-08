@@ -2,11 +2,12 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { auth } from '@/auth';
-import { getDiscordAccessToken } from '@/lib/session';
-import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
-import { getGuildPlugin } from '@/lib/guild-plugins';
 import { ModerationConfigForm } from '@/components/moderation-config-form';
 import { PluginConfigForm } from '@/components/plugin-config-form';
+import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
+import { getGuildPlugin } from '@/lib/guild-plugins';
+import { getDiscordAccessToken } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +23,11 @@ export default async function PluginDetailPage({
   const guild = await getManageableGuild(accessToken, guildId);
   if (!guild) notFound();
   await persistSelectedGuild(guild, session.user.id);
-  const plugin = await getGuildPlugin(guildId, pluginId);
+
+  const [plugin, discordOptions] = await Promise.all([
+    getGuildPlugin(guildId, pluginId),
+    pluginId === 'moderation' ? getGuildConfigurationOptions(guildId) : Promise.resolve(null),
+  ]);
   if (!plugin) notFound();
 
   return (
@@ -46,6 +51,7 @@ export default async function PluginDetailPage({
             guildId={guildId}
             initialEnabled={plugin.enabled}
             initialConfig={plugin.config}
+            discordOptions={discordOptions}
           />
         ) : (
           <div className="rounded-2xl border border-border bg-surface p-6 shadow-card">

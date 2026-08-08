@@ -39,6 +39,7 @@ const healthServer = healthConfig.enabled
       logger,
       version,
       getHealth: () => healthService.getHealth(),
+      getGuildOptions: (guildId) => bot.getGuildConfigurationOptions(guildId),
     })
   : undefined;
 
