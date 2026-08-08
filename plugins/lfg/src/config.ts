@@ -3,6 +3,8 @@ export interface LfgConfig {
   maxOpenPostsPerChannel: number;
   creationCooldownSeconds: number;
   maxPlayersLimit: number;
+  defaultMaxPlayers: number;
+  gamePresets: string[];
   maxTitleLength: number;
   maxDescriptionLength: number;
   defaultDurationMinutes: number;
@@ -36,6 +38,18 @@ export const LFG_DEFAULTS: LfgConfig = {
   maxOpenPostsPerChannel: 10,
   creationCooldownSeconds: 30,
   maxPlayersLimit: 100,
+  defaultMaxPlayers: 4,
+  gamePresets: [
+    'Minecraft',
+    'VALORANT',
+    'Apex Legends',
+    'Fortnite',
+    'Overwatch 2',
+    'League of Legends',
+    'Splatoon 3',
+    'Monster Hunter Wilds',
+    '雑談・イベント',
+  ],
   maxTitleLength: 100,
   maxDescriptionLength: 1000,
   defaultDurationMinutes: 180,
@@ -57,6 +71,12 @@ export class LfgValidationError extends Error {
 
 export function normalizeLfgConfig(input: unknown): LfgConfig {
   const source = isRecord(input) ? input : {};
+  const maxPlayersLimit = readInteger(
+    source['maxPlayersLimit'],
+    LFG_DEFAULTS.maxPlayersLimit,
+    2,
+    500,
+  );
   return {
     maxOpenPostsPerGuild: readInteger(
       source['maxOpenPostsPerGuild'],
@@ -76,7 +96,14 @@ export function normalizeLfgConfig(input: unknown): LfgConfig {
       0,
       3600,
     ),
-    maxPlayersLimit: readInteger(source['maxPlayersLimit'], LFG_DEFAULTS.maxPlayersLimit, 2, 500),
+    maxPlayersLimit,
+    defaultMaxPlayers: readInteger(
+      source['defaultMaxPlayers'],
+      Math.min(LFG_DEFAULTS.defaultMaxPlayers, maxPlayersLimit),
+      2,
+      maxPlayersLimit,
+    ),
+    gamePresets: readStringArray(source['gamePresets'], LFG_DEFAULTS.gamePresets, 30, 80),
     maxTitleLength: readInteger(source['maxTitleLength'], LFG_DEFAULTS.maxTitleLength, 1, 200),
     maxDescriptionLength: readInteger(
       source['maxDescriptionLength'],
@@ -184,6 +211,26 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readBoolean(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
+}
+
+function readStringArray(
+  value: unknown,
+  fallback: string[],
+  maxItems: number,
+  maxLength: number,
+): string[] {
+  if (!Array.isArray(value)) return [...fallback];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of value) {
+    if (typeof item !== 'string') continue;
+    const normalized = item.trim();
+    if (!normalized || normalized.length > maxLength || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
+    if (result.length >= maxItems) break;
+  }
+  return result;
 }
 
 function readInteger(value: unknown, fallback: number, minimum: number, maximum: number): number {

@@ -45,45 +45,43 @@ interface CreateForm {
   durationMinutes: string;
 }
 
-const GAME_PRESETS = [
-  'Minecraft',
-  'VALORANT',
-  'Apex Legends',
-  'Fortnite',
-  'Overwatch 2',
-  'League of Legends',
-  'Splatoon 3',
-  'Monster Hunter Wilds',
-  '雑談・イベント',
-] as const;
-
-const initialForm: CreateForm = {
-  channelId: '',
-  game: '',
-  title: '',
-  description: '',
-  maxPlayers: '4',
-  startTime: '',
-  durationMinutes: '180',
-};
+function createInitialForm(defaultMaxPlayers: number, defaultDurationMinutes: number): CreateForm {
+  return {
+    channelId: '',
+    game: '',
+    title: '',
+    description: '',
+    maxPlayers: String(defaultMaxPlayers),
+    startTime: '',
+    durationMinutes: String(defaultDurationMinutes),
+  };
+}
 
 export function LfgManager({
   guildId,
   initialPosts,
   pluginEnabled,
   maxPlayersLimit,
+  defaultMaxPlayers,
+  defaultDurationMinutes,
+  gamePresets,
   discordOptions,
 }: {
   guildId: string;
   initialPosts: LfgPostItem[];
   pluginEnabled: boolean;
   maxPlayersLimit: number;
+  defaultMaxPlayers: number;
+  defaultDurationMinutes: number;
+  gamePresets: string[];
   discordOptions?: GuildConfigurationOptions | null;
 }) {
   const [posts, setPosts] = useState(initialPosts);
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
-  const [form, setForm] = useState<CreateForm>(initialForm);
+  const [form, setForm] = useState<CreateForm>(() =>
+    createInitialForm(defaultMaxPlayers, defaultDurationMinutes),
+  );
   const [detail, setDetail] = useState<LfgDetailResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -140,7 +138,7 @@ export function LfgManager({
       const body = (await response.json()) as LfgPostItem | { error?: string };
       if (!response.ok) throw new Error(readError(body, '募集の作成に失敗しました'));
       setPosts((current) => [body as LfgPostItem, ...current]);
-      setForm(initialForm);
+      setForm(createInitialForm(defaultMaxPlayers, defaultDurationMinutes));
       setNotice(
         pluginEnabled
           ? '募集を作成しました。WorkerがDiscordへ投稿します。'
@@ -390,7 +388,7 @@ export function LfgManager({
               autoComplete="off"
             />
             <datalist id="lfg-game-presets">
-              {GAME_PRESETS.map((game) => (
+              {gamePresets.map((game) => (
                 <option key={game} value={game} />
               ))}
             </datalist>

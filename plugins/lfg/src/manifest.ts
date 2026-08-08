@@ -47,6 +47,34 @@ export const lfgManifest: PluginManifest = {
         maximum: 500,
         default: 100,
       },
+      defaultMaxPlayers: {
+        type: 'integer',
+        title: '新規募集の既定定員',
+        description:
+          'Studioで新しい募集を作る際の初期人数です。最大人数設定を超える場合は自動調整されます。',
+        minimum: 2,
+        maximum: 500,
+        default: 4,
+      },
+      gamePresets: {
+        type: 'array',
+        title: 'ゲーム・イベントPreset',
+        description:
+          'Studioの募集作成フォームに候補として表示します。候補外の名前も自由入力できます。',
+        maxItems: 30,
+        items: { type: 'string', minLength: 1, maxLength: 80 },
+        default: [
+          'Minecraft',
+          'VALORANT',
+          'Apex Legends',
+          'Fortnite',
+          'Overwatch 2',
+          'League of Legends',
+          'Splatoon 3',
+          'Monster Hunter Wilds',
+          '雑談・イベント',
+        ],
+      },
       maxTitleLength: {
         type: 'integer',
         title: 'タイトル最大文字数',
@@ -94,6 +122,8 @@ export const lfgManifest: PluginManifest = {
       'maxOpenPostsPerChannel',
       'creationCooldownSeconds',
       'maxPlayersLimit',
+      'defaultMaxPlayers',
+      'gamePresets',
       'maxTitleLength',
       'maxDescriptionLength',
       'defaultDurationMinutes',
