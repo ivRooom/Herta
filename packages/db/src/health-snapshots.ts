@@ -22,6 +22,8 @@ export interface ServiceHealthSnapshotRecord extends ServiceHealthSnapshotInput 
 
 const DEFAULT_HEALTH_SNAPSHOT_LIMIT = 10_000;
 const MAX_HEALTH_SNAPSHOT_LIMIT = 50_000;
+const DEFAULT_HEALTH_SNAPSHOT_RETENTION_DAYS = 31;
+const DAY_MS = 24 * 60 * 60 * 1_000;
 const HEALTH_SNAPSHOT_SELECT = {
   id: true,
   serviceId: true,
@@ -43,6 +45,18 @@ export function normalizeServiceHealthSnapshotLimit(limit: number | null | undef
   const finiteLimit =
     typeof limit === 'number' && Number.isFinite(limit) ? limit : DEFAULT_HEALTH_SNAPSHOT_LIMIT;
   return Math.min(Math.max(Math.trunc(finiteLimit), 1), MAX_HEALTH_SNAPSHOT_LIMIT);
+}
+
+export function getServiceHealthSnapshotRetentionCutoff(
+  retentionDays: number | null | undefined = DEFAULT_HEALTH_SNAPSHOT_RETENTION_DAYS,
+  now = new Date(),
+): Date {
+  const finiteDays =
+    typeof retentionDays === 'number' && Number.isFinite(retentionDays)
+      ? retentionDays
+      : DEFAULT_HEALTH_SNAPSHOT_RETENTION_DAYS;
+  const safeDays = Math.max(1, Math.trunc(finiteDays));
+  return new Date(now.getTime() - safeDays * DAY_MS);
 }
 
 export async function recordServiceHealthSnapshot(
@@ -99,4 +113,16 @@ export async function getServiceHealthSnapshotBefore(
     orderBy: { checkedAt: 'desc' },
     select: HEALTH_SNAPSHOT_SELECT,
   });
+}
+
+export async function pruneServiceHealthSnapshots(
+  prisma: PrismaClient,
+  retentionDays: number | null | undefined = DEFAULT_HEALTH_SNAPSHOT_RETENTION_DAYS,
+  now = new Date(),
+): Promise<number> {
+  const cutoff = getServiceHealthSnapshotRetentionCutoff(retentionDays, now);
+  const result = await prisma.serviceHealthSnapshot.deleteMany({
+    where: { checkedAt: { lt: cutoff } },
+  });
+  return result.count;
 }
