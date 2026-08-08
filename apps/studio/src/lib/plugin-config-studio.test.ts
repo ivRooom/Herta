@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  buildDiscordMessageUrl,
+  normalizeDiscordMessageTarget,
+  parseDiscordMessageReference,
+} from './discord-message-target.ts';
+import {
   applySchemaDefaults,
   fieldMatchesSearch,
   makeDefaultValue,
@@ -166,6 +171,63 @@ test('multiple metadataはstring SchemaのJSON型を配列へ変更しない', (
   });
   assert.equal(normalized.channelId, '1175075504940908635');
   assert.equal(Array.isArray(normalized.channelId), false);
+});
+
+test('Discord Message Target metadataと保存objectを保持する', () => {
+  const messageTargetSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+      channelId: { type: 'string' },
+      messageId: { type: 'string' },
+    },
+    required: ['channelId', 'messageId'],
+    ['x-herta-ui']: { widget: 'discord-message-target' },
+  };
+  const current = {
+    channelId: '1175075504940908635',
+    messageId: '1175075504940908636',
+  };
+
+  assert.equal(messageTargetSchema['x-herta-ui']?.widget, 'discord-message-target');
+  assert.deepEqual(normalizeConfigForStudio(messageTargetSchema, current), current);
+  assert.deepEqual(normalizeDiscordMessageTarget({ ...current, unexpected: true }), current);
+});
+
+test('Discord message URLは同じGuildのChannel/Message IDへ変換する', () => {
+  const guildId = '964326043420872704';
+  const channelId = '1175075504940908635';
+  const messageId = '1175075504940908636';
+
+  assert.deepEqual(
+    parseDiscordMessageReference(
+      `https://discord.com/channels/${guildId}/${channelId}/${messageId}`,
+      guildId,
+    ),
+    { channelId, messageId },
+  );
+  assert.equal(
+    parseDiscordMessageReference(
+      `https://discord.com/channels/964326043420872799/${channelId}/${messageId}`,
+      guildId,
+    ),
+    null,
+  );
+  assert.equal(
+    buildDiscordMessageUrl(guildId, { channelId, messageId }),
+    `https://discord.com/channels/${guildId}/${channelId}/${messageId}`,
+  );
+});
+
+test('Message ID単体は選択済みChannelがある場合だけ受け入れる', () => {
+  const guildId = '964326043420872704';
+  const channelId = '1175075504940908635';
+  const messageId = '1175075504940908636';
+
+  assert.deepEqual(parseDiscordMessageReference(messageId, guildId, channelId), {
+    channelId,
+    messageId,
+  });
+  assert.equal(parseDiscordMessageReference(messageId, guildId), null);
 });
 
 test('検索は親・子のtitle/descriptionを対象にする', () => {
