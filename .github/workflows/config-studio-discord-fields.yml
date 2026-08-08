@@ -24,6 +24,8 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Prisma Generate
+        run: pnpm db:generate
       - name: Apply Discord Picker patch
         run: python3 scripts/patch-config-studio-discord-fields.py
       - name: Format changed files
