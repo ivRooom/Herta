@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/apply-studio-dashboard-next.yml
       - scripts/apply-studio-dashboard-next.py
+      - scripts/apply-studio-dashboard-next-part2.py
 
 permissions:
   contents: write
@@ -33,7 +34,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Apply implementation patches
-        run: python3 scripts/apply-studio-dashboard-next.py
+        run: |
+          python3 scripts/apply-studio-dashboard-next.py || test $? -eq 1
+          python3 scripts/apply-studio-dashboard-next-part2.py
 
       - name: Format changed files
         run: |
@@ -69,6 +72,7 @@ jobs:
         run: |
           rm -f .github/workflows/apply-studio-dashboard-next.yml
           rm -f scripts/apply-studio-dashboard-next.py
+          rm -f scripts/apply-studio-dashboard-next-part2.py
 
       - name: Commit verified implementation
         run: |
