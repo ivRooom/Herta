@@ -86,6 +86,7 @@ export function PluginCatalogGrid({
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Plugin名・説明・IDを検索"
+              aria-label="Pluginを検索"
               className="min-w-0 flex-1 border-0 bg-transparent text-sm outline-none placeholder:text-muted"
             />
             {query ? (
@@ -102,6 +103,7 @@ export function PluginCatalogGrid({
 
           <button
             type="button"
+            aria-pressed={onlyEnabled}
             onClick={() => setOnlyEnabled((current) => !current)}
             className={`inline-flex items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
               onlyEnabled
@@ -113,13 +115,14 @@ export function PluginCatalogGrid({
           </button>
         </div>
 
-        <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+        <div className="mt-4 flex gap-2 overflow-x-auto pb-1" aria-label="Pluginカテゴリ">
           {categories.map((item) => {
             const active = category === item;
             return (
               <button
                 key={item}
                 type="button"
+                aria-pressed={active}
                 onClick={() => setCategory(item)}
                 className={`shrink-0 rounded-lg px-3 py-2 text-xs font-semibold transition-colors ${
                   active
