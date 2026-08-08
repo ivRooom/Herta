@@ -192,7 +192,7 @@ function DiscordEntityPicker({
 
   function commitManualId() {
     const id = query.replace(/\D/gu, '');
-    if (!id) return;
+    if (!id || optionMap.get(id)?.disabled) return;
     if (multiple) {
       if (!value.includes(id)) onChange([...value, id]);
     } else {
