@@ -1,6 +1,10 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
-import { listServiceHealthSnapshots, type ServiceHealthSnapshotRecord } from '@herta/db';
+import {
+  getServiceHealthSnapshotBefore,
+  listServiceHealthSnapshots,
+  type ServiceHealthSnapshotRecord,
+} from '@herta/db';
 import type { LucideIcon } from 'lucide-react';
 import {
   Activity,
@@ -217,7 +221,12 @@ export default async function OperationsDashboardPage({
   const rangeStart = new Date(rangeEnd.getTime() - rangeConfig.durationMs);
   const [result, history] = await Promise.all([getBotHealth(), loadHistory(rangeStart)]);
   const buckets = bucketOperationsHistory(history.snapshots, rangeConfig.bucketMs);
-  const summary = summarizeOperationsHistory(history.snapshots, rangeStart, rangeEnd);
+  const summary = summarizeOperationsHistory(
+    history.snapshots,
+    rangeStart,
+    rangeEnd,
+    history.previousSnapshot?.status,
+  );
 
   return (
     <div>
@@ -510,18 +519,23 @@ export default async function OperationsDashboardPage({
   );
 }
 
-async function loadHistory(
-  since: Date,
-): Promise<{ available: boolean; snapshots: ServiceHealthSnapshotRecord[] }> {
+async function loadHistory(since: Date): Promise<{
+  available: boolean;
+  snapshots: ServiceHealthSnapshotRecord[];
+  previousSnapshot: ServiceHealthSnapshotRecord | null;
+}> {
   try {
-    const snapshots = await listServiceHealthSnapshots(prisma, 'herta-discord-bot', since, 10_000);
-    return { available: true, snapshots };
+    const [snapshots, previousSnapshot] = await Promise.all([
+      listServiceHealthSnapshots(prisma, 'herta-discord-bot', since, 10_000),
+      getServiceHealthSnapshotBefore(prisma, 'herta-discord-bot', since),
+    ]);
+    return { available: true, snapshots, previousSnapshot };
   } catch (error) {
     console.error(
       'Operations health history query failed',
       error instanceof Error ? error.name : 'UnknownError',
     );
-    return { available: false, snapshots: [] };
+    return { available: false, snapshots: [], previousSnapshot: null };
   }
 }
 
