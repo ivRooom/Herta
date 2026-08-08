@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { resolveBotHealthRequestTimeoutMs } from './bot-health';
+import { resolveBotHealthRequestTimeoutMs } from './bot-health.ts';
 
 const guildMemberOptionSchema = z.object({
   id: z.string().regex(/^\d+$/u),

@@ -99,6 +99,7 @@ export function DiscordUserPicker({
   }
 
   const manualIdAvailable =
+    includeBots &&
     /^\d{17,20}$/u.test(normalizedQuery) &&
     !selectedIds.includes(normalizedQuery) &&
     !results.some((member) => member.id === normalizedQuery);
