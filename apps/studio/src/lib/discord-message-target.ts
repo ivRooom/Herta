@@ -19,6 +19,15 @@ export function normalizeDiscordMessageTarget(value: unknown): DiscordMessageTar
   };
 }
 
+export function mergeDiscordMessageTarget(
+  current: unknown,
+  next: DiscordMessageTarget | null,
+): Record<string, unknown> | null {
+  if (next === null) return null;
+  const base = current && typeof current === 'object' && !Array.isArray(current) ? current : {};
+  return { ...(base as Record<string, unknown>), ...next };
+}
+
 export function parseDiscordMessageReference(
   input: string,
   guildId: string,
