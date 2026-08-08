@@ -1,0 +1,42 @@
+name: Format Plugin Catalog
+
+on:
+  push:
+    branches:
+      - feat/custom-plugin-catalog-v1
+    paths:
+      - .github/workflows/format-plugin-catalog.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/custom-plugin-catalog-v1
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format
+        run: |
+          pnpm exec prettier --write \
+            'apps/studio/src/app/dashboard/guilds/[guildId]/plugins/page.tsx' \
+            apps/studio/src/components/plugin-catalog-grid.tsx
+          rm -f .github/workflows/format-plugin-catalog.yml
+      - name: Commit
+        run: |
+          git config user.name 'mizzz-ivr'
+          git config user.email '86910433+mizzz-ivr@users.noreply.github.com'
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m 'style: Plugin Catalogを整形'
+          git push origin HEAD:feat/custom-plugin-catalog-v1
