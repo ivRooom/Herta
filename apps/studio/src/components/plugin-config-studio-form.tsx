@@ -352,9 +352,11 @@ function SchemaField({
   const nullable = schemaAllowsNull(schema);
   const title = schema.title ?? humanizeKey(fieldKey);
   const ui = schema['x-herta-ui'];
-  const discordMultiple = type === 'array' || ui?.multiple === true;
+  const discordMultiple = type === 'array';
+  const supportsDiscordPicker =
+    type === 'string' || (type === 'array' && schemaPrimaryType(schema.items ?? {}) === 'string');
 
-  if (ui?.widget === 'discord-channel' && (type === 'string' || type === 'array')) {
+  if (ui?.widget === 'discord-channel' && supportsDiscordPicker) {
     return (
       <FieldShell title={title} schema={schema} required={required}>
         <DiscordChannelPicker
@@ -368,7 +370,7 @@ function SchemaField({
     );
   }
 
-  if (ui?.widget === 'discord-role' && (type === 'string' || type === 'array')) {
+  if (ui?.widget === 'discord-role' && supportsDiscordPicker) {
     return (
       <FieldShell title={title} schema={schema} required={required}>
         <DiscordRolePicker
