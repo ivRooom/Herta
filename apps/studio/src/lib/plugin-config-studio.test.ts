@@ -123,6 +123,32 @@ test('Discord Picker用metadataをSchema互換のまま保持できる', () => {
   assert.equal(roleSchema['x-herta-ui']?.editableOnly, true);
 });
 
+test('Discord Picker付きSchemaでも保存済みIDを変換せず保持する', () => {
+  const discordSchema: JsonSchema = {
+    type: 'object',
+    properties: {
+      channelId: {
+        type: ['string', 'null'],
+        default: null,
+        ['x-herta-ui']: { widget: 'discord-channel' },
+      },
+      roleIds: {
+        type: 'array',
+        items: { type: 'string' },
+        default: [],
+        ['x-herta-ui']: { widget: 'discord-role', multiple: true },
+      },
+    },
+  };
+
+  const current = {
+    channelId: '1175075504940908635',
+    roleIds: ['964326043420872706', '964326043420872707'],
+  };
+  assert.deepEqual(normalizeConfigForStudio(discordSchema, current), current);
+  assert.deepEqual(parseConfigJson(stringifyConfig(current)), current);
+});
+
 test('検索は親・子のtitle/descriptionを対象にする', () => {
   assert.equal(fieldMatchesSearch('nested', schema.properties?.nested ?? {}, '表示名'), true);
   assert.equal(fieldMatchesSearch('rules', schema.properties?.rules ?? {}, '存在しない'), false);
