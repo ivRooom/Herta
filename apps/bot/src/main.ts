@@ -1,4 +1,10 @@
-import { getPrismaClient, pruneCommandExecutionEvents } from '@herta/db';
+import {
+  getPrismaClient,
+  pruneCommandExecutionEvents,
+  pruneServiceHealthSnapshots,
+  recordServiceHealthSnapshot,
+  type ServiceHealthSnapshotInput,
+} from '@herta/db';
 import {
   pruneAutoResponseExecutionEvents,
   type AutoResponsePrismaClient,
@@ -44,25 +50,35 @@ const healthServer = healthConfig.enabled
     })
   : undefined;
 
-const EXECUTION_ANALYTICS_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1_000;
+const RETENTION_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1_000;
 const EXECUTION_ANALYTICS_RETENTION_DAYS = 90;
+const HEALTH_SNAPSHOT_RETENTION_DAYS = 31;
+const HEALTH_SNAPSHOT_INTERVAL_MS = 5 * 60 * 1_000;
+const HEALTH_SNAPSHOT_BUFFER_LIMIT = Math.ceil(
+  (HEALTH_SNAPSHOT_RETENTION_DAYS * 24 * 60 * 60 * 1_000) / HEALTH_SNAPSHOT_INTERVAL_MS,
+);
 
 let shuttingDown = false;
-let executionAnalyticsPruneInFlight = false;
-let executionAnalyticsPruneTimer: NodeJS.Timeout | undefined;
+let retentionPruneInFlight = false;
+let retentionPruneTimer: NodeJS.Timeout | undefined;
+let healthSnapshotTimer: NodeJS.Timeout | undefined;
+let healthSnapshotRun: Promise<void> | undefined;
+let healthSnapshotCollectionActive = false;
+const pendingHealthSnapshots: ServiceHealthSnapshotInput[] = [];
 
-async function pruneExecutionAnalytics(): Promise<void> {
-  if (!process.env['DATABASE_URL'] || executionAnalyticsPruneInFlight) return;
+async function pruneRetainedData(): Promise<void> {
+  if (!process.env['DATABASE_URL'] || retentionPruneInFlight) return;
 
-  executionAnalyticsPruneInFlight = true;
+  retentionPruneInFlight = true;
   try {
     const prisma = getPrismaClient();
-    const [commandDeleted, autoResponseDeleted] = await Promise.all([
+    const [commandDeleted, autoResponseDeleted, healthSnapshotDeleted] = await Promise.all([
       pruneCommandExecutionEvents(prisma, EXECUTION_ANALYTICS_RETENTION_DAYS),
       pruneAutoResponseExecutionEvents(
         prisma as unknown as AutoResponsePrismaClient,
         EXECUTION_ANALYTICS_RETENTION_DAYS,
       ),
+      pruneServiceHealthSnapshots(prisma, HEALTH_SNAPSHOT_RETENTION_DAYS),
     ]);
     if (commandDeleted > 0) {
       logger.info(
@@ -76,37 +92,130 @@ async function pruneExecutionAnalytics(): Promise<void> {
         '古いAuto Response実行履歴を削除しました',
       );
     }
+    if (healthSnapshotDeleted > 0) {
+      logger.info(
+        { deleted: healthSnapshotDeleted, retentionDays: HEALTH_SNAPSHOT_RETENTION_DAYS },
+        '古いHealth Snapshotを削除しました',
+      );
+    }
   } catch (error) {
-    logger.warn({ err: error }, '古い実行履歴の整理に失敗しました');
+    logger.warn({ err: error }, '古いTelemetryデータの整理に失敗しました');
   } finally {
-    executionAnalyticsPruneInFlight = false;
+    retentionPruneInFlight = false;
   }
 }
 
-function startExecutionAnalyticsPruning(): void {
-  if (!process.env['DATABASE_URL'] || executionAnalyticsPruneTimer) return;
+function startRetentionPruning(): void {
+  if (!process.env['DATABASE_URL'] || retentionPruneTimer) return;
 
-  executionAnalyticsPruneTimer = setInterval(() => {
-    void pruneExecutionAnalytics();
-  }, EXECUTION_ANALYTICS_PRUNE_INTERVAL_MS);
-  executionAnalyticsPruneTimer.unref();
+  retentionPruneTimer = setInterval(() => {
+    void pruneRetainedData();
+  }, RETENTION_PRUNE_INTERVAL_MS);
+  retentionPruneTimer.unref();
 }
 
-function stopExecutionAnalyticsPruning(): void {
-  if (!executionAnalyticsPruneTimer) return;
-  clearInterval(executionAnalyticsPruneTimer);
-  executionAnalyticsPruneTimer = undefined;
+function stopRetentionPruning(): void {
+  if (!retentionPruneTimer) return;
+  clearInterval(retentionPruneTimer);
+  retentionPruneTimer = undefined;
+}
+
+function bufferHealthSnapshot(snapshot: ServiceHealthSnapshotInput): void {
+  if (pendingHealthSnapshots.length >= HEALTH_SNAPSHOT_BUFFER_LIMIT) {
+    pendingHealthSnapshots.shift();
+    logger.warn(
+      { limit: HEALTH_SNAPSHOT_BUFFER_LIMIT },
+      'Health Snapshot一時バッファが上限に達したため最古の記録を破棄しました',
+    );
+  }
+  pendingHealthSnapshots.push(snapshot);
+}
+
+async function persistHealthSnapshot(snapshot: ServiceHealthSnapshotInput): Promise<void> {
+  const prisma = getPrismaClient();
+  while (healthSnapshotCollectionActive && pendingHealthSnapshots.length > 0) {
+    await recordServiceHealthSnapshot(prisma, pendingHealthSnapshots[0]!);
+    pendingHealthSnapshots.shift();
+  }
+  if (!healthSnapshotCollectionActive) return;
+  await recordServiceHealthSnapshot(prisma, snapshot);
+}
+
+async function collectHealthSnapshot(): Promise<void> {
+  const health = await healthService.getHealth();
+  if (!healthSnapshotCollectionActive) return;
+
+  const snapshot: ServiceHealthSnapshotInput = {
+    serviceId: health.service.id,
+    version: health.version,
+    status: health.status,
+    discordStatus: health.checks.discord.status,
+    databaseStatus: health.checks.database.status,
+    redisStatus: health.checks.redis.status,
+    workerStatus: health.checks.worker.status,
+    databaseLatencyMs: health.checks.database.latency_ms ?? null,
+    redisLatencyMs: health.checks.redis.latency_ms ?? null,
+    workerLatencyMs: health.checks.worker.latency_ms ?? null,
+    guildCount: health.guild_count,
+    uptimeSeconds: health.uptime_seconds,
+    checkedAt: new Date(health.checked_at),
+  };
+
+  try {
+    await persistHealthSnapshot(snapshot);
+  } catch (error) {
+    if (healthSnapshotCollectionActive) bufferHealthSnapshot(snapshot);
+    logger.warn(
+      { err: error, buffered: pendingHealthSnapshots.length },
+      'Health Snapshotの保存に失敗したため一時バッファへ保持しました',
+    );
+  }
+}
+
+async function recordHealthSnapshot(): Promise<void> {
+  if (!process.env['DATABASE_URL'] || !healthSnapshotCollectionActive || healthSnapshotRun) {
+    return;
+  }
+
+  const run = collectHealthSnapshot();
+  healthSnapshotRun = run;
+  try {
+    await run;
+  } finally {
+    if (healthSnapshotRun === run) healthSnapshotRun = undefined;
+  }
+}
+
+function startHealthSnapshotCollection(): void {
+  if (!process.env['DATABASE_URL'] || healthSnapshotCollectionActive) return;
+  healthSnapshotCollectionActive = true;
+  void recordHealthSnapshot();
+  healthSnapshotTimer = setInterval(() => {
+    void recordHealthSnapshot();
+  }, HEALTH_SNAPSHOT_INTERVAL_MS);
+  healthSnapshotTimer.unref();
+}
+
+async function stopHealthSnapshotCollection(): Promise<void> {
+  healthSnapshotCollectionActive = false;
+  if (healthSnapshotTimer) {
+    clearInterval(healthSnapshotTimer);
+    healthSnapshotTimer = undefined;
+  }
+  await healthSnapshotRun?.catch(() => undefined);
 }
 
 async function main(): Promise<void> {
   logger.info('Herta Bot を起動しています...');
   try {
-    await pruneExecutionAnalytics();
+    await pruneRetainedData();
     await healthServer?.start();
     await bot.start();
-    startExecutionAnalyticsPruning();
+    startRetentionPruning();
+    startHealthSnapshotCollection();
   } catch (error) {
-    stopExecutionAnalyticsPruning();
+    stopRetentionPruning();
+    await stopHealthSnapshotCollection();
     await healthServer?.stop().catch(() => undefined);
     logger.fatal(error, 'Bot の起動に失敗しました');
     process.exitCode = 1;
@@ -116,7 +225,8 @@ async function main(): Promise<void> {
 async function shutdown(signal: 'SIGINT' | 'SIGTERM'): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
-  stopExecutionAnalyticsPruning();
+  stopRetentionPruning();
+  await stopHealthSnapshotCollection();
   logger.info({ signal }, 'シャットダウン中...');
 
   const results = await Promise.allSettled([healthServer?.stop(), bot.stop()]);
