@@ -33,6 +33,9 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
 
+      - name: Prisma Generate
+        run: pnpm --filter @herta/db generate
+
       - name: Apply implementation patches
         run: |
           python3 scripts/apply-studio-dashboard-next.py || test $? -eq 1
