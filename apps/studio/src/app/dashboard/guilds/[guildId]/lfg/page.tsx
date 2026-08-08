@@ -11,6 +11,7 @@ import { LfgManager, type LfgPostItem } from '@/components/lfg-manager';
 import { prisma } from '@/lib/db';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
+import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
 import { getDiscordAccessToken } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
@@ -25,7 +26,10 @@ export default async function LfgPage({ params }: { params: Promise<{ guildId: s
   if (!guild) notFound();
   await persistSelectedGuild(guild, session.user.id);
 
-  const plugin = await getGuildPlugin(guildId, 'lfg');
+  const [plugin, discordOptions] = await Promise.all([
+    getGuildPlugin(guildId, 'lfg'),
+    getGuildConfigurationOptions(guildId),
+  ]);
   if (!plugin) notFound();
   const config = normalizeLfgConfig(plugin.config);
 
@@ -115,6 +119,7 @@ export default async function LfgPage({ params }: { params: Promise<{ guildId: s
             initialPosts={posts}
             pluginEnabled={plugin.enabled}
             maxPlayersLimit={config.maxPlayersLimit}
+            discordOptions={discordOptions}
           />
         </div>
       )}

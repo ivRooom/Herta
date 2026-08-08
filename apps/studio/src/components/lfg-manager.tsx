@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { CheckCircle2, Loader2, Plus, RefreshCw, Search, Users, XCircle } from 'lucide-react';
+import type { GuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { DiscordChannelPicker } from './discord-entity-picker';
 
 export interface LfgPostItem {
   id: string;
@@ -43,6 +45,18 @@ interface CreateForm {
   durationMinutes: string;
 }
 
+const GAME_PRESETS = [
+  'Minecraft',
+  'VALORANT',
+  'Apex Legends',
+  'Fortnite',
+  'Overwatch 2',
+  'League of Legends',
+  'Splatoon 3',
+  'Monster Hunter Wilds',
+  '雑談・イベント',
+] as const;
+
 const initialForm: CreateForm = {
   channelId: '',
   game: '',
@@ -58,11 +72,13 @@ export function LfgManager({
   initialPosts,
   pluginEnabled,
   maxPlayersLimit,
+  discordOptions,
 }: {
   guildId: string;
   initialPosts: LfgPostItem[];
   pluginEnabled: boolean;
   maxPlayersLimit: number;
+  discordOptions?: GuildConfigurationOptions | null;
 }) {
   const [posts, setPosts] = useState(initialPosts);
   const [query, setQuery] = useState('');
@@ -312,7 +328,10 @@ export function LfgManager({
             </div>
             <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
               <Detail label="作成者" value={detail.post.creatorId} />
-              <Detail label="チャンネル" value={detail.post.channelId} />
+              <Detail
+                label="チャンネル"
+                value={formatChannelLabel(detail.post.channelId, discordOptions)}
+              />
               <Detail label="状態" value={detail.post.status} />
               <Detail label="メッセージ" value={detail.post.messageId ?? '未投稿'} />
               <Detail
@@ -347,21 +366,34 @@ export function LfgManager({
           作成後、Workerが対象DiscordチャンネルへButton付きメッセージを投稿します。
         </p>
         <form className="mt-5 space-y-3" onSubmit={(event) => void createPost(event)}>
-          <Field label="チャンネルID">
-            <input
-              required
-              value={form.channelId}
-              onChange={(event) => setForm({ ...form, channelId: event.target.value })}
-              className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm"
+          <Field label="投稿チャンネル">
+            <DiscordChannelPicker
+              options={discordOptions?.channels ?? []}
+              value={form.channelId || null}
+              placeholder="募集を投稿するチャンネルを検索"
+              onChange={(next) =>
+                setForm({
+                  ...form,
+                  channelId: Array.isArray(next) ? (next[0] ?? '') : (next ?? ''),
+                })
+              }
             />
           </Field>
           <Field label="ゲーム・イベント">
             <input
+              list="lfg-game-presets"
               required
               value={form.game}
               onChange={(event) => setForm({ ...form, game: event.target.value })}
               className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm"
+              placeholder="ゲーム名またはイベント名"
+              autoComplete="off"
             />
+            <datalist id="lfg-game-presets">
+              {GAME_PRESETS.map((game) => (
+                <option key={game} value={game} />
+              ))}
+            </datalist>
           </Field>
           <Field label="タイトル">
             <input
@@ -440,6 +472,14 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <div className="mt-1.5">{children}</div>
     </label>
   );
+}
+
+function formatChannelLabel(
+  channelId: string,
+  discordOptions?: GuildConfigurationOptions | null,
+): string {
+  const channel = discordOptions?.channels.find((candidate) => candidate.id === channelId);
+  return channel ? `#${channel.name}` : channelId;
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
