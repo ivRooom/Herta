@@ -25,6 +25,7 @@ import { prisma } from '@/lib/db';
 import { getDiscordAccessToken } from '@/lib/session';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
+import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +48,10 @@ export default async function AutoResponsePage({
   if (!guild) notFound();
   await persistSelectedGuild(guild, session.user.id);
 
-  const plugin = await getGuildPlugin(guildId, 'auto-response');
+  const [plugin, discordOptions] = await Promise.all([
+    getGuildPlugin(guildId, 'auto-response'),
+    getGuildConfigurationOptions(guildId),
+  ]);
   if (!plugin) notFound();
   const config = normalizeAutoResponseConfig(plugin.config);
   const filters = {
@@ -215,6 +219,7 @@ export default async function AutoResponsePage({
             guildId={guildId}
             initialRules={items}
             defaultRuleCooldownSeconds={config.defaultRuleCooldownSeconds}
+            discordOptions={discordOptions}
           />
         </div>
       )}
