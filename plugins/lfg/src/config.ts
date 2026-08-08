@@ -77,6 +77,12 @@ export function normalizeLfgConfig(input: unknown): LfgConfig {
     2,
     500,
   );
+  const maxDurationMinutes = readInteger(
+    source['maxDurationMinutes'],
+    LFG_DEFAULTS.maxDurationMinutes,
+    5,
+    43_200,
+  );
   return {
     maxOpenPostsPerGuild: readInteger(
       source['maxOpenPostsPerGuild'],
@@ -113,16 +119,11 @@ export function normalizeLfgConfig(input: unknown): LfgConfig {
     ),
     defaultDurationMinutes: readInteger(
       source['defaultDurationMinutes'],
-      LFG_DEFAULTS.defaultDurationMinutes,
+      Math.min(LFG_DEFAULTS.defaultDurationMinutes, maxDurationMinutes),
       5,
-      10_080,
+      maxDurationMinutes,
     ),
-    maxDurationMinutes: readInteger(
-      source['maxDurationMinutes'],
-      LFG_DEFAULTS.maxDurationMinutes,
-      5,
-      43_200,
-    ),
+    maxDurationMinutes,
     allowUserMentions: readBoolean(source['allowUserMentions'], LFG_DEFAULTS.allowUserMentions),
     retentionDays: readInteger(source['retentionDays'], LFG_DEFAULTS.retentionDays, 1, 3650),
   };
