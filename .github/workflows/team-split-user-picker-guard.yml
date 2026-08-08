@@ -1,0 +1,51 @@
+name: Team Split User Picker Guard
+
+on:
+  push:
+    branches: [feat/team-split-user-picker]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/team-split-user-picker
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - name: 空User ID送信ガードを追加
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('apps/studio/src/components/team-split-manager.tsx')
+          text = path.read_text()
+          old = """  async function addParticipant(event: FormEvent<HTMLFormElement>) {
+              event.preventDefault();
+              if (!selectedId) return;
+          """
+          # YAMLの共通indent除去に依存せず、短い行単位で置換する
+          marker = "  async function addParticipant(event: FormEvent<HTMLFormElement>) {\n    event.preventDefault();\n    if (!selectedId) return;"
+          replacement = "  async function addParticipant(event: FormEvent<HTMLFormElement>) {\n    event.preventDefault();\n    if (!selectedId || !participantUserId) return;"
+          if marker not in text:
+              raise SystemExit('addParticipant guard target not found')
+          path.write_text(text.replace(marker, replacement, 1))
+          PY
+      - run: pnpm exec prettier --write apps/studio/src/components/team-split-manager.tsx
+      - run: pnpm --dir apps/studio typecheck
+      - name: commitして一時Workflowを削除
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/team-split-user-picker-guard.yml
+          git add apps/studio/src/components/team-split-manager.tsx
+          git commit -m "fix: Team Split参加者追加の空User ID送信を防ぐ"
+          git push origin HEAD:feat/team-split-user-picker
