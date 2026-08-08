@@ -1,0 +1,75 @@
+name: Team Split User Picker Apply
+
+on:
+  push:
+    branches: [feat/team-split-user-picker]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/team-split-user-picker
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - name: User Pickerへ移行
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/studio/src/components/team-split-manager.tsx')
+          text = path.read_text()
+
+          old_import = "import { DiscordChannelPicker } from './discord-entity-picker';\n"
+          new_import = old_import + "import { DiscordUserPicker } from './discord-user-picker';\n"
+          if old_import not in text or "./discord-user-picker" in text:
+              raise SystemExit('import patch target not found or already applied')
+          text = text.replace(old_import, new_import, 1)
+
+          old_guard = """  async function addParticipant(event: FormEvent<HTMLFormElement>) {\n    event.preventDefault();\n    if (!selectedId) return;\n"""
+          new_guard = """  async function addParticipant(event: FormEvent<HTMLFormElement>) {\n    event.preventDefault();\n    if (!selectedId || !participantUserId) return;\n"""
+          if old_guard not in text:
+              raise SystemExit('addParticipant guard target not found')
+          text = text.replace(old_guard, new_guard, 1)
+
+          old_input = """              <input\n                className={`${inputClass} mt-3`}\n                value={participantUserId}\n                onChange={(event) => setParticipantUserId(event.target.value)}\n                placeholder=\"DiscordユーザーID\"\n                pattern=\"\\d{17,20}\"\n                required\n              />\n"""
+          new_input = """              <div className=\"mt-3\">\n                <DiscordUserPicker\n                  guildId={guildId}\n                  value={participantUserId || null}\n                  includeBots={false}\n                  placeholder=\"ユーザー名・表示名・IDで検索\"\n                  onChange={(next) =>\n                    setParticipantUserId(Array.isArray(next) ? (next[0] ?? '') : (next ?? ''))\n                  }\n                />\n              </div>\n"""
+          if old_input not in text:
+              raise SystemExit('participant input target not found')
+          text = text.replace(old_input, new_input, 1)
+
+          marker = '<form onSubmit={addParticipant} className="rounded-xl border border-border p-3">'
+          start = text.index(marker)
+          tail = text[start:]
+          old_disabled = "disabled={!pluginEnabled || loading || detail.session.status !== 'open'}"
+          new_disabled = "disabled={\n                  !pluginEnabled ||\n                  loading ||\n                  !participantUserId ||\n                  detail.session.status !== 'open'\n                }"
+          if old_disabled not in tail:
+              raise SystemExit('participant submit disabled target not found')
+          tail = tail.replace(old_disabled, new_disabled, 1)
+          text = text[:start] + tail
+
+          path.write_text(text)
+          PY
+      - run: pnpm exec prettier --write apps/studio/src/components/team-split-manager.tsx
+      - run: pnpm --dir apps/studio typecheck
+      - name: 変更をコミットして一時Workflowを削除
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'mizzz（ずーみー）/いゔる。'
+          git config user.email 'mizzz._.dev@outlook.jp'
+          git rm .github/workflows/team-split-user-picker-apply.yml
+          git add apps/studio/src/components/team-split-manager.tsx
+          git commit -m 'feat: Team Split参加者選択をUser Pickerへ移行'
+          git push origin HEAD:feat/team-split-user-picker
