@@ -9,6 +9,7 @@ import {
   normalizeConfigForStudio,
   parseConfigJson,
   removeConfigValue,
+  stringifyConfig,
   updateConfigValue,
   type JsonSchema,
 } from './plugin-config-studio.ts';
@@ -79,6 +80,20 @@ test('array itemを削除・並び替えできる', () => {
 test('JSONはobjectのみ許可する', () => {
   assert.deepEqual(parseConfigJson('{"enabled":true}'), { enabled: true });
   assert.throws(() => parseConfigJson('[]'), /オブジェクト形式/);
+});
+
+test('Advanced JSON往復でもSchema外の既存キーを保持する', () => {
+  const original = normalizeConfigForStudio(schema, {
+    retries: 8,
+    futurePluginSetting: { mode: 'experimental', flags: ['a', 'b'] },
+  });
+  const roundTrip = normalizeConfigForStudio(schema, parseConfigJson(stringifyConfig(original)));
+
+  assert.deepEqual(roundTrip.futurePluginSetting, {
+    mode: 'experimental',
+    flags: ['a', 'b'],
+  });
+  assert.equal(roundTrip.retries, 8);
 });
 
 test('検索は親・子のtitle/descriptionを対象にする', () => {
