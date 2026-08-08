@@ -1,8 +1,14 @@
+import type { Metadata } from 'next';
 import { getAllPluginManifests } from '@herta/plugin-catalog';
 import {
   CustomPluginHubCatalog,
   type PluginHubCatalogItem,
 } from '@/components/custom-plugin-hub-catalog';
+
+export const metadata: Metadata = {
+  title: 'Custom Plugin Hub | Herta Studio',
+  description: 'Herta Pluginの機能、要求権限、依存関係、Command、Event購読を確認できます。',
+};
 
 export default function CustomPluginsPage() {
   const plugins: PluginHubCatalogItem[] = getAllPluginManifests().map((manifest) => ({
