@@ -3,7 +3,11 @@
 import { useMemo, useState } from 'react';
 
 import type { GuildConfigurationOptions } from '@/lib/bot-guild-options';
-import { DiscordChannelPicker, DiscordRolePicker } from './discord-entity-picker';
+import {
+  DiscordChannelPicker,
+  DiscordEmojiPicker,
+  DiscordRolePicker,
+} from './discord-entity-picker';
 import { DiscordUserPicker } from './discord-user-picker';
 
 import {
@@ -395,6 +399,20 @@ function SchemaField({
       <FieldShell title={title} schema={schema} required={required}>
         <DiscordUserPicker
           guildId={guildId}
+          value={normalizeDiscordEntityValue(value, discordMultiple)}
+          multiple={discordMultiple}
+          placeholder={ui.placeholder}
+          onChange={(next) => onChange(path, next)}
+        />
+      </FieldShell>
+    );
+  }
+
+  if (ui?.widget === 'discord-emoji' && supportsDiscordPicker) {
+    return (
+      <FieldShell title={title} schema={schema} required={required}>
+        <DiscordEmojiPicker
+          options={discordOptions?.emojis ?? []}
           value={normalizeDiscordEntityValue(value, discordMultiple)}
           multiple={discordMultiple}
           placeholder={ui.placeholder}

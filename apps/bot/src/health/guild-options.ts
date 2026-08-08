@@ -18,6 +18,14 @@ export interface GuildRoleOption {
   editable: boolean;
 }
 
+export interface GuildEmojiOption {
+  id: string;
+  name: string;
+  animated: boolean;
+  available: boolean;
+  managed: boolean;
+}
+
 export interface GuildBotPermissionSnapshot {
   manageMessages: boolean;
   manageRoles: boolean;
@@ -33,6 +41,7 @@ export interface GuildConfigurationOptions {
   guildName: string;
   channels: GuildChannelOption[];
   roles: GuildRoleOption[];
+  emojis: GuildEmojiOption[];
   bot: GuildBotPermissionSnapshot;
   fetchedAt: string;
 }
@@ -44,9 +53,10 @@ export async function loadGuildConfigurationOptions(
   const guild = client.guilds.cache.get(guildId);
   if (!guild) return null;
 
-  const [channels, roles, me] = await Promise.all([
+  const [channels, roles, emojis, me] = await Promise.all([
     guild.channels.fetch(),
     guild.roles.fetch(),
+    guild.emojis.fetch(),
     guild.members.me ? Promise.resolve(guild.members.me) : guild.members.fetchMe(),
   ]);
 
@@ -81,11 +91,22 @@ export async function loadGuildConfigurationOptions(
     }))
     .sort((a, b) => b.position - a.position || a.name.localeCompare(b.name, 'ja'));
 
+  const emojiOptions = [...emojis.values()]
+    .map((emoji) => ({
+      id: emoji.id,
+      name: emoji.name ?? emoji.id,
+      animated: Boolean(emoji.animated),
+      available: emoji.available !== false,
+      managed: emoji.managed,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+
   return {
     guildId: guild.id,
     guildName: guild.name,
     channels: channelOptions,
     roles: roleOptions,
+    emojis: emojiOptions,
     bot: {
       manageMessages: me.permissions.has(PermissionFlagsBits.ManageMessages),
       manageRoles: me.permissions.has(PermissionFlagsBits.ManageRoles),
