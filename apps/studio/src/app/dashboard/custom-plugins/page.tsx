@@ -24,12 +24,17 @@ export default function CustomPluginsPage() {
               <Puzzle className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">Custom Plugin Hub</h1>
-              <p className="mt-1 text-sm text-muted">Hertaを自分たちの運用に合わせて拡張するための次世代Plugin基盤</p>
+              <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                Custom Plugin Hub
+              </h1>
+              <p className="mt-1 text-sm text-muted">
+                Hertaを自分たちの運用に合わせて拡張するための次世代Plugin基盤
+              </p>
             </div>
           </div>
           <p className="mt-5 max-w-2xl text-sm leading-7 text-muted">
-            現在は公式Pluginを安全に配布する段階です。次Phaseでは署名付きPlugin Package、権限宣言、Guild単位インストール、Studio設定UIまで一つの導線で扱えるようにします。
+            現在は公式Pluginを安全に配布する段階です。次Phaseでは署名付きPlugin
+            Package、権限宣言、Guild単位インストール、Studio設定UIまで一つの導線で扱えるようにします。
           </p>
         </div>
       </section>
@@ -65,7 +70,11 @@ export default function CustomPluginsPage() {
             {[
               ['1', 'Plugin Packageを検証', 'manifest、署名、互換Version、依存Pluginを検査'],
               ['2', '要求権限を確認', 'Message管理やRole管理など、実際に必要なDiscord権限を表示'],
-              ['3', 'Guildへインストール', 'Guild単位でenableし、config schemaからStudio設定画面を生成'],
+              [
+                '3',
+                'Guildへインストール',
+                'Guild単位でenableし、config schemaからStudio設定画面を生成',
+              ],
               ['4', '安全に更新', 'version履歴・監査ログ・rollbackで壊れたPluginを切り戻し'],
             ].map(([number, title, description]) => (
               <li key={number} className="flex gap-3">

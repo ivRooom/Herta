@@ -60,7 +60,9 @@ export default async function PluginsPage({ params }: { params: Promise<{ guildI
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
               <Sparkles className="h-3.5 w-3.5" /> Guild Feature Center
             </div>
-            <h1 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">Plugin Manager</h1>
+            <h1 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
+              Plugin Manager
+            </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
               {guild.name} に必要な機能だけを有効化し、各Pluginの設定・運用画面へ移動できます。
             </p>
@@ -75,7 +77,9 @@ export default async function PluginsPage({ params }: { params: Promise<{ guildI
       <section>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Official Plugins</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+              Official Plugins
+            </p>
             <h2 className="mt-2 text-xl font-semibold">利用できる機能</h2>
           </div>
           <Link
@@ -153,7 +157,8 @@ export default async function PluginsPage({ params }: { params: Promise<{ guildI
             <div>
               <h2 className="font-semibold">Hertaを自分たちのPluginで拡張</h2>
               <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">
-                署名付きPackage、権限宣言、Guild単位インストール、ロールバックを備えたCustom Plugin基盤を次Phaseで実装します。
+                署名付きPackage、権限宣言、Guild単位インストール、ロールバックを備えたCustom
+                Plugin基盤を次Phaseで実装します。
               </p>
             </div>
           </div>
@@ -169,7 +174,15 @@ export default async function PluginsPage({ params }: { params: Promise<{ guildI
   );
 }
 
-function SummaryMetric({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
+function SummaryMetric({
+  label,
+  value,
+  accent = false,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
   return (
     <div className="rounded-xl border border-border bg-background/70 px-4 py-3">
       <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">{label}</p>

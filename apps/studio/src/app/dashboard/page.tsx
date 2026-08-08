@@ -111,7 +111,9 @@ export default async function DashboardPage() {
             <div className="relative flex h-full flex-col justify-between gap-7">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted">Bot Status</p>
+                  <p className="text-xs font-medium uppercase tracking-[0.16em] text-muted">
+                    Bot Status
+                  </p>
                   <p className="mt-2 text-2xl font-semibold">{statusLabel(healthStatus)}</p>
                 </div>
                 <span
@@ -138,13 +140,19 @@ export default async function DashboardPage() {
           icon={Bot}
           label="Herta Bot"
           value={statusLabel(healthStatus)}
-          description={health.available ? `${health.health.guild_count} Guildで認識` : '状態を取得できません'}
+          description={
+            health.available ? `${health.health.guild_count} Guildで認識` : '状態を取得できません'
+          }
         />
         <MetricCard
           icon={Activity}
           label="Discord Gateway"
           value={gatewayLabel(gatewayStatus)}
-          description={health.available && health.health.checks.discord.ready ? 'Gateway Ready' : '接続状態を確認してください'}
+          description={
+            health.available && health.health.checks.discord.ready
+              ? 'Gateway Ready'
+              : '接続状態を確認してください'
+          }
         />
         <MetricCard
           icon={CheckCircle2}
@@ -158,7 +166,9 @@ export default async function DashboardPage() {
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
           <div className="flex items-end justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Quick Access</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+                Quick Access
+              </p>
               <h2 className="mt-2 text-lg font-semibold">運用ショートカット</h2>
             </div>
           </div>
@@ -191,13 +201,27 @@ export default async function DashboardPage() {
         </div>
 
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">System Overview</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+            System Overview
+          </p>
           <h2 className="mt-2 text-lg font-semibold">現在の運用状態</h2>
           <div className="mt-5 space-y-3">
-            <StatusRow label="Discord" ok={health.available && health.health.checks.discord.status === 'ok'} />
-            <StatusRow label="Database" ok={health.available && health.health.checks.database.status === 'ok'} />
-            <StatusRow label="Redis" ok={health.available && health.health.checks.redis.status === 'ok'} />
-            <StatusRow label="Worker" ok={health.available && health.health.checks.worker.status === 'ok'} />
+            <StatusRow
+              label="Discord"
+              ok={health.available && health.health.checks.discord.status === 'ok'}
+            />
+            <StatusRow
+              label="Database"
+              ok={health.available && health.health.checks.database.status === 'ok'}
+            />
+            <StatusRow
+              label="Redis"
+              ok={health.available && health.health.checks.redis.status === 'ok'}
+            />
+            <StatusRow
+              label="Worker"
+              ok={health.available && health.health.checks.worker.status === 'ok'}
+            />
           </div>
           <Link
             href="/dashboard/operations"
@@ -211,11 +235,18 @@ export default async function DashboardPage() {
       <section>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Capabilities</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+              Capabilities
+            </p>
             <h2 className="mt-2 text-xl font-semibold">Hertaで使える機能</h2>
-            <p className="mt-1 text-sm text-muted">公式Pluginを組み合わせてGuildごとに必要な機能だけ有効化できます。</p>
+            <p className="mt-1 text-sm text-muted">
+              公式Pluginを組み合わせてGuildごとに必要な機能だけ有効化できます。
+            </p>
           </div>
-          <Link href="/dashboard/guilds" className="text-sm font-semibold text-primary hover:underline">
+          <Link
+            href="/dashboard/guilds"
+            className="text-sm font-semibold text-primary hover:underline"
+          >
             Pluginを設定する
           </Link>
         </div>
@@ -223,7 +254,10 @@ export default async function DashboardPage() {
           {FEATURES.map((feature) => {
             const Icon = feature.icon;
             return (
-              <article key={feature.title} className="rounded-2xl border border-border bg-surface p-5 shadow-card">
+              <article
+                key={feature.title}
+                className="rounded-2xl border border-border bg-surface p-5 shadow-card"
+              >
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
                   <Icon className="h-5 w-5" />
                 </div>
@@ -305,7 +339,9 @@ function StatusRow({ label, ok }: { label: string; ok: boolean }) {
   return (
     <div className="flex items-center justify-between rounded-xl border border-border bg-background/60 px-4 py-3 text-sm">
       <span>{label}</span>
-      <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${ok ? 'text-emerald-400' : 'text-amber-400'}`}>
+      <span
+        className={`inline-flex items-center gap-1.5 text-xs font-medium ${ok ? 'text-emerald-400' : 'text-amber-400'}`}
+      >
         <span className={`h-2 w-2 rounded-full ${ok ? 'bg-emerald-400' : 'bg-amber-400'}`} />
         {ok ? 'Operational' : 'Check'}
       </span>
@@ -314,21 +350,25 @@ function StatusRow({ label, ok }: { label: string; ok: boolean }) {
 }
 
 function statusLabel(status: string): string {
-  return {
-    operational: 'Operational',
-    degraded: 'Degraded',
-    maintenance: 'Maintenance',
-    outage: 'Outage',
-    unknown: 'Unknown',
-  }[status] ?? 'Unknown';
+  return (
+    {
+      operational: 'Operational',
+      degraded: 'Degraded',
+      maintenance: 'Maintenance',
+      outage: 'Outage',
+      unknown: 'Unknown',
+    }[status] ?? 'Unknown'
+  );
 }
 
 function gatewayLabel(status: string): string {
-  return {
-    ready: 'Ready',
-    connecting: 'Connecting',
-    reconnecting: 'Reconnecting',
-    disconnected: 'Disconnected',
-    unknown: 'Unknown',
-  }[status] ?? 'Unknown';
+  return (
+    {
+      ready: 'Ready',
+      connecting: 'Connecting',
+      reconnecting: 'Reconnecting',
+      disconnected: 'Disconnected',
+      unknown: 'Unknown',
+    }[status] ?? 'Unknown'
+  );
 }

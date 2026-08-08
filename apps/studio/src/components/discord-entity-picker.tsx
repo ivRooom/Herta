@@ -135,7 +135,9 @@ function DiscordEntityPicker({
       setOpen(false);
       return;
     }
-    onChange(value.includes(option.id) ? value.filter((id) => id !== option.id) : [...value, option.id]);
+    onChange(
+      value.includes(option.id) ? value.filter((id) => id !== option.id) : [...value, option.id],
+    );
     setQuery('');
   }
 
@@ -267,7 +269,8 @@ function DiscordEntityPicker({
                   <span className="min-w-0 flex-1">
                     <span className="block truncate font-medium">{option.name}</span>
                     <span className="block truncate text-[11px] text-muted">
-                      {option.meta ? `${option.meta} · ` : ''}{option.id}
+                      {option.meta ? `${option.meta} · ` : ''}
+                      {option.id}
                     </span>
                   </span>
                   {selected ? <Check className="h-4 w-4 shrink-0 text-primary" /> : null}
@@ -278,7 +281,11 @@ function DiscordEntityPicker({
             <div className="px-3 py-4 text-sm text-muted">
               <p>{emptyMessage}</p>
               {/\d/u.test(query) ? (
-                <button type="button" onClick={commitManualId} className="mt-2 text-primary hover:underline">
+                <button
+                  type="button"
+                  onClick={commitManualId}
+                  className="mt-2 text-primary hover:underline"
+                >
                   入力したIDをそのまま使用
                 </button>
               ) : null}

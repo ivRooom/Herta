@@ -2,6 +2,8 @@
 
 import { useMemo, useState, type ReactNode } from 'react';
 import { AlertTriangle, BellRing, Save, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { DiscordChannelPicker, DiscordRolePicker } from '@/components/discord-entity-picker';
+import type { GuildConfigurationOptions } from '@/lib/bot-guild-options';
 import {
   getEnforcementPolicy,
   isBuiltInRuleEnabled,
@@ -65,9 +67,11 @@ const SEVERITY_OPTIONS: Array<{ value: AutomaticModerationSeverityDraft; label: 
 export function ModerationEnforcementForm({
   guildId,
   initialConfig,
+  discordOptions,
 }: {
   guildId: string;
   initialConfig: Record<string, unknown>;
+  discordOptions: GuildConfigurationOptions | null;
 }) {
   const initialDraft = useMemo(() => toModerationConfigDraft(initialConfig), [initialConfig]);
   const [config, setConfig] = useState<ModerationConfigDraft>(initialDraft);
@@ -161,6 +165,8 @@ export function ModerationEnforcementForm({
         ) : null}
       </section>
 
+      <PermissionDiagnostics options={discordOptions} />
+
       <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
         <div className="flex items-center gap-2">
           <BellRing className="h-5 w-5 text-primary" />
@@ -170,13 +176,16 @@ export function ModerationEnforcementForm({
           危険度が設定値以上の検知を、Discordの指定チャンネルへ即時通知します。自動対応の失敗は危険度に関係なく通知します。
         </p>
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
-          <Field label="通知チャンネルID" hint="未設定なら緊急Alertは送信しません。">
-            <input
-              value={config.autoAlertChannelId ?? ''}
-              onChange={(event) => patch({ autoAlertChannelId: numericOrNull(event.target.value) })}
-              inputMode="numeric"
-              placeholder="123456789012345678"
-              className={inputClassName}
+          <Field
+            label="通知チャンネル"
+            hint="未設定なら緊急Alertは送信しません。名前またはIDで検索できます。"
+          >
+            <DiscordChannelPicker
+              options={discordOptions?.channels ?? []}
+              value={config.autoAlertChannelId}
+              onChange={(value) =>
+                patch({ autoAlertChannelId: typeof value === 'string' ? value : null })
+              }
             />
           </Field>
           <Field label="通知する最低危険度">
@@ -197,17 +206,16 @@ export function ModerationEnforcementForm({
             </select>
           </Field>
           <Field
-            label="メンションするRole ID"
-            hint="カンマまたは改行区切り。@everyone/@hereは使用しません。"
+            label="メンションするRole"
+            hint="Discordサーバーから取得したRoleを複数選択できます。@everyone/@hereは使用しません。"
           >
-            <textarea
-              value={config.autoAlertMentionRoleIds.join('\n')}
-              onChange={(event) =>
-                patch({ autoAlertMentionRoleIds: parseIdList(event.target.value) })
+            <DiscordRolePicker
+              options={discordOptions?.roles ?? []}
+              value={config.autoAlertMentionRoleIds}
+              multiple
+              onChange={(value) =>
+                patch({ autoAlertMentionRoleIds: Array.isArray(value) ? value : [] })
               }
-              rows={3}
-              className={inputClassName}
-              placeholder={'111111111111111111\n222222222222222222'}
             />
           </Field>
           <Field label="同一ユーザー・ルールの通知間隔（秒）" hint="0でCooldown無効。最大3600秒。">
@@ -255,6 +263,7 @@ export function ModerationEnforcementForm({
               rule={rule}
               config={config}
               updatePolicy={updatePolicy}
+              discordOptions={discordOptions}
             />
           ))}
         </div>
@@ -287,10 +296,12 @@ function PolicyCard({
   rule,
   config,
   updatePolicy,
+  discordOptions,
 }: {
   rule: RuleDescriptor;
   config: ModerationConfigDraft;
   updatePolicy: (selector: string, patch: Parameters<typeof setEnforcementPolicy>[2]) => void;
+  discordOptions: GuildConfigurationOptions | null;
 }) {
   const policy = getEnforcementPolicy(config, rule.selector);
   const actionMeta = ACTION_OPTIONS.find((item) => item.value === policy.action)!;
@@ -373,15 +384,17 @@ function PolicyCard({
 
       {policy.action === 'role' ? (
         <div className="mt-4">
-          <Field label="付与するRole ID" hint="Botの最高ロールより下のRoleだけ指定できます。">
-            <input
-              value={policy.roleId ?? ''}
-              onChange={(event) =>
-                updatePolicy(rule.selector, { roleId: numericOrNull(event.target.value) })
+          <Field
+            label="付与するRole"
+            hint="Botの最高ロールより下で、Botが編集できるRoleだけ選択できます。"
+          >
+            <DiscordRolePicker
+              options={discordOptions?.roles ?? []}
+              value={policy.roleId}
+              editableOnly
+              onChange={(value) =>
+                updatePolicy(rule.selector, { roleId: typeof value === 'string' ? value : null })
               }
-              inputMode="numeric"
-              placeholder="123456789012345678"
-              className={inputClassName}
             />
           </Field>
         </div>
@@ -425,6 +438,72 @@ function PolicyCard({
         </div>
       ) : null}
     </article>
+  );
+}
+
+function PermissionDiagnostics({ options }: { options: GuildConfigurationOptions | null }) {
+  if (!options) {
+    return (
+      <section className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-5 text-sm sm:p-6">
+        <div className="flex gap-3">
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+          <div>
+            <p className="font-medium">Botの実効権限を取得できません</p>
+            <p className="mt-1 leading-6 text-muted">
+              BotがGuildへ接続済みか確認してください。権限診断が取得できない間も設定保存はできます。
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  const checks = [
+    ['メッセージ削除', options.bot.manageMessages],
+    ['Role管理', options.bot.manageRoles],
+    ['Timeout', options.bot.moderateMembers],
+    ['Kick', options.bot.kickMembers],
+    ['BAN', options.bot.banMembers],
+  ] as const;
+  const missing = checks.filter(([, ok]) => !ok);
+
+  return (
+    <section
+      className={`rounded-2xl border p-5 sm:p-6 ${missing.length ? 'border-amber-500/30 bg-amber-500/5' : 'border-emerald-500/20 bg-emerald-500/5'}`}
+    >
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="text-sm font-semibold">Bot実効権限チェック</h2>
+          <p className="mt-1 text-xs leading-5 text-muted">
+            Discord Guildから現在のHerta Bot権限を直接取得しています。
+          </p>
+        </div>
+        <span
+          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${missing.length ? 'bg-amber-500/10 text-amber-300' : 'bg-emerald-500/10 text-emerald-300'}`}
+        >
+          {missing.length ? `${missing.length}項目を確認` : '必要権限 OK'}
+        </span>
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+        {checks.map(([label, ok]) => (
+          <div
+            key={label}
+            className="flex items-center justify-between rounded-lg border border-border bg-background/70 px-3 py-2 text-xs"
+          >
+            <span>{label}</span>
+            <span className={ok ? 'text-emerald-400' : 'font-semibold text-amber-300'}>
+              {ok ? 'OK' : '不足'}
+            </span>
+          </div>
+        ))}
+      </div>
+      {!options.bot.manageMessages ? (
+        <p className="mt-4 rounded-lg border border-amber-500/20 bg-background/60 px-3 py-2 text-xs leading-5 text-amber-200">
+          「メッセージ削除」が不足しているため、危険度に関係なくAction=削除 /
+          警告+削除は実行できません。StudioのBot再認可でManage Messagesを反映してください。
+        </p>
+      ) : null}
+    </section>
   );
 }
 

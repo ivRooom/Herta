@@ -59,7 +59,10 @@ export async function loadGuildConfigurationOptions(
     .map((channel) => ({
       id: channel.id,
       name: channel.name,
-      kind: channel.type === ChannelType.GuildAnnouncement ? ('announcement' as const) : ('text' as const),
+      kind:
+        channel.type === ChannelType.GuildAnnouncement
+          ? ('announcement' as const)
+          : ('text' as const),
       position: channel.rawPosition,
       parentId: channel.parentId,
     }))

@@ -23,6 +23,10 @@ import { PluginRuntimeEventSubscriber } from './plugins/runtime-events.js';
 import { syncGuildCommands } from './plugins/sync.js';
 import type { SlashCommand } from './commands/registry.js';
 import { DiscordHealthTracker } from './health/discord-state.js';
+import {
+  loadGuildConfigurationOptions,
+  type GuildConfigurationOptions,
+} from './health/guild-options.js';
 import type { DiscordHealthObservation } from './health/types.js';
 
 function resolveErrorName(error: unknown): string {
@@ -405,6 +409,10 @@ export class HertaBot {
         'Plugin Runtimeイベント購読の開始に失敗しました。TTL同期で継続します',
       );
     }
+  }
+
+  async getGuildConfigurationOptions(guildId: string): Promise<GuildConfigurationOptions | null> {
+    return loadGuildConfigurationOptions(this.client, guildId);
   }
 
   getDiscordHealthObservation(): DiscordHealthObservation {
