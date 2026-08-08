@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   TriangleAlert,
 } from 'lucide-react';
+import { analyzePluginPreflight } from '@/lib/plugin-hub-preflight';
 
 export type PluginHubGuildOption = {
   id: string;
@@ -45,7 +46,9 @@ export function PluginHubGuildPreflight({
   const selected = Boolean(selectedGuildId && selectedGuildName);
   const installedCount = plugins.filter((plugin) => plugin.installed).length;
   const enabledCount = plugins.filter((plugin) => plugin.enabled).length;
-  const blockedCount = plugins.filter((plugin) => hasMissingRequiredDependency(plugin)).length;
+  const blockedCount = plugins.filter(
+    (plugin) => !analyzePluginPreflight(plugin.dependencies).ready,
+  ).length;
 
   return (
     <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
@@ -149,9 +152,9 @@ function PluginPreflightRow({
   guildId: string;
   plugin: PluginHubGuildPluginState;
 }) {
-  const requiredDependencies = plugin.dependencies.filter((dependency) => !dependency.optional);
-  const missingDependencies = requiredDependencies.filter((dependency) => !dependency.enabled);
-  const ready = missingDependencies.length === 0;
+  const analysis = analyzePluginPreflight(plugin.dependencies);
+  const ready = analysis.ready;
+  const missingDependencyCount = analysis.missingRequiredPluginIds.length;
 
   return (
     <li className="rounded-xl border border-border bg-background p-4">
@@ -189,7 +192,7 @@ function PluginPreflightRow({
         <CheckItem
           icon={ShieldCheck}
           label="Dependencies"
-          value={ready ? 'Ready' : `${missingDependencies.length}件不足`}
+          value={ready ? 'Ready' : `${missingDependencyCount}件不足`}
           ok={ready}
         />
       </div>
@@ -292,8 +295,4 @@ function Summary({
       </p>
     </div>
   );
-}
-
-function hasMissingRequiredDependency(plugin: PluginHubGuildPluginState): boolean {
-  return plugin.dependencies.some((dependency) => !dependency.optional && !dependency.enabled);
 }
