@@ -1,0 +1,32 @@
+name: Team Split Format Fix
+
+on:
+  push:
+    branches: [feat/team-split-user-picker]
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/team-split-user-picker
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prettier --write apps/studio/src/lib/bot-guild-members.test.ts
+      - name: 整形をcommitして一時Workflowを削除
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/team-split-format-fix.yml
+          git add apps/studio/src/lib/bot-guild-members.test.ts
+          git commit -m "style: Guild Member検索テストをPrettier整形"
+          git push origin HEAD:feat/team-split-user-picker
