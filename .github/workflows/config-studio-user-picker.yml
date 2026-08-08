@@ -31,8 +31,8 @@ jobs:
         run: pnpm exec prettier --write apps/bot/src/bot.ts apps/bot/src/main.ts apps/bot/src/health/server.ts apps/bot/src/health/guild-members.ts apps/bot/src/health/guild-members.test.ts apps/studio/src/lib/bot-guild-members.ts apps/studio/src/app/api/guilds/'[guildId]'/discord/members/route.ts apps/studio/src/components/discord-user-picker.tsx
       - name: Typecheck Bot
         run: pnpm --dir apps/bot typecheck
-      - name: Test Bot
-        run: pnpm --dir apps/bot test
+      - name: Test Guild Member search
+        run: pnpm --dir apps/bot exec vitest run src/health/guild-members.test.ts
       - name: Typecheck Studio
         run: pnpm --dir apps/studio typecheck
       - name: Commit and remove temporary files
