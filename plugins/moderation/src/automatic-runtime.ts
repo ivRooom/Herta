@@ -69,6 +69,11 @@ interface ModerationAutomaticMember {
 
 interface ModerationTextChannel {
   isTextBased(): boolean;
+  permissionsFor?(member: {
+    id: string;
+    permissions: PermissionSet;
+    roles: { highest: { position: number } };
+  }): PermissionSet | null;
   send(options: DiscordVisualMessagePayload): Promise<unknown>;
 }
 
@@ -300,6 +305,8 @@ async function recordAutomaticDecisionTrace(
 ): Promise<void> {
   const actorId = getBotActorId(context.client);
   const bot = message.guild?.members.me;
+  const channel = message.guild?.channels.cache.get(message.channelId);
+  const channelPermissions = bot && channel?.permissionsFor ? channel.permissionsFor(bot) : null;
   const action = selected.policy.action;
   const metadata = {
     outcome,
@@ -309,7 +316,7 @@ async function recordAutomaticDecisionTrace(
     channelId: message.channelId,
     messageId: message.id,
     messageDeletable: message.deletable ?? null,
-    botCanManageMessages: bot?.permissions.has(MANAGE_MESSAGES_PERMISSION) ?? null,
+    botCanManageMessages: channelPermissions?.has(MANAGE_MESSAGES_PERMISSION) ?? null,
   };
 
   context.logger.info(
