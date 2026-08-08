@@ -1,0 +1,41 @@
+name: Temporary Moderation Decision Trace
+
+on:
+  push:
+    branches:
+      - fix/moderation-enforcement-decision-trace
+    paths:
+      - scripts/tmp-moderation-decision-trace.py
+      - .github/workflows/tmp-moderation-decision-trace.yml
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/moderation-enforcement-decision-trace
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: python3 scripts/tmp-moderation-decision-trace.py
+      - run: pnpm exec prettier --write plugins/moderation/src/automatic-runtime.ts
+      - run: pnpm --dir plugins/moderation typecheck
+      - run: pnpm --dir plugins/moderation test
+      - name: Remove temporary files and commit
+        run: |
+          rm scripts/tmp-moderation-decision-trace.py
+          rm .github/workflows/tmp-moderation-decision-trace.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "fix: Moderation自動対応のDecision Traceを追加"
+          git push origin HEAD:fix/moderation-enforcement-decision-trace
