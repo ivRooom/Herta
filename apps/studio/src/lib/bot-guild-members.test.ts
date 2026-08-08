@@ -36,11 +36,7 @@ test('Discord User IDの完全一致検索でもBot判定を保持する', async
     });
   };
 
-  const result = await searchGuildMembers(
-    '964326043420872704',
-    '123456789012345678',
-    1,
-  );
+  const result = await searchGuildMembers('964326043420872704', '123456789012345678', 1);
 
   assert.ok(result);
   assert.equal(result.length, 1);
