@@ -14,6 +14,7 @@ export const DEFAULT_QUOTE_CONFIG: QuoteConfig = {
   allowedChannelIds: [],
 };
 
+// StudioのTagEditorもこのservice契約と同じ上限を使用する。
 export const MAX_QUOTE_TAGS = 5;
 export const MAX_QUOTE_TAG_LENGTH = 32;
 export const MAX_QUOTE_LENGTH = 1800;
