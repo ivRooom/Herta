@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# この更新で既存の一時Workflowを起動し、変更適用・整形・Plugin検証まで実行する。
 path = Path('plugins/moderation/src/automatic-runtime.ts')
 text = path.read_text(encoding='utf-8')
 old = '''  if (!enforcementConfig.autoEnforcementEnabled) return;
