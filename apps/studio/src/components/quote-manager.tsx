@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, type KeyboardEvent } from 'react';
 
 export interface QuoteManagerItem {
   quoteNumber: number;
@@ -19,6 +19,7 @@ export function QuoteManager({ guildId, items }: { guildId: string; items: Quote
   const [quoteText, setQuoteText] = useState('');
   const [sourceAuthorName, setSourceAuthorName] = useState('');
   const [tags, setTags] = useState('');
+  const [tagDraft, setTagDraft] = useState('');
   const [status, setStatus] = useState('public');
   const [isNsfw, setIsNsfw] = useState(false);
   const [message, setMessage] = useState('');
@@ -28,13 +29,14 @@ export function QuoteManager({ guildId, items }: { guildId: string; items: Quote
     setBusy(true);
     setMessage('登録中…');
     try {
+      const tagsToSave = mergeTagDraft(tags, tagDraft);
       await apiRequest(`/api/guilds/${guildId}/quotes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           quoteText,
           sourceAuthorName,
-          tags,
+          tags: tagsToSave,
           status,
           isNsfw,
         }),
@@ -42,6 +44,7 @@ export function QuoteManager({ guildId, items }: { guildId: string; items: Quote
       setQuoteText('');
       setSourceAuthorName('');
       setTags('');
+      setTagDraft('');
       setStatus('public');
       setIsNsfw(false);
       setMessage('Quoteを登録しました');
@@ -83,27 +86,24 @@ export function QuoteManager({ guildId, items }: { guildId: string; items: Quote
               placeholder="任意"
             />
           </label>
-          <label>
+          <div>
             <span className="text-sm font-medium">タグ</span>
-            <input
-              value={tags}
-              onChange={(event) => setTags(event.target.value)}
-              className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-              placeholder="herta, bot"
-            />
-          </label>
-          <label>
-            <span className="text-sm font-medium">ステータス</span>
-            <select
-              value={status}
-              onChange={(event) => setStatus(event.target.value)}
-              className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-            >
-              <option value="public">public</option>
-              <option value="private">private</option>
-              <option value="hidden">hidden</option>
-            </select>
-          </label>
+            <div className="mt-2">
+              <TagEditor
+                value={tags}
+                onChange={setTags}
+                draft={tagDraft}
+                onDraftChange={setTagDraft}
+                ariaLabel="新しいQuoteのタグ"
+              />
+            </div>
+          </div>
+          <div className="md:col-span-2">
+            <span className="text-sm font-medium">公開範囲</span>
+            <div className="mt-2">
+              <VisibilityPicker value={status} onChange={setStatus} />
+            </div>
+          </div>
           <label className="flex items-center gap-2 self-end rounded-xl border border-border bg-background px-3 py-2 text-sm">
             <input
               type="checkbox"
@@ -151,6 +151,7 @@ function QuoteEditor({ guildId, item }: { guildId: string; item: QuoteManagerIte
   const [quoteText, setQuoteText] = useState(item.quoteText);
   const [sourceAuthorName, setSourceAuthorName] = useState(item.sourceAuthorName ?? '');
   const [tags, setTags] = useState(item.tags.join(', '));
+  const [tagDraft, setTagDraft] = useState('');
   const [status, setStatus] = useState(item.status);
   const [isNsfw, setIsNsfw] = useState(item.isNsfw);
   const [message, setMessage] = useState('');
@@ -160,11 +161,14 @@ function QuoteEditor({ guildId, item }: { guildId: string; item: QuoteManagerIte
     setBusy(true);
     setMessage('保存中…');
     try {
+      const tagsToSave = mergeTagDraft(tags, tagDraft);
       await apiRequest(`/api/guilds/${guildId}/quotes/${item.quoteNumber}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quoteText, sourceAuthorName, tags, status, isNsfw }),
+        body: JSON.stringify({ quoteText, sourceAuthorName, tags: tagsToSave, status, isNsfw }),
       });
+      setTags(tagsToSave);
+      setTagDraft('');
       setMessage('保存しました');
       router.refresh();
     } catch (error) {
@@ -200,7 +204,9 @@ function QuoteEditor({ guildId, item }: { guildId: string; item: QuoteManagerIte
           </p>
         </div>
         <div className="flex gap-2 text-xs">
-          <span className="rounded-full border border-border px-2 py-1">{status}</span>
+          <span className="rounded-full border border-border px-2 py-1">
+            {visibilityLabel(status)}
+          </span>
           {isNsfw ? (
             <span className="rounded-full border border-border px-2 py-1">NSFW</span>
           ) : null}
@@ -224,23 +230,19 @@ function QuoteEditor({ guildId, item }: { guildId: string; item: QuoteManagerIte
           className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
           placeholder="作者・発言者"
         />
-        <input
+        <TagEditor
           value={tags}
-          onChange={(event) => setTags(event.target.value)}
-          aria-label={`Quote #${item.quoteNumber} タグ`}
-          className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          placeholder="タグ"
+          onChange={setTags}
+          draft={tagDraft}
+          onDraftChange={setTagDraft}
+          ariaLabel={`Quote #${item.quoteNumber} タグ`}
         />
-        <select
+        <VisibilityPicker
           value={status}
-          onChange={(event) => setStatus(event.target.value)}
-          aria-label={`Quote #${item.quoteNumber} ステータス`}
-          className="rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-        >
-          <option value="public">public</option>
-          <option value="private">private</option>
-          <option value="hidden">hidden</option>
-        </select>
+          onChange={setStatus}
+          ariaLabel={`Quote #${item.quoteNumber} 公開範囲`}
+          compact
+        />
         <label className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm">
           <input
             type="checkbox"
@@ -276,6 +278,200 @@ function QuoteEditor({ guildId, item }: { guildId: string; item: QuoteManagerIte
       </div>
     </article>
   );
+}
+
+const MAX_QUOTE_TAGS = 5;
+const MAX_QUOTE_TAG_LENGTH = 32;
+
+const VISIBILITY_OPTIONS = [
+  {
+    value: 'public',
+    label: '公開',
+    description: '通常のQuoteとして検索・表示対象にします。',
+  },
+  {
+    value: 'private',
+    label: '限定',
+    description: '公開一覧から外し、管理用途のQuoteとして保持します。',
+  },
+  {
+    value: 'hidden',
+    label: '非表示',
+    description: '削除せず完全に表示対象から外します。',
+  },
+] as const;
+
+function VisibilityPicker({
+  value,
+  onChange,
+  ariaLabel = 'Quoteの公開範囲',
+  compact = false,
+}: {
+  value: string;
+  onChange(value: string): void;
+  ariaLabel?: string;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={`grid gap-2 ${compact ? 'grid-cols-1 sm:grid-cols-3' : 'sm:grid-cols-3'}`}
+      role="group"
+      aria-label={ariaLabel}
+    >
+      {VISIBILITY_OPTIONS.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(option.value)}
+            className={`rounded-xl border p-3 text-left transition-colors ${
+              active
+                ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                : 'border-border bg-background hover:border-primary/40'
+            }`}
+          >
+            <span className="block text-sm font-medium">{option.label}</span>
+            {!compact ? (
+              <span className="mt-1 block text-xs leading-5 text-muted">{option.description}</span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function TagEditor({
+  value,
+  onChange,
+  draft,
+  onDraftChange,
+  ariaLabel,
+}: {
+  value: string;
+  onChange(value: string): void;
+  draft: string;
+  onDraftChange(value: string): void;
+  ariaLabel: string;
+}) {
+  const tags = normalizeTags(value);
+
+  function commitTag(raw: string) {
+    const normalized = normalizeTag(raw);
+    if (!normalized) return;
+    if (
+      tags.length < MAX_QUOTE_TAGS &&
+      !tags.some((tag) => tag.toLocaleLowerCase('ja') === normalized.toLocaleLowerCase('ja'))
+    ) {
+      onChange([...tags, normalized].join(', '));
+    }
+    onDraftChange('');
+  }
+
+  function removeTag(tag: string) {
+    onChange(tags.filter((candidate) => candidate !== tag).join(', '));
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'Enter' || event.key === ',') {
+      event.preventDefault();
+      commitTag(draft);
+      return;
+    }
+    const lastTag = tags.at(-1);
+    if (event.key === 'Backspace' && !draft && lastTag) {
+      removeTag(lastTag);
+    }
+  }
+
+  const tagLimitReached = tags.length >= MAX_QUOTE_TAGS;
+
+  return (
+    <div className="rounded-xl border border-border bg-background p-2 focus-within:ring-2 focus-within:ring-ring">
+      {tags.length > 0 ? (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {tags.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              onClick={() => removeTag(tag)}
+              className="rounded-full border border-border bg-surface px-2.5 py-1 text-xs hover:border-destructive/40 hover:text-destructive"
+              aria-label={`${tag} タグを削除`}
+            >
+              #{tag} ×
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <div className="flex gap-2">
+        <input
+          value={draft}
+          onChange={(event) => onDraftChange(event.target.value)}
+          onKeyDown={handleKeyDown}
+          aria-label={ariaLabel}
+          className="min-w-0 flex-1 bg-transparent px-1 py-1 text-sm outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          placeholder={
+            tagLimitReached
+              ? 'タグ上限に達しました'
+              : tags.length === 0
+                ? 'タグを入力してEnter'
+                : 'タグを追加'
+          }
+          maxLength={MAX_QUOTE_TAG_LENGTH}
+          disabled={tagLimitReached}
+        />
+        <button
+          type="button"
+          onClick={() => commitTag(draft)}
+          disabled={!draft.trim() || tagLimitReached}
+          className="rounded-lg border border-border px-2.5 py-1 text-xs font-medium disabled:opacity-40"
+        >
+          追加
+        </button>
+      </div>
+      <p className="mt-1 px-1 text-[11px] text-muted">
+        Enterまたはカンマで追加 · 最大{MAX_QUOTE_TAGS}件 · 1タグ{MAX_QUOTE_TAG_LENGTH}文字
+      </p>
+    </div>
+  );
+}
+
+function normalizeTag(value: string): string {
+  return value.trim().replace(/^#/, '').slice(0, MAX_QUOTE_TAG_LENGTH);
+}
+
+function normalizeTags(value: string): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const raw of value.split(',')) {
+    const tag = normalizeTag(raw);
+    if (!tag) continue;
+    const key = tag.toLocaleLowerCase('ja');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(tag);
+    if (result.length >= MAX_QUOTE_TAGS) break;
+  }
+  return result;
+}
+
+function mergeTagDraft(value: string, draft: string): string {
+  const tags = normalizeTags(value);
+  const pending = normalizeTag(draft);
+  if (
+    pending &&
+    tags.length < MAX_QUOTE_TAGS &&
+    !tags.some((tag) => tag.toLocaleLowerCase('ja') === pending.toLocaleLowerCase('ja'))
+  ) {
+    tags.push(pending);
+  }
+  return tags.join(', ');
+}
+
+function visibilityLabel(value: string): string {
+  return VISIBILITY_OPTIONS.find((option) => option.value === value)?.label ?? value;
 }
 
 async function apiRequest(url: string, init: RequestInit): Promise<unknown> {
