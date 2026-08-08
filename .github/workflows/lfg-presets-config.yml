@@ -25,6 +25,7 @@ jobs:
       - run: pnpm db:generate
       - run: python3 scripts/patch-lfg-presets-config.py
       - run: pnpm exec prettier --write plugins/lfg/src/config.ts plugins/lfg/src/config.test.ts plugins/lfg/src/manifest.ts apps/studio/src/components/lfg-manager.tsx apps/studio/src/app/dashboard/guilds/'[guildId]'/lfg/page.tsx
+      - run: pnpm --filter @herta/discord-ui build
       - run: pnpm --filter @herta/plugin-lfg test
       - run: pnpm --filter @herta/plugin-lfg typecheck
       - run: pnpm --dir apps/studio typecheck
