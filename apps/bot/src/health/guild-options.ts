@@ -6,6 +6,8 @@ export interface GuildChannelOption {
   kind: 'text' | 'announcement';
   position: number;
   parentId: string | null;
+  viewable: boolean;
+  readMessageHistory: boolean;
 }
 
 export interface GuildRoleOption {
@@ -66,16 +68,21 @@ export async function loadGuildConfigurationOptions(
       (channel) =>
         channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildAnnouncement,
     )
-    .map((channel) => ({
-      id: channel.id,
-      name: channel.name,
-      kind:
-        channel.type === ChannelType.GuildAnnouncement
-          ? ('announcement' as const)
-          : ('text' as const),
-      position: channel.rawPosition,
-      parentId: channel.parentId,
-    }))
+    .map((channel) => {
+      const permissions = channel.permissionsFor(me);
+      return {
+        id: channel.id,
+        name: channel.name,
+        kind:
+          channel.type === ChannelType.GuildAnnouncement
+            ? ('announcement' as const)
+            : ('text' as const),
+        position: channel.rawPosition,
+        parentId: channel.parentId,
+        viewable: permissions?.has(PermissionFlagsBits.ViewChannel) ?? false,
+        readMessageHistory: permissions?.has(PermissionFlagsBits.ReadMessageHistory) ?? false,
+      };
+    })
     .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name, 'ja'));
 
   const roleOptions = [...roles.values()]
