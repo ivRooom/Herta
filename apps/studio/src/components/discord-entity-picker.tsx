@@ -1,8 +1,12 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Check, ChevronDown, Hash, Search, Shield, X } from 'lucide-react';
-import type { GuildChannelOption, GuildRoleOption } from '@/lib/bot-guild-options';
+import { Check, ChevronDown, Hash, Search, Shield, Smile, X } from 'lucide-react';
+import type {
+  GuildChannelOption,
+  GuildEmojiOption,
+  GuildRoleOption,
+} from '@/lib/bot-guild-options';
 
 type PickerOption = {
   id: string;
@@ -19,7 +23,7 @@ type PickerProps = {
   multiple?: boolean;
   placeholder: string;
   emptyMessage: string;
-  icon: 'channel' | 'role';
+  icon: 'channel' | 'role' | 'emoji';
 };
 
 export function DiscordChannelPicker({
@@ -102,6 +106,47 @@ export function DiscordRolePicker({
   );
 }
 
+export function DiscordEmojiPicker({
+  options,
+  value,
+  onChange,
+  multiple = false,
+  placeholder = 'Emoji名またはIDを検索',
+}: {
+  options: GuildEmojiOption[];
+  value: string | string[] | null;
+  onChange: (value: string | string[] | null) => void;
+  multiple?: boolean;
+  placeholder?: string;
+}) {
+  const selected = Array.isArray(value) ? value : value ? [value] : [];
+  const normalized = options.map((option) => ({
+    id: option.id,
+    name: option.name,
+    disabled: !option.available,
+    meta: !option.available
+      ? '現在利用不可'
+      : option.managed
+        ? option.animated
+          ? '管理Emoji・アニメーション'
+          : '管理Emoji'
+        : option.animated
+          ? 'アニメーション'
+          : undefined,
+  }));
+  return (
+    <DiscordEntityPicker
+      options={normalized}
+      value={selected}
+      onChange={(values) => onChange(multiple ? values : (values[0] ?? null))}
+      multiple={multiple}
+      placeholder={placeholder}
+      emptyMessage="利用できるGuild Emojiが見つかりません"
+      icon="emoji"
+    />
+  );
+}
+
 function DiscordEntityPicker({
   options,
   value,
@@ -157,7 +202,7 @@ function DiscordEntityPicker({
     setQuery('');
   }
 
-  const Icon = icon === 'channel' ? Hash : Shield;
+  const Icon = icon === 'channel' ? Hash : icon === 'role' ? Shield : Smile;
   const singleOption = !multiple && value[0] ? optionMap.get(value[0]) : undefined;
 
   return (

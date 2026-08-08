@@ -19,11 +19,20 @@ const guildRoleOptionSchema = z.object({
   editable: z.boolean(),
 });
 
+const guildEmojiOptionSchema = z.object({
+  id: z.string().regex(/^\d+$/u),
+  name: z.string().min(1),
+  animated: z.boolean(),
+  available: z.boolean(),
+  managed: z.boolean(),
+});
+
 const guildConfigurationOptionsSchema = z.object({
   guildId: z.string().regex(/^\d+$/u),
   guildName: z.string().min(1),
   channels: z.array(guildChannelOptionSchema),
   roles: z.array(guildRoleOptionSchema),
+  emojis: z.array(guildEmojiOptionSchema),
   bot: z.object({
     manageMessages: z.boolean(),
     manageRoles: z.boolean(),
@@ -39,6 +48,7 @@ const guildConfigurationOptionsSchema = z.object({
 export type GuildConfigurationOptions = z.infer<typeof guildConfigurationOptionsSchema>;
 export type GuildChannelOption = GuildConfigurationOptions['channels'][number];
 export type GuildRoleOption = GuildConfigurationOptions['roles'][number];
+export type GuildEmojiOption = GuildConfigurationOptions['emojis'][number];
 
 export async function getGuildConfigurationOptions(
   guildId: string,
