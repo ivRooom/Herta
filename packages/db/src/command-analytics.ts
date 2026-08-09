@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 
 export type CommandExecutionStatus = 'success' | 'failure';
 
@@ -17,12 +17,27 @@ export interface CommandUsageCount {
   failed: number;
 }
 
+export interface CommandUsagePerformance extends CommandUsageCount {
+  successRate: number | null;
+  averageDurationMs: number;
+  p95DurationMs: number;
+}
+
 export interface CommandUsageDay extends CommandUsageCount {
   date: string;
 }
 
-export interface CommandUsageRanking extends CommandUsageCount {
+export interface CommandUsageHour extends CommandUsageCount {
+  hour: number;
+}
+
+export interface CommandUsageRanking extends CommandUsagePerformance {
   commandName: string;
+}
+
+export interface CommandErrorRanking {
+  errorName: string;
+  total: number;
 }
 
 export interface RecentCommandFailure {
@@ -35,13 +50,51 @@ export interface RecentCommandFailure {
 export interface CommandUsageAnalytics {
   generatedAt: string;
   timeZone: 'Asia/Tokyo';
+  rangeDays: number;
   today: CommandUsageCount;
   last7Days: CommandUsageCount & {
     successRate: number | null;
   };
+  range: CommandUsagePerformance;
   daily: CommandUsageDay[];
+  hourly: CommandUsageHour[];
   ranking: CommandUsageRanking[];
+  errors: CommandErrorRanking[];
   recentFailures: RecentCommandFailure[];
+}
+
+export interface CommandAnalyticsOptions {
+  now?: Date;
+  days?: number;
+}
+
+export interface CommandExecutionSearchFilters {
+  query?: string | null;
+  status?: CommandExecutionStatus | 'all' | null;
+  guildId?: string | null;
+  rangeDays?: number;
+  page?: number;
+  pageSize?: number;
+  now?: Date;
+}
+
+export interface CommandExecutionHistoryItem {
+  id: string;
+  guildId: string | null;
+  commandName: string;
+  status: string;
+  durationMs: number;
+  errorName: string | null;
+  executedAt: string;
+}
+
+export interface CommandExecutionSearchResult {
+  items: CommandExecutionHistoryItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  rangeDays: number;
 }
 
 interface CountRow {
@@ -50,12 +103,26 @@ interface CountRow {
   failed: number;
 }
 
+interface PerformanceRow extends CountRow {
+  averageDurationMs: number;
+  p95DurationMs: number;
+}
+
 interface DailyRow extends CountRow {
   date: string;
 }
 
-interface RankingRow extends CountRow {
+interface HourlyRow extends CountRow {
+  hour: number;
+}
+
+interface RankingRow extends PerformanceRow {
   commandName: string;
+}
+
+interface ErrorRankingRow {
+  errorName: string;
+  total: number;
 }
 
 interface FailureRow {
@@ -67,17 +134,26 @@ interface FailureRow {
 
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const ANALYTICS_DAYS = 7;
+const DEFAULT_ANALYTICS_DAYS = 7;
+const MAX_ANALYTICS_DAYS = 90;
 const MAX_COMMAND_NAME_LENGTH = 100;
 const MAX_GUILD_ID_LENGTH = 64;
 const MAX_ERROR_NAME_LENGTH = 120;
 const MAX_DURATION_MS = 5 * 60 * 1000;
 const DEFAULT_RETENTION_DAYS = 90;
 const MAX_RETENTION_DAYS = 3_650;
+const DEFAULT_HISTORY_PAGE_SIZE = 25;
+const MAX_HISTORY_PAGE_SIZE = 100;
+const MAX_HISTORY_QUERY_LENGTH = 120;
 
 function normalizeOptionalText(value: string | null | undefined, maxLength: number): string | null {
   const normalized = value?.trim();
   return normalized ? normalized.slice(0, maxLength) : null;
+}
+
+export function normalizeAnalyticsDays(value: number | undefined): number {
+  if (!Number.isFinite(value)) return DEFAULT_ANALYTICS_DAYS;
+  return Math.min(MAX_ANALYTICS_DAYS, Math.max(1, Math.floor(value ?? DEFAULT_ANALYTICS_DAYS)));
 }
 
 export function normalizeCommandExecutionInput(
@@ -105,15 +181,24 @@ function formatJstDate(value: Date): string {
 export function fillCommandUsageDays(
   rows: readonly CommandUsageDay[],
   now: Date,
+  days = DEFAULT_ANALYTICS_DAYS,
 ): CommandUsageDay[] {
+  const normalizedDays = normalizeAnalyticsDays(days);
   const byDate = new Map(rows.map((row) => [row.date, row]));
   const todayStart = startOfJstDay(now);
 
-  return Array.from({ length: ANALYTICS_DAYS }, (_, index) => {
-    const date = new Date(todayStart.getTime() - (ANALYTICS_DAYS - 1 - index) * DAY_MS);
+  return Array.from({ length: normalizedDays }, (_, index) => {
+    const date = new Date(todayStart.getTime() - (normalizedDays - 1 - index) * DAY_MS);
     const key = formatJstDate(date);
     return byDate.get(key) ?? { date: key, total: 0, succeeded: 0, failed: 0 };
   });
+}
+
+export function fillCommandUsageHours(rows: readonly CommandUsageHour[]): CommandUsageHour[] {
+  const byHour = new Map(rows.map((row) => [row.hour, row]));
+  return Array.from({ length: 24 }, (_, hour) =>
+    byHour.get(hour) ?? { hour, total: 0, succeeded: 0, failed: 0 },
+  );
 }
 
 export function calculateSuccessRate(count: CommandUsageCount): number | null {
@@ -154,14 +239,41 @@ export async function pruneCommandExecutionEvents(
   return result.count;
 }
 
+function toPerformance(row: PerformanceRow | undefined): CommandUsagePerformance {
+  const count = row ?? {
+    total: 0,
+    succeeded: 0,
+    failed: 0,
+    averageDurationMs: 0,
+    p95DurationMs: 0,
+  };
+  return {
+    ...count,
+    successRate: calculateSuccessRate(count),
+  };
+}
+
 export async function getCommandUsageAnalytics(
   prisma: PrismaClient,
-  now = new Date(),
+  nowOrOptions: Date | CommandAnalyticsOptions = new Date(),
 ): Promise<CommandUsageAnalytics> {
+  const options = nowOrOptions instanceof Date ? { now: nowOrOptions } : nowOrOptions;
+  const now = options.now ?? new Date();
+  const rangeDays = normalizeAnalyticsDays(options.days);
   const todayStart = startOfJstDay(now);
-  const rangeStart = new Date(todayStart.getTime() - (ANALYTICS_DAYS - 1) * DAY_MS);
+  const last7DaysStart = new Date(todayStart.getTime() - 6 * DAY_MS);
+  const rangeStart = new Date(todayStart.getTime() - (rangeDays - 1) * DAY_MS);
 
-  const [todayRows, totalRows, dailyRows, rankingRows, failureRows] = await Promise.all([
+  const [
+    todayRows,
+    last7DaysRows,
+    rangeRows,
+    dailyRows,
+    hourlyRows,
+    rankingRows,
+    errorRows,
+    failureRows,
+  ] = await Promise.all([
     prisma.$queryRaw<CountRow[]>`
       SELECT
         COUNT(*)::int AS "total",
@@ -176,6 +288,16 @@ export async function getCommandUsageAnalytics(
         COUNT(*) FILTER (WHERE "status" = 'success')::int AS "succeeded",
         COUNT(*) FILTER (WHERE "status" = 'failure')::int AS "failed"
       FROM "command_execution_events"
+      WHERE "executed_at" >= ${last7DaysStart}
+    `,
+    prisma.$queryRaw<PerformanceRow[]>`
+      SELECT
+        COUNT(*)::int AS "total",
+        COUNT(*) FILTER (WHERE "status" = 'success')::int AS "succeeded",
+        COUNT(*) FILTER (WHERE "status" = 'failure')::int AS "failed",
+        COALESCE(ROUND(AVG("duration_ms"))::int, 0) AS "averageDurationMs",
+        COALESCE(ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY "duration_ms"))::int, 0) AS "p95DurationMs"
+      FROM "command_execution_events"
       WHERE "executed_at" >= ${rangeStart}
     `,
     prisma.$queryRaw<DailyRow[]>`
@@ -189,16 +311,40 @@ export async function getCommandUsageAnalytics(
       GROUP BY 1
       ORDER BY 1
     `,
-    prisma.$queryRaw<RankingRow[]>`
+    prisma.$queryRaw<HourlyRow[]>`
       SELECT
-        "command_name" AS "commandName",
+        EXTRACT(HOUR FROM "executed_at" AT TIME ZONE 'Asia/Tokyo')::int AS "hour",
         COUNT(*)::int AS "total",
         COUNT(*) FILTER (WHERE "status" = 'success')::int AS "succeeded",
         COUNT(*) FILTER (WHERE "status" = 'failure')::int AS "failed"
       FROM "command_execution_events"
       WHERE "executed_at" >= ${rangeStart}
+      GROUP BY 1
+      ORDER BY 1
+    `,
+    prisma.$queryRaw<RankingRow[]>`
+      SELECT
+        "command_name" AS "commandName",
+        COUNT(*)::int AS "total",
+        COUNT(*) FILTER (WHERE "status" = 'success')::int AS "succeeded",
+        COUNT(*) FILTER (WHERE "status" = 'failure')::int AS "failed",
+        COALESCE(ROUND(AVG("duration_ms"))::int, 0) AS "averageDurationMs",
+        COALESCE(ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY "duration_ms"))::int, 0) AS "p95DurationMs"
+      FROM "command_execution_events"
+      WHERE "executed_at" >= ${rangeStart}
       GROUP BY "command_name"
       ORDER BY "total" DESC, "command_name" ASC
+      LIMIT 10
+    `,
+    prisma.$queryRaw<ErrorRankingRow[]>`
+      SELECT
+        COALESCE(NULLIF("error_name", ''), 'UnknownError') AS "errorName",
+        COUNT(*)::int AS "total"
+      FROM "command_execution_events"
+      WHERE "status" = 'failure'
+        AND "executed_at" >= ${rangeStart}
+      GROUP BY 1
+      ORDER BY "total" DESC, "errorName" ASC
       LIMIT 8
     `,
     prisma.$queryRaw<FailureRow[]>`
@@ -209,6 +355,7 @@ export async function getCommandUsageAnalytics(
         "executed_at" AS "executedAt"
       FROM "command_execution_events"
       WHERE "status" = 'failure'
+        AND "executed_at" >= ${rangeStart}
       ORDER BY "executed_at" DESC
       LIMIT 10
     `,
@@ -216,21 +363,101 @@ export async function getCommandUsageAnalytics(
 
   const emptyCount: CommandUsageCount = { total: 0, succeeded: 0, failed: 0 };
   const today = todayRows[0] ?? emptyCount;
-  const last7Days = totalRows[0] ?? emptyCount;
+  const last7Days = last7DaysRows[0] ?? emptyCount;
 
   return {
     generatedAt: now.toISOString(),
     timeZone: 'Asia/Tokyo',
+    rangeDays,
     today,
     last7Days: {
       ...last7Days,
       successRate: calculateSuccessRate(last7Days),
     },
-    daily: fillCommandUsageDays(dailyRows, now),
-    ranking: rankingRows,
-    recentFailures: failureRows.map((failure: FailureRow) => ({
+    range: toPerformance(rangeRows[0]),
+    daily: fillCommandUsageDays(dailyRows, now, rangeDays),
+    hourly: fillCommandUsageHours(hourlyRows),
+    ranking: rankingRows.map((row) => ({
+      ...row,
+      successRate: calculateSuccessRate(row),
+    })),
+    errors: errorRows,
+    recentFailures: failureRows.map((failure) => ({
       ...failure,
       executedAt: failure.executedAt.toISOString(),
     })),
+  };
+}
+
+function normalizeSearchPage(value: number | undefined): number {
+  if (!Number.isFinite(value)) return 1;
+  return Math.max(1, Math.floor(value ?? 1));
+}
+
+function normalizeSearchPageSize(value: number | undefined): number {
+  if (!Number.isFinite(value)) return DEFAULT_HISTORY_PAGE_SIZE;
+  return Math.min(
+    MAX_HISTORY_PAGE_SIZE,
+    Math.max(1, Math.floor(value ?? DEFAULT_HISTORY_PAGE_SIZE)),
+  );
+}
+
+export async function searchCommandExecutionEvents(
+  prisma: PrismaClient,
+  filters: CommandExecutionSearchFilters = {},
+): Promise<CommandExecutionSearchResult> {
+  const now = filters.now ?? new Date();
+  const rangeDays = normalizeAnalyticsDays(filters.rangeDays);
+  const rangeStart = new Date(startOfJstDay(now).getTime() - (rangeDays - 1) * DAY_MS);
+  const query = normalizeOptionalText(filters.query, MAX_HISTORY_QUERY_LENGTH);
+  const guildId = normalizeOptionalText(filters.guildId, MAX_GUILD_ID_LENGTH);
+  const status = filters.status === 'success' || filters.status === 'failure' ? filters.status : null;
+  const page = normalizeSearchPage(filters.page);
+  const pageSize = normalizeSearchPageSize(filters.pageSize);
+
+  const where: Prisma.CommandExecutionEventWhereInput = {
+    executedAt: { gte: rangeStart },
+    ...(status ? { status } : {}),
+    ...(guildId ? { guildId } : {}),
+    ...(query
+      ? {
+          OR: [
+            { commandName: { contains: query, mode: 'insensitive' } },
+            { guildId: { contains: query, mode: 'insensitive' } },
+            { errorName: { contains: query, mode: 'insensitive' } },
+          ],
+        }
+      : {}),
+  };
+
+  const [total, rows] = await Promise.all([
+    prisma.commandExecutionEvent.count({ where }),
+    prisma.commandExecutionEvent.findMany({
+      where,
+      orderBy: { executedAt: 'desc' },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+      select: {
+        id: true,
+        guildId: true,
+        commandName: true,
+        status: true,
+        durationMs: true,
+        errorName: true,
+        executedAt: true,
+      },
+    }),
+  ]);
+
+  return {
+    items: rows.map((row) => ({
+      ...row,
+      executedAt: row.executedAt.toISOString(),
+    })),
+    total,
+    page,
+    pageSize,
+    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    rangeDays,
   };
 }
