@@ -617,7 +617,8 @@ export default async function AnalyticsDashboardPage({
                 Analyticsの認可情報を取得できませんでした
               </h2>
               <p className="mt-1 text-sm leading-relaxed text-amber-800/80 dark:text-amber-200/80">
-                Discord APIのレート制限またはセッション切れの場合、他Guildの情報を誤表示しないためAnalyticsと履歴を非表示にします。
+                Discord
+                APIのレート制限またはセッション切れの場合、他Guildの情報を誤表示しないためAnalyticsと履歴を非表示にします。
               </p>
             </div>
           </div>
