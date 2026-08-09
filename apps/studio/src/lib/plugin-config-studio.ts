@@ -231,34 +231,39 @@ function validateSchemaValue(
   value: unknown,
   path: StudioValidationPath,
 ): StudioValidationIssue[] {
-  if (value === null) {
-    return schemaAllowsNull(schema)
-      ? []
-      : [{ path, keyword: 'type', message: 'nullは許可されていません' }];
+  const issues = validateCombinators(schema, value, path);
+  const types = schemaTypes(schema);
+
+  if (!matchesSchemaTypes(types, schema.nullable === true, value)) {
+    const expected = types?.join(' / ') ?? '指定された';
+    issues.push({
+      path,
+      keyword: 'type',
+      message: value === null ? 'nullは許可されていません' : `値は${expected}型である必要があります`,
+    });
+    return issues;
   }
-
-  const combinatorIssues = validateCombinators(schema, value, path);
-  if (combinatorIssues.length > 0) return combinatorIssues;
-
-  const type = schemaPrimaryType(schema);
-  if (!matchesSchemaType(type, value)) {
-    return type
-      ? [{ path, keyword: 'type', message: `値は${type}型である必要があります` }]
-      : [];
-  }
-
-  const issues: StudioValidationIssue[] = [];
 
   if (schema.enum && !schema.enum.some((candidate) => jsonValuesEqual(candidate, value))) {
     issues.push({ path, keyword: 'enum', message: '許可されている候補から選択してください' });
   }
 
+  if (value === null) return issues;
+
   if (typeof value === 'number') {
     if (schema.minimum !== undefined && value < schema.minimum) {
-      issues.push({ path, keyword: 'minimum', message: `${schema.minimum}以上で入力してください` });
+      issues.push({
+        path,
+        keyword: 'minimum',
+        message: `${schema.minimum}以上で入力してください`,
+      });
     }
     if (schema.maximum !== undefined && value > schema.maximum) {
-      issues.push({ path, keyword: 'maximum', message: `${schema.maximum}以下で入力してください` });
+      issues.push({
+        path,
+        keyword: 'maximum',
+        message: `${schema.maximum}以下で入力してください`,
+      });
     }
   }
 
@@ -280,7 +285,11 @@ function validateSchemaValue(
     if (schema.pattern) {
       try {
         if (!new RegExp(schema.pattern, 'u').test(value)) {
-          issues.push({ path, keyword: 'pattern', message: '指定された入力形式に一致しません' });
+          issues.push({
+            path,
+            keyword: 'pattern',
+            message: '指定された入力形式に一致しません',
+          });
         }
       } catch {
         issues.push({ path, keyword: 'pattern', message: 'Schemaのpatternが不正です' });
@@ -325,18 +334,18 @@ function validateCombinators(
   value: unknown,
   path: StudioValidationPath,
 ): StudioValidationIssue[] {
+  const issues: StudioValidationIssue[] = [];
+
   if (schema.oneOf?.length) {
     const matches = schema.oneOf.filter(
       (candidate) => validateSchemaValue(candidate, value, path).length === 0,
     ).length;
     if (matches !== 1) {
-      return [
-        {
-          path,
-          keyword: 'oneOf',
-          message: 'oneOfの候補のうち1つだけに一致する必要があります',
-        },
-      ];
+      issues.push({
+        path,
+        keyword: 'oneOf',
+        message: 'oneOfの候補のうち1つだけに一致する必要があります',
+      });
     }
   }
 
@@ -345,21 +354,36 @@ function validateCombinators(
       (candidate) => validateSchemaValue(candidate, value, path).length === 0,
     );
     if (!matches) {
-      return [
-        {
-          path,
-          keyword: 'anyOf',
-          message: 'anyOfの候補のいずれかに一致する必要があります',
-        },
-      ];
+      issues.push({
+        path,
+        keyword: 'anyOf',
+        message: 'anyOfの候補のいずれかに一致する必要があります',
+      });
     }
   }
 
-  return [];
+  return issues;
 }
 
-function matchesSchemaType(type: string | undefined, value: unknown): boolean {
-  if (!type) return true;
+function schemaTypes(schema: JsonSchema): string[] | undefined {
+  if (typeof schema.type === 'string') return [schema.type];
+  if (Array.isArray(schema.type)) return schema.type;
+  if (schema.properties) return ['object'];
+  if (schema.items) return ['array'];
+  return undefined;
+}
+
+function matchesSchemaTypes(
+  types: string[] | undefined,
+  nullable: boolean,
+  value: unknown,
+): boolean {
+  if (value === null && nullable) return true;
+  if (!types) return true;
+  return types.some((type) => matchesSchemaType(type, value));
+}
+
+function matchesSchemaType(type: string, value: unknown): boolean {
   if (type === 'object') return isConfigObject(value);
   if (type === 'array') return Array.isArray(value);
   if (type === 'integer') return typeof value === 'number' && Number.isInteger(value);
@@ -372,7 +396,7 @@ function matchesSchemaType(type: string | undefined, value: unknown): boolean {
 
 function matchesStringFormat(format: string, value: string): boolean {
   if (format === 'email') return /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value);
-  if (format === 'uri' || format === 'url') {
+  if (format === 'url') {
     try {
       const parsed = new URL(value);
       return Boolean(parsed.protocol && parsed.hostname);
@@ -380,17 +404,73 @@ function matchesStringFormat(format: string, value: string): boolean {
       return false;
     }
   }
-  if (format === 'date-time') {
-    return /^\d{4}-\d{2}-\d{2}T/u.test(value) && Number.isFinite(Date.parse(value));
+  if (format === 'uri') {
+    try {
+      const parsed = new URL(value);
+      return Boolean(parsed.protocol);
+    } catch {
+      return false;
+    }
   }
-  if (format === 'date') {
-    return /^\d{4}-\d{2}-\d{2}$/u.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`));
-  }
+  if (format === 'date-time') return isValidDateTime(value);
+  if (format === 'date') return isValidDate(value);
   return true;
 }
 
+function isValidDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+}
+
+function isValidDateTime(value: string): boolean {
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/u.exec(
+      value,
+    );
+  if (!match || !isValidDate(`${match[1]}-${match[2]}-${match[3]}`)) return false;
+
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  if (hour > 23 || minute > 59 || second > 59) return false;
+
+  if (match[7] !== 'Z') {
+    const offset = /^([+-])(\d{2}):(\d{2})$/u.exec(match[7]!);
+    if (!offset || Number(offset[2]) > 23 || Number(offset[3]) > 59) return false;
+  }
+
+  return Number.isFinite(Date.parse(value));
+}
+
 function jsonValuesEqual(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return (
+      left.length === right.length &&
+      left.every((item, index) => jsonValuesEqual(item, right[index]))
+    );
+  }
+  if (isConfigObject(left) && isConfigObject(right)) {
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    return (
+      leftKeys.length === rightKeys.length &&
+      leftKeys.every(
+        (key) => Object.prototype.hasOwnProperty.call(right, key) && jsonValuesEqual(left[key], right[key]),
+      )
+    );
+  }
+  return false;
 }
 
 function cloneJsonValue<T>(value: T): T {
