@@ -269,14 +269,15 @@ function validateSchemaValue(
   }
 
   if (typeof value === 'string') {
-    if (schema.minLength !== undefined && value.length < schema.minLength) {
+    const stringLength = [...value].length;
+    if (schema.minLength !== undefined && stringLength < schema.minLength) {
       issues.push({
         path,
         keyword: 'minLength',
         message: `${schema.minLength}文字以上で入力してください`,
       });
     }
-    if (schema.maxLength !== undefined && value.length > schema.maxLength) {
+    if (schema.maxLength !== undefined && stringLength > schema.maxLength) {
       issues.push({
         path,
         keyword: 'maxLength',
@@ -369,8 +370,6 @@ function validateCombinators(
 function schemaTypes(schema: JsonSchema): string[] | undefined {
   if (typeof schema.type === 'string') return [schema.type];
   if (Array.isArray(schema.type)) return schema.type;
-  if (schema.properties) return ['object'];
-  if (schema.items) return ['array'];
   return undefined;
 }
 
@@ -396,7 +395,7 @@ function matchesSchemaType(type: string, value: unknown): boolean {
 }
 
 function matchesStringFormat(format: string, value: string): boolean {
-  if (format === 'email') return /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value);
+  if (format === 'email') return isValidEmail(value);
   if (format === 'url') {
     try {
       const parsed = new URL(value);
@@ -418,6 +417,29 @@ function matchesStringFormat(format: string, value: string): boolean {
   return true;
 }
 
+function isValidEmail(value: string): boolean {
+  if (/\s/u.test(value)) return false;
+  const separator = value.indexOf('@');
+  if (separator <= 0 || separator !== value.lastIndexOf('@') || separator === value.length - 1) {
+    return false;
+  }
+
+  const local = value.slice(0, separator);
+  const domain = value.slice(separator + 1);
+  if (
+    local.startsWith('.') ||
+    local.endsWith('.') ||
+    local.includes('..') ||
+    domain.startsWith('.') ||
+    domain.endsWith('.') ||
+    domain.includes('..')
+  ) {
+    return false;
+  }
+
+  return /^[^@]+$/u.test(local) && /^[A-Za-z0-9.-]+$/u.test(domain);
+}
+
 function isValidDate(value: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value);
   if (!match) return false;
@@ -433,7 +455,7 @@ function isValidDate(value: string): boolean {
 
 function isValidDateTime(value: string): boolean {
   const match =
-    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/u.exec(value);
+    /^(\d{4})-(\d{2})-(\d{2})t(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(z|[+-]\d{2}:\d{2})$/iu.exec(value);
   if (!match || !isValidDate(`${match[1]}-${match[2]}-${match[3]}`)) return false;
 
   const hour = Number(match[4]);
@@ -441,12 +463,13 @@ function isValidDateTime(value: string): boolean {
   const second = Number(match[6]);
   if (hour > 23 || minute > 59 || second > 59) return false;
 
-  if (match[7] !== 'Z') {
+  if (match[7]?.toUpperCase() !== 'Z') {
     const offset = /^([+-])(\d{2}):(\d{2})$/u.exec(match[7]!);
     if (!offset || Number(offset[2]) > 23 || Number(offset[3]) > 59) return false;
   }
 
-  return Number.isFinite(Date.parse(value));
+  const normalized = value.replace('t', 'T').replace(/z$/iu, 'Z');
+  return Number.isFinite(Date.parse(normalized));
 }
 
 function jsonValuesEqual(left: unknown, right: unknown): boolean {
