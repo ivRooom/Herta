@@ -406,7 +406,8 @@ export function PluginConfigStudioForm({
                   </p>
                 ) : validationIssues.length > 0 ? (
                   <p className="mt-2 text-xs text-red-300">
-                    JSONの形式は正しいですが、Schemaに一致しない設定が{validationIssues.length}件あります。
+                    JSONの形式は正しいですが、Schemaに一致しない設定が{validationIssues.length}
+                    件あります。
                   </p>
                 ) : null}
               </div>
@@ -480,7 +481,9 @@ function ValidationSummary({
             className="flex w-full items-start justify-between gap-3 rounded-lg border border-red-400/20 bg-background/60 px-3 py-2 text-left transition hover:border-red-400/40 hover:bg-red-400/5 disabled:cursor-default"
           >
             <span className="min-w-0">
-              <span className="block break-all font-mono text-xs text-red-200/70">{issue.path}</span>
+              <span className="block break-all font-mono text-xs text-red-200/70">
+                {issue.path}
+              </span>
               <span className="mt-0.5 block text-sm text-red-100">{issue.message}</span>
             </span>
             <span className="shrink-0 rounded bg-red-400/10 px-1.5 py-0.5 text-[10px] text-red-200/70">
