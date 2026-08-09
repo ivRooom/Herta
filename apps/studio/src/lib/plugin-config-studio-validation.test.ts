@@ -94,7 +94,10 @@ test('oneOfは1件だけ、anyOfはいずれか1件以上の一致を要求す�
         ],
       },
       target: {
-        anyOf: [{ type: 'integer', minimum: 1 }, { type: 'string', minLength: 1 }],
+        anyOf: [
+          { type: 'integer', minimum: 1 },
+          { type: 'string', minLength: 1 },
+        ],
       },
     },
   };
