@@ -389,6 +389,7 @@ export function PluginConfigStudioForm({
                       key={key}
                       fieldKey={key}
                       schema={findSourcePropertySchema(configSchema, config, key) ?? propertySchema}
+                      effectiveSchemaOverride={propertySchema}
                       value={config[key]}
                       path={[key]}
                       required={(effectiveConfigSchema.required ?? []).includes(key)}
@@ -587,6 +588,7 @@ function SchemaBranchSelector({
 function SchemaField({
   fieldKey,
   schema,
+  effectiveSchemaOverride,
   value,
   path,
   required,
@@ -598,6 +600,7 @@ function SchemaField({
 }: {
   fieldKey: string;
   schema: JsonSchema;
+  effectiveSchemaOverride?: JsonSchema;
   value: unknown;
   path: Path;
   required?: boolean;
@@ -609,7 +612,7 @@ function SchemaField({
 }) {
   const branchState = getSchemaBranchState(schema, value);
   const branchDiscriminatorKey = getBranchDiscriminatorKey(branchState);
-  const effectiveSchema = resolveSchemaForValue(schema, value);
+  const effectiveSchema = effectiveSchemaOverride ?? resolveSchemaForValue(schema, value);
   const type = schemaPrimaryType(effectiveSchema);
   const nullable = schemaAllowsNull(effectiveSchema);
   const title = effectiveSchema.title ?? schema.title ?? humanizeKey(fieldKey);
@@ -777,6 +780,7 @@ function SchemaField({
               key={childKey}
               fieldKey={childKey}
               schema={findSourcePropertySchema(schema, value, childKey) ?? childSchema}
+              effectiveSchemaOverride={childSchema}
               value={objectValue[childKey]}
               path={[...path, childKey]}
               required={(effectiveSchema.required ?? []).includes(childKey)}
@@ -794,7 +798,7 @@ function SchemaField({
 
   if (type === 'array') {
     const items = Array.isArray(value) ? value : [];
-    const itemSchema = effectiveSchema.items ?? schema.items ?? {};
+    const itemSchema = schema.items ?? effectiveSchema.items ?? {};
     return (
       <FieldShell
         title={title}
@@ -1106,8 +1110,6 @@ function findSourcePropertySchema(
   value: unknown,
   key: string,
 ): JsonSchema | null {
-  if (schema.properties?.[key]) return schema.properties[key];
-
   const composed = schema as ComposedJsonSchema;
   const branchState = getSchemaBranchState(schema, value);
   if (branchState) {
@@ -1129,7 +1131,7 @@ function findSourcePropertySchema(
     }
   }
 
-  return null;
+  return schema.properties?.[key] ?? null;
 }
 
 function getBranchDiscriminatorKey(state: SchemaBranchState | null): string | null {
