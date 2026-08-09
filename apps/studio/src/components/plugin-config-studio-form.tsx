@@ -156,9 +156,7 @@ export function PluginConfigStudioForm({
     if (path === '$') return;
 
     if (mode === 'json' && validationState.config) {
-      const normalized = normalizeConfigForStudio(configSchema, validationState.config);
-      setConfig(normalized);
-      setJsonText(stringifyConfig(normalized));
+      setConfig(validationState.config);
       setMode('visual');
     }
 
