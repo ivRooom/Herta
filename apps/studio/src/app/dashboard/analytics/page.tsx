@@ -23,7 +23,6 @@ import {
   type CommandUsageAnalytics,
 } from '@herta/db';
 import { RefreshHealthButton } from '@/components/refresh-health-button';
-import { getBotHealth } from '@/lib/bot-health';
 import { prisma } from '@/lib/db';
 import { getManageableGuilds } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
@@ -550,6 +549,9 @@ export default async function AnalyticsDashboardPage({
     }
   }
 
+  const analyticsPromise = allowedGuildIds
+    ? getCommandUsageAnalytics(prisma, { days: rangeDays, guildIds: allowedGuildIds })
+    : Promise.resolve<CommandUsageAnalytics | null>(null);
   const historyPromise = allowedGuildIds
     ? searchCommandExecutionEvents(prisma, {
         rangeDays,
@@ -561,16 +563,14 @@ export default async function AnalyticsDashboardPage({
       })
     : Promise.resolve<CommandExecutionSearchResult | null>(null);
 
-  const [analyticsResult, historyResult, healthResult] = await Promise.allSettled([
-    getCommandUsageAnalytics(prisma, { days: rangeDays }),
+  const [analyticsResult, historyResult] = await Promise.allSettled([
+    analyticsPromise,
     historyPromise,
-    getBotHealth(),
   ]);
 
   const analytics = analyticsResult.status === 'fulfilled' ? analyticsResult.value : null;
   const history = historyResult.status === 'fulfilled' ? historyResult.value : null;
-  const health = healthResult.status === 'fulfilled' ? healthResult.value : null;
-  const guildCount = health?.available ? health.health.guild_count : null;
+  const manageableGuildCount = allowedGuildIds?.length ?? null;
 
   return (
     <div>
@@ -582,7 +582,7 @@ export default async function AnalyticsDashboardPage({
           </div>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight">Bot利用状況とコマンド履歴</h1>
           <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted">
-            実行推移、成功率、レイテンシ、時間帯、エラー傾向を可視化し、コマンド履歴を検索できます。
+            管理権限のあるGuildについて、実行推移、成功率、レイテンシ、時間帯、エラー傾向を可視化し、コマンド履歴を検索できます。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -606,18 +606,18 @@ export default async function AnalyticsDashboardPage({
       </div>
 
       {!analytics ? (
-        <section className="mt-8 rounded-2xl border border-red-500/30 bg-red-500/10 p-6">
+        <section className="mt-8 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-6">
           <div className="flex items-start gap-3">
             <CircleAlert
-              className="mt-0.5 h-5 w-5 text-red-700 dark:text-red-300"
+              className="mt-0.5 h-5 w-5 text-amber-700 dark:text-amber-300"
               aria-hidden="true"
             />
             <div>
-              <h2 className="font-medium text-red-800 dark:text-red-200">
-                利用状況を取得できませんでした
+              <h2 className="font-medium text-amber-800 dark:text-amber-200">
+                Analyticsの認可情報を取得できませんでした
               </h2>
-              <p className="mt-1 text-sm leading-relaxed text-red-800/80 dark:text-red-200/80">
-                PostgreSQL接続とStudioログを確認してください。Bot本体のコマンド実行には影響しません。
+              <p className="mt-1 text-sm leading-relaxed text-amber-800/80 dark:text-amber-200/80">
+                Discord APIのレート制限またはセッション切れの場合、他Guildの情報を誤表示しないためAnalyticsと履歴を非表示にします。
               </p>
             </div>
           </div>
@@ -656,9 +656,9 @@ export default async function AnalyticsDashboardPage({
               icon={Clock3}
             />
             <SummaryCard
-              title="Bot参加サーバー"
-              value={guildCount === null ? '—' : `${guildCount}件`}
-              description="Discord Gatewayが現在認識しているGuild数"
+              title="管理対象サーバー"
+              value={manageableGuildCount === null ? '—' : `${manageableGuildCount}件`}
+              description="現在のDiscord権限で管理できるGuild数"
               icon={Server}
             />
           </div>
@@ -699,19 +699,7 @@ export default async function AnalyticsDashboardPage({
           status={status}
           rangeDays={rangeDays}
         />
-      ) : (
-        <section className="mt-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5">
-          <div className="flex items-start gap-2 text-amber-800 dark:text-amber-200">
-            <CircleAlert className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
-            <div>
-              <p className="font-medium">コマンド履歴の認可情報を取得できませんでした。</p>
-              <p className="mt-1 text-sm opacity-80">
-                Discord APIのレート制限またはセッション切れの場合、他Guildの情報を誤表示しないため履歴を非表示にします。
-              </p>
-            </div>
-          </div>
-        </section>
-      )}
+      ) : null}
     </div>
   );
 }
