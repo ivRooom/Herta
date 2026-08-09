@@ -6,6 +6,7 @@ import {
 import type { CommandOption, CommandSubcommand } from '@herta/shared';
 import type { Logger } from 'pino';
 import type { CommandHandler } from '@herta/plugin-sdk';
+import { coreInformationCommands } from './core-info.js';
 
 export type SlashCommand = CommandHandler<ChatInputCommandInteraction>;
 
@@ -91,7 +92,11 @@ export function toDiscordCommandJSON(
 export class CommandRegistry {
   private commands = new Map<string, SlashCommand>();
 
-  constructor(private logger: Logger) {}
+  constructor(private logger: Logger) {
+    for (const command of coreInformationCommands) {
+      this.register(command);
+    }
+  }
 
   register(command: SlashCommand): void {
     const existing = this.commands.get(command.definition.name);
