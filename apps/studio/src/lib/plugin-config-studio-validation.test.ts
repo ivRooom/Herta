@@ -138,8 +138,14 @@ test('object enumはproperty順に依存せず比較する', () => {
 });
 
 test('uriはhostを持たないabsolute URIを許可し、urlはhostを要求する', () => {
-  assert.deepEqual(validateConfigForStudio({ type: 'string', format: 'uri' }, 'mailto:ops@example.com'), []);
-  assert.deepEqual(validateConfigForStudio({ type: 'string', format: 'uri' }, 'urn:isbn:0451450523'), []);
+  assert.deepEqual(
+    validateConfigForStudio({ type: 'string', format: 'uri' }, 'mailto:ops@example.com'),
+    [],
+  );
+  assert.deepEqual(
+    validateConfigForStudio({ type: 'string', format: 'uri' }, 'urn:isbn:0451450523'),
+    [],
+  );
   assert.equal(
     validateConfigForStudio({ type: 'string', format: 'url' }, 'mailto:ops@example.com')[0]
       ?.keyword,
