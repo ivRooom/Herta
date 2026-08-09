@@ -7,6 +7,7 @@ import {
   updateGuildPlugin,
   validatePluginConfig,
 } from '@/lib/guild-plugins';
+import { toPluginConfigValidationIssues } from '@/lib/plugin-config-validation-issues';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,7 +52,11 @@ export async function PATCH(
     const validation = validatePluginConfig(manifest, body.config);
     if (!validation.valid) {
       return NextResponse.json(
-        { error: '設定がスキーマに適合しません', details: validation.errors },
+        {
+          error: '設定がスキーマに適合しません',
+          details: validation.errors,
+          issues: toPluginConfigValidationIssues(validation.errors),
+        },
         { status: 400 },
       );
     }
