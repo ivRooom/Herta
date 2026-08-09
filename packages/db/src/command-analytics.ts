@@ -155,7 +155,9 @@ function normalizeOptionalText(value: string | null | undefined, maxLength: numb
 
 function normalizeGuildIds(guildIds: readonly string[] | undefined): string[] | undefined {
   if (guildIds === undefined) return undefined;
-  return [...new Set(guildIds.map((id) => id.trim().slice(0, MAX_GUILD_ID_LENGTH)).filter(Boolean))];
+  return [
+    ...new Set(guildIds.map((id) => id.trim().slice(0, MAX_GUILD_ID_LENGTH)).filter(Boolean)),
+  ];
 }
 
 function guildScopeSql(guildIds: readonly string[] | undefined): Prisma.Sql {
