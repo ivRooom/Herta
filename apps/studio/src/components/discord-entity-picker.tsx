@@ -26,6 +26,13 @@ type PickerProps = {
   icon: 'channel' | 'role' | 'emoji';
 };
 
+function channelKindLabel(kind: GuildChannelOption['kind']): string {
+  if (kind === 'announcement') return 'アナウンス';
+  if (kind === 'forum') return 'フォーラム';
+  if (kind === 'thread') return 'スレッド';
+  return 'テキスト';
+}
+
 export function DiscordChannelPicker({
   options,
   value,
@@ -43,7 +50,7 @@ export function DiscordChannelPicker({
   const normalized = options.map((option) => ({
     id: option.id,
     name: option.name,
-    meta: option.kind === 'announcement' ? 'アナウンス' : 'テキスト',
+    meta: channelKindLabel(option.kind),
   }));
   return (
     <DiscordEntityPicker
@@ -52,7 +59,7 @@ export function DiscordChannelPicker({
       onChange={(values) => onChange(multiple ? values : (values[0] ?? null))}
       multiple={multiple}
       placeholder={placeholder}
-      emptyMessage="利用できるテキストチャンネルが見つかりません"
+      emptyMessage="利用できるチャンネル・フォーラム・スレッドが見つかりません"
       icon="channel"
     />
   );
