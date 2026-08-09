@@ -388,9 +388,7 @@ export function PluginConfigStudioForm({
                     <SchemaField
                       key={key}
                       fieldKey={key}
-                      schema={
-                        findSourcePropertySchema(configSchema, config, key) ?? propertySchema
-                      }
+                      schema={findSourcePropertySchema(configSchema, config, key) ?? propertySchema}
                       value={config[key]}
                       path={[key]}
                       required={(effectiveConfigSchema.required ?? []).includes(key)}
