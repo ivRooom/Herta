@@ -3,7 +3,7 @@ import { ChannelType, PermissionFlagsBits, type Client } from 'discord.js';
 export interface GuildChannelOption {
   id: string;
   name: string;
-  kind: 'text' | 'announcement';
+  kind: 'text' | 'announcement' | 'forum' | 'thread';
   position: number;
   parentId: string | null;
   viewable: boolean;
@@ -55,35 +55,62 @@ export async function loadGuildConfigurationOptions(
   const guild = client.guilds.cache.get(guildId);
   if (!guild) return null;
 
-  const [channels, roles, emojis, me] = await Promise.all([
+  const [channels, activeThreads, roles, emojis, me] = await Promise.all([
     guild.channels.fetch(),
+    guild.channels.fetchActiveThreads().catch(() => null),
     guild.roles.fetch(),
     guild.emojis.fetch(),
     guild.members.me ? Promise.resolve(guild.members.me) : guild.members.fetchMe(),
   ]);
 
-  const channelOptions = [...channels.values()]
+  const channelOptions: GuildChannelOption[] = [...channels.values()]
     .filter((channel): channel is NonNullable<typeof channel> => channel !== null)
     .filter(
       (channel) =>
-        channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildAnnouncement,
+        channel.type === ChannelType.GuildText ||
+        channel.type === ChannelType.GuildAnnouncement ||
+        channel.type === ChannelType.GuildForum,
     )
     .map((channel) => {
       const permissions = channel.permissionsFor(me);
+      const kind: GuildChannelOption['kind'] =
+        channel.type === ChannelType.GuildAnnouncement
+          ? 'announcement'
+          : channel.type === ChannelType.GuildForum
+            ? 'forum'
+            : 'text';
       return {
         id: channel.id,
         name: channel.name,
-        kind:
-          channel.type === ChannelType.GuildAnnouncement
-            ? ('announcement' as const)
-            : ('text' as const),
+        kind,
         position: channel.rawPosition,
         parentId: channel.parentId,
         viewable: permissions?.has(PermissionFlagsBits.ViewChannel) ?? false,
         readMessageHistory: permissions?.has(PermissionFlagsBits.ReadMessageHistory) ?? false,
       };
-    })
-    .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name, 'ja'));
+    });
+
+  if (activeThreads) {
+    for (const thread of activeThreads.threads.values()) {
+      const permissions = thread.permissionsFor(me);
+      channelOptions.push({
+        id: thread.id,
+        name: thread.name,
+        kind: 'thread',
+        position: thread.parent?.rawPosition ?? 0,
+        parentId: thread.parentId,
+        viewable: permissions?.has(PermissionFlagsBits.ViewChannel) ?? false,
+        readMessageHistory: permissions?.has(PermissionFlagsBits.ReadMessageHistory) ?? false,
+      });
+    }
+  }
+
+  channelOptions.sort(
+    (a, b) =>
+      a.position - b.position ||
+      (a.kind === 'thread' ? 1 : 0) - (b.kind === 'thread' ? 1 : 0) ||
+      a.name.localeCompare(b.name, 'ja'),
+  );
 
   const roleOptions = [...roles.values()]
     .filter((role) => role.id !== guild.id)
