@@ -12,6 +12,13 @@ import { DiscordMessageTargetPicker } from './discord-message-target-picker';
 import { DiscordUserPicker } from './discord-user-picker';
 
 import {
+  getSchemaBranchState,
+  resolveSchemaForValue,
+  schemaMatchesValue,
+  selectSchemaBranch,
+  type SchemaBranchState,
+} from '../lib/plugin-config-schema-branches';
+import {
   fieldMatchesSearch,
   formatStudioValidationPath,
   makeDefaultValue,
@@ -43,6 +50,14 @@ type PluginUpdateResponse = {
 };
 
 type Path = Array<string | number>;
+
+type ComposedJsonSchema = JsonSchema & {
+  oneOf?: JsonSchema[];
+  anyOf?: JsonSchema[];
+  if?: JsonSchema;
+  then?: JsonSchema;
+  else?: JsonSchema;
+};
 
 export function PluginConfigStudioForm({
   guildId,
@@ -89,25 +104,45 @@ export function PluginConfigStudioForm({
   );
   const validationErrorCount = validationIssues.length + (validationState.jsonError ? 1 : 0);
   const hasValidationErrors = validationErrorCount > 0;
-  const properties = configSchema.properties ?? {};
-  const visibleEntries = Object.entries(properties).filter(([key, propertySchema]) =>
-    fieldMatchesSearch(key, propertySchema, query),
+  const effectiveConfigSchema = useMemo(
+    () => resolveSchemaForValue(configSchema, config),
+    [config, configSchema],
+  );
+  const rootBranchState = useMemo(
+    () => getSchemaBranchState(configSchema, config),
+    [config, configSchema],
+  );
+  const rootDiscriminatorKey = getBranchDiscriminatorKey(rootBranchState);
+  const properties = effectiveConfigSchema.properties ?? {};
+  const visibleEntries = Object.entries(properties).filter(
+    ([key, propertySchema]) =>
+      key !== rootDiscriminatorKey && fieldMatchesSearch(key, propertySchema, query),
   );
 
   function clearServerIssues() {
     setServerIssues([]);
   }
 
+  function markChanged(message = '未保存の変更があります') {
+    clearServerIssues();
+    setStatus(message);
+  }
+
   function update(path: Path, nextValue: unknown) {
     setConfig((current) => updateConfigValue(current, path, nextValue) as ConfigObject);
-    clearServerIssues();
-    setStatus('未保存の変更があります');
+    markChanged();
   }
 
   function remove(path: Path) {
     setConfig((current) => removeConfigValue(current, path) as ConfigObject);
-    clearServerIssues();
-    setStatus('未保存の変更があります');
+    markChanged();
+  }
+
+  function selectRootBranch(index: number) {
+    const next = selectSchemaBranch(configSchema, config, index);
+    if (!isObject(next)) return;
+    setConfig(next);
+    markChanged('設定タイプを切り替えました。保存するまで反映されません');
   }
 
   function enterJsonMode() {
@@ -343,16 +378,21 @@ export function PluginConfigStudioForm({
                 ) : null}
               </div>
 
+              {rootBranchState ? (
+                <SchemaBranchSelector state={rootBranchState} onSelect={selectRootBranch} />
+              ) : null}
+
               {visibleEntries.length > 0 ? (
                 <div className="grid gap-4">
                   {visibleEntries.map(([key, propertySchema]) => (
                     <SchemaField
                       key={key}
                       fieldKey={key}
-                      schema={propertySchema}
+                      schema={findSourcePropertySchema(configSchema, config, key) ?? propertySchema}
+                      effectiveSchemaOverride={propertySchema}
                       value={config[key]}
                       path={[key]}
-                      required={(configSchema.required ?? []).includes(key)}
+                      required={(effectiveConfigSchema.required ?? []).includes(key)}
                       onChange={update}
                       onRemove={remove}
                       discordOptions={discordOptions}
@@ -494,9 +534,61 @@ function ValidationSummary({
   );
 }
 
+function SchemaBranchSelector({
+  state,
+  onSelect,
+}: {
+  state: SchemaBranchState;
+  onSelect: (index: number) => void;
+}) {
+  const activeOption = state.options.find((option) => option.active) ?? state.options[0];
+  const selectable = Boolean(getBranchDiscriminatorKey(state));
+
+  return (
+    <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm font-semibold">{state.label}</p>
+          <p className="mt-1 text-xs text-muted">
+            {selectable
+              ? '選択した設定タイプに必要な項目だけを表示します。既存の値は保持されます。'
+              : `${state.mode}の候補は現在の入力値から自動判定されます。`}
+          </p>
+        </div>
+        {selectable ? (
+          <select
+            value={String(activeOption?.index ?? 0)}
+            onChange={(event) => onSelect(Number(event.target.value))}
+            aria-label={state.label}
+            className="min-w-48 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring"
+          >
+            {state.options.map((option) => (
+              <option key={option.index} value={option.index}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {state.options.map((option) => (
+              <span
+                key={option.index}
+                className={`rounded-full border px-2.5 py-1 text-xs ${option.active ? 'border-primary/30 bg-primary/10 text-primary' : 'border-border text-muted'}`}
+              >
+                {option.label}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SchemaField({
   fieldKey,
   schema,
+  effectiveSchemaOverride,
   value,
   path,
   required,
@@ -508,6 +600,7 @@ function SchemaField({
 }: {
   fieldKey: string;
   schema: JsonSchema;
+  effectiveSchemaOverride?: JsonSchema;
   value: unknown;
   path: Path;
   required?: boolean;
@@ -517,14 +610,18 @@ function SchemaField({
   guildId: string;
   issues: ConfigValidationIssue[];
 }) {
-  const type = schemaPrimaryType(schema);
-  const nullable = schemaAllowsNull(schema);
-  const title = schema.title ?? humanizeKey(fieldKey);
-  const ui = schema['x-herta-ui'];
+  const branchState = getSchemaBranchState(schema, value);
+  const branchDiscriminatorKey = getBranchDiscriminatorKey(branchState);
+  const effectiveSchema = effectiveSchemaOverride ?? resolveSchemaForValue(schema, value);
+  const type = schemaPrimaryType(effectiveSchema);
+  const nullable = schemaAllowsNull(effectiveSchema);
+  const title = effectiveSchema.title ?? schema.title ?? humanizeKey(fieldKey);
+  const ui = effectiveSchema['x-herta-ui'];
   const discordMultiple = type === 'array';
   const supportsDiscordPicker =
-    type === 'string' || (type === 'array' && schemaPrimaryType(schema.items ?? {}) === 'string');
-  const messageTargetProperties = schema.properties ?? {};
+    type === 'string' ||
+    (type === 'array' && schemaPrimaryType(effectiveSchema.items ?? {}) === 'string');
+  const messageTargetProperties = effectiveSchema.properties ?? {};
   const supportsDiscordMessageTarget =
     type === 'object' &&
     schemaPrimaryType(messageTargetProperties.channelId ?? {}) === 'string' &&
@@ -532,7 +629,13 @@ function SchemaField({
 
   if (ui?.widget === 'discord-channel' && supportsDiscordPicker) {
     return (
-      <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
+      <FieldShell
+        title={title}
+        schema={effectiveSchema}
+        required={required}
+        path={path}
+        issues={issues}
+      >
         <DiscordChannelPicker
           options={discordOptions?.channels ?? []}
           value={normalizeDiscordEntityValue(value, discordMultiple)}
@@ -546,7 +649,13 @@ function SchemaField({
 
   if (ui?.widget === 'discord-role' && supportsDiscordPicker) {
     return (
-      <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
+      <FieldShell
+        title={title}
+        schema={effectiveSchema}
+        required={required}
+        path={path}
+        issues={issues}
+      >
         <DiscordRolePicker
           options={discordOptions?.roles ?? []}
           value={normalizeDiscordEntityValue(value, discordMultiple)}
@@ -562,7 +671,13 @@ function SchemaField({
 
   if (ui?.widget === 'discord-user' && supportsDiscordPicker) {
     return (
-      <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
+      <FieldShell
+        title={title}
+        schema={effectiveSchema}
+        required={required}
+        path={path}
+        issues={issues}
+      >
         <DiscordUserPicker
           guildId={guildId}
           value={normalizeDiscordEntityValue(value, discordMultiple)}
@@ -576,7 +691,13 @@ function SchemaField({
 
   if (ui?.widget === 'discord-emoji' && supportsDiscordPicker) {
     return (
-      <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
+      <FieldShell
+        title={title}
+        schema={effectiveSchema}
+        required={required}
+        path={path}
+        issues={issues}
+      >
         <DiscordEmojiPicker
           options={discordOptions?.emojis ?? []}
           value={normalizeDiscordEntityValue(value, discordMultiple)}
@@ -590,7 +711,13 @@ function SchemaField({
 
   if (ui?.widget === 'discord-message-target' && supportsDiscordMessageTarget) {
     return (
-      <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
+      <FieldShell
+        title={title}
+        schema={effectiveSchema}
+        required={required}
+        path={path}
+        issues={issues}
+      >
         <DiscordMessageTargetPicker
           guildId={guildId}
           channels={discordOptions?.channels ?? []}
@@ -604,12 +731,20 @@ function SchemaField({
 
   if (nullable && value === null) {
     return (
-      <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
+      <FieldShell
+        title={title}
+        schema={effectiveSchema}
+        required={required}
+        path={path}
+        issues={issues}
+      >
         <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-border bg-background/60 p-3">
           <span className="text-sm text-muted">未設定（null）</span>
           <button
             type="button"
-            onClick={() => onChange(path, makeDefaultValue({ ...schema, nullable: false, type }))}
+            onClick={() =>
+              onChange(path, makeDefaultValue({ ...effectiveSchema, nullable: false, type }))
+            }
             className="rounded-lg border border-border px-3 py-2 text-sm hover:bg-surface"
           >
             値を設定
@@ -621,24 +756,34 @@ function SchemaField({
 
   if (type === 'object') {
     const objectValue = isObject(value) ? value : {};
+    const childEntries = Object.entries(effectiveSchema.properties ?? {}).filter(
+      ([childKey]) => childKey !== branchDiscriminatorKey,
+    );
     return (
       <FieldShell
         title={title}
-        schema={schema}
+        schema={effectiveSchema}
         required={required}
         emphasized
         path={path}
         issues={issues}
       >
         <div className="grid gap-4">
-          {Object.entries(schema.properties ?? {}).map(([childKey, childSchema]) => (
+          {branchState ? (
+            <SchemaBranchSelector
+              state={branchState}
+              onSelect={(index) => onChange(path, selectSchemaBranch(schema, value, index))}
+            />
+          ) : null}
+          {childEntries.map(([childKey, childSchema]) => (
             <SchemaField
               key={childKey}
               fieldKey={childKey}
-              schema={childSchema}
+              schema={findSourcePropertySchema(schema, value, childKey) ?? childSchema}
+              effectiveSchemaOverride={childSchema}
               value={objectValue[childKey]}
               path={[...path, childKey]}
-              required={(schema.required ?? []).includes(childKey)}
+              required={(effectiveSchema.required ?? []).includes(childKey)}
               onChange={onChange}
               onRemove={onRemove}
               discordOptions={discordOptions}
@@ -653,11 +798,11 @@ function SchemaField({
 
   if (type === 'array') {
     const items = Array.isArray(value) ? value : [];
-    const itemSchema = schema.items ?? {};
+    const itemSchema = schema.items ?? effectiveSchema.items ?? {};
     return (
       <FieldShell
         title={title}
-        schema={schema}
+        schema={effectiveSchema}
         required={required}
         emphasized
         path={path}
@@ -715,17 +860,23 @@ function SchemaField({
     );
   }
 
-  if (schema.enum?.length) {
+  if (effectiveSchema.enum?.length) {
     return (
-      <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
+      <FieldShell
+        title={title}
+        schema={effectiveSchema}
+        required={required}
+        path={path}
+        issues={issues}
+      >
         <select
           value={serializeSelectValue(value)}
           onChange={(event) =>
-            onChange(path, deserializeEnumValue(schema.enum ?? [], event.target.value))
+            onChange(path, deserializeEnumValue(effectiveSchema.enum ?? [], event.target.value))
           }
           className="w-full rounded-xl border border-border bg-background px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
         >
-          {schema.enum.map((option) => (
+          {effectiveSchema.enum.map((option) => (
             <option key={serializeSelectValue(option)} value={serializeSelectValue(option)}>
               {String(option)}
             </option>
@@ -740,7 +891,7 @@ function SchemaField({
     return (
       <FieldShell
         title={title}
-        schema={schema}
+        schema={effectiveSchema}
         required={required}
         compact
         path={path}
@@ -768,12 +919,18 @@ function SchemaField({
 
   if (type === 'integer' || type === 'number') {
     return (
-      <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
+      <FieldShell
+        title={title}
+        schema={effectiveSchema}
+        required={required}
+        path={path}
+        issues={issues}
+      >
         <input
           type="number"
           value={typeof value === 'number' ? value : ''}
-          min={schema.minimum}
-          max={schema.maximum}
+          min={effectiveSchema.minimum}
+          max={effectiveSchema.maximum}
           step={type === 'integer' ? 1 : 'any'}
           onChange={(event) => {
             if (event.target.value === '' && nullable) {
@@ -788,11 +945,13 @@ function SchemaField({
           }}
           className="w-full rounded-xl border border-border bg-background px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
         />
-        {schema.minimum !== undefined || schema.maximum !== undefined ? (
+        {effectiveSchema.minimum !== undefined || effectiveSchema.maximum !== undefined ? (
           <p className="mt-2 text-xs text-muted">
-            {schema.minimum !== undefined ? `最小 ${schema.minimum}` : ''}
-            {schema.minimum !== undefined && schema.maximum !== undefined ? ' / ' : ''}
-            {schema.maximum !== undefined ? `最大 ${schema.maximum}` : ''}
+            {effectiveSchema.minimum !== undefined ? `最小 ${effectiveSchema.minimum}` : ''}
+            {effectiveSchema.minimum !== undefined && effectiveSchema.maximum !== undefined
+              ? ' / '
+              : ''}
+            {effectiveSchema.maximum !== undefined ? `最大 ${effectiveSchema.maximum}` : ''}
           </p>
         ) : null}
       </FieldShell>
@@ -800,36 +959,46 @@ function SchemaField({
   }
 
   const stringValue = typeof value === 'string' ? value : '';
-  const multiline = ui?.widget === 'textarea' || schema.format === 'multiline';
+  const multiline = ui?.widget === 'textarea' || effectiveSchema.format === 'multiline';
   return (
-    <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
+    <FieldShell
+      title={title}
+      schema={effectiveSchema}
+      required={required}
+      path={path}
+      issues={issues}
+    >
       {multiline ? (
         <textarea
           value={stringValue}
           onChange={(event) => onChange(path, event.target.value)}
           rows={4}
-          minLength={schema.minLength}
-          maxLength={schema.maxLength}
+          minLength={effectiveSchema.minLength}
+          maxLength={effectiveSchema.maxLength}
           placeholder={ui?.placeholder}
           className="w-full rounded-xl border border-border bg-background px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
         />
       ) : (
         <input
           type={
-            schema.format === 'password' ? 'password' : schema.format === 'url' ? 'url' : 'text'
+            effectiveSchema.format === 'password'
+              ? 'password'
+              : effectiveSchema.format === 'url'
+                ? 'url'
+                : 'text'
           }
           value={stringValue}
           onChange={(event) => onChange(path, event.target.value)}
-          minLength={schema.minLength}
-          maxLength={schema.maxLength}
-          pattern={schema.pattern}
+          minLength={effectiveSchema.minLength}
+          maxLength={effectiveSchema.maxLength}
+          pattern={effectiveSchema.pattern}
           placeholder={ui?.placeholder}
           className="w-full rounded-xl border border-border bg-background px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
         />
       )}
-      {schema.maxLength !== undefined ? (
+      {effectiveSchema.maxLength !== undefined ? (
         <p className="mt-2 text-right text-xs text-muted">
-          {stringValue.length} / {schema.maxLength}
+          {stringValue.length} / {effectiveSchema.maxLength}
         </p>
       ) : null}
     </FieldShell>
@@ -934,6 +1103,43 @@ function SmallButton({
       {label}
     </button>
   );
+}
+
+function findSourcePropertySchema(
+  schema: JsonSchema,
+  value: unknown,
+  key: string,
+): JsonSchema | null {
+  const composed = schema as ComposedJsonSchema;
+  const branchState = getSchemaBranchState(schema, value);
+  if (branchState) {
+    const branches = composed[branchState.mode] ?? [];
+    for (const option of branchState.options) {
+      if (!option.active) continue;
+      const branch = branches[option.index];
+      if (!branch) continue;
+      const found = findSourcePropertySchema(branch, value, key);
+      if (found) return found;
+    }
+  }
+
+  if (composed.if) {
+    const conditional = schemaMatchesValue(composed.if, value) ? composed.then : composed.else;
+    if (conditional) {
+      const found = findSourcePropertySchema(conditional, value, key);
+      if (found) return found;
+    }
+  }
+
+  return schema.properties?.[key] ?? null;
+}
+
+function getBranchDiscriminatorKey(state: SchemaBranchState | null): string | null {
+  if (!state || state.options.length === 0) return null;
+  const keys = state.options.map((option) => option.discriminatorKey);
+  const first = keys[0];
+  if (!first || keys.some((key) => key !== first)) return null;
+  return first;
 }
 
 function normalizeDiscordEntityValue(value: unknown, multiple: boolean): string | string[] | null {
