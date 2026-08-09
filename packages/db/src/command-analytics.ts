@@ -72,6 +72,7 @@ export interface CommandExecutionSearchFilters {
   query?: string | null;
   status?: CommandExecutionStatus | 'all' | null;
   guildId?: string | null;
+  allowedGuildIds?: readonly string[];
   rangeDays?: number;
   page?: number;
   pageSize?: number;
@@ -412,6 +413,7 @@ export async function searchCommandExecutionEvents(
   const rangeStart = new Date(startOfJstDay(now).getTime() - (rangeDays - 1) * DAY_MS);
   const query = normalizeOptionalText(filters.query, MAX_HISTORY_QUERY_LENGTH);
   const guildId = normalizeOptionalText(filters.guildId, MAX_GUILD_ID_LENGTH);
+  const allowedGuildIds = filters.allowedGuildIds?.map((id) => id.slice(0, MAX_GUILD_ID_LENGTH));
   const status =
     filters.status === 'success' || filters.status === 'failure' ? filters.status : null;
   const page = normalizeSearchPage(filters.page);
@@ -421,6 +423,7 @@ export async function searchCommandExecutionEvents(
     executedAt: { gte: rangeStart },
     ...(status ? { status } : {}),
     ...(guildId ? { guildId } : {}),
+    ...(allowedGuildIds ? { AND: [{ guildId: { in: allowedGuildIds } }] } : {}),
     ...(query
       ? {
           OR: [
