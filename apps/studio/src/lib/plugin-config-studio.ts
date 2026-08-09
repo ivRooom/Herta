@@ -239,7 +239,8 @@ function validateSchemaValue(
     issues.push({
       path,
       keyword: 'type',
-      message: value === null ? 'nullは許可されていません' : `値は${expected}型である必要があります`,
+      message:
+        value === null ? 'nullは許可されていません' : `値は${expected}型である必要があります`,
     });
     return issues;
   }
@@ -426,17 +427,13 @@ function isValidDate(value: string): boolean {
   const day = Number(match[3]);
   const date = new Date(Date.UTC(year, month - 1, day));
   return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
   );
 }
 
 function isValidDateTime(value: string): boolean {
   const match =
-    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/u.exec(
-      value,
-    );
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/u.exec(value);
   if (!match || !isValidDate(`${match[1]}-${match[2]}-${match[3]}`)) return false;
 
   const hour = Number(match[4]);
