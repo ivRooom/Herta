@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 
 export type CommandExecutionStatus = 'success' | 'failure';
 
@@ -66,6 +66,7 @@ export interface CommandUsageAnalytics {
 export interface CommandAnalyticsOptions {
   now?: Date;
   days?: number;
+  guildIds?: readonly string[];
 }
 
 export interface CommandExecutionSearchFilters {
@@ -150,6 +151,18 @@ const MAX_HISTORY_QUERY_LENGTH = 120;
 function normalizeOptionalText(value: string | null | undefined, maxLength: number): string | null {
   const normalized = value?.trim();
   return normalized ? normalized.slice(0, maxLength) : null;
+}
+
+function normalizeGuildIds(guildIds: readonly string[] | undefined): string[] | undefined {
+  if (guildIds === undefined) return undefined;
+  return [...new Set(guildIds.map((id) => id.trim().slice(0, MAX_GUILD_ID_LENGTH)).filter(Boolean))];
+}
+
+function guildScopeSql(guildIds: readonly string[] | undefined): Prisma.Sql {
+  const normalized = normalizeGuildIds(guildIds);
+  if (normalized === undefined) return Prisma.sql``;
+  if (normalized.length === 0) return Prisma.sql`AND FALSE`;
+  return Prisma.sql`AND "guild_id" IN (${Prisma.join(normalized)})`;
 }
 
 export function normalizeAnalyticsDays(value: number | undefined): number {
@@ -265,6 +278,7 @@ export async function getCommandUsageAnalytics(
   const todayStart = startOfJstDay(now);
   const last7DaysStart = new Date(todayStart.getTime() - 6 * DAY_MS);
   const rangeStart = new Date(todayStart.getTime() - (rangeDays - 1) * DAY_MS);
+  const guildScope = guildScopeSql(options.guildIds);
 
   const [
     todayRows,
@@ -283,6 +297,7 @@ export async function getCommandUsageAnalytics(
         COUNT(*) FILTER (WHERE "status" = 'failure')::int AS "failed"
       FROM "command_execution_events"
       WHERE "executed_at" >= ${todayStart}
+      ${guildScope}
     `,
     prisma.$queryRaw<CountRow[]>`
       SELECT
@@ -291,6 +306,7 @@ export async function getCommandUsageAnalytics(
         COUNT(*) FILTER (WHERE "status" = 'failure')::int AS "failed"
       FROM "command_execution_events"
       WHERE "executed_at" >= ${last7DaysStart}
+      ${guildScope}
     `,
     prisma.$queryRaw<PerformanceRow[]>`
       SELECT
@@ -301,6 +317,7 @@ export async function getCommandUsageAnalytics(
         COALESCE(ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY "duration_ms"))::int, 0) AS "p95DurationMs"
       FROM "command_execution_events"
       WHERE "executed_at" >= ${rangeStart}
+      ${guildScope}
     `,
     prisma.$queryRaw<DailyRow[]>`
       SELECT
@@ -310,6 +327,7 @@ export async function getCommandUsageAnalytics(
         COUNT(*) FILTER (WHERE "status" = 'failure')::int AS "failed"
       FROM "command_execution_events"
       WHERE "executed_at" >= ${rangeStart}
+      ${guildScope}
       GROUP BY 1
       ORDER BY 1
     `,
@@ -321,6 +339,7 @@ export async function getCommandUsageAnalytics(
         COUNT(*) FILTER (WHERE "status" = 'failure')::int AS "failed"
       FROM "command_execution_events"
       WHERE "executed_at" >= ${rangeStart}
+      ${guildScope}
       GROUP BY 1
       ORDER BY 1
     `,
@@ -334,6 +353,7 @@ export async function getCommandUsageAnalytics(
         COALESCE(ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY "duration_ms"))::int, 0) AS "p95DurationMs"
       FROM "command_execution_events"
       WHERE "executed_at" >= ${rangeStart}
+      ${guildScope}
       GROUP BY "command_name"
       ORDER BY "total" DESC, "command_name" ASC
       LIMIT 10
@@ -345,6 +365,7 @@ export async function getCommandUsageAnalytics(
       FROM "command_execution_events"
       WHERE "status" = 'failure'
         AND "executed_at" >= ${rangeStart}
+        ${guildScope}
       GROUP BY 1
       ORDER BY "total" DESC, "errorName" ASC
       LIMIT 8
@@ -358,6 +379,7 @@ export async function getCommandUsageAnalytics(
       FROM "command_execution_events"
       WHERE "status" = 'failure'
         AND "executed_at" >= ${rangeStart}
+        ${guildScope}
       ORDER BY "executed_at" DESC
       LIMIT 10
     `,
@@ -413,7 +435,7 @@ export async function searchCommandExecutionEvents(
   const rangeStart = new Date(startOfJstDay(now).getTime() - (rangeDays - 1) * DAY_MS);
   const query = normalizeOptionalText(filters.query, MAX_HISTORY_QUERY_LENGTH);
   const guildId = normalizeOptionalText(filters.guildId, MAX_GUILD_ID_LENGTH);
-  const allowedGuildIds = filters.allowedGuildIds?.map((id) => id.slice(0, MAX_GUILD_ID_LENGTH));
+  const allowedGuildIds = normalizeGuildIds(filters.allowedGuildIds);
   const status =
     filters.status === 'success' || filters.status === 'failure' ? filters.status : null;
   const page = normalizeSearchPage(filters.page);
