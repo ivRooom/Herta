@@ -311,7 +311,10 @@ function intersectSchemaTypes(
   return intersection;
 }
 
-function intersectEnums(base: unknown[] | undefined, branch: unknown[] | undefined): unknown[] | undefined {
+function intersectEnums(
+  base: unknown[] | undefined,
+  branch: unknown[] | undefined,
+): unknown[] | undefined {
   if (!base) return branch;
   if (!branch) return base;
   return base.filter((candidate) =>
@@ -331,7 +334,10 @@ function stricterMaximum(base: number | undefined, branch: number | undefined): 
   return Math.min(base, branch);
 }
 
-function intersectPatterns(base: string | undefined, branch: string | undefined): string | undefined {
+function intersectPatterns(
+  base: string | undefined,
+  branch: string | undefined,
+): string | undefined {
   if (!base) return branch;
   if (!branch || base === branch) return base;
   return `(?=[\\s\\S]*(?:${base}))(?=[\\s\\S]*(?:${branch}))[\\s\\S]*`;
