@@ -13,6 +13,7 @@ import { DiscordUserPicker } from './discord-user-picker';
 
 import {
   fieldMatchesSearch,
+  formatStudioValidationPath,
   makeDefaultValue,
   moveArrayItem,
   normalizeConfigForStudio,
@@ -25,10 +26,19 @@ import {
   type ConfigObject,
   type JsonSchema,
 } from '../lib/plugin-config-studio';
+import {
+  mergeValidationIssues,
+  readApiValidationIssues,
+  validateStudioDraft,
+  validationIssueCountUnderPath,
+  validationIssuesAtPath,
+  type ConfigValidationIssue,
+} from '../lib/plugin-config-validation-ui';
 
 type PluginUpdateResponse = {
   error?: unknown;
   details?: unknown;
+  issues?: unknown;
   config?: Record<string, unknown>;
 };
 
@@ -63,28 +73,46 @@ export function PluginConfigStudioForm({
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('');
   const [saving, setSaving] = useState(false);
+  const [serverIssues, setServerIssues] = useState<ConfigValidationIssue[]>([]);
 
   const savedConfigText = stringifyConfig(savedConfig);
   const dirty =
     enabled !== savedEnabled ||
     (mode === 'json' ? jsonText !== savedConfigText : stringifyConfig(config) !== savedConfigText);
+  const validationState = useMemo(
+    () => validateStudioDraft(configSchema, mode, config, jsonText),
+    [configSchema, config, jsonText, mode],
+  );
+  const validationIssues = useMemo(
+    () => mergeValidationIssues(validationState.issues, serverIssues),
+    [serverIssues, validationState.issues],
+  );
+  const validationErrorCount = validationIssues.length + (validationState.jsonError ? 1 : 0);
+  const hasValidationErrors = validationErrorCount > 0;
   const properties = configSchema.properties ?? {};
   const visibleEntries = Object.entries(properties).filter(([key, propertySchema]) =>
     fieldMatchesSearch(key, propertySchema, query),
   );
 
+  function clearServerIssues() {
+    setServerIssues([]);
+  }
+
   function update(path: Path, nextValue: unknown) {
     setConfig((current) => updateConfigValue(current, path, nextValue) as ConfigObject);
+    clearServerIssues();
     setStatus('未保存の変更があります');
   }
 
   function remove(path: Path) {
     setConfig((current) => removeConfigValue(current, path) as ConfigObject);
+    clearServerIssues();
     setStatus('未保存の変更があります');
   }
 
   function enterJsonMode() {
     setJsonText(stringifyConfig(config));
+    clearServerIssues();
     setStatus('');
     setMode('json');
   }
@@ -93,9 +121,15 @@ export function PluginConfigStudioForm({
     try {
       const parsed = parseConfigJson(jsonText);
       const normalized = normalizeConfigForStudio(configSchema, parsed);
+      const nextValidation = validateStudioDraft(configSchema, 'visual', normalized, '');
       setConfig(normalized);
       setJsonText(stringifyConfig(normalized));
-      setStatus('JSONをGUIへ反映しました');
+      clearServerIssues();
+      setStatus(
+        nextValidation.issues.length > 0
+          ? `JSONをGUIへ反映しました。入力エラーが${nextValidation.issues.length}件あります`
+          : 'JSONをGUIへ反映しました',
+      );
       setMode('visual');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'JSONの形式が不正です');
@@ -106,6 +140,7 @@ export function PluginConfigStudioForm({
     const next = normalizeConfigForStudio(configSchema, {});
     setConfig(next);
     setJsonText(stringifyConfig(next));
+    clearServerIssues();
     setStatus('Schemaの初期値へ戻しました。保存するまで反映されません');
   }
 
@@ -113,27 +148,69 @@ export function PluginConfigStudioForm({
     setConfig(savedConfig);
     setEnabled(savedEnabled);
     setJsonText(stringifyConfig(savedConfig));
+    clearServerIssues();
     setStatus('未保存の変更を破棄しました');
   }
 
+  function jumpToIssue(path: string) {
+    if (path === '$') return;
+
+    if (mode === 'json' && validationState.config) {
+      const normalized = normalizeConfigForStudio(configSchema, validationState.config);
+      setConfig(normalized);
+      setJsonText(stringifyConfig(normalized));
+      setMode('visual');
+    }
+
+    setQuery('');
+    window.setTimeout(() => {
+      const target = Array.from(document.querySelectorAll<HTMLElement>('[data-config-path]')).find(
+        (element) => element.dataset.configPath === path,
+      );
+      target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      target?.focus({ preventScroll: true });
+    }, 0);
+  }
+
   async function save() {
+    const draft = validateStudioDraft(configSchema, mode, config, jsonText);
+    if (draft.jsonError) {
+      clearServerIssues();
+      setStatus(draft.jsonError);
+      return;
+    }
+    if (draft.issues.length > 0 || !draft.config) {
+      clearServerIssues();
+      setStatus(`入力エラーが${draft.issues.length}件あります。修正してから保存してください`);
+      return;
+    }
+
     setSaving(true);
     setStatus('保存中…');
     try {
-      const payloadConfig = mode === 'json' ? parseConfigJson(jsonText) : config;
+      const payloadConfig = draft.config;
       const response = await fetch(`/api/guilds/${guildId}/plugins/${pluginId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled, config: payloadConfig }),
       });
       const result = await readResponse(response);
-      if (!response.ok) throw new Error(formatApiError(result, '保存に失敗しました'));
+      if (!response.ok) {
+        const apiIssues = readApiValidationIssues(result);
+        if (apiIssues.length > 0) {
+          setServerIssues(apiIssues);
+          setStatus(`サーバー検証で入力エラーが${apiIssues.length}件見つかりました`);
+          return;
+        }
+        throw new Error(formatApiError(result, '保存に失敗しました'));
+      }
 
       const normalized = normalizeConfigForStudio(configSchema, result?.config ?? payloadConfig);
       setConfig(normalized);
       setSavedConfig(normalized);
       setSavedEnabled(enabled);
       setJsonText(stringifyConfig(normalized));
+      clearServerIssues();
       setStatus('保存しました');
     } catch (error) {
       setStatus(
@@ -161,6 +238,11 @@ export function PluginConfigStudioForm({
                 {dirty ? (
                   <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-xs text-amber-300">
                     未保存
+                  </span>
+                ) : null}
+                {hasValidationErrors ? (
+                  <span className="rounded-full border border-red-400/20 bg-red-400/10 px-2.5 py-1 text-xs text-red-300">
+                    エラー {validationErrorCount}
                   </span>
                 ) : null}
               </div>
@@ -234,6 +316,14 @@ export function PluginConfigStudioForm({
             </div>
           </div>
 
+          {hasValidationErrors ? (
+            <ValidationSummary
+              issues={validationIssues}
+              jsonError={validationState.jsonError}
+              onSelect={jumpToIssue}
+            />
+          ) : null}
+
           {mode === 'visual' ? (
             <div className="mt-5 space-y-5">
               <div className="relative">
@@ -269,6 +359,7 @@ export function PluginConfigStudioForm({
                       onRemove={remove}
                       discordOptions={discordOptions}
                       guildId={guildId}
+                      issues={validationIssues}
                     />
                   ))}
                 </div>
@@ -290,7 +381,8 @@ export function PluginConfigStudioForm({
                   <button
                     type="button"
                     onClick={applyJsonToVisual}
-                    className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/15"
+                    disabled={Boolean(validationState.jsonError)}
+                    className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     JSONをGUIへ反映
                   </button>
@@ -299,13 +391,24 @@ export function PluginConfigStudioForm({
                   value={jsonText}
                   onChange={(event) => {
                     setJsonText(event.target.value);
+                    clearServerIssues();
                     setStatus('未保存の変更があります');
                   }}
                   rows={20}
-                  className="w-full rounded-xl border border-border bg-surface p-4 font-mono text-sm leading-6 outline-none focus:ring-2 focus:ring-ring"
+                  className={`w-full rounded-xl border bg-surface p-4 font-mono text-sm leading-6 outline-none focus:ring-2 focus:ring-ring ${hasValidationErrors ? 'border-red-400/60 focus:ring-red-400/20' : 'border-border'}`}
                   aria-label="Plugin設定JSON"
+                  aria-invalid={hasValidationErrors}
                   spellCheck={false}
                 />
+                {validationState.jsonError ? (
+                  <p className="mt-2 text-sm text-red-300" role="alert">
+                    {validationState.jsonError}
+                  </p>
+                ) : validationIssues.length > 0 ? (
+                  <p className="mt-2 text-xs text-red-300">
+                    JSONの形式は正しいですが、Schemaに一致しない設定が{validationIssues.length}件あります。
+                  </p>
+                ) : null}
               </div>
             </div>
           )}
@@ -315,8 +418,12 @@ export function PluginConfigStudioForm({
       <div className="sticky bottom-4 z-20 rounded-2xl border border-border bg-surface/95 p-3 shadow-2xl backdrop-blur sm:p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <p className="text-sm font-medium">
-              {dirty ? '未保存の変更があります' : '設定は保存済みです'}
+            <p className={`text-sm font-medium ${hasValidationErrors ? 'text-red-300' : ''}`}>
+              {hasValidationErrors
+                ? `入力エラーが${validationErrorCount}件あります`
+                : dirty
+                  ? '未保存の変更があります'
+                  : '設定は保存済みです'}
             </p>
             <p className="mt-1 min-h-5 break-words text-xs text-muted" aria-live="polite">
               {status || 'GUIとJSONは同じ設定データを編集します。'}
@@ -325,12 +432,62 @@ export function PluginConfigStudioForm({
           <button
             type="button"
             onClick={save}
-            disabled={saving}
-            className="w-full rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:cursor-wait disabled:opacity-60 sm:w-auto"
+            disabled={saving || hasValidationErrors}
+            className="w-full rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
-            {saving ? '保存中…' : '設定を保存'}
+            {saving ? '保存中…' : hasValidationErrors ? '入力エラーを修正' : '設定を保存'}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ValidationSummary({
+  issues,
+  jsonError,
+  onSelect,
+}: {
+  issues: ConfigValidationIssue[];
+  jsonError: string | null;
+  onSelect: (path: string) => void;
+}) {
+  return (
+    <div className="mt-5 rounded-xl border border-red-400/30 bg-red-400/5 p-4" role="alert">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-semibold text-red-200">設定内容を確認してください</p>
+          <p className="mt-1 text-xs text-red-200/70">
+            エラーが残っている間は保存できません。項目を選ぶと該当箇所へ移動します。
+          </p>
+        </div>
+        <span className="rounded-full border border-red-400/20 bg-red-400/10 px-2.5 py-1 text-xs font-medium text-red-200">
+          {issues.length + (jsonError ? 1 : 0)}件
+        </span>
+      </div>
+      <div className="mt-3 grid gap-2">
+        {jsonError ? (
+          <div className="rounded-lg border border-red-400/20 bg-background/60 px-3 py-2 text-sm text-red-200">
+            Advanced JSON: {jsonError}
+          </div>
+        ) : null}
+        {issues.map((issue, index) => (
+          <button
+            key={`${issue.path}-${issue.keyword}-${index}`}
+            type="button"
+            onClick={() => onSelect(issue.path)}
+            disabled={issue.path === '$'}
+            className="flex w-full items-start justify-between gap-3 rounded-lg border border-red-400/20 bg-background/60 px-3 py-2 text-left transition hover:border-red-400/40 hover:bg-red-400/5 disabled:cursor-default"
+          >
+            <span className="min-w-0">
+              <span className="block break-all font-mono text-xs text-red-200/70">{issue.path}</span>
+              <span className="mt-0.5 block text-sm text-red-100">{issue.message}</span>
+            </span>
+            <span className="shrink-0 rounded bg-red-400/10 px-1.5 py-0.5 text-[10px] text-red-200/70">
+              {issue.source === 'server' ? 'server' : issue.keyword}
+            </span>
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -346,6 +503,7 @@ function SchemaField({
   onRemove,
   discordOptions,
   guildId,
+  issues,
 }: {
   fieldKey: string;
   schema: JsonSchema;
@@ -356,6 +514,7 @@ function SchemaField({
   onRemove: (path: Path) => void;
   discordOptions?: GuildConfigurationOptions | null;
   guildId: string;
+  issues: ConfigValidationIssue[];
 }) {
   const type = schemaPrimaryType(schema);
   const nullable = schemaAllowsNull(schema);
@@ -372,7 +531,7 @@ function SchemaField({
 
   if (ui?.widget === 'discord-channel' && supportsDiscordPicker) {
     return (
-      <FieldShell title={title} schema={schema} required={required}>
+      <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
         <DiscordChannelPicker
           options={discordOptions?.channels ?? []}
           value={normalizeDiscordEntityValue(value, discordMultiple)}
@@ -386,7 +545,7 @@ function SchemaField({
 
   if (ui?.widget === 'discord-role' && supportsDiscordPicker) {
     return (
-      <FieldShell title={title} schema={schema} required={required}>
+      <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
         <DiscordRolePicker
           options={discordOptions?.roles ?? []}
           value={normalizeDiscordEntityValue(value, discordMultiple)}
@@ -402,7 +561,7 @@ function SchemaField({
 
   if (ui?.widget === 'discord-user' && supportsDiscordPicker) {
     return (
-      <FieldShell title={title} schema={schema} required={required}>
+      <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
         <DiscordUserPicker
           guildId={guildId}
           value={normalizeDiscordEntityValue(value, discordMultiple)}
@@ -416,7 +575,7 @@ function SchemaField({
 
   if (ui?.widget === 'discord-emoji' && supportsDiscordPicker) {
     return (
-      <FieldShell title={title} schema={schema} required={required}>
+      <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
         <DiscordEmojiPicker
           options={discordOptions?.emojis ?? []}
           value={normalizeDiscordEntityValue(value, discordMultiple)}
@@ -430,7 +589,7 @@ function SchemaField({
 
   if (ui?.widget === 'discord-message-target' && supportsDiscordMessageTarget) {
     return (
-      <FieldShell title={title} schema={schema} required={required}>
+      <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
         <DiscordMessageTargetPicker
           guildId={guildId}
           channels={discordOptions?.channels ?? []}
@@ -444,7 +603,7 @@ function SchemaField({
 
   if (nullable && value === null) {
     return (
-      <FieldShell title={title} schema={schema} required={required}>
+      <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
         <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-border bg-background/60 p-3">
           <span className="text-sm text-muted">未設定（null）</span>
           <button
@@ -462,7 +621,14 @@ function SchemaField({
   if (type === 'object') {
     const objectValue = isObject(value) ? value : {};
     return (
-      <FieldShell title={title} schema={schema} required={required} emphasized>
+      <FieldShell
+        title={title}
+        schema={schema}
+        required={required}
+        emphasized
+        path={path}
+        issues={issues}
+      >
         <div className="grid gap-4">
           {Object.entries(schema.properties ?? {}).map(([childKey, childSchema]) => (
             <SchemaField
@@ -476,6 +642,7 @@ function SchemaField({
               onRemove={onRemove}
               discordOptions={discordOptions}
               guildId={guildId}
+              issues={issues}
             />
           ))}
         </div>
@@ -487,7 +654,14 @@ function SchemaField({
     const items = Array.isArray(value) ? value : [];
     const itemSchema = schema.items ?? {};
     return (
-      <FieldShell title={title} schema={schema} required={required} emphasized>
+      <FieldShell
+        title={title}
+        schema={schema}
+        required={required}
+        emphasized
+        path={path}
+        issues={issues}
+      >
         <div className="space-y-3">
           {items.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border bg-background/50 p-5 text-center text-sm text-muted">
@@ -524,6 +698,7 @@ function SchemaField({
                 onRemove={onRemove}
                 discordOptions={discordOptions}
                 guildId={guildId}
+                issues={issues}
               />
             </div>
           ))}
@@ -541,7 +716,7 @@ function SchemaField({
 
   if (schema.enum?.length) {
     return (
-      <FieldShell title={title} schema={schema} required={required}>
+      <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
         <select
           value={serializeSelectValue(value)}
           onChange={(event) =>
@@ -562,7 +737,14 @@ function SchemaField({
   if (type === 'boolean') {
     const checked = Boolean(value);
     return (
-      <FieldShell title={title} schema={schema} required={required} compact>
+      <FieldShell
+        title={title}
+        schema={schema}
+        required={required}
+        compact
+        path={path}
+        issues={issues}
+      >
         <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-background/70 px-4 py-3">
           <span className="text-sm text-muted">{checked ? '有効' : '無効'}</span>
           <button
@@ -585,7 +767,7 @@ function SchemaField({
 
   if (type === 'integer' || type === 'number') {
     return (
-      <FieldShell title={title} schema={schema} required={required}>
+      <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
         <input
           type="number"
           value={typeof value === 'number' ? value : ''}
@@ -619,7 +801,7 @@ function SchemaField({
   const stringValue = typeof value === 'string' ? value : '';
   const multiline = ui?.widget === 'textarea' || schema.format === 'multiline';
   return (
-    <FieldShell title={title} schema={schema} required={required}>
+    <FieldShell title={title} schema={schema} required={required} path={path} issues={issues}>
       {multiline ? (
         <textarea
           value={stringValue}
@@ -659,6 +841,8 @@ function FieldShell({
   required,
   emphasized,
   compact,
+  path,
+  issues,
   children,
 }: {
   title: string;
@@ -666,11 +850,20 @@ function FieldShell({
   required?: boolean;
   emphasized?: boolean;
   compact?: boolean;
+  path: Path;
+  issues: ConfigValidationIssue[];
   children: React.ReactNode;
 }) {
+  const pathText = formatStudioValidationPath(path);
+  const directIssues = validationIssuesAtPath(issues, pathText);
+  const issueCount = validationIssueCountUnderPath(issues, pathText);
+  const invalid = issueCount > 0;
+
   return (
     <div
-      className={`min-w-0 rounded-xl border p-4 ${emphasized ? 'border-border bg-surface/70 sm:p-5' : 'border-border/80 bg-background/40'} ${compact ? 'sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(220px,0.7fr)] sm:items-center sm:gap-5' : ''}`}
+      data-config-path={pathText}
+      tabIndex={-1}
+      className={`min-w-0 rounded-xl border p-4 outline-none transition ${invalid ? 'border-red-400/50 bg-red-400/5 focus:ring-2 focus:ring-red-400/20' : emphasized ? 'border-border bg-surface/70 sm:p-5' : 'border-border/80 bg-background/40'} ${compact ? 'sm:grid sm:grid-cols-[minmax(0,1fr)_minmax(220px,0.7fr)] sm:items-center sm:gap-5' : ''}`}
     >
       <div className={compact ? '' : 'mb-3'}>
         <div className="flex flex-wrap items-center gap-2">
@@ -683,6 +876,11 @@ function FieldShell({
           {schema['x-herta-ui']?.section ? (
             <span className="rounded bg-border/50 px-1.5 py-0.5 text-[10px] text-muted">
               {schema['x-herta-ui']?.section}
+            </span>
+          ) : null}
+          {invalid ? (
+            <span className="rounded bg-red-400/10 px-1.5 py-0.5 text-[10px] font-medium text-red-300">
+              エラー {issueCount}
             </span>
           ) : null}
         </div>
@@ -698,7 +896,18 @@ function FieldShell({
           </p>
         ) : null}
       </div>
-      <div>{children}</div>
+      <div>
+        {children}
+        {directIssues.length > 0 ? (
+          <div className="mt-2 space-y-1" role="alert">
+            {directIssues.map((issue, index) => (
+              <p key={`${issue.keyword}-${index}`} className="text-xs font-medium text-red-300">
+                {issue.message}
+              </p>
+            ))}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
