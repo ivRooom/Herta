@@ -135,6 +135,22 @@ test('型未指定Schemaではnullを許可し、combinatorとenumはnullにも�
   );
 });
 
+test('type未指定のproperties/itemsは異なるinstance型を拒否しない', () => {
+  assert.deepEqual(
+    validateConfigForStudio({ properties: { name: { type: 'string' } } }, 'not-an-object'),
+    [],
+  );
+  assert.deepEqual(validateConfigForStudio({ items: { type: 'string' } }, 123), []);
+});
+
+test('Unicode astral文字をJSON Schemaの文字数として1文字で数える', () => {
+  assert.deepEqual(validateConfigForStudio({ type: 'string', maxLength: 1 }, '😀'), []);
+  assert.equal(
+    validateConfigForStudio({ type: 'string', minLength: 2 }, '😀')[0]?.keyword,
+    'minLength',
+  );
+});
+
 test('object enumはproperty順に依存せず比較する', () => {
   const schema: JsonSchema = { enum: [{ a: 1, b: 2 }] };
   assert.deepEqual(validateConfigForStudio(schema, { b: 2, a: 1 }), []);
@@ -156,6 +172,23 @@ test('uriはhostを持たないabsolute URIを許可し、urlはhostを要求す
   );
 });
 
+test('emailは連続dotを含む不正なaddressを拒否する', () => {
+  assert.deepEqual(
+    validateConfigForStudio({ type: 'string', format: 'email' }, 'ops@example.com'),
+    [],
+  );
+  assert.equal(
+    validateConfigForStudio({ type: 'string', format: 'email' }, 'ops@example..com')[0]
+      ?.keyword,
+    'format',
+  );
+  assert.equal(
+    validateConfigForStudio({ type: 'string', format: 'email' }, 'first..last@example.com')[0]
+      ?.keyword,
+    'format',
+  );
+});
+
 test('dateとdate-timeは実在日付とRFC3339 timezoneを要求する', () => {
   assert.deepEqual(validateConfigForStudio({ type: 'string', format: 'date' }, '2024-02-29'), []);
   assert.equal(
@@ -171,6 +204,16 @@ test('dateとdate-timeは実在日付とRFC3339 timezoneを要求する', () => 
     validateConfigForStudio({ type: 'string', format: 'date-time' }, '2025-02-28T00:00:00')[0]
       ?.keyword,
     'format',
+  );
+});
+
+test('date-timeはRFC3339で許可される小文字t/zも受け入れる', () => {
+  assert.deepEqual(
+    validateConfigForStudio(
+      { type: 'string', format: 'date-time' },
+      '2025-02-28t00:00:00z',
+    ),
+    [],
   );
 });
 
