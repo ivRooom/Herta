@@ -42,7 +42,12 @@ test('nested pathとarray indexをStudio field pathへ変換する', () => {
 test('requiredはmissingPropertyをfield pathへ追加する', () => {
   assert.deepEqual(
     toPluginConfigValidationIssues([
-      error('required', '/notification', { missingProperty: 'email' }, 'must have required property'),
+      error(
+        'required',
+        '/notification',
+        { missingProperty: 'email' },
+        'must have required property',
+      ),
     ]),
     [{ path: 'notification.email', keyword: 'required', message: '必須項目です' }],
   );
@@ -53,18 +58,25 @@ test('JSON Pointer escapeを復元する', () => {
     toPluginConfigValidationIssues([
       error('type', '/properties/a~1b/~0meta', { type: 'string' }),
     ]),
-    [{
-      path: 'properties.a/b.~meta',
-      keyword: 'type',
-      message: 'string型で入力してください',
-    }],
+    [
+      {
+        path: 'properties.a/b.~meta',
+        keyword: 'type',
+        message: 'string型で入力してください',
+      },
+    ],
   );
 });
 
 test('root errorは$ pathを返し未知keywordではAjv messageを保持する', () => {
   assert.deepEqual(
     toPluginConfigValidationIssues([
-      error('additionalProperties', '', { additionalProperty: 'unknown' }, 'must NOT have additional properties'),
+      error(
+        'additionalProperties',
+        '',
+        { additionalProperty: 'unknown' },
+        'must NOT have additional properties',
+      ),
     ]),
     [
       {
