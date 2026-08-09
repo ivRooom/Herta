@@ -48,6 +48,8 @@ export interface GuildConfigurationOptions {
   fetchedAt: string;
 }
 
+const DISCORD_CHANNEL_FLAG_REQUIRE_TAG = 1 << 4;
+
 export async function loadGuildConfigurationOptions(
   client: Client,
   guildId: string,
@@ -70,6 +72,11 @@ export async function loadGuildConfigurationOptions(
         channel.type === ChannelType.GuildText ||
         channel.type === ChannelType.GuildAnnouncement ||
         channel.type === ChannelType.GuildForum,
+    )
+    .filter(
+      (channel) =>
+        channel.type !== ChannelType.GuildForum ||
+        !channel.flags.has(DISCORD_CHANNEL_FLAG_REQUIRE_TAG),
     )
     .map((channel) => {
       const permissions = channel.permissionsFor(me);
