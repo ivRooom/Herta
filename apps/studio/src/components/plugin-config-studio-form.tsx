@@ -14,6 +14,7 @@ import { DiscordUserPicker } from './discord-user-picker';
 import {
   getSchemaBranchState,
   resolveSchemaForValue,
+  schemaMatchesValue,
   selectSchemaBranch,
   type SchemaBranchState,
 } from '../lib/plugin-config-schema-branches';
@@ -49,6 +50,14 @@ type PluginUpdateResponse = {
 };
 
 type Path = Array<string | number>;
+
+type ComposedJsonSchema = JsonSchema & {
+  oneOf?: JsonSchema[];
+  anyOf?: JsonSchema[];
+  if?: JsonSchema;
+  then?: JsonSchema;
+  else?: JsonSchema;
+};
 
 export function PluginConfigStudioForm({
   guildId,
@@ -379,7 +388,9 @@ export function PluginConfigStudioForm({
                     <SchemaField
                       key={key}
                       fieldKey={key}
-                      schema={propertySchema}
+                      schema={
+                        findSourcePropertySchema(configSchema, config, key) ?? propertySchema
+                      }
                       value={config[key]}
                       path={[key]}
                       required={(effectiveConfigSchema.required ?? []).includes(key)}
@@ -532,7 +543,7 @@ function SchemaBranchSelector({
   onSelect: (index: number) => void;
 }) {
   const activeOption = state.options.find((option) => option.active) ?? state.options[0];
-  const selectable = state.mode === 'oneOf' || Boolean(getBranchDiscriminatorKey(state));
+  const selectable = Boolean(getBranchDiscriminatorKey(state));
 
   return (
     <div className="rounded-xl border border-primary/20 bg-primary/5 p-4">
@@ -542,7 +553,7 @@ function SchemaBranchSelector({
           <p className="mt-1 text-xs text-muted">
             {selectable
               ? '選択した設定タイプに必要な項目だけを表示します。既存の値は保持されます。'
-              : 'anyOfの複数条件は現在の入力値から自動判定されます。'}
+              : `${state.mode}の候補は現在の入力値から自動判定されます。`}
           </p>
         </div>
         {selectable ? (
@@ -767,7 +778,7 @@ function SchemaField({
             <SchemaField
               key={childKey}
               fieldKey={childKey}
-              schema={childSchema}
+              schema={findSourcePropertySchema(schema, value, childKey) ?? childSchema}
               value={objectValue[childKey]}
               path={[...path, childKey]}
               required={(effectiveSchema.required ?? []).includes(childKey)}
@@ -1090,6 +1101,37 @@ function SmallButton({
       {label}
     </button>
   );
+}
+
+function findSourcePropertySchema(
+  schema: JsonSchema,
+  value: unknown,
+  key: string,
+): JsonSchema | null {
+  if (schema.properties?.[key]) return schema.properties[key];
+
+  const composed = schema as ComposedJsonSchema;
+  const branchState = getSchemaBranchState(schema, value);
+  if (branchState) {
+    const branches = composed[branchState.mode] ?? [];
+    for (const option of branchState.options) {
+      if (!option.active) continue;
+      const branch = branches[option.index];
+      if (!branch) continue;
+      const found = findSourcePropertySchema(branch, value, key);
+      if (found) return found;
+    }
+  }
+
+  if (composed.if) {
+    const conditional = schemaMatchesValue(composed.if, value) ? composed.then : composed.else;
+    if (conditional) {
+      const found = findSourcePropertySchema(conditional, value, key);
+      if (found) return found;
+    }
+  }
+
+  return null;
 }
 
 function getBranchDiscriminatorKey(state: SchemaBranchState | null): string | null {
