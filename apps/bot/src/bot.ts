@@ -16,6 +16,9 @@ import { HERTA_WORKER_HEARTBEAT_KEY } from '@herta/shared';
 import type { Logger } from '@herta/logger';
 import { pingCommand } from './commands/ping.js';
 import { CommandRegistry } from './commands/registry.js';
+import { serverInfoCommand } from './commands/serverinfo.js';
+import { statusCommand } from './commands/status.js';
+import { userInfoCommand } from './commands/userinfo.js';
 import { defaultGuildPluginCache } from './plugins/cache.js';
 import { GuildPluginLoader } from './plugins/loader.js';
 import { createDefaultPluginRegistry } from './plugins/registry.js';
@@ -96,6 +99,9 @@ export class HertaBot {
     });
     this.registry = new CommandRegistry(this.logger);
     this.registry.register(pingCommand);
+    this.registry.register(statusCommand);
+    this.registry.register(serverInfoCommand);
+    this.registry.register(userInfoCommand);
 
     const pluginRegistry = createDefaultPluginRegistry({
       client: this.client,
