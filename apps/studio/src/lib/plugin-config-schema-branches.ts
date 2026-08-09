@@ -65,7 +65,7 @@ export function getSchemaBranchState(schema: JsonSchema, value: unknown): Schema
 
 export function selectSchemaBranch(schema: JsonSchema, value: unknown, index: number): unknown {
   const extended = schema as ExtendedJsonSchema;
-  const branches = extended.oneOf?.length ? extended.oneOf : extended.anyOf ?? [];
+  const branches = extended.oneOf?.length ? extended.oneOf : (extended.anyOf ?? []);
   const branch = branches[index];
   if (!branch) return value;
 
@@ -99,7 +99,9 @@ export function resolveSchemaForValue(schema: JsonSchema, value: unknown): JsonS
   }
 
   if (extended.if) {
-    const conditionalBranch = schemaMatchesValue(extended.if, value) ? extended.then : extended.else;
+    const conditionalBranch = schemaMatchesValue(extended.if, value)
+      ? extended.then
+      : extended.else;
     if (conditionalBranch) resolved = mergeSchemas(resolved, conditionalBranch);
   }
 
@@ -129,7 +131,8 @@ export function schemaMatchesValue(schema: JsonSchema, value: unknown): boolean 
   const extended = schema as ExtendedJsonSchema;
 
   if ('const' in extended && !jsonValuesEqual(extended.const, value)) return false;
-  if (extended.enum && !extended.enum.some((candidate) => jsonValuesEqual(candidate, value))) return false;
+  if (extended.enum && !extended.enum.some((candidate) => jsonValuesEqual(candidate, value)))
+    return false;
 
   const type = schemaPrimaryType(extended);
   if (type && !matchesType(type, value)) return false;
@@ -149,7 +152,8 @@ export function schemaMatchesValue(schema: JsonSchema, value: unknown): boolean 
   }
 
   if (extended.oneOf?.length) {
-    if (extended.oneOf.filter((branch) => schemaMatchesValue(branch, value)).length !== 1) return false;
+    if (extended.oneOf.filter((branch) => schemaMatchesValue(branch, value)).length !== 1)
+      return false;
   }
   if (extended.anyOf?.length) {
     if (!extended.anyOf.some((branch) => schemaMatchesValue(branch, value))) return false;
@@ -166,11 +170,15 @@ function getActiveBranchIndexes(
 ): number[] {
   if (discriminator && isConfigObject(value)) {
     const current = value[discriminator.key];
-    const index = discriminator.values.findIndex((candidate) => jsonValuesEqual(candidate, current));
+    const index = discriminator.values.findIndex((candidate) =>
+      jsonValuesEqual(candidate, current),
+    );
     if (index >= 0) return [index];
   }
 
-  const matching = branches.flatMap((branch, index) => (schemaMatchesValue(branch, value) ? [index] : []));
+  const matching = branches.flatMap((branch, index) =>
+    schemaMatchesValue(branch, value) ? [index] : [],
+  );
   if (mode === 'oneOf') return matching.length === 1 ? matching : matching.slice(0, 1);
   return matching;
 }
