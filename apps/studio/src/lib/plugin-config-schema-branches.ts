@@ -103,7 +103,8 @@ export function resolveSchemaForValue(schema: JsonSchema, value: unknown): JsonS
     const indexes = activeIndexes.length > 0 ? activeIndexes : [0];
     for (const index of indexes) {
       const activeBranch = extended.anyOf[index];
-      if (activeBranch) resolved = mergeSchemas(resolved, resolveSchemaForValue(activeBranch, value));
+      if (activeBranch)
+        resolved = mergeSchemas(resolved, resolveSchemaForValue(activeBranch, value));
     }
   }
 
@@ -296,9 +297,7 @@ function mergeDefaultsPreservingValue(current: unknown, defaults: unknown): unkn
 
   if (Array.isArray(current)) {
     const defaultItems = Array.isArray(defaults) ? defaults : [];
-    return current.map((item, index) =>
-      mergeDefaultsPreservingValue(item, defaultItems[index]),
-    );
+    return current.map((item, index) => mergeDefaultsPreservingValue(item, defaultItems[index]));
   }
   return current === undefined ? cloneJsonValue(defaults) : cloneJsonValue(current);
 }
