@@ -37,6 +37,24 @@ export type JsonSchema = {
 };
 
 export type ConfigObject = Record<string, unknown>;
+export type StudioValidationPath = Array<string | number>;
+
+export interface StudioValidationIssue {
+  path: StudioValidationPath;
+  message: string;
+  keyword:
+    | 'type'
+    | 'required'
+    | 'enum'
+    | 'minimum'
+    | 'maximum'
+    | 'minLength'
+    | 'maxLength'
+    | 'pattern'
+    | 'format'
+    | 'oneOf'
+    | 'anyOf';
+}
 
 export function isConfigObject(value: unknown): value is ConfigObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -116,6 +134,21 @@ export function stringifyConfig(config: ConfigObject): string {
   return JSON.stringify(config, null, 2);
 }
 
+export function validateConfigForStudio(
+  schema: JsonSchema,
+  value: unknown,
+): StudioValidationIssue[] {
+  return validateSchemaValue(schema, value, []);
+}
+
+export function formatStudioValidationPath(path: StudioValidationPath): string {
+  if (path.length === 0) return '$';
+  return path.reduce<string>((result, segment) => {
+    if (typeof segment === 'number') return `${result}[${segment}]`;
+    return result ? `${result}.${segment}` : segment;
+  }, '');
+}
+
 export function updateConfigValue(
   root: unknown,
   path: Array<string | number>,
@@ -191,6 +224,275 @@ export function fieldMatchesSearch(key: string, schema: JsonSchema, query: strin
   return Object.entries(schema.properties ?? {}).some(([childKey, childSchema]) =>
     fieldMatchesSearch(childKey, childSchema, normalized),
   );
+}
+
+function validateSchemaValue(
+  schema: JsonSchema,
+  value: unknown,
+  path: StudioValidationPath,
+): StudioValidationIssue[] {
+  const issues = validateCombinators(schema, value, path);
+  const types = schemaTypes(schema);
+
+  if (!matchesSchemaTypes(types, schema.nullable === true, value)) {
+    const expected = types?.join(' / ') ?? '指定された';
+    issues.push({
+      path,
+      keyword: 'type',
+      message:
+        value === null ? 'nullは許可されていません' : `値は${expected}型である必要があります`,
+    });
+    return issues;
+  }
+
+  if (schema.enum && !schema.enum.some((candidate) => jsonValuesEqual(candidate, value))) {
+    issues.push({ path, keyword: 'enum', message: '許可されている候補から選択してください' });
+  }
+
+  if (value === null) return issues;
+
+  if (typeof value === 'number') {
+    if (schema.minimum !== undefined && value < schema.minimum) {
+      issues.push({
+        path,
+        keyword: 'minimum',
+        message: `${schema.minimum}以上で入力してください`,
+      });
+    }
+    if (schema.maximum !== undefined && value > schema.maximum) {
+      issues.push({
+        path,
+        keyword: 'maximum',
+        message: `${schema.maximum}以下で入力してください`,
+      });
+    }
+  }
+
+  if (typeof value === 'string') {
+    const stringLength = [...value].length;
+    if (schema.minLength !== undefined && stringLength < schema.minLength) {
+      issues.push({
+        path,
+        keyword: 'minLength',
+        message: `${schema.minLength}文字以上で入力してください`,
+      });
+    }
+    if (schema.maxLength !== undefined && stringLength > schema.maxLength) {
+      issues.push({
+        path,
+        keyword: 'maxLength',
+        message: `${schema.maxLength}文字以内で入力してください`,
+      });
+    }
+    if (schema.pattern) {
+      try {
+        if (!new RegExp(schema.pattern, 'u').test(value)) {
+          issues.push({
+            path,
+            keyword: 'pattern',
+            message: '指定された入力形式に一致しません',
+          });
+        }
+      } catch {
+        issues.push({ path, keyword: 'pattern', message: 'Schemaのpatternが不正です' });
+      }
+    }
+    if (schema.format && !matchesStringFormat(schema.format, value)) {
+      issues.push({
+        path,
+        keyword: 'format',
+        message: `${schema.format}形式で入力してください`,
+      });
+    }
+  }
+
+  if (isConfigObject(value)) {
+    for (const requiredKey of schema.required ?? []) {
+      if (!(requiredKey in value) || value[requiredKey] === undefined) {
+        issues.push({
+          path: [...path, requiredKey],
+          keyword: 'required',
+          message: '必須項目です',
+        });
+      }
+    }
+    for (const [key, propertySchema] of Object.entries(schema.properties ?? {})) {
+      if (!(key in value) || value[key] === undefined) continue;
+      issues.push(...validateSchemaValue(propertySchema, value[key], [...path, key]));
+    }
+  }
+
+  if (Array.isArray(value) && schema.items) {
+    value.forEach((item, index) => {
+      issues.push(...validateSchemaValue(schema.items!, item, [...path, index]));
+    });
+  }
+
+  return issues;
+}
+
+function validateCombinators(
+  schema: JsonSchema,
+  value: unknown,
+  path: StudioValidationPath,
+): StudioValidationIssue[] {
+  const issues: StudioValidationIssue[] = [];
+
+  if (schema.oneOf?.length) {
+    const matches = schema.oneOf.filter(
+      (candidate) => validateSchemaValue(candidate, value, path).length === 0,
+    ).length;
+    if (matches !== 1) {
+      issues.push({
+        path,
+        keyword: 'oneOf',
+        message: 'oneOfの候補のうち1つだけに一致する必要があります',
+      });
+    }
+  }
+
+  if (schema.anyOf?.length) {
+    const matches = schema.anyOf.some(
+      (candidate) => validateSchemaValue(candidate, value, path).length === 0,
+    );
+    if (!matches) {
+      issues.push({
+        path,
+        keyword: 'anyOf',
+        message: 'anyOfの候補のいずれかに一致する必要があります',
+      });
+    }
+  }
+
+  return issues;
+}
+
+function schemaTypes(schema: JsonSchema): string[] | undefined {
+  if (typeof schema.type === 'string') return [schema.type];
+  if (Array.isArray(schema.type)) return schema.type;
+  return undefined;
+}
+
+function matchesSchemaTypes(
+  types: string[] | undefined,
+  nullable: boolean,
+  value: unknown,
+): boolean {
+  if (value === null && nullable) return true;
+  if (!types) return true;
+  return types.some((type) => matchesSchemaType(type, value));
+}
+
+function matchesSchemaType(type: string, value: unknown): boolean {
+  if (type === 'object') return isConfigObject(value);
+  if (type === 'array') return Array.isArray(value);
+  if (type === 'integer') return typeof value === 'number' && Number.isInteger(value);
+  if (type === 'number') return typeof value === 'number' && Number.isFinite(value);
+  if (type === 'string') return typeof value === 'string';
+  if (type === 'boolean') return typeof value === 'boolean';
+  if (type === 'null') return value === null;
+  return true;
+}
+
+function matchesStringFormat(format: string, value: string): boolean {
+  if (format === 'email') return isValidEmail(value);
+  if (format === 'url') {
+    try {
+      const parsed = new URL(value);
+      return Boolean(parsed.protocol && parsed.hostname);
+    } catch {
+      return false;
+    }
+  }
+  if (format === 'uri') {
+    try {
+      const parsed = new URL(value);
+      return Boolean(parsed.protocol);
+    } catch {
+      return false;
+    }
+  }
+  if (format === 'date-time') return isValidDateTime(value);
+  if (format === 'date') return isValidDate(value);
+  return true;
+}
+
+function isValidEmail(value: string): boolean {
+  if (/\s/u.test(value)) return false;
+  const separator = value.indexOf('@');
+  if (separator <= 0 || separator !== value.lastIndexOf('@') || separator === value.length - 1) {
+    return false;
+  }
+
+  const local = value.slice(0, separator);
+  const domain = value.slice(separator + 1);
+  if (
+    local.startsWith('.') ||
+    local.endsWith('.') ||
+    local.includes('..') ||
+    domain.startsWith('.') ||
+    domain.endsWith('.') ||
+    domain.includes('..')
+  ) {
+    return false;
+  }
+
+  return /^[^@]+$/u.test(local) && /^[A-Za-z0-9.-]+$/u.test(domain);
+}
+
+function isValidDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  );
+}
+
+function isValidDateTime(value: string): boolean {
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})t(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(z|[+-]\d{2}:\d{2})$/iu.exec(value);
+  if (!match || !isValidDate(`${match[1]}-${match[2]}-${match[3]}`)) return false;
+
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  if (hour > 23 || minute > 59 || second > 59) return false;
+
+  if (match[7]?.toUpperCase() !== 'Z') {
+    const offset = /^([+-])(\d{2}):(\d{2})$/u.exec(match[7]!);
+    if (!offset || Number(offset[2]) > 23 || Number(offset[3]) > 59) return false;
+  }
+
+  const normalized = value.replace('t', 'T').replace(/z$/iu, 'Z');
+  return Number.isFinite(Date.parse(normalized));
+}
+
+function jsonValuesEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return (
+      left.length === right.length &&
+      left.every((item, index) => jsonValuesEqual(item, right[index]))
+    );
+  }
+  if (isConfigObject(left) && isConfigObject(right)) {
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    return (
+      leftKeys.length === rightKeys.length &&
+      leftKeys.every(
+        (key) =>
+          Object.prototype.hasOwnProperty.call(right, key) &&
+          jsonValuesEqual(left[key], right[key]),
+      )
+    );
+  }
+  return false;
 }
 
 function cloneJsonValue<T>(value: T): T {
