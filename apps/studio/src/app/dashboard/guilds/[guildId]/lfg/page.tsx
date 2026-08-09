@@ -119,6 +119,9 @@ export default async function LfgPage({ params }: { params: Promise<{ guildId: s
             initialPosts={posts}
             pluginEnabled={plugin.enabled}
             maxPlayersLimit={config.maxPlayersLimit}
+            defaultMaxPlayers={config.defaultMaxPlayers}
+            defaultDurationMinutes={config.defaultDurationMinutes}
+            gamePresets={config.gamePresets}
             discordOptions={discordOptions}
           />
         </div>
