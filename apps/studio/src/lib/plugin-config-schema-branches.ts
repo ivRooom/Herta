@@ -73,10 +73,14 @@ export function selectSchemaBranch(schema: JsonSchema, value: unknown, index: nu
     discriminator && isConfigObject(value)
       ? { ...value, [discriminator.key]: cloneJsonValue(discriminator.values[index]) }
       : value;
-  const effectiveBranch = resolveSchemaForValue(branch, branchValue);
-  const withDefaults = mergeDefaultsPreservingValue(
+  const valueWithPredicateDefaults = mergeDefaultsPreservingValue(
     branchValue,
-    applySchemaDefaults(effectiveBranch, branchValue),
+    applySchemaDefaults(branch, branchValue),
+  );
+  const effectiveBranch = resolveSchemaForValue(branch, valueWithPredicateDefaults);
+  const withDefaults = mergeDefaultsPreservingValue(
+    valueWithPredicateDefaults,
+    applySchemaDefaults(effectiveBranch, valueWithPredicateDefaults),
   );
 
   if (!discriminator || !isConfigObject(withDefaults)) return withDefaults;
@@ -161,6 +165,7 @@ export function schemaMatchesValue(schema: JsonSchema, value: unknown): boolean 
         return false;
       }
     }
+    if (extended.format && !matchesStringFormat(extended.format, value)) return false;
   }
 
   if (isConfigObject(value)) {
@@ -261,6 +266,13 @@ function mergeSchemas(base: JsonSchema, branch: JsonSchema): JsonSchema {
   return {
     ...base,
     ...branch,
+    type: intersectSchemaTypes(base.type, branch.type),
+    enum: intersectEnums(base.enum, branch.enum),
+    minimum: stricterMinimum(base.minimum, branch.minimum),
+    maximum: stricterMaximum(base.maximum, branch.maximum),
+    minLength: stricterMinimum(base.minLength, branch.minLength),
+    maxLength: stricterMaximum(base.maxLength, branch.maxLength),
+    pattern: intersectPatterns(base.pattern, branch.pattern),
     properties: mergePropertyMaps(base.properties, branch.properties),
     required: required.length > 0 ? required : undefined,
     ['x-herta-ui']:
@@ -284,6 +296,45 @@ function mergePropertyMaps(
       return [key, branchSchema ?? baseSchema ?? {}];
     }),
   );
+}
+
+function intersectSchemaTypes(
+  base: JsonSchema['type'],
+  branch: JsonSchema['type'],
+): JsonSchema['type'] {
+  if (base === undefined) return branch;
+  if (branch === undefined) return base;
+  const baseTypes = Array.isArray(base) ? base : [base];
+  const branchTypes = Array.isArray(branch) ? branch : [branch];
+  const intersection = baseTypes.filter((type) => branchTypes.includes(type));
+  if (intersection.length === 1) return intersection[0];
+  return intersection;
+}
+
+function intersectEnums(base: unknown[] | undefined, branch: unknown[] | undefined): unknown[] | undefined {
+  if (!base) return branch;
+  if (!branch) return base;
+  return base.filter((candidate) =>
+    branch.some((branchCandidate) => jsonValuesEqual(candidate, branchCandidate)),
+  );
+}
+
+function stricterMinimum(base: number | undefined, branch: number | undefined): number | undefined {
+  if (base === undefined) return branch;
+  if (branch === undefined) return base;
+  return Math.max(base, branch);
+}
+
+function stricterMaximum(base: number | undefined, branch: number | undefined): number | undefined {
+  if (base === undefined) return branch;
+  if (branch === undefined) return base;
+  return Math.min(base, branch);
+}
+
+function intersectPatterns(base: string | undefined, branch: string | undefined): string | undefined {
+  if (!base) return branch;
+  if (!branch || base === branch) return base;
+  return `(?=[\\s\\S]*(?:${base}))(?=[\\s\\S]*(?:${branch}))[\\s\\S]*`;
 }
 
 function mergeDefaultsPreservingValue(current: unknown, defaults: unknown): unknown {
@@ -333,6 +384,84 @@ function matchesType(type: string, value: unknown): boolean {
     default:
       return true;
   }
+}
+
+function matchesStringFormat(format: string, value: string): boolean {
+  if (format === 'email') return isValidEmail(value);
+  if (format === 'url') {
+    try {
+      const parsed = new URL(value);
+      return Boolean(parsed.protocol && parsed.hostname);
+    } catch {
+      return false;
+    }
+  }
+  if (format === 'uri') {
+    try {
+      const parsed = new URL(value);
+      return Boolean(parsed.protocol);
+    } catch {
+      return false;
+    }
+  }
+  if (format === 'date-time') return isValidDateTime(value);
+  if (format === 'date') return isValidDate(value);
+  return true;
+}
+
+function isValidEmail(value: string): boolean {
+  if (/\s/u.test(value)) return false;
+  const separator = value.indexOf('@');
+  if (separator <= 0 || separator !== value.lastIndexOf('@') || separator === value.length - 1) {
+    return false;
+  }
+
+  const local = value.slice(0, separator);
+  const domain = value.slice(separator + 1);
+  if (
+    local.startsWith('.') ||
+    local.endsWith('.') ||
+    local.includes('..') ||
+    domain.startsWith('.') ||
+    domain.endsWith('.') ||
+    domain.includes('..')
+  ) {
+    return false;
+  }
+
+  return /^[^@]+$/u.test(local) && /^[A-Za-z0-9.-]+$/u.test(domain);
+}
+
+function isValidDate(value: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+  );
+}
+
+function isValidDateTime(value: string): boolean {
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})t(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(z|[+-]\d{2}:\d{2})$/iu.exec(value);
+  if (!match || !isValidDate(`${match[1]}-${match[2]}-${match[3]}`)) return false;
+
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  if (hour > 23 || minute > 59 || second > 59) return false;
+
+  if (match[7]?.toUpperCase() !== 'Z') {
+    const offset = /^([+-])(\d{2}):(\d{2})$/u.exec(match[7]!);
+    if (!offset || Number(offset[2]) > 23 || Number(offset[3]) > 59) return false;
+  }
+
+  const normalized = value.replace('t', 'T').replace(/z$/iu, 'Z');
+  return Number.isFinite(Date.parse(normalized));
 }
 
 function jsonValuesEqual(left: unknown, right: unknown): boolean {
