@@ -45,7 +45,7 @@ export function getSchemaBranchState(schema: JsonSchema, value: unknown): Schema
       : null;
   if (!mode) return null;
 
-  const branches = extended[mode] ?? [];
+  const branches = (extended[mode] ?? []) as ExtendedJsonSchema[];
   const discriminator = inferDiscriminator(branches);
   const activeIndexes = getActiveBranchIndexes(branches, value, mode, discriminator);
 
