@@ -25,6 +25,8 @@ import {
 import { RefreshHealthButton } from '@/components/refresh-health-button';
 import { getBotHealth } from '@/lib/bot-health';
 import { prisma } from '@/lib/db';
+import { getManageableGuilds } from '@/lib/guilds';
+import { getDiscordAccessToken } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -386,7 +388,8 @@ function CommandHistory({
             <h2 className="font-medium">コマンド履歴</h2>
           </div>
           <p className="mt-1 text-sm text-muted">
-            コマンド名・Guild ID・エラー名で検索できます。{history.total}件一致。
+            管理権限のあるGuildのみ、コマンド名・Guild ID・エラー名で検索できます。{history.total}
+            件一致。
           </p>
         </div>
       </div>
@@ -537,15 +540,30 @@ export default async function AnalyticsDashboardPage({
   const status = rawStatus === 'success' || rawStatus === 'failure' ? rawStatus : 'all';
   const page = parsePage(readSingle(params['page']));
 
+  const accessToken = await getDiscordAccessToken();
+  let allowedGuildIds: string[] | null = null;
+  if (accessToken) {
+    try {
+      allowedGuildIds = (await getManageableGuilds(accessToken)).map((guild) => guild.id);
+    } catch {
+      allowedGuildIds = null;
+    }
+  }
+
+  const historyPromise = allowedGuildIds
+    ? searchCommandExecutionEvents(prisma, {
+        rangeDays,
+        query,
+        guildId,
+        status,
+        page,
+        allowedGuildIds,
+      })
+    : Promise.resolve<CommandExecutionSearchResult | null>(null);
+
   const [analyticsResult, historyResult, healthResult] = await Promise.allSettled([
     getCommandUsageAnalytics(prisma, { days: rangeDays }),
-    searchCommandExecutionEvents(prisma, {
-      rangeDays,
-      query,
-      guildId,
-      status,
-      page,
-    }),
+    historyPromise,
     getBotHealth(),
   ]);
 
@@ -683,9 +701,14 @@ export default async function AnalyticsDashboardPage({
         />
       ) : (
         <section className="mt-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5">
-          <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
-            <CircleAlert className="h-5 w-5" aria-hidden="true" />
-            <p className="font-medium">コマンド履歴の検索結果を取得できませんでした。</p>
+          <div className="flex items-start gap-2 text-amber-800 dark:text-amber-200">
+            <CircleAlert className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
+            <div>
+              <p className="font-medium">コマンド履歴の認可情報を取得できませんでした。</p>
+              <p className="mt-1 text-sm opacity-80">
+                Discord APIのレート制限またはセッション切れの場合、他Guildの情報を誤表示しないため履歴を非表示にします。
+              </p>
+            </div>
           </div>
         </section>
       )}
