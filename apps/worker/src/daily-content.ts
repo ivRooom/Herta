@@ -36,7 +36,9 @@ import {
 const DISCORD_API_BASE_URL = 'https://discord.com/api/v10';
 const DAILY_CONTENT_SCAN_LIMIT = 200;
 const BASE_RETRY_DELAY_MS = 15_000;
-const TEXT_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12]);
+const MESSAGE_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12]);
+const FORUM_CHANNEL_TYPES = new Set([15]);
+const SUPPORTED_CHANNEL_TYPES = new Set([...MESSAGE_CHANNEL_TYPES, ...FORUM_CHANNEL_TYPES]);
 const DISCORD_NONCE_MAX_LENGTH = 25;
 const DISCORD_PERMISSION_CACHE_TTL_MS = 30_000;
 const THREAD_CHANNEL_TYPES = new Set([10, 11, 12]);
@@ -50,6 +52,7 @@ interface DiscordChannelPayload {
   parent_id?: string | null;
   permission_overwrites?: DiscordPermissionOverwrite[];
   thread_metadata?: { archived?: boolean; locked?: boolean };
+  message?: { id?: unknown };
 }
 
 interface DiscordUserPayload {
@@ -275,7 +278,9 @@ async function processDelivery(
     const messageId = await publishDiscordMessage({
       token: options.discordBotToken,
       channelId: delivery.dailyContent.channelId,
+      title: delivery.dailyContent.title,
       content: delivery.dailyContent.content,
+      scheduledFor: delivery.scheduledFor,
       allowUserMentions: config.allowUserMentions,
       nonce: createDeliveryNonce(delivery.idempotencyKey),
     });
@@ -317,7 +322,9 @@ async function processDelivery(
 async function publishDiscordMessage(input: {
   token: string;
   channelId: string;
+  title: string;
   content: string;
+  scheduledFor: Date;
   allowUserMentions: boolean;
   nonce: string;
 }): Promise<string> {
@@ -329,14 +336,27 @@ async function publishDiscordMessage(input: {
     throw await createDiscordError('DailyContentChannelPreflightFailed', channelResponse);
   }
   const channel = (await channelResponse.json()) as DiscordChannelPayload;
-  if (typeof channel.type !== 'number' || !TEXT_CHANNEL_TYPES.has(channel.type)) {
-    throw new DailyContentPublishError('DailyContentChannelNotTextBased', channelResponse.status);
+  if (typeof channel.type !== 'number' || !SUPPORTED_CHANNEL_TYPES.has(channel.type)) {
+    throw new DailyContentPublishError('DailyContentChannelNotSupported', channelResponse.status);
   }
   if (THREAD_CHANNEL_TYPES.has(channel.type) && channel.thread_metadata?.archived) {
     throw new DailyContentPublishError('DailyContentThreadArchived', 409);
   }
   await assertDiscordCanSend(input.token, channel);
 
+  if (FORUM_CHANNEL_TYPES.has(channel.type)) {
+    return publishDiscordForumPost(input);
+  }
+  return publishDiscordChannelMessage(input);
+}
+
+async function publishDiscordChannelMessage(input: {
+  token: string;
+  channelId: string;
+  content: string;
+  allowUserMentions: boolean;
+  nonce: string;
+}): Promise<string> {
   const response = await fetch(`${DISCORD_API_BASE_URL}/channels/${input.channelId}/messages`, {
     method: 'POST',
     headers: {
@@ -359,6 +379,55 @@ async function publishDiscordMessage(input: {
     throw new DailyContentPublishError('DailyContentDiscordResponseInvalid', response.status);
   }
   return message.id;
+}
+
+async function publishDiscordForumPost(input: {
+  token: string;
+  channelId: string;
+  title: string;
+  content: string;
+  scheduledFor: Date;
+  allowUserMentions: boolean;
+  nonce: string;
+}): Promise<string> {
+  const response = await fetch(`${DISCORD_API_BASE_URL}/channels/${input.channelId}/threads`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bot ${input.token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name: resolveForumPostTitle(input.title, input.scheduledFor),
+      message: {
+        content: input.content,
+        nonce: input.nonce,
+        enforce_nonce: true,
+        allowed_mentions: { parse: input.allowUserMentions ? ['users'] : [] },
+      },
+    }),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) {
+    throw await createDiscordError('DailyContentForumPublishFailed', response);
+  }
+  const thread = (await response.json()) as DiscordChannelPayload;
+  const messageId = thread.message?.id;
+  if (typeof messageId !== 'string' || !messageId) {
+    throw new DailyContentPublishError('DailyContentForumResponseInvalid', response.status);
+  }
+  return messageId;
+}
+
+export function resolveForumPostTitle(title: string, scheduledFor: Date): string {
+  const normalized = title.trim();
+  if (normalized) return normalized.slice(0, 100);
+  const date = new Intl.DateTimeFormat('ja-JP', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    timeZone: 'Asia/Tokyo',
+  }).format(scheduledFor);
+  return `Daily Content ${date}`.slice(0, 100);
 }
 
 async function assertDiscordCanSend(
