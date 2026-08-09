@@ -196,8 +196,9 @@ export function fillCommandUsageDays(
 
 export function fillCommandUsageHours(rows: readonly CommandUsageHour[]): CommandUsageHour[] {
   const byHour = new Map(rows.map((row) => [row.hour, row]));
-  return Array.from({ length: 24 }, (_, hour) =>
-    byHour.get(hour) ?? { hour, total: 0, succeeded: 0, failed: 0 },
+  return Array.from(
+    { length: 24 },
+    (_, hour) => byHour.get(hour) ?? { hour, total: 0, succeeded: 0, failed: 0 },
   );
 }
 
@@ -411,7 +412,8 @@ export async function searchCommandExecutionEvents(
   const rangeStart = new Date(startOfJstDay(now).getTime() - (rangeDays - 1) * DAY_MS);
   const query = normalizeOptionalText(filters.query, MAX_HISTORY_QUERY_LENGTH);
   const guildId = normalizeOptionalText(filters.guildId, MAX_GUILD_ID_LENGTH);
-  const status = filters.status === 'success' || filters.status === 'failure' ? filters.status : null;
+  const status =
+    filters.status === 'success' || filters.status === 'failure' ? filters.status : null;
   const page = normalizeSearchPage(filters.page);
   const pageSize = normalizeSearchPageSize(filters.pageSize);
 
