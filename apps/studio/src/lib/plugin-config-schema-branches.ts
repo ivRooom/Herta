@@ -1,7 +1,6 @@
 import {
   applySchemaDefaults,
   isConfigObject,
-  schemaPrimaryType,
   type ConfigObject,
   type JsonSchema,
 } from './plugin-config-studio.ts';
@@ -70,7 +69,15 @@ export function selectSchemaBranch(schema: JsonSchema, value: unknown, index: nu
   if (!branch) return value;
 
   const discriminator = inferDiscriminator(branches);
-  const withDefaults = mergeDefaultsPreservingValue(value, applySchemaDefaults(branch, value));
+  const branchValue =
+    discriminator && isConfigObject(value)
+      ? { ...value, [discriminator.key]: cloneJsonValue(discriminator.values[index]) }
+      : value;
+  const effectiveBranch = resolveSchemaForValue(branch, branchValue);
+  const withDefaults = mergeDefaultsPreservingValue(
+    branchValue,
+    applySchemaDefaults(effectiveBranch, branchValue),
+  );
 
   if (!discriminator || !isConfigObject(withDefaults)) return withDefaults;
   return {
@@ -86,7 +93,8 @@ export function resolveSchemaForValue(schema: JsonSchema, value: unknown): JsonS
   if (extended.oneOf?.length) {
     const discriminator = inferDiscriminator(extended.oneOf);
     const [activeIndex = 0] = getActiveBranchIndexes(extended.oneOf, value, 'oneOf', discriminator);
-    resolved = mergeSchemas(resolved, extended.oneOf[activeIndex] ?? {});
+    const activeBranch = extended.oneOf[activeIndex];
+    if (activeBranch) resolved = mergeSchemas(resolved, resolveSchemaForValue(activeBranch, value));
   }
 
   if (extended.anyOf?.length) {
@@ -94,7 +102,8 @@ export function resolveSchemaForValue(schema: JsonSchema, value: unknown): JsonS
     const activeIndexes = getActiveBranchIndexes(extended.anyOf, value, 'anyOf', discriminator);
     const indexes = activeIndexes.length > 0 ? activeIndexes : [0];
     for (const index of indexes) {
-      resolved = mergeSchemas(resolved, extended.anyOf[index] ?? {});
+      const activeBranch = extended.anyOf[index];
+      if (activeBranch) resolved = mergeSchemas(resolved, resolveSchemaForValue(activeBranch, value));
     }
   }
 
@@ -102,7 +111,9 @@ export function resolveSchemaForValue(schema: JsonSchema, value: unknown): JsonS
     const conditionalBranch = schemaMatchesValue(extended.if, value)
       ? extended.then
       : extended.else;
-    if (conditionalBranch) resolved = mergeSchemas(resolved, conditionalBranch);
+    if (conditionalBranch) {
+      resolved = mergeSchemas(resolved, resolveSchemaForValue(conditionalBranch, value));
+    }
   }
 
   if (resolved.properties && isConfigObject(value)) {
@@ -117,14 +128,11 @@ export function resolveSchemaForValue(schema: JsonSchema, value: unknown): JsonS
     };
   }
 
-  if (resolved.items && Array.isArray(value)) {
-    resolved = {
-      ...resolved,
-      items: resolveArrayItemSchema(resolved.items, value),
-    };
-  }
-
   return resolved;
+}
+
+export function resolveSchemaForArrayItem(schema: JsonSchema, value: unknown): JsonSchema {
+  return resolveSchemaForValue(schema, value);
 }
 
 export function schemaMatchesValue(schema: JsonSchema, value: unknown): boolean {
@@ -134,8 +142,25 @@ export function schemaMatchesValue(schema: JsonSchema, value: unknown): boolean 
   if (extended.enum && !extended.enum.some((candidate) => jsonValuesEqual(candidate, value)))
     return false;
 
-  const type = schemaPrimaryType(extended);
-  if (type && !matchesType(type, value)) return false;
+  if (!matchesAllowedTypes(extended, value)) return false;
+
+  if (typeof value === 'number') {
+    if (extended.minimum !== undefined && value < extended.minimum) return false;
+    if (extended.maximum !== undefined && value > extended.maximum) return false;
+  }
+
+  if (typeof value === 'string') {
+    const length = [...value].length;
+    if (extended.minLength !== undefined && length < extended.minLength) return false;
+    if (extended.maxLength !== undefined && length > extended.maxLength) return false;
+    if (extended.pattern) {
+      try {
+        if (!new RegExp(extended.pattern, 'u').test(value)) return false;
+      } catch {
+        return false;
+      }
+    }
+  }
 
   if (isConfigObject(value)) {
     for (const requiredKey of extended.required ?? []) {
@@ -149,6 +174,13 @@ export function schemaMatchesValue(schema: JsonSchema, value: unknown): boolean 
 
   if (Array.isArray(value) && extended.items) {
     if (!value.every((item) => schemaMatchesValue(extended.items!, item))) return false;
+  }
+
+  if (extended.if) {
+    const conditionalBranch = schemaMatchesValue(extended.if, value)
+      ? extended.then
+      : extended.else;
+    if (conditionalBranch && !schemaMatchesValue(conditionalBranch, value)) return false;
   }
 
   if (extended.oneOf?.length) {
@@ -222,28 +254,35 @@ function withoutConditionalKeywords(schema: ExtendedJsonSchema): JsonSchema {
   return base;
 }
 
-function mergeSchemas(base: JsonSchema, branch: ExtendedJsonSchema): JsonSchema {
-  const cleanBranch = withoutConditionalKeywords(branch);
-  const required = [...new Set([...(base.required ?? []), ...(cleanBranch.required ?? [])])];
+function mergeSchemas(base: JsonSchema, branch: JsonSchema): JsonSchema {
+  const required = [...new Set([...(base.required ?? []), ...(branch.required ?? [])])];
 
   return {
     ...base,
-    ...cleanBranch,
-    properties:
-      base.properties || cleanBranch.properties
-        ? { ...(base.properties ?? {}), ...(cleanBranch.properties ?? {}) }
-        : undefined,
+    ...branch,
+    properties: mergePropertyMaps(base.properties, branch.properties),
     required: required.length > 0 ? required : undefined,
     ['x-herta-ui']:
-      base['x-herta-ui'] || cleanBranch['x-herta-ui']
-        ? { ...(base['x-herta-ui'] ?? {}), ...(cleanBranch['x-herta-ui'] ?? {}) }
+      base['x-herta-ui'] || branch['x-herta-ui']
+        ? { ...(base['x-herta-ui'] ?? {}), ...(branch['x-herta-ui'] ?? {}) }
         : undefined,
   };
 }
 
-function resolveArrayItemSchema(schema: JsonSchema, values: unknown[]): JsonSchema {
-  const first = values[0];
-  return resolveSchemaForValue(schema, first);
+function mergePropertyMaps(
+  base: Record<string, JsonSchema> | undefined,
+  branch: Record<string, JsonSchema> | undefined,
+): Record<string, JsonSchema> | undefined {
+  if (!base && !branch) return undefined;
+  const keys = new Set([...Object.keys(base ?? {}), ...Object.keys(branch ?? {})]);
+  return Object.fromEntries(
+    [...keys].map((key) => {
+      const baseSchema = base?.[key];
+      const branchSchema = branch?.[key];
+      if (baseSchema && branchSchema) return [key, mergeSchemas(baseSchema, branchSchema)];
+      return [key, branchSchema ?? baseSchema ?? {}];
+    }),
+  );
 }
 
 function mergeDefaultsPreservingValue(current: unknown, defaults: unknown): unknown {
@@ -255,8 +294,25 @@ function mergeDefaultsPreservingValue(current: unknown, defaults: unknown): unkn
     return result;
   }
 
-  if (Array.isArray(current)) return current.map(cloneJsonValue);
+  if (Array.isArray(current)) {
+    const defaultItems = Array.isArray(defaults) ? defaults : [];
+    return current.map((item, index) =>
+      mergeDefaultsPreservingValue(item, defaultItems[index]),
+    );
+  }
   return current === undefined ? cloneJsonValue(defaults) : cloneJsonValue(current);
+}
+
+function matchesAllowedTypes(schema: ExtendedJsonSchema, value: unknown): boolean {
+  const declaredTypes = Array.isArray(schema.type)
+    ? schema.type
+    : typeof schema.type === 'string'
+      ? [schema.type]
+      : [];
+
+  if (schema.nullable && !declaredTypes.includes('null')) declaredTypes.push('null');
+  if (declaredTypes.length === 0) return true;
+  return declaredTypes.some((type) => matchesType(type, value));
 }
 
 function matchesType(type: string, value: unknown): boolean {
