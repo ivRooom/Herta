@@ -129,9 +129,7 @@ function TrendChart({ analytics }: { analytics: CommandUsageAnalytics }) {
   };
 
   const totalPoints = analytics.daily.map((day, index) => pointFor(day.total, index)).join(' ');
-  const failurePoints = analytics.daily
-    .map((day, index) => pointFor(day.failed, index))
-    .join(' ');
+  const failurePoints = analytics.daily.map((day, index) => pointFor(day.failed, index)).join(' ');
   const labelStep = Math.max(1, Math.ceil(analytics.daily.length / 6));
 
   return (
@@ -648,7 +646,11 @@ export default async function AnalyticsDashboardPage({
           </div>
 
           <div className="mt-6">
-            {analytics.range.total === 0 ? <EmptyAnalytics /> : <TrendChart analytics={analytics} />}
+            {analytics.range.total === 0 ? (
+              <EmptyAnalytics />
+            ) : (
+              <TrendChart analytics={analytics} />
+            )}
           </div>
 
           {analytics.range.total > 0 ? (
