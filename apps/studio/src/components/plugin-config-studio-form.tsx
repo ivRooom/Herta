@@ -859,10 +859,7 @@ function SchemaField({
         <select
           value={serializeSelectValue(value)}
           onChange={(event) =>
-            onChange(
-              path,
-              deserializeEnumValue(effectiveSchema.enum ?? [], event.target.value),
-            )
+            onChange(path, deserializeEnumValue(effectiveSchema.enum ?? [], event.target.value))
           }
           className="w-full rounded-xl border border-border bg-background px-3 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
         >
