@@ -390,30 +390,34 @@ async function publishDiscordForumPost(input: {
   allowUserMentions: boolean;
   nonce: string;
 }): Promise<string> {
-  const response = await fetch(`${DISCORD_API_BASE_URL}/channels/${input.channelId}/threads`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bot ${input.token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      name: resolveForumPostTitle(input.title, input.scheduledFor),
-      message: {
-        content: input.content,
-        nonce: input.nonce,
-        enforce_nonce: true,
-        allowed_mentions: { parse: input.allowUserMentions ? ['users'] : [] },
+  let response: Response;
+  try {
+    response = await fetch(`${DISCORD_API_BASE_URL}/channels/${input.channelId}/threads`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bot ${input.token}`,
+        'Content-Type': 'application/json',
       },
-    }),
-    signal: AbortSignal.timeout(15_000),
-  });
+      body: JSON.stringify({
+        name: resolveForumPostTitle(input.title, input.scheduledFor),
+        message: {
+          content: input.content,
+          allowed_mentions: { parse: input.allowUserMentions ? ['users'] : [] },
+        },
+      }),
+      signal: AbortSignal.timeout(15_000),
+    });
+  } catch {
+    throw new DailyContentForumPublishError('DailyContentForumPublishAmbiguous', 0);
+  }
   if (!response.ok) {
-    throw await createDiscordError('DailyContentForumPublishFailed', response);
+    const error = await createDiscordError('DailyContentForumPublishFailed', response);
+    throw new DailyContentForumPublishError(error.name, response.status);
   }
   const thread = (await response.json()) as DiscordChannelPayload;
   const messageId = thread.message?.id;
   if (typeof messageId !== 'string' || !messageId) {
-    throw new DailyContentPublishError('DailyContentForumResponseInvalid', response.status);
+    throw new DailyContentForumPublishError('DailyContentForumResponseInvalid', response.status);
   }
   return messageId;
 }
@@ -551,6 +555,8 @@ class DailyContentPublishError extends Error {
   }
 }
 
+class DailyContentForumPublishError extends DailyContentPublishError {}
+
 async function initializeMissingNextRuns(prisma: PrismaClient, now: Date): Promise<void> {
   const schedules = await prisma.dailyContent.findMany({
     where: { enabled: true, deletedAt: null, nextRunAt: null },
@@ -606,6 +612,9 @@ async function resolveGuildConfig(
 }
 
 function isRetryable(error: unknown): boolean {
+  if (error instanceof DailyContentForumPublishError) {
+    return error.status === 429;
+  }
   if (error instanceof DailyContentPublishError) {
     return error.status === 429 || error.status >= 500;
   }
