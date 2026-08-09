@@ -178,8 +178,7 @@ test('emailは連続dotを含む不正なaddressを拒否する', () => {
     [],
   );
   assert.equal(
-    validateConfigForStudio({ type: 'string', format: 'email' }, 'ops@example..com')[0]
-      ?.keyword,
+    validateConfigForStudio({ type: 'string', format: 'email' }, 'ops@example..com')[0]?.keyword,
     'format',
   );
   assert.equal(
@@ -209,10 +208,7 @@ test('dateとdate-timeは実在日付とRFC3339 timezoneを要求する', () => 
 
 test('date-timeはRFC3339で許可される小文字t/zも受け入れる', () => {
   assert.deepEqual(
-    validateConfigForStudio(
-      { type: 'string', format: 'date-time' },
-      '2025-02-28t00:00:00z',
-    ),
+    validateConfigForStudio({ type: 'string', format: 'date-time' }, '2025-02-28t00:00:00z'),
     [],
   );
 });
