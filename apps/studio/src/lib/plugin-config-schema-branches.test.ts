@@ -330,3 +330,94 @@ test('branch切替時に既存配列itemへ不足しているnested defaultを�
     rules: [{ enabled: true, name: 'rule-1' }],
   });
 });
+
+test('branch内のdefaultを条件判定へ先に反映してthen側defaultを適用する', () => {
+  const schema = {
+    type: 'object',
+    oneOf: [
+      {
+        properties: {
+          mode: { const: 'simple' },
+        },
+      },
+      {
+        properties: {
+          mode: { const: 'advanced' },
+          enabled: { type: 'boolean', default: true },
+        },
+        if: {
+          properties: {
+            enabled: { const: true },
+          },
+          required: ['enabled'],
+        },
+        then: {
+          properties: {
+            retryCount: { type: 'integer', default: 3 },
+          },
+        },
+        else: {
+          properties: {
+            disabledReason: { type: 'string', default: 'disabled' },
+          },
+        },
+      },
+    ],
+  } as unknown as JsonSchema;
+
+  const next = selectSchemaBranch(schema, { mode: 'simple' }, 1);
+  assert.deepEqual(next, {
+    mode: 'advanced',
+    enabled: true,
+    retryCount: 3,
+  });
+});
+
+test('baseとbranchで重なる制約は緩和せず交差させる', () => {
+  const schema = {
+    type: 'object',
+    properties: {
+      retryCount: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 100,
+        enum: [0, 1, 2],
+      },
+    },
+    oneOf: [
+      {
+        properties: {
+          mode: { const: 'normal' },
+          retryCount: {
+            minimum: -10,
+            maximum: 10,
+            enum: [1, 2, 3],
+          },
+        },
+      },
+      {
+        properties: {
+          mode: { const: 'extended' },
+        },
+      },
+    ],
+  } as unknown as JsonSchema;
+
+  const resolved = resolveSchemaForValue(schema, { mode: 'normal', retryCount: 1 });
+  assert.equal(resolved.properties?.retryCount?.minimum, 0);
+  assert.equal(resolved.properties?.retryCount?.maximum, 10);
+  assert.deepEqual(resolved.properties?.retryCount?.enum, [1, 2]);
+});
+
+test('format制約をconditional branch判定へ利用する', () => {
+  const condition = {
+    type: 'object',
+    required: ['email'],
+    properties: {
+      email: { type: 'string', format: 'email' },
+    },
+  } as unknown as JsonSchema;
+
+  assert.equal(schemaMatchesValue(condition, { email: 'user@example.com' }), true);
+  assert.equal(schemaMatchesValue(condition, { email: 'not-an-email' }), false);
+});
