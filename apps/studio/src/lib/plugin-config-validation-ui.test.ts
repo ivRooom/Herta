@@ -29,10 +29,15 @@ const schema: JsonSchema = {
 };
 
 test('visual draftをfield path付きissueへ変換する', () => {
-  const result = validateStudioDraft(schema, 'visual', {
-    name: 'x',
-    rules: [{ retryCount: 0 }],
-  }, '');
+  const result = validateStudioDraft(
+    schema,
+    'visual',
+    {
+      name: 'x',
+      rules: [{ retryCount: 0 }],
+    },
+    '',
+  );
 
   assert.equal(result.jsonError, null);
   assert.deepEqual(
