@@ -461,7 +461,7 @@ export async function searchCommandExecutionEvents(
     prisma.commandExecutionEvent.count({ where }),
     prisma.commandExecutionEvent.findMany({
       where,
-      orderBy: { executedAt: 'desc' },
+      orderBy: [{ executedAt: 'desc' }, { id: 'desc' }],
       skip: (page - 1) * pageSize,
       take: pageSize,
       select: {
