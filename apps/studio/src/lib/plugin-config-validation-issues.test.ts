@@ -55,9 +55,7 @@ test('requiredはmissingPropertyをfield pathへ追加する', () => {
 
 test('JSON Pointer escapeを復元する', () => {
   assert.deepEqual(
-    toPluginConfigValidationIssues([
-      error('type', '/properties/a~1b/~0meta', { type: 'string' }),
-    ]),
+    toPluginConfigValidationIssues([error('type', '/properties/a~1b/~0meta', { type: 'string' })]),
     [
       {
         path: 'properties.a/b.~meta',
