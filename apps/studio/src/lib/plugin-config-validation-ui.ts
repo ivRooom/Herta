@@ -4,7 +4,7 @@ import {
   validateConfigForStudio,
   type ConfigObject,
   type JsonSchema,
-} from './plugin-config-studio';
+} from './plugin-config-studio.ts';
 
 export type ConfigValidationIssue = {
   path: string;
