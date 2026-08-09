@@ -466,7 +466,9 @@ function jsonValuesEqual(left: unknown, right: unknown): boolean {
     return (
       leftKeys.length === rightKeys.length &&
       leftKeys.every(
-        (key) => Object.prototype.hasOwnProperty.call(right, key) && jsonValuesEqual(left[key], right[key]),
+        (key) =>
+          Object.prototype.hasOwnProperty.call(right, key) &&
+          jsonValuesEqual(left[key], right[key]),
       )
     );
   }
