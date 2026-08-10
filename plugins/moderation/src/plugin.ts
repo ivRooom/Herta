@@ -200,7 +200,11 @@ async function executeModerationCommand(
       if (config.logChannelId) {
         await sendModerationLog(context, guild, config.logChannelId, updated);
       }
-      await respond(interaction, buildModerationCaseEmbed(updated), config.defaultResponseEphemeral);
+      await respond(
+        interaction,
+        buildModerationCaseEmbed(updated),
+        config.defaultResponseEphemeral,
+      );
       return;
     }
 
@@ -251,24 +255,47 @@ async function executeModerationCommand(
         return;
       }
 
-      const activeTimeouts = await listModerationCases(context.prisma, {
-        guildId,
-        targetUserId: target.id,
-        action: 'timeout',
-        status: 'active',
-        page: 1,
-        pageSize: 1,
-      });
-      const activeTimeout = activeTimeouts.items[0] ?? null;
-      const revoked = activeTimeout
-        ? await updateModerationCase(context.prisma, {
-            guildId,
-            caseNumber: activeTimeout.caseNumber,
-            actorId: interaction.user.id,
-            source: 'discord',
-            status: 'revoked',
-          })
-        : null;
+      let revoked: ModerationCaseRecord | null = null;
+      try {
+        const activeTimeouts = await listModerationCases(context.prisma, {
+          guildId,
+          targetUserId: target.id,
+          action: 'timeout',
+          status: 'active',
+          page: 1,
+          pageSize: 1,
+        });
+        const activeTimeout = activeTimeouts.items[0] ?? null;
+        revoked = activeTimeout
+          ? await updateModerationCase(context.prisma, {
+              guildId,
+              caseNumber: activeTimeout.caseNumber,
+              actorId: interaction.user.id,
+              source: 'discord',
+              status: 'revoked',
+            })
+          : null;
+
+        if (activeTimeout && !revoked) {
+          throw new Error('ActiveTimeoutCaseDisappeared');
+        }
+      } catch (error) {
+        context.logger.error(
+          { err: error, guildId, targetUserId: target.id },
+          'Discordタイムアウト解除後のCase同期に失敗しました',
+        );
+        await respond(
+          interaction,
+          buildModerationStatusEmbed({
+            title: '⚠️ Timeout解除済み・Case同期失敗',
+            description:
+              'Discord上のTimeoutは解除済みですが、Herta Caseの状態更新に失敗しました。Case履歴を確認し、必要に応じてcase-statusで更新してください。',
+            variant: 'warning',
+          }),
+          true,
+        );
+        return;
+      }
 
       if (revoked) {
         if (config.dmTarget) {
