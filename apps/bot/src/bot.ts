@@ -3,6 +3,7 @@ import {
   Events,
   GatewayIntentBits,
   MessageFlags,
+  Partials,
   type ChatInputCommandInteraction,
 } from 'discord.js';
 import { Redis } from 'ioredis';
@@ -93,6 +94,7 @@ export class HertaBot {
     );
     this.client = new Client({
       intents: resolveGatewayIntents(this.logger),
+      partials: [Partials.Message],
     });
     this.registry = new CommandRegistry(this.logger);
     this.registry.register(pingCommand);
@@ -205,6 +207,30 @@ export class HertaBot {
       }
     });
 
+    this.client.on(Events.MessageUpdate, async (oldMessage, newMessage) => {
+      let updatedMessage = newMessage;
+      if (newMessage.partial) {
+        try {
+          updatedMessage = await newMessage.fetch();
+        } catch (error) {
+          this.logger.warn(
+            { err: error, messageId: newMessage.id, channelId: newMessage.channelId },
+            '編集メッセージの取得に失敗したためPlugin再判定をスキップします',
+          );
+          return;
+        }
+      }
+
+      const guildId = updatedMessage.guildId ?? oldMessage.guildId;
+      if (!guildId) return;
+      await this.dispatchGuildPluginEvent(
+        guildId,
+        Events.MessageUpdate,
+        oldMessage,
+        updatedMessage,
+      );
+    });
+
     this.client.on(Events.MessageDelete, async (message) => {
       if (!message.guildId) return;
       await this.dispatchGuildPluginEvent(message.guildId, Events.MessageDelete, message);
@@ -296,7 +322,7 @@ export class HertaBot {
   private async dispatchGuildPluginEvent(
     guildId: string,
     eventName: string,
-    payload: unknown,
+    ...payloads: unknown[]
   ): Promise<{ matched: number; failed: boolean }> {
     try {
       const events = await this.pluginLoader.getGuildEvents(guildId);
@@ -304,7 +330,7 @@ export class HertaBot {
       let failed = false;
       for (const event of handlers) {
         try {
-          await event.handler(payload);
+          await event.handler(...payloads);
         } catch (error) {
           failed = true;
           this.logger.error(

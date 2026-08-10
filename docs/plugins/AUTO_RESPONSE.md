@@ -41,7 +41,7 @@ Botには対象チャンネルで次の権限が必要です。
 - Send Messages in Threads（Thread内で応答する場合）
 - Embed Links（Embed応答を利用する場合）
 
-StudioのGuild Install導線は、これらを含む`DISCORD_BOT_PERMISSIONS=274877926400`を既定で要求します。既存導入Guildは権限が自動追加されないため、Studioから再認可してください。Runtimeは送信前にチャンネル種別ごとの送信権限を確認し、権限不足はルール本文を含めず失敗メトリクスへ記録します。
+StudioのGuild Install導線は、公式Plugin全体で利用する権限を含む`DISCORD_BOT_PERMISSIONS=274877934592`を既定で要求します。既存導入Guildは権限が自動追加されないため、Studioから再認可してください。Runtimeは送信前にチャンネル種別ごとの送信権限を確認し、権限不足はルール本文を含めず失敗メトリクスへ記録します。
 
 ## Plugin設定
 
@@ -167,7 +167,7 @@ docker compose \
 2. `auto_response_execution_events`が作成されている
 3. Developer PortalのMessage Content Intentが有効
 4. `DISCORD_ENABLE_MESSAGE_CONTENT_INTENT=true`
-5. `DISCORD_BOT_PERMISSIONS=274877926400`
+5. `DISCORD_BOT_PERMISSIONS=274877934592`
 6. Bot起動ログにIntent有効化が表示される
 7. Pluginを有効化したGuildだけで応答する
 8. Bot・Webhook投稿へ応答しない
@@ -237,7 +237,3 @@ ALTER TABLE auto_responses
 ### 正規表現を保存できない
 
 安全なサブセット外のパターンです。完全一致、部分一致、前方一致を優先し、正規表現は単純なアンカー・文字クラス・単一の量指定子へ簡略化します。
-
-### 失敗数が増える
-
-Botのチャンネル権限、Embed JSON、Discord APIエラーをBotログで確認します。ログには本文を出さないため、Rule IDをStudioの対象ルールと照合します。送信準備失敗は最低30秒間隔で記録されるため、権限修復後に再度メッセージを送信して確認してください。

@@ -6,9 +6,13 @@ import { moderationManifest } from '@herta/plugin-moderation/manifest';
 import { quoteManifest } from '@herta/plugin-quote/manifest';
 import { teamSplitManifest } from '@herta/plugin-team-split/manifest';
 import type { PluginManifest } from '@herta/shared';
+import { channelPolicyManifest } from './manifests/channel-policy.js';
+
+export { channelPolicyManifest } from './manifests/channel-policy.js';
 
 const pluginManifests: PluginManifest[] = [
   autoResponseManifest,
+  channelPolicyManifest,
   dailyContentManifest,
   lfgManifest,
   moderationManifest,

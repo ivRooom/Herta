@@ -9,6 +9,7 @@ import type { Logger } from '@herta/logger';
 import { createPluginContext } from '@herta/plugin-sdk';
 import type { HertaPlugin } from '@herta/plugin-sdk';
 import type { SlashCommand } from '../commands/registry.js';
+import { channelPolicyPlugin } from './channel-policy.js';
 import type { RuntimePluginEntry } from './types.js';
 
 export type { GuildEventHandler, RuntimePluginEntry } from './types.js';
@@ -214,6 +215,7 @@ function validateRuntimeEntry(
 
 const officialPluginIds = [
   'auto-response',
+  'channel-policy',
   'daily-content',
   'lfg',
   'moderation',
@@ -234,6 +236,20 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             config,
             manifest: plugin.manifest,
           }) as Parameters<NonNullable<typeof autoResponsePlugin.onEnable>>[0],
+      )
+    : undefined;
+  const channelPolicyEntry = deps
+    ? toRuntimePluginEntry(
+        channelPolicyPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof channelPolicyPlugin.onEnable>>[0],
       )
     : undefined;
   const dailyContentEntry = deps
@@ -310,6 +326,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
   return officialPluginIds.flatMap((pluginId) => {
     if (!getPluginManifest(pluginId)) return [];
     if (pluginId === 'auto-response' && autoResponseEntry) return [autoResponseEntry];
+    if (pluginId === 'channel-policy' && channelPolicyEntry) return [channelPolicyEntry];
     if (pluginId === 'daily-content' && dailyContentEntry) return [dailyContentEntry];
     if (pluginId === 'lfg' && lfgEntry) return [lfgEntry];
     if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];
