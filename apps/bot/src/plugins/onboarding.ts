@@ -152,7 +152,8 @@ export function normalizeOnboardingConfig(value: unknown): OnboardingConfig {
     ),
     autoRoleEnabled: source.autoRoleEnabled === true,
     autoRoleIds,
-    mentionNewMember: source.mentionNewMember === undefined ? true : source.mentionNewMember === true,
+    mentionNewMember:
+      source.mentionNewMember === undefined ? true : source.mentionNewMember === true,
   };
 }
 
@@ -184,7 +185,13 @@ async function handleMemberAdd(
     await assignAutoRoles(context, member, config.autoRoleIds);
   }
   if (config.welcomeEnabled && config.welcomeChannelId) {
-    await sendConfiguredMessage(context, member, config.welcomeChannelId, config.welcomeMessage, true);
+    await sendConfiguredMessage(
+      context,
+      member,
+      config.welcomeChannelId,
+      config.welcomeMessage,
+      true,
+    );
   }
 }
 
@@ -193,8 +200,15 @@ async function handleMemberRemove(
   member: OnboardingMember,
 ): Promise<void> {
   const config = normalizeOnboardingConfig(context.config);
-  if (!config.enabled || member.user.bot || !config.goodbyeEnabled || !config.goodbyeChannelId) return;
-  await sendConfiguredMessage(context, member, config.goodbyeChannelId, config.goodbyeMessage, false);
+  if (!config.enabled || member.user.bot || !config.goodbyeEnabled || !config.goodbyeChannelId)
+    return;
+  await sendConfiguredMessage(
+    context,
+    member,
+    config.goodbyeChannelId,
+    config.goodbyeMessage,
+    false,
+  );
 }
 
 async function assignAutoRoles(
@@ -204,7 +218,10 @@ async function assignAutoRoles(
 ): Promise<void> {
   const botMember = member.guild.members.me;
   if (!botMember?.permissions.has(MANAGE_ROLES_PERMISSION)) {
-    context.logger.warn({ guildId: member.guild.id }, 'Onboarding Auto Roleに必要なManage Rolesがありません');
+    context.logger.warn(
+      { guildId: member.guild.id },
+      'Onboarding Auto Roleに必要なManage Rolesがありません',
+    );
     return;
   }
 
@@ -213,12 +230,18 @@ async function assignAutoRoles(
     try {
       const role = await member.guild.roles.fetch(roleId);
       if (!role || role.managed || !role.editable) {
-        context.logger.warn({ guildId: member.guild.id, roleId }, 'Auto Roleを安全上の理由でスキップしました');
+        context.logger.warn(
+          { guildId: member.guild.id, roleId },
+          'Auto Roleを安全上の理由でスキップしました',
+        );
         continue;
       }
       safeRoleIds.push(role.id);
     } catch (error) {
-      context.logger.warn({ err: error, guildId: member.guild.id, roleId }, 'Auto Roleの検証に失敗しました');
+      context.logger.warn(
+        { err: error, guildId: member.guild.id, roleId },
+        'Auto Roleの検証に失敗しました',
+      );
     }
   }
   if (safeRoleIds.length === 0) return;
@@ -247,7 +270,10 @@ async function sendConfiguredMessage(
   try {
     const channel = await member.guild.channels.fetch(channelId);
     if (!channel?.isTextBased()) {
-      context.logger.warn({ guildId: member.guild.id, channelId }, 'Onboarding投稿先Channelが利用できません');
+      context.logger.warn(
+        { guildId: member.guild.id, channelId },
+        'Onboarding投稿先Channelが利用できません',
+      );
       return;
     }
     const content = renderOnboardingMessage(template, {

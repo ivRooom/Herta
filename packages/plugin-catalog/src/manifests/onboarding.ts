@@ -56,7 +56,8 @@ export const onboardingManifest: PluginManifest = {
         description: '{user} / {username} / {server} / {memberCount} を利用できます',
         minLength: 1,
         maxLength: 1500,
-        default: '👋 {username}さんが{server}から退出しました。現在のメンバー数は{memberCount}人です。',
+        default:
+          '👋 {username}さんが{server}から退出しました。現在のメンバー数は{memberCount}人です。',
       },
       autoRoleEnabled: {
         type: 'boolean',

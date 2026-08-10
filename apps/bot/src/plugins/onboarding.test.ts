@@ -33,7 +33,12 @@ describe('Onboarding v1', () => {
     const config = normalizeOnboardingConfig({
       welcomeChannelId: 'abc',
       goodbyeChannelId: '123',
-      autoRoleIds: ['100', '100', 'bad', ...Array.from({ length: 20 }, (_, index) => String(200 + index))],
+      autoRoleIds: [
+        '100',
+        '100',
+        'bad',
+        ...Array.from({ length: 20 }, (_, index) => String(200 + index)),
+      ],
     });
     expect(config.welcomeChannelId).toBeNull();
     expect(config.goodbyeChannelId).toBe('123');
