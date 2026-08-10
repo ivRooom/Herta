@@ -1,6 +1,10 @@
 import type { PrismaClient } from '@herta/db';
 import { birthdayRoleManifest } from '@herta/plugin-catalog';
-import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
+import {
+  definePlugin,
+  type CommandHandler,
+  type PluginRuntimeContext,
+} from '@herta/plugin-sdk';
 
 const EPHEMERAL_FLAG = 64;
 const MANAGE_ROLES_PERMISSION = 268435456n;
@@ -279,8 +283,9 @@ export async function runBirthdayRoleCycle(
     const todaysUsers = new Set(todaysRegistrations.map((registration) => registration.userId));
     const guild = await context.client.guilds.fetch(context.guildId);
 
+    await cleanupPreviousBirthdayRoles(context, guild, localDate, todaysUsers);
+
     if (config.assignRole && config.birthdayRoleId) {
-      await cleanupPreviousBirthdayRoles(context, guild, localDate, todaysUsers);
       const role = await validateBirthdayRole(guild, config.birthdayRoleId);
       if (!role) {
         context.logger.warn(
