@@ -25,6 +25,7 @@ CREATE TABLE "birthday_deliveries" (
     "message_id" TEXT,
     "error_name" TEXT,
     "completed_at" TIMESTAMPTZ(3),
+    "reconciled_at" TIMESTAMPTZ(3),
     "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMPTZ(3) NOT NULL,
 
@@ -36,6 +37,10 @@ ON "birthday_deliveries"("idempotency_key");
 
 CREATE INDEX "birthday_deliveries_guild_id_local_date_kind_idx"
 ON "birthday_deliveries"("guild_id", "local_date", "kind");
+
+CREATE INDEX "birthday_deliveries_cleanup_idx"
+ON "birthday_deliveries"("guild_id", "reconciled_at", "local_date")
+WHERE "status" = 'completed' AND "kind" LIKE 'role-assigned:%';
 
 CREATE INDEX "birthday_deliveries_status_created_at_idx"
 ON "birthday_deliveries"("status", "created_at");
