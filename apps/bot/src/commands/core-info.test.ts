@@ -14,6 +14,10 @@ const expectedCommandNames = [
   'dice',
   'coinflip',
   'random',
+  '8ball',
+  'rps',
+  'shuffle',
+  'rate',
 ];
 
 describe('coreInformationCommands', () => {
