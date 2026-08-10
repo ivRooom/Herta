@@ -69,10 +69,7 @@ interface ChannelPolicyMessage {
   channel: {
     parentId?: string | null;
     isTextBased(): boolean;
-    send(options: {
-      content: string;
-      allowedMentions: { parse: [] };
-    }): Promise<unknown>;
+    send(options: { content: string; allowedMentions: { parse: [] } }): Promise<unknown>;
   };
   delete(): Promise<unknown>;
 }
@@ -97,16 +94,7 @@ const IMAGE_EXTENSIONS = new Set([
   'png',
   'webp',
 ]);
-const VIDEO_EXTENSIONS = new Set([
-  'avi',
-  'm4v',
-  'mkv',
-  'mov',
-  'mp4',
-  'mpeg',
-  'mpg',
-  'webm',
-]);
+const VIDEO_EXTENSIONS = new Set(['avi', 'm4v', 'mkv', 'mov', 'mp4', 'mpeg', 'mpg', 'webm']);
 const MODES = new Set<ChannelPolicyMode>([
   'commands_only',
   'media_only',
@@ -130,9 +118,7 @@ export const channelPolicyPlugin = definePlugin<ChannelPolicyConfig>({
   },
 });
 
-function createChannelPolicyEvents(
-  guildId: string,
-): PluginEventHandler<ChannelPolicyConfig>[] {
+function createChannelPolicyEvents(guildId: string): PluginEventHandler<ChannelPolicyConfig>[] {
   return [
     {
       event: 'messageCreate',
@@ -226,7 +212,8 @@ function createChannelPolicyEvents(
 export function normalizeChannelPolicyConfig(value: unknown): ChannelPolicyConfig {
   const source = isRecord(value) ? value : {};
   const warningCooldownSeconds = clampInteger(source.warningCooldownSeconds, 15, 0, 3600);
-  const defaultWarningMessage = normalizeWarningMessage(source.defaultWarningMessage) ?? DEFAULT_WARNING;
+  const defaultWarningMessage =
+    normalizeWarningMessage(source.defaultWarningMessage) ?? DEFAULT_WARNING;
   const rawRules = Array.isArray(source.rules) ? source.rules.slice(0, 200) : [];
   const ruleMap = new Map<string, ChannelPolicyRule>();
 
@@ -251,9 +238,10 @@ function normalizeChannelPolicyRule(value: unknown): ChannelPolicyRule | null {
   const channelId = normalizeDiscordId(value.channelId);
   if (!channelId) return null;
 
-  const mode = typeof value.mode === 'string' && MODES.has(value.mode as ChannelPolicyMode)
-    ? (value.mode as ChannelPolicyMode)
-    : 'commands_only';
+  const mode =
+    typeof value.mode === 'string' && MODES.has(value.mode as ChannelPolicyMode)
+      ? (value.mode as ChannelPolicyMode)
+      : 'commands_only';
   const action =
     typeof value.action === 'string' && ACTIONS.has(value.action as ChannelPolicyAction)
       ? (value.action as ChannelPolicyAction)
@@ -282,17 +270,12 @@ export function findChannelPolicyRule(
   if (direct) return direct;
   if (!parentChannelId) return null;
   return (
-    config.rules.find(
-      (rule) => rule.channelId === parentChannelId && rule.includeThreads,
-    ) ?? null
+    config.rules.find((rule) => rule.channelId === parentChannelId && rule.includeThreads) ?? null
   );
 }
 
 export function evaluateChannelPolicyMessage(
-  message: Pick<
-    ChannelPolicyMessage,
-    'content' | 'attachments' | 'stickers'
-  >,
+  message: Pick<ChannelPolicyMessage, 'content' | 'attachments' | 'stickers'>,
   rule: ChannelPolicyRule,
 ): ChannelPolicyEvaluation {
   const content = message.content.trim();
@@ -301,7 +284,8 @@ export function evaluateChannelPolicyMessage(
   const hasAttachments = attachments.length > 0;
   const hasImages = attachmentKinds.includes('image');
   const hasVideos = attachmentKinds.includes('video');
-  const allMedia = hasAttachments && attachmentKinds.every((kind) => kind === 'image' || kind === 'video');
+  const allMedia =
+    hasAttachments && attachmentKinds.every((kind) => kind === 'image' || kind === 'video');
   const allImages = hasAttachments && attachmentKinds.every((kind) => kind === 'image');
   const allVideos = hasAttachments && attachmentKinds.every((kind) => kind === 'video');
   const hasStickers = message.stickers.size > 0;
@@ -314,20 +298,24 @@ export function evaluateChannelPolicyMessage(
       const hasAllowedMedia = allMedia || (rule.allowStickers && hasStickers && !hasAttachments);
       if (!hasAllowedMedia) return deny('画像または動画が必要です');
       if (hasStickers && !rule.allowStickers) return deny('Stickerは許可されていません');
-      if (!rule.allowCaption && content.length > 0) return deny('添付ファイル以外の本文は許可されていません');
+      if (!rule.allowCaption && content.length > 0)
+        return deny('添付ファイル以外の本文は許可されていません');
       return allow();
     }
     case 'images_only':
       if (!allImages || hasVideos || hasStickers) return deny('画像ファイルだけ投稿できます');
-      if (!rule.allowCaption && content.length > 0) return deny('画像以外の本文は許可されていません');
+      if (!rule.allowCaption && content.length > 0)
+        return deny('画像以外の本文は許可されていません');
       return allow();
     case 'videos_only':
       if (!allVideos || hasImages || hasStickers) return deny('動画ファイルだけ投稿できます');
-      if (!rule.allowCaption && content.length > 0) return deny('動画以外の本文は許可されていません');
+      if (!rule.allowCaption && content.length > 0)
+        return deny('動画以外の本文は許可されていません');
       return allow();
     case 'attachments_only':
       if (!hasAttachments || hasStickers) return deny('添付ファイルが必要です');
-      if (!rule.allowCaption && content.length > 0) return deny('添付ファイル以外の本文は許可されていません');
+      if (!rule.allowCaption && content.length > 0)
+        return deny('添付ファイル以外の本文は許可されていません');
       return allow();
     case 'text_only':
       if (content.length === 0) return deny('テキスト本文が必要です');
@@ -336,7 +324,8 @@ export function evaluateChannelPolicyMessage(
     case 'links_only':
       if (!hasUrls) return deny('HTTP(S)リンクが必要です');
       if (hasAttachments || hasStickers) return deny('リンク以外の添付は許可されていません');
-      if (removeHttpUrls(content).trim().length > 0) return deny('リンク以外の本文は許可されていません');
+      if (removeHttpUrls(content).trim().length > 0)
+        return deny('リンク以外の本文は許可されていません');
       return allow();
     case 'no_links':
       return hasUrls ? deny('HTTP(S)リンクは許可されていません') : allow();
@@ -386,7 +375,7 @@ function classifyAttachment(attachment: ChannelPolicyAttachment): 'image' | 'vid
   if (contentType.startsWith('video/')) return 'video';
 
   const name = attachment.name?.toLowerCase() ?? '';
-  const extension = name.includes('.') ? name.split('.').pop() ?? '' : '';
+  const extension = name.includes('.') ? (name.split('.').pop() ?? '') : '';
   if (IMAGE_EXTENSIONS.has(extension)) return 'image';
   if (VIDEO_EXTENSIONS.has(extension)) return 'video';
   return 'other';
@@ -422,10 +411,9 @@ function normalizeDiscordId(value: unknown): string | null {
 
 function normalizeDiscordIdArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return [...new Set(value.map(normalizeDiscordId).filter((id): id is string => Boolean(id)))].slice(
-    0,
-    100,
-  );
+  return [
+    ...new Set(value.map(normalizeDiscordId).filter((id): id is string => Boolean(id))),
+  ].slice(0, 100);
 }
 
 function normalizeWarningMessage(value: unknown): string | null {
