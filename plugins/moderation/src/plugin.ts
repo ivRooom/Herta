@@ -8,11 +8,13 @@ import {
   normalizeTimeoutMinutes,
   type ModerationConfig,
 } from './config.js';
+import { normalizeEditableModerationCaseStatus } from './case-lifecycle.js';
 import { moderationManifest } from './manifest.js';
 import {
   createModerationCase,
   getModerationCase,
   listModerationCases,
+  updateModerationCase,
   type ModerationAction,
   type ModerationCaseRecord,
   type ModerationPrismaClient,
@@ -60,7 +62,7 @@ interface ModerationMember {
   moderatable?: boolean;
   kickable?: boolean;
   bannable?: boolean;
-  timeout(durationMs: number, reason?: string): Promise<unknown>;
+  timeout(durationMs: number | null, reason?: string): Promise<unknown>;
   kick(reason?: string): Promise<unknown>;
   ban(options?: { reason?: string; deleteMessageSeconds?: number }): Promise<unknown>;
 }
@@ -162,6 +164,46 @@ async function executeModerationCommand(
       return;
     }
 
+    if (subcommand === 'case-status') {
+      assertAnyPermission(interaction, [MANAGE_MESSAGES_PERMISSION, MODERATE_MEMBERS_PERMISSION]);
+      const caseNumber = requiredInteger(interaction, 'number');
+      const status = normalizeEditableModerationCaseStatus(
+        interaction.options.getString('status', true),
+      );
+      const rawReason = interaction.options.getString('reason');
+      const reason =
+        rawReason === null
+          ? undefined
+          : normalizeModerationReason(rawReason, { ...config, requireReason: false });
+      const updated = await updateModerationCase(context.prisma, {
+        guildId,
+        caseNumber,
+        actorId: interaction.user.id,
+        source: 'discord',
+        status,
+        ...(reason !== undefined ? { reason } : {}),
+      });
+
+      if (!updated) {
+        await respond(
+          interaction,
+          buildModerationStatusEmbed({
+            title: 'Caseが見つかりません',
+            description: `Case #${caseNumber} は見つかりません。`,
+            variant: 'warning',
+          }),
+          true,
+        );
+        return;
+      }
+
+      if (config.logChannelId) {
+        await sendModerationLog(context, guild, config.logChannelId, updated);
+      }
+      await respond(interaction, buildModerationCaseEmbed(updated), config.defaultResponseEphemeral);
+      return;
+    }
+
     if (subcommand === 'history') {
       assertAnyPermission(interaction, [MANAGE_MESSAGES_PERMISSION, MODERATE_MEMBERS_PERMISSION]);
       const target = requiredUser(interaction, 'user');
@@ -178,6 +220,73 @@ async function executeModerationCommand(
           items: result.items,
           page: result.page,
           totalPages: result.totalPages,
+        }),
+        config.defaultResponseEphemeral,
+      );
+      return;
+    }
+
+    if (subcommand === 'untimeout') {
+      assertAnyPermission(interaction, [MODERATE_MEMBERS_PERMISSION]);
+      const target = requiredMember(interaction, 'user');
+      assertTargetCanBeModerated(interaction, guild, target, 'timeout');
+      const reason = normalizeModerationReason(interaction.options.getString('reason'), config);
+
+      try {
+        await target.timeout(null, reason ?? undefined);
+      } catch (error) {
+        context.logger.warn(
+          { err: error, guildId, targetUserId: target.id },
+          'Discordタイムアウト解除に失敗しました',
+        );
+        await respond(
+          interaction,
+          buildModerationStatusEmbed({
+            title: '❌ タイムアウト解除に失敗',
+            description: 'Bot権限・ロール階層・対象ユーザーの状態を確認してください。',
+            variant: 'failed',
+          }),
+          true,
+        );
+        return;
+      }
+
+      const activeTimeouts = await listModerationCases(context.prisma, {
+        guildId,
+        targetUserId: target.id,
+        action: 'timeout',
+        status: 'active',
+        page: 1,
+        pageSize: 1,
+      });
+      const activeTimeout = activeTimeouts.items[0] ?? null;
+      const revoked = activeTimeout
+        ? await updateModerationCase(context.prisma, {
+            guildId,
+            caseNumber: activeTimeout.caseNumber,
+            actorId: interaction.user.id,
+            source: 'discord',
+            status: 'revoked',
+          })
+        : null;
+
+      if (revoked) {
+        if (config.dmTarget) {
+          await notifyTarget(context, target.user, revoked);
+        }
+        if (config.logChannelId) {
+          await sendModerationLog(context, guild, config.logChannelId, revoked);
+        }
+      }
+
+      await respond(
+        interaction,
+        buildModerationStatusEmbed({
+          title: '✅ タイムアウトを解除しました',
+          description: revoked
+            ? `対象ユーザーのTimeoutを解除し、Case #${revoked.caseNumber} を「解除済み」へ更新しました。`
+            : '対象ユーザーのTimeoutを解除しました。Herta内にActiveなTimeout Caseはありませんでした。',
+          variant: 'case',
         }),
         config.defaultResponseEphemeral,
       );
