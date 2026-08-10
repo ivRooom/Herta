@@ -37,6 +37,8 @@ function toDiscordOption(option: CommandOption): DiscordCommandOption {
           name: choice.name,
           value: Number(choice.value),
         })),
+        min_value: Number.isInteger(option.minValue) ? option.minValue : undefined,
+        max_value: Number.isInteger(option.maxValue) ? option.maxValue : undefined,
       } as DiscordCommandOption;
     case 'boolean':
       return {
