@@ -36,6 +36,8 @@ export interface CommandOption {
   type: 'string' | 'integer' | 'boolean' | 'user' | 'channel' | 'role';
   required?: boolean;
   choices?: Array<{ name: string; value: string | number }>;
+  minValue?: number;
+  maxValue?: number;
 }
 
 /** Plugin マニフェスト */
