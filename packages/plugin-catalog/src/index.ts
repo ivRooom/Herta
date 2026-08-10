@@ -8,10 +8,12 @@ import { teamSplitManifest } from '@herta/plugin-team-split/manifest';
 import type { PluginManifest } from '@herta/shared';
 import { birthdayRoleManifest } from './manifests/birthday-role.js';
 import { channelPolicyManifest } from './manifests/channel-policy.js';
+import { onboardingManifest } from './manifests/onboarding.js';
 import { roleManagerManifest } from './manifests/role-manager.js';
 
 export { birthdayRoleManifest } from './manifests/birthday-role.js';
 export { channelPolicyManifest } from './manifests/channel-policy.js';
+export { onboardingManifest } from './manifests/onboarding.js';
 export { roleManagerManifest } from './manifests/role-manager.js';
 
 const pluginManifests: PluginManifest[] = [
@@ -21,6 +23,7 @@ const pluginManifests: PluginManifest[] = [
   dailyContentManifest,
   lfgManifest,
   moderationManifest,
+  onboardingManifest,
   quoteManifest,
   roleManagerManifest,
   teamSplitManifest,
