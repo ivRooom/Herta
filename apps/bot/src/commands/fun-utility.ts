@@ -1,4 +1,4 @@
-import { randomInt } from 'node:crypto';
+import { createHash, randomInt } from 'node:crypto';
 import { EmbedBuilder, MessageFlags } from 'discord.js';
 import type { SlashCommand } from './registry.js';
 
@@ -7,6 +7,26 @@ const MAX_CHOICE_LENGTH = 4_000;
 const MAX_DICE_COUNT = 20;
 const MAX_DICE_SIDES = 1_000;
 const RANDOM_ABSOLUTE_LIMIT = 1_000_000_000;
+
+const EIGHT_BALL_ANSWERS = [
+  'かなり期待できそうです！',
+  'その可能性は高そうです。',
+  'いい結果になりそうです。',
+  '今なら進めてよさそうです。',
+  'もう少し情報を集めてから決めるのがよさそうです。',
+  '今は判断を保留した方がよさそうです。',
+  '別のやり方を試す価値がありそうです。',
+  '今回は見送る方がよさそうです。',
+] as const;
+
+const RPS_HANDS = ['rock', 'paper', 'scissors'] as const;
+type RpsHand = (typeof RPS_HANDS)[number];
+
+const RPS_LABELS: Record<RpsHand, string> = {
+  rock: '✊ グー',
+  paper: '✋ パー',
+  scissors: '✌️ チョキ',
+};
 
 export function parseChoices(value: string): string[] {
   return value
@@ -31,6 +51,32 @@ export function randomIntegerInclusive(min: number, max: number): number {
     Math.min(RANDOM_ABSOLUTE_LIMIT, Math.trunc(Math.max(min, max))),
   );
   return randomInt(lower, upper + 1);
+}
+
+export function shuffleChoices<T>(values: readonly T[]): T[] {
+  const shuffled = [...values];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const target = randomInt(index + 1);
+    [shuffled[index], shuffled[target]] = [shuffled[target]!, shuffled[index]!];
+  }
+  return shuffled;
+}
+
+export function resolveRpsResult(player: RpsHand, bot: RpsHand): 'win' | 'draw' | 'lose' {
+  if (player === bot) return 'draw';
+  if (
+    (player === 'rock' && bot === 'scissors') ||
+    (player === 'paper' && bot === 'rock') ||
+    (player === 'scissors' && bot === 'paper')
+  ) {
+    return 'win';
+  }
+  return 'lose';
+}
+
+export function deterministicRate(subject: string, userId: string): number {
+  const digest = createHash('sha256').update(`${userId}:${subject.trim().toLocaleLowerCase('ja')}`).digest();
+  return digest.readUInt32BE(0) % 101;
 }
 
 export const chooseCommand: SlashCommand = {
@@ -173,9 +219,140 @@ export const randomCommand: SlashCommand = {
   },
 };
 
+export const eightBallCommand: SlashCommand = {
+  definition: {
+    name: '8ball',
+    description: '質問にHertaが8ボール風に答えます',
+    options: [
+      {
+        name: 'question',
+        description: 'Hertaに聞きたいこと',
+        type: 'string',
+        required: true,
+      },
+    ],
+  },
+  async execute(interaction) {
+    const question = interaction.options.getString('question', true).trim();
+    if (!question || question.length > 500) {
+      await interaction.reply({
+        content: '質問は1〜500文字で入力してください。',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    const answer = EIGHT_BALL_ANSWERS[randomInt(EIGHT_BALL_ANSWERS.length)]!;
+    const embed = new EmbedBuilder()
+      .setTitle('🎱 Herta 8 Ball')
+      .setDescription(`**Q.** ${question}\n\n**A.** ${answer}`)
+      .setColor(0x7c6df2);
+    await interaction.reply({ embeds: [embed] });
+  },
+};
+
+export const rpsCommand: SlashCommand = {
+  definition: {
+    name: 'rps',
+    description: 'Hertaとじゃんけんします',
+    options: [
+      {
+        name: 'hand',
+        description: '出す手を選択',
+        type: 'string',
+        required: true,
+        choices: [
+          { name: '✊ グー', value: 'rock' },
+          { name: '✋ パー', value: 'paper' },
+          { name: '✌️ チョキ', value: 'scissors' },
+        ],
+      },
+    ],
+  },
+  async execute(interaction) {
+    const requested = interaction.options.getString('hand', true);
+    if (!RPS_HANDS.includes(requested as RpsHand)) {
+      await interaction.reply({ content: '有効な手を選択してください。', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    const player = requested as RpsHand;
+    const bot = RPS_HANDS[randomInt(RPS_HANDS.length)]!;
+    const result = resolveRpsResult(player, bot);
+    const resultLabel = result === 'win' ? '🎉 あなたの勝ち！' : result === 'draw' ? '🤝 あいこ！' : '🤖 Hertaの勝ち！';
+    await interaction.reply({
+      content: `あなた: ${RPS_LABELS[player]}\nHerta: ${RPS_LABELS[bot]}\n\n**${resultLabel}**`,
+    });
+  },
+};
+
+export const shuffleCommand: SlashCommand = {
+  definition: {
+    name: 'shuffle',
+    description: '入力した候補をランダムな順番に並べ替えます',
+    options: [
+      {
+        name: 'choices',
+        description: 'カンマまたは改行区切りで2〜20件の候補を入力',
+        type: 'string',
+        required: true,
+      },
+    ],
+  },
+  async execute(interaction) {
+    const choices = parseChoices(interaction.options.getString('choices', true));
+    if (choices.length < 2 || choices.length > MAX_CHOICES) {
+      await interaction.reply({ content: '候補を2〜20件入力してください。', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    if (choices.some((choice) => choice.length > 200)) {
+      await interaction.reply({ content: 'shuffleの各候補は200文字以内で入力してください。', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    const shuffled = shuffleChoices(choices);
+    await interaction.reply({
+      embeds: [
+        new EmbedBuilder()
+          .setTitle('🔀 Shuffle Result')
+          .setDescription(shuffled.map((choice, index) => `**${index + 1}.** ${choice}`).join('\n'))
+          .setColor(0x7c6df2),
+      ],
+    });
+  },
+};
+
+export const rateCommand: SlashCommand = {
+  definition: {
+    name: 'rate',
+    description: 'お題を0〜100%でHertaが採点します',
+    options: [
+      {
+        name: 'subject',
+        description: '採点するお題',
+        type: 'string',
+        required: true,
+      },
+    ],
+  },
+  async execute(interaction) {
+    const subject = interaction.options.getString('subject', true).trim();
+    if (!subject || subject.length > 200) {
+      await interaction.reply({ content: 'お題は1〜200文字で入力してください。', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    const score = deterministicRate(subject, interaction.user.id);
+    const meter = '█'.repeat(Math.round(score / 10)) + '░'.repeat(10 - Math.round(score / 10));
+    await interaction.reply({
+      content: `📊 **${subject}**\n${meter} **${score}%**\n\n同じユーザー・同じお題なら結果は変わりません。`,
+    });
+  },
+};
+
 export const coreFunUtilityCommands: SlashCommand[] = [
   chooseCommand,
   diceCommand,
   coinflipCommand,
   randomCommand,
+  eightBallCommand,
+  rpsCommand,
+  shuffleCommand,
+  rateCommand,
 ];
