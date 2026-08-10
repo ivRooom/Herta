@@ -8,6 +8,8 @@ const DISCORD_ID_PATTERN = /^\d+$/;
 const MAX_RESPONSE_LENGTH = 1900;
 const WORKER_INTERVAL_MS = 60 * 60 * 1000;
 const STALE_DELIVERY_MS = 2 * 60 * 60 * 1000;
+const ROLE_ASSIGNED_PREFIX = 'role-assigned:';
+const ROLE_REMOVED_PREFIX = 'role-removed:';
 
 export type LeapDayPolicy = 'february-28' | 'march-1' | 'skip';
 
@@ -45,12 +47,19 @@ interface BirthdayReplyOptions {
   allowedMentions: { parse: [] };
 }
 
+interface BirthdayEditReplyOptions {
+  content: string;
+  allowedMentions: { parse: [] };
+}
+
 interface BirthdayCommandInteraction {
   guildId: string | null;
   user: { id: string };
   options: BirthdayCommandOptions;
   replied: boolean;
   deferred: boolean;
+  deferReply(options?: { flags?: number }): Promise<unknown>;
+  editReply(options: BirthdayEditReplyOptions): Promise<unknown>;
   reply(options: BirthdayReplyOptions): Promise<unknown>;
   followUp(options: BirthdayReplyOptions): Promise<unknown>;
 }
@@ -129,9 +138,8 @@ export const birthdayRolePlugin = definePlugin<BirthdayRoleConfig, BirthdayClien
 
 export function normalizeBirthdayRoleConfig(value: unknown): BirthdayRoleConfig {
   const source = isRecord(value) ? value : {};
-  const birthdayRoleId = normalizeDiscordId(source.birthdayRoleId);
-  const announcementChannelId = normalizeDiscordId(source.announcementChannelId);
-  const announcementMessage = normalizeText(source.announcementMessage, 1000) ?? '🎂 {user} お誕生日おめでとう！';
+  const announcementMessage =
+    normalizeText(source.announcementMessage, 1000) ?? '🎂 {user} お誕生日おめでとう！';
   const leapDayPolicy: LeapDayPolicy =
     source.leapDayPolicy === 'march-1' || source.leapDayPolicy === 'skip'
       ? source.leapDayPolicy
@@ -142,10 +150,10 @@ export function normalizeBirthdayRoleConfig(value: unknown): BirthdayRoleConfig 
     ephemeralResponses:
       source.ephemeralResponses === undefined ? true : source.ephemeralResponses === true,
     assignRole: source.assignRole === undefined ? true : source.assignRole === true,
-    birthdayRoleId,
+    birthdayRoleId: normalizeDiscordId(source.birthdayRoleId),
     sendAnnouncement:
       source.sendAnnouncement === undefined ? true : source.sendAnnouncement === true,
-    announcementChannelId,
+    announcementChannelId: normalizeDiscordId(source.announcementChannelId),
     announcementMessage,
     leapDayPolicy,
   };
@@ -215,7 +223,8 @@ export function formatBirthdayListPages(registrations: BirthdayRegistrationLike[
     (a, b) => a.month - b.month || a.day - b.day || a.userId.localeCompare(b.userId),
   );
   const lines = sorted.map(
-    (entry) => `${entry.month.toString().padStart(2, '0')}/${entry.day.toString().padStart(2, '0')}  <@${entry.userId}>`,
+    (entry) =>
+      `${entry.month.toString().padStart(2, '0')}/${entry.day.toString().padStart(2, '0')}  <@${entry.userId}>`,
   );
   return paginateLines('**誕生日一覧**', lines);
 }
@@ -245,8 +254,7 @@ export async function runBirthdayRoleCycle(
 ): Promise<void> {
   await withGuildCycleLock(context.guildId, async () => {
     const config = normalizeBirthdayRoleConfig(context.config);
-    if (!config.enabled) return;
-    if (!config.assignRole && !config.sendAnnouncement) return;
+    if (!config.enabled || (!config.assignRole && !config.sendAnnouncement)) return;
 
     const guildRecord = await context.prisma.guild.findUnique({
       where: { id: context.guildId },
@@ -269,21 +277,24 @@ export async function runBirthdayRoleCycle(
       return effective?.month === today.month && effective.day === today.day;
     });
     const todaysUsers = new Set(todaysRegistrations.map((registration) => registration.userId));
-
     const guild = await context.client.guilds.fetch(context.guildId);
 
     if (config.assignRole && config.birthdayRoleId) {
-      await cleanupPreviousBirthdayRoles(context, guild, config.birthdayRoleId, localDate, todaysUsers);
+      await cleanupPreviousBirthdayRoles(context, guild, localDate, todaysUsers);
       const role = await validateBirthdayRole(guild, config.birthdayRoleId);
-      if (role) {
+      if (!role) {
+        context.logger.warn(
+          { roleId: config.birthdayRoleId },
+          'Birthday RoleをBotから安全に編集できません',
+        );
+      } else {
         for (const registration of todaysRegistrations) {
           await processDelivery(
             context,
             {
               userId: registration.userId,
               localDate,
-              kind: 'role-assigned',
-              roleId: role.id,
+              kind: `${ROLE_ASSIGNED_PREFIX}${role.id}`,
             },
             async () => {
               const member = await guild.members.fetch(registration.userId);
@@ -306,12 +317,7 @@ export async function runBirthdayRoleCycle(
         for (const registration of todaysRegistrations) {
           await processDelivery(
             context,
-            {
-              userId: registration.userId,
-              localDate,
-              kind: 'announcement',
-              roleId: null,
-            },
+            { userId: registration.userId, localDate, kind: 'announcement' },
             async () => {
               const content = truncate(
                 config.announcementMessage.replaceAll('{user}', `<@${registration.userId}>`),
@@ -345,6 +351,11 @@ async function executeBirthdayCommand(
   }
 
   const subcommand = interaction.options.getSubcommand();
+  if (!['set', 'remove', 'me', 'next', 'list'].includes(subcommand)) {
+    await respond(interaction, '指定されたサブコマンドは利用できません', true);
+    return;
+  }
+
   if (subcommand === 'set') {
     const month = interaction.options.getInteger('month', true);
     const day = interaction.options.getInteger('day', true);
@@ -352,6 +363,7 @@ async function executeBirthdayCommand(
       await respond(interaction, '存在する月日を指定してください。2月29日は登録できます。', true);
       return;
     }
+    await defer(interaction, config.ephemeralResponses);
     await context.prisma.birthdayRegistration.upsert({
       where: { guildId_userId: { guildId: interaction.guildId, userId: interaction.user.id } },
       create: { guildId: interaction.guildId, userId: interaction.user.id, month, day },
@@ -368,6 +380,8 @@ async function executeBirthdayCommand(
     );
     return;
   }
+
+  await defer(interaction, config.ephemeralResponses);
 
   if (subcommand === 'remove') {
     const result = await context.prisma.birthdayRegistration.deleteMany({
@@ -410,56 +424,50 @@ async function executeBirthdayCommand(
     return;
   }
 
-  if (subcommand === 'next') {
-    const guildRecord = await context.prisma.guild.findUnique({
-      where: { id: interaction.guildId },
-      select: { timezone: true },
-    });
-    const today = getLocalDateParts(new Date(), guildRecord?.timezone || 'Asia/Tokyo');
-    const next = findNextBirthdays(registrations, today, config.leapDayPolicy);
-    if (!next) {
-      await respond(interaction, '次の誕生日を計算できる登録がありません。', config.ephemeralResponses);
-      return;
-    }
-    const users = next.registrations.map((entry) => `<@${entry.userId}>`).join(' ');
-    const label = next.days === 0 ? '今日' : next.days === 1 ? '明日' : `${next.days}日後`;
-    await respond(interaction, `次の誕生日は${label}です。\n${users}`, config.ephemeralResponses);
+  const guildRecord = await context.prisma.guild.findUnique({
+    where: { id: interaction.guildId },
+    select: { timezone: true },
+  });
+  const today = getLocalDateParts(new Date(), guildRecord?.timezone || 'Asia/Tokyo');
+  const next = findNextBirthdays(registrations, today, config.leapDayPolicy);
+  if (!next) {
+    await respond(interaction, '次の誕生日を計算できる登録がありません。', config.ephemeralResponses);
     return;
   }
-
-  await respond(interaction, '指定されたサブコマンドは利用できません', true);
+  const users = next.registrations.map((entry) => `<@${entry.userId}>`).join(' ');
+  const label = next.days === 0 ? '今日' : next.days === 1 ? '明日' : `${next.days}日後`;
+  await respond(interaction, `次の誕生日は${label}です。\n${users}`, config.ephemeralResponses);
 }
 
 async function cleanupPreviousBirthdayRoles(
   context: BirthdayRuntimeContext,
   guild: BirthdayGuild,
-  currentRoleId: string,
   localDate: string,
   todaysUsers: Set<string>,
 ): Promise<void> {
   const assignments = await context.prisma.birthdayDelivery.findMany({
     where: {
       guildId: context.guildId,
-      kind: 'role-assigned',
+      kind: { startsWith: ROLE_ASSIGNED_PREFIX },
       status: 'completed',
       localDate: { not: localDate },
-      roleId: { not: null },
     },
-    select: { userId: true, localDate: true, roleId: true },
+    select: { userId: true, localDate: true, kind: true },
   });
 
   for (const assignment of assignments) {
-    if (!assignment.roleId || todaysUsers.has(assignment.userId)) continue;
+    if (todaysUsers.has(assignment.userId)) continue;
+    const roleId = assignment.kind.slice(ROLE_ASSIGNED_PREFIX.length);
+    if (!DISCORD_ID_PATTERN.test(roleId)) continue;
     await processDelivery(
       context,
       {
         userId: assignment.userId,
         localDate: assignment.localDate,
-        kind: 'role-removed',
-        roleId: assignment.roleId,
+        kind: `${ROLE_REMOVED_PREFIX}${roleId}`,
       },
       async () => {
-        const role = await validateBirthdayRole(guild, assignment.roleId!);
+        const role = await validateBirthdayRole(guild, roleId);
         if (!role) return null;
         const member = await guild.members.fetch(assignment.userId);
         if (member.roles.cache.has(role.id)) await member.roles.remove(role.id);
@@ -467,8 +475,6 @@ async function cleanupPreviousBirthdayRoles(
       },
     );
   }
-
-  if (currentRoleId) return;
 }
 
 async function validateBirthdayRole(
@@ -483,12 +489,7 @@ async function validateBirthdayRole(
 
 async function processDelivery(
   context: BirthdayRuntimeContext,
-  input: {
-    userId: string;
-    localDate: string;
-    kind: string;
-    roleId: string | null;
-  },
+  input: { userId: string; localDate: string; kind: string },
   task: () => Promise<string | null>,
 ): Promise<void> {
   const idempotencyKey = [
@@ -497,7 +498,6 @@ async function processDelivery(
     input.userId,
     input.localDate,
     input.kind,
-    input.roleId ?? 'none',
   ].join(':');
   const staleBefore = new Date(Date.now() - STALE_DELIVERY_MS);
   await context.prisma.birthdayDelivery.updateMany({
@@ -511,7 +511,6 @@ async function processDelivery(
       userId: input.userId,
       localDate: input.localDate,
       kind: input.kind,
-      roleId: input.roleId,
       idempotencyKey,
       status: 'pending',
     },
@@ -598,13 +597,26 @@ function paginateLines(header: string, lines: string[]): string[] {
   return pages;
 }
 
+async function defer(
+  interaction: BirthdayCommandInteraction,
+  ephemeral: boolean,
+): Promise<void> {
+  if (interaction.replied || interaction.deferred) return;
+  await interaction.deferReply(ephemeral ? { flags: EPHEMERAL_FLAG } : undefined);
+}
+
 async function respond(
   interaction: BirthdayCommandInteraction,
   content: string,
   ephemeral: boolean,
 ): Promise<void> {
-  const options = createReplyOptions(truncate(content, MAX_RESPONSE_LENGTH), ephemeral);
-  if (interaction.replied || interaction.deferred) {
+  const safeContent = truncate(content, MAX_RESPONSE_LENGTH);
+  if (interaction.deferred) {
+    await interaction.editReply({ content: safeContent, allowedMentions: { parse: [] } });
+    return;
+  }
+  const options = createReplyOptions(safeContent, ephemeral);
+  if (interaction.replied) {
     await interaction.followUp(options);
     return;
   }
