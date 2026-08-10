@@ -45,7 +45,9 @@ describe('coreInformationCommands', () => {
 
   it('userinfo・avatar・permissionsのユーザー指定は任意にする', () => {
     for (const name of ['userinfo', 'avatar', 'permissions']) {
-      const command = coreInformationCommands.find((candidate) => candidate.definition.name === name);
+      const command = coreInformationCommands.find(
+        (candidate) => candidate.definition.name === name,
+      );
       expect(command?.definition.options?.[0]).toMatchObject({ type: 'user' });
       expect(command?.definition.options?.[0]?.required).not.toBe(true);
     }
