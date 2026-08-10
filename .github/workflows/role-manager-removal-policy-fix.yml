@@ -23,57 +23,44 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('apps/bot/src/plugins/role-manager.ts')
           text = path.read_text()
-          old = '''  if (!config.allowSelfRemoval && addRoleIds.length === 0 && removeRoleIds.length > 0) {
-            return rejected('このサーバーではSelf Roleの自己解除が無効です', group.id);
-          }
-          return accepted(addRoleIds, removeRoleIds, 'Role Panelの選択を反映します', group.id);'''
-          new = '''  const isSingleReplacement =
-            group.mode === 'single' && addRoleIds.length === 1 && removeRoleIds.length === 1;
-          if (!config.allowSelfRemoval && removeRoleIds.length > 0 && !isSingleReplacement) {
-            return rejected('このサーバーではSelf Roleの自己解除が無効です', group.id);
-          }
-          return accepted(addRoleIds, removeRoleIds, 'Role Panelの選択を反映します', group.id);'''
-          if old not in text:
+          pattern = r"  if \(!config\.allowSelfRemoval && addRoleIds\.length === 0 && removeRoleIds\.length > 0\) \{\n    return rejected\('このサーバーではSelf Roleの自己解除が無効です', group\.id\);\n  \}\n  return accepted\(addRoleIds, removeRoleIds, 'Role Panelの選択を反映します', group\.id\);"
+          replacement = "  const isSingleReplacement =\n    group.mode === 'single' && addRoleIds.length === 1 && removeRoleIds.length === 1;\n  if (!config.allowSelfRemoval && removeRoleIds.length > 0 && !isSingleReplacement) {\n    return rejected('このサーバーではSelf Roleの自己解除が無効です', group.id);\n  }\n  return accepted(addRoleIds, removeRoleIds, 'Role Panelの選択を反映します', group.id);"
+          text, count = re.subn(pattern, replacement, text, count=1)
+          if count != 1:
               raise SystemExit('policy block not found')
-          path.write_text(text.replace(old, new, 1))
+          path.write_text(text)
 
           path = Path('apps/bot/src/plugins/role-manager.test.ts')
           text = path.read_text()
-          anchor = '''  it('自己解除無効時はPanelの全解除を拒否する', () => {
-            const plan = planRoleGroupSelection(
-              makeConfig({ allowSelfRemoval: false }),
-              'color',
-              ['100'],
-              [],
-            );
-            expect(plan.accepted).toBe(false);
-          });'''
-          addition = anchor + '''
+          pattern = r"(  it\('自己解除無効時はPanelの全解除を拒否する', \(\) => \{.*?\n  \}\);)"
+          addition = r'''\1
 
-          it('自己解除無効時はmultipleの追加と解除を混在させても解除を拒否する', () => {
-            const plan = planRoleGroupSelection(
-              makeConfig({ allowSelfRemoval: false }),
-              'color',
-              ['100', '200'],
-              ['300'],
-            );
-            expect(plan.accepted).toBe(false);
-            expect(plan.removeRoleIds).toEqual([]);
-          });
+  it('自己解除無効時はmultipleの追加と解除を混在させても解除を拒否する', () => {
+    const plan = planRoleGroupSelection(
+      makeConfig({ allowSelfRemoval: false }),
+      'color',
+      ['100', '200'],
+      ['300'],
+    );
+    expect(plan.accepted).toBe(false);
+    expect(plan.removeRoleIds).toEqual([]);
+  });
 
-          it('自己解除無効でもsingleの1対1切替は許可する', () => {
-            const config = makeConfig({ allowSelfRemoval: false, groups: [makeSingleGroup()] });
-            const plan = planRoleGroupSelection(config, 'platform', ['100'], ['200']);
-            expect(plan.accepted).toBe(true);
-            expect(plan.addRoleIds).toEqual(['200']);
-            expect(plan.removeRoleIds).toEqual(['100']);
-          });'''
-          if anchor not in text:
+  it('自己解除無効でもsingleの1対1切替は許可する', () => {
+    const config = makeConfig({ allowSelfRemoval: false, groups: [makeSingleGroup()] });
+    const plan = planRoleGroupSelection(config, 'platform', ['100'], ['200']);
+    expect(plan.accepted).toBe(true);
+    expect(plan.addRoleIds).toEqual(['200']);
+    expect(plan.removeRoleIds).toEqual(['100']);
+  });'''
+          text, count = re.subn(pattern, addition, text, count=1, flags=re.S)
+          if count != 1:
               raise SystemExit('test anchor not found')
-          path.write_text(text.replace(anchor, addition, 1))
+          path.write_text(text)
           PY
           pnpm exec prettier --write apps/bot/src/plugins/role-manager.ts apps/bot/src/plugins/role-manager.test.ts
           git config user.name "github-actions[bot]"
