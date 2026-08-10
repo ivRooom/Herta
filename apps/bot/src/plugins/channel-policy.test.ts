@@ -197,9 +197,9 @@ describe('evaluateChannelPolicyMessage', () => {
     expect(evaluateChannelPolicyMessage(makeMessage('https://example.com'), rule).allowed).toBe(
       true,
     );
-    expect(
-      evaluateChannelPolicyMessage(makeMessage('<https://example.com>'), rule).allowed,
-    ).toBe(true);
+    expect(evaluateChannelPolicyMessage(makeMessage('<https://example.com>'), rule).allowed).toBe(
+      true,
+    );
     expect(
       evaluateChannelPolicyMessage(makeMessage('おすすめ https://example.com'), rule).allowed,
     ).toBe(false);
