@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildRoleManagerFinalRoleIds,
-  formatRoleManagerList,
+  formatRoleManagerListPages,
   normalizeRoleManagerConfig,
   planRoleChange,
   roleManagerPlugin,
@@ -237,13 +237,36 @@ describe('withRoleManagerMemberLock', () => {
   });
 });
 
-describe('formatRoleManagerList', () => {
+describe('formatRoleManagerListPages', () => {
   it('Role mentionと選択上限を表示する', () => {
-    const text = formatRoleManagerList(makeConfig());
+    const [text] = formatRoleManagerListPages(makeConfig());
 
     expect(text).toContain('カラー');
     expect(text).toContain('最大2個');
     expect(text).toContain('<@&100>');
     expect(text).toContain('<@&300>');
+  });
+
+  it('大量Roleをmention途中で切らず1900文字以内の複数ページへ分割する', () => {
+    const groups = Array.from({ length: 10 }, (_, groupIndex) => ({
+      enabled: true,
+      id: `group-${groupIndex}`,
+      name: `Group ${groupIndex}`,
+      description: `Group ${groupIndex} のSelf Role一覧`,
+      mode: 'multiple' as const,
+      maxSelections: 25,
+      roleIds: Array.from({ length: 25 }, (_, roleIndex) =>
+        (100000000000000000n + BigInt(groupIndex * 25 + roleIndex)).toString(),
+      ),
+    }));
+    const pages = formatRoleManagerListPages(makeConfig({ groups }));
+    const combined = pages.join('\n');
+    const mentions = combined.match(/<@&\d+>/g) ?? [];
+
+    expect(pages.length).toBeGreaterThan(1);
+    expect(pages.every((page) => page.length <= 1900)).toBe(true);
+    expect(mentions).toHaveLength(250);
+    expect(mentions[0]).toBe('<@&100000000000000000>');
+    expect(mentions.at(-1)).toBe('<@&100000000000000249>');
   });
 });
