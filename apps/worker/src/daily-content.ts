@@ -422,12 +422,18 @@ async function publishDiscordForumPost(input: {
     const error = await createDiscordError('DailyContentForumPublishFailed', response);
     throw new DailyContentForumPublishError(error.name, response.status);
   }
-  const thread = (await response.json()) as DiscordChannelPayload;
-  const messageId = thread.message?.id;
-  if (typeof messageId !== 'string' || !messageId) {
-    throw new DailyContentForumPublishError('DailyContentForumResponseInvalid', response.status);
+
+  try {
+    const thread = (await response.json()) as DiscordChannelPayload;
+    const messageId = thread.message?.id;
+    if (typeof messageId !== 'string' || !messageId) {
+      throw new DailyContentForumPublishError('DailyContentForumResponseInvalid', response.status);
+    }
+    return messageId;
+  } catch (error) {
+    if (error instanceof DailyContentForumPublishError) throw error;
+    throw new DailyContentForumPublishError('DailyContentForumPublishAmbiguous', response.status);
   }
-  return messageId;
 }
 
 export function resolveForumPostTitle(
