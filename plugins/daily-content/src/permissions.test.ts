@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canManageDailyContentThreads,
   checkDailyContentSendPermissions,
   computeDiscordChannelPermissions,
   DISCORD_ADMINISTRATOR,
+  DISCORD_MANAGE_THREADS,
   DISCORD_SEND_MESSAGES,
   DISCORD_SEND_MESSAGES_IN_THREADS,
   DISCORD_VIEW_CHANNEL,
@@ -97,5 +99,11 @@ describe('Discord permission computation', () => {
     });
     expect(checkDailyContentSendPermissions(permissions, false).allowed).toBe(true);
     expect(checkDailyContentSendPermissions(permissions, true).allowed).toBe(true);
+  });
+
+  it('Manage ThreadsまたはAdministratorだけがArchived Threadを再開できる', () => {
+    expect(canManageDailyContentThreads(DISCORD_MANAGE_THREADS)).toBe(true);
+    expect(canManageDailyContentThreads(DISCORD_ADMINISTRATOR)).toBe(true);
+    expect(canManageDailyContentThreads(DISCORD_SEND_MESSAGES_IN_THREADS)).toBe(false);
   });
 });
