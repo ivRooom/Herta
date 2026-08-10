@@ -5,7 +5,6 @@ import type { Logger } from 'pino';
 import { Redis } from 'ioredis';
 import { QueueNames, type JobData } from '@herta/queue';
 import {
-  canManageDailyContentThreads,
   checkDailyContentSendPermissions,
   computeDiscordChannelPermissions,
   getDeliveryWithSchedule,
@@ -282,6 +281,7 @@ async function processDelivery(
       title: delivery.dailyContent.title,
       content: delivery.dailyContent.content,
       scheduledFor: delivery.scheduledFor,
+      timezone: delivery.dailyContent.timezone,
       allowUserMentions: config.allowUserMentions,
       nonce: createDeliveryNonce(delivery.idempotencyKey),
     });
@@ -326,6 +326,7 @@ async function publishDiscordMessage(input: {
   title: string;
   content: string;
   scheduledFor: Date;
+  timezone: string;
   allowUserMentions: boolean;
   nonce: string;
 }): Promise<string> {
@@ -345,11 +346,8 @@ async function publishDiscordMessage(input: {
   if (isThread && channel.thread_metadata?.locked) {
     throw new DailyContentPublishError('DailyContentThreadLocked', 409);
   }
-  const permissions = await assertDiscordCanSend(input.token, channel);
+  await assertDiscordCanSend(input.token, channel);
   if (isThread && channel.thread_metadata?.archived) {
-    if (!canManageDailyContentThreads(permissions)) {
-      throw new DailyContentPublishError('DailyContentThreadUnarchivePermissionDenied', 403);
-    }
     await unarchiveDiscordThread(input.token, channel.id);
   }
 
@@ -396,6 +394,7 @@ async function publishDiscordForumPost(input: {
   title: string;
   content: string;
   scheduledFor: Date;
+  timezone: string;
   allowUserMentions: boolean;
   nonce: string;
 }): Promise<string> {
@@ -408,7 +407,7 @@ async function publishDiscordForumPost(input: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        name: resolveForumPostTitle(input.title, input.scheduledFor),
+        name: resolveForumPostTitle(input.title, input.scheduledFor, input.timezone),
         message: {
           content: input.content,
           allowed_mentions: { parse: input.allowUserMentions ? ['users'] : [] },
@@ -431,14 +430,18 @@ async function publishDiscordForumPost(input: {
   return messageId;
 }
 
-export function resolveForumPostTitle(title: string, scheduledFor: Date): string {
+export function resolveForumPostTitle(
+  title: string,
+  scheduledFor: Date,
+  timezone = 'Asia/Tokyo',
+): string {
   const normalized = title.trim();
   if (normalized) return normalized.slice(0, 100);
   const date = new Intl.DateTimeFormat('ja-JP', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-    timeZone: 'Asia/Tokyo',
+    timeZone: timezone,
   }).format(scheduledFor);
   return `Daily Content ${date}`.slice(0, 100);
 }
@@ -446,7 +449,7 @@ export function resolveForumPostTitle(title: string, scheduledFor: Date): string
 async function assertDiscordCanSend(
   token: string,
   targetChannel: DiscordChannelPayload,
-): Promise<bigint> {
+): Promise<void> {
   const isThread = THREAD_CHANNEL_TYPES.has(targetChannel.type);
   const permissionChannel =
     isThread && targetChannel.parent_id
@@ -476,7 +479,6 @@ async function assertDiscordCanSend(
       403,
     );
   }
-  return permissions;
 }
 
 async function unarchiveDiscordThread(token: string, threadId: string): Promise<void> {
