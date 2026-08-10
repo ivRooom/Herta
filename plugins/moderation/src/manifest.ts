@@ -20,7 +20,7 @@ const automaticWordArraySchema = {
 export const moderationManifest: PluginManifest = {
   id: 'moderation',
   name: 'Moderation',
-  version: '2.3.0',
+  version: '2.4.0',
   description:
     '手動モデレーション、自動検知、緊急Alert、明示的に有効化する自動対応ポリシーをGuild単位で提供します',
   author: { name: 'Herta' },
@@ -359,6 +359,24 @@ export const moderationManifest: PluginManifest = {
           ],
         },
         {
+          name: 'untimeout',
+          description: 'ユーザーのタイムアウトを解除しCaseを更新します',
+          options: [
+            {
+              name: 'user',
+              description: '対象ユーザー',
+              type: 'user',
+              required: true,
+            },
+            {
+              name: 'reason',
+              description: '解除理由',
+              type: 'string',
+              required: true,
+            },
+          ],
+        },
+        {
           name: 'kick',
           description: 'ユーザーをサーバーから退出させます',
           options: [
@@ -408,6 +426,34 @@ export const moderationManifest: PluginManifest = {
               description: 'ケース番号',
               type: 'integer',
               required: true,
+            },
+          ],
+        },
+        {
+          name: 'case-status',
+          description: 'ケースの状態を更新します',
+          options: [
+            {
+              name: 'number',
+              description: 'ケース番号',
+              type: 'integer',
+              required: true,
+            },
+            {
+              name: 'status',
+              description: '更新後の状態',
+              type: 'string',
+              required: true,
+              choices: [
+                { name: '有効', value: 'active' },
+                { name: '完了', value: 'completed' },
+                { name: '解除済み', value: 'revoked' },
+              ],
+            },
+            {
+              name: 'reason',
+              description: 'Case理由も同時に更新する場合に入力',
+              type: 'string',
             },
           ],
         },
