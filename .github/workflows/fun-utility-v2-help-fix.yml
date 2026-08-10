@@ -1,0 +1,40 @@
+name: Fix Fun Utility v2 help
+
+on:
+  push:
+    branches:
+      - feat/fun-utility-v2
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Update help and clean temporary workflow
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('apps/bot/src/commands/core-info.ts')
+          text = path.read_text()
+          old = "  ['/random min max', '指定範囲からランダムな整数を生成'],\n] as const;"
+          new = "  ['/random min max', '指定範囲からランダムな整数を生成'],\n  ['/8ball question', '質問にHertaが8ボール風に回答'],\n  ['/rps hand', 'Hertaとじゃんけん'],\n  ['/shuffle choices', '候補をランダムな順番に並べ替え'],\n  ['/rate subject', 'お題を0〜100%で採点'],\n] as const;"
+          if old not in text:
+              raise SystemExit('CORE_COMMANDS anchor not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          pnpm exec prettier --write apps/bot/src/commands/core-info.ts apps/bot/src/commands/fun-utility.ts apps/bot/src/commands/fun-utility.test.ts
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/bot/src/commands/core-info.ts apps/bot/src/commands/fun-utility.ts apps/bot/src/commands/fun-utility.test.ts
+          git rm .github/workflows/fun-utility-v2-help-fix.yml
+          git commit -m "Fun Utility v2をhelpへ追加してレビュー指摘を修正する"
+          git push
