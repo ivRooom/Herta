@@ -124,17 +124,13 @@ export const roleManagerPlugin = definePlugin<RoleManagerConfig>({
 export function normalizeRoleManagerConfig(value: unknown): RoleManagerConfig {
   const source = isRecord(value) ? value : {};
   const rawGroups = Array.isArray(source.groups) ? source.groups.slice(0, MAX_GROUPS) : [];
-  const groupMap = new Map<string, RoleManagerGroup>();
-
-  for (const rawGroup of rawGroups) {
+  const normalizedGroups = rawGroups.flatMap((rawGroup) => {
     const group = normalizeRoleManagerGroup(rawGroup);
-    if (!group) continue;
-    groupMap.delete(group.id);
-    groupMap.set(group.id, group);
-  }
+    return group ? [group] : [];
+  });
 
   const seenRoleIds = new Set<string>();
-  const groups = [...groupMap.values()].map((group) => {
+  const groups = normalizedGroups.map((group) => {
     const roleIds = group.roleIds.filter((roleId) => {
       if (seenRoleIds.has(roleId)) return false;
       seenRoleIds.add(roleId);
