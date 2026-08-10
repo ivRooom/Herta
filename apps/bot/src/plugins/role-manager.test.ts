@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildRoleManagerFinalRoleIds,
   formatRoleManagerList,
   normalizeRoleManagerConfig,
   planRoleChange,
   roleManagerPlugin,
+  withRoleManagerMemberLock,
   type RoleManagerConfig,
 } from './role-manager.js';
 
@@ -154,6 +156,66 @@ describe('planRoleChange', () => {
 
     expect(plan.accepted).toBe(true);
     expect(plan.changed).toBe(false);
+  });
+});
+
+describe('buildRoleManagerFinalRoleIds', () => {
+  it('single切替で無関係なRoleを維持しつつ対象Roleだけを置き換える', () => {
+    const plan = planRoleChange(
+      makeConfig({
+        groups: [
+          {
+            enabled: true,
+            id: 'platform',
+            name: 'Platform',
+            description: null,
+            mode: 'single',
+            maxSelections: 1,
+            roleIds: ['100', '200'],
+          },
+        ],
+      }),
+      ['100'],
+      '200',
+      'add',
+    );
+
+    expect(buildRoleManagerFinalRoleIds(['guild', '100', '900'], 'guild', plan)).toEqual([
+      '900',
+      '200',
+    ]);
+  });
+});
+
+describe('withRoleManagerMemberLock', () => {
+  it('同一Guild・UserのRole更新を直列化する', async () => {
+    const order: string[] = [];
+    let signalFirstStarted!: () => void;
+    let releaseFirst!: () => void;
+    const firstStarted = new Promise<void>((resolve) => {
+      signalFirstStarted = resolve;
+    });
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+
+    const first = withRoleManagerMemberLock('guild', 'user', async () => {
+      order.push('first-start');
+      signalFirstStarted();
+      await firstGate;
+      order.push('first-end');
+    });
+    await firstStarted;
+
+    const second = withRoleManagerMemberLock('guild', 'user', async () => {
+      order.push('second-start');
+    });
+    await Promise.resolve();
+    expect(order).toEqual(['first-start']);
+
+    releaseFirst();
+    await Promise.all([first, second]);
+    expect(order).toEqual(['first-start', 'first-end', 'second-start']);
   });
 });
 
