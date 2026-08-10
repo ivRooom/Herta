@@ -83,7 +83,9 @@ export const helpCommand: SlashCommand = {
     description: 'Hertaで利用できるCore Commandの一覧を表示します',
   },
   async execute(interaction) {
-    const description = CORE_COMMANDS.map(([name, detail]) => `**${name}**\n${detail}`).join('\n\n');
+    const description = CORE_COMMANDS.map(([name, detail]) => `**${name}**\n${detail}`).join(
+      '\n\n',
+    );
     const embed = new EmbedBuilder()
       .setTitle('Herta Command Help')
       .setDescription(description)
@@ -115,7 +117,11 @@ export const serverCommand: SlashCommand = {
       .addFields(
         { name: 'サーバーID', value: guild.id, inline: true },
         { name: 'メンバー数', value: guild.memberCount.toLocaleString('ja-JP'), inline: true },
-        { name: 'チャンネル数', value: guild.channels.cache.size.toLocaleString('ja-JP'), inline: true },
+        {
+          name: 'チャンネル数',
+          value: guild.channels.cache.size.toLocaleString('ja-JP'),
+          inline: true,
+        },
         { name: 'ロール数', value: guild.roles.cache.size.toLocaleString('ja-JP'), inline: true },
         { name: 'Boost', value: `${guild.premiumSubscriptionCount ?? 0}件`, inline: true },
         { name: '作成日時', value: discordTimestamp(guild.createdAt), inline: false },
@@ -164,8 +170,10 @@ export const userInfoCommand: SlashCommand = {
         {
           name: 'ロール',
           value:
-            member.roles.cache.filter((role) => role.id !== interaction.guildId).map(String).join(' ') ||
-            'なし',
+            member.roles.cache
+              .filter((role) => role.id !== interaction.guildId)
+              .map(String)
+              .join(' ') || 'なし',
           inline: false,
         },
       );
