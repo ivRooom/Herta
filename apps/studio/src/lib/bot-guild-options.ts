@@ -33,6 +33,8 @@ const guildConfigurationOptionsSchema = z.object({
   guildId: z.string().regex(/^\d+$/u),
   guildName: z.string().min(1),
   channels: z.array(guildChannelOptionSchema),
+  // Bot/Studioのローリングデプロイ中も従来レスポンスを受け取れるようoptionalにする。
+  messageTargets: z.array(guildChannelOptionSchema).optional(),
   roles: z.array(guildRoleOptionSchema),
   emojis: z.array(guildEmojiOptionSchema),
   bot: z.object({
