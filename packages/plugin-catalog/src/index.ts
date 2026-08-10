@@ -6,14 +6,17 @@ import { moderationManifest } from '@herta/plugin-moderation/manifest';
 import { quoteManifest } from '@herta/plugin-quote/manifest';
 import { teamSplitManifest } from '@herta/plugin-team-split/manifest';
 import type { PluginManifest } from '@herta/shared';
+import { birthdayRoleManifest } from './manifests/birthday-role.js';
 import { channelPolicyManifest } from './manifests/channel-policy.js';
 import { roleManagerManifest } from './manifests/role-manager.js';
 
+export { birthdayRoleManifest } from './manifests/birthday-role.js';
 export { channelPolicyManifest } from './manifests/channel-policy.js';
 export { roleManagerManifest } from './manifests/role-manager.js';
 
 const pluginManifests: PluginManifest[] = [
   autoResponseManifest,
+  birthdayRoleManifest,
   channelPolicyManifest,
   dailyContentManifest,
   lfgManifest,
