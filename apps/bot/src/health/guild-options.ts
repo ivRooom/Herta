@@ -41,7 +41,10 @@ export interface GuildBotPermissionSnapshot {
 export interface GuildConfigurationOptions {
   guildId: string;
   guildName: string;
+  /** 従来のMessage endpointへ直接投稿できる安全なチャンネル候補。 */
   channels: GuildChannelOption[];
+  /** Forum/Thread対応済みのconsumerが明示的に利用する配信先候補。 */
+  messageTargets: GuildChannelOption[];
   roles: GuildRoleOption[];
   emojis: GuildEmojiOption[];
   bot: GuildBotPermissionSnapshot;
@@ -65,7 +68,7 @@ export async function loadGuildConfigurationOptions(
     guild.members.me ? Promise.resolve(guild.members.me) : guild.members.fetchMe(),
   ]);
 
-  const channelOptions: GuildChannelOption[] = [...channels.values()]
+  const messageTargets: GuildChannelOption[] = [...channels.values()]
     .filter((channel): channel is NonNullable<typeof channel> => channel !== null)
     .filter(
       (channel) =>
@@ -99,8 +102,9 @@ export async function loadGuildConfigurationOptions(
 
   if (activeThreads) {
     for (const thread of activeThreads.threads.values()) {
+      if (thread.archived) continue;
       const permissions = thread.permissionsFor(me);
-      channelOptions.push({
+      messageTargets.push({
         id: thread.id,
         name: thread.name,
         kind: 'thread',
@@ -112,11 +116,16 @@ export async function loadGuildConfigurationOptions(
     }
   }
 
-  channelOptions.sort(
+  messageTargets.sort(
     (a, b) =>
       a.position - b.position ||
       (a.kind === 'thread' ? 1 : 0) - (b.kind === 'thread' ? 1 : 0) ||
       a.name.localeCompare(b.name, 'ja'),
+  );
+
+  // Forum/Thread未対応の既存consumerには従来どおり直接投稿可能な候補だけを返す。
+  const channelOptions = messageTargets.filter(
+    (channel) => channel.kind === 'text' || channel.kind === 'announcement',
   );
 
   const roleOptions = [...roles.values()]
@@ -146,6 +155,7 @@ export async function loadGuildConfigurationOptions(
     guildId: guild.id,
     guildName: guild.name,
     channels: channelOptions,
+    messageTargets,
     roles: roleOptions,
     emojis: emojiOptions,
     bot: {
