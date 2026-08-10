@@ -423,9 +423,10 @@ function isExempt(message: ChannelPolicyMessage, rule: ChannelPolicyRule): boole
 }
 
 function classifyAttachment(attachment: ChannelPolicyAttachment): 'image' | 'video' | 'other' {
-  const contentType = attachment.contentType?.toLowerCase() ?? '';
+  const contentType = attachment.contentType?.trim().toLowerCase() ?? '';
   if (contentType.startsWith('image/')) return 'image';
   if (contentType.startsWith('video/')) return 'video';
+  if (contentType && contentType !== 'application/octet-stream') return 'other';
 
   const name = attachment.name?.toLowerCase() ?? '';
   const extension = name.includes('.') ? (name.split('.').pop() ?? '') : '';
