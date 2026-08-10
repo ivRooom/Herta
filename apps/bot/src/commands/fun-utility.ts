@@ -11,8 +11,7 @@ export function parseChoices(value: string): string[] {
   return value
     .split(/[\n,、]/u)
     .map((choice) => choice.trim())
-    .filter(Boolean)
-    .slice(0, MAX_CHOICES);
+    .filter(Boolean);
 }
 
 export function rollDice(sides: number, count: number): number[] {
@@ -22,9 +21,15 @@ export function rollDice(sides: number, count: number): number[] {
 }
 
 export function randomIntegerInclusive(min: number, max: number): number {
-  const normalizedMin = Math.max(-RANDOM_ABSOLUTE_LIMIT, Math.trunc(Math.min(min, max)));
-  const normalizedMax = Math.min(RANDOM_ABSOLUTE_LIMIT, Math.trunc(Math.max(min, max)));
-  return randomInt(normalizedMin, normalizedMax + 1);
+  const lower = Math.max(
+    -RANDOM_ABSOLUTE_LIMIT,
+    Math.min(RANDOM_ABSOLUTE_LIMIT, Math.trunc(Math.min(min, max))),
+  );
+  const upper = Math.max(
+    -RANDOM_ABSOLUTE_LIMIT,
+    Math.min(RANDOM_ABSOLUTE_LIMIT, Math.trunc(Math.max(min, max))),
+  );
+  return randomInt(lower, upper + 1);
 }
 
 export const chooseCommand: SlashCommand = {
@@ -42,9 +47,9 @@ export const chooseCommand: SlashCommand = {
   },
   async execute(interaction) {
     const choices = parseChoices(interaction.options.getString('choices', true));
-    if (choices.length < 2) {
+    if (choices.length < 2 || choices.length > MAX_CHOICES) {
       await interaction.reply({
-        content: '候補を2件以上、カンマまたは改行で区切って入力してください。',
+        content: '候補を2〜20件、カンマまたは改行で区切って入力してください。',
         flags: MessageFlags.Ephemeral,
       });
       return;
