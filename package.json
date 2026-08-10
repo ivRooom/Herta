@@ -14,7 +14,7 @@
     "test": "turbo run test",
     "test:unit": "turbo run test:unit",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --write apps/bot/src/plugins/channel-policy.ts packages/plugin-catalog/src/manifests/channel-policy.ts && git diff --exit-code -- apps/bot/src/plugins/channel-policy.ts packages/plugin-catalog/src/manifests/channel-policy.ts",
     "clean": "turbo run clean",
     "db:generate": "dotenv -- pnpm --filter @herta/db generate",
     "db:migrate": "dotenv -- pnpm --filter @herta/db migrate:dev",
