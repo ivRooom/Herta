@@ -1,10 +1,6 @@
 import type { PrismaClient } from '@herta/db';
 import { birthdayRoleManifest } from '@herta/plugin-catalog';
-import {
-  definePlugin,
-  type CommandHandler,
-  type PluginRuntimeContext,
-} from '@herta/plugin-sdk';
+import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
 
 const EPHEMERAL_FLAG = 64;
 const MANAGE_ROLES_PERMISSION = 268435456n;
@@ -436,7 +432,11 @@ async function executeBirthdayCommand(
   const today = getLocalDateParts(new Date(), guildRecord?.timezone || 'Asia/Tokyo');
   const next = findNextBirthdays(registrations, today, config.leapDayPolicy);
   if (!next) {
-    await respond(interaction, '次の誕生日を計算できる登録がありません。', config.ephemeralResponses);
+    await respond(
+      interaction,
+      '次の誕生日を計算できる登録がありません。',
+      config.ephemeralResponses,
+    );
     return;
   }
   const users = next.registrations.map((entry) => `<@${entry.userId}>`).join(' ');
@@ -602,10 +602,7 @@ function paginateLines(header: string, lines: string[]): string[] {
   return pages;
 }
 
-async function defer(
-  interaction: BirthdayCommandInteraction,
-  ephemeral: boolean,
-): Promise<void> {
+async function defer(interaction: BirthdayCommandInteraction, ephemeral: boolean): Promise<void> {
   if (interaction.replied || interaction.deferred) return;
   await interaction.deferReply(ephemeral ? { flags: EPHEMERAL_FLAG } : undefined);
 }
