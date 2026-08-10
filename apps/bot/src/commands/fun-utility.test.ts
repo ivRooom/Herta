@@ -13,9 +13,9 @@ describe('fun utility commands', () => {
 
   it('空の候補を除外し、21件以上も切り捨てず検証側へ渡す', () => {
     expect(parseChoices('赤,,,\n、 青')).toEqual(['赤', '青']);
-    expect(parseChoices(Array.from({ length: 21 }, (_, index) => `候補${index}`).join(','))).toHaveLength(
-      21,
-    );
+    expect(
+      parseChoices(Array.from({ length: 21 }, (_, index) => `候補${index}`).join(',')),
+    ).toHaveLength(21);
   });
 
   it('4,000文字を超える候補も切り捨てず検証側へ渡す', () => {
