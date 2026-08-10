@@ -5,6 +5,7 @@ import {
   PermissionFlagsBits,
   type GuildMember,
 } from 'discord.js';
+import { coreFunUtilityCommands } from './fun-utility.js';
 import type { SlashCommand } from './registry.js';
 
 const CORE_COMMANDS = [
@@ -17,6 +18,10 @@ const CORE_COMMANDS = [
   ['/roleinfo role', 'Discord Roleの情報を表示'],
   ['/channelinfo channel', 'Discord Channelの情報を表示'],
   ['/permissions [user]', 'サーバー内での主要権限を確認'],
+  ['/choose choices', '候補の中からランダムに1つ選択'],
+  ['/dice [sides] [count]', '指定したダイスを振る'],
+  ['/coinflip', 'コインを投げて表か裏を決定'],
+  ['/random min max', '指定範囲からランダムな整数を生成'],
 ] as const;
 
 const PERMISSION_LABELS: Array<[bigint, string]> = [
@@ -368,4 +373,5 @@ export const coreInformationCommands: SlashCommand[] = [
   roleInfoCommand,
   channelInfoCommand,
   permissionsCommand,
+  ...coreFunUtilityCommands,
 ];
