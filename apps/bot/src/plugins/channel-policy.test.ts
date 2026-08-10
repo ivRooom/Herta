@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  channelPolicyMessageContentIntentEnabled,
   evaluateChannelPolicyMessage,
   findChannelPolicyRule,
   normalizeChannelPolicyConfig,
@@ -39,6 +40,15 @@ function makeRule(overrides: Partial<ChannelPolicyRule> = {}): ChannelPolicyRule
 
 afterEach(() => {
   resetChannelPolicyRuntime();
+});
+
+describe('channelPolicyMessageContentIntentEnabled', () => {
+  it('trueまたは1だけを有効として扱う', () => {
+    expect(channelPolicyMessageContentIntentEnabled('true')).toBe(true);
+    expect(channelPolicyMessageContentIntentEnabled(' 1 ')).toBe(true);
+    expect(channelPolicyMessageContentIntentEnabled('false')).toBe(false);
+    expect(channelPolicyMessageContentIntentEnabled(undefined)).toBe(false);
+  });
 });
 
 describe('normalizeChannelPolicyConfig', () => {
@@ -82,15 +92,31 @@ describe('findChannelPolicyRule', () => {
     const direct = makeRule({ channelId: '20', mode: 'text_only' });
     const config = normalizeChannelPolicyConfig({ rules: [parent, direct] });
 
-    expect(findChannelPolicyRule(config, '20', '10')?.mode).toBe('text_only');
+    expect(findChannelPolicyRule(config, '20', '10', true)?.mode).toBe('text_only');
   });
 
-  it('includeThreads=trueなら親チャンネルのルールを継承する', () => {
+  it('ThreadかつincludeThreads=trueなら親チャンネルのルールを継承する', () => {
     const config = normalizeChannelPolicyConfig({
       rules: [makeRule({ channelId: '10', mode: 'images_only', includeThreads: true })],
     });
 
-    expect(findChannelPolicyRule(config, '20', '10')?.mode).toBe('images_only');
+    expect(findChannelPolicyRule(config, '20', '10', true)?.mode).toBe('images_only');
+  });
+
+  it('通常チャンネルのCategory parentIdからルールを継承しない', () => {
+    const config = normalizeChannelPolicyConfig({
+      rules: [makeRule({ channelId: '10', mode: 'images_only', includeThreads: true })],
+    });
+
+    expect(findChannelPolicyRule(config, '20', '10', false)).toBeNull();
+  });
+
+  it('ThreadでもincludeThreads=falseなら親ルールを継承しない', () => {
+    const config = normalizeChannelPolicyConfig({
+      rules: [makeRule({ channelId: '10', mode: 'images_only', includeThreads: false })],
+    });
+
+    expect(findChannelPolicyRule(config, '20', '10', true)).toBeNull();
   });
 });
 
@@ -171,6 +197,9 @@ describe('evaluateChannelPolicyMessage', () => {
     expect(evaluateChannelPolicyMessage(makeMessage('https://example.com'), rule).allowed).toBe(
       true,
     );
+    expect(
+      evaluateChannelPolicyMessage(makeMessage('<https://example.com>'), rule).allowed,
+    ).toBe(true);
     expect(
       evaluateChannelPolicyMessage(makeMessage('おすすめ https://example.com'), rule).allowed,
     ).toBe(false);
