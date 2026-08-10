@@ -10,10 +10,14 @@ const expectedCommandNames = [
   'roleinfo',
   'channelinfo',
   'permissions',
+  'choose',
+  'dice',
+  'coinflip',
+  'random',
 ];
 
 describe('coreInformationCommands', () => {
-  it('情報系Core Commandを重複なく登録する', () => {
+  it('Core Commandを重複なく登録する', () => {
     const names = coreInformationCommands.map((command) => command.definition.name);
 
     expect(names).toEqual(expectedCommandNames);
