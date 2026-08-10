@@ -89,8 +89,8 @@ type ChannelPolicyRuntimeContext = PluginRuntimeContext<ChannelPolicyConfig>;
 const DEFAULT_WARNING =
   '{user} このチャンネルでは `{mode}` ルールが有効です。投稿内容を確認してください。';
 const DISCORD_ID_PATTERN = /^\d+$/;
-const URL_PATTERN = /https?:\/\/[^\s<>()]+/giu;
-const DISCORD_WRAPPED_URL_PATTERN = /<https?:\/\/[^\s<>()]+>/giu;
+const URL_PATTERN = /https?:\/\/[^\s<>]+/giu;
+const DISCORD_WRAPPED_URL_PATTERN = /<https?:\/\/[^\s<>]+>/giu;
 const IMAGE_EXTENSIONS = new Set([
   'apng',
   'avif',
@@ -262,7 +262,6 @@ export function normalizeChannelPolicyConfig(value: unknown): ChannelPolicyConfi
   for (const rawRule of rawRules) {
     const rule = normalizeChannelPolicyRule(rawRule);
     if (!rule) continue;
-    // Config Studio上で同一Channelが重複しても、後ろの設定を明示的に優先する。
     ruleMap.delete(rule.channelId);
     ruleMap.set(rule.channelId, rule);
   }
