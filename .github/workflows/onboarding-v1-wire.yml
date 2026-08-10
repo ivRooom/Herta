@@ -1,0 +1,96 @@
+name: Wire Onboarding v1
+
+on:
+  push:
+    branches:
+      - feat/onboarding-v1
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Wire plugin registry and member remove event
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('apps/bot/src/plugins/registry.ts')
+          text = path.read_text()
+
+          old = "import { channelPolicyPlugin } from './channel-policy.js';\nimport { roleManagerPlugin } from './role-manager.js';"
+          new = "import { channelPolicyPlugin } from './channel-policy.js';\nimport { onboardingPlugin } from './onboarding.js';\nimport { roleManagerPlugin } from './role-manager.js';"
+          if old not in text:
+              raise SystemExit('registry import anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = "  'moderation',\n  'quote',"
+          new = "  'moderation',\n  'onboarding',\n  'quote',"
+          if old not in text:
+              raise SystemExit('officialPluginIds anchor not found')
+          text = text.replace(old, new, 1)
+
+          old = "  const quoteEntry = deps\n    ? toRuntimePluginEntry("
+          onboarding_entry = """  const onboardingEntry = deps
+    ? toRuntimePluginEntry(
+        onboardingPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof onboardingPlugin.onEnable>>[0],
+      )
+    : undefined;
+  const quoteEntry = deps
+    ? toRuntimePluginEntry("""
+          if old not in text:
+              raise SystemExit('quote entry anchor not found')
+          text = text.replace(old, onboarding_entry, 1)
+
+          old = "    if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];\n    if (pluginId === 'quote' && quoteEntry) return [quoteEntry];"
+          new = "    if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];\n    if (pluginId === 'onboarding' && onboardingEntry) return [onboardingEntry];\n    if (pluginId === 'quote' && quoteEntry) return [quoteEntry];"
+          if old not in text:
+              raise SystemExit('registry return anchor not found')
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+
+          path = Path('apps/bot/src/bot.ts')
+          text = path.read_text()
+          old = """    this.client.on(Events.GuildMemberAdd, async (member) => {
+      await this.dispatchGuildPluginEvent(member.guild.id, Events.GuildMemberAdd, member);
+    });
+
+    this.client.on(Events.MessageCreate, async (message) => {"""
+          new = """    this.client.on(Events.GuildMemberAdd, async (member) => {
+      await this.dispatchGuildPluginEvent(member.guild.id, Events.GuildMemberAdd, member);
+    });
+
+    this.client.on(Events.GuildMemberRemove, async (member) => {
+      await this.dispatchGuildPluginEvent(member.guild.id, Events.GuildMemberRemove, member);
+    });
+
+    this.client.on(Events.MessageCreate, async (message) => {"""
+          if old not in text:
+              raise SystemExit('GuildMemberAdd anchor not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          pnpm exec prettier --write apps/bot/src/plugins/registry.ts apps/bot/src/bot.ts apps/bot/src/plugins/onboarding.ts apps/bot/src/plugins/onboarding.test.ts packages/plugin-catalog/src/index.ts packages/plugin-catalog/src/manifests/onboarding.ts
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/bot/src/plugins/registry.ts apps/bot/src/bot.ts apps/bot/src/plugins/onboarding.ts apps/bot/src/plugins/onboarding.test.ts packages/plugin-catalog/src/index.ts packages/plugin-catalog/src/manifests/onboarding.ts
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "OnboardingをBot Runtimeへ接続する"
+          git push
