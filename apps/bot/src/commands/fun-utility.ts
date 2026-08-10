@@ -75,7 +75,9 @@ export function resolveRpsResult(player: RpsHand, bot: RpsHand): 'win' | 'draw' 
 }
 
 export function deterministicRate(subject: string, userId: string): number {
-  const digest = createHash('sha256').update(`${userId}:${subject.trim().toLocaleLowerCase('ja')}`).digest();
+  const digest = createHash('sha256')
+    .update(`${userId}:${subject.trim().toLocaleLowerCase('ja')}`)
+    .digest();
   return digest.readUInt32BE(0) % 101;
 }
 
@@ -271,13 +273,21 @@ export const rpsCommand: SlashCommand = {
   async execute(interaction) {
     const requested = interaction.options.getString('hand', true);
     if (!RPS_HANDS.includes(requested as RpsHand)) {
-      await interaction.reply({ content: '有効な手を選択してください。', flags: MessageFlags.Ephemeral });
+      await interaction.reply({
+        content: '有効な手を選択してください。',
+        flags: MessageFlags.Ephemeral,
+      });
       return;
     }
     const player = requested as RpsHand;
     const bot = RPS_HANDS[randomInt(RPS_HANDS.length)]!;
     const result = resolveRpsResult(player, bot);
-    const resultLabel = result === 'win' ? '🎉 あなたの勝ち！' : result === 'draw' ? '🤝 あいこ！' : '🤖 Hertaの勝ち！';
+    const resultLabel =
+      result === 'win'
+        ? '🎉 あなたの勝ち！'
+        : result === 'draw'
+          ? '🤝 あいこ！'
+          : '🤖 Hertaの勝ち！';
     await interaction.reply({
       content: `あなた: ${RPS_LABELS[player]}\nHerta: ${RPS_LABELS[bot]}\n\n**${resultLabel}**`,
     });
@@ -300,11 +310,17 @@ export const shuffleCommand: SlashCommand = {
   async execute(interaction) {
     const choices = parseChoices(interaction.options.getString('choices', true));
     if (choices.length < 2 || choices.length > MAX_CHOICES) {
-      await interaction.reply({ content: '候補を2〜20件入力してください。', flags: MessageFlags.Ephemeral });
+      await interaction.reply({
+        content: '候補を2〜20件入力してください。',
+        flags: MessageFlags.Ephemeral,
+      });
       return;
     }
     if (choices.some((choice) => choice.length > 200)) {
-      await interaction.reply({ content: 'shuffleの各候補は200文字以内で入力してください。', flags: MessageFlags.Ephemeral });
+      await interaction.reply({
+        content: 'shuffleの各候補は200文字以内で入力してください。',
+        flags: MessageFlags.Ephemeral,
+      });
       return;
     }
     const shuffled = shuffleChoices(choices);
@@ -335,7 +351,10 @@ export const rateCommand: SlashCommand = {
   async execute(interaction) {
     const subject = interaction.options.getString('subject', true).trim();
     if (!subject || subject.length > 200) {
-      await interaction.reply({ content: 'お題は1〜200文字で入力してください。', flags: MessageFlags.Ephemeral });
+      await interaction.reply({
+        content: 'お題は1〜200文字で入力してください。',
+        flags: MessageFlags.Ephemeral,
+      });
       return;
     }
     const score = deterministicRate(subject, interaction.user.id);
