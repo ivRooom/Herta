@@ -23,7 +23,7 @@
     "pino-pretty": "^13.0.0"
   },
   "devDependencies": {
-    "tsx": "^4.23.1",
+    "tsx": "^4.23.9",
     "typescript": "^5.7.2"
   }
 }
