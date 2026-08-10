@@ -41,6 +41,12 @@ export default async function DailyContentPage({
   ]);
   if (!plugin) notFound();
   const config = normalizeDailyContentConfig(plugin.config);
+  const dailyContentDiscordOptions = discordOptions
+    ? {
+        ...discordOptions,
+        channels: discordOptions.messageTargets ?? discordOptions.channels,
+      }
+    : null;
 
   let schedules: DailyContentScheduleItem[] = [];
   let deliveries: DailyContentDeliveryItem[] = [];
@@ -143,7 +149,7 @@ export default async function DailyContentPage({
             defaultTimezone={config.defaultTimezone}
             maxContentLength={config.maxContentLength}
             pluginEnabled={plugin.enabled}
-            discordOptions={discordOptions}
+            discordOptions={dailyContentDiscordOptions}
           />
         </div>
       )}

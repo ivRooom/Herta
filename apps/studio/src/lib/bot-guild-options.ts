@@ -4,7 +4,7 @@ import { resolveBotHealthRequestTimeoutMs } from './bot-health';
 const guildChannelOptionSchema = z.object({
   id: z.string().regex(/^\d+$/u),
   name: z.string().min(1),
-  kind: z.enum(['text', 'announcement']),
+  kind: z.enum(['text', 'announcement', 'forum', 'thread']),
   position: z.number().int(),
   parentId: z.string().regex(/^\d+$/u).nullable(),
   viewable: z.boolean().default(false),
@@ -33,6 +33,8 @@ const guildConfigurationOptionsSchema = z.object({
   guildId: z.string().regex(/^\d+$/u),
   guildName: z.string().min(1),
   channels: z.array(guildChannelOptionSchema),
+  // Bot/Studioのローリングデプロイ中も従来レスポンスを受け取れるようoptionalにする。
+  messageTargets: z.array(guildChannelOptionSchema).optional(),
   roles: z.array(guildRoleOptionSchema),
   emojis: z.array(guildEmojiOptionSchema),
   bot: z.object({
