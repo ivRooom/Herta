@@ -53,9 +53,8 @@ export const roleManagerManifest: PluginManifest = {
             id: {
               type: 'string',
               title: 'グループID',
-              description: '設定内で一意な識別子です',
+              description: '設定内で一意な識別子です。例: games, colors, platform',
               pattern: '^[a-z0-9][a-z0-9_-]{0,31}$',
-              default: 'roles',
             },
             name: {
               type: 'string',
