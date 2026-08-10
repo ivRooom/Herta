@@ -4,7 +4,6 @@ import {
   MessageFlags,
   PermissionFlagsBits,
   type GuildMember,
-  type Role,
 } from 'discord.js';
 import type { SlashCommand } from './registry.js';
 
@@ -39,6 +38,10 @@ function discordTimestamp(date: Date, style: 'F' | 'R' = 'F'): string {
   return `<t:${Math.floor(date.getTime() / 1_000)}:${style}>`;
 }
 
+function snowflakeCreatedAt(id: string): Date {
+  return new Date(Number(BigInt(id) >> 22n) + 1_420_070_400_000);
+}
+
 function channelTypeLabel(type: ChannelType): string {
   switch (type) {
     case ChannelType.GuildText:
@@ -66,8 +69,12 @@ function channelTypeLabel(type: ChannelType): string {
   }
 }
 
-function roleColor(role: Role): number {
-  return role.color || 0x5865f2;
+function roleColor(color: number): number {
+  return color || 0x5865f2;
+}
+
+function roleHexColor(color: number): string {
+  return `#${color.toString(16).padStart(6, '0').toUpperCase()}`;
 }
 
 function memberPermissionSummary(member: GuildMember): string {
@@ -258,15 +265,15 @@ export const roleInfoCommand: SlashCommand = {
     const role = interaction.options.getRole('role', true);
     const embed = new EmbedBuilder()
       .setTitle(role.name)
-      .setColor(roleColor(role))
+      .setColor(roleColor(role.color))
       .addFields(
         { name: 'ロールID', value: role.id, inline: true },
         { name: '表示位置', value: String(role.position), inline: true },
-        { name: '色', value: role.hexColor, inline: true },
+        { name: '色', value: roleHexColor(role.color), inline: true },
         { name: 'メンション可能', value: role.mentionable ? 'はい' : 'いいえ', inline: true },
         { name: '個別表示', value: role.hoist ? 'はい' : 'いいえ', inline: true },
         { name: '管理ロール', value: role.managed ? 'はい' : 'いいえ', inline: true },
-        { name: '作成日時', value: discordTimestamp(role.createdAt), inline: false },
+        { name: '作成日時', value: discordTimestamp(snowflakeCreatedAt(role.id)), inline: false },
       );
 
     await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
@@ -288,9 +295,10 @@ export const channelInfoCommand: SlashCommand = {
   },
   async execute(interaction) {
     const channel = interaction.options.getChannel('channel', true);
-    const createdAt = new Date(Number(BigInt(channel.id) >> 22n) + 1_420_070_400_000);
+    const createdAt = snowflakeCreatedAt(channel.id);
+    const title = 'name' in channel && typeof channel.name === 'string' ? channel.name : 'Discord Channel';
     const embed = new EmbedBuilder()
-      .setTitle('name' in channel ? channel.name : channel.id)
+      .setTitle(title)
       .setColor(0x5865f2)
       .addFields(
         { name: 'チャンネルID', value: channel.id, inline: true },
