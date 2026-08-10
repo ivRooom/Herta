@@ -91,6 +91,7 @@ const DEFAULT_WARNING =
 const DISCORD_ID_PATTERN = /^\d+$/;
 const URL_PATTERN = /https?:\/\/[^\s<>]+/giu;
 const DISCORD_WRAPPED_URL_PATTERN = /<https?:\/\/[^\s<>]+>/giu;
+const DISCORD_MASKED_URL_PATTERN = /\[[^\]\r\n]+\]\(https?:\/\/[^\s<>]+\)/giu;
 const IMAGE_EXTENSIONS = new Set([
   'apng',
   'avif',
@@ -439,8 +440,10 @@ function containsHttpUrl(content: string): boolean {
 }
 
 function removeHttpUrls(content: string): string {
+  DISCORD_MASKED_URL_PATTERN.lastIndex = 0;
+  const withoutMaskedUrls = content.replace(DISCORD_MASKED_URL_PATTERN, '');
   DISCORD_WRAPPED_URL_PATTERN.lastIndex = 0;
-  const withoutWrappedUrls = content.replace(DISCORD_WRAPPED_URL_PATTERN, '');
+  const withoutWrappedUrls = withoutMaskedUrls.replace(DISCORD_WRAPPED_URL_PATTERN, '');
   URL_PATTERN.lastIndex = 0;
   return withoutWrappedUrls.replace(URL_PATTERN, '');
 }
