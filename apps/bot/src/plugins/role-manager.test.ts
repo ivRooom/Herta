@@ -39,6 +39,22 @@ describe('roleManagerPlugin', () => {
       'toggle',
     ]);
   });
+
+  it('新規Group IDへ重複する固定defaultを持たない', () => {
+    const configSchema = roleManagerPlugin.manifest.configSchema as {
+      properties?: {
+        groups?: {
+          items?: {
+            properties?: {
+              id?: { default?: unknown };
+            };
+          };
+        };
+      };
+    };
+
+    expect(configSchema.properties?.groups?.items?.properties?.id?.default).toBeUndefined();
+  });
 });
 
 describe('normalizeRoleManagerConfig', () => {
@@ -71,7 +87,7 @@ describe('normalizeRoleManagerConfig', () => {
     expect(config.groups[0]?.maxSelections).toBe(2);
   });
 
-  it('同一Group IDは後ろを優先し、Roleのグループ間重複を除去する', () => {
+  it('同一Group IDでもグループ自体を破棄せず、Roleのグループ間重複だけを除去する', () => {
     const config = normalizeRoleManagerConfig({
       groups: [
         { id: 'color', name: '旧Color', roleIds: ['100', '200'] },
@@ -80,9 +96,11 @@ describe('normalizeRoleManagerConfig', () => {
       ],
     });
 
-    expect(config.groups.map((group) => group.name)).toEqual(['新Color', 'Game']);
-    expect(config.groups[0]?.roleIds).toEqual(['300']);
-    expect(config.groups[1]?.roleIds).toEqual(['400']);
+    expect(config.groups.map((group) => group.name)).toEqual(['旧Color', '新Color', 'Game']);
+    expect(config.groups.map((group) => group.id)).toEqual(['color', 'color', 'game']);
+    expect(config.groups[0]?.roleIds).toEqual(['100', '200']);
+    expect(config.groups[1]?.roleIds).toEqual(['300']);
+    expect(config.groups[2]?.roleIds).toEqual(['400']);
   });
 
   it('singleグループはmaxSelectionsを1に固定する', () => {
