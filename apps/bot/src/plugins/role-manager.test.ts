@@ -114,7 +114,15 @@ describe('normalizeRoleManagerConfig', () => {
 
   it('singleグループはmaxSelectionsを1に固定する', () => {
     const config = normalizeRoleManagerConfig({
-      groups: [{ id: 'platform', name: 'Platform', mode: 'single', maxSelections: 20, roleIds: ['100', '200'] }],
+      groups: [
+        {
+          id: 'platform',
+          name: 'Platform',
+          mode: 'single',
+          maxSelections: 20,
+          roleIds: ['100', '200'],
+        },
+      ],
     });
     expect(config.groups[0]?.maxSelections).toBe(1);
   });
@@ -143,7 +151,9 @@ describe('planRoleChange', () => {
   });
 
   it('自己解除が無効な場合はremoveを拒否する', () => {
-    expect(planRoleChange(makeConfig({ allowSelfRemoval: false }), ['100'], '100', 'remove').accepted).toBe(false);
+    expect(
+      planRoleChange(makeConfig({ allowSelfRemoval: false }), ['100'], '100', 'remove').accepted,
+    ).toBe(false);
   });
 });
 
@@ -157,7 +167,9 @@ describe('planRoleGroupSelection', () => {
 
   it('設定外Roleと最大選択数超過を拒否する', () => {
     expect(planRoleGroupSelection(makeConfig(), 'color', [], ['999']).accepted).toBe(false);
-    expect(planRoleGroupSelection(makeConfig(), 'color', [], ['100', '200', '300']).accepted).toBe(false);
+    expect(planRoleGroupSelection(makeConfig(), 'color', [], ['100', '200', '300']).accepted).toBe(
+      false,
+    );
   });
 
   it('singleグループをRole Panelから安全に切り替える', () => {
@@ -168,7 +180,12 @@ describe('planRoleGroupSelection', () => {
   });
 
   it('自己解除無効時はPanelの全解除を拒否する', () => {
-    const plan = planRoleGroupSelection(makeConfig({ allowSelfRemoval: false }), 'color', ['100'], []);
+    const plan = planRoleGroupSelection(
+      makeConfig({ allowSelfRemoval: false }),
+      'color',
+      ['100'],
+      [],
+    );
     expect(plan.accepted).toBe(false);
   });
 });
@@ -196,8 +213,16 @@ describe('Role Panel components', () => {
   });
 
   it('Custom IDを厳格に解析する', () => {
-    expect(parseRolePanelCustomId('herta:role:v2:select:color')).toEqual({ action: 'select', groupId: 'color', roleId: null });
-    expect(parseRolePanelCustomId('herta:role:v2:toggle:color:100')).toEqual({ action: 'toggle', groupId: 'color', roleId: '100' });
+    expect(parseRolePanelCustomId('herta:role:v2:select:color')).toEqual({
+      action: 'select',
+      groupId: 'color',
+      roleId: null,
+    });
+    expect(parseRolePanelCustomId('herta:role:v2:toggle:color:100')).toEqual({
+      action: 'toggle',
+      groupId: 'color',
+      roleId: '100',
+    });
     expect(parseRolePanelCustomId('herta:role:v2:toggle:INVALID ID:100')).toBeNull();
   });
 });
@@ -205,7 +230,10 @@ describe('Role Panel components', () => {
 describe('buildRoleManagerFinalRoleIds', () => {
   it('single切替で無関係なRoleを維持しつつ対象Roleだけを置き換える', () => {
     const plan = planRoleChange(makeConfig({ groups: [makeSingleGroup()] }), ['100'], '200', 'add');
-    expect(buildRoleManagerFinalRoleIds(['guild', '100', '900'], 'guild', plan)).toEqual(['900', '200']);
+    expect(buildRoleManagerFinalRoleIds(['guild', '100', '900'], 'guild', plan)).toEqual([
+      '900',
+      '200',
+    ]);
   });
 });
 
@@ -214,8 +242,12 @@ describe('withRoleManagerMemberLock', () => {
     const order: string[] = [];
     let signalFirstStarted!: () => void;
     let releaseFirst!: () => void;
-    const firstStarted = new Promise<void>((resolve) => { signalFirstStarted = resolve; });
-    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    const firstStarted = new Promise<void>((resolve) => {
+      signalFirstStarted = resolve;
+    });
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
     const first = withRoleManagerMemberLock('guild', 'user', async () => {
       order.push('first-start');
       signalFirstStarted();
@@ -223,7 +255,9 @@ describe('withRoleManagerMemberLock', () => {
       order.push('first-end');
     });
     await firstStarted;
-    const second = withRoleManagerMemberLock('guild', 'user', async () => { order.push('second-start'); });
+    const second = withRoleManagerMemberLock('guild', 'user', async () => {
+      order.push('second-start');
+    });
     await Promise.resolve();
     expect(order).toEqual(['first-start']);
     releaseFirst();

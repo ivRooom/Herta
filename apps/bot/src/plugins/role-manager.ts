@@ -312,8 +312,7 @@ export function buildRolePanelMessage(
   roles: RolePanelRole[],
 ): RolePanelMessage {
   const description = group.description ? `\n${group.description}` : '';
-  const modeLabel =
-    group.mode === 'single' ? '1つ選択' : `最大${group.maxSelections}個まで選択`;
+  const modeLabel = group.mode === 'single' ? '1つ選択' : `最大${group.maxSelections}個まで選択`;
   const content = `**${group.name}**\n${modeLabel}${description}`;
 
   if (group.panelStyle === 'buttons') {
@@ -460,13 +459,20 @@ async function executeRoleManagerCommand(
 
   try {
     await interaction.deferReply(config.ephemeralResponses ? { flags: EPHEMERAL_FLAG } : undefined);
-    const result = await applyRoleManagerPlan(context, interaction.guild, interaction.user.id, () => {
-      const configuredRoleIds = config.groups.flatMap((group) => group.roleIds);
-      return async (member: RoleManagerMember) => {
-        const currentRoleIds = configuredRoleIds.filter((roleId) => member.roles.cache.has(roleId));
-        return planRoleChange(config, currentRoleIds, selectedRole.id, subcommand);
-      };
-    });
+    const result = await applyRoleManagerPlan(
+      context,
+      interaction.guild,
+      interaction.user.id,
+      () => {
+        const configuredRoleIds = config.groups.flatMap((group) => group.roleIds);
+        return async (member: RoleManagerMember) => {
+          const currentRoleIds = configuredRoleIds.filter((roleId) =>
+            member.roles.cache.has(roleId),
+          );
+          return planRoleChange(config, currentRoleIds, selectedRole.id, subcommand);
+        };
+      },
+    );
     await respond(interaction, result.message, config.ephemeralResponses);
   } catch (error) {
     context.logger.warn(
@@ -499,7 +505,11 @@ async function executeRolePanelCommand(
   const groupId = interaction.options.getString('group', true)?.trim() ?? '';
   const group = config.groups.find((candidate) => candidate.enabled && candidate.id === groupId);
   if (!group || group.roleIds.length === 0) {
-    await respond(interaction, '指定したRoleグループが見つからないか、Roleが設定されていません', true);
+    await respond(
+      interaction,
+      '指定したRoleグループが見つからないか、Roleが設定されていません',
+      true,
+    );
     return;
   }
   if (!interaction.channel?.isTextBased()) {
@@ -512,7 +522,11 @@ async function executeRolePanelCommand(
   for (const roleId of group.roleIds) {
     const role = await interaction.guild!.roles.fetch(roleId);
     if (!role) {
-      await respond(interaction, `Role ${roleId} が見つかりません。Studio設定を確認してください。`, true);
+      await respond(
+        interaction,
+        `Role ${roleId} が見つかりません。Studio設定を確認してください。`,
+        true,
+      );
       return;
     }
     if (role.id === interaction.guild!.id || role.managed || !role.editable) {
@@ -551,7 +565,9 @@ async function handleRoleManagerComponent(
     await respondComponent(interaction, 'このRole Panelは利用できません');
     return;
   }
-  const group = config.groups.find((candidate) => candidate.enabled && candidate.id === payload.groupId);
+  const group = config.groups.find(
+    (candidate) => candidate.enabled && candidate.id === payload.groupId,
+  );
   if (!group) {
     await respondComponent(interaction, 'このRole Panelの設定は削除または無効化されています');
     return;
@@ -559,22 +575,27 @@ async function handleRoleManagerComponent(
 
   await interaction.deferReply({ flags: EPHEMERAL_FLAG });
   try {
-    const result = await applyRoleManagerPlan(context, interaction.guild, interaction.user.id, () => {
-      return async (member: RoleManagerMember) => {
-        const currentRoleIds = group.roleIds.filter((roleId) => member.roles.cache.has(roleId));
-        if (payload.action === 'toggle') {
-          if (!payload.roleId || !group.roleIds.includes(payload.roleId)) {
-            return rejected('このRoleは現在選択できません', group.id);
+    const result = await applyRoleManagerPlan(
+      context,
+      interaction.guild,
+      interaction.user.id,
+      () => {
+        return async (member: RoleManagerMember) => {
+          const currentRoleIds = group.roleIds.filter((roleId) => member.roles.cache.has(roleId));
+          if (payload.action === 'toggle') {
+            if (!payload.roleId || !group.roleIds.includes(payload.roleId)) {
+              return rejected('このRoleは現在選択できません', group.id);
+            }
+            return planRoleChange(config, currentRoleIds, payload.roleId, 'toggle');
           }
-          return planRoleChange(config, currentRoleIds, payload.roleId, 'toggle');
-        }
-        const desiredRoleIds =
-          payload.action === 'clear'
-            ? []
-            : (interaction.values ?? []).filter((roleId) => DISCORD_ID_PATTERN.test(roleId));
-        return planRoleGroupSelection(config, group.id, currentRoleIds, desiredRoleIds);
-      };
-    });
+          const desiredRoleIds =
+            payload.action === 'clear'
+              ? []
+              : (interaction.values ?? []).filter((roleId) => DISCORD_ID_PATTERN.test(roleId));
+          return planRoleGroupSelection(config, group.id, currentRoleIds, desiredRoleIds);
+        };
+      },
+    );
     await respondComponent(interaction, result.message);
   } catch (error) {
     context.logger.warn(
@@ -609,7 +630,11 @@ async function applyRoleManagerPlan(
     const affectedRoleIds = [...new Set([...plan.removeRoleIds, ...plan.addRoleIds])];
     for (const roleId of affectedRoleIds) {
       const role = await guild.roles.fetch(roleId);
-      if (!role) return { message: `Role ${roleId} が見つかりません。Studio設定を確認してください。`, plan: null };
+      if (!role)
+        return {
+          message: `Role ${roleId} が見つかりません。Studio設定を確認してください。`,
+          plan: null,
+        };
       if (role.id === guild.id || role.managed || !role.editable) {
         return {
           message:
@@ -620,7 +645,9 @@ async function applyRoleManagerPlan(
     }
 
     if (plan.removeRoleIds.length > 0 && plan.addRoleIds.length > 0) {
-      await member.roles.set(buildRoleManagerFinalRoleIds(member.roles.cache.keys(), guild.id, plan));
+      await member.roles.set(
+        buildRoleManagerFinalRoleIds(member.roles.cache.keys(), guild.id, plan),
+      );
     } else if (plan.removeRoleIds.length > 0) {
       await member.roles.remove(plan.removeRoleIds);
     } else if (plan.addRoleIds.length > 0) {
@@ -641,7 +668,9 @@ async function applyRoleManagerPlan(
   });
 }
 
-export function parseRolePanelCustomId(customId: string):
+export function parseRolePanelCustomId(
+  customId: string,
+):
   | { action: 'select' | 'clear'; groupId: string; roleId: null }
   | { action: 'toggle'; groupId: string; roleId: string }
   | null {
