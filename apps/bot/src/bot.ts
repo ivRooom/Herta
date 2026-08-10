@@ -3,6 +3,7 @@ import {
   Events,
   GatewayIntentBits,
   MessageFlags,
+  Partials,
   type ChatInputCommandInteraction,
 } from 'discord.js';
 import { Redis } from 'ioredis';
@@ -93,6 +94,7 @@ export class HertaBot {
     );
     this.client = new Client({
       intents: resolveGatewayIntents(this.logger),
+      partials: [Partials.Message],
     });
     this.registry = new CommandRegistry(this.logger);
     this.registry.register(pingCommand);
@@ -206,9 +208,22 @@ export class HertaBot {
     });
 
     this.client.on(Events.MessageUpdate, async (oldMessage, newMessage) => {
-      const guildId = newMessage.guildId ?? oldMessage.guildId;
+      let updatedMessage = newMessage;
+      if (newMessage.partial) {
+        try {
+          updatedMessage = await newMessage.fetch();
+        } catch (error) {
+          this.logger.warn(
+            { err: error, messageId: newMessage.id, channelId: newMessage.channelId },
+            '編集メッセージの取得に失敗したためPlugin再判定をスキップします',
+          );
+          return;
+        }
+      }
+
+      const guildId = updatedMessage.guildId ?? oldMessage.guildId;
       if (!guildId) return;
-      await this.dispatchGuildPluginEvent(guildId, Events.MessageUpdate, oldMessage, newMessage);
+      await this.dispatchGuildPluginEvent(guildId, Events.MessageUpdate, oldMessage, updatedMessage);
     });
 
     this.client.on(Events.MessageDelete, async (message) => {
