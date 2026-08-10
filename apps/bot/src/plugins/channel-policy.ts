@@ -1,5 +1,5 @@
-import { definePlugin, type PluginEventHandler } from '@herta/plugin-sdk';
 import { channelPolicyManifest } from '@herta/plugin-catalog';
+import { definePlugin, type PluginEventHandler } from '@herta/plugin-sdk';
 
 export type ChannelPolicyMode =
   | 'commands_only'
@@ -68,6 +68,7 @@ interface ChannelPolicyMessage {
   };
   channel: {
     parentId?: string | null;
+    isThread?(): boolean;
     isTextBased(): boolean;
     send(options: { content: string; allowedMentions: { parse: [] } }): Promise<unknown>;
   };
@@ -83,6 +84,7 @@ const DEFAULT_WARNING =
   '{user} このチャンネルでは `{mode}` ルールが有効です。投稿内容を確認してください。';
 const DISCORD_ID_PATTERN = /^\d+$/;
 const URL_PATTERN = /https?:\/\/[^\s<>()]+/giu;
+const DISCORD_WRAPPED_URL_PATTERN = /<https?:\/\/[^\s<>()]+>/giu;
 const IMAGE_EXTENSIONS = new Set([
   'apng',
   'avif',
@@ -110,6 +112,14 @@ const warningCooldowns = new Map<string, number>();
 
 export const channelPolicyPlugin = definePlugin<ChannelPolicyConfig>({
   manifest: channelPolicyManifest,
+  async onEnable(context) {
+    if (!channelPolicyMessageContentIntentEnabled()) {
+      throw new Error(
+        'Channel PolicyにはDISCORD_ENABLE_MESSAGE_CONTENT_INTENT=trueとDiscord Developer PortalのMessage Content Intent有効化が必要です',
+      );
+    }
+    context.logger.info('Channel PolicyのMessage Content Intent要件を確認しました');
+  },
   provideEvents(context) {
     return createChannelPolicyEvents(context.guildId) as PluginEventHandler<ChannelPolicyConfig>[];
   },
@@ -134,6 +144,7 @@ function createChannelPolicyEvents(guildId: string): PluginEventHandler<ChannelP
           config,
           message.channelId,
           message.channel.parentId ?? null,
+          message.channel.isThread?.() === true,
         );
         if (!rule || !rule.enabled || isExempt(message, rule)) return;
 
@@ -176,6 +187,7 @@ function createChannelPolicyEvents(guildId: string): PluginEventHandler<ChannelP
         }
 
         if (rule.action !== 'warn_delete') return;
+        if (!message.channel.isTextBased()) return;
         if (
           !shouldSendChannelPolicyWarning(
             context.guildId,
@@ -193,7 +205,6 @@ function createChannelPolicyEvents(guildId: string): PluginEventHandler<ChannelP
           rule,
         );
         try {
-          if (!message.channel.isTextBased()) return;
           await message.channel.send({
             content: warning,
             allowedMentions: { parse: [] },
@@ -207,6 +218,13 @@ function createChannelPolicyEvents(guildId: string): PluginEventHandler<ChannelP
       },
     },
   ];
+}
+
+export function channelPolicyMessageContentIntentEnabled(
+  value = process.env['DISCORD_ENABLE_MESSAGE_CONTENT_INTENT'],
+): boolean {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === 'true' || normalized === '1';
 }
 
 export function normalizeChannelPolicyConfig(value: unknown): ChannelPolicyConfig {
@@ -265,10 +283,11 @@ export function findChannelPolicyRule(
   config: ChannelPolicyConfig,
   channelId: string,
   parentChannelId: string | null,
+  isThread: boolean,
 ): ChannelPolicyRule | null {
   const direct = config.rules.find((rule) => rule.channelId === channelId);
   if (direct) return direct;
-  if (!parentChannelId) return null;
+  if (!isThread || !parentChannelId) return null;
   return (
     config.rules.find((rule) => rule.channelId === parentChannelId && rule.includeThreads) ?? null
   );
@@ -387,8 +406,10 @@ function containsHttpUrl(content: string): boolean {
 }
 
 function removeHttpUrls(content: string): string {
+  DISCORD_WRAPPED_URL_PATTERN.lastIndex = 0;
+  const withoutWrappedUrls = content.replace(DISCORD_WRAPPED_URL_PATTERN, '');
   URL_PATTERN.lastIndex = 0;
-  return content.replace(URL_PATTERN, '');
+  return withoutWrappedUrls.replace(URL_PATTERN, '');
 }
 
 function formatChannelPolicyWarning(
