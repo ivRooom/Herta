@@ -223,7 +223,12 @@ export class HertaBot {
 
       const guildId = updatedMessage.guildId ?? oldMessage.guildId;
       if (!guildId) return;
-      await this.dispatchGuildPluginEvent(guildId, Events.MessageUpdate, oldMessage, updatedMessage);
+      await this.dispatchGuildPluginEvent(
+        guildId,
+        Events.MessageUpdate,
+        oldMessage,
+        updatedMessage,
+      );
     });
 
     this.client.on(Events.MessageDelete, async (message) => {
