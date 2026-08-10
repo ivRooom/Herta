@@ -9,6 +9,8 @@ const MAX_GROUPS = 25;
 const MAX_ROLES_PER_GROUP = 25;
 const MAX_RESPONSE_LENGTH = 1900;
 
+const roleManagerMemberLocks = new Map<string, Promise<void>>();
+
 export type RoleManagerMode = 'single' | 'multiple';
 export type RoleManagerAction = 'add' | 'remove' | 'toggle';
 
@@ -57,9 +59,11 @@ interface RoleManagerMember {
   roles: {
     cache: {
       has(roleId: string): boolean;
+      keys(): IterableIterator<string>;
     };
     add(roleIds: string | string[]): Promise<unknown>;
     remove(roleIds: string | string[]): Promise<unknown>;
+    set(roleIds: string[]): Promise<unknown>;
   };
 }
 
@@ -71,7 +75,7 @@ interface RoleManagerGuild {
         has(permission: bigint): boolean;
       };
     } | null;
-    fetch(userId: string): Promise<RoleManagerMember>;
+    fetch(options: { user: string; force?: boolean }): Promise<RoleManagerMember>;
   };
   roles: {
     fetch(roleId: string): Promise<RoleManagerRole | null>;
@@ -84,6 +88,11 @@ interface RoleManagerReplyOptions {
   allowedMentions: { parse: [] };
 }
 
+interface RoleManagerEditReplyOptions {
+  content: string;
+  allowedMentions: { parse: [] };
+}
+
 interface RoleManagerCommandInteraction {
   guildId: string | null;
   guild: RoleManagerGuild | null;
@@ -91,6 +100,8 @@ interface RoleManagerCommandInteraction {
   options: RoleManagerCommandOptions;
   replied: boolean;
   deferred: boolean;
+  deferReply(options?: { flags?: number }): Promise<unknown>;
+  editReply(options: RoleManagerEditReplyOptions): Promise<unknown>;
   reply(options: RoleManagerReplyOptions): Promise<unknown>;
   followUp(options: RoleManagerReplyOptions): Promise<unknown>;
 }
@@ -196,6 +207,42 @@ export function planRoleChange(
   return accepted([targetRoleId], [], 'Self Roleを追加します', group.id);
 }
 
+export function buildRoleManagerFinalRoleIds(
+  currentRoleIds: Iterable<string>,
+  guildId: string,
+  plan: RoleChangePlan,
+): string[] {
+  const removeRoleIds = new Set(plan.removeRoleIds);
+  const finalRoleIds = new Set(
+    [...currentRoleIds].filter((roleId) => roleId !== guildId && !removeRoleIds.has(roleId)),
+  );
+  for (const roleId of plan.addRoleIds) finalRoleIds.add(roleId);
+  return [...finalRoleIds];
+}
+
+export async function withRoleManagerMemberLock<T>(
+  guildId: string,
+  userId: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  const key = `${guildId}:${userId}`;
+  const previous = roleManagerMemberLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.then(() => gate);
+  roleManagerMemberLocks.set(key, tail);
+
+  await previous;
+  try {
+    return await task();
+  } finally {
+    release();
+    if (roleManagerMemberLocks.get(key) === tail) roleManagerMemberLocks.delete(key);
+  }
+}
+
 export function formatRoleManagerList(config: RoleManagerConfig): string {
   const groups = config.groups.filter((group) => group.enabled && group.roleIds.length > 0);
   if (groups.length === 0) {
@@ -247,66 +294,80 @@ async function executeRoleManagerCommand(
   }
 
   try {
-    const member = await interaction.guild.members.fetch(interaction.user.id);
-    const configuredRoleIds = config.groups.flatMap((group) => group.roleIds);
-    const currentRoleIds = configuredRoleIds.filter((roleId) => member.roles.cache.has(roleId));
-    const plan = planRoleChange(config, currentRoleIds, selectedRole.id, subcommand);
+    await interaction.deferReply(config.ephemeralResponses ? { flags: EPHEMERAL_FLAG } : undefined);
 
-    if (!plan.accepted || !plan.changed) {
-      await respond(interaction, plan.message, true);
-      return;
-    }
+    const result = await withRoleManagerMemberLock(
+      interaction.guildId,
+      interaction.user.id,
+      async () => {
+        const member = await interaction.guild!.members.fetch({
+          user: interaction.user.id,
+          force: true,
+        });
+        const configuredRoleIds = config.groups.flatMap((group) => group.roleIds);
+        const currentRoleIds = configuredRoleIds.filter((roleId) => member.roles.cache.has(roleId));
+        const plan = planRoleChange(config, currentRoleIds, selectedRole.id, subcommand);
 
-    if (!interaction.guild.members.me?.permissions.has(MANAGE_ROLES_PERMISSION)) {
-      await respond(
-        interaction,
-        'Herta Botに「ロールの管理」権限がありません。サーバー管理者へ確認してください。',
-        true,
-      );
-      return;
-    }
+        if (!plan.accepted || !plan.changed) return { message: plan.message, plan: null };
 
-    const affectedRoleIds = [...new Set([...plan.removeRoleIds, ...plan.addRoleIds])];
-    for (const roleId of affectedRoleIds) {
-      const role = await interaction.guild.roles.fetch(roleId);
-      if (!role) {
-        await respond(
-          interaction,
-          `Role ${roleId} が見つかりません。Studio設定を確認してください。`,
-          true,
-        );
-        return;
-      }
-      if (role.id === interaction.guild.id || role.managed || !role.editable) {
-        await respond(
-          interaction,
-          'このRoleはHerta Botから安全に編集できません。Botより下へRoleを移動し、Managed Roleではないことを確認してください。',
-          true,
-        );
-        return;
-      }
-    }
+        if (!interaction.guild!.members.me?.permissions.has(MANAGE_ROLES_PERMISSION)) {
+          return {
+            message:
+              'Herta Botに「ロールの管理」権限がありません。サーバー管理者へ確認してください。',
+            plan: null,
+          };
+        }
 
-    if (plan.removeRoleIds.length > 0) {
-      await member.roles.remove(plan.removeRoleIds);
-    }
-    if (plan.addRoleIds.length > 0) {
-      await member.roles.add(plan.addRoleIds);
-    }
+        const affectedRoleIds = [...new Set([...plan.removeRoleIds, ...plan.addRoleIds])];
+        for (const roleId of affectedRoleIds) {
+          const role = await interaction.guild!.roles.fetch(roleId);
+          if (!role) {
+            return {
+              message: `Role ${roleId} が見つかりません。Studio設定を確認してください。`,
+              plan: null,
+            };
+          }
+          if (role.id === interaction.guild!.id || role.managed || !role.editable) {
+            return {
+              message:
+                'このRoleはHerta Botから安全に編集できません。Botより下へRoleを移動し、Managed Roleではないことを確認してください。',
+              plan: null,
+            };
+          }
+        }
 
-    context.logger.info(
-      {
-        guildId: interaction.guildId,
-        userId: interaction.user.id,
-        groupId: plan.groupId,
-        requestedAction: subcommand,
-        addedRoleIds: plan.addRoleIds,
-        removedRoleIds: plan.removeRoleIds,
+        if (plan.removeRoleIds.length > 0 && plan.addRoleIds.length > 0) {
+          const finalRoleIds = buildRoleManagerFinalRoleIds(
+            member.roles.cache.keys(),
+            interaction.guild!.id,
+            plan,
+          );
+          await member.roles.set(finalRoleIds);
+        } else if (plan.removeRoleIds.length > 0) {
+          await member.roles.remove(plan.removeRoleIds);
+        } else if (plan.addRoleIds.length > 0) {
+          await member.roles.add(plan.addRoleIds);
+        }
+
+        return { message: formatRoleChangeSuccess(plan), plan };
       },
-      'Role ManagerでSelf Roleを更新しました',
     );
 
-    await respond(interaction, formatRoleChangeSuccess(plan), config.ephemeralResponses);
+    if (result.plan) {
+      context.logger.info(
+        {
+          guildId: interaction.guildId,
+          userId: interaction.user.id,
+          groupId: result.plan.groupId,
+          requestedAction: subcommand,
+          addedRoleIds: result.plan.addRoleIds,
+          removedRoleIds: result.plan.removeRoleIds,
+        },
+        'Role ManagerでSelf Roleを更新しました',
+      );
+    }
+
+    await respond(interaction, result.message, config.ephemeralResponses);
   } catch (error) {
     context.logger.warn(
       {
@@ -426,12 +487,21 @@ async function respond(
   content: string,
   ephemeral: boolean,
 ): Promise<void> {
+  const safeContent = truncate(content, MAX_RESPONSE_LENGTH);
+  if (interaction.deferred) {
+    await interaction.editReply({
+      content: safeContent,
+      allowedMentions: { parse: [] },
+    });
+    return;
+  }
+
   const options: RoleManagerReplyOptions = {
-    content: truncate(content, MAX_RESPONSE_LENGTH),
+    content: safeContent,
     allowedMentions: { parse: [] },
     ...(ephemeral ? { flags: EPHEMERAL_FLAG } : {}),
   };
-  if (interaction.replied || interaction.deferred) {
+  if (interaction.replied) {
     await interaction.followUp(options);
     return;
   }
