@@ -1,5 +1,9 @@
 import { channelPolicyManifest } from '@herta/plugin-catalog';
-import { definePlugin, type PluginEventHandler } from '@herta/plugin-sdk';
+import {
+  definePlugin,
+  type PluginEventHandler,
+  type PluginRuntimeContext,
+} from '@herta/plugin-sdk';
 
 export type ChannelPolicyMode =
   | 'commands_only'
@@ -80,6 +84,8 @@ export interface ChannelPolicyEvaluation {
   reason: string | null;
 }
 
+type ChannelPolicyRuntimeContext = PluginRuntimeContext<ChannelPolicyConfig>;
+
 const DEFAULT_WARNING =
   '{user} このチャンネルでは `{mode}` ルールが有効です。投稿内容を確認してください。';
 const DISCORD_ID_PATTERN = /^\d+$/;
@@ -108,6 +114,7 @@ const MODES = new Set<ChannelPolicyMode>([
   'no_links',
 ]);
 const ACTIONS = new Set<ChannelPolicyAction>(['log_only', 'delete', 'warn_delete']);
+const MAX_WARNING_COOLDOWNS = 5000;
 const warningCooldowns = new Map<string, number>();
 
 export const channelPolicyPlugin = definePlugin<ChannelPolicyConfig>({
@@ -134,90 +141,107 @@ function createChannelPolicyEvents(guildId: string): PluginEventHandler<ChannelP
       event: 'messageCreate',
       async handler(context, ...args) {
         const message = args[0] as ChannelPolicyMessage | undefined;
-        if (!message || message.guildId !== guildId || message.guildId !== context.guildId) return;
-        if (message.author.bot || message.webhookId || message.system) return;
-
-        const config = normalizeChannelPolicyConfig(context.config);
-        if (!config.enabled || config.rules.length === 0) return;
-
-        const rule = findChannelPolicyRule(
-          config,
-          message.channelId,
-          message.channel.parentId ?? null,
-          message.channel.isThread?.() === true,
-        );
-        if (!rule || !rule.enabled || isExempt(message, rule)) return;
-
-        const evaluation = evaluateChannelPolicyMessage(message, rule);
-        if (evaluation.allowed) return;
-
-        const logContext = {
-          guildId: context.guildId,
-          channelId: message.channelId,
-          messageId: message.id,
-          userId: message.author.id,
-          policyChannelId: rule.channelId,
-          mode: rule.mode,
-          action: rule.action,
-          reason: evaluation.reason,
-        };
-
-        if (rule.action === 'log_only') {
-          context.logger.info(logContext, 'Channel Policy違反を検知しました');
-          return;
-        }
-
-        let deleted = false;
-        if (message.deletable === false) {
-          context.logger.warn(
-            logContext,
-            'Channel Policy違反メッセージを削除できません。Bot権限を確認してください',
-          );
-        } else {
-          try {
-            await message.delete();
-            deleted = true;
-            context.logger.info(logContext, 'Channel Policy違反メッセージを削除しました');
-          } catch (error) {
-            context.logger.warn(
-              { ...logContext, err: error },
-              'Channel Policy違反メッセージの削除に失敗しました',
-            );
-          }
-        }
-
-        if (rule.action !== 'warn_delete') return;
-        if (!message.channel.isTextBased()) return;
-        if (
-          !shouldSendChannelPolicyWarning(
-            context.guildId,
-            message.channelId,
-            message.author.id,
-            config.warningCooldownSeconds,
-          )
-        ) {
-          return;
-        }
-
-        const warning = formatChannelPolicyWarning(
-          rule.warningMessage ?? config.defaultWarningMessage,
-          message,
-          rule,
-        );
-        try {
-          await message.channel.send({
-            content: warning,
-            allowedMentions: { parse: [] },
-          });
-        } catch (error) {
-          context.logger.warn(
-            { ...logContext, err: error, deleted },
-            'Channel Policy警告メッセージの送信に失敗しました',
-          );
-        }
+        await enforceChannelPolicyMessage(context, guildId, message);
+      },
+    },
+    {
+      event: 'messageUpdate',
+      async handler(context, ...args) {
+        const updatedMessage = args[1] as ChannelPolicyMessage | undefined;
+        await enforceChannelPolicyMessage(context, guildId, updatedMessage);
       },
     },
   ];
+}
+
+async function enforceChannelPolicyMessage(
+  context: ChannelPolicyRuntimeContext,
+  guildId: string,
+  message: ChannelPolicyMessage | undefined,
+): Promise<void> {
+  if (!message || message.guildId !== guildId || message.guildId !== context.guildId) return;
+  if (!message.author || !message.channel || !message.attachments || !message.stickers) return;
+  if (typeof message.content !== 'string') return;
+  if (message.author.bot || message.webhookId || message.system) return;
+
+  const config = normalizeChannelPolicyConfig(context.config);
+  if (!config.enabled || config.rules.length === 0) return;
+
+  const rule = findChannelPolicyRule(
+    config,
+    message.channelId,
+    message.channel.parentId ?? null,
+    message.channel.isThread?.() === true,
+  );
+  if (!rule || !rule.enabled || isExempt(message, rule)) return;
+
+  const evaluation = evaluateChannelPolicyMessage(message, rule);
+  if (evaluation.allowed) return;
+
+  const logContext = {
+    guildId: context.guildId,
+    channelId: message.channelId,
+    messageId: message.id,
+    userId: message.author.id,
+    policyChannelId: rule.channelId,
+    mode: rule.mode,
+    action: rule.action,
+    reason: evaluation.reason,
+  };
+
+  if (rule.action === 'log_only') {
+    context.logger.info(logContext, 'Channel Policy違反を検知しました');
+    return;
+  }
+
+  let deleted = false;
+  if (message.deletable === false) {
+    context.logger.warn(
+      logContext,
+      'Channel Policy違反メッセージを削除できません。Bot権限を確認してください',
+    );
+  } else {
+    try {
+      await message.delete();
+      deleted = true;
+      context.logger.info(logContext, 'Channel Policy違反メッセージを削除しました');
+    } catch (error) {
+      context.logger.warn(
+        { ...logContext, err: error },
+        'Channel Policy違反メッセージの削除に失敗しました',
+      );
+    }
+  }
+
+  if (rule.action !== 'warn_delete') return;
+  if (!message.channel.isTextBased()) return;
+  if (
+    !shouldSendChannelPolicyWarning(
+      context.guildId,
+      message.channelId,
+      message.author.id,
+      config.warningCooldownSeconds,
+    )
+  ) {
+    return;
+  }
+
+  const warning = formatChannelPolicyWarning(
+    rule.warningMessage ?? config.defaultWarningMessage,
+    message,
+    rule,
+  );
+  try {
+    await message.channel.send({
+      content: warning,
+      allowedMentions: { parse: [] },
+    });
+  } catch (error) {
+    context.logger.warn(
+      { ...logContext, err: error, deleted },
+      'Channel Policy警告メッセージの送信に失敗しました',
+    );
+  }
 }
 
 export function channelPolicyMessageContentIntentEnabled(
@@ -364,11 +388,7 @@ export function shouldSendChannelPolicyWarning(
   if (expiresAt > nowMs) return false;
 
   warningCooldowns.set(key, nowMs + cooldownSeconds * 1000);
-  if (warningCooldowns.size > 5000) {
-    for (const [entryKey, entryExpiresAt] of warningCooldowns) {
-      if (entryExpiresAt <= nowMs) warningCooldowns.delete(entryKey);
-    }
-  }
+  pruneWarningCooldowns(nowMs);
   return true;
 }
 
@@ -380,6 +400,20 @@ export function resetChannelPolicyRuntime(guildId?: string): void {
   const prefix = `${guildId}:`;
   for (const key of warningCooldowns.keys()) {
     if (key.startsWith(prefix)) warningCooldowns.delete(key);
+  }
+}
+
+function pruneWarningCooldowns(nowMs: number): void {
+  if (warningCooldowns.size <= MAX_WARNING_COOLDOWNS) return;
+
+  for (const [key, expiresAt] of warningCooldowns) {
+    if (expiresAt <= nowMs) warningCooldowns.delete(key);
+  }
+
+  while (warningCooldowns.size > MAX_WARNING_COOLDOWNS) {
+    const oldestKey = warningCooldowns.keys().next().value as string | undefined;
+    if (!oldestKey) break;
+    warningCooldowns.delete(oldestKey);
   }
 }
 
