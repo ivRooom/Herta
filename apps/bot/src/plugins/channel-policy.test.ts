@@ -208,6 +208,12 @@ describe('evaluateChannelPolicyMessage', () => {
       true,
     );
     expect(
+      evaluateChannelPolicyMessage(
+        makeMessage('https://en.wikipedia.org/wiki/Function_(mathematics)'),
+        rule,
+      ).allowed,
+    ).toBe(true);
+    expect(
       evaluateChannelPolicyMessage(makeMessage('おすすめ https://example.com'), rule).allowed,
     ).toBe(false);
   });
