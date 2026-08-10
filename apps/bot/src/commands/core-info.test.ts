@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { coreInformationCommands } from './core-info.js';
+import { coreInformationCommands, formatRoleMentions } from './core-info.js';
 
 const expectedCommandNames = [
   'help',
@@ -51,5 +51,14 @@ describe('coreInformationCommands', () => {
       expect(command?.definition.options?.[0]).toMatchObject({ type: 'user' });
       expect(command?.definition.options?.[0]?.required).not.toBe(true);
     }
+  });
+
+  it('User InfoのRole一覧をEmbed fieldの1024文字以内に収める', () => {
+    const roles = Array.from({ length: 250 }, (_, index) => `<@&${10n ** 18n + BigInt(index)}>`);
+    const formatted = formatRoleMentions(roles);
+
+    expect(formatted.length).toBeLessThanOrEqual(1_024);
+    expect(formatted).toContain('ほか');
+    expect(formatRoleMentions([])).toBe('なし');
   });
 });
