@@ -216,9 +216,15 @@ function DiscordEntityPicker({
     <div
       className="relative min-w-0"
       onBlur={(event) => {
+        const container = event.currentTarget;
         const next = event.relatedTarget;
-        if (next instanceof Node && event.currentTarget.contains(next)) return;
-        setOpen(false);
+        if (next instanceof Node && container.contains(next)) return;
+
+        window.setTimeout(() => {
+          const active = document.activeElement;
+          if (active instanceof Node && container.contains(active)) return;
+          setOpen(false);
+        }, 0);
       }}
     >
       {multiple && value.length > 0 ? (
