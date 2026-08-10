@@ -205,6 +205,17 @@ export class HertaBot {
       }
     });
 
+    this.client.on(Events.MessageUpdate, async (oldMessage, newMessage) => {
+      const guildId = newMessage.guildId ?? oldMessage.guildId;
+      if (!guildId) return;
+      await this.dispatchGuildPluginEvent(
+        guildId,
+        Events.MessageUpdate,
+        oldMessage,
+        newMessage,
+      );
+    });
+
     this.client.on(Events.MessageDelete, async (message) => {
       if (!message.guildId) return;
       await this.dispatchGuildPluginEvent(message.guildId, Events.MessageDelete, message);
@@ -296,7 +307,7 @@ export class HertaBot {
   private async dispatchGuildPluginEvent(
     guildId: string,
     eventName: string,
-    payload: unknown,
+    ...payloads: unknown[]
   ): Promise<{ matched: number; failed: boolean }> {
     try {
       const events = await this.pluginLoader.getGuildEvents(guildId);
@@ -304,7 +315,7 @@ export class HertaBot {
       let failed = false;
       for (const event of handlers) {
         try {
-          await event.handler(payload);
+          await event.handler(...payloads);
         } catch (error) {
           failed = true;
           this.logger.error(
