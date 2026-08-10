@@ -23,6 +23,17 @@ describe('birthdayRolePlugin', () => {
       'list',
     ]);
   });
+
+  it('monthとdayのDiscord入力範囲を公開する', () => {
+    const setCommand = birthdayRolePlugin.manifest.commands[0]?.subcommands?.find(
+      (item) => item.name === 'set',
+    );
+    const month = setCommand?.options?.find((item) => item.name === 'month');
+    const day = setCommand?.options?.find((item) => item.name === 'day');
+
+    expect(month).toMatchObject({ minValue: 1, maxValue: 12 });
+    expect(day).toMatchObject({ minValue: 1, maxValue: 31 });
+  });
 });
 
 describe('normalizeBirthdayRoleConfig', () => {
@@ -98,6 +109,27 @@ describe('timezone and next birthday', () => {
         'february-28',
       ),
     ).toBe(1);
+  });
+
+  it('skipでも次のうるう年まで2月29日を探索する', () => {
+    const days = getDaysUntilBirthday(
+      { userId: '1', month: 2, day: 29 },
+      { year: 2026, month: 3, day: 1 },
+      'skip',
+    );
+
+    expect(days).not.toBeNull();
+    expect(days).toBeGreaterThan(700);
+  });
+
+  it('2100年を飛ばして次の有効な2月29日を探索する', () => {
+    const days = getDaysUntilBirthday(
+      { userId: '1', month: 2, day: 29 },
+      { year: 2099, month: 3, day: 1 },
+      'skip',
+    );
+
+    expect(days).not.toBeNull();
   });
 
   it('同じ最短日のメンバーをまとめて返す', () => {
