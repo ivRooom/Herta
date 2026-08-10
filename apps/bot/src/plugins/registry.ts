@@ -10,6 +10,7 @@ import { createPluginContext } from '@herta/plugin-sdk';
 import type { HertaPlugin } from '@herta/plugin-sdk';
 import type { SlashCommand } from '../commands/registry.js';
 import { channelPolicyPlugin } from './channel-policy.js';
+import { roleManagerPlugin } from './role-manager.js';
 import type { RuntimePluginEntry } from './types.js';
 
 export type { GuildEventHandler, RuntimePluginEntry } from './types.js';
@@ -220,6 +221,7 @@ const officialPluginIds = [
   'lfg',
   'moderation',
   'quote',
+  'role-manager',
   'team-split',
 ] as const;
 
@@ -308,6 +310,20 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
           }) as Parameters<NonNullable<typeof quotePlugin.onEnable>>[0],
       )
     : undefined;
+  const roleManagerEntry = deps
+    ? toRuntimePluginEntry(
+        roleManagerPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof roleManagerPlugin.onEnable>>[0],
+      )
+    : undefined;
   const teamSplitEntry = deps
     ? toRuntimePluginEntry(
         teamSplitPlugin,
@@ -331,6 +347,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (pluginId === 'lfg' && lfgEntry) return [lfgEntry];
     if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];
     if (pluginId === 'quote' && quoteEntry) return [quoteEntry];
+    if (pluginId === 'role-manager' && roleManagerEntry) return [roleManagerEntry];
     if (pluginId === 'team-split' && teamSplitEntry) return [teamSplitEntry];
     return [{ pluginId }];
   });

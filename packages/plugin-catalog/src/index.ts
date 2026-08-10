@@ -7,8 +7,10 @@ import { quoteManifest } from '@herta/plugin-quote/manifest';
 import { teamSplitManifest } from '@herta/plugin-team-split/manifest';
 import type { PluginManifest } from '@herta/shared';
 import { channelPolicyManifest } from './manifests/channel-policy.js';
+import { roleManagerManifest } from './manifests/role-manager.js';
 
 export { channelPolicyManifest } from './manifests/channel-policy.js';
+export { roleManagerManifest } from './manifests/role-manager.js';
 
 const pluginManifests: PluginManifest[] = [
   autoResponseManifest,
@@ -17,6 +19,7 @@ const pluginManifests: PluginManifest[] = [
   lfgManifest,
   moderationManifest,
   quoteManifest,
+  roleManagerManifest,
   teamSplitManifest,
 ];
 
