@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   channelPolicyMessageContentIntentEnabled,
+  channelPolicyPlugin,
   evaluateChannelPolicyMessage,
   findChannelPolicyRule,
   normalizeChannelPolicyConfig,
@@ -40,6 +41,12 @@ function makeRule(overrides: Partial<ChannelPolicyRule> = {}): ChannelPolicyRule
 
 afterEach(() => {
   resetChannelPolicyRuntime();
+});
+
+describe('channelPolicyPlugin', () => {
+  it('新規投稿と編集投稿の両方を監視する', () => {
+    expect(channelPolicyPlugin.manifest.events).toEqual(['messageCreate', 'messageUpdate']);
+  });
 });
 
 describe('channelPolicyMessageContentIntentEnabled', () => {
@@ -225,5 +232,13 @@ describe('shouldSendChannelPolicyWarning', () => {
   it('Cooldown 0では毎回警告できる', () => {
     expect(shouldSendChannelPolicyWarning('g', 'c', 'u', 0, 1000)).toBe(true);
     expect(shouldSendChannelPolicyWarning('g', 'c', 'u', 0, 1001)).toBe(true);
+  });
+
+  it('Cooldown Mapは上限超過時に古いEntryを退避する', () => {
+    for (let index = 0; index <= 5000; index += 1) {
+      shouldSendChannelPolicyWarning('g', 'c', `user-${index}`, 60, 1000);
+    }
+
+    expect(shouldSendChannelPolicyWarning('g', 'c', 'user-0', 60, 1001)).toBe(true);
   });
 });
