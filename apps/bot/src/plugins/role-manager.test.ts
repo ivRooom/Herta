@@ -98,7 +98,7 @@ describe('normalizeRoleManagerConfig', () => {
     expect(config.groups[0]?.panelStyle).toBe('select');
   });
 
-  it('Roleのグループ間重複だけを除去する', () => {
+  it('重複Group IDは後続Groupを除外しRoleのグループ間重複も除去する', () => {
     const config = normalizeRoleManagerConfig({
       groups: [
         { id: 'color', name: '旧Color', roleIds: ['100', '200'] },
@@ -106,10 +106,10 @@ describe('normalizeRoleManagerConfig', () => {
         { id: 'game', name: 'Game', roleIds: ['300', '400'] },
       ],
     });
-    expect(config.groups.map((group) => group.name)).toEqual(['旧Color', '新Color', 'Game']);
+    expect(config.groups.map((group) => group.name)).toEqual(['旧Color', 'Game']);
+    expect(config.groups.map((group) => group.id)).toEqual(['color', 'game']);
     expect(config.groups[0]?.roleIds).toEqual(['100', '200']);
-    expect(config.groups[1]?.roleIds).toEqual(['300']);
-    expect(config.groups[2]?.roleIds).toEqual(['400']);
+    expect(config.groups[1]?.roleIds).toEqual(['300', '400']);
   });
 
   it('singleグループはmaxSelectionsを1に固定する', () => {

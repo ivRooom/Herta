@@ -195,19 +195,24 @@ export function normalizeRoleManagerConfig(value: unknown): RoleManagerConfig {
     return group ? [group] : [];
   });
 
+  const seenGroupIds = new Set<string>();
   const seenRoleIds = new Set<string>();
-  const groups = normalizedGroups.map((group) => {
+  const groups = normalizedGroups.flatMap((group) => {
+    if (seenGroupIds.has(group.id)) return [];
+    seenGroupIds.add(group.id);
     const roleIds = group.roleIds.filter((roleId) => {
       if (seenRoleIds.has(roleId)) return false;
       seenRoleIds.add(roleId);
       return true;
     });
-    return {
-      ...group,
-      roleIds,
-      maxSelections:
-        group.mode === 'single' ? 1 : Math.min(group.maxSelections, Math.max(roleIds.length, 1)),
-    };
+    return [
+      {
+        ...group,
+        roleIds,
+        maxSelections:
+          group.mode === 'single' ? 1 : Math.min(group.maxSelections, Math.max(roleIds.length, 1)),
+      },
+    ];
   });
 
   return {
@@ -281,7 +286,8 @@ export function planRoleGroupSelection(
     return rejected(`「${group.name}」では最大${maxSelections}個まで選択できます`, group.id);
   }
 
-  const current = new Set(group.roleIds.filter((roleId) => new Set(currentRoleIds).has(roleId)));
+  const currentRoleIdSet = new Set(currentRoleIds);
+  const current = new Set(group.roleIds.filter((roleId) => currentRoleIdSet.has(roleId)));
   const desiredSet = new Set(desired);
   const addRoleIds = desired.filter((roleId) => !current.has(roleId));
   const removeRoleIds = [...current].filter((roleId) => !desiredSet.has(roleId));
