@@ -26,63 +26,62 @@ jobs:
 
           path = Path('apps/bot/src/plugins/registry.ts')
           text = path.read_text()
-
-          old = "import { channelPolicyPlugin } from './channel-policy.js';\nimport { roleManagerPlugin } from './role-manager.js';"
-          new = "import { channelPolicyPlugin } from './channel-policy.js';\nimport { onboardingPlugin } from './onboarding.js';\nimport { roleManagerPlugin } from './role-manager.js';"
-          if old not in text:
-              raise SystemExit('registry import anchor not found')
-          text = text.replace(old, new, 1)
-
-          old = "  'moderation',\n  'quote',"
-          new = "  'moderation',\n  'onboarding',\n  'quote',"
-          if old not in text:
-              raise SystemExit('officialPluginIds anchor not found')
-          text = text.replace(old, new, 1)
-
-          old = "  const quoteEntry = deps\n    ? toRuntimePluginEntry("
-          onboarding_entry = """  const onboardingEntry = deps
-    ? toRuntimePluginEntry(
-        onboardingPlugin,
-        (plugin, guildId, config) =>
-          createPluginContext({
-            client: deps.client,
-            prisma: deps.prisma,
-            logger: deps.logger,
-            guildId,
-            config,
-            manifest: plugin.manifest,
-          }) as Parameters<NonNullable<typeof onboardingPlugin.onEnable>>[0],
-      )
-    : undefined;
-  const quoteEntry = deps
-    ? toRuntimePluginEntry("""
-          if old not in text:
-              raise SystemExit('quote entry anchor not found')
-          text = text.replace(old, onboarding_entry, 1)
-
-          old = "    if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];\n    if (pluginId === 'quote' && quoteEntry) return [quoteEntry];"
-          new = "    if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];\n    if (pluginId === 'onboarding' && onboardingEntry) return [onboardingEntry];\n    if (pluginId === 'quote' && quoteEntry) return [quoteEntry];"
-          if old not in text:
-              raise SystemExit('registry return anchor not found')
-          text = text.replace(old, new, 1)
+          replacements = [
+              (
+                  "import { channelPolicyPlugin } from './channel-policy.js';\nimport { roleManagerPlugin } from './role-manager.js';",
+                  "import { channelPolicyPlugin } from './channel-policy.js';\nimport { onboardingPlugin } from './onboarding.js';\nimport { roleManagerPlugin } from './role-manager.js';",
+              ),
+              (
+                  "  'moderation',\n  'quote',",
+                  "  'moderation',\n  'onboarding',\n  'quote',",
+              ),
+              (
+                  "  const quoteEntry = deps\n    ? toRuntimePluginEntry(",
+                  "  const onboardingEntry = deps\n"
+                  "    ? toRuntimePluginEntry(\n"
+                  "        onboardingPlugin,\n"
+                  "        (plugin, guildId, config) =>\n"
+                  "          createPluginContext({\n"
+                  "            client: deps.client,\n"
+                  "            prisma: deps.prisma,\n"
+                  "            logger: deps.logger,\n"
+                  "            guildId,\n"
+                  "            config,\n"
+                  "            manifest: plugin.manifest,\n"
+                  "          }) as Parameters<NonNullable<typeof onboardingPlugin.onEnable>>[0],\n"
+                  "      )\n"
+                  "    : undefined;\n"
+                  "  const quoteEntry = deps\n"
+                  "    ? toRuntimePluginEntry(",
+              ),
+              (
+                  "    if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];\n    if (pluginId === 'quote' && quoteEntry) return [quoteEntry];",
+                  "    if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];\n    if (pluginId === 'onboarding' && onboardingEntry) return [onboardingEntry];\n    if (pluginId === 'quote' && quoteEntry) return [quoteEntry];",
+              ),
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f'registry anchor not found: {old[:40]}')
+              text = text.replace(old, new, 1)
           path.write_text(text)
 
           path = Path('apps/bot/src/bot.ts')
           text = path.read_text()
-          old = """    this.client.on(Events.GuildMemberAdd, async (member) => {
-      await this.dispatchGuildPluginEvent(member.guild.id, Events.GuildMemberAdd, member);
-    });
-
-    this.client.on(Events.MessageCreate, async (message) => {"""
-          new = """    this.client.on(Events.GuildMemberAdd, async (member) => {
-      await this.dispatchGuildPluginEvent(member.guild.id, Events.GuildMemberAdd, member);
-    });
-
-    this.client.on(Events.GuildMemberRemove, async (member) => {
-      await this.dispatchGuildPluginEvent(member.guild.id, Events.GuildMemberRemove, member);
-    });
-
-    this.client.on(Events.MessageCreate, async (message) => {"""
+          old = (
+              "    this.client.on(Events.GuildMemberAdd, async (member) => {\n"
+              "      await this.dispatchGuildPluginEvent(member.guild.id, Events.GuildMemberAdd, member);\n"
+              "    });\n\n"
+              "    this.client.on(Events.MessageCreate, async (message) => {"
+          )
+          new = (
+              "    this.client.on(Events.GuildMemberAdd, async (member) => {\n"
+              "      await this.dispatchGuildPluginEvent(member.guild.id, Events.GuildMemberAdd, member);\n"
+              "    });\n\n"
+              "    this.client.on(Events.GuildMemberRemove, async (member) => {\n"
+              "      await this.dispatchGuildPluginEvent(member.guild.id, Events.GuildMemberRemove, member);\n"
+              "    });\n\n"
+              "    this.client.on(Events.MessageCreate, async (message) => {"
+          )
           if old not in text:
               raise SystemExit('GuildMemberAdd anchor not found')
           path.write_text(text.replace(old, new, 1))
