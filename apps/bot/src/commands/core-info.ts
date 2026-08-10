@@ -7,6 +7,8 @@ import {
 } from 'discord.js';
 import type { SlashCommand } from './registry.js';
 
+const EMBED_FIELD_VALUE_LIMIT = 1_024;
+
 const CORE_COMMANDS = [
   ['/ping', 'Botとの疎通とWebSocketレイテンシを確認'],
   ['/help', 'HertaのCore Command一覧を表示'],
@@ -82,6 +84,24 @@ function memberPermissionSummary(member: GuildMember): string {
     ([, label]) => label,
   );
   return permissions.length > 0 ? permissions.join('\n') : '主要な管理権限はありません';
+}
+
+export function formatRoleMentions(roleMentions: readonly string[]): string {
+  if (roleMentions.length === 0) return 'なし';
+
+  const visible: string[] = [];
+  for (const roleMention of roleMentions) {
+    const next = [...visible, roleMention];
+    const omitted = roleMentions.length - next.length;
+    const suffix = omitted > 0 ? `\nほか${omitted}件` : '';
+    if (`${next.join(' ')}${suffix}`.length > EMBED_FIELD_VALUE_LIMIT) break;
+    visible.push(roleMention);
+  }
+
+  const omitted = roleMentions.length - visible.length;
+  if (omitted === 0) return visible.join(' ');
+  if (visible.length === 0) return `ほか${omitted}件`;
+  return `${visible.join(' ')}\nほか${omitted}件`;
 }
 
 export const helpCommand: SlashCommand = {
@@ -168,6 +188,9 @@ export const userInfoCommand: SlashCommand = {
       );
 
     if (member) {
+      const roleMentions = member.roles.cache
+        .filter((role) => role.id !== interaction.guildId)
+        .map(String);
       embed.addFields(
         {
           name: 'サーバー参加',
@@ -176,11 +199,7 @@ export const userInfoCommand: SlashCommand = {
         },
         {
           name: 'ロール',
-          value:
-            member.roles.cache
-              .filter((role) => role.id !== interaction.guildId)
-              .map(String)
-              .join(' ') || 'なし',
+          value: formatRoleMentions(roleMentions),
           inline: false,
         },
       );
