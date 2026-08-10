@@ -1,6 +1,19 @@
 import type { PrismaClient } from '@herta/db';
 import { birthdayRoleManifest } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
+import {
+  claimBirthdayDelivery,
+  completeBirthdayDelivery,
+  deleteBirthdayRegistration,
+  ensureBirthdayDelivery,
+  failBirthdayDelivery,
+  getBirthdayRegistration,
+  listBirthdayRegistrations,
+  listPendingBirthdayRoleAssignments,
+  markBirthdayRoleAssignmentReconciled,
+  recoverStaleBirthdayDelivery,
+  upsertBirthdayRegistration,
+} from './birthday-role-repository.js';
 
 const EPHEMERAL_FLAG = 64;
 const MANAGE_ROLES_PERMISSION = 268435456n;
@@ -10,6 +23,7 @@ const WORKER_INTERVAL_MS = 60 * 60 * 1000;
 const STALE_DELIVERY_MS = 2 * 60 * 60 * 1000;
 const ROLE_ASSIGNED_PREFIX = 'role-assigned:';
 const ROLE_REMOVED_PREFIX = 'role-removed:';
+const MAX_BIRTHDAY_SEARCH_YEARS = 8;
 
 export type LeapDayPolicy = 'february-28' | 'march-1' | 'skip';
 
@@ -208,7 +222,8 @@ export function getDaysUntilBirthday(
   policy: LeapDayPolicy,
 ): number | null {
   const todayUtc = Date.UTC(today.year, today.month - 1, today.day);
-  for (const year of [today.year, today.year + 1]) {
+  for (let offset = 0; offset <= MAX_BIRTHDAY_SEARCH_YEARS; offset += 1) {
+    const year = today.year + offset;
     const effective = resolveEffectiveBirthday(registration.month, registration.day, year, policy);
     if (!effective) continue;
     const birthdayUtc = Date.UTC(year, effective.month - 1, effective.day);
@@ -254,7 +269,7 @@ export async function runBirthdayRoleCycle(
 ): Promise<void> {
   await withGuildCycleLock(context.guildId, async () => {
     const config = normalizeBirthdayRoleConfig(context.config);
-    if (!config.enabled || (!config.assignRole && !config.sendAnnouncement)) return;
+    if (!config.enabled) return;
 
     const guildRecord = await context.prisma.guild.findUnique({
       where: { id: context.guildId },
@@ -263,10 +278,7 @@ export async function runBirthdayRoleCycle(
     const timeZone = guildRecord?.timezone || 'Asia/Tokyo';
     const today = getLocalDateParts(now, timeZone);
     const localDate = formatLocalDate(today);
-    const registrations = await context.prisma.birthdayRegistration.findMany({
-      where: { guildId: context.guildId },
-      select: { userId: true, month: true, day: true },
-    });
+    const registrations = await listBirthdayRegistrations(context.prisma, context.guildId);
     const todaysRegistrations = registrations.filter((registration) => {
       const effective = resolveEffectiveBirthday(
         registration.month,
@@ -365,11 +377,13 @@ async function executeBirthdayCommand(
       return;
     }
     await defer(interaction, config.ephemeralResponses);
-    await context.prisma.birthdayRegistration.upsert({
-      where: { guildId_userId: { guildId: interaction.guildId, userId: interaction.user.id } },
-      create: { guildId: interaction.guildId, userId: interaction.user.id, month, day },
-      update: { month, day },
-    });
+    await upsertBirthdayRegistration(
+      context.prisma,
+      interaction.guildId,
+      interaction.user.id,
+      month,
+      day,
+    );
     context.logger.info(
       { guildId: interaction.guildId, userId: interaction.user.id, month, day },
       '誕生日を登録しました',
@@ -385,22 +399,25 @@ async function executeBirthdayCommand(
   await defer(interaction, config.ephemeralResponses);
 
   if (subcommand === 'remove') {
-    const result = await context.prisma.birthdayRegistration.deleteMany({
-      where: { guildId: interaction.guildId, userId: interaction.user.id },
-    });
+    const count = await deleteBirthdayRegistration(
+      context.prisma,
+      interaction.guildId,
+      interaction.user.id,
+    );
     await respond(
       interaction,
-      result.count > 0 ? '誕生日登録を削除しました。' : '削除する誕生日登録はありません。',
+      count > 0 ? '誕生日登録を削除しました。' : '削除する誕生日登録はありません。',
       config.ephemeralResponses,
     );
     return;
   }
 
   if (subcommand === 'me') {
-    const registration = await context.prisma.birthdayRegistration.findUnique({
-      where: { guildId_userId: { guildId: interaction.guildId, userId: interaction.user.id } },
-      select: { month: true, day: true },
-    });
+    const registration = await getBirthdayRegistration(
+      context.prisma,
+      interaction.guildId,
+      interaction.user.id,
+    );
     await respond(
       interaction,
       registration
@@ -411,10 +428,7 @@ async function executeBirthdayCommand(
     return;
   }
 
-  const registrations = await context.prisma.birthdayRegistration.findMany({
-    where: { guildId: interaction.guildId },
-    select: { userId: true, month: true, day: true },
-  });
+  const registrations = await listBirthdayRegistrations(context.prisma, interaction.guildId);
 
   if (subcommand === 'list') {
     const pages = formatBirthdayListPages(registrations);
@@ -450,21 +464,20 @@ async function cleanupPreviousBirthdayRoles(
   localDate: string,
   todaysUsers: Set<string>,
 ): Promise<void> {
-  const assignments = await context.prisma.birthdayDelivery.findMany({
-    where: {
-      guildId: context.guildId,
-      kind: { startsWith: ROLE_ASSIGNED_PREFIX },
-      status: 'completed',
-      localDate: { not: localDate },
-    },
-    select: { userId: true, localDate: true, kind: true },
-  });
+  const assignments = await listPendingBirthdayRoleAssignments(
+    context.prisma,
+    context.guildId,
+    localDate,
+  );
 
   for (const assignment of assignments) {
     if (todaysUsers.has(assignment.userId)) continue;
     const roleId = assignment.kind.slice(ROLE_ASSIGNED_PREFIX.length);
-    if (!DISCORD_ID_PATTERN.test(roleId)) continue;
-    await processDelivery(
+    if (!DISCORD_ID_PATTERN.test(roleId)) {
+      await markBirthdayRoleAssignmentReconciled(context.prisma, assignment.id);
+      continue;
+    }
+    const removed = await processDelivery(
       context,
       {
         userId: assignment.userId,
@@ -473,12 +486,15 @@ async function cleanupPreviousBirthdayRoles(
       },
       async () => {
         const role = await validateBirthdayRole(guild, roleId);
-        if (!role) return null;
+        if (!role) throw new Error('BirthdayRoleUnavailable');
         const member = await guild.members.fetch(assignment.userId);
         if (member.roles.cache.has(role.id)) await member.roles.remove(role.id);
         return null;
       },
     );
+    if (removed) {
+      await markBirthdayRoleAssignmentReconciled(context.prisma, assignment.id);
+    }
   }
 }
 
@@ -496,7 +512,7 @@ async function processDelivery(
   context: BirthdayRuntimeContext,
   input: { userId: string; localDate: string; kind: string },
   task: () => Promise<string | null>,
-): Promise<void> {
+): Promise<boolean> {
   const idempotencyKey = [
     'birthday',
     context.guildId,
@@ -505,47 +521,31 @@ async function processDelivery(
     input.kind,
   ].join(':');
   const staleBefore = new Date(Date.now() - STALE_DELIVERY_MS);
-  await context.prisma.birthdayDelivery.updateMany({
-    where: { idempotencyKey, status: 'processing', updatedAt: { lt: staleBefore } },
-    data: { status: 'failed', errorName: 'StaleDelivery' },
+  await recoverStaleBirthdayDelivery(context.prisma, idempotencyKey, staleBefore);
+  const delivery = await ensureBirthdayDelivery(context.prisma, {
+    guildId: context.guildId,
+    userId: input.userId,
+    localDate: input.localDate,
+    kind: input.kind,
+    idempotencyKey,
   });
-  const delivery = await context.prisma.birthdayDelivery.upsert({
-    where: { idempotencyKey },
-    create: {
-      guildId: context.guildId,
-      userId: input.userId,
-      localDate: input.localDate,
-      kind: input.kind,
-      idempotencyKey,
-      status: 'pending',
-    },
-    update: {},
-    select: { id: true, status: true },
-  });
-  if (delivery.status === 'completed') return;
+  if (delivery.status === 'completed') return true;
 
-  const claim = await context.prisma.birthdayDelivery.updateMany({
-    where: { id: delivery.id, status: { in: ['pending', 'failed'] } },
-    data: { status: 'processing', errorName: null },
-  });
-  if (claim.count === 0) return;
+  const claimed = await claimBirthdayDelivery(context.prisma, delivery.id);
+  if (!claimed) return false;
 
   try {
     const messageId = await task();
-    await context.prisma.birthdayDelivery.update({
-      where: { id: delivery.id },
-      data: { status: 'completed', messageId, errorName: null, completedAt: new Date() },
-    });
+    await completeBirthdayDelivery(context.prisma, delivery.id, messageId);
+    return true;
   } catch (error) {
     const errorName = error instanceof Error && error.name ? error.name : 'UnknownError';
-    await context.prisma.birthdayDelivery.update({
-      where: { id: delivery.id },
-      data: { status: 'failed', errorName },
-    });
+    await failBirthdayDelivery(context.prisma, delivery.id, errorName);
     context.logger.warn(
       { err: error, guildId: context.guildId, userId: input.userId, kind: input.kind },
       'Birthday Role deliveryの処理に失敗しました',
     );
+    return false;
   }
 }
 
