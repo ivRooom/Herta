@@ -60,6 +60,11 @@ describe('fun utility commands', () => {
     expect(source).toEqual(['a', 'b', 'c', 'd']);
   });
 
+  it('shuffleの通常入力はEmbed description上限内に収まる', () => {
+    const description = formatShuffleDescription(['red', 'blue', 'green']);
+    expect(description.length).toBeLessThanOrEqual(4_096);
+  });
+
   it('shuffleの最大入力ではEmbed description上限を超えることを検出できる', () => {
     const description = formatShuffleDescription(Array.from({ length: 20 }, () => 'a'.repeat(200)));
     expect(description.length).toBeGreaterThan(4_096);
