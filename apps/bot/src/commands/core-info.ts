@@ -296,7 +296,8 @@ export const channelInfoCommand: SlashCommand = {
   async execute(interaction) {
     const channel = interaction.options.getChannel('channel', true);
     const createdAt = snowflakeCreatedAt(channel.id);
-    const title = 'name' in channel && typeof channel.name === 'string' ? channel.name : 'Discord Channel';
+    const title =
+      'name' in channel && typeof channel.name === 'string' ? channel.name : 'Discord Channel';
     const embed = new EmbedBuilder()
       .setTitle(title)
       .setColor(0x5865f2)
