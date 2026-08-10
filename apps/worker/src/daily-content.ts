@@ -5,6 +5,7 @@ import type { Logger } from 'pino';
 import { Redis } from 'ioredis';
 import { QueueNames, type JobData } from '@herta/queue';
 import {
+  canManageDailyContentThreads,
   checkDailyContentSendPermissions,
   computeDiscordChannelPermissions,
   getDeliveryWithSchedule,
@@ -339,10 +340,18 @@ async function publishDiscordMessage(input: {
   if (typeof channel.type !== 'number' || !SUPPORTED_CHANNEL_TYPES.has(channel.type)) {
     throw new DailyContentPublishError('DailyContentChannelNotSupported', channelResponse.status);
   }
-  if (THREAD_CHANNEL_TYPES.has(channel.type) && channel.thread_metadata?.archived) {
-    throw new DailyContentPublishError('DailyContentThreadArchived', 409);
+
+  const isThread = THREAD_CHANNEL_TYPES.has(channel.type);
+  if (isThread && channel.thread_metadata?.locked) {
+    throw new DailyContentPublishError('DailyContentThreadLocked', 409);
   }
-  await assertDiscordCanSend(input.token, channel);
+  const permissions = await assertDiscordCanSend(input.token, channel);
+  if (isThread && channel.thread_metadata?.archived) {
+    if (!canManageDailyContentThreads(permissions)) {
+      throw new DailyContentPublishError('DailyContentThreadUnarchivePermissionDenied', 403);
+    }
+    await unarchiveDiscordThread(input.token, channel.id);
+  }
 
   if (FORUM_CHANNEL_TYPES.has(channel.type)) {
     return publishDiscordForumPost(input);
@@ -437,7 +446,7 @@ export function resolveForumPostTitle(title: string, scheduledFor: Date): string
 async function assertDiscordCanSend(
   token: string,
   targetChannel: DiscordChannelPayload,
-): Promise<void> {
+): Promise<bigint> {
   const isThread = THREAD_CHANNEL_TYPES.has(targetChannel.type);
   const permissionChannel =
     isThread && targetChannel.parent_id
@@ -466,6 +475,22 @@ async function assertDiscordCanSend(
       `DailyContentBotPermissionDenied:${check.missing.join(',')}`,
       403,
     );
+  }
+  return permissions;
+}
+
+async function unarchiveDiscordThread(token: string, threadId: string): Promise<void> {
+  const response = await fetch(`${DISCORD_API_BASE_URL}/channels/${threadId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bot ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ archived: false }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) {
+    throw await createDiscordError('DailyContentThreadUnarchiveFailed', response);
   }
 }
 
