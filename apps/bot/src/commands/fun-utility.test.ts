@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   coreFunUtilityCommands,
   deterministicRate,
+  formatShuffleDescription,
   parseChoices,
   randomIntegerInclusive,
   resolveRpsResult,
@@ -57,6 +58,11 @@ describe('fun utility commands', () => {
     expect(shuffled).toHaveLength(source.length);
     expect([...shuffled].sort()).toEqual([...source].sort());
     expect(source).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('shuffleの最大入力ではEmbed description上限を超えることを検出できる', () => {
+    const description = formatShuffleDescription(Array.from({ length: 20 }, () => 'a'.repeat(200)));
+    expect(description.length).toBeGreaterThan(4_096);
   });
 
   it('じゃんけんの勝敗を正しく判定する', () => {
