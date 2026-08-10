@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  evaluateChannelPolicyMessage,
-  type ChannelPolicyRule,
-} from './channel-policy.js';
+import { evaluateChannelPolicyMessage, type ChannelPolicyRule } from './channel-policy.js';
 
 function makeLinksOnlyRule(): ChannelPolicyRule {
   return {
