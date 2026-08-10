@@ -9,7 +9,7 @@ test('Guild Install用のscopeと公式Plugin最小権限を設定する', () =>
     }),
   );
 
-  assert.equal(DEFAULT_DISCORD_BOT_PERMISSIONS, '274877934592');
+  assert.equal(DEFAULT_DISCORD_BOT_PERMISSIONS, '275146370048');
   assert.equal(url.origin, 'https://discord.com');
   assert.equal(url.pathname, '/oauth2/authorize');
   assert.equal(url.searchParams.get('client_id'), '1521451822521520128');
