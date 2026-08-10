@@ -12,8 +12,7 @@ export const channelPolicyManifest: PluginManifest = {
   id: 'channel-policy',
   name: 'Channel Policy',
   version: '1.0.0',
-  description:
-    'チャンネルごとにコマンド専用・メディア専用・画像専用などの投稿ルールを適用します',
+  description: 'チャンネルごとにコマンド専用・メディア専用・画像専用などの投稿ルールを適用します',
   author: { name: 'Herta' },
   category: 'moderation',
   permissions: [
@@ -44,8 +43,7 @@ export const channelPolicyManifest: PluginManifest = {
       defaultWarningMessage: {
         type: 'string',
         title: '既定の違反警告メッセージ',
-        description:
-          '{user}、{channel}、{mode}を置換できます。メンション通知は発生しません',
+        description: '{user}、{channel}、{mode}を置換できます。メンション通知は発生しません',
         minLength: 1,
         maxLength: 1000,
         default:
@@ -90,16 +88,14 @@ export const channelPolicyManifest: PluginManifest = {
             action: {
               type: 'string',
               title: '違反時Action',
-              description:
-                'log_onlyで監視のみ、deleteで削除、warn_deleteで削除後に警告します',
+              description: 'log_onlyで監視のみ、deleteで削除、warn_deleteで削除後に警告します',
               enum: ['log_only', 'delete', 'warn_delete'],
               default: 'warn_delete',
             },
             allowCaption: {
               type: 'boolean',
               title: '添付ファイルと一緒の本文を許可する',
-              description:
-                'media/images/videos/attachments専用ルールでのみ使用します',
+              description: 'media/images/videos/attachments専用ルールでのみ使用します',
               default: true,
             },
             allowStickers: {
