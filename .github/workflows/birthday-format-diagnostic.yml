@@ -1,0 +1,25 @@
+name: Birthday format diagnostic
+
+on:
+  push:
+    branches:
+      - feat/birthday-role-v1
+
+permissions:
+  contents: read
+
+jobs:
+  format-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Show Prettier diff
+        run: |
+          pnpm exec prettier --write apps/bot/src/plugins/birthday-role.ts
+          git diff -- apps/bot/src/plugins/birthday-role.ts
