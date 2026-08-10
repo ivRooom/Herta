@@ -23,24 +23,12 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path('apps/bot/src/plugins/role-manager.ts')
           text = path.read_text()
-          old = '''  const seenRoleIds = new Set<string>();
-          const groups = normalizedGroups.map((group) => {
-            const roleIds = group.roleIds.filter((roleId) => {
-              if (seenRoleIds.has(roleId)) return false;
-              seenRoleIds.add(roleId);
-              return true;
-            });
-            return {
-              ...group,
-              roleIds,
-              maxSelections:
-                group.mode === 'single' ? 1 : Math.min(group.maxSelections, Math.max(roleIds.length, 1)),
-            };
-          });'''
-          new = '''  const seenGroupIds = new Set<string>();
+          pattern = r"  const seenRoleIds = new Set<string>\(\);\n  const groups = normalizedGroups\.map\(\(group\) => \{.*?\n  \}\);\n\n  return \{"
+          replacement = '''  const seenGroupIds = new Set<string>();
           const seenRoleIds = new Set<string>();
           const groups = normalizedGroups.flatMap((group) => {
             if (seenGroupIds.has(group.id)) return [];
@@ -60,32 +48,26 @@ jobs:
                     : Math.min(group.maxSelections, Math.max(roleIds.length, 1)),
               },
             ];
-          });'''
-          if old not in text:
+          });
+
+          return {'''
+          text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+          if count != 1:
               raise SystemExit('normalize block not found')
-          text = text.replace(old, new, 1)
-          old = "  const current = new Set(group.roleIds.filter((roleId) => new Set(currentRoleIds).has(roleId)));"
-          new = "  const currentRoleIdSet = new Set(currentRoleIds);\n  const current = new Set(group.roleIds.filter((roleId) => currentRoleIdSet.has(roleId)));"
-          if old not in text:
+          text, count = re.subn(
+              r"  const current = new Set\(group\.roleIds\.filter\(\(roleId\) => new Set\(currentRoleIds\)\.has\(roleId\)\)\);",
+              "  const currentRoleIdSet = new Set(currentRoleIds);\n  const current = new Set(group.roleIds.filter((roleId) => currentRoleIdSet.has(roleId)));",
+              text,
+              count=1,
+          )
+          if count != 1:
               raise SystemExit('selection block not found')
-          path.write_text(text.replace(old, new, 1))
+          path.write_text(text)
 
           path = Path('apps/bot/src/plugins/role-manager.test.ts')
           text = path.read_text()
-          old = '''  it('Roleのグループ間重複だけを除去する', () => {
-            const config = normalizeRoleManagerConfig({
-              groups: [
-                { id: 'color', name: '旧Color', roleIds: ['100', '200'] },
-                { id: 'color', name: '新Color', roleIds: ['300'] },
-                { id: 'game', name: 'Game', roleIds: ['300', '400'] },
-              ],
-            });
-            expect(config.groups.map((group) => group.name)).toEqual(['旧Color', '新Color', 'Game']);
-            expect(config.groups[0]?.roleIds).toEqual(['100', '200']);
-            expect(config.groups[1]?.roleIds).toEqual(['300']);
-            expect(config.groups[2]?.roleIds).toEqual(['400']);
-          });'''
-          new = '''  it('重複Group IDは後続Groupを除外しRoleのグループ間重複も除去する', () => {
+          pattern = r"  it\('Roleのグループ間重複だけを除去する', \(\) => \{.*?\n  \}\);\n\n  it\('singleグループはmaxSelectionsを1に固定する'"
+          replacement = '''  it('重複Group IDは後続Groupを除外しRoleのグループ間重複も除去する', () => {
             const config = normalizeRoleManagerConfig({
               groups: [
                 { id: 'color', name: '旧Color', roleIds: ['100', '200'] },
@@ -97,10 +79,13 @@ jobs:
             expect(config.groups.map((group) => group.id)).toEqual(['color', 'game']);
             expect(config.groups[0]?.roleIds).toEqual(['100', '200']);
             expect(config.groups[1]?.roleIds).toEqual(['300', '400']);
-          });'''
-          if old not in text:
+          });
+
+          it('singleグループはmaxSelectionsを1に固定する' '''
+          text, count = re.subn(pattern, replacement, text, count=1, flags=re.S)
+          if count != 1:
               raise SystemExit('test block not found')
-          path.write_text(text.replace(old, new, 1))
+          path.write_text(text)
           PY
           pnpm exec prettier --write apps/bot/src/plugins/role-manager.ts apps/bot/src/plugins/role-manager.test.ts
           git config user.name "github-actions[bot]"
