@@ -133,9 +133,7 @@ export function normalizeRoleManagerConfig(value: unknown): RoleManagerConfig {
       ...group,
       roleIds,
       maxSelections:
-        group.mode === 'single'
-          ? 1
-          : Math.min(group.maxSelections, Math.max(roleIds.length, 1)),
+        group.mode === 'single' ? 1 : Math.min(group.maxSelections, Math.max(roleIds.length, 1)),
     };
   });
 
@@ -186,18 +184,13 @@ export function planRoleChange(
     return accepted(
       [targetRoleId],
       selectedInGroup,
-      selectedInGroup.length > 0
-        ? '同じグループのRoleを切り替えます'
-        : 'Self Roleを追加します',
+      selectedInGroup.length > 0 ? '同じグループのRoleを切り替えます' : 'Self Roleを追加します',
       group.id,
     );
   }
 
   if (selectedInGroup.length >= group.maxSelections) {
-    return rejected(
-      `「${group.name}」では最大${group.maxSelections}個まで選択できます`,
-      group.id,
-    );
+    return rejected(`「${group.name}」では最大${group.maxSelections}個まで選択できます`, group.id);
   }
 
   return accepted([targetRoleId], [], 'Self Roleを追加します', group.id);
@@ -277,7 +270,11 @@ async function executeRoleManagerCommand(
     for (const roleId of affectedRoleIds) {
       const role = await interaction.guild.roles.fetch(roleId);
       if (!role) {
-        await respond(interaction, `Role ${roleId} が見つかりません。Studio設定を確認してください。`, true);
+        await respond(
+          interaction,
+          `Role ${roleId} が見つかりません。Studio設定を確認してください。`,
+          true,
+        );
         return;
       }
       if (role.id === interaction.guild.id || role.managed || !role.editable) {
