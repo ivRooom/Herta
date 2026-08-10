@@ -3,15 +3,15 @@ import type { PluginManifest } from '@herta/shared';
 export const roleManagerManifest: PluginManifest = {
   id: 'role-manager',
   name: 'Role Manager',
-  version: '1.0.0',
-  description: 'メンバーが許可されたRoleを自分で付け外しできるSelf Role機能を提供します',
+  version: '2.0.0',
+  description: 'Self Roleのコマンド操作とButton・Select Menu型Role Panelを提供します',
   author: { name: 'Herta' },
   category: 'utility',
   permissions: [
     {
       id: 'role-manager.manage',
       name: 'Role Manager 管理',
-      description: 'Self Roleグループと選択可能Roleの設定を管理します',
+      description: 'Self RoleグループとRole Panelの設定・投稿を管理します',
     },
   ],
   dependencies: [],
@@ -86,6 +86,13 @@ export const roleManagerManifest: PluginManifest = {
               maximum: 25,
               default: 25,
             },
+            panelStyle: {
+              type: 'string',
+              title: 'Role Panel表示方式',
+              description: 'Select MenuまたはRoleごとのButtonで選択できる常設Panelを作成します',
+              enum: ['select', 'buttons'],
+              default: 'select',
+            },
             roleIds: {
               type: 'array',
               title: '選択可能Role',
@@ -103,13 +110,22 @@ export const roleManagerManifest: PluginManifest = {
               },
             },
           },
-          required: ['enabled', 'id', 'name', 'description', 'mode', 'maxSelections', 'roleIds'],
+          required: [
+            'enabled',
+            'id',
+            'name',
+            'description',
+            'mode',
+            'maxSelections',
+            'panelStyle',
+            'roleIds',
+          ],
         },
       },
     },
     required: ['enabled', 'ephemeralResponses', 'allowSelfRemoval', 'groups'],
   },
-  events: [],
+  events: ['interactionCreate'],
   commands: [
     {
       name: 'role',
@@ -118,6 +134,18 @@ export const roleManagerManifest: PluginManifest = {
         {
           name: 'list',
           description: '選択可能なSelf Role一覧を表示します',
+        },
+        {
+          name: 'panel',
+          description: 'このChannelへRole Panelを投稿します（サーバー管理者向け）',
+          options: [
+            {
+              name: 'group',
+              description: '投稿するRoleグループID',
+              type: 'string',
+              required: true,
+            },
+          ],
         },
         {
           name: 'add',
