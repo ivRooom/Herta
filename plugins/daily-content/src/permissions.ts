@@ -1,7 +1,6 @@
 export const DISCORD_VIEW_CHANNEL = 1n << 10n;
 export const DISCORD_SEND_MESSAGES = 1n << 11n;
 export const DISCORD_ADMINISTRATOR = 1n << 3n;
-export const DISCORD_MANAGE_THREADS = 1n << 34n;
 export const DISCORD_SEND_MESSAGES_IN_THREADS = 1n << 38n;
 
 export interface DiscordPermissionRole {
@@ -82,14 +81,6 @@ export function checkDailyContentSendPermissions(
     missing.push(isThread ? 'SEND_MESSAGES_IN_THREADS' : 'SEND_MESSAGES');
   }
   return { allowed: missing.length === 0, permissions, missing };
-}
-
-/** Archived Threadを再開できるDiscord権限か判定する。 */
-export function canManageDailyContentThreads(permissions: bigint): boolean {
-  return (
-    (permissions & DISCORD_ADMINISTRATOR) === DISCORD_ADMINISTRATOR ||
-    (permissions & DISCORD_MANAGE_THREADS) === DISCORD_MANAGE_THREADS
-  );
 }
 
 function applyOverwrite(
