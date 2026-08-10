@@ -4,8 +4,7 @@ export const roleManagerManifest: PluginManifest = {
   id: 'role-manager',
   name: 'Role Manager',
   version: '1.0.0',
-  description:
-    'メンバーが許可されたRoleを自分で付け外しできるSelf Role機能を提供します',
+  description: 'メンバーが許可されたRoleを自分で付け外しできるSelf Role機能を提供します',
   author: { name: 'Herta' },
   category: 'utility',
   permissions: [
@@ -105,15 +104,7 @@ export const roleManagerManifest: PluginManifest = {
               },
             },
           },
-          required: [
-            'enabled',
-            'id',
-            'name',
-            'description',
-            'mode',
-            'maxSelections',
-            'roleIds',
-          ],
+          required: ['enabled', 'id', 'name', 'description', 'mode', 'maxSelections', 'roleIds'],
         },
       },
     },
