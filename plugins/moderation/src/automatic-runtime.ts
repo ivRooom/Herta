@@ -22,6 +22,7 @@ import {
   type ModerationCaseAction,
   type ModerationPrismaClient,
 } from './service.js';
+import { waitForModerationTargetOperation } from './target-operation-lock.js';
 import {
   buildAutomaticAlertEmbed,
   buildAutomaticWarningEmbed,
@@ -365,64 +366,72 @@ async function executeAutomaticEnforcement(
   const reason = `自動検知ルール ${selected.policy.selector} に一致（危険度: ${selected.policy.severity}）`;
   const action = selected.policy.action;
   let actionError: unknown;
+  const releaseTargetOperation =
+    action === 'timeout'
+      ? await waitForModerationTargetOperation(context.guildId, message.author.id)
+      : null;
 
   try {
-    assertAutomaticTargetCanBeModerated(message, selected.policy);
-    if (action === 'blacklist') {
-      await upsertModerationBlacklistEntry(context.prisma, {
-        guildId: context.guildId,
-        userId: message.author.id,
-        reason,
-        originDetectionId: selected.detectionId,
-        createdBy: actorId,
-      });
-    }
-    await executeAutomaticDiscordAction(message, selected.policy, reason);
-    context.logger.info(
-      {
-        guildId: context.guildId,
-        messageId: message.id,
-        targetUserId: message.author.id,
-        action,
-        selector: selected.policy.selector,
-        severity: selected.policy.severity,
-      },
-      '自動Moderation Discord操作を実行しました',
-    );
-  } catch (error) {
-    actionError = error;
-  }
-
-  const caseAction = enforcementActionToCaseAction(action);
-  if (caseAction) {
     try {
-      const durationSeconds = action === 'timeout' ? selected.policy.timeoutMinutes * 60 : null;
-      const expiresAt =
-        durationSeconds === null ? null : new Date(Date.now() + durationSeconds * 1000);
-      await createModerationCase(context.prisma, {
-        guildId: context.guildId,
-        action: caseAction,
-        targetUserId: message.author.id,
-        moderatorUserId: actorId,
-        reason,
-        status: actionError ? 'failed' : undefined,
-        durationSeconds,
-        expiresAt,
-        source: 'automatic',
-        originDetectionId: selected.detectionId,
-      });
-    } catch (error) {
-      context.logger.error(
-        {
-          err: error,
+      assertAutomaticTargetCanBeModerated(message, selected.policy);
+      if (action === 'blacklist') {
+        await upsertModerationBlacklistEntry(context.prisma, {
           guildId: context.guildId,
+          userId: message.author.id,
+          reason,
+          originDetectionId: selected.detectionId,
+          createdBy: actorId,
+        });
+      }
+      await executeAutomaticDiscordAction(message, selected.policy, reason);
+      context.logger.info(
+        {
+          guildId: context.guildId,
+          messageId: message.id,
+          targetUserId: message.author.id,
           action,
-          detectionId: selected.detectionId,
+          selector: selected.policy.selector,
+          severity: selected.policy.severity,
         },
-        '自動Moderation Caseの記録に失敗しました',
+        '自動Moderation Discord操作を実行しました',
       );
-      if (!actionError) actionError = error;
+    } catch (error) {
+      actionError = error;
     }
+
+    const caseAction = enforcementActionToCaseAction(action);
+    if (caseAction) {
+      try {
+        const durationSeconds = action === 'timeout' ? selected.policy.timeoutMinutes * 60 : null;
+        const expiresAt =
+          durationSeconds === null ? null : new Date(Date.now() + durationSeconds * 1000);
+        await createModerationCase(context.prisma, {
+          guildId: context.guildId,
+          action: caseAction,
+          targetUserId: message.author.id,
+          moderatorUserId: actorId,
+          reason,
+          status: actionError ? 'failed' : undefined,
+          durationSeconds,
+          expiresAt,
+          source: 'automatic',
+          originDetectionId: selected.detectionId,
+        });
+      } catch (error) {
+        context.logger.error(
+          {
+            err: error,
+            guildId: context.guildId,
+            action,
+            detectionId: selected.detectionId,
+          },
+          '自動Moderation Caseの記録に失敗しました',
+        );
+        if (!actionError) actionError = error;
+      }
+    }
+  } finally {
+    releaseTargetOperation?.();
   }
 
   try {
