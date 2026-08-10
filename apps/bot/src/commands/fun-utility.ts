@@ -7,6 +7,7 @@ const MAX_CHOICE_LENGTH = 4_000;
 const MAX_DICE_COUNT = 20;
 const MAX_DICE_SIDES = 1_000;
 const RANDOM_ABSOLUTE_LIMIT = 1_000_000_000;
+const EMBED_DESCRIPTION_LIMIT = 4_096;
 
 const EIGHT_BALL_ANSWERS = [
   'かなり期待できそうです！',
@@ -60,6 +61,10 @@ export function shuffleChoices<T>(values: readonly T[]): T[] {
     [shuffled[index], shuffled[target]] = [shuffled[target]!, shuffled[index]!];
   }
   return shuffled;
+}
+
+export function formatShuffleDescription(choices: readonly string[]): string {
+  return choices.map((choice, index) => `**${index + 1}.** ${choice}`).join('\n');
 }
 
 export function resolveRpsResult(player: RpsHand, bot: RpsHand): 'win' | 'draw' | 'lose' {
@@ -324,11 +329,19 @@ export const shuffleCommand: SlashCommand = {
       return;
     }
     const shuffled = shuffleChoices(choices);
+    const description = formatShuffleDescription(shuffled);
+    if (description.length > EMBED_DESCRIPTION_LIMIT) {
+      await interaction.reply({
+        content: '候補全体が長すぎます。候補数または各候補の文字数を減らしてください。',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
     await interaction.reply({
       embeds: [
         new EmbedBuilder()
           .setTitle('🔀 Shuffle Result')
-          .setDescription(shuffled.map((choice, index) => `**${index + 1}.** ${choice}`).join('\n'))
+          .setDescription(description)
           .setColor(0x7c6df2),
       ],
     });
@@ -361,6 +374,7 @@ export const rateCommand: SlashCommand = {
     const meter = '█'.repeat(Math.round(score / 10)) + '░'.repeat(10 - Math.round(score / 10));
     await interaction.reply({
       content: `📊 **${subject}**\n${meter} **${score}%**\n\n同じユーザー・同じお題なら結果は変わりません。`,
+      allowedMentions: { parse: [] },
     });
   },
 };
