@@ -11,8 +11,11 @@ describe('fun utility commands', () => {
     expect(parseChoices('  赤, 青、緑\n 黄  ')).toEqual(['赤', '青', '緑', '黄']);
   });
 
-  it('空の候補を除外する', () => {
+  it('空の候補を除外し、21件以上も切り捨てず検証側へ渡す', () => {
     expect(parseChoices('赤,,,\n、 青')).toEqual(['赤', '青']);
+    expect(parseChoices(Array.from({ length: 21 }, (_, index) => `候補${index}`).join(','))).toHaveLength(
+      21,
+    );
   });
 
   it('ダイス結果を指定個数・面数の範囲で生成する', () => {
