@@ -8,6 +8,8 @@ const GROUP_ID_PATTERN = /^[a-z0-9][a-z0-9_-]{0,31}$/;
 const MAX_GROUPS = 25;
 const MAX_ROLES_PER_GROUP = 25;
 const MAX_RESPONSE_LENGTH = 1900;
+const ROLE_LIST_HEADER = '**選択可能なSelf Role**';
+const ROLE_LIST_CONTINUATION_HEADER = '**選択可能なSelf Role（続き）**';
 
 const roleManagerMemberLocks = new Map<string, Promise<void>>();
 
@@ -239,10 +241,10 @@ export async function withRoleManagerMemberLock<T>(
   }
 }
 
-export function formatRoleManagerList(config: RoleManagerConfig): string {
+export function formatRoleManagerListPages(config: RoleManagerConfig): string[] {
   const groups = config.groups.filter((group) => group.enabled && group.roleIds.length > 0);
   if (groups.length === 0) {
-    return 'Self Roleはまだ設定されていません。Herta StudioからRoleグループを追加してください。';
+    return ['Self Roleはまだ設定されていません。Herta StudioからRoleグループを追加してください。'];
   }
 
   const sections = groups.map((group) => {
@@ -254,7 +256,22 @@ export function formatRoleManagerList(config: RoleManagerConfig): string {
     return lines.join('\n');
   });
 
-  return truncate(`**選択可能なSelf Role**\n\n${sections.join('\n\n')}`, MAX_RESPONSE_LENGTH);
+  const pages: string[] = [];
+  let currentPage = ROLE_LIST_HEADER;
+
+  for (const section of sections) {
+    const nextPage = `${currentPage}\n\n${section}`;
+    if (nextPage.length <= MAX_RESPONSE_LENGTH) {
+      currentPage = nextPage;
+      continue;
+    }
+
+    pages.push(currentPage);
+    currentPage = `${ROLE_LIST_CONTINUATION_HEADER}\n\n${section}`;
+  }
+
+  pages.push(currentPage);
+  return pages;
 }
 
 async function executeRoleManagerCommand(
@@ -274,7 +291,11 @@ async function executeRoleManagerCommand(
 
   const subcommand = interaction.options.getSubcommand();
   if (subcommand === 'list') {
-    await respond(interaction, formatRoleManagerList(config), config.ephemeralResponses);
+    const pages = formatRoleManagerListPages(config);
+    await respond(interaction, pages[0]!, config.ephemeralResponses);
+    for (const page of pages.slice(1)) {
+      await followUp(interaction, page, config.ephemeralResponses);
+    }
     return;
   }
 
@@ -492,16 +513,28 @@ async function respond(
     return;
   }
 
-  const options: RoleManagerReplyOptions = {
-    content: safeContent,
-    allowedMentions: { parse: [] },
-    ...(ephemeral ? { flags: EPHEMERAL_FLAG } : {}),
-  };
+  const options = createReplyOptions(safeContent, ephemeral);
   if (interaction.replied) {
     await interaction.followUp(options);
     return;
   }
   await interaction.reply(options);
+}
+
+async function followUp(
+  interaction: RoleManagerCommandInteraction,
+  content: string,
+  ephemeral: boolean,
+): Promise<void> {
+  await interaction.followUp(createReplyOptions(truncate(content, MAX_RESPONSE_LENGTH), ephemeral));
+}
+
+function createReplyOptions(content: string, ephemeral: boolean): RoleManagerReplyOptions {
+  return {
+    content,
+    allowedMentions: { parse: [] },
+    ...(ephemeral ? { flags: EPHEMERAL_FLAG } : {}),
+  };
 }
 
 function truncate(value: string, maxLength: number): string {
