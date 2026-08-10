@@ -368,7 +368,10 @@ async function executeAutomaticEnforcement(
   let actionError: unknown;
   const releaseTargetOperation =
     action === 'timeout'
-      ? await waitForModerationTargetOperation(context.guildId, message.author.id)
+      ? await waitForModerationTargetOperation(
+          context.guildId,
+          message.author.id,
+        )
       : null;
 
   try {
