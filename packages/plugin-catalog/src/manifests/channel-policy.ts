@@ -143,6 +143,6 @@ export const channelPolicyManifest: PluginManifest = {
     },
     required: ['enabled', 'warningCooldownSeconds', 'defaultWarningMessage', 'rules'],
   },
-  events: ['messageCreate'],
+  events: ['messageCreate', 'messageUpdate'],
   commands: [],
 };
