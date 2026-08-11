@@ -16,6 +16,12 @@ export interface CommunityLeaderboardEntry {
   total: number;
 }
 
+export interface CommunityUserRank {
+  rank: number | null;
+  total: number;
+  participants: number;
+}
+
 export interface CommunityActivityTotals {
   messages: number;
   reactionsGiven: number;
@@ -71,6 +77,28 @@ export async function getCommunityLeaderboard(
     take: Math.max(1, Math.min(25, limit)),
   });
   return rows.map((row) => ({ userId: row.userId, total: Number(row._sum.value ?? 0n) }));
+}
+
+export async function getCommunityUserRank(
+  prisma: PrismaClient,
+  guildId: string,
+  userId: string,
+  metric: CommunityActivityMetric,
+  period: CommunityActivityPeriod,
+): Promise<CommunityUserRank> {
+  const rows = await prisma.communityActivityDaily.groupBy({
+    by: ['userId'],
+    where: { guildId, metric, activityDate: { gte: periodStart(period) } },
+    _sum: { value: true },
+    orderBy: { _sum: { value: 'desc' } },
+  });
+
+  const index = rows.findIndex((row) => row.userId === userId);
+  return {
+    rank: index >= 0 ? index + 1 : null,
+    total: index >= 0 ? Number(rows[index]?._sum.value ?? 0n) : 0,
+    participants: rows.length,
+  };
 }
 
 export async function getCommunityActivityTotals(
