@@ -23,52 +23,21 @@ import json
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-
-port_file = Path(sys.argv[1])
-hit_file = Path(sys.argv[2])
-payload = {
-    "service": {"id": "herta-discord-bot"},
-    "status": "operational",
-    "checked_at": "2026-07-27T00:00:00.000Z",
-    "version": "0.1.0",
-    "checks": {
-        "process": {"status": "ok"},
-        "discord": {"status": "ok"},
-        "database": {"status": "ok"},
-        "redis": {"status": "ok"},
-        "worker": {"status": "ok"},
-    },
-}
+port_file = Path(sys.argv[1]); hit_file = Path(sys.argv[2])
+payload = {"service":{"id":"herta-discord-bot"},"status":"operational","checked_at":"2026-07-27T00:00:00.000Z","version":"0.1.0","checks":{"process":{"status":"ok"},"discord":{"status":"ok"},"database":{"status":"ok"},"redis":{"status":"ok"},"worker":{"status":"ok"}}}
 body = json.dumps(payload).encode("utf-8")
-
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         hit_file.write_text(self.path, encoding="utf-8")
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, format, *args):
-        return
-
-server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.send_response(200); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(body))); self.end_headers(); self.wfile.write(body)
+    def log_message(self, format, *args): return
+server = ThreadingHTTPServer(("127.0.0.1",0), Handler)
 port_file.write_text(str(server.server_address[1]), encoding="utf-8")
 server.serve_forever()
 PY
 PROXY_PID=$!
-
-for _ in $(seq 1 50); do
-  if [ -s "${PROXY_PORT_FILE}" ]; then break; fi
-  sleep 0.1
-done
-
-if [ ! -s "${PROXY_PORT_FILE}" ]; then
-  echo 'FAIL: mock proxyを起動できませんでした' >&2
-  exit 1
-fi
-
+for _ in $(seq 1 50); do [ ! -s "${PROXY_PORT_FILE}" ] || break; sleep 0.1; done
+[ -s "${PROXY_PORT_FILE}" ] || { echo 'FAIL: mock proxyを起動できませんでした' >&2; exit 1; }
 PROXY_PORT="$(cat "${PROXY_PORT_FILE}")"
 PROXY_URL="http://127.0.0.1:${PROXY_PORT}"
 
@@ -78,7 +47,7 @@ env \
   https_proxy="${PROXY_URL}" HTTPS_PROXY="${PROXY_URL}" ALL_PROXY="${PROXY_URL}" \
   no_proxy='' NO_PROXY='' \
   HEALTH_URL='http://127.0.0.1:9/healthz' \
-  STATUS_INGEST_URL='https://stats.ivrm.jp/api/internal/status-ingest' \
+  STATUS_INGEST_URL='https://status.ivrm.jp/api/internal/status-ingest' \
   STATUS_SIGNING_SECRET="${SIGNING_SECRET}" \
   STATUS_LOCK_FILE="${TEST_ROOT}/agent.lock" \
   STATUS_CONNECT_TIMEOUT_SECONDS=1 STATUS_MAX_TIME_SECONDS=2 STATUS_RETRY_COUNT=0 \
@@ -93,12 +62,6 @@ if [ "${STATUS}" -ne 3 ]; then
   cat "${TEST_ROOT}/stderr.txt" >&2 || true
   exit 1
 fi
-
-if [ -e "${PROXY_HIT_FILE}" ]; then
-  echo 'FAIL: loopback health requestがProxyへ送信されました' >&2
-  cat "${PROXY_HIT_FILE}" >&2 || true
-  exit 1
-fi
-
+if [ -e "${PROXY_HIT_FILE}" ]; then echo 'FAIL: loopback health requestがProxyへ送信されました' >&2; cat "${PROXY_HIT_FILE}" >&2 || true; exit 1; fi
 grep -q '内部ヘルスの取得に失敗しました' "${TEST_ROOT}/stderr.txt"
 echo 'PASS: Proxy環境変数があってもloopback healthを直接取得'
