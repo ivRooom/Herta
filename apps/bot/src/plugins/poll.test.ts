@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildPollMessage,
   formatPollListPages,
+  formatPollResult,
   normalizePollConfig,
   parsePollOptions,
 } from './poll.js';
@@ -36,10 +37,14 @@ describe('Poll v1', () => {
   });
 
   it('途中結果を隠す設定では開催中の得票数を表示しない', () => {
-    const message = buildPollMessage(makeSnapshot({ showLiveResults: false }));
+    const snapshot = makeSnapshot({ showLiveResults: false });
+    const message = buildPollMessage(snapshot);
+    const result = formatPollResult(snapshot);
     expect(message.content).toContain('投票受付中');
     expect(message.content).not.toContain('3票');
     expect(message.components).toHaveLength(1);
+    expect(result).toContain('途中結果は締切まで非公開');
+    expect(result).not.toContain('3票');
   });
 
   it('終了したPollでは結果を表示して投票Buttonを消す', () => {
@@ -49,12 +54,29 @@ describe('Poll v1', () => {
   });
 
   it('最終結果を非公開にしても終了時は投票Buttonを消す', () => {
-    const message = buildPollMessage(
-      makeSnapshot({ status: 'closed', showLiveResults: false, closeAnnouncement: false }),
-    );
+    const snapshot = makeSnapshot({
+      status: 'closed',
+      showLiveResults: false,
+      closeAnnouncement: false,
+    });
+    const message = buildPollMessage(snapshot);
+    const result = formatPollResult(snapshot);
     expect(message.content).toContain('最終結果は非公開');
     expect(message.content).not.toContain('3票');
     expect(message.components).toHaveLength(0);
+    expect(result).toContain('最終結果は非公開');
+    expect(result).not.toContain('3票');
+  });
+
+  it('count表示では結果コマンドに割合を付けない', () => {
+    const result = formatPollResult(makeSnapshot({ resultStyle: 'count' }));
+    expect(result).toContain('3票');
+    expect(result).not.toContain('75%');
+  });
+
+  it('percentage表示では結果コマンドに割合を表示する', () => {
+    const result = formatPollResult(makeSnapshot({ resultStyle: 'percentage' }));
+    expect(result).toContain('3票 (75%)');
   });
 
   it('Poll一覧をDiscord文字数上限以下へ分割する', () => {
