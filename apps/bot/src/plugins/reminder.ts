@@ -149,7 +149,11 @@ async function executeReminderCommand(
     return;
   }
   if (subcommand === 'list') {
-    const reminders = await listUserReminders(context.prisma, interaction.guildId, interaction.user.id);
+    const reminders = await listUserReminders(
+      context.prisma,
+      interaction.guildId,
+      interaction.user.id,
+    );
     await reply(context, interaction, formatReminderList(reminders));
     return;
   }
@@ -223,7 +227,11 @@ async function handleCancel(
 ): Promise<void> {
   const id = interaction.options.getString('id', true)?.trim() ?? '';
   if (!UUID_PATTERN.test(id)) {
-    await reply(context, interaction, 'Reminder IDの形式が正しくありません。`/remind list`からコピーしてください。');
+    await reply(
+      context,
+      interaction,
+      'Reminder IDの形式が正しくありません。`/remind list`からコピーしてください。',
+    );
     return;
   }
 
@@ -264,7 +272,10 @@ async function runReminderCycle(context: ReminderRuntimeContext): Promise<void> 
 
   const run = processDueReminders(context)
     .catch((error) => {
-      context.logger.warn({ err: error, guildId: context.guildId }, 'Reminder workerの実行に失敗しました');
+      context.logger.warn(
+        { err: error, guildId: context.guildId },
+        'Reminder workerの実行に失敗しました',
+      );
     })
     .finally(() => {
       if (workerRuns.get(context.guildId) === run) workerRuns.delete(context.guildId);
@@ -295,7 +306,12 @@ async function processDueReminders(context: ReminderRuntimeContext): Promise<voi
         new Date(Date.now() + RETRY_DELAY_MS),
       );
       context.logger.warn(
-        { err: error, guildId: context.guildId, reminderId: reminder.id, delivery: reminder.delivery },
+        {
+          err: error,
+          guildId: context.guildId,
+          reminderId: reminder.id,
+          delivery: reminder.delivery,
+        },
         'Reminderの配信に失敗しました',
       );
     }
