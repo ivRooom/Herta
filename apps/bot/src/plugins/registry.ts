@@ -12,6 +12,7 @@ import type { SlashCommand } from '../commands/registry.js';
 import { birthdayRolePlugin } from './birthday-role.js';
 import { channelPolicyPlugin } from './channel-policy.js';
 import { onboardingPlugin } from './onboarding.js';
+import { pollPlugin } from './poll.js';
 import { reminderPlugin } from './reminder.js';
 import { roleManagerPlugin } from './role-manager.js';
 import type { RuntimePluginEntry } from './types.js';
@@ -225,6 +226,7 @@ const officialPluginIds = [
   'lfg',
   'moderation',
   'onboarding',
+  'poll',
   'reminder',
   'quote',
   'role-manager',
@@ -330,6 +332,20 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
           }) as Parameters<NonNullable<typeof onboardingPlugin.onEnable>>[0],
       )
     : undefined;
+  const pollEntry = deps
+    ? toRuntimePluginEntry(
+        pollPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof pollPlugin.onEnable>>[0],
+      )
+    : undefined;
   const reminderEntry = deps
     ? toRuntimePluginEntry(
         reminderPlugin,
@@ -344,7 +360,6 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
           }) as Parameters<NonNullable<typeof reminderPlugin.onEnable>>[0],
       )
     : undefined;
-
   const quoteEntry = deps
     ? toRuntimePluginEntry(
         quotePlugin,
@@ -397,6 +412,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (pluginId === 'lfg' && lfgEntry) return [lfgEntry];
     if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];
     if (pluginId === 'onboarding' && onboardingEntry) return [onboardingEntry];
+    if (pluginId === 'poll' && pollEntry) return [pollEntry];
     if (pluginId === 'reminder' && reminderEntry) return [reminderEntry];
     if (pluginId === 'quote' && quoteEntry) return [quoteEntry];
     if (pluginId === 'role-manager' && roleManagerEntry) return [roleManagerEntry];
