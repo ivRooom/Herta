@@ -93,9 +93,7 @@ jobs:
             apps/studio/src/components/plugin-setup-overview.tsx
           pnpm --filter @herta/db exec prisma format --schema prisma/schema.prisma
           pnpm --filter @herta/db exec prisma generate --schema prisma/schema.prisma
-          pnpm --filter @herta/shared build
-          pnpm --filter @herta/plugin-sdk build
-          pnpm --filter @herta/plugin-catalog build
+          pnpm build
           pnpm --filter @herta/bot test -- achievements.test.ts
           pnpm typecheck
           git rm .github/workflows/tmp-integrate-achievements.yml
