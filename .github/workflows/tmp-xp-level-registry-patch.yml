@@ -1,0 +1,46 @@
+name: Temporary XP Level Registry Patch
+on:
+  push:
+    branches:
+      - tmp/xp-level-registry-patch
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: tmp/xp-level-registry-patch
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Patch registry
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('apps/bot/src/plugins/registry.ts')
+          s = p.read_text()
+          replacements = [
+            ("import { roleManagerPlugin } from './role-manager.js';\n", "import { roleManagerPlugin } from './role-manager.js';\nimport { xpLevelPlugin } from './xp-level.js';\n"),
+            ("  'team-split',\n] as const;", "  'team-split',\n  'xp-level',\n] as const;"),
+            ("  const teamSplitEntry = deps\n", "  const xpLevelEntry = deps\n    ? toRuntimePluginEntry(\n        xpLevelPlugin,\n        (plugin, guildId, config) =>\n          createPluginContext({\n            client: deps.client,\n            prisma: deps.prisma,\n            logger: deps.logger,\n            guildId,\n            config,\n            manifest: plugin.manifest,\n          }) as Parameters<NonNullable<typeof xpLevelPlugin.onEnable>>[0],\n      )\n    : undefined;\n  const teamSplitEntry = deps\n"),
+            ("    if (pluginId === 'team-split' && teamSplitEntry) return [teamSplitEntry];\n", "    if (pluginId === 'team-split' && teamSplitEntry) return [teamSplitEntry];\n    if (pluginId === 'xp-level' && xpLevelEntry) return [xpLevelEntry];\n"),
+          ]
+          for old, new in replacements:
+            if old not in s:
+              raise SystemExit(f'pattern not found: {old!r}')
+            s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+          pnpm exec prettier --write apps/bot/src/plugins/registry.ts apps/bot/src/plugins/xp-level.ts apps/bot/src/plugins/xp-level-repository.ts apps/bot/src/plugins/xp-level.test.ts packages/plugin-catalog/src/index.ts packages/plugin-catalog/src/manifests/xp-level.ts
+          rm .github/workflows/tmp-xp-level-registry-patch.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add apps/bot/src/plugins packages/plugin-catalog/src .github/workflows/tmp-xp-level-registry-patch.yml
+          git commit -m 'XP Levelを公式Plugin Registryへ登録する'
+          git push origin HEAD:tmp/xp-level-registry-patch
