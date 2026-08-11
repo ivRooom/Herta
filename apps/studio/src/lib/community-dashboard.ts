@@ -1,3 +1,4 @@
+import { getAllPluginManifests } from '@herta/plugin-catalog';
 import { prisma } from '@/lib/db';
 
 export interface CommunityDashboardSnapshot {
@@ -21,7 +22,6 @@ export async function getCommunityDashboardSnapshot(
   const [row] = await prisma.$queryRaw<
     Array<{
       enabledPlugins: bigint;
-      totalPlugins: bigint;
       afkUsers: bigint;
       openPolls: bigint;
       openGiveaways: bigint;
@@ -35,7 +35,6 @@ export async function getCommunityDashboardSnapshot(
   >`
     SELECT
       (SELECT COUNT(*) FROM "guild_plugins" WHERE "guild_id" = ${guildId} AND "enabled" = TRUE)::bigint AS "enabledPlugins",
-      (SELECT COUNT(*) FROM "plugins" WHERE "is_official" = TRUE)::bigint AS "totalPlugins",
       (SELECT COUNT(*) FROM "afk_statuses" WHERE "guild_id" = ${guildId})::bigint AS "afkUsers",
       (SELECT COUNT(*) FROM "polls" WHERE "guild_id" = ${guildId} AND "status" = 'open' AND "ends_at" > CURRENT_TIMESTAMP)::bigint AS "openPolls",
       (SELECT COUNT(*) FROM "giveaways" WHERE "guild_id" = ${guildId} AND "status" = 'open' AND "ends_at" > CURRENT_TIMESTAMP)::bigint AS "openGiveaways",
@@ -51,7 +50,7 @@ export async function getCommunityDashboardSnapshot(
   const failedCommands7d = Number(row?.failedCommands7d ?? 0n);
   return {
     enabledPlugins: Number(row?.enabledPlugins ?? 0n),
-    totalPlugins: Number(row?.totalPlugins ?? 0n),
+    totalPlugins: getAllPluginManifests().length,
     afkUsers: Number(row?.afkUsers ?? 0n),
     openPolls: Number(row?.openPolls ?? 0n),
     openGiveaways: Number(row?.openGiveaways ?? 0n),
