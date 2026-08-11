@@ -226,7 +226,9 @@ export async function votePoll(
 ): Promise<PollVoteResult> {
   const now = input.now ?? new Date();
   return prisma.$transaction(async (tx) => {
-    const polls = await tx.$queryRaw<Array<{ multiple: boolean; status: PollStatus; endsAt: Date }>>`
+    const polls = await tx.$queryRaw<
+      Array<{ multiple: boolean; status: PollStatus; endsAt: Date }>
+    >`
       SELECT "multiple", "status", "ends_at" AS "endsAt"
       FROM "polls"
       WHERE "id" = ${input.pollId}::uuid AND "guild_id" = ${input.guildId}

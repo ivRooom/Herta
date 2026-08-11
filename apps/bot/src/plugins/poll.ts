@@ -322,7 +322,11 @@ async function handleCreate(
   } catch (error) {
     await deletePoll(context.prisma, pollId).catch(() => undefined);
     context.logger.warn({ err: error, guildId, pollId }, 'Pollメッセージの作成に失敗しました');
-    await reply(context, interaction, 'Pollの投稿に失敗しました。チャンネル権限を確認してください。');
+    await reply(
+      context,
+      interaction,
+      'Pollの投稿に失敗しました。チャンネル権限を確認してください。',
+    );
   }
 }
 
@@ -330,11 +334,7 @@ async function handleList(
   context: PollRuntimeContext,
   interaction: PollCommandInteraction,
 ): Promise<void> {
-  const records = await listCreatorPolls(
-    context.prisma,
-    interaction.guildId!,
-    interaction.user.id,
-  );
+  const records = await listCreatorPolls(context.prisma, interaction.guildId!, interaction.user.id);
   const pages = formatPollListPages(records);
   await reply(context, interaction, pages[0]!);
   for (const page of pages.slice(1)) await followUp(context, interaction, page);
@@ -346,7 +346,11 @@ async function handleResults(
 ): Promise<void> {
   const id = interaction.options.getString('id', true)?.trim() ?? '';
   if (!UUID_PATTERN.test(id)) {
-    await reply(context, interaction, 'Poll IDの形式が正しくありません。`/poll list`からコピーしてください。');
+    await reply(
+      context,
+      interaction,
+      'Poll IDの形式が正しくありません。`/poll list`からコピーしてください。',
+    );
     return;
   }
   const snapshot = await getPollSnapshot(context.prisma, id, interaction.guildId!);
@@ -363,7 +367,11 @@ async function handleClose(
 ): Promise<void> {
   const id = interaction.options.getString('id', true)?.trim() ?? '';
   if (!UUID_PATTERN.test(id)) {
-    await reply(context, interaction, 'Poll IDの形式が正しくありません。`/poll list`からコピーしてください。');
+    await reply(
+      context,
+      interaction,
+      'Poll IDの形式が正しくありません。`/poll list`からコピーしてください。',
+    );
     return;
   }
   const closed = await closePollByCreator(
@@ -373,7 +381,11 @@ async function handleClose(
     interaction.user.id,
   );
   if (!closed) {
-    await reply(context, interaction, '開催中のPollが見つからないか、あなたが作成したPollではありません。');
+    await reply(
+      context,
+      interaction,
+      '開催中のPollが見つからないか、あなたが作成したPollではありません。',
+    );
     return;
   }
   const snapshot = await getPollSnapshot(context.prisma, id, interaction.guildId!);
@@ -385,7 +397,8 @@ async function handlePollComponent(
   context: PollRuntimeContext,
   interaction: PollComponentInteraction | undefined,
 ): Promise<void> {
-  if (!interaction?.isButton?.() || !interaction.customId?.startsWith(POLL_CUSTOM_ID_PREFIX)) return;
+  if (!interaction?.isButton?.() || !interaction.customId?.startsWith(POLL_CUSTOM_ID_PREFIX))
+    return;
   if (!interaction.guildId) return;
   const parsed = parsePollCustomId(interaction.customId);
   if (!parsed) return;
@@ -447,7 +460,10 @@ async function runPollCycle(context: PollRuntimeContext): Promise<void> {
   if (existing) return existing;
   const run = processExpiredPolls(context)
     .catch((error) => {
-      context.logger.warn({ err: error, guildId: context.guildId }, 'Poll workerの実行に失敗しました');
+      context.logger.warn(
+        { err: error, guildId: context.guildId },
+        'Poll workerの実行に失敗しました',
+      );
     })
     .finally(() => {
       if (workerRuns.get(context.guildId) === run) workerRuns.delete(context.guildId);
@@ -515,9 +531,7 @@ export function formatPollResult(snapshot: PollSnapshot): string {
   ].join('\n');
 }
 
-function parsePollCustomId(
-  customId: string,
-): { pollId: string; optionPosition: number } | null {
+function parsePollCustomId(customId: string): { pollId: string; optionPosition: number } | null {
   const body = customId.slice(POLL_CUSTOM_ID_PREFIX.length);
   const [action, pollId, positionText] = body.split(':');
   if (action !== 'vote' || !pollId || !UUID_PATTERN.test(pollId)) return null;
