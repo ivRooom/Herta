@@ -78,55 +78,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-
-          sudo useradd \
-            --system \
-            --no-create-home \
-            --home-dir /nonexistent \
-            --shell /usr/sbin/nologin \
-            herta-status-agent
-
-          sudo install -d \
-            --owner root \
-            --group root \
-            --mode 0755 \
-            /app/herta/deploy/scripts \
-            /app/herta/docs
-          sudo install -d \
-            --owner root \
-            --group root \
-            --mode 0700 \
-            /etc/herta
-
-          sudo install \
-            --owner root \
-            --group root \
-            --mode 0644 \
-            deploy/scripts/ivrm-status-agent.sh \
-            /app/herta/deploy/scripts/ivrm-status-agent.sh
-          sudo install \
-            --owner root \
-            --group root \
-            --mode 0644 \
-            docs/STATUS_AGENT.md \
-            /app/herta/docs/STATUS_AGENT.md
-          sudo install \
-            --owner root \
-            --group root \
-            --mode 0600 \
-            deploy/systemd/status-agent.env.example \
-            /etc/herta/status-agent.env
-
-          systemd-analyze verify --recursive-errors=yes \
-            deploy/systemd/herta-status-agent.service \
-            deploy/systemd/herta-status-agent.timer
+          sudo useradd --system --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin herta-status-agent
+          sudo install -d --owner root --group root --mode 0755 /app/herta/deploy/scripts /app/herta/docs
+          sudo install -d --owner root --group root --mode 0700 /etc/herta
+          sudo install --owner root --group root --mode 0644 deploy/scripts/ivrm-status-agent.sh /app/herta/deploy/scripts/ivrm-status-agent.sh
+          sudo install --owner root --group root --mode 0644 docs/STATUS_AGENT.md /app/herta/docs/STATUS_AGENT.md
+          sudo install --owner root --group root --mode 0600 deploy/systemd/status-agent.env.example /etc/herta/status-agent.env
+          systemd-analyze verify --recursive-errors=yes deploy/systemd/herta-status-agent.service deploy/systemd/herta-status-agent.timer
 
       - name: セキュリティ境界を静的検証
         shell: bash
         run: |
           set -euo pipefail
-
-          grep -q "STATUS_INGEST_HOST='stats.ivrm.jp'" deploy/scripts/ivrm-status-agent.sh
+          grep -q "STATUS_INGEST_HOST='status.ivrm.jp'" deploy/scripts/ivrm-status-agent.sh
           grep -q "STATUS_INGEST_PATH='/api/internal/status-ingest'" deploy/scripts/ivrm-status-agent.sh
           grep -q 'X-IVRM-Service-Id:' deploy/scripts/ivrm-status-agent.sh
           grep -q 'X-IVRM-Timestamp:' deploy/scripts/ivrm-status-agent.sh
@@ -143,7 +107,16 @@ jobs:
           grep -q 'ulimit -f' deploy/scripts/ivrm-status-agent.sh
           grep -q -- '--max-filesize' deploy/scripts/ivrm-status-agent.sh
           grep -q -- '--output /dev/null' deploy/scripts/ivrm-status-agent.sh
+          grep -q '^STATUS_INGEST_URL=https://status.ivrm.jp/api/internal/status-ingest$' deploy/systemd/status-agent.env.example
 
+          if grep -q "STATUS_INGEST_HOST='stats.ivrm.jp'" deploy/scripts/ivrm-status-agent.sh; then
+            echo '::error::旧stats.ivrm.jpを本番送信先へ戻さないでください'
+            exit 1
+          fi
+          if grep -q '^STATUS_INGEST_URL=https://stats.ivrm.jp/' deploy/systemd/status-agent.env.example; then
+            echo '::error::設定例に旧stats.ivrm.jpを使用しないでください'
+            exit 1
+          fi
           if grep -q 'guild_count:' deploy/scripts/ivrm-status-agent.sh; then
             echo '::error::公開payloadへguild_countを追加しないでください'
             exit 1
@@ -153,7 +126,7 @@ jobs:
             exit 1
           fi
           if grep -q 'X-IVRM-Nonce:' deploy/scripts/ivrm-status-agent.sh; then
-            echo '::error::既存ivrm-stats契約にないNonce headerを追加しないでください'
+            echo '::error::既存status API契約にないNonce headerを追加しないでください'
             exit 1
           fi
 
