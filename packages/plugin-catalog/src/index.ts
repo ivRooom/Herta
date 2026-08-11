@@ -9,12 +9,14 @@ import type { PluginManifest } from '@herta/shared';
 import { birthdayRoleManifest } from './manifests/birthday-role.js';
 import { channelPolicyManifest } from './manifests/channel-policy.js';
 import { onboardingManifest } from './manifests/onboarding.js';
+import { pollManifest } from './manifests/poll.js';
 import { reminderManifest } from './manifests/reminder.js';
 import { roleManagerManifest } from './manifests/role-manager.js';
 
 export { birthdayRoleManifest } from './manifests/birthday-role.js';
 export { channelPolicyManifest } from './manifests/channel-policy.js';
 export { onboardingManifest } from './manifests/onboarding.js';
+export { pollManifest } from './manifests/poll.js';
 export { reminderManifest } from './manifests/reminder.js';
 export { roleManagerManifest } from './manifests/role-manager.js';
 
@@ -26,6 +28,7 @@ const pluginManifests: PluginManifest[] = [
   lfgManifest,
   moderationManifest,
   onboardingManifest,
+  pollManifest,
   reminderManifest,
   quoteManifest,
   roleManagerManifest,
