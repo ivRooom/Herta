@@ -92,6 +92,7 @@ jobs:
             apps/bot/src/plugins/registry.ts \
             apps/studio/src/components/plugin-setup-overview.tsx
           pnpm --filter @herta/db exec prisma format --schema prisma/schema.prisma
+          pnpm --filter @herta/db exec prisma generate --schema prisma/schema.prisma
           pnpm --filter @herta/plugin-catalog build
           pnpm --filter @herta/bot test -- achievements.test.ts
           pnpm typecheck
