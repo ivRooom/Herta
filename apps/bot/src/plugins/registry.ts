@@ -11,6 +11,7 @@ import type { HertaPlugin } from '@herta/plugin-sdk';
 import type { SlashCommand } from '../commands/registry.js';
 import { birthdayRolePlugin } from './birthday-role.js';
 import { channelPolicyPlugin } from './channel-policy.js';
+import { giveawayPlugin } from './giveaway.js';
 import { onboardingPlugin } from './onboarding.js';
 import { pollPlugin } from './poll.js';
 import { reminderPlugin } from './reminder.js';
@@ -223,6 +224,7 @@ const officialPluginIds = [
   'birthday-role',
   'channel-policy',
   'daily-content',
+  'giveaway',
   'lfg',
   'moderation',
   'onboarding',
@@ -288,6 +290,20 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             config,
             manifest: plugin.manifest,
           }) as Parameters<NonNullable<typeof dailyContentPlugin.onEnable>>[0],
+      )
+    : undefined;
+  const giveawayEntry = deps
+    ? toRuntimePluginEntry(
+        giveawayPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof giveawayPlugin.onEnable>>[0],
       )
     : undefined;
   const lfgEntry = deps
@@ -409,6 +425,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (pluginId === 'birthday-role' && birthdayRoleEntry) return [birthdayRoleEntry];
     if (pluginId === 'channel-policy' && channelPolicyEntry) return [channelPolicyEntry];
     if (pluginId === 'daily-content' && dailyContentEntry) return [dailyContentEntry];
+    if (pluginId === 'giveaway' && giveawayEntry) return [giveawayEntry];
     if (pluginId === 'lfg' && lfgEntry) return [lfgEntry];
     if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];
     if (pluginId === 'onboarding' && onboardingEntry) return [onboardingEntry];
