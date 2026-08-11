@@ -30,6 +30,10 @@ const pluginSetupNotes: Record<string, string[]> = {
   'team-split': [
     'balancedを使う場合は参加者scoreの入力ルールをサーバー内で統一すると結果が安定します。',
   ],
+  'server-stats': [
+    'Botを除外した正確なメンバー数にはServer Members Intentと完全なMember Cacheが必要です。',
+    'Activityは既存DBを読み取り集計するため、Server Stats専用の追加ログ収集や外部API通信は行いません。',
+  ],
   reminder: [
     'ReminderはDBへ保存されるため、Bot再起動後も未配信分が維持されます。',
     'DM通知を使う場合、ユーザー側のDM受信設定によっては配信に失敗する場合があります。',
