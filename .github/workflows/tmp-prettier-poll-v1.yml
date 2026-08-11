@@ -1,0 +1,35 @@
+name: Temporary Prettier Poll v1
+
+on:
+  push:
+    branches: [tmp/prettier-poll-v1]
+
+permissions:
+  contents: write
+
+jobs:
+  prettier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prettierを適用
+        run: |
+          pnpm exec prettier --write \
+            apps/bot/src/plugins/poll-repository.ts \
+            apps/bot/src/plugins/poll.ts \
+            apps/bot/src/plugins/registry.ts
+          git config user.name 'mizzz（ずーみー）/いゔる。'
+          git config user.email 'mizzz._.dev@outlook.jp'
+          git add apps/bot/src/plugins/poll-repository.ts apps/bot/src/plugins/poll.ts apps/bot/src/plugins/registry.ts
+          if ! git diff --cached --quiet; then
+            git commit -m 'Poll v1をPrettier整形する'
+            git push
+          fi
