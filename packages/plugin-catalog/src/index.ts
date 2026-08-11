@@ -12,6 +12,7 @@ import { onboardingManifest } from './manifests/onboarding.js';
 import { pollManifest } from './manifests/poll.js';
 import { reminderManifest } from './manifests/reminder.js';
 import { roleManagerManifest } from './manifests/role-manager.js';
+import { suggestionManifest } from './manifests/suggestion.js';
 
 export { birthdayRoleManifest } from './manifests/birthday-role.js';
 export { channelPolicyManifest } from './manifests/channel-policy.js';
@@ -19,6 +20,7 @@ export { onboardingManifest } from './manifests/onboarding.js';
 export { pollManifest } from './manifests/poll.js';
 export { reminderManifest } from './manifests/reminder.js';
 export { roleManagerManifest } from './manifests/role-manager.js';
+export { suggestionManifest } from './manifests/suggestion.js';
 
 const pluginManifests: PluginManifest[] = [
   autoResponseManifest,
@@ -32,6 +34,7 @@ const pluginManifests: PluginManifest[] = [
   reminderManifest,
   quoteManifest,
   roleManagerManifest,
+  suggestionManifest,
   teamSplitManifest,
 ];
 
