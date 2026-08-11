@@ -1,0 +1,258 @@
+name: Temporary Community Activity Integration
+
+on:
+  push:
+    branches:
+      - feat/community-activity-leaderboard-v1
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/community-activity-leaderboard-v1
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Integrate and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          schema = Path('packages/db/prisma/schema.prisma')
+          text = schema.read_text()
+          marker = '// ============================================================\n// Plugin: Achievements / Badges\n// ============================================================'
+          models = '''// ============================================================
+          // Community Activity / Leaderboard
+          // ============================================================
+
+          model CommunityActivityDaily {
+            guildId      String   @map("guild_id")
+            userId       String   @map("user_id")
+            activityDate DateTime @map("activity_date") @db.Date
+            metric       String   @db.VarChar(32)
+            value        BigInt   @default(0)
+            updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+            @@id([guildId, userId, activityDate, metric])
+            @@index([guildId, metric, activityDate])
+            @@index([guildId, userId, activityDate])
+            @@map("community_activity_daily")
+          }
+
+          model CommunityVoiceSession {
+            guildId   String   @map("guild_id")
+            userId    String   @map("user_id")
+            channelId String   @map("channel_id")
+            startedAt DateTime @map("started_at") @db.Timestamptz(3)
+            updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+            @@id([guildId, userId])
+            @@index([guildId, startedAt])
+            @@map("community_voice_sessions")
+          }
+
+          '''
+          if 'model CommunityActivityDaily {' not in text:
+              if marker not in text:
+                  raise SystemExit('schema marker missing')
+              text = text.replace(marker, models + marker, 1)
+          schema.write_text(text)
+
+          registry = Path('apps/bot/src/commands/registry.ts')
+          text = registry.read_text()
+          if "./community-activity.js" not in text:
+              text = text.replace(
+                  "import { coreInformationCommands } from './core-info.js';",
+                  "import { coreInformationCommands } from './core-info.js';\nimport { communityActivityCommands } from './community-activity.js';",
+                  1,
+              )
+              text = text.replace(
+                  "for (const command of [...coreInformationCommands, ...coreUtilityV3Commands])",
+                  "for (const command of [\n      ...coreInformationCommands,\n      ...coreUtilityV3Commands,\n      ...communityActivityCommands,\n    ])",
+                  1,
+              )
+          registry.write_text(text)
+
+          bot = Path('apps/bot/src/bot.ts')
+          text = bot.read_text()
+          if "./activity/community-activity.js" not in text:
+              anchor = "import type { DiscordHealthObservation } from './health/types.js';"
+              addition = """import type { DiscordHealthObservation } from './health/types.js';
+          import {
+            finishVoiceSession,
+            incrementCommunityActivity,
+            resetVoiceSessions,
+            startVoiceSession,
+          } from './activity/community-activity.js';"""
+              if anchor not in text:
+                  raise SystemExit('bot import anchor missing')
+              text = text.replace(anchor, addition, 1)
+
+          old_intents = "const intents = [GatewayIntentBits.Guilds];\n  if (messageContentIntentEnabled()) {\n    intents.push(GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent);"
+          new_intents = """const intents = [
+            GatewayIntentBits.Guilds,
+            GatewayIntentBits.GuildMessages,
+            GatewayIntentBits.GuildMessageReactions,
+            GatewayIntentBits.GuildVoiceStates,
+          ];
+            if (messageContentIntentEnabled()) {
+              intents.push(GatewayIntentBits.MessageContent);"""
+          if old_intents in text:
+              text = text.replace(old_intents, new_intents, 1)
+
+          if 'Partials.Reaction' not in text:
+              text = text.replace(
+                  'partials: [Partials.Message],',
+                  'partials: [Partials.Message, Partials.Reaction, Partials.User],',
+                  1,
+              )
+
+          ready_anchor = "      for (const guildId of guildIds) {\n        await this.syncGuild(client, guildId);\n      }"
+          if 'resetVoiceSessions(this.prisma' not in text:
+              ready_replacement = """      for (const guildId of guildIds) {
+                await this.syncGuild(client, guildId);
+                try {
+                  await resetVoiceSessions(this.prisma, guildId);
+                  const guild = client.guilds.cache.get(guildId);
+                  if (guild) {
+                    for (const state of guild.voiceStates.cache.values()) {
+                      if (!state.channelId || state.member?.user.bot) continue;
+                      await startVoiceSession(this.prisma, guildId, state.id, state.channelId);
+                    }
+                  }
+                } catch (error) {
+                  this.logger.warn({ err: error, guildId }, 'VCセッション初期化に失敗しました');
+                }
+              }"""
+              if ready_anchor not in text:
+                  raise SystemExit('ready anchor missing')
+              text = text.replace(ready_anchor, ready_replacement, 1)
+
+          message_anchor = "    this.client.on(Events.MessageCreate, async (message) => {\n      if (!message.guildId) return;"
+          if "'messages'" not in text[text.find(message_anchor):text.find(message_anchor)+1200]:
+              message_replacement = """    this.client.on(Events.MessageCreate, async (message) => {
+                if (!message.guildId) return;
+                if (!message.author.bot && !message.webhookId) {
+                  try {
+                    await incrementCommunityActivity(
+                      this.prisma,
+                      message.guildId,
+                      message.author.id,
+                      'messages',
+                    );
+                  } catch (error) {
+                    this.logger.warn(
+                      { err: error, guildId: message.guildId, userId: message.author.id },
+                      '発言数の記録に失敗しました',
+                    );
+                  }
+                }"""
+              if message_anchor not in text:
+                  raise SystemExit('message anchor missing')
+              text = text.replace(message_anchor, message_replacement, 1)
+
+          interaction_anchor = "    this.client.on(Events.InteractionCreate, async (interaction) => {"
+          if 'this.client.on(Events.MessageReactionAdd' not in text:
+              event_block = """    this.client.on(Events.MessageReactionAdd, async (reaction, user) => {
+                if (user.bot) return;
+                try {
+                  const resolvedReaction = reaction.partial ? await reaction.fetch() : reaction;
+                  const resolvedMessage = resolvedReaction.message.partial
+                    ? await resolvedReaction.message.fetch()
+                    : resolvedReaction.message;
+                  const guildId = resolvedMessage.guildId;
+                  if (!guildId) return;
+
+                  await incrementCommunityActivity(this.prisma, guildId, user.id, 'reactions_given');
+                  const receiver = resolvedMessage.author;
+                  if (receiver && !receiver.bot && receiver.id !== user.id) {
+                    await incrementCommunityActivity(
+                      this.prisma,
+                      guildId,
+                      receiver.id,
+                      'reactions_received',
+                    );
+                  }
+                  await this.dispatchGuildPluginEvent(
+                    guildId,
+                    Events.MessageReactionAdd,
+                    resolvedReaction,
+                    user,
+                  );
+                } catch (error) {
+                  this.logger.warn({ err: error, userId: user.id }, 'リアクション活動の記録に失敗しました');
+                }
+              });
+
+              this.client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+                const guildId = newState.guild.id;
+                const userId = newState.id;
+                if (newState.member?.user.bot ?? oldState.member?.user.bot) return;
+
+                try {
+                  if (!oldState.channelId && newState.channelId) {
+                    await startVoiceSession(this.prisma, guildId, userId, newState.channelId);
+                  } else if (oldState.channelId && !newState.channelId) {
+                    await finishVoiceSession(this.prisma, guildId, userId);
+                  }
+                  await this.dispatchGuildPluginEvent(
+                    guildId,
+                    Events.VoiceStateUpdate,
+                    oldState,
+                    newState,
+                  );
+                } catch (error) {
+                  this.logger.warn({ err: error, guildId, userId }, 'VC滞在時間の記録に失敗しました');
+                }
+              });
+
+          """
+              if interaction_anchor not in text:
+                  raise SystemExit('interaction anchor missing')
+              text = text.replace(interaction_anchor, event_block + interaction_anchor, 1)
+          bot.write_text(text)
+
+          nav = Path('apps/studio/src/components/dashboard-nav.tsx')
+          text = nav.read_text()
+          if "'/dashboard/community'" not in text:
+              text = text.replace('  BarChart3,', '  BarChart3,\n  Trophy,', 1)
+              text = text.replace(
+                  "  { href: '/dashboard/analytics', label: 'アナリティクス', icon: BarChart3 },",
+                  "  { href: '/dashboard/analytics', label: 'アナリティクス', icon: BarChart3 },\n  { href: '/dashboard/community', label: 'コミュニティ', icon: Trophy },",
+                  1,
+              )
+          nav.write_text(text)
+          PY
+
+          pnpm exec prettier --write \
+            apps/bot/src/activity/community-activity.ts \
+            apps/bot/src/commands/community-activity.ts \
+            apps/bot/src/commands/registry.ts \
+            apps/bot/src/bot.ts \
+            apps/studio/src/app/dashboard/community/page.tsx \
+            apps/studio/src/components/dashboard-nav.tsx
+          pnpm --filter @herta/db exec prisma format --schema prisma/schema.prisma
+          pnpm --filter @herta/db exec prisma generate --schema prisma/schema.prisma
+          pnpm format:check
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+          pnpm build
+
+          git rm .github/workflows/tmp-community-activity-integration.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps packages
+          git commit -m 'コミュニティ活動リーダーボードv1を統合する'
+          git push origin HEAD:feat/community-activity-leaderboard-v1
