@@ -9,6 +9,7 @@ import type { Logger } from '@herta/logger';
 import { createPluginContext } from '@herta/plugin-sdk';
 import type { HertaPlugin } from '@herta/plugin-sdk';
 import type { SlashCommand } from '../commands/registry.js';
+import { afkPlugin } from './afk.js';
 import { birthdayRolePlugin } from './birthday-role.js';
 import { channelPolicyPlugin } from './channel-policy.js';
 import { giveawayPlugin } from './giveaway.js';
@@ -220,6 +221,7 @@ function validateRuntimeEntry(
 }
 
 const officialPluginIds = [
+  'afk',
   'auto-response',
   'birthday-role',
   'channel-policy',
@@ -236,6 +238,20 @@ const officialPluginIds = [
 ] as const;
 
 function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginEntry[] {
+  const afkEntry = deps
+    ? toRuntimePluginEntry(
+        afkPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof afkPlugin.onEnable>>[0],
+      )
+    : undefined;
   const autoResponseEntry = deps
     ? toRuntimePluginEntry(
         autoResponsePlugin,
@@ -420,6 +436,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     : undefined;
 
   return officialPluginIds.flatMap((pluginId) => {
+    if (pluginId === 'afk' && afkEntry) return [afkEntry];
     if (!getPluginManifest(pluginId)) return [];
     if (pluginId === 'auto-response' && autoResponseEntry) return [autoResponseEntry];
     if (pluginId === 'birthday-role' && birthdayRoleEntry) return [birthdayRoleEntry];

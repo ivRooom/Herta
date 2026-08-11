@@ -6,6 +6,7 @@ import { moderationManifest } from '@herta/plugin-moderation/manifest';
 import { quoteManifest } from '@herta/plugin-quote/manifest';
 import { teamSplitManifest } from '@herta/plugin-team-split/manifest';
 import type { PluginManifest } from '@herta/shared';
+import { afkManifest } from './manifests/afk.js';
 import { birthdayRoleManifest } from './manifests/birthday-role.js';
 import { channelPolicyManifest } from './manifests/channel-policy.js';
 import { giveawayManifest } from './manifests/giveaway.js';
@@ -14,6 +15,7 @@ import { pollManifest } from './manifests/poll.js';
 import { reminderManifest } from './manifests/reminder.js';
 import { roleManagerManifest } from './manifests/role-manager.js';
 
+export { afkManifest } from './manifests/afk.js';
 export { birthdayRoleManifest } from './manifests/birthday-role.js';
 export { channelPolicyManifest } from './manifests/channel-policy.js';
 export { giveawayManifest } from './manifests/giveaway.js';
@@ -23,6 +25,7 @@ export { reminderManifest } from './manifests/reminder.js';
 export { roleManagerManifest } from './manifests/role-manager.js';
 
 const pluginManifests: PluginManifest[] = [
+  afkManifest,
   autoResponseManifest,
   birthdayRoleManifest,
   channelPolicyManifest,
