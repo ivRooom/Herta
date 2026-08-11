@@ -20,8 +20,7 @@ JSON
 cat > "${MOCK_BIN}/curl" <<'MOCK'
 #!/bin/bash
 set -euo pipefail
-request="GET"
-output_file=""
+request="GET"; output_file=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --request) request="$2"; shift 2 ;;
@@ -32,11 +31,7 @@ while [ "$#" -gt 0 ]; do
     *) shift ;;
   esac
 done
-if [ "${request}" = "POST" ]; then
-  echo POST > "${MOCK_CAPTURE_DIR}/post.txt"
-  printf '202'
-  exit 0
-fi
+if [ "${request}" = "POST" ]; then echo POST > "${MOCK_CAPTURE_DIR}/post.txt"; printf '202'; exit 0; fi
 cp "${MOCK_HEALTH_BODY_FILE}" "${output_file}"
 printf '200'
 MOCK
@@ -48,7 +43,7 @@ env \
   MOCK_CAPTURE_DIR="${CAPTURE_DIR}" \
   MOCK_HEALTH_BODY_FILE="${TEST_ROOT}/multi-document.json" \
   HEALTH_URL='http://127.0.0.1:3000/healthz' \
-  STATUS_INGEST_URL='https://stats.ivrm.jp/api/internal/status-ingest' \
+  STATUS_INGEST_URL='https://status.ivrm.jp/api/internal/status-ingest' \
   STATUS_SIGNING_SECRET="${SIGNING_SECRET}" \
   STATUS_LOCK_FILE="${TEST_ROOT}/agent.lock" \
   STATUS_RETRY_COUNT=0 \
@@ -57,14 +52,8 @@ env \
 MULTI_STATUS=$?
 set -e
 
-if [ "${MULTI_STATUS}" -ne 3 ]; then
-  echo "FAIL: 複数JSONドキュメントをexit code 3で拒否できませんでした: ${MULTI_STATUS}" >&2
-  exit 1
-fi
-if [ -e "${CAPTURE_DIR}/post.txt" ]; then
-  echo 'FAIL: 複数JSONドキュメントをstatus APIへ送信しました' >&2
-  exit 1
-fi
+if [ "${MULTI_STATUS}" -ne 3 ]; then echo "FAIL: 複数JSONドキュメントをexit code 3で拒否できませんでした: ${MULTI_STATUS}" >&2; exit 1; fi
+if [ -e "${CAPTURE_DIR}/post.txt" ]; then echo 'FAIL: 複数JSONドキュメントをstatus APIへ送信しました' >&2; exit 1; fi
 grep -q 'JSON形式または値が不正' "${TEST_ROOT}/multi.stderr"
 echo 'PASS: health応答を単一JSONドキュメントへ限定'
 
@@ -72,7 +61,7 @@ set +e
 env \
   PATH="${MOCK_BIN}:${PATH}" \
   HEALTH_URL='http://127.0.0.1:3000/healthz' \
-  STATUS_INGEST_URL='https://stats.ivrm.jp/api/internal/status-ingest' \
+  STATUS_INGEST_URL='https://status.ivrm.jp/api/internal/status-ingest' \
   STATUS_SIGNING_SECRET="${SIGNING_SECRET}" \
   STATUS_LOCK_FILE="${TEST_ROOT}/agent.lock" \
   STATUS_DRY_RUN=TRUE \
@@ -80,9 +69,6 @@ env \
 BOOLEAN_STATUS=$?
 set -e
 
-if [ "${BOOLEAN_STATUS}" -ne 2 ]; then
-  echo "FAIL: 不正なdry-run値をexit code 2で拒否できませんでした: ${BOOLEAN_STATUS}" >&2
-  exit 1
-fi
+if [ "${BOOLEAN_STATUS}" -ne 2 ]; then echo "FAIL: 不正なdry-run値をexit code 2で拒否できませんでした: ${BOOLEAN_STATUS}" >&2; exit 1; fi
 grep -q 'STATUS_DRY_RUNにはtrueまたはfalse' "${TEST_ROOT}/boolean.stderr"
 echo 'PASS: 不正なdry-run値で実送信へ進まない'
