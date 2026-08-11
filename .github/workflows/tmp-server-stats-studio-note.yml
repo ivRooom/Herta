@@ -1,0 +1,41 @@
+name: Temporary Server Stats Studio Note
+on:
+  push:
+    branches:
+      - tmp/server-stats-studio-note
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: feat/server-stats-v1
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Add Server Stats setup notes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('apps/studio/src/components/plugin-setup-overview.tsx')
+          s = p.read_text()
+          marker = "  reminder: [\n    'ReminderはDBへ保存されるため、Bot再起動後も未配信分が維持されます。',\n    'DM通知を使う場合、ユーザー側のDM受信設定によっては配信に失敗する場合があります。',\n  ],\n"
+          addition = marker + "  'server-stats': [\n    'Botを除外した正確なメンバー数を表示するにはServer Members Intentと完全なMember Cacheが必要です。不足時は総メンバー数へフォールバックすることをDiscord上で明示します。',\n    'ActivityはHertaが既に保持しているコマンド・Poll・Giveaway・Suggestion等のデータを読み取り集計します。新しい外部トラッキングや有料APIは追加しません。',\n  ],\n"
+          if "'server-stats': [" not in s:
+              if marker not in s:
+                  raise SystemExit('reminder setup note marker not found')
+              s = s.replace(marker, addition)
+          p.write_text(s)
+          PY
+          pnpm exec prettier --write apps/studio/src/components/plugin-setup-overview.tsx
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/studio/src/components/plugin-setup-overview.tsx
+          git commit -m "Server Statsの設定ガイドを追加する"
+          git push origin HEAD:feat/server-stats-v1
