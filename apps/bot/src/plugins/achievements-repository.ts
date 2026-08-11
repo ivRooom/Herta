@@ -19,14 +19,16 @@ export async function getAchievementMetrics(
   guildId: string,
   userId: string,
 ): Promise<AchievementMetrics> {
-  const [row] = await prisma.$queryRaw<Array<{
-    xp: bigint;
-    pollVotes: bigint;
-    giveawayEntries: bigint;
-    eventGoing: bigint;
-    suggestions: bigint;
-    acceptedSuggestions: bigint;
-  }>>`
+  const [row] = await prisma.$queryRaw<
+    Array<{
+      xp: bigint;
+      pollVotes: bigint;
+      giveawayEntries: bigint;
+      eventGoing: bigint;
+      suggestions: bigint;
+      acceptedSuggestions: bigint;
+    }>
+  >`
     SELECT
       COALESCE((SELECT "xp" FROM "xp_profiles" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId}), 0)::bigint AS "xp",
       (SELECT COUNT(DISTINCT v."poll_id") FROM "poll_votes" v JOIN "polls" p ON p."id" = v."poll_id" WHERE p."guild_id" = ${guildId} AND v."user_id" = ${userId})::bigint AS "pollVotes",

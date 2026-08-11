@@ -6,6 +6,7 @@ import { moderationManifest } from '@herta/plugin-moderation/manifest';
 import { quoteManifest } from '@herta/plugin-quote/manifest';
 import { teamSplitManifest } from '@herta/plugin-team-split/manifest';
 import type { PluginManifest } from '@herta/shared';
+import { achievementsManifest } from './manifests/achievements.js';
 import { afkManifest } from './manifests/afk.js';
 import { birthdayRoleManifest } from './manifests/birthday-role.js';
 import { channelPolicyManifest } from './manifests/channel-policy.js';
@@ -19,6 +20,7 @@ import { suggestionManifest } from './manifests/suggestion.js';
 import { serverStatsManifest } from './manifests/server-stats.js';
 import { xpLevelManifest } from './manifests/xp-level.js';
 
+export { achievementsManifest } from './manifests/achievements.js';
 export { afkManifest } from './manifests/afk.js';
 export { birthdayRoleManifest } from './manifests/birthday-role.js';
 export { channelPolicyManifest } from './manifests/channel-policy.js';
@@ -33,6 +35,7 @@ export { serverStatsManifest } from './manifests/server-stats.js';
 export { xpLevelManifest } from './manifests/xp-level.js';
 
 const pluginManifests: PluginManifest[] = [
+  achievementsManifest,
   afkManifest,
   autoResponseManifest,
   birthdayRoleManifest,

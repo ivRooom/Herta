@@ -26,18 +26,115 @@ export interface AchievementDefinition {
 }
 
 export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
-  { id: 'first-steps', name: 'First Steps', description: '100 XPを獲得する', emoji: '🌱', rarity: 'common', metric: 'xp', target: 100 },
-  { id: 'getting-active', name: 'Getting Active', description: '1,000 XPを獲得する', emoji: '⚡', rarity: 'uncommon', metric: 'xp', target: 1000 },
-  { id: 'server-regular', name: 'Server Regular', description: '5,000 XPを獲得する', emoji: '🔥', rarity: 'rare', metric: 'xp', target: 5000 },
-  { id: 'veteran', name: 'Veteran', description: '20,000 XPを獲得する', emoji: '👑', rarity: 'legendary', metric: 'xp', target: 20000 },
-  { id: 'first-vote', name: 'First Vote', description: 'Pollへ1回参加する', emoji: '🗳️', rarity: 'common', metric: 'pollVotes', target: 1 },
-  { id: 'voice-of-community', name: 'Voice of Community', description: 'Pollへ10回参加する', emoji: '📊', rarity: 'rare', metric: 'pollVotes', target: 10 },
-  { id: 'feeling-lucky', name: 'Feeling Lucky', description: 'Giveawayへ1回参加する', emoji: '🎁', rarity: 'common', metric: 'giveawayEntries', target: 1 },
-  { id: 'event-goer', name: 'Event Goer', description: 'Eventへ3回参加表明する', emoji: '🎟️', rarity: 'uncommon', metric: 'eventGoing', target: 3 },
-  { id: 'community-regular', name: 'Community Regular', description: 'Eventへ10回参加表明する', emoji: '🎉', rarity: 'epic', metric: 'eventGoing', target: 10 },
-  { id: 'idea-maker', name: 'Idea Maker', description: 'Suggestionを1件投稿する', emoji: '💡', rarity: 'common', metric: 'suggestions', target: 1 },
-  { id: 'change-maker', name: 'Change Maker', description: 'Suggestionが1件採用または完了になる', emoji: '🛠️', rarity: 'rare', metric: 'acceptedSuggestions', target: 1 },
-  { id: 'community-legend', name: 'Community Legend', description: '複数のコミュニティ活動を極める', emoji: '🌌', rarity: 'legendary', metric: 'acceptedSuggestions', target: 5, secret: true },
+  {
+    id: 'first-steps',
+    name: 'First Steps',
+    description: '100 XPを獲得する',
+    emoji: '🌱',
+    rarity: 'common',
+    metric: 'xp',
+    target: 100,
+  },
+  {
+    id: 'getting-active',
+    name: 'Getting Active',
+    description: '1,000 XPを獲得する',
+    emoji: '⚡',
+    rarity: 'uncommon',
+    metric: 'xp',
+    target: 1000,
+  },
+  {
+    id: 'server-regular',
+    name: 'Server Regular',
+    description: '5,000 XPを獲得する',
+    emoji: '🔥',
+    rarity: 'rare',
+    metric: 'xp',
+    target: 5000,
+  },
+  {
+    id: 'veteran',
+    name: 'Veteran',
+    description: '20,000 XPを獲得する',
+    emoji: '👑',
+    rarity: 'legendary',
+    metric: 'xp',
+    target: 20000,
+  },
+  {
+    id: 'first-vote',
+    name: 'First Vote',
+    description: 'Pollへ1回参加する',
+    emoji: '🗳️',
+    rarity: 'common',
+    metric: 'pollVotes',
+    target: 1,
+  },
+  {
+    id: 'voice-of-community',
+    name: 'Voice of Community',
+    description: 'Pollへ10回参加する',
+    emoji: '📊',
+    rarity: 'rare',
+    metric: 'pollVotes',
+    target: 10,
+  },
+  {
+    id: 'feeling-lucky',
+    name: 'Feeling Lucky',
+    description: 'Giveawayへ1回参加する',
+    emoji: '🎁',
+    rarity: 'common',
+    metric: 'giveawayEntries',
+    target: 1,
+  },
+  {
+    id: 'event-goer',
+    name: 'Event Goer',
+    description: 'Eventへ3回参加表明する',
+    emoji: '🎟️',
+    rarity: 'uncommon',
+    metric: 'eventGoing',
+    target: 3,
+  },
+  {
+    id: 'community-regular',
+    name: 'Community Regular',
+    description: 'Eventへ10回参加表明する',
+    emoji: '🎉',
+    rarity: 'epic',
+    metric: 'eventGoing',
+    target: 10,
+  },
+  {
+    id: 'idea-maker',
+    name: 'Idea Maker',
+    description: 'Suggestionを1件投稿する',
+    emoji: '💡',
+    rarity: 'common',
+    metric: 'suggestions',
+    target: 1,
+  },
+  {
+    id: 'change-maker',
+    name: 'Change Maker',
+    description: 'Suggestionが1件採用または完了になる',
+    emoji: '🛠️',
+    rarity: 'rare',
+    metric: 'acceptedSuggestions',
+    target: 1,
+  },
+  {
+    id: 'community-legend',
+    name: 'Community Legend',
+    description: '複数のコミュニティ活動を極める',
+    emoji: '🌌',
+    rarity: 'legendary',
+    metric: 'acceptedSuggestions',
+    target: 5,
+    secret: true,
+  },
 ];
 
 export interface AchievementsConfig {
@@ -136,7 +233,9 @@ export function formatAchievements(
       return `${achievement.emoji} **${achievement.name}** · ${rarityLabel(achievement.rarity)} · ✅ 解除済み`;
     }
     const current = achievement.id === 'community-legend' ? 0 : metrics[achievement.metric];
-    const progress = config.showProgress ? ` · ${Math.min(current, achievement.target).toLocaleString()}/${achievement.target.toLocaleString()}` : '';
+    const progress = config.showProgress
+      ? ` · ${Math.min(current, achievement.target).toLocaleString()}/${achievement.target.toLocaleString()}`
+      : '';
     return `🔒 **${achievement.name}** · ${rarityLabel(achievement.rarity)}${progress}`;
   });
   const header = `**🏅 <@${userId}> のAchievements — ${unlocks.length}/${ACHIEVEMENTS.length} unlocked**`;
@@ -148,7 +247,11 @@ async function loadAndSync(
   context: AchievementsRuntimeContext,
   guildId: string,
   userId: string,
-): Promise<{ metrics: AchievementMetrics; unlocks: AchievementUnlockRecord[]; newlyUnlocked: string[] }> {
+): Promise<{
+  metrics: AchievementMetrics;
+  unlocks: AchievementUnlockRecord[];
+  newlyUnlocked: string[];
+}> {
   const metrics = await getAchievementMetrics(context.prisma, guildId, userId);
   const newlyUnlocked = await syncAchievementUnlocks(
     context.prisma,
@@ -164,7 +267,8 @@ async function executeAchievements(
   context: AchievementsRuntimeContext,
   interaction: AchievementCommandInteraction,
 ): Promise<void> {
-  if (!interaction.guildId) return reply(interaction, 'このコマンドはDiscordサーバー内でのみ利用できます。');
+  if (!interaction.guildId)
+    return reply(interaction, 'このコマンドはDiscordサーバー内でのみ利用できます。');
   const config = normalizeAchievementsConfig(context.config);
   if (!config.enabled) return reply(interaction, 'Achievements Pluginは現在無効です。');
   const userId = interaction.options.getUser('user')?.id ?? interaction.user.id;
@@ -180,14 +284,20 @@ async function executeSync(
   context: AchievementsRuntimeContext,
   interaction: AchievementCommandInteraction,
 ): Promise<void> {
-  if (!interaction.guildId) return reply(interaction, 'このコマンドはDiscordサーバー内でのみ利用できます。');
+  if (!interaction.guildId)
+    return reply(interaction, 'このコマンドはDiscordサーバー内でのみ利用できます。');
   const config = normalizeAchievementsConfig(context.config);
   if (!config.enabled) return reply(interaction, 'Achievements Pluginは現在無効です。');
-  const { newlyUnlocked, unlocks } = await loadAndSync(context, interaction.guildId, interaction.user.id);
+  const { newlyUnlocked, unlocks } = await loadAndSync(
+    context,
+    interaction.guildId,
+    interaction.user.id,
+  );
   const names = newlyUnlocked.map((id) => ACHIEVEMENTS.find((item) => item.id === id)?.name ?? id);
-  const content = names.length > 0
-    ? `🏅 **${names.length}個のAchievementを新しく解除しました！**\n${names.map((name) => `• ${name}`).join('\n')}\n現在 ${unlocks.length}/${ACHIEVEMENTS.length}`
-    : `同期しました。新しい解除はありません。現在 ${unlocks.length}/${ACHIEVEMENTS.length} です。`;
+  const content =
+    names.length > 0
+      ? `🏅 **${names.length}個のAchievementを新しく解除しました！**\n${names.map((name) => `• ${name}`).join('\n')}\n現在 ${unlocks.length}/${ACHIEVEMENTS.length}`
+      : `同期しました。新しい解除はありません。現在 ${unlocks.length}/${ACHIEVEMENTS.length} です。`;
   await interaction.reply({
     content,
     flags: config.ephemeralSync ? EPHEMERAL_FLAG : undefined,
@@ -199,12 +309,17 @@ async function executeInfo(
   context: AchievementsRuntimeContext,
   interaction: AchievementCommandInteraction,
 ): Promise<void> {
-  if (!interaction.guildId) return reply(interaction, 'このコマンドはDiscordサーバー内でのみ利用できます。');
+  if (!interaction.guildId)
+    return reply(interaction, 'このコマンドはDiscordサーバー内でのみ利用できます。');
   const config = normalizeAchievementsConfig(context.config);
   if (!config.enabled) return reply(interaction, 'Achievements Pluginは現在無効です。');
   const id = interaction.options.getString('id', true)?.trim().toLowerCase() ?? '';
   const achievement = ACHIEVEMENTS.find((item) => item.id === id);
-  if (!achievement) return reply(interaction, 'そのAchievement IDは見つかりません。`/achievements`で一覧を確認してください。');
+  if (!achievement)
+    return reply(
+      interaction,
+      'そのAchievement IDは見つかりません。`/achievements`で一覧を確認してください。',
+    );
   const userId = interaction.options.getUser('user')?.id ?? interaction.user.id;
   const { metrics, unlocks } = await loadAndSync(context, interaction.guildId, userId);
   const unlocked = unlocks.find((record) => record.achievementId === id);
@@ -230,13 +345,21 @@ function chunkLines(header: string, lines: string[], pageSize: number): string[]
   const pages: string[] = [];
   for (let index = 0; index < lines.length; index += pageSize) {
     const page = lines.slice(index, index + pageSize);
-    pages.push([pages.length === 0 ? header : `${header} · continued`, ...page].join('\n').slice(0, 1990));
+    pages.push(
+      [pages.length === 0 ? header : `${header} · continued`, ...page].join('\n').slice(0, 1990),
+    );
   }
   return pages;
 }
 
 function rarityLabel(rarity: Rarity): string {
-  return ({ common: 'Common', uncommon: 'Uncommon', rare: 'Rare', epic: 'Epic', legendary: 'Legendary' })[rarity];
+  return {
+    common: 'Common',
+    uncommon: 'Uncommon',
+    rare: 'Rare',
+    epic: 'Epic',
+    legendary: 'Legendary',
+  }[rarity];
 }
 
 async function reply(interaction: AchievementCommandInteraction, content: string): Promise<void> {
