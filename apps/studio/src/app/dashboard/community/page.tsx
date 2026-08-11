@@ -67,7 +67,10 @@ function displayDate(value: Date): string {
   return `${Number(month)}/${Number(day)}`;
 }
 
-function comparisonLabel(current: number, previous: number): {
+function comparisonLabel(
+  current: number,
+  previous: number,
+): {
   label: string;
   tone: 'up' | 'down' | 'flat';
 } {
@@ -306,7 +309,10 @@ export default async function CommunityDashboardPage({
             const height = item.value === 0 ? 2 : Math.max(6, (item.value / dailyMax) * 100);
             const showLabel = range === 7 || index % 5 === 0 || index === range - 1;
             return (
-              <div key={dateKey(item.date)} className="flex min-w-0 flex-1 flex-col items-center justify-end">
+              <div
+                key={dateKey(item.date)}
+                className="flex min-w-0 flex-1 flex-col items-center justify-end"
+              >
                 <div className="group relative flex h-36 w-full items-end justify-center">
                   <div
                     className="w-full max-w-8 rounded-t-md bg-primary/80 transition-opacity hover:opacity-80"
@@ -330,7 +336,9 @@ export default async function CommunityDashboardPage({
               <BarChart3 className="h-5 w-5 text-primary" />
               <h2 className="font-medium">ランキング</h2>
             </div>
-            <p className="mt-1 text-sm text-muted">上位25人を表示します。Botでは /rank で個人順位を確認できます。</p>
+            <p className="mt-1 text-sm text-muted">
+              上位25人を表示します。Botでは /rank で個人順位を確認できます。
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             {metrics.map((item) => (

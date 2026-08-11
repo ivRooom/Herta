@@ -244,7 +244,9 @@ export const rankCommand: SlashCommand = {
       'minecraft_seconds',
     ];
     const ranks = await Promise.all(
-      metrics.map((metric) => getCommunityUserRank(prisma, interaction.guildId!, user.id, metric, period)),
+      metrics.map((metric) =>
+        getCommunityUserRank(prisma, interaction.guildId!, user.id, metric, period),
+      ),
     );
 
     const embed = new EmbedBuilder()
