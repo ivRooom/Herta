@@ -125,8 +125,7 @@ export const teamsCommand: SlashCommand = {
     const teams = splitIntoTeams(members, teamCount);
     const content = teams
       .map(
-        (team, index) =>
-          `**Team ${index + 1}**\n${team.map((member) => `• ${member}`).join('\n')}`,
+        (team, index) => `**Team ${index + 1}**\n${team.map((member) => `• ${member}`).join('\n')}`,
       )
       .join('\n\n');
     await interaction.reply({ content, allowedMentions: { parse: [] } });
