@@ -274,6 +274,22 @@ model ServiceHealthSnapshot {
 }
 
 // ============================================================
+// Plugin: Achievements / Badges
+// ============================================================
+
+model AchievementUnlock {
+  guildId       String   @map("guild_id")
+  userId        String   @map("user_id")
+  achievementId String   @map("achievement_id")
+  unlockedAt    DateTime @default(now()) @map("unlocked_at") @db.Timestamptz(3)
+
+  @@id([guildId, userId, achievementId])
+  @@index([guildId, userId, unlockedAt(sort: Desc)])
+  @@index([guildId, achievementId, unlockedAt(sort: Desc)])
+  @@map("achievement_unlocks")
+}
+
+// ============================================================
 // Plugin: Auto Response
 // ============================================================
 
@@ -638,28 +654,28 @@ model DailyContentDelivery {
 // ============================================================
 
 model CommunityEvent {
-  id                       String      @id @default(uuid()) @db.Uuid
-  guildId                  String      @map("guild_id")
-  creatorId                String      @map("creator_id")
-  channelId                String      @map("channel_id")
-  messageId                String?     @map("message_id")
-  title                    String      @db.VarChar(200)
-  description              String?     @db.VarChar(1000)
-  location                 String?     @db.VarChar(200)
-  timezone                 String      @default("Asia/Tokyo") @db.VarChar(64)
-  startsAt                 DateTime    @map("starts_at") @db.Timestamptz(3)
-  registrationClosesAt     DateTime    @map("registration_closes_at") @db.Timestamptz(3)
-  capacity                 Int?
-  status                   String      @default("open") @db.VarChar(16)
-  allowMaybe               Boolean     @default(true) @map("allow_maybe")
-  allowWaitlist            Boolean     @default(true) @map("allow_waitlist")
-  reminderMinutes          Int         @default(60) @map("reminder_minutes")
-  reminderSentAt           DateTime?   @map("reminder_sent_at") @db.Timestamptz(3)
-  reminderClaimedAt        DateTime?   @map("reminder_claimed_at") @db.Timestamptz(3)
-  finalizedAt              DateTime?   @map("finalized_at") @db.Timestamptz(3)
-  createdAt                DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt                DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
-  rsvps                    EventRsvp[]
+  id                   String      @id @default(uuid()) @db.Uuid
+  guildId              String      @map("guild_id")
+  creatorId            String      @map("creator_id")
+  channelId            String      @map("channel_id")
+  messageId            String?     @map("message_id")
+  title                String      @db.VarChar(200)
+  description          String?     @db.VarChar(1000)
+  location             String?     @db.VarChar(200)
+  timezone             String      @default("Asia/Tokyo") @db.VarChar(64)
+  startsAt             DateTime    @map("starts_at") @db.Timestamptz(3)
+  registrationClosesAt DateTime    @map("registration_closes_at") @db.Timestamptz(3)
+  capacity             Int?
+  status               String      @default("open") @db.VarChar(16)
+  allowMaybe           Boolean     @default(true) @map("allow_maybe")
+  allowWaitlist        Boolean     @default(true) @map("allow_waitlist")
+  reminderMinutes      Int         @default(60) @map("reminder_minutes")
+  reminderSentAt       DateTime?   @map("reminder_sent_at") @db.Timestamptz(3)
+  reminderClaimedAt    DateTime?   @map("reminder_claimed_at") @db.Timestamptz(3)
+  finalizedAt          DateTime?   @map("finalized_at") @db.Timestamptz(3)
+  createdAt            DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  rsvps                EventRsvp[]
 
   @@index([guildId, startsAt])
   @@index([guildId, status, registrationClosesAt])

@@ -1,6 +1,10 @@
 import type { PluginManifest } from '@herta/shared';
 
 const pluginSetupNotes: Record<string, string[]> = {
+  achievements: [
+    'Achievementsは既存のXP・Poll・Giveaway・Event・Suggestion活動を読み取り、/achievements または /achievement sync 実行時に解除状態を同期します。',
+    'Secret Achievementを有効にすると、解除するまで条件と名称を一覧から隠せます。',
+  ],
   'auto-response': [
     '最初は対象チャンネルを限定して、想定外の自動応答が起きないか確認してください。',
     'Cooldownを設定すると同じトリガーの連続反応を抑えられます。',
