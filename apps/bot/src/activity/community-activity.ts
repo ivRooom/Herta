@@ -79,6 +79,7 @@ export async function getCommunityLeaderboard(
   return rows.map((row) => ({ userId: row.userId, total: Number(row._sum.value ?? 0n) }));
 }
 
+// /rank向けに対象期間の全参加者を同じ集計条件で並べ、本人の現在順位を返す。
 export async function getCommunityUserRank(
   prisma: PrismaClient,
   guildId: string,
