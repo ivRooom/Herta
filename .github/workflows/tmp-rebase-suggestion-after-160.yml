@@ -1,0 +1,76 @@
+name: Temporary Rebase Suggestion After 160
+
+on:
+  push:
+    branches: [tmp/rebase-suggestion-after-160]
+
+permissions:
+  contents: write
+
+jobs:
+  rebase:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Merge latest main and restore merged registries
+        run: |
+          git fetch origin main
+          git merge origin/main --no-commit -X ours || true
+          git checkout origin/main -- apps/bot/src/plugins/registry.ts packages/plugin-catalog/src/index.ts
+          node <<'NODE'
+          const fs = require('fs');
+
+          const registryPath = 'apps/bot/src/plugins/registry.ts';
+          let registry = fs.readFileSync(registryPath, 'utf8');
+          if (!registry.includes("import { suggestionPlugin } from './suggestion.js';")) {
+            registry = registry.replace(
+              "import { roleManagerPlugin } from './role-manager.js';",
+              "import { roleManagerPlugin } from './role-manager.js';\nimport { suggestionPlugin } from './suggestion.js';",
+            );
+          }
+          if (!registry.includes("  'suggestion',")) {
+            registry = registry.replace("  'role-manager',\n", "  'role-manager',\n  'suggestion',\n");
+          }
+          if (!registry.includes('const suggestionEntry = deps')) {
+            const marker = '  const teamSplitEntry = deps\n';
+            const block = `  const suggestionEntry = deps\n    ? toRuntimePluginEntry(\n        suggestionPlugin,\n        (plugin, guildId, config) =>\n          createPluginContext({\n            client: deps.client,\n            prisma: deps.prisma,\n            logger: deps.logger,\n            guildId,\n            config,\n            manifest: plugin.manifest,\n          }) as Parameters<NonNullable<typeof suggestionPlugin.onEnable>>[0],\n      )\n    : undefined;\n`;
+            if (!registry.includes(marker)) throw new Error('registry marker missing');
+            registry = registry.replace(marker, block + marker);
+          }
+          if (!registry.includes("if (pluginId === 'suggestion' && suggestionEntry)")) {
+            registry = registry.replace(
+              "    if (pluginId === 'role-manager' && roleManagerEntry) return [roleManagerEntry];\n",
+              "    if (pluginId === 'role-manager' && roleManagerEntry) return [roleManagerEntry];\n    if (pluginId === 'suggestion' && suggestionEntry) return [suggestionEntry];\n",
+            );
+          }
+          fs.writeFileSync(registryPath, registry);
+
+          const catalogPath = 'packages/plugin-catalog/src/index.ts';
+          let catalog = fs.readFileSync(catalogPath, 'utf8');
+          if (!catalog.includes("import { suggestionManifest } from './manifests/suggestion.js';")) {
+            catalog = catalog.replace(
+              "import { roleManagerManifest } from './manifests/role-manager.js';",
+              "import { roleManagerManifest } from './manifests/role-manager.js';\nimport { suggestionManifest } from './manifests/suggestion.js';",
+            );
+          }
+          if (!catalog.includes("export { suggestionManifest } from './manifests/suggestion.js';")) {
+            catalog = catalog.replace(
+              "export { roleManagerManifest } from './manifests/role-manager.js';",
+              "export { roleManagerManifest } from './manifests/role-manager.js';\nexport { suggestionManifest } from './manifests/suggestion.js';",
+            );
+          }
+          if (!catalog.includes('  suggestionManifest,')) {
+            catalog = catalog.replace('  roleManagerManifest,\n', '  roleManagerManifest,\n  suggestionManifest,\n');
+          }
+          fs.writeFileSync(catalogPath, catalog);
+          NODE
+          rm .github/workflows/tmp-rebase-suggestion-after-160.yml
+          git add -A
+          git commit -m "main更新をSuggestion v1へ取り込む"
+          git push origin HEAD:feat/suggestion-v1 --force-with-lease
