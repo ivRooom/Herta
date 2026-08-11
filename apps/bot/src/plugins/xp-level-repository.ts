@@ -52,7 +52,9 @@ export async function getXpProfile(
   guildId: string,
   userId: string,
 ): Promise<XpProfileRecord | null> {
-  const rows = await prisma.$queryRaw<Array<{ guildId: string; userId: string; xp: bigint; lastXpAt: Date | null }>>`
+  const rows = await prisma.$queryRaw<
+    Array<{ guildId: string; userId: string; xp: bigint; lastXpAt: Date | null }>
+  >`
     SELECT
       "guild_id" AS "guildId",
       "user_id" AS "userId",
@@ -71,7 +73,9 @@ export async function listXpLeaderboard(
   guildId: string,
   limit: number,
 ): Promise<XpProfileRecord[]> {
-  const rows = await prisma.$queryRaw<Array<{ guildId: string; userId: string; xp: bigint; lastXpAt: Date | null }>>`
+  const rows = await prisma.$queryRaw<
+    Array<{ guildId: string; userId: string; xp: bigint; lastXpAt: Date | null }>
+  >`
     SELECT
       "guild_id" AS "guildId",
       "user_id" AS "userId",

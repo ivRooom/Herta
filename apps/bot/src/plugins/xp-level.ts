@@ -224,7 +224,10 @@ async function handleXpMessage(
   if (!message?.guildId || message.author.bot) return;
   const config = normalizeXpLevelConfig(context.config);
   if (!config.enabled || config.excludedChannelIds.includes(message.channelId)) return;
-  if (message.member && config.excludedRoleIds.some((roleId) => message.member!.roles.cache.has(roleId))) {
+  if (
+    message.member &&
+    config.excludedRoleIds.some((roleId) => message.member!.roles.cache.has(roleId))
+  ) {
     return;
   }
 
@@ -317,8 +320,13 @@ async function reply(interaction: XpCommandInteraction, content: string): Promis
 
 function normalizedIds(value: unknown, maxItems: number): string[] {
   if (!Array.isArray(value)) return [];
-  return [...new Set(value.filter((item): item is string => typeof item === 'string' && DISCORD_ID_PATTERN.test(item)))]
-    .slice(0, maxItems);
+  return [
+    ...new Set(
+      value.filter(
+        (item): item is string => typeof item === 'string' && DISCORD_ID_PATTERN.test(item),
+      ),
+    ),
+  ].slice(0, maxItems);
 }
 
 function nullableDiscordId(value: unknown): string | null {
