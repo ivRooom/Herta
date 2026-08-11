@@ -5,7 +5,7 @@ on:
     branches: [tmp/prettier-giveaway-160]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   format:
@@ -19,7 +19,13 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec prettier --write apps/bot/src/plugins/giveaway.ts
-      - uses: actions/upload-artifact@v7.0.1
-        with:
-          name: formatted-giveaway
-          path: apps/bot/src/plugins/giveaway.ts
+      - name: Commit formatted file
+        run: |
+          if git diff --quiet -- apps/bot/src/plugins/giveaway.ts; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/bot/src/plugins/giveaway.ts
+          git commit -m "GiveawayをPrettierで整形する"
+          git push
