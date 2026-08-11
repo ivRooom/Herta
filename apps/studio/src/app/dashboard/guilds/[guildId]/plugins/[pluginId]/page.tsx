@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { auth } from '@/auth';
 import { ModerationConfigForm } from '@/components/moderation-config-form';
 import { PluginConfigForm } from '@/components/plugin-config-form';
+import { PluginSetupOverview } from '@/components/plugin-setup-overview';
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
@@ -45,7 +46,14 @@ export default async function PluginDetailPage({
           v{plugin.manifest.version} · {plugin.manifest.category}
         </p>
       </div>
+
       <div className="mt-8">
+        <PluginSetupOverview
+          manifest={plugin.manifest}
+          enabled={plugin.enabled}
+          config={plugin.config}
+        />
+
         {pluginId === 'moderation' ? (
           <ModerationConfigForm
             guildId={guildId}
