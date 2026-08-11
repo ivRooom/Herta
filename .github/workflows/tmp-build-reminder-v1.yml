@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - name: Reminder v1を機能ブランチへ配線
+      - name: Reminder一覧を安全にページ分割する
         shell: bash
         run: |
           git fetch origin feat/reminder-v1
@@ -29,66 +29,108 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          catalog = Path('packages/plugin-catalog/src/index.ts')
-          text = catalog.read_text()
+          path = Path('apps/bot/src/plugins/reminder.ts')
+          text = path.read_text()
           text = text.replace(
-              "import { onboardingManifest } from './manifests/onboarding.js';\n",
-              "import { onboardingManifest } from './manifests/onboarding.js';\nimport { reminderManifest } from './manifests/reminder.js';\n",
+              "  reply(options: {\n    content: string;\n    flags?: number;\n    allowedMentions: { parse: [] };\n  }): Promise<unknown>;\n",
+              "  reply(options: {\n    content: string;\n    flags?: number;\n    allowedMentions: { parse: [] };\n  }): Promise<unknown>;\n  followUp(options: {\n    content: string;\n    flags?: number;\n    allowedMentions: { parse: [] };\n  }): Promise<unknown>;\n",
           )
-          text = text.replace(
-              "export { onboardingManifest } from './manifests/onboarding.js';\n",
-              "export { onboardingManifest } from './manifests/onboarding.js';\nexport { reminderManifest } from './manifests/reminder.js';\n",
-          )
-          text = text.replace(
-              "  onboardingManifest,\n  quoteManifest,\n",
-              "  onboardingManifest,\n  reminderManifest,\n  quoteManifest,\n",
-          )
-          catalog.write_text(text)
+          old = '''export function formatReminderList(reminders: readonly ReminderRecord[]): string {
+            if (reminders.length === 0) return '未配信のリマインダーはありません。';
 
-          registry = Path('apps/bot/src/plugins/registry.ts')
-          text = registry.read_text()
+            const lines = reminders.map((reminder) => {
+              const unix = Math.floor(reminder.remindAt.getTime() / 1000);
+              const preview = reminder.message.replace(/\\s+/g, ' ').slice(0, 80);
+              const target = reminder.delivery === 'dm' ? 'DM' : 'チャンネル';
+              return `\\`${reminder.id}\\`\\n<t:${unix}:F> (${target}) — ${preview}`;
+            });
+
+            const pages: string[] = [];
+            let current = '**未配信Reminder一覧**';
+            for (const line of lines) {
+              const next = `${current}\\n\\n${line}`;
+              if (next.length > MAX_LIST_LENGTH) {
+                pages.push(current);
+                current = `**未配信Reminder一覧（続き）**\\n\\n${line}`;
+              } else {
+                current = next;
+              }
+            }
+            pages.push(current);
+            return pages.join('\\n\\n---\\n\\n');
+          }
+          '''
+          new = '''export function formatReminderListPages(reminders: readonly ReminderRecord[]): string[] {
+            if (reminders.length === 0) return ['未配信のリマインダーはありません。'];
+
+            const lines = reminders.map((reminder) => {
+              const unix = Math.floor(reminder.remindAt.getTime() / 1000);
+              const preview = reminder.message.replace(/\\s+/g, ' ').slice(0, 80);
+              const target = reminder.delivery === 'dm' ? 'DM' : 'チャンネル';
+              return `\\`${reminder.id}\\`\\n<t:${unix}:F> (${target}) — ${preview}`;
+            });
+
+            const pages: string[] = [];
+            let current = '**未配信Reminder一覧**';
+            for (const line of lines) {
+              const next = `${current}\\n\\n${line}`;
+              if (next.length > MAX_LIST_LENGTH) {
+                pages.push(current);
+                current = `**未配信Reminder一覧（続き）**\\n\\n${line}`;
+              } else {
+                current = next;
+              }
+            }
+            pages.push(current);
+            return pages;
+          }
+          '''
+          if old not in text:
+              raise SystemExit('formatReminderList block not found')
+          text = text.replace(old, new)
           text = text.replace(
-              "import { onboardingPlugin } from './onboarding.js';\n",
-              "import { onboardingPlugin } from './onboarding.js';\nimport { reminderPlugin } from './reminder.js';\n",
+              "    await reply(context, interaction, formatReminderList(reminders));\n",
+              "    await replyPages(context, interaction, formatReminderListPages(reminders));\n",
           )
-          text = text.replace(
-              "  'onboarding',\n  'quote',\n",
-              "  'onboarding',\n  'reminder',\n  'quote',\n",
-          )
-          reminder_entry = """  const reminderEntry = deps
-            ? toRuntimePluginEntry(
-                reminderPlugin,
-                (plugin, guildId, config) =>
-                  createPluginContext({
-                    client: deps.client,
-                    prisma: deps.prisma,
-                    logger: deps.logger,
-                    guildId,
-                    config,
-                    manifest: plugin.manifest,
-                  }) as Parameters<NonNullable<typeof reminderPlugin.onEnable>>[0],
-              )
-            : undefined;
-          """
-          text = text.replace("  const quoteEntry = deps\n", reminder_entry + "\n  const quoteEntry = deps\n")
-          text = text.replace(
-              "    if (pluginId === 'onboarding' && onboardingEntry) return [onboardingEntry];\n    if (pluginId === 'quote' && quoteEntry) return [quoteEntry];\n",
-              "    if (pluginId === 'onboarding' && onboardingEntry) return [onboardingEntry];\n    if (pluginId === 'reminder' && reminderEntry) return [reminderEntry];\n    if (pluginId === 'quote' && quoteEntry) return [quoteEntry];\n",
-          )
-          registry.write_text(text)
+          marker = '''async function reply(
+            context: ReminderRuntimeContext,
+            interaction: ReminderCommandInteraction,
+            content: string,
+          ): Promise<void> {
+          '''
+          helper = '''async function replyPages(
+            context: ReminderRuntimeContext,
+            interaction: ReminderCommandInteraction,
+            pages: readonly string[],
+          ): Promise<void> {
+            const [first, ...rest] = pages;
+            await reply(context, interaction, first ?? '未配信のリマインダーはありません。');
+            const config = normalizeReminderConfig(context.config);
+            for (const content of rest) {
+              await interaction.followUp({
+                content,
+                ...(config.ephemeralResponses ? { flags: EPHEMERAL_FLAG } : {}),
+                allowedMentions: { parse: [] },
+              });
+            }
+          }
+
+          '''
+          if marker not in text:
+              raise SystemExit('reply marker not found')
+          text = text.replace(marker, helper + marker)
+          path.write_text(text)
+
+          test = Path('apps/bot/src/plugins/reminder.test.ts')
+          t = test.read_text().replace('formatReminderList, normalizeReminderConfig', 'formatReminderListPages, normalizeReminderConfig')
+          t = t.replace('const result = formatReminderList([reminder]);', 'const [result] = formatReminderListPages([reminder]);')
+          t = t.replace("expect(formatReminderList([])).toBe('未配信のリマインダーはありません。');", "expect(formatReminderListPages([])).toEqual(['未配信のリマインダーはありません。']);")
+          test.write_text(t)
           PY
           pnpm install --frozen-lockfile
-          pnpm exec prettier --write \
-            packages/plugin-catalog/src/index.ts \
-            packages/plugin-catalog/src/manifests/reminder.ts \
-            apps/bot/src/plugins/registry.ts \
-            apps/bot/src/plugins/reminder.ts \
-            apps/bot/src/plugins/reminder-repository.ts \
-            apps/bot/src/plugins/reminder.test.ts
+          pnpm exec prettier --write apps/bot/src/plugins/reminder.ts apps/bot/src/plugins/reminder.test.ts
           git config user.name 'mizzz（ずーみー）/いゔる。'
           git config user.email 'mizzz._.dev@outlook.jp'
-          git add packages/plugin-catalog/src/index.ts packages/plugin-catalog/src/manifests/reminder.ts apps/bot/src/plugins/registry.ts apps/bot/src/plugins/reminder.ts apps/bot/src/plugins/reminder-repository.ts apps/bot/src/plugins/reminder.test.ts packages/db/prisma/migrations/20260811005000_reminder_plugin_v1/migration.sql
-          if ! git diff --cached --quiet; then
-            git commit -m 'Reminder v1を公式Pluginへ配線する'
-            git push origin HEAD:feat/reminder-v1
-          fi
+          git add apps/bot/src/plugins/reminder.ts apps/bot/src/plugins/reminder.test.ts
+          git commit -m 'Reminder一覧を複数メッセージへ分割する'
+          git push origin HEAD:feat/reminder-v1
