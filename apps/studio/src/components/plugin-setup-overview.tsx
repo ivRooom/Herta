@@ -89,13 +89,18 @@ export function PluginSetupOverview({
           </div>
           <h2 className="mt-3 text-lg font-semibold">最初に確認すること</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-            このPluginで使える機能、設定項目、必要な準備をまとめています。下のConfig Studioで値を変更できます。
+            このPluginで使える機能、設定項目、必要な準備をまとめています。下のConfig
+            Studioで値を変更できます。
           </p>
         </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <SummaryCard label="コマンド" value={`${commandLabels.length}個`} detail="Discordから利用" />
+        <SummaryCard
+          label="コマンド"
+          value={`${commandLabels.length}個`}
+          detail="Discordから利用"
+        />
         <SummaryCard
           label="設定項目"
           value={`${Object.keys(properties).length}個`}
@@ -134,7 +139,9 @@ export function PluginSetupOverview({
               {manifest.permissions.map((permission) => (
                 <div key={permission.id} className="rounded-lg border border-border/70 p-3">
                   <p className="text-sm font-medium">{permission.name}</p>
-                  <p className="mt-1 text-xs leading-5 text-muted">{permission.description}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted">
+                    {permission.description}
+                  </p>
                 </div>
               ))}
             </div>
@@ -160,10 +167,15 @@ export function PluginSetupOverview({
 
       {Object.keys(properties).length > 0 ? (
         <details className="rounded-xl border border-border bg-background/40 p-4">
-          <summary className="cursor-pointer text-sm font-semibold">設定項目の一覧を見る</summary>
+          <summary className="cursor-pointer text-sm font-semibold">
+            設定項目の一覧を見る
+          </summary>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {Object.entries(properties).map(([key, property]) => (
-              <div key={key} className="rounded-lg border border-border/70 bg-surface/50 p-3">
+              <div
+                key={key}
+                className="rounded-lg border border-border/70 bg-surface/50 p-3"
+              >
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-sm font-medium">{property.title ?? humanizeKey(key)}</p>
                   {required.has(key) ? (
@@ -185,7 +197,15 @@ export function PluginSetupOverview({
   );
 }
 
-function SummaryCard({ label, value, detail }: { label: string; value: string; detail: string }) {
+function SummaryCard({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
   return (
     <div className="rounded-xl border border-border bg-background/60 p-4">
       <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
