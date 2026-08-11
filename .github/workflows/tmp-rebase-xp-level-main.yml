@@ -1,0 +1,55 @@
+name: Temporary Rebase XP Level Main
+on:
+  push:
+    branches:
+      - tmp/rebase-xp-level-main
+permissions:
+  contents: write
+jobs:
+  rebase:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: main
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Reapply XP Level files on latest main
+        run: |
+          git fetch origin feat/xp-level-v1
+          git checkout origin/feat/xp-level-v1 -- \
+            apps/bot/src/plugins/xp-level-repository.ts \
+            apps/bot/src/plugins/xp-level.test.ts \
+            apps/bot/src/plugins/xp-level.ts \
+            packages/db/prisma/migrations/20260811053000_xp_level_plugin_v1/migration.sql \
+            packages/plugin-catalog/src/manifests/xp-level.ts
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('packages/plugin-catalog/src/index.ts')
+          s = p.read_text()
+          s = s.replace("import { suggestionManifest } from './manifests/suggestion.js';\n", "import { suggestionManifest } from './manifests/suggestion.js';\nimport { xpLevelManifest } from './manifests/xp-level.js';\n")
+          s = s.replace("export { suggestionManifest } from './manifests/suggestion.js';\n", "export { suggestionManifest } from './manifests/suggestion.js';\nexport { xpLevelManifest } from './manifests/xp-level.js';\n")
+          s = s.replace("  teamSplitManifest,\n];", "  teamSplitManifest,\n  xpLevelManifest,\n];")
+          p.write_text(s)
+
+          p = Path('apps/bot/src/plugins/registry.ts')
+          s = p.read_text()
+          s = s.replace("import { suggestionPlugin } from './suggestion.js';\n", "import { suggestionPlugin } from './suggestion.js';\nimport { xpLevelPlugin } from './xp-level.js';\n")
+          s = s.replace("  'team-split',\n] as const;", "  'team-split',\n  'xp-level',\n] as const;")
+          marker = "  const teamSplitEntry = deps\n"
+          xp = "  const xpLevelEntry = deps\n    ? toRuntimePluginEntry(\n        xpLevelPlugin,\n        (plugin, guildId, config) =>\n          createPluginContext({\n            client: deps.client,\n            prisma: deps.prisma,\n            logger: deps.logger,\n            guildId,\n            config,\n            manifest: plugin.manifest,\n          }) as Parameters<NonNullable<typeof xpLevelPlugin.onEnable>>[0],\n      )\n    : undefined;\n"
+          if xp not in s:
+              s = s.replace(marker, xp + marker)
+          s = s.replace("    if (pluginId === 'team-split' && teamSplitEntry) return [teamSplitEntry];\n", "    if (pluginId === 'team-split' && teamSplitEntry) return [teamSplitEntry];\n    if (pluginId === 'xp-level' && xpLevelEntry) return [xpLevelEntry];\n")
+          p.write_text(s)
+          PY
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm exec prettier --write apps/bot/src/plugins/registry.ts apps/bot/src/plugins/xp-level-repository.ts apps/bot/src/plugins/xp-level.test.ts apps/bot/src/plugins/xp-level.ts packages/plugin-catalog/src/index.ts packages/plugin-catalog/src/manifests/xp-level.ts
+          git add apps/bot/src/plugins/registry.ts apps/bot/src/plugins/xp-level-repository.ts apps/bot/src/plugins/xp-level.test.ts apps/bot/src/plugins/xp-level.ts packages/db/prisma/migrations/20260811053000_xp_level_plugin_v1/migration.sql packages/plugin-catalog/src/index.ts packages/plugin-catalog/src/manifests/xp-level.ts
+          git commit -m "XP Levelを最新mainへ追従する"
+          git push --force origin HEAD:feat/xp-level-v1
