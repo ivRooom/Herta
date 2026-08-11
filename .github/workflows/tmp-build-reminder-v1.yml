@@ -84,8 +84,7 @@ jobs:
             apps/bot/src/plugins/registry.ts \
             apps/bot/src/plugins/reminder.ts \
             apps/bot/src/plugins/reminder-repository.ts \
-            apps/bot/src/plugins/reminder.test.ts \
-            packages/db/prisma/migrations/20260811005000_reminder_plugin_v1/migration.sql
+            apps/bot/src/plugins/reminder.test.ts
           git config user.name 'mizzz（ずーみー）/いゔる。'
           git config user.email 'mizzz._.dev@outlook.jp'
           git add packages/plugin-catalog/src/index.ts packages/plugin-catalog/src/manifests/reminder.ts apps/bot/src/plugins/registry.ts apps/bot/src/plugins/reminder.ts apps/bot/src/plugins/reminder-repository.ts apps/bot/src/plugins/reminder.test.ts packages/db/prisma/migrations/20260811005000_reminder_plugin_v1/migration.sql
