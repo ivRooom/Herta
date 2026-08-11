@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { reminderManifest } from '@herta/plugin-catalog';
-import { formatReminderList, normalizeReminderConfig } from './reminder.js';
+import { formatReminderListPages, normalizeReminderConfig } from './reminder.js';
 import type { ReminderRecord } from './reminder-repository.js';
 
 describe('Reminder v1', () => {
@@ -35,7 +35,7 @@ describe('Reminder v1', () => {
       status: 'pending',
       attempts: 0,
     };
-    const result = formatReminderList([reminder]);
+    const [result] = formatReminderListPages([reminder]);
     expect(result).toContain(reminder.id);
     expect(result).toContain('チャンネル');
     expect(result).toContain('テスト リマインダー');
@@ -43,6 +43,6 @@ describe('Reminder v1', () => {
   });
 
   it('空一覧を明示する', () => {
-    expect(formatReminderList([])).toBe('未配信のリマインダーはありません。');
+    expect(formatReminderListPages([])).toEqual(['未配信のリマインダーはありません。']);
   });
 });

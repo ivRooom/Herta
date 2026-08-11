@@ -46,6 +46,11 @@ interface ReminderCommandInteraction {
     flags?: number;
     allowedMentions: { parse: [] };
   }): Promise<unknown>;
+  followUp(options: {
+    content: string;
+    flags?: number;
+    allowedMentions: { parse: [] };
+  }): Promise<unknown>;
 }
 
 interface ReminderChannel {
@@ -103,8 +108,8 @@ export function normalizeReminderConfig(value: unknown): ReminderConfig {
   };
 }
 
-export function formatReminderList(reminders: readonly ReminderRecord[]): string {
-  if (reminders.length === 0) return '未配信のリマインダーはありません。';
+export function formatReminderListPages(reminders: readonly ReminderRecord[]): string[] {
+  if (reminders.length === 0) return ['未配信のリマインダーはありません。'];
 
   const lines = reminders.map((reminder) => {
     const unix = Math.floor(reminder.remindAt.getTime() / 1000);
@@ -125,7 +130,7 @@ export function formatReminderList(reminders: readonly ReminderRecord[]): string
     }
   }
   pages.push(current);
-  return pages.join('\n\n---\n\n');
+  return pages;
 }
 
 async function executeReminderCommand(
@@ -154,7 +159,7 @@ async function executeReminderCommand(
       interaction.guildId,
       interaction.user.id,
     );
-    await reply(context, interaction, formatReminderList(reminders));
+    await replyPages(context, interaction, formatReminderListPages(reminders));
     return;
   }
   if (subcommand === 'cancel') {
@@ -335,6 +340,23 @@ async function deliverReminder(client: ReminderClient, reminder: ReminderRecord)
     content: `⏰ <@${reminder.userId}> **リマインダー**\n${reminder.message}`,
     allowedMentions: { parse: [], users: [reminder.userId] },
   });
+}
+
+async function replyPages(
+  context: ReminderRuntimeContext,
+  interaction: ReminderCommandInteraction,
+  pages: readonly string[],
+): Promise<void> {
+  const [first, ...rest] = pages;
+  await reply(context, interaction, first ?? '未配信のリマインダーはありません。');
+  const config = normalizeReminderConfig(context.config);
+  for (const content of rest) {
+    await interaction.followUp({
+      content,
+      ...(config.ephemeralResponses ? { flags: EPHEMERAL_FLAG } : {}),
+      allowedMentions: { parse: [] },
+    });
+  }
 }
 
 async function reply(
