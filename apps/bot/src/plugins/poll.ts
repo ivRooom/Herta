@@ -9,11 +9,12 @@ import {
 import {
   closeExpiredPolls,
   closePollByCreator,
-  countActivePolls,
   createPoll,
   deletePoll,
   getPollSnapshot,
   listCreatorPolls,
+  listPollsPendingFinalization,
+  markPollFinalized,
   setPollMessageId,
   votePoll,
   type PollListRecord,
@@ -59,6 +60,7 @@ interface PollCommandOptions {
 interface PollMessageHandle {
   id: string;
   edit(options: PollMessage): Promise<unknown>;
+  delete(): Promise<unknown>;
 }
 
 interface PollTextChannel {
@@ -280,16 +282,6 @@ async function handleCreate(
     return;
   }
 
-  const activeCount = await countActivePolls(context.prisma, guildId, interaction.user.id);
-  if (activeCount >= config.maxActivePerUser) {
-    await reply(
-      context,
-      interaction,
-      `開催中Pollが上限（${config.maxActivePerUser}件）に達しています。既存Pollを終了してください。`,
-    );
-    return;
-  }
-
   const requestedDuration = interaction.options.getInteger('duration');
   const duration = clamp(
     requestedDuration ?? config.defaultDurationMinutes,
@@ -309,19 +301,25 @@ async function handleCreate(
     resultStyle: config.resultStyle,
     closeAnnouncement: config.closeAnnouncement,
     endsAt,
+    maxActivePerUser: config.maxActivePerUser,
   });
-
-  try {
-    const snapshot = await getPollSnapshot(context.prisma, pollId, guildId);
-    if (!snapshot) throw new Error('PollSnapshotMissing');
-    const message = await interaction.channel.send(buildPollMessage(snapshot));
-    await setPollMessageId(context.prisma, pollId, message.id);
+  if (!pollId) {
     await reply(
       context,
       interaction,
-      `📊 Pollを作成しました。\nID: \`${pollId}\`\n終了: <t:${Math.floor(endsAt.getTime() / 1000)}:F>`,
+      `開催中Pollが上限（${config.maxActivePerUser}件）に達しています。既存Pollを終了してください。`,
     );
+    return;
+  }
+
+  let publishedMessage: PollMessageHandle | null = null;
+  try {
+    const snapshot = await getPollSnapshot(context.prisma, pollId, guildId);
+    if (!snapshot) throw new Error('PollSnapshotMissing');
+    publishedMessage = await interaction.channel.send(buildPollMessage(snapshot));
+    await setPollMessageId(context.prisma, pollId, publishedMessage.id);
   } catch (error) {
+    await publishedMessage?.delete().catch(() => undefined);
     await deletePoll(context.prisma, pollId).catch(() => undefined);
     context.logger.warn({ err: error, guildId, pollId }, 'Pollメッセージの作成に失敗しました');
     await reply(
@@ -329,7 +327,19 @@ async function handleCreate(
       interaction,
       'Pollの投稿に失敗しました。チャンネル権限を確認してください。',
     );
+    return;
   }
+
+  await reply(
+    context,
+    interaction,
+    `📊 Pollを作成しました。\nID: \`${pollId}\`\n終了: <t:${Math.floor(endsAt.getTime() / 1000)}:F>`,
+  ).catch((error) => {
+    context.logger.warn(
+      { err: error, guildId, pollId },
+      'Poll作成後の確認メッセージ送信に失敗しました',
+    );
+  });
 }
 
 async function handleList(
@@ -391,7 +401,7 @@ async function handleClose(
     return;
   }
   const snapshot = await getPollSnapshot(context.prisma, id, interaction.guildId!);
-  if (snapshot) await updateStoredPollMessage(context.client, snapshot);
+  if (snapshot) await finalizeStoredPoll(context, snapshot);
   await reply(context, interaction, `Poll \`${id}\` を終了しました。`);
 }
 
@@ -405,6 +415,16 @@ async function handlePollComponent(
   const parsed = parsePollCustomId(interaction.customId);
   if (!parsed) return;
 
+  const config = normalizePollConfig(context.config);
+  if (!config.enabled) {
+    await interaction.reply({
+      content: 'Poll Pluginは現在無効です。',
+      flags: EPHEMERAL_FLAG,
+      allowedMentions: { parse: [] },
+    });
+    return;
+  }
+
   const result = await votePoll(context.prisma, {
     pollId: parsed.pollId,
     guildId: interaction.guildId,
@@ -414,17 +434,17 @@ async function handlePollComponent(
   if (!result.accepted) {
     if (result.reason === 'expired') {
       await closeExpiredPolls(context.prisma, interaction.guildId);
-      const expired = await getPollSnapshot(context.prisma, parsed.pollId, interaction.guildId);
-      if (expired) {
-        await interaction.update(buildPollMessage(expired));
+    }
+    if (result.reason === 'closed' || result.reason === 'expired') {
+      const closed = await getPollSnapshot(context.prisma, parsed.pollId, interaction.guildId);
+      if (closed?.status === 'closed') {
+        await interaction.update(buildPollMessage(closed));
+        await markPollFinalized(context.prisma, closed.id);
         return;
       }
     }
     await interaction.reply({
-      content:
-        result.reason === 'closed' || result.reason === 'expired'
-          ? 'このPollは終了しています。'
-          : 'このPollには投票できません。',
+      content: 'このPollには投票できません。',
       flags: EPHEMERAL_FLAG,
       allowedMentions: { parse: [] },
     });
@@ -475,17 +495,26 @@ async function runPollCycle(context: PollRuntimeContext): Promise<void> {
 }
 
 async function processExpiredPolls(context: PollRuntimeContext): Promise<void> {
-  const closedIds = await closeExpiredPolls(context.prisma, context.guildId);
-  for (const pollId of closedIds) {
+  await closeExpiredPolls(context.prisma, context.guildId);
+  const pendingIds = await listPollsPendingFinalization(context.prisma, context.guildId);
+  for (const pollId of pendingIds) {
     const snapshot = await getPollSnapshot(context.prisma, pollId, context.guildId);
     if (!snapshot) continue;
-    await updateStoredPollMessage(context.client, snapshot).catch((error) => {
+    await finalizeStoredPoll(context, snapshot).catch((error) => {
       context.logger.warn(
         { err: error, guildId: context.guildId, pollId },
-        '終了したPollメッセージの更新に失敗しました',
+        '終了したPollメッセージの更新に失敗しました。次回Workerで再試行します',
       );
     });
   }
+}
+
+async function finalizeStoredPoll(
+  context: PollRuntimeContext,
+  snapshot: PollSnapshot,
+): Promise<void> {
+  await updateStoredPollMessage(context.client, snapshot);
+  await markPollFinalized(context.prisma, snapshot.id);
 }
 
 async function updateStoredPollMessage(client: PollClient, snapshot: PollSnapshot): Promise<void> {
@@ -518,14 +547,27 @@ export function formatPollListPages(records: readonly PollListRecord[]): string[
 }
 
 export function formatPollResult(snapshot: PollSnapshot): string {
+  const closed = snapshot.status === 'closed';
+  const revealResults = closed ? snapshot.closeAnnouncement : snapshot.showLiveResults;
+  if (!revealResults) {
+    return [
+      `📊 **${snapshot.question}**`,
+      closed ? '状態: 終了' : '状態: 開催中',
+      closed ? '最終結果は非公開です。' : '途中結果は締切まで非公開です。',
+    ].join('\n');
+  }
+
   const total = snapshot.totalVotes || 1;
   const lines = snapshot.options.map((option, index) => {
+    if (snapshot.resultStyle === 'count') {
+      return `${index + 1}. ${option.label} — ${option.votes}票`;
+    }
     const percentage = Math.round((option.votes / total) * 100);
     return `${index + 1}. ${option.label} — ${option.votes}票 (${percentage}%)`;
   });
   return [
     `📊 **${snapshot.question}**`,
-    snapshot.status === 'closed' ? '状態: 終了' : '状態: 開催中',
+    closed ? '状態: 終了' : '状態: 開催中',
     '',
     ...lines,
     '',
