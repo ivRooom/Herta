@@ -37,6 +37,7 @@ export interface XpLevelConfig {
 interface XpCommandInteraction {
   guildId: string | null;
   user: { id: string };
+  options: { getUser(name: string): { id: string } | null };
   reply(options: ReplyOptions): Promise<unknown>;
 }
 
@@ -183,12 +184,13 @@ async function executeRank(
     await reply(interaction, 'XP / Level Pluginは現在無効です。');
     return;
   }
+  const targetUserId = interaction.options.getUser('user')?.id ?? interaction.user.id;
   const [profile, rank] = await Promise.all([
-    getXpProfile(context.prisma, interaction.guildId, interaction.user.id),
-    getXpRank(context.prisma, interaction.guildId, interaction.user.id),
+    getXpProfile(context.prisma, interaction.guildId, targetUserId),
+    getXpRank(context.prisma, interaction.guildId, targetUserId),
   ]);
   await interaction.reply({
-    content: formatRankMessage(profile, rank, interaction.user.id),
+    content: formatRankMessage(profile, rank, targetUserId),
     allowedMentions: { parse: [] },
   });
 }
