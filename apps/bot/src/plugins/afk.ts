@@ -15,7 +15,6 @@ import {
 } from './afk-repository.js';
 
 const EPHEMERAL_FLAG = 64;
-const MAX_REASON_LENGTH = 200;
 const MAX_LIST_PAGE_LENGTH = 1900;
 const noticeCooldowns = new Map<string, number>();
 
