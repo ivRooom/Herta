@@ -13,6 +13,7 @@ CREATE TABLE "polls" (
   "ends_at" TIMESTAMPTZ(3) NOT NULL,
   "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "closed_at" TIMESTAMPTZ(3),
+  "finalized_at" TIMESTAMPTZ(3),
   "updated_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   CONSTRAINT "polls_pkey" PRIMARY KEY ("id"),
@@ -49,4 +50,6 @@ CREATE TABLE "poll_votes" (
 
 CREATE INDEX "polls_due_idx" ON "polls" ("guild_id", "status", "ends_at");
 CREATE INDEX "polls_creator_active_idx" ON "polls" ("guild_id", "creator_id", "status", "ends_at");
+CREATE INDEX "polls_pending_finalization_idx"
+  ON "polls" ("guild_id", "status", "finalized_at", "closed_at");
 CREATE INDEX "poll_votes_user_idx" ON "poll_votes" ("poll_id", "user_id");
