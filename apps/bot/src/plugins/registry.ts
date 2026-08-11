@@ -11,6 +11,7 @@ import type { HertaPlugin } from '@herta/plugin-sdk';
 import type { SlashCommand } from '../commands/registry.js';
 import { birthdayRolePlugin } from './birthday-role.js';
 import { channelPolicyPlugin } from './channel-policy.js';
+import { onboardingPlugin } from './onboarding.js';
 import { roleManagerPlugin } from './role-manager.js';
 import type { RuntimePluginEntry } from './types.js';
 
@@ -222,6 +223,7 @@ const officialPluginIds = [
   'daily-content',
   'lfg',
   'moderation',
+  'onboarding',
   'quote',
   'role-manager',
   'team-split',
@@ -312,6 +314,20 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
           }) as Parameters<NonNullable<typeof moderationPlugin.onEnable>>[0],
       )
     : undefined;
+  const onboardingEntry = deps
+    ? toRuntimePluginEntry(
+        onboardingPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof onboardingPlugin.onEnable>>[0],
+      )
+    : undefined;
   const quoteEntry = deps
     ? toRuntimePluginEntry(
         quotePlugin,
@@ -363,6 +379,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (pluginId === 'daily-content' && dailyContentEntry) return [dailyContentEntry];
     if (pluginId === 'lfg' && lfgEntry) return [lfgEntry];
     if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];
+    if (pluginId === 'onboarding' && onboardingEntry) return [onboardingEntry];
     if (pluginId === 'quote' && quoteEntry) return [quoteEntry];
     if (pluginId === 'role-manager' && roleManagerEntry) return [roleManagerEntry];
     if (pluginId === 'team-split' && teamSplitEntry) return [teamSplitEntry];

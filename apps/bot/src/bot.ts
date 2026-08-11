@@ -175,6 +175,10 @@ export class HertaBot {
       await this.dispatchGuildPluginEvent(member.guild.id, Events.GuildMemberAdd, member);
     });
 
+    this.client.on(Events.GuildMemberRemove, async (member) => {
+      await this.dispatchGuildPluginEvent(member.guild.id, Events.GuildMemberRemove, member);
+    });
+
     this.client.on(Events.MessageCreate, async (message) => {
       if (!message.guildId) return;
 
