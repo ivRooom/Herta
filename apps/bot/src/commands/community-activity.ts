@@ -30,11 +30,7 @@ function readPeriod(value: string | null): CommunityActivityPeriod {
 }
 
 function readMetric(value: string | null): CommunityActivityMetric {
-  if (
-    value === 'reactions_given' ||
-    value === 'reactions_received' ||
-    value === 'voice_seconds'
-  ) {
+  if (value === 'reactions_given' || value === 'reactions_received' || value === 'voice_seconds') {
     return value;
   }
   return 'messages';
@@ -49,10 +45,7 @@ function formatMetric(metric: CommunityActivityMetric, value: number): string {
   return value.toLocaleString('ja-JP');
 }
 
-function displayName(
-  interaction: Parameters<SlashCommand['execute']>[0],
-  userId: string,
-): string {
+function displayName(interaction: Parameters<SlashCommand['execute']>[0], userId: string): string {
   const member = interaction.guild?.members.cache.get(userId);
   return member?.displayName ?? `<@${userId}>`;
 }
@@ -105,13 +98,7 @@ export const leaderboardCommand: SlashCommand = {
     const metric = readMetric(interaction.options.getString('metric'));
     const period = readPeriod(interaction.options.getString('period'));
     const limit = interaction.options.getInteger('limit') ?? 10;
-    const rows = await getCommunityLeaderboard(
-      prisma,
-      interaction.guildId,
-      metric,
-      period,
-      limit,
-    );
+    const rows = await getCommunityLeaderboard(prisma, interaction.guildId, metric, period, limit);
 
     const description = rows.length
       ? rows
@@ -166,12 +153,7 @@ export const activityCommand: SlashCommand = {
 
     const user = interaction.options.getUser('user') ?? interaction.user;
     const period = readPeriod(interaction.options.getString('period'));
-    const totals = await getCommunityActivityTotals(
-      prisma,
-      interaction.guildId,
-      user.id,
-      period,
-    );
+    const totals = await getCommunityActivityTotals(prisma, interaction.guildId, user.id, period);
 
     const embed = new EmbedBuilder()
       .setTitle(`📈 ${user.globalName ?? user.username} のアクティビティ`)

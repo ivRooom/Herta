@@ -101,9 +101,7 @@ export default async function CommunityDashboardPage({
     }),
   ]);
 
-  const totalMap = new Map(
-    totals.map((item) => [item.metric, Number(item._sum.value ?? 0n)]),
-  );
+  const totalMap = new Map(totals.map((item) => [item.metric, Number(item._sum.value ?? 0n)]));
   const top = rows.map((row) => ({
     userId: row.userId,
     total: Number(row._sum.value ?? 0n),
@@ -234,10 +232,7 @@ export default async function CommunityDashboardPage({
         ) : (
           <div className="mt-6 space-y-3">
             {top.map((item, index) => (
-              <div
-                key={item.userId}
-                className="rounded-xl border border-border bg-background p-4"
-              >
+              <div key={item.userId} className="rounded-xl border border-border bg-background p-4">
                 <div className="flex items-center justify-between gap-4">
                   <p className="truncate text-sm font-medium">
                     <span className="mr-2 text-muted">#{index + 1}</span>
@@ -265,7 +260,8 @@ export default async function CommunityDashboardPage({
           <div>
             <h2 className="font-medium">Minecraft連携に対応できるメトリクス基盤</h2>
             <p className="mt-1 text-sm leading-relaxed text-muted">
-              minecraft_secondsを予約済みです。Discord IDとMinecraft UUIDのリンク、署名付きAgent/APIを追加すると、同じランキングとプロフィールへプレイ時間を表示できます。
+              minecraft_secondsを予約済みです。Discord IDとMinecraft
+              UUIDのリンク、署名付きAgent/APIを追加すると、同じランキングとプロフィールへプレイ時間を表示できます。
             </p>
           </div>
         </div>

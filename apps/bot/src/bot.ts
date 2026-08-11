@@ -29,6 +29,12 @@ import {
   type GuildConfigurationOptions,
 } from './health/guild-options.js';
 import type { DiscordHealthObservation } from './health/types.js';
+import {
+  finishVoiceSession,
+  incrementCommunityActivity,
+  resetVoiceSessions,
+  startVoiceSession,
+} from './activity/community-activity.js';
 import { searchGuildMemberOptions, type GuildMemberOption } from './health/guild-members.js';
 
 function resolveErrorName(error: unknown): string {
@@ -50,9 +56,14 @@ function guildMembersIntentEnabled(): boolean {
 }
 
 function resolveGatewayIntents(logger: Logger): GatewayIntentBits[] {
-  const intents = [GatewayIntentBits.Guilds];
+  const intents = [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildVoiceStates,
+  ];
   if (messageContentIntentEnabled()) {
-    intents.push(GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent);
+    intents.push(GatewayIntentBits.MessageContent);
     logger.info('Auto Response / Moderation用Message Content Intentを有効化します');
   } else {
     logger.warn(
@@ -94,7 +105,7 @@ export class HertaBot {
     );
     this.client = new Client({
       intents: resolveGatewayIntents(this.logger),
-      partials: [Partials.Message],
+      partials: [Partials.Message, Partials.Reaction, Partials.User],
     });
     this.registry = new CommandRegistry(this.logger);
     this.registry.register(pingCommand);
@@ -143,6 +154,18 @@ export class HertaBot {
 
       for (const guildId of guildIds) {
         await this.syncGuild(client, guildId);
+        try {
+          await resetVoiceSessions(this.prisma, guildId);
+          const guild = client.guilds.cache.get(guildId);
+          if (guild) {
+            for (const state of guild.voiceStates.cache.values()) {
+              if (!state.channelId || state.member?.user.bot) continue;
+              await startVoiceSession(this.prisma, guildId, state.id, state.channelId);
+            }
+          }
+        } catch (error) {
+          this.logger.warn({ err: error, guildId }, 'VCセッション初期化に失敗しました');
+        }
       }
     });
 
@@ -181,6 +204,21 @@ export class HertaBot {
 
     this.client.on(Events.MessageCreate, async (message) => {
       if (!message.guildId) return;
+      if (!message.author.bot && !message.webhookId) {
+        try {
+          await incrementCommunityActivity(
+            this.prisma,
+            message.guildId,
+            message.author.id,
+            'messages',
+          );
+        } catch (error) {
+          this.logger.warn(
+            { err: error, guildId: message.guildId, userId: message.author.id },
+            '発言数の記録に失敗しました',
+          );
+        }
+      }
 
       let events: Awaited<ReturnType<typeof this.pluginLoader.getGuildEvents>>;
       try {
@@ -242,6 +280,49 @@ export class HertaBot {
 
     this.client.on('error', (error) => {
       this.logger.error(error, 'Discord クライアントエラー');
+    });
+
+    this.client.on(Events.MessageReactionAdd, async (reaction, user) => {
+      if (user.bot) return;
+      try {
+        const resolvedReaction = reaction.partial ? await reaction.fetch() : reaction;
+        const resolvedMessage = resolvedReaction.message.partial
+          ? await resolvedReaction.message.fetch()
+          : resolvedReaction.message;
+        const guildId = resolvedMessage.guildId;
+        if (!guildId) return;
+
+        await incrementCommunityActivity(this.prisma, guildId, user.id, 'reactions_given');
+        const receiver = resolvedMessage.author;
+        if (receiver && !receiver.bot && receiver.id !== user.id) {
+          await incrementCommunityActivity(this.prisma, guildId, receiver.id, 'reactions_received');
+        }
+        await this.dispatchGuildPluginEvent(
+          guildId,
+          Events.MessageReactionAdd,
+          resolvedReaction,
+          user,
+        );
+      } catch (error) {
+        this.logger.warn({ err: error, userId: user.id }, 'リアクション活動の記録に失敗しました');
+      }
+    });
+
+    this.client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+      const guildId = newState.guild.id;
+      const userId = newState.id;
+      if (newState.member?.user.bot ?? oldState.member?.user.bot) return;
+
+      try {
+        if (!oldState.channelId && newState.channelId) {
+          await startVoiceSession(this.prisma, guildId, userId, newState.channelId);
+        } else if (oldState.channelId && !newState.channelId) {
+          await finishVoiceSession(this.prisma, guildId, userId);
+        }
+        await this.dispatchGuildPluginEvent(guildId, Events.VoiceStateUpdate, oldState, newState);
+      } catch (error) {
+        this.logger.warn({ err: error, guildId, userId }, 'VC滞在時間の記録に失敗しました');
+      }
     });
 
     this.client.on(Events.InteractionCreate, async (interaction) => {

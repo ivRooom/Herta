@@ -274,6 +274,36 @@ model ServiceHealthSnapshot {
 }
 
 // ============================================================
+// Community Activity / Leaderboard
+// ============================================================
+
+model CommunityActivityDaily {
+  guildId      String   @map("guild_id")
+  userId       String   @map("user_id")
+  activityDate DateTime @map("activity_date") @db.Date
+  metric       String   @db.VarChar(32)
+  value        BigInt   @default(0)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@id([guildId, userId, activityDate, metric])
+  @@index([guildId, metric, activityDate])
+  @@index([guildId, userId, activityDate])
+  @@map("community_activity_daily")
+}
+
+model CommunityVoiceSession {
+  guildId   String   @map("guild_id")
+  userId    String   @map("user_id")
+  channelId String   @map("channel_id")
+  startedAt DateTime @map("started_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@id([guildId, userId])
+  @@index([guildId, startedAt])
+  @@map("community_voice_sessions")
+}
+
+// ============================================================
 // Plugin: Achievements / Badges
 // ============================================================
 
