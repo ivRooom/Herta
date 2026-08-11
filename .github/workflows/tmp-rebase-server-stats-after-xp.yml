@@ -1,0 +1,72 @@
+name: Temporary Rebase Server Stats After XP
+on:
+  push:
+    branches:
+      - tmp/server-stats-rebase-runner-final
+permissions:
+  contents: write
+jobs:
+  rebase:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Reapply Server Stats on latest main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main feat/server-stats-v1
+          git checkout -B rebuilt origin/main
+          git checkout origin/feat/server-stats-v1 -- \
+            apps/bot/src/plugins/server-stats-repository.ts \
+            apps/bot/src/plugins/server-stats.test.ts \
+            apps/bot/src/plugins/server-stats.ts \
+            packages/plugin-catalog/src/manifests/server-stats.ts
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('packages/plugin-catalog/src/index.ts')
+          s = p.read_text()
+          if "./manifests/server-stats.js" not in s:
+              s = s.replace("import { suggestionManifest } from './manifests/suggestion.js';\n", "import { suggestionManifest } from './manifests/suggestion.js';\nimport { serverStatsManifest } from './manifests/server-stats.js';\n")
+              s = s.replace("export { suggestionManifest } from './manifests/suggestion.js';\n", "export { suggestionManifest } from './manifests/suggestion.js';\nexport { serverStatsManifest } from './manifests/server-stats.js';\n")
+              s = s.replace("  suggestionManifest,\n  teamSplitManifest,", "  suggestionManifest,\n  serverStatsManifest,\n  teamSplitManifest,")
+          p.write_text(s)
+
+          p = Path('apps/bot/src/plugins/registry.ts')
+          s = p.read_text()
+          if "./server-stats.js" not in s:
+              s = s.replace("import { suggestionPlugin } from './suggestion.js';\n", "import { suggestionPlugin } from './suggestion.js';\nimport { serverStatsPlugin } from './server-stats.js';\n")
+              s = s.replace("  'suggestion',\n  'team-split',", "  'suggestion',\n  'server-stats',\n  'team-split',")
+              marker = "  const teamSplitEntry = deps\n"
+              entry = "  const serverStatsEntry = deps\n    ? toRuntimePluginEntry(\n        serverStatsPlugin,\n        (plugin, guildId, config) =>\n          createPluginContext({\n            client: deps.client,\n            prisma: deps.prisma,\n            logger: deps.logger,\n            guildId,\n            config,\n            manifest: plugin.manifest,\n          }) as Parameters<NonNullable<typeof serverStatsPlugin.onEnable>>[0],\n      )\n    : undefined;\n"
+              s = s.replace(marker, entry + marker)
+              s = s.replace("    if (pluginId === 'suggestion' && suggestionEntry) return [suggestionEntry];\n", "    if (pluginId === 'suggestion' && suggestionEntry) return [suggestionEntry];\n    if (pluginId === 'server-stats' && serverStatsEntry) return [serverStatsEntry];\n")
+          p.write_text(s)
+
+          p = Path('apps/studio/src/components/plugin-setup-overview.tsx')
+          s = p.read_text()
+          if "'server-stats':" not in s:
+              marker = "  reminder: [\n"
+              block = "  'server-stats': [\n    'Botを除外した正確なメンバー数にはServer Members Intentと完全なMember Cacheが必要です。',\n    'Activityは既存DBを読み取り集計するため、Server Stats専用の追加ログ収集や外部API通信は行いません。',\n  ],\n"
+              s = s.replace(marker, block + marker)
+          p.write_text(s)
+          PY
+          pnpm exec prettier --write \
+            apps/bot/src/plugins/registry.ts \
+            apps/bot/src/plugins/server-stats-repository.ts \
+            apps/bot/src/plugins/server-stats.test.ts \
+            apps/bot/src/plugins/server-stats.ts \
+            apps/studio/src/components/plugin-setup-overview.tsx \
+            packages/plugin-catalog/src/index.ts \
+            packages/plugin-catalog/src/manifests/server-stats.ts
+          git add apps/bot/src/plugins/registry.ts apps/bot/src/plugins/server-stats-repository.ts apps/bot/src/plugins/server-stats.test.ts apps/bot/src/plugins/server-stats.ts apps/studio/src/components/plugin-setup-overview.tsx packages/plugin-catalog/src/index.ts packages/plugin-catalog/src/manifests/server-stats.ts
+          git commit -m "Server Statsを最新mainへ追従する"
+          git push --force origin HEAD:feat/server-stats-v1
