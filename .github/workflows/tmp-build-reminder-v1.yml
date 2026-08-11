@@ -1,0 +1,95 @@
+name: Temporary Build Reminder v1
+
+on:
+  push:
+    branches: [tmp/reminder-v1-builder]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Reminder v1を機能ブランチへ配線
+        shell: bash
+        run: |
+          git fetch origin feat/reminder-v1
+          git checkout -B feat/reminder-v1 origin/feat/reminder-v1
+          python3 - <<'PY'
+          from pathlib import Path
+
+          catalog = Path('packages/plugin-catalog/src/index.ts')
+          text = catalog.read_text()
+          text = text.replace(
+              "import { onboardingManifest } from './manifests/onboarding.js';\n",
+              "import { onboardingManifest } from './manifests/onboarding.js';\nimport { reminderManifest } from './manifests/reminder.js';\n",
+          )
+          text = text.replace(
+              "export { onboardingManifest } from './manifests/onboarding.js';\n",
+              "export { onboardingManifest } from './manifests/onboarding.js';\nexport { reminderManifest } from './manifests/reminder.js';\n",
+          )
+          text = text.replace(
+              "  onboardingManifest,\n  quoteManifest,\n",
+              "  onboardingManifest,\n  reminderManifest,\n  quoteManifest,\n",
+          )
+          catalog.write_text(text)
+
+          registry = Path('apps/bot/src/plugins/registry.ts')
+          text = registry.read_text()
+          text = text.replace(
+              "import { onboardingPlugin } from './onboarding.js';\n",
+              "import { onboardingPlugin } from './onboarding.js';\nimport { reminderPlugin } from './reminder.js';\n",
+          )
+          text = text.replace(
+              "  'onboarding',\n  'quote',\n",
+              "  'onboarding',\n  'reminder',\n  'quote',\n",
+          )
+          reminder_entry = """  const reminderEntry = deps
+            ? toRuntimePluginEntry(
+                reminderPlugin,
+                (plugin, guildId, config) =>
+                  createPluginContext({
+                    client: deps.client,
+                    prisma: deps.prisma,
+                    logger: deps.logger,
+                    guildId,
+                    config,
+                    manifest: plugin.manifest,
+                  }) as Parameters<NonNullable<typeof reminderPlugin.onEnable>>[0],
+              )
+            : undefined;
+          """
+          text = text.replace("  const quoteEntry = deps\n", reminder_entry + "\n  const quoteEntry = deps\n")
+          text = text.replace(
+              "    if (pluginId === 'onboarding' && onboardingEntry) return [onboardingEntry];\n    if (pluginId === 'quote' && quoteEntry) return [quoteEntry];\n",
+              "    if (pluginId === 'onboarding' && onboardingEntry) return [onboardingEntry];\n    if (pluginId === 'reminder' && reminderEntry) return [reminderEntry];\n    if (pluginId === 'quote' && quoteEntry) return [quoteEntry];\n",
+          )
+          registry.write_text(text)
+          PY
+          pnpm install --frozen-lockfile
+          pnpm exec prettier --write \
+            packages/plugin-catalog/src/index.ts \
+            packages/plugin-catalog/src/manifests/reminder.ts \
+            apps/bot/src/plugins/registry.ts \
+            apps/bot/src/plugins/reminder.ts \
+            apps/bot/src/plugins/reminder-repository.ts \
+            apps/bot/src/plugins/reminder.test.ts \
+            packages/db/prisma/migrations/20260811005000_reminder_plugin_v1/migration.sql
+          git config user.name 'mizzz（ずーみー）/いゔる。'
+          git config user.email 'mizzz._.dev@outlook.jp'
+          git add packages/plugin-catalog/src/index.ts packages/plugin-catalog/src/manifests/reminder.ts apps/bot/src/plugins/registry.ts apps/bot/src/plugins/reminder.ts apps/bot/src/plugins/reminder-repository.ts apps/bot/src/plugins/reminder.test.ts packages/db/prisma/migrations/20260811005000_reminder_plugin_v1/migration.sql
+          if ! git diff --cached --quiet; then
+            git commit -m 'Reminder v1を公式Pluginへ配線する'
+            git push origin HEAD:feat/reminder-v1
+          fi
