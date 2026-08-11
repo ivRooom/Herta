@@ -31,21 +31,23 @@ jobs:
 
           index = Path('packages/plugin-catalog/src/index.ts')
           text = index.read_text()
-          text = text.replace("import { afkManifest } from './manifests/afk.js';", "import { achievementsManifest } from './manifests/achievements.js';\nimport { afkManifest } from './manifests/afk.js';")
-          text = text.replace("export { afkManifest } from './manifests/afk.js';", "export { achievementsManifest } from './manifests/achievements.js';\nexport { afkManifest } from './manifests/afk.js';")
-          text = text.replace("const pluginManifests: PluginManifest[] = [\n  afkManifest,", "const pluginManifests: PluginManifest[] = [\n  achievementsManifest,\n  afkManifest,")
+          if "./manifests/achievements.js" not in text:
+              text = text.replace("import { afkManifest } from './manifests/afk.js';", "import { achievementsManifest } from './manifests/achievements.js';\nimport { afkManifest } from './manifests/afk.js';")
+              text = text.replace("export { afkManifest } from './manifests/afk.js';", "export { achievementsManifest } from './manifests/achievements.js';\nexport { afkManifest } from './manifests/afk.js';")
+              text = text.replace("const pluginManifests: PluginManifest[] = [\n  afkManifest,", "const pluginManifests: PluginManifest[] = [\n  achievementsManifest,\n  afkManifest,")
           index.write_text(text)
 
           registry = Path('apps/bot/src/plugins/registry.ts')
           text = registry.read_text()
-          text = text.replace("import { afkPlugin } from './afk.js';", "import { achievementsPlugin } from './achievements.js';\nimport { afkPlugin } from './afk.js';")
-          text = text.replace("const officialPluginIds = [\n  'afk',", "const officialPluginIds = [\n  'achievements',\n  'afk',")
-          anchor = "function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginEntry[] {\n  const afkEntry = deps"
-          replacement = "function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginEntry[] {\n  const achievementsEntry = deps\n    ? toRuntimePluginEntry(\n        achievementsPlugin,\n        (plugin, guildId, config) =>\n          createPluginContext({\n            client: deps.client,\n            prisma: deps.prisma,\n            logger: deps.logger,\n            guildId,\n            config,\n            manifest: plugin.manifest,\n          }) as Parameters<NonNullable<typeof achievementsPlugin.onEnable>>[0],\n      )\n    : undefined;\n  const afkEntry = deps"
-          if anchor not in text:
-              raise SystemExit('registry entry anchor missing')
-          text = text.replace(anchor, replacement, 1)
-          text = text.replace("  return officialPluginIds.flatMap((pluginId) => {\n    if (pluginId === 'afk' && afkEntry) return [afkEntry];", "  return officialPluginIds.flatMap((pluginId) => {\n    if (pluginId === 'achievements' && achievementsEntry) return [achievementsEntry];\n    if (pluginId === 'afk' && afkEntry) return [afkEntry];", 1)
+          if "./achievements.js" not in text:
+              text = text.replace("import { afkPlugin } from './afk.js';", "import { achievementsPlugin } from './achievements.js';\nimport { afkPlugin } from './afk.js';")
+              text = text.replace("const officialPluginIds = [\n  'afk',", "const officialPluginIds = [\n  'achievements',\n  'afk',")
+              anchor = "function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginEntry[] {\n  const afkEntry = deps"
+              replacement = "function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginEntry[] {\n  const achievementsEntry = deps\n    ? toRuntimePluginEntry(\n        achievementsPlugin,\n        (plugin, guildId, config) =>\n          createPluginContext({\n            client: deps.client,\n            prisma: deps.prisma,\n            logger: deps.logger,\n            guildId,\n            config,\n            manifest: plugin.manifest,\n          }) as Parameters<NonNullable<typeof achievementsPlugin.onEnable>>[0],\n      )\n    : undefined;\n  const afkEntry = deps"
+              if anchor not in text:
+                  raise SystemExit('registry entry anchor missing')
+              text = text.replace(anchor, replacement, 1)
+              text = text.replace("  return officialPluginIds.flatMap((pluginId) => {\n    if (pluginId === 'afk' && afkEntry) return [afkEntry];", "  return officialPluginIds.flatMap((pluginId) => {\n    if (pluginId === 'achievements' && achievementsEntry) return [achievementsEntry];\n    if (pluginId === 'afk' && afkEntry) return [afkEntry];", 1)
           registry.write_text(text)
 
           schema = Path('packages/db/prisma/schema.prisma')
@@ -76,7 +78,8 @@ jobs:
 
           overview = Path('apps/studio/src/components/plugin-setup-overview.tsx')
           text = overview.read_text()
-          text = text.replace("const pluginSetupNotes: Record<string, string[]> = {\n  'auto-response': [", "const pluginSetupNotes: Record<string, string[]> = {\n  achievements: [\n    'Achievementsは既存のXP・Poll・Giveaway・Event・Suggestion活動を読み取り、/achievements または /achievement sync 実行時に解除状態を同期します。',\n    'Secret Achievementを有効にすると、解除するまで条件と名称を一覧から隠せます。',\n  ],\n  'auto-response': [", 1)
+          if 'achievements: [' not in text:
+              text = text.replace("const pluginSetupNotes: Record<string, string[]> = {\n  'auto-response': [", "const pluginSetupNotes: Record<string, string[]> = {\n  achievements: [\n    'Achievementsは既存のXP・Poll・Giveaway・Event・Suggestion活動を読み取り、/achievements または /achievement sync 実行時に解除状態を同期します。',\n    'Secret Achievementを有効にすると、解除するまで条件と名称を一覧から隠せます。',\n  ],\n  'auto-response': [", 1)
           overview.write_text(text)
           PY
 
@@ -89,6 +92,7 @@ jobs:
             apps/bot/src/plugins/registry.ts \
             apps/studio/src/components/plugin-setup-overview.tsx
           pnpm --filter @herta/db exec prisma format --schema prisma/schema.prisma
+          pnpm --filter @herta/plugin-catalog build
           pnpm --filter @herta/bot test -- achievements.test.ts
           pnpm typecheck
           git rm .github/workflows/tmp-integrate-achievements.yml
