@@ -632,3 +632,51 @@ model DailyContentDelivery {
   @@index([dailyContentId, scheduledFor(sort: Desc)])
   @@map("daily_content_deliveries")
 }
+
+// ============================================================
+// Plugin: Event / RSVP
+// ============================================================
+
+model CommunityEvent {
+  id                       String      @id @default(uuid()) @db.Uuid
+  guildId                  String      @map("guild_id")
+  creatorId                String      @map("creator_id")
+  channelId                String      @map("channel_id")
+  messageId                String?     @map("message_id")
+  title                    String      @db.VarChar(200)
+  description              String?     @db.VarChar(1000)
+  location                 String?     @db.VarChar(200)
+  timezone                 String      @default("Asia/Tokyo") @db.VarChar(64)
+  startsAt                 DateTime    @map("starts_at") @db.Timestamptz(3)
+  registrationClosesAt     DateTime    @map("registration_closes_at") @db.Timestamptz(3)
+  capacity                 Int?
+  status                   String      @default("open") @db.VarChar(16)
+  allowMaybe               Boolean     @default(true) @map("allow_maybe")
+  allowWaitlist            Boolean     @default(true) @map("allow_waitlist")
+  reminderMinutes          Int         @default(60) @map("reminder_minutes")
+  reminderSentAt           DateTime?   @map("reminder_sent_at") @db.Timestamptz(3)
+  reminderClaimedAt        DateTime?   @map("reminder_claimed_at") @db.Timestamptz(3)
+  finalizedAt              DateTime?   @map("finalized_at") @db.Timestamptz(3)
+  createdAt                DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  rsvps                    EventRsvp[]
+
+  @@index([guildId, startsAt])
+  @@index([guildId, status, registrationClosesAt])
+  @@index([guildId, creatorId, startsAt])
+  @@index([guildId, reminderSentAt, startsAt])
+  @@map("community_events")
+}
+
+model EventRsvp {
+  eventId   String         @map("event_id") @db.Uuid
+  userId    String         @map("user_id")
+  status    String         @db.VarChar(16)
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  event     CommunityEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, userId])
+  @@index([eventId, status, createdAt])
+  @@map("event_rsvps")
+}

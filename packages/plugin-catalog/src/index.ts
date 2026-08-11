@@ -9,6 +9,7 @@ import type { PluginManifest } from '@herta/shared';
 import { afkManifest } from './manifests/afk.js';
 import { birthdayRoleManifest } from './manifests/birthday-role.js';
 import { channelPolicyManifest } from './manifests/channel-policy.js';
+import { eventRsvpManifest } from './manifests/event-rsvp.js';
 import { giveawayManifest } from './manifests/giveaway.js';
 import { onboardingManifest } from './manifests/onboarding.js';
 import { pollManifest } from './manifests/poll.js';
@@ -21,6 +22,7 @@ import { xpLevelManifest } from './manifests/xp-level.js';
 export { afkManifest } from './manifests/afk.js';
 export { birthdayRoleManifest } from './manifests/birthday-role.js';
 export { channelPolicyManifest } from './manifests/channel-policy.js';
+export { eventRsvpManifest } from './manifests/event-rsvp.js';
 export { giveawayManifest } from './manifests/giveaway.js';
 export { onboardingManifest } from './manifests/onboarding.js';
 export { pollManifest } from './manifests/poll.js';
@@ -36,6 +38,7 @@ const pluginManifests: PluginManifest[] = [
   birthdayRoleManifest,
   channelPolicyManifest,
   dailyContentManifest,
+  eventRsvpManifest,
   giveawayManifest,
   lfgManifest,
   moderationManifest,
