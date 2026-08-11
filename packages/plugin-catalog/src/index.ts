@@ -15,6 +15,7 @@ import { pollManifest } from './manifests/poll.js';
 import { reminderManifest } from './manifests/reminder.js';
 import { roleManagerManifest } from './manifests/role-manager.js';
 import { suggestionManifest } from './manifests/suggestion.js';
+import { serverStatsManifest } from './manifests/server-stats.js';
 
 export { afkManifest } from './manifests/afk.js';
 export { birthdayRoleManifest } from './manifests/birthday-role.js';
@@ -25,6 +26,7 @@ export { pollManifest } from './manifests/poll.js';
 export { reminderManifest } from './manifests/reminder.js';
 export { roleManagerManifest } from './manifests/role-manager.js';
 export { suggestionManifest } from './manifests/suggestion.js';
+export { serverStatsManifest } from './manifests/server-stats.js';
 
 const pluginManifests: PluginManifest[] = [
   afkManifest,
@@ -41,6 +43,7 @@ const pluginManifests: PluginManifest[] = [
   quoteManifest,
   roleManagerManifest,
   suggestionManifest,
+  serverStatsManifest,
   teamSplitManifest,
 ];
 

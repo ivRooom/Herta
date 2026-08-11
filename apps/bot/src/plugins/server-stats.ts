@@ -162,7 +162,11 @@ async function executeServerCommand(
     return;
   }
   if (config.adminOnly && !interaction.memberPermissions?.has('ManageGuild')) {
-    await reply(context, interaction, 'この統計はManage Server権限を持つメンバーだけ閲覧できます。');
+    await reply(
+      context,
+      interaction,
+      'この統計はManage Server権限を持つメンバーだけ閲覧できます。',
+    );
     return;
   }
 
@@ -175,11 +179,7 @@ async function executeServerCommand(
   if (subcommand === 'activity') {
     const since = new Date(Date.now() - config.activityWindowDays * 86_400_000);
     const metrics = await getServerActivityMetrics(context.prisma, interaction.guildId, since);
-    await reply(
-      context,
-      interaction,
-      formatServerActivity(metrics, config.activityWindowDays),
-    );
+    await reply(context, interaction, formatServerActivity(metrics, config.activityWindowDays));
     return;
   }
   if (subcommand === 'plugins') {
@@ -229,7 +229,11 @@ async function replyPages(
   const flags = normalizeServerStatsConfig(context.config).ephemeralResponses
     ? EPHEMERAL_FLAG
     : undefined;
-  await interaction.reply({ content: pages[0] ?? '表示する項目がありません。', flags, allowedMentions: { parse: [] } });
+  await interaction.reply({
+    content: pages[0] ?? '表示する項目がありません。',
+    flags,
+    allowedMentions: { parse: [] },
+  });
   for (const page of pages.slice(1)) {
     await interaction.followUp({ content: page, flags, allowedMentions: { parse: [] } });
   }
