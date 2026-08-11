@@ -16,6 +16,7 @@ import { onboardingPlugin } from './onboarding.js';
 import { pollPlugin } from './poll.js';
 import { reminderPlugin } from './reminder.js';
 import { roleManagerPlugin } from './role-manager.js';
+import { suggestionPlugin } from './suggestion.js';
 import type { RuntimePluginEntry } from './types.js';
 
 export type { GuildEventHandler, RuntimePluginEntry } from './types.js';
@@ -232,6 +233,7 @@ const officialPluginIds = [
   'reminder',
   'quote',
   'role-manager',
+  'suggestion',
   'team-split',
 ] as const;
 
@@ -404,6 +406,20 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
           }) as Parameters<NonNullable<typeof roleManagerPlugin.onEnable>>[0],
       )
     : undefined;
+  const suggestionEntry = deps
+    ? toRuntimePluginEntry(
+        suggestionPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof suggestionPlugin.onEnable>>[0],
+      )
+    : undefined;
   const teamSplitEntry = deps
     ? toRuntimePluginEntry(
         teamSplitPlugin,
@@ -433,6 +449,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (pluginId === 'reminder' && reminderEntry) return [reminderEntry];
     if (pluginId === 'quote' && quoteEntry) return [quoteEntry];
     if (pluginId === 'role-manager' && roleManagerEntry) return [roleManagerEntry];
+    if (pluginId === 'suggestion' && suggestionEntry) return [suggestionEntry];
     if (pluginId === 'team-split' && teamSplitEntry) return [teamSplitEntry];
     return [{ pluginId }];
   });
