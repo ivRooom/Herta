@@ -82,7 +82,6 @@ jobs:
           repository.write_text(text)
           PYFIX
 
-          pnpm exec prisma format --schema packages/db/prisma/schema.prisma
           '''
           if marker not in script:
               raise SystemExit('prettier marker missing')
