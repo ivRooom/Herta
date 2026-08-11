@@ -579,9 +579,8 @@ export function formatGiveawayListPages(records: readonly GiveawayListRecord[]):
 }
 
 export function formatGiveawayInfo(snapshot: GiveawaySnapshot): string {
-  const winners = snapshot.winners.length > 0
-    ? snapshot.winners.map((id) => `<@${id}>`).join('、')
-    : 'なし';
+  const winners =
+    snapshot.winners.length > 0 ? snapshot.winners.map((id) => `<@${id}>`).join('、') : 'なし';
   return [
     `🎉 **${snapshot.prize}**`,
     `状態: ${snapshot.status === 'open' ? '開催中' : '終了'}`,
