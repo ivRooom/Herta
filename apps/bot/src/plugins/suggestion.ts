@@ -55,9 +55,7 @@ interface TextChannel {
 interface SuggestionClient {
   channels: { fetch(id: string): Promise<TextChannel | null> };
   users: {
-    fetch(
-      id: string,
-    ): Promise<{
+    fetch(id: string): Promise<{
       send(options: { content: string; allowedMentions: { parse: [] } }): Promise<unknown>;
     }>;
   };
