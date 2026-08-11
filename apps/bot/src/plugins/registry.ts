@@ -238,91 +238,182 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     ? toRuntimePluginEntry(
         autoResponsePlugin,
         (plugin, guildId, config) =>
-          createPluginContext({ client: deps.client, prisma: deps.prisma, logger: deps.logger, guildId, config, manifest: plugin.manifest }) as Parameters<NonNullable<typeof autoResponsePlugin.onEnable>>[0],
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof autoResponsePlugin.onEnable>>[0],
       )
     : undefined;
   const birthdayRoleEntry = deps
     ? toRuntimePluginEntry(
         birthdayRolePlugin,
         (plugin, guildId, config) =>
-          createPluginContext({ client: deps.client, prisma: deps.prisma, logger: deps.logger, guildId, config, manifest: plugin.manifest }) as Parameters<NonNullable<typeof birthdayRolePlugin.onEnable>>[0],
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof birthdayRolePlugin.onEnable>>[0],
       )
     : undefined;
   const channelPolicyEntry = deps
     ? toRuntimePluginEntry(
         channelPolicyPlugin,
         (plugin, guildId, config) =>
-          createPluginContext({ client: deps.client, prisma: deps.prisma, logger: deps.logger, guildId, config, manifest: plugin.manifest }) as Parameters<NonNullable<typeof channelPolicyPlugin.onEnable>>[0],
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof channelPolicyPlugin.onEnable>>[0],
       )
     : undefined;
   const dailyContentEntry = deps
     ? toRuntimePluginEntry(
         dailyContentPlugin,
         (plugin, guildId, config) =>
-          createPluginContext({ client: deps.client, prisma: deps.prisma, logger: deps.logger, guildId, config, manifest: plugin.manifest }) as Parameters<NonNullable<typeof dailyContentPlugin.onEnable>>[0],
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof dailyContentPlugin.onEnable>>[0],
       )
     : undefined;
   const lfgEntry = deps
     ? toRuntimePluginEntry(
         lfgPlugin,
         (plugin, guildId, config) =>
-          createPluginContext({ client: deps.client, prisma: deps.prisma, logger: deps.logger, guildId, config, manifest: plugin.manifest }) as Parameters<NonNullable<typeof lfgPlugin.onEnable>>[0],
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof lfgPlugin.onEnable>>[0],
       )
     : undefined;
   const moderationEntry = deps
     ? toRuntimePluginEntry(
         moderationPlugin,
         (plugin, guildId, config) =>
-          createPluginContext({ client: deps.client, prisma: deps.prisma, logger: deps.logger, guildId, config, manifest: plugin.manifest }) as Parameters<NonNullable<typeof moderationPlugin.onEnable>>[0],
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof moderationPlugin.onEnable>>[0],
       )
     : undefined;
   const onboardingEntry = deps
     ? toRuntimePluginEntry(
         onboardingPlugin,
         (plugin, guildId, config) =>
-          createPluginContext({ client: deps.client, prisma: deps.prisma, logger: deps.logger, guildId, config, manifest: plugin.manifest }) as Parameters<NonNullable<typeof onboardingPlugin.onEnable>>[0],
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof onboardingPlugin.onEnable>>[0],
       )
     : undefined;
   const pollEntry = deps
     ? toRuntimePluginEntry(
         pollPlugin,
         (plugin, guildId, config) =>
-          createPluginContext({ client: deps.client, prisma: deps.prisma, logger: deps.logger, guildId, config, manifest: plugin.manifest }) as Parameters<NonNullable<typeof pollPlugin.onEnable>>[0],
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof pollPlugin.onEnable>>[0],
       )
     : undefined;
   const reminderEntry = deps
     ? toRuntimePluginEntry(
         reminderPlugin,
         (plugin, guildId, config) =>
-          createPluginContext({ client: deps.client, prisma: deps.prisma, logger: deps.logger, guildId, config, manifest: plugin.manifest }) as Parameters<NonNullable<typeof reminderPlugin.onEnable>>[0],
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof reminderPlugin.onEnable>>[0],
       )
     : undefined;
   const quoteEntry = deps
     ? toRuntimePluginEntry(
         quotePlugin,
         (plugin, guildId, config) =>
-          createPluginContext({ client: deps.client, prisma: deps.prisma, logger: deps.logger, guildId, config, manifest: plugin.manifest }) as Parameters<NonNullable<typeof quotePlugin.onEnable>>[0],
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof quotePlugin.onEnable>>[0],
       )
     : undefined;
   const roleManagerEntry = deps
     ? toRuntimePluginEntry(
         roleManagerPlugin,
         (plugin, guildId, config) =>
-          createPluginContext({ client: deps.client, prisma: deps.prisma, logger: deps.logger, guildId, config, manifest: plugin.manifest }) as Parameters<NonNullable<typeof roleManagerPlugin.onEnable>>[0],
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof roleManagerPlugin.onEnable>>[0],
       )
     : undefined;
   const suggestionEntry = deps
     ? toRuntimePluginEntry(
         suggestionPlugin,
         (plugin, guildId, config) =>
-          createPluginContext({ client: deps.client, prisma: deps.prisma, logger: deps.logger, guildId, config, manifest: plugin.manifest }) as Parameters<NonNullable<typeof suggestionPlugin.onEnable>>[0],
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof suggestionPlugin.onEnable>>[0],
       )
     : undefined;
   const teamSplitEntry = deps
     ? toRuntimePluginEntry(
         teamSplitPlugin,
         (plugin, guildId, config) =>
-          createPluginContext({ client: deps.client, prisma: deps.prisma, logger: deps.logger, guildId, config, manifest: plugin.manifest }) as Parameters<NonNullable<typeof teamSplitPlugin.onEnable>>[0],
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof teamSplitPlugin.onEnable>>[0],
       )
     : undefined;
 

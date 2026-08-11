@@ -132,9 +132,7 @@ export async function voteSuggestion(
   input: { id: string; guildId: string; userId: string; value: 1 | -1 },
 ): Promise<SuggestionSnapshot | null> {
   const accepted = await prisma.$transaction(async (tx) => {
-    const rows = await tx.$queryRaw<
-      Array<{ votingEnabled: boolean; status: SuggestionStatus }>
-    >`
+    const rows = await tx.$queryRaw<Array<{ votingEnabled: boolean; status: SuggestionStatus }>>`
       SELECT "voting_enabled" AS "votingEnabled", "status"
       FROM "suggestions"
       WHERE "id" = ${input.id}::uuid AND "guild_id" = ${input.guildId}
