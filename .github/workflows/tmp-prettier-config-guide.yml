@@ -1,0 +1,32 @@
+name: Temporary Prettier Config Guide
+
+on:
+  push:
+    branches: [tmp/prettier-config-guide]
+
+permissions:
+  contents: write
+
+jobs:
+  prettier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prettierを適用
+        run: |
+          pnpm exec prettier --write apps/studio/src/components/plugin-setup-overview.tsx
+          git config user.name 'mizzz（ずーみー）/いゔる。'
+          git config user.email 'mizzz._.dev@outlook.jp'
+          git add apps/studio/src/components/plugin-setup-overview.tsx
+          if ! git diff --cached --quiet; then
+            git commit -m 'Config Studio設定ガイドをPrettier整形する'
+            git push
+          fi
