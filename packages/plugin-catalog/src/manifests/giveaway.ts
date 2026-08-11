@@ -6,7 +6,7 @@ export const giveawayManifest: PluginManifest = {
   version: '1.0.0',
   description: 'Button参加・自動抽選・再抽選に対応した永続Giveawayを提供します',
   author: { name: 'Herta' },
-  category: 'community',
+  category: 'fun',
   permissions: [
     {
       id: 'giveaway.use',
@@ -143,26 +143,44 @@ export const giveawayManifest: PluginManifest = {
             },
           ],
         },
-        { name: 'list', description: '自分が開催中・最近終了したGiveawayを一覧表示します' },
+        {
+          name: 'list',
+          description: '自分が開催中・最近終了したGiveawayを一覧表示します',
+        },
         {
           name: 'info',
           description: 'Giveawayの状態と抽選結果を確認します',
           options: [
-            { name: 'id', description: '/giveaway listに表示されるGiveaway ID', type: 'string', required: true },
+            {
+              name: 'id',
+              description: '/giveaway listに表示されるGiveaway ID',
+              type: 'string',
+              required: true,
+            },
           ],
         },
         {
           name: 'end',
           description: '自分が作成したGiveawayを今すぐ終了して抽選します',
           options: [
-            { name: 'id', description: '/giveaway listに表示されるGiveaway ID', type: 'string', required: true },
+            {
+              name: 'id',
+              description: '/giveaway listに表示されるGiveaway ID',
+              type: 'string',
+              required: true,
+            },
           ],
         },
         {
           name: 'reroll',
           description: '終了済みGiveawayの当選者を再抽選します',
           options: [
-            { name: 'id', description: '/giveaway listに表示されるGiveaway ID', type: 'string', required: true },
+            {
+              name: 'id',
+              description: '/giveaway listに表示されるGiveaway ID',
+              type: 'string',
+              required: true,
+            },
           ],
         },
       ],
