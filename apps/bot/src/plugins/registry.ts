@@ -18,6 +18,7 @@ import { pollPlugin } from './poll.js';
 import { reminderPlugin } from './reminder.js';
 import { roleManagerPlugin } from './role-manager.js';
 import { suggestionPlugin } from './suggestion.js';
+import { xpLevelPlugin } from './xp-level.js';
 import type { RuntimePluginEntry } from './types.js';
 
 export type { GuildEventHandler, RuntimePluginEntry } from './types.js';
@@ -237,6 +238,7 @@ const officialPluginIds = [
   'role-manager',
   'suggestion',
   'team-split',
+  'xp-level',
 ] as const;
 
 function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginEntry[] {
@@ -436,6 +438,20 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
           }) as Parameters<NonNullable<typeof suggestionPlugin.onEnable>>[0],
       )
     : undefined;
+  const xpLevelEntry = deps
+    ? toRuntimePluginEntry(
+        xpLevelPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof xpLevelPlugin.onEnable>>[0],
+      )
+    : undefined;
   const teamSplitEntry = deps
     ? toRuntimePluginEntry(
         teamSplitPlugin,
@@ -468,6 +484,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (pluginId === 'role-manager' && roleManagerEntry) return [roleManagerEntry];
     if (pluginId === 'suggestion' && suggestionEntry) return [suggestionEntry];
     if (pluginId === 'team-split' && teamSplitEntry) return [teamSplitEntry];
+    if (pluginId === 'xp-level' && xpLevelEntry) return [xpLevelEntry];
     return [{ pluginId }];
   });
 }
