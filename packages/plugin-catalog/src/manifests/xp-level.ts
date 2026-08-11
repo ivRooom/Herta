@@ -179,7 +179,14 @@ export const xpLevelManifest: PluginManifest = {
   commands: [
     {
       name: 'rank',
-      description: '自分のXP・レベル・次レベルまでの進捗を表示します',
+      description: 'XP・レベル・次レベルまでの進捗を表示します',
+      options: [
+        {
+          name: 'user',
+          description: '確認するメンバー（未指定は自分）',
+          type: 'user',
+        },
+      ],
     },
     {
       name: 'leaderboard',
