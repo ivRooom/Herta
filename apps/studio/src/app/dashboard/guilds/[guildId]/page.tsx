@@ -55,7 +55,8 @@ export default async function GuildDetailPage({
     getCommunityDashboardSnapshot(guild.id),
     Promise.resolve(getDiscordGuildInstallUrl(guild.id)),
   ]);
-  const attentionCount = snapshot.openSuggestions + snapshot.failedReminders + snapshot.failedCommands7d;
+  const attentionCount =
+    snapshot.openSuggestions + snapshot.failedReminders + snapshot.failedCommands7d;
 
   return (
     <div className="space-y-6">
@@ -70,7 +71,9 @@ export default async function GuildDetailPage({
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
                 Community Dashboard
               </p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">{guild.name}</h1>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
+                {guild.name}
+              </h1>
               <p className="mt-1 text-sm text-muted">サーバー ID: {guild.id}</p>
             </div>
           </div>
@@ -114,7 +117,9 @@ export default async function GuildDetailPage({
           icon={attentionCount > 0 ? AlertTriangle : CheckCircle2}
           label="要確認"
           value={attentionCount.toLocaleString()}
-          detail={attentionCount > 0 ? '未処理・失敗項目があります' : '大きな要対応項目はありません'}
+          detail={
+            attentionCount > 0 ? '未処理・失敗項目があります' : '大きな要対応項目はありません'
+          }
           attention={attentionCount > 0}
         />
       </section>
@@ -151,7 +156,9 @@ export default async function GuildDetailPage({
         </div>
 
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Next Action</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+            Next Action
+          </p>
           <h2 className="mt-2 text-lg font-semibold">運用チェック</h2>
           <div className="mt-5 space-y-3">
             <CheckRow
@@ -166,12 +173,18 @@ export default async function GuildDetailPage({
             />
             <CheckRow
               label="Reminder配信"
-              detail={snapshot.failedReminders > 0 ? `${snapshot.failedReminders}件の失敗` : '失敗なし'}
+              detail={
+                snapshot.failedReminders > 0 ? `${snapshot.failedReminders}件の失敗` : '失敗なし'
+              }
               ok={snapshot.failedReminders === 0}
             />
             <CheckRow
               label="Suggestion対応"
-              detail={snapshot.openSuggestions > 0 ? `${snapshot.openSuggestions}件が未処理` : '未処理なし'}
+              detail={
+                snapshot.openSuggestions > 0
+                  ? `${snapshot.openSuggestions}件が未処理`
+                  : '未処理なし'
+              }
               ok={snapshot.openSuggestions === 0}
             />
           </div>
