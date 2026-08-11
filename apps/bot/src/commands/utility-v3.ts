@@ -1,4 +1,4 @@
-import { randomUUID, randomInt } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { MessageFlags } from 'discord.js';
 import type { SlashCommand } from './registry.js';
 
@@ -95,7 +95,12 @@ export const teamsCommand: SlashCommand = {
   async execute(interaction) {
     const members = parseTeamMembers(interaction.options.getString('members', true));
     const teamCount = interaction.options.getInteger('teams', true);
-    if (members.length < 2 || members.length > MAX_TEAM_MEMBERS || teamCount < 2 || teamCount > MAX_TEAMS) {
+    if (
+      members.length < 2 ||
+      members.length > MAX_TEAM_MEMBERS ||
+      teamCount < 2 ||
+      teamCount > MAX_TEAMS
+    ) {
       await interaction.reply({
         content: 'メンバーは2〜30人、チーム数は2〜10で指定してください。',
         flags: MessageFlags.Ephemeral,
@@ -119,7 +124,10 @@ export const teamsCommand: SlashCommand = {
 
     const teams = splitIntoTeams(members, teamCount);
     const content = teams
-      .map((team, index) => `**Team ${index + 1}**\n${team.map((member) => `• ${member}`).join('\n')}`)
+      .map(
+        (team, index) =>
+          `**Team ${index + 1}**\n${team.map((member) => `• ${member}`).join('\n')}`,
+      )
       .join('\n\n');
     await interaction.reply({ content, allowedMentions: { parse: [] } });
   },
@@ -180,7 +188,11 @@ export const timestampCommand: SlashCommand = {
   async execute(interaction) {
     const unix = interaction.options.getInteger('unix', true);
     const requestedStyle = interaction.options.getString('style') ?? 'F';
-    if (unix < 0 || unix > MAX_UNIX_SECONDS || !TIMESTAMP_STYLES.includes(requestedStyle as TimestampStyle)) {
+    if (
+      unix < 0 ||
+      unix > MAX_UNIX_SECONDS ||
+      !TIMESTAMP_STYLES.includes(requestedStyle as TimestampStyle)
+    ) {
       await interaction.reply({
         content: 'Unix秒またはstyleが有効範囲外です。',
         flags: MessageFlags.Ephemeral,
