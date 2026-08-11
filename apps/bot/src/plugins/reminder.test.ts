@@ -42,6 +42,26 @@ describe('Reminder v1', () => {
     expect(result).toContain('<t:');
   });
 
+  it('大量のReminderをDiscord文字数上限内の複数ページへ分割する', () => {
+    const reminders: ReminderRecord[] = Array.from({ length: 50 }, (_, index) => ({
+      id: `11111111-1111-4111-8111-${String(index).padStart(12, '0')}`,
+      userId: '123',
+      channelId: '456',
+      delivery: 'channel',
+      message: `Reminder ${index} ${'x'.repeat(80)}`,
+      remindAt: new Date(1_786_410_000_000 + index * 60_000),
+      status: 'pending',
+      attempts: 0,
+    }));
+
+    const pages = formatReminderListPages(reminders);
+    expect(pages.length).toBeGreaterThan(1);
+    expect(pages.every((page) => page.length <= 1900)).toBe(true);
+    for (const reminder of reminders) {
+      expect(pages.join('\n')).toContain(reminder.id);
+    }
+  });
+
   it('空一覧を明示する', () => {
     expect(formatReminderListPages([])).toEqual(['未配信のリマインダーはありません。']);
   });
