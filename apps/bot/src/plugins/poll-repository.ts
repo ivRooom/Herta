@@ -59,10 +59,25 @@ export async function createPoll(
     resultStyle: PollResultStyle;
     closeAnnouncement: boolean;
     endsAt: Date;
+    maxActivePerUser: number;
   },
-): Promise<string> {
+): Promise<string | null> {
   const id = randomUUID();
-  await prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) => {
+    const lockKey = `${input.guildId}:${input.creatorId}`;
+    await tx.$queryRaw`
+      SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))
+    `;
+    const activeRows = await tx.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*)::bigint AS "count"
+      FROM "polls"
+      WHERE "guild_id" = ${input.guildId}
+        AND "creator_id" = ${input.creatorId}
+        AND "status" = 'open'
+        AND "ends_at" > CURRENT_TIMESTAMP
+    `;
+    if (Number(activeRows[0]?.count ?? 0n) >= input.maxActivePerUser) return null;
+
     await tx.$executeRaw`
       INSERT INTO "polls" (
         "id", "guild_id", "creator_id", "channel_id", "question", "multiple",
@@ -79,8 +94,8 @@ export async function createPoll(
         VALUES (${id}::uuid, ${position}, ${label})
       `;
     }
+    return id;
   });
-  return id;
 }
 
 export async function deletePoll(prisma: PrismaClient, pollId: string): Promise<void> {
@@ -97,23 +112,6 @@ export async function setPollMessageId(
     SET "message_id" = ${messageId}, "updated_at" = CURRENT_TIMESTAMP
     WHERE "id" = ${pollId}::uuid
   `;
-}
-
-export async function countActivePolls(
-  prisma: PrismaClient,
-  guildId: string,
-  creatorId: string,
-  now = new Date(),
-): Promise<number> {
-  const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
-    SELECT COUNT(*)::bigint AS "count"
-    FROM "polls"
-    WHERE "guild_id" = ${guildId}
-      AND "creator_id" = ${creatorId}
-      AND "status" = 'open'
-      AND "ends_at" > ${now}
-  `;
-  return Number(rows[0]?.count ?? 0n);
 }
 
 export async function listCreatorPolls(
@@ -183,23 +181,23 @@ export async function getPollSnapshot(
   if (!poll) return null;
 
   const optionRows = await prisma.$queryRaw<
-    Array<{ position: number; label: string; votes: bigint }>
+    Array<{ position: number; label: string; votes: bigint; uniqueVoters: bigint }>
   >`
     SELECT
       o."position",
       o."label",
-      COUNT(v."user_id")::bigint AS "votes"
+      COUNT(v."user_id")::bigint AS "votes",
+      (
+        SELECT COUNT(DISTINCT v2."user_id")::bigint
+        FROM "poll_votes" v2
+        WHERE v2."poll_id" = ${pollId}::uuid
+      ) AS "uniqueVoters"
     FROM "poll_options" o
     LEFT JOIN "poll_votes" v
       ON v."poll_id" = o."poll_id" AND v."option_position" = o."position"
     WHERE o."poll_id" = ${pollId}::uuid
     GROUP BY o."position", o."label"
     ORDER BY o."position" ASC
-  `;
-  const voterRows = await prisma.$queryRaw<Array<{ count: bigint }>>`
-    SELECT COUNT(DISTINCT "user_id")::bigint AS "count"
-    FROM "poll_votes"
-    WHERE "poll_id" = ${pollId}::uuid
   `;
   const options = optionRows.map((option) => ({
     position: option.position,
@@ -210,7 +208,7 @@ export async function getPollSnapshot(
     ...poll,
     options,
     totalVotes: options.reduce((sum, option) => sum + option.votes, 0),
-    uniqueVoters: Number(voterRows[0]?.count ?? 0n),
+    uniqueVoters: Number(optionRows[0]?.uniqueVoters ?? 0n),
   };
 }
 
@@ -305,7 +303,11 @@ export async function closePollByCreator(
 ): Promise<boolean> {
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     UPDATE "polls"
-    SET "status" = 'closed', "closed_at" = CURRENT_TIMESTAMP, "updated_at" = CURRENT_TIMESTAMP
+    SET
+      "status" = 'closed',
+      "closed_at" = CURRENT_TIMESTAMP,
+      "finalized_at" = NULL,
+      "updated_at" = CURRENT_TIMESTAMP
     WHERE "id" = ${pollId}::uuid
       AND "guild_id" = ${guildId}
       AND "creator_id" = ${creatorId}
@@ -333,12 +335,41 @@ export async function closeExpiredPolls(
       FOR UPDATE SKIP LOCKED
     )
     UPDATE "polls" p
-    SET "status" = 'closed', "closed_at" = ${now}, "updated_at" = CURRENT_TIMESTAMP
+    SET
+      "status" = 'closed',
+      "closed_at" = ${now},
+      "finalized_at" = NULL,
+      "updated_at" = CURRENT_TIMESTAMP
     FROM due
     WHERE p."id" = due."id"
     RETURNING p."id"::text AS "id"
   `;
   return rows.map((row) => row.id);
+}
+
+export async function listPollsPendingFinalization(
+  prisma: PrismaClient,
+  guildId: string,
+  limit = 25,
+): Promise<string[]> {
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT "id"::text AS "id"
+    FROM "polls"
+    WHERE "guild_id" = ${guildId}
+      AND "status" = 'closed'
+      AND "finalized_at" IS NULL
+    ORDER BY "closed_at" ASC NULLS FIRST, "updated_at" ASC
+    LIMIT ${limit}
+  `;
+  return rows.map((row) => row.id);
+}
+
+export async function markPollFinalized(prisma: PrismaClient, pollId: string): Promise<void> {
+  await prisma.$executeRaw`
+    UPDATE "polls"
+    SET "finalized_at" = CURRENT_TIMESTAMP, "updated_at" = CURRENT_TIMESTAMP
+    WHERE "id" = ${pollId}::uuid AND "status" = 'closed'
+  `;
 }
 
 async function insertVote(
