@@ -132,23 +132,41 @@ export async function voteSuggestion(
   input: { id: string; guildId: string; userId: string; value: 1 | -1 },
 ): Promise<SuggestionSnapshot | null> {
   const accepted = await prisma.$transaction(async (tx) => {
-    const rows = await tx.$queryRaw<Array<{ votingEnabled: boolean }>>`
-      SELECT "voting_enabled" AS "votingEnabled"
+    const rows = await tx.$queryRaw<
+      Array<{ votingEnabled: boolean; status: SuggestionStatus }>
+    >`
+      SELECT "voting_enabled" AS "votingEnabled", "status"
       FROM "suggestions"
       WHERE "id" = ${input.id}::uuid AND "guild_id" = ${input.guildId}
       FOR UPDATE
     `;
-    if (!rows[0]?.votingEnabled) return false;
-    await tx.$executeRaw`
-      INSERT INTO "suggestion_votes" ("suggestion_id", "user_id", "value", "updated_at")
-      VALUES (${input.id}::uuid, ${input.userId}, ${input.value}, CURRENT_TIMESTAMP)
-      ON CONFLICT ("suggestion_id", "user_id") DO UPDATE
-      SET "value" = CASE
-        WHEN "suggestion_votes"."value" = EXCLUDED."value" THEN -EXCLUDED."value"
-        ELSE EXCLUDED."value"
-      END,
-      "updated_at" = CURRENT_TIMESTAMP
+    const suggestion = rows[0];
+    if (
+      !suggestion?.votingEnabled ||
+      (suggestion.status !== 'pending' && suggestion.status !== 'reviewing')
+    ) {
+      return false;
+    }
+
+    const existing = await tx.$queryRaw<Array<{ value: number }>>`
+      SELECT "value"::int AS "value"
+      FROM "suggestion_votes"
+      WHERE "suggestion_id" = ${input.id}::uuid AND "user_id" = ${input.userId}
+      LIMIT 1
     `;
+    if (existing[0]?.value === input.value) {
+      await tx.$executeRaw`
+        DELETE FROM "suggestion_votes"
+        WHERE "suggestion_id" = ${input.id}::uuid AND "user_id" = ${input.userId}
+      `;
+    } else {
+      await tx.$executeRaw`
+        INSERT INTO "suggestion_votes" ("suggestion_id", "user_id", "value", "updated_at")
+        VALUES (${input.id}::uuid, ${input.userId}, ${input.value}, CURRENT_TIMESTAMP)
+        ON CONFLICT ("suggestion_id", "user_id") DO UPDATE
+        SET "value" = EXCLUDED."value", "updated_at" = CURRENT_TIMESTAMP
+      `;
+    }
     return true;
   });
   return accepted ? getSuggestionSnapshot(prisma, input.id, input.guildId) : null;
