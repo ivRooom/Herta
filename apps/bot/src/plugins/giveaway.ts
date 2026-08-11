@@ -10,12 +10,14 @@ import { randomInt } from 'node:crypto';
 import {
   closeExpiredGiveaways,
   closeGiveawayByCreator,
-  countActiveGiveaways,
   createGiveaway,
   deleteGiveaway,
   getGiveawaySnapshot,
   listCreatorGiveaways,
   listGiveawayEntrants,
+  listGiveawaysPendingFinalization,
+  markGiveawayFinalized,
+  markGiveawayPendingFinalization,
   replaceGiveawayWinners,
   setGiveawayMessageId,
   toggleGiveawayEntry,
@@ -59,6 +61,7 @@ interface GiveawayCommandOptions {
 interface GiveawayMessageHandle {
   id: string;
   edit(options: GiveawayMessage): Promise<unknown>;
+  delete(): Promise<unknown>;
 }
 
 interface GiveawayTextChannel {
@@ -176,7 +179,7 @@ export function buildGiveawayMessage(snapshot: GiveawaySnapshot): GiveawayMessag
       : '🏆 当選者なし（参加者がいませんでした）'
     : `🏆 当選人数: ${snapshot.winnerCount}名`;
   const content = [
-    `🎉 **Giveaway**`,
+    '🎉 **Giveaway**',
     `**${snapshot.prize}**`,
     status,
     winnerLine,
@@ -258,15 +261,6 @@ async function handleCreate(
     await reply(context, interaction, 'このチャンネルにはGiveawayを投稿できません。');
     return;
   }
-  const active = await countActiveGiveaways(context.prisma, guildId, interaction.user.id);
-  if (active >= config.maxActivePerUser) {
-    await reply(
-      context,
-      interaction,
-      `開催中Giveawayが上限（${config.maxActivePerUser}件）に達しています。`,
-    );
-    return;
-  }
 
   const duration = clamp(
     interaction.options.getInteger('duration') ?? config.defaultDurationMinutes,
@@ -287,22 +281,45 @@ async function handleCreate(
     winnerCount,
     announceWinners: config.announceWinners,
     endsAt,
+    maxActivePerUser: config.maxActivePerUser,
   });
-  try {
-    const snapshot = await getGiveawaySnapshot(context.prisma, giveawayId, guildId);
-    if (!snapshot) throw new Error('GiveawaySnapshotMissing');
-    const message = await interaction.channel.send(buildGiveawayMessage(snapshot));
-    await setGiveawayMessageId(context.prisma, giveawayId, message.id);
+  if (!giveawayId) {
     await reply(
       context,
       interaction,
-      `🎉 Giveawayを作成しました。\nID: \`${giveawayId}\`\n終了: <t:${Math.floor(endsAt.getTime() / 1000)}:F>`,
+      `開催中Giveawayが上限（${config.maxActivePerUser}件）に達しています。`,
     );
+    return;
+  }
+
+  let publishedMessage: GiveawayMessageHandle | null = null;
+  try {
+    const snapshot = await getGiveawaySnapshot(context.prisma, giveawayId, guildId);
+    if (!snapshot) throw new Error('GiveawaySnapshotMissing');
+    publishedMessage = await interaction.channel.send(buildGiveawayMessage(snapshot));
+    await setGiveawayMessageId(context.prisma, giveawayId, publishedMessage.id);
   } catch (error) {
+    await publishedMessage?.delete().catch(() => undefined);
     await deleteGiveaway(context.prisma, giveawayId).catch(() => undefined);
     context.logger.warn({ err: error, guildId, giveawayId }, 'Giveaway投稿に失敗しました');
-    await reply(context, interaction, 'Giveawayの投稿に失敗しました。チャンネル権限を確認してください。');
+    await reply(
+      context,
+      interaction,
+      'Giveawayの投稿に失敗しました。チャンネル権限を確認してください。',
+    );
+    return;
   }
+
+  await reply(
+    context,
+    interaction,
+    `🎉 Giveawayを作成しました。\nID: \`${giveawayId}\`\n終了: <t:${Math.floor(endsAt.getTime() / 1000)}:F>`,
+  ).catch((error) => {
+    context.logger.warn(
+      { err: error, guildId, giveawayId },
+      'Giveaway作成後の確認メッセージ送信に失敗しました',
+    );
+  });
 }
 
 async function handleList(
@@ -351,7 +368,14 @@ async function handleEnd(
     return;
   }
   const snapshot = await drawAndStoreWinners(context.prisma, id, interaction.guildId!);
-  if (snapshot) await updateStoredGiveawayMessage(context.client, snapshot);
+  if (snapshot) {
+    await finalizeStoredGiveaway(context, snapshot).catch((error) => {
+      context.logger.warn(
+        { err: error, guildId: interaction.guildId, giveawayId: id },
+        'Giveaway終了メッセージ更新に失敗しました。Workerで再試行します',
+      );
+    });
+  }
   await reply(context, interaction, `Giveaway \`${id}\` を終了して抽選しました。`);
 }
 
@@ -370,8 +394,16 @@ async function handleReroll(
     );
     return;
   }
+  await markGiveawayPendingFinalization(context.prisma, id);
   const snapshot = await drawAndStoreWinners(context.prisma, id, interaction.guildId!);
-  if (snapshot) await updateStoredGiveawayMessage(context.client, snapshot);
+  if (snapshot) {
+    await finalizeStoredGiveaway(context, snapshot).catch((error) => {
+      context.logger.warn(
+        { err: error, guildId: interaction.guildId, giveawayId: id },
+        'Giveaway再抽選メッセージ更新に失敗しました。Workerで再試行します',
+      );
+    });
+  }
   await reply(context, interaction, `Giveaway \`${id}\` の当選者を再抽選しました。`);
 }
 
@@ -384,9 +416,18 @@ async function handleGiveawayComponent(
   if (!interaction.guildId) return;
   const giveawayId = parseGiveawayCustomId(interaction.customId);
   if (!giveawayId) return;
+  const config = normalizeGiveawayConfig(context.config);
+  if (!config.enabled) {
+    await interaction.reply({
+      content: 'Giveaway Pluginは現在無効です。',
+      flags: EPHEMERAL_FLAG,
+      allowedMentions: { parse: [] },
+    });
+    return;
+  }
+
   const snapshot = await getGiveawaySnapshot(context.prisma, giveawayId, interaction.guildId);
   if (!snapshot) return;
-  const config = normalizeGiveawayConfig(context.config);
   if (!config.allowCreatorEntry && snapshot.creatorId === interaction.user.id) {
     await interaction.reply({
       content: 'このサーバー設定ではGiveaway主催者本人は参加できません。',
@@ -407,11 +448,20 @@ async function handleGiveawayComponent(
       const closed = await drawAndStoreWinners(context.prisma, giveawayId, interaction.guildId);
       if (closed) {
         await interaction.update(buildGiveawayMessage(closed));
+        await markGiveawayFinalized(context.prisma, giveawayId);
+        return;
+      }
+    }
+    if (result.reason === 'closed') {
+      const closed = await getGiveawaySnapshot(context.prisma, giveawayId, interaction.guildId);
+      if (closed) {
+        await interaction.update(buildGiveawayMessage(closed));
+        await markGiveawayFinalized(context.prisma, giveawayId);
         return;
       }
     }
     await interaction.reply({
-      content: 'このGiveawayは終了しているため参加できません。',
+      content: 'このGiveawayには参加できません。',
       flags: EPHEMERAL_FLAG,
       allowedMentions: { parse: [] },
     });
@@ -454,14 +504,22 @@ async function runGiveawayCycle(context: GiveawayRuntimeContext): Promise<void> 
 }
 
 async function processExpiredGiveaways(context: GiveawayRuntimeContext): Promise<void> {
-  const closedIds = await closeExpiredGiveaways(context.prisma, context.guildId);
-  for (const giveawayId of closedIds) {
-    const snapshot = await drawAndStoreWinners(context.prisma, giveawayId, context.guildId);
+  const newlyClosed = await closeExpiredGiveaways(context.prisma, context.guildId);
+  for (const giveawayId of newlyClosed) {
+    await drawAndStoreWinners(context.prisma, giveawayId, context.guildId);
+  }
+  const pendingIds = await listGiveawaysPendingFinalization(context.prisma, context.guildId);
+  for (const giveawayId of pendingIds) {
+    let snapshot = await getGiveawaySnapshot(context.prisma, giveawayId, context.guildId);
     if (!snapshot) continue;
-    await updateStoredGiveawayMessage(context.client, snapshot).catch((error) => {
+    if (snapshot.winners.length === 0 && snapshot.entryCount > 0) {
+      snapshot = await drawAndStoreWinners(context.prisma, giveawayId, context.guildId);
+    }
+    if (!snapshot) continue;
+    await finalizeStoredGiveaway(context, snapshot).catch((error) => {
       context.logger.warn(
         { err: error, guildId: context.guildId, giveawayId },
-        '終了したGiveawayメッセージの更新に失敗しました',
+        '終了したGiveawayメッセージの更新に失敗しました。次回Workerで再試行します',
       );
     });
   }
@@ -478,6 +536,14 @@ async function drawAndStoreWinners(
   const winnerIds = selectRandomWinners(entrants, snapshot.winnerCount);
   await replaceGiveawayWinners(prisma, giveawayId, winnerIds);
   return getGiveawaySnapshot(prisma, giveawayId, guildId);
+}
+
+async function finalizeStoredGiveaway(
+  context: GiveawayRuntimeContext,
+  snapshot: GiveawaySnapshot,
+): Promise<void> {
+  await updateStoredGiveawayMessage(context.client, snapshot);
+  await markGiveawayFinalized(context.prisma, snapshot.id);
 }
 
 async function updateStoredGiveawayMessage(
