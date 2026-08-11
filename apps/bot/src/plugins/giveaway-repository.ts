@@ -44,19 +44,36 @@ export async function createGiveaway(
     winnerCount: number;
     announceWinners: boolean;
     endsAt: Date;
+    maxActivePerUser: number;
   },
-): Promise<string> {
+): Promise<string | null> {
   const id = randomUUID();
-  await prisma.$executeRaw`
-    INSERT INTO "giveaways" (
-      "id", "guild_id", "creator_id", "channel_id", "prize", "winner_count",
-      "announce_winners", "status", "ends_at", "updated_at"
-    ) VALUES (
-      ${id}::uuid, ${input.guildId}, ${input.creatorId}, ${input.channelId}, ${input.prize},
-      ${input.winnerCount}, ${input.announceWinners}, 'open', ${input.endsAt}, CURRENT_TIMESTAMP
-    )
-  `;
-  return id;
+  return prisma.$transaction(async (tx) => {
+    const lockKey = `giveaway:${input.guildId}:${input.creatorId}`;
+    await tx.$queryRaw`
+      SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))
+    `;
+    const activeRows = await tx.$queryRaw<Array<{ count: bigint }>>`
+      SELECT COUNT(*)::bigint AS "count"
+      FROM "giveaways"
+      WHERE "guild_id" = ${input.guildId}
+        AND "creator_id" = ${input.creatorId}
+        AND "status" = 'open'
+        AND "ends_at" > CURRENT_TIMESTAMP
+    `;
+    if (Number(activeRows[0]?.count ?? 0n) >= input.maxActivePerUser) return null;
+
+    await tx.$executeRaw`
+      INSERT INTO "giveaways" (
+        "id", "guild_id", "creator_id", "channel_id", "prize", "winner_count",
+        "announce_winners", "status", "ends_at", "updated_at"
+      ) VALUES (
+        ${id}::uuid, ${input.guildId}, ${input.creatorId}, ${input.channelId}, ${input.prize},
+        ${input.winnerCount}, ${input.announceWinners}, 'open', ${input.endsAt}, CURRENT_TIMESTAMP
+      )
+    `;
+    return id;
+  });
 }
 
 export async function deleteGiveaway(prisma: PrismaClient, giveawayId: string): Promise<void> {
@@ -75,23 +92,6 @@ export async function setGiveawayMessageId(
   `;
 }
 
-export async function countActiveGiveaways(
-  prisma: PrismaClient,
-  guildId: string,
-  creatorId: string,
-  now = new Date(),
-): Promise<number> {
-  const rows = await prisma.$queryRaw<Array<{ count: bigint }>>`
-    SELECT COUNT(*)::bigint AS "count"
-    FROM "giveaways"
-    WHERE "guild_id" = ${guildId}
-      AND "creator_id" = ${creatorId}
-      AND "status" = 'open'
-      AND "ends_at" > ${now}
-  `;
-  return Number(rows[0]?.count ?? 0n);
-}
-
 export async function listCreatorGiveaways(
   prisma: PrismaClient,
   guildId: string,
@@ -104,7 +104,7 @@ export async function listCreatorGiveaways(
       g."prize",
       g."status",
       g."ends_at" AS "endsAt",
-      COUNT(e."user_id")::bigint AS "entryCount"
+      COUNT(e."user_id")::int AS "entryCount"
     FROM "giveaways" g
     LEFT JOIN "giveaway_entries" e ON e."giveaway_id" = g."id"
     WHERE g."guild_id" = ${guildId}
@@ -134,7 +134,7 @@ export async function getGiveawaySnapshot(
       status: GiveawayStatus;
       endsAt: Date;
       closedAt: Date | null;
-      entryCount: bigint;
+      entryCount: number;
     }>
   >`
     SELECT
@@ -149,7 +149,7 @@ export async function getGiveawaySnapshot(
       g."status",
       g."ends_at" AS "endsAt",
       g."closed_at" AS "closedAt",
-      COUNT(e."user_id")::bigint AS "entryCount"
+      COUNT(e."user_id")::int AS "entryCount"
     FROM "giveaways" g
     LEFT JOIN "giveaway_entries" e ON e."giveaway_id" = g."id"
     WHERE g."id" = ${giveawayId}::uuid
@@ -166,11 +166,7 @@ export async function getGiveawaySnapshot(
     WHERE "giveaway_id" = ${giveawayId}::uuid
     ORDER BY "position" ASC
   `;
-  return {
-    ...row,
-    entryCount: Number(row.entryCount),
-    winners: winners.map((winner) => winner.userId),
-  };
+  return { ...row, winners: winners.map((winner) => winner.userId) };
 }
 
 export async function toggleGiveawayEntry(
@@ -232,7 +228,11 @@ export async function closeGiveawayByCreator(
 ): Promise<boolean> {
   const rows = await prisma.$queryRaw<Array<{ id: string }>>`
     UPDATE "giveaways"
-    SET "status" = 'closed', "closed_at" = ${now}, "updated_at" = CURRENT_TIMESTAMP
+    SET
+      "status" = 'closed',
+      "closed_at" = ${now},
+      "finalized_at" = NULL,
+      "updated_at" = CURRENT_TIMESTAMP
     WHERE "id" = ${giveawayId}::uuid
       AND "guild_id" = ${guildId}
       AND "creator_id" = ${creatorId}
@@ -260,7 +260,11 @@ export async function closeExpiredGiveaways(
       FOR UPDATE SKIP LOCKED
     )
     UPDATE "giveaways" g
-    SET "status" = 'closed', "closed_at" = ${now}, "updated_at" = CURRENT_TIMESTAMP
+    SET
+      "status" = 'closed',
+      "closed_at" = ${now},
+      "finalized_at" = NULL,
+      "updated_at" = CURRENT_TIMESTAMP
     FROM due
     WHERE g."id" = due."id"
     RETURNING g."id"::text AS "id"
@@ -297,6 +301,45 @@ export async function replaceGiveawayWinners(
       `;
     }
   });
+}
+
+export async function listGiveawaysPendingFinalization(
+  prisma: PrismaClient,
+  guildId: string,
+  limit = 25,
+): Promise<string[]> {
+  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
+    SELECT "id"::text AS "id"
+    FROM "giveaways"
+    WHERE "guild_id" = ${guildId}
+      AND "status" = 'closed'
+      AND "finalized_at" IS NULL
+    ORDER BY "closed_at" ASC NULLS FIRST, "updated_at" ASC
+    LIMIT ${limit}
+  `;
+  return rows.map((row) => row.id);
+}
+
+export async function markGiveawayPendingFinalization(
+  prisma: PrismaClient,
+  giveawayId: string,
+): Promise<void> {
+  await prisma.$executeRaw`
+    UPDATE "giveaways"
+    SET "finalized_at" = NULL, "updated_at" = CURRENT_TIMESTAMP
+    WHERE "id" = ${giveawayId}::uuid AND "status" = 'closed'
+  `;
+}
+
+export async function markGiveawayFinalized(
+  prisma: PrismaClient,
+  giveawayId: string,
+): Promise<void> {
+  await prisma.$executeRaw`
+    UPDATE "giveaways"
+    SET "finalized_at" = CURRENT_TIMESTAMP, "updated_at" = CURRENT_TIMESTAMP
+    WHERE "id" = ${giveawayId}::uuid AND "status" = 'closed'
+  `;
 }
 
 function rejectedEntry(reason: GiveawayEntryResult['reason']): GiveawayEntryResult {
