@@ -17,9 +17,7 @@ const pluginSetupNotes: Record<string, string[]> = {
     '配信先・時刻・Timezoneを最初に設定すると、定期配信の事故を防ぎやすくなります。',
     'ForumやThreadを配信先にする場合は、Discord側の投稿権限も確認してください。',
   ],
-  lfg: [
-    '募集を投稿するチャンネルと募集の有効期限を先に決めておくと運用しやすくなります。',
-  ],
+  lfg: ['募集を投稿するチャンネルと募集の有効期限を先に決めておくと運用しやすくなります。'],
   onboarding: [
     'Welcome / Goodbyeを利用するにはServer Members Intentを有効にしてください。',
     'Auto Roleを使う場合は、Herta BotのRoleを対象Roleより上に配置してください。',
@@ -139,9 +137,7 @@ export function PluginSetupOverview({
               {manifest.permissions.map((permission) => (
                 <div key={permission.id} className="rounded-lg border border-border/70 p-3">
                   <p className="text-sm font-medium">{permission.name}</p>
-                  <p className="mt-1 text-xs leading-5 text-muted">
-                    {permission.description}
-                  </p>
+                  <p className="mt-1 text-xs leading-5 text-muted">{permission.description}</p>
                 </div>
               ))}
             </div>
@@ -167,15 +163,10 @@ export function PluginSetupOverview({
 
       {Object.keys(properties).length > 0 ? (
         <details className="rounded-xl border border-border bg-background/40 p-4">
-          <summary className="cursor-pointer text-sm font-semibold">
-            設定項目の一覧を見る
-          </summary>
+          <summary className="cursor-pointer text-sm font-semibold">設定項目の一覧を見る</summary>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {Object.entries(properties).map(([key, property]) => (
-              <div
-                key={key}
-                className="rounded-lg border border-border/70 bg-surface/50 p-3"
-              >
+              <div key={key} className="rounded-lg border border-border/70 bg-surface/50 p-3">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="text-sm font-medium">{property.title ?? humanizeKey(key)}</p>
                   {required.has(key) ? (
@@ -197,15 +188,7 @@ export function PluginSetupOverview({
   );
 }
 
-function SummaryCard({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-}) {
+function SummaryCard({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
     <div className="rounded-xl border border-border bg-background/60 p-4">
       <p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p>
