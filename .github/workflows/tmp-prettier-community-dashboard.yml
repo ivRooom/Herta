@@ -1,0 +1,29 @@
+name: Temporary Prettier Community Dashboard
+on:
+  push:
+    branches:
+      - tmp/prettier-community-dashboard
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/community-dashboard-v1
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format Community Dashboard
+        run: |
+          pnpm exec prettier --write 'apps/studio/src/app/dashboard/guilds/[guildId]/page.tsx' apps/studio/src/lib/community-dashboard.ts
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add 'apps/studio/src/app/dashboard/guilds/[guildId]/page.tsx' apps/studio/src/lib/community-dashboard.ts
+          git commit -m "Community DashboardをPrettier整形する" || exit 0
+          git push origin HEAD:feat/community-dashboard-v1
