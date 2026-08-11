@@ -24,6 +24,10 @@ const CORE_COMMANDS = [
   ['/dice [sides] [count]', '指定したダイスを振る'],
   ['/coinflip', 'コインを投げて表か裏を決定'],
   ['/random min max', '指定範囲からランダムな整数を生成'],
+  ['/8ball question', '質問にHertaが8ボール風に回答'],
+  ['/rps hand', 'Hertaとじゃんけん'],
+  ['/shuffle choices', '候補をランダムな順番に並べ替え'],
+  ['/rate subject', 'お題を0〜100%で採点'],
 ] as const;
 
 const PERMISSION_LABELS: Array<[bigint, string]> = [

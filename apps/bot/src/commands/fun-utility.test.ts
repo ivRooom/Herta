@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   coreFunUtilityCommands,
+  deterministicRate,
+  formatShuffleDescription,
   parseChoices,
   randomIntegerInclusive,
+  resolveRpsResult,
   rollDice,
+  shuffleChoices,
 } from './fun-utility.js';
 
 describe('fun utility commands', () => {
@@ -48,26 +52,80 @@ describe('fun utility commands', () => {
     expect(randomIntegerInclusive(2_000_000_000, 2_000_000_000)).toBe(1_000_000_000);
   });
 
-  it('4つの便利系Commandを重複なく定義する', () => {
+  it('shuffleは入力要素を失わず並べ替える', () => {
+    const source = ['a', 'b', 'c', 'd'];
+    const shuffled = shuffleChoices(source);
+    expect(shuffled).toHaveLength(source.length);
+    expect([...shuffled].sort()).toEqual([...source].sort());
+    expect(source).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('shuffleの通常入力はEmbed description上限内に収まる', () => {
+    const description = formatShuffleDescription(['red', 'blue', 'green']);
+    expect(description.length).toBeLessThanOrEqual(4_096);
+  });
+
+  it('shuffleの最大入力ではEmbed description上限を超えることを検出できる', () => {
+    const description = formatShuffleDescription(Array.from({ length: 20 }, () => 'a'.repeat(200)));
+    expect(description.length).toBeGreaterThan(4_096);
+  });
+
+  it('じゃんけんの勝敗を正しく判定する', () => {
+    expect(resolveRpsResult('rock', 'scissors')).toBe('win');
+    expect(resolveRpsResult('paper', 'rock')).toBe('win');
+    expect(resolveRpsResult('scissors', 'paper')).toBe('win');
+    expect(resolveRpsResult('rock', 'paper')).toBe('lose');
+    expect(resolveRpsResult('rock', 'rock')).toBe('draw');
+  });
+
+  it('rateは同じユーザーとお題で同じ0〜100の値を返す', () => {
+    const first = deterministicRate('Minecraft', '100');
+    const second = deterministicRate(' minecraft ', '100');
+    expect(first).toBe(second);
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(first).toBeLessThanOrEqual(100);
+  });
+
+  it('8つの便利系Commandを重複なく定義する', () => {
     const names = coreFunUtilityCommands.map((command) => command.definition.name);
-    expect(names).toEqual(['choose', 'dice', 'coinflip', 'random']);
+    expect(names).toEqual([
+      'choose',
+      'dice',
+      'coinflip',
+      'random',
+      '8ball',
+      'rps',
+      'shuffle',
+      'rate',
+    ]);
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it('chooseとrandomの必須入力を定義する', () => {
-    const choose = coreFunUtilityCommands.find((command) => command.definition.name === 'choose');
-    const random = coreFunUtilityCommands.find((command) => command.definition.name === 'random');
+  it('追加Commandの必須入力を定義する', () => {
+    const eightBall = coreFunUtilityCommands.find((command) => command.definition.name === '8ball');
+    const rps = coreFunUtilityCommands.find((command) => command.definition.name === 'rps');
+    const shuffle = coreFunUtilityCommands.find((command) => command.definition.name === 'shuffle');
+    const rate = coreFunUtilityCommands.find((command) => command.definition.name === 'rate');
 
-    expect(choose?.definition.options?.[0]).toMatchObject({
+    expect(eightBall?.definition.options?.[0]).toMatchObject({
+      name: 'question',
+      type: 'string',
+      required: true,
+    });
+    expect(rps?.definition.options?.[0]).toMatchObject({
+      name: 'hand',
+      type: 'string',
+      required: true,
+    });
+    expect(shuffle?.definition.options?.[0]).toMatchObject({
       name: 'choices',
       type: 'string',
       required: true,
     });
-    expect(random?.definition.options).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ name: 'min', type: 'integer', required: true }),
-        expect.objectContaining({ name: 'max', type: 'integer', required: true }),
-      ]),
-    );
+    expect(rate?.definition.options?.[0]).toMatchObject({
+      name: 'subject',
+      type: 'string',
+      required: true,
+    });
   });
 });
