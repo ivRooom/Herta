@@ -1,0 +1,672 @@
+name: Temporary Community Activity v1
+
+on:
+  push:
+    branches:
+      - feat/community-activity-leaderboard-v1
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/community-activity-leaderboard-v1
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Implement Community Activity v1
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p apps/bot/src/activity
+          mkdir -p apps/studio/src/app/dashboard/community
+          mkdir -p packages/db/prisma/migrations/20260812080000_community_activity_v1
+
+          cat > apps/bot/src/activity/community-activity.ts <<'EOF'
+          import type { PrismaClient } from '@herta/db';
+
+          export const COMMUNITY_ACTIVITY_METRICS = [
+            'messages',
+            'reactions_given',
+            'reactions_received',
+            'voice_seconds',
+            'minecraft_seconds',
+          ] as const;
+
+          export type CommunityActivityMetric = (typeof COMMUNITY_ACTIVITY_METRICS)[number];
+          export type CommunityActivityPeriod = 'today' | '7d' | '30d' | 'all';
+
+          export interface CommunityLeaderboardEntry {
+            userId: string;
+            total: number;
+          }
+
+          export interface CommunityActivityTotals {
+            messages: number;
+            reactionsGiven: number;
+            reactionsReceived: number;
+            voiceSeconds: number;
+            minecraftSeconds: number;
+          }
+
+          function jstDate(value = new Date()): Date {
+            const key = new Date(value.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+            return new Date(`${key}T00:00:00.000Z`);
+          }
+
+          export function periodStart(period: CommunityActivityPeriod, now = new Date()): Date {
+            const today = jstDate(now);
+            if (period === 'today') return today;
+            if (period === 'all') return new Date('1970-01-01T00:00:00.000Z');
+            const days = period === '7d' ? 6 : 29;
+            return new Date(today.getTime() - days * 86_400_000);
+          }
+
+          export async function incrementCommunityActivity(
+            prisma: PrismaClient,
+            guildId: string,
+            userId: string,
+            metric: CommunityActivityMetric,
+            amount = 1,
+            occurredAt = new Date(),
+          ): Promise<void> {
+            if (!Number.isFinite(amount) || amount <= 0) return;
+            const activityDate = jstDate(occurredAt);
+            await prisma.communityActivityDaily.upsert({
+              where: {
+                guildId_userId_activityDate_metric: { guildId, userId, activityDate, metric },
+              },
+              create: { guildId, userId, activityDate, metric, value: BigInt(Math.floor(amount)) },
+              update: { value: { increment: BigInt(Math.floor(amount)) } },
+            });
+          }
+
+          export async function getCommunityLeaderboard(
+            prisma: PrismaClient,
+            guildId: string,
+            metric: CommunityActivityMetric,
+            period: CommunityActivityPeriod,
+            limit = 10,
+          ): Promise<CommunityLeaderboardEntry[]> {
+            const start = periodStart(period);
+            const rows = await prisma.communityActivityDaily.groupBy({
+              by: ['userId'],
+              where: { guildId, metric, activityDate: { gte: start } },
+              _sum: { value: true },
+              orderBy: { _sum: { value: 'desc' } },
+              take: Math.max(1, Math.min(25, limit)),
+            });
+            return rows.map((row) => ({ userId: row.userId, total: Number(row._sum.value ?? 0n) }));
+          }
+
+          export async function getCommunityActivityTotals(
+            prisma: PrismaClient,
+            guildId: string,
+            userId: string,
+            period: CommunityActivityPeriod,
+          ): Promise<CommunityActivityTotals> {
+            const rows = await prisma.communityActivityDaily.groupBy({
+              by: ['metric'],
+              where: { guildId, userId, activityDate: { gte: periodStart(period) } },
+              _sum: { value: true },
+            });
+            const totals = new Map(rows.map((row) => [row.metric, Number(row._sum.value ?? 0n)]));
+            return {
+              messages: totals.get('messages') ?? 0,
+              reactionsGiven: totals.get('reactions_given') ?? 0,
+              reactionsReceived: totals.get('reactions_received') ?? 0,
+              voiceSeconds: totals.get('voice_seconds') ?? 0,
+              minecraftSeconds: totals.get('minecraft_seconds') ?? 0,
+            };
+          }
+
+          export async function startVoiceSession(
+            prisma: PrismaClient,
+            guildId: string,
+            userId: string,
+            channelId: string,
+            startedAt = new Date(),
+          ): Promise<void> {
+            await prisma.communityVoiceSession.upsert({
+              where: { guildId_userId: { guildId, userId } },
+              create: { guildId, userId, channelId, startedAt },
+              update: { channelId, startedAt },
+            });
+          }
+
+          function voiceChunks(start: Date, end: Date): Array<{ date: Date; seconds: number }> {
+            const chunks: Array<{ date: Date; seconds: number }> = [];
+            let cursor = start;
+            while (cursor < end) {
+              const local = new Date(cursor.getTime() + 9 * 60 * 60 * 1000);
+              const nextMidnightUtc =
+                Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() + 1) -
+                9 * 60 * 60 * 1000;
+              const chunkEnd = new Date(Math.min(end.getTime(), nextMidnightUtc));
+              const seconds = Math.max(0, Math.floor((chunkEnd.getTime() - cursor.getTime()) / 1000));
+              if (seconds > 0) chunks.push({ date: jstDate(cursor), seconds });
+              cursor = chunkEnd;
+            }
+            return chunks;
+          }
+
+          export async function finishVoiceSession(
+            prisma: PrismaClient,
+            guildId: string,
+            userId: string,
+            endedAt = new Date(),
+          ): Promise<number> {
+            return prisma.$transaction(async (tx) => {
+              const session = await tx.communityVoiceSession.findUnique({
+                where: { guildId_userId: { guildId, userId } },
+              });
+              if (!session) return 0;
+              await tx.communityVoiceSession.delete({
+                where: { guildId_userId: { guildId, userId } },
+              });
+              let total = 0;
+              for (const chunk of voiceChunks(session.startedAt, endedAt)) {
+                total += chunk.seconds;
+                await tx.communityActivityDaily.upsert({
+                  where: {
+                    guildId_userId_activityDate_metric: {
+                      guildId,
+                      userId,
+                      activityDate: chunk.date,
+                      metric: 'voice_seconds',
+                    },
+                  },
+                  create: {
+                    guildId,
+                    userId,
+                    activityDate: chunk.date,
+                    metric: 'voice_seconds',
+                    value: BigInt(chunk.seconds),
+                  },
+                  update: { value: { increment: BigInt(chunk.seconds) } },
+                });
+              }
+              return total;
+            });
+          }
+
+          export async function resetVoiceSessions(prisma: PrismaClient, guildId: string): Promise<void> {
+            await prisma.communityVoiceSession.deleteMany({ where: { guildId } });
+          }
+          EOF
+
+          cat > apps/bot/src/commands/community-activity.ts <<'EOF'
+          import { EmbedBuilder, MessageFlags } from 'discord.js';
+          import { getPrismaClient } from '@herta/db';
+          import {
+            getCommunityActivityTotals,
+            getCommunityLeaderboard,
+            type CommunityActivityMetric,
+            type CommunityActivityPeriod,
+          } from '../activity/community-activity.js';
+          import type { SlashCommand } from './registry.js';
+
+          const prisma = getPrismaClient();
+          const metricLabels: Record<CommunityActivityMetric, string> = {
+            messages: '発言数',
+            reactions_given: 'リアクション数',
+            reactions_received: 'もらったリアクション',
+            voice_seconds: 'VC滞在時間',
+            minecraft_seconds: 'Minecraftプレイ時間',
+          };
+          const periodLabels: Record<CommunityActivityPeriod, string> = {
+            today: '今日',
+            '7d': '7日間',
+            '30d': '30日間',
+            all: '全期間',
+          };
+
+          function readPeriod(value: string | null): CommunityActivityPeriod {
+            return value === 'today' || value === '30d' || value === 'all' ? value : '7d';
+          }
+
+          function readMetric(value: string | null): CommunityActivityMetric {
+            if (value === 'reactions_given' || value === 'reactions_received' || value === 'voice_seconds') {
+              return value;
+            }
+            return 'messages';
+          }
+
+          function formatMetric(metric: CommunityActivityMetric, value: number): string {
+            if (metric === 'voice_seconds' || metric === 'minecraft_seconds') {
+              const hours = Math.floor(value / 3600);
+              const minutes = Math.floor((value % 3600) / 60);
+              return `${hours}時間${minutes}分`;
+            }
+            return value.toLocaleString('ja-JP');
+          }
+
+          function displayName(interaction: Parameters<SlashCommand['execute']>[0], userId: string): string {
+            const member = interaction.guild?.members.cache.get(userId);
+            return member?.displayName ?? `<@${userId}>`;
+          }
+
+          export const leaderboardCommand: SlashCommand = {
+            definition: {
+              name: 'leaderboard',
+              description: 'コミュニティ活動ランキングを表示します',
+              options: [
+                {
+                  name: 'metric',
+                  description: 'ランキング指標',
+                  type: 'string',
+                  choices: [
+                    { name: '発言数', value: 'messages' },
+                    { name: 'リアクション数', value: 'reactions_given' },
+                    { name: 'もらったリアクション', value: 'reactions_received' },
+                    { name: 'VC滞在時間', value: 'voice_seconds' },
+                  ],
+                },
+                {
+                  name: 'period',
+                  description: '集計期間',
+                  type: 'string',
+                  choices: [
+                    { name: '今日', value: 'today' },
+                    { name: '7日間', value: '7d' },
+                    { name: '30日間', value: '30d' },
+                    { name: '全期間', value: 'all' },
+                  ],
+                },
+                { name: 'limit', description: '表示人数（1〜25）', type: 'integer', minValue: 1, maxValue: 25 },
+              ],
+            },
+            async execute(interaction) {
+              if (!interaction.guildId) {
+                await interaction.reply({ content: 'サーバー内でのみ利用できます。', flags: MessageFlags.Ephemeral });
+                return;
+              }
+              const metric = readMetric(interaction.options.getString('metric'));
+              const period = readPeriod(interaction.options.getString('period'));
+              const limit = interaction.options.getInteger('limit') ?? 10;
+              const rows = await getCommunityLeaderboard(prisma, interaction.guildId, metric, period, limit);
+              const description = rows.length
+                ? rows
+                    .map((row, index) => `**${index + 1}.** ${displayName(interaction, row.userId)} — **${formatMetric(metric, row.total)}**`)
+                    .join('\n')
+                : 'この期間の活動データはまだありません。';
+              const embed = new EmbedBuilder()
+                .setTitle(`🏆 ${metricLabels[metric]} リーダーボード`)
+                .setDescription(description)
+                .setColor(0x7c6df2)
+                .setFooter({ text: `${periodLabels[period]} · 最大${limit}人` });
+              await interaction.reply({ embeds: [embed], allowedMentions: { parse: [] } });
+            },
+          };
+
+          export const activityCommand: SlashCommand = {
+            definition: {
+              name: 'activity',
+              description: '自分またはメンバーのコミュニティ活動を表示します',
+              options: [
+                { name: 'user', description: '確認するユーザー。省略時は自分', type: 'user' },
+                {
+                  name: 'period',
+                  description: '集計期間',
+                  type: 'string',
+                  choices: [
+                    { name: '今日', value: 'today' },
+                    { name: '7日間', value: '7d' },
+                    { name: '30日間', value: '30d' },
+                    { name: '全期間', value: 'all' },
+                  ],
+                },
+              ],
+            },
+            async execute(interaction) {
+              if (!interaction.guildId) {
+                await interaction.reply({ content: 'サーバー内でのみ利用できます。', flags: MessageFlags.Ephemeral });
+                return;
+              }
+              const user = interaction.options.getUser('user') ?? interaction.user;
+              const period = readPeriod(interaction.options.getString('period'));
+              const totals = await getCommunityActivityTotals(prisma, interaction.guildId, user.id, period);
+              const embed = new EmbedBuilder()
+                .setTitle(`📈 ${user.globalName ?? user.username} のアクティビティ`)
+                .setThumbnail(user.displayAvatarURL({ size: 256 }))
+                .setColor(0x5865f2)
+                .addFields(
+                  { name: '💬 発言', value: totals.messages.toLocaleString('ja-JP'), inline: true },
+                  { name: '✨ リアクション', value: totals.reactionsGiven.toLocaleString('ja-JP'), inline: true },
+                  { name: '💜 もらったリアクション', value: totals.reactionsReceived.toLocaleString('ja-JP'), inline: true },
+                  { name: '🎙️ VC', value: formatMetric('voice_seconds', totals.voiceSeconds), inline: true },
+                )
+                .setFooter({ text: `${periodLabels[period]}の集計` });
+              if (totals.minecraftSeconds > 0) {
+                embed.addFields({ name: '⛏️ Minecraft', value: formatMetric('minecraft_seconds', totals.minecraftSeconds), inline: true });
+              }
+              await interaction.reply({ embeds: [embed], allowedMentions: { parse: [] } });
+            },
+          };
+
+          export const communityActivityCommands = [leaderboardCommand, activityCommand];
+          EOF
+
+          cat > apps/studio/src/app/dashboard/community/page.tsx <<'EOF'
+          import Link from 'next/link';
+          import { BarChart3, MessageSquare, Mic2, Pickaxe, Sparkles, Users } from 'lucide-react';
+          import { redirect } from 'next/navigation';
+          import { prisma } from '@/lib/db';
+          import { getManageableGuilds } from '@/lib/guilds';
+          import { getDiscordAccessToken } from '@/lib/session';
+
+          export const dynamic = 'force-dynamic';
+          type SearchParams = Record<string, string | string[] | undefined>;
+          const metrics = ['messages', 'voice_seconds', 'reactions_given', 'reactions_received'] as const;
+          type Metric = (typeof metrics)[number];
+          const metricLabels: Record<Metric, string> = {
+            messages: '発言数',
+            voice_seconds: 'VC滞在時間',
+            reactions_given: 'リアクション',
+            reactions_received: 'もらったリアクション',
+          };
+
+          function single(value: string | string[] | undefined): string {
+            return Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
+          }
+          function formatSeconds(value: number): string {
+            const hours = Math.floor(value / 3600);
+            const minutes = Math.floor((value % 3600) / 60);
+            return `${hours}時間 ${minutes}分`;
+          }
+          function formatMetric(metric: string, value: number): string {
+            return metric.endsWith('_seconds') ? formatSeconds(value) : value.toLocaleString('ja-JP');
+          }
+
+          export default async function CommunityDashboardPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
+            const accessToken = await getDiscordAccessToken();
+            if (!accessToken) redirect('/login');
+            const guilds = await getManageableGuilds(accessToken);
+            const params = (await searchParams) ?? {};
+            const requestedGuild = single(params.guild);
+            const guild = guilds.find((item) => item.id === requestedGuild) ?? guilds[0];
+            const requestedMetric = single(params.metric);
+            const metric: Metric = metrics.includes(requestedMetric as Metric) ? (requestedMetric as Metric) : 'messages';
+            const range = single(params.range) === '30' ? 30 : 7;
+            if (!guild) {
+              return <div className="rounded-2xl border border-border bg-surface p-6 text-sm text-muted">管理可能なDiscordサーバーがありません。</div>;
+            }
+            const start = new Date();
+            start.setUTCHours(0, 0, 0, 0);
+            start.setUTCDate(start.getUTCDate() - (range - 1));
+            const [rows, totals, activeUsers] = await Promise.all([
+              prisma.communityActivityDaily.groupBy({
+                by: ['userId'],
+                where: { guildId: guild.id, metric, activityDate: { gte: start } },
+                _sum: { value: true },
+                orderBy: { _sum: { value: 'desc' } },
+                take: 25,
+              }),
+              prisma.communityActivityDaily.groupBy({
+                by: ['metric'],
+                where: { guildId: guild.id, activityDate: { gte: start } },
+                _sum: { value: true },
+              }),
+              prisma.communityActivityDaily.findMany({
+                where: { guildId: guild.id, activityDate: { gte: start } },
+                distinct: ['userId'],
+                select: { userId: true },
+              }),
+            ]);
+            const totalMap = new Map(totals.map((item) => [item.metric, Number(item._sum.value ?? 0n)]));
+            const top = rows.map((row) => ({ userId: row.userId, total: Number(row._sum.value ?? 0n) }));
+            const max = Math.max(...top.map((item) => item.total), 1);
+            const queryHref = (overrides: Record<string, string>) => {
+              const query = new URLSearchParams({ guild: guild.id, metric, range: String(range), ...overrides });
+              return `/dashboard/community?${query.toString()}`;
+            };
+
+            return (
+              <div className="space-y-6">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">Community Insights</p>
+                    <h1 className="mt-2 text-3xl font-semibold tracking-tight">コミュニティ・リーダーボード</h1>
+                    <p className="mt-2 max-w-2xl text-sm text-muted">発言、VC、リアクションを同じ日次メトリクス基盤で集計。将来のMinecraftプレイ時間も同じ形式で接続できます。</p>
+                  </div>
+                  <form className="flex flex-wrap gap-2" action="/dashboard/community">
+                    <select name="guild" defaultValue={guild.id} className="rounded-xl border border-border bg-surface px-3 py-2 text-sm">
+                      {guilds.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                    </select>
+                    <select name="range" defaultValue={String(range)} className="rounded-xl border border-border bg-surface px-3 py-2 text-sm">
+                      <option value="7">7日間</option><option value="30">30日間</option>
+                    </select>
+                    <input type="hidden" name="metric" value={metric} />
+                    <button className="rounded-xl bg-primary px-4 py-2 text-sm font-medium text-white">更新</button>
+                  </form>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    ['発言', totalMap.get('messages') ?? 0, MessageSquare, false],
+                    ['VC', totalMap.get('voice_seconds') ?? 0, Mic2, true],
+                    ['リアクション', totalMap.get('reactions_given') ?? 0, Sparkles, false],
+                    ['アクティブメンバー', activeUsers.length, Users, false],
+                  ].map(([label, raw, Icon, duration]) => (
+                    <section key={String(label)} className="rounded-2xl border border-border bg-surface p-5 shadow-card">
+                      <div className="flex items-center justify-between"><p className="text-sm text-muted">{String(label)}</p><Icon className="h-5 w-5 text-primary" /></div>
+                      <p className="mt-3 text-2xl font-semibold">{duration ? formatSeconds(Number(raw)) : Number(raw).toLocaleString('ja-JP')}</p>
+                      <p className="mt-1 text-xs text-muted">過去{range}日</p>
+                    </section>
+                  ))}
+                </div>
+
+                <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div><div className="flex items-center gap-2"><BarChart3 className="h-5 w-5 text-primary" /><h2 className="font-medium">ランキング</h2></div><p className="mt-1 text-sm text-muted">上位25人を表示します。</p></div>
+                    <div className="flex flex-wrap gap-2">
+                      {metrics.map((item) => <Link key={item} href={queryHref({ metric: item })} className={`rounded-lg px-3 py-2 text-xs font-medium ${item === metric ? 'bg-primary text-white' : 'border border-border bg-background text-muted hover:text-foreground'}`}>{metricLabels[item]}</Link>)}
+                    </div>
+                  </div>
+                  {top.length === 0 ? <p className="mt-8 text-sm text-muted">この期間の活動データはまだありません。</p> : (
+                    <div className="mt-6 space-y-3">{top.map((item, index) => (
+                      <div key={item.userId} className="rounded-xl border border-border bg-background p-4">
+                        <div className="flex items-center justify-between gap-4"><p className="truncate text-sm font-medium"><span className="mr-2 text-muted">#{index + 1}</span>&lt;@{item.userId}&gt;</p><span className="text-sm font-semibold tabular-nums">{formatMetric(metric, item.total)}</span></div>
+                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface"><div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(3, (item.total / max) * 100)}%` }} /></div>
+                      </div>
+                    ))}</div>
+                  )}
+                </section>
+
+                <section className="rounded-2xl border border-primary/20 bg-primary/5 p-5 sm:p-6">
+                  <div className="flex items-start gap-3"><Pickaxe className="mt-0.5 h-5 w-5 text-primary" /><div><h2 className="font-medium">Minecraft連携に対応できるメトリクス基盤</h2><p className="mt-1 text-sm leading-relaxed text-muted">`minecraft_seconds` を予約済みです。Discord IDとMinecraft UUIDのリンク、署名付きAgent/APIを追加すれば、同じランキングとプロフィールにプレイ時間を表示できます。</p></div></div>
+                </section>
+              </div>
+            );
+          }
+          EOF
+
+          cat > packages/db/prisma/migrations/20260812080000_community_activity_v1/migration.sql <<'EOF'
+          CREATE TABLE "community_activity_daily" (
+            "guild_id" TEXT NOT NULL,
+            "user_id" TEXT NOT NULL,
+            "activity_date" DATE NOT NULL,
+            "metric" VARCHAR(32) NOT NULL,
+            "value" BIGINT NOT NULL DEFAULT 0,
+            "updated_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "community_activity_daily_pkey" PRIMARY KEY ("guild_id", "user_id", "activity_date", "metric")
+          );
+          CREATE INDEX "community_activity_daily_guild_id_metric_activity_date_idx" ON "community_activity_daily"("guild_id", "metric", "activity_date");
+          CREATE INDEX "community_activity_daily_guild_id_user_id_activity_date_idx" ON "community_activity_daily"("guild_id", "user_id", "activity_date");
+
+          CREATE TABLE "community_voice_sessions" (
+            "guild_id" TEXT NOT NULL,
+            "user_id" TEXT NOT NULL,
+            "channel_id" TEXT NOT NULL,
+            "started_at" TIMESTAMPTZ(3) NOT NULL,
+            "updated_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT "community_voice_sessions_pkey" PRIMARY KEY ("guild_id", "user_id")
+          );
+          CREATE INDEX "community_voice_sessions_guild_id_started_at_idx" ON "community_voice_sessions"("guild_id", "started_at");
+          EOF
+
+          python - <<'PY'
+          from pathlib import Path
+
+          schema = Path('packages/db/prisma/schema.prisma')
+          text = schema.read_text()
+          marker = '// ============================================================\n// Plugin: Achievements / Badges\n// ============================================================'
+          models = '''// ============================================================
+          // Community Activity / Leaderboard
+          // ============================================================
+
+          model CommunityActivityDaily {
+            guildId      String   @map("guild_id")
+            userId       String   @map("user_id")
+            activityDate DateTime @map("activity_date") @db.Date
+            metric       String   @db.VarChar(32)
+            value        BigInt   @default(0)
+            updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+            @@id([guildId, userId, activityDate, metric])
+            @@index([guildId, metric, activityDate])
+            @@index([guildId, userId, activityDate])
+            @@map("community_activity_daily")
+          }
+
+          model CommunityVoiceSession {
+            guildId   String   @map("guild_id")
+            userId    String   @map("user_id")
+            channelId String   @map("channel_id")
+            startedAt DateTime @map("started_at") @db.Timestamptz(3)
+            updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+            @@id([guildId, userId])
+            @@index([guildId, startedAt])
+            @@map("community_voice_sessions")
+          }
+
+          '''
+          if 'model CommunityActivityDaily {' not in text:
+              if marker not in text: raise SystemExit('schema marker missing')
+              text = text.replace(marker, models + marker, 1)
+          schema.write_text(text)
+
+          registry = Path('apps/bot/src/commands/registry.ts')
+          text = registry.read_text()
+          if "./community-activity.js" not in text:
+              text = text.replace("import { coreInformationCommands } from './core-info.js';", "import { coreInformationCommands } from './core-info.js';\nimport { communityActivityCommands } from './community-activity.js';")
+              text = text.replace("for (const command of [...coreInformationCommands, ...coreUtilityV3Commands])", "for (const command of [...coreInformationCommands, ...coreUtilityV3Commands, ...communityActivityCommands])")
+          registry.write_text(text)
+
+          bot = Path('apps/bot/src/bot.ts')
+          text = bot.read_text()
+          if "./activity/community-activity.js" not in text:
+              anchor = "import type { DiscordHealthObservation } from './health/types.js';"
+              addition = """import type { DiscordHealthObservation } from './health/types.js';
+          import {
+            finishVoiceSession,
+            incrementCommunityActivity,
+            resetVoiceSessions,
+            startVoiceSession,
+          } from './activity/community-activity.js';"""
+              text = text.replace(anchor, addition, 1)
+          old = "const intents = [GatewayIntentBits.Guilds];\n  if (messageContentIntentEnabled()) {\n    intents.push(GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent);"
+          new = "const intents = [\n    GatewayIntentBits.Guilds,\n    GatewayIntentBits.GuildMessages,\n    GatewayIntentBits.GuildMessageReactions,\n    GatewayIntentBits.GuildVoiceStates,\n  ];\n  if (messageContentIntentEnabled()) {\n    intents.push(GatewayIntentBits.MessageContent);"
+          text = text.replace(old, new, 1)
+          text = text.replace("partials: [Partials.Message],", "partials: [Partials.Message, Partials.Reaction, Partials.User],", 1)
+          ready_anchor = "      for (const guildId of guildIds) {\n        await this.syncGuild(client, guildId);\n      }"
+          ready_replacement = """      for (const guildId of guildIds) {
+                await this.syncGuild(client, guildId);
+                try {
+                  await resetVoiceSessions(this.prisma, guildId);
+                  const guild = client.guilds.cache.get(guildId);
+                  if (guild) {
+                    for (const state of guild.voiceStates.cache.values()) {
+                      if (!state.channelId || state.member?.user.bot) continue;
+                      await startVoiceSession(this.prisma, guildId, state.id, state.channelId);
+                    }
+                  }
+                } catch (error) {
+                  this.logger.warn({ err: error, guildId }, 'VCセッション初期化に失敗しました');
+                }
+              }"""
+          text = text.replace(ready_anchor, ready_replacement, 1)
+          message_anchor = "    this.client.on(Events.MessageCreate, async (message) => {\n      if (!message.guildId) return;"
+          message_replacement = """    this.client.on(Events.MessageCreate, async (message) => {
+                if (!message.guildId) return;
+                if (!message.author.bot && !message.webhookId) {
+                  try {
+                    await incrementCommunityActivity(this.prisma, message.guildId, message.author.id, 'messages');
+                  } catch (error) {
+                    this.logger.warn({ err: error, guildId: message.guildId, userId: message.author.id }, '発言数の記録に失敗しました');
+                  }
+                }"""
+          text = text.replace(message_anchor, message_replacement, 1)
+          interaction_anchor = "    this.client.on(Events.InteractionCreate, async (interaction) => {"
+          event_block = """    this.client.on(Events.MessageReactionAdd, async (reaction, user) => {
+                if (user.bot) return;
+                try {
+                  const resolvedReaction = reaction.partial ? await reaction.fetch() : reaction;
+                  const resolvedMessage = resolvedReaction.message.partial
+                    ? await resolvedReaction.message.fetch()
+                    : resolvedReaction.message;
+                  const guildId = resolvedMessage.guildId;
+                  if (!guildId) return;
+                  await incrementCommunityActivity(this.prisma, guildId, user.id, 'reactions_given');
+                  const receiver = resolvedMessage.author;
+                  if (receiver && !receiver.bot && receiver.id !== user.id) {
+                    await incrementCommunityActivity(this.prisma, guildId, receiver.id, 'reactions_received');
+                  }
+                  await this.dispatchGuildPluginEvent(guildId, Events.MessageReactionAdd, resolvedReaction, user);
+                } catch (error) {
+                  this.logger.warn({ err: error, userId: user.id }, 'リアクション活動の記録に失敗しました');
+                }
+              });
+
+              this.client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+                const guildId = newState.guild.id;
+                const userId = newState.id;
+                if (newState.member?.user.bot ?? oldState.member?.user.bot) return;
+                try {
+                  if (!oldState.channelId && newState.channelId) {
+                    await startVoiceSession(this.prisma, guildId, userId, newState.channelId);
+                  } else if (oldState.channelId && !newState.channelId) {
+                    await finishVoiceSession(this.prisma, guildId, userId);
+                  }
+                  await this.dispatchGuildPluginEvent(guildId, Events.VoiceStateUpdate, oldState, newState);
+                } catch (error) {
+                  this.logger.warn({ err: error, guildId, userId }, 'VC滞在時間の記録に失敗しました');
+                }
+              });
+
+          """
+          if "Events.MessageReactionAdd" not in text:
+              text = text.replace(interaction_anchor, event_block + interaction_anchor, 1)
+          bot.write_text(text)
+
+          nav = Path('apps/studio/src/components/dashboard-nav.tsx')
+          text = nav.read_text()
+          if "'/dashboard/community'" not in text:
+              text = text.replace("  BarChart3,", "  BarChart3,\n  Trophy,", 1)
+              text = text.replace("  { href: '/dashboard/analytics', label: 'アナリティクス', icon: BarChart3 },", "  { href: '/dashboard/analytics', label: 'アナリティクス', icon: BarChart3 },\n  { href: '/dashboard/community', label: 'コミュニティ', icon: Trophy },", 1)
+          nav.write_text(text)
+          PY
+
+          pnpm exec prettier --write apps/bot/src/activity/community-activity.ts apps/bot/src/commands/community-activity.ts apps/bot/src/commands/registry.ts apps/bot/src/bot.ts apps/studio/src/app/dashboard/community/page.tsx apps/studio/src/components/dashboard-nav.tsx
+          pnpm --filter @herta/db exec prisma format --schema prisma/schema.prisma
+          pnpm --filter @herta/db exec prisma generate --schema prisma/schema.prisma
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+          pnpm build
+
+          git rm .github/workflows/tmp-community-activity-v1.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps packages
+          git commit -m 'コミュニティ活動リーダーボードv1を追加する'
+          git push origin HEAD:feat/community-activity-leaderboard-v1
