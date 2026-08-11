@@ -54,7 +54,13 @@ interface TextChannel {
 
 interface SuggestionClient {
   channels: { fetch(id: string): Promise<TextChannel | null> };
-  users: { fetch(id: string): Promise<{ send(options: { content: string; allowedMentions: { parse: [] } }): Promise<unknown> }> };
+  users: {
+    fetch(
+      id: string,
+    ): Promise<{
+      send(options: { content: string; allowedMentions: { parse: [] } }): Promise<unknown>;
+    }>;
+  };
 }
 
 interface CommandInteraction {
@@ -130,7 +136,13 @@ export function normalizeSuggestionConfig(value: unknown): SuggestionConfig {
     enableVoting: source.enableVoting === undefined ? true : source.enableVoting === true,
     maxOpenPerUser: clamp(toInteger(source.maxOpenPerUser, 5), 1, 20),
     staffRoleIds: Array.isArray(source.staffRoleIds)
-      ? [...new Set(source.staffRoleIds.filter((id): id is string => typeof id === 'string' && /^\d+$/.test(id)))].slice(0, 10)
+      ? [
+          ...new Set(
+            source.staffRoleIds.filter(
+              (id): id is string => typeof id === 'string' && /^\d+$/.test(id),
+            ),
+          ),
+        ].slice(0, 10)
       : [],
     notifyAuthorOnStatusChange:
       source.notifyAuthorOnStatusChange === undefined
@@ -215,7 +227,10 @@ async function handleCreate(
 
   const channel = await resolveSuggestionChannel(context, config, interaction);
   if (!channel) {
-    await reply(interaction, 'Suggestion投稿先チャンネルを利用できません。Studio設定とBot権限を確認してください。');
+    await reply(
+      interaction,
+      'Suggestion投稿先チャンネルを利用できません。Studio設定とBot権限を確認してください。',
+    );
     return;
   }
 
@@ -229,7 +244,10 @@ async function handleCreate(
     maxOpenPerUser: config.maxOpenPerUser,
   });
   if (!id) {
-    await reply(interaction, `未処理Suggestionが上限（${config.maxOpenPerUser}件）に達しています。`);
+    await reply(
+      interaction,
+      `未処理Suggestionが上限（${config.maxOpenPerUser}件）に達しています。`,
+    );
     return;
   }
 
@@ -242,18 +260,33 @@ async function handleCreate(
     await setSuggestionMessageId(context.prisma, id, message.id);
   } catch (error) {
     if (!published) await deleteSuggestion(context.prisma, id).catch(() => undefined);
-    context.logger.warn({ err: error, guildId: interaction.guildId, suggestionId: id }, 'Suggestion投稿に失敗しました');
+    context.logger.warn(
+      { err: error, guildId: interaction.guildId, suggestionId: id },
+      'Suggestion投稿に失敗しました',
+    );
     await reply(interaction, 'Suggestionの投稿に失敗しました。Botの送信権限を確認してください。');
     return;
   }
   await reply(interaction, `💡 Suggestionを投稿しました。\nID: \`${id}\``);
 }
 
-async function handleList(context: SuggestionContext, interaction: CommandInteraction): Promise<void> {
-  const records = await listAuthorSuggestions(context.prisma, interaction.guildId!, interaction.user.id);
+async function handleList(
+  context: SuggestionContext,
+  interaction: CommandInteraction,
+): Promise<void> {
+  const records = await listAuthorSuggestions(
+    context.prisma,
+    interaction.guildId!,
+    interaction.user.id,
+  );
   const pages = formatSuggestionListPages(records);
   await reply(interaction, pages[0]!);
-  for (const page of pages.slice(1)) await interaction.followUp({ content: page, flags: EPHEMERAL_FLAG, allowedMentions: { parse: [] } });
+  for (const page of pages.slice(1))
+    await interaction.followUp({
+      content: page,
+      flags: EPHEMERAL_FLAG,
+      allowedMentions: { parse: [] },
+    });
 }
 
 async function handleStatus(
@@ -262,7 +295,10 @@ async function handleStatus(
   interaction: CommandInteraction,
 ): Promise<void> {
   if (!canManageSuggestion(interaction, config)) {
-    await reply(interaction, 'Suggestionの状態変更にはManage Server権限または設定済みStaff Roleが必要です。');
+    await reply(
+      interaction,
+      'Suggestionの状態変更にはManage Server権限または設定済みStaff Roleが必要です。',
+    );
     return;
   }
   const id = interaction.options.getString('id', true)?.trim() ?? '';
@@ -308,10 +344,19 @@ async function handleSuggestionComponent(
   context: SuggestionContext,
   interaction: ComponentInteraction | undefined,
 ): Promise<void> {
-  if (!interaction?.isButton?.() || !interaction.customId?.startsWith(CUSTOM_ID_PREFIX) || !interaction.guildId) return;
+  if (
+    !interaction?.isButton?.() ||
+    !interaction.customId?.startsWith(CUSTOM_ID_PREFIX) ||
+    !interaction.guildId
+  )
+    return;
   const config = normalizeSuggestionConfig(context.config);
   if (!config.enabled || !config.enableVoting) {
-    await interaction.reply({ content: 'Suggestion投票は現在無効です。', flags: EPHEMERAL_FLAG, allowedMentions: { parse: [] } });
+    await interaction.reply({
+      content: 'Suggestion投票は現在無効です。',
+      flags: EPHEMERAL_FLAG,
+      allowedMentions: { parse: [] },
+    });
     return;
   }
   const parsed = parseVoteCustomId(interaction.customId);
@@ -323,7 +368,11 @@ async function handleSuggestionComponent(
     value: parsed.value,
   });
   if (!snapshot) {
-    await interaction.reply({ content: 'このSuggestionには投票できません。', flags: EPHEMERAL_FLAG, allowedMentions: { parse: [] } });
+    await interaction.reply({
+      content: 'このSuggestionには投票できません。',
+      flags: EPHEMERAL_FLAG,
+      allowedMentions: { parse: [] },
+    });
     return;
   }
   await interaction.update(buildSuggestionMessage(snapshot));
@@ -335,13 +384,18 @@ async function resolveSuggestionChannel(
   interaction: CommandInteraction,
 ): Promise<TextChannel | null> {
   if (config.suggestionChannelId) {
-    const channel = await context.client.channels.fetch(config.suggestionChannelId).catch(() => null);
+    const channel = await context.client.channels
+      .fetch(config.suggestionChannelId)
+      .catch(() => null);
     return channel?.isTextBased() ? channel : null;
   }
   return interaction.channelId && interaction.channel?.isTextBased() ? interaction.channel : null;
 }
 
-async function updateStoredMessage(context: SuggestionContext, snapshot: SuggestionSnapshot): Promise<void> {
+async function updateStoredMessage(
+  context: SuggestionContext,
+  snapshot: SuggestionSnapshot,
+): Promise<void> {
   if (!snapshot.messageId) return;
   const channel = await context.client.channels.fetch(snapshot.channelId);
   if (!channel?.isTextBased()) throw new Error('SuggestionChannelUnavailable');
@@ -369,7 +423,9 @@ export function formatSuggestionListPages(records: readonly SuggestionListRecord
 
 function canManageSuggestion(interaction: CommandInteraction, config: SuggestionConfig): boolean {
   if (interaction.memberPermissions?.has('ManageGuild')) return true;
-  return config.staffRoleIds.some((roleId) => interaction.member?.roles?.cache?.has(roleId) === true);
+  return config.staffRoleIds.some(
+    (roleId) => interaction.member?.roles?.cache?.has(roleId) === true,
+  );
 }
 
 function parseVoteCustomId(customId: string): { id: string; value: 1 | -1 } | null {
@@ -381,7 +437,9 @@ function parseVoteCustomId(customId: string): { id: string; value: 1 | -1 } | nu
 }
 
 function isSuggestionStatus(value: unknown): value is SuggestionStatus {
-  return value === 'reviewing' || value === 'accepted' || value === 'rejected' || value === 'completed';
+  return (
+    value === 'reviewing' || value === 'accepted' || value === 'rejected' || value === 'completed'
+  );
 }
 
 function statusLabel(status: SuggestionStatus): string {
