@@ -32,7 +32,7 @@ export interface NextContentOccurrenceInput extends NextDailyOccurrenceInput {
 
 /**
  * 指定timezoneの壁時計時刻として、afterより後に到来する最初のUTC時刻を返す。
- * DSTで存在しない時刻は次の日へ送り、重複する時刻はafterより後の早い方を採用する。
+ * DSTで存在しない時刻は次の日へ送り、重複する壁時計時刻は同じ現地日で1回だけ採用する。
  */
 export function nextDailyOccurrence(input: NextDailyOccurrenceInput): Date {
   return nextRecurringOccurrence({ ...input, recurrenceType: 'daily' })!;
@@ -92,6 +92,16 @@ function nextRecurringOccurrence(input: NextContentOccurrenceInput): Date | null
       },
       timezone,
     );
+
+    // DST終了日に同じ壁時計時刻が2回存在しても、1つ目を予約済みなら
+    // 2つ目を別 occurrence として扱わず、その現地日は完了済みとして進める。
+    if (
+      offsetDays === 0 &&
+      candidates.some((candidate) => candidate.getTime() <= input.after.getTime())
+    ) {
+      continue;
+    }
+
     const next = candidates.find((candidate) => candidate.getTime() > input.after.getTime());
     if (next) return next;
   }
