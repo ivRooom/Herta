@@ -40,79 +40,6 @@ export { suggestionManifest } from './manifests/suggestion.js';
 export { serverStatsManifest } from './manifests/server-stats.js';
 export { xpLevelManifest } from './manifests/xp-level.js';
 
-const rawPluginManifests: PluginManifest[] = [
-  achievementsManifest,
-  activityRulesManifest,
-  afkManifest,
-  autoResponseManifest,
-  birthdayRoleManifest,
-  channelPolicyManifest,
-  communityProfileManifest,
-  communityChallengeManifest,
-  dailyContentManifest,
-  eventRsvpManifest,
-  giveawayManifest,
-  lfgManifest,
-  moderationManifest,
-  onboardingManifest,
-  pollManifest,
-  reminderManifest,
-  quoteManifest,
-  roleManagerManifest,
-  suggestionManifest,
-  serverStatsManifest,
-  teamSplitManifest,
-  xpLevelManifest,
-];
-
-const pluginManifests: PluginManifest[] = rawPluginManifests.map((manifest) => ({
-  ...manifest,
-  configSchema: applyDiscordPickerMetadata(manifest.configSchema) as PluginManifest['configSchema'],
-}));
-
-const pluginManifestMap = new Map(pluginManifests.map((manifest) => [manifest.id, manifest]));
-
-export function getPluginManifest(id: string): PluginManifest | undefined {
-  return pluginManifestMap.get(id);
-}
-
-export function getAllPluginManifests(): PluginManifest[] {
-  return [...pluginManifests];
-}
-
-export interface EnabledPlugin {
-  manifest: PluginManifest;
-  config: Record<string, unknown>;
-  configVersion: number;
-}
-
-/**
- * Guildで有効な公式Pluginと検証済み設定を返す。
- * RuntimeはDB内のコードやpackage名を評価せず、静的Registryだけから実装を解決する。
- */
-export async function getEnabledPlugins(
-  prisma: PrismaClient,
-  guildId: string,
-): Promise<EnabledPlugin[]> {
-  const rows = await prisma.guildPlugin.findMany({
-    where: { guildId, enabled: true },
-    include: { plugin: true },
-  });
-
-  return rows.flatMap((row: (typeof rows)[number]) => {
-    const manifest = getPluginManifest(row.pluginId);
-    if (!manifest) return [];
-
-    return [
-      {
-        manifest,
-        config: isRecord(row.config) ? row.config : {},
-        configVersion: row.configVersion,
-      },
-    ];
-  });
-}
-
 type DiscordPickerWidget = 'discord-channel' | 'discord-role' | 'discord-user' | 'discord-emoji';
 
 const DISCORD_ENTITY_FIELDS: Array<{ pattern: RegExp; widget: DiscordPickerWidget }> = [
@@ -184,4 +111,77 @@ function applyDiscordPickerMetadata(schema: unknown, insideMessageTarget = false
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const rawPluginManifests: PluginManifest[] = [
+  achievementsManifest,
+  activityRulesManifest,
+  afkManifest,
+  autoResponseManifest,
+  birthdayRoleManifest,
+  channelPolicyManifest,
+  communityProfileManifest,
+  communityChallengeManifest,
+  dailyContentManifest,
+  eventRsvpManifest,
+  giveawayManifest,
+  lfgManifest,
+  moderationManifest,
+  onboardingManifest,
+  pollManifest,
+  reminderManifest,
+  quoteManifest,
+  roleManagerManifest,
+  suggestionManifest,
+  serverStatsManifest,
+  teamSplitManifest,
+  xpLevelManifest,
+];
+
+const pluginManifests: PluginManifest[] = rawPluginManifests.map((manifest) => ({
+  ...manifest,
+  configSchema: applyDiscordPickerMetadata(manifest.configSchema) as PluginManifest['configSchema'],
+}));
+
+const pluginManifestMap = new Map(pluginManifests.map((manifest) => [manifest.id, manifest]));
+
+export function getPluginManifest(id: string): PluginManifest | undefined {
+  return pluginManifestMap.get(id);
+}
+
+export function getAllPluginManifests(): PluginManifest[] {
+  return [...pluginManifests];
+}
+
+export interface EnabledPlugin {
+  manifest: PluginManifest;
+  config: Record<string, unknown>;
+  configVersion: number;
+}
+
+/**
+ * Guildで有効な公式Pluginと検証済み設定を返す。
+ * RuntimeはDB内のコードやpackage名を評価せず、静的Registryだけから実装を解決する。
+ */
+export async function getEnabledPlugins(
+  prisma: PrismaClient,
+  guildId: string,
+): Promise<EnabledPlugin[]> {
+  const rows = await prisma.guildPlugin.findMany({
+    where: { guildId, enabled: true },
+    include: { plugin: true },
+  });
+
+  return rows.flatMap((row: (typeof rows)[number]) => {
+    const manifest = getPluginManifest(row.pluginId);
+    if (!manifest) return [];
+
+    return [
+      {
+        manifest,
+        config: isRecord(row.config) ? row.config : {},
+        configVersion: row.configVersion,
+      },
+    ];
+  });
 }
