@@ -473,7 +473,13 @@ function resolveChannelId(
 
 function readForumTitle(interaction: DailyContentCommandInteraction): string {
   return (
-    (interaction.options.getString('embed_title') ?? 'お知らせ').trim().slice(0, 100) || 'お知らせ'
+    (
+      interaction.options.getString('forum_title') ??
+      interaction.options.getString('embed_title') ??
+      'お知らせ'
+    )
+      .trim()
+      .slice(0, 100) || 'お知らせ'
   );
 }
 

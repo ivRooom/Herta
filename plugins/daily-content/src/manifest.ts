@@ -43,6 +43,13 @@ const targetOption: CommandOption = {
   required: false,
 };
 
+const forumTitleOption: CommandOption = {
+  name: 'forum_title',
+  description: 'Forumへ投稿する場合のスレッドタイトル',
+  type: 'string',
+  required: false,
+};
+
 export const dailyContentManifest: PluginManifest = {
   id: 'daily-content',
   name: 'Announcement / Message Studio',
@@ -200,6 +207,7 @@ export const dailyContentManifest: PluginManifest = {
           description: 'お知らせを今すぐ投稿します',
           options: [
             targetOption,
+            forumTitleOption,
             ...contentOptions,
             {
               name: 'crosspost',
@@ -220,6 +228,7 @@ export const dailyContentManifest: PluginManifest = {
               required: true,
             },
             targetOption,
+            forumTitleOption,
             ...contentOptions.filter((option) => option.name !== 'image'),
             {
               name: 'crosspost',
@@ -256,6 +265,7 @@ export const dailyContentManifest: PluginManifest = {
               required: false,
             },
             targetOption,
+            forumTitleOption,
             ...contentOptions.filter((option) => option.name !== 'image'),
             {
               name: 'crosspost',

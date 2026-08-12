@@ -146,7 +146,7 @@ function createEmptyForm(
     timezone: defaultTimezone,
     enabled: true,
     recurrenceType: 'once',
-    onceAt: nextLocalDateTime(),
+    onceAt: nextLocalDateTime(defaultTimezone),
     weekdays: [1, 2, 3, 4, 5],
     messageFormat: 'text',
     embedTitle: '',
@@ -249,7 +249,9 @@ export function DailyContentManager({
       timezone: schedule.timezone,
       enabled: schedule.enabled,
       recurrenceType: schedule.recurrenceType,
-      onceAt: schedule.onceAt ? toDateTimeLocal(schedule.onceAt) : nextLocalDateTime(),
+      onceAt: schedule.onceAt
+        ? toDateTimeLocal(schedule.onceAt, schedule.timezone)
+        : nextLocalDateTime(schedule.timezone),
       weekdays: schedule.weekdays,
       messageFormat: schedule.messageFormat,
       embedTitle: schedule.embed?.title ?? '',
@@ -1218,18 +1220,32 @@ function validColor(value: string): string {
   return /^#[0-9a-fA-F]{6}$/.test(value) ? value : '#5865F2';
 }
 
-function nextLocalDateTime(): string {
+function nextLocalDateTime(timezone: string): string {
   const date = new Date(Date.now() + 60 * 60 * 1000);
   date.setSeconds(0, 0);
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
+  return formatZonedDateTimeLocal(date, timezone);
 }
 
-function toDateTimeLocal(value: string): string {
+function toDateTimeLocal(value: string, timezone: string): string {
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return nextLocalDateTime();
-  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 16);
+  if (Number.isNaN(date.getTime())) return nextLocalDateTime(timezone);
+  return formatZonedDateTimeLocal(date, timezone);
+}
+
+function formatZonedDateTimeLocal(date: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).formatToParts(date);
+  const values = new Map(
+    parts.filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]),
+  );
+  return `${values.get('year')}-${values.get('month')}-${values.get('day')}T${values.get('hour')}:${values.get('minute')}`;
 }
 
 async function requestJson(url: string, init: RequestInit): Promise<unknown> {
