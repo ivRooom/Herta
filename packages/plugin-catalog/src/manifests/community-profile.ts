@@ -3,9 +3,9 @@ import type { PluginManifest } from '@herta/shared';
 export const communityProfileManifest: PluginManifest = {
   id: 'community-profile',
   name: 'Community Profile',
-  version: '2.0.0',
+  version: '3.0.0',
   description:
-    'XP・Activity・Achievements・Profile Title・Badge Showcaseを1つのメンバープロフィールとして表示します',
+    'XP・Activity・Achievements・Season・Momentum・Profile Compareを1つのメンバープロフィールとして表示します',
   author: { name: 'Herta' },
   category: 'utility',
   permissions: [
@@ -99,6 +99,62 @@ export const communityProfileManifest: PluginManifest = {
         default: true,
         'x-herta-ui': { section: '表示項目' },
       },
+      showSeason: {
+        type: 'boolean',
+        title: 'Current Seasonを表示する',
+        default: true,
+        'x-herta-ui': {
+          section: 'Season / Challenge',
+          help: 'Community Challenge / SeasonのPoint・Level・Rank・Clear数をプロフィールへ表示します。',
+        },
+      },
+      showSeasonProgress: {
+        type: 'boolean',
+        title: '次のSeason Levelまでの進捗を表示する',
+        default: true,
+        'x-herta-ui': { section: 'Season / Challenge' },
+      },
+      showDailyChallengeStreak: {
+        type: 'boolean',
+        title: 'Daily ALL CLEAR Streakを表示する',
+        default: true,
+        'x-herta-ui': { section: 'Season / Challenge' },
+      },
+      showNextMilestones: {
+        type: 'boolean',
+        title: 'Next Milestonesを表示する',
+        default: true,
+        'x-herta-ui': {
+          section: 'Insights',
+          help: '現在の活動値から、解除に近い未解除Achievementを表示します。Secret Achievementは表示しません。',
+        },
+      },
+      nextMilestoneCount: {
+        type: 'integer',
+        title: 'Next Milestonesの表示数',
+        minimum: 1,
+        maximum: 5,
+        default: 3,
+        'x-herta-ui': { section: 'Insights' },
+      },
+      showActivityMomentum: {
+        type: 'boolean',
+        title: '7-day Momentumを表示する',
+        default: true,
+        'x-herta-ui': {
+          section: 'Insights',
+          help: '直近7日間とその前7日間を比較し、Activityの増減を表示します。',
+        },
+      },
+      allowComparisons: {
+        type: 'boolean',
+        title: 'Profile Compareを許可する',
+        default: true,
+        'x-herta-ui': {
+          section: 'Compare',
+          help: 'ONにすると /profile compare で自分と公開プロフィールのメンバーを比較できます。',
+        },
+      },
       showRecentAchievements: {
         type: 'boolean',
         title: '最近解除したAchievementを表示する',
@@ -149,6 +205,13 @@ export const communityProfileManifest: PluginManifest = {
       'showAchievementRarityBreakdown',
       'showProfileTitle',
       'showRankings',
+      'showSeason',
+      'showSeasonProgress',
+      'showDailyChallengeStreak',
+      'showNextMilestones',
+      'nextMilestoneCount',
+      'showActivityMomentum',
+      'allowComparisons',
       'showRecentAchievements',
       'recentAchievementCount',
       'featuredBadgeLimit',
@@ -170,6 +233,18 @@ export const communityProfileManifest: PluginManifest = {
               name: 'user',
               description: '確認するメンバー（未指定は自分）',
               type: 'user',
+            },
+          ],
+        },
+        {
+          name: 'compare',
+          description: '自分と他メンバーのCommunity Profileを比較します',
+          options: [
+            {
+              name: 'user',
+              description: '比較するメンバー',
+              type: 'user',
+              required: true,
             },
           ],
         },

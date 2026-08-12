@@ -22,6 +22,10 @@ const pluginSetupNotes: Record<string, string[]> = {
     'Message Content Intentを有効にした環境で利用してください。',
     '新しいルールはlog_onlyから始め、誤検知がないことを確認してからdelete系へ切り替えるのがおすすめです。',
   ],
+  'community-profile': [
+    'Current Season・Momentum・Milestoneは既存のActivity / Achievement / Challengeデータを読み取り表示し、Profile専用の活動ログは追加しません。',
+    'Profile Compareは相手の公開設定とサーバー側の他ユーザー閲覧設定を尊重します。',
+  ],
   'daily-content': [
     '配信先・時刻・Timezoneを最初に設定すると、定期配信の事故を防ぎやすくなります。',
     'ForumやThreadを配信先にする場合は、Discord側の投稿権限も確認してください。',

@@ -19,6 +19,14 @@ import {
   summarizeAchievementCollection,
   type AchievementDefinition,
 } from '@herta/shared';
+import {
+  appendCommunityProfileMilestones,
+  appendCommunityProfileMomentum,
+  appendCommunityProfileSeason,
+  formatCommunityProfileComparison,
+  getCommunityProfileV3Data,
+  type CommunityProfileV3Data,
+} from './community-profile-v3.js';
 import { levelForXp, xpRequiredForLevel } from './xp-level.js';
 
 const EPHEMERAL_FLAG = 64;
@@ -36,6 +44,13 @@ export interface CommunityProfileConfig {
   showAchievementRarityBreakdown: boolean;
   showProfileTitle: boolean;
   showRankings: boolean;
+  showSeason: boolean;
+  showSeasonProgress: boolean;
+  showDailyChallengeStreak: boolean;
+  showNextMilestones: boolean;
+  nextMilestoneCount: number;
+  showActivityMomentum: boolean;
+  allowComparisons: boolean;
   showRecentAchievements: boolean;
   recentAchievementCount: number;
   featuredBadgeLimit: number;
@@ -100,6 +115,20 @@ export function normalizeCommunityProfileConfig(value: unknown): CommunityProfil
     showProfileTitle:
       source.showProfileTitle === undefined ? true : source.showProfileTitle === true,
     showRankings: source.showRankings === undefined ? true : source.showRankings === true,
+    showSeason: source.showSeason === undefined ? true : source.showSeason === true,
+    showSeasonProgress:
+      source.showSeasonProgress === undefined ? true : source.showSeasonProgress === true,
+    showDailyChallengeStreak:
+      source.showDailyChallengeStreak === undefined
+        ? true
+        : source.showDailyChallengeStreak === true,
+    showNextMilestones:
+      source.showNextMilestones === undefined ? true : source.showNextMilestones === true,
+    nextMilestoneCount: clamp(toInteger(source.nextMilestoneCount, 3), 1, 5),
+    showActivityMomentum:
+      source.showActivityMomentum === undefined ? true : source.showActivityMomentum === true,
+    allowComparisons:
+      source.allowComparisons === undefined ? true : source.allowComparisons === true,
     showRecentAchievements:
       source.showRecentAchievements === undefined ? true : source.showRecentAchievements === true,
     recentAchievementCount: clamp(toInteger(source.recentAchievementCount, 3), 0, 5),
@@ -124,6 +153,7 @@ export function formatCommunityProfile(
   snapshot: CommunityProfileSnapshotData,
   config: CommunityProfileConfig,
   viewerId = snapshot.userId,
+  v3Data?: CommunityProfileV3Data,
 ): string {
   const lines: string[] = [`**👤 <@${snapshot.userId}> Community Profile**`];
 
@@ -137,8 +167,21 @@ export function formatCommunityProfile(
   }
 
   if (config.showXp) appendXp(lines, snapshot, config);
+  if (v3Data && config.showSeason) {
+    appendCommunityProfileSeason(lines, v3Data, {
+      showRankings: config.showRankings,
+      showProgress: config.showSeasonProgress,
+      showDailyStreak: config.showDailyChallengeStreak,
+    });
+  }
   if (config.showAchievements) appendAchievements(lines, snapshot, config);
+  if (v3Data && config.showNextMilestones) {
+    appendCommunityProfileMilestones(lines, snapshot, v3Data, config.nextMilestoneCount);
+  }
   if (config.showActivity) appendActivity(lines, snapshot, config);
+  if (v3Data && config.showActivityMomentum) {
+    appendCommunityProfileMomentum(lines, v3Data.momentum, config.showMinecraftActivity);
+  }
 
   const featured = resolveFeaturedAchievements(snapshot, config.featuredBadgeLimit);
   lines.push('', '**🏷️ Badge Showcase**');
@@ -193,6 +236,10 @@ async function executeProfileCommand(
   const subcommand = interaction.options.getSubcommand();
   if (subcommand === 'view') {
     await executeView(context, interaction, config);
+    return;
+  }
+  if (subcommand === 'compare') {
+    await executeCompare(context, interaction, config);
     return;
   }
   if (subcommand === 'badge-add') {
@@ -287,8 +334,74 @@ async function executeView(
     );
     return;
   }
+  const v3Data = await getCommunityProfileV3Data(context.prisma, guildId, targetId);
   await interaction.reply({
-    content: formatCommunityProfile(snapshot, config, interaction.user.id),
+    content: formatCommunityProfile(snapshot, config, interaction.user.id, v3Data),
+    flags: config.ephemeralResponses ? EPHEMERAL_FLAG : undefined,
+    allowedMentions: { parse: [] },
+  });
+}
+
+async function executeCompare(
+  context: CommunityProfileContext,
+  interaction: CommunityProfileInteraction,
+  config: CommunityProfileConfig,
+): Promise<void> {
+  if (!config.allowComparisons) {
+    await replyPrivate(interaction, 'Community Profile Compareはこのサーバーで無効です。');
+    return;
+  }
+  const guildId = interaction.guildId!;
+  const targetId = interaction.options.getUser('user')?.id;
+  if (!targetId) {
+    await replyPrivate(interaction, '比較するメンバーを指定してください。');
+    return;
+  }
+  if (targetId === interaction.user.id) {
+    await replyPrivate(
+      interaction,
+      '自分自身との比較はできません。`/profile view` を利用してください。',
+    );
+    return;
+  }
+
+  const [viewerSnapshot, targetSnapshot] = await Promise.all([
+    getCommunityProfileSnapshotData(
+      context.prisma,
+      guildId,
+      interaction.user.id,
+      config.defaultActivityPeriod,
+    ),
+    getCommunityProfileSnapshotData(
+      context.prisma,
+      guildId,
+      targetId,
+      config.defaultActivityPeriod,
+    ),
+  ]);
+
+  if (!canViewCommunityProfile(interaction.user.id, targetId, targetSnapshot, config)) {
+    await replyPrivate(
+      interaction,
+      targetSnapshot.preference.isPublic
+        ? 'このサーバーでは他メンバーのプロフィール比較が無効です。'
+        : '🔒 このメンバーのCommunity Profileは非公開のため比較できません。',
+    );
+    return;
+  }
+
+  const [viewerV3, targetV3] = await Promise.all([
+    getCommunityProfileV3Data(context.prisma, guildId, interaction.user.id),
+    getCommunityProfileV3Data(context.prisma, guildId, targetId),
+  ]);
+  await interaction.reply({
+    content: formatCommunityProfileComparison(viewerSnapshot, viewerV3, targetSnapshot, targetV3, {
+      showXp: config.showXp,
+      showAchievements: config.showAchievements,
+      showActivity: config.showActivity,
+      showSeason: config.showSeason,
+      showMinecraftActivity: config.showMinecraftActivity,
+    }),
     flags: config.ephemeralResponses ? EPHEMERAL_FLAG : undefined,
     allowedMentions: { parse: [] },
   });

@@ -34,7 +34,7 @@ const snapshot: CommunityProfileSnapshotData = {
   },
 };
 
-describe('Community Profile v2', () => {
+describe('Community Profile v3', () => {
   it('設定値を安全な範囲へ正規化する', () => {
     expect(
       normalizeCommunityProfileConfig({
@@ -55,6 +55,13 @@ describe('Community Profile v2', () => {
       showAchievementRarityBreakdown: true,
       showProfileTitle: true,
       showRankings: true,
+      showSeason: true,
+      showSeasonProgress: true,
+      showDailyChallengeStreak: true,
+      showNextMilestones: true,
+      nextMilestoneCount: 3,
+      showActivityMomentum: true,
+      allowComparisons: true,
       showRecentAchievements: true,
       recentAchievementCount: 5,
       featuredBadgeLimit: 1,
