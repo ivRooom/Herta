@@ -297,9 +297,12 @@ describe('Achievements v3', () => {
     const unlocks: AchievementUnlockRecord[] = [
       { achievementId: 'custom:chat-master:bronze', unlockedAt: new Date('2026-08-12T00:00:00Z') },
     ];
-    const list = formatAchievements('123', { ...emptyMetrics, messages: 100 }, unlocks, config).join(
-      '\n',
-    );
+    const list = formatAchievements(
+      '123',
+      { ...emptyMetrics, messages: 100 },
+      unlocks,
+      config,
+    ).join('\n');
     expect(list).toContain('Bronze');
     expect(list).toContain('Chat Master');
     expect(list).toContain('75pt');
