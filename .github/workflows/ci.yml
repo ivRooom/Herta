@@ -10,7 +10,7 @@ on:
     branches: [main, develop]
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
