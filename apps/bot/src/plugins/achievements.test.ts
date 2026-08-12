@@ -26,6 +26,8 @@ const emptyMetrics: AchievementMetrics = {
   eventGoing: 0,
   suggestions: 0,
   acceptedSuggestions: 0,
+  challengeCompletions: 0,
+  seasonPoints: 0,
 };
 
 describe('Achievements v2', () => {
@@ -86,7 +88,10 @@ describe('Achievements v2', () => {
     expect(ids.has('minecraft-explorer')).toBe(true);
     expect(ids.has('minecraft-regular')).toBe(true);
     expect(ids.has('minecraft-veteran')).toBe(true);
-    expect(ACHIEVEMENTS).toHaveLength(38);
+    expect(ids.has('first-challenge')).toBe(true);
+    expect(ids.has('challenge-master')).toBe(true);
+    expect(ids.has('season-legend')).toBe(true);
+    expect(ACHIEVEMENTS).toHaveLength(43);
   });
 
   it('Activity Rules集計後の発言・リアクション・VCから実績を解除する', () => {
@@ -148,6 +153,23 @@ describe('Achievements v2', () => {
     });
     expect(unlocked).toEqual(
       expect.arrayContaining(['minecraft-explorer', 'minecraft-regular', 'minecraft-veteran']),
+    );
+  });
+
+  it('Challenge Clear数とSeason PointからAchievementを解除する', () => {
+    const unlocked = unlockedAchievementIds({
+      ...emptyMetrics,
+      challengeCompletions: 100,
+      seasonPoints: 1_500,
+    });
+    expect(unlocked).toEqual(
+      expect.arrayContaining([
+        'first-challenge',
+        'challenge-regular',
+        'challenge-master',
+        'season-rising',
+        'season-legend',
+      ]),
     );
   });
 

@@ -5,6 +5,11 @@ const pluginSetupNotes: Record<string, string[]> = {
     'Achievementsは既存のXP・Poll・Giveaway・Event・Suggestion活動を読み取り、/achievements または /achievement sync 実行時に解除状態を同期します。',
     'Secret Achievementを有効にすると、解除するまで条件と名称を一覧から隠せます。',
   ],
+  'community-challenge': [
+    'Challenge進捗はActivity Rules適用後のCommunity Activity集計を利用するため、除外Channel・Role・Cooldown・VCルールがそのまま反映されます。',
+    'Minecraft活動データをまだ投入していないGuildでは「Minecraft Challengeを配布候補に含める」をOFFにしてください。',
+    'Dailyは毎日0:00 JST、Weeklyは月曜0:00 JSTに更新し、Seasonは4週間（28日）単位で進行します。',
+  ],
   'auto-response': [
     '最初は対象チャンネルを限定して、想定外の自動応答が起きないか確認してください。',
     'Cooldownを設定すると同じトリガーの連続反応を抑えられます。',

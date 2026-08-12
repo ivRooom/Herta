@@ -14,6 +14,7 @@ import { afkPlugin } from './afk.js';
 import { birthdayRolePlugin } from './birthday-role.js';
 import { channelPolicyPlugin } from './channel-policy.js';
 import { communityProfilePlugin } from './community-profile.js';
+import { communityChallengePlugin } from './community-challenge.js';
 import { eventRsvpPlugin } from './event-rsvp.js';
 import { giveawayPlugin } from './giveaway.js';
 import { onboardingPlugin } from './onboarding.js';
@@ -234,6 +235,7 @@ const officialPluginIds = [
   'birthday-role',
   'channel-policy',
   'community-profile',
+  'community-challenge',
   'daily-content',
   'event-rsvp',
   'giveaway',
@@ -333,6 +335,20 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             config,
             manifest: plugin.manifest,
           }) as Parameters<NonNullable<typeof communityProfilePlugin.onEnable>>[0],
+      )
+    : undefined;
+  const communityChallengeEntry = deps
+    ? toRuntimePluginEntry(
+        communityChallengePlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof communityChallengePlugin.onEnable>>[0],
       )
     : undefined;
   const dailyContentEntry = deps
@@ -540,6 +556,8 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (pluginId === 'birthday-role' && birthdayRoleEntry) return [birthdayRoleEntry];
     if (pluginId === 'channel-policy' && channelPolicyEntry) return [channelPolicyEntry];
     if (pluginId === 'community-profile' && communityProfileEntry) return [communityProfileEntry];
+    if (pluginId === 'community-challenge' && communityChallengeEntry)
+      return [communityChallengeEntry];
     if (pluginId === 'daily-content' && dailyContentEntry) return [dailyContentEntry];
     if (pluginId === 'event-rsvp' && eventRsvpEntry) return [eventRsvpEntry];
     if (pluginId === 'giveaway' && giveawayEntry) return [giveawayEntry];

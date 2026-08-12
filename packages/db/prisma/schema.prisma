@@ -337,6 +337,39 @@ model CommunityProfilePreference {
 }
 
 // ============================================================
+// Plugin: Community Challenge / Season
+// ============================================================
+
+model CommunityChallengeAssignment {
+  guildId      String   @map("guild_id")
+  periodType   String   @map("period_type") @db.VarChar(16)
+  periodKey    String   @map("period_key") @db.VarChar(32)
+  challengeIds String[] @map("challenge_ids")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@id([guildId, periodType, periodKey])
+  @@index([guildId, createdAt(sort: Desc)])
+  @@map("community_challenge_assignments")
+}
+
+model CommunityChallengeCompletion {
+  guildId     String   @map("guild_id")
+  userId      String   @map("user_id")
+  challengeId String   @map("challenge_id") @db.VarChar(96)
+  periodType  String   @map("period_type") @db.VarChar(16)
+  periodKey   String   @map("period_key") @db.VarChar(32)
+  seasonKey   String   @map("season_key") @db.VarChar(32)
+  points      Int
+  completedAt DateTime @default(now()) @map("completed_at") @db.Timestamptz(3)
+
+  @@id([guildId, userId, challengeId, periodType, periodKey])
+  @@index([guildId, userId, completedAt(sort: Desc)])
+  @@index([guildId, seasonKey, points(sort: Desc)])
+  @@index([guildId, periodType, periodKey])
+  @@map("community_challenge_completions")
+}
+
+// ============================================================
 // Plugin: Auto Response
 // ============================================================
 

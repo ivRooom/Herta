@@ -68,8 +68,8 @@ describe('Community Profile v2', () => {
     expect(output).toContain('Community Profile');
     expect(output).toContain('Level **7**');
     expect(output).toContain('XP Rank **#2**');
-    expect(output).toContain('**2/38** unlocked');
-    expect(output).toContain('**5%**');
+    expect(output).toContain('**2/43** unlocked');
+    expect(output).toContain('**4%**');
     expect(output).toContain('Title **All-Rounder**');
     expect(output).toContain('Common 1/');
     expect(output).toContain('Epic 1/');
