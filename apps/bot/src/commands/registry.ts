@@ -70,6 +70,13 @@ function toDiscordOption(option: CommandOption): DiscordCommandOption {
         type: ApplicationCommandOptionType.Role,
         required: option.required,
       } as DiscordCommandOption;
+    case 'attachment':
+      return {
+        name: option.name,
+        description: option.description,
+        type: ApplicationCommandOptionType.Attachment,
+        required: option.required,
+      } as DiscordCommandOption;
   }
 }
 
