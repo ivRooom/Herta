@@ -1,4 +1,4 @@
-name: Temporary Message Studio DB Null Final Fix
+name: Temporary Message Studio Final Review Polish
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  fix:
+  polish:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -22,22 +22,139 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Patch DB null execution
+      - name: Strengthen stale one-shot regression test
         run: |
-          python -c "from pathlib import Path; p=Path('plugins/daily-content/src/service.ts'); t=p.read_text(); old='  \u0024queryRawUnsafe(query: string, ...values: unknown[]): Promise<unknown>;'; new=old+'\n  \u0024executeRawUnsafe(query: string, ...values: unknown[]): Promise<number>;'; assert old in t; t=t.replace(old,new,1); old2=\"await tx.\u0024queryRawUnsafe(\\n        'UPDATE daily_contents SET embed_json = NULL WHERE id = \u00241',\\n        current.id,\\n      );\"; new2=\"await tx.\u0024executeRawUnsafe(\\n        'UPDATE daily_contents SET embed_json = NULL WHERE id = \u00241',\\n        current.id,\\n      );\"; assert old2 in t; p.write_text(t.replace(old2,new2,1))"
-          python -c "from pathlib import Path; p=Path('plugins/daily-content/src/service.test.ts'); t=p.read_text(); old='    \u0024queryRawUnsafe: async () => [],'; assert old in t; p.write_text(t.replace(old,old+'\n    \u0024executeRawUnsafe: async () => 1,',1))"
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('plugins/daily-content/src/service.test.ts')
+          text = path.read_text()
+          old = """  it('配信中にone-shot日時が編集された場合は新しい予約を無効化しない', async () => {
+    const originalAt = new Date('2030-01-01T00:10:00Z');
+    const editedAt = new Date('2030-01-02T00:10:00Z');
+    const harness = createHarness({
+      onceAt: editedAt,
+      lastScheduledAt: originalAt,
+      nextRunAt: editedAt,
+      enabled: true,
+    });
+
+    await markDeliverySent(harness.prisma, {
+      deliveryId: 'delivery-1',
+      scheduleId: 'schedule-1',
+      guildId: 'guild-1',
+      messageId: 'message-after-edit',
+      completeOneShot: true,
+      expectedOneShotAt: originalAt,
+    }).catch(() => undefined);
+
+    expect(harness.getSchedule().enabled).toBe(true);
+    expect(harness.getSchedule().onceAt).toEqual(editedAt);
+    expect(harness.getSchedule().nextRunAt).toEqual(editedAt);
+  });
+"""
+          new = """  it('配信中にone-shot日時が編集された場合は新しい予約を無効化しない', async () => {
+    const originalAt = new Date('2030-01-01T00:10:00Z');
+    const editedAt = new Date('2030-01-02T00:10:00Z');
+    const harness = createHarness({
+      onceAt: originalAt,
+      lastScheduledAt: null,
+      nextRunAt: originalAt,
+      enabled: true,
+    });
+
+    const reserved = await reserveDueDelivery(harness.prisma, 'schedule-1', originalAt);
+    expect(reserved?.status).toBe('pending');
+
+    await updateDailyContent(harness.prisma, {
+      guildId: 'guild-1',
+      scheduleId: 'schedule-1',
+      actorId: 'user-2',
+      config: normalizeDailyContentConfig({}),
+      patch: { onceAt: editedAt },
+      now: new Date('2029-12-31T00:00:00Z'),
+    });
+
+    await markDeliverySent(harness.prisma, {
+      deliveryId: reserved!.id,
+      scheduleId: 'schedule-1',
+      guildId: 'guild-1',
+      messageId: 'message-after-edit',
+      completeOneShot: true,
+      expectedOneShotAt: originalAt,
+    });
+
+    expect(harness.getDelivery()?.status).toBe('sent');
+    expect(harness.getSchedule().enabled).toBe(true);
+    expect(harness.getSchedule().onceAt).toEqual(editedAt);
+    expect(harness.getSchedule().nextRunAt).toEqual(editedAt);
+  });
+"""
+          if old not in text:
+              raise SystemExit('stale one-shot test pattern not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Format one-shot list using schedule timezone
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('apps/studio/src/components/daily-content-manager.tsx')
+          text = path.read_text()
+          old = """function formatScheduleItem(schedule: DailyContentScheduleItem): string {
+  if (schedule.recurrenceType === 'once')
+    return schedule.onceAt ? `1回 ${formatDate(schedule.onceAt)}` : '1回予約';
+"""
+          new = """function formatScheduleItem(schedule: DailyContentScheduleItem): string {
+  if (schedule.recurrenceType === 'once')
+    return schedule.onceAt
+      ? `1回 ${formatDate(schedule.onceAt, schedule.timezone)}`
+      : '1回予約';
+"""
+          if old not in text:
+              raise SystemExit('formatScheduleItem pattern not found')
+          text = text.replace(old, new, 1)
+          old2 = """function formatDate(value: string | null): string {
+  if (!value) return '未定';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '不明';
+  return new Intl.DateTimeFormat('ja-JP', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+"""
+          new2 = """function formatDate(value: string | null, timezone?: string): string {
+  if (!value) return '未定';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '不明';
+  return new Intl.DateTimeFormat('ja-JP', {
+    ...(timezone ? { timeZone: timezone } : {}),
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date);
+}
+"""
+          if old2 not in text:
+              raise SystemExit('formatDate pattern not found')
+          path.write_text(text.replace(old2, new2, 1))
+          PY
       - run: pnpm db:generate
-      - run: pnpm exec prettier --write plugins/daily-content/src/service.ts plugins/daily-content/src/service.test.ts
+      - run: pnpm exec prettier --write plugins/daily-content/src/service.test.ts apps/studio/src/components/daily-content-manager.tsx
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-      - name: Push fix
+      - name: Push polish
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add plugins/daily-content/src/service.ts plugins/daily-content/src/service.test.ts
-          git commit -m 'Message Studioのnullable JSON更新を安全化する'
+          git add plugins/daily-content/src/service.test.ts apps/studio/src/components/daily-content-manager.tsx
+          git commit -m 'Message Studioのone-shotテストとTimezone表示を強化する'
           git pull --rebase origin feat/message-studio-v2
           git push origin HEAD:feat/message-studio-v2
