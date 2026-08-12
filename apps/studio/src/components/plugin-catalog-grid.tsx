@@ -38,6 +38,14 @@ type BulkPluginResponse = {
     manifest?: { id?: string };
     enabled?: boolean;
   }>;
+  results?: Array<{
+    pluginId?: string;
+    enabled?: boolean;
+    success?: boolean;
+    error?: string;
+  }>;
+  successCount?: number;
+  failedCount?: number;
   error?: unknown;
 };
 
@@ -72,6 +80,7 @@ export function PluginCatalogGrid({
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [bulkSaving, setBulkSaving] = useState(false);
   const [bulkStatus, setBulkStatus] = useState('');
+  const [individualSaving, setIndividualSaving] = useState<Set<string>>(() => new Set());
 
   const categories = useMemo(() => {
     const unique = [...new Set(catalog.map((plugin) => plugin.category))].sort();
@@ -93,6 +102,7 @@ export function PluginCatalogGrid({
   }, [catalog, category, onlyEnabled, query]);
 
   const selectedCount = selected.size;
+  const individualSavingCount = individualSaving.size;
   const filteredIds = useMemo(() => filtered.map((plugin) => plugin.id), [filtered]);
   const allFilteredSelected =
     filteredIds.length > 0 && filteredIds.every((pluginId) => selected.has(pluginId));
@@ -101,6 +111,15 @@ export function PluginCatalogGrid({
     setCatalog((current) =>
       current.map((plugin) => (plugin.id === pluginId ? { ...plugin, enabled } : plugin)),
     );
+  }
+
+  function handleIndividualSavingChange(pluginId: string, saving: boolean) {
+    setIndividualSaving((current) => {
+      const next = new Set(current);
+      if (saving) next.add(pluginId);
+      else next.delete(pluginId);
+      return next;
+    });
   }
 
   function toggleSelected(pluginId: string) {
@@ -124,7 +143,7 @@ export function PluginCatalogGrid({
   }
 
   async function applyBulkEnabled(enabled: boolean) {
-    if (selected.size === 0 || bulkSaving) return;
+    if (selected.size === 0 || bulkSaving || individualSaving.size > 0) return;
 
     const pluginIds = [...selected];
     setBulkSaving(true);
@@ -157,14 +176,29 @@ export function PluginCatalogGrid({
           return nextEnabled === undefined ? plugin : { ...plugin, enabled: nextEnabled };
         }),
       );
-      setSelected(new Set());
-      setBulkStatus(`${pluginIds.length}件を${enabled ? '有効化' : '無効化'}しました`);
+
+      const failedIds = new Set(
+        (result.results ?? [])
+          .filter((item) => item.success === false && typeof item.pluginId === 'string')
+          .map((item) => item.pluginId as string),
+      );
+      setSelected(failedIds);
+
+      const failedCount = result.failedCount ?? failedIds.size;
+      const successCount = result.successCount ?? pluginIds.length - failedCount;
+      if (failedCount > 0) {
+        setBulkStatus(`${successCount}件成功、${failedCount}件失敗しました。失敗したPluginを選択状態で残しています`);
+      } else {
+        setBulkStatus(`${successCount}件を${enabled ? '有効化' : '無効化'}しました`);
+      }
     } catch (error) {
       setBulkStatus(error instanceof Error ? error.message : '一括更新に失敗しました');
     } finally {
       setBulkSaving(false);
     }
   }
+
+  const bulkBlocked = bulkSaving || individualSavingCount > 0;
 
   return (
     <div>
@@ -251,12 +285,17 @@ export function PluginCatalogGrid({
               </button>
             ) : null}
             <span className="text-xs text-muted">{selectedCount}件選択中</span>
+            {individualSavingCount > 0 ? (
+              <span className="inline-flex items-center gap-1 text-xs text-primary">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> 個別設定を保存中
+              </span>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              disabled={selectedCount === 0 || bulkSaving}
+              disabled={selectedCount === 0 || bulkBlocked}
               onClick={() => applyBulkEnabled(true)}
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -269,7 +308,7 @@ export function PluginCatalogGrid({
             </button>
             <button
               type="button"
-              disabled={selectedCount === 0 || bulkSaving}
+              disabled={selectedCount === 0 || bulkBlocked}
               onClick={() => applyBulkEnabled(false)}
               className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold transition-colors hover:border-red-400/40 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -370,6 +409,7 @@ export function PluginCatalogGrid({
                     disabled={bulkSaving}
                     ariaLabel={`${plugin.name}の有効状態を切り替え`}
                     onEnabledChange={(enabled) => handleEnabledChange(plugin.id, enabled)}
+                    onSavingChange={(saving) => handleIndividualSavingChange(plugin.id, saving)}
                   />
                 </div>
 
