@@ -152,21 +152,34 @@ describe('Message Studio one-shot delivery lifecycle', () => {
     const originalAt = new Date('2030-01-01T00:10:00Z');
     const editedAt = new Date('2030-01-02T00:10:00Z');
     const harness = createHarness({
-      onceAt: editedAt,
-      lastScheduledAt: originalAt,
-      nextRunAt: editedAt,
+      onceAt: originalAt,
+      lastScheduledAt: null,
+      nextRunAt: originalAt,
       enabled: true,
     });
 
+    const reserved = await reserveDueDelivery(harness.prisma, 'schedule-1', originalAt);
+    expect(reserved?.status).toBe('pending');
+
+    await updateDailyContent(harness.prisma, {
+      guildId: 'guild-1',
+      scheduleId: 'schedule-1',
+      actorId: 'user-2',
+      config: normalizeDailyContentConfig({}),
+      patch: { onceAt: editedAt },
+      now: new Date('2029-12-31T00:00:00Z'),
+    });
+
     await markDeliverySent(harness.prisma, {
-      deliveryId: 'delivery-1',
+      deliveryId: reserved!.id,
       scheduleId: 'schedule-1',
       guildId: 'guild-1',
       messageId: 'message-after-edit',
       completeOneShot: true,
       expectedOneShotAt: originalAt,
-    }).catch(() => undefined);
+    });
 
+    expect(harness.getDelivery()?.status).toBe('sent');
     expect(harness.getSchedule().enabled).toBe(true);
     expect(harness.getSchedule().onceAt).toEqual(editedAt);
     expect(harness.getSchedule().nextRunAt).toEqual(editedAt);
