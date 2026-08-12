@@ -46,7 +46,8 @@ export default async function AchievementTemplatesPage({
             <h1 className="text-2xl font-semibold tracking-tight">Achievement Template Gallery</h1>
           </div>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-            {guild.name} に用途別Achievement Packを追加します。Community、VC、Minecraft、Event、Season向けの実績をゼロから作らず導入できます。
+            {guild.name} に用途別Achievement
+            Packを追加します。Community、VC、Minecraft、Event、Season向けの実績をゼロから作らず導入できます。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -61,7 +62,8 @@ export default async function AchievementTemplatesPage({
 
       {!plugin.enabled ? (
         <div className="mt-6 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-700 dark:text-amber-300">
-          Achievements Pluginは現在無効です。Templateは追加できますが、Pluginを有効化するまでDiscord上の自動解除は実行されません。
+          Achievements
+          Pluginは現在無効です。Templateは追加できますが、Pluginを有効化するまでDiscord上の自動解除は実行されません。
         </div>
       ) : null}
 

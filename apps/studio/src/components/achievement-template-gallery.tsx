@@ -132,7 +132,8 @@ export function AchievementTemplateGallery({
               <h2 className="text-lg font-semibold">Achievement Content Packs</h2>
             </div>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-              用途別に調整済みのSeries / Stage / 条件をまとめて追加します。追加後はBuilderで名称、条件値、Role報酬、通知先を自由に変更できます。
+              用途別に調整済みのSeries / Stage /
+              条件をまとめて追加します。追加後はBuilderで名称、条件値、Role報酬、通知先を自由に変更できます。
             </p>
           </div>
           <div className="rounded-xl border border-border bg-background px-4 py-3 text-sm">
@@ -155,22 +156,30 @@ export function AchievementTemplateGallery({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Filter className="h-4 w-4 text-muted" />
-            {(['all', 'starter', 'community', 'voice', 'minecraft', 'events', 'season'] as CategoryFilter[]).map(
-              (item) => (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => setCategory(item)}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-                    category === item
-                      ? 'bg-primary text-primary-foreground'
-                      : 'border border-border bg-background text-muted hover:text-foreground'
-                  }`}
-                >
-                  {item === 'all' ? 'すべて' : CATEGORY_LABELS[item]}
-                </button>
-              ),
-            )}
+            {(
+              [
+                'all',
+                'starter',
+                'community',
+                'voice',
+                'minecraft',
+                'events',
+                'season',
+              ] as CategoryFilter[]
+            ).map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => setCategory(item)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                  category === item
+                    ? 'bg-primary text-primary-foreground'
+                    : 'border border-border bg-background text-muted hover:text-foreground'
+                }`}
+              >
+                {item === 'all' ? 'すべて' : CATEGORY_LABELS[item]}
+              </button>
+            ))}
           </div>
         </div>
       </section>
@@ -178,7 +187,9 @@ export function AchievementTemplateGallery({
       {status ? (
         <div
           className={`rounded-xl border px-4 py-3 text-sm ${
-            status.includes('失敗') || status.includes('超える') || status.includes('取得できません')
+            status.includes('失敗') ||
+            status.includes('超える') ||
+            status.includes('取得できません')
               ? 'border-destructive/30 bg-destructive/5 text-destructive'
               : 'border-primary/20 bg-primary/5 text-foreground'
           }`}
@@ -194,7 +205,9 @@ export function AchievementTemplateGallery({
             pack={pack}
             installing={installingId === pack.id}
             disabled={installingId !== null || currentSeriesCount + pack.series.length > 25}
-            previouslyInstalled={pack.series.every((item) => hasTemplateKey(installedKeys, item.key))}
+            previouslyInstalled={pack.series.every((item) =>
+              hasTemplateKey(installedKeys, item.key),
+            )}
             onInstall={() => install(pack)}
           />
         ))}
@@ -295,7 +308,8 @@ function TemplateCard({
             '追加中…'
           ) : (
             <>
-              <Plus className="h-4 w-4" /> {previouslyInstalled ? 'もう1セット追加' : 'このPackを追加'}
+              <Plus className="h-4 w-4" />{' '}
+              {previouslyInstalled ? 'もう1セット追加' : 'このPackを追加'}
             </>
           )}
         </button>
@@ -305,7 +319,9 @@ function TemplateCard({
 }
 
 function Badge({ children }: { children: React.ReactNode }) {
-  return <span className="rounded-lg border border-border bg-background px-2 py-1">{children}</span>;
+  return (
+    <span className="rounded-lg border border-border bg-background px-2 py-1">{children}</span>
+  );
 }
 
 function readKeys(series: unknown[]): string[] {
@@ -316,7 +332,9 @@ function readKeys(series: unknown[]): string[] {
 }
 
 function hasTemplateKey(keys: string[], base: string): boolean {
-  return keys.some((key) => key === base || new RegExp(`^${escapeRegExp(base)}-\\d+$`, 'u').test(key));
+  return keys.some(
+    (key) => key === base || new RegExp(`^${escapeRegExp(base)}-\\d+$`, 'u').test(key),
+  );
 }
 
 function escapeRegExp(value: string): string {
