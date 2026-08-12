@@ -29,6 +29,14 @@ import {
   type AchievementMetrics,
   type AchievementUnlockRecord,
 } from './achievements-repository.js';
+import {
+  customAchievementUnlockId,
+  findCustomAchievementStage,
+  normalizeCustomAchievementSeries,
+  unlockedCustomAchievementIds,
+  type CustomAchievementSeries,
+  type CustomAchievementStage,
+} from './custom-achievements.js';
 
 const EPHEMERAL_FLAG = 64;
 const DISCORD_ID_PATTERN = /^\d+$/;
@@ -51,6 +59,7 @@ export interface AchievementsConfig {
   unlockChannelId: string | null;
   mentionOnUnlock: boolean;
   notificationMinimumRarity: AchievementRarity;
+  customAchievements: CustomAchievementSeries[];
   showLocked: boolean;
   showProgress: boolean;
   showScore: boolean;
@@ -68,6 +77,7 @@ export interface AchievementListFilter {
 
 interface AchievementCommandInteraction {
   guildId: string | null;
+  guild?: AchievementGuild | null;
   user: { id: string };
   options: {
     getUser(name: string): { id: string } | null;
@@ -90,9 +100,14 @@ interface AchievementChannel {
   send(options: ReplyOptions): Promise<unknown>;
 }
 
+interface AchievementMember {
+  roles: { add(roleId: string): Promise<unknown> };
+}
+
 interface AchievementGuild {
   id: string;
   channels: { fetch(channelId: string): Promise<AchievementChannel | null> };
+  members?: { fetch(userId: string): Promise<AchievementMember | null> };
 }
 
 interface AchievementMessage {
@@ -129,6 +144,17 @@ interface AchievementVoiceState {
 interface AchievementNotificationTarget {
   guild: AchievementGuild | null;
   reply?: (options: ReplyOptions) => Promise<unknown>;
+}
+
+interface AchievementPresentation {
+  id: string;
+  emoji: string;
+  name: string;
+  rarity: AchievementRarity;
+  points: number;
+  secret: boolean;
+  notificationChannelId: string | null;
+  rewardRoleId: string | null;
 }
 
 type AchievementsRuntimeContext = PluginRuntimeContext<AchievementsConfig, unknown, PrismaClient>;
@@ -202,6 +228,7 @@ export function normalizeAchievementsConfig(value: unknown): AchievementsConfig 
     unlockChannelId: nullableDiscordId(source.unlockChannelId),
     mentionOnUnlock: source.mentionOnUnlock === true,
     notificationMinimumRarity: readRarity(source.notificationMinimumRarity) ?? 'common',
+    customAchievements: normalizeCustomAchievementSeries(source.customAchievements),
     showLocked: source.showLocked === undefined ? true : source.showLocked === true,
     showProgress: source.showProgress === undefined ? true : source.showProgress === true,
     showScore: source.showScore === undefined ? true : source.showScore === true,
@@ -219,6 +246,16 @@ export function unlockedAchievementIds(metrics: AchievementMetrics): string[] {
   );
 }
 
+export function unlockedAchievementIdsWithCustom(
+  metrics: AchievementMetrics,
+  config: AchievementsConfig,
+): string[] {
+  return [
+    ...unlockedAchievementIds(metrics),
+    ...unlockedCustomAchievementIds(config.customAchievements, metrics),
+  ];
+}
+
 export function formatAchievements(
   userId: string,
   metrics: AchievementMetrics,
@@ -229,44 +266,71 @@ export function formatAchievements(
   const unlocked = new Map(unlocks.map((record) => [record.achievementId, record.unlockedAt]));
   const knownUnlockedIds = unlocks
     .map((record) => record.achievementId)
-    .filter((id) => achievementById.has(id));
-  const visible = ACHIEVEMENTS.filter((achievement) => {
+    .filter((id) => isKnownAchievementId(id, config));
+  const staticLines = ACHIEVEMENTS.flatMap((achievement) => {
     const isUnlocked = unlocked.has(achievement.id);
-    if (filter.category && achievement.category !== filter.category) return false;
-    if (filter.rarity && achievement.rarity !== filter.rarity) return false;
-    if (filter.status === 'unlocked' && !isUnlocked) return false;
-    if (filter.status === 'locked' && isUnlocked) return false;
-    if (isUnlocked) return true;
-    if (!config.showLocked) return false;
-    return !(achievement.secret && config.hideSecretUntilUnlocked);
-  });
-  const lines = visible.map((achievement) => {
+    if (filter.category && achievement.category !== filter.category) return [];
+    if (filter.rarity && achievement.rarity !== filter.rarity) return [];
+    if (filter.status === 'unlocked' && !isUnlocked) return [];
+    if (filter.status === 'locked' && isUnlocked) return [];
+    if (!isUnlocked && !config.showLocked) return [];
+    if (!isUnlocked && achievement.secret && config.hideSecretUntilUnlocked) return [];
+
     const unlockedAt = unlocked.get(achievement.id);
     const rarity = config.showRarity ? ` · ${achievementRarityLabel(achievement.rarity)}` : '';
     const points = config.showScore ? ` · ${achievementPoints(achievement)}pt` : '';
     if (unlockedAt) {
-      return `${achievement.emoji} **${achievement.name}**${rarity}${points} · ✅ 解除済み`;
+      return [`${achievement.emoji} **${achievement.name}**${rarity}${points} · ✅ 解除済み`];
     }
     const progress = config.showProgress
       ? ` · ${formatAchievementProgress(achievement, metrics)}`
       : '';
-    return `🔒 **${achievement.name}**${rarity}${points}${progress}`;
+    return [`🔒 **${achievement.name}**${rarity}${points}${progress}`];
   });
-  const score = achievementScoreForIds(knownUnlockedIds);
+
+  const customLines = enabledCustomStages(config).flatMap(({ series, stage }) => {
+    const id = customAchievementUnlockId(series.key, stage.key);
+    const isUnlocked = unlocked.has(id);
+    if (filter.category && series.category !== filter.category) return [];
+    if (filter.rarity && stage.rarity !== filter.rarity) return [];
+    if (filter.status === 'unlocked' && !isUnlocked) return [];
+    if (filter.status === 'locked' && isUnlocked) return [];
+    if (!isUnlocked && !config.showLocked) return [];
+    if (!isUnlocked && stage.secret && config.hideSecretUntilUnlocked) return [];
+
+    const rarity = config.showRarity ? ` · ${achievementRarityLabel(stage.rarity)}` : '';
+    const points = config.showScore ? ` · ${stage.points.toLocaleString()}pt` : '';
+    const level = ` · ${series.name}`;
+    if (isUnlocked) return [`${stage.emoji} **${stage.name}**${level}${rarity}${points} · ✅ 解除済み`];
+    const progress = config.showProgress ? ` · ${formatCustomProgress(stage, metrics)}` : '';
+    return [`🔒 **${stage.name}**${level}${rarity}${points}${progress}`];
+  });
+
+  const total = ACHIEVEMENTS.length + enabledCustomStages(config).length;
+  const score = achievementScoreForIds(knownUnlockedIds.filter((id) => achievementById.has(id))) +
+    customAchievementScoreForIds(knownUnlockedIds, config);
   const scoreText = config.showScore ? ` · **${score.toLocaleString()}pt**` : '';
-  const header = `**🏅 <@${userId}> のAchievements — ${knownUnlockedIds.length}/${ACHIEVEMENTS.length} unlocked${scoreText}**`;
+  const header = `**🏅 <@${userId}> のAchievements — ${knownUnlockedIds.length}/${total} unlocked${scoreText}**`;
+  const lines = [...staticLines, ...customLines];
   if (lines.length === 0) return [[header, '条件に一致する実績はありません。'].join('\n')];
   return chunkLines(header, lines, config.pageSize);
 }
 
 export function formatAchievementLeaderboard(
   records: readonly AchievementLeaderboardRecord[],
+  config?: AchievementsConfig,
 ): string {
   if (records.length === 0)
     return '**🏆 Badge Leaderboard**\nまだAchievement解除データがありません。';
+  const total = ACHIEVEMENTS.length + (config ? enabledCustomStages(config).length : 0);
   const lines = records.map((record, index) => {
-    const score = achievementScoreForIds(record.achievementIds);
-    return `${index + 1}. <@${record.userId}> — **${record.unlockCount}/${ACHIEVEMENTS.length}** · **${score.toLocaleString()}pt**`;
+    const recognizedIds = config
+      ? record.achievementIds.filter((id) => isKnownAchievementId(id, config))
+      : record.achievementIds.filter((id) => achievementById.has(id));
+    const score =
+      achievementScoreForIds(recognizedIds.filter((id) => achievementById.has(id))) +
+      (config ? customAchievementScoreForIds(recognizedIds, config) : 0);
+    return `${index + 1}. <@${record.userId}> — **${recognizedIds.length}/${total}** · **${score.toLocaleString()}pt**`;
   });
   return ['**🏆 Badge Leaderboard · 解除数順**', ...lines].join('\n');
 }
@@ -280,12 +344,13 @@ async function loadAndSync(
   unlocks: AchievementUnlockRecord[];
   newlyUnlocked: string[];
 }> {
+  const config = normalizeAchievementsConfig(context.config);
   const metrics = await getAchievementMetrics(context.prisma, guildId, userId);
   const newlyUnlocked = await syncAchievementUnlocks(
     context.prisma,
     guildId,
     userId,
-    unlockedAchievementIds(metrics),
+    unlockedAchievementIdsWithCustom(metrics, config),
   );
   const unlocks = await listAchievementUnlocks(context.prisma, guildId, userId);
   return { metrics, unlocks, newlyUnlocked };
@@ -332,21 +397,25 @@ async function executeSync(
     interaction.guildId,
     interaction.user.id,
   );
+  const target: AchievementNotificationTarget = { guild: interaction.guild ?? null };
+  await applyCustomAchievementRewards(context, target, config, interaction.user.id, newlyUnlocked);
   const unlockedDefinitions = newlyUnlocked.flatMap((id) => {
-    const achievement = achievementById.get(id);
-    return achievement ? [achievement] : [];
+    const presentation = achievementPresentation(id, config);
+    return presentation ? [presentation] : [];
   });
+  const total = ACHIEVEMENTS.length + enabledCustomStages(config).length;
+  const unlockedCount = unlocks.filter((record) => isKnownAchievementId(record.achievementId, config)).length;
   const content =
     unlockedDefinitions.length > 0
       ? [
           `🏅 **${unlockedDefinitions.length}個のAchievementを新しく解除しました！**`,
           ...unlockedDefinitions.map(
             (achievement) =>
-              `• ${achievement.emoji} ${achievement.name} · ${achievementRarityLabel(achievement.rarity)} · ${achievementPoints(achievement)}pt`,
+              `• ${achievement.emoji} ${achievement.name} · ${achievementRarityLabel(achievement.rarity)} · ${achievement.points.toLocaleString()}pt`,
           ),
-          `現在 ${unlocks.filter((record) => achievementById.has(record.achievementId)).length}/${ACHIEVEMENTS.length}`,
+          `現在 ${unlockedCount}/${total}`,
         ].join('\n')
-      : `同期しました。新しい解除はありません。現在 ${unlocks.filter((record) => achievementById.has(record.achievementId)).length}/${ACHIEVEMENTS.length} です。`;
+      : `同期しました。新しい解除はありません。現在 ${unlockedCount}/${total} です。`;
   await interaction.reply({
     content,
     flags: config.ephemeralSync ? EPHEMERAL_FLAG : undefined,
@@ -363,28 +432,50 @@ async function executeInfo(
   const config = normalizeAchievementsConfig(context.config);
   if (!config.enabled) return reply(interaction, 'Achievements Pluginは現在無効です。');
   const id = interaction.options.getString('id', true)?.trim().toLowerCase() ?? '';
+  const userId = interaction.options.getUser('user')?.id ?? interaction.user.id;
+  const { metrics, unlocks } = await loadAndSync(context, interaction.guildId, userId);
+  const unlocked = unlocks.find((record) => record.achievementId === id);
   const achievement = achievementById.get(id);
-  if (!achievement)
+  if (achievement) {
+    if (achievement.secret && config.hideSecretUntilUnlocked && !unlocked) {
+      return reply(interaction, '🌌 **Secret Achievement**\n条件は解除するまで非公開です。');
+    }
+    await interaction.reply({
+      content: [
+        `${achievement.emoji} **${achievement.name}**`,
+        `ID: \`${achievement.id}\``,
+        `Category: **${achievementCategoryLabel(achievement.category)}**`,
+        `Rarity: **${achievementRarityLabel(achievement.rarity)}** · **${achievementPoints(achievement)}pt**`,
+        achievement.description,
+        unlocked
+          ? `Status: ✅ 解除済み · <t:${Math.floor(unlocked.unlockedAt.getTime() / 1000)}:R>`
+          : `Status: 🔒 未解除 · ${formatAchievementProgress(achievement, metrics)}`,
+      ].join('\n'),
+      allowedMentions: { parse: [] },
+    });
+    return;
+  }
+
+  const custom = findCustomAchievementStage(config.customAchievements, id);
+  if (!custom) {
     return reply(
       interaction,
       'そのAchievement IDは見つかりません。`/achievements`で一覧を確認してください。',
     );
-  const userId = interaction.options.getUser('user')?.id ?? interaction.user.id;
-  const { metrics, unlocks } = await loadAndSync(context, interaction.guildId, userId);
-  const unlocked = unlocks.find((record) => record.achievementId === id);
-  if (achievement.secret && config.hideSecretUntilUnlocked && !unlocked) {
+  }
+  if (custom.stage.secret && config.hideSecretUntilUnlocked && !unlocked) {
     return reply(interaction, '🌌 **Secret Achievement**\n条件は解除するまで非公開です。');
   }
   await interaction.reply({
     content: [
-      `${achievement.emoji} **${achievement.name}**`,
-      `ID: \`${achievement.id}\``,
-      `Category: **${achievementCategoryLabel(achievement.category)}**`,
-      `Rarity: **${achievementRarityLabel(achievement.rarity)}** · **${achievementPoints(achievement)}pt**`,
-      achievement.description,
+      `${custom.stage.emoji} **${custom.stage.name}** · ${custom.series.name}`,
+      `ID: \`${id}\``,
+      `Category: **${custom.series.category}**`,
+      `Rarity: **${achievementRarityLabel(custom.stage.rarity)}** · **${custom.stage.points.toLocaleString()}pt**`,
+      custom.stage.description || '説明は設定されていません。',
       unlocked
         ? `Status: ✅ 解除済み · <t:${Math.floor(unlocked.unlockedAt.getTime() / 1000)}:R>`
-        : `Status: 🔒 未解除 · ${formatAchievementProgress(achievement, metrics)}`,
+        : `Status: 🔒 未解除 · ${formatCustomProgress(custom.stage, metrics)}`,
     ].join('\n'),
     allowedMentions: { parse: [] },
   });
@@ -401,7 +492,7 @@ async function executeLeaderboard(
   const limit = clamp(interaction.options.getInteger('limit') ?? config.leaderboardSize, 5, 25);
   const records = await listAchievementLeaderboard(context.prisma, interaction.guildId, limit);
   await interaction.reply({
-    content: formatAchievementLeaderboard(records),
+    content: formatAchievementLeaderboard(records, config),
     allowedMentions: { parse: [] },
   });
 }
@@ -463,11 +554,50 @@ async function maybeAutoSync(
     context.prisma,
     guildId,
     userId,
-    unlockedAchievementIds(metrics),
+    unlockedAchievementIdsWithCustom(metrics, config),
   );
   rememberAutoSync(key, now);
-  if (newlyUnlocked.length > 0 && config.notifyUnlocks) {
+  if (newlyUnlocked.length === 0) return;
+  await applyCustomAchievementRewards(context, target, config, userId, newlyUnlocked);
+  if (config.notifyUnlocks) {
     await sendUnlockNotification(context, target, config, userId, newlyUnlocked);
+  }
+}
+
+async function applyCustomAchievementRewards(
+  context: AchievementsRuntimeContext,
+  target: AchievementNotificationTarget,
+  config: AchievementsConfig,
+  userId: string,
+  newlyUnlocked: readonly string[],
+): Promise<void> {
+  if (!target.guild?.members) return;
+  const roleIds = new Set(
+    newlyUnlocked.flatMap((id) => {
+      const custom = findCustomAchievementStage(config.customAchievements, id);
+      return custom?.stage.rewardRoleId ? [custom.stage.rewardRoleId] : [];
+    }),
+  );
+  if (roleIds.size === 0) return;
+
+  try {
+    const member = await target.guild.members.fetch(userId);
+    if (!member) return;
+    for (const roleId of roleIds) {
+      try {
+        await member.roles.add(roleId);
+      } catch (error) {
+        context.logger.warn(
+          { err: error, guildId: target.guild.id, userId, roleId },
+          'Custom Achievement報酬Roleの付与に失敗しました',
+        );
+      }
+    }
+  } catch (error) {
+    context.logger.warn(
+      { err: error, guildId: target.guild.id, userId },
+      'Custom Achievement報酬対象メンバーの取得に失敗しました',
+    );
   }
 }
 
@@ -478,9 +608,9 @@ async function sendUnlockNotification(
   userId: string,
   newlyUnlocked: readonly string[],
 ): Promise<void> {
-  const definitions = newlyUnlocked
+  const presentations = newlyUnlocked
     .flatMap((id) => {
-      const achievement = achievementById.get(id);
+      const achievement = achievementPresentation(id, config);
       return achievement ? [achievement] : [];
     })
     .filter(
@@ -488,52 +618,59 @@ async function sendUnlockNotification(
         ACHIEVEMENT_RARITY_ORDER[achievement.rarity] >=
         ACHIEVEMENT_RARITY_ORDER[config.notificationMinimumRarity],
     );
-  if (definitions.length === 0) return;
+  if (presentations.length === 0) return;
 
-  const points = definitions.reduce(
-    (total, achievement) => total + achievementPoints(achievement),
-    0,
-  );
-  const shown = definitions.slice(0, 10);
-  const content = [
-    `🏅 <@${userId}> が **${definitions.length}個のAchievementを解除！** · +${points.toLocaleString()}pt`,
-    ...shown.map(
-      (achievement) =>
-        `• ${achievement.emoji} **${achievement.name}** · ${achievementRarityLabel(achievement.rarity)}`,
-    ),
-    ...(definitions.length > shown.length ? [`• ほか ${definitions.length - shown.length}個`] : []),
-  ].join('\n');
-  const options: ReplyOptions = {
-    content,
-    allowedMentions: {
-      parse: [],
-      ...(config.mentionOnUnlock ? { users: [userId] } : {}),
-    },
-  };
-
-  if (config.unlockChannelId && target.guild) {
-    try {
-      const channel = await target.guild.channels.fetch(config.unlockChannelId);
-      if (channel?.isTextBased()) {
-        await channel.send(options);
-        return;
-      }
-    } catch (error) {
-      context.logger.warn(
-        { err: error, guildId: target.guild.id, channelId: config.unlockChannelId, userId },
-        'Achievement解除通知チャンネルへの送信に失敗しました',
-      );
-    }
+  const groups = new Map<string, AchievementPresentation[]>();
+  for (const achievement of presentations) {
+    const destination = achievement.notificationChannelId ?? config.unlockChannelId ?? '__reply__';
+    const list = groups.get(destination) ?? [];
+    list.push(achievement);
+    groups.set(destination, list);
   }
 
-  if (!target.reply) return;
-  try {
-    await target.reply(options);
-  } catch (error) {
-    context.logger.warn(
-      { err: error, guildId: target.guild?.id, userId },
-      'Achievement解除通知の送信に失敗しました',
-    );
+  for (const [destination, definitions] of groups) {
+    const points = definitions.reduce((total, achievement) => total + achievement.points, 0);
+    const shown = definitions.slice(0, 10);
+    const content = [
+      `🏅 <@${userId}> が **${definitions.length}個のAchievementを解除！** · +${points.toLocaleString()}pt`,
+      ...shown.map(
+        (achievement) =>
+          `• ${achievement.emoji} **${achievement.name}** · ${achievementRarityLabel(achievement.rarity)}`,
+      ),
+      ...(definitions.length > shown.length ? [`• ほか ${definitions.length - shown.length}個`] : []),
+    ].join('\n');
+    const options: ReplyOptions = {
+      content,
+      allowedMentions: {
+        parse: [],
+        ...(config.mentionOnUnlock ? { users: [userId] } : {}),
+      },
+    };
+
+    if (destination !== '__reply__' && target.guild) {
+      try {
+        const channel = await target.guild.channels.fetch(destination);
+        if (channel?.isTextBased()) {
+          await channel.send(options);
+          continue;
+        }
+      } catch (error) {
+        context.logger.warn(
+          { err: error, guildId: target.guild.id, channelId: destination, userId },
+          'Achievement解除通知チャンネルへの送信に失敗しました',
+        );
+      }
+    }
+
+    if (!target.reply) continue;
+    try {
+      await target.reply(options);
+    } catch (error) {
+      context.logger.warn(
+        { err: error, guildId: target.guild?.id, userId },
+        'Achievement解除通知の送信に失敗しました',
+      );
+    }
   }
 }
 
@@ -589,6 +726,72 @@ function formatAchievementProgress(
     return `${formatDuration(current)}/${formatDuration(achievement.target)}`;
   }
   return `${current.toLocaleString()}/${achievement.target.toLocaleString()}`;
+}
+
+function formatCustomProgress(stage: CustomAchievementStage, metrics: AchievementMetrics): string {
+  const completed = stage.conditions.filter(
+    (condition) => metrics[condition.metric] >= condition.target,
+  ).length;
+  if (stage.conditions.length > 1) {
+    return `${stage.conditionMode === 'any' ? 'ANY' : 'ALL'} ${completed}/${stage.conditions.length}`;
+  }
+  const condition = stage.conditions[0];
+  if (!condition) return '進捗なし';
+  const current = Math.min(metrics[condition.metric], condition.target);
+  if (condition.metric === 'voiceSeconds' || condition.metric === 'minecraftSeconds') {
+    return `${formatDuration(current)}/${formatDuration(condition.target)}`;
+  }
+  return `${current.toLocaleString()}/${condition.target.toLocaleString()}`;
+}
+
+function achievementPresentation(
+  id: string,
+  config: AchievementsConfig,
+): AchievementPresentation | undefined {
+  const builtIn = achievementById.get(id);
+  if (builtIn) {
+    return {
+      id,
+      emoji: builtIn.emoji,
+      name: builtIn.name,
+      rarity: builtIn.rarity,
+      points: achievementPoints(builtIn),
+      secret: builtIn.secret,
+      notificationChannelId: null,
+      rewardRoleId: null,
+    };
+  }
+  const custom = findCustomAchievementStage(config.customAchievements, id);
+  if (!custom || !custom.series.enabled) return undefined;
+  return {
+    id,
+    emoji: custom.stage.emoji,
+    name: `${custom.series.name} · ${custom.stage.name}`,
+    rarity: custom.stage.rarity,
+    points: custom.stage.points,
+    secret: custom.stage.secret,
+    notificationChannelId: custom.stage.notificationChannelId,
+    rewardRoleId: custom.stage.rewardRoleId,
+  };
+}
+
+function enabledCustomStages(
+  config: AchievementsConfig,
+): Array<{ series: CustomAchievementSeries; stage: CustomAchievementStage }> {
+  return config.customAchievements.flatMap((series) =>
+    series.enabled ? series.stages.map((stage) => ({ series, stage })) : [],
+  );
+}
+
+function isKnownAchievementId(id: string, config: AchievementsConfig): boolean {
+  return achievementById.has(id) || Boolean(findCustomAchievementStage(config.customAchievements, id));
+}
+
+function customAchievementScoreForIds(ids: readonly string[], config: AchievementsConfig): number {
+  return ids.reduce((total, id) => {
+    const custom = findCustomAchievementStage(config.customAchievements, id);
+    return total + (custom?.series.enabled ? custom.stage.points : 0);
+  }, 0);
 }
 
 function voiceActivityMayHaveClosed(
