@@ -55,7 +55,8 @@ export default async function AchievementsBuilderPage({
             <h1 className="text-2xl font-semibold tracking-tight">Achievement Builder</h1>
           </div>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-            {guild.name} 専用の段階AchievementをGUIで設計します。条件、Badge Point、Secret、解除通知、Role報酬までここで管理できます。
+            {guild.name} 専用の段階AchievementをGUIで設計します。条件、Badge
+            Point、Secret、解除通知、Role報酬までここで管理できます。
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -70,13 +71,15 @@ export default async function AchievementsBuilderPage({
 
       {!plugin.enabled ? (
         <div className="mt-6 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-700 dark:text-amber-300">
-          Achievements Pluginは現在無効です。Builderは編集できますが、Discord上の自動解除・通知は実行されません。
+          Achievements
+          Pluginは現在無効です。Builderは編集できますが、Discord上の自動解除・通知は実行されません。
         </div>
       ) : null}
 
       {!discordOptions ? (
         <div className="mt-6 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-700 dark:text-amber-300">
-          DiscordのChannel / Role候補を取得できませんでした。既存IDは保持されますが、Picker候補はBot接続が復旧するまで表示されません。
+          DiscordのChannel /
+          Role候補を取得できませんでした。既存IDは保持されますが、Picker候補はBot接続が復旧するまで表示されません。
         </div>
       ) : null}
 

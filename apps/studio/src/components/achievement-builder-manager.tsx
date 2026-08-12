@@ -96,7 +96,10 @@ export function AchievementBuilderManager({
   initialConfig: Record<string, unknown>;
   discordOptions: GuildConfigurationOptions | null;
 }) {
-  const initialSeries = useMemo(() => normalizeSeries(initialConfig.customAchievements), [initialConfig]);
+  const initialSeries = useMemo(
+    () => normalizeSeries(initialConfig.customAchievements),
+    [initialConfig],
+  );
   const [series, setSeries] = useState<AchievementSeries[]>(initialSeries);
   const [savedSeries, setSavedSeries] = useState<AchievementSeries[]>(initialSeries);
   const [selectedSeries, setSelectedSeries] = useState(0);
@@ -157,7 +160,10 @@ export function AchievementBuilderManager({
     if (series.length >= 25) return;
     const source = series[index];
     if (!source) return;
-    const suffix = nextCopySuffix(series.map((item) => item.key), source.key);
+    const suffix = nextCopySuffix(
+      series.map((item) => item.key),
+      source.key,
+    );
     const copy: AchievementSeries = {
       ...structuredClone(source),
       key: suffix,
@@ -191,7 +197,10 @@ export function AchievementBuilderManager({
     const source = current?.stages[stageIndex];
     if (!current || !source || current.stages.length >= 10) return;
     const copy = structuredClone(source);
-    copy.key = nextCopySuffix(current.stages.map((stage) => stage.key), source.key);
+    copy.key = nextCopySuffix(
+      current.stages.map((stage) => stage.key),
+      source.key,
+    );
     copy.name = `${source.name} Copy`;
     patchSeries(seriesIndex, { stages: [...current.stages, copy] });
     setSelectedStage(current.stages.length);
@@ -259,7 +268,8 @@ export function AchievementBuilderManager({
         cache: 'no-store',
       });
       const latest = (await latestResponse.json().catch(() => null)) as PluginResponse | null;
-      if (!latestResponse.ok || !latest?.config) throw new Error('最新のPlugin設定を取得できませんでした');
+      if (!latestResponse.ok || !latest?.config)
+        throw new Error('最新のPlugin設定を取得できませんでした');
 
       const response = await fetch(`/api/guilds/${guildId}/plugins/achievements`, {
         method: 'PATCH',
@@ -289,7 +299,8 @@ export function AchievementBuilderManager({
               <h2 className="text-lg font-semibold">Custom Achievement Builder</h2>
             </div>
             <p className="mt-1 text-sm leading-6 text-muted">
-              Series → Stage → 解除条件の順に組み立てます。保存時は最新のPlugin設定へCustom Achievementだけをマージします。
+              Series → Stage → 解除条件の順に組み立てます。保存時は最新のPlugin設定へCustom
+              Achievementだけをマージします。
             </p>
           </div>
           <div className="flex flex-wrap gap-2 text-xs text-muted">
@@ -350,9 +361,13 @@ export function AchievementBuilderManager({
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="truncate text-sm font-medium">{item.name || '名称未設定'}</span>
-                  <span className={`h-2 w-2 rounded-full ${item.enabled ? 'bg-emerald-400' : 'bg-muted'}`} />
+                  <span
+                    className={`h-2 w-2 rounded-full ${item.enabled ? 'bg-emerald-400' : 'bg-muted'}`}
+                  />
                 </div>
-                <p className="mt-1 truncate font-mono text-[11px] text-muted">{item.key || 'series-id'}</p>
+                <p className="mt-1 truncate font-mono text-[11px] text-muted">
+                  {item.key || 'series-id'}
+                </p>
                 <p className="mt-2 text-[11px] text-muted">{item.stages.length} stages</p>
               </button>
             ))}
@@ -366,37 +381,89 @@ export function AchievementBuilderManager({
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <h3 className="font-semibold">Series設定</h3>
-                    <p className="mt-1 text-xs text-muted">Series IDは解除履歴の名前空間になるため、運用開始後の変更は避けてください。</p>
+                    <p className="mt-1 text-xs text-muted">
+                      Series IDは解除履歴の名前空間になるため、運用開始後の変更は避けてください。
+                    </p>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    <IconButton label="上へ" onClick={() => moveSeries(selectedSeries, -1)} disabled={selectedSeries === 0} icon={<ArrowUp />} />
-                    <IconButton label="下へ" onClick={() => moveSeries(selectedSeries, 1)} disabled={selectedSeries === series.length - 1} icon={<ArrowDown />} />
-                    <IconButton label="複製" onClick={() => duplicateSeries(selectedSeries)} disabled={series.length >= 25} icon={<Copy />} />
-                    <IconButton label="削除" onClick={() => removeSeries(selectedSeries)} icon={<Trash2 />} destructive />
+                    <IconButton
+                      label="上へ"
+                      onClick={() => moveSeries(selectedSeries, -1)}
+                      disabled={selectedSeries === 0}
+                      icon={<ArrowUp />}
+                    />
+                    <IconButton
+                      label="下へ"
+                      onClick={() => moveSeries(selectedSeries, 1)}
+                      disabled={selectedSeries === series.length - 1}
+                      icon={<ArrowDown />}
+                    />
+                    <IconButton
+                      label="複製"
+                      onClick={() => duplicateSeries(selectedSeries)}
+                      disabled={series.length >= 25}
+                      icon={<Copy />}
+                    />
+                    <IconButton
+                      label="削除"
+                      onClick={() => removeSeries(selectedSeries)}
+                      icon={<Trash2 />}
+                      destructive
+                    />
                   </div>
                 </div>
 
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <Field label="Series名">
-                    <input value={activeSeries.name} onChange={(event) => patchSeries(selectedSeries, { name: event.target.value })} maxLength={80} className={inputClass} placeholder="Chat Master" />
+                    <input
+                      value={activeSeries.name}
+                      onChange={(event) =>
+                        patchSeries(selectedSeries, { name: event.target.value })
+                      }
+                      maxLength={80}
+                      className={inputClass}
+                      placeholder="Chat Master"
+                    />
                   </Field>
                   <Field label="Series ID">
-                    <input value={activeSeries.key} onChange={(event) => patchSeries(selectedSeries, { key: slug(event.target.value) })} maxLength={48} className={`${inputClass} font-mono`} placeholder="chat-master" />
+                    <input
+                      value={activeSeries.key}
+                      onChange={(event) =>
+                        patchSeries(selectedSeries, { key: slug(event.target.value) })
+                      }
+                      maxLength={48}
+                      className={`${inputClass} font-mono`}
+                      placeholder="chat-master"
+                    />
                   </Field>
                   <Field label="Category">
-                    <input value={activeSeries.category} onChange={(event) => patchSeries(selectedSeries, { category: event.target.value })} maxLength={40} className={inputClass} placeholder="activity" />
+                    <input
+                      value={activeSeries.category}
+                      onChange={(event) =>
+                        patchSeries(selectedSeries, { category: event.target.value })
+                      }
+                      maxLength={40}
+                      className={inputClass}
+                      placeholder="activity"
+                    />
                   </Field>
                   <Field label="状態">
                     <button
                       type="button"
                       role="switch"
                       aria-checked={activeSeries.enabled}
-                      onClick={() => patchSeries(selectedSeries, { enabled: !activeSeries.enabled })}
+                      onClick={() =>
+                        patchSeries(selectedSeries, { enabled: !activeSeries.enabled })
+                      }
                       className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-sm ${activeSeries.enabled ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-border bg-background'}`}
                     >
                       <span>{activeSeries.enabled ? '有効' : '無効'}</span>
-                      <span className={`h-5 w-9 rounded-full p-0.5 ${activeSeries.enabled ? 'bg-emerald-500' : 'bg-border'}`}>
-                        <span className={`block h-4 w-4 rounded-full bg-white transition-transform ${activeSeries.enabled ? 'translate-x-4' : ''}`} />
+                      <span
+                        className={`h-5 w-9 rounded-full p-0.5 ${activeSeries.enabled ? 'bg-emerald-500' : 'bg-border'}`}
+                      >
+                        <span
+                          className={`block h-4 w-4 rounded-full bg-white transition-transform ${activeSeries.enabled ? 'translate-x-4' : ''}`}
+                        />
                       </span>
                     </button>
                   </Field>
@@ -407,9 +474,16 @@ export function AchievementBuilderManager({
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h3 className="font-semibold">Stages / Levels</h3>
-                    <p className="mt-1 text-xs text-muted">Bronze → Silver → Goldのように最大10段階まで作成できます。</p>
+                    <p className="mt-1 text-xs text-muted">
+                      Bronze → Silver → Goldのように最大10段階まで作成できます。
+                    </p>
                   </div>
-                  <button type="button" onClick={() => addStage(selectedSeries)} disabled={activeSeries.stages.length >= 10} className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border px-3 py-2 text-sm font-medium hover:bg-background disabled:opacity-40">
+                  <button
+                    type="button"
+                    onClick={() => addStage(selectedSeries)}
+                    disabled={activeSeries.stages.length >= 10}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-border px-3 py-2 text-sm font-medium hover:bg-background disabled:opacity-40"
+                  >
                     <Plus className="h-4 w-4" /> Stage追加
                   </button>
                 </div>
@@ -424,9 +498,13 @@ export function AchievementBuilderManager({
                     >
                       <div className="flex items-center gap-2">
                         <span className="text-lg">{stage.emoji || '🏅'}</span>
-                        <span className="truncate text-sm font-medium">{stage.name || `Stage ${index + 1}`}</span>
+                        <span className="truncate text-sm font-medium">
+                          {stage.name || `Stage ${index + 1}`}
+                        </span>
                       </div>
-                      <p className="mt-1 text-[11px] capitalize text-muted">{stage.rarity} · {stage.points}pt</p>
+                      <p className="mt-1 text-[11px] capitalize text-muted">
+                        {stage.rarity} · {stage.points}pt
+                      </p>
                     </button>
                   ))}
                 </div>
@@ -436,42 +514,137 @@ export function AchievementBuilderManager({
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <p className="font-medium">Stage {selectedStage + 1}</p>
-                        <p className="mt-1 font-mono text-[11px] text-muted">custom:{activeSeries.key || 'series'}:{activeStage.key || 'stage'}</p>
+                        <p className="mt-1 font-mono text-[11px] text-muted">
+                          custom:{activeSeries.key || 'series'}:{activeStage.key || 'stage'}
+                        </p>
                       </div>
                       <div className="flex flex-wrap gap-1.5">
-                        <IconButton label="上へ" onClick={() => moveStage(selectedSeries, selectedStage, -1)} disabled={selectedStage === 0} icon={<ArrowUp />} />
-                        <IconButton label="下へ" onClick={() => moveStage(selectedSeries, selectedStage, 1)} disabled={selectedStage === activeSeries.stages.length - 1} icon={<ArrowDown />} />
-                        <IconButton label="複製" onClick={() => duplicateStage(selectedSeries, selectedStage)} disabled={activeSeries.stages.length >= 10} icon={<Copy />} />
-                        <IconButton label="削除" onClick={() => removeStage(selectedSeries, selectedStage)} disabled={activeSeries.stages.length <= 1} icon={<Trash2 />} destructive />
+                        <IconButton
+                          label="上へ"
+                          onClick={() => moveStage(selectedSeries, selectedStage, -1)}
+                          disabled={selectedStage === 0}
+                          icon={<ArrowUp />}
+                        />
+                        <IconButton
+                          label="下へ"
+                          onClick={() => moveStage(selectedSeries, selectedStage, 1)}
+                          disabled={selectedStage === activeSeries.stages.length - 1}
+                          icon={<ArrowDown />}
+                        />
+                        <IconButton
+                          label="複製"
+                          onClick={() => duplicateStage(selectedSeries, selectedStage)}
+                          disabled={activeSeries.stages.length >= 10}
+                          icon={<Copy />}
+                        />
+                        <IconButton
+                          label="削除"
+                          onClick={() => removeStage(selectedSeries, selectedStage)}
+                          disabled={activeSeries.stages.length <= 1}
+                          icon={<Trash2 />}
+                          destructive
+                        />
                       </div>
                     </div>
 
                     <div className="mt-5 grid gap-4 md:grid-cols-2">
                       <Field label="Stage名">
-                        <input value={activeStage.name} onChange={(event) => patchStage(selectedSeries, selectedStage, { name: event.target.value })} maxLength={80} className={inputClass} placeholder="Bronze" />
+                        <input
+                          value={activeStage.name}
+                          onChange={(event) =>
+                            patchStage(selectedSeries, selectedStage, { name: event.target.value })
+                          }
+                          maxLength={80}
+                          className={inputClass}
+                          placeholder="Bronze"
+                        />
                       </Field>
                       <Field label="Stage ID">
-                        <input value={activeStage.key} onChange={(event) => patchStage(selectedSeries, selectedStage, { key: slug(event.target.value) })} maxLength={48} className={`${inputClass} font-mono`} placeholder="bronze" />
+                        <input
+                          value={activeStage.key}
+                          onChange={(event) =>
+                            patchStage(selectedSeries, selectedStage, {
+                              key: slug(event.target.value),
+                            })
+                          }
+                          maxLength={48}
+                          className={`${inputClass} font-mono`}
+                          placeholder="bronze"
+                        />
                       </Field>
                       <Field label="Badge / Emoji">
-                        <input value={activeStage.emoji} onChange={(event) => patchStage(selectedSeries, selectedStage, { emoji: event.target.value })} maxLength={32} className={inputClass} placeholder="🏅" />
+                        <input
+                          value={activeStage.emoji}
+                          onChange={(event) =>
+                            patchStage(selectedSeries, selectedStage, { emoji: event.target.value })
+                          }
+                          maxLength={32}
+                          className={inputClass}
+                          placeholder="🏅"
+                        />
                       </Field>
                       <Field label="Rarity">
-                        <select value={activeStage.rarity} onChange={(event) => patchStage(selectedSeries, selectedStage, { rarity: event.target.value as Rarity })} className={inputClass}>
-                          {RARITIES.map((rarity) => <option key={rarity.value} value={rarity.value}>{rarity.label}</option>)}
+                        <select
+                          value={activeStage.rarity}
+                          onChange={(event) =>
+                            patchStage(selectedSeries, selectedStage, {
+                              rarity: event.target.value as Rarity,
+                            })
+                          }
+                          className={inputClass}
+                        >
+                          {RARITIES.map((rarity) => (
+                            <option key={rarity.value} value={rarity.value}>
+                              {rarity.label}
+                            </option>
+                          ))}
                         </select>
                       </Field>
                       <Field label="Badge Point">
-                        <input type="number" value={activeStage.points} min={0} max={100000} onChange={(event) => patchStage(selectedSeries, selectedStage, { points: numberValue(event.target.value, 0) })} className={inputClass} />
+                        <input
+                          type="number"
+                          value={activeStage.points}
+                          min={0}
+                          max={100000}
+                          onChange={(event) =>
+                            patchStage(selectedSeries, selectedStage, {
+                              points: numberValue(event.target.value, 0),
+                            })
+                          }
+                          className={inputClass}
+                        />
                       </Field>
                       <Field label="Secret">
-                        <button type="button" onClick={() => patchStage(selectedSeries, selectedStage, { secret: !activeStage.secret })} className="flex w-full items-center justify-between rounded-xl border border-border bg-surface px-3 py-2 text-sm">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            patchStage(selectedSeries, selectedStage, {
+                              secret: !activeStage.secret,
+                            })
+                          }
+                          className="flex w-full items-center justify-between rounded-xl border border-border bg-surface px-3 py-2 text-sm"
+                        >
                           <span>{activeStage.secret ? '解除まで非公開' : '公開'}</span>
-                          {activeStage.secret ? <EyeOff className="h-4 w-4 text-primary" /> : <Eye className="h-4 w-4 text-muted" />}
+                          {activeStage.secret ? (
+                            <EyeOff className="h-4 w-4 text-primary" />
+                          ) : (
+                            <Eye className="h-4 w-4 text-muted" />
+                          )}
                         </button>
                       </Field>
                       <Field label="説明" wide>
-                        <textarea value={activeStage.description} onChange={(event) => patchStage(selectedSeries, selectedStage, { description: event.target.value })} maxLength={240} rows={3} className={inputClass} placeholder="このStageの達成内容を説明" />
+                        <textarea
+                          value={activeStage.description}
+                          onChange={(event) =>
+                            patchStage(selectedSeries, selectedStage, {
+                              description: event.target.value,
+                            })
+                          }
+                          maxLength={240}
+                          rows={3}
+                          className={inputClass}
+                          placeholder="このStageの達成内容を説明"
+                        />
                       </Field>
                     </div>
 
@@ -479,14 +652,29 @@ export function AchievementBuilderManager({
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="text-sm font-semibold">解除条件</p>
-                          <p className="mt-1 text-xs text-muted">ALLはすべて、ANYはいずれか1つを満たすと解除します。</p>
+                          <p className="mt-1 text-xs text-muted">
+                            ALLはすべて、ANYはいずれか1つを満たすと解除します。
+                          </p>
                         </div>
                         <div className="flex gap-2">
-                          <select value={activeStage.conditionMode} onChange={(event) => patchStage(selectedSeries, selectedStage, { conditionMode: event.target.value as ConditionMode })} className="rounded-lg border border-border bg-surface px-3 py-2 text-xs font-semibold">
+                          <select
+                            value={activeStage.conditionMode}
+                            onChange={(event) =>
+                              patchStage(selectedSeries, selectedStage, {
+                                conditionMode: event.target.value as ConditionMode,
+                              })
+                            }
+                            className="rounded-lg border border-border bg-surface px-3 py-2 text-xs font-semibold"
+                          >
                             <option value="all">ALL</option>
                             <option value="any">ANY</option>
                           </select>
-                          <button type="button" onClick={addCondition} disabled={activeStage.conditions.length >= 8} className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium disabled:opacity-40">
+                          <button
+                            type="button"
+                            onClick={addCondition}
+                            disabled={activeStage.conditions.length >= 8}
+                            className="inline-flex items-center gap-1 rounded-lg border border-border bg-surface px-3 py-2 text-xs font-medium disabled:opacity-40"
+                          >
                             <Plus className="h-3.5 w-3.5" /> 条件追加
                           </button>
                         </div>
@@ -495,15 +683,46 @@ export function AchievementBuilderManager({
                         {activeStage.conditions.map((condition, index) => {
                           const metric = METRICS.find((item) => item.value === condition.metric);
                           return (
-                            <div key={`${condition.metric}-${index}`} className="grid gap-2 rounded-xl border border-border bg-surface p-3 sm:grid-cols-[minmax(0,1fr)_150px_auto] sm:items-center">
-                              <select value={condition.metric} onChange={(event) => patchCondition(index, { metric: event.target.value as Metric })} className={inputClass}>
-                                {METRICS.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                            <div
+                              key={`${condition.metric}-${index}`}
+                              className="grid gap-2 rounded-xl border border-border bg-surface p-3 sm:grid-cols-[minmax(0,1fr)_150px_auto] sm:items-center"
+                            >
+                              <select
+                                value={condition.metric}
+                                onChange={(event) =>
+                                  patchCondition(index, { metric: event.target.value as Metric })
+                                }
+                                className={inputClass}
+                              >
+                                {METRICS.map((item) => (
+                                  <option key={item.value} value={item.value}>
+                                    {item.label}
+                                  </option>
+                                ))}
                               </select>
                               <div className="relative">
-                                <input type="number" min={1} value={condition.target} onChange={(event) => patchCondition(index, { target: numberValue(event.target.value, 1) })} className={`${inputClass} pr-11`} />
-                                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-muted">{metric?.unit}</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  value={condition.target}
+                                  onChange={(event) =>
+                                    patchCondition(index, {
+                                      target: numberValue(event.target.value, 1),
+                                    })
+                                  }
+                                  className={`${inputClass} pr-11`}
+                                />
+                                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-muted">
+                                  {metric?.unit}
+                                </span>
                               </div>
-                              <button type="button" onClick={() => removeCondition(index)} disabled={activeStage.conditions.length <= 1} className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border text-muted hover:text-destructive disabled:opacity-30" aria-label={`条件${index + 1}を削除`}>
+                              <button
+                                type="button"
+                                onClick={() => removeCondition(index)}
+                                disabled={activeStage.conditions.length <= 1}
+                                className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border text-muted hover:text-destructive disabled:opacity-30"
+                                aria-label={`条件${index + 1}を削除`}
+                              >
                                 <Trash2 className="h-4 w-4" />
                               </button>
                             </div>
@@ -517,7 +736,11 @@ export function AchievementBuilderManager({
                         <DiscordRolePicker
                           options={discordOptions?.roles ?? []}
                           value={activeStage.rewardRoleId}
-                          onChange={(value) => patchStage(selectedSeries, selectedStage, { rewardRoleId: typeof value === 'string' ? value : null })}
+                          onChange={(value) =>
+                            patchStage(selectedSeries, selectedStage, {
+                              rewardRoleId: typeof value === 'string' ? value : null,
+                            })
+                          }
                           editableOnly
                           placeholder="Roleを選択（任意）"
                         />
@@ -526,7 +749,11 @@ export function AchievementBuilderManager({
                         <DiscordChannelPicker
                           options={discordOptions?.channels ?? []}
                           value={activeStage.notificationChannelId}
-                          onChange={(value) => patchStage(selectedSeries, selectedStage, { notificationChannelId: typeof value === 'string' ? value : null })}
+                          onChange={(value) =>
+                            patchStage(selectedSeries, selectedStage, {
+                              notificationChannelId: typeof value === 'string' ? value : null,
+                            })
+                          }
                           placeholder="未設定なら共通通知先を使用"
                         />
                       </Field>
@@ -540,7 +767,11 @@ export function AchievementBuilderManager({
               <Trophy className="mx-auto h-8 w-8 text-muted" />
               <h3 className="mt-3 font-semibold">Custom Achievementを作成しましょう</h3>
               <p className="mt-1 text-sm text-muted">Seriesを追加すると編集画面が表示されます。</p>
-              <button type="button" onClick={addSeries} className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+              <button
+                type="button"
+                onClick={addSeries}
+                className="mt-4 inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+              >
                 <Plus className="h-4 w-4" /> 最初のSeriesを追加
               </button>
             </section>
@@ -555,27 +786,46 @@ export function AchievementBuilderManager({
           {activeSeries && activeStage ? (
             <div className="mt-4 rounded-xl border border-border bg-background p-4">
               <div className="flex items-start gap-3">
-                <div className="text-2xl">{activeStage.secret ? '🌌' : activeStage.emoji || '🏅'}</div>
+                <div className="text-2xl">
+                  {activeStage.secret ? '🌌' : activeStage.emoji || '🏅'}
+                </div>
                 <div className="min-w-0">
-                  <p className="font-semibold">{activeStage.secret ? 'Secret Achievement' : activeStage.name || 'Stage名'}</p>
-                  <p className="mt-0.5 text-xs text-muted">{activeSeries.name || 'Series'} · {rarityLabel(activeStage.rarity)} · {activeStage.points.toLocaleString()}pt</p>
+                  <p className="font-semibold">
+                    {activeStage.secret ? 'Secret Achievement' : activeStage.name || 'Stage名'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted">
+                    {activeSeries.name || 'Series'} · {rarityLabel(activeStage.rarity)} ·{' '}
+                    {activeStage.points.toLocaleString()}pt
+                  </p>
                 </div>
               </div>
-              <p className="mt-3 text-sm leading-6 text-muted">{activeStage.secret ? '条件は解除するまで非公開です。' : activeStage.description || '説明は設定されていません。'}</p>
+              <p className="mt-3 text-sm leading-6 text-muted">
+                {activeStage.secret
+                  ? '条件は解除するまで非公開です。'
+                  : activeStage.description || '説明は設定されていません。'}
+              </p>
               {!activeStage.secret ? (
                 <div className="mt-3 rounded-lg border border-border bg-surface p-3">
-                  <p className="text-[11px] font-semibold text-muted">UNLOCK CONDITION · {activeStage.conditionMode.toUpperCase()}</p>
+                  <p className="text-[11px] font-semibold text-muted">
+                    UNLOCK CONDITION · {activeStage.conditionMode.toUpperCase()}
+                  </p>
                   <div className="mt-2 space-y-1.5">
                     {activeStage.conditions.map((condition, index) => (
-                      <p key={`${condition.metric}-${index}`} className="text-xs">{conditionLabel(condition)}</p>
+                      <p key={`${condition.metric}-${index}`} className="text-xs">
+                        {conditionLabel(condition)}
+                      </p>
                     ))}
                   </div>
                 </div>
               ) : null}
-              <p className="mt-3 break-all font-mono text-[10px] text-muted">custom:{activeSeries.key || 'series'}:{activeStage.key || 'stage'}</p>
+              <p className="mt-3 break-all font-mono text-[10px] text-muted">
+                custom:{activeSeries.key || 'series'}:{activeStage.key || 'stage'}
+              </p>
             </div>
           ) : (
-            <p className="mt-4 text-xs leading-5 text-muted">Stageを選択するとBadge表示と解除条件を確認できます。</p>
+            <p className="mt-4 text-xs leading-5 text-muted">
+              Stageを選択するとBadge表示と解除条件を確認できます。
+            </p>
           )}
 
           <div className="mt-5 border-t border-border pt-4">
@@ -593,12 +843,30 @@ export function AchievementBuilderManager({
       <div className="sticky bottom-4 z-20 rounded-2xl border border-border bg-surface/95 p-3 shadow-card backdrop-blur">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
-            <p className={`truncate text-sm ${status.includes('失敗') || status.includes('エラー') ? 'text-destructive' : 'text-muted'}`}>{status || (dirty ? '未保存の変更があります' : '保存済み')}</p>
-            <p className="mt-0.5 text-[11px] text-muted">{validation.length > 0 ? `${validation.length}件の入力エラー` : '保存可能'}</p>
+            <p
+              className={`truncate text-sm ${status.includes('失敗') || status.includes('エラー') ? 'text-destructive' : 'text-muted'}`}
+            >
+              {status || (dirty ? '未保存の変更があります' : '保存済み')}
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted">
+              {validation.length > 0 ? `${validation.length}件の入力エラー` : '保存可能'}
+            </p>
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={reset} disabled={!dirty || saving} className="rounded-xl border border-border px-4 py-2 text-sm font-medium hover:bg-background disabled:opacity-40">変更を破棄</button>
-            <button type="button" onClick={save} disabled={!dirty || saving || validation.length > 0} className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-40">
+            <button
+              type="button"
+              onClick={reset}
+              disabled={!dirty || saving}
+              className="rounded-xl border border-border px-4 py-2 text-sm font-medium hover:bg-background disabled:opacity-40"
+            >
+              変更を破棄
+            </button>
+            <button
+              type="button"
+              onClick={save}
+              disabled={!dirty || saving || validation.length > 0}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-40"
+            >
               <Save className="h-4 w-4" /> {saving ? '保存中…' : 'Builderを保存'}
             </button>
           </div>
@@ -611,7 +879,15 @@ export function AchievementBuilderManager({
 const inputClass =
   'w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm outline-none transition focus:border-primary/60 focus:ring-2 focus:ring-ring';
 
-function Field({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
+function Field({
+  label,
+  children,
+  wide = false,
+}: {
+  label: string;
+  children: React.ReactNode;
+  wide?: boolean;
+}) {
   return (
     <label className={wide ? 'md:col-span-2' : undefined}>
       <span className="mb-1.5 block text-xs font-medium text-muted">{label}</span>
@@ -628,16 +904,41 @@ function Stat({ value, label }: { value: string; label: string }) {
   );
 }
 
-function IconButton({ label, onClick, icon, disabled = false, destructive = false }: { label: string; onClick: () => void; icon: React.ReactElement<{ className?: string }>; disabled?: boolean; destructive?: boolean }) {
+function IconButton({
+  label,
+  onClick,
+  icon,
+  disabled = false,
+  destructive = false,
+}: {
+  label: string;
+  onClick: () => void;
+  icon: React.ReactElement<{ className?: string }>;
+  disabled?: boolean;
+  destructive?: boolean;
+}) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled} title={label} aria-label={label} className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border transition disabled:opacity-30 ${destructive ? 'text-muted hover:border-destructive/40 hover:text-destructive' : 'text-muted hover:bg-background hover:text-foreground'}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      aria-label={label}
+      className={`inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border transition disabled:opacity-30 ${destructive ? 'text-muted hover:border-destructive/40 hover:text-destructive' : 'text-muted hover:bg-background hover:text-foreground'}`}
+    >
       {icon.type ? <icon.type {...icon.props} className="h-4 w-4" /> : icon}
     </button>
   );
 }
 
 function createSeries(key: string, name: string): AchievementSeries {
-  return { key, name, category: 'custom', enabled: true, stages: [createStage('bronze', 'Bronze')] };
+  return {
+    key,
+    name,
+    category: 'custom',
+    enabled: true,
+    stages: [createStage('bronze', 'Bronze')],
+  };
 }
 
 function createStage(key: string, name: string): AchievementStage {
@@ -668,27 +969,31 @@ function normalizeSeries(value: unknown): AchievementSeries[] {
         if (!isRecord(rawCondition) || !isMetric(rawCondition.metric)) return [];
         return [{ metric: rawCondition.metric, target: positiveInt(rawCondition.target, 1) }];
       });
-      return [{
-        key: text(rawStage.key, `stage-${stageIndex + 1}`),
-        name: text(rawStage.name, `Stage ${stageIndex + 1}`),
-        description: text(rawStage.description, ''),
-        emoji: text(rawStage.emoji, '🏅'),
-        rarity: isRarity(rawStage.rarity) ? rawStage.rarity : 'common',
-        points: boundedInt(rawStage.points, 100, 0, 100000),
-        secret: rawStage.secret === true,
-        conditionMode: rawStage.conditionMode === 'any' ? 'any' : 'all',
-        conditions: conditions.length > 0 ? conditions : [{ metric: 'messages', target: 100 }],
-        rewardRoleId: discordId(rawStage.rewardRoleId),
-        notificationChannelId: discordId(rawStage.notificationChannelId),
-      } satisfies AchievementStage];
+      return [
+        {
+          key: text(rawStage.key, `stage-${stageIndex + 1}`),
+          name: text(rawStage.name, `Stage ${stageIndex + 1}`),
+          description: text(rawStage.description, ''),
+          emoji: text(rawStage.emoji, '🏅'),
+          rarity: isRarity(rawStage.rarity) ? rawStage.rarity : 'common',
+          points: boundedInt(rawStage.points, 100, 0, 100000),
+          secret: rawStage.secret === true,
+          conditionMode: rawStage.conditionMode === 'any' ? 'any' : 'all',
+          conditions: conditions.length > 0 ? conditions : [{ metric: 'messages', target: 100 }],
+          rewardRoleId: discordId(rawStage.rewardRoleId),
+          notificationChannelId: discordId(rawStage.notificationChannelId),
+        } satisfies AchievementStage,
+      ];
     });
-    return [{
-      key: text(rawSeries.key, `achievement-${seriesIndex + 1}`),
-      name: text(rawSeries.name, `Achievement ${seriesIndex + 1}`),
-      category: text(rawSeries.category, 'custom'),
-      enabled: rawSeries.enabled !== false,
-      stages: stages.length > 0 ? stages : [createStage('bronze', 'Bronze')],
-    } satisfies AchievementSeries];
+    return [
+      {
+        key: text(rawSeries.key, `achievement-${seriesIndex + 1}`),
+        name: text(rawSeries.name, `Achievement ${seriesIndex + 1}`),
+        category: text(rawSeries.category, 'custom'),
+        enabled: rawSeries.enabled !== false,
+        stages: stages.length > 0 ? stages : [createStage('bronze', 'Bronze')],
+      } satisfies AchievementSeries,
+    ];
   });
 }
 
@@ -698,25 +1003,42 @@ function validateSeries(series: AchievementSeries[]): string[] {
   const seriesKeys = new Set<string>();
   for (const [seriesIndex, item] of series.entries()) {
     const prefix = `Series ${seriesIndex + 1}`;
-    if (!/^[a-z0-9][a-z0-9-]{0,47}$/u.test(item.key)) issues.push(`${prefix}: Series IDは小文字英数字とハイフン、48文字以内で入力してください`);
-    if (seriesKeys.has(item.key)) issues.push(`${prefix}: Series ID「${item.key}」が重複しています`);
+    if (!/^[a-z0-9][a-z0-9-]{0,47}$/u.test(item.key))
+      issues.push(`${prefix}: Series IDは小文字英数字とハイフン、48文字以内で入力してください`);
+    if (seriesKeys.has(item.key))
+      issues.push(`${prefix}: Series ID「${item.key}」が重複しています`);
     seriesKeys.add(item.key);
-    if (!item.name.trim() || item.name.length > 80) issues.push(`${prefix}: Series名は1〜80文字で入力してください`);
-    if (!item.category.trim() || item.category.length > 40) issues.push(`${prefix}: Categoryは1〜40文字で入力してください`);
-    if (item.stages.length < 1 || item.stages.length > 10) issues.push(`${prefix}: Stageは1〜10件必要です`);
+    if (!item.name.trim() || item.name.length > 80)
+      issues.push(`${prefix}: Series名は1〜80文字で入力してください`);
+    if (!item.category.trim() || item.category.length > 40)
+      issues.push(`${prefix}: Categoryは1〜40文字で入力してください`);
+    if (item.stages.length < 1 || item.stages.length > 10)
+      issues.push(`${prefix}: Stageは1〜10件必要です`);
     const stageKeys = new Set<string>();
     for (const [stageIndex, stage] of item.stages.entries()) {
       const stagePrefix = `${prefix} / Stage ${stageIndex + 1}`;
-      if (!/^[a-z0-9][a-z0-9-]{0,47}$/u.test(stage.key)) issues.push(`${stagePrefix}: Stage IDは小文字英数字とハイフン、48文字以内で入力してください`);
-      if (stageKeys.has(stage.key)) issues.push(`${stagePrefix}: Stage ID「${stage.key}」が重複しています`);
+      if (!/^[a-z0-9][a-z0-9-]{0,47}$/u.test(stage.key))
+        issues.push(
+          `${stagePrefix}: Stage IDは小文字英数字とハイフン、48文字以内で入力してください`,
+        );
+      if (stageKeys.has(stage.key))
+        issues.push(`${stagePrefix}: Stage ID「${stage.key}」が重複しています`);
       stageKeys.add(stage.key);
-      if (!stage.name.trim() || stage.name.length > 80) issues.push(`${stagePrefix}: Stage名は1〜80文字で入力してください`);
+      if (!stage.name.trim() || stage.name.length > 80)
+        issues.push(`${stagePrefix}: Stage名は1〜80文字で入力してください`);
       if (stage.description.length > 240) issues.push(`${stagePrefix}: 説明は240文字以内です`);
       if (stage.emoji.length > 32) issues.push(`${stagePrefix}: Badge / Emojiは32文字以内です`);
-      if (!Number.isSafeInteger(stage.points) || stage.points < 0 || stage.points > 100000) issues.push(`${stagePrefix}: Badge Pointは0〜100000の整数です`);
-      if (stage.conditions.length < 1 || stage.conditions.length > 8) issues.push(`${stagePrefix}: 解除条件は1〜8件必要です`);
+      if (!Number.isSafeInteger(stage.points) || stage.points < 0 || stage.points > 100000)
+        issues.push(`${stagePrefix}: Badge Pointは0〜100000の整数です`);
+      if (stage.conditions.length < 1 || stage.conditions.length > 8)
+        issues.push(`${stagePrefix}: 解除条件は1〜8件必要です`);
       for (const [conditionIndex, condition] of stage.conditions.entries()) {
-        if (!Number.isSafeInteger(condition.target) || condition.target < 1 || condition.target > 2147483647) issues.push(`${stagePrefix} / 条件${conditionIndex + 1}: 達成値は1以上の整数です`);
+        if (
+          !Number.isSafeInteger(condition.target) ||
+          condition.target < 1 ||
+          condition.target > 2147483647
+        )
+          issues.push(`${stagePrefix} / 条件${conditionIndex + 1}: 達成値は1以上の整数です`);
       }
     }
   }
@@ -750,7 +1072,12 @@ function move<T>(items: T[], from: number, to: number): T[] {
 }
 
 function slug(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9-]/gu, '-').replace(/-+/gu, '-').replace(/^-+/u, '').slice(0, 48);
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/gu, '-')
+    .replace(/-+/gu, '-')
+    .replace(/^-+/u, '')
+    .slice(0, 48);
 }
 
 function numberValue(value: string, fallback: number): number {
