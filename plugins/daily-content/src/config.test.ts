@@ -49,7 +49,7 @@ describe('Announcement / Message Studio config', () => {
 
   it('1回予約とEmbedを正規化する', () => {
     const config = normalizeDailyContentConfig({ allowAnnouncementCrosspost: true });
-    const onceAt = new Date('2026-08-20T11:00:00Z');
+    const onceAt = new Date('2099-08-20T11:00:00Z');
     const normalized = normalizeDailyContentInput(
       {
         channelId: '123456789012345678',
@@ -196,5 +196,43 @@ describe('Announcement / Message Studio config', () => {
       normalizeMessageStudioEmbed({ description: '<@123456789012345678> お知らせです' }, true)
         ?.description,
     ).toContain('<@123456789012345678>');
+  });
+
+  it('未知のrecurrenceTypeをdailyへ黙って変換せず拒否する', () => {
+    expect(() =>
+      normalizeDailyContentInput(
+        {
+          channelId: '123456789012345678',
+          content: 'content',
+          scheduleTime: '09:00',
+          recurrenceType: 'monthly' as never,
+        },
+        normalizeDailyContentConfig({}),
+      ),
+    ).toThrow('recurrenceTypeはonce/daily/weeklyのいずれかを指定してください');
+  });
+
+  it('有効な1回予約は現在時刻より1分以上先だけ受け付ける', () => {
+    const now = new Date('2030-01-01T00:00:00Z');
+    const base = {
+      channelId: '123456789012345678',
+      content: 'content',
+      scheduleTime: '09:00',
+      recurrenceType: 'once' as const,
+    };
+    expect(() =>
+      normalizeDailyContentInput(
+        { ...base, onceAt: new Date('2030-01-01T00:00:30Z') },
+        normalizeDailyContentConfig({}),
+        now,
+      ),
+    ).toThrow('1回予約の日時は現在時刻より1分以上先を指定してください');
+    expect(
+      normalizeDailyContentInput(
+        { ...base, onceAt: new Date('2030-01-01T00:02:00Z') },
+        normalizeDailyContentConfig({}),
+        now,
+      ).onceAt,
+    ).toEqual(new Date('2030-01-01T00:02:00Z'));
   });
 });

@@ -21,7 +21,7 @@ export interface DiscordMessageReference {
 }
 
 const MESSAGE_URL_PATTERN =
-  /^https?:\/\/(?:www\.)?(?:discord\.com|discordapp\.com)\/channels\/(\d{17,20})\/(\d{17,20})\/(\d{17,20})(?:\?.*)?$/i;
+  /^https?:\/\/(?:(?:www|canary|ptb)\.)?(?:discord\.com|discordapp\.com)\/channels\/(\d{17,20})\/(\d{17,20})\/(\d{17,20})(?:\?.*)?$/i;
 
 const WEEKDAY_ALIASES = new Map<string, number>([
   ['1', 1],
@@ -104,7 +104,7 @@ export function parseDiscordMessageUrl(value: string): DiscordMessageReference {
 export function parseMessageStudioWeekdays(value: string | null | undefined): number[] {
   if (!value?.trim()) return [];
   const parts = value
-    .split(/[\s,、/]+/)
+    .split(/[\s,、，・/]+/)
     .map((part) => part.trim().toLowerCase())
     .filter(Boolean);
   const days: number[] = [];

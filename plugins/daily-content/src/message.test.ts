@@ -51,4 +51,19 @@ describe('Message Studio message helpers', () => {
       fields: [{ name: 'Status', value: 'Ready', inline: true }],
     });
   });
+
+  it('Canary/PTBのDiscordメッセージURLも受け付ける', () => {
+    for (const host of ['canary.discord.com', 'ptb.discord.com']) {
+      expect(
+        parseDiscordMessageUrl(
+          `https://${host}/channels/123456789012345678/223456789012345678/323456789012345678`,
+        ),
+      ).toMatchObject({ guildId: '123456789012345678', channelId: '223456789012345678' });
+    }
+  });
+
+  it('一覧表示で使う中黒と全角カンマを曜日区切りとして再入力できる', () => {
+    expect(parseMessageStudioWeekdays('月・水・金')).toEqual([1, 3, 5]);
+    expect(parseMessageStudioWeekdays('月，水，金')).toEqual([1, 3, 5]);
+  });
 });

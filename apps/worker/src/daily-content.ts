@@ -282,18 +282,36 @@ async function processDelivery(
       channelId: delivery.dailyContent.channelId,
       title: delivery.dailyContent.title,
       content: delivery.dailyContent.content,
-      embed: safeEmbedFromJson(delivery.dailyContent.embedJson),
+      embed:
+        delivery.dailyContent.messageFormat === 'embed'
+          ? safeEmbedFromJson(delivery.dailyContent.embedJson)
+          : null,
       scheduledFor: delivery.scheduledFor,
       timezone: delivery.dailyContent.timezone,
       allowUserMentions: config.allowUserMentions,
       publishAnnouncement:
         delivery.dailyContent.publishAnnouncement && config.allowAnnouncementCrosspost,
       nonce: createDeliveryNonce(delivery.idempotencyKey),
+      onCrosspostWarning: ({ messageId, status, errorName }) =>
+        options.logger.warn(
+          {
+            guildId: delivery.guildId,
+            scheduleId: delivery.dailyContent.id,
+            deliveryId: delivery.id,
+            channelId: delivery.dailyContent.channelId,
+            messageId,
+            status,
+            errorName,
+          },
+          'AnnouncementのCrosspostに失敗しました。元メッセージは配信済みです',
+        ),
     });
     await markDeliverySent(prisma, {
       deliveryId: delivery.id,
       scheduleId: delivery.dailyContent.id,
       messageId,
+      completeOneShot:
+        delivery.origin === 'scheduled' && delivery.dailyContent.recurrenceType === 'once',
     });
     options.logger.info(
       {
@@ -336,6 +354,7 @@ async function publishDiscordMessage(input: {
   allowUserMentions: boolean;
   publishAnnouncement: boolean;
   nonce: string;
+  onCrosspostWarning?: (details: { messageId: string; status?: number; errorName: string }) => void;
 }): Promise<string> {
   const channelResponse = await fetch(`${DISCORD_API_BASE_URL}/channels/${input.channelId}`, {
     headers: { Authorization: `Bot ${input.token}` },
@@ -372,6 +391,7 @@ async function publishDiscordChannelMessage(input: {
   allowUserMentions: boolean;
   publishAnnouncement: boolean;
   nonce: string;
+  onCrosspostWarning?: (details: { messageId: string; status?: number; errorName: string }) => void;
 }): Promise<string> {
   const embed = toDiscordApiEmbed(input.embed);
   const response = await fetch(`${DISCORD_API_BASE_URL}/channels/${input.channelId}/messages`, {
@@ -398,7 +418,7 @@ async function publishDiscordChannelMessage(input: {
   }
   if (input.publishAnnouncement) {
     try {
-      await fetch(
+      const crosspostResponse = await fetch(
         `${DISCORD_API_BASE_URL}/channels/${input.channelId}/messages/${message.id}/crosspost`,
         {
           method: 'POST',
@@ -406,7 +426,18 @@ async function publishDiscordChannelMessage(input: {
           signal: AbortSignal.timeout(10_000),
         },
       );
-    } catch {
+      if (!crosspostResponse.ok) {
+        input.onCrosspostWarning?.({
+          messageId: message.id,
+          status: crosspostResponse.status,
+          errorName: 'DailyContentCrosspostFailed',
+        });
+      }
+    } catch (error) {
+      input.onCrosspostWarning?.({
+        messageId: message.id,
+        errorName: resolveErrorName(error),
+      });
       // Base message is already sent. Do not retry and duplicate it only because crosspost failed.
     }
   }
@@ -630,6 +661,7 @@ async function initializeMissingNextRuns(prisma: PrismaClient, now: Date): Promi
       recurrenceType: true,
       onceAt: true,
       weekdays: true,
+      lastScheduledAt: true,
     },
     take: DAILY_CONTENT_SCAN_LIMIT,
   });
@@ -643,6 +675,11 @@ async function initializeMissingNextRuns(prisma: PrismaClient, now: Date): Promi
       schedule.recurrenceType === 'once' || schedule.recurrenceType === 'weekly'
         ? schedule.recurrenceType
         : 'daily';
+    if (recurrenceType === 'once' && schedule.lastScheduledAt) {
+      // A delivery was already reserved. Keep the schedule enabled until that
+      // scheduled delivery succeeds (or an operator explicitly disables it).
+      continue;
+    }
     const nextRunAt = nextContentOccurrence({
       recurrenceType,
       onceAt: schedule.onceAt,

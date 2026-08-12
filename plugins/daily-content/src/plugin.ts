@@ -13,6 +13,7 @@ import {
   formatMessageStudioWeekdays,
   parseDiscordMessageUrl,
   parseMessageStudioWeekdays,
+  safeEmbedFromJson,
   toDiscordApiEmbed,
 } from './message.js';
 import { parseLocalDateTime } from './schedule.js';
@@ -65,6 +66,7 @@ interface DailyContentCommandInteraction {
 
 interface DailyContentReplyOptions {
   content: string;
+  embeds?: unknown[];
   flags?: number;
   allowedMentions: { parse: [] };
 }
@@ -84,6 +86,7 @@ interface SentMessage {
 
 interface MessageTargetChannel {
   id: string;
+  guildId?: string | null;
   isTextBased?(): boolean;
   isThreadOnly?(): boolean;
   send?(payload: MessagePayload): Promise<SentMessage>;
@@ -183,6 +186,16 @@ async function executeLegacyDaily(
   if (subcommand === 'preview') {
     const schedule = await getDailyContent(context.prisma, context.guildId, scheduleId);
     if (!schedule) return respond(interaction, '指定したMessage Studio投稿が見つかりません');
+    if (schedule.messageFormat === 'embed') {
+      const apiEmbed = toDiscordApiEmbed(safeEmbedFromJson(schedule.embedJson));
+      const title = schedule.title ? `\n管理タイトル: ${escapeMarkdown(schedule.title)}` : '';
+      await respond(
+        interaction,
+        `プレビュー（<#${schedule.channelId}> / ${schedule.scheduleTime} ${schedule.timezone}）${title}`,
+        apiEmbed ? [apiEmbed] : undefined,
+      );
+      return;
+    }
     const heading = schedule.title ? `**${escapeMarkdown(schedule.title)}**\n` : '';
     const body = `${heading}${schedule.content}`;
     const truncated =
@@ -230,12 +243,16 @@ async function executeAnnouncement(
     }
     const sent = await sendToTarget(
       context.client,
+      context.guildId,
       channelId,
       payload,
       readForumTitle(interaction),
     );
     let crosspostWarning = '';
-    if (crosspost && sent.crosspost) {
+    if (crosspost && !sent.crosspost) {
+      crosspostWarning =
+        ' / このチャンネルはAnnouncement ChannelではないためCrosspostしませんでした';
+    } else if (crosspost && sent.crosspost) {
       try {
         await sent.crosspost();
       } catch (error) {
@@ -361,6 +378,7 @@ async function executeSay(
     const payload = buildImmediatePayload(interaction, config);
     const sent = await sendToTarget(
       context.client,
+      context.guildId,
       channelId,
       payload,
       readForumTitle(interaction),
@@ -376,6 +394,9 @@ async function executeSay(
     const channel = await context.client.channels.fetch(reference.channelId);
     if (!channel?.messages)
       throw new DailyContentValidationError('返信先チャンネルを取得できません');
+    if (channel.guildId !== context.guildId) {
+      throw new DailyContentValidationError('別サーバーのメッセージには返信できません');
+    }
     const target = await channel.messages.fetch(reference.messageId);
     const mentionUser =
       interaction.options.getBoolean('mention_user') ?? config.defaultMentionRepliedUser;
@@ -393,15 +414,14 @@ function readStoredMessage(
 ) {
   const content = interaction.options.getString('content') ?? '';
   assertSafeMentions(content, config.allowUserMentions);
-  const embed = readEmbed(interaction, config);
+  const rawEmbed = readEmbed(interaction, config);
+  const requestedFormat = interaction.options.getString('format');
+  const messageFormat: 'text' | 'embed' =
+    requestedFormat === 'embed' || (requestedFormat === null && rawEmbed) ? 'embed' : 'text';
+  const embed = messageFormat === 'embed' ? rawEmbed : null;
   if (!content.trim() && !embed)
     throw new DailyContentValidationError('本文またはEmbedを入力してください');
-  return {
-    content,
-    messageFormat:
-      interaction.options.getString('format') === 'embed' ? ('embed' as const) : ('text' as const),
-    embed,
-  };
+  return { content, messageFormat, embed };
 }
 
 function buildImmediatePayload(
@@ -411,7 +431,11 @@ function buildImmediatePayload(
 ): MessagePayload {
   const content = interaction.options.getString('content')?.trim() ?? '';
   assertSafeMentions(content, config.allowUserMentions);
-  const embed = readEmbed(interaction, config);
+  const rawEmbed = readEmbed(interaction, config);
+  const requestedFormat = interaction.options.getString('format');
+  const messageFormat: 'text' | 'embed' =
+    requestedFormat === 'embed' || (requestedFormat === null && rawEmbed) ? 'embed' : 'text';
+  const embed = messageFormat === 'embed' ? rawEmbed : null;
   const attachment = interaction.options.getAttachment('image');
   if (!content && !embed && !attachment) {
     throw new DailyContentValidationError('本文・Embed・画像のいずれかを入力してください');
@@ -447,12 +471,16 @@ function readEmbed(
 
 async function sendToTarget(
   client: MessageStudioClient,
+  guildId: string,
   channelId: string,
   payload: MessagePayload,
   forumTitle: string,
 ): Promise<SentMessage> {
   const channel = await client.channels.fetch(channelId);
   if (!channel) throw new DailyContentValidationError('投稿先チャンネルを取得できません');
+  if (channel.guildId !== guildId) {
+    throw new DailyContentValidationError('別サーバーのチャンネルには投稿できません');
+  }
   if (channel.isThreadOnly?.()) {
     if (!channel.threads) throw new DailyContentValidationError('Forumへ投稿できません');
     const thread = await channel.threads.create({
@@ -506,9 +534,11 @@ function requiredOption(interaction: DailyContentCommandInteraction, name: strin
 async function respond(
   interaction: DailyContentCommandInteraction,
   content: string,
+  embeds?: unknown[],
 ): Promise<void> {
   const options: DailyContentReplyOptions = {
     content,
+    ...(embeds?.length ? { embeds } : {}),
     flags: EPHEMERAL_FLAG,
     allowedMentions: { parse: [] },
   };

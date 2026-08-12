@@ -118,7 +118,7 @@ export async function createDailyContent(
   input: CreateDailyContentInput,
 ): Promise<DailyContentRecord> {
   const now = input.now ?? new Date();
-  const normalized = normalizeDailyContentInput(input.schedule, input.config);
+  const normalized = normalizeDailyContentInput(input.schedule, input.config, now);
   const nextRunAt = normalized.enabled
     ? nextContentOccurrence({
         recurrenceType: normalized.recurrenceType,
@@ -202,6 +202,7 @@ export async function updateDailyContent(
         publishAnnouncement: input.patch.publishAnnouncement ?? current.publishAnnouncement,
       },
       input.config,
+      now,
     );
     const scheduleChanged =
       normalized.scheduleTime !== current.scheduleTime ||
@@ -366,7 +367,6 @@ export async function reserveDueDelivery(
       data: {
         nextRunAt,
         lastScheduledAt: scheduledFor,
-        ...(schedule.recurrenceType === 'once' ? { enabled: false } : {}),
       },
     });
     return delivery;
@@ -489,7 +489,13 @@ export async function markDeliveryRetrying(
 
 export async function markDeliverySent(
   prisma: DailyContentPrismaClient,
-  input: { deliveryId: string; scheduleId: string; messageId: string; sentAt?: Date },
+  input: {
+    deliveryId: string;
+    scheduleId: string;
+    messageId: string;
+    sentAt?: Date;
+    completeOneShot?: boolean;
+  },
 ): Promise<void> {
   const sentAt = input.sentAt ?? new Date();
   await prisma.$transaction(async (tx) => {
@@ -506,7 +512,10 @@ export async function markDeliverySent(
     });
     await tx.dailyContent.update({
       where: { id: input.scheduleId },
-      data: { lastSentAt: sentAt },
+      data: {
+        lastSentAt: sentAt,
+        ...(input.completeOneShot ? { enabled: false, nextRunAt: null } : {}),
+      },
     });
   });
 }

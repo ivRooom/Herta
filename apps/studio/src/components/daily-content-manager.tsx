@@ -146,7 +146,7 @@ function createEmptyForm(
     timezone: defaultTimezone,
     enabled: true,
     recurrenceType: 'once',
-    onceAt: nextLocalDateTime(defaultTimezone),
+    onceAt: '',
     weekdays: [1, 2, 3, 4, 5],
     messageFormat: 'text',
     embedTitle: '',
@@ -197,6 +197,11 @@ export function DailyContentManager({
 
   useEffect(() => setSchedules(initialSchedules), [initialSchedules]);
   useEffect(() => setDeliveries(initialDeliveries), [initialDeliveries]);
+  useEffect(() => {
+    setForm((current) =>
+      current.onceAt ? current : { ...current, onceAt: nextLocalDateTime(current.timezone) },
+    );
+  }, []);
   useEffect(() => {
     if (!editingId) {
       setForm((current) => ({
@@ -337,7 +342,10 @@ export function DailyContentManager({
 
   function resetForm() {
     setEditingId(null);
-    setForm(createEmptyForm(defaultTimezone, defaultChannelId));
+    setForm({
+      ...createEmptyForm(defaultTimezone, defaultChannelId),
+      onceAt: nextLocalDateTime(defaultTimezone),
+    });
   }
 
   function clearMessages() {
@@ -558,8 +566,10 @@ export function DailyContentManager({
                 </div>
               </div>
 
-              <label className="mt-3 block">
-                <span className="text-xs font-medium text-muted">通常本文</span>
+              <div className="mt-3 block">
+                <label htmlFor="message-studio-content" className="text-xs font-medium text-muted">
+                  通常本文
+                </label>
                 <div className="mt-1 overflow-hidden rounded-xl border border-border bg-background focus-within:ring-2 focus-within:ring-ring">
                   <div className="flex flex-wrap gap-1 border-b border-border p-2">
                     <ToolbarButton
@@ -604,6 +614,7 @@ export function DailyContentManager({
                     />
                   </div>
                   <textarea
+                    id="message-studio-content"
                     ref={textareaRef}
                     value={form.content}
                     onChange={(event) => setForm({ ...form, content: event.target.value })}
@@ -616,7 +627,7 @@ export function DailyContentManager({
                 <span className="mt-1 block text-right text-xs text-muted">
                   {form.content.length} / {maxContentLength}
                 </span>
-              </label>
+              </div>
             </section>
 
             {form.messageFormat === 'embed' ? (
@@ -787,7 +798,11 @@ export function DailyContentManager({
               </div>
               <button
                 type="submit"
-                disabled={busyKey === 'save' || !form.channelId}
+                disabled={
+                  busyKey === 'save' ||
+                  !form.channelId ||
+                  (form.recurrenceType === 'weekly' && form.weekdays.length === 0)
+                }
                 className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
               >
                 {editingId ? <Pencil className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
@@ -1041,10 +1056,10 @@ function toApiPayload(form: DailyContentFormState) {
           ...(form.imageUrl.trim() ? { imageUrl: form.imageUrl.trim() } : {}),
           ...(form.thumbnailUrl.trim() ? { thumbnailUrl: form.thumbnailUrl.trim() } : {}),
           ...(form.footerText.trim() ? { footerText: form.footerText.trim() } : {}),
-          ...(form.fields.some((field) => field.name.trim() || field.value.trim())
+          ...(form.fields.some((field) => field.name.trim() && field.value.trim())
             ? {
                 fields: form.fields
-                  .filter((field) => field.name.trim() || field.value.trim())
+                  .filter((field) => field.name.trim() && field.value.trim())
                   .map((field) => ({
                     name: field.name.trim(),
                     value: field.value.trim(),

@@ -130,6 +130,7 @@ export function normalizeDailyContentConfig(input: unknown): DailyContentConfig 
 export function normalizeDailyContentInput(
   input: DailyContentInput,
   config: DailyContentConfig,
+  now = new Date(),
 ): NormalizedDailyContentInput {
   const channelId = input.channelId.trim();
   if (!DISCORD_SNOWFLAKE_PATTERN.test(channelId)) {
@@ -161,7 +162,8 @@ export function normalizeDailyContentInput(
   if (!isValidIanaTimezone(timezone)) {
     throw new DailyContentValidationError('timezoneに有効なIANA timezoneを指定してください');
   }
-  const onceAt = normalizeOnceAt(input.onceAt, recurrenceType);
+  const enabled = input.enabled ?? true;
+  const onceAt = normalizeOnceAt(input.onceAt, recurrenceType, enabled, now);
   const weekdays = normalizeWeekdays(input.weekdays, recurrenceType);
   const publishAnnouncement = input.publishAnnouncement === true;
   if (publishAnnouncement && !config.allowAnnouncementCrosspost) {
@@ -174,7 +176,7 @@ export function normalizeDailyContentInput(
     content,
     scheduleTime,
     timezone,
-    enabled: input.enabled ?? true,
+    enabled,
     recurrenceType,
     onceAt,
     weekdays,
@@ -278,7 +280,11 @@ export function assertSafeMentions(content: string, allowUserMentions: boolean):
 }
 
 function normalizeRecurrenceType(value: unknown): MessageStudioRecurrence {
-  return value === 'once' || value === 'weekly' || value === 'daily' ? value : 'daily';
+  if (value === undefined || value === null) return 'daily';
+  if (value === 'once' || value === 'weekly' || value === 'daily') return value;
+  throw new DailyContentValidationError(
+    'recurrenceTypeはonce/daily/weeklyのいずれかを指定してください',
+  );
 }
 
 function normalizeMessageFormat(value: unknown): MessageStudioFormat {
@@ -288,11 +294,16 @@ function normalizeMessageFormat(value: unknown): MessageStudioFormat {
 function normalizeOnceAt(
   value: Date | string | null | undefined,
   recurrence: MessageStudioRecurrence,
+  enabled: boolean,
+  now: Date,
 ) {
   if (recurrence !== 'once') return null;
   const date = value instanceof Date ? value : typeof value === 'string' ? new Date(value) : null;
   if (!date || Number.isNaN(date.getTime())) {
     throw new DailyContentValidationError('1回予約ではonceAtに有効な日時を指定してください');
+  }
+  if (enabled && date.getTime() < now.getTime() + 60_000) {
+    throw new DailyContentValidationError('1回予約の日時は現在時刻より1分以上先を指定してください');
   }
   return date;
 }
