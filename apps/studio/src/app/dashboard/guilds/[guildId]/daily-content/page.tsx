@@ -1,6 +1,13 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, CalendarClock, CheckCircle2, History, MessageSquareText, TriangleAlert } from 'lucide-react';
+import {
+  ArrowLeft,
+  CalendarClock,
+  CheckCircle2,
+  History,
+  MessageSquareText,
+  TriangleAlert,
+} from 'lucide-react';
 import {
   listDailyContents,
   listDeliveryHistory,
@@ -115,7 +122,8 @@ export default async function DailyContentPage({
             <h1 className="text-2xl font-semibold tracking-tight">Announcement / Message Studio</h1>
           </div>
           <p className="mt-2 max-w-3xl text-sm text-muted">
-            {guild.name} のお知らせ、1回予約、日次・週次投稿、Forum投稿、Embed、画像、配信履歴をまとめて管理します。
+            {guild.name}{' '}
+            のお知らせ、1回予約、日次・週次投稿、Forum投稿、Embed、画像、配信履歴をまとめて管理します。
           </p>
         </div>
         <span className="rounded-full border border-border px-3 py-1 text-sm text-muted">
@@ -167,7 +175,8 @@ export default async function DailyContentPage({
       <div className="mt-8 flex items-start gap-2 text-xs text-muted">
         <History className="mt-0.5 h-4 w-4 shrink-0" />
         <p>
-          配信履歴には本文を複製せず、状態・予定日時・試行回数・安全なエラー名を保存します。既存Daily Contentの毎日投稿はそのまま互換動作します。
+          配信履歴には本文を複製せず、状態・予定日時・試行回数・安全なエラー名を保存します。既存Daily
+          Contentの毎日投稿はそのまま互換動作します。
         </p>
       </div>
     </div>

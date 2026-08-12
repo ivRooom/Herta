@@ -163,6 +163,10 @@ export function normalizeDailyContentInput(
   }
   const onceAt = normalizeOnceAt(input.onceAt, recurrenceType);
   const weekdays = normalizeWeekdays(input.weekdays, recurrenceType);
+  const publishAnnouncement = input.publishAnnouncement === true;
+  if (publishAnnouncement && !config.allowAnnouncementCrosspost) {
+    throw new DailyContentValidationError('Announcement CrosspostはPlugin設定で許可されていません');
+  }
 
   return {
     channelId,
@@ -176,7 +180,7 @@ export function normalizeDailyContentInput(
     weekdays,
     messageFormat,
     embed,
-    publishAnnouncement: input.publishAnnouncement === true,
+    publishAnnouncement,
   };
 }
 

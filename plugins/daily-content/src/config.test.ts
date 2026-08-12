@@ -48,7 +48,7 @@ describe('Announcement / Message Studio config', () => {
   });
 
   it('1回予約とEmbedを正規化する', () => {
-    const config = normalizeDailyContentConfig({});
+    const config = normalizeDailyContentConfig({ allowAnnouncementCrosspost: true });
     const onceAt = new Date('2026-08-20T11:00:00Z');
     const normalized = normalizeDailyContentInput(
       {
@@ -79,6 +79,20 @@ describe('Announcement / Message Studio config', () => {
       footerText: 'Herta',
     });
     expect(normalized.publishAnnouncement).toBe(true);
+  });
+
+  it('CrosspostはPlugin設定で許可されている場合だけ保存できる', () => {
+    expect(() =>
+      normalizeDailyContentInput(
+        {
+          channelId: '123456789012345678',
+          content: 'Announcement',
+          scheduleTime: '20:00',
+          publishAnnouncement: true,
+        },
+        normalizeDailyContentConfig({}),
+      ),
+    ).toThrow('Announcement CrosspostはPlugin設定で許可されていません');
   });
 
   it('週次配信は曜日を重複除去して昇順にする', () => {

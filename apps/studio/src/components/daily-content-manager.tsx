@@ -134,7 +134,10 @@ const COMMON_TIMEZONES = [
   'Australia/Sydney',
 ] as const;
 
-function createEmptyForm(defaultTimezone: string, defaultChannelId: string | null): DailyContentFormState {
+function createEmptyForm(
+  defaultTimezone: string,
+  defaultChannelId: string | null,
+): DailyContentFormState {
   return {
     title: '',
     channelId: defaultChannelId ?? '',
@@ -205,7 +208,8 @@ export function DailyContentManager({
   }, [defaultChannelId, defaultTimezone, editingId]);
 
   const scheduleNames = useMemo(
-    () => new Map(schedules.map((schedule) => [schedule.id, schedule.title || schedule.scheduleTime])),
+    () =>
+      new Map(schedules.map((schedule) => [schedule.id, schedule.title || schedule.scheduleTime])),
     [schedules],
   );
 
@@ -222,7 +226,9 @@ export function DailyContentManager({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(toApiPayload(form)),
       });
-      setNotice(editingId ? 'Message Studio投稿を更新しました' : 'Message Studio投稿を作成しました');
+      setNotice(
+        editingId ? 'Message Studio投稿を更新しました' : 'Message Studio投稿を作成しました',
+      );
       resetForm();
       router.refresh();
     } catch (requestError) {
@@ -387,7 +393,9 @@ export function DailyContentManager({
             <div>
               <div className="flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-primary" />
-                <h2 className="font-semibold">{editingId ? 'Message Composer — 編集' : 'Message Composer'}</h2>
+                <h2 className="font-semibold">
+                  {editingId ? 'Message Composer — 編集' : 'Message Composer'}
+                </h2>
               </div>
               <p className="mt-1 text-xs text-muted">
                 お知らせ・定期投稿・Forum投稿を通常メッセージまたはEmbedで作成します。
@@ -433,7 +441,9 @@ export function DailyContentManager({
             </div>
 
             <section className="rounded-2xl border border-border bg-background/50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted">配信タイミング</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                配信タイミング
+              </p>
               <div className="mt-3 grid grid-cols-3 gap-2">
                 {(
                   [
@@ -529,7 +539,9 @@ export function DailyContentManager({
 
             <section>
               <div className="flex items-center justify-between gap-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted">メッセージ形式</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+                  メッセージ形式
+                </p>
                 <div className="inline-flex rounded-xl border border-border p-1">
                   <FormatButton
                     active={form.messageFormat === 'text'}
@@ -548,14 +560,46 @@ export function DailyContentManager({
                 <span className="text-xs font-medium text-muted">通常本文</span>
                 <div className="mt-1 overflow-hidden rounded-xl border border-border bg-background focus-within:ring-2 focus-within:ring-ring">
                   <div className="flex flex-wrap gap-1 border-b border-border p-2">
-                    <ToolbarButton icon={<Bold />} label="太字" onClick={() => wrapMarkdown('**')} />
-                    <ToolbarButton icon={<Italic />} label="斜体" onClick={() => wrapMarkdown('*')} />
-                    <ToolbarButton icon={<Underline />} label="下線" onClick={() => wrapMarkdown('__')} />
-                    <ToolbarButton icon={<Strikethrough />} label="取消" onClick={() => wrapMarkdown('~~')} />
-                    <ToolbarButton icon={<Code2 />} label="コード" onClick={() => wrapMarkdown('`')} />
-                    <ToolbarButton icon={<Eye />} label="スポイラー" onClick={() => wrapMarkdown('||')} />
-                    <ToolbarButton icon={<Quote />} label="引用" onClick={() => wrapMarkdown('> ', '', '引用文')} />
-                    <ToolbarButton icon={<Link2 />} label="リンク" onClick={() => wrapMarkdown('[', '](https://)', '表示名')} />
+                    <ToolbarButton
+                      icon={<Bold />}
+                      label="太字"
+                      onClick={() => wrapMarkdown('**')}
+                    />
+                    <ToolbarButton
+                      icon={<Italic />}
+                      label="斜体"
+                      onClick={() => wrapMarkdown('*')}
+                    />
+                    <ToolbarButton
+                      icon={<Underline />}
+                      label="下線"
+                      onClick={() => wrapMarkdown('__')}
+                    />
+                    <ToolbarButton
+                      icon={<Strikethrough />}
+                      label="取消"
+                      onClick={() => wrapMarkdown('~~')}
+                    />
+                    <ToolbarButton
+                      icon={<Code2 />}
+                      label="コード"
+                      onClick={() => wrapMarkdown('`')}
+                    />
+                    <ToolbarButton
+                      icon={<Eye />}
+                      label="スポイラー"
+                      onClick={() => wrapMarkdown('||')}
+                    />
+                    <ToolbarButton
+                      icon={<Quote />}
+                      label="引用"
+                      onClick={() => wrapMarkdown('> ', '', '引用文')}
+                    />
+                    <ToolbarButton
+                      icon={<Link2 />}
+                      label="リンク"
+                      onClick={() => wrapMarkdown('[', '](https://)', '表示名')}
+                    />
                   </div>
                   <textarea
                     ref={textareaRef}
@@ -649,7 +693,9 @@ export function DailyContentManager({
 
                 <div>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs font-medium text-muted">Fields ({form.fields.length}/25)</span>
+                    <span className="text-xs font-medium text-muted">
+                      Fields ({form.fields.length}/25)
+                    </span>
                     <button
                       type="button"
                       onClick={addField}
@@ -661,7 +707,10 @@ export function DailyContentManager({
                   </div>
                   <div className="mt-2 space-y-2">
                     {form.fields.map((field, index) => (
-                      <div key={index} className="grid gap-2 rounded-xl border border-border p-3 md:grid-cols-[1fr_2fr_auto]">
+                      <div
+                        key={index}
+                        className="grid gap-2 rounded-xl border border-border p-3 md:grid-cols-[1fr_2fr_auto]"
+                      >
                         <input
                           value={field.name}
                           onChange={(event) => updateField(index, { name: event.target.value })}
@@ -681,13 +730,20 @@ export function DailyContentManager({
                             <input
                               type="checkbox"
                               checked={field.inline === true}
-                              onChange={(event) => updateField(index, { inline: event.target.checked })}
+                              onChange={(event) =>
+                                updateField(index, { inline: event.target.checked })
+                              }
                             />
                             横並び
                           </label>
                           <button
                             type="button"
-                            onClick={() => setForm({ ...form, fields: form.fields.filter((_, i) => i !== index) })}
+                            onClick={() =>
+                              setForm({
+                                ...form,
+                                fields: form.fields.filter((_, i) => i !== index),
+                              })
+                            }
                             className="rounded-lg p-2 text-destructive hover:bg-destructive/5"
                             aria-label="Fieldを削除"
                           >
@@ -712,12 +768,16 @@ export function DailyContentManager({
                   />
                   保存後すぐ有効化
                 </label>
-                <label className={`flex items-center gap-2 text-sm ${allowAnnouncementCrosspost ? '' : 'text-muted'}`}>
+                <label
+                  className={`flex items-center gap-2 text-sm ${allowAnnouncementCrosspost ? '' : 'text-muted'}`}
+                >
                   <input
                     type="checkbox"
                     checked={form.publishAnnouncement}
                     disabled={!allowAnnouncementCrosspost}
-                    onChange={(event) => setForm({ ...form, publishAnnouncement: event.target.checked })}
+                    onChange={(event) =>
+                      setForm({ ...form, publishAnnouncement: event.target.checked })
+                    }
                     className="h-4 w-4 rounded border-border"
                   />
                   Announcement ChannelでCrosspost
@@ -753,7 +813,9 @@ export function DailyContentManager({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-white">Herta</span>
-                      <span className="rounded bg-[#5865f2] px-1 py-0.5 text-[9px] font-bold text-white">APP</span>
+                      <span className="rounded bg-[#5865f2] px-1 py-0.5 text-[9px] font-bold text-white">
+                        APP
+                      </span>
                     </div>
                     {form.content ? (
                       <p className="mt-1 whitespace-pre-wrap break-words text-sm">{form.content}</p>
@@ -764,7 +826,9 @@ export function DailyContentManager({
               </div>
               <div className="mt-4 rounded-xl border border-border bg-surface p-3 text-xs text-muted">
                 <p className="font-medium text-foreground">配信設定</p>
-                <p className="mt-1">{formatRecurrence(form)} · {form.timezone}</p>
+                <p className="mt-1">
+                  {formatRecurrence(form)} · {form.timezone}
+                </p>
                 <p className="mt-1">投稿先: {formatChannelLabel(form.channelId, discordOptions)}</p>
                 {form.publishAnnouncement ? <p className="mt-1">📢 Crosspost有効</p> : null}
               </div>
@@ -783,7 +847,10 @@ export function DailyContentManager({
             <EmptyState text="予約投稿はまだありません。" />
           ) : (
             schedules.map((schedule) => (
-              <article key={schedule.id} className="rounded-2xl border border-border bg-surface p-5 shadow-card">
+              <article
+                key={schedule.id}
+                className="rounded-2xl border border-border bg-surface p-5 shadow-card"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -794,13 +861,17 @@ export function DailyContentManager({
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-muted">
-                      {formatScheduleItem(schedule)} · {schedule.timezone} · {formatChannelLabel(schedule.channelId, discordOptions)}
+                      {formatScheduleItem(schedule)} · {schedule.timezone} ·{' '}
+                      {formatChannelLabel(schedule.channelId, discordOptions)}
                     </p>
                   </div>
                   <CalendarClock className="h-5 w-5 shrink-0 text-muted" />
                 </div>
                 <p className="mt-4 line-clamp-3 whitespace-pre-wrap text-sm text-foreground/90">
-                  {schedule.content || schedule.embed?.description || schedule.embed?.title || '画像 / Embed投稿'}
+                  {schedule.content ||
+                    schedule.embed?.description ||
+                    schedule.embed?.title ||
+                    '画像 / Embed投稿'}
                 </p>
                 <dl className="mt-4 grid gap-2 text-xs text-muted sm:grid-cols-2">
                   <div>
@@ -813,7 +884,11 @@ export function DailyContentManager({
                   </div>
                 </dl>
                 <div className="mt-5 flex flex-wrap justify-end gap-2">
-                  <ActionButton onClick={() => editSchedule(schedule)} icon={<Pencil />} label="編集" />
+                  <ActionButton
+                    onClick={() => editSchedule(schedule)}
+                    icon={<Pencil />}
+                    label="編集"
+                  />
                   <ActionButton
                     onClick={() => toggleSchedule(schedule)}
                     disabled={busyKey === `toggle:${schedule.id}`}
@@ -861,7 +936,9 @@ export function DailyContentManager({
                           {scheduleNames.get(delivery.dailyContentId) ?? delivery.dailyContentId}
                         </p>
                         <StatusBadge status={delivery.status} />
-                        <span className="text-xs text-muted">{delivery.origin === 'manual' ? '手動' : '予約'}</span>
+                        <span className="text-xs text-muted">
+                          {delivery.origin === 'manual' ? '手動' : '予約'}
+                        </span>
                       </div>
                       <p className="mt-1 text-xs text-muted">
                         予定 {formatDate(delivery.scheduledFor)} · 試行 {delivery.attemptCount}回
@@ -890,8 +967,8 @@ export function DailyContentManager({
           <span className="font-medium">Discord内からの即時発言・返信</span>
         </div>
         <p className="mt-2">
-          `/announce send` で即時お知らせ、`/say send` でBot発言、`/say reply` でメッセージURLへの返信ができます。
-          即時コマンドでは画像ファイルも直接添付できます。
+          `/announce send` で即時お知らせ、`/say send` でBot発言、`/say reply`
+          でメッセージURLへの返信ができます。 即時コマンドでは画像ファイルも直接添付できます。
         </p>
       </div>
     </div>
@@ -906,29 +983,47 @@ function EmbedPreview({ form }: { form: DailyContentFormState }) {
     form.thumbnailUrl ||
     form.footerText ||
     form.fields.some((field) => field.name || field.value);
-  if (!hasEmbed) return <p className="mt-2 text-xs text-[#949ba4]">Embedの内容を入力するとここに表示されます。</p>;
+  if (!hasEmbed)
+    return (
+      <p className="mt-2 text-xs text-[#949ba4]">Embedの内容を入力するとここに表示されます。</p>
+    );
   return (
-    <div className="mt-2 max-w-[520px] overflow-hidden rounded bg-[#2b2d31]" style={{ borderLeft: `4px solid ${validColor(form.embedColor)}` }}>
+    <div
+      className="mt-2 max-w-[520px] overflow-hidden rounded bg-[#2b2d31]"
+      style={{ borderLeft: `4px solid ${validColor(form.embedColor)}` }}
+    >
       <div className="p-3">
         {form.thumbnailUrl ? (
-          <div className="float-right ml-3 h-16 w-16 rounded bg-cover bg-center" style={{ backgroundImage: `url(${JSON.stringify(form.thumbnailUrl).slice(1, -1)})` }} />
+          <div
+            className="float-right ml-3 h-16 w-16 rounded bg-cover bg-center"
+            style={{ backgroundImage: `url(${JSON.stringify(form.thumbnailUrl).slice(1, -1)})` }}
+          />
         ) : null}
         {form.embedTitle ? <p className="font-semibold text-white">{form.embedTitle}</p> : null}
-        {form.embedDescription ? <p className="mt-1 whitespace-pre-wrap text-sm">{form.embedDescription}</p> : null}
+        {form.embedDescription ? (
+          <p className="mt-1 whitespace-pre-wrap text-sm">{form.embedDescription}</p>
+        ) : null}
         {form.fields.length ? (
           <div className="mt-3 grid grid-cols-2 gap-2">
-            {form.fields.filter((field) => field.name || field.value).map((field, index) => (
-              <div key={index} className={field.inline ? '' : 'col-span-2'}>
-                <p className="text-xs font-semibold text-white">{field.name || 'Field'}</p>
-                <p className="whitespace-pre-wrap text-xs">{field.value || '—'}</p>
-              </div>
-            ))}
+            {form.fields
+              .filter((field) => field.name || field.value)
+              .map((field, index) => (
+                <div key={index} className={field.inline ? '' : 'col-span-2'}>
+                  <p className="text-xs font-semibold text-white">{field.name || 'Field'}</p>
+                  <p className="whitespace-pre-wrap text-xs">{field.value || '—'}</p>
+                </div>
+              ))}
           </div>
         ) : null}
         {form.imageUrl ? (
-          <div className="mt-3 aspect-video w-full rounded bg-cover bg-center" style={{ backgroundImage: `url(${JSON.stringify(form.imageUrl).slice(1, -1)})` }} />
+          <div
+            className="mt-3 aspect-video w-full rounded bg-cover bg-center"
+            style={{ backgroundImage: `url(${JSON.stringify(form.imageUrl).slice(1, -1)})` }}
+          />
         ) : null}
-        {form.footerText ? <p className="mt-3 text-[11px] text-[#949ba4]">{form.footerText}</p> : null}
+        {form.footerText ? (
+          <p className="mt-3 text-[11px] text-[#949ba4]">{form.footerText}</p>
+        ) : null}
       </div>
     </div>
   );
@@ -961,7 +1056,10 @@ function toApiPayload(form: DailyContentFormState) {
     title: form.title,
     channelId: form.channelId,
     content: form.content,
-    scheduleTime: form.recurrenceType === 'once' ? form.onceAt.slice(11, 16) || form.scheduleTime : form.scheduleTime,
+    scheduleTime:
+      form.recurrenceType === 'once'
+        ? form.onceAt.slice(11, 16) || form.scheduleTime
+        : form.scheduleTime,
     timezone: form.timezone,
     enabled: form.enabled,
     recurrenceType: form.recurrenceType,
@@ -982,23 +1080,61 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function FormatButton({ active, onClick, label }: { active: boolean; onClick(): void; label: string }) {
+function FormatButton({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick(): void;
+  label: string;
+}) {
   return (
-    <button type="button" onClick={onClick} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${active ? 'bg-primary text-primary-foreground' : 'text-muted hover:text-foreground'}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-lg px-3 py-1.5 text-xs font-medium ${active ? 'bg-primary text-primary-foreground' : 'text-muted hover:text-foreground'}`}
+    >
       {label}
     </button>
   );
 }
 
-function ToolbarButton({ icon, label, onClick }: { icon: ReactElement<{ className?: string }>; label: string; onClick(): void }) {
+function ToolbarButton({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: ReactElement<{ className?: string }>;
+  label: string;
+  onClick(): void;
+}) {
   return (
-    <button type="button" onClick={onClick} title={label} aria-label={label} className="rounded-lg p-1.5 text-muted hover:bg-surface hover:text-foreground">
+    <button
+      type="button"
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className="rounded-lg p-1.5 text-muted hover:bg-surface hover:text-foreground"
+    >
       {cloneElement(icon, { className: 'h-3.5 w-3.5' })}
     </button>
   );
 }
 
-function ActionButton({ onClick, disabled, icon, label, destructive = false }: { onClick(): void; disabled?: boolean; icon: ReactElement<{ className?: string }>; label: string; destructive?: boolean }) {
+function ActionButton({
+  onClick,
+  disabled,
+  icon,
+  label,
+  destructive = false,
+}: {
+  onClick(): void;
+  disabled?: boolean;
+  icon: ReactElement<{ className?: string }>;
+  label: string;
+  destructive?: boolean;
+}) {
   return (
     <button
       type="button"
@@ -1024,20 +1160,32 @@ function StatusBadge({ status }: { status: string }) {
     failed: '失敗',
     skipped: 'スキップ',
   };
-  return <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted">{label[status] ?? status}</span>;
+  return (
+    <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted">
+      {label[status] ?? status}
+    </span>
+  );
 }
 
 function DeliveryIcon({ status }: { status: DailyContentDeliveryItem['status'] }) {
   if (status === 'sent') return <CheckCircle2 className="h-5 w-5 text-emerald-600" />;
-  if (status === 'failed' || status === 'skipped') return <TriangleAlert className="h-5 w-5 text-destructive" />;
+  if (status === 'failed' || status === 'skipped')
+    return <TriangleAlert className="h-5 w-5 text-destructive" />;
   return <CalendarClock className="h-5 w-5 text-muted" />;
 }
 
 function EmptyState({ text }: { text: string }) {
-  return <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted">{text}</div>;
+  return (
+    <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted">
+      {text}
+    </div>
+  );
 }
 
-function formatChannelLabel(channelId: string, discordOptions?: GuildConfigurationOptions | null): string {
+function formatChannelLabel(
+  channelId: string,
+  discordOptions?: GuildConfigurationOptions | null,
+): string {
   if (!channelId) return '未選択';
   const channel = discordOptions?.channels.find((candidate) => candidate.id === channelId);
   return channel ? `#${channel.name}` : `#${channelId}`;
@@ -1045,18 +1193,25 @@ function formatChannelLabel(channelId: string, discordOptions?: GuildConfigurati
 
 function formatRecurrence(form: DailyContentFormState): string {
   if (form.recurrenceType === 'once') return `1回 ${form.onceAt.replace('T', ' ')}`;
-  if (form.recurrenceType === 'weekly') return `毎週 ${formatWeekdays(form.weekdays)} ${form.scheduleTime}`;
+  if (form.recurrenceType === 'weekly')
+    return `毎週 ${formatWeekdays(form.weekdays)} ${form.scheduleTime}`;
   return `毎日 ${form.scheduleTime}`;
 }
 
 function formatScheduleItem(schedule: DailyContentScheduleItem): string {
-  if (schedule.recurrenceType === 'once') return schedule.onceAt ? `1回 ${formatDate(schedule.onceAt)}` : '1回予約';
-  if (schedule.recurrenceType === 'weekly') return `毎週 ${formatWeekdays(schedule.weekdays)} ${schedule.scheduleTime}`;
+  if (schedule.recurrenceType === 'once')
+    return schedule.onceAt ? `1回 ${formatDate(schedule.onceAt)}` : '1回予約';
+  if (schedule.recurrenceType === 'weekly')
+    return `毎週 ${formatWeekdays(schedule.weekdays)} ${schedule.scheduleTime}`;
   return `毎日 ${schedule.scheduleTime}`;
 }
 
 function formatWeekdays(days: readonly number[]): string {
-  return WEEKDAYS.filter((weekday) => days.includes(weekday.value)).map((weekday) => weekday.label).join('・') || '曜日未選択';
+  return (
+    WEEKDAYS.filter((weekday) => days.includes(weekday.value))
+      .map((weekday) => weekday.label)
+      .join('・') || '曜日未選択'
+  );
 }
 
 function validColor(value: string): string {
@@ -1080,7 +1235,8 @@ function toDateTimeLocal(value: string): string {
 async function requestJson(url: string, init: RequestInit): Promise<unknown> {
   const response = await fetch(url, init);
   const payload = (await response.json().catch(() => ({}))) as { error?: unknown };
-  if (!response.ok) throw new Error(typeof payload.error === 'string' ? payload.error : 'リクエストに失敗しました');
+  if (!response.ok)
+    throw new Error(typeof payload.error === 'string' ? payload.error : 'リクエストに失敗しました');
   return payload;
 }
 
