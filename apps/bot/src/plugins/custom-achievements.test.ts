@@ -26,7 +26,7 @@ describe('custom achievements', () => {
   it('段階アチーブメントを正規化して安定したIDを生成する', () => {
     const series = normalizeCustomAchievementSeries([
       {
-        key: 'Chat Master',
+        key: 'chat-master',
         name: 'Chat Master',
         category: 'activity',
         stages: [
