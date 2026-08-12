@@ -67,7 +67,9 @@ const rawPluginManifests: PluginManifest[] = [
 
 const pluginManifests: PluginManifest[] = rawPluginManifests.map((manifest) => ({
   ...manifest,
-  configSchema: applyDiscordPickerMetadata(manifest.configSchema) as PluginManifest['configSchema'],
+  configSchema: applyDiscordPickerMetadata(
+    manifest.configSchema,
+  ) as PluginManifest['configSchema'],
 }));
 
 const pluginManifestMap = new Map(pluginManifests.map((manifest) => [manifest.id, manifest]));
@@ -113,7 +115,11 @@ export async function getEnabledPlugins(
   });
 }
 
-type DiscordPickerWidget = 'discord-channel' | 'discord-role' | 'discord-user' | 'discord-emoji';
+type DiscordPickerWidget =
+  | 'discord-channel'
+  | 'discord-role'
+  | 'discord-user'
+  | 'discord-emoji';
 
 const DISCORD_ENTITY_FIELDS: Array<{ pattern: RegExp; widget: DiscordPickerWidget }> = [
   { pattern: /channelIds?$/i, widget: 'discord-channel' },
@@ -140,11 +146,11 @@ function applyDiscordPickerMetadata(schema: unknown, insideMessageTarget = false
         if (!isRecord(property)) return [key, property];
 
         const expected = DISCORD_ENTITY_FIELDS.find(({ pattern }) => pattern.test(key));
-        const propertyUi = isRecord(property['x-herta-ui']) ? property['x-herta-ui'] : undefined;
+        const propertyUi = isRecord(property['x-herta-ui'])
+          ? property['x-herta-ui']
+          : undefined;
         const shouldInfer =
-          expected &&
-          !propertyUi?.widget &&
-          !(messageTarget && /^channelId$/i.test(key));
+          expected && !propertyUi?.widget && !(messageTarget && /^channelId$/i.test(key));
         const withPicker = shouldInfer
           ? {
               ...property,
