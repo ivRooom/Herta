@@ -33,7 +33,7 @@ export default async function AchievementsBuilderPage({
   const customAchievements = Array.isArray(plugin.config.customAchievements)
     ? plugin.config.customAchievements
     : [];
-  const stageCount = customAchievements.reduce((total, item) => {
+  const stageCount = customAchievements.reduce<number>((total, item) => {
     if (typeof item !== 'object' || item === null || Array.isArray(item)) return total;
     const stages = (item as Record<string, unknown>).stages;
     return total + (Array.isArray(stages) ? stages.length : 0);
