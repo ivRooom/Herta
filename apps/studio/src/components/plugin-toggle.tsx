@@ -10,6 +10,7 @@ export function PluginToggle({
   ariaLabel = 'Pluginの有効状態を切り替え',
   disabled = false,
   onEnabledChange,
+  onSavingChange,
 }: {
   guildId: string;
   pluginId: string;
@@ -18,6 +19,7 @@ export function PluginToggle({
   ariaLabel?: string;
   disabled?: boolean;
   onEnabledChange?: (enabled: boolean) => void;
+  onSavingChange?: (saving: boolean) => void;
 }) {
   const [enabled, setEnabled] = useState(initialEnabled);
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
@@ -31,6 +33,7 @@ export function PluginToggle({
     const next = !enabled;
     setEnabled(next);
     setStatus('saving');
+    onSavingChange?.(true);
     try {
       const response = await fetch(`/api/guilds/${guildId}/plugins/${pluginId}`, {
         method: 'PATCH',
@@ -43,6 +46,8 @@ export function PluginToggle({
     } catch {
       setEnabled(!next);
       setStatus('error');
+    } finally {
+      onSavingChange?.(false);
     }
   }
 
