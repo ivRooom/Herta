@@ -97,8 +97,7 @@ export function validatePluginConfig(
     };
   }
 
-  const candidate =
-    manifest.id === 'auto-response' ? { ...normalizeAutoResponseConfig(config) } : { ...config };
+  const candidate = normalizePluginConfigForValidation(manifest, config);
   const validate = ajv.compile(manifest.configSchema);
   if (!validate(candidate)) return { valid: false, errors: validate.errors ?? [] };
   return { valid: true, config: candidate };
@@ -227,6 +226,17 @@ export async function updateGuildPlugin(
     config: isPluginConfig(result.config) ? result.config : {},
     configVersion: result.configVersion,
   };
+}
+
+function normalizePluginConfigForValidation(
+  manifest: PluginManifest,
+  config: PluginConfig,
+): PluginConfig {
+  if (manifest.id === 'auto-response') return { ...normalizeAutoResponseConfig(config) };
+  if (manifest.id === 'achievements' && config.customAchievements === undefined) {
+    return { ...config, customAchievements: [] };
+  }
+  return { ...config };
 }
 
 function isPluginConfig(value: unknown): value is PluginConfig {
