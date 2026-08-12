@@ -34,8 +34,11 @@ jobs:
             packages/shared/src/types/plugin.ts \
             apps/bot/src/commands/registry.ts \
             plugins/daily-content/src/config.ts \
+            plugins/daily-content/src/config.test.ts \
             plugins/daily-content/src/schedule.ts \
+            plugins/daily-content/src/schedule.test.ts \
             plugins/daily-content/src/message.ts \
+            plugins/daily-content/src/message.test.ts \
             plugins/daily-content/src/manifest.ts \
             plugins/daily-content/src/plugin.ts \
             plugins/daily-content/src/service.ts \
