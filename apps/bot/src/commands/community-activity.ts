@@ -193,7 +193,7 @@ export const activityCommand: SlashCommand = {
           inline: true,
         },
       )
-      .setFooter({ text: `${periodLabels[period]}の集計 · /rank で順位を確認` });
+      .setFooter({ text: `${periodLabels[period]}の集計 · /activity-rank で順位を確認` });
 
     if (totals.minecraftSeconds > 0) {
       embed.addFields({
@@ -207,9 +207,9 @@ export const activityCommand: SlashCommand = {
   },
 };
 
-export const rankCommand: SlashCommand = {
+export const activityRankCommand: SlashCommand = {
   definition: {
-    name: 'rank',
+    name: 'activity-rank',
     description: '自分またはメンバーのコミュニティ内順位を表示します',
     options: [
       {
@@ -250,7 +250,7 @@ export const rankCommand: SlashCommand = {
     );
 
     const embed = new EmbedBuilder()
-      .setTitle(`🏅 ${user.globalName ?? user.username} の順位`)
+      .setTitle(`🏅 ${user.globalName ?? user.username} のコミュニティ順位`)
       .setThumbnail(user.displayAvatarURL({ size: 256 }))
       .setColor(0xf1c40f)
       .addFields(
@@ -263,7 +263,7 @@ export const rankCommand: SlashCommand = {
           inline: true,
         },
       )
-      .setFooter({ text: `${periodLabels[period]}の順位 · 同値は現在の集計順で表示` });
+      .setFooter({ text: `${periodLabels[period]}の順位 · 同値はDiscord ID昇順で固定` });
 
     if (ranks[4]!.rank !== null) {
       embed.addFields({
@@ -277,4 +277,4 @@ export const rankCommand: SlashCommand = {
   },
 };
 
-export const communityActivityCommands = [leaderboardCommand, activityCommand, rankCommand];
+export const communityActivityCommands = [leaderboardCommand, activityCommand, activityRankCommand];
