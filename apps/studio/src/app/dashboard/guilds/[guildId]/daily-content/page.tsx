@@ -1,10 +1,11 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, CalendarClock, CheckCircle2, History, TriangleAlert } from 'lucide-react';
+import { ArrowLeft, CalendarClock, CheckCircle2, History, MessageSquareText, TriangleAlert } from 'lucide-react';
 import {
   listDailyContents,
   listDeliveryHistory,
   normalizeDailyContentConfig,
+  safeEmbedFromJson,
   type DailyContentPrismaClient,
 } from '@herta/plugin-catalog/daily-content-service';
 import { auth } from '@/auth';
@@ -41,7 +42,7 @@ export default async function DailyContentPage({
   ]);
   if (!plugin) notFound();
   const config = normalizeDailyContentConfig(plugin.config);
-  const dailyContentDiscordOptions = discordOptions
+  const messageStudioDiscordOptions = discordOptions
     ? {
         ...discordOptions,
         channels: discordOptions.messageTargets ?? discordOptions.channels,
@@ -64,6 +65,12 @@ export default async function DailyContentPage({
       scheduleTime: schedule.scheduleTime,
       timezone: schedule.timezone,
       enabled: schedule.enabled,
+      recurrenceType: schedule.recurrenceType,
+      onceAt: schedule.onceAt?.toISOString() ?? null,
+      weekdays: schedule.weekdays,
+      messageFormat: schedule.messageFormat,
+      embed: safeEmbedFromJson(schedule.embedJson),
+      publishAnnouncement: schedule.publishAnnouncement,
       nextRunAt: schedule.nextRunAt?.toISOString() ?? null,
       lastSentAt: schedule.lastSentAt?.toISOString() ?? null,
       createdAt: schedule.createdAt.toISOString(),
@@ -83,8 +90,8 @@ export default async function DailyContentPage({
       createdAt: delivery.createdAt.toISOString(),
     }));
   } catch (error) {
-    console.error('Daily Content page failed to load', error);
-    loadError = 'Daily Contentを取得できませんでした。時間をおいて再読み込みしてください。';
+    console.error('Message Studio page failed to load', error);
+    loadError = 'Message Studioを取得できませんでした。時間をおいて再読み込みしてください。';
   }
 
   const sentCount = deliveries.filter((delivery) => delivery.status === 'sent').length;
@@ -98,17 +105,17 @@ export default async function DailyContentPage({
         href={`/dashboard/guilds/${guildId}/plugins/daily-content`}
         className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground"
       >
-        <ArrowLeft className="h-4 w-4" /> Daily Content Pluginへ戻る
+        <ArrowLeft className="h-4 w-4" /> Announcement / Message Studio Pluginへ戻る
       </Link>
 
       <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <CalendarClock className="h-6 w-6 text-primary" />
-            <h1 className="text-2xl font-semibold tracking-tight">Daily Content</h1>
+            <MessageSquareText className="h-6 w-6 text-primary" />
+            <h1 className="text-2xl font-semibold tracking-tight">Announcement / Message Studio</h1>
           </div>
-          <p className="mt-2 text-sm text-muted">
-            {guild.name} の定時コンテンツ、次回配信、履歴、失敗再実行を管理します。
+          <p className="mt-2 max-w-3xl text-sm text-muted">
+            {guild.name} のお知らせ、1回予約、日次・週次投稿、Forum投稿、Embed、画像、配信履歴をまとめて管理します。
           </p>
         </div>
         <span className="rounded-full border border-border px-3 py-1 text-sm text-muted">
@@ -118,14 +125,14 @@ export default async function DailyContentPage({
 
       {!plugin.enabled ? (
         <div className="mt-6 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-700 dark:text-amber-300">
-          Pluginは現在無効です。設定は編集できますが、定時・手動配信はWorkerでスキップされます。
+          Pluginは現在無効です。Composerの編集はできますが、予約・手動配信はWorkerでスキップされます。
         </div>
       ) : null}
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">
         <Metric
           icon={<CalendarClock className="h-5 w-5" />}
-          label="スケジュール"
+          label="予約・定期投稿"
           value={schedules.length}
         />
         <Metric icon={<CheckCircle2 className="h-5 w-5" />} label="直近の成功" value={sentCount} />
@@ -147,16 +154,21 @@ export default async function DailyContentPage({
             initialSchedules={schedules}
             initialDeliveries={deliveries}
             defaultTimezone={config.defaultTimezone}
+            defaultChannelId={config.defaultAnnouncementChannelId}
             maxContentLength={config.maxContentLength}
             pluginEnabled={plugin.enabled}
-            discordOptions={dailyContentDiscordOptions}
+            allowAnnouncementCrosspost={config.allowAnnouncementCrosspost}
+            allowUserMentions={config.allowUserMentions}
+            discordOptions={messageStudioDiscordOptions}
           />
         </div>
       )}
 
-      <div className="mt-8 flex items-center gap-2 text-xs text-muted">
-        <History className="h-4 w-4" />{' '}
-        配信履歴は本文を保持せず、状態・予定日時・試行回数・安全なエラー名だけを表示します。
+      <div className="mt-8 flex items-start gap-2 text-xs text-muted">
+        <History className="mt-0.5 h-4 w-4 shrink-0" />
+        <p>
+          配信履歴には本文を複製せず、状態・予定日時・試行回数・安全なエラー名を保存します。既存Daily Contentの毎日投稿はそのまま互換動作します。
+        </p>
       </div>
     </div>
   );
