@@ -235,4 +235,49 @@ describe('Announcement / Message Studio config', () => {
       ).onceAt,
     ).toEqual(new Date('2030-01-01T00:02:00Z'));
   });
+
+  it('選択したmessageFormatに実際に配信できる内容が必要', () => {
+    const config = normalizeDailyContentConfig({});
+    const base = {
+      channelId: '123456789012345678',
+      scheduleTime: '09:00',
+      recurrenceType: 'daily' as const,
+    };
+
+    expect(() =>
+      normalizeDailyContentInput(
+        {
+          ...base,
+          content: '',
+          messageFormat: 'text',
+          embed: { description: 'Embedだけ' },
+        },
+        config,
+      ),
+    ).toThrow('通常メッセージでは本文を入力してください');
+
+    expect(() =>
+      normalizeDailyContentInput(
+        {
+          ...base,
+          content: '本文だけ',
+          messageFormat: 'embed',
+          embed: null,
+        },
+        config,
+      ),
+    ).toThrow('Embed形式ではEmbedの内容を入力してください');
+
+    expect(
+      normalizeDailyContentInput(
+        {
+          ...base,
+          content: '本文',
+          messageFormat: 'embed',
+          embed: { description: 'Embed本文' },
+        },
+        config,
+      ).messageFormat,
+    ).toBe('embed');
+  });
 });

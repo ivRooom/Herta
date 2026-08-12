@@ -152,8 +152,11 @@ export function normalizeDailyContentInput(
 
   const messageFormat = normalizeMessageFormat(input.messageFormat);
   const embed = normalizeMessageStudioEmbed(input.embed, config.allowUserMentions);
-  if (!content && !embedHasVisibleContent(embed)) {
-    throw new DailyContentValidationError('本文またはEmbedの内容を入力してください');
+  if (messageFormat === 'text' && !content) {
+    throw new DailyContentValidationError('通常メッセージでは本文を入力してください');
+  }
+  if (messageFormat === 'embed' && !embedHasVisibleContent(embed)) {
+    throw new DailyContentValidationError('Embed形式ではEmbedの内容を入力してください');
   }
 
   const recurrenceType = normalizeRecurrenceType(input.recurrenceType);

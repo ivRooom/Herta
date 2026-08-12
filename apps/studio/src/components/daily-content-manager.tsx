@@ -266,7 +266,7 @@ export function DailyContentManager({
       thumbnailUrl: schedule.embed?.thumbnailUrl ?? '',
       footerText: schedule.embed?.footerText ?? '',
       fields: schedule.embed?.fields ?? [],
-      publishAnnouncement: schedule.publishAnnouncement,
+      publishAnnouncement: schedule.publishAnnouncement && allowAnnouncementCrosspost,
     });
     document.getElementById('message-studio-composer')?.scrollIntoView({ behavior: 'smooth' });
   }

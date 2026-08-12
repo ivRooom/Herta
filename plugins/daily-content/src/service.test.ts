@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import { normalizeDailyContentConfig } from './config.js';
 import {
   markDeliverySent,
   reserveDueDelivery,
+  updateDailyContent,
   type DailyContentDeliveryRecord,
   type DailyContentPrismaClient,
   type DailyContentRecord,
   type DailyContentTransactionClient,
 } from './service.js';
 
-function createHarness() {
+function createHarness(overrides: Partial<DailyContentRecord> = {}) {
   const scheduledFor = new Date('2030-01-01T00:10:00Z');
   let schedule: DailyContentRecord = {
     id: 'schedule-1',
@@ -33,6 +35,7 @@ function createHarness() {
     updatedBy: 'user-1',
     createdAt: new Date('2029-12-01T00:00:00Z'),
     updatedAt: new Date('2029-12-01T00:00:00Z'),
+    ...overrides,
   };
   let delivery: DailyContentDeliveryRecord | null = null;
 
@@ -118,5 +121,27 @@ describe('Message Studio one-shot delivery lifecycle', () => {
     expect(harness.getDelivery()?.status).toBe('sent');
     expect(harness.getSchedule().enabled).toBe(false);
     expect(harness.getSchedule().lastSentAt).toEqual(sentAt);
+  });
+
+  it('Crosspost設定をOFFにした後も既存予約を編集でき、保存済みフラグを解除する', async () => {
+    const harness = createHarness({
+      recurrenceType: 'daily',
+      onceAt: null,
+      scheduleTime: '09:00',
+      publishAnnouncement: true,
+      nextRunAt: new Date('2030-01-02T09:00:00Z'),
+    });
+
+    const updated = await updateDailyContent(harness.prisma, {
+      guildId: 'guild-1',
+      scheduleId: 'schedule-1',
+      actorId: 'user-2',
+      config: normalizeDailyContentConfig({ allowAnnouncementCrosspost: false }),
+      patch: { title: 'Crosspost解除後も編集可能' },
+      now: new Date('2029-12-31T00:00:00Z'),
+    });
+
+    expect(updated?.title).toBe('Crosspost解除後も編集可能');
+    expect(updated?.publishAnnouncement).toBe(false);
   });
 });

@@ -199,7 +199,10 @@ export async function updateDailyContent(
           input.patch.embed !== undefined
             ? input.patch.embed
             : (current.embedJson as DailyContentInput['embed']),
-        publishAnnouncement: input.patch.publishAnnouncement ?? current.publishAnnouncement,
+        publishAnnouncement:
+          !input.config.allowAnnouncementCrosspost && input.patch.publishAnnouncement === undefined
+            ? false
+            : (input.patch.publishAnnouncement ?? current.publishAnnouncement),
       },
       input.config,
       now,
