@@ -37,6 +37,31 @@ replace_once(
   };''',
 )
 
+replace_once(
+    'plugins/daily-content/src/config.test.ts',
+    "    const config = normalizeDailyContentConfig({});\n    const onceAt = new Date('2026-08-20T11:00:00Z');",
+    "    const config = normalizeDailyContentConfig({ allowAnnouncementCrosspost: true });\n    const onceAt = new Date('2026-08-20T11:00:00Z');",
+)
+replace_once(
+    'plugins/daily-content/src/config.test.ts',
+    "  it('週次配信は曜日を重複除去して昇順にする', () => {",
+    '''  it('CrosspostはPlugin設定で許可されている場合だけ保存できる', () => {
+    expect(() =>
+      normalizeDailyContentInput(
+        {
+          channelId: '123456789012345678',
+          content: 'Announcement',
+          scheduleTime: '20:00',
+          publishAnnouncement: true,
+        },
+        normalizeDailyContentConfig({}),
+      ),
+    ).toThrow('Announcement CrosspostはPlugin設定で許可されていません');
+  });
+
+  it('週次配信は曜日を重複除去して昇順にする', () => {''',
+)
+
 # Ensure package version follows manifest version.
 package_path = Path('plugins/daily-content/package.json')
 package_text = package_path.read_text()
