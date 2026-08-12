@@ -89,6 +89,7 @@ function createHarness(overrides: Partial<DailyContentRecord> = {}) {
     auditLog: { create: async () => ({}) },
     guildPlugin: { findUnique: async () => ({ enabled: true }) },
     $queryRawUnsafe: async () => [],
+    $executeRawUnsafe: async () => 1,
   } as unknown as DailyContentTransactionClient;
 
   const prisma = {

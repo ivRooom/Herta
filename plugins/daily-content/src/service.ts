@@ -90,6 +90,7 @@ export interface DailyContentTransactionClient {
   auditLog: AuditLogDelegate;
   guildPlugin: GuildPluginDelegate;
   $queryRawUnsafe(query: string, ...values: unknown[]): Promise<unknown>;
+  $executeRawUnsafe(query: string, ...values: unknown[]): Promise<number>;
 }
 
 export interface DailyContentPrismaClient extends DailyContentTransactionClient {
@@ -238,7 +239,7 @@ export async function updateDailyContent(
       },
     });
     if (!embed) {
-      await tx.$queryRawUnsafe(
+      await tx.$executeRawUnsafe(
         'UPDATE daily_contents SET embed_json = NULL WHERE id = $1',
         current.id,
       );
