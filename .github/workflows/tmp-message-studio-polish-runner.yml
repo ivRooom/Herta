@@ -1,0 +1,46 @@
+name: Temporary Message Studio Polish Runner v2
+
+on:
+  push:
+    branches:
+      - tmp/message-studio-polish-runner
+
+permissions:
+  contents: write
+
+jobs:
+  polish:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/message-studio-v2
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: python .github/scripts/tmp-message-studio-polish.py
+      - run: pnpm db:generate
+      - run: |
+          pnpm exec prettier --write \
+            apps/studio/src/components/daily-content-manager.tsx \
+            apps/studio/src/components/plugin-setup-overview.tsx \
+            plugins/daily-content/src/manifest.ts \
+            plugins/daily-content/src/plugin.ts
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+      - name: Push feature changes
+        run: |
+          rm .github/scripts/tmp-message-studio-polish.py
+          rm .github/workflows/tmp-message-studio-polish.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Message StudioのTimezoneとForum投稿を仕上げる'
+          git push origin HEAD:feat/message-studio-v2
