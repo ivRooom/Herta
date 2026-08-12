@@ -1,4 +1,4 @@
-name: Temporary Message Studio Final Hardening
+name: Temporary Message Studio Review Hardening
 
 on:
   push:
@@ -22,45 +22,124 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Apply final hardening
+      - name: Apply review hardening
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          manifest_path = Path('plugins/daily-content/src/manifest.ts')
-          manifest = manifest_path.read_text()
-          old = """          options: [{ ...targetOption, required: true }, ...contentOptions],"""
-          new = """          options: [{ ...targetOption, required: true }, forumTitleOption, ...contentOptions],"""
-          if old not in manifest:
-              raise SystemExit('say send options pattern not found')
-          manifest_path.write_text(manifest.replace(old, new, 1))
+          request_path = Path('apps/studio/src/lib/message-studio-request.ts')
+          request = request_path.read_text()
+          old = """import { parseLocalDateTime } from '@herta/plugin-catalog/daily-content-service';
 
-          plugin_path = Path('plugins/daily-content/src/plugin.ts')
-          plugin = plugin_path.read_text()
-          old = """    if (crosspost && sent.crosspost) await sent.crosspost();
-              await respond(interaction, `📢 <#${channelId}> へお知らせを投稿しました（${sent.id}）`);"""
-          new = """    let crosspostWarning = '';
-              if (crosspost && sent.crosspost) {
-                try {
-                  await sent.crosspost();
-                } catch (error) {
-                  crosspostWarning = ' / Crosspostのみ失敗';
-                  context.logger.warn(
-                    { error, guildId: context.guildId, channelId, messageId: sent.id },
-                    'AnnouncementのCrosspostに失敗しました。元メッセージは投稿済みです',
-                  );
-                }
-              }
-              await respond(
-                interaction,
-                `📢 <#${channelId}> へお知らせを投稿しました（${sent.id}）${crosspostWarning}`,
-              );"""
-          if old not in plugin:
-              raise SystemExit('crosspost pattern not found')
-          plugin_path.write_text(plugin.replace(old, new, 1))
+export function normalizeMessageStudioRequestBody(
+  body: Record<string, unknown>,
+  defaultTimezone: string,
+): Record<string, unknown> {
+  const normalized = { ...body };
+  const onceAt = normalized.onceAt;
+  if (typeof onceAt === 'string' && onceAt.trim()) {
+    const timezone =
+      typeof normalized.timezone === 'string' && normalized.timezone.trim()
+        ? normalized.timezone.trim()
+        : defaultTimezone;
+    normalized.onceAt = parseLocalDateTime(onceAt.trim().replace('T', ' '), timezone);
+  }
+  return normalized;
+}
+"""
+          new = """import {
+  DailyContentValidationError,
+  parseLocalDateTime,
+} from '@herta/plugin-catalog/daily-content-service';
+
+const ISO_OFFSET_PATTERN = /(?:Z|[+-]\\d{2}:\\d{2})$/i;
+
+export function normalizeMessageStudioRequestBody(
+  body: Record<string, unknown>,
+  defaultTimezone: string,
+): Record<string, unknown> {
+  const normalized = { ...body };
+  const onceAt = normalized.onceAt;
+  if (typeof onceAt === 'string' && onceAt.trim()) {
+    const value = onceAt.trim();
+    const timezone =
+      typeof normalized.timezone === 'string' && normalized.timezone.trim()
+        ? normalized.timezone.trim()
+        : defaultTimezone;
+    if (ISO_OFFSET_PATTERN.test(value)) {
+      const parsed = new Date(value);
+      if (Number.isNaN(parsed.getTime())) {
+        throw new DailyContentValidationError('onceAtの日時形式が不正です');
+      }
+      normalized.onceAt = parsed;
+    } else {
+      normalized.onceAt = parseLocalDateTime(value.replace('T', ' '), timezone);
+    }
+  }
+  return normalized;
+}
+"""
+          if old not in request:
+              raise SystemExit('message-studio-request pattern not found')
+          request_path.write_text(request.replace(old, new, 1))
+
+          worker_path = Path('apps/worker/src/daily-content.ts')
+          worker = worker_path.read_text()
+          old = """  if (FORUM_CHANNEL_TYPES.has(channel.type)) {
+    return publishDiscordForumPost(input);
+  }
+"""
+          new = """  if (FORUM_CHANNEL_TYPES.has(channel.type)) {
+    if (input.publishAnnouncement) {
+      throw new DailyContentPublishError('DailyContentCrosspostUnsupportedForForum', 400);
+    }
+    return publishDiscordForumPost(input);
+  }
+"""
+          if old not in worker:
+              raise SystemExit('forum publish pattern not found')
+          worker_path.write_text(worker.replace(old, new, 1))
+
+          test_path = Path('apps/studio/src/lib/message-studio-request.test.ts')
+          test_path.write_text("""import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { normalizeMessageStudioRequestBody } from './message-studio-request.ts';
+
+test('offset付きISO onceAtを同じ絶対時刻として保持する', () => {
+  const result = normalizeMessageStudioRequestBody(
+    { onceAt: '2026-08-20T11:00:00.000Z' },
+    'Asia/Tokyo',
+  );
+  assert.ok(result.onceAt instanceof Date);
+  assert.equal(result.onceAt.toISOString(), '2026-08-20T11:00:00.000Z');
+});
+
+test('datetime-local onceAtは指定Timezoneの壁時計時刻として解釈する', () => {
+  const result = normalizeMessageStudioRequestBody(
+    { onceAt: '2026-08-20T20:00', timezone: 'Asia/Tokyo' },
+    'UTC',
+  );
+  assert.ok(result.onceAt instanceof Date);
+  assert.equal(result.onceAt.toISOString(), '2026-08-20T11:00:00.000Z');
+});
+""")
+
+          package_path = Path('apps/studio/package.json')
+          package = package_path.read_text()
+          needle = 'src/lib/plugin-hub-preflight.test.ts'
+          if 'src/lib/message-studio-request.test.ts' not in package:
+              if needle not in package:
+                  raise SystemExit('studio test script pattern not found')
+              package = package.replace(
+                  needle,
+                  needle + ' src/lib/message-studio-request.test.ts',
+                  1,
+              )
+              package_path.write_text(package)
           PY
       - run: pnpm db:generate
-      - run: pnpm exec prettier --write plugins/daily-content/src/manifest.ts plugins/daily-content/src/plugin.ts
+      - run: pnpm exec prettier --write apps/studio/src/lib/message-studio-request.ts apps/studio/src/lib/message-studio-request.test.ts apps/studio/package.json apps/worker/src/daily-content.ts
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
@@ -70,6 +149,6 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add plugins/daily-content/src/manifest.ts plugins/daily-content/src/plugin.ts
-          git commit -m 'Message StudioのForum発言とCrosspost失敗処理を強化する'
+          git add apps/studio/src/lib/message-studio-request.ts apps/studio/src/lib/message-studio-request.test.ts apps/studio/package.json apps/worker/src/daily-content.ts
+          git commit -m 'Message StudioのISO予約とForum Crosspostを強化する'
           git push origin HEAD:feat/message-studio-v2
