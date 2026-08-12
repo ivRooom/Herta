@@ -1,4 +1,4 @@
-import Ajv, { type ErrorObject } from 'ajv';
+import { type ErrorObject } from 'ajv';
 import type { Prisma } from '@herta/db';
 import type { PluginManifest } from '@herta/shared';
 import { getAllPluginManifests, getPluginManifest } from '@herta/plugin-catalog';
@@ -7,10 +7,11 @@ import { prisma } from '@/lib/db';
 import { DiscordApiError } from '@/lib/discord';
 import { discordApiErrorResponse } from '@/lib/discord-api-response';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
+import { createPluginConfigAjv } from '@/lib/plugin-config-ajv';
 import { publishPluginRuntimeEvent } from '@/lib/plugin-runtime-events';
 import { getDiscordAccessToken } from '@/lib/session';
 
-const ajv = new Ajv({ allErrors: true, useDefaults: true });
+const ajv = createPluginConfigAjv();
 
 export type PluginConfig = Record<string, unknown>;
 
