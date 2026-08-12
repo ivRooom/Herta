@@ -328,6 +328,7 @@ model CommunityProfilePreference {
   userId                 String   @map("user_id")
   isPublic               Boolean  @default(true) @map("is_public")
   featuredAchievementIds String[] @default([]) @map("featured_achievement_ids")
+  titleAchievementId     String?  @map("title_achievement_id")
   updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@id([guildId, userId])

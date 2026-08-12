@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const achievementsManifest: PluginManifest = {
   id: 'achievements',
   name: 'Achievements / Badges',
-  version: '2.0.0',
+  version: '2.1.0',
   description:
     'サーバー活動から実績を自動解除し、Badge Collection・進捗・ポイント・ランキングを提供します',
   author: { name: 'Herta' },
@@ -171,6 +171,7 @@ export const achievementsManifest: PluginManifest = {
             { name: 'Social', value: 'social' },
             { name: 'Events', value: 'events' },
             { name: 'Community', value: 'community' },
+            { name: 'Minecraft', value: 'minecraft' },
           ],
         },
         {

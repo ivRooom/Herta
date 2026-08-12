@@ -1,6 +1,20 @@
 import type { PrismaClient } from '@herta/db';
 import { achievementsManifest } from '@herta/plugin-catalog';
 import {
+  ACHIEVEMENTS,
+  ACHIEVEMENT_BY_ID,
+  ACHIEVEMENT_RARITY_ORDER,
+  achievementCategoryLabel,
+  achievementPoints,
+  achievementRarityLabel,
+  achievementScoreForIds,
+  isAchievementCategory,
+  isAchievementRarity,
+  type AchievementCategory,
+  type AchievementDefinition,
+  type AchievementRarity,
+} from '@herta/shared';
+import {
   definePlugin,
   type CommandHandler,
   type PluginEventHandler,
@@ -21,300 +35,12 @@ const DISCORD_ID_PATTERN = /^\d+$/;
 const AUTO_SYNC_CACHE_LIMIT = 20_000;
 const autoSyncLastAt = new Map<string, number>();
 
-type MetricKey = keyof AchievementMetrics;
-export type AchievementRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
-export type AchievementCategory = 'xp' | 'activity' | 'social' | 'events' | 'community';
 type AchievementStatusFilter = 'unlocked' | 'locked';
 
-export interface AchievementDefinition {
-  id: string;
-  name: string;
-  description: string;
-  emoji: string;
-  rarity: AchievementRarity;
-  category: AchievementCategory;
-  metric?: MetricKey;
-  target?: number;
-  secret?: boolean;
-}
+export { ACHIEVEMENTS, achievementPoints, achievementScoreForIds };
+export type { AchievementCategory, AchievementDefinition, AchievementRarity };
 
-export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
-  {
-    id: 'first-steps',
-    name: 'First Steps',
-    description: '100 XPを獲得する',
-    emoji: '🌱',
-    rarity: 'common',
-    category: 'xp',
-    metric: 'xp',
-    target: 100,
-  },
-  {
-    id: 'getting-active',
-    name: 'Getting Active',
-    description: '1,000 XPを獲得する',
-    emoji: '⚡',
-    rarity: 'uncommon',
-    category: 'xp',
-    metric: 'xp',
-    target: 1000,
-  },
-  {
-    id: 'server-regular',
-    name: 'Server Regular',
-    description: '5,000 XPを獲得する',
-    emoji: '🔥',
-    rarity: 'rare',
-    category: 'xp',
-    metric: 'xp',
-    target: 5000,
-  },
-  {
-    id: 'veteran',
-    name: 'Veteran',
-    description: '20,000 XPを獲得する',
-    emoji: '👑',
-    rarity: 'legendary',
-    category: 'xp',
-    metric: 'xp',
-    target: 20000,
-  },
-  {
-    id: 'first-message',
-    name: 'Hello, Community!',
-    description: '集計対象メッセージを1件送信する',
-    emoji: '👋',
-    rarity: 'common',
-    category: 'activity',
-    metric: 'messages',
-    target: 1,
-  },
-  {
-    id: 'chat-starter',
-    name: 'Chat Starter',
-    description: '集計対象メッセージを100件送信する',
-    emoji: '💬',
-    rarity: 'uncommon',
-    category: 'activity',
-    metric: 'messages',
-    target: 100,
-  },
-  {
-    id: 'conversation-engine',
-    name: 'Conversation Engine',
-    description: '集計対象メッセージを1,000件送信する',
-    emoji: '🗣️',
-    rarity: 'rare',
-    category: 'activity',
-    metric: 'messages',
-    target: 1000,
-  },
-  {
-    id: 'chat-legend',
-    name: 'Chat Legend',
-    description: '集計対象メッセージを10,000件送信する',
-    emoji: '📣',
-    rarity: 'legendary',
-    category: 'activity',
-    metric: 'messages',
-    target: 10000,
-  },
-  {
-    id: 'voice-check-in',
-    name: 'Voice Check-in',
-    description: 'VCで合計10分活動する',
-    emoji: '🎙️',
-    rarity: 'common',
-    category: 'activity',
-    metric: 'voiceSeconds',
-    target: 600,
-  },
-  {
-    id: 'voice-regular',
-    name: 'Voice Regular',
-    description: 'VCで合計10時間活動する',
-    emoji: '🎧',
-    rarity: 'uncommon',
-    category: 'activity',
-    metric: 'voiceSeconds',
-    target: 36_000,
-  },
-  {
-    id: 'voice-veteran',
-    name: 'Voice Veteran',
-    description: 'VCで合計100時間活動する',
-    emoji: '📻',
-    rarity: 'legendary',
-    category: 'activity',
-    metric: 'voiceSeconds',
-    target: 360_000,
-  },
-  {
-    id: 'first-reaction',
-    name: 'First Reaction',
-    description: 'リアクションを1回付ける',
-    emoji: '✨',
-    rarity: 'common',
-    category: 'social',
-    metric: 'reactionsGiven',
-    target: 1,
-  },
-  {
-    id: 'reaction-regular',
-    name: 'Reaction Regular',
-    description: 'リアクションを100回付ける',
-    emoji: '🙌',
-    rarity: 'uncommon',
-    category: 'social',
-    metric: 'reactionsGiven',
-    target: 100,
-  },
-  {
-    id: 'reaction-machine',
-    name: 'Reaction Machine',
-    description: 'リアクションを1,000回付ける',
-    emoji: '🎆',
-    rarity: 'epic',
-    category: 'social',
-    metric: 'reactionsGiven',
-    target: 1000,
-  },
-  {
-    id: 'noticed',
-    name: 'Getting Noticed',
-    description: '自分の投稿にリアクションを10回もらう',
-    emoji: '💜',
-    rarity: 'common',
-    category: 'social',
-    metric: 'reactionsReceived',
-    target: 10,
-  },
-  {
-    id: 'crowd-favorite',
-    name: 'Crowd Favorite',
-    description: '自分の投稿にリアクションを100回もらう',
-    emoji: '🌟',
-    rarity: 'rare',
-    category: 'social',
-    metric: 'reactionsReceived',
-    target: 100,
-  },
-  {
-    id: 'community-star',
-    name: 'Community Star',
-    description: '自分の投稿にリアクションを1,000回もらう',
-    emoji: '💫',
-    rarity: 'epic',
-    category: 'social',
-    metric: 'reactionsReceived',
-    target: 1000,
-  },
-  {
-    id: 'first-vote',
-    name: 'First Vote',
-    description: 'Pollへ1回参加する',
-    emoji: '🗳️',
-    rarity: 'common',
-    category: 'community',
-    metric: 'pollVotes',
-    target: 1,
-  },
-  {
-    id: 'voice-of-community',
-    name: 'Voice of Community',
-    description: 'Pollへ10回参加する',
-    emoji: '📊',
-    rarity: 'rare',
-    category: 'community',
-    metric: 'pollVotes',
-    target: 10,
-  },
-  {
-    id: 'feeling-lucky',
-    name: 'Feeling Lucky',
-    description: 'Giveawayへ1回参加する',
-    emoji: '🎁',
-    rarity: 'common',
-    category: 'events',
-    metric: 'giveawayEntries',
-    target: 1,
-  },
-  {
-    id: 'event-goer',
-    name: 'Event Goer',
-    description: 'Eventへ3回参加表明する',
-    emoji: '🎟️',
-    rarity: 'uncommon',
-    category: 'events',
-    metric: 'eventGoing',
-    target: 3,
-  },
-  {
-    id: 'community-regular',
-    name: 'Community Regular',
-    description: 'Eventへ10回参加表明する',
-    emoji: '🎉',
-    rarity: 'epic',
-    category: 'events',
-    metric: 'eventGoing',
-    target: 10,
-  },
-  {
-    id: 'idea-maker',
-    name: 'Idea Maker',
-    description: 'Suggestionを1件投稿する',
-    emoji: '💡',
-    rarity: 'common',
-    category: 'community',
-    metric: 'suggestions',
-    target: 1,
-  },
-  {
-    id: 'change-maker',
-    name: 'Change Maker',
-    description: 'Suggestionが1件採用または完了になる',
-    emoji: '🛠️',
-    rarity: 'rare',
-    category: 'community',
-    metric: 'acceptedSuggestions',
-    target: 1,
-  },
-  {
-    id: 'all-rounder',
-    name: 'All-Rounder',
-    description: '発言・VC・リアクション・被リアクションの4分野で条件を達成する',
-    emoji: '🧭',
-    rarity: 'epic',
-    category: 'community',
-  },
-  {
-    id: 'community-legend',
-    name: 'Community Legend',
-    description: '複数のコミュニティ活動を極める',
-    emoji: '🌌',
-    rarity: 'legendary',
-    category: 'community',
-    secret: true,
-  },
-];
-
-const achievementById = new Map(ACHIEVEMENTS.map((achievement) => [achievement.id, achievement]));
-
-const RARITY_POINTS: Record<AchievementRarity, number> = {
-  common: 10,
-  uncommon: 25,
-  rare: 50,
-  epic: 100,
-  legendary: 250,
-};
-
-const RARITY_ORDER: Record<AchievementRarity, number> = {
-  common: 0,
-  uncommon: 1,
-  rare: 2,
-  epic: 3,
-  legendary: 4,
-};
+const achievementById = ACHIEVEMENT_BY_ID;
 
 export interface AchievementsConfig {
   enabled: boolean;
@@ -487,17 +213,6 @@ export function normalizeAchievementsConfig(value: unknown): AchievementsConfig 
   };
 }
 
-export function achievementPoints(achievement: AchievementDefinition): number {
-  return RARITY_POINTS[achievement.rarity];
-}
-
-export function achievementScoreForIds(achievementIds: readonly string[]): number {
-  return achievementIds.reduce((total, id) => {
-    const achievement = achievementById.get(id);
-    return total + (achievement ? achievementPoints(achievement) : 0);
-  }, 0);
-}
-
 export function unlockedAchievementIds(metrics: AchievementMetrics): string[] {
   return ACHIEVEMENTS.filter((achievement) => isAchievementUnlocked(achievement, metrics)).map(
     (achievement) => achievement.id,
@@ -527,7 +242,7 @@ export function formatAchievements(
   });
   const lines = visible.map((achievement) => {
     const unlockedAt = unlocked.get(achievement.id);
-    const rarity = config.showRarity ? ` · ${rarityLabel(achievement.rarity)}` : '';
+    const rarity = config.showRarity ? ` · ${achievementRarityLabel(achievement.rarity)}` : '';
     const points = config.showScore ? ` · ${achievementPoints(achievement)}pt` : '';
     if (unlockedAt) {
       return `${achievement.emoji} **${achievement.name}**${rarity}${points} · ✅ 解除済み`;
@@ -627,7 +342,7 @@ async function executeSync(
           `🏅 **${unlockedDefinitions.length}個のAchievementを新しく解除しました！**`,
           ...unlockedDefinitions.map(
             (achievement) =>
-              `• ${achievement.emoji} ${achievement.name} · ${rarityLabel(achievement.rarity)} · ${achievementPoints(achievement)}pt`,
+              `• ${achievement.emoji} ${achievement.name} · ${achievementRarityLabel(achievement.rarity)} · ${achievementPoints(achievement)}pt`,
           ),
           `現在 ${unlocks.filter((record) => achievementById.has(record.achievementId)).length}/${ACHIEVEMENTS.length}`,
         ].join('\n')
@@ -664,8 +379,8 @@ async function executeInfo(
     content: [
       `${achievement.emoji} **${achievement.name}**`,
       `ID: \`${achievement.id}\``,
-      `Category: **${categoryLabel(achievement.category)}**`,
-      `Rarity: **${rarityLabel(achievement.rarity)}** · **${achievementPoints(achievement)}pt**`,
+      `Category: **${achievementCategoryLabel(achievement.category)}**`,
+      `Rarity: **${achievementRarityLabel(achievement.rarity)}** · **${achievementPoints(achievement)}pt**`,
       achievement.description,
       unlocked
         ? `Status: ✅ 解除済み · <t:${Math.floor(unlocked.unlockedAt.getTime() / 1000)}:R>`
@@ -770,7 +485,8 @@ async function sendUnlockNotification(
     })
     .filter(
       (achievement) =>
-        RARITY_ORDER[achievement.rarity] >= RARITY_ORDER[config.notificationMinimumRarity],
+        ACHIEVEMENT_RARITY_ORDER[achievement.rarity] >=
+        ACHIEVEMENT_RARITY_ORDER[config.notificationMinimumRarity],
     );
   if (definitions.length === 0) return;
 
@@ -783,7 +499,7 @@ async function sendUnlockNotification(
     `🏅 <@${userId}> が **${definitions.length}個のAchievementを解除！** · +${points.toLocaleString()}pt`,
     ...shown.map(
       (achievement) =>
-        `• ${achievement.emoji} **${achievement.name}** · ${rarityLabel(achievement.rarity)}`,
+        `• ${achievement.emoji} **${achievement.name}** · ${achievementRarityLabel(achievement.rarity)}`,
     ),
     ...(definitions.length > shown.length ? [`• ほか ${definitions.length - shown.length}個`] : []),
   ].join('\n');
@@ -913,26 +629,6 @@ function chunkLines(header: string, lines: string[], pageSize: number): string[]
   return pages;
 }
 
-function rarityLabel(rarity: AchievementRarity): string {
-  return {
-    common: 'Common',
-    uncommon: 'Uncommon',
-    rare: 'Rare',
-    epic: 'Epic',
-    legendary: 'Legendary',
-  }[rarity];
-}
-
-function categoryLabel(category: AchievementCategory): string {
-  return {
-    xp: 'XP',
-    activity: 'Activity',
-    social: 'Social',
-    events: 'Events',
-    community: 'Community',
-  }[category];
-}
-
 function formatDuration(seconds: number): string {
   const safeSeconds = Math.max(0, Math.floor(seconds));
   const hours = Math.floor(safeSeconds / 3600);
@@ -946,23 +642,11 @@ async function reply(interaction: AchievementCommandInteraction, content: string
 }
 
 function readCategory(value: unknown): AchievementCategory | undefined {
-  return value === 'xp' ||
-    value === 'activity' ||
-    value === 'social' ||
-    value === 'events' ||
-    value === 'community'
-    ? value
-    : undefined;
+  return isAchievementCategory(value) ? value : undefined;
 }
 
 function readRarity(value: unknown): AchievementRarity | undefined {
-  return value === 'common' ||
-    value === 'uncommon' ||
-    value === 'rare' ||
-    value === 'epic' ||
-    value === 'legendary'
-    ? value
-    : undefined;
+  return isAchievementRarity(value) ? value : undefined;
 }
 
 function readStatus(value: unknown): AchievementStatusFilter | undefined {

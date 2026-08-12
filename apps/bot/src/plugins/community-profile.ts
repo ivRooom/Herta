@@ -1,8 +1,10 @@
 import {
   addFeaturedAchievement,
+  clearCommunityProfileTitle,
   clearFeaturedAchievements,
   getCommunityProfileSnapshotData,
   removeFeaturedAchievement,
+  setCommunityProfileTitle,
   setCommunityProfileVisibility,
   type CommunityProfilePeriod,
   type CommunityProfileSnapshotData,
@@ -11,15 +13,16 @@ import {
 import { communityProfileManifest } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
 import {
-  ACHIEVEMENTS,
+  ACHIEVEMENT_BY_ID,
   achievementPoints,
-  achievementScoreForIds,
+  achievementRarityLabel,
+  summarizeAchievementCollection,
   type AchievementDefinition,
-} from './achievements.js';
+} from '@herta/shared';
 import { levelForXp, xpRequiredForLevel } from './xp-level.js';
 
 const EPHEMERAL_FLAG = 64;
-const achievementById = new Map(ACHIEVEMENTS.map((achievement) => [achievement.id, achievement]));
+const achievementById = ACHIEVEMENT_BY_ID;
 
 export interface CommunityProfileConfig {
   enabled: boolean;
@@ -29,6 +32,9 @@ export interface CommunityProfileConfig {
   showXp: boolean;
   showActivity: boolean;
   showAchievements: boolean;
+  showAchievementCompletion: boolean;
+  showAchievementRarityBreakdown: boolean;
+  showProfileTitle: boolean;
   showRankings: boolean;
   showRecentAchievements: boolean;
   recentAchievementCount: number;
@@ -83,6 +89,16 @@ export function normalizeCommunityProfileConfig(value: unknown): CommunityProfil
     showActivity: source.showActivity === undefined ? true : source.showActivity === true,
     showAchievements:
       source.showAchievements === undefined ? true : source.showAchievements === true,
+    showAchievementCompletion:
+      source.showAchievementCompletion === undefined
+        ? true
+        : source.showAchievementCompletion === true,
+    showAchievementRarityBreakdown:
+      source.showAchievementRarityBreakdown === undefined
+        ? true
+        : source.showAchievementRarityBreakdown === true,
+    showProfileTitle:
+      source.showProfileTitle === undefined ? true : source.showProfileTitle === true,
     showRankings: source.showRankings === undefined ? true : source.showRankings === true,
     showRecentAchievements:
       source.showRecentAchievements === undefined ? true : source.showRecentAchievements === true,
@@ -115,6 +131,11 @@ export function formatCommunityProfile(
     lines.push('🔒 このプロフィールは現在非公開です。');
   }
 
+  if (config.showProfileTitle) {
+    const title = resolveProfileTitle(snapshot);
+    if (title) lines.push(`${title.emoji} Title **${title.name}**`);
+  }
+
   if (config.showXp) appendXp(lines, snapshot, config);
   if (config.showAchievements) appendAchievements(lines, snapshot, config);
   if (config.showActivity) appendActivity(lines, snapshot, config);
@@ -127,7 +148,7 @@ export function formatCommunityProfile(
     lines.push(
       ...featured.map(
         (achievement) =>
-          `${achievement.emoji} **${achievement.name}** · ${rarityLabel(achievement.rarity)} · ${achievementPoints(achievement)}pt`,
+          `${achievement.emoji} **${achievement.name}** · ${achievementRarityLabel(achievement.rarity)} · ${achievementPoints(achievement)}pt`,
       ),
     );
   }
@@ -185,6 +206,39 @@ async function executeProfileCommand(
   if (subcommand === 'badge-clear') {
     await clearFeaturedAchievements(context.prisma, interaction.guildId, interaction.user.id);
     await replyPrivate(interaction, '🏷️ Badge Showcaseをすべてクリアしました。');
+    return;
+  }
+  if (subcommand === 'title-set') {
+    const achievementId = normalizedAchievementId(
+      interaction.options.getString('achievement', true),
+    );
+    const achievement = achievementId ? achievementById.get(achievementId) : undefined;
+    if (!achievementId || !achievement) {
+      await replyPrivate(interaction, 'そのAchievement IDは見つかりません。');
+      return;
+    }
+    const result = await setCommunityProfileTitle(
+      context.prisma,
+      interaction.guildId,
+      interaction.user.id,
+      achievementId,
+    );
+    if (result.status === 'not-unlocked') {
+      await replyPrivate(
+        interaction,
+        `🔒 **${achievement.name}** はまだ解除していないためTitleに設定できません。`,
+      );
+      return;
+    }
+    await replyPrivate(
+      interaction,
+      `${achievement.emoji} Profile Titleを **${achievement.name}** に変更しました。`,
+    );
+    return;
+  }
+  if (subcommand === 'title-clear') {
+    await clearCommunityProfileTitle(context.prisma, interaction.guildId, interaction.user.id);
+    await replyPrivate(interaction, '🏷️ Profile Titleを解除しました。');
     return;
   }
   if (subcommand === 'privacy') {
@@ -347,11 +401,19 @@ function appendAchievements(
   const knownIds = snapshot.achievements.unlocks
     .map((record) => record.achievementId)
     .filter((id) => achievementById.has(id));
-  const score = achievementScoreForIds(knownIds);
+  const summary = summarizeAchievementCollection(knownIds);
   lines.push('', '**🏅 Achievements**');
+  const completion = config.showAchievementCompletion ? ` · **${summary.percentage}%**` : '';
   lines.push(
-    `**${knownIds.length}/${ACHIEVEMENTS.length}** unlocked · **${score.toLocaleString()}pt**`,
+    `**${summary.unlocked}/${summary.total}** unlocked${completion} · **${summary.score.toLocaleString()}pt**`,
   );
+  if (config.showAchievementRarityBreakdown) {
+    lines.push(
+      summary.rarity
+        .map((item) => `${achievementRarityLabel(item.rarity)} ${item.unlocked}/${item.total}`)
+        .join(' · '),
+    );
+  }
   if (config.showRankings) {
     lines.push(
       `Badge Rank **${formatRank(snapshot.achievements.rank)}**${snapshot.achievements.participants > 0 ? ` / ${snapshot.achievements.participants.toLocaleString()}人` : ''}`,
@@ -411,6 +473,15 @@ function resolveFeaturedAchievements(
     .slice(0, limit);
 }
 
+function resolveProfileTitle(
+  snapshot: CommunityProfileSnapshotData,
+): AchievementDefinition | undefined {
+  const id = snapshot.preference.titleAchievementId;
+  if (!id) return undefined;
+  const unlocked = new Set(snapshot.achievements.unlocks.map((record) => record.achievementId));
+  return unlocked.has(id) ? achievementById.get(id) : undefined;
+}
+
 function appendActivityMetric(
   lines: string[],
   label: string,
@@ -437,16 +508,6 @@ function periodLabel(period: CommunityProfilePeriod): string {
   if (period === '7d') return '7 days';
   if (period === '30d') return '30 days';
   return 'All Time';
-}
-
-function rarityLabel(rarity: AchievementDefinition['rarity']): string {
-  return {
-    common: 'Common',
-    uncommon: 'Uncommon',
-    rare: 'Rare',
-    epic: 'Epic',
-    legendary: 'Legendary',
-  }[rarity];
 }
 
 function readPeriod(value: unknown): CommunityProfilePeriod | undefined {
