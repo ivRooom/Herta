@@ -23,7 +23,9 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Apply Message Studio core
-        run: python .github/scripts/tmp-message-studio-core.py
+        run: |
+          python .github/scripts/tmp-message-studio-core.py
+          python .github/scripts/tmp-message-studio-core-fix.py
       - name: Prisma Generate
         run: pnpm db:generate
       - name: Format changed files
@@ -46,6 +48,7 @@ jobs:
       - name: Commit core
         run: |
           rm .github/scripts/tmp-message-studio-core.py
+          rm .github/scripts/tmp-message-studio-core-fix.py
           rm .github/workflows/tmp-message-studio-core.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
