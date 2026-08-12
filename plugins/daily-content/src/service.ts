@@ -238,7 +238,10 @@ export async function updateDailyContent(
       },
     });
     if (!embed) {
-      await tx.$queryRawUnsafe('UPDATE daily_contents SET embed_json = NULL WHERE id = $1', current.id);
+      await tx.$queryRawUnsafe(
+        'UPDATE daily_contents SET embed_json = NULL WHERE id = $1',
+        current.id,
+      );
       updated.embedJson = null;
     }
     await tx.auditLog.create({
