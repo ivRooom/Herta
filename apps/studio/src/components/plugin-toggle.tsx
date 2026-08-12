@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export function PluginToggle({
   guildId,
@@ -8,22 +8,32 @@ export function PluginToggle({
   initialEnabled,
   initialConfig,
   ariaLabel = 'Pluginの有効状態を切り替え',
+  disabled = false,
   onEnabledChange,
+  onSavingChange,
 }: {
   guildId: string;
   pluginId: string;
   initialEnabled: boolean;
   initialConfig: Record<string, unknown>;
   ariaLabel?: string;
+  disabled?: boolean;
   onEnabledChange?: (enabled: boolean) => void;
+  onSavingChange?: (saving: boolean) => void;
 }) {
   const [enabled, setEnabled] = useState(initialEnabled);
   const [status, setStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
+
+  useEffect(() => {
+    setEnabled(initialEnabled);
+    setStatus('idle');
+  }, [initialEnabled]);
 
   async function toggle() {
     const next = !enabled;
     setEnabled(next);
     setStatus('saving');
+    onSavingChange?.(true);
     try {
       const response = await fetch(`/api/guilds/${guildId}/plugins/${pluginId}`, {
         method: 'PATCH',
@@ -36,6 +46,8 @@ export function PluginToggle({
     } catch {
       setEnabled(!next);
       setStatus('error');
+    } finally {
+      onSavingChange?.(false);
     }
   }
 
@@ -47,9 +59,9 @@ export function PluginToggle({
         aria-label={ariaLabel}
         aria-checked={enabled}
         aria-busy={status === 'saving'}
-        disabled={status === 'saving'}
+        disabled={disabled || status === 'saving'}
         onClick={toggle}
-        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${enabled ? 'bg-primary' : 'bg-border'} disabled:opacity-60`}
+        className={`relative h-6 w-11 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface ${enabled ? 'bg-primary' : 'bg-border'} disabled:cursor-not-allowed disabled:opacity-60`}
       >
         <span
           aria-hidden="true"
