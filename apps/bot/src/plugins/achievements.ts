@@ -301,13 +301,15 @@ export function formatAchievements(
     const rarity = config.showRarity ? ` · ${achievementRarityLabel(stage.rarity)}` : '';
     const points = config.showScore ? ` · ${stage.points.toLocaleString()}pt` : '';
     const level = ` · ${series.name}`;
-    if (isUnlocked) return [`${stage.emoji} **${stage.name}**${level}${rarity}${points} · ✅ 解除済み`];
+    if (isUnlocked)
+      return [`${stage.emoji} **${stage.name}**${level}${rarity}${points} · ✅ 解除済み`];
     const progress = config.showProgress ? ` · ${formatCustomProgress(stage, metrics)}` : '';
     return [`🔒 **${stage.name}**${level}${rarity}${points}${progress}`];
   });
 
   const total = ACHIEVEMENTS.length + enabledCustomStages(config).length;
-  const score = achievementScoreForIds(knownUnlockedIds.filter((id) => achievementById.has(id))) +
+  const score =
+    achievementScoreForIds(knownUnlockedIds.filter((id) => achievementById.has(id))) +
     customAchievementScoreForIds(knownUnlockedIds, config);
   const scoreText = config.showScore ? ` · **${score.toLocaleString()}pt**` : '';
   const header = `**🏅 <@${userId}> のAchievements — ${knownUnlockedIds.length}/${total} unlocked${scoreText}**`;
@@ -404,7 +406,9 @@ async function executeSync(
     return presentation ? [presentation] : [];
   });
   const total = ACHIEVEMENTS.length + enabledCustomStages(config).length;
-  const unlockedCount = unlocks.filter((record) => isKnownAchievementId(record.achievementId, config)).length;
+  const unlockedCount = unlocks.filter((record) =>
+    isKnownAchievementId(record.achievementId, config),
+  ).length;
   const content =
     unlockedDefinitions.length > 0
       ? [
@@ -637,7 +641,9 @@ async function sendUnlockNotification(
         (achievement) =>
           `• ${achievement.emoji} **${achievement.name}** · ${achievementRarityLabel(achievement.rarity)}`,
       ),
-      ...(definitions.length > shown.length ? [`• ほか ${definitions.length - shown.length}個`] : []),
+      ...(definitions.length > shown.length
+        ? [`• ほか ${definitions.length - shown.length}個`]
+        : []),
     ].join('\n');
     const options: ReplyOptions = {
       content,
@@ -756,7 +762,7 @@ function achievementPresentation(
       name: builtIn.name,
       rarity: builtIn.rarity,
       points: achievementPoints(builtIn),
-      secret: builtIn.secret,
+      secret: builtIn.secret === true,
       notificationChannelId: null,
       rewardRoleId: null,
     };
@@ -784,7 +790,9 @@ function enabledCustomStages(
 }
 
 function isKnownAchievementId(id: string, config: AchievementsConfig): boolean {
-  return achievementById.has(id) || Boolean(findCustomAchievementStage(config.customAchievements, id));
+  return (
+    achievementById.has(id) || Boolean(findCustomAchievementStage(config.customAchievements, id))
+  );
 }
 
 function customAchievementScoreForIds(ids: readonly string[], config: AchievementsConfig): number {
