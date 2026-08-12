@@ -2,6 +2,11 @@ import type { PrismaClient } from '@herta/db';
 
 export interface AchievementMetrics {
   xp: number;
+  messages: number;
+  reactionsGiven: number;
+  reactionsReceived: number;
+  voiceSeconds: number;
+  minecraftSeconds: number;
   pollVotes: number;
   giveawayEntries: number;
   eventGoing: number;
@@ -14,6 +19,12 @@ export interface AchievementUnlockRecord {
   unlockedAt: Date;
 }
 
+export interface AchievementLeaderboardRecord {
+  userId: string;
+  unlockCount: number;
+  achievementIds: string[];
+}
+
 export async function getAchievementMetrics(
   prisma: PrismaClient,
   guildId: string,
@@ -22,6 +33,11 @@ export async function getAchievementMetrics(
   const [row] = await prisma.$queryRaw<
     Array<{
       xp: bigint;
+      messages: bigint;
+      reactionsGiven: bigint;
+      reactionsReceived: bigint;
+      voiceSeconds: bigint;
+      minecraftSeconds: bigint;
       pollVotes: bigint;
       giveawayEntries: bigint;
       eventGoing: bigint;
@@ -31,6 +47,11 @@ export async function getAchievementMetrics(
   >`
     SELECT
       COALESCE((SELECT "xp" FROM "xp_profiles" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId}), 0)::bigint AS "xp",
+      COALESCE((SELECT SUM("value") FROM "community_activity_daily" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId} AND "metric" = 'messages'), 0)::bigint AS "messages",
+      COALESCE((SELECT SUM("value") FROM "community_activity_daily" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId} AND "metric" = 'reactions_given'), 0)::bigint AS "reactionsGiven",
+      COALESCE((SELECT SUM("value") FROM "community_activity_daily" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId} AND "metric" = 'reactions_received'), 0)::bigint AS "reactionsReceived",
+      COALESCE((SELECT SUM("value") FROM "community_activity_daily" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId} AND "metric" = 'voice_seconds'), 0)::bigint AS "voiceSeconds",
+      COALESCE((SELECT SUM("value") FROM "community_activity_daily" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId} AND "metric" = 'minecraft_seconds'), 0)::bigint AS "minecraftSeconds",
       (SELECT COUNT(DISTINCT v."poll_id") FROM "poll_votes" v JOIN "polls" p ON p."id" = v."poll_id" WHERE p."guild_id" = ${guildId} AND v."user_id" = ${userId})::bigint AS "pollVotes",
       (SELECT COUNT(DISTINCT e."giveaway_id") FROM "giveaway_entries" e JOIN "giveaways" g ON g."id" = e."giveaway_id" WHERE g."guild_id" = ${guildId} AND e."user_id" = ${userId})::bigint AS "giveawayEntries",
       (SELECT COUNT(DISTINCT r."event_id") FROM "event_rsvps" r JOIN "community_events" e ON e."id" = r."event_id" WHERE e."guild_id" = ${guildId} AND r."user_id" = ${userId} AND r."status" = 'going')::bigint AS "eventGoing",
@@ -39,6 +60,11 @@ export async function getAchievementMetrics(
   `;
   return {
     xp: Number(row?.xp ?? 0n),
+    messages: Number(row?.messages ?? 0n),
+    reactionsGiven: Number(row?.reactionsGiven ?? 0n),
+    reactionsReceived: Number(row?.reactionsReceived ?? 0n),
+    voiceSeconds: Number(row?.voiceSeconds ?? 0n),
+    minecraftSeconds: Number(row?.minecraftSeconds ?? 0n),
     pollVotes: Number(row?.pollVotes ?? 0n),
     giveawayEntries: Number(row?.giveawayEntries ?? 0n),
     eventGoing: Number(row?.eventGoing ?? 0n),
@@ -58,6 +84,32 @@ export async function listAchievementUnlocks(
     WHERE "guild_id" = ${guildId} AND "user_id" = ${userId}
     ORDER BY "unlocked_at" ASC, "achievement_id" ASC
   `;
+}
+
+export async function listAchievementLeaderboard(
+  prisma: PrismaClient,
+  guildId: string,
+  limit: number,
+): Promise<AchievementLeaderboardRecord[]> {
+  const safeLimit = Math.max(5, Math.min(25, Math.trunc(limit)));
+  const rows = await prisma.$queryRaw<
+    Array<{ userId: string; unlockCount: bigint; achievementIds: string[] }>
+  >`
+    SELECT
+      "user_id" AS "userId",
+      COUNT(*)::bigint AS "unlockCount",
+      ARRAY_AGG("achievement_id" ORDER BY "achievement_id") AS "achievementIds"
+    FROM "achievement_unlocks"
+    WHERE "guild_id" = ${guildId}
+    GROUP BY "user_id"
+    ORDER BY COUNT(*) DESC, "user_id" ASC
+    LIMIT ${safeLimit}
+  `;
+  return rows.map((row) => ({
+    userId: row.userId,
+    unlockCount: Number(row.unlockCount),
+    achievementIds: row.achievementIds,
+  }));
 }
 
 export async function syncAchievementUnlocks(
