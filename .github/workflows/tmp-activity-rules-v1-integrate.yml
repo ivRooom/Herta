@@ -1,0 +1,112 @@
+name: Temporary Activity Rules v1 Integration
+
+on:
+  push:
+    branches:
+      - tmp/activity-rules-v1-integrate
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Patch feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin feat/activity-rules-v1
+          git checkout -B feat/activity-rules-v1 origin/feat/activity-rules-v1
+          python <<'PY'
+          from pathlib import Path
+
+          bot = Path('apps/bot/src/bot.ts')
+          text = bot.read_text()
+
+          old = """import {\n  finishVoiceSession,\n  incrementCommunityActivity,\n  resetVoiceSessions,\n  startVoiceSession,\n} from './activity/community-activity.js';\n"""
+          new = old + """import {\n  hasMessageCooldownElapsed,\n  normalizeActivityRulesConfig,\n  shouldCountMessage,\n  shouldCountVoice,\n  type ActivityRulesConfig,\n} from './activity/activity-rules.js';\n"""
+          if old not in text:
+              raise SystemExit('community activity import block not found')
+          text = text.replace(old, new, 1)
+
+          old = """  private gatewayObservationTimer?: NodeJS.Timeout;\n  private healthRedis?: Redis;\n"""
+          new = """  private gatewayObservationTimer?: NodeJS.Timeout;\n  private healthRedis?: Redis;\n  private readonly activityMessageLastCountedAt = new Map<string, number>();\n"""
+          if old not in text:
+              raise SystemExit('class properties block not found')
+          text = text.replace(old, new, 1)
+
+          old = """        try {\n          await resetVoiceSessions(this.prisma, guildId);\n          const guild = client.guilds.cache.get(guildId);\n          if (guild) {\n            for (const state of guild.voiceStates.cache.values()) {\n              if (!state.channelId || state.member?.user.bot) continue;\n              await startVoiceSession(this.prisma, guildId, state.id, state.channelId);\n            }\n          }\n        } catch (error) {\n"""
+          new = """        try {\n          await resetVoiceSessions(this.prisma, guildId);\n          const guild = client.guilds.cache.get(guildId);\n          if (guild) {\n            const activityRules = await this.getActivityRules(guildId);\n            for (const state of guild.voiceStates.cache.values()) {\n              if (state.member?.user.bot || !this.isCountableVoiceState(state, activityRules)) continue;\n              await startVoiceSession(this.prisma, guildId, state.id, state.channelId!);\n            }\n          }\n        } catch (error) {\n"""
+          if old not in text:
+              raise SystemExit('client ready voice block not found')
+          text = text.replace(old, new, 1)
+
+          old = """      this.pluginCommands.delete(guild.id);\n    });\n"""
+          new = """      this.pluginCommands.delete(guild.id);\n      for (const key of this.activityMessageLastCountedAt.keys()) {\n        if (key.startsWith(`${guild.id}:`)) this.activityMessageLastCountedAt.delete(key);\n      }\n    });\n"""
+          if old not in text:
+              raise SystemExit('guild delete block not found')
+          text = text.replace(old, new, 1)
+
+          old = """      if (!message.author.bot && !message.webhookId) {\n        try {\n          await incrementCommunityActivity(\n            this.prisma,\n            message.guildId,\n            message.author.id,\n            'messages',\n          );\n        } catch (error) {\n          this.logger.warn(\n            { err: error, guildId: message.guildId, userId: message.author.id },\n            '発言数の記録に失敗しました',\n          );\n        }\n      }\n"""
+          new = """      if (!message.author.bot && !message.webhookId) {\n        try {\n          const activityRules = await this.getActivityRules(message.guildId);\n          const now = Date.now();\n          const cooldownKey = `${message.guildId}:${message.author.id}`;\n          const roleIds = message.member ? [...message.member.roles.cache.keys()] : [];\n          if (\n            shouldCountMessage(activityRules, {\n              channelId: message.channelId,\n              roleIds,\n              contentAvailable: messageContentIntentEnabled(),\n              contentLength: message.content.length,\n            }) &&\n            hasMessageCooldownElapsed(\n              activityRules,\n              this.activityMessageLastCountedAt.get(cooldownKey),\n              now,\n            )\n          ) {\n            await incrementCommunityActivity(\n              this.prisma,\n              message.guildId,\n              message.author.id,\n              'messages',\n            );\n            this.activityMessageLastCountedAt.set(cooldownKey, now);\n          }\n        } catch (error) {\n          this.logger.warn(\n            { err: error, guildId: message.guildId, userId: message.author.id },\n            '発言数の記録に失敗しました',\n          );\n        }\n      }\n"""
+          if old not in text:
+              raise SystemExit('message activity block not found')
+          text = text.replace(old, new, 1)
+
+          old = """    this.client.on(Events.MessageReactionAdd, async (reaction, user) => {\n      if (user.bot) return;\n      try {\n        const resolvedReaction = reaction.partial ? await reaction.fetch() : reaction;\n        const resolvedMessage = resolvedReaction.message.partial\n          ? await resolvedReaction.message.fetch()\n          : resolvedReaction.message;\n        const guildId = resolvedMessage.guildId;\n        if (!guildId) return;\n\n        await incrementCommunityActivity(this.prisma, guildId, user.id, 'reactions_given');\n        const receiver = resolvedMessage.author;\n        if (receiver && !receiver.bot && receiver.id !== user.id) {\n          await incrementCommunityActivity(this.prisma, guildId, receiver.id, 'reactions_received');\n        }\n        await this.dispatchGuildPluginEvent(\n          guildId,\n          Events.MessageReactionAdd,\n          resolvedReaction,\n          user,\n        );\n      } catch (error) {\n        this.logger.warn({ err: error, userId: user.id }, 'リアクション活動の記録に失敗しました');\n      }\n    });\n"""
+          new = """    this.client.on(Events.MessageReactionAdd, async (reaction, user) => {\n      if (user.bot) return;\n      let resolvedReaction;\n      try {\n        resolvedReaction = reaction.partial ? await reaction.fetch() : reaction;\n        const resolvedMessage = resolvedReaction.message.partial\n          ? await resolvedReaction.message.fetch()\n          : resolvedReaction.message;\n        const guildId = resolvedMessage.guildId;\n        if (!guildId) return;\n\n        try {\n          const activityRules = await this.getActivityRules(guildId);\n          const giver = resolvedMessage.guild?.members.cache.get(user.id);\n          const giverAllowed = shouldCountMessage(activityRules, {\n            channelId: resolvedMessage.channelId,\n            roleIds: giver ? [...giver.roles.cache.keys()] : [],\n            contentAvailable: false,\n          });\n          if (giverAllowed && activityRules.countReactionsGiven) {\n            await incrementCommunityActivity(this.prisma, guildId, user.id, 'reactions_given');\n          }\n\n          const receiver = resolvedMessage.author;\n          const receiverAllowed = shouldCountMessage(activityRules, {\n            channelId: resolvedMessage.channelId,\n            roleIds: resolvedMessage.member ? [...resolvedMessage.member.roles.cache.keys()] : [],\n            contentAvailable: false,\n          });\n          if (\n            receiverAllowed &&\n            activityRules.countReactionsReceived &&\n            receiver &&\n            !receiver.bot &&\n            receiver.id !== user.id\n          ) {\n            await incrementCommunityActivity(this.prisma, guildId, receiver.id, 'reactions_received');\n          }\n        } catch (error) {\n          this.logger.warn({ err: error, guildId, userId: user.id }, 'リアクション活動の記録に失敗しました');\n        }\n\n        await this.dispatchGuildPluginEvent(\n          guildId,\n          Events.MessageReactionAdd,\n          resolvedReaction,\n          user,\n        );\n      } catch (error) {\n        this.logger.warn({ err: error, userId: user.id }, 'リアクションの取得に失敗しました');\n      }\n    });\n"""
+          if old not in text:
+              raise SystemExit('reaction block not found')
+          text = text.replace(old, new, 1)
+
+          old = """    this.client.on(Events.VoiceStateUpdate, async (oldState, newState) => {\n      const guildId = newState.guild.id;\n      const userId = newState.id;\n      if (newState.member?.user.bot ?? oldState.member?.user.bot) return;\n\n      try {\n        if (!oldState.channelId && newState.channelId) {\n          await startVoiceSession(this.prisma, guildId, userId, newState.channelId);\n        } else if (oldState.channelId && !newState.channelId) {\n          await finishVoiceSession(this.prisma, guildId, userId);\n        }\n        await this.dispatchGuildPluginEvent(guildId, Events.VoiceStateUpdate, oldState, newState);\n      } catch (error) {\n        this.logger.warn({ err: error, guildId, userId }, 'VC滞在時間の記録に失敗しました');\n      }\n    });\n"""
+          new = """    this.client.on(Events.VoiceStateUpdate, async (oldState, newState) => {\n      const guildId = newState.guild.id;\n      const userId = newState.id;\n      if (newState.member?.user.bot ?? oldState.member?.user.bot) return;\n\n      try {\n        const activityRules = await this.getActivityRules(guildId);\n        const oldEligible = this.isCountableVoiceState(oldState, activityRules);\n        const newEligible = this.isCountableVoiceState(newState, activityRules);\n        const channelChanged = oldState.channelId !== newState.channelId;\n\n        if (oldEligible && (!newEligible || channelChanged)) {\n          await finishVoiceSession(this.prisma, guildId, userId);\n        }\n        if (newEligible && (!oldEligible || channelChanged)) {\n          await startVoiceSession(this.prisma, guildId, userId, newState.channelId!);\n        }\n      } catch (error) {\n        this.logger.warn({ err: error, guildId, userId }, 'VC滞在時間の記録に失敗しました');\n      }\n\n      await this.dispatchGuildPluginEvent(guildId, Events.VoiceStateUpdate, oldState, newState);\n    });\n"""
+          if old not in text:
+              raise SystemExit('voice block not found')
+          text = text.replace(old, new, 1)
+
+          marker = """  private async dispatchGuildPluginEvent(\n"""
+          helpers = """  private async getActivityRules(guildId: string): Promise<ActivityRulesConfig> {\n    return normalizeActivityRulesConfig(\n      await this.pluginLoader.getGuildPluginConfig(guildId, 'activity-rules'),\n    );\n  }\n\n  private isCountableVoiceState(\n    state: {\n      channelId: string | null;\n      selfMute?: boolean | null;\n      serverMute?: boolean | null;\n      selfDeaf?: boolean | null;\n      serverDeaf?: boolean | null;\n      member?: { roles: { cache: Map<string, unknown> } } | null;\n    },\n    config: ActivityRulesConfig,\n  ): boolean {\n    return shouldCountVoice(config, {\n      channelId: state.channelId,\n      roleIds: state.member ? [...state.member.roles.cache.keys()] : [],\n      selfMute: state.selfMute,\n      serverMute: state.serverMute,\n      selfDeaf: state.selfDeaf,\n      serverDeaf: state.serverDeaf,\n    });\n  }\n\n"""
+          if marker not in text:
+              raise SystemExit('dispatch marker not found')
+          text = text.replace(marker, helpers + marker, 1)
+          bot.write_text(text)
+
+          registry = Path('apps/bot/src/plugins/registry.ts')
+          text = registry.read_text()
+          old = """const officialPluginIds = [\n  'achievements',\n  'afk',\n"""
+          new = """const officialPluginIds = [\n  'achievements',\n  'activity-rules',\n  'afk',\n"""
+          if old not in text:
+              raise SystemExit('officialPluginIds block not found')
+          registry.write_text(text.replace(old, new, 1))
+          PY
+          pnpm exec prettier --write \
+            apps/bot/src/bot.ts \
+            apps/bot/src/plugins/registry.ts \
+            apps/bot/src/plugins/loader.ts \
+            apps/bot/src/activity/activity-rules.ts \
+            apps/bot/src/activity/activity-rules.test.ts \
+            packages/plugin-catalog/src/index.ts \
+            packages/plugin-catalog/src/manifests/activity-rules.ts
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            apps/bot/src/bot.ts \
+            apps/bot/src/plugins/registry.ts \
+            apps/bot/src/plugins/loader.ts \
+            apps/bot/src/activity/activity-rules.ts \
+            apps/bot/src/activity/activity-rules.test.ts \
+            packages/plugin-catalog/src/index.ts \
+            packages/plugin-catalog/src/manifests/activity-rules.ts
+          git commit -m 'Activity Rules v1をBot集計へ統合する'
+          git push origin HEAD:feat/activity-rules-v1
