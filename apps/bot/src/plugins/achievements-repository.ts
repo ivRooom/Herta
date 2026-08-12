@@ -32,8 +32,9 @@ export async function getAchievementMetrics(
   prisma: PrismaClient,
   guildId: string,
   userId: string,
+  now = new Date(),
 ): Promise<AchievementMetrics> {
-  const seasonKey = getCommunitySeasonWindow().key;
+  const seasonKey = getCommunitySeasonWindow(now).key;
   const [row] = await prisma.$queryRaw<
     Array<{
       xp: bigint;
