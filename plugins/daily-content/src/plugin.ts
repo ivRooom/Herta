@@ -60,6 +60,8 @@ interface DailyContentCommandInteraction {
   options: DailyContentCommandOptions;
   replied: boolean;
   deferred: boolean;
+  deferReply(options: { flags: number }): Promise<unknown>;
+  editReply(options: DailyContentReplyOptions): Promise<unknown>;
   reply(options: DailyContentReplyOptions): Promise<unknown>;
   followUp(options: DailyContentReplyOptions): Promise<unknown>;
 }
@@ -233,6 +235,7 @@ async function executeAnnouncement(
   const config = normalizeDailyContentConfig(context.config);
   const subcommand = interaction.options.getSubcommand();
   if (subcommand === 'send') {
+    await deferEphemeral(interaction);
     const channelId = resolveChannelId(interaction, config, false);
     const payload = buildImmediatePayload(interaction, config);
     const crosspost = interaction.options.getBoolean('crosspost') === true;
@@ -374,6 +377,7 @@ async function executeSay(
   const config = normalizeDailyContentConfig(context.config);
   const subcommand = interaction.options.getSubcommand();
   if (subcommand === 'send') {
+    await deferEphemeral(interaction);
     const channelId = resolveChannelId(interaction, config, true);
     const payload = buildImmediatePayload(interaction, config);
     const sent = await sendToTarget(
@@ -387,6 +391,7 @@ async function executeSay(
     return;
   }
   if (subcommand === 'reply') {
+    await deferEphemeral(interaction);
     const reference = parseDiscordMessageUrl(requiredOption(interaction, 'message_url'));
     if (reference.guildId !== context.guildId) {
       throw new DailyContentValidationError('別サーバーのメッセージには返信できません');
@@ -430,6 +435,11 @@ function buildImmediatePayload(
   repliedUser?: boolean,
 ): MessagePayload {
   const content = interaction.options.getString('content')?.trim() ?? '';
+  if (content.length > config.maxContentLength) {
+    throw new DailyContentValidationError(
+      `contentは${config.maxContentLength}文字以内で指定してください`,
+    );
+  }
   assertSafeMentions(content, config.allowUserMentions);
   const rawEmbed = readEmbed(interaction, config);
   const requestedFormat = interaction.options.getString('format');
@@ -531,19 +541,29 @@ function requiredOption(interaction: DailyContentCommandInteraction, name: strin
   return value;
 }
 
+async function deferEphemeral(interaction: DailyContentCommandInteraction): Promise<void> {
+  if (!interaction.replied && !interaction.deferred) {
+    await interaction.deferReply({ flags: EPHEMERAL_FLAG });
+  }
+}
+
 async function respond(
   interaction: DailyContentCommandInteraction,
   content: string,
   embeds?: unknown[],
 ): Promise<void> {
-  const options: DailyContentReplyOptions = {
+  const baseOptions: DailyContentReplyOptions = {
     content,
     ...(embeds?.length ? { embeds } : {}),
-    flags: EPHEMERAL_FLAG,
     allowedMentions: { parse: [] },
   };
-  if (interaction.replied || interaction.deferred) await interaction.followUp(options);
-  else await interaction.reply(options);
+  if (interaction.deferred) {
+    await interaction.editReply(baseOptions);
+    return;
+  }
+  const ephemeralOptions = { ...baseOptions, flags: EPHEMERAL_FLAG };
+  if (interaction.replied) await interaction.followUp(ephemeralOptions);
+  else await interaction.reply(ephemeralOptions);
 }
 
 function escapeMarkdown(value: string): string {

@@ -113,9 +113,11 @@ describe('Message Studio one-shot delivery lifecycle', () => {
     await markDeliverySent(harness.prisma, {
       deliveryId: reserved!.id,
       scheduleId: 'schedule-1',
+      guildId: 'guild-1',
       messageId: 'message-1',
       sentAt,
       completeOneShot: true,
+      expectedOneShotAt: harness.scheduledFor,
     });
 
     expect(harness.getDelivery()?.status).toBe('sent');
@@ -143,5 +145,29 @@ describe('Message Studio one-shot delivery lifecycle', () => {
 
     expect(updated?.title).toBe('Crosspost解除後も編集可能');
     expect(updated?.publishAnnouncement).toBe(false);
+  });
+
+  it('配信中にone-shot日時が編集された場合は新しい予約を無効化しない', async () => {
+    const originalAt = new Date('2030-01-01T00:10:00Z');
+    const editedAt = new Date('2030-01-02T00:10:00Z');
+    const harness = createHarness({
+      onceAt: editedAt,
+      lastScheduledAt: originalAt,
+      nextRunAt: editedAt,
+      enabled: true,
+    });
+
+    await markDeliverySent(harness.prisma, {
+      deliveryId: 'delivery-1',
+      scheduleId: 'schedule-1',
+      guildId: 'guild-1',
+      messageId: 'message-after-edit',
+      completeOneShot: true,
+      expectedOneShotAt: originalAt,
+    }).catch(() => undefined);
+
+    expect(harness.getSchedule().enabled).toBe(true);
+    expect(harness.getSchedule().onceAt).toEqual(editedAt);
+    expect(harness.getSchedule().nextRunAt).toEqual(editedAt);
   });
 });

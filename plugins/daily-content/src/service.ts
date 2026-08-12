@@ -495,13 +495,29 @@ export async function markDeliverySent(
   input: {
     deliveryId: string;
     scheduleId: string;
+    guildId: string;
     messageId: string;
     sentAt?: Date;
     completeOneShot?: boolean;
+    expectedOneShotAt?: Date;
   },
 ): Promise<void> {
   const sentAt = input.sentAt ?? new Date();
   await prisma.$transaction(async (tx) => {
+    await lockGuild(tx, input.guildId);
+    const currentSchedule = await tx.dailyContent.findFirst({
+      where: { id: input.scheduleId, guildId: input.guildId },
+    });
+    const expectedOneShotAt = input.expectedOneShotAt?.getTime();
+    const shouldCompleteOneShot =
+      input.completeOneShot === true &&
+      expectedOneShotAt !== undefined &&
+      currentSchedule?.deletedAt === null &&
+      currentSchedule.enabled === true &&
+      currentSchedule.recurrenceType === 'once' &&
+      currentSchedule.onceAt?.getTime() === expectedOneShotAt &&
+      currentSchedule.lastScheduledAt?.getTime() === expectedOneShotAt;
+
     await tx.dailyContentDelivery.update({
       where: { id: input.deliveryId },
       data: {
@@ -517,7 +533,7 @@ export async function markDeliverySent(
       where: { id: input.scheduleId },
       data: {
         lastSentAt: sentAt,
-        ...(input.completeOneShot ? { enabled: false, nextRunAt: null } : {}),
+        ...(shouldCompleteOneShot ? { enabled: false, nextRunAt: null } : {}),
       },
     });
   });

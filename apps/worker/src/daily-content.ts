@@ -309,9 +309,14 @@ async function processDelivery(
     await markDeliverySent(prisma, {
       deliveryId: delivery.id,
       scheduleId: delivery.dailyContent.id,
+      guildId: delivery.guildId,
       messageId,
       completeOneShot:
         delivery.origin === 'scheduled' && delivery.dailyContent.recurrenceType === 'once',
+      expectedOneShotAt:
+        delivery.origin === 'scheduled' && delivery.dailyContent.recurrenceType === 'once'
+          ? delivery.scheduledFor
+          : undefined,
     });
     options.logger.info(
       {
