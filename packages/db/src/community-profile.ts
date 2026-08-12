@@ -5,6 +5,7 @@ export type CommunityProfilePeriod = '7d' | '30d' | 'all';
 export interface CommunityProfilePreferenceData {
   isPublic: boolean;
   featuredAchievementIds: string[];
+  titleAchievementId: string | null;
 }
 
 export interface CommunityProfileXp {
@@ -71,6 +72,7 @@ interface AchievementRankRow {
 interface PreferenceRow {
   isPublic: boolean;
   featuredAchievementIds: string[];
+  titleAchievementId: string | null;
 }
 
 export function communityProfilePeriodStart(
@@ -146,7 +148,8 @@ export async function getCommunityProfileSnapshotData(
     prisma.$queryRaw<PreferenceRow[]>`
       SELECT
         "is_public" AS "isPublic",
-        "featured_achievement_ids" AS "featuredAchievementIds"
+        "featured_achievement_ids" AS "featuredAchievementIds",
+        "title_achievement_id" AS "titleAchievementId"
       FROM "community_profile_preferences"
       WHERE "guild_id" = ${guildId} AND "user_id" = ${userId}
       LIMIT 1
@@ -186,8 +189,9 @@ export async function getCommunityProfileSnapshotData(
       ? {
           isPublic: preference.isPublic,
           featuredAchievementIds: normalizedAchievementIds(preference.featuredAchievementIds),
+          titleAchievementId: normalizedNullableAchievementId(preference.titleAchievementId),
         }
-      : { isPublic: true, featuredAchievementIds: [] },
+      : { isPublic: true, featuredAchievementIds: [], titleAchievementId: null },
   };
 }
 
@@ -205,11 +209,13 @@ export async function setCommunityProfileVisibility(
     SET "is_public" = EXCLUDED."is_public", "updated_at" = NOW()
     RETURNING
       "is_public" AS "isPublic",
-      "featured_achievement_ids" AS "featuredAchievementIds"
+      "featured_achievement_ids" AS "featuredAchievementIds",
+      "title_achievement_id" AS "titleAchievementId"
   `;
   return {
     isPublic: row?.isPublic ?? isPublic,
     featuredAchievementIds: normalizedAchievementIds(row?.featuredAchievementIds ?? []),
+    titleAchievementId: normalizedNullableAchievementId(row?.titleAchievementId ?? null),
   };
 }
 
@@ -276,8 +282,63 @@ export async function clearFeaturedAchievements(
   `;
 }
 
+export type SetCommunityProfileTitleResult =
+  | { status: 'set'; titleAchievementId: string }
+  | { status: 'not-unlocked'; titleAchievementId: string | null };
+
+export async function setCommunityProfileTitle(
+  prisma: PrismaClient,
+  guildId: string,
+  userId: string,
+  achievementId: string,
+): Promise<SetCommunityProfileTitleResult> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${`profile:${guildId}:${userId}`}, 0))`;
+    const unlocked = await tx.$queryRaw<Array<{ exists: boolean }>>`
+      SELECT EXISTS(
+        SELECT 1 FROM "achievement_unlocks"
+        WHERE "guild_id" = ${guildId}
+          AND "user_id" = ${userId}
+          AND "achievement_id" = ${achievementId}
+      ) AS "exists"
+    `;
+    const current = await getPreferenceInTransaction(tx, guildId, userId);
+    if (!unlocked[0]?.exists) {
+      return { status: 'not-unlocked', titleAchievementId: current.titleAchievementId };
+    }
+    await tx.$executeRaw`
+      INSERT INTO "community_profile_preferences" (
+        "guild_id", "user_id", "is_public", "featured_achievement_ids",
+        "title_achievement_id", "updated_at"
+      ) VALUES (${guildId}, ${userId}, TRUE, ARRAY[]::text[], ${achievementId}, NOW())
+      ON CONFLICT ("guild_id", "user_id") DO UPDATE
+      SET "title_achievement_id" = EXCLUDED."title_achievement_id", "updated_at" = NOW()
+    `;
+    return { status: 'set', titleAchievementId: achievementId };
+  });
+}
+
+export async function clearCommunityProfileTitle(
+  prisma: PrismaClient,
+  guildId: string,
+  userId: string,
+): Promise<void> {
+  await prisma.$executeRaw`
+    INSERT INTO "community_profile_preferences" (
+      "guild_id", "user_id", "is_public", "featured_achievement_ids",
+      "title_achievement_id", "updated_at"
+    ) VALUES (${guildId}, ${userId}, TRUE, ARRAY[]::text[], NULL, NOW())
+    ON CONFLICT ("guild_id", "user_id") DO UPDATE
+    SET "title_achievement_id" = NULL, "updated_at" = NOW()
+  `;
+}
+
 function normalizedAchievementIds(value: readonly string[]): string[] {
   return [...new Set(value.filter((id) => typeof id === 'string' && id.length > 0))].slice(0, 5);
+}
+
+function normalizedNullableAchievementId(value: string | null | undefined): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
 async function getPreferenceInTransaction(
@@ -288,7 +349,8 @@ async function getPreferenceInTransaction(
   const rows = await prisma.$queryRaw<PreferenceRow[]>`
     SELECT
       "is_public" AS "isPublic",
-      "featured_achievement_ids" AS "featuredAchievementIds"
+      "featured_achievement_ids" AS "featuredAchievementIds",
+      "title_achievement_id" AS "titleAchievementId"
     FROM "community_profile_preferences"
     WHERE "guild_id" = ${guildId} AND "user_id" = ${userId}
     LIMIT 1
@@ -298,8 +360,9 @@ async function getPreferenceInTransaction(
     ? {
         isPublic: row.isPublic,
         featuredAchievementIds: normalizedAchievementIds(row.featuredAchievementIds),
+        titleAchievementId: normalizedNullableAchievementId(row.titleAchievementId),
       }
-    : { isPublic: true, featuredAchievementIds: [] };
+    : { isPublic: true, featuredAchievementIds: [], titleAchievementId: null };
 }
 
 async function writeFeaturedAchievementIds(

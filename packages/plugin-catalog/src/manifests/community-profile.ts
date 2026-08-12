@@ -3,9 +3,9 @@ import type { PluginManifest } from '@herta/shared';
 export const communityProfileManifest: PluginManifest = {
   id: 'community-profile',
   name: 'Community Profile',
-  version: '1.0.0',
+  version: '2.0.0',
   description:
-    'XP・Activity・Achievements・Badge Showcaseを1つのメンバープロフィールとして表示します',
+    'XP・Activity・Achievements・Profile Title・Badge Showcaseを1つのメンバープロフィールとして表示します',
   author: { name: 'Herta' },
   category: 'utility',
   permissions: [
@@ -72,6 +72,27 @@ export const communityProfileManifest: PluginManifest = {
         default: true,
         'x-herta-ui': { section: '表示項目' },
       },
+      showAchievementCompletion: {
+        type: 'boolean',
+        title: 'Achievement達成率を表示する',
+        default: true,
+        'x-herta-ui': { section: 'Achievements' },
+      },
+      showAchievementRarityBreakdown: {
+        type: 'boolean',
+        title: 'Rarity別の解除内訳を表示する',
+        default: true,
+        'x-herta-ui': { section: 'Achievements' },
+      },
+      showProfileTitle: {
+        type: 'boolean',
+        title: 'Profile Titleを表示する',
+        default: true,
+        'x-herta-ui': {
+          section: 'Profile Title',
+          help: '解除済みAchievementを称号としてプロフィール上部へ表示します。',
+        },
+      },
       showRankings: {
         type: 'boolean',
         title: 'ランキング順位を表示する',
@@ -124,6 +145,9 @@ export const communityProfileManifest: PluginManifest = {
       'showXp',
       'showActivity',
       'showAchievements',
+      'showAchievementCompletion',
+      'showAchievementRarityBreakdown',
+      'showProfileTitle',
       'showRankings',
       'showRecentAchievements',
       'recentAchievementCount',
@@ -176,6 +200,22 @@ export const communityProfileManifest: PluginManifest = {
         {
           name: 'badge-clear',
           description: 'Badge Showcaseをすべてクリアします',
+        },
+        {
+          name: 'title-set',
+          description: '解除済みAchievementをProfile Titleに設定します',
+          options: [
+            {
+              name: 'achievement',
+              description: 'Titleとして表示するAchievement ID',
+              type: 'string',
+              required: true,
+            },
+          ],
+        },
+        {
+          name: 'title-clear',
+          description: 'Profile Titleを解除します',
         },
         {
           name: 'privacy',

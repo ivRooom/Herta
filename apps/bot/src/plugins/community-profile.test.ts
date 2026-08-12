@@ -30,10 +30,11 @@ const snapshot: CommunityProfileSnapshotData = {
   preference: {
     isPublic: true,
     featuredAchievementIds: ['all-rounder', 'first-steps'],
+    titleAchievementId: 'all-rounder',
   },
 };
 
-describe('Community Profile v1', () => {
+describe('Community Profile v2', () => {
   it('設定値を安全な範囲へ正規化する', () => {
     expect(
       normalizeCommunityProfileConfig({
@@ -50,6 +51,9 @@ describe('Community Profile v1', () => {
       showXp: false,
       showActivity: true,
       showAchievements: true,
+      showAchievementCompletion: true,
+      showAchievementRarityBreakdown: true,
+      showProfileTitle: true,
       showRankings: true,
       showRecentAchievements: true,
       recentAchievementCount: 5,
@@ -64,7 +68,11 @@ describe('Community Profile v1', () => {
     expect(output).toContain('Community Profile');
     expect(output).toContain('Level **7**');
     expect(output).toContain('XP Rank **#2**');
-    expect(output).toContain('**2/26** unlocked');
+    expect(output).toContain('**2/38** unlocked');
+    expect(output).toContain('**5%**');
+    expect(output).toContain('Title **All-Rounder**');
+    expect(output).toContain('Common 1/');
+    expect(output).toContain('Epic 1/');
     expect(output).toContain('Badge Rank **#4**');
     expect(output).toContain('Messages **640**');
     expect(output).toContain('Voice **5h 10m**');

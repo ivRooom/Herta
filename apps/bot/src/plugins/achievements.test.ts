@@ -80,6 +80,13 @@ describe('Achievements v2', () => {
     expect(ids.has('voice-veteran')).toBe(true);
     expect(ids.has('reaction-machine')).toBe(true);
     expect(ids.has('all-rounder')).toBe(true);
+    expect(ids.has('xp-elite')).toBe(true);
+    expect(ids.has('chat-marathon')).toBe(true);
+    expect(ids.has('community-builder')).toBe(true);
+    expect(ids.has('minecraft-explorer')).toBe(true);
+    expect(ids.has('minecraft-regular')).toBe(true);
+    expect(ids.has('minecraft-veteran')).toBe(true);
+    expect(ACHIEVEMENTS).toHaveLength(38);
   });
 
   it('Activity Rules集計後の発言・リアクション・VCから実績を解除する', () => {
@@ -132,6 +139,16 @@ describe('Achievements v2', () => {
       ]),
     );
     expect(unlocked).not.toContain('community-legend');
+  });
+
+  it('Minecraft活動時間から3段階のAchievementを解除する', () => {
+    const unlocked = unlockedAchievementIds({
+      ...emptyMetrics,
+      minecraftSeconds: 360_000,
+    });
+    expect(unlocked).toEqual(
+      expect.arrayContaining(['minecraft-explorer', 'minecraft-regular', 'minecraft-veteran']),
+    );
   });
 
   it('All-Rounderは4分野を満たした時だけ解除する', () => {
