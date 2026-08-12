@@ -58,18 +58,45 @@ export async function PATCH(
   }
 
   const plugins = [];
+  const results: Array<{
+    pluginId: string;
+    enabled: boolean;
+    success: boolean;
+    error?: string;
+  }> = [];
+
   for (const update of body.updates) {
-    const plugin = await updateGuildPlugin(guildId, update.pluginId, session.user.id, {
-      enabled: update.enabled,
-    });
-    if (!plugin || !('manifest' in plugin)) {
-      return NextResponse.json(
-        { error: `${update.pluginId} の更新に失敗しました` },
-        { status: 400 },
-      );
+    try {
+      const plugin = await updateGuildPlugin(guildId, update.pluginId, session.user.id, {
+        enabled: update.enabled,
+      });
+      if (!plugin || !('manifest' in plugin)) {
+        results.push({
+          pluginId: update.pluginId,
+          enabled: update.enabled,
+          success: false,
+          error: `${update.pluginId} の更新に失敗しました`,
+        });
+        continue;
+      }
+
+      plugins.push(plugin);
+      results.push({ pluginId: update.pluginId, enabled: plugin.enabled, success: true });
+    } catch (error) {
+      results.push({
+        pluginId: update.pluginId,
+        enabled: update.enabled,
+        success: false,
+        error: error instanceof Error ? error.message : `${update.pluginId} の更新に失敗しました`,
+      });
     }
-    plugins.push(plugin);
   }
 
-  return NextResponse.json({ plugins });
+  const failedCount = results.filter((result) => !result.success).length;
+  return NextResponse.json({
+    plugins,
+    results,
+    successCount: results.length - failedCount,
+    failedCount,
+  });
 }
