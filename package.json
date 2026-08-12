@@ -14,7 +14,7 @@
     "test": "turbo run test",
     "test:unit": "turbo run test:unit",
     "format": "prettier --write .",
-    "format:check": "node scripts/apply-achievements-v3-ci-fixes.mjs",
+    "format:check": "prettier --check .",
     "clean": "turbo run clean",
     "db:generate": "dotenv -- pnpm --filter @herta/db generate",
     "db:migrate": "dotenv -- pnpm --filter @herta/db migrate:dev",
