@@ -30,6 +30,12 @@ export interface CommunityActivityTotals {
   minecraftSeconds: number;
 }
 
+interface CommunityUserRankRow {
+  rank: bigint | null;
+  total: bigint;
+  participants: bigint;
+}
+
 function jstDate(value = new Date()): Date {
   const key = new Date(value.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
   return new Date(`${key}T00:00:00.000Z`);
@@ -73,13 +79,12 @@ export async function getCommunityLeaderboard(
     by: ['userId'],
     where: { guildId, metric, activityDate: { gte: periodStart(period) } },
     _sum: { value: true },
-    orderBy: { _sum: { value: 'desc' } },
+    orderBy: [{ _sum: { value: 'desc' } }, { userId: 'asc' }],
     take: Math.max(1, Math.min(25, limit)),
   });
   return rows.map((row) => ({ userId: row.userId, total: Number(row._sum.value ?? 0n) }));
 }
 
-// /rank向けに対象期間の全参加者を同じ集計条件で並べ、本人の現在順位を返す。
 export async function getCommunityUserRank(
   prisma: PrismaClient,
   guildId: string,
@@ -87,18 +92,36 @@ export async function getCommunityUserRank(
   metric: CommunityActivityMetric,
   period: CommunityActivityPeriod,
 ): Promise<CommunityUserRank> {
-  const rows = await prisma.communityActivityDaily.groupBy({
-    by: ['userId'],
-    where: { guildId, metric, activityDate: { gte: periodStart(period) } },
-    _sum: { value: true },
-    orderBy: { _sum: { value: 'desc' } },
-  });
-
-  const index = rows.findIndex((row) => row.userId === userId);
+  const start = periodStart(period);
+  const rows = await prisma.$queryRaw<CommunityUserRankRow[]>`
+    WITH totals AS (
+      SELECT user_id, SUM(value)::bigint AS total
+      FROM community_activity_daily
+      WHERE guild_id = ${guildId}
+        AND metric = ${metric}
+        AND activity_date >= ${start}
+      GROUP BY user_id
+    ), ranked AS (
+      SELECT
+        user_id,
+        total,
+        ROW_NUMBER() OVER (ORDER BY total DESC, user_id ASC)::bigint AS rank
+      FROM totals
+    )
+    SELECT
+      ranked.rank,
+      COALESCE(ranked.total, 0)::bigint AS total,
+      (SELECT COUNT(*)::bigint FROM totals) AS participants
+    FROM (VALUES (1)) AS seed(value)
+    LEFT JOIN ranked ON ranked.user_id = ${userId}
+    LIMIT 1
+  `;
+  const row = rows[0];
+  if (!row) return { rank: null, total: 0, participants: 0 };
   return {
-    rank: index >= 0 ? index + 1 : null,
-    total: index >= 0 ? Number(rows[index]?._sum.value ?? 0n) : 0,
-    participants: rows.length,
+    rank: row.rank === null ? null : Number(row.rank),
+    total: Number(row.total),
+    participants: Number(row.participants),
   };
 }
 
