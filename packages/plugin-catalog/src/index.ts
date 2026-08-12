@@ -11,6 +11,7 @@ import { activityRulesManifest } from './manifests/activity-rules.js';
 import { afkManifest } from './manifests/afk.js';
 import { birthdayRoleManifest } from './manifests/birthday-role.js';
 import { channelPolicyManifest } from './manifests/channel-policy.js';
+import { communityProfileManifest } from './manifests/community-profile.js';
 import { eventRsvpManifest } from './manifests/event-rsvp.js';
 import { giveawayManifest } from './manifests/giveaway.js';
 import { onboardingManifest } from './manifests/onboarding.js';
@@ -26,6 +27,7 @@ export { activityRulesManifest } from './manifests/activity-rules.js';
 export { afkManifest } from './manifests/afk.js';
 export { birthdayRoleManifest } from './manifests/birthday-role.js';
 export { channelPolicyManifest } from './manifests/channel-policy.js';
+export { communityProfileManifest } from './manifests/community-profile.js';
 export { eventRsvpManifest } from './manifests/event-rsvp.js';
 export { giveawayManifest } from './manifests/giveaway.js';
 export { onboardingManifest } from './manifests/onboarding.js';
@@ -43,6 +45,7 @@ const pluginManifests: PluginManifest[] = [
   autoResponseManifest,
   birthdayRoleManifest,
   channelPolicyManifest,
+  communityProfileManifest,
   dailyContentManifest,
   eventRsvpManifest,
   giveawayManifest,

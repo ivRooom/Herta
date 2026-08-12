@@ -320,6 +320,22 @@ model AchievementUnlock {
 }
 
 // ============================================================
+// Community Profile
+// ============================================================
+
+model CommunityProfilePreference {
+  guildId                String   @map("guild_id")
+  userId                 String   @map("user_id")
+  isPublic               Boolean  @default(true) @map("is_public")
+  featuredAchievementIds String[] @default([]) @map("featured_achievement_ids")
+  updatedAt              DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@id([guildId, userId])
+  @@index([guildId, isPublic])
+  @@map("community_profile_preferences")
+}
+
+// ============================================================
 // Plugin: Auto Response
 // ============================================================
 
