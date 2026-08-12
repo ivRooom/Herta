@@ -77,9 +77,9 @@ function formatRank(metric: CommunityActivityMetric, value: CommunityUserRank): 
   return `**#${value.rank} / ${value.participants}人**\n${formatMetric(metric, value.total)}`;
 }
 
-export const leaderboardCommand: SlashCommand = {
+export const activityLeaderboardCommand: SlashCommand = {
   definition: {
-    name: 'leaderboard',
+    name: 'activity-leaderboard',
     description: 'コミュニティ活動ランキングを表示します',
     options: [
       {
@@ -277,4 +277,8 @@ export const activityRankCommand: SlashCommand = {
   },
 };
 
-export const communityActivityCommands = [leaderboardCommand, activityCommand, activityRankCommand];
+export const communityActivityCommands = [
+  activityLeaderboardCommand,
+  activityCommand,
+  activityRankCommand,
+];
