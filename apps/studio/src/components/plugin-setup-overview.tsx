@@ -27,8 +27,9 @@ const pluginSetupNotes: Record<string, string[]> = {
     'Profile Compareは相手の公開設定とサーバー側の他ユーザー閲覧設定を尊重します。',
   ],
   'daily-content': [
-    '配信先・時刻・Timezoneを最初に設定すると、定期配信の事故を防ぎやすくなります。',
-    'ForumやThreadを配信先にする場合は、Discord側の投稿権限も確認してください。',
+    'Message Composerから1回・日次・週次のお知らせ、通常文、Embed、画像URL、Forum投稿を作成できます。',
+    'Forum / ThreadではCreate Public Threads・Send Messages in Threads、お知らせChannelではSend Messages権限を確認してください。',
+    '即時発言と返信は /announce send・/say send・/say reply から利用でき、画像ファイルは即時コマンドへ直接添付できます。',
   ],
   lfg: ['募集を投稿するチャンネルと募集の有効期限を先に決めておくと運用しやすくなります。'],
   onboarding: [
