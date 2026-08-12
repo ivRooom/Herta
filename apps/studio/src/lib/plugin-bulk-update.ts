@@ -19,10 +19,7 @@ export function parsePluginBulkUpdateRequest(value: unknown): PluginBulkUpdateRe
 
   for (const candidate of value.updates) {
     if (!isRecord(candidate)) return null;
-    if (
-      typeof candidate.pluginId !== 'string' ||
-      !PLUGIN_ID_PATTERN.test(candidate.pluginId)
-    )
+    if (typeof candidate.pluginId !== 'string' || !PLUGIN_ID_PATTERN.test(candidate.pluginId))
       return null;
     if (typeof candidate.enabled !== 'boolean') return null;
     if (seen.has(candidate.pluginId)) return null;
