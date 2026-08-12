@@ -14,7 +14,7 @@
     "test": "turbo run test",
     "test:unit": "turbo run test:unit",
     "format": "prettier --write .",
-    "format:check": "sh -c 'files=$(prettier --list-different .); code=$?; for file in $files; do echo \"::error file=$file::Prettier formatting required\"; done; exit $code'",
+    "format:check": "node scripts/prettier-diagnostic.mjs",
     "clean": "turbo run clean",
     "db:generate": "dotenv -- pnpm --filter @herta/db generate",
     "db:migrate": "dotenv -- pnpm --filter @herta/db migrate:dev",
