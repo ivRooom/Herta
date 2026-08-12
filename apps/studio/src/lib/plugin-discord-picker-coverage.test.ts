@@ -45,7 +45,8 @@ function inspectSchema(
   insideMessageTarget: boolean,
   violations: string[],
 ): void {
-  const messageTarget = insideMessageTarget || schema['x-herta-ui']?.widget === 'discord-message-target';
+  const messageTarget =
+    insideMessageTarget || schema['x-herta-ui']?.widget === 'discord-message-target';
 
   for (const [key, property] of Object.entries(schema.properties ?? {})) {
     const propertyPath = `${path}.${key}`;
