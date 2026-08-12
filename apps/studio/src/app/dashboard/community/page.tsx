@@ -128,7 +128,7 @@ export default async function CommunityDashboardPage({
       by: ['userId'],
       where: { guildId: guild.id, metric, activityDate: { gte: start } },
       _sum: { value: true },
-      orderBy: { _sum: { value: 'desc' } },
+      orderBy: [{ _sum: { value: 'desc' } }, { userId: 'asc' }],
       take: 25,
     }),
     prisma.communityActivityDaily.groupBy({
@@ -308,16 +308,22 @@ export default async function CommunityDashboardPage({
           {daily.map((item, index) => {
             const height = item.value === 0 ? 2 : Math.max(6, (item.value / dailyMax) * 100);
             const showLabel = range === 7 || index % 5 === 0 || index === range - 1;
+            const accessibleLabel = `${displayDate(item.date)}: ${formatMetric(metric, item.value)}`;
             return (
               <div
                 key={dateKey(item.date)}
                 className="flex min-w-0 flex-1 flex-col items-center justify-end"
               >
-                <div className="group relative flex h-36 w-full items-end justify-center">
+                <div
+                  className="group relative flex h-36 w-full items-end justify-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  role="img"
+                  aria-label={accessibleLabel}
+                  tabIndex={0}
+                >
                   <div
                     className="w-full max-w-8 rounded-t-md bg-primary/80 transition-opacity hover:opacity-80"
                     style={{ height: `${height}%` }}
-                    title={`${displayDate(item.date)}: ${formatMetric(metric, item.value)}`}
+                    title={accessibleLabel}
                   />
                 </div>
                 <span className="mt-2 h-4 text-[10px] text-muted">
@@ -337,7 +343,7 @@ export default async function CommunityDashboardPage({
               <h2 className="font-medium">ランキング</h2>
             </div>
             <p className="mt-1 text-sm text-muted">
-              上位25人を表示します。Botでは /rank で個人順位を確認できます。
+              上位25人を表示します。Botでは /activity-rank で個人順位を確認できます。
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
