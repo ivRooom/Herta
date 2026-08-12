@@ -40,7 +40,7 @@ export { suggestionManifest } from './manifests/suggestion.js';
 export { serverStatsManifest } from './manifests/server-stats.js';
 export { xpLevelManifest } from './manifests/xp-level.js';
 
-const pluginManifests: PluginManifest[] = [
+const rawPluginManifests: PluginManifest[] = [
   achievementsManifest,
   activityRulesManifest,
   afkManifest,
@@ -64,6 +64,11 @@ const pluginManifests: PluginManifest[] = [
   teamSplitManifest,
   xpLevelManifest,
 ];
+
+const pluginManifests: PluginManifest[] = rawPluginManifests.map((manifest) => ({
+  ...manifest,
+  configSchema: applyDiscordPickerMetadata(manifest.configSchema) as PluginManifest['configSchema'],
+}));
 
 const pluginManifestMap = new Map(pluginManifests.map((manifest) => [manifest.id, manifest]));
 
@@ -106,6 +111,77 @@ export async function getEnabledPlugins(
       },
     ];
   });
+}
+
+type DiscordPickerWidget = 'discord-channel' | 'discord-role' | 'discord-user' | 'discord-emoji';
+
+const DISCORD_ENTITY_FIELDS: Array<{ pattern: RegExp; widget: DiscordPickerWidget }> = [
+  { pattern: /channelIds?$/i, widget: 'discord-channel' },
+  { pattern: /roleIds?$/i, widget: 'discord-role' },
+  { pattern: /userIds?$/i, widget: 'discord-user' },
+  { pattern: /emojiIds?$/i, widget: 'discord-emoji' },
+];
+
+/**
+ * 公式PluginのSnowflake設定は、Manifest側でUI metadataを明示し忘れても
+ * Config Studioでは生ID入力へ退行させずDiscord Entity Pickerへ正規化する。
+ * 明示済みのx-herta-uiは常に優先し、Message Target配下は親Widgetへ委譲する。
+ */
+function applyDiscordPickerMetadata(schema: unknown, insideMessageTarget = false): unknown {
+  if (!isRecord(schema)) return schema;
+
+  const ui = isRecord(schema['x-herta-ui']) ? schema['x-herta-ui'] : undefined;
+  const messageTarget = insideMessageTarget || ui?.widget === 'discord-message-target';
+  const normalized: Record<string, unknown> = { ...schema };
+
+  if (isRecord(schema.properties)) {
+    normalized.properties = Object.fromEntries(
+      Object.entries(schema.properties).map(([key, property]) => {
+        if (!isRecord(property)) return [key, property];
+
+        const expected = DISCORD_ENTITY_FIELDS.find(({ pattern }) => pattern.test(key));
+        const propertyUi = isRecord(property['x-herta-ui']) ? property['x-herta-ui'] : undefined;
+        const shouldInfer =
+          expected &&
+          !propertyUi?.widget &&
+          !(messageTarget && /^channelId$/i.test(key));
+        const withPicker = shouldInfer
+          ? {
+              ...property,
+              'x-herta-ui': {
+                ...(propertyUi ?? {}),
+                widget: expected.widget,
+              },
+            }
+          : property;
+
+        return [key, applyDiscordPickerMetadata(withPicker, messageTarget)];
+      }),
+    );
+  }
+
+  if (schema.items !== undefined) {
+    normalized.items = Array.isArray(schema.items)
+      ? schema.items.map((item) => applyDiscordPickerMetadata(item, messageTarget))
+      : applyDiscordPickerMetadata(schema.items, messageTarget);
+  }
+
+  for (const keyword of ['oneOf', 'anyOf', 'allOf'] as const) {
+    const branches = schema[keyword];
+    if (Array.isArray(branches)) {
+      normalized[keyword] = branches.map((branch) =>
+        applyDiscordPickerMetadata(branch, messageTarget),
+      );
+    }
+  }
+
+  for (const keyword of ['if', 'then', 'else'] as const) {
+    if (schema[keyword] !== undefined) {
+      normalized[keyword] = applyDiscordPickerMetadata(schema[keyword], messageTarget);
+    }
+  }
+
+  return normalized;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
