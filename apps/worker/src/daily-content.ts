@@ -18,8 +18,10 @@ import {
   markDeliveryRetrying,
   markDeliverySent,
   markDeliverySkipped,
-  nextDailyOccurrence,
+  nextContentOccurrence,
   normalizeDailyContentConfig,
+  safeEmbedFromJson,
+  toDiscordApiEmbed,
   normalizeDailyContentScanIntervalSeconds,
   redisReconnectDelay,
   resolveDailyContentQueueJobDisposition,
@@ -280,15 +282,41 @@ async function processDelivery(
       channelId: delivery.dailyContent.channelId,
       title: delivery.dailyContent.title,
       content: delivery.dailyContent.content,
+      embed:
+        delivery.dailyContent.messageFormat === 'embed'
+          ? safeEmbedFromJson(delivery.dailyContent.embedJson)
+          : null,
       scheduledFor: delivery.scheduledFor,
       timezone: delivery.dailyContent.timezone,
       allowUserMentions: config.allowUserMentions,
+      publishAnnouncement:
+        delivery.dailyContent.publishAnnouncement && config.allowAnnouncementCrosspost,
       nonce: createDeliveryNonce(delivery.idempotencyKey),
+      onCrosspostWarning: ({ messageId, status, errorName }) =>
+        options.logger.warn(
+          {
+            guildId: delivery.guildId,
+            scheduleId: delivery.dailyContent.id,
+            deliveryId: delivery.id,
+            channelId: delivery.dailyContent.channelId,
+            messageId,
+            status,
+            errorName,
+          },
+          'AnnouncementのCrosspostに失敗しました。元メッセージは配信済みです',
+        ),
     });
     await markDeliverySent(prisma, {
       deliveryId: delivery.id,
       scheduleId: delivery.dailyContent.id,
+      guildId: delivery.guildId,
       messageId,
+      completeOneShot:
+        delivery.origin === 'scheduled' && delivery.dailyContent.recurrenceType === 'once',
+      expectedOneShotAt:
+        delivery.origin === 'scheduled' && delivery.dailyContent.recurrenceType === 'once'
+          ? delivery.scheduledFor
+          : undefined,
     });
     options.logger.info(
       {
@@ -325,10 +353,13 @@ async function publishDiscordMessage(input: {
   channelId: string;
   title: string;
   content: string;
+  embed: ReturnType<typeof safeEmbedFromJson>;
   scheduledFor: Date;
   timezone: string;
   allowUserMentions: boolean;
+  publishAnnouncement: boolean;
   nonce: string;
+  onCrosspostWarning?: (details: { messageId: string; status?: number; errorName: string }) => void;
 }): Promise<string> {
   const channelResponse = await fetch(`${DISCORD_API_BASE_URL}/channels/${input.channelId}`, {
     headers: { Authorization: `Bot ${input.token}` },
@@ -352,6 +383,9 @@ async function publishDiscordMessage(input: {
   }
 
   if (FORUM_CHANNEL_TYPES.has(channel.type)) {
+    if (input.publishAnnouncement) {
+      throw new DailyContentPublishError('DailyContentForumCrosspostUnsupported', 400);
+    }
     return publishDiscordForumPost(input);
   }
   return publishDiscordChannelMessage(input);
@@ -361,9 +395,13 @@ async function publishDiscordChannelMessage(input: {
   token: string;
   channelId: string;
   content: string;
+  embed: ReturnType<typeof safeEmbedFromJson>;
   allowUserMentions: boolean;
+  publishAnnouncement: boolean;
   nonce: string;
+  onCrosspostWarning?: (details: { messageId: string; status?: number; errorName: string }) => void;
 }): Promise<string> {
+  const embed = toDiscordApiEmbed(input.embed);
   const response = await fetch(`${DISCORD_API_BASE_URL}/channels/${input.channelId}/messages`, {
     method: 'POST',
     headers: {
@@ -371,7 +409,8 @@ async function publishDiscordChannelMessage(input: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      content: input.content,
+      content: input.content || undefined,
+      embeds: embed ? [embed] : undefined,
       nonce: input.nonce,
       enforce_nonce: true,
       allowed_mentions: { parse: input.allowUserMentions ? ['users'] : [] },
@@ -385,6 +424,31 @@ async function publishDiscordChannelMessage(input: {
   if (typeof message.id !== 'string' || !message.id) {
     throw new DailyContentPublishError('DailyContentDiscordResponseInvalid', response.status);
   }
+  if (input.publishAnnouncement) {
+    try {
+      const crosspostResponse = await fetch(
+        `${DISCORD_API_BASE_URL}/channels/${input.channelId}/messages/${message.id}/crosspost`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bot ${input.token}` },
+          signal: AbortSignal.timeout(10_000),
+        },
+      );
+      if (!crosspostResponse.ok) {
+        input.onCrosspostWarning?.({
+          messageId: message.id,
+          status: crosspostResponse.status,
+          errorName: 'DailyContentCrosspostFailed',
+        });
+      }
+    } catch (error) {
+      input.onCrosspostWarning?.({
+        messageId: message.id,
+        errorName: resolveErrorName(error),
+      });
+      // Base message is already sent. Do not retry and duplicate it only because crosspost failed.
+    }
+  }
   return message.id;
 }
 
@@ -393,11 +457,14 @@ async function publishDiscordForumPost(input: {
   channelId: string;
   title: string;
   content: string;
+  embed: ReturnType<typeof safeEmbedFromJson>;
   scheduledFor: Date;
   timezone: string;
   allowUserMentions: boolean;
+  publishAnnouncement: boolean;
   nonce: string;
 }): Promise<string> {
+  const embed = toDiscordApiEmbed(input.embed);
   let response: Response;
   try {
     response = await fetch(`${DISCORD_API_BASE_URL}/channels/${input.channelId}/threads`, {
@@ -409,7 +476,8 @@ async function publishDiscordForumPost(input: {
       body: JSON.stringify({
         name: resolveForumPostTitle(input.title, input.scheduledFor, input.timezone),
         message: {
-          content: input.content,
+          content: input.content || undefined,
+          embeds: embed ? [embed] : undefined,
           allowed_mentions: { parse: input.allowUserMentions ? ['users'] : [] },
         },
       }),
@@ -593,7 +661,16 @@ class DailyContentForumPublishError extends DailyContentPublishError {}
 async function initializeMissingNextRuns(prisma: PrismaClient, now: Date): Promise<void> {
   const schedules = await prisma.dailyContent.findMany({
     where: { enabled: true, deletedAt: null, nextRunAt: null },
-    select: { id: true, guildId: true, scheduleTime: true, timezone: true },
+    select: {
+      id: true,
+      guildId: true,
+      scheduleTime: true,
+      timezone: true,
+      recurrenceType: true,
+      onceAt: true,
+      weekdays: true,
+      lastScheduledAt: true,
+    },
     take: DAILY_CONTENT_SCAN_LIMIT,
   });
   for (const schedule of schedules) {
@@ -602,14 +679,29 @@ async function initializeMissingNextRuns(prisma: PrismaClient, now: Date): Promi
       schedule.guildId,
     );
     if (!pluginEnabled) continue;
-    const nextRunAt = nextDailyOccurrence({
+    const recurrenceType =
+      schedule.recurrenceType === 'once' || schedule.recurrenceType === 'weekly'
+        ? schedule.recurrenceType
+        : 'daily';
+    if (recurrenceType === 'once' && schedule.lastScheduledAt) {
+      // A delivery was already reserved. Keep the schedule enabled until that
+      // scheduled delivery succeeds (or an operator explicitly disables it).
+      continue;
+    }
+    const nextRunAt = nextContentOccurrence({
+      recurrenceType,
+      onceAt: schedule.onceAt,
+      weekdays: schedule.weekdays,
       scheduleTime: schedule.scheduleTime,
       timezone: schedule.timezone,
       after: now,
     });
     await prisma.dailyContent.update({
       where: { id: schedule.id },
-      data: { nextRunAt },
+      data: {
+        nextRunAt,
+        ...(recurrenceType === 'once' && !nextRunAt ? { enabled: false } : {}),
+      },
     });
   }
 }

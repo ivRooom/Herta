@@ -678,27 +678,34 @@ model TeamSplitParticipant {
 // ============================================================
 
 model DailyContent {
-  id              String    @id @default(uuid())
-  guildId         String    @map("guild_id")
-  channelId       String    @map("channel_id")
-  title           String    @default("")
-  content         String
-  scheduleTime    String    @map("schedule_time")
-  timezone        String    @default("Asia/Tokyo")
-  enabled         Boolean   @default(true)
-  nextRunAt       DateTime? @map("next_run_at") @db.Timestamptz(3)
-  lastScheduledAt DateTime? @map("last_scheduled_at") @db.Timestamptz(3)
-  lastSentAt      DateTime? @map("last_sent_at") @db.Timestamptz(3)
-  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(3)
-  createdBy       String?   @map("created_by")
-  updatedBy       String?   @map("updated_by")
-  createdAt       DateTime  @default(now()) @map("created_at")
-  updatedAt       DateTime  @updatedAt @map("updated_at")
+  id                  String    @id @default(uuid())
+  guildId             String    @map("guild_id")
+  channelId           String    @map("channel_id")
+  title               String    @default("")
+  content             String
+  scheduleTime        String    @map("schedule_time")
+  timezone            String    @default("Asia/Tokyo")
+  enabled             Boolean   @default(true)
+  recurrenceType      String    @default("daily") @map("recurrence_type") @db.VarChar(16)
+  onceAt              DateTime? @map("once_at") @db.Timestamptz(3)
+  weekdays            Int[]     @default([])
+  messageFormat       String    @default("text") @map("message_format") @db.VarChar(16)
+  embedJson           Json?     @map("embed_json")
+  publishAnnouncement Boolean   @default(false) @map("publish_announcement")
+  nextRunAt           DateTime? @map("next_run_at") @db.Timestamptz(3)
+  lastScheduledAt     DateTime? @map("last_scheduled_at") @db.Timestamptz(3)
+  lastSentAt          DateTime? @map("last_sent_at") @db.Timestamptz(3)
+  deletedAt           DateTime? @map("deleted_at") @db.Timestamptz(3)
+  createdBy           String?   @map("created_by")
+  updatedBy           String?   @map("updated_by")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
 
   deliveries DailyContentDelivery[]
 
   @@index([guildId, enabled])
   @@index([enabled, nextRunAt])
+  @@index([guildId, recurrenceType, nextRunAt])
   @@map("daily_contents")
 }
 

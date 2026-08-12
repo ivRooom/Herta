@@ -4,7 +4,7 @@ import {
   type DailyContentConfig,
   type DailyContentInput,
 } from './config.js';
-import { dailyContentIdempotencyKey, nextDailyOccurrence } from './schedule.js';
+import { dailyContentIdempotencyKey, nextContentOccurrence } from './schedule.js';
 
 export type DailyContentDeliveryStatus =
   'pending' | 'queued' | 'processing' | 'retrying' | 'sent' | 'failed' | 'skipped';
@@ -20,6 +20,12 @@ export interface DailyContentRecord {
   scheduleTime: string;
   timezone: string;
   enabled: boolean;
+  recurrenceType: 'once' | 'daily' | 'weekly';
+  onceAt: Date | null;
+  weekdays: number[];
+  messageFormat: 'text' | 'embed';
+  embedJson: unknown | null;
+  publishAnnouncement: boolean;
   nextRunAt: Date | null;
   lastScheduledAt: Date | null;
   lastSentAt: Date | null;
@@ -84,6 +90,7 @@ export interface DailyContentTransactionClient {
   auditLog: AuditLogDelegate;
   guildPlugin: GuildPluginDelegate;
   $queryRawUnsafe(query: string, ...values: unknown[]): Promise<unknown>;
+  $executeRawUnsafe(query: string, ...values: unknown[]): Promise<number>;
 }
 
 export interface DailyContentPrismaClient extends DailyContentTransactionClient {
@@ -112,9 +119,12 @@ export async function createDailyContent(
   input: CreateDailyContentInput,
 ): Promise<DailyContentRecord> {
   const now = input.now ?? new Date();
-  const normalized = normalizeDailyContentInput(input.schedule, input.config);
+  const normalized = normalizeDailyContentInput(input.schedule, input.config, now);
   const nextRunAt = normalized.enabled
-    ? nextDailyOccurrence({
+    ? nextContentOccurrence({
+        recurrenceType: normalized.recurrenceType,
+        onceAt: normalized.onceAt,
+        weekdays: normalized.weekdays,
         scheduleTime: normalized.scheduleTime,
         timezone: normalized.timezone,
         after: now,
@@ -132,10 +142,12 @@ export async function createDailyContent(
       );
     }
 
+    const { embed, ...stored } = normalized;
     const created = await tx.dailyContent.create({
       data: {
         guildId: input.guildId,
-        ...normalized,
+        ...stored,
+        ...(embed ? { embedJson: embed } : {}),
         nextRunAt,
         createdBy: input.actorId,
         updatedBy: input.actorId,
@@ -180,31 +192,59 @@ export async function updateDailyContent(
         scheduleTime: input.patch.scheduleTime ?? current.scheduleTime,
         timezone: input.patch.timezone ?? current.timezone,
         enabled: input.patch.enabled ?? current.enabled,
+        recurrenceType: input.patch.recurrenceType ?? current.recurrenceType,
+        onceAt: input.patch.onceAt !== undefined ? input.patch.onceAt : current.onceAt,
+        weekdays: input.patch.weekdays !== undefined ? input.patch.weekdays : current.weekdays,
+        messageFormat: input.patch.messageFormat ?? current.messageFormat,
+        embed:
+          input.patch.embed !== undefined
+            ? input.patch.embed
+            : (current.embedJson as DailyContentInput['embed']),
+        publishAnnouncement:
+          !input.config.allowAnnouncementCrosspost && input.patch.publishAnnouncement === undefined
+            ? false
+            : (input.patch.publishAnnouncement ?? current.publishAnnouncement),
       },
       input.config,
+      now,
     );
     const scheduleChanged =
       normalized.scheduleTime !== current.scheduleTime ||
       normalized.timezone !== current.timezone ||
-      normalized.enabled !== current.enabled;
+      normalized.enabled !== current.enabled ||
+      normalized.recurrenceType !== current.recurrenceType ||
+      normalized.onceAt?.getTime() !== current.onceAt?.getTime() ||
+      normalized.weekdays.join(',') !== current.weekdays.join(',');
     const nextRunAt = !normalized.enabled
       ? null
       : scheduleChanged || !current.nextRunAt
-        ? nextDailyOccurrence({
+        ? nextContentOccurrence({
+            recurrenceType: normalized.recurrenceType,
+            onceAt: normalized.onceAt,
+            weekdays: normalized.weekdays,
             scheduleTime: normalized.scheduleTime,
             timezone: normalized.timezone,
             after: now,
           })
         : current.nextRunAt;
 
+    const { embed, ...stored } = normalized;
     const updated = await tx.dailyContent.update({
       where: { id: current.id },
       data: {
-        ...normalized,
+        ...stored,
+        ...(embed ? { embedJson: embed } : {}),
         nextRunAt,
         updatedBy: input.actorId,
       },
     });
+    if (!embed) {
+      await tx.$executeRawUnsafe(
+        'UPDATE daily_contents SET embed_json = NULL WHERE id = $1',
+        current.id,
+      );
+      updated.embedJson = null;
+    }
     await tx.auditLog.create({
       data: {
         guildId: input.guildId,
@@ -325,14 +365,20 @@ export async function reserveDueDelivery(
       });
     }
 
-    const nextRunAt = nextDailyOccurrence({
+    const nextRunAt = nextContentOccurrence({
+      recurrenceType: schedule.recurrenceType,
+      onceAt: schedule.onceAt,
+      weekdays: schedule.weekdays,
       scheduleTime: schedule.scheduleTime,
       timezone: schedule.timezone,
       after: scheduledFor,
     });
     await tx.dailyContent.update({
       where: { id: schedule.id },
-      data: { nextRunAt, lastScheduledAt: scheduledFor },
+      data: {
+        nextRunAt,
+        lastScheduledAt: scheduledFor,
+      },
     });
     return delivery;
   });
@@ -454,10 +500,32 @@ export async function markDeliveryRetrying(
 
 export async function markDeliverySent(
   prisma: DailyContentPrismaClient,
-  input: { deliveryId: string; scheduleId: string; messageId: string; sentAt?: Date },
+  input: {
+    deliveryId: string;
+    scheduleId: string;
+    guildId: string;
+    messageId: string;
+    sentAt?: Date;
+    completeOneShot?: boolean;
+    expectedOneShotAt?: Date;
+  },
 ): Promise<void> {
   const sentAt = input.sentAt ?? new Date();
   await prisma.$transaction(async (tx) => {
+    await lockGuild(tx, input.guildId);
+    const currentSchedule = await tx.dailyContent.findFirst({
+      where: { id: input.scheduleId, guildId: input.guildId },
+    });
+    const expectedOneShotAt = input.expectedOneShotAt?.getTime();
+    const shouldCompleteOneShot =
+      input.completeOneShot === true &&
+      expectedOneShotAt !== undefined &&
+      currentSchedule?.deletedAt === null &&
+      currentSchedule.enabled === true &&
+      currentSchedule.recurrenceType === 'once' &&
+      currentSchedule.onceAt?.getTime() === expectedOneShotAt &&
+      currentSchedule.lastScheduledAt?.getTime() === expectedOneShotAt;
+
     await tx.dailyContentDelivery.update({
       where: { id: input.deliveryId },
       data: {
@@ -471,7 +539,10 @@ export async function markDeliverySent(
     });
     await tx.dailyContent.update({
       where: { id: input.scheduleId },
-      data: { lastSentAt: sentAt },
+      data: {
+        lastSentAt: sentAt,
+        ...(shouldCompleteOneShot ? { enabled: false, nextRunAt: null } : {}),
+      },
     });
   });
 }

@@ -33,7 +33,7 @@ export interface CommandSubcommand {
 export interface CommandOption {
   name: string;
   description: string;
-  type: 'string' | 'integer' | 'boolean' | 'user' | 'channel' | 'role';
+  type: 'string' | 'integer' | 'boolean' | 'user' | 'channel' | 'role' | 'attachment';
   required?: boolean;
   choices?: Array<{ name: string; value: string | number }>;
   minValue?: number;

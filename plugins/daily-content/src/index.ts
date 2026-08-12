@@ -5,4 +5,5 @@ export * from './permissions.js';
 export * from './queue.js';
 export * from './retry.js';
 export * from './schedule.js';
+export * from './message.js';
 export * from './service.js';

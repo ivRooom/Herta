@@ -2,6 +2,7 @@ import {
   DailyContentValidationError,
   isValidIanaTimezone,
   normalizeScheduleTime,
+  type MessageStudioRecurrence,
 } from './config.js';
 
 interface ZonedDateParts {
@@ -15,7 +16,7 @@ interface ZonedDateParts {
 const formatterCache = new Map<string, Intl.DateTimeFormat>();
 const LOCAL_RESOLUTION_WINDOW_MS = 4 * 60 * 60 * 1000;
 const ONE_MINUTE_MS = 60 * 1000;
-const MAX_LOCAL_DAY_LOOKAHEAD = 8;
+const MAX_LOCAL_DAY_LOOKAHEAD = 15;
 
 export interface NextDailyOccurrenceInput {
   scheduleTime: string;
@@ -23,11 +24,43 @@ export interface NextDailyOccurrenceInput {
   after: Date;
 }
 
+export interface NextContentOccurrenceInput extends NextDailyOccurrenceInput {
+  recurrenceType: MessageStudioRecurrence;
+  onceAt?: Date | null;
+  weekdays?: readonly number[];
+}
+
 /**
  * 指定timezoneの壁時計時刻として、afterより後に到来する最初のUTC時刻を返す。
- * DSTで存在しない時刻は次の日へ送り、重複する時刻はafterより後の早い方を採用する。
+ * DSTで存在しない時刻は次の日へ送り、重複する壁時計時刻は同じ現地日で1回だけ採用する。
  */
 export function nextDailyOccurrence(input: NextDailyOccurrenceInput): Date {
+  return nextRecurringOccurrence({ ...input, recurrenceType: 'daily' })!;
+}
+
+export function nextContentOccurrence(input: NextContentOccurrenceInput): Date | null {
+  if (input.recurrenceType === 'once') {
+    const onceAt = input.onceAt;
+    if (!onceAt || Number.isNaN(onceAt.getTime())) {
+      throw new DailyContentValidationError('1回予約の日時が不正です');
+    }
+    return onceAt.getTime() > input.after.getTime() ? onceAt : null;
+  }
+  return nextRecurringOccurrence(input);
+}
+
+export function nextWeeklyOccurrence(input: {
+  scheduleTime: string;
+  timezone: string;
+  weekdays: readonly number[];
+  after: Date;
+}): Date {
+  const next = nextRecurringOccurrence({ ...input, recurrenceType: 'weekly' });
+  if (!next) throw new DailyContentValidationError('次回週次配信日時を計算できませんでした');
+  return next;
+}
+
+function nextRecurringOccurrence(input: NextContentOccurrenceInput): Date | null {
   const scheduleTime = normalizeScheduleTime(input.scheduleTime);
   const timezone = input.timezone.trim();
   if (!isValidIanaTimezone(timezone)) {
@@ -37,6 +70,7 @@ export function nextDailyOccurrence(input: NextDailyOccurrenceInput): Date {
     throw new DailyContentValidationError('afterに有効な日時を指定してください');
   }
 
+  const weekdays = normalizeWeekdays(input.weekdays ?? [], input.recurrenceType);
   const [hourText, minuteText] = scheduleTime.split(':');
   const hour = Number.parseInt(hourText!, 10);
   const minute = Number.parseInt(minuteText!, 10);
@@ -44,6 +78,10 @@ export function nextDailyOccurrence(input: NextDailyOccurrenceInput): Date {
 
   for (let offsetDays = 0; offsetDays <= MAX_LOCAL_DAY_LOOKAHEAD; offsetDays += 1) {
     const localDate = addLocalDays(localAfter, offsetDays);
+    if (input.recurrenceType === 'weekly') {
+      const weekday = isoWeekday(localDate.year, localDate.month, localDate.day);
+      if (!weekdays.includes(weekday)) continue;
+    }
     const candidates = resolveLocalDateTimeCandidates(
       {
         year: localDate.year,
@@ -54,11 +92,55 @@ export function nextDailyOccurrence(input: NextDailyOccurrenceInput): Date {
       },
       timezone,
     );
+
+    // DST終了日に同じ壁時計時刻が2回存在しても、1つ目を予約済みなら
+    // 2つ目を別 occurrence として扱わず、その現地日は完了済みとして進める。
+    if (
+      offsetDays === 0 &&
+      candidates.some((candidate) => candidate.getTime() <= input.after.getTime())
+    ) {
+      continue;
+    }
+
     const next = candidates.find((candidate) => candidate.getTime() > input.after.getTime());
     if (next) return next;
   }
 
   throw new DailyContentValidationError('次回配信日時を計算できませんでした');
+}
+
+export function parseLocalDateTime(value: string, timezone: string): Date {
+  const match = /^(\d{4})[-/](\d{2})[-/](\d{2})[ T](\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) {
+    throw new DailyContentValidationError('日時はYYYY-MM-DD HH:mm形式で指定してください');
+  }
+  if (!isValidIanaTimezone(timezone)) {
+    throw new DailyContentValidationError('timezoneに有効なIANA timezoneを指定してください');
+  }
+  const target: ZonedDateParts = {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: Number(match[4]),
+    minute: Number(match[5]),
+  };
+  const normalizedDate = new Date(Date.UTC(target.year, target.month - 1, target.day));
+  if (
+    normalizedDate.getUTCFullYear() !== target.year ||
+    normalizedDate.getUTCMonth() + 1 !== target.month ||
+    normalizedDate.getUTCDate() !== target.day ||
+    target.hour < 0 ||
+    target.hour > 23 ||
+    target.minute < 0 ||
+    target.minute > 59
+  ) {
+    throw new DailyContentValidationError('日時が不正です');
+  }
+  const candidates = resolveLocalDateTimeCandidates(target, timezone);
+  if (candidates.length === 0) {
+    throw new DailyContentValidationError('指定した現地時刻はtimezone上で存在しません');
+  }
+  return candidates[0]!;
 }
 
 export function dailyContentIdempotencyKey(scheduleId: string, scheduledFor: Date): string {
@@ -75,6 +157,25 @@ export function dailyContentIdempotencyKey(scheduleId: string, scheduledFor: Dat
 export function formatDailyOccurrence(date: Date, timezone: string): string {
   const parts = getZonedDateParts(date, timezone);
   return `${parts.year}-${pad(parts.month)}-${pad(parts.day)} ${pad(parts.hour)}:${pad(parts.minute)}`;
+}
+
+function normalizeWeekdays(
+  value: readonly number[],
+  recurrence: MessageStudioRecurrence,
+): number[] {
+  if (recurrence !== 'weekly') return [];
+  const normalized = [
+    ...new Set(value.filter((day) => Number.isInteger(day) && day >= 1 && day <= 7)),
+  ];
+  if (normalized.length === 0) {
+    throw new DailyContentValidationError('週次配信では曜日を1つ以上指定してください');
+  }
+  return normalized;
+}
+
+function isoWeekday(year: number, month: number, day: number): number {
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return weekday === 0 ? 7 : weekday;
 }
 
 function resolveLocalDateTimeCandidates(target: ZonedDateParts, timezone: string): Date[] {

@@ -1,248 +1,174 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { normalizeDailyContentConfig } from './config.js';
-import { retryDailyContentDelivery } from './retry.js';
 import {
-  createDailyContent,
-  recoverStaleDelivery,
+  markDeliverySent,
   reserveDueDelivery,
+  updateDailyContent,
+  type DailyContentDeliveryRecord,
   type DailyContentPrismaClient,
+  type DailyContentRecord,
   type DailyContentTransactionClient,
 } from './service.js';
 
-function schedule(overrides: Record<string, unknown> = {}) {
-  return {
+function createHarness(overrides: Partial<DailyContentRecord> = {}) {
+  const scheduledFor = new Date('2030-01-01T00:10:00Z');
+  let schedule: DailyContentRecord = {
     id: 'schedule-1',
     guildId: 'guild-1',
     channelId: '123456789012345678',
-    title: '朝のお知らせ',
-    content: 'おはようございます',
-    scheduleTime: '09:00',
-    timezone: 'Asia/Tokyo',
+    title: 'one-shot',
+    content: 'content',
+    scheduleTime: '00:10',
+    timezone: 'UTC',
     enabled: true,
-    nextRunAt: new Date('2026-07-29T00:00:00.000Z'),
+    recurrenceType: 'once',
+    onceAt: scheduledFor,
+    weekdays: [],
+    messageFormat: 'text',
+    embedJson: null,
+    publishAnnouncement: false,
+    nextRunAt: scheduledFor,
     lastScheduledAt: null,
     lastSentAt: null,
     deletedAt: null,
     createdBy: 'user-1',
     updatedBy: 'user-1',
-    createdAt: new Date('2026-07-28T00:00:00.000Z'),
-    updatedAt: new Date('2026-07-28T00:00:00.000Z'),
+    createdAt: new Date('2029-12-01T00:00:00Z'),
+    updatedAt: new Date('2029-12-01T00:00:00Z'),
     ...overrides,
   };
-}
+  let delivery: DailyContentDeliveryRecord | null = null;
 
-function delivery(overrides: Record<string, unknown> = {}) {
-  return {
-    id: 'delivery-1',
-    dailyContentId: 'schedule-1',
-    guildId: 'guild-1',
-    idempotencyKey: 'schedule-1:2026-07-29T00:00:00.000Z',
-    origin: 'scheduled',
-    scheduledFor: new Date('2026-07-29T00:00:00.000Z'),
-    status: 'pending',
-    attemptCount: 0,
-    messageId: null,
-    errorName: null,
-    queuedAt: null,
-    startedAt: null,
-    nextAttemptAt: new Date('2026-07-29T00:00:00.000Z'),
-    sentAt: null,
-    failedAt: null,
-    createdAt: new Date('2026-07-29T00:00:00.000Z'),
-    updatedAt: new Date('2026-07-29T00:00:00.000Z'),
-    ...overrides,
-  };
-}
-
-function prismaFromTransaction(tx: DailyContentTransactionClient): DailyContentPrismaClient {
-  return {
-    ...tx,
-    $transaction: vi.fn(async (callback) => callback(tx)),
-  };
-}
-
-describe('createDailyContent', () => {
-  it('advisory lock後に件数確認・作成・Auditを行う', async () => {
-    const calls: string[] = [];
-    const created = schedule();
-    const tx = {
-      $queryRawUnsafe: vi.fn(async () => calls.push('lock')),
-      dailyContent: {
-        count: vi.fn(async () => {
-          calls.push('count');
-          return 0;
-        }),
-        findMany: vi.fn(),
-        findFirst: vi.fn(),
-        create: vi.fn(async () => {
-          calls.push('create');
-          return created;
-        }),
-        update: vi.fn(),
-        delete: vi.fn(),
+  const tx = {
+    dailyContent: {
+      count: async () => 1,
+      findMany: async () => [schedule],
+      findFirst: async () => schedule,
+      create: async () => schedule,
+      update: async (args: Record<string, unknown>) => {
+        const data = (args['data'] ?? {}) as Partial<DailyContentRecord>;
+        schedule = { ...schedule, ...data };
+        return schedule;
       },
-      dailyContentDelivery: {
-        findMany: vi.fn(),
-        findFirst: vi.fn(),
-        create: vi.fn(),
-        update: vi.fn(),
-      },
-      auditLog: {
-        create: vi.fn(async () => {
-          calls.push('audit');
-          return {};
-        }),
-      },
-      guildPlugin: { findUnique: vi.fn() },
-    } as unknown as DailyContentTransactionClient;
-
-    const result = await createDailyContent(prismaFromTransaction(tx), {
-      guildId: 'guild-1',
-      actorId: 'user-1',
-      config: normalizeDailyContentConfig({}),
-      now: new Date('2026-07-28T00:00:00.000Z'),
-      schedule: {
-        channelId: '123456789012345678',
-        title: '朝のお知らせ',
-        content: 'おはようございます',
-        scheduleTime: '09:00',
-        timezone: 'Asia/Tokyo',
-      },
-    });
-
-    expect(result).toBe(created);
-    expect(calls).toEqual(['lock', 'count', 'create', 'audit']);
-  });
-});
-
-describe('reserveDueDelivery', () => {
-  it('予定時刻からidempotency keyを作り次回時刻を更新する', async () => {
-    const current = schedule();
-    const createdDelivery = delivery();
-    const create = vi.fn(async () => createdDelivery);
-    const update = vi.fn(async () => current);
-    const tx = {
-      $queryRawUnsafe: vi.fn(async () => undefined),
-      dailyContent: {
-        count: vi.fn(),
-        findMany: vi.fn(),
-        findFirst: vi.fn(async () => current),
-        create: vi.fn(),
-        update,
-        delete: vi.fn(),
-      },
-      dailyContentDelivery: {
-        findMany: vi.fn(),
-        findFirst: vi.fn(async () => null),
-        create,
-        update: vi.fn(),
-      },
-      auditLog: { create: vi.fn() },
-      guildPlugin: { findUnique: vi.fn() },
-    } as unknown as DailyContentTransactionClient;
-
-    const result = await reserveDueDelivery(
-      prismaFromTransaction(tx),
-      'schedule-1',
-      new Date('2026-07-29T00:00:01.000Z'),
-    );
-
-    expect(result).toBe(createdDelivery);
-    expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          idempotencyKey: 'schedule-1:2026-07-29T00:00:00.000Z',
+      delete: async () => schedule,
+    },
+    dailyContentDelivery: {
+      findMany: async () => (delivery ? [delivery] : []),
+      findFirst: async () => delivery,
+      create: async (args: Record<string, unknown>) => {
+        const data = args['data'] as Record<string, unknown>;
+        const now = new Date('2030-01-01T00:10:00Z');
+        delivery = {
+          id: 'delivery-1',
+          dailyContentId: String(data['dailyContentId']),
+          guildId: String(data['guildId']),
+          idempotencyKey: String(data['idempotencyKey']),
+          origin: 'scheduled',
+          scheduledFor: data['scheduledFor'] as Date,
           status: 'pending',
-        }),
-      }),
-    );
-    expect(update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          lastScheduledAt: new Date('2026-07-29T00:00:00.000Z'),
-          nextRunAt: new Date('2026-07-30T00:00:00.000Z'),
-        }),
-      }),
-    );
-  });
-
-  it('同じidempotency keyの履歴があれば新規作成しない', async () => {
-    const current = schedule();
-    const existing = delivery();
-    const create = vi.fn();
-    const tx = {
-      $queryRawUnsafe: vi.fn(async () => undefined),
-      dailyContent: {
-        count: vi.fn(),
-        findMany: vi.fn(),
-        findFirst: vi.fn(async () => current),
-        create: vi.fn(),
-        update: vi.fn(async () => current),
-        delete: vi.fn(),
+          attemptCount: 0,
+          messageId: null,
+          errorName: null,
+          queuedAt: null,
+          startedAt: null,
+          nextAttemptAt: data['nextAttemptAt'] as Date,
+          sentAt: null,
+          failedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        };
+        return delivery;
       },
-      dailyContentDelivery: {
-        findMany: vi.fn(),
-        findFirst: vi.fn(async () => existing),
-        create,
-        update: vi.fn(),
+      update: async (args: Record<string, unknown>) => {
+        if (!delivery) throw new Error('delivery missing');
+        const data = (args['data'] ?? {}) as Partial<DailyContentDeliveryRecord>;
+        delivery = { ...delivery, ...data };
+        return delivery;
       },
-      auditLog: { create: vi.fn() },
-      guildPlugin: { findUnique: vi.fn() },
-    } as unknown as DailyContentTransactionClient;
+    },
+    auditLog: { create: async () => ({}) },
+    guildPlugin: { findUnique: async () => ({ enabled: true }) },
+    $queryRawUnsafe: async () => [],
+    $executeRawUnsafe: async () => 1,
+  } as unknown as DailyContentTransactionClient;
 
-    const result = await reserveDueDelivery(
-      prismaFromTransaction(tx),
-      'schedule-1',
-      new Date('2026-07-29T00:00:01.000Z'),
-    );
+  const prisma = {
+    ...tx,
+    $transaction: async <T>(callback: (client: DailyContentTransactionClient) => Promise<T>) =>
+      callback(tx),
+  } as unknown as DailyContentPrismaClient;
 
-    expect(result).toBe(existing);
-    expect(create).not.toHaveBeenCalled();
-  });
-});
+  return { prisma, scheduledFor, getSchedule: () => schedule, getDelivery: () => delivery };
+}
 
-describe('stale recovery and retry', () => {
-  it('stale配信をretryingへ戻す', async () => {
-    const update = vi.fn(async () => delivery({ status: 'retrying' }));
-    const tx = {
-      dailyContentDelivery: { update },
-    } as unknown as DailyContentPrismaClient;
-    const now = new Date('2026-07-29T01:00:00.000Z');
+describe('Message Studio one-shot delivery lifecycle', () => {
+  it('予約確保時は有効のまま、予約配信成功後にだけ無効化する', async () => {
+    const harness = createHarness();
+    const reserved = await reserveDueDelivery(harness.prisma, 'schedule-1', harness.scheduledFor);
 
-    await recoverStaleDelivery(tx, 'delivery-1', now);
+    expect(reserved?.status).toBe('pending');
+    expect(harness.getSchedule().enabled).toBe(true);
+    expect(harness.getSchedule().nextRunAt).toBeNull();
 
-    expect(update).toHaveBeenCalledWith({
-      where: { id: 'delivery-1' },
-      data: {
-        status: 'retrying',
-        errorName: 'DailyContentStaleRecovered',
-        nextAttemptAt: now,
-      },
-    });
-  });
-
-  it('失敗済み配信だけを手動再実行できる', async () => {
-    const failed = delivery({ status: 'failed', errorName: 'DiscordError' });
-    const updated = delivery({ status: 'retrying', errorName: null });
-    const tx = {
-      $queryRawUnsafe: vi.fn(async () => undefined),
-      dailyContent: {} as never,
-      dailyContentDelivery: {
-        findFirst: vi.fn(async () => failed),
-        update: vi.fn(async () => updated),
-      },
-      auditLog: { create: vi.fn(async () => ({})) },
-      guildPlugin: {} as never,
-    } as unknown as DailyContentTransactionClient;
-
-    const result = await retryDailyContentDelivery(prismaFromTransaction(tx), {
+    const sentAt = new Date('2030-01-01T00:10:05Z');
+    await markDeliverySent(harness.prisma, {
+      deliveryId: reserved!.id,
+      scheduleId: 'schedule-1',
       guildId: 'guild-1',
-      deliveryId: 'delivery-1',
-      actorId: 'user-1',
-      now: new Date('2026-07-29T01:00:00.000Z'),
+      messageId: 'message-1',
+      sentAt,
+      completeOneShot: true,
+      expectedOneShotAt: harness.scheduledFor,
     });
 
-    expect(result).toBe(updated);
-    expect(tx.auditLog.create).toHaveBeenCalled();
+    expect(harness.getDelivery()?.status).toBe('sent');
+    expect(harness.getSchedule().enabled).toBe(false);
+    expect(harness.getSchedule().lastSentAt).toEqual(sentAt);
+  });
+
+  it('Crosspost設定をOFFにした後も既存予約を編集でき、保存済みフラグを解除する', async () => {
+    const harness = createHarness({
+      recurrenceType: 'daily',
+      onceAt: null,
+      scheduleTime: '09:00',
+      publishAnnouncement: true,
+      nextRunAt: new Date('2030-01-02T09:00:00Z'),
+    });
+
+    const updated = await updateDailyContent(harness.prisma, {
+      guildId: 'guild-1',
+      scheduleId: 'schedule-1',
+      actorId: 'user-2',
+      config: normalizeDailyContentConfig({ allowAnnouncementCrosspost: false }),
+      patch: { title: 'Crosspost解除後も編集可能' },
+      now: new Date('2029-12-31T00:00:00Z'),
+    });
+
+    expect(updated?.title).toBe('Crosspost解除後も編集可能');
+    expect(updated?.publishAnnouncement).toBe(false);
+  });
+
+  it('配信中にone-shot日時が編集された場合は新しい予約を無効化しない', async () => {
+    const originalAt = new Date('2030-01-01T00:10:00Z');
+    const editedAt = new Date('2030-01-02T00:10:00Z');
+    const harness = createHarness({
+      onceAt: editedAt,
+      lastScheduledAt: originalAt,
+      nextRunAt: editedAt,
+      enabled: true,
+    });
+
+    await markDeliverySent(harness.prisma, {
+      deliveryId: 'delivery-1',
+      scheduleId: 'schedule-1',
+      guildId: 'guild-1',
+      messageId: 'message-after-edit',
+      completeOneShot: true,
+      expectedOneShotAt: originalAt,
+    }).catch(() => undefined);
+
+    expect(harness.getSchedule().enabled).toBe(true);
+    expect(harness.getSchedule().onceAt).toEqual(editedAt);
+    expect(harness.getSchedule().nextRunAt).toEqual(editedAt);
   });
 });

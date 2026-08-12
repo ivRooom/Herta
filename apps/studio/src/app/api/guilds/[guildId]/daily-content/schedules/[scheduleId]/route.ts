@@ -11,6 +11,7 @@ import {
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { authorizeGuild, getGuildPlugin } from '@/lib/guild-plugins';
+import { normalizeMessageStudioRequestBody } from '@/lib/message-studio-request';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,11 +32,11 @@ export async function GET(_request: Request, { params }: RouteContext) {
       scheduleId,
     );
     if (!schedule) {
-      return NextResponse.json({ error: 'Daily Contentが見つかりません' }, { status: 404 });
+      return NextResponse.json({ error: 'Message Studio投稿が見つかりません' }, { status: 404 });
     }
     return NextResponse.json(schedule);
   } catch (error) {
-    return dailyContentErrorResponse(error, 'Daily Contentの取得に失敗しました');
+    return messageStudioErrorResponse(error, 'Message Studio投稿の取得に失敗しました');
   }
 }
 
@@ -60,19 +61,20 @@ export async function PATCH(request: Request, { params }: RouteContext) {
   try {
     const plugin = await getGuildPlugin(guildId, 'daily-content');
     const config = normalizeDailyContentConfig(plugin?.config);
+    const normalizedBody = normalizeMessageStudioRequestBody(body, config.defaultTimezone);
     const schedule = await updateDailyContent(prisma as unknown as DailyContentPrismaClient, {
       guildId,
       scheduleId,
       actorId: session.user.id,
       config,
-      patch: body as Partial<DailyContentInput>,
+      patch: normalizedBody as Partial<DailyContentInput>,
     });
     if (!schedule) {
-      return NextResponse.json({ error: 'Daily Contentが見つかりません' }, { status: 404 });
+      return NextResponse.json({ error: 'Message Studio投稿が見つかりません' }, { status: 404 });
     }
     return NextResponse.json(schedule);
   } catch (error) {
-    return dailyContentErrorResponse(error, 'Daily Contentの更新に失敗しました');
+    return messageStudioErrorResponse(error, 'Message Studio投稿の更新に失敗しました');
   }
 }
 
@@ -91,19 +93,19 @@ export async function DELETE(_request: Request, { params }: RouteContext) {
       actorId: session.user.id,
     });
     if (!deleted) {
-      return NextResponse.json({ error: 'Daily Contentが見つかりません' }, { status: 404 });
+      return NextResponse.json({ error: 'Message Studio投稿が見つかりません' }, { status: 404 });
     }
     return NextResponse.json({ deleted: true });
   } catch (error) {
-    return dailyContentErrorResponse(error, 'Daily Contentの削除に失敗しました');
+    return messageStudioErrorResponse(error, 'Message Studio投稿の削除に失敗しました');
   }
 }
 
-function dailyContentErrorResponse(error: unknown, fallback: string): NextResponse {
+function messageStudioErrorResponse(error: unknown, fallback: string): NextResponse {
   if (error instanceof DailyContentValidationError) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
-  console.error('Daily Content schedule API request failed', error);
+  console.error('Message Studio schedule API request failed', error);
   return NextResponse.json({ error: fallback }, { status: 500 });
 }
 
