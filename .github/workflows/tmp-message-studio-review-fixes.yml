@@ -33,18 +33,18 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Apply final re-review fixes
-        run: python3 .tmp-message-studio-runner/.github/scripts/tmp-message-studio-review-fixes-v5.py
+      - name: Apply final review fixes
+        run: python3 .tmp-message-studio-runner/.github/scripts/tmp-message-studio-review-fixes-v6.py
 
       - run: pnpm db:generate
 
       - name: Format modified files
         run: >-
           pnpm exec prettier --write
-          plugins/daily-content/src/plugin.ts
-          plugins/daily-content/src/service.ts
-          plugins/daily-content/src/service.test.ts
+          apps/studio/src/lib/message-studio-request.ts
+          apps/studio/src/lib/message-studio-request.test.ts
           apps/worker/src/daily-content.ts
+          plugins/daily-content/src/service.test.ts
 
       - run: pnpm format:check
       - run: pnpm lint
@@ -58,10 +58,10 @@ jobs:
           rm -rf .tmp-message-studio-runner
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add plugins/daily-content/src apps/worker/src/daily-content.ts
+          git add apps/studio/src/lib/message-studio-request.ts apps/studio/src/lib/message-studio-request.test.ts apps/worker/src/daily-content.ts plugins/daily-content/src/service.test.ts
           if git diff --cached --quiet; then
             echo 'No changes to commit'
             exit 0
           fi
-          git commit -m 'Message Studioの最終再レビュー指摘を修正する'
+          git commit -m 'Message Studioの最終レビュー指摘を修正する'
           git push origin HEAD:feat/message-studio-v2
