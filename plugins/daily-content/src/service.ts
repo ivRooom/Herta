@@ -146,7 +146,7 @@ export async function createDailyContent(
       data: {
         guildId: input.guildId,
         ...stored,
-        embedJson: embed,
+        ...(embed ? { embedJson: embed } : {}),
         nextRunAt,
         createdBy: input.actorId,
         updatedBy: input.actorId,
@@ -232,11 +232,15 @@ export async function updateDailyContent(
       where: { id: current.id },
       data: {
         ...stored,
-        embedJson: embed,
+        ...(embed ? { embedJson: embed } : {}),
         nextRunAt,
         updatedBy: input.actorId,
       },
     });
+    if (!embed) {
+      await tx.$queryRawUnsafe('UPDATE daily_contents SET embed_json = NULL WHERE id = $1', current.id);
+      updated.embedJson = null;
+    }
     await tx.auditLog.create({
       data: {
         guildId: input.guildId,
