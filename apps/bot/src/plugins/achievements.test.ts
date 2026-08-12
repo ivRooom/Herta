@@ -7,6 +7,7 @@ import {
   formatAchievements,
   normalizeAchievementsConfig,
   unlockedAchievementIds,
+  unlockedAchievementIdsWithCustom,
 } from './achievements.js';
 import type {
   AchievementLeaderboardRecord,
@@ -30,8 +31,8 @@ const emptyMetrics: AchievementMetrics = {
   seasonPoints: 0,
 };
 
-describe('Achievements v2', () => {
-  it('v2設定を安全な範囲へ正規化する', () => {
+describe('Achievements v3', () => {
+  it('既存v2設定を安全な範囲へ正規化しCustom Achievementを空配列で補完する', () => {
     expect(
       normalizeAchievementsConfig({
         pageSize: 99,
@@ -50,6 +51,7 @@ describe('Achievements v2', () => {
       unlockChannelId: null,
       mentionOnUnlock: false,
       notificationMinimumRarity: 'common',
+      customAchievements: [],
       showLocked: false,
       showProgress: true,
       showScore: true,
@@ -206,6 +208,51 @@ describe('Achievements v2', () => {
     ).toContain('community-legend');
   });
 
+  it('Guild独自の段階Achievementを既存実績と同時に解除する', () => {
+    const config = normalizeAchievementsConfig({
+      customAchievements: [
+        {
+          key: 'chat-master',
+          name: 'Chat Master',
+          category: 'activity',
+          enabled: true,
+          stages: [
+            {
+              key: 'bronze',
+              name: 'Bronze',
+              description: '100 messages',
+              emoji: '🥉',
+              rarity: 'common',
+              points: 50,
+              secret: false,
+              conditionMode: 'all',
+              conditions: [{ metric: 'messages', target: 100 }],
+              rewardRoleId: null,
+              notificationChannelId: null,
+            },
+            {
+              key: 'silver',
+              name: 'Silver',
+              description: '1000 messages',
+              emoji: '🥈',
+              rarity: 'rare',
+              points: 150,
+              secret: false,
+              conditionMode: 'all',
+              conditions: [{ metric: 'messages', target: 1000 }],
+              rewardRoleId: null,
+              notificationChannelId: null,
+            },
+          ],
+        },
+      ],
+    });
+    const ids = unlockedAchievementIdsWithCustom({ ...emptyMetrics, messages: 120 }, config);
+    expect(ids).toContain('first-message');
+    expect(ids).toContain('custom:chat-master:bronze');
+    expect(ids).not.toContain('custom:chat-master:silver');
+  });
+
   it('Rarityに応じてBadge Pointを計算する', () => {
     const common = ACHIEVEMENTS.find((achievement) => achievement.rarity === 'common')!;
     const legendary = ACHIEVEMENTS.find((achievement) => achievement.rarity === 'legendary')!;
@@ -225,6 +272,47 @@ describe('Achievements v2', () => {
     const visible = formatAchievements('123', emptyMetrics, unlocks, config).join('\n');
     expect(visible).toContain('Community Legend');
     expect(visible).toContain('250pt');
+  });
+
+  it('Custom Achievementを一覧とLeaderboardへ含める', () => {
+    const config = normalizeAchievementsConfig({
+      customAchievements: [
+        {
+          key: 'chat-master',
+          name: 'Chat Master',
+          category: 'activity',
+          stages: [
+            {
+              key: 'bronze',
+              name: 'Bronze',
+              emoji: '🥉',
+              rarity: 'rare',
+              points: 75,
+              conditions: [{ metric: 'messages', target: 100 }],
+            },
+          ],
+        },
+      ],
+    });
+    const unlocks: AchievementUnlockRecord[] = [
+      { achievementId: 'custom:chat-master:bronze', unlockedAt: new Date('2026-08-12T00:00:00Z') },
+    ];
+    const list = formatAchievements(
+      '123',
+      { ...emptyMetrics, messages: 100 },
+      unlocks,
+      config,
+    ).join('\n');
+    expect(list).toContain('Bronze');
+    expect(list).toContain('Chat Master');
+    expect(list).toContain('75pt');
+
+    const leaderboard = formatAchievementLeaderboard(
+      [{ userId: '1', unlockCount: 1, achievementIds: ['custom:chat-master:bronze'] }],
+      config,
+    );
+    expect(leaderboard).toContain('75pt');
+    expect(leaderboard).toContain('1/44');
   });
 
   it('Category・Rarity・Statusで一覧を絞り込む', () => {

@@ -1,11 +1,120 @@
 import type { PluginManifest } from '@herta/shared';
 
+const customConditionSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    metric: {
+      type: 'string',
+      title: '条件メトリクス',
+      enum: [
+        'xp',
+        'messages',
+        'reactionsGiven',
+        'reactionsReceived',
+        'voiceSeconds',
+        'minecraftSeconds',
+        'pollVotes',
+        'giveawayEntries',
+        'eventGoing',
+        'suggestions',
+        'acceptedSuggestions',
+        'challengeCompletions',
+        'seasonPoints',
+      ],
+    },
+    target: {
+      type: 'integer',
+      title: '達成値',
+      minimum: 1,
+      maximum: 2147483647,
+      default: 1,
+    },
+  },
+  required: ['metric', 'target'],
+} as const;
+
+const customStageSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    key: {
+      type: 'string',
+      title: 'Stage ID',
+      pattern: '^[a-z0-9][a-z0-9-]{0,47}$',
+      minLength: 1,
+      maxLength: 48,
+    },
+    name: { type: 'string', title: 'Stage名', minLength: 1, maxLength: 80 },
+    description: { type: 'string', title: '説明', maxLength: 240, default: '' },
+    emoji: { type: 'string', title: 'Badge / Emoji', maxLength: 32, default: '🏅' },
+    rarity: {
+      type: 'string',
+      title: 'Rarity',
+      enum: ['common', 'uncommon', 'rare', 'epic', 'legendary'],
+      default: 'common',
+    },
+    points: {
+      type: 'integer',
+      title: 'Badge Point',
+      minimum: 0,
+      maximum: 100000,
+      default: 100,
+    },
+    secret: { type: 'boolean', title: 'Secret Achievement', default: false },
+    conditionMode: {
+      type: 'string',
+      title: '複数条件の判定',
+      enum: ['all', 'any'],
+      default: 'all',
+    },
+    conditions: {
+      type: 'array',
+      title: '解除条件',
+      minItems: 1,
+      maxItems: 8,
+      items: customConditionSchema,
+      'x-herta-ui': {
+        help: 'ALLはすべて、ANYはいずれか1つの条件を満たすと解除します。',
+      },
+    },
+    rewardRoleId: {
+      type: ['string', 'null'],
+      title: '解除時に付与するRole',
+      default: null,
+      'x-herta-ui': { widget: 'discord-role', placeholder: 'Roleを選択（任意）' },
+    },
+    notificationChannelId: {
+      type: ['string', 'null'],
+      title: 'このStage専用の通知Channel',
+      default: null,
+      'x-herta-ui': {
+        widget: 'discord-channel',
+        placeholder: '未設定なら共通の解除通知Channelを使用',
+      },
+    },
+  },
+  required: [
+    'key',
+    'name',
+    'description',
+    'emoji',
+    'rarity',
+    'points',
+    'secret',
+    'conditionMode',
+    'conditions',
+    'rewardRoleId',
+    'notificationChannelId',
+  ],
+} as const;
+
 export const achievementsManifest: PluginManifest = {
   id: 'achievements',
   name: 'Achievements / Badges',
-  version: '2.1.0',
+  version: '3.0.0',
   description:
-    'サーバー活動から実績を自動解除し、Badge Collection・進捗・ポイント・ランキングを提供します',
+    'サーバー活動から実績を自動解除し、カスタムBadge・段階Achievement・進捗・ポイント・ランキングを提供します',
   author: { name: 'Herta' },
   category: 'utility',
   permissions: [
@@ -85,6 +194,49 @@ export const achievementsManifest: PluginManifest = {
           help: 'Rare以上だけ通知する、といった運用ができます。',
         },
       },
+      customAchievements: {
+        type: 'array',
+        title: 'Custom Achievement Series',
+        maxItems: 25,
+        default: [],
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            key: {
+              type: 'string',
+              title: 'Series ID',
+              pattern: '^[a-z0-9][a-z0-9-]{0,47}$',
+              minLength: 1,
+              maxLength: 48,
+            },
+            name: { type: 'string', title: 'Series名', minLength: 1, maxLength: 80 },
+            category: {
+              type: 'string',
+              title: 'カテゴリ',
+              minLength: 1,
+              maxLength: 40,
+              default: 'custom',
+            },
+            enabled: { type: 'boolean', title: 'このSeriesを有効化', default: true },
+            stages: {
+              type: 'array',
+              title: 'Levels / Stages',
+              minItems: 1,
+              maxItems: 10,
+              items: customStageSchema,
+              'x-herta-ui': {
+                help: 'Bronze → Silver → Goldのように同じ実績を段階化できます。',
+              },
+            },
+          },
+          required: ['key', 'name', 'category', 'enabled', 'stages'],
+        },
+        'x-herta-ui': {
+          section: 'Custom Achievement Builder',
+          help: 'Guild独自のAchievementを最大25Series、各Series最大10Stageまで作成できます。',
+        },
+      },
       showLocked: {
         type: 'boolean',
         title: '未解除実績を一覧に表示する',
@@ -141,6 +293,7 @@ export const achievementsManifest: PluginManifest = {
       'unlockChannelId',
       'mentionOnUnlock',
       'notificationMinimumRarity',
+      'customAchievements',
       'showLocked',
       'showProgress',
       'showScore',
