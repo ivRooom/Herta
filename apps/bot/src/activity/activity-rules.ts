@@ -49,7 +49,9 @@ export function normalizeActivityRulesConfig(value: unknown): ActivityRulesConfi
     countSelfDeafenedVoice:
       source.countSelfDeafenedVoice === undefined ? true : source.countSelfDeafenedVoice === true,
     countServerDeafenedVoice:
-      source.countServerDeafenedVoice === undefined ? true : source.countServerDeafenedVoice === true,
+      source.countServerDeafenedVoice === undefined
+        ? true
+        : source.countServerDeafenedVoice === true,
   };
 }
 
