@@ -1217,7 +1217,7 @@ function formatRecurrence(form: DailyContentFormState): string {
 
 function formatScheduleItem(schedule: DailyContentScheduleItem): string {
   if (schedule.recurrenceType === 'once')
-    return schedule.onceAt ? `1回 ${formatDate(schedule.onceAt)}` : '1回予約';
+    return schedule.onceAt ? `1回 ${formatDate(schedule.onceAt, schedule.timezone)}` : '1回予約';
   if (schedule.recurrenceType === 'weekly')
     return `毎週 ${formatWeekdays(schedule.weekdays)} ${schedule.scheduleTime}`;
   return `毎日 ${schedule.scheduleTime}`;
@@ -1275,11 +1275,12 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '予期しないエラーが発生しました';
 }
 
-function formatDate(value: string | null): string {
+function formatDate(value: string | null, timezone?: string): string {
   if (!value) return '未定';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '不明';
   return new Intl.DateTimeFormat('ja-JP', {
+    ...(timezone ? { timeZone: timezone } : {}),
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
