@@ -140,9 +140,7 @@ export function PluginCatalogGrid({
       });
       const result = (await response.json().catch(() => ({}))) as BulkPluginResponse;
       if (!response.ok) {
-        throw new Error(
-          typeof result.error === 'string' ? result.error : '一括更新に失敗しました',
-        );
+        throw new Error(typeof result.error === 'string' ? result.error : '一括更新に失敗しました');
       }
 
       const enabledByPluginId = new Map<string, boolean>();
