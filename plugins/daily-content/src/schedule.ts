@@ -99,6 +99,40 @@ function nextRecurringOccurrence(input: NextContentOccurrenceInput): Date | null
   throw new DailyContentValidationError('次回配信日時を計算できませんでした');
 }
 
+export function parseLocalDateTime(value: string, timezone: string): Date {
+  const match = /^(\d{4})[-/](\d{2})[-/](\d{2})[ T](\d{2}):(\d{2})$/.exec(value.trim());
+  if (!match) {
+    throw new DailyContentValidationError('日時はYYYY-MM-DD HH:mm形式で指定してください');
+  }
+  if (!isValidIanaTimezone(timezone)) {
+    throw new DailyContentValidationError('timezoneに有効なIANA timezoneを指定してください');
+  }
+  const target: ZonedDateParts = {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: Number(match[4]),
+    minute: Number(match[5]),
+  };
+  const normalizedDate = new Date(Date.UTC(target.year, target.month - 1, target.day));
+  if (
+    normalizedDate.getUTCFullYear() !== target.year ||
+    normalizedDate.getUTCMonth() + 1 !== target.month ||
+    normalizedDate.getUTCDate() !== target.day ||
+    target.hour < 0 ||
+    target.hour > 23 ||
+    target.minute < 0 ||
+    target.minute > 59
+  ) {
+    throw new DailyContentValidationError('日時が不正です');
+  }
+  const candidates = resolveLocalDateTimeCandidates(target, timezone);
+  if (candidates.length === 0) {
+    throw new DailyContentValidationError('指定した現地時刻はtimezone上で存在しません');
+  }
+  return candidates[0]!;
+}
+
 export function dailyContentIdempotencyKey(scheduleId: string, scheduledFor: Date): string {
   const normalizedId = scheduleId.trim();
   if (!normalizedId) {
@@ -115,9 +149,14 @@ export function formatDailyOccurrence(date: Date, timezone: string): string {
   return `${parts.year}-${pad(parts.month)}-${pad(parts.day)} ${pad(parts.hour)}:${pad(parts.minute)}`;
 }
 
-function normalizeWeekdays(value: readonly number[], recurrence: MessageStudioRecurrence): number[] {
+function normalizeWeekdays(
+  value: readonly number[],
+  recurrence: MessageStudioRecurrence,
+): number[] {
   if (recurrence !== 'weekly') return [];
-  const normalized = [...new Set(value.filter((day) => Number.isInteger(day) && day >= 1 && day <= 7))];
+  const normalized = [
+    ...new Set(value.filter((day) => Number.isInteger(day) && day >= 1 && day <= 7)),
+  ];
   if (normalized.length === 0) {
     throw new DailyContentValidationError('週次配信では曜日を1つ以上指定してください');
   }

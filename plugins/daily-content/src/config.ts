@@ -234,12 +234,12 @@ export function normalizeMessageStudioEmbed(
 export function embedHasVisibleContent(embed: MessageStudioEmbed | null): boolean {
   return Boolean(
     embed &&
-      (embed.title ||
-        embed.description ||
-        embed.imageUrl ||
-        embed.thumbnailUrl ||
-        embed.footerText ||
-        embed.fields?.length),
+    (embed.title ||
+      embed.description ||
+      embed.imageUrl ||
+      embed.thumbnailUrl ||
+      embed.footerText ||
+      embed.fields?.length),
   );
 }
 
@@ -281,7 +281,10 @@ function normalizeMessageFormat(value: unknown): MessageStudioFormat {
   return value === 'embed' ? 'embed' : 'text';
 }
 
-function normalizeOnceAt(value: Date | string | null | undefined, recurrence: MessageStudioRecurrence) {
+function normalizeOnceAt(
+  value: Date | string | null | undefined,
+  recurrence: MessageStudioRecurrence,
+) {
   if (recurrence !== 'once') return null;
   const date = value instanceof Date ? value : typeof value === 'string' ? new Date(value) : null;
   if (!date || Number.isNaN(date.getTime())) {
@@ -290,11 +293,14 @@ function normalizeOnceAt(value: Date | string | null | undefined, recurrence: Me
   return date;
 }
 
-function normalizeWeekdays(value: number[] | null | undefined, recurrence: MessageStudioRecurrence) {
+function normalizeWeekdays(
+  value: number[] | null | undefined,
+  recurrence: MessageStudioRecurrence,
+) {
   if (recurrence !== 'weekly') return [];
-  const normalized = [...new Set((value ?? []).filter((day) => Number.isInteger(day) && day >= 1 && day <= 7))].sort(
-    (a, b) => a - b,
-  );
+  const normalized = [
+    ...new Set((value ?? []).filter((day) => Number.isInteger(day) && day >= 1 && day <= 7)),
+  ].sort((a, b) => a - b);
   if (normalized.length === 0) {
     throw new DailyContentValidationError('週次配信では曜日を1つ以上指定してください');
   }
@@ -303,9 +309,11 @@ function normalizeWeekdays(value: number[] | null | undefined, recurrence: Messa
 
 function optionalString(value: unknown, max: number, label: string): string | undefined {
   if (value === undefined || value === null || value === '') return undefined;
-  if (typeof value !== 'string') throw new DailyContentValidationError(`${label}は文字列で指定してください`);
+  if (typeof value !== 'string')
+    throw new DailyContentValidationError(`${label}は文字列で指定してください`);
   const normalized = value.trim();
-  if (normalized.length > max) throw new DailyContentValidationError(`${label}は${max}文字以内です`);
+  if (normalized.length > max)
+    throw new DailyContentValidationError(`${label}は${max}文字以内です`);
   return normalized || undefined;
 }
 

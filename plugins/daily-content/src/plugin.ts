@@ -166,7 +166,10 @@ async function executeMessageStudioCommand(
       return;
     }
     context.logger.error({ error }, 'Message Studioコマンドの実行に失敗しました');
-    await respond(interaction, 'Message Studioの処理に失敗しました。Bot権限と投稿先を確認してください。');
+    await respond(
+      interaction,
+      'Message Studioの処理に失敗しました。Bot権限と投稿先を確認してください。',
+    );
   }
 }
 
@@ -221,9 +224,16 @@ async function executeAnnouncement(
     const payload = buildImmediatePayload(interaction, config);
     const crosspost = interaction.options.getBoolean('crosspost') === true;
     if (crosspost && !config.allowAnnouncementCrosspost) {
-      throw new DailyContentValidationError('Announcement CrosspostはPlugin設定で許可されていません');
+      throw new DailyContentValidationError(
+        'Announcement CrosspostはPlugin設定で許可されていません',
+      );
     }
-    const sent = await sendToTarget(context.client, channelId, payload, readForumTitle(interaction));
+    const sent = await sendToTarget(
+      context.client,
+      channelId,
+      payload,
+      readForumTitle(interaction),
+    );
     if (crosspost && sent.crosspost) await sent.crosspost();
     await respond(interaction, `📢 <#${channelId}> へお知らせを投稿しました（${sent.id}）`);
     return;
@@ -263,7 +273,10 @@ async function executeAnnouncement(
       throw new DailyContentValidationError('cadenceはdailyまたはweeklyを指定してください');
     }
     const scheduleTime = requiredOption(interaction, 'time');
-    const weekdays = cadence === 'weekly' ? parseMessageStudioWeekdays(interaction.options.getString('weekdays')) : [];
+    const weekdays =
+      cadence === 'weekly'
+        ? parseMessageStudioWeekdays(interaction.options.getString('weekdays'))
+        : [];
     const schedule = await createDailyContent(context.prisma, {
       guildId: context.guildId,
       actorId: interaction.user.id,
@@ -279,19 +292,29 @@ async function executeAnnouncement(
         publishAnnouncement: interaction.options.getBoolean('crosspost') === true,
       },
     });
-    const cadenceText = cadence === 'daily' ? `毎日 ${scheduleTime}` : `毎週 ${formatMessageStudioWeekdays(weekdays)} ${scheduleTime}`;
-    await respond(interaction, `🔁 定期投稿を作成しました（ID: ${schedule.id} / ${cadenceText} ${config.defaultTimezone}）`);
+    const cadenceText =
+      cadence === 'daily'
+        ? `毎日 ${scheduleTime}`
+        : `毎週 ${formatMessageStudioWeekdays(weekdays)} ${scheduleTime}`;
+    await respond(
+      interaction,
+      `🔁 定期投稿を作成しました（ID: ${schedule.id} / ${cadenceText} ${config.defaultTimezone}）`,
+    );
     return;
   }
   if (subcommand === 'list') {
     const schedules = (await listDailyContents(context.prisma, context.guildId)).slice(0, 20);
-    if (schedules.length === 0) return respond(interaction, '登録中のMessage Studio投稿はありません。');
+    if (schedules.length === 0)
+      return respond(interaction, '登録中のMessage Studio投稿はありません。');
     const lines = schedules.map((item) => {
-      const cadence = item.recurrenceType === 'once'
-        ? item.onceAt ? `<t:${Math.floor(item.onceAt.getTime() / 1000)}:F>` : '1回'
-        : item.recurrenceType === 'weekly'
-          ? `毎週 ${formatMessageStudioWeekdays(item.weekdays)} ${item.scheduleTime}`
-          : `毎日 ${item.scheduleTime}`;
+      const cadence =
+        item.recurrenceType === 'once'
+          ? item.onceAt
+            ? `<t:${Math.floor(item.onceAt.getTime() / 1000)}:F>`
+            : '1回'
+          : item.recurrenceType === 'weekly'
+            ? `毎週 ${formatMessageStudioWeekdays(item.weekdays)} ${item.scheduleTime}`
+            : `毎日 ${item.scheduleTime}`;
       return `${item.enabled ? '🟢' : '⚪'} \`${item.id}\` · <#${item.channelId}> · ${cadence} · ${item.messageFormat}`;
     });
     await respond(interaction, `**📨 Message Studio予約一覧**\n${lines.join('\n')}`.slice(0, 1950));
@@ -304,7 +327,10 @@ async function executeAnnouncement(
       scheduleId: id,
       actorId: interaction.user.id,
     });
-    await respond(interaction, deleted ? `🛑 予約 ${id} を停止しました。` : '指定した予約が見つかりません。');
+    await respond(
+      interaction,
+      deleted ? `🛑 予約 ${id} を停止しました。` : '指定した予約が見つかりません。',
+    );
     return;
   }
   await respond(interaction, '未対応のお知らせ操作です');
@@ -319,7 +345,12 @@ async function executeSay(
   if (subcommand === 'send') {
     const channelId = resolveChannelId(interaction, config, true);
     const payload = buildImmediatePayload(interaction, config);
-    const sent = await sendToTarget(context.client, channelId, payload, readForumTitle(interaction));
+    const sent = await sendToTarget(
+      context.client,
+      channelId,
+      payload,
+      readForumTitle(interaction),
+    );
     await respond(interaction, `💬 <#${channelId}> へBotとして投稿しました（${sent.id}）`);
     return;
   }
@@ -329,9 +360,11 @@ async function executeSay(
       throw new DailyContentValidationError('別サーバーのメッセージには返信できません');
     }
     const channel = await context.client.channels.fetch(reference.channelId);
-    if (!channel?.messages) throw new DailyContentValidationError('返信先チャンネルを取得できません');
+    if (!channel?.messages)
+      throw new DailyContentValidationError('返信先チャンネルを取得できません');
     const target = await channel.messages.fetch(reference.messageId);
-    const mentionUser = interaction.options.getBoolean('mention_user') ?? config.defaultMentionRepliedUser;
+    const mentionUser =
+      interaction.options.getBoolean('mention_user') ?? config.defaultMentionRepliedUser;
     const payload = buildImmediatePayload(interaction, config, mentionUser);
     const sent = await target.reply(payload);
     await respond(interaction, `↩️ 指定メッセージへ返信しました（${sent.id}）`);
@@ -340,14 +373,19 @@ async function executeSay(
   await respond(interaction, '未対応のBot発言操作です');
 }
 
-function readStoredMessage(interaction: DailyContentCommandInteraction, config: DailyContentConfig) {
+function readStoredMessage(
+  interaction: DailyContentCommandInteraction,
+  config: DailyContentConfig,
+) {
   const content = interaction.options.getString('content') ?? '';
   assertSafeMentions(content, config.allowUserMentions);
   const embed = readEmbed(interaction, config);
-  if (!content.trim() && !embed) throw new DailyContentValidationError('本文またはEmbedを入力してください');
+  if (!content.trim() && !embed)
+    throw new DailyContentValidationError('本文またはEmbedを入力してください');
   return {
     content,
-    messageFormat: interaction.options.getString('format') === 'embed' ? ('embed' as const) : ('text' as const),
+    messageFormat:
+      interaction.options.getString('format') === 'embed' ? ('embed' as const) : ('text' as const),
     embed,
   };
 }
@@ -403,7 +441,10 @@ async function sendToTarget(
   if (!channel) throw new DailyContentValidationError('投稿先チャンネルを取得できません');
   if (channel.isThreadOnly?.()) {
     if (!channel.threads) throw new DailyContentValidationError('Forumへ投稿できません');
-    const thread = await channel.threads.create({ name: forumTitle || 'お知らせ', message: payload });
+    const thread = await channel.threads.create({
+      name: forumTitle || 'お知らせ',
+      message: payload,
+    });
     const starter = thread.message ?? (await thread.fetchStarterMessage?.());
     if (!starter) throw new DailyContentValidationError('Forum starter messageを取得できません');
     return starter;
@@ -421,13 +462,19 @@ function resolveChannelId(
 ): string {
   const selected = interaction.options.getChannel('channel')?.id;
   const channelId = selected ?? config.defaultAnnouncementChannelId;
-  if (!channelId && required) throw new DailyContentValidationError('投稿先channelを指定してください');
-  if (!channelId) throw new DailyContentValidationError('投稿先channelを指定するか、既定のお知らせチャンネルを設定してください');
+  if (!channelId && required)
+    throw new DailyContentValidationError('投稿先channelを指定してください');
+  if (!channelId)
+    throw new DailyContentValidationError(
+      '投稿先channelを指定するか、既定のお知らせチャンネルを設定してください',
+    );
   return channelId;
 }
 
 function readForumTitle(interaction: DailyContentCommandInteraction): string {
-  return (interaction.options.getString('embed_title') ?? 'お知らせ').trim().slice(0, 100) || 'お知らせ';
+  return (
+    (interaction.options.getString('embed_title') ?? 'お知らせ').trim().slice(0, 100) || 'お知らせ'
+  );
 }
 
 function requiredOption(interaction: DailyContentCommandInteraction, name: string): string {
@@ -436,7 +483,10 @@ function requiredOption(interaction: DailyContentCommandInteraction, name: strin
   return value;
 }
 
-async function respond(interaction: DailyContentCommandInteraction, content: string): Promise<void> {
+async function respond(
+  interaction: DailyContentCommandInteraction,
+  content: string,
+): Promise<void> {
   const options: DailyContentReplyOptions = {
     content,
     flags: EPHEMERAL_FLAG,

@@ -179,10 +179,8 @@ describe('Announcement / Message Studio config', () => {
       normalizeMessageStudioEmbed({ description: '<@123456789012345678> お知らせです' }),
     ).toThrow('ユーザーメンションはPlugin設定で許可されていません');
     expect(
-      normalizeMessageStudioEmbed(
-        { description: '<@123456789012345678> お知らせです' },
-        true,
-      )?.description,
+      normalizeMessageStudioEmbed({ description: '<@123456789012345678> お知らせです' }, true)
+        ?.description,
     ).toContain('<@123456789012345678>');
   });
 });

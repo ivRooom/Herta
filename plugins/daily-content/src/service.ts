@@ -4,7 +4,7 @@ import {
   type DailyContentConfig,
   type DailyContentInput,
 } from './config.js';
-import { dailyContentIdempotencyKey, nextDailyOccurrence } from './schedule.js';
+import { dailyContentIdempotencyKey, nextContentOccurrence } from './schedule.js';
 
 export type DailyContentDeliveryStatus =
   'pending' | 'queued' | 'processing' | 'retrying' | 'sent' | 'failed' | 'skipped';
@@ -20,6 +20,12 @@ export interface DailyContentRecord {
   scheduleTime: string;
   timezone: string;
   enabled: boolean;
+  recurrenceType: 'once' | 'daily' | 'weekly';
+  onceAt: Date | null;
+  weekdays: number[];
+  messageFormat: 'text' | 'embed';
+  embedJson: unknown | null;
+  publishAnnouncement: boolean;
   nextRunAt: Date | null;
   lastScheduledAt: Date | null;
   lastSentAt: Date | null;
@@ -114,7 +120,10 @@ export async function createDailyContent(
   const now = input.now ?? new Date();
   const normalized = normalizeDailyContentInput(input.schedule, input.config);
   const nextRunAt = normalized.enabled
-    ? nextDailyOccurrence({
+    ? nextContentOccurrence({
+        recurrenceType: normalized.recurrenceType,
+        onceAt: normalized.onceAt,
+        weekdays: normalized.weekdays,
         scheduleTime: normalized.scheduleTime,
         timezone: normalized.timezone,
         after: now,
@@ -132,10 +141,12 @@ export async function createDailyContent(
       );
     }
 
+    const { embed, ...stored } = normalized;
     const created = await tx.dailyContent.create({
       data: {
         guildId: input.guildId,
-        ...normalized,
+        ...stored,
+        embedJson: embed,
         nextRunAt,
         createdBy: input.actorId,
         updatedBy: input.actorId,
@@ -180,27 +191,44 @@ export async function updateDailyContent(
         scheduleTime: input.patch.scheduleTime ?? current.scheduleTime,
         timezone: input.patch.timezone ?? current.timezone,
         enabled: input.patch.enabled ?? current.enabled,
+        recurrenceType: input.patch.recurrenceType ?? current.recurrenceType,
+        onceAt: input.patch.onceAt !== undefined ? input.patch.onceAt : current.onceAt,
+        weekdays: input.patch.weekdays !== undefined ? input.patch.weekdays : current.weekdays,
+        messageFormat: input.patch.messageFormat ?? current.messageFormat,
+        embed:
+          input.patch.embed !== undefined
+            ? input.patch.embed
+            : (current.embedJson as DailyContentInput['embed']),
+        publishAnnouncement: input.patch.publishAnnouncement ?? current.publishAnnouncement,
       },
       input.config,
     );
     const scheduleChanged =
       normalized.scheduleTime !== current.scheduleTime ||
       normalized.timezone !== current.timezone ||
-      normalized.enabled !== current.enabled;
+      normalized.enabled !== current.enabled ||
+      normalized.recurrenceType !== current.recurrenceType ||
+      normalized.onceAt?.getTime() !== current.onceAt?.getTime() ||
+      normalized.weekdays.join(',') !== current.weekdays.join(',');
     const nextRunAt = !normalized.enabled
       ? null
       : scheduleChanged || !current.nextRunAt
-        ? nextDailyOccurrence({
+        ? nextContentOccurrence({
+            recurrenceType: normalized.recurrenceType,
+            onceAt: normalized.onceAt,
+            weekdays: normalized.weekdays,
             scheduleTime: normalized.scheduleTime,
             timezone: normalized.timezone,
             after: now,
           })
         : current.nextRunAt;
 
+    const { embed, ...stored } = normalized;
     const updated = await tx.dailyContent.update({
       where: { id: current.id },
       data: {
-        ...normalized,
+        ...stored,
+        embedJson: embed,
         nextRunAt,
         updatedBy: input.actorId,
       },
@@ -325,14 +353,21 @@ export async function reserveDueDelivery(
       });
     }
 
-    const nextRunAt = nextDailyOccurrence({
+    const nextRunAt = nextContentOccurrence({
+      recurrenceType: schedule.recurrenceType,
+      onceAt: schedule.onceAt,
+      weekdays: schedule.weekdays,
       scheduleTime: schedule.scheduleTime,
       timezone: schedule.timezone,
       after: scheduledFor,
     });
     await tx.dailyContent.update({
       where: { id: schedule.id },
-      data: { nextRunAt, lastScheduledAt: scheduledFor },
+      data: {
+        nextRunAt,
+        lastScheduledAt: scheduledFor,
+        ...(schedule.recurrenceType === 'once' ? { enabled: false } : {}),
+      },
     });
     return delivery;
   });

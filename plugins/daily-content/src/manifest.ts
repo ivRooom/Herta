@@ -145,11 +145,7 @@ export const dailyContentManifest: PluginManifest = {
         },
         {
           title: '投稿権限',
-          fields: [
-            'allowUserMentions',
-            'allowAnnouncementCrosspost',
-            'defaultMentionRepliedUser',
-          ],
+          fields: ['allowUserMentions', 'allowAnnouncementCrosspost', 'defaultMentionRepliedUser'],
         },
         {
           title: '配信制御',
@@ -273,9 +269,7 @@ export const dailyContentManifest: PluginManifest = {
         {
           name: 'cancel',
           description: '予約・定期投稿を停止します',
-          options: [
-            { name: 'id', description: 'スケジュールID', type: 'string', required: true },
-          ],
+          options: [{ name: 'id', description: 'スケジュールID', type: 'string', required: true }],
         },
       ],
     },
@@ -286,10 +280,7 @@ export const dailyContentManifest: PluginManifest = {
         {
           name: 'send',
           description: 'チャンネル・Forum・ThreadへBotとして発言します',
-          options: [
-            { ...targetOption, required: true },
-            ...contentOptions,
-          ],
+          options: [{ ...targetOption, required: true }, ...contentOptions],
         },
         {
           name: 'reply',
