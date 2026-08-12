@@ -5,8 +5,12 @@ import Link from 'next/link';
 import {
   ArrowRight,
   CalendarDays,
+  CheckSquare2,
   Gamepad2,
+  Loader2,
   MessageCircleReply,
+  Power,
+  PowerOff,
   Puzzle,
   Quote,
   Search,
@@ -27,6 +31,14 @@ export type PluginCatalogItem = {
   category: string;
   enabled: boolean;
   config: Record<string, unknown>;
+};
+
+type BulkPluginResponse = {
+  plugins?: Array<{
+    manifest?: { id?: string };
+    enabled?: boolean;
+  }>;
+  error?: unknown;
 };
 
 const PLUGIN_ICONS: Record<string, LucideIcon> = {
@@ -57,6 +69,9 @@ export function PluginCatalogGrid({
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [onlyEnabled, setOnlyEnabled] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [bulkStatus, setBulkStatus] = useState('');
 
   const categories = useMemo(() => {
     const unique = [...new Set(catalog.map((plugin) => plugin.category))].sort();
@@ -77,10 +92,78 @@ export function PluginCatalogGrid({
     });
   }, [catalog, category, onlyEnabled, query]);
 
+  const selectedCount = selected.size;
+  const filteredIds = useMemo(() => filtered.map((plugin) => plugin.id), [filtered]);
+  const allFilteredSelected =
+    filteredIds.length > 0 && filteredIds.every((pluginId) => selected.has(pluginId));
+
   function handleEnabledChange(pluginId: string, enabled: boolean) {
     setCatalog((current) =>
       current.map((plugin) => (plugin.id === pluginId ? { ...plugin, enabled } : plugin)),
     );
+  }
+
+  function toggleSelected(pluginId: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(pluginId)) next.delete(pluginId);
+      else next.add(pluginId);
+      return next;
+    });
+    setBulkStatus('');
+  }
+
+  function toggleFilteredSelection() {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (allFilteredSelected) filteredIds.forEach((pluginId) => next.delete(pluginId));
+      else filteredIds.forEach((pluginId) => next.add(pluginId));
+      return next;
+    });
+    setBulkStatus('');
+  }
+
+  async function applyBulkEnabled(enabled: boolean) {
+    if (selected.size === 0 || bulkSaving) return;
+
+    const pluginIds = [...selected];
+    setBulkSaving(true);
+    setBulkStatus(`${pluginIds.length}件を${enabled ? '有効化' : '無効化'}しています…`);
+
+    try {
+      const response = await fetch(`/api/guilds/${guildId}/plugins`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          updates: pluginIds.map((pluginId) => ({ pluginId, enabled })),
+        }),
+      });
+      const result = (await response.json().catch(() => ({}))) as BulkPluginResponse;
+      if (!response.ok) {
+        throw new Error(typeof result.error === 'string' ? result.error : '一括更新に失敗しました');
+      }
+
+      const enabledByPluginId = new Map<string, boolean>();
+      for (const plugin of result.plugins ?? []) {
+        const pluginId = plugin.manifest?.id;
+        if (pluginId && typeof plugin.enabled === 'boolean') {
+          enabledByPluginId.set(pluginId, plugin.enabled);
+        }
+      }
+
+      setCatalog((current) =>
+        current.map((plugin) => {
+          const nextEnabled = enabledByPluginId.get(plugin.id);
+          return nextEnabled === undefined ? plugin : { ...plugin, enabled: nextEnabled };
+        }),
+      );
+      setSelected(new Set());
+      setBulkStatus(`${pluginIds.length}件を${enabled ? '有効化' : '無効化'}しました`);
+    } catch (error) {
+      setBulkStatus(error instanceof Error ? error.message : '一括更新に失敗しました');
+    } finally {
+      setBulkSaving(false);
+    }
   }
 
   return (
@@ -142,6 +225,63 @@ export function PluginCatalogGrid({
             );
           })}
         </div>
+
+        <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={toggleFilteredSelection}
+              disabled={filteredIds.length === 0 || bulkSaving}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold transition-colors hover:border-primary/30 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <CheckSquare2 className="h-4 w-4" />
+              {allFilteredSelected ? '表示中の選択を解除' : '表示中をすべて選択'}
+            </button>
+            {selectedCount > 0 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelected(new Set());
+                  setBulkStatus('');
+                }}
+                disabled={bulkSaving}
+                className="rounded-lg px-3 py-2 text-xs font-semibold text-muted hover:bg-background hover:text-foreground disabled:opacity-50"
+              >
+                選択解除
+              </button>
+            ) : null}
+            <span className="text-xs text-muted">{selectedCount}件選択中</span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={selectedCount === 0 || bulkSaving}
+              onClick={() => applyBulkEnabled(true)}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {bulkSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}
+              選択したPluginを有効化
+            </button>
+            <button
+              type="button"
+              disabled={selectedCount === 0 || bulkSaving}
+              onClick={() => applyBulkEnabled(false)}
+              className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-xs font-semibold transition-colors hover:border-red-400/40 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <PowerOff className="h-4 w-4" /> 選択したPluginを無効化
+            </button>
+          </div>
+        </div>
+
+        {bulkStatus ? (
+          <p
+            className={`mt-3 text-xs ${bulkStatus.includes('失敗') || bulkStatus.includes('不正') ? 'text-red-400' : 'text-muted'}`}
+            role="status"
+          >
+            {bulkStatus}
+          </p>
+        ) : null}
       </div>
 
       <div className="mt-4 flex items-center justify-between gap-3 text-xs text-muted">
@@ -167,12 +307,31 @@ export function PluginCatalogGrid({
         <ul className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map((plugin) => {
             const Icon = PLUGIN_ICONS[plugin.id] ?? Puzzle;
+            const checked = selected.has(plugin.id);
             return (
               <li
                 key={plugin.id}
-                className="group relative overflow-hidden rounded-2xl border border-border bg-surface p-5 shadow-card transition-colors hover:border-primary/40"
+                className={`group relative overflow-hidden rounded-2xl border bg-surface p-5 shadow-card transition-colors ${checked ? 'border-primary/60 ring-1 ring-primary/20' : 'border-border hover:border-primary/40'}`}
               >
                 <div className="pointer-events-none absolute right-0 top-0 h-24 w-24 rounded-full bg-primary/0 blur-2xl transition-colors group-hover:bg-primary/10" />
+                <div className="relative mb-4 flex items-center justify-between gap-3">
+                  <label className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-muted hover:text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={bulkSaving}
+                      onChange={() => toggleSelected(plugin.id)}
+                      className="h-4 w-4 rounded border-border accent-current"
+                    />
+                    一括操作に選択
+                  </label>
+                  {checked ? (
+                    <span className="rounded-full bg-primary/10 px-2 py-1 text-[10px] font-semibold text-primary">
+                      選択中
+                    </span>
+                  ) : null}
+                </div>
+
                 <div className="relative flex items-start justify-between gap-4">
                   <div className="flex min-w-0 items-start gap-3">
                     <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -191,10 +350,12 @@ export function PluginCatalogGrid({
                     </div>
                   </div>
                   <PluginToggle
+                    key={`${plugin.id}:${plugin.enabled}`}
                     guildId={guildId}
                     pluginId={plugin.id}
                     initialEnabled={plugin.enabled}
                     initialConfig={plugin.config}
+                    disabled={bulkSaving}
                     ariaLabel={`${plugin.name}の有効状態を切り替え`}
                     onEnabledChange={(enabled) => handleEnabledChange(plugin.id, enabled)}
                   />
