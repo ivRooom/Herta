@@ -383,6 +383,9 @@ async function publishDiscordMessage(input: {
   }
 
   if (FORUM_CHANNEL_TYPES.has(channel.type)) {
+    if (input.publishAnnouncement) {
+      throw new DailyContentPublishError('DailyContentForumCrosspostUnsupported', 400);
+    }
     return publishDiscordForumPost(input);
   }
   return publishDiscordChannelMessage(input);
