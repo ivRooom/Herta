@@ -1,0 +1,41 @@
+name: Achievements v3 Format Export
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/bot/src/plugins/achievements.ts'
+      - 'apps/bot/src/plugins/achievements.test.ts'
+      - 'apps/bot/src/plugins/custom-achievements.test.ts'
+      - '.github/workflows/achievements-v3-format-export.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply exact Prettier formatting
+        run: pnpm exec prettier --write apps/bot/src/plugins/achievements.ts apps/bot/src/plugins/achievements.test.ts apps/bot/src/plugins/custom-achievements.test.ts
+      - name: Fix known type normalization
+        run: sed -i "s/secret: builtIn.secret,/secret: builtIn.secret === true,/" apps/bot/src/plugins/achievements.ts
+      - name: Reformat after type fix
+        run: pnpm exec prettier --write apps/bot/src/plugins/achievements.ts
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: achievements-v3-formatted
+          path: |
+            apps/bot/src/plugins/achievements.ts
+            apps/bot/src/plugins/achievements.test.ts
+            apps/bot/src/plugins/custom-achievements.test.ts
+          if-no-files-found: error
