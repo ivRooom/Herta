@@ -35,6 +35,13 @@ import {
   resetVoiceSessions,
   startVoiceSession,
 } from './activity/community-activity.js';
+import {
+  hasMessageCooldownElapsed,
+  normalizeActivityRulesConfig,
+  shouldCountMessage,
+  shouldCountVoice,
+  type ActivityRulesConfig,
+} from './activity/activity-rules.js';
 import { searchGuildMemberOptions, type GuildMemberOption } from './health/guild-members.js';
 
 function resolveErrorName(error: unknown): string {
@@ -94,6 +101,7 @@ export class HertaBot {
   private readonly gatewayObservationIntervalMs: number;
   private gatewayObservationTimer?: NodeJS.Timeout;
   private healthRedis?: Redis;
+  private readonly activityMessageLastCountedAt = new Map<string, number>();
 
   constructor(
     private logger: Logger,
@@ -158,9 +166,11 @@ export class HertaBot {
           await resetVoiceSessions(this.prisma, guildId);
           const guild = client.guilds.cache.get(guildId);
           if (guild) {
+            const activityRules = await this.getActivityRules(guildId);
             for (const state of guild.voiceStates.cache.values()) {
-              if (!state.channelId || state.member?.user.bot) continue;
-              await startVoiceSession(this.prisma, guildId, state.id, state.channelId);
+              if (state.member?.user.bot || !this.isCountableVoiceState(state, activityRules))
+                continue;
+              await startVoiceSession(this.prisma, guildId, state.id, state.channelId!);
             }
           }
         } catch (error) {
@@ -192,6 +202,9 @@ export class HertaBot {
       await this.pluginLoader.disableGuildPlugins(guild.id);
       this.pluginCache.invalidate(guild.id);
       this.pluginCommands.delete(guild.id);
+      for (const key of this.activityMessageLastCountedAt.keys()) {
+        if (key.startsWith(`${guild.id}:`)) this.activityMessageLastCountedAt.delete(key);
+      }
     });
 
     this.client.on(Events.GuildMemberAdd, async (member) => {
@@ -206,12 +219,31 @@ export class HertaBot {
       if (!message.guildId) return;
       if (!message.author.bot && !message.webhookId) {
         try {
-          await incrementCommunityActivity(
-            this.prisma,
-            message.guildId,
-            message.author.id,
-            'messages',
-          );
+          const activityRules = await this.getActivityRules(message.guildId);
+          const now = Date.now();
+          const cooldownKey = `${message.guildId}:${message.author.id}`;
+          const roleIds = message.member ? [...message.member.roles.cache.keys()] : [];
+          if (
+            shouldCountMessage(activityRules, {
+              channelId: message.channelId,
+              roleIds,
+              contentAvailable: messageContentIntentEnabled(),
+              contentLength: message.content.length,
+            }) &&
+            hasMessageCooldownElapsed(
+              activityRules,
+              this.activityMessageLastCountedAt.get(cooldownKey),
+              now,
+            )
+          ) {
+            await incrementCommunityActivity(
+              this.prisma,
+              message.guildId,
+              message.author.id,
+              'messages',
+            );
+            this.activityMessageLastCountedAt.set(cooldownKey, now);
+          }
         } catch (error) {
           this.logger.warn(
             { err: error, guildId: message.guildId, userId: message.author.id },
@@ -284,19 +316,54 @@ export class HertaBot {
 
     this.client.on(Events.MessageReactionAdd, async (reaction, user) => {
       if (user.bot) return;
+      let resolvedReaction;
       try {
-        const resolvedReaction = reaction.partial ? await reaction.fetch() : reaction;
+        resolvedReaction = reaction.partial ? await reaction.fetch() : reaction;
         const resolvedMessage = resolvedReaction.message.partial
           ? await resolvedReaction.message.fetch()
           : resolvedReaction.message;
         const guildId = resolvedMessage.guildId;
         if (!guildId) return;
 
-        await incrementCommunityActivity(this.prisma, guildId, user.id, 'reactions_given');
-        const receiver = resolvedMessage.author;
-        if (receiver && !receiver.bot && receiver.id !== user.id) {
-          await incrementCommunityActivity(this.prisma, guildId, receiver.id, 'reactions_received');
+        try {
+          const activityRules = await this.getActivityRules(guildId);
+          const giver = resolvedMessage.guild?.members.cache.get(user.id);
+          const giverAllowed = shouldCountMessage(activityRules, {
+            channelId: resolvedMessage.channelId,
+            roleIds: giver ? [...giver.roles.cache.keys()] : [],
+            contentAvailable: false,
+          });
+          if (giverAllowed && activityRules.countReactionsGiven) {
+            await incrementCommunityActivity(this.prisma, guildId, user.id, 'reactions_given');
+          }
+
+          const receiver = resolvedMessage.author;
+          const receiverAllowed = shouldCountMessage(activityRules, {
+            channelId: resolvedMessage.channelId,
+            roleIds: resolvedMessage.member ? [...resolvedMessage.member.roles.cache.keys()] : [],
+            contentAvailable: false,
+          });
+          if (
+            receiverAllowed &&
+            activityRules.countReactionsReceived &&
+            receiver &&
+            !receiver.bot &&
+            receiver.id !== user.id
+          ) {
+            await incrementCommunityActivity(
+              this.prisma,
+              guildId,
+              receiver.id,
+              'reactions_received',
+            );
+          }
+        } catch (error) {
+          this.logger.warn(
+            { err: error, guildId, userId: user.id },
+            'リアクション活動の記録に失敗しました',
+          );
         }
+
         await this.dispatchGuildPluginEvent(
           guildId,
           Events.MessageReactionAdd,
@@ -304,7 +371,7 @@ export class HertaBot {
           user,
         );
       } catch (error) {
-        this.logger.warn({ err: error, userId: user.id }, 'リアクション活動の記録に失敗しました');
+        this.logger.warn({ err: error, userId: user.id }, 'リアクションの取得に失敗しました');
       }
     });
 
@@ -314,15 +381,22 @@ export class HertaBot {
       if (newState.member?.user.bot ?? oldState.member?.user.bot) return;
 
       try {
-        if (!oldState.channelId && newState.channelId) {
-          await startVoiceSession(this.prisma, guildId, userId, newState.channelId);
-        } else if (oldState.channelId && !newState.channelId) {
+        const activityRules = await this.getActivityRules(guildId);
+        const oldEligible = this.isCountableVoiceState(oldState, activityRules);
+        const newEligible = this.isCountableVoiceState(newState, activityRules);
+        const channelChanged = oldState.channelId !== newState.channelId;
+
+        if (oldEligible && (!newEligible || channelChanged)) {
           await finishVoiceSession(this.prisma, guildId, userId);
         }
-        await this.dispatchGuildPluginEvent(guildId, Events.VoiceStateUpdate, oldState, newState);
+        if (newEligible && (!oldEligible || channelChanged)) {
+          await startVoiceSession(this.prisma, guildId, userId, newState.channelId!);
+        }
       } catch (error) {
         this.logger.warn({ err: error, guildId, userId }, 'VC滞在時間の記録に失敗しました');
       }
+
+      await this.dispatchGuildPluginEvent(guildId, Events.VoiceStateUpdate, oldState, newState);
     });
 
     this.client.on(Events.InteractionCreate, async (interaction) => {
@@ -401,6 +475,33 @@ export class HertaBot {
           errorName,
         });
       }
+    });
+  }
+
+  private async getActivityRules(guildId: string): Promise<ActivityRulesConfig> {
+    return normalizeActivityRulesConfig(
+      await this.pluginLoader.getGuildPluginConfig(guildId, 'activity-rules'),
+    );
+  }
+
+  private isCountableVoiceState(
+    state: {
+      channelId: string | null;
+      selfMute?: boolean | null;
+      serverMute?: boolean | null;
+      selfDeaf?: boolean | null;
+      serverDeaf?: boolean | null;
+      member?: { roles: { cache: Map<string, unknown> } } | null;
+    },
+    config: ActivityRulesConfig,
+  ): boolean {
+    return shouldCountVoice(config, {
+      channelId: state.channelId,
+      roleIds: state.member ? [...state.member.roles.cache.keys()] : [],
+      selfMute: state.selfMute,
+      serverMute: state.serverMute,
+      selfDeaf: state.selfDeaf,
+      serverDeaf: state.serverDeaf,
     });
   }
 

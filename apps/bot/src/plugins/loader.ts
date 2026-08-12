@@ -50,6 +50,14 @@ export class GuildPluginLoader {
     }
   }
 
+  async getGuildPluginConfig(
+    guildId: string,
+    pluginId: string,
+  ): Promise<Record<string, unknown> | null> {
+    const enabled = (await this.getEnabled(guildId)).find((item) => item.manifest.id === pluginId);
+    return enabled ? structuredClone(enabled.config) : null;
+  }
+
   async loadGuildPlugins(guildId: string): Promise<LoadedGuildPlugins> {
     const commands: SlashCommand[] = [];
     const events: GuildEventHandler[] = [];

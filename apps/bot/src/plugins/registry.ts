@@ -227,6 +227,7 @@ function validateRuntimeEntry(
 
 const officialPluginIds = [
   'achievements',
+  'activity-rules',
   'afk',
   'auto-response',
   'birthday-role',
