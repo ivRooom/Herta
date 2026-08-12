@@ -69,7 +69,9 @@ const WEEKDAY_ALIASES = new Map<string, number>([
 ]);
 
 export function toDiscordApiEmbed(input: MessageStudioEmbed | null): DiscordApiEmbed | null {
-  const embed = normalizeMessageStudioEmbed(input);
+  // 保存前にPlugin設定に応じたmention検証を済ませているため、Workerでの再変換では
+  // user mentionを許容して構造・長さ・URLだけを再検証する。
+  const embed = normalizeMessageStudioEmbed(input, true);
   if (!embed) return null;
   const color = embed.color ? Number.parseInt(embed.color.slice(1), 16) : undefined;
   return {
