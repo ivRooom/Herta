@@ -37,8 +37,7 @@ jobs:
             plugins/daily-content/src/manifest.ts \
             plugins/daily-content/src/plugin.ts \
             plugins/daily-content/src/service.ts \
-            apps/worker/src/daily-content.ts \
-            packages/db/prisma/schema.prisma
+            apps/worker/src/daily-content.ts
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
