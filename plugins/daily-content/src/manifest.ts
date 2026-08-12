@@ -290,7 +290,7 @@ export const dailyContentManifest: PluginManifest = {
         {
           name: 'send',
           description: 'チャンネル・Forum・ThreadへBotとして発言します',
-          options: [{ ...targetOption, required: true }, ...contentOptions],
+          options: [{ ...targetOption, required: true }, forumTitleOption, ...contentOptions],
         },
         {
           name: 'reply',

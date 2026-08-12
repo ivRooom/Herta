@@ -234,8 +234,22 @@ async function executeAnnouncement(
       payload,
       readForumTitle(interaction),
     );
-    if (crosspost && sent.crosspost) await sent.crosspost();
-    await respond(interaction, `📢 <#${channelId}> へお知らせを投稿しました（${sent.id}）`);
+    let crosspostWarning = '';
+    if (crosspost && sent.crosspost) {
+      try {
+        await sent.crosspost();
+      } catch (error) {
+        crosspostWarning = ' / Crosspostのみ失敗';
+        context.logger.warn(
+          { error, guildId: context.guildId, channelId, messageId: sent.id },
+          'AnnouncementのCrosspostに失敗しました。元メッセージは投稿済みです',
+        );
+      }
+    }
+    await respond(
+      interaction,
+      `📢 <#${channelId}> へお知らせを投稿しました（${sent.id}）${crosspostWarning}`,
+    );
     return;
   }
   if (subcommand === 'schedule') {
