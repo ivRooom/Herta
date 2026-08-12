@@ -83,11 +83,16 @@ export async function PATCH(
       plugins.push(plugin);
       results.push({ pluginId: update.pluginId, enabled: plugin.enabled, success: true });
     } catch (error) {
+      console.error('Plugin一括更新中に内部エラーが発生しました', {
+        guildId,
+        pluginId: update.pluginId,
+        error,
+      });
       results.push({
         pluginId: update.pluginId,
         enabled: update.enabled,
         success: false,
-        error: error instanceof Error ? error.message : `${update.pluginId} の更新に失敗しました`,
+        error: `${update.pluginId} の更新に失敗しました`,
       });
     }
   }
