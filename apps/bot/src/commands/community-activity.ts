@@ -3,8 +3,10 @@ import { getPrismaClient } from '@herta/db';
 import {
   getCommunityActivityTotals,
   getCommunityLeaderboard,
+  getCommunityUserRank,
   type CommunityActivityMetric,
   type CommunityActivityPeriod,
+  type CommunityUserRank,
 } from '../activity/community-activity.js';
 import type { SlashCommand } from './registry.js';
 
@@ -25,12 +27,32 @@ const periodLabels: Record<CommunityActivityPeriod, string> = {
   all: '全期間',
 };
 
+const periodChoices = [
+  { name: '今日', value: 'today' },
+  { name: '7日間', value: '7d' },
+  { name: '30日間', value: '30d' },
+  { name: '全期間', value: 'all' },
+];
+
+const metricChoices = [
+  { name: '発言数', value: 'messages' },
+  { name: 'リアクション数', value: 'reactions_given' },
+  { name: 'もらったリアクション', value: 'reactions_received' },
+  { name: 'VC滞在時間', value: 'voice_seconds' },
+  { name: 'Minecraftプレイ時間', value: 'minecraft_seconds' },
+];
+
 function readPeriod(value: string | null): CommunityActivityPeriod {
   return value === 'today' || value === '30d' || value === 'all' ? value : '7d';
 }
 
 function readMetric(value: string | null): CommunityActivityMetric {
-  if (value === 'reactions_given' || value === 'reactions_received' || value === 'voice_seconds') {
+  if (
+    value === 'reactions_given' ||
+    value === 'reactions_received' ||
+    value === 'voice_seconds' ||
+    value === 'minecraft_seconds'
+  ) {
     return value;
   }
   return 'messages';
@@ -50,32 +72,27 @@ function displayName(interaction: Parameters<SlashCommand['execute']>[0], userId
   return member?.displayName ?? `<@${userId}>`;
 }
 
-export const leaderboardCommand: SlashCommand = {
+function formatRank(metric: CommunityActivityMetric, value: CommunityUserRank): string {
+  if (value.rank === null) return '記録なし';
+  return `**#${value.rank} / ${value.participants}人**\n${formatMetric(metric, value.total)}`;
+}
+
+export const activityLeaderboardCommand: SlashCommand = {
   definition: {
-    name: 'leaderboard',
+    name: 'activity-leaderboard',
     description: 'コミュニティ活動ランキングを表示します',
     options: [
       {
         name: 'metric',
         description: 'ランキング指標',
         type: 'string',
-        choices: [
-          { name: '発言数', value: 'messages' },
-          { name: 'リアクション数', value: 'reactions_given' },
-          { name: 'もらったリアクション', value: 'reactions_received' },
-          { name: 'VC滞在時間', value: 'voice_seconds' },
-        ],
+        choices: metricChoices,
       },
       {
         name: 'period',
         description: '集計期間',
         type: 'string',
-        choices: [
-          { name: '今日', value: 'today' },
-          { name: '7日間', value: '7d' },
-          { name: '30日間', value: '30d' },
-          { name: '全期間', value: 'all' },
-        ],
+        choices: periodChoices,
       },
       {
         name: 'limit',
@@ -133,12 +150,7 @@ export const activityCommand: SlashCommand = {
         name: 'period',
         description: '集計期間',
         type: 'string',
-        choices: [
-          { name: '今日', value: 'today' },
-          { name: '7日間', value: '7d' },
-          { name: '30日間', value: '30d' },
-          { name: '全期間', value: 'all' },
-        ],
+        choices: periodChoices,
       },
     ],
   },
@@ -181,7 +193,7 @@ export const activityCommand: SlashCommand = {
           inline: true,
         },
       )
-      .setFooter({ text: `${periodLabels[period]}の集計` });
+      .setFooter({ text: `${periodLabels[period]}の集計 · /activity-rank で順位を確認` });
 
     if (totals.minecraftSeconds > 0) {
       embed.addFields({
@@ -195,4 +207,78 @@ export const activityCommand: SlashCommand = {
   },
 };
 
-export const communityActivityCommands = [leaderboardCommand, activityCommand];
+export const activityRankCommand: SlashCommand = {
+  definition: {
+    name: 'activity-rank',
+    description: '自分またはメンバーのコミュニティ内順位を表示します',
+    options: [
+      {
+        name: 'user',
+        description: '確認するユーザー。省略時は自分',
+        type: 'user',
+      },
+      {
+        name: 'period',
+        description: '集計期間',
+        type: 'string',
+        choices: periodChoices,
+      },
+    ],
+  },
+  async execute(interaction) {
+    if (!interaction.guildId) {
+      await interaction.reply({
+        content: 'サーバー内でのみ利用できます。',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const user = interaction.options.getUser('user') ?? interaction.user;
+    const period = readPeriod(interaction.options.getString('period'));
+    const metrics: CommunityActivityMetric[] = [
+      'messages',
+      'voice_seconds',
+      'reactions_given',
+      'reactions_received',
+      'minecraft_seconds',
+    ];
+    const ranks = await Promise.all(
+      metrics.map((metric) =>
+        getCommunityUserRank(prisma, interaction.guildId!, user.id, metric, period),
+      ),
+    );
+
+    const embed = new EmbedBuilder()
+      .setTitle(`🏅 ${user.globalName ?? user.username} のコミュニティ順位`)
+      .setThumbnail(user.displayAvatarURL({ size: 256 }))
+      .setColor(0xf1c40f)
+      .addFields(
+        { name: '💬 発言', value: formatRank('messages', ranks[0]!), inline: true },
+        { name: '🎙️ VC', value: formatRank('voice_seconds', ranks[1]!), inline: true },
+        { name: '✨ リアクション', value: formatRank('reactions_given', ranks[2]!), inline: true },
+        {
+          name: '💜 もらったリアクション',
+          value: formatRank('reactions_received', ranks[3]!),
+          inline: true,
+        },
+      )
+      .setFooter({ text: `${periodLabels[period]}の順位 · 同値はDiscord ID昇順で固定` });
+
+    if (ranks[4]!.rank !== null) {
+      embed.addFields({
+        name: '⛏️ Minecraft',
+        value: formatRank('minecraft_seconds', ranks[4]!),
+        inline: true,
+      });
+    }
+
+    await interaction.reply({ embeds: [embed], allowedMentions: { parse: [] } });
+  },
+};
+
+export const communityActivityCommands = [
+  activityLeaderboardCommand,
+  activityCommand,
+  activityRankCommand,
+];

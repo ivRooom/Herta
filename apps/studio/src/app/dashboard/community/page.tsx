@@ -1,10 +1,14 @@
 import Link from 'next/link';
 import {
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpRight,
   BarChart3,
   MessageSquare,
   Mic2,
   Pickaxe,
   Sparkles,
+  TrendingUp,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -16,7 +20,13 @@ import { getDiscordAccessToken } from '@/lib/session';
 export const dynamic = 'force-dynamic';
 
 type SearchParams = Record<string, string | string[] | undefined>;
-const metrics = ['messages', 'voice_seconds', 'reactions_given', 'reactions_received'] as const;
+const metrics = [
+  'messages',
+  'voice_seconds',
+  'reactions_given',
+  'reactions_received',
+  'minecraft_seconds',
+] as const;
 type Metric = (typeof metrics)[number];
 
 const metricLabels: Record<Metric, string> = {
@@ -24,6 +34,7 @@ const metricLabels: Record<Metric, string> = {
   voice_seconds: 'VC滞在時間',
   reactions_given: 'リアクション',
   reactions_received: 'もらったリアクション',
+  minecraft_seconds: 'Minecraft',
 };
 
 function single(value: string | string[] | undefined): string {
@@ -45,6 +56,34 @@ function jstPeriodStart(days: number): Date {
   const key = new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const today = new Date(`${key}T00:00:00.000Z`);
   return new Date(today.getTime() - (days - 1) * 86_400_000);
+}
+
+function dateKey(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function displayDate(value: Date): string {
+  const [, month, day] = dateKey(value).split('-');
+  return `${Number(month)}/${Number(day)}`;
+}
+
+function comparisonLabel(
+  current: number,
+  previous: number,
+): {
+  label: string;
+  tone: 'up' | 'down' | 'flat';
+} {
+  if (previous === 0) {
+    if (current === 0) return { label: '前期間と同じ', tone: 'flat' };
+    return { label: '前期間は記録なし', tone: 'up' };
+  }
+  const rate = ((current - previous) / previous) * 100;
+  if (Math.abs(rate) < 0.05) return { label: '前期間比 ±0%', tone: 'flat' };
+  return {
+    label: `前期間比 ${rate > 0 ? '+' : ''}${rate.toFixed(1)}%`,
+    tone: rate > 0 ? 'up' : 'down',
+  };
 }
 
 interface SummaryCard {
@@ -81,12 +120,15 @@ export default async function CommunityDashboardPage({
   }
 
   const start = jstPeriodStart(range);
-  const [rows, totals, activeUsers] = await Promise.all([
+  const previousStart = new Date(start.getTime() - range * 86_400_000);
+  const previousEnd = new Date(start.getTime() - 1);
+
+  const [rows, totals, activeUsers, dailyRows, previousRows] = await Promise.all([
     prisma.communityActivityDaily.groupBy({
       by: ['userId'],
       where: { guildId: guild.id, metric, activityDate: { gte: start } },
       _sum: { value: true },
-      orderBy: { _sum: { value: 'desc' } },
+      orderBy: [{ _sum: { value: 'desc' } }, { userId: 'asc' }],
       take: 25,
     }),
     prisma.communityActivityDaily.groupBy({
@@ -99,6 +141,21 @@ export default async function CommunityDashboardPage({
       distinct: ['userId'],
       select: { userId: true },
     }),
+    prisma.communityActivityDaily.groupBy({
+      by: ['activityDate'],
+      where: { guildId: guild.id, metric, activityDate: { gte: start } },
+      _sum: { value: true },
+      orderBy: { activityDate: 'asc' },
+    }),
+    prisma.communityActivityDaily.groupBy({
+      by: ['metric'],
+      where: {
+        guildId: guild.id,
+        metric,
+        activityDate: { gte: previousStart, lte: previousEnd },
+      },
+      _sum: { value: true },
+    }),
   ]);
 
   const totalMap = new Map(totals.map((item) => [item.metric, Number(item._sum.value ?? 0n)]));
@@ -106,7 +163,29 @@ export default async function CommunityDashboardPage({
     userId: row.userId,
     total: Number(row._sum.value ?? 0n),
   }));
+
+  const users = top.length
+    ? await prisma.user.findMany({
+        where: { id: { in: top.map((item) => item.userId) } },
+        select: { id: true, username: true },
+      })
+    : [];
+  const userNames = new Map(users.map((user) => [user.id, user.username]));
+
   const max = Math.max(...top.map((item) => item.total), 1);
+  const selectedTotal = totalMap.get(metric) ?? 0;
+  const previousTotal = Number(previousRows[0]?._sum.value ?? 0n);
+  const comparison = comparisonLabel(selectedTotal, previousTotal);
+
+  const dailyMap = new Map(
+    dailyRows.map((row) => [dateKey(row.activityDate), Number(row._sum.value ?? 0n)]),
+  );
+  const daily = Array.from({ length: range }, (_, index) => {
+    const date = new Date(start.getTime() + index * 86_400_000);
+    return { date, value: dailyMap.get(dateKey(date)) ?? 0 };
+  });
+  const dailyMax = Math.max(...daily.map((item) => item.value), 1);
+
   const summaryCards: SummaryCard[] = [
     {
       label: '発言',
@@ -141,18 +220,23 @@ export default async function CommunityDashboardPage({
     return `/dashboard/community?${query.toString()}`;
   };
 
+  const ComparisonIcon =
+    comparison.tone === 'up'
+      ? ArrowUpRight
+      : comparison.tone === 'down'
+        ? ArrowDownRight
+        : ArrowRight;
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary">
-            Community Insights
+            Community Insights v2
           </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-            コミュニティ・リーダーボード
-          </h1>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">コミュニティ分析</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted">
-            発言、VC、リアクションを同じ日次メトリクス基盤で集計。Minecraftプレイ時間も同じ形式で接続できます。
+            発言、VC、リアクションを日次で可視化し、ランキングと前期間比較をまとめて確認できます。
           </p>
         </div>
 
@@ -202,13 +286,65 @@ export default async function CommunityDashboardPage({
       </div>
 
       <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-primary" />
+              <h2 className="font-medium">{metricLabels[metric]}の推移</h2>
+            </div>
+            <p className="mt-1 text-sm text-muted">日次合計と直前の同期間を比較します。</p>
+          </div>
+          <div className="rounded-xl border border-border bg-background px-4 py-3 text-right">
+            <p className="text-xs text-muted">過去{range}日</p>
+            <p className="mt-1 text-xl font-semibold">{formatMetric(metric, selectedTotal)}</p>
+            <div className="mt-1 flex items-center justify-end gap-1 text-xs text-muted">
+              <ComparisonIcon className="h-3.5 w-3.5" />
+              <span>{comparison.label}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-6 flex h-48 items-end gap-1 rounded-xl border border-border bg-background p-4 sm:gap-2">
+          {daily.map((item, index) => {
+            const height = item.value === 0 ? 2 : Math.max(6, (item.value / dailyMax) * 100);
+            const showLabel = range === 7 || index % 5 === 0 || index === range - 1;
+            const accessibleLabel = `${displayDate(item.date)}: ${formatMetric(metric, item.value)}`;
+            return (
+              <div
+                key={dateKey(item.date)}
+                className="flex min-w-0 flex-1 flex-col items-center justify-end"
+              >
+                <div
+                  className="group relative flex h-36 w-full items-end justify-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                  role="img"
+                  aria-label={accessibleLabel}
+                  tabIndex={0}
+                >
+                  <div
+                    className="w-full max-w-8 rounded-t-md bg-primary/80 transition-opacity hover:opacity-80"
+                    style={{ height: `${height}%` }}
+                    title={accessibleLabel}
+                  />
+                </div>
+                <span className="mt-2 h-4 text-[10px] text-muted">
+                  {showLabel ? displayDate(item.date) : ''}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="flex items-center gap-2">
               <BarChart3 className="h-5 w-5 text-primary" />
               <h2 className="font-medium">ランキング</h2>
             </div>
-            <p className="mt-1 text-sm text-muted">上位25人を表示します。</p>
+            <p className="mt-1 text-sm text-muted">
+              上位25人を表示します。Botでは /activity-rank で個人順位を確認できます。
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             {metrics.map((item) => (
@@ -234,11 +370,16 @@ export default async function CommunityDashboardPage({
             {top.map((item, index) => (
               <div key={item.userId} className="rounded-xl border border-border bg-background p-4">
                 <div className="flex items-center justify-between gap-4">
-                  <p className="truncate text-sm font-medium">
-                    <span className="mr-2 text-muted">#{index + 1}</span>
-                    Discord ID: {item.userId}
-                  </p>
-                  <span className="text-sm font-semibold tabular-nums">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium">
+                      <span className="mr-2 text-muted">#{index + 1}</span>
+                      {userNames.get(item.userId) ?? `Discord ID: ${item.userId}`}
+                    </p>
+                    {userNames.has(item.userId) ? (
+                      <p className="mt-0.5 truncate text-[11px] text-muted">{item.userId}</p>
+                    ) : null}
+                  </div>
+                  <span className="shrink-0 text-sm font-semibold tabular-nums">
                     {formatMetric(metric, item.total)}
                   </span>
                 </div>
@@ -258,10 +399,9 @@ export default async function CommunityDashboardPage({
         <div className="flex items-start gap-3">
           <Pickaxe className="mt-0.5 h-5 w-5 text-primary" />
           <div>
-            <h2 className="font-medium">Minecraft連携に対応できるメトリクス基盤</h2>
+            <h2 className="font-medium">Minecraft連携の受け口を維持</h2>
             <p className="mt-1 text-sm leading-relaxed text-muted">
-              minecraft_secondsを予約済みです。Discord IDとMinecraft
-              UUIDのリンク、署名付きAgent/APIを追加すると、同じランキングとプロフィールへプレイ時間を表示できます。
+              minecraft_secondsはランキングと日次推移の対象に含めています。Minecraft側から活動データが投入されると、この画面へ自動的に統合されます。
             </p>
           </div>
         </div>
