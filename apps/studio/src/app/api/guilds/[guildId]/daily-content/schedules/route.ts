@@ -10,6 +10,7 @@ import {
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { authorizeGuild, getGuildPlugin } from '@/lib/guild-plugins';
+import { normalizeMessageStudioRequestBody } from '@/lib/message-studio-request';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,7 +31,7 @@ export async function GET(_request: Request, { params }: RouteContext) {
     );
     return NextResponse.json(schedules);
   } catch (error) {
-    return dailyContentErrorResponse(error, 'Daily Contentの取得に失敗しました');
+    return messageStudioErrorResponse(error, 'Message Studioの取得に失敗しました');
   }
 }
 
@@ -49,29 +50,30 @@ export async function POST(request: Request, { params }: RouteContext) {
     return NextResponse.json({ error: 'JSON bodyが不正です' }, { status: 400 });
   }
   if (!isRecord(body)) {
-    return NextResponse.json({ error: 'スケジュール内容が不正です' }, { status: 400 });
+    return NextResponse.json({ error: '投稿内容が不正です' }, { status: 400 });
   }
 
   try {
     const plugin = await getGuildPlugin(guildId, 'daily-content');
     const config = normalizeDailyContentConfig(plugin?.config);
+    const normalizedBody = normalizeMessageStudioRequestBody(body, config.defaultTimezone);
     const schedule = await createDailyContent(prisma as unknown as DailyContentPrismaClient, {
       guildId,
       actorId: session.user.id,
       config,
-      schedule: body as unknown as DailyContentInput,
+      schedule: normalizedBody as unknown as DailyContentInput,
     });
     return NextResponse.json(schedule, { status: 201 });
   } catch (error) {
-    return dailyContentErrorResponse(error, 'Daily Contentの作成に失敗しました');
+    return messageStudioErrorResponse(error, 'Message Studio投稿の作成に失敗しました');
   }
 }
 
-function dailyContentErrorResponse(error: unknown, fallback: string): NextResponse {
+function messageStudioErrorResponse(error: unknown, fallback: string): NextResponse {
   if (error instanceof DailyContentValidationError) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
-  console.error('Daily Content schedules API request failed', error);
+  console.error('Message Studio schedules API request failed', error);
   return NextResponse.json({ error: fallback }, { status: 500 });
 }
 
