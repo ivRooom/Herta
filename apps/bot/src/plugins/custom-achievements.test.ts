@@ -41,9 +41,7 @@ describe('custom achievements', () => {
 
     expect(series).toHaveLength(1);
     expect(series[0]?.key).toBe('chat-master');
-    expect(customAchievementUnlockId('chat-master', 'bronze')).toBe(
-      'custom:chat-master:bronze',
-    );
+    expect(customAchievementUnlockId('chat-master', 'bronze')).toBe('custom:chat-master:bronze');
   });
 
   it('ALL / ANY 条件で解除を判定する', () => {
