@@ -1,9 +1,9 @@
-name: Temporary Message Studio Polish
+name: Temporary Message Studio Polish Runner
 
 on:
   push:
     branches:
-      - feat/message-studio-v2
+      - tmp/message-studio-polish-runner
 
 permissions:
   contents: write
@@ -37,7 +37,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-      - name: Commit polish
+      - name: Commit polish to feature branch
         run: |
           rm .github/scripts/tmp-message-studio-polish.py
           rm .github/workflows/tmp-message-studio-polish.yml
