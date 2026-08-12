@@ -34,7 +34,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Apply final review fixes
-        run: python3 .tmp-message-studio-runner/.github/scripts/tmp-message-studio-review-fixes-v6.py
+        run: python3 .tmp-message-studio-runner/.github/scripts/tmp-message-studio-review-fixes-v7.py
 
       - run: pnpm db:generate
 
