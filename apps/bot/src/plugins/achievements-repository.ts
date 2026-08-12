@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@herta/db';
+import { getCommunitySeasonWindow } from '@herta/shared';
 
 export interface AchievementMetrics {
   xp: number;
@@ -12,6 +13,8 @@ export interface AchievementMetrics {
   eventGoing: number;
   suggestions: number;
   acceptedSuggestions: number;
+  challengeCompletions: number;
+  seasonPoints: number;
 }
 
 export interface AchievementUnlockRecord {
@@ -30,6 +33,7 @@ export async function getAchievementMetrics(
   guildId: string,
   userId: string,
 ): Promise<AchievementMetrics> {
+  const seasonKey = getCommunitySeasonWindow().key;
   const [row] = await prisma.$queryRaw<
     Array<{
       xp: bigint;
@@ -43,6 +47,8 @@ export async function getAchievementMetrics(
       eventGoing: bigint;
       suggestions: bigint;
       acceptedSuggestions: bigint;
+      challengeCompletions: bigint;
+      seasonPoints: bigint;
     }>
   >`
     SELECT
@@ -56,7 +62,9 @@ export async function getAchievementMetrics(
       (SELECT COUNT(DISTINCT e."giveaway_id") FROM "giveaway_entries" e JOIN "giveaways" g ON g."id" = e."giveaway_id" WHERE g."guild_id" = ${guildId} AND e."user_id" = ${userId})::bigint AS "giveawayEntries",
       (SELECT COUNT(DISTINCT r."event_id") FROM "event_rsvps" r JOIN "community_events" e ON e."id" = r."event_id" WHERE e."guild_id" = ${guildId} AND r."user_id" = ${userId} AND r."status" = 'going')::bigint AS "eventGoing",
       (SELECT COUNT(*) FROM "suggestions" s WHERE s."guild_id" = ${guildId} AND s."author_id" = ${userId})::bigint AS "suggestions",
-      (SELECT COUNT(*) FROM "suggestions" s WHERE s."guild_id" = ${guildId} AND s."author_id" = ${userId} AND s."status" IN ('accepted', 'completed'))::bigint AS "acceptedSuggestions"
+      (SELECT COUNT(*) FROM "suggestions" s WHERE s."guild_id" = ${guildId} AND s."author_id" = ${userId} AND s."status" IN ('accepted', 'completed'))::bigint AS "acceptedSuggestions",
+      (SELECT COUNT(*) FROM "community_challenge_completions" c WHERE c."guild_id" = ${guildId} AND c."user_id" = ${userId})::bigint AS "challengeCompletions",
+      COALESCE((SELECT SUM(c."points") FROM "community_challenge_completions" c WHERE c."guild_id" = ${guildId} AND c."user_id" = ${userId} AND c."season_key" = ${seasonKey}), 0)::bigint AS "seasonPoints
   `;
   return {
     xp: Number(row?.xp ?? 0n),
@@ -70,6 +78,8 @@ export async function getAchievementMetrics(
     eventGoing: Number(row?.eventGoing ?? 0n),
     suggestions: Number(row?.suggestions ?? 0n),
     acceptedSuggestions: Number(row?.acceptedSuggestions ?? 0n),
+    challengeCompletions: Number(row?.challengeCompletions ?? 0n),
+    seasonPoints: Number(row?.seasonPoints ?? 0n),
   };
 }
 

@@ -172,6 +172,7 @@ export const achievementsManifest: PluginManifest = {
             { name: 'Events', value: 'events' },
             { name: 'Community', value: 'community' },
             { name: 'Minecraft', value: 'minecraft' },
+            { name: 'Challenge', value: 'challenge' },
           ],
         },
         {

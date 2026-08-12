@@ -7,6 +7,7 @@ export const ACHIEVEMENT_CATEGORIES = [
   'events',
   'community',
   'minecraft',
+  'challenge',
 ] as const;
 
 export type AchievementRarity = (typeof ACHIEVEMENT_RARITIES)[number];
@@ -22,7 +23,9 @@ export type AchievementMetric =
   | 'giveawayEntries'
   | 'eventGoing'
   | 'suggestions'
-  | 'acceptedSuggestions';
+  | 'acceptedSuggestions'
+  | 'challengeCompletions'
+  | 'seasonPoints';
 
 export interface AchievementDefinition {
   id: string;
@@ -398,6 +401,56 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     target: 360_000,
   },
   {
+    id: 'first-challenge',
+    name: 'First Challenge',
+    description: 'Community Challengeを1回Clearする',
+    emoji: '🎯',
+    rarity: 'common',
+    category: 'challenge',
+    metric: 'challengeCompletions',
+    target: 1,
+  },
+  {
+    id: 'challenge-regular',
+    name: 'Challenge Regular',
+    description: 'Community Challengeを25回Clearする',
+    emoji: '🧩',
+    rarity: 'uncommon',
+    category: 'challenge',
+    metric: 'challengeCompletions',
+    target: 25,
+  },
+  {
+    id: 'challenge-master',
+    name: 'Challenge Master',
+    description: 'Community Challengeを100回Clearする',
+    emoji: '🏆',
+    rarity: 'epic',
+    category: 'challenge',
+    metric: 'challengeCompletions',
+    target: 100,
+  },
+  {
+    id: 'season-rising',
+    name: 'Season Rising',
+    description: '1つのCommunity Seasonで500 Pointを獲得する',
+    emoji: '⭐',
+    rarity: 'rare',
+    category: 'challenge',
+    metric: 'seasonPoints',
+    target: 500,
+  },
+  {
+    id: 'season-legend',
+    name: 'Season Legend',
+    description: '1つのCommunity Seasonで1,500 Pointを獲得する',
+    emoji: '🌠',
+    rarity: 'legendary',
+    category: 'challenge',
+    metric: 'seasonPoints',
+    target: 1_500,
+  },
+  {
     id: 'all-rounder',
     name: 'All-Rounder',
     description: '発言・VC・リアクション・被リアクションの4分野で条件を達成する',
@@ -504,6 +557,7 @@ export function achievementCategoryLabel(category: AchievementCategory): string 
     events: 'Events',
     community: 'Community',
     minecraft: 'Minecraft',
+    challenge: 'Challenge',
   }[category];
 }
 
