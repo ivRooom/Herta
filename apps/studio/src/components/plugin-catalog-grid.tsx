@@ -140,7 +140,9 @@ export function PluginCatalogGrid({
       });
       const result = (await response.json().catch(() => ({}))) as BulkPluginResponse;
       if (!response.ok) {
-        throw new Error(typeof result.error === 'string' ? result.error : '一括更新に失敗しました');
+        throw new Error(
+          typeof result.error === 'string' ? result.error : '一括更新に失敗しました',
+        );
       }
 
       const enabledByPluginId = new Map<string, boolean>();
@@ -260,7 +262,11 @@ export function PluginCatalogGrid({
               onClick={() => applyBulkEnabled(true)}
               className="inline-flex items-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {bulkSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}
+              {bulkSaving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Power className="h-4 w-4" />
+              )}
               選択したPluginを有効化
             </button>
             <button
@@ -276,7 +282,11 @@ export function PluginCatalogGrid({
 
         {bulkStatus ? (
           <p
-            className={`mt-3 text-xs ${bulkStatus.includes('失敗') || bulkStatus.includes('不正') ? 'text-red-400' : 'text-muted'}`}
+            className={`mt-3 text-xs ${
+              bulkStatus.includes('失敗') || bulkStatus.includes('不正')
+                ? 'text-red-400'
+                : 'text-muted'
+            }`}
             role="status"
           >
             {bulkStatus}
@@ -311,7 +321,11 @@ export function PluginCatalogGrid({
             return (
               <li
                 key={plugin.id}
-                className={`group relative overflow-hidden rounded-2xl border bg-surface p-5 shadow-card transition-colors ${checked ? 'border-primary/60 ring-1 ring-primary/20' : 'border-border hover:border-primary/40'}`}
+                className={`group relative overflow-hidden rounded-2xl border bg-surface p-5 shadow-card transition-colors ${
+                  checked
+                    ? 'border-primary/60 ring-1 ring-primary/20'
+                    : 'border-border hover:border-primary/40'
+                }`}
               >
                 <div className="pointer-events-none absolute right-0 top-0 h-24 w-24 rounded-full bg-primary/0 blur-2xl transition-colors group-hover:bg-primary/10" />
                 <div className="relative mb-4 flex items-center justify-between gap-3">
