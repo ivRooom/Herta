@@ -187,7 +187,9 @@ export function PluginCatalogGrid({
       const failedCount = result.failedCount ?? failedIds.size;
       const successCount = result.successCount ?? pluginIds.length - failedCount;
       if (failedCount > 0) {
-        setBulkStatus(`${successCount}件成功、${failedCount}件失敗しました。失敗したPluginを選択状態で残しています`);
+        setBulkStatus(
+          `${successCount}件成功、${failedCount}件失敗しました。失敗したPluginを選択状態で残しています`,
+        );
       } else {
         setBulkStatus(`${successCount}件を${enabled ? '有効化' : '無効化'}しました`);
       }
