@@ -27,6 +27,12 @@ describe('shouldSweepMember', () => {
     expect(shouldSweepMember(member({ id: '10001' }), new Map(), new Set(['20001']))).toBe(false);
   });
 
+  it('XP0のプロフィールだけ存在していても報酬Roleがなければ対象外にする', () => {
+    expect(
+      shouldSweepMember(member({ id: '10001' }), new Map([['10001', 0]]), new Set(['20001'])),
+    ).toBe(false);
+  });
+
   it('Botアカウントは対象外にする', () => {
     expect(
       shouldSweepMember(
