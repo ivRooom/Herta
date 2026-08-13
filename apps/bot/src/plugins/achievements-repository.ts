@@ -98,7 +98,7 @@ export async function getAchievementMetrics(
       COALESCE((SELECT MAX("value") FROM "community_activity_daily" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId} AND "metric" = 'highlow_best_streak'), 0)::bigint AS "highLowBestStreak",
       COALESCE((SELECT SUM("value") FROM "community_activity_daily" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId} AND "metric" = 'highlow_clears'), 0)::bigint AS "highLowClears",
       COALESCE((SELECT SUM("value") FROM "community_activity_daily" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId} AND "metric" = 'blackjack_wins'), 0)::bigint AS "blackjackWins",
-      COALESCE((SELECT SUM("value") FROM "community_activity_daily" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId} AND "metric" = 'blackjack_naturals'), 0)::bigint AS "blackjackNaturals
+      COALESCE((SELECT SUM("value") FROM "community_activity_daily" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId} AND "metric" = 'blackjack_naturals'), 0)::bigint AS "blackjackNaturals"
   `;
   return {
     xp: Number(row?.xp ?? 0n),
