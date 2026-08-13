@@ -124,9 +124,7 @@ export async function getAchievementUserProgress(
   `;
   const unlockedIds = rows
     .map((row) => row.achievementId)
-    .filter(
-      (id) => !id.startsWith(ACHIEVEMENT_OPERATION_BLOCK_PREFIX) && catalogMap.has(id),
-    );
+    .filter((id) => !id.startsWith(ACHIEVEMENT_OPERATION_BLOCK_PREFIX) && catalogMap.has(id));
   const blockedIds = rows
     .map((row) => row.achievementId)
     .filter((id) => id.startsWith(ACHIEVEMENT_OPERATION_BLOCK_PREFIX))
