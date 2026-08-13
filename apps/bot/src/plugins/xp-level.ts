@@ -6,13 +6,14 @@ import {
   type PluginEventHandler,
   type PluginRuntimeContext,
 } from '@herta/plugin-sdk';
+import { awardMessageXp, type XpProfileRecord } from './xp-level-repository.js';
 import {
-  awardMessageXp,
-  getXpProfile,
-  getXpRank,
-  listXpLeaderboard,
-  type XpProfileRecord,
-} from './xp-level-repository.js';
+  formatDiscordCommunityLeaderboard,
+  formatDiscordCommunityRank,
+  getDiscordCommunityLeaderboard,
+  getDiscordCommunityRank,
+  resolveDiscordCommunityLeaderboardQuery,
+} from './community-leaderboard-discord.js';
 
 const EPHEMERAL_FLAG = 64;
 const DISCORD_ID_PATTERN = /^\d+$/;
@@ -37,7 +38,11 @@ export interface XpLevelConfig {
 interface XpCommandInteraction {
   guildId: string | null;
   user: { id: string };
-  options: { getUser(name: string): { id: string } | null };
+  options: {
+    getUser(name: string): { id: string } | null;
+    getString(name: string): string | null;
+    getInteger(name: string): number | null;
+  };
   reply(options: ReplyOptions): Promise<unknown>;
 }
 
@@ -146,20 +151,7 @@ export function formatRankMessage(
   rank: number | null,
   userId: string,
 ): string {
-  const xp = profile?.xp ?? 0;
-  const level = levelForXp(xp);
-  const currentFloor = xpRequiredForLevel(level);
-  const nextTarget = xpRequiredForLevel(level + 1);
-  const progress = xp - currentFloor;
-  const needed = Math.max(1, nextTarget - currentFloor);
-  const percentage = Math.min(100, Math.floor((progress / needed) * 100));
-  return [
-    `**<@${userId}> のRank**`,
-    `Level: **${level}**`,
-    `XP: **${xp.toLocaleString()}**`,
-    `次のLevelまで: **${progress.toLocaleString()} / ${needed.toLocaleString()} XP (${percentage}%)**`,
-    `サーバー順位: **${rank ? `#${rank}` : '未ランク'}**`,
-  ].join('\n');
+  return formatXpRankMessage(profile?.xp ?? 0, rank, userId);
 }
 
 export function formatLeaderboard(records: readonly XpProfileRecord[]): string {
@@ -184,13 +176,26 @@ async function executeRank(
     await reply(interaction, 'XP / Level Pluginは現在無効です。');
     return;
   }
+
   const targetUserId = interaction.options.getUser('user')?.id ?? interaction.user.id;
-  const [profile, rank] = await Promise.all([
-    getXpProfile(context.prisma, interaction.guildId, targetUserId),
-    getXpRank(context.prisma, interaction.guildId, targetUserId),
-  ]);
+  const query = resolveDiscordCommunityLeaderboardQuery({
+    metric: interaction.options.getString('metric'),
+    period: interaction.options.getString('period'),
+    defaultLimit: config.leaderboardSize,
+  });
+  const snapshot = await getDiscordCommunityRank(
+    context.prisma,
+    interaction.guildId,
+    targetUserId,
+    query,
+  );
+  const content =
+    query.metric === 'xp'
+      ? formatXpRankMessage(snapshot.value, snapshot.rank, targetUserId)
+      : formatDiscordCommunityRank(snapshot);
+
   await interaction.reply({
-    content: formatRankMessage(profile, rank, targetUserId),
+    content,
     allowedMentions: { parse: [] },
   });
 }
@@ -208,15 +213,35 @@ async function executeLeaderboard(
     await reply(interaction, 'XP / Level Pluginは現在無効です。');
     return;
   }
-  const records = await listXpLeaderboard(
-    context.prisma,
-    interaction.guildId,
-    config.leaderboardSize,
-  );
+
+  const query = resolveDiscordCommunityLeaderboardQuery({
+    metric: interaction.options.getString('metric'),
+    period: interaction.options.getString('period'),
+    limit: interaction.options.getInteger('limit'),
+    defaultLimit: config.leaderboardSize,
+  });
+  const snapshot = await getDiscordCommunityLeaderboard(context.prisma, interaction.guildId, query);
   await interaction.reply({
-    content: formatLeaderboard(records),
+    content: formatDiscordCommunityLeaderboard(snapshot),
     allowedMentions: { parse: [] },
   });
+}
+
+function formatXpRankMessage(xpValue: number, rank: number | null, userId: string): string {
+  const xp = Math.max(0, Math.trunc(xpValue));
+  const level = levelForXp(xp);
+  const currentFloor = xpRequiredForLevel(level);
+  const nextTarget = xpRequiredForLevel(level + 1);
+  const progress = xp - currentFloor;
+  const needed = Math.max(1, nextTarget - currentFloor);
+  const percentage = Math.min(100, Math.floor((progress / needed) * 100));
+  return [
+    `**<@${userId}> のRank**`,
+    `Level: **${level}**`,
+    `XP: **${xp.toLocaleString()}**`,
+    `次のLevelまで: **${progress.toLocaleString()} / ${needed.toLocaleString()} XP (${percentage}%)**`,
+    `サーバー順位: **${rank ? `#${rank}` : '未ランク'}**`,
+  ].join('\n');
 }
 
 async function handleXpMessage(

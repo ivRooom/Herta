@@ -1,10 +1,28 @@
 import type { PluginManifest } from '@herta/shared';
 
+const metricChoices = [
+  { name: 'XP', value: 'xp' },
+  { name: 'Level', value: 'level' },
+  { name: '発言数', value: 'messages' },
+  { name: 'Reaction', value: 'reactions' },
+  { name: 'Voice', value: 'voice' },
+  { name: 'Minecraft', value: 'minecraft' },
+  { name: 'Achievements', value: 'achievements' },
+  { name: 'Season Point', value: 'season' },
+] as const;
+
+const periodChoices = [
+  { name: 'All Time', value: 'all' },
+  { name: '直近7日', value: '7d' },
+  { name: '直近30日', value: '30d' },
+  { name: 'Current Season', value: 'season' },
+] as const;
+
 export const xpLevelManifest: PluginManifest = {
   id: 'xp-level',
   name: 'XP / Level',
-  version: '1.0.0',
-  description: 'メッセージ活動に応じたXP・レベル・ランキング・Level Roleを提供します',
+  version: '1.1.0',
+  description: 'XP・Level・Community活動ランキング・Level Roleを提供します',
   author: { name: 'Herta' },
   category: 'utility',
   permissions: [
@@ -179,18 +197,51 @@ export const xpLevelManifest: PluginManifest = {
   commands: [
     {
       name: 'rank',
-      description: 'XP・レベル・次レベルまでの進捗を表示します',
+      description: '自分やメンバーのCommunity Rankを表示します',
       options: [
         {
           name: 'user',
           description: '確認するメンバー（未指定は自分）',
           type: 'user',
         },
+        {
+          name: 'metric',
+          description: '確認するランキング指標（未指定はXP）',
+          type: 'string',
+          choices: [...metricChoices],
+        },
+        {
+          name: 'period',
+          description: '集計期間（指標に対応しない期間は自動補正）',
+          type: 'string',
+          choices: [...periodChoices],
+        },
       ],
     },
     {
       name: 'leaderboard',
-      description: 'サーバーのXPランキングを表示します',
+      description: 'サーバーのCommunityランキングを表示します',
+      options: [
+        {
+          name: 'metric',
+          description: 'ランキング指標（未指定はXP）',
+          type: 'string',
+          choices: [...metricChoices],
+        },
+        {
+          name: 'period',
+          description: '集計期間（指標に対応しない期間は自動補正）',
+          type: 'string',
+          choices: [...periodChoices],
+        },
+        {
+          name: 'limit',
+          description: '表示人数（未指定はPlugin設定）',
+          type: 'integer',
+          minValue: 5,
+          maxValue: 25,
+        },
+      ],
     },
   ],
 };
