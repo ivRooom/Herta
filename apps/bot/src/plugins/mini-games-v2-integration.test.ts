@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { achievementsManifest, communityChallengeManifest } from '@herta/plugin-catalog';
 import {
   ACHIEVEMENTS,
   COMMUNITY_CHALLENGES,
@@ -18,8 +19,8 @@ function miniGameInteraction(input: {
     guildId: input.guildId === undefined ? '12345' : input.guildId,
     user: { id: '67890', bot: input.bot ?? false },
     guild: null,
-    commandName: input.commandName,
-    customId: input.customId,
+    ...(input.commandName ? { commandName: input.commandName } : {}),
+    ...(input.customId ? { customId: input.customId } : {}),
     isChatInputCommand: () => Boolean(input.commandName),
     isButton: () => Boolean(input.customId),
   };
@@ -105,5 +106,10 @@ describe('Mini Games v2 integrations', () => {
     expect(isMiniGameChallengeInteraction(unrelated)).toBe(false);
     expect(isMiniGameAchievementInteraction(bot)).toBe(false);
     expect(isMiniGameChallengeInteraction(bot)).toBe(false);
+  });
+
+  it('AchievementとCommunity ChallengeがinteractionCreateを購読する', () => {
+    expect(achievementsManifest.events).toContain('interactionCreate');
+    expect(communityChallengeManifest.events).toContain('interactionCreate');
   });
 });
