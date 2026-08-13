@@ -19,6 +19,15 @@ describe('Mini Games v2 stats', () => {
     expect(stats.blackjackPushes).toBe(0);
   });
 
+  it('負の保存値が混入しても戦績表示へ負値を出さない', () => {
+    const stats = miniGameStatsFromRows([
+      { metric: 'minigame_plays', total: -3n },
+      { metric: 'blackjack_wins', total: -1n },
+    ]);
+    expect(stats.totalPlays).toBe(0);
+    expect(stats.blackjackWins).toBe(0);
+  });
+
   it('Coin Flip的中率・High-Low最高連勝・Blackjack勝率を表示する', () => {
     const message = formatMiniGameStats('12345', {
       totalPlays: 30,
