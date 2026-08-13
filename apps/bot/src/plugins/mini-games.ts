@@ -554,8 +554,9 @@ async function executeGameStats(
     return;
   }
   const userId = interaction.options.getUser('user')?.id ?? interaction.user.id;
+  await interaction.deferReply();
   const stats = await getMiniGameStats(context.prisma, interaction.guildId, userId);
-  await interaction.reply({
+  await interaction.editReply({
     content: formatMiniGameStats(userId, stats),
     allowedMentions: { parse: [] },
   });
