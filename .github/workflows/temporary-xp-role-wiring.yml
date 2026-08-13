@@ -1,0 +1,75 @@
+name: Temporary XP role reconciliation wiring
+
+on:
+  push:
+    branches:
+      - feature/xp-reward-role-reconciliation
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/xp-reward-role-reconciliation
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Wire reconciliation into HertaBot
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          path = Path('apps/bot/src/bot.ts')
+          text = path.read_text()
+
+          replacements = [
+            (
+              "import { PluginRuntimeEventSubscriber } from './plugins/runtime-events.js';\n",
+              "import { PluginRuntimeEventSubscriber } from './plugins/runtime-events.js';\nimport { XpRoleReconciliationSubscriber } from './plugins/xp-role-reconciliation-events.js';\nimport { getXpProfile } from './plugins/xp-level-repository.js';\nimport { levelForXp, normalizeXpLevelConfig } from './plugins/xp-level.js';\nimport {\n  reconcileXpRewardRoles as reconcileXpRewardRolesForMember,\n  type XpRewardRoleReconciliationResult,\n} from './plugins/xp-reward-roles.js';\n",
+            ),
+            (
+              "  private readonly runtimeEvents: PluginRuntimeEventSubscriber;\n  private readonly discordHealth = new DiscordHealthTracker();\n",
+              "  private readonly runtimeEvents: PluginRuntimeEventSubscriber;\n  private readonly xpRoleReconciliation: XpRoleReconciliationSubscriber;\n  private readonly discordHealth = new DiscordHealthTracker();\n",
+            ),
+            (
+              "    this.runtimeEvents = new PluginRuntimeEventSubscriber(\n      (guildId) => this.resyncGuild(guildId),\n      this.logger,\n    );\n    pluginRegistry.validateAll(this.logger);\n",
+              "    this.runtimeEvents = new PluginRuntimeEventSubscriber(\n      (guildId) => this.resyncGuild(guildId),\n      this.logger,\n    );\n    this.xpRoleReconciliation = new XpRoleReconciliationSubscriber(\n      async (guildId, userId) => {\n        await this.reconcileXpRewardRoles(guildId, userId);\n      },\n      this.logger,\n    );\n    pluginRegistry.validateAll(this.logger);\n",
+            ),
+            (
+              "    try {\n      await this.runtimeEvents.start(redisUrl);\n    } catch (error) {\n      this.logger.error(\n        { err: error },\n        'Plugin Runtimeイベント購読の開始に失敗しました。TTL同期で継続します',\n      );\n    }\n  }\n\n  async getGuildConfigurationOptions(guildId: string): Promise<GuildConfigurationOptions | null> {\n",
+              "    try {\n      await this.runtimeEvents.start(redisUrl);\n    } catch (error) {\n      this.logger.error(\n        { err: error },\n        'Plugin Runtimeイベント購読の開始に失敗しました。TTL同期で継続します',\n      );\n    }\n\n    try {\n      await this.xpRoleReconciliation.start(redisUrl);\n    } catch (error) {\n      this.logger.error(\n        { err: error },\n        'XP報酬Role再同期イベント購読の開始に失敗しました。XP更新自体は継続します',\n      );\n    }\n  }\n\n  async getGuildConfigurationOptions(guildId: string): Promise<GuildConfigurationOptions | null> {\n",
+            ),
+            (
+              "  async searchGuildMembers(\n    guildId: string,\n    query: string,\n    limit: number,\n  ): Promise<GuildMemberOption[] | null> {\n    return searchGuildMemberOptions(this.client, guildId, query, limit);\n  }\n\n  getDiscordHealthObservation(): DiscordHealthObservation {\n",
+              "  async searchGuildMembers(\n    guildId: string,\n    query: string,\n    limit: number,\n  ): Promise<GuildMemberOption[] | null> {\n    return searchGuildMemberOptions(this.client, guildId, query, limit);\n  }\n\n  async reconcileXpRewardRoles(\n    guildId: string,\n    userId: string,\n  ): Promise<XpRewardRoleReconciliationResult | null> {\n    const rawConfig = await this.pluginLoader.getGuildPluginConfig(guildId, 'xp-level');\n    if (!rawConfig) {\n      this.logger.debug({ guildId, userId }, 'XP / Level Pluginが無効なため報酬Role再同期をスキップします');\n      return null;\n    }\n\n    const guild = this.client.guilds.cache.get(guildId);\n    if (!guild) {\n      this.logger.warn({ guildId, userId }, 'GuildがBot cacheにないためXP報酬Role再同期をスキップします');\n      return null;\n    }\n\n    let member;\n    try {\n      member = await guild.members.fetch(userId);\n    } catch (error) {\n      this.logger.warn({ err: error, guildId, userId }, '対象メンバーを取得できないためXP報酬Role再同期をスキップします');\n      return null;\n    }\n\n    const profile = await getXpProfile(this.prisma, guildId, userId);\n    const level = levelForXp(profile?.xp ?? 0);\n    const result = await reconcileXpRewardRolesForMember({\n      member,\n      config: normalizeXpLevelConfig(rawConfig),\n      level,\n      logger: this.logger,\n    });\n    this.logger.info(\n      {\n        guildId,\n        userId,\n        level,\n        added: result.addedRoleIds.length,\n        removed: result.removedRoleIds.length,\n        skipped: result.skippedRoleIds.length,\n        failed: result.failedRoleIds.length,\n      },\n      'XP報酬Roleの再同期を完了しました',\n    );\n    return result;\n  }\n\n  getDiscordHealthObservation(): DiscordHealthObservation {\n",
+            ),
+            (
+              "    await this.runtimeEvents.stop();\n    const guildIds = [...this.client.guilds.cache.keys()];\n",
+              "    await Promise.allSettled([this.runtimeEvents.stop(), this.xpRoleReconciliation.stop()]);\n    const guildIds = [...this.client.guilds.cache.keys()];\n",
+            ),
+          ]
+
+          for old, new in replacements:
+            count = text.count(old)
+            if count != 1:
+              raise SystemExit(f'expected exactly one bot.ts match, got {count}: {old[:80]!r}')
+            text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+      - run: pnpm exec prettier --write apps/bot/src/bot.ts
+      - name: Commit wiring and remove temporary workflow
+        run: |
+          rm .github/workflows/temporary-xp-role-wiring.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'XP報酬Role再同期をBotへ接続する'
+          git push origin HEAD:feature/xp-reward-role-reconciliation
