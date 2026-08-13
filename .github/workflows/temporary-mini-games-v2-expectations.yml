@@ -1,0 +1,84 @@
+name: Temporary Mini Games v2 expectations
+
+on:
+  push:
+    branches:
+      - feature/mini-games-v2-stats-challenges
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/mini-games-v2-stats-challenges
+      - name: Update catalog expectations
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          p = Path('apps/bot/src/plugins/achievements.test.ts')
+          s = p.read_text()
+          assert 'expect(ACHIEVEMENTS).toHaveLength(43);' in s
+          s = s.replace('expect(ACHIEVEMENTS).toHaveLength(43);', 'expect(ACHIEVEMENTS).toHaveLength(54);', 1)
+          assert "expect(leaderboard).toContain('1/44');" in s
+          s = s.replace("expect(leaderboard).toContain('1/44');", "expect(leaderboard).toContain('1/55');", 1)
+          p.write_text(s)
+
+          p = Path('apps/bot/src/plugins/community-challenge.test.ts')
+          s = p.read_text()
+          assert '      includeMinecraftChallenges: false,\n      autoSync: true,' in s
+          s = s.replace(
+              '      includeMinecraftChallenges: false,\n      autoSync: true,',
+              '      includeMinecraftChallenges: false,\n      includeMiniGameChallenges: false,\n      autoSync: true,',
+              1,
+          )
+          assert "it('Daily 15種・Weekly 15種の30 Challengeを提供する'" in s
+          s = s.replace(
+              "it('Daily 15種・Weekly 15種の30 Challengeを提供する'",
+              "it('既存30種 + Mini Games 24種の54 Challengeを提供する'",
+              1,
+          )
+          assert 'expect(COMMUNITY_CHALLENGES).toHaveLength(30);' in s
+          s = s.replace('expect(COMMUNITY_CHALLENGES).toHaveLength(30);', 'expect(COMMUNITY_CHALLENGES).toHaveLength(54);', 1)
+          assert "expect(COMMUNITY_CHALLENGES.filter((item) => item.period === 'daily')).toHaveLength(15);" in s
+          s = s.replace(
+              "expect(COMMUNITY_CHALLENGES.filter((item) => item.period === 'daily')).toHaveLength(15);",
+              "expect(COMMUNITY_CHALLENGES.filter((item) => item.period === 'daily')).toHaveLength(27);",
+              1,
+          )
+          assert "expect(COMMUNITY_CHALLENGES.filter((item) => item.period === 'weekly')).toHaveLength(15);" in s
+          s = s.replace(
+              "expect(COMMUNITY_CHALLENGES.filter((item) => item.period === 'weekly')).toHaveLength(15);",
+              "expect(COMMUNITY_CHALLENGES.filter((item) => item.period === 'weekly')).toHaveLength(27);",
+              1,
+          )
+          p.write_text(s)
+
+          p = Path('apps/bot/src/plugins/community-profile-v3.test.ts')
+          s = p.read_text()
+          assert "expect(output).toContain('2/43');" in s
+          s = s.replace("expect(output).toContain('2/43');", "expect(output).toContain('2/54');", 1)
+          assert "expect(output).toContain('4%');" in s
+          s = s.replace("expect(output).toContain('4%');", "expect(output).toContain('3%');", 1)
+          p.write_text(s)
+          PY
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prettier --write apps/bot/src/plugins/achievements.test.ts apps/bot/src/plugins/community-challenge.test.ts apps/bot/src/plugins/community-profile-v3.test.ts
+      - name: Commit changes
+        run: |
+          rm .github/workflows/temporary-mini-games-v2-expectations.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Mini Games v2追加後のCatalog期待値を更新する'
+          git push origin HEAD:feature/mini-games-v2-stats-challenges
