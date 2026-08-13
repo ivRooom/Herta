@@ -17,6 +17,7 @@ import { communityProfilePlugin } from './community-profile.js';
 import { communityChallengePlugin } from './community-challenge.js';
 import { eventRsvpPlugin } from './event-rsvp.js';
 import { giveawayPlugin } from './giveaway.js';
+import { miniGamesPlugin } from './mini-games.js';
 import { onboardingPlugin } from './onboarding.js';
 import { pollPlugin } from './poll.js';
 import { reminderPlugin } from './reminder.js';
@@ -240,6 +241,7 @@ const officialPluginIds = [
   'event-rsvp',
   'giveaway',
   'lfg',
+  'mini-games',
   'moderation',
   'onboarding',
   'poll',
@@ -407,6 +409,20 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
           }) as Parameters<NonNullable<typeof lfgPlugin.onEnable>>[0],
       )
     : undefined;
+  const miniGamesEntry = deps
+    ? toRuntimePluginEntry(
+        miniGamesPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof miniGamesPlugin.onEnable>>[0],
+      )
+    : undefined;
   const moderationEntry = deps
     ? toRuntimePluginEntry(
         moderationPlugin,
@@ -562,6 +578,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (pluginId === 'event-rsvp' && eventRsvpEntry) return [eventRsvpEntry];
     if (pluginId === 'giveaway' && giveawayEntry) return [giveawayEntry];
     if (pluginId === 'lfg' && lfgEntry) return [lfgEntry];
+    if (pluginId === 'mini-games' && miniGamesEntry) return [miniGamesEntry];
     if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];
     if (pluginId === 'onboarding' && onboardingEntry) return [onboardingEntry];
     if (pluginId === 'poll' && pollEntry) return [pollEntry];
