@@ -100,7 +100,7 @@ describe('Achievements v3', () => {
     expect(ids.has('first-challenge')).toBe(true);
     expect(ids.has('challenge-master')).toBe(true);
     expect(ids.has('season-legend')).toBe(true);
-    expect(ACHIEVEMENTS).toHaveLength(43);
+    expect(ACHIEVEMENTS).toHaveLength(54);
   });
 
   it('Activity Rules集計後の発言・リアクション・VCから実績を解除する', () => {
@@ -319,7 +319,7 @@ describe('Achievements v3', () => {
       config,
     );
     expect(leaderboard).toContain('75pt');
-    expect(leaderboard).toContain('1/44');
+    expect(leaderboard).toContain('1/55');
   });
 
   it('Category・Rarity・Statusで一覧を絞り込む', () => {
