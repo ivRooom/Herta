@@ -43,11 +43,18 @@ describe('Mini Games v2 stats', () => {
       blackjackWins: 6,
       blackjackPushes: 2,
       blackjackNaturals: 1,
+      dicePlays: 4,
+      chinchiroPlays: 3,
+      chinchiroShigoro: 1,
+      chinchiroZorome: 1,
+      chinchiroHifumi: 1,
     });
     expect(message).toContain('<@12345> Mini Games Stats');
     expect(message).toContain('62.5%');
     expect(message).toContain('Best **9連勝**');
     expect(message).toContain('Natural **1**');
     expect(message).toContain('60%');
+    expect(message).toContain('Dice');
+    expect(message).toContain('シゴロ **1**');
   });
 });

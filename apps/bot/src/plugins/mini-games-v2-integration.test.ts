@@ -110,6 +110,8 @@ describe('Mini Games v2 integrations', () => {
 
   it('Mini GamesのSlash/ButtonだけをAchievement・Challenge自動同期対象にする', () => {
     const slash = miniGameInteraction({ commandName: 'blackjack' });
+    const dice = miniGameInteraction({ commandName: 'dice' });
+    const chinchiro = miniGameInteraction({ commandName: 'chinchiro' });
     const button = miniGameInteraction({
       customId: 'herta:mini-games:v1:highlow:0123456789abcdef0123456789abcdef:higher',
     });
@@ -118,6 +120,10 @@ describe('Mini Games v2 integrations', () => {
 
     expect(isMiniGameAchievementInteraction(slash)).toBe(true);
     expect(isMiniGameChallengeInteraction(slash)).toBe(true);
+    expect(isMiniGameAchievementInteraction(dice)).toBe(true);
+    expect(isMiniGameChallengeInteraction(dice)).toBe(true);
+    expect(isMiniGameAchievementInteraction(chinchiro)).toBe(true);
+    expect(isMiniGameChallengeInteraction(chinchiro)).toBe(true);
     expect(isMiniGameAchievementInteraction(button)).toBe(true);
     expect(isMiniGameChallengeInteraction(button)).toBe(true);
     expect(isMiniGameAchievementInteraction(unrelated)).toBe(false);

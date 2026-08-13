@@ -33,12 +33,20 @@ import {
   type PlayingCard,
 } from './mini-games-core.js';
 import {
+  formatChinchiroTurn,
+  formatDiceRoll,
+  playChinchiroTurn,
+  rollDice,
+} from './mini-games-dice.js';
+import {
+  getMiniGameLeaderboard,
   getMiniGameStats,
   incrementMiniGameMetric,
   recordMiniGameMaximum,
+  type MiniGameLeaderboardMetric,
   type MiniGameMetric,
 } from './mini-games-repository.js';
-import { formatMiniGameStats } from './mini-games-stats.js';
+import { formatMiniGameLeaderboard, formatMiniGameStats } from './mini-games-stats.js';
 
 const CUSTOM_ID_PREFIX = 'herta:mini-games:v1:';
 const COIN_FLIP_ANIMATION_MS = 1_100;
@@ -116,7 +124,25 @@ export const miniGamesPlugin = definePlugin<MiniGamesConfig, unknown, PrismaClie
         await executeGameStats(context, interaction);
       },
     };
-    return [coinflip, highlow, blackjack, gamestats];
+    const dice: CommandHandler<ChatInputCommandInteraction> = {
+      definition: miniGamesManifest.commands[4]!,
+      async execute(interaction) {
+        await executeDice(context, interaction);
+      },
+    };
+    const chinchiro: CommandHandler<ChatInputCommandInteraction> = {
+      definition: miniGamesManifest.commands[5]!,
+      async execute(interaction) {
+        await executeChinchiro(context, interaction);
+      },
+    };
+    const gameleaderboard: CommandHandler<ChatInputCommandInteraction> = {
+      definition: miniGamesManifest.commands[6]!,
+      async execute(interaction) {
+        await executeGameLeaderboard(context, interaction);
+      },
+    };
+    return [coinflip, highlow, blackjack, gamestats, dice, chinchiro, gameleaderboard];
   },
   provideEvents() {
     return [
@@ -537,6 +563,101 @@ async function executeGameStats(
   const stats = await getMiniGameStats(context.prisma, interaction.guildId, userId);
   await interaction.reply({
     content: formatMiniGameStats(userId, stats),
+    allowedMentions: { parse: [] },
+  });
+}
+
+async function executeDice(
+  context: MiniGamesRuntimeContext,
+  interaction: ChatInputCommandInteraction,
+): Promise<void> {
+  if (!interaction.guildId) {
+    await replyEphemeral(interaction, 'このコマンドはDiscordサーバー内でのみ利用できます。');
+    return;
+  }
+  const config = normalizeMiniGamesConfig(context.config);
+  if (!config.enabled) {
+    await replyEphemeral(interaction, 'Mini Games Pluginは現在無効です。');
+    return;
+  }
+
+  const count = clamp(interaction.options.getInteger('count') ?? 2, 1, 10);
+  const sides = clamp(interaction.options.getInteger('sides') ?? 6, 2, 100);
+  const values = rollDice(count, sides);
+  await recordMetricsSafely(
+    context,
+    [
+      ['minigame_plays', 1],
+      ['dice_plays', 1],
+    ],
+    interaction.user.id,
+  );
+  await interaction.reply({
+    content: formatDiceRoll(values, sides),
+    allowedMentions: { parse: [] },
+  });
+}
+
+async function executeChinchiro(
+  context: MiniGamesRuntimeContext,
+  interaction: ChatInputCommandInteraction,
+): Promise<void> {
+  if (!interaction.guildId) {
+    await replyEphemeral(interaction, 'このコマンドはDiscordサーバー内でのみ利用できます。');
+    return;
+  }
+  const config = normalizeMiniGamesConfig(context.config);
+  if (!config.enabled) {
+    await replyEphemeral(interaction, 'Mini Games Pluginは現在無効です。');
+    return;
+  }
+
+  const turn = playChinchiroTurn();
+  const metrics: Array<readonly [MiniGameMetric, number]> = [
+    ['minigame_plays', 1],
+    ['chinchiro_plays', 1],
+  ];
+  if (turn.result.kind === 'shigoro') metrics.push(['chinchiro_shigoro', 1]);
+  if (turn.result.kind === 'triple') metrics.push(['chinchiro_zorome', 1]);
+  if (turn.result.kind === 'hifumi') metrics.push(['chinchiro_hifumi', 1]);
+  await recordMetricsSafely(context, metrics, interaction.user.id);
+  await interaction.reply({
+    content: formatChinchiroTurn(turn),
+    allowedMentions: { parse: [] },
+  });
+}
+
+async function executeGameLeaderboard(
+  context: MiniGamesRuntimeContext,
+  interaction: ChatInputCommandInteraction,
+): Promise<void> {
+  if (!interaction.guildId) {
+    await replyEphemeral(interaction, 'このコマンドはDiscordサーバー内でのみ利用できます。');
+    return;
+  }
+  const config = normalizeMiniGamesConfig(context.config);
+  if (!config.enabled) {
+    await replyEphemeral(interaction, 'Mini Games Pluginは現在無効です。');
+    return;
+  }
+  if (!config.statsEnabled) {
+    await replyEphemeral(interaction, 'Mini Gamesの戦績記録は現在無効です。');
+    return;
+  }
+
+  const requested = interaction.options.getString('metric');
+  const metric: MiniGameLeaderboardMetric =
+    requested === 'plays' ||
+    requested === 'coinflip' ||
+    requested === 'highlow' ||
+    requested === 'blackjack' ||
+    requested === 'chinchiro'
+      ? requested
+      : 'wins';
+  const limit = clamp(interaction.options.getInteger('limit') ?? 10, 3, 25);
+  const records = await getMiniGameLeaderboard(context.prisma, interaction.guildId, metric, limit);
+  await interaction.reply({
+    content: formatMiniGameLeaderboard(metric, records),
     allowedMentions: { parse: [] },
   });
 }

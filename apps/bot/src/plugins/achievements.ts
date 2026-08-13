@@ -566,7 +566,9 @@ export function isMiniGameAchievementInteraction(
     interaction.isChatInputCommand() &&
     (interaction.commandName === 'coinflip' ||
       interaction.commandName === 'highlow' ||
-      interaction.commandName === 'blackjack')
+      interaction.commandName === 'blackjack' ||
+      interaction.commandName === 'dice' ||
+      interaction.commandName === 'chinchiro')
   ) {
     return true;
   }

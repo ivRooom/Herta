@@ -68,12 +68,15 @@ describe('Mini Games Plugin', () => {
     expect(parseMiniGameCustomId(`herta:poll:v1:blackjack:${id}:hit`)).toBeNull();
   });
 
-  it('Manifestに3ゲーム・戦績コマンド・interactionCreateを登録する', () => {
+  it('Manifestに5ゲーム・戦績・Leaderboardコマンドを登録する', () => {
     expect(miniGamesManifest.commands.map((command) => command.name)).toEqual([
       'coinflip',
       'highlow',
       'blackjack',
       'gamestats',
+      'dice',
+      'chinchiro',
+      'gameleaderboard',
     ]);
     expect(miniGamesManifest.events).toContain('interactionCreate');
   });
