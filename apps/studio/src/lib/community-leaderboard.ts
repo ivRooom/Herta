@@ -35,6 +35,8 @@ interface XpRankedRow {
   participants: bigint;
 }
 
+type SingleActivityMetric = 'messages' | 'voice' | 'minecraft';
+
 export async function getCommunityLeaderboardSnapshot(
   guildId: string,
   query: CommunityLeaderboardQuery,
@@ -93,26 +95,32 @@ async function getActivityLeaderboard(
   now: Date,
 ): Promise<CommunityLeaderboardSnapshot> {
   const start = communityActivityPeriodStart(query.period, now);
-  const rows =
-    query.metric === 'reactions'
-      ? await prisma.$queryRaw<RankedRow[]>`
-          WITH totals AS (
-            SELECT "user_id", SUM("value")::bigint AS "total"
-            FROM "community_activity_daily"
-            WHERE "guild_id" = ${guildId}
-              AND "metric" IN ('reactions_given', 'reactions_received')
-              AND "activity_date" >= ${start}
-            GROUP BY "user_id"
-          )
-          SELECT
-            "user_id" AS "userId",
-            "total",
-            COUNT(*) OVER()::bigint AS "participants"
-          FROM totals
-          ORDER BY "total" DESC, "user_id" ASC
-          LIMIT ${query.limit}
-        `
-      : await getSingleActivityMetricLeaderboard(guildId, query.metric, start, query.limit);
+  let rows: RankedRow[];
+
+  if (query.metric === 'reactions') {
+    rows = await prisma.$queryRaw<RankedRow[]>`
+      WITH totals AS (
+        SELECT "user_id", SUM("value")::bigint AS "total"
+        FROM "community_activity_daily"
+        WHERE "guild_id" = ${guildId}
+          AND "metric" IN ('reactions_given', 'reactions_received')
+          AND "activity_date" >= ${start}
+        GROUP BY "user_id"
+      )
+      SELECT
+        "user_id" AS "userId",
+        "total",
+        COUNT(*) OVER()::bigint AS "participants"
+      FROM totals
+      ORDER BY "total" DESC, "user_id" ASC
+      LIMIT ${query.limit}
+    `;
+  } else {
+    if (!isSingleActivityMetric(query.metric)) {
+      throw new Error(`Unsupported activity leaderboard metric: ${query.metric}`);
+    }
+    rows = await getSingleActivityMetricLeaderboard(guildId, query.metric, start, query.limit);
+  }
 
   return {
     metric: query.metric,
@@ -130,10 +138,7 @@ async function getActivityLeaderboard(
 
 async function getSingleActivityMetricLeaderboard(
   guildId: string,
-  metric: Exclude<
-    CommunityLeaderboardMetric,
-    'xp' | 'level' | 'reactions' | 'achievements' | 'season'
-  >,
+  metric: SingleActivityMetric,
   start: Date,
   limit: number,
 ): Promise<RankedRow[]> {
@@ -231,4 +236,8 @@ async function getSeasonLeaderboard(
       secondaryValue: null,
     })),
   };
+}
+
+function isSingleActivityMetric(metric: CommunityLeaderboardMetric): metric is SingleActivityMetric {
+  return metric === 'messages' || metric === 'voice' || metric === 'minecraft';
 }
