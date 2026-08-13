@@ -26,6 +26,17 @@ test('Metricごとに利用可能な期間へLeaderboard queryを正規化する
   });
 });
 
+test('Top 25は文字列queryでも正規化できる', () => {
+  assert.deepEqual(
+    normalizeCommunityLeaderboardQuery({ metric: 'messages', period: '7d', limit: '25' }),
+    {
+      metric: 'messages',
+      period: '7d',
+      limit: 25,
+    },
+  );
+});
+
 test('未知Metricと不正limitは安全な既定値へ戻す', () => {
   assert.deepEqual(
     normalizeCommunityLeaderboardQuery({ metric: 'unknown', period: '30d', limit: 99 }),
