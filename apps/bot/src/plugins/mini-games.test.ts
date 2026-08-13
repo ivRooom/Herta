@@ -75,6 +75,9 @@ describe('Mini Games Plugin', () => {
       'blackjack',
       'gamestats',
     ]);
+    const stats = miniGamesManifest.commands.find((command) => command.name === 'gamestats');
+    expect(stats?.description).toContain('戦績');
+    expect(stats?.options?.find((option) => option.name === 'user')?.type).toBe('user');
     expect(miniGamesManifest.events).toContain('interactionCreate');
   });
 });
