@@ -1,0 +1,36 @@
+name: Temporary Community Leaderboard format
+
+on:
+  push:
+    branches:
+      - feature/community-leaderboard-discord-v3
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/community-leaderboard-discord-v3
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: >-
+          pnpm exec prettier --write
+          apps/studio/src/lib/community-leaderboard.ts
+          packages/db/src/community-leaderboard.ts
+      - name: Commit formatted files and remove temporary workflow
+        run: |
+          rm .github/workflows/temporary-community-leaderboard-format.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Community Leaderboard v3コードをPrettierで整形する'
+          git push origin HEAD:feature/community-leaderboard-discord-v3
