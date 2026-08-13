@@ -7,3 +7,4 @@ export * from './xp-role-sweep-events.js';
 export * from './health.js';
 export * from './achievement-catalog.js';
 export * from './community-challenge-catalog.js';
+export * from './community-leaderboard.js';
