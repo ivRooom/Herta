@@ -50,7 +50,8 @@ export default async function AchievementOperationsPage({
           <h1 className="text-2xl font-semibold tracking-tight">Achievement Operations</h1>
         </div>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-          {guild.name} の解除状況、Leaderboard、最近の解除履歴を確認し、メンバー単位でAchievementの手動付与・取消を管理します。
+          {guild.name}{' '}
+          の解除状況、Leaderboard、最近の解除履歴を確認し、メンバー単位でAchievementの手動付与・取消を管理します。
         </p>
       </div>
 

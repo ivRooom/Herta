@@ -64,7 +64,9 @@ export function achievementBlockRecordId(achievementId: string): string {
   return `${BLOCK_PREFIX}${achievementId}`;
 }
 
-export function parseAchievementOperationRequest(value: unknown): AchievementOperationRequest | null {
+export function parseAchievementOperationRequest(
+  value: unknown,
+): AchievementOperationRequest | null {
   if (!isRecord(value)) return null;
   if (value.action !== 'grant' && value.action !== 'revoke') return null;
   if (typeof value.userId !== 'string' || !DISCORD_ID_PATTERN.test(value.userId)) return null;
@@ -164,10 +166,7 @@ export async function getAchievementOperationsSnapshot(
   const leaderboard = leaderboardRows.map((row) => ({
     userId: row.userId,
     unlockCount: Number(row.unlockCount),
-    points: row.achievementIds.reduce(
-      (total, id) => total + (catalogMap.get(id)?.points ?? 0),
-      0,
-    ),
+    points: row.achievementIds.reduce((total, id) => total + (catalogMap.get(id)?.points ?? 0), 0),
   }));
 
   return {
@@ -212,7 +211,8 @@ export async function getAchievementUserProgress(
     unlockedCount: unlockedIds.length,
     blockedCount: blockedIds.length,
     totalCatalog: catalog.length,
-    progressPercent: catalog.length === 0 ? 0 : Math.round((unlockedIds.length / catalog.length) * 100),
+    progressPercent:
+      catalog.length === 0 ? 0 : Math.round((unlockedIds.length / catalog.length) * 100),
     points,
     unlockedIds,
     blockedIds,
@@ -275,7 +275,9 @@ export async function applyAchievementOperation(input: {
         guildId: input.guildId,
         actorId: input.actorId,
         event:
-          input.request.action === 'grant' ? 'achievement.manual_grant' : 'achievement.manual_revoke',
+          input.request.action === 'grant'
+            ? 'achievement.manual_grant'
+            : 'achievement.manual_revoke',
         targetType: 'achievement',
         targetId: input.request.achievementId,
         changes: {

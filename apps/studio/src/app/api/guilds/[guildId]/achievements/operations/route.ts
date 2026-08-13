@@ -21,7 +21,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ guil
   if ('response' in authorization) return authorization.response;
 
   const plugin = await getGuildPlugin(guildId, 'achievements');
-  if (!plugin) return NextResponse.json({ error: 'Achievements Pluginが見つかりません' }, { status: 404 });
+  if (!plugin)
+    return NextResponse.json({ error: 'Achievements Pluginが見つかりません' }, { status: 404 });
 
   const url = new URL(request.url);
   const userId = url.searchParams.get('userId')?.trim() ?? '';
@@ -59,10 +60,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
     return NextResponse.json({ error: 'JSON body が不正です' }, { status: 400 });
   }
   const parsed = parseAchievementOperationRequest(body);
-  if (!parsed) return NextResponse.json({ error: 'Achievement操作の入力が不正です' }, { status: 400 });
+  if (!parsed)
+    return NextResponse.json({ error: 'Achievement操作の入力が不正です' }, { status: 400 });
 
   const plugin = await getGuildPlugin(guildId, 'achievements');
-  if (!plugin) return NextResponse.json({ error: 'Achievements Pluginが見つかりません' }, { status: 404 });
+  if (!plugin)
+    return NextResponse.json({ error: 'Achievements Pluginが見つかりません' }, { status: 404 });
 
   try {
     const result = await applyAchievementOperation({

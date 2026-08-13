@@ -63,7 +63,8 @@ export function AchievementOperationsDashboard({
   const unlockedSet = useMemo(() => new Set(progress?.unlockedIds ?? []), [progress]);
   const blockedSet = useMemo(() => new Set(progress?.blockedIds ?? []), [progress]);
   const categories = useMemo(
-    () => Array.from(new Set(catalog.map((item) => item.category))).sort((a, b) => a.localeCompare(b)),
+    () =>
+      Array.from(new Set(catalog.map((item) => item.category))).sort((a, b) => a.localeCompare(b)),
     [catalog],
   );
   const filteredCatalog = useMemo(() => {
@@ -153,16 +154,29 @@ export function AchievementOperationsDashboard({
     <div className="space-y-6">
       {!pluginEnabled ? (
         <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-700 dark:text-amber-300">
-          Achievements Pluginは現在無効です。運用データの確認と手動操作はできますが、自動解除・通知はPluginを有効化するまで実行されません。
+          Achievements
+          Pluginは現在無効です。運用データの確認と手動操作はできますが、自動解除・通知はPluginを有効化するまで実行されません。
         </div>
       ) : null}
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <StatCard icon={Trophy} label="Achievement" value={snapshot.totalCatalog.toLocaleString()} />
+        <StatCard
+          icon={Trophy}
+          label="Achievement"
+          value={snapshot.totalCatalog.toLocaleString()}
+        />
         <StatCard icon={Medal} label="総解除数" value={snapshot.totalUnlocks.toLocaleString()} />
-        <StatCard icon={Users} label="解除メンバー" value={snapshot.uniqueMembers.toLocaleString()} />
+        <StatCard
+          icon={Users}
+          label="解除メンバー"
+          value={snapshot.uniqueMembers.toLocaleString()}
+        />
         <StatCard icon={Clock3} label="直近7日" value={snapshot.unlocks7d.toLocaleString()} />
-        <StatCard icon={Ban} label="手動取消中" value={snapshot.blockedOverrides.toLocaleString()} />
+        <StatCard
+          icon={Ban}
+          label="手動取消中"
+          value={snapshot.blockedOverrides.toLocaleString()}
+        />
       </section>
 
       <div className="grid gap-5 xl:grid-cols-2">
@@ -243,12 +257,15 @@ export function AchievementOperationsDashboard({
               <h2 className="font-semibold">Member Operations</h2>
             </div>
             <p className="mt-1 text-sm text-muted">
-              メンバーを検索して進捗確認、手動付与、永続的な取消抑止を行います。すべてAudit Logへ記録されます。
+              メンバーを検索して進捗確認、手動付与、永続的な取消抑止を行います。すべてAudit
+              Logへ記録されます。
             </p>
           </div>
           {progress ? (
             <div className="flex flex-wrap gap-2 text-xs">
-              <Badge>{progress.unlockedCount}/{progress.totalCatalog} unlocked</Badge>
+              <Badge>
+                {progress.unlockedCount}/{progress.totalCatalog} unlocked
+              </Badge>
               <Badge>{progress.progressPercent}%</Badge>
               <Badge>{progress.points.toLocaleString()}pt</Badge>
               {progress.blockedCount > 0 ? <Badge>{progress.blockedCount} blocked</Badge> : null}
@@ -268,7 +285,9 @@ export function AchievementOperationsDashboard({
             />
           </div>
           <div>
-            <label className="mb-2 block text-xs font-medium text-muted">操作理由（任意・Audit Log記録）</label>
+            <label className="mb-2 block text-xs font-medium text-muted">
+              操作理由（任意・Audit Log記録）
+            </label>
             <input
               value={reason}
               onChange={(event) => setReason(event.target.value.slice(0, 240))}
@@ -326,15 +345,22 @@ export function AchievementOperationsDashboard({
                 const blocked = blockedSet.has(item.id);
                 const busy = operatingId === item.id;
                 return (
-                  <article key={item.id} className="rounded-xl border border-border bg-background p-4">
+                  <article
+                    key={item.id}
+                    className="rounded-xl border border-border bg-background p-4"
+                  >
                     <div className="flex items-start gap-3">
                       <span className="text-2xl">{item.emoji}</span>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-semibold">{item.name}</p>
-                        <p className="mt-0.5 truncate font-mono text-[11px] text-muted">{item.id}</p>
+                        <p className="mt-0.5 truncate font-mono text-[11px] text-muted">
+                          {item.id}
+                        </p>
                       </div>
                       {blocked ? (
-                        <span className="rounded-full bg-destructive/10 px-2 py-1 text-[10px] font-medium text-destructive">BLOCKED</span>
+                        <span className="rounded-full bg-destructive/10 px-2 py-1 text-[10px] font-medium text-destructive">
+                          BLOCKED
+                        </span>
                       ) : unlocked ? (
                         <CheckCircle2 className="h-4 w-4 text-emerald-500" />
                       ) : null}
@@ -353,7 +379,11 @@ export function AchievementOperationsDashboard({
                           onClick={() => void operate(item, 'grant')}
                           className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground disabled:opacity-50"
                         >
-                          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                          {busy ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Sparkles className="h-3.5 w-3.5" />
+                          )}
                           {blocked ? '抑止解除して付与' : '手動付与'}
                         </button>
                       ) : (
@@ -363,7 +393,11 @@ export function AchievementOperationsDashboard({
                           onClick={() => void operate(item, 'revoke')}
                           className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg border border-destructive/30 px-3 py-2 text-xs font-semibold text-destructive hover:bg-destructive/5 disabled:opacity-50"
                         >
-                          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Ban className="h-3.5 w-3.5" />}
+                          {busy ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Ban className="h-3.5 w-3.5" />
+                          )}
                           取消・再解除抑止
                         </button>
                       )}
@@ -372,13 +406,18 @@ export function AchievementOperationsDashboard({
                 );
               })}
             </div>
-            {filteredCatalog.length === 0 ? <div className="mt-4"><Empty text="条件に一致するAchievementがありません" /></div> : null}
+            {filteredCatalog.length === 0 ? (
+              <div className="mt-4">
+                <Empty text="条件に一致するAchievementがありません" />
+              </div>
+            ) : null}
           </>
         ) : null}
 
         {!selectedUserId ? (
           <div className="mt-5 flex items-center gap-2 rounded-xl border border-dashed border-border p-5 text-sm text-muted">
-            <UserRound className="h-4 w-4" /> 対象メンバーを選択するとAchievement進捗と管理操作が表示されます。
+            <UserRound className="h-4 w-4" />{' '}
+            対象メンバーを選択するとAchievement進捗と管理操作が表示されます。
           </div>
         ) : null}
 
@@ -412,11 +451,19 @@ function StatCard({
 }
 
 function Badge({ children }: { children: React.ReactNode }) {
-  return <span className="rounded-full border border-border bg-surface px-2.5 py-1 text-muted">{children}</span>;
+  return (
+    <span className="rounded-full border border-border bg-surface px-2.5 py-1 text-muted">
+      {children}
+    </span>
+  );
 }
 
 function Empty({ text }: { text: string }) {
-  return <div className="rounded-xl border border-dashed border-border p-5 text-center text-sm text-muted">{text}</div>;
+  return (
+    <div className="rounded-xl border border-dashed border-border p-5 text-center text-sm text-muted">
+      {text}
+    </div>
+  );
 }
 
 function formatDate(value: string): string {
