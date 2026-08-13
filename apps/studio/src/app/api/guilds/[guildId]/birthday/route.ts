@@ -6,7 +6,10 @@ import {
   removeBirthdayRegistration,
   setBirthdayRegistration,
 } from '@/lib/birthday-admin';
-import { parseBirthdayAdminRequest } from '@/lib/birthday-admin-core';
+import {
+  birthdayMemberEligibility,
+  parseBirthdayAdminRequest,
+} from '@/lib/birthday-admin-core';
 import { searchGuildMembers } from '@/lib/bot-guild-members';
 import { authorizeGuild } from '@/lib/guild-plugins';
 
@@ -56,14 +59,14 @@ export async function POST(request: Request, { params }: GuildRouteContext) {
           { status: 503 },
         );
       }
-      const member = members.find((candidate) => candidate.id === parsed.userId);
-      if (!member) {
+      const eligibility = birthdayMemberEligibility(parsed.userId, members);
+      if (eligibility === 'not-found') {
         return NextResponse.json(
           { error: '対象ユーザーは現在このDiscordサーバーに所属していません' },
           { status: 400 },
         );
       }
-      if (member.bot) {
+      if (eligibility === 'bot') {
         return NextResponse.json(
           { error: 'Botアカウントは誕生日登録の対象にできません' },
           { status: 400 },
