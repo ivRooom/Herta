@@ -11,7 +11,7 @@ import {
 
 const SWEEP_CONCURRENCY = 3;
 
-export interface XpRoleSweepResult {
+export interface XpRoleSweepResult extends Record<string, number> {
   membersFetched: number;
   xpProfiles: number;
   profilesWithoutMember: number;
