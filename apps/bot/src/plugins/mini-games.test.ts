@@ -11,6 +11,7 @@ describe('Mini Games Plugin', () => {
   it('設定を安全な範囲へ正規化する', () => {
     expect(normalizeMiniGamesConfig(undefined)).toEqual({
       enabled: true,
+      statsEnabled: true,
       coinflipAnimation: true,
       sessionTimeoutSeconds: 90,
       highLowMaxRounds: 10,
@@ -19,6 +20,7 @@ describe('Mini Games Plugin', () => {
     expect(
       normalizeMiniGamesConfig({
         enabled: false,
+        statsEnabled: false,
         coinflipAnimation: false,
         sessionTimeoutSeconds: 999,
         highLowMaxRounds: 1,
@@ -26,6 +28,7 @@ describe('Mini Games Plugin', () => {
       }),
     ).toEqual({
       enabled: false,
+      statsEnabled: false,
       coinflipAnimation: false,
       sessionTimeoutSeconds: 300,
       highLowMaxRounds: 3,
@@ -65,11 +68,12 @@ describe('Mini Games Plugin', () => {
     expect(parseMiniGameCustomId(`herta:poll:v1:blackjack:${id}:hit`)).toBeNull();
   });
 
-  it('Manifestに3ゲームとinteractionCreateを登録する', () => {
+  it('Manifestに3ゲーム・戦績コマンド・interactionCreateを登録する', () => {
     expect(miniGamesManifest.commands.map((command) => command.name)).toEqual([
       'coinflip',
       'highlow',
       'blackjack',
+      'gamestats',
     ]);
     expect(miniGamesManifest.events).toContain('interactionCreate');
   });
