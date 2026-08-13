@@ -66,7 +66,10 @@ function isDiscordId(value: unknown): value is string {
 }
 
 function isRequestId(value: unknown): value is string {
-  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value);
+  return (
+    typeof value === 'string' &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value)
+  );
 }
 
 function isXpRoleSweepReason(value: unknown): value is XpRoleSweepReason {

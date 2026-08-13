@@ -26,12 +26,17 @@ export class XpRoleSweepSubscriber {
     });
     this.redis = redis;
 
-    redis.on('ready', () => this.logger.info('XP報酬Role一括修復イベントのRedis購読を開始しました'));
+    redis.on('ready', () =>
+      this.logger.info('XP報酬Role一括修復イベントのRedis購読を開始しました'),
+    );
     redis.on('reconnecting', () =>
       this.logger.warn('XP報酬Role一括修復イベントのRedis再接続を試行しています'),
     );
     redis.on('error', (error: unknown) =>
-      this.logger.error({ err: error }, 'XP報酬Role一括修復イベントのRedis接続でエラーが発生しました'),
+      this.logger.error(
+        { err: error },
+        'XP報酬Role一括修復イベントのRedis接続でエラーが発生しました',
+      ),
     );
     redis.on('message', (channel: string, payload: string) => {
       if (channel === XP_ROLE_SWEEP_EVENT_CHANNEL) this.handleMessage(payload);

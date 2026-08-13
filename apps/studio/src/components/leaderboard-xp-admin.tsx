@@ -419,7 +419,9 @@ function RoleSweepStatusView({ status }: { status: XpRoleSweepStatus | null }) {
           BotのGuild Members Intent、XP / Level Pluginの有効状態、Redis接続を確認してください。
         </p>
       ) : (
-        <p className="mt-2 text-xs text-muted">Botが順番に修復しています。完了状態を自動更新します。</p>
+        <p className="mt-2 text-xs text-muted">
+          Botが順番に修復しています。完了状態を自動更新します。
+        </p>
       )}
     </div>
   );
