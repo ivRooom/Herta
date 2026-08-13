@@ -1,13 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 
 export type CommunityLeaderboardStorageMetric =
-  | 'xp'
-  | 'messages'
-  | 'reactions'
-  | 'voice'
-  | 'minecraft'
-  | 'achievements'
-  | 'season';
+  'xp' | 'messages' | 'reactions' | 'voice' | 'minecraft' | 'achievements' | 'season';
 
 export interface CommunityLeaderboardDataEntry {
   rank: number;

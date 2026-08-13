@@ -1,7 +1,4 @@
-import {
-  queryCommunityLeaderboardData,
-  type CommunityLeaderboardStorageMetric,
-} from '@herta/db';
+import { queryCommunityLeaderboardData, type CommunityLeaderboardStorageMetric } from '@herta/db';
 import {
   communityActivityPeriodStart,
   communityLeaderboardLevelForXp,
@@ -56,8 +53,7 @@ export async function getCommunityLeaderboardSnapshot(
     entries: data.entries.map((entry) => ({
       rank: entry.rank,
       userId: entry.userId,
-      value:
-        query.metric === 'level' ? communityLeaderboardLevelForXp(entry.value) : entry.value,
+      value: query.metric === 'level' ? communityLeaderboardLevelForXp(entry.value) : entry.value,
       secondaryValue: query.metric === 'level' ? entry.value : null,
     })),
   };
