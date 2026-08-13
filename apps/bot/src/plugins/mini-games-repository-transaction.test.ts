@@ -8,7 +8,10 @@ describe('Mini Games metric transaction', () => {
     const transaction = vi.fn(async (operations: readonly Promise<unknown>[]) =>
       Promise.all(operations),
     );
-    const prisma = { $executeRaw: executeRaw, $transaction: transaction } as unknown as PrismaClient;
+    const prisma = {
+      $executeRaw: executeRaw,
+      $transaction: transaction,
+    } as unknown as PrismaClient;
 
     await incrementMiniGameMetrics(
       prisma,
@@ -33,7 +36,10 @@ describe('Mini Games metric transaction', () => {
     const transaction = vi.fn(async (operations: readonly Promise<unknown>[]) =>
       Promise.all(operations),
     );
-    const prisma = { $executeRaw: executeRaw, $transaction: transaction } as unknown as PrismaClient;
+    const prisma = {
+      $executeRaw: executeRaw,
+      $transaction: transaction,
+    } as unknown as PrismaClient;
 
     await incrementMiniGameMetrics(prisma, 'guild-1', 'user-1', [
       ['minigame_plays', 1],

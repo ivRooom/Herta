@@ -74,8 +74,9 @@ export async function incrementMiniGameMetrics(
   if (updates.length === 0) return;
   const activityDate = jstDateKey(now);
   await prisma.$transaction(
-    updates.map(([metric, amount]) =>
-      prisma.$executeRaw`
+    updates.map(
+      ([metric, amount]) =>
+        prisma.$executeRaw`
         INSERT INTO "community_activity_daily" (
           "guild_id", "user_id", "activity_date", "metric", "value"
         ) VALUES (
