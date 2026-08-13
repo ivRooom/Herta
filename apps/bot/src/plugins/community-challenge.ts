@@ -34,10 +34,6 @@ import {
   type CommunitySeasonSummary,
   type NewlyCompletedChallenge,
 } from './community-challenge-repository.js';
-import {
-  subscribeMiniGameCompletion,
-  unsubscribeMiniGameCompletion,
-} from './mini-games-completion-events.js';
 
 const EPHEMERAL_FLAG = 64;
 const DISCORD_ID_PATTERN = /^\d+$/;
@@ -159,21 +155,6 @@ export const communityChallengePlugin = definePlugin<
   PrismaClient
 >({
   manifest: communityChallengeManifest,
-  async onEnable(context) {
-    subscribeMiniGameCompletion(`community-challenge:${context.guildId}`, async (event) => {
-      if (event.guildId !== context.guildId) return;
-      await maybeAutoSync(
-        context,
-        event.guildId,
-        event.userId,
-        {
-          guild: event.guild as unknown as ChallengeGuild,
-          reply: (options) => event.reply(options),
-        },
-        true,
-      );
-    });
-  },
   provideCommands(context) {
     const challenge: CommandHandler<CommunityChallengeInteraction> = {
       definition: communityChallengeManifest.commands[0]!,
@@ -211,6 +192,15 @@ export const communityChallengePlugin = definePlugin<
         },
       },
       {
+        event: 'interactionCreate',
+        async handler(context, ...args) {
+          scheduleMiniGameChallengeSync(
+            context as CommunityChallengeContext,
+            args[0] as MiniGameChallengeInteraction | undefined,
+          );
+        },
+      },
+      {
         event: 'voiceStateUpdate',
         async handler(context, ...args) {
           await handleChallengeVoice(
@@ -223,7 +213,6 @@ export const communityChallengePlugin = definePlugin<
     ] as PluginEventHandler<CommunityChallengeConfig>[];
   },
   async onDisable(context) {
-    unsubscribeMiniGameCompletion(`community-challenge:${context.guildId}`);
     clearAutoSyncGuild(context.guildId);
   },
 });
@@ -661,13 +650,34 @@ export function isMiniGameChallengeInteraction(
     interaction.isChatInputCommand() &&
     (interaction.commandName === 'coinflip' ||
       interaction.commandName === 'highlow' ||
-      interaction.commandName === 'blackjack')
+      interaction.commandName === 'blackjack' ||
+      interaction.commandName === 'dice' ||
+      interaction.commandName === 'chinchiro')
   ) {
     return true;
   }
   return (
     interaction.isButton() && interaction.customId?.startsWith('herta:mini-games:v1:') === true
   );
+}
+
+function scheduleMiniGameChallengeSync(
+  context: CommunityChallengeContext,
+  interaction: MiniGameChallengeInteraction | undefined,
+): void {
+  if (!isMiniGameChallengeInteraction(interaction) || !interaction?.guildId) return;
+  const guildId = interaction.guildId;
+  const userId = interaction.user.id;
+  const target: CompletionNotificationTarget = { guild: interaction.guild };
+  const timer = setTimeout(() => {
+    void maybeAutoSync(context, guildId, userId, target, true).catch((error) => {
+      context.logger.warn(
+        { err: error, guildId, userId },
+        'Mini Games後のChallenge同期に失敗しました',
+      );
+    });
+  }, 400);
+  timer.unref?.();
 }
 
 async function maybeAutoSync(

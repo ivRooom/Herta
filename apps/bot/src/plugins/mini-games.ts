@@ -34,13 +34,12 @@ import {
 } from './mini-games-core.js';
 import {
   getMiniGameStats,
-  incrementMiniGameMetrics,
+  incrementMiniGameMetric,
   recordMiniGameMaximum,
   type MiniGameMetric,
 } from './mini-games-repository.js';
 import { formatMiniGameStats } from './mini-games-stats.js';
-import { blackjackSettlementMetrics } from './mini-games-blackjack-metrics.js';
-import { publishMiniGameCompletion } from './mini-games-completion-events.js';
+import { createMiniGamesV3CommandHandlers } from './mini-games-v3.js';
 
 const CUSTOM_ID_PREFIX = 'herta:mini-games:v1:';
 const COIN_FLIP_ANIMATION_MS = 1_100;
@@ -118,7 +117,7 @@ export const miniGamesPlugin = definePlugin<MiniGamesConfig, unknown, PrismaClie
         await executeGameStats(context, interaction);
       },
     };
-    return [coinflip, highlow, blackjack, gamestats];
+    return [coinflip, highlow, blackjack, gamestats, ...createMiniGamesV3CommandHandlers(context)];
   },
   provideEvents() {
     return [
@@ -185,25 +184,27 @@ async function executeCoinFlip(
   const requested = interaction.options.getString('choice');
   const choice: CoinFace | null = requested === 'heads' || requested === 'tails' ? requested : null;
   const result = flipCoin();
-  const metrics: Array<readonly [MiniGameMetric, number]> = [
-    ['minigame_plays', 1],
-    ['coinflip_plays', 1],
-    ...(choice ? ([['coinflip_predictions', 1]] as const) : []),
-    ...(choice === result
-      ? ([
-          ['coinflip_wins', 1],
-          ['minigame_wins', 1],
-        ] as const)
-      : []),
-  ];
+  await recordMetricsSafely(
+    context,
+    [
+      ['minigame_plays', 1],
+      ['coinflip_plays', 1],
+      ...(choice ? ([['coinflip_predictions', 1]] as const) : []),
+      ...(choice === result
+        ? ([
+            ['coinflip_wins', 1],
+            ['minigame_wins', 1],
+          ] as const)
+        : []),
+    ],
+    interaction.user.id,
+  );
 
   if (!config.coinflipAnimation) {
     await interaction.reply({
       content: formatCoinFlipResult(result, choice),
       allowedMentions: { parse: [] },
     });
-    await recordMetricsSafely(context, metrics, interaction.user.id);
-    await publishMiniGameCompletion(interaction);
     return;
   }
 
@@ -215,8 +216,6 @@ async function executeCoinFlip(
   });
   await delay(COIN_FLIP_ANIMATION_MS);
   await interaction.editReply({ content: formatCoinFlipResult(result, choice) });
-  await recordMetricsSafely(context, metrics, interaction.user.id);
-  await publishMiniGameCompletion(interaction);
 }
 
 async function executeHighLow(
@@ -233,6 +232,14 @@ async function executeHighLow(
     return;
   }
 
+  await recordMetricsSafely(
+    context,
+    [
+      ['minigame_plays', 1],
+      ['highlow_plays', 1],
+    ],
+    interaction.user.id,
+  );
   const deck = createShuffledDeck();
   const id = createSessionId();
   const session: HighLowSession = {
@@ -262,15 +269,6 @@ async function executeHighLow(
     components: [buildHighLowRow(session.id)],
     allowedMentions: { parse: [] },
   });
-  await recordMetricsSafely(
-    context,
-    [
-      ['minigame_plays', 1],
-      ['highlow_plays', 1],
-    ],
-    interaction.user.id,
-  );
-  await publishMiniGameCompletion(interaction);
 }
 
 async function executeBlackjack(
@@ -287,6 +285,14 @@ async function executeBlackjack(
     return;
   }
 
+  await recordMetricsSafely(
+    context,
+    [
+      ['minigame_plays', 1],
+      ['blackjack_plays', 1],
+    ],
+    interaction.user.id,
+  );
   const deck = createShuffledDeck();
   const player = [drawCard(deck), drawCard(deck)];
   const dealer = [drawCard(deck), drawCard(deck)];
@@ -315,20 +321,11 @@ async function executeBlackjack(
   const openingPlayer = blackjackScore(player);
   const openingDealer = blackjackScore(dealer);
   if (openingPlayer.blackjack || openingDealer.blackjack) {
+    await recordBlackjackSettlement(context, session);
     await interaction.reply({
       content: renderBlackjackFinal(session),
       allowedMentions: { parse: [] },
     });
-    await recordMetricsSafely(
-      context,
-      [
-        ['minigame_plays', 1],
-        ['blackjack_plays', 1],
-      ],
-      interaction.user.id,
-    );
-    await recordBlackjackSettlement(context, session);
-    await publishMiniGameCompletion(interaction);
     return;
   }
 
@@ -339,15 +336,6 @@ async function executeBlackjack(
     components: [buildBlackjackRow(session.id)],
     allowedMentions: { parse: [] },
   });
-  await recordMetricsSafely(
-    context,
-    [
-      ['minigame_plays', 1],
-      ['blackjack_plays', 1],
-    ],
-    interaction.user.id,
-  );
-  await publishMiniGameCompletion(interaction);
 }
 
 async function handleGameButton(
@@ -451,7 +439,17 @@ async function handleHighLowButton(
   }
 
   session.streak += 1;
+  await recordMetricsSafely(context, [['highlow_round_wins', 1]], session.userId);
+  await recordMaximumSafely(context, session.guildId, session.userId, session.streak);
   if (session.streak >= session.maxRounds) {
+    await recordMetricsSafely(
+      context,
+      [
+        ['highlow_clears', 1],
+        ['minigame_wins', 1],
+      ],
+      session.userId,
+    );
     endSession(session);
     await interaction.update({
       content: [
@@ -462,17 +460,6 @@ async function handleHighLowButton(
       ].join('\n'),
       components: [],
     });
-    await recordMetricsSafely(
-      context,
-      [
-        ['highlow_round_wins', 1],
-        ['highlow_clears', 1],
-        ['minigame_wins', 1],
-      ],
-      session.userId,
-    );
-    await recordMaximumSafely(context, session.guildId, session.userId, session.streak);
-    await publishMiniGameCompletion(interaction);
     return;
   }
 
@@ -487,9 +474,6 @@ async function handleHighLowButton(
     ].join('\n'),
     components: [buildHighLowRow(session.id)],
   });
-  await recordMetricsSafely(context, [['highlow_round_wins', 1]], session.userId);
-  await recordMaximumSafely(context, session.guildId, session.userId, session.streak);
-  await publishMiniGameCompletion(interaction);
 }
 
 async function handleBlackjackButton(
@@ -505,17 +489,15 @@ async function handleBlackjackButton(
     const score = blackjackScore(session.player);
     if (score.bust) {
       endSession(session);
-      await interaction.update({ content: renderBlackjackFinal(session), components: [] });
       await recordBlackjackSettlement(context, session);
-      await publishMiniGameCompletion(interaction);
+      await interaction.update({ content: renderBlackjackFinal(session), components: [] });
       return;
     }
     if (score.total === 21) {
       playDealer(session);
       endSession(session);
-      await interaction.update({ content: renderBlackjackFinal(session), components: [] });
       await recordBlackjackSettlement(context, session);
-      await publishMiniGameCompletion(interaction);
+      await interaction.update({ content: renderBlackjackFinal(session), components: [] });
       return;
     }
     armSessionTimeout(session, config.sessionTimeoutSeconds);
@@ -528,9 +510,8 @@ async function handleBlackjackButton(
   if (action === 'stand') {
     playDealer(session);
     endSession(session);
-    await interaction.update({ content: renderBlackjackFinal(session), components: [] });
     await recordBlackjackSettlement(context, session);
-    await publishMiniGameCompletion(interaction);
+    await interaction.update({ content: renderBlackjackFinal(session), components: [] });
     return;
   }
   await replyEphemeral(interaction, '不明なBlackjack操作です。');
@@ -554,9 +535,8 @@ async function executeGameStats(
     return;
   }
   const userId = interaction.options.getUser('user')?.id ?? interaction.user.id;
-  await interaction.deferReply();
   const stats = await getMiniGameStats(context.prisma, interaction.guildId, userId);
-  await interaction.editReply({
+  await interaction.reply({
     content: formatMiniGameStats(userId, stats),
     allowedMentions: { parse: [] },
   });
@@ -566,11 +546,14 @@ async function recordBlackjackSettlement(
   context: MiniGamesRuntimeContext,
   session: BlackjackSession,
 ): Promise<void> {
-  await recordMetricsSafely(
-    context,
-    blackjackSettlementMetrics(session.player, session.dealer),
-    session.userId,
-  );
+  const outcome = settleBlackjack(session.player, session.dealer);
+  const metrics: Array<readonly [MiniGameMetric, number]> = [];
+  if (outcome === 'player-win' || outcome === 'player-blackjack') {
+    metrics.push(['blackjack_wins', 1], ['minigame_wins', 1]);
+  }
+  if (outcome === 'push') metrics.push(['blackjack_pushes', 1]);
+  if (outcome === 'player-blackjack') metrics.push(['blackjack_naturals', 1]);
+  await recordMetricsSafely(context, metrics, session.userId);
 }
 
 async function recordMetricsSafely(
@@ -579,13 +562,13 @@ async function recordMetricsSafely(
   userId: string,
 ): Promise<void> {
   if (!normalizeMiniGamesConfig(context.config).statsEnabled || metrics.length === 0) return;
-  try {
-    await incrementMiniGameMetrics(context.prisma, context.guildId, userId, metrics);
-  } catch (error) {
-    context.logger.warn(
-      { err: error, guildId: context.guildId, userId },
-      'Mini Games戦績の保存に失敗しました',
-    );
+  const results = await Promise.allSettled(
+    metrics.map(([metric, amount]) =>
+      incrementMiniGameMetric(context.prisma, context.guildId, userId, metric, amount),
+    ),
+  );
+  if (results.some((result) => result.status === 'rejected')) {
+    context.logger.warn({ guildId: context.guildId }, 'Mini Games戦績の保存に一部失敗しました');
   }
 }
 

@@ -37,10 +37,6 @@ import {
   type CustomAchievementSeries,
   type CustomAchievementStage,
 } from './custom-achievements.js';
-import {
-  subscribeMiniGameCompletion,
-  unsubscribeMiniGameCompletion,
-} from './mini-games-completion-events.js';
 
 const EPHEMERAL_FLAG = 64;
 const DISCORD_ID_PATTERN = /^\d+$/;
@@ -175,21 +171,6 @@ type AchievementsRuntimeContext = PluginRuntimeContext<AchievementsConfig, unkno
 
 export const achievementsPlugin = definePlugin<AchievementsConfig, unknown, PrismaClient>({
   manifest: achievementsManifest,
-  async onEnable(context) {
-    subscribeMiniGameCompletion(`achievements:${context.guildId}`, async (event) => {
-      if (event.guildId !== context.guildId) return;
-      await maybeAutoSync(
-        context,
-        event.guildId,
-        event.userId,
-        {
-          guild: event.guild as unknown as AchievementGuild,
-          reply: (options) => event.reply(options),
-        },
-        true,
-      );
-    });
-  },
   provideCommands(context) {
     const list: CommandHandler<AchievementCommandInteraction> = {
       definition: achievementsManifest.commands[0]!,
@@ -230,6 +211,15 @@ export const achievementsPlugin = definePlugin<AchievementsConfig, unknown, Pris
         },
       },
       {
+        event: 'interactionCreate',
+        async handler(context, ...args) {
+          scheduleMiniGameAchievementSync(
+            context as AchievementsRuntimeContext,
+            args[0] as MiniGameAchievementInteraction | undefined,
+          );
+        },
+      },
+      {
         event: 'voiceStateUpdate',
         async handler(context, ...args) {
           await handleAchievementVoice(
@@ -242,7 +232,6 @@ export const achievementsPlugin = definePlugin<AchievementsConfig, unknown, Pris
     ] as PluginEventHandler<AchievementsConfig>[];
   },
   async onDisable(context) {
-    unsubscribeMiniGameCompletion(`achievements:${context.guildId}`);
     clearAutoSyncGuild(context.guildId);
   },
 });
@@ -577,13 +566,34 @@ export function isMiniGameAchievementInteraction(
     interaction.isChatInputCommand() &&
     (interaction.commandName === 'coinflip' ||
       interaction.commandName === 'highlow' ||
-      interaction.commandName === 'blackjack')
+      interaction.commandName === 'blackjack' ||
+      interaction.commandName === 'dice' ||
+      interaction.commandName === 'chinchiro')
   ) {
     return true;
   }
   return (
     interaction.isButton() && interaction.customId?.startsWith('herta:mini-games:v1:') === true
   );
+}
+
+function scheduleMiniGameAchievementSync(
+  context: AchievementsRuntimeContext,
+  interaction: MiniGameAchievementInteraction | undefined,
+): void {
+  if (!isMiniGameAchievementInteraction(interaction) || !interaction?.guildId) return;
+  const guildId = interaction.guildId;
+  const userId = interaction.user.id;
+  const target: AchievementNotificationTarget = { guild: interaction.guild };
+  const timer = setTimeout(() => {
+    void maybeAutoSync(context, guildId, userId, target, true).catch((error) => {
+      context.logger.warn(
+        { err: error, guildId, userId },
+        'Mini Games後のAchievement同期に失敗しました',
+      );
+    });
+  }, 400);
+  timer.unref?.();
 }
 
 async function maybeAutoSync(

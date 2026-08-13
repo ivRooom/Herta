@@ -14,6 +14,11 @@ export const MINI_GAME_METRICS = [
   'blackjack_wins',
   'blackjack_pushes',
   'blackjack_naturals',
+  'dice_plays',
+  'dice_sixes',
+  'chinchiro_plays',
+  'chinchiro_wins',
+  'chinchiro_specials',
 ] as const;
 
 export type MiniGameMetric = (typeof MINI_GAME_METRICS)[number];
@@ -32,6 +37,11 @@ export interface MiniGameStats {
   blackjackWins: number;
   blackjackPushes: number;
   blackjackNaturals: number;
+  dicePlays: number;
+  diceSixes: number;
+  chinchiroPlays: number;
+  chinchiroWins: number;
+  chinchiroSpecials: number;
 }
 
 interface MiniGameMetricRow {
@@ -59,34 +69,6 @@ export async function incrementMiniGameMetric(
     ON CONFLICT ("guild_id", "user_id", "activity_date", "metric")
     DO UPDATE SET "value" = "community_activity_daily"."value" + EXCLUDED."value"
   `;
-}
-
-export async function incrementMiniGameMetrics(
-  prisma: PrismaClient,
-  guildId: string,
-  userId: string,
-  metrics: readonly (readonly [MiniGameMetric, number])[],
-  now = new Date(),
-): Promise<void> {
-  const updates = metrics
-    .map(([metric, amount]) => [metric, Math.max(0, Math.trunc(amount))] as const)
-    .filter(([, amount]) => amount > 0);
-  if (updates.length === 0) return;
-  const activityDate = jstDateKey(now);
-  await prisma.$transaction(
-    updates.map(
-      ([metric, amount]) =>
-        prisma.$executeRaw`
-        INSERT INTO "community_activity_daily" (
-          "guild_id", "user_id", "activity_date", "metric", "value"
-        ) VALUES (
-          ${guildId}, ${userId}, ${activityDate}::date, ${metric}, ${BigInt(amount)}
-        )
-        ON CONFLICT ("guild_id", "user_id", "activity_date", "metric")
-        DO UPDATE SET "value" = "community_activity_daily"."value" + EXCLUDED."value"
-      `,
-    ),
-  );
 }
 
 export async function recordMiniGameMaximum(
@@ -130,7 +112,9 @@ export async function getMiniGameStats(
         'minigame_plays', 'minigame_wins',
         'coinflip_plays', 'coinflip_predictions', 'coinflip_wins',
         'highlow_plays', 'highlow_round_wins', 'highlow_clears', 'highlow_best_streak',
-        'blackjack_plays', 'blackjack_wins', 'blackjack_pushes', 'blackjack_naturals'
+        'blackjack_plays', 'blackjack_wins', 'blackjack_pushes', 'blackjack_naturals',
+        'dice_plays', 'dice_sixes',
+        'chinchiro_plays', 'chinchiro_wins', 'chinchiro_specials'
       )
     GROUP BY "metric"
   `;
@@ -157,6 +141,11 @@ export function miniGameStatsFromRows(
     blackjackWins: value('blackjack_wins'),
     blackjackPushes: value('blackjack_pushes'),
     blackjackNaturals: value('blackjack_naturals'),
+    dicePlays: value('dice_plays'),
+    diceSixes: value('dice_sixes'),
+    chinchiroPlays: value('chinchiro_plays'),
+    chinchiroWins: value('chinchiro_wins'),
+    chinchiroSpecials: value('chinchiro_specials'),
   };
 }
 

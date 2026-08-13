@@ -176,7 +176,7 @@ export const communityChallengeManifest: PluginManifest = {
       'ephemeralSync',
     ],
   },
-  events: ['messageCreate', 'messageReactionAdd', 'voiceStateUpdate'],
+  events: ['messageCreate', 'messageReactionAdd', 'interactionCreate', 'voiceStateUpdate'],
   commands: [
     {
       name: 'challenge',

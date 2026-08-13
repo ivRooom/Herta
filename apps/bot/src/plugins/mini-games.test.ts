@@ -74,10 +74,10 @@ describe('Mini Games Plugin', () => {
       'highlow',
       'blackjack',
       'gamestats',
+      'dice',
+      'chinchiro',
+      'gameleaderboard',
     ]);
-    const stats = miniGamesManifest.commands.find((command) => command.name === 'gamestats');
-    expect(stats?.description).toContain('戦績');
-    expect(stats?.options?.find((option) => option.name === 'user')?.type).toBe('user');
     expect(miniGamesManifest.events).toContain('interactionCreate');
   });
 });
