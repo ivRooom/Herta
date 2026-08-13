@@ -5,6 +5,10 @@ import {
   createPluginRuntimeEvent,
   type PluginRuntimeEventType,
 } from '@herta/shared/plugin-runtime-events';
+import {
+  XP_ROLE_RECONCILIATION_EVENT_CHANNEL,
+  createXpRoleReconciliationEvent,
+} from '@herta/shared/xp-role-reconciliation-events';
 
 export async function publishPluginRuntimeEvent(input: {
   guildId: string;
@@ -24,6 +28,27 @@ export async function publishPluginRuntimeEvent(input: {
       guildId: input.guildId,
       pluginId: input.pluginId,
       eventType: input.eventType,
+      error,
+    });
+    return false;
+  }
+}
+
+export async function publishXpRoleReconciliationEvent(input: {
+  guildId: string;
+  userId: string;
+}): Promise<boolean> {
+  const redisUrl = process.env['REDIS_URL'];
+  if (!redisUrl) return false;
+
+  try {
+    const event = createXpRoleReconciliationEvent(input);
+    await publish(redisUrl, XP_ROLE_RECONCILIATION_EVENT_CHANNEL, JSON.stringify(event));
+    return true;
+  } catch (error) {
+    console.error('XP報酬Role再同期イベントの発行に失敗しました', {
+      guildId: input.guildId,
+      userId: input.userId,
       error,
     });
     return false;
