@@ -26,7 +26,10 @@ export function rollDice(
 }
 
 export function evaluateChinchiro(values: readonly number[]): ChinchiroResult {
-  if (values.length !== 3 || values.some((value) => !Number.isInteger(value) || value < 1 || value > 6)) {
+  if (
+    values.length !== 3 ||
+    values.some((value) => !Number.isInteger(value) || value < 1 || value > 6)
+  ) {
     throw new Error('チンチロは1〜6のサイコロ3個で判定します');
   }
 
@@ -62,9 +65,11 @@ export function formatDiceRoll(values: readonly number[], sides: number): string
     .map((value) => (sides === 6 ? DICE_FACES[value - 1] : undefined) ?? `**${value}**`)
     .join(' ');
   const total = values.reduce((sum, value) => sum + value, 0);
-  return [`🎲 **Dice · ${values.length}d${sides}**`, faces, `合計: **${total.toLocaleString()}**`].join(
-    '\n',
-  );
+  return [
+    `🎲 **Dice · ${values.length}d${sides}**`,
+    faces,
+    `合計: **${total.toLocaleString()}**`,
+  ].join('\n');
 }
 
 export function formatChinchiroTurn(turn: ChinchiroTurn): string {
