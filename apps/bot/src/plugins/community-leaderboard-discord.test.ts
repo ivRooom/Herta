@@ -68,6 +68,19 @@ describe('Discord Community Leaderboard v3', () => {
     expect(message).toContain('🥇 <@10001> — Lv.3 · 1,000 XP');
   });
 
+  it('Season Point LeaderboardはCurrent SeasonとPointを表示する', () => {
+    const message = formatDiscordCommunityLeaderboard({
+      metric: 'season',
+      period: 'season',
+      participants: 12,
+      seasonKey: '2026-08',
+      entries: [{ rank: 1, userId: '10001', value: 250, secondaryValue: null }],
+    });
+
+    expect(message).toContain('Season Point Leaderboard · Current Season');
+    expect(message).toContain('🥇 <@10001> — 250 pt');
+  });
+
   it('Voice Rankは時間表示と順位/参加人数を表示する', () => {
     const message = formatDiscordCommunityRank({
       metric: 'voice',
