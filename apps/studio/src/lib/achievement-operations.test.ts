@@ -4,7 +4,7 @@ import {
   achievementBlockRecordId,
   getAchievementCatalog,
   parseAchievementOperationRequest,
-} from './achievement-operations.ts';
+} from './achievement-operations-core.ts';
 
 test('Achievement手動操作の入力を検証する', () => {
   assert.deepEqual(
