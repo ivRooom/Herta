@@ -58,7 +58,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
   });
   const status = await getLatestXpRoleSweepStatus(guildId);
   return NextResponse.json(
-    { request: result, status },
+    {
+      ...(result.queued
+        ? {}
+        : { error: 'BotがXP報酬Role一括修復イベントを購読していません' }),
+      request: result,
+      status,
+    },
     { status: result.queued ? 202 : 503, headers: { 'Cache-Control': 'private, no-store' } },
   );
 }
