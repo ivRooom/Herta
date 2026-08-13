@@ -36,6 +36,16 @@ describe('XpRoleReconciliationSubscriber', () => {
     const subscriber = new XpRoleReconciliationSubscriber(reconcile, logger, 1);
 
     subscriber.handleMessage('{"schemaVersion":1,"guildId":"bad"}');
+    subscriber.handleMessage(
+      JSON.stringify({
+        schemaVersion: 1,
+        eventId: 'bad-user-id',
+        guildId: '12345678901234567',
+        userId: 'not-a-discord-id',
+        reason: 'xp_admin',
+        occurredAt: '2026-08-13T00:00:00.000Z',
+      }),
+    );
     await wait();
 
     expect(reconcile).not.toHaveBeenCalled();
