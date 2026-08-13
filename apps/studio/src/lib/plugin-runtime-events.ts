@@ -2,13 +2,11 @@ import net from 'node:net';
 import tls from 'node:tls';
 import {
   PLUGIN_RUNTIME_EVENT_CHANNEL,
-  createPluginRuntimeEvent,
-  type PluginRuntimeEventType,
-} from '@herta/shared/plugin-runtime-events';
-import {
   XP_ROLE_RECONCILIATION_EVENT_CHANNEL,
+  createPluginRuntimeEvent,
   createXpRoleReconciliationEvent,
-} from '@herta/shared/xp-role-reconciliation-events';
+  type PluginRuntimeEventType,
+} from '@herta/shared';
 
 export async function publishPluginRuntimeEvent(input: {
   guildId: string;
