@@ -1,0 +1,39 @@
+name: Temporary XP role sweep format
+
+on:
+  push:
+    branches:
+      - feature/xp-role-guild-sweep
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/xp-role-guild-sweep
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: >-
+          pnpm exec prettier --write
+          apps/bot/src/plugins/xp-role-sweep-events.ts
+          apps/bot/src/plugins/xp-role-sweep.test.ts
+          apps/studio/src/app/api/guilds/[guildId]/leaderboard/xp/roles/reconcile/route.ts
+          apps/studio/src/components/leaderboard-xp-admin.tsx
+          packages/shared/src/xp-role-sweep-events.ts
+      - name: Commit formatted files and remove temporary workflow
+        run: |
+          rm .github/workflows/temporary-xp-role-sweep-format.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'XP報酬Role一括修復コードをPrettierで整形する'
+          git push origin HEAD:feature/xp-role-guild-sweep
