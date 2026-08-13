@@ -25,27 +25,21 @@ jobs:
           from pathlib import Path
           path = Path('apps/studio/src/app/dashboard/guilds/[guildId]/page.tsx')
           text = path.read_text()
-          needle = '''            <Link
-              href={`/dashboard/guilds/${guildId}/audit-logs`}
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-background/70 px-4 py-2.5 text-sm font-semibold"
-            >
-              <History className="h-4 w-4" /> 監査ログ
-            </Link>'''
-          replacement = '''            <Link
+          href = 'href={`/dashboard/guilds/${guildId}/audit-logs`}'
+          href_index = text.find(href)
+          if href_index < 0:
+              raise SystemExit('audit log navigation href not found')
+          link_index = text.rfind('            <Link', 0, href_index)
+          if link_index < 0:
+              raise SystemExit('audit log Link start not found')
+          leaderboard = '''            <Link
               href={`/dashboard/guilds/${guildId}/leaderboard`}
               className="inline-flex items-center gap-2 rounded-xl border border-border bg-background/70 px-4 py-2.5 text-sm font-semibold"
             >
               <Trophy className="h-4 w-4" /> Leaderboard
             </Link>
-            <Link
-              href={`/dashboard/guilds/${guildId}/audit-logs`}
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-background/70 px-4 py-2.5 text-sm font-semibold"
-            >
-              <History className="h-4 w-4" /> 監査ログ
-            </Link>'''
-          if needle not in text:
-              raise SystemExit('navigation insertion point not found')
-          path.write_text(text.replace(needle, replacement, 1))
+'''
+          path.write_text(text[:link_index] + leaderboard + text[link_index:])
           PY
       - name: Commit navigation and remove temporary workflow
         run: |
