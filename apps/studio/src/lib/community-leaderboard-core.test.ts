@@ -56,3 +56,9 @@ test('活動日とTimestampでJST期間境界を正しく使い分ける', () =>
   assert.equal(communityActivityPeriodStart('7d', now).toISOString(), '2026-08-07T00:00:00.000Z');
   assert.equal(communityTimestampPeriodStart('7d', now).toISOString(), '2026-08-06T15:00:00.000Z');
 });
+
+test('All TimeはActivityとTimestampの両方で共通の下限を返す', () => {
+  const now = new Date('2026-08-13T01:00:00.000Z');
+  assert.equal(communityActivityPeriodStart('all', now).toISOString(), '1970-01-01T00:00:00.000Z');
+  assert.equal(communityTimestampPeriodStart('all', now).toISOString(), '1970-01-01T00:00:00.000Z');
+});
