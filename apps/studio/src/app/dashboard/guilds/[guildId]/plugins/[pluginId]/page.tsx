@@ -132,6 +132,14 @@ export default async function PluginDetailPage({
         />
       ) : null}
 
+      {pluginId === 'birthday-role' ? (
+        <ManagementLink
+          href={`/dashboard/guilds/${guildId}/birthday`}
+          title="Birthday管理"
+          description="Discordメンバーの誕生日を月日だけで登録・更新・解除します。"
+        />
+      ) : null}
+
       {pluginId === 'lfg' ? (
         <ManagementLink
           href={`/dashboard/guilds/${guildId}/lfg`}
