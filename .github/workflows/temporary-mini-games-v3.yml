@@ -1,0 +1,458 @@
+name: Temporary Mini Games v3 patch
+
+on:
+  push:
+    branches:
+      - feature/mini-games-v3-arcade-leaderboard-dice-chinchiro
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/mini-games-v3-arcade-leaderboard-dice-chinchiro
+      - name: Apply Mini Games v3
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace(path: str, old: str, new: str, count: int = 1):
+              p = Path(path)
+              s = p.read_text()
+              assert old in s, f'pattern not found: {path}: {old[:80]!r}'
+              s = s.replace(old, new, count)
+              p.write_text(s)
+
+          # Core game logic
+          Path('apps/bot/src/plugins/mini-games-v3-core.ts').write_text(r'''export type ChinchiroHandKind =
+  | 'pinzoro'
+  | 'triple'
+  | 'shigoro'
+  | 'point'
+  | 'no-hand'
+  | 'hifumi';
+
+export interface ChinchiroHand {
+  dice: readonly [number, number, number];
+  kind: ChinchiroHandKind;
+  point: number | null;
+  strength: number;
+}
+
+export function rollDice(
+  sides = 6,
+  count = 1,
+  random: () => number = Math.random,
+): number[] {
+  const safeSides = Math.min(100, Math.max(2, Math.trunc(sides)));
+  const safeCount = Math.min(10, Math.max(1, Math.trunc(count)));
+  return Array.from({ length: safeCount }, () => Math.floor(random() * safeSides) + 1);
+}
+
+export function rollChinchiroHand(random: () => number = Math.random): ChinchiroHand {
+  const dice = rollDice(6, 3, random) as [number, number, number];
+  return evaluateChinchiroHand(dice);
+}
+
+export function evaluateChinchiroHand(dice: readonly [number, number, number]): ChinchiroHand {
+  const sorted = [...dice].sort((a, b) => a - b) as [number, number, number];
+  const [a, b, c] = sorted;
+  if (a === 1 && b === 1 && c === 1) {
+    return { dice, kind: 'pinzoro', point: null, strength: 700 };
+  }
+  if (a === b && b === c) {
+    return { dice, kind: 'triple', point: a, strength: 600 + a };
+  }
+  if (a === 4 && b === 5 && c === 6) {
+    return { dice, kind: 'shigoro', point: null, strength: 500 };
+  }
+  if (a === 1 && b === 2 && c === 3) {
+    return { dice, kind: 'hifumi', point: null, strength: 0 };
+  }
+  const point = pairPoint(sorted);
+  if (point !== null) {
+    return { dice, kind: 'point', point, strength: 100 + point };
+  }
+  return { dice, kind: 'no-hand', point: null, strength: 50 };
+}
+
+export function compareChinchiroHands(
+  player: ChinchiroHand,
+  dealer: ChinchiroHand,
+): 'player-win' | 'dealer-win' | 'push' {
+  if (player.strength > dealer.strength) return 'player-win';
+  if (player.strength < dealer.strength) return 'dealer-win';
+  return 'push';
+}
+
+export function formatChinchiroHand(hand: ChinchiroHand): string {
+  const dice = hand.dice.map((value) => dieFace(value)).join(' ');
+  const label =
+    hand.kind === 'pinzoro'
+      ? 'ピンゾロ'
+      : hand.kind === 'triple'
+        ? `ゾロ目 ${hand.point}`
+        : hand.kind === 'shigoro'
+          ? 'シゴロ'
+          : hand.kind === 'hifumi'
+            ? 'ヒフミ'
+            : hand.kind === 'point'
+              ? `${hand.point}の目`
+              : '役なし';
+  return `${dice} — **${label}**`;
+}
+
+function pairPoint(sorted: readonly [number, number, number]): number | null {
+  const [a, b, c] = sorted;
+  if (a === b) return c;
+  if (b === c) return a;
+  if (a === c) return b;
+  return null;
+}
+
+function dieFace(value: number): string {
+  return ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'][value - 1] ?? `🎲${value}`;
+}
+''')
+
+          Path('apps/bot/src/plugins/mini-games-v3-core.test.ts').write_text(r'''import { describe, expect, it } from 'vitest';
+import {
+  compareChinchiroHands,
+  evaluateChinchiroHand,
+  formatChinchiroHand,
+  rollDice,
+} from './mini-games-v3-core.js';
+
+describe('Mini Games v3 core', () => {
+  it('Diceは個数と面数を安全な範囲へ制限する', () => {
+    expect(rollDice(6, 3, () => 0)).toEqual([1, 1, 1]);
+    expect(rollDice(6, 3, () => 0.999)).toEqual([6, 6, 6]);
+    expect(rollDice(1, 99, () => 0.5)).toHaveLength(10);
+  });
+
+  it('チンチロの代表役を判定する', () => {
+    expect(evaluateChinchiroHand([1, 1, 1]).kind).toBe('pinzoro');
+    expect(evaluateChinchiroHand([4, 5, 6]).kind).toBe('shigoro');
+    expect(evaluateChinchiroHand([1, 2, 3]).kind).toBe('hifumi');
+    expect(evaluateChinchiroHand([2, 2, 6])).toMatchObject({ kind: 'point', point: 6 });
+    expect(evaluateChinchiroHand([2, 4, 6]).kind).toBe('no-hand');
+  });
+
+  it('ピンゾロ > ゾロ目 > シゴロ > 通常の目 > 役なし > ヒフミで比較する', () => {
+    const pinzoro = evaluateChinchiroHand([1, 1, 1]);
+    const triple = evaluateChinchiroHand([6, 6, 6]);
+    const shigoro = evaluateChinchiroHand([4, 5, 6]);
+    const point = evaluateChinchiroHand([5, 5, 6]);
+    const noHand = evaluateChinchiroHand([2, 4, 6]);
+    const hifumi = evaluateChinchiroHand([1, 2, 3]);
+    expect(compareChinchiroHands(pinzoro, triple)).toBe('player-win');
+    expect(compareChinchiroHands(triple, shigoro)).toBe('player-win');
+    expect(compareChinchiroHands(shigoro, point)).toBe('player-win');
+    expect(compareChinchiroHands(point, noHand)).toBe('player-win');
+    expect(compareChinchiroHands(noHand, hifumi)).toBe('player-win');
+    expect(compareChinchiroHands(point, point)).toBe('push');
+    expect(formatChinchiroHand(pinzoro)).toContain('ピンゾロ');
+  });
+});
+''')
+
+          # Repository metrics + leaderboard
+          replace(
+              'apps/bot/src/plugins/mini-games-repository.ts',
+              "  'blackjack_naturals',\n] as const;",
+              "  'blackjack_naturals',\n  'dice_plays',\n  'dice_sixes',\n  'chinchiro_plays',\n  'chinchiro_wins',\n  'chinchiro_specials',\n] as const;",
+          )
+          replace(
+              'apps/bot/src/plugins/mini-games-repository.ts',
+              "  blackjackNaturals: number;\n}",
+              "  blackjackNaturals: number;\n  dicePlays: number;\n  diceSixes: number;\n  chinchiroPlays: number;\n  chinchiroWins: number;\n  chinchiroSpecials: number;\n}\n\nexport const MINI_GAME_LEADERBOARD_METRICS = [\n  'minigame_wins',\n  'minigame_plays',\n  'coinflip_wins',\n  'highlow_best_streak',\n  'blackjack_wins',\n  'chinchiro_wins',\n] as const;\n\nexport type MiniGameLeaderboardMetric = (typeof MINI_GAME_LEADERBOARD_METRICS)[number];\n\nexport interface MiniGameLeaderboardRecord {\n  userId: string;\n  value: number;\n}",
+          )
+          replace(
+              'apps/bot/src/plugins/mini-games-repository.ts',
+              "        'blackjack_plays', 'blackjack_wins', 'blackjack_pushes', 'blackjack_naturals'\n      )",
+              "        'blackjack_plays', 'blackjack_wins', 'blackjack_pushes', 'blackjack_naturals',\n        'dice_plays', 'dice_sixes',\n        'chinchiro_plays', 'chinchiro_wins', 'chinchiro_specials'\n      )",
+          )
+          replace(
+              'apps/bot/src/plugins/mini-games-repository.ts',
+              "    blackjackNaturals: value('blackjack_naturals'),\n  };\n}",
+              "    blackjackNaturals: value('blackjack_naturals'),\n    dicePlays: value('dice_plays'),\n    diceSixes: value('dice_sixes'),\n    chinchiroPlays: value('chinchiro_plays'),\n    chinchiroWins: value('chinchiro_wins'),\n    chinchiroSpecials: value('chinchiro_specials'),\n  };\n}\n\nexport async function listMiniGameLeaderboard(\n  prisma: PrismaClient,\n  guildId: string,\n  metric: MiniGameLeaderboardMetric,\n  limit = 10,\n): Promise<MiniGameLeaderboardRecord[]> {\n  const safeLimit = Math.min(25, Math.max(5, Math.trunc(limit)));\n  const rows = await prisma.$queryRaw<Array<{ userId: string; value: bigint }>>`\n    SELECT\n      \"user_id\"::text AS \"userId\",\n      CASE\n        WHEN \"metric\" = 'highlow_best_streak' THEN MAX(\"value\")\n        ELSE SUM(\"value\")\n      END::bigint AS \"value\"\n    FROM \"community_activity_daily\"\n    WHERE \"guild_id\" = ${guildId}\n      AND \"metric\" = ${metric}\n    GROUP BY \"user_id\", \"metric\"\n    HAVING CASE\n      WHEN \"metric\" = 'highlow_best_streak' THEN MAX(\"value\")\n      ELSE SUM(\"value\")\n    END > 0\n    ORDER BY \"value\" DESC, \"userId\" ASC\n    LIMIT ${safeLimit}\n  `;\n  return rows.map((row) => ({ userId: row.userId, value: Math.max(0, Number(row.value)) }));\n}",
+          )
+
+          # Stats output
+          replace(
+              'apps/bot/src/plugins/mini-games-stats.ts',
+              "    `勝利 **${stats.blackjackWins.toLocaleString()}** · Push **${stats.blackjackPushes.toLocaleString()}** · Natural **${stats.blackjackNaturals.toLocaleString()}** · ${blackjackRate}`,\n  ].join('\\n');",
+              "    `勝利 **${stats.blackjackWins.toLocaleString()}** · Push **${stats.blackjackPushes.toLocaleString()}** · Natural **${stats.blackjackNaturals.toLocaleString()}** · ${blackjackRate}`,\n    '',\n    `🎲 **Dice** — ${stats.dicePlays.toLocaleString()} rolls · 6 **${stats.diceSixes.toLocaleString()}回**`,\n    `🎋 **チンチロ** — ${stats.chinchiroPlays.toLocaleString()} plays · 勝利 **${stats.chinchiroWins.toLocaleString()}** · 特殊役 **${stats.chinchiroSpecials.toLocaleString()}**`,\n  ].join('\\n');",
+          )
+
+          # Manifest
+          replace(
+              'packages/plugin-catalog/src/manifests/mini-games.ts',
+              "  version: '2.0.0',\n  description: 'Coin Flip・High-Low・Blackjackを戦績付きでDiscord内で遊べるミニゲームPluginです',",
+              "  version: '3.0.0',\n  description: 'Coin Flip・High-Low・Blackjack・Dice・チンチロを戦績とArcadeランキング付きで遊べるPluginです',",
+          )
+          replace(
+              'packages/plugin-catalog/src/manifests/mini-games.ts',
+              "      statsEnabled: {\n        type: 'boolean',\n        title: 'ゲーム戦績を記録・表示する',\n        default: true,\n        'x-herta-ui': {\n          section: '戦績',\n          help: '既存のCommunity Activity基盤へプレイ数・勝利数・最高連勝などを記録します。',\n        },\n      },",
+              "      statsEnabled: {\n        type: 'boolean',\n        title: 'ゲーム戦績を記録・表示する',\n        default: true,\n        'x-herta-ui': {\n          section: '戦績',\n          help: '既存のCommunity Activity基盤へプレイ数・勝利数・最高連勝などを記録します。',\n        },\n      },\n      leaderboardEnabled: {\n        type: 'boolean',\n        title: 'Arcade Leaderboardを有効化する',\n        default: true,\n        'x-herta-ui': {\n          section: '戦績',\n          help: '総勝利・ゲーム別記録をサーバー内ランキングとして表示します。',\n        },\n      },",
+          )
+          replace(
+              'packages/plugin-catalog/src/manifests/mini-games.ts',
+              "    {\n      name: 'gamestats',\n      description: 'Mini Gamesの戦績・勝率・最高連勝を表示します',\n      options: [\n        {\n          name: 'user',\n          description: '確認するメンバー（未指定は自分）',\n          type: 'user',\n        },\n      ],\n    },\n  ],",
+              "    {\n      name: 'gamestats',\n      description: 'Mini Gamesの戦績・勝率・最高連勝を表示します',\n      options: [\n        {\n          name: 'user',\n          description: '確認するメンバー（未指定は自分）',\n          type: 'user',\n        },\n      ],\n    },\n    {\n      name: 'dice',\n      description: '1〜10個のダイスを振ります',\n      options: [\n        { name: 'count', description: '振る個数（1〜10）', type: 'integer' },\n        { name: 'sides', description: '面数（2〜100）', type: 'integer' },\n      ],\n    },\n    {\n      name: 'chinchiro',\n      description: 'Dealerと3個のサイコロでチンチロ勝負をします',\n    },\n    {\n      name: 'gameleaderboard',\n      description: 'Mini Gamesのサーバー内Arcadeランキングを表示します',\n      options: [\n        {\n          name: 'metric',\n          description: 'ランキング指標',\n          type: 'string',\n          choices: [\n            { name: '総勝利', value: 'minigame_wins' },\n            { name: '総プレイ', value: 'minigame_plays' },\n            { name: 'Coin Flip 的中', value: 'coinflip_wins' },\n            { name: 'High-Low 最高連勝', value: 'highlow_best_streak' },\n            { name: 'Blackjack 勝利', value: 'blackjack_wins' },\n            { name: 'チンチロ 勝利', value: 'chinchiro_wins' },\n          ],\n        },\n        { name: 'limit', description: '表示人数（5〜25）', type: 'integer' },\n      ],\n    },\n  ],",
+          )
+
+          # Runtime imports/config/commands
+          replace(
+              'apps/bot/src/plugins/mini-games.ts',
+              "  getMiniGameStats,\n  incrementMiniGameMetric,\n  recordMiniGameMaximum,\n  type MiniGameMetric,\n} from './mini-games-repository.js';\nimport { formatMiniGameStats } from './mini-games-stats.js';",
+              "  getMiniGameStats,\n  incrementMiniGameMetric,\n  listMiniGameLeaderboard,\n  recordMiniGameMaximum,\n  type MiniGameLeaderboardMetric,\n  type MiniGameMetric,\n} from './mini-games-repository.js';\nimport { formatMiniGameStats } from './mini-games-stats.js';\nimport {\n  compareChinchiroHands,\n  formatChinchiroHand,\n  rollChinchiroHand,\n  rollDice,\n} from './mini-games-v3-core.js';",
+          )
+          replace(
+              'apps/bot/src/plugins/mini-games.ts',
+              "  statsEnabled: boolean;\n  coinflipAnimation: boolean;",
+              "  statsEnabled: boolean;\n  leaderboardEnabled: boolean;\n  coinflipAnimation: boolean;",
+          )
+          replace(
+              'apps/bot/src/plugins/mini-games.ts',
+              "    statsEnabled: source.statsEnabled === undefined ? true : source.statsEnabled === true,\n    coinflipAnimation:",
+              "    statsEnabled: source.statsEnabled === undefined ? true : source.statsEnabled === true,\n    leaderboardEnabled:\n      source.leaderboardEnabled === undefined ? true : source.leaderboardEnabled === true,\n    coinflipAnimation:",
+          )
+          replace(
+              'apps/bot/src/plugins/mini-games.ts',
+              "    const gamestats: CommandHandler<ChatInputCommandInteraction> = {\n      definition: miniGamesManifest.commands[3]!,\n      async execute(interaction) {\n        await executeGameStats(context, interaction);\n      },\n    };\n    return [coinflip, highlow, blackjack, gamestats];",
+              "    const gamestats: CommandHandler<ChatInputCommandInteraction> = {\n      definition: miniGamesManifest.commands[3]!,\n      async execute(interaction) {\n        await executeGameStats(context, interaction);\n      },\n    };\n    const dice: CommandHandler<ChatInputCommandInteraction> = {\n      definition: miniGamesManifest.commands[4]!,\n      async execute(interaction) {\n        await executeDice(context, interaction);\n      },\n    };\n    const chinchiro: CommandHandler<ChatInputCommandInteraction> = {\n      definition: miniGamesManifest.commands[5]!,\n      async execute(interaction) {\n        await executeChinchiro(context, interaction);\n      },\n    };\n    const gameleaderboard: CommandHandler<ChatInputCommandInteraction> = {\n      definition: miniGamesManifest.commands[6]!,\n      async execute(interaction) {\n        await executeGameLeaderboard(context, interaction);\n      },\n    };\n    return [coinflip, highlow, blackjack, gamestats, dice, chinchiro, gameleaderboard];",
+          )
+
+          marker = "async function executeGameStats(\n"
+          p = Path('apps/bot/src/plugins/mini-games.ts')
+          s = p.read_text()
+          assert marker in s
+          addition = r'''async function executeDice(
+  context: MiniGamesRuntimeContext,
+  interaction: ChatInputCommandInteraction,
+): Promise<void> {
+  if (!interaction.guildId) {
+    await replyEphemeral(interaction, 'このコマンドはDiscordサーバー内でのみ利用できます。');
+    return;
+  }
+  const config = normalizeMiniGamesConfig(context.config);
+  if (!config.enabled) {
+    await replyEphemeral(interaction, 'Mini Games Pluginは現在無効です。');
+    return;
+  }
+  const count = clamp(interaction.options.getInteger('count') ?? 1, 1, 10);
+  const sides = clamp(interaction.options.getInteger('sides') ?? 6, 2, 100);
+  const dice = rollDice(sides, count);
+  const sixes = sides === 6 ? dice.filter((value) => value === 6).length : 0;
+  await recordMetricsSafely(
+    context,
+    [
+      ['minigame_plays', 1],
+      ['dice_plays', 1],
+      ...(sixes > 0 ? ([['dice_sixes', sixes]] as const) : []),
+    ],
+    interaction.user.id,
+  );
+  const total = dice.reduce((sum, value) => sum + value, 0);
+  await interaction.reply({
+    content: [
+      '🎲 **Dice**',
+      `<@${interaction.user.id}> — **${count}d${sides}**`,
+      dice.map((value) => `\`${value}\``).join(' '),
+      count > 1 ? `合計: **${total}**` : '',
+    ]
+      .filter(Boolean)
+      .join('\n'),
+    allowedMentions: { parse: [] },
+  });
+}
+
+async function executeChinchiro(
+  context: MiniGamesRuntimeContext,
+  interaction: ChatInputCommandInteraction,
+): Promise<void> {
+  if (!interaction.guildId) {
+    await replyEphemeral(interaction, 'このコマンドはDiscordサーバー内でのみ利用できます。');
+    return;
+  }
+  const config = normalizeMiniGamesConfig(context.config);
+  if (!config.enabled) {
+    await replyEphemeral(interaction, 'Mini Games Pluginは現在無効です。');
+    return;
+  }
+  const player = rollChinchiroHand();
+  const dealer = rollChinchiroHand();
+  const outcome = compareChinchiroHands(player, dealer);
+  const special = ['pinzoro', 'triple', 'shigoro'].includes(player.kind);
+  await recordMetricsSafely(
+    context,
+    [
+      ['minigame_plays', 1],
+      ['chinchiro_plays', 1],
+      ...(outcome === 'player-win'
+        ? ([
+            ['chinchiro_wins', 1],
+            ['minigame_wins', 1],
+          ] as const)
+        : []),
+      ...(special ? ([['chinchiro_specials', 1]] as const) : []),
+    ],
+    interaction.user.id,
+  );
+  const result =
+    outcome === 'player-win'
+      ? '🎉 **あなたの勝ち！**'
+      : outcome === 'dealer-win'
+        ? '😵 **Dealerの勝ち**'
+        : '🤝 **引き分け**';
+  await interaction.reply({
+    content: [
+      '🎋 **チンチロ**',
+      `あなた: ${formatChinchiroHand(player)}`,
+      `Dealer: ${formatChinchiroHand(dealer)}`,
+      '',
+      result,
+    ].join('\n'),
+    allowedMentions: { parse: [] },
+  });
+}
+
+async function executeGameLeaderboard(
+  context: MiniGamesRuntimeContext,
+  interaction: ChatInputCommandInteraction,
+): Promise<void> {
+  if (!interaction.guildId) {
+    await replyEphemeral(interaction, 'このコマンドはDiscordサーバー内でのみ利用できます。');
+    return;
+  }
+  const config = normalizeMiniGamesConfig(context.config);
+  if (!config.enabled || !config.statsEnabled || !config.leaderboardEnabled) {
+    await replyEphemeral(interaction, 'Arcade Leaderboardは現在無効です。');
+    return;
+  }
+  const requested = interaction.options.getString('metric') ?? 'minigame_wins';
+  const metrics: readonly MiniGameLeaderboardMetric[] = [
+    'minigame_wins',
+    'minigame_plays',
+    'coinflip_wins',
+    'highlow_best_streak',
+    'blackjack_wins',
+    'chinchiro_wins',
+  ];
+  const metric: MiniGameLeaderboardMetric = metrics.includes(
+    requested as MiniGameLeaderboardMetric,
+  )
+    ? (requested as MiniGameLeaderboardMetric)
+    : 'minigame_wins';
+  const limit = clamp(interaction.options.getInteger('limit') ?? 10, 5, 25);
+  const records = await listMiniGameLeaderboard(context.prisma, interaction.guildId, metric, limit);
+  const labels: Record<MiniGameLeaderboardMetric, string> = {
+    minigame_wins: '総勝利',
+    minigame_plays: '総プレイ',
+    coinflip_wins: 'Coin Flip 的中',
+    highlow_best_streak: 'High-Low 最高連勝',
+    blackjack_wins: 'Blackjack 勝利',
+    chinchiro_wins: 'チンチロ 勝利',
+  };
+  const lines = records.map(
+    (record, index) => `${index + 1}. <@${record.userId}> — **${record.value.toLocaleString()}**`,
+  );
+  await interaction.reply({
+    content: [
+      `**🏆 Arcade Leaderboard — ${labels[metric]}**`,
+      ...(lines.length > 0 ? lines : ['まだランキングデータがありません。']),
+    ]
+      .join('\n')
+      .slice(0, 1990),
+    allowedMentions: { parse: [] },
+  });
+}
+
+'''
+          p.write_text(s.replace(marker, addition + marker, 1))
+
+          # Achievement / Challenge immediate sync
+          for path in [
+              'apps/bot/src/plugins/achievements.ts',
+              'apps/bot/src/plugins/community-challenge.ts',
+          ]:
+              replace(
+                  path,
+                  "      interaction.commandName === 'blackjack')",
+                  "      interaction.commandName === 'blackjack' ||\n      interaction.commandName === 'dice' ||\n      interaction.commandName === 'chinchiro')",
+              )
+
+          # Existing tests
+          replace(
+              'apps/bot/src/plugins/mini-games.test.ts',
+              "      statsEnabled: true,\n      coinflipAnimation: true,",
+              "      statsEnabled: true,\n      leaderboardEnabled: true,\n      coinflipAnimation: true,",
+              1,
+          )
+          replace(
+              'apps/bot/src/plugins/mini-games.test.ts',
+              "        statsEnabled: false,\n        coinflipAnimation: false,",
+              "        statsEnabled: false,\n        leaderboardEnabled: false,\n        coinflipAnimation: false,",
+              1,
+          )
+          replace(
+              'apps/bot/src/plugins/mini-games.test.ts',
+              "      statsEnabled: false,\n      coinflipAnimation: false,",
+              "      statsEnabled: false,\n      leaderboardEnabled: false,\n      coinflipAnimation: false,",
+              1,
+          )
+          replace(
+              'apps/bot/src/plugins/mini-games.test.ts',
+              "        blackjackDealerHitsSoft17: true,\n      }),",
+              "        blackjackDealerHitsSoft17: true,\n        leaderboardEnabled: false,\n      }),",
+              1,
+          )
+          replace(
+              'apps/bot/src/plugins/mini-games.test.ts',
+              "  it('Manifestに3ゲーム・戦績コマンド・interactionCreateを登録する', () => {\n    expect(miniGamesManifest.commands.map((command) => command.name)).toEqual([\n      'coinflip',\n      'highlow',\n      'blackjack',\n      'gamestats',\n    ]);",
+              "  it('Manifestに5ゲーム・戦績・Arcadeランキングコマンドを登録する', () => {\n    expect(miniGamesManifest.commands.map((command) => command.name)).toEqual([\n      'coinflip',\n      'highlow',\n      'blackjack',\n      'gamestats',\n      'dice',\n      'chinchiro',\n      'gameleaderboard',\n    ]);",
+          )
+
+          replace(
+              'apps/bot/src/plugins/mini-games-stats.test.ts',
+              "      blackjackNaturals: 1,\n    });",
+              "      blackjackNaturals: 1,\n      dicePlays: 12,\n      diceSixes: 3,\n      chinchiroPlays: 8,\n      chinchiroWins: 5,\n      chinchiroSpecials: 2,\n    });",
+          )
+          replace(
+              'apps/bot/src/plugins/mini-games-stats.test.ts',
+              "    expect(message).toContain('60%');",
+              "    expect(message).toContain('60%');\n    expect(message).toContain('Dice');\n    expect(message).toContain('チンチロ');",
+          )
+
+          replace(
+              'apps/bot/src/plugins/mini-games-v2-integration.test.ts',
+              "    const unrelated = miniGameInteraction({ commandName: 'poll' });",
+              "    const dice = miniGameInteraction({ commandName: 'dice' });\n    const chinchiro = miniGameInteraction({ commandName: 'chinchiro' });\n    const unrelated = miniGameInteraction({ commandName: 'poll' });",
+          )
+          replace(
+              'apps/bot/src/plugins/mini-games-v2-integration.test.ts',
+              "    expect(isMiniGameAchievementInteraction(unrelated)).toBe(false);",
+              "    expect(isMiniGameAchievementInteraction(dice)).toBe(true);\n    expect(isMiniGameChallengeInteraction(dice)).toBe(true);\n    expect(isMiniGameAchievementInteraction(chinchiro)).toBe(true);\n    expect(isMiniGameChallengeInteraction(chinchiro)).toBe(true);\n    expect(isMiniGameAchievementInteraction(unrelated)).toBe(false);",
+          )
+          PY
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prettier --write apps/bot/src/plugins/mini-games.ts apps/bot/src/plugins/mini-games-repository.ts apps/bot/src/plugins/mini-games-stats.ts apps/bot/src/plugins/mini-games-v3-core.ts apps/bot/src/plugins/mini-games-v3-core.test.ts apps/bot/src/plugins/mini-games.test.ts apps/bot/src/plugins/mini-games-stats.test.ts apps/bot/src/plugins/mini-games-v2-integration.test.ts apps/bot/src/plugins/achievements.ts apps/bot/src/plugins/community-challenge.ts packages/plugin-catalog/src/manifests/mini-games.ts
+      - name: Commit changes
+        run: |
+          rm .github/workflows/temporary-mini-games-v3.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Mini Games v3にDice・チンチロ・Arcadeランキングを追加する'
+          git push origin HEAD:feature/mini-games-v3-arcade-leaderboard-dice-chinchiro
