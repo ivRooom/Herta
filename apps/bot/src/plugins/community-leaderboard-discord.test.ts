@@ -55,6 +55,19 @@ describe('Discord Community Leaderboard v3', () => {
     expect(message).toContain('4. <@10004> — 30');
   });
 
+  it('Level LeaderboardはLevelと元XPを併記する', () => {
+    const message = formatDiscordCommunityLeaderboard({
+      metric: 'level',
+      period: 'all',
+      participants: 1,
+      seasonKey: null,
+      entries: [{ rank: 1, userId: '10001', value: 3, secondaryValue: 1_000 }],
+    });
+
+    expect(message).toContain('Level Leaderboard · All Time');
+    expect(message).toContain('🥇 <@10001> — Lv.3 · 1,000 XP');
+  });
+
   it('Voice Rankは時間表示と順位/参加人数を表示する', () => {
     const message = formatDiscordCommunityRank({
       metric: 'voice',
