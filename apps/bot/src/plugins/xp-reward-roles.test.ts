@@ -31,6 +31,14 @@ describe('resolveXpRewardRoleTargets', () => {
     ]);
   });
 
+  it('Level 0へ戻した場合は設定済み報酬Roleをすべて剥奪対象にする', () => {
+    expect(resolveXpRewardRoleTargets(config(), 0)).toEqual([
+      { roleId: '10001', level: 5, shouldHave: false },
+      { roleId: '10002', level: 10, shouldHave: false },
+      { roleId: '10003', level: 20, shouldHave: false },
+    ]);
+  });
+
   it('同じRoleが複数枠に設定された場合は最小Levelを採用する', () => {
     expect(
       resolveXpRewardRoleTargets(
