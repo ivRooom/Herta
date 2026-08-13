@@ -29,6 +29,13 @@ const emptyMetrics: AchievementMetrics = {
   acceptedSuggestions: 0,
   challengeCompletions: 0,
   seasonPoints: 0,
+  minigamePlays: 0,
+  minigameWins: 0,
+  coinflipWins: 0,
+  highLowBestStreak: 0,
+  highLowClears: 0,
+  blackjackWins: 0,
+  blackjackNaturals: 0,
 };
 
 describe('Achievements v3', () => {

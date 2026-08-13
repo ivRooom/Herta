@@ -118,6 +118,10 @@ describe('Community Challenge / Season v1', () => {
         reactions_received: 100,
         voice_seconds: 100_000,
         minecraft_seconds: 100_000,
+        minigame_plays: 0,
+        minigame_wins: 0,
+        highlow_round_wins: 0,
+        blackjack_wins: 0,
       },
       completions: definitions.map((definition, index) => ({
         challengeId: definition.id,

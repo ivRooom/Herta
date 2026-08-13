@@ -51,6 +51,13 @@ const metrics: AchievementMetrics = {
   acceptedSuggestions: 4,
   challengeCompletions: 24,
   seasonPoints: 490,
+  minigamePlays: 0,
+  minigameWins: 0,
+  coinflipWins: 0,
+  highLowBestStreak: 0,
+  highLowClears: 0,
+  blackjackWins: 0,
+  blackjackNaturals: 0,
 };
 
 const v3: CommunityProfileV3Data = {

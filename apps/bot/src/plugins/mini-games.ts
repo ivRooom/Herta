@@ -558,12 +558,12 @@ async function recordBlackjackSettlement(
 async function recordMetricsSafely(
   context: MiniGamesRuntimeContext,
   metrics: readonly (readonly [MiniGameMetric, number])[],
-  userId?: string,
+  userId: string,
 ): Promise<void> {
   if (!normalizeMiniGamesConfig(context.config).statsEnabled || metrics.length === 0) return;
   const results = await Promise.allSettled(
     metrics.map(([metric, amount]) =>
-      incrementMiniGameMetric(context.prisma, context.guildId, userId ?? '', metric, amount),
+      incrementMiniGameMetric(context.prisma, context.guildId, userId, metric, amount),
     ),
   );
   if (results.some((result) => result.status === 'rejected')) {
