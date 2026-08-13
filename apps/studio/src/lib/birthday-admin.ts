@@ -69,7 +69,10 @@ export async function setBirthdayRegistration(input: {
         targetType: 'birthday_registration',
         targetId: input.userId,
         severity: 'info',
-        changes: { before, after },
+        changes: {
+          before,
+          after: { userId: input.userId, month: input.month, day: input.day },
+        },
         metadata: { operationSource: 'dashboard', storesBirthYear: false },
       },
     });
