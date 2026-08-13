@@ -21,6 +21,7 @@ type XpAdminPayload = {
   summary?: XpAdminGuildSummary;
   profile?: XpAdminProfile | null;
   result?: XpAdminResult;
+  rewardRoleSyncQueued?: boolean;
 };
 
 export function LeaderboardXpAdmin({
@@ -89,13 +90,19 @@ export function LeaderboardXpAdmin({
       if (payload?.summary) setSummary(payload.summary);
       setProfile(payload?.profile ?? null);
       const result = payload?.result;
-      setStatus(
-        result?.rewardRoleSyncRequired
-          ? 'XPを更新しました。Levelが変化したため、XP報酬RoleはBot側の再同期が必要です。'
-          : result?.changed
+      if (result?.rewardRoleSyncRequired) {
+        setStatus(
+          payload?.rewardRoleSyncQueued
+            ? 'XPを更新し、Level報酬Roleの自動再同期をキューへ送信しました。'
+            : 'XPは更新済みですが、Level報酬Roleの再同期要求を送信できませんでした。',
+        );
+      } else {
+        setStatus(
+          result?.changed
             ? 'XPを更新しました。Audit Logへ記録済みです。'
             : '値に変化はありませんでした。操作履歴はAudit Logへ記録済みです。',
-      );
+        );
+      }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'XP操作に失敗しました');
     } finally {
@@ -127,7 +134,9 @@ export function LeaderboardXpAdmin({
       if (payload?.summary) setSummary(payload.summary);
       setProfile(selectedUserId ? { userId: selectedUserId, xp: 0, level: 0, rank: null } : null);
       setConfirmation('');
-      setStatus('サーバー全体のXPをリセットしました。Level報酬RoleはBot側の再同期が必要です。');
+      setStatus(
+        'サーバー全体のXPをリセットしました。全メンバーのLevel報酬Role一括再同期は別タスクで対応します。',
+      );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'サーバー全体XPリセットに失敗しました');
     } finally {
@@ -147,8 +156,8 @@ export function LeaderboardXpAdmin({
             メンバーXPの加算・減算・直接設定・リセットを行います。すべてAudit Logへ記録されます。
           </p>
         </div>
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-          XP変更でLevelが変わる場合、報酬RoleはBot側の再同期が必要です。
+        <div className="rounded-xl border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-muted">
+          個人XP変更でLevelが変化した場合、報酬RoleをBotへ自動再同期します。
         </div>
       </div>
 
