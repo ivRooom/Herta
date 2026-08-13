@@ -91,17 +91,21 @@ async function executeDice(
   interaction: ChatInputCommandInteraction,
 ): Promise<void> {
   if (!(await ensureEnabled(context, interaction))) return;
+  const config = readConfig(context.config);
   const sides = clamp(interaction.options.getInteger('sides') ?? 6, 2, 100);
   const count = clamp(interaction.options.getInteger('count') ?? 1, 1, 10);
   const values = rollDice(sides, count);
   const sixes = values.filter((value) => value === 6).length;
-  await recordMetric(context.prisma, context.guildId, interaction.user.id, 'minigame_plays', 1);
-  await recordMetric(context.prisma, context.guildId, interaction.user.id, 'dice_plays', 1);
-  if (sixes > 0) {
-    await recordMetric(context.prisma, context.guildId, interaction.user.id, 'dice_sixes', sixes);
+  if (config.statsEnabled) {
+    await recordMetric(context.prisma, context.guildId, interaction.user.id, 'minigame_plays', 1);
+    await recordMetric(context.prisma, context.guildId, interaction.user.id, 'dice_plays', 1);
+    if (sixes > 0) {
+      await recordMetric(context.prisma, context.guildId, interaction.user.id, 'dice_sixes', sixes);
+    }
   }
   const total = values.reduce((sum, value) => sum + value, 0);
-  const faces = sides === 6 ? values.map(dieFace).join(' ') : values.map((value) => `🎲${value}`).join(' ');
+  const faces =
+    sides === 6 ? values.map(dieFace).join(' ') : values.map((value) => `🎲${value}`).join(' ');
   await interaction.reply({
     content: [
       `🎲 **Dice — ${count}d${sides}**`,
@@ -117,18 +121,21 @@ async function executeChinchiro(
   interaction: ChatInputCommandInteraction,
 ): Promise<void> {
   if (!(await ensureEnabled(context, interaction))) return;
+  const config = readConfig(context.config);
   const player = rollChinchiroTurn();
   const dealer = rollChinchiroTurn();
   const outcome = compareChinchiroHands(player.hand, dealer.hand);
   const won = outcome === 'player-win';
-  await recordMetric(context.prisma, context.guildId, interaction.user.id, 'minigame_plays', 1);
-  await recordMetric(context.prisma, context.guildId, interaction.user.id, 'chinchiro_plays', 1);
-  if (won) {
-    await recordMetric(context.prisma, context.guildId, interaction.user.id, 'minigame_wins', 1);
-    await recordMetric(context.prisma, context.guildId, interaction.user.id, 'chinchiro_wins', 1);
-  }
-  if (isChinchiroSpecial(player.hand)) {
-    await recordMetric(context.prisma, context.guildId, interaction.user.id, 'chinchiro_specials', 1);
+  if (config.statsEnabled) {
+    await recordMetric(context.prisma, context.guildId, interaction.user.id, 'minigame_plays', 1);
+    await recordMetric(context.prisma, context.guildId, interaction.user.id, 'chinchiro_plays', 1);
+    if (won) {
+      await recordMetric(context.prisma, context.guildId, interaction.user.id, 'minigame_wins', 1);
+      await recordMetric(context.prisma, context.guildId, interaction.user.id, 'chinchiro_wins', 1);
+    }
+    if (isChinchiroSpecial(player.hand)) {
+      await recordMetric(context.prisma, context.guildId, interaction.user.id, 'chinchiro_specials', 1);
+    }
   }
   const result =
     outcome === 'player-win'
@@ -173,7 +180,10 @@ async function ensureEnabled(
   interaction: ChatInputCommandInteraction,
 ): Promise<boolean> {
   if (!interaction.guildId) {
-    await interaction.reply({ content: 'このコマンドはDiscordサーバー内でのみ利用できます。', ephemeral: true });
+    await interaction.reply({
+      content: 'このコマンドはDiscordサーバー内でのみ利用できます。',
+      ephemeral: true,
+    });
     return false;
   }
   if (!readConfig(context.config).enabled) {
@@ -231,13 +241,18 @@ async function recordMetric(
   `;
 }
 
-function readConfig(value: unknown): { enabled: boolean; leaderboardEnabled: boolean } {
+function readConfig(value: unknown): {
+  enabled: boolean;
+  statsEnabled: boolean;
+  leaderboardEnabled: boolean;
+} {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    return { enabled: true, leaderboardEnabled: true };
+    return { enabled: true, statsEnabled: true, leaderboardEnabled: true };
   }
   const source = value as Record<string, unknown>;
   return {
     enabled: source.enabled === undefined ? true : source.enabled === true,
+    statsEnabled: source.statsEnabled === undefined ? true : source.statsEnabled === true,
     leaderboardEnabled:
       source.leaderboardEnabled === undefined ? true : source.leaderboardEnabled === true,
   };
