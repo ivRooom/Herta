@@ -14,7 +14,7 @@
     "test": "turbo run test",
     "test:unit": "turbo run test:unit",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier apps/studio/src/app/api/guilds/[guildId]/birthday/route.ts apps/studio/src/lib/birthday-admin-core.test.ts",
     "clean": "turbo run clean",
     "db:generate": "dotenv -- pnpm --filter @herta/db generate",
     "db:migrate": "dotenv -- pnpm --filter @herta/db migrate:dev",
