@@ -19,8 +19,12 @@ export async function publishPluginRuntimeEvent(input: {
 
   try {
     const event = createPluginRuntimeEvent(input);
-    await publish(redisUrl, PLUGIN_RUNTIME_EVENT_CHANNEL, JSON.stringify(event));
-    return true;
+    const subscribers = await publish(
+      redisUrl,
+      PLUGIN_RUNTIME_EVENT_CHANNEL,
+      JSON.stringify(event),
+    );
+    return subscribers > 0;
   } catch (error) {
     console.error('Plugin Runtime更新イベントの発行に失敗しました', {
       guildId: input.guildId,
@@ -41,8 +45,12 @@ export async function publishXpRoleReconciliationEvent(input: {
 
   try {
     const event = createXpRoleReconciliationEvent(input);
-    await publish(redisUrl, XP_ROLE_RECONCILIATION_EVENT_CHANNEL, JSON.stringify(event));
-    return true;
+    const subscribers = await publish(
+      redisUrl,
+      XP_ROLE_RECONCILIATION_EVENT_CHANNEL,
+      JSON.stringify(event),
+    );
+    return subscribers > 0;
   } catch (error) {
     console.error('XP報酬Role再同期イベントの発行に失敗しました', {
       guildId: input.guildId,
@@ -53,7 +61,7 @@ export async function publishXpRoleReconciliationEvent(input: {
   }
 }
 
-async function publish(redisUrl: string, channel: string, message: string): Promise<void> {
+async function publish(redisUrl: string, channel: string, message: string): Promise<number> {
   const url = new URL(redisUrl);
   if (url.protocol !== 'redis:' && url.protocol !== 'rediss:') {
     throw new Error('REDIS_URLはredis://またはrediss://で指定してください');
@@ -66,7 +74,7 @@ async function publish(redisUrl: string, channel: string, message: string): Prom
   if (database && database !== '0') commands.push(encodeCommand('SELECT', database));
   commands.push(encodeCommand('PUBLISH', channel, message));
 
-  await new Promise<void>((resolve, reject) => {
+  return new Promise<number>((resolve, reject) => {
     const socket =
       url.protocol === 'rediss:'
         ? tls.connect({ host: url.hostname, port, servername: url.hostname })
@@ -88,10 +96,11 @@ async function publish(redisUrl: string, channel: string, message: string): Prom
         reject(new Error(`Redis error: ${errorReply[1]}`));
         return;
       }
-      if (/:-?\d+\r\n/.test(response)) {
+      const publishReply = response.match(/:(-?\d+)\r\n/);
+      if (publishReply) {
         clearTimeout(timer);
         socket.end();
-        resolve();
+        resolve(Number(publishReply[1]));
       }
     });
     socket.once('error', (error) => {
