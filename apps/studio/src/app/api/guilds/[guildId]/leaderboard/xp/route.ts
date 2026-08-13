@@ -59,7 +59,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
       actorId: session.user.id,
       request: parsed,
     });
-    const rewardRoleSyncQueued =
+    const rewardRoleSyncPublished =
       result.rewardRoleSyncRequired && parsed.userId
         ? await publishXpRoleReconciliationEvent({ guildId, userId: parsed.userId })
         : false;
@@ -67,7 +67,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
       getXpAdminGuildSummary(guildId),
       parsed.userId ? getXpAdminProfile(guildId, parsed.userId) : Promise.resolve(null),
     ]);
-    return NextResponse.json({ result, rewardRoleSyncQueued, summary, profile });
+    return NextResponse.json({ result, rewardRoleSyncPublished, summary, profile });
   } catch (error) {
     return xpAdminErrorResponse(error);
   }
