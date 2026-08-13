@@ -1,10 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  nextXpAfterAdminAction,
-  parseXpAdminRequest,
-  xpAdminLevelForXp,
-} from './xp-admin-core.ts';
+import { nextXpAfterAdminAction, parseXpAdminRequest, xpAdminLevelForXp } from './xp-admin-core.ts';
 
 test('XP add/subtract/setを正規化する', () => {
   assert.deepEqual(parseXpAdminRequest({ action: 'add', userId: '123456', amount: 500 }, '999'), {

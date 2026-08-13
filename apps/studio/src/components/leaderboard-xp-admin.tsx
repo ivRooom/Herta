@@ -127,9 +127,7 @@ export function LeaderboardXpAdmin({
       if (payload?.summary) setSummary(payload.summary);
       setProfile(selectedUserId ? { userId: selectedUserId, xp: 0, level: 0, rank: null } : null);
       setConfirmation('');
-      setStatus(
-        'サーバー全体のXPをリセットしました。Level報酬RoleはBot側の再同期が必要です。',
-      );
+      setStatus('サーバー全体のXPをリセットしました。Level報酬RoleはBot側の再同期が必要です。');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'サーバー全体XPリセットに失敗しました');
     } finally {
@@ -272,15 +270,7 @@ export function LeaderboardXpAdmin({
   );
 }
 
-function Stat({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: typeof Users;
-  label: string;
-  value: string;
-}) {
+function Stat({ icon: Icon, label, value }: { icon: typeof Users; label: string; value: string }) {
   return (
     <div className="rounded-xl border border-border bg-background p-4">
       <Icon className="h-4 w-4 text-primary" />

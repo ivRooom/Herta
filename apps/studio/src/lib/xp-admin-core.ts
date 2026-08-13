@@ -91,7 +91,8 @@ function clampXp(value: number): number {
 
 function toSafeInteger(value: unknown): number | null {
   if (typeof value === 'string' && value.trim() === '') return null;
-  const number = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  const number =
+    typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
   if (!Number.isSafeInteger(number)) return null;
   return number;
 }

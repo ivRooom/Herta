@@ -43,7 +43,9 @@ export default async function LeaderboardAdminPage({
             <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted">
               <Trophy className="h-3.5 w-3.5" /> Leaderboard v2
             </div>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">XP Operations</h1>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight sm:text-3xl">
+              XP Operations
+            </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
               {guild.name} のXPを管理します。変更は即時反映され、すべてAudit Logへ記録されます。
             </p>

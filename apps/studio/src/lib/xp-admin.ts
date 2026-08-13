@@ -25,7 +25,9 @@ export type {
 } from './xp-admin-core';
 
 export async function getXpAdminGuildSummary(guildId: string): Promise<XpAdminGuildSummary> {
-  const rows = await prisma.$queryRaw<Array<{ profiles: bigint; totalXp: bigint; highestXp: bigint }>>`
+  const rows = await prisma.$queryRaw<
+    Array<{ profiles: bigint; totalXp: bigint; highestXp: bigint }>
+  >`
     SELECT
       COUNT(*)::bigint AS "profiles",
       COALESCE(SUM("xp"), 0)::bigint AS "totalXp",
