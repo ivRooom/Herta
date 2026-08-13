@@ -3,8 +3,9 @@ import type { PluginManifest } from '@herta/shared';
 export const miniGamesManifest: PluginManifest = {
   id: 'mini-games',
   name: 'Mini Games',
-  version: '2.0.0',
-  description: 'Coin Flip・High-Low・Blackjackを戦績付きでDiscord内で遊べるミニゲームPluginです',
+  version: '3.0.0',
+  description:
+    'Coin Flip・High-Low・Blackjack・Dice・チンチロを戦績とArcadeランキング付きで遊べるPluginです',
   author: { name: 'Herta' },
   category: 'fun',
   permissions: [
@@ -32,6 +33,15 @@ export const miniGamesManifest: PluginManifest = {
         'x-herta-ui': {
           section: '戦績',
           help: '既存のCommunity Activity基盤へプレイ数・勝利数・最高連勝などを記録します。',
+        },
+      },
+      leaderboardEnabled: {
+        type: 'boolean',
+        title: 'Arcade Leaderboardを有効化する',
+        default: true,
+        'x-herta-ui': {
+          section: '戦績',
+          help: '総勝利・総プレイ・ゲーム別記録をサーバー内ランキングとして表示します。',
         },
       },
       coinflipAnimation: {
@@ -100,22 +110,60 @@ export const miniGamesManifest: PluginManifest = {
         },
       ],
     },
-    {
-      name: 'highlow',
-      description: '次のカードが高いか低いかを当てるHigh-Lowを開始します',
-    },
-    {
-      name: 'blackjack',
-      description: 'Dealerと1対1でBlackjackを開始します',
-    },
+    { name: 'highlow', description: '次のカードが高いか低いかを当てるHigh-Lowを開始します' },
+    { name: 'blackjack', description: 'Dealerと1対1でBlackjackを開始します' },
     {
       name: 'gamestats',
       description: 'Mini Gamesの戦績・勝率・最高連勝を表示します',
       options: [
+        { name: 'user', description: '確認するメンバー（未指定は自分）', type: 'user' },
+      ],
+    },
+    {
+      name: 'dice',
+      description: '1〜10個のダイスを振ります',
+      options: [
         {
-          name: 'user',
-          description: '確認するメンバー（未指定は自分）',
-          type: 'user',
+          name: 'count',
+          description: '振る個数（1〜10、既定1）',
+          type: 'integer',
+          minValue: 1,
+          maxValue: 10,
+        },
+        {
+          name: 'sides',
+          description: 'ダイスの面数（2〜100、既定6）',
+          type: 'integer',
+          minValue: 2,
+          maxValue: 100,
+        },
+      ],
+    },
+    { name: 'chinchiro', description: '親とチンチロで1勝負します' },
+    {
+      name: 'gameleaderboard',
+      description: 'Mini GamesのArcadeランキングを表示します',
+      options: [
+        {
+          name: 'metric',
+          description: 'ランキング指標',
+          type: 'string',
+          choices: [
+            { name: '総勝利', value: 'minigame_wins' },
+            { name: '総プレイ', value: 'minigame_plays' },
+            { name: 'Coin Flip 的中', value: 'coinflip_wins' },
+            { name: 'High-Low 最高連勝', value: 'highlow_best_streak' },
+            { name: 'Blackjack 勝利', value: 'blackjack_wins' },
+            { name: 'チンチロ 勝利', value: 'chinchiro_wins' },
+            { name: 'Dice 6の目', value: 'dice_sixes' },
+          ],
+        },
+        {
+          name: 'limit',
+          description: '表示人数（5〜25、既定10）',
+          type: 'integer',
+          minValue: 5,
+          maxValue: 25,
         },
       ],
     },
