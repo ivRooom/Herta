@@ -54,7 +54,11 @@ describe('Mini Games v2 integrations', () => {
       'blackjackNaturals',
     ]);
     const games = ACHIEVEMENTS.filter((achievement) => achievement.category === 'games');
-    expect(games.every((achievement) => gameMetrics.has(achievement.metric))).toBe(true);
+    expect(
+      games.every(
+        (achievement) => achievement.metric !== undefined && gameMetrics.has(achievement.metric),
+      ),
+    ).toBe(true);
   });
 
   it('Daily/Weeklyへ合計24個のMini Games Challengeを追加する', () => {
