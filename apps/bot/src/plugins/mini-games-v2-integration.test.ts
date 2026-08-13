@@ -114,12 +114,18 @@ describe('Mini Games v2 integrations', () => {
       customId: 'herta:mini-games:v1:highlow:0123456789abcdef0123456789abcdef:higher',
     });
     const unrelated = miniGameInteraction({ commandName: 'poll' });
+    const dice = miniGameInteraction({ commandName: 'dice' });
+    const chinchiro = miniGameInteraction({ commandName: 'chinchiro' });
     const bot = miniGameInteraction({ commandName: 'coinflip', bot: true });
 
     expect(isMiniGameAchievementInteraction(slash)).toBe(true);
     expect(isMiniGameChallengeInteraction(slash)).toBe(true);
     expect(isMiniGameAchievementInteraction(button)).toBe(true);
     expect(isMiniGameChallengeInteraction(button)).toBe(true);
+    expect(isMiniGameAchievementInteraction(dice)).toBe(true);
+    expect(isMiniGameChallengeInteraction(dice)).toBe(true);
+    expect(isMiniGameAchievementInteraction(chinchiro)).toBe(true);
+    expect(isMiniGameChallengeInteraction(chinchiro)).toBe(true);
     expect(isMiniGameAchievementInteraction(unrelated)).toBe(false);
     expect(isMiniGameChallengeInteraction(unrelated)).toBe(false);
     expect(isMiniGameAchievementInteraction(bot)).toBe(false);

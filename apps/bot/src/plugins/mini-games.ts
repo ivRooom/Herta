@@ -39,6 +39,7 @@ import {
   type MiniGameMetric,
 } from './mini-games-repository.js';
 import { formatMiniGameStats } from './mini-games-stats.js';
+import { createMiniGamesV3CommandHandlers } from './mini-games-v3.js';
 
 const CUSTOM_ID_PREFIX = 'herta:mini-games:v1:';
 const COIN_FLIP_ANIMATION_MS = 1_100;
@@ -116,7 +117,7 @@ export const miniGamesPlugin = definePlugin<MiniGamesConfig, unknown, PrismaClie
         await executeGameStats(context, interaction);
       },
     };
-    return [coinflip, highlow, blackjack, gamestats];
+    return [coinflip, highlow, blackjack, gamestats, ...createMiniGamesV3CommandHandlers(context)];
   },
   provideEvents() {
     return [
