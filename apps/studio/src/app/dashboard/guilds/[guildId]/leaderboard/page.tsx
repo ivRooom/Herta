@@ -55,7 +55,10 @@ export default async function CommunityLeaderboardPage({
   });
   const definition = getCommunityLeaderboardDefinition(query.metric);
   const snapshot = await getCommunityLeaderboardSnapshot(guildId, query);
-  const memberMap = await resolveMemberNames(guildId, snapshot.entries.slice(0, 10).map((entry) => entry.userId));
+  const memberMap = await resolveMemberNames(
+    guildId,
+    snapshot.entries.slice(0, 10).map((entry) => entry.userId),
+  );
   const topEntry = snapshot.entries[0];
 
   return (
@@ -79,7 +82,8 @@ export default async function CommunityLeaderboardPage({
               Community Leaderboard
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
-              XPだけでなく、発言・Reaction・VC・Minecraft・Achievement・Season Pointを同じ画面で比較できます。
+              XPだけでなく、発言・Reaction・VC・Minecraft・Achievement・Season
+              Pointを同じ画面で比較できます。
             </p>
           </div>
           <div className="rounded-2xl border border-border bg-background/70 px-4 py-3 text-sm">
@@ -102,7 +106,11 @@ export default async function CommunityLeaderboardPage({
           icon={Crown}
           label="現在の1位"
           value={topEntry ? displayName(memberMap.get(topEntry.userId), topEntry.userId) : '—'}
-          detail={topEntry ? formatEntryValue(query.metric, topEntry.value, topEntry.secondaryValue) : 'データなし'}
+          detail={
+            topEntry
+              ? formatEntryValue(query.metric, topEntry.value, topEntry.secondaryValue)
+              : 'データなし'
+          }
         />
         <SummaryCard
           icon={Gauge}
@@ -126,7 +134,12 @@ export default async function CommunityLeaderboardPage({
             return (
               <Link
                 key={candidate.metric}
-                href={leaderboardHref(guildId, candidate.metric, candidate.periods[0]!, query.limit)}
+                href={leaderboardHref(
+                  guildId,
+                  candidate.metric,
+                  candidate.periods[0]!,
+                  query.limit,
+                )}
                 className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
                   active
                     ? 'border-primary/40 bg-primary/10 text-primary'
@@ -189,7 +202,9 @@ export default async function CommunityLeaderboardPage({
             <div className="flex items-center justify-between border-b border-border px-5 py-4">
               <div>
                 <h2 className="font-semibold">{definition.label} Ranking</h2>
-                <p className="mt-1 text-xs text-muted">同値の場合はDiscord User ID順で安定して表示します。</p>
+                <p className="mt-1 text-xs text-muted">
+                  同値の場合はDiscord User ID順で安定して表示します。
+                </p>
               </div>
               <MetricIcon metric={query.metric} />
             </div>
@@ -201,7 +216,9 @@ export default async function CommunityLeaderboardPage({
                     key={entry.userId}
                     className="grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-3 px-5 py-4"
                   >
-                    <span className="text-center text-sm font-semibold text-muted">#{entry.rank}</span>
+                    <span className="text-center text-sm font-semibold text-muted">
+                      #{entry.rank}
+                    </span>
                     <div className="min-w-0">
                       <p className="truncate text-sm font-semibold">
                         {displayName(member, entry.userId)}

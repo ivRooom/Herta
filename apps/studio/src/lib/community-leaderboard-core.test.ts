@@ -27,11 +27,14 @@ test('Metricごとに利用可能な期間へLeaderboard queryを正規化する
 });
 
 test('未知Metricと不正limitは安全な既定値へ戻す', () => {
-  assert.deepEqual(normalizeCommunityLeaderboardQuery({ metric: 'unknown', period: '30d', limit: 99 }), {
-    metric: 'xp',
-    period: 'all',
-    limit: 10,
-  });
+  assert.deepEqual(
+    normalizeCommunityLeaderboardQuery({ metric: 'unknown', period: '30d', limit: 99 }),
+    {
+      metric: 'xp',
+      period: 'all',
+      limit: 10,
+    },
+  );
 });
 
 test('XPからLevelを既存XP式と同じルールで算出する', () => {
@@ -51,8 +54,5 @@ test('時間系Metricを読みやすい時間表記へ変換する', () => {
 test('活動日とTimestampでJST期間境界を正しく使い分ける', () => {
   const now = new Date('2026-08-13T01:00:00.000Z');
   assert.equal(communityActivityPeriodStart('7d', now).toISOString(), '2026-08-07T00:00:00.000Z');
-  assert.equal(
-    communityTimestampPeriodStart('7d', now).toISOString(),
-    '2026-08-06T15:00:00.000Z',
-  );
+  assert.equal(communityTimestampPeriodStart('7d', now).toISOString(), '2026-08-06T15:00:00.000Z');
 });
