@@ -33,6 +33,17 @@ Birthday Roleは、Guildメンバーが誕生日の**月日だけ**を登録し�
   - `march-1`: 3月1日に祝う
   - `skip`: 非うるう年は自動処理しない
 
+## Birthday Management
+
+Guild管理者はHerta Studioの `/dashboard/guilds/[guildId]/birthday` からメンバーの誕生日を登録・更新・解除できます。
+
+- Discord User Pickerで対象メンバーを選択します。
+- 保存するのは既存コマンドと同じ月・日だけです。
+- 2月29日は登録できます。
+- 存在しない月日はAPI側でも拒否します。
+- 管理者による登録・更新・解除はAudit Logへ記録します。
+- 既存の`birthday_registrations`を再利用するため追加migrationはありません。
+
 ## timezone
 
 日付境界はサーバープロセスのtimezoneではなく、`Guild.timezone`を使用します。Guildにtimezoneが保存されていない場合は`Asia/Tokyo`へフォールバックします。
