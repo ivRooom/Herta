@@ -47,9 +47,7 @@ export default async function LeaderboardLandingPage() {
           <div className="mt-4 rounded-2xl border border-dashed border-border bg-surface p-8 text-center">
             <ServerCog className="mx-auto h-8 w-8 text-muted" />
             <p className="mt-3 font-medium">管理可能なサーバーがありません</p>
-            <p className="mt-1 text-sm text-muted">
-              Discordでサーバー管理権限を確認してください。
-            </p>
+            <p className="mt-1 text-sm text-muted">Discordでサーバー管理権限を確認してください。</p>
           </div>
         ) : (
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
