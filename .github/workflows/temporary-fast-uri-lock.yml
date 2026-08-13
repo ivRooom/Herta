@@ -1,0 +1,49 @@
+name: Temporary fast-uri lock refresh
+
+on:
+  push:
+    branches:
+      - feature/achievements-v3-3-operations
+    paths:
+      - .github/workflows/temporary-fast-uri-lock.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lock:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/achievements-v3-3-operations
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Update fast-uri override
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'package.json';
+          const pkg = JSON.parse(fs.readFileSync(path, 'utf8'));
+          pkg.pnpm ??= {};
+          pkg.pnpm.overrides ??= {};
+          pkg.pnpm.overrides['fast-uri'] = '4.1.2';
+          fs.writeFileSync(path, `${JSON.stringify(pkg, null, 2)}\n`);
+          NODE
+          pnpm install --lockfile-only
+      - name: Commit generated lockfile and remove temporary workflow
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/temporary-fast-uri-lock.yml
+          git add package.json pnpm-lock.yaml
+          git diff --cached --check
+          git commit -m 'fast-uriを4.1.2へ更新して脆弱性を解消する'
+          git push origin HEAD:feature/achievements-v3-3-operations
