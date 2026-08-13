@@ -303,7 +303,7 @@ export const achievementsManifest: PluginManifest = {
       'leaderboardSize',
     ],
   },
-  events: ['messageCreate', 'messageReactionAdd', 'interactionCreate', 'voiceStateUpdate'],
+  events: ['messageCreate', 'messageReactionAdd', 'voiceStateUpdate'],
   commands: [
     {
       name: 'achievements',

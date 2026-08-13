@@ -39,6 +39,7 @@ import {
   type MiniGameMetric,
 } from './mini-games-repository.js';
 import { formatMiniGameStats } from './mini-games-stats.js';
+import { blackjackSettlementMetrics } from './mini-games-blackjack-metrics.js';
 import { publishMiniGameCompletion } from './mini-games-completion-events.js';
 
 const CUSTOM_ID_PREFIX = 'herta:mini-games:v1:';
@@ -556,14 +557,11 @@ async function recordBlackjackSettlement(
   context: MiniGamesRuntimeContext,
   session: BlackjackSession,
 ): Promise<void> {
-  const outcome = settleBlackjack(session.player, session.dealer);
-  const metrics: Array<readonly [MiniGameMetric, number]> = [];
-  if (outcome === 'player-win' || outcome === 'player-blackjack') {
-    metrics.push(['blackjack_wins', 1], ['minigame_wins', 1]);
-  }
-  if (outcome === 'push') metrics.push(['blackjack_pushes', 1]);
-  if (blackjackScore(session.player).blackjack) metrics.push(['blackjack_naturals', 1]);
-  await recordMetricsSafely(context, metrics, session.userId);
+  await recordMetricsSafely(
+    context,
+    blackjackSettlementMetrics(session.player, session.dealer),
+    session.userId,
+  );
 }
 
 async function recordMetricsSafely(

@@ -126,8 +126,15 @@ describe('Mini Games v2 integrations', () => {
     expect(isMiniGameChallengeInteraction(bot)).toBe(false);
   });
 
-  it('AchievementとCommunity ChallengeがinteractionCreateを購読する', () => {
-    expect(achievementsManifest.events).toContain('interactionCreate');
-    expect(communityChallengeManifest.events).toContain('interactionCreate');
+  it('AchievementとCommunity ChallengeはMini Games同期のためにinteractionCreateへ依存しない', () => {
+    expect(achievementsManifest.events).not.toContain('interactionCreate');
+    expect(communityChallengeManifest.events).not.toContain('interactionCreate');
+  });
+
+  it('High-Low実績は最小3ラウンド設定でも到達可能にする', () => {
+    const heater = ACHIEVEMENTS.find((achievement) => achievement.id === 'highlow-five');
+    const master = ACHIEVEMENTS.find((achievement) => achievement.id === 'highlow-ten');
+    expect(heater).toMatchObject({ metric: 'highLowBestStreak', target: 3 });
+    expect(master).toMatchObject({ metric: 'highLowClears', target: 10 });
   });
 });
