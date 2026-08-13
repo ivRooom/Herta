@@ -3,17 +3,15 @@ import type {
   ChatInputCommandInteraction,
   Guild,
   InteractionReplyOptions,
-  MessagePayload,
 } from 'discord.js';
 
 type MiniGameInteraction = ChatInputCommandInteraction | ButtonInteraction;
-type MiniGameReply = string | MessagePayload | InteractionReplyOptions;
 
 export interface MiniGameCompletionEvent {
   guildId: string;
   userId: string;
   guild: Guild | null;
-  reply(options: MiniGameReply): Promise<unknown>;
+  reply(options: unknown): Promise<unknown>;
 }
 
 type MiniGameCompletionHandler = (event: MiniGameCompletionEvent) => Promise<void>;
@@ -37,7 +35,7 @@ export async function publishMiniGameCompletion(interaction: MiniGameInteraction
     guildId: interaction.guildId,
     userId: interaction.user.id,
     guild: interaction.guild,
-    reply: (options) => interaction.followUp(options),
+    reply: (options) => interaction.followUp(options as InteractionReplyOptions),
   };
   await Promise.allSettled([...subscribers.values()].map((handler) => handler(event)));
 }
