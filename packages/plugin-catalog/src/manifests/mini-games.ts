@@ -3,8 +3,9 @@ import type { PluginManifest } from '@herta/shared';
 export const miniGamesManifest: PluginManifest = {
   id: 'mini-games',
   name: 'Mini Games',
-  version: '2.0.0',
-  description: 'Coin Flip・High-Low・Blackjackを戦績付きでDiscord内で遊べるミニゲームPluginです',
+  version: '3.0.0',
+  description:
+    'Coin Flip・High-Low・Blackjack・Dice・チンチロを戦績とランキング付きで遊べるDiscord Mini Games Pluginです',
   author: { name: 'Herta' },
   category: 'fun',
   permissions: [
@@ -116,6 +117,56 @@ export const miniGamesManifest: PluginManifest = {
           name: 'user',
           description: '確認するメンバー（未指定は自分）',
           type: 'user',
+        },
+      ],
+    },
+    {
+      name: 'dice',
+      description: '個数と面数を指定してサイコロを振ります',
+      options: [
+        {
+          name: 'count',
+          description: 'サイコロの個数（1〜10、既定2）',
+          type: 'integer',
+          minValue: 1,
+          maxValue: 10,
+        },
+        {
+          name: 'sides',
+          description: 'サイコロの面数（2〜100、既定6）',
+          type: 'integer',
+          minValue: 2,
+          maxValue: 100,
+        },
+      ],
+    },
+    {
+      name: 'chinchiro',
+      description: '3個のサイコロでチンチロを遊びます（役なしは最大3投）',
+    },
+    {
+      name: 'gameleaderboard',
+      description: 'Mini Gamesのサーバー内ランキングを表示します',
+      options: [
+        {
+          name: 'metric',
+          description: 'ランキング項目',
+          type: 'string',
+          choices: [
+            { name: '総勝利数', value: 'wins' },
+            { name: '総プレイ数', value: 'plays' },
+            { name: 'Coin Flip 的中数', value: 'coinflip' },
+            { name: 'High-Low 最高連勝', value: 'highlow' },
+            { name: 'Blackjack 勝利数', value: 'blackjack' },
+            { name: 'チンチロ シゴロ回数', value: 'chinchiro' },
+          ],
+        },
+        {
+          name: 'limit',
+          description: '表示人数（3〜25、既定10）',
+          type: 'integer',
+          minValue: 3,
+          maxValue: 25,
         },
       ],
     },
