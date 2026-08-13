@@ -43,6 +43,20 @@ describe('Mini Games v2 integrations', () => {
     );
   });
 
+  it('Games Achievementはゲーム専用Metricだけを利用する', () => {
+    const gameMetrics = new Set([
+      'minigamePlays',
+      'minigameWins',
+      'coinflipWins',
+      'highLowBestStreak',
+      'highLowClears',
+      'blackjackWins',
+      'blackjackNaturals',
+    ]);
+    const games = ACHIEVEMENTS.filter((achievement) => achievement.category === 'games');
+    expect(games.every((achievement) => gameMetrics.has(achievement.metric))).toBe(true);
+  });
+
   it('Daily/Weeklyへ合計24個のMini Games Challengeを追加する', () => {
     const metrics = new Set([
       'minigame_plays',
