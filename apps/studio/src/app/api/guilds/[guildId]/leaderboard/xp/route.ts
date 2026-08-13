@@ -9,6 +9,7 @@ import {
   parseXpAdminRequest,
   XpAdminValidationError,
 } from '@/lib/xp-admin';
+import { requestXpRoleSweep } from '@/lib/xp-role-sweep';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,15 +60,32 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
       actorId: session.user.id,
       request: parsed,
     });
+
     const rewardRoleSyncPublished =
       result.rewardRoleSyncRequired && parsed.userId
         ? await publishXpRoleReconciliationEvent({ guildId, userId: parsed.userId })
         : false;
+    const rewardRoleSweep =
+      parsed.action === 'reset_guild'
+        ? await requestXpRoleSweep({
+            guildId,
+            actorId: session.user.id,
+            reason: 'xp_admin_reset_guild',
+            note: parsed.reason,
+          })
+        : null;
+
     const [summary, profile] = await Promise.all([
       getXpAdminGuildSummary(guildId),
       parsed.userId ? getXpAdminProfile(guildId, parsed.userId) : Promise.resolve(null),
     ]);
-    return NextResponse.json({ result, rewardRoleSyncPublished, summary, profile });
+    return NextResponse.json({
+      result,
+      rewardRoleSyncPublished,
+      rewardRoleSweep,
+      summary,
+      profile,
+    });
   } catch (error) {
     return xpAdminErrorResponse(error);
   }

@@ -1,20 +1,31 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   AlertTriangle,
+  CheckCircle2,
   Gauge,
   Loader2,
   Minus,
   Plus,
+  RefreshCw,
   RotateCcw,
   Save,
   ShieldAlert,
   Sparkles,
   Users,
+  XCircle,
 } from 'lucide-react';
 import { DiscordUserPicker } from './discord-user-picker';
 import type { XpAdminGuildSummary, XpAdminProfile, XpAdminResult } from '@/lib/xp-admin-core';
+
+type XpRoleSweepStatus = {
+  requestId: string;
+  status: 'queued' | 'completed' | 'failed';
+  reason: string | null;
+  createdAt: string;
+  result: Record<string, unknown> | null;
+};
 
 type XpAdminPayload = {
   error?: string;
@@ -22,6 +33,13 @@ type XpAdminPayload = {
   profile?: XpAdminProfile | null;
   result?: XpAdminResult;
   rewardRoleSyncPublished?: boolean;
+  rewardRoleSweep?: { requestId: string; queued: boolean } | null;
+};
+
+type XpRoleSweepPayload = {
+  error?: string;
+  request?: { requestId: string; queued: boolean };
+  status?: XpRoleSweepStatus | null;
 };
 
 export function LeaderboardXpAdmin({
@@ -38,7 +56,36 @@ export function LeaderboardXpAdmin({
   const [reason, setReason] = useState('');
   const [confirmation, setConfirmation] = useState('');
   const [busy, setBusy] = useState(false);
+  const [sweepBusy, setSweepBusy] = useState(false);
   const [status, setStatus] = useState('');
+  const [roleSweepStatus, setRoleSweepStatus] = useState<XpRoleSweepStatus | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void fetchRoleSweepStatus(guildId).then((next) => {
+      if (active) setRoleSweepStatus(next);
+    });
+    return () => {
+      active = false;
+    };
+  }, [guildId]);
+
+  useEffect(() => {
+    if (roleSweepStatus?.status !== 'queued') return;
+
+    let active = true;
+    const refresh = async () => {
+      const next = await fetchRoleSweepStatus(guildId);
+      if (active && next) setRoleSweepStatus(next);
+    };
+    const interval = window.setInterval(() => void refresh(), 2_000);
+    const timeout = window.setTimeout(() => window.clearInterval(interval), 60_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.clearTimeout(timeout);
+    };
+  }, [guildId, roleSweepStatus?.requestId, roleSweepStatus?.status]);
 
   async function selectUser(value: string | string[] | null) {
     const userId = typeof value === 'string' ? value : null;
@@ -110,6 +157,29 @@ export function LeaderboardXpAdmin({
     }
   }
 
+  async function runRoleSweep() {
+    setSweepBusy(true);
+    setStatus('全メンバーのXP報酬Role修復をキューへ送信中…');
+    try {
+      const response = await fetch(`/api/guilds/${guildId}/leaderboard/xp/roles/reconcile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ note: reason.trim() || null }),
+      });
+      const payload = (await response.json().catch(() => null)) as XpRoleSweepPayload | null;
+      if (payload?.status !== undefined) setRoleSweepStatus(payload.status ?? null);
+      if (!response.ok) {
+        setStatus(payload?.error ?? 'XP報酬Role一括修復を開始できませんでした');
+        return;
+      }
+      setStatus('XP報酬Role一括修復をBotへ送信しました。完了まで状態を自動更新します。');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'XP報酬Role一括修復に失敗しました');
+    } finally {
+      setSweepBusy(false);
+    }
+  }
+
   async function resetGuild() {
     if (confirmation !== `RESET ${guildId}` || reason.trim().length < 3) return;
     const confirmed = window.confirm(
@@ -134,9 +204,13 @@ export function LeaderboardXpAdmin({
       if (payload?.summary) setSummary(payload.summary);
       setProfile(selectedUserId ? { userId: selectedUserId, xp: 0, level: 0, rank: null } : null);
       setConfirmation('');
+      const sweep = payload?.rewardRoleSweep;
       setStatus(
-        'サーバー全体のXPをリセットしました。全メンバーのLevel報酬Role一括再同期は別タスクで対応します。',
+        sweep?.queued
+          ? 'サーバー全体のXPをリセットし、Level報酬Roleの全体修復もBotへ送信しました。'
+          : 'サーバー全体のXPはリセットしましたが、Botが一括修復イベントを購読していないためRoleは未同期です。',
       );
+      setRoleSweepStatus(await fetchRoleSweepStatus(guildId));
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'サーバー全体XPリセットに失敗しました');
     } finally {
@@ -157,7 +231,7 @@ export function LeaderboardXpAdmin({
           </p>
         </div>
         <div className="rounded-xl border border-primary/25 bg-primary/5 px-3 py-2 text-xs text-muted">
-          個人XP変更でLevelが変化した場合、報酬RoleをBotへ自動再同期します。
+          個人XP変更は即時Role再同期、全体操作は追跡可能な一括修復キューで処理します。
         </div>
       </div>
 
@@ -241,13 +315,42 @@ export function LeaderboardXpAdmin({
         </div>
       </div>
 
+      <div className="mt-6 rounded-2xl border border-primary/20 bg-primary/5 p-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <RefreshCw className="h-5 w-5 text-primary" />
+              <h3 className="font-semibold">Level Role Health</h3>
+            </div>
+            <p className="mt-1 max-w-2xl text-xs leading-5 text-muted">
+              Guild全体のXPとLevel Roleを照合し、足りないRoleを付与、不要なRoleを剥奪します。
+              完全な全件修復にはBotのGuild Members Intentが必要です。
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={sweepBusy || roleSweepStatus?.status === 'queued'}
+            onClick={() => void runRoleSweep()}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-primary/30 bg-surface px-4 py-2.5 text-sm font-semibold text-primary transition hover:bg-primary/10 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {sweepBusy || roleSweepStatus?.status === 'queued' ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            全メンバーを再同期
+          </button>
+        </div>
+        <RoleSweepStatusView status={roleSweepStatus} />
+      </div>
+
       <div className="mt-6 rounded-2xl border border-destructive/30 bg-destructive/5 p-4">
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-destructive" />
           <div>
             <h3 className="font-semibold text-destructive">Danger Zone — サーバー全体XPリセット</h3>
             <p className="mt-1 text-xs leading-5 text-muted">
-              全XPプロフィールを削除します。実行理由を3文字以上入力し、確認欄へ
+              全XPプロフィールを削除し、続けてLevel報酬Roleの全体修復を自動要求します。実行理由を3文字以上入力し、確認欄へ
               <code className="mx-1 rounded bg-background px-1.5 py-0.5">RESET {guildId}</code>
               と完全一致で入力してください。
             </p>
@@ -277,6 +380,78 @@ export function LeaderboardXpAdmin({
       ) : null}
     </section>
   );
+}
+
+function RoleSweepStatusView({ status }: { status: XpRoleSweepStatus | null }) {
+  if (!status) {
+    return <p className="mt-4 text-xs text-muted">一括修復の実行履歴はまだありません。</p>;
+  }
+
+  const result = status.result;
+  const statusLabel =
+    status.status === 'completed' ? '完了' : status.status === 'failed' ? '失敗' : '実行待ち';
+  const StatusIcon =
+    status.status === 'completed' ? CheckCircle2 : status.status === 'failed' ? XCircle : Loader2;
+
+  return (
+    <div className="mt-4 rounded-xl border border-border bg-surface p-3">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <StatusIcon
+          className={`h-4 w-4 ${status.status === 'queued' ? 'animate-spin text-primary' : ''}`}
+        />
+        <span className="font-semibold">{statusLabel}</span>
+        <span className="text-muted">{new Date(status.createdAt).toLocaleString('ja-JP')}</span>
+        <code className="rounded bg-background px-1.5 py-0.5 text-[10px] text-muted">
+          {status.requestId.slice(0, 8)}
+        </code>
+      </div>
+      {status.status === 'completed' && result ? (
+        <div className="mt-3 grid gap-2 sm:grid-cols-3 xl:grid-cols-6">
+          <MiniStat label="対象" value={numericResult(result, 'candidates')} />
+          <MiniStat label="処理済み" value={numericResult(result, 'processed')} />
+          <MiniStat label="Role付与" value={numericResult(result, 'addedRoles')} />
+          <MiniStat label="Role剥奪" value={numericResult(result, 'removedRoles')} />
+          <MiniStat label="Skip" value={numericResult(result, 'skippedRoles')} />
+          <MiniStat label="失敗" value={numericResult(result, 'failedRoles')} />
+        </div>
+      ) : status.status === 'failed' ? (
+        <p className="mt-2 text-xs text-muted">
+          BotのGuild Members Intent、XP / Level Pluginの有効状態、Redis接続を確認してください。
+        </p>
+      ) : (
+        <p className="mt-2 text-xs text-muted">
+          Botが順番に修復しています。完了状態を自動更新します。
+        </p>
+      )}
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-background px-2.5 py-2">
+      <p className="text-[10px] text-muted">{label}</p>
+      <p className="mt-0.5 text-sm font-semibold">{value}</p>
+    </div>
+  );
+}
+
+function numericResult(result: Record<string, unknown>, key: string): string {
+  const value = result[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value.toLocaleString() : '—';
+}
+
+async function fetchRoleSweepStatus(guildId: string): Promise<XpRoleSweepStatus | null> {
+  try {
+    const response = await fetch(`/api/guilds/${guildId}/leaderboard/xp/roles/reconcile`, {
+      cache: 'no-store',
+    });
+    if (!response.ok) return null;
+    const payload = (await response.json().catch(() => null)) as XpRoleSweepPayload | null;
+    return payload?.status ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function Stat({ icon: Icon, label, value }: { icon: typeof Users; label: string; value: string }) {
