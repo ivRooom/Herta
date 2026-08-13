@@ -3,6 +3,7 @@ import type { MiniGameStats } from './mini-games-repository.js';
 export function formatMiniGameStats(userId: string, stats: MiniGameStats): string {
   const coinflipRate = percentage(stats.coinflipWins, stats.coinflipPredictions);
   const blackjackRate = percentage(stats.blackjackWins, stats.blackjackPlays);
+  const chinchiroRate = percentage(stats.chinchiroWins, stats.chinchiroPlays);
   return [
     `**🎮 <@${userId}> Mini Games Stats**`,
     `All Games: **${stats.totalPlays.toLocaleString()} plays** · **${stats.totalWins.toLocaleString()} wins**`,
@@ -15,6 +16,11 @@ export function formatMiniGameStats(userId: string, stats: MiniGameStats): strin
     '',
     `🃏 **Blackjack** — ${stats.blackjackPlays.toLocaleString()} plays`,
     `勝利 **${stats.blackjackWins.toLocaleString()}** · Push **${stats.blackjackPushes.toLocaleString()}** · Natural **${stats.blackjackNaturals.toLocaleString()}** · ${blackjackRate}`,
+    '',
+    `🎲 **Dice** — ${stats.dicePlays.toLocaleString()} rolls · 6の目 **${stats.diceSixes.toLocaleString()}回**`,
+    '',
+    `🎋 **チンチロ** — ${stats.chinchiroPlays.toLocaleString()} plays`,
+    `勝利 **${stats.chinchiroWins.toLocaleString()}** · 特殊役 **${stats.chinchiroSpecials.toLocaleString()}回** · ${chinchiroRate}`,
   ].join('\n');
 }
 
