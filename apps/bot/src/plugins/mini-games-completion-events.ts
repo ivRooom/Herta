@@ -29,15 +29,18 @@ export function unsubscribeMiniGameCompletion(subscriberId: string): void {
   subscribers.delete(subscriberId);
 }
 
+export async function emitMiniGameCompletion(event: MiniGameCompletionEvent): Promise<void> {
+  await Promise.allSettled([...subscribers.values()].map((handler) => handler(event)));
+}
+
 export async function publishMiniGameCompletion(interaction: MiniGameInteraction): Promise<void> {
   if (!interaction.guildId) return;
-  const event: MiniGameCompletionEvent = {
+  await emitMiniGameCompletion({
     guildId: interaction.guildId,
     userId: interaction.user.id,
     guild: interaction.guild,
     reply: (options) => interaction.followUp(options as InteractionReplyOptions),
-  };
-  await Promise.allSettled([...subscribers.values()].map((handler) => handler(event)));
+  });
 }
 
 export function miniGameCompletionSubscriberCount(): number {
