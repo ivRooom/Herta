@@ -6,6 +6,13 @@ export interface BirthdayRegistration {
   day: number;
 }
 
+export interface BirthdayMemberCandidate {
+  id: string;
+  bot: boolean;
+}
+
+export type BirthdayMemberEligibility = 'eligible' | 'not-found' | 'bot';
+
 export type BirthdayAdminAction = 'set' | 'remove';
 
 export interface BirthdayAdminRequest {
@@ -23,6 +30,15 @@ export function daysInBirthdayMonth(month: number): number {
 export function isValidBirthdayDate(month: number, day: number): boolean {
   const maxDay = daysInBirthdayMonth(month);
   return Number.isInteger(day) && day >= 1 && day <= maxDay;
+}
+
+export function birthdayMemberEligibility(
+  userId: string,
+  members: readonly BirthdayMemberCandidate[],
+): BirthdayMemberEligibility {
+  const member = members.find((candidate) => candidate.id === userId);
+  if (!member) return 'not-found';
+  return member.bot ? 'bot' : 'eligible';
 }
 
 export function parseBirthdayAdminRequest(value: unknown): BirthdayAdminRequest | null {
