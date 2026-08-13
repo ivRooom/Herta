@@ -11,7 +11,10 @@ import { authorizeGuild } from '@/lib/guild-plugins';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(_request: Request, { params }: { params: Promise<{ guildId: string }> }) {
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ guildId: string }> },
+) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
   const { guildId } = await params;
@@ -27,7 +30,10 @@ export async function GET(_request: Request, { params }: { params: Promise<{ gui
   }
 }
 
-export async function POST(request: Request, { params }: { params: Promise<{ guildId: string }> }) {
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ guildId: string }> },
+) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
   const { guildId } = await params;
@@ -36,7 +42,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
 
   const body = await request.json().catch(() => null);
   const parsed = parseBirthdayAdminRequest(body);
-  if (!parsed) return NextResponse.json({ error: '誕生日管理操作の入力が不正です' }, { status: 400 });
+  if (!parsed) {
+    return NextResponse.json({ error: '誕生日管理操作の入力が不正です' }, { status: 400 });
+  }
 
   try {
     if (parsed.action === 'set') {
