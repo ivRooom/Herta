@@ -100,6 +100,14 @@ export default async function PluginDetailPage({
         </>
       ) : null}
 
+      {pluginId === 'achievements' ? (
+        <ManagementLink
+          href={`/dashboard/guilds/${guildId}/achievements`}
+          title="Achievement Builder"
+          description="Guild独自のSeries / Stage、解除条件、Badge Point、Secret、Role報酬、通知先をGUIで設計します。"
+        />
+      ) : null}
+
       {pluginId === 'quote' ? (
         <ManagementLink
           href={`/dashboard/guilds/${guildId}/plugins/quote/quotes`}
