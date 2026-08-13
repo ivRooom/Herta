@@ -185,27 +185,24 @@ async function executeCoinFlip(
   const requested = interaction.options.getString('choice');
   const choice: CoinFace | null = requested === 'heads' || requested === 'tails' ? requested : null;
   const result = flipCoin();
-  await recordMetricsSafely(
-    context,
-    [
-      ['minigame_plays', 1],
-      ['coinflip_plays', 1],
-      ...(choice ? ([['coinflip_predictions', 1]] as const) : []),
-      ...(choice === result
-        ? ([
-            ['coinflip_wins', 1],
-            ['minigame_wins', 1],
-          ] as const)
-        : []),
-    ],
-    interaction.user.id,
-  );
+  const metrics: Array<readonly [MiniGameMetric, number]> = [
+    ['minigame_plays', 1],
+    ['coinflip_plays', 1],
+    ...(choice ? ([['coinflip_predictions', 1]] as const) : []),
+    ...(choice === result
+      ? ([
+          ['coinflip_wins', 1],
+          ['minigame_wins', 1],
+        ] as const)
+      : []),
+  ];
 
   if (!config.coinflipAnimation) {
     await interaction.reply({
       content: formatCoinFlipResult(result, choice),
       allowedMentions: { parse: [] },
     });
+    await recordMetricsSafely(context, metrics, interaction.user.id);
     await publishMiniGameCompletion(interaction);
     return;
   }
@@ -218,6 +215,7 @@ async function executeCoinFlip(
   });
   await delay(COIN_FLIP_ANIMATION_MS);
   await interaction.editReply({ content: formatCoinFlipResult(result, choice) });
+  await recordMetricsSafely(context, metrics, interaction.user.id);
   await publishMiniGameCompletion(interaction);
 }
 
@@ -235,14 +233,6 @@ async function executeHighLow(
     return;
   }
 
-  await recordMetricsSafely(
-    context,
-    [
-      ['minigame_plays', 1],
-      ['highlow_plays', 1],
-    ],
-    interaction.user.id,
-  );
   const deck = createShuffledDeck();
   const id = createSessionId();
   const session: HighLowSession = {
@@ -272,6 +262,14 @@ async function executeHighLow(
     components: [buildHighLowRow(session.id)],
     allowedMentions: { parse: [] },
   });
+  await recordMetricsSafely(
+    context,
+    [
+      ['minigame_plays', 1],
+      ['highlow_plays', 1],
+    ],
+    interaction.user.id,
+  );
   await publishMiniGameCompletion(interaction);
 }
 
@@ -289,14 +287,6 @@ async function executeBlackjack(
     return;
   }
 
-  await recordMetricsSafely(
-    context,
-    [
-      ['minigame_plays', 1],
-      ['blackjack_plays', 1],
-    ],
-    interaction.user.id,
-  );
   const deck = createShuffledDeck();
   const player = [drawCard(deck), drawCard(deck)];
   const dealer = [drawCard(deck), drawCard(deck)];
@@ -325,11 +315,19 @@ async function executeBlackjack(
   const openingPlayer = blackjackScore(player);
   const openingDealer = blackjackScore(dealer);
   if (openingPlayer.blackjack || openingDealer.blackjack) {
-    await recordBlackjackSettlement(context, session);
     await interaction.reply({
       content: renderBlackjackFinal(session),
       allowedMentions: { parse: [] },
     });
+    await recordMetricsSafely(
+      context,
+      [
+        ['minigame_plays', 1],
+        ['blackjack_plays', 1],
+      ],
+      interaction.user.id,
+    );
+    await recordBlackjackSettlement(context, session);
     await publishMiniGameCompletion(interaction);
     return;
   }
@@ -341,6 +339,14 @@ async function executeBlackjack(
     components: [buildBlackjackRow(session.id)],
     allowedMentions: { parse: [] },
   });
+  await recordMetricsSafely(
+    context,
+    [
+      ['minigame_plays', 1],
+      ['blackjack_plays', 1],
+    ],
+    interaction.user.id,
+  );
   await publishMiniGameCompletion(interaction);
 }
 
@@ -445,17 +451,7 @@ async function handleHighLowButton(
   }
 
   session.streak += 1;
-  await recordMetricsSafely(context, [['highlow_round_wins', 1]], session.userId);
-  await recordMaximumSafely(context, session.guildId, session.userId, session.streak);
   if (session.streak >= session.maxRounds) {
-    await recordMetricsSafely(
-      context,
-      [
-        ['highlow_clears', 1],
-        ['minigame_wins', 1],
-      ],
-      session.userId,
-    );
     endSession(session);
     await interaction.update({
       content: [
@@ -466,6 +462,16 @@ async function handleHighLowButton(
       ].join('\n'),
       components: [],
     });
+    await recordMetricsSafely(
+      context,
+      [
+        ['highlow_round_wins', 1],
+        ['highlow_clears', 1],
+        ['minigame_wins', 1],
+      ],
+      session.userId,
+    );
+    await recordMaximumSafely(context, session.guildId, session.userId, session.streak);
     await publishMiniGameCompletion(interaction);
     return;
   }
@@ -481,6 +487,8 @@ async function handleHighLowButton(
     ].join('\n'),
     components: [buildHighLowRow(session.id)],
   });
+  await recordMetricsSafely(context, [['highlow_round_wins', 1]], session.userId);
+  await recordMaximumSafely(context, session.guildId, session.userId, session.streak);
   await publishMiniGameCompletion(interaction);
 }
 
@@ -497,16 +505,16 @@ async function handleBlackjackButton(
     const score = blackjackScore(session.player);
     if (score.bust) {
       endSession(session);
-      await recordBlackjackSettlement(context, session);
       await interaction.update({ content: renderBlackjackFinal(session), components: [] });
+      await recordBlackjackSettlement(context, session);
       await publishMiniGameCompletion(interaction);
       return;
     }
     if (score.total === 21) {
       playDealer(session);
       endSession(session);
-      await recordBlackjackSettlement(context, session);
       await interaction.update({ content: renderBlackjackFinal(session), components: [] });
+      await recordBlackjackSettlement(context, session);
       await publishMiniGameCompletion(interaction);
       return;
     }
@@ -520,8 +528,8 @@ async function handleBlackjackButton(
   if (action === 'stand') {
     playDealer(session);
     endSession(session);
-    await recordBlackjackSettlement(context, session);
     await interaction.update({ content: renderBlackjackFinal(session), components: [] });
+    await recordBlackjackSettlement(context, session);
     await publishMiniGameCompletion(interaction);
     return;
   }

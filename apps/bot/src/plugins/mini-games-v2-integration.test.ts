@@ -86,6 +86,7 @@ describe('Mini Games v2 integrations', () => {
       }),
     ).flat();
     expect(withoutGames.some((challenge) => challenge.metric.startsWith('minigame_'))).toBe(false);
+    expect(withoutGames.some((challenge) => challenge.metric === 'highlow_round_wins')).toBe(false);
     expect(withoutGames.some((challenge) => challenge.metric === 'blackjack_wins')).toBe(false);
 
     const withGames = Array.from({ length: 40 }, (_, index) =>
