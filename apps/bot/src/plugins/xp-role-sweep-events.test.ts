@@ -78,4 +78,21 @@ describe('XpRoleSweepSubscriber', () => {
     expect(sweep).not.toHaveBeenCalled();
     await subscriber.stop();
   });
+
+  it('UUIDではないrequestIdを持つイベントを破棄する', async () => {
+    const sweep = vi.fn(async () => undefined);
+    const subscriber = new XpRoleSweepSubscriber(sweep, logger);
+    const event = createXpRoleSweepEvent({
+      requestId: '11111111-1111-4111-8111-111111111111',
+      guildId: '12345678901234567',
+      actorId: '22345678901234567',
+      reason: 'manual_repair',
+    });
+
+    subscriber.handleMessage(JSON.stringify({ ...event, requestId: 'not-a-uuid' }));
+    await wait();
+
+    expect(sweep).not.toHaveBeenCalled();
+    await subscriber.stop();
+  });
 });
