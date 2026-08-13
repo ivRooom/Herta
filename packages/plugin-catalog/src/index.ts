@@ -15,6 +15,7 @@ import { communityProfileManifest } from './manifests/community-profile.js';
 import { communityChallengeManifest } from './manifests/community-challenge.js';
 import { eventRsvpManifest } from './manifests/event-rsvp.js';
 import { giveawayManifest } from './manifests/giveaway.js';
+import { miniGamesManifest } from './manifests/mini-games.js';
 import { onboardingManifest } from './manifests/onboarding.js';
 import { pollManifest } from './manifests/poll.js';
 import { reminderManifest } from './manifests/reminder.js';
@@ -32,6 +33,7 @@ export { communityProfileManifest } from './manifests/community-profile.js';
 export { communityChallengeManifest } from './manifests/community-challenge.js';
 export { eventRsvpManifest } from './manifests/event-rsvp.js';
 export { giveawayManifest } from './manifests/giveaway.js';
+export { miniGamesManifest } from './manifests/mini-games.js';
 export { onboardingManifest } from './manifests/onboarding.js';
 export { pollManifest } from './manifests/poll.js';
 export { reminderManifest } from './manifests/reminder.js';
@@ -126,6 +128,7 @@ const rawPluginManifests: PluginManifest[] = [
   eventRsvpManifest,
   giveawayManifest,
   lfgManifest,
+  miniGamesManifest,
   moderationManifest,
   onboardingManifest,
   pollManifest,

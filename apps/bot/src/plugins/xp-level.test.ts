@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { xpLevelManifest } from '@herta/plugin-catalog';
 import {
   formatLeaderboard,
   formatRankMessage,
@@ -80,5 +81,34 @@ describe('XP / Level v1', () => {
     const message = formatLeaderboard(records);
     expect(message).toContain('1. <@1> — Lv.3 / 1,000 XP');
     expect(message).toContain('2. <@2> — Lv.2 / 400 XP');
+  });
+
+  it('RankとLeaderboardが8種類のCommunity指標を公開する', () => {
+    const expectedMetrics = [
+      'xp',
+      'level',
+      'messages',
+      'reactions',
+      'voice',
+      'minecraft',
+      'achievements',
+      'season',
+    ];
+    for (const commandName of ['rank', 'leaderboard']) {
+      const command = xpLevelManifest.commands.find((item) => item.name === commandName);
+      const metric = command?.options?.find((option) => option.name === 'metric');
+      const period = command?.options?.find((option) => option.name === 'period');
+      expect(metric?.choices?.map((choice) => choice.value)).toEqual(expectedMetrics);
+      expect(period?.choices?.map((choice) => choice.value)).toEqual([
+        'all',
+        '7d',
+        '30d',
+        'season',
+      ]);
+    }
+
+    const leaderboard = xpLevelManifest.commands.find((item) => item.name === 'leaderboard');
+    const limit = leaderboard?.options?.find((option) => option.name === 'limit');
+    expect(limit).toMatchObject({ type: 'integer', minValue: 5, maxValue: 25 });
   });
 });

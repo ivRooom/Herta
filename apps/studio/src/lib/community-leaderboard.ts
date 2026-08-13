@@ -1,12 +1,13 @@
-import { getCommunitySeasonWindow } from '@herta/shared';
-import { prisma } from '@/lib/db';
+import { queryCommunityLeaderboardData, type CommunityLeaderboardStorageMetric } from '@herta/db';
 import {
   communityActivityPeriodStart,
   communityLeaderboardLevelForXp,
   communityTimestampPeriodStart,
+  getCommunitySeasonWindow,
   type CommunityLeaderboardMetric,
   type CommunityLeaderboardQuery,
-} from './community-leaderboard-core';
+} from '@herta/shared';
+import { prisma } from '@/lib/db';
 
 export interface CommunityLeaderboardEntry {
   rank: number;
@@ -23,223 +24,51 @@ export interface CommunityLeaderboardSnapshot {
   seasonKey: string | null;
 }
 
-interface RankedRow {
-  userId: string;
-  total: bigint;
-  participants: bigint;
-}
-
-interface XpRankedRow {
-  userId: string;
-  xp: bigint;
-  participants: bigint;
-}
-
-type SingleActivityMetric = 'messages' | 'voice' | 'minecraft';
-
 export async function getCommunityLeaderboardSnapshot(
   guildId: string,
   query: CommunityLeaderboardQuery,
   now = new Date(),
 ): Promise<CommunityLeaderboardSnapshot> {
-  if (query.metric === 'xp' || query.metric === 'level') {
-    return getXpLeaderboard(guildId, query);
+  const storageMetric = storageMetricFor(query.metric);
+  const seasonKey = query.metric === 'season' ? getCommunitySeasonWindow(now).key : null;
+  const start = resolveStart(query, now);
+  const data = await queryCommunityLeaderboardData(prisma, {
+    guildId,
+    metric: storageMetric,
+    limit: query.limit,
+    ...(start ? { start } : {}),
+    ...(seasonKey ? { seasonKey } : {}),
+  });
+
+  return {
+    metric: query.metric,
+    period:
+      query.metric === 'xp' || query.metric === 'level'
+        ? 'all'
+        : query.metric === 'season'
+          ? 'season'
+          : query.period,
+    participants: data.participants,
+    seasonKey,
+    entries: data.entries.map((entry) => ({
+      rank: entry.rank,
+      userId: entry.userId,
+      value: query.metric === 'level' ? communityLeaderboardLevelForXp(entry.value) : entry.value,
+      secondaryValue: query.metric === 'level' ? entry.value : null,
+    })),
+  };
+}
+
+function storageMetricFor(metric: CommunityLeaderboardMetric): CommunityLeaderboardStorageMetric {
+  return metric === 'level' ? 'xp' : metric;
+}
+
+function resolveStart(query: CommunityLeaderboardQuery, now: Date): Date | undefined {
+  if (query.metric === 'xp' || query.metric === 'level' || query.metric === 'season') {
+    return undefined;
   }
   if (query.metric === 'achievements') {
-    return getAchievementLeaderboard(guildId, query, now);
+    return communityTimestampPeriodStart(query.period, now);
   }
-  if (query.metric === 'season') {
-    return getSeasonLeaderboard(guildId, query, now);
-  }
-  return getActivityLeaderboard(guildId, query, now);
-}
-
-async function getXpLeaderboard(
-  guildId: string,
-  query: CommunityLeaderboardQuery,
-): Promise<CommunityLeaderboardSnapshot> {
-  const rows = await prisma.$queryRaw<XpRankedRow[]>`
-    WITH ranked AS (
-      SELECT
-        "user_id" AS "userId",
-        "xp"::bigint AS "xp",
-        COUNT(*) OVER()::bigint AS "participants"
-      FROM "xp_profiles"
-      WHERE "guild_id" = ${guildId}
-      ORDER BY "xp" DESC, "updated_at" ASC, "user_id" ASC
-      LIMIT ${query.limit}
-    )
-    SELECT "userId", "xp", "participants" FROM ranked
-  `;
-
-  return {
-    metric: query.metric,
-    period: 'all',
-    participants: Number(rows[0]?.participants ?? 0n),
-    seasonKey: null,
-    entries: rows.map((row, index) => {
-      const xp = Number(row.xp);
-      return {
-        rank: index + 1,
-        userId: row.userId,
-        value: query.metric === 'level' ? communityLeaderboardLevelForXp(xp) : xp,
-        secondaryValue: query.metric === 'level' ? xp : null,
-      };
-    }),
-  };
-}
-
-async function getActivityLeaderboard(
-  guildId: string,
-  query: CommunityLeaderboardQuery,
-  now: Date,
-): Promise<CommunityLeaderboardSnapshot> {
-  const start = communityActivityPeriodStart(query.period, now);
-  let rows: RankedRow[];
-
-  if (query.metric === 'reactions') {
-    rows = await prisma.$queryRaw<RankedRow[]>`
-      WITH totals AS (
-        SELECT "user_id", SUM("value")::bigint AS "total"
-        FROM "community_activity_daily"
-        WHERE "guild_id" = ${guildId}
-          AND "metric" IN ('reactions_given', 'reactions_received')
-          AND "activity_date" >= ${start}
-        GROUP BY "user_id"
-      )
-      SELECT
-        "user_id" AS "userId",
-        "total",
-        COUNT(*) OVER()::bigint AS "participants"
-      FROM totals
-      ORDER BY "total" DESC, "user_id" ASC
-      LIMIT ${query.limit}
-    `;
-  } else {
-    if (!isSingleActivityMetric(query.metric)) {
-      throw new Error(`Unsupported activity leaderboard metric: ${query.metric}`);
-    }
-    rows = await getSingleActivityMetricLeaderboard(guildId, query.metric, start, query.limit);
-  }
-
-  return {
-    metric: query.metric,
-    period: query.period,
-    participants: Number(rows[0]?.participants ?? 0n),
-    seasonKey: null,
-    entries: rows.map((row, index) => ({
-      rank: index + 1,
-      userId: row.userId,
-      value: Number(row.total),
-      secondaryValue: null,
-    })),
-  };
-}
-
-async function getSingleActivityMetricLeaderboard(
-  guildId: string,
-  metric: SingleActivityMetric,
-  start: Date,
-  limit: number,
-): Promise<RankedRow[]> {
-  const databaseMetric =
-    metric === 'messages' ? 'messages' : metric === 'voice' ? 'voice_seconds' : 'minecraft_seconds';
-
-  return prisma.$queryRaw<RankedRow[]>`
-    WITH totals AS (
-      SELECT "user_id", SUM("value")::bigint AS "total"
-      FROM "community_activity_daily"
-      WHERE "guild_id" = ${guildId}
-        AND "metric" = ${databaseMetric}
-        AND "activity_date" >= ${start}
-      GROUP BY "user_id"
-    )
-    SELECT
-      "user_id" AS "userId",
-      "total",
-      COUNT(*) OVER()::bigint AS "participants"
-    FROM totals
-    ORDER BY "total" DESC, "user_id" ASC
-    LIMIT ${limit}
-  `;
-}
-
-async function getAchievementLeaderboard(
-  guildId: string,
-  query: CommunityLeaderboardQuery,
-  now: Date,
-): Promise<CommunityLeaderboardSnapshot> {
-  const start = communityTimestampPeriodStart(query.period, now);
-  const rows = await prisma.$queryRaw<RankedRow[]>`
-    WITH totals AS (
-      SELECT "user_id", COUNT(*)::bigint AS "total"
-      FROM "achievement_unlocks"
-      WHERE "guild_id" = ${guildId}
-        AND "unlocked_at" >= ${start}
-        AND "achievement_id" NOT LIKE 'blocked:%'
-      GROUP BY "user_id"
-    )
-    SELECT
-      "user_id" AS "userId",
-      "total",
-      COUNT(*) OVER()::bigint AS "participants"
-    FROM totals
-    ORDER BY "total" DESC, "user_id" ASC
-    LIMIT ${query.limit}
-  `;
-
-  return {
-    metric: query.metric,
-    period: query.period,
-    participants: Number(rows[0]?.participants ?? 0n),
-    seasonKey: null,
-    entries: rows.map((row, index) => ({
-      rank: index + 1,
-      userId: row.userId,
-      value: Number(row.total),
-      secondaryValue: null,
-    })),
-  };
-}
-
-async function getSeasonLeaderboard(
-  guildId: string,
-  query: CommunityLeaderboardQuery,
-  now: Date,
-): Promise<CommunityLeaderboardSnapshot> {
-  const seasonKey = getCommunitySeasonWindow(now).key;
-  const rows = await prisma.$queryRaw<RankedRow[]>`
-    WITH totals AS (
-      SELECT "user_id", SUM("points")::bigint AS "total"
-      FROM "community_challenge_completions"
-      WHERE "guild_id" = ${guildId} AND "season_key" = ${seasonKey}
-      GROUP BY "user_id"
-    )
-    SELECT
-      "user_id" AS "userId",
-      "total",
-      COUNT(*) OVER()::bigint AS "participants"
-    FROM totals
-    ORDER BY "total" DESC, "user_id" ASC
-    LIMIT ${query.limit}
-  `;
-
-  return {
-    metric: query.metric,
-    period: 'season',
-    participants: Number(rows[0]?.participants ?? 0n),
-    seasonKey,
-    entries: rows.map((row, index) => ({
-      rank: index + 1,
-      userId: row.userId,
-      value: Number(row.total),
-      secondaryValue: null,
-    })),
-  };
-}
-
-function isSingleActivityMetric(
-  metric: CommunityLeaderboardMetric,
-): metric is SingleActivityMetric {
-  return metric === 'messages' || metric === 'voice' || metric === 'minecraft';
+  return communityActivityPeriodStart(query.period, now);
 }

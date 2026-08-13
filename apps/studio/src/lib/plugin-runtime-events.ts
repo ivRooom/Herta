@@ -3,9 +3,12 @@ import tls from 'node:tls';
 import {
   PLUGIN_RUNTIME_EVENT_CHANNEL,
   XP_ROLE_RECONCILIATION_EVENT_CHANNEL,
+  XP_ROLE_SWEEP_EVENT_CHANNEL,
   createPluginRuntimeEvent,
   createXpRoleReconciliationEvent,
+  createXpRoleSweepEvent,
   type PluginRuntimeEventType,
+  type XpRoleSweepReason,
 } from '@herta/shared';
 
 export async function publishPluginRuntimeEvent(input: {
@@ -55,6 +58,30 @@ export async function publishXpRoleReconciliationEvent(input: {
     console.error('XP報酬Role再同期イベントの発行に失敗しました', {
       guildId: input.guildId,
       userId: input.userId,
+      error,
+    });
+    return false;
+  }
+}
+
+export async function publishXpRoleSweepEvent(input: {
+  requestId: string;
+  guildId: string;
+  actorId: string;
+  reason: XpRoleSweepReason;
+}): Promise<boolean> {
+  const redisUrl = process.env['REDIS_URL'];
+  if (!redisUrl) return false;
+
+  try {
+    const event = createXpRoleSweepEvent(input);
+    const subscribers = await publish(redisUrl, XP_ROLE_SWEEP_EVENT_CHANNEL, JSON.stringify(event));
+    return subscribers > 0;
+  } catch (error) {
+    console.error('XP報酬Role一括修復イベントの発行に失敗しました', {
+      guildId: input.guildId,
+      requestId: input.requestId,
+      reason: input.reason,
       error,
     });
     return false;

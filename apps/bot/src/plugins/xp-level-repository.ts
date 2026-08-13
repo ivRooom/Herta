@@ -68,6 +68,25 @@ export async function getXpProfile(
   return row ? { ...row, xp: Number(row.xp) } : null;
 }
 
+export async function listGuildXpProfiles(
+  prisma: PrismaClient,
+  guildId: string,
+): Promise<XpProfileRecord[]> {
+  const rows = await prisma.$queryRaw<
+    Array<{ guildId: string; userId: string; xp: bigint; lastXpAt: Date | null }>
+  >`
+    SELECT
+      "guild_id" AS "guildId",
+      "user_id" AS "userId",
+      "xp",
+      "last_xp_at" AS "lastXpAt"
+    FROM "xp_profiles"
+    WHERE "guild_id" = ${guildId}
+    ORDER BY "user_id" ASC
+  `;
+  return rows.map((row) => ({ ...row, xp: Number(row.xp) }));
+}
+
 export async function listXpLeaderboard(
   prisma: PrismaClient,
   guildId: string,
