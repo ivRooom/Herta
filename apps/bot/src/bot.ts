@@ -13,7 +13,7 @@ import {
   type CommandExecutionInput,
 } from '@herta/db';
 import { getEnabledPlugins } from '@herta/plugin-catalog';
-import { HERTA_WORKER_HEARTBEAT_KEY } from '@herta/shared';
+import { HERTA_WORKER_HEARTBEAT_KEY, type XpRoleSweepEvent } from '@herta/shared';
 import type { Logger } from '@herta/logger';
 import { pingCommand } from './commands/ping.js';
 import { CommandRegistry } from './commands/registry.js';
@@ -22,6 +22,8 @@ import { GuildPluginLoader } from './plugins/loader.js';
 import { createDefaultPluginRegistry } from './plugins/registry.js';
 import { PluginRuntimeEventSubscriber } from './plugins/runtime-events.js';
 import { XpRoleReconciliationSubscriber } from './plugins/xp-role-reconciliation-events.js';
+import { XpRoleSweepSubscriber } from './plugins/xp-role-sweep-events.js';
+import { sweepGuildXpRewardRoles } from './plugins/xp-role-sweep.js';
 import { getXpProfile } from './plugins/xp-level-repository.js';
 import { levelForXp, normalizeXpLevelConfig } from './plugins/xp-level.js';
 import {
@@ -105,6 +107,7 @@ export class HertaBot {
   private readonly pluginCommands = new Map<string, SlashCommand[]>();
   private readonly runtimeEvents: PluginRuntimeEventSubscriber;
   private readonly xpRoleReconciliation: XpRoleReconciliationSubscriber;
+  private readonly xpRoleSweep: XpRoleSweepSubscriber;
   private readonly discordHealth = new DiscordHealthTracker();
   private readonly gatewayObservationIntervalMs: number;
   private gatewayObservationTimer?: NodeJS.Timeout;
@@ -150,6 +153,9 @@ export class HertaBot {
     );
     this.xpRoleReconciliation = new XpRoleReconciliationSubscriber(async (guildId, userId) => {
       await this.reconcileXpRewardRoles(guildId, userId);
+    }, this.logger);
+    this.xpRoleSweep = new XpRoleSweepSubscriber(async (event) => {
+      await this.reconcileGuildXpRewardRoles(event);
     }, this.logger);
     pluginRegistry.validateAll(this.logger);
     pluginRegistry.validateAgainstCatalog(this.logger);
@@ -642,6 +648,12 @@ export class HertaBot {
         'XP報酬Role再同期イベント購読の開始に失敗しました。XP更新自体は継続します',
       );
     }
+
+    try {
+      await this.xpRoleSweep.start(redisUrl);
+    } catch (error) {
+      this.logger.error({ err: error }, 'XP報酬Role一括修復イベント購読の開始に失敗しました');
+    }
   }
 
   async getGuildConfigurationOptions(guildId: string): Promise<GuildConfigurationOptions | null> {
@@ -712,6 +724,85 @@ export class HertaBot {
     return result;
   }
 
+  async reconcileGuildXpRewardRoles(event: XpRoleSweepEvent): Promise<void> {
+    const { guildId, requestId } = event;
+    const fail = async (failureCode: string): Promise<void> => {
+      await this.prisma.auditLog.create({
+        data: {
+          guildId,
+          actorId: event.actorId,
+          event: 'leaderboard.xp_role_sweep_failed',
+          targetType: 'guild',
+          targetId: guildId,
+          severity: 'warning',
+          metadata: {
+            requestId,
+            reason: event.reason,
+            operationSource: 'bot',
+            failureCode,
+          },
+        },
+      });
+    };
+
+    if (!guildMembersIntentEnabled()) {
+      this.logger.warn(
+        { guildId, requestId },
+        'Guild Members Intentが無効なためXP報酬Role一括修復を実行できません',
+      );
+      await fail('guild_members_intent_disabled');
+      return;
+    }
+
+    const guild = this.client.guilds.cache.get(guildId);
+    if (!guild) {
+      await fail('guild_not_cached');
+      return;
+    }
+
+    const plugin = await this.prisma.guildPlugin.findUnique({
+      where: { guildId_pluginId: { guildId, pluginId: 'xp-level' } },
+      select: { enabled: true, config: true },
+    });
+    if (!plugin?.enabled) {
+      await fail('xp_level_plugin_disabled');
+      return;
+    }
+
+    try {
+      const result = await sweepGuildXpRewardRoles({
+        guild,
+        prisma: this.prisma,
+        config: normalizeXpLevelConfig(plugin.config),
+        logger: this.logger,
+      });
+      await this.prisma.auditLog.create({
+        data: {
+          guildId,
+          actorId: event.actorId,
+          event: 'leaderboard.xp_role_sweep_completed',
+          targetType: 'guild',
+          targetId: guildId,
+          severity: result.failedRoles > 0 ? 'warning' : 'info',
+          changes: result,
+          metadata: {
+            requestId,
+            reason: event.reason,
+            operationSource: 'bot',
+            result,
+          },
+        },
+      });
+      this.logger.info({ guildId, requestId, ...result }, 'XP報酬Role一括修復を完了しました');
+    } catch (error) {
+      this.logger.error(
+        { err: error, guildId, requestId },
+        'XP報酬Role一括修復の実行に失敗しました',
+      );
+      await fail('sweep_execution_failed');
+    }
+  }
+
   getDiscordHealthObservation(): DiscordHealthObservation {
     return this.discordHealth.snapshot(this.client);
   }
@@ -741,7 +832,11 @@ export class HertaBot {
       this.gatewayObservationTimer = undefined;
     }
 
-    await Promise.allSettled([this.runtimeEvents.stop(), this.xpRoleReconciliation.stop()]);
+    await Promise.allSettled([
+      this.runtimeEvents.stop(),
+      this.xpRoleReconciliation.stop(),
+      this.xpRoleSweep.stop(),
+    ]);
     const guildIds = [...this.client.guilds.cache.keys()];
     const results = await Promise.allSettled(
       guildIds.map((guildId) => this.pluginLoader.disableGuildPlugins(guildId)),
