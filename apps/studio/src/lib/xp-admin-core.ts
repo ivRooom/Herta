@@ -19,6 +19,12 @@ export interface XpAdminProfile {
   rank: number | null;
 }
 
+export interface XpAdminGuildSummary {
+  profiles: number;
+  totalXp: number;
+  highestXp: number;
+}
+
 export interface XpAdminResult {
   action: XpAdminAction;
   changed: boolean;
