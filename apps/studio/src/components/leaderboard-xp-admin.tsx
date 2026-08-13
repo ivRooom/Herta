@@ -21,7 +21,7 @@ type XpAdminPayload = {
   summary?: XpAdminGuildSummary;
   profile?: XpAdminProfile | null;
   result?: XpAdminResult;
-  rewardRoleSyncQueued?: boolean;
+  rewardRoleSyncPublished?: boolean;
 };
 
 export function LeaderboardXpAdmin({
@@ -92,9 +92,9 @@ export function LeaderboardXpAdmin({
       const result = payload?.result;
       if (result?.rewardRoleSyncRequired) {
         setStatus(
-          payload?.rewardRoleSyncQueued
-            ? 'XPを更新し、Level報酬Roleの自動再同期をキューへ送信しました。'
-            : 'XPは更新済みですが、Level報酬Roleの再同期要求を送信できませんでした。',
+          payload?.rewardRoleSyncPublished
+            ? 'XPを更新し、Level報酬Roleの自動再同期イベントをBotへ送信しました。'
+            : 'XPは更新済みですが、Botが再同期イベントを購読していないためRoleは未同期です。',
         );
       } else {
         setStatus(
