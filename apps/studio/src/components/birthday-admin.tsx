@@ -46,10 +46,7 @@ export function BirthdayAdmin({
 
   async function update(action: 'set' | 'remove') {
     if (!userId || (action === 'remove' && !existing)) return;
-    if (
-      action === 'remove' &&
-      !window.confirm('このメンバーの誕生日登録を解除しますか？')
-    ) {
+    if (action === 'remove' && !window.confirm('このメンバーの誕生日登録を解除しますか？')) {
       return;
     }
 
@@ -68,9 +65,7 @@ export function BirthdayAdmin({
         throw new Error(payload?.error ?? '誕生日管理操作に失敗しました');
       }
       if (payload?.registrations) setRegistrations(payload.registrations);
-      setStatus(
-        action === 'set' ? '誕生日を保存しました。' : '誕生日登録を解除しました。',
-      );
+      setStatus(action === 'set' ? '誕生日を保存しました。' : '誕生日登録を解除しました。');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '誕生日管理操作に失敗しました');
     } finally {
