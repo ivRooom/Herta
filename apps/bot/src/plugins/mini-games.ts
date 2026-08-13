@@ -39,6 +39,7 @@ import {
   type MiniGameMetric,
 } from './mini-games-repository.js';
 import { formatMiniGameStats } from './mini-games-stats.js';
+import { publishMiniGameCompletion } from './mini-games-completion-events.js';
 
 const CUSTOM_ID_PREFIX = 'herta:mini-games:v1:';
 const COIN_FLIP_ANIMATION_MS = 1_100;
@@ -204,6 +205,7 @@ async function executeCoinFlip(
       content: formatCoinFlipResult(result, choice),
       allowedMentions: { parse: [] },
     });
+    await publishMiniGameCompletion(interaction);
     return;
   }
 
@@ -215,6 +217,7 @@ async function executeCoinFlip(
   });
   await delay(COIN_FLIP_ANIMATION_MS);
   await interaction.editReply({ content: formatCoinFlipResult(result, choice) });
+  await publishMiniGameCompletion(interaction);
 }
 
 async function executeHighLow(
@@ -268,6 +271,7 @@ async function executeHighLow(
     components: [buildHighLowRow(session.id)],
     allowedMentions: { parse: [] },
   });
+  await publishMiniGameCompletion(interaction);
 }
 
 async function executeBlackjack(
@@ -325,6 +329,7 @@ async function executeBlackjack(
       content: renderBlackjackFinal(session),
       allowedMentions: { parse: [] },
     });
+    await publishMiniGameCompletion(interaction);
     return;
   }
 
@@ -335,6 +340,7 @@ async function executeBlackjack(
     components: [buildBlackjackRow(session.id)],
     allowedMentions: { parse: [] },
   });
+  await publishMiniGameCompletion(interaction);
 }
 
 async function handleGameButton(
@@ -459,6 +465,7 @@ async function handleHighLowButton(
       ].join('\n'),
       components: [],
     });
+    await publishMiniGameCompletion(interaction);
     return;
   }
 
@@ -473,6 +480,7 @@ async function handleHighLowButton(
     ].join('\n'),
     components: [buildHighLowRow(session.id)],
   });
+  await publishMiniGameCompletion(interaction);
 }
 
 async function handleBlackjackButton(
@@ -490,6 +498,7 @@ async function handleBlackjackButton(
       endSession(session);
       await recordBlackjackSettlement(context, session);
       await interaction.update({ content: renderBlackjackFinal(session), components: [] });
+      await publishMiniGameCompletion(interaction);
       return;
     }
     if (score.total === 21) {
@@ -497,6 +506,7 @@ async function handleBlackjackButton(
       endSession(session);
       await recordBlackjackSettlement(context, session);
       await interaction.update({ content: renderBlackjackFinal(session), components: [] });
+      await publishMiniGameCompletion(interaction);
       return;
     }
     armSessionTimeout(session, config.sessionTimeoutSeconds);
@@ -511,6 +521,7 @@ async function handleBlackjackButton(
     endSession(session);
     await recordBlackjackSettlement(context, session);
     await interaction.update({ content: renderBlackjackFinal(session), components: [] });
+    await publishMiniGameCompletion(interaction);
     return;
   }
   await replyEphemeral(interaction, '不明なBlackjack操作です。');
@@ -551,7 +562,7 @@ async function recordBlackjackSettlement(
     metrics.push(['blackjack_wins', 1], ['minigame_wins', 1]);
   }
   if (outcome === 'push') metrics.push(['blackjack_pushes', 1]);
-  if (outcome === 'player-blackjack') metrics.push(['blackjack_naturals', 1]);
+  if (blackjackScore(session.player).blackjack) metrics.push(['blackjack_naturals', 1]);
   await recordMetricsSafely(context, metrics, session.userId);
 }
 
