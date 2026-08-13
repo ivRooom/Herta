@@ -9,6 +9,7 @@ import {
   type ChatInputCommandInteraction,
   type Interaction,
 } from 'discord.js';
+import type { PrismaClient } from '@herta/db';
 import { miniGamesManifest } from '@herta/plugin-catalog';
 import {
   definePlugin,
@@ -31,19 +32,27 @@ import {
   type HighLowChoice,
   type PlayingCard,
 } from './mini-games-core.js';
+import {
+  getMiniGameStats,
+  incrementMiniGameMetric,
+  recordMiniGameMaximum,
+  type MiniGameMetric,
+} from './mini-games-repository.js';
+import { formatMiniGameStats } from './mini-games-stats.js';
 
 const CUSTOM_ID_PREFIX = 'herta:mini-games:v1:';
 const COIN_FLIP_ANIMATION_MS = 1_100;
 
 export interface MiniGamesConfig {
   enabled: boolean;
+  statsEnabled: boolean;
   coinflipAnimation: boolean;
   sessionTimeoutSeconds: number;
   highLowMaxRounds: number;
   blackjackDealerHitsSoft17: boolean;
 }
 
-type MiniGamesRuntimeContext = PluginRuntimeContext<MiniGamesConfig, unknown, unknown>;
+type MiniGamesRuntimeContext = PluginRuntimeContext<MiniGamesConfig, unknown, PrismaClient>;
 type GameType = 'highlow' | 'blackjack';
 
 interface GameSessionBase {
@@ -77,7 +86,7 @@ type GameSession = HighLowSession | BlackjackSession;
 
 const gameSessions = new Map<string, GameSession>();
 
-export const miniGamesPlugin = definePlugin<MiniGamesConfig, unknown, unknown>({
+export const miniGamesPlugin = definePlugin<MiniGamesConfig, unknown, PrismaClient>({
   manifest: miniGamesManifest,
   async onDisable(context) {
     clearGuildGameSessions(context.guildId);
@@ -101,7 +110,13 @@ export const miniGamesPlugin = definePlugin<MiniGamesConfig, unknown, unknown>({
         await executeBlackjack(context, interaction);
       },
     };
-    return [coinflip, highlow, blackjack];
+    const gamestats: CommandHandler<ChatInputCommandInteraction> = {
+      definition: miniGamesManifest.commands[3]!,
+      async execute(interaction) {
+        await executeGameStats(context, interaction);
+      },
+    };
+    return [coinflip, highlow, blackjack, gamestats];
   },
   provideEvents() {
     return [
@@ -121,6 +136,7 @@ export function normalizeMiniGamesConfig(value: unknown): MiniGamesConfig {
   const source = isRecord(value) ? value : {};
   return {
     enabled: source.enabled === undefined ? true : source.enabled === true,
+    statsEnabled: source.statsEnabled === undefined ? true : source.statsEnabled === true,
     coinflipAnimation:
       source.coinflipAnimation === undefined ? true : source.coinflipAnimation === true,
     sessionTimeoutSeconds: clamp(toInteger(source.sessionTimeoutSeconds, 90), 30, 300),
@@ -167,6 +183,21 @@ async function executeCoinFlip(
   const requested = interaction.options.getString('choice');
   const choice: CoinFace | null = requested === 'heads' || requested === 'tails' ? requested : null;
   const result = flipCoin();
+  await recordMetricsSafely(
+    context,
+    [
+      ['minigame_plays', 1],
+      ['coinflip_plays', 1],
+      ...(choice ? ([['coinflip_predictions', 1]] as const) : []),
+      ...(choice === result
+        ? ([
+            ['coinflip_wins', 1],
+            ['minigame_wins', 1],
+          ] as const)
+        : []),
+    ],
+    interaction.user.id,
+  );
 
   if (!config.coinflipAnimation) {
     await interaction.reply({
@@ -200,6 +231,14 @@ async function executeHighLow(
     return;
   }
 
+  await recordMetricsSafely(
+    context,
+    [
+      ['minigame_plays', 1],
+      ['highlow_plays', 1],
+    ],
+    interaction.user.id,
+  );
   const deck = createShuffledDeck();
   const id = createSessionId();
   const session: HighLowSession = {
@@ -245,6 +284,14 @@ async function executeBlackjack(
     return;
   }
 
+  await recordMetricsSafely(
+    context,
+    [
+      ['minigame_plays', 1],
+      ['blackjack_plays', 1],
+    ],
+    interaction.user.id,
+  );
   const deck = createShuffledDeck();
   const player = [drawCard(deck), drawCard(deck)];
   const dealer = [drawCard(deck), drawCard(deck)];
@@ -273,6 +320,7 @@ async function executeBlackjack(
   const openingPlayer = blackjackScore(player);
   const openingDealer = blackjackScore(dealer);
   if (openingPlayer.blackjack || openingDealer.blackjack) {
+    await recordBlackjackSettlement(context, session);
     await interaction.reply({
       content: renderBlackjackFinal(session),
       allowedMentions: { parse: [] },
@@ -325,9 +373,9 @@ async function handleGameButton(
       return;
     }
     if (session.type === 'highlow') {
-      await handleHighLowButton(session, parsed.action, config, interaction);
+      await handleHighLowButton(context, session, parsed.action, config, interaction);
     } else {
-      await handleBlackjackButton(session, parsed.action, config, interaction);
+      await handleBlackjackButton(context, session, parsed.action, config, interaction);
     }
   } finally {
     if (gameSessions.get(session.id) === session) session.processing = false;
@@ -335,6 +383,7 @@ async function handleGameButton(
 }
 
 async function handleHighLowButton(
+  context: MiniGamesRuntimeContext,
   session: HighLowSession,
   action: string,
   config: MiniGamesConfig,
@@ -389,7 +438,17 @@ async function handleHighLowButton(
   }
 
   session.streak += 1;
+  await recordMetricsSafely(context, [['highlow_round_wins', 1]], session.userId);
+  await recordMaximumSafely(context, session.guildId, session.userId, session.streak);
   if (session.streak >= session.maxRounds) {
+    await recordMetricsSafely(
+      context,
+      [
+        ['highlow_clears', 1],
+        ['minigame_wins', 1],
+      ],
+      session.userId,
+    );
     endSession(session);
     await interaction.update({
       content: [
@@ -417,6 +476,7 @@ async function handleHighLowButton(
 }
 
 async function handleBlackjackButton(
+  context: MiniGamesRuntimeContext,
   session: BlackjackSession,
   action: string,
   config: MiniGamesConfig,
@@ -428,12 +488,14 @@ async function handleBlackjackButton(
     const score = blackjackScore(session.player);
     if (score.bust) {
       endSession(session);
+      await recordBlackjackSettlement(context, session);
       await interaction.update({ content: renderBlackjackFinal(session), components: [] });
       return;
     }
     if (score.total === 21) {
       playDealer(session);
       endSession(session);
+      await recordBlackjackSettlement(context, session);
       await interaction.update({ content: renderBlackjackFinal(session), components: [] });
       return;
     }
@@ -447,10 +509,80 @@ async function handleBlackjackButton(
   if (action === 'stand') {
     playDealer(session);
     endSession(session);
+    await recordBlackjackSettlement(context, session);
     await interaction.update({ content: renderBlackjackFinal(session), components: [] });
     return;
   }
   await replyEphemeral(interaction, '不明なBlackjack操作です。');
+}
+
+async function executeGameStats(
+  context: MiniGamesRuntimeContext,
+  interaction: ChatInputCommandInteraction,
+): Promise<void> {
+  if (!interaction.guildId) {
+    await replyEphemeral(interaction, 'このコマンドはDiscordサーバー内でのみ利用できます。');
+    return;
+  }
+  const config = normalizeMiniGamesConfig(context.config);
+  if (!config.enabled) {
+    await replyEphemeral(interaction, 'Mini Games Pluginは現在無効です。');
+    return;
+  }
+  if (!config.statsEnabled) {
+    await replyEphemeral(interaction, 'Mini Gamesの戦績記録は現在無効です。');
+    return;
+  }
+  const userId = interaction.options.getUser('user')?.id ?? interaction.user.id;
+  const stats = await getMiniGameStats(context.prisma, interaction.guildId, userId);
+  await interaction.reply({
+    content: formatMiniGameStats(userId, stats),
+    allowedMentions: { parse: [] },
+  });
+}
+
+async function recordBlackjackSettlement(
+  context: MiniGamesRuntimeContext,
+  session: BlackjackSession,
+): Promise<void> {
+  const outcome = settleBlackjack(session.player, session.dealer);
+  const metrics: Array<readonly [MiniGameMetric, number]> = [];
+  if (outcome === 'player-win' || outcome === 'player-blackjack') {
+    metrics.push(['blackjack_wins', 1], ['minigame_wins', 1]);
+  }
+  if (outcome === 'push') metrics.push(['blackjack_pushes', 1]);
+  if (outcome === 'player-blackjack') metrics.push(['blackjack_naturals', 1]);
+  await recordMetricsSafely(context, metrics, session.userId);
+}
+
+async function recordMetricsSafely(
+  context: MiniGamesRuntimeContext,
+  metrics: readonly (readonly [MiniGameMetric, number])[],
+  userId?: string,
+): Promise<void> {
+  if (!normalizeMiniGamesConfig(context.config).statsEnabled || metrics.length === 0) return;
+  const results = await Promise.allSettled(
+    metrics.map(([metric, amount]) =>
+      incrementMiniGameMetric(context.prisma, context.guildId, userId ?? '', metric, amount),
+    ),
+  );
+  if (results.some((result) => result.status === 'rejected')) {
+    context.logger.warn({ guildId: context.guildId }, 'Mini Games戦績の保存に一部失敗しました');
+  }
+}
+
+async function recordMaximumSafely(
+  context: MiniGamesRuntimeContext,
+  guildId: string,
+  userId: string,
+  streak: number,
+): Promise<void> {
+  if (!normalizeMiniGamesConfig(context.config).statsEnabled) return;
+  try {
+    await recordMiniGameMaximum(context.prisma, guildId, userId, 'highlow_best_streak', streak);
+  } catch (error) {
+    context.logger.warn({ err: error, guildId, userId }, 'High-Low最高連勝の保存に失敗しました');
+  }
 }
 
 function playDealer(session: BlackjackSession): void {
