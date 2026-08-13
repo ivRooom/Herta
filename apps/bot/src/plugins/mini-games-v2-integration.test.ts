@@ -76,6 +76,12 @@ describe('Mini Games v2 integrations', () => {
   });
 
   it('Mini Games Challengeは既定では配布せず、明示ONで候補化する', () => {
+    const miniGameMetrics = new Set([
+      'minigame_plays',
+      'minigame_wins',
+      'highlow_round_wins',
+      'blackjack_wins',
+    ]);
     const withoutGames = Array.from({ length: 40 }, (_, index) =>
       selectCommunityChallenges({
         guildId: 'guild',
@@ -85,9 +91,7 @@ describe('Mini Games v2 integrations', () => {
         includeMinecraft: true,
       }),
     ).flat();
-    expect(withoutGames.some((challenge) => challenge.metric.startsWith('minigame_'))).toBe(false);
-    expect(withoutGames.some((challenge) => challenge.metric === 'highlow_round_wins')).toBe(false);
-    expect(withoutGames.some((challenge) => challenge.metric === 'blackjack_wins')).toBe(false);
+    expect(withoutGames.every((challenge) => !miniGameMetrics.has(challenge.metric))).toBe(true);
 
     const withGames = Array.from({ length: 40 }, (_, index) =>
       selectCommunityChallenges({
@@ -99,14 +103,7 @@ describe('Mini Games v2 integrations', () => {
         includeMiniGames: true,
       }),
     ).flat();
-    expect(
-      withGames.some(
-        (challenge) =>
-          challenge.metric.startsWith('minigame_') ||
-          challenge.metric === 'highlow_round_wins' ||
-          challenge.metric === 'blackjack_wins',
-      ),
-    ).toBe(true);
+    expect(withGames.some((challenge) => miniGameMetrics.has(challenge.metric))).toBe(true);
   });
 
   it('Mini GamesのSlash/ButtonだけをAchievement・Challenge自動同期対象にする', () => {
