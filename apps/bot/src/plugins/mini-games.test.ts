@@ -74,6 +74,9 @@ describe('Mini Games Plugin', () => {
       'highlow',
       'blackjack',
       'gamestats',
+      'dice',
+      'chinchiro',
+      'gameleaderboard',
     ]);
     expect(miniGamesManifest.events).toContain('interactionCreate');
   });
