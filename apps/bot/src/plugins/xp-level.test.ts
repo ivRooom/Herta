@@ -99,7 +99,12 @@ describe('XP / Level v1', () => {
       const metric = command?.options?.find((option) => option.name === 'metric');
       const period = command?.options?.find((option) => option.name === 'period');
       expect(metric?.choices?.map((choice) => choice.value)).toEqual(expectedMetrics);
-      expect(period?.choices?.map((choice) => choice.value)).toEqual(['all', '7d', '30d', 'season']);
+      expect(period?.choices?.map((choice) => choice.value)).toEqual([
+        'all',
+        '7d',
+        '30d',
+        'season',
+      ]);
     }
 
     const leaderboard = xpLevelManifest.commands.find((item) => item.name === 'leaderboard');
