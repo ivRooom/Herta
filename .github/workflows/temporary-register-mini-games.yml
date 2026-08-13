@@ -1,0 +1,60 @@
+name: Temporary register Mini Games
+
+on:
+  push:
+    branches:
+      - feature/mini-games-coinflip-blackjack-highlow
+
+permissions:
+  contents: write
+
+jobs:
+  register:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/mini-games-coinflip-blackjack-highlow
+      - name: Register Mini Games runtime
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('apps/bot/src/plugins/registry.ts')
+          text = path.read_text()
+
+          replacements = [
+              (
+                  "import { giveawayPlugin } from './giveaway.js';\nimport { onboardingPlugin } from './onboarding.js';",
+                  "import { giveawayPlugin } from './giveaway.js';\nimport { miniGamesPlugin } from './mini-games.js';\nimport { onboardingPlugin } from './onboarding.js';",
+              ),
+              (
+                  "  'lfg',\n  'moderation',",
+                  "  'lfg',\n  'mini-games',\n  'moderation',",
+              ),
+              (
+                  "  const moderationEntry = deps\n    ? toRuntimePluginEntry(\n        moderationPlugin,",
+                  "  const miniGamesEntry = deps\n    ? toRuntimePluginEntry(\n        miniGamesPlugin,\n        (plugin, guildId, config) =>\n          createPluginContext({\n            client: deps.client,\n            prisma: deps.prisma,\n            logger: deps.logger,\n            guildId,\n            config,\n            manifest: plugin.manifest,\n          }) as Parameters<NonNullable<typeof miniGamesPlugin.onEnable>>[0],\n      )\n    : undefined;\n  const moderationEntry = deps\n    ? toRuntimePluginEntry(\n        moderationPlugin,",
+              ),
+              (
+                  "    if (pluginId === 'lfg' && lfgEntry) return [lfgEntry];\n    if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];",
+                  "    if (pluginId === 'lfg' && lfgEntry) return [lfgEntry];\n    if (pluginId === 'mini-games' && miniGamesEntry) return [miniGamesEntry];\n    if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];",
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'Expected exactly one registry replacement, found {count}: {old[:80]!r}')
+              text = text.replace(old, new)
+
+          path.write_text(text)
+          PY
+      - name: Commit registry and remove temporary workflow
+        run: |
+          rm .github/workflows/temporary-register-mini-games.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Mini Gamesを公式Runtime Registryへ登録する'
+          git push origin HEAD:feature/mini-games-coinflip-blackjack-highlow
