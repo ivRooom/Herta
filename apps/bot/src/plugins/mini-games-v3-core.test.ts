@@ -11,6 +11,7 @@ describe('Mini Games v3 core', () => {
   it('Diceは個数と面数を安全な範囲へ制限する', () => {
     expect(rollDice(6, 3, () => 0)).toEqual([1, 1, 1]);
     expect(rollDice(6, 3, () => 0.999)).toEqual([6, 6, 6]);
+    expect(rollDice(100, 1, () => 0.999)).toEqual([100]);
     expect(rollDice(1, 99, () => 0.5)).toHaveLength(10);
   });
 
