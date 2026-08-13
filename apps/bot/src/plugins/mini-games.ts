@@ -129,10 +129,7 @@ export function normalizeMiniGamesConfig(value: unknown): MiniGamesConfig {
   };
 }
 
-export function formatCoinFlipResult(
-  result: CoinFace,
-  choice: CoinFace | null = null,
-): string {
+export function formatCoinFlipResult(result: CoinFace, choice: CoinFace | null = null): string {
   const resultLabel = result === 'heads' ? '表 / Heads' : '裏 / Tails';
   const lines = ['🪙 **Coin Flip**', `結果: **${resultLabel}**`];
   if (choice) {
@@ -172,7 +169,10 @@ async function executeCoinFlip(
   const result = flipCoin();
 
   if (!config.coinflipAnimation) {
-    await interaction.reply({ content: formatCoinFlipResult(result, choice), allowedMentions: { parse: [] } });
+    await interaction.reply({
+      content: formatCoinFlipResult(result, choice),
+      allowedMentions: { parse: [] },
+    });
     return;
   }
 
@@ -298,7 +298,10 @@ async function handleGameButton(
   const session = gameSessions.get(parsed.sessionId);
   if (!session || session.type !== parsed.type || Date.now() >= session.expiresAt) {
     if (session) endSession(session);
-    await replyEphemeral(interaction, 'このゲームセッションは終了しています。もう一度コマンドを実行してください。');
+    await replyEphemeral(
+      interaction,
+      'このゲームセッションは終了しています。もう一度コマンドを実行してください。',
+    );
     return;
   }
   if (interaction.guildId !== session.guildId || interaction.user.id !== session.userId) {
@@ -315,7 +318,10 @@ async function handleGameButton(
     const config = normalizeMiniGamesConfig(context.config);
     if (!config.enabled) {
       endSession(session);
-      await interaction.update({ content: 'Mini Games Pluginが無効になったためゲームを終了しました。', components: [] });
+      await interaction.update({
+        content: 'Mini Games Pluginが無効になったためゲームを終了しました。',
+        components: [],
+      });
       return;
     }
     if (session.type === 'highlow') {

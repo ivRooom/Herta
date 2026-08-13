@@ -18,11 +18,7 @@ export interface BlackjackScore {
 }
 
 export type BlackjackOutcome =
-  | 'player-blackjack'
-  | 'dealer-blackjack'
-  | 'player-win'
-  | 'dealer-win'
-  | 'push';
+  'player-blackjack' | 'dealer-blackjack' | 'player-win' | 'dealer-win' | 'push';
 
 const SUITS: readonly CardSuit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
 
@@ -30,9 +26,7 @@ export function flipCoin(random: (max: number) => number = randomInt): CoinFace 
   return random(2) === 0 ? 'heads' : 'tails';
 }
 
-export function createShuffledDeck(
-  random: (max: number) => number = randomInt,
-): PlayingCard[] {
+export function createShuffledDeck(random: (max: number) => number = randomInt): PlayingCard[] {
   const deck: PlayingCard[] = [];
   for (const suit of SUITS) {
     for (let rank = 1; rank <= 13; rank += 1) deck.push({ suit, rank });
