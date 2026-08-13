@@ -6,6 +6,10 @@ export const COMMUNITY_CHALLENGE_METRICS = [
   'reactions_received',
   'voice_seconds',
   'minecraft_seconds',
+  'minigame_plays',
+  'minigame_wins',
+  'highlow_round_wins',
+  'blackjack_wins',
 ] as const;
 
 export type CommunityChallengePeriod = (typeof COMMUNITY_CHALLENGE_PERIODS)[number];
@@ -42,6 +46,7 @@ export interface CommunityChallengeSelectionInput {
   periodKey: string;
   count: number;
   includeMinecraft: boolean;
+  includeMiniGames?: boolean;
 }
 
 const DAY_MS = 86_400_000;
@@ -400,6 +405,274 @@ export const COMMUNITY_CHALLENGES: readonly CommunityChallengeDefinition[] = [
     120,
     'hard',
   ),
+
+  // Daily / Mini Games
+  challenge(
+    'daily-arcade-break',
+    'Arcade Break',
+    'Mini Gameを2回プレイする',
+    '🎮',
+    'daily',
+    'minigame_plays',
+    2,
+    10,
+    'easy',
+  ),
+  challenge(
+    'daily-arcade-session',
+    'Arcade Session',
+    'Mini Gameを5回プレイする',
+    '🕹️',
+    'daily',
+    'minigame_plays',
+    5,
+    15,
+    'normal',
+  ),
+  challenge(
+    'daily-arcade-marathon',
+    'Arcade Marathon',
+    'Mini Gameを10回プレイする',
+    '👾',
+    'daily',
+    'minigame_plays',
+    10,
+    25,
+    'hard',
+  ),
+  challenge(
+    'daily-lucky-win',
+    'Lucky Win',
+    'Mini Gameで1回勝利する',
+    '🍀',
+    'daily',
+    'minigame_wins',
+    1,
+    10,
+    'easy',
+  ),
+  challenge(
+    'daily-winning-hand',
+    'Winning Hand',
+    'Mini Gameで3回勝利する',
+    '🏅',
+    'daily',
+    'minigame_wins',
+    3,
+    20,
+    'normal',
+  ),
+  challenge(
+    'daily-win-streak',
+    'Win Streak',
+    'Mini Gameで5回勝利する',
+    '🔥',
+    'daily',
+    'minigame_wins',
+    5,
+    30,
+    'hard',
+  ),
+  challenge(
+    'daily-highlow-warmup',
+    'High-Low Warmup',
+    'High-Lowで合計3Round正解する',
+    '🎴',
+    'daily',
+    'highlow_round_wins',
+    3,
+    10,
+    'easy',
+  ),
+  challenge(
+    'daily-highlow-reader',
+    'Card Reader',
+    'High-Lowで合計8Round正解する',
+    '🔮',
+    'daily',
+    'highlow_round_wins',
+    8,
+    20,
+    'normal',
+  ),
+  challenge(
+    'daily-highlow-run',
+    'High-Low Run',
+    'High-Lowで合計15Round正解する',
+    '🃏',
+    'daily',
+    'highlow_round_wins',
+    15,
+    30,
+    'hard',
+  ),
+  challenge(
+    'daily-blackjack-win',
+    'Twenty-One',
+    'Blackjackで1回勝利する',
+    '♠️',
+    'daily',
+    'blackjack_wins',
+    1,
+    15,
+    'easy',
+  ),
+  challenge(
+    'daily-blackjack-table',
+    'Blackjack Table',
+    'Blackjackで2回勝利する',
+    '♦️',
+    'daily',
+    'blackjack_wins',
+    2,
+    20,
+    'normal',
+  ),
+  challenge(
+    'daily-blackjack-shark',
+    'Table Shark',
+    'Blackjackで4回勝利する',
+    '🦈',
+    'daily',
+    'blackjack_wins',
+    4,
+    35,
+    'hard',
+  ),
+
+  // Weekly / Mini Games
+  challenge(
+    'weekly-arcade-regular',
+    'Arcade Regular',
+    '1週間でMini Gameを15回プレイする',
+    '🎮',
+    'weekly',
+    'minigame_plays',
+    15,
+    40,
+    'easy',
+  ),
+  challenge(
+    'weekly-arcade-fan',
+    'Arcade Fan',
+    '1週間でMini Gameを35回プレイする',
+    '🕹️',
+    'weekly',
+    'minigame_plays',
+    35,
+    60,
+    'normal',
+  ),
+  challenge(
+    'weekly-arcade-veteran',
+    'Arcade Veteran',
+    '1週間でMini Gameを70回プレイする',
+    '👾',
+    'weekly',
+    'minigame_plays',
+    70,
+    100,
+    'hard',
+  ),
+  challenge(
+    'weekly-winner',
+    'Winning Week',
+    '1週間でMini Gameに8回勝利する',
+    '🏅',
+    'weekly',
+    'minigame_wins',
+    8,
+    45,
+    'easy',
+  ),
+  challenge(
+    'weekly-champion',
+    'Weekly Champion',
+    '1週間でMini Gameに20回勝利する',
+    '🏆',
+    'weekly',
+    'minigame_wins',
+    20,
+    70,
+    'normal',
+  ),
+  challenge(
+    'weekly-arcade-ace',
+    'Arcade Ace',
+    '1週間でMini Gameに40回勝利する',
+    '🌟',
+    'weekly',
+    'minigame_wins',
+    40,
+    120,
+    'hard',
+  ),
+  challenge(
+    'weekly-highlow-climber',
+    'High-Low Climber',
+    '1週間でHigh-Lowを25Round正解する',
+    '🎴',
+    'weekly',
+    'highlow_round_wins',
+    25,
+    45,
+    'easy',
+  ),
+  challenge(
+    'weekly-highlow-reader',
+    'Card Reader Pro',
+    '1週間でHigh-Lowを60Round正解する',
+    '🔮',
+    'weekly',
+    'highlow_round_wins',
+    60,
+    70,
+    'normal',
+  ),
+  challenge(
+    'weekly-highlow-master',
+    'High-Low Master',
+    '1週間でHigh-Lowを120Round正解する',
+    '🃏',
+    'weekly',
+    'highlow_round_wins',
+    120,
+    120,
+    'hard',
+  ),
+  challenge(
+    'weekly-blackjack-regular',
+    'Blackjack Regular',
+    '1週間でBlackjackに5回勝利する',
+    '♠️',
+    'weekly',
+    'blackjack_wins',
+    5,
+    50,
+    'easy',
+  ),
+  challenge(
+    'weekly-blackjack-pro',
+    'Blackjack Pro',
+    '1週間でBlackjackに12回勝利する',
+    '♦️',
+    'weekly',
+    'blackjack_wins',
+    12,
+    80,
+    'normal',
+  ),
+  challenge(
+    'weekly-blackjack-shark',
+    'Blackjack Shark',
+    '1週間でBlackjackに25回勝利する',
+    '🦈',
+    'weekly',
+    'blackjack_wins',
+    25,
+    130,
+    'hard',
+  ),
 ];
 
 export const COMMUNITY_CHALLENGE_BY_ID = new Map(
@@ -413,7 +686,8 @@ export function selectCommunityChallenges(
   const definitions = COMMUNITY_CHALLENGES.filter(
     (definition) =>
       definition.period === input.period &&
-      (input.includeMinecraft || definition.metric !== 'minecraft_seconds'),
+      (input.includeMinecraft || definition.metric !== 'minecraft_seconds') &&
+      (input.includeMiniGames === true || !isMiniGameChallengeMetric(definition.metric)),
   );
   const groups = new Map<CommunityChallengeMetric, CommunityChallengeDefinition[]>();
   for (const definition of definitions) {
@@ -510,6 +784,14 @@ export function communityChallengeMetricLabel(metric: CommunityChallengeMetric):
       return 'Voice';
     case 'minecraft_seconds':
       return 'Minecraft';
+    case 'minigame_plays':
+      return 'Mini Game Plays';
+    case 'minigame_wins':
+      return 'Mini Game Wins';
+    case 'highlow_round_wins':
+      return 'High-Low Round Wins';
+    case 'blackjack_wins':
+      return 'Blackjack Wins';
   }
 }
 
@@ -537,6 +819,15 @@ export function formatCommunityChallengeValue(
     return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
   }
   return safe.toLocaleString();
+}
+
+function isMiniGameChallengeMetric(metric: CommunityChallengeMetric): boolean {
+  return (
+    metric === 'minigame_plays' ||
+    metric === 'minigame_wins' ||
+    metric === 'highlow_round_wins' ||
+    metric === 'blackjack_wins'
+  );
 }
 
 function challenge(

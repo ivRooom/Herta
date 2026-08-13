@@ -8,6 +8,7 @@ export const ACHIEVEMENT_CATEGORIES = [
   'community',
   'minecraft',
   'challenge',
+  'games',
 ] as const;
 
 export type AchievementRarity = (typeof ACHIEVEMENT_RARITIES)[number];
@@ -25,7 +26,14 @@ export type AchievementMetric =
   | 'suggestions'
   | 'acceptedSuggestions'
   | 'challengeCompletions'
-  | 'seasonPoints';
+  | 'seasonPoints'
+  | 'minigamePlays'
+  | 'minigameWins'
+  | 'coinflipWins'
+  | 'highLowBestStreak'
+  | 'highLowClears'
+  | 'blackjackWins'
+  | 'blackjackNaturals';
 
 export interface AchievementDefinition {
   id: string;
@@ -451,6 +459,116 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     target: 1_500,
   },
   {
+    id: 'arcade-debut',
+    name: 'Arcade Debut',
+    description: 'Mini Gameを1回プレイする',
+    emoji: '🎮',
+    rarity: 'common',
+    category: 'games',
+    metric: 'minigamePlays',
+    target: 1,
+  },
+  {
+    id: 'arcade-regular',
+    name: 'Arcade Regular',
+    description: 'Mini Gameを25回プレイする',
+    emoji: '🕹️',
+    rarity: 'uncommon',
+    category: 'games',
+    metric: 'minigamePlays',
+    target: 25,
+  },
+  {
+    id: 'arcade-veteran',
+    name: 'Arcade Veteran',
+    description: 'Mini Gameを100回プレイする',
+    emoji: '👾',
+    rarity: 'epic',
+    category: 'games',
+    metric: 'minigamePlays',
+    target: 100,
+  },
+  {
+    id: 'arcade-winner',
+    name: 'Arcade Winner',
+    description: 'Mini Gameで10回勝利する',
+    emoji: '🏅',
+    rarity: 'rare',
+    category: 'games',
+    metric: 'minigameWins',
+    target: 10,
+  },
+  {
+    id: 'lucky-call',
+    name: 'Lucky Call',
+    description: 'Coin Flipの予想を10回的中させる',
+    emoji: '🪙',
+    rarity: 'rare',
+    category: 'games',
+    metric: 'coinflipWins',
+    target: 10,
+  },
+  {
+    id: 'highlow-five',
+    name: 'High-Low Heater',
+    description: 'High-Lowで5連勝する',
+    emoji: '🔥',
+    rarity: 'uncommon',
+    category: 'games',
+    metric: 'highLowBestStreak',
+    target: 5,
+  },
+  {
+    id: 'highlow-ten',
+    name: 'High-Low Master',
+    description: 'High-Lowで10連勝する',
+    emoji: '🎴',
+    rarity: 'epic',
+    category: 'games',
+    metric: 'highLowBestStreak',
+    target: 10,
+  },
+  {
+    id: 'highlow-perfect',
+    name: 'Perfect Read',
+    description: 'High-Lowをパーフェクトクリアする',
+    emoji: '🔮',
+    rarity: 'rare',
+    category: 'games',
+    metric: 'highLowClears',
+    target: 1,
+  },
+  {
+    id: 'blackjack-first-win',
+    name: 'First Twenty-One',
+    description: 'Blackjackで1回勝利する',
+    emoji: '🃏',
+    rarity: 'common',
+    category: 'games',
+    metric: 'blackjackWins',
+    target: 1,
+  },
+  {
+    id: 'natural-21',
+    name: 'Natural 21',
+    description: 'Natural Blackjackを1回出す',
+    emoji: '✨',
+    rarity: 'rare',
+    category: 'games',
+    metric: 'blackjackNaturals',
+    target: 1,
+  },
+  {
+    id: 'blackjack-shark',
+    name: 'Blackjack Shark',
+    description: 'Blackjackで25回勝利する',
+    emoji: '🦈',
+    rarity: 'epic',
+    category: 'games',
+    metric: 'blackjackWins',
+    target: 25,
+  },
+  {
     id: 'all-rounder',
     name: 'All-Rounder',
     description: '発言・VC・リアクション・被リアクションの4分野で条件を達成する',
@@ -558,6 +676,7 @@ export function achievementCategoryLabel(category: AchievementCategory): string 
     community: 'Community',
     minecraft: 'Minecraft',
     challenge: 'Challenge',
+    games: 'Games',
   }[category];
 }
 

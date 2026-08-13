@@ -55,7 +55,8 @@ export async function getCommunityChallengeMetrics(
       AND "activity_date" >= ${startDateKey}::date
       AND "activity_date" < ${endDateKey}::date
       AND "metric" IN (
-        'messages', 'reactions_given', 'reactions_received', 'voice_seconds', 'minecraft_seconds'
+        'messages', 'reactions_given', 'reactions_received', 'voice_seconds', 'minecraft_seconds',
+        'minigame_plays', 'minigame_wins', 'highlow_round_wins', 'blackjack_wins'
       )
     GROUP BY "metric"
   `;
@@ -65,6 +66,10 @@ export async function getCommunityChallengeMetrics(
     reactions_received: 0,
     voice_seconds: 0,
     minecraft_seconds: 0,
+    minigame_plays: 0,
+    minigame_wins: 0,
+    highlow_round_wins: 0,
+    blackjack_wins: 0,
   };
   for (const row of rows) result[row.metric] = Number(row.total);
   return result;

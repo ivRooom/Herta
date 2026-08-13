@@ -47,6 +47,7 @@ export interface CommunityChallengeConfig {
   dailyChallengeCount: number;
   weeklyChallengeCount: number;
   includeMinecraftChallenges: boolean;
+  includeMiniGameChallenges: boolean;
   autoSync: boolean;
   autoSyncCooldownSeconds: number;
   notifyCompletions: boolean;
@@ -209,6 +210,7 @@ export function normalizeCommunityChallengeConfig(value: unknown): CommunityChal
       source.includeMinecraftChallenges === undefined
         ? true
         : source.includeMinecraftChallenges === true,
+    includeMiniGameChallenges: source.includeMiniGameChallenges === true,
     autoSync: source.autoSync === undefined ? true : source.autoSync === true,
     autoSyncCooldownSeconds: clamp(toInteger(source.autoSyncCooldownSeconds, 30), 10, 600),
     notifyCompletions:
@@ -421,6 +423,7 @@ async function ensurePeriodDefinitions(
     periodKey: window.key,
     count,
     includeMinecraft: config.includeMinecraftChallenges,
+    includeMiniGames: config.includeMiniGameChallenges,
   });
   const assignment = await ensureCommunityChallengeAssignment(
     context.prisma,
@@ -528,7 +531,12 @@ export function formatChallengeCatalog(
   const definitions = COMMUNITY_CHALLENGES.filter(
     (definition) =>
       (!period || definition.period === period) &&
-      (config.includeMinecraftChallenges || definition.metric !== 'minecraft_seconds'),
+      (config.includeMinecraftChallenges || definition.metric !== 'minecraft_seconds') &&
+      (config.includeMiniGameChallenges ||
+        (definition.metric !== 'minigame_plays' &&
+          definition.metric !== 'minigame_wins' &&
+          definition.metric !== 'highlow_round_wins' &&
+          definition.metric !== 'blackjack_wins')),
   );
   const lines = definitions.map(
     (definition) =>

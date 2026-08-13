@@ -17,6 +17,13 @@ export interface AchievementMetrics {
   acceptedSuggestions: number;
   challengeCompletions: number;
   seasonPoints: number;
+  minigamePlays: number;
+  minigameWins: number;
+  coinflipWins: number;
+  highLowBestStreak: number;
+  highLowClears: number;
+  blackjackWins: number;
+  blackjackNaturals: number;
 }
 
 export interface AchievementUnlockRecord {
@@ -62,6 +69,13 @@ export async function getAchievementMetrics(
       acceptedSuggestions: bigint;
       challengeCompletions: bigint;
       seasonPoints: bigint;
+      minigamePlays: bigint;
+      minigameWins: bigint;
+      coinflipWins: bigint;
+      highLowBestStreak: bigint;
+      highLowClears: bigint;
+      blackjackWins: bigint;
+      blackjackNaturals: bigint;
     }>
   >`
     SELECT
@@ -77,7 +91,14 @@ export async function getAchievementMetrics(
       (SELECT COUNT(*) FROM "suggestions" s WHERE s."guild_id" = ${guildId} AND s."author_id" = ${userId})::bigint AS "suggestions",
       (SELECT COUNT(*) FROM "suggestions" s WHERE s."guild_id" = ${guildId} AND s."author_id" = ${userId} AND s."status" IN ('accepted', 'completed'))::bigint AS "acceptedSuggestions",
       (SELECT COUNT(*) FROM "community_challenge_completions" c WHERE c."guild_id" = ${guildId} AND c."user_id" = ${userId})::bigint AS "challengeCompletions",
-      COALESCE((SELECT SUM(c."points") FROM "community_challenge_completions" c WHERE c."guild_id" = ${guildId} AND c."user_id" = ${userId} AND c."season_key" = ${seasonKey}), 0)::bigint AS "seasonPoints"
+      COALESCE((SELECT SUM(c."points") FROM "community_challenge_completions" c WHERE c."guild_id" = ${guildId} AND c."user_id" = ${userId} AND c."season_key" = ${seasonKey}), 0)::bigint AS "seasonPoints",
+      COALESCE((SELECT SUM("value") FROM "community_activity_daily" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId} AND "metric" = 'minigame_plays'), 0)::bigint AS "minigamePlays",
+      COALESCE((SELECT SUM("value") FROM "community_activity_daily" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId} AND "metric" = 'minigame_wins'), 0)::bigint AS "minigameWins",
+      COALESCE((SELECT SUM("value") FROM "community_activity_daily" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId} AND "metric" = 'coinflip_wins'), 0)::bigint AS "coinflipWins",
+      COALESCE((SELECT MAX("value") FROM "community_activity_daily" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId} AND "metric" = 'highlow_best_streak'), 0)::bigint AS "highLowBestStreak",
+      COALESCE((SELECT SUM("value") FROM "community_activity_daily" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId} AND "metric" = 'highlow_clears'), 0)::bigint AS "highLowClears",
+      COALESCE((SELECT SUM("value") FROM "community_activity_daily" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId} AND "metric" = 'blackjack_wins'), 0)::bigint AS "blackjackWins",
+      COALESCE((SELECT SUM("value") FROM "community_activity_daily" WHERE "guild_id" = ${guildId} AND "user_id" = ${userId} AND "metric" = 'blackjack_naturals'), 0)::bigint AS "blackjackNaturals
   `;
   return {
     xp: Number(row?.xp ?? 0n),
@@ -93,6 +114,13 @@ export async function getAchievementMetrics(
     acceptedSuggestions: Number(row?.acceptedSuggestions ?? 0n),
     challengeCompletions: Number(row?.challengeCompletions ?? 0n),
     seasonPoints: Number(row?.seasonPoints ?? 0n),
+    minigamePlays: Number(row?.minigamePlays ?? 0n),
+    minigameWins: Number(row?.minigameWins ?? 0n),
+    coinflipWins: Number(row?.coinflipWins ?? 0n),
+    highLowBestStreak: Number(row?.highLowBestStreak ?? 0n),
+    highLowClears: Number(row?.highLowClears ?? 0n),
+    blackjackWins: Number(row?.blackjackWins ?? 0n),
+    blackjackNaturals: Number(row?.blackjackNaturals ?? 0n),
   };
 }
 
