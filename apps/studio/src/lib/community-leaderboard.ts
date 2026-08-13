@@ -143,11 +143,7 @@ async function getSingleActivityMetricLeaderboard(
   limit: number,
 ): Promise<RankedRow[]> {
   const databaseMetric =
-    metric === 'messages'
-      ? 'messages'
-      : metric === 'voice'
-        ? 'voice_seconds'
-        : 'minecraft_seconds';
+    metric === 'messages' ? 'messages' : metric === 'voice' ? 'voice_seconds' : 'minecraft_seconds';
 
   return prisma.$queryRaw<RankedRow[]>`
     WITH totals AS (
