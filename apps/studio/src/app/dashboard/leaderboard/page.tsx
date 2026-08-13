@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, Medal, ServerCog, Trophy } from 'lucide-react';
+import { ArrowRight, Medal, ServerCog, ShieldAlert, Trophy } from 'lucide-react';
 import { redirect } from 'next/navigation';
 import { GuildAvatar } from '@/components/guild-avatar';
 import { getManageableGuilds } from '@/lib/guilds';
@@ -26,7 +26,7 @@ export default async function LeaderboardLandingPage() {
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
               XP、Level、発言、Reaction、VC、Minecraft、Achievement、Season
-              Pointをサーバーごとに比較できます。
+              Pointをサーバーごとに比較・運用できます。
             </p>
           </div>
         </div>
@@ -52,21 +52,34 @@ export default async function LeaderboardLandingPage() {
         ) : (
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {guilds.map((guild) => (
-              <Link
+              <article
                 key={guild.id}
-                href={`/dashboard/guilds/${guild.id}/leaderboard`}
-                className="group flex items-center gap-4 rounded-2xl border border-border bg-surface p-5 shadow-card transition-colors hover:border-primary/40"
+                className="rounded-2xl border border-border bg-surface p-5 shadow-card"
               >
-                <GuildAvatar name={guild.name} iconUrl={guild.iconUrl} size={48} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold">{guild.name}</p>
-                  <div className="mt-1 flex items-center gap-1.5 text-xs text-muted">
-                    <Medal className="h-3.5 w-3.5" />
-                    ランキングを表示
+                <div className="flex items-center gap-4">
+                  <GuildAvatar name={guild.name} iconUrl={guild.iconUrl} size={48} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold">{guild.name}</p>
+                    <p className="mt-1 text-xs text-muted">ランキング表示・XP管理</p>
                   </div>
                 </div>
-                <ArrowRight className="h-4 w-4 text-muted transition-transform group-hover:translate-x-0.5 group-hover:text-primary" />
-              </Link>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <Link
+                    href={`/dashboard/guilds/${guild.id}/leaderboard`}
+                    className="group inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm font-medium transition hover:border-primary/40 hover:text-primary"
+                  >
+                    <Medal className="h-4 w-4" />
+                    Ranking
+                    <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                  </Link>
+                  <Link
+                    href={`/dashboard/guilds/${guild.id}/leaderboard/admin`}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm font-medium transition hover:border-primary/40 hover:text-primary"
+                  >
+                    <ShieldAlert className="h-4 w-4" /> XP管理
+                  </Link>
+                </div>
+              </article>
             ))}
           </div>
         )}
