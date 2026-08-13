@@ -21,6 +21,13 @@ import { defaultGuildPluginCache } from './plugins/cache.js';
 import { GuildPluginLoader } from './plugins/loader.js';
 import { createDefaultPluginRegistry } from './plugins/registry.js';
 import { PluginRuntimeEventSubscriber } from './plugins/runtime-events.js';
+import { XpRoleReconciliationSubscriber } from './plugins/xp-role-reconciliation-events.js';
+import { getXpProfile } from './plugins/xp-level-repository.js';
+import { levelForXp, normalizeXpLevelConfig } from './plugins/xp-level.js';
+import {
+  reconcileXpRewardRoles as reconcileXpRewardRolesForMember,
+  type XpRewardRoleReconciliationResult,
+} from './plugins/xp-reward-roles.js';
 import { syncGuildCommands } from './plugins/sync.js';
 import type { SlashCommand } from './commands/registry.js';
 import { DiscordHealthTracker } from './health/discord-state.js';
@@ -97,6 +104,7 @@ export class HertaBot {
   private readonly pluginLoader: GuildPluginLoader;
   private readonly pluginCommands = new Map<string, SlashCommand[]>();
   private readonly runtimeEvents: PluginRuntimeEventSubscriber;
+  private readonly xpRoleReconciliation: XpRoleReconciliationSubscriber;
   private readonly discordHealth = new DiscordHealthTracker();
   private readonly gatewayObservationIntervalMs: number;
   private gatewayObservationTimer?: NodeJS.Timeout;
@@ -140,6 +148,9 @@ export class HertaBot {
       (guildId) => this.resyncGuild(guildId),
       this.logger,
     );
+    this.xpRoleReconciliation = new XpRoleReconciliationSubscriber(async (guildId, userId) => {
+      await this.reconcileXpRewardRoles(guildId, userId);
+    }, this.logger);
     pluginRegistry.validateAll(this.logger);
     pluginRegistry.validateAgainstCatalog(this.logger);
 
@@ -622,6 +633,15 @@ export class HertaBot {
         'Plugin Runtimeイベント購読の開始に失敗しました。TTL同期で継続します',
       );
     }
+
+    try {
+      await this.xpRoleReconciliation.start(redisUrl);
+    } catch (error) {
+      this.logger.error(
+        { err: error },
+        'XP報酬Role再同期イベント購読の開始に失敗しました。XP更新自体は継続します',
+      );
+    }
   }
 
   async getGuildConfigurationOptions(guildId: string): Promise<GuildConfigurationOptions | null> {
@@ -634,6 +654,62 @@ export class HertaBot {
     limit: number,
   ): Promise<GuildMemberOption[] | null> {
     return searchGuildMemberOptions(this.client, guildId, query, limit);
+  }
+
+  async reconcileXpRewardRoles(
+    guildId: string,
+    userId: string,
+  ): Promise<XpRewardRoleReconciliationResult | null> {
+    const rawConfig = await this.pluginLoader.getGuildPluginConfig(guildId, 'xp-level');
+    if (!rawConfig) {
+      this.logger.debug(
+        { guildId, userId },
+        'XP / Level Pluginが無効なため報酬Role再同期をスキップします',
+      );
+      return null;
+    }
+
+    const guild = this.client.guilds.cache.get(guildId);
+    if (!guild) {
+      this.logger.warn(
+        { guildId, userId },
+        'GuildがBot cacheにないためXP報酬Role再同期をスキップします',
+      );
+      return null;
+    }
+
+    let member;
+    try {
+      member = await guild.members.fetch(userId);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, guildId, userId },
+        '対象メンバーを取得できないためXP報酬Role再同期をスキップします',
+      );
+      return null;
+    }
+
+    const profile = await getXpProfile(this.prisma, guildId, userId);
+    const level = levelForXp(profile?.xp ?? 0);
+    const result = await reconcileXpRewardRolesForMember({
+      member,
+      config: normalizeXpLevelConfig(rawConfig),
+      level,
+      logger: this.logger,
+    });
+    this.logger.info(
+      {
+        guildId,
+        userId,
+        level,
+        added: result.addedRoleIds.length,
+        removed: result.removedRoleIds.length,
+        skipped: result.skippedRoleIds.length,
+        failed: result.failedRoleIds.length,
+      },
+      'XP報酬Roleの再同期を完了しました',
+    );
+    return result;
   }
 
   getDiscordHealthObservation(): DiscordHealthObservation {
@@ -665,7 +741,7 @@ export class HertaBot {
       this.gatewayObservationTimer = undefined;
     }
 
-    await this.runtimeEvents.stop();
+    await Promise.allSettled([this.runtimeEvents.stop(), this.xpRoleReconciliation.stop()]);
     const guildIds = [...this.client.guilds.cache.keys()];
     const results = await Promise.allSettled(
       guildIds.map((guildId) => this.pluginLoader.disableGuildPlugins(guildId)),

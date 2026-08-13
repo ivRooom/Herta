@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { authorizeGuild } from '@/lib/guild-plugins';
+import { publishXpRoleReconciliationEvent } from '@/lib/plugin-runtime-events';
 import {
   applyXpAdminOperation,
   getXpAdminGuildSummary,
@@ -58,11 +59,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
       actorId: session.user.id,
       request: parsed,
     });
+    const rewardRoleSyncPublished =
+      result.rewardRoleSyncRequired && parsed.userId
+        ? await publishXpRoleReconciliationEvent({ guildId, userId: parsed.userId })
+        : false;
     const [summary, profile] = await Promise.all([
       getXpAdminGuildSummary(guildId),
       parsed.userId ? getXpAdminProfile(guildId, parsed.userId) : Promise.resolve(null),
     ]);
-    return NextResponse.json({ result, summary, profile });
+    return NextResponse.json({ result, rewardRoleSyncPublished, summary, profile });
   } catch (error) {
     return xpAdminErrorResponse(error);
   }
