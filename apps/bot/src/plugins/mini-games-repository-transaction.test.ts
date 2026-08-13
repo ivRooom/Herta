@@ -31,6 +31,27 @@ describe('Mini Games metric transaction', () => {
     expect(transaction.mock.calls[0]?.[0]).toHaveLength(4);
   });
 
+  it('transaction失敗時は呼び出し元へ失敗を返して部分成功扱いにしない', async () => {
+    const executeRaw = vi.fn(async () => 1);
+    const transaction = vi.fn(async () => {
+      throw new Error('transaction failed');
+    });
+    const prisma = {
+      $executeRaw: executeRaw,
+      $transaction: transaction,
+    } as unknown as PrismaClient;
+
+    await expect(
+      incrementMiniGameMetrics(prisma, 'guild-1', 'user-1', [
+        ['minigame_plays', 1],
+        ['coinflip_plays', 1],
+        ['coinflip_wins', 1],
+        ['minigame_wins', 1],
+      ]),
+    ).rejects.toThrow('transaction failed');
+    expect(transaction).toHaveBeenCalledOnce();
+  });
+
   it('0以下の更新はtransaction対象から除外する', async () => {
     const executeRaw = vi.fn(async () => 1);
     const transaction = vi.fn(async (operations: readonly Promise<unknown>[]) =>
