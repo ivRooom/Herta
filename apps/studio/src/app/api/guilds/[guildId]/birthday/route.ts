@@ -7,6 +7,7 @@ import {
   setBirthdayRegistration,
 } from '@/lib/birthday-admin';
 import { parseBirthdayAdminRequest } from '@/lib/birthday-admin-core';
+import { searchGuildMembers } from '@/lib/bot-guild-members';
 import { authorizeGuild } from '@/lib/guild-plugins';
 
 export const dynamic = 'force-dynamic';
@@ -47,6 +48,28 @@ export async function POST(request: Request, { params }: GuildRouteContext) {
       if (parsed.month === null || parsed.day === null) {
         return NextResponse.json({ error: '誕生日の月日が不正です' }, { status: 400 });
       }
+
+      const members = await searchGuildMembers(guildId, parsed.userId, 1);
+      if (!members) {
+        return NextResponse.json(
+          { error: 'Discordメンバーを確認できないため、誕生日を保存できませんでした' },
+          { status: 503 },
+        );
+      }
+      const member = members.find((candidate) => candidate.id === parsed.userId);
+      if (!member) {
+        return NextResponse.json(
+          { error: '対象ユーザーは現在このDiscordサーバーに所属していません' },
+          { status: 400 },
+        );
+      }
+      if (member.bot) {
+        return NextResponse.json(
+          { error: 'Botアカウントは誕生日登録の対象にできません' },
+          { status: 400 },
+        );
+      }
+
       await setBirthdayRegistration({
         guildId,
         actorId: session.user.id,
