@@ -61,6 +61,33 @@ export async function incrementMiniGameMetric(
   `;
 }
 
+export async function incrementMiniGameMetrics(
+  prisma: PrismaClient,
+  guildId: string,
+  userId: string,
+  metrics: readonly (readonly [MiniGameMetric, number])[],
+  now = new Date(),
+): Promise<void> {
+  const updates = metrics
+    .map(([metric, amount]) => [metric, Math.max(0, Math.trunc(amount))] as const)
+    .filter(([, amount]) => amount > 0);
+  if (updates.length === 0) return;
+  const activityDate = jstDateKey(now);
+  await prisma.$transaction(
+    updates.map(([metric, amount]) =>
+      prisma.$executeRaw`
+        INSERT INTO "community_activity_daily" (
+          "guild_id", "user_id", "activity_date", "metric", "value"
+        ) VALUES (
+          ${guildId}, ${userId}, ${activityDate}::date, ${metric}, ${BigInt(amount)}
+        )
+        ON CONFLICT ("guild_id", "user_id", "activity_date", "metric")
+        DO UPDATE SET "value" = "community_activity_daily"."value" + EXCLUDED."value"
+      `,
+    ),
+  );
+}
+
 export async function recordMiniGameMaximum(
   prisma: PrismaClient,
   guildId: string,
