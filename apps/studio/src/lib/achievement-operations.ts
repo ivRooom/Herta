@@ -1,107 +1,33 @@
-import { ACHIEVEMENTS, achievementPoints } from '@herta/shared';
 import { prisma } from '@/lib/db';
+import {
+  ACHIEVEMENT_OPERATION_BLOCK_PREFIX,
+  ACHIEVEMENT_OPERATION_DISCORD_ID_PATTERN,
+  AchievementOperationValidationError,
+  achievementBlockRecordId,
+  getAchievementCatalog,
+  type AchievementCatalogItem,
+  type AchievementLeaderboardEntry,
+  type AchievementOperationRequest,
+  type AchievementOperationsSnapshot,
+  type AchievementRecentUnlock,
+  type AchievementUserProgress,
+} from './achievement-operations-core';
 
-const BLOCK_PREFIX = 'blocked:';
-const DISCORD_ID_PATTERN = /^\d{17,20}$/u;
-const ACHIEVEMENT_ID_PATTERN = /^[a-z0-9][a-z0-9:_-]{0,119}$/u;
-
-export type AchievementOperationAction = 'grant' | 'revoke';
-
-export interface AchievementCatalogItem {
-  id: string;
-  name: string;
-  emoji: string;
-  category: string;
-  rarity: string;
-  points: number;
-  source: 'built-in' | 'custom';
-}
-
-export interface AchievementRecentUnlock extends AchievementCatalogItem {
-  userId: string;
-  unlockedAt: string;
-}
-
-export interface AchievementLeaderboardEntry {
-  userId: string;
-  unlockCount: number;
-  points: number;
-}
-
-export interface AchievementOperationsSnapshot {
-  totalCatalog: number;
-  totalUnlocks: number;
-  uniqueMembers: number;
-  unlocks7d: number;
-  blockedOverrides: number;
-  recentUnlocks: AchievementRecentUnlock[];
-  leaderboard: AchievementLeaderboardEntry[];
-}
-
-export interface AchievementUserProgress {
-  userId: string;
-  unlockedCount: number;
-  blockedCount: number;
-  totalCatalog: number;
-  progressPercent: number;
-  points: number;
-  unlockedIds: string[];
-  blockedIds: string[];
-  unlocked: AchievementCatalogItem[];
-  blocked: AchievementCatalogItem[];
-}
-
-export interface AchievementOperationRequest {
-  action: AchievementOperationAction;
-  userId: string;
-  achievementId: string;
-  reason: string | null;
-}
-
-export class AchievementOperationValidationError extends Error {}
-
-export function achievementBlockRecordId(achievementId: string): string {
-  return `${BLOCK_PREFIX}${achievementId}`;
-}
-
-export function parseAchievementOperationRequest(
-  value: unknown,
-): AchievementOperationRequest | null {
-  if (!isRecord(value)) return null;
-  if (value.action !== 'grant' && value.action !== 'revoke') return null;
-  if (typeof value.userId !== 'string' || !DISCORD_ID_PATTERN.test(value.userId)) return null;
-  if (
-    typeof value.achievementId !== 'string' ||
-    !ACHIEVEMENT_ID_PATTERN.test(value.achievementId)
-  ) {
-    return null;
-  }
-  if (value.reason !== undefined && value.reason !== null && typeof value.reason !== 'string') {
-    return null;
-  }
-  const reason = typeof value.reason === 'string' ? value.reason.trim().slice(0, 240) : null;
-  return {
-    action: value.action,
-    userId: value.userId,
-    achievementId: value.achievementId,
-    reason: reason || null,
-  };
-}
-
-export function getAchievementCatalog(config: Record<string, unknown>): AchievementCatalogItem[] {
-  const builtIn = ACHIEVEMENTS.map((achievement) => ({
-    id: achievement.id,
-    name: achievement.name,
-    emoji: achievement.emoji,
-    category: achievement.category,
-    rarity: achievement.rarity,
-    points: achievementPoints(achievement),
-    source: 'built-in' as const,
-  }));
-
-  const custom = readCustomAchievementCatalog(config.customAchievements);
-  return [...builtIn, ...custom];
-}
+export {
+  AchievementOperationValidationError,
+  achievementBlockRecordId,
+  getAchievementCatalog,
+  parseAchievementOperationRequest,
+} from './achievement-operations-core';
+export type {
+  AchievementCatalogItem,
+  AchievementLeaderboardEntry,
+  AchievementOperationAction,
+  AchievementOperationRequest,
+  AchievementOperationsSnapshot,
+  AchievementRecentUnlock,
+  AchievementUserProgress,
+} from './achievement-operations-core';
 
 export async function getAchievementOperationsSnapshot(
   guildId: string,
@@ -109,7 +35,7 @@ export async function getAchievementOperationsSnapshot(
 ): Promise<AchievementOperationsSnapshot> {
   const catalog = getAchievementCatalog(config);
   const catalogMap = new Map(catalog.map((item) => [item.id, item]));
-  const blockPattern = `${BLOCK_PREFIX}%`;
+  const blockPattern = `${ACHIEVEMENT_OPERATION_BLOCK_PREFIX}%`;
   const [summary] = await prisma.$queryRaw<
     Array<{
       totalUnlocks: bigint;
@@ -157,13 +83,13 @@ export async function getAchievementOperationsSnapshot(
     LIMIT 10
   `;
 
-  const recentUnlocks = recentRows.flatMap((row) => {
+  const recentUnlocks: AchievementRecentUnlock[] = recentRows.flatMap((row) => {
     const definition = catalogMap.get(row.achievementId);
     return definition
       ? [{ ...definition, userId: row.userId, unlockedAt: row.unlockedAt.toISOString() }]
       : [];
   });
-  const leaderboard = leaderboardRows.map((row) => ({
+  const leaderboard: AchievementLeaderboardEntry[] = leaderboardRows.map((row) => ({
     userId: row.userId,
     unlockCount: Number(row.unlockCount),
     points: row.achievementIds.reduce((total, id) => total + (catalogMap.get(id)?.points ?? 0), 0),
@@ -185,7 +111,7 @@ export async function getAchievementUserProgress(
   userId: string,
   config: Record<string, unknown>,
 ): Promise<AchievementUserProgress> {
-  if (!DISCORD_ID_PATTERN.test(userId)) {
+  if (!ACHIEVEMENT_OPERATION_DISCORD_ID_PATTERN.test(userId)) {
     throw new AchievementOperationValidationError('DiscordユーザーIDが不正です');
   }
   const catalog = getAchievementCatalog(config);
@@ -198,11 +124,13 @@ export async function getAchievementUserProgress(
   `;
   const unlockedIds = rows
     .map((row) => row.achievementId)
-    .filter((id) => !id.startsWith(BLOCK_PREFIX) && catalogMap.has(id));
+    .filter(
+      (id) => !id.startsWith(ACHIEVEMENT_OPERATION_BLOCK_PREFIX) && catalogMap.has(id),
+    );
   const blockedIds = rows
     .map((row) => row.achievementId)
-    .filter((id) => id.startsWith(BLOCK_PREFIX))
-    .map((id) => id.slice(BLOCK_PREFIX.length))
+    .filter((id) => id.startsWith(ACHIEVEMENT_OPERATION_BLOCK_PREFIX))
+    .map((id) => id.slice(ACHIEVEMENT_OPERATION_BLOCK_PREFIX.length))
     .filter((id) => catalogMap.has(id));
   const points = unlockedIds.reduce((total, id) => total + (catalogMap.get(id)?.points ?? 0), 0);
 
@@ -216,14 +144,8 @@ export async function getAchievementUserProgress(
     points,
     unlockedIds,
     blockedIds,
-    unlocked: unlockedIds.flatMap((id) => {
-      const item = catalogMap.get(id);
-      return item ? [item] : [];
-    }),
-    blocked: blockedIds.flatMap((id) => {
-      const item = catalogMap.get(id);
-      return item ? [item] : [];
-    }),
+    unlocked: resolveCatalogItems(unlockedIds, catalogMap),
+    blocked: resolveCatalogItems(blockedIds, catalogMap),
   };
 }
 
@@ -299,46 +221,12 @@ export async function applyAchievementOperation(input: {
   });
 }
 
-function readCustomAchievementCatalog(value: unknown): AchievementCatalogItem[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((seriesValue) => {
-    if (!isRecord(seriesValue) || seriesValue.enabled === false) return [];
-    const seriesKey = readKey(seriesValue.key);
-    const seriesName = readText(seriesValue.name, seriesKey || 'Custom Achievement');
-    const category = readText(seriesValue.category, 'custom');
-    if (!seriesKey || !Array.isArray(seriesValue.stages)) return [];
-    return seriesValue.stages.flatMap((stageValue) => {
-      if (!isRecord(stageValue)) return [];
-      const stageKey = readKey(stageValue.key);
-      if (!stageKey) return [];
-      return [
-        {
-          id: `custom:${seriesKey}:${stageKey}`,
-          name: `${seriesName} · ${readText(stageValue.name, stageKey)}`,
-          emoji: readText(stageValue.emoji, '🏅'),
-          category,
-          rarity: readText(stageValue.rarity, 'common'),
-          points: clampNumber(stageValue.points, 0, 100_000),
-          source: 'custom' as const,
-        },
-      ];
-    });
+function resolveCatalogItems(
+  ids: string[],
+  catalogMap: Map<string, AchievementCatalogItem>,
+): AchievementCatalogItem[] {
+  return ids.flatMap((id) => {
+    const item = catalogMap.get(id);
+    return item ? [item] : [];
   });
-}
-
-function readKey(value: unknown): string {
-  return typeof value === 'string' && /^[a-z0-9][a-z0-9_-]{0,63}$/u.test(value) ? value : '';
-}
-
-function readText(value: unknown, fallback: string): string {
-  return typeof value === 'string' && value.trim() ? value.trim().slice(0, 120) : fallback;
-}
-
-function clampNumber(value: unknown, min: number, max: number): number {
-  const parsed = typeof value === 'number' && Number.isFinite(value) ? Math.trunc(value) : min;
-  return Math.max(min, Math.min(max, parsed));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
