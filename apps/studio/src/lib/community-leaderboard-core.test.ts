@@ -51,6 +51,10 @@ test('時間系Metricを読みやすい時間表記へ変換する', () => {
   assert.equal(formatCommunityLeaderboardValue('level', 8, 7_350), 'Lv.8 · 7,350 XP');
 });
 
+test('Season Pointをポイント表記で表示する', () => {
+  assert.equal(formatCommunityLeaderboardValue('season', 1_250), '1,250 pt');
+});
+
 test('活動日とTimestampでJST期間境界を正しく使い分ける', () => {
   const now = new Date('2026-08-13T01:00:00.000Z');
   assert.equal(communityActivityPeriodStart('7d', now).toISOString(), '2026-08-07T00:00:00.000Z');
