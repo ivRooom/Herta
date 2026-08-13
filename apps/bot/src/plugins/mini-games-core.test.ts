@@ -56,8 +56,14 @@ describe('Mini Games card rules', () => {
     expect(settleBlackjack([spades(1), hearts(13)], [spades(10), hearts(9)])).toBe(
       'player-blackjack',
     );
+    expect(settleBlackjack([spades(10), hearts(9)], [spades(1), hearts(13)])).toBe(
+      'dealer-blackjack',
+    );
     expect(settleBlackjack([spades(10), hearts(8), spades(7)], [spades(10), hearts(9)])).toBe(
       'dealer-win',
+    );
+    expect(settleBlackjack([spades(10), hearts(9)], [spades(10), hearts(8), spades(7)])).toBe(
+      'player-win',
     );
     expect(settleBlackjack([spades(10), hearts(8)], [spades(10), hearts(8)])).toBe('push');
   });
