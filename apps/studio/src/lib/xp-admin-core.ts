@@ -24,7 +24,10 @@ export interface XpAdminResult {
   changed: boolean;
   beforeXp: number | null;
   afterXp: number | null;
+  beforeLevel: number | null;
+  afterLevel: number | null;
   affectedProfiles: number;
+  rewardRoleSyncRequired: boolean;
 }
 
 export class XpAdminValidationError extends Error {}
