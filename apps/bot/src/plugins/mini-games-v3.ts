@@ -134,7 +134,13 @@ async function executeChinchiro(
       await recordMetric(context.prisma, context.guildId, interaction.user.id, 'chinchiro_wins', 1);
     }
     if (isChinchiroSpecial(player.hand)) {
-      await recordMetric(context.prisma, context.guildId, interaction.user.id, 'chinchiro_specials', 1);
+      await recordMetric(
+        context.prisma,
+        context.guildId,
+        interaction.user.id,
+        'chinchiro_specials',
+        1,
+      );
     }
   }
   const result =
