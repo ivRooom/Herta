@@ -33,8 +33,9 @@ test('XP add/subtract/setを正規化する', () => {
   });
 });
 
-test('XP操作は不正ID・負数・過大値を拒否する', () => {
+test('XP操作は不正ID・空値・負数・過大値を拒否する', () => {
   assert.equal(parseXpAdminRequest({ action: 'add', userId: 'abc', amount: 100 }, '999'), null);
+  assert.equal(parseXpAdminRequest({ action: 'set', userId: '123456', amount: '' }, '999'), null);
   assert.equal(parseXpAdminRequest({ action: 'add', userId: '123456', amount: -1 }, '999'), null);
   assert.equal(
     parseXpAdminRequest({ action: 'set', userId: '123456', amount: 100_000_001 }, '999'),
