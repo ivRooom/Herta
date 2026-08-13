@@ -1,4 +1,9 @@
-import type { MiniGameStats } from './mini-games-repository.js';
+import type {
+  MiniGameLeaderboardMetric,
+  MiniGameLeaderboardRecord,
+  MiniGameStats,
+} from './mini-games-repository.js';
+import { miniGameLeaderboardMetricLabel } from './mini-games-repository.js';
 
 export function formatMiniGameStats(userId: string, stats: MiniGameStats): string {
   const coinflipRate = percentage(stats.coinflipWins, stats.coinflipPredictions);
@@ -15,7 +20,29 @@ export function formatMiniGameStats(userId: string, stats: MiniGameStats): strin
     '',
     `🃏 **Blackjack** — ${stats.blackjackPlays.toLocaleString()} plays`,
     `勝利 **${stats.blackjackWins.toLocaleString()}** · Push **${stats.blackjackPushes.toLocaleString()}** · Natural **${stats.blackjackNaturals.toLocaleString()}** · ${blackjackRate}`,
+    '',
+    `🎲 **Dice** — ${stats.dicePlays.toLocaleString()} rolls`,
+    '',
+    `🎲 **チンチロ** — ${stats.chinchiroPlays.toLocaleString()} plays`,
+    `シゴロ **${stats.chinchiroShigoro.toLocaleString()}** · ゾロ目 **${stats.chinchiroZorome.toLocaleString()}** · ヒフミ **${stats.chinchiroHifumi.toLocaleString()}**`,
   ].join('\n');
+}
+
+export function formatMiniGameLeaderboard(
+  metric: MiniGameLeaderboardMetric,
+  records: readonly MiniGameLeaderboardRecord[],
+): string {
+  const label = miniGameLeaderboardMetricLabel(metric);
+  if (records.length === 0) {
+    return `**🏆 Mini Games Leaderboard · ${label}**\nまだランキング対象の戦績がありません。`;
+  }
+  const suffix = metric === 'highlow' ? '連勝' : '回';
+  const medals = ['🥇', '🥈', '🥉'];
+  const lines = records.map((record, index) => {
+    const rank = medals[index] ?? `${index + 1}.`;
+    return `${rank} <@${record.userId}> — **${record.value.toLocaleString()}${suffix}**`;
+  });
+  return [`**🏆 Mini Games Leaderboard · ${label}**`, ...lines].join('\n').slice(0, 1990);
 }
 
 function percentage(wins: number, total: number): string {
