@@ -36,7 +36,10 @@ describe('Mini Games Plugin', () => {
   it('Coin Flip結果と予想の当落を表示する', () => {
     expect(formatCoinFlipResult('heads', 'heads')).toContain('🎉 **的中！**');
     expect(formatCoinFlipResult('tails', 'heads')).toContain('💥 **はずれ！**');
-    expect(formatCoinFlipResult('tails')).toContain('裏 / Tails');
+    const noChoice = formatCoinFlipResult('tails');
+    expect(noChoice).toContain('裏 / Tails');
+    expect(noChoice).not.toContain('的中');
+    expect(noChoice).not.toContain('はずれ');
   });
 
   it('Coin Flip GIFを外部HTTPなしで同梱する', () => {
