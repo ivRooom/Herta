@@ -119,6 +119,16 @@ interface ChallengeVoiceState {
   guild: ChallengeGuild;
 }
 
+interface MiniGameChallengeInteraction {
+  guildId: string | null;
+  user: { id: string; bot?: boolean };
+  guild: ChallengeGuild | null;
+  commandName?: string;
+  customId?: string;
+  isChatInputCommand(): boolean;
+  isButton(): boolean;
+}
+
 interface CompletionNotificationTarget {
   guild: ChallengeGuild | null;
   reply?: (options: ReplyOptions) => Promise<unknown>;
@@ -178,6 +188,15 @@ export const communityChallengePlugin = definePlugin<
             context as CommunityChallengeContext,
             args[0] as ChallengeReaction | undefined,
             args[1] as ChallengeReactionUser | undefined,
+          );
+        },
+      },
+      {
+        event: 'interactionCreate',
+        async handler(context, ...args) {
+          scheduleMiniGameChallengeSync(
+            context as CommunityChallengeContext,
+            args[0] as MiniGameChallengeInteraction | undefined,
           );
         },
       },
@@ -621,6 +640,42 @@ async function handleChallengeVoice(
   if (!oldState || !newState || oldState.member?.user.bot || newState.member?.user.bot) return;
   if (!voiceActivityMayHaveClosed(oldState, newState)) return;
   await maybeAutoSync(context, newState.guild.id, newState.id, { guild: newState.guild }, true);
+}
+
+export function isMiniGameChallengeInteraction(
+  interaction: MiniGameChallengeInteraction | undefined,
+): boolean {
+  if (!interaction?.guildId || interaction.user.bot) return false;
+  if (
+    interaction.isChatInputCommand() &&
+    (interaction.commandName === 'coinflip' ||
+      interaction.commandName === 'highlow' ||
+      interaction.commandName === 'blackjack')
+  ) {
+    return true;
+  }
+  return (
+    interaction.isButton() && interaction.customId?.startsWith('herta:mini-games:v1:') === true
+  );
+}
+
+function scheduleMiniGameChallengeSync(
+  context: CommunityChallengeContext,
+  interaction: MiniGameChallengeInteraction | undefined,
+): void {
+  if (!isMiniGameChallengeInteraction(interaction) || !interaction?.guildId) return;
+  const guildId = interaction.guildId;
+  const userId = interaction.user.id;
+  const target: CompletionNotificationTarget = { guild: interaction.guild };
+  const timer = setTimeout(() => {
+    void maybeAutoSync(context, guildId, userId, target, true).catch((error) => {
+      context.logger.warn(
+        { err: error, guildId, userId },
+        'Mini Games後のChallenge同期に失敗しました',
+      );
+    });
+  }, 400);
+  timer.unref?.();
 }
 
 async function maybeAutoSync(

@@ -141,6 +141,16 @@ interface AchievementVoiceState {
   guild: AchievementGuild;
 }
 
+interface MiniGameAchievementInteraction {
+  guildId: string | null;
+  user: { id: string; bot?: boolean };
+  guild: AchievementGuild | null;
+  commandName?: string;
+  customId?: string;
+  isChatInputCommand(): boolean;
+  isButton(): boolean;
+}
+
 interface AchievementNotificationTarget {
   guild: AchievementGuild | null;
   reply?: (options: ReplyOptions) => Promise<unknown>;
@@ -197,6 +207,15 @@ export const achievementsPlugin = definePlugin<AchievementsConfig, unknown, Pris
             context as AchievementsRuntimeContext,
             args[0] as AchievementReaction | undefined,
             args[1] as AchievementReactionUser | undefined,
+          );
+        },
+      },
+      {
+        event: 'interactionCreate',
+        async handler(context, ...args) {
+          scheduleMiniGameAchievementSync(
+            context as AchievementsRuntimeContext,
+            args[0] as MiniGameAchievementInteraction | undefined,
           );
         },
       },
@@ -537,6 +556,42 @@ async function handleAchievementVoice(
   if (!oldState || !newState || newState.member?.user.bot || oldState.member?.user.bot) return;
   if (!voiceActivityMayHaveClosed(oldState, newState)) return;
   await maybeAutoSync(context, newState.guild.id, newState.id, { guild: newState.guild }, true);
+}
+
+export function isMiniGameAchievementInteraction(
+  interaction: MiniGameAchievementInteraction | undefined,
+): boolean {
+  if (!interaction?.guildId || interaction.user.bot) return false;
+  if (
+    interaction.isChatInputCommand() &&
+    (interaction.commandName === 'coinflip' ||
+      interaction.commandName === 'highlow' ||
+      interaction.commandName === 'blackjack')
+  ) {
+    return true;
+  }
+  return (
+    interaction.isButton() && interaction.customId?.startsWith('herta:mini-games:v1:') === true
+  );
+}
+
+function scheduleMiniGameAchievementSync(
+  context: AchievementsRuntimeContext,
+  interaction: MiniGameAchievementInteraction | undefined,
+): void {
+  if (!isMiniGameAchievementInteraction(interaction) || !interaction?.guildId) return;
+  const guildId = interaction.guildId;
+  const userId = interaction.user.id;
+  const target: AchievementNotificationTarget = { guild: interaction.guild };
+  const timer = setTimeout(() => {
+    void maybeAutoSync(context, guildId, userId, target, true).catch((error) => {
+      context.logger.warn(
+        { err: error, guildId, userId },
+        'Mini Games後のAchievement同期に失敗しました',
+      );
+    });
+  }, 400);
+  timer.unref?.();
 }
 
 async function maybeAutoSync(
