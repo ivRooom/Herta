@@ -29,7 +29,10 @@ export function resolveXpRewardRoleTargets(
   ]) {
     if (!reward.roleId) continue;
     const existing = thresholds.get(reward.roleId);
-    thresholds.set(reward.roleId, existing === undefined ? reward.level : Math.min(existing, reward.level));
+    thresholds.set(
+      reward.roleId,
+      existing === undefined ? reward.level : Math.min(existing, reward.level),
+    );
   }
 
   return [...thresholds.entries()]

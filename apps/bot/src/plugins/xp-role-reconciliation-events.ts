@@ -31,7 +31,10 @@ export class XpRoleReconciliationSubscriber {
       this.logger.warn('XP報酬Role再同期イベントのRedis再接続を試行しています'),
     );
     redis.on('error', (error: unknown) =>
-      this.logger.error({ err: error }, 'XP報酬Role再同期イベントのRedis接続でエラーが発生しました'),
+      this.logger.error(
+        { err: error },
+        'XP報酬Role再同期イベントのRedis接続でエラーが発生しました',
+      ),
     );
     redis.on('message', (channel: string, payload: string) => {
       if (channel === XP_ROLE_RECONCILIATION_EVENT_CHANNEL) this.handleMessage(payload);
