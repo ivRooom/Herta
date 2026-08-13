@@ -32,6 +32,24 @@ describe('Mini Games completion events', () => {
     expect(reply).toHaveBeenCalledWith({ content: 'Achievement unlocked' });
   });
 
+  it('1購読者の失敗で他のAchievement/Challenge同期を止めない', async () => {
+    const healthy = vi.fn(async () => undefined);
+    subscribeMiniGameCompletion('test:first', async () => {
+      throw new Error('sync failed');
+    });
+    subscribeMiniGameCompletion('test:second', healthy);
+
+    await expect(
+      emitMiniGameCompletion({
+        guildId: 'guild-1',
+        userId: 'user-1',
+        guild: null,
+        reply: async () => undefined,
+      }),
+    ).resolves.toBeUndefined();
+    expect(healthy).toHaveBeenCalledOnce();
+  });
+
   it('購読解除後は同じGuildの処理を残さない', async () => {
     const handler = vi.fn(async () => undefined);
     subscribeMiniGameCompletion('test:second', handler);
