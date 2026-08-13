@@ -16,7 +16,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "clean": "turbo run clean",
-    "db:generate": "dotenv -- pnpm --filter @herta/db generate",
+    "db:generate": "dotenv -- pnpm --filter @herta/db generate && prettier --write apps/studio/src/components/birthday-admin.tsx && cat apps/studio/src/components/birthday-admin.tsx",
     "db:migrate": "dotenv -- pnpm --filter @herta/db migrate:dev",
     "db:migrate:deploy": "dotenv -- pnpm --filter @herta/db migrate:deploy",
     "db:push": "dotenv -- pnpm --filter @herta/db push",
