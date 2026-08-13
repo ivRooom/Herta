@@ -1,6 +1,8 @@
 import type { PrismaClient } from '@herta/db';
 import { getCommunitySeasonWindow } from '@herta/shared';
 
+export const ACHIEVEMENT_BLOCK_PREFIX = 'blocked:';
+
 export interface AchievementMetrics {
   xp: number;
   messages: number;
@@ -26,6 +28,16 @@ export interface AchievementLeaderboardRecord {
   userId: string;
   unlockCount: number;
   achievementIds: string[];
+}
+
+export function blockedAchievementRecordId(achievementId: string): string {
+  return `${ACHIEVEMENT_BLOCK_PREFIX}${achievementId}`;
+}
+
+export function achievementIdFromBlockedRecord(recordId: string): string | null {
+  return recordId.startsWith(ACHIEVEMENT_BLOCK_PREFIX)
+    ? recordId.slice(ACHIEVEMENT_BLOCK_PREFIX.length)
+    : null;
 }
 
 export async function getAchievementMetrics(
@@ -65,7 +77,7 @@ export async function getAchievementMetrics(
       (SELECT COUNT(*) FROM "suggestions" s WHERE s."guild_id" = ${guildId} AND s."author_id" = ${userId})::bigint AS "suggestions",
       (SELECT COUNT(*) FROM "suggestions" s WHERE s."guild_id" = ${guildId} AND s."author_id" = ${userId} AND s."status" IN ('accepted', 'completed'))::bigint AS "acceptedSuggestions",
       (SELECT COUNT(*) FROM "community_challenge_completions" c WHERE c."guild_id" = ${guildId} AND c."user_id" = ${userId})::bigint AS "challengeCompletions",
-      COALESCE((SELECT SUM(c."points") FROM "community_challenge_completions" c WHERE c."guild_id" = ${guildId} AND c."user_id" = ${userId} AND c."season_key" = ${seasonKey}), 0)::bigint AS "seasonPoints
+      COALESCE((SELECT SUM(c."points") FROM "community_challenge_completions" c WHERE c."guild_id" = ${guildId} AND c."user_id" = ${userId} AND c."season_key" = ${seasonKey}), 0)::bigint AS "seasonPoints"
   `;
   return {
     xp: Number(row?.xp ?? 0n),
@@ -111,7 +123,7 @@ export async function listAchievementLeaderboard(
       COUNT(*)::bigint AS "unlockCount",
       ARRAY_AGG("achievement_id" ORDER BY "achievement_id") AS "achievementIds"
     FROM "achievement_unlocks"
-    WHERE "guild_id" = ${guildId}
+    WHERE "guild_id" = ${guildId} AND "achievement_id" NOT LIKE ${`${ACHIEVEMENT_BLOCK_PREFIX}%`}
     GROUP BY "user_id"
     ORDER BY COUNT(*) DESC, "user_id" ASC
     LIMIT ${safeLimit}
@@ -138,7 +150,15 @@ export async function syncAchievementUnlocks(
       WHERE "guild_id" = ${guildId} AND "user_id" = ${userId}
     `;
     const existingIds = new Set(existing.map((record) => record.achievementId));
-    const newlyUnlocked = achievementIds.filter((id) => !existingIds.has(id));
+    const blockedIds = new Set(
+      existing.flatMap((record) => {
+        const id = achievementIdFromBlockedRecord(record.achievementId);
+        return id ? [id] : [];
+      }),
+    );
+    const newlyUnlocked = achievementIds.filter(
+      (id) => !existingIds.has(id) && !blockedIds.has(id),
+    );
     for (const achievementId of newlyUnlocked) {
       await tx.$executeRaw`
         INSERT INTO "achievement_unlocks" ("guild_id", "user_id", "achievement_id")

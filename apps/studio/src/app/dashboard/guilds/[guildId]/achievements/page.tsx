@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ArrowLeft, LibraryBig, Sparkles, Trophy } from 'lucide-react';
+import { ArrowLeft, LibraryBig, ShieldCheck, Sparkles, Trophy } from 'lucide-react';
 import { auth } from '@/auth';
 import { AchievementBuilderManager } from '@/components/achievement-builder-manager';
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
@@ -60,6 +60,12 @@ export default async function AchievementsBuilderPage({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link
+            href={`/dashboard/guilds/${guildId}/achievements/operations`}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-xs font-semibold text-foreground shadow-card transition hover:border-primary/40 hover:bg-background"
+          >
+            <ShieldCheck className="h-3.5 w-3.5 text-primary" /> Operations
+          </Link>
           <Link
             href={`/dashboard/guilds/${guildId}/achievements/templates`}
             className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground shadow-card transition hover:opacity-90"
