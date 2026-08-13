@@ -5,11 +5,12 @@ import { usePathname } from 'next/navigation';
 import {
   Activity,
   BarChart3,
-  Trophy,
   LayoutDashboard,
+  Medal,
   Puzzle,
   ServerCog,
   Sparkles,
+  Trophy,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -19,6 +20,7 @@ const NAV_ITEMS: Array<{ href: string; label: string; icon: LucideIcon; exact?: 
   { href: '/dashboard/operations', label: '稼働状況', icon: Activity },
   { href: '/dashboard/analytics', label: 'アナリティクス', icon: BarChart3 },
   { href: '/dashboard/community', label: 'コミュニティ', icon: Trophy },
+  { href: '/dashboard/leaderboard', label: 'Leaderboard', icon: Medal },
   { href: '/dashboard/custom-plugins', label: 'カスタムPlugin', icon: Puzzle },
 ];
 
