@@ -34,7 +34,7 @@ import {
 } from './mini-games-core.js';
 import {
   getMiniGameStats,
-  incrementMiniGameMetric,
+  incrementMiniGameMetrics,
   recordMiniGameMaximum,
   type MiniGameMetric,
 } from './mini-games-repository.js';
@@ -578,13 +578,13 @@ async function recordMetricsSafely(
   userId: string,
 ): Promise<void> {
   if (!normalizeMiniGamesConfig(context.config).statsEnabled || metrics.length === 0) return;
-  const results = await Promise.allSettled(
-    metrics.map(([metric, amount]) =>
-      incrementMiniGameMetric(context.prisma, context.guildId, userId, metric, amount),
-    ),
-  );
-  if (results.some((result) => result.status === 'rejected')) {
-    context.logger.warn({ guildId: context.guildId }, 'Mini Games戦績の保存に一部失敗しました');
+  try {
+    await incrementMiniGameMetrics(context.prisma, context.guildId, userId, metrics);
+  } catch (error) {
+    context.logger.warn(
+      { err: error, guildId: context.guildId, userId },
+      'Mini Games戦績の保存に失敗しました',
+    );
   }
 }
 
