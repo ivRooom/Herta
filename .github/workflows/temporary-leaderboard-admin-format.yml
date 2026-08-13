@@ -1,0 +1,39 @@
+name: Temporary leaderboard admin format
+
+on:
+  push:
+    branches:
+      - feature/leaderboard-v2-main
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/leaderboard-v2-main
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: >-
+          pnpm exec prettier --write
+          'apps/studio/src/app/dashboard/guilds/[guildId]/leaderboard/admin/page.tsx'
+          apps/studio/src/components/leaderboard-xp-admin.tsx
+          apps/studio/src/lib/xp-admin-core.test.ts
+          apps/studio/src/lib/xp-admin-core.ts
+          apps/studio/src/lib/xp-admin.ts
+      - name: Commit formatted files and remove temporary workflow
+        run: |
+          rm .github/workflows/temporary-leaderboard-admin-format.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'XP管理コードをPrettierで整形する'
+          git push origin HEAD:feature/leaderboard-v2-main
