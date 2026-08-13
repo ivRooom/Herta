@@ -17,7 +17,9 @@ describe('Mini Games v3', () => {
     const leaderboard = miniGamesManifest.commands.find(
       (command) => command.name === 'gameleaderboard',
     );
-    expect(leaderboard?.options?.find((option) => option.name === 'metric')?.choices).toHaveLength(7);
+    expect(leaderboard?.options?.find((option) => option.name === 'metric')?.choices).toHaveLength(
+      7,
+    );
   });
 
   it('Arcade LeaderboardへTop 3メダルと指標単位を表示する', () => {

@@ -130,8 +130,11 @@ async function executeChinchiro(
   const dealer = rollChinchiroTurn();
   const outcome = compareChinchiroHands(player.hand, dealer.hand);
   const won = outcome === 'player-win';
-  const result =
-    won ? '🎉 **あなたの勝ち！**' : outcome === 'dealer-win' ? '😵 **親の勝ち**' : '🤝 **あいこ**';
+  const result = won
+    ? '🎉 **あなたの勝ち！**'
+    : outcome === 'dealer-win'
+      ? '😵 **親の勝ち**'
+      : '🤝 **あいこ**';
 
   await interaction.reply({
     content: [

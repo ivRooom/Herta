@@ -1,10 +1,4 @@
-export type ChinchiroHandKind =
-  | 'pinzoro'
-  | 'triple'
-  | 'shigoro'
-  | 'point'
-  | 'no-hand'
-  | 'hifumi';
+export type ChinchiroHandKind = 'pinzoro' | 'triple' | 'shigoro' | 'point' | 'no-hand' | 'hifumi';
 
 export interface ChinchiroHand {
   dice: readonly [number, number, number];
@@ -18,11 +12,7 @@ export interface ChinchiroTurn {
   rolls: number;
 }
 
-export function rollDice(
-  sides = 6,
-  count = 1,
-  random: () => number = Math.random,
-): number[] {
+export function rollDice(sides = 6, count = 1, random: () => number = Math.random): number[] {
   const safeSides = Math.min(100, Math.max(2, Math.trunc(sides)));
   const safeCount = Math.min(10, Math.max(1, Math.trunc(count)));
   return Array.from({ length: safeCount }, () => Math.floor(random() * safeSides) + 1);
@@ -52,10 +42,7 @@ export function evaluateChinchiroHand(dice: readonly [number, number, number]): 
   return { dice, kind: 'no-hand', point: null, strength: 50 };
 }
 
-export function rollChinchiroTurn(
-  random: () => number = Math.random,
-  maxRolls = 3,
-): ChinchiroTurn {
+export function rollChinchiroTurn(random: () => number = Math.random, maxRolls = 3): ChinchiroTurn {
   const safeRolls = Math.min(3, Math.max(1, Math.trunc(maxRolls)));
   let hand = evaluateChinchiroHand(asThreeDice(rollDice(6, 3, random)));
   let rolls = 1;

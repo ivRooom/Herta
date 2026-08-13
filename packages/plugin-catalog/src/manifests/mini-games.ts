@@ -115,9 +115,7 @@ export const miniGamesManifest: PluginManifest = {
     {
       name: 'gamestats',
       description: 'Mini Gamesの戦績・勝率・最高連勝を表示します',
-      options: [
-        { name: 'user', description: '確認するメンバー（未指定は自分）', type: 'user' },
-      ],
+      options: [{ name: 'user', description: '確認するメンバー（未指定は自分）', type: 'user' }],
     },
     {
       name: 'dice',
