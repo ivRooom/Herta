@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import { cookies } from 'next/headers';
 import { getToken } from 'next-auth/jwt';
 import type { JWT } from 'next-auth/jwt';
@@ -17,8 +18,10 @@ function sessionCookieName(): string {
  * サーバー専用: JWT (アクセストークンを含む) を取得する。
  * accessToken はクライアントへ露出させないため、session callback ではなく
  * この経由でのみ取り出す。
+ *
+ * Dashboardのlayoutとpageが同一リクエストで参照してもJWT復号は1回に共有する。
  */
-async function getAuthToken(): Promise<JWT | null> {
+const getAuthToken = cache(async (): Promise<JWT | null> => {
   const cookieStore = await cookies();
   const cookieName = sessionCookieName();
   const secure = isSecureContext();
@@ -30,7 +33,7 @@ async function getAuthToken(): Promise<JWT | null> {
     cookieName,
     secureCookie: secure,
   });
-}
+});
 
 /** サーバー専用: ログインユーザーの Discord アクセストークンを取得する */
 export async function getDiscordAccessToken(): Promise<string | null> {

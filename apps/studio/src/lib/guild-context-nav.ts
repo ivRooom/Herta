@@ -35,6 +35,21 @@ export function getGuildConsoleHref(
   return `${basePath}/audit-logs`;
 }
 
+/**
+ * 別Guildへ切り替える際の安全な遷移先を返す。
+ * Plugin詳細は新GuildのPlugin Managerへ畳み、監査ログは同じ画面を維持する。
+ * BirthdayやDiagnosticsなど `other` の深いルートは新Guildでの存在・状態を
+ * 保証できないため、新Guildの概要へ戻す。
+ */
+export function getGuildSwitchHref(
+  targetGuildId: string,
+  context: GuildConsoleContext | null,
+): string {
+  if (context?.section === 'plugins') return getGuildConsoleHref(targetGuildId, 'plugins');
+  if (context?.section === 'audit-logs') return getGuildConsoleHref(targetGuildId, 'audit-logs');
+  return getGuildConsoleHref(targetGuildId, 'overview');
+}
+
 function isRouteOrChild(pathname: string, route: string): boolean {
   return pathname === route || pathname.startsWith(`${route}/`);
 }
