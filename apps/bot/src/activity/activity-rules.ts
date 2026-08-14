@@ -4,7 +4,7 @@ export {
   normalizeActivityRulesConfig,
   shouldCountMessage,
   shouldCountVoice,
-} from '@herta/shared';
+} from '@herta/shared/activity-rules';
 export type {
   ActivityRulesConfig,
   MessageActivityBlockingReason,
@@ -12,4 +12,4 @@ export type {
   MessageActivityEvaluation,
   MessageActivityNotice,
   VoiceActivityCandidate,
-} from '@herta/shared';
+} from '@herta/shared/activity-rules';
