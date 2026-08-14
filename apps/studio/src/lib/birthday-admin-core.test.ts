@@ -43,10 +43,7 @@ test('Birthday removeは月日を要求しない', () => {
 });
 
 test('Birthday対象はGuild所属の人間メンバーだけを許可する', () => {
-  assert.equal(
-    birthdayMemberEligibility(USER_ID, [{ id: USER_ID, bot: false }]),
-    'eligible',
-  );
+  assert.equal(birthdayMemberEligibility(USER_ID, [{ id: USER_ID, bot: false }]), 'eligible');
   assert.equal(birthdayMemberEligibility(USER_ID, [{ id: USER_ID, bot: true }]), 'bot');
   assert.equal(
     birthdayMemberEligibility(USER_ID, [{ id: '987654321098765432', bot: false }]),
