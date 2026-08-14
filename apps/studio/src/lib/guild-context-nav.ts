@@ -16,10 +16,10 @@ export function getGuildConsoleContext(pathname: string): GuildConsoleContext | 
   if (pathname === basePath || pathname === `${basePath}/`) {
     return { guildId, section: 'overview' };
   }
-  if (pathname.startsWith(`${basePath}/plugins`)) {
+  if (isRouteOrChild(pathname, `${basePath}/plugins`)) {
     return { guildId, section: 'plugins' };
   }
-  if (pathname.startsWith(`${basePath}/audit-logs`)) {
+  if (isRouteOrChild(pathname, `${basePath}/audit-logs`)) {
     return { guildId, section: 'audit-logs' };
   }
   return { guildId, section: 'other' };
@@ -33,4 +33,8 @@ export function getGuildConsoleHref(
   if (section === 'overview') return basePath;
   if (section === 'plugins') return `${basePath}/plugins`;
   return `${basePath}/audit-logs`;
+}
+
+function isRouteOrChild(pathname: string, route: string): boolean {
+  return pathname === route || pathname.startsWith(`${route}/`);
 }
