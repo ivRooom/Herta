@@ -79,7 +79,10 @@ export class GuildPluginLoader {
       let pluginEvents: GuildEventHandler[] = [];
       try {
         pluginCommands = entry.provideCommands?.(enabled.config, guildId) ?? [];
-        pluginEvents = entry.provideEvents?.(enabled.config, guildId) ?? [];
+        pluginEvents = (entry.provideEvents?.(enabled.config, guildId) ?? []).map((event) => ({
+          ...event,
+          pluginId,
+        }));
       } catch (error) {
         const reason = 'Plugin provider の実行に失敗しました';
         this.logger.error({ guildId, pluginId, error }, 'Pluginのロードに失敗しました');
