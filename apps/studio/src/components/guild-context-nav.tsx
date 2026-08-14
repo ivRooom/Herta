@@ -166,7 +166,9 @@ function QuickNavLink({
         href={href}
         aria-current={active ? 'page' : undefined}
         className={`flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-medium transition-colors ${
-          active ? 'bg-primary/10 text-primary' : 'text-muted hover:bg-background hover:text-foreground'
+          active
+            ? 'bg-primary/10 text-primary'
+            : 'text-muted hover:bg-background hover:text-foreground'
         }`}
       >
         <Icon className="h-4 w-4" aria-hidden="true" />
@@ -180,7 +182,9 @@ function QuickNavLink({
       href={href}
       aria-current={active ? 'page' : undefined}
       className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors ${
-        active ? 'bg-primary/15 text-primary' : 'text-muted hover:bg-background hover:text-foreground'
+        active
+          ? 'bg-primary/15 text-primary'
+          : 'text-muted hover:bg-background hover:text-foreground'
       }`}
     >
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />
