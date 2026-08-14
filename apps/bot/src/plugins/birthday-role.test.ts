@@ -9,6 +9,7 @@ import {
   isLeapYear,
   isValidBirthday,
   normalizeBirthdayRoleConfig,
+  renderBirthdayAnnouncement,
   resolveEffectiveBirthday,
 } from './birthday-role.js';
 
@@ -41,6 +42,7 @@ describe('normalizeBirthdayRoleConfig', () => {
     expect(normalizeBirthdayRoleConfig({})).toEqual({
       enabled: true,
       ephemeralResponses: true,
+      allowSelfRegistration: true,
       assignRole: true,
       birthdayRoleId: null,
       sendAnnouncement: true,
@@ -50,20 +52,34 @@ describe('normalizeBirthdayRoleConfig', () => {
     });
   });
 
-  it('Discord IDとメッセージを正規化する', () => {
+  it('Discord ID・自己登録設定・メッセージを正規化する', () => {
     expect(
       normalizeBirthdayRoleConfig({
+        allowSelfRegistration: false,
         birthdayRoleId: ' 123 ',
         announcementChannelId: 'invalid',
         announcementMessage: '  Happy {user}!  ',
         leapDayPolicy: 'march-1',
       }),
     ).toMatchObject({
+      allowSelfRegistration: false,
       birthdayRoleId: '123',
       announcementChannelId: null,
       announcementMessage: 'Happy {user}!',
       leapDayPolicy: 'march-1',
     });
+  });
+});
+
+describe('birthday announcement', () => {
+  it('user・month・day変数をお祝い文へ展開する', () => {
+    expect(
+      renderBirthdayAnnouncement('🎂 {user} {month}月{day}日おめでとう！', {
+        userId: '123456789012345678',
+        month: 8,
+        day: 14,
+      }),
+    ).toBe('🎂 <@123456789012345678> 8月14日おめでとう！');
   });
 });
 
