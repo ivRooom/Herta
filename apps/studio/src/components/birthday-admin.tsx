@@ -241,10 +241,7 @@ export function BirthdayAdmin({
               </thead>
               <tbody>
                 {visibleRegistrations.map((registration) => (
-                  <tr
-                    key={registration.userId}
-                    className="border-b border-border last:border-b-0"
-                  >
+                  <tr key={registration.userId} className="border-b border-border last:border-b-0">
                     <td className="px-3 py-2 tabular-nums">
                       {registration.month}月{registration.day}日
                     </td>
