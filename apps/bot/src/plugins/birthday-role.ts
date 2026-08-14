@@ -30,6 +30,7 @@ export type LeapDayPolicy = 'february-28' | 'march-1' | 'skip';
 export interface BirthdayRoleConfig {
   enabled: boolean;
   ephemeralResponses: boolean;
+  allowSelfRegistration: boolean;
   assignRole: boolean;
   birthdayRoleId: string | null;
   sendAnnouncement: boolean;
@@ -163,6 +164,8 @@ export function normalizeBirthdayRoleConfig(value: unknown): BirthdayRoleConfig 
     enabled: source.enabled === undefined ? true : source.enabled === true,
     ephemeralResponses:
       source.ephemeralResponses === undefined ? true : source.ephemeralResponses === true,
+    allowSelfRegistration:
+      source.allowSelfRegistration === undefined ? true : source.allowSelfRegistration === true,
     assignRole: source.assignRole === undefined ? true : source.assignRole === true,
     birthdayRoleId: normalizeDiscordId(source.birthdayRoleId),
     sendAnnouncement:
@@ -214,6 +217,16 @@ export function getLocalDateParts(now: Date, timeZone: string): LocalDateParts {
 
 export function formatLocalDate(parts: LocalDateParts): string {
   return `${parts.year.toString().padStart(4, '0')}-${parts.month.toString().padStart(2, '0')}-${parts.day.toString().padStart(2, '0')}`;
+}
+
+export function renderBirthdayAnnouncement(
+  template: string,
+  registration: BirthdayRegistrationLike,
+): string {
+  return template
+    .replaceAll('{user}', `<@${registration.userId}>`)
+    .replaceAll('{month}', String(registration.month))
+    .replaceAll('{day}', String(registration.day));
 }
 
 export function getDaysUntilBirthday(
@@ -333,7 +346,7 @@ export async function runBirthdayRoleCycle(
             { userId: registration.userId, localDate, kind: 'announcement' },
             async () => {
               const content = truncate(
-                config.announcementMessage.replaceAll('{user}', `<@${registration.userId}>`),
+                renderBirthdayAnnouncement(config.announcementMessage, registration),
                 MAX_RESPONSE_LENGTH,
               );
               const message = await channel.send({
@@ -370,6 +383,14 @@ async function executeBirthdayCommand(
   }
 
   if (subcommand === 'set') {
+    if (!config.allowSelfRegistration) {
+      await respond(
+        interaction,
+        '本人による誕生日登録は管理者設定で無効になっています。サーバー管理者へ登録を依頼してください。',
+        true,
+      );
+      return;
+    }
     const month = interaction.options.getInteger('month', true);
     const day = interaction.options.getInteger('day', true);
     if (month === null || day === null || !isValidBirthday(month, day)) {

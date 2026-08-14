@@ -8,11 +8,12 @@ Birthday Roleは、Guildメンバーが誕生日の**月日だけ**を登録し�
 - 生年・年齢は保存しません。
 - `/birthday remove` で本人が登録を削除できます。
 - `/birthday me` で本人が保存内容を確認できます。
+- Guild管理者が本人登録を無効化しても、本人の削除権限は維持します。
 
 ## コマンド
 
-- `/birthday set month:<1-12> day:<1-31>`: 自分の誕生日を登録・更新します。
-- `/birthday remove`: 自分の誕生日登録を削除します。
+- `/birthday set month:<1-12> day:<1-31>`: 自分の誕生日を登録・更新します。`allowSelfRegistration`がOFFの場合は利用できません。
+- `/birthday remove`: 自分の誕生日登録を削除します。本人登録がOFFでも利用できます。
 - `/birthday me`: 自分の登録内容を確認します。
 - `/birthday next`: Guild timezone基準で次の誕生日を表示します。
 - `/birthday list`: 登録済み誕生日を月日順で表示します。
@@ -23,15 +24,34 @@ Birthday Roleは、Guildメンバーが誕生日の**月日だけ**を登録し�
 
 - `enabled`: Plugin全体の有効/無効
 - `ephemeralResponses`: コマンド結果を本人だけへ表示
+- `allowSelfRegistration`: メンバー本人による`/birthday set`を許可するか。OFFでもStudio管理者による管理と本人の`/birthday remove`は利用できます。
 - `assignRole`: 誕生日当日のRole付与
 - `birthdayRoleId`: 誕生日Role。Role PickerではBotが編集可能なRoleだけを選択します。
 - `sendAnnouncement`: お祝い投稿の有効/無効
 - `announcementChannelId`: お祝い投稿Channel
-- `announcementMessage`: お祝い文。`{user}`を対象ユーザーのメンションへ置換します。
+- `announcementMessage`: お祝い文。以下の変数を利用できます。
+  - `{user}`: 対象ユーザーのメンション
+  - `{month}`: 登録された誕生月
+  - `{day}`: 登録された誕生日
 - `leapDayPolicy`: 非うるう年に2月29日生まれを扱う方法
   - `february-28`: 2月28日に祝う
   - `march-1`: 3月1日に祝う
   - `skip`: 非うるう年は自動処理しない
+
+## Birthday Management
+
+Guild管理者はHerta Studioの `/dashboard/guilds/[guildId]/birthday` からメンバーの誕生日を登録・更新・解除できます。
+
+- Discord User Pickerで対象メンバーを選択します。
+- 保存するのは既存コマンドと同じ月・日だけです。
+- 2月29日は登録できます。
+- 存在しない月日はAPI側でも拒否します。
+- 登録時は対象Discord IDが現在そのGuildに所属する非BotメンバーかAPI側でも確認します。
+- Bot内部APIで所属確認できない場合、未確認のIDを保存せず503で失敗させます。
+- 解除は退会済みメンバーの古い登録も削除できるよう、現在のGuild所属を要求しません。
+- 管理者による登録・更新・解除はAudit Logへ記録します。
+- `allowSelfRegistration`がOFFでもStudio管理者は登録・更新・解除できます。
+- 既存の`birthday_registrations`を再利用するため追加migrationはありません。
 
 ## timezone
 

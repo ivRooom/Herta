@@ -5,6 +5,7 @@ import {
   formatRankMessage,
   levelForXp,
   normalizeXpLevelConfig,
+  shouldAwardXpByActivityRules,
   xpRequiredForLevel,
 } from './xp-level.js';
 import type { XpProfileRecord } from './xp-level-repository.js';
@@ -47,6 +48,97 @@ describe('XP / Level v1', () => {
       reward1Level: 1,
       reward1RoleId: '789',
     });
+  });
+
+  it('Activity Rules未導入またはXP連携OFFなら従来どおりXP対象にする', () => {
+    const candidate = {
+      channelId: '100',
+      roleIds: ['200'],
+      contentAvailable: true,
+      content: '!help',
+      contentLength: 5,
+    };
+    expect(shouldAwardXpByActivityRules(null, candidate)).toBe(true);
+    expect(
+      shouldAwardXpByActivityRules(
+        {
+          applyMessageRulesToXp: false,
+          excludedTextChannelIds: ['100'],
+          excludedRoleIds: ['200'],
+          excludeCommandMessages: true,
+          commandPrefixes: ['!'],
+        },
+        candidate,
+      ),
+    ).toBe(true);
+  });
+
+  it('Activity Rulesの発言除外をXPへ適用できる', () => {
+    const config = {
+      applyMessageRulesToXp: true,
+      excludedTextChannelIds: ['100'],
+      excludedRoleIds: ['200'],
+      excludeCommandMessages: true,
+      commandPrefixes: ['!'],
+      minimumMessageLength: 5,
+    };
+
+    expect(
+      shouldAwardXpByActivityRules(config, {
+        channelId: '100',
+        roleIds: [],
+        contentAvailable: true,
+        content: 'hello',
+        contentLength: 5,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAwardXpByActivityRules(config, {
+        channelId: '101',
+        roleIds: ['200'],
+        contentAvailable: true,
+        content: 'hello',
+        contentLength: 5,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAwardXpByActivityRules(config, {
+        channelId: '101',
+        roleIds: [],
+        contentAvailable: true,
+        content: '   !help',
+        contentLength: 8,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAwardXpByActivityRules(config, {
+        channelId: '101',
+        roleIds: [],
+        contentAvailable: true,
+        content: 'abcd',
+        contentLength: 4,
+      }),
+    ).toBe(false);
+  });
+
+  it('Message Content Intentが無い場合はActivity Rulesの本文条件だけをXPでスキップする', () => {
+    expect(
+      shouldAwardXpByActivityRules(
+        {
+          applyMessageRulesToXp: true,
+          excludeCommandMessages: true,
+          commandPrefixes: ['!'],
+          minimumMessageLength: 50,
+        },
+        {
+          channelId: '101',
+          roleIds: [],
+          contentAvailable: false,
+          content: '!help',
+          contentLength: 0,
+        },
+      ),
+    ).toBe(true);
   });
 
   it('XPから二次曲線ベースのLevelを算出する', () => {

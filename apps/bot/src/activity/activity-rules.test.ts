@@ -6,14 +6,17 @@ import {
   shouldCountVoice,
 } from './activity-rules.js';
 
-describe('Activity Rules v1', () => {
-  it('既存Community Activityと同じ挙動を既定値にする', () => {
+describe('Activity Rules v1.2', () => {
+  it('既存Community ActivityとXPの挙動を既定値で維持する', () => {
     expect(normalizeActivityRulesConfig(undefined)).toEqual({
       excludedTextChannelIds: [],
       excludedVoiceChannelIds: [],
       excludedRoleIds: [],
       messageCooldownSeconds: 0,
       minimumMessageLength: 0,
+      excludeCommandMessages: false,
+      commandPrefixes: ['/', '!'],
+      applyMessageRulesToXp: false,
       countReactionsGiven: true,
       countReactionsReceived: true,
       countSelfMutedVoice: true,
@@ -23,13 +26,16 @@ describe('Activity Rules v1', () => {
     });
   });
 
-  it('IDと数値設定を安全な範囲へ正規化する', () => {
+  it('ID・数値・コマンドprefix・XP適用設定を安全な範囲へ正規化する', () => {
     const config = normalizeActivityRulesConfig({
       excludedTextChannelIds: ['123', '123', 'bad'],
       excludedVoiceChannelIds: ['456', 'bad'],
       excludedRoleIds: ['789', 'bad'],
       messageCooldownSeconds: 999,
       minimumMessageLength: -5,
+      excludeCommandMessages: true,
+      commandPrefixes: ['!', ' ! ', '?', 'too-long', 'has space'],
+      applyMessageRulesToXp: true,
       countReactionsGiven: false,
       countSelfMutedVoice: false,
     });
@@ -40,6 +46,9 @@ describe('Activity Rules v1', () => {
       excludedRoleIds: ['789'],
       messageCooldownSeconds: 300,
       minimumMessageLength: 0,
+      excludeCommandMessages: true,
+      commandPrefixes: ['!', '?'],
+      applyMessageRulesToXp: true,
       countReactionsGiven: false,
       countSelfMutedVoice: false,
     });
@@ -86,13 +95,50 @@ describe('Activity Rules v1', () => {
     ).toBe(true);
   });
 
-  it('Message Content Intentが無い場合は文字数条件だけをスキップする', () => {
-    const config = normalizeActivityRulesConfig({ minimumMessageLength: 50 });
+  it('設定したprefixのコマンド形式メッセージを発言数から除外する', () => {
+    const config = normalizeActivityRulesConfig({
+      excludeCommandMessages: true,
+      commandPrefixes: ['/', '!', '?'],
+    });
+
+    expect(
+      shouldCountMessage(config, {
+        channelId: '101',
+        contentAvailable: true,
+        content: '/rank',
+        contentLength: 5,
+      }),
+    ).toBe(false);
+    expect(
+      shouldCountMessage(config, {
+        channelId: '101',
+        contentAvailable: true,
+        content: '   !help',
+        contentLength: 8,
+      }),
+    ).toBe(false);
+    expect(
+      shouldCountMessage(config, {
+        channelId: '101',
+        contentAvailable: true,
+        content: 'これは!通常メッセージ',
+        contentLength: 11,
+      }),
+    ).toBe(true);
+  });
+
+  it('Message Content Intentが無い場合は本文依存条件だけをスキップする', () => {
+    const config = normalizeActivityRulesConfig({
+      minimumMessageLength: 50,
+      excludeCommandMessages: true,
+      commandPrefixes: ['!'],
+    });
     expect(
       shouldCountMessage(config, {
         channelId: '101',
         roleIds: [],
         contentAvailable: false,
+        content: '!help',
         contentLength: 0,
       }),
     ).toBe(true);
