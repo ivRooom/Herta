@@ -7,7 +7,7 @@ import {
   normalizeActivityRulesConfig,
   type MessageActivityBlockingReason,
   type MessageActivityNotice,
-} from '@herta/shared';
+} from '@herta/shared/activity-rules';
 import { DiscordChannelPicker, DiscordRolePicker } from './discord-entity-picker';
 import type { GuildChannelOption, GuildRoleOption } from '@/lib/bot-guild-options';
 
