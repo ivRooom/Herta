@@ -245,6 +245,7 @@ export class HertaBot {
               channelId: message.channelId,
               roleIds,
               contentAvailable: messageContentIntentEnabled(),
+              content: message.content,
               contentLength: message.content.length,
             }) &&
             hasMessageCooldownElapsed(

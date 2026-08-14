@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const activityRulesManifest: PluginManifest = {
   id: 'activity-rules',
   name: 'Activity Rules',
-  version: '1.0.0',
+  version: '1.1.0',
   description:
     'Community Activityの発言・リアクション・VC集計へ除外ルールとanti-spam設定を適用します',
   author: { name: 'Herta' },
@@ -72,6 +72,29 @@ export const activityRulesManifest: PluginManifest = {
           help: '0は文字数判定なしです。1以上の判定には既存のMessage Content Intentが必要です。Intentが無効な場合、この条件だけを安全にスキップします。',
         },
       },
+      excludeCommandMessages: {
+        type: 'boolean',
+        title: 'コマンド形式のメッセージを発言数に含めない',
+        default: false,
+        'x-herta-ui': {
+          section: '発言anti-spam',
+          help: 'ONにすると、指定prefixで始まる通常メッセージをMessagesランキングから除外します。Discord Slash Command自体はInteractionとして処理されるため元から発言数には含まれません。本文判定にはMessage Content Intentが必要です。',
+        },
+      },
+      commandPrefixes: {
+        type: 'array',
+        title: 'コマンドとして扱うprefix',
+        uniqueItems: true,
+        minItems: 1,
+        maxItems: 10,
+        default: ['/', '!'],
+        items: { type: 'string', minLength: 1, maxLength: 5, pattern: '^\\S+$' },
+        'x-herta-ui': {
+          section: '発言anti-spam',
+          placeholder: '例: / または !',
+          help: 'コマンド形式除外をONにしたとき、メッセージ先頭で判定するprefixです。最大10件・1〜5文字です。',
+        },
+      },
       countReactionsGiven: {
         type: 'boolean',
         title: '付けたリアクションを集計する',
@@ -129,6 +152,8 @@ export const activityRulesManifest: PluginManifest = {
       'excludedRoleIds',
       'messageCooldownSeconds',
       'minimumMessageLength',
+      'excludeCommandMessages',
+      'commandPrefixes',
       'countReactionsGiven',
       'countReactionsReceived',
       'excludedVoiceChannelIds',
