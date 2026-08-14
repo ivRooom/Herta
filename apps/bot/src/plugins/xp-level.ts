@@ -6,6 +6,12 @@ import {
   type PluginEventHandler,
   type PluginRuntimeContext,
 } from '@herta/plugin-sdk';
+import {
+  normalizeActivityRulesConfig,
+  shouldCountMessage,
+  type MessageActivityCandidate,
+} from '../activity/activity-rules.js';
+import { defaultGuildPluginCache } from './cache.js';
 import { awardMessageXp, type XpProfileRecord } from './xp-level-repository.js';
 import {
   formatDiscordCommunityLeaderboard,
@@ -66,13 +72,17 @@ interface XpChannel {
 }
 
 interface XpMemberRoles {
-  cache: { has(roleId: string): boolean };
+  cache: {
+    has(roleId: string): boolean;
+    keys(): IterableIterator<string>;
+  };
   add(roleId: string): Promise<unknown>;
 }
 
 interface XpMessage {
   guildId: string | null;
   channelId: string;
+  content?: string;
   author: { id: string; bot?: boolean };
   member: { roles: XpMemberRoles } | null;
   guild: {
@@ -135,6 +145,15 @@ export function normalizeXpLevelConfig(value: unknown): XpLevelConfig {
     reward3Level: clamp(toInteger(source.reward3Level, 20), 1, 999),
     reward3RoleId: nullableDiscordId(source.reward3RoleId),
   };
+}
+
+export function shouldAwardXpByActivityRules(
+  activityRulesConfig: unknown | null,
+  candidate: MessageActivityCandidate,
+): boolean {
+  if (activityRulesConfig === null) return true;
+  const rules = normalizeActivityRulesConfig(activityRulesConfig);
+  return !rules.applyMessageRulesToXp || shouldCountMessage(rules, candidate);
 }
 
 export function levelForXp(xp: number): number {
@@ -251,9 +270,22 @@ async function handleXpMessage(
   if (!message?.guildId || message.author.bot) return;
   const config = normalizeXpLevelConfig(context.config);
   if (!config.enabled || config.excludedChannelIds.includes(message.channelId)) return;
+
+  const roleIds = message.member ? [...message.member.roles.cache.keys()] : [];
+  if (config.excludedRoleIds.some((roleId) => roleIds.includes(roleId))) return;
+
+  const activityRulesConfig =
+    defaultGuildPluginCache
+      .get(message.guildId)
+      ?.find((item) => item.manifest.id === 'activity-rules')?.config ?? null;
   if (
-    message.member &&
-    config.excludedRoleIds.some((roleId) => message.member!.roles.cache.has(roleId))
+    !shouldAwardXpByActivityRules(activityRulesConfig, {
+      channelId: message.channelId,
+      roleIds,
+      contentAvailable: messageContentAvailable(),
+      content: message.content,
+      contentLength: message.content?.length ?? 0,
+    })
   ) {
     return;
   }
@@ -343,6 +375,11 @@ async function reply(interaction: XpCommandInteraction, content: string): Promis
     flags: EPHEMERAL_FLAG,
     allowedMentions: { parse: [] },
   });
+}
+
+function messageContentAvailable(): boolean {
+  const value = process.env['DISCORD_ENABLE_MESSAGE_CONTENT_INTENT']?.trim().toLowerCase();
+  return value === 'true' || value === '1';
 }
 
 function normalizedIds(value: unknown, maxItems: number): string[] {
