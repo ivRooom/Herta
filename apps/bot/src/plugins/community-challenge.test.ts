@@ -34,6 +34,7 @@ describe('Community Challenge / Season v1', () => {
       dailyChallengeCount: 5,
       weeklyChallengeCount: 1,
       includeMinecraftChallenges: false,
+      includeMiniGameChallenges: false,
       autoSync: true,
       autoSyncCooldownSeconds: 10,
       notifyCompletions: true,
@@ -46,10 +47,10 @@ describe('Community Challenge / Season v1', () => {
     });
   });
 
-  it('Daily 15種・Weekly 15種の30 Challengeを提供する', () => {
-    expect(COMMUNITY_CHALLENGES).toHaveLength(30);
-    expect(COMMUNITY_CHALLENGES.filter((item) => item.period === 'daily')).toHaveLength(15);
-    expect(COMMUNITY_CHALLENGES.filter((item) => item.period === 'weekly')).toHaveLength(15);
+  it('既存30種 + Mini Games 24種の54 Challengeを提供する', () => {
+    expect(COMMUNITY_CHALLENGES).toHaveLength(54);
+    expect(COMMUNITY_CHALLENGES.filter((item) => item.period === 'daily')).toHaveLength(27);
+    expect(COMMUNITY_CHALLENGES.filter((item) => item.period === 'weekly')).toHaveLength(27);
   });
 
   it('Guildと期間が同じなら同じChallengeを選び、活動指標は重複させない', () => {
@@ -118,6 +119,10 @@ describe('Community Challenge / Season v1', () => {
         reactions_received: 100,
         voice_seconds: 100_000,
         minecraft_seconds: 100_000,
+        minigame_plays: 0,
+        minigame_wins: 0,
+        highlow_round_wins: 0,
+        blackjack_wins: 0,
       },
       completions: definitions.map((definition, index) => ({
         challengeId: definition.id,

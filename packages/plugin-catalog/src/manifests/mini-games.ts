@@ -3,8 +3,8 @@ import type { PluginManifest } from '@herta/shared';
 export const miniGamesManifest: PluginManifest = {
   id: 'mini-games',
   name: 'Mini Games',
-  version: '1.0.0',
-  description: 'Coin Flip・High-Low・BlackjackをDiscord内で遊べるミニゲームPluginです',
+  version: '2.0.0',
+  description: 'Coin Flip・High-Low・Blackjackを戦績付きでDiscord内で遊べるミニゲームPluginです',
   author: { name: 'Herta' },
   category: 'fun',
   permissions: [
@@ -24,6 +24,15 @@ export const miniGamesManifest: PluginManifest = {
         title: 'Mini Gamesを有効化する',
         default: true,
         'x-herta-ui': { section: '基本設定' },
+      },
+      statsEnabled: {
+        type: 'boolean',
+        title: 'ゲーム戦績を記録・表示する',
+        default: true,
+        'x-herta-ui': {
+          section: '戦績',
+          help: '既存のCommunity Activity基盤へプレイ数・勝利数・最高連勝などを記録します。',
+        },
       },
       coinflipAnimation: {
         type: 'boolean',
@@ -98,6 +107,17 @@ export const miniGamesManifest: PluginManifest = {
     {
       name: 'blackjack',
       description: 'Dealerと1対1でBlackjackを開始します',
+    },
+    {
+      name: 'gamestats',
+      description: 'Mini Gamesの戦績・勝率・最高連勝を表示します',
+      options: [
+        {
+          name: 'user',
+          description: '確認するメンバー（未指定は自分）',
+          type: 'user',
+        },
+      ],
     },
   ],
 };

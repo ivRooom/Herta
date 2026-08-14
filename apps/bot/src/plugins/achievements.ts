@@ -37,6 +37,10 @@ import {
   type CustomAchievementSeries,
   type CustomAchievementStage,
 } from './custom-achievements.js';
+import {
+  subscribeMiniGameCompletion,
+  unsubscribeMiniGameCompletion,
+} from './mini-games-completion-events.js';
 
 const EPHEMERAL_FLAG = 64;
 const DISCORD_ID_PATTERN = /^\d+$/;
@@ -141,6 +145,16 @@ interface AchievementVoiceState {
   guild: AchievementGuild;
 }
 
+interface MiniGameAchievementInteraction {
+  guildId: string | null;
+  user: { id: string; bot?: boolean };
+  guild: AchievementGuild | null;
+  commandName?: string;
+  customId?: string;
+  isChatInputCommand(): boolean;
+  isButton(): boolean;
+}
+
 interface AchievementNotificationTarget {
   guild: AchievementGuild | null;
   reply?: (options: ReplyOptions) => Promise<unknown>;
@@ -161,6 +175,21 @@ type AchievementsRuntimeContext = PluginRuntimeContext<AchievementsConfig, unkno
 
 export const achievementsPlugin = definePlugin<AchievementsConfig, unknown, PrismaClient>({
   manifest: achievementsManifest,
+  async onEnable(context) {
+    subscribeMiniGameCompletion(`achievements:${context.guildId}`, async (event) => {
+      if (event.guildId !== context.guildId) return;
+      await maybeAutoSync(
+        context,
+        event.guildId,
+        event.userId,
+        {
+          guild: event.guild as unknown as AchievementGuild,
+          reply: (options) => event.reply(options),
+        },
+        true,
+      );
+    });
+  },
   provideCommands(context) {
     const list: CommandHandler<AchievementCommandInteraction> = {
       definition: achievementsManifest.commands[0]!,
@@ -213,6 +242,7 @@ export const achievementsPlugin = definePlugin<AchievementsConfig, unknown, Pris
     ] as PluginEventHandler<AchievementsConfig>[];
   },
   async onDisable(context) {
+    unsubscribeMiniGameCompletion(`achievements:${context.guildId}`);
     clearAutoSyncGuild(context.guildId);
   },
 });
@@ -537,6 +567,23 @@ async function handleAchievementVoice(
   if (!oldState || !newState || newState.member?.user.bot || oldState.member?.user.bot) return;
   if (!voiceActivityMayHaveClosed(oldState, newState)) return;
   await maybeAutoSync(context, newState.guild.id, newState.id, { guild: newState.guild }, true);
+}
+
+export function isMiniGameAchievementInteraction(
+  interaction: MiniGameAchievementInteraction | undefined,
+): boolean {
+  if (!interaction?.guildId || interaction.user.bot) return false;
+  if (
+    interaction.isChatInputCommand() &&
+    (interaction.commandName === 'coinflip' ||
+      interaction.commandName === 'highlow' ||
+      interaction.commandName === 'blackjack')
+  ) {
+    return true;
+  }
+  return (
+    interaction.isButton() && interaction.customId?.startsWith('herta:mini-games:v1:') === true
+  );
 }
 
 async function maybeAutoSync(

@@ -69,6 +69,15 @@ export const communityChallengeManifest: PluginManifest = {
           help: 'Minecraft活動データを投入していないGuildではOFFを推奨します。',
         },
       },
+      includeMiniGameChallenges: {
+        type: 'boolean',
+        title: 'Mini Games Challengeを配布候補に含める',
+        default: false,
+        'x-herta-ui': {
+          section: 'Challenge配布',
+          help: 'Mini Games Pluginを有効にし、ゲーム戦績を記録しているGuildでONにしてください。',
+        },
+      },
       autoSync: {
         type: 'boolean',
         title: '活動に応じてChallengeを自動同期する',

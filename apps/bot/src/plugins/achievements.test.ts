@@ -29,6 +29,13 @@ const emptyMetrics: AchievementMetrics = {
   acceptedSuggestions: 0,
   challengeCompletions: 0,
   seasonPoints: 0,
+  minigamePlays: 0,
+  minigameWins: 0,
+  coinflipWins: 0,
+  highLowBestStreak: 0,
+  highLowClears: 0,
+  blackjackWins: 0,
+  blackjackNaturals: 0,
 };
 
 describe('Achievements v3', () => {
@@ -93,7 +100,7 @@ describe('Achievements v3', () => {
     expect(ids.has('first-challenge')).toBe(true);
     expect(ids.has('challenge-master')).toBe(true);
     expect(ids.has('season-legend')).toBe(true);
-    expect(ACHIEVEMENTS).toHaveLength(43);
+    expect(ACHIEVEMENTS).toHaveLength(54);
   });
 
   it('Activity Rules集計後の発言・リアクション・VCから実績を解除する', () => {
@@ -312,7 +319,7 @@ describe('Achievements v3', () => {
       config,
     );
     expect(leaderboard).toContain('75pt');
-    expect(leaderboard).toContain('1/44');
+    expect(leaderboard).toContain('1/55');
   });
 
   it('Category・Rarity・Statusで一覧を絞り込む', () => {
