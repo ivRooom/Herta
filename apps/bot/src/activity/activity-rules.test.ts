@@ -6,8 +6,8 @@ import {
   shouldCountVoice,
 } from './activity-rules.js';
 
-describe('Activity Rules v1.1', () => {
-  it('既存Community Activityと同じ挙動を既定値にする', () => {
+describe('Activity Rules v1.2', () => {
+  it('既存Community ActivityとXPの挙動を既定値で維持する', () => {
     expect(normalizeActivityRulesConfig(undefined)).toEqual({
       excludedTextChannelIds: [],
       excludedVoiceChannelIds: [],
@@ -16,6 +16,7 @@ describe('Activity Rules v1.1', () => {
       minimumMessageLength: 0,
       excludeCommandMessages: false,
       commandPrefixes: ['/', '!'],
+      applyMessageRulesToXp: false,
       countReactionsGiven: true,
       countReactionsReceived: true,
       countSelfMutedVoice: true,
@@ -25,7 +26,7 @@ describe('Activity Rules v1.1', () => {
     });
   });
 
-  it('ID・数値・コマンドprefix設定を安全な範囲へ正規化する', () => {
+  it('ID・数値・コマンドprefix・XP適用設定を安全な範囲へ正規化する', () => {
     const config = normalizeActivityRulesConfig({
       excludedTextChannelIds: ['123', '123', 'bad'],
       excludedVoiceChannelIds: ['456', 'bad'],
@@ -34,6 +35,7 @@ describe('Activity Rules v1.1', () => {
       minimumMessageLength: -5,
       excludeCommandMessages: true,
       commandPrefixes: ['!', ' ! ', '?', 'too-long', 'has space'],
+      applyMessageRulesToXp: true,
       countReactionsGiven: false,
       countSelfMutedVoice: false,
     });
@@ -46,6 +48,7 @@ describe('Activity Rules v1.1', () => {
       minimumMessageLength: 0,
       excludeCommandMessages: true,
       commandPrefixes: ['!', '?'],
+      applyMessageRulesToXp: true,
       countReactionsGiven: false,
       countSelfMutedVoice: false,
     });
