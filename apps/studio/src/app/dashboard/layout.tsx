@@ -3,8 +3,14 @@ import { redirect } from 'next/navigation';
 import { Sparkles } from 'lucide-react';
 import { auth } from '@/auth';
 import { DashboardNav } from '@/components/dashboard-nav';
-import { GuildContextNav } from '@/components/guild-context-nav';
+import {
+  GuildContextNav,
+  type GuildSwitcherItem,
+  type GuildSwitcherState,
+} from '@/components/guild-context-nav';
 import { SignOutButton } from '@/components/sign-out-button';
+import { getManageableGuilds } from '@/lib/guilds';
+import { getDiscordAccessToken } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +19,25 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (!session?.user) redirect('/login');
 
   const { name, image } = session.user;
+  const accessToken = await getDiscordAccessToken();
+  let guilds: GuildSwitcherItem[] = [];
+  let guildsState: GuildSwitcherState = accessToken ? 'ready' : 'reconnect-required';
+
+  if (accessToken) {
+    try {
+      guilds = (await getManageableGuilds(accessToken)).map((guild) => ({
+        id: guild.id,
+        name: guild.name,
+        iconUrl: guild.iconUrl,
+      }));
+    } catch (error) {
+      guildsState = 'unavailable';
+      console.error(
+        'Guild switcher could not load manageable guilds',
+        error instanceof Error ? error.name : 'UnknownError',
+      );
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -67,7 +92,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <div className="min-h-screen lg:pl-64">
         <header className="sticky top-0 z-20 hidden border-b border-border bg-background/85 backdrop-blur-xl lg:block">
           <div className="flex h-16 items-center justify-end gap-3 px-6 xl:px-8">
-            <GuildContextNav variant="desktop" />
+            <GuildContextNav variant="desktop" guilds={guilds} guildsState={guildsState} />
             <div
               className="flex h-10 min-w-0 items-center gap-2.5 rounded-xl border border-border bg-surface px-2.5"
               title={name ?? 'Herta User'}
@@ -100,7 +125,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
               <span className="truncate tracking-tight">Herta Studio</span>
             </Link>
             <div className="flex shrink-0 items-center gap-2">
-              <GuildContextNav variant="mobile" />
+              <GuildContextNav variant="mobile" guilds={guilds} guildsState={guildsState} />
               {image ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
