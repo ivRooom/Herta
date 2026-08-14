@@ -53,7 +53,8 @@ export default async function ActivityRulesDiagnosticsPage({
               発言・XP判定シミュレーター
             </h1>
             <p className="mt-2 text-sm text-muted">
-              {guild.name} の保存済み設定を使い、Messages集計とXP付与の静的ルールを安全に確認します。
+              {guild.name}{' '}
+              の保存済み設定を使い、Messages集計とXP付与の静的ルールを安全に確認します。
             </p>
           </div>
         </div>
