@@ -22,7 +22,7 @@ const NAV_ICONS: Partial<Record<StudioNavigationIcon, LucideIcon>> = {
   analytics: BarChart3,
   community: Trophy,
   leaderboard: Medal,
-  plugin: Puzzle,
+  'custom-plugin': Puzzle,
 };
 
 export function DashboardNav({ variant = 'sidebar' }: { variant?: 'sidebar' | 'mobile' }) {
