@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const birthdayRoleManifest: PluginManifest = {
   id: 'birthday-role',
   name: 'Birthday Role',
-  version: '1.0.0',
+  version: '1.1.0',
   description: '誕生日の登録・確認と、誕生日当日のRole付与・お祝い通知を提供します',
   author: { name: 'Herta' },
   category: 'fun',
@@ -28,6 +28,13 @@ export const birthdayRoleManifest: PluginManifest = {
         type: 'boolean',
         title: '誕生日の登録・確認結果を本人だけに表示する',
         default: true,
+      },
+      allowSelfRegistration: {
+        type: 'boolean',
+        title: 'メンバー本人の誕生日登録を許可する',
+        default: true,
+        description:
+          'OFFにすると /birthday set を停止し、Studio管理者からのみ登録・更新できます。本人の /birthday remove は引き続き利用できます。',
       },
       assignRole: {
         type: 'boolean',
@@ -65,7 +72,8 @@ export const birthdayRoleManifest: PluginManifest = {
       announcementMessage: {
         type: 'string',
         title: 'お祝いメッセージ',
-        description: '{user}を誕生日のユーザーメンションへ置換します',
+        description:
+          '{user}を対象ユーザーのメンション、{month}を誕生月、{day}を誕生日へ置換します',
         minLength: 1,
         maxLength: 1000,
         default: '🎂 {user} お誕生日おめでとう！',
@@ -80,6 +88,7 @@ export const birthdayRoleManifest: PluginManifest = {
     required: [
       'enabled',
       'ephemeralResponses',
+      'allowSelfRegistration',
       'assignRole',
       'birthdayRoleId',
       'sendAnnouncement',
