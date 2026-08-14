@@ -41,6 +41,37 @@ export function birthdayMemberEligibility(
   return member.bot ? 'bot' : 'eligible';
 }
 
+export function sortBirthdayRegistrations(
+  registrations: readonly BirthdayRegistration[],
+): BirthdayRegistration[] {
+  return [...registrations].sort(
+    (left, right) =>
+      left.month - right.month || left.day - right.day || left.userId.localeCompare(right.userId),
+  );
+}
+
+export function filterBirthdayRegistrations(
+  registrations: readonly BirthdayRegistration[],
+  query: string,
+  month: number | null,
+): BirthdayRegistration[] {
+  const normalizedQuery = query.trim();
+  return sortBirthdayRegistrations(
+    registrations.filter((registration) => {
+      if (month !== null && registration.month !== month) return false;
+      if (normalizedQuery && !registration.userId.includes(normalizedQuery)) return false;
+      return true;
+    }),
+  );
+}
+
+export function buildBirthdayCsv(registrations: readonly BirthdayRegistration[]): string {
+  const rows = sortBirthdayRegistrations(registrations).map(
+    (registration) => `${registration.userId},${registration.month},${registration.day}`,
+  );
+  return ['discord_user_id,month,day', ...rows].join('\n');
+}
+
 export function parseBirthdayAdminRequest(value: unknown): BirthdayAdminRequest | null {
   if (!isRecord(value)) return null;
   if (value.action !== 'set' && value.action !== 'remove') return null;
