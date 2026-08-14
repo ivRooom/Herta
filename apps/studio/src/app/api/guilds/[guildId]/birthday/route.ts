@@ -6,10 +6,7 @@ import {
   removeBirthdayRegistration,
   setBirthdayRegistration,
 } from '@/lib/birthday-admin';
-import {
-  birthdayMemberEligibility,
-  parseBirthdayAdminRequest,
-} from '@/lib/birthday-admin-core';
+import { birthdayMemberEligibility, parseBirthdayAdminRequest } from '@/lib/birthday-admin-core';
 import { searchGuildMembers } from '@/lib/bot-guild-members';
 import { authorizeGuild } from '@/lib/guild-plugins';
 
