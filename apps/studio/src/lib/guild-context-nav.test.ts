@@ -13,13 +13,10 @@ test('Guildコンソールの主要画面を判定する', () => {
     guildId: GUILD_ID,
     section: 'plugins',
   });
-  assert.deepEqual(
-    getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/plugins/activity-rules`),
-    {
-      guildId: GUILD_ID,
-      section: 'plugins',
-    },
-  );
+  assert.deepEqual(getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/plugins/activity-rules`), {
+    guildId: GUILD_ID,
+    section: 'plugins',
+  });
   assert.deepEqual(getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/audit-logs`), {
     guildId: GUILD_ID,
     section: 'audit-logs',
