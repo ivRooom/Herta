@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { Sparkles } from 'lucide-react';
 import { auth } from '@/auth';
 import { DashboardNav } from '@/components/dashboard-nav';
+import { GuildContextNav } from '@/components/guild-context-nav';
 import { SignOutButton } from '@/components/sign-out-button';
 
 export const dynamic = 'force-dynamic';
@@ -64,6 +65,32 @@ export default async function DashboardLayout({ children }: { children: React.Re
       </aside>
 
       <div className="min-h-screen lg:pl-64">
+        <header className="sticky top-0 z-20 hidden border-b border-border bg-background/85 backdrop-blur-xl lg:block">
+          <div className="flex h-16 items-center justify-end gap-3 px-6 xl:px-8">
+            <GuildContextNav variant="desktop" />
+            <div
+              className="flex h-10 min-w-0 items-center gap-2.5 rounded-xl border border-border bg-surface px-2.5"
+              title={name ?? 'Herta User'}
+            >
+              {image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={image}
+                  alt=""
+                  width={28}
+                  height={28}
+                  className="h-7 w-7 shrink-0 rounded-lg border border-border object-cover"
+                />
+              ) : (
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-xs font-bold text-primary">
+                  {(name ?? 'H').slice(0, 1).toUpperCase()}
+                </span>
+              )}
+              <span className="max-w-36 truncate text-xs font-medium">{name ?? 'Herta User'}</span>
+            </div>
+          </div>
+        </header>
+
         <header className="sticky top-0 z-20 border-b border-border bg-background/85 backdrop-blur-xl lg:hidden">
           <div className="flex h-14 items-center justify-between gap-3 px-4 sm:px-6">
             <Link href="/dashboard" className="flex min-w-0 items-center gap-2 font-semibold">
@@ -73,6 +100,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
               <span className="truncate tracking-tight">Herta Studio</span>
             </Link>
             <div className="flex shrink-0 items-center gap-2">
+              <GuildContextNav variant="mobile" />
               {image ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
