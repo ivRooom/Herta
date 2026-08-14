@@ -5,4 +5,3 @@ dist
 coverage
 pnpm-lock.yaml
 packages/db/src/generated
-apps/studio/src/components/birthday-admin.tsx
