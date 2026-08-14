@@ -132,6 +132,14 @@ export default async function PluginDetailPage({
         />
       ) : null}
 
+      {pluginId === 'activity-rules' ? (
+        <ManagementLink
+          href={`/dashboard/guilds/${guildId}/activity-rules/diagnostics`}
+          title="Activity Rules Diagnostics"
+          description="Channel・Role・本文・Intent・Cooldownを入力し、Messages集計とXP付与の判定理由をシミュレーションします。"
+        />
+      ) : null}
+
       {pluginId === 'birthday-role' ? (
         <ManagementLink
           href={`/dashboard/guilds/${guildId}/birthday`}
