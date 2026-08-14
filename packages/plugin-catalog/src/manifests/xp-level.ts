@@ -21,7 +21,7 @@ const periodChoices = [
 export const xpLevelManifest: PluginManifest = {
   id: 'xp-level',
   name: 'XP / Level',
-  version: '1.1.0',
+  version: '1.2.0',
   description: 'XP・Level・Community活動ランキング・Level Roleを提供します',
   author: { name: 'Herta' },
   category: 'utility',
@@ -63,6 +63,27 @@ export const xpLevelManifest: PluginManifest = {
         'x-herta-ui': {
           section: 'XP設定',
           help: '短時間の連投でXPを稼ぎにくくします。',
+        },
+      },
+      excludeCommandMessages: {
+        type: 'boolean',
+        title: 'コマンド形式のメッセージへXPを付与しない',
+        default: false,
+        'x-herta-ui': {
+          section: 'XP設定',
+          help: 'ONにすると、指定prefixで始まる通常メッセージをXP付与対象から外します。Discord Slash Commandは元からMessageCreateのXP対象ではありません。',
+        },
+      },
+      commandPrefixes: {
+        type: 'array',
+        title: 'XP対象外にするコマンドprefix',
+        uniqueItems: true,
+        maxItems: 10,
+        default: ['/', '!'],
+        items: { type: 'string', minLength: 1, maxLength: 5, pattern: '^\\S+$' },
+        'x-herta-ui': {
+          section: 'XP設定',
+          help: '例: /, !, ?, .。先頭の空白は無視して判定します。',
         },
       },
       excludedChannelIds: {
@@ -180,6 +201,8 @@ export const xpLevelManifest: PluginManifest = {
       'enabled',
       'xpPerMessage',
       'cooldownSeconds',
+      'excludeCommandMessages',
+      'commandPrefixes',
       'excludedChannelIds',
       'excludedRoleIds',
       'levelUpNotification',
