@@ -107,7 +107,7 @@ export function hasMessageCooldownElapsed(
   return now - lastCountedAt >= config.messageCooldownSeconds * 1_000;
 }
 
-function isCommandLikeMessage(content: string, prefixes: readonly string[]): boolean {
+export function isCommandLikeMessage(content: string, prefixes: readonly string[]): boolean {
   const normalized = content.trimStart();
   if (!normalized) return false;
   return prefixes.some((prefix) => normalized.startsWith(prefix));
