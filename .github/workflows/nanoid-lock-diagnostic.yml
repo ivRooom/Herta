@@ -1,0 +1,39 @@
+name: Nanoid Lockfile Diagnostic
+
+on:
+  push:
+    branches:
+      - feature/console-command-palette
+
+permissions:
+  contents: read
+
+jobs:
+  lockfile:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Update nanoid override only
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          pkg.pnpm.overrides.nanoid = '3.3.18';
+          fs.writeFileSync('package.json', `${JSON.stringify(pkg, null, 2)}\n`);
+          NODE
+          pnpm install --lockfile-only --no-frozen-lockfile
+          git diff -- package.json pnpm-lock.yaml
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: nanoid-lockfile
+          path: |
+            package.json
+            pnpm-lock.yaml
+          if-no-files-found: error
+          retention-days: 1
