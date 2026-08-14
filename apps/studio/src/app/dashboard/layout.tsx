@@ -77,9 +77,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 <img
                   src={image}
                   alt=""
-                  width={30}
-                  height={30}
-                  className="h-7.5 w-7.5 shrink-0 rounded-lg border border-border object-cover"
+                  width={28}
+                  height={28}
+                  className="h-7 w-7 shrink-0 rounded-lg border border-border object-cover"
                 />
               ) : (
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-xs font-bold text-primary">
