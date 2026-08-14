@@ -2,12 +2,11 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { createPortal } from 'react-dom';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import {
   Activity,
   Award,
   BarChart3,
-  BotMessageSquare,
   Cake,
   CalendarDays,
   ChevronRight,
@@ -102,11 +101,11 @@ export function ConsoleCommandPaletteTrigger({ variant }: { variant: 'desktop' |
       aria-label="ページ・機能を検索"
       aria-keyshortcuts="Control+K Meta+K"
       onClick={(event) => requestCommandPaletteOpen(event.currentTarget)}
-      className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-surface px-3 text-xs font-semibold text-muted transition-colors hover:text-foreground"
+      className="inline-flex h-10 items-center gap-2 rounded-xl border border-border bg-surface px-2.5 text-xs font-semibold text-muted transition-colors hover:text-foreground xl:px-3"
     >
       <Search className="h-4 w-4" aria-hidden="true" />
-      <span>検索</span>
-      <kbd className="rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted">
+      <span className="hidden xl:inline">検索</span>
+      <kbd className="hidden rounded-md border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] font-medium text-muted xl:inline">
         {shortcutLabel}
       </kbd>
     </button>
@@ -138,7 +137,8 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
     function handleShortcut(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase('en') === 'k') {
         event.preventDefault();
-        triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        triggerRef.current =
+          document.activeElement instanceof HTMLElement ? document.activeElement : null;
         setOpen((current) => !current);
         return;
       }
@@ -174,9 +174,8 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
   }, [open]);
 
   useEffect(() => {
-    if (!open) return;
     setOpen(false);
-  }, [pathname, open]);
+  }, [pathname]);
 
   useEffect(() => {
     if (filteredCommands.length === 0) {
@@ -204,7 +203,7 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
     router.push(command.href);
   }
 
-  function handleDialogKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+  function handleDialogKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.key === 'ArrowDown' && filteredCommands.length > 0) {
       event.preventDefault();
       setActiveIndex((current) => (current + 1) % filteredCommands.length);
@@ -223,7 +222,7 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
     if (event.key === 'Tab') trapFocus(event);
   }
 
-  function trapFocus(event: React.KeyboardEvent<HTMLDivElement>) {
+  function trapFocus(event: ReactKeyboardEvent<HTMLDivElement>) {
     const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
       '[data-command-palette-focusable="true"]',
     );
@@ -304,7 +303,11 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
           {currentGuild ? <span> · 現在のサーバー: {currentGuild.name}</span> : null}
         </div>
 
-        <div id={RESULTS_ID} role="listbox" className="max-h-[min(62vh,32rem)] overflow-y-auto p-2">
+        <div
+          id={RESULTS_ID}
+          role="listbox"
+          className="max-h-[min(62vh,32rem)] overflow-y-auto p-2"
+        >
           {filteredCommands.length === 0 ? (
             <div className="px-4 py-10 text-center">
               <Search className="mx-auto h-7 w-7 text-muted" aria-hidden="true" />
