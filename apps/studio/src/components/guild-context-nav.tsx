@@ -56,7 +56,9 @@ export function GuildContextNav({
 }) {
   const pathname = usePathname();
   const context = getGuildConsoleContext(pathname);
-  const currentGuild = context ? guilds.find((guild) => guild.id === context.guildId) ?? null : null;
+  const currentGuild = context
+    ? (guilds.find((guild) => guild.id === context.guildId) ?? null)
+    : null;
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState('');
   const menuRef = useRef<HTMLDivElement>(null);
@@ -69,7 +71,8 @@ export function GuildContextNav({
     if (guild.id === currentGuild?.id) return false;
     if (!normalizedQuery) return true;
     return (
-      guild.name.toLocaleLowerCase('ja').includes(normalizedQuery) || guild.id.includes(normalizedQuery)
+      guild.name.toLocaleLowerCase('ja').includes(normalizedQuery) ||
+      guild.id.includes(normalizedQuery)
     );
   });
 
@@ -151,7 +154,11 @@ export function GuildContextNav({
               {currentGuild ? (
                 <div className="mt-2 flex items-center gap-2.5 rounded-xl bg-primary/5 p-2.5">
                   <span className="shrink-0 overflow-hidden rounded-xl" aria-hidden="true">
-                    <GuildAvatar name={currentGuild.name} iconUrl={currentGuild.iconUrl} size={36} />
+                    <GuildAvatar
+                      name={currentGuild.name}
+                      iconUrl={currentGuild.iconUrl}
+                      size={36}
+                    />
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold">{currentGuild.name}</p>
@@ -174,7 +181,9 @@ export function GuildContextNav({
               <div className="flex items-center justify-between gap-3 px-2.5 py-1.5">
                 <p className="text-xs font-semibold">サーバーを切り替える</p>
                 {guildsState === 'ready' ? (
-                  <span className="text-[10px] tabular-nums text-muted">{guilds.length} servers</span>
+                  <span className="text-[10px] tabular-nums text-muted">
+                    {guilds.length} servers
+                  </span>
                 ) : null}
               </div>
 
