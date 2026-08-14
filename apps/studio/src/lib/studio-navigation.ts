@@ -1,3 +1,5 @@
+import { isDiscordGuildId } from './guild-context-nav.ts';
+
 export type StudioNavigationIcon =
   | 'dashboard'
   | 'server'
@@ -290,7 +292,7 @@ export function buildStudioCommandItems(
   guildName: string | null,
 ): StudioCommandItem[] {
   const workspace = STUDIO_NAV_ITEMS.map((item) => ({ ...item, group: 'workspace' as const }));
-  if (!guildId) return workspace;
+  if (!guildId || !isDiscordGuildId(guildId)) return workspace;
 
   const baseHref = `/dashboard/guilds/${guildId}`;
   return [
