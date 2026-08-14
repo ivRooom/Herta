@@ -2,7 +2,13 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { createPortal } from 'react-dom';
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+} from 'react';
 import {
   Activity,
   Award,
@@ -125,7 +131,9 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
   const triggerRef = useRef<HTMLElement | null>(null);
 
   const context = getGuildConsoleContext(pathname);
-  const currentGuild = context ? guilds.find((guild) => guild.id === context.guildId) ?? null : null;
+  const currentGuild = context
+    ? (guilds.find((guild) => guild.id === context.guildId) ?? null)
+    : null;
   const commands = useMemo(
     () => buildStudioCommandItems(context?.guildId ?? null, currentGuild?.name ?? null),
     [context?.guildId, currentGuild?.name],
@@ -219,7 +227,9 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
     }
     if (event.key === 'ArrowUp' && filteredCommands.length > 0) {
       event.preventDefault();
-      setActiveIndex((current) => (current - 1 + filteredCommands.length) % filteredCommands.length);
+      setActiveIndex(
+        (current) => (current - 1 + filteredCommands.length) % filteredCommands.length,
+      );
       return;
     }
     if (event.key === 'Enter' && filteredCommands[activeIndex]) {
@@ -311,11 +321,7 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
           {currentGuild ? <span> · 現在のサーバー: {currentGuild.name}</span> : null}
         </div>
 
-        <div
-          id={RESULTS_ID}
-          role="listbox"
-          className="max-h-[min(62vh,32rem)] overflow-y-auto p-2"
-        >
+        <div id={RESULTS_ID} role="listbox" className="max-h-[min(62vh,32rem)] overflow-y-auto p-2">
           {filteredCommands.length === 0 ? (
             <div role="status" className="px-4 py-10 text-center">
               <Search className="mx-auto h-7 w-7 text-muted" aria-hidden="true" />
