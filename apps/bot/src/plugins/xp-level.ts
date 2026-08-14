@@ -17,6 +17,7 @@ import {
 
 const EPHEMERAL_FLAG = 64;
 const DISCORD_ID_PATTERN = /^\d+$/;
+const DEFAULT_COMMAND_PREFIXES = ['/', '!'] as const;
 
 export interface XpLevelConfig {
   enabled: boolean;
@@ -24,6 +25,8 @@ export interface XpLevelConfig {
   cooldownSeconds: number;
   excludedChannelIds: string[];
   excludedRoleIds: string[];
+  excludeCommandMessages: boolean;
+  commandPrefixes: string[];
   levelUpNotification: boolean;
   levelUpChannelId: string | null;
   leaderboardSize: number;
@@ -73,6 +76,7 @@ interface XpMemberRoles {
 interface XpMessage {
   guildId: string | null;
   channelId: string;
+  content?: string;
   author: { id: string; bot?: boolean };
   member: { roles: XpMemberRoles } | null;
   guild: {
@@ -124,6 +128,8 @@ export function normalizeXpLevelConfig(value: unknown): XpLevelConfig {
     cooldownSeconds: clamp(toInteger(source.cooldownSeconds, 60), 5, 600),
     excludedChannelIds: normalizedIds(source.excludedChannelIds, 25),
     excludedRoleIds: normalizedIds(source.excludedRoleIds, 25),
+    excludeCommandMessages: source.excludeCommandMessages === true,
+    commandPrefixes: normalizedCommandPrefixes(source.commandPrefixes),
     levelUpNotification:
       source.levelUpNotification === undefined ? true : source.levelUpNotification === true,
     levelUpChannelId: nullableDiscordId(source.levelUpChannelId),
@@ -135,6 +141,16 @@ export function normalizeXpLevelConfig(value: unknown): XpLevelConfig {
     reward3Level: clamp(toInteger(source.reward3Level, 20), 1, 999),
     reward3RoleId: nullableDiscordId(source.reward3RoleId),
   };
+}
+
+export function shouldExcludeXpCommandMessage(
+  config: XpLevelConfig,
+  content: string | undefined,
+): boolean {
+  if (!config.excludeCommandMessages || !content) return false;
+  const normalized = content.trimStart();
+  if (!normalized) return false;
+  return config.commandPrefixes.some((prefix) => normalized.startsWith(prefix));
 }
 
 export function levelForXp(xp: number): number {
@@ -250,7 +266,13 @@ async function handleXpMessage(
 ): Promise<void> {
   if (!message?.guildId || message.author.bot) return;
   const config = normalizeXpLevelConfig(context.config);
-  if (!config.enabled || config.excludedChannelIds.includes(message.channelId)) return;
+  if (
+    !config.enabled ||
+    config.excludedChannelIds.includes(message.channelId) ||
+    shouldExcludeXpCommandMessage(config, message.content)
+  ) {
+    return;
+  }
   if (
     message.member &&
     config.excludedRoleIds.some((roleId) => message.member!.roles.cache.has(roleId))
@@ -354,6 +376,19 @@ function normalizedIds(value: unknown, maxItems: number): string[] {
       ),
     ),
   ].slice(0, maxItems);
+}
+
+function normalizedCommandPrefixes(value: unknown): string[] {
+  if (!Array.isArray(value)) return [...DEFAULT_COMMAND_PREFIXES];
+  const prefixes = [
+    ...new Set(
+      value
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0 && item.length <= 5 && !/\s/u.test(item)),
+    ),
+  ].slice(0, 10);
+  return prefixes.length > 0 ? prefixes : [...DEFAULT_COMMAND_PREFIXES];
 }
 
 function nullableDiscordId(value: unknown): string | null {
