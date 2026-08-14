@@ -72,8 +72,7 @@ export const birthdayRoleManifest: PluginManifest = {
       announcementMessage: {
         type: 'string',
         title: 'お祝いメッセージ',
-        description:
-          '{user}を対象ユーザーのメンション、{month}を誕生月、{day}を誕生日へ置換します',
+        description: '{user}を対象ユーザーのメンション、{month}を誕生月、{day}を誕生日へ置換します',
         minLength: 1,
         maxLength: 1000,
         default: '🎂 {user} お誕生日おめでとう！',
