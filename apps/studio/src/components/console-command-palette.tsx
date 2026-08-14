@@ -15,6 +15,7 @@ import {
   Medal,
   MessageSquareText,
   Plug,
+  Puzzle,
   Search,
   ServerCog,
   ShieldCheck,
@@ -53,6 +54,7 @@ const ICONS: Record<StudioNavigationIcon, LucideIcon> = {
   community: Trophy,
   leaderboard: Medal,
   plugin: Plug,
+  'custom-plugin': Puzzle,
   history: History,
   rules: Sparkles,
   achievement: Award,
@@ -137,9 +139,15 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
     function handleShortcut(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase('en') === 'k') {
         event.preventDefault();
+        if (event.repeat) return;
+        if (open) {
+          closePalette();
+          return;
+        }
+
         triggerRef.current =
           document.activeElement instanceof HTMLElement ? document.activeElement : null;
-        setOpen((current) => !current);
+        setOpen(true);
         return;
       }
       if (event.key === 'Escape' && open) closePalette();
@@ -309,7 +317,7 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
           className="max-h-[min(62vh,32rem)] overflow-y-auto p-2"
         >
           {filteredCommands.length === 0 ? (
-            <div className="px-4 py-10 text-center">
+            <div role="status" className="px-4 py-10 text-center">
               <Search className="mx-auto h-7 w-7 text-muted" aria-hidden="true" />
               <p className="mt-3 text-sm font-medium">一致するページ・機能がありません</p>
               <p className="mt-1 text-xs text-muted">別のキーワードで検索してください。</p>
@@ -329,7 +337,7 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
                     {STUDIO_COMMAND_GROUP_LABELS[group]}
                     {group === 'current-server' && currentGuild ? ` · ${currentGuild.name}` : ''}
                   </div>
-                  <div className="space-y-0.5">
+                  <div role="presentation" className="space-y-0.5">
                     {groupCommands.map((command) => {
                       const index = filteredCommands.findIndex((item) => item.id === command.id);
                       const active = index === activeIndex;
@@ -343,6 +351,7 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
                           type="button"
                           role="option"
                           aria-selected={active}
+                          onFocus={() => setActiveIndex(index)}
                           onMouseMove={() => setActiveIndex(index)}
                           onClick={() => selectCommand(command)}
                           data-command-palette-focusable="true"
