@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const activityRulesManifest: PluginManifest = {
   id: 'activity-rules',
   name: 'Activity Rules',
-  version: '1.1.0',
+  version: '1.2.0',
   description:
     'Community Activityの発言・リアクション・VC集計へ除外ルールとanti-spam設定を適用します',
   author: { name: 'Herta' },
@@ -95,6 +95,15 @@ export const activityRulesManifest: PluginManifest = {
           help: 'コマンド形式除外をONにしたとき、メッセージ先頭で判定するprefixです。最大10件・1〜5文字です。',
         },
       },
+      applyMessageRulesToXp: {
+        type: 'boolean',
+        title: '発言集計ルールをXP付与にも適用する',
+        default: false,
+        'x-herta-ui': {
+          section: 'XP連携',
+          help: 'ONにすると、除外テキストチャンネル・除外Role・最小文字数・コマンドprefix判定をXP LevelのメッセージXPにも適用します。発言カウントCooldownは適用せず、XP Level側のCooldownを使用します。',
+        },
+      },
       countReactionsGiven: {
         type: 'boolean',
         title: '付けたリアクションを集計する',
@@ -154,6 +163,7 @@ export const activityRulesManifest: PluginManifest = {
       'minimumMessageLength',
       'excludeCommandMessages',
       'commandPrefixes',
+      'applyMessageRulesToXp',
       'countReactionsGiven',
       'countReactionsReceived',
       'excludedVoiceChannelIds',
