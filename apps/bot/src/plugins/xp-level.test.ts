@@ -5,6 +5,7 @@ import {
   formatRankMessage,
   levelForXp,
   normalizeXpLevelConfig,
+  shouldAwardXpForMessage,
   xpRequiredForLevel,
 } from './xp-level.js';
 import type { XpProfileRecord } from './xp-level-repository.js';
@@ -17,6 +18,8 @@ describe('XP / Level v1', () => {
       cooldownSeconds: 60,
       excludedChannelIds: [],
       excludedRoleIds: [],
+      excludeCommandMessages: false,
+      commandPrefixes: ['/', '!'],
       levelUpNotification: true,
       levelUpChannelId: null,
       leaderboardSize: 10,
@@ -35,6 +38,7 @@ describe('XP / Level v1', () => {
         leaderboardSize: 100,
         excludedChannelIds: ['123', '123', 'bad'],
         excludedRoleIds: ['456', 'bad'],
+        commandPrefixes: [' ! ', '?', '?', 'too-long', 'has space'],
         reward1Level: 0,
         reward1RoleId: '789',
       }),
@@ -44,9 +48,79 @@ describe('XP / Level v1', () => {
       leaderboardSize: 25,
       excludedChannelIds: ['123'],
       excludedRoleIds: ['456'],
+      commandPrefixes: ['!', '?'],
       reward1Level: 1,
       reward1RoleId: '789',
     });
+  });
+
+  it('コマンド形式メッセージを設定に応じてXP対象外にできる', () => {
+    const config = normalizeXpLevelConfig({
+      excludeCommandMessages: true,
+      commandPrefixes: ['/', '!'],
+    });
+
+    expect(
+      shouldAwardXpForMessage(config, {
+        channelId: '100',
+        content: '/rank',
+        hasExcludedRole: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAwardXpForMessage(config, {
+        channelId: '100',
+        content: '   !help',
+        hasExcludedRole: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAwardXpForMessage(config, {
+        channelId: '100',
+        content: '今日は!通常メッセージ',
+        hasExcludedRole: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('コマンド除外は既定OFFで、本文が取得できない場合もXP判定を止めない', () => {
+    expect(
+      shouldAwardXpForMessage(normalizeXpLevelConfig(undefined), {
+        channelId: '100',
+        content: '/rank',
+        hasExcludedRole: false,
+      }),
+    ).toBe(true);
+
+    expect(
+      shouldAwardXpForMessage(normalizeXpLevelConfig({ excludeCommandMessages: true }), {
+        channelId: '100',
+        hasExcludedRole: false,
+      }),
+    ).toBe(true);
+  });
+
+  it('既存のチャンネル・Role除外をコマンド除外と併用できる', () => {
+    const config = normalizeXpLevelConfig({
+      excludedChannelIds: ['100'],
+      excludedRoleIds: ['200'],
+      excludeCommandMessages: true,
+    });
+
+    expect(
+      shouldAwardXpForMessage(config, {
+        channelId: '100',
+        content: 'hello',
+        hasExcludedRole: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldAwardXpForMessage(config, {
+        channelId: '101',
+        content: 'hello',
+        hasExcludedRole: true,
+      }),
+    ).toBe(false);
   });
 
   it('XPから二次曲線ベースのLevelを算出する', () => {
