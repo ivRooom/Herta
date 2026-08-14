@@ -8,6 +8,7 @@ export type StudioNavigationIcon =
   | 'community'
   | 'leaderboard'
   | 'plugin'
+  | 'custom-plugin'
   | 'history'
   | 'rules'
   | 'achievement'
@@ -85,17 +86,17 @@ export const STUDIO_NAV_ITEMS: readonly StudioNavigationItem[] = [
     label: 'カスタムPlugin',
     description: 'カスタムPluginを管理する',
     keywords: ['custom plugin', 'plugin', 'プラグイン', '拡張'],
-    icon: 'plugin',
+    icon: 'custom-plugin',
   },
 ];
 
 export type StudioCommandGroup = 'workspace' | 'current-server' | 'community' | 'moderation';
 
 export const STUDIO_COMMAND_GROUP_ORDER: readonly StudioCommandGroup[] = [
-  'workspace',
   'current-server',
   'community',
   'moderation',
+  'workspace',
 ];
 
 export const STUDIO_COMMAND_GROUP_LABELS: Record<StudioCommandGroup, string> = {
@@ -295,14 +296,13 @@ export function buildStudioCommandItems(
   if (!guildId || !isDiscordGuildId(guildId)) return workspace;
 
   const baseHref = `/dashboard/guilds/${guildId}`;
-  return [
-    ...workspace,
-    ...GUILD_COMMAND_DEFINITIONS.map(({ path, description, ...item }) => ({
-      ...item,
-      href: path ? `${baseHref}/${path}` : baseHref,
-      description: guildName ? `${guildName}: ${description}` : description,
-    })),
-  ];
+  const guildCommands = GUILD_COMMAND_DEFINITIONS.map(({ path, description, ...item }) => ({
+    ...item,
+    href: path ? `${baseHref}/${path}` : baseHref,
+    description: guildName ? `${guildName}: ${description}` : description,
+  }));
+
+  return [...guildCommands, ...workspace];
 }
 
 export function filterStudioCommandItems(
