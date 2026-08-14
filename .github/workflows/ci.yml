@@ -21,6 +21,8 @@ env:
   GRYPE_VERSION: 0.112.0
   SYFT_CHECK_FOR_APP_UPDATE: 'false'
   GRYPE_CHECK_FOR_APP_UPDATE: 'false'
+  # DB更新は専用stepで明示的に行い、各scan起動時の暗黙更新に依存しない。
+  GRYPE_DB_AUTO_UPDATE: 'false'
 
 jobs:
   verify:
@@ -194,6 +196,27 @@ jobs:
           echo "$tool_dir" >> "$GITHUB_PATH"
           "$tool_dir/syft" version
           "$tool_dir/grype" version
+
+      - name: Refresh Grype vulnerability database
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for attempt in 1 2 3; do
+            if grype db update; then
+              break
+            fi
+
+            if [[ "$attempt" -eq 3 ]]; then
+              echo "::error::Grype脆弱性DBを3回試行しても更新できませんでした"
+              exit 1
+            fi
+
+            sleep "$((attempt * 5))"
+          done
+
+          # 年齢検証を無効化せず、実際に利用するDBの状態をログへ残す。
+          grype db status
 
       - name: Verify vulnerability failure gate
         shell: bash
