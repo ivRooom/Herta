@@ -37,8 +37,9 @@ export function getGuildConsoleHref(
 
 /**
  * 別Guildへ切り替える際の安全な遷移先を返す。
- * 主要管理画面だけは同じセクションを維持し、Plugin詳細や専用管理画面など
- * Guild固有の深いルートは存在保証ができないため新Guildの概要へ戻す。
+ * Plugin詳細は新GuildのPlugin Managerへ畳み、監査ログは同じ画面を維持する。
+ * BirthdayやDiagnosticsなど `other` の深いルートは新Guildでの存在・状態を
+ * 保証できないため、新Guildの概要へ戻す。
  */
 export function getGuildSwitchHref(
   targetGuildId: string,
