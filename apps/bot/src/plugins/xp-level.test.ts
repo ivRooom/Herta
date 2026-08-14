@@ -5,7 +5,6 @@ import {
   formatRankMessage,
   levelForXp,
   normalizeXpLevelConfig,
-  shouldExcludeXpCommandMessage,
   xpRequiredForLevel,
 } from './xp-level.js';
 import type { XpProfileRecord } from './xp-level-repository.js';
@@ -18,8 +17,6 @@ describe('XP / Level v1', () => {
       cooldownSeconds: 60,
       excludedChannelIds: [],
       excludedRoleIds: [],
-      excludeCommandMessages: false,
-      commandPrefixes: ['/', '!'],
       levelUpNotification: true,
       levelUpChannelId: null,
       leaderboardSize: 10,
@@ -38,8 +35,6 @@ describe('XP / Level v1', () => {
         leaderboardSize: 100,
         excludedChannelIds: ['123', '123', 'bad'],
         excludedRoleIds: ['456', 'bad'],
-        excludeCommandMessages: true,
-        commandPrefixes: ['!', ' ! ', '?', 'too-long', 'has space'],
         reward1Level: 0,
         reward1RoleId: '789',
       }),
@@ -49,29 +44,9 @@ describe('XP / Level v1', () => {
       leaderboardSize: 25,
       excludedChannelIds: ['123'],
       excludedRoleIds: ['456'],
-      excludeCommandMessages: true,
-      commandPrefixes: ['!', '?'],
       reward1Level: 1,
       reward1RoleId: '789',
     });
-  });
-
-  it('設定したprefixのコマンド形式メッセージをXP付与から除外する', () => {
-    const config = normalizeXpLevelConfig({
-      excludeCommandMessages: true,
-      commandPrefixes: ['/', '!', '?'],
-    });
-
-    expect(shouldExcludeXpCommandMessage(config, '/rank')).toBe(true);
-    expect(shouldExcludeXpCommandMessage(config, '   !help')).toBe(true);
-    expect(shouldExcludeXpCommandMessage(config, 'これは!通常メッセージ')).toBe(false);
-    expect(shouldExcludeXpCommandMessage(config, undefined)).toBe(false);
-    expect(
-      shouldExcludeXpCommandMessage(
-        normalizeXpLevelConfig({ excludeCommandMessages: false, commandPrefixes: ['!'] }),
-        '!help',
-      ),
-    ).toBe(false);
   });
 
   it('XPから二次曲線ベースのLevelを算出する', () => {
