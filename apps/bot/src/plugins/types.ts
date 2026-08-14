@@ -2,6 +2,7 @@ import type { SlashCommand } from '../commands/registry.js';
 import type { HertaPlugin } from '@herta/plugin-sdk';
 
 export interface GuildEventHandler {
+  pluginId?: string;
   event: string;
   handler(...args: unknown[]): Promise<void>;
 }
