@@ -9,10 +9,7 @@ import {
   type MessageActivityNotice,
 } from '@herta/shared';
 import { DiscordChannelPicker, DiscordRolePicker } from './discord-entity-picker';
-import type {
-  GuildChannelOption,
-  GuildRoleOption,
-} from '@/lib/bot-guild-options';
+import type { GuildChannelOption, GuildRoleOption } from '@/lib/bot-guild-options';
 
 type Props = {
   activityRulesEnabled: boolean;
@@ -32,9 +29,9 @@ const BLOCKING_REASON_LABELS: Record<MessageActivityBlockingReason, string> = {
 
 const NOTICE_LABELS: Record<MessageActivityNotice, string> = {
   command_check_skipped_without_content:
-    'Message Content Intentなしの想定ため、コマンドprefix判定はスキップされます。',
+    'Message Content Intentなしの想定のため、コマンドprefix判定はスキップされます。',
   length_check_skipped_without_content:
-    'Message Content Intentなしの想定ため、最小文字数判定はスキップされます。',
+    'Message Content Intentなしの想定のため、最小文字数判定はスキップされます。',
 };
 
 export function ActivityRulesDiagnostics({
@@ -52,8 +49,8 @@ export function ActivityRulesDiagnostics({
   const [secondsSinceLastCount, setSecondsSinceLastCount] = useState('');
 
   const rules = useMemo(
-    () => normalizeActivityRulesConfig(activityRulesConfig),
-    [activityRulesConfig],
+    () => normalizeActivityRulesConfig(activityRulesEnabled ? activityRulesConfig : undefined),
+    [activityRulesConfig, activityRulesEnabled],
   );
 
   const evaluation = channelId
@@ -91,14 +88,16 @@ export function ActivityRulesDiagnostics({
         <div>
           <h2 className="font-semibold">Message Rule Simulator</h2>
           <p className="mt-1 text-sm text-muted">
-            保存済み設定を使い、実際のBotと同じActivity Rules判定ロジックで発言集計とXP適用を確認します。
+            保存済み設定を使い、実際のBotと同じActivity
+            Rules判定ロジックで発言集計とXP適用を確認します。
           </p>
         </div>
       </div>
 
       {!activityRulesEnabled ? (
         <Notice>
-          Activity Rules Pluginは現在無効です。Messagesの既定集計は継続しますが、XPへのActivity Rules連携は適用されません。
+          Activity Rules Pluginは現在無効です。Messagesの既定集計は継続しますが、XPへのActivity
+          Rules連携は適用されません。
         </Notice>
       ) : null}
 
@@ -186,7 +185,11 @@ export function ActivityRulesDiagnostics({
               <DiagnosticCard
                 title="Community Messages"
                 passed={messagesCounted}
-                summary={messagesCounted ? 'この発言は1件として集計されます。' : 'この発言は集計されません。'}
+                summary={
+                  messagesCounted
+                    ? 'この発言は1件として集計されます。'
+                    : 'この発言は集計されません。'
+                }
               >
                 {evaluation?.blockingReason ? (
                   <Reason>{BLOCKING_REASON_LABELS[evaluation.blockingReason]}</Reason>
