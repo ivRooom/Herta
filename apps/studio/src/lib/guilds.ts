@@ -1,10 +1,17 @@
+import { cache } from 'react';
 import { prisma } from '@/lib/db';
 import { fetchManageableGuilds, type ManageableGuild } from '@/lib/discord';
 import { buildGuildPersistenceData } from '@/lib/guild-metadata';
 
+/**
+ * 同一Server Componentsレンダー内ではDiscord Guild一覧取得を共有する。
+ * `fetchManageableGuilds` 自体は `cache: 'no-store'` のため、別リクエストへは持ち越さない。
+ */
+const getManageableGuildsForRequest = cache(fetchManageableGuilds);
+
 /** ログインユーザーが管理可能な Guild 一覧を取得する */
 export async function getManageableGuilds(accessToken: string): Promise<ManageableGuild[]> {
-  return fetchManageableGuilds(accessToken);
+  return getManageableGuildsForRequest(accessToken);
 }
 
 /**
@@ -15,7 +22,7 @@ export async function getManageableGuild(
   accessToken: string,
   guildId: string,
 ): Promise<ManageableGuild | null> {
-  const guilds = await fetchManageableGuilds(accessToken);
+  const guilds = await getManageableGuilds(accessToken);
   return guilds.find((g) => g.id === guildId) ?? null;
 }
 
