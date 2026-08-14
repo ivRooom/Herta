@@ -9,6 +9,7 @@ export interface ActivityRulesConfig {
   minimumMessageLength: number;
   excludeCommandMessages: boolean;
   commandPrefixes: string[];
+  applyMessageRulesToXp: boolean;
   countReactionsGiven: boolean;
   countReactionsReceived: boolean;
   countSelfMutedVoice: boolean;
@@ -44,6 +45,7 @@ export function normalizeActivityRulesConfig(value: unknown): ActivityRulesConfi
     minimumMessageLength: clamp(toInteger(source.minimumMessageLength, 0), 0, 200),
     excludeCommandMessages: source.excludeCommandMessages === true,
     commandPrefixes: normalizedCommandPrefixes(source.commandPrefixes),
+    applyMessageRulesToXp: source.applyMessageRulesToXp === true,
     countReactionsGiven:
       source.countReactionsGiven === undefined ? true : source.countReactionsGiven === true,
     countReactionsReceived:
