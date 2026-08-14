@@ -13,6 +13,10 @@
       "types": "./src/index.ts",
       "default": "./dist/index.js"
     },
+    "./activity-rules": {
+      "types": "./src/activity-rules.ts",
+      "default": "./dist/activity-rules.js"
+    },
     "./plugin-runtime-events": {
       "types": "./src/plugin-runtime-events.ts",
       "default": "./dist/plugin-runtime-events.js"

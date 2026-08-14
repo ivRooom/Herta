@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  evaluateMessageActivity,
   hasMessageCooldownElapsed,
   normalizeActivityRulesConfig,
   shouldCountMessage,
   shouldCountVoice,
 } from './activity-rules.js';
 
-describe('Activity Rules v1.2', () => {
+describe('Activity Rules v1.3', () => {
   it('既存Community ActivityとXPの挙動を既定値で維持する', () => {
     expect(normalizeActivityRulesConfig(undefined)).toEqual({
       excludedTextChannelIds: [],
@@ -127,21 +128,44 @@ describe('Activity Rules v1.2', () => {
     ).toBe(true);
   });
 
-  it('Message Content Intentが無い場合は本文依存条件だけをスキップする', () => {
+  it('診断用評価は除外理由と一致prefixを返す', () => {
+    const config = normalizeActivityRulesConfig({
+      excludeCommandMessages: true,
+      commandPrefixes: ['!', '?'],
+    });
+    expect(
+      evaluateMessageActivity(config, {
+        channelId: '101',
+        contentAvailable: true,
+        content: '  !help',
+      }),
+    ).toEqual({
+      counted: false,
+      blockingReason: 'command_prefix',
+      matchedCommandPrefix: '!',
+      notices: [],
+    });
+  });
+
+  it('Message Content Intentが無い場合は本文依存条件だけをスキップして理由を返す', () => {
     const config = normalizeActivityRulesConfig({
       minimumMessageLength: 50,
       excludeCommandMessages: true,
       commandPrefixes: ['!'],
     });
-    expect(
-      shouldCountMessage(config, {
-        channelId: '101',
-        roleIds: [],
-        contentAvailable: false,
-        content: '!help',
-        contentLength: 0,
-      }),
-    ).toBe(true);
+    const evaluation = evaluateMessageActivity(config, {
+      channelId: '101',
+      roleIds: [],
+      contentAvailable: false,
+      content: '!help',
+      contentLength: 0,
+    });
+
+    expect(evaluation.counted).toBe(true);
+    expect(evaluation.notices).toEqual([
+      'command_check_skipped_without_content',
+      'length_check_skipped_without_content',
+    ]);
   });
 
   it('Cooldownの経過を判定する', () => {
