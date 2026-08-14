@@ -40,6 +40,17 @@ test('Guild配下の専用管理画面はotherとして現在Guildだけ維持�
   );
 });
 
+test('主要画面に似た別パスを誤ってactive扱いしない', () => {
+  assert.deepEqual(getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/plugins-extra`), {
+    guildId: GUILD_ID,
+    section: 'other',
+  });
+  assert.deepEqual(getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/audit-logs-archive`), {
+    guildId: GUILD_ID,
+    section: 'other',
+  });
+});
+
 test('Guild一覧や不正なGuild IDではコンテキストを生成しない', () => {
   assert.equal(getGuildConsoleContext('/dashboard/guilds'), null);
   assert.equal(getGuildConsoleContext('/dashboard/guilds/not-a-guild/plugins'), null);
