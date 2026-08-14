@@ -88,7 +88,10 @@ test('複数トークンはすべて一致するコマンドだけを返す', ()
   const commands = buildStudioCommandItems(GUILD_ID, 'Test Guild');
   const results = filterStudioCommandItems(commands, 'moderation blacklist');
 
-  assert.deepEqual(results.map((command) => command.id), ['guild-moderation-blacklist']);
+  assert.deepEqual(
+    results.map((command) => command.id),
+    ['guild-moderation-blacklist'],
+  );
 });
 
 test('空検索では登録順を維持する', () => {
