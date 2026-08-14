@@ -36,14 +36,10 @@ export interface VoiceActivityCandidate {
 }
 
 export type MessageActivityBlockingReason =
-  | 'excluded_text_channel'
-  | 'excluded_role'
-  | 'command_prefix'
-  | 'minimum_message_length';
+  'excluded_text_channel' | 'excluded_role' | 'command_prefix' | 'minimum_message_length';
 
 export type MessageActivityNotice =
-  | 'command_check_skipped_without_content'
-  | 'length_check_skipped_without_content';
+  'command_check_skipped_without_content' | 'length_check_skipped_without_content';
 
 export interface MessageActivityEvaluation {
   counted: boolean;
@@ -97,7 +93,10 @@ export function evaluateMessageActivity(
     if (!candidate.contentAvailable) {
       notices.push('command_check_skipped_without_content');
     } else {
-      const matchedCommandPrefix = findCommandPrefix(candidate.content ?? '', config.commandPrefixes);
+      const matchedCommandPrefix = findCommandPrefix(
+        candidate.content ?? '',
+        config.commandPrefixes,
+      );
       if (matchedCommandPrefix) {
         return {
           counted: false,
@@ -112,7 +111,9 @@ export function evaluateMessageActivity(
   if (config.minimumMessageLength > 0) {
     if (!candidate.contentAvailable) {
       notices.push('length_check_skipped_without_content');
-    } else if ((candidate.contentLength ?? candidate.content?.length ?? 0) < config.minimumMessageLength) {
+    } else if (
+      (candidate.contentLength ?? candidate.content?.length ?? 0) < config.minimumMessageLength
+    ) {
       return blocked('minimum_message_length', notices);
     }
   }
