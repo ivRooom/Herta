@@ -12,6 +12,13 @@ test('Guild外ではWorkspaceコマンドだけを生成する', () => {
   assert.ok(commands.some((command) => command.href === '/dashboard/guilds'));
 });
 
+test('不正なGuild IDではGuild固有コマンドを生成しない', () => {
+  for (const guildId of ['123', 'not-a-guild', '12345678901234567/path']) {
+    const commands = buildStudioCommandItems(guildId, 'Invalid Guild');
+    assert.ok(commands.every((command) => command.group === 'workspace'));
+  }
+});
+
 test('現在Guildがある場合はGuild固有コマンドを安全なhrefで生成する', () => {
   const commands = buildStudioCommandItems(GUILD_ID, 'Test Guild');
 
