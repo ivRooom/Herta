@@ -24,7 +24,7 @@ export function BirthdayAdmin({
   const [status, setStatus] = useState('');
 
   const existing = userId
-    ? registrations.find((registration) => registration.userId === userId) ?? null
+    ? (registrations.find((registration) => registration.userId === userId) ?? null)
     : null;
   const maxDay = daysInBirthdayMonth(month);
 
