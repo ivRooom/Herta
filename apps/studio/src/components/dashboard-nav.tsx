@@ -13,16 +13,17 @@ import {
   Trophy,
   type LucideIcon,
 } from 'lucide-react';
+import { STUDIO_NAV_ITEMS, type StudioNavigationIcon } from '@/lib/studio-navigation';
 
-const NAV_ITEMS: Array<{ href: string; label: string; icon: LucideIcon; exact?: boolean }> = [
-  { href: '/dashboard', label: 'ダッシュボード', icon: LayoutDashboard, exact: true },
-  { href: '/dashboard/guilds', label: 'サーバー', icon: ServerCog },
-  { href: '/dashboard/operations', label: '稼働状況', icon: Activity },
-  { href: '/dashboard/analytics', label: 'アナリティクス', icon: BarChart3 },
-  { href: '/dashboard/community', label: 'コミュニティ', icon: Trophy },
-  { href: '/dashboard/leaderboard', label: 'Leaderboard', icon: Medal },
-  { href: '/dashboard/custom-plugins', label: 'カスタムPlugin', icon: Puzzle },
-];
+const NAV_ICONS: Partial<Record<StudioNavigationIcon, LucideIcon>> = {
+  dashboard: LayoutDashboard,
+  server: ServerCog,
+  activity: Activity,
+  analytics: BarChart3,
+  community: Trophy,
+  leaderboard: Medal,
+  plugin: Puzzle,
+};
 
 export function DashboardNav({ variant = 'sidebar' }: { variant?: 'sidebar' | 'mobile' }) {
   const pathname = usePathname();
@@ -30,9 +31,11 @@ export function DashboardNav({ variant = 'sidebar' }: { variant?: 'sidebar' | 'm
   if (variant === 'mobile') {
     return (
       <nav className="flex gap-1 overflow-x-auto px-3 py-2" aria-label="Studioナビゲーション">
-        {NAV_ITEMS.map((item) => {
+        {STUDIO_NAV_ITEMS.map((item) => {
           const active = isActive(pathname, item.href, item.exact);
-          const Icon = item.icon;
+          const Icon = NAV_ICONS[item.icon];
+          if (!Icon) return null;
+
           return (
             <Link
               key={item.href}
@@ -43,7 +46,7 @@ export function DashboardNav({ variant = 'sidebar' }: { variant?: 'sidebar' | 'm
                   : 'text-muted hover:bg-surface hover:text-foreground'
               }`}
             >
-              <Icon className="h-3.5 w-3.5" />
+              <Icon className="h-3.5 w-3.5" aria-hidden="true" />
               {item.label}
             </Link>
           );
@@ -54,9 +57,11 @@ export function DashboardNav({ variant = 'sidebar' }: { variant?: 'sidebar' | 'm
 
   return (
     <nav className="space-y-1" aria-label="Studioナビゲーション">
-      {NAV_ITEMS.map((item) => {
+      {STUDIO_NAV_ITEMS.map((item) => {
         const active = isActive(pathname, item.href, item.exact);
-        const Icon = item.icon;
+        const Icon = NAV_ICONS[item.icon];
+        if (!Icon) return null;
+
         return (
           <Link
             key={item.href}
@@ -67,9 +72,9 @@ export function DashboardNav({ variant = 'sidebar' }: { variant?: 'sidebar' | 'm
                 : 'text-muted hover:bg-surface hover:text-foreground'
             }`}
           >
-            <Icon className="h-4 w-4 shrink-0" />
+            <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
             <span className="flex-1">{item.label}</span>
-            {item.href === '/dashboard/custom-plugins' ? (
+            {item.id === 'custom-plugins' ? (
               <Sparkles className="h-3.5 w-3.5 text-primary/70" aria-label="新機能" />
             ) : null}
           </Link>
