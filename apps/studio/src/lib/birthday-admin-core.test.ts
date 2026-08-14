@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   birthdayMemberEligibility,
+  buildBirthdayCsv,
   daysInBirthdayMonth,
+  filterBirthdayRegistrations,
   isValidBirthdayDate,
   parseBirthdayAdminRequest,
 } from './birthday-admin-core.ts';
@@ -48,5 +50,40 @@ test('Birthday対象はGuild所属の人間メンバーだけを許可する', (
   assert.equal(
     birthdayMemberEligibility(USER_ID, [{ id: '987654321098765432', bot: false }]),
     'not-found',
+  );
+});
+
+test('Birthday一覧は月日順に並べて月・Discord IDで絞り込める', () => {
+  const registrations = [
+    { userId: '333333333333333333', month: 12, day: 1 },
+    { userId: '222222222222222222', month: 2, day: 14 },
+    { userId: '111111111111111111', month: 2, day: 3 },
+  ];
+
+  assert.deepEqual(
+    filterBirthdayRegistrations(registrations, '', null).map((item) => item.userId),
+    ['111111111111111111', '222222222222222222', '333333333333333333'],
+  );
+  assert.deepEqual(
+    filterBirthdayRegistrations(registrations, '', 2).map((item) => item.userId),
+    ['111111111111111111', '222222222222222222'],
+  );
+  assert.deepEqual(
+    filterBirthdayRegistrations(registrations, '333333', null).map((item) => item.userId),
+    ['333333333333333333'],
+  );
+});
+
+test('Birthday CSVは生年を含めずDiscord ID・月・日のみ出力する', () => {
+  assert.equal(
+    buildBirthdayCsv([
+      { userId: '333333333333333333', month: 12, day: 1 },
+      { userId: '111111111111111111', month: 2, day: 3 },
+    ]),
+    [
+      'discord_user_id,month,day',
+      '111111111111111111,2,3',
+      '333333333333333333,12,1',
+    ].join('\n'),
   );
 });
