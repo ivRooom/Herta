@@ -9,6 +9,8 @@ function config(overrides: Partial<XpLevelConfig> = {}): XpLevelConfig {
     cooldownSeconds: 60,
     excludedChannelIds: [],
     excludedRoleIds: [],
+    excludeCommandMessages: false,
+    commandPrefixes: ['/', '!'],
     levelUpNotification: true,
     levelUpChannelId: null,
     leaderboardSize: 10,
