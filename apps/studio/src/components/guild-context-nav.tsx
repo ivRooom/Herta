@@ -4,20 +4,32 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import {
+  Check,
   ChevronDown,
   History,
   LayoutDashboard,
   Plug,
+  Search,
   ServerCog,
   type LucideIcon,
 } from 'lucide-react';
+import { GuildAvatar } from '@/components/guild-avatar';
 import {
   getGuildConsoleContext,
   getGuildConsoleHref,
+  getGuildSwitchHref,
   type GuildConsoleSection,
 } from '@/lib/guild-context-nav';
 
 type Variant = 'desktop' | 'mobile';
+
+export type GuildSwitcherState = 'ready' | 'reconnect-required' | 'unavailable';
+
+export interface GuildSwitcherItem {
+  id: string;
+  name: string;
+  iconUrl: string | null;
+}
 
 type QuickNavItem = {
   section: Exclude<GuildConsoleSection, 'other'>;
@@ -31,25 +43,52 @@ const QUICK_NAV_ITEMS: QuickNavItem[] = [
   { section: 'audit-logs', label: '監査ログ', icon: History },
 ];
 
-export function GuildContextNav({ variant }: { variant: Variant }) {
+const SEARCH_THRESHOLD = 6;
+
+export function GuildContextNav({
+  variant,
+  guilds,
+  guildsState,
+}: {
+  variant: Variant;
+  guilds: GuildSwitcherItem[];
+  guildsState: GuildSwitcherState;
+}) {
   const pathname = usePathname();
   const context = getGuildConsoleContext(pathname);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const currentGuild = context ? guilds.find((guild) => guild.id === context.guildId) ?? null : null;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuId = `guild-context-menu-${variant}`;
+  const searchId = `guild-switcher-search-${variant}`;
+
+  const normalizedQuery = query.trim().toLocaleLowerCase('ja');
+  const switchCandidates = guilds.filter((guild) => {
+    if (guild.id === currentGuild?.id) return false;
+    if (!normalizedQuery) return true;
+    return (
+      guild.name.toLocaleLowerCase('ja').includes(normalizedQuery) || guild.id.includes(normalizedQuery)
+    );
+  });
 
   useEffect(() => {
-    setMobileOpen(false);
+    setMenuOpen(false);
+    setQuery('');
   }, [pathname]);
 
   useEffect(() => {
-    if (!mobileOpen) return;
+    if (!menuOpen) return;
 
     function handlePointerDown(event: PointerEvent) {
-      if (!mobileMenuRef.current?.contains(event.target as Node)) setMobileOpen(false);
+      if (!menuRef.current?.contains(event.target as Node)) setMenuOpen(false);
     }
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') setMobileOpen(false);
+      if (event.key !== 'Escape') return;
+      setMenuOpen(false);
+      triggerRef.current?.focus();
     }
 
     document.addEventListener('pointerdown', handlePointerDown);
@@ -58,82 +97,134 @@ export function GuildContextNav({ variant }: { variant: Variant }) {
       document.removeEventListener('pointerdown', handlePointerDown);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [mobileOpen]);
+  }, [menuOpen]);
 
-  if (variant === 'mobile') {
-    if (!context) {
-      return (
-        <Link
-          href="/dashboard/guilds"
-          aria-label="サーバー管理を開く"
-          className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-border bg-surface text-muted transition-colors hover:text-foreground"
-        >
-          <ServerCog className="h-4 w-4" aria-hidden="true" />
-        </Link>
-      );
-    }
-
-    return (
-      <div ref={mobileMenuRef} className="relative">
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <div ref={menuRef} className="relative min-w-0">
         <button
+          ref={triggerRef}
           type="button"
-          aria-expanded={mobileOpen}
-          aria-controls="guild-context-mobile-menu"
-          aria-label="サーバー管理メニュー"
-          onClick={() => setMobileOpen((current) => !current)}
-          className={`inline-flex h-9 items-center gap-1.5 rounded-xl border px-2.5 text-xs font-semibold transition-colors ${
-            mobileOpen
-              ? 'border-primary/30 bg-primary/10 text-primary'
-              : 'border-border bg-surface text-muted hover:text-foreground'
+          aria-expanded={menuOpen}
+          aria-controls={menuId}
+          aria-haspopup="dialog"
+          onClick={() => setMenuOpen((current) => !current)}
+          className={`inline-flex items-center gap-2 rounded-xl border transition-colors ${
+            variant === 'desktop'
+              ? 'h-10 max-w-56 bg-surface px-2.5 text-xs font-semibold'
+              : 'h-9 max-w-40 bg-surface px-2 text-xs font-semibold'
+          } ${
+            menuOpen
+              ? 'border-primary/30 text-primary'
+              : 'border-border text-muted hover:text-foreground'
           }`}
         >
-          <ServerCog className="h-4 w-4" aria-hidden="true" />
-          <span className="hidden sm:inline">サーバー管理</span>
+          {currentGuild ? (
+            <span className="shrink-0 overflow-hidden rounded-lg" aria-hidden="true">
+              <GuildAvatar name={currentGuild.name} iconUrl={currentGuild.iconUrl} size={24} />
+            </span>
+          ) : (
+            <ServerCog className="h-4 w-4 shrink-0" aria-hidden="true" />
+          )}
+          <span className={`truncate ${variant === 'mobile' ? 'hidden sm:inline' : ''}`}>
+            {currentGuild?.name ?? (guilds.length > 0 ? 'サーバーを選択' : 'サーバー')}
+          </span>
           <ChevronDown
-            className={`h-3.5 w-3.5 transition-transform ${mobileOpen ? 'rotate-180' : ''}`}
+            className={`h-3.5 w-3.5 shrink-0 transition-transform ${menuOpen ? 'rotate-180' : ''}`}
             aria-hidden="true"
           />
         </button>
 
-        {mobileOpen ? (
+        {menuOpen ? (
           <div
-            id="guild-context-mobile-menu"
-            className="absolute right-0 top-11 z-50 w-56 rounded-2xl border border-border bg-surface p-2 shadow-xl"
+            id={menuId}
+            role="dialog"
+            aria-label="サーバー切替"
+            className={`absolute right-0 z-50 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-2xl border border-border bg-surface p-2 shadow-xl ${
+              variant === 'mobile' ? 'top-9' : 'top-10'
+            }`}
           >
-            <p className="px-2.5 pb-2 pt-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
-              Current Server
-            </p>
-            <nav className="space-y-1" aria-label="現在のサーバー管理">
-              {QUICK_NAV_ITEMS.map((item) => (
-                <QuickNavLink key={item.section} item={item} context={context} mobile />
-              ))}
-            </nav>
+            <div className="px-2.5 pb-2 pt-1">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
+                Server Switcher
+              </p>
+              {currentGuild ? (
+                <div className="mt-2 flex items-center gap-2.5 rounded-xl bg-primary/5 p-2.5">
+                  <span className="shrink-0 overflow-hidden rounded-xl" aria-hidden="true">
+                    <GuildAvatar name={currentGuild.name} iconUrl={currentGuild.iconUrl} size={36} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{currentGuild.name}</p>
+                    <p className="mt-0.5 text-[11px] text-muted">現在のサーバー</p>
+                  </div>
+                  <Check className="h-4 w-4 shrink-0 text-primary" aria-label="選択中" />
+                </div>
+              ) : null}
+            </div>
+
+            {context ? (
+              <nav className="mb-2 grid grid-cols-3 gap-1" aria-label="現在のサーバー管理">
+                {QUICK_NAV_ITEMS.map((item) => (
+                  <QuickNavLink key={item.section} item={item} context={context} compact />
+                ))}
+              </nav>
+            ) : null}
+
+            <div className="border-t border-border pt-2">
+              <div className="flex items-center justify-between gap-3 px-2.5 py-1.5">
+                <p className="text-xs font-semibold">サーバーを切り替える</p>
+                {guildsState === 'ready' ? (
+                  <span className="text-[10px] tabular-nums text-muted">{guilds.length} servers</span>
+                ) : null}
+              </div>
+
+              {guildsState === 'ready' && guilds.length >= SEARCH_THRESHOLD ? (
+                <div className="relative mx-2 mt-1">
+                  <label htmlFor={searchId} className="sr-only">
+                    サーバーを検索
+                  </label>
+                  <Search
+                    className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted"
+                    aria-hidden="true"
+                  />
+                  <input
+                    id={searchId}
+                    type="search"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value.slice(0, 100))}
+                    placeholder="名前・Server IDで検索"
+                    autoComplete="off"
+                    className="h-9 w-full rounded-xl border border-border bg-background pl-8 pr-3 text-xs outline-none transition-colors placeholder:text-muted focus:border-primary"
+                  />
+                </div>
+              ) : null}
+
+              <div className="mt-1 max-h-64 overflow-y-auto px-1">
+                <GuildListState
+                  guildsState={guildsState}
+                  guilds={guilds}
+                  candidates={switchCandidates}
+                  currentGuild={currentGuild}
+                  context={context}
+                  hasQuery={normalizedQuery.length > 0}
+                />
+              </div>
+            </div>
+
             <div className="mt-2 border-t border-border pt-2">
               <Link
                 href="/dashboard/guilds"
                 className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm text-muted transition-colors hover:bg-background hover:text-foreground"
               >
                 <ServerCog className="h-4 w-4" aria-hidden="true" />
-                サーバーを切り替える
+                サーバー一覧を開く
               </Link>
             </div>
           </div>
         ) : null}
       </div>
-    );
-  }
 
-  return (
-    <div className="flex min-w-0 items-center gap-2">
-      <Link
-        href="/dashboard/guilds"
-        className="inline-flex h-9 shrink-0 items-center gap-2 rounded-xl border border-border bg-surface px-3 text-xs font-semibold text-muted transition-colors hover:text-foreground"
-      >
-        <ServerCog className="h-4 w-4" aria-hidden="true" />
-        {context ? 'サーバー切替' : 'サーバー'}
-      </Link>
-
-      {context ? (
+      {variant === 'desktop' && context ? (
         <nav
           className="flex min-w-0 items-center gap-1 rounded-xl border border-border bg-surface p-1"
           aria-label="現在のサーバー管理"
@@ -147,32 +238,104 @@ export function GuildContextNav({ variant }: { variant: Variant }) {
   );
 }
 
+function GuildListState({
+  guildsState,
+  guilds,
+  candidates,
+  currentGuild,
+  context,
+  hasQuery,
+}: {
+  guildsState: GuildSwitcherState;
+  guilds: GuildSwitcherItem[];
+  candidates: GuildSwitcherItem[];
+  currentGuild: GuildSwitcherItem | null;
+  context: ReturnType<typeof getGuildConsoleContext>;
+  hasQuery: boolean;
+}) {
+  if (guildsState === 'reconnect-required') {
+    return (
+      <p className="rounded-xl px-2.5 py-3 text-xs leading-5 text-muted">
+        Discordとの接続を更新すると、管理可能なサーバーをここから切り替えられます。
+      </p>
+    );
+  }
+
+  if (guildsState === 'unavailable') {
+    return (
+      <p className="rounded-xl px-2.5 py-3 text-xs leading-5 text-muted">
+        サーバー一覧を取得できませんでした。サーバー一覧画面から再試行してください。
+      </p>
+    );
+  }
+
+  if (guilds.length === 0) {
+    return (
+      <p className="rounded-xl px-2.5 py-3 text-xs leading-5 text-muted">
+        管理可能なDiscordサーバーがありません。
+      </p>
+    );
+  }
+
+  if (candidates.length === 0) {
+    return (
+      <p className="rounded-xl px-2.5 py-3 text-xs leading-5 text-muted">
+        {hasQuery
+          ? '検索条件に一致するサーバーがありません。'
+          : currentGuild
+            ? 'ほかに切り替え可能なサーバーはありません。'
+            : '切り替え可能なサーバーがありません。'}
+      </p>
+    );
+  }
+
+  return (
+    <nav className="space-y-1" aria-label="切り替え可能なサーバー">
+      {candidates.map((guild) => (
+        <Link
+          key={guild.id}
+          href={getGuildSwitchHref(guild.id, context)}
+          className="flex items-center gap-2.5 rounded-xl px-2 py-2 text-sm transition-colors hover:bg-background"
+        >
+          <span className="shrink-0 overflow-hidden rounded-lg" aria-hidden="true">
+            <GuildAvatar name={guild.name} iconUrl={guild.iconUrl} size={30} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium">{guild.name}</span>
+            <span className="block truncate text-[10px] text-muted">{guild.id}</span>
+          </span>
+        </Link>
+      ))}
+    </nav>
+  );
+}
+
 function QuickNavLink({
   item,
   context,
-  mobile = false,
+  compact = false,
 }: {
   item: QuickNavItem;
   context: NonNullable<ReturnType<typeof getGuildConsoleContext>>;
-  mobile?: boolean;
+  compact?: boolean;
 }) {
   const active = context.section === item.section;
   const Icon = item.icon;
   const href = getGuildConsoleHref(context.guildId, item.section);
 
-  if (mobile) {
+  if (compact) {
     return (
       <Link
         href={href}
         aria-current={active ? 'page' : undefined}
-        className={`flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm font-medium transition-colors ${
+        className={`flex min-w-0 flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] font-medium transition-colors ${
           active
             ? 'bg-primary/10 text-primary'
             : 'text-muted hover:bg-background hover:text-foreground'
         }`}
       >
         <Icon className="h-4 w-4" aria-hidden="true" />
-        {item.label}
+        <span className="truncate">{item.label}</span>
       </Link>
     );
   }
