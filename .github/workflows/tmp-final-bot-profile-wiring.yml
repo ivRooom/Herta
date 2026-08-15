@@ -1,0 +1,107 @@
+name: Temporary Final Bot Profile Wiring
+
+on:
+  push:
+    branches:
+      - feature/studio-server-context-bot-profile
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/studio-server-context-bot-profile
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Wire Bot profile internal API
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              target = Path(path)
+              content = target.read_text()
+              if old not in content:
+                  raise RuntimeError(f'pattern not found: {path}: {old[:100]!r}')
+              target.write_text(content.replace(old, new, 1))
+
+          bot = 'apps/bot/src/bot.ts'
+          replace_once(
+              bot,
+              "import { loadStoredBotPresence } from './presence/store.js';",
+              "import { loadStoredBotPresence } from './presence/store.js';\nimport {\n  getGuildBotProfile as loadGuildBotProfile,\n  updateGuildBotProfile as saveGuildBotProfile,\n  type GuildBotProfile,\n  type GuildBotProfileUpdate,\n} from './profile/guild-bot-profile.js';",
+          )
+          marker = '''  async searchGuildMembers(
+    guildId: string,
+    query: string,
+    limit: number,
+  ): Promise<GuildMemberOption[] | null> {
+    return searchGuildMemberOptions(this.client, guildId, query, limit);
+  }
+'''
+          replacement = marker + '''
+  async getGuildBotProfile(guildId: string): Promise<GuildBotProfile | null> {
+    return loadGuildBotProfile(this.client, guildId);
+  }
+
+  async updateGuildBotProfile(
+    guildId: string,
+    input: GuildBotProfileUpdate,
+  ): Promise<GuildBotProfile | null> {
+    return saveGuildBotProfile(this.client, guildId, input);
+  }
+'''
+          replace_once(bot, marker, replacement)
+
+          env = '.env.example'
+          replace_once(
+              env,
+              "BOT_HEALTH_REQUEST_TIMEOUT_MS=\n",
+              "BOT_HEALTH_REQUEST_TIMEOUT_MS=\n# Studio → Bot内部プロフィールAPI専用Bearer secret。32文字以上のランダム値を指定する。\n# BotとStudioで必ず同じ値を設定し、ブラウザへ公開しない。\nBOT_INTERNAL_API_SECRET=\n",
+          )
+
+          env_prod = '.env.production.example'
+          content = Path(env_prod).read_text()
+          if 'BOT_INTERNAL_API_SECRET=' not in content:
+              if 'BOT_HEALTH_REQUEST_TIMEOUT_MS=' in content:
+                  content = content.replace(
+                      'BOT_HEALTH_REQUEST_TIMEOUT_MS=',
+                      'BOT_HEALTH_REQUEST_TIMEOUT_MS=\n# Studio → Bot内部プロフィールAPI専用。openssl rand -base64 32等で生成する。\nBOT_INTERNAL_API_SECRET=',
+                      1,
+                  )
+              else:
+                  content += '\n# Studio → Bot内部プロフィールAPI専用。32文字以上。\nBOT_INTERNAL_API_SECRET=\n'
+              Path(env_prod).write_text(content)
+
+          compose = 'docker-compose.prod.yml'
+          replace_once(
+              compose,
+              "      BOT_HEALTH_REQUEST_TIMEOUT_MS: ${BOT_HEALTH_REQUEST_TIMEOUT_MS:-}\n      HEALTH_CHECK_TIMEOUT_MS:",
+              "      BOT_HEALTH_REQUEST_TIMEOUT_MS: ${BOT_HEALTH_REQUEST_TIMEOUT_MS:-}\n      BOT_INTERNAL_API_SECRET: ${BOT_INTERNAL_API_SECRET:?BOT_INTERNAL_API_SECRET is required}\n      HEALTH_CHECK_TIMEOUT_MS:",
+          )
+          replace_once(
+              compose,
+              "      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN is required}\n      LFG_COMPONENT_SECRET:",
+              "      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN is required}\n      BOT_INTERNAL_API_SECRET: ${BOT_INTERNAL_API_SECRET:?BOT_INTERNAL_API_SECRET is required}\n      LFG_COMPONENT_SECRET:",
+          )
+          PY
+      - name: Format touched source files
+        run: pnpm exec prettier --write apps/bot/src/bot.ts .env.example .env.production.example docker-compose.prod.yml
+      - name: Remove temporary workflow and push
+        run: |
+          git rm .github/workflows/tmp-final-bot-profile-wiring.yml
+          git config user.name "mizzz-ivr"
+          git config user.email "86910433+mizzz-ivr@users.noreply.github.com"
+          git add -A
+          git commit -m "Botプロフィール内部APIの配線とSecret設定を完成"
+          git push origin HEAD:feature/studio-server-context-bot-profile
