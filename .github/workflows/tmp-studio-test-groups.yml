@@ -1,0 +1,105 @@
+name: Temporary Studio Test Groups
+
+on:
+  push:
+    branches:
+      - feature/studio-server-context-bot-profile
+
+permissions:
+  contents: read
+
+jobs:
+  base-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - working-directory: apps/studio
+        run: >-
+          node --experimental-strip-types --test
+          src/lib/guild-metadata.test.ts
+          src/lib/discord-install.test.ts
+          src/lib/discord.test.ts
+          src/lib/discord-api-response.test.ts
+          src/lib/bot-health.test.ts
+          src/lib/bot-guild-members.test.ts
+          src/lib/bot-profile-input.test.ts
+          src/lib/bot-presence-config.test.ts
+          src/lib/operations-history.test.ts
+          src/lib/operations-history-boundary.test.ts
+          src/lib/audit-logs.test.ts
+          src/lib/team-split.test.ts
+
+  plugin-config:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - working-directory: apps/studio
+        run: >-
+          node --experimental-strip-types --test
+          src/lib/moderation-config-ui.test.ts
+          src/lib/plugin-config-studio.test.ts
+          src/lib/plugin-config-studio-validation.test.ts
+          src/lib/plugin-config-validation-issues.test.ts
+          src/lib/plugin-config-validation-ui.test.ts
+          src/lib/plugin-config-schema-branches.test.ts
+          src/lib/plugin-config-ajv.test.ts
+          src/lib/plugin-bulk-update.test.ts
+          src/lib/plugin-discord-picker-coverage.test.ts
+          src/lib/plugin-hub-preflight.test.ts
+          src/lib/plugin-management-summary.test.ts
+          src/lib/message-studio-request.test.ts
+
+  community-admin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - working-directory: apps/studio
+        run: >-
+          node --experimental-strip-types --test
+          src/lib/achievement-templates.test.ts
+          src/lib/achievement-operations.test.ts
+          src/lib/community-leaderboard-core.test.ts
+          src/lib/xp-admin-core.test.ts
+          src/lib/birthday-admin-core.test.ts
+
+  navigation-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - working-directory: apps/studio
+        run: >-
+          node --experimental-strip-types --test
+          src/lib/guild-context-nav.test.ts
+          src/lib/studio-navigation.test.ts
+          src/lib/studio-server-preferences.test.ts
+          src/lib/studio-selected-server-navigation.test.ts
+          src/lib/request-origin.test.ts
+          src/lib/command-palette-preferences.test.ts
