@@ -52,14 +52,7 @@ export async function PATCH(request: Request) {
   }
 
   try {
-    const result = await saveBotPresence(config);
-    if (!result.persisted) {
-      return NextResponse.json(
-        { error: 'Redisが設定されていないためPresenceを保存できません' },
-        { status: 503 },
-      );
-    }
-
+    const result = await saveBotPresence(config, session.user.id);
     console.info('Bot Presence設定を更新しました', {
       actorId: session.user.id,
       status: config.status,
@@ -68,7 +61,7 @@ export async function PATCH(request: Request) {
     });
     return NextResponse.json({
       config,
-      persisted: true,
+      persisted: result.persisted,
       appliedImmediately: result.subscriberCount > 0,
     });
   } catch (error) {
