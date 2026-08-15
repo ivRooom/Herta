@@ -16,36 +16,47 @@ export async function redisCommand(
 
   const port = Number(url.port || (url.protocol === 'rediss:' ? 6380 : 6379));
   const commands: string[][] = [];
-  if (url.password) commands.push(['AUTH', decodeURIComponent(url.password)]);
+  if (url.password) {
+    const password = decodeURIComponent(url.password);
+    const username = url.username ? decodeURIComponent(url.username) : '';
+    commands.push(username ? ['AUTH', username, password] : ['AUTH', password]);
+  }
   const database = url.pathname.replace(/^\//u, '');
   if (database && database !== '0') commands.push(['SELECT', database]);
   commands.push([...parts]);
 
   return new Promise<RedisCommandResult>((resolve, reject) => {
-    const socket =
-      url.protocol === 'rediss:'
-        ? tls.connect({ host: url.hostname, port, servername: url.hostname })
-        : net.createConnection({ host: url.hostname, port });
+    const secure = url.protocol === 'rediss:';
+    const socket = secure
+      ? tls.connect({ host: url.hostname, port, servername: url.hostname })
+      : net.createConnection({ host: url.hostname, port });
     let response = Buffer.alloc(0);
+    let settled = false;
     const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
       socket.destroy();
       reject(new Error('Redis commandがタイムアウトしました'));
     }, 1_500);
 
     function fail(error: unknown) {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       socket.destroy();
       reject(error instanceof Error ? error : new Error('Redis commandに失敗しました'));
     }
 
-    socket.once('connect', () => {
+    socket.once(secure ? 'secureConnect' : 'connect', () => {
       socket.write(commands.map((command) => encodeCommand(...command)).join(''));
     });
     socket.on('data', (chunk) => {
+      if (settled) return;
       response = Buffer.concat([response, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)]);
       try {
         const parsed = parseRespValues(response);
         if (!parsed.complete || parsed.values.length < commands.length) return;
+        settled = true;
         clearTimeout(timer);
         socket.end();
         resolve(parsed.values[commands.length - 1] ?? null);
