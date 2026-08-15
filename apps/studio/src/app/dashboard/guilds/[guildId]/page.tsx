@@ -82,13 +82,13 @@ export default async function GuildDetailPage({
               href={`/dashboard/guilds/${guildId}/plugins`}
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
             >
-              <Plug className="h-4 w-4" /> Pluginを設定
+              <Plug className="h-4 w-4" aria-hidden="true" /> Pluginを設定
             </Link>
             <Link
               href={`/dashboard/guilds/${guildId}/audit-logs`}
               className="inline-flex items-center gap-2 rounded-xl border border-border bg-background/70 px-4 py-2.5 text-sm font-semibold"
             >
-              <History className="h-4 w-4" /> 監査ログ
+              <History className="h-4 w-4" aria-hidden="true" /> 監査ログ
             </Link>
           </div>
         </div>
@@ -122,6 +122,64 @@ export default async function GuildDetailPage({
           }
           attention={attentionCount > 0}
         />
+      </section>
+
+      <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+              Quick Operations
+            </p>
+            <h2 className="mt-2 text-lg font-semibold">よく使う運用画面</h2>
+            <p className="mt-1 text-sm text-muted">
+              サーバーを選び直さず、日常的な管理・コミュニティ機能へ直接移動できます。
+            </p>
+          </div>
+          <Link
+            href={`/dashboard/guilds/${guildId}/audit-logs`}
+            className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
+          >
+            <History className="h-4 w-4" aria-hidden="true" /> 操作履歴を確認
+          </Link>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <ConsoleShortcut
+            href={`/dashboard/guilds/${guildId}/plugins`}
+            icon={Plug}
+            title="プラグイン管理"
+            description="有効化・無効化とPlugin設定"
+          />
+          <ConsoleShortcut
+            href={`/dashboard/guilds/${guildId}/leaderboard`}
+            icon={Trophy}
+            title="Leaderboard"
+            description="ランキング・Season状況を確認"
+          />
+          <ConsoleShortcut
+            href={`/dashboard/guilds/${guildId}/moderation`}
+            icon={ShieldCheck}
+            title="Moderation"
+            description="検知・Blacklist・Enforcement"
+          />
+          <ConsoleShortcut
+            href={`/dashboard/guilds/${guildId}/birthday`}
+            icon={Gift}
+            title="Birthday"
+            description="誕生日登録とお祝い設定"
+          />
+          <ConsoleShortcut
+            href={`/dashboard/guilds/${guildId}/auto-response`}
+            icon={MessageSquareText}
+            title="Auto Response"
+            description="自動返信ルールを管理"
+          />
+          <ConsoleShortcut
+            href={`/dashboard/guilds/${guildId}/daily-content`}
+            icon={Bell}
+            title="Daily Content"
+            description="定期コンテンツ配信を管理"
+          />
+        </div>
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
@@ -192,7 +250,7 @@ export default async function GuildDetailPage({
             href={`/dashboard/guilds/${guildId}/plugins`}
             className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
           >
-            Plugin Managerを開く <ArrowRight className="h-4 w-4" />
+            Plugin Managerを開く <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>
         </div>
       </section>
@@ -200,7 +258,7 @@ export default async function GuildDetailPage({
       <section className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-border bg-surface p-6 shadow-card">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-primary" />
+            <ShieldCheck className="h-5 w-5 text-primary" aria-hidden="true" />
             <h2 className="font-medium">あなたの権限</h2>
           </div>
           <ul className="mt-4 space-y-2 text-sm">
@@ -213,7 +271,7 @@ export default async function GuildDetailPage({
         <div className="rounded-2xl border border-[#5865F2]/30 bg-[#5865F2]/10 p-6">
           <div className="flex gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#5865F2] text-white">
-              <Bot className="h-5 w-5" />
+              <Bot className="h-5 w-5" aria-hidden="true" />
             </div>
             <div className="min-w-0 flex-1">
               <h2 className="font-medium">Herta Botの導入・権限更新</h2>
@@ -227,7 +285,7 @@ export default async function GuildDetailPage({
                   rel="noreferrer noopener"
                   className="mt-4 inline-flex items-center gap-2 rounded-xl bg-[#5865F2] px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
                 >
-                  Botを追加 / 権限を更新 <ExternalLink className="h-4 w-4" />
+                  Botを追加 / 権限を更新 <ExternalLink className="h-4 w-4" aria-hidden="true" />
                 </a>
               ) : (
                 <p className="mt-4 text-sm text-muted">Discord Application ID が未設定です</p>
@@ -246,7 +304,38 @@ function BackLink() {
       href="/dashboard/guilds"
       className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground"
     >
-      <ArrowLeft className="h-4 w-4" /> サーバー一覧へ戻る
+      <ArrowLeft className="h-4 w-4" aria-hidden="true" /> サーバー一覧へ戻る
+    </Link>
+  );
+}
+
+function ConsoleShortcut({
+  href,
+  icon: Icon,
+  title,
+  description,
+}: {
+  href: string;
+  icon: typeof Plug;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group flex items-center gap-3 rounded-xl border border-border bg-background/60 p-4 transition-colors hover:border-primary/40"
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <Icon className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-semibold">{title}</span>
+        <span className="mt-0.5 block truncate text-xs text-muted">{description}</span>
+      </span>
+      <ArrowRight
+        className="h-4 w-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5"
+        aria-hidden="true"
+      />
     </Link>
   );
 }
@@ -269,7 +358,7 @@ function MetricCard({
       <span
         className={`flex h-9 w-9 items-center justify-center rounded-xl ${attention ? 'bg-amber-400/10 text-amber-300' : 'bg-primary/10 text-primary'}`}
       >
-        <Icon className="h-4 w-4" />
+        <Icon className="h-4 w-4" aria-hidden="true" />
       </span>
       <p className="mt-4 text-xs font-medium text-muted">{label}</p>
       <p className="mt-1 text-2xl font-semibold tracking-tight">{value}</p>
@@ -292,7 +381,10 @@ function SmallMetric({
   return (
     <div className="rounded-xl border border-border bg-background/60 p-4">
       <div className="flex items-center justify-between gap-3">
-        <Icon className={`h-4 w-4 ${attention ? 'text-amber-300' : 'text-primary'}`} />
+        <Icon
+          className={`h-4 w-4 ${attention ? 'text-amber-300' : 'text-primary'}`}
+          aria-hidden="true"
+        />
         <span className={`text-xl font-semibold ${attention ? 'text-amber-200' : ''}`}>
           {value.toLocaleString()}
         </span>

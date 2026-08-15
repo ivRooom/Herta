@@ -7,14 +7,17 @@ import {
   CalendarDays,
   CheckCircle2,
   MessageCircleReply,
+  Plug,
   Puzzle,
   Quote,
   ServerCog,
   ShieldCheck,
   Sparkles,
+  Trophy,
   UsersRound,
 } from 'lucide-react';
 import { auth } from '@/auth';
+import { GuildAvatar } from '@/components/guild-avatar';
 import { ReconnectNotice } from '@/components/reconnect-notice';
 import { getBotHealth } from '@/lib/bot-health';
 import { getManageableGuilds } from '@/lib/guilds';
@@ -71,6 +74,7 @@ export default async function DashboardPage() {
   const healthStatus = health.available ? health.health.status : 'unknown';
   const gatewayStatus = health.available ? health.health.checks.discord.gateway_status : 'unknown';
   const version = health.available ? health.health.version : '---';
+  const quickGuilds = guildResult.ok ? guildResult.guilds.slice(0, 4) : [];
 
   return (
     <div className="space-y-7">
@@ -82,7 +86,7 @@ export default async function DashboardPage() {
         <div className="relative grid gap-7 lg:grid-cols-[1.35fr_0.65fr] lg:items-center">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-              <Sparkles className="h-3.5 w-3.5" /> Herta Studio Next
+              <Sparkles className="h-3.5 w-3.5" aria-hidden="true" /> Herta Studio Next
             </div>
             <h1 className="mt-5 max-w-3xl text-3xl font-semibold tracking-tight sm:text-4xl">
               おかえりなさい、{session?.user?.name ?? 'Herta User'} さん
@@ -95,13 +99,13 @@ export default async function DashboardPage() {
                 href="/dashboard/guilds"
                 className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground shadow-lg shadow-primary/20"
               >
-                サーバーを管理 <ArrowRight className="h-4 w-4" />
+                サーバーを管理 <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Link>
               <Link
-                href="/dashboard/custom-plugins"
+                href="/dashboard/plugins"
                 className="inline-flex items-center gap-2 rounded-xl border border-border bg-background/70 px-4 py-2.5 text-sm font-semibold hover:border-primary/40"
               >
-                <Puzzle className="h-4 w-4 text-primary" /> Custom Plugin Hub
+                <Plug className="h-4 w-4 text-primary" aria-hidden="true" /> プラグイン管理
               </Link>
             </div>
           </div>
@@ -118,6 +122,7 @@ export default async function DashboardPage() {
                 </div>
                 <span
                   className={`mt-1 h-3 w-3 rounded-full ${healthStatus === 'operational' ? 'bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.7)]' : healthStatus === 'degraded' ? 'bg-amber-400' : 'bg-red-400'}`}
+                  aria-hidden="true"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3 text-xs">
@@ -162,6 +167,55 @@ export default async function DashboardPage() {
         />
       </section>
 
+      {quickGuilds.length > 0 ? (
+        <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+                Server Consoles
+              </p>
+              <h2 className="mt-2 text-lg font-semibold">サーバーへすぐ移動</h2>
+              <p className="mt-1 text-sm text-muted">
+                よく使う管理画面へ、サーバー選択を挟まず直接移動できます。
+              </p>
+            </div>
+            <Link
+              href="/dashboard/guilds"
+              className="text-sm font-semibold text-primary hover:underline"
+            >
+              すべてのサーバー
+            </Link>
+          </div>
+          <ul className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {quickGuilds.map((guild) => (
+              <li key={guild.id} className="rounded-xl border border-border bg-background/60 p-4">
+                <div className="flex items-center gap-3">
+                  <GuildAvatar name={guild.name} iconUrl={guild.iconUrl} size={36} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">{guild.name}</p>
+                    <p className="mt-0.5 truncate text-[10px] text-muted">{guild.id}</p>
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <Link
+                    href={`/dashboard/guilds/${guild.id}`}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-2 py-2 text-xs font-semibold transition-colors hover:border-primary/40 hover:text-primary"
+                  >
+                    <ServerCog className="h-3.5 w-3.5" aria-hidden="true" /> Console
+                  </Link>
+                  <Link
+                    href={`/dashboard/guilds/${guild.id}/plugins`}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-2 py-2 text-xs font-semibold transition-colors hover:border-primary/40 hover:text-primary"
+                  >
+                    <Plug className="h-3.5 w-3.5" aria-hidden="true" /> Plugin
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       <section className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
           <div className="flex items-end justify-between gap-4">
@@ -174,10 +228,10 @@ export default async function DashboardPage() {
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <QuickLink
-              href="/dashboard/guilds"
-              icon={ServerCog}
-              title="サーバー管理"
-              description="Plugin・Moderation設定"
+              href="/dashboard/plugins"
+              icon={Plug}
+              title="プラグイン管理"
+              description="全サーバーのPlugin状態と設定"
             />
             <QuickLink
               href="/dashboard/operations"
@@ -190,6 +244,18 @@ export default async function DashboardPage() {
               icon={BarChart3}
               title="アナリティクス"
               description="利用状況と失敗傾向"
+            />
+            <QuickLink
+              href="/dashboard/community"
+              icon={Trophy}
+              title="コミュニティ"
+              description="Community機能とアクティビティ"
+            />
+            <QuickLink
+              href="/dashboard/guilds"
+              icon={ServerCog}
+              title="サーバー管理"
+              description="Guildコンソールと権限管理"
             />
             <QuickLink
               href="/dashboard/custom-plugins"
@@ -227,7 +293,7 @@ export default async function DashboardPage() {
             href="/dashboard/operations"
             className="mt-5 inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
           >
-            詳細を確認 <ArrowRight className="h-4 w-4" />
+            詳細を確認 <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>
         </div>
       </section>
@@ -244,10 +310,10 @@ export default async function DashboardPage() {
             </p>
           </div>
           <Link
-            href="/dashboard/guilds"
+            href="/dashboard/plugins"
             className="text-sm font-semibold text-primary hover:underline"
           >
-            Pluginを設定する
+            Pluginを管理する
           </Link>
         </div>
         <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -259,7 +325,7 @@ export default async function DashboardPage() {
                 className="rounded-2xl border border-border bg-surface p-5 shadow-card"
               >
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                  <Icon className="h-5 w-5" />
+                  <Icon className="h-5 w-5" aria-hidden="true" />
                 </div>
                 <h3 className="mt-4 font-semibold">{feature.title}</h3>
                 <p className="mt-2 text-sm leading-6 text-muted">{feature.description}</p>
@@ -287,7 +353,7 @@ function MetricCard({
     <article className="rounded-2xl border border-border bg-surface p-5 shadow-card">
       <div className="flex items-center justify-between gap-3">
         <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Icon className="h-4 w-4" />
+          <Icon className="h-4 w-4" aria-hidden="true" />
         </span>
         <span className="text-[10px] uppercase tracking-[0.14em] text-muted">Live</span>
       </div>
@@ -324,13 +390,16 @@ function QuickLink({
       className="group flex items-center gap-3 rounded-xl border border-border bg-background/60 p-4 transition-colors hover:border-primary/40"
     >
       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-        <Icon className="h-4 w-4" />
+        <Icon className="h-4 w-4" aria-hidden="true" />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-medium">{title}</span>
         <span className="mt-0.5 block truncate text-xs text-muted">{description}</span>
       </span>
-      <ArrowRight className="h-4 w-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5" />
+      <ArrowRight
+        className="h-4 w-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5"
+        aria-hidden="true"
+      />
     </Link>
   );
 }
@@ -342,7 +411,10 @@ function StatusRow({ label, ok }: { label: string; ok: boolean }) {
       <span
         className={`inline-flex items-center gap-1.5 text-xs font-medium ${ok ? 'text-emerald-400' : 'text-amber-400'}`}
       >
-        <span className={`h-2 w-2 rounded-full ${ok ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+        <span
+          className={`h-2 w-2 rounded-full ${ok ? 'bg-emerald-400' : 'bg-amber-400'}`}
+          aria-hidden="true"
+        />
         {ok ? 'Operational' : 'Check'}
       </span>
     </div>

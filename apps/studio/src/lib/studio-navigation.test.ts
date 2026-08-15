@@ -12,6 +12,9 @@ test('Guild外ではWorkspaceコマンドだけを生成する', () => {
   assert.ok(commands.every((command) => command.group === 'workspace'));
   assert.ok(commands.some((command) => command.href === '/dashboard/guilds'));
   assert.ok(
+    commands.some((command) => command.id === 'plugins' && command.href === '/dashboard/plugins'),
+  );
+  assert.ok(
     commands.some((command) => command.id === 'account' && command.href === '/dashboard/account'),
   );
 });
@@ -69,6 +72,11 @@ test('日本語・英語キーワードでコマンドを検索できる', () =>
   assert.ok(
     filterStudioCommandItems(commands, 'xp operations').some(
       (command) => command.id === 'guild-xp-operations',
+    ),
+  );
+  assert.ok(
+    filterStudioCommandItems(commands, 'プラグイン 管理').some(
+      (command) => command.id === 'plugins' && command.href === '/dashboard/plugins',
     ),
   );
   assert.ok(

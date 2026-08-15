@@ -21,6 +21,8 @@ export default async function PluginsPage({ params }: { params: Promise<{ guildI
 
   const plugins = await listGuildPlugins(guildId);
   const enabledCount = plugins.filter((plugin) => plugin.enabled).length;
+  const configuredCount = plugins.filter((plugin) => plugin.installed).length;
+  const disabledCount = Math.max(configuredCount - enabledCount, 0);
   const catalog: PluginCatalogItem[] = plugins.map(({ manifest, enabled, config }) => ({
     id: manifest.id,
     name: manifest.name,
@@ -33,31 +35,41 @@ export default async function PluginsPage({ params }: { params: Promise<{ guildI
 
   return (
     <div className="space-y-7">
-      <Link
-        href={`/dashboard/guilds/${guildId}`}
-        className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" /> {guild.name} に戻る
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link
+          href="/dashboard/plugins"
+          className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" /> プラグイン管理へ戻る
+        </Link>
+        <Link
+          href={`/dashboard/guilds/${guildId}`}
+          className="text-sm font-medium text-muted transition-colors hover:text-foreground"
+        >
+          {guild.name} のコンソール
+        </Link>
+      </div>
 
       <section className="relative overflow-hidden rounded-3xl border border-primary/20 bg-surface p-6 shadow-card sm:p-8">
         <div className="pointer-events-none absolute -right-20 -top-20 h-60 w-60 rounded-full bg-primary/15 blur-3xl" />
         <div className="relative flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-              <Sparkles className="h-3.5 w-3.5" /> Guild Feature Center
+              <Sparkles className="h-3.5 w-3.5" aria-hidden="true" /> Guild Feature Center
             </div>
             <h1 className="mt-4 text-2xl font-semibold tracking-tight sm:text-3xl">
-              Plugin Manager
+              プラグイン管理
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
               {guild.name}{' '}
               に必要な機能だけを有効化し、検索・カテゴリから各Pluginの設定・運用画面へ移動できます。
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:min-w-72">
-            <SummaryMetric label="Installed" value={`${plugins.length}`} />
+          <div className="grid grid-cols-2 gap-3 sm:min-w-[22rem]">
+            <SummaryMetric label="Available" value={`${plugins.length}`} />
+            <SummaryMetric label="Configured" value={`${configuredCount}`} />
             <SummaryMetric label="Enabled" value={`${enabledCount}`} accent />
+            <SummaryMetric label="Disabled" value={`${disabledCount}`} />
           </div>
         </div>
       </section>
@@ -69,12 +81,15 @@ export default async function PluginsPage({ params }: { params: Promise<{ guildI
               Official Plugins
             </p>
             <h2 className="mt-2 text-xl font-semibold">利用できる機能</h2>
+            <p className="mt-1 text-sm text-muted">
+              検索・カテゴリ・Active状態で絞り込み、個別または複数選択で管理できます。
+            </p>
           </div>
           <Link
             href="/dashboard/custom-plugins"
             className="inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
           >
-            <Puzzle className="h-4 w-4" /> Custom Plugin Hub
+            <Puzzle className="h-4 w-4" aria-hidden="true" /> Custom Plugin Hub
           </Link>
         </div>
 
@@ -87,7 +102,7 @@ export default async function PluginsPage({ params }: { params: Promise<{ guildI
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex gap-3">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <Puzzle className="h-5 w-5" />
+              <Puzzle className="h-5 w-5" aria-hidden="true" />
             </span>
             <div>
               <h2 className="font-semibold">Hertaを自分たちのPluginで拡張</h2>
@@ -101,7 +116,7 @@ export default async function PluginsPage({ params }: { params: Promise<{ guildI
             href="/dashboard/custom-plugins"
             className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-primary/30 bg-background px-4 py-2.5 text-sm font-semibold text-primary"
           >
-            ロードマップを見る <ArrowRight className="h-4 w-4" />
+            ロードマップを見る <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>
         </div>
       </section>

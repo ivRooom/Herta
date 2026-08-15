@@ -7,6 +7,7 @@ import {
   BarChart3,
   LayoutDashboard,
   Medal,
+  Plug,
   Puzzle,
   ServerCog,
   Sparkles,
@@ -23,6 +24,7 @@ const NAV_ICONS: Partial<Record<StudioNavigationIcon, LucideIcon>> = {
   analytics: BarChart3,
   community: Trophy,
   leaderboard: Medal,
+  plugin: Plug,
   'custom-plugin': Puzzle,
   account: UserRound,
 };
@@ -42,6 +44,7 @@ export function DashboardNav({ variant = 'sidebar' }: { variant?: 'sidebar' | 'm
             <Link
               key={item.href}
               href={item.href}
+              aria-current={active ? 'page' : undefined}
               className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors ${
                 active
                   ? 'bg-primary/15 text-primary'
@@ -68,6 +71,7 @@ export function DashboardNav({ variant = 'sidebar' }: { variant?: 'sidebar' | 'm
           <Link
             key={item.href}
             href={item.href}
+            aria-current={active ? 'page' : undefined}
             className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
               active
                 ? 'bg-primary/15 text-primary'
