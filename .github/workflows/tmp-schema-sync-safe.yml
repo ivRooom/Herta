@@ -1,0 +1,40 @@
+name: Temporary Prisma Schema Safe Sync
+
+on:
+  push:
+    branches:
+      - feature/studio-server-context-bot-profile
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/studio-server-context-bot-profile
+          fetch-depth: 0
+      - name: Sync schema
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('packages/db/prisma/schema.prisma')
+          content = path.read_text()
+          if 'model StudioUserPreference {' not in content:
+              addition = "\n\n// ============================================================\n// Studio Preferences / Bot Presence\n// ============================================================\n\nmodel StudioUserPreference {\n  userId         String   @id @map(\"user_id\")\n  defaultGuildId String?  @map(\"default_guild_id\")\n  updatedAt      DateTime @updatedAt @map(\"updated_at\") @db.Timestamptz(3)\n\n  @@map(\"studio_user_preferences\")\n}\n\nmodel BotPresenceSetting {\n  id           String   @id @default(\"default\")\n  status       String   @default(\"online\")\n  activityType String   @default(\"playing\") @map(\"activity_type\")\n  activityText String   @default(\"Herta\") @map(\"activity_text\")\n  updatedBy    String?  @map(\"updated_by\")\n  updatedAt    DateTime @updatedAt @map(\"updated_at\") @db.Timestamptz(3)\n\n  @@map(\"bot_presence_settings\")\n}\n"
+              path.write_text(content.rstrip() + addition + '\n')
+          PY
+      - name: Commit and clean up
+        shell: bash
+        run: |
+          git rm .github/workflows/tmp-schema-sync-safe.yml
+          git config user.name "mizzz-ivr"
+          git config user.email "86910433+mizzz-ivr@users.noreply.github.com"
+          git add packages/db/prisma/schema.prisma
+          git commit -m "Studio設定テーブルをPrisma schemaへ同期"
+          git fetch origin feature/studio-server-context-bot-profile
+          git rebase origin/feature/studio-server-context-bot-profile
+          git push origin HEAD:feature/studio-server-context-bot-profile
