@@ -1,4 +1,3 @@
-export const BOT_PRESENCE_CONFIG_KEY = 'herta:bot-presence:config';
 export const BOT_PRESENCE_EVENT_CHANNEL = 'herta:bot-presence:update';
 
 export const BOT_PRESENCE_STATUSES = ['online', 'idle', 'dnd', 'invisible'] as const;
@@ -63,7 +62,9 @@ export function parseBotPresenceUpdateEvent(payload: string): BotPresenceUpdateE
 
   try {
     const value = JSON.parse(payload) as unknown;
-    if (!isRecord(value) || value.version !== 1 || typeof value.occurredAt !== 'string') return null;
+    if (!isRecord(value) || value.version !== 1 || typeof value.occurredAt !== 'string') {
+      return null;
+    }
     if (!Number.isFinite(Date.parse(value.occurredAt))) return null;
 
     const config = parseBotPresenceConfig(value.config);
