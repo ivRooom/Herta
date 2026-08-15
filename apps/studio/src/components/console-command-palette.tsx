@@ -45,7 +45,7 @@ import {
   toggleFavoriteCommand,
   type CommandPalettePreferences,
 } from '@/lib/command-palette-preferences';
-import { getGuildConsoleContext } from '@/lib/guild-context-nav';
+import { useStudioServerContext } from '@/components/studio-server-context';
 import {
   buildStudioCommandItems,
   filterStudioCommandItems,
@@ -55,11 +55,6 @@ import {
 
 const COMMAND_PALETTE_OPEN_EVENT = 'herta:command-palette-open';
 const RESULTS_ID = 'studio-command-palette-results';
-
-interface CommandPaletteGuild {
-  id: string;
-  name: string;
-}
 
 type OpenEventDetail = { trigger?: HTMLElement | null };
 
@@ -132,9 +127,10 @@ export function ConsoleCommandPaletteTrigger({ variant }: { variant: 'desktop' |
   );
 }
 
-export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPaletteGuild[] }) {
+export function ConsoleCommandPaletteController() {
   const pathname = usePathname();
   const router = useRouter();
+  const { selectedGuild } = useStudioServerContext();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -147,13 +143,9 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
   const triggerRef = useRef<HTMLElement | null>(null);
   const preferredActiveCommandIdRef = useRef<string | null>(null);
 
-  const context = getGuildConsoleContext(pathname);
-  const currentGuild = context
-    ? (guilds.find((guild) => guild.id === context.guildId) ?? null)
-    : null;
   const commands = useMemo(
-    () => buildStudioCommandItems(context?.guildId ?? null, currentGuild?.name ?? null),
-    [context?.guildId, currentGuild?.name],
+    () => buildStudioCommandItems(selectedGuild?.id ?? null, selectedGuild?.name ?? null),
+    [selectedGuild?.id, selectedGuild?.name],
   );
   const filteredCommands = useMemo(
     () => filterStudioCommandItems(commands, query),

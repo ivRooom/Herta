@@ -51,7 +51,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <StudioServerContextProvider guilds={guilds}>
       <div className="min-h-screen bg-background">
-        <ConsoleCommandPaletteController guilds={guilds} />
+        <ConsoleCommandPaletteController />
 
         <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border bg-surface/80 px-4 py-5 backdrop-blur-xl lg:flex">
           <Link href="/dashboard" className="flex items-center gap-3 px-2">
@@ -62,7 +62,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <span>
               <span className="block text-sm font-semibold tracking-tight">Herta Studio</span>
               <span className="mt-0.5 flex items-center gap-1 text-[11px] text-muted">
-                <Sparkles className="h-3 w-3 text-primary" aria-hidden="true" /> Discord Control Center
+                <Sparkles className="h-3 w-3 text-primary" aria-hidden="true" /> Discord Control
+                Center
               </span>
             </span>
           </Link>

@@ -1,4 +1,5 @@
 import {
+  ActivityType,
   Client,
   Events,
   GatewayIntentBits,
@@ -13,7 +14,14 @@ import {
   type CommandExecutionInput,
 } from '@herta/db';
 import { getEnabledPlugins } from '@herta/plugin-catalog';
-import { HERTA_WORKER_HEARTBEAT_KEY, type XpRoleSweepEvent } from '@herta/shared';
+import {
+  BOT_PRESENCE_CONFIG_KEY,
+  DEFAULT_BOT_PRESENCE_CONFIG,
+  HERTA_WORKER_HEARTBEAT_KEY,
+  normalizeBotPresenceConfig,
+  type BotPresenceConfig,
+  type XpRoleSweepEvent,
+} from '@herta/shared';
 import type { Logger } from '@herta/logger';
 import { pingCommand } from './commands/ping.js';
 import { CommandRegistry } from './commands/registry.js';
@@ -21,6 +29,7 @@ import { defaultGuildPluginCache } from './plugins/cache.js';
 import { GuildPluginLoader } from './plugins/loader.js';
 import { createDefaultPluginRegistry } from './plugins/registry.js';
 import { PluginRuntimeEventSubscriber } from './plugins/runtime-events.js';
+import { BotPresenceEventSubscriber } from './presence/runtime-events.js';
 import { XpRoleReconciliationSubscriber } from './plugins/xp-role-reconciliation-events.js';
 import { XpRoleSweepSubscriber } from './plugins/xp-role-sweep-events.js';
 import { sweepGuildXpRewardRoles } from './plugins/xp-role-sweep.js';
@@ -71,6 +80,13 @@ function guildMembersIntentEnabled(): boolean {
   return envFlagEnabled('DISCORD_ENABLE_GUILD_MEMBERS_INTENT');
 }
 
+const BOT_ACTIVITY_TYPE_MAP: Record<BotPresenceConfig['activityType'], ActivityType> = {
+  playing: ActivityType.Playing,
+  listening: ActivityType.Listening,
+  watching: ActivityType.Watching,
+  competing: ActivityType.Competing,
+};
+
 function resolveGatewayIntents(logger: Logger): GatewayIntentBits[] {
   const intents = [
     GatewayIntentBits.Guilds,
@@ -106,6 +122,7 @@ export class HertaBot {
   private readonly pluginLoader: GuildPluginLoader;
   private readonly pluginCommands = new Map<string, SlashCommand[]>();
   private readonly runtimeEvents: PluginRuntimeEventSubscriber;
+  private readonly presenceEvents: BotPresenceEventSubscriber;
   private readonly xpRoleReconciliation: XpRoleReconciliationSubscriber;
   private readonly xpRoleSweep: XpRoleSweepSubscriber;
   private readonly discordHealth = new DiscordHealthTracker();
@@ -149,6 +166,10 @@ export class HertaBot {
     });
     this.runtimeEvents = new PluginRuntimeEventSubscriber(
       (guildId) => this.resyncGuild(guildId),
+      this.logger,
+    );
+    this.presenceEvents = new BotPresenceEventSubscriber(
+      (config) => this.applyBotPresence(config),
       this.logger,
     );
     this.xpRoleReconciliation = new XpRoleReconciliationSubscriber(async (guildId, userId) => {
@@ -605,6 +626,7 @@ export class HertaBot {
       throw new Error('DISCORD_BOT_TOKEN が設定されていません');
     }
     await this.client.login(token);
+    this.applyBotPresence(DEFAULT_BOT_PRESENCE_CONFIG);
 
     this.discordHealth.observe(this.client);
     this.gatewayObservationTimer = setInterval(() => {
@@ -633,11 +655,29 @@ export class HertaBot {
     }
 
     try {
+      const storedPresence = await this.healthRedis.get(BOT_PRESENCE_CONFIG_KEY);
+      if (storedPresence) {
+        this.applyBotPresence(normalizeBotPresenceConfig(JSON.parse(storedPresence) as unknown));
+      }
+    } catch (error) {
+      this.logger.warn({ err: error }, '保存済みBot Presence設定の読み込みに失敗しました');
+    }
+
+    try {
       await this.runtimeEvents.start(redisUrl);
     } catch (error) {
       this.logger.error(
         { err: error },
         'Plugin Runtimeイベント購読の開始に失敗しました。TTL同期で継続します',
+      );
+    }
+
+    try {
+      await this.presenceEvents.start(redisUrl);
+    } catch (error) {
+      this.logger.error(
+        { err: error },
+        'Bot Presenceイベント購読の開始に失敗しました。保存済みPresenceで継続します',
       );
     }
 
@@ -655,6 +695,28 @@ export class HertaBot {
     } catch (error) {
       this.logger.error({ err: error }, 'XP報酬Role一括修復イベント購読の開始に失敗しました');
     }
+  }
+
+  private applyBotPresence(config: BotPresenceConfig): void {
+    const user = this.client.user;
+    if (!user) {
+      this.logger.warn('Discord ClientがReadyではないためBot Presenceを適用できません');
+      return;
+    }
+
+    user.setPresence({
+      status: config.status,
+      activities: [
+        {
+          name: config.activityText,
+          type: BOT_ACTIVITY_TYPE_MAP[config.activityType],
+        },
+      ],
+    });
+    this.logger.info(
+      { status: config.status, activityType: config.activityType },
+      'Bot Presenceを更新しました',
+    );
   }
 
   async getGuildConfigurationOptions(guildId: string): Promise<GuildConfigurationOptions | null> {
@@ -835,6 +897,7 @@ export class HertaBot {
 
     await Promise.allSettled([
       this.runtimeEvents.stop(),
+      this.presenceEvents.stop(),
       this.xpRoleReconciliation.stop(),
       this.xpRoleSweep.stop(),
     ]);
