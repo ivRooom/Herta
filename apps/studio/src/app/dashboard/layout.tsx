@@ -17,6 +17,7 @@ import { StudioServerContextProvider } from '@/components/studio-server-context'
 import { getManageableGuilds } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
 import { STUDIO_ACCOUNT_NAV_ITEM } from '@/lib/studio-navigation';
+import { getDefaultStudioGuildId } from '@/lib/studio-user-preferences';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +29,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const accessToken = await getDiscordAccessToken();
   let guilds: GuildSwitcherItem[] = [];
   let guildsState: GuildSwitcherState = accessToken ? 'ready' : 'reconnect-required';
+  let initialDefaultGuildId: string | null = null;
+
+  try {
+    initialDefaultGuildId = await getDefaultStudioGuildId(session.user.id);
+  } catch (error) {
+    console.error('Studio default server could not be loaded', {
+      userId: session.user.id,
+      error: error instanceof Error ? error.name : 'UnknownError',
+    });
+  }
 
   if (accessToken) {
     try {
@@ -49,7 +60,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const displayName = name?.trim() || 'Herta User';
 
   return (
-    <StudioServerContextProvider guilds={guilds}>
+    <StudioServerContextProvider guilds={guilds} initialDefaultGuildId={initialDefaultGuildId}>
       <div className="min-h-screen bg-background">
         <ConsoleCommandPaletteController />
 
