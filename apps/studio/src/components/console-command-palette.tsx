@@ -26,18 +26,28 @@ import {
   ServerCog,
   ShieldCheck,
   Sparkles,
+  Star,
   Swords,
   Trophy,
   UsersRound,
   X,
   type LucideIcon,
 } from 'lucide-react';
+import {
+  buildCommandPaletteSections,
+  clearRecentCommands,
+  COMMAND_PALETTE_PREFERENCES_STORAGE_KEY,
+  createDefaultCommandPalettePreferences,
+  parseCommandPalettePreferences,
+  recordRecentCommand,
+  serializeCommandPalettePreferences,
+  toggleFavoriteCommand,
+  type CommandPalettePreferences,
+} from '@/lib/command-palette-preferences';
 import { getGuildConsoleContext } from '@/lib/guild-context-nav';
 import {
   buildStudioCommandItems,
   filterStudioCommandItems,
-  STUDIO_COMMAND_GROUP_LABELS,
-  STUDIO_COMMAND_GROUP_ORDER,
   type StudioCommandItem,
   type StudioNavigationIcon,
 } from '@/lib/studio-navigation';
@@ -126,9 +136,14 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
+  const [preferences, setPreferences] = useState<CommandPalettePreferences>(() =>
+    createDefaultCommandPalettePreferences(),
+  );
+  const [storageWarning, setStorageWarning] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
+  const preferredActiveCommandIdRef = useRef<string | null>(null);
 
   const context = getGuildConsoleContext(pathname);
   const currentGuild = context
@@ -142,6 +157,42 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
     () => filterStudioCommandItems(commands, query),
     [commands, query],
   );
+  const sections = useMemo(
+    () => buildCommandPaletteSections(filteredCommands, preferences, query.trim().length === 0),
+    [filteredCommands, preferences, query],
+  );
+  const visibleCommands = useMemo(
+    () => sections.flatMap((section) => section.commands),
+    [sections],
+  );
+  const visibleCommandIndex = useMemo(
+    () => new Map(visibleCommands.map((command, index) => [command.id, index])),
+    [visibleCommands],
+  );
+  const activeCommand = visibleCommands[activeIndex] ?? null;
+  const activeIsFavorite = activeCommand
+    ? preferences.favoriteIds.includes(activeCommand.id)
+    : false;
+
+  useEffect(() => {
+    try {
+      setPreferences(
+        parseCommandPalettePreferences(
+          window.localStorage.getItem(COMMAND_PALETTE_PREFERENCES_STORAGE_KEY),
+        ),
+      );
+    } catch {
+      setStorageWarning(true);
+    }
+
+    function handleStorage(event: StorageEvent) {
+      if (event.key !== COMMAND_PALETTE_PREFERENCES_STORAGE_KEY) return;
+      setPreferences(parseCommandPalettePreferences(event.newValue));
+    }
+
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   useEffect(() => {
     function handleShortcut(event: KeyboardEvent) {
@@ -194,18 +245,43 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
   }, [pathname]);
 
   useEffect(() => {
-    if (filteredCommands.length === 0) {
+    if (visibleCommands.length === 0) {
+      preferredActiveCommandIdRef.current = null;
       setActiveIndex(0);
       return;
     }
-    setActiveIndex((current) => Math.min(current, filteredCommands.length - 1));
-  }, [filteredCommands.length]);
+
+    const preferredCommandId = preferredActiveCommandIdRef.current;
+    if (preferredCommandId) {
+      const nextIndex = visibleCommands.findIndex((command) => command.id === preferredCommandId);
+      preferredActiveCommandIdRef.current = null;
+      if (nextIndex >= 0) {
+        setActiveIndex(nextIndex);
+        return;
+      }
+    }
+
+    setActiveIndex((current) => Math.min(current, visibleCommands.length - 1));
+  }, [visibleCommands]);
 
   useEffect(() => {
-    if (!open || filteredCommands.length === 0) return;
-    const active = document.getElementById(commandOptionId(filteredCommands[activeIndex]?.id));
+    if (!open || visibleCommands.length === 0) return;
+    const active = document.getElementById(commandOptionId(visibleCommands[activeIndex]?.id));
     active?.scrollIntoView({ block: 'nearest' });
-  }, [activeIndex, filteredCommands, open]);
+  }, [activeIndex, open, visibleCommands]);
+
+  function commitPreferences(nextPreferences: CommandPalettePreferences) {
+    setPreferences(nextPreferences);
+    try {
+      window.localStorage.setItem(
+        COMMAND_PALETTE_PREFERENCES_STORAGE_KEY,
+        serializeCommandPalettePreferences(nextPreferences),
+      );
+      setStorageWarning(false);
+    } catch {
+      setStorageWarning(true);
+    }
+  }
 
   function closePalette(restoreFocus = true) {
     setOpen(false);
@@ -215,26 +291,53 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
   }
 
   function selectCommand(command: StudioCommandItem) {
+    commitPreferences(recordRecentCommand(preferences, command.id));
     closePalette(false);
     router.push(command.href);
   }
 
+  function toggleFavorite(command: StudioCommandItem) {
+    preferredActiveCommandIdRef.current = command.id;
+    commitPreferences(toggleFavoriteCommand(preferences, command.id));
+  }
+
+  function clearRecentHistory() {
+    preferredActiveCommandIdRef.current = activeCommand?.id ?? null;
+    commitPreferences(clearRecentCommands(preferences));
+  }
+
   function handleDialogKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
-    if (event.key === 'ArrowDown' && filteredCommands.length > 0) {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    const targetIsCommandOption = target?.getAttribute('role') === 'option';
+    const targetSupportsCommandNavigation = target === inputRef.current || targetIsCommandOption;
+
+    if (
+      event.key === 'ArrowDown' &&
+      targetSupportsCommandNavigation &&
+      visibleCommands.length > 0
+    ) {
       event.preventDefault();
-      setActiveIndex((current) => (current + 1) % filteredCommands.length);
+      setActiveIndex((current) => (current + 1) % visibleCommands.length);
       return;
     }
-    if (event.key === 'ArrowUp' && filteredCommands.length > 0) {
+    if (event.key === 'ArrowUp' && targetSupportsCommandNavigation && visibleCommands.length > 0) {
       event.preventDefault();
-      setActiveIndex(
-        (current) => (current - 1 + filteredCommands.length) % filteredCommands.length,
-      );
+      setActiveIndex((current) => (current - 1 + visibleCommands.length) % visibleCommands.length);
       return;
     }
-    if (event.key === 'Enter' && filteredCommands[activeIndex]) {
+    if (
+      event.key === 'Enter' &&
+      event.shiftKey &&
+      targetSupportsCommandNavigation &&
+      activeCommand
+    ) {
       event.preventDefault();
-      selectCommand(filteredCommands[activeIndex]);
+      toggleFavorite(activeCommand);
+      return;
+    }
+    if (event.key === 'Enter' && target === inputRef.current && activeCommand) {
+      event.preventDefault();
+      selectCommand(activeCommand);
       return;
     }
     if (event.key === 'Tab') trapFocus(event);
@@ -288,11 +391,7 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
             aria-expanded="true"
             aria-controls={RESULTS_ID}
             aria-autocomplete="list"
-            aria-activedescendant={
-              filteredCommands[activeIndex]
-                ? commandOptionId(filteredCommands[activeIndex].id)
-                : undefined
-            }
+            aria-activedescendant={activeCommand ? commandOptionId(activeCommand.id) : undefined}
             value={query}
             onChange={(event) => {
               setQuery(event.target.value.slice(0, 100));
@@ -303,6 +402,26 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
             data-command-palette-focusable="true"
             className="h-10 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
           />
+          <button
+            type="button"
+            aria-label={
+              activeCommand
+                ? `「${activeCommand.label}」を${activeIsFavorite ? 'お気に入りから解除' : 'お気に入りに追加'}`
+                : 'お気に入り'
+            }
+            aria-pressed={activeIsFavorite}
+            disabled={!activeCommand}
+            onClick={() => {
+              if (activeCommand) toggleFavorite(activeCommand);
+            }}
+            data-command-palette-focusable="true"
+            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted transition-colors hover:bg-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Star
+              className={`h-4 w-4 ${activeIsFavorite ? 'fill-current text-primary' : ''}`}
+              aria-hidden="true"
+            />
+          </button>
           <button
             type="button"
             aria-label="検索を閉じる"
@@ -322,32 +441,33 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
         </div>
 
         <div id={RESULTS_ID} role="listbox" className="max-h-[min(62vh,32rem)] overflow-y-auto p-2">
-          {filteredCommands.length === 0 ? (
+          {visibleCommands.length === 0 ? (
             <div role="status" className="px-4 py-10 text-center">
               <Search className="mx-auto h-7 w-7 text-muted" aria-hidden="true" />
               <p className="mt-3 text-sm font-medium">一致するページ・機能がありません</p>
               <p className="mt-1 text-xs text-muted">別のキーワードで検索してください。</p>
             </div>
           ) : (
-            STUDIO_COMMAND_GROUP_ORDER.map((group) => {
-              const groupCommands = filteredCommands.filter((command) => command.group === group);
-              if (groupCommands.length === 0) return null;
-              const groupId = `studio-command-group-${group}`;
+            sections.map((section) => {
+              const groupId = `studio-command-group-${section.id}`;
 
               return (
-                <div key={group} role="group" aria-labelledby={groupId} className="py-1">
+                <div key={section.id} role="group" aria-labelledby={groupId} className="py-1">
                   <div
                     id={groupId}
                     className="px-3 pb-1.5 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted"
                   >
-                    {STUDIO_COMMAND_GROUP_LABELS[group]}
-                    {group === 'current-server' && currentGuild ? ` · ${currentGuild.name}` : ''}
+                    {section.label}
+                    {section.id === 'current-server' && currentGuild
+                      ? ` · ${currentGuild.name}`
+                      : ''}
                   </div>
                   <div role="presentation" className="space-y-0.5">
-                    {groupCommands.map((command) => {
-                      const index = filteredCommands.findIndex((item) => item.id === command.id);
+                    {section.commands.map((command) => {
+                      const index = visibleCommandIndex.get(command.id) ?? -1;
                       const active = index === activeIndex;
                       const current = pathname === command.href;
+                      const favorite = preferences.favoriteIds.includes(command.id);
                       const Icon = ICONS[command.icon];
 
                       return (
@@ -385,6 +505,12 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
                               {command.description}
                             </span>
                           </span>
+                          {favorite ? (
+                            <Star
+                              className="h-3.5 w-3.5 shrink-0 fill-current text-primary"
+                              aria-hidden="true"
+                            />
+                          ) : null}
                           <ChevronRight
                             className={`h-4 w-4 shrink-0 ${active ? 'text-primary' : 'text-muted'}`}
                             aria-hidden="true"
@@ -402,8 +528,25 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-border bg-background/60 px-4 py-2 text-[10px] text-muted sm:px-5">
           <span>↑↓ 選択</span>
           <span>Enter 移動</span>
+          <span>Shift+Enter ★</span>
           <span>Esc 閉じる</span>
-          {!currentGuild ? <span>サーバー固有機能はGuild画面で表示</span> : null}
+          <span role="status">
+            {storageWarning
+              ? '保存できないためこのタブのみ有効'
+              : '履歴・お気に入りはこの端末に保存'}
+          </span>
+          {preferences.recentIds.length > 0 ? (
+            <button
+              type="button"
+              onClick={clearRecentHistory}
+              data-command-palette-focusable="true"
+              className="ml-auto font-semibold text-muted underline-offset-2 transition-colors hover:text-foreground hover:underline"
+            >
+              最近使った項目をクリア
+            </button>
+          ) : !currentGuild ? (
+            <span className="ml-auto">サーバー固有機能はGuild画面で表示</span>
+          ) : null}
         </div>
       </div>
     </div>,
