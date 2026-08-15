@@ -135,14 +135,17 @@ function botProfileErrorResponse(error: unknown): Response {
     );
   }
   if (error.status === 503) {
-    return NextResponse.json({ error: 'Bot Tokenが設定されていません' }, { status: 503 });
-  }
-  if (error.status === 401 || error.status === 403 || error.status === 404) {
     return NextResponse.json(
-      { error: 'Discord上のBotまたは権限を確認してください' },
+      { error: 'Bot内部APIの設定または接続状態を確認してください' },
+      { status: 503 },
+    );
+  }
+  if (error.status === 404) {
+    return NextResponse.json(
+      { error: '選択したサーバーでBotを確認できませんでした' },
       { status: 502 },
     );
   }
 
-  return NextResponse.json({ error: 'Discord APIへ接続できませんでした' }, { status: 502 });
+  return NextResponse.json({ error: 'Bot内部APIへ接続できませんでした' }, { status: 502 });
 }
