@@ -38,11 +38,11 @@ export async function finalizeCompletedCommunitySeasons(
   for (const season of seasons) {
     const remaining = FINALIZER_TARGET_LIMIT - summary.scanned;
     if (remaining <= 0) break;
-    const guildIds = await listCommunitySeasonGuildIdsWithoutSnapshot(
-      options.prisma,
-      season.key,
-      remaining,
-    );
+    const guildIds = await listCommunitySeasonGuildIdsWithoutSnapshot(options.prisma, {
+      seasonKey: season.key,
+      seasonEndsAt: season.endsAt,
+      limit: remaining,
+    });
 
     for (const guildId of guildIds) {
       summary.scanned += 1;
