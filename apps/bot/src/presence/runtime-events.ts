@@ -1,0 +1,69 @@
+import { Redis } from 'ioredis';
+import type { Logger } from '@herta/logger';
+import {
+  BOT_PRESENCE_EVENT_CHANNEL,
+  parseBotPresenceUpdateEvent,
+  type BotPresenceConfig,
+} from '@herta/shared';
+
+export class BotPresenceEventSubscriber {
+  private redis?: Redis;
+  private lastOccurredAt = 0;
+
+  constructor(
+    private readonly onPresenceChanged: (config: BotPresenceConfig) => void,
+    private readonly logger: Logger,
+  ) {}
+
+  async start(redisUrl: string): Promise<void> {
+    if (this.redis) return;
+
+    const redis = new Redis(redisUrl, {
+      lazyConnect: true,
+      maxRetriesPerRequest: null,
+      enableReadyCheck: true,
+    });
+    this.redis = redis;
+
+    redis.on('ready', () => this.logger.info('Bot PresenceイベントのRedis購読を開始しました'));
+    redis.on('reconnecting', () =>
+      this.logger.warn('Bot PresenceイベントのRedis再接続を試行しています'),
+    );
+    redis.on('error', (error: unknown) =>
+      this.logger.error({ err: error }, 'Bot PresenceイベントのRedis接続でエラーが発生しました'),
+    );
+    redis.on('message', (channel: string, payload: string) => {
+      if (channel !== BOT_PRESENCE_EVENT_CHANNEL) return;
+      this.handleMessage(payload);
+    });
+
+    await redis.connect();
+    await redis.subscribe(BOT_PRESENCE_EVENT_CHANNEL);
+  }
+
+  handleMessage(payload: string): void {
+    const event = parseBotPresenceUpdateEvent(payload);
+    if (!event) {
+      this.logger.warn('不正なBot Presenceイベントを破棄しました');
+      return;
+    }
+
+    const occurredAt = Date.parse(event.occurredAt);
+    if (occurredAt <= this.lastOccurredAt) return;
+    this.lastOccurredAt = occurredAt;
+
+    try {
+      this.onPresenceChanged(event.config);
+    } catch (error) {
+      this.logger.error({ err: error }, 'Bot Presenceイベントの適用に失敗しました');
+    }
+  }
+
+  async stop(): Promise<void> {
+    const redis = this.redis;
+    this.redis = undefined;
+    if (!redis) return;
+    await redis.unsubscribe(BOT_PRESENCE_EVENT_CHANNEL).catch(() => undefined);
+    await redis.quit().catch(() => redis.disconnect());
+  }
+}
