@@ -76,27 +76,32 @@ export async function startCommunitySeasonRuntime(options: {
   logger: Logger;
 }): Promise<CommunitySeasonRuntime> {
   let closed = false;
-  let running = false;
+  let runningPromise: Promise<void> | undefined;
 
-  const run = async (): Promise<void> => {
-    if (closed || running) return;
-    running = true;
-    try {
-      const summary = await finalizeCompletedCommunitySeasons(options);
-      if (summary.scanned > 0 || summary.failed > 0) {
-        options.logger.info(summary, 'Community Season Snapshotの確定チェックを完了しました');
+  const run = (): Promise<void> => {
+    if (closed) return Promise.resolve();
+    if (runningPromise) return runningPromise;
+
+    runningPromise = (async () => {
+      try {
+        const summary = await finalizeCompletedCommunitySeasons(options);
+        if (summary.scanned > 0 || summary.failed > 0) {
+          options.logger.info(summary, 'Community Season Snapshotの確定チェックを完了しました');
+        }
+      } catch (error) {
+        options.logger.error(
+          { errorName: resolveErrorName(error) },
+          'Community Season Snapshotの確定チェックに失敗しました',
+        );
+      } finally {
+        runningPromise = undefined;
       }
-    } catch (error) {
-      options.logger.error(
-        { errorName: resolveErrorName(error) },
-        'Community Season Snapshotの確定チェックに失敗しました',
-      );
-    } finally {
-      running = false;
-    }
+    })();
+
+    return runningPromise;
   };
 
-  await run();
+  void run();
   const timer = setInterval(() => {
     void run();
   }, FINALIZER_INTERVAL_MS);
@@ -107,6 +112,7 @@ export async function startCommunitySeasonRuntime(options: {
       if (closed) return;
       closed = true;
       clearInterval(timer);
+      await runningPromise;
     },
   };
 }
