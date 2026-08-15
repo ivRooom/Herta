@@ -22,7 +22,7 @@ export default async function PluginsPage({ params }: { params: Promise<{ guildI
   const plugins = await listGuildPlugins(guildId);
   const enabledCount = plugins.filter((plugin) => plugin.enabled).length;
   const configuredCount = plugins.filter((plugin) => plugin.installed).length;
-  const disabledCount = plugins.length - enabledCount;
+  const disabledCount = Math.max(configuredCount - enabledCount, 0);
   const catalog: PluginCatalogItem[] = plugins.map(({ manifest, enabled, config }) => ({
     id: manifest.id,
     name: manifest.name,
