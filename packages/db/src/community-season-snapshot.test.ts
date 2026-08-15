@@ -14,6 +14,8 @@ test('Season AwardはChampion・Top3・Top10を順位から判定する', () => 
 test('不正な順位はSeason Awardを返さない', () => {
   assert.equal(communitySeasonAwardTierForRank(0), null);
   assert.equal(communitySeasonAwardTierForRank(-1), null);
+  assert.equal(communitySeasonAwardTierForRank(1.5), null);
+  assert.equal(communitySeasonAwardTierForRank(9.9), null);
   assert.equal(communitySeasonAwardTierForRank(Number.NaN), null);
   assert.equal(communitySeasonAwardTierForRank(Number.POSITIVE_INFINITY), null);
 });
