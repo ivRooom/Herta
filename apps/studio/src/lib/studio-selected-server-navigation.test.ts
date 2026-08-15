@@ -21,6 +21,15 @@ test('選択中サーバーの主要管理画面を直接リンクする', () =>
   );
 });
 
+test('Moderationは詳細画面でも親ナビゲーションをactiveにできる', () => {
+  const moderation = buildSelectedServerNavigationItems(GUILD_ID).find(
+    (item) => item.id === 'selected-server-moderation',
+  );
+
+  assert.ok(moderation);
+  assert.notEqual(moderation.exact, true);
+});
+
 test('不正または未選択のGuildではサーバー固有リンクを作らない', () => {
   assert.deepEqual(buildSelectedServerNavigationItems(null), []);
   assert.deepEqual(buildSelectedServerNavigationItems('not-a-guild'), []);
