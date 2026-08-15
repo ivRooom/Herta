@@ -119,7 +119,7 @@ jobs:
           PY
       - name: Format Prisma and TypeScript
         run: |
-          pnpm exec prisma format --schema packages/db/prisma/schema.prisma
+          pnpm --filter @herta/db exec prisma format --schema prisma/schema.prisma
           pnpm exec prettier --write \
             packages/db/src/community-leaderboard.ts \
             packages/db/src/community-season-snapshot.ts \
