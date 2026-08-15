@@ -120,7 +120,7 @@ export default async function CommunityLeaderboardPage({
         />
         <SummaryCard
           icon={Crown}
-          label="現在の1位"
+          label={query.metric === 'season' ? 'Season 1位' : '現在の1位'}
           value={topEntry ? displayName(memberMap.get(topEntry.userId), topEntry.userId) : '—'}
           detail={
             topEntry
@@ -169,7 +169,11 @@ export default async function CommunityLeaderboardPage({
                   candidate.metric,
                   candidate.periods[0]!,
                   query.limit,
-                  candidate.metric === 'season' ? selectedSeason.key : null,
+                  candidate.metric === 'season'
+                    ? query.metric === 'season'
+                      ? selectedSeason.key
+                      : currentSeason.key
+                    : null,
                 )}
                 className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
                   active
@@ -255,7 +259,7 @@ export default async function CommunityLeaderboardPage({
             </span>
           </div>
 
-          <div className="mt-4 flex gap-2 overflow-x-auto pb-1" aria-label="Season選択">
+          <nav className="mt-4 flex gap-2 overflow-x-auto pb-1" aria-label="Season選択">
             {seasons.map((season) => {
               const active = season.key === selectedSeason.key;
               return (
@@ -278,7 +282,7 @@ export default async function CommunityLeaderboardPage({
                 </Link>
               );
             })}
-          </div>
+          </nav>
 
           <div className="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
             <div className="flex items-start gap-3 rounded-xl bg-background/60 p-3">

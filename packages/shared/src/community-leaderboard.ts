@@ -88,7 +88,7 @@ export const COMMUNITY_LEADERBOARD_DEFINITIONS: readonly CommunityLeaderboardMet
     metric: 'season',
     label: 'Season Point',
     shortLabel: 'Season',
-    description: '現在のCommunity Challenge Seasonで獲得したPoint',
+    description: 'Community Challenge Seasonで獲得したPoint',
     periods: ['season'],
   },
 ] as const;
@@ -97,7 +97,7 @@ const PERIOD_LABELS: Record<CommunityLeaderboardPeriod, string> = {
   all: 'All Time',
   '7d': '直近7日',
   '30d': '直近30日',
-  season: 'Current Season',
+  season: 'Season',
 };
 
 const METRIC_SET = new Set<string>(COMMUNITY_LEADERBOARD_METRICS);
@@ -182,7 +182,10 @@ export function listCommunityLeaderboardSeasons(
   now = new Date(),
   limit = COMMUNITY_LEADERBOARD_SEASON_HISTORY_LIMIT,
 ): CommunitySeasonWindow[] {
-  const safeLimit = Math.max(1, Math.min(12, Math.trunc(limit)));
+  const normalizedLimit = Number.isFinite(limit)
+    ? Math.trunc(limit)
+    : COMMUNITY_LEADERBOARD_SEASON_HISTORY_LIMIT;
+  const safeLimit = Math.max(1, Math.min(12, normalizedLimit));
   const seasons: CommunitySeasonWindow[] = [];
   let cursor = now;
 

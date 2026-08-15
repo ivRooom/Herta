@@ -86,6 +86,8 @@ test('直近Season履歴を現在から新しい順に生成する', () => {
   const now = new Date('2026-08-15T08:56:00.000Z');
   const seasons = listCommunityLeaderboardSeasons(now, 3);
 
+  assert.equal(listCommunityLeaderboardSeasons(now, Number.NaN).length, 6);
+
   assert.deepEqual(
     seasons.map((season) => ({ index: season.index, key: season.key })),
     [
