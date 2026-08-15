@@ -28,6 +28,7 @@ import {
   Sparkles,
   Swords,
   Trophy,
+  UserRound,
   UsersRound,
   X,
   type LucideIcon,
@@ -71,6 +72,7 @@ const ICONS: Record<StudioNavigationIcon, LucideIcon> = {
   team: Swords,
   message: MessageSquareText,
   xp: Trophy,
+  account: UserRound,
 };
 
 export function requestCommandPaletteOpen(trigger?: HTMLElement | null) {
