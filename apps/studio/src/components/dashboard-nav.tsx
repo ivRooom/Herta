@@ -11,6 +11,7 @@ import {
   ServerCog,
   Sparkles,
   Trophy,
+  UserRound,
   type LucideIcon,
 } from 'lucide-react';
 import { STUDIO_NAV_ITEMS, type StudioNavigationIcon } from '@/lib/studio-navigation';
@@ -23,6 +24,7 @@ const NAV_ICONS: Partial<Record<StudioNavigationIcon, LucideIcon>> = {
   community: Trophy,
   leaderboard: Medal,
   'custom-plugin': Puzzle,
+  account: UserRound,
 };
 
 export function DashboardNav({ variant = 'sidebar' }: { variant?: 'sidebar' | 'mobile' }) {

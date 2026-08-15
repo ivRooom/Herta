@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { Sparkles } from 'lucide-react';
+import { ChevronRight, Sparkles } from 'lucide-react';
 import { auth } from '@/auth';
+import { AccountMenu } from '@/components/account-menu';
 import {
   ConsoleCommandPaletteController,
   ConsoleCommandPaletteTrigger,
@@ -12,9 +13,9 @@ import {
   type GuildSwitcherItem,
   type GuildSwitcherState,
 } from '@/components/guild-context-nav';
-import { SignOutButton } from '@/components/sign-out-button';
 import { getManageableGuilds } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
+import { STUDIO_ACCOUNT_NAV_ITEM } from '@/lib/studio-navigation';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +23,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const session = await auth();
   if (!session?.user) redirect('/login');
 
-  const { name, image } = session.user;
+  const { name, image, email } = session.user;
   const accessToken = await getDiscordAccessToken();
   let guilds: GuildSwitcherItem[] = [];
   let guildsState: GuildSwitcherState = accessToken ? 'ready' : 'reconnect-required';
@@ -42,6 +43,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
       );
     }
   }
+
+  const reconnectRequired = guildsState === 'reconnect-required';
+  const displayName = name?.trim() || 'Herta User';
 
   return (
     <div className="min-h-screen bg-background">
@@ -68,31 +72,35 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <DashboardNav />
         </div>
 
-        <div className="rounded-2xl border border-border bg-background/70 p-3">
-          <div className="flex min-w-0 items-center gap-3">
-            {image ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={image}
-                alt={name ?? 'user'}
-                width={36}
-                height={36}
-                className="h-9 w-9 shrink-0 rounded-xl border border-border object-cover"
-              />
-            ) : (
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary">
-                {(name ?? 'H').slice(0, 1).toUpperCase()}
-              </span>
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{name ?? 'Herta User'}</p>
-              <p className="text-[11px] text-muted">Administrator</p>
-            </div>
+        <Link
+          href={STUDIO_ACCOUNT_NAV_ITEM.href}
+          className="group flex items-center gap-3 rounded-2xl border border-border bg-background/70 p-3 transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {image ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={image}
+              alt=""
+              width={36}
+              height={36}
+              className="h-9 w-9 shrink-0 rounded-xl border border-border object-cover"
+            />
+          ) : (
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-sm font-bold text-primary">
+              {displayName.slice(0, 1).toUpperCase() || 'H'}
+            </span>
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">{displayName}</p>
+            <p className="text-[11px] text-muted">
+              {reconnectRequired ? 'Discord再接続が必要' : 'Account Center'}
+            </p>
           </div>
-          <div className="mt-3 border-t border-border pt-3">
-            <SignOutButton />
-          </div>
-        </div>
+          <ChevronRight
+            className="h-4 w-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5"
+            aria-hidden="true"
+          />
+        </Link>
       </aside>
 
       <div className="min-h-screen lg:pl-64">
@@ -100,26 +108,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <div className="flex h-16 items-center justify-end gap-3 px-6 xl:px-8">
             <ConsoleCommandPaletteTrigger variant="desktop" />
             <GuildContextNav variant="desktop" guilds={guilds} guildsState={guildsState} />
-            <div
-              className="flex h-10 min-w-0 items-center gap-2.5 rounded-xl border border-border bg-surface px-2.5"
-              title={name ?? 'Herta User'}
-            >
-              {image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={image}
-                  alt=""
-                  width={28}
-                  height={28}
-                  className="h-7 w-7 shrink-0 rounded-lg border border-border object-cover"
-                />
-              ) : (
-                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-xs font-bold text-primary">
-                  {(name ?? 'H').slice(0, 1).toUpperCase()}
-                </span>
-              )}
-              <span className="max-w-36 truncate text-xs font-medium">{name ?? 'Herta User'}</span>
-            </div>
+            <AccountMenu
+              name={name}
+              image={image}
+              email={email}
+              reconnectRequired={reconnectRequired}
+              variant="desktop"
+            />
           </div>
         </header>
 
@@ -134,17 +129,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <div className="flex shrink-0 items-center gap-2">
               <ConsoleCommandPaletteTrigger variant="mobile" />
               <GuildContextNav variant="mobile" guilds={guilds} guildsState={guildsState} />
-              {image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={image}
-                  alt={name ?? 'user'}
-                  width={30}
-                  height={30}
-                  className="h-8 w-8 rounded-xl border border-border object-cover"
-                />
-              ) : null}
-              <SignOutButton />
+              <AccountMenu
+                name={name}
+                image={image}
+                email={email}
+                reconnectRequired={reconnectRequired}
+                variant="mobile"
+              />
             </div>
           </div>
           <div className="border-t border-border/70">
