@@ -48,11 +48,10 @@ const DISCORD_ID_PATTERN = /^\d{1,32}$/;
 const SOURCE_VERSION = 1;
 
 export function communitySeasonAwardTierForRank(rank: number): CommunitySeasonAwardTier | null {
-  if (!Number.isFinite(rank)) return null;
-  const normalized = Math.trunc(rank);
-  if (normalized === 1) return 'champion';
-  if (normalized >= 2 && normalized <= 3) return 'top3';
-  if (normalized >= 4 && normalized <= 10) return 'top10';
+  if (!Number.isInteger(rank) || rank < 1) return null;
+  if (rank === 1) return 'champion';
+  if (rank <= 3) return 'top3';
+  if (rank <= 10) return 'top10';
   return null;
 }
 
@@ -263,7 +262,7 @@ function normalizeSeasonWindow(
   season: CommunitySeasonSnapshotWindowInput,
 ): CommunitySeasonSnapshotWindowInput {
   const key = requireSeasonKey(season.key);
-  if (!Number.isFinite(season.index) || Math.trunc(season.index) < 1) {
+  if (!Number.isInteger(season.index) || season.index < 1) {
     throw new Error('season index must be a positive integer');
   }
   if (!Number.isFinite(season.startsAt.getTime()) || !Number.isFinite(season.endsAt.getTime())) {
@@ -274,7 +273,7 @@ function normalizeSeasonWindow(
   }
   return {
     key,
-    index: Math.trunc(season.index),
+    index: season.index,
     startsAt: new Date(season.startsAt),
     endsAt: new Date(season.endsAt),
   };
