@@ -312,10 +312,7 @@ export class HealthHttpServer {
       }
 
       try {
-        const profile = await withTimeout(
-          this.options.updateGuildBotProfile(guildId, input),
-          this.options.config.checkTimeoutMs + 5_000,
-        );
+        const profile = await this.options.updateGuildBotProfile(guildId, input);
         if (!profile) {
           this.sendJson(response, 404, { status: 'guild_not_found' });
           return;
