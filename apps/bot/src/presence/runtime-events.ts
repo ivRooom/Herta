@@ -12,7 +12,6 @@ type BotPresenceLoader = () => Promise<BotPresenceConfig>;
 
 export class BotPresenceEventSubscriber {
   private redis?: Redis;
-  private lastOccurredAt = 0;
 
   constructor(
     private readonly onPresenceChanged: (config: BotPresenceConfig) => void,
@@ -40,7 +39,7 @@ export class BotPresenceEventSubscriber {
     );
     redis.on('message', (channel: string, payload: string) => {
       if (channel !== BOT_PRESENCE_EVENT_CHANNEL) return;
-      this.handleMessage(payload);
+      void this.handleMessage(payload);
     });
 
     try {
@@ -58,26 +57,20 @@ export class BotPresenceEventSubscriber {
     try {
       this.onPresenceChanged(await this.loadCurrentPresence());
     } catch (error) {
-      this.logger.warn({ err: error }, 'Redis購読後のBot Presence設定再読み込みに失敗しました');
+      this.logger.warn({ err: error }, 'Bot Presence設定のDB再読み込みに失敗しました');
     }
   }
 
-  handleMessage(payload: string): void {
+  async handleMessage(payload: string): Promise<void> {
     const event = parseBotPresenceUpdateEvent(payload);
     if (!event) {
       this.logger.warn('不正なBot Presenceイベントを破棄しました');
       return;
     }
 
-    const occurredAt = Date.parse(event.occurredAt);
-    if (occurredAt < this.lastOccurredAt) return;
-    this.lastOccurredAt = occurredAt;
-
-    try {
-      this.onPresenceChanged(event.config);
-    } catch (error) {
-      this.logger.error({ err: error }, 'Bot Presenceイベントの適用に失敗しました');
-    }
+    // Redisイベントは変更通知としてのみ扱う。publisherのwall-clockや到着順に依存せず、
+    // 常にDB正本を再読み込みして複数Studioインスタンス間でも最新設定へ収束させる。
+    await this.refreshStoredPresence();
   }
 
   async stop(): Promise<void> {
