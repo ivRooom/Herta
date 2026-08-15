@@ -369,6 +369,39 @@ model CommunityChallengeCompletion {
   @@map("community_challenge_completions")
 }
 
+model CommunitySeasonSnapshot {
+  guildId          String   @map("guild_id")
+  seasonKey        String   @map("season_key") @db.VarChar(32)
+  seasonIndex      Int      @map("season_index")
+  startsAt         DateTime @map("starts_at") @db.Timestamptz(3)
+  endsAt           DateTime @map("ends_at") @db.Timestamptz(3)
+  participantCount Int      @default(0) @map("participant_count")
+  sourceVersion    Int      @default(1) @map("source_version")
+  finalizedAt      DateTime @default(now()) @map("finalized_at") @db.Timestamptz(3)
+
+  entries CommunitySeasonSnapshotEntry[]
+
+  @@id([guildId, seasonKey])
+  @@index([seasonKey, finalizedAt(sort: Desc)])
+  @@map("community_season_snapshots")
+}
+
+model CommunitySeasonSnapshotEntry {
+  guildId   String  @map("guild_id")
+  seasonKey String  @map("season_key") @db.VarChar(32)
+  userId    String  @map("user_id")
+  rank      Int
+  points    Int
+  awardTier String? @map("award_tier") @db.VarChar(16)
+
+  snapshot CommunitySeasonSnapshot @relation(fields: [guildId, seasonKey], references: [guildId, seasonKey], onDelete: Cascade)
+
+  @@id([guildId, seasonKey, userId])
+  @@unique([guildId, seasonKey, rank])
+  @@index([guildId, seasonKey, awardTier, rank])
+  @@map("community_season_snapshot_entries")
+}
+
 // ============================================================
 // Plugin: Auto Response
 // ============================================================

@@ -1,13 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 
 export type CommunityLeaderboardStorageMetric =
-  | 'xp'
-  | 'messages'
-  | 'reactions'
-  | 'voice'
-  | 'minecraft'
-  | 'achievements'
-  | 'season';
+  'xp' | 'messages' | 'reactions' | 'voice' | 'minecraft' | 'achievements' | 'season';
 
 export interface CommunityLeaderboardDataEntry {
   rank: number;
@@ -336,7 +330,6 @@ async function rankRows(
     `;
   }
 
-  const start = input.start ?? new Date('1970-01-01T00:00:00.000Z');
   const databaseMetric = activityMetric(input.metric);
   return prisma.$queryRaw<RankRow[]>`
     WITH totals AS (

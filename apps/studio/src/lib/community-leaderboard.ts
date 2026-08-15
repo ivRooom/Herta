@@ -61,7 +61,9 @@ export async function getCommunityLeaderboardSnapshot(
           userId: options.viewerUserId,
         })
       : Promise.resolve(null),
-    seasonKey ? getCommunitySeasonSnapshotMetadata(prisma, guildId, seasonKey) : Promise.resolve(null),
+    seasonKey
+      ? getCommunitySeasonSnapshotMetadata(prisma, guildId, seasonKey)
+      : Promise.resolve(null),
     seasonKey ? listCommunitySeasonSnapshotAwards(prisma, guildId, seasonKey) : Promise.resolve([]),
   ]);
 

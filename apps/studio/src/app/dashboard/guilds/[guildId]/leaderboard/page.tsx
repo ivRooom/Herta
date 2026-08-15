@@ -91,7 +91,7 @@ export default async function CommunityLeaderboardPage({
             <div className="flex items-center gap-2 text-primary">
               <Trophy className="h-5 w-5" />
               <p className="text-xs font-semibold uppercase tracking-[0.18em]">
-                Leaderboard v3 · Seasons
+                Leaderboard v4 · Season Finals
               </p>
             </div>
             <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">
@@ -99,7 +99,7 @@ export default async function CommunityLeaderboardPage({
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
               XPだけでなく、発言・Reaction・VC・Minecraft・Achievement・Season
-              Pointを同じ画面で比較できます。
+              Pointを比較できます。終了済みSeasonは確定Snapshotを優先して表示します。
             </p>
           </div>
           <div className="rounded-2xl border border-border bg-background/70 px-4 py-3 text-sm">
@@ -242,7 +242,7 @@ export default async function CommunityLeaderboardPage({
                 Season Archive
               </p>
               <p className="mt-1 text-xs leading-5 text-muted">
-                現在と過去5シーズンを切り替えて、Season PointとChampionを比較できます。
+                現在と過去5シーズンを切り替えて、Season Point・Champion・確定Awardを比較できます。
               </p>
             </div>
             <span
@@ -255,7 +255,9 @@ export default async function CommunityLeaderboardPage({
               <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
               {communityLeaderboardSeasonStatus(selectedSeason, now) === 'current'
                 ? `残り${communityLeaderboardSeasonDaysRemaining(selectedSeason, now)}日`
-                : 'Completed'}
+                : snapshot.seasonSnapshot
+                  ? 'Official Final'
+                  : 'Finalization pending'}
             </span>
           </div>
 
@@ -284,7 +286,7 @@ export default async function CommunityLeaderboardPage({
             })}
           </nav>
 
-          <div className="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
+          <div className="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2 xl:grid-cols-3">
             <div className="flex items-start gap-3 rounded-xl bg-background/60 p-3">
               <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
               <div>
@@ -308,6 +310,66 @@ export default async function CommunityLeaderboardPage({
                 </p>
               </div>
             </div>
+            <div className="flex items-start gap-3 rounded-xl bg-background/60 p-3">
+              <Medal className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+              <div>
+                <p className="text-xs font-medium text-muted">Season Final</p>
+                <p className="mt-1 text-sm font-semibold">
+                  {snapshot.seasonSnapshot
+                    ? 'Official Snapshot'
+                    : communityLeaderboardSeasonStatus(selectedSeason, now) === 'current'
+                      ? 'Live Ranking'
+                      : 'Finalization pending'}
+                </p>
+                <p className="mt-0.5 text-xs text-muted">
+                  {snapshot.seasonSnapshot
+                    ? `${formatFinalizedAt(snapshot.seasonSnapshot.finalizedAt)} · source v${snapshot.seasonSnapshot.sourceVersion}`
+                    : communityLeaderboardSeasonStatus(selectedSeason, now) === 'current'
+                      ? 'Season終了後に自動確定します'
+                      : 'Workerが確定処理を実行すると固定されます'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      {query.metric === 'season' && snapshot.seasonSnapshot && snapshot.seasonAwards.length > 0 ? (
+        <section
+          aria-labelledby="season-awards-title"
+          className="rounded-2xl border border-primary/20 bg-surface p-4 shadow-card sm:p-5"
+        >
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <Medal className="h-5 w-5" aria-hidden="true" />
+            </div>
+            <div>
+              <h2 id="season-awards-title" className="font-semibold">
+                Official Season Awards
+              </h2>
+              <p className="mt-1 text-xs leading-5 text-muted">
+                Season終了時の確定SnapshotからChampion / Top 3 / Top 10を表示します。
+              </p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+            {snapshot.seasonAwards.map((award) => (
+              <article
+                key={award.userId}
+                className="rounded-xl border border-border bg-background/60 p-3"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="rounded-full bg-primary/10 px-2 py-1 text-[11px] font-semibold text-primary">
+                    {seasonAwardTierLabel(award.awardTier)}
+                  </span>
+                  <span className="text-xs font-semibold text-muted">#{award.rank}</span>
+                </div>
+                <p className="mt-3 truncate text-sm font-semibold">
+                  {displayName(memberMap.get(award.userId), award.userId)}
+                </p>
+                <p className="mt-1 text-xs text-muted">{award.points.toLocaleString()} pt</p>
+              </article>
+            ))}
           </div>
         </section>
       ) : null}
@@ -373,6 +435,23 @@ export default async function CommunityLeaderboardPage({
       )}
     </div>
   );
+}
+
+function seasonAwardTierLabel(tier: 'champion' | 'top3' | 'top10'): string {
+  if (tier === 'champion') return 'Champion';
+  if (tier === 'top3') return 'Top 3';
+  return 'Top 10';
+}
+
+function formatFinalizedAt(value: Date): string {
+  return new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(value);
 }
 
 function SummaryCard({

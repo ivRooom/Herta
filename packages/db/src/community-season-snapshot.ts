@@ -47,9 +47,7 @@ const SEASON_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const DISCORD_ID_PATTERN = /^\d{1,32}$/;
 const SOURCE_VERSION = 1;
 
-export function communitySeasonAwardTierForRank(
-  rank: number,
-): CommunitySeasonAwardTier | null {
+export function communitySeasonAwardTierForRank(rank: number): CommunitySeasonAwardTier | null {
   if (!Number.isFinite(rank)) return null;
   const normalized = Math.trunc(rank);
   if (normalized === 1) return 'champion';

@@ -2,10 +2,7 @@ import { getPrismaClient } from '@herta/db';
 import { createLogger } from '@herta/logger';
 import { HERTA_WORKER_HEARTBEAT_INTERVAL_MS, HERTA_WORKER_HEARTBEAT_KEY } from '@herta/shared';
 import { Redis } from 'ioredis';
-import {
-  startCommunitySeasonRuntime,
-  type CommunitySeasonRuntime,
-} from './community-seasons.js';
+import { startCommunitySeasonRuntime, type CommunitySeasonRuntime } from './community-seasons.js';
 import { startDailyContentRuntime, type DailyContentRuntime } from './daily-content.js';
 import { startLfgRuntime, type LfgRuntime } from './lfg.js';
 import { startTeamSplitRuntime, type TeamSplitWorkerRuntime } from './team-split.js';

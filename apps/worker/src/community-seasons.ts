@@ -3,10 +3,7 @@ import {
   listCommunitySeasonGuildIdsWithoutSnapshot,
   type PrismaClient,
 } from '@herta/db';
-import {
-  communityLeaderboardSeasonStatus,
-  listCommunityLeaderboardSeasons,
-} from '@herta/shared';
+import { communityLeaderboardSeasonStatus, listCommunityLeaderboardSeasons } from '@herta/shared';
 import type { Logger } from 'pino';
 
 const FINALIZER_INTERVAL_MS = 60 * 60 * 1000;
