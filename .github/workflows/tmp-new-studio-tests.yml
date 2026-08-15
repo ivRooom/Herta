@@ -1,0 +1,80 @@
+name: Temporary New Studio Tests
+
+on:
+  push:
+    branches:
+      - feature/studio-server-context-bot-profile
+
+permissions:
+  contents: read
+
+jobs:
+  setup-test-bot-profile-input:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @herta/shared build
+      - working-directory: apps/studio
+        run: node --experimental-strip-types --test src/lib/bot-profile-input.test.ts
+
+  setup-test-bot-presence:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @herta/shared build
+      - working-directory: apps/studio
+        run: node --experimental-strip-types --test src/lib/bot-presence-config.test.ts
+
+  setup-test-server-preferences:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @herta/shared build
+      - working-directory: apps/studio
+        run: node --experimental-strip-types --test src/lib/studio-server-preferences.test.ts
+
+  setup-test-selected-navigation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @herta/shared build
+      - working-directory: apps/studio
+        run: node --experimental-strip-types --test src/lib/studio-selected-server-navigation.test.ts
+
+  setup-test-request-origin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @herta/shared build
+      - working-directory: apps/studio
+        run: node --experimental-strip-types --test src/lib/request-origin.test.ts
