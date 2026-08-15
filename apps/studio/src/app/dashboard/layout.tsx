@@ -2,6 +2,10 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Sparkles } from 'lucide-react';
 import { auth } from '@/auth';
+import {
+  ConsoleCommandPaletteController,
+  ConsoleCommandPaletteTrigger,
+} from '@/components/console-command-palette';
 import { DashboardNav } from '@/components/dashboard-nav';
 import {
   GuildContextNav,
@@ -41,6 +45,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="min-h-screen bg-background">
+      <ConsoleCommandPaletteController guilds={guilds} />
+
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border bg-surface/80 px-4 py-5 backdrop-blur-xl lg:flex">
         <Link href="/dashboard" className="flex items-center gap-3 px-2">
           <span className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-br from-primary to-violet-400 text-base font-black text-white shadow-lg shadow-primary/20">
@@ -92,6 +98,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <div className="min-h-screen lg:pl-64">
         <header className="sticky top-0 z-20 hidden border-b border-border bg-background/85 backdrop-blur-xl lg:block">
           <div className="flex h-16 items-center justify-end gap-3 px-6 xl:px-8">
+            <ConsoleCommandPaletteTrigger variant="desktop" />
             <GuildContextNav variant="desktop" guilds={guilds} guildsState={guildsState} />
             <div
               className="flex h-10 min-w-0 items-center gap-2.5 rounded-xl border border-border bg-surface px-2.5"
@@ -125,6 +132,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
               <span className="truncate tracking-tight">Herta Studio</span>
             </Link>
             <div className="flex shrink-0 items-center gap-2">
+              <ConsoleCommandPaletteTrigger variant="mobile" />
               <GuildContextNav variant="mobile" guilds={guilds} guildsState={guildsState} />
               {image ? (
                 // eslint-disable-next-line @next/next/no-img-element

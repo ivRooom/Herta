@@ -1,3 +1,4 @@
+const DISCORD_GUILD_ID = /^\d{17,20}$/u;
 const GUILD_DASHBOARD_PATH = /^\/dashboard\/guilds\/(\d{17,20})(?:\/|$)/u;
 
 export type GuildConsoleSection = 'overview' | 'plugins' | 'audit-logs' | 'other';
@@ -5,6 +6,10 @@ export type GuildConsoleSection = 'overview' | 'plugins' | 'audit-logs' | 'other
 export interface GuildConsoleContext {
   guildId: string;
   section: GuildConsoleSection;
+}
+
+export function isDiscordGuildId(value: string): boolean {
+  return DISCORD_GUILD_ID.test(value);
 }
 
 export function getGuildConsoleContext(pathname: string): GuildConsoleContext | null {
