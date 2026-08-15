@@ -396,7 +396,10 @@ function QuickLink({
         <span className="block text-sm font-medium">{title}</span>
         <span className="mt-0.5 block truncate text-xs text-muted">{description}</span>
       </span>
-      <ArrowRight className="h-4 w-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+      <ArrowRight
+        className="h-4 w-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5"
+        aria-hidden="true"
+      />
     </Link>
   );
 }

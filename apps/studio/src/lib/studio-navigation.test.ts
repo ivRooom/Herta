@@ -12,9 +12,7 @@ test('Guild外ではWorkspaceコマンドだけを生成する', () => {
   assert.ok(commands.every((command) => command.group === 'workspace'));
   assert.ok(commands.some((command) => command.href === '/dashboard/guilds'));
   assert.ok(
-    commands.some(
-      (command) => command.id === 'plugins' && command.href === '/dashboard/plugins',
-    ),
+    commands.some((command) => command.id === 'plugins' && command.href === '/dashboard/plugins'),
   );
   assert.ok(
     commands.some((command) => command.id === 'account' && command.href === '/dashboard/account'),
