@@ -12,13 +12,14 @@ function createLogger(): Logger {
 }
 
 describe('BotPresenceEventSubscriber', () => {
-  it('正しいPresence更新イベントを受信するとDB正本を適用する', async () => {
+  it('正しいPresence更新通知でDB正本を再読み込みする', async () => {
+    const storedConfig = {
+      status: 'idle' as const,
+      activityType: 'watching' as const,
+      activityText: 'Herta Studio',
+    };
     const onPresenceChanged = vi.fn();
-    const loadCurrentPresence = vi.fn().mockResolvedValue({
-      status: 'idle',
-      activityType: 'watching',
-      activityText: 'Latest from DB',
-    });
+    const loadCurrentPresence = vi.fn().mockResolvedValue(storedConfig);
     const subscriber = new BotPresenceEventSubscriber(
       onPresenceChanged,
       createLogger(),
@@ -32,47 +33,46 @@ describe('BotPresenceEventSubscriber', () => {
         config: {
           status: 'online',
           activityType: 'playing',
-          activityText: 'Potentially stale event payload',
+          activityText: 'Publisher payload',
         },
       }),
     );
 
     expect(loadCurrentPresence).toHaveBeenCalledOnce();
-    expect(onPresenceChanged).toHaveBeenCalledWith({
-      status: 'idle',
-      activityType: 'watching',
-      activityText: 'Latest from DB',
-    });
+    expect(onPresenceChanged).toHaveBeenCalledOnce();
+    expect(onPresenceChanged).toHaveBeenCalledWith(storedConfig);
   });
 
-  it('publisherのtimestamp順序に関係なく有効な通知ごとにDB正本を再読込する', async () => {
+  it('publisher時刻が前後しても通知ごとにDB正本を直列再読み込みする', async () => {
+    const firstStoredConfig = {
+      status: 'online' as const,
+      activityType: 'playing' as const,
+      activityText: 'First stored state',
+    };
+    const secondStoredConfig = {
+      status: 'dnd' as const,
+      activityType: 'competing' as const,
+      activityText: 'Second stored state',
+    };
     const onPresenceChanged = vi.fn();
     const loadCurrentPresence = vi
       .fn()
-      .mockResolvedValueOnce({
-        status: 'online',
-        activityType: 'playing',
-        activityText: 'First DB state',
-      })
-      .mockResolvedValueOnce({
-        status: 'dnd',
-        activityType: 'competing',
-        activityText: 'Latest DB state',
-      });
+      .mockResolvedValueOnce(firstStoredConfig)
+      .mockResolvedValueOnce(secondStoredConfig);
     const subscriber = new BotPresenceEventSubscriber(
       onPresenceChanged,
       createLogger(),
       loadCurrentPresence,
     );
 
-    await subscriber.handleMessage(
+    const first = subscriber.handleMessage(
       JSON.stringify({
         version: 1,
         occurredAt: '2026-08-15T13:00:01.000Z',
         config: { status: 'online', activityType: 'playing', activityText: 'Newer clock' },
       }),
     );
-    await subscriber.handleMessage(
+    const second = subscriber.handleMessage(
       JSON.stringify({
         version: 1,
         occurredAt: '2026-08-15T12:59:59.000Z',
@@ -80,16 +80,57 @@ describe('BotPresenceEventSubscriber', () => {
       }),
     );
 
+    await Promise.all([first, second]);
+
     expect(loadCurrentPresence).toHaveBeenCalledTimes(2);
     expect(onPresenceChanged).toHaveBeenCalledTimes(2);
-    expect(onPresenceChanged).toHaveBeenLastCalledWith({
-      status: 'dnd',
-      activityType: 'competing',
-      activityText: 'Latest DB state',
-    });
+    expect(onPresenceChanged).toHaveBeenNthCalledWith(1, firstStoredConfig);
+    expect(onPresenceChanged).toHaveBeenNthCalledWith(2, secondStoredConfig);
   });
 
-  it('不正イベントはDB正本を読み込まず破棄する', async () => {
+  it('同一timestampの通知も欠落させない', async () => {
+    const onPresenceChanged = vi.fn();
+    const loadCurrentPresence = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: 'online',
+        activityType: 'playing',
+        activityText: 'First',
+      })
+      .mockResolvedValueOnce({
+        status: 'idle',
+        activityType: 'watching',
+        activityText: 'Second',
+      });
+    const subscriber = new BotPresenceEventSubscriber(
+      onPresenceChanged,
+      createLogger(),
+      loadCurrentPresence,
+    );
+    const occurredAt = '2026-08-15T13:00:00.000Z';
+
+    await Promise.all([
+      subscriber.handleMessage(
+        JSON.stringify({
+          version: 1,
+          occurredAt,
+          config: { status: 'online', activityType: 'playing', activityText: 'First event' },
+        }),
+      ),
+      subscriber.handleMessage(
+        JSON.stringify({
+          version: 1,
+          occurredAt,
+          config: { status: 'idle', activityType: 'watching', activityText: 'Second event' },
+        }),
+      ),
+    ]);
+
+    expect(loadCurrentPresence).toHaveBeenCalledTimes(2);
+    expect(onPresenceChanged).toHaveBeenCalledTimes(2);
+  });
+
+  it('不正イベントはDBを読まず適用しない', async () => {
     const logger = createLogger();
     const onPresenceChanged = vi.fn();
     const loadCurrentPresence = vi.fn();

@@ -12,6 +12,7 @@ type BotPresenceLoader = () => Promise<BotPresenceConfig>;
 
 export class BotPresenceEventSubscriber {
   private redis?: Redis;
+  private refreshQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly onPresenceChanged: (config: BotPresenceConfig) => void,
@@ -45,7 +46,7 @@ export class BotPresenceEventSubscriber {
     try {
       await redis.connect();
       await redis.subscribe(BOT_PRESENCE_EVENT_CHANNEL);
-      await this.refreshStoredPresence();
+      await this.enqueueStoredPresenceRefresh();
     } catch (error) {
       this.redis = undefined;
       redis.disconnect();
@@ -68,9 +69,9 @@ export class BotPresenceEventSubscriber {
       return;
     }
 
-    // Redisイベントは変更通知としてのみ扱う。publisherのwall-clockや到着順に依存せず、
-    // 常にDB正本を再読み込みして複数Studioインスタンス間でも最新設定へ収束させる。
-    await this.refreshStoredPresence();
+    // Redisイベントは変更通知としてのみ扱う。publisherのwall-clockには依存せず、
+    // DB正本の再読み込みを直列化して複数Studioインスタンス間でも最新設定へ収束させる。
+    await this.enqueueStoredPresenceRefresh();
   }
 
   async stop(): Promise<void> {
@@ -79,5 +80,11 @@ export class BotPresenceEventSubscriber {
     if (!redis) return;
     await redis.unsubscribe(BOT_PRESENCE_EVENT_CHANNEL).catch(() => undefined);
     await redis.quit().catch(() => redis.disconnect());
+  }
+
+  private enqueueStoredPresenceRefresh(): Promise<void> {
+    const nextRefresh = this.refreshQueue.then(() => this.refreshStoredPresence());
+    this.refreshQueue = nextRefresh;
+    return nextRefresh;
   }
 }
