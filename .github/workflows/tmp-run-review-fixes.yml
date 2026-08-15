@@ -1,0 +1,53 @@
+name: Run temporary review fixes
+
+on:
+  push:
+    branches:
+      - feature/studio-server-context-bot-profile
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: python scripts/tmp-review-fixes.py
+      - name: Format touched files
+        run: |
+          pnpm exec prettier --write \
+            apps/bot/src/bot.ts \
+            apps/bot/src/presence/runtime-events.ts \
+            apps/bot/src/presence/runtime-events.test.ts \
+            apps/bot/src/profile/guild-bot-profile.ts \
+            apps/bot/src/profile/guild-bot-profile.test.ts \
+            apps/studio/src/lib/bounded-request-body.ts \
+            apps/studio/src/lib/request-origin.test.ts \
+            apps/studio/src/app/api/bot/presence/route.ts \
+            'apps/studio/src/app/api/guilds/[guildId]/bot-profile/route.ts' \
+            apps/studio/src/app/api/me/studio-preferences/route.ts \
+            apps/studio/src/app/dashboard/layout.tsx \
+            apps/studio/src/components/bot-profile-settings.tsx \
+            apps/studio/src/components/console-command-palette.tsx \
+            apps/studio/src/components/guild-context-nav.tsx \
+            apps/studio/src/components/studio-server-context.tsx \
+            apps/studio/src/lib/redis-command.ts \
+            apps/studio/src/lib/studio-selected-server-navigation.ts
+      - name: Commit fixes and remove temporary files
+        run: |
+          rm scripts/tmp-review-fixes.py .github/workflows/tmp-run-review-fixes.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "レビュー指摘に基づき安全性とUXを改善する"
+          git push
