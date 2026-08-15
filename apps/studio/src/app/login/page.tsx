@@ -11,6 +11,7 @@ import {
 import { auth } from '@/auth';
 import { DiscordIcon } from '@/components/discord-icon';
 import { signInWithDiscord } from '@/lib/actions';
+import { normalizeDashboardCallbackUrl } from '@/lib/auth-navigation';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,9 +40,10 @@ export default async function LoginPage({
 }) {
   const session = await auth();
   const { callbackUrl, error } = await searchParams;
+  const safeCallbackUrl = normalizeDashboardCallbackUrl(callbackUrl);
 
   if (session?.user) {
-    redirect(callbackUrl || '/dashboard');
+    redirect(safeCallbackUrl);
   }
 
   return (
@@ -150,7 +152,7 @@ export default async function LoginPage({
             ) : null}
 
             <form action={signInWithDiscord} className="mt-6">
-              <input type="hidden" name="callbackUrl" value={callbackUrl || '/dashboard'} />
+              <input type="hidden" name="callbackUrl" value={safeCallbackUrl} />
               <button
                 type="submit"
                 className="group flex w-full items-center justify-between gap-3 rounded-2xl bg-[#5865F2] px-4 py-3.5 text-sm font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
