@@ -3,6 +3,7 @@ export type * from '@prisma/client';
 export * from './command-analytics.js';
 export * from './community-profile.js';
 export * from './community-leaderboard.js';
+export * from './community-season-snapshot.js';
 export * from './health-snapshots.js';
 
 import { PrismaClient } from '@prisma/client';

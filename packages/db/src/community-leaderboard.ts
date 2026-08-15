@@ -125,18 +125,44 @@ async function listRows(
   if (input.metric === 'season') {
     const seasonKey = requireSeasonKey(input.seasonKey);
     return prisma.$queryRaw<RankedRow[]>`
-      WITH totals AS (
+      WITH snapshot_meta AS (
+        SELECT "participant_count"
+        FROM "community_season_snapshots"
+        WHERE "guild_id" = ${input.guildId} AND "season_key" = ${seasonKey}
+        LIMIT 1
+      ), snapshot_rows AS (
+        SELECT
+          e."user_id",
+          e."points"::bigint AS "total",
+          e."rank"::bigint AS "sort_rank",
+          s."participant_count"::bigint AS "participants"
+        FROM "community_season_snapshot_entries" e
+        JOIN "community_season_snapshots" s
+          ON s."guild_id" = e."guild_id" AND s."season_key" = e."season_key"
+        WHERE e."guild_id" = ${input.guildId} AND e."season_key" = ${seasonKey}
+      ), live_totals AS (
         SELECT "user_id", SUM("points")::bigint AS "total"
         FROM "community_challenge_completions"
         WHERE "guild_id" = ${input.guildId} AND "season_key" = ${seasonKey}
         GROUP BY "user_id"
+      ), live_ranked AS (
+        SELECT
+          "user_id",
+          "total",
+          ROW_NUMBER() OVER (ORDER BY "total" DESC, "user_id" ASC)::bigint AS "sort_rank",
+          COUNT(*) OVER()::bigint AS "participants"
+        FROM live_totals
+      ), selected_rows AS (
+        SELECT "user_id", "total", "sort_rank", "participants"
+        FROM snapshot_rows
+        UNION ALL
+        SELECT "user_id", "total", "sort_rank", "participants"
+        FROM live_ranked
+        WHERE NOT EXISTS (SELECT 1 FROM snapshot_meta)
       )
-      SELECT
-        "user_id" AS "userId",
-        "total",
-        COUNT(*) OVER()::bigint AS "participants"
-      FROM totals
-      ORDER BY "total" DESC, "user_id" ASC
+      SELECT "user_id" AS "userId", "total", "participants"
+      FROM selected_rows
+      ORDER BY "sort_rank" ASC
       LIMIT ${input.limit}
     `;
   }
@@ -238,22 +264,43 @@ async function rankRows(
   if (input.metric === 'season') {
     const seasonKey = requireSeasonKey(input.seasonKey);
     return prisma.$queryRaw<RankRow[]>`
-      WITH totals AS (
+      WITH snapshot_meta AS (
+        SELECT "participant_count"
+        FROM "community_season_snapshots"
+        WHERE "guild_id" = ${input.guildId} AND "season_key" = ${seasonKey}
+        LIMIT 1
+      ), snapshot_target AS (
+        SELECT
+          e."user_id",
+          e."points"::bigint AS "total",
+          e."rank"::bigint AS "rank",
+          s."participant_count"::bigint AS "participants"
+        FROM "community_season_snapshot_entries" e
+        JOIN "community_season_snapshots" s
+          ON s."guild_id" = e."guild_id" AND s."season_key" = e."season_key"
+        WHERE e."guild_id" = ${input.guildId}
+          AND e."season_key" = ${seasonKey}
+          AND e."user_id" = ${input.userId}
+      ), live_totals AS (
         SELECT "user_id", SUM("points")::bigint AS "total"
         FROM "community_challenge_completions"
         WHERE "guild_id" = ${input.guildId} AND "season_key" = ${seasonKey}
         GROUP BY "user_id"
-      ), ranked AS (
+      ), live_ranked AS (
         SELECT
           "user_id",
           "total",
           ROW_NUMBER() OVER (ORDER BY "total" DESC, "user_id" ASC)::bigint AS "rank",
           COUNT(*) OVER()::bigint AS "participants"
-        FROM totals
+        FROM live_totals
       )
       SELECT "user_id" AS "userId", "total", "rank", "participants"
-      FROM ranked
+      FROM snapshot_target
+      UNION ALL
+      SELECT "user_id" AS "userId", "total", "rank", "participants"
+      FROM live_ranked
       WHERE "user_id" = ${input.userId}
+        AND NOT EXISTS (SELECT 1 FROM snapshot_meta)
       LIMIT 1
     `;
   }

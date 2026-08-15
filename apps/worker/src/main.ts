@@ -2,6 +2,7 @@ import { getPrismaClient } from '@herta/db';
 import { createLogger } from '@herta/logger';
 import { HERTA_WORKER_HEARTBEAT_INTERVAL_MS, HERTA_WORKER_HEARTBEAT_KEY } from '@herta/shared';
 import { Redis } from 'ioredis';
+import { startCommunitySeasonRuntime, type CommunitySeasonRuntime } from './community-seasons.js';
 import { startDailyContentRuntime, type DailyContentRuntime } from './daily-content.js';
 import { startLfgRuntime, type LfgRuntime } from './lfg.js';
 import { startTeamSplitRuntime, type TeamSplitWorkerRuntime } from './team-split.js';
@@ -13,6 +14,7 @@ const logger = createLogger({
 
 let redis: Redis | undefined;
 let heartbeatTimer: NodeJS.Timeout | undefined;
+let communitySeasonRuntime: CommunitySeasonRuntime | undefined;
 let dailyContentRuntime: DailyContentRuntime | undefined;
 let lfgRuntime: LfgRuntime | undefined;
 let teamSplitRuntime: TeamSplitWorkerRuntime | undefined;
@@ -67,62 +69,78 @@ async function main() {
   const discordBotToken = process.env['DISCORD_BOT_TOKEN']?.trim();
   const databaseConfigured = Boolean(process.env['DATABASE_URL']);
   if (!databaseConfigured) {
-    logger.warn('DATABASE_URLが未設定のためPlugin Workerを開始しません');
-  } else if (!discordBotToken) {
-    logger.warn('DISCORD_BOT_TOKENが未設定のためPlugin Workerを開始しません');
+    logger.warn('DATABASE_URLが未設定のためPlugin WorkerとSeason Snapshot Workerを開始しません');
   } else {
     try {
-      dailyContentRuntime = await startDailyContentRuntime({
-        redisUrl,
+      communitySeasonRuntime = await startCommunitySeasonRuntime({
         prisma: getPrismaClient(),
         logger,
-        discordBotToken,
       });
-      logger.info('Daily Content Workerを開始しました');
+      logger.info('Community Season Snapshot Workerを開始しました');
     } catch (error) {
       logger.error(
         { errorName: resolveErrorName(error) },
-        'Daily Content Workerの開始に失敗しました',
+        'Community Season Snapshot Workerの開始に失敗しました',
       );
       process.exit(1);
     }
 
-    const componentSecret = process.env['LFG_COMPONENT_SECRET']?.trim();
-    if (!componentSecret || componentSecret.length < 32) {
-      logger.warn('LFG_COMPONENT_SECRETが未設定または短いためLFG Workerを開始しません');
+    if (!discordBotToken) {
+      logger.warn('DISCORD_BOT_TOKENが未設定のためDiscord依存Plugin Workerを開始しません');
     } else {
       try {
-        lfgRuntime = await startLfgRuntime({
+        dailyContentRuntime = await startDailyContentRuntime({
+          redisUrl,
           prisma: getPrismaClient(),
           logger,
           discordBotToken,
-          componentSecret,
         });
-        logger.info('LFG Workerを開始しました');
-      } catch (error) {
-        logger.error({ errorName: resolveErrorName(error) }, 'LFG Workerの開始に失敗しました');
-        process.exit(1);
-      }
-    }
-
-    const teamSplitSecret = process.env['TEAM_SPLIT_SECRET']?.trim();
-    if (!teamSplitSecret || teamSplitSecret.length < 32) {
-      logger.warn('TEAM_SPLIT_SECRETが未設定または短いためTeam Split Workerを開始しません');
-    } else {
-      try {
-        teamSplitRuntime = await startTeamSplitRuntime({
-          prisma: getPrismaClient(),
-          logger,
-          discordBotToken,
-          secret: teamSplitSecret,
-        });
-        logger.info('Team Split Workerを開始しました');
+        logger.info('Daily Content Workerを開始しました');
       } catch (error) {
         logger.error(
           { errorName: resolveErrorName(error) },
-          'Team Split Workerの開始に失敗しました',
+          'Daily Content Workerの開始に失敗しました',
         );
         process.exit(1);
+      }
+
+      const componentSecret = process.env['LFG_COMPONENT_SECRET']?.trim();
+      if (!componentSecret || componentSecret.length < 32) {
+        logger.warn('LFG_COMPONENT_SECRETが未設定または短いためLFG Workerを開始しません');
+      } else {
+        try {
+          lfgRuntime = await startLfgRuntime({
+            prisma: getPrismaClient(),
+            logger,
+            discordBotToken,
+            componentSecret,
+          });
+          logger.info('LFG Workerを開始しました');
+        } catch (error) {
+          logger.error({ errorName: resolveErrorName(error) }, 'LFG Workerの開始に失敗しました');
+          process.exit(1);
+        }
+      }
+
+      const teamSplitSecret = process.env['TEAM_SPLIT_SECRET']?.trim();
+      if (!teamSplitSecret || teamSplitSecret.length < 32) {
+        logger.warn('TEAM_SPLIT_SECRETが未設定または短いためTeam Split Workerを開始しません');
+      } else {
+        try {
+          teamSplitRuntime = await startTeamSplitRuntime({
+            prisma: getPrismaClient(),
+            logger,
+            discordBotToken,
+            secret: teamSplitSecret,
+          });
+          logger.info('Team Split Workerを開始しました');
+        } catch (error) {
+          logger.error(
+            { errorName: resolveErrorName(error) },
+            'Team Split Workerの開始に失敗しました',
+          );
+          process.exit(1);
+        }
       }
     }
   }
@@ -164,6 +182,16 @@ async function shutdown(signal: string): Promise<void> {
     logger.error(
       { errorName: resolveErrorName(error) },
       'Daily Content Workerの終了処理に失敗しました',
+    );
+  }
+
+  try {
+    await communitySeasonRuntime?.close();
+    communitySeasonRuntime = undefined;
+  } catch (error) {
+    logger.error(
+      { errorName: resolveErrorName(error) },
+      'Community Season Snapshot Workerの終了処理に失敗しました',
     );
   }
 
