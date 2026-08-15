@@ -3,9 +3,13 @@ import test from 'node:test';
 import {
   communityActivityPeriodStart,
   communityLeaderboardLevelForXp,
+  communityLeaderboardSeasonDaysRemaining,
+  communityLeaderboardSeasonStatus,
   communityTimestampPeriodStart,
   formatCommunityLeaderboardValue,
+  listCommunityLeaderboardSeasons,
   normalizeCommunityLeaderboardQuery,
+  resolveCommunityLeaderboardSeason,
 } from './community-leaderboard-core.ts';
 
 test('Metricごとに利用可能な期間へLeaderboard queryを正規化する', () => {
@@ -76,4 +80,37 @@ test('All TimeはActivityとTimestampの両方で共通の下限を返す', () =
   const now = new Date('2026-08-13T01:00:00.000Z');
   assert.equal(communityActivityPeriodStart('all', now).toISOString(), '1970-01-01T00:00:00.000Z');
   assert.equal(communityTimestampPeriodStart('all', now).toISOString(), '1970-01-01T00:00:00.000Z');
+});
+
+test('直近Season履歴を現在から新しい順に生成する', () => {
+  const now = new Date('2026-08-15T08:56:00.000Z');
+  const seasons = listCommunityLeaderboardSeasons(now, 3);
+
+  assert.equal(listCommunityLeaderboardSeasons(now, Number.NaN).length, 6);
+
+  assert.deepEqual(
+    seasons.map((season) => ({ index: season.index, key: season.key })),
+    [
+      { index: 8, key: '2026-07-20' },
+      { index: 7, key: '2026-06-22' },
+      { index: 6, key: '2026-05-25' },
+    ],
+  );
+});
+
+test('Season queryは直近履歴だけを許可し不正値はCurrent Seasonへ戻す', () => {
+  const now = new Date('2026-08-15T08:56:00.000Z');
+  assert.equal(resolveCommunityLeaderboardSeason('2026-06-22', now).index, 7);
+  assert.equal(resolveCommunityLeaderboardSeason('2099-01-01', now).index, 8);
+  assert.equal(resolveCommunityLeaderboardSeason('../invalid', now).index, 8);
+});
+
+test('Seasonの状態と残り日数をJST境界で算出する', () => {
+  const now = new Date('2026-08-15T08:56:00.000Z');
+  const [current, previous] = listCommunityLeaderboardSeasons(now, 2);
+
+  assert.equal(communityLeaderboardSeasonStatus(current!, now), 'current');
+  assert.equal(communityLeaderboardSeasonDaysRemaining(current!, now), 2);
+  assert.equal(communityLeaderboardSeasonStatus(previous!, now), 'completed');
+  assert.equal(communityLeaderboardSeasonDaysRemaining(previous!, now), 0);
 });

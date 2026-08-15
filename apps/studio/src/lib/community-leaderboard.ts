@@ -1,4 +1,8 @@
-import { queryCommunityLeaderboardData, type CommunityLeaderboardStorageMetric } from '@herta/db';
+import {
+  queryCommunityLeaderboardData,
+  queryCommunityLeaderboardRank,
+  type CommunityLeaderboardStorageMetric,
+} from '@herta/db';
 import {
   communityActivityPeriodStart,
   communityLeaderboardLevelForXp,
@@ -22,23 +26,36 @@ export interface CommunityLeaderboardSnapshot {
   entries: CommunityLeaderboardEntry[];
   participants: number;
   seasonKey: string | null;
+  viewerRank: CommunityLeaderboardEntry | null;
 }
 
 export async function getCommunityLeaderboardSnapshot(
   guildId: string,
   query: CommunityLeaderboardQuery,
   now = new Date(),
+  options: { seasonKey?: string | null; viewerUserId?: string | null } = {},
 ): Promise<CommunityLeaderboardSnapshot> {
   const storageMetric = storageMetricFor(query.metric);
-  const seasonKey = query.metric === 'season' ? getCommunitySeasonWindow(now).key : null;
+  const requestedSeasonKey = options.seasonKey?.trim();
+  const seasonKey =
+    query.metric === 'season' ? requestedSeasonKey || getCommunitySeasonWindow(now).key : null;
   const start = resolveStart(query, now);
-  const data = await queryCommunityLeaderboardData(prisma, {
+  const storageQuery = {
     guildId,
     metric: storageMetric,
-    limit: query.limit,
     ...(start ? { start } : {}),
     ...(seasonKey ? { seasonKey } : {}),
-  });
+  };
+
+  const [data, viewerRank] = await Promise.all([
+    queryCommunityLeaderboardData(prisma, { ...storageQuery, limit: query.limit }),
+    options.viewerUserId
+      ? queryCommunityLeaderboardRank(prisma, {
+          ...storageQuery,
+          userId: options.viewerUserId,
+        })
+      : Promise.resolve(null),
+  ]);
 
   return {
     metric: query.metric,
@@ -50,12 +67,20 @@ export async function getCommunityLeaderboardSnapshot(
           : query.period,
     participants: data.participants,
     seasonKey,
-    entries: data.entries.map((entry) => ({
-      rank: entry.rank,
-      userId: entry.userId,
-      value: query.metric === 'level' ? communityLeaderboardLevelForXp(entry.value) : entry.value,
-      secondaryValue: query.metric === 'level' ? entry.value : null,
-    })),
+    viewerRank: viewerRank ? mapLeaderboardEntry(query.metric, viewerRank) : null,
+    entries: data.entries.map((entry) => mapLeaderboardEntry(query.metric, entry)),
+  };
+}
+
+function mapLeaderboardEntry(
+  metric: CommunityLeaderboardMetric,
+  entry: { rank: number; userId: string; value: number },
+): CommunityLeaderboardEntry {
+  return {
+    rank: entry.rank,
+    userId: entry.userId,
+    value: metric === 'level' ? communityLeaderboardLevelForXp(entry.value) : entry.value,
+    secondaryValue: metric === 'level' ? entry.value : null,
   };
 }
 

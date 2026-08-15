@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
   ArrowLeft,
+  CalendarDays,
+  Clock3,
   Crown,
   Gauge,
   Medal,
@@ -18,10 +20,15 @@ import { searchGuildMembers, type GuildMemberOption } from '@/lib/bot-guild-memb
 import {
   COMMUNITY_LEADERBOARD_DEFINITIONS,
   communityLeaderboardPeriodLabel,
+  communityLeaderboardSeasonDaysRemaining,
+  communityLeaderboardSeasonStatus,
   formatCommunityLeaderboardValue,
   getCommunityLeaderboardDefinition,
+  listCommunityLeaderboardSeasons,
   normalizeCommunityLeaderboardQuery,
+  resolveCommunityLeaderboardSeason,
   type CommunityLeaderboardMetric,
+  type CommunitySeasonWindow,
 } from '@/lib/community-leaderboard-core';
 import { getCommunityLeaderboardSnapshot } from '@/lib/community-leaderboard';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
@@ -54,7 +61,14 @@ export default async function CommunityLeaderboardPage({
     limit: first(queryParams.limit),
   });
   const definition = getCommunityLeaderboardDefinition(query.metric);
-  const snapshot = await getCommunityLeaderboardSnapshot(guildId, query);
+  const now = new Date();
+  const seasons = listCommunityLeaderboardSeasons(now);
+  const currentSeason = seasons[0]!;
+  const selectedSeason = resolveCommunityLeaderboardSeason(first(queryParams.season), now);
+  const snapshot = await getCommunityLeaderboardSnapshot(guildId, query, now, {
+    seasonKey: query.metric === 'season' ? selectedSeason.key : null,
+    viewerUserId: session.user.id ?? null,
+  });
   const memberMap = await resolveMemberNames(
     guildId,
     snapshot.entries.slice(0, 10).map((entry) => entry.userId),
@@ -76,7 +90,9 @@ export default async function CommunityLeaderboardPage({
           <div>
             <div className="flex items-center gap-2 text-primary">
               <Trophy className="h-5 w-5" />
-              <p className="text-xs font-semibold uppercase tracking-[0.18em]">Leaderboard v2</p>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em]">
+                Leaderboard v3 · Seasons
+              </p>
             </div>
             <h1 className="mt-3 text-2xl font-semibold tracking-tight sm:text-3xl">
               Community Leaderboard
@@ -95,7 +111,7 @@ export default async function CommunityLeaderboardPage({
         </div>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <SummaryCard
           icon={Users}
           label="参加メンバー"
@@ -104,7 +120,7 @@ export default async function CommunityLeaderboardPage({
         />
         <SummaryCard
           icon={Crown}
-          label="現在の1位"
+          label={query.metric === 'season' ? 'Season 1位' : '現在の1位'}
           value={topEntry ? displayName(memberMap.get(topEntry.userId), topEntry.userId) : '—'}
           detail={
             topEntry
@@ -120,9 +136,23 @@ export default async function CommunityLeaderboardPage({
         />
         <SummaryCard
           icon={Sparkles}
-          label="Season"
-          value={snapshot.seasonKey ?? '—'}
-          detail={snapshot.seasonKey ? '現在のChallenge Season' : 'Season外カテゴリ'}
+          label={query.metric === 'season' ? '選択中Season' : 'Current Season'}
+          value={`Season ${query.metric === 'season' ? selectedSeason.index : currentSeason.index}`}
+          detail={formatSeasonDateRange(query.metric === 'season' ? selectedSeason : currentSeason)}
+        />
+        <SummaryCard
+          icon={Medal}
+          label="あなたの順位"
+          value={snapshot.viewerRank ? `#${snapshot.viewerRank.rank}` : '—'}
+          detail={
+            snapshot.viewerRank
+              ? `${formatEntryValue(
+                  query.metric,
+                  snapshot.viewerRank.value,
+                  snapshot.viewerRank.secondaryValue,
+                )} · ${snapshot.participants}人中`
+              : 'このカテゴリではまだ記録がありません'
+          }
         />
       </section>
 
@@ -139,6 +169,11 @@ export default async function CommunityLeaderboardPage({
                   candidate.metric,
                   candidate.periods[0]!,
                   query.limit,
+                  candidate.metric === 'season'
+                    ? query.metric === 'season'
+                      ? selectedSeason.key
+                      : currentSeason.key
+                    : null,
                 )}
                 className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
                   active
@@ -157,7 +192,13 @@ export default async function CommunityLeaderboardPage({
             {definition.periods.map((period) => (
               <Link
                 key={period}
-                href={leaderboardHref(guildId, query.metric, period, query.limit)}
+                href={leaderboardHref(
+                  guildId,
+                  query.metric,
+                  period,
+                  query.limit,
+                  query.metric === 'season' ? selectedSeason.key : null,
+                )}
                 className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
                   period === query.period
                     ? 'bg-foreground text-background'
@@ -172,7 +213,13 @@ export default async function CommunityLeaderboardPage({
             {[10, 25].map((limit) => (
               <Link
                 key={limit}
-                href={leaderboardHref(guildId, query.metric, query.period, limit as 10 | 25)}
+                href={leaderboardHref(
+                  guildId,
+                  query.metric,
+                  query.period,
+                  limit as 10 | 25,
+                  query.metric === 'season' ? selectedSeason.key : null,
+                )}
                 className={`rounded-lg px-3 py-1.5 text-xs ${
                   query.limit === limit ? 'bg-primary/10 font-semibold text-primary' : 'text-muted'
                 }`}
@@ -183,6 +230,87 @@ export default async function CommunityLeaderboardPage({
           </div>
         </div>
       </section>
+
+      {query.metric === 'season' ? (
+        <section
+          aria-labelledby="season-archive-title"
+          className="rounded-2xl border border-border bg-surface p-4 shadow-card sm:p-5"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p id="season-archive-title" className="font-semibold">
+                Season Archive
+              </p>
+              <p className="mt-1 text-xs leading-5 text-muted">
+                現在と過去5シーズンを切り替えて、Season PointとChampionを比較できます。
+              </p>
+            </div>
+            <span
+              className={`inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${
+                communityLeaderboardSeasonStatus(selectedSeason, now) === 'current'
+                  ? 'bg-emerald-500/10 text-emerald-500'
+                  : 'bg-background text-muted'
+              }`}
+            >
+              <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
+              {communityLeaderboardSeasonStatus(selectedSeason, now) === 'current'
+                ? `残り${communityLeaderboardSeasonDaysRemaining(selectedSeason, now)}日`
+                : 'Completed'}
+            </span>
+          </div>
+
+          <nav className="mt-4 flex gap-2 overflow-x-auto pb-1" aria-label="Season選択">
+            {seasons.map((season) => {
+              const active = season.key === selectedSeason.key;
+              return (
+                <Link
+                  key={season.key}
+                  href={leaderboardHref(guildId, 'season', 'season', query.limit, season.key)}
+                  aria-current={active ? 'page' : undefined}
+                  className={`min-w-[9.5rem] shrink-0 rounded-xl border px-3 py-2.5 transition-colors ${
+                    active
+                      ? 'border-primary/40 bg-primary/10 text-primary'
+                      : 'border-border bg-background/60 hover:border-primary/30'
+                  }`}
+                >
+                  <span className="block text-sm font-semibold">Season {season.index}</span>
+                  <span
+                    className={`mt-1 block text-[11px] ${active ? 'text-primary/80' : 'text-muted'}`}
+                  >
+                    {formatSeasonDateRange(season)}
+                  </span>
+                </Link>
+              );
+            })}
+          </nav>
+
+          <div className="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2">
+            <div className="flex items-start gap-3 rounded-xl bg-background/60 p-3">
+              <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+              <div>
+                <p className="text-xs font-medium text-muted">集計期間</p>
+                <p className="mt-1 text-sm font-semibold">
+                  {formatSeasonDateRange(selectedSeason)}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start gap-3 rounded-xl bg-background/60 p-3">
+              <Crown className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-muted">Season Champion</p>
+                <p className="mt-1 truncate text-sm font-semibold">
+                  {topEntry ? displayName(memberMap.get(topEntry.userId), topEntry.userId) : '—'}
+                </p>
+                <p className="mt-0.5 text-xs text-muted">
+                  {topEntry
+                    ? formatEntryValue(query.metric, topEntry.value, topEntry.secondaryValue)
+                    : 'まだ記録がありません'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       {snapshot.entries.length > 0 ? (
         <>
@@ -326,9 +454,22 @@ function leaderboardHref(
   metric: CommunityLeaderboardMetric,
   period: string,
   limit: 10 | 25,
+  seasonKey?: string | null,
 ): string {
   const params = new URLSearchParams({ metric, period, limit: String(limit) });
+  if (metric === 'season' && seasonKey) params.set('season', seasonKey);
   return `/dashboard/guilds/${guildId}/leaderboard?${params.toString()}`;
+}
+
+function formatSeasonDateRange(season: CommunitySeasonWindow): string {
+  const formatter = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const inclusiveEnd = new Date(season.endsAt.getTime() - 1);
+  return `${formatter.format(season.startsAt)} – ${formatter.format(inclusiveEnd)}`;
 }
 
 async function resolveMemberNames(
