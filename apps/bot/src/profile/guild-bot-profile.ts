@@ -25,12 +25,19 @@ export interface GuildBotProfileUpdate {
   avatar?: string | null;
 }
 
-const MAX_INTERNAL_AVATAR_DATA_URI_LENGTH = 1_450_000;
+const MAX_BOT_AVATAR_BYTES = 1024 * 1024;
 const AVATAR_DATA_URI_PREFIXES = [
   'data:image/png;base64,',
   'data:image/jpeg;base64,',
   'data:image/gif;base64,',
 ] as const;
+const MAX_INTERNAL_AVATAR_DATA_URI_LENGTH =
+  Math.ceil(MAX_BOT_AVATAR_BYTES / 3) * 4 + 'data:image/jpeg;base64,'.length;
+
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const JPEG_SIGNATURE = Buffer.from([0xff, 0xd8, 0xff]);
+const GIF87A_SIGNATURE = Buffer.from('GIF87a', 'ascii');
+const GIF89A_SIGNATURE = Buffer.from('GIF89a', 'ascii');
 
 export async function getGuildBotProfile(
   client: Client,
@@ -70,13 +77,42 @@ export function parseGuildBotProfileUpdate(value: unknown): GuildBotProfileUpdat
 
   const avatar = value.avatar;
   if (avatar === null) return { nickname, avatar: null };
-  if (typeof avatar !== 'string' || avatar.length > MAX_INTERNAL_AVATAR_DATA_URI_LENGTH)
+  if (typeof avatar !== 'string' || avatar.length > MAX_INTERNAL_AVATAR_DATA_URI_LENGTH) {
     return null;
-  if (!AVATAR_DATA_URI_PREFIXES.some((prefix) => avatar.startsWith(prefix))) return null;
+  }
 
-  const encoded = avatar.slice(avatar.indexOf(',') + 1);
-  if (!encoded || !/^[A-Za-z0-9+/]+={0,2}$/u.test(encoded)) return null;
+  const prefix = AVATAR_DATA_URI_PREFIXES.find((candidate) => avatar.startsWith(candidate));
+  if (!prefix) return null;
+
+  const encoded = avatar.slice(prefix.length);
+  if (
+    !encoded ||
+    encoded.length % 4 !== 0 ||
+    !/^[A-Za-z0-9+/]+={0,2}$/u.test(encoded)
+  ) {
+    return null;
+  }
+
+  const bytes = Buffer.from(encoded, 'base64');
+  if (bytes.length === 0 || bytes.length > MAX_BOT_AVATAR_BYTES) return null;
+  if (!matchesAvatarSignature(prefix, bytes)) return null;
+
   return { nickname, avatar };
+}
+
+function matchesAvatarSignature(
+  prefix: (typeof AVATAR_DATA_URI_PREFIXES)[number],
+  bytes: Buffer,
+): boolean {
+  if (prefix === 'data:image/png;base64,') return startsWithSignature(bytes, PNG_SIGNATURE);
+  if (prefix === 'data:image/jpeg;base64,') return startsWithSignature(bytes, JPEG_SIGNATURE);
+  return (
+    startsWithSignature(bytes, GIF87A_SIGNATURE) || startsWithSignature(bytes, GIF89A_SIGNATURE)
+  );
+}
+
+function startsWithSignature(bytes: Buffer, signature: Buffer): boolean {
+  return bytes.length >= signature.length && bytes.subarray(0, signature.length).equals(signature);
 }
 
 function parseDiscordBotGuildMember(value: unknown): DiscordBotGuildMember | null {

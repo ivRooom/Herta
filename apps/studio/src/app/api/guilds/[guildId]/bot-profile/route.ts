@@ -93,8 +93,8 @@ export async function PATCH(
 
   try {
     const profile = await updateDiscordBotGuildProfile(guildId, { nickname, avatar });
-    void prisma.auditLog
-      .create({
+    try {
+      await prisma.auditLog.create({
         data: {
           guildId,
           actorId: session.user.id,
@@ -107,13 +107,20 @@ export async function PATCH(
           },
           metadata: { operationSource: 'studio' },
         },
-      })
-      .catch((error) =>
-        console.error('Botプロフィール更新の監査ログ保存に失敗しました', {
-          guildId,
-          error: error instanceof Error ? error.name : 'UnknownError',
-        }),
+      });
+    } catch (error) {
+      console.error('Botプロフィール更新の監査ログ保存に失敗しました', {
+        guildId,
+        error: error instanceof Error ? error.name : 'UnknownError',
+      });
+      return NextResponse.json(
+        {
+          profile,
+          error: 'Discordへの変更は反映されましたが、監査ログを保存できませんでした',
+        },
+        { status: 500 },
       );
+    }
     return NextResponse.json({ profile });
   } catch (error) {
     return botProfileErrorResponse(error);

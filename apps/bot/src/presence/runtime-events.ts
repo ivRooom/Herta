@@ -1,10 +1,14 @@
-import { Redis } from 'ioredis';
+import { getPrismaClient } from '@herta/db';
 import type { Logger } from '@herta/logger';
 import {
   BOT_PRESENCE_EVENT_CHANNEL,
   parseBotPresenceUpdateEvent,
   type BotPresenceConfig,
 } from '@herta/shared';
+import { Redis } from 'ioredis';
+import { loadStoredBotPresence } from './store.js';
+
+type BotPresenceLoader = () => Promise<BotPresenceConfig>;
 
 export class BotPresenceEventSubscriber {
   private redis?: Redis;
@@ -13,6 +17,8 @@ export class BotPresenceEventSubscriber {
   constructor(
     private readonly onPresenceChanged: (config: BotPresenceConfig) => void,
     private readonly logger: Logger,
+    private readonly loadCurrentPresence: BotPresenceLoader = () =>
+      loadStoredBotPresence(getPrismaClient()),
   ) {}
 
   async start(redisUrl: string): Promise<void> {
@@ -39,6 +45,18 @@ export class BotPresenceEventSubscriber {
 
     await redis.connect();
     await redis.subscribe(BOT_PRESENCE_EVENT_CHANNEL);
+    await this.refreshStoredPresence();
+  }
+
+  async refreshStoredPresence(): Promise<void> {
+    try {
+      this.onPresenceChanged(await this.loadCurrentPresence());
+    } catch (error) {
+      this.logger.warn(
+        { err: error },
+        'Redis購読後のBot Presence設定再読み込みに失敗しました',
+      );
+    }
   }
 
   handleMessage(payload: string): void {

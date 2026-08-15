@@ -60,4 +60,41 @@ describe('BotPresenceEventSubscriber', () => {
     expect(onPresenceChanged).toHaveBeenCalledTimes(1);
     expect(logger.warn).toHaveBeenCalled();
   });
+
+  it('Redis購読後にDB正本を再読み込みしてPresenceを同期する', async () => {
+    const onPresenceChanged = vi.fn();
+    const loadCurrentPresence = vi.fn().mockResolvedValue({
+      status: 'dnd',
+      activityType: 'competing',
+      activityText: 'Latest from DB',
+    });
+    const subscriber = new BotPresenceEventSubscriber(
+      onPresenceChanged,
+      createLogger(),
+      loadCurrentPresence,
+    );
+
+    await subscriber.refreshStoredPresence();
+
+    expect(loadCurrentPresence).toHaveBeenCalledOnce();
+    expect(onPresenceChanged).toHaveBeenCalledWith({
+      status: 'dnd',
+      activityType: 'competing',
+      activityText: 'Latest from DB',
+    });
+  });
+
+  it('DB正本の再読み込み失敗は購読処理を落とさず警告に留める', async () => {
+    const logger = createLogger();
+    const onPresenceChanged = vi.fn();
+    const subscriber = new BotPresenceEventSubscriber(
+      onPresenceChanged,
+      logger,
+      vi.fn().mockRejectedValue(new Error('database unavailable')),
+    );
+
+    await expect(subscriber.refreshStoredPresence()).resolves.toBeUndefined();
+    expect(onPresenceChanged).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalled();
+  });
 });
