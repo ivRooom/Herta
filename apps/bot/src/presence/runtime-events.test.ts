@@ -12,80 +12,97 @@ function createLogger(): Logger {
 }
 
 describe('BotPresenceEventSubscriber', () => {
-  it('正しいPresence更新イベントを適用する', () => {
+  it('正しいPresence更新イベントを受信するとDB正本を適用する', async () => {
     const onPresenceChanged = vi.fn();
-    const subscriber = new BotPresenceEventSubscriber(onPresenceChanged, createLogger());
+    const loadCurrentPresence = vi.fn().mockResolvedValue({
+      status: 'idle',
+      activityType: 'watching',
+      activityText: 'Latest from DB',
+    });
+    const subscriber = new BotPresenceEventSubscriber(
+      onPresenceChanged,
+      createLogger(),
+      loadCurrentPresence,
+    );
 
-    subscriber.handleMessage(
+    await subscriber.handleMessage(
       JSON.stringify({
         version: 1,
         occurredAt: '2026-08-15T13:00:00.000Z',
         config: {
-          status: 'idle',
-          activityType: 'watching',
-          activityText: 'Herta Studio',
+          status: 'online',
+          activityType: 'playing',
+          activityText: 'Potentially stale event payload',
         },
       }),
     );
 
-    expect(onPresenceChanged).toHaveBeenCalledOnce();
+    expect(loadCurrentPresence).toHaveBeenCalledOnce();
     expect(onPresenceChanged).toHaveBeenCalledWith({
       status: 'idle',
       activityType: 'watching',
-      activityText: 'Herta Studio',
+      activityText: 'Latest from DB',
     });
   });
 
-  it('同一timestampの更新も適用する', () => {
+  it('publisherのtimestamp順序に関係なく有効な通知ごとにDB正本を再読込する', async () => {
     const onPresenceChanged = vi.fn();
-    const subscriber = new BotPresenceEventSubscriber(onPresenceChanged, createLogger());
-    const occurredAt = '2026-08-15T13:00:00.000Z';
-
-    subscriber.handleMessage(
-      JSON.stringify({
-        version: 1,
-        occurredAt,
-        config: { status: 'online', activityType: 'playing', activityText: 'First' },
-      }),
+    const loadCurrentPresence = vi
+      .fn()
+      .mockResolvedValueOnce({
+        status: 'online',
+        activityType: 'playing',
+        activityText: 'First DB state',
+      })
+      .mockResolvedValueOnce({
+        status: 'dnd',
+        activityType: 'competing',
+        activityText: 'Latest DB state',
+      });
+    const subscriber = new BotPresenceEventSubscriber(
+      onPresenceChanged,
+      createLogger(),
+      loadCurrentPresence,
     );
-    subscriber.handleMessage(
-      JSON.stringify({
-        version: 1,
-        occurredAt,
-        config: { status: 'idle', activityType: 'watching', activityText: 'Second' },
-      }),
-    );
 
-    expect(onPresenceChanged).toHaveBeenCalledTimes(2);
-    expect(onPresenceChanged).toHaveBeenLastCalledWith({
-      status: 'idle',
-      activityType: 'watching',
-      activityText: 'Second',
-    });
-  });
-
-  it('不正イベントと古いイベントを適用しない', () => {
-    const logger = createLogger();
-    const onPresenceChanged = vi.fn();
-    const subscriber = new BotPresenceEventSubscriber(onPresenceChanged, logger);
-
-    subscriber.handleMessage('{');
-    subscriber.handleMessage(
+    await subscriber.handleMessage(
       JSON.stringify({
         version: 1,
         occurredAt: '2026-08-15T13:00:01.000Z',
-        config: { status: 'online', activityType: 'playing', activityText: 'Latest' },
+        config: { status: 'online', activityType: 'playing', activityText: 'Newer clock' },
       }),
     );
-    subscriber.handleMessage(
+    await subscriber.handleMessage(
       JSON.stringify({
         version: 1,
-        occurredAt: '2026-08-15T13:00:00.000Z',
-        config: { status: 'dnd', activityType: 'playing', activityText: 'Old' },
+        occurredAt: '2026-08-15T12:59:59.000Z',
+        config: { status: 'idle', activityType: 'watching', activityText: 'Older clock' },
       }),
     );
 
-    expect(onPresenceChanged).toHaveBeenCalledTimes(1);
+    expect(loadCurrentPresence).toHaveBeenCalledTimes(2);
+    expect(onPresenceChanged).toHaveBeenCalledTimes(2);
+    expect(onPresenceChanged).toHaveBeenLastCalledWith({
+      status: 'dnd',
+      activityType: 'competing',
+      activityText: 'Latest DB state',
+    });
+  });
+
+  it('不正イベントはDB正本を読み込まず破棄する', async () => {
+    const logger = createLogger();
+    const onPresenceChanged = vi.fn();
+    const loadCurrentPresence = vi.fn();
+    const subscriber = new BotPresenceEventSubscriber(
+      onPresenceChanged,
+      logger,
+      loadCurrentPresence,
+    );
+
+    await subscriber.handleMessage('{');
+
+    expect(loadCurrentPresence).not.toHaveBeenCalled();
+    expect(onPresenceChanged).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalled();
   });
 
