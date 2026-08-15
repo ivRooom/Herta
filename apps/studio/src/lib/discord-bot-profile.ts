@@ -64,7 +64,12 @@ async function requestBotGuildProfile(
         ...init.headers,
       },
       cache: 'no-store',
-      signal: AbortSignal.timeout(resolveBotHealthRequestTimeoutMs() + 5_000),
+      // GETは読み取りなのでタイムアウト可能。PATCHはBot側のDiscord mutation完了を待ち、
+      // 「失敗応答の後で実変更だけ完了する」監査不能な状態を作らない。
+      signal:
+        init.method === 'PATCH'
+          ? undefined
+          : AbortSignal.timeout(resolveBotHealthRequestTimeoutMs() + 5_000),
     });
   } catch {
     throw new DiscordBotProfileError(502);
