@@ -1,7 +1,11 @@
 import {
+  getCommunitySeasonSnapshotMetadata,
+  listCommunitySeasonSnapshotAwards,
   queryCommunityLeaderboardData,
   queryCommunityLeaderboardRank,
   type CommunityLeaderboardStorageMetric,
+  type CommunitySeasonSnapshotAward,
+  type CommunitySeasonSnapshotMetadata,
 } from '@herta/db';
 import {
   communityActivityPeriodStart,
@@ -27,6 +31,8 @@ export interface CommunityLeaderboardSnapshot {
   participants: number;
   seasonKey: string | null;
   viewerRank: CommunityLeaderboardEntry | null;
+  seasonSnapshot: CommunitySeasonSnapshotMetadata | null;
+  seasonAwards: CommunitySeasonSnapshotAward[];
 }
 
 export async function getCommunityLeaderboardSnapshot(
@@ -47,7 +53,7 @@ export async function getCommunityLeaderboardSnapshot(
     ...(seasonKey ? { seasonKey } : {}),
   };
 
-  const [data, viewerRank] = await Promise.all([
+  const [data, viewerRank, seasonSnapshot, seasonAwards] = await Promise.all([
     queryCommunityLeaderboardData(prisma, { ...storageQuery, limit: query.limit }),
     options.viewerUserId
       ? queryCommunityLeaderboardRank(prisma, {
@@ -55,6 +61,8 @@ export async function getCommunityLeaderboardSnapshot(
           userId: options.viewerUserId,
         })
       : Promise.resolve(null),
+    seasonKey ? getCommunitySeasonSnapshotMetadata(prisma, guildId, seasonKey) : Promise.resolve(null),
+    seasonKey ? listCommunitySeasonSnapshotAwards(prisma, guildId, seasonKey) : Promise.resolve([]),
   ]);
 
   return {
@@ -69,6 +77,8 @@ export async function getCommunityLeaderboardSnapshot(
     seasonKey,
     viewerRank: viewerRank ? mapLeaderboardEntry(query.metric, viewerRank) : null,
     entries: data.entries.map((entry) => mapLeaderboardEntry(query.metric, entry)),
+    seasonSnapshot,
+    seasonAwards,
   };
 }
 
