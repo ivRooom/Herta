@@ -152,10 +152,10 @@ export async function finalizeCommunitySeasonSnapshot(
   }
 
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`
+    await tx.$queryRaw<Array<{ lockResult: string }>>`
       SELECT pg_advisory_xact_lock(
         hashtextextended(${`community-season-snapshot:${guildId}:${season.key}`}, 0)
-      )
+      )::text AS "lockResult"
     `;
 
     const existingRows = await tx.$queryRaw<SnapshotMetadataRow[]>`
