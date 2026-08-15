@@ -1,0 +1,79 @@
+name: Temporary Prisma Studio Preferences Patch
+
+on:
+  push:
+    branches:
+      - feature/studio-server-context-bot-profile
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/studio-server-context-bot-profile
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Patch Prisma schema
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('packages/db/prisma/schema.prisma')
+          content = path.read_text()
+          old = '''  memberships GuildMember[]
+
+  @@map("users")
+}
+
+model GuildMember {'''
+          new = '''  memberships     GuildMember[]
+  studioPreference StudioUserPreference?
+
+  @@map("users")
+}
+
+model StudioUserPreference {
+  userId         String   @id @map("user_id")
+  defaultGuildId String?  @map("default_guild_id")
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("studio_user_preferences")
+}
+
+model BotPresenceSetting {
+  id           String   @id @default("default")
+  status       String   @default("online")
+  activityType String   @default("playing") @map("activity_type")
+  activityText String   @default("Herta") @map("activity_text")
+  updatedBy    String?  @map("updated_by")
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("bot_presence_settings")
+}
+
+model GuildMember {'''
+          if old not in content:
+              raise RuntimeError('User model insertion point not found')
+          path.write_text(content.replace(old, new, 1))
+      - name: Validate Prisma schema
+        run: |
+          pnpm --filter @herta/db exec prisma format
+          pnpm db:generate
+      - name: Commit schema and remove temporary workflow
+        run: |
+          git rm .github/workflows/tmp-prisma-studio-preferences.yml
+          git config user.name "mizzz-ivr"
+          git config user.email "86910433+mizzz-ivr@users.noreply.github.com"
+          git add packages/db/prisma/schema.prisma
+          git commit -m "Studio設定とBot PresenceのPrismaモデルを追加"
+          git push origin HEAD:feature/studio-server-context-bot-profile
