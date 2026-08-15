@@ -13,6 +13,7 @@ type BotPresenceLoader = () => Promise<BotPresenceConfig>;
 export class BotPresenceEventSubscriber {
   private redis?: Redis;
   private refreshQueue: Promise<void> = Promise.resolve();
+  private subscriptionEstablished = false;
 
   constructor(
     private readonly onPresenceChanged: (config: BotPresenceConfig) => void,
@@ -31,7 +32,12 @@ export class BotPresenceEventSubscriber {
     });
     this.redis = redis;
 
-    redis.on('ready', () => this.logger.info('Bot PresenceイベントのRedis購読を開始しました'));
+    redis.on('ready', () => {
+      this.logger.info('Bot PresenceイベントのRedis購読を開始しました');
+      if (this.subscriptionEstablished) {
+        void this.enqueueStoredPresenceRefresh();
+      }
+    });
     redis.on('reconnecting', () =>
       this.logger.warn('Bot PresenceイベントのRedis再接続を試行しています'),
     );
@@ -46,9 +52,11 @@ export class BotPresenceEventSubscriber {
     try {
       await redis.connect();
       await redis.subscribe(BOT_PRESENCE_EVENT_CHANNEL);
+      this.subscriptionEstablished = true;
       await this.enqueueStoredPresenceRefresh();
     } catch (error) {
       this.redis = undefined;
+      this.subscriptionEstablished = false;
       redis.disconnect();
       throw error;
     }
@@ -77,6 +85,7 @@ export class BotPresenceEventSubscriber {
   async stop(): Promise<void> {
     const redis = this.redis;
     this.redis = undefined;
+    this.subscriptionEstablished = false;
     if (!redis) return;
     await redis.unsubscribe(BOT_PRESENCE_EVENT_CHANNEL).catch(() => undefined);
     await redis.quit().catch(() => redis.disconnect());
