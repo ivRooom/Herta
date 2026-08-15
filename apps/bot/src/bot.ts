@@ -15,10 +15,8 @@ import {
 } from '@herta/db';
 import { getEnabledPlugins } from '@herta/plugin-catalog';
 import {
-  BOT_PRESENCE_CONFIG_KEY,
   DEFAULT_BOT_PRESENCE_CONFIG,
   HERTA_WORKER_HEARTBEAT_KEY,
-  normalizeBotPresenceConfig,
   type BotPresenceConfig,
   type XpRoleSweepEvent,
 } from '@herta/shared';
@@ -30,6 +28,7 @@ import { GuildPluginLoader } from './plugins/loader.js';
 import { createDefaultPluginRegistry } from './plugins/registry.js';
 import { PluginRuntimeEventSubscriber } from './plugins/runtime-events.js';
 import { BotPresenceEventSubscriber } from './presence/runtime-events.js';
+import { loadStoredBotPresence } from './presence/store.js';
 import { XpRoleReconciliationSubscriber } from './plugins/xp-role-reconciliation-events.js';
 import { XpRoleSweepSubscriber } from './plugins/xp-role-sweep-events.js';
 import { sweepGuildXpRewardRoles } from './plugins/xp-role-sweep.js';
@@ -627,6 +626,11 @@ export class HertaBot {
     }
     await this.client.login(token);
     this.applyBotPresence(DEFAULT_BOT_PRESENCE_CONFIG);
+    try {
+      this.applyBotPresence(await loadStoredBotPresence(this.prisma));
+    } catch (error) {
+      this.logger.warn({ err: error }, '保存済みBot Presence設定のDB読み込みに失敗しました');
+    }
 
     this.discordHealth.observe(this.client);
     this.gatewayObservationTimer = setInterval(() => {
@@ -652,15 +656,6 @@ export class HertaBot {
       await this.healthRedis.connect();
     } catch {
       this.logger.warn('ヘルスチェック用Redisの初期接続に失敗しました');
-    }
-
-    try {
-      const storedPresence = await this.healthRedis.get(BOT_PRESENCE_CONFIG_KEY);
-      if (storedPresence) {
-        this.applyBotPresence(normalizeBotPresenceConfig(JSON.parse(storedPresence) as unknown));
-      }
-    } catch (error) {
-      this.logger.warn({ err: error }, '保存済みBot Presence設定の読み込みに失敗しました');
     }
 
     try {

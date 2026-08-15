@@ -10,11 +10,7 @@ import { auth } from '@/auth';
 
 export const dynamic = 'force-dynamic';
 
-export default async function BotProfilePage({
-  params,
-}: {
-  params: Promise<{ guildId: string }>;
-}) {
+export default async function BotProfilePage({ params }: { params: Promise<{ guildId: string }> }) {
   const session = await auth();
   const accessToken = await getDiscordAccessToken();
   const { guildId } = await params;
@@ -48,8 +44,8 @@ export default async function BotProfilePage({
           <div>
             <h2 className="font-semibold">設定範囲を分離しています</h2>
             <p className="mt-1 text-sm leading-6 text-muted">
-              NicknameとAvatarはこのサーバーだけに反映されます。Online / Idle / DNDやActivityはDiscord
-              Gateway上のBot全体設定なので、Herta管理者だけが変更できます。
+              NicknameとAvatarはこのサーバーだけに反映されます。Online / Idle /
+              DNDやActivityはDiscord Gateway上のBot全体設定なので、Herta管理者だけが変更できます。
             </p>
           </div>
         </div>
@@ -80,8 +76,12 @@ function PageHeader({ guildId, guildName }: { guildId: string; guildName: string
             <Bot className="h-6 w-6" aria-hidden="true" />
           </span>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">{guildName}</p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">Botプロフィール</h1>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+              {guildName}
+            </p>
+            <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
+              Botプロフィール
+            </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
               Discord上で見えるHertaのプロフィールとPresenceをStudioから安全に管理します。
             </p>

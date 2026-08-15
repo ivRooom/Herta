@@ -57,6 +57,7 @@ export function GuildContextNav({
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [preferenceMessage, setPreferenceMessage] = useState<string | null>(null);
+  const [preferenceSaving, setPreferenceSaving] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuId = `guild-context-menu-${variant}`;
@@ -106,17 +107,23 @@ export function GuildContextNav({
     if (routeContext) router.push(getGuildSwitchHref(guild.id, routeContext));
   }
 
-  function handleDefaultToggle() {
-    if (!selectedGuild) return;
+  async function handleDefaultToggle() {
+    if (!selectedGuild || preferenceSaving) return;
     const nextDefaultGuildId = defaultGuildId === selectedGuild.id ? null : selectedGuild.id;
-    const saved = setDefaultGuild(nextDefaultGuildId);
-    setPreferenceMessage(
-      saved
-        ? nextDefaultGuildId
-          ? 'このサーバーをデフォルトに設定しました'
-          : 'デフォルトサーバーを解除しました'
-        : 'ブラウザ設定へ保存できませんでした',
-    );
+    setPreferenceSaving(true);
+    setPreferenceMessage(null);
+    try {
+      const saved = await setDefaultGuild(nextDefaultGuildId);
+      setPreferenceMessage(
+        saved
+          ? nextDefaultGuildId
+            ? 'このサーバーをデフォルトに設定しました'
+            : 'デフォルトサーバーを解除しました'
+          : 'デフォルトサーバーを保存できませんでした',
+      );
+    } finally {
+      setPreferenceSaving(false);
+    }
   }
 
   return (
@@ -150,7 +157,10 @@ export function GuildContextNav({
             {selectedGuild?.name ?? (guilds.length > 0 ? 'サーバーを選択' : 'サーバー')}
           </span>
           {selectedGuild && defaultGuildId === selectedGuild.id ? (
-            <Star className="h-3 w-3 shrink-0 fill-current text-amber-400" aria-label="デフォルト" />
+            <Star
+              className="h-3 w-3 shrink-0 fill-current text-amber-400"
+              aria-label="デフォルト"
+            />
           ) : null}
           <ChevronDown
             className={`h-3.5 w-3.5 shrink-0 transition-transform ${menuOpen ? 'rotate-180' : ''}`}
@@ -175,7 +185,11 @@ export function GuildContextNav({
                 <div className="mt-2 rounded-xl bg-primary/5 p-2.5">
                   <div className="flex items-center gap-2.5">
                     <span className="shrink-0 overflow-hidden rounded-xl" aria-hidden="true">
-                      <GuildAvatar name={selectedGuild.name} iconUrl={selectedGuild.iconUrl} size={36} />
+                      <GuildAvatar
+                        name={selectedGuild.name}
+                        iconUrl={selectedGuild.iconUrl}
+                        size={36}
+                      />
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold">{selectedGuild.name}</p>
@@ -186,7 +200,8 @@ export function GuildContextNav({
                   <button
                     type="button"
                     aria-pressed={defaultGuildId === selectedGuild.id}
-                    onClick={handleDefaultToggle}
+                    onClick={() => void handleDefaultToggle()}
+                    disabled={preferenceSaving}
                     className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-2 text-xs font-medium text-muted transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   >
                     <Star
@@ -368,7 +383,10 @@ function GuildListState({
             <span className="flex items-center gap-1.5">
               <span className="block truncate font-medium">{guild.name}</span>
               {defaultGuildId === guild.id ? (
-                <Star className="h-3 w-3 shrink-0 fill-current text-amber-400" aria-label="デフォルト" />
+                <Star
+                  className="h-3 w-3 shrink-0 fill-current text-amber-400"
+                  aria-label="デフォルト"
+                />
               ) : null}
             </span>
             <span className="block truncate text-[10px] text-muted">{guild.id}</span>
@@ -416,7 +434,9 @@ function QuickNavLink({
       href={href}
       aria-current={active ? 'page' : undefined}
       className={`inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors ${
-        active ? 'bg-primary/15 text-primary' : 'text-muted hover:bg-background hover:text-foreground'
+        active
+          ? 'bg-primary/15 text-primary'
+          : 'text-muted hover:bg-background hover:text-foreground'
       }`}
     >
       <Icon className="h-3.5 w-3.5" aria-hidden="true" />

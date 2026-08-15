@@ -3,10 +3,7 @@ import { auth } from '@/auth';
 import { getManageableGuild } from '@/lib/guilds';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
 import { getDiscordAccessToken } from '@/lib/session';
-import {
-  getDefaultStudioGuildId,
-  setDefaultStudioGuildId,
-} from '@/lib/studio-user-preferences';
+import { getDefaultStudioGuildId, setDefaultStudioGuildId } from '@/lib/studio-user-preferences';
 import { normalizeOptionalGuildId } from '@/lib/studio-server-preferences';
 
 export const dynamic = 'force-dynamic';
@@ -49,7 +46,8 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'defaultGuildId が必要です' }, { status: 400 });
   }
 
-  const defaultGuildId = body.defaultGuildId === null ? null : normalizeOptionalGuildId(body.defaultGuildId);
+  const defaultGuildId =
+    body.defaultGuildId === null ? null : normalizeOptionalGuildId(body.defaultGuildId);
   if (body.defaultGuildId !== null && !defaultGuildId) {
     return NextResponse.json({ error: 'Server IDが不正です' }, { status: 400 });
   }
@@ -68,7 +66,10 @@ export async function PATCH(request: Request) {
         );
       }
     } catch {
-      return NextResponse.json({ error: 'Discordのサーバー情報を確認できませんでした' }, { status: 502 });
+      return NextResponse.json(
+        { error: 'Discordのサーバー情報を確認できませんでした' },
+        { status: 502 },
+      );
     }
   }
 
@@ -80,7 +81,10 @@ export async function PATCH(request: Request) {
       userId: session.user.id,
       error: error instanceof Error ? error.name : 'UnknownError',
     });
-    return NextResponse.json({ error: 'デフォルトサーバーを保存できませんでした' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'デフォルトサーバーを保存できませんでした' },
+      { status: 500 },
+    );
   }
 }
 

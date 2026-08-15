@@ -44,8 +44,7 @@ export async function PATCH(request: Request) {
   if (!config) {
     return NextResponse.json(
       {
-        error:
-          'status / activityType / activityTextを確認してください。Activityは1〜128文字です',
+        error: 'status / activityType / activityTextを確認してください。Activityは1〜128文字です',
       },
       { status: 400 },
     );

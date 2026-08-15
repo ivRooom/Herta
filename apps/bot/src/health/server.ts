@@ -9,10 +9,7 @@ import {
 import type { HealthConfig } from './config.js';
 import type { GuildConfigurationOptions } from './guild-options.js';
 import type { GuildMemberOption } from './guild-members.js';
-import {
-  isAuthorizedInternalApiRequest,
-  isConfiguredInternalApiSecret,
-} from './internal-auth.js';
+import { isAuthorizedInternalApiRequest, isConfiguredInternalApiSecret } from './internal-auth.js';
 import { createUnknownHealthResponse } from './service.js';
 import type { HertaHealthResponse, PublicServiceStatus } from './types.js';
 
@@ -159,12 +156,7 @@ export class HealthHttpServer {
 
     const guildBotProfileMatch = /^\/internal\/guilds\/(\d+)\/bot-profile$/u.exec(pathname);
     if (guildBotProfileMatch) {
-      await this.handleGuildBotProfileRequest(
-        request,
-        response,
-        method,
-        guildBotProfileMatch[1]!,
-      );
+      await this.handleGuildBotProfileRequest(request, response, method, guildBotProfileMatch[1]!);
       return;
     }
 
@@ -286,7 +278,10 @@ export class HealthHttpServer {
         }
         this.sendJson(response, 200, { profile });
       } catch (error) {
-        this.options.logger.warn({ err: error, guildId }, 'Bot Guildプロフィール取得に失敗しました');
+        this.options.logger.warn(
+          { err: error, guildId },
+          'Bot Guildプロフィール取得に失敗しました',
+        );
         this.sendJson(response, 503, { status: 'unavailable' });
       }
       return;
@@ -327,7 +322,10 @@ export class HealthHttpServer {
         }
         this.sendJson(response, 200, { profile });
       } catch (error) {
-        this.options.logger.warn({ err: error, guildId }, 'Bot Guildプロフィール更新に失敗しました');
+        this.options.logger.warn(
+          { err: error, guildId },
+          'Bot Guildプロフィール更新に失敗しました',
+        );
         this.sendJson(response, 503, { status: 'unavailable' });
       }
       return;

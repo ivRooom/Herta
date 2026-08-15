@@ -18,12 +18,18 @@ test('AvatarはDiscord Image Data対応形式と1MiB以下だけ許可する', (
   assert.equal(validateBotAvatarMetadata({ type: 'image/png', size: 100 }), true);
   assert.equal(validateBotAvatarMetadata({ type: 'image/jpeg', size: BOT_AVATAR_MAX_BYTES }), true);
   assert.equal(validateBotAvatarMetadata({ type: 'image/webp', size: 100 }), false);
-  assert.equal(validateBotAvatarMetadata({ type: 'image/png', size: BOT_AVATAR_MAX_BYTES + 1 }), false);
+  assert.equal(
+    validateBotAvatarMetadata({ type: 'image/png', size: BOT_AVATAR_MAX_BYTES + 1 }),
+    false,
+  );
   assert.equal(validateBotAvatarMetadata({ type: 'image/png', size: 0 }), false);
 });
 
 test('Avatar MIMEと実データのsignatureが一致することを検証する', () => {
-  assert.equal(matchesBotAvatarSignature('image/jpeg', Uint8Array.from([0xff, 0xd8, 0xff, 0x00])), true);
+  assert.equal(
+    matchesBotAvatarSignature('image/jpeg', Uint8Array.from([0xff, 0xd8, 0xff, 0x00])),
+    true,
+  );
   assert.equal(
     matchesBotAvatarSignature(
       'image/png',

@@ -22,7 +22,10 @@ test('同一Originの書き込みリクエストだけ許可する', () => {
 });
 
 test('Origin欠落・不正URL・巨大値は拒否する', () => {
-  assert.equal(isSameOriginMutationRequest(new Request('https://studio.example.com/api/test')), false);
+  assert.equal(
+    isSameOriginMutationRequest(new Request('https://studio.example.com/api/test')),
+    false,
+  );
   assert.equal(
     isSameOriginMutationRequest(
       new Request('https://studio.example.com/api/test', { headers: { Origin: 'not a url' } }),

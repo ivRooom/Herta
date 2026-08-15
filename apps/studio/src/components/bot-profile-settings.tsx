@@ -71,7 +71,8 @@ function GuildProfileCard({ guildId, guildName }: { guildId: string; guildName: 
     void fetch(`/api/guilds/${guildId}/bot-profile`, { cache: 'no-store' })
       .then(async (response) => {
         const body = (await response.json()) as { profile?: BotGuildProfile; error?: string };
-        if (!response.ok || !body.profile) throw new Error(body.error || 'Botプロフィールを取得できません');
+        if (!response.ok || !body.profile)
+          throw new Error(body.error || 'Botプロフィールを取得できません');
         if (cancelled) return;
         setProfile(body.profile);
         setNickname(body.profile.nickname ?? '');
@@ -106,7 +107,8 @@ function GuildProfileCard({ guildId, guildName }: { guildId: string; guildName: 
         body: data,
       });
       const body = (await response.json()) as { profile?: BotGuildProfile; error?: string };
-      if (!response.ok || !body.profile) throw new Error(body.error || 'Botプロフィールを保存できません');
+      if (!response.ok || !body.profile)
+        throw new Error(body.error || 'Botプロフィールを保存できません');
 
       setProfile(body.profile);
       setNickname(body.profile.nickname ?? '');
@@ -145,7 +147,9 @@ function GuildProfileCard({ guildId, guildName }: { guildId: string; guildName: 
           <Bot className="h-5 w-5" aria-hidden="true" />
         </span>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Server Profile</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+            Server Profile
+          </p>
           <h2 className="mt-1 text-lg font-semibold">{guildName}での表示</h2>
           <p className="mt-1 text-sm leading-6 text-muted">
             このNicknameとAvatarは選択中のDiscordサーバーだけに反映されます。
@@ -219,7 +223,9 @@ function GuildProfileCard({ guildId, guildName }: { guildId: string; guildName: 
                 className="sr-only"
               />
             </label>
-            <p className="mt-1.5 text-xs text-muted">上限1MiB。画像内容もサーバー側で再検証します。</p>
+            <p className="mt-1.5 text-xs text-muted">
+              上限1MiB。画像内容もサーバー側で再検証します。
+            </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -330,7 +336,9 @@ function GlobalPresenceCard() {
           <Radio className="h-5 w-5" aria-hidden="true" />
         </span>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Global Presence</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
+            Global Presence
+          </p>
           <h2 className="mt-1 text-lg font-semibold">Bot全体のステータス</h2>
           <p className="mt-1 text-sm leading-6 text-muted">
             変更はHertaが参加しているすべてのサーバーに表示されます。
@@ -346,7 +354,7 @@ function GlobalPresenceCard() {
         <form onSubmit={handleSubmit} className="mt-6 space-y-5">
           {!persistenceAvailable ? (
             <p className="rounded-xl border border-amber-400/30 bg-amber-400/5 p-3 text-xs leading-5 text-amber-200">
-              Redisへ接続できないため現在はデフォルト表示です。接続復旧後に保存してください。
+              設定データベースへ接続できないため現在はデフォルト表示です。接続復旧後に保存してください。
             </p>
           ) : null}
 
@@ -385,7 +393,10 @@ function GlobalPresenceCard() {
               id="bot-activity-text"
               value={config.activityText}
               onChange={(event) =>
-                setConfig((current) => ({ ...current, activityText: event.target.value.slice(0, 128) }))
+                setConfig((current) => ({
+                  ...current,
+                  activityText: event.target.value.slice(0, 128),
+                }))
               }
               required
               maxLength={128}
@@ -452,12 +463,18 @@ function Feedback({ message, error }: { message: string | null; error: string | 
   return (
     <>
       {error ? (
-        <p className="rounded-xl border border-red-400/30 bg-red-400/5 p-3 text-sm text-red-300" role="alert">
+        <p
+          className="rounded-xl border border-red-400/30 bg-red-400/5 p-3 text-sm text-red-300"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
       {message ? (
-        <p className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 text-sm text-emerald-300" role="status">
+        <p
+          className="rounded-xl border border-emerald-400/20 bg-emerald-400/5 p-3 text-sm text-emerald-300"
+          role="status"
+        >
           {message}
         </p>
       ) : null}

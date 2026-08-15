@@ -83,7 +83,10 @@ export async function PATCH(
 
     const bytes = new Uint8Array(await file.arrayBuffer());
     if (!matchesBotAvatarSignature(file.type, bytes)) {
-      return NextResponse.json({ error: 'Avatarの画像形式とデータが一致しません' }, { status: 400 });
+      return NextResponse.json(
+        { error: 'Avatarの画像形式とデータが一致しません' },
+        { status: 400 },
+      );
     }
     avatar = `data:${file.type};base64,${Buffer.from(bytes).toString('base64')}`;
   }

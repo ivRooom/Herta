@@ -33,9 +33,7 @@ export function parseStudioServerPreferences(value: string | null): StudioServer
   }
 }
 
-export function serializeStudioServerPreferences(
-  preferences: StudioServerPreferences,
-): string {
+export function serializeStudioServerPreferences(preferences: StudioServerPreferences): string {
   return JSON.stringify({
     version: 1,
     defaultGuildId: normalizeOptionalGuildId(preferences.defaultGuildId),

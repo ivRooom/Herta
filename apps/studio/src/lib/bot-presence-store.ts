@@ -71,7 +71,12 @@ export async function saveBotPresence(
 
   try {
     const event = JSON.stringify(createBotPresenceUpdateEvent(config));
-    const publishResult = await redisCommand(redisUrl, 'PUBLISH', BOT_PRESENCE_EVENT_CHANNEL, event);
+    const publishResult = await redisCommand(
+      redisUrl,
+      'PUBLISH',
+      BOT_PRESENCE_EVENT_CHANNEL,
+      event,
+    );
     return {
       persisted: true,
       subscriberCount: typeof publishResult === 'number' ? Math.max(0, publishResult) : 0,

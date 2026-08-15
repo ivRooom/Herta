@@ -70,7 +70,8 @@ export function parseGuildBotProfileUpdate(value: unknown): GuildBotProfileUpdat
 
   const avatar = value.avatar;
   if (avatar === null) return { nickname, avatar: null };
-  if (typeof avatar !== 'string' || avatar.length > MAX_INTERNAL_AVATAR_DATA_URI_LENGTH) return null;
+  if (typeof avatar !== 'string' || avatar.length > MAX_INTERNAL_AVATAR_DATA_URI_LENGTH)
+    return null;
   if (!AVATAR_DATA_URI_PREFIXES.some((prefix) => avatar.startsWith(prefix))) return null;
 
   const encoded = avatar.slice(avatar.indexOf(',') + 1);
