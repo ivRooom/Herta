@@ -1,0 +1,28 @@
+name: Temporary Format Preview
+
+on:
+  push:
+    branches:
+      - feature/plugin-management-console-ux
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format changed Studio files
+        run: >-
+          pnpm exec prettier --write
+          apps/studio/src/app/dashboard/page.tsx
+          apps/studio/src/lib/studio-navigation.test.ts
+      - name: Print formatting diff
+        run: git --no-pager diff -- apps/studio/src/app/dashboard/page.tsx apps/studio/src/lib/studio-navigation.test.ts
