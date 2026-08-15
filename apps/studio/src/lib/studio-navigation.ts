@@ -59,6 +59,14 @@ export const STUDIO_NAV_ITEMS: readonly StudioNavigationItem[] = [
     icon: 'server',
   },
   {
+    id: 'plugins',
+    href: '/dashboard/plugins',
+    label: 'プラグイン管理',
+    description: '管理可能なサーバーのPlugin状態を横断して確認する',
+    keywords: ['plugin', 'plugins', 'plugin manager', 'プラグイン', 'プラグイン管理', '設定'],
+    icon: 'plugin',
+  },
+  {
     id: 'operations',
     href: '/dashboard/operations',
     label: '稼働状況',
