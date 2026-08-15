@@ -61,16 +61,7 @@ export function StudioServerContextProvider({
     let sessionGuildId: string | null = null;
     try {
       sessionGuildId = window.sessionStorage.getItem(STUDIO_SELECTED_SERVER_SESSION_KEY);
-      window.localStorage.setItem(
-        STUDIO_SERVER_PREFERENCES_STORAGE_KEY,
-        serializeStudioServerPreferences({
-          version: 1,
-          defaultGuildId:
-            initialDefaultGuildId && guildById.has(initialDefaultGuildId)
-              ? initialDefaultGuildId
-              : null,
-        }),
-      );
+      // DB由来の初期値はstateだけへ反映し、古いタブからlocalStorageへ再配信しない。
     } catch {
       // Storageが利用できない環境でもDB設定とURL Contextで継続する。
     }

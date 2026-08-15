@@ -160,6 +160,7 @@ export function GuildContextNav({
             <Star
               className="h-3 w-3 shrink-0 fill-current text-amber-400"
               aria-label="デフォルト"
+              role="img"
             />
           ) : null}
           <ChevronDown
@@ -195,7 +196,11 @@ export function GuildContextNav({
                       <p className="truncate text-sm font-semibold">{selectedGuild.name}</p>
                       <p className="mt-0.5 text-[11px] text-muted">ナビゲーションの操作対象</p>
                     </div>
-                    <Check className="h-4 w-4 shrink-0 text-primary" aria-label="選択中" />
+                    <Check
+                      className="h-4 w-4 shrink-0 text-primary"
+                      aria-label="選択中"
+                      role="img"
+                    />
                   </div>
                   <button
                     type="button"
@@ -214,11 +219,13 @@ export function GuildContextNav({
                       ? 'デフォルトサーバーを解除'
                       : 'デフォルトサーバーに設定'}
                   </button>
-                  {preferenceMessage ? (
-                    <p className="mt-2 text-center text-[10px] text-muted" role="status">
-                      {preferenceMessage}
-                    </p>
-                  ) : null}
+                  <p
+                    className="mt-2 text-center text-[10px] text-muted"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {preferenceMessage ?? ''}
+                  </p>
                 </div>
               ) : null}
             </div>
@@ -369,29 +376,30 @@ function GuildListState({
   return (
     <div className="space-y-1" role="list" aria-label="切り替え可能なサーバー">
       {candidates.map((guild) => (
-        <button
-          key={guild.id}
-          type="button"
-          role="listitem"
-          onClick={() => onSelect(guild)}
-          className="flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left text-sm transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          <span className="shrink-0 overflow-hidden rounded-lg" aria-hidden="true">
-            <GuildAvatar name={guild.name} iconUrl={guild.iconUrl} size={30} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="flex items-center gap-1.5">
-              <span className="block truncate font-medium">{guild.name}</span>
-              {defaultGuildId === guild.id ? (
-                <Star
-                  className="h-3 w-3 shrink-0 fill-current text-amber-400"
-                  aria-label="デフォルト"
-                />
-              ) : null}
+        <div key={guild.id} role="listitem">
+          <button
+            type="button"
+            onClick={() => onSelect(guild)}
+            className="flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left text-sm transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="shrink-0 overflow-hidden rounded-lg" aria-hidden="true">
+              <GuildAvatar name={guild.name} iconUrl={guild.iconUrl} size={30} />
             </span>
-            <span className="block truncate text-[10px] text-muted">{guild.id}</span>
-          </span>
-        </button>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-1.5">
+                <span className="block truncate font-medium">{guild.name}</span>
+                {defaultGuildId === guild.id ? (
+                  <Star
+                    className="h-3 w-3 shrink-0 fill-current text-amber-400"
+                    aria-label="デフォルト"
+                    role="img"
+                  />
+                ) : null}
+              </span>
+              <span className="block truncate text-[10px] text-muted">{guild.id}</span>
+            </span>
+          </button>
+        </div>
       ))}
     </div>
   );

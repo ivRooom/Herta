@@ -36,6 +36,34 @@ describe('BotPresenceEventSubscriber', () => {
     });
   });
 
+  it('同一timestampの更新も適用する', () => {
+    const onPresenceChanged = vi.fn();
+    const subscriber = new BotPresenceEventSubscriber(onPresenceChanged, createLogger());
+    const occurredAt = '2026-08-15T13:00:00.000Z';
+
+    subscriber.handleMessage(
+      JSON.stringify({
+        version: 1,
+        occurredAt,
+        config: { status: 'online', activityType: 'playing', activityText: 'First' },
+      }),
+    );
+    subscriber.handleMessage(
+      JSON.stringify({
+        version: 1,
+        occurredAt,
+        config: { status: 'idle', activityType: 'watching', activityText: 'Second' },
+      }),
+    );
+
+    expect(onPresenceChanged).toHaveBeenCalledTimes(2);
+    expect(onPresenceChanged).toHaveBeenLastCalledWith({
+      status: 'idle',
+      activityType: 'watching',
+      activityText: 'Second',
+    });
+  });
+
   it('不正イベントと古いイベントを適用しない', () => {
     const logger = createLogger();
     const onPresenceChanged = vi.fn();

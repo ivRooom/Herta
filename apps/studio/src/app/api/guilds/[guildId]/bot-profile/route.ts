@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { RequestBodyTooLargeError, readRequestBodyBytes } from '@/lib/bounded-request-body';
 import {
   matchesBotAvatarSignature,
   parseBotNickname,
@@ -43,19 +44,22 @@ export async function PATCH(
     return NextResponse.json({ error: '不正なリクエスト元です' }, { status: 403 });
   }
 
-  const contentLength = Number(request.headers.get('content-length') ?? '0');
-  if (Number.isFinite(contentLength) && contentLength > MAX_FORM_BODY_BYTES) {
-    return NextResponse.json({ error: 'アップロードサイズが大きすぎます' }, { status: 413 });
-  }
-
   const { guildId } = await params;
   const authorization = await authorizeGuild(guildId, session.user.id);
   if ('response' in authorization) return authorization.response;
 
   let formData: FormData;
   try {
-    formData = await request.formData();
-  } catch {
+    const contentType = request.headers.get('content-type') ?? '';
+    if (!contentType.toLowerCase().startsWith('multipart/form-data;')) {
+      return NextResponse.json({ error: 'フォームデータが不正です' }, { status: 400 });
+    }
+    const body = await readRequestBodyBytes(request, MAX_FORM_BODY_BYTES);
+    formData = await new Response(body, { headers: { 'Content-Type': contentType } }).formData();
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      return NextResponse.json({ error: 'アップロードサイズが大きすぎます' }, { status: 413 });
+    }
     return NextResponse.json({ error: 'フォームデータが不正です' }, { status: 400 });
   }
 
@@ -92,6 +96,7 @@ export async function PATCH(
   }
 
   try {
+    const previousProfile = await getDiscordBotGuildProfile(guildId);
     const profile = await updateDiscordBotGuildProfile(guildId, { nickname, avatar });
     try {
       await prisma.auditLog.create({
@@ -102,7 +107,7 @@ export async function PATCH(
           targetType: 'bot_member',
           targetId: profile.userId,
           changes: {
-            nicknameChanged: true,
+            nicknameChanged: previousProfile.nickname !== profile.nickname,
             avatarAction,
           },
           metadata: { operationSource: 'studio' },

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Bot, ImageIcon, LoaderCircle, Radio, RotateCcw, Save, ShieldAlert } from 'lucide-react';
 import {
   BOT_ACTIVITY_TYPES,
@@ -65,6 +65,12 @@ function GuildProfileCard({ guildId, guildName }: { guildId: string; guildName: 
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+
+  function clearAvatarInput() {
+    setAvatarFile(null);
+    if (avatarInputRef.current) avatarInputRef.current.value = '';
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -112,7 +118,7 @@ function GuildProfileCard({ guildId, guildName }: { guildId: string; guildName: 
 
       setProfile(body.profile);
       setNickname(body.profile.nickname ?? '');
-      setAvatarFile(null);
+      clearAvatarInput();
       setAvatarReset(false);
       setMessage('DiscordへBotプロフィールを反映しました');
     } catch (saveError) {
@@ -125,15 +131,17 @@ function GuildProfileCard({ guildId, guildName }: { guildId: string; guildName: 
   function handleAvatarChange(file: File | null) {
     setError(null);
     if (!file) {
-      setAvatarFile(null);
+      clearAvatarInput();
       return;
     }
     if (!BOT_AVATAR_MIME_TYPES.includes(file.type as (typeof BOT_AVATAR_MIME_TYPES)[number])) {
       setError('AvatarはPNG / JPEG / GIFを選択してください');
+      clearAvatarInput();
       return;
     }
     if (file.size <= 0 || file.size > BOT_AVATAR_MAX_BYTES) {
       setError('Avatarは1MiB以下にしてください');
+      clearAvatarInput();
       return;
     }
     setAvatarFile(file);
@@ -217,6 +225,7 @@ function GuildProfileCard({ guildId, guildName }: { guildId: string; guildName: 
               {avatarFile ? avatarFile.name : 'PNG / JPEG / GIFを選択'}
               <input
                 id="bot-avatar"
+                ref={avatarInputRef}
                 type="file"
                 accept="image/png,image/jpeg,image/gif"
                 onChange={(event) => handleAvatarChange(event.target.files?.[0] ?? null)}
@@ -232,7 +241,7 @@ function GuildProfileCard({ guildId, guildName }: { guildId: string; guildName: 
             <button
               type="button"
               onClick={() => {
-                setAvatarFile(null);
+                clearAvatarInput();
                 setAvatarReset(true);
               }}
               className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm font-medium text-muted transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -311,15 +320,15 @@ function GlobalPresenceCard() {
       });
       const body = (await response.json()) as {
         config?: BotPresenceConfig;
-        appliedImmediately?: boolean;
+        notificationDelivered?: boolean;
         error?: string;
       };
       if (!response.ok || !body.config) throw new Error(body.error || 'Presenceを保存できません');
       setConfig(body.config);
       setPersistenceAvailable(true);
       setMessage(
-        body.appliedImmediately
-          ? 'Presenceを保存し、起動中のBotへ反映しました'
+        body.notificationDelivered
+          ? 'Presenceを保存し、起動中のBotへ反映通知を送信しました'
           : 'Presenceを保存しました。Bot起動時に自動適用されます',
       );
     } catch (saveError) {

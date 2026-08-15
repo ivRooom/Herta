@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { parseBotPresenceConfig } from '@herta/shared';
 import { auth } from '@/auth';
+import { RequestBodyTooLargeError, readJsonBodyWithLimit } from '@/lib/bounded-request-body';
 import { getStoredBotPresence, saveBotPresence } from '@/lib/bot-presence-store';
 import { prisma } from '@/lib/db';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
@@ -28,15 +29,13 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'Herta管理者権限が必要です' }, { status: 403 });
   }
 
-  const contentLength = Number(request.headers.get('content-length') ?? '0');
-  if (Number.isFinite(contentLength) && contentLength > 4_096) {
-    return NextResponse.json({ error: 'リクエストサイズが大きすぎます' }, { status: 413 });
-  }
-
   let body: unknown;
   try {
-    body = await request.json();
-  } catch {
+    body = await readJsonBodyWithLimit(request, 4_096);
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      return NextResponse.json({ error: 'リクエストサイズが大きすぎます' }, { status: 413 });
+    }
     return NextResponse.json({ error: 'JSON body が不正です' }, { status: 400 });
   }
 
@@ -53,7 +52,6 @@ export async function PATCH(request: Request) {
   try {
     const result = await saveBotPresence(config, session.user.id);
     console.info('Bot Presence設定を更新しました', {
-      actorId: session.user.id,
       status: config.status,
       activityType: config.activityType,
       subscriberCount: result.subscriberCount,
@@ -61,11 +59,10 @@ export async function PATCH(request: Request) {
     return NextResponse.json({
       config,
       persisted: result.persisted,
-      appliedImmediately: result.subscriberCount > 0,
+      notificationDelivered: result.subscriberCount > 0,
     });
   } catch (error) {
     console.error('Bot Presence設定の保存に失敗しました', {
-      actorId: session.user.id,
       error: error instanceof Error ? error.name : 'UnknownError',
     });
     return NextResponse.json({ error: 'Presence設定を保存できませんでした' }, { status: 503 });

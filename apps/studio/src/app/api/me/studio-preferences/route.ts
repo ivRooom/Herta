@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { RequestBodyTooLargeError, readJsonBodyWithLimit } from '@/lib/bounded-request-body';
 import { getManageableGuild } from '@/lib/guilds';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
 import { getDiscordAccessToken } from '@/lib/session';
@@ -16,7 +17,6 @@ export async function GET() {
     return NextResponse.json({ defaultGuildId: await getDefaultStudioGuildId(session.user.id) });
   } catch (error) {
     console.error('Studioユーザー設定の取得に失敗しました', {
-      userId: session.user.id,
       error: error instanceof Error ? error.name : 'UnknownError',
     });
     return NextResponse.json({ error: 'Studio設定を取得できませんでした' }, { status: 500 });
@@ -30,15 +30,13 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: '不正なリクエスト元です' }, { status: 403 });
   }
 
-  const contentLength = Number(request.headers.get('content-length') ?? '0');
-  if (Number.isFinite(contentLength) && contentLength > 1_024) {
-    return NextResponse.json({ error: 'リクエストサイズが大きすぎます' }, { status: 413 });
-  }
-
   let body: unknown;
   try {
-    body = await request.json();
-  } catch {
+    body = await readJsonBodyWithLimit(request, 1_024);
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      return NextResponse.json({ error: 'リクエストサイズが大きすぎます' }, { status: 413 });
+    }
     return NextResponse.json({ error: 'JSON body が不正です' }, { status: 400 });
   }
 
@@ -78,7 +76,6 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ defaultGuildId });
   } catch (error) {
     console.error('Studioデフォルトサーバーの保存に失敗しました', {
-      userId: session.user.id,
       error: error instanceof Error ? error.name : 'UnknownError',
     });
     return NextResponse.json(

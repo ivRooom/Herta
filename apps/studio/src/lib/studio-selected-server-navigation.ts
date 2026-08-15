@@ -43,7 +43,6 @@ const SELECTED_SERVER_NAVIGATION_DEFINITIONS: readonly SelectedServerNavigationD
     label: 'Moderation',
     description: '選択中サーバーのモデレーションを管理する',
     icon: 'moderation',
-    exact: true,
   },
   {
     id: 'selected-server-audit-logs',

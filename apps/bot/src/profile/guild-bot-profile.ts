@@ -85,11 +85,7 @@ export function parseGuildBotProfileUpdate(value: unknown): GuildBotProfileUpdat
   if (!prefix) return null;
 
   const encoded = avatar.slice(prefix.length);
-  if (
-    !encoded ||
-    encoded.length % 4 !== 0 ||
-    !/^[A-Za-z0-9+/]+={0,2}$/u.test(encoded)
-  ) {
+  if (!encoded || encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/u.test(encoded)) {
     return null;
   }
 

@@ -43,19 +43,22 @@ export class BotPresenceEventSubscriber {
       this.handleMessage(payload);
     });
 
-    await redis.connect();
-    await redis.subscribe(BOT_PRESENCE_EVENT_CHANNEL);
-    await this.refreshStoredPresence();
+    try {
+      await redis.connect();
+      await redis.subscribe(BOT_PRESENCE_EVENT_CHANNEL);
+      await this.refreshStoredPresence();
+    } catch (error) {
+      this.redis = undefined;
+      redis.disconnect();
+      throw error;
+    }
   }
 
   async refreshStoredPresence(): Promise<void> {
     try {
       this.onPresenceChanged(await this.loadCurrentPresence());
     } catch (error) {
-      this.logger.warn(
-        { err: error },
-        'Redis購読後のBot Presence設定再読み込みに失敗しました',
-      );
+      this.logger.warn({ err: error }, 'Redis購読後のBot Presence設定再読み込みに失敗しました');
     }
   }
 
@@ -67,7 +70,7 @@ export class BotPresenceEventSubscriber {
     }
 
     const occurredAt = Date.parse(event.occurredAt);
-    if (occurredAt <= this.lastOccurredAt) return;
+    if (occurredAt < this.lastOccurredAt) return;
     this.lastOccurredAt = occurredAt;
 
     try {

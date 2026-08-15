@@ -65,6 +65,9 @@ export async function redisCommand(
       }
     });
     socket.once('error', fail);
+    socket.once('close', () => {
+      fail(new Error('Redis接続が応答前に切断されました'));
+    });
   });
 }
 

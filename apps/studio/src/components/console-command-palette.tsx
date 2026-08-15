@@ -539,7 +539,7 @@ export function ConsoleCommandPaletteController() {
               最近使った項目をクリア
             </button>
           ) : !selectedGuild ? (
-            <span className="ml-auto">サーバー固有機能はGuild画面で表示</span>
+            <span className="ml-auto">Server Switcherでサーバーを選択すると固有機能を表示</span>
           ) : null}
         </div>
       </div>

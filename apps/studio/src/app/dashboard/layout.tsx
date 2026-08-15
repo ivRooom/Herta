@@ -35,7 +35,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
     initialDefaultGuildId = await getDefaultStudioGuildId(session.user.id);
   } catch (error) {
     console.error('Studio default server could not be loaded', {
-      userId: session.user.id,
       error: error instanceof Error ? error.name : 'UnknownError',
     });
   }
@@ -66,7 +65,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
       initialDefaultGuildId = null;
     } catch (error) {
       console.error('Invalid Studio default server could not be cleared', {
-        userId: session.user.id,
         error: error instanceof Error ? error.name : 'UnknownError',
       });
     }
