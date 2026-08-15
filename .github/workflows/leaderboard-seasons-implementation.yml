@@ -1,4 +1,4 @@
-name: Implement Leaderboard Seasons
+name: Polish Leaderboard Seasons
 
 on:
   push:
@@ -11,12 +11,12 @@ permissions:
   contents: write
 
 jobs:
-  implement:
+  polish:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: feature/leaderboard-seasons
+          ref: feature/studio-account-menu
           fetch-depth: 0
 
       - uses: pnpm/action-setup@v6
@@ -28,184 +28,58 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - name: Leaderboard Seasons v1を実装
+      - name: Season表示と入力検証を仕上げる
         shell: bash
         run: |
           set -euo pipefail
+          git checkout feature/leaderboard-seasons
           python3 - <<'PY'
           from pathlib import Path
 
-          def replace_once(path: str, old: str, new: str) -> None:
-              file = Path(path)
-              text = file.read_text()
-              if old not in text:
-                  raise SystemExit(f'marker not found in {path}: {old[:120]!r}')
-              file.write_text(text.replace(old, new, 1))
-
           shared = Path('packages/shared/src/community-leaderboard.ts')
           text = shared.read_text()
-          if not text.startswith("import { getCommunitySeasonWindow"):
-              text = "import { getCommunitySeasonWindow, type CommunitySeasonWindow } from './community-challenge-catalog.js';\n\n" + text
+          text = text.replace("    description: '現在のCommunity Challenge Seasonで獲得したPoint',", "    description: 'Community Challenge Seasonで獲得したPoint',", 1)
+          text = text.replace("  season: 'Current Season',", "  season: 'Season',", 1)
           text = text.replace(
-              "export type CommunityLeaderboardPeriod = 'all' | '7d' | '30d' | 'season';\n",
-              "export type CommunityLeaderboardPeriod = 'all' | '7d' | '30d' | 'season';\nexport type CommunityLeaderboardSeasonStatus = 'current' | 'completed';\n\nexport const COMMUNITY_LEADERBOARD_SEASON_HISTORY_LIMIT = 6;\n",
+              "  const safeLimit = Math.max(1, Math.min(12, Math.trunc(limit)));",
+              "  const normalizedLimit = Number.isFinite(limit)\n    ? Math.trunc(limit)\n    : COMMUNITY_LEADERBOARD_SEASON_HISTORY_LIMIT;\n  const safeLimit = Math.max(1, Math.min(12, normalizedLimit));",
               1,
           )
-          marker = "function jstActivityDate(value: Date): Date {\n"
-          helpers = """export function listCommunityLeaderboardSeasons(\n  now = new Date(),\n  limit = COMMUNITY_LEADERBOARD_SEASON_HISTORY_LIMIT,\n): CommunitySeasonWindow[] {\n  const safeLimit = Math.max(1, Math.min(12, Math.trunc(limit)));\n  const seasons: CommunitySeasonWindow[] = [];\n  let cursor = now;\n\n  for (let index = 0; index < safeLimit; index += 1) {\n    const season = getCommunitySeasonWindow(cursor);\n    if (seasons.some((candidate) => candidate.key === season.key)) break;\n    seasons.push(season);\n    if (season.index <= 1) break;\n    cursor = new Date(season.startsAt.getTime() - 1);\n  }\n\n  return seasons;\n}\n\nexport function resolveCommunityLeaderboardSeason(\n  seasonKey: string | null | undefined,\n  now = new Date(),\n  limit = COMMUNITY_LEADERBOARD_SEASON_HISTORY_LIMIT,\n): CommunitySeasonWindow {\n  const seasons = listCommunityLeaderboardSeasons(now, limit);\n  const current = seasons[0] ?? getCommunitySeasonWindow(now);\n  const normalizedKey = seasonKey?.trim();\n  if (!normalizedKey) return current;\n  return seasons.find((season) => season.key === normalizedKey) ?? current;\n}\n\nexport function communityLeaderboardSeasonStatus(\n  season: CommunitySeasonWindow,\n  now = new Date(),\n): CommunityLeaderboardSeasonStatus {\n  return now.getTime() >= season.endsAt.getTime() ? 'completed' : 'current';\n}\n\nexport function communityLeaderboardSeasonDaysRemaining(\n  season: CommunitySeasonWindow,\n  now = new Date(),\n): number {\n  if (communityLeaderboardSeasonStatus(season, now) === 'completed') return 0;\n  return Math.max(1, Math.ceil((season.endsAt.getTime() - now.getTime()) / 86_400_000));\n}\n\n"""
-          if 'export function listCommunityLeaderboardSeasons' not in text:
-              if marker not in text:
-                  raise SystemExit('shared season helper insertion point not found')
-              text = text.replace(marker, helpers + marker, 1)
           shared.write_text(text)
-
-          core = Path('apps/studio/src/lib/community-leaderboard-core.ts')
-          text = core.read_text()
-          text = text.replace(
-              "  COMMUNITY_LEADERBOARD_METRICS,\n",
-              "  COMMUNITY_LEADERBOARD_METRICS,\n  COMMUNITY_LEADERBOARD_SEASON_HISTORY_LIMIT,\n",
-              1,
-          )
-          text = text.replace(
-              "  communityLeaderboardPeriodLabel,\n",
-              "  communityLeaderboardPeriodLabel,\n  communityLeaderboardSeasonDaysRemaining,\n  communityLeaderboardSeasonStatus,\n",
-              1,
-          )
-          text = text.replace(
-              "  getCommunityLeaderboardDefinition,\n",
-              "  getCommunityLeaderboardDefinition,\n  listCommunityLeaderboardSeasons,\n",
-              1,
-          )
-          text = text.replace(
-              "  normalizeCommunityLeaderboardQuery,\n",
-              "  normalizeCommunityLeaderboardQuery,\n  resolveCommunityLeaderboardSeason,\n",
-              1,
-          )
-          text = text.replace(
-              "  type CommunityLeaderboardQuery,\n",
-              "  type CommunityLeaderboardQuery,\n  type CommunityLeaderboardSeasonStatus,\n  type CommunitySeasonWindow,\n",
-              1,
-          )
-          core.write_text(text)
-
-          leaderboard = Path('apps/studio/src/lib/community-leaderboard.ts')
-          text = leaderboard.read_text()
-          text = text.replace(
-              "import { queryCommunityLeaderboardData, type CommunityLeaderboardStorageMetric } from '@herta/db';",
-              "import {\n  queryCommunityLeaderboardData,\n  queryCommunityLeaderboardRank,\n  type CommunityLeaderboardStorageMetric,\n} from '@herta/db';",
-              1,
-          )
-          text = text.replace(
-              "  seasonKey: string | null;\n}",
-              "  seasonKey: string | null;\n  viewerRank: CommunityLeaderboardEntry | null;\n}",
-              1,
-          )
-          old_fn = """export async function getCommunityLeaderboardSnapshot(\n  guildId: string,\n  query: CommunityLeaderboardQuery,\n  now = new Date(),\n): Promise<CommunityLeaderboardSnapshot> {\n  const storageMetric = storageMetricFor(query.metric);\n  const seasonKey = query.metric === 'season' ? getCommunitySeasonWindow(now).key : null;\n  const start = resolveStart(query, now);\n  const data = await queryCommunityLeaderboardData(prisma, {\n    guildId,\n    metric: storageMetric,\n    limit: query.limit,\n    ...(start ? { start } : {}),\n    ...(seasonKey ? { seasonKey } : {}),\n  });\n\n  return {\n    metric: query.metric,\n    period:\n      query.metric === 'xp' || query.metric === 'level'\n        ? 'all'\n        : query.metric === 'season'\n          ? 'season'\n          : query.period,\n    participants: data.participants,\n    seasonKey,\n    entries: data.entries.map((entry) => ({\n      rank: entry.rank,\n      userId: entry.userId,\n      value: query.metric === 'level' ? communityLeaderboardLevelForXp(entry.value) : entry.value,\n      secondaryValue: query.metric === 'level' ? entry.value : null,\n    })),\n  };\n}\n"""
-          new_fn = """export async function getCommunityLeaderboardSnapshot(\n  guildId: string,\n  query: CommunityLeaderboardQuery,\n  now = new Date(),\n  options: { seasonKey?: string | null; viewerUserId?: string | null } = {},\n): Promise<CommunityLeaderboardSnapshot> {\n  const storageMetric = storageMetricFor(query.metric);\n  const requestedSeasonKey = options.seasonKey?.trim();\n  const seasonKey =\n    query.metric === 'season' ? requestedSeasonKey || getCommunitySeasonWindow(now).key : null;\n  const start = resolveStart(query, now);\n  const storageQuery = {\n    guildId,\n    metric: storageMetric,\n    ...(start ? { start } : {}),\n    ...(seasonKey ? { seasonKey } : {}),\n  };\n\n  const [data, viewerRank] = await Promise.all([\n    queryCommunityLeaderboardData(prisma, { ...storageQuery, limit: query.limit }),\n    options.viewerUserId\n      ? queryCommunityLeaderboardRank(prisma, {\n          ...storageQuery,\n          userId: options.viewerUserId,\n        })\n      : Promise.resolve(null),\n  ]);\n\n  return {\n    metric: query.metric,\n    period:\n      query.metric === 'xp' || query.metric === 'level'\n        ? 'all'\n        : query.metric === 'season'\n          ? 'season'\n          : query.period,\n    participants: data.participants,\n    seasonKey,\n    viewerRank: viewerRank ? mapLeaderboardEntry(query.metric, viewerRank) : null,\n    entries: data.entries.map((entry) => mapLeaderboardEntry(query.metric, entry)),\n  };\n}\n\nfunction mapLeaderboardEntry(\n  metric: CommunityLeaderboardMetric,\n  entry: { rank: number; userId: string; value: number },\n): CommunityLeaderboardEntry {\n  return {\n    rank: entry.rank,\n    userId: entry.userId,\n    value: metric === 'level' ? communityLeaderboardLevelForXp(entry.value) : entry.value,\n    secondaryValue: metric === 'level' ? entry.value : null,\n  };\n}\n"""
-          if old_fn not in text:
-              raise SystemExit('community leaderboard snapshot marker not found')
-          text = text.replace(old_fn, new_fn, 1)
-          leaderboard.write_text(text)
 
           page = Path('apps/studio/src/app/dashboard/guilds/[guildId]/leaderboard/page.tsx')
           text = page.read_text()
           text = text.replace(
-              "  ArrowLeft,\n  Crown,\n",
-              "  ArrowLeft,\n  CalendarDays,\n  Clock3,\n  Crown,\n",
+              '          label="現在の1位"',
+              "          label={query.metric === 'season' ? 'Season 1位' : '現在の1位'}",
               1,
           )
           text = text.replace(
-              "  communityLeaderboardPeriodLabel,\n",
-              "  communityLeaderboardPeriodLabel,\n  communityLeaderboardSeasonDaysRemaining,\n  communityLeaderboardSeasonStatus,\n",
+              "                  candidate.metric === 'season' ? selectedSeason.key : null,",
+              "                  candidate.metric === 'season'\n                    ? query.metric === 'season'\n                      ? selectedSeason.key\n                      : currentSeason.key\n                    : null,",
               1,
           )
           text = text.replace(
-              "  getCommunityLeaderboardDefinition,\n",
-              "  getCommunityLeaderboardDefinition,\n  listCommunityLeaderboardSeasons,\n",
+              '<div className="mt-4 flex gap-2 overflow-x-auto pb-1" aria-label="Season選択">',
+              '<nav className="mt-4 flex gap-2 overflow-x-auto pb-1" aria-label="Season選択">',
               1,
           )
           text = text.replace(
-              "  normalizeCommunityLeaderboardQuery,\n",
-              "  normalizeCommunityLeaderboardQuery,\n  resolveCommunityLeaderboardSeason,\n",
+              "            })}\n          </div>\n\n          <div className=\"mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2\">",
+              "            })}\n          </nav>\n\n          <div className=\"mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2\">",
               1,
           )
-          text = text.replace(
-              "  type CommunityLeaderboardMetric,\n",
-              "  type CommunityLeaderboardMetric,\n  type CommunitySeasonWindow,\n",
-              1,
-          )
-          old_snapshot = """  const definition = getCommunityLeaderboardDefinition(query.metric);\n  const snapshot = await getCommunityLeaderboardSnapshot(guildId, query);\n  const memberMap = await resolveMemberNames(\n"""
-          new_snapshot = """  const definition = getCommunityLeaderboardDefinition(query.metric);\n  const now = new Date();\n  const seasons = listCommunityLeaderboardSeasons(now);\n  const currentSeason = seasons[0]!;\n  const selectedSeason = resolveCommunityLeaderboardSeason(first(queryParams.season), now);\n  const snapshot = await getCommunityLeaderboardSnapshot(guildId, query, now, {\n    seasonKey: query.metric === 'season' ? selectedSeason.key : null,\n    viewerUserId: session.user.id ?? null,\n  });\n  const memberMap = await resolveMemberNames(\n"""
-          if old_snapshot not in text:
-              raise SystemExit('leaderboard page snapshot marker not found')
-          text = text.replace(old_snapshot, new_snapshot, 1)
-          text = text.replace(
-              '<p className="text-xs font-semibold uppercase tracking-[0.18em]">Leaderboard v2</p>',
-              '<p className="text-xs font-semibold uppercase tracking-[0.18em]">Leaderboard v3 · Seasons</p>',
-              1,
-          )
-          text = text.replace(
-              '      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">',
-              '      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">',
-              1,
-          )
-          old_cards = """        <SummaryCard\n          icon={Sparkles}\n          label=\"Season\"\n          value={snapshot.seasonKey ?? '—'}\n          detail={snapshot.seasonKey ? '現在のChallenge Season' : 'Season外カテゴリ'}\n        />\n"""
-          new_cards = """        <SummaryCard\n          icon={Sparkles}\n          label={query.metric === 'season' ? '選択中Season' : 'Current Season'}\n          value={`Season ${query.metric === 'season' ? selectedSeason.index : currentSeason.index}`}\n          detail={formatSeasonDateRange(query.metric === 'season' ? selectedSeason : currentSeason)}\n        />\n        <SummaryCard\n          icon={Medal}\n          label=\"あなたの順位\"\n          value={snapshot.viewerRank ? `#${snapshot.viewerRank.rank}` : '—'}\n          detail={\n            snapshot.viewerRank\n              ? `${formatEntryValue(\n                  query.metric,\n                  snapshot.viewerRank.value,\n                  snapshot.viewerRank.secondaryValue,\n                )} · ${snapshot.viewerRank.participants ?? snapshot.participants}人中`\n              : 'このカテゴリではまだ記録がありません'\n          }\n        />\n"""
-          # CommunityLeaderboardEntry does not expose participants; use snapshot participants only.
-          new_cards = new_cards.replace("snapshot.viewerRank.participants ?? snapshot.participants", "snapshot.participants")
-          if old_cards not in text:
-              raise SystemExit('leaderboard summary card marker not found')
-          text = text.replace(old_cards, new_cards, 1)
-
-          text = text.replace(
-              """                href={leaderboardHref(\n                  guildId,\n                  candidate.metric,\n                  candidate.periods[0]!,\n                  query.limit,\n                )}\n""",
-              """                href={leaderboardHref(\n                  guildId,\n                  candidate.metric,\n                  candidate.periods[0]!,\n                  query.limit,\n                  candidate.metric === 'season' ? selectedSeason.key : null,\n                )}\n""",
-              1,
-          )
-          text = text.replace(
-              "href={leaderboardHref(guildId, query.metric, period, query.limit)}",
-              "href={leaderboardHref(\n                  guildId,\n                  query.metric,\n                  period,\n                  query.limit,\n                  query.metric === 'season' ? selectedSeason.key : null,\n                )}",
-              1,
-          )
-          text = text.replace(
-              "href={leaderboardHref(guildId, query.metric, query.period, limit as 10 | 25)}",
-              "href={leaderboardHref(\n                  guildId,\n                  query.metric,\n                  query.period,\n                  limit as 10 | 25,\n                  query.metric === 'season' ? selectedSeason.key : null,\n                )}",
-              1,
-          )
-
-          category_end = """      </section>\n\n      {snapshot.entries.length > 0 ? (\n"""
-          season_section = """      </section>\n\n      {query.metric === 'season' ? (\n        <section\n          aria-labelledby=\"season-archive-title\"\n          className=\"rounded-2xl border border-border bg-surface p-4 shadow-card sm:p-5\"\n        >\n          <div className=\"flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between\">\n            <div>\n              <p id=\"season-archive-title\" className=\"font-semibold\">\n                Season Archive\n              </p>\n              <p className=\"mt-1 text-xs leading-5 text-muted\">\n                現在と過去5シーズンを切り替えて、Season PointとChampionを比較できます。\n              </p>\n            </div>\n            <span\n              className={`inline-flex w-fit items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold ${\n                communityLeaderboardSeasonStatus(selectedSeason, now) === 'current'\n                  ? 'bg-emerald-500/10 text-emerald-500'\n                  : 'bg-background text-muted'\n              }`}\n            >\n              <Clock3 className=\"h-3.5 w-3.5\" aria-hidden=\"true\" />\n              {communityLeaderboardSeasonStatus(selectedSeason, now) === 'current'\n                ? `残り${communityLeaderboardSeasonDaysRemaining(selectedSeason, now)}日`\n                : 'Completed'}\n            </span>\n          </div>\n\n          <div className=\"mt-4 flex gap-2 overflow-x-auto pb-1\" aria-label=\"Season選択\">\n            {seasons.map((season) => {\n              const active = season.key === selectedSeason.key;\n              return (\n                <Link\n                  key={season.key}\n                  href={leaderboardHref(guildId, 'season', 'season', query.limit, season.key)}\n                  aria-current={active ? 'page' : undefined}\n                  className={`min-w-[9.5rem] shrink-0 rounded-xl border px-3 py-2.5 transition-colors ${\n                    active\n                      ? 'border-primary/40 bg-primary/10 text-primary'\n                      : 'border-border bg-background/60 hover:border-primary/30'\n                  }`}\n                >\n                  <span className=\"block text-sm font-semibold\">Season {season.index}</span>\n                  <span className={`mt-1 block text-[11px] ${active ? 'text-primary/80' : 'text-muted'}`}>\n                    {formatSeasonDateRange(season)}\n                  </span>\n                </Link>\n              );\n            })}\n          </div>\n\n          <div className=\"mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-2\">\n            <div className=\"flex items-start gap-3 rounded-xl bg-background/60 p-3\">\n              <CalendarDays className=\"mt-0.5 h-4 w-4 shrink-0 text-primary\" aria-hidden=\"true\" />\n              <div>\n                <p className=\"text-xs font-medium text-muted\">集計期間</p>\n                <p className=\"mt-1 text-sm font-semibold\">{formatSeasonDateRange(selectedSeason)}</p>\n              </div>\n            </div>\n            <div className=\"flex items-start gap-3 rounded-xl bg-background/60 p-3\">\n              <Crown className=\"mt-0.5 h-4 w-4 shrink-0 text-primary\" aria-hidden=\"true\" />\n              <div className=\"min-w-0\">\n                <p className=\"text-xs font-medium text-muted\">Season Champion</p>\n                <p className=\"mt-1 truncate text-sm font-semibold\">\n                  {topEntry ? displayName(memberMap.get(topEntry.userId), topEntry.userId) : '—'}\n                </p>\n                <p className=\"mt-0.5 text-xs text-muted\">\n                  {topEntry\n                    ? formatEntryValue(query.metric, topEntry.value, topEntry.secondaryValue)\n                    : 'まだ記録がありません'}\n                </p>\n              </div>\n            </div>\n          </div>\n        </section>\n      ) : null}\n\n      {snapshot.entries.length > 0 ? (\n"""
-          if category_end not in text:
-              raise SystemExit('season archive insertion point not found')
-          text = text.replace(category_end, season_section, 1)
-
-          old_href = """function leaderboardHref(\n  guildId: string,\n  metric: CommunityLeaderboardMetric,\n  period: string,\n  limit: 10 | 25,\n): string {\n  const params = new URLSearchParams({ metric, period, limit: String(limit) });\n  return `/dashboard/guilds/${guildId}/leaderboard?${params.toString()}`;\n}\n"""
-          new_href = """function leaderboardHref(\n  guildId: string,\n  metric: CommunityLeaderboardMetric,\n  period: string,\n  limit: 10 | 25,\n  seasonKey?: string | null,\n): string {\n  const params = new URLSearchParams({ metric, period, limit: String(limit) });\n  if (metric === 'season' && seasonKey) params.set('season', seasonKey);\n  return `/dashboard/guilds/${guildId}/leaderboard?${params.toString()}`;\n}\n\nfunction formatSeasonDateRange(season: CommunitySeasonWindow): string {\n  const formatter = new Intl.DateTimeFormat('ja-JP', {\n    timeZone: 'Asia/Tokyo',\n    year: 'numeric',\n    month: '2-digit',\n    day: '2-digit',\n  });\n  const inclusiveEnd = new Date(season.endsAt.getTime() - 1);\n  return `${formatter.format(season.startsAt)} – ${formatter.format(inclusiveEnd)}`;\n}\n"""
-          if old_href not in text:
-              raise SystemExit('leaderboard href marker not found')
-          text = text.replace(old_href, new_href, 1)
           page.write_text(text)
 
           test_file = Path('apps/studio/src/lib/community-leaderboard-core.test.ts')
           text = test_file.read_text()
-          text = text.replace(
-              "  communityLeaderboardLevelForXp,\n",
-              "  communityLeaderboardLevelForXp,\n  communityLeaderboardSeasonDaysRemaining,\n  communityLeaderboardSeasonStatus,\n",
-              1,
-          )
-          text = text.replace(
-              "  formatCommunityLeaderboardValue,\n",
-              "  formatCommunityLeaderboardValue,\n  listCommunityLeaderboardSeasons,\n",
-              1,
-          )
-          text = text.replace(
-              "  normalizeCommunityLeaderboardQuery,\n",
-              "  normalizeCommunityLeaderboardQuery,\n  resolveCommunityLeaderboardSeason,\n",
-              1,
-          )
-          tests = """\n\ntest('直近Season履歴を現在から新しい順に生成する', () => {\n  const now = new Date('2026-08-15T08:56:00.000Z');\n  const seasons = listCommunityLeaderboardSeasons(now, 3);\n\n  assert.deepEqual(\n    seasons.map((season) => ({ index: season.index, key: season.key })),\n    [\n      { index: 8, key: '2026-07-20' },\n      { index: 7, key: '2026-06-22' },\n      { index: 6, key: '2026-05-25' },\n    ],\n  );\n});\n\ntest('Season queryは直近履歴だけを許可し不正値はCurrent Seasonへ戻す', () => {\n  const now = new Date('2026-08-15T08:56:00.000Z');\n  assert.equal(resolveCommunityLeaderboardSeason('2026-06-22', now).index, 7);\n  assert.equal(resolveCommunityLeaderboardSeason('2099-01-01', now).index, 8);\n  assert.equal(resolveCommunityLeaderboardSeason('../invalid', now).index, 8);\n});\n\ntest('Seasonの状態と残り日数をJST境界で算出する', () => {\n  const now = new Date('2026-08-15T08:56:00.000Z');\n  const [current, previous] = listCommunityLeaderboardSeasons(now, 2);\n\n  assert.equal(communityLeaderboardSeasonStatus(current!, now), 'current');\n  assert.equal(communityLeaderboardSeasonDaysRemaining(current!, now), 2);\n  assert.equal(communityLeaderboardSeasonStatus(previous!, now), 'completed');\n  assert.equal(communityLeaderboardSeasonDaysRemaining(previous!, now), 0);\n});\n"""
-          if "test('直近Season履歴を現在から新しい順に生成する'" not in text:
-              text += tests
+          marker = "  const seasons = listCommunityLeaderboardSeasons(now, 3);\n\n"
+          if "Number.NaN" not in text:
+              text = text.replace(
+                  marker,
+                  marker + "  assert.equal(listCommunityLeaderboardSeasons(now, Number.NaN).length, 6);\n\n",
+                  1,
+              )
           test_file.write_text(text)
           PY
 
@@ -213,8 +87,6 @@ jobs:
         run: >-
           pnpm exec prettier --write
           packages/shared/src/community-leaderboard.ts
-          apps/studio/src/lib/community-leaderboard-core.ts
-          apps/studio/src/lib/community-leaderboard.ts
           apps/studio/src/lib/community-leaderboard-core.test.ts
           'apps/studio/src/app/dashboard/guilds/[guildId]/leaderboard/page.tsx'
 
@@ -225,9 +97,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add packages/shared/src/community-leaderboard.ts \
-            apps/studio/src/lib/community-leaderboard-core.ts \
-            apps/studio/src/lib/community-leaderboard.ts \
             apps/studio/src/lib/community-leaderboard-core.test.ts \
             'apps/studio/src/app/dashboard/guilds/[guildId]/leaderboard/page.tsx'
-          git commit -m "Leaderboard Seasons v1を実装する"
+          git commit -m "Leaderboard Seasonsの表示と検証を仕上げる"
           git push origin HEAD:feature/leaderboard-seasons
