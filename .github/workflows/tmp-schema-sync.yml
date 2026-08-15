@@ -1,0 +1,66 @@
+name: Temporary Prisma Schema Sync
+
+on:
+  push:
+    branches:
+      - feature/studio-server-context-bot-profile
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/studio-server-context-bot-profile
+          fetch-depth: 0
+      - name: Add Studio preference models to Prisma schema
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('packages/db/prisma/schema.prisma')
+          content = path.read_text()
+          marker = 'model StudioUserPreference {'
+          if marker not in content:
+              addition = '''
+
+// ============================================================
+// Studio Preferences / Bot Presence
+// ============================================================
+
+model StudioUserPreference {
+  userId         String   @id @map("user_id")
+  defaultGuildId String?  @map("default_guild_id")
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("studio_user_preferences")
+}
+
+model BotPresenceSetting {
+  id           String   @id @default("default")
+  status       String   @default("online")
+  activityType String   @default("playing") @map("activity_type")
+  activityText String   @default("Herta") @map("activity_text")
+  updatedBy    String?  @map("updated_by")
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("bot_presence_settings")
+}
+'''
+              path.write_text(content.rstrip() + addition + '\n')
+          PY
+      - name: Commit schema and remove temporary workflow
+        shell: bash
+        run: |
+          git rm .github/workflows/tmp-schema-sync.yml
+          git config user.name "mizzz-ivr"
+          git config user.email "86910433+mizzz-ivr@users.noreply.github.com"
+          git add packages/db/prisma/schema.prisma
+          git commit -m "Studio設定テーブルをPrisma schemaへ同期"
+          git fetch origin feature/studio-server-context-bot-profile
+          git rebase origin/feature/studio-server-context-bot-profile
+          git push origin HEAD:feature/studio-server-context-bot-profile
