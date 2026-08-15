@@ -30,7 +30,10 @@ CREATE TABLE "community_season_snapshot_entries" (
     CONSTRAINT "community_season_snapshot_entries_rank_check" CHECK ("rank" > 0),
     CONSTRAINT "community_season_snapshot_entries_points_check" CHECK ("points" >= 0),
     CONSTRAINT "community_season_snapshot_entries_award_tier_check" CHECK (
-        "award_tier" IS NULL OR "award_tier" IN ('champion', 'top3', 'top10')
+        ("rank" = 1 AND "award_tier" = 'champion')
+        OR ("rank" BETWEEN 2 AND 3 AND "award_tier" = 'top3')
+        OR ("rank" BETWEEN 4 AND 10 AND "award_tier" = 'top10')
+        OR ("rank" > 10 AND "award_tier" IS NULL)
     ),
     CONSTRAINT "community_season_snapshot_entries_snapshot_fkey"
         FOREIGN KEY ("guild_id", "season_key")
