@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: feature/studio-account-menu
+          ref: feature/leaderboard-seasons
           fetch-depth: 0
 
       - uses: pnpm/action-setup@v6
@@ -32,7 +32,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git checkout feature/leaderboard-seasons
           python3 - <<'PY'
           from pathlib import Path
 
