@@ -92,7 +92,8 @@ export default async function AccountPage() {
           </dl>
 
           <p className="mt-4 text-xs leading-5 text-muted">
-            表示名やメールアドレスはDiscord側のアカウント情報に基づきます。Herta Studioから直接変更は行いません。
+            表示名やメールアドレスはDiscord側のアカウント情報に基づきます。Herta
+            Studioから直接変更は行いません。
           </p>
         </section>
 
@@ -114,9 +115,15 @@ export default async function AccountPage() {
           </div>
 
           {reconnectRequired ? (
-            <div role="alert" className="mt-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
+            <div
+              role="alert"
+              className="mt-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4"
+            >
               <div className="flex items-start gap-3">
-                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />
+                <CircleAlert
+                  className="mt-0.5 h-4 w-4 shrink-0 text-amber-500"
+                  aria-hidden="true"
+                />
                 <div>
                   <p className="text-sm font-semibold text-amber-500">Discordの再認証が必要です</p>
                   <p className="mt-1 text-xs leading-5 text-muted">
@@ -138,7 +145,10 @@ export default async function AccountPage() {
           ) : (
             <div className="mt-5 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4">
               <div className="flex items-start gap-3">
-                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500" aria-hidden="true" />
+                <ShieldCheck
+                  className="mt-0.5 h-4 w-4 shrink-0 text-emerald-500"
+                  aria-hidden="true"
+                />
                 <div>
                   <p className="text-sm font-semibold text-emerald-500">接続は正常です</p>
                   <p className="mt-1 text-xs leading-5 text-muted">
@@ -159,7 +169,9 @@ export default async function AccountPage() {
               セッションとセキュリティ
             </div>
             <p className="mt-2 text-xs leading-5 text-muted">
-              DiscordのAccess Token / Refresh TokenやBot Tokenはこの画面へ表示せず、ブラウザにも公開しません。ログアウトすると現在のHerta Studioセッションを終了します。
+              DiscordのAccess Token / Refresh TokenやBot
+              Tokenはこの画面へ表示せず、ブラウザにも公開しません。ログアウトすると現在のHerta
+              Studioセッションを終了します。
             </p>
           </div>
           <SignOutButton />

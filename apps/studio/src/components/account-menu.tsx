@@ -2,14 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-  ChevronDown,
-  CircleAlert,
-  LogOut,
-  RefreshCw,
-  ShieldCheck,
-  UserRound,
-} from 'lucide-react';
+import { ChevronDown, CircleAlert, LogOut, RefreshCw, ShieldCheck, UserRound } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { signInWithDiscord, signOutAction } from '@/lib/actions';
 import { STUDIO_ACCOUNT_NAV_ITEM } from '@/lib/studio-navigation';
@@ -91,7 +84,8 @@ export function AccountMenu({
     }
 
     const direction = event.key === 'ArrowDown' ? 1 : -1;
-    const nextIndex = currentIndex < 0 ? 0 : (currentIndex + direction + items.length) % items.length;
+    const nextIndex =
+      currentIndex < 0 ? 0 : (currentIndex + direction + items.length) % items.length;
     items[nextIndex]?.focus();
   };
 
@@ -167,7 +161,9 @@ export function AccountMenu({
             <UserRound className="h-4 w-4 text-muted" aria-hidden="true" />
             <span>
               <span className="block font-medium">アカウントセンター</span>
-              <span className="mt-0.5 block text-[11px] text-muted">Discord連携とセッションを確認</span>
+              <span className="mt-0.5 block text-[11px] text-muted">
+                Discord連携とセッションを確認
+              </span>
             </span>
           </Link>
 

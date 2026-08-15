@@ -18,8 +18,7 @@ export function normalizeDashboardCallbackUrl(value: unknown): string {
     const url = new URL(candidate, CALLBACK_BASE_URL);
     if (url.origin !== CALLBACK_BASE_URL) return DEFAULT_DASHBOARD_CALLBACK_URL;
 
-    const isDashboardPath =
-      url.pathname === '/dashboard' || url.pathname.startsWith('/dashboard/');
+    const isDashboardPath = url.pathname === '/dashboard' || url.pathname.startsWith('/dashboard/');
     if (!isDashboardPath) return DEFAULT_DASHBOARD_CALLBACK_URL;
 
     return `${url.pathname}${url.search}${url.hash}`;
