@@ -1,4 +1,4 @@
-# advisory-lock-fix-rerun
+# fixture-period-type-fix
 name: Season Snapshot Migration Smoke
 
 on:
@@ -168,8 +168,8 @@ jobs:
                 guildId,
                 userId: '200000000000000002',
                 challengeId: 'late:mutation',
-                periodType: 'manual',
-                periodKey: '2026-07-20',
+                periodType: 'daily',
+                periodKey: '2026-07-18',
                 seasonKey: season.key,
                 points: 1000,
               },
