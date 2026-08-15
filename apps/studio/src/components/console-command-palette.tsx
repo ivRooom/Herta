@@ -431,7 +431,7 @@ export function ConsoleCommandPaletteController() {
           <span id="studio-command-palette-title" className="font-medium text-foreground">
             Herta Studio Command Palette
           </span>
-          {currentGuild ? <span> · 現在のサーバー: {currentGuild.name}</span> : null}
+          {selectedGuild ? <span> · 現在のサーバー: {selectedGuild.name}</span> : null}
         </div>
 
         <div id={RESULTS_ID} role="listbox" className="max-h-[min(62vh,32rem)] overflow-y-auto p-2">
@@ -452,8 +452,8 @@ export function ConsoleCommandPaletteController() {
                     className="px-3 pb-1.5 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted"
                   >
                     {section.label}
-                    {section.id === 'current-server' && currentGuild
-                      ? ` · ${currentGuild.name}`
+                    {section.id === 'current-server' && selectedGuild
+                      ? ` · ${selectedGuild.name}`
                       : ''}
                   </div>
                   <div role="presentation" className="space-y-0.5">
@@ -538,7 +538,7 @@ export function ConsoleCommandPaletteController() {
             >
               最近使った項目をクリア
             </button>
-          ) : !currentGuild ? (
+          ) : !selectedGuild ? (
             <span className="ml-auto">サーバー固有機能はGuild画面で表示</span>
           ) : null}
         </div>

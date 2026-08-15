@@ -60,6 +60,12 @@ import {
   type ActivityRulesConfig,
 } from './activity/activity-rules.js';
 import { searchGuildMemberOptions, type GuildMemberOption } from './health/guild-members.js';
+import {
+  getGuildBotProfile as getDiscordGuildBotProfile,
+  updateGuildBotProfile as updateDiscordGuildBotProfile,
+  type GuildBotProfile,
+  type GuildBotProfileUpdate,
+} from './profile/guild-bot-profile.js';
 
 function resolveErrorName(error: unknown): string {
   if (error instanceof Error && error.name.trim()) return error.name;
@@ -712,6 +718,17 @@ export class HertaBot {
       { status: config.status, activityType: config.activityType },
       'Bot Presenceを更新しました',
     );
+  }
+
+  async getGuildBotProfile(guildId: string): Promise<GuildBotProfile | null> {
+    return getDiscordGuildBotProfile(this.client, guildId);
+  }
+
+  async updateGuildBotProfile(
+    guildId: string,
+    input: GuildBotProfileUpdate,
+  ): Promise<GuildBotProfile | null> {
+    return updateDiscordGuildBotProfile(this.client, guildId, input);
   }
 
   async getGuildConfigurationOptions(guildId: string): Promise<GuildConfigurationOptions | null> {
