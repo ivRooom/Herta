@@ -28,9 +28,11 @@ test('Bot内部APIへBearer認証付きGETを送信する', async () => {
   await withBotInternalEnv(async () => {
     let capturedUrl = '';
     let capturedAuthorization = '';
+    let capturedSignal: AbortSignal | null | undefined;
     const profile = await getDiscordBotGuildProfile(GUILD_ID, async (input, init) => {
       capturedUrl = String(input);
       capturedAuthorization = new Headers(init?.headers).get('authorization') ?? '';
+      capturedSignal = init?.signal;
       return Response.json({
         profile: {
           userId: USER_ID,
@@ -44,20 +46,23 @@ test('Bot内部APIへBearer認証付きGETを送信する', async () => {
 
     assert.equal(capturedUrl, `http://bot:3000/internal/guilds/${GUILD_ID}/bot-profile`);
     assert.equal(capturedAuthorization, `Bearer ${SECRET}`);
+    assert.ok(capturedSignal instanceof AbortSignal);
     assert.equal(profile.nickname, 'Herta Bot');
   });
 });
 
-test('PATCHではNicknameとAvatar操作をJSONで送信する', async () => {
+test('PATCHではNicknameとAvatar操作をJSONで送信しmutation完了を待つ', async () => {
   await withBotInternalEnv(async () => {
     let capturedMethod = '';
     let capturedBody = '';
+    let capturedSignal: AbortSignal | null | undefined = null;
     const profile = await updateDiscordBotGuildProfile(
       GUILD_ID,
       { nickname: 'New Herta', avatar: null },
       async (_input, init) => {
         capturedMethod = init?.method ?? '';
         capturedBody = String(init?.body ?? '');
+        capturedSignal = init?.signal;
         return Response.json({
           profile: {
             userId: USER_ID,
@@ -72,6 +77,7 @@ test('PATCHではNicknameとAvatar操作をJSONで送信する', async () => {
 
     assert.equal(capturedMethod, 'PATCH');
     assert.deepEqual(JSON.parse(capturedBody), { nickname: 'New Herta', avatar: null });
+    assert.equal(capturedSignal, undefined);
     assert.equal(profile.nickname, 'New Herta');
   });
 });
