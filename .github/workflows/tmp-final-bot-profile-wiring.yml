@@ -22,7 +22,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Wire Bot profile internal API
+      - name: Wire remaining Bot profile API pieces
         shell: bash
         run: |
           python - <<'PY'
@@ -63,15 +63,8 @@ jobs:
 '''
           replace_once(bot, marker, replacement)
 
-          env = '.env.example'
-          replace_once(
-              env,
-              "BOT_HEALTH_REQUEST_TIMEOUT_MS=\n",
-              "BOT_HEALTH_REQUEST_TIMEOUT_MS=\n# Studio → Bot内部プロフィールAPI専用Bearer secret。32文字以上のランダム値を指定する。\n# BotとStudioで必ず同じ値を設定し、ブラウザへ公開しない。\nBOT_INTERNAL_API_SECRET=\n",
-          )
-
-          env_prod = '.env.production.example'
-          content = Path(env_prod).read_text()
+          env_prod = Path('.env.production.example')
+          content = env_prod.read_text()
           if 'BOT_INTERNAL_API_SECRET=' not in content:
               if 'BOT_HEALTH_REQUEST_TIMEOUT_MS=' in content:
                   content = content.replace(
@@ -81,27 +74,15 @@ jobs:
                   )
               else:
                   content += '\n# Studio → Bot内部プロフィールAPI専用。32文字以上。\nBOT_INTERNAL_API_SECRET=\n'
-              Path(env_prod).write_text(content)
-
-          compose = 'docker-compose.prod.yml'
-          replace_once(
-              compose,
-              "      BOT_HEALTH_REQUEST_TIMEOUT_MS: ${BOT_HEALTH_REQUEST_TIMEOUT_MS:-}\n      HEALTH_CHECK_TIMEOUT_MS:",
-              "      BOT_HEALTH_REQUEST_TIMEOUT_MS: ${BOT_HEALTH_REQUEST_TIMEOUT_MS:-}\n      BOT_INTERNAL_API_SECRET: ${BOT_INTERNAL_API_SECRET:?BOT_INTERNAL_API_SECRET is required}\n      HEALTH_CHECK_TIMEOUT_MS:",
-          )
-          replace_once(
-              compose,
-              "      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN is required}\n      LFG_COMPONENT_SECRET:",
-              "      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN is required}\n      BOT_INTERNAL_API_SECRET: ${BOT_INTERNAL_API_SECRET:?BOT_INTERNAL_API_SECRET is required}\n      LFG_COMPONENT_SECRET:",
-          )
+              env_prod.write_text(content)
           PY
-      - name: Format touched source files
-        run: pnpm exec prettier --write apps/bot/src/bot.ts .env.example .env.production.example docker-compose.prod.yml
+      - name: Format Bot source
+        run: pnpm exec prettier --write apps/bot/src/bot.ts
       - name: Remove temporary workflow and push
         run: |
           git rm .github/workflows/tmp-final-bot-profile-wiring.yml
           git config user.name "mizzz-ivr"
           git config user.email "86910433+mizzz-ivr@users.noreply.github.com"
           git add -A
-          git commit -m "Botプロフィール内部APIの配線とSecret設定を完成"
+          git commit -m "Botプロフィール内部APIの配線を完成"
           git push origin HEAD:feature/studio-server-context-bot-profile
