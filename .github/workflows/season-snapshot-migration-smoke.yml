@@ -1,0 +1,230 @@
+name: Season Snapshot Migration Smoke
+
+on:
+  push:
+    branches:
+      - feature/leaderboard-season-snapshots
+    paths:
+      - .github/workflows/season-snapshot-migration-smoke.yml
+
+permissions:
+  contents: read
+
+jobs:
+  migration-smoke:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: herta_smoke
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d herta_smoke"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/herta_smoke?schema=public
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/leaderboard-season-snapshots
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply all migrations
+        run: pnpm --filter @herta/db exec prisma migrate deploy --schema prisma/schema.prisma
+      - name: Generate Prisma Client
+        run: pnpm --filter @herta/db exec prisma generate --schema prisma/schema.prisma
+      - name: Create smoke test
+        run: |
+          cat > packages/db/season-snapshot-smoke.ts <<'TS'
+          import assert from 'node:assert/strict';
+          import { PrismaClient } from '@prisma/client';
+          import {
+            finalizeCommunitySeasonSnapshot,
+            listCommunitySeasonGuildIdsWithoutSnapshot,
+            listCommunitySeasonSnapshotAwards,
+          } from './src/community-season-snapshot.ts';
+          import { queryCommunityLeaderboardData } from './src/community-leaderboard.ts';
+
+          const prisma = new PrismaClient();
+          const season = {
+            key: '2026-06-22',
+            index: 7,
+            startsAt: new Date('2026-06-21T15:00:00.000Z'),
+            endsAt: new Date('2026-07-19T15:00:00.000Z'),
+          };
+          const now = new Date('2026-08-15T09:45:00.000Z');
+          const guildId = '100000000000000001';
+          const emptyGuildId = '100000000000000002';
+
+          try {
+            await prisma.plugin.create({
+              data: {
+                id: 'community-challenge',
+                name: 'Community Challenge / Season',
+                version: '1.0.0',
+                manifest: {},
+              },
+            });
+            await prisma.guild.createMany({
+              data: [
+                { id: guildId, name: 'Snapshot Smoke Guild' },
+                { id: emptyGuildId, name: 'Empty Snapshot Smoke Guild' },
+              ],
+            });
+            await prisma.guildPlugin.createMany({
+              data: [
+                {
+                  guildId,
+                  pluginId: 'community-challenge',
+                  enabled: true,
+                  config: {},
+                  installedAt: new Date('2026-06-01T00:00:00.000Z'),
+                },
+                {
+                  guildId: emptyGuildId,
+                  pluginId: 'community-challenge',
+                  enabled: true,
+                  config: {},
+                  installedAt: new Date('2026-06-01T00:00:00.000Z'),
+                },
+              ],
+            });
+            await prisma.communityChallengeCompletion.createMany({
+              data: [
+                {
+                  guildId,
+                  userId: '200000000000000001',
+                  challengeId: 'daily:one',
+                  periodType: 'daily',
+                  periodKey: '2026-06-23',
+                  seasonKey: season.key,
+                  points: 100,
+                },
+                {
+                  guildId,
+                  userId: '200000000000000001',
+                  challengeId: 'weekly:one',
+                  periodType: 'weekly',
+                  periodKey: '2026-06-22',
+                  seasonKey: season.key,
+                  points: 50,
+                },
+                {
+                  guildId,
+                  userId: '200000000000000002',
+                  challengeId: 'daily:two',
+                  periodType: 'daily',
+                  periodKey: '2026-06-24',
+                  seasonKey: season.key,
+                  points: 100,
+                },
+              ],
+            });
+
+            const first = await finalizeCommunitySeasonSnapshot(prisma, {
+              guildId,
+              season,
+              now,
+            });
+            assert.equal(first.created, true);
+            assert.equal(first.snapshot.participantCount, 2);
+
+            const awards = await listCommunitySeasonSnapshotAwards(prisma, guildId, season.key);
+            assert.deepEqual(
+              awards.map((award) => [award.userId, award.rank, award.points, award.awardTier]),
+              [
+                ['200000000000000001', 1, 150, 'champion'],
+                ['200000000000000002', 2, 100, 'top3'],
+              ],
+            );
+
+            const finalized = await queryCommunityLeaderboardData(prisma, {
+              guildId,
+              metric: 'season',
+              seasonKey: season.key,
+              limit: 10,
+            });
+            assert.deepEqual(
+              finalized.entries.map((entry) => [entry.rank, entry.userId, entry.value]),
+              [
+                [1, '200000000000000001', 150],
+                [2, '200000000000000002', 100],
+              ],
+            );
+
+            await prisma.communityChallengeCompletion.create({
+              data: {
+                guildId,
+                userId: '200000000000000002',
+                challengeId: 'late:mutation',
+                periodType: 'manual',
+                periodKey: '2026-07-20',
+                seasonKey: season.key,
+                points: 1000,
+              },
+            });
+            const afterLiveMutation = await queryCommunityLeaderboardData(prisma, {
+              guildId,
+              metric: 'season',
+              seasonKey: season.key,
+              limit: 10,
+            });
+            assert.deepEqual(afterLiveMutation.entries, finalized.entries);
+
+            const second = await finalizeCommunitySeasonSnapshot(prisma, {
+              guildId,
+              season,
+              now,
+            });
+            assert.equal(second.created, false);
+
+            const pendingGuildIds = await listCommunitySeasonGuildIdsWithoutSnapshot(prisma, {
+              seasonKey: season.key,
+              seasonEndsAt: season.endsAt,
+              limit: 10,
+            });
+            assert.equal(pendingGuildIds.includes(guildId), false);
+            assert.equal(pendingGuildIds.includes(emptyGuildId), true);
+
+            const empty = await finalizeCommunitySeasonSnapshot(prisma, {
+              guildId: emptyGuildId,
+              season,
+              now,
+            });
+            assert.equal(empty.created, true);
+            assert.equal(empty.snapshot.participantCount, 0);
+            const emptyLeaderboard = await queryCommunityLeaderboardData(prisma, {
+              guildId: emptyGuildId,
+              metric: 'season',
+              seasonKey: season.key,
+              limit: 10,
+            });
+            assert.equal(emptyLeaderboard.participants, 0);
+            assert.deepEqual(emptyLeaderboard.entries, []);
+
+            await assert.rejects(
+              finalizeCommunitySeasonSnapshot(prisma, {
+                guildId: '100000000000000003',
+                season,
+                now: new Date('2026-07-01T00:00:00.000Z'),
+              }),
+              /cannot be finalized/i,
+            );
+
+            console.log('Season Snapshot migration smoke passed');
+          } finally {
+            await prisma.$disconnect();
+          }
+          TS
+      - name: Run snapshot integration smoke
+        run: pnpm --filter @herta/db exec tsx season-snapshot-smoke.ts
