@@ -1,4 +1,4 @@
-name: Temporary Studio Full Test Log
+name: Temporary Discord Bot Profile Test
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  studio-full-test-log:
+  discord-bot-profile-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -19,22 +19,6 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm db:generate
-      - name: Run exact Studio test pipeline and capture log
-        shell: bash
-        run: |
-          set +e
-          pnpm turbo run test --filter=@herta/studio --output-logs=full > studio-test.log 2>&1
-          code=$?
-          echo "$code" > studio-test-exit-code.txt
-          cat studio-test.log
-          exit 0
-      - uses: actions/upload-artifact@v7.0.1
-        with:
-          name: studio-test-log
-          path: |
-            studio-test.log
-            studio-test-exit-code.txt
-      - name: Fail if Studio tests failed
-        shell: bash
-        run: test "$(cat studio-test-exit-code.txt)" -eq 0
+      - run: pnpm --filter @herta/shared build
+      - working-directory: apps/studio
+        run: node --experimental-strip-types --test src/lib/discord-bot-profile.test.ts
