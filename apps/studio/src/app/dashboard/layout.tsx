@@ -17,10 +17,7 @@ import { StudioServerContextProvider } from '@/components/studio-server-context'
 import { getManageableGuilds } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
 import { STUDIO_ACCOUNT_NAV_ITEM } from '@/lib/studio-navigation';
-import {
-  getDefaultStudioGuildId,
-  setDefaultStudioGuildId,
-} from '@/lib/studio-user-preferences';
+import { getDefaultStudioGuildId, setDefaultStudioGuildId } from '@/lib/studio-user-preferences';
 
 export const dynamic = 'force-dynamic';
 
