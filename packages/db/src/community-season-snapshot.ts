@@ -104,18 +104,31 @@ export async function listCommunitySeasonSnapshotAwards(
 
 export async function listCommunitySeasonGuildIdsWithoutSnapshot(
   prisma: PrismaClient,
-  seasonKey: string,
-  limit = 100,
+  input: { seasonKey: string; seasonEndsAt: Date; limit?: number },
 ): Promise<string[]> {
-  const normalizedSeasonKey = requireSeasonKey(seasonKey);
-  const safeLimit = Number.isFinite(limit) ? Math.max(1, Math.min(500, Math.trunc(limit))) : 100;
+  const normalizedSeasonKey = requireSeasonKey(input.seasonKey);
+  if (!Number.isFinite(input.seasonEndsAt.getTime())) throw new Error('Invalid season end');
+  const safeLimit = Number.isFinite(input.limit)
+    ? Math.max(1, Math.min(500, Math.trunc(input.limit!)))
+    : 100;
   const rows = await prisma.$queryRaw<Array<{ guildId: string }>>`
-    SELECT DISTINCT c."guild_id" AS "guildId"
-    FROM "community_challenge_completions" c
+    WITH candidates AS (
+      SELECT DISTINCT c."guild_id"
+      FROM "community_challenge_completions" c
+      WHERE c."season_key" = ${normalizedSeasonKey}
+
+      UNION
+
+      SELECT gp."guild_id"
+      FROM "guild_plugins" gp
+      WHERE gp."plugin_id" = 'community-challenge'
+        AND gp."installed_at" < ${input.seasonEndsAt}
+    )
+    SELECT c."guild_id" AS "guildId"
+    FROM candidates c
     LEFT JOIN "community_season_snapshots" s
-      ON s."guild_id" = c."guild_id" AND s."season_key" = c."season_key"
-    WHERE c."season_key" = ${normalizedSeasonKey}
-      AND s."guild_id" IS NULL
+      ON s."guild_id" = c."guild_id" AND s."season_key" = ${normalizedSeasonKey}
+    WHERE s."guild_id" IS NULL
     ORDER BY c."guild_id" ASC
     LIMIT ${safeLimit}
   `;
