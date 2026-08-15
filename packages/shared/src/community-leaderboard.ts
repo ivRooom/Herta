@@ -1,3 +1,8 @@
+import {
+  getCommunitySeasonWindow,
+  type CommunitySeasonWindow,
+} from './community-challenge-catalog.js';
+
 export const COMMUNITY_LEADERBOARD_METRICS = [
   'xp',
   'level',
@@ -11,6 +16,9 @@ export const COMMUNITY_LEADERBOARD_METRICS = [
 
 export type CommunityLeaderboardMetric = (typeof COMMUNITY_LEADERBOARD_METRICS)[number];
 export type CommunityLeaderboardPeriod = 'all' | '7d' | '30d' | 'season';
+export type CommunityLeaderboardSeasonStatus = 'current' | 'completed';
+
+export const COMMUNITY_LEADERBOARD_SEASON_HISTORY_LIMIT = 6;
 
 export interface CommunityLeaderboardQuery {
   metric: CommunityLeaderboardMetric;
@@ -168,6 +176,52 @@ export function communityTimestampPeriodStart(
     9 * 60 * 60 * 1000;
   const days = period === '7d' ? 6 : 29;
   return new Date(localMidnightUtc - days * 86_400_000);
+}
+
+export function listCommunityLeaderboardSeasons(
+  now = new Date(),
+  limit = COMMUNITY_LEADERBOARD_SEASON_HISTORY_LIMIT,
+): CommunitySeasonWindow[] {
+  const safeLimit = Math.max(1, Math.min(12, Math.trunc(limit)));
+  const seasons: CommunitySeasonWindow[] = [];
+  let cursor = now;
+
+  for (let index = 0; index < safeLimit; index += 1) {
+    const season = getCommunitySeasonWindow(cursor);
+    if (seasons.some((candidate) => candidate.key === season.key)) break;
+    seasons.push(season);
+    if (season.index <= 1) break;
+    cursor = new Date(season.startsAt.getTime() - 1);
+  }
+
+  return seasons;
+}
+
+export function resolveCommunityLeaderboardSeason(
+  seasonKey: string | null | undefined,
+  now = new Date(),
+  limit = COMMUNITY_LEADERBOARD_SEASON_HISTORY_LIMIT,
+): CommunitySeasonWindow {
+  const seasons = listCommunityLeaderboardSeasons(now, limit);
+  const current = seasons[0] ?? getCommunitySeasonWindow(now);
+  const normalizedKey = seasonKey?.trim();
+  if (!normalizedKey) return current;
+  return seasons.find((season) => season.key === normalizedKey) ?? current;
+}
+
+export function communityLeaderboardSeasonStatus(
+  season: CommunitySeasonWindow,
+  now = new Date(),
+): CommunityLeaderboardSeasonStatus {
+  return now.getTime() >= season.endsAt.getTime() ? 'completed' : 'current';
+}
+
+export function communityLeaderboardSeasonDaysRemaining(
+  season: CommunitySeasonWindow,
+  now = new Date(),
+): number {
+  if (communityLeaderboardSeasonStatus(season, now) === 'completed') return 0;
+  return Math.max(1, Math.ceil((season.endsAt.getTime() - now.getTime()) / 86_400_000));
 }
 
 function jstActivityDate(value: Date): Date {
