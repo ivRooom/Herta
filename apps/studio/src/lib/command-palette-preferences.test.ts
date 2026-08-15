@@ -42,7 +42,10 @@ test('保存データは安全なCommand IDだけに正規化して件数を制�
   assert.equal(new Set(parsed.favoriteIds).size, parsed.favoriteIds.length);
   assert.equal(parsed.favoriteIds.length, COMMAND_PALETTE_MAX_FAVORITES);
   assert.equal(parsed.recentIds.length, COMMAND_PALETTE_MAX_RECENT);
-  assert.deepEqual(parseCommandPalettePreferences(serializeCommandPalettePreferences(parsed)), parsed);
+  assert.deepEqual(
+    parseCommandPalettePreferences(serializeCommandPalettePreferences(parsed)),
+    parsed,
+  );
 });
 
 test('お気に入りは追加・解除でき上限を維持する', () => {
@@ -104,14 +107,22 @@ test('現在Contextに存在しない保存IDは表示せず検索中は通常Gr
     recentIds: ['another-unknown', 'guild-audit-logs'],
   };
   const quickSections = buildCommandPaletteSections(commands, preferences, true);
-  const quickIds = quickSections.flatMap((section) => section.commands.map((command) => command.id));
+  const quickIds = quickSections.flatMap((section) =>
+    section.commands.map((command) => command.id),
+  );
   assert.equal(quickIds.includes('unknown-command'), false);
   assert.equal(quickIds.includes('another-unknown'), false);
 
   const searchResults = filterStudioCommandItems(commands, 'birthday');
   const searchSections = buildCommandPaletteSections(searchResults, preferences, false);
-  assert.equal(searchSections.some((section) => section.id === 'favorites'), false);
-  assert.equal(searchSections.some((section) => section.id === 'recent'), false);
+  assert.equal(
+    searchSections.some((section) => section.id === 'favorites'),
+    false,
+  );
+  assert.equal(
+    searchSections.some((section) => section.id === 'recent'),
+    false,
+  );
   assert.deepEqual(
     searchSections.flatMap((section) => section.commands.map((command) => command.id)),
     ['guild-birthday'],

@@ -320,18 +320,17 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
       setActiveIndex((current) => (current + 1) % visibleCommands.length);
       return;
     }
-    if (
-      event.key === 'ArrowUp' &&
-      targetSupportsCommandNavigation &&
-      visibleCommands.length > 0
-    ) {
+    if (event.key === 'ArrowUp' && targetSupportsCommandNavigation && visibleCommands.length > 0) {
       event.preventDefault();
-      setActiveIndex(
-        (current) => (current - 1 + visibleCommands.length) % visibleCommands.length,
-      );
+      setActiveIndex((current) => (current - 1 + visibleCommands.length) % visibleCommands.length);
       return;
     }
-    if (event.key === 'Enter' && event.shiftKey && targetSupportsCommandNavigation && activeCommand) {
+    if (
+      event.key === 'Enter' &&
+      event.shiftKey &&
+      targetSupportsCommandNavigation &&
+      activeCommand
+    ) {
       event.preventDefault();
       toggleFavorite(activeCommand);
       return;
@@ -532,7 +531,9 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
           <span>Shift+Enter ★</span>
           <span>Esc 閉じる</span>
           <span role="status">
-            {storageWarning ? '保存できないためこのタブのみ有効' : '履歴・お気に入りはこの端末に保存'}
+            {storageWarning
+              ? '保存できないためこのタブのみ有効'
+              : '履歴・お気に入りはこの端末に保存'}
           </span>
           {preferences.recentIds.length > 0 ? (
             <button

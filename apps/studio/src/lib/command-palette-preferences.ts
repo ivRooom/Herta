@@ -55,9 +55,7 @@ export function parseCommandPalettePreferences(raw: string | null): CommandPalet
   }
 }
 
-export function serializeCommandPalettePreferences(
-  preferences: CommandPalettePreferences,
-): string {
+export function serializeCommandPalettePreferences(preferences: CommandPalettePreferences): string {
   return JSON.stringify({
     version: 1,
     favoriteIds: sanitizeCommandIds(preferences.favoriteIds, COMMAND_PALETTE_MAX_FAVORITES),
@@ -72,10 +70,7 @@ export function toggleFavoriteCommand(
   const safeCommandId = sanitizeCommandIds([commandId], 1)[0];
   if (!safeCommandId) return preferences;
 
-  const favoriteIds = sanitizeCommandIds(
-    preferences.favoriteIds,
-    COMMAND_PALETTE_MAX_FAVORITES,
-  );
+  const favoriteIds = sanitizeCommandIds(preferences.favoriteIds, COMMAND_PALETTE_MAX_FAVORITES);
   const nextFavoriteIds = favoriteIds.includes(safeCommandId)
     ? favoriteIds.filter((id) => id !== safeCommandId)
     : [safeCommandId, ...favoriteIds.filter((id) => id !== safeCommandId)].slice(
@@ -101,10 +96,7 @@ export function recordRecentCommand(
 
   return {
     version: 1,
-    favoriteIds: sanitizeCommandIds(
-      preferences.favoriteIds,
-      COMMAND_PALETTE_MAX_FAVORITES,
-    ),
+    favoriteIds: sanitizeCommandIds(preferences.favoriteIds, COMMAND_PALETTE_MAX_FAVORITES),
     recentIds: [safeCommandId, ...recentIds.filter((id) => id !== safeCommandId)].slice(
       0,
       COMMAND_PALETTE_MAX_RECENT,
@@ -117,10 +109,7 @@ export function clearRecentCommands(
 ): CommandPalettePreferences {
   return {
     version: 1,
-    favoriteIds: sanitizeCommandIds(
-      preferences.favoriteIds,
-      COMMAND_PALETTE_MAX_FAVORITES,
-    ),
+    favoriteIds: sanitizeCommandIds(preferences.favoriteIds, COMMAND_PALETTE_MAX_FAVORITES),
     recentIds: [],
   };
 }
@@ -138,10 +127,7 @@ export function buildCommandPaletteSections(
   const recent = resolveCommands(preferences.recentIds, commandById).filter(
     (command) => !favoriteIds.has(command.id),
   );
-  const quickAccessIds = new Set([
-    ...favoriteIds,
-    ...recent.map((command) => command.id),
-  ]);
+  const quickAccessIds = new Set([...favoriteIds, ...recent.map((command) => command.id)]);
   const remainingCommands = items.filter((command) => !quickAccessIds.has(command.id));
 
   const sections: CommandPaletteSection[] = [];
