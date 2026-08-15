@@ -11,9 +11,12 @@ export interface DiscordBotGuildProfile {
 }
 
 export class DiscordBotProfileError extends Error {
-  constructor(readonly status: number) {
+  readonly status: number;
+
+  constructor(status: number) {
     super(`Discord Bot profile request failed (${status})`);
     this.name = 'DiscordBotProfileError';
+    this.status = status;
   }
 }
 
