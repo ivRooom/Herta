@@ -97,7 +97,7 @@ const PERIOD_LABELS: Record<CommunityLeaderboardPeriod, string> = {
   all: 'All Time',
   '7d': '直近7日',
   '30d': '直近30日',
-  season: 'Season',
+  season: 'Current Season',
 };
 
 const METRIC_SET = new Set<string>(COMMUNITY_LEADERBOARD_METRICS);
