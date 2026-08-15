@@ -1,11 +1,13 @@
 import { createLogger } from '@herta/logger';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { HealthConfig } from './config.js';
-import { HealthHttpServer } from './server.js';
+import { HealthHttpServer, type HealthHttpServerOptions } from './server.js';
 import type { HertaHealthResponse, PublicServiceStatus } from './types.js';
 
 const logger = createLogger({ name: 'health-http-test', level: 'silent' });
 const servers: HealthHttpServer[] = [];
+const INTERNAL_SECRET = '0123456789abcdef0123456789abcdef';
+const GUILD_ID = '123456789012345678';
 
 function config(): HealthConfig {
   return {
@@ -46,7 +48,15 @@ function response(status: PublicServiceStatus): HertaHealthResponse {
   };
 }
 
-async function startServer(getHealth: () => Promise<HertaHealthResponse>) {
+type ExtraOptions = Pick<
+  HealthHttpServerOptions,
+  'internalApiSecret' | 'getGuildBotProfile' | 'updateGuildBotProfile'
+>;
+
+async function startServer(
+  getHealth: () => Promise<HertaHealthResponse>,
+  extraOptions: ExtraOptions = {},
+) {
   const server = new HealthHttpServer({
     config: config(),
     logger,
@@ -54,6 +64,7 @@ async function startServer(getHealth: () => Promise<HertaHealthResponse>) {
     getHealth,
     now: () => new Date('2026-07-25T11:30:00.000Z'),
     uptimeSeconds: () => 100,
+    ...extraOptions,
   });
   servers.push(server);
   await server.start();
@@ -106,5 +117,83 @@ describe('GET /healthz', () => {
     expect(result.status).toBe(503);
     expect(body).toContain('"status":"unknown"');
     expect(body).not.toContain('unexpected secret stack');
+  });
+});
+
+describe('internal guild bot profile API', () => {
+  const profile = {
+    userId: '987654321098765432',
+    username: 'Herta',
+    nickname: 'Herta Bot',
+    avatarUrl: null,
+    guildAvatar: false,
+  };
+
+  it('Secret未設定時は内部APIを公開しない', async () => {
+    const baseUrl = await startServer(async () => response('operational'), {
+      getGuildBotProfile: async () => profile,
+    });
+    const result = await fetch(`${baseUrl}/internal/guilds/${GUILD_ID}/bot-profile`);
+    expect(result.status).toBe(503);
+  });
+
+  it('Bearer Secretが一致しない場合は401を返す', async () => {
+    const baseUrl = await startServer(async () => response('operational'), {
+      internalApiSecret: INTERNAL_SECRET,
+      getGuildBotProfile: async () => profile,
+    });
+    const result = await fetch(`${baseUrl}/internal/guilds/${GUILD_ID}/bot-profile`, {
+      headers: { Authorization: 'Bearer wrong-secret' },
+    });
+    expect(result.status).toBe(401);
+  });
+
+  it('認証済みGETでプロフィールを返す', async () => {
+    const baseUrl = await startServer(async () => response('operational'), {
+      internalApiSecret: INTERNAL_SECRET,
+      getGuildBotProfile: async () => profile,
+    });
+    const result = await fetch(`${baseUrl}/internal/guilds/${GUILD_ID}/bot-profile`, {
+      headers: { Authorization: `Bearer ${INTERNAL_SECRET}` },
+    });
+    expect(result.status).toBe(200);
+    expect(await result.json()).toEqual({ profile });
+  });
+
+  it('認証済みPATCHで検証済み入力だけを更新関数へ渡す', async () => {
+    let received: unknown = null;
+    const baseUrl = await startServer(async () => response('operational'), {
+      internalApiSecret: INTERNAL_SECRET,
+      updateGuildBotProfile: async (_guildId, input) => {
+        received = input;
+        return { ...profile, nickname: input.nickname };
+      },
+    });
+    const result = await fetch(`${baseUrl}/internal/guilds/${GUILD_ID}/bot-profile`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${INTERNAL_SECRET}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ nickname: 'New Herta' }),
+    });
+    expect(result.status).toBe(200);
+    expect(received).toEqual({ nickname: 'New Herta' });
+  });
+
+  it('不正なPATCH bodyは400を返す', async () => {
+    const baseUrl = await startServer(async () => response('operational'), {
+      internalApiSecret: INTERNAL_SECRET,
+      updateGuildBotProfile: async () => profile,
+    });
+    const result = await fetch(`${baseUrl}/internal/guilds/${GUILD_ID}/bot-profile`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${INTERNAL_SECRET}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ nickname: 'x'.repeat(33) }),
+    });
+    expect(result.status).toBe(400);
   });
 });
