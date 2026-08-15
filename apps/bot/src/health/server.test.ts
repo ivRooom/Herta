@@ -56,9 +56,10 @@ type ExtraOptions = Pick<
 async function startServer(
   getHealth: () => Promise<HertaHealthResponse>,
   extraOptions: ExtraOptions = {},
+  configOverrides: Partial<HealthConfig> = {},
 ) {
   const server = new HealthHttpServer({
-    config: config(),
+    config: { ...config(), ...configOverrides },
     logger,
     version: '1.0.0',
     getHealth,
@@ -179,6 +180,35 @@ describe('internal guild bot profile API', () => {
     });
     expect(result.status).toBe(200);
     expect(received).toEqual({ nickname: 'New Herta' });
+  });
+
+  it('PATCH mutationはhealth timeoutを超えても完了まで待って成功を返す', async () => {
+    let completed = false;
+    const baseUrl = await startServer(
+      async () => response('operational'),
+      {
+        internalApiSecret: INTERNAL_SECRET,
+        updateGuildBotProfile: async (_guildId, input) => {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          completed = true;
+          return { ...profile, nickname: input.nickname };
+        },
+      },
+      { checkTimeoutMs: -4_990 },
+    );
+
+    const result = await fetch(`${baseUrl}/internal/guilds/${GUILD_ID}/bot-profile`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${INTERNAL_SECRET}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ nickname: 'Slow Herta' }),
+    });
+
+    expect(result.status).toBe(200);
+    expect(completed).toBe(true);
+    expect(await result.json()).toEqual({ profile: { ...profile, nickname: 'Slow Herta' } });
   });
 
   it('不正なPATCH bodyは400を返す', async () => {
