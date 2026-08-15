@@ -1,11 +1,11 @@
 import {
-  BOT_PRESENCE_CONFIG_KEY,
   BOT_PRESENCE_EVENT_CHANNEL,
   DEFAULT_BOT_PRESENCE_CONFIG,
   createBotPresenceUpdateEvent,
   normalizeBotPresenceConfig,
   type BotPresenceConfig,
 } from '@herta/shared';
+import { prisma } from '@/lib/db';
 import { redisCommand } from '@/lib/redis-command';
 
 export interface BotPresenceState {
@@ -14,42 +14,67 @@ export interface BotPresenceState {
 }
 
 export async function getStoredBotPresence(): Promise<BotPresenceState> {
-  const redisUrl = process.env['REDIS_URL'];
-  if (!redisUrl) {
-    return { config: { ...DEFAULT_BOT_PRESENCE_CONFIG }, persistenceAvailable: false };
-  }
-
   try {
-    const value = await redisCommand(redisUrl, 'GET', BOT_PRESENCE_CONFIG_KEY);
-    if (typeof value !== 'string') {
-      return { config: { ...DEFAULT_BOT_PRESENCE_CONFIG }, persistenceAvailable: true };
-    }
+    const setting = await prisma.botPresenceSetting.findUnique({
+      where: { id: 'default' },
+      select: {
+        status: true,
+        activityType: true,
+        activityText: true,
+      },
+    });
     return {
-      config: normalizeBotPresenceConfig(JSON.parse(value) as unknown),
+      config: setting
+        ? normalizeBotPresenceConfig(setting)
+        : { ...DEFAULT_BOT_PRESENCE_CONFIG },
       persistenceAvailable: true,
     };
   } catch (error) {
-    console.error('Bot Presence設定のRedis読み込みに失敗しました', {
+    console.error('Bot Presence設定のDB読み込みに失敗しました', {
       error: error instanceof Error ? error.name : 'UnknownError',
     });
     return { config: { ...DEFAULT_BOT_PRESENCE_CONFIG }, persistenceAvailable: false };
   }
 }
 
-export async function saveBotPresence(config: BotPresenceConfig): Promise<{
+export async function saveBotPresence(
+  config: BotPresenceConfig,
+  updatedBy: string,
+): Promise<{
   persisted: boolean;
   subscriberCount: number;
 }> {
+  await prisma.botPresenceSetting.upsert({
+    where: { id: 'default' },
+    create: {
+      id: 'default',
+      status: config.status,
+      activityType: config.activityType,
+      activityText: config.activityText,
+      updatedBy,
+    },
+    update: {
+      status: config.status,
+      activityType: config.activityType,
+      activityText: config.activityText,
+      updatedBy,
+    },
+  });
+
   const redisUrl = process.env['REDIS_URL'];
-  if (!redisUrl) return { persisted: false, subscriberCount: 0 };
+  if (!redisUrl) return { persisted: true, subscriberCount: 0 };
 
-  const serialized = JSON.stringify(config);
-  const event = JSON.stringify(createBotPresenceUpdateEvent(config));
-
-  await redisCommand(redisUrl, 'SET', BOT_PRESENCE_CONFIG_KEY, serialized);
-  const publishResult = await redisCommand(redisUrl, 'PUBLISH', BOT_PRESENCE_EVENT_CHANNEL, event);
-  return {
-    persisted: true,
-    subscriberCount: typeof publishResult === 'number' ? Math.max(0, publishResult) : 0,
-  };
+  try {
+    const event = JSON.stringify(createBotPresenceUpdateEvent(config));
+    const publishResult = await redisCommand(redisUrl, 'PUBLISH', BOT_PRESENCE_EVENT_CHANNEL, event);
+    return {
+      persisted: true,
+      subscriberCount: typeof publishResult === 'number' ? Math.max(0, publishResult) : 0,
+    };
+  } catch (error) {
+    console.error('Bot Presence更新イベントの発行に失敗しました', {
+      error: error instanceof Error ? error.name : 'UnknownError',
+    });
+    return { persisted: true, subscriberCount: 0 };
+  }
 }
