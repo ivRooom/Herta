@@ -14,7 +14,6 @@ import { getGuildConsoleContext } from '@/lib/guild-context-nav';
 import {
   STUDIO_SELECTED_SERVER_SESSION_KEY,
   STUDIO_SERVER_PREFERENCES_STORAGE_KEY,
-  createDefaultStudioServerPreferences,
   parseStudioServerPreferences,
   resolveSelectedGuildId,
   serializeStudioServerPreferences,
@@ -32,16 +31,18 @@ interface StudioServerContextValue {
   selectedGuildId: string | null;
   defaultGuildId: string | null;
   selectGuild: (guildId: string) => boolean;
-  setDefaultGuild: (guildId: string | null) => boolean;
+  setDefaultGuild: (guildId: string | null) => Promise<boolean>;
 }
 
 const StudioServerContext = createContext<StudioServerContextValue | null>(null);
 
 export function StudioServerContextProvider({
   guilds,
+  initialDefaultGuildId,
   children,
 }: {
   guilds: readonly StudioServerItem[];
+  initialDefaultGuildId: string | null;
   children: ReactNode;
 }) {
   const pathname = usePathname();
@@ -49,40 +50,44 @@ export function StudioServerContextProvider({
   const initialSelectedGuildId = resolveSelectedGuildId({
     guildIds: guilds.map((guild) => guild.id),
     routeGuildId,
+    defaultGuildId: initialDefaultGuildId,
   });
   const [selectedGuildId, setSelectedGuildId] = useState<string | null>(initialSelectedGuildId);
-  const [defaultGuildId, setDefaultGuildId] = useState<string | null>(null);
+  const [defaultGuildId, setDefaultGuildId] = useState<string | null>(initialDefaultGuildId);
 
   const guildById = useMemo(() => new Map(guilds.map((guild) => [guild.id, guild])), [guilds]);
 
   useEffect(() => {
-    let preferences = createDefaultStudioServerPreferences();
     let sessionGuildId: string | null = null;
-
     try {
-      preferences = parseStudioServerPreferences(
-        window.localStorage.getItem(STUDIO_SERVER_PREFERENCES_STORAGE_KEY),
-      );
       sessionGuildId = window.sessionStorage.getItem(STUDIO_SELECTED_SERVER_SESSION_KEY);
+      window.localStorage.setItem(
+        STUDIO_SERVER_PREFERENCES_STORAGE_KEY,
+        serializeStudioServerPreferences({
+          version: 1,
+          defaultGuildId:
+            initialDefaultGuildId && guildById.has(initialDefaultGuildId)
+              ? initialDefaultGuildId
+              : null,
+        }),
+      );
     } catch {
-      // Storageが利用できない環境でもStudioの操作自体は継続する。
+      // Storageが利用できない環境でもDB設定とURL Contextで継続する。
     }
 
+    const nextDefaultGuildId =
+      initialDefaultGuildId && guildById.has(initialDefaultGuildId) ? initialDefaultGuildId : null;
     const nextSelectedGuildId = resolveSelectedGuildId({
       guildIds: guilds.map((guild) => guild.id),
       routeGuildId,
       sessionGuildId,
-      defaultGuildId: preferences.defaultGuildId,
+      defaultGuildId: nextDefaultGuildId,
     });
-    const nextDefaultGuildId =
-      preferences.defaultGuildId && guildById.has(preferences.defaultGuildId)
-        ? preferences.defaultGuildId
-        : null;
 
     setDefaultGuildId(nextDefaultGuildId);
     setSelectedGuildId(nextSelectedGuildId);
     persistSessionSelection(nextSelectedGuildId);
-  }, [guildById, guilds, routeGuildId]);
+  }, [guildById, guilds, initialDefaultGuildId, routeGuildId]);
 
   useEffect(() => {
     if (!routeGuildId || !guildById.has(routeGuildId)) return;
@@ -116,21 +121,30 @@ export function StudioServerContextProvider({
   );
 
   const setDefaultGuild = useCallback(
-    (guildId: string | null): boolean => {
+    async (guildId: string | null): Promise<boolean> => {
       if (guildId !== null && !guildById.has(guildId)) return false;
 
-      const preferences = { version: 1 as const, defaultGuildId: guildId };
       try {
-        window.localStorage.setItem(
-          STUDIO_SERVER_PREFERENCES_STORAGE_KEY,
-          serializeStudioServerPreferences(preferences),
-        );
+        const response = await fetch('/api/me/studio-preferences', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ defaultGuildId: guildId }),
+        });
+        if (!response.ok) return false;
+
+        setDefaultGuildId(guildId);
+        try {
+          window.localStorage.setItem(
+            STUDIO_SERVER_PREFERENCES_STORAGE_KEY,
+            serializeStudioServerPreferences({ version: 1, defaultGuildId: guildId }),
+          );
+        } catch {
+          // DBへの保存は成功済みなのでブラウザキャッシュ失敗は致命的ではない。
+        }
+        return true;
       } catch {
         return false;
       }
-
-      setDefaultGuildId(guildId);
-      return true;
     },
     [guildById],
   );
