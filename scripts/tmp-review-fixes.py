@@ -13,15 +13,17 @@ def write(path: str, content: str) -> None:
     Path(path).write_text(content)
 
 
-# Presence subscriber: retry-safe startup and equal-timestamp delivery.
+# Presence subscriber: failed startup must be retryable and same-ms updates must not be dropped.
 replace_once(
     "apps/bot/src/presence/runtime-events.ts",
     """    await redis.connect();
     await redis.subscribe(BOT_PRESENCE_EVENT_CHANNEL);
+    await this.refreshStoredPresence();
 """,
     """    try {
       await redis.connect();
       await redis.subscribe(BOT_PRESENCE_EVENT_CHANNEL);
+      await this.refreshStoredPresence();
     } catch (error) {
       this.redis = undefined;
       redis.disconnect();
@@ -69,136 +71,6 @@ replace_once(
 """,
 )
 
-# Close the startup race by reloading DB state after subscription is live.
-replace_once(
-    "apps/bot/src/bot.ts",
-    """    try {
-      await this.presenceEvents.start(redisUrl);
-    } catch (error) {
-      this.logger.error(
-        { err: error },
-        'Bot Presenceイベント購読の開始に失敗しました。保存済みPresenceで継続します',
-      );
-    }
-""",
-    """    try {
-      await this.presenceEvents.start(redisUrl);
-      try {
-        this.applyBotPresence(await loadStoredBotPresence(this.prisma));
-      } catch (error) {
-        this.logger.warn(
-          { err: error },
-          'Bot Presenceイベント購読後の設定再読み込みに失敗しました',
-        );
-      }
-    } catch (error) {
-      this.logger.error(
-        { err: error },
-        'Bot Presenceイベント購読の開始に失敗しました。保存済みPresenceで継続します',
-      );
-    }
-""",
-)
-
-# Validate decoded avatar bytes again at the bot internal API boundary.
-replace_once(
-    "apps/bot/src/profile/guild-bot-profile.ts",
-    """const MAX_INTERNAL_AVATAR_DATA_URI_LENGTH = 1_450_000;
-const AVATAR_DATA_URI_PREFIXES = [
-""",
-    """const MAX_AVATAR_BYTES = 1_048_576;
-const MAX_INTERNAL_AVATAR_DATA_URI_LENGTH = 1_400_000;
-const AVATAR_DATA_URI_PREFIXES = [
-""",
-)
-replace_once(
-    "apps/bot/src/profile/guild-bot-profile.ts",
-    """  const avatar = value.avatar;
-  if (avatar === null) return { nickname, avatar: null };
-  if (typeof avatar !== 'string' || avatar.length > MAX_INTERNAL_AVATAR_DATA_URI_LENGTH)
-    return null;
-  if (!AVATAR_DATA_URI_PREFIXES.some((prefix) => avatar.startsWith(prefix))) return null;
-
-  const encoded = avatar.slice(avatar.indexOf(',') + 1);
-  if (!encoded || !/^[A-Za-z0-9+/]+={0,2}$/u.test(encoded)) return null;
-  return { nickname, avatar };
-}
-""",
-    """  const avatar = value.avatar;
-  if (avatar === null) return { nickname, avatar: null };
-  if (typeof avatar !== 'string' || avatar.length > MAX_INTERNAL_AVATAR_DATA_URI_LENGTH)
-    return null;
-
-  const prefix = AVATAR_DATA_URI_PREFIXES.find((candidate) => avatar.startsWith(candidate));
-  if (!prefix) return null;
-
-  const encoded = avatar.slice(prefix.length);
-  if (!encoded || encoded.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/u.test(encoded)) {
-    return null;
-  }
-
-  const bytes = Buffer.from(encoded, 'base64');
-  if (
-    bytes.length === 0 ||
-    bytes.length > MAX_AVATAR_BYTES ||
-    bytes.toString('base64') !== encoded ||
-    !matchesAvatarSignature(prefix, bytes)
-  ) {
-    return null;
-  }
-
-  return { nickname, avatar };
-}
-
-function matchesAvatarSignature(
-  prefix: (typeof AVATAR_DATA_URI_PREFIXES)[number],
-  bytes: Buffer,
-): boolean {
-  if (prefix === 'data:image/png;base64,') {
-    return (
-      bytes.length >= 8 &&
-      bytes[0] === 0x89 &&
-      bytes[1] === 0x50 &&
-      bytes[2] === 0x4e &&
-      bytes[3] === 0x47 &&
-      bytes[4] === 0x0d &&
-      bytes[5] === 0x0a &&
-      bytes[6] === 0x1a &&
-      bytes[7] === 0x0a
-    );
-  }
-  if (prefix === 'data:image/jpeg;base64,') {
-    return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-  }
-  const signature = bytes.subarray(0, 6).toString('ascii');
-  return bytes.length >= 6 && (signature === 'GIF87a' || signature === 'GIF89a');
-}
-""",
-)
-replace_once(
-    "apps/bot/src/profile/guild-bot-profile.test.ts",
-    """    expect(
-      parseGuildBotProfileUpdate({ nickname: 'Herta', avatar: 'data:image/png;base64,not base64' }),
-    ).toBeNull();
-""",
-    """    expect(
-      parseGuildBotProfileUpdate({ nickname: 'Herta', avatar: 'data:image/png;base64,not base64' }),
-    ).toBeNull();
-    expect(
-      parseGuildBotProfileUpdate({ nickname: 'Herta', avatar: 'data:image/png;base64,SGVsbG8=' }),
-    ).toBeNull();
-
-    const oversized = Buffer.alloc(1_048_577);
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(oversized);
-    expect(
-      parseGuildBotProfileUpdate({
-        nickname: 'Herta',
-        avatar: `data:image/png;base64,${oversized.toString('base64')}`,
-      }),
-    ).toBeNull();
-""",
-)
-
 # Shared bounded body reader protects chunked and misleading Content-Length requests.
 write(
     "apps/studio/src/lib/bounded-request-body.ts",
@@ -212,7 +84,7 @@ write(
 export async function readRequestBodyBytes(
   request: Request,
   maxBytes: number,
-): Promise<Uint8Array> {
+): Promise<Uint8Array<ArrayBuffer>> {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) {
     throw new RangeError('maxBytes must be a non-negative safe integer');
   }
@@ -221,7 +93,7 @@ export async function readRequestBodyBytes(
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
     throw new RequestBodyTooLargeError();
   }
-  if (!request.body) return new Uint8Array();
+  if (!request.body) return new Uint8Array(0);
 
   const reader = request.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -304,7 +176,7 @@ test('上限内のJSON bodyを解析する', async () => {
 """
     )
 
-# Presence route uses the bounded JSON reader and does not claim an application ACK.
+# Presence API: actual-byte body limit and subscriber notification semantics (not an ACK).
 replace_once(
     "apps/studio/src/app/api/bot/presence/route.ts",
     "import { getStoredBotPresence, saveBotPresence } from '@/lib/bot-presence-store';\n",
@@ -345,18 +217,11 @@ replace_once(
     "      appliedImmediately: result.subscriberCount > 0,\n",
     "      notificationDelivered: result.subscriberCount > 0,\n",
 )
-replace_once(
-    "apps/studio/src/app/api/bot/presence/route.ts",
-    "      actorId: session.user.id,\n",
-    "",
-)
-replace_once(
-    "apps/studio/src/app/api/bot/presence/route.ts",
-    "      actorId: session.user.id,\n",
-    "",
-)
+text = Path("apps/studio/src/app/api/bot/presence/route.ts").read_text()
+text = text.replace("      actorId: session.user.id,\n", "")
+Path("apps/studio/src/app/api/bot/presence/route.ts").write_text(text)
 
-# Default server route uses the same bounded reader and avoids user IDs in logs.
+# Default server API uses the same bounded reader and avoids direct user IDs in logs.
 replace_once(
     "apps/studio/src/app/api/me/studio-preferences/route.ts",
     "import { auth } from '@/auth';\n",
@@ -392,18 +257,11 @@ replace_once(
   }
 """,
 )
-replace_once(
-    "apps/studio/src/app/api/me/studio-preferences/route.ts",
-    "      userId: session.user.id,\n",
-    "",
-)
-replace_once(
-    "apps/studio/src/app/api/me/studio-preferences/route.ts",
-    "      userId: session.user.id,\n",
-    "",
-)
+text = Path("apps/studio/src/app/api/me/studio-preferences/route.ts").read_text()
+text = text.replace("      userId: session.user.id,\n", "")
+Path("apps/studio/src/app/api/me/studio-preferences/route.ts").write_text(text)
 
-# Bot profile route bounds multipart reads and records the true nickname delta.
+# Bot profile API bounds multipart reads and records the true nickname delta.
 replace_once(
     "apps/studio/src/app/api/guilds/[guildId]/bot-profile/route.ts",
     "import { auth } from '@/auth';\n",
@@ -465,19 +323,14 @@ replace_once(
     "            nicknameChanged: previousProfile.nickname !== profile.nickname,\n",
 )
 
-# Remove user IDs from request-path logging.
-replace_once(
-    "apps/studio/src/app/dashboard/layout.tsx",
-    "      userId: session.user.id,\n",
-    "",
+# Avoid direct user IDs in layout request-path logs.
+text = Path("apps/studio/src/app/dashboard/layout.tsx").read_text()
+text = text.replace("      userId: session.user.id,\n", "").replace(
+    "        userId: session.user.id,\n", ""
 )
-replace_once(
-    "apps/studio/src/app/dashboard/layout.tsx",
-    "        userId: session.user.id,\n",
-    "",
-)
+Path("apps/studio/src/app/dashboard/layout.tsx").write_text(text)
 
-# Reset the native file input and use precise Presence notification wording.
+# Reset native avatar input as well as React state; use precise notification wording.
 replace_once(
     "apps/studio/src/components/bot-profile-settings.tsx",
     "import { useEffect, useState, type FormEvent } from 'react';\n",
@@ -588,14 +441,13 @@ replace_once(
 """,
 )
 
-# Updated selection model wording.
 replace_once(
     "apps/studio/src/components/console-command-palette.tsx",
     '<span className="ml-auto">サーバー固有機能はGuild画面で表示</span>',
     '<span className="ml-auto">Server Switcherでサーバーを選択すると固有機能を表示</span>',
 )
 
-# Server switcher accessibility.
+# Server switcher accessibility: persistent live region, proper list semantics and labelled icons.
 replace_once(
     "apps/studio/src/components/guild-context-nav.tsx",
     """              aria-label="デフォルト"
@@ -685,7 +537,7 @@ replace_once(
 """,
 )
 
-# Avoid cross-tab stale default rebroadcasts.
+# Do not rebroadcast a stale server-rendered default into another tab.
 replace_once(
     "apps/studio/src/components/studio-server-context.tsx",
     """    try {
@@ -709,7 +561,7 @@ replace_once(
 """,
 )
 
-# Redis command should reject immediately on premature socket close.
+# Fail Redis commands immediately on a premature connection close.
 replace_once(
     "apps/studio/src/lib/redis-command.ts",
     """    socket.once('error', fail);
@@ -723,7 +575,7 @@ replace_once(
 """,
 )
 
-# Moderation entry stays active for sub-routes.
+# Moderation main entry remains highlighted on detail routes.
 replace_once(
     "apps/studio/src/lib/studio-selected-server-navigation.ts",
     """    icon: 'moderation',
