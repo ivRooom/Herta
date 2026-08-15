@@ -1,0 +1,27 @@
+name: Remove profile mutation timeout
+
+on:
+  push:
+    branches:
+      - feature/studio-server-context-bot-profile
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: python scripts/tmp-remove-profile-timeout.py
+      - name: Commit and cleanup
+        run: |
+          rm scripts/tmp-remove-profile-timeout.py .github/workflows/tmp-remove-profile-timeout.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Botプロフィール更新の完了を待って応答する"
+          git push
