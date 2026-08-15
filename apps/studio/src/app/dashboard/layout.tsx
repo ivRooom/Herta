@@ -17,7 +17,10 @@ import { StudioServerContextProvider } from '@/components/studio-server-context'
 import { getManageableGuilds } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
 import { STUDIO_ACCOUNT_NAV_ITEM } from '@/lib/studio-navigation';
-import { getDefaultStudioGuildId } from '@/lib/studio-user-preferences';
+import {
+  getDefaultStudioGuildId,
+  setDefaultStudioGuildId,
+} from '@/lib/studio-user-preferences';
 
 export const dynamic = 'force-dynamic';
 
@@ -53,6 +56,22 @@ export default async function DashboardLayout({ children }: { children: React.Re
         'Guild switcher could not load manageable guilds',
         error instanceof Error ? error.name : 'UnknownError',
       );
+    }
+  }
+
+  if (
+    guildsState === 'ready' &&
+    initialDefaultGuildId &&
+    !guilds.some((guild) => guild.id === initialDefaultGuildId)
+  ) {
+    try {
+      await setDefaultStudioGuildId(session.user.id, null);
+      initialDefaultGuildId = null;
+    } catch (error) {
+      console.error('Invalid Studio default server could not be cleared', {
+        userId: session.user.id,
+        error: error instanceof Error ? error.name : 'UnknownError',
+      });
     }
   }
 
