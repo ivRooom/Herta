@@ -92,8 +92,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             <span>
               <span className="block text-sm font-semibold tracking-tight">Herta Studio</span>
               <span className="mt-0.5 flex items-center gap-1 text-[11px] text-muted">
-                <Sparkles className="h-3 w-3 text-primary" aria-hidden="true" /> Discord Control
-                Center
+                <Sparkles className="h-3 w-3 text-primary" aria-hidden="true" /> Discord Control Center
               </span>
             </span>
           </Link>
