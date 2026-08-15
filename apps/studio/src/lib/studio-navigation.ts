@@ -18,7 +18,8 @@ export type StudioNavigationIcon =
   | 'moderation'
   | 'team'
   | 'message'
-  | 'xp';
+  | 'xp'
+  | 'account';
 
 export interface StudioNavigationItem {
   id: string;
@@ -29,6 +30,15 @@ export interface StudioNavigationItem {
   icon: StudioNavigationIcon;
   exact?: boolean;
 }
+
+export const STUDIO_ACCOUNT_NAV_ITEM = {
+  id: 'account',
+  href: '/dashboard/account',
+  label: 'アカウント',
+  description: 'Discord連携とStudioセッションを確認する',
+  keywords: ['account', 'profile', 'settings', 'discord', 'アカウント', 'プロフィール', '設定'],
+  icon: 'account',
+} as const satisfies StudioNavigationItem;
 
 export const STUDIO_NAV_ITEMS: readonly StudioNavigationItem[] = [
   {
@@ -88,6 +98,7 @@ export const STUDIO_NAV_ITEMS: readonly StudioNavigationItem[] = [
     keywords: ['custom plugin', 'plugin', 'プラグイン', '拡張'],
     icon: 'custom-plugin',
   },
+  STUDIO_ACCOUNT_NAV_ITEM,
 ];
 
 export type StudioCommandGroup = 'workspace' | 'current-server' | 'community' | 'moderation';
