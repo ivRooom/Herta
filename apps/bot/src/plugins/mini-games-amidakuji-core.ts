@@ -13,6 +13,21 @@ export interface AmidakujiLadder {
 }
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const MAX_RESULT_LABEL_LENGTH = 50;
+
+export function parseAmidakujiResultLabels(input: string | null, slots: number): string[] | null {
+  if (!Number.isInteger(slots) || slots < 2 || slots > 10) return null;
+  const normalized = input?.trim() ?? '';
+  if (!normalized) return Array.from({ length: slots }, (_, index) => `${index + 1}番`);
+
+  const labels = normalized
+    .split(/[\n,、]/u)
+    .map((label) => label.trim())
+    .filter(Boolean);
+  if (labels.length !== slots) return null;
+  if (labels.some((label) => label.length > MAX_RESULT_LABEL_LENGTH)) return null;
+  return labels;
+}
 
 export function generateAmidakujiLadder(
   slots: number,
@@ -35,7 +50,6 @@ export function generateAmidakujiLadder(
     }
   }
 
-  // A completely straight ladder is visually uninteresting and makes the result obvious.
   if (bars.length === 0) {
     bars.push({ row: Math.floor(rows / 2), left: Math.floor(random() * (slots - 1)) });
   }
