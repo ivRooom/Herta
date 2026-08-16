@@ -53,10 +53,19 @@ export function createMiniGamesV3CommandHandlers(
       definition: miniGamesManifest.commands[6]!,
       execute: (interaction) => executeArcadeLeaderboard(context, interaction),
     },
-    createAmidakujiCommandHandler(miniGamesManifest.commands[7]!, () => ({
-      enabled: readConfig(context.config).enabled,
-      sessionTimeoutSeconds: readSessionTimeout(context.config),
-    })),
+    createAmidakujiCommandHandler(miniGamesManifest.commands[7]!, () => {
+      const config = readConfig(context.config);
+      return {
+        enabled: config.enabled,
+        sessionTimeoutSeconds: readSessionTimeout(context.config),
+        complexity: readEnum(context.config, 'amidakujiComplexity', ['simple', 'standard', 'chaos'], 'standard'),
+        theme: readEnum(context.config, 'amidakujiTheme', ['arcade', 'midnight', 'classic'], 'arcade'),
+        hiddenPercent: readInteger(context.config, 'amidakujiHiddenPercent', 42, 20, 70),
+        revealAnimation: readBoolean(context.config, 'amidakujiRevealAnimation', true),
+        revealDelayMs: readInteger(context.config, 'amidakujiRevealDelayMs', 700, 250, 2000),
+        highlightPaths: readBoolean(context.config, 'amidakujiHighlightPaths', true),
+      };
+    }),
   ];
 }
 
@@ -271,9 +280,30 @@ function readConfig(value: unknown): {
 }
 
 function readSessionTimeout(value: unknown): number {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return 90;
-  const raw = (value as Record<string, unknown>).sessionTimeoutSeconds;
-  return typeof raw === 'number' && Number.isFinite(raw) ? clamp(raw, 30, 300) : 90;
+  return readInteger(value, 'sessionTimeoutSeconds', 90, 30, 300);
+}
+
+function readBoolean(value: unknown, key: string, fallback: boolean): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return fallback;
+  const raw = (value as Record<string, unknown>)[key];
+  return raw === undefined ? fallback : raw === true;
+}
+
+function readInteger(value: unknown, key: string, fallback: number, min: number, max: number): number {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return fallback;
+  const raw = (value as Record<string, unknown>)[key];
+  return typeof raw === 'number' && Number.isFinite(raw) ? clamp(raw, min, max) : fallback;
+}
+
+function readEnum<const T extends readonly string[]>(
+  value: unknown,
+  key: string,
+  values: T,
+  fallback: T[number],
+): T[number] {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return fallback;
+  const raw = (value as Record<string, unknown>)[key];
+  return typeof raw === 'string' && values.includes(raw) ? (raw as T[number]) : fallback;
 }
 
 function isArcadeMetric(value: string): value is ArcadeMetric {
