@@ -9,13 +9,22 @@ function createLogger(): Logger {
 }
 
 describe('CommandRegistry plugin-owned commands', () => {
+  it('Plugin非所有のCore Fun Utilityをすべて登録する', () => {
+    const registry = new CommandRegistry(createLogger());
+
+    for (const name of ['choose', 'random', '8ball', 'rps', 'shuffle', 'rate']) {
+      expect(registry.get(name), `${name} should be registered`).toBeDefined();
+    }
+    expect(registry.get('hash')).toBeDefined();
+  });
+
   it('Mini Gamesが所有するcoinflipとdiceをCore登録から除外する', () => {
     const registry = new CommandRegistry(createLogger());
+    const names = registry.getAll().map((command) => command.definition.name);
 
     expect(registry.get('coinflip')).toBeUndefined();
     expect(registry.get('dice')).toBeUndefined();
-    expect(registry.get('choose')).toBeDefined();
-    expect(registry.get('random')).toBeDefined();
+    expect(new Set(names).size).toBe(names.length);
   });
 
   it('Plugin側からcoinflipとdiceを登録できる', () => {
