@@ -43,7 +43,9 @@ export interface SpotifyTrackResult {
 let tokenCache: { accessToken: string; expiresAt: number } | null = null;
 
 export function isSpotifyConfigured(): boolean {
-  return Boolean(process.env.SPOTIFY_CLIENT_ID?.trim() && process.env.SPOTIFY_CLIENT_SECRET?.trim());
+  return Boolean(
+    process.env.SPOTIFY_CLIENT_ID?.trim() && process.env.SPOTIFY_CLIENT_SECRET?.trim(),
+  );
 }
 
 export function parseSpotifyTrackId(input: string): string | null {
@@ -152,7 +154,10 @@ async function spotifyFetch(url: string, accessToken: string): Promise<Response>
       signal: controller.signal,
     });
     if (response.status === 429) {
-      throw new SpotifyCatalogError('rate_limited', 'Spotifyの検索上限に達しました。少し時間を置いてください');
+      throw new SpotifyCatalogError(
+        'rate_limited',
+        'Spotifyの検索上限に達しました。少し時間を置いてください',
+      );
     }
     if (!response.ok) {
       throw new SpotifyCatalogError('upstream_failed', 'Spotifyから楽曲情報を取得できませんでした');

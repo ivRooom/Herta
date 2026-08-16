@@ -11,6 +11,7 @@ import {
   type BotPresenceStatus,
 } from '@herta/shared';
 import { BOT_AVATAR_MAX_BYTES, BOT_AVATAR_MIME_TYPES } from '@/lib/bot-profile-input';
+import { SpotifyPresencePicker } from '@/components/spotify-presence-picker';
 
 interface BotGuildProfile {
   userId: string;
@@ -396,7 +397,7 @@ function GlobalPresenceCard() {
 
           <div>
             <label htmlFor="bot-activity-text" className="text-sm font-semibold">
-              Activity
+              {activityInputLabel(config.activityType)}
             </label>
             <input
               id="bot-activity-text"
@@ -409,10 +410,22 @@ function GlobalPresenceCard() {
               }
               required
               maxLength={128}
-              placeholder="Herta"
+              placeholder={activityInputPlaceholder(config.activityType)}
               className="mt-2 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/10"
             />
           </div>
+
+          {config.activityType === 'listening' ? (
+            <SpotifyPresencePicker
+              onSelect={(presenceText) =>
+                setConfig((current) => ({
+                  ...current,
+                  activityType: 'listening',
+                  activityText: presenceText,
+                }))
+              }
+            />
+          ) : null}
 
           <button
             type="submit"
@@ -506,6 +519,24 @@ function activityTypeLabel(type: BotActivityType): string {
     listening: 'Listening',
     watching: 'Watching',
     competing: 'Competing',
+  }[type];
+}
+
+function activityInputLabel(type: BotActivityType): string {
+  return {
+    playing: 'Game Title',
+    listening: 'Track / Artist',
+    watching: 'Watching Title',
+    competing: 'Competition Title',
+  }[type];
+}
+
+function activityInputPlaceholder(type: BotActivityType): string {
+  return {
+    playing: 'Minecraft',
+    listening: 'アイドル — YOASOBI',
+    watching: 'Herta Studio',
+    competing: 'Herta Championship',
   }[type];
 }
 

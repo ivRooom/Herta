@@ -12,11 +12,7 @@ interface SpotifyTrackResult {
   presenceText: string;
 }
 
-export function SpotifyPresencePicker({
-  onSelect,
-}: {
-  onSelect: (presenceText: string) => void;
-}) {
+export function SpotifyPresencePicker({ onSelect }: { onSelect: (presenceText: string) => void }) {
   const [query, setQuery] = useState('');
   const [tracks, setTracks] = useState<SpotifyTrackResult[]>([]);
   const [configured, setConfigured] = useState<boolean | null>(null);
@@ -31,9 +27,12 @@ export function SpotifyPresencePicker({
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/bot/presence/spotify?q=${encodeURIComponent(normalized)}`, {
-        cache: 'no-store',
-      });
+      const response = await fetch(
+        `/api/bot/presence/spotify?q=${encodeURIComponent(normalized)}`,
+        {
+          cache: 'no-store',
+        },
+      );
       const body = (await response.json()) as {
         configured?: boolean;
         tracks?: SpotifyTrackResult[];
@@ -96,7 +95,10 @@ export function SpotifyPresencePicker({
         </p>
       ) : null}
       {error ? (
-        <p className="mt-3 rounded-xl border border-red-400/30 bg-red-400/5 p-3 text-xs text-red-300" role="alert">
+        <p
+          className="mt-3 rounded-xl border border-red-400/30 bg-red-400/5 p-3 text-xs text-red-300"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
@@ -108,7 +110,10 @@ export function SpotifyPresencePicker({
       {tracks.length > 0 ? (
         <ul className="mt-4 space-y-2" aria-label="Spotify検索結果">
           {tracks.map((track) => (
-            <li key={track.id} className="flex items-center gap-3 rounded-xl border border-border bg-surface p-3">
+            <li
+              key={track.id}
+              className="flex items-center gap-3 rounded-xl border border-border bg-surface p-3"
+            >
               {track.imageUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
@@ -123,7 +128,9 @@ export function SpotifyPresencePicker({
               )}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold">{track.name}</p>
-                <p className="truncate text-xs text-muted">{track.artists.join(', ') || 'Unknown Artist'}</p>
+                <p className="truncate text-xs text-muted">
+                  {track.artists.join(', ') || 'Unknown Artist'}
+                </p>
               </div>
               <a
                 href={track.url}
