@@ -1,6 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Logger } from 'pino';
-import { CommandRegistry, type SlashCommand } from './registry.js';
+import { communityActivityCommands } from './community-activity.js';
+import { coreInformationCommands } from './core-info.js';
+import { coreFunUtilityCommands } from './fun-utility.js';
+import {
+  CommandRegistry,
+  PLUGIN_OWNED_COMMAND_NAMES,
+  type SlashCommand,
+} from './registry.js';
+import { coreUtilityV3Commands } from './utility-v3.js';
+import { coreUtilityV4Commands } from './utility-v4.js';
 
 function createLogger(): Logger {
   return {
@@ -8,23 +17,47 @@ function createLogger(): Logger {
   } as unknown as Logger;
 }
 
-describe('CommandRegistry plugin-owned commands', () => {
-  it('Plugin非所有のCore Fun Utilityをすべて登録する', () => {
-    const registry = new CommandRegistry(createLogger());
+function expectedCoreCommandNames(): string[] {
+  return [
+    ...coreInformationCommands,
+    ...coreFunUtilityCommands,
+    ...coreUtilityV3Commands,
+    ...coreUtilityV4Commands,
+    ...communityActivityCommands,
+  ]
+    .map((command) => command.definition.name)
+    .filter((name) => !PLUGIN_OWNED_COMMAND_NAMES.has(name));
+}
 
-    for (const name of ['choose', 'random', '8ball', 'rps', 'shuffle', 'rate']) {
+describe('CommandRegistry command ownership audit', () => {
+  it('Plugin非所有のCore Commandを漏れなくRegistryへ登録する', () => {
+    const registry = new CommandRegistry(createLogger());
+    const expected = [...expectedCoreCommandNames()].sort();
+    const actual = registry
+      .getAll()
+      .map((command) => command.definition.name)
+      .sort();
+
+    expect(actual).toEqual(expected);
+  });
+
+  it('Core側の非Plugin所有Command名に重複がない', () => {
+    const names = expectedCoreCommandNames();
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('Utility v4コマンドをRegistryへ登録する', () => {
+    const registry = new CommandRegistry(createLogger());
+    for (const name of ['color', 'base64', 'url', 'textstats']) {
       expect(registry.get(name), `${name} should be registered`).toBeDefined();
     }
-    expect(registry.get('hash')).toBeDefined();
   });
 
   it('Mini Gamesが所有するcoinflipとdiceをCore登録から除外する', () => {
     const registry = new CommandRegistry(createLogger());
-    const names = registry.getAll().map((command) => command.definition.name);
 
     expect(registry.get('coinflip')).toBeUndefined();
     expect(registry.get('dice')).toBeUndefined();
-    expect(new Set(names).size).toBe(names.length);
   });
 
   it('Plugin側からcoinflipとdiceを登録できる', () => {
