@@ -48,6 +48,7 @@ export function parseBotPresenceConfig(value: unknown): BotPresenceConfig | null
   const status = value.status;
   const activityType = value.activityType;
   const activityText = typeof value.activityText === 'string' ? value.activityText.trim() : '';
+  const hasMedia = Object.prototype.hasOwnProperty.call(value, 'media');
   const media =
     value.media === undefined || value.media === null ? null : parseBotPresenceMedia(value.media);
 
@@ -56,12 +57,13 @@ export function parseBotPresenceConfig(value: unknown): BotPresenceConfig | null
   if (activityText.length < 1 || activityText.length > 128) return null;
   if (value.media !== undefined && value.media !== null && !media) return null;
 
-  return {
+  const config: BotPresenceConfig = {
     status: status as BotPresenceStatus,
     activityType: activityType as BotActivityType,
     activityText,
-    media,
   };
+  if (hasMedia) config.media = media;
+  return config;
 }
 
 export function normalizeBotPresenceConfig(value: unknown): BotPresenceConfig {
