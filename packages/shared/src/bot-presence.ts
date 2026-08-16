@@ -42,6 +42,19 @@ const STATUS_SET = new Set<string>(BOT_PRESENCE_STATUSES);
 const ACTIVITY_TYPE_SET = new Set<string>(BOT_ACTIVITY_TYPES);
 const MEDIA_PROVIDER_SET = new Set<string>(BOT_PRESENCE_MEDIA_PROVIDERS);
 
+const MEDIA_ACTIVITY_TYPE: Readonly<Record<BotPresenceMediaProvider, BotActivityType>> = {
+  spotify: 'listening',
+  youtube: 'watching',
+  'prime-video': 'watching',
+};
+
+export function isBotPresenceMediaCompatible(
+  activityType: BotActivityType,
+  provider: BotPresenceMediaProvider,
+): boolean {
+  return MEDIA_ACTIVITY_TYPE[provider] === activityType;
+}
+
 export function parseBotPresenceConfig(value: unknown): BotPresenceConfig | null {
   if (!isRecord(value)) return null;
 
@@ -57,9 +70,12 @@ export function parseBotPresenceConfig(value: unknown): BotPresenceConfig | null
   if (activityText.length < 1 || activityText.length > 128) return null;
   if (value.media !== undefined && value.media !== null && !media) return null;
 
+  const normalizedActivityType = activityType as BotActivityType;
+  if (media && !isBotPresenceMediaCompatible(normalizedActivityType, media.provider)) return null;
+
   const config: BotPresenceConfig = {
     status: status as BotPresenceStatus,
-    activityType: activityType as BotActivityType,
+    activityType: normalizedActivityType,
     activityText,
   };
   if (hasMedia) config.media = media;
