@@ -74,7 +74,7 @@ describe('PluginRuntimeEventSubscriber', () => {
     expect(synced).toEqual(['guild-a']);
   });
 
-  it('Guildごとに独立して同期し一方の失敗を他方へ波及させない', async () => {
+  it('Guildごとに独立して同期し失敗したGuildだけ最大3回再試行する', async () => {
     vi.useFakeTimers();
     const synced: string[] = [];
     const subscriber = new PluginRuntimeEventSubscriber(
@@ -101,7 +101,40 @@ describe('PluginRuntimeEventSubscriber', () => {
     await vi.runAllTimersAsync();
     await Promise.resolve();
 
-    expect(synced.sort()).toEqual(['guild-a', 'guild-b']);
+    expect(synced.filter((guildId) => guildId === 'guild-a')).toHaveLength(3);
+    expect(synced.filter((guildId) => guildId === 'guild-b')).toHaveLength(1);
+  });
+
+  it('一時的な同期失敗から再試行で復旧する', async () => {
+    vi.useFakeTimers();
+    let attempts = 0;
+    const logger = createLogger();
+    const subscriber = new PluginRuntimeEventSubscriber(
+      async () => {
+        attempts += 1;
+        if (attempts < 2) throw new Error('temporary failure');
+      },
+      logger,
+      10,
+    );
+    subscriber.handleMessage(
+      JSON.stringify(
+        createPluginRuntimeEvent({
+          guildId: 'guild-a',
+          pluginId: 'mini-games',
+          configVersion: 4,
+          eventType: 'enabled',
+        }),
+      ),
+    );
+
+    await vi.runAllTimersAsync();
+
+    expect(attempts).toBe(2);
+    expect(logger.info).toHaveBeenCalledWith(
+      { guildId: 'guild-a', attempt: 2 },
+      'Plugin Runtime Guild再同期の再試行に成功しました',
+    );
   });
 
   it('不正なpayloadを破棄する', async () => {
