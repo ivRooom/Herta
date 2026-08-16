@@ -1,10 +1,16 @@
-import { createServer, type Server } from 'node:http';
+import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { Logger } from '@herta/logger';
+import {
+  parseGuildBotProfileUpdate,
+  type GuildBotProfile,
+  type GuildBotProfileUpdate,
+} from '../profile/guild-bot-profile.js';
 import type { HealthConfig } from './config.js';
-import { createUnknownHealthResponse } from './service.js';
 import type { GuildConfigurationOptions } from './guild-options.js';
 import type { GuildMemberOption } from './guild-members.js';
+import { isAuthorizedInternalApiRequest, isConfiguredInternalApiSecret } from './internal-auth.js';
+import { createUnknownHealthResponse } from './service.js';
 import type { HertaHealthResponse, PublicServiceStatus } from './types.js';
 
 export interface HealthHttpServerOptions {
@@ -18,6 +24,12 @@ export interface HealthHttpServerOptions {
     query: string,
     limit: number,
   ) => Promise<GuildMemberOption[] | null>;
+  getGuildBotProfile?: (guildId: string) => Promise<GuildBotProfile | null>;
+  updateGuildBotProfile?: (
+    guildId: string,
+    input: GuildBotProfileUpdate,
+  ) => Promise<GuildBotProfile | null>;
+  internalApiSecret?: string;
   now?: () => Date;
   uptimeSeconds?: () => number;
 }
@@ -29,6 +41,11 @@ const HTTP_STATUS_BY_HEALTH: Record<PublicServiceStatus, number> = {
   outage: 503,
   unknown: 503,
 };
+
+const MAX_INTERNAL_JSON_BODY_BYTES = 1_500_000;
+
+class RequestBodyTooLargeError extends Error {}
+class InvalidJsonBodyError extends Error {}
 
 async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
@@ -43,6 +60,42 @@ async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise
   }
 }
 
+async function readJsonBody(request: IncomingMessage, maxBytes: number): Promise<unknown> {
+  const contentLength = Number(request.headers['content-length'] ?? '0');
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    request.resume();
+    throw new RequestBodyTooLargeError();
+  }
+
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let tooLarge = false;
+
+    request.on('data', (chunk: Buffer | string) => {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
+      if (size > maxBytes) {
+        tooLarge = true;
+        return;
+      }
+      if (!tooLarge) chunks.push(buffer);
+    });
+    request.once('error', reject);
+    request.once('end', () => {
+      if (tooLarge) {
+        reject(new RequestBodyTooLargeError());
+        return;
+      }
+      try {
+        resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown);
+      } catch {
+        reject(new InvalidJsonBodyError());
+      }
+    });
+  });
+}
+
 export class HealthHttpServer {
   private readonly server: Server;
   private readonly now: () => Date;
@@ -52,7 +105,7 @@ export class HealthHttpServer {
     this.now = options.now ?? (() => new Date());
     this.uptimeSeconds = options.uptimeSeconds ?? (() => process.uptime());
     this.server = createServer((request, response) => {
-      void this.handleRequest(request.method ?? 'GET', request.url ?? '/', response);
+      void this.handleRequest(request, response);
     });
   }
 
@@ -94,12 +147,19 @@ export class HealthHttpServer {
   }
 
   private async handleRequest(
-    method: string,
-    url: string,
+    request: IncomingMessage,
     response: import('node:http').ServerResponse,
   ): Promise<void> {
-    const requestUrl = new URL(url, 'http://localhost');
+    const method = request.method ?? 'GET';
+    const requestUrl = new URL(request.url ?? '/', 'http://localhost');
     const pathname = requestUrl.pathname;
+
+    const guildBotProfileMatch = /^\/internal\/guilds\/(\d+)\/bot-profile$/u.exec(pathname);
+    if (guildBotProfileMatch) {
+      await this.handleGuildBotProfileRequest(request, response, method, guildBotProfileMatch[1]!);
+      return;
+    }
+
     const guildMemberSearchMatch = /^\/internal\/guilds\/(\d+)\/members$/u.exec(pathname);
     if (guildMemberSearchMatch) {
       if (method !== 'GET') {
@@ -184,6 +244,92 @@ export class HealthHttpServer {
     }
 
     this.sendJson(response, HTTP_STATUS_BY_HEALTH[health.status], health);
+  }
+
+  private async handleGuildBotProfileRequest(
+    request: IncomingMessage,
+    response: import('node:http').ServerResponse,
+    method: string,
+    guildId: string,
+  ): Promise<void> {
+    const internalApiSecret = this.options.internalApiSecret;
+    if (!isConfiguredInternalApiSecret(internalApiSecret)) {
+      this.sendJson(response, 503, { status: 'internal_api_not_configured' });
+      return;
+    }
+    if (!isAuthorizedInternalApiRequest(request.headers.authorization, internalApiSecret)) {
+      this.sendJson(response, 401, { status: 'unauthorized' });
+      return;
+    }
+
+    if (method === 'GET') {
+      if (!this.options.getGuildBotProfile) {
+        this.sendJson(response, 404, { status: 'not_found' });
+        return;
+      }
+      try {
+        const profile = await withTimeout(
+          this.options.getGuildBotProfile(guildId),
+          this.options.config.checkTimeoutMs + 2_000,
+        );
+        if (!profile) {
+          this.sendJson(response, 404, { status: 'guild_not_found' });
+          return;
+        }
+        this.sendJson(response, 200, { profile });
+      } catch (error) {
+        this.options.logger.warn(
+          { err: error, guildId },
+          'Bot Guildプロフィール取得に失敗しました',
+        );
+        this.sendJson(response, 503, { status: 'unavailable' });
+      }
+      return;
+    }
+
+    if (method === 'PATCH') {
+      if (!this.options.updateGuildBotProfile) {
+        this.sendJson(response, 404, { status: 'not_found' });
+        return;
+      }
+
+      let rawBody: unknown;
+      try {
+        rawBody = await readJsonBody(request, MAX_INTERNAL_JSON_BODY_BYTES);
+      } catch (error) {
+        if (error instanceof RequestBodyTooLargeError) {
+          this.sendJson(response, 413, { status: 'payload_too_large' });
+          return;
+        }
+        this.sendJson(response, 400, { status: 'invalid_json' });
+        return;
+      }
+
+      const input = parseGuildBotProfileUpdate(rawBody);
+      if (!input) {
+        this.sendJson(response, 400, { status: 'invalid_profile_input' });
+        return;
+      }
+
+      try {
+        const profile = await this.options.updateGuildBotProfile(guildId, input);
+        if (!profile) {
+          this.sendJson(response, 404, { status: 'guild_not_found' });
+          return;
+        }
+        this.sendJson(response, 200, { profile });
+      } catch (error) {
+        this.options.logger.warn(
+          { err: error, guildId },
+          'Bot Guildプロフィール更新に失敗しました',
+        );
+        this.sendJson(response, 503, { status: 'unavailable' });
+      }
+      return;
+    }
+
+    response.setHeader('Allow', 'GET, PATCH');
+    this.sendJson(response, 405, { status: 'method_not_allowed' });
   }
 
   private sendJson(

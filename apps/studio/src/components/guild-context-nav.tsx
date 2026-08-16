@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import {
   Check,
@@ -11,9 +11,11 @@ import {
   Plug,
   Search,
   ServerCog,
+  Star,
   type LucideIcon,
 } from 'lucide-react';
 import { GuildAvatar } from '@/components/guild-avatar';
+import { useStudioServerContext, type StudioServerItem } from '@/components/studio-server-context';
 import {
   getGuildConsoleContext,
   getGuildConsoleHref,
@@ -24,12 +26,7 @@ import {
 type Variant = 'desktop' | 'mobile';
 
 export type GuildSwitcherState = 'ready' | 'reconnect-required' | 'unavailable';
-
-export interface GuildSwitcherItem {
-  id: string;
-  name: string;
-  iconUrl: string | null;
-}
+export type GuildSwitcherItem = StudioServerItem;
 
 type QuickNavItem = {
   section: Exclude<GuildConsoleSection, 'other'>;
@@ -47,20 +44,20 @@ const SEARCH_THRESHOLD = 6;
 
 export function GuildContextNav({
   variant,
-  guilds,
   guildsState,
 }: {
   variant: Variant;
-  guilds: GuildSwitcherItem[];
   guildsState: GuildSwitcherState;
 }) {
   const pathname = usePathname();
-  const context = getGuildConsoleContext(pathname);
-  const currentGuild = context
-    ? (guilds.find((guild) => guild.id === context.guildId) ?? null)
-    : null;
+  const router = useRouter();
+  const routeContext = getGuildConsoleContext(pathname);
+  const { guilds, selectedGuild, defaultGuildId, selectGuild, setDefaultGuild } =
+    useStudioServerContext();
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [preferenceMessage, setPreferenceMessage] = useState<string | null>(null);
+  const [preferenceSaving, setPreferenceSaving] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuId = `guild-context-menu-${variant}`;
@@ -68,7 +65,7 @@ export function GuildContextNav({
 
   const normalizedQuery = query.trim().toLocaleLowerCase('ja');
   const switchCandidates = guilds.filter((guild) => {
-    if (guild.id === currentGuild?.id) return false;
+    if (guild.id === selectedGuild?.id) return false;
     if (!normalizedQuery) return true;
     return (
       guild.name.toLocaleLowerCase('ja').includes(normalizedQuery) ||
@@ -79,6 +76,7 @@ export function GuildContextNav({
   useEffect(() => {
     setMenuOpen(false);
     setQuery('');
+    setPreferenceMessage(null);
   }, [pathname]);
 
   useEffect(() => {
@@ -102,6 +100,32 @@ export function GuildContextNav({
     };
   }, [menuOpen]);
 
+  function handleGuildSelect(guild: StudioServerItem) {
+    if (!selectGuild(guild.id)) return;
+    setMenuOpen(false);
+    setQuery('');
+    if (routeContext) router.push(getGuildSwitchHref(guild.id, routeContext));
+  }
+
+  async function handleDefaultToggle() {
+    if (!selectedGuild || preferenceSaving) return;
+    const nextDefaultGuildId = defaultGuildId === selectedGuild.id ? null : selectedGuild.id;
+    setPreferenceSaving(true);
+    setPreferenceMessage(null);
+    try {
+      const saved = await setDefaultGuild(nextDefaultGuildId);
+      setPreferenceMessage(
+        saved
+          ? nextDefaultGuildId
+            ? 'このサーバーをデフォルトに設定しました'
+            : 'デフォルトサーバーを解除しました'
+          : 'デフォルトサーバーを保存できませんでした',
+      );
+    } finally {
+      setPreferenceSaving(false);
+    }
+  }
+
   return (
     <div className="flex min-w-0 items-center gap-2">
       <div ref={menuRef} className="relative min-w-0">
@@ -122,16 +146,23 @@ export function GuildContextNav({
               : 'border-border text-muted hover:text-foreground'
           }`}
         >
-          {currentGuild ? (
+          {selectedGuild ? (
             <span className="shrink-0 overflow-hidden rounded-lg" aria-hidden="true">
-              <GuildAvatar name={currentGuild.name} iconUrl={currentGuild.iconUrl} size={24} />
+              <GuildAvatar name={selectedGuild.name} iconUrl={selectedGuild.iconUrl} size={24} />
             </span>
           ) : (
             <ServerCog className="h-4 w-4 shrink-0" aria-hidden="true" />
           )}
           <span className={`truncate ${variant === 'mobile' ? 'hidden sm:inline' : ''}`}>
-            {currentGuild?.name ?? (guilds.length > 0 ? 'サーバーを選択' : 'サーバー')}
+            {selectedGuild?.name ?? (guilds.length > 0 ? 'サーバーを選択' : 'サーバー')}
           </span>
+          {selectedGuild && defaultGuildId === selectedGuild.id ? (
+            <Star
+              className="h-3 w-3 shrink-0 fill-current text-amber-400"
+              aria-label="デフォルト"
+              role="img"
+            />
+          ) : null}
           <ChevronDown
             className={`h-3.5 w-3.5 shrink-0 transition-transform ${menuOpen ? 'rotate-180' : ''}`}
             aria-hidden="true"
@@ -149,37 +180,73 @@ export function GuildContextNav({
           >
             <div className="px-2.5 pb-2 pt-1">
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
-                Server Switcher
+                Selected Server
               </p>
-              {currentGuild ? (
-                <div className="mt-2 flex items-center gap-2.5 rounded-xl bg-primary/5 p-2.5">
-                  <span className="shrink-0 overflow-hidden rounded-xl" aria-hidden="true">
-                    <GuildAvatar
-                      name={currentGuild.name}
-                      iconUrl={currentGuild.iconUrl}
-                      size={36}
+              {selectedGuild ? (
+                <div className="mt-2 rounded-xl bg-primary/5 p-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <span className="shrink-0 overflow-hidden rounded-xl" aria-hidden="true">
+                      <GuildAvatar
+                        name={selectedGuild.name}
+                        iconUrl={selectedGuild.iconUrl}
+                        size={36}
+                      />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold">{selectedGuild.name}</p>
+                      <p className="mt-0.5 text-[11px] text-muted">ナビゲーションの操作対象</p>
+                    </div>
+                    <Check
+                      className="h-4 w-4 shrink-0 text-primary"
+                      aria-label="選択中"
+                      role="img"
                     />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">{currentGuild.name}</p>
-                    <p className="mt-0.5 text-[11px] text-muted">現在のサーバー</p>
                   </div>
-                  <Check className="h-4 w-4 shrink-0 text-primary" aria-label="選択中" />
+                  <button
+                    type="button"
+                    aria-pressed={defaultGuildId === selectedGuild.id}
+                    onClick={() => void handleDefaultToggle()}
+                    disabled={preferenceSaving}
+                    className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-2 text-xs font-medium text-muted transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Star
+                      className={`h-3.5 w-3.5 ${
+                        defaultGuildId === selectedGuild.id ? 'fill-current text-amber-400' : ''
+                      }`}
+                      aria-hidden="true"
+                    />
+                    {defaultGuildId === selectedGuild.id
+                      ? 'デフォルトサーバーを解除'
+                      : 'デフォルトサーバーに設定'}
+                  </button>
+                  <p
+                    className="mt-2 text-center text-[10px] text-muted"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {preferenceMessage ?? ''}
+                  </p>
                 </div>
               ) : null}
             </div>
 
-            {context ? (
-              <nav className="mb-2 grid grid-cols-3 gap-1" aria-label="現在のサーバー管理">
+            {selectedGuild ? (
+              <nav className="mb-2 grid grid-cols-3 gap-1" aria-label="選択中サーバー管理">
                 {QUICK_NAV_ITEMS.map((item) => (
-                  <QuickNavLink key={item.section} item={item} context={context} compact />
+                  <QuickNavLink
+                    key={item.section}
+                    item={item}
+                    guildId={selectedGuild.id}
+                    routeContext={routeContext}
+                    compact
+                  />
                 ))}
               </nav>
             ) : null}
 
             <div className="border-t border-border pt-2">
               <div className="flex items-center justify-between gap-3 px-2.5 py-1.5">
-                <p className="text-xs font-semibold">サーバーを切り替える</p>
+                <p className="text-xs font-semibold">操作対象を切り替える</p>
                 {guildsState === 'ready' ? (
                   <span className="text-[10px] tabular-nums text-muted">
                     {guilds.length} servers
@@ -213,9 +280,10 @@ export function GuildContextNav({
                   guildsState={guildsState}
                   guilds={guilds}
                   candidates={switchCandidates}
-                  currentGuild={currentGuild}
-                  context={context}
+                  selectedGuild={selectedGuild}
+                  defaultGuildId={defaultGuildId}
                   hasQuery={normalizedQuery.length > 0}
+                  onSelect={handleGuildSelect}
                 />
               </div>
             </div>
@@ -233,13 +301,18 @@ export function GuildContextNav({
         ) : null}
       </div>
 
-      {variant === 'desktop' && context ? (
+      {variant === 'desktop' && selectedGuild ? (
         <nav
           className="flex min-w-0 items-center gap-1 rounded-xl border border-border bg-surface p-1"
-          aria-label="現在のサーバー管理"
+          aria-label="選択中サーバー管理"
         >
           {QUICK_NAV_ITEMS.map((item) => (
-            <QuickNavLink key={item.section} item={item} context={context} />
+            <QuickNavLink
+              key={item.section}
+              item={item}
+              guildId={selectedGuild.id}
+              routeContext={routeContext}
+            />
           ))}
         </nav>
       ) : null}
@@ -251,16 +324,18 @@ function GuildListState({
   guildsState,
   guilds,
   candidates,
-  currentGuild,
-  context,
+  selectedGuild,
+  defaultGuildId,
   hasQuery,
+  onSelect,
 }: {
   guildsState: GuildSwitcherState;
-  guilds: GuildSwitcherItem[];
-  candidates: GuildSwitcherItem[];
-  currentGuild: GuildSwitcherItem | null;
-  context: ReturnType<typeof getGuildConsoleContext>;
+  guilds: readonly StudioServerItem[];
+  candidates: readonly StudioServerItem[];
+  selectedGuild: StudioServerItem | null;
+  defaultGuildId: string | null;
   hasQuery: boolean;
+  onSelect: (guild: StudioServerItem) => void;
 }) {
   if (guildsState === 'reconnect-required') {
     return (
@@ -291,7 +366,7 @@ function GuildListState({
       <p className="rounded-xl px-2.5 py-3 text-xs leading-5 text-muted">
         {hasQuery
           ? '検索条件に一致するサーバーがありません。'
-          : currentGuild
+          : selectedGuild
             ? 'ほかに切り替え可能なサーバーはありません。'
             : '切り替え可能なサーバーがありません。'}
       </p>
@@ -299,38 +374,51 @@ function GuildListState({
   }
 
   return (
-    <nav className="space-y-1" aria-label="切り替え可能なサーバー">
+    <div className="space-y-1" role="list" aria-label="切り替え可能なサーバー">
       {candidates.map((guild) => (
-        <Link
-          key={guild.id}
-          href={getGuildSwitchHref(guild.id, context)}
-          className="flex items-center gap-2.5 rounded-xl px-2 py-2 text-sm transition-colors hover:bg-background"
-        >
-          <span className="shrink-0 overflow-hidden rounded-lg" aria-hidden="true">
-            <GuildAvatar name={guild.name} iconUrl={guild.iconUrl} size={30} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate font-medium">{guild.name}</span>
-            <span className="block truncate text-[10px] text-muted">{guild.id}</span>
-          </span>
-        </Link>
+        <div key={guild.id} role="listitem">
+          <button
+            type="button"
+            onClick={() => onSelect(guild)}
+            className="flex w-full items-center gap-2.5 rounded-xl px-2 py-2 text-left text-sm transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <span className="shrink-0 overflow-hidden rounded-lg" aria-hidden="true">
+              <GuildAvatar name={guild.name} iconUrl={guild.iconUrl} size={30} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-1.5">
+                <span className="block truncate font-medium">{guild.name}</span>
+                {defaultGuildId === guild.id ? (
+                  <Star
+                    className="h-3 w-3 shrink-0 fill-current text-amber-400"
+                    aria-label="デフォルト"
+                    role="img"
+                  />
+                ) : null}
+              </span>
+              <span className="block truncate text-[10px] text-muted">{guild.id}</span>
+            </span>
+          </button>
+        </div>
       ))}
-    </nav>
+    </div>
   );
 }
 
 function QuickNavLink({
   item,
-  context,
+  guildId,
+  routeContext,
   compact = false,
 }: {
   item: QuickNavItem;
-  context: NonNullable<ReturnType<typeof getGuildConsoleContext>>;
+  guildId: string;
+  routeContext: ReturnType<typeof getGuildConsoleContext>;
   compact?: boolean;
 }) {
-  const active = context.section === item.section;
+  const active = routeContext?.guildId === guildId && routeContext.section === item.section;
   const Icon = item.icon;
-  const href = getGuildConsoleHref(context.guildId, item.section);
+  const href = getGuildConsoleHref(guildId, item.section);
 
   if (compact) {
     return (

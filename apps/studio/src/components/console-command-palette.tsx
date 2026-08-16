@@ -45,7 +45,7 @@ import {
   toggleFavoriteCommand,
   type CommandPalettePreferences,
 } from '@/lib/command-palette-preferences';
-import { getGuildConsoleContext } from '@/lib/guild-context-nav';
+import { useStudioServerContext } from '@/components/studio-server-context';
 import {
   buildStudioCommandItems,
   filterStudioCommandItems,
@@ -55,11 +55,6 @@ import {
 
 const COMMAND_PALETTE_OPEN_EVENT = 'herta:command-palette-open';
 const RESULTS_ID = 'studio-command-palette-results';
-
-interface CommandPaletteGuild {
-  id: string;
-  name: string;
-}
 
 type OpenEventDetail = { trigger?: HTMLElement | null };
 
@@ -132,9 +127,10 @@ export function ConsoleCommandPaletteTrigger({ variant }: { variant: 'desktop' |
   );
 }
 
-export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPaletteGuild[] }) {
+export function ConsoleCommandPaletteController() {
   const pathname = usePathname();
   const router = useRouter();
+  const { selectedGuild } = useStudioServerContext();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -147,13 +143,9 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
   const triggerRef = useRef<HTMLElement | null>(null);
   const preferredActiveCommandIdRef = useRef<string | null>(null);
 
-  const context = getGuildConsoleContext(pathname);
-  const currentGuild = context
-    ? (guilds.find((guild) => guild.id === context.guildId) ?? null)
-    : null;
   const commands = useMemo(
-    () => buildStudioCommandItems(context?.guildId ?? null, currentGuild?.name ?? null),
-    [context?.guildId, currentGuild?.name],
+    () => buildStudioCommandItems(selectedGuild?.id ?? null, selectedGuild?.name ?? null),
+    [selectedGuild?.id, selectedGuild?.name],
   );
   const filteredCommands = useMemo(
     () => filterStudioCommandItems(commands, query),
@@ -439,7 +431,7 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
           <span id="studio-command-palette-title" className="font-medium text-foreground">
             Herta Studio Command Palette
           </span>
-          {currentGuild ? <span> · 現在のサーバー: {currentGuild.name}</span> : null}
+          {selectedGuild ? <span> · 現在のサーバー: {selectedGuild.name}</span> : null}
         </div>
 
         <div id={RESULTS_ID} role="listbox" className="max-h-[min(62vh,32rem)] overflow-y-auto p-2">
@@ -460,8 +452,8 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
                     className="px-3 pb-1.5 pt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted"
                   >
                     {section.label}
-                    {section.id === 'current-server' && currentGuild
-                      ? ` · ${currentGuild.name}`
+                    {section.id === 'current-server' && selectedGuild
+                      ? ` · ${selectedGuild.name}`
                       : ''}
                   </div>
                   <div role="presentation" className="space-y-0.5">
@@ -546,8 +538,8 @@ export function ConsoleCommandPaletteController({ guilds }: { guilds: CommandPal
             >
               最近使った項目をクリア
             </button>
-          ) : !currentGuild ? (
-            <span className="ml-auto">サーバー固有機能はGuild画面で表示</span>
+          ) : !selectedGuild ? (
+            <span className="ml-auto">Server Switcherでサーバーを選択すると固有機能を表示</span>
           ) : null}
         </div>
       </div>

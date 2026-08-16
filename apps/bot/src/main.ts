@@ -47,6 +47,9 @@ const healthServer = healthConfig.enabled
       getHealth: () => healthService.getHealth(),
       getGuildOptions: (guildId) => bot.getGuildConfigurationOptions(guildId),
       searchGuildMembers: (guildId, query, limit) => bot.searchGuildMembers(guildId, query, limit),
+      getGuildBotProfile: (guildId) => bot.getGuildBotProfile(guildId),
+      updateGuildBotProfile: (guildId, input) => bot.updateGuildBotProfile(guildId, input),
+      internalApiSecret: process.env['BOT_INTERNAL_API_SECRET']?.trim(),
     })
   : undefined;
 

@@ -22,9 +22,25 @@ test('Guildコンソールの主要画面を判定する', () => {
     guildId: GUILD_ID,
     section: 'plugins',
   });
+  assert.deepEqual(getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/leaderboard`), {
+    guildId: GUILD_ID,
+    section: 'leaderboard',
+  });
+  assert.deepEqual(getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/moderation`), {
+    guildId: GUILD_ID,
+    section: 'moderation',
+  });
+  assert.deepEqual(getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/moderation/detections`), {
+    guildId: GUILD_ID,
+    section: 'moderation',
+  });
   assert.deepEqual(getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/audit-logs`), {
     guildId: GUILD_ID,
     section: 'audit-logs',
+  });
+  assert.deepEqual(getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/bot-profile`), {
+    guildId: GUILD_ID,
+    section: 'bot-profile',
   });
 });
 
@@ -51,6 +67,10 @@ test('主要画面に似た別パスを誤ってactive扱いしない', () => {
     guildId: GUILD_ID,
     section: 'other',
   });
+  assert.deepEqual(getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/moderation-extra`), {
+    guildId: GUILD_ID,
+    section: 'other',
+  });
 });
 
 test('Guild一覧や不正なGuild IDではコンテキストを生成しない', () => {
@@ -63,19 +83,42 @@ test('Guildコンソールの主要hrefを一元生成する', () => {
   assert.equal(getGuildConsoleHref(GUILD_ID, 'overview'), `/dashboard/guilds/${GUILD_ID}`);
   assert.equal(getGuildConsoleHref(GUILD_ID, 'plugins'), `/dashboard/guilds/${GUILD_ID}/plugins`);
   assert.equal(
+    getGuildConsoleHref(GUILD_ID, 'leaderboard'),
+    `/dashboard/guilds/${GUILD_ID}/leaderboard`,
+  );
+  assert.equal(
+    getGuildConsoleHref(GUILD_ID, 'moderation'),
+    `/dashboard/guilds/${GUILD_ID}/moderation`,
+  );
+  assert.equal(
     getGuildConsoleHref(GUILD_ID, 'audit-logs'),
     `/dashboard/guilds/${GUILD_ID}/audit-logs`,
   );
+  assert.equal(
+    getGuildConsoleHref(GUILD_ID, 'bot-profile'),
+    `/dashboard/guilds/${GUILD_ID}/bot-profile`,
+  );
 });
 
-test('Guild切替では主要セクションだけを安全に維持する', () => {
+test('Guild切替では主要セクションを安全に維持する', () => {
+  for (const section of [
+    'plugins',
+    'leaderboard',
+    'moderation',
+    'audit-logs',
+    'bot-profile',
+  ] as const) {
+    assert.equal(
+      getGuildSwitchHref(OTHER_GUILD_ID, { guildId: GUILD_ID, section }),
+      `/dashboard/guilds/${OTHER_GUILD_ID}/${section}`,
+    );
+  }
+});
+
+test('overview切替は新Guild概要を維持する', () => {
   assert.equal(
-    getGuildSwitchHref(OTHER_GUILD_ID, { guildId: GUILD_ID, section: 'plugins' }),
-    `/dashboard/guilds/${OTHER_GUILD_ID}/plugins`,
-  );
-  assert.equal(
-    getGuildSwitchHref(OTHER_GUILD_ID, { guildId: GUILD_ID, section: 'audit-logs' }),
-    `/dashboard/guilds/${OTHER_GUILD_ID}/audit-logs`,
+    getGuildSwitchHref(OTHER_GUILD_ID, { guildId: GUILD_ID, section: 'overview' }),
+    `/dashboard/guilds/${OTHER_GUILD_ID}`,
   );
 });
 

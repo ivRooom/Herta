@@ -61,7 +61,8 @@ model User {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  memberships GuildMember[]
+  memberships      GuildMember[]
+  studioPreference StudioUserPreference?
 
   @@map("users")
 }
@@ -816,3 +817,29 @@ model EventRsvp {
   @@index([eventId, status, createdAt])
   @@map("event_rsvps")
 }
+
+// ============================================================
+// Studio Preferences / Bot Presence
+// ============================================================
+
+model StudioUserPreference {
+  userId         String   @id @map("user_id")
+  defaultGuildId String?  @map("default_guild_id")
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@map("studio_user_preferences")
+}
+
+model BotPresenceSetting {
+  id           String   @id @default("default")
+  status       String   @default("online")
+  activityType String   @default("playing") @map("activity_type")
+  activityText String   @default("Herta") @map("activity_text")
+  updatedBy    String?  @map("updated_by")
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("bot_presence_settings")
+}
+
