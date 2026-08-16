@@ -12,8 +12,35 @@ export interface AmidakujiLadder {
   results: number[];
 }
 
+export type AmidakujiComplexity = 'simple' | 'standard' | 'chaos';
+export type AmidakujiTheme = 'arcade' | 'midnight' | 'classic';
+
+export interface AmidakujiGenerationOptions {
+  complexity?: AmidakujiComplexity;
+}
+
+export interface AmidakujiRenderOptions {
+  hidden?: boolean;
+  hiddenPercent?: number;
+  revealProgress?: number;
+  theme?: AmidakujiTheme;
+  highlightStarts?: readonly number[];
+}
+
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const MAX_RESULT_LABEL_LENGTH = 50;
+const PATH_COLORS: readonly Rgba[] = [
+  [250, 204, 21, 255],
+  [56, 189, 248, 255],
+  [244, 114, 182, 255],
+  [74, 222, 128, 255],
+  [192, 132, 252, 255],
+  [251, 146, 60, 255],
+  [45, 212, 191, 255],
+  [248, 113, 113, 255],
+  [129, 140, 248, 255],
+  [163, 230, 53, 255],
+];
 
 export function parseAmidakujiResultLabels(input: string | null, slots: number): string[] | null {
   if (!Number.isInteger(slots) || slots < 2 || slots > 10) return null;
@@ -31,31 +58,50 @@ export function parseAmidakujiResultLabels(input: string | null, slots: number):
 
 export function generateAmidakujiLadder(
   slots: number,
+  optionsOrRandom: AmidakujiGenerationOptions | (() => number) = {},
   random: () => number = Math.random,
 ): AmidakujiLadder {
   if (!Number.isInteger(slots) || slots < 2 || slots > 10) {
     throw new RangeError('Amidakuji slots must be an integer between 2 and 10');
   }
 
-  const rows = Math.max(8, slots * 4);
+  const options = typeof optionsOrRandom === 'function' ? {} : optionsOrRandom;
+  const rng = typeof optionsOrRandom === 'function' ? optionsOrRandom : random;
+  const complexity = normalizeComplexity(options.complexity);
+  const settings =
+    complexity === 'simple'
+      ? { rowMultiplier: 3, minimumRows: 7, density: 0.24 }
+      : complexity === 'chaos'
+        ? { rowMultiplier: 7, minimumRows: 16, density: 0.55 }
+        : { rowMultiplier: 5, minimumRows: 10, density: 0.38 };
+
+  const rows = Math.max(settings.minimumRows, slots * settings.rowMultiplier);
   const bars: AmidakujiBar[] = [];
   for (let row = 0; row < rows; row += 1) {
     const occupied = new Set<number>();
-    for (let left = 0; left < slots - 1; left += 1) {
+    const direction = row % 2 === 0 ? 1 : -1;
+    const start = direction === 1 ? 0 : slots - 2;
+    const end = direction === 1 ? slots - 1 : -1;
+    for (let left = start; left !== end; left += direction) {
       if (occupied.has(left) || occupied.has(left + 1)) continue;
-      if (random() >= 0.36) continue;
+      if (rng() >= settings.density) continue;
       bars.push({ row, left });
       occupied.add(left);
       occupied.add(left + 1);
     }
   }
 
-  if (bars.length === 0) {
-    bars.push({ row: Math.floor(rows / 2), left: Math.floor(random() * (slots - 1)) });
+  const minimumBars = complexity === 'chaos' ? slots * 2 : complexity === 'standard' ? slots : 1;
+  while (bars.length < minimumBars) {
+    const row = Math.floor(rng() * rows);
+    const left = Math.floor(rng() * (slots - 1));
+    if (bars.some((bar) => bar.row === row && Math.abs(bar.left - left) <= 1)) continue;
+    bars.push({ row, left });
   }
+  bars.sort((a, b) => a.row - b.row || a.left - b.left);
 
-  const results = Array.from({ length: slots }, (_, start) =>
-    traceAmidakuji(slots, rows, bars, start),
+  const results = Array.from({ length: slots }, (_, startSlot) =>
+    traceAmidakuji(slots, rows, bars, startSlot),
   );
   return { slots, rows, bars, results };
 }
@@ -70,12 +116,7 @@ export function traceAmidakuji(
     throw new RangeError('Amidakuji start slot is out of range');
   }
   let column = start;
-  const byRow = new Map<number, AmidakujiBar[]>();
-  for (const bar of bars) {
-    const rowBars = byRow.get(bar.row) ?? [];
-    rowBars.push(bar);
-    byRow.set(bar.row, rowBars);
-  }
+  const byRow = groupBarsByRow(bars);
   for (let row = 0; row < rows; row += 1) {
     for (const bar of byRow.get(row) ?? []) {
       if (bar.left === column) {
@@ -91,23 +132,43 @@ export function traceAmidakuji(
   return column;
 }
 
-export function renderAmidakujiPng(ladder: AmidakujiLadder, hidden: boolean): Buffer {
-  const marginX = 36;
-  const top = 42;
-  const bottom = 398;
-  const width = Math.max(360, marginX * 2 + (ladder.slots - 1) * 62);
-  const height = 440;
-  const pixels = Buffer.alloc(width * height * 4, 255);
+export function renderAmidakujiPng(
+  ladder: AmidakujiLadder,
+  hiddenOrOptions: boolean | AmidakujiRenderOptions,
+): Buffer {
+  const options: AmidakujiRenderOptions =
+    typeof hiddenOrOptions === 'boolean' ? { hidden: hiddenOrOptions } : hiddenOrOptions;
+  const theme = normalizeTheme(options.theme);
+  const palette = themePalette(theme);
+  const hidden = options.hidden === true;
+  const hiddenPercent = clamp(options.hiddenPercent ?? 42, 20, 70);
+  const revealProgress = clampFloat(options.revealProgress ?? 0, 0, 1);
+  const marginX = 52;
+  const top = 64;
+  const bottom = 430;
+  const width = Math.max(440, marginX * 2 + (ladder.slots - 1) * 72);
+  const height = 486;
+  const pixels = Buffer.alloc(width * height * 4);
+  fillRect(pixels, width, height, 0, 0, width, height, palette.background);
+
+  for (let y = 0; y < height; y += 24) {
+    fillRect(pixels, width, height, 0, y, width, 1, palette.grid);
+  }
+  for (let x = 0; x < width; x += 24) {
+    fillRect(pixels, width, height, x, 0, 1, height, palette.grid);
+  }
+
   const xFor = (column: number) =>
-    ladder.slots === 1
-      ? Math.floor(width / 2)
-      : Math.round(marginX + (column * (width - marginX * 2)) / (ladder.slots - 1));
+    Math.round(marginX + (column * (width - marginX * 2)) / (ladder.slots - 1));
   const rowHeight = (bottom - top) / ladder.rows;
 
   for (let column = 0; column < ladder.slots; column += 1) {
-    drawLine(pixels, width, height, xFor(column), top, xFor(column), bottom, [53, 57, 65, 255], 3);
-    drawDigitNumber(pixels, width, height, xFor(column), 15, column + 1, [31, 41, 55, 255]);
-    drawDigitNumber(pixels, width, height, xFor(column), 410, column + 1, [31, 41, 55, 255]);
+    const x = xFor(column);
+    fillRect(pixels, width, height, x - 14, 25, 28, 28, palette.slotFill);
+    fillRect(pixels, width, height, x - 14, 444, 28, 28, palette.slotFill);
+    drawLine(pixels, width, height, x, top, x, bottom, palette.rail, 4);
+    drawDigitNumber(pixels, width, height, x, 30, column + 1, palette.text);
+    drawDigitNumber(pixels, width, height, x, 449, column + 1, palette.text);
   }
 
   for (const bar of ladder.bars) {
@@ -120,33 +181,144 @@ export function renderAmidakujiPng(ladder: AmidakujiLadder, hidden: boolean): Bu
       y,
       xFor(bar.left + 1),
       y,
-      [88, 101, 242, 255],
-      4,
+      palette.bar,
+      5,
     );
+  }
+
+  for (const start of options.highlightStarts ?? []) {
+    if (!Number.isInteger(start) || start < 0 || start >= ladder.slots) continue;
+    drawPath(pixels, width, height, ladder, start, xFor, top, rowHeight, PATH_COLORS[start % PATH_COLORS.length]!);
   }
 
   if (hidden) {
-    const maskTop = Math.round(top + (bottom - top) * 0.34);
-    const maskBottom = Math.round(top + (bottom - top) * 0.68);
-    fillRect(
-      pixels,
-      width,
-      height,
-      10,
-      maskTop,
-      width - 20,
-      maskBottom - maskTop,
-      [229, 231, 235, 255],
-    );
-    const centerX = Math.floor(width / 2);
-    drawQuestionMark(pixels, width, height, centerX, Math.floor((maskTop + maskBottom) / 2));
+    const fullMaskHeight = Math.round((bottom - top) * (hiddenPercent / 100));
+    const currentMaskHeight = Math.round(fullMaskHeight * (1 - revealProgress));
+    if (currentMaskHeight > 0) {
+      const maskTop = Math.round((top + bottom - currentMaskHeight) / 2);
+      fillRect(
+        pixels,
+        width,
+        height,
+        14,
+        maskTop,
+        width - 28,
+        currentMaskHeight,
+        palette.mask,
+      );
+      drawBorder(pixels, width, height, 14, maskTop, width - 28, currentMaskHeight, palette.maskBorder, 2);
+      const centerX = Math.floor(width / 2);
+      drawQuestionMark(pixels, width, height, centerX, Math.floor(maskTop + currentMaskHeight / 2), palette.maskText);
+    }
   }
 
+  drawBorder(pixels, width, height, 8, 8, width - 16, height - 16, palette.frame, 2);
   return encodePng(width, height, pixels);
 }
 
-function drawQuestionMark(pixels: Buffer, width: number, height: number, cx: number, cy: number) {
-  const color: Rgba = [107, 114, 128, 255];
+function drawPath(
+  pixels: Buffer,
+  width: number,
+  height: number,
+  ladder: AmidakujiLadder,
+  start: number,
+  xFor: (column: number) => number,
+  top: number,
+  rowHeight: number,
+  color: Rgba,
+) {
+  const byRow = groupBarsByRow(ladder.bars);
+  let column = start;
+  let previousY = top;
+  for (let row = 0; row < ladder.rows; row += 1) {
+    const y = Math.round(top + (row + 0.5) * rowHeight);
+    drawLine(pixels, width, height, xFor(column), previousY, xFor(column), y, color, 3);
+    for (const bar of byRow.get(row) ?? []) {
+      if (bar.left === column) {
+        drawLine(pixels, width, height, xFor(column), y, xFor(column + 1), y, color, 3);
+        column += 1;
+        break;
+      }
+      if (bar.left + 1 === column) {
+        drawLine(pixels, width, height, xFor(column), y, xFor(column - 1), y, color, 3);
+        column -= 1;
+        break;
+      }
+    }
+    previousY = y;
+  }
+  drawLine(pixels, width, height, xFor(column), previousY, xFor(column), 430, color, 3);
+}
+
+function groupBarsByRow(bars: readonly AmidakujiBar[]): Map<number, AmidakujiBar[]> {
+  const byRow = new Map<number, AmidakujiBar[]>();
+  for (const bar of bars) {
+    const rowBars = byRow.get(bar.row) ?? [];
+    rowBars.push(bar);
+    byRow.set(bar.row, rowBars);
+  }
+  return byRow;
+}
+
+function normalizeComplexity(value: AmidakujiComplexity | undefined): AmidakujiComplexity {
+  return value === 'simple' || value === 'chaos' ? value : 'standard';
+}
+
+function normalizeTheme(value: AmidakujiTheme | undefined): AmidakujiTheme {
+  return value === 'midnight' || value === 'classic' ? value : 'arcade';
+}
+
+function themePalette(theme: AmidakujiTheme) {
+  if (theme === 'classic') {
+    return {
+      background: [250, 250, 249, 255] as Rgba,
+      grid: [231, 229, 228, 255] as Rgba,
+      frame: [120, 113, 108, 255] as Rgba,
+      rail: [68, 64, 60, 255] as Rgba,
+      bar: [37, 99, 235, 255] as Rgba,
+      slotFill: [231, 229, 228, 255] as Rgba,
+      text: [28, 25, 23, 255] as Rgba,
+      mask: [214, 211, 209, 255] as Rgba,
+      maskBorder: [120, 113, 108, 255] as Rgba,
+      maskText: [87, 83, 78, 255] as Rgba,
+    };
+  }
+  if (theme === 'midnight') {
+    return {
+      background: [9, 14, 28, 255] as Rgba,
+      grid: [18, 29, 52, 255] as Rgba,
+      frame: [71, 85, 105, 255] as Rgba,
+      rail: [148, 163, 184, 255] as Rgba,
+      bar: [96, 165, 250, 255] as Rgba,
+      slotFill: [30, 41, 59, 255] as Rgba,
+      text: [241, 245, 249, 255] as Rgba,
+      mask: [15, 23, 42, 255] as Rgba,
+      maskBorder: [100, 116, 139, 255] as Rgba,
+      maskText: [148, 163, 184, 255] as Rgba,
+    };
+  }
+  return {
+    background: [17, 12, 35, 255] as Rgba,
+    grid: [37, 28, 72, 255] as Rgba,
+    frame: [168, 85, 247, 255] as Rgba,
+    rail: [196, 181, 253, 255] as Rgba,
+    bar: [34, 211, 238, 255] as Rgba,
+    slotFill: [49, 36, 88, 255] as Rgba,
+    text: [250, 245, 255, 255] as Rgba,
+    mask: [45, 31, 78, 255] as Rgba,
+    maskBorder: [217, 70, 239, 255] as Rgba,
+    maskText: [232, 121, 249, 255] as Rgba,
+  };
+}
+
+function drawQuestionMark(
+  pixels: Buffer,
+  width: number,
+  height: number,
+  cx: number,
+  cy: number,
+  color: Rgba,
+) {
   fillRect(pixels, width, height, cx - 16, cy - 25, 24, 6, color);
   fillRect(pixels, width, height, cx + 4, cy - 19, 6, 18, color);
   fillRect(pixels, width, height, cx - 8, cy - 6, 18, 6, color);
@@ -156,14 +328,7 @@ function drawQuestionMark(pixels: Buffer, width: number, height: number, cx: num
 
 type Rgba = readonly [number, number, number, number];
 
-function setPixel(
-  pixels: Buffer,
-  width: number,
-  height: number,
-  x: number,
-  y: number,
-  color: Rgba,
-) {
+function setPixel(pixels: Buffer, width: number, height: number, x: number, y: number, color: Rgba) {
   if (x < 0 || y < 0 || x >= width || y >= height) return;
   const index = (y * width + x) * 4;
   pixels[index] = color[0];
@@ -187,6 +352,23 @@ function fillRect(
       setPixel(pixels, width, height, xx, yy, color);
     }
   }
+}
+
+function drawBorder(
+  pixels: Buffer,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  rectWidth: number,
+  rectHeight: number,
+  color: Rgba,
+  thickness: number,
+) {
+  fillRect(pixels, width, height, x, y, rectWidth, thickness, color);
+  fillRect(pixels, width, height, x, y + rectHeight - thickness, rectWidth, thickness, color);
+  fillRect(pixels, width, height, x, y, thickness, rectHeight, color);
+  fillRect(pixels, width, height, x + rectWidth - thickness, y, thickness, rectHeight, color);
 }
 
 function drawLine(
@@ -324,4 +506,12 @@ function crc32(data: Buffer): number {
     }
   }
   return (crc ^ 0xffffffff) >>> 0;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Math.trunc(value)));
+}
+
+function clampFloat(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
 }
