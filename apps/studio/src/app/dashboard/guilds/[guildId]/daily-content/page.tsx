@@ -21,6 +21,7 @@ import {
   type DailyContentDeliveryItem,
   type DailyContentScheduleItem,
 } from '@/components/daily-content-manager';
+import { MessageStudioQuickSend } from '@/components/message-studio-quick-send';
 import { prisma } from '@/lib/db';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
@@ -119,11 +120,11 @@ export default async function DailyContentPage({
         <div>
           <div className="flex items-center gap-2">
             <MessageSquareText className="h-6 w-6 text-primary" />
-            <h1 className="text-2xl font-semibold tracking-tight">Announcement / Message Studio</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Botで発言 / Message Studio</h1>
           </div>
           <p className="mt-2 max-w-3xl text-sm text-muted">
             {guild.name}{' '}
-            のお知らせ、1回予約、日次・週次投稿、Forum投稿、Embed、画像、配信履歴をまとめて管理します。
+            へBotとして今すぐ発言するほか、1回予約、日次・週次投稿、Forum投稿、Embed、画像、配信履歴をまとめて管理します。
           </p>
         </div>
         <span className="rounded-full border border-border px-3 py-1 text-sm text-muted">
@@ -133,7 +134,7 @@ export default async function DailyContentPage({
 
       {!plugin.enabled ? (
         <div className="mt-6 rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm text-amber-700 dark:text-amber-300">
-          Pluginは現在無効です。Composerの編集はできますが、予約・手動配信はWorkerでスキップされます。
+          Pluginは現在無効です。Composerの編集はできますが、即時発言・予約・手動配信は実行されません。
         </div>
       ) : null}
 
@@ -151,12 +152,28 @@ export default async function DailyContentPage({
         />
       </div>
 
+      <div className="mt-6">
+        <MessageStudioQuickSend
+          guildId={guildId}
+          maxContentLength={config.maxContentLength}
+          allowAnnouncementCrosspost={config.allowAnnouncementCrosspost}
+          allowUserMentions={config.allowUserMentions}
+          discordOptions={messageStudioDiscordOptions}
+        />
+      </div>
+
       {loadError ? (
         <div className="mt-6 rounded-2xl border border-destructive/30 bg-destructive/5 p-5 text-sm text-destructive">
           {loadError}
         </div>
       ) : (
-        <div className="mt-6">
+        <div className="mt-8">
+          <div className="mb-3">
+            <h2 className="text-lg font-semibold">予約・定期投稿を作成</h2>
+            <p className="mt-1 text-sm text-muted">
+              1回予約・毎日・毎週の配信、Forum、Discord Markdown、Embedを設定できます。
+            </p>
+          </div>
           <DailyContentManager
             guildId={guildId}
             initialSchedules={schedules}
@@ -175,8 +192,7 @@ export default async function DailyContentPage({
       <div className="mt-8 flex items-start gap-2 text-xs text-muted">
         <History className="mt-0.5 h-4 w-4 shrink-0" />
         <p>
-          配信履歴には本文を複製せず、状態・予定日時・試行回数・安全なエラー名を保存します。既存Daily
-          Contentの毎日投稿はそのまま互換動作します。
+          配信履歴には本文を複製せず、状態・予定日時・試行回数・安全なエラー名を保存します。即時発言の監査ログにも本文や画像本体は保存しません。
         </p>
       </div>
     </div>
