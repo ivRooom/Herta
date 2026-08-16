@@ -22,6 +22,50 @@ test('同一Originの書き込みリクエストだけ許可する', () => {
   );
 });
 
+test('リバースプロキシ配下では転送された公開Originを許可する', () => {
+  assert.equal(
+    isSameOriginMutationRequest(
+      new Request('http://studio:3000/api/me/studio-preferences', {
+        headers: {
+          Origin: 'https://studio.example.com',
+          Host: 'studio.example.com',
+          'X-Forwarded-Proto': 'https',
+        },
+      }),
+    ),
+    true,
+  );
+
+  assert.equal(
+    isSameOriginMutationRequest(
+      new Request('http://studio:3000/api/me/studio-preferences', {
+        headers: {
+          Origin: 'https://evil.example.com',
+          Host: 'studio.example.com',
+          'X-Forwarded-Proto': 'https',
+        },
+      }),
+    ),
+    false,
+  );
+});
+
+test('X-Forwarded-Hostがある場合は公開Hostとして優先する', () => {
+  assert.equal(
+    isSameOriginMutationRequest(
+      new Request('http://studio:3000/api/test', {
+        headers: {
+          Origin: 'https://studio.example.com',
+          Host: 'studio:3000',
+          'X-Forwarded-Host': 'studio.example.com',
+          'X-Forwarded-Proto': 'https',
+        },
+      }),
+    ),
+    true,
+  );
+});
+
 test('Origin欠落・不正URL・巨大値は拒否する', () => {
   assert.equal(
     isSameOriginMutationRequest(new Request('https://studio.example.com/api/test')),
@@ -37,6 +81,34 @@ test('Origin欠落・不正URL・巨大値は拒否する', () => {
     isSameOriginMutationRequest(
       new Request('https://studio.example.com/api/test', {
         headers: { Origin: `https://studio.example.com/${'x'.repeat(600)}` },
+      }),
+    ),
+    false,
+  );
+});
+
+test('不正な転送protoやHostではOrigin一致扱いにしない', () => {
+  assert.equal(
+    isSameOriginMutationRequest(
+      new Request('http://studio:3000/api/test', {
+        headers: {
+          Origin: 'https://studio.example.com',
+          Host: 'studio.example.com',
+          'X-Forwarded-Proto': 'javascript',
+        },
+      }),
+    ),
+    false,
+  );
+
+  assert.equal(
+    isSameOriginMutationRequest(
+      new Request('http://studio:3000/api/test', {
+        headers: {
+          Origin: 'https://studio.example.com',
+          Host: 'not a valid host',
+          'X-Forwarded-Proto': 'https',
+        },
       }),
     ),
     false,
