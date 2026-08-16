@@ -23,10 +23,11 @@ describe('Mini Games v3', () => {
     expect(new Set(choices.map((choice) => choice.value)).size).toBe(choices.length);
 
     const amidakuji = miniGamesManifest.commands.find((command) => command.name === 'amidakuji');
-    expect(amidakuji?.options?.find((option) => option.name === 'results')).toMatchObject({
+    const resultsOption = amidakuji?.options?.find((option) => option.name === 'results');
+    expect(resultsOption).toMatchObject({
       type: 'string',
-      required: undefined,
     });
+    expect(resultsOption?.required).not.toBe(true);
   });
 
   it('Arcade LeaderboardへTop 3メダルと指標単位を表示する', () => {
