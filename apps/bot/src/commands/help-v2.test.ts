@@ -63,7 +63,12 @@ describe('Help v2', () => {
   it('詳細Helpへ必須・任意optionを使い方付きで表示する', () => {
     const detail = buildHelpCommandDetail(
       command('sample', 'sample command', [
-        { name: 'required', description: 'required option', type: 'string', required: true },
+        {
+          name: 'required',
+          description: 'required option',
+          type: 'string',
+          required: true,
+        },
         { name: 'optional', description: 'optional option', type: 'integer' },
       ]),
     );
@@ -74,7 +79,12 @@ describe('Help v2', () => {
   });
 
   it('部分一致から最大件数まで候補を返す', () => {
-    const commands = [command('activity'), command('activity-rank'), command('avatar'), command('color')];
+    const commands = [
+      command('activity'),
+      command('activity-rank'),
+      command('avatar'),
+      command('color'),
+    ];
 
     expect(findHelpSuggestions(commands, 'acti')).toEqual(['activity', 'activity-rank']);
     expect(findHelpSuggestions(commands, 'a', 2)).toHaveLength(2);
