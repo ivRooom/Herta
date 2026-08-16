@@ -114,7 +114,10 @@ export class PluginRuntimeEventSubscriber {
       try {
         await this.onGuildChanged(guildId);
         if (attempt > 1) {
-          this.logger.info({ guildId, attempt }, 'Plugin Runtime Guild再同期の再試行に成功しました');
+          this.logger.info(
+            { guildId, attempt },
+            'Plugin Runtime Guild再同期の再試行に成功しました',
+          );
         }
         return;
       } catch (error) {
