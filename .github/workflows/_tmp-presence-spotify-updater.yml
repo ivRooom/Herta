@@ -26,47 +26,32 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('apps/studio/src/components/bot-profile-settings.tsx')
           text = path.read_text()
           marker = "import { BOT_AVATAR_MAX_BYTES, BOT_AVATAR_MIME_TYPES } from '@/lib/bot-profile-input';"
           replacement = marker + "\nimport { SpotifyPresencePicker } from '@/components/spotify-presence-picker';"
-          if marker not in text:
-              raise SystemExit('import marker missing')
-          text = text.replace(marker, replacement, 1)
-
-          text = text.replace(
-              '<label htmlFor="bot-activity-text" className="text-sm font-semibold">\n              Activity\n            </label>',
-              '<label htmlFor="bot-activity-text" className="text-sm font-semibold">\n              {activityInputLabel(config.activityType)}\n            </label>',
-              1,
-          )
-          text = text.replace(
-              'placeholder="Herta"',
-              'placeholder={activityInputPlaceholder(config.activityType)}',
-              1,
-          )
+          if "SpotifyPresencePicker" not in text:
+              text = text.replace(marker, replacement, 1)
+          text = text.replace('<label htmlFor="bot-activity-text" className="text-sm font-semibold">\n              Activity\n            </label>', '<label htmlFor="bot-activity-text" className="text-sm font-semibold">\n              {activityInputLabel(config.activityType)}\n            </label>', 1)
+          text = text.replace('placeholder="Herta"', 'placeholder={activityInputPlaceholder(config.activityType)}', 1)
           activity_block = '''          </div>\n\n          <button\n            type="submit"'''
-          picker_block = '''          </div>\n\n          {config.activityType === 'listening' ? (\n            <SpotifyPresencePicker\n              onSelect={(presenceText) =>\n                setConfig((current) => ({\n                  ...current,\n                  activityType: 'listening',\n                  activityText: presenceText,\n                }))\n              }\n            />\n          ) : null}\n\n          <button\n            type="submit"'''
-          if activity_block not in text:
-              raise SystemExit('activity insertion marker missing')
-          text = text.replace(activity_block, picker_block, 1)
-
+          picker_block = '''          </div>\n\n          {config.activityType === 'listening' ? (\n            <SpotifyPresencePicker\n              onSelect={(presenceText) =>\n                setConfig((current) => ({ ...current, activityType: 'listening', activityText: presenceText }))\n              }\n            />\n          ) : null}\n\n          <button\n            type="submit"'''
+          if "<SpotifyPresencePicker" not in text:
+              text = text.replace(activity_block, picker_block, 1)
           helper_marker = '''function activityTypeLabel(type: BotActivityType): string {\n  return {\n    playing: 'Playing',\n    listening: 'Listening',\n    watching: 'Watching',\n    competing: 'Competing',\n  }[type];\n}\n'''
-          helpers = helper_marker + '''\nfunction activityInputLabel(type: BotActivityType): string {\n  return {\n    playing: 'Game Title',\n    listening: 'Track / Artist',\n    watching: 'Watching Title',\n    competing: 'Competition Title',\n  }[type];\n}\n\nfunction activityInputPlaceholder(type: BotActivityType): string {\n  return {\n    playing: 'Minecraft',\n    listening: 'アイドル — YOASOBI',\n    watching: 'Herta Studio',\n    competing: 'Herta Championship',\n  }[type];\n}\n'''
-          if helper_marker not in text:
-              raise SystemExit('helper marker missing')
-          path.write_text(text.replace(helper_marker, helpers, 1))
-
+          helpers = helper_marker + '''\nfunction activityInputLabel(type: BotActivityType): string {\n  return { playing: 'Game Title', listening: 'Track / Artist', watching: 'Watching Title', competing: 'Competition Title' }[type];\n}\n\nfunction activityInputPlaceholder(type: BotActivityType): string {\n  return { playing: 'Minecraft', listening: 'アイドル — YOASOBI', watching: 'Herta Studio', competing: 'Herta Championship' }[type];\n}\n'''
+          if "function activityInputLabel" not in text:
+              text = text.replace(helper_marker, helpers, 1)
+          path.write_text(text)
           for env_name in ['.env.example', '.env.production.example']:
               env = Path(env_name)
               content = env.read_text()
-              if 'SPOTIFY_CLIENT_ID=' in content:
-                  continue
-              content += '''\n\n# --- Spotify (任意: PresenceのListening検索) ---\n# Spotify Developer Dashboardでアプリを作成し、Studioサーバーだけに設定する。\n# 未設定でも手動Presenceは利用可能。Client Secretをブラウザへ公開しないこと。\nSPOTIFY_CLIENT_ID=\nSPOTIFY_CLIENT_SECRET=\n'''
-              env.write_text(content)
+              if 'SPOTIFY_CLIENT_ID=' not in content:
+                  content += '''\n\n# --- Spotify (任意: PresenceのListening検索) ---\n# Spotify Developer Dashboardでアプリを作成し、Studioサーバーだけに設定する。\n# 未設定でも手動Presenceは利用可能。Client Secretをブラウザへ公開しないこと。\nSPOTIFY_CLIENT_ID=\nSPOTIFY_CLIENT_SECRET=\n'''
+                  env.write_text(content)
           PY
-      - name: Format changed files
-        run: pnpm exec prettier --write apps/studio/src/components/bot-profile-settings.tsx apps/studio/src/components/spotify-presence-picker.tsx apps/studio/src/lib/spotify-catalog.ts apps/studio/src/lib/spotify-catalog.test.ts apps/studio/src/app/api/bot/presence/spotify/route.ts .env.example .env.production.example
+      - name: Format changed TypeScript files
+        run: pnpm exec prettier --write apps/studio/src/components/bot-profile-settings.tsx apps/studio/src/components/spotify-presence-picker.tsx apps/studio/src/lib/spotify-catalog.ts apps/studio/src/lib/spotify-catalog.test.ts apps/studio/src/app/api/bot/presence/spotify/route.ts
       - name: Commit changes
         run: |
           git config user.name "github-actions[bot]"
