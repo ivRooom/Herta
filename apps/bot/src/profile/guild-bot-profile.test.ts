@@ -66,7 +66,9 @@ describe('Guild Bot Profile Discord REST', () => {
     } as unknown as Client;
 
     await expect(getGuildBotProfile(client, GUILD_ID)).resolves.toBeNull();
-    await expect(updateGuildBotProfile(client, GUILD_ID, { nickname: 'Herta' })).resolves.toBeNull();
+    await expect(
+      updateGuildBotProfile(client, GUILD_ID, { nickname: 'Herta' }),
+    ).resolves.toBeNull();
     expect(get).not.toHaveBeenCalled();
     expect(patch).not.toHaveBeenCalled();
   });
