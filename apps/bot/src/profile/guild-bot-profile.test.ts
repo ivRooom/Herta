@@ -32,7 +32,7 @@ function createClientMock() {
 }
 
 describe('Guild Bot Profile Discord REST', () => {
-  it('取得時に@meではなくBot自身のsnowflakeを使用する', async () => {
+  it('取得時はBot自身のsnowflakeを使用する', async () => {
     const { client, get } = createClientMock();
 
     await expect(getGuildBotProfile(client, GUILD_ID)).resolves.toMatchObject({
@@ -42,7 +42,7 @@ describe('Guild Bot Profile Discord REST', () => {
     expect(get).toHaveBeenCalledWith(Routes.guildMember(GUILD_ID, BOT_USER_ID));
   });
 
-  it('更新時にもBot自身のsnowflakeを使用する', async () => {
+  it('更新時はModify Current Memberの@me routeを使用する', async () => {
     const { client, patch } = createClientMock();
 
     await expect(
@@ -51,21 +51,24 @@ describe('Guild Bot Profile Discord REST', () => {
       userId: BOT_USER_ID,
       nickname: 'Herta Updated',
     });
-    expect(patch).toHaveBeenCalledWith(Routes.guildMember(GUILD_ID, BOT_USER_ID), {
+    expect(patch).toHaveBeenCalledWith(Routes.guildMember(GUILD_ID, '@me'), {
       body: { nick: 'Herta Updated' },
     });
   });
 
   it('Botログイン前はDiscord RESTを呼ばずnullを返す', async () => {
     const get = vi.fn();
+    const patch = vi.fn();
     const client = {
       user: null,
       guilds: { cache: new Map([[GUILD_ID, {}]]) },
-      rest: { get },
+      rest: { get, patch },
     } as unknown as Client;
 
     await expect(getGuildBotProfile(client, GUILD_ID)).resolves.toBeNull();
+    await expect(updateGuildBotProfile(client, GUILD_ID, { nickname: 'Herta' })).resolves.toBeNull();
     expect(get).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
   });
 });
 
