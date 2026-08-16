@@ -27,7 +27,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Spotify選択メディアをPresenceフォームへ接続
-        shell: python
+        shell: python {0}
         run: |
           from pathlib import Path
 
