@@ -10,6 +10,11 @@ import type { HealthConfig } from './config.js';
 import type { GuildConfigurationOptions } from './guild-options.js';
 import type { GuildMemberOption } from './guild-members.js';
 import { isAuthorizedInternalApiRequest, isConfiguredInternalApiSecret } from './internal-auth.js';
+import {
+  GuildMessageStudioSendError,
+  parseGuildMessageStudioSendInput,
+  sendGuildMessageStudioMessage,
+} from './message-studio-send.js';
 import { createUnknownHealthResponse } from './service.js';
 import type { HertaHealthResponse, PublicServiceStatus } from './types.js';
 
@@ -43,6 +48,7 @@ const HTTP_STATUS_BY_HEALTH: Record<PublicServiceStatus, number> = {
 };
 
 const MAX_INTERNAL_JSON_BODY_BYTES = 1_500_000;
+const MAX_MESSAGE_STUDIO_INTERNAL_BODY_BYTES = 12_000_000;
 
 class RequestBodyTooLargeError extends Error {}
 class InvalidJsonBodyError extends Error {}
@@ -154,6 +160,19 @@ export class HealthHttpServer {
     const requestUrl = new URL(request.url ?? '/', 'http://localhost');
     const pathname = requestUrl.pathname;
 
+    const guildMessageStudioMatch = /^\/internal\/guilds\/(\d+)\/message-studio\/send$/u.exec(
+      pathname,
+    );
+    if (guildMessageStudioMatch) {
+      await this.handleMessageStudioSendRequest(
+        request,
+        response,
+        method,
+        guildMessageStudioMatch[1]!,
+      );
+      return;
+    }
+
     const guildBotProfileMatch = /^\/internal\/guilds\/(\d+)\/bot-profile$/u.exec(pathname);
     if (guildBotProfileMatch) {
       await this.handleGuildBotProfileRequest(request, response, method, guildBotProfileMatch[1]!);
@@ -244,6 +263,69 @@ export class HealthHttpServer {
     }
 
     this.sendJson(response, HTTP_STATUS_BY_HEALTH[health.status], health);
+  }
+
+  private async handleMessageStudioSendRequest(
+    request: IncomingMessage,
+    response: import('node:http').ServerResponse,
+    method: string,
+    guildId: string,
+  ): Promise<void> {
+    const internalApiSecret = this.options.internalApiSecret;
+    if (!isConfiguredInternalApiSecret(internalApiSecret)) {
+      this.sendJson(response, 503, { status: 'internal_api_not_configured' });
+      return;
+    }
+    if (!isAuthorizedInternalApiRequest(request.headers.authorization, internalApiSecret)) {
+      this.sendJson(response, 401, { status: 'unauthorized' });
+      return;
+    }
+    if (method !== 'POST') {
+      response.setHeader('Allow', 'POST');
+      this.sendJson(response, 405, { status: 'method_not_allowed' });
+      return;
+    }
+
+    const token = process.env['DISCORD_BOT_TOKEN']?.trim();
+    if (!token) {
+      this.sendJson(response, 503, { status: 'discord_bot_not_configured' });
+      return;
+    }
+
+    let rawBody: unknown;
+    try {
+      rawBody = await readJsonBody(request, MAX_MESSAGE_STUDIO_INTERNAL_BODY_BYTES);
+    } catch (error) {
+      this.sendJson(response, error instanceof RequestBodyTooLargeError ? 413 : 400, {
+        status: error instanceof RequestBodyTooLargeError ? 'payload_too_large' : 'invalid_json',
+      });
+      return;
+    }
+
+    const input = parseGuildMessageStudioSendInput(rawBody);
+    if (!input) {
+      this.sendJson(response, 400, { status: 'invalid_message_input' });
+      return;
+    }
+
+    try {
+      const result = await sendGuildMessageStudioMessage(token, guildId, input);
+      this.sendJson(response, 201, { result });
+    } catch (error) {
+      if (error instanceof GuildMessageStudioSendError) {
+        this.options.logger.warn(
+          { guildId, status: error.status, errorName: error.name },
+          'Message Studio内部送信に失敗しました',
+        );
+        this.sendJson(response, error.status, { status: 'discord_publish_failed' });
+        return;
+      }
+      this.options.logger.error(
+        { guildId, errorName: error instanceof Error ? error.name : 'UnknownError' },
+        'Message Studio内部送信で予期しないエラーが発生しました',
+      );
+      this.sendJson(response, 503, { status: 'unavailable' });
+    }
   }
 
   private async handleGuildBotProfileRequest(
