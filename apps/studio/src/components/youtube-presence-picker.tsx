@@ -34,9 +34,12 @@ export function YouTubePresencePicker({ selectedMedia, onSelect }: YouTubePresen
     setError(null);
     setSearched(true);
     try {
-      const response = await fetch(`/api/bot/presence/youtube?q=${encodeURIComponent(normalized)}`, {
-        cache: 'no-store',
-      });
+      const response = await fetch(
+        `/api/bot/presence/youtube?q=${encodeURIComponent(normalized)}`,
+        {
+          cache: 'no-store',
+        },
+      );
       const body = (await response.json()) as {
         configured?: boolean;
         videos?: YouTubeVideoResult[];
@@ -62,7 +65,8 @@ export function YouTubePresencePicker({ selectedMedia, onSelect }: YouTubePresen
         <div className="min-w-0">
           <p className="text-sm font-semibold">YouTubeからWatching表示を選択</p>
           <p className="mt-1 text-xs leading-5 text-muted">
-            動画タイトル・チャンネル名、YouTube URL、Video IDで検索できます。サムネイルはStudioのPresenceプレビューに保存されます。
+            動画タイトル・チャンネル名、YouTube URL、Video
+            IDで検索できます。サムネイルはStudioのPresenceプレビューに保存されます。
           </p>
         </div>
       </div>
@@ -152,7 +156,9 @@ export function YouTubePresencePicker({ selectedMedia, onSelect }: YouTubePresen
       ) : null}
 
       {configured !== false && !error && videos.length === 0 && !loading && searched ? (
-        <p className="mt-3 text-xs text-muted">一致する動画がありません。検索語を変えてください。</p>
+        <p className="mt-3 text-xs text-muted">
+          一致する動画がありません。検索語を変えてください。
+        </p>
       ) : null}
 
       {videos.length > 0 ? (
@@ -213,7 +219,9 @@ export function YouTubePresencePicker({ selectedMedia, onSelect }: YouTubePresen
       ) : null}
 
       <p className="mt-3 text-[11px] leading-5 text-muted">
-        キーワード検索にはYouTube Data APIの検索クォータを使用します。同じ検索は短時間キャッシュし、URL/Video ID指定は動画取得APIを使います。
+        キーワード検索にはYouTube Data
+        APIの検索クォータを使用します。同じ検索は短時間キャッシュし、URL/Video
+        ID指定は動画取得APIを使います。
       </p>
     </div>
   );

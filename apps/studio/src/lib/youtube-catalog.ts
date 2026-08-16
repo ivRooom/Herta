@@ -49,11 +49,7 @@ export interface YouTubeVideoResult {
 }
 
 type YouTubeCatalogErrorCode =
-  | 'invalid_query'
-  | 'not_configured'
-  | 'timeout'
-  | 'rate_limited'
-  | 'upstream_failed';
+  'invalid_query' | 'not_configured' | 'timeout' | 'rate_limited' | 'upstream_failed';
 
 const resultCache = new Map<string, { expiresAt: number; videos: YouTubeVideoResult[] }>();
 
@@ -163,9 +159,12 @@ async function youtubeFetch<T>(url: string): Promise<YouTubeListResponse<T>> {
       const reason = body.error?.errors?.[0]?.reason ?? '';
       if (
         response.status === 429 ||
-        ['quotaExceeded', 'dailyLimitExceeded', 'rateLimitExceeded', 'userRateLimitExceeded'].includes(
-          reason,
-        )
+        [
+          'quotaExceeded',
+          'dailyLimitExceeded',
+          'rateLimitExceeded',
+          'userRateLimitExceeded',
+        ].includes(reason)
       ) {
         throw new YouTubeCatalogError(
           'rate_limited',
@@ -221,7 +220,9 @@ function normalizeVideo(item: YouTubeVideoItem): YouTubeVideoResult | null {
 function decodeYouTubeText(value: string): string {
   return value
     .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) => String.fromCodePoint(Number.parseInt(code, 16)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) =>
+      String.fromCodePoint(Number.parseInt(code, 16)),
+    )
     .replaceAll('&amp;', '&')
     .replaceAll('&quot;', '"')
     .replaceAll('&#39;', "'")
