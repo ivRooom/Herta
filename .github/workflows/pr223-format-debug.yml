@@ -1,0 +1,35 @@
+name: PR223 Format Debug
+
+on:
+  push:
+    branches:
+      - feature/message-studio-calendar
+
+permissions:
+  contents: read
+
+jobs:
+  format-diff:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format target files
+        run: |
+          pnpm exec prettier --write \
+            'apps/studio/src/app/dashboard/guilds/[guildId]/daily-content/calendar/page.tsx' \
+            apps/studio/src/components/message-studio-quick-send.tsx \
+            apps/studio/src/lib/message-studio-calendar.ts
+      - name: Show formatted files
+        run: |
+          echo '===== CALENDAR PAGE ====='
+          cat 'apps/studio/src/app/dashboard/guilds/[guildId]/daily-content/calendar/page.tsx'
+          echo '===== QUICK SEND ====='
+          cat apps/studio/src/components/message-studio-quick-send.tsx
+          echo '===== CALENDAR LIB ====='
+          cat apps/studio/src/lib/message-studio-calendar.ts
