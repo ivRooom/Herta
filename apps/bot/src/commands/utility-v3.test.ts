@@ -3,14 +3,15 @@ import {
   coreUtilityV3Commands,
   discordSnowflakeCreatedAt,
   formatDiscordTimestamp,
+  hashText,
   parseTeamMembers,
   splitIntoTeams,
 } from './utility-v3.js';
 
 describe('Core Utility v3', () => {
-  it('5つのCommandを重複なく登録する', () => {
+  it('6つのCommandを重複なく登録する', () => {
     const names = coreUtilityV3Commands.map((command) => command.definition.name);
-    expect(names).toEqual(['utilities', 'teams', 'uuid', 'timestamp', 'snowflake']);
+    expect(names).toEqual(['utilities', 'teams', 'uuid', 'timestamp', 'snowflake', 'hash']);
     expect(new Set(names).size).toBe(names.length);
   });
 
@@ -39,6 +40,14 @@ describe('Core Utility v3', () => {
     expect(formatDiscordTimestamp(1_700_000_000.9, 'R')).toBe('<t:1700000000:R>');
   });
 
+  it('SHAハッシュを既知ベクトルどおり生成する', () => {
+    expect(hashText('abc', 'sha256')).toBe(
+      'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+    );
+    expect(hashText('abc', 'sha384')).toHaveLength(96);
+    expect(hashText('abc', 'sha512')).toHaveLength(128);
+  });
+
   it('必須OptionとDiscord入力境界を定義する', () => {
     const teams = coreUtilityV3Commands.find((command) => command.definition.name === 'teams');
     const timestamp = coreUtilityV3Commands.find(
@@ -47,6 +56,7 @@ describe('Core Utility v3', () => {
     const snowflake = coreUtilityV3Commands.find(
       (command) => command.definition.name === 'snowflake',
     );
+    const hash = coreUtilityV3Commands.find((command) => command.definition.name === 'hash');
 
     expect(teams?.definition.options?.[0]).toMatchObject({
       name: 'members',
@@ -69,6 +79,15 @@ describe('Core Utility v3', () => {
       name: 'id',
       type: 'string',
       required: true,
+    });
+    expect(hash?.definition.options?.[0]).toMatchObject({
+      name: 'text',
+      type: 'string',
+      required: true,
+    });
+    expect(hash?.definition.options?.[1]).toMatchObject({
+      name: 'algorithm',
+      type: 'string',
     });
   });
 });
