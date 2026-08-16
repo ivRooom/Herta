@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import type { Logger } from 'pino';
 import { communityActivityCommands } from './community-activity.js';
 import { coreInformationCommands } from './core-info.js';
-import { coreFunUtilityCommands } from './fun-utility.js';
 import { CommandRegistry, PLUGIN_OWNED_COMMAND_NAMES, type SlashCommand } from './registry.js';
 import { coreUtilityV3Commands } from './utility-v3.js';
 import { coreUtilityV4Commands } from './utility-v4.js';
@@ -16,7 +15,6 @@ function createLogger(): Logger {
 function expectedCoreCommandNames(): string[] {
   return [
     ...coreInformationCommands,
-    ...coreFunUtilityCommands,
     ...coreUtilityV3Commands,
     ...coreUtilityV4Commands,
     ...communityActivityCommands,
@@ -40,6 +38,13 @@ describe('CommandRegistry command ownership audit', () => {
   it('Core側の非Plugin所有Command名に重複がない', () => {
     const names = expectedCoreCommandNames();
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('Core初期化時に重複登録警告を出さない', () => {
+    const logger = createLogger();
+    new CommandRegistry(logger);
+
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   it('Utility v4コマンドをRegistryへ登録する', () => {
