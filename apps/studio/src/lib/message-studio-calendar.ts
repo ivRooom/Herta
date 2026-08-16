@@ -96,7 +96,8 @@ export function buildMessageStudioCalendarEntries(
 
   return base.map((entry) => ({
     ...entry,
-    conflictCount: conflictCounts.get(`${entry.dateKey}:${entry.timeLabel}:${entry.channelId}`) ?? 1,
+    conflictCount:
+      conflictCounts.get(`${entry.dateKey}:${entry.timeLabel}:${entry.channelId}`) ?? 1,
   }));
 }
 
@@ -135,7 +136,10 @@ export function zonedTimeLabel(date: Date, timezone: string): string {
   return formatter.format(date);
 }
 
-function zonedDateParts(date: Date, timezone: string): { year: number; month: number; day: number } {
+function zonedDateParts(
+  date: Date,
+  timezone: string,
+): { year: number; month: number; day: number } {
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     year: 'numeric',
@@ -143,7 +147,8 @@ function zonedDateParts(date: Date, timezone: string): { year: number; month: nu
     day: '2-digit',
   });
   const parts = formatter.formatToParts(date);
-  const read = (type: 'year' | 'month' | 'day') => Number(parts.find((part) => part.type === type)?.value);
+  const read = (type: 'year' | 'month' | 'day') =>
+    Number(parts.find((part) => part.type === type)?.value);
   const year = read('year');
   const month = read('month');
   const day = read('day');

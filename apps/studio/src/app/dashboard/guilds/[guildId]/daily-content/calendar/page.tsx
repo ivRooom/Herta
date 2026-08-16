@@ -157,7 +157,8 @@ export default async function MessageStudioCalendarPage({
             <h1 className="text-2xl font-semibold tracking-tight">投稿カレンダー</h1>
           </div>
           <p className="mt-2 max-w-3xl text-sm text-muted">
-            {guild.name} の1回予約・毎日・毎週投稿を月単位で確認できます。同じチャンネルへ同じ分に複数投稿が重なる場合は競合として表示します。
+            {guild.name}{' '}
+            の1回予約・毎日・毎週投稿を月単位で確認できます。同じチャンネルへ同じ分に複数投稿が重なる場合は競合として表示します。
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -207,11 +208,7 @@ export default async function MessageStudioCalendarPage({
               <div
                 key={weekday}
                 className={`px-2 py-2 text-center text-xs font-semibold ${
-                  index === 0
-                    ? 'text-rose-500'
-                    : index === 6
-                      ? 'text-blue-500'
-                      : 'text-muted'
+                  index === 0 ? 'text-rose-500' : index === 6 ? 'text-blue-500' : 'text-muted'
                 }`}
               >
                 {weekday}

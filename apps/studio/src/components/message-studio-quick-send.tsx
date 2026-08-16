@@ -74,11 +74,11 @@ export function MessageStudioQuickSend({
     messageFormat === 'embed' &&
     Boolean(
       embedTitle.trim() ||
-        embedDescription.trim() ||
-        embedImageUrl.trim() ||
-        embedThumbnailUrl.trim() ||
-        embedFooterText.trim() ||
-        embedFields.some((field) => field.name.trim() && field.value.trim()),
+      embedDescription.trim() ||
+      embedImageUrl.trim() ||
+      embedThumbnailUrl.trim() ||
+      embedFooterText.trim() ||
+      embedFields.some((field) => field.name.trim() && field.value.trim()),
     );
 
   function wrapMarkdown(before: string, after = before, placeholder = 'テキスト') {
@@ -418,7 +418,9 @@ export function MessageStudioQuickSend({
                         <button
                           type="button"
                           onClick={() =>
-                            setEmbedFields(embedFields.filter((_, fieldIndex) => fieldIndex !== index))
+                            setEmbedFields(
+                              embedFields.filter((_, fieldIndex) => fieldIndex !== index),
+                            )
                           }
                           className="rounded-lg p-2 text-destructive hover:bg-destructive/5"
                           aria-label="Fieldを削除"
