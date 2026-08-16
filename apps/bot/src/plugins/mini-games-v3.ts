@@ -2,6 +2,7 @@ import type { ChatInputCommandInteraction } from 'discord.js';
 import type { PrismaClient } from '@herta/db';
 import { miniGamesManifest } from '@herta/plugin-catalog';
 import type { CommandHandler } from '@herta/plugin-sdk';
+import { createAmidakujiCommandHandler } from './mini-games-amidakuji.js';
 import { publishMiniGameCompletion } from './mini-games-completion-events.js';
 import { incrementMiniGameMetrics, type MiniGameMetric } from './mini-games-repository.js';
 import {
@@ -52,6 +53,10 @@ export function createMiniGamesV3CommandHandlers(
       definition: miniGamesManifest.commands[6]!,
       execute: (interaction) => executeArcadeLeaderboard(context, interaction),
     },
+    createAmidakujiCommandHandler(miniGamesManifest.commands[7]!, () => ({
+      enabled: readConfig(context.config).enabled,
+      sessionTimeoutSeconds: readSessionTimeout(context.config),
+    })),
   ];
 }
 
@@ -263,6 +268,12 @@ function readConfig(value: unknown): {
     leaderboardEnabled:
       source.leaderboardEnabled === undefined ? true : source.leaderboardEnabled === true,
   };
+}
+
+function readSessionTimeout(value: unknown): number {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return 90;
+  const raw = (value as Record<string, unknown>).sessionTimeoutSeconds;
+  return typeof raw === 'number' && Number.isFinite(raw) ? clamp(raw, 30, 300) : 90;
 }
 
 function isArcadeMetric(value: string): value is ArcadeMetric {
