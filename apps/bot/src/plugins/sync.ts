@@ -35,17 +35,24 @@ export async function syncGuildCommands(
 ): Promise<void> {
   const appId = client.application?.id ?? process.env['DISCORD_CLIENT_ID'];
   if (!appId) {
+    const error = new Error('Discord Application ID is unavailable');
     logger.warn(
       { guildId },
-      'Discord Application ID が取得できないため、Guild Commandの登録をスキップします',
+      'Discord Application ID が取得できないため、Guild Commandの登録を実行できません',
     );
-    return;
+    throw error;
   }
+
+  const body = buildGuildCommandBodies(coreCommands, pluginCommands, logger);
+  const commandNames = body.map((command) => command.name);
   try {
-    const body = buildGuildCommandBodies(coreCommands, pluginCommands, logger);
     await client.rest.put(Routes.applicationGuildCommands(appId, guildId), { body });
-    logger.info({ guildId, count: body.length }, 'Guild Commandを登録しました');
+    logger.info({ guildId, count: body.length, commandNames }, 'Guild Commandを登録しました');
   } catch (error) {
-    logger.error({ err: error, guildId, appId }, 'Guild Commandの登録に失敗しました');
+    logger.error(
+      { err: error, guildId, appId, count: body.length, commandNames },
+      'Guild Commandの登録に失敗しました',
+    );
+    throw error;
   }
 }

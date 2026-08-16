@@ -11,6 +11,9 @@ import {
   type XpRoleSweepReason,
 } from '@herta/shared';
 
+const PLUGIN_RUNTIME_PUBLISH_ATTEMPTS = 3;
+const PLUGIN_RUNTIME_RETRY_MS = 200;
+
 export async function publishPluginRuntimeEvent(input: {
   guildId: string;
   pluginId: string;
@@ -22,12 +25,20 @@ export async function publishPluginRuntimeEvent(input: {
 
   try {
     const event = createPluginRuntimeEvent(input);
-    const subscribers = await publish(
-      redisUrl,
-      PLUGIN_RUNTIME_EVENT_CHANNEL,
-      JSON.stringify(event),
-    );
-    return subscribers > 0;
+    const payload = JSON.stringify(event);
+    for (let attempt = 1; attempt <= PLUGIN_RUNTIME_PUBLISH_ATTEMPTS; attempt += 1) {
+      const subscribers = await publish(redisUrl, PLUGIN_RUNTIME_EVENT_CHANNEL, payload);
+      if (subscribers > 0) return true;
+      if (attempt < PLUGIN_RUNTIME_PUBLISH_ATTEMPTS) {
+        await delay(PLUGIN_RUNTIME_RETRY_MS * attempt);
+      }
+    }
+    console.warn('Plugin Runtime更新イベントの購読者を確認できませんでした', {
+      guildId: input.guildId,
+      pluginId: input.pluginId,
+      eventType: input.eventType,
+    });
+    return false;
   } catch (error) {
     console.error('Plugin Runtime更新イベントの発行に失敗しました', {
       guildId: input.guildId,
@@ -141,4 +152,8 @@ function encodeCommand(...parts: string[]): string {
   return `*${parts.length}\r\n${parts
     .map((part) => `$${Buffer.byteLength(part)}\r\n${part}\r\n`)
     .join('')}`;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

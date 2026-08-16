@@ -11,6 +11,9 @@ interface EventCursor {
   occurredAt: number;
 }
 
+const MAX_SYNC_ATTEMPTS = 3;
+const SYNC_RETRY_BASE_MS = 500;
+
 export class PluginRuntimeEventSubscriber {
   private redis?: Redis;
   private readonly cursors = new Map<string, EventCursor>();
@@ -99,17 +102,39 @@ export class PluginRuntimeEventSubscriber {
     const previous = this.guildQueues.get(guildId) ?? Promise.resolve();
     const next = previous
       .catch(() => undefined)
-      .then(() => this.onGuildChanged(guildId))
-      .catch((error) => {
-        this.logger.error(
-          { err: error, guildId },
-          'Plugin RuntimeイベントによるGuild再同期に失敗しました',
-        );
-      })
+      .then(() => this.syncGuildWithRetry(guildId))
       .finally(() => {
         if (this.guildQueues.get(guildId) === next) this.guildQueues.delete(guildId);
       });
     this.guildQueues.set(guildId, next);
+  }
+
+  private async syncGuildWithRetry(guildId: string): Promise<void> {
+    for (let attempt = 1; attempt <= MAX_SYNC_ATTEMPTS; attempt += 1) {
+      try {
+        await this.onGuildChanged(guildId);
+        if (attempt > 1) {
+          this.logger.info(
+            { guildId, attempt },
+            'Plugin Runtime Guild再同期の再試行に成功しました',
+          );
+        }
+        return;
+      } catch (error) {
+        if (attempt === MAX_SYNC_ATTEMPTS) {
+          this.logger.error(
+            { err: error, guildId, attempt },
+            'Plugin RuntimeイベントによるGuild再同期に失敗しました',
+          );
+          return;
+        }
+        this.logger.warn(
+          { err: error, guildId, attempt },
+          'Plugin Runtime Guild再同期に失敗したため再試行します',
+        );
+        await new Promise((resolve) => setTimeout(resolve, SYNC_RETRY_BASE_MS * attempt));
+      }
+    }
   }
 
   async stop(): Promise<void> {

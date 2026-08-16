@@ -145,6 +145,43 @@ jobs:
               git checkout --detach "${DEPLOY_REF}"
             fi
 
+            echo "=== Optional runtime secretsをSSMから同期 ==="
+            if command -v aws >/dev/null 2>&1; then
+              SPOTIFY_CLIENT_ID_VALUE="$(aws ssm get-parameter \
+                --region "${AWS_REGION:-ap-northeast-1}" \
+                --name '/ivrm/runtime/spotify/client-id' \
+                --with-decryption \
+                --query 'Parameter.Value' \
+                --output text 2>/dev/null || true)"
+              SPOTIFY_CLIENT_SECRET_VALUE="$(aws ssm get-parameter \
+                --region "${AWS_REGION:-ap-northeast-1}" \
+                --name '/ivrm/runtime/spotify/client-secret' \
+                --with-decryption \
+                --query 'Parameter.Value' \
+                --output text 2>/dev/null || true)"
+
+              if [ -n "${SPOTIFY_CLIENT_ID_VALUE}" ] && [ "${SPOTIFY_CLIENT_ID_VALUE}" != 'None' ] && \
+                 [ -n "${SPOTIFY_CLIENT_SECRET_VALUE}" ] && [ "${SPOTIFY_CLIENT_SECRET_VALUE}" != 'None' ]; then
+                upsert_env() {
+                  key="$1"
+                  value="$2"
+                  tmp="$(mktemp)"
+                  awk -F= -v target="${key}" '$1 != target { print }' "${ENV_FILE}" > "${tmp}"
+                  printf '%s=%s\n' "${key}" "${value}" >> "${tmp}"
+                  chmod 600 "${tmp}"
+                  mv "${tmp}" "${ENV_FILE}"
+                }
+                upsert_env SPOTIFY_CLIENT_ID "${SPOTIFY_CLIENT_ID_VALUE}"
+                upsert_env SPOTIFY_CLIENT_SECRET "${SPOTIFY_CLIENT_SECRET_VALUE}"
+                echo "Spotify runtime secretsを同期しました（値は非表示）"
+              else
+                echo "Spotify SSM parametersは未設定のため、Spotify検索は無効のまま継続します"
+              fi
+              unset SPOTIFY_CLIENT_ID_VALUE SPOTIFY_CLIENT_SECRET_VALUE
+            else
+              echo "AWS CLIがないためSpotify SSM同期をスキップします"
+            fi
+
             ${COMPOSE} config --quiet
 
             printf '%s' "${GHCR_TOKEN}" | \
