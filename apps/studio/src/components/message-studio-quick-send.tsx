@@ -56,7 +56,8 @@ export function MessageStudioQuickSend({
     };
   }, [imagePreviewUrl]);
 
-  const selectedChannel = discordOptions?.channels.find((channel) => channel.id === channelId) ?? null;
+  const selectedChannel =
+    discordOptions?.channels.find((channel) => channel.id === channelId) ?? null;
   const isForum = selectedChannel?.kind === 'forum';
   const isAnnouncement = selectedChannel?.kind === 'announcement';
 
@@ -118,9 +119,15 @@ export function MessageStudioQuickSend({
         method: 'POST',
         body,
       });
-      const payload = (await response.json()) as { error?: string; messageId?: string; threadId?: string };
+      const payload = (await response.json()) as {
+        error?: string;
+        messageId?: string;
+        threadId?: string;
+      };
       if (!response.ok) throw new Error(payload.error || 'Botでの発言に失敗しました');
-      setNotice(payload.threadId ? 'ForumへBot投稿を作成しました' : 'Botでメッセージを送信しました');
+      setNotice(
+        payload.threadId ? 'ForumへBot投稿を作成しました' : 'Botでメッセージを送信しました',
+      );
       setContent('');
       setForumTitle('');
       setImage(null);
@@ -141,7 +148,8 @@ export function MessageStudioQuickSend({
           <h2 className="font-semibold">今すぐBotで発言</h2>
         </div>
         <p className="mt-1 text-xs leading-5 text-muted">
-          ユーザーがDiscordへ投稿する感覚で、チャンネル・Thread・Forumへ即時送信できます。Discord Markdownと画像添付に対応します。
+          ユーザーがDiscordへ投稿する感覚で、チャンネル・Thread・Forumへ即時送信できます。Discord
+          Markdownと画像添付に対応します。
         </p>
       </div>
 
@@ -172,15 +180,30 @@ export function MessageStudioQuickSend({
           </div>
 
           <div className="overflow-hidden rounded-xl border border-border bg-background focus-within:ring-2 focus-within:ring-ring">
-            <div className="flex flex-wrap gap-1 border-b border-border p-2" aria-label="Discord書式ツール">
+            <div
+              className="flex flex-wrap gap-1 border-b border-border p-2"
+              aria-label="Discord書式ツール"
+            >
               <ToolbarButton label="太字" onClick={() => wrapMarkdown('**')} icon={<Bold />} />
               <ToolbarButton label="斜体" onClick={() => wrapMarkdown('*')} icon={<Italic />} />
               <ToolbarButton label="下線" onClick={() => wrapMarkdown('__')} icon={<Underline />} />
-              <ToolbarButton label="取消" onClick={() => wrapMarkdown('~~')} icon={<Strikethrough />} />
+              <ToolbarButton
+                label="取消"
+                onClick={() => wrapMarkdown('~~')}
+                icon={<Strikethrough />}
+              />
               <ToolbarButton label="コード" onClick={() => wrapMarkdown('`')} icon={<Code2 />} />
               <ToolbarButton label="スポイラー" onClick={() => wrapMarkdown('||')} icon={<Eye />} />
-              <ToolbarButton label="引用" onClick={() => wrapMarkdown('> ', '', '引用文')} icon={<Quote />} />
-              <ToolbarButton label="リンク" onClick={() => wrapMarkdown('[', '](https://)', '表示名')} icon={<Link2 />} />
+              <ToolbarButton
+                label="引用"
+                onClick={() => wrapMarkdown('> ', '', '引用文')}
+                icon={<Quote />}
+              />
+              <ToolbarButton
+                label="リンク"
+                onClick={() => wrapMarkdown('[', '](https://)', '表示名')}
+                icon={<Link2 />}
+              />
             </div>
             <textarea
               ref={textareaRef}
@@ -192,7 +215,9 @@ export function MessageStudioQuickSend({
               placeholder="Discordへ送るメッセージを入力…"
             />
           </div>
-          <p className="text-right text-xs text-muted">{content.length} / {maxContentLength}</p>
+          <p className="text-right text-xs text-muted">
+            {content.length} / {maxContentLength}
+          </p>
 
           <div>
             <label
@@ -251,29 +276,57 @@ export function MessageStudioQuickSend({
             </button>
           </div>
 
-          {error ? <p className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive" role="alert">{error}</p> : null}
-          {notice ? <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300" role="status">{notice}</p> : null}
+          {error ? (
+            <p
+              className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+              role="alert"
+            >
+              {error}
+            </p>
+          ) : null}
+          {notice ? (
+            <p
+              className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300"
+              role="status"
+            >
+              {notice}
+            </p>
+          ) : null}
         </div>
 
         <aside className="rounded-2xl bg-[#313338] p-4 text-[#dbdee1]">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#949ba4]">Discord Preview</p>
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#949ba4]">
+            Discord Preview
+          </p>
           <div className="flex gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">H</div>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
+              H
+            </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-white">Herta</span>
-                <span className="rounded bg-[#5865f2] px-1 py-0.5 text-[9px] font-bold text-white">APP</span>
+                <span className="rounded bg-[#5865f2] px-1 py-0.5 text-[9px] font-bold text-white">
+                  APP
+                </span>
               </div>
-              {content ? <p className="mt-1 whitespace-pre-wrap break-words text-sm">{content}</p> : null}
+              {content ? (
+                <p className="mt-1 whitespace-pre-wrap break-words text-sm">{content}</p>
+              ) : null}
               {imagePreviewUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={imagePreviewUrl} alt="添付画像プレビュー" className="mt-3 max-h-64 max-w-full rounded-lg object-contain" />
+                <img
+                  src={imagePreviewUrl}
+                  alt="添付画像プレビュー"
+                  className="mt-3 max-h-64 max-w-full rounded-lg object-contain"
+                />
               ) : null}
             </div>
           </div>
           <div className="mt-4 border-t border-white/10 pt-3 text-xs text-[#949ba4]">
             <p>{selectedChannel ? `# ${selectedChannel.name}` : '投稿先未選択'}</p>
-            {isForum ? <p className="mt-1">Forum: {forumTitle || '本文1行目をタイトルに使用'}</p> : null}
+            {isForum ? (
+              <p className="mt-1">Forum: {forumTitle || '本文1行目をタイトルに使用'}</p>
+            ) : null}
           </div>
         </aside>
       </form>
@@ -290,7 +343,15 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function ToolbarButton({ label, onClick, icon }: { label: string; onClick: () => void; icon: ReactNode }) {
+function ToolbarButton({
+  label,
+  onClick,
+  icon,
+}: {
+  label: string;
+  onClick: () => void;
+  icon: ReactNode;
+}) {
   return (
     <button
       type="button"

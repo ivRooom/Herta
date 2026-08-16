@@ -49,12 +49,13 @@ export function validateMessageStudioImageFile(file: File): string | null {
 }
 
 export function sanitizeMessageStudioFilename(name: string, contentType: string): string {
-  const extension = {
-    'image/png': '.png',
-    'image/jpeg': '.jpg',
-    'image/gif': '.gif',
-    'image/webp': '.webp',
-  }[contentType] ?? '.bin';
+  const extension =
+    {
+      'image/png': '.png',
+      'image/jpeg': '.jpg',
+      'image/gif': '.gif',
+      'image/webp': '.webp',
+    }[contentType] ?? '.bin';
   const base = name
     .normalize('NFKC')
     .replace(/[^A-Za-z0-9._-]+/gu, '-')
@@ -120,14 +121,15 @@ export async function sendMessageStudioMessage(
     status?: string;
   } | null;
   if (!response.ok || !body?.result) {
-    const message = {
-      400: '投稿内容または投稿先が不正です',
-      401: 'Bot内部送信APIの認証に失敗しました',
-      403: '選択した投稿先へ送信できません',
-      409: '投稿先の状態により送信できません',
-      413: '画像データが大きすぎます',
-      429: 'Discordの送信制限に達しました',
-    }[response.status] ?? 'Discordへの投稿に失敗しました';
+    const message =
+      {
+        400: '投稿内容または投稿先が不正です',
+        401: 'Bot内部送信APIの認証に失敗しました',
+        403: '選択した投稿先へ送信できません',
+        409: '投稿先の状態により送信できません',
+        413: '画像データが大きすぎます',
+        429: 'Discordの送信制限に達しました',
+      }[response.status] ?? 'Discordへの投稿に失敗しました';
     throw new MessageStudioDiscordError(message, response.status || 502);
   }
   return body.result;

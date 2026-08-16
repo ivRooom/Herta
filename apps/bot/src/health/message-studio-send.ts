@@ -44,13 +44,19 @@ export class GuildMessageStudioSendError extends Error {
   }
 }
 
-export function parseGuildMessageStudioSendInput(value: unknown): GuildMessageStudioSendInput | null {
+export function parseGuildMessageStudioSendInput(
+  value: unknown,
+): GuildMessageStudioSendInput | null {
   if (!isRecord(value)) return null;
   const channelId = typeof value.channelId === 'string' ? value.channelId.trim() : '';
   const content = typeof value.content === 'string' ? value.content : '';
   const forumTitle = typeof value.forumTitle === 'string' ? value.forumTitle.trim() : '';
-  if (!/^\d{17,20}$/u.test(channelId) || content.length > 4_000 || forumTitle.length > 100) return null;
-  if (typeof value.allowUserMentions !== 'boolean' || typeof value.publishAnnouncement !== 'boolean') {
+  if (!/^\d{17,20}$/u.test(channelId) || content.length > 4_000 || forumTitle.length > 100)
+    return null;
+  if (
+    typeof value.allowUserMentions !== 'boolean' ||
+    typeof value.publishAnnouncement !== 'boolean'
+  ) {
     return null;
   }
 
@@ -60,7 +66,8 @@ export function parseGuildMessageStudioSendInput(value: unknown): GuildMessageSt
     const filename = typeof value.image.filename === 'string' ? value.image.filename.trim() : '';
     const contentType = typeof value.image.contentType === 'string' ? value.image.contentType : '';
     const dataBase64 = typeof value.image.dataBase64 === 'string' ? value.image.dataBase64 : '';
-    if (!filename || filename.length > 100 || !IMAGE_MIME_TYPES.has(contentType) || !dataBase64) return null;
+    if (!filename || filename.length > 100 || !IMAGE_MIME_TYPES.has(contentType) || !dataBase64)
+      return null;
     const bytes = decodeBase64(dataBase64);
     if (!bytes || bytes.length <= 0 || bytes.length > MAX_IMAGE_BYTES) return null;
     image = { filename, contentType, dataBase64 };
@@ -126,10 +133,14 @@ async function unarchiveThread(token: string, channelId: string): Promise<void> 
     body: JSON.stringify({ archived: false }),
     signal: AbortSignal.timeout(10_000),
   });
-  if (!response.ok) throw await discordError('アーカイブ済みスレッドを再開できませんでした', response);
+  if (!response.ok)
+    throw await discordError('アーカイブ済みスレッドを再開できませんでした', response);
 }
 
-async function sendChannelMessage(token: string, input: GuildMessageStudioSendInput): Promise<string> {
+async function sendChannelMessage(
+  token: string,
+  input: GuildMessageStudioSendInput,
+): Promise<string> {
   const payload = {
     content: input.content || undefined,
     allowed_mentions: { parse: input.allowUserMentions ? ['users'] : [] },
@@ -185,7 +196,10 @@ async function sendForumPost(
   return { messageId, channelId: input.channelId, threadId: thread.id, channelType };
 }
 
-function buildMultipart(payload: unknown, image: NonNullable<GuildMessageStudioSendInput['image']>): FormData {
+function buildMultipart(
+  payload: unknown,
+  image: NonNullable<GuildMessageStudioSendInput['image']>,
+): FormData {
   const bytes = decodeBase64(image.dataBase64);
   if (!bytes) throw new GuildMessageStudioSendError('添付画像を復元できませんでした', 400);
   const form = new FormData();
@@ -197,7 +211,10 @@ function buildMultipart(payload: unknown, image: NonNullable<GuildMessageStudioS
 function decodeBase64(value: string): Uint8Array | null {
   try {
     const buffer = Buffer.from(value, 'base64');
-    if (buffer.length === 0 || buffer.toString('base64').replace(/=+$/u, '') !== value.replace(/=+$/u, '')) {
+    if (
+      buffer.length === 0 ||
+      buffer.toString('base64').replace(/=+$/u, '') !== value.replace(/=+$/u, '')
+    ) {
       return null;
     }
     return new Uint8Array(buffer);
@@ -208,7 +225,11 @@ function decodeBase64(value: string): Uint8Array | null {
 
 function resolveForumTitle(explicit: string, content: string): string {
   if (explicit) return explicit.slice(0, 100);
-  const firstLine = content.split(/\r?\n/u).find((line) => line.trim())?.trim() ?? '';
+  const firstLine =
+    content
+      .split(/\r?\n/u)
+      .find((line) => line.trim())
+      ?.trim() ?? '';
   return (firstLine || 'Hertaからのお知らせ').slice(0, 100);
 }
 
@@ -221,10 +242,14 @@ async function crosspost(token: string, channelId: string, messageId: string): P
       signal: AbortSignal.timeout(10_000),
     },
   );
-  if (!response.ok) throw await discordError('投稿は完了しましたがCrosspostに失敗しました', response);
+  if (!response.ok)
+    throw await discordError('投稿は完了しましたがCrosspostに失敗しました', response);
 }
 
-async function discordError(message: string, response: Response): Promise<GuildMessageStudioSendError> {
+async function discordError(
+  message: string,
+  response: Response,
+): Promise<GuildMessageStudioSendError> {
   let detail = '';
   try {
     const body = (await response.json()) as { message?: unknown };
@@ -232,7 +257,10 @@ async function discordError(message: string, response: Response): Promise<GuildM
   } catch {
     detail = '';
   }
-  return new GuildMessageStudioSendError(detail ? `${message}: ${detail}` : message, response.status);
+  return new GuildMessageStudioSendError(
+    detail ? `${message}: ${detail}` : message,
+    response.status,
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

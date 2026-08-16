@@ -44,7 +44,9 @@ describe('parseGuildMessageStudioSendInput', () => {
       allowUserMentions: false,
       publishAnnouncement: false,
     };
-    expect(parseGuildMessageStudioSendInput({ ...base, channelId: '../invalid', image: null })).toBeNull();
+    expect(
+      parseGuildMessageStudioSendInput({ ...base, channelId: '../invalid', image: null }),
+    ).toBeNull();
     expect(parseGuildMessageStudioSendInput({ ...base, content: '', image: null })).toBeNull();
     expect(
       parseGuildMessageStudioSendInput({
