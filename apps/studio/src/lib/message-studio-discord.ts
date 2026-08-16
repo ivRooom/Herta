@@ -12,6 +12,22 @@ export interface MessageStudioImageAttachment {
   contentType: (typeof MESSAGE_STUDIO_IMAGE_MIME_TYPES)[number];
 }
 
+export interface MessageStudioImmediateEmbedField {
+  name: string;
+  value: string;
+  inline: boolean;
+}
+
+export interface MessageStudioImmediateEmbed {
+  title: string;
+  description: string;
+  color: string;
+  imageUrl: string;
+  thumbnailUrl: string;
+  footerText: string;
+  fields: MessageStudioImmediateEmbedField[];
+}
+
 export interface SendMessageStudioMessageInput {
   guildId: string;
   channelId: string;
@@ -19,6 +35,7 @@ export interface SendMessageStudioMessageInput {
   forumTitle: string;
   allowUserMentions: boolean;
   publishAnnouncement: boolean;
+  embed: MessageStudioImmediateEmbed | null;
   attachment: MessageStudioImageAttachment | null;
 }
 
@@ -104,6 +121,7 @@ export async function sendMessageStudioMessage(
         forumTitle: input.forumTitle,
         allowUserMentions: input.allowUserMentions,
         publishAnnouncement: input.publishAnnouncement,
+        embed: input.embed,
         image,
       }),
       cache: 'no-store',

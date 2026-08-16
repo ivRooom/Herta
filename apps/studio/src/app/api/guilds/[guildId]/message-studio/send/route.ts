@@ -9,6 +9,7 @@ import {
   sendMessageStudioMessage,
   validateMessageStudioImageFile,
   type MessageStudioImageAttachment,
+  type MessageStudioImmediateEmbed,
 } from '@/lib/message-studio-discord';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
 
@@ -40,6 +41,7 @@ export async function POST(request: Request, { params }: RouteContext) {
   const forumTitle = formText(form, 'forumTitle');
   const publishAnnouncement = formText(form, 'publishAnnouncement') === 'true';
   const rawAttachment = form.get('image');
+  const rawEmbed = formText(form, 'embed');
 
   try {
     const plugin = await getGuildPlugin(guildId, 'daily-content');
@@ -60,6 +62,11 @@ export async function POST(request: Request, { params }: RouteContext) {
       );
     }
 
+    const embed = parseImmediateEmbed(rawEmbed);
+    if (rawEmbed && !embed) {
+      return NextResponse.json({ error: 'Embedの入力内容が不正です' }, { status: 400 });
+    }
+
     let attachment: MessageStudioImageAttachment | null = null;
     if (rawAttachment instanceof File && rawAttachment.size > 0) {
       const fileError = validateMessageStudioImageFile(rawAttachment);
@@ -70,8 +77,11 @@ export async function POST(request: Request, { params }: RouteContext) {
         contentType: rawAttachment.type as MessageStudioImageAttachment['contentType'],
       };
     }
-    if (!content.trim() && !attachment) {
-      return NextResponse.json({ error: '本文または画像を入力してください' }, { status: 400 });
+    if (!content.trim() && !attachment && !embed) {
+      return NextResponse.json(
+        { error: '本文・Embed・画像のいずれかを入力してください' },
+        { status: 400 },
+      );
     }
 
     const result = await sendMessageStudioMessage({
@@ -81,6 +91,7 @@ export async function POST(request: Request, { params }: RouteContext) {
       forumTitle,
       allowUserMentions: config.allowUserMentions,
       publishAnnouncement: publishAnnouncement && config.allowAnnouncementCrosspost,
+      embed,
       attachment,
     });
 
@@ -97,6 +108,7 @@ export async function POST(request: Request, { params }: RouteContext) {
           threadId: result.threadId,
           channelType: result.channelType,
           hasAttachment: attachment !== null,
+          hasEmbed: embed !== null,
           contentLength: content.length,
         },
       },
@@ -116,7 +128,66 @@ export async function POST(request: Request, { params }: RouteContext) {
   }
 }
 
+function parseImmediateEmbed(value: string): MessageStudioImmediateEmbed | null {
+  if (!value) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed)) return null;
+  const title = text(parsed.title);
+  const description = text(parsed.description);
+  const color = text(parsed.color) || '#5865F2';
+  const imageUrl = text(parsed.imageUrl);
+  const thumbnailUrl = text(parsed.thumbnailUrl);
+  const footerText = text(parsed.footerText);
+  if (
+    title.length > 256 ||
+    description.length > 4096 ||
+    footerText.length > 2048 ||
+    !/^#[0-9A-Fa-f]{6}$/u.test(color) ||
+    !isSafeHttpUrl(imageUrl) ||
+    !isSafeHttpUrl(thumbnailUrl) ||
+    !Array.isArray(parsed.fields) ||
+    parsed.fields.length > 25
+  ) {
+    return null;
+  }
+  const fields: MessageStudioImmediateEmbed['fields'] = [];
+  for (const rawField of parsed.fields) {
+    if (!isRecord(rawField)) return null;
+    const name = text(rawField.name);
+    const fieldValue = text(rawField.value);
+    if (!name || !fieldValue || name.length > 256 || fieldValue.length > 1024) return null;
+    fields.push({ name, value: fieldValue, inline: rawField.inline === true });
+  }
+  if (!title && !description && !imageUrl && !thumbnailUrl && !footerText && fields.length === 0) {
+    return null;
+  }
+  return { title, description, color, imageUrl, thumbnailUrl, footerText, fields };
+}
+
 function formText(form: FormData, name: string): string {
   const value = form.get(name);
   return typeof value === 'string' ? value.trimEnd() : '';
+}
+
+function text(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function isSafeHttpUrl(value: string): boolean {
+  if (!value) return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  } catch {
+    return false;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
