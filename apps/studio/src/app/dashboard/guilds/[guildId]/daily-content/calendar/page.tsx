@@ -36,6 +36,7 @@ export const dynamic = 'force-dynamic';
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'] as const;
 const MAX_OCCURRENCES_PER_SCHEDULE = 100;
+const CONFLICT_KEY_SEPARATOR = '|';
 
 export default async function MessageStudioCalendarPage({
   params,
@@ -129,7 +130,9 @@ export default async function MessageStudioCalendarPage({
   const conflictKeys = new Set(
     entries
       .filter((entry) => entry.conflictCount > 1)
-      .map((entry) => `${entry.dateKey}:${entry.timeLabel}:${entry.channelId}`),
+      .map((entry) =>
+        [entry.dateKey, entry.timeLabel, entry.channelId].join(CONFLICT_KEY_SEPARATOR),
+      ),
   );
   const scheduledDays = entriesByDate.size;
 
@@ -176,9 +179,21 @@ export default async function MessageStudioCalendarPage({
       </div>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-3">
-        <Metric icon={<MessageSquareText className="h-5 w-5" />} label="有効な投稿" value={enabledScheduleCount} />
-        <Metric icon={<Layers3 className="h-5 w-5" />} label="今月の配信予定" value={entries.length} />
-        <Metric icon={<CircleAlert className="h-5 w-5" />} label="重複時間帯" value={conflictKeys.size} />
+        <Metric
+          icon={<MessageSquareText className="h-5 w-5" />}
+          label="有効な投稿"
+          value={enabledScheduleCount}
+        />
+        <Metric
+          icon={<Layers3 className="h-5 w-5" />}
+          label="今月の配信予定"
+          value={entries.length}
+        />
+        <Metric
+          icon={<CircleAlert className="h-5 w-5" />}
+          label="重複時間帯"
+          value={conflictKeys.size}
+        />
       </div>
 
       {loadError ? (
@@ -290,13 +305,18 @@ export default async function MessageStudioCalendarPage({
           ) : (
             <div className="mt-4 space-y-2">
               {[...conflictKeys].slice(0, 10).map((key) => {
-                const [dateKey, timeLabel, channelId] = key.split(':');
+                const [dateKey, timeLabel, channelId] = key.split(CONFLICT_KEY_SEPARATOR);
                 return (
-                  <div key={key} className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+                  <div
+                    key={key}
+                    className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs"
+                  >
                     <p className="font-medium text-amber-700 dark:text-amber-300">
                       {dateKey} {timeLabel}
                     </p>
-                    <p className="mt-1 text-muted">#{channelNames.get(channelId ?? '') ?? channelId}</p>
+                    <p className="mt-1 text-muted">
+                      #{channelNames.get(channelId ?? '') ?? channelId}
+                    </p>
                   </div>
                 );
               })}
@@ -307,7 +327,9 @@ export default async function MessageStudioCalendarPage({
           <h2 className="text-sm font-semibold">カレンダーの見方</h2>
           <div className="mt-3 space-y-2 text-xs leading-5 text-muted">
             <p>・1回予約、毎日、毎週の設定から、この月に実際に発火する予定時刻を算出しています。</p>
-            <p>・表示時刻はMessage Studioの既定Timezone（{config.defaultTimezone}）へ統一しています。</p>
+            <p>
+              ・表示時刻はMessage Studioの既定Timezone（{config.defaultTimezone}）へ統一しています。
+            </p>
             <p>・個別投稿で別Timezoneを設定していても、実際の絶対時刻へ変換してから並べます。</p>
             <p>・停止中の投稿はカレンダーへ出さず、有効なスケジュールだけを表示します。</p>
           </div>
@@ -315,7 +337,8 @@ export default async function MessageStudioCalendarPage({
       </div>
 
       <p className="mt-4 text-xs text-muted">
-        今月は{scheduledDays}日間に配信予定があります。カレンダーは確認用で、既存Schedulerの実行状態や配信ロジックは変更しません。
+        今月は{scheduledDays}
+        日間に配信予定があります。カレンダーは確認用で、既存Schedulerの実行状態や配信ロジックは変更しません。
       </p>
     </div>
   );
