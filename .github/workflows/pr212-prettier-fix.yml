@@ -1,0 +1,35 @@
+name: PR212 Prettier Fix
+
+on:
+  push:
+    branches:
+      - feature/studio-server-context-bot-profile
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/studio-server-context-bot-profile
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format target and remove helper workflow
+        run: |
+          pnpm exec prettier --write apps/studio/src/lib/guild-context-nav.ts
+          git rm .github/workflows/pr212-prettier-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/studio/src/lib/guild-context-nav.ts
+          git commit -m "Guild切替ナビゲーションの書式を整える"
+          git push origin HEAD:feature/studio-server-context-bot-profile
