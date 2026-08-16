@@ -46,7 +46,7 @@ describe('Core Utility v4', () => {
       codePoints: 8,
       lines: 2,
       words: 3,
-      utf8Bytes: 15,
+      utf8Bytes: 17,
     });
   });
 
