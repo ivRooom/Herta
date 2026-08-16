@@ -14,7 +14,9 @@ import {
   generateAmidakujiLadder,
   parseAmidakujiResultLabels,
   renderAmidakujiPng,
+  type AmidakujiComplexity,
   type AmidakujiLadder,
+  type AmidakujiTheme,
 } from './mini-games-amidakuji-core.js';
 
 const PREFIX = 'herta:amidakuji:v1:';
@@ -30,9 +32,19 @@ interface AmidakujiSession {
   selections: Map<string, { userId: string; displayName: string; slot: number }>;
   expiresAt: number;
   processing: boolean;
+  visual: AmidakujiVisualConfig;
 }
 
-export interface AmidakujiRuntimeConfig {
+interface AmidakujiVisualConfig {
+  complexity: AmidakujiComplexity;
+  theme: AmidakujiTheme;
+  hiddenPercent: number;
+  revealAnimation: boolean;
+  revealDelayMs: number;
+  highlightPaths: boolean;
+}
+
+export interface AmidakujiRuntimeConfig extends AmidakujiVisualConfig {
   enabled: boolean;
   sessionTimeoutSeconds: number;
 }
@@ -99,7 +111,15 @@ async function startAmidakuji(
   }
 
   const sessionId = randomUUID().replaceAll('-', '');
-  const ladder = generateAmidakujiLadder(memberCount);
+  const visual: AmidakujiVisualConfig = {
+    complexity: config.complexity,
+    theme: config.theme,
+    hiddenPercent: config.hiddenPercent,
+    revealAnimation: config.revealAnimation,
+    revealDelayMs: config.revealDelayMs,
+    highlightPaths: config.highlightPaths,
+  };
+  const ladder = generateAmidakujiLadder(memberCount, { complexity: visual.complexity });
   const timeoutSeconds = Math.max(30, Math.min(300, config.sessionTimeoutSeconds));
   const session: AmidakujiSession = {
     id: sessionId,
@@ -111,12 +131,18 @@ async function startAmidakuji(
     selections: new Map(),
     expiresAt: Date.now() + timeoutSeconds * 1000,
     processing: false,
+    visual,
   };
   sessions.set(sessionId, session);
 
-  const hiddenImage = new AttachmentBuilder(renderAmidakujiPng(ladder, true), {
-    name: `amidakuji-${sessionId}-hidden.png`,
-  });
+  const hiddenImage = new AttachmentBuilder(
+    renderAmidakujiPng(ladder, {
+      hidden: true,
+      hiddenPercent: visual.hiddenPercent,
+      theme: visual.theme,
+    }),
+    { name: `amidakuji-${sessionId}-hidden.png` },
+  );
   await interaction.reply({
     content: renderWaiting(session),
     components: buildRows(session),
@@ -211,16 +237,7 @@ async function handleButton(
 
     if (session.selections.size >= session.memberCount) {
       sessions.delete(session.id);
-      const image = new AttachmentBuilder(renderAmidakujiPng(session.ladder, false), {
-        name: `amidakuji-${session.id}-result.png`,
-      });
-      await interaction.update({
-        content: renderResult(session),
-        components: [],
-        attachments: [],
-        files: [image],
-        allowedMentions: { parse: [] },
-      });
+      await revealResult(interaction, session);
       return true;
     }
 
@@ -233,6 +250,50 @@ async function handleButton(
   } finally {
     if (sessions.get(session.id) === session) session.processing = false;
   }
+}
+
+async function revealResult(interaction: ButtonInteraction, session: AmidakujiSession): Promise<void> {
+  const starts = session.visual.highlightPaths
+    ? [...new Set([...session.selections.values()].map((selection) => selection.slot))]
+    : [];
+
+  if (session.visual.revealAnimation) {
+    const halfway = new AttachmentBuilder(
+      renderAmidakujiPng(session.ladder, {
+        hidden: true,
+        hiddenPercent: session.visual.hiddenPercent,
+        revealProgress: 0.58,
+        theme: session.visual.theme,
+      }),
+      { name: `amidakuji-${session.id}-reveal.png` },
+    );
+    await interaction.update({
+      content: '🪜 **あみだくじ**\n✨ 全員の選択が完了しました。経路を解析しています…',
+      components: [],
+      attachments: [],
+      files: [halfway],
+      allowedMentions: { parse: [] },
+    });
+    await delay(session.visual.revealDelayMs);
+  } else {
+    await interaction.deferUpdate();
+  }
+
+  const finalImage = new AttachmentBuilder(
+    renderAmidakujiPng(session.ladder, {
+      hidden: false,
+      theme: session.visual.theme,
+      highlightStarts: starts,
+    }),
+    { name: `amidakuji-${session.id}-result.png` },
+  );
+  await interaction.editReply({
+    content: renderResult(session),
+    components: [],
+    attachments: [],
+    files: [finalImage],
+    allowedMentions: { parse: [] },
+  });
 }
 
 function buildRows(session: AmidakujiSession): ActionRowBuilder<ButtonBuilder>[] {
@@ -258,9 +319,11 @@ function renderWaiting(session: AmidakujiSession): string {
   const selections = [...session.selections.values()]
     .sort((a, b) => a.slot - b.slot || a.userId.localeCompare(b.userId))
     .map((selection) => `• ${selection.displayName}: **${selection.slot + 1}番**`);
+  const complexityLabel =
+    session.visual.complexity === 'chaos' ? 'カオス' : session.visual.complexity === 'simple' ? 'シンプル' : '標準';
   return [
     '🪜 **あみだくじ**',
-    `参加人数: **${session.memberCount}人** · 同じ場所: **${session.allowDuplicate ? '選択可' : '選択不可'}**`,
+    `参加人数: **${session.memberCount}人** · 同じ場所: **${session.allowDuplicate ? '選択可' : '選択不可'}** · 複雑度: **${complexityLabel}**`,
     `結果候補: ${session.resultLabels.map((label, index) => `**${index + 1}. ${label}**`).join(' / ')}`,
     '中央の経路はまだ隠れています。下のButtonから開始位置を選んでください。',
     `選択済み: **${session.selections.size}/${session.memberCount}人**`,
@@ -276,7 +339,14 @@ function renderResult(session: AmidakujiSession): string {
       const resultLabel = session.resultLabels[result] ?? `${result + 1}番`;
       return `• ${selection.displayName}: **${selection.slot + 1}番 → ${resultLabel}**`;
     });
-  return ['🪜 **あみだくじ結果**', '隠れていた経路を公開しました！', '', ...lines].join('\n');
+  return [
+    '🎊 **あみだくじ結果**',
+    session.visual.highlightPaths
+      ? '隠れていた経路を公開しました。画像では選択ルートを色分けしています！'
+      : '隠れていた経路を公開しました！',
+    '',
+    ...lines,
+  ].join('\n');
 }
 
 export function parseAmidakujiCustomId(
@@ -292,4 +362,8 @@ function parseCustomId(customId: string): { sessionId: string; slot: number } | 
   const slot = Number(rawSlot);
   if (!Number.isInteger(slot)) return null;
   return { sessionId, slot };
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 }
