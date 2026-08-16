@@ -2,35 +2,24 @@ export function isSameOriginMutationRequest(request: Request): boolean {
   const origin = request.headers.get('origin');
   if (!origin || origin.length > 512) return false;
 
-  try {
-    const browserOrigin = new URL(origin).origin;
-    const directOrigin = new URL(request.url).origin;
-    if (browserOrigin === directOrigin) return true;
+  const browserOrigin = parseHttpOrigin(origin);
+  if (!browserOrigin) return false;
 
-    const forwardedOrigin = resolveForwardedRequestOrigin(request);
-    return forwardedOrigin !== null && browserOrigin === forwardedOrigin;
-  } catch {
-    return false;
-  }
+  const directOrigin = parseHttpOrigin(request.url);
+  if (directOrigin && browserOrigin === directOrigin) return true;
+
+  const configuredPublicOrigin = parseHttpOrigin(process.env['NEXTAUTH_URL']?.trim() ?? '');
+  return configuredPublicOrigin !== null && browserOrigin === configuredPublicOrigin;
 }
 
-function resolveForwardedRequestOrigin(request: Request): string | null {
-  const forwardedProto = firstHeaderValue(request.headers.get('x-forwarded-proto'));
-  const host = request.headers.get('host')?.trim() ?? null;
-
-  if ((forwardedProto !== 'http' && forwardedProto !== 'https') || !host || host.length > 255) {
-    return null;
-  }
-
-  try {
-    return new URL(`${forwardedProto}://${host}`).origin;
-  } catch {
-    return null;
-  }
-}
-
-function firstHeaderValue(value: string | null): string | null {
+function parseHttpOrigin(value: string): string | null {
   if (!value) return null;
-  const first = value.split(',', 1)[0]?.trim();
-  return first || null;
+
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
 }
