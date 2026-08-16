@@ -202,9 +202,11 @@ function buildMultipart(
 ): FormData {
   const bytes = decodeBase64(image.dataBase64);
   if (!bytes) throw new GuildMessageStudioSendError('添付画像を復元できませんでした', 400);
+  const arrayBuffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(arrayBuffer).set(bytes);
   const form = new FormData();
   form.set('payload_json', JSON.stringify(payload));
-  form.set('files[0]', new Blob([bytes], { type: image.contentType }), image.filename);
+  form.set('files[0]', new Blob([arrayBuffer], { type: image.contentType }), image.filename);
   return form;
 }
 
