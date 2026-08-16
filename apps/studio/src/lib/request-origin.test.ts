@@ -22,48 +22,62 @@ test('同一Originの書き込みリクエストだけ許可する', () => {
   );
 });
 
-test('リバースプロキシ配下では転送された公開Originを許可する', () => {
-  assert.equal(
-    isSameOriginMutationRequest(
-      new Request('http://studio:3000/api/me/studio-preferences', {
-        headers: {
-          Origin: 'https://studio.example.com',
-          Host: 'studio.example.com',
-          'X-Forwarded-Proto': 'https',
-        },
-      }),
-    ),
-    true,
-  );
+test('リバースプロキシ配下では設定済みの公開Originを許可する', () => {
+  const previousNextAuthUrl = process.env['NEXTAUTH_URL'];
+  process.env['NEXTAUTH_URL'] = 'https://studio.example.com';
 
-  assert.equal(
-    isSameOriginMutationRequest(
-      new Request('http://studio:3000/api/me/studio-preferences', {
-        headers: {
-          Origin: 'https://evil.example.com',
-          Host: 'studio.example.com',
-          'X-Forwarded-Proto': 'https',
-        },
-      }),
-    ),
-    false,
-  );
+  try {
+    assert.equal(
+      isSameOriginMutationRequest(
+        new Request('http://studio:3000/api/me/studio-preferences', {
+          headers: {
+            Origin: 'https://studio.example.com',
+            Host: 'studio.example.com',
+            'X-Forwarded-Proto': 'https',
+          },
+        }),
+      ),
+      true,
+    );
+
+    assert.equal(
+      isSameOriginMutationRequest(
+        new Request('http://studio:3000/api/me/studio-preferences', {
+          headers: {
+            Origin: 'https://evil.example.com',
+            Host: 'studio.example.com',
+            'X-Forwarded-Proto': 'https',
+          },
+        }),
+      ),
+      false,
+    );
+  } finally {
+    restoreEnv('NEXTAUTH_URL', previousNextAuthUrl);
+  }
 });
 
-test('未信頼のX-Forwarded-HostはOrigin判定に使用しない', () => {
-  assert.equal(
-    isSameOriginMutationRequest(
-      new Request('http://studio:3000/api/test', {
-        headers: {
-          Origin: 'https://studio.example.com',
-          Host: 'studio:3000',
-          'X-Forwarded-Host': 'studio.example.com',
-          'X-Forwarded-Proto': 'https',
-        },
-      }),
-    ),
-    false,
-  );
+test('Forwarded系ヘッダーだけではOrigin一致扱いにしない', () => {
+  const previousNextAuthUrl = process.env['NEXTAUTH_URL'];
+  delete process.env['NEXTAUTH_URL'];
+
+  try {
+    assert.equal(
+      isSameOriginMutationRequest(
+        new Request('http://studio:3000/api/test', {
+          headers: {
+            Origin: 'https://studio.example.com',
+            Host: 'studio.example.com',
+            'X-Forwarded-Host': 'studio.example.com',
+            'X-Forwarded-Proto': 'https',
+          },
+        }),
+      ),
+      false,
+    );
+  } finally {
+    restoreEnv('NEXTAUTH_URL', previousNextAuthUrl);
+  }
 });
 
 test('Origin欠落・不正URL・巨大値は拒否する', () => {
@@ -87,32 +101,22 @@ test('Origin欠落・不正URL・巨大値は拒否する', () => {
   );
 });
 
-test('不正な転送protoやHostではOrigin一致扱いにしない', () => {
-  assert.equal(
-    isSameOriginMutationRequest(
-      new Request('http://studio:3000/api/test', {
-        headers: {
-          Origin: 'https://studio.example.com',
-          Host: 'studio.example.com',
-          'X-Forwarded-Proto': 'javascript',
-        },
-      }),
-    ),
-    false,
-  );
+test('公開URL設定がHTTP(S)以外ならOrigin一致に利用しない', () => {
+  const previousNextAuthUrl = process.env['NEXTAUTH_URL'];
+  process.env['NEXTAUTH_URL'] = 'javascript:alert(1)';
 
-  assert.equal(
-    isSameOriginMutationRequest(
-      new Request('http://studio:3000/api/test', {
-        headers: {
-          Origin: 'https://studio.example.com',
-          Host: 'not a valid host',
-          'X-Forwarded-Proto': 'https',
-        },
-      }),
-    ),
-    false,
-  );
+  try {
+    assert.equal(
+      isSameOriginMutationRequest(
+        new Request('http://studio:3000/api/test', {
+          headers: { Origin: 'https://studio.example.com' },
+        }),
+      ),
+      false,
+    );
+  } finally {
+    restoreEnv('NEXTAUTH_URL', previousNextAuthUrl);
+  }
 });
 
 test('実際のbodyサイズをContent-Lengthに依存せず制限する', async () => {
@@ -142,3 +146,11 @@ test('上限内のJSON bodyを解析する', async () => {
     defaultGuildId: '123456789012345678',
   });
 });
+
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+    return;
+  }
+  process.env[name] = value;
+}
