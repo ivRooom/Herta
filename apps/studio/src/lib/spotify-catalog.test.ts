@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { formatSpotifyPresenceText, parseSpotifyTrackId } from './spotify-catalog';
+import { formatSpotifyPresenceText, parseSpotifyTrackId } from './spotify-catalog.ts';
 
 describe('Spotify catalog helpers', () => {
   it('Spotify Track URLまたはIDだけを受理する', () => {
