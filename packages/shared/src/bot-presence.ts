@@ -22,7 +22,7 @@ export interface BotPresenceConfig {
   status: BotPresenceStatus;
   activityType: BotActivityType;
   activityText: string;
-  media: BotPresenceMedia | null;
+  media?: BotPresenceMedia | null;
 }
 
 export interface BotPresenceUpdateEvent {
