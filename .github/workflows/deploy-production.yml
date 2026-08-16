@@ -147,18 +147,27 @@ jobs:
 
             echo "=== Optional runtime secretsをSSMから同期 ==="
             if command -v aws >/dev/null 2>&1; then
-              SPOTIFY_CLIENT_ID_VALUE="$(aws ssm get-parameter \
+              spotify_ssm_readable=true
+              if ! SPOTIFY_CLIENT_ID_VALUE="$(aws ssm get-parameter \
                 --region "${AWS_REGION:-ap-northeast-1}" \
                 --name '/ivrm/runtime/spotify/client-id' \
                 --with-decryption \
                 --query 'Parameter.Value' \
-                --output text 2>/dev/null || true)"
-              SPOTIFY_CLIENT_SECRET_VALUE="$(aws ssm get-parameter \
+                --output text 2>/dev/null)"; then
+                SPOTIFY_CLIENT_ID_VALUE=''
+                spotify_ssm_readable=false
+                echo "WARN: Spotify Client IDをSSMから読み取れません（値は非表示）"
+              fi
+              if ! SPOTIFY_CLIENT_SECRET_VALUE="$(aws ssm get-parameter \
                 --region "${AWS_REGION:-ap-northeast-1}" \
                 --name '/ivrm/runtime/spotify/client-secret' \
                 --with-decryption \
                 --query 'Parameter.Value' \
-                --output text 2>/dev/null || true)"
+                --output text 2>/dev/null)"; then
+                SPOTIFY_CLIENT_SECRET_VALUE=''
+                spotify_ssm_readable=false
+                echo "WARN: Spotify Client SecretをSSMから読み取れません（値は非表示）"
+              fi
 
               if [ -n "${SPOTIFY_CLIENT_ID_VALUE}" ] && [ "${SPOTIFY_CLIENT_ID_VALUE}" != 'None' ] && \
                  [ -n "${SPOTIFY_CLIENT_SECRET_VALUE}" ] && [ "${SPOTIFY_CLIENT_SECRET_VALUE}" != 'None' ]; then
@@ -173,7 +182,9 @@ jobs:
                 }
                 upsert_env SPOTIFY_CLIENT_ID "${SPOTIFY_CLIENT_ID_VALUE}"
                 upsert_env SPOTIFY_CLIENT_SECRET "${SPOTIFY_CLIENT_SECRET_VALUE}"
-                echo "Spotify runtime secretsを同期しました（値は非表示）"
+                echo "Spotify runtime secretsを同期しました（値は非表示、ID=${#SPOTIFY_CLIENT_ID_VALUE} chars / Secret=${#SPOTIFY_CLIENT_SECRET_VALUE} chars）"
+              elif [ "${spotify_ssm_readable}" != 'true' ]; then
+                echo "WARN: Lightsail Instance Roleのssm:GetParameter権限またはSSM regionを確認してください"
               else
                 echo "Spotify SSM parametersは未設定のため、Spotify検索は無効のまま継続します"
               fi
@@ -263,16 +274,16 @@ jobs:
               exit 1
             fi
 
-            echo "=== Discord Botログイン確認 ==="
+            echo "=== Discord Bot health check ==="
             bot_ready=false
             bot_container="$(${COMPOSE} ps -q bot)"
             for i in $(seq 1 12); do
-              if docker logs --since 5m "${bot_container}" 2>&1 | \
-                grep -q 'Herta Bot がログインしました'; then
+              bot_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${bot_container}")"
+              if [ "${bot_health}" = 'healthy' ] || [ "${bot_health}" = 'running' ]; then
                 bot_ready=true
                 break
               fi
-              echo "Botログイン待ち... (${i}/12)"
+              echo "Bot health待ち... (${i}/12, status=${bot_health})"
               sleep 5
             done
             if [ "${bot_ready}" != 'true' ]; then
