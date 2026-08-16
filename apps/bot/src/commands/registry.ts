@@ -16,6 +16,8 @@ type DiscordCommandOption = NonNullable<
   RESTPostAPIChatInputApplicationCommandsJSONBody['options']
 >[number];
 
+const PLUGIN_OWNED_COMMAND_NAMES = new Set(['coinflip', 'dice']);
+
 function toDiscordOption(option: CommandOption): DiscordCommandOption {
   switch (option.type) {
     case 'string':
@@ -109,6 +111,7 @@ export class CommandRegistry {
       ...coreUtilityV3Commands,
       ...communityActivityCommands,
     ]) {
+      if (PLUGIN_OWNED_COMMAND_NAMES.has(command.definition.name)) continue;
       this.register(command);
     }
   }
