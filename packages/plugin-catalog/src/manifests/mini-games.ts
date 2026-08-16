@@ -3,9 +3,9 @@ import type { PluginManifest } from '@herta/shared';
 export const miniGamesManifest: PluginManifest = {
   id: 'mini-games',
   name: 'Mini Games',
-  version: '3.0.0',
+  version: '3.1.0',
   description:
-    'Coin Flip・High-Low・Blackjack・Dice・チンチロを戦績とArcadeランキング付きで遊べるPluginです',
+    'Coin Flip・High-Low・Blackjack・Dice・チンチロ・あみだくじを戦績とArcadeランキング付きで遊べるPluginです',
   author: { name: 'Herta' },
   category: 'fun',
   permissions: [
@@ -61,7 +61,7 @@ export const miniGamesManifest: PluginManifest = {
         default: 90,
         'x-herta-ui': {
           section: 'セッション',
-          help: 'High-Low / Blackjackで操作がないまま終了するまでの時間です。',
+          help: 'High-Low / Blackjack / あみだくじで操作がないまま終了するまでの時間です。',
         },
       },
       highLowMaxRounds: {
@@ -162,6 +162,25 @@ export const miniGamesManifest: PluginManifest = {
           type: 'integer',
           minValue: 5,
           maxValue: 25,
+        },
+      ],
+    },
+    {
+      name: 'amidakuji',
+      description: '画像付きのあみだくじを開始します',
+      options: [
+        {
+          name: 'members',
+          description: '参加するメンバー数（2〜10人）',
+          type: 'integer',
+          required: true,
+          minValue: 2,
+          maxValue: 10,
+        },
+        {
+          name: 'allow_duplicate',
+          description: '複数メンバーが同じ開始位置を選べるようにする',
+          type: 'boolean',
         },
       ],
     },
