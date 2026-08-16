@@ -24,6 +24,13 @@ const SELECTED_SERVER_NAVIGATION_DEFINITIONS: readonly SelectedServerNavigationD
     exact: true,
   },
   {
+    id: 'selected-server-message-studio',
+    path: 'daily-content',
+    label: 'Botで発言',
+    description: 'Bot発言・Forum・予約投稿・定期投稿を作成する',
+    icon: 'message',
+  },
+  {
     id: 'selected-server-plugins',
     path: 'plugins',
     label: 'プラグイン',
