@@ -22,6 +22,64 @@ test('同一Originの書き込みリクエストだけ許可する', () => {
   );
 });
 
+test('リバースプロキシ配下では設定済みの公開Originを許可する', () => {
+  const previousNextAuthUrl = process.env['NEXTAUTH_URL'];
+  process.env['NEXTAUTH_URL'] = 'https://studio.example.com';
+
+  try {
+    assert.equal(
+      isSameOriginMutationRequest(
+        new Request('http://studio:3000/api/me/studio-preferences', {
+          headers: {
+            Origin: 'https://studio.example.com',
+            Host: 'studio.example.com',
+            'X-Forwarded-Proto': 'https',
+          },
+        }),
+      ),
+      true,
+    );
+
+    assert.equal(
+      isSameOriginMutationRequest(
+        new Request('http://studio:3000/api/me/studio-preferences', {
+          headers: {
+            Origin: 'https://evil.example.com',
+            Host: 'studio.example.com',
+            'X-Forwarded-Proto': 'https',
+          },
+        }),
+      ),
+      false,
+    );
+  } finally {
+    restoreEnv('NEXTAUTH_URL', previousNextAuthUrl);
+  }
+});
+
+test('Forwarded系ヘッダーだけではOrigin一致扱いにしない', () => {
+  const previousNextAuthUrl = process.env['NEXTAUTH_URL'];
+  delete process.env['NEXTAUTH_URL'];
+
+  try {
+    assert.equal(
+      isSameOriginMutationRequest(
+        new Request('http://studio:3000/api/test', {
+          headers: {
+            Origin: 'https://studio.example.com',
+            Host: 'studio.example.com',
+            'X-Forwarded-Host': 'studio.example.com',
+            'X-Forwarded-Proto': 'https',
+          },
+        }),
+      ),
+      false,
+    );
+  } finally {
+    restoreEnv('NEXTAUTH_URL', previousNextAuthUrl);
+  }
+});
+
 test('Origin欠落・不正URL・巨大値は拒否する', () => {
   assert.equal(
     isSameOriginMutationRequest(new Request('https://studio.example.com/api/test')),
@@ -41,6 +99,24 @@ test('Origin欠落・不正URL・巨大値は拒否する', () => {
     ),
     false,
   );
+});
+
+test('公開URL設定がHTTP(S)以外ならOrigin一致に利用しない', () => {
+  const previousNextAuthUrl = process.env['NEXTAUTH_URL'];
+  process.env['NEXTAUTH_URL'] = 'javascript:alert(1)';
+
+  try {
+    assert.equal(
+      isSameOriginMutationRequest(
+        new Request('http://studio:3000/api/test', {
+          headers: { Origin: 'https://studio.example.com' },
+        }),
+      ),
+      false,
+    );
+  } finally {
+    restoreEnv('NEXTAUTH_URL', previousNextAuthUrl);
+  }
 });
 
 test('実際のbodyサイズをContent-Lengthに依存せず制限する', async () => {
@@ -70,3 +146,11 @@ test('上限内のJSON bodyを解析する', async () => {
     defaultGuildId: '123456789012345678',
   });
 });
+
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+    return;
+  }
+  process.env[name] = value;
+}

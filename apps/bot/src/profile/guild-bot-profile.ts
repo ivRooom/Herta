@@ -45,8 +45,11 @@ export async function getGuildBotProfile(
 ): Promise<GuildBotProfile | null> {
   if (!client.guilds.cache.has(guildId)) return null;
 
+  const botUserId = client.user?.id;
+  if (!botUserId) return null;
+
   const member = parseDiscordBotGuildMember(
-    await client.rest.get(Routes.guildMember(guildId, '@me')),
+    await client.rest.get(Routes.guildMember(guildId, botUserId)),
   );
   return member ? toGuildBotProfile(guildId, member) : null;
 }
@@ -56,11 +59,13 @@ export async function updateGuildBotProfile(
   guildId: string,
   input: GuildBotProfileUpdate,
 ): Promise<GuildBotProfile | null> {
-  if (!client.guilds.cache.has(guildId)) return null;
+  if (!client.guilds.cache.has(guildId) || !client.user) return null;
 
   const body: { nick: string | null; avatar?: string | null } = { nick: input.nickname };
   if (input.avatar !== undefined) body.avatar = input.avatar;
 
+  // DiscordのModify Current Member endpointを使う。
+  // NicknameはCHANGE_NICKNAMEで変更でき、Guild AvatarもCurrent Memberの更新対象になる。
   const member = parseDiscordBotGuildMember(
     await client.rest.patch(Routes.guildMember(guildId, '@me'), { body }),
   );
