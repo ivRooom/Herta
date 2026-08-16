@@ -1,25 +1,22 @@
-import { getAllPluginManifests } from '@herta/plugin-catalog';
-import { prisma } from '@/lib/db';
-import { summarizePluginManagementRows } from './plugin-management-summary.ts';
+import { getPluginOperationsInventory } from './plugin-operations.ts';
 
 export async function getPluginManagementOverview(guildIds: readonly string[]) {
-  const manifests = getAllPluginManifests();
-  const pluginIds = manifests.map((manifest) => manifest.id);
+  const inventory = await getPluginOperationsInventory(guildIds);
 
-  if (guildIds.length === 0 || pluginIds.length === 0) {
-    return summarizePluginManagementRows(guildIds, manifests.length, []);
-  }
-
-  const rows = await prisma.guildPlugin.findMany({
-    where: {
-      guildId: { in: [...guildIds] },
-      pluginId: { in: pluginIds },
-    },
-    select: {
-      guildId: true,
-      enabled: true,
-    },
-  });
-
-  return summarizePluginManagementRows(guildIds, manifests.length, rows);
+  return {
+    availablePlugins: inventory.availablePlugins,
+    installedInstances: inventory.configuredInstances,
+    enabledInstances: inventory.enabledInstances,
+    attentionInstances: inventory.attentionInstances,
+    byGuild: Object.fromEntries(
+      Object.entries(inventory.byGuild).map(([guildId, summary]) => [
+        guildId,
+        {
+          installed: summary.configured,
+          enabled: summary.enabled,
+          attention: summary.attention,
+        },
+      ]),
+    ),
+  };
 }
