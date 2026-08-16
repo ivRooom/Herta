@@ -173,22 +173,22 @@ export function renderAmidakujiPng(
 
   for (const bar of ladder.bars) {
     const y = Math.round(top + (bar.row + 0.5) * rowHeight);
-    drawLine(
-      pixels,
-      width,
-      height,
-      xFor(bar.left),
-      y,
-      xFor(bar.left + 1),
-      y,
-      palette.bar,
-      5,
-    );
+    drawLine(pixels, width, height, xFor(bar.left), y, xFor(bar.left + 1), y, palette.bar, 5);
   }
 
   for (const start of options.highlightStarts ?? []) {
     if (!Number.isInteger(start) || start < 0 || start >= ladder.slots) continue;
-    drawPath(pixels, width, height, ladder, start, xFor, top, rowHeight, PATH_COLORS[start % PATH_COLORS.length]!);
+    drawPath(
+      pixels,
+      width,
+      height,
+      ladder,
+      start,
+      xFor,
+      top,
+      rowHeight,
+      PATH_COLORS[start % PATH_COLORS.length]!,
+    );
   }
 
   if (hidden) {
@@ -196,7 +196,8 @@ export function renderAmidakujiPng(
     const currentMaskHeight = Math.round(fullMaskHeight * (1 - revealProgress));
     if (currentMaskHeight > 0) {
       const maskTop = Math.round((top + bottom - currentMaskHeight) / 2);
-      fillRect(
+      fillRect(pixels, width, height, 14, maskTop, width - 28, currentMaskHeight, palette.mask);
+      drawBorder(
         pixels,
         width,
         height,
@@ -204,11 +205,18 @@ export function renderAmidakujiPng(
         maskTop,
         width - 28,
         currentMaskHeight,
-        palette.mask,
+        palette.maskBorder,
+        2,
       );
-      drawBorder(pixels, width, height, 14, maskTop, width - 28, currentMaskHeight, palette.maskBorder, 2);
       const centerX = Math.floor(width / 2);
-      drawQuestionMark(pixels, width, height, centerX, Math.floor(maskTop + currentMaskHeight / 2), palette.maskText);
+      drawQuestionMark(
+        pixels,
+        width,
+        height,
+        centerX,
+        Math.floor(maskTop + currentMaskHeight / 2),
+        palette.maskText,
+      );
     }
   }
 
@@ -328,7 +336,14 @@ function drawQuestionMark(
 
 type Rgba = readonly [number, number, number, number];
 
-function setPixel(pixels: Buffer, width: number, height: number, x: number, y: number, color: Rgba) {
+function setPixel(
+  pixels: Buffer,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  color: Rgba,
+) {
   if (x < 0 || y < 0 || x >= width || y >= height) return;
   const index = (y * width + x) * 4;
   pixels[index] = color[0];

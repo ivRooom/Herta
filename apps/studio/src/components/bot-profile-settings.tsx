@@ -390,7 +390,11 @@ function GlobalPresenceCard() {
                 label: activityTypeLabel(value),
               }))}
               onChange={(value) =>
-                setConfig((current) => ({ ...current, activityType: value as BotActivityType }))
+                setConfig((current) => ({
+                  ...current,
+                  activityType: value as BotActivityType,
+                  media: value === 'listening' ? current.media : null,
+                }))
               }
             />
           </div>
@@ -406,6 +410,7 @@ function GlobalPresenceCard() {
                 setConfig((current) => ({
                   ...current,
                   activityText: event.target.value.slice(0, 128),
+                  media: null,
                 }))
               }
               required
@@ -417,11 +422,13 @@ function GlobalPresenceCard() {
 
           {config.activityType === 'listening' ? (
             <SpotifyPresencePicker
-              onSelect={(presenceText) =>
+              selectedMedia={config.media?.provider === 'spotify' ? config.media : null}
+              onSelect={(presenceText, media) =>
                 setConfig((current) => ({
                   ...current,
                   activityType: 'listening',
                   activityText: presenceText,
+                  media,
                 }))
               }
             />

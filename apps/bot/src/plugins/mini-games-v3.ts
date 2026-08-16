@@ -58,8 +58,18 @@ export function createMiniGamesV3CommandHandlers(
       return {
         enabled: config.enabled,
         sessionTimeoutSeconds: readSessionTimeout(context.config),
-        complexity: readEnum(context.config, 'amidakujiComplexity', ['simple', 'standard', 'chaos'], 'standard'),
-        theme: readEnum(context.config, 'amidakujiTheme', ['arcade', 'midnight', 'classic'], 'arcade'),
+        complexity: readEnum(
+          context.config,
+          'amidakujiComplexity',
+          ['simple', 'standard', 'chaos'],
+          'standard',
+        ),
+        theme: readEnum(
+          context.config,
+          'amidakujiTheme',
+          ['arcade', 'midnight', 'classic'],
+          'arcade',
+        ),
         hiddenPercent: readInteger(context.config, 'amidakujiHiddenPercent', 42, 20, 70),
         revealAnimation: readBoolean(context.config, 'amidakujiRevealAnimation', true),
         revealDelayMs: readInteger(context.config, 'amidakujiRevealDelayMs', 700, 250, 2000),
@@ -289,7 +299,13 @@ function readBoolean(value: unknown, key: string, fallback: boolean): boolean {
   return raw === undefined ? fallback : raw === true;
 }
 
-function readInteger(value: unknown, key: string, fallback: number, min: number, max: number): number {
+function readInteger(
+  value: unknown,
+  key: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return fallback;
   const raw = (value as Record<string, unknown>)[key];
   return typeof raw === 'number' && Number.isFinite(raw) ? clamp(raw, min, max) : fallback;

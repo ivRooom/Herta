@@ -252,7 +252,10 @@ async function handleButton(
   }
 }
 
-async function revealResult(interaction: ButtonInteraction, session: AmidakujiSession): Promise<void> {
+async function revealResult(
+  interaction: ButtonInteraction,
+  session: AmidakujiSession,
+): Promise<void> {
   const starts = session.visual.highlightPaths
     ? [...new Set([...session.selections.values()].map((selection) => selection.slot))]
     : [];
@@ -320,7 +323,11 @@ function renderWaiting(session: AmidakujiSession): string {
     .sort((a, b) => a.slot - b.slot || a.userId.localeCompare(b.userId))
     .map((selection) => `• ${selection.displayName}: **${selection.slot + 1}番**`);
   const complexityLabel =
-    session.visual.complexity === 'chaos' ? 'カオス' : session.visual.complexity === 'simple' ? 'シンプル' : '標準';
+    session.visual.complexity === 'chaos'
+      ? 'カオス'
+      : session.visual.complexity === 'simple'
+        ? 'シンプル'
+        : '標準';
   return [
     '🪜 **あみだくじ**',
     `参加人数: **${session.memberCount}人** · 同じ場所: **${session.allowDuplicate ? '選択可' : '選択不可'}** · 複雑度: **${complexityLabel}**`,

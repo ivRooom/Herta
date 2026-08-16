@@ -63,7 +63,8 @@ export function SpotifyPresencePicker({ selectedMedia, onSelect }: SpotifyPresen
         <div className="min-w-0">
           <p className="text-sm font-semibold">SpotifyからListening表示を選択</p>
           <p className="mt-1 text-xs leading-5 text-muted">
-            曲名・歌手名、またはSpotify Track URLで検索します。カバーはStudioのPresenceプレビューにも保存されます。
+            曲名・歌手名、またはSpotify Track
+            URLで検索します。カバーはStudioのPresenceプレビューにも保存されます。
           </p>
         </div>
       </div>
@@ -214,7 +215,8 @@ export function SpotifyPresencePicker({ selectedMedia, onSelect }: SpotifyPresen
       ) : null}
 
       <p className="mt-3 text-[11px] leading-5 text-muted">
-        Discord Bot Presenceには曲名・アーティストを反映し、カバー画像はStudio側のメディアプレビューとして保持します。
+        Discord Bot
+        Presenceには曲名・アーティストを反映し、カバー画像はStudio側のメディアプレビューとして保持します。
       </p>
     </div>
   );

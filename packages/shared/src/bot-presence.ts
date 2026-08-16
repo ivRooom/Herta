@@ -48,7 +48,8 @@ export function parseBotPresenceConfig(value: unknown): BotPresenceConfig | null
   const status = value.status;
   const activityType = value.activityType;
   const activityText = typeof value.activityText === 'string' ? value.activityText.trim() : '';
-  const media = value.media === undefined || value.media === null ? null : parseBotPresenceMedia(value.media);
+  const media =
+    value.media === undefined || value.media === null ? null : parseBotPresenceMedia(value.media);
 
   if (typeof status !== 'string' || !STATUS_SET.has(status)) return null;
   if (typeof activityType !== 'string' || !ACTIVITY_TYPE_SET.has(activityType)) return null;
@@ -105,8 +106,10 @@ function parseBotPresenceMedia(value: unknown): BotPresenceMedia | null {
 
   if (typeof provider !== 'string' || !MEDIA_PROVIDER_SET.has(provider)) return null;
   if (!providerId || !title || creator === null) return null;
-  if (value.artworkUrl !== null && value.artworkUrl !== undefined && artworkUrl === null) return null;
-  if (value.externalUrl !== null && value.externalUrl !== undefined && externalUrl === null) return null;
+  if (value.artworkUrl !== null && value.artworkUrl !== undefined && artworkUrl === null)
+    return null;
+  if (value.externalUrl !== null && value.externalUrl !== undefined && externalUrl === null)
+    return null;
 
   return {
     provider: provider as BotPresenceMediaProvider,
