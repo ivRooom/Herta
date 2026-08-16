@@ -3,11 +3,7 @@ import type { Logger } from 'pino';
 import { communityActivityCommands } from './community-activity.js';
 import { coreInformationCommands } from './core-info.js';
 import { coreFunUtilityCommands } from './fun-utility.js';
-import {
-  CommandRegistry,
-  PLUGIN_OWNED_COMMAND_NAMES,
-  type SlashCommand,
-} from './registry.js';
+import { CommandRegistry, PLUGIN_OWNED_COMMAND_NAMES, type SlashCommand } from './registry.js';
 import { coreUtilityV3Commands } from './utility-v3.js';
 import { coreUtilityV4Commands } from './utility-v4.js';
 
