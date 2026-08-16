@@ -1,9 +1,3 @@
-const DISCORD_API_BASE_URL = 'https://discord.com/api/v10';
-const MESSAGE_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12]);
-const FORUM_CHANNEL_TYPES = new Set([15]);
-const SUPPORTED_CHANNEL_TYPES = new Set([...MESSAGE_CHANNEL_TYPES, ...FORUM_CHANNEL_TYPES]);
-const THREAD_CHANNEL_TYPES = new Set([10, 11, 12]);
-
 export const MESSAGE_STUDIO_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 export const MESSAGE_STUDIO_IMAGE_MIME_TYPES = [
   'image/png',
@@ -12,21 +6,6 @@ export const MESSAGE_STUDIO_IMAGE_MIME_TYPES = [
   'image/webp',
 ] as const;
 
-interface DiscordChannelPayload {
-  id: string;
-  type: number;
-  guild_id?: string;
-  thread_metadata?: { archived?: boolean; locked?: boolean };
-}
-
-interface DiscordMessagePayload {
-  id?: unknown;
-}
-
-interface DiscordForumPayload extends DiscordChannelPayload {
-  message?: DiscordMessagePayload;
-}
-
 export interface MessageStudioImageAttachment {
   bytes: Uint8Array;
   filename: string;
@@ -34,7 +13,6 @@ export interface MessageStudioImageAttachment {
 }
 
 export interface SendMessageStudioMessageInput {
-  token: string;
   guildId: string;
   channelId: string;
   content: string;
@@ -89,155 +67,68 @@ export function sanitizeMessageStudioFilename(name: string, contentType: string)
 export async function sendMessageStudioMessage(
   input: SendMessageStudioMessageInput,
 ): Promise<SendMessageStudioMessageResult> {
-  if (!/^\d+$/u.test(input.guildId) || !/^\d+$/u.test(input.channelId)) {
-    throw new MessageStudioDiscordError('Discordの投稿先が不正です', 400);
-  }
-  const channel = await fetchDiscordChannel(input.token, input.channelId);
-  if (channel.guild_id !== input.guildId) {
-    throw new MessageStudioDiscordError('選択した投稿先はこのサーバーに属していません', 403);
-  }
-  if (!SUPPORTED_CHANNEL_TYPES.has(channel.type)) {
-    throw new MessageStudioDiscordError('このチャンネル種別には投稿できません', 400);
-  }
-  if (THREAD_CHANNEL_TYPES.has(channel.type) && channel.thread_metadata?.locked) {
-    throw new MessageStudioDiscordError('ロック中のスレッドには投稿できません', 409);
-  }
-  if (THREAD_CHANNEL_TYPES.has(channel.type) && channel.thread_metadata?.archived) {
-    await unarchiveDiscordThread(input.token, input.channelId);
+  const healthUrl = process.env['BOT_HEALTH_URL']?.trim();
+  const secret = process.env['BOT_INTERNAL_API_SECRET']?.trim();
+  if (!healthUrl || !secret || secret.length < 32) {
+    throw new MessageStudioDiscordError('Bot内部送信APIが設定されていません', 503);
   }
 
-  if (FORUM_CHANNEL_TYPES.has(channel.type)) {
-    if (input.publishAnnouncement) {
-      throw new MessageStudioDiscordError('Forum投稿ではCrosspostを利用できません', 400);
-    }
-    return sendForumPost(input, channel.type);
-  }
-
-  const messageId = await sendChannelMessage(input);
-  if (input.publishAnnouncement && channel.type === 5) {
-    await crosspostMessage(input.token, input.channelId, messageId);
-  }
-  return { messageId, channelId: input.channelId, threadId: null, channelType: channel.type };
-}
-
-async function fetchDiscordChannel(token: string, channelId: string): Promise<DiscordChannelPayload> {
-  const response = await fetch(`${DISCORD_API_BASE_URL}/channels/${channelId}`, {
-    headers: { Authorization: `Bot ${token}` },
-    cache: 'no-store',
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) throw await discordError('投稿先チャンネルを確認できませんでした', response);
-  return (await response.json()) as DiscordChannelPayload;
-}
-
-async function unarchiveDiscordThread(token: string, channelId: string): Promise<void> {
-  const response = await fetch(`${DISCORD_API_BASE_URL}/channels/${channelId}`, {
-    method: 'PATCH',
-    headers: { Authorization: `Bot ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ archived: false }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) throw await discordError('アーカイブ済みスレッドを再開できませんでした', response);
-}
-
-async function sendChannelMessage(input: SendMessageStudioMessageInput): Promise<string> {
-  const payload = {
-    content: input.content || undefined,
-    allowed_mentions: { parse: input.allowUserMentions ? ['users'] : [] },
-    attachments: input.attachment
-      ? [{ id: 0, filename: input.attachment.filename }]
-      : undefined,
-  };
-  const response = await fetch(`${DISCORD_API_BASE_URL}/channels/${input.channelId}/messages`, {
-    method: 'POST',
-    headers: input.attachment
-      ? { Authorization: `Bot ${input.token}` }
-      : { Authorization: `Bot ${input.token}`, 'Content-Type': 'application/json' },
-    body: input.attachment ? buildMultipartBody(payload, input.attachment) : JSON.stringify(payload),
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!response.ok) throw await discordError('Discordへの投稿に失敗しました', response);
-  const message = (await response.json()) as DiscordMessagePayload;
-  if (typeof message.id !== 'string' || !message.id) {
-    throw new MessageStudioDiscordError('Discordから不正な応答を受け取りました');
-  }
-  return message.id;
-}
-
-async function sendForumPost(
-  input: SendMessageStudioMessageInput,
-  channelType: number,
-): Promise<SendMessageStudioMessageResult> {
-  const title = normalizeForumTitle(input.forumTitle, input.content);
-  const payload = {
-    name: title,
-    message: {
-      content: input.content || undefined,
-      allowed_mentions: { parse: input.allowUserMentions ? ['users'] : [] },
-      attachments: input.attachment
-        ? [{ id: 0, filename: input.attachment.filename }]
-        : undefined,
-    },
-  };
-  const response = await fetch(`${DISCORD_API_BASE_URL}/channels/${input.channelId}/threads`, {
-    method: 'POST',
-    headers: input.attachment
-      ? { Authorization: `Bot ${input.token}` }
-      : { Authorization: `Bot ${input.token}`, 'Content-Type': 'application/json' },
-    body: input.attachment ? buildMultipartBody(payload, input.attachment) : JSON.stringify(payload),
-    signal: AbortSignal.timeout(20_000),
-  });
-  if (!response.ok) throw await discordError('Forum投稿の作成に失敗しました', response);
-  const thread = (await response.json()) as DiscordForumPayload;
-  const messageId = thread.message?.id;
-  if (typeof thread.id !== 'string' || typeof messageId !== 'string') {
-    throw new MessageStudioDiscordError('DiscordからForum投稿の不正な応答を受け取りました');
-  }
-  return {
-    messageId,
-    channelId: input.channelId,
-    threadId: thread.id,
-    channelType,
-  };
-}
-
-function buildMultipartBody(payload: unknown, attachment: MessageStudioImageAttachment): FormData {
-  const form = new FormData();
-  form.set('payload_json', JSON.stringify(payload));
-  form.set(
-    'files[0]',
-    new Blob([attachment.bytes], { type: attachment.contentType }),
-    attachment.filename,
-  );
-  return form;
-}
-
-function normalizeForumTitle(forumTitle: string, content: string): string {
-  const explicit = forumTitle.trim();
-  if (explicit) return explicit.slice(0, 100);
-  const firstLine = content.split(/\r?\n/u).find((line) => line.trim())?.trim() ?? '';
-  return (firstLine || 'Hertaからのお知らせ').slice(0, 100);
-}
-
-async function crosspostMessage(token: string, channelId: string, messageId: string): Promise<void> {
-  const response = await fetch(
-    `${DISCORD_API_BASE_URL}/channels/${channelId}/messages/${messageId}/crosspost`,
-    {
-      method: 'POST',
-      headers: { Authorization: `Bot ${token}` },
-      signal: AbortSignal.timeout(10_000),
-    },
-  );
-  if (!response.ok) throw await discordError('投稿は完了しましたがCrosspostに失敗しました', response);
-}
-
-async function discordError(message: string, response: Response): Promise<MessageStudioDiscordError> {
-  let detail = '';
+  let endpoint: URL;
   try {
-    const body = (await response.json()) as { message?: unknown };
-    detail = typeof body.message === 'string' ? body.message.slice(0, 180) : '';
+    endpoint = new URL(`/internal/guilds/${input.guildId}/message-studio/send`, healthUrl);
   } catch {
-    detail = '';
+    throw new MessageStudioDiscordError('Bot内部送信APIのURLが不正です', 503);
   }
-  return new MessageStudioDiscordError(detail ? `${message}: ${detail}` : message, response.status);
+
+  const image = input.attachment
+    ? {
+        filename: input.attachment.filename,
+        contentType: input.attachment.contentType,
+        dataBase64: Buffer.from(input.attachment.bytes).toString('base64'),
+      }
+    : null;
+
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        channelId: input.channelId,
+        content: input.content,
+        forumTitle: input.forumTitle,
+        allowUserMentions: input.allowUserMentions,
+        publishAnnouncement: input.publishAnnouncement,
+        image,
+      }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(25_000),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw new MessageStudioDiscordError('Botへの送信がタイムアウトしました', 504);
+    }
+    throw new MessageStudioDiscordError('Bot内部送信APIへ接続できませんでした', 503);
+  }
+
+  const body = (await response.json().catch(() => null)) as {
+    result?: SendMessageStudioMessageResult;
+    status?: string;
+  } | null;
+  if (!response.ok || !body?.result) {
+    const message = {
+      400: '投稿内容または投稿先が不正です',
+      401: 'Bot内部送信APIの認証に失敗しました',
+      403: '選択した投稿先へ送信できません',
+      409: '投稿先の状態により送信できません',
+      413: '画像データが大きすぎます',
+      429: 'Discordの送信制限に達しました',
+    }[response.status] ?? 'Discordへの投稿に失敗しました';
+    throw new MessageStudioDiscordError(message, response.status || 502);
+  }
+  return body.result;
 }
