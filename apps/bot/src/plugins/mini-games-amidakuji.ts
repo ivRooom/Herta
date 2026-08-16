@@ -4,13 +4,17 @@ import {
   AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ComponentType,
   MessageFlags,
   type ButtonInteraction,
   type ChatInputCommandInteraction,
 } from 'discord.js';
-import type { SlashCommandDefinition } from '@herta/shared';
 import type { CommandHandler } from '@herta/plugin-sdk';
-import { generateAmidakujiLadder, renderAmidakujiPng, type AmidakujiLadder } from './mini-games-amidakuji-core.js';
+import {
+  generateAmidakujiLadder,
+  renderAmidakujiPng,
+  type AmidakujiLadder,
+} from './mini-games-amidakuji-core.js';
 
 const PREFIX = 'herta:amidakuji:v1:';
 const sessions = new Map<string, AmidakujiSession>();
@@ -24,8 +28,6 @@ interface AmidakujiSession {
   selections: Map<string, { userId: string; displayName: string; slot: number }>;
   expiresAt: number;
   processing: boolean;
-  timer?: NodeJS.Timeout;
-  editReply(payload: Parameters<ChatInputCommandInteraction['editReply']>[0]): ReturnType<ChatInputCommandInteraction['editReply']>;
 }
 
 export interface AmidakujiRuntimeConfig {
@@ -34,48 +36,133 @@ export interface AmidakujiRuntimeConfig {
 }
 
 export function createAmidakujiCommandHandler(
-  definition: SlashCommandDefinition,
+  definition: CommandHandler<ChatInputCommandInteraction>['definition'],
   config: () => AmidakujiRuntimeConfig,
 ): CommandHandler<ChatInputCommandInteraction> {
   return {
     definition,
     async execute(interaction) {
-      await startAmidakuji(interaction, config());
+      await startAmidakuji(interaction, config);
     },
   };
 }
 
-export async function handleAmidakujiButton(
-  interaction: ButtonInteraction,
-  config: AmidakujiRuntimeConfig,
-): Promise<boolean> {
-  const parsed = parseCustomId(interaction.customId);
-  if (!parsed) return false;
-  const session = sessions.get(parsed.sessionId);
-  if (!session || Date.now() >= session.expiresAt) {
-    if (session) endSession(session);
+export function clearAmidakujiGuildSessions(guildId: string): void {
+  for (const session of sessions.values()) {
+    if (session.guildId === guildId) sessions.delete(session.id);
+  }
+}
+
+async function startAmidakuji(
+  interaction: ChatInputCommandInteraction,
+  configProvider: () => AmidakujiRuntimeConfig,
+): Promise<void> {
+  const config = configProvider();
+  if (!interaction.guildId) {
     await interaction.reply({
-      content: 'このあみだくじは終了しています。',
+      content: 'このコマンドはDiscordサーバー内でのみ利用できます。',
       flags: MessageFlags.Ephemeral,
     });
+    return;
+  }
+  if (!config.enabled) {
+    await interaction.reply({
+      content: 'Mini Games Pluginは現在無効です。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const memberCount = interaction.options.getInteger('members', true);
+  const allowDuplicate = interaction.options.getBoolean('allow_duplicate') ?? false;
+  if (!Number.isInteger(memberCount) || memberCount < 2 || memberCount > 10) {
+    await interaction.reply({
+      content: 'メンバー数は2〜10人で指定してください。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const sessionId = randomUUID().replaceAll('-', '');
+  const ladder = generateAmidakujiLadder(memberCount);
+  const timeoutSeconds = Math.max(30, Math.min(300, config.sessionTimeoutSeconds));
+  const session: AmidakujiSession = {
+    id: sessionId,
+    guildId: interaction.guildId,
+    memberCount,
+    allowDuplicate,
+    ladder,
+    selections: new Map(),
+    expiresAt: Date.now() + timeoutSeconds * 1000,
+    processing: false,
+  };
+  sessions.set(sessionId, session);
+
+  const hiddenImage = new AttachmentBuilder(renderAmidakujiPng(ladder, true), {
+    name: `amidakuji-${sessionId}-hidden.png`,
+  });
+  await interaction.reply({
+    content: renderWaiting(session),
+    components: buildRows(session),
+    files: [hiddenImage],
+    allowedMentions: { parse: [] },
+  });
+
+  const message = await interaction.fetchReply();
+  const collector = message.createMessageComponentCollector({
+    componentType: ComponentType.Button,
+    time: timeoutSeconds * 1000,
+  });
+  collector.on('collect', (button) => {
+    void handleButton(button, session, configProvider).then((completed) => {
+      if (completed) collector.stop('completed');
+    });
+  });
+  collector.on('end', (_collected, reason) => {
+    if (reason === 'completed' || sessions.get(session.id) !== session) return;
+    sessions.delete(session.id);
+    void interaction
+      .editReply({
+        content: `${renderWaiting(session)}\n\n⌛ **時間切れで終了しました。**`,
+        components: [],
+        allowedMentions: { parse: [] },
+      })
+      .catch(() => undefined);
+  });
+}
+
+async function handleButton(
+  interaction: ButtonInteraction,
+  session: AmidakujiSession,
+  configProvider: () => AmidakujiRuntimeConfig,
+): Promise<boolean> {
+  const parsed = parseCustomId(interaction.customId);
+  if (!parsed || parsed.sessionId !== session.id) return false;
+  if (sessions.get(session.id) !== session || Date.now() >= session.expiresAt) {
+    sessions.delete(session.id);
+    await interaction.reply({ content: 'このあみだくじは終了しています。', flags: MessageFlags.Ephemeral });
     return true;
   }
   if (interaction.guildId !== session.guildId) {
     await interaction.reply({ content: '別サーバーのあみだくじは操作できません。', flags: MessageFlags.Ephemeral });
-    return true;
+    return false;
   }
-  if (!config.enabled) {
-    endSession(session);
-    await interaction.update({ content: 'Mini Games Pluginが無効になったため、あみだくじを終了しました。', components: [], attachments: [] });
+  if (!configProvider().enabled) {
+    sessions.delete(session.id);
+    await interaction.update({
+      content: 'Mini Games Pluginが無効になったため、あみだくじを終了しました。',
+      components: [],
+      attachments: [],
+    });
     return true;
   }
   if (session.processing) {
     await interaction.reply({ content: '前の選択を処理中です。', flags: MessageFlags.Ephemeral });
-    return true;
+    return false;
   }
   if (parsed.slot < 0 || parsed.slot >= session.memberCount) {
     await interaction.reply({ content: '不正な選択肢です。', flags: MessageFlags.Ephemeral });
-    return true;
+    return false;
   }
 
   session.processing = true;
@@ -84,20 +171,24 @@ export async function handleAmidakujiButton(
       (selection) => selection.userId !== interaction.user.id && selection.slot === parsed.slot,
     );
     if (!session.allowDuplicate && occupiedByOther) {
-      await interaction.reply({ content: 'その場所はすでに他のメンバーが選択しています。', flags: MessageFlags.Ephemeral });
-      return true;
+      await interaction.reply({
+        content: 'その場所はすでに他のメンバーが選択しています。',
+        flags: MessageFlags.Ephemeral,
+      });
+      return false;
     }
 
     session.selections.set(interaction.user.id, {
       userId: interaction.user.id,
-      displayName: interaction.member && 'displayName' in interaction.member
-        ? String(interaction.member.displayName).slice(0, 32)
-        : interaction.user.globalName?.slice(0, 32) ?? interaction.user.username.slice(0, 32),
+      displayName:
+        interaction.member && 'displayName' in interaction.member
+          ? String(interaction.member.displayName).slice(0, 32)
+          : (interaction.user.globalName?.slice(0, 32) ?? interaction.user.username.slice(0, 32)),
       slot: parsed.slot,
     });
 
     if (session.selections.size >= session.memberCount) {
-      endSession(session);
+      sessions.delete(session.id);
       const image = new AttachmentBuilder(renderAmidakujiPng(session.ladder, false), {
         name: `amidakuji-${session.id}-result.png`,
       });
@@ -116,72 +207,10 @@ export async function handleAmidakujiButton(
       components: buildRows(session),
       allowedMentions: { parse: [] },
     });
-    return true;
+    return false;
   } finally {
     if (sessions.get(session.id) === session) session.processing = false;
   }
-}
-
-export function clearAmidakujiGuildSessions(guildId: string): void {
-  for (const session of sessions.values()) {
-    if (session.guildId === guildId) endSession(session);
-  }
-}
-
-async function startAmidakuji(
-  interaction: ChatInputCommandInteraction,
-  config: AmidakujiRuntimeConfig,
-): Promise<void> {
-  if (!interaction.guildId) {
-    await interaction.reply({ content: 'このコマンドはDiscordサーバー内でのみ利用できます。', flags: MessageFlags.Ephemeral });
-    return;
-  }
-  if (!config.enabled) {
-    await interaction.reply({ content: 'Mini Games Pluginは現在無効です。', flags: MessageFlags.Ephemeral });
-    return;
-  }
-  const memberCount = interaction.options.getInteger('members', true);
-  const allowDuplicate = interaction.options.getBoolean('allow_duplicate') ?? false;
-  if (!Number.isInteger(memberCount) || memberCount < 2 || memberCount > 10) {
-    await interaction.reply({ content: 'メンバー数は2〜10人で指定してください。', flags: MessageFlags.Ephemeral });
-    return;
-  }
-
-  const sessionId = randomUUID().replaceAll('-', '');
-  const ladder = generateAmidakujiLadder(memberCount);
-  const timeoutSeconds = Math.max(30, Math.min(300, config.sessionTimeoutSeconds));
-  const session: AmidakujiSession = {
-    id: sessionId,
-    guildId: interaction.guildId,
-    memberCount,
-    allowDuplicate,
-    ladder,
-    selections: new Map(),
-    expiresAt: Date.now() + timeoutSeconds * 1000,
-    processing: false,
-    editReply: (payload) => interaction.editReply(payload),
-  };
-  sessions.set(sessionId, session);
-  session.timer = setTimeout(() => {
-    if (sessions.get(session.id) !== session) return;
-    endSession(session);
-    void session.editReply({
-      content: `${renderWaiting(session)}\n\n⌛ **時間切れで終了しました。**`,
-      components: [],
-      allowedMentions: { parse: [] },
-    }).catch(() => undefined);
-  }, timeoutSeconds * 1000);
-  session.timer.unref?.();
-
-  const hiddenImage = new AttachmentBuilder(renderAmidakujiPng(ladder, true), {
-    name: `amidakuji-${sessionId}-hidden.png`,
-  });
-  await interaction.reply({
-    content: renderWaiting(session),
-    components: buildRows(session),
-    files: [hiddenImage],
-    allowedMentions: { parse: [] },
-  });
 }
 
 function buildRows(session: AmidakujiSession): ActionRowBuilder<ButtonBuilder>[] {
@@ -226,6 +255,12 @@ function renderResult(session: AmidakujiSession): string {
   return ['🪜 **あみだくじ結果**', '隠れていた経路を公開しました！', '', ...lines].join('\n');
 }
 
+export function parseAmidakujiCustomId(
+  customId: string,
+): { sessionId: string; slot: number } | null {
+  return parseCustomId(customId);
+}
+
 function parseCustomId(customId: string): { sessionId: string; slot: number } | null {
   if (!customId.startsWith(PREFIX)) return null;
   const [sessionId, rawSlot, extra] = customId.slice(PREFIX.length).split(':');
@@ -233,9 +268,4 @@ function parseCustomId(customId: string): { sessionId: string; slot: number } | 
   const slot = Number(rawSlot);
   if (!Number.isInteger(slot)) return null;
   return { sessionId, slot };
-}
-
-function endSession(session: AmidakujiSession): void {
-  if (session.timer) clearTimeout(session.timer);
-  sessions.delete(session.id);
 }
