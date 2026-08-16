@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import {
   ArrowLeft,
   CalendarClock,
+  CalendarDays,
   CheckCircle2,
   History,
   MessageSquareText,
@@ -127,9 +128,17 @@ export default async function DailyContentPage({
             へBotとして今すぐ発言するほか、1回予約、日次・週次投稿、Forum投稿、Embed、画像、配信履歴をまとめて管理します。
           </p>
         </div>
-        <span className="rounded-full border border-border px-3 py-1 text-sm text-muted">
-          {schedules.length} / {config.maxSchedules}件
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={`/dashboard/guilds/${guildId}/daily-content/calendar`}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-surface px-3 py-2 text-sm font-medium hover:bg-background"
+          >
+            <CalendarDays className="h-4 w-4" aria-hidden="true" /> 投稿カレンダー
+          </Link>
+          <span className="rounded-full border border-border px-3 py-1 text-sm text-muted">
+            {schedules.length} / {config.maxSchedules}件
+          </span>
+        </div>
       </div>
 
       {!plugin.enabled ? (
