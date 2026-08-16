@@ -1,4 +1,4 @@
-import { randomInt, randomUUID } from 'node:crypto';
+import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { MessageFlags } from 'discord.js';
 import type { SlashCommand } from './registry.js';
 
@@ -6,11 +6,14 @@ const MAX_TEAM_MEMBERS = 30;
 const MAX_MEMBER_LENGTH = 30;
 const MAX_TEAMS = 10;
 const MAX_UUID_COUNT = 10;
+const MAX_HASH_INPUT_LENGTH = 4_000;
 const DISCORD_EPOCH = 1_420_070_400_000n;
 const MAX_UNIX_SECONDS = 4_102_444_800;
 
 const TIMESTAMP_STYLES = ['t', 'T', 'd', 'D', 'f', 'F', 'R'] as const;
 type TimestampStyle = (typeof TIMESTAMP_STYLES)[number];
+const HASH_ALGORITHMS = ['sha256', 'sha384', 'sha512'] as const;
+type HashAlgorithm = (typeof HASH_ALGORITHMS)[number];
 
 export function parseTeamMembers(value: string): string[] {
   return value
@@ -51,6 +54,10 @@ export function formatDiscordTimestamp(unixSeconds: number, style: TimestampStyl
   return `<t:${Math.trunc(unixSeconds)}:${style}>`;
 }
 
+export function hashText(value: string, algorithm: HashAlgorithm): string {
+  return createHash(algorithm).update(value, 'utf8').digest('hex');
+}
+
 export const utilitiesCommand: SlashCommand = {
   definition: {
     name: 'utilities',
@@ -64,6 +71,7 @@ export const utilitiesCommand: SlashCommand = {
         '`/uuid [count]` — UUID v4を生成',
         '`/timestamp unix [style]` — Discord時刻表記を生成',
         '`/snowflake id` — Discord IDの作成日時を解析',
+        '`/hash text [algorithm]` — SHA-256 / SHA-384 / SHA-512ハッシュを生成',
       ].join('\n'),
       flags: MessageFlags.Ephemeral,
       allowedMentions: { parse: [] },
@@ -240,10 +248,62 @@ export const snowflakeCommand: SlashCommand = {
   },
 };
 
+export const hashCommand: SlashCommand = {
+  definition: {
+    name: 'hash',
+    description: '入力テキストの暗号学的ハッシュを生成します',
+    options: [
+      {
+        name: 'text',
+        description: 'ハッシュ化するテキスト（最大4,000文字）',
+        type: 'string',
+        required: true,
+      },
+      {
+        name: 'algorithm',
+        description: 'ハッシュアルゴリズム（既定SHA-256）',
+        type: 'string',
+        choices: [
+          { name: 'SHA-256', value: 'sha256' },
+          { name: 'SHA-384', value: 'sha384' },
+          { name: 'SHA-512', value: 'sha512' },
+        ],
+      },
+    ],
+  },
+  async execute(interaction) {
+    const text = interaction.options.getString('text', true);
+    const requestedAlgorithm = interaction.options.getString('algorithm') ?? 'sha256';
+    if (!text || text.length > MAX_HASH_INPUT_LENGTH) {
+      await interaction.reply({
+        content: 'textは1〜4,000文字で入力してください。',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    if (!HASH_ALGORITHMS.includes(requestedAlgorithm as HashAlgorithm)) {
+      await interaction.reply({
+        content: '対応しているalgorithmを選択してください。',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+
+    const algorithm = requestedAlgorithm as HashAlgorithm;
+    const digest = hashText(text, algorithm);
+    await interaction.reply({
+      content: `**${algorithm.toUpperCase()}**\n\`${digest}\``,
+      flags: MessageFlags.Ephemeral,
+      allowedMentions: { parse: [] },
+    });
+  },
+};
+
 export const coreUtilityV3Commands: SlashCommand[] = [
   utilitiesCommand,
   teamsCommand,
   uuidCommand,
   timestampCommand,
   snowflakeCommand,
+  hashCommand,
 ];
