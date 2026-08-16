@@ -55,6 +55,15 @@ test('現在Guildがある場合はGuild固有コマンドを安全なhrefで生
       (command) => command.id === 'guild-overview' && command.description.includes('Test Guild'),
     ),
   );
+  assert.ok(
+    commands.some(
+      (command) =>
+        command.id === 'guild-daily-content' &&
+        command.group === 'current-server' &&
+        command.label === 'Message Studio' &&
+        command.href === `/dashboard/guilds/${GUILD_ID}/daily-content`,
+    ),
+  );
 });
 
 test('日本語・英語キーワードでコマンドを検索できる', () => {
@@ -72,6 +81,11 @@ test('日本語・英語キーワードでコマンドを検索できる', () =>
   assert.ok(
     filterStudioCommandItems(commands, 'xp operations').some(
       (command) => command.id === 'guild-xp-operations',
+    ),
+  );
+  assert.ok(
+    filterStudioCommandItems(commands, 'Bot発言 予約投稿').some(
+      (command) => command.id === 'guild-daily-content',
     ),
   );
   assert.ok(
