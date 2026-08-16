@@ -38,6 +38,62 @@ test('不正なstatus・activity type・空Activityを拒否する', () => {
   );
 });
 
+test('Presence mediaはProviderに対応するActivityだけ許可する', () => {
+  const spotifyMedia = {
+    provider: 'spotify',
+    providerId: 'spotify-track-id',
+    title: 'Herta Theme',
+    creator: 'ivRooom',
+    artworkUrl: 'https://i.scdn.co/image/example',
+    externalUrl: 'https://open.spotify.com/track/example',
+  };
+  const youtubeMedia = {
+    provider: 'youtube',
+    providerId: 'dQw4w9WgXcQ',
+    title: 'Herta Guide',
+    creator: 'ivRooom',
+    artworkUrl: 'https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg',
+    externalUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+  };
+
+  assert.notEqual(
+    parseBotPresenceConfig({
+      status: 'online',
+      activityType: 'listening',
+      activityText: 'Herta Theme — ivRooom',
+      media: spotifyMedia,
+    }),
+    null,
+  );
+  assert.notEqual(
+    parseBotPresenceConfig({
+      status: 'online',
+      activityType: 'watching',
+      activityText: 'Herta Guide — ivRooom',
+      media: youtubeMedia,
+    }),
+    null,
+  );
+  assert.equal(
+    parseBotPresenceConfig({
+      status: 'online',
+      activityType: 'watching',
+      activityText: 'Herta Theme — ivRooom',
+      media: spotifyMedia,
+    }),
+    null,
+  );
+  assert.equal(
+    parseBotPresenceConfig({
+      status: 'online',
+      activityType: 'listening',
+      activityText: 'Herta Guide — ivRooom',
+      media: youtubeMedia,
+    }),
+    null,
+  );
+});
+
 test('保存済み不正値は安全なデフォルトへフォールバックする', () => {
   assert.deepEqual(normalizeBotPresenceConfig(null), DEFAULT_BOT_PRESENCE_CONFIG);
 });
