@@ -2,13 +2,7 @@ const DISCORD_GUILD_ID = /^\d{17,20}$/u;
 const GUILD_DASHBOARD_PATH = /^\/dashboard\/guilds\/(\d{17,20})(?:\/|$)/u;
 
 export type GuildConsoleSection =
-  | 'overview'
-  | 'plugins'
-  | 'leaderboard'
-  | 'moderation'
-  | 'audit-logs'
-  | 'bot-profile'
-  | 'other';
+  'overview' | 'plugins' | 'leaderboard' | 'moderation' | 'audit-logs' | 'bot-profile' | 'other';
 
 export interface GuildConsoleContext {
   guildId: string;
