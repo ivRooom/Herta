@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const miniGamesManifest: PluginManifest = {
   id: 'mini-games',
   name: 'Mini Games',
-  version: '3.2.0',
+  version: '3.3.0',
   description:
     'Coin Flip・High-Low・Blackjack・Dice・チンチロ・あみだくじを戦績とArcadeランキング付きで遊べるPluginです',
   author: { name: 'Herta' },
@@ -62,6 +62,66 @@ export const miniGamesManifest: PluginManifest = {
         'x-herta-ui': {
           section: 'セッション',
           help: 'High-Low / Blackjack / あみだくじで操作がないまま終了するまでの時間です。',
+        },
+      },
+      amidakujiComplexity: {
+        type: 'string',
+        title: 'あみだくじの複雑度',
+        enum: ['simple', 'standard', 'chaos'],
+        default: 'standard',
+        'x-herta-ui': {
+          section: 'あみだくじ演出',
+          help: 'simpleは短め、standardは標準、chaosは横線と段数を増やした複雑な盤面になります。',
+        },
+      },
+      amidakujiTheme: {
+        type: 'string',
+        title: 'あみだくじ画像テーマ',
+        enum: ['arcade', 'midnight', 'classic'],
+        default: 'arcade',
+        'x-herta-ui': {
+          section: 'あみだくじ演出',
+          help: 'Discordへ投稿する盤面画像の見た目を変更します。',
+        },
+      },
+      amidakujiHiddenPercent: {
+        type: 'integer',
+        title: '最初に隠す経路の割合（%）',
+        minimum: 20,
+        maximum: 70,
+        default: 42,
+        'x-herta-ui': {
+          section: 'あみだくじ演出',
+          help: '開始画像で中央の経路を隠す割合です。大きいほど結果を予想しにくくなります。',
+        },
+      },
+      amidakujiRevealAnimation: {
+        type: 'boolean',
+        title: '結果公開時に段階リビール演出を行う',
+        default: true,
+        'x-herta-ui': {
+          section: 'あみだくじ演出',
+          help: '全員の選択後、隠し領域を一度に消さず途中画像を挟んで公開します。',
+        },
+      },
+      amidakujiRevealDelayMs: {
+        type: 'integer',
+        title: 'リビール演出の間隔（ms）',
+        minimum: 250,
+        maximum: 2000,
+        default: 700,
+        'x-herta-ui': {
+          section: 'あみだくじ演出',
+          help: '結果公開アニメーションのテンポを調整します。',
+        },
+      },
+      amidakujiHighlightPaths: {
+        type: 'boolean',
+        title: '結果画像で選択経路を色分けする',
+        default: true,
+        'x-herta-ui': {
+          section: 'あみだくじ演出',
+          help: '最終画像で各開始位置から結果までの経路を色分けして追いやすくします。',
         },
       },
       highLowMaxRounds: {
