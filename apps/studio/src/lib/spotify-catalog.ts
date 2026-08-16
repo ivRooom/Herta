@@ -40,6 +40,14 @@ export interface SpotifyTrackResult {
   presenceText: string;
 }
 
+type SpotifyCatalogErrorCode =
+  | 'invalid_query'
+  | 'not_configured'
+  | 'token_failed'
+  | 'timeout'
+  | 'rate_limited'
+  | 'upstream_failed';
+
 let tokenCache: { accessToken: string; expiresAt: number } | null = null;
 
 export function isSpotifyConfigured(): boolean {
@@ -199,17 +207,11 @@ function isTrackResult(value: SpotifyTrackResult | null): value is SpotifyTrackR
 }
 
 export class SpotifyCatalogError extends Error {
-  constructor(
-    readonly code:
-      | 'invalid_query'
-      | 'not_configured'
-      | 'token_failed'
-      | 'timeout'
-      | 'rate_limited'
-      | 'upstream_failed',
-    message: string,
-  ) {
+  readonly code: SpotifyCatalogErrorCode;
+
+  constructor(code: SpotifyCatalogErrorCode, message: string) {
     super(message);
     this.name = 'SpotifyCatalogError';
+    this.code = code;
   }
 }
