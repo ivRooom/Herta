@@ -50,7 +50,7 @@ test('リバースプロキシ配下では転送された公開Originを許可�
   );
 });
 
-test('X-Forwarded-Hostがある場合は公開Hostとして優先する', () => {
+test('未信頼のX-Forwarded-HostはOrigin判定に使用しない', () => {
   assert.equal(
     isSameOriginMutationRequest(
       new Request('http://studio:3000/api/test', {
@@ -62,7 +62,7 @@ test('X-Forwarded-Hostがある場合は公開Hostとして優先する', () => 
         },
       }),
     ),
-    true,
+    false,
   );
 });
 
