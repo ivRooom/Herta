@@ -8,6 +8,7 @@ import type { Logger } from 'pino';
 import type { CommandHandler } from '@herta/plugin-sdk';
 import { coreInformationCommands } from './core-info.js';
 import { communityActivityCommands } from './community-activity.js';
+import { coreFunUtilityCommands } from './fun-utility.js';
 import { coreUtilityV3Commands } from './utility-v3.js';
 
 export type SlashCommand = CommandHandler<ChatInputCommandInteraction>;
@@ -108,6 +109,7 @@ export class CommandRegistry {
   constructor(private logger: Logger) {
     for (const command of [
       ...coreInformationCommands,
+      ...coreFunUtilityCommands,
       ...coreUtilityV3Commands,
       ...communityActivityCommands,
     ]) {
