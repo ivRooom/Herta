@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const miniGamesManifest: PluginManifest = {
   id: 'mini-games',
   name: 'Mini Games',
-  version: '3.1.0',
+  version: '3.2.0',
   description:
     'Coin Flip・High-Low・Blackjack・Dice・チンチロ・あみだくじを戦績とArcadeランキング付きで遊べるPluginです',
   author: { name: 'Herta' },
@@ -176,6 +176,11 @@ export const miniGamesManifest: PluginManifest = {
           required: true,
           minValue: 2,
           maxValue: 10,
+        },
+        {
+          name: 'results',
+          description: '結果名を人数分指定（例: 当たり,ハズレ / Minecraft,VALORANT）',
+          type: 'string',
         },
         {
           name: 'allow_duplicate',
