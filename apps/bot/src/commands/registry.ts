@@ -10,6 +10,7 @@ import { coreInformationCommands } from './core-info.js';
 import { communityActivityCommands } from './community-activity.js';
 import { coreFunUtilityCommands } from './fun-utility.js';
 import { coreUtilityV3Commands } from './utility-v3.js';
+import { coreUtilityV4Commands } from './utility-v4.js';
 
 export type SlashCommand = CommandHandler<ChatInputCommandInteraction>;
 
@@ -17,7 +18,7 @@ type DiscordCommandOption = NonNullable<
   RESTPostAPIChatInputApplicationCommandsJSONBody['options']
 >[number];
 
-const PLUGIN_OWNED_COMMAND_NAMES = new Set(['coinflip', 'dice']);
+export const PLUGIN_OWNED_COMMAND_NAMES = new Set(['coinflip', 'dice']);
 
 function toDiscordOption(option: CommandOption): DiscordCommandOption {
   switch (option.type) {
@@ -111,6 +112,7 @@ export class CommandRegistry {
       ...coreInformationCommands,
       ...coreFunUtilityCommands,
       ...coreUtilityV3Commands,
+      ...coreUtilityV4Commands,
       ...communityActivityCommands,
     ]) {
       if (PLUGIN_OWNED_COMMAND_NAMES.has(command.definition.name)) continue;
