@@ -45,8 +45,11 @@ export async function getGuildBotProfile(
 ): Promise<GuildBotProfile | null> {
   if (!client.guilds.cache.has(guildId)) return null;
 
+  const botUserId = client.user?.id;
+  if (!botUserId) return null;
+
   const member = parseDiscordBotGuildMember(
-    await client.rest.get(Routes.guildMember(guildId, '@me')),
+    await client.rest.get(Routes.guildMember(guildId, botUserId)),
   );
   return member ? toGuildBotProfile(guildId, member) : null;
 }
@@ -58,11 +61,14 @@ export async function updateGuildBotProfile(
 ): Promise<GuildBotProfile | null> {
   if (!client.guilds.cache.has(guildId)) return null;
 
+  const botUserId = client.user?.id;
+  if (!botUserId) return null;
+
   const body: { nick: string | null; avatar?: string | null } = { nick: input.nickname };
   if (input.avatar !== undefined) body.avatar = input.avatar;
 
   const member = parseDiscordBotGuildMember(
-    await client.rest.patch(Routes.guildMember(guildId, '@me'), { body }),
+    await client.rest.patch(Routes.guildMember(guildId, botUserId), { body }),
   );
   return member ? toGuildBotProfile(guildId, member) : null;
 }
