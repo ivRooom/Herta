@@ -5,6 +5,7 @@ const SUPPORTED_CHANNEL_TYPES = new Set([...MESSAGE_CHANNEL_TYPES, ...FORUM_CHAN
 const THREAD_CHANNEL_TYPES = new Set([10, 11, 12]);
 const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const EMBED_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/u;
 
 interface DiscordChannelPayload {
   id: string;
@@ -14,12 +15,29 @@ interface DiscordChannelPayload {
   message?: { id?: unknown };
 }
 
+export interface GuildMessageStudioEmbedField {
+  name: string;
+  value: string;
+  inline: boolean;
+}
+
+export interface GuildMessageStudioEmbed {
+  title: string;
+  description: string;
+  color: string;
+  imageUrl: string;
+  thumbnailUrl: string;
+  footerText: string;
+  fields: GuildMessageStudioEmbedField[];
+}
+
 export interface GuildMessageStudioSendInput {
   channelId: string;
   content: string;
   forumTitle: string;
   allowUserMentions: boolean;
   publishAnnouncement: boolean;
+  embed: GuildMessageStudioEmbed | null;
   image: {
     filename: string;
     contentType: string;
@@ -51,8 +69,9 @@ export function parseGuildMessageStudioSendInput(
   const channelId = typeof value.channelId === 'string' ? value.channelId.trim() : '';
   const content = typeof value.content === 'string' ? value.content : '';
   const forumTitle = typeof value.forumTitle === 'string' ? value.forumTitle.trim() : '';
-  if (!/^\d{17,20}$/u.test(channelId) || content.length > 4_000 || forumTitle.length > 100)
+  if (!/^\d{17,20}$/u.test(channelId) || content.length > 4_000 || forumTitle.length > 100) {
     return null;
+  }
   if (
     typeof value.allowUserMentions !== 'boolean' ||
     typeof value.publishAnnouncement !== 'boolean'
@@ -60,19 +79,23 @@ export function parseGuildMessageStudioSendInput(
     return null;
   }
 
+  const embed = parseEmbed(value.embed);
+  if (value.embed !== null && value.embed !== undefined && !embed) return null;
+
   let image: GuildMessageStudioSendInput['image'] = null;
   if (value.image !== null && value.image !== undefined) {
     if (!isRecord(value.image)) return null;
     const filename = typeof value.image.filename === 'string' ? value.image.filename.trim() : '';
     const contentType = typeof value.image.contentType === 'string' ? value.image.contentType : '';
     const dataBase64 = typeof value.image.dataBase64 === 'string' ? value.image.dataBase64 : '';
-    if (!filename || filename.length > 100 || !IMAGE_MIME_TYPES.has(contentType) || !dataBase64)
+    if (!filename || filename.length > 100 || !IMAGE_MIME_TYPES.has(contentType) || !dataBase64) {
       return null;
+    }
     const bytes = decodeBase64(dataBase64);
     if (!bytes || bytes.length <= 0 || bytes.length > MAX_IMAGE_BYTES) return null;
     image = { filename, contentType, dataBase64 };
   }
-  if (!content.trim() && !image) return null;
+  if (!content.trim() && !image && !embed) return null;
 
   return {
     channelId,
@@ -80,6 +103,7 @@ export function parseGuildMessageStudioSendInput(
     forumTitle,
     allowUserMentions: value.allowUserMentions,
     publishAnnouncement: value.publishAnnouncement,
+    embed,
     image,
   };
 }
@@ -133,8 +157,9 @@ async function unarchiveThread(token: string, channelId: string): Promise<void> 
     body: JSON.stringify({ archived: false }),
     signal: AbortSignal.timeout(10_000),
   });
-  if (!response.ok)
+  if (!response.ok) {
     throw await discordError('アーカイブ済みスレッドを再開できませんでした', response);
+  }
 }
 
 async function sendChannelMessage(
@@ -143,6 +168,7 @@ async function sendChannelMessage(
 ): Promise<string> {
   const payload = {
     content: input.content || undefined,
+    embeds: input.embed ? [toDiscordEmbed(input.embed)] : undefined,
     allowed_mentions: { parse: input.allowUserMentions ? ['users'] : [] },
     attachments: input.image ? [{ id: 0, filename: input.image.filename }] : undefined,
   };
@@ -169,9 +195,10 @@ async function sendForumPost(
   channelType: number,
 ): Promise<GuildMessageStudioSendResult> {
   const payload = {
-    name: resolveForumTitle(input.forumTitle, input.content),
+    name: resolveForumTitle(input.forumTitle, input.content, input.embed),
     message: {
       content: input.content || undefined,
+      embeds: input.embed ? [toDiscordEmbed(input.embed)] : undefined,
       allowed_mentions: { parse: input.allowUserMentions ? ['users'] : [] },
       attachments: input.image ? [{ id: 0, filename: input.image.filename }] : undefined,
     },
@@ -194,6 +221,67 @@ async function sendForumPost(
     throw new GuildMessageStudioSendError('DiscordからForum投稿の不正な応答を受け取りました');
   }
   return { messageId, channelId: input.channelId, threadId: thread.id, channelType };
+}
+
+function parseEmbed(value: unknown): GuildMessageStudioEmbed | null {
+  if (value === null || value === undefined) return null;
+  if (!isRecord(value)) return null;
+
+  const title = stringValue(value.title);
+  const description = stringValue(value.description);
+  const color = stringValue(value.color);
+  const imageUrl = stringValue(value.imageUrl);
+  const thumbnailUrl = stringValue(value.thumbnailUrl);
+  const footerText = stringValue(value.footerText);
+  if (
+    title.length > 256 ||
+    description.length > 4096 ||
+    footerText.length > 2048 ||
+    (color && !EMBED_COLOR_PATTERN.test(color)) ||
+    !isSafeHttpUrl(imageUrl) ||
+    !isSafeHttpUrl(thumbnailUrl)
+  ) {
+    return null;
+  }
+
+  if (!Array.isArray(value.fields) || value.fields.length > 25) return null;
+  const fields: GuildMessageStudioEmbedField[] = [];
+  for (const rawField of value.fields) {
+    if (!isRecord(rawField)) return null;
+    const name = stringValue(rawField.name);
+    const fieldValue = stringValue(rawField.value);
+    if (!name || !fieldValue || name.length > 256 || fieldValue.length > 1024) return null;
+    fields.push({
+      name,
+      value: fieldValue,
+      inline: rawField.inline === true,
+    });
+  }
+
+  if (!title && !description && !imageUrl && !thumbnailUrl && !footerText && fields.length === 0) {
+    return null;
+  }
+  return {
+    title,
+    description,
+    color: color || '#5865F2',
+    imageUrl,
+    thumbnailUrl,
+    footerText,
+    fields,
+  };
+}
+
+function toDiscordEmbed(embed: GuildMessageStudioEmbed): Record<string, unknown> {
+  return {
+    title: embed.title || undefined,
+    description: embed.description || undefined,
+    color: Number.parseInt(embed.color.slice(1), 16),
+    image: embed.imageUrl ? { url: embed.imageUrl } : undefined,
+    thumbnail: embed.thumbnailUrl ? { url: embed.thumbnailUrl } : undefined,
+    footer: embed.footerText ? { text: embed.footerText } : undefined,
+    fields: embed.fields.length > 0 ? embed.fields : undefined,
+  };
 }
 
 function buildMultipart(
@@ -225,8 +313,13 @@ function decodeBase64(value: string): Uint8Array | null {
   }
 }
 
-function resolveForumTitle(explicit: string, content: string): string {
+function resolveForumTitle(
+  explicit: string,
+  content: string,
+  embed: GuildMessageStudioEmbed | null,
+): string {
   if (explicit) return explicit.slice(0, 100);
+  if (embed?.title) return embed.title.slice(0, 100);
   const firstLine =
     content
       .split(/\r?\n/u)
@@ -244,8 +337,9 @@ async function crosspost(token: string, channelId: string, messageId: string): P
       signal: AbortSignal.timeout(10_000),
     },
   );
-  if (!response.ok)
+  if (!response.ok) {
     throw await discordError('投稿は完了しましたがCrosspostに失敗しました', response);
+  }
 }
 
 async function discordError(
@@ -263,6 +357,20 @@ async function discordError(
     detail ? `${message}: ${detail}` : message,
     response.status,
   );
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function isSafeHttpUrl(value: string): boolean {
+  if (!value) return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:';
+  } catch {
+    return false;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
