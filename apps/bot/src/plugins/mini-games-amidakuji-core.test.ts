@@ -21,6 +21,18 @@ describe('Amidakuji', () => {
     }
   });
 
+  it('increases board depth and bar count for chaos complexity', () => {
+    const rng = () => 0.1;
+    const simple = generateAmidakujiLadder(6, { complexity: 'simple' }, rng);
+    const standard = generateAmidakujiLadder(6, { complexity: 'standard' }, rng);
+    const chaos = generateAmidakujiLadder(6, { complexity: 'chaos' }, rng);
+
+    expect(simple.rows).toBeLessThan(standard.rows);
+    expect(standard.rows).toBeLessThan(chaos.rows);
+    expect(simple.bars.length).toBeLessThanOrEqual(standard.bars.length);
+    expect(standard.bars.length).toBeLessThanOrEqual(chaos.bars.length);
+  });
+
   it('rejects unsupported member counts', () => {
     expect(() => generateAmidakujiLadder(1)).toThrow(RangeError);
     expect(() => generateAmidakujiLadder(11)).toThrow(RangeError);
@@ -42,16 +54,32 @@ describe('Amidakuji', () => {
     expect(parseAmidakujiResultLabels(`当たり,${'x'.repeat(51)}`, 2)).toBeNull();
   });
 
-  it('renders valid PNG files for hidden and revealed boards', () => {
+  it('renders valid themed PNG files for hidden, partial and highlighted boards', () => {
     const ladder = generateAmidakujiLadder(4, () => 0.2);
-    const hidden = renderAmidakujiPng(ladder, true);
-    const revealed = renderAmidakujiPng(ladder, false);
+    const hidden = renderAmidakujiPng(ladder, {
+      hidden: true,
+      hiddenPercent: 55,
+      theme: 'arcade',
+    });
+    const partial = renderAmidakujiPng(ladder, {
+      hidden: true,
+      hiddenPercent: 55,
+      revealProgress: 0.6,
+      theme: 'midnight',
+    });
+    const revealed = renderAmidakujiPng(ladder, {
+      hidden: false,
+      theme: 'classic',
+      highlightStarts: [0, 2],
+    });
     const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
     expect(hidden.subarray(0, 8)).toEqual(signature);
+    expect(partial.subarray(0, 8)).toEqual(signature);
     expect(revealed.subarray(0, 8)).toEqual(signature);
     expect(hidden.length).toBeGreaterThan(1_000);
     expect(revealed.length).toBeGreaterThan(1_000);
-    expect(hidden.equals(revealed)).toBe(false);
+    expect(hidden.equals(partial)).toBe(false);
+    expect(partial.equals(revealed)).toBe(false);
   });
 });

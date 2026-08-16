@@ -15,16 +15,26 @@ export interface BotPresenceState {
 
 export async function getStoredBotPresence(): Promise<BotPresenceState> {
   try {
-    const setting = await prisma.botPresenceSetting.findUnique({
-      where: { id: 'default' },
-      select: {
-        status: true,
-        activityType: true,
-        activityText: true,
-      },
-    });
+    const [setting, mediaRows] = await Promise.all([
+      prisma.botPresenceSetting.findUnique({
+        where: { id: 'default' },
+        select: {
+          status: true,
+          activityType: true,
+          activityText: true,
+        },
+      }),
+      prisma.$queryRaw<Array<{ media: unknown }>>`
+        SELECT "media"
+        FROM "bot_presence_media_settings"
+        WHERE "id" = 'default'
+        LIMIT 1
+      `,
+    ]);
     return {
-      config: setting ? normalizeBotPresenceConfig(setting) : { ...DEFAULT_BOT_PRESENCE_CONFIG },
+      config: setting
+        ? normalizeBotPresenceConfig({ ...setting, media: mediaRows[0]?.media ?? null })
+        : { ...DEFAULT_BOT_PRESENCE_CONFIG },
       persistenceAvailable: true,
     };
   } catch (error) {
@@ -42,21 +52,31 @@ export async function saveBotPresence(
   persisted: boolean;
   subscriberCount: number;
 }> {
-  await prisma.botPresenceSetting.upsert({
-    where: { id: 'default' },
-    create: {
-      id: 'default',
-      status: config.status,
-      activityType: config.activityType,
-      activityText: config.activityText,
-      updatedBy,
-    },
-    update: {
-      status: config.status,
-      activityType: config.activityType,
-      activityText: config.activityText,
-      updatedBy,
-    },
+  await prisma.$transaction(async (transaction) => {
+    await transaction.botPresenceSetting.upsert({
+      where: { id: 'default' },
+      create: {
+        id: 'default',
+        status: config.status,
+        activityType: config.activityType,
+        activityText: config.activityText,
+        updatedBy,
+      },
+      update: {
+        status: config.status,
+        activityType: config.activityType,
+        activityText: config.activityText,
+        updatedBy,
+      },
+    });
+
+    const mediaJson = config.media ? JSON.stringify(config.media) : null;
+    await transaction.$executeRaw`
+      INSERT INTO "bot_presence_media_settings" ("id", "media", "updated_at")
+      VALUES ('default', CAST(${mediaJson} AS jsonb), CURRENT_TIMESTAMP)
+      ON CONFLICT ("id") DO UPDATE
+      SET "media" = EXCLUDED."media", "updated_at" = CURRENT_TIMESTAMP
+    `;
   });
 
   const redisUrl = process.env['REDIS_URL'];

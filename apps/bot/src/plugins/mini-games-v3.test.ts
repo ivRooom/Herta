@@ -4,7 +4,7 @@ import { arcadeMetricLabel, formatArcadeLeaderboard } from './mini-games-v3.js';
 
 describe('Mini Games v3', () => {
   it('ManifestへDice・チンチロ・Arcade Leaderboard・あみだくじを登録する', () => {
-    expect(miniGamesManifest.version).toBe('3.2.0');
+    expect(miniGamesManifest.version).toBe('3.3.0');
     expect(miniGamesManifest.commands.map((command) => command.name)).toEqual([
       'coinflip',
       'highlow',
@@ -24,10 +24,45 @@ describe('Mini Games v3', () => {
 
     const amidakuji = miniGamesManifest.commands.find((command) => command.name === 'amidakuji');
     const resultsOption = amidakuji?.options?.find((option) => option.name === 'results');
-    expect(resultsOption).toMatchObject({
-      type: 'string',
-    });
+    expect(resultsOption).toMatchObject({ type: 'string' });
     expect(resultsOption?.required).not.toBe(true);
+  });
+
+  it('Studioからあみだくじ演出を調整できるSchemaを公開する', () => {
+    const properties = (miniGamesManifest.configSchema?.properties ?? {}) as Record<
+      string,
+      unknown
+    >;
+    expect(properties['amidakujiComplexity']).toMatchObject({
+      type: 'string',
+      default: 'standard',
+      enum: ['simple', 'standard', 'chaos'],
+    });
+    expect(properties['amidakujiTheme']).toMatchObject({
+      type: 'string',
+      default: 'arcade',
+      enum: ['arcade', 'midnight', 'classic'],
+    });
+    expect(properties['amidakujiHiddenPercent']).toMatchObject({
+      type: 'integer',
+      minimum: 20,
+      maximum: 70,
+      default: 42,
+    });
+    expect(properties['amidakujiRevealAnimation']).toMatchObject({
+      type: 'boolean',
+      default: true,
+    });
+    expect(properties['amidakujiRevealDelayMs']).toMatchObject({
+      type: 'integer',
+      minimum: 250,
+      maximum: 2000,
+      default: 700,
+    });
+    expect(properties['amidakujiHighlightPaths']).toMatchObject({
+      type: 'boolean',
+      default: true,
+    });
   });
 
   it('Arcade LeaderboardへTop 3メダルと指標単位を表示する', () => {
