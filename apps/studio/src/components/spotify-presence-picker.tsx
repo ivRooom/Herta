@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import { ExternalLink, LoaderCircle, Music2, Search } from 'lucide-react';
 
 interface SpotifyTrackResult {
@@ -19,8 +19,7 @@ export function SpotifyPresencePicker({ onSelect }: { onSelect: (presenceText: s
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleSearch() {
     const normalized = query.trim();
     if (!normalized || loading) return;
 
@@ -63,7 +62,7 @@ export function SpotifyPresencePicker({ onSelect }: { onSelect: (presenceText: s
         </div>
       </div>
 
-      <form onSubmit={handleSearch} className="mt-4 flex gap-2">
+      <div className="mt-4 flex gap-2" role="search">
         <label htmlFor="spotify-presence-query" className="sr-only">
           Spotify楽曲検索
         </label>
@@ -71,12 +70,18 @@ export function SpotifyPresencePicker({ onSelect }: { onSelect: (presenceText: s
           id="spotify-presence-query"
           value={query}
           onChange={(event) => setQuery(event.target.value.slice(0, 160))}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            void handleSearch();
+          }}
           maxLength={160}
           placeholder="例: YOASOBI アイドル / Spotify Track URL"
           className="h-11 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3 text-sm outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/10"
         />
         <button
-          type="submit"
+          type="button"
+          onClick={() => void handleSearch()}
           disabled={loading || query.trim().length === 0}
           className="inline-flex h-11 items-center gap-2 rounded-xl border border-border bg-surface px-4 text-sm font-semibold transition-colors hover:border-primary/40 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
@@ -87,7 +92,7 @@ export function SpotifyPresencePicker({ onSelect }: { onSelect: (presenceText: s
           )}
           検索
         </button>
-      </form>
+      </div>
 
       {configured === false ? (
         <p className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/5 p-3 text-xs leading-5 text-amber-200">
