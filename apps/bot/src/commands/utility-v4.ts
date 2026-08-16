@@ -2,6 +2,7 @@ import { MessageFlags } from 'discord.js';
 import type { SlashCommand } from './registry.js';
 
 const MAX_TRANSFORM_INPUT_LENGTH = 2_000;
+const MAX_TRANSFORM_OUTPUT_LENGTH = 1_800;
 const MAX_TEXTSTATS_INPUT_LENGTH = 4_000;
 
 export interface ParsedColor {
@@ -87,6 +88,11 @@ export function analyzeText(value: string): {
   };
 }
 
+function formatTransformResult(result: string): string | null {
+  if (result.length > MAX_TRANSFORM_OUTPUT_LENGTH) return null;
+  return `\`\`\`text\n${result.replace(/```/g, '``\u200b`')}\n\`\`\``;
+}
+
 export const colorCommand: SlashCommand = {
   definition: {
     name: 'color',
@@ -156,7 +162,8 @@ export const base64Command: SlashCommand = {
       });
       return;
     }
-    const result = mode === 'encode' ? encodeBase64(text) : mode === 'decode' ? decodeBase64(text) : null;
+    const result =
+      mode === 'encode' ? encodeBase64(text) : mode === 'decode' ? decodeBase64(text) : null;
     if (result === null) {
       await interaction.reply({
         content: '有効なmodeとUTF-8として復元可能なBase64文字列を指定してください。',
@@ -165,8 +172,16 @@ export const base64Command: SlashCommand = {
       });
       return;
     }
+    const content = formatTransformResult(result);
+    if (!content) {
+      await interaction.reply({
+        content: '変換結果がDiscordのメッセージ上限を超えます。入力を短くしてください。',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
     await interaction.reply({
-      content: `\`\`\`text\n${result}\n\`\`\``,
+      content,
       flags: MessageFlags.Ephemeral,
       allowedMentions: { parse: [] },
     });
@@ -206,7 +221,12 @@ export const urlCommand: SlashCommand = {
       });
       return;
     }
-    const result = mode === 'encode' ? encodeUrlComponent(text) : mode === 'decode' ? decodeUrlComponent(text) : null;
+    const result =
+      mode === 'encode'
+        ? encodeUrlComponent(text)
+        : mode === 'decode'
+          ? decodeUrlComponent(text)
+          : null;
     if (result === null) {
       await interaction.reply({
         content: '有効なmodeとURL component文字列を指定してください。',
@@ -215,8 +235,16 @@ export const urlCommand: SlashCommand = {
       });
       return;
     }
+    const content = formatTransformResult(result);
+    if (!content) {
+      await interaction.reply({
+        content: '変換結果がDiscordのメッセージ上限を超えます。入力を短くしてください。',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
     await interaction.reply({
-      content: `\`\`\`text\n${result}\n\`\`\``,
+      content,
       flags: MessageFlags.Ephemeral,
       allowedMentions: { parse: [] },
     });
