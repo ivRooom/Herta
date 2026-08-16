@@ -36,7 +36,13 @@ export function buildHelpOverviewFields(
   );
 
   if (lines.length === 0) {
-    return [{ name: '利用可能なコマンド', value: '現在表示できるコマンドはありません。', inline: false }];
+    return [
+      {
+        name: '利用可能なコマンド',
+        value: '現在表示できるコマンドはありません。',
+        inline: false,
+      },
+    ];
   }
 
   const chunks: string[] = [];
@@ -54,7 +60,10 @@ export function buildHelpOverviewFields(
   if (current) chunks.push(current);
 
   return chunks.map((value, index) => ({
-    name: chunks.length === 1 ? '利用可能なコマンド' : `利用可能なコマンド ${index + 1}/${chunks.length}`,
+    name:
+      chunks.length === 1
+        ? '利用可能なコマンド'
+        : `利用可能なコマンド ${index + 1}/${chunks.length}`,
     value,
     inline: false as const,
   }));
@@ -78,7 +87,12 @@ function commandUsage(definition: CommandDefinition): string[] {
 
 export function buildHelpCommandDetail(command: SlashCommand): string {
   const definition = command.definition;
-  const parts = [definition.description, '', '**使い方**', ...commandUsage(definition).map((usage) => `\`${usage}\``)];
+  const parts = [
+    definition.description,
+    '',
+    '**使い方**',
+    ...commandUsage(definition).map((usage) => `\`${usage}\``),
+  ];
 
   if (definition.subcommands?.length) {
     parts.push('', '**サブコマンド**');
