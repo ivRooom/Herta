@@ -28,11 +28,6 @@ export async function POST(request: Request, { params }: RouteContext) {
   const authorization = await authorizeGuild(guildId, session.user.id);
   if ('response' in authorization) return authorization.response;
 
-  const token = process.env['DISCORD_BOT_TOKEN']?.trim();
-  if (!token) {
-    return NextResponse.json({ error: 'Bot送信機能が設定されていません' }, { status: 503 });
-  }
-
   let form: FormData;
   try {
     form = await request.formData();
@@ -80,7 +75,6 @@ export async function POST(request: Request, { params }: RouteContext) {
     }
 
     const result = await sendMessageStudioMessage({
-      token,
       guildId,
       channelId,
       content,
