@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { generateAmidakujiLadder, renderAmidakujiPng, traceAmidakuji } from './mini-games-amidakuji-core.js';
+import {
+  generateAmidakujiLadder,
+  renderAmidakujiPng,
+  traceAmidakuji,
+} from './mini-games-amidakuji-core.js';
 
 describe('Amidakuji', () => {
   it('creates a permutation of all result slots', () => {

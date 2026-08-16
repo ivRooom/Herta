@@ -40,7 +40,9 @@ export function generateAmidakujiLadder(
     bars.push({ row: Math.floor(rows / 2), left: Math.floor(random() * (slots - 1)) });
   }
 
-  const results = Array.from({ length: slots }, (_, start) => traceAmidakuji(slots, rows, bars, start));
+  const results = Array.from({ length: slots }, (_, start) =>
+    traceAmidakuji(slots, rows, bars, start),
+  );
   return { slots, rows, bars, results };
 }
 
@@ -96,13 +98,32 @@ export function renderAmidakujiPng(ladder: AmidakujiLadder, hidden: boolean): Bu
 
   for (const bar of ladder.bars) {
     const y = Math.round(top + (bar.row + 0.5) * rowHeight);
-    drawLine(pixels, width, height, xFor(bar.left), y, xFor(bar.left + 1), y, [88, 101, 242, 255], 4);
+    drawLine(
+      pixels,
+      width,
+      height,
+      xFor(bar.left),
+      y,
+      xFor(bar.left + 1),
+      y,
+      [88, 101, 242, 255],
+      4,
+    );
   }
 
   if (hidden) {
     const maskTop = Math.round(top + (bottom - top) * 0.34);
     const maskBottom = Math.round(top + (bottom - top) * 0.68);
-    fillRect(pixels, width, height, 10, maskTop, width - 20, maskBottom - maskTop, [229, 231, 235, 255]);
+    fillRect(
+      pixels,
+      width,
+      height,
+      10,
+      maskTop,
+      width - 20,
+      maskBottom - maskTop,
+      [229, 231, 235, 255],
+    );
     const centerX = Math.floor(width / 2);
     drawQuestionMark(pixels, width, height, centerX, Math.floor((maskTop + maskBottom) / 2));
   }
@@ -121,7 +142,14 @@ function drawQuestionMark(pixels: Buffer, width: number, height: number, cx: num
 
 type Rgba = readonly [number, number, number, number];
 
-function setPixel(pixels: Buffer, width: number, height: number, x: number, y: number, color: Rgba) {
+function setPixel(
+  pixels: Buffer,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  color: Rgba,
+) {
   if (x < 0 || y < 0 || x >= width || y >= height) return;
   const index = (y * width + x) * 4;
   pixels[index] = color[0];
@@ -166,7 +194,16 @@ function drawLine(
   let x = x0;
   let y = y0;
   while (true) {
-    fillRect(pixels, width, height, x - Math.floor(thickness / 2), y - Math.floor(thickness / 2), thickness, thickness, color);
+    fillRect(
+      pixels,
+      width,
+      height,
+      x - Math.floor(thickness / 2),
+      y - Math.floor(thickness / 2),
+      thickness,
+      thickness,
+      color,
+    );
     if (x === x1 && y === y1) break;
     const twice = 2 * error;
     if (twice >= dy) {
@@ -193,7 +230,15 @@ const DIGIT_SEGMENTS: Record<string, readonly string[]> = {
   '9': ['a', 'b', 'c', 'd', 'f', 'g'],
 };
 
-function drawDigitNumber(pixels: Buffer, width: number, height: number, centerX: number, y: number, value: number, color: Rgba) {
+function drawDigitNumber(
+  pixels: Buffer,
+  width: number,
+  height: number,
+  centerX: number,
+  y: number,
+  value: number,
+  color: Rgba,
+) {
   const text = String(value);
   const digitWidth = 10;
   const gap = 4;
@@ -205,7 +250,15 @@ function drawDigitNumber(pixels: Buffer, width: number, height: number, centerX:
   }
 }
 
-function drawDigit(pixels: Buffer, width: number, height: number, x: number, y: number, digit: string, color: Rgba) {
+function drawDigit(
+  pixels: Buffer,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  digit: string,
+  color: Rgba,
+) {
   const segments = new Set(DIGIT_SEGMENTS[digit] ?? []);
   const h = (xx: number, yy: number) => fillRect(pixels, width, height, xx, yy, 8, 2, color);
   const v = (xx: number, yy: number) => fillRect(pixels, width, height, xx, yy, 2, 8, color);
@@ -231,7 +284,12 @@ function encodePng(width: number, height: number, pixels: Buffer): Buffer {
   ihdr[8] = 8;
   ihdr[9] = 6;
   const idat = deflateSync(raw, { level: 6 });
-  return Buffer.concat([PNG_SIGNATURE, pngChunk('IHDR', ihdr), pngChunk('IDAT', idat), pngChunk('IEND', Buffer.alloc(0))]);
+  return Buffer.concat([
+    PNG_SIGNATURE,
+    pngChunk('IHDR', ihdr),
+    pngChunk('IDAT', idat),
+    pngChunk('IEND', Buffer.alloc(0)),
+  ]);
 }
 
 function pngChunk(type: string, data: Buffer): Buffer {

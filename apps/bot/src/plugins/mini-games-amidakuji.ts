@@ -140,11 +140,17 @@ async function handleButton(
   if (!parsed || parsed.sessionId !== session.id) return false;
   if (sessions.get(session.id) !== session || Date.now() >= session.expiresAt) {
     sessions.delete(session.id);
-    await interaction.reply({ content: 'このあみだくじは終了しています。', flags: MessageFlags.Ephemeral });
+    await interaction.reply({
+      content: 'このあみだくじは終了しています。',
+      flags: MessageFlags.Ephemeral,
+    });
     return true;
   }
   if (interaction.guildId !== session.guildId) {
-    await interaction.reply({ content: '別サーバーのあみだくじは操作できません。', flags: MessageFlags.Ephemeral });
+    await interaction.reply({
+      content: '別サーバーのあみだくじは操作できません。',
+      flags: MessageFlags.Ephemeral,
+    });
     return false;
   }
   if (!configProvider().enabled) {
