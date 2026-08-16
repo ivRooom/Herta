@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   generateAmidakujiLadder,
+  parseAmidakujiResultLabels,
   renderAmidakujiPng,
   traceAmidakuji,
 } from './mini-games-amidakuji-core.js';
@@ -23,6 +24,22 @@ describe('Amidakuji', () => {
   it('rejects unsupported member counts', () => {
     expect(() => generateAmidakujiLadder(1)).toThrow(RangeError);
     expect(() => generateAmidakujiLadder(11)).toThrow(RangeError);
+  });
+
+  it('accepts custom result labels separated by comma, Japanese comma, or newline', () => {
+    expect(parseAmidakujiResultLabels('当たり,ハズレ', 2)).toEqual(['当たり', 'ハズレ']);
+    expect(parseAmidakujiResultLabels('Minecraft、VALORANT、APEX', 3)).toEqual([
+      'Minecraft',
+      'VALORANT',
+      'APEX',
+    ]);
+    expect(parseAmidakujiResultLabels('A\nB\nC', 3)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('uses numbered defaults and rejects invalid custom label counts or oversized labels', () => {
+    expect(parseAmidakujiResultLabels(null, 3)).toEqual(['1番', '2番', '3番']);
+    expect(parseAmidakujiResultLabels('当たり', 2)).toBeNull();
+    expect(parseAmidakujiResultLabels(`当たり,${'x'.repeat(51)}`, 2)).toBeNull();
   });
 
   it('renders valid PNG files for hidden and revealed boards', () => {

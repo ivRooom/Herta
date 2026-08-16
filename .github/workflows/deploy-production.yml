@@ -16,6 +16,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 concurrency:
   group: deploy-production
@@ -107,13 +108,55 @@ jobs:
       GHCR_TOKEN: ${{ github.token }}
 
     steps:
+      - name: AWS credentialsを設定
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: arn:aws:iam::911291529944:role/ivrm-web-github-deploy-role
+          aws-region: ap-northeast-1
+          allowed-account-ids: '911291529944'
+          role-session-name: HertaProductionDeploy
+
+      - name: Spotify runtime secretsをSSMから取得
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          SPOTIFY_CLIENT_ID_VALUE="$(aws ssm get-parameter \
+            --region ap-northeast-1 \
+            --name '/ivrm/runtime/spotify/client-id' \
+            --with-decryption \
+            --query 'Parameter.Value' \
+            --output text)"
+          SPOTIFY_CLIENT_SECRET_VALUE="$(aws ssm get-parameter \
+            --region ap-northeast-1 \
+            --name '/ivrm/runtime/spotify/client-secret' \
+            --with-decryption \
+            --query 'Parameter.Value' \
+            --output text)"
+
+          if [ -z "${SPOTIFY_CLIENT_ID_VALUE}" ] || [ "${SPOTIFY_CLIENT_ID_VALUE}" = 'None' ] || \
+             [ -z "${SPOTIFY_CLIENT_SECRET_VALUE}" ] || [ "${SPOTIFY_CLIENT_SECRET_VALUE}" = 'None' ]; then
+            echo "ERROR: Spotify runtime secretsがSSMにありません。" >&2
+            exit 1
+          fi
+
+          echo "::add-mask::${SPOTIFY_CLIENT_ID_VALUE}"
+          echo "::add-mask::${SPOTIFY_CLIENT_SECRET_VALUE}"
+          {
+            echo "SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID_VALUE}"
+            echo "SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET_VALUE}"
+          } >> "${GITHUB_ENV}"
+
+          echo "Spotify runtime secretsをGitHub Actions側で取得しました（値は非表示、ID=${#SPOTIFY_CLIENT_ID_VALUE} chars / Secret=${#SPOTIFY_CLIENT_SECRET_VALUE} chars）"
+          unset SPOTIFY_CLIENT_ID_VALUE SPOTIFY_CLIENT_SECRET_VALUE
+
       - name: LightsailへSSHデプロイ
         uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          envs: DEPLOY_REF,HERTA_IMAGE,GHCR_USERNAME,GHCR_TOKEN
+          envs: DEPLOY_REF,HERTA_IMAGE,GHCR_USERNAME,GHCR_TOKEN,SPOTIFY_CLIENT_ID,SPOTIFY_CLIENT_SECRET
           command_timeout: 15m
           script: |
             set -euo pipefail
@@ -145,42 +188,24 @@ jobs:
               git checkout --detach "${DEPLOY_REF}"
             fi
 
-            echo "=== Optional runtime secretsをSSMから同期 ==="
-            if command -v aws >/dev/null 2>&1; then
-              SPOTIFY_CLIENT_ID_VALUE="$(aws ssm get-parameter \
-                --region "${AWS_REGION:-ap-northeast-1}" \
-                --name '/ivrm/runtime/spotify/client-id' \
-                --with-decryption \
-                --query 'Parameter.Value' \
-                --output text 2>/dev/null || true)"
-              SPOTIFY_CLIENT_SECRET_VALUE="$(aws ssm get-parameter \
-                --region "${AWS_REGION:-ap-northeast-1}" \
-                --name '/ivrm/runtime/spotify/client-secret' \
-                --with-decryption \
-                --query 'Parameter.Value' \
-                --output text 2>/dev/null || true)"
-
-              if [ -n "${SPOTIFY_CLIENT_ID_VALUE}" ] && [ "${SPOTIFY_CLIENT_ID_VALUE}" != 'None' ] && \
-                 [ -n "${SPOTIFY_CLIENT_SECRET_VALUE}" ] && [ "${SPOTIFY_CLIENT_SECRET_VALUE}" != 'None' ]; then
-                upsert_env() {
-                  key="$1"
-                  value="$2"
-                  tmp="$(mktemp)"
-                  awk -F= -v target="${key}" '$1 != target { print }' "${ENV_FILE}" > "${tmp}"
-                  printf '%s=%s\n' "${key}" "${value}" >> "${tmp}"
-                  chmod 600 "${tmp}"
-                  mv "${tmp}" "${ENV_FILE}"
-                }
-                upsert_env SPOTIFY_CLIENT_ID "${SPOTIFY_CLIENT_ID_VALUE}"
-                upsert_env SPOTIFY_CLIENT_SECRET "${SPOTIFY_CLIENT_SECRET_VALUE}"
-                echo "Spotify runtime secretsを同期しました（値は非表示）"
-              else
-                echo "Spotify SSM parametersは未設定のため、Spotify検索は無効のまま継続します"
-              fi
-              unset SPOTIFY_CLIENT_ID_VALUE SPOTIFY_CLIENT_SECRET_VALUE
-            else
-              echo "AWS CLIがないためSpotify SSM同期をスキップします"
+            echo "=== Optional runtime secretsをGitHub Actionsから同期 ==="
+            if [ -z "${SPOTIFY_CLIENT_ID:-}" ] || [ -z "${SPOTIFY_CLIENT_SECRET:-}" ]; then
+              echo "ERROR: GitHub ActionsからSpotify runtime secretsが渡されていません。" >&2
+              exit 1
             fi
+
+            upsert_env() {
+              key="$1"
+              value="$2"
+              tmp="$(mktemp)"
+              awk -F= -v target="${key}" '$1 != target { print }' "${ENV_FILE}" > "${tmp}"
+              printf '%s=%s\n' "${key}" "${value}" >> "${tmp}"
+              chmod 600 "${tmp}"
+              mv "${tmp}" "${ENV_FILE}"
+            }
+            upsert_env SPOTIFY_CLIENT_ID "${SPOTIFY_CLIENT_ID}"
+            upsert_env SPOTIFY_CLIENT_SECRET "${SPOTIFY_CLIENT_SECRET}"
+            echo "Spotify runtime secretsを同期しました（値は非表示）"
 
             ${COMPOSE} config --quiet
 
@@ -263,16 +288,16 @@ jobs:
               exit 1
             fi
 
-            echo "=== Discord Botログイン確認 ==="
+            echo "=== Discord Bot health check ==="
             bot_ready=false
             bot_container="$(${COMPOSE} ps -q bot)"
             for i in $(seq 1 12); do
-              if docker logs --since 5m "${bot_container}" 2>&1 | \
-                grep -q 'Herta Bot がログインしました'; then
+              bot_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${bot_container}")"
+              if [ "${bot_health}" = 'healthy' ] || [ "${bot_health}" = 'running' ]; then
                 bot_ready=true
                 break
               fi
-              echo "Botログイン待ち... (${i}/12)"
+              echo "Bot health待ち... (${i}/12, status=${bot_health})"
               sleep 5
             done
             if [ "${bot_ready}" != 'true' ]; then

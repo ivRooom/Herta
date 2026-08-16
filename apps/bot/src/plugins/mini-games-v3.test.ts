@@ -4,7 +4,7 @@ import { arcadeMetricLabel, formatArcadeLeaderboard } from './mini-games-v3.js';
 
 describe('Mini Games v3', () => {
   it('ManifestへDice・チンチロ・Arcade Leaderboard・あみだくじを登録する', () => {
-    expect(miniGamesManifest.version).toBe('3.1.0');
+    expect(miniGamesManifest.version).toBe('3.2.0');
     expect(miniGamesManifest.commands.map((command) => command.name)).toEqual([
       'coinflip',
       'highlow',
@@ -21,6 +21,13 @@ describe('Mini Games v3', () => {
     const choices = leaderboard?.options?.find((option) => option.name === 'metric')?.choices ?? [];
     expect(choices).toHaveLength(7);
     expect(new Set(choices.map((choice) => choice.value)).size).toBe(choices.length);
+
+    const amidakuji = miniGamesManifest.commands.find((command) => command.name === 'amidakuji');
+    const resultsOption = amidakuji?.options?.find((option) => option.name === 'results');
+    expect(resultsOption).toMatchObject({
+      type: 'string',
+    });
+    expect(resultsOption?.required).not.toBe(true);
   });
 
   it('Arcade LeaderboardへTop 3メダルと指標単位を表示する', () => {
