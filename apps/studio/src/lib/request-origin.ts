@@ -16,8 +16,7 @@ export function isSameOriginMutationRequest(request: Request): boolean {
 
 function resolveForwardedRequestOrigin(request: Request): string | null {
   const forwardedProto = firstHeaderValue(request.headers.get('x-forwarded-proto'));
-  const forwardedHost = firstHeaderValue(request.headers.get('x-forwarded-host'));
-  const host = forwardedHost ?? request.headers.get('host')?.trim() ?? null;
+  const host = request.headers.get('host')?.trim() ?? null;
 
   if ((forwardedProto !== 'http' && forwardedProto !== 'https') || !host || host.length > 255) {
     return null;
