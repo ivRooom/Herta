@@ -6,12 +6,14 @@ import {
   BOT_ACTIVITY_TYPES,
   BOT_PRESENCE_STATUSES,
   DEFAULT_BOT_PRESENCE_CONFIG,
+  isBotPresenceMediaCompatible,
   type BotActivityType,
   type BotPresenceConfig,
   type BotPresenceStatus,
 } from '@herta/shared';
 import { BOT_AVATAR_MAX_BYTES, BOT_AVATAR_MIME_TYPES } from '@/lib/bot-profile-input';
 import { SpotifyPresencePicker } from '@/components/spotify-presence-picker';
+import { YouTubePresencePicker } from '@/components/youtube-presence-picker';
 
 interface BotGuildProfile {
   userId: string;
@@ -390,11 +392,15 @@ function GlobalPresenceCard() {
                 label: activityTypeLabel(value),
               }))}
               onChange={(value) =>
-                setConfig((current) => ({
-                  ...current,
-                  activityType: value as BotActivityType,
-                  media: value === 'listening' ? current.media : null,
-                }))
+                setConfig((current) => {
+                  const activityType = value as BotActivityType;
+                  const media =
+                    current.media &&
+                    isBotPresenceMediaCompatible(activityType, current.media.provider)
+                      ? current.media
+                      : null;
+                  return { ...current, activityType, media };
+                })
               }
             />
           </div>
@@ -427,6 +433,20 @@ function GlobalPresenceCard() {
                 setConfig((current) => ({
                   ...current,
                   activityType: 'listening',
+                  activityText: presenceText,
+                  media,
+                }))
+              }
+            />
+          ) : null}
+
+          {config.activityType === 'watching' ? (
+            <YouTubePresencePicker
+              selectedMedia={config.media?.provider === 'youtube' ? config.media : null}
+              onSelect={(presenceText, media) =>
+                setConfig((current) => ({
+                  ...current,
+                  activityType: 'watching',
                   activityText: presenceText,
                   media,
                 }))
