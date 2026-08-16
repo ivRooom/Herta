@@ -12,6 +12,7 @@ import {
 import type { CommandHandler } from '@herta/plugin-sdk';
 import {
   generateAmidakujiLadder,
+  parseAmidakujiResultLabels,
   renderAmidakujiPng,
   type AmidakujiLadder,
 } from './mini-games-amidakuji-core.js';
@@ -24,6 +25,7 @@ interface AmidakujiSession {
   guildId: string;
   memberCount: number;
   allowDuplicate: boolean;
+  resultLabels: string[];
   ladder: AmidakujiLadder;
   selections: Map<string, { userId: string; displayName: string; slot: number }>;
   expiresAt: number;
@@ -83,6 +85,19 @@ async function startAmidakuji(
     return;
   }
 
+  const resultLabels = parseAmidakujiResultLabels(
+    interaction.options.getString('results'),
+    memberCount,
+  );
+  if (!resultLabels) {
+    await interaction.reply({
+      content:
+        'resultsは参加人数と同じ件数を、カンマ・読点・改行のいずれかで区切って指定してください。各結果は50文字以内です。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
   const sessionId = randomUUID().replaceAll('-', '');
   const ladder = generateAmidakujiLadder(memberCount);
   const timeoutSeconds = Math.max(30, Math.min(300, config.sessionTimeoutSeconds));
@@ -91,6 +106,7 @@ async function startAmidakuji(
     guildId: interaction.guildId,
     memberCount,
     allowDuplicate,
+    resultLabels,
     ladder,
     selections: new Map(),
     expiresAt: Date.now() + timeoutSeconds * 1000,
@@ -245,6 +261,7 @@ function renderWaiting(session: AmidakujiSession): string {
   return [
     '🪜 **あみだくじ**',
     `参加人数: **${session.memberCount}人** · 同じ場所: **${session.allowDuplicate ? '選択可' : '選択不可'}**`,
+    `結果候補: ${session.resultLabels.map((label, index) => `**${index + 1}. ${label}**`).join(' / ')}`,
     '中央の経路はまだ隠れています。下のButtonから開始位置を選んでください。',
     `選択済み: **${session.selections.size}/${session.memberCount}人**`,
     ...(selections.length ? ['', ...selections] : []),
@@ -256,7 +273,8 @@ function renderResult(session: AmidakujiSession): string {
     .sort((a, b) => a.slot - b.slot || a.userId.localeCompare(b.userId))
     .map((selection) => {
       const result = session.ladder.results[selection.slot] ?? selection.slot;
-      return `• ${selection.displayName}: **${selection.slot + 1}番 → 結果 ${result + 1}番**`;
+      const resultLabel = session.resultLabels[result] ?? `${result + 1}番`;
+      return `• ${selection.displayName}: **${selection.slot + 1}番 → ${resultLabel}**`;
     });
   return ['🪜 **あみだくじ結果**', '隠れていた経路を公開しました！', '', ...lines].join('\n');
 }
