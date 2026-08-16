@@ -1,0 +1,111 @@
+name: Temporary Message Studio Navigation Updater
+
+on:
+  push:
+    branches:
+      - feature/message-studio-navigation
+
+permissions:
+  contents: write
+
+jobs:
+  update-navigation:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/message-studio-navigation
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Promote Message Studio to Current Server
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          nav = Path('apps/studio/src/lib/studio-navigation.ts')
+          text = nav.read_text()
+          old = """  {
+              id: 'guild-daily-content',
+              path: 'daily-content',
+              label: 'Daily Content',
+              description: 'Daily Contentの設定を管理する',
+              keywords: ['daily', 'daily content', 'content', 'デイリー', 'コンテンツ'],
+              icon: 'daily',
+              group: 'community',
+            },"""
+          new = """  {
+              id: 'guild-daily-content',
+              path: 'daily-content',
+              label: 'Message Studio',
+              description: 'Bot発言・お知らせ・予約投稿・定期投稿を作成する',
+              keywords: [
+                'message studio',
+                'bot message',
+                'announce',
+                'say',
+                'scheduled post',
+                'recurring post',
+                'forum',
+                'daily content',
+                'Bot発言',
+                'お知らせ',
+                '予約投稿',
+                '定期投稿',
+                'フォーラム',
+              ],
+              icon: 'message',
+              group: 'current-server',
+            },"""
+          if old not in text:
+              raise SystemExit('navigation target block was not found')
+          nav.write_text(text.replace(old, new))
+
+          test = Path('apps/studio/src/lib/studio-navigation.test.ts')
+          text = test.read_text()
+          marker = """  assert.ok(
+              commands.some(
+                (command) => command.id === 'guild-overview' && command.description.includes('Test Guild'),
+              ),
+            );"""
+          addition = marker + """
+            assert.ok(
+              commands.some(
+                (command) =>
+                  command.id === 'guild-daily-content' &&
+                  command.group === 'current-server' &&
+                  command.label === 'Message Studio' &&
+                  command.href === `/dashboard/guilds/${GUILD_ID}/daily-content`,
+              ),
+            );"""
+          if marker not in text:
+              raise SystemExit('test insertion marker was not found')
+          text = text.replace(marker, addition)
+          search_marker = """  assert.ok(
+              filterStudioCommandItems(commands, 'xp operations').some(
+                (command) => command.id === 'guild-xp-operations',
+              ),
+            );"""
+          search_addition = search_marker + """
+            assert.ok(
+              filterStudioCommandItems(commands, 'Bot発言 予約投稿').some(
+                (command) => command.id === 'guild-daily-content',
+              ),
+            );"""
+          if search_marker not in text:
+              raise SystemExit('search test insertion marker was not found')
+          test.write_text(text.replace(search_marker, search_addition))
+          PY
+      - name: Format updated files
+        run: pnpm exec prettier --write apps/studio/src/lib/studio-navigation.ts apps/studio/src/lib/studio-navigation.test.ts
+      - name: Commit navigation update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/studio/src/lib/studio-navigation.ts apps/studio/src/lib/studio-navigation.test.ts
+          git commit -m "Expose Message Studio in Current Server navigation"
+          git push origin HEAD:feature/message-studio-navigation
