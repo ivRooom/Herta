@@ -13,6 +13,8 @@ CREATE TABLE "studio_access_policies" (
   CONSTRAINT "studio_access_policies_pkey" PRIMARY KEY ("id")
 );
 
+CREATE UNIQUE INDEX "studio_access_policies_guild_id_name_key"
+  ON "studio_access_policies"("guild_id", "name");
 CREATE UNIQUE INDEX "studio_access_policies_guild_id_name_ci_key"
   ON "studio_access_policies"("guild_id", lower("name"));
 CREATE UNIQUE INDEX "studio_access_policies_id_guild_id_key"
@@ -33,6 +35,8 @@ CREATE TABLE "studio_access_groups" (
   CONSTRAINT "studio_access_groups_pkey" PRIMARY KEY ("id")
 );
 
+CREATE UNIQUE INDEX "studio_access_groups_guild_id_name_key"
+  ON "studio_access_groups"("guild_id", "name");
 CREATE UNIQUE INDEX "studio_access_groups_guild_id_name_ci_key"
   ON "studio_access_groups"("guild_id", lower("name"));
 CREATE UNIQUE INDEX "studio_access_groups_id_guild_id_key"
