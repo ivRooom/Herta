@@ -1,13 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import type {
-  DiscordRoleOperationRecord,
-  StoredRuleRuntimeRecord,
-} from '@herta/db';
+import type { DiscordRoleOperationRecord, StoredRuleRuntimeRecord } from '@herta/db';
 import {
   RULE_ACTION_ROLE_CREATE,
   RULE_ACTION_ROLE_DELETE,
-  RULE_CONDITION_CHANNEL_IS,
-  RULE_TRIGGER_MESSAGE_CREATED,
+  RULE_CONDITION_UTC_HOUR_IS,
   RULE_TRIGGER_SCHEDULE_MINUTE,
   RuleProductionRuntime,
   deriveRoleCreateIdempotency,
@@ -17,10 +13,6 @@ import {
 
 const GUILD_ID = '12345678901234567';
 const ACTOR_ID = '22345678901234567';
-const USER_ID = '32345678901234567';
-const CHANNEL_ID = '42345678901234567';
-const OTHER_CHANNEL_ID = '52345678901234567';
-const MESSAGE_ID = '62345678901234567';
 const ROLE_ID = '72345678901234567';
 const RULE_ID = '11111111-1111-4111-8111-111111111111';
 const NOW = new Date('2026-08-17T12:00:00.000Z');
@@ -34,7 +26,7 @@ function storedRule(overrides: Partial<StoredRuleRuntimeRecord> = {}): StoredRul
     enabled: true,
     priority: 10,
     schemaVersion: 1,
-    trigger: { type: RULE_TRIGGER_MESSAGE_CREATED, config: {} },
+    trigger: { type: RULE_TRIGGER_SCHEDULE_MINUTE, config: { everyMinutes: 1 } },
     conditions: [],
     actions: [{ type: RULE_ACTION_ROLE_CREATE, config: { roleName: 'Event', roleColor: 0 } }],
     cooldownMs: 0,
@@ -74,7 +66,6 @@ function createHarness(input?: {
   authorized?: boolean;
   canCreate?: boolean;
   canDelete?: boolean;
-  scheduleGuildIds?: string[];
 }) {
   const rules = input?.rules ?? [storedRule()];
   const seen = new Set<string>();
@@ -98,7 +89,7 @@ function createHarness(input?: {
           (rule.trigger as Record<string, unknown>)['type'] === triggerType,
       ),
     ),
-    listGuildIdsWithTrigger: vi.fn(async () => input?.scheduleGuildIds ?? []),
+    listGuildIdsWithTrigger: vi.fn(async () => [GUILD_ID]),
     reserveExecution,
     recordExecution,
     recordInvalidRule,
@@ -123,7 +114,6 @@ function createHarness(input?: {
   const runtime = new RuleProductionRuntime({ store, security, logger, now: () => NOW });
   return {
     runtime,
-    store,
     security,
     enqueueRoleCreate,
     enqueueRoleDelete,
@@ -132,21 +122,16 @@ function createHarness(input?: {
   };
 }
 
-async function dispatchMessage(runtime: RuleProductionRuntime, channelId = CHANNEL_ID) {
-  await runtime.handleMessageCreated({
-    guildId: GUILD_ID,
-    messageId: MESSAGE_ID,
-    channelId,
-    userId: USER_ID,
-    timestamp: NOW,
-  });
+function nextMinute(date: Date): Date {
+  return new Date(date.getTime() + 60_000);
 }
 
 describe('RuleProductionRuntime', () => {
-  it('production message triggerからRole create Operationを生成する', async () => {
+  it('schedule production triggerからRole create Operationを生成する', async () => {
     const harness = createHarness();
+    const minuteEpoch = Math.floor(NOW.getTime() / 60_000);
 
-    await dispatchMessage(harness.runtime);
+    await harness.runtime.scanNow(NOW);
 
     expect(harness.enqueueRoleCreate).toHaveBeenCalledTimes(1);
     expect(harness.enqueueRoleCreate).toHaveBeenCalledWith(
@@ -161,20 +146,46 @@ describe('RuleProductionRuntime', () => {
     );
     expect(harness.recordExecution).toHaveBeenCalledWith(
       expect.objectContaining({
-        triggerExecutionId: `discord-message:${MESSAGE_ID}`,
+        triggerExecutionId: `schedule-minute:${minuteEpoch}`,
         result: expect.objectContaining({ actionsExecuted: true }),
       }),
     );
   });
 
-  it('同一trigger execution再配送ではRoleを重複作成しない', async () => {
+  it('同一minuteはprocess内で再評価せず、再配送claimでもRoleを重複作成しない', async () => {
     const harness = createHarness();
 
-    await dispatchMessage(harness.runtime);
-    await dispatchMessage(harness.runtime);
+    await harness.runtime.scanNow(NOW);
+    await harness.runtime.scanNow(NOW);
+    expect(harness.enqueueRoleCreate).toHaveBeenCalledTimes(1);
+
+    // process再起動相当: 同じStore claimを共有する別runtimeへ同一minuteを再配送する。
+    const replay = new RuleProductionRuntime({
+      store: {
+        listRules: async () => [storedRule()],
+        listGuildIdsWithTrigger: async () => [GUILD_ID],
+        reserveExecution: harness.reserveExecution,
+        recordExecution: harness.recordExecution,
+        recordInvalidRule: async () => undefined,
+        enqueueRoleCreate: harness.enqueueRoleCreate,
+        enqueueRoleDelete: harness.enqueueRoleDelete,
+      },
+      security: harness.security,
+      logger: {
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        fatal: vi.fn(),
+        trace: vi.fn(),
+        child: vi.fn(),
+        level: 'info',
+      } as never,
+      now: () => NOW,
+    });
+    await replay.scanNow(NOW);
 
     expect(harness.enqueueRoleCreate).toHaveBeenCalledTimes(1);
-    expect(harness.reserveExecution).toHaveBeenCalledTimes(2);
     expect(harness.recordExecution).toHaveBeenLastCalledWith(
       expect.objectContaining({
         result: expect.objectContaining({
@@ -189,14 +200,12 @@ describe('RuleProductionRuntime', () => {
     const harness = createHarness({
       rules: [
         storedRule({
-          conditions: [
-            { type: RULE_CONDITION_CHANNEL_IS, config: { channelId: OTHER_CHANNEL_ID } },
-          ],
+          conditions: [{ type: RULE_CONDITION_UTC_HOUR_IS, config: { hour: 13 } }],
         }),
       ],
     });
 
-    await dispatchMessage(harness.runtime);
+    await harness.runtime.scanNow(NOW);
 
     expect(harness.enqueueRoleCreate).not.toHaveBeenCalled();
     expect(harness.reserveExecution).not.toHaveBeenCalled();
@@ -210,7 +219,7 @@ describe('RuleProductionRuntime', () => {
   it('Rule creatorがroot authorizationを失っている場合はfail closedする', async () => {
     const harness = createHarness({ authorized: false });
 
-    await dispatchMessage(harness.runtime);
+    await harness.runtime.scanNow(NOW);
 
     expect(harness.enqueueRoleCreate).not.toHaveBeenCalled();
     expect(harness.recordExecution).toHaveBeenCalledWith(
@@ -220,17 +229,15 @@ describe('RuleProductionRuntime', () => {
     );
   });
 
-  it('別GuildのRoleとして検証できないdelete targetはenqueueしない', async () => {
+  it('現在のGuildで削除可能と検証できないRoleはenqueueしない', async () => {
     const harness = createHarness({
       canDelete: false,
       rules: [
-        storedRule({
-          actions: [{ type: RULE_ACTION_ROLE_DELETE, config: { roleId: ROLE_ID } }],
-        }),
+        storedRule({ actions: [{ type: RULE_ACTION_ROLE_DELETE, config: { roleId: ROLE_ID } }] }),
       ],
     });
 
-    await dispatchMessage(harness.runtime);
+    await harness.runtime.scanNow(NOW);
 
     expect(harness.enqueueRoleDelete).not.toHaveBeenCalled();
     expect(harness.recordExecution).toHaveBeenCalledWith(
@@ -245,36 +252,30 @@ describe('RuleProductionRuntime', () => {
     );
   });
 
-  it('schedule triggerからRole create Operationを生成できる', async () => {
+  it('everyMinutesに一致しないscheduleではActionを実行しない', async () => {
     const minuteEpoch = Math.floor(NOW.getTime() / 60_000);
-    const everyMinutes = 5;
-    const offsetMinutes = minuteEpoch % everyMinutes;
     const harness = createHarness({
-      scheduleGuildIds: [GUILD_ID],
       rules: [
         storedRule({
           trigger: {
             type: RULE_TRIGGER_SCHEDULE_MINUTE,
-            config: { everyMinutes, offsetMinutes },
+            config: { everyMinutes: 5, offsetMinutes: (minuteEpoch + 1) % 5 },
           },
         }),
       ],
     });
 
-    await harness.runtime.scanScheduleNow(NOW);
+    await harness.runtime.scanNow(nextMinute(NOW));
 
-    expect(harness.enqueueRoleCreate).toHaveBeenCalledTimes(1);
-    expect(harness.recordExecution).toHaveBeenCalledWith(
-      expect.objectContaining({ triggerExecutionId: `schedule-minute:${minuteEpoch}` }),
-    );
+    expect(harness.enqueueRoleCreate).not.toHaveBeenCalled();
   });
 });
 
 describe('deriveRoleCreateIdempotency', () => {
-  it('同一execution/actionは同じoperation IDになりpayload変更はfingerprint conflictへ変換できる', () => {
+  it('同一execution/actionは同じoperation IDになりpayload変更ではfingerprintだけ変わる', () => {
     const base = {
       ruleId: RULE_ID,
-      triggerExecutionId: `discord-message:${MESSAGE_ID}`,
+      triggerExecutionId: `schedule-minute:${Math.floor(NOW.getTime() / 60_000)}`,
       actionIndex: 0,
       actionType: RULE_ACTION_ROLE_CREATE,
       roleName: 'Event',
