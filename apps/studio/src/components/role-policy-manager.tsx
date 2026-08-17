@@ -5,8 +5,9 @@ import { useRouter } from 'next/navigation';
 import { Braces, Check, LockKeyhole, Save, Shield, Trash2 } from 'lucide-react';
 import {
   STUDIO_ACCESS_POLICY_VERSION,
+  STUDIO_GUI_PERMISSION_SID,
   STUDIO_POLICY_ACTIONS,
-  createStudioRolePolicyFromActions,
+  setStudioGuiActions,
   type StudioAccessPolicy,
   type StudioPolicyAction,
 } from '@/lib/studio-access-policy';
@@ -68,7 +69,8 @@ export function RolePolicyManager({
   const storedPolicy = policyMap.get(selectedRoleId)?.policy;
   const draft =
     draftByRole[selectedRoleId] ?? JSON.stringify(storedPolicy ?? emptyPolicy(), null, 2);
-  const selectedActions = extractGuiActions(parsePolicy(draft));
+  const parsedDraft = parsePolicy(draft);
+  const selectedActions = extractGuiActions(parsedDraft);
   const isProtectedRoot = selectedRoleId === rootRoleId;
 
   function setDraft(value: string) {
@@ -80,7 +82,8 @@ export function RolePolicyManager({
     const next = new Set(selectedActions);
     if (next.has(action)) next.delete(action);
     else next.add(action);
-    setDraft(JSON.stringify(createStudioRolePolicyFromActions(guildId, [...next]), null, 2));
+    const currentPolicy = parsedDraft ?? emptyPolicy();
+    setDraft(JSON.stringify(setStudioGuiActions(currentPolicy, guildId, [...next]), null, 2));
   }
 
   async function savePolicy() {
@@ -340,9 +343,11 @@ function parsePolicy(value: string): StudioAccessPolicy | null {
 function extractGuiActions(policy: StudioAccessPolicy | null): Set<StudioPolicyAction> {
   if (!policy) return new Set();
   const supported = new Set<string>(STUDIO_POLICY_ACTIONS);
+  const guiStatement = policy.Statement.find(
+    (statement) => statement.Sid === STUDIO_GUI_PERMISSION_SID && statement.Effect === 'Allow',
+  );
+  if (!guiStatement) return new Set();
   return new Set(
-    policy.Statement.filter((statement) => statement.Effect === 'Allow')
-      .flatMap((statement) => statement.Action)
-      .filter((action): action is StudioPolicyAction => supported.has(action)),
+    guiStatement.Action.filter((action): action is StudioPolicyAction => supported.has(action)),
   );
 }
