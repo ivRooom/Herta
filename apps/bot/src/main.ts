@@ -49,6 +49,11 @@ const ruleRuntime = process.env['DATABASE_URL']
       logger,
     })
   : undefined;
+
+bot.setRuleRuntimeEventSink(
+  ruleRuntime ? { memberJoined: (input) => ruleRuntime.dispatchMemberJoined(input) } : undefined,
+);
+
 const version = process.env['HERTA_VERSION']?.trim() || '0.1.0';
 const healthService = new HertaHealthService({
   config: healthConfig,

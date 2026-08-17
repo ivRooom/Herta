@@ -18,6 +18,7 @@ import type { ActionResult, ConditionNode, RuleDefinition, TriggerEvent } from '
 import type { Logger } from '@herta/logger';
 
 export const RULE_TRIGGER_SCHEDULE_MINUTE = 'schedule.minute';
+export const RULE_TRIGGER_MEMBER_JOINED = 'member.joined';
 export const RULE_ACTION_ROLE_CREATE = 'discord.role.create';
 export const RULE_ACTION_ROLE_CREATE_TEMPORARY = 'discord.role.create-temporary';
 export const RULE_ACTION_ROLE_DELETE = 'discord.role.delete';
@@ -154,6 +155,27 @@ export class RuleProductionRuntime {
     });
     this.scheduleRun = run;
     return run;
+  }
+
+  async dispatchMemberJoined(input: {
+    guildId: string;
+    userId: string;
+    joinedAt: Date;
+  }): Promise<void> {
+    if (this.closed) return;
+    assertSnowflake(input.guildId, 'guildId');
+    assertSnowflake(input.userId, 'userId');
+    assertValidDate(input.joinedAt, 'joinedAt');
+    const triggerExecutionId = `member-joined:${input.guildId}:${input.userId}:${input.joinedAt.getTime()}`;
+    await this.dispatch(
+      {
+        type: RULE_TRIGGER_MEMBER_JOINED,
+        guildId: input.guildId,
+        data: { userId: input.userId },
+        timestamp: input.joinedAt,
+      },
+      triggerExecutionId,
+    );
   }
 
   async close(): Promise<void> {
@@ -293,6 +315,14 @@ export class RuleProductionRuntime {
         const minuteEpoch = Math.floor(event.timestamp.getTime() / 60_000);
         return (minuteEpoch - offsetMinutes) % everyMinutes === 0;
       },
+    });
+
+    this.triggers.register({
+      type: RULE_TRIGGER_MEMBER_JOINED,
+      name: 'Member joined',
+      description: 'Discord GuildMemberAddを評価するproduction trigger',
+      configSchema: {},
+      evaluate: async (event) => event.type === RULE_TRIGGER_MEMBER_JOINED,
     });
 
     this.conditions.register({

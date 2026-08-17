@@ -2,8 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Clock3, Plus, Save, ShieldAlert, Trash2 } from 'lucide-react';
-import type { RuleStudioActionType, RuleStudioView } from '@/lib/rule-studio';
+import { Clock3, Plus, Save, ShieldAlert, Trash2, UserPlus } from 'lucide-react';
+import type {
+  RuleStudioActionType,
+  RuleStudioTriggerType,
+  RuleStudioView,
+} from '@/lib/rule-studio';
 
 interface RoleOption {
   id: string;
@@ -17,6 +21,7 @@ const DEFAULT_DRAFT = {
   description: '',
   enabled: true,
   priority: 0,
+  triggerType: 'schedule.minute' as RuleStudioTriggerType,
   everyMinutes: 60,
   offsetMinutes: 0,
   conditionHour: null as number | null,
@@ -60,6 +65,15 @@ export function RuleStudioManager({
 
   function patch<K extends keyof typeof DEFAULT_DRAFT>(key: K, value: (typeof DEFAULT_DRAFT)[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
+    setNotice(null);
+  }
+
+  function changeTriggerType(triggerType: RuleStudioTriggerType) {
+    setDraft((current) => ({
+      ...current,
+      triggerType,
+      conditionHour: triggerType === 'schedule.minute' ? current.conditionHour : null,
+    }));
     setNotice(null);
   }
 
@@ -144,7 +158,8 @@ export function RuleStudioManager({
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">Automation</p>
           <h2 className="mt-1 text-xl font-semibold">Rule Studio</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-            Production runtimeで対応済みのSchedule TriggerとDiscord Role ActionをGUIで設定します。
+            Production runtimeで対応済みのSchedule / Member joined TriggerとDiscord Role
+            ActionをGUIで設定します。
           </p>
         </div>
         <PermissionButton
@@ -261,50 +276,80 @@ export function RuleStudioManager({
 
             <div className="rounded-xl border border-border bg-background p-4">
               <div className="flex items-center gap-2">
-                <Clock3 className="h-4 w-4 text-primary" aria-hidden="true" />
-                <h3 className="font-semibold">Trigger · schedule.minute</h3>
+                {draft.triggerType === 'schedule.minute' ? (
+                  <Clock3 className="h-4 w-4 text-primary" aria-hidden="true" />
+                ) : (
+                  <UserPlus className="h-4 w-4 text-primary" aria-hidden="true" />
+                )}
+                <h3 className="font-semibold">Trigger</h3>
               </div>
-              <div className="mt-4 grid gap-4 sm:grid-cols-3">
-                <Field label="実行間隔（分）">
-                  <input
-                    type="number"
-                    min={1}
-                    max={1440}
-                    value={draft.everyMinutes}
-                    onChange={(event) => patch('everyMinutes', Number(event.target.value))}
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="Offset（分）">
-                  <input
-                    type="number"
-                    min={0}
-                    max={Math.max(0, draft.everyMinutes - 1)}
-                    value={draft.offsetMinutes}
-                    onChange={(event) => patch('offsetMinutes', Number(event.target.value))}
-                    className={inputClass}
-                  />
-                </Field>
-                <Field label="UTC時刻条件（任意）">
+              <div className="mt-4 max-w-sm">
+                <Field label="Trigger種別">
                   <select
-                    value={draft.conditionHour === null ? '' : String(draft.conditionHour)}
+                    value={draft.triggerType}
                     onChange={(event) =>
-                      patch(
-                        'conditionHour',
-                        event.target.value === '' ? null : Number(event.target.value),
-                      )
+                      changeTriggerType(event.target.value as RuleStudioTriggerType)
                     }
                     className={inputClass}
                   >
-                    <option value="">指定なし</option>
-                    {Array.from({ length: 24 }, (_, hour) => (
-                      <option key={hour} value={hour}>
-                        {hour}:00 UTC
-                      </option>
-                    ))}
+                    <option value="schedule.minute">Schedule</option>
+                    <option value="member.joined">Member joined</option>
                   </select>
                 </Field>
               </div>
+              {draft.triggerType === 'schedule.minute' ? (
+                <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                  <Field label="実行間隔（分）">
+                    <input
+                      type="number"
+                      min={1}
+                      max={1440}
+                      value={draft.everyMinutes}
+                      onChange={(event) => patch('everyMinutes', Number(event.target.value))}
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="Offset（分）">
+                    <input
+                      type="number"
+                      min={0}
+                      max={Math.max(0, draft.everyMinutes - 1)}
+                      value={draft.offsetMinutes}
+                      onChange={(event) => patch('offsetMinutes', Number(event.target.value))}
+                      className={inputClass}
+                    />
+                  </Field>
+                  <Field label="UTC時刻条件（任意）">
+                    <select
+                      value={draft.conditionHour === null ? '' : String(draft.conditionHour)}
+                      onChange={(event) =>
+                        patch(
+                          'conditionHour',
+                          event.target.value === '' ? null : Number(event.target.value),
+                        )
+                      }
+                      className={inputClass}
+                    >
+                      <option value="">指定なし</option>
+                      {Array.from({ length: 24 }, (_, hour) => (
+                        <option key={hour} value={hour}>
+                          {hour}:00 UTC
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+              ) : (
+                <div className="mt-4 rounded-lg border border-blue-500/25 bg-blue-500/5 p-3 text-sm leading-6 text-muted">
+                  <p className="font-semibold text-foreground">
+                    新しいメンバーがGuildへ参加したときに実行します。
+                  </p>
+                  <p className="mt-1">
+                    BotでGuild Members Intentが有効な環境で動作します。Message Content
+                    Intentは不要です。
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="rounded-xl border border-border bg-background p-4">
