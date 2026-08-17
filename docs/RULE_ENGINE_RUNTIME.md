@@ -152,4 +152,4 @@ Studioの **Role Manager > Rule Engine 実行履歴** から直近30件をGuild 
 
 ## v1 scope
 
-v1は安全にproductionへ接続する最小縦切りとして` schedule.minute `のみをproduction Triggerにしています。Message / reaction / voice / achievement / moderation / webhook TriggerやRule編集UIは後続フェーズです。Triggerを追加するときもstable execution IDを必須にし、同じRuntime Store / Action boundaryを再利用します。
+v1は安全にproductionへ接続する最小縦切りとして`schedule.minute`のみをproduction Triggerにしています。Message / reaction / voice / achievement / moderation / webhook TriggerやRule編集UIは後続フェーズです。Triggerを追加するときもstable execution IDを必須にし、同じRuntime Store / Action boundaryを再利用します。

@@ -270,7 +270,11 @@ async function shutdown(signal: 'SIGINT' | 'SIGTERM'): Promise<void> {
   await stopHealthSnapshotCollection();
   logger.info({ signal }, 'シャットダウン中...');
 
-  const results = await Promise.allSettled([ruleRuntime?.close(), healthServer?.stop(), bot.stop()]);
+  const results = await Promise.allSettled([
+    ruleRuntime?.close(),
+    healthServer?.stop(),
+    bot.stop(),
+  ]);
   const rejected = results.filter((result) => result.status === 'rejected').length;
   if (rejected > 0) {
     logger.error({ rejected }, 'シャットダウン処理の一部が失敗しました');

@@ -32,10 +32,18 @@ export function RuleExecutionHistory({ entries }: { entries: RuleExecutionHistor
           <table className="min-w-full divide-y divide-border text-left text-sm">
             <thead className="bg-background text-xs text-muted">
               <tr>
-                <th scope="col" className="px-4 py-3 font-semibold">Rule</th>
-                <th scope="col" className="px-4 py-3 font-semibold">Trigger</th>
-                <th scope="col" className="px-4 py-3 font-semibold">結果</th>
-                <th scope="col" className="px-4 py-3 font-semibold">実行日時</th>
+                <th scope="col" className="px-4 py-3 font-semibold">
+                  Rule
+                </th>
+                <th scope="col" className="px-4 py-3 font-semibold">
+                  Trigger
+                </th>
+                <th scope="col" className="px-4 py-3 font-semibold">
+                  結果
+                </th>
+                <th scope="col" className="px-4 py-3 font-semibold">
+                  実行日時
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -65,7 +73,9 @@ export function RuleExecutionHistory({ entries }: { entries: RuleExecutionHistor
                         {result.label}
                       </span>
                       {result.detail ? (
-                        <p className="mt-1 max-w-md text-xs leading-5 text-muted">{result.detail}</p>
+                        <p className="mt-1 max-w-md text-xs leading-5 text-muted">
+                          {result.detail}
+                        </p>
                       ) : null}
                       {entry.durationMs !== null ? (
                         <p className="mt-1 text-[10px] text-muted">{entry.durationMs} ms</p>

@@ -41,10 +41,7 @@ export interface StoredRuleRuntimeRecord {
 }
 
 export type RuleExecutionReservationReason =
-  | 'rule-disabled'
-  | 'duplicate-event'
-  | 'max-executions'
-  | 'cooldown';
+  'rule-disabled' | 'duplicate-event' | 'max-executions' | 'cooldown';
 
 export type RuleExecutionReservation =
   | { allowed: true; executionCount: number }
@@ -71,8 +68,7 @@ interface LockedRuleRow {
 }
 
 const DISCORD_ID_PATTERN = /^\d{17,20}$/u;
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const MAX_TRIGGER_TYPE_LENGTH = 96;
 const MAX_TRIGGER_EXECUTION_ID_LENGTH = 160;
 const MAX_LOG_ERROR_LENGTH = 500;

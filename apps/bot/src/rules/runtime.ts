@@ -258,9 +258,7 @@ export class RuleProductionRuntime {
       triggerExecutionId: context.triggerExecutionId,
       now: this.now(),
     });
-    return reservation.allowed
-      ? { allowed: true }
-      : { allowed: false, reason: reservation.reason };
+    return reservation.allowed ? { allowed: true } : { allowed: false, reason: reservation.reason };
   }
 
   private createActionContext(input: RuleActionContextInput): RoleActionContext {
@@ -552,9 +550,14 @@ function parseCreateRoleConfig(
 
 function requireBaseContext(value: unknown): RuleBaseContext {
   const record = requireRecord(value, 'ruleRuntimeContext');
-  if (typeof record['triggerExecutionId'] !== 'string') throw new Error('InvalidRuleRuntimeContext');
+  if (typeof record['triggerExecutionId'] !== 'string')
+    throw new Error('InvalidRuleRuntimeContext');
   if (!(record['metadata'] instanceof Map)) throw new Error('InvalidRuleRuntimeContext');
-  if (typeof record['data'] !== 'object' || record['data'] === null || Array.isArray(record['data'])) {
+  if (
+    typeof record['data'] !== 'object' ||
+    record['data'] === null ||
+    Array.isArray(record['data'])
+  ) {
     throw new Error('InvalidRuleRuntimeContext');
   }
   return value as RuleBaseContext;
@@ -571,7 +574,10 @@ function requireRoleActionContext(value: unknown): RoleActionContext {
     160,
   );
   const actionIndex = parseInteger(record['actionIndex'], 0, MAX_RULE_ACTIONS - 1, 'actionIndex');
-  if (!(record['eventTimestamp'] instanceof Date) || Number.isNaN(record['eventTimestamp'].getTime())) {
+  if (
+    !(record['eventTimestamp'] instanceof Date) ||
+    Number.isNaN(record['eventTimestamp'].getTime())
+  ) {
     throw new Error('InvalidRuleEventTimestamp');
   }
   return {

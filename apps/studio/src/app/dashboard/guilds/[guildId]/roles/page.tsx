@@ -1,7 +1,4 @@
-import {
-  listRecentDiscordRoleOperations,
-  listRecentRuleRuntimeExecutionLogs,
-} from '@herta/db';
+import { listRecentDiscordRoleOperations, listRecentRuleRuntimeExecutionLogs } from '@herta/db';
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, LockKeyhole, ShieldCheck, SlidersHorizontal } from 'lucide-react';
 import { notFound } from 'next/navigation';
