@@ -75,6 +75,8 @@ export interface EvaluationResult {
   conditionsMet: boolean;
   actionsExecuted: boolean;
   actionResults: ActionResult[];
+  /** cooldown / max executions / authorization 等でAction実行前に安全側へ停止した理由 */
+  actionSkipReason?: string;
   error?: string;
   durationMs: number;
 }
