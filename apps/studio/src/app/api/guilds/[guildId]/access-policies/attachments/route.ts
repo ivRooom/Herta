@@ -49,22 +49,24 @@ async function mutateAttachment(
 
   const body = await parseJsonBody(request);
   if ('response' in body) return body.response;
-  const policyId = typeof body.value.policyId === 'string' ? body.value.policyId : '';
+  const rawPolicyId = typeof body.value.policyId === 'string' ? body.value.policyId : '';
   const principalType =
     typeof body.value.principalType === 'string' ? body.value.principalType : '';
-  const principalId = typeof body.value.principalId === 'string' ? body.value.principalId : '';
-  if (!POLICY_ID_PATTERN.test(policyId)) {
+  const rawPrincipalId = typeof body.value.principalId === 'string' ? body.value.principalId : '';
+  if (!POLICY_ID_PATTERN.test(rawPolicyId)) {
     return NextResponse.json({ error: 'Policy IDが不正です' }, { status: 400 });
   }
   if (!isStudioAccessPrincipalType(principalType)) {
     return NextResponse.json({ error: 'Principal種別が不正です' }, { status: 400 });
   }
 
-  const principalFormatError = validatePrincipalIdFormat(principalType, principalId);
+  const principalFormatError = validatePrincipalIdFormat(principalType, rawPrincipalId);
   if (principalFormatError) {
     return NextResponse.json({ error: principalFormatError }, { status: 400 });
   }
 
+  const policyId = rawPolicyId.toLowerCase();
+  const principalId = principalType === 'group' ? rawPrincipalId.toLowerCase() : rawPrincipalId;
   const policy = await findManagedStudioAccessPolicy(prisma, guildId, policyId);
   if (!policy) return NextResponse.json({ error: 'Policyが見つかりません' }, { status: 404 });
 
