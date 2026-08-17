@@ -16,6 +16,7 @@ import {
   parseGuildMessageStudioSendInput,
   sendGuildMessageStudioMessage,
 } from './message-studio-send.js';
+import { handleGuildRoleLifecycleHttpRequest } from './guild-role-lifecycle-http.js';
 import { createUnknownHealthResponse } from './service.js';
 import type { HertaHealthResponse, PublicServiceStatus } from './types.js';
 
@@ -160,6 +161,22 @@ export class HealthHttpServer {
     const method = request.method ?? 'GET';
     const requestUrl = new URL(request.url ?? '/', 'http://localhost');
     const pathname = requestUrl.pathname;
+
+    const guildRoleLifecycleMatch = /^\/internal\/guilds\/(\d+)\/roles(?:\/(\d+))?$/u.exec(
+      pathname,
+    );
+    if (guildRoleLifecycleMatch) {
+      await handleGuildRoleLifecycleHttpRequest({
+        request,
+        response,
+        method,
+        guildId: guildRoleLifecycleMatch[1]!,
+        ...(guildRoleLifecycleMatch[2] ? { roleId: guildRoleLifecycleMatch[2] } : {}),
+        internalApiSecret: this.options.internalApiSecret,
+        logger: this.options.logger,
+      });
+      return;
+    }
 
     const guildMessageStudioMatch = /^\/internal\/guilds\/(\d+)\/message-studio\/send$/u.exec(
       pathname,

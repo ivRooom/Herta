@@ -4,6 +4,10 @@ import { HERTA_WORKER_HEARTBEAT_INTERVAL_MS, HERTA_WORKER_HEARTBEAT_KEY } from '
 import { Redis } from 'ioredis';
 import { startCommunitySeasonRuntime, type CommunitySeasonRuntime } from './community-seasons.js';
 import { startDailyContentRuntime, type DailyContentRuntime } from './daily-content.js';
+import {
+  startDiscordRoleLifecycleRuntime,
+  type DiscordRoleLifecycleRuntime,
+} from './discord-role-lifecycle.js';
 import { startLfgRuntime, type LfgRuntime } from './lfg.js';
 import { startTeamSplitRuntime, type TeamSplitWorkerRuntime } from './team-split.js';
 
@@ -16,6 +20,7 @@ let redis: Redis | undefined;
 let heartbeatTimer: NodeJS.Timeout | undefined;
 let communitySeasonRuntime: CommunitySeasonRuntime | undefined;
 let dailyContentRuntime: DailyContentRuntime | undefined;
+let discordRoleLifecycleRuntime: DiscordRoleLifecycleRuntime | undefined;
 let lfgRuntime: LfgRuntime | undefined;
 let teamSplitRuntime: TeamSplitWorkerRuntime | undefined;
 let shuttingDown = false;
@@ -67,6 +72,8 @@ async function main() {
   }
 
   const discordBotToken = process.env['DISCORD_BOT_TOKEN']?.trim();
+  const botHealthUrl = process.env['BOT_HEALTH_URL']?.trim() || 'http://bot:3000/healthz';
+  const botInternalApiSecret = process.env['BOT_INTERNAL_API_SECRET']?.trim();
   const databaseConfigured = Boolean(process.env['DATABASE_URL']);
   if (!databaseConfigured) {
     logger.warn('DATABASE_URLが未設定のためPlugin WorkerとSeason Snapshot Workerを開始しません');
@@ -83,6 +90,18 @@ async function main() {
         'Community Season Snapshot Workerの開始に失敗しました',
       );
       process.exit(1);
+    }
+
+    if (!botInternalApiSecret || botInternalApiSecret.length < 32) {
+      logger.warn('BOT_INTERNAL_API_SECRETが未設定または短いためRole Lifecycle Workerを開始しません');
+    } else {
+      discordRoleLifecycleRuntime = startDiscordRoleLifecycleRuntime({
+        prisma: getPrismaClient(),
+        logger,
+        botHealthUrl,
+        internalApiSecret: botInternalApiSecret,
+      });
+      logger.info('Discord Role Lifecycle Workerを開始しました');
     }
 
     if (!discordBotToken) {
@@ -156,6 +175,16 @@ async function shutdown(signal: string): Promise<void> {
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = undefined;
+  }
+
+  try {
+    await discordRoleLifecycleRuntime?.close();
+    discordRoleLifecycleRuntime = undefined;
+  } catch (error) {
+    logger.error(
+      { errorName: resolveErrorName(error) },
+      'Discord Role Lifecycle Workerの終了処理に失敗しました',
+    );
   }
 
   try {
