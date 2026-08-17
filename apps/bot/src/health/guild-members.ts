@@ -82,12 +82,8 @@ function rememberSearch(key: string, members: GuildMemberOption[], now: number):
     const oldestKey = memberSearchCache.keys().next().value as string | undefined;
     if (oldestKey) memberSearchCache.delete(oldestKey);
   }
-  memberSearchCache.set(cacheKeyForStore(key), {
+  memberSearchCache.set(key, {
     expiresAt: now + MEMBER_SEARCH_CACHE_TTL_MS,
     members: members.map(cloneMemberOption),
   });
-}
-
-function cacheKeyForStore(key: string): string {
-  return key;
 }
