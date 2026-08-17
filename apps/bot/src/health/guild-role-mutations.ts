@@ -56,7 +56,11 @@ export async function createGuildRole(
     headers: discordHeaders(token, `Herta Role Manager create ${input.operationId}`),
     body: JSON.stringify({
       name: input.name,
-      color: input.color,
+      colors: {
+        primary_color: input.color,
+        secondary_color: null,
+        tertiary_color: null,
+      },
       permissions: '0',
       hoist: false,
       mentionable: false,
