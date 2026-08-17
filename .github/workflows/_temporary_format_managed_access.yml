@@ -23,8 +23,83 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Format changed access-control files
+      - name: Sync Prisma schema and format changed files
         run: |
+          if ! grep -q '^model StudioAccessPolicy {' packages/db/prisma/schema.prisma; then
+            cat >> packages/db/prisma/schema.prisma <<'PRISMA'
+
+model StudioAccessPolicy {
+  id          String   @id @db.Uuid
+  guildId     String   @map("guild_id")
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(500)
+  document    Json
+  revision    Int      @default(1)
+  createdBy   String   @map("created_by")
+  updatedBy   String   @map("updated_by")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  attachments StudioAccessPolicyAttachment[]
+
+  @@unique([guildId, name])
+  @@unique([id, guildId])
+  @@index([guildId, updatedAt(sort: Desc)])
+  @@map("studio_access_policies")
+}
+
+model StudioAccessGroup {
+  id          String   @id @db.Uuid
+  guildId     String   @map("guild_id")
+  name        String   @db.VarChar(100)
+  description String?  @db.VarChar(500)
+  createdBy   String   @map("created_by")
+  updatedBy   String   @map("updated_by")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  members StudioAccessGroupMember[]
+
+  @@unique([guildId, name])
+  @@unique([id, guildId])
+  @@index([guildId, updatedAt(sort: Desc)])
+  @@map("studio_access_groups")
+}
+
+model StudioAccessGroupMember {
+  groupId   String   @map("group_id") @db.Uuid
+  guildId   String   @map("guild_id")
+  userId    String   @map("user_id")
+  createdBy String   @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  group StudioAccessGroup @relation(fields: [groupId, guildId], references: [id, guildId], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([groupId, userId])
+  @@index([guildId, userId])
+  @@map("studio_access_group_members")
+}
+
+model StudioAccessPolicyAttachment {
+  id            String   @id @db.Uuid
+  policyId      String   @map("policy_id") @db.Uuid
+  guildId       String   @map("guild_id")
+  principalType String   @map("principal_type") @db.VarChar(16)
+  principalId   String   @map("principal_id")
+  createdBy     String   @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  policy StudioAccessPolicy @relation(fields: [policyId, guildId], references: [id, guildId], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([policyId, principalType, principalId])
+  @@index([guildId, principalType, principalId])
+  @@index([guildId, policyId])
+  @@map("studio_access_policy_attachments")
+}
+PRISMA
+          fi
+
+          pnpm --filter @herta/db exec prisma format
           pnpm prettier --write \
             apps/studio/package.json \
             apps/studio/src/app/api/guilds/[guildId]/access-groups \
@@ -43,9 +118,8 @@ jobs:
             packages/db/src/index.ts \
             packages/db/src/studio-access-control.ts \
             packages/db/src/studio-access-control.test.ts \
-            packages/db/src/studio-access-groups-admin.ts \
-            packages/db/prisma/migrations/20260817203000_studio_managed_access_policies_v1/migration.sql
-      - name: Commit formatting
+            packages/db/src/studio-access-groups-admin.ts
+      - name: Commit schema and formatting
         run: |
           if git diff --quiet; then
             exit 0
@@ -53,5 +127,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add apps/studio packages/db
-          git commit -m "style: format managed access changes"
+          git commit -m "style: sync schema and format managed access changes"
           git push origin HEAD:feat/studio-managed-access-policies-v1
