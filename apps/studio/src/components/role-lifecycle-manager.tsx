@@ -2,6 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { describeStudioApiError } from '@/lib/studio-api-feedback';
+import {
+  PermissionDisabledHint,
+  ReadOnlyPermissionNotice,
+  OWNER_ROOT_PERMISSION_HINT,
+} from '@/components/permission-disabled-hint';
 import { CalendarClock, Clock3, Plus, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
 import type { RoleInventoryRole } from '@/lib/role-access-inventory';
 import { roleDeleteBlockReason } from '@/lib/discord-role-lifecycle';
@@ -136,7 +142,16 @@ export function RoleLifecycleManager({
       });
       resetRequestId = response.status < 500;
       const result = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(result?.error || 'Role作成の受付に失敗しました');
+      if (!response.ok) {
+        throw new Error(
+          describeStudioApiError(
+            response.status,
+            result,
+            'Role作成の受付に失敗しました',
+            'role-lifecycle',
+          ),
+        );
+      }
       setName('');
       setNotice({
         kind: 'success',
@@ -172,7 +187,16 @@ export function RoleLifecycleManager({
         { method: 'DELETE' },
       );
       const result = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(result?.error || 'Role削除の受付に失敗しました');
+      if (!response.ok) {
+        throw new Error(
+          describeStudioApiError(
+            response.status,
+            result,
+            'Role削除の受付に失敗しました',
+            'role-lifecycle',
+          ),
+        );
+      }
       setNotice({
         kind: 'success',
         text: `${selectedDeleteRole.name} の削除を受け付けました。`,
@@ -217,13 +241,18 @@ export function RoleLifecycleManager({
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
           <div className="flex gap-2">
             <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />
-            <p>
-              Herta
-              Botに「ロールの管理」権限がありません。Discord側で権限を付与するまでRole本体の変更は実行できません。
-            </p>
+            <div>
+              <p className="font-semibold">Herta BotのDiscord権限が不足しています</p>
+              <p className="mt-1 leading-6">
+                必要な権限は「ロールの管理」です。Discordのサーバー設定 → ロールでHerta
+                Botへ権限を付与し、Herta BotのRoleを操作対象Roleより上に配置してください。
+              </p>
+            </div>
           </div>
         </div>
       ) : null}
+
+      {!canEdit ? <ReadOnlyPermissionNotice /> : null}
 
       <div className="grid gap-5 xl:grid-cols-2">
         <div className="rounded-2xl border border-border bg-background p-4 sm:p-5">
@@ -249,7 +278,8 @@ export function RoleLifecycleManager({
               onChange={(event) => setName(event.target.value)}
               maxLength={100}
               disabled={!canEdit || pendingAction !== null}
-              className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              title={!canEdit ? OWNER_ROOT_PERMISSION_HINT : undefined}
+              className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:grayscale disabled:opacity-40"
               placeholder="例: Summer Event"
             />
 
@@ -263,6 +293,7 @@ export function RoleLifecycleManager({
                     value={color}
                     onChange={(event) => setColor(event.target.value)}
                     disabled={!canEdit || pendingAction !== null}
+                    title={!canEdit ? OWNER_ROOT_PERMISSION_HINT : undefined}
                     className="h-10 w-14 rounded-lg border border-border bg-surface p-1"
                   />
                   <code className="text-xs text-muted">{color.toUpperCase()}</code>
@@ -276,6 +307,7 @@ export function RoleLifecycleManager({
                   value={scheduleMode}
                   onChange={(event) => setScheduleMode(event.target.value as ScheduleMode)}
                   disabled={!canEdit || pendingAction !== null}
+                  title={!canEdit ? OWNER_ROOT_PERMISSION_HINT : undefined}
                   className="mt-1 w-full rounded-xl border border-border bg-surface px-3 py-2 text-base"
                 >
                   <option value="now">今すぐ</option>
@@ -294,6 +326,7 @@ export function RoleLifecycleManager({
                     value={scheduledFor}
                     onChange={(event) => setScheduledFor(event.target.value)}
                     disabled={!canEdit || pendingAction !== null}
+                    title={!canEdit ? OWNER_ROOT_PERMISSION_HINT : undefined}
                     className="block w-full min-w-0 border-0 bg-transparent p-0 text-base"
                   />
                 </span>
@@ -328,6 +361,7 @@ export function RoleLifecycleManager({
                     value={duration}
                     onChange={(event) => setDuration(event.target.value)}
                     disabled={!canEdit || pendingAction !== null}
+                    title={!canEdit ? OWNER_ROOT_PERMISSION_HINT : undefined}
                     className="mt-1 w-full rounded-xl border border-border bg-surface px-3 py-2 text-base"
                   />
                 </label>
@@ -338,6 +372,7 @@ export function RoleLifecycleManager({
                     value={durationUnit}
                     onChange={(event) => setDurationUnit(event.target.value as DurationUnit)}
                     disabled={!canEdit || pendingAction !== null}
+                    title={!canEdit ? OWNER_ROOT_PERMISSION_HINT : undefined}
                     className="mt-1 w-full rounded-xl border border-border bg-surface px-3 py-2 text-base"
                   >
                     <option value="minutes">分</option>
@@ -352,7 +387,7 @@ export function RoleLifecycleManager({
               type="button"
               onClick={() => void createRole()}
               disabled={createDisabled}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:grayscale disabled:opacity-40"
             >
               {scheduleMode === 'scheduled' ? (
                 <CalendarClock className="h-4 w-4" aria-hidden="true" />

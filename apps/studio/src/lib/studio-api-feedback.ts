@@ -44,7 +44,10 @@ export function describeStudioApiError(
         'サーバー所有者またはOWNER root管理者にRoleの付与を依頼してください。付与済みの場合はページを再読み込みしてください。',
       ].join('\n');
     }
-    return ['この操作を実行する権限がありません', serverMessage || '必要な権限を持つ管理者へ権限付与を依頼してください。'].join('\n');
+    return [
+      'この操作を実行する権限がありません',
+      serverMessage || '必要な権限を持つ管理者へ権限付与を依頼してください。',
+    ].join('\n');
   }
 
   if (status === 409 && serverMessage.includes('Herta Botに「ロールの管理」権限がありません')) {

@@ -2,6 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { describeStudioApiError } from '@/lib/studio-api-feedback';
+import {
+  PermissionDisabledHint,
+  ReadOnlyPermissionNotice,
+  OWNER_ROOT_PERMISSION_HINT,
+} from '@/components/permission-disabled-hint';
 import { Plus, Save, Trash2, UserPlus } from 'lucide-react';
 
 interface GroupView {
@@ -78,7 +84,16 @@ export function AccessGroupManager({
         error?: string;
         group?: GroupView;
       } | null;
-      if (!response.ok) throw new Error(result?.error || 'Groupの保存に失敗しました');
+      if (!response.ok) {
+        throw new Error(
+          describeStudioApiError(
+            response.status,
+            result,
+            'Groupの保存に失敗しました',
+            'access-control',
+          ),
+        );
+      }
       if (isNew && result?.group?.id) setSelectedGroupId(result.group.id);
       setNotice({
         kind: 'success',
@@ -110,7 +125,16 @@ export function AccessGroupManager({
         { method: 'DELETE' },
       );
       const result = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(result?.error || 'Groupの削除に失敗しました');
+      if (!response.ok) {
+        throw new Error(
+          describeStudioApiError(
+            response.status,
+            result,
+            'Groupの削除に失敗しました',
+            'access-control',
+          ),
+        );
+      }
       setSelectedGroupId('new');
       setName('');
       setDescription('');
@@ -137,7 +161,16 @@ export function AccessGroupManager({
         body: JSON.stringify({ groupId: selectedGroup.id, userId: targetUserId }),
       });
       const result = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(result?.error || 'Group Member更新に失敗しました');
+      if (!response.ok) {
+        throw new Error(
+          describeStudioApiError(
+            response.status,
+            result,
+            'Group Member更新に失敗しました',
+            'access-control',
+          ),
+        );
+      }
       if (add) setUserId('');
       setNotice({
         kind: 'success',
@@ -165,16 +198,20 @@ export function AccessGroupManager({
             Roleとは独立したHerta内の権限グループです。UserをまとめてPolicyへAttachできます。
           </p>
         </div>
-        <button
-          type="button"
-          onClick={startNew}
-          disabled={!canEdit || pending}
-          className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold disabled:opacity-50"
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          新規Group
-        </button>
+        <PermissionDisabledHint blocked={!canEdit}>
+          <button
+            type="button"
+            onClick={startNew}
+            disabled={!canEdit || pending}
+            className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:grayscale disabled:opacity-40"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            新規Group
+          </button>
+        </PermissionDisabledHint>
       </div>
+
+      {!canEdit ? <ReadOnlyPermissionNotice /> : null}
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[18rem_minmax(0,1fr)]">
         <aside className="rounded-xl border border-border bg-background p-3">
@@ -203,6 +240,7 @@ export function AccessGroupManager({
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 disabled={!canEdit || pending}
+                title={!canEdit ? OWNER_ROOT_PERMISSION_HINT : undefined}
                 maxLength={100}
                 className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
@@ -213,6 +251,7 @@ export function AccessGroupManager({
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 disabled={!canEdit || pending}
+                title={!canEdit ? OWNER_ROOT_PERMISSION_HINT : undefined}
                 maxLength={500}
                 className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
@@ -228,13 +267,14 @@ export function AccessGroupManager({
                   placeholder="Discord User ID"
                   inputMode="numeric"
                   disabled={!canEdit || pending}
+                  title={!canEdit ? OWNER_ROOT_PERMISSION_HINT : undefined}
                   className="min-w-0 flex-1 rounded-xl border border-border bg-surface px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
                 <button
                   type="button"
                   onClick={() => void changeMember(userId.trim(), true)}
                   disabled={!canEdit || pending || !/^\d{17,20}$/u.test(userId.trim())}
-                  className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold disabled:opacity-50"
+                  className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:grayscale disabled:opacity-40"
                 >
                   <UserPlus className="h-4 w-4" aria-hidden="true" />
                   追加
@@ -247,6 +287,7 @@ export function AccessGroupManager({
                     type="button"
                     onClick={() => void changeMember(member.userId, false)}
                     disabled={!canEdit || pending}
+                    title={!canEdit ? OWNER_ROOT_PERMISSION_HINT : undefined}
                     className="rounded-full border border-border px-3 py-1 font-mono text-xs hover:border-red-500/40 hover:text-red-600"
                   >
                     {member.userId} ×
@@ -260,8 +301,8 @@ export function AccessGroupManager({
           ) : null}
           {notice ? (
             <p
-              role="status"
-              className={`rounded-xl border px-3 py-2 text-sm ${notice.kind === 'success' ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300' : 'border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-300'}`}
+              role={notice.kind === 'error' ? 'alert' : 'status'}
+              className={`whitespace-pre-line rounded-xl border px-3 py-2 text-sm ${notice.kind === 'success' ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300' : 'border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-300'}`}
             >
               {notice.text}
             </p>
@@ -271,7 +312,7 @@ export function AccessGroupManager({
               type="button"
               onClick={() => void saveGroup()}
               disabled={!canEdit || pending || !name.trim()}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:grayscale disabled:opacity-40"
             >
               <Save className="h-4 w-4" aria-hidden="true" />
               {selectedGroup ? '更新' : '作成'}
@@ -281,7 +322,7 @@ export function AccessGroupManager({
                 type="button"
                 onClick={() => void deleteGroup()}
                 disabled={!canEdit || pending}
-                className="inline-flex items-center gap-2 rounded-xl border border-red-500/30 px-4 py-2 text-sm font-semibold text-red-600 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl border border-red-500/30 px-4 py-2 text-sm font-semibold text-red-600 disabled:cursor-not-allowed disabled:grayscale disabled:opacity-40"
               >
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
                 Group削除

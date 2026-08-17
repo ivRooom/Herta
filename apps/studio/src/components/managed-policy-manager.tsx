@@ -2,6 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { describeStudioApiError } from '@/lib/studio-api-feedback';
+import {
+  PermissionDisabledHint,
+  ReadOnlyPermissionNotice,
+  OWNER_ROOT_PERMISSION_HINT,
+} from '@/components/permission-disabled-hint';
 import { Braces, Plus, Save, Trash2, UserPlus } from 'lucide-react';
 import {
   STUDIO_ACCESS_POLICY_VERSION,
@@ -165,8 +171,7 @@ export function ManagedPolicyManager({
       } | null;
       if (!response.ok) {
         throw new Error(
-          [result?.error, ...(result?.details ?? [])].filter(Boolean).join(' / ') ||
-            '保存に失敗しました',
+          describeStudioApiError(response.status, result, '保存に失敗しました', 'access-control'),
         );
       }
       if (isNew && result?.policy?.id) setSelectedPolicyId(result.policy.id);
@@ -198,7 +203,11 @@ export function ManagedPolicyManager({
         { method: 'DELETE' },
       );
       const result = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(result?.error || '削除に失敗しました');
+      if (!response.ok) {
+        throw new Error(
+          describeStudioApiError(response.status, result, '削除に失敗しました', 'access-control'),
+        );
+      }
       setSelectedPolicyId('new');
       setNotice({ kind: 'success', text: 'Policyを削除しました。' });
       router.refresh();
@@ -227,7 +236,16 @@ export function ManagedPolicyManager({
         body: JSON.stringify({ policyId: selectedPolicy.id, principalType, principalId }),
       });
       const result = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(result?.error || 'Attachment更新に失敗しました');
+      if (!response.ok) {
+        throw new Error(
+          describeStudioApiError(
+            response.status,
+            result,
+            'Attachment更新に失敗しました',
+            'access-control',
+          ),
+        );
+      }
       setNotice({
         kind: 'success',
         text: attached ? 'PolicyをAttachしました。' : 'PolicyをDetachしました。',
@@ -255,15 +273,19 @@ export function ManagedPolicyManager({
             GroupへAttachします。Denyはすべての経路より優先されます。
           </p>
         </div>
-        <button
-          type="button"
-          onClick={startNew}
-          disabled={!canEdit || pending}
-          className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold disabled:opacity-50"
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" /> 新規Policy
-        </button>
+        <PermissionDisabledHint blocked={!canEdit}>
+          <button
+            type="button"
+            onClick={startNew}
+            disabled={!canEdit || pending}
+            className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:grayscale disabled:opacity-40"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" /> 新規Policy
+          </button>
+        </PermissionDisabledHint>
       </div>
+
+      {!canEdit ? <ReadOnlyPermissionNotice /> : null}
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[18rem_minmax(0,1fr)]">
         <aside className="rounded-xl border border-border bg-background p-3">
@@ -294,6 +316,7 @@ export function ManagedPolicyManager({
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 disabled={!canEdit || pending}
+                title={!canEdit ? OWNER_ROOT_PERMISSION_HINT : undefined}
                 maxLength={100}
                 className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
@@ -304,6 +327,7 @@ export function ManagedPolicyManager({
                 value={description}
                 onChange={(event) => setDescription(event.target.value)}
                 disabled={!canEdit || pending}
+                title={!canEdit ? OWNER_ROOT_PERMISSION_HINT : undefined}
                 maxLength={500}
                 className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
@@ -358,6 +382,7 @@ export function ManagedPolicyManager({
                         checked={selectedActions.has(action)}
                         onChange={() => toggleAction(action)}
                         disabled={!canEdit || pending || !parsedDraft}
+                        title={!canEdit ? OWNER_ROOT_PERMISSION_HINT : undefined}
                       />
                       <span>
                         <span className="font-semibold">{ACTION_LABELS[action]}</span>
@@ -372,6 +397,7 @@ export function ManagedPolicyManager({
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 readOnly={!canEdit}
+                title={!canEdit ? OWNER_ROOT_PERMISSION_HINT : undefined}
                 spellCheck={false}
                 aria-label="Policy JSON"
                 aria-invalid={!parsedDraft}
@@ -414,7 +440,7 @@ export function ManagedPolicyManager({
                     type="button"
                     onClick={() => void setAttachment('user', userId.trim(), true)}
                     disabled={!canEdit || pending || !/^\d{17,20}$/u.test(userId.trim())}
-                    className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold disabled:opacity-50"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:grayscale disabled:opacity-40"
                   >
                     <UserPlus className="h-4 w-4" aria-hidden="true" />
                     Attach
@@ -427,6 +453,7 @@ export function ManagedPolicyManager({
                       type="button"
                       onClick={() => void setAttachment('user', attachment.principalId, false)}
                       disabled={!canEdit || pending}
+                      title={!canEdit ? OWNER_ROOT_PERMISSION_HINT : undefined}
                       className="rounded-full border border-border px-3 py-1 font-mono text-xs hover:border-red-500/40 hover:text-red-600"
                     >
                       {attachment.principalId} ×
@@ -442,8 +469,8 @@ export function ManagedPolicyManager({
 
           {notice ? (
             <p
-              role="status"
-              className={`rounded-xl border px-3 py-2 text-sm ${notice.kind === 'success' ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300' : 'border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-300'}`}
+              role={notice.kind === 'error' ? 'alert' : 'status'}
+              className={`whitespace-pre-line rounded-xl border px-3 py-2 text-sm ${notice.kind === 'success' ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300' : 'border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-300'}`}
             >
               {notice.text}
             </p>
@@ -454,7 +481,7 @@ export function ManagedPolicyManager({
               type="button"
               onClick={() => void savePolicy()}
               disabled={!canEdit || pending || name.trim().length === 0 || !parsedDraft}
-              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:grayscale disabled:opacity-40"
             >
               <Save className="h-4 w-4" aria-hidden="true" />
               {selectedPolicy ? '更新' : '作成'}
@@ -464,7 +491,7 @@ export function ManagedPolicyManager({
                 type="button"
                 onClick={() => void deletePolicy()}
                 disabled={!canEdit || pending}
-                className="inline-flex items-center gap-2 rounded-xl border border-red-500/30 px-4 py-2 text-sm font-semibold text-red-600 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl border border-red-500/30 px-4 py-2 text-sm font-semibold text-red-600 disabled:cursor-not-allowed disabled:grayscale disabled:opacity-40"
               >
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
                 Policy削除
@@ -511,6 +538,7 @@ function PrincipalChecklist({
               checked={attachedIds.has(option.id)}
               onChange={(event) => void onChange(type, option.id, event.target.checked)}
               disabled={disabled}
+              title={disabled ? OWNER_ROOT_PERMISSION_HINT : undefined}
             />
             <span className="min-w-0">
               <span className="block truncate font-medium">{option.name}</span>
