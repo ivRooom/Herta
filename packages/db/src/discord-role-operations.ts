@@ -36,6 +36,7 @@ export interface EnqueueDiscordRoleCreateInput {
   expiresAfterSeconds: number | null;
   createdBy: string;
   source?: Extract<DiscordRoleOperationSource, 'studio' | 'rule-engine'>;
+  operationId?: string;
 }
 
 export interface EnqueueDiscordRoleDeleteInput {
@@ -51,9 +52,17 @@ export interface EnqueueDiscordRoleDeleteInput {
 type RoleOperationDb = Pick<Prisma.TransactionClient, '$queryRaw' | '$executeRaw'>;
 
 const DISCORD_ID_PATTERN = /^\d{17,20}$/u;
+const ROLE_NAME_CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/u;
 const MAX_ROLE_NAME_LENGTH = 100;
 const MIN_EXPIRY_SECONDS = 60;
 const MAX_EXPIRY_SECONDS = 31_536_000;
+
+export class DiscordRoleOperationIdempotencyConflictError extends Error {
+  constructor() {
+    super('Discord role operation idempotency key is already used by another request');
+    this.name = 'DiscordRoleOperationIdempotencyConflictError';
+  }
+}
 
 export async function enqueueDiscordRoleCreateOperation(
   db: RoleOperationDb,
@@ -61,9 +70,14 @@ export async function enqueueDiscordRoleCreateOperation(
 ): Promise<DiscordRoleOperationRecord> {
   assertDiscordId(input.guildId, 'guildId');
   assertDiscordId(input.createdBy, 'createdBy');
+  if (input.operationId) assertUuid(input.operationId, 'operationId');
   const roleName = input.roleName.trim();
-  if (!roleName || roleName.length > MAX_ROLE_NAME_LENGTH) {
-    throw new RangeError('roleName must be between 1 and 100 characters');
+  if (
+    !roleName ||
+    roleName.length > MAX_ROLE_NAME_LENGTH ||
+    ROLE_NAME_CONTROL_CHARACTER_PATTERN.test(roleName)
+  ) {
+    throw new RangeError('roleName must be between 1 and 100 printable characters');
   }
   if (!Number.isInteger(input.roleColor) || input.roleColor < 0 || input.roleColor > 0xffffff) {
     throw new RangeError('roleColor must be an integer between 0 and 0xFFFFFF');
@@ -78,7 +92,7 @@ export async function enqueueDiscordRoleCreateOperation(
     throw new RangeError('expiresAfterSeconds must be between 60 and 31536000');
   }
 
-  const id = randomUUID();
+  const id = input.operationId ?? randomUUID();
   const rows = await db.$queryRaw<DiscordRoleOperationRecord[]>`
     INSERT INTO "discord_role_operations" (
       "id", "guild_id", "operation", "status", "source", "role_name", "role_color",
@@ -95,9 +109,22 @@ export async function enqueueDiscordRoleCreateOperation(
       ${input.expiresAfterSeconds},
       ${input.createdBy}
     )
+    ON CONFLICT ("id") DO NOTHING
     RETURNING ${operationProjection()}
   `;
-  return requireOperation(rows[0]);
+  if (rows[0]) return rows[0];
+
+  const existingRows = await db.$queryRaw<DiscordRoleOperationRecord[]>`
+    SELECT ${operationProjection()}
+    FROM "discord_role_operations"
+    WHERE "id" = ${id}::uuid
+      AND "guild_id" = ${input.guildId}
+      AND "created_by" = ${input.createdBy}
+      AND "operation" = 'create'
+    LIMIT 1
+  `;
+  if (existingRows[0]) return existingRows[0];
+  throw new DiscordRoleOperationIdempotencyConflictError();
 }
 
 export async function enqueueDiscordRoleDeleteOperation(
