@@ -3,7 +3,7 @@ import test from 'node:test';
 import {
   computeRoleDeleteRetryAt,
   normalizeRoleOperationScanIntervalSeconds,
-} from './discord-role-operations.ts';
+} from './discord-role-operations.js';
 
 test('Role Operation scan intervalを5〜300秒へ制限する', () => {
   assert.equal(normalizeRoleOperationScanIntervalSeconds(undefined), 15);
