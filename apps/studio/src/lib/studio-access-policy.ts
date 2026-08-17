@@ -1,6 +1,7 @@
+import { HERTA_STUDIO_ROOT_DISCORD_ROLE_ID } from '@herta/shared';
 import { z } from 'zod';
 
-export const STUDIO_ROOT_DISCORD_ROLE_ID = '1069969919271252018';
+export const STUDIO_ROOT_DISCORD_ROLE_ID = HERTA_STUDIO_ROOT_DISCORD_ROLE_ID;
 export const STUDIO_ACCESS_POLICY_VERSION = '2026-08-17';
 export const STUDIO_GUI_PERMISSION_SID = 'StudioGuiPermissions';
 
