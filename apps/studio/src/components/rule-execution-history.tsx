@@ -50,13 +50,18 @@ export function RuleExecutionHistory({ entries }: { entries: RuleExecutionHistor
                     <td className="px-4 py-3">
                       <code className="text-xs">{entry.triggerType}</code>
                       {entry.triggerExecutionId ? (
-                        <code className="mt-1 block max-w-64 truncate text-[10px] text-muted" title={entry.triggerExecutionId}>
+                        <code
+                          className="mt-1 block max-w-64 truncate text-[10px] text-muted"
+                          title={entry.triggerExecutionId}
+                        >
                           {entry.triggerExecutionId}
                         </code>
                       ) : null}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${result.className}`}>
+                      <span
+                        className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${result.className}`}
+                      >
                         {result.label}
                       </span>
                       {result.detail ? (
@@ -92,6 +97,17 @@ function summarizeExecution(entry: RuleExecutionHistoryEntry): {
       className: 'border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-300',
     };
   }
+
+  const actions = asRecord(entry.actionsResult);
+  if (actions?.['reservation'] === true) {
+    return {
+      label: 'Reserved',
+      detail:
+        'Action実行前の予約記録です。Bot停止などで最終結果が確定しなかった可能性があるため、自動再実行はしません。',
+      className: 'border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300',
+    };
+  }
+
   if (!entry.conditionsMet) {
     return {
       label: 'Condition false',
@@ -100,8 +116,8 @@ function summarizeExecution(entry: RuleExecutionHistoryEntry): {
     };
   }
 
-  const actions = asRecord(entry.actionsResult);
-  const skipReason = typeof actions?.['actionSkipReason'] === 'string' ? actions['actionSkipReason'] : null;
+  const skipReason =
+    typeof actions?.['actionSkipReason'] === 'string' ? actions['actionSkipReason'] : null;
   if (skipReason) {
     return {
       label: 'Skipped',
