@@ -55,7 +55,7 @@ StudioはBot Tokenを保持せず、Role操作を`discord_role_operations`へ予
 - Herta GuildSettings / Plugin configからの参照確認
 - bounded request body
 
-Role削除要求は、`modRoleIds` / `adminRoleIds` / `settingsJson` / Guild Plugin configから対象Role IDが参照されている場合に409で拒否する。削除成功後に自動cleanupするStudio Role Policyだけはこの参照判定から除外する。
+Role削除要求は、`modRoleIds` / `adminRoleIds` / `settingsJson` / Guild Plugin configから対象Role IDが参照されている場合に409で拒否する。削除成功後に自動cleanupするStudio Role Policyだけはこの参照判定から除外する。JSON参照探索は完全一致のみ、最大深度16・返却20件までに制限し、異常に深い設定や巨大な参照一覧で処理が無制限にならないようにする。
 
 ### Worker
 
