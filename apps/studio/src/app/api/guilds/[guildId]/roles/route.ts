@@ -1,5 +1,6 @@
 import {
   countPendingDiscordRoleCreates,
+  DiscordRoleOperationIdempotencyConflictError,
   enqueueDiscordRoleCreateOperation,
   enqueueDiscordRoleDeleteOperation,
   findHertaDiscordRoleReferences,
@@ -10,6 +11,7 @@ import { RequestBodyTooLargeError, readJsonBodyWithLimit } from '@/lib/bounded-r
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
 import {
   isDiscordRoleId,
+  isRoleOperationId,
   parseDiscordRoleCreateRequest,
   roleDeleteBlockReason,
 } from '@/lib/discord-role-lifecycle';
@@ -33,6 +35,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
   const { guildId } = await params;
   const root = await requireRoot(guildId, session.user.id);
   if (!root.ok) return root.response;
+
+  const operationId = request.headers.get('Idempotency-Key')?.trim() ?? '';
+  if (!isRoleOperationId(operationId)) {
+    return NextResponse.json(
+      { error: 'Role作成には有効なIdempotency-Keyが必要です' },
+      { status: 400 },
+    );
+  }
 
   let body: unknown;
   try {
@@ -80,15 +90,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
     );
   }
 
-  const operation = await enqueueDiscordRoleCreateOperation(prisma, {
-    guildId,
-    roleName: input.name,
-    roleColor: input.color,
-    scheduledFor: input.scheduledFor,
-    expiresAfterSeconds: input.expiresAfterSeconds,
-    createdBy: session.user.id,
-    source: 'studio',
-  });
+  let operation;
+  try {
+    operation = await enqueueDiscordRoleCreateOperation(prisma, {
+      guildId,
+      roleName: input.name,
+      roleColor: input.color,
+      scheduledFor: input.scheduledFor,
+      expiresAfterSeconds: input.expiresAfterSeconds,
+      createdBy: session.user.id,
+      source: 'studio',
+      operationId,
+    });
+  } catch (error) {
+    if (error instanceof DiscordRoleOperationIdempotencyConflictError) {
+      return NextResponse.json(
+        { error: 'Idempotency-Keyが別のRole作成要求ですでに使用されています' },
+        { status: 409 },
+      );
+    }
+    throw error;
+  }
 
   await recordAudit(guildId, session.user.id, 'discord_role.create_requested', operation.id, {
     roleName: operation.roleName,
