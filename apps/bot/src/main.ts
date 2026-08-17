@@ -243,7 +243,7 @@ async function main(): Promise<void> {
     await bot.start();
     if (ruleRuntime) {
       try {
-        await ruleRuntime.startSchedule();
+        await ruleRuntime.start();
       } catch (error) {
         logger.error(
           { err: error },
