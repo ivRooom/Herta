@@ -5,6 +5,7 @@ export * from './community-profile.js';
 export * from './community-leaderboard.js';
 export * from './community-season-snapshot.js';
 export * from './health-snapshots.js';
+export * from './discord-role-operations.js';
 
 import { PrismaClient } from '@prisma/client';
 
