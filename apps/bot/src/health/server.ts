@@ -10,6 +10,12 @@ import { fetchGuildCommandCatalog, GuildCommandCatalogError } from './command-ca
 import type { HealthConfig } from './config.js';
 import type { GuildConfigurationOptions } from './guild-options.js';
 import type { GuildMemberOption } from './guild-members.js';
+import {
+  createGuildRole,
+  deleteGuildRole,
+  GuildRoleMutationError,
+  parseGuildRoleCreateInput,
+} from './guild-role-mutations.js';
 import { isAuthorizedInternalApiRequest, isConfiguredInternalApiSecret } from './internal-auth.js';
 import {
   GuildMessageStudioSendError,
@@ -50,6 +56,7 @@ const HTTP_STATUS_BY_HEALTH: Record<PublicServiceStatus, number> = {
 
 const MAX_INTERNAL_JSON_BODY_BYTES = 1_500_000;
 const MAX_MESSAGE_STUDIO_INTERNAL_BODY_BYTES = 30_000_000;
+const MAX_GUILD_ROLE_MUTATION_BODY_BYTES = 8 * 1024;
 
 class RequestBodyTooLargeError extends Error {}
 class InvalidJsonBodyError extends Error {}
@@ -174,6 +181,20 @@ export class HealthHttpServer {
       return;
     }
 
+    const guildRoleMutationMatch = /^\/internal\/guilds\/(\d+)\/roles(?:\/(\d+))?$/u.exec(
+      pathname,
+    );
+    if (guildRoleMutationMatch) {
+      await this.handleGuildRoleMutationRequest(
+        request,
+        response,
+        method,
+        guildRoleMutationMatch[1]!,
+        guildRoleMutationMatch[2] ?? null,
+      );
+      return;
+    }
+
     const guildCommandCatalogMatch = /^\/internal\/guilds\/(\d+)\/commands$/u.exec(pathname);
     if (guildCommandCatalogMatch) {
       await this.handleGuildCommandCatalogRequest(
@@ -293,6 +314,80 @@ export class HealthHttpServer {
     }
 
     this.sendJson(response, HTTP_STATUS_BY_HEALTH[health.status], health);
+  }
+
+  private async handleGuildRoleMutationRequest(
+    request: IncomingMessage,
+    response: import('node:http').ServerResponse,
+    method: string,
+    guildId: string,
+    roleId: string | null,
+  ): Promise<void> {
+    const internalApiSecret = this.options.internalApiSecret;
+    if (!isConfiguredInternalApiSecret(internalApiSecret)) {
+      this.sendJson(response, 503, { status: 'internal_api_not_configured' });
+      return;
+    }
+    if (!isAuthorizedInternalApiRequest(request.headers.authorization, internalApiSecret)) {
+      this.sendJson(response, 401, { status: 'unauthorized' });
+      return;
+    }
+
+    const token = process.env['DISCORD_BOT_TOKEN']?.trim();
+    if (!token) {
+      this.sendJson(response, 503, { status: 'discord_bot_not_configured' });
+      return;
+    }
+
+    try {
+      if (method === 'POST' && roleId === null) {
+        let rawBody: unknown;
+        try {
+          rawBody = await readJsonBody(request, MAX_GUILD_ROLE_MUTATION_BODY_BYTES);
+        } catch (error) {
+          this.sendJson(response, error instanceof RequestBodyTooLargeError ? 413 : 400, {
+            status: error instanceof RequestBodyTooLargeError ? 'payload_too_large' : 'invalid_json',
+          });
+          return;
+        }
+        const input = parseGuildRoleCreateInput(rawBody);
+        if (!input) {
+          this.sendJson(response, 400, { status: 'invalid_role_input' });
+          return;
+        }
+        const role = await createGuildRole(token, guildId, input);
+        this.sendJson(response, 201, { role });
+        return;
+      }
+
+      if (method === 'DELETE' && roleId !== null) {
+        const operationId = request.headers['x-herta-operation-id'];
+        if (typeof operationId !== 'string') {
+          this.sendJson(response, 400, { status: 'missing_operation_id' });
+          return;
+        }
+        const role = await deleteGuildRole(token, guildId, roleId, operationId);
+        this.sendJson(response, 200, { deleted: true, role });
+        return;
+      }
+
+      response.setHeader('Allow', roleId === null ? 'POST' : 'DELETE');
+      this.sendJson(response, 405, { status: 'method_not_allowed' });
+    } catch (error) {
+      if (error instanceof GuildRoleMutationError) {
+        this.options.logger.warn(
+          { guildId, roleId, status: error.status, errorName: error.name, code: error.code },
+          'Discord Role内部操作に失敗しました',
+        );
+        this.sendJson(response, error.status, { status: error.code });
+        return;
+      }
+      this.options.logger.error(
+        { guildId, roleId, errorName: error instanceof Error ? error.name : 'UnknownError' },
+        'Discord Role内部操作で予期しないエラーが発生しました',
+      );
+      this.sendJson(response, 503, { status: 'unavailable' });
+    }
   }
 
   private async handleGuildCommandCatalogRequest(
