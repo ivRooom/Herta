@@ -4,6 +4,7 @@ import {
   DISCORD_ROLE_EXPIRY_MAX_SECONDS,
   DISCORD_ROLE_EXPIRY_MIN_SECONDS,
   formatDiscordRoleColor,
+  isRoleOperationId,
   parseDiscordRoleCreateRequest,
   roleDeleteBlockReason,
 } from './discord-role-lifecycle.ts';
@@ -110,6 +111,12 @@ test('一時Role TTLの境界値を検証する', () => {
     ),
     null,
   );
+});
+
+test('Role作成Idempotency-KeyはUUIDだけを受け付ける', () => {
+  assert.equal(isRoleOperationId('123e4567-e89b-42d3-a456-426614174000'), true);
+  assert.equal(isRoleOperationId('123456789012345678'), false);
+  assert.equal(isRoleOperationId('not-a-uuid'), false);
 });
 
 test('削除不可理由をroot・managed・hierarchyの順に判定する', () => {
