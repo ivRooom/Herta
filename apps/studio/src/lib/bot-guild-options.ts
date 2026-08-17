@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { resolveBotHealthRequestTimeoutMs } from './bot-health';
+import { getBotInternalApiAuthorizationHeader } from './bot-internal-api-auth';
 
 const guildChannelOptionSchema = z.object({
   id: z.string().regex(/^\d+$/u),
@@ -56,10 +57,12 @@ export type GuildEmojiOption = GuildConfigurationOptions['emojis'][number];
 
 export async function getGuildConfigurationOptions(
   guildId: string,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<GuildConfigurationOptions | null> {
   if (!/^\d+$/u.test(guildId)) return null;
   const healthUrl = process.env['BOT_HEALTH_URL']?.trim();
-  if (!healthUrl) return null;
+  const authorization = getBotInternalApiAuthorizationHeader();
+  if (!healthUrl || !authorization) return null;
 
   let endpoint: URL;
   try {
@@ -71,9 +74,12 @@ export async function getGuildConfigurationOptions(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), resolveBotHealthRequestTimeoutMs());
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetchImpl(endpoint, {
       method: 'GET',
-      headers: { Accept: 'application/json' },
+      headers: {
+        Authorization: authorization,
+        Accept: 'application/json',
+      },
       cache: 'no-store',
       signal: controller.signal,
     });
