@@ -145,11 +145,14 @@ export function ManagedPolicyManager({
     setNotice(null);
     try {
       const isNew = selectedPolicyId === 'new';
+      if (!isNew && !selectedPolicy) throw new Error('Policyの最新状態を確認できません');
       const response = await fetch(`/api/guilds/${guildId}/access-policies`, {
         method: isNew ? 'POST' : 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...(isNew ? {} : { policyId: selectedPolicyId }),
+          ...(isNew
+            ? {}
+            : { policyId: selectedPolicyId, expectedRevision: selectedPolicy?.revision }),
           name,
           description,
           policy: parsedDraft,
@@ -264,7 +267,7 @@ export function ManagedPolicyManager({
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[18rem_minmax(0,1fr)]">
         <aside className="rounded-xl border border-border bg-background p-3">
-          <div className="space-y-1" role="list" aria-label="Managed Policy一覧">
+          <nav className="space-y-1" aria-label="Managed Policy一覧">
             {policies.map((policy) => (
               <button
                 key={policy.id}
@@ -280,7 +283,7 @@ export function ManagedPolicyManager({
             {policies.length === 0 ? (
               <p className="px-2 py-3 text-sm text-muted">Policyはまだありません。</p>
             ) : null}
-          </div>
+          </nav>
         </aside>
 
         <div className="min-w-0 space-y-6">
@@ -312,13 +315,12 @@ export function ManagedPolicyManager({
               <h3 className="text-sm font-semibold">Policy document</h3>
               <div
                 className="flex rounded-xl border border-border bg-background p-1"
-                role="tablist"
+                role="group"
                 aria-label="Policy編集モード"
               >
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={mode === 'gui'}
+                  aria-pressed={mode === 'gui'}
                   onClick={() => setMode('gui')}
                   className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${mode === 'gui' ? 'bg-primary text-primary-foreground' : ''}`}
                 >
@@ -326,8 +328,7 @@ export function ManagedPolicyManager({
                 </button>
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={mode === 'json'}
+                  aria-pressed={mode === 'json'}
                   onClick={() => setMode('json')}
                   className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${mode === 'json' ? 'bg-primary text-primary-foreground' : ''}`}
                 >
