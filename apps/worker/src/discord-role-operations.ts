@@ -162,9 +162,17 @@ async function processCreateOperation(
     return;
   }
 
+  let role: InternalRoleResult;
   try {
-    const role = await createRoleViaBot(input.baseUrl, input.secret, operation, input.fetchImpl);
-    const completedAt = input.now();
+    role = await createRoleViaBot(input.baseUrl, input.secret, operation, input.fetchImpl);
+  } catch (error) {
+    // createは応答喪失時にDiscord側だけ成功している可能性があるため自動再試行しない。
+    await failOperation(input, operation, resolveErrorName(error));
+    return;
+  }
+
+  const completedAt = input.now();
+  try {
     await input.prisma.$transaction(async (tx) => {
       await markDiscordRoleOperationSucceeded(tx, operation.id, completedAt, role.id);
       if (operation.expiresAfterSeconds !== null) {
@@ -205,10 +213,55 @@ async function processCreateOperation(
       { guildId: operation.guildId, roleId: role.id, operationId: operation.id },
       'Discord Roleを作成しました',
     );
-  } catch (error) {
-    // createは応答喪失時にDiscord側だけ成功している可能性があるため自動再試行しない。
-    await failOperation(input, operation, resolveErrorName(error));
+  } catch (persistenceError) {
+    await compensateFailedCreatePersistence(input, operation, role, persistenceError);
   }
+}
+
+async function compensateFailedCreatePersistence(
+  input: {
+    prisma: PrismaClient;
+    logger: Logger;
+    baseUrl: URL;
+    secret: string;
+    fetchImpl: typeof fetch;
+    now: () => Date;
+  },
+  operation: DiscordRoleOperationRecord,
+  role: InternalRoleResult,
+  persistenceError: unknown,
+): Promise<void> {
+  const persistenceErrorName = resolveErrorName(persistenceError);
+  let compensationErrorName: string | null = null;
+
+  try {
+    await deleteRoleViaBot(
+      input.baseUrl,
+      input.secret,
+      { ...operation, discordRoleId: role.id },
+      input.fetchImpl,
+    );
+  } catch (compensationError) {
+    compensationErrorName = resolveErrorName(compensationError);
+    input.logger.error(
+      {
+        guildId: operation.guildId,
+        roleId: role.id,
+        operationId: operation.id,
+        persistenceErrorName,
+        compensationErrorName,
+      },
+      'Discord Role作成後のDB確定と補償削除の両方に失敗しました',
+    );
+  }
+
+  const errorName = compensationErrorName
+    ? 'DiscordRoleCreatePersistenceFailedCompensationFailed'
+    : 'DiscordRoleCreatePersistenceFailedCompensated';
+  await failOperation(input, operation, errorName, role.id, {
+    persistenceErrorName,
+    ...(compensationErrorName ? { compensationErrorName } : {}),
+  });
 }
 
 async function processDeleteOperation(
@@ -292,17 +345,29 @@ async function failOperation(
   input: { prisma: PrismaClient; logger: Logger; now: () => Date },
   operation: DiscordRoleOperationRecord,
   errorName: string,
+  discordRoleId: string | null = operation.discordRoleId,
+  details: Record<string, string> = {},
 ): Promise<void> {
   const failedAt = input.now();
-  await markDiscordRoleOperationFailed(input.prisma, operation.id, failedAt, errorName);
+  await markDiscordRoleOperationFailed(
+    input.prisma,
+    operation.id,
+    failedAt,
+    errorName,
+    discordRoleId,
+  );
   await input.prisma.auditLog.create({
     data: {
       guildId: operation.guildId,
       actorId: operation.createdBy,
       event: `discord_role.${operation.operation}_failed`,
       targetType: 'discord_role',
-      targetId: operation.discordRoleId ?? operation.id,
-      changes: { errorName: errorName.slice(0, 120), attemptCount: operation.attemptCount },
+      targetId: discordRoleId ?? operation.id,
+      changes: {
+        errorName: errorName.slice(0, 120),
+        attemptCount: operation.attemptCount,
+        ...details,
+      },
       severity: 'error',
       metadata: {
         operationSource: 'worker',
@@ -315,10 +380,11 @@ async function failOperation(
   input.logger.error(
     {
       guildId: operation.guildId,
-      roleId: operation.discordRoleId,
+      roleId: discordRoleId,
       operationId: operation.id,
       operation: operation.operation,
       errorName,
+      ...details,
     },
     'Discord Role Operationが失敗しました',
   );
