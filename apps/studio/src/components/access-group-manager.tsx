@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Save, Trash2, UserPlus } from 'lucide-react';
 
@@ -34,16 +34,34 @@ export function AccessGroupManager({
   const [userId, setUserId] = useState('');
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const lastSyncedGroupKey = useRef<string | null>(null);
 
   useEffect(() => {
     const next = groups.find((group) => group.id === selectedGroupId) ?? null;
-    if (!next && selectedGroupId !== 'new') return;
+    const syncKey = next
+      ? JSON.stringify([next.id, next.name, next.description])
+      : selectedGroupId === 'new'
+        ? 'new'
+        : null;
+    if (!syncKey || lastSyncedGroupKey.current === syncKey) return;
+    lastSyncedGroupKey.current = syncKey;
     setName(next?.name ?? '');
     setDescription(next?.description ?? '');
-    setNotice(null);
   }, [groups, selectedGroupId]);
 
   const selectedMembers = members.filter((member) => member.groupId === selectedGroupId);
+
+  function selectGroup(groupId: string) {
+    setSelectedGroupId(groupId);
+    setNotice(null);
+  }
+
+  function startNew() {
+    setSelectedGroupId('new');
+    setName('');
+    setDescription('');
+    setNotice(null);
+  }
 
   async function saveGroup() {
     if (!canEdit || pending || !name.trim()) return;
@@ -94,6 +112,8 @@ export function AccessGroupManager({
       const result = (await response.json().catch(() => null)) as { error?: string } | null;
       if (!response.ok) throw new Error(result?.error || 'Groupの削除に失敗しました');
       setSelectedGroupId('new');
+      setName('');
+      setDescription('');
       setNotice({ kind: 'success', text: 'Groupを削除しました。' });
       router.refresh();
     } catch (error) {
@@ -147,7 +167,7 @@ export function AccessGroupManager({
         </div>
         <button
           type="button"
-          onClick={() => setSelectedGroupId('new')}
+          onClick={startNew}
           disabled={!canEdit || pending}
           className="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-semibold disabled:opacity-50"
         >
@@ -163,7 +183,7 @@ export function AccessGroupManager({
               <button
                 key={group.id}
                 type="button"
-                onClick={() => setSelectedGroupId(group.id)}
+                onClick={() => selectGroup(group.id)}
                 aria-pressed={selectedGroupId === group.id}
                 className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold ${selectedGroupId === group.id ? 'bg-primary/10 text-primary' : 'hover:bg-surface'}`}
               >
