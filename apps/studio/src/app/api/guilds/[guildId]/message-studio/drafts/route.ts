@@ -13,6 +13,8 @@ import { isSameOriginMutationRequest } from '@/lib/request-origin';
 
 export const dynamic = 'force-dynamic';
 const MAX_DRAFT_BODY_BYTES = 96 * 1024;
+const DRAFT_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 type RouteContext = { params: Promise<{ guildId: string }> };
 
 export async function GET(_request: Request, { params }: RouteContext) {
@@ -41,6 +43,9 @@ export async function POST(request: Request, { params }: RouteContext) {
   const name = typeof body.value.name === 'string' ? body.value.name.trim() : '';
   const id = typeof body.value.id === 'string' ? body.value.id.trim() : undefined;
   const payload = parseMessageStudioDraftPayload(body.value.payload);
+  if (id !== undefined && !DRAFT_ID_PATTERN.test(id)) {
+    return NextResponse.json({ error: '下書きIDが不正です' }, { status: 400 });
+  }
   if (!name || name.length > 100 || !payload) {
     return NextResponse.json({ error: '下書きの内容が不正です' }, { status: 400 });
   }
@@ -67,6 +72,9 @@ export async function DELETE(request: Request, { params }: RouteContext) {
   if ('response' in authorization) return authorization.response;
 
   const id = new URL(request.url).searchParams.get('id') ?? '';
+  if (!DRAFT_ID_PATTERN.test(id)) {
+    return NextResponse.json({ error: '下書きIDが不正です' }, { status: 400 });
+  }
   const deleted = await deleteMessageStudioDraft(guildId, session.user.id, id);
   if (!deleted) return NextResponse.json({ error: '下書きが見つかりません' }, { status: 404 });
   return NextResponse.json({ deleted: true });
