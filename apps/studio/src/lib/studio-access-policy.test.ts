@@ -5,6 +5,7 @@ import {
   createStudioRolePolicyFromActions,
   evaluateStudioAccessPolicy,
   isStudioRootRole,
+  setStudioGuiActions,
   validateStudioAccessPolicy,
 } from './studio-access-policy.ts';
 
@@ -15,6 +16,32 @@ test('GUI Policyは選択ActionをGuild scopeへAllowする', () => {
   const policy = createStudioRolePolicyFromActions(GUILD_ID, ['studio.page.view', 'studio.ai.use']);
   assert.deepEqual(policy.Statement[0]?.Action, ['studio.page.view', 'studio.ai.use']);
   assert.deepEqual(policy.Statement[0]?.Resource, [`guild:${GUILD_ID}:*`]);
+});
+
+test('GUIの全体権限変更でPlugin等のscoped Statementを消さない', () => {
+  const scoped = {
+    Sid: 'PluginPermissiondeadbeef',
+    Effect: 'Deny' as const,
+    Action: ['studio.settings.write'],
+    Resource: [`guild:${GUILD_ID}:plugin:mini-games:config:amidakujiTheme`],
+  };
+  const policy = {
+    Version: '2026-08-17' as const,
+    Statement: [
+      {
+        Sid: 'StudioGuiPermissions',
+        Effect: 'Allow' as const,
+        Action: ['studio.page.view'],
+        Resource: [`guild:${GUILD_ID}:*`],
+      },
+      scoped,
+    ],
+  };
+
+  const updated = setStudioGuiActions(policy, GUILD_ID, ['studio.page.view', 'studio.ai.use']);
+  assert.equal(updated.Statement.length, 2);
+  assert.deepEqual(updated.Statement[1], scoped);
+  assert.deepEqual(updated.Statement[0]?.Action, ['studio.page.view', 'studio.ai.use']);
 });
 
 test('AllowされたRoleだけが一致ActionとResourceへアクセスできる', () => {

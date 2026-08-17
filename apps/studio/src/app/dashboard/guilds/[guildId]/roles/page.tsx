@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowLeft, LockKeyhole, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, ArrowRight, LockKeyhole, ShieldCheck, SlidersHorizontal } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import { auth } from '@/auth';
 import { RolePolicyManager } from '@/components/role-policy-manager';
@@ -72,6 +72,25 @@ export default async function GuildRoleManagerPage({
           </div>
         </div>
       </section>
+
+      <Link
+        href={`/dashboard/guilds/${guildId}/roles/plugins`}
+        className="flex items-center justify-between gap-4 rounded-2xl border border-primary/20 bg-primary/5 p-5 transition hover:border-primary/40 hover:bg-primary/10"
+      >
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <SlidersHorizontal className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div>
+            <h2 className="font-semibold">Plugin Permission Matrix</h2>
+            <p className="mt-1 text-sm leading-6 text-muted">
+              Pluginごとの有効・無効操作と、設定項目単位の「閲覧のみ /
+              編集可」をRoleごとに指定します。
+            </p>
+          </div>
+        </div>
+        <ArrowRight className="h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
+      </Link>
 
       <RolePolicyManager
         guildId={guildId}
