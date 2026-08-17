@@ -10,6 +10,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { RequestBodyTooLargeError, readRequestBodyBytes } from '@/lib/bounded-request-body';
 import { prisma } from '@/lib/db';
+import { isPrismaRawUniqueViolation } from '@/lib/prisma-raw-error';
 import { authorizeStudioPermission, resolveStudioAccess } from '@/lib/studio-access';
 import { validateStudioAccessPolicy } from '@/lib/studio-access-policy';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
@@ -83,12 +84,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
     });
     return NextResponse.json({ policy }, { status: 201 });
   } catch (error) {
+    const duplicateName = isPrismaRawUniqueViolation(error);
     console.error('Failed to create managed Studio access policy', {
       guildId,
       actorId: session.user.id,
       errorName: error instanceof Error ? error.name : 'UnknownError',
+      duplicateName,
     });
-    return NextResponse.json({ error: 'Policyを作成できませんでした' }, { status: 409 });
+    return NextResponse.json(
+      { error: duplicateName ? '同名のPolicyが存在します' : 'Policyを作成できませんでした' },
+      { status: duplicateName ? 409 : 500 },
+    );
   }
 }
 
@@ -104,10 +110,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ guil
 
   const body = await parseJsonBody(request);
   if ('response' in body) return body.response;
-  const policyId = typeof body.value.policyId === 'string' ? body.value.policyId : '';
-  if (!POLICY_ID_PATTERN.test(policyId)) {
+  const rawPolicyId = typeof body.value.policyId === 'string' ? body.value.policyId : '';
+  if (!POLICY_ID_PATTERN.test(rawPolicyId)) {
     return NextResponse.json({ error: 'Policy IDが不正です' }, { status: 400 });
   }
+  const policyId = rawPolicyId.toLowerCase();
   const current = await findManagedStudioAccessPolicy(prisma, guildId, policyId);
   if (!current) return NextResponse.json({ error: 'Policyが見つかりません' }, { status: 404 });
 
@@ -144,13 +151,18 @@ export async function PUT(request: Request, { params }: { params: Promise<{ guil
     });
     return NextResponse.json({ policy });
   } catch (error) {
+    const duplicateName = isPrismaRawUniqueViolation(error);
     console.error('Failed to update managed Studio access policy', {
       guildId,
       policyId,
       actorId: session.user.id,
       errorName: error instanceof Error ? error.name : 'UnknownError',
+      duplicateName,
     });
-    return NextResponse.json({ error: 'Policyを更新できませんでした' }, { status: 409 });
+    return NextResponse.json(
+      { error: duplicateName ? '同名のPolicyが存在します' : 'Policyを更新できませんでした' },
+      { status: duplicateName ? 409 : 500 },
+    );
   }
 }
 
@@ -167,10 +179,11 @@ export async function DELETE(
   const root = await requireRoot(guildId, session.user.id);
   if (!root.ok) return root.response;
 
-  const policyId = new URL(request.url).searchParams.get('policyId') ?? '';
-  if (!POLICY_ID_PATTERN.test(policyId)) {
+  const rawPolicyId = new URL(request.url).searchParams.get('policyId') ?? '';
+  if (!POLICY_ID_PATTERN.test(rawPolicyId)) {
     return NextResponse.json({ error: 'Policy IDが不正です' }, { status: 400 });
   }
+  const policyId = rawPolicyId.toLowerCase();
   const current = await findManagedStudioAccessPolicy(prisma, guildId, policyId);
   if (!current) return NextResponse.json({ error: 'Policyが見つかりません' }, { status: 404 });
   const deleted = await deleteManagedStudioAccessPolicy(prisma, guildId, policyId);
