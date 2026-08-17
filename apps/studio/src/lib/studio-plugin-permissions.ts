@@ -1,6 +1,21 @@
-import type { StudioAccessPolicy, StudioPolicyAction } from './studio-access-policy';
+import {
+  evaluateStudioAccessPolicy,
+  type StudioAccessPolicy,
+  type StudioPolicyAction,
+} from './studio-access-policy.ts';
 
 export type ExplicitPermissionMode = 'inherit' | 'allow' | 'deny';
+
+export interface EffectivePluginPermissionContext {
+  isRoot: boolean;
+  roleIds: readonly string[];
+  policies: readonly { discordRoleId: string; policy: StudioAccessPolicy }[];
+}
+
+export interface PluginConfigStudioAccess {
+  canToggleEnabled: boolean;
+  editableFieldKeys: string[];
+}
 
 export function pluginConfigFieldResource(
   guildId: string,
@@ -12,6 +27,49 @@ export function pluginConfigFieldResource(
 
 export function pluginEnabledControlResource(guildId: string, pluginId: string): string {
   return `guild:${guildId}:plugin:${encodeSegment(pluginId)}:control:enabled`;
+}
+
+export function hasEffectivePluginPermission(
+  access: EffectivePluginPermissionContext,
+  action: StudioPolicyAction,
+  resource: string,
+): boolean {
+  if (access.isRoot) return true;
+  const activeRoleIds = new Set(access.roleIds);
+  const hasApplicablePolicy = access.policies.some((policy) =>
+    activeRoleIds.has(policy.discordRoleId),
+  );
+  // Policy未導入のManage Guildユーザーは従来挙動を維持し、段階移行を可能にする。
+  if (!hasApplicablePolicy) return true;
+  return evaluateStudioAccessPolicy({
+    roleIds: access.roleIds,
+    policies: access.policies,
+    action,
+    resource,
+  });
+}
+
+export function resolvePluginConfigStudioAccess(
+  access: EffectivePluginPermissionContext,
+  guildId: string,
+  pluginId: string,
+  fieldKeys: readonly string[],
+): PluginConfigStudioAccess {
+  const uniqueFieldKeys = [...new Set(fieldKeys)];
+  return {
+    canToggleEnabled: hasEffectivePluginPermission(
+      access,
+      'studio.operation.execute',
+      pluginEnabledControlResource(guildId, pluginId),
+    ),
+    editableFieldKeys: uniqueFieldKeys.filter((fieldKey) =>
+      hasEffectivePluginPermission(
+        access,
+        'studio.settings.write',
+        pluginConfigFieldResource(guildId, pluginId, fieldKey),
+      ),
+    ),
+  };
 }
 
 export function getExplicitPermissionMode(
