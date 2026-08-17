@@ -1,5 +1,27 @@
 import { Prisma, type PrismaClient } from '@prisma/client';
-import type { EvaluationResult, TriggerEvent } from '@herta/shared';
+
+interface RuleRuntimeTriggerEvent {
+  type: string;
+  guildId: string;
+  data: Record<string, unknown>;
+  timestamp: Date;
+}
+
+interface RuleRuntimeEvaluationResult {
+  ruleId: string;
+  ruleName: string;
+  triggerMatched: boolean;
+  conditionsMet: boolean;
+  actionsExecuted: boolean;
+  actionResults: Array<{
+    success: boolean;
+    error?: string;
+    data?: Record<string, unknown>;
+  }>;
+  actionSkipReason?: string;
+  error?: string;
+  durationMs: number;
+}
 
 export interface StoredRuleRuntimeRecord {
   id: string;
@@ -41,41 +63,11 @@ export interface RecentRuleExecutionLogRecord {
   executedAt: Date;
 }
 
-interface RuleRuntimeRow {
-  id: string;
-  guildId: string;
-  name: string;
-  description: string | null;
-  enabled: boolean;
-  priority: number;
-  schemaVersion: number;
-  trigger: Prisma.JsonValue;
-  conditions: Prisma.JsonValue;
-  actions: Prisma.JsonValue;
-  cooldownMs: number;
-  maxExecutions: number | null;
-  executionCount: number;
-  createdBy: string;
-}
-
 interface LockedRuleRow {
   enabled: boolean;
   cooldownMs: number;
   maxExecutions: number | null;
   executionCount: number;
-}
-
-interface RecentRuleExecutionLogRow {
-  id: string;
-  ruleId: string;
-  ruleName: string;
-  triggerType: string;
-  triggerExecutionId: string | null;
-  conditionsMet: boolean;
-  actionsResult: Prisma.JsonValue | null;
-  error: string | null;
-  durationMs: number | null;
-  executedAt: Date;
 }
 
 const DISCORD_ID_PATTERN = /^\d{17,20}$/u;
@@ -93,7 +85,7 @@ export async function listEnabledRuleRuntimeRecords(
 ): Promise<StoredRuleRuntimeRecord[]> {
   assertDiscordId(guildId, 'guildId');
   const normalizedTriggerType = normalizeTriggerType(triggerType);
-  const rows = await prisma.$queryRaw<RuleRuntimeRow[]>`
+  return prisma.$queryRaw<StoredRuleRuntimeRecord[]>`
     SELECT
       "id",
       "guild_id" AS "guildId",
@@ -115,7 +107,6 @@ export async function listEnabledRuleRuntimeRecords(
       AND "trigger" ->> 'type' = ${normalizedTriggerType}
     ORDER BY "priority" DESC, "id" ASC
   `;
-  return rows;
 }
 
 export async function listGuildIdsWithEnabledRuleTrigger(
@@ -133,10 +124,7 @@ export async function listGuildIdsWithEnabledRuleTrigger(
   return rows.map((row) => row.guildId).filter((guildId) => DISCORD_ID_PATTERN.test(guildId));
 }
 
-/**
- * Condition成立後、Action実行直前に呼び出すatomic claim。
- * Rule rowをlockし、placeholder logも同じtransactionで作成して、同一eventの再配送を遮断する。
- */
+/** Condition成立後、Action実行直前に行うatomic claim。 */
 export async function reserveRuleRuntimeExecution(
   prisma: PrismaClient,
   input: {
@@ -166,7 +154,7 @@ export async function reserveRuleRuntimeExecution(
     const rule = rows[0];
     if (!rule?.enabled) return { allowed: false, reason: 'rule-disabled' };
 
-    const duplicateRows = await tx.$queryRaw<Array<{ present: boolean }>>`
+    const duplicate = await tx.$queryRaw<Array<{ present: boolean }>>`
       SELECT EXISTS (
         SELECT 1
         FROM "rule_execution_logs"
@@ -175,16 +163,14 @@ export async function reserveRuleRuntimeExecution(
           AND "trigger_event" ->> 'executionId' = ${triggerExecutionId}
       ) AS "present"
     `;
-    if (duplicateRows[0]?.present) {
-      return { allowed: false, reason: 'duplicate-event' };
-    }
+    if (duplicate[0]?.present) return { allowed: false, reason: 'duplicate-event' };
 
     if (rule.maxExecutions !== null && rule.executionCount >= rule.maxExecutions) {
       return { allowed: false, reason: 'max-executions' };
     }
 
     if (rule.cooldownMs > 0) {
-      const lastExecutionRows = await tx.$queryRaw<Array<{ executedAt: Date }>>`
+      const latest = await tx.$queryRaw<Array<{ executedAt: Date }>>`
         SELECT "executed_at" AS "executedAt"
         FROM "rule_execution_logs"
         WHERE "rule_id" = ${input.ruleId}::uuid
@@ -194,33 +180,11 @@ export async function reserveRuleRuntimeExecution(
         ORDER BY "executed_at" DESC
         LIMIT 1
       `;
-      const lastExecution = lastExecutionRows[0]?.executedAt;
+      const lastExecution = latest[0]?.executedAt;
       if (lastExecution && input.now.getTime() - lastExecution.getTime() < rule.cooldownMs) {
         return { allowed: false, reason: 'cooldown' };
       }
     }
-
-    await tx.ruleExecutionLog.create({
-      data: {
-        ruleId: input.ruleId,
-        guildId: input.guildId,
-        triggerEvent: {
-          executionId: triggerExecutionId,
-          type: 'reservation',
-          guildId: input.guildId,
-          data: {},
-          timestamp: input.now.toISOString(),
-        },
-        conditionsMet: true,
-        actionsResult: {
-          reservation: true,
-          actionsExecuted: false,
-          results: [],
-        },
-        durationMs: null,
-        executedAt: input.now,
-      },
-    });
 
     const updated = await tx.$queryRaw<Array<{ executionCount: number }>>`
       UPDATE "rules"
@@ -239,9 +203,9 @@ export async function reserveRuleRuntimeExecution(
 export async function recordRuleRuntimeExecution(
   prisma: PrismaClient,
   input: {
-    event: TriggerEvent;
+    event: RuleRuntimeTriggerEvent;
     triggerExecutionId: string;
-    result: EvaluationResult;
+    result: RuleRuntimeEvaluationResult;
     executedAt?: Date;
   },
 ): Promise<void> {
@@ -251,55 +215,26 @@ export async function recordRuleRuntimeExecution(
   const executedAt = input.executedAt ?? new Date();
   assertValidDate(executedAt, 'executedAt');
 
-  const triggerEvent = {
-    executionId: triggerExecutionId,
-    type: input.event.type,
-    guildId: input.event.guildId,
-    data: input.event.data,
-    timestamp: input.event.timestamp.toISOString(),
-  };
-  const actionsResult = {
-    triggerMatched: input.result.triggerMatched,
-    actionsExecuted: input.result.actionsExecuted,
-    actionSkipReason: input.result.actionSkipReason ?? null,
-    results: input.result.actionResults,
-  };
-  const triggerEventJson = JSON.stringify(triggerEvent);
-  const actionsResultJson = JSON.stringify(actionsResult);
-  const normalizedError = normalizeLogError(input.result.error);
-  const durationMs = normalizeDuration(input.result.durationMs);
-
-  const updated = await prisma.$executeRaw`
-    WITH target AS (
-      SELECT "id"
-      FROM "rule_execution_logs"
-      WHERE "rule_id" = ${input.result.ruleId}::uuid
-        AND "guild_id" = ${input.event.guildId}
-        AND "trigger_event" ->> 'executionId' = ${triggerExecutionId}
-      ORDER BY "executed_at" DESC, "id" DESC
-      LIMIT 1
-    )
-    UPDATE "rule_execution_logs"
-    SET
-      "trigger_event" = ${triggerEventJson}::jsonb,
-      "conditions_met" = ${input.result.conditionsMet},
-      "actions_result" = ${actionsResultJson}::jsonb,
-      "error" = ${normalizedError},
-      "duration_ms" = ${durationMs},
-      "executed_at" = ${executedAt}
-    WHERE "id" IN (SELECT "id" FROM target)
-  `;
-  if (updated > 0) return;
-
   await prisma.ruleExecutionLog.create({
     data: {
       ruleId: input.result.ruleId,
       guildId: input.event.guildId,
-      triggerEvent: toJsonValue(triggerEvent),
+      triggerEvent: toJsonValue({
+        executionId: triggerExecutionId,
+        type: input.event.type,
+        guildId: input.event.guildId,
+        data: input.event.data,
+        timestamp: input.event.timestamp.toISOString(),
+      }),
       conditionsMet: input.result.conditionsMet,
-      actionsResult: toJsonValue(actionsResult),
-      error: normalizedError,
-      durationMs,
+      actionsResult: toJsonValue({
+        triggerMatched: input.result.triggerMatched,
+        actionsExecuted: input.result.actionsExecuted,
+        actionSkipReason: input.result.actionSkipReason ?? null,
+        results: input.result.actionResults,
+      }),
+      error: normalizeLogError(input.result.error),
+      durationMs: normalizeDuration(input.result.durationMs),
       executedAt,
     },
   });
@@ -350,7 +285,7 @@ export async function listRecentRuleRuntimeExecutionLogs(
 ): Promise<RecentRuleExecutionLogRecord[]> {
   assertDiscordId(guildId, 'guildId');
   const safeLimit = Math.max(1, Math.min(MAX_RECENT_LOGS, Math.trunc(limit)));
-  return prisma.$queryRaw<RecentRuleExecutionLogRow[]>`
+  return prisma.$queryRaw<RecentRuleExecutionLogRecord[]>`
     SELECT
       l."id",
       l."rule_id" AS "ruleId",
