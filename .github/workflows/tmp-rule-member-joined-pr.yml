@@ -18,7 +18,7 @@ jobs:
       - name: Format
         run: |
           corepack enable
-          pnpm prettier --write \
+          pnpm dlx prettier@3.9.6 --write \
             apps/bot/src/rules/runtime.ts \
             apps/bot/src/rules/runtime.test.ts \
             apps/bot/src/bot.ts \
