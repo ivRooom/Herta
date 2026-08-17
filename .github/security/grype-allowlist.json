@@ -1,12 +1,1 @@
-[
-  {
-    "id": "CVE-2026-58043",
-    "reason": "Node.js公式修正版22.23.2をNVDの境界誤りで検出している。Permission Modelも使用していない",
-    "expires": "2026-09-05",
-    "issue": "https://github.com/ivRooom/Herta/issues/85",
-    "package": {
-      "name": "node",
-      "type": "binary"
-    }
-  }
-]
+[]
