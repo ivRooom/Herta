@@ -4,6 +4,10 @@ import { HERTA_WORKER_HEARTBEAT_INTERVAL_MS, HERTA_WORKER_HEARTBEAT_KEY } from '
 import { Redis } from 'ioredis';
 import { startCommunitySeasonRuntime, type CommunitySeasonRuntime } from './community-seasons.js';
 import { startDailyContentRuntime, type DailyContentRuntime } from './daily-content.js';
+import {
+  startDiscordRoleOperationRuntime,
+  type DiscordRoleOperationRuntime,
+} from './discord-role-operations.js';
 import { startLfgRuntime, type LfgRuntime } from './lfg.js';
 import { startTeamSplitRuntime, type TeamSplitWorkerRuntime } from './team-split.js';
 
@@ -16,6 +20,7 @@ let redis: Redis | undefined;
 let heartbeatTimer: NodeJS.Timeout | undefined;
 let communitySeasonRuntime: CommunitySeasonRuntime | undefined;
 let dailyContentRuntime: DailyContentRuntime | undefined;
+let discordRoleOperationRuntime: DiscordRoleOperationRuntime | undefined;
 let lfgRuntime: LfgRuntime | undefined;
 let teamSplitRuntime: TeamSplitWorkerRuntime | undefined;
 let shuttingDown = false;
@@ -83,6 +88,35 @@ async function main() {
         'Community Season Snapshot Workerの開始に失敗しました',
       );
       process.exit(1);
+    }
+
+    const botHealthUrl = process.env['BOT_HEALTH_URL']?.trim();
+    const botInternalApiSecret = process.env['BOT_INTERNAL_API_SECRET']?.trim();
+    if (!botHealthUrl || !botInternalApiSecret || botInternalApiSecret.length < 32) {
+      logger.warn(
+        'BOT_HEALTH_URLまたはBOT_INTERNAL_API_SECRETが未設定のためDiscord Role Operation Workerを開始しません',
+      );
+    } else {
+      try {
+        const configuredInterval = Number.parseInt(
+          process.env['DISCORD_ROLE_OPERATION_SCAN_INTERVAL_SECONDS'] ?? '',
+          10,
+        );
+        discordRoleOperationRuntime = await startDiscordRoleOperationRuntime({
+          prisma: getPrismaClient(),
+          logger,
+          botHealthUrl,
+          internalApiSecret: botInternalApiSecret,
+          scanIntervalSeconds: Number.isFinite(configuredInterval) ? configuredInterval : undefined,
+        });
+        logger.info('Discord Role Operation Workerを開始しました');
+      } catch (error) {
+        logger.error(
+          { errorName: resolveErrorName(error) },
+          'Discord Role Operation Workerの開始に失敗しました',
+        );
+        process.exit(1);
+      }
     }
 
     if (!discordBotToken) {
@@ -182,6 +216,16 @@ async function shutdown(signal: string): Promise<void> {
     logger.error(
       { errorName: resolveErrorName(error) },
       'Daily Content Workerの終了処理に失敗しました',
+    );
+  }
+
+  try {
+    await discordRoleOperationRuntime?.close();
+    discordRoleOperationRuntime = undefined;
+  } catch (error) {
+    logger.error(
+      { errorName: resolveErrorName(error) },
+      'Discord Role Operation Workerの終了処理に失敗しました',
     );
   }
 

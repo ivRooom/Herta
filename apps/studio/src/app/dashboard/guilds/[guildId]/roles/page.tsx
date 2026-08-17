@@ -1,9 +1,12 @@
+import { listRecentDiscordRoleOperations } from '@herta/db';
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, LockKeyhole, ShieldCheck, SlidersHorizontal } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import { auth } from '@/auth';
+import { RoleLifecycleManager } from '@/components/role-lifecycle-manager';
 import { RolePolicyManager } from '@/components/role-policy-manager';
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { prisma } from '@/lib/db';
 import { authorizeStudioPermission } from '@/lib/studio-access';
 import { STUDIO_ROOT_DISCORD_ROLE_ID } from '@/lib/studio-access-policy';
 import { listStudioRolePolicies } from '@/lib/studio-role-policy-store';
@@ -30,7 +33,34 @@ export default async function GuildRoleManagerPage({
 
   const options = await getGuildConfigurationOptions(guildId);
   if (!options) return <AccessUnavailable guildId={guildId} status={503} />;
-  const policies = await listStudioRolePolicies(guildId);
+  const [policies, recentOperations] = await Promise.all([
+    listStudioRolePolicies(guildId),
+    listRecentDiscordRoleOperations(prisma, guildId, 20),
+  ]);
+  const roles = options.roles.map((role) => ({
+    id: role.id,
+    name: role.name,
+    color: role.color,
+    position: role.position,
+    managed: role.managed,
+    mentionable: role.mentionable,
+    editable: role.editable,
+  }));
+  const operations = recentOperations.map((operation) => ({
+    id: operation.id,
+    operation: operation.operation,
+    status: operation.status,
+    source: operation.source,
+    discordRoleId: operation.discordRoleId,
+    roleName: operation.roleName,
+    roleColor: operation.roleColor,
+    scheduledFor: operation.scheduledFor.toISOString(),
+    expiresAfterSeconds: operation.expiresAfterSeconds,
+    nextAttemptAt: operation.nextAttemptAt?.toISOString() ?? null,
+    attemptCount: operation.attemptCount,
+    lastErrorName: operation.lastErrorName,
+    createdAt: operation.createdAt.toISOString(),
+  }));
 
   return (
     <div className="space-y-7">
@@ -53,8 +83,8 @@ export default async function GuildRoleManagerPage({
             </p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">Role Manager</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Discord RoleをIAM風のAccess Inventoryから検索・絞り込みし、Herta
-              Studioの閲覧・編集・作成・削除・Command・AI・Secret・RAG・MCP権限を管理します。PolicyはGUIとJSONの両方で編集できます。
+              Discord Role本体の作成・削除・期間限定運用と、IAM風Access InventoryからHerta
+              Studioの閲覧・編集・作成・削除・Command・AI・Secret・RAG・MCP権限を管理します。
             </p>
           </div>
         </div>
@@ -67,7 +97,8 @@ export default async function GuildRoleManagerPage({
             <h2 className="text-sm font-semibold">root security boundary</h2>
             <p className="mt-1 text-xs leading-5 text-muted">
               Discord Role <code>{STUDIO_ROOT_DISCORD_ROLE_ID}</code>{' '}
-              はrootとして固定され、Policyから変更・削除できません。v1ではPolicy変更もrootだけが実行できます。
+              はrootとして固定され、Policy変更・Policy削除・Discord
+              Role本体の削除対象にできません。Role本体の変更もrootだけが実行できます。
             </p>
           </div>
         </div>
@@ -92,17 +123,18 @@ export default async function GuildRoleManagerPage({
         <ArrowRight className="h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
       </Link>
 
+      <RoleLifecycleManager
+        guildId={guildId}
+        roles={roles}
+        operations={operations}
+        rootRoleId={STUDIO_ROOT_DISCORD_ROLE_ID}
+        canEdit={authorization.access.isRoot}
+        botCanManageRoles={options.bot.manageRoles}
+      />
+
       <RolePolicyManager
         guildId={guildId}
-        roles={options.roles.map((role) => ({
-          id: role.id,
-          name: role.name,
-          color: role.color,
-          position: role.position,
-          managed: role.managed,
-          mentionable: role.mentionable,
-          editable: role.editable,
-        }))}
+        roles={roles}
         policies={policies}
         rootRoleId={STUDIO_ROOT_DISCORD_ROLE_ID}
         canEdit={authorization.access.isRoot}
