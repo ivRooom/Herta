@@ -10,10 +10,13 @@ import {
   type AutoResponsePrismaClient,
 } from '@herta/plugin-catalog/auto-response-service';
 import { createLogger } from '@herta/logger';
+import { HERTA_STUDIO_ROOT_DISCORD_ROLE_ID } from '@herta/shared';
 import { HertaBot } from './bot.js';
 import { loadHealthConfig } from './health/config.js';
 import { HealthHttpServer } from './health/server.js';
 import { HertaHealthService } from './health/service.js';
+import { RuleProductionRuntime } from './rules/runtime.js';
+import { createPrismaRuleRuntimeStore } from './rules/store.js';
 
 const logger = createLogger({
   name: 'herta-bot',
@@ -22,6 +25,30 @@ const logger = createLogger({
 
 const healthConfig = loadHealthConfig();
 const bot = new HertaBot(logger, healthConfig.heartbeatStaleMs);
+const ruleRuntime = process.env['DATABASE_URL']
+  ? new RuleProductionRuntime({
+      store: createPrismaRuleRuntimeStore(getPrismaClient()),
+      security: {
+        authorizeRuleActor: async (guildId, actorId) => {
+          const members = await bot.searchGuildMembers(guildId, actorId, 1);
+          const actor = members?.find((member) => member.id === actorId);
+          return actor?.roleIds.includes(HERTA_STUDIO_ROOT_DISCORD_ROLE_ID) ?? false;
+        },
+        canCreateRole: async (guildId) => {
+          const options = await bot.getGuildConfigurationOptions(guildId);
+          return options?.bot.manageRoles ?? false;
+        },
+        canDeleteRole: async (guildId, roleId) => {
+          if (roleId === HERTA_STUDIO_ROOT_DISCORD_ROLE_ID) return false;
+          const options = await bot.getGuildConfigurationOptions(guildId);
+          if (!options?.bot.manageRoles) return false;
+          const role = options.roles.find((candidate) => candidate.id === roleId);
+          return Boolean(role && role.editable && !role.managed);
+        },
+      },
+      logger,
+    })
+  : undefined;
 const version = process.env['HERTA_VERSION']?.trim() || '0.1.0';
 const healthService = new HertaHealthService({
   config: healthConfig,
@@ -214,11 +241,22 @@ async function main(): Promise<void> {
     await pruneRetainedData();
     await healthServer?.start();
     await bot.start();
+    if (ruleRuntime) {
+      try {
+        await ruleRuntime.start();
+      } catch (error) {
+        logger.error(
+          { err: error },
+          'Rule Engine production runtimeの開始に失敗しました。Bot本体は継続します',
+        );
+      }
+    }
     startRetentionPruning();
     startHealthSnapshotCollection();
   } catch (error) {
     stopRetentionPruning();
     await stopHealthSnapshotCollection();
+    await ruleRuntime?.close().catch(() => undefined);
     await healthServer?.stop().catch(() => undefined);
     logger.fatal(error, 'Bot の起動に失敗しました');
     process.exitCode = 1;
@@ -232,7 +270,7 @@ async function shutdown(signal: 'SIGINT' | 'SIGTERM'): Promise<void> {
   await stopHealthSnapshotCollection();
   logger.info({ signal }, 'シャットダウン中...');
 
-  const results = await Promise.allSettled([healthServer?.stop(), bot.stop()]);
+  const results = await Promise.allSettled([ruleRuntime?.close(), healthServer?.stop(), bot.stop()]);
   const rejected = results.filter((result) => result.status === 'rejected').length;
   if (rejected > 0) {
     logger.error({ rejected }, 'シャットダウン処理の一部が失敗しました');
