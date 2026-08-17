@@ -3,7 +3,11 @@ import { Prisma } from '@prisma/client';
 
 export type DiscordRoleOperationKind = 'create' | 'delete';
 export type DiscordRoleOperationStatus =
-  'pending' | 'processing' | 'succeeded' | 'failed' | 'cancelled';
+  | 'pending'
+  | 'processing'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled';
 export type DiscordRoleOperationSource = 'studio' | 'temporary-expiry' | 'rule-engine';
 
 export interface DiscordRoleOperationRecord {
@@ -248,14 +252,17 @@ export async function markDiscordRoleOperationFailed(
   id: string,
   now: Date,
   errorName: string,
+  discordRoleId?: string | null,
 ): Promise<void> {
   assertUuid(id, 'id');
   assertValidDate(now, 'now');
+  if (discordRoleId) assertDiscordId(discordRoleId, 'discordRoleId');
   const normalizedErrorName = normalizeErrorName(errorName);
   await db.$executeRaw`
     UPDATE "discord_role_operations"
     SET
       "status" = 'failed',
+      "discord_role_id" = COALESCE(${discordRoleId ?? null}, "discord_role_id"),
       "completed_at" = ${now},
       "claimed_at" = NULL,
       "next_attempt_at" = NULL,
