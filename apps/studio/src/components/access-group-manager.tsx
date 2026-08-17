@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { describeStudioApiError } from '@/lib/studio-api-feedback';
 import { Plus, Save, Trash2, UserPlus } from 'lucide-react';
 
 interface GroupView {
@@ -78,7 +79,16 @@ export function AccessGroupManager({
         error?: string;
         group?: GroupView;
       } | null;
-      if (!response.ok) throw new Error(result?.error || 'Groupの保存に失敗しました');
+      if (!response.ok) {
+        throw new Error(
+          describeStudioApiError(
+            response.status,
+            result,
+            'Groupの保存に失敗しました',
+            'access-control',
+          ),
+        );
+      }
       if (isNew && result?.group?.id) setSelectedGroupId(result.group.id);
       setNotice({
         kind: 'success',
@@ -110,7 +120,16 @@ export function AccessGroupManager({
         { method: 'DELETE' },
       );
       const result = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(result?.error || 'Groupの削除に失敗しました');
+      if (!response.ok) {
+        throw new Error(
+          describeStudioApiError(
+            response.status,
+            result,
+            'Groupの削除に失敗しました',
+            'access-control',
+          ),
+        );
+      }
       setSelectedGroupId('new');
       setName('');
       setDescription('');
@@ -137,7 +156,16 @@ export function AccessGroupManager({
         body: JSON.stringify({ groupId: selectedGroup.id, userId: targetUserId }),
       });
       const result = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(result?.error || 'Group Member更新に失敗しました');
+      if (!response.ok) {
+        throw new Error(
+          describeStudioApiError(
+            response.status,
+            result,
+            'Group Member更新に失敗しました',
+            'access-control',
+          ),
+        );
+      }
       if (add) setUserId('');
       setNotice({
         kind: 'success',
@@ -260,8 +288,8 @@ export function AccessGroupManager({
           ) : null}
           {notice ? (
             <p
-              role="status"
-              className={`rounded-xl border px-3 py-2 text-sm ${notice.kind === 'success' ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300' : 'border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-300'}`}
+              role={notice.kind === 'error' ? 'alert' : 'status'}
+              className={`whitespace-pre-line rounded-xl border px-3 py-2 text-sm ${notice.kind === 'success' ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300' : 'border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-300'}`}
             >
               {notice.text}
             </p>

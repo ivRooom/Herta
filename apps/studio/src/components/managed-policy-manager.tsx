@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { describeStudioApiError } from '@/lib/studio-api-feedback';
 import { Braces, Plus, Save, Trash2, UserPlus } from 'lucide-react';
 import {
   STUDIO_ACCESS_POLICY_VERSION,
@@ -165,8 +166,7 @@ export function ManagedPolicyManager({
       } | null;
       if (!response.ok) {
         throw new Error(
-          [result?.error, ...(result?.details ?? [])].filter(Boolean).join(' / ') ||
-            '保存に失敗しました',
+          describeStudioApiError(response.status, result, '保存に失敗しました', 'access-control'),
         );
       }
       if (isNew && result?.policy?.id) setSelectedPolicyId(result.policy.id);
@@ -198,7 +198,11 @@ export function ManagedPolicyManager({
         { method: 'DELETE' },
       );
       const result = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(result?.error || '削除に失敗しました');
+      if (!response.ok) {
+        throw new Error(
+          describeStudioApiError(response.status, result, '削除に失敗しました', 'access-control'),
+        );
+      }
       setSelectedPolicyId('new');
       setNotice({ kind: 'success', text: 'Policyを削除しました。' });
       router.refresh();
@@ -227,7 +231,16 @@ export function ManagedPolicyManager({
         body: JSON.stringify({ policyId: selectedPolicy.id, principalType, principalId }),
       });
       const result = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(result?.error || 'Attachment更新に失敗しました');
+      if (!response.ok) {
+        throw new Error(
+          describeStudioApiError(
+            response.status,
+            result,
+            'Attachment更新に失敗しました',
+            'access-control',
+          ),
+        );
+      }
       setNotice({
         kind: 'success',
         text: attached ? 'PolicyをAttachしました。' : 'PolicyをDetachしました。',
@@ -442,8 +455,8 @@ export function ManagedPolicyManager({
 
           {notice ? (
             <p
-              role="status"
-              className={`rounded-xl border px-3 py-2 text-sm ${notice.kind === 'success' ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300' : 'border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-300'}`}
+              role={notice.kind === 'error' ? 'alert' : 'status'}
+              className={`whitespace-pre-line rounded-xl border px-3 py-2 text-sm ${notice.kind === 'success' ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300' : 'border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-300'}`}
             >
               {notice.text}
             </p>

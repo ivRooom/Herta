@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { describeStudioApiError } from '@/lib/studio-api-feedback';
 import { CalendarClock, Clock3, Plus, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
 import type { RoleInventoryRole } from '@/lib/role-access-inventory';
 import { roleDeleteBlockReason } from '@/lib/discord-role-lifecycle';
@@ -136,7 +137,16 @@ export function RoleLifecycleManager({
       });
       resetRequestId = response.status < 500;
       const result = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(result?.error || 'Role作成の受付に失敗しました');
+      if (!response.ok) {
+        throw new Error(
+          describeStudioApiError(
+            response.status,
+            result,
+            'Role作成の受付に失敗しました',
+            'role-lifecycle',
+          ),
+        );
+      }
       setName('');
       setNotice({
         kind: 'success',
@@ -172,7 +182,16 @@ export function RoleLifecycleManager({
         { method: 'DELETE' },
       );
       const result = (await response.json().catch(() => null)) as { error?: string } | null;
-      if (!response.ok) throw new Error(result?.error || 'Role削除の受付に失敗しました');
+      if (!response.ok) {
+        throw new Error(
+          describeStudioApiError(
+            response.status,
+            result,
+            'Role削除の受付に失敗しました',
+            'role-lifecycle',
+          ),
+        );
+      }
       setNotice({
         kind: 'success',
         text: `${selectedDeleteRole.name} の削除を受け付けました。`,
@@ -217,10 +236,13 @@ export function RoleLifecycleManager({
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
           <div className="flex gap-2">
             <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />
-            <p>
-              Herta
-              Botに「ロールの管理」権限がありません。Discord側で権限を付与するまでRole本体の変更は実行できません。
-            </p>
+            <div>
+              <p className="font-semibold">Herta BotのDiscord権限が不足しています</p>
+              <p className="mt-1 leading-6">
+                必要な権限は「ロールの管理」です。Discordのサーバー設定 → ロールでHerta
+                Botへ権限を付与し、Herta BotのRoleを操作対象Roleより上に配置してください。
+              </p>
+            </div>
           </div>
         </div>
       ) : null}
