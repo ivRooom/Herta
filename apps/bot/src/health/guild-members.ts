@@ -6,6 +6,7 @@ export interface GuildMemberOption {
   displayName: string;
   avatarUrl: string | null;
   bot: boolean;
+  roleIds: string[];
 }
 
 interface CacheEntry {
@@ -32,7 +33,7 @@ export async function searchGuildMemberOptions(
   const cacheKey = `${guildId}:${normalizedQuery.toLocaleLowerCase('ja')}:${limit}`;
   const now = Date.now();
   const cached = memberSearchCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) return cached.members.map((member) => ({ ...member }));
+  if (cached && cached.expiresAt > now) return cached.members.map(cloneMemberOption);
   if (cached) memberSearchCache.delete(cacheKey);
 
   let members: GuildMemberOption[];
@@ -44,7 +45,7 @@ export async function searchGuildMemberOptions(
   }
 
   rememberSearch(cacheKey, members, now);
-  return members.map((member) => ({ ...member }));
+  return members.map(cloneMemberOption);
 }
 
 export function isAllowedMemberSearchQuery(query: string): boolean {
@@ -59,7 +60,12 @@ function toMemberOption(member: GuildMember): GuildMemberOption {
     displayName: member.displayName,
     avatarUrl: member.displayAvatarURL({ size: 64 }),
     bot: member.user.bot,
+    roleIds: [...member.roles.cache.keys()].filter((roleId) => roleId !== member.guild.id).sort(),
   };
+}
+
+function cloneMemberOption(member: GuildMemberOption): GuildMemberOption {
+  return { ...member, roleIds: [...member.roleIds] };
 }
 
 async function searchExactMemberId(guild: Guild, memberId: string): Promise<GuildMemberOption[]> {
@@ -76,8 +82,12 @@ function rememberSearch(key: string, members: GuildMemberOption[], now: number):
     const oldestKey = memberSearchCache.keys().next().value as string | undefined;
     if (oldestKey) memberSearchCache.delete(oldestKey);
   }
-  memberSearchCache.set(key, {
+  memberSearchCache.set(cacheKeyForStore(key), {
     expiresAt: now + MEMBER_SEARCH_CACHE_TTL_MS,
-    members: members.map((member) => ({ ...member })),
+    members: members.map(cloneMemberOption),
   });
+}
+
+function cacheKeyForStore(key: string): string {
+  return key;
 }
