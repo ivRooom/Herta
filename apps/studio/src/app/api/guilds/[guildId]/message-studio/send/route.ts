@@ -4,16 +4,21 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { authorizeGuild, getGuildPlugin } from '@/lib/guild-plugins';
 import {
+  MESSAGE_STUDIO_VOICE_MAX_BYTES,
   MessageStudioDiscordError,
   sanitizeMessageStudioFilename,
   sendMessageStudioMessage,
   validateMessageStudioImageFile,
+  validateMessageStudioVoiceFile,
+  validateMessageStudioVoiceMetadata,
   type MessageStudioImageAttachment,
   type MessageStudioImmediateEmbed,
+  type MessageStudioVoiceAttachment,
 } from '@/lib/message-studio-discord';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
 
 export const dynamic = 'force-dynamic';
+const MAX_MULTIPART_REQUEST_BYTES = MESSAGE_STUDIO_VOICE_MAX_BYTES + 2 * 1024 * 1024;
 
 type RouteContext = { params: Promise<{ guildId: string }> };
 
@@ -24,6 +29,11 @@ export async function POST(request: Request, { params }: RouteContext) {
 
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
+
+  const declaredLength = Number(request.headers.get('content-length') ?? '0');
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_MULTIPART_REQUEST_BYTES) {
+    return NextResponse.json({ error: '送信データが大きすぎます' }, { status: 413 });
+  }
 
   const { guildId } = await params;
   const authorization = await authorizeGuild(guildId, session.user.id);
@@ -41,6 +51,9 @@ export async function POST(request: Request, { params }: RouteContext) {
   const forumTitle = formText(form, 'forumTitle');
   const publishAnnouncement = formText(form, 'publishAnnouncement') === 'true';
   const rawAttachment = form.get('image');
+  const rawVoice = form.get('voice');
+  const rawVoiceDuration = formText(form, 'voiceDurationSeconds');
+  const rawVoiceWaveform = formText(form, 'voiceWaveform');
   const rawEmbed = formText(form, 'embed');
 
   try {
@@ -77,9 +90,32 @@ export async function POST(request: Request, { params }: RouteContext) {
         contentType: rawAttachment.type as MessageStudioImageAttachment['contentType'],
       };
     }
-    if (!content.trim() && !attachment && !embed) {
+
+    let voice: MessageStudioVoiceAttachment | null = null;
+    if (rawVoice instanceof File && rawVoice.size > 0) {
+      const fileError = validateMessageStudioVoiceFile(rawVoice);
+      if (fileError) return NextResponse.json({ error: fileError }, { status: 400 });
+      const durationSeconds = Number(rawVoiceDuration);
+      const metadataError = validateMessageStudioVoiceMetadata(durationSeconds, rawVoiceWaveform);
+      if (metadataError) return NextResponse.json({ error: metadataError }, { status: 400 });
+      if (content.trim() || embed || attachment || publishAnnouncement) {
+        return NextResponse.json(
+          { error: 'ボイスメッセージは本文・Embed・画像・Crosspostと同時に送信できません' },
+          { status: 400 },
+        );
+      }
+      voice = {
+        bytes: new Uint8Array(await rawVoice.arrayBuffer()),
+        filename: sanitizeMessageStudioFilename(rawVoice.name, rawVoice.type),
+        contentType: rawVoice.type,
+        durationSeconds,
+        waveform: rawVoiceWaveform,
+      };
+    }
+
+    if (!content.trim() && !attachment && !embed && !voice) {
       return NextResponse.json(
-        { error: '本文・Embed・画像のいずれかを入力してください' },
+        { error: '本文・Embed・画像・ボイスメッセージのいずれかを入力してください' },
         { status: 400 },
       );
     }
@@ -93,6 +129,7 @@ export async function POST(request: Request, { params }: RouteContext) {
       publishAnnouncement: publishAnnouncement && config.allowAnnouncementCrosspost,
       embed,
       attachment,
+      voice,
     });
 
     await prisma.auditLog.create({
@@ -108,6 +145,7 @@ export async function POST(request: Request, { params }: RouteContext) {
           threadId: result.threadId,
           channelType: result.channelType,
           hasAttachment: attachment !== null,
+          hasVoice: voice !== null,
           hasEmbed: embed !== null,
           contentLength: content.length,
         },
