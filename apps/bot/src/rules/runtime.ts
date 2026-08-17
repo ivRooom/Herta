@@ -14,21 +14,14 @@ import {
   type RuleActionContextInput,
   type RuleBeforeActionsInput,
 } from '@herta/rule-engine';
-import type {
-  ActionResult,
-  ConditionNode,
-  RuleDefinition,
-  TriggerEvent,
-} from '@herta/shared';
+import type { ActionResult, ConditionNode, RuleDefinition, TriggerEvent } from '@herta/shared';
 import type { Logger } from '@herta/logger';
 
-export const RULE_TRIGGER_MESSAGE_CREATED = 'discord.message.created';
 export const RULE_TRIGGER_SCHEDULE_MINUTE = 'schedule.minute';
 export const RULE_ACTION_ROLE_CREATE = 'discord.role.create';
 export const RULE_ACTION_ROLE_CREATE_TEMPORARY = 'discord.role.create-temporary';
 export const RULE_ACTION_ROLE_DELETE = 'discord.role.delete';
-export const RULE_CONDITION_CHANNEL_IS = 'event.channel-is';
-export const RULE_CONDITION_USER_IS = 'event.user-is';
+export const RULE_CONDITION_UTC_HOUR_IS = 'schedule.utc-hour-is';
 
 const RULE_SCHEMA_VERSION = 1;
 const DISCORD_ID_PATTERN = /^\d{17,20}$/u;
@@ -66,8 +59,11 @@ export interface RuleRuntimeStore {
 }
 
 export interface RuleRuntimeSecurity {
+  /** Rule作成者が現在もOWNER root Roleを持つことをlive Discord stateで検証する。 */
   authorizeRuleActor(guildId: string, actorId: string): Promise<boolean>;
+  /** Bot Manage Roles権限をlive Discord stateで検証する。 */
   canCreateRole(guildId: string): Promise<boolean>;
+  /** Guild境界・root Role保護・role hierarchyをlive Discord stateで検証する。 */
   canDeleteRole(guildId: string, roleId: string): Promise<boolean>;
 }
 
@@ -76,14 +72,6 @@ export interface RuleProductionRuntimeOptions {
   security: RuleRuntimeSecurity;
   logger: Logger;
   now?: () => Date;
-}
-
-export interface MessageCreatedRuleEventInput {
-  guildId: string;
-  messageId: string;
-  channelId: string;
-  userId: string;
-  timestamp: Date;
 }
 
 interface RuntimeRuleMetadata {
@@ -111,13 +99,10 @@ interface ParsedCreateRoleConfig {
   expiresAfterSeconds: number | null;
 }
 
-interface ParsedDeleteRoleConfig {
-  roleId: string;
-}
-
 /**
- * Bot production eventをRuleEvaluatorへ接続するruntime。
- * Discord mutationは行わず、Role Lifecycle Operationだけをenqueueする。
+ * Rule Engine v1 production runtime。
+ * UTC minute tickをproduction triggerとして評価し、Discord mutationは直接行わず
+ * PR #239のRole Lifecycle Operationだけをenqueueする。
  */
 export class RuleProductionRuntime {
   private readonly triggers = new TriggerRegistry();
@@ -142,34 +127,11 @@ export class RuleProductionRuntime {
     });
   }
 
-  async handleMessageCreated(input: MessageCreatedRuleEventInput): Promise<void> {
-    if (this.closed) return;
-    assertSnowflake(input.guildId, 'guildId');
-    assertSnowflake(input.messageId, 'messageId');
-    assertSnowflake(input.channelId, 'channelId');
-    assertSnowflake(input.userId, 'userId');
-    assertValidDate(input.timestamp, 'timestamp');
-
-    await this.dispatch(
-      {
-        type: RULE_TRIGGER_MESSAGE_CREATED,
-        guildId: input.guildId,
-        data: {
-          messageId: input.messageId,
-          channelId: input.channelId,
-          userId: input.userId,
-        },
-        timestamp: input.timestamp,
-      },
-      `discord-message:${input.messageId}`,
-    );
-  }
-
-  async startSchedule(): Promise<void> {
+  async start(): Promise<void> {
     if (this.closed || this.scheduleTimer) return;
-    await this.scanScheduleNow();
+    await this.scanNow();
     this.scheduleTimer = setInterval(() => {
-      void this.scanScheduleNow().catch((error) => {
+      void this.scanNow().catch((error) => {
         this.options.logger.error(
           { errorName: resolveErrorName(error) },
           'Rule Engine schedule scanに失敗しました',
@@ -179,14 +141,14 @@ export class RuleProductionRuntime {
     this.scheduleTimer.unref();
   }
 
-  async scanScheduleNow(at = this.now()): Promise<void> {
+  async scanNow(at = this.now()): Promise<void> {
     if (this.closed) return;
     assertValidDate(at, 'at');
     const minuteEpoch = Math.floor(at.getTime() / 60_000);
     if (this.lastScheduleMinute === minuteEpoch) return;
-    this.lastScheduleMinute = minuteEpoch;
-
     if (this.scheduleRun) return this.scheduleRun;
+
+    this.lastScheduleMinute = minuteEpoch;
     const run = this.dispatchScheduleMinute(minuteEpoch).finally(() => {
       if (this.scheduleRun === run) this.scheduleRun = undefined;
     });
@@ -211,7 +173,11 @@ export class RuleProductionRuntime {
           {
             type: RULE_TRIGGER_SCHEDULE_MINUTE,
             guildId,
-            data: { minuteEpoch },
+            data: {
+              minuteEpoch,
+              utcHour: timestamp.getUTCHours(),
+              utcMinute: timestamp.getUTCMinutes(),
+            },
             timestamp,
           },
           executionId,
@@ -254,14 +220,10 @@ export class RuleProductionRuntime {
     }
     if (rules.length === 0) return;
 
-    const context: RuleBaseContext = {
-      triggerExecutionId,
-      data: event.data,
-      metadata,
-    };
+    const context: RuleBaseContext = { triggerExecutionId, data: event.data, metadata };
     const results = await this.evaluator.evaluate(event, rules, context);
     for (const result of results) {
-      // typeはDBで事前絞り込み済み。config不一致はnoiseを避けて記録しない。
+      // trigger config不一致はnoiseを避けて記録しない。errorは必ず残す。
       if (!result.triggerMatched && !result.error) continue;
       try {
         await this.options.store.recordExecution({
@@ -317,23 +279,9 @@ export class RuleProductionRuntime {
 
   private registerDefinitions(): void {
     this.triggers.register({
-      type: RULE_TRIGGER_MESSAGE_CREATED,
-      name: 'Discord message created',
-      description: 'Bot/webhook以外のGuild message作成イベント',
-      configSchema: { channelIds: 'Discord snowflake[]?' },
-      evaluate: async (event, config) => {
-        if (event.type !== RULE_TRIGGER_MESSAGE_CREATED) return false;
-        const channelIds = parseOptionalSnowflakeArray(config['channelIds'], 'channelIds');
-        if (channelIds.length === 0) return true;
-        const channelId = event.data['channelId'];
-        return typeof channelId === 'string' && channelIds.includes(channelId);
-      },
-    });
-
-    this.triggers.register({
       type: RULE_TRIGGER_SCHEDULE_MINUTE,
       name: 'Schedule minute',
-      description: 'UTC epoch minuteを基準に一定間隔で評価する',
+      description: 'UTC epoch minuteを基準に一定間隔で評価するproduction trigger',
       configSchema: { everyMinutes: 'integer 1..1440', offsetMinutes: 'integer >= 0' },
       evaluate: async (event, config) => {
         if (event.type !== RULE_TRIGGER_SCHEDULE_MINUTE) return false;
@@ -350,31 +298,21 @@ export class RuleProductionRuntime {
     });
 
     this.conditions.register({
-      type: RULE_CONDITION_CHANNEL_IS,
-      name: 'Event channel is',
-      configSchema: { channelId: 'Discord snowflake' },
+      type: RULE_CONDITION_UTC_HOUR_IS,
+      name: 'UTC hour is',
+      description: 'schedule eventのUTC hourを0〜23で比較する',
+      configSchema: { hour: 'integer 0..23' },
       evaluate: async (context, config) => {
         const base = requireBaseContext(context);
-        const channelId = parseSnowflake(config['channelId'], 'channelId');
-        return base.data['channelId'] === channelId;
-      },
-    });
-
-    this.conditions.register({
-      type: RULE_CONDITION_USER_IS,
-      name: 'Event user is',
-      configSchema: { userId: 'Discord snowflake' },
-      evaluate: async (context, config) => {
-        const base = requireBaseContext(context);
-        const userId = parseSnowflake(config['userId'], 'userId');
-        return base.data['userId'] === userId;
+        const hour = parseInteger(config['hour'], 0, 23, 'hour');
+        return base.data['utcHour'] === hour;
       },
     });
 
     this.actions.register({
       type: RULE_ACTION_ROLE_CREATE,
       name: 'Create Discord role',
-      description: 'Role Lifecycle Operationへ即時作成をenqueueする',
+      description: 'Role Lifecycle Operationへ作成をenqueueする',
       configSchema: { roleName: 'string', roleColor: '0..16777215?' },
       execute: (context, config) => this.executeRoleCreate(context, config, false),
     });
@@ -455,22 +393,22 @@ export class RuleProductionRuntime {
     config: Record<string, unknown>,
   ): Promise<ActionResult> {
     let actionContext: RoleActionContext;
-    let parsed: ParsedDeleteRoleConfig;
+    let roleId: string;
     try {
       actionContext = requireRoleActionContext(context);
-      parsed = parseDeleteRoleConfig(config);
+      roleId = parseSnowflake(config['roleId'], 'roleId');
     } catch (error) {
       return { success: false, error: resolveErrorName(error) };
     }
 
-    if (!(await this.options.security.canDeleteRole(actionContext.guildId, parsed.roleId))) {
+    if (!(await this.options.security.canDeleteRole(actionContext.guildId, roleId))) {
       return { success: false, error: 'DiscordRoleDeleteNotPermitted' };
     }
 
     try {
       const operation = await this.options.store.enqueueRoleDelete({
         guildId: actionContext.guildId,
-        discordRoleId: parsed.roleId,
+        discordRoleId: roleId,
         scheduledFor: actionContext.eventTimestamp,
         createdBy: actionContext.actorId,
         source: 'rule-engine',
@@ -490,7 +428,11 @@ export function parseStoredRule(record: StoredRuleRuntimeRecord): RuleDefinition
   if (!record.enabled) throw new Error('DisabledRuleLoadedIntoRuntime');
   if (!record.name.trim() || record.name.length > 200) throw new Error('InvalidStoredRuleName');
   if (!Number.isInteger(record.priority)) throw new Error('InvalidStoredRulePriority');
-  if (!Number.isInteger(record.cooldownMs) || record.cooldownMs < 0 || record.cooldownMs > MAX_COOLDOWN_MS) {
+  if (
+    !Number.isInteger(record.cooldownMs) ||
+    record.cooldownMs < 0 ||
+    record.cooldownMs > MAX_COOLDOWN_MS
+  ) {
     throw new Error('InvalidStoredRuleCooldown');
   }
   if (
@@ -501,9 +443,6 @@ export function parseStoredRule(record: StoredRuleRuntimeRecord): RuleDefinition
   }
   assertSnowflake(record.createdBy, 'createdBy');
 
-  const trigger = parseTrigger(record.trigger);
-  const conditions = parseConditions(record.conditions);
-  const actions = parseActions(record.actions);
   return {
     id: record.id,
     schemaVersion: record.schemaVersion,
@@ -511,14 +450,18 @@ export function parseStoredRule(record: StoredRuleRuntimeRecord): RuleDefinition
     ...(record.description ? { description: record.description } : {}),
     enabled: record.enabled,
     priority: record.priority,
-    trigger,
-    conditions,
-    actions,
+    trigger: parseTrigger(record.trigger),
+    conditions: parseConditions(record.conditions),
+    actions: parseActions(record.actions),
     cooldownMs: record.cooldownMs,
     ...(record.maxExecutions === null ? {} : { maxExecutions: record.maxExecutions }),
   };
 }
 
+/**
+ * operationIdはrule + trigger execution + action slotだけから決める。
+ * payloadは別fingerprintに束縛するため、同じkeyでpayloadが変わると既存DB repositoryがconflictにする。
+ */
 export function deriveRoleCreateIdempotency(input: {
   ruleId: string;
   triggerExecutionId: string;
@@ -548,7 +491,8 @@ export function deriveRoleCreateIdempotency(input: {
 function parseTrigger(value: unknown): RuleDefinition['trigger'] {
   const record = requireRecord(value, 'trigger');
   const type = parseNonEmptyString(record['type'], 'trigger.type', 96);
-  const config = record['config'] === undefined ? {} : requireRecord(record['config'], 'trigger.config');
+  const config =
+    record['config'] === undefined ? {} : requireRecord(record['config'], 'trigger.config');
   return { type, config };
 }
 
@@ -563,16 +507,16 @@ function parseConditionNode(value: unknown, depth: number): ConditionNode {
   if (depth > MAX_CONDITION_DEPTH) throw new Error('RuleConditionTreeTooDeep');
   const record = requireRecord(value, 'condition');
   const type = parseNonEmptyString(record['type'], 'condition.type', 96);
-  const config = record['config'] === undefined ? undefined : requireRecord(record['config'], 'condition.config');
-  const rawChildren = record['children'];
-  const children =
-    rawChildren === undefined
+  const config =
+    record['config'] === undefined
       ? undefined
-      : Array.isArray(rawChildren)
-        ? rawChildren.map((child) => parseConditionNode(child, depth + 1))
-        : (() => {
-            throw new Error('InvalidStoredRuleConditionChildren');
-          })();
+      : requireRecord(record['config'], 'condition.config');
+  const rawChildren = record['children'];
+  let children: ConditionNode[] | undefined;
+  if (rawChildren !== undefined) {
+    if (!Array.isArray(rawChildren)) throw new Error('InvalidStoredRuleConditionChildren');
+    children = rawChildren.map((child) => parseConditionNode(child, depth + 1));
+  }
   return {
     type,
     ...(config ? { config } : {}),
@@ -587,7 +531,8 @@ function parseActions(value: unknown): RuleDefinition['actions'] {
   return value.map((action) => {
     const record = requireRecord(action, 'action');
     const type = parseNonEmptyString(record['type'], 'action.type', 96);
-    const config = record['config'] === undefined ? {} : requireRecord(record['config'], 'action.config');
+    const config =
+      record['config'] === undefined ? {} : requireRecord(record['config'], 'action.config');
     return { type, config };
   });
 }
@@ -605,14 +550,13 @@ function parseCreateRoleConfig(
   return { roleName, roleColor, expiresAfterSeconds };
 }
 
-function parseDeleteRoleConfig(config: Record<string, unknown>): ParsedDeleteRoleConfig {
-  return { roleId: parseSnowflake(config['roleId'], 'roleId') };
-}
-
 function requireBaseContext(value: unknown): RuleBaseContext {
   const record = requireRecord(value, 'ruleRuntimeContext');
   if (typeof record['triggerExecutionId'] !== 'string') throw new Error('InvalidRuleRuntimeContext');
   if (!(record['metadata'] instanceof Map)) throw new Error('InvalidRuleRuntimeContext');
+  if (typeof record['data'] !== 'object' || record['data'] === null || Array.isArray(record['data'])) {
+    throw new Error('InvalidRuleRuntimeContext');
+  }
   return value as RuleBaseContext;
 }
 
@@ -645,13 +589,6 @@ function requireRecord(value: unknown, field: string): Record<string, unknown> {
     throw new Error(`Invalid${field.replace(/[^a-z0-9]/giu, '')}`);
   }
   return value as Record<string, unknown>;
-}
-
-function parseOptionalSnowflakeArray(value: unknown, field: string): string[] {
-  if (value === undefined) return [];
-  if (!Array.isArray(value) || value.length > 100) throw new Error(`Invalid${field}`);
-  const ids = value.map((entry) => parseSnowflake(entry, field));
-  return [...new Set(ids)];
 }
 
 function parseSnowflake(value: unknown, field: string): string {
