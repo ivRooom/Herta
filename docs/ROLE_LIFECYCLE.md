@@ -15,6 +15,7 @@ Herta Role ManagerのDiscord Role本体に対する作成・削除・予約・�
 - Worker再起動時のstale operation reconcile
 - deleteの安全な再試行
 - Discord Role削除成功後の孤児Studio Role Policy cleanup
+- Discord作成成功後にDB確定が失敗した場合の補償削除
 
 今回の対象外:
 
@@ -64,6 +65,8 @@ WorkerはDBを正本としてdue operationを走査する。
 
 WorkerはDiscord Bot TokenをRole Lifecycleの実行には使用せず、既存のBot内部API secretでBotへ依頼する。
 
+Discord Role作成成功後にoperation成功確定・TTL delete生成・Audit Log保存を行うDB transactionが失敗した場合は、作成済みRoleをBot経由で補償削除する。補償削除まで失敗した場合は、実際に作成されたDiscord Role IDとfailure contextをfailed operationとAudit Logへ残し、運用から追跡できる状態にする。
+
 ### Bot
 
 Discord固有のprivileged operationはBotへ閉じ込める。
@@ -71,6 +74,9 @@ Discord固有のprivileged operationはBotへ閉じ込める。
 Role作成は常に以下で開始する。
 
 - permissions: `0`
+- colors.primary_color: Studioで指定した単色
+- colors.secondary_color: `null`
+- colors.tertiary_color: `null`
 - mentionable: `false`
 - hoist: `false`
 
@@ -162,7 +168,3 @@ DISCORD_ROLE_OPERATION_SCAN_INTERVAL_SECONDS=15
 4. Bot healthy
 
 新しいoperation tableが存在しない状態やBot内部APIが起動前の状態でWorkerがRole処理を開始しないためである。
-
-## Development / CI
-
-Role Lifecycle実装中に一時formatter workflowを使用する場合でも、通常CIの`pnpm format:check`が通った時点で削除し、feature固有のwrite権限付きworkflowをmainへ残さない。
