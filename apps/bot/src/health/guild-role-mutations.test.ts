@@ -28,12 +28,16 @@ describe('parseGuildRoleCreateInput', () => {
 });
 
 describe('createGuildRole', () => {
-  it('Discord Roleを権限0・非mentionable・非hoistで作成する', async () => {
+  it('Discord Roleを現行colors payload・権限0・非mentionable・非hoistで作成する', async () => {
     const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       expect(init?.method).toBe('POST');
       expect(JSON.parse(String(init?.body))).toEqual({
         name: 'Temporary',
-        color: 0x123456,
+        colors: {
+          primary_color: 0x123456,
+          secondary_color: null,
+          tertiary_color: null,
+        },
         permissions: '0',
         hoist: false,
         mentionable: false,
