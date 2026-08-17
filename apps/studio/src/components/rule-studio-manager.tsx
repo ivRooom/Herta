@@ -37,13 +37,13 @@ const DEFAULT_DRAFT = {
 export function RuleStudioManager({
   guildId,
   rules,
-  deleteRoleOptions,
+  editableRoleOptions,
   canEdit,
   unsupportedCount,
 }: {
   guildId: string;
   rules: RuleStudioView[];
-  deleteRoleOptions: RoleOption[];
+  editableRoleOptions: RoleOption[];
   canEdit: boolean;
   unsupportedCount: number;
 }) {
@@ -73,6 +73,14 @@ export function RuleStudioManager({
       ...current,
       triggerType,
       conditionHour: triggerType === 'schedule.minute' ? current.conditionHour : null,
+      actionType:
+        triggerType === 'schedule.minute' && current.actionType === 'discord.member.role.add'
+          ? 'discord.role.create'
+          : current.actionType,
+      roleId:
+        triggerType === 'schedule.minute' && current.actionType === 'discord.member.role.add'
+          ? ''
+          : current.roleId,
     }));
     setNotice(null);
   }
@@ -366,17 +374,27 @@ export function RuleStudioManager({
                     <option value="discord.role.create">Roleを作成</option>
                     <option value="discord.role.create-temporary">一時Roleを作成</option>
                     <option value="discord.role.delete">Roleを削除</option>
+                    {draft.triggerType === 'member.joined' ? (
+                      <option value="discord.member.role.add">参加メンバーへRoleを付与</option>
+                    ) : null}
                   </select>
                 </Field>
-                {draft.actionType === 'discord.role.delete' ? (
-                  <Field label="削除対象Role">
+                {draft.actionType === 'discord.role.delete' ||
+                draft.actionType === 'discord.member.role.add' ? (
+                  <Field
+                    label={
+                      draft.actionType === 'discord.member.role.add'
+                        ? '付与するRole'
+                        : '削除対象Role'
+                    }
+                  >
                     <select
                       value={draft.roleId}
                       onChange={(event) => patch('roleId', event.target.value)}
                       className={inputClass}
                     >
                       <option value="">選択してください</option>
-                      {deleteRoleOptions.map((role) => (
+                      {editableRoleOptions.map((role) => (
                         <option key={role.id} value={role.id}>
                           {role.name}
                         </option>
@@ -395,7 +413,8 @@ export function RuleStudioManager({
                 )}
               </div>
 
-              {draft.actionType !== 'discord.role.delete' ? (
+              {draft.actionType === 'discord.role.create' ||
+              draft.actionType === 'discord.role.create-temporary' ? (
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <Field label="Role色">
                     <div className="flex items-center gap-3">
@@ -424,6 +443,13 @@ export function RuleStudioManager({
                       />
                     </Field>
                   ) : null}
+                </div>
+              ) : null}
+
+              {draft.actionType === 'discord.member.role.add' ? (
+                <div className="mt-4 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3 text-sm leading-6 text-muted">
+                  Triggerで参加したメンバー本人へRoleを付与します。User IDは入力できません。OWNER
+                  root / managed / Botから編集不能なRoleはserver-sideでも拒否されます。
                 </div>
               ) : null}
             </div>

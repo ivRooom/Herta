@@ -5,6 +5,7 @@ import {
   GatewayIntentBits,
   MessageFlags,
   Partials,
+  PermissionFlagsBits,
   type ChatInputCommandInteraction,
 } from 'discord.js';
 import { Redis } from 'ioredis';
@@ -16,6 +17,7 @@ import {
 import { getEnabledPlugins } from '@herta/plugin-catalog';
 import {
   DEFAULT_BOT_PRESENCE_CONFIG,
+  HERTA_STUDIO_ROOT_DISCORD_ROLE_ID,
   HERTA_WORKER_HEARTBEAT_KEY,
   type BotPresenceConfig,
   type XpRoleSweepEvent,
@@ -70,6 +72,12 @@ import {
 function resolveErrorName(error: unknown): string {
   if (error instanceof Error && error.name.trim()) return error.name;
   return 'UnknownError';
+}
+
+function namedError(name: string): Error {
+  const error = new Error(name);
+  error.name = name;
+  return error;
 }
 
 function envFlagEnabled(name: string): boolean {
@@ -770,6 +778,112 @@ export class HertaBot {
     limit: number,
   ): Promise<GuildMemberOption[] | null> {
     return searchGuildMemberOptions(this.client, guildId, query, limit);
+  }
+
+  async addRuleMemberRole(input: {
+    guildId: string;
+    userId: string;
+    roleId: string;
+    actorId: string;
+    ruleId: string;
+    triggerExecutionId: string;
+  }): Promise<{ status: 'added' | 'already-present'; auditRecorded: boolean }> {
+    if (input.roleId === HERTA_STUDIO_ROOT_DISCORD_ROLE_ID) {
+      throw namedError('DiscordMemberRoleRootProtected');
+    }
+
+    const guild = this.client.guilds.cache.get(input.guildId);
+    if (!guild) throw namedError('DiscordGuildNotAvailable');
+
+    let botMember = guild.members.me;
+    if (!botMember) {
+      try {
+        botMember = await guild.members.fetchMe();
+      } catch (error) {
+        this.logger.warn(
+          { err: error, guildId: input.guildId },
+          'Bot member状態を取得できませんでした',
+        );
+        throw namedError('DiscordBotMemberNotAvailable');
+      }
+    }
+    if (!botMember.permissions.has(PermissionFlagsBits.ManageRoles)) {
+      throw namedError('DiscordManageRolesPermissionMissing');
+    }
+
+    let role;
+    try {
+      role = await guild.roles.fetch(input.roleId);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, guildId: input.guildId, roleId: input.roleId },
+        'Rule Role付与対象の取得に失敗しました',
+      );
+      throw namedError('DiscordRoleNotAvailable');
+    }
+    if (!role) throw namedError('DiscordRoleNotAvailable');
+    if (role.managed || !role.editable) throw namedError('DiscordRoleNotAssignable');
+
+    let member;
+    try {
+      member = await guild.members.fetch(input.userId);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, guildId: input.guildId, userId: input.userId },
+        'Rule Role付与対象memberの取得に失敗しました',
+      );
+      throw namedError('DiscordMemberNotAvailable');
+    }
+    if (member.user.bot) throw namedError('DiscordBotMemberRoleAssignmentDenied');
+    if (member.roles.cache.has(input.roleId)) {
+      return { status: 'already-present', auditRecorded: true };
+    }
+    if (!member.manageable) throw namedError('DiscordMemberNotManageable');
+
+    try {
+      await member.roles.add(role, `Herta Rule ${input.ruleId}`);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, guildId: input.guildId, userId: input.userId, roleId: input.roleId },
+        'RuleからDiscord Roleを付与できませんでした',
+      );
+      throw namedError('DiscordMemberRoleAddFailed');
+    }
+
+    let auditRecorded = true;
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          guildId: input.guildId,
+          actorId: input.actorId,
+          event: 'rule.member_role_added',
+          targetType: 'member',
+          targetId: input.userId,
+          changes: { roleId: input.roleId, status: 'added' },
+          severity: 'warning',
+          metadata: {
+            ruleId: input.ruleId,
+            triggerExecutionId: input.triggerExecutionId,
+            operationSource: 'rule-engine',
+            securitySensitive: true,
+          },
+        },
+      });
+    } catch (error) {
+      auditRecorded = false;
+      this.logger.error(
+        {
+          err: error,
+          guildId: input.guildId,
+          userId: input.userId,
+          roleId: input.roleId,
+          ruleId: input.ruleId,
+        },
+        'Rule Role付与のAudit Log保存に失敗しました',
+      );
+    }
+
+    return { status: 'added', auditRecorded };
   }
 
   async reconcileXpRewardRoles(

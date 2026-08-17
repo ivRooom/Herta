@@ -40,7 +40,7 @@ export default async function GuildRuleStudioPage({
   if (!options) return <AccessUnavailable guildId={guildId} status={503} />;
 
   const rules = records.map(parseStoredRuleStudioView).filter((rule) => rule !== null);
-  const deleteRoleOptions = options.roles
+  const editableRoleOptions = options.roles
     .filter((role) => role.id !== STUDIO_ROOT_DISCORD_ROLE_ID && !role.managed && role.editable)
     .map((role) => ({ id: role.id, name: role.name }));
 
@@ -65,9 +65,9 @@ export default async function GuildRuleStudioPage({
             </p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">Rule Studio</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Schedule TriggerからDiscord Role Lifecycleを実行するproduction
-              Ruleを管理します。Runtime側のroot再認証・idempotency・Role
-              hierarchy検証は保存後も継続します。
+              Schedule / Member joined TriggerからDiscord Role Actionを実行するproduction
+              Ruleを管理します。Runtime側のroot再認証・idempotency・Role hierarchy・Guild
+              boundary検証は保存後も継続します。
             </p>
           </div>
         </div>
@@ -76,7 +76,7 @@ export default async function GuildRuleStudioPage({
       <RuleStudioManager
         guildId={guildId}
         rules={rules}
-        deleteRoleOptions={deleteRoleOptions}
+        editableRoleOptions={editableRoleOptions}
         canEdit={authorization.access.isRoot}
         unsupportedCount={records.length - rules.length}
       />

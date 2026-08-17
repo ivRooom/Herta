@@ -28,6 +28,9 @@ const bot = new HertaBot(logger, healthConfig.heartbeatStaleMs);
 const ruleRuntime = process.env['DATABASE_URL']
   ? new RuleProductionRuntime({
       store: createPrismaRuleRuntimeStore(getPrismaClient()),
+      memberRoles: {
+        addRole: (input) => bot.addRuleMemberRole(input),
+      },
       security: {
         authorizeRuleActor: async (guildId, actorId) => {
           const members = await bot.searchGuildMembers(guildId, actorId, 1);

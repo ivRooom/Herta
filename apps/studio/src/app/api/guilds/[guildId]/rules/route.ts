@@ -57,7 +57,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
       { status: 400 },
     );
   }
-  const targetCheck = await validateDeleteTarget(guildId, validation.definition.actions[0]);
+  const targetCheck = await validateRoleTarget(guildId, validation.definition.actions[0]);
   if (targetCheck) return targetCheck;
 
   try {
@@ -125,7 +125,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ guil
       { status: 400 },
     );
   }
-  const targetCheck = await validateDeleteTarget(guildId, validation.definition.actions[0]);
+  const targetCheck = await validateRoleTarget(guildId, validation.definition.actions[0]);
   if (targetCheck) return targetCheck;
 
   const current = await prisma.rule.findFirst({ where: { id: ruleId, guildId } });
@@ -213,24 +213,34 @@ async function requireRoot(guildId: string, userId: string) {
   };
 }
 
-async function validateDeleteTarget(
+async function validateRoleTarget(
   guildId: string,
   action: { type: string; config: Record<string, unknown> } | undefined,
 ): Promise<Response | null> {
-  if (action?.type !== 'discord.role.delete') return null;
+  if (action?.type !== 'discord.role.delete' && action?.type !== 'discord.member.role.add') {
+    return null;
+  }
   const roleId = typeof action.config.roleId === 'string' ? action.config.roleId : '';
   const options = await getGuildConfigurationOptions(guildId);
-  if (!options)
+  if (!options) {
     return NextResponse.json({ error: 'Discord Role状態を確認できませんでした' }, { status: 503 });
+  }
+  if (!options.bot.manageRoles) {
+    return NextResponse.json({ error: 'BotにManage Roles権限がありません' }, { status: 400 });
+  }
   const role = options.roles.find((candidate) => candidate.id === roleId);
-  if (!role)
-    return NextResponse.json({ error: '削除対象RoleはこのGuildに存在しません' }, { status: 400 });
+  if (!role) {
+    return NextResponse.json({ error: '対象RoleはこのGuildに存在しません' }, { status: 400 });
+  }
   if (role.id === STUDIO_ROOT_DISCORD_ROLE_ID) {
-    return NextResponse.json({ error: 'OWNER root RoleはRuleから削除できません' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'OWNER root RoleはRuleの操作対象にできません' },
+      { status: 400 },
+    );
   }
   if (role.managed || !role.editable) {
     return NextResponse.json(
-      { error: 'Botから編集できないRoleは削除対象にできません' },
+      { error: 'Botから編集できないRoleはRuleの操作対象にできません' },
       { status: 400 },
     );
   }
