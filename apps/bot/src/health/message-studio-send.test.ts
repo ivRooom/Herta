@@ -12,6 +12,7 @@ describe('parseGuildMessageStudioSendInput', () => {
         publishAnnouncement: false,
         embed: null,
         image: null,
+        voice: null,
       }),
     ).toMatchObject({
       channelId: '123456789012345678',
@@ -34,6 +35,7 @@ describe('parseGuildMessageStudioSendInput', () => {
           contentType: 'image/png',
           dataBase64: Buffer.from('test-image').toString('base64'),
         },
+        voice: null,
       }),
     ).not.toBeNull();
   });
@@ -56,6 +58,7 @@ describe('parseGuildMessageStudioSendInput', () => {
           fields: [{ name: '開始', value: '21:00', inline: true }],
         },
         image: null,
+        voice: null,
       }),
     ).toMatchObject({
       embed: {
@@ -66,6 +69,86 @@ describe('parseGuildMessageStudioSendInput', () => {
     });
   });
 
+  it('Voice Messageを受理する', () => {
+    const waveform = Buffer.from([0, 32, 96, 255]).toString('base64');
+    expect(
+      parseGuildMessageStudioSendInput({
+        channelId: '123456789012345678',
+        content: '',
+        forumTitle: '',
+        allowUserMentions: false,
+        publishAnnouncement: false,
+        embed: null,
+        image: null,
+        voice: {
+          filename: 'voice.ogg',
+          contentType: 'audio/ogg',
+          dataBase64: Buffer.from('audio-data').toString('base64'),
+          durationSeconds: 3.25,
+          waveform,
+        },
+      }),
+    ).toMatchObject({
+      voice: { filename: 'voice.ogg', contentType: 'audio/ogg', durationSeconds: 3.25, waveform },
+    });
+  });
+
+  it('Voice Messageと本文・Embed・画像・Crosspostの併用を拒否する', () => {
+    const voice = {
+      filename: 'voice.ogg',
+      contentType: 'audio/ogg',
+      dataBase64: Buffer.from('audio-data').toString('base64'),
+      durationSeconds: 2,
+      waveform: Buffer.from([12, 80]).toString('base64'),
+    };
+    const base = {
+      channelId: '123456789012345678',
+      forumTitle: '',
+      allowUserMentions: false,
+      embed: null,
+      image: null,
+      voice,
+    };
+    expect(
+      parseGuildMessageStudioSendInput({ ...base, content: 'hello', publishAnnouncement: false }),
+    ).toBeNull();
+    expect(
+      parseGuildMessageStudioSendInput({ ...base, content: '', publishAnnouncement: true }),
+    ).toBeNull();
+  });
+
+  it('不正なVoice MIME・duration・waveformを拒否する', () => {
+    const base = {
+      channelId: '123456789012345678',
+      content: '',
+      forumTitle: '',
+      allowUserMentions: false,
+      publishAnnouncement: false,
+      embed: null,
+      image: null,
+    };
+    const voice = {
+      filename: 'voice.bin',
+      contentType: 'application/octet-stream',
+      dataBase64: Buffer.from('audio-data').toString('base64'),
+      durationSeconds: 2,
+      waveform: Buffer.from([10]).toString('base64'),
+    };
+    expect(parseGuildMessageStudioSendInput({ ...base, voice })).toBeNull();
+    expect(
+      parseGuildMessageStudioSendInput({
+        ...base,
+        voice: { ...voice, contentType: 'audio/ogg', durationSeconds: 0 },
+      }),
+    ).toBeNull();
+    expect(
+      parseGuildMessageStudioSendInput({
+        ...base,
+        voice: { ...voice, contentType: 'audio/ogg', waveform: 'not-base64!' },
+      }),
+    ).toBeNull();
+  });
+
   it('不正なEmbed URL・色・空Embedを拒否する', () => {
     const base = {
       channelId: '123456789012345678',
@@ -74,6 +157,7 @@ describe('parseGuildMessageStudioSendInput', () => {
       allowUserMentions: false,
       publishAnnouncement: false,
       image: null,
+      voice: null,
     };
     expect(
       parseGuildMessageStudioSendInput({
@@ -127,6 +211,7 @@ describe('parseGuildMessageStudioSendInput', () => {
       allowUserMentions: false,
       publishAnnouncement: false,
       embed: null,
+      voice: null,
     };
     expect(
       parseGuildMessageStudioSendInput({ ...base, channelId: '../invalid', image: null }),
