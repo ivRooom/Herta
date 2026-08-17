@@ -10,7 +10,7 @@ export interface EffectivePluginPermissionContext {
   isRoot: boolean;
   roleIds: readonly string[];
   policies: readonly { discordRoleId: string; policy: StudioAccessPolicy }[];
-  managedPolicies?: readonly StudioAccessPolicy[];
+  managedPolicies: readonly StudioAccessPolicy[];
 }
 
 export interface PluginConfigStudioAccess {
@@ -40,7 +40,7 @@ export function hasEffectivePluginPermission(
   const legacyPolicies = access.policies
     .filter((policy) => activeRoleIds.has(policy.discordRoleId))
     .map((policy) => policy.policy);
-  const managedPolicies = access.managedPolicies ?? [];
+  const managedPolicies = access.managedPolicies;
 
   // Policy未導入のManage Guildユーザーは従来挙動を維持し、段階移行を可能にする。
   if (legacyPolicies.length === 0 && managedPolicies.length === 0) return true;
