@@ -115,11 +115,7 @@ export async function DELETE(
   if (!root.ok) return root.response;
 
   const roleId = new URL(request.url).searchParams.get('roleId') ?? '';
-  if (
-    !isDiscordRoleId(roleId) ||
-    roleId === guildId ||
-    roleId === STUDIO_ROOT_DISCORD_ROLE_ID
-  ) {
+  if (!isDiscordRoleId(roleId) || roleId === guildId || roleId === STUDIO_ROOT_DISCORD_ROLE_ID) {
     return NextResponse.json({ error: '削除対象Roleが不正です' }, { status: 400 });
   }
 

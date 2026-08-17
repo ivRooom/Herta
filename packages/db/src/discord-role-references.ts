@@ -62,20 +62,14 @@ export function collectHertaDiscordRoleReferences(
   return [...references].slice(0, MAX_REFERENCE_RESULTS);
 }
 
-export function containsExactJsonStringValue(
-  value: unknown,
-  target: string,
-  depth = 0,
-): boolean {
+export function containsExactJsonStringValue(value: unknown, target: string, depth = 0): boolean {
   if (depth > MAX_JSON_REFERENCE_DEPTH) return false;
   if (typeof value === 'string') return value === target;
   if (Array.isArray(value)) {
     return value.some((item) => containsExactJsonStringValue(item, target, depth + 1));
   }
   if (!isRecord(value)) return false;
-  return Object.values(value).some((item) =>
-    containsExactJsonStringValue(item, target, depth + 1),
-  );
+  return Object.values(value).some((item) => containsExactJsonStringValue(item, target, depth + 1));
 }
 
 function removeAutoCleanedStudioRolePolicies(value: unknown): unknown {
