@@ -8,6 +8,7 @@ import type { Logger } from 'pino';
 import type { CommandHandler } from '@herta/plugin-sdk';
 import { coreInformationCommands } from './core-info.js';
 import { communityActivityCommands } from './community-activity.js';
+import { configureHelpCommandProvider, helpV2Command } from './help-v2.js';
 import { coreUtilityV3Commands } from './utility-v3.js';
 import { coreUtilityV4Commands } from './utility-v4.js';
 
@@ -114,8 +115,12 @@ export class CommandRegistry {
       ...communityActivityCommands,
     ]) {
       if (PLUGIN_OWNED_COMMAND_NAMES.has(command.definition.name)) continue;
+      if (command.definition.name === 'help') continue;
       this.register(command);
     }
+
+    this.register(helpV2Command);
+    configureHelpCommandProvider(() => this.getAll());
   }
 
   register(command: SlashCommand): void {
