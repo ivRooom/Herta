@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { DiscordRoleOperationRecord, StoredRuleRuntimeRecord } from '@herta/db';
 import {
+  RULE_ACTION_MEMBER_ROLE_ADD,
   RULE_ACTION_ROLE_CREATE,
   RULE_ACTION_ROLE_DELETE,
   RULE_CONDITION_UTC_HOUR_IS,
@@ -14,6 +15,7 @@ import {
 
 const GUILD_ID = '12345678901234567';
 const ACTOR_ID = '22345678901234567';
+const JOINED_USER_ID = '32345678901234567';
 const ROLE_ID = '72345678901234567';
 const RULE_ID = '11111111-1111-4111-8111-111111111111';
 const NOW = new Date('2026-08-17T12:00:00.000Z');
@@ -67,12 +69,17 @@ function createHarness(input?: {
   authorized?: boolean;
   canCreate?: boolean;
   canDelete?: boolean;
+  memberRoleStatus?: 'added' | 'already-present';
 }) {
   const rules = input?.rules ?? [storedRule()];
   const seen = new Set<string>();
   const enqueueRoleCreate = vi.fn(async () => operation());
   const enqueueRoleDelete = vi.fn(async () => ({ ...operation(), operation: 'delete' as const }));
   const recordExecution = vi.fn(async () => undefined);
+  const addMemberRole = vi.fn(async () => ({
+    status: input?.memberRoleStatus ?? ('added' as const),
+    auditRecorded: true,
+  }));
   const recordInvalidRule = vi.fn(async () => undefined);
   const reserveExecution = vi.fn(async ({ ruleId, triggerExecutionId }) => {
     const key = `${ruleId}:${triggerExecutionId}`;
@@ -112,12 +119,21 @@ function createHarness(input?: {
     child: vi.fn(),
     level: 'info',
   } as never;
-  const runtime = new RuleProductionRuntime({ store, security, logger, now: () => NOW });
+  const memberRoles = { addRole: addMemberRole };
+  const runtime = new RuleProductionRuntime({
+    store,
+    security,
+    memberRoles,
+    logger,
+    now: () => NOW,
+  });
   return {
     runtime,
     security,
     enqueueRoleCreate,
     enqueueRoleDelete,
+    addMemberRole,
+    memberRoles,
     recordExecution,
     reserveExecution,
   };
@@ -175,6 +191,82 @@ describe('RuleProductionRuntime', () => {
     );
   });
 
+  it('member.joined本人へ既存Roleを一度だけ付与する', async () => {
+    const joinedAt = new Date('2026-08-17T11:59:59.000Z');
+    const harness = createHarness({
+      rules: [
+        storedRule({
+          trigger: { type: RULE_TRIGGER_MEMBER_JOINED, config: {} },
+          actions: [{ type: RULE_ACTION_MEMBER_ROLE_ADD, config: { roleId: ROLE_ID } }],
+        }),
+      ],
+    });
+
+    await harness.runtime.dispatchMemberJoined({
+      guildId: GUILD_ID,
+      userId: JOINED_USER_ID,
+      joinedAt,
+    });
+    await harness.runtime.dispatchMemberJoined({
+      guildId: GUILD_ID,
+      userId: JOINED_USER_ID,
+      joinedAt,
+    });
+
+    expect(harness.addMemberRole).toHaveBeenCalledTimes(1);
+    expect(harness.addMemberRole).toHaveBeenCalledWith({
+      guildId: GUILD_ID,
+      userId: JOINED_USER_ID,
+      roleId: ROLE_ID,
+      actorId: ACTOR_ID,
+      ruleId: RULE_ID,
+      triggerExecutionId: `member-joined:${GUILD_ID}:${JOINED_USER_ID}:${joinedAt.getTime()}`,
+    });
+    expect(harness.recordExecution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        result: expect.objectContaining({
+          actionsExecuted: true,
+          actionResults: [
+            expect.objectContaining({
+              success: true,
+              data: expect.objectContaining({
+                status: 'added',
+                userId: JOINED_USER_ID,
+                roleId: ROLE_ID,
+              }),
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
+  it('schedule Triggerからmember role addを実行せずfail closedする', async () => {
+    const harness = createHarness({
+      rules: [
+        storedRule({
+          actions: [{ type: RULE_ACTION_MEMBER_ROLE_ADD, config: { roleId: ROLE_ID } }],
+        }),
+      ],
+    });
+
+    await harness.runtime.scanNow(NOW);
+
+    expect(harness.addMemberRole).not.toHaveBeenCalled();
+    expect(harness.recordExecution).toHaveBeenCalledWith(
+      expect.objectContaining({
+        result: expect.objectContaining({
+          actionResults: [
+            expect.objectContaining({
+              success: false,
+              error: 'DiscordMemberRoleAddRequiresMemberJoinedTrigger',
+            }),
+          ],
+        }),
+      }),
+    );
+  });
+
   it('同一minuteはprocess内で再評価せず、再配送claimでもRoleを重複作成しない', async () => {
     const harness = createHarness();
 
@@ -193,6 +285,7 @@ describe('RuleProductionRuntime', () => {
         enqueueRoleDelete: harness.enqueueRoleDelete,
       },
       security: harness.security,
+      memberRoles: harness.memberRoles,
       logger: {
         info: vi.fn(),
         warn: vi.fn(),

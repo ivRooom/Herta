@@ -4,6 +4,7 @@ export const RULE_STUDIO_ACTION_TYPES = [
   'discord.role.create',
   'discord.role.create-temporary',
   'discord.role.delete',
+  'discord.member.role.add',
 ] as const;
 
 export type RuleStudioTriggerType = (typeof RULE_STUDIO_TRIGGER_TYPES)[number];
@@ -44,6 +45,7 @@ export interface ValidatedRuleStudioDefinition {
         config: { roleName: string; roleColor: number; expiresAfterSeconds: number };
       }
     | { type: 'discord.role.delete'; config: { roleId: string } }
+    | { type: 'discord.member.role.add'; config: { roleId: string } }
   >;
   cooldownMs: number;
   maxExecutions: number | null;
@@ -125,8 +127,15 @@ export function validateRuleStudioDraft(value: unknown): RuleStudioValidationRes
     )
       errors.push('一時Roleの有効期間は60〜31536000秒で指定してください');
   }
-  if (actionType === 'discord.role.delete' && !DISCORD_ID_PATTERN.test(roleId))
-    errors.push('削除対象Role IDが不正です');
+  if (
+    (actionType === 'discord.role.delete' || actionType === 'discord.member.role.add') &&
+    !DISCORD_ID_PATTERN.test(roleId)
+  ) {
+    errors.push('対象Role IDが不正です');
+  }
+  if (actionType === 'discord.member.role.add' && triggerType !== 'member.joined') {
+    errors.push('Role自動付与Actionはmember.joined Triggerでのみ利用できます');
+  }
 
   if (
     errors.length > 0 ||
@@ -160,7 +169,7 @@ export function validateRuleStudioDraft(value: unknown): RuleStudioValidationRes
     maxExecutions,
   };
 
-  if (actionType === 'discord.role.delete') {
+  if (actionType === 'discord.role.delete' || actionType === 'discord.member.role.add') {
     return {
       valid: true,
       definition: { ...base, actions: [{ type: actionType, config: { roleId } }] },

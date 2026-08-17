@@ -22,6 +22,7 @@ export const RULE_TRIGGER_MEMBER_JOINED = 'member.joined';
 export const RULE_ACTION_ROLE_CREATE = 'discord.role.create';
 export const RULE_ACTION_ROLE_CREATE_TEMPORARY = 'discord.role.create-temporary';
 export const RULE_ACTION_ROLE_DELETE = 'discord.role.delete';
+export const RULE_ACTION_MEMBER_ROLE_ADD = 'discord.member.role.add';
 export const RULE_CONDITION_UTC_HOUR_IS = 'schedule.utc-hour-is';
 
 const RULE_SCHEMA_VERSION = 1;
@@ -68,9 +69,21 @@ export interface RuleRuntimeSecurity {
   canDeleteRole(guildId: string, roleId: string): Promise<boolean>;
 }
 
+export interface RuleRuntimeMemberRoleService {
+  addRole(input: {
+    guildId: string;
+    userId: string;
+    roleId: string;
+    actorId: string;
+    ruleId: string;
+    triggerExecutionId: string;
+  }): Promise<{ status: 'added' | 'already-present'; auditRecorded: boolean }>;
+}
+
 export interface RuleProductionRuntimeOptions {
   store: RuleRuntimeStore;
   security: RuleRuntimeSecurity;
+  memberRoles: RuleRuntimeMemberRoleService;
   logger: Logger;
   now?: () => Date;
 }
@@ -92,6 +105,8 @@ interface RoleActionContext {
   actionIndex: number;
   actorId: string;
   eventTimestamp: Date;
+  eventType: string;
+  eventData: Record<string, unknown>;
 }
 
 interface ParsedCreateRoleConfig {
@@ -294,6 +309,8 @@ export class RuleProductionRuntime {
       actionIndex: input.actionIndex,
       actorId: metadata.actorId,
       eventTimestamp: input.event.timestamp,
+      eventType: input.event.type,
+      eventData: input.event.data,
     };
   }
 
@@ -364,6 +381,14 @@ export class RuleProductionRuntime {
       configSchema: { roleId: 'Discord snowflake' },
       execute: (context, config) => this.executeRoleDelete(context, config),
     });
+
+    this.actions.register({
+      type: RULE_ACTION_MEMBER_ROLE_ADD,
+      name: 'Add role to joined member',
+      description: 'member.joined event本人へ既存Discord Roleを付与する',
+      configSchema: { roleId: 'Discord snowflake' },
+      execute: (context, config) => this.executeMemberRoleAdd(context, config),
+    });
   }
 
   private async executeRoleCreate(
@@ -410,6 +435,42 @@ export class RuleProductionRuntime {
       return {
         success: true,
         data: { operationId: operation.id, operationStatus: operation.status },
+      };
+    } catch (error) {
+      return { success: false, error: resolveErrorName(error) };
+    }
+  }
+
+  private async executeMemberRoleAdd(
+    context: unknown,
+    config: Record<string, unknown>,
+  ): Promise<ActionResult> {
+    let actionContext: RoleActionContext;
+    let roleId: string;
+    let userId: string;
+    try {
+      actionContext = requireRoleActionContext(context);
+      if (actionContext.eventType !== RULE_TRIGGER_MEMBER_JOINED) {
+        throw new Error('DiscordMemberRoleAddRequiresMemberJoinedTrigger');
+      }
+      userId = parseSnowflake(actionContext.eventData['userId'], 'event.userId');
+      roleId = parseSnowflake(config['roleId'], 'roleId');
+    } catch (error) {
+      return { success: false, error: resolveErrorName(error) };
+    }
+
+    try {
+      const result = await this.options.memberRoles.addRole({
+        guildId: actionContext.guildId,
+        userId,
+        roleId,
+        actorId: actionContext.actorId,
+        ruleId: actionContext.ruleId,
+        triggerExecutionId: actionContext.triggerExecutionId,
+      });
+      return {
+        success: true,
+        data: { userId, roleId, status: result.status, auditRecorded: result.auditRecorded },
       };
     } catch (error) {
       return { success: false, error: resolveErrorName(error) };
@@ -617,6 +678,8 @@ function requireRoleActionContext(value: unknown): RoleActionContext {
     triggerExecutionId,
     actionIndex,
     eventTimestamp: record['eventTimestamp'],
+    eventType: parseNonEmptyString(record['eventType'], 'eventType', 96),
+    eventData: requireRecord(record['eventData'], 'eventData'),
   };
 }
 
