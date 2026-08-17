@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 export const STUDIO_ROOT_DISCORD_ROLE_ID = '1069969919271252018';
 export const STUDIO_ACCESS_POLICY_VERSION = '2026-08-17';
+export const STUDIO_GUI_PERMISSION_SID = 'StudioGuiPermissions';
 
 export const STUDIO_POLICY_ACTIONS = [
   'studio.page.view',
@@ -60,17 +61,30 @@ export function createStudioRolePolicyFromActions(
   guildId: string,
   actions: readonly StudioPolicyAction[],
 ): StudioAccessPolicy {
+  return setStudioGuiActions(createEmptyStudioAccessPolicy(), guildId, actions);
+}
+
+export function setStudioGuiActions(
+  policy: StudioAccessPolicy,
+  guildId: string,
+  actions: readonly StudioPolicyAction[],
+): StudioAccessPolicy {
   const uniqueActions = [...new Set(actions)];
-  if (uniqueActions.length === 0) return createEmptyStudioAccessPolicy();
+  const scopedStatements = policy.Statement.filter(
+    (statement) => statement.Sid !== STUDIO_GUI_PERMISSION_SID,
+  );
+  if (uniqueActions.length === 0) return { ...policy, Statement: scopedStatements };
+
   return {
-    Version: STUDIO_ACCESS_POLICY_VERSION,
+    ...policy,
     Statement: [
       {
-        Sid: 'StudioGuiPermissions',
+        Sid: STUDIO_GUI_PERMISSION_SID,
         Effect: 'Allow',
         Action: uniqueActions,
         Resource: [`guild:${guildId}:*`],
       },
+      ...scopedStatements,
     ],
   };
 }
