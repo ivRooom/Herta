@@ -52,7 +52,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
   if ('response' in body) return body.response;
   const validation = validateRuleStudioDraft(body.value);
   if (!validation.valid) {
-    return NextResponse.json({ error: 'Rule設定が不正です', details: validation.errors }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Rule設定が不正です', details: validation.errors },
+      { status: 400 },
+    );
   }
   const targetCheck = await validateDeleteTarget(guildId, validation.definition.actions[0]);
   if (targetCheck) return targetCheck;
@@ -106,8 +109,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ guil
   const body = await parseBody(request);
   if ('response' in body) return body.response;
   const rawRuleId = typeof body.value.ruleId === 'string' ? body.value.ruleId : '';
-  const expectedUpdatedAt = typeof body.value.expectedUpdatedAt === 'string' ? body.value.expectedUpdatedAt : '';
-  if (!UUID_PATTERN.test(rawRuleId)) return NextResponse.json({ error: 'Rule IDが不正です' }, { status: 400 });
+  const expectedUpdatedAt =
+    typeof body.value.expectedUpdatedAt === 'string' ? body.value.expectedUpdatedAt : '';
+  if (!UUID_PATTERN.test(rawRuleId))
+    return NextResponse.json({ error: 'Rule IDが不正です' }, { status: 400 });
   const expectedDate = new Date(expectedUpdatedAt);
   if (!expectedUpdatedAt || Number.isNaN(expectedDate.getTime())) {
     return NextResponse.json({ error: 'Rule更新時刻が不正です' }, { status: 400 });
@@ -115,7 +120,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ guil
   const ruleId = rawRuleId.toLowerCase();
   const validation = validateRuleStudioDraft(body.value);
   if (!validation.valid) {
-    return NextResponse.json({ error: 'Rule設定が不正です', details: validation.errors }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Rule設定が不正です', details: validation.errors },
+      { status: 400 },
+    );
   }
   const targetCheck = await validateDeleteTarget(guildId, validation.definition.actions[0]);
   if (targetCheck) return targetCheck;
@@ -123,7 +131,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ guil
   const current = await prisma.rule.findFirst({ where: { id: ruleId, guildId } });
   if (!current) return NextResponse.json({ error: 'Ruleが見つかりません' }, { status: 404 });
   if (!parseStoredRuleStudioView(current)) {
-    return NextResponse.json({ error: 'このRuleはRule Studio v1の編集対象外です' }, { status: 409 });
+    return NextResponse.json(
+      { error: 'このRuleはRule Studio v1の編集対象外です' },
+      { status: 409 },
+    );
   }
 
   const definition = validation.definition;
@@ -160,7 +171,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ guil
   return NextResponse.json({ rule: parseStoredRuleStudioView(rule) });
 }
 
-export async function DELETE(request: Request, { params }: { params: Promise<{ guildId: string }> }) {
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ guildId: string }> },
+) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
   if (!isSameOriginMutationRequest(request)) {
@@ -171,12 +185,14 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ g
   if (!root.ok) return root.response;
 
   const rawRuleId = new URL(request.url).searchParams.get('ruleId') ?? '';
-  if (!UUID_PATTERN.test(rawRuleId)) return NextResponse.json({ error: 'Rule IDが不正です' }, { status: 400 });
+  if (!UUID_PATTERN.test(rawRuleId))
+    return NextResponse.json({ error: 'Rule IDが不正です' }, { status: 400 });
   const ruleId = rawRuleId.toLowerCase();
   const current = await prisma.rule.findFirst({ where: { id: ruleId, guildId } });
   if (!current) return NextResponse.json({ error: 'Ruleが見つかりません' }, { status: 404 });
   const deleted = await prisma.rule.deleteMany({ where: { id: ruleId, guildId } });
-  if (deleted.count !== 1) return NextResponse.json({ error: 'Ruleが見つかりません' }, { status: 404 });
+  if (deleted.count !== 1)
+    return NextResponse.json({ error: 'Ruleが見つかりません' }, { status: 404 });
   await recordAudit(guildId, session.user.id, 'rule.deleted', ruleId, {
     name: current.name,
     executionCount: current.executionCount,
@@ -190,7 +206,10 @@ async function requireRoot(guildId: string, userId: string) {
   if (resolved.access.isRoot) return resolved;
   return {
     ok: false as const,
-    response: NextResponse.json({ error: 'Ruleの変更にはOWNER root Roleが必要です' }, { status: 403 }),
+    response: NextResponse.json(
+      { error: 'Ruleの変更にはOWNER root Roleが必要です' },
+      { status: 403 },
+    ),
   };
 }
 
@@ -201,14 +220,19 @@ async function validateDeleteTarget(
   if (action?.type !== 'discord.role.delete') return null;
   const roleId = typeof action.config.roleId === 'string' ? action.config.roleId : '';
   const options = await getGuildConfigurationOptions(guildId);
-  if (!options) return NextResponse.json({ error: 'Discord Role状態を確認できませんでした' }, { status: 503 });
+  if (!options)
+    return NextResponse.json({ error: 'Discord Role状態を確認できませんでした' }, { status: 503 });
   const role = options.roles.find((candidate) => candidate.id === roleId);
-  if (!role) return NextResponse.json({ error: '削除対象RoleはこのGuildに存在しません' }, { status: 400 });
+  if (!role)
+    return NextResponse.json({ error: '削除対象RoleはこのGuildに存在しません' }, { status: 400 });
   if (role.id === STUDIO_ROOT_DISCORD_ROLE_ID) {
     return NextResponse.json({ error: 'OWNER root RoleはRuleから削除できません' }, { status: 400 });
   }
   if (role.managed || !role.editable) {
-    return NextResponse.json({ error: 'Botから編集できないRoleは削除対象にできません' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Botから編集できないRoleは削除対象にできません' },
+      { status: 400 },
+    );
   }
   return null;
 }
@@ -220,13 +244,18 @@ async function parseBody(
     const bytes = await readRequestBodyBytes(request, MAX_RULE_BODY_BYTES);
     const value = JSON.parse(Buffer.from(bytes).toString('utf8')) as unknown;
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-      return { response: NextResponse.json({ error: 'JSONオブジェクトが必要です' }, { status: 400 }) };
+      return {
+        response: NextResponse.json({ error: 'JSONオブジェクトが必要です' }, { status: 400 }),
+      };
     }
     return { value: value as Record<string, unknown> };
   } catch (error) {
     return {
       response: NextResponse.json(
-        { error: error instanceof RequestBodyTooLargeError ? 'Rule設定が大きすぎます' : 'JSONが不正です' },
+        {
+          error:
+            error instanceof RequestBodyTooLargeError ? 'Rule設定が大きすぎます' : 'JSONが不正です',
+        },
         { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
       ),
     };

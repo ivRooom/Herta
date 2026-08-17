@@ -41,7 +41,11 @@ test('arbitrary actions fail closed', () => {
 });
 
 test('delete action requires a Discord role id', () => {
-  const result = validateRuleStudioDraft({ ...baseDraft, actionType: 'discord.role.delete', roleId: 'abc' });
+  const result = validateRuleStudioDraft({
+    ...baseDraft,
+    actionType: 'discord.role.delete',
+    roleId: 'abc',
+  });
   assert.equal(result.valid, false);
 });
 

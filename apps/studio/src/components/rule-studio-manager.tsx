@@ -163,7 +163,8 @@ export function RuleStudioManager({
           <div className="flex gap-2">
             <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />
             <p>
-              閲覧専用です。Ruleの作成・変更・削除には OWNER root Role が必要です。操作項目はグレーアウトしています。
+              閲覧専用です。Ruleの作成・変更・削除には OWNER root Role
+              が必要です。操作項目はグレーアウトしています。
             </p>
           </div>
         </div>
@@ -171,7 +172,8 @@ export function RuleStudioManager({
 
       {unsupportedCount > 0 ? (
         <div className="mt-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
-          {unsupportedCount}件のRuleはv1 Editorの対応範囲外です。Runtimeでは既存定義のまま維持され、ここからは変更しません。
+          {unsupportedCount}件のRuleはv1
+          Editorの対応範囲外です。Runtimeでは既存定義のまま維持され、ここからは変更しません。
         </div>
       ) : null}
 
@@ -196,12 +198,18 @@ export function RuleStudioManager({
                 </span>
               </button>
             ))}
-            {rules.length === 0 ? <p className="px-2 py-3 text-sm text-muted">Ruleはまだありません。</p> : null}
+            {rules.length === 0 ? (
+              <p className="px-2 py-3 text-sm text-muted">Ruleはまだありません。</p>
+            ) : null}
           </nav>
         </aside>
 
         <div className="min-w-0 space-y-6">
-          <fieldset disabled={!canEdit || pending} className="space-y-5 disabled:opacity-60" title={!canEdit ? permissionHint : undefined}>
+          <fieldset
+            disabled={!canEdit || pending}
+            className="space-y-5 disabled:opacity-60"
+            title={!canEdit ? permissionHint : undefined}
+          >
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Rule名">
                 <input
@@ -223,14 +231,31 @@ export function RuleStudioManager({
 
             <div className="grid gap-4 sm:grid-cols-3">
               <label className="flex items-center gap-3 rounded-xl border border-border bg-background p-3 text-sm font-semibold">
-                <input type="checkbox" checked={draft.enabled} onChange={(event) => patch('enabled', event.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={draft.enabled}
+                  onChange={(event) => patch('enabled', event.target.checked)}
+                />
                 Ruleを有効化
               </label>
               <Field label="Priority">
-                <input type="number" min={-10000} max={10000} value={draft.priority} onChange={(event) => patch('priority', Number(event.target.value))} className={inputClass} />
+                <input
+                  type="number"
+                  min={-10000}
+                  max={10000}
+                  value={draft.priority}
+                  onChange={(event) => patch('priority', Number(event.target.value))}
+                  className={inputClass}
+                />
               </Field>
               <Field label="Cooldown (ms)">
-                <input type="number" min={0} value={draft.cooldownMs} onChange={(event) => patch('cooldownMs', Number(event.target.value))} className={inputClass} />
+                <input
+                  type="number"
+                  min={0}
+                  value={draft.cooldownMs}
+                  onChange={(event) => patch('cooldownMs', Number(event.target.value))}
+                  className={inputClass}
+                />
               </Field>
             </div>
 
@@ -241,15 +266,42 @@ export function RuleStudioManager({
               </div>
               <div className="mt-4 grid gap-4 sm:grid-cols-3">
                 <Field label="実行間隔（分）">
-                  <input type="number" min={1} max={1440} value={draft.everyMinutes} onChange={(event) => patch('everyMinutes', Number(event.target.value))} className={inputClass} />
+                  <input
+                    type="number"
+                    min={1}
+                    max={1440}
+                    value={draft.everyMinutes}
+                    onChange={(event) => patch('everyMinutes', Number(event.target.value))}
+                    className={inputClass}
+                  />
                 </Field>
                 <Field label="Offset（分）">
-                  <input type="number" min={0} max={Math.max(0, draft.everyMinutes - 1)} value={draft.offsetMinutes} onChange={(event) => patch('offsetMinutes', Number(event.target.value))} className={inputClass} />
+                  <input
+                    type="number"
+                    min={0}
+                    max={Math.max(0, draft.everyMinutes - 1)}
+                    value={draft.offsetMinutes}
+                    onChange={(event) => patch('offsetMinutes', Number(event.target.value))}
+                    className={inputClass}
+                  />
                 </Field>
                 <Field label="UTC時刻条件（任意）">
-                  <select value={draft.conditionHour === null ? '' : String(draft.conditionHour)} onChange={(event) => patch('conditionHour', event.target.value === '' ? null : Number(event.target.value))} className={inputClass}>
+                  <select
+                    value={draft.conditionHour === null ? '' : String(draft.conditionHour)}
+                    onChange={(event) =>
+                      patch(
+                        'conditionHour',
+                        event.target.value === '' ? null : Number(event.target.value),
+                      )
+                    }
+                    className={inputClass}
+                  >
                     <option value="">指定なし</option>
-                    {Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{hour}:00 UTC</option>)}
+                    {Array.from({ length: 24 }, (_, hour) => (
+                      <option key={hour} value={hour}>
+                        {hour}:00 UTC
+                      </option>
+                    ))}
                   </select>
                 </Field>
               </div>
@@ -259,7 +311,13 @@ export function RuleStudioManager({
               <h3 className="font-semibold">Action</h3>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <Field label="Action種別">
-                  <select value={draft.actionType} onChange={(event) => patch('actionType', event.target.value as RuleStudioActionType)} className={inputClass}>
+                  <select
+                    value={draft.actionType}
+                    onChange={(event) =>
+                      patch('actionType', event.target.value as RuleStudioActionType)
+                    }
+                    className={inputClass}
+                  >
                     <option value="discord.role.create">Roleを作成</option>
                     <option value="discord.role.create-temporary">一時Roleを作成</option>
                     <option value="discord.role.delete">Roleを削除</option>
@@ -267,14 +325,27 @@ export function RuleStudioManager({
                 </Field>
                 {draft.actionType === 'discord.role.delete' ? (
                   <Field label="削除対象Role">
-                    <select value={draft.roleId} onChange={(event) => patch('roleId', event.target.value)} className={inputClass}>
+                    <select
+                      value={draft.roleId}
+                      onChange={(event) => patch('roleId', event.target.value)}
+                      className={inputClass}
+                    >
                       <option value="">選択してください</option>
-                      {deleteRoleOptions.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}
+                      {deleteRoleOptions.map((role) => (
+                        <option key={role.id} value={role.id}>
+                          {role.name}
+                        </option>
+                      ))}
                     </select>
                   </Field>
                 ) : (
                   <Field label="作成Role名">
-                    <input value={draft.roleName} onChange={(event) => patch('roleName', event.target.value)} maxLength={100} className={inputClass} />
+                    <input
+                      value={draft.roleName}
+                      onChange={(event) => patch('roleName', event.target.value)}
+                      maxLength={100}
+                      className={inputClass}
+                    />
                   </Field>
                 )}
               </div>
@@ -283,13 +354,29 @@ export function RuleStudioManager({
                 <div className="mt-4 grid gap-4 sm:grid-cols-2">
                   <Field label="Role色">
                     <div className="flex items-center gap-3">
-                      <input type="color" value={numberToHex(draft.roleColor)} onChange={(event) => patch('roleColor', hexToNumber(event.target.value))} className="h-10 w-14 rounded-lg border border-border bg-surface p-1" />
-                      <code className="text-xs text-muted">{numberToHex(draft.roleColor).toUpperCase()}</code>
+                      <input
+                        type="color"
+                        value={numberToHex(draft.roleColor)}
+                        onChange={(event) => patch('roleColor', hexToNumber(event.target.value))}
+                        className="h-10 w-14 rounded-lg border border-border bg-surface p-1"
+                      />
+                      <code className="text-xs text-muted">
+                        {numberToHex(draft.roleColor).toUpperCase()}
+                      </code>
                     </div>
                   </Field>
                   {draft.actionType === 'discord.role.create-temporary' ? (
                     <Field label="有効期間（秒）">
-                      <input type="number" min={60} max={31536000} value={draft.expiresAfterSeconds} onChange={(event) => patch('expiresAfterSeconds', Number(event.target.value))} className={inputClass} />
+                      <input
+                        type="number"
+                        min={60}
+                        max={31536000}
+                        value={draft.expiresAfterSeconds}
+                        onChange={(event) =>
+                          patch('expiresAfterSeconds', Number(event.target.value))
+                        }
+                        className={inputClass}
+                      />
                     </Field>
                   ) : null}
                 </div>
@@ -301,7 +388,12 @@ export function RuleStudioManager({
                 type="number"
                 min={1}
                 value={draft.maxExecutions ?? ''}
-                onChange={(event) => patch('maxExecutions', event.target.value === '' ? null : Number(event.target.value))}
+                onChange={(event) =>
+                  patch(
+                    'maxExecutions',
+                    event.target.value === '' ? null : Number(event.target.value),
+                  )
+                }
                 placeholder="無制限"
                 className={`${inputClass} max-w-xs`}
               />
@@ -361,7 +453,11 @@ function PermissionButton({
   children: React.ReactNode;
 }) {
   return (
-    <span className="inline-flex" title={!allowed ? hint : undefined} tabIndex={!allowed ? 0 : undefined}>
+    <span
+      className="inline-flex"
+      title={!allowed ? hint : undefined}
+      tabIndex={!allowed ? 0 : undefined}
+    >
       <button
         type="button"
         onClick={onClick}
