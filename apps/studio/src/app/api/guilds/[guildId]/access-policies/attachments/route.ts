@@ -97,18 +97,30 @@ async function mutateAttachment(
         });
 
   if (changed) {
-    await prisma.auditLog.create({
-      data: {
+    try {
+      await prisma.auditLog.create({
+        data: {
+          guildId,
+          actorId: session.user.id,
+          event: `studio_access_policy.${operation === 'attach' ? 'attached' : 'detached'}`,
+          targetType: 'studio_access_policy',
+          targetId: policyId,
+          changes: { policyName: policy.name, principalType, principalId },
+          severity: 'warning',
+          metadata: { operationSource: 'studio', securitySensitive: true },
+        },
+      });
+    } catch (error) {
+      console.error('Failed to record Studio access policy attachment audit log', {
         guildId,
+        policyId,
+        principalType,
+        principalId,
+        operation,
         actorId: session.user.id,
-        event: `studio_access_policy.${operation === 'attach' ? 'attached' : 'detached'}`,
-        targetType: 'studio_access_policy',
-        targetId: policyId,
-        changes: { policyName: policy.name, principalType, principalId },
-        severity: 'warning',
-        metadata: { operationSource: 'studio', securitySensitive: true },
-      },
-    });
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+    }
   }
   return NextResponse.json({ changed });
 }
