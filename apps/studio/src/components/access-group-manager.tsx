@@ -178,7 +178,7 @@ export function AccessGroupManager({
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[18rem_minmax(0,1fr)]">
         <aside className="rounded-xl border border-border bg-background p-3">
-          <div className="space-y-1" role="list" aria-label="Herta Group一覧">
+          <nav className="space-y-1" aria-label="Herta Group一覧">
             {groups.map((group) => (
               <button
                 key={group.id}
@@ -193,7 +193,7 @@ export function AccessGroupManager({
             {groups.length === 0 ? (
               <p className="px-2 py-3 text-sm text-muted">Groupはまだありません。</p>
             ) : null}
-          </div>
+          </nav>
         </aside>
         <div className="space-y-5">
           <div className="grid gap-4 sm:grid-cols-2">
