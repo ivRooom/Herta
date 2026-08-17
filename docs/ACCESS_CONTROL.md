@@ -102,9 +102,11 @@ Managed Policy Editor は不正な JSON / Policy document を GUI の空 Policy 
 
 既存 Guild の権限を突然変更しないため、`GuildSettings.settings_json.studioAccess.rolePolicies` は v1 migration では削除・自動変換しません。
 
-Legacy Role Policy は移行期間中、認可の互換入力として評価します。
+Legacy Role Policy は移行期間中、認可の互換入力として **読み取り・評価のみ** 継続します。
 
-新しい Role 全体権限の変更は Access Control Center の Managed Policy を使用します。旧 Role Policy API の global GUI grant は freeze し、既存 Plugin Permission Matrix が必要とする scoped statement 互換のみ維持します。
+`/api/guilds/[guildId]/role-policies` は GET-only とし、旧 Role Policy の PUT / DELETE 書き込み経路は閉じます。旧 Plugin Permission Matrix URL も Access Control Center へリダイレクトし、Legacy Role JSON を更新する Client Editor は削除します。
+
+既存データに保存済みの Plugin scoped statement も認可入力としては引き続き評価しますが、新規・変更する Plugin Resource 権限は Managed Policy document で定義します。v1 では JSON Editor から任意 Resource を記述でき、Plugin 項目向けの専用 Visual Resource Builder は後続フェーズで追加します。
 
 Legacy Policy の完全廃止は migration wizard と利用状況確認を行う別フェーズで実施します。
 
@@ -156,4 +158,4 @@ v1 後は次を独立した変更として追加します。
 2. User 一覧 / Effective Access Viewer
 3. Policy Simulator と Allow / Deny source 表示
 4. Policy revision history / diff / rollback
-5. Plugin Permission Matrix の Managed Policy native editor 統合
+5. Plugin field / operation Resource の Managed Policy Visual Builder
