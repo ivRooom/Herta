@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   countPendingDiscordRoleCreates,
   DiscordRoleOperationIdempotencyConflictError,
@@ -14,6 +15,7 @@ import {
   isRoleOperationId,
   parseDiscordRoleCreateRequest,
   roleDeleteBlockReason,
+  serializeDiscordRoleCreateIdempotencyPayload,
 } from '@/lib/discord-role-lifecycle';
 import { prisma } from '@/lib/db';
 import { resolveStudioAccess } from '@/lib/studio-access';
@@ -68,6 +70,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
     );
   }
 
+  const idempotencyPayload = serializeDiscordRoleCreateIdempotencyPayload(body, input);
+  if (!idempotencyPayload) {
+    return NextResponse.json({ error: 'Role作成リクエストが不正です' }, { status: 400 });
+  }
+  const idempotencyFingerprint = createHash('sha256').update(idempotencyPayload).digest('hex');
+
   const options = await getGuildConfigurationOptions(guildId);
   if (!options) {
     return NextResponse.json(
@@ -101,6 +109,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
       createdBy: session.user.id,
       source: 'studio',
       operationId,
+      idempotencyFingerprint,
     });
   } catch (error) {
     if (error instanceof DiscordRoleOperationIdempotencyConflictError) {
