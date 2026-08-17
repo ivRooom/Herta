@@ -145,9 +145,7 @@ function isSupportedActionPattern(action: string): boolean {
 }
 
 function isGuildScopedResource(resource: string, guildId: string): boolean {
-  return (
-    resource === '*' || resource === `guild:${guildId}` || resource.startsWith(`guild:${guildId}:`)
-  );
+  return resource === `guild:${guildId}` || resource.startsWith(`guild:${guildId}:`);
 }
 
 function matchesAny(patterns: readonly string[], value: string): boolean {
