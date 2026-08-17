@@ -166,14 +166,26 @@ services:
       NODE_ENV: production
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       REDIS_URL: ${REDIS_URL:?REDIS_URL is required}
+      BOT_HEALTH_URL: ${BOT_HEALTH_URL:-http://bot:3000/healthz}
+      BOT_INTERNAL_API_SECRET: ${BOT_INTERNAL_API_SECRET:?BOT_INTERNAL_API_SECRET is required}
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN is required}
       LFG_COMPONENT_SECRET: ${LFG_COMPONENT_SECRET:?LFG_COMPONENT_SECRET is required}
       TEAM_SPLIT_SECRET: ${TEAM_SPLIT_SECRET:?TEAM_SPLIT_SECRET is required}
+      DISCORD_ROLE_OPERATION_SCAN_INTERVAL_SECONDS: ${DISCORD_ROLE_OPERATION_SCAN_INTERVAL_SECONDS:-15}
       DAILY_CONTENT_SCAN_INTERVAL_SECONDS: ${DAILY_CONTENT_SCAN_INTERVAL_SECONDS:-30}
       LFG_SCAN_INTERVAL_SECONDS: ${LFG_SCAN_INTERVAL_SECONDS:-30}
       TEAM_SPLIT_SCAN_INTERVAL_SECONDS: ${TEAM_SPLIT_SCAN_INTERVAL_SECONDS:-30}
       WORKER_LOG_LEVEL: ${WORKER_LOG_LEVEL:-info}
       HEALTH_HEARTBEAT_STALE_MS: ${HEALTH_HEARTBEAT_STALE_MS:-120000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+      bot:
+        condition: service_healthy
 
   caddy:
     image: caddy:2-alpine
