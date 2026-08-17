@@ -80,6 +80,18 @@ test('Guild外Resourceと未知Actionを拒否する', () => {
   assert.ok(result.errors.length >= 2);
 });
 
+test('global Resourceワイルドカードは拒否してGuild scopeを強制する', () => {
+  const result = validateStudioAccessPolicy(
+    {
+      Version: '2026-08-17',
+      Statement: [{ Effect: 'Allow', Action: ['*'], Resource: ['*'] }],
+    },
+    GUILD_ID,
+  );
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => error.includes('Resource')));
+});
+
 test('OWNER Role IDだけをrootとして識別する', () => {
   assert.equal(isStudioRootRole([STUDIO_ROOT_DISCORD_ROLE_ID]), true);
   assert.equal(isStudioRootRole([ROLE_ID]), false);
