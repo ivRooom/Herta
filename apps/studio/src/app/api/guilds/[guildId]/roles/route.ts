@@ -22,10 +22,7 @@ export const dynamic = 'force-dynamic';
 const MAX_ROLE_BODY_BYTES = 8 * 1024;
 const MAX_PENDING_CREATE_OPERATIONS_PER_GUILD = 100;
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ guildId: string }> },
-) {
+export async function POST(request: Request, { params }: { params: Promise<{ guildId: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
   if (!isSameOriginMutationRequest(request)) {
@@ -62,7 +59,10 @@ export async function POST(
 
   const options = await getGuildConfigurationOptions(guildId);
   if (!options) {
-    return NextResponse.json({ error: 'Discord Guildの状態を確認できませんでした' }, { status: 503 });
+    return NextResponse.json(
+      { error: 'Discord Guildの状態を確認できませんでした' },
+      { status: 503 },
+    );
   }
   if (!options.bot.manageRoles) {
     return NextResponse.json(
@@ -120,7 +120,10 @@ export async function DELETE(
 
   const options = await getGuildConfigurationOptions(guildId);
   if (!options) {
-    return NextResponse.json({ error: 'Discord Guildの状態を確認できませんでした' }, { status: 503 });
+    return NextResponse.json(
+      { error: 'Discord Guildの状態を確認できませんでした' },
+      { status: 503 },
+    );
   }
   if (!options.bot.manageRoles) {
     return NextResponse.json(

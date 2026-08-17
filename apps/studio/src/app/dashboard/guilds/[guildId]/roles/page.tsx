@@ -97,7 +97,8 @@ export default async function GuildRoleManagerPage({
             <h2 className="text-sm font-semibold">root security boundary</h2>
             <p className="mt-1 text-xs leading-5 text-muted">
               Discord Role <code>{STUDIO_ROOT_DISCORD_ROLE_ID}</code>{' '}
-              はrootとして固定され、Policy変更・Policy削除・Discord Role本体の削除対象にできません。Role本体の変更もrootだけが実行できます。
+              はrootとして固定され、Policy変更・Policy削除・Discord
+              Role本体の削除対象にできません。Role本体の変更もrootだけが実行できます。
             </p>
           </div>
         </div>

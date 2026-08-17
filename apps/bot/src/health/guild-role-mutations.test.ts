@@ -14,10 +14,16 @@ const OPERATION_ID = '123e4567-e89b-42d3-a456-426614174000';
 describe('parseGuildRoleCreateInput', () => {
   it('role名をtrimし安全なcolorだけを受け付ける', () => {
     expect(
-      parseGuildRoleCreateInput({ name: '  Event Role  ', color: 0x5865f2, operationId: OPERATION_ID }),
+      parseGuildRoleCreateInput({
+        name: '  Event Role  ',
+        color: 0x5865f2,
+        operationId: OPERATION_ID,
+      }),
     ).toEqual({ name: 'Event Role', color: 0x5865f2, operationId: OPERATION_ID });
     expect(parseGuildRoleCreateInput({ name: '', color: 0, operationId: OPERATION_ID })).toBeNull();
-    expect(parseGuildRoleCreateInput({ name: 'x', color: 0x1000000, operationId: OPERATION_ID })).toBeNull();
+    expect(
+      parseGuildRoleCreateInput({ name: 'x', color: 0x1000000, operationId: OPERATION_ID }),
+    ).toBeNull();
   });
 });
 
@@ -60,16 +66,20 @@ describe('deleteGuildRole', () => {
         OPERATION_ID,
         fetchImpl as typeof fetch,
       ),
-    ).rejects.toMatchObject<Partial<GuildRoleMutationError>>({ status: 403, code: 'protected_role' });
+    ).rejects.toMatchObject<Partial<GuildRoleMutationError>>({
+      status: 403,
+      code: 'protected_role',
+    });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it('Discord managed Roleを削除しない', async () => {
-    const fetchImpl = vi.fn(async () =>
-      new Response(
-        JSON.stringify([{ id: ROLE_ID, name: 'Integration', color: 0, managed: true }]),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify([{ id: ROLE_ID, name: 'Integration', color: 0, managed: true }]),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
     );
     await expect(
       deleteGuildRole('token', GUILD_ID, ROLE_ID, OPERATION_ID, fetchImpl as typeof fetch),

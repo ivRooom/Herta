@@ -176,7 +176,9 @@ export function RoleLifecycleManager({
           </p>
           <h2 className="mt-1 text-xl font-semibold">Roleの作成・削除・予約</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-            Discord Role本体を管理します。新規Roleは安全側で権限0・非メンション・非hoistとして作成され、必要なHerta権限は下のPolicy Editorで設定します。
+            Discord
+            Role本体を管理します。新規Roleは安全側で権限0・非メンション・非hoistとして作成され、必要なHerta権限は下のPolicy
+            Editorで設定します。
           </p>
         </div>
         <button
@@ -195,7 +197,8 @@ export function RoleLifecycleManager({
           <div className="flex gap-2">
             <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />
             <p>
-              Herta Botに「ロールの管理」権限がありません。Discord側で権限を付与するまでRole本体の変更は実行できません。
+              Herta
+              Botに「ロールの管理」権限がありません。Discord側で権限を付与するまでRole本体の変更は実行できません。
             </p>
           </div>
         </div>
@@ -335,7 +338,11 @@ export function RoleLifecycleManager({
               ) : (
                 <Plus className="h-4 w-4" aria-hidden="true" />
               )}
-              {pendingAction === 'create' ? '受付中…' : scheduleMode === 'scheduled' ? '作成を予約' : 'Roleを作成'}
+              {pendingAction === 'create'
+                ? '受付中…'
+                : scheduleMode === 'scheduled'
+                  ? '作成を予約'
+                  : 'Roleを作成'}
             </button>
           </div>
         </div>
@@ -348,7 +355,8 @@ export function RoleLifecycleManager({
             <div>
               <h3 className="font-semibold">既存Roleを削除</h3>
               <p className="mt-1 text-xs leading-5 text-muted">
-                root / Discord Managed / Bot hierarchy外のRoleは削除できません。削除は確認後に非同期実行されます。
+                root / Discord Managed / Bot
+                hierarchy外のRoleは削除できません。削除は確認後に非同期実行されます。
               </p>
             </div>
           </div>
@@ -381,7 +389,9 @@ export function RoleLifecycleManager({
             {selectedDeleteRole ? (
               <div className="rounded-xl border border-border bg-surface p-3 text-sm">
                 <p className="font-medium">{selectedDeleteRole.name}</p>
-                <p className="mt-1 break-all font-mono text-xs text-muted">{selectedDeleteRole.id}</p>
+                <p className="mt-1 break-all font-mono text-xs text-muted">
+                  {selectedDeleteRole.id}
+                </p>
                 <p className="mt-2 text-xs text-muted">
                   hierarchy #{selectedDeleteRole.position}
                   {deleteBlock ? ` · ${deleteReasonLabel(deleteBlock)}` : ' · 削除可能'}
@@ -404,7 +414,8 @@ export function RoleLifecycleManager({
             </button>
 
             <p className="text-xs leading-5 text-muted">
-              削除成功後、該当RoleのStudio Policyも自動で整理されます。失敗時はAudit Logと操作履歴へ理由を残します。
+              削除成功後、該当RoleのStudio Policyも自動で整理されます。失敗時はAudit
+              Logと操作履歴へ理由を残します。
             </p>
           </div>
         </div>
@@ -449,11 +460,15 @@ export function RoleLifecycleManager({
         ) : (
           <div className="mt-3 divide-y divide-border overflow-hidden rounded-xl border border-border">
             {operations.map((operation) => (
-              <div key={operation.id} className="flex flex-col gap-2 bg-background p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div
+                key={operation.id}
+                className="flex flex-col gap-2 bg-background p-3 sm:flex-row sm:items-center sm:justify-between"
+              >
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-sm font-medium">
-                      {operation.operation === 'create' ? '作成' : '削除'} · {operation.roleName ?? operation.discordRoleId ?? 'Role'}
+                      {operation.operation === 'create' ? '作成' : '削除'} ·{' '}
+                      {operation.roleName ?? operation.discordRoleId ?? 'Role'}
                     </span>
                     <OperationStatusBadge status={operation.status} />
                     {operation.expiresAfterSeconds !== null ? (
@@ -463,7 +478,8 @@ export function RoleLifecycleManager({
                     ) : null}
                   </div>
                   <p className="mt-1 text-xs text-muted">
-                    実行予定 {formatDateTime(operation.nextAttemptAt ?? operation.scheduledFor)} · 試行 {operation.attemptCount}回
+                    実行予定 {formatDateTime(operation.nextAttemptAt ?? operation.scheduledFor)} ·
+                    試行 {operation.attemptCount}回
                   </p>
                   {operation.lastErrorName ? (
                     <p className="mt-1 break-all text-xs text-red-600">{operation.lastErrorName}</p>
@@ -498,7 +514,11 @@ function OperationStatusBadge({ status }: { status: RoleLifecycleOperationView['
         : status === 'processing'
           ? 'border-primary/30 bg-primary/5 text-primary'
           : 'border-border bg-surface text-muted';
-  return <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${className}`}>{label}</span>;
+  return (
+    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${className}`}>
+      {label}
+    </span>
+  );
 }
 
 function deleteReasonLabel(reason: 'root' | 'managed' | 'hierarchy'): string {

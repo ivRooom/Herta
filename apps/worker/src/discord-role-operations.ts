@@ -59,8 +59,7 @@ export async function startDiscordRoleOperationRuntime(
   if (secret.length < 32) throw new Error('BOT_INTERNAL_API_SECRET must be at least 32 characters');
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? (() => new Date());
-  const intervalMs =
-    normalizeRoleOperationScanIntervalSeconds(options.scanIntervalSeconds) * 1_000;
+  const intervalMs = normalizeRoleOperationScanIntervalSeconds(options.scanIntervalSeconds) * 1_000;
   let timer: NodeJS.Timeout | undefined;
   let activeCycle: Promise<void> | null = null;
   let closed = false;
@@ -132,10 +131,7 @@ async function runRoleOperationCycle(input: {
     cycleNow,
   );
   if (recovered.createFailed > 0 || recovered.deleteRequeued > 0) {
-    input.logger.warn(
-      recovered,
-      'staleなDiscord Role Operationをreconcileしました',
-    );
+    input.logger.warn(recovered, 'staleなDiscord Role Operationをreconcileしました');
   }
 
   const due = await listDueDiscordRoleOperations(input.prisma, cycleNow, MAX_BATCH_SIZE);
@@ -167,12 +163,7 @@ async function processCreateOperation(
   }
 
   try {
-    const role = await createRoleViaBot(
-      input.baseUrl,
-      input.secret,
-      operation,
-      input.fetchImpl,
-    );
+    const role = await createRoleViaBot(input.baseUrl, input.secret, operation, input.fetchImpl);
     const completedAt = input.now();
     await input.prisma.$transaction(async (tx) => {
       await markDiscordRoleOperationSucceeded(tx, operation.id, completedAt, role.id);
@@ -357,7 +348,8 @@ async function createRoleViaBot(
     },
   );
   const payload = await readInternalPayload(response);
-  if (!response.ok) throw new BotRoleMutationError(response.status, payload.status ?? 'bot_role_create_failed');
+  if (!response.ok)
+    throw new BotRoleMutationError(response.status, payload.status ?? 'bot_role_create_failed');
   const role = payload.role;
   if (!isRoleResult(role)) throw new BotRoleMutationError(502, 'malformed_bot_role_response');
   return role;
@@ -382,7 +374,8 @@ async function deleteRoleViaBot(
     },
   );
   const payload = await readInternalPayload(response);
-  if (!response.ok) throw new BotRoleMutationError(response.status, payload.status ?? 'bot_role_delete_failed');
+  if (!response.ok)
+    throw new BotRoleMutationError(response.status, payload.status ?? 'bot_role_delete_failed');
 }
 
 function resolveBotInternalBaseUrl(raw: string): URL {

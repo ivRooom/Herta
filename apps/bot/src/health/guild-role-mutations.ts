@@ -118,7 +118,10 @@ function discordHeaders(token: string, reason?: string): Record<string, string> 
   return headers;
 }
 
-async function toMutationError(response: Response, fallbackCode: string): Promise<GuildRoleMutationError> {
+async function toMutationError(
+  response: Response,
+  fallbackCode: string,
+): Promise<GuildRoleMutationError> {
   const status = [400, 403, 404, 409, 429].includes(response.status) ? response.status : 503;
   return new GuildRoleMutationError(status, fallbackCode);
 }

@@ -181,9 +181,7 @@ export class HealthHttpServer {
       return;
     }
 
-    const guildRoleMutationMatch = /^\/internal\/guilds\/(\d+)\/roles(?:\/(\d+))?$/u.exec(
-      pathname,
-    );
+    const guildRoleMutationMatch = /^\/internal\/guilds\/(\d+)\/roles(?:\/(\d+))?$/u.exec(pathname);
     if (guildRoleMutationMatch) {
       await this.handleGuildRoleMutationRequest(
         request,
@@ -346,7 +344,8 @@ export class HealthHttpServer {
           rawBody = await readJsonBody(request, MAX_GUILD_ROLE_MUTATION_BODY_BYTES);
         } catch (error) {
           this.sendJson(response, error instanceof RequestBodyTooLargeError ? 413 : 400, {
-            status: error instanceof RequestBodyTooLargeError ? 'payload_too_large' : 'invalid_json',
+            status:
+              error instanceof RequestBodyTooLargeError ? 'payload_too_large' : 'invalid_json',
           });
           return;
         }
