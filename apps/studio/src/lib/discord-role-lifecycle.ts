@@ -4,6 +4,7 @@ export const DISCORD_ROLE_EXPIRY_MAX_SECONDS = 31_536_000;
 export const DISCORD_ROLE_SCHEDULE_MAX_AHEAD_MS = 365 * 24 * 60 * 60 * 1_000;
 
 const DISCORD_ID_PATTERN = /^\d{17,20}$/u;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/iu;
 const ROLE_NAME_CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/u;
 const ALLOWED_CREATE_KEYS = new Set(['name', 'color', 'scheduledFor', 'expiresAfterSeconds']);
@@ -58,6 +59,10 @@ export function formatDiscordRoleColor(value: number): string {
 
 export function isDiscordRoleId(value: string): boolean {
   return DISCORD_ID_PATTERN.test(value);
+}
+
+export function isRoleOperationId(value: string): boolean {
+  return UUID_PATTERN.test(value);
 }
 
 export function roleDeleteBlockReason(
