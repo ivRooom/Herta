@@ -1,0 +1,143 @@
+name: Temporary Permission Feedback Integration
+
+on:
+  push:
+    branches:
+      - feat/rule-engine-production-runtime-v1
+    paths:
+      - .github/workflows/tmp-permission-feedback.yml
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/rule-engine-production-runtime-v1
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply permission feedback integration
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace(path, old, new, count=1):
+              p = Path(path)
+              text = p.read_text()
+              actual = text.count(old)
+              if actual < count:
+                  raise SystemExit(f'{path}: expected at least {count} matches, found {actual}: {old[:80]!r}')
+              p.write_text(text.replace(old, new, count))
+
+          pkg = Path('apps/studio/package.json')
+          text = pkg.read_text()
+          marker = 'src/lib/studio-managed-access.test.ts src/lib/prisma-raw-error.test.ts'
+          replacement = 'src/lib/studio-managed-access.test.ts src/lib/studio-api-feedback.test.ts src/lib/prisma-raw-error.test.ts'
+          if replacement not in text:
+              if marker not in text:
+                  raise SystemExit('package.json test marker not found')
+              pkg.write_text(text.replace(marker, replacement, 1))
+
+          for path in [
+              'apps/studio/src/components/managed-policy-manager.tsx',
+              'apps/studio/src/components/access-group-manager.tsx',
+              'apps/studio/src/components/role-lifecycle-manager.tsx',
+          ]:
+              p = Path(path)
+              text = p.read_text()
+              import_line = "import { describeStudioApiError } from '@/lib/studio-api-feedback';\n"
+              if import_line not in text:
+                  anchor = "import { useRouter } from 'next/navigation';\n"
+                  if anchor not in text:
+                      raise SystemExit(f'{path}: import anchor missing')
+                  text = text.replace(anchor, anchor + import_line, 1)
+              text = text.replace(
+                  'role="status"\n              className={`rounded-xl border px-3 py-2 text-sm ${',
+                  'role={notice.kind === \'error\' ? \'alert\' : \'status\'}\n              className={`whitespace-pre-line rounded-xl border px-3 py-2 text-sm ${',
+              )
+              p.write_text(text)
+
+          p = Path('apps/studio/src/components/managed-policy-manager.tsx')
+          text = p.read_text()
+          old = """      if (!response.ok) {\n        throw new Error(\n          [result?.error, ...(result?.details ?? [])].filter(Boolean).join(' / ') ||\n            '保存に失敗しました',\n        );\n      }"""
+          new = """      if (!response.ok) {\n        throw new Error(\n          describeStudioApiError(response.status, result, '保存に失敗しました', 'access-control'),\n        );\n      }"""
+          if old not in text:
+              raise SystemExit('managed policy save error block missing')
+          text = text.replace(old, new, 1)
+          text = text.replace(
+              "if (!response.ok) throw new Error(result?.error || '削除に失敗しました');",
+              "if (!response.ok) {\n        throw new Error(\n          describeStudioApiError(response.status, result, '削除に失敗しました', 'access-control'),\n        );\n      }",
+              1,
+          )
+          text = text.replace(
+              "if (!response.ok) throw new Error(result?.error || 'Attachment更新に失敗しました');",
+              "if (!response.ok) {\n        throw new Error(\n          describeStudioApiError(\n            response.status,\n            result,\n            'Attachment更新に失敗しました',\n            'access-control',\n          ),\n        );\n      }",
+              1,
+          )
+          p.write_text(text)
+
+          p = Path('apps/studio/src/components/access-group-manager.tsx')
+          text = p.read_text()
+          replacements = [
+              (
+                  "if (!response.ok) throw new Error(result?.error || 'Groupの保存に失敗しました');",
+                  "if (!response.ok) {\n        throw new Error(\n          describeStudioApiError(\n            response.status,\n            result,\n            'Groupの保存に失敗しました',\n            'access-control',\n          ),\n        );\n      }",
+              ),
+              (
+                  "if (!response.ok) throw new Error(result?.error || 'Groupの削除に失敗しました');",
+                  "if (!response.ok) {\n        throw new Error(\n          describeStudioApiError(\n            response.status,\n            result,\n            'Groupの削除に失敗しました',\n            'access-control',\n          ),\n        );\n      }",
+              ),
+              (
+                  "if (!response.ok) throw new Error(result?.error || 'Group Member更新に失敗しました');",
+                  "if (!response.ok) {\n        throw new Error(\n          describeStudioApiError(\n            response.status,\n            result,\n            'Group Member更新に失敗しました',\n            'access-control',\n          ),\n        );\n      }",
+              ),
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f'access group error block missing: {old}')
+              text = text.replace(old, new, 1)
+          p.write_text(text)
+
+          p = Path('apps/studio/src/components/role-lifecycle-manager.tsx')
+          text = p.read_text()
+          replacements = [
+              (
+                  "if (!response.ok) throw new Error(result?.error || 'Role作成の受付に失敗しました');",
+                  "if (!response.ok) {\n        throw new Error(\n          describeStudioApiError(\n            response.status,\n            result,\n            'Role作成の受付に失敗しました',\n            'role-lifecycle',\n          ),\n        );\n      }",
+              ),
+              (
+                  "if (!response.ok) throw new Error(result?.error || 'Role削除の受付に失敗しました');",
+                  "if (!response.ok) {\n        throw new Error(\n          describeStudioApiError(\n            response.status,\n            result,\n            'Role削除の受付に失敗しました',\n            'role-lifecycle',\n          ),\n        );\n      }",
+              ),
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f'role lifecycle error block missing: {old}')
+              text = text.replace(old, new, 1)
+          old_warning = """            <p>\n              Herta\n              Botに「ロールの管理」権限がありません。Discord側で権限を付与するまでRole本体の変更は実行できません。\n            </p>"""
+          new_warning = """            <div>\n              <p className=\"font-semibold\">Herta BotのDiscord権限が不足しています</p>\n              <p className=\"mt-1 leading-6\">\n                必要な権限は「ロールの管理」です。Discordのサーバー設定 → ロールでHerta\n                Botへ権限を付与し、Herta BotのRoleを操作対象Roleより上に配置してください。\n              </p>\n            </div>"""
+          if old_warning not in text:
+              raise SystemExit('role lifecycle bot warning block missing')
+          p.write_text(text.replace(old_warning, new_warning, 1))
+          PY
+      - run: pnpm prettier --write apps/studio/package.json apps/studio/src/lib/studio-api-feedback.ts apps/studio/src/lib/studio-api-feedback.test.ts apps/studio/src/components/managed-policy-manager.tsx apps/studio/src/components/access-group-manager.tsx apps/studio/src/components/role-lifecycle-manager.tsx
+      - run: pnpm --filter @herta/studio typecheck
+      - run: pnpm --filter @herta/studio test
+      - name: Commit integration
+        run: |
+          git config user.name "mizzz-ivr"
+          git config user.email "mizzz._.dev@outlook.jp"
+          git add apps/studio
+          if git diff --cached --quiet; then
+            echo "No integration changes"
+            exit 0
+          fi
+          git commit -m "feat(studio): improve permission denied guidance"
+          git push origin HEAD:feat/rule-engine-production-runtime-v1
