@@ -9,10 +9,32 @@ import type { TriggerRegistry } from './trigger-registry.js';
 import type { ConditionRegistry } from './condition-registry.js';
 import type { ActionRegistry } from './action-registry.js';
 
+export interface RuleBeforeActionsInput {
+  event: TriggerEvent;
+  rule: RuleDefinition & { id: string };
+  context: unknown;
+}
+
+export interface RuleBeforeActionsResult {
+  allowed: boolean;
+  reason?: string;
+}
+
+export interface RuleActionContextInput extends RuleBeforeActionsInput {
+  actionIndex: number;
+}
+
 export interface RuleEvaluatorDeps {
   triggers: TriggerRegistry;
   conditions: ConditionRegistry;
   actions: ActionRegistry;
+  /**
+   * Action直前のproduction guard。
+   * cooldown / max executions / authorization のclaimをatomicに行う用途を想定する。
+   */
+  beforeActions?: (input: RuleBeforeActionsInput) => Promise<RuleBeforeActionsResult>;
+  /** Rule / trigger execution / action indexをActionへ安全に渡すためのcontext factory。 */
+  createActionContext?: (input: RuleActionContextInput) => unknown;
 }
 
 /** Rule 評価エンジン */
@@ -63,10 +85,23 @@ export class RuleEvaluator {
         return this.buildResult(rule, start, { triggerMatched: true, conditionsMet: false });
       }
 
+      const beforeActions = this.deps.beforeActions
+        ? await this.deps.beforeActions({ event, rule, context })
+        : { allowed: true };
+      if (!beforeActions.allowed) {
+        return this.buildResult(rule, start, {
+          triggerMatched: true,
+          conditionsMet: true,
+          actionSkipReason: beforeActions.reason ?? 'action-guard-rejected',
+        });
+      }
+
       // Action 実行
       const actionResults: ActionResult[] = [];
-      for (const action of rule.actions) {
-        const result = await this.deps.actions.execute(action.type, context, action.config);
+      for (const [actionIndex, action] of rule.actions.entries()) {
+        const actionContext =
+          this.deps.createActionContext?.({ event, rule, context, actionIndex }) ?? context;
+        const result = await this.deps.actions.execute(action.type, actionContext, action.config);
         actionResults.push(result);
         if (!result.success) break;
       }
