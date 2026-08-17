@@ -7,6 +7,7 @@ import {
   isRoleOperationId,
   parseDiscordRoleCreateRequest,
   roleDeleteBlockReason,
+  serializeDiscordRoleCreateIdempotencyPayload,
 } from './discord-role-lifecycle.ts';
 
 const NOW = new Date('2026-08-17T08:00:00.000Z');
@@ -117,6 +118,60 @@ test('Role作成Idempotency-KeyはUUIDだけを受け付ける', () => {
   assert.equal(isRoleOperationId('123e4567-e89b-42d3-a456-426614174000'), true);
   assert.equal(isRoleOperationId('123456789012345678'), false);
   assert.equal(isRoleOperationId('not-a-uuid'), false);
+});
+
+test('即時Roleのidempotency payloadは再送時刻が変わっても同一になる', () => {
+  const body = {
+    name: ' Event Staff ',
+    color: '#5865F2',
+    scheduledFor: null,
+    expiresAfterSeconds: 3600,
+  };
+  const first = parseDiscordRoleCreateRequest(body, NOW);
+  const retried = parseDiscordRoleCreateRequest(body, new Date(NOW.getTime() + 10_000));
+  assert.ok(first);
+  assert.ok(retried);
+
+  assert.equal(
+    serializeDiscordRoleCreateIdempotencyPayload(body, first),
+    serializeDiscordRoleCreateIdempotencyPayload(body, retried),
+  );
+});
+
+test('予約Roleのidempotency payloadは日時表現をUTCへ正規化する', () => {
+  const firstBody = {
+    name: 'Scheduled',
+    color: '#123456',
+    scheduledFor: '2026-09-01T09:00:00+09:00',
+    expiresAfterSeconds: null,
+  };
+  const retryBody = {
+    ...firstBody,
+    scheduledFor: '2026-09-01T00:00:00.000Z',
+  };
+  const first = parseDiscordRoleCreateRequest(firstBody, NOW);
+  const retried = parseDiscordRoleCreateRequest(retryBody, NOW);
+  assert.ok(first);
+  assert.ok(retried);
+
+  assert.equal(
+    serializeDiscordRoleCreateIdempotencyPayload(firstBody, first),
+    serializeDiscordRoleCreateIdempotencyPayload(retryBody, retried),
+  );
+});
+
+test('Role作成payloadが変わればidempotency payloadも変わる', () => {
+  const firstBody = { name: 'Alpha', color: '#123456', expiresAfterSeconds: null };
+  const changedBody = { name: 'Beta', color: '#123456', expiresAfterSeconds: null };
+  const first = parseDiscordRoleCreateRequest(firstBody, NOW);
+  const changed = parseDiscordRoleCreateRequest(changedBody, NOW);
+  assert.ok(first);
+  assert.ok(changed);
+
+  assert.notEqual(
+    serializeDiscordRoleCreateIdempotencyPayload(firstBody, first),
+    serializeDiscordRoleCreateIdempotencyPayload(changedBody, changed),
+  );
 });
 
 test('削除不可理由をroot・managed・hierarchyの順に判定する', () => {
