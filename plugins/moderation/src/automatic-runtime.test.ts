@@ -21,8 +21,69 @@ describe('automatic moderation Discord action', () => {
       author: { send: vi.fn(async () => undefined) },
     };
 
-    await executeAutomaticDiscordAction(message as never, BASE_POLICY, 'test reason');
+    const result = await executeAutomaticDiscordAction(
+      message as never,
+      BASE_POLICY,
+      'test reason',
+    );
     expect(deleteMessage).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ outcome: 'executed', discordErrorCode: null });
+  });
+
+  it('Discord 10008 Unknown Messageは既に削除済みとして冪等成功にする', async () => {
+    const message = {
+      delete: vi.fn(async () => {
+        throw Object.assign(new Error('Unknown Message'), { code: 10008, status: 404 });
+      }),
+      member: null,
+      author: { send: vi.fn(async () => undefined) },
+    };
+
+    const result = await executeAutomaticDiscordAction(
+      message as never,
+      BASE_POLICY,
+      'test reason',
+    );
+    expect(result).toEqual({ outcome: 'already_satisfied', discordErrorCode: 10008 });
+  });
+
+  it('Unknown Message以外のDiscord削除失敗は握り潰さない', async () => {
+    const error = Object.assign(new Error('Missing Permissions'), { code: 50013, status: 403 });
+    const message = {
+      delete: vi.fn(async () => {
+        throw error;
+      }),
+      member: null,
+      author: { send: vi.fn(async () => undefined) },
+    };
+
+    await expect(
+      executeAutomaticDiscordAction(message as never, BASE_POLICY, 'test reason'),
+    ).rejects.toBe(error);
+  });
+
+  it('warn_deleteでは既に削除済みでも警告DMを送る', async () => {
+    const calls: string[] = [];
+    const message = {
+      delete: vi.fn(async () => {
+        calls.push('delete');
+        throw Object.assign(new Error('Unknown Message'), { code: '10008', status: 404 });
+      }),
+      member: null,
+      author: {
+        send: vi.fn(async () => {
+          calls.push('warn');
+        }),
+      },
+    };
+
+    const result = await executeAutomaticDiscordAction(
+      message as never,
+      { ...BASE_POLICY, action: 'warn_delete' },
+      'test reason',
+    );
+    expect(calls).toEqual(['delete', 'warn']);
+    expect(result).toEqual({ outcome: 'already_satisfied', discordErrorCode: 10008 });
   });
 
   it('warn_deleteでは削除後に警告DMを送る', async () => {

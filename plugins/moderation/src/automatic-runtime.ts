@@ -141,6 +141,11 @@ type InsertedFinding = {
   detectionId: string | null;
 };
 
+export interface AutomaticDiscordActionResult {
+  outcome: 'executed' | 'already_satisfied';
+  discordErrorCode: string | number | null;
+}
+
 const detectors = new Map<string, AutomaticModerationDetector>();
 // 現在の本番はBot単一プロセス構成。将来shard/複数process化する場合はRedis共有へ移行する。
 const alertCooldowns = new Map<string, number>();
@@ -366,6 +371,7 @@ async function executeAutomaticEnforcement(
   const reason = `自動検知ルール ${selected.policy.selector} に一致（危険度: ${selected.policy.severity}）`;
   const action = selected.policy.action;
   let actionError: unknown;
+  let actionResult: AutomaticDiscordActionResult | null = null;
   const releaseTargetOperation =
     action === 'timeout'
       ? await waitForModerationTargetOperation(context.guildId, message.author.id)
@@ -383,7 +389,7 @@ async function executeAutomaticEnforcement(
           createdBy: actorId,
         });
       }
-      await executeAutomaticDiscordAction(message, selected.policy, reason);
+      actionResult = await executeAutomaticDiscordAction(message, selected.policy, reason);
       context.logger.info(
         {
           guildId: context.guildId,
@@ -392,6 +398,8 @@ async function executeAutomaticEnforcement(
           action,
           selector: selected.policy.selector,
           severity: selected.policy.severity,
+          actionOutcome: actionResult.outcome,
+          discordErrorCode: actionResult.discordErrorCode,
         },
         '自動Moderation Discord操作を実行しました',
       );
@@ -447,6 +455,11 @@ async function executeAutomaticEnforcement(
         severity: selected.policy.severity,
         channelId: message.channelId,
         messageId: message.id,
+        actionOutcome: actionError ? 'failed' : (actionResult?.outcome ?? 'executed'),
+        discordErrorCode: actionError
+          ? getDiscordErrorCode(actionError)
+          : (actionResult?.discordErrorCode ?? null),
+        discordHttpStatus: actionError ? getDiscordHttpStatus(actionError) : null,
       },
       severity: actionError || selected.policy.severity === 'critical' ? 'critical' : 'warning',
     });
@@ -487,42 +500,77 @@ export async function executeAutomaticDiscordAction(
   message: ModerationMessage,
   policy: AutomaticEnforcementPolicy,
   reason: string,
-): Promise<void> {
+): Promise<AutomaticDiscordActionResult> {
   const member = message.member;
   switch (policy.action) {
     case 'observe':
-      return;
+      return executedActionResult();
     case 'warn':
       await sendAutomaticWarning(message, policy);
-      return;
+      return executedActionResult();
     case 'delete':
-      await message.delete();
-      return;
+      return deleteModerationMessage(message);
     case 'warn_delete': {
-      await message.delete();
+      const deleteResult = await deleteModerationMessage(message);
       await sendAutomaticWarning(message, policy);
-      return;
+      return deleteResult;
     }
     case 'timeout':
       if (!member) throw new Error('対象Guild Memberを取得できません');
       await member.timeout(policy.timeoutMinutes * 60 * 1000, reason);
-      return;
+      return executedActionResult();
     case 'role':
       if (!member || !policy.roleId) throw new Error('付与対象ロールを取得できません');
       await member.roles.add(policy.roleId, reason);
-      return;
+      return executedActionResult();
     case 'blacklist':
       if (!member) throw new Error('対象Guild Memberを取得できません');
       await member.ban({ reason, deleteMessageSeconds: policy.banDeleteMessageSeconds });
-      return;
+      return executedActionResult();
     case 'kick':
       if (!member) throw new Error('対象Guild Memberを取得できません');
       await member.kick(reason);
-      return;
+      return executedActionResult();
     case 'ban':
       if (!member) throw new Error('対象Guild Memberを取得できません');
       await member.ban({ reason, deleteMessageSeconds: policy.banDeleteMessageSeconds });
+      return executedActionResult();
   }
+}
+
+async function deleteModerationMessage(
+  message: ModerationMessage,
+): Promise<AutomaticDiscordActionResult> {
+  try {
+    await message.delete();
+    return executedActionResult();
+  } catch (error) {
+    if (isDiscordUnknownMessageError(error)) {
+      return { outcome: 'already_satisfied', discordErrorCode: 10008 };
+    }
+    throw error;
+  }
+}
+
+function executedActionResult(): AutomaticDiscordActionResult {
+  return { outcome: 'executed', discordErrorCode: null };
+}
+
+function isDiscordUnknownMessageError(error: unknown): boolean {
+  const code = getDiscordErrorCode(error);
+  return code === 10008 || code === '10008';
+}
+
+function getDiscordErrorCode(error: unknown): string | number | null {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return null;
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' || typeof code === 'number' ? code : null;
+}
+
+function getDiscordHttpStatus(error: unknown): number | null {
+  if (typeof error !== 'object' || error === null || !('status' in error)) return null;
+  const status = (error as { status?: unknown }).status;
+  return typeof status === 'number' && Number.isInteger(status) ? status : null;
 }
 
 async function sendAutomaticWarning(
