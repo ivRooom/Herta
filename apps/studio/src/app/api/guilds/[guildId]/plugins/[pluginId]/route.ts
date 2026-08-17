@@ -10,7 +10,12 @@ import {
 } from '@/lib/guild-plugins';
 import { toPluginConfigValidationIssues } from '@/lib/plugin-config-validation-issues';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
-import { hasStudioPermission, resolveStudioAccess } from '@/lib/studio-access';
+import {
+  hasStudioPermission,
+  resolveStudioAccess,
+  type StudioAccessContext,
+} from '@/lib/studio-access';
+import type { StudioPolicyAction } from '@/lib/studio-access-policy';
 import {
   pluginConfigFieldResource,
   pluginEnabledControlResource,
@@ -58,7 +63,7 @@ export async function PATCH(
 
   if (body.value.enabled !== undefined && body.value.enabled !== current.enabled) {
     const resource = pluginEnabledControlResource(guildId, pluginId);
-    if (!hasStudioPermission(access.access, 'studio.operation.execute', resource)) {
+    if (!hasPluginPermission(access.access, 'studio.operation.execute', resource)) {
       return NextResponse.json(
         { error: 'このPluginを有効化・無効化する権限がありません', resource },
         { status: 403 },
@@ -82,7 +87,7 @@ export async function PATCH(
     const changedFields = changedTopLevelFields(current.config, validation.config);
     const deniedFields = changedFields.filter(
       (fieldKey) =>
-        !hasStudioPermission(
+        !hasPluginPermission(
           access.access,
           'studio.settings.write',
           pluginConfigFieldResource(guildId, pluginId, fieldKey),
@@ -104,6 +109,18 @@ export async function PATCH(
     return NextResponse.json({ error: '設定が不正です' }, { status: 400 });
   }
   return NextResponse.json(result);
+}
+
+function hasPluginPermission(
+  access: StudioAccessContext,
+  action: StudioPolicyAction,
+  resource: string,
+): boolean {
+  if (access.isRoot) return true;
+  const activeRoleIds = new Set(access.roleIds);
+  const hasApplicablePolicy = access.policies.some((policy) => activeRoleIds.has(policy.discordRoleId));
+  if (!hasApplicablePolicy) return true;
+  return hasStudioPermission(access, action, resource);
 }
 
 async function parsePatchBody(
