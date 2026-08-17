@@ -79,7 +79,9 @@ async function readJsonObject(
     const bytes = await readRequestBodyBytes(request, MAX_DRAFT_BODY_BYTES);
     const parsed = JSON.parse(Buffer.from(bytes).toString('utf8')) as unknown;
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      return { response: NextResponse.json({ error: 'JSONオブジェクトが必要です' }, { status: 400 }) };
+      return {
+        response: NextResponse.json({ error: 'JSONオブジェクトが必要です' }, { status: 400 }),
+      };
     }
     return { value: parsed as Record<string, unknown> };
   } catch (error) {

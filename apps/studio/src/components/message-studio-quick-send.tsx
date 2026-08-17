@@ -1,6 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 import {
   Bold,
   Code2,
@@ -93,7 +101,9 @@ export function MessageStudioQuickSend({
       const response = await fetch(`/api/guilds/${guildId}/message-studio/drafts`, {
         cache: 'no-store',
       });
-      const payload = (await response.json().catch(() => null)) as { drafts?: DraftRecord[] } | null;
+      const payload = (await response.json().catch(() => null)) as {
+        drafts?: DraftRecord[];
+      } | null;
       if (response.ok && Array.isArray(payload?.drafts)) setDrafts(payload.drafts);
     } catch {
       // Draft一覧が取れなくても即時投稿は継続できる。
@@ -124,11 +134,11 @@ export function MessageStudioQuickSend({
     messageFormat === 'embed' &&
     Boolean(
       embedTitle.trim() ||
-        embedDescription.trim() ||
-        embedImageUrl.trim() ||
-        embedThumbnailUrl.trim() ||
-        embedFooterText.trim() ||
-        embedFields.some((field) => field.name.trim() && field.value.trim()),
+      embedDescription.trim() ||
+      embedImageUrl.trim() ||
+      embedThumbnailUrl.trim() ||
+      embedFooterText.trim() ||
+      embedFields.some((field) => field.name.trim() && field.value.trim()),
     );
   const hasVoice = messageFormat === 'voice' && Boolean(voice && voiceMetadata);
 
@@ -185,7 +195,9 @@ export function MessageStudioQuickSend({
       setVoice(file);
       setVoiceMetadata(metadata);
     } catch {
-      setError('この音声ファイルを解析できませんでした。ブラウザで再生可能な音声を選択してください');
+      setError(
+        'この音声ファイルを解析できませんでした。ブラウザで再生可能な音声を選択してください',
+      );
       if (voiceInputRef.current) voiceInputRef.current.value = '';
     } finally {
       setVoiceAnalyzing(false);
@@ -265,7 +277,8 @@ export function MessageStudioQuickSend({
         error?: string;
         draft?: DraftRecord;
       } | null;
-      if (!response.ok || !result?.draft) throw new Error(result?.error || '下書きの保存に失敗しました');
+      if (!response.ok || !result?.draft)
+        throw new Error(result?.error || '下書きの保存に失敗しました');
       setSelectedDraftId(result.draft.id);
       setDraftName(result.draft.name);
       setNotice(
@@ -326,7 +339,9 @@ export function MessageStudioQuickSend({
       return;
     }
     if (messageFormat === 'voice' && isForum) {
-      setError('ボイスメッセージはForum新規投稿ではなく、通常チャンネルまたは既存Threadへ送信してください');
+      setError(
+        'ボイスメッセージはForum新規投稿ではなく、通常チャンネルまたは既存Threadへ送信してください',
+      );
       return;
     }
     if (messageFormat === 'voice' && !hasVoice) {
@@ -428,7 +443,8 @@ export function MessageStudioQuickSend({
           <h2 className="font-semibold">今すぐBotで発言</h2>
         </div>
         <p className="mt-1 text-xs leading-5 text-muted">
-          通常・Embed・Voice Messageを送信できます。下書きはアカウント単位で保存され、別端末からも復元できます。
+          通常・Embed・Voice
+          Messageを送信できます。下書きはアカウント単位で保存され、別端末からも復元できます。
         </p>
       </div>
 
@@ -576,7 +592,8 @@ export function MessageStudioQuickSend({
               {voicePreviewUrl ? <audio className="w-full" controls src={voicePreviewUrl} /> : null}
               {isForum ? (
                 <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-2 text-xs text-amber-700 dark:text-amber-300">
-                  Forumの新規投稿にはVoice Messageを送れません。通常チャンネルまたは既存Threadを選択してください。
+                  Forumの新規投稿にはVoice
+                  Messageを送れません。通常チャンネルまたは既存Threadを選択してください。
                 </p>
               ) : null}
             </section>
@@ -589,12 +606,36 @@ export function MessageStudioQuickSend({
                 >
                   <ToolbarButton label="太字" onClick={() => wrapMarkdown('**')} icon={<Bold />} />
                   <ToolbarButton label="斜体" onClick={() => wrapMarkdown('*')} icon={<Italic />} />
-                  <ToolbarButton label="下線" onClick={() => wrapMarkdown('__')} icon={<Underline />} />
-                  <ToolbarButton label="取消" onClick={() => wrapMarkdown('~~')} icon={<Strikethrough />} />
-                  <ToolbarButton label="コード" onClick={() => wrapMarkdown('`')} icon={<Code2 />} />
-                  <ToolbarButton label="スポイラー" onClick={() => wrapMarkdown('||')} icon={<Eye />} />
-                  <ToolbarButton label="引用" onClick={() => wrapMarkdown('> ', '', '引用文')} icon={<Quote />} />
-                  <ToolbarButton label="リンク" onClick={() => wrapMarkdown('[', '](https://)', '表示名')} icon={<Link2 />} />
+                  <ToolbarButton
+                    label="下線"
+                    onClick={() => wrapMarkdown('__')}
+                    icon={<Underline />}
+                  />
+                  <ToolbarButton
+                    label="取消"
+                    onClick={() => wrapMarkdown('~~')}
+                    icon={<Strikethrough />}
+                  />
+                  <ToolbarButton
+                    label="コード"
+                    onClick={() => wrapMarkdown('`')}
+                    icon={<Code2 />}
+                  />
+                  <ToolbarButton
+                    label="スポイラー"
+                    onClick={() => wrapMarkdown('||')}
+                    icon={<Eye />}
+                  />
+                  <ToolbarButton
+                    label="引用"
+                    onClick={() => wrapMarkdown('> ', '', '引用文')}
+                    icon={<Quote />}
+                  />
+                  <ToolbarButton
+                    label="リンク"
+                    onClick={() => wrapMarkdown('[', '](https://)', '表示名')}
+                    icon={<Link2 />}
+                  />
                 </div>
                 <textarea
                   ref={textareaRef}
@@ -678,7 +719,9 @@ export function MessageStudioQuickSend({
                   </Field>
                   <div>
                     <div className="flex items-center justify-between gap-3">
-                      <span className="text-xs font-medium text-muted">Fields ({embedFields.length}/25)</span>
+                      <span className="text-xs font-medium text-muted">
+                        Fields ({embedFields.length}/25)
+                      </span>
                       <button
                         type="button"
                         onClick={addEmbedField}
@@ -696,13 +739,17 @@ export function MessageStudioQuickSend({
                         >
                           <input
                             value={field.name}
-                            onChange={(event) => updateEmbedField(index, { name: event.target.value.slice(0, 256) })}
+                            onChange={(event) =>
+                              updateEmbedField(index, { name: event.target.value.slice(0, 256) })
+                            }
                             className={INPUT_CLASS_NAME}
                             placeholder="項目名"
                           />
                           <input
                             value={field.value}
-                            onChange={(event) => updateEmbedField(index, { value: event.target.value.slice(0, 1024) })}
+                            onChange={(event) =>
+                              updateEmbedField(index, { value: event.target.value.slice(0, 1024) })
+                            }
                             className={INPUT_CLASS_NAME}
                             placeholder="値"
                           />
@@ -711,13 +758,19 @@ export function MessageStudioQuickSend({
                               <input
                                 type="checkbox"
                                 checked={field.inline}
-                                onChange={(event) => updateEmbedField(index, { inline: event.target.checked })}
+                                onChange={(event) =>
+                                  updateEmbedField(index, { inline: event.target.checked })
+                                }
                               />
                               横並び
                             </label>
                             <button
                               type="button"
-                              onClick={() => setEmbedFields(embedFields.filter((_, fieldIndex) => fieldIndex !== index))}
+                              onClick={() =>
+                                setEmbedFields(
+                                  embedFields.filter((_, fieldIndex) => fieldIndex !== index),
+                                )
+                              }
                               className="rounded-lg p-2 text-destructive hover:bg-destructive/5"
                               aria-label="Fieldを削除"
                             >
@@ -800,62 +853,113 @@ export function MessageStudioQuickSend({
           </div>
 
           {error ? (
-            <p className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive" role="alert">
+            <p
+              className="rounded-xl border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"
+              role="alert"
+            >
               {error}
             </p>
           ) : null}
           {notice ? (
-            <p className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300" role="status">
+            <p
+              className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-700 dark:text-emerald-300"
+              role="status"
+            >
               {notice}
             </p>
           ) : null}
         </div>
 
         <aside className="rounded-2xl bg-[#313338] p-4 text-[#dbdee1]">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#949ba4]">Discord Preview</p>
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-[#949ba4]">
+            Discord Preview
+          </p>
           <div className="flex gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">H</div>
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-bold text-primary-foreground">
+              H
+            </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
                 <span className="font-semibold text-white">Herta</span>
-                <span className="rounded bg-[#5865f2] px-1 py-0.5 text-[9px] font-bold text-white">APP</span>
+                <span className="rounded bg-[#5865f2] px-1 py-0.5 text-[9px] font-bold text-white">
+                  APP
+                </span>
               </div>
               {messageFormat === 'voice' ? (
                 <div className="mt-2 rounded-xl bg-[#2b2d31] p-3">
                   <div className="flex items-center gap-2 text-sm">
                     <Mic2 className="h-4 w-4 text-[#5865f2]" aria-hidden="true" />
                     <span>{voice ? voice.name : 'Voice Message'}</span>
-                    {voiceMetadata ? <span className="text-[#949ba4]">{formatDuration(voiceMetadata.durationSeconds)}</span> : null}
+                    {voiceMetadata ? (
+                      <span className="text-[#949ba4]">
+                        {formatDuration(voiceMetadata.durationSeconds)}
+                      </span>
+                    ) : null}
                   </div>
                   <div className="mt-2 h-6 rounded bg-white/10" aria-hidden="true" />
                 </div>
               ) : (
                 <>
-                  {content ? <p className="mt-1 whitespace-pre-wrap break-words text-sm">{content}</p> : null}
+                  {content ? (
+                    <p className="mt-1 whitespace-pre-wrap break-words text-sm">{content}</p>
+                  ) : null}
                   {messageFormat === 'embed' && hasEmbed ? (
-                    <div className="mt-2 max-w-full overflow-hidden rounded bg-[#2b2d31]" style={{ borderLeft: `4px solid ${validColor(embedColor)}` }}>
+                    <div
+                      className="mt-2 max-w-full overflow-hidden rounded bg-[#2b2d31]"
+                      style={{ borderLeft: `4px solid ${validColor(embedColor)}` }}
+                    >
                       <div className="p-3">
-                        {embedThumbnailUrl ? <div className="float-right ml-3 h-16 w-16 rounded bg-cover bg-center" style={{ backgroundImage: `url(${JSON.stringify(embedThumbnailUrl).slice(1, -1)})` }} /> : null}
-                        {embedTitle ? <p className="font-semibold text-white">{embedTitle}</p> : null}
-                        {embedDescription ? <p className="mt-1 whitespace-pre-wrap text-sm">{embedDescription}</p> : null}
+                        {embedThumbnailUrl ? (
+                          <div
+                            className="float-right ml-3 h-16 w-16 rounded bg-cover bg-center"
+                            style={{
+                              backgroundImage: `url(${JSON.stringify(embedThumbnailUrl).slice(1, -1)})`,
+                            }}
+                          />
+                        ) : null}
+                        {embedTitle ? (
+                          <p className="font-semibold text-white">{embedTitle}</p>
+                        ) : null}
+                        {embedDescription ? (
+                          <p className="mt-1 whitespace-pre-wrap text-sm">{embedDescription}</p>
+                        ) : null}
                         {embedFields.length > 0 ? (
                           <div className="mt-3 grid grid-cols-2 gap-2">
-                            {embedFields.filter((field) => field.name || field.value).map((field, index) => (
-                              <div key={index} className={field.inline ? '' : 'col-span-2'}>
-                                <p className="text-xs font-semibold text-white">{field.name || 'Field'}</p>
-                                <p className="whitespace-pre-wrap text-xs">{field.value || '—'}</p>
-                              </div>
-                            ))}
+                            {embedFields
+                              .filter((field) => field.name || field.value)
+                              .map((field, index) => (
+                                <div key={index} className={field.inline ? '' : 'col-span-2'}>
+                                  <p className="text-xs font-semibold text-white">
+                                    {field.name || 'Field'}
+                                  </p>
+                                  <p className="whitespace-pre-wrap text-xs">
+                                    {field.value || '—'}
+                                  </p>
+                                </div>
+                              ))}
                           </div>
                         ) : null}
-                        {embedImageUrl ? <div className="mt-3 aspect-video w-full rounded bg-cover bg-center" style={{ backgroundImage: `url(${JSON.stringify(embedImageUrl).slice(1, -1)})` }} /> : null}
-                        {embedFooterText ? <p className="mt-3 text-[11px] text-[#949ba4]">{embedFooterText}</p> : null}
+                        {embedImageUrl ? (
+                          <div
+                            className="mt-3 aspect-video w-full rounded bg-cover bg-center"
+                            style={{
+                              backgroundImage: `url(${JSON.stringify(embedImageUrl).slice(1, -1)})`,
+                            }}
+                          />
+                        ) : null}
+                        {embedFooterText ? (
+                          <p className="mt-3 text-[11px] text-[#949ba4]">{embedFooterText}</p>
+                        ) : null}
                       </div>
                     </div>
                   ) : null}
                   {imagePreviewUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={imagePreviewUrl} alt="添付画像プレビュー" className="mt-3 max-h-64 max-w-full rounded-lg object-contain" />
+                    <img
+                      src={imagePreviewUrl}
+                      alt="添付画像プレビュー"
+                      className="mt-3 max-h-64 max-w-full rounded-lg object-contain"
+                    />
                   ) : null}
                 </>
               )}
@@ -863,8 +967,19 @@ export function MessageStudioQuickSend({
           </div>
           <div className="mt-4 border-t border-white/10 pt-3 text-xs text-[#949ba4]">
             <p>{selectedChannel ? `# ${selectedChannel.name}` : '投稿先未選択'}</p>
-            <p className="mt-1">形式: {messageFormat === 'embed' ? 'Embed' : messageFormat === 'voice' ? 'Voice Message' : '通常'}</p>
-            {isForum && messageFormat !== 'voice' ? <p className="mt-1">Forum: {forumTitle || embedTitle || '本文1行目をタイトルに使用'}</p> : null}
+            <p className="mt-1">
+              形式:{' '}
+              {messageFormat === 'embed'
+                ? 'Embed'
+                : messageFormat === 'voice'
+                  ? 'Voice Message'
+                  : '通常'}
+            </p>
+            {isForum && messageFormat !== 'voice' ? (
+              <p className="mt-1">
+                Forum: {forumTitle || embedTitle || '本文1行目をタイトルに使用'}
+              </p>
+            ) : null}
           </div>
         </aside>
       </form>
@@ -881,25 +996,66 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function FormatButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+function FormatButton({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
   return (
-    <button type="button" onClick={onClick} className={`rounded-lg px-3 py-1.5 text-xs font-medium ${active ? 'bg-primary text-primary-foreground' : 'text-muted hover:text-foreground'}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-lg px-3 py-1.5 text-xs font-medium ${active ? 'bg-primary text-primary-foreground' : 'text-muted hover:text-foreground'}`}
+    >
       {label}
     </button>
   );
 }
 
-function ToolbarButton({ label, onClick, icon }: { label: string; onClick: () => void; icon: ReactNode }) {
+function ToolbarButton({
+  label,
+  onClick,
+  icon,
+}: {
+  label: string;
+  onClick: () => void;
+  icon: ReactNode;
+}) {
   return (
-    <button type="button" title={label} aria-label={label} onClick={onClick} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&>svg]:h-4 [&>svg]:w-4">
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={onClick}
+      className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted transition hover:bg-surface hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&>svg]:h-4 [&>svg]:w-4"
+    >
       {icon}
     </button>
   );
 }
 
-function IconTextButton({ label, icon, disabled, onClick }: { label: string; icon: ReactNode; disabled: boolean; onClick: () => void }) {
+function IconTextButton({
+  label,
+  icon,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  icon: ReactNode;
+  disabled: boolean;
+  onClick: () => void;
+}) {
   return (
-    <button type="button" disabled={disabled} onClick={onClick} className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-2 text-xs disabled:opacity-40">
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-2 text-xs disabled:opacity-40"
+    >
       {icon}
       <span className="sr-only sm:not-sr-only">{label}</span>
     </button>
@@ -917,7 +1073,8 @@ async function analyzeVoiceFile(file: File): Promise<VoiceMetadata> {
   try {
     const bytes = await file.arrayBuffer();
     const audio = await context.decodeAudioData(bytes.slice(0));
-    if (!Number.isFinite(audio.duration) || audio.duration <= 0) throw new Error('invalid duration');
+    if (!Number.isFinite(audio.duration) || audio.duration <= 0)
+      throw new Error('invalid duration');
     const samples = audio.getChannelData(0);
     const pointCount = Math.max(1, Math.min(256, Math.ceil(audio.duration * 10)));
     const waveform = new Uint8Array(pointCount);

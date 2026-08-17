@@ -349,9 +349,16 @@ function parseEncodedAttachment(
   maxBytes: number,
 ): EncodedAttachment | null {
   const filename = typeof value.filename === 'string' ? value.filename.trim() : '';
-  const contentType = typeof value.contentType === 'string' ? value.contentType.trim().toLowerCase() : '';
+  const contentType =
+    typeof value.contentType === 'string' ? value.contentType.trim().toLowerCase() : '';
   const dataBase64 = typeof value.dataBase64 === 'string' ? value.dataBase64 : '';
-  if (!filename || filename.length > 100 || !contentType || contentType.length > 100 || !dataBase64) {
+  if (
+    !filename ||
+    filename.length > 100 ||
+    !contentType ||
+    contentType.length > 100 ||
+    !dataBase64
+  ) {
     return null;
   }
   const bytes = decodeBase64(dataBase64);

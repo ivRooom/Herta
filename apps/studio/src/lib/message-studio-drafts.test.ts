@@ -31,7 +31,10 @@ test('不正な形式・色・過大Fieldを拒否する', () => {
   assert.equal(parseMessageStudioDraftPayload({ ...base, messageFormat: 'unknown' }), null);
   assert.equal(parseMessageStudioDraftPayload({ ...base, embedColor: 'red' }), null);
   assert.equal(
-    parseMessageStudioDraftPayload({ ...base, embedFields: Array.from({ length: 26 }, () => ({ name: 'n', value: 'v' })) }),
+    parseMessageStudioDraftPayload({
+      ...base,
+      embedFields: Array.from({ length: 26 }, () => ({ name: 'n', value: 'v' })),
+    }),
     null,
   );
 });

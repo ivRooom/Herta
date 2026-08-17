@@ -109,8 +109,12 @@ describe('parseGuildMessageStudioSendInput', () => {
       image: null,
       voice,
     };
-    expect(parseGuildMessageStudioSendInput({ ...base, content: 'hello', publishAnnouncement: false })).toBeNull();
-    expect(parseGuildMessageStudioSendInput({ ...base, content: '', publishAnnouncement: true })).toBeNull();
+    expect(
+      parseGuildMessageStudioSendInput({ ...base, content: 'hello', publishAnnouncement: false }),
+    ).toBeNull();
+    expect(
+      parseGuildMessageStudioSendInput({ ...base, content: '', publishAnnouncement: true }),
+    ).toBeNull();
   });
 
   it('不正なVoice MIME・duration・waveformを拒否する', () => {

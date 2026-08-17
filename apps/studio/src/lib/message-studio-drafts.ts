@@ -118,7 +118,8 @@ export async function deleteMessageStudioDraft(
 export function parseMessageStudioDraftPayload(value: unknown): MessageStudioDraftPayload | null {
   if (!isRecord(value)) return null;
   const messageFormat = value.messageFormat;
-  if (messageFormat !== 'text' && messageFormat !== 'embed' && messageFormat !== 'voice') return null;
+  if (messageFormat !== 'text' && messageFormat !== 'embed' && messageFormat !== 'voice')
+    return null;
   if (!Array.isArray(value.embedFields) || value.embedFields.length > 25) return null;
   const embedFields: MessageStudioDraftPayload['embedFields'] = [];
   for (const field of value.embedFields) {

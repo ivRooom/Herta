@@ -78,7 +78,8 @@ export function validateMessageStudioImageFile(file: File): string | null {
 
 export function validateMessageStudioVoiceFile(file: File): string | null {
   if (file.size <= 0) return '音声ファイルが空です';
-  if (file.size > MESSAGE_STUDIO_VOICE_MAX_BYTES) return 'ボイスメッセージは20MiB以下にしてください';
+  if (file.size > MESSAGE_STUDIO_VOICE_MAX_BYTES)
+    return 'ボイスメッセージは20MiB以下にしてください';
   if (!file.type.toLowerCase().startsWith('audio/')) {
     return 'ボイスメッセージには音声ファイルを選択してください';
   }
