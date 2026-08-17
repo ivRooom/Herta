@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CalendarClock, Clock3, Plus, RefreshCw, ShieldAlert, Trash2 } from 'lucide-react';
 import type { RoleInventoryRole } from '@/lib/role-access-inventory';
@@ -62,6 +62,7 @@ export function RoleLifecycleManager({
   const [deleteRoleId, setDeleteRoleId] = useState(deletableRoles[0]?.id ?? '');
   const [pendingAction, setPendingAction] = useState<'create' | 'delete' | null>(null);
   const [notice, setNotice] = useState<Notice>(null);
+  const createRequestIdRef = useRef<string | null>(null);
 
   const selectedDeleteRole = roles.find((role) => role.id === deleteRoleId) ?? null;
   const deleteBlock = selectedDeleteRole
@@ -80,6 +81,10 @@ export function RoleLifecycleManager({
   useEffect(() => {
     if (!deleteRoleId && deletableRoles[0]) setDeleteRoleId(deletableRoles[0].id);
   }, [deleteRoleId, deletableRoles]);
+
+  useEffect(() => {
+    createRequestIdRef.current = null;
+  }, [name, color, scheduleMode, scheduledFor, temporary, duration, durationUnit]);
 
   const createDisabled =
     !canEdit ||
@@ -100,14 +105,28 @@ export function RoleLifecycleManager({
     const expiresAfterSeconds = temporary
       ? Math.trunc(Number(duration) * DURATION_MULTIPLIER[durationUnit])
       : null;
-    const scheduledIso =
-      scheduleMode === 'scheduled' && scheduledFor ? new Date(scheduledFor).toISOString() : null;
+    let scheduledIso: string | null = null;
+    if (scheduleMode === 'scheduled' && scheduledFor) {
+      const scheduledDate = new Date(scheduledFor);
+      if (Number.isNaN(scheduledDate.getTime())) {
+        setNotice({ kind: 'error', text: '作成日時が不正です。' });
+        return;
+      }
+      scheduledIso = scheduledDate.toISOString();
+    }
+
+    const requestId = createRequestIdRef.current ?? crypto.randomUUID();
+    createRequestIdRef.current = requestId;
+    let resetRequestId = false;
     setPendingAction('create');
     setNotice(null);
     try {
       const response = await fetch(`/api/guilds/${guildId}/roles`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': requestId,
+        },
         body: JSON.stringify({
           name: name.trim(),
           color,
@@ -115,6 +134,7 @@ export function RoleLifecycleManager({
           expiresAfterSeconds,
         }),
       });
+      resetRequestId = response.status < 500;
       const result = (await response.json().catch(() => null)) as { error?: string } | null;
       if (!response.ok) throw new Error(result?.error || 'Role作成の受付に失敗しました');
       setName('');
@@ -132,6 +152,7 @@ export function RoleLifecycleManager({
         text: error instanceof Error ? error.message : 'Role作成の受付に失敗しました。',
       });
     } finally {
+      if (resetRequestId) createRequestIdRef.current = null;
       setPendingAction(null);
     }
   }
