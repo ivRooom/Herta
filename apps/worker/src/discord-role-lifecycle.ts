@@ -305,7 +305,9 @@ class RoleLifecycleTransportError extends Error {}
 class RoleLifecycleAttentionError extends Error {}
 
 function requiresCreateAttention(error: unknown): boolean {
-  return error instanceof RoleLifecycleTransportError || error instanceof RoleLifecycleAttentionError;
+  return (
+    error instanceof RoleLifecycleTransportError || error instanceof RoleLifecycleAttentionError
+  );
 }
 
 async function markFailed(prisma: PrismaClient, id: string, errorName: string): Promise<void> {
