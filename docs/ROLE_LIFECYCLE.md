@@ -162,3 +162,7 @@ DISCORD_ROLE_OPERATION_SCAN_INTERVAL_SECONDS=15
 4. Bot healthy
 
 新しいoperation tableが存在しない状態やBot内部APIが起動前の状態でWorkerがRole処理を開始しないためである。
+
+## Development / CI
+
+Role Lifecycle実装中に一時formatter workflowを使用する場合でも、通常CIの`pnpm format:check`が通った時点で削除し、feature固有のwrite権限付きworkflowをmainへ残さない。
