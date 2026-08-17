@@ -114,9 +114,19 @@ export async function PUT(request: Request, { params }: { params: Promise<{ guil
   if (!POLICY_ID_PATTERN.test(rawPolicyId)) {
     return NextResponse.json({ error: 'Policy IDが不正です' }, { status: 400 });
   }
+  const expectedRevision = body.value.expectedRevision;
+  if (!Number.isInteger(expectedRevision) || Number(expectedRevision) < 1) {
+    return NextResponse.json({ error: 'Policy revisionが不正です' }, { status: 400 });
+  }
   const policyId = rawPolicyId.toLowerCase();
   const current = await findManagedStudioAccessPolicy(prisma, guildId, policyId);
   if (!current) return NextResponse.json({ error: 'Policyが見つかりません' }, { status: 404 });
+  if (current.revision !== expectedRevision) {
+    return NextResponse.json(
+      { error: 'Policyは別の操作で更新されています。最新状態を確認してから再編集してください' },
+      { status: 409 },
+    );
+  }
 
   const metadata = parsePolicyMetadata(body.value);
   if ('error' in metadata) return NextResponse.json({ error: metadata.error }, { status: 400 });
@@ -142,11 +152,17 @@ export async function PUT(request: Request, { params }: { params: Promise<{ guil
       description: metadata.description,
       document: validation.policy,
       actorId: session.user.id,
+      expectedRevision,
     });
-    if (!policy) return NextResponse.json({ error: 'Policyが見つかりません' }, { status: 404 });
+    if (!policy) {
+      return NextResponse.json(
+        { error: 'Policyは別の操作で更新されています。最新状態を確認してから再編集してください' },
+        { status: 409 },
+      );
+    }
     await recordAudit(guildId, session.user.id, 'studio_access_policy.updated', policy.id, {
       name: policy.name,
-      previousRevision: current.revision,
+      previousRevision: expectedRevision,
       revision: policy.revision,
     });
     return NextResponse.json({ policy });
@@ -249,16 +265,26 @@ async function recordAudit(
   targetId: string,
   changes: object,
 ): Promise<void> {
-  await prisma.auditLog.create({
-    data: {
+  try {
+    await prisma.auditLog.create({
+      data: {
+        guildId,
+        actorId,
+        event,
+        targetType: 'studio_access_policy',
+        targetId,
+        changes,
+        severity: 'warning',
+        metadata: { operationSource: 'studio', securitySensitive: true },
+      },
+    });
+  } catch (error) {
+    console.error('Failed to record Studio access policy audit log', {
       guildId,
       actorId,
       event,
-      targetType: 'studio_access_policy',
       targetId,
-      changes,
-      severity: 'warning',
-      metadata: { operationSource: 'studio', securitySensitive: true },
-    },
-  });
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
+  }
 }
