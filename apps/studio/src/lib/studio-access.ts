@@ -1,9 +1,13 @@
+import { listEffectiveStudioAccessPolicyDocuments } from '@herta/db';
 import type { ManageableGuild } from '@/lib/discord';
 import { getGuildMemberById } from '@/lib/bot-guild-members';
+import { prisma } from '@/lib/db';
 import { authorizeGuild } from '@/lib/guild-plugins';
 import {
-  evaluateStudioAccessPolicy,
+  evaluateStudioPolicyDocuments,
   isStudioRootRole,
+  validateStudioAccessPolicy,
+  type StudioAccessPolicy,
   type StudioPolicyAction,
 } from '@/lib/studio-access-policy';
 import {
@@ -17,6 +21,7 @@ export interface StudioAccessContext {
   roleIds: string[];
   isRoot: boolean;
   policies: StudioRolePolicyRecord[];
+  managedPolicies: StudioAccessPolicy[];
 }
 
 export type StudioAccessResult =
@@ -44,12 +49,58 @@ export async function resolveStudioAccess(
   }
 
   const isRoot = isStudioRootRole(member.roleIds);
-  const policies = isRoot ? [] : await listStudioRolePolicies(guildId);
-  return {
-    ok: true,
-    guild: guildAuthorization.guild,
-    access: { guildId, userId, roleIds: member.roleIds, isRoot, policies },
-  };
+  if (isRoot) {
+    return {
+      ok: true,
+      guild: guildAuthorization.guild,
+      access: { guildId, userId, roleIds: member.roleIds, isRoot: true, policies: [], managedPolicies: [] },
+    };
+  }
+
+  try {
+    const [policies, managedDocuments] = await Promise.all([
+      listStudioRolePolicies(guildId),
+      listEffectiveStudioAccessPolicyDocuments(prisma, guildId, userId, member.roleIds),
+    ]);
+    const managedPolicies: StudioAccessPolicy[] = [];
+    for (const document of managedDocuments) {
+      const validation = validateStudioAccessPolicy(document, guildId);
+      if (!validation.valid || !validation.policy) {
+        console.error('Invalid managed Studio access policy stored in database', {
+          guildId,
+          userId,
+          validationErrors: validation.errors,
+        });
+        return {
+          ok: false,
+          response: Response.json(
+            { error: 'Studio権限設定を安全に評価できませんでした' },
+            { status: 503 },
+          ),
+        };
+      }
+      managedPolicies.push(validation.policy);
+    }
+
+    return {
+      ok: true,
+      guild: guildAuthorization.guild,
+      access: { guildId, userId, roleIds: member.roleIds, isRoot, policies, managedPolicies },
+    };
+  } catch (error) {
+    console.error('Failed to resolve Studio access policies', {
+      guildId,
+      userId,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
+    return {
+      ok: false,
+      response: Response.json(
+        { error: 'Studio権限設定を取得できませんでした' },
+        { status: 503 },
+      ),
+    };
+  }
 }
 
 export async function authorizeStudioPermission(
@@ -77,10 +128,13 @@ export function hasStudioPermission(
   resource = `guild:${access.guildId}:*`,
 ): boolean {
   if (access.isRoot) return true;
-  return evaluateStudioAccessPolicy({
-    roleIds: access.roleIds,
-    policies: access.policies,
+  const activeRoleIds = new Set(access.roleIds);
+  const legacyPolicies = access.policies
+    .filter((record) => activeRoleIds.has(record.discordRoleId))
+    .map((record) => record.policy);
+  return evaluateStudioPolicyDocuments(
+    [...access.managedPolicies, ...legacyPolicies],
     action,
     resource,
-  });
+  );
 }
