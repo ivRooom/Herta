@@ -73,18 +73,29 @@ async function mutateMembership(
         })
       : await removeStudioAccessGroupMember(prisma, { guildId, groupId, userId });
   if (changed) {
-    await prisma.auditLog.create({
-      data: {
+    try {
+      await prisma.auditLog.create({
+        data: {
+          guildId,
+          actorId: session.user.id,
+          event: `studio_access_group.member_${operation === 'add' ? 'added' : 'removed'}`,
+          targetType: 'studio_access_group',
+          targetId: groupId,
+          changes: { groupName: group.name, userId },
+          severity: 'warning',
+          metadata: { operationSource: 'studio', securitySensitive: true },
+        },
+      });
+    } catch (error) {
+      console.error('Failed to record Studio access group membership audit log', {
         guildId,
+        groupId,
+        userId,
+        operation,
         actorId: session.user.id,
-        event: `studio_access_group.member_${operation === 'add' ? 'added' : 'removed'}`,
-        targetType: 'studio_access_group',
-        targetId: groupId,
-        changes: { groupName: group.name, userId },
-        severity: 'warning',
-        metadata: { operationSource: 'studio', securitySensitive: true },
-      },
-    });
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+    }
   }
   return NextResponse.json({ changed });
 }
