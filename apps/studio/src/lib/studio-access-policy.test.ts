@@ -12,10 +12,7 @@ const GUILD_ID = '123456789012345678';
 const ROLE_ID = '234567890123456789';
 
 test('GUI Policyは選択ActionをGuild scopeへAllowする', () => {
-  const policy = createStudioRolePolicyFromActions(GUILD_ID, [
-    'studio.page.view',
-    'studio.ai.use',
-  ]);
+  const policy = createStudioRolePolicyFromActions(GUILD_ID, ['studio.page.view', 'studio.ai.use']);
   assert.deepEqual(policy.Statement[0]?.Action, ['studio.page.view', 'studio.ai.use']);
   assert.deepEqual(policy.Statement[0]?.Resource, [`guild:${GUILD_ID}:*`]);
 });

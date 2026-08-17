@@ -83,7 +83,9 @@ export function validateStudioAccessPolicy(
   if (!parsed.success) {
     return {
       valid: false,
-      errors: parsed.error.issues.map((issue) => `${issue.path.join('.') || 'policy'}: ${issue.message}`),
+      errors: parsed.error.issues.map(
+        (issue) => `${issue.path.join('.') || 'policy'}: ${issue.message}`,
+      ),
     };
   }
 
@@ -131,7 +133,8 @@ export function isStudioRootRole(roleIds: readonly string[]): boolean {
 
 export function policyContainsWildcardGrant(policy: StudioAccessPolicy): boolean {
   return policy.Statement.some(
-    (statement) => statement.Effect === 'Allow' && statement.Action.some((action) => action.includes('*')),
+    (statement) =>
+      statement.Effect === 'Allow' && statement.Action.some((action) => action.includes('*')),
   );
 }
 
@@ -142,7 +145,9 @@ function isSupportedActionPattern(action: string): boolean {
 }
 
 function isGuildScopedResource(resource: string, guildId: string): boolean {
-  return resource === '*' || resource === `guild:${guildId}` || resource.startsWith(`guild:${guildId}:`);
+  return (
+    resource === '*' || resource === `guild:${guildId}` || resource.startsWith(`guild:${guildId}:`)
+  );
 }
 
 function matchesAny(patterns: readonly string[], value: string): boolean {

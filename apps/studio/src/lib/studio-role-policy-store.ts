@@ -1,9 +1,6 @@
 import type { Prisma } from '@herta/db';
 import { prisma } from '@/lib/db';
-import {
-  validateStudioAccessPolicy,
-  type StudioAccessPolicy,
-} from '@/lib/studio-access-policy';
+import { validateStudioAccessPolicy, type StudioAccessPolicy } from '@/lib/studio-access-policy';
 
 const STORE_VERSION = 1;
 
@@ -26,7 +23,9 @@ export async function listStudioRolePolicies(guildId: string): Promise<StudioRol
     select: { settingsJson: true },
   });
   const store = parseStudioAccessSettings(settings?.settingsJson, guildId);
-  return Object.values(store.rolePolicies).sort((a, b) => a.roleName.localeCompare(b.roleName, 'ja'));
+  return Object.values(store.rolePolicies).sort((a, b) =>
+    a.roleName.localeCompare(b.roleName, 'ja'),
+  );
 }
 
 export async function saveStudioRolePolicy(
@@ -71,7 +70,10 @@ export async function saveStudioRolePolicy(
   return record;
 }
 
-export async function deleteStudioRolePolicy(guildId: string, discordRoleId: string): Promise<void> {
+export async function deleteStudioRolePolicy(
+  guildId: string,
+  discordRoleId: string,
+): Promise<void> {
   await prisma.$transaction(
     async (tx) => {
       const current = await tx.guildSettings.findUnique({

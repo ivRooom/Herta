@@ -7,7 +7,10 @@ const guildMemberOptionSchema = z.object({
   displayName: z.string().min(1),
   avatarUrl: z.string().url().nullable(),
   bot: z.boolean(),
-  roleIds: z.array(z.string().regex(/^\d{17,20}$/u)).max(250).default([]),
+  roleIds: z
+    .array(z.string().regex(/^\d{17,20}$/u))
+    .max(250)
+    .default([]),
 });
 
 const guildMemberSearchResponseSchema = z.object({

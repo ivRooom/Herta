@@ -55,7 +55,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ guil
 
   const body = await parseJsonBody(request);
   if ('response' in body) return body.response;
-  const discordRoleId = typeof body.value.discordRoleId === 'string' ? body.value.discordRoleId : '';
+  const discordRoleId =
+    typeof body.value.discordRoleId === 'string' ? body.value.discordRoleId : '';
   if (!/^\d{17,20}$/u.test(discordRoleId)) {
     return NextResponse.json({ error: 'Discord Role IDが不正です' }, { status: 400 });
   }
@@ -69,7 +70,10 @@ export async function PUT(request: Request, { params }: { params: Promise<{ guil
 
   const validation = validateStudioAccessPolicy(body.value.policy, guildId);
   if (!validation.valid || !validation.policy) {
-    return NextResponse.json({ error: 'Policyが不正です', details: validation.errors }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Policyが不正です', details: validation.errors },
+      { status: 400 },
+    );
   }
 
   const previous = (await listStudioRolePolicies(guildId)).find(
@@ -134,13 +138,18 @@ async function parseJsonBody(
     const bytes = await readRequestBodyBytes(request, MAX_POLICY_BODY_BYTES);
     const value = JSON.parse(Buffer.from(bytes).toString('utf8')) as unknown;
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-      return { response: NextResponse.json({ error: 'JSONオブジェクトが必要です' }, { status: 400 }) };
+      return {
+        response: NextResponse.json({ error: 'JSONオブジェクトが必要です' }, { status: 400 }),
+      };
     }
     return { value: value as Record<string, unknown> };
   } catch (error) {
     return {
       response: NextResponse.json(
-        { error: error instanceof RequestBodyTooLargeError ? 'Policyが大きすぎます' : 'JSONが不正です' },
+        {
+          error:
+            error instanceof RequestBodyTooLargeError ? 'Policyが大きすぎます' : 'JSONが不正です',
+        },
         { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
       ),
     };

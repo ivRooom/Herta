@@ -5,7 +5,10 @@ import {
   isStudioRootRole,
   type StudioPolicyAction,
 } from '@/lib/studio-access-policy';
-import { listStudioRolePolicies, type StudioRolePolicyRecord } from '@/lib/studio-role-policy-store';
+import {
+  listStudioRolePolicies,
+  type StudioRolePolicyRecord,
+} from '@/lib/studio-role-policy-store';
 
 export interface StudioAccessContext {
   guildId: string;
