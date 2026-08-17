@@ -6,6 +6,10 @@ import {
   type GuildBotProfile,
   type GuildBotProfileUpdate,
 } from '../profile/guild-bot-profile.js';
+import {
+  fetchGuildCommandCatalog,
+  GuildCommandCatalogError,
+} from './command-catalog.js';
 import type { HealthConfig } from './config.js';
 import type { GuildConfigurationOptions } from './guild-options.js';
 import type { GuildMemberOption } from './guild-members.js';
@@ -173,6 +177,17 @@ export class HealthHttpServer {
       return;
     }
 
+    const guildCommandCatalogMatch = /^\/internal\/guilds\/(\d+)\/commands$/u.exec(pathname);
+    if (guildCommandCatalogMatch) {
+      await this.handleGuildCommandCatalogRequest(
+        request,
+        response,
+        method,
+        guildCommandCatalogMatch[1]!,
+      );
+      return;
+    }
+
     const guildBotProfileMatch = /^\/internal\/guilds\/(\d+)\/bot-profile$/u.exec(pathname);
     if (guildBotProfileMatch) {
       await this.handleGuildBotProfileRequest(request, response, method, guildBotProfileMatch[1]!);
@@ -263,6 +278,60 @@ export class HealthHttpServer {
     }
 
     this.sendJson(response, HTTP_STATUS_BY_HEALTH[health.status], health);
+  }
+
+  private async handleGuildCommandCatalogRequest(
+    request: IncomingMessage,
+    response: import('node:http').ServerResponse,
+    method: string,
+    guildId: string,
+  ): Promise<void> {
+    const internalApiSecret = this.options.internalApiSecret;
+    if (!isConfiguredInternalApiSecret(internalApiSecret)) {
+      this.sendJson(response, 503, { status: 'internal_api_not_configured' });
+      return;
+    }
+    if (!isAuthorizedInternalApiRequest(request.headers.authorization, internalApiSecret)) {
+      this.sendJson(response, 401, { status: 'unauthorized' });
+      return;
+    }
+    if (method !== 'GET') {
+      response.setHeader('Allow', 'GET');
+      this.sendJson(response, 405, { status: 'method_not_allowed' });
+      return;
+    }
+
+    const token = process.env['DISCORD_BOT_TOKEN']?.trim();
+    const applicationId = process.env['DISCORD_CLIENT_ID']?.trim();
+    if (!token || !applicationId) {
+      this.sendJson(response, 503, { status: 'discord_bot_not_configured' });
+      return;
+    }
+
+    try {
+      const catalog = await withTimeout(
+        fetchGuildCommandCatalog(token, applicationId, guildId),
+        this.options.config.checkTimeoutMs + 5_000,
+      );
+      this.sendJson(response, 200, catalog);
+    } catch (error) {
+      if (error instanceof GuildCommandCatalogError) {
+        this.options.logger.warn(
+          { guildId, status: error.status, errorName: error.name },
+          'Guild Command Catalog取得に失敗しました',
+        );
+        const status = error.status === 404 || error.status === 429 ? error.status : 503;
+        this.sendJson(response, status, {
+          status: status === 429 ? 'rate_limited' : status === 404 ? 'guild_not_found' : 'unavailable',
+        });
+        return;
+      }
+      this.options.logger.error(
+        { guildId, errorName: error instanceof Error ? error.name : 'UnknownError' },
+        'Guild Command Catalog取得で予期しないエラーが発生しました',
+      );
+      this.sendJson(response, 503, { status: 'unavailable' });
+    }
   }
 
   private async handleMessageStudioSendRequest(
