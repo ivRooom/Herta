@@ -23,9 +23,9 @@ describe('settleBlackjackPvp', () => {
 
   it('同点と両者BustはPushにする', () => {
     expect(settleBlackjackPvp([card(10), card(8)], [card(9), card(9)])).toBe('push');
-    expect(
-      settleBlackjackPvp([card(10), card(9), card(5)], [card(10), card(8), card(7)]),
-    ).toBe('push');
+    expect(settleBlackjackPvp([card(10), card(9), card(5)], [card(10), card(8), card(7)])).toBe(
+      'push',
+    );
   });
 });
 
