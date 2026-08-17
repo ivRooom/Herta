@@ -50,7 +50,11 @@ function response(status: PublicServiceStatus): HertaHealthResponse {
 
 type ExtraOptions = Pick<
   HealthHttpServerOptions,
-  'internalApiSecret' | 'getGuildBotProfile' | 'updateGuildBotProfile'
+  | 'internalApiSecret'
+  | 'getGuildOptions'
+  | 'searchGuildMembers'
+  | 'getGuildBotProfile'
+  | 'updateGuildBotProfile'
 >;
 
 async function startServer(
@@ -118,6 +122,125 @@ describe('GET /healthz', () => {
     expect(result.status).toBe(503);
     expect(body).toContain('"status":"unknown"');
     expect(body).not.toContain('unexpected secret stack');
+  });
+});
+
+describe('internal guild options API', () => {
+  const options = {
+    guildId: GUILD_ID,
+    guildName: 'Herta Test Guild',
+    channels: [],
+    messageTargets: [],
+    roles: [],
+    emojis: [],
+    bot: {
+      manageMessages: true,
+      manageRoles: true,
+      moderateMembers: true,
+      kickMembers: true,
+      banMembers: true,
+      mentionEveryone: false,
+      highestRolePosition: 10,
+    },
+    fetchedAt: '2026-08-17T05:00:00.000Z',
+  };
+
+  it('Secret未設定時は503を返しGuild情報を取得しない', async () => {
+    let called = false;
+    const baseUrl = await startServer(async () => response('operational'), {
+      getGuildOptions: async () => {
+        called = true;
+        return options;
+      },
+    });
+
+    const result = await fetch(`${baseUrl}/internal/guilds/${GUILD_ID}/options`);
+    expect(result.status).toBe(503);
+    expect(called).toBe(false);
+  });
+
+  it('Bearer Secretが一致しない場合は401を返す', async () => {
+    const baseUrl = await startServer(async () => response('operational'), {
+      internalApiSecret: INTERNAL_SECRET,
+      getGuildOptions: async () => options,
+    });
+
+    const result = await fetch(`${baseUrl}/internal/guilds/${GUILD_ID}/options`, {
+      headers: { Authorization: 'Bearer wrong-secret' },
+    });
+    expect(result.status).toBe(401);
+  });
+
+  it('認証済みGETだけGuild optionsを返す', async () => {
+    const baseUrl = await startServer(async () => response('operational'), {
+      internalApiSecret: INTERNAL_SECRET,
+      getGuildOptions: async (guildId) => (guildId === GUILD_ID ? options : null),
+    });
+
+    const result = await fetch(`${baseUrl}/internal/guilds/${GUILD_ID}/options`, {
+      headers: { Authorization: `Bearer ${INTERNAL_SECRET}` },
+    });
+    expect(result.status).toBe(200);
+    expect(await result.json()).toEqual(options);
+  });
+});
+
+describe('internal guild members API', () => {
+  const member = {
+    id: '987654321098765432',
+    username: 'herta-user',
+    displayName: 'Herta User',
+    avatarUrl: null,
+    bot: false,
+    roleIds: ['1069969919271252018'],
+  };
+
+  it('Secret未設定時は503を返しメンバー検索を実行しない', async () => {
+    let called = false;
+    const baseUrl = await startServer(async () => response('operational'), {
+      searchGuildMembers: async () => {
+        called = true;
+        return [member];
+      },
+    });
+
+    const result = await fetch(
+      `${baseUrl}/internal/guilds/${GUILD_ID}/members?query=${member.id}&limit=1`,
+    );
+    expect(result.status).toBe(503);
+    expect(called).toBe(false);
+  });
+
+  it('Bearer Secretが一致しない場合は401を返す', async () => {
+    const baseUrl = await startServer(async () => response('operational'), {
+      internalApiSecret: INTERNAL_SECRET,
+      searchGuildMembers: async () => [member],
+    });
+
+    const result = await fetch(
+      `${baseUrl}/internal/guilds/${GUILD_ID}/members?query=${member.id}&limit=1`,
+      { headers: { Authorization: 'Bearer wrong-secret' } },
+    );
+    expect(result.status).toBe(401);
+  });
+
+  it('認証済みGETでqueryとlimitを検証してメンバーを返す', async () => {
+    let received: { guildId: string; query: string; limit: number } | null = null;
+    const baseUrl = await startServer(async () => response('operational'), {
+      internalApiSecret: INTERNAL_SECRET,
+      searchGuildMembers: async (guildId, query, limit) => {
+        received = { guildId, query, limit };
+        return [member];
+      },
+    });
+
+    const result = await fetch(
+      `${baseUrl}/internal/guilds/${GUILD_ID}/members?query=${member.id}&limit=999`,
+      { headers: { Authorization: `Bearer ${INTERNAL_SECRET}` } },
+    );
+    expect(result.status).toBe(200);
+    expect(received).toEqual({ guildId: GUILD_ID, query: member.id, limit: 20 });
+    expect(await result.json()).toEqual({ members: [member] });
   });
 });
 
