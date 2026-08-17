@@ -41,7 +41,12 @@ describe('Guild command catalog', () => {
       ]),
     ) as unknown as typeof fetch;
 
-    const catalog = await fetchGuildCommandCatalog('bot-token', APPLICATION_ID, GUILD_ID, fetchImpl);
+    const catalog = await fetchGuildCommandCatalog(
+      'bot-token',
+      APPLICATION_ID,
+      GUILD_ID,
+      fetchImpl,
+    );
 
     expect(catalog.guildId).toBe(GUILD_ID);
     expect(catalog.commands).toEqual([
@@ -86,7 +91,12 @@ describe('Guild command catalog', () => {
       ]),
     ) as unknown as typeof fetch;
 
-    const catalog = await fetchGuildCommandCatalog('bot-token', APPLICATION_ID, GUILD_ID, fetchImpl);
+    const catalog = await fetchGuildCommandCatalog(
+      'bot-token',
+      APPLICATION_ID,
+      GUILD_ID,
+      fetchImpl,
+    );
     const count = catalog.commands[0]?.options[0]?.options?.[0];
 
     expect(count).toMatchObject({ type: 'integer', minValue: 1, maxValue: 10 });

@@ -164,7 +164,12 @@ function parseOptions(value: unknown[]): BotCommandCatalogOption[] | null {
 
     const choices = parseChoices(item.choices);
     if (!choices) return null;
-    const nested = item.options === undefined ? [] : Array.isArray(item.options) ? parseOptions(item.options) : null;
+    const nested =
+      item.options === undefined
+        ? []
+        : Array.isArray(item.options)
+          ? parseOptions(item.options)
+          : null;
     if (!nested) return null;
 
     result.push({

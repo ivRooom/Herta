@@ -6,10 +6,7 @@ import {
   type GuildBotProfile,
   type GuildBotProfileUpdate,
 } from '../profile/guild-bot-profile.js';
-import {
-  fetchGuildCommandCatalog,
-  GuildCommandCatalogError,
-} from './command-catalog.js';
+import { fetchGuildCommandCatalog, GuildCommandCatalogError } from './command-catalog.js';
 import type { HealthConfig } from './config.js';
 import type { GuildConfigurationOptions } from './guild-options.js';
 import type { GuildMemberOption } from './guild-members.js';
@@ -322,7 +319,8 @@ export class HealthHttpServer {
         );
         const status = error.status === 404 || error.status === 429 ? error.status : 503;
         this.sendJson(response, status, {
-          status: status === 429 ? 'rate_limited' : status === 404 ? 'guild_not_found' : 'unavailable',
+          status:
+            status === 429 ? 'rate_limited' : status === 404 ? 'guild_not_found' : 'unavailable',
         });
         return;
       }

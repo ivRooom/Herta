@@ -83,11 +83,7 @@ test('不正レスポンスとrate limitを分類する', async () => {
     );
 
     await assert.rejects(
-      () =>
-        getBotGuildCommandCatalog(
-          GUILD_ID,
-          async () => new Response(null, { status: 429 }),
-        ),
+      () => getBotGuildCommandCatalog(GUILD_ID, async () => new Response(null, { status: 429 })),
       (error: unknown) => error instanceof BotCommandCatalogError && error.status === 429,
     );
   });

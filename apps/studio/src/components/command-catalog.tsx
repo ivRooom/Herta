@@ -55,7 +55,10 @@ export function CommandCatalog({ commands }: { commands: BotCommandCatalogEntry[
             />
           </label>
 
-          <div className="inline-flex rounded-xl border border-border bg-background p-1" aria-label="所有元で絞り込み">
+          <div
+            className="inline-flex rounded-xl border border-border bg-background p-1"
+            aria-label="所有元で絞り込み"
+          >
             {(
               [
                 ['all', 'すべて'],
@@ -94,7 +97,9 @@ export function CommandCatalog({ commands }: { commands: BotCommandCatalogEntry[
         <section className="rounded-2xl border border-dashed border-border bg-surface px-6 py-12 text-center">
           <Search className="mx-auto h-8 w-8 text-muted" aria-hidden="true" />
           <h2 className="mt-3 font-semibold">一致するCommandがありません</h2>
-          <p className="mt-1 text-sm text-muted">検索語または所有元フィルターを変更してください。</p>
+          <p className="mt-1 text-sm text-muted">
+            検索語または所有元フィルターを変更してください。
+          </p>
         </section>
       )}
     </div>

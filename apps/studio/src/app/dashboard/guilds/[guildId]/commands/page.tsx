@@ -79,7 +79,8 @@ function PageHeader({ guildId, guildName }: { guildId: string; guildName: string
               Command Catalog
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Discordへ実際に登録されているSlash Commandを確認します。Coreと有効Plugin由来を区別し、使い方・オプション・選択肢まで検索できます。
+              Discordへ実際に登録されているSlash
+              Commandを確認します。Coreと有効Plugin由来を区別し、使い方・オプション・選択肢まで検索できます。
             </p>
           </div>
         </div>
