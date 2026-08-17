@@ -3,7 +3,6 @@ import { HERTA_STUDIO_ROOT_DISCORD_ROLE_ID } from '@herta/shared';
 import {
   createGuildRole,
   deleteGuildRole,
-  GuildRoleMutationError,
   parseGuildRoleCreateInput,
 } from './guild-role-mutations.js';
 
@@ -70,7 +69,7 @@ describe('deleteGuildRole', () => {
         OPERATION_ID,
         fetchImpl as typeof fetch,
       ),
-    ).rejects.toMatchObject<Partial<GuildRoleMutationError>>({
+    ).rejects.toMatchObject({
       status: 403,
       code: 'protected_role',
     });
@@ -87,7 +86,7 @@ describe('deleteGuildRole', () => {
     );
     await expect(
       deleteGuildRole('token', GUILD_ID, ROLE_ID, OPERATION_ID, fetchImpl as typeof fetch),
-    ).rejects.toMatchObject<Partial<GuildRoleMutationError>>({ status: 409, code: 'managed_role' });
+    ).rejects.toMatchObject({ status: 409, code: 'managed_role' });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
