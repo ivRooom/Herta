@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 
 export type DiscordRoleOperationKind = 'create' | 'delete';
 export type DiscordRoleOperationStatus =
@@ -325,31 +325,48 @@ export async function recoverStaleDiscordRoleOperations(
   return { createFailed, deleteRequeued };
 }
 
+export async function removeStudioRolePolicyForDeletedDiscordRole(
+  db: RoleOperationDb,
+  guildId: string,
+  discordRoleId: string,
+): Promise<void> {
+  assertDiscordId(guildId, 'guildId');
+  assertDiscordId(discordRoleId, 'discordRoleId');
+  await db.$executeRaw`
+    UPDATE "guild_settings"
+    SET "settings_json" = jsonb_set(
+      "settings_json"::jsonb,
+      '{studioAccess,rolePolicies}',
+      COALESCE("settings_json"::jsonb #> '{studioAccess,rolePolicies}', '{}'::jsonb) - ${discordRoleId},
+      true
+    )
+    WHERE "guild_id" = ${guildId}
+      AND "settings_json"::jsonb #> '{studioAccess,rolePolicies}' IS NOT NULL
+  `;
+}
+
 function operationProjection(): Prisma.Sql {
-  return {
-    sql: `
-      "id",
-      "guild_id" AS "guildId",
-      "operation",
-      "status",
-      "source",
-      "discord_role_id" AS "discordRoleId",
-      "role_name" AS "roleName",
-      "role_color" AS "roleColor",
-      "scheduled_for" AS "scheduledFor",
-      "expires_after_seconds" AS "expiresAfterSeconds",
-      "next_attempt_at" AS "nextAttemptAt",
-      "attempt_count" AS "attemptCount",
-      "claimed_at" AS "claimedAt",
-      "completed_at" AS "completedAt",
-      "last_error_name" AS "lastErrorName",
-      "parent_operation_id" AS "parentOperationId",
-      "created_by" AS "createdBy",
-      "created_at" AS "createdAt",
-      "updated_at" AS "updatedAt"
-    `,
-    values: [],
-  } as Prisma.Sql;
+  return Prisma.raw(`
+    "id",
+    "guild_id" AS "guildId",
+    "operation",
+    "status",
+    "source",
+    "discord_role_id" AS "discordRoleId",
+    "role_name" AS "roleName",
+    "role_color" AS "roleColor",
+    "scheduled_for" AS "scheduledFor",
+    "expires_after_seconds" AS "expiresAfterSeconds",
+    "next_attempt_at" AS "nextAttemptAt",
+    "attempt_count" AS "attemptCount",
+    "claimed_at" AS "claimedAt",
+    "completed_at" AS "completedAt",
+    "last_error_name" AS "lastErrorName",
+    "parent_operation_id" AS "parentOperationId",
+    "created_by" AS "createdBy",
+    "created_at" AS "createdAt",
+    "updated_at" AS "updatedAt"
+  `);
 }
 
 function requireOperation(
