@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { resolveBotHealthRequestTimeoutMs } from './bot-health.ts';
+import { getBotInternalApiAuthorizationHeader } from './bot-internal-api-auth.ts';
 
 const guildMemberOptionSchema = z.object({
   id: z.string().regex(/^\d+$/u),
@@ -23,13 +24,15 @@ export async function searchGuildMembers(
   guildId: string,
   query: string,
   limit = 20,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<GuildMemberOption[] | null> {
   if (!/^\d+$/u.test(guildId)) return null;
   const normalizedQuery = query.trim().slice(0, 64);
   if (!/^\d{17,20}$/u.test(normalizedQuery) && normalizedQuery.length < 2) return [];
 
   const healthUrl = process.env['BOT_HEALTH_URL']?.trim();
-  if (!healthUrl) return null;
+  const authorization = getBotInternalApiAuthorizationHeader();
+  if (!healthUrl || !authorization) return null;
 
   let endpoint: URL;
   try {
@@ -46,9 +49,12 @@ export async function searchGuildMembers(
     Math.max(3_000, resolveBotHealthRequestTimeoutMs() + 2_000),
   );
   try {
-    const response = await fetch(endpoint, {
+    const response = await fetchImpl(endpoint, {
       method: 'GET',
-      headers: { Accept: 'application/json' },
+      headers: {
+        Authorization: authorization,
+        Accept: 'application/json',
+      },
       cache: 'no-store',
       signal: controller.signal,
     });

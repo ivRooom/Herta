@@ -193,6 +193,15 @@ export class HealthHttpServer {
 
     const guildMemberSearchMatch = /^\/internal\/guilds\/(\d+)\/members$/u.exec(pathname);
     if (guildMemberSearchMatch) {
+      const internalApiSecret = this.options.internalApiSecret;
+      if (!isConfiguredInternalApiSecret(internalApiSecret)) {
+        this.sendJson(response, 503, { status: 'internal_api_not_configured' });
+        return;
+      }
+      if (!isAuthorizedInternalApiRequest(request.headers.authorization, internalApiSecret)) {
+        this.sendJson(response, 401, { status: 'unauthorized' });
+        return;
+      }
       if (method !== 'GET') {
         response.setHeader('Allow', 'GET');
         this.sendJson(response, 405, { status: 'method_not_allowed' });
@@ -230,6 +239,15 @@ export class HealthHttpServer {
 
     const guildOptionsMatch = /^\/internal\/guilds\/(\d+)\/options$/u.exec(pathname);
     if (guildOptionsMatch) {
+      const internalApiSecret = this.options.internalApiSecret;
+      if (!isConfiguredInternalApiSecret(internalApiSecret)) {
+        this.sendJson(response, 503, { status: 'internal_api_not_configured' });
+        return;
+      }
+      if (!isAuthorizedInternalApiRequest(request.headers.authorization, internalApiSecret)) {
+        this.sendJson(response, 401, { status: 'unauthorized' });
+        return;
+      }
       if (method !== 'GET') {
         response.setHeader('Allow', 'GET');
         this.sendJson(response, 405, { status: 'method_not_allowed' });
