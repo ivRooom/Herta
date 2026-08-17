@@ -37,6 +37,7 @@ export interface EnqueueDiscordRoleCreateInput {
   createdBy: string;
   source?: Extract<DiscordRoleOperationSource, 'studio' | 'rule-engine'>;
   operationId?: string;
+  idempotencyFingerprint?: string;
 }
 
 export interface EnqueueDiscordRoleDeleteInput {
@@ -52,6 +53,7 @@ export interface EnqueueDiscordRoleDeleteInput {
 type RoleOperationDb = Pick<Prisma.TransactionClient, '$queryRaw' | '$executeRaw'>;
 
 const DISCORD_ID_PATTERN = /^\d{17,20}$/u;
+const IDEMPOTENCY_FINGERPRINT_PATTERN = /^[0-9a-f]{64}$/u;
 const ROLE_NAME_CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/u;
 const MAX_ROLE_NAME_LENGTH = 100;
 const MIN_EXPIRY_SECONDS = 60;
@@ -70,7 +72,18 @@ export async function enqueueDiscordRoleCreateOperation(
 ): Promise<DiscordRoleOperationRecord> {
   assertDiscordId(input.guildId, 'guildId');
   assertDiscordId(input.createdBy, 'createdBy');
+  const hasOperationId = input.operationId !== undefined;
+  const hasIdempotencyFingerprint = input.idempotencyFingerprint !== undefined;
+  if (hasOperationId !== hasIdempotencyFingerprint) {
+    throw new RangeError('operationId and idempotencyFingerprint must be provided together');
+  }
   if (input.operationId) assertUuid(input.operationId, 'operationId');
+  if (
+    input.idempotencyFingerprint &&
+    !IDEMPOTENCY_FINGERPRINT_PATTERN.test(input.idempotencyFingerprint)
+  ) {
+    throw new RangeError('idempotencyFingerprint must be a lowercase SHA-256 hex digest');
+  }
   const roleName = input.roleName.trim();
   if (
     !roleName ||
@@ -93,10 +106,11 @@ export async function enqueueDiscordRoleCreateOperation(
   }
 
   const id = input.operationId ?? randomUUID();
+  const idempotencyFingerprint = input.idempotencyFingerprint ?? null;
   const rows = await db.$queryRaw<DiscordRoleOperationRecord[]>`
     INSERT INTO "discord_role_operations" (
       "id", "guild_id", "operation", "status", "source", "role_name", "role_color",
-      "scheduled_for", "expires_after_seconds", "created_by"
+      "scheduled_for", "expires_after_seconds", "created_by", "idempotency_fingerprint"
     ) VALUES (
       ${id}::uuid,
       ${input.guildId},
@@ -107,7 +121,8 @@ export async function enqueueDiscordRoleCreateOperation(
       ${input.roleColor},
       ${input.scheduledFor},
       ${input.expiresAfterSeconds},
-      ${input.createdBy}
+      ${input.createdBy},
+      ${idempotencyFingerprint}
     )
     ON CONFLICT ("id") DO NOTHING
     RETURNING ${operationProjection()}
@@ -121,6 +136,7 @@ export async function enqueueDiscordRoleCreateOperation(
       AND "guild_id" = ${input.guildId}
       AND "created_by" = ${input.createdBy}
       AND "operation" = 'create'
+      AND "idempotency_fingerprint" = ${idempotencyFingerprint}
     LIMIT 1
   `;
   if (existingRows[0]) return existingRows[0];
