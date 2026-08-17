@@ -71,7 +71,10 @@ async function mutateAttachment(
   if (operation === 'attach') {
     const principalError = await validatePrincipalExists(guildId, principalType, principalId);
     if (principalError) {
-      return NextResponse.json({ error: principalError.message }, { status: principalError.status });
+      return NextResponse.json(
+        { error: principalError.message },
+        { status: principalError.status },
+      );
     }
   }
 
