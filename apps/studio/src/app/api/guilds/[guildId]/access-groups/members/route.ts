@@ -43,14 +43,15 @@ async function mutateMembership(
 
   const body = await parseJsonBody(request);
   if ('response' in body) return body.response;
-  const groupId = typeof body.value.groupId === 'string' ? body.value.groupId : '';
+  const rawGroupId = typeof body.value.groupId === 'string' ? body.value.groupId : '';
   const userId = typeof body.value.userId === 'string' ? body.value.userId : '';
-  if (!GROUP_ID_PATTERN.test(groupId)) {
+  if (!GROUP_ID_PATTERN.test(rawGroupId)) {
     return NextResponse.json({ error: 'Group IDが不正です' }, { status: 400 });
   }
   if (!DISCORD_ID_PATTERN.test(userId)) {
     return NextResponse.json({ error: 'Discord User IDが不正です' }, { status: 400 });
   }
+  const groupId = rawGroupId.toLowerCase();
   const group = (await listStudioAccessGroups(prisma, guildId)).find(
     (candidate) => candidate.id === groupId,
   );
