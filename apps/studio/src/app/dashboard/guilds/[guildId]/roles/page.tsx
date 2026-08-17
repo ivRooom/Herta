@@ -24,9 +24,8 @@ export default async function GuildRoleManagerPage({
     'studio.roles.read',
     `guild:${guildId}:role:*`,
   );
-  if ('response' in authorization) {
-    const status = authorization.response.status;
-    return <AccessUnavailable guildId={guildId} status={status} />;
+  if (!authorization.ok) {
+    return <AccessUnavailable guildId={guildId} status={authorization.response.status} />;
   }
 
   const options = await getGuildConfigurationOptions(guildId);
