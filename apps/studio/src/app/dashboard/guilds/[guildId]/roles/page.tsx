@@ -2,8 +2,10 @@ import Link from 'next/link';
 import { ArrowLeft, ArrowRight, LockKeyhole, ShieldCheck, SlidersHorizontal } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import { auth } from '@/auth';
+import { RoleLifecycleManager } from '@/components/role-lifecycle-manager';
 import { RolePolicyManager } from '@/components/role-policy-manager';
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { prisma } from '@/lib/db';
 import { authorizeStudioPermission } from '@/lib/studio-access';
 import { STUDIO_ROOT_DISCORD_ROLE_ID } from '@/lib/studio-access-policy';
 import { listStudioRolePolicies } from '@/lib/studio-role-policy-store';
@@ -30,7 +32,25 @@ export default async function GuildRoleManagerPage({
 
   const options = await getGuildConfigurationOptions(guildId);
   if (!options) return <AccessUnavailable guildId={guildId} status={503} />;
-  const policies = await listStudioRolePolicies(guildId);
+  const [policies, lifecycleOperations] = await Promise.all([
+    listStudioRolePolicies(guildId),
+    authorization.access.isRoot
+      ? prisma.discordRoleLifecycleOperation.findMany({
+          where: { guildId },
+          orderBy: { createdAt: 'desc' },
+          take: 30,
+        })
+      : Promise.resolve([]),
+  ]);
+  const roles = options.roles.map((role) => ({
+    id: role.id,
+    name: role.name,
+    color: role.color,
+    position: role.position,
+    managed: role.managed,
+    mentionable: role.mentionable,
+    editable: role.editable,
+  }));
 
   return (
     <div className="space-y-7">
@@ -53,8 +73,7 @@ export default async function GuildRoleManagerPage({
             </p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">Role Manager</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Discord RoleをIAM風のAccess Inventoryから検索・絞り込みし、Herta
-              Studioの閲覧・編集・作成・削除・Command・AI・Secret・RAG・MCP権限を管理します。PolicyはGUIとJSONの両方で編集できます。
+              Discord RoleのlifecycleとHerta StudioのアクセスPolicyを一元管理します。Roleの作成・削除・期間限定運用・予約作成に加え、PolicyはGUIとJSONの両方で編集できます。
             </p>
           </div>
         </div>
@@ -67,7 +86,7 @@ export default async function GuildRoleManagerPage({
             <h2 className="text-sm font-semibold">root security boundary</h2>
             <p className="mt-1 text-xs leading-5 text-muted">
               Discord Role <code>{STUDIO_ROOT_DISCORD_ROLE_ID}</code>{' '}
-              はrootとして固定され、Policyから変更・削除できません。v1ではPolicy変更もrootだけが実行できます。
+              はrootとして固定され、Policy変更・Discord Role削除の対象外です。Role lifecycleの変更操作もOWNER root Roleだけが実行できます。
             </p>
           </div>
         </div>
@@ -84,25 +103,34 @@ export default async function GuildRoleManagerPage({
           <div>
             <h2 className="font-semibold">Plugin Permission Matrix</h2>
             <p className="mt-1 text-sm leading-6 text-muted">
-              Pluginごとの有効・無効操作と、設定項目単位の「閲覧のみ /
-              編集可」をRoleごとに指定します。
+              Pluginごとの有効・無効操作と、設定項目単位の「閲覧のみ / 編集可」をRoleごとに指定します。
             </p>
           </div>
         </div>
         <ArrowRight className="h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
       </Link>
 
+      <RoleLifecycleManager
+        guildId={guildId}
+        roles={roles}
+        rootRoleId={STUDIO_ROOT_DISCORD_ROLE_ID}
+        operations={lifecycleOperations.map((operation) => ({
+          id: operation.id,
+          operationType: operation.operationType,
+          status: operation.status,
+          executeAt: operation.executeAt.toISOString(),
+          roleId: operation.roleId,
+          roleName: operation.roleName,
+          expiresAt: operation.expiresAt?.toISOString() ?? null,
+          lastError: operation.lastError,
+          createdAt: operation.createdAt.toISOString(),
+        }))}
+        canEdit={authorization.access.isRoot}
+      />
+
       <RolePolicyManager
         guildId={guildId}
-        roles={options.roles.map((role) => ({
-          id: role.id,
-          name: role.name,
-          color: role.color,
-          position: role.position,
-          managed: role.managed,
-          mentionable: role.mentionable,
-          editable: role.editable,
-        }))}
+        roles={roles}
         policies={policies}
         rootRoleId={STUDIO_ROOT_DISCORD_ROLE_ID}
         canEdit={authorization.access.isRoot}
@@ -118,10 +146,7 @@ function AccessUnavailable({ guildId, status }: { guildId: string; status: numbe
       : 'Discord RoleまたはBot接続状態を確認できませんでした。権限判定は安全側に倒して拒否されています。';
   return (
     <div className="space-y-6">
-      <Link
-        href={`/dashboard/guilds/${guildId}`}
-        className="text-sm text-muted hover:text-foreground"
-      >
+      <Link href={`/dashboard/guilds/${guildId}`} className="text-sm text-muted hover:text-foreground">
         ← サーバー概要へ戻る
       </Link>
       <section className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-6">
