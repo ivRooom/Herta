@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseStoredRuleStudioView, validateRuleStudioDraft } from './rule-studio.js';
+import { parseStoredRuleStudioView, validateRuleStudioDraft } from './rule-studio.ts';
 
 const baseDraft = {
   name: 'Hourly Event Role',
