@@ -16,6 +16,8 @@ describe('Mini Games Plugin', () => {
       sessionTimeoutSeconds: 90,
       highLowMaxRounds: 10,
       blackjackDealerHitsSoft17: false,
+      blackjackAnimation: true,
+      blackjackAnimationDelayMs: 450,
     });
     expect(
       normalizeMiniGamesConfig({
@@ -25,6 +27,8 @@ describe('Mini Games Plugin', () => {
         sessionTimeoutSeconds: 999,
         highLowMaxRounds: 1,
         blackjackDealerHitsSoft17: true,
+        blackjackAnimation: false,
+        blackjackAnimationDelayMs: 9_999,
       }),
     ).toEqual({
       enabled: false,
@@ -33,6 +37,8 @@ describe('Mini Games Plugin', () => {
       sessionTimeoutSeconds: 300,
       highLowMaxRounds: 3,
       blackjackDealerHitsSoft17: true,
+      blackjackAnimation: false,
+      blackjackAnimationDelayMs: 1_500,
     });
   });
 
@@ -79,6 +85,9 @@ describe('Mini Games Plugin', () => {
       'gameleaderboard',
       'amidakuji',
     ]);
+    const blackjack = miniGamesManifest.commands.find((command) => command.name === 'blackjack');
+    expect(blackjack?.options?.find((option) => option.name === 'member1')?.type).toBe('user');
+    expect(blackjack?.options?.find((option) => option.name === 'member2')?.type).toBe('user');
     const stats = miniGamesManifest.commands.find((command) => command.name === 'gamestats');
     expect(stats?.description).toContain('戦績');
     expect(stats?.options?.find((option) => option.name === 'user')?.type).toBe('user');

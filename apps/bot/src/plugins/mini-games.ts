@@ -8,6 +8,7 @@ import {
   type ButtonInteraction,
   type ChatInputCommandInteraction,
   type Interaction,
+  type User,
 } from 'discord.js';
 import type { PrismaClient } from '@herta/db';
 import { miniGamesManifest } from '@herta/plugin-catalog';
@@ -40,6 +41,7 @@ import {
 } from './mini-games-repository.js';
 import { formatMiniGameStats } from './mini-games-stats.js';
 import { blackjackSettlementMetrics } from './mini-games-blackjack-metrics.js';
+import { isBlackjackHandComplete, settleBlackjackPvp } from './mini-games-blackjack-pvp.js';
 import { publishMiniGameCompletion } from './mini-games-completion-events.js';
 import { createMiniGamesV3CommandHandlers } from './mini-games-v3.js';
 
@@ -53,6 +55,8 @@ export interface MiniGamesConfig {
   sessionTimeoutSeconds: number;
   highLowMaxRounds: number;
   blackjackDealerHitsSoft17: boolean;
+  blackjackAnimation: boolean;
+  blackjackAnimationDelayMs: number;
 }
 
 type MiniGamesRuntimeContext = PluginRuntimeContext<MiniGamesConfig, unknown, PrismaClient>;
@@ -77,14 +81,30 @@ interface HighLowSession extends GameSessionBase {
   maxRounds: number;
 }
 
-interface BlackjackSession extends GameSessionBase {
+interface BlackjackDealerSession extends GameSessionBase {
   type: 'blackjack';
+  mode: 'dealer';
   deck: PlayingCard[];
   player: PlayingCard[];
   dealer: PlayingCard[];
   dealerHitsSoft17: boolean;
 }
 
+interface BlackjackPvpPlayer {
+  userId: string;
+  cards: PlayingCard[];
+  stood: boolean;
+}
+
+interface BlackjackPvpSession extends GameSessionBase {
+  type: 'blackjack';
+  mode: 'pvp';
+  deck: PlayingCard[];
+  players: [BlackjackPvpPlayer, BlackjackPvpPlayer];
+  activePlayerIndex: 0 | 1;
+}
+
+type BlackjackSession = BlackjackDealerSession | BlackjackPvpSession;
 type GameSession = HighLowSession | BlackjackSession;
 
 const gameSessions = new Map<string, GameSession>();
@@ -145,6 +165,9 @@ export function normalizeMiniGamesConfig(value: unknown): MiniGamesConfig {
     sessionTimeoutSeconds: clamp(toInteger(source.sessionTimeoutSeconds, 90), 30, 300),
     highLowMaxRounds: clamp(toInteger(source.highLowMaxRounds, 10), 3, 25),
     blackjackDealerHitsSoft17: source.blackjackDealerHitsSoft17 === true,
+    blackjackAnimation:
+      source.blackjackAnimation === undefined ? true : source.blackjackAnimation === true,
+    blackjackAnimationDelayMs: clamp(toInteger(source.blackjackAnimationDelayMs, 450), 250, 1_500),
   };
 }
 
@@ -288,14 +311,29 @@ async function executeBlackjack(
     return;
   }
 
+  const member1 = interaction.options.getUser('member1');
+  const member2 = interaction.options.getUser('member2');
+  if (member1 || member2) {
+    await executeBlackjackPvp(context, interaction, config, member1, member2);
+    return;
+  }
+  await executeBlackjackDealer(context, interaction, config);
+}
+
+async function executeBlackjackDealer(
+  context: MiniGamesRuntimeContext,
+  interaction: ChatInputCommandInteraction,
+  config: MiniGamesConfig,
+): Promise<void> {
   const deck = createShuffledDeck();
   const player = [drawCard(deck), drawCard(deck)];
   const dealer = [drawCard(deck), drawCard(deck)];
   const id = createSessionId();
-  const session: BlackjackSession = {
+  const session: BlackjackDealerSession = {
     id,
     type: 'blackjack',
-    guildId: interaction.guildId,
+    mode: 'dealer',
+    guildId: interaction.guildId!,
     userId: interaction.user.id,
     deck,
     player,
@@ -315,31 +353,30 @@ async function executeBlackjack(
 
   const openingPlayer = blackjackScore(player);
   const openingDealer = blackjackScore(dealer);
-  if (openingPlayer.blackjack || openingDealer.blackjack) {
+  const openingFinished = openingPlayer.blackjack || openingDealer.blackjack;
+  if (!openingFinished) gameSessions.set(id, session);
+
+  if (config.blackjackAnimation) {
     await interaction.reply({
-      content: renderBlackjackFinal(session),
+      content: '🃏 **Blackjack**\n🔀 カードをシャッフルしています…',
       allowedMentions: { parse: [] },
     });
-    await recordMetricsSafely(
-      context,
-      [
-        ['minigame_plays', 1],
-        ['blackjack_plays', 1],
-      ],
-      interaction.user.id,
-    );
-    await recordBlackjackSettlement(context, session);
-    await publishMiniGameCompletion(interaction);
-    return;
+    await delay(config.blackjackAnimationDelayMs);
+    await interaction.editReply({ content: renderBlackjackDealStage(session) });
+    await delay(config.blackjackAnimationDelayMs);
+    await interaction.editReply({
+      content: openingFinished ? renderBlackjackFinal(session) : renderBlackjack(session, false),
+      components: openingFinished ? [] : [buildBlackjackRow(session.id)],
+    });
+  } else {
+    await interaction.reply({
+      content: openingFinished ? renderBlackjackFinal(session) : renderBlackjack(session, false),
+      components: openingFinished ? [] : [buildBlackjackRow(session.id)],
+      allowedMentions: { parse: [] },
+    });
   }
 
-  gameSessions.set(id, session);
-  armSessionTimeout(session, config.sessionTimeoutSeconds);
-  await interaction.reply({
-    content: renderBlackjack(session, false),
-    components: [buildBlackjackRow(session.id)],
-    allowedMentions: { parse: [] },
-  });
+  if (!openingFinished) armSessionTimeout(session, config.sessionTimeoutSeconds);
   await recordMetricsSafely(
     context,
     [
@@ -348,6 +385,93 @@ async function executeBlackjack(
     ],
     interaction.user.id,
   );
+  if (openingFinished) await recordBlackjackSettlement(context, session);
+  await publishMiniGameCompletion(interaction);
+}
+
+async function executeBlackjackPvp(
+  context: MiniGamesRuntimeContext,
+  interaction: ChatInputCommandInteraction,
+  config: MiniGamesConfig,
+  member1: User | null,
+  member2: User | null,
+): Promise<void> {
+  const first = member2 ? (member1 ?? interaction.user) : interaction.user;
+  const second = member2 ?? member1;
+  if (!second) {
+    await replyEphemeral(interaction, '対戦するメンバーを指定してください。');
+    return;
+  }
+  if (first.id === second.id) {
+    await replyEphemeral(interaction, '同じメンバー同士では対戦できません。');
+    return;
+  }
+  if (first.bot || second.bot) {
+    await replyEphemeral(interaction, 'BotはBlackjack PvPへ参加できません。');
+    return;
+  }
+
+  const deck = createShuffledDeck();
+  const id = createSessionId();
+  const session: BlackjackPvpSession = {
+    id,
+    type: 'blackjack',
+    mode: 'pvp',
+    guildId: interaction.guildId!,
+    userId: interaction.user.id,
+    deck,
+    players: [
+      { userId: first.id, cards: [drawCard(deck), drawCard(deck)], stood: false },
+      { userId: second.id, cards: [drawCard(deck), drawCard(deck)], stood: false },
+    ],
+    activePlayerIndex: 0,
+    expiresAt: 0,
+    processing: false,
+    async expireMessage() {
+      await interaction
+        .editReply({
+          content: `${renderBlackjackPvp(session)}\n\n⌛ **時間切れで対戦終了**`,
+          components: [],
+        })
+        .catch(() => undefined);
+    },
+  };
+
+  const openingFinished = session.players.some((player) => blackjackScore(player.cards).blackjack);
+  if (!openingFinished) gameSessions.set(id, session);
+
+  if (config.blackjackAnimation) {
+    await interaction.reply({
+      content: `🃏 **Blackjack PvP**\n<@${first.id}> vs <@${second.id}>\n🔀 カードをシャッフルしています…`,
+      allowedMentions: { parse: [] },
+    });
+    await delay(config.blackjackAnimationDelayMs);
+    await interaction.editReply({ content: renderBlackjackPvpDealStage(session) });
+    await delay(config.blackjackAnimationDelayMs);
+    await interaction.editReply({
+      content: openingFinished ? renderBlackjackPvpFinal(session) : renderBlackjackPvp(session),
+      components: openingFinished ? [] : [buildBlackjackRow(session.id)],
+    });
+  } else {
+    await interaction.reply({
+      content: openingFinished ? renderBlackjackPvpFinal(session) : renderBlackjackPvp(session),
+      components: openingFinished ? [] : [buildBlackjackRow(session.id)],
+      allowedMentions: { parse: [] },
+    });
+  }
+
+  if (!openingFinished) armSessionTimeout(session, config.sessionTimeoutSeconds);
+  for (const player of session.players) {
+    await recordMetricsSafely(
+      context,
+      [
+        ['minigame_plays', 1],
+        ['blackjack_plays', 1],
+      ],
+      player.userId,
+    );
+  }
+  if (openingFinished) await recordBlackjackPvpSettlement(context, session);
   await publishMiniGameCompletion(interaction);
 }
 
@@ -366,8 +490,16 @@ async function handleGameButton(
     );
     return;
   }
-  if (interaction.guildId !== session.guildId || interaction.user.id !== session.userId) {
-    await replyEphemeral(interaction, 'このゲームは開始した本人だけ操作できます。');
+  if (
+    interaction.guildId !== session.guildId ||
+    !canOperateGameSession(session, interaction.user.id)
+  ) {
+    await replyEphemeral(
+      interaction,
+      session.type === 'blackjack' && session.mode === 'pvp'
+        ? 'このBlackjack対戦は参加メンバーだけ操作できます。'
+        : 'このゲームは開始した本人だけ操作できます。',
+    );
     return;
   }
   if (session.processing) {
@@ -500,41 +632,129 @@ async function handleBlackjackButton(
   config: MiniGamesConfig,
   interaction: ButtonInteraction,
 ): Promise<void> {
+  if (session.mode === 'pvp') {
+    await handleBlackjackPvpButton(context, session, action, config, interaction);
+    return;
+  }
+
   session.dealerHitsSoft17 = config.blackjackDealerHitsSoft17;
   if (action === 'hit') {
+    const animated = config.blackjackAnimation;
+    if (animated) {
+      await interaction.update({
+        content: `${renderBlackjack(session, false)}\n\n🃏 カードを引いています…`,
+        components: [],
+      });
+      await delay(config.blackjackAnimationDelayMs);
+    }
     session.player.push(drawCard(session.deck));
     const score = blackjackScore(session.player);
-    if (score.bust) {
+    if (score.bust || score.total === 21) {
+      if (!score.bust) playDealer(session);
       endSession(session);
-      await interaction.update({ content: renderBlackjackFinal(session), components: [] });
-      await recordBlackjackSettlement(context, session);
-      await publishMiniGameCompletion(interaction);
-      return;
-    }
-    if (score.total === 21) {
-      playDealer(session);
-      endSession(session);
-      await interaction.update({ content: renderBlackjackFinal(session), components: [] });
+      await finishButtonMessage(interaction, animated, renderBlackjackFinal(session), []);
       await recordBlackjackSettlement(context, session);
       await publishMiniGameCompletion(interaction);
       return;
     }
     armSessionTimeout(session, config.sessionTimeoutSeconds);
-    await interaction.update({
-      content: renderBlackjack(session, false),
-      components: [buildBlackjackRow(session.id)],
-    });
+    await finishButtonMessage(interaction, animated, renderBlackjack(session, false), [
+      buildBlackjackRow(session.id),
+    ]);
     return;
   }
   if (action === 'stand') {
+    const animated = config.blackjackAnimation;
+    if (animated) {
+      await interaction.update({
+        content: `${renderBlackjack(session, false)}\n\n🎩 Dealerのターン…`,
+        components: [],
+      });
+      await delay(config.blackjackAnimationDelayMs);
+    }
     playDealer(session);
     endSession(session);
-    await interaction.update({ content: renderBlackjackFinal(session), components: [] });
+    await finishButtonMessage(interaction, animated, renderBlackjackFinal(session), []);
     await recordBlackjackSettlement(context, session);
     await publishMiniGameCompletion(interaction);
     return;
   }
   await replyEphemeral(interaction, '不明なBlackjack操作です。');
+}
+
+async function handleBlackjackPvpButton(
+  context: MiniGamesRuntimeContext,
+  session: BlackjackPvpSession,
+  action: string,
+  config: MiniGamesConfig,
+  interaction: ButtonInteraction,
+): Promise<void> {
+  const playerIndex = session.players.findIndex((player) => player.userId === interaction.user.id);
+  if (playerIndex < 0) {
+    await replyEphemeral(interaction, 'このBlackjack対戦の参加者ではありません。');
+    return;
+  }
+  if (playerIndex !== session.activePlayerIndex) {
+    await replyEphemeral(interaction, '現在は相手のターンです。');
+    return;
+  }
+  if (action !== 'hit' && action !== 'stand') {
+    await replyEphemeral(interaction, '不明なBlackjack操作です。');
+    return;
+  }
+
+  const player = session.players[playerIndex]!;
+  const animated = config.blackjackAnimation;
+  if (animated) {
+    await interaction.update({
+      content: `${renderBlackjackPvp(session)}\n\n${action === 'hit' ? '🃏 カードを引いています…' : '✋ Standを選択しました…'}`,
+      components: [],
+    });
+    await delay(config.blackjackAnimationDelayMs);
+  }
+
+  if (action === 'hit') player.cards.push(drawCard(session.deck));
+  if (action === 'stand') player.stood = true;
+  const score = blackjackScore(player.cards);
+  if (score.bust) {
+    endSession(session);
+    await finishButtonMessage(interaction, animated, renderBlackjackPvpFinal(session), []);
+    await recordBlackjackPvpSettlement(context, session);
+    await publishMiniGameCompletion(interaction);
+    return;
+  }
+  if (score.total >= 21) player.stood = true;
+
+  if (isBlackjackHandComplete(player.cards, player.stood)) {
+    const otherIndex: 0 | 1 = playerIndex === 0 ? 1 : 0;
+    const other = session.players[otherIndex];
+    if (isBlackjackHandComplete(other.cards, other.stood)) {
+      endSession(session);
+      await finishButtonMessage(interaction, animated, renderBlackjackPvpFinal(session), []);
+      await recordBlackjackPvpSettlement(context, session);
+      await publishMiniGameCompletion(interaction);
+      return;
+    }
+    session.activePlayerIndex = otherIndex;
+  }
+
+  armSessionTimeout(session, config.sessionTimeoutSeconds);
+  await finishButtonMessage(interaction, animated, renderBlackjackPvp(session), [
+    buildBlackjackRow(session.id),
+  ]);
+}
+
+async function finishButtonMessage(
+  interaction: ButtonInteraction,
+  alreadyAcknowledged: boolean,
+  content: string,
+  components: ActionRowBuilder<ButtonBuilder>[],
+): Promise<void> {
+  if (alreadyAcknowledged) {
+    await interaction.editReply({ content, components });
+  } else {
+    await interaction.update({ content, components });
+  }
 }
 
 async function executeGameStats(
@@ -565,7 +785,7 @@ async function executeGameStats(
 
 async function recordBlackjackSettlement(
   context: MiniGamesRuntimeContext,
-  session: BlackjackSession,
+  session: BlackjackDealerSession,
 ): Promise<void> {
   await recordMetricsSafely(
     context,
@@ -604,7 +824,7 @@ async function recordMaximumSafely(
   }
 }
 
-function playDealer(session: BlackjackSession): void {
+function playDealer(session: BlackjackDealerSession): void {
   while (shouldDealerHit(session.dealer, session.dealerHitsSoft17)) {
     session.dealer.push(drawCard(session.deck));
   }
@@ -619,7 +839,7 @@ function renderHighLow(session: HighLowSession): string {
   ].join('\n');
 }
 
-function renderBlackjack(session: BlackjackSession, revealDealer: boolean): string {
+function renderBlackjack(session: BlackjackDealerSession, revealDealer: boolean): string {
   const playerScore = blackjackScore(session.player);
   const dealerScore = blackjackScore(session.dealer);
   const dealerCards = revealDealer
@@ -635,7 +855,7 @@ function renderBlackjack(session: BlackjackSession, revealDealer: boolean): stri
   ].join('\n');
 }
 
-function renderBlackjackFinal(session: BlackjackSession): string {
+function renderBlackjackFinal(session: BlackjackDealerSession): string {
   const outcome = settleBlackjack(session.player, session.dealer);
   const playerScore = blackjackScore(session.player);
   const dealerScore = blackjackScore(session.dealer);
@@ -660,6 +880,83 @@ function renderBlackjackFinal(session: BlackjackSession): string {
     '',
     result,
   ].join('\n');
+}
+
+function renderBlackjackDealStage(session: BlackjackDealerSession): string {
+  return [
+    '🃏 **Blackjack — Dealing**',
+    `Dealer: ${formatPlayingCard(session.dealer[0]!)} 🂠`,
+    `あなた: ${formatPlayingCard(session.player[0]!)} 🂠`,
+    '',
+    'カードを配っています…',
+  ].join('\n');
+}
+
+function renderBlackjackPvpDealStage(session: BlackjackPvpSession): string {
+  const [first, second] = session.players;
+  return [
+    '🃏 **Blackjack PvP — Dealing**',
+    `<@${first.userId}>: ${formatPlayingCard(first.cards[0]!)} 🂠`,
+    `<@${second.userId}>: ${formatPlayingCard(second.cards[0]!)} 🂠`,
+    '',
+    'カードを配っています…',
+  ].join('\n');
+}
+
+function renderBlackjackPvp(session: BlackjackPvpSession): string {
+  const lines = session.players.map((player, index) => {
+    const score = blackjackScore(player.cards);
+    const turn = index === session.activePlayerIndex ? ' ◀ **TURN**' : '';
+    const state = score.bust ? ' · BUST' : player.stood ? ' · STAND' : '';
+    return `<@${player.userId}>: ${formatCards(player.cards)} **（${score.total}）**${state}${turn}`;
+  });
+  return ['🃏 **Blackjack PvP**', ...lines, '', '自分のターンでHit / Standを選んでください。'].join(
+    '\n',
+  );
+}
+
+function renderBlackjackPvpFinal(session: BlackjackPvpSession): string {
+  const [first, second] = session.players;
+  const outcome = settleBlackjackPvp(first.cards, second.cards);
+  const firstScore = blackjackScore(first.cards);
+  const secondScore = blackjackScore(second.cards);
+  const result =
+    outcome === 'player1-win'
+      ? `🏆 <@${first.userId}> **WIN!**`
+      : outcome === 'player2-win'
+        ? `🏆 <@${second.userId}> **WIN!**`
+        : '🤝 **PUSH — 引き分け**';
+  return [
+    '🃏 **Blackjack PvP — Result**',
+    `<@${first.userId}>: ${formatCards(first.cards)} **（${firstScore.total}）**`,
+    `<@${second.userId}>: ${formatCards(second.cards)} **（${secondScore.total}）**`,
+    '',
+    result,
+  ].join('\n');
+}
+
+async function recordBlackjackPvpSettlement(
+  context: MiniGamesRuntimeContext,
+  session: BlackjackPvpSession,
+): Promise<void> {
+  const outcome = settleBlackjackPvp(session.players[0].cards, session.players[1].cards);
+  if (outcome === 'push') return;
+  const winner = session.players[outcome === 'player1-win' ? 0 : 1];
+  await recordMetricsSafely(
+    context,
+    [
+      ['minigame_wins', 1],
+      ['blackjack_wins', 1],
+    ],
+    winner.userId,
+  );
+}
+
+function canOperateGameSession(session: GameSession, userId: string): boolean {
+  if (session.type === 'blackjack' && session.mode === 'pvp') {
+    return session.players.some((player) => player.userId === userId);
+  }
+  return session.userId === userId;
 }
 
 function buildHighLowRow(sessionId: string): ActionRowBuilder<ButtonBuilder> {

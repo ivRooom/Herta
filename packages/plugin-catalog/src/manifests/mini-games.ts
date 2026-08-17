@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const miniGamesManifest: PluginManifest = {
   id: 'mini-games',
   name: 'Mini Games',
-  version: '3.3.0',
+  version: '3.4.0',
   description:
     'Coin Flip・High-Low・Blackjack・Dice・チンチロ・あみだくじを戦績とArcadeランキング付きで遊べるPluginです',
   author: { name: 'Herta' },
@@ -135,6 +135,26 @@ export const miniGamesManifest: PluginManifest = {
           help: 'この回数を連続正解するとパーフェクトクリアになります。',
         },
       },
+      blackjackAnimation: {
+        type: 'boolean',
+        title: 'Blackjackのカード配布演出を有効化する',
+        default: true,
+        'x-herta-ui': {
+          section: 'Blackjack',
+          help: '開始時・Hit時・Dealerターンを段階表示してカードゲームらしい演出を追加します。',
+        },
+      },
+      blackjackAnimationDelayMs: {
+        type: 'integer',
+        title: 'Blackjack演出間隔（ms）',
+        minimum: 250,
+        maximum: 1500,
+        default: 450,
+        'x-herta-ui': {
+          section: 'Blackjack',
+          help: 'カード配布・ドロー演出のテンポを調整します。',
+        },
+      },
       blackjackDealerHitsSoft17: {
         type: 'boolean',
         title: 'DealerはSoft 17でHitする',
@@ -171,7 +191,22 @@ export const miniGamesManifest: PluginManifest = {
       ],
     },
     { name: 'highlow', description: '次のカードが高いか低いかを当てるHigh-Lowを開始します' },
-    { name: 'blackjack', description: 'Dealerと1対1でBlackjackを開始します' },
+    {
+      name: 'blackjack',
+      description: 'Dealer戦またはメンバー同士のBlackjackを開始します',
+      options: [
+        {
+          name: 'member1',
+          description: '1人だけ指定すると自分との対戦、2人指定時は対戦する1人目',
+          type: 'user',
+        },
+        {
+          name: 'member2',
+          description: '2人の対戦を開始する場合の2人目',
+          type: 'user',
+        },
+      ],
+    },
     {
       name: 'gamestats',
       description: 'Mini Gamesの戦績・勝率・最高連勝を表示します',
