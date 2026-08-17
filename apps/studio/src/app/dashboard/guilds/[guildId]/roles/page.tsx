@@ -1,6 +1,13 @@
 import { listRecentDiscordRoleOperations, listRecentRuleRuntimeExecutionLogs } from '@herta/db';
 import Link from 'next/link';
-import { ArrowLeft, ArrowRight, LockKeyhole, ShieldCheck, SlidersHorizontal } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  LockKeyhole,
+  ShieldCheck,
+  SlidersHorizontal,
+  Workflow,
+} from 'lucide-react';
 import { notFound } from 'next/navigation';
 import { auth } from '@/auth';
 import { RoleLifecycleManager } from '@/components/role-lifecycle-manager';
@@ -141,6 +148,24 @@ export default async function GuildRoleManagerPage({
             <h2 className="font-semibold">Access Control Center</h2>
             <p className="mt-1 text-sm leading-6 text-muted">
               AWS IAM風にPolicyをGUI / JSONで作成し、Role・User・Herta GroupへAttachします。
+            </p>
+          </div>
+        </div>
+        <ArrowRight className="h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
+      </Link>
+
+      <Link
+        href={`/dashboard/guilds/${guildId}/rules`}
+        className="flex items-center justify-between gap-4 rounded-2xl border border-border bg-surface p-5 transition hover:border-primary/30"
+      >
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Workflow className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div>
+            <h2 className="font-semibold">Rule Studio</h2>
+            <p className="mt-1 text-sm leading-6 text-muted">
+              Schedule TriggerとDiscord Role Lifecycle ActionをGUIで作成・編集します。
             </p>
           </div>
         </div>
