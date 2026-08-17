@@ -3,11 +3,7 @@ import { Prisma } from '@prisma/client';
 
 export type DiscordRoleOperationKind = 'create' | 'delete';
 export type DiscordRoleOperationStatus =
-  | 'pending'
-  | 'processing'
-  | 'succeeded'
-  | 'failed'
-  | 'cancelled';
+  'pending' | 'processing' | 'succeeded' | 'failed' | 'cancelled';
 export type DiscordRoleOperationSource = 'studio' | 'temporary-expiry' | 'rule-engine';
 
 export interface DiscordRoleOperationRecord {
