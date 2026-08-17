@@ -49,12 +49,12 @@ export default async function GuildRoleManagerPage({
           </span>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
-              {options.guildName}
+              {options.guildName} · Herta Access Control
             </p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">Role Manager</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Discord RoleごとにHerta
-              Studioの閲覧・編集・作成・削除・Command・AI・Secret・RAG・MCP権限を管理します。GUIとIAM風JSONの両方で設定できます。
+              Discord RoleをIAM風のAccess Inventoryから検索・絞り込みし、Herta
+              Studioの閲覧・編集・作成・削除・Command・AI・Secret・RAG・MCP権限を管理します。PolicyはGUIとJSONの両方で編集できます。
             </p>
           </div>
         </div>
@@ -94,7 +94,15 @@ export default async function GuildRoleManagerPage({
 
       <RolePolicyManager
         guildId={guildId}
-        roles={options.roles.map((role) => ({ id: role.id, name: role.name, color: role.color }))}
+        roles={options.roles.map((role) => ({
+          id: role.id,
+          name: role.name,
+          color: role.color,
+          position: role.position,
+          managed: role.managed,
+          mentionable: role.mentionable,
+          editable: role.editable,
+        }))}
         policies={policies}
         rootRoleId={STUDIO_ROOT_DISCORD_ROLE_ID}
         canEdit={authorization.access.isRoot}
