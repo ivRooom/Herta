@@ -85,6 +85,10 @@ function guildMembersIntentEnabled(): boolean {
   return envFlagEnabled('DISCORD_ENABLE_GUILD_MEMBERS_INTENT');
 }
 
+export interface RuleRuntimeEventSink {
+  memberJoined(input: { guildId: string; userId: string; joinedAt: Date }): Promise<void>;
+}
+
 const BOT_ACTIVITY_TYPE_MAP: Record<BotPresenceConfig['activityType'], ActivityType> = {
   playing: ActivityType.Playing,
   listening: ActivityType.Listening,
@@ -109,10 +113,10 @@ function resolveGatewayIntents(logger: Logger): GatewayIntentBits[] {
   }
   if (guildMembersIntentEnabled()) {
     intents.push(GatewayIntentBits.GuildMembers);
-    logger.info('Moderationブラックリスト再参加監視用Guild Members Intentを有効化します');
+    logger.info('Moderation / member.joined Rule用Guild Members Intentを有効化します');
   } else {
     logger.warn(
-      'DISCORD_ENABLE_GUILD_MEMBERS_INTENTが無効なためブラックリスト再参加BANは実行されません',
+      'DISCORD_ENABLE_GUILD_MEMBERS_INTENTが無効なためブラックリスト再参加BAN / member.joined Ruleは実行されません',
     );
   }
   return intents;
@@ -135,6 +139,7 @@ export class HertaBot {
   private gatewayObservationTimer?: NodeJS.Timeout;
   private healthRedis?: Redis;
   private readonly activityMessageLastCountedAt = new Map<string, number>();
+  private ruleRuntimeEvents?: RuleRuntimeEventSink;
 
   constructor(
     private logger: Logger,
@@ -187,6 +192,10 @@ export class HertaBot {
     pluginRegistry.validateAgainstCatalog(this.logger);
 
     this.setupEventHandlers();
+  }
+
+  setRuleRuntimeEventSink(sink: RuleRuntimeEventSink | undefined): void {
+    this.ruleRuntimeEvents = sink;
   }
 
   private setupEventHandlers(): void {
@@ -252,6 +261,26 @@ export class HertaBot {
 
     this.client.on(Events.GuildMemberAdd, async (member) => {
       await this.dispatchGuildPluginEvent(member.guild.id, Events.GuildMemberAdd, member);
+      if (member.user.bot || !this.ruleRuntimeEvents) return;
+      if (member.joinedTimestamp === null) {
+        this.logger.warn(
+          { guildId: member.guild.id, userId: member.id },
+          'member.joined Ruleの安定したexecution IDを作れないため実行をスキップしました',
+        );
+        return;
+      }
+      try {
+        await this.ruleRuntimeEvents.memberJoined({
+          guildId: member.guild.id,
+          userId: member.id,
+          joinedAt: new Date(member.joinedTimestamp),
+        });
+      } catch (error) {
+        this.logger.error(
+          { err: error, guildId: member.guild.id, userId: member.id },
+          'member.joined Ruleの実行に失敗しました',
+        );
+      }
     });
 
     this.client.on(Events.GuildMemberRemove, async (member) => {

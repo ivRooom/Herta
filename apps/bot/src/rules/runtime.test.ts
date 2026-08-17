@@ -4,6 +4,7 @@ import {
   RULE_ACTION_ROLE_CREATE,
   RULE_ACTION_ROLE_DELETE,
   RULE_CONDITION_UTC_HOUR_IS,
+  RULE_TRIGGER_MEMBER_JOINED,
   RULE_TRIGGER_SCHEDULE_MINUTE,
   RuleProductionRuntime,
   deriveRoleCreateIdempotency,
@@ -144,6 +145,32 @@ describe('RuleProductionRuntime', () => {
       expect.objectContaining({
         triggerExecutionId: `schedule-minute:${minuteEpoch}`,
         result: expect.objectContaining({ actionsExecuted: true }),
+      }),
+    );
+  });
+
+  it('member.joined production triggerからRole create Operationを生成し再配送をdedupeする', async () => {
+    const joinedAt = new Date('2026-08-17T11:59:58.000Z');
+    const harness = createHarness({
+      rules: [storedRule({ trigger: { type: RULE_TRIGGER_MEMBER_JOINED, config: {} } })],
+    });
+
+    await harness.runtime.dispatchMemberJoined({ guildId: GUILD_ID, userId: ACTOR_ID, joinedAt });
+    await harness.runtime.dispatchMemberJoined({ guildId: GUILD_ID, userId: ACTOR_ID, joinedAt });
+
+    expect(harness.enqueueRoleCreate).toHaveBeenCalledTimes(1);
+    expect(harness.recordExecution).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        triggerExecutionId: `member-joined:${GUILD_ID}:${ACTOR_ID}:${joinedAt.getTime()}`,
+        event: expect.objectContaining({
+          type: RULE_TRIGGER_MEMBER_JOINED,
+          guildId: GUILD_ID,
+          data: { userId: ACTOR_ID },
+        }),
+        result: expect.objectContaining({
+          actionsExecuted: false,
+          actionSkipReason: 'duplicate-event',
+        }),
       }),
     );
   });

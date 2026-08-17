@@ -132,7 +132,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ guil
   if (!current) return NextResponse.json({ error: 'Ruleが見つかりません' }, { status: 404 });
   if (!parseStoredRuleStudioView(current)) {
     return NextResponse.json(
-      { error: 'このRuleはRule Studio v1の編集対象外です' },
+      { error: 'このRuleは現在のRule Studio編集対象外です' },
       { status: 409 },
     );
   }

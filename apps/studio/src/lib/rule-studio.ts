@@ -1,10 +1,12 @@
 export const RULE_STUDIO_SCHEMA_VERSION = 1 as const;
+export const RULE_STUDIO_TRIGGER_TYPES = ['schedule.minute', 'member.joined'] as const;
 export const RULE_STUDIO_ACTION_TYPES = [
   'discord.role.create',
   'discord.role.create-temporary',
   'discord.role.delete',
 ] as const;
 
+export type RuleStudioTriggerType = (typeof RULE_STUDIO_TRIGGER_TYPES)[number];
 export type RuleStudioActionType = (typeof RULE_STUDIO_ACTION_TYPES)[number];
 
 export interface RuleStudioDraft {
@@ -12,6 +14,7 @@ export interface RuleStudioDraft {
   description: string;
   enabled: boolean;
   priority: number;
+  triggerType: RuleStudioTriggerType;
   everyMinutes: number;
   offsetMinutes: number;
   conditionHour: number | null;
@@ -30,7 +33,9 @@ export interface ValidatedRuleStudioDefinition {
   enabled: boolean;
   priority: number;
   schemaVersion: typeof RULE_STUDIO_SCHEMA_VERSION;
-  trigger: { type: 'schedule.minute'; config: { everyMinutes: number; offsetMinutes: number } };
+  trigger:
+    | { type: 'schedule.minute'; config: { everyMinutes: number; offsetMinutes: number } }
+    | { type: 'member.joined'; config: Record<string, never> };
   conditions: Array<{ type: 'schedule.utc-hour-is'; config: { hour: number } }>;
   actions: Array<
     | { type: 'discord.role.create'; config: { roleName: string; roleColor: number } }
@@ -57,14 +62,16 @@ const DISCORD_ID_PATTERN = /^\d{17,20}$/u;
 const MAX_INT = 2_147_483_647;
 
 export function validateRuleStudioDraft(value: unknown): RuleStudioValidationResult {
-  if (!isRecord(value))
+  if (!isRecord(value)) {
     return { valid: false, errors: ['Rule設定はJSONオブジェクトで指定してください'] };
+  }
 
   const errors: string[] = [];
   const name = stringValue(value.name).trim();
   const description = stringValue(value.description).trim();
   const enabled = value.enabled === true;
   const priority = integerValue(value.priority);
+  const triggerType = stringValue(value.triggerType);
   const everyMinutes = integerValue(value.everyMinutes);
   const offsetMinutes = integerValue(value.offsetMinutes);
   const conditionHour = value.conditionHour === null ? null : integerValue(value.conditionHour);
@@ -80,25 +87,28 @@ export function validateRuleStudioDraft(value: unknown): RuleStudioValidationRes
   if (description.length > 500) errors.push('説明は500文字以内で指定してください');
   if (priority === null || priority < -10_000 || priority > 10_000)
     errors.push('priorityは-10000〜10000の整数で指定してください');
-  if (everyMinutes === null || everyMinutes < 1 || everyMinutes > 1440)
-    errors.push('実行間隔は1〜1440分で指定してください');
-  if (
-    offsetMinutes === null ||
-    offsetMinutes < 0 ||
-    everyMinutes === null ||
-    offsetMinutes >= everyMinutes
-  )
-    errors.push('offsetMinutesは0以上かつ実行間隔未満で指定してください');
-  if (conditionHour !== null && (conditionHour === null || conditionHour < 0 || conditionHour > 23))
-    errors.push('UTC時刻条件は0〜23時で指定してください');
+  if (!RULE_STUDIO_TRIGGER_TYPES.includes(triggerType as RuleStudioTriggerType))
+    errors.push('未対応のTriggerです');
+  if (triggerType === 'schedule.minute') {
+    if (everyMinutes === null || everyMinutes < 1 || everyMinutes > 1440)
+      errors.push('実行間隔は1〜1440分で指定してください');
+    if (
+      offsetMinutes === null ||
+      offsetMinutes < 0 ||
+      everyMinutes === null ||
+      offsetMinutes >= everyMinutes
+    )
+      errors.push('offsetMinutesは0以上かつ実行間隔未満で指定してください');
+    if (conditionHour !== null && (conditionHour < 0 || conditionHour > 23))
+      errors.push('UTC時刻条件は0〜23時で指定してください');
+  } else if (triggerType === 'member.joined' && conditionHour !== null) {
+    errors.push('member.joinedではUTC時刻条件を指定できません');
+  }
   if (!RULE_STUDIO_ACTION_TYPES.includes(actionType as RuleStudioActionType))
     errors.push('未対応のActionです');
   if (cooldownMs === null || cooldownMs < 0 || cooldownMs > MAX_INT)
     errors.push('cooldownは0〜2147483647msで指定してください');
-  if (
-    maxExecutions !== null &&
-    (maxExecutions === null || maxExecutions < 1 || maxExecutions > MAX_INT)
-  )
+  if (maxExecutions !== null && (maxExecutions < 1 || maxExecutions > MAX_INT))
     errors.push('最大実行回数は1〜2147483647で指定してください');
 
   if (actionType === 'discord.role.create' || actionType === 'discord.role.create-temporary') {
@@ -121,24 +131,31 @@ export function validateRuleStudioDraft(value: unknown): RuleStudioValidationRes
   if (
     errors.length > 0 ||
     priority === null ||
-    everyMinutes === null ||
-    offsetMinutes === null ||
-    cooldownMs === null
+    cooldownMs === null ||
+    (triggerType === 'schedule.minute' && (everyMinutes === null || offsetMinutes === null))
   ) {
     return { valid: false, errors };
   }
 
+  const trigger: ValidatedRuleStudioDefinition['trigger'] =
+    triggerType === 'member.joined'
+      ? { type: 'member.joined', config: {} }
+      : {
+          type: 'schedule.minute',
+          config: { everyMinutes: everyMinutes ?? 60, offsetMinutes: offsetMinutes ?? 0 },
+        };
+  const conditions: ValidatedRuleStudioDefinition['conditions'] =
+    trigger.type === 'schedule.minute' && conditionHour !== null
+      ? [{ type: 'schedule.utc-hour-is', config: { hour: conditionHour } }]
+      : [];
   const base = {
     name,
     description: description || null,
     enabled,
     priority,
     schemaVersion: RULE_STUDIO_SCHEMA_VERSION,
-    trigger: { type: 'schedule.minute' as const, config: { everyMinutes, offsetMinutes } },
-    conditions:
-      conditionHour === null
-        ? []
-        : [{ type: 'schedule.utc-hour-is' as const, config: { hour: conditionHour } }],
+    trigger,
+    conditions,
     cooldownMs,
     maxExecutions,
   };
@@ -192,18 +209,17 @@ export function parseStoredRuleStudioView(value: {
   updatedAt: Date;
 }): RuleStudioView | null {
   if (value.schemaVersion !== RULE_STUDIO_SCHEMA_VERSION) return null;
-  if (
-    !isRecord(value.trigger) ||
-    value.trigger.type !== 'schedule.minute' ||
-    !isRecord(value.trigger.config)
-  )
-    return null;
+  if (!isRecord(value.trigger) || !isRecord(value.trigger.config)) return null;
+  const triggerType = value.trigger.type;
+  if (!RULE_STUDIO_TRIGGER_TYPES.includes(triggerType as RuleStudioTriggerType)) return null;
   if (!Array.isArray(value.conditions) || value.conditions.length > 1) return null;
   if (!Array.isArray(value.actions) || value.actions.length !== 1 || !isRecord(value.actions[0]))
     return null;
 
   const condition = value.conditions[0];
+  if (triggerType === 'member.joined' && condition !== undefined) return null;
   if (
+    triggerType === 'schedule.minute' &&
     condition !== undefined &&
     (!isRecord(condition) ||
       condition.type !== 'schedule.utc-hour-is' ||
@@ -213,14 +229,19 @@ export function parseStoredRuleStudioView(value: {
   const action = value.actions[0];
   if (!isRecord(action.config)) return null;
 
+  const scheduleConditionConfig =
+    triggerType === 'schedule.minute' && isRecord(condition) && isRecord(condition.config)
+      ? condition.config
+      : null;
   const draft = {
     name: value.name,
     description: value.description ?? '',
     enabled: value.enabled,
     priority: value.priority,
-    everyMinutes: value.trigger.config.everyMinutes,
-    offsetMinutes: value.trigger.config.offsetMinutes,
-    conditionHour: condition === undefined ? null : condition.config.hour,
+    triggerType,
+    everyMinutes: triggerType === 'schedule.minute' ? value.trigger.config.everyMinutes : 60,
+    offsetMinutes: triggerType === 'schedule.minute' ? value.trigger.config.offsetMinutes : 0,
+    conditionHour: scheduleConditionConfig?.hour ?? null,
     actionType: action.type,
     roleName: action.config.roleName ?? '',
     roleColor: action.config.roleColor ?? 0,
@@ -234,13 +255,8 @@ export function parseStoredRuleStudioView(value: {
   return {
     id: value.id,
     ...draft,
+    triggerType: validation.definition.trigger.type,
     actionType: validation.definition.actions[0].type,
-    everyMinutes: validation.definition.trigger.config.everyMinutes,
-    offsetMinutes: validation.definition.trigger.config.offsetMinutes,
-    conditionHour:
-      validation.definition.conditions[0]?.type === 'schedule.utc-hour-is'
-        ? validation.definition.conditions[0].config.hour
-        : null,
     executionCount: value.executionCount,
     updatedAt: value.updatedAt.toISOString(),
   } as RuleStudioView;

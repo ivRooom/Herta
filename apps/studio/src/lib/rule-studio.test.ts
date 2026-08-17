@@ -7,6 +7,7 @@ const baseDraft = {
   description: 'schedule v1',
   enabled: true,
   priority: 10,
+  triggerType: 'schedule.minute' as const,
   everyMinutes: 60,
   offsetMinutes: 0,
   conditionHour: null,
@@ -28,6 +29,48 @@ test('valid schedule create rule is normalized', () => {
     config: { everyMinutes: 60, offsetMinutes: 0 },
   });
   assert.equal(result.definition.actions[0]?.type, 'discord.role.create');
+});
+
+test('member.joined rule is normalized without schedule-only config', () => {
+  const result = validateRuleStudioDraft({
+    ...baseDraft,
+    triggerType: 'member.joined',
+    everyMinutes: 0,
+    offsetMinutes: -1,
+    conditionHour: null,
+  });
+  assert.equal(result.valid, true);
+  if (!result.valid) return;
+  assert.deepEqual(result.definition.trigger, { type: 'member.joined', config: {} });
+  assert.deepEqual(result.definition.conditions, []);
+});
+
+test('member.joined rejects schedule-only UTC condition', () => {
+  const result = validateRuleStudioDraft({
+    ...baseDraft,
+    triggerType: 'member.joined',
+    conditionHour: 12,
+  });
+  assert.equal(result.valid, false);
+});
+
+test('member.joined stored rule is exposed as editable', () => {
+  const result = parseStoredRuleStudioView({
+    id: '11111111-1111-4111-8111-111111111111',
+    name: 'Join event',
+    description: null,
+    enabled: true,
+    priority: 0,
+    schemaVersion: 1,
+    trigger: { type: 'member.joined', config: {} },
+    conditions: [],
+    actions: [{ type: 'discord.role.create', config: { roleName: 'joined', roleColor: 0 } }],
+    cooldownMs: 0,
+    maxExecutions: null,
+    executionCount: 0,
+    updatedAt: new Date('2026-08-17T00:00:00.000Z'),
+  });
+  assert.equal(result?.triggerType, 'member.joined');
 });
 
 test('offset must be smaller than schedule interval', () => {
