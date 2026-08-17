@@ -150,7 +150,8 @@ async function loadPermissionContext(
     }),
   ]);
   if (rolesResponse.status === 404) throw new GuildRoleLifecycleError('guild_not_found', 404);
-  if (!userResponse.ok || !rolesResponse.ok) throw new GuildRoleLifecycleError('discord_role_mutation_failed', 503);
+  if (!userResponse.ok || !rolesResponse.ok)
+    throw new GuildRoleLifecycleError('discord_role_mutation_failed', 503);
 
   const user = (await userResponse.json().catch(() => null)) as DiscordUserPayload | null;
   const rawRoles = await rolesResponse.json().catch(() => null);
@@ -170,7 +171,9 @@ async function loadPermissionContext(
   );
   if (memberResponse.status === 404) throw new GuildRoleLifecycleError('guild_not_found', 404);
   if (!memberResponse.ok) throw new GuildRoleLifecycleError('discord_role_mutation_failed', 503);
-  const member = (await memberResponse.json().catch(() => null)) as DiscordGuildMemberPayload | null;
+  const member = (await memberResponse
+    .json()
+    .catch(() => null)) as DiscordGuildMemberPayload | null;
   if (!member || !Array.isArray(member.roles)) {
     throw new GuildRoleLifecycleError('discord_role_mutation_failed', 503);
   }
@@ -212,7 +215,10 @@ function parseDiscordRole(value: unknown): DiscordRolePayload | null {
   };
 }
 
-function toMutationResult(role: DiscordRolePayload, highestRolePosition: number): GuildRoleMutationResult {
+function toMutationResult(
+  role: DiscordRolePayload,
+  highestRolePosition: number,
+): GuildRoleMutationResult {
   return {
     id: role.id,
     name: role.name,
@@ -243,7 +249,10 @@ function discordHeaders(token: string, json: boolean): Record<string, string> {
 async function mutationError(response: Response): Promise<GuildRoleLifecycleError> {
   if (response.status === 403) return new GuildRoleLifecycleError('manage_roles_required', 403);
   if (response.status === 404) return new GuildRoleLifecycleError('guild_not_found', 404);
-  return new GuildRoleLifecycleError('discord_role_mutation_failed', response.status === 429 ? 429 : 503);
+  return new GuildRoleLifecycleError(
+    'discord_role_mutation_failed',
+    response.status === 429 ? 429 : 503,
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

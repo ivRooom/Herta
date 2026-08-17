@@ -23,14 +23,14 @@ model Guild {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  settings             GuildSettings?
-  members              GuildMember[]
+  settings                       GuildSettings?
+  members                        GuildMember[]
   roles                          Role[]
   discordRoleLifecycleOperations DiscordRoleLifecycleOperation[]
   auditLogs                      AuditLog[]
-  guildPlugins         GuildPlugin[]
-  rules                Rule[]
-  moderationDetections ModerationDetectionEvent[]
+  guildPlugins                   GuildPlugin[]
+  rules                          Rule[]
+  moderationDetections           ModerationDetectionEvent[]
 
   @@map("guilds")
 }
@@ -164,6 +164,7 @@ model DiscordRoleLifecycleOperation {
   @@index([guildId, createdAt(sort: Desc)])
   @@map("discord_role_lifecycle_operations")
 }
+
 model CommandExecutionEvent {
   id          String   @id
   guildId     String?  @map("guild_id")
@@ -872,4 +873,3 @@ model BotPresenceSetting {
 
   @@map("bot_presence_settings")
 }
-

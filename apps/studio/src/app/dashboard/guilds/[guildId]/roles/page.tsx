@@ -73,7 +73,8 @@ export default async function GuildRoleManagerPage({
             </p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">Role Manager</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Discord RoleのlifecycleとHerta StudioのアクセスPolicyを一元管理します。Roleの作成・削除・期間限定運用・予約作成に加え、PolicyはGUIとJSONの両方で編集できます。
+              Discord RoleのlifecycleとHerta
+              StudioのアクセスPolicyを一元管理します。Roleの作成・削除・期間限定運用・予約作成に加え、PolicyはGUIとJSONの両方で編集できます。
             </p>
           </div>
         </div>
@@ -86,7 +87,8 @@ export default async function GuildRoleManagerPage({
             <h2 className="text-sm font-semibold">root security boundary</h2>
             <p className="mt-1 text-xs leading-5 text-muted">
               Discord Role <code>{STUDIO_ROOT_DISCORD_ROLE_ID}</code>{' '}
-              はrootとして固定され、Policy変更・Discord Role削除の対象外です。Role lifecycleの変更操作もOWNER root Roleだけが実行できます。
+              はrootとして固定され、Policy変更・Discord Role削除の対象外です。Role
+              lifecycleの変更操作もOWNER root Roleだけが実行できます。
             </p>
           </div>
         </div>
@@ -103,7 +105,8 @@ export default async function GuildRoleManagerPage({
           <div>
             <h2 className="font-semibold">Plugin Permission Matrix</h2>
             <p className="mt-1 text-sm leading-6 text-muted">
-              Pluginごとの有効・無効操作と、設定項目単位の「閲覧のみ / 編集可」をRoleごとに指定します。
+              Pluginごとの有効・無効操作と、設定項目単位の「閲覧のみ /
+              編集可」をRoleごとに指定します。
             </p>
           </div>
         </div>
@@ -146,7 +149,10 @@ function AccessUnavailable({ guildId, status }: { guildId: string; status: numbe
       : 'Discord RoleまたはBot接続状態を確認できませんでした。権限判定は安全側に倒して拒否されています。';
   return (
     <div className="space-y-6">
-      <Link href={`/dashboard/guilds/${guildId}`} className="text-sm text-muted hover:text-foreground">
+      <Link
+        href={`/dashboard/guilds/${guildId}`}
+        className="text-sm text-muted hover:text-foreground"
+      >
         ← サーバー概要へ戻る
       </Link>
       <section className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-6">

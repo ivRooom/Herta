@@ -9,12 +9,35 @@ import {
 describe('guild role lifecycle', () => {
   it('validates safe role creation fields', () => {
     expect(
-      parseGuildRoleCreateInput({ name: ' Event ', color: 0xff00aa, hoist: false, mentionable: true }),
+      parseGuildRoleCreateInput({
+        name: ' Event ',
+        color: 0xff00aa,
+        hoist: false,
+        mentionable: true,
+      }),
     ).toEqual({ name: 'Event', color: 0xff00aa, hoist: false, mentionable: true });
-    expect(parseGuildRoleCreateInput({ name: '', color: 0, hoist: false, mentionable: false })).toBeNull();
-    expect(parseGuildRoleCreateInput({ name: 'x'.repeat(101), color: 0, hoist: false, mentionable: false })).toBeNull();
-    expect(parseGuildRoleCreateInput({ name: 'Role', color: 0x1000000, hoist: false, mentionable: false })).toBeNull();
-    expect(parseGuildRoleCreateInput({ name: 'Role', color: 0, hoist: 'false', mentionable: false })).toBeNull();
+    expect(
+      parseGuildRoleCreateInput({ name: '', color: 0, hoist: false, mentionable: false }),
+    ).toBeNull();
+    expect(
+      parseGuildRoleCreateInput({
+        name: 'x'.repeat(101),
+        color: 0,
+        hoist: false,
+        mentionable: false,
+      }),
+    ).toBeNull();
+    expect(
+      parseGuildRoleCreateInput({
+        name: 'Role',
+        color: 0x1000000,
+        hoist: false,
+        mentionable: false,
+      }),
+    ).toBeNull();
+    expect(
+      parseGuildRoleCreateInput({ name: 'Role', color: 0, hoist: 'false', mentionable: false }),
+    ).toBeNull();
   });
 
   it('protects everyone, root, managed and non-editable roles', () => {

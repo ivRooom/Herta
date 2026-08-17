@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { CalendarClock, Clock3, Plus, ShieldAlert, Trash2 } from 'lucide-react';
 import type { RoleInventoryRole } from '@/lib/role-access-inventory';
@@ -35,6 +35,7 @@ export function RoleLifecycleManager({
   canEdit: boolean;
 }) {
   const router = useRouter();
+  const requestIdRef = useRef<string | null>(null);
   const [name, setName] = useState('');
   const [color, setColor] = useState('#5865F2');
   const [hoist, setHoist] = useState(false);
@@ -71,6 +72,8 @@ export function RoleLifecycleManager({
       return;
     }
 
+    const requestId = requestIdRef.current ?? crypto.randomUUID();
+    requestIdRef.current = requestId;
     setPending(true);
     setNotice(null);
     try {
@@ -78,7 +81,7 @@ export function RoleLifecycleManager({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          requestId: crypto.randomUUID(),
+          requestId,
           name,
           color,
           hoist,
@@ -93,6 +96,7 @@ export function RoleLifecycleManager({
         attention?: boolean;
       } | null;
       if (!response.ok) {
+        if (!result?.attention) requestIdRef.current = null;
         throw new Error(
           [result?.error, ...(result?.details ?? [])].filter(Boolean).join(' / ') ||
             'Role作成に失敗しました',
@@ -102,10 +106,14 @@ export function RoleLifecycleManager({
         kind: 'success',
         text: timing === 'scheduled' ? 'Role作成を予約しました。' : 'Discord Roleを作成しました。',
       });
+      requestIdRef.current = null;
       if (timing === 'now') setName('');
       router.refresh();
     } catch (error) {
-      setNotice({ kind: 'error', text: error instanceof Error ? error.message : 'Role作成に失敗しました。' });
+      setNotice({
+        kind: 'error',
+        text: error instanceof Error ? error.message : 'Role作成に失敗しました。',
+      });
     } finally {
       setPending(false);
     }
@@ -136,7 +144,10 @@ export function RoleLifecycleManager({
       setDeleteRoleId('');
       router.refresh();
     } catch (error) {
-      setNotice({ kind: 'error', text: error instanceof Error ? error.message : 'Role削除に失敗しました。' });
+      setNotice({
+        kind: 'error',
+        text: error instanceof Error ? error.message : 'Role削除に失敗しました。',
+      });
     } finally {
       setPending(false);
     }
@@ -156,7 +167,10 @@ export function RoleLifecycleManager({
       setNotice({ kind: 'success', text: '待機中のRole lifecycle予約をキャンセルしました。' });
       router.refresh();
     } catch (error) {
-      setNotice({ kind: 'error', text: error instanceof Error ? error.message : 'キャンセルに失敗しました。' });
+      setNotice({
+        kind: 'error',
+        text: error instanceof Error ? error.message : 'キャンセルに失敗しました。',
+      });
     } finally {
       setPending(false);
     }
@@ -190,18 +204,43 @@ export function RoleLifecycleManager({
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="sm:col-span-2">
               <span className="text-xs font-medium">Role名</span>
-              <input value={name} onChange={(event) => setName(event.target.value)} maxLength={100} disabled={!canEdit || pending} className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                maxLength={100}
+                disabled={!canEdit || pending}
+                className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
             </label>
             <label>
               <span className="text-xs font-medium">色</span>
               <div className="mt-1 flex gap-2">
-                <input type="color" value={color} onChange={(event) => setColor(event.target.value.toUpperCase())} disabled={!canEdit || pending} className="h-10 w-12 rounded-lg border border-border bg-surface p-1" aria-label="Roleの色" />
-                <input value={color} onChange={(event) => setColor(event.target.value.toUpperCase())} maxLength={7} disabled={!canEdit || pending} className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 font-mono text-sm" aria-label="Role色のHEX値" />
+                <input
+                  type="color"
+                  value={color}
+                  onChange={(event) => setColor(event.target.value.toUpperCase())}
+                  disabled={!canEdit || pending}
+                  className="h-10 w-12 rounded-lg border border-border bg-surface p-1"
+                  aria-label="Roleの色"
+                />
+                <input
+                  value={color}
+                  onChange={(event) => setColor(event.target.value.toUpperCase())}
+                  maxLength={7}
+                  disabled={!canEdit || pending}
+                  className="h-10 min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 font-mono text-sm"
+                  aria-label="Role色のHEX値"
+                />
               </div>
             </label>
             <label>
               <span className="text-xs font-medium">作成タイミング</span>
-              <select value={timing} onChange={(event) => setTiming(event.target.value as CreateTiming)} disabled={!canEdit || pending} className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm">
+              <select
+                value={timing}
+                onChange={(event) => setTiming(event.target.value as CreateTiming)}
+                disabled={!canEdit || pending}
+                className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm"
+              >
                 <option value="now">今すぐ</option>
                 <option value="scheduled">指定日時</option>
               </select>
@@ -209,12 +248,23 @@ export function RoleLifecycleManager({
             {timing === 'scheduled' ? (
               <label className="sm:col-span-2">
                 <span className="text-xs font-medium">作成予定日時</span>
-                <input type="datetime-local" value={createAt} onChange={(event) => setCreateAt(event.target.value)} disabled={!canEdit || pending} className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm" />
+                <input
+                  type="datetime-local"
+                  value={createAt}
+                  onChange={(event) => setCreateAt(event.target.value)}
+                  disabled={!canEdit || pending}
+                  className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm"
+                />
               </label>
             ) : null}
             <label>
               <span className="text-xs font-medium">有効期間</span>
-              <select value={expirationMode} onChange={(event) => setExpirationMode(event.target.value as ExpirationMode)} disabled={!canEdit || pending} className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm">
+              <select
+                value={expirationMode}
+                onChange={(event) => setExpirationMode(event.target.value as ExpirationMode)}
+                disabled={!canEdit || pending}
+                className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm"
+              >
                 <option value="permanent">無期限</option>
                 <option value="duration">一定時間後に削除</option>
                 <option value="at">指定日時に削除</option>
@@ -223,36 +273,155 @@ export function RoleLifecycleManager({
             {expirationMode === 'duration' ? (
               <label>
                 <span className="text-xs font-medium">有効時間（時間）</span>
-                <input type="number" min={1} max={8784} value={durationHours} onChange={(event) => setDurationHours(event.target.value)} disabled={!canEdit || pending} className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm" />
+                <input
+                  type="number"
+                  min={1}
+                  max={8784}
+                  value={durationHours}
+                  onChange={(event) => setDurationHours(event.target.value)}
+                  disabled={!canEdit || pending}
+                  className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm"
+                />
               </label>
             ) : expirationMode === 'at' ? (
               <label>
                 <span className="text-xs font-medium">削除予定日時</span>
-                <input type="datetime-local" value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} disabled={!canEdit || pending} className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm" />
+                <input
+                  type="datetime-local"
+                  value={expiresAt}
+                  onChange={(event) => setExpiresAt(event.target.value)}
+                  disabled={!canEdit || pending}
+                  className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm"
+                />
               </label>
             ) : null}
           </div>
           <div className="mt-4 flex flex-wrap gap-4 text-sm">
-            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={hoist} onChange={(event) => setHoist(event.target.checked)} disabled={!canEdit || pending} />メンバー一覧で分けて表示</label>
-            <label className="inline-flex items-center gap-2"><input type="checkbox" checked={mentionable} onChange={(event) => setMentionable(event.target.checked)} disabled={!canEdit || pending} />メンション可能</label>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={hoist}
+                onChange={(event) => setHoist(event.target.checked)}
+                disabled={!canEdit || pending}
+              />
+              メンバー一覧で分けて表示
+            </label>
+            <label className="inline-flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={mentionable}
+                onChange={(event) => setMentionable(event.target.checked)}
+                disabled={!canEdit || pending}
+              />
+              メンション可能
+            </label>
           </div>
-          <button type="button" onClick={() => void createRole()} disabled={!canEdit || pending || !name.trim()} className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50">
-            <Plus className="h-4 w-4" aria-hidden="true" />{pending ? '処理中…' : timing === 'scheduled' ? '作成を予約' : 'Roleを作成'}
+          <button
+            type="button"
+            onClick={() => void createRole()}
+            disabled={!canEdit || pending || !name.trim()}
+            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            {pending ? '処理中…' : timing === 'scheduled' ? '作成を予約' : 'Roleを作成'}
           </button>
         </div>
 
         <div className="rounded-xl border border-red-500/20 bg-red-500/[0.03] p-4">
-          <div className="flex gap-2"><ShieldAlert className="mt-0.5 h-4 w-4 text-red-500" aria-hidden="true" /><div><h3 className="font-semibold">Discord Roleを削除</h3><p className="mt-1 text-xs leading-5 text-muted">参照中のHerta設定、root、Managed Role、Bot以上のRoleは削除できません。</p></div></div>
-          <label className="mt-4 block"><span className="text-xs font-medium">削除対象</span><select value={deleteRoleId} onChange={(event) => setDeleteRoleId(event.target.value)} disabled={!canEdit || pending} className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm"><option value="">Roleを選択</option>{deletableRoles.map((role) => <option key={role.id} value={role.id}>{role.name}</option>)}</select></label>
-          <button type="button" onClick={() => void deleteRole()} disabled={!canEdit || pending || !selectedDeleteRole} className="mt-4 inline-flex items-center gap-2 rounded-xl border border-red-500/30 px-4 py-2 text-sm font-semibold text-red-600 disabled:opacity-40"><Trash2 className="h-4 w-4" aria-hidden="true" />Discord Roleを削除</button>
+          <div className="flex gap-2">
+            <ShieldAlert className="mt-0.5 h-4 w-4 text-red-500" aria-hidden="true" />
+            <div>
+              <h3 className="font-semibold">Discord Roleを削除</h3>
+              <p className="mt-1 text-xs leading-5 text-muted">
+                参照中のHerta設定、root、Managed Role、Bot以上のRoleは削除できません。
+              </p>
+            </div>
+          </div>
+          <label className="mt-4 block">
+            <span className="text-xs font-medium">削除対象</span>
+            <select
+              value={deleteRoleId}
+              onChange={(event) => setDeleteRoleId(event.target.value)}
+              disabled={!canEdit || pending}
+              className="mt-1 h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm"
+            >
+              <option value="">Roleを選択</option>
+              {deletableRoles.map((role) => (
+                <option key={role.id} value={role.id}>
+                  {role.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={() => void deleteRole()}
+            disabled={!canEdit || pending || !selectedDeleteRole}
+            className="mt-4 inline-flex items-center gap-2 rounded-xl border border-red-500/30 px-4 py-2 text-sm font-semibold text-red-600 disabled:opacity-40"
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+            Discord Roleを削除
+          </button>
         </div>
       </div>
 
-      {notice ? <p role="status" className={`mt-4 rounded-xl border px-3 py-2 text-sm ${notice.kind === 'success' ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}>{notice.text}</p> : null}
+      {notice ? (
+        <p
+          role="status"
+          className={`mt-4 rounded-xl border px-3 py-2 text-sm ${notice.kind === 'success' ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-red-500/30 bg-red-500/5'}`}
+        >
+          {notice.text}
+        </p>
+      ) : null}
 
       <div className="mt-6 border-t border-border pt-5">
-        <div className="flex items-center gap-2"><Clock3 className="h-4 w-4 text-muted" aria-hidden="true" /><h3 className="text-sm font-semibold">Lifecycle operations</h3></div>
-        {operations.length === 0 ? <p className="mt-3 text-sm text-muted">予約・実行履歴はまだありません。</p> : <div className="mt-3 divide-y divide-border overflow-hidden rounded-xl border border-border">{operations.map((operation) => <div key={operation.id} className="flex flex-col gap-3 bg-background/50 p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className="text-sm font-medium">{operation.operationType === 'create' ? '作成' : '削除'} · {operation.roleName}</span><span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">{lifecycleStatusLabel(operation.status)}</span></div><p className="mt-1 text-xs text-muted">実行: {formatDate(operation.executeAt)}{operation.expiresAt ? ` / 期限: ${formatDate(operation.expiresAt)}` : ''}</p>{operation.lastError ? <p className="mt-1 font-mono text-[10px] text-amber-600">{operation.lastError}</p> : null}</div>{operation.status === 'pending' ? <button type="button" onClick={() => void cancelOperation(operation.id)} disabled={!canEdit || pending} className="self-start rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-background disabled:opacity-40">キャンセル</button> : null}</div>)}</div>}
+        <div className="flex items-center gap-2">
+          <Clock3 className="h-4 w-4 text-muted" aria-hidden="true" />
+          <h3 className="text-sm font-semibold">Lifecycle operations</h3>
+        </div>
+        {operations.length === 0 ? (
+          <p className="mt-3 text-sm text-muted">予約・実行履歴はまだありません。</p>
+        ) : (
+          <div className="mt-3 divide-y divide-border overflow-hidden rounded-xl border border-border">
+            {operations.map((operation) => (
+              <div
+                key={operation.id}
+                className="flex flex-col gap-3 bg-background/50 p-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium">
+                      {operation.operationType === 'create' ? '作成' : '削除'} ·{' '}
+                      {operation.roleName}
+                    </span>
+                    <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">
+                      {lifecycleStatusLabel(operation.status)}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-muted">
+                    実行: {formatDate(operation.executeAt)}
+                    {operation.expiresAt ? ` / 期限: ${formatDate(operation.expiresAt)}` : ''}
+                  </p>
+                  {operation.lastError ? (
+                    <p className="mt-1 font-mono text-[10px] text-amber-600">
+                      {operation.lastError}
+                    </p>
+                  ) : null}
+                </div>
+                {operation.status === 'pending' ? (
+                  <button
+                    type="button"
+                    onClick={() => void cancelOperation(operation.id)}
+                    disabled={!canEdit || pending}
+                    className="self-start rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-background disabled:opacity-40"
+                  >
+                    キャンセル
+                  </button>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );

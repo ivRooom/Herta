@@ -33,7 +33,10 @@ export async function createBotGuildRole(
     { method: 'POST', body: JSON.stringify(input) },
     fetchImpl,
   );
-  const payload = (await response.json().catch(() => null)) as { result?: BotGuildRoleResult; status?: string } | null;
+  const payload = (await response.json().catch(() => null)) as {
+    result?: BotGuildRoleResult;
+    status?: string;
+  } | null;
   if (!response.ok || !payload?.result) throw toLifecycleError(response.status, payload?.status);
   return payload.result;
 }

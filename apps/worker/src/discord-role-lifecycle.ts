@@ -1,5 +1,9 @@
-import type { PrismaClient } from '@herta/db';
+import type { DiscordRoleLifecycleOperation, PrismaClient } from '@herta/db';
 import type { Logger } from 'pino';
+import {
+  findHertaRoleReferences,
+  removeStudioRolePolicyReference,
+} from './discord-role-references.js';
 
 const SCAN_INTERVAL_MS = 10_000;
 const DUE_LIMIT = 50;
@@ -61,7 +65,9 @@ export function startDiscordRoleLifecycleRuntime(input: {
           await recordAudit(input.prisma, {
             guildId: operation.guildId,
             actorId: operation.createdBy,
-            event: ambiguousCreate ? 'discord_role.lifecycle_attention' : 'discord_role.lifecycle_failed',
+            event: ambiguousCreate
+              ? 'discord_role.lifecycle_attention'
+              : 'discord_role.lifecycle_failed',
             targetId: operation.id,
             changes: { operationType: operation.operationType, errorName: resolveErrorName(error) },
           });
@@ -96,7 +102,7 @@ export function startDiscordRoleLifecycleRuntime(input: {
 
 async function executeCreate(
   input: { prisma: PrismaClient; botHealthUrl: string; internalApiSecret: string },
-  operation: Awaited<ReturnType<PrismaClient['discordRoleLifecycleOperation']['findFirst']>> & {},
+  operation: DiscordRoleLifecycleOperation,
   now: Date,
 ): Promise<void> {
   if (!operation || operation.roleColor === null) throw new Error('RoleCreatePayloadMissing');
@@ -113,7 +119,12 @@ async function executeCreate(
     });
     if (operation.expiresAt) {
       await tx.discordRoleLifecycleOperation.upsert({
-        where: { guildId_idempotencyKey: { guildId: operation.guildId, idempotencyKey: `expire:${operation.id}` } },
+        where: {
+          guildId_idempotencyKey: {
+            guildId: operation.guildId,
+            idempotencyKey: `expire:${operation.id}`,
+          },
+        },
         create: {
           guildId: operation.guildId,
           operationType: 'delete',
@@ -136,9 +147,17 @@ async function executeCreate(
         event: 'discord_role.created',
         targetType: 'discord_role',
         targetId: role.id,
-        changes: { roleName: role.name, scheduled: true, expiresAt: operation.expiresAt?.toISOString() ?? null },
+        changes: {
+          roleName: role.name,
+          scheduled: true,
+          expiresAt: operation.expiresAt?.toISOString() ?? null,
+        },
         severity: 'warning',
-        metadata: { operationSource: 'worker', originalActorId: operation.createdBy, lifecycleOperationId: operation.id },
+        metadata: {
+          operationSource: 'worker',
+          originalActorId: operation.createdBy,
+          lifecycleOperationId: operation.id,
+        },
       },
     });
   });
@@ -146,12 +165,21 @@ async function executeCreate(
 
 async function executeDelete(
   input: { prisma: PrismaClient; botHealthUrl: string; internalApiSecret: string },
-  operation: Awaited<ReturnType<PrismaClient['discordRoleLifecycleOperation']['findFirst']>> & {},
+  operation: DiscordRoleLifecycleOperation,
   now: Date,
 ): Promise<void> {
-  if (!operation?.roleId) throw new Error('RoleDeleteTargetMissing');
+  if (!operation.roleId) throw new Error('RoleDeleteTargetMissing');
+  const references = await findHertaRoleReferences(
+    input.prisma,
+    operation.guildId,
+    operation.roleId,
+  );
+  if (references.length > 0) {
+    throw new Error(`RoleStillReferencedByHertaConfig:${references.join(',')}`);
+  }
   const result = await callDeleteRole(input, operation.guildId, operation.roleId);
   await input.prisma.$transaction(async (tx) => {
+    await removeStudioRolePolicyReference(tx, operation.guildId, operation.roleId);
     await tx.discordRoleLifecycleOperation.update({
       where: { id: operation.id },
       data: { status: 'completed', completedAt: now, lastError: null },
@@ -164,15 +192,27 @@ async function executeDelete(
         event: 'discord_role.deleted',
         targetType: 'discord_role',
         targetId: operation.roleId,
-        changes: { roleName: result.roleName ?? operation.roleName, scheduled: true, alreadyMissing: !result.deleted },
+        changes: {
+          roleName: result.roleName ?? operation.roleName,
+          scheduled: true,
+          alreadyMissing: !result.deleted,
+        },
         severity: 'warning',
-        metadata: { operationSource: 'worker', originalActorId: operation.createdBy, lifecycleOperationId: operation.id },
+        metadata: {
+          operationSource: 'worker',
+          originalActorId: operation.createdBy,
+          lifecycleOperationId: operation.id,
+        },
       },
     });
   });
 }
 
-async function recoverStaleOperations(prisma: PrismaClient, now: Date, logger: Logger): Promise<void> {
+async function recoverStaleOperations(
+  prisma: PrismaClient,
+  now: Date,
+  logger: Logger,
+): Promise<void> {
   const staleBefore = new Date(now.getTime() - STALE_RUNNING_MS);
   const createResult = await prisma.discordRoleLifecycleOperation.updateMany({
     where: { status: 'running', operationType: 'create', startedAt: { lt: staleBefore } },
@@ -199,8 +239,12 @@ async function callCreateRole(
     method: 'POST',
     body: JSON.stringify(body),
   });
-  const payload = (await response.json().catch(() => null)) as { result?: RoleResult; status?: string } | null;
-  if (!response.ok || !payload?.result) throw new Error(payload?.status ?? `RoleCreateHttp${response.status}`);
+  const payload = (await response.json().catch(() => null)) as {
+    result?: RoleResult;
+    status?: string;
+  } | null;
+  if (!response.ok || !payload?.result)
+    throw new Error(payload?.status ?? `RoleCreateHttp${response.status}`);
   return payload.result;
 }
 
@@ -209,12 +253,15 @@ async function callDeleteRole(
   guildId: string,
   roleId: string,
 ): Promise<{ deleted: boolean; roleName: string | null }> {
-  const response = await roleApiRequest(input, `/internal/guilds/${guildId}/roles/${roleId}`, { method: 'DELETE' });
+  const response = await roleApiRequest(input, `/internal/guilds/${guildId}/roles/${roleId}`, {
+    method: 'DELETE',
+  });
   const payload = (await response.json().catch(() => null)) as {
     result?: { deleted: boolean; roleName: string | null };
     status?: string;
   } | null;
-  if (!response.ok || !payload?.result) throw new Error(payload?.status ?? `RoleDeleteHttp${response.status}`);
+  if (!response.ok || !payload?.result)
+    throw new Error(payload?.status ?? `RoleDeleteHttp${response.status}`);
   return payload.result;
 }
 
@@ -251,7 +298,10 @@ function isTransportError(error: unknown): boolean {
 }
 
 async function markFailed(prisma: PrismaClient, id: string, errorName: string): Promise<void> {
-  await prisma.discordRoleLifecycleOperation.update({ where: { id }, data: { status: 'failed', lastError: errorName } });
+  await prisma.discordRoleLifecycleOperation.update({
+    where: { id },
+    data: { status: 'failed', lastError: errorName },
+  });
 }
 
 async function recordAudit(

@@ -93,7 +93,9 @@ async function main() {
     }
 
     if (!botInternalApiSecret || botInternalApiSecret.length < 32) {
-      logger.warn('BOT_INTERNAL_API_SECRETが未設定または短いためRole Lifecycle Workerを開始しません');
+      logger.warn(
+        'BOT_INTERNAL_API_SECRETが未設定または短いためRole Lifecycle Workerを開始しません',
+      );
     } else {
       discordRoleLifecycleRuntime = startDiscordRoleLifecycleRuntime({
         prisma: getPrismaClient(),

@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { RequestBodyTooLargeError, readRequestBodyBytes } from '@/lib/bounded-request-body';
-import { createBotGuildRole, deleteBotGuildRole, BotGuildRoleLifecycleError } from '@/lib/bot-guild-role-lifecycle';
+import {
+  createBotGuildRole,
+  deleteBotGuildRole,
+  BotGuildRoleLifecycleError,
+} from '@/lib/bot-guild-role-lifecycle';
 import { prisma } from '@/lib/db';
 import { validateDiscordRoleLifecycleCreate } from '@/lib/discord-role-lifecycle';
 import { resolveStudioAccess } from '@/lib/studio-access';
@@ -39,7 +43,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
   if ('response' in body) return body.response;
   const validation = validateDiscordRoleLifecycleCreate(body.value);
   if (!validation.valid || !validation.input) {
-    return NextResponse.json({ error: 'Role作成設定が不正です', details: validation.errors }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Role作成設定が不正です', details: validation.errors },
+      { status: 400 },
+    );
   }
   const input = validation.input;
   const executeAt = input.createAt ?? new Date();
@@ -75,7 +82,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
     data: { status: 'running', startedAt: new Date(), lastError: null },
   });
   if (claim.count === 0) {
-    const existing = await prisma.discordRoleLifecycleOperation.findUnique({ where: { id: operation.id } });
+    const existing = await prisma.discordRoleLifecycleOperation.findUnique({
+      where: { id: operation.id },
+    });
+    if (existing?.status === 'attention') {
+      return NextResponse.json(
+        {
+          error: '前回のRole作成結果を確定できません。Discord上のRoleを確認してください。',
+          operation: existing,
+          attention: true,
+        },
+        { status: 409 },
+      );
+    }
+    if (existing?.status === 'failed') {
+      return NextResponse.json(
+        { error: '前回のRole作成は失敗しています。再試行してください。', operation: existing },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ operation: existing }, { status: 200 });
   }
 
@@ -88,7 +113,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
       mentionable: input.mentionable,
     });
   } catch (error) {
-    const status = error instanceof BotGuildRoleLifecycleError && error.code === 'transport_unknown' ? 'attention' : 'failed';
+    const status =
+      error instanceof BotGuildRoleLifecycleError && error.code === 'transport_unknown'
+        ? 'attention'
+        : 'failed';
     await prisma.discordRoleLifecycleOperation.update({
       where: { id: operation.id },
       data: { status, lastError: safeErrorCode(error) },
@@ -106,7 +134,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
     await prisma.$transaction(async (tx) => {
       await tx.discordRoleLifecycleOperation.update({
         where: { id: operation.id },
-        data: { status: 'completed', roleId: createdRole.id, completedAt: new Date(), lastError: null },
+        data: {
+          status: 'completed',
+          roleId: createdRole.id,
+          completedAt: new Date(),
+          lastError: null,
+        },
       });
       if (input.expiresAt) {
         await tx.discordRoleLifecycleOperation.create({
@@ -138,24 +171,52 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
             expiresAt: input.expiresAt?.toISOString() ?? null,
           },
           severity: 'warning',
-          metadata: { operationSource: 'studio', securitySensitive: true, lifecycleOperationId: operation.id },
+          metadata: {
+            operationSource: 'studio',
+            securitySensitive: true,
+            lifecycleOperationId: operation.id,
+          },
         },
       });
     });
-  } catch (error) {
-    await compensateCreatedRole(guildId, createdRole.id);
-    await prisma.discordRoleLifecycleOperation.update({
-      where: { id: operation.id },
-      data: { status: 'failed', lastError: 'RolePersistenceFailed' },
-    }).catch(() => undefined);
-    return NextResponse.json({ error: 'Role作成後の永続化に失敗したため作成を取り消しました' }, { status: 503 });
+  } catch {
+    const compensated = await compensateCreatedRole(guildId, createdRole.id);
+    const persistenceStatus = compensated ? 'failed' : 'attention';
+    try {
+      await prisma.discordRoleLifecycleOperation.update({
+        where: { id: operation.id },
+        data: {
+          status: persistenceStatus,
+          lastError: compensated ? 'RolePersistenceFailed' : 'RolePersistenceCompensationFailed',
+        },
+      });
+    } catch (persistenceError) {
+      console.error('Discord Role lifecycle operationの障害状態保存に失敗しました', {
+        operationId: operation.id,
+        errorName: safeErrorCode(persistenceError),
+      });
+    }
+    return NextResponse.json(
+      {
+        error: compensated
+          ? 'Role作成後の永続化に失敗したため作成を取り消しました'
+          : 'Role作成後の永続化と補償削除を確認できません。Discord上のRoleを確認してください。',
+        attention: !compensated,
+      },
+      { status: 503 },
+    );
   }
 
-  const completed = await prisma.discordRoleLifecycleOperation.findUnique({ where: { id: operation.id } });
+  const completed = await prisma.discordRoleLifecycleOperation.findUnique({
+    where: { id: operation.id },
+  });
   return NextResponse.json({ role: createdRole, operation: completed }, { status: 201 });
 }
 
-export async function DELETE(request: Request, { params }: { params: Promise<{ guildId: string }> }) {
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ guildId: string }> },
+) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
   if (!isSameOriginMutationRequest(request)) {
@@ -177,11 +238,12 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ g
   return NextResponse.json({ canceled: true });
 }
 
-async function compensateCreatedRole(guildId: string, roleId: string): Promise<void> {
+async function compensateCreatedRole(guildId: string, roleId: string): Promise<boolean> {
   try {
     await deleteBotGuildRole(guildId, roleId);
+    return true;
   } catch {
-    // Operationをfailedとして残し、Role Managerの「要確認」対象として追跡できる。
+    return false;
   }
 }
 
@@ -191,7 +253,10 @@ async function requireRoot(guildId: string, userId: string) {
   if (resolved.access.isRoot) return resolved;
   return {
     ok: false as const,
-    response: NextResponse.json({ error: 'Discord Role管理にはOWNER root Roleが必要です' }, { status: 403 }),
+    response: NextResponse.json(
+      { error: 'Discord Role管理にはOWNER root Roleが必要です' },
+      { status: 403 },
+    ),
   };
 }
 
@@ -202,7 +267,12 @@ async function parseBody(request: Request): Promise<{ value: unknown } | { respo
   } catch (error) {
     return {
       response: NextResponse.json(
-        { error: error instanceof RequestBodyTooLargeError ? 'リクエストが大きすぎます' : 'JSONが不正です' },
+        {
+          error:
+            error instanceof RequestBodyTooLargeError
+              ? 'リクエストが大きすぎます'
+              : 'JSONが不正です',
+        },
         { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
       ),
     };

@@ -24,7 +24,9 @@ export async function handleGuildRoleLifecycleHttpRequest(input: {
     sendJson(input.response, 503, { status: 'internal_api_not_configured' });
     return;
   }
-  if (!isAuthorizedInternalApiRequest(input.request.headers.authorization, input.internalApiSecret)) {
+  if (
+    !isAuthorizedInternalApiRequest(input.request.headers.authorization, input.internalApiSecret)
+  ) {
     sendJson(input.response, 401, { status: 'unauthorized' });
     return;
   }

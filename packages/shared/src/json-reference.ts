@@ -1,8 +1,4 @@
-export function containsExactJsonStringValue(
-  value: unknown,
-  target: string,
-  depth = 0,
-): boolean {
+export function containsExactJsonStringValue(value: unknown, target: string, depth = 0): boolean {
   if (depth > 16) return false;
   if (typeof value === 'string') return value === target;
   if (Array.isArray(value)) {
