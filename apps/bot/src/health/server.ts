@@ -49,7 +49,7 @@ const HTTP_STATUS_BY_HEALTH: Record<PublicServiceStatus, number> = {
 };
 
 const MAX_INTERNAL_JSON_BODY_BYTES = 1_500_000;
-const MAX_MESSAGE_STUDIO_INTERNAL_BODY_BYTES = 12_000_000;
+const MAX_MESSAGE_STUDIO_INTERNAL_BODY_BYTES = 30_000_000;
 
 class RequestBodyTooLargeError extends Error {}
 class InvalidJsonBodyError extends Error {}
