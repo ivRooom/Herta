@@ -1,0 +1,91 @@
+name: Temporary Rule Studio Integration
+
+on:
+  push:
+    branches:
+      - feat/rule-studio-v1
+    paths:
+      - .github/workflows/tmp-rule-studio-integration.yml
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/rule-studio-v1
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - name: Apply Rule Studio integration
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          pkg = Path('apps/studio/package.json')
+          text = pkg.read_text()
+          marker = 'src/lib/studio-managed-access.test.ts src/lib/prisma-raw-error.test.ts'
+          replacement = 'src/lib/studio-managed-access.test.ts src/lib/rule-studio.test.ts src/lib/prisma-raw-error.test.ts'
+          if replacement not in text:
+              if marker not in text:
+                  raise SystemExit('package test marker missing')
+              text = text.replace(marker, replacement, 1)
+          pkg.write_text(text)
+
+          page = Path('apps/studio/src/app/dashboard/guilds/[guildId]/roles/page.tsx')
+          text = page.read_text()
+          old_import = "import { ArrowLeft, ArrowRight, LockKeyhole, ShieldCheck, SlidersHorizontal } from 'lucide-react';"
+          new_import = "import { ArrowLeft, ArrowRight, LockKeyhole, ShieldCheck, SlidersHorizontal, Workflow } from 'lucide-react';"
+          if old_import in text:
+              text = text.replace(old_import, new_import, 1)
+          elif new_import not in text:
+              raise SystemExit('role page lucide import marker missing')
+
+          marker = """      <Link
+        href={`/dashboard/guilds/${guildId}/roles/plugins`}"""
+          rule_link = """      <Link
+        href={`/dashboard/guilds/${guildId}/rules`}
+        className=\"flex items-center justify-between gap-4 rounded-2xl border border-border bg-surface p-5 transition hover:border-primary/30\"
+      >
+        <div className=\"flex min-w-0 items-start gap-3\">
+          <span className=\"flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary\">
+            <Workflow className=\"h-5 w-5\" aria-hidden=\"true\" />
+          </span>
+          <div>
+            <h2 className=\"font-semibold\">Rule Studio</h2>
+            <p className=\"mt-1 text-sm leading-6 text-muted\">
+              Schedule TriggerとDiscord Role Lifecycle ActionをGUIで作成・編集します。
+            </p>
+          </div>
+        </div>
+        <ArrowRight className=\"h-5 w-5 shrink-0 text-muted\" aria-hidden=\"true\" />
+      </Link>
+
+"""
+          if '/rules`}' not in text:
+              if marker not in text:
+                  raise SystemExit('role page link marker missing')
+              text = text.replace(marker, rule_link + marker, 1)
+          page.write_text(text)
+          PY
+      - run: pnpm prettier --write apps/studio/package.json apps/studio/src/lib/rule-studio.ts apps/studio/src/lib/rule-studio.test.ts apps/studio/src/app/api/guilds/[guildId]/rules/route.ts apps/studio/src/components/rule-studio-manager.tsx apps/studio/src/app/dashboard/guilds/[guildId]/rules/page.tsx apps/studio/src/app/dashboard/guilds/[guildId]/roles/page.tsx
+      - run: pnpm --filter @herta/studio typecheck
+      - run: node --experimental-strip-types --test apps/studio/src/lib/rule-studio.test.ts
+      - name: Commit integration
+        run: |
+          git config user.name "mizzz-ivr"
+          git config user.email "mizzz._.dev@outlook.jp"
+          git add apps/studio
+          if git diff --cached --quiet; then
+            echo "No integration changes"
+            exit 0
+          fi
+          git commit -m "feat(studio): integrate Rule Studio v1"
+          git push origin HEAD:feat/rule-studio-v1
