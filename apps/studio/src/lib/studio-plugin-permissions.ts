@@ -1,5 +1,5 @@
 import {
-  evaluateStudioAccessPolicy,
+  evaluateStudioPolicyDocuments,
   type StudioAccessPolicy,
   type StudioPolicyAction,
 } from './studio-access-policy.ts';
@@ -10,6 +10,7 @@ export interface EffectivePluginPermissionContext {
   isRoot: boolean;
   roleIds: readonly string[];
   policies: readonly { discordRoleId: string; policy: StudioAccessPolicy }[];
+  managedPolicies: readonly StudioAccessPolicy[];
 }
 
 export interface PluginConfigStudioAccess {
@@ -36,17 +37,14 @@ export function hasEffectivePluginPermission(
 ): boolean {
   if (access.isRoot) return true;
   const activeRoleIds = new Set(access.roleIds);
-  const hasApplicablePolicy = access.policies.some((policy) =>
-    activeRoleIds.has(policy.discordRoleId),
-  );
+  const legacyPolicies = access.policies
+    .filter((policy) => activeRoleIds.has(policy.discordRoleId))
+    .map((policy) => policy.policy);
+  const managedPolicies = access.managedPolicies;
+
   // Policy未導入のManage Guildユーザーは従来挙動を維持し、段階移行を可能にする。
-  if (!hasApplicablePolicy) return true;
-  return evaluateStudioAccessPolicy({
-    roleIds: access.roleIds,
-    policies: access.policies,
-    action,
-    resource,
-  });
+  if (legacyPolicies.length === 0 && managedPolicies.length === 0) return true;
+  return evaluateStudioPolicyDocuments([...managedPolicies, ...legacyPolicies], action, resource);
 }
 
 export function resolvePluginConfigStudioAccess(

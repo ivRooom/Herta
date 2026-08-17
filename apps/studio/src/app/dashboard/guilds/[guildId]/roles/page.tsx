@@ -4,7 +4,6 @@ import { ArrowLeft, ArrowRight, LockKeyhole, ShieldCheck, SlidersHorizontal } fr
 import { notFound } from 'next/navigation';
 import { auth } from '@/auth';
 import { RoleLifecycleManager } from '@/components/role-lifecycle-manager';
-import { RolePolicyManager } from '@/components/role-policy-manager';
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
 import { prisma } from '@/lib/db';
 import { authorizeStudioPermission } from '@/lib/studio-access';
@@ -33,7 +32,7 @@ export default async function GuildRoleManagerPage({
 
   const options = await getGuildConfigurationOptions(guildId);
   if (!options) return <AccessUnavailable guildId={guildId} status={503} />;
-  const [policies, recentOperations] = await Promise.all([
+  const [legacyPolicies, recentOperations] = await Promise.all([
     listStudioRolePolicies(guildId),
     listRecentDiscordRoleOperations(prisma, guildId, 20),
   ]);
@@ -79,12 +78,13 @@ export default async function GuildRoleManagerPage({
           </span>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
-              {options.guildName} · Herta Access Control
+              {options.guildName} · Discord Role Lifecycle
             </p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">Role Manager</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Discord Role本体の作成・削除・期間限定運用と、IAM風Access InventoryからHerta
-              Studioの閲覧・編集・作成・削除・Command・AI・Secret・RAG・MCP権限を管理します。
+              Discord Role本体の作成・削除・期間限定運用を管理します。Herta
+              Studio権限はRoleへJSONを直接保存せず、Access Control CenterでManaged
+              PolicyをAttachします。
             </p>
           </div>
         </div>
@@ -96,17 +96,46 @@ export default async function GuildRoleManagerPage({
           <div>
             <h2 className="text-sm font-semibold">root security boundary</h2>
             <p className="mt-1 text-xs leading-5 text-muted">
-              Discord Role <code>{STUDIO_ROOT_DISCORD_ROLE_ID}</code>{' '}
-              はrootとして固定され、Policy変更・Policy削除・Discord
+              Discord Role <code>{STUDIO_ROOT_DISCORD_ROLE_ID}</code> はrootとして固定され、Policy
+              Attachment・Policy上書き・Discord
               Role本体の削除対象にできません。Role本体の変更もrootだけが実行できます。
             </p>
           </div>
         </div>
       </section>
 
+      {legacyPolicies.length > 0 ? (
+        <section className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 sm:p-5">
+          <h2 className="text-sm font-semibold">Legacy Role Policy</h2>
+          <p className="mt-1 text-xs leading-5 text-muted">
+            既存Role Policyが{legacyPolicies.length}
+            件あります。既存権限を壊さないため認可時のみ読み取り継続します。RoleごとのJSON編集は廃止し、新規設定はManaged
+            Policyへ移行します。
+          </p>
+        </section>
+      ) : null}
+
+      <Link
+        href={`/dashboard/guilds/${guildId}/access`}
+        className="flex items-center justify-between gap-4 rounded-2xl border border-primary/30 bg-primary/5 p-5 transition hover:border-primary/50 hover:bg-primary/10"
+      >
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div>
+            <h2 className="font-semibold">Access Control Center</h2>
+            <p className="mt-1 text-sm leading-6 text-muted">
+              AWS IAM風にPolicyをGUI / JSONで作成し、Role・User・Herta GroupへAttachします。
+            </p>
+          </div>
+        </div>
+        <ArrowRight className="h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
+      </Link>
+
       <Link
         href={`/dashboard/guilds/${guildId}/roles/plugins`}
-        className="flex items-center justify-between gap-4 rounded-2xl border border-primary/20 bg-primary/5 p-5 transition hover:border-primary/40 hover:bg-primary/10"
+        className="flex items-center justify-between gap-4 rounded-2xl border border-border bg-surface p-5 transition hover:border-primary/30"
       >
         <div className="flex min-w-0 items-start gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
@@ -115,8 +144,8 @@ export default async function GuildRoleManagerPage({
           <div>
             <h2 className="font-semibold">Plugin Permission Matrix</h2>
             <p className="mt-1 text-sm leading-6 text-muted">
-              Pluginごとの有効・無効操作と、設定項目単位の「閲覧のみ /
-              編集可」をRoleごとに指定します。
+              既存Pluginの項目単位権限を確認します。Managed
+              Policyへの完全統合までは互換レイヤとして維持します。
             </p>
           </div>
         </div>
@@ -131,14 +160,6 @@ export default async function GuildRoleManagerPage({
         canEdit={authorization.access.isRoot}
         botCanManageRoles={options.bot.manageRoles}
       />
-
-      <RolePolicyManager
-        guildId={guildId}
-        roles={roles}
-        policies={policies}
-        rootRoleId={STUDIO_ROOT_DISCORD_ROLE_ID}
-        canEdit={authorization.access.isRoot}
-      />
     </div>
   );
 }
@@ -146,7 +167,7 @@ export default async function GuildRoleManagerPage({
 function AccessUnavailable({ guildId, status }: { guildId: string; status: number }) {
   const message =
     status === 403
-      ? 'このページを閲覧するRole Policyがありません。初期設定はOWNER root Roleを持つメンバーが行ってください。'
+      ? 'このページを閲覧する権限がありません。OWNER rootまたは許可されたPolicyが必要です。'
       : 'Discord RoleまたはBot接続状態を確認できませんでした。権限判定は安全側に倒して拒否されています。';
   return (
     <div className="space-y-6">

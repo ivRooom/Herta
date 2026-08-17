@@ -127,13 +127,26 @@ export function validateStudioAccessPolicy(
 
 export function evaluateStudioAccessPolicy(input: StudioPolicyEvaluationInput): boolean {
   const activeRoleIds = new Set(input.roleIds);
+  return evaluateStudioPolicyDocuments(
+    input.policies
+      .filter((rolePolicy) => activeRoleIds.has(rolePolicy.discordRoleId))
+      .map((rolePolicy) => rolePolicy.policy),
+    input.action,
+    input.resource,
+  );
+}
+
+export function evaluateStudioPolicyDocuments(
+  policies: readonly StudioAccessPolicy[],
+  action: StudioPolicyAction,
+  resource: string,
+): boolean {
   let allowed = false;
 
-  for (const rolePolicy of input.policies) {
-    if (!activeRoleIds.has(rolePolicy.discordRoleId)) continue;
-    for (const statement of rolePolicy.policy.Statement) {
-      if (!matchesAny(statement.Action, input.action)) continue;
-      if (!matchesAny(statement.Resource, input.resource)) continue;
+  for (const policy of policies) {
+    for (const statement of policy.Statement) {
+      if (!matchesAny(statement.Action, action)) continue;
+      if (!matchesAny(statement.Resource, resource)) continue;
       if (statement.Effect === 'Deny') return false;
       allowed = true;
     }
