@@ -118,14 +118,18 @@ function hasPluginPermission(
 ): boolean {
   if (access.isRoot) return true;
   const activeRoleIds = new Set(access.roleIds);
-  const hasApplicablePolicy = access.policies.some((policy) => activeRoleIds.has(policy.discordRoleId));
+  const hasApplicablePolicy = access.policies.some((policy) =>
+    activeRoleIds.has(policy.discordRoleId),
+  );
   if (!hasApplicablePolicy) return true;
   return hasStudioPermission(access, action, resource);
 }
 
 async function parsePatchBody(
   request: Request,
-): Promise<{ value: { enabled?: boolean; config?: Record<string, unknown> } } | { response: Response }> {
+): Promise<
+  { value: { enabled?: boolean; config?: Record<string, unknown> } } | { response: Response }
+> {
   try {
     const bytes = await readRequestBodyBytes(request, MAX_PLUGIN_PATCH_BODY_BYTES);
     const value = JSON.parse(Buffer.from(bytes).toString('utf8')) as unknown;

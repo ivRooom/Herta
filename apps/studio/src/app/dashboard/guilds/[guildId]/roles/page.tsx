@@ -84,7 +84,8 @@ export default async function GuildRoleManagerPage({
           <div>
             <h2 className="font-semibold">Plugin Permission Matrix</h2>
             <p className="mt-1 text-sm leading-6 text-muted">
-              Pluginごとの有効・無効操作と、設定項目単位の「閲覧のみ / 編集可」をRoleごとに指定します。
+              Pluginごとの有効・無効操作と、設定項目単位の「閲覧のみ /
+              編集可」をRoleごとに指定します。
             </p>
           </div>
         </div>

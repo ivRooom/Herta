@@ -3,10 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { LockKeyhole, Save, ShieldCheck, SlidersHorizontal } from 'lucide-react';
-import {
-  STUDIO_ACCESS_POLICY_VERSION,
-  type StudioAccessPolicy,
-} from '@/lib/studio-access-policy';
+import { STUDIO_ACCESS_POLICY_VERSION, type StudioAccessPolicy } from '@/lib/studio-access-policy';
 import type { StudioRolePolicyRecord } from '@/lib/studio-role-policy-store';
 import {
   getExplicitPermissionMode,
@@ -206,9 +203,7 @@ export function PluginPermissionManager({
           <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
             <div className="flex gap-2">
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />
-              <p>
-                OWNER root Roleは全Plugin・全項目を操作できます。個別制限は設定できません。
-              </p>
+              <p>OWNER root Roleは全Plugin・全項目を操作できます。個別制限は設定できません。</p>
             </div>
           </div>
         ) : selectedPlugin ? (
@@ -239,7 +234,8 @@ export function PluginPermissionManager({
               <div className="mb-3">
                 <h2 className="text-sm font-semibold">設定項目</h2>
                 <p className="mt-1 text-xs leading-5 text-muted">
-                  「閲覧のみ」は <code>studio.settings.write</code> を明示Denyします。「編集可」は項目Resourceへ明示Allowします。
+                  「閲覧のみ」は <code>studio.settings.write</code>{' '}
+                  を明示Denyします。「編集可」は項目Resourceへ明示Allowします。
                 </p>
               </div>
               {selectedPlugin.fields.length > 0 ? (
@@ -251,7 +247,9 @@ export function PluginPermissionManager({
                     >
                       <div className="min-w-0">
                         <p className="text-sm font-medium">{field.label}</p>
-                        <code className="mt-1 block break-all text-[11px] text-muted">{field.key}</code>
+                        <code className="mt-1 block break-all text-[11px] text-muted">
+                          {field.key}
+                        </code>
                         {field.description ? (
                           <p className="mt-1 text-xs leading-5 text-muted">{field.description}</p>
                         ) : null}

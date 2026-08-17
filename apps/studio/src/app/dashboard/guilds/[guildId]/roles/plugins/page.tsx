@@ -38,7 +38,9 @@ export default async function PluginPermissionsPage({
   if (!options) notFound();
 
   const descriptors = plugins
-    .map(({ manifest }) => toPermissionDescriptor(manifest.id, manifest.name, manifest.configSchema))
+    .map(({ manifest }) =>
+      toPermissionDescriptor(manifest.id, manifest.name, manifest.configSchema),
+    )
     .sort((left, right) => left.name.localeCompare(right.name, 'ja'));
 
   return (
@@ -63,7 +65,8 @@ export default async function PluginPermissionsPage({
               Plugin Permission Matrix
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Discord Roleごとに、Pluginの有効・無効操作と各設定項目の編集可否を個別指定します。項目単位のDenyは全体Allowより優先されます。
+              Discord
+              Roleごとに、Pluginの有効・無効操作と各設定項目の編集可否を個別指定します。項目単位のDenyは全体Allowより優先されます。
             </p>
           </div>
         </div>
@@ -94,7 +97,10 @@ function toPermissionDescriptor(
       const fieldSchema = isRecord(rawSchema) ? rawSchema : {};
       return {
         key,
-        label: typeof fieldSchema.title === 'string' && fieldSchema.title.trim() ? fieldSchema.title : key,
+        label:
+          typeof fieldSchema.title === 'string' && fieldSchema.title.trim()
+            ? fieldSchema.title
+            : key,
         description:
           typeof fieldSchema.description === 'string' && fieldSchema.description.trim()
             ? fieldSchema.description
