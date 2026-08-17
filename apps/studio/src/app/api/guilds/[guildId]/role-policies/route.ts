@@ -28,7 +28,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ gui
     'studio.roles.read',
     `guild:${guildId}:role:*`,
   );
-  if ('response' in authorization) return authorization.response;
+  if (!authorization.ok) return authorization.response;
 
   const options = await getGuildConfigurationOptions(guildId);
   if (!options) {
@@ -51,7 +51,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ guil
   }
   const { guildId } = await params;
   const root = await requireRoot(guildId, session.user.id);
-  if ('response' in root) return root.response;
+  if (!root.ok) return root.response;
 
   const body = await parseJsonBody(request);
   if ('response' in body) return body.response;
@@ -103,7 +103,7 @@ export async function DELETE(
   }
   const { guildId } = await params;
   const root = await requireRoot(guildId, session.user.id);
-  if ('response' in root) return root.response;
+  if (!root.ok) return root.response;
 
   const roleId = new URL(request.url).searchParams.get('roleId') ?? '';
   if (!/^\d{17,20}$/u.test(roleId) || roleId === STUDIO_ROOT_DISCORD_ROLE_ID) {
@@ -121,9 +121,10 @@ export async function DELETE(
 
 async function requireRoot(guildId: string, userId: string) {
   const resolved = await resolveStudioAccess(guildId, userId);
-  if ('response' in resolved) return resolved;
+  if (!resolved.ok) return resolved;
   if (resolved.access.isRoot) return resolved;
   return {
+    ok: false as const,
     response: NextResponse.json(
       { error: 'Role Policyの変更にはOWNER root Roleが必要です' },
       { status: 403 },
