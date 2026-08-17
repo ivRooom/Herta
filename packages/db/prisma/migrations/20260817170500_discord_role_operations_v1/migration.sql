@@ -23,6 +23,7 @@ CREATE TABLE "discord_role_operations" (
     CONSTRAINT "discord_role_operations_pkey" PRIMARY KEY ("id"),
     CONSTRAINT "discord_role_operations_operation_check" CHECK ("operation" IN ('create', 'delete')),
     CONSTRAINT "discord_role_operations_status_check" CHECK ("status" IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled')),
+    CONSTRAINT "discord_role_operations_source_check" CHECK ("source" IN ('studio', 'temporary-expiry', 'rule-engine')),
     CONSTRAINT "discord_role_operations_role_color_check" CHECK ("role_color" IS NULL OR ("role_color" >= 0 AND "role_color" <= 16777215)),
     CONSTRAINT "discord_role_operations_expiry_check" CHECK ("expires_after_seconds" IS NULL OR ("expires_after_seconds" >= 60 AND "expires_after_seconds" <= 31536000)),
     CONSTRAINT "discord_role_operations_create_payload_check" CHECK ("operation" <> 'create' OR ("role_name" IS NOT NULL AND length(btrim("role_name")) BETWEEN 1 AND 100)),
