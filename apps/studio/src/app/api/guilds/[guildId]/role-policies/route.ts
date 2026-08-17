@@ -5,8 +5,10 @@ import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
 import { prisma } from '@/lib/db';
 import { authorizeStudioPermission, resolveStudioAccess } from '@/lib/studio-access';
 import {
+  STUDIO_GUI_PERMISSION_SID,
   STUDIO_ROOT_DISCORD_ROLE_ID,
   validateStudioAccessPolicy,
+  type StudioAccessPolicy,
 } from '@/lib/studio-access-policy';
 import {
   deleteStudioRolePolicy,
@@ -79,6 +81,16 @@ export async function PUT(request: Request, { params }: { params: Promise<{ guil
   const previous = (await listStudioRolePolicies(guildId)).find(
     (policy) => policy.discordRoleId === discordRoleId,
   );
+  if (!sameLegacyGlobalGrant(previous?.policy ?? null, validation.policy)) {
+    return NextResponse.json(
+      {
+        error:
+          'Role単位の全体権限はLegacy扱いです。Access Control CenterでManaged PolicyをAttachしてください',
+      },
+      { status: 409 },
+    );
+  }
+
   const policy = await saveStudioRolePolicy(guildId, session.user.id, {
     discordRoleId,
     roleName: role.name,
@@ -130,6 +142,19 @@ async function requireRoot(guildId: string, userId: string) {
       { status: 403 },
     ),
   };
+}
+
+function sameLegacyGlobalGrant(
+  previous: StudioAccessPolicy | null,
+  next: StudioAccessPolicy,
+): boolean {
+  return (
+    JSON.stringify(globalGrantStatements(previous)) === JSON.stringify(globalGrantStatements(next))
+  );
+}
+
+function globalGrantStatements(policy: StudioAccessPolicy | null) {
+  return policy?.Statement.filter((statement) => statement.Sid === STUDIO_GUI_PERMISSION_SID) ?? [];
 }
 
 async function parseJsonBody(
