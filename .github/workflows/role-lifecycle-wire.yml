@@ -30,95 +30,53 @@ jobs:
                   raise SystemExit(f'marker is not unique: {path}: {text.count(old)}')
               p.write_text(text.replace(old, new, 1))
 
-          replace_once(
-              'apps/bot/src/health/server.ts',
-              "import { createUnknownHealthResponse } from './service.js';",
-              "import { handleGuildRoleLifecycleHttpRequest } from './guild-role-lifecycle-http.js';\nimport { createUnknownHealthResponse } from './service.js';",
-          )
-          replace_once(
-              'apps/bot/src/health/server.ts',
-              "    const pathname = requestUrl.pathname;\n\n    const guildMessageStudioMatch",
-              "    const pathname = requestUrl.pathname;\n\n    const guildRoleLifecycleMatch = /^\\/internal\\/guilds\\/(\\d+)\\/roles(?:\\/(\\d+))?$/u.exec(\n      pathname,\n    );\n    if (guildRoleLifecycleMatch) {\n      await handleGuildRoleLifecycleHttpRequest({\n        request,\n        response,\n        method,\n        guildId: guildRoleLifecycleMatch[1]!,\n        ...(guildRoleLifecycleMatch[2] ? { roleId: guildRoleLifecycleMatch[2] } : {}),\n        internalApiSecret: this.options.internalApiSecret,\n        logger: this.options.logger,\n      });\n      return;\n    }\n\n    const guildMessageStudioMatch",
-          )
+          replace_once('apps/bot/src/health/server.ts', "import { createUnknownHealthResponse } from './service.js';", "import { handleGuildRoleLifecycleHttpRequest } from './guild-role-lifecycle-http.js';\nimport { createUnknownHealthResponse } from './service.js';")
+          role_route = "    const pathname = requestUrl.pathname;\n\n    const guildRoleLifecycleMatch = /^\\/internal\\/guilds\\/(\\d+)\\/roles(?:\\/(\\d+))?$/u.exec(\n      pathname,\n    );\n    if (guildRoleLifecycleMatch) {\n      await handleGuildRoleLifecycleHttpRequest({\n        request,\n        response,\n        method,\n        guildId: guildRoleLifecycleMatch[1]!,\n        ...(guildRoleLifecycleMatch[2] ? { roleId: guildRoleLifecycleMatch[2] } : {}),\n        internalApiSecret: this.options.internalApiSecret,\n        logger: this.options.logger,\n      });\n      return;\n    }\n\n    const guildMessageStudioMatch"
+          replace_once('apps/bot/src/health/server.ts', "    const pathname = requestUrl.pathname;\n\n    const guildMessageStudioMatch", role_route)
 
-          replace_once(
-              'packages/db/prisma/schema.prisma',
-              "  roles                Role[]\n  auditLogs            AuditLog[]",
-              "  roles                          Role[]\n  discordRoleLifecycleOperations DiscordRoleLifecycleOperation[]\n  auditLogs                      AuditLog[]",
-          )
-          replace_once(
-              'packages/db/prisma/schema.prisma',
-              "model CommandExecutionEvent {",
-              '''model DiscordRoleLifecycleOperation {
-  id                String    @id @default(uuid())
-  guildId           String    @map("guild_id")
-  operationType     String    @map("operation_type") @db.VarChar(16)
-  status            String    @default("pending") @db.VarChar(24)
-  executeAt         DateTime  @map("execute_at") @db.Timestamptz(3)
-  roleId            String?   @map("role_id")
-  roleName          String    @map("role_name") @db.VarChar(100)
-  roleColor         Int?      @map("role_color")
-  hoist             Boolean   @default(false)
-  mentionable       Boolean   @default(false)
-  expiresAt         DateTime? @map("expires_at") @db.Timestamptz(3)
-  createdBy         String    @map("created_by")
-  idempotencyKey    String    @map("idempotency_key") @db.VarChar(64)
-  sourceOperationId String?   @unique @map("source_operation_id")
-  lastError         String?   @map("last_error") @db.VarChar(160)
-  startedAt         DateTime? @map("started_at") @db.Timestamptz(3)
-  completedAt       DateTime? @map("completed_at") @db.Timestamptz(3)
-  canceledAt        DateTime? @map("canceled_at") @db.Timestamptz(3)
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+          replace_once('packages/db/prisma/schema.prisma', "  roles                Role[]\n  auditLogs            AuditLog[]", "  roles                          Role[]\n  discordRoleLifecycleOperations DiscordRoleLifecycleOperation[]\n  auditLogs                      AuditLog[]")
+          model = "\n".join([
+              'model DiscordRoleLifecycleOperation {',
+              '  id                String    @id @default(uuid())',
+              '  guildId           String    @map("guild_id")',
+              '  operationType     String    @map("operation_type") @db.VarChar(16)',
+              '  status            String    @default("pending") @db.VarChar(24)',
+              '  executeAt         DateTime  @map("execute_at") @db.Timestamptz(3)',
+              '  roleId            String?   @map("role_id")',
+              '  roleName          String    @map("role_name") @db.VarChar(100)',
+              '  roleColor         Int?      @map("role_color")',
+              '  hoist             Boolean   @default(false)',
+              '  mentionable       Boolean   @default(false)',
+              '  expiresAt         DateTime? @map("expires_at") @db.Timestamptz(3)',
+              '  createdBy         String    @map("created_by")',
+              '  idempotencyKey    String    @map("idempotency_key") @db.VarChar(64)',
+              '  sourceOperationId String?   @unique @map("source_operation_id")',
+              '  lastError         String?   @map("last_error") @db.VarChar(160)',
+              '  startedAt         DateTime? @map("started_at") @db.Timestamptz(3)',
+              '  completedAt       DateTime? @map("completed_at") @db.Timestamptz(3)',
+              '  canceledAt        DateTime? @map("canceled_at") @db.Timestamptz(3)',
+              '  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)',
+              '  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)',
+              '',
+              '  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)',
+              '',
+              '  @@unique([guildId, idempotencyKey])',
+              '  @@index([status, executeAt])',
+              '  @@index([guildId, createdAt(sort: Desc)])',
+              '  @@map("discord_role_lifecycle_operations")',
+              '}',
+              '',
+          ])
+          replace_once('packages/db/prisma/schema.prisma', 'model CommandExecutionEvent {', model + 'model CommandExecutionEvent {')
 
-  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
+          replace_once('apps/worker/src/main.ts', "import { startDailyContentRuntime, type DailyContentRuntime } from './daily-content.js';", "import { startDailyContentRuntime, type DailyContentRuntime } from './daily-content.js';\nimport {\n  startDiscordRoleLifecycleRuntime,\n  type DiscordRoleLifecycleRuntime,\n} from './discord-role-lifecycle.js';")
+          replace_once('apps/worker/src/main.ts', 'let dailyContentRuntime: DailyContentRuntime | undefined;', 'let dailyContentRuntime: DailyContentRuntime | undefined;\nlet discordRoleLifecycleRuntime: DiscordRoleLifecycleRuntime | undefined;')
+          replace_once('apps/worker/src/main.ts', "  const discordBotToken = process.env['DISCORD_BOT_TOKEN']?.trim();\n  const databaseConfigured", "  const discordBotToken = process.env['DISCORD_BOT_TOKEN']?.trim();\n  const botHealthUrl = process.env['BOT_HEALTH_URL']?.trim() || 'http://bot:3000/healthz';\n  const botInternalApiSecret = process.env['BOT_INTERNAL_API_SECRET']?.trim();\n  const databaseConfigured")
+          replace_once('apps/worker/src/main.ts', "    if (!discordBotToken) {\n      logger.warn('DISCORD_BOT_TOKENが未設定のためDiscord依存Plugin Workerを開始しません');", "    if (!botInternalApiSecret || botInternalApiSecret.length < 32) {\n      logger.warn('BOT_INTERNAL_API_SECRETが未設定または短いためRole Lifecycle Workerを開始しません');\n    } else {\n      discordRoleLifecycleRuntime = startDiscordRoleLifecycleRuntime({\n        prisma: getPrismaClient(),\n        logger,\n        botHealthUrl,\n        internalApiSecret: botInternalApiSecret,\n      });\n      logger.info('Discord Role Lifecycle Workerを開始しました');\n    }\n\n    if (!discordBotToken) {\n      logger.warn('DISCORD_BOT_TOKENが未設定のためDiscord依存Plugin Workerを開始しません');")
+          replace_once('apps/worker/src/main.ts', '  try {\n    await teamSplitRuntime?.close();', "  try {\n    await discordRoleLifecycleRuntime?.close();\n    discordRoleLifecycleRuntime = undefined;\n  } catch (error) {\n    logger.error(\n      { errorName: resolveErrorName(error) },\n      'Discord Role Lifecycle Workerの終了処理に失敗しました',\n    );\n  }\n\n  try {\n    await teamSplitRuntime?.close();")
 
-  @@unique([guildId, idempotencyKey])
-  @@index([status, executeAt])
-  @@index([guildId, createdAt(sort: Desc)])
-  @@map("discord_role_lifecycle_operations")
-}
-
-model CommandExecutionEvent {''',
-          )
-
-          replace_once(
-              'apps/worker/src/main.ts',
-              "import { startDailyContentRuntime, type DailyContentRuntime } from './daily-content.js';",
-              "import { startDailyContentRuntime, type DailyContentRuntime } from './daily-content.js';\nimport {\n  startDiscordRoleLifecycleRuntime,\n  type DiscordRoleLifecycleRuntime,\n} from './discord-role-lifecycle.js';",
-          )
-          replace_once(
-              'apps/worker/src/main.ts',
-              "let dailyContentRuntime: DailyContentRuntime | undefined;",
-              "let dailyContentRuntime: DailyContentRuntime | undefined;\nlet discordRoleLifecycleRuntime: DiscordRoleLifecycleRuntime | undefined;",
-          )
-          replace_once(
-              'apps/worker/src/main.ts',
-              "  const discordBotToken = process.env['DISCORD_BOT_TOKEN']?.trim();\n  const databaseConfigured",
-              "  const discordBotToken = process.env['DISCORD_BOT_TOKEN']?.trim();\n  const botHealthUrl = process.env['BOT_HEALTH_URL']?.trim() || 'http://bot:3000/healthz';\n  const botInternalApiSecret = process.env['BOT_INTERNAL_API_SECRET']?.trim();\n  const databaseConfigured",
-          )
-          replace_once(
-              'apps/worker/src/main.ts',
-              "    if (!discordBotToken) {\n      logger.warn('DISCORD_BOT_TOKENが未設定のためDiscord依存Plugin Workerを開始しません');",
-              "    if (!botInternalApiSecret || botInternalApiSecret.length < 32) {\n      logger.warn('BOT_INTERNAL_API_SECRETが未設定または短いためRole Lifecycle Workerを開始しません');\n    } else {\n      discordRoleLifecycleRuntime = startDiscordRoleLifecycleRuntime({\n        prisma: getPrismaClient(),\n        logger,\n        botHealthUrl,\n        internalApiSecret: botInternalApiSecret,\n      });\n      logger.info('Discord Role Lifecycle Workerを開始しました');\n    }\n\n    if (!discordBotToken) {\n      logger.warn('DISCORD_BOT_TOKENが未設定のためDiscord依存Plugin Workerを開始しません');",
-          )
-          replace_once(
-              'apps/worker/src/main.ts',
-              "  try {\n    await teamSplitRuntime?.close();",
-              "  try {\n    await discordRoleLifecycleRuntime?.close();\n    discordRoleLifecycleRuntime = undefined;\n  } catch (error) {\n    logger.error(\n      { errorName: resolveErrorName(error) },\n      'Discord Role Lifecycle Workerの終了処理に失敗しました',\n    );\n  }\n\n  try {\n    await teamSplitRuntime?.close();",
-          )
-
-          replace_once(
-              'docker-compose.prod.yml',
-              "      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}\n      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN is required}\n      LFG_COMPONENT_SECRET:",
-              "      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}\n      BOT_HEALTH_URL: ${BOT_HEALTH_URL:-http://bot:3000/healthz}\n      BOT_INTERNAL_API_SECRET: ${BOT_INTERNAL_API_SECRET:?BOT_INTERNAL_API_SECRET is required}\n      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN is required}\n      LFG_COMPONENT_SECRET:",
-          )
-
-          replace_once(
-              'apps/studio/package.json',
-              "src/lib/role-access-inventory.test.ts src/lib/request-origin.test.ts",
-              "src/lib/role-access-inventory.test.ts src/lib/discord-role-lifecycle.test.ts src/lib/request-origin.test.ts",
-          )
+          replace_once('docker-compose.prod.yml', '      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}\n      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN is required}\n      LFG_COMPONENT_SECRET:', '      REDIS_URL: ${REDIS_URL:?REDIS_URL is required}\n      BOT_HEALTH_URL: ${BOT_HEALTH_URL:-http://bot:3000/healthz}\n      BOT_INTERNAL_API_SECRET: ${BOT_INTERNAL_API_SECRET:?BOT_INTERNAL_API_SECRET is required}\n      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:?DISCORD_BOT_TOKEN is required}\n      LFG_COMPONENT_SECRET:')
+          replace_once('apps/studio/package.json', 'src/lib/role-access-inventory.test.ts src/lib/request-origin.test.ts', 'src/lib/role-access-inventory.test.ts src/lib/discord-role-lifecycle.test.ts src/lib/request-origin.test.ts')
           PY
       - name: Verify patch
         run: git diff --check && git status --short
