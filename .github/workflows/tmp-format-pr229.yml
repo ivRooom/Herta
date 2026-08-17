@@ -1,0 +1,43 @@
+name: Temp format PR229
+
+on:
+  push:
+    branches:
+      - feature/studio-command-catalog
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/studio-command-catalog
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format changed files
+        run: |
+          pnpm exec prettier --write \
+            apps/bot/src/health/command-catalog.test.ts \
+            apps/bot/src/health/command-catalog.ts \
+            apps/bot/src/health/server.ts \
+            'apps/studio/src/app/dashboard/guilds/[guildId]/commands/page.tsx' \
+            apps/studio/src/components/command-catalog.tsx \
+            apps/studio/src/lib/bot-command-catalog.test.ts \
+            apps/studio/src/lib/bot-command-catalog.ts
+      - name: Commit formatting
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add apps/bot/src/health apps/studio/src/app/dashboard/guilds apps/studio/src/components/command-catalog.tsx apps/studio/src/lib/bot-command-catalog.ts apps/studio/src/lib/bot-command-catalog.test.ts
+          git commit -m 'style: format command catalog implementation'
+          git push origin HEAD:feature/studio-command-catalog
