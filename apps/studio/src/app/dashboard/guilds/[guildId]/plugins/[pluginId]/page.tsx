@@ -6,9 +6,9 @@ import { ModerationConfigForm } from '@/components/moderation-config-form';
 import { PluginConfigForm } from '@/components/plugin-config-form';
 import { PluginSetupOverview } from '@/components/plugin-setup-overview';
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
-import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
-import { getDiscordAccessToken } from '@/lib/session';
+import { resolveStudioAccess } from '@/lib/studio-access';
+import { resolvePluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,17 +19,21 @@ export default async function PluginDetailPage({
 }) {
   const { guildId, pluginId } = await params;
   const session = await auth();
-  const accessToken = await getDiscordAccessToken();
-  if (!accessToken || !session?.user) notFound();
-  const guild = await getManageableGuild(accessToken, guildId);
-  if (!guild) notFound();
-  await persistSelectedGuild(guild, session.user.id);
+  if (!session?.user) notFound();
+  const access = await resolveStudioAccess(guildId, session.user.id);
+  if (!access.ok) notFound();
 
   const [plugin, discordOptions] = await Promise.all([
     getGuildPlugin(guildId, pluginId),
     getGuildConfigurationOptions(guildId),
   ]);
   if (!plugin) notFound();
+  const configAccess = resolvePluginConfigStudioAccess(
+    access.access,
+    guildId,
+    pluginId,
+    topLevelConfigFieldKeys(plugin.manifest.configSchema),
+  );
 
   return (
     <div>
@@ -70,6 +74,7 @@ export default async function PluginDetailPage({
               initialConfig={plugin.config}
               schema={plugin.manifest.configSchema}
               discordOptions={discordOptions}
+              configAccess={configAccess}
             />
           </div>
         )}
@@ -188,4 +193,10 @@ function ManagementLink({
       <ArrowRight className="h-5 w-5 text-muted" />
     </Link>
   );
+}
+
+function topLevelConfigFieldKeys(schema: Record<string, unknown>): string[] {
+  const properties = schema['properties'];
+  if (typeof properties !== 'object' || properties === null || Array.isArray(properties)) return [];
+  return Object.keys(properties);
 }
