@@ -11,3 +11,4 @@ export * from './community-challenge-catalog.js';
 export * from './community-leaderboard.js';
 export * from './activity-rules.js';
 export * from './studio-access.js';
+export * from './json-reference.js';
