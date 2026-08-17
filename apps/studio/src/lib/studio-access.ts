@@ -70,12 +70,13 @@ export async function resolveStudioAccess(
       listEffectiveStudioAccessPolicyDocuments(prisma, guildId, userId, member.roleIds),
     ]);
     const managedPolicies: StudioAccessPolicy[] = [];
-    for (const document of managedDocuments) {
-      const validation = validateStudioAccessPolicy(document, guildId);
+    for (const managedDocument of managedDocuments) {
+      const validation = validateStudioAccessPolicy(managedDocument.document, guildId);
       if (!validation.valid || !validation.policy) {
         console.error('Invalid managed Studio access policy stored in database', {
           guildId,
           userId,
+          policyId: managedDocument.id,
           validationErrors: validation.errors,
         });
         return {
