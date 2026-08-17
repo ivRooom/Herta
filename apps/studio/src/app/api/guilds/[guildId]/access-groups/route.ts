@@ -9,6 +9,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { RequestBodyTooLargeError, readRequestBodyBytes } from '@/lib/bounded-request-body';
 import { prisma } from '@/lib/db';
+import { isPrismaRawUniqueViolation } from '@/lib/prisma-raw-error';
 import { authorizeStudioPermission, resolveStudioAccess } from '@/lib/studio-access';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
 
@@ -65,12 +66,17 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
     });
     return NextResponse.json({ group }, { status: 201 });
   } catch (error) {
+    const duplicateName = isPrismaRawUniqueViolation(error);
     console.error('Failed to create Studio access group', {
       guildId,
       actorId: session.user.id,
       errorName: error instanceof Error ? error.name : 'UnknownError',
+      duplicateName,
     });
-    return NextResponse.json({ error: 'Groupを作成できませんでした' }, { status: 409 });
+    return NextResponse.json(
+      { error: duplicateName ? '同名のGroupが存在します' : 'Groupを作成できませんでした' },
+      { status: duplicateName ? 409 : 500 },
+    );
   }
 }
 
@@ -85,10 +91,11 @@ export async function PUT(request: Request, { params }: { params: Promise<{ guil
   if (!root.ok) return root.response;
   const body = await parseJsonBody(request);
   if ('response' in body) return body.response;
-  const groupId = typeof body.value.groupId === 'string' ? body.value.groupId : '';
-  if (!GROUP_ID_PATTERN.test(groupId)) {
+  const rawGroupId = typeof body.value.groupId === 'string' ? body.value.groupId : '';
+  if (!GROUP_ID_PATTERN.test(rawGroupId)) {
     return NextResponse.json({ error: 'Group IDが不正です' }, { status: 400 });
   }
+  const groupId = rawGroupId.toLowerCase();
   const metadata = parseGroupMetadata(body.value);
   if ('error' in metadata) return NextResponse.json({ error: metadata.error }, { status: 400 });
   const groups = await listStudioAccessGroups(prisma, guildId);
@@ -119,13 +126,18 @@ export async function PUT(request: Request, { params }: { params: Promise<{ guil
     });
     return NextResponse.json({ updated: true });
   } catch (error) {
+    const duplicateName = isPrismaRawUniqueViolation(error);
     console.error('Failed to update Studio access group', {
       guildId,
       groupId,
       actorId: session.user.id,
       errorName: error instanceof Error ? error.name : 'UnknownError',
+      duplicateName,
     });
-    return NextResponse.json({ error: 'Groupを更新できませんでした' }, { status: 409 });
+    return NextResponse.json(
+      { error: duplicateName ? '同名のGroupが存在します' : 'Groupを更新できませんでした' },
+      { status: duplicateName ? 409 : 500 },
+    );
   }
 }
 
@@ -141,10 +153,11 @@ export async function DELETE(
   const { guildId } = await params;
   const root = await requireRoot(guildId, session.user.id);
   if (!root.ok) return root.response;
-  const groupId = new URL(request.url).searchParams.get('groupId') ?? '';
-  if (!GROUP_ID_PATTERN.test(groupId)) {
+  const rawGroupId = new URL(request.url).searchParams.get('groupId') ?? '';
+  if (!GROUP_ID_PATTERN.test(rawGroupId)) {
     return NextResponse.json({ error: 'Group IDが不正です' }, { status: 400 });
   }
+  const groupId = rawGroupId.toLowerCase();
   const current = (await listStudioAccessGroups(prisma, guildId)).find(
     (group) => group.id === groupId,
   );
