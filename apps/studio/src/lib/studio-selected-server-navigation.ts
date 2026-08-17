@@ -31,6 +31,13 @@ const SELECTED_SERVER_NAVIGATION_DEFINITIONS: readonly SelectedServerNavigationD
     icon: 'message',
   },
   {
+    id: 'selected-server-commands',
+    path: 'commands',
+    label: 'コマンド',
+    description: 'Discordへ登録済みのSlash Commandと使い方を確認する',
+    icon: 'rules',
+  },
+  {
     id: 'selected-server-plugins',
     path: 'plugins',
     label: 'プラグイン',
