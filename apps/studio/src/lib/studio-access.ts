@@ -15,13 +15,7 @@ export interface StudioAccessContext {
   policies: StudioRolePolicyRecord[];
 }
 
-export async function resolveStudioAccess(
-  guildId: string,
-  userId: string,
-): Promise<
-  | { access: StudioAccessContext; guild: Awaited<ReturnType<typeof authorizeGuild>> extends infer T ? T : never }
-  | { response: Response }
-> {
+export async function resolveStudioAccess(guildId: string, userId: string) {
   const guildAuthorization = await authorizeGuild(guildId, userId);
   if ('response' in guildAuthorization) return guildAuthorization;
 
@@ -38,7 +32,7 @@ export async function resolveStudioAccess(
   const isRoot = isStudioRootRole(member.roleIds);
   const policies = isRoot ? [] : await listStudioRolePolicies(guildId);
   return {
-    guild: guildAuthorization.guild as never,
+    guild: guildAuthorization.guild,
     access: { guildId, userId, roleIds: member.roleIds, isRoot, policies },
   };
 }
