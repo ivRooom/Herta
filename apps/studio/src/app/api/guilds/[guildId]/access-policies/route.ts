@@ -16,7 +16,8 @@ import { isSameOriginMutationRequest } from '@/lib/request-origin';
 
 export const dynamic = 'force-dynamic';
 const MAX_POLICY_BODY_BYTES = 64 * 1024;
-const POLICY_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const POLICY_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export async function GET(_request: Request, { params }: { params: Promise<{ guildId: string }> }) {
   const session = await auth();
@@ -196,7 +197,8 @@ async function requireRoot(guildId: string, userId: string) {
 
 function parsePolicyMetadata(value: Record<string, unknown>) {
   const name = typeof value.name === 'string' ? value.name.trim() : '';
-  if (name.length < 1 || name.length > 100) return { error: 'Policy名は1〜100文字で指定してください' };
+  if (name.length < 1 || name.length > 100)
+    return { error: 'Policy名は1〜100文字で指定してください' };
   const description = typeof value.description === 'string' ? value.description.trim() : '';
   if (description.length > 500) return { error: '説明は500文字以内で指定してください' };
   return { name, description: description || null };

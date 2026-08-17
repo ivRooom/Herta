@@ -44,11 +44,7 @@ export function hasEffectivePluginPermission(
 
   // Policy未導入のManage Guildユーザーは従来挙動を維持し、段階移行を可能にする。
   if (legacyPolicies.length === 0 && managedPolicies.length === 0) return true;
-  return evaluateStudioPolicyDocuments(
-    [...managedPolicies, ...legacyPolicies],
-    action,
-    resource,
-  );
+  return evaluateStudioPolicyDocuments([...managedPolicies, ...legacyPolicies], action, resource);
 }
 
 export function resolvePluginConfigStudioAccess(

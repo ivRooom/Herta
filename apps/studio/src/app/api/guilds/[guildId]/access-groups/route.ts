@@ -14,7 +14,8 @@ import { isSameOriginMutationRequest } from '@/lib/request-origin';
 
 export const dynamic = 'force-dynamic';
 const MAX_GROUP_BODY_BYTES = 16 * 1024;
-const GROUP_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const GROUP_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export async function GET(_request: Request, { params }: { params: Promise<{ guildId: string }> }) {
   const session = await auth();
@@ -144,7 +145,9 @@ export async function DELETE(
   if (!GROUP_ID_PATTERN.test(groupId)) {
     return NextResponse.json({ error: 'Group IDが不正です' }, { status: 400 });
   }
-  const current = (await listStudioAccessGroups(prisma, guildId)).find((group) => group.id === groupId);
+  const current = (await listStudioAccessGroups(prisma, guildId)).find(
+    (group) => group.id === groupId,
+  );
   if (!current) return NextResponse.json({ error: 'Groupが見つかりません' }, { status: 404 });
   const deleted = await deleteStudioAccessGroup(prisma, guildId, groupId);
   if (!deleted) return NextResponse.json({ error: 'Groupが見つかりません' }, { status: 404 });
@@ -169,7 +172,8 @@ async function requireRoot(guildId: string, userId: string) {
 
 function parseGroupMetadata(value: Record<string, unknown>) {
   const name = typeof value.name === 'string' ? value.name.trim() : '';
-  if (name.length < 1 || name.length > 100) return { error: 'Group名は1〜100文字で指定してください' };
+  if (name.length < 1 || name.length > 100)
+    return { error: 'Group名は1〜100文字で指定してください' };
   const description = typeof value.description === 'string' ? value.description.trim() : '';
   if (description.length > 500) return { error: '説明は500文字以内で指定してください' };
   return { name, description: description || null };
@@ -192,7 +196,9 @@ async function parseJsonBody(
       response: NextResponse.json(
         {
           error:
-            error instanceof RequestBodyTooLargeError ? 'Group設定が大きすぎます' : 'JSONが不正です',
+            error instanceof RequestBodyTooLargeError
+              ? 'Group設定が大きすぎます'
+              : 'JSONが不正です',
         },
         { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
       ),

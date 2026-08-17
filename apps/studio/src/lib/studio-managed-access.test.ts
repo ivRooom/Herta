@@ -66,11 +66,7 @@ test('一致するAllowがない場合はdefault denyになる', () => {
 
 test('Wildcard Allowもより具体的なDenyで拒否される', () => {
   const broadAllow = policy('Allow', 'studio.ai.*');
-  const specificDeny = policy(
-    'Deny',
-    'studio.ai.manage',
-    `guild:${GUILD_ID}:ai:settings`,
-  );
+  const specificDeny = policy('Deny', 'studio.ai.manage', `guild:${GUILD_ID}:ai:settings`);
 
   assert.equal(
     evaluateStudioPolicyDocuments(

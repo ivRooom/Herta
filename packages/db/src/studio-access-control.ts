@@ -183,15 +183,17 @@ export async function listStudioAccessPolicyAttachments(
   `;
   return rows.flatMap((row) => {
     if (!isStudioAccessPrincipalType(row.principal_type)) return [];
-    return [{
-      id: row.id,
-      policyId: row.policy_id,
-      guildId: row.guild_id,
-      principalType: row.principal_type,
-      principalId: row.principal_id,
-      createdBy: row.created_by,
-      createdAt: row.created_at,
-    }];
+    return [
+      {
+        id: row.id,
+        policyId: row.policy_id,
+        guildId: row.guild_id,
+        principalType: row.principal_type,
+        principalId: row.principal_id,
+        createdBy: row.created_by,
+        createdAt: row.created_at,
+      },
+    ];
   });
 }
 

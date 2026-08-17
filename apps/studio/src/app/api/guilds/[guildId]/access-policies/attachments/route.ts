@@ -17,7 +17,8 @@ import { STUDIO_ROOT_DISCORD_ROLE_ID } from '@/lib/studio-access-policy';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
 
 const MAX_ATTACHMENT_BODY_BYTES = 16 * 1024;
-const POLICY_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const POLICY_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const DISCORD_ID_PATTERN = /^\d{17,20}$/u;
 const GROUP_ID_PATTERN = POLICY_ID_PATTERN;
 
@@ -49,7 +50,8 @@ async function mutateAttachment(
   const body = await parseJsonBody(request);
   if ('response' in body) return body.response;
   const policyId = typeof body.value.policyId === 'string' ? body.value.policyId : '';
-  const principalType = typeof body.value.principalType === 'string' ? body.value.principalType : '';
+  const principalType =
+    typeof body.value.principalType === 'string' ? body.value.principalType : '';
   const principalId = typeof body.value.principalId === 'string' ? body.value.principalId : '';
   if (!POLICY_ID_PATTERN.test(policyId)) {
     return NextResponse.json({ error: 'Policy IDが不正です' }, { status: 400 });
@@ -61,7 +63,8 @@ async function mutateAttachment(
   if (!policy) return NextResponse.json({ error: 'Policyが見つかりません' }, { status: 404 });
 
   const principalError = await validatePrincipal(guildId, principalType, principalId);
-  if (principalError) return NextResponse.json({ error: principalError.message }, { status: principalError.status });
+  if (principalError)
+    return NextResponse.json({ error: principalError.message }, { status: principalError.status });
 
   const changed =
     operation === 'attach'
@@ -113,7 +116,8 @@ async function validatePrincipal(
     return null;
   }
   if (principalType === 'user') {
-    if (!DISCORD_ID_PATTERN.test(principalId)) return { message: 'Discord User IDが不正です', status: 400 };
+    if (!DISCORD_ID_PATTERN.test(principalId))
+      return { message: 'Discord User IDが不正です', status: 400 };
     const member = await getGuildMemberById(guildId, principalId);
     if (!member) return { message: 'このGuildのメンバーを確認できません', status: 404 };
     return null;

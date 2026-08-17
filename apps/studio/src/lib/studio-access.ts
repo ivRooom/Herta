@@ -53,7 +53,14 @@ export async function resolveStudioAccess(
     return {
       ok: true,
       guild: guildAuthorization.guild,
-      access: { guildId, userId, roleIds: member.roleIds, isRoot: true, policies: [], managedPolicies: [] },
+      access: {
+        guildId,
+        userId,
+        roleIds: member.roleIds,
+        isRoot: true,
+        policies: [],
+        managedPolicies: [],
+      },
     };
   }
 
@@ -95,10 +102,7 @@ export async function resolveStudioAccess(
     });
     return {
       ok: false,
-      response: Response.json(
-        { error: 'Studio権限設定を取得できませんでした' },
-        { status: 503 },
-      ),
+      response: Response.json({ error: 'Studio権限設定を取得できませんでした' }, { status: 503 }),
     };
   }
 }

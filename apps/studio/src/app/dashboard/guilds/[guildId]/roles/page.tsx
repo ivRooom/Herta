@@ -82,8 +82,9 @@ export default async function GuildRoleManagerPage({
             </p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">Role Manager</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Discord Role本体の作成・削除・期間限定運用を管理します。Herta Studio権限はRoleへJSONを直接保存せず、Access
-              Control CenterでManaged PolicyをAttachします。
+              Discord Role本体の作成・削除・期間限定運用を管理します。Herta
+              Studio権限はRoleへJSONを直接保存せず、Access Control CenterでManaged
+              PolicyをAttachします。
             </p>
           </div>
         </div>
@@ -95,8 +96,8 @@ export default async function GuildRoleManagerPage({
           <div>
             <h2 className="text-sm font-semibold">root security boundary</h2>
             <p className="mt-1 text-xs leading-5 text-muted">
-              Discord Role <code>{STUDIO_ROOT_DISCORD_ROLE_ID}</code>{' '}
-              はrootとして固定され、Policy Attachment・Policy上書き・Discord
+              Discord Role <code>{STUDIO_ROOT_DISCORD_ROLE_ID}</code> はrootとして固定され、Policy
+              Attachment・Policy上書き・Discord
               Role本体の削除対象にできません。Role本体の変更もrootだけが実行できます。
             </p>
           </div>
@@ -143,7 +144,8 @@ export default async function GuildRoleManagerPage({
           <div>
             <h2 className="font-semibold">Plugin Permission Matrix</h2>
             <p className="mt-1 text-sm leading-6 text-muted">
-              既存Pluginの項目単位権限を確認します。Managed Policyへの完全統合までは互換レイヤとして維持します。
+              既存Pluginの項目単位権限を確認します。Managed
+              Policyへの完全統合までは互換レイヤとして維持します。
             </p>
           </div>
         </div>

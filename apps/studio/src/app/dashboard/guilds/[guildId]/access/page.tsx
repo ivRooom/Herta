@@ -141,13 +141,17 @@ export default async function GuildAccessControlPage({
       ) : null}
 
       {invalidPolicyCount > 0 ? (
-        <section className="rounded-2xl border border-red-500/30 bg-red-500/5 p-4 sm:p-5" role="alert">
+        <section
+          className="rounded-2xl border border-red-500/30 bg-red-500/5 p-4 sm:p-5"
+          role="alert"
+        >
           <h2 className="text-sm font-semibold text-red-700 dark:text-red-300">
             無効なManaged Policyを検出しました
           </h2>
           <p className="mt-1 text-xs leading-5 text-muted">
             {invalidPolicyCount}
-            件のPolicy documentが現在のPolicy schemaまたはGuild scopeを満たしていません。認可resolverも安全側に倒して拒否します。
+            件のPolicy documentが現在のPolicy schemaまたはGuild
+            scopeを満たしていません。認可resolverも安全側に倒して拒否します。
           </p>
         </section>
       ) : null}
@@ -202,7 +206,10 @@ function AccessUnavailable({ guildId, status }: { guildId: string; status: numbe
       : 'Discordまたは権限データを確認できませんでした。安全のためAccess Controlを拒否しています。';
   return (
     <div className="space-y-6">
-      <Link href={`/dashboard/guilds/${guildId}`} className="text-sm text-muted hover:text-foreground">
+      <Link
+        href={`/dashboard/guilds/${guildId}`}
+        className="text-sm text-muted hover:text-foreground"
+      >
         ← サーバー概要へ戻る
       </Link>
       <section className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-6">

@@ -12,7 +12,8 @@ import { resolveStudioAccess } from '@/lib/studio-access';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
 
 const MAX_MEMBER_BODY_BYTES = 16 * 1024;
-const GROUP_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const GROUP_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const DISCORD_ID_PATTERN = /^\d{17,20}$/u;
 
 export async function POST(request: Request, { params }: { params: Promise<{ guildId: string }> }) {
@@ -50,7 +51,9 @@ async function mutateMembership(
   if (!DISCORD_ID_PATTERN.test(userId)) {
     return NextResponse.json({ error: 'Discord User IDが不正です' }, { status: 400 });
   }
-  const group = (await listStudioAccessGroups(prisma, guildId)).find((candidate) => candidate.id === groupId);
+  const group = (await listStudioAccessGroups(prisma, guildId)).find(
+    (candidate) => candidate.id === groupId,
+  );
   if (!group) return NextResponse.json({ error: 'Groupが見つかりません' }, { status: 404 });
   if (operation === 'add') {
     const member = await getGuildMemberById(guildId, userId);
