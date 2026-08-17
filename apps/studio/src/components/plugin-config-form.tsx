@@ -1,6 +1,7 @@
 'use client';
 
 import type { GuildConfigurationOptions } from '@/lib/bot-guild-options';
+import type { PluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';
 import { PluginConfigStudioForm } from './plugin-config-studio-form';
 
 export function PluginConfigForm({
@@ -10,6 +11,7 @@ export function PluginConfigForm({
   initialConfig,
   schema,
   discordOptions,
+  configAccess,
 }: {
   guildId: string;
   pluginId: string;
@@ -17,6 +19,7 @@ export function PluginConfigForm({
   initialConfig: Record<string, unknown>;
   schema: Record<string, unknown>;
   discordOptions?: GuildConfigurationOptions | null;
+  configAccess: PluginConfigStudioAccess;
 }) {
   return (
     <PluginConfigStudioForm
@@ -26,6 +29,7 @@ export function PluginConfigForm({
       initialConfig={initialConfig}
       schema={schema}
       discordOptions={discordOptions}
+      configAccess={configAccess}
     />
   );
 }
