@@ -168,3 +168,37 @@ test('複数Roleでは明示Denyが別RoleのAllowより優先される', () => 
 
   assert.equal(hasEffectivePluginPermission(access, 'studio.settings.write', resource), false);
 });
+
+test('Managed PolicyのDenyがLegacy Role PolicyのAllowより優先される', () => {
+  const resource = pluginConfigFieldResource(GUILD_ID, 'mini-games', 'theme');
+  let legacyAllow = createEmptyStudioAccessPolicy();
+  legacyAllow = setExplicitPermissionMode(legacyAllow, 'studio.settings.write', resource, 'allow');
+  let managedDeny = createEmptyStudioAccessPolicy();
+  managedDeny = setExplicitPermissionMode(managedDeny, 'studio.settings.write', resource, 'deny');
+  const access: EffectivePluginPermissionContext = {
+    isRoot: false,
+    roleIds: [ROLE_ID],
+    policies: [{ discordRoleId: ROLE_ID, policy: legacyAllow }],
+    managedPolicies: [managedDeny],
+  };
+
+  assert.equal(hasEffectivePluginPermission(access, 'studio.settings.write', resource), false);
+});
+
+test('Managed Policyだけが存在する場合もdefault denyへ移行する', () => {
+  const access: EffectivePluginPermissionContext = {
+    isRoot: false,
+    roleIds: [ROLE_ID],
+    policies: [],
+    managedPolicies: [createEmptyStudioAccessPolicy()],
+  };
+
+  assert.equal(
+    hasEffectivePluginPermission(
+      access,
+      'studio.settings.write',
+      pluginConfigFieldResource(GUILD_ID, 'mini-games', 'theme'),
+    ),
+    false,
+  );
+});
