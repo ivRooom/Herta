@@ -2,7 +2,9 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Braces, Check, LockKeyhole, Save, Shield, Trash2 } from 'lucide-react';
+import { Braces, LockKeyhole, Save, Trash2 } from 'lucide-react';
+import { RoleInventorySelector } from '@/components/role-inventory-selector';
+import type { RoleInventoryRole } from '@/lib/role-access-inventory';
 import {
   STUDIO_ACCESS_POLICY_VERSION,
   STUDIO_GUI_PERMISSION_SID,
@@ -12,12 +14,6 @@ import {
   type StudioPolicyAction,
 } from '@/lib/studio-access-policy';
 import type { StudioRolePolicyRecord } from '@/lib/studio-role-policy-store';
-
-interface DiscordRoleOption {
-  id: string;
-  name: string;
-  color: string;
-}
 
 const ACTION_LABELS: Record<StudioPolicyAction, { label: string; description: string }> = {
   'studio.page.view': { label: 'ページ閲覧', description: '許可されたStudioページを閲覧' },
@@ -48,7 +44,7 @@ export function RolePolicyManager({
   canEdit,
 }: {
   guildId: string;
-  roles: DiscordRoleOption[];
+  roles: RoleInventoryRole[];
   policies: StudioRolePolicyRecord[];
   rootRoleId: string;
   canEdit: boolean;
@@ -56,6 +52,10 @@ export function RolePolicyManager({
   const router = useRouter();
   const policyMap = useMemo(
     () => new Map(policies.map((policy) => [policy.discordRoleId, policy])),
+    [policies],
+  );
+  const configuredRoleIds = useMemo(
+    () => policies.map((policy) => policy.discordRoleId),
     [policies],
   );
   const firstEditable = roles.find((role) => role.id !== rootRoleId)?.id ?? roles[0]?.id ?? '';
@@ -72,6 +72,7 @@ export function RolePolicyManager({
   const parsedDraft = parsePolicy(draft);
   const selectedActions = extractGuiActions(parsedDraft);
   const isProtectedRoot = selectedRoleId === rootRoleId;
+  const hasStoredPolicy = policyMap.has(selectedRoleId);
 
   function setDraft(value: string) {
     setDraftByRole((current) => ({ ...current, [selectedRoleId]: value }));
@@ -152,51 +153,43 @@ export function RolePolicyManager({
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[19rem_minmax(0,1fr)]">
-      <aside className="rounded-2xl border border-border bg-surface p-4 shadow-card">
-        <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-          <Shield className="h-4 w-4 text-primary" aria-hidden="true" />
-          Discord Roles
-        </div>
-        <div className="space-y-1" role="list" aria-label="Discord Role一覧">
-          {roles.map((role) => {
-            const active = role.id === selectedRoleId;
-            const root = role.id === rootRoleId;
-            const configured = policyMap.has(role.id);
-            return (
-              <button
-                key={role.id}
-                type="button"
-                onClick={() => {
-                  setSelectedRoleId(role.id);
-                  setNotice(null);
-                }}
-                className={`flex w-full items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-left text-sm transition ${active ? 'bg-primary/10 text-primary' : 'hover:bg-background'}`}
-                aria-pressed={active}
-              >
-                <span className="min-w-0 truncate">{role.name}</span>
-                <span className="flex shrink-0 items-center gap-1">
-                  {root && <LockKeyhole className="h-3.5 w-3.5" aria-label="root" />}
-                  {configured && (
-                    <Check className="h-3.5 w-3.5 text-emerald-500" aria-label="Policy設定済み" />
-                  )}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </aside>
+    <div className="space-y-6">
+      <RoleInventorySelector
+        roles={roles}
+        selectedRoleId={selectedRoleId}
+        onSelect={(roleId) => {
+          setSelectedRoleId(roleId);
+          setNotice(null);
+        }}
+        configuredRoleIds={configuredRoleIds}
+        rootRoleId={rootRoleId}
+        title="Access inventory"
+        description="Role名・ID、Policy状態、Discord管理Roleで絞り込みできます。リストを基本に、グリッド表示へも切り替えられます。"
+      />
 
       <section className="min-w-0 rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+          <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
               Selected Role
             </p>
-            <h2 className="mt-1 text-xl font-semibold">{selectedRole?.name ?? 'Roleを選択'}</h2>
-            <p className="mt-1 break-all font-mono text-xs text-muted">{selectedRoleId}</p>
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-2">
+              <h2 className="min-w-0 truncate text-xl font-semibold">
+                {selectedRole?.name ?? 'Roleを選択'}
+              </h2>
+              {isProtectedRoot ? <RoleStateBadge label="root" emphasis="warning" /> : null}
+              {!isProtectedRoot && hasStoredPolicy ? (
+                <RoleStateBadge label="Policy設定済み" emphasis="success" />
+              ) : null}
+              {!isProtectedRoot && !hasStoredPolicy ? <RoleStateBadge label="新規Policy" /> : null}
+              {selectedRole?.managed ? <RoleStateBadge label="Discord Managed" /> : null}
+            </div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+              <span className="break-all font-mono">{selectedRoleId}</span>
+              {selectedRole ? <span>Hierarchy #{selectedRole.position}</span> : null}
+            </div>
           </div>
-          {!isProtectedRoot && (
+          {!isProtectedRoot ? (
             <div
               className="flex rounded-xl border border-border bg-background p-1"
               role="tablist"
@@ -222,7 +215,7 @@ export function RolePolicyManager({
                 JSON
               </button>
             </div>
-          )}
+          ) : null}
         </div>
 
         {isProtectedRoot ? (
@@ -287,16 +280,16 @@ export function RolePolicyManager({
           </div>
         )}
 
-        {notice && (
+        {notice ? (
           <p
             className={`mt-4 rounded-xl border px-3 py-2 text-sm ${notice.kind === 'success' ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300' : 'border-red-500/30 bg-red-500/5 text-red-700 dark:text-red-300'}`}
             role="status"
           >
             {notice.text}
           </p>
-        )}
+        ) : null}
 
-        {!isProtectedRoot && (
+        {!isProtectedRoot ? (
           <div className="mt-6 flex flex-wrap gap-2 border-t border-border pt-5">
             <button
               type="button"
@@ -316,15 +309,35 @@ export function RolePolicyManager({
               <Trash2 className="h-4 w-4" aria-hidden="true" />
               Policy削除
             </button>
-            {!canEdit && (
+            {!canEdit ? (
               <p className="self-center text-xs text-muted">
                 閲覧のみです。Policy変更にはOWNER root Roleが必要です。
               </p>
-            )}
+            ) : null}
           </div>
-        )}
+        ) : null}
       </section>
     </div>
+  );
+}
+
+function RoleStateBadge({
+  label,
+  emphasis = 'default',
+}: {
+  label: string;
+  emphasis?: 'default' | 'success' | 'warning';
+}) {
+  const className =
+    emphasis === 'success'
+      ? 'border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300'
+      : emphasis === 'warning'
+        ? 'border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300'
+        : 'border-border bg-background text-muted';
+  return (
+    <span className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${className}`}>
+      {label}
+    </span>
   );
 }
 
