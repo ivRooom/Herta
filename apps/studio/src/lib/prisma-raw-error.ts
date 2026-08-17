@@ -3,10 +3,7 @@ const MANAGED_ACCESS_NAME_CONSTRAINTS = [
   'studio_access_groups_guild_id_name_ci_key',
 ] as const;
 
-export function isPrismaRawUniqueViolation(
-  error: unknown,
-  constraintName?: string,
-): boolean {
+export function isPrismaRawUniqueViolation(error: unknown, constraintName?: string): boolean {
   if (!isRecord(error) || error.code !== 'P2010') return false;
   const meta = isRecord(error.meta) ? error.meta : null;
   if (meta?.code !== '23505') return false;
