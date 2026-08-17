@@ -15,6 +15,8 @@ CREATE TABLE "studio_access_policies" (
 
 CREATE UNIQUE INDEX "studio_access_policies_guild_id_name_key"
   ON "studio_access_policies"("guild_id", "name");
+CREATE UNIQUE INDEX "studio_access_policies_id_guild_id_key"
+  ON "studio_access_policies"("id", "guild_id");
 CREATE INDEX "studio_access_policies_guild_id_updated_at_idx"
   ON "studio_access_policies"("guild_id", "updated_at" DESC);
 
@@ -33,6 +35,8 @@ CREATE TABLE "studio_access_groups" (
 
 CREATE UNIQUE INDEX "studio_access_groups_guild_id_name_key"
   ON "studio_access_groups"("guild_id", "name");
+CREATE UNIQUE INDEX "studio_access_groups_id_guild_id_key"
+  ON "studio_access_groups"("id", "guild_id");
 CREATE INDEX "studio_access_groups_guild_id_updated_at_idx"
   ON "studio_access_groups"("guild_id", "updated_at" DESC);
 
@@ -44,8 +48,9 @@ CREATE TABLE "studio_access_group_members" (
   "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   CONSTRAINT "studio_access_group_members_pkey" PRIMARY KEY ("group_id", "user_id"),
-  CONSTRAINT "studio_access_group_members_group_id_fkey"
-    FOREIGN KEY ("group_id") REFERENCES "studio_access_groups"("id")
+  CONSTRAINT "studio_access_group_members_group_guild_fkey"
+    FOREIGN KEY ("group_id", "guild_id")
+    REFERENCES "studio_access_groups"("id", "guild_id")
     ON DELETE CASCADE ON UPDATE CASCADE
 );
 
@@ -62,8 +67,9 @@ CREATE TABLE "studio_access_policy_attachments" (
   "created_at" TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   CONSTRAINT "studio_access_policy_attachments_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "studio_access_policy_attachments_policy_id_fkey"
-    FOREIGN KEY ("policy_id") REFERENCES "studio_access_policies"("id")
+  CONSTRAINT "studio_access_policy_attachments_policy_guild_fkey"
+    FOREIGN KEY ("policy_id", "guild_id")
+    REFERENCES "studio_access_policies"("id", "guild_id")
     ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT "studio_access_policy_attachments_principal_type_check"
     CHECK ("principal_type" IN ('role', 'user', 'group'))
