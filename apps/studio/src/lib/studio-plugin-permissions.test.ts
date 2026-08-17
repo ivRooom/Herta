@@ -1,14 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createEmptyStudioAccessPolicy } from './studio-access-policy';
+import {
+  createEmptyStudioAccessPolicy,
+  createStudioRolePolicyFromActions,
+} from './studio-access-policy.ts';
 import {
   getExplicitPermissionMode,
+  hasEffectivePluginPermission,
   pluginConfigFieldResource,
   pluginEnabledControlResource,
+  resolvePluginConfigStudioAccess,
   setExplicitPermissionMode,
-} from './studio-plugin-permissions';
+  type EffectivePluginPermissionContext,
+} from './studio-plugin-permissions.ts';
 
 const GUILD_ID = '123456789012345678';
+const ROLE_ID = '234567890123456789';
 
 test('Plugin config field resourceをGuild scopeで生成する', () => {
   assert.equal(
@@ -52,4 +59,112 @@ test('別Resource向けStatementを壊さない', () => {
   assert.equal(getExplicitPermissionMode(policy, 'studio.settings.write', first), 'deny');
   assert.equal(getExplicitPermissionMode(policy, 'studio.settings.write', second), 'allow');
   assert.equal(policy.Statement.length, 2);
+});
+
+test('rootはPlugin権限を常に持つ', () => {
+  const access: EffectivePluginPermissionContext = {
+    isRoot: true,
+    roleIds: [],
+    policies: [],
+  };
+  assert.equal(
+    hasEffectivePluginPermission(
+      access,
+      'studio.settings.write',
+      pluginConfigFieldResource(GUILD_ID, 'mini-games', 'theme'),
+    ),
+    true,
+  );
+});
+
+test('適用対象PolicyがないManage Guildユーザーは従来権限を維持する', () => {
+  const access: EffectivePluginPermissionContext = {
+    isRoot: false,
+    roleIds: [ROLE_ID],
+    policies: [
+      {
+        discordRoleId: '999999999999999999',
+        policy: createEmptyStudioAccessPolicy(),
+      },
+    ],
+  };
+  assert.equal(
+    hasEffectivePluginPermission(
+      access,
+      'studio.settings.write',
+      pluginConfigFieldResource(GUILD_ID, 'mini-games', 'theme'),
+    ),
+    true,
+  );
+});
+
+test('適用対象Policyが存在する場合はdefault denyになる', () => {
+  const access: EffectivePluginPermissionContext = {
+    isRoot: false,
+    roleIds: [ROLE_ID],
+    policies: [{ discordRoleId: ROLE_ID, policy: createEmptyStudioAccessPolicy() }],
+  };
+  assert.equal(
+    hasEffectivePluginPermission(
+      access,
+      'studio.settings.write',
+      pluginConfigFieldResource(GUILD_ID, 'mini-games', 'theme'),
+    ),
+    false,
+  );
+});
+
+test('全体Allowより項目Denyを優先してConfig Studio権限を解決する', () => {
+  const deniedField = 'amidakujiTheme';
+  let policy = createStudioRolePolicyFromActions(GUILD_ID, [
+    'studio.settings.write',
+    'studio.operation.execute',
+  ]);
+  policy = setExplicitPermissionMode(
+    policy,
+    'studio.settings.write',
+    pluginConfigFieldResource(GUILD_ID, 'mini-games', deniedField),
+    'deny',
+  );
+  policy = setExplicitPermissionMode(
+    policy,
+    'studio.operation.execute',
+    pluginEnabledControlResource(GUILD_ID, 'mini-games'),
+    'deny',
+  );
+  const access: EffectivePluginPermissionContext = {
+    isRoot: false,
+    roleIds: [ROLE_ID],
+    policies: [{ discordRoleId: ROLE_ID, policy }],
+  };
+
+  assert.deepEqual(
+    resolvePluginConfigStudioAccess(access, GUILD_ID, 'mini-games', [
+      deniedField,
+      'amidakujiComplexity',
+    ]),
+    {
+      canToggleEnabled: false,
+      editableFieldKeys: ['amidakujiComplexity'],
+    },
+  );
+});
+
+test('複数Roleでは明示Denyが別RoleのAllowより優先される', () => {
+  const secondRoleId = '345678901234567890';
+  const resource = pluginConfigFieldResource(GUILD_ID, 'mini-games', 'theme');
+  let allowed = createEmptyStudioAccessPolicy();
+  allowed = setExplicitPermissionMode(allowed, 'studio.settings.write', resource, 'allow');
+  let denied = createEmptyStudioAccessPolicy();
+  denied = setExplicitPermissionMode(denied, 'studio.settings.write', resource, 'deny');
+  const access: EffectivePluginPermissionContext = {
+    isRoot: false,
+    roleIds: [ROLE_ID, secondRoleId],
+    policies: [
+      { discordRoleId: ROLE_ID, policy: allowed },
+      { discordRoleId: secondRoleId, policy: denied },
+    ],
+  };
+
+  assert.equal(hasEffectivePluginPermission(access, 'studio.settings.write', resource), false);
 });

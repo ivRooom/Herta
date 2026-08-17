@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 
 import type { GuildConfigurationOptions } from '@/lib/bot-guild-options';
+import type { PluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';
 import {
   DiscordChannelPicker,
   DiscordEmojiPicker,
@@ -46,6 +47,7 @@ type PluginUpdateResponse = {
   error?: unknown;
   details?: unknown;
   issues?: unknown;
+  enabled?: boolean;
   config?: Record<string, unknown>;
 };
 
@@ -66,6 +68,7 @@ export function PluginConfigStudioForm({
   initialConfig,
   schema,
   discordOptions,
+  configAccess,
 }: {
   guildId: string;
   pluginId: string;
@@ -73,6 +76,7 @@ export function PluginConfigStudioForm({
   initialConfig: Record<string, unknown>;
   schema: Record<string, unknown>;
   discordOptions?: GuildConfigurationOptions | null;
+  configAccess: PluginConfigStudioAccess;
 }) {
   const configSchema = schema as JsonSchema;
   const initialNormalized = useMemo(
@@ -90,10 +94,19 @@ export function PluginConfigStudioForm({
   const [saving, setSaving] = useState(false);
   const [serverIssues, setServerIssues] = useState<ConfigValidationIssue[]>([]);
 
+  const editableFieldKeySet = useMemo(
+    () => new Set(configAccess.editableFieldKeys),
+    [configAccess.editableFieldKeys],
+  );
+  const topLevelFieldKeys = Object.keys(configSchema.properties ?? {});
+  const allConfigFieldsEditable = topLevelFieldKeys.every((key) => editableFieldKeySet.has(key));
+  const jsonReadOnly = !allConfigFieldsEditable;
+  const hasPermissionRestrictions = !configAccess.canToggleEnabled || jsonReadOnly;
   const savedConfigText = stringifyConfig(savedConfig);
-  const dirty =
-    enabled !== savedEnabled ||
-    (mode === 'json' ? jsonText !== savedConfigText : stringifyConfig(config) !== savedConfigText);
+  const enabledDirty = enabled !== savedEnabled;
+  const configDirty =
+    mode === 'json' ? jsonText !== savedConfigText : stringifyConfig(config) !== savedConfigText;
+  const dirty = enabledDirty || configDirty;
   const validationState = useMemo(
     () => validateStudioDraft(configSchema, mode, config, jsonText),
     [configSchema, config, jsonText, mode],
@@ -139,6 +152,7 @@ export function PluginConfigStudioForm({
   }
 
   function selectRootBranch(index: number) {
+    if (!allConfigFieldsEditable) return;
     const next = selectSchemaBranch(configSchema, config, index);
     if (!isObject(next)) return;
     setConfig(next);
@@ -153,6 +167,12 @@ export function PluginConfigStudioForm({
   }
 
   function applyJsonToVisual() {
+    if (jsonReadOnly) {
+      setMode('visual');
+      clearServerIssues();
+      setStatus('Advanced JSONはRole権限により閲覧専用です');
+      return;
+    }
     try {
       const parsed = parseConfigJson(jsonText);
       const normalized = normalizeConfigForStudio(configSchema, parsed);
@@ -172,6 +192,10 @@ export function PluginConfigStudioForm({
   }
 
   function resetToDefaults() {
+    if (!allConfigFieldsEditable) {
+      setStatus('閲覧のみの項目があるため、一括リセットは利用できません');
+      return;
+    }
     const next = normalizeConfigForStudio(configSchema, {});
     setConfig(next);
     setJsonText(stringifyConfig(next));
@@ -218,14 +242,23 @@ export function PluginConfigStudioForm({
       return;
     }
 
+    if (!dirty) {
+      clearServerIssues();
+      setStatus('保存する変更はありません');
+      return;
+    }
+
     setSaving(true);
     setStatus('保存中…');
     try {
       const payloadConfig = draft.config;
+      const payload: { enabled?: boolean; config?: ConfigObject } = {};
+      if (enabledDirty) payload.enabled = enabled;
+      if (configDirty) payload.config = payloadConfig;
       const response = await fetch(`/api/guilds/${guildId}/plugins/${pluginId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled, config: payloadConfig }),
+        body: JSON.stringify(payload),
       });
       const result = await readResponse(response);
       if (!response.ok) {
@@ -238,10 +271,15 @@ export function PluginConfigStudioForm({
         throw new Error(formatApiError(result, '保存に失敗しました'));
       }
 
-      const normalized = normalizeConfigForStudio(configSchema, result?.config ?? payloadConfig);
+      const normalized = normalizeConfigForStudio(
+        configSchema,
+        result?.config ?? (configDirty ? payloadConfig : savedConfig),
+      );
+      const nextEnabled = typeof result?.enabled === 'boolean' ? result.enabled : enabled;
       setConfig(normalized);
       setSavedConfig(normalized);
-      setSavedEnabled(enabled);
+      setEnabled(nextEnabled);
+      setSavedEnabled(nextEnabled);
       setJsonText(stringifyConfig(normalized));
       clearServerIssues();
       setStatus('保存しました');
@@ -268,6 +306,11 @@ export function PluginConfigStudioForm({
                 <span className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
                   Config Studio
                 </span>
+                {hasPermissionRestrictions ? (
+                  <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-xs text-amber-300">
+                    権限制限あり
+                  </span>
+                ) : null}
                 {dirty ? (
                   <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-xs text-amber-300">
                     未保存
@@ -281,24 +324,30 @@ export function PluginConfigStudioForm({
               </div>
               <h2 className="mt-3 text-xl font-semibold">Plugin設定</h2>
               <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">
-                通常はGUIで設定できます。JSONはAdvancedモードからいつでも直接編集できます。
+                {hasPermissionRestrictions
+                  ? 'Role権限で許可された項目だけ編集できます。閲覧のみの項目は値を確認できますが変更できません。'
+                  : '通常はGUIで設定できます。JSONはAdvancedモードからいつでも直接編集できます。'}
               </p>
             </div>
             <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-border bg-background/70 px-4 py-3 sm:min-w-44">
               <div>
                 <p className="text-sm font-medium">Plugin</p>
                 <p className="text-xs text-muted">{enabled ? '有効' : '無効'}</p>
+                {!configAccess.canToggleEnabled ? (
+                  <p className="mt-0.5 text-[11px] text-amber-300">操作権限なし</p>
+                ) : null}
               </div>
               <button
                 type="button"
                 role="switch"
                 aria-checked={enabled}
                 aria-label={enabled ? 'Pluginを無効化' : 'Pluginを有効化'}
+                disabled={!configAccess.canToggleEnabled || saving}
                 onClick={() => {
                   setEnabled((current) => !current);
                   setStatus('未保存の変更があります');
                 }}
-                className={`inline-flex h-7 w-12 shrink-0 items-center rounded-full p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${enabled ? 'bg-primary' : 'bg-border'}`}
+                className={`inline-flex h-7 w-12 shrink-0 items-center rounded-full p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${enabled ? 'bg-primary' : 'bg-border'}`}
               >
                 <span
                   aria-hidden="true"
@@ -315,7 +364,13 @@ export function PluginConfigStudioForm({
               <button
                 type="button"
                 onClick={() => {
-                  if (mode === 'json') applyJsonToVisual();
+                  if (mode !== 'json') return;
+                  if (jsonReadOnly) {
+                    setMode('visual');
+                    setStatus('');
+                    return;
+                  }
+                  applyJsonToVisual();
                 }}
                 className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition sm:flex-none ${mode === 'visual' ? 'bg-primary text-primary-foreground' : 'text-muted hover:text-foreground'}`}
               >
@@ -334,7 +389,8 @@ export function PluginConfigStudioForm({
               <button
                 type="button"
                 onClick={resetToDefaults}
-                className="rounded-lg border border-border px-3 py-2 text-sm text-muted transition hover:bg-background hover:text-foreground"
+                disabled={!allConfigFieldsEditable || saving}
+                className="rounded-lg border border-border px-3 py-2 text-sm text-muted transition hover:bg-background hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40"
               >
                 初期値へ戻す
               </button>
@@ -379,27 +435,37 @@ export function PluginConfigStudioForm({
               </div>
 
               {rootBranchState ? (
-                <SchemaBranchSelector state={rootBranchState} onSelect={selectRootBranch} />
+                <SchemaBranchSelector
+                  state={rootBranchState}
+                  onSelect={selectRootBranch}
+                  disabled={!allConfigFieldsEditable}
+                />
               ) : null}
 
               {visibleEntries.length > 0 ? (
                 <div className="grid gap-4">
-                  {visibleEntries.map(([key, propertySchema]) => (
-                    <SchemaField
-                      key={key}
-                      fieldKey={key}
-                      schema={findSourcePropertySchema(configSchema, config, key) ?? propertySchema}
-                      effectiveSchemaOverride={propertySchema}
-                      value={config[key]}
-                      path={[key]}
-                      required={(effectiveConfigSchema.required ?? []).includes(key)}
-                      onChange={update}
-                      onRemove={remove}
-                      discordOptions={discordOptions}
-                      guildId={guildId}
-                      issues={validationIssues}
-                    />
-                  ))}
+                  {visibleEntries.map(([key, propertySchema]) => {
+                    const readOnly = !editableFieldKeySet.has(key);
+                    return (
+                      <PermissionFieldScope key={key} readOnly={readOnly}>
+                        <SchemaField
+                          fieldKey={key}
+                          schema={
+                            findSourcePropertySchema(configSchema, config, key) ?? propertySchema
+                          }
+                          effectiveSchemaOverride={propertySchema}
+                          value={config[key]}
+                          path={[key]}
+                          required={(effectiveConfigSchema.required ?? []).includes(key)}
+                          onChange={update}
+                          onRemove={remove}
+                          discordOptions={discordOptions}
+                          guildId={guildId}
+                          issues={validationIssues}
+                        />
+                      </PermissionFieldScope>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="rounded-xl border border-dashed border-border p-8 text-center">
@@ -414,12 +480,16 @@ export function PluginConfigStudioForm({
                 <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-sm font-medium">Advanced JSON</p>
-                    <p className="mt-1 text-xs text-muted">既存のJSON設定形式と完全互換です。</p>
+                    <p className="mt-1 text-xs text-muted">
+                      {jsonReadOnly
+                        ? '閲覧のみの項目が含まれるため、Advanced JSONは閲覧専用です。'
+                        : '既存のJSON設定形式と完全互換です。'}
+                    </p>
                   </div>
                   <button
                     type="button"
                     onClick={applyJsonToVisual}
-                    disabled={Boolean(validationState.jsonError)}
+                    disabled={jsonReadOnly || Boolean(validationState.jsonError)}
                     className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/15 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     JSONをGUIへ反映
@@ -427,6 +497,8 @@ export function PluginConfigStudioForm({
                 </div>
                 <textarea
                   value={jsonText}
+                  readOnly={jsonReadOnly}
+                  aria-readonly={jsonReadOnly}
                   onChange={(event) => {
                     setJsonText(event.target.value);
                     clearServerIssues();
@@ -465,19 +537,54 @@ export function PluginConfigStudioForm({
                   : '設定は保存済みです'}
             </p>
             <p className="mt-1 min-h-5 break-words text-xs text-muted" aria-live="polite">
-              {status || 'GUIとJSONは同じ設定データを編集します。'}
+              {status ||
+                (hasPermissionRestrictions
+                  ? 'Role権限で許可された操作だけ変更できます。'
+                  : 'GUIとJSONは同じ設定データを編集します。')}
             </p>
           </div>
           <button
             type="button"
             onClick={save}
-            disabled={saving || hasValidationErrors}
+            disabled={saving || hasValidationErrors || !dirty}
             className="w-full rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
           >
-            {saving ? '保存中…' : hasValidationErrors ? '入力エラーを修正' : '設定を保存'}
+            {saving
+              ? '保存中…'
+              : hasValidationErrors
+                ? '入力エラーを修正'
+                : dirty
+                  ? '設定を保存'
+                  : '変更なし'}
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PermissionFieldScope({
+  readOnly,
+  children,
+}: {
+  readOnly: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      {readOnly ? (
+        <div className="mb-2 flex justify-end">
+          <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-[11px] font-medium text-amber-300">
+            閲覧のみ
+          </span>
+        </div>
+      ) : null}
+      <fieldset
+        disabled={readOnly}
+        className={`m-0 min-w-0 border-0 p-0 ${readOnly ? 'opacity-75' : ''}`}
+      >
+        {children}
+      </fieldset>
     </div>
   );
 }
@@ -537,9 +644,11 @@ function ValidationSummary({
 function SchemaBranchSelector({
   state,
   onSelect,
+  disabled = false,
 }: {
   state: SchemaBranchState;
   onSelect: (index: number) => void;
+  disabled?: boolean;
 }) {
   const activeOption = state.options.find((option) => option.active) ?? state.options[0];
   const selectable = Boolean(getBranchDiscriminatorKey(state));
@@ -559,8 +668,9 @@ function SchemaBranchSelector({
           <select
             value={String(activeOption?.index ?? 0)}
             onChange={(event) => onSelect(Number(event.target.value))}
+            disabled={disabled}
             aria-label={state.label}
-            className="min-w-48 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring"
+            className="min-w-48 rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
             {state.options.map((option) => (
               <option key={option.index} value={option.index}>
