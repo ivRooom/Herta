@@ -4,7 +4,7 @@ import { arcadeMetricLabel, formatArcadeLeaderboard } from './mini-games-v3.js';
 
 describe('Mini Games v3', () => {
   it('ManifestへDice・チンチロ・Arcade Leaderboard・あみだくじを登録する', () => {
-    expect(miniGamesManifest.version).toBe('3.3.0');
+    expect(miniGamesManifest.version).toBe('3.4.0');
     expect(miniGamesManifest.commands.map((command) => command.name)).toEqual([
       'coinflip',
       'highlow',
