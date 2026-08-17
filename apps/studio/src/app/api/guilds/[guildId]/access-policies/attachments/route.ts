@@ -59,12 +59,21 @@ async function mutateAttachment(
   if (!isStudioAccessPrincipalType(principalType)) {
     return NextResponse.json({ error: 'Principal種別が不正です' }, { status: 400 });
   }
+
+  const principalFormatError = validatePrincipalIdFormat(principalType, principalId);
+  if (principalFormatError) {
+    return NextResponse.json({ error: principalFormatError }, { status: 400 });
+  }
+
   const policy = await findManagedStudioAccessPolicy(prisma, guildId, policyId);
   if (!policy) return NextResponse.json({ error: 'Policyが見つかりません' }, { status: 404 });
 
-  const principalError = await validatePrincipal(guildId, principalType, principalId);
-  if (principalError)
-    return NextResponse.json({ error: principalError.message }, { status: principalError.status });
+  if (operation === 'attach') {
+    const principalError = await validatePrincipalExists(guildId, principalType, principalId);
+    if (principalError) {
+      return NextResponse.json({ error: principalError.message }, { status: principalError.status });
+    }
+  }
 
   const changed =
     operation === 'attach'
@@ -99,14 +108,27 @@ async function mutateAttachment(
   return NextResponse.json({ changed });
 }
 
-async function validatePrincipal(
+function validatePrincipalIdFormat(
+  principalType: StudioAccessPrincipalType,
+  principalId: string,
+): string | null {
+  if (principalType === 'role') {
+    return DISCORD_ID_PATTERN.test(principalId) ? null : 'Discord Role IDが不正です';
+  }
+  if (principalType === 'user') {
+    return DISCORD_ID_PATTERN.test(principalId) ? null : 'Discord User IDが不正です';
+  }
+  return GROUP_ID_PATTERN.test(principalId) ? null : 'Group IDが不正です';
+}
+
+async function validatePrincipalExists(
   guildId: string,
   principalType: StudioAccessPrincipalType,
   principalId: string,
 ): Promise<{ message: string; status: number } | null> {
   if (principalType === 'role') {
-    if (!DISCORD_ID_PATTERN.test(principalId) || principalId === STUDIO_ROOT_DISCORD_ROLE_ID) {
-      return { message: 'Discord Role IDが不正です', status: 400 };
+    if (principalId === STUDIO_ROOT_DISCORD_ROLE_ID) {
+      return { message: 'OWNER root RoleにはPolicyを追加できません', status: 400 };
     }
     const options = await getGuildConfigurationOptions(guildId);
     if (!options) return { message: 'Discord Role一覧を取得できませんでした', status: 503 };
@@ -116,13 +138,10 @@ async function validatePrincipal(
     return null;
   }
   if (principalType === 'user') {
-    if (!DISCORD_ID_PATTERN.test(principalId))
-      return { message: 'Discord User IDが不正です', status: 400 };
     const member = await getGuildMemberById(guildId, principalId);
     if (!member) return { message: 'このGuildのメンバーを確認できません', status: 404 };
     return null;
   }
-  if (!GROUP_ID_PATTERN.test(principalId)) return { message: 'Group IDが不正です', status: 400 };
   const groups = await listStudioAccessGroups(prisma, guildId);
   if (!groups.some((group) => group.id === principalId)) {
     return { message: 'このGuildにGroupが存在しません', status: 404 };
