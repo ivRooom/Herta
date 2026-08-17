@@ -2,6 +2,7 @@ import {
   countPendingDiscordRoleCreates,
   enqueueDiscordRoleCreateOperation,
   enqueueDiscordRoleDeleteOperation,
+  findHertaDiscordRoleReferences,
 } from '@herta/db';
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
@@ -114,7 +115,11 @@ export async function DELETE(
   if (!root.ok) return root.response;
 
   const roleId = new URL(request.url).searchParams.get('roleId') ?? '';
-  if (!isDiscordRoleId(roleId) || roleId === STUDIO_ROOT_DISCORD_ROLE_ID) {
+  if (
+    !isDiscordRoleId(roleId) ||
+    roleId === guildId ||
+    roleId === STUDIO_ROOT_DISCORD_ROLE_ID
+  ) {
     return NextResponse.json({ error: '削除対象Roleが不正です' }, { status: 400 });
   }
 
@@ -144,6 +149,17 @@ export async function DELETE(
           ? 'Botより上位または同順位のRoleは削除できません'
           : 'OWNER root Roleは削除できません';
     return NextResponse.json({ error }, { status: 409 });
+  }
+
+  const references = await findHertaDiscordRoleReferences(prisma, guildId, role.id);
+  if (references.length > 0) {
+    return NextResponse.json(
+      {
+        error: 'このRoleはHerta設定から参照されています。先に参照を解除してください。',
+        references,
+      },
+      { status: 409 },
+    );
   }
 
   const operation = await enqueueDiscordRoleDeleteOperation(prisma, {
