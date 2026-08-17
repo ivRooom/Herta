@@ -87,7 +87,13 @@ Studio の事前チェックと DB constraint の semantics を合わせるた�
 
 並行リクエストによる競合は PostgreSQL の unique index を正本にし、raw Prisma query の `P2010` + PostgreSQL `23505` かつ対象 name constraint の場合だけ `409 Conflict` として返します。
 
-DB 接続障害、timeout、Audit Log failure などは name conflict と誤分類せず 5xx にします。
+DB 接続障害や timeout は name conflict と誤分類せず 5xx にします。
+
+## Policy concurrency
+
+Managed Policy は `revision` を持ちます。更新時に Client が保持している `expectedRevision` を送信し、DB の `UPDATE` 条件でも現在 revision と一致することを確認します。
+
+別の管理者または別タブが先に Policy を更新した場合は `409 Conflict` とし、古い document で新しい権限設定を silent overwrite しません。
 
 ## Editor safety
 
@@ -132,6 +138,8 @@ Role Lifecycle から Discord Role を削除する際は、Managed Policy Attach
 - `studio_access_group.member_removed`
 
 Policy document 全文は Audit Log へ複製せず、Policy ID、名前、revision、Principal など運用に必要な metadata を中心に保存します。
+
+mutation が DB 上で完了した後に Audit Log の書き込みだけ失敗した場合は、既に成功した操作を Client へ 500 と誤通知して再実行を誘発しないよう、structured error log を残した上で mutation 自体の成功レスポンスを維持します。
 
 ## Database migration
 
