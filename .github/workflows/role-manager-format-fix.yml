@@ -1,0 +1,46 @@
+name: Format Role Manager access inventory
+
+on:
+  push:
+    branches:
+      - feat/role-manager-access-inventory
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/role-manager-access-inventory
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format changed files
+        run: >-
+          pnpm exec prettier --write
+          apps/studio/src/components/plugin-permission-manager.tsx
+          apps/studio/src/components/role-inventory-selector.tsx
+          apps/studio/src/lib/role-access-inventory.test.ts
+      - name: Verify diff
+        run: git diff --check
+      - name: Commit formatted files
+        run: |
+          if git diff --quiet; then
+            echo 'No formatting changes required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            apps/studio/src/components/plugin-permission-manager.tsx \
+            apps/studio/src/components/role-inventory-selector.tsx \
+            apps/studio/src/lib/role-access-inventory.test.ts
+          git commit -m 'style: Role Manager access inventoryを整形する'
+          git push origin HEAD:feat/role-manager-access-inventory
