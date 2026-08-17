@@ -13,8 +13,7 @@ import { isSameOriginMutationRequest } from '@/lib/request-origin';
 
 export const dynamic = 'force-dynamic';
 const MAX_DRAFT_BODY_BYTES = 96 * 1024;
-const DRAFT_ID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+const DRAFT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 type RouteContext = { params: Promise<{ guildId: string }> };
 
 export async function GET(_request: Request, { params }: RouteContext) {
