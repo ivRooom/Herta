@@ -17,7 +17,10 @@ export function createPrismaRuleRuntimeStore(prisma: PrismaClient): RuleRuntimeS
     listGuildIdsWithTrigger: (triggerType) =>
       listGuildIdsWithEnabledRuleTrigger(prisma, triggerType),
     reserveExecution: (input) => reserveRuleRuntimeExecution(prisma, input),
-    recordExecution: (input) => recordRuleRuntimeExecution(prisma, input),
+    recordExecution: (input) =>
+      input.result.actionSkipReason === 'duplicate-event'
+        ? Promise.resolve()
+        : recordRuleRuntimeExecution(prisma, input),
     recordInvalidRule: (input) => recordInvalidStoredRuleExecution(prisma, input),
     enqueueRoleCreate: (input) => enqueueDiscordRoleCreateOperation(prisma, input),
     enqueueRoleDelete: (input) => enqueueDiscordRoleDeleteOperation(prisma, input),
