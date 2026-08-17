@@ -1,6 +1,6 @@
 import { z } from 'zod';
-import { resolveBotHealthRequestTimeoutMs } from './bot-health';
-import { getBotInternalApiAuthorizationHeader } from './bot-internal-api-auth';
+import { resolveBotHealthRequestTimeoutMs } from './bot-health.ts';
+import { getBotInternalApiAuthorizationHeader } from './bot-internal-api-auth.ts';
 
 const guildChannelOptionSchema = z.object({
   id: z.string().regex(/^\d+$/u),
