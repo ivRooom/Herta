@@ -20,7 +20,7 @@ export async function findHertaDiscordRoleReferences(
   guildId: string,
   roleId: string,
 ): Promise<string[]> {
-  const [settings, plugins] = await Promise.all([
+  const [settings, plugins, managedPolicies] = await Promise.all([
     prisma.guildSettings.findUnique({
       where: { guildId },
       select: { modRoleIds: true, adminRoleIds: true, settingsJson: true },
@@ -29,9 +29,25 @@ export async function findHertaDiscordRoleReferences(
       where: { guildId },
       select: { pluginId: true, config: true },
     }),
+    prisma.$queryRaw<Array<{ policy_name: string }>>`
+      SELECT p.name AS policy_name
+      FROM studio_access_policy_attachments a
+      INNER JOIN studio_access_policies p
+        ON p.id = a.policy_id AND p.guild_id = a.guild_id
+      WHERE a.guild_id = ${guildId}
+        AND a.principal_type = 'role'
+        AND a.principal_id = ${roleId}
+      ORDER BY lower(p.name), p.id
+      LIMIT ${MAX_REFERENCE_RESULTS}
+    `,
   ]);
 
-  return collectHertaDiscordRoleReferences({ settings, plugins }, roleId);
+  const references = collectHertaDiscordRoleReferences({ settings, plugins }, roleId);
+  for (const policy of managedPolicies) {
+    if (references.length >= MAX_REFERENCE_RESULTS) break;
+    references.push(`ManagedPolicy:${policy.policy_name}`);
+  }
+  return references.slice(0, MAX_REFERENCE_RESULTS);
 }
 
 export function collectHertaDiscordRoleReferences(
