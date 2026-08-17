@@ -124,7 +124,12 @@ export async function listGuildIdsWithEnabledRuleTrigger(
   return rows.map((row) => row.guildId).filter((guildId) => DISCORD_ID_PATTERN.test(guildId));
 }
 
-/** Condition成立後、Action実行直前に行うatomic claim。 */
+/**
+ * Condition成立後、Action実行直前に行うatomic claim。
+ * Rule row lock中にExecution Logのclaim markerも永続化することで、複数Bot instanceでも
+ * 同一trigger executionを二重claimしない。processがAction完了前に落ちた場合は
+ * `RuleExecutionOutcomeUnknown` が残り、自動再実行せず安全側へ倒す。
+ */
 export async function reserveRuleRuntimeExecution(
   prisma: PrismaClient,
   input: {
@@ -196,6 +201,31 @@ export async function reserveRuleRuntimeExecution(
       RETURNING "execution_count" AS "executionCount"
     `;
     if (!updated[0]) return { allowed: false, reason: 'rule-disabled' };
+
+    await tx.ruleExecutionLog.create({
+      data: {
+        ruleId: input.ruleId,
+        guildId: input.guildId,
+        triggerEvent: {
+          executionId: triggerExecutionId,
+          type: 'execution-reserved',
+          guildId: input.guildId,
+          data: {},
+          timestamp: input.now.toISOString(),
+        },
+        conditionsMet: true,
+        actionsResult: {
+          triggerMatched: true,
+          actionsExecuted: false,
+          actionSkipReason: 'execution-reserved',
+          results: [],
+        },
+        error: 'RuleExecutionOutcomeUnknown',
+        durationMs: 0,
+        executedAt: input.now,
+      },
+    });
+
     return { allowed: true, executionCount: updated[0].executionCount };
   });
 }
@@ -215,28 +245,49 @@ export async function recordRuleRuntimeExecution(
   const executedAt = input.executedAt ?? new Date();
   assertValidDate(executedAt, 'executedAt');
 
-  await prisma.ruleExecutionLog.create({
-    data: {
-      ruleId: input.result.ruleId,
-      guildId: input.event.guildId,
-      triggerEvent: toJsonValue({
-        executionId: triggerExecutionId,
-        type: input.event.type,
+  const triggerEvent = toJsonValue({
+    executionId: triggerExecutionId,
+    type: input.event.type,
+    guildId: input.event.guildId,
+    data: input.event.data,
+    timestamp: input.event.timestamp.toISOString(),
+  });
+  const actionsResult = toJsonValue({
+    triggerMatched: input.result.triggerMatched,
+    actionsExecuted: input.result.actionsExecuted,
+    actionSkipReason: input.result.actionSkipReason ?? null,
+    results: input.result.actionResults,
+  });
+  const error = normalizeLogError(input.result.error);
+  const durationMs = normalizeDuration(input.result.durationMs);
+
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.$executeRaw`
+      UPDATE "rule_execution_logs"
+      SET "trigger_event" = ${JSON.stringify(triggerEvent)}::jsonb,
+          "conditions_met" = ${input.result.conditionsMet},
+          "actions_result" = ${JSON.stringify(actionsResult)}::jsonb,
+          "error" = ${error},
+          "duration_ms" = ${durationMs},
+          "executed_at" = ${executedAt}
+      WHERE "rule_id" = ${input.result.ruleId}::uuid
+        AND "guild_id" = ${input.event.guildId}
+        AND "trigger_event" ->> 'executionId' = ${triggerExecutionId}
+    `;
+    if (updated > 0) return;
+
+    await tx.ruleExecutionLog.create({
+      data: {
+        ruleId: input.result.ruleId,
         guildId: input.event.guildId,
-        data: input.event.data,
-        timestamp: input.event.timestamp.toISOString(),
-      }),
-      conditionsMet: input.result.conditionsMet,
-      actionsResult: toJsonValue({
-        triggerMatched: input.result.triggerMatched,
-        actionsExecuted: input.result.actionsExecuted,
-        actionSkipReason: input.result.actionSkipReason ?? null,
-        results: input.result.actionResults,
-      }),
-      error: normalizeLogError(input.result.error),
-      durationMs: normalizeDuration(input.result.durationMs),
-      executedAt,
-    },
+        triggerEvent,
+        conditionsMet: input.result.conditionsMet,
+        actionsResult,
+        error,
+        durationMs,
+        executedAt,
+      },
+    });
   });
 }
 
