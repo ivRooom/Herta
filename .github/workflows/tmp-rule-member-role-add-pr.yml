@@ -1,0 +1,46 @@
+name: Temporary Rule Member Role Add Patch
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'feat/rule-member-role-add'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/rule-member-role-add
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply patch
+        run: python .github/scripts/tmp_rule_member_role_add.py
+      - name: Format changed source
+        run: |
+          pnpm exec prettier --write \
+            apps/bot/src/bot.ts \
+            apps/bot/src/main.ts \
+            apps/bot/src/rules/runtime.ts \
+            apps/bot/src/rules/runtime.test.ts \
+            apps/studio/src/lib/rule-studio.ts \
+            apps/studio/src/lib/rule-studio.test.ts \
+            'apps/studio/src/app/api/guilds/[guildId]/rules/route.ts' \
+            'apps/studio/src/app/dashboard/guilds/[guildId]/rules/page.tsx' \
+            apps/studio/src/components/rule-studio-manager.tsx
+      - name: Commit source changes when needed
+        run: |
+          if git diff --quiet -- apps/bot apps/studio; then
+            echo 'No source changes to commit.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/bot apps/studio
+          git commit -m 'feat(rule-engine): add member role assignment action'
+          git push origin HEAD:feat/rule-member-role-add
