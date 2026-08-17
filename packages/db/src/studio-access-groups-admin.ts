@@ -53,7 +53,7 @@ export async function updateStudioAccessGroup(
         description = ${input.description},
         updated_by = ${input.actorId},
         updated_at = CURRENT_TIMESTAMP
-    WHERE guild_id = ${input.guildId} AND id = ${input.groupId}::uuid
+    WHERE guild_id = ${input.guildId} AND id = ${input.groupId.toLowerCase()}::uuid
   `;
   return updated > 0;
 }
@@ -63,16 +63,17 @@ export async function deleteStudioAccessGroup(
   guildId: string,
   groupId: string,
 ): Promise<boolean> {
+  const canonicalGroupId = groupId.toLowerCase();
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`
       DELETE FROM studio_access_policy_attachments
       WHERE guild_id = ${guildId}
         AND principal_type = 'group'
-        AND principal_id = ${groupId}
+        AND principal_id = ${canonicalGroupId}
     `;
     const deleted = await tx.$executeRaw`
       DELETE FROM studio_access_groups
-      WHERE guild_id = ${guildId} AND id = ${groupId}::uuid
+      WHERE guild_id = ${guildId} AND id = ${canonicalGroupId}::uuid
     `;
     return deleted > 0;
   });
