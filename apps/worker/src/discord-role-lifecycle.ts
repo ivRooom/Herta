@@ -54,18 +54,19 @@ export function startDiscordRoleLifecycleRuntime(input: {
             await markFailed(input.prisma, operation.id, 'UnsupportedOperationType');
           }
         } catch (error) {
-          const ambiguousCreate = operation.operationType === 'create' && isTransportError(error);
+          const createNeedsAttention =
+            operation.operationType === 'create' && requiresCreateAttention(error);
           await input.prisma.discordRoleLifecycleOperation.update({
             where: { id: operation.id },
             data: {
-              status: ambiguousCreate ? 'attention' : 'failed',
+              status: createNeedsAttention ? 'attention' : 'failed',
               lastError: resolveErrorName(error),
             },
           });
           await recordAudit(input.prisma, {
             guildId: operation.guildId,
             actorId: operation.createdBy,
-            event: ambiguousCreate
+            event: createNeedsAttention
               ? 'discord_role.lifecycle_attention'
               : 'discord_role.lifecycle_failed',
             targetId: operation.id,
@@ -112,55 +113,65 @@ async function executeCreate(
     hoist: operation.hoist,
     mentionable: operation.mentionable,
   });
-  await input.prisma.$transaction(async (tx) => {
-    await tx.discordRoleLifecycleOperation.update({
-      where: { id: operation.id },
-      data: { status: 'completed', roleId: role.id, completedAt: now, lastError: null },
-    });
-    if (operation.expiresAt) {
-      await tx.discordRoleLifecycleOperation.upsert({
-        where: {
-          guildId_idempotencyKey: {
+
+  try {
+    await input.prisma.$transaction(async (tx) => {
+      await tx.discordRoleLifecycleOperation.update({
+        where: { id: operation.id },
+        data: { status: 'completed', roleId: role.id, completedAt: now, lastError: null },
+      });
+      if (operation.expiresAt) {
+        await tx.discordRoleLifecycleOperation.upsert({
+          where: {
+            guildId_idempotencyKey: {
+              guildId: operation.guildId,
+              idempotencyKey: `expire:${operation.id}`,
+            },
+          },
+          create: {
             guildId: operation.guildId,
+            operationType: 'delete',
+            status: 'pending',
+            executeAt: operation.expiresAt,
+            roleId: role.id,
+            roleName: role.name,
+            createdBy: operation.createdBy,
             idempotencyKey: `expire:${operation.id}`,
+            sourceOperationId: operation.id,
+          },
+          update: {},
+        });
+      }
+      await tx.auditLog.create({
+        data: {
+          guildId: operation.guildId,
+          actorId: 'herta-worker',
+          actorType: 'system',
+          event: 'discord_role.created',
+          targetType: 'discord_role',
+          targetId: role.id,
+          changes: {
+            roleName: role.name,
+            scheduled: true,
+            expiresAt: operation.expiresAt?.toISOString() ?? null,
+          },
+          severity: 'warning',
+          metadata: {
+            operationSource: 'worker',
+            originalActorId: operation.createdBy,
+            lifecycleOperationId: operation.id,
           },
         },
-        create: {
-          guildId: operation.guildId,
-          operationType: 'delete',
-          status: 'pending',
-          executeAt: operation.expiresAt,
-          roleId: role.id,
-          roleName: role.name,
-          createdBy: operation.createdBy,
-          idempotencyKey: `expire:${operation.id}`,
-          sourceOperationId: operation.id,
-        },
-        update: {},
       });
-    }
-    await tx.auditLog.create({
-      data: {
-        guildId: operation.guildId,
-        actorId: 'herta-worker',
-        actorType: 'system',
-        event: 'discord_role.created',
-        targetType: 'discord_role',
-        targetId: role.id,
-        changes: {
-          roleName: role.name,
-          scheduled: true,
-          expiresAt: operation.expiresAt?.toISOString() ?? null,
-        },
-        severity: 'warning',
-        metadata: {
-          operationSource: 'worker',
-          originalActorId: operation.createdBy,
-          lifecycleOperationId: operation.id,
-        },
-      },
     });
-  });
+  } catch {
+    try {
+      await callDeleteRole(input, operation.guildId, role.id);
+    } catch {
+      throw new RoleLifecycleAttentionError('ScheduledCreateCompensationFailed');
+    }
+    throw new Error('ScheduledCreatePersistenceFailed');
+  }
 }
 
 async function executeDelete(
@@ -240,8 +251,9 @@ async function callCreateRole(
     result?: RoleResult;
     status?: string;
   } | null;
-  if (!response.ok || !payload?.result)
+  if (!response.ok || !payload?.result) {
     throw new Error(payload?.status ?? `RoleCreateHttp${response.status}`);
+  }
   return payload.result;
 }
 
@@ -257,8 +269,9 @@ async function callDeleteRole(
     result?: { deleted: boolean; roleName: string | null };
     status?: string;
   } | null;
-  if (!response.ok || !payload?.result)
+  if (!response.ok || !payload?.result) {
     throw new Error(payload?.status ?? `RoleDeleteHttp${response.status}`);
+  }
   return payload.result;
 }
 
@@ -289,9 +302,10 @@ async function roleApiRequest(
 }
 
 class RoleLifecycleTransportError extends Error {}
+class RoleLifecycleAttentionError extends Error {}
 
-function isTransportError(error: unknown): boolean {
-  return error instanceof RoleLifecycleTransportError;
+function requiresCreateAttention(error: unknown): boolean {
+  return error instanceof RoleLifecycleTransportError || error instanceof RoleLifecycleAttentionError;
 }
 
 async function markFailed(prisma: PrismaClient, id: string, errorName: string): Promise<void> {
