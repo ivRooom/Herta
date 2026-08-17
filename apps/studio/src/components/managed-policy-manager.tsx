@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Braces, Plus, Save, Trash2, UserPlus } from 'lucide-react';
 import {
@@ -8,6 +8,7 @@ import {
   STUDIO_GUI_PERMISSION_SID,
   STUDIO_POLICY_ACTIONS,
   setStudioGuiActions,
+  validateStudioAccessPolicy,
   type StudioAccessPolicy,
   type StudioPolicyAction,
 } from '@/lib/studio-access-policy';
@@ -77,17 +78,23 @@ export function ManagedPolicyManager({
   const [pending, setPending] = useState(false);
   const [userId, setUserId] = useState('');
   const [notice, setNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
+  const lastSyncedPolicyKey = useRef<string | null>(null);
 
   useEffect(() => {
     const next = policies.find((policy) => policy.id === selectedPolicyId) ?? null;
-    if (!next && selectedPolicyId !== 'new') return;
+    const syncKey = next
+      ? `${next.id}:${next.revision}`
+      : selectedPolicyId === 'new'
+        ? 'new'
+        : null;
+    if (!syncKey || lastSyncedPolicyKey.current === syncKey) return;
+    lastSyncedPolicyKey.current = syncKey;
     setName(next?.name ?? '');
     setDescription(next?.description ?? '');
     setDraft(JSON.stringify(next?.policy ?? emptyPolicy(), null, 2));
-    setNotice(null);
   }, [policies, selectedPolicyId]);
 
-  const parsedDraft = parsePolicy(draft);
+  const parsedDraft = parsePolicy(draft, guildId);
   const selectedActions = extractGuiActions(parsedDraft);
   const selectedAttachments = useMemo(
     () => attachments.filter((attachment) => attachment.policyId === selectedPolicyId),
@@ -96,6 +103,11 @@ export function ManagedPolicyManager({
   const directUsers = selectedAttachments.filter(
     (attachment) => attachment.principalType === 'user',
   );
+
+  function selectPolicy(policyId: string) {
+    setSelectedPolicyId(policyId);
+    setNotice(null);
+  }
 
   function startNew() {
     setSelectedPolicyId('new');
@@ -106,26 +118,27 @@ export function ManagedPolicyManager({
   }
 
   function toggleAction(action: StudioPolicyAction) {
+    if (!parsedDraft) {
+      setNotice({
+        kind: 'error',
+        text: 'Policy JSONが不正です。JSONタブで修正してからGUIを操作してください。',
+      });
+      return;
+    }
     const next = new Set(selectedActions);
     if (next.has(action)) next.delete(action);
     else next.add(action);
-    setDraft(
-      JSON.stringify(
-        setStudioGuiActions(parsedDraft ?? emptyPolicy(), guildId, [...next]),
-        null,
-        2,
-      ),
-    );
+    setDraft(JSON.stringify(setStudioGuiActions(parsedDraft, guildId, [...next]), null, 2));
     setNotice(null);
   }
 
   async function savePolicy() {
     if (!canEdit || pending) return;
-    let policy: unknown;
-    try {
-      policy = JSON.parse(draft);
-    } catch {
-      setNotice({ kind: 'error', text: 'JSONの構文が正しくありません。' });
+    if (!parsedDraft) {
+      setNotice({
+        kind: 'error',
+        text: 'Policy JSONまたはPolicy documentが不正です。JSONタブで修正してください。',
+      });
       return;
     }
     setPending(true);
@@ -139,7 +152,7 @@ export function ManagedPolicyManager({
           ...(isNew ? {} : { policyId: selectedPolicyId }),
           name,
           description,
-          policy,
+          policy: parsedDraft,
         }),
       });
       const result = (await response.json().catch(() => null)) as {
@@ -256,7 +269,7 @@ export function ManagedPolicyManager({
               <button
                 key={policy.id}
                 type="button"
-                onClick={() => setSelectedPolicyId(policy.id)}
+                onClick={() => selectPolicy(policy.id)}
                 aria-pressed={selectedPolicyId === policy.id}
                 className={`w-full rounded-lg px-3 py-2 text-left ${selectedPolicyId === policy.id ? 'bg-primary/10 text-primary' : 'hover:bg-surface'}`}
               >
@@ -324,24 +337,34 @@ export function ManagedPolicyManager({
               </div>
             </div>
             {mode === 'gui' ? (
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                {STUDIO_POLICY_ACTIONS.map((action) => (
-                  <label
-                    key={action}
-                    className="flex items-center gap-3 rounded-xl border border-border bg-background p-3 text-sm"
+              <div className="mt-3 space-y-3">
+                {!parsedDraft ? (
+                  <p
+                    role="alert"
+                    className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
                   >
-                    <input
-                      type="checkbox"
-                      checked={selectedActions.has(action)}
-                      onChange={() => toggleAction(action)}
-                      disabled={!canEdit || pending}
-                    />
-                    <span>
-                      <span className="font-semibold">{ACTION_LABELS[action]}</span>
-                      <code className="mt-0.5 block text-[10px] text-muted">{action}</code>
-                    </span>
-                  </label>
-                ))}
+                    Policy JSONが不正です。JSONタブで修正するまでGUI操作は無効です。
+                  </p>
+                ) : null}
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {STUDIO_POLICY_ACTIONS.map((action) => (
+                    <label
+                      key={action}
+                      className="flex items-center gap-3 rounded-xl border border-border bg-background p-3 text-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedActions.has(action)}
+                        onChange={() => toggleAction(action)}
+                        disabled={!canEdit || pending || !parsedDraft}
+                      />
+                      <span>
+                        <span className="font-semibold">{ACTION_LABELS[action]}</span>
+                        <code className="mt-0.5 block text-[10px] text-muted">{action}</code>
+                      </span>
+                    </label>
+                  ))}
+                </div>
               </div>
             ) : (
               <textarea
@@ -350,6 +373,7 @@ export function ManagedPolicyManager({
                 readOnly={!canEdit}
                 spellCheck={false}
                 aria-label="Policy JSON"
+                aria-invalid={!parsedDraft}
                 className="mt-3 min-h-[24rem] w-full rounded-xl border border-border bg-background p-4 font-mono text-xs leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             )}
@@ -428,7 +452,7 @@ export function ManagedPolicyManager({
             <button
               type="button"
               onClick={() => void savePolicy()}
-              disabled={!canEdit || pending || name.trim().length === 0}
+              disabled={!canEdit || pending || name.trim().length === 0 || !parsedDraft}
               className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
             >
               <Save className="h-4 w-4" aria-hidden="true" />
@@ -503,22 +527,26 @@ function emptyPolicy(): StudioAccessPolicy {
   return { Version: STUDIO_ACCESS_POLICY_VERSION, Statement: [] };
 }
 
-function parsePolicy(value: string): StudioAccessPolicy | null {
+function parsePolicy(value: string, guildId: string): StudioAccessPolicy | null {
   try {
-    return JSON.parse(value) as StudioAccessPolicy;
+    const parsed = JSON.parse(value) as unknown;
+    const validation = validateStudioAccessPolicy(parsed, guildId);
+    return validation.valid ? (validation.policy ?? null) : null;
   } catch {
     return null;
   }
 }
 
 function extractGuiActions(policy: StudioAccessPolicy | null): Set<StudioPolicyAction> {
-  if (!policy) return new Set();
+  if (!policy || !Array.isArray(policy.Statement)) return new Set();
   const supported = new Set<string>(STUDIO_POLICY_ACTIONS);
   const guiStatement = policy.Statement.find(
     (statement) => statement.Sid === STUDIO_GUI_PERMISSION_SID && statement.Effect === 'Allow',
   );
   if (!guiStatement) return new Set();
   return new Set(
-    guiStatement.Action.filter((action): action is StudioPolicyAction => supported.has(action)),
+    (Array.isArray(guiStatement.Action) ? guiStatement.Action : []).filter(
+      (action): action is StudioPolicyAction => supported.has(action),
+    ),
   );
 }
