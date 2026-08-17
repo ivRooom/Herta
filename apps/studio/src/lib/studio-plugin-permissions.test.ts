@@ -66,6 +66,7 @@ test('rootはPlugin権限を常に持つ', () => {
     isRoot: true,
     roleIds: [],
     policies: [],
+    managedPolicies: [],
   };
   assert.equal(
     hasEffectivePluginPermission(
@@ -87,6 +88,7 @@ test('適用対象PolicyがないManage Guildユーザーは従来権限を維�
         policy: createEmptyStudioAccessPolicy(),
       },
     ],
+    managedPolicies: [],
   };
   assert.equal(
     hasEffectivePluginPermission(
@@ -103,6 +105,7 @@ test('適用対象Policyが存在する場合はdefault denyになる', () => {
     isRoot: false,
     roleIds: [ROLE_ID],
     policies: [{ discordRoleId: ROLE_ID, policy: createEmptyStudioAccessPolicy() }],
+    managedPolicies: [],
   };
   assert.equal(
     hasEffectivePluginPermission(
@@ -136,6 +139,7 @@ test('全体Allowより項目Denyを優先してConfig Studio権限を解決す�
     isRoot: false,
     roleIds: [ROLE_ID],
     policies: [{ discordRoleId: ROLE_ID, policy }],
+    managedPolicies: [],
   };
 
   assert.deepEqual(
@@ -164,6 +168,7 @@ test('複数Roleでは明示Denyが別RoleのAllowより優先される', () => 
       { discordRoleId: ROLE_ID, policy: allowed },
       { discordRoleId: secondRoleId, policy: denied },
     ],
+    managedPolicies: [],
   };
 
   assert.equal(hasEffectivePluginPermission(access, 'studio.settings.write', resource), false);
