@@ -1,6 +1,7 @@
 import {
   claimDiscordRoleOperation,
   enqueueDiscordRoleDeleteOperation,
+  findHertaDiscordRoleReferences,
   listDueDiscordRoleOperations,
   markDiscordRoleOperationFailed,
   markDiscordRoleOperationSucceeded,
@@ -277,6 +278,22 @@ async function processDeleteOperation(
 ): Promise<void> {
   if (!operation.discordRoleId) {
     await failOperation(input, operation, 'InvalidStoredDiscordRoleDeletePayload');
+    return;
+  }
+
+  const references = await findHertaDiscordRoleReferences(
+    input.prisma,
+    operation.guildId,
+    operation.discordRoleId,
+  );
+  if (references.length > 0) {
+    await failOperation(
+      input,
+      operation,
+      'DiscordRoleStillReferencedByHertaConfig',
+      operation.discordRoleId,
+      { references: references.join(',').slice(0, 512) },
+    );
     return;
   }
 
