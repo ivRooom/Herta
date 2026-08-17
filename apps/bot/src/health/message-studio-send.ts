@@ -5,6 +5,9 @@ const SUPPORTED_CHANNEL_TYPES = new Set([...MESSAGE_CHANNEL_TYPES, ...FORUM_CHAN
 const THREAD_CHANNEL_TYPES = new Set([10, 11, 12]);
 const IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+const MAX_VOICE_BYTES = 20 * 1024 * 1024;
+const MAX_VOICE_DURATION_SECONDS = 6 * 60 * 60;
+const VOICE_MESSAGE_FLAG = 1 << 13;
 const EMBED_COLOR_PATTERN = /^#[0-9A-Fa-f]{6}$/u;
 
 interface DiscordChannelPayload {
@@ -31,6 +34,12 @@ export interface GuildMessageStudioEmbed {
   fields: GuildMessageStudioEmbedField[];
 }
 
+interface EncodedAttachment {
+  filename: string;
+  contentType: string;
+  dataBase64: string;
+}
+
 export interface GuildMessageStudioSendInput {
   channelId: string;
   content: string;
@@ -38,11 +47,8 @@ export interface GuildMessageStudioSendInput {
   allowUserMentions: boolean;
   publishAnnouncement: boolean;
   embed: GuildMessageStudioEmbed | null;
-  image: {
-    filename: string;
-    contentType: string;
-    dataBase64: string;
-  } | null;
+  image: EncodedAttachment | null;
+  voice: (EncodedAttachment & { durationSeconds: number; waveform: string }) | null;
 }
 
 export interface GuildMessageStudioSendResult {
@@ -85,17 +91,36 @@ export function parseGuildMessageStudioSendInput(
   let image: GuildMessageStudioSendInput['image'] = null;
   if (value.image !== null && value.image !== undefined) {
     if (!isRecord(value.image)) return null;
-    const filename = typeof value.image.filename === 'string' ? value.image.filename.trim() : '';
-    const contentType = typeof value.image.contentType === 'string' ? value.image.contentType : '';
-    const dataBase64 = typeof value.image.dataBase64 === 'string' ? value.image.dataBase64 : '';
-    if (!filename || filename.length > 100 || !IMAGE_MIME_TYPES.has(contentType) || !dataBase64) {
+    const parsed = parseEncodedAttachment(value.image, MAX_IMAGE_BYTES);
+    if (!parsed || !IMAGE_MIME_TYPES.has(parsed.contentType)) return null;
+    image = parsed;
+  }
+
+  let voice: GuildMessageStudioSendInput['voice'] = null;
+  if (value.voice !== null && value.voice !== undefined) {
+    if (!isRecord(value.voice)) return null;
+    const parsed = parseEncodedAttachment(value.voice, MAX_VOICE_BYTES);
+    const durationSeconds =
+      typeof value.voice.durationSeconds === 'number' ? value.voice.durationSeconds : Number.NaN;
+    const waveform = typeof value.voice.waveform === 'string' ? value.voice.waveform : '';
+    const waveformBytes = decodeBase64(waveform);
+    if (
+      !parsed ||
+      !parsed.contentType.toLowerCase().startsWith('audio/') ||
+      !Number.isFinite(durationSeconds) ||
+      durationSeconds <= 0 ||
+      durationSeconds > MAX_VOICE_DURATION_SECONDS ||
+      !waveformBytes ||
+      waveformBytes.length <= 0 ||
+      waveformBytes.length > 256
+    ) {
       return null;
     }
-    const bytes = decodeBase64(dataBase64);
-    if (!bytes || bytes.length <= 0 || bytes.length > MAX_IMAGE_BYTES) return null;
-    image = { filename, contentType, dataBase64 };
+    voice = { ...parsed, durationSeconds, waveform };
   }
-  if (!content.trim() && !image && !embed) return null;
+
+  if (voice && (content.trim() || image || embed || value.publishAnnouncement)) return null;
+  if (!content.trim() && !image && !embed && !voice) return null;
 
   return {
     channelId,
@@ -105,6 +130,7 @@ export function parseGuildMessageStudioSendInput(
     publishAnnouncement: value.publishAnnouncement,
     embed,
     image,
+    voice,
   };
 }
 
@@ -128,6 +154,12 @@ export async function sendGuildMessageStudioMessage(
   }
 
   if (FORUM_CHANNEL_TYPES.has(channel.type)) {
+    if (input.voice) {
+      throw new GuildMessageStudioSendError(
+        'ボイスメッセージはForumの新規投稿には使用できません。通常チャンネルまたは既存Threadを選択してください',
+        400,
+      );
+    }
     if (input.publishAnnouncement) {
       throw new GuildMessageStudioSendError('Forum投稿ではCrosspostを利用できません', 400);
     }
@@ -166,19 +198,32 @@ async function sendChannelMessage(
   token: string,
   input: GuildMessageStudioSendInput,
 ): Promise<string> {
-  const payload = {
-    content: input.content || undefined,
-    embeds: input.embed ? [toDiscordEmbed(input.embed)] : undefined,
-    allowed_mentions: { parse: input.allowUserMentions ? ['users'] : [] },
-    attachments: input.image ? [{ id: 0, filename: input.image.filename }] : undefined,
-  };
+  const attachment = input.voice ?? input.image;
+  const payload = input.voice
+    ? {
+        flags: VOICE_MESSAGE_FLAG,
+        attachments: [
+          {
+            id: 0,
+            filename: input.voice.filename,
+            duration_secs: input.voice.durationSeconds,
+            waveform: input.voice.waveform,
+          },
+        ],
+      }
+    : {
+        content: input.content || undefined,
+        embeds: input.embed ? [toDiscordEmbed(input.embed)] : undefined,
+        allowed_mentions: { parse: input.allowUserMentions ? ['users'] : [] },
+        attachments: input.image ? [{ id: 0, filename: input.image.filename }] : undefined,
+      };
   const response = await fetch(`${DISCORD_API_BASE_URL}/channels/${input.channelId}/messages`, {
     method: 'POST',
-    headers: input.image
+    headers: attachment
       ? { Authorization: `Bot ${token}` }
       : { Authorization: `Bot ${token}`, 'Content-Type': 'application/json' },
-    body: input.image ? buildMultipart(payload, input.image) : JSON.stringify(payload),
-    signal: AbortSignal.timeout(20_000),
+    body: attachment ? buildMultipart(payload, attachment) : JSON.stringify(payload),
+    signal: AbortSignal.timeout(25_000),
   });
   if (!response.ok) throw await discordError('Discordへの投稿に失敗しました', response);
   const message = (await response.json()) as { id?: unknown };
@@ -284,18 +329,34 @@ function toDiscordEmbed(embed: GuildMessageStudioEmbed): Record<string, unknown>
   };
 }
 
-function buildMultipart(
-  payload: unknown,
-  image: NonNullable<GuildMessageStudioSendInput['image']>,
-): FormData {
-  const bytes = decodeBase64(image.dataBase64);
-  if (!bytes) throw new GuildMessageStudioSendError('添付画像を復元できませんでした', 400);
+function buildMultipart(payload: unknown, attachment: EncodedAttachment): FormData {
+  const bytes = decodeBase64(attachment.dataBase64);
+  if (!bytes) throw new GuildMessageStudioSendError('添付ファイルを復元できませんでした', 400);
   const arrayBuffer = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(arrayBuffer).set(bytes);
   const form = new FormData();
   form.set('payload_json', JSON.stringify(payload));
-  form.set('files[0]', new Blob([arrayBuffer], { type: image.contentType }), image.filename);
+  form.set(
+    'files[0]',
+    new Blob([arrayBuffer], { type: attachment.contentType }),
+    attachment.filename,
+  );
   return form;
+}
+
+function parseEncodedAttachment(
+  value: Record<string, unknown>,
+  maxBytes: number,
+): EncodedAttachment | null {
+  const filename = typeof value.filename === 'string' ? value.filename.trim() : '';
+  const contentType = typeof value.contentType === 'string' ? value.contentType.trim().toLowerCase() : '';
+  const dataBase64 = typeof value.dataBase64 === 'string' ? value.dataBase64 : '';
+  if (!filename || filename.length > 100 || !contentType || contentType.length > 100 || !dataBase64) {
+    return null;
+  }
+  const bytes = decodeBase64(dataBase64);
+  if (!bytes || bytes.length <= 0 || bytes.length > maxBytes) return null;
+  return { filename, contentType, dataBase64 };
 }
 
 function decodeBase64(value: string): Uint8Array | null {
