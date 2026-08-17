@@ -226,16 +226,26 @@ async function recordAudit(
   targetId: string,
   changes: object,
 ): Promise<void> {
-  await prisma.auditLog.create({
-    data: {
+  try {
+    await prisma.auditLog.create({
+      data: {
+        guildId,
+        actorId,
+        event,
+        targetType: 'studio_access_group',
+        targetId,
+        changes,
+        severity: 'warning',
+        metadata: { operationSource: 'studio', securitySensitive: true },
+      },
+    });
+  } catch (error) {
+    console.error('Failed to record Studio access group audit log', {
       guildId,
       actorId,
       event,
-      targetType: 'studio_access_group',
       targetId,
-      changes,
-      severity: 'warning',
-      metadata: { operationSource: 'studio', securitySensitive: true },
-    },
-  });
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
+  }
 }
