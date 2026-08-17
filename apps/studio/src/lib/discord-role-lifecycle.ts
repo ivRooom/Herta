@@ -1,3 +1,5 @@
+import { containsExactJsonStringValue } from '@herta/shared';
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/iu;
 const ROLE_NAME_MAX_LENGTH = 100;
@@ -34,7 +36,9 @@ export function validateDiscordRoleLifecycleCreate(
   const mentionable = value.mentionable;
 
   if (!UUID_PATTERN.test(requestId)) errors.push('requestIdが不正です');
-  if (!name || name.length > ROLE_NAME_MAX_LENGTH) errors.push('Role名は1〜100文字で指定してください');
+  if (!name || name.length > ROLE_NAME_MAX_LENGTH) {
+    errors.push('Role名は1〜100文字で指定してください');
+  }
   if (!HEX_COLOR_PATTERN.test(colorHex)) errors.push('色は#RRGGBB形式で指定してください');
   if (typeof hoist !== 'boolean') errors.push('hoistはbooleanで指定してください');
   if (typeof mentionable !== 'boolean') errors.push('mentionableはbooleanで指定してください');
@@ -43,7 +47,9 @@ export function validateDiscordRoleLifecycleCreate(
   const expiresAt = parseOptionalDate(value.expiresAt, 'expiresAt', errors);
   const nowMs = now.getTime();
   const effectiveCreateAt = createAt ?? now;
-  if (createAt && createAt.getTime() <= nowMs) errors.push('予約作成日時は現在より後にしてください');
+  if (createAt && createAt.getTime() <= nowMs) {
+    errors.push('予約作成日時は現在より後にしてください');
+  }
   if (createAt && createAt.getTime() - nowMs > MAX_SCHEDULE_AHEAD_MS) {
     errors.push('予約作成日時は366日以内にしてください');
   }
@@ -73,14 +79,8 @@ export function validateDiscordRoleLifecycleCreate(
   };
 }
 
-export function containsDiscordRoleReference(value: unknown, roleId: string, depth = 0): boolean {
-  if (depth > 16) return false;
-  if (typeof value === 'string') return value === roleId;
-  if (Array.isArray(value)) {
-    return value.some((item) => containsDiscordRoleReference(item, roleId, depth + 1));
-  }
-  if (!isRecord(value)) return false;
-  return Object.values(value).some((item) => containsDiscordRoleReference(item, roleId, depth + 1));
+export function containsDiscordRoleReference(value: unknown, roleId: string): boolean {
+  return containsExactJsonStringValue(value, roleId);
 }
 
 export function lifecycleStatusLabel(status: string): string {
