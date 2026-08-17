@@ -44,6 +44,19 @@ export function parseDiscordRoleCreateRequest(
   return { name, color, scheduledFor, expiresAfterSeconds };
 }
 
+export function serializeDiscordRoleCreateIdempotencyPayload(
+  value: unknown,
+  parsed: DiscordRoleCreateRequest,
+): string | null {
+  if (!isRecord(value)) return null;
+  const rawScheduledFor = value.scheduledFor;
+  const scheduleKey =
+    rawScheduledFor === undefined || rawScheduledFor === null || rawScheduledFor === ''
+      ? 'now'
+      : parsed.scheduledFor.toISOString();
+  return JSON.stringify([parsed.name, parsed.color, scheduleKey, parsed.expiresAfterSeconds]);
+}
+
 export function parseDiscordRoleColor(value: unknown): number | null {
   if (typeof value === 'number') {
     return Number.isInteger(value) && value >= 0 && value <= 0xffffff ? value : null;
