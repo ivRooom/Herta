@@ -1,0 +1,57 @@
+name: Temporary format managed access
+
+on:
+  push:
+    branches:
+      - feat/studio-managed-access-policies-v1
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/studio-managed-access-policies-v1
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format changed access-control files
+        run: |
+          pnpm prettier --write \
+            apps/studio/package.json \
+            apps/studio/src/app/api/guilds/[guildId]/access-groups \
+            apps/studio/src/app/api/guilds/[guildId]/access-policies \
+            apps/studio/src/app/api/guilds/[guildId]/role-policies/route.ts \
+            apps/studio/src/app/dashboard/guilds/[guildId]/access/page.tsx \
+            apps/studio/src/app/dashboard/guilds/[guildId]/roles/page.tsx \
+            apps/studio/src/components/access-group-manager.tsx \
+            apps/studio/src/components/managed-policy-manager.tsx \
+            apps/studio/src/lib/studio-access-policy.ts \
+            apps/studio/src/lib/studio-access.ts \
+            apps/studio/src/lib/studio-managed-access.test.ts \
+            apps/studio/src/lib/studio-plugin-permissions.ts \
+            apps/studio/src/lib/studio-plugin-permissions.test.ts \
+            packages/db/src/discord-role-references.ts \
+            packages/db/src/index.ts \
+            packages/db/src/studio-access-control.ts \
+            packages/db/src/studio-access-control.test.ts \
+            packages/db/src/studio-access-groups-admin.ts \
+            packages/db/prisma/migrations/20260817203000_studio_managed_access_policies_v1/migration.sql
+      - name: Commit formatting
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/studio packages/db
+          git commit -m "style: format managed access changes"
+          git push origin HEAD:feat/studio-managed-access-policies-v1
