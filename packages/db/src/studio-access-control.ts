@@ -73,6 +73,7 @@ interface GroupRow {
 }
 
 interface EffectivePolicyRow {
+  id: string;
   document: Prisma.JsonValue;
 }
 
@@ -139,6 +140,7 @@ export async function updateManagedStudioAccessPolicy(
     description: string | null;
     document: Prisma.InputJsonValue;
     actorId: string;
+    expectedRevision: number;
   },
 ): Promise<ManagedStudioAccessPolicyRecord | null> {
   const rows = await prisma.$queryRaw<PolicyRow[]>`
@@ -149,7 +151,9 @@ export async function updateManagedStudioAccessPolicy(
         revision = revision + 1,
         updated_by = ${input.actorId},
         updated_at = CURRENT_TIMESTAMP
-    WHERE guild_id = ${input.guildId} AND id = ${input.policyId}::uuid
+    WHERE guild_id = ${input.guildId}
+      AND id = ${input.policyId}::uuid
+      AND revision = ${input.expectedRevision}
     RETURNING id, guild_id, name, description, document, revision,
               created_by, updated_by, created_at, updated_at
   `;
@@ -246,7 +250,7 @@ export async function listEffectiveStudioAccessPolicyDocuments(
   guildId: string,
   userId: string,
   roleIds: readonly string[],
-): Promise<Prisma.JsonValue[]> {
+): Promise<Array<{ id: string; document: Prisma.JsonValue }>> {
   const rolePredicate =
     roleIds.length === 0
       ? Prisma.sql`FALSE`
@@ -273,7 +277,7 @@ export async function listEffectiveStudioAccessPolicyDocuments(
       )
     ORDER BY p.id
   `);
-  return rows.map((row) => row.document);
+  return rows.map((row) => ({ id: row.id, document: row.document }));
 }
 
 export async function listStudioAccessGroups(
