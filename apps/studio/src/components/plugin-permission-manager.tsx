@@ -187,7 +187,9 @@ export function PluginPermissionManager({
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
                 {selectedRole?.name ?? 'Role'}
               </p>
-              <h1 className="mt-1 text-xl font-semibold">{selectedPlugin?.name ?? 'Pluginを選択'}</h1>
+              <h1 className="mt-1 text-xl font-semibold">
+                {selectedPlugin?.name ?? 'Pluginを選択'}
+              </h1>
               <p className="mt-1 text-sm leading-6 text-muted">
                 項目単位の編集権限は全体Policyより細かいDeny/Allowとして評価されます。Denyが常に優先されます。
               </p>
@@ -197,7 +199,10 @@ export function PluginPermissionManager({
           {isRoot ? (
             <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-sm">
               <div className="flex gap-2">
-                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" aria-hidden="true" />
+                <ShieldCheck
+                  className="mt-0.5 h-4 w-4 shrink-0 text-amber-500"
+                  aria-hidden="true"
+                />
                 <p>OWNER root Roleは全Plugin・全項目を操作できます。個別制限は設定できません。</p>
               </div>
             </div>

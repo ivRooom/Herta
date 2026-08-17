@@ -35,7 +35,10 @@ test('Role名とDiscord Role IDの両方で検索できる', () => {
     configuredRoleIds,
     rootRoleId: ROOT_ROLE_ID,
   });
-  assert.deepEqual(byName.map((item) => item.name), ['Moderator']);
+  assert.deepEqual(
+    byName.map((item) => item.name),
+    ['Moderator'],
+  );
 
   const byId = filterAndSortRoleInventory(roles, {
     query: '000000000000004',
@@ -44,7 +47,10 @@ test('Role名とDiscord Role IDの両方で検索できる', () => {
     configuredRoleIds,
     rootRoleId: ROOT_ROLE_ID,
   });
-  assert.deepEqual(byId.map((item) => item.name), ['Guest']);
+  assert.deepEqual(
+    byId.map((item) => item.name),
+    ['Guest'],
+  );
 });
 
 test('未設定filterはrootとPolicy設定済みRoleを除外する', () => {
@@ -55,7 +61,10 @@ test('未設定filterはrootとPolicy設定済みRoleを除外する', () => {
     configuredRoleIds,
     rootRoleId: ROOT_ROLE_ID,
   });
-  assert.deepEqual(result.map((item) => item.name), ['Integration Bot', 'Member']);
+  assert.deepEqual(
+    result.map((item) => item.name),
+    ['Integration Bot', 'Member'],
+  );
 });
 
 test('Policy順はroot、設定済み、未設定の順に並べる', () => {
@@ -66,13 +75,10 @@ test('Policy順はroot、設定済み、未設定の順に並べる', () => {
     configuredRoleIds,
     rootRoleId: ROOT_ROLE_ID,
   });
-  assert.deepEqual(result.map((item) => item.name), [
-    'OWNER',
-    'Moderator',
-    'Guest',
-    'Integration Bot',
-    'Member',
-  ]);
+  assert.deepEqual(
+    result.map((item) => item.name),
+    ['OWNER', 'Moderator', 'Guest', 'Integration Bot', 'Member'],
+  );
 });
 
 test('Role hierarchy順はposition降順を維持する', () => {
@@ -83,7 +89,10 @@ test('Role hierarchy順はposition降順を維持する', () => {
     configuredRoleIds,
     rootRoleId: ROOT_ROLE_ID,
   });
-  assert.deepEqual(result.map((item) => item.position), [100, 80, 60, 20, 10]);
+  assert.deepEqual(
+    result.map((item) => item.position),
+    [100, 80, 60, 20, 10],
+  );
 });
 
 test('ページングは範囲外pageを最終pageへclampする', () => {
@@ -92,7 +101,10 @@ test('ページングは範囲外pageを最終pageへclampする', () => {
   assert.equal(result.pageCount, 3);
   assert.equal(result.from, 5);
   assert.equal(result.to, 5);
-  assert.deepEqual(result.items.map((item) => item.name), ['Guest']);
+  assert.deepEqual(
+    result.items.map((item) => item.name),
+    ['Guest'],
+  );
 });
 
 function role(id: string, name: string, position: number): RoleInventoryRole {

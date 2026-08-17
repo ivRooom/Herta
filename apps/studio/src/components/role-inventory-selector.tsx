@@ -203,10 +203,16 @@ export function RoleInventorySelector({
         {currentPage.items.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border bg-background/40 px-4 py-10 text-center">
             <p className="text-sm font-medium">条件に一致するRoleがありません</p>
-            <p className="mt-1 text-xs text-muted">検索文字または絞り込み条件を変更してください。</p>
+            <p className="mt-1 text-xs text-muted">
+              検索文字または絞り込み条件を変更してください。
+            </p>
           </div>
         ) : view === 'grid' ? (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" role="list" aria-label="Discord Role一覧">
+          <div
+            className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+            role="list"
+            aria-label="Discord Role一覧"
+          >
             {currentPage.items.map((role) => (
               <div key={role.id} role="listitem">
                 <RoleGridButton
