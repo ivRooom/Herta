@@ -1,0 +1,44 @@
+name: PR233 Blackjack Patch v2
+
+on:
+  push:
+    branches:
+      - feature/blackjack-pvp-animation-v1
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feature/blackjack-pvp-animation-v1
+      - run: python .github/scripts/pr233_blackjack_patch.py
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format changed files
+        run: |
+          pnpm exec prettier --write \
+            apps/bot/src/plugins/mini-games.ts \
+            packages/plugin-catalog/src/manifests/mini-games.ts \
+            apps/bot/src/plugins/mini-games.test.ts \
+            apps/bot/src/plugins/mini-games-blackjack-pvp.ts \
+            apps/bot/src/plugins/mini-games-blackjack-pvp.test.ts
+      - name: Commit Blackjack implementation
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/bot/src/plugins/mini-games.ts packages/plugin-catalog/src/manifests/mini-games.ts apps/bot/src/plugins/mini-games.test.ts apps/bot/src/plugins/mini-games-blackjack-pvp.ts apps/bot/src/plugins/mini-games-blackjack-pvp.test.ts
+          if ! git diff --cached --quiet; then
+            git commit -m 'feat: add animated Blackjack PvP'
+            git push origin HEAD:feature/blackjack-pvp-animation-v1
+          fi
