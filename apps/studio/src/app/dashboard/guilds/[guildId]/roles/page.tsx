@@ -1,9 +1,13 @@
-import { listRecentDiscordRoleOperations } from '@herta/db';
+import {
+  listRecentDiscordRoleOperations,
+  listRecentRuleRuntimeExecutionLogs,
+} from '@herta/db';
 import Link from 'next/link';
 import { ArrowLeft, ArrowRight, LockKeyhole, ShieldCheck, SlidersHorizontal } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import { auth } from '@/auth';
 import { RoleLifecycleManager } from '@/components/role-lifecycle-manager';
+import { RuleExecutionHistory } from '@/components/rule-execution-history';
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
 import { prisma } from '@/lib/db';
 import { authorizeStudioPermission } from '@/lib/studio-access';
@@ -32,9 +36,10 @@ export default async function GuildRoleManagerPage({
 
   const options = await getGuildConfigurationOptions(guildId);
   if (!options) return <AccessUnavailable guildId={guildId} status={503} />;
-  const [legacyPolicies, recentOperations] = await Promise.all([
+  const [legacyPolicies, recentOperations, ruleExecutionLogs] = await Promise.all([
     listStudioRolePolicies(guildId),
     listRecentDiscordRoleOperations(prisma, guildId, 20),
+    listRecentRuleRuntimeExecutionLogs(prisma, guildId, 30),
   ]);
   const roles = options.roles.map((role) => ({
     id: role.id,
@@ -59,6 +64,18 @@ export default async function GuildRoleManagerPage({
     attemptCount: operation.attemptCount,
     lastErrorName: operation.lastErrorName,
     createdAt: operation.createdAt.toISOString(),
+  }));
+  const ruleExecutions = ruleExecutionLogs.map((entry) => ({
+    id: entry.id,
+    ruleId: entry.ruleId,
+    ruleName: entry.ruleName,
+    triggerType: entry.triggerType,
+    triggerExecutionId: entry.triggerExecutionId,
+    conditionsMet: entry.conditionsMet,
+    actionsResult: entry.actionsResult,
+    error: entry.error,
+    durationMs: entry.durationMs,
+    executedAt: entry.executedAt.toISOString(),
   }));
 
   return (
@@ -160,6 +177,8 @@ export default async function GuildRoleManagerPage({
         canEdit={authorization.access.isRoot}
         botCanManageRoles={options.bot.manageRoles}
       />
+
+      <RuleExecutionHistory entries={ruleExecutions} />
     </div>
   );
 }
