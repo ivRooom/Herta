@@ -105,7 +105,7 @@ async function executeCreate(
   operation: DiscordRoleLifecycleOperation,
   now: Date,
 ): Promise<void> {
-  if (!operation || operation.roleColor === null) throw new Error('RoleCreatePayloadMissing');
+  if (operation.roleColor === null) throw new Error('RoleCreatePayloadMissing');
   const role = await callCreateRole(input, operation.guildId, {
     name: operation.roleName,
     color: operation.roleColor,
@@ -168,18 +168,15 @@ async function executeDelete(
   operation: DiscordRoleLifecycleOperation,
   now: Date,
 ): Promise<void> {
-  if (!operation.roleId) throw new Error('RoleDeleteTargetMissing');
-  const references = await findHertaRoleReferences(
-    input.prisma,
-    operation.guildId,
-    operation.roleId,
-  );
+  const roleId = operation.roleId;
+  if (!roleId) throw new Error('RoleDeleteTargetMissing');
+  const references = await findHertaRoleReferences(input.prisma, operation.guildId, roleId);
   if (references.length > 0) {
     throw new Error(`RoleStillReferencedByHertaConfig:${references.join(',')}`);
   }
-  const result = await callDeleteRole(input, operation.guildId, operation.roleId);
+  const result = await callDeleteRole(input, operation.guildId, roleId);
   await input.prisma.$transaction(async (tx) => {
-    await removeStudioRolePolicyReference(tx, operation.guildId, operation.roleId);
+    await removeStudioRolePolicyReference(tx, operation.guildId, roleId);
     await tx.discordRoleLifecycleOperation.update({
       where: { id: operation.id },
       data: { status: 'completed', completedAt: now, lastError: null },
@@ -191,7 +188,7 @@ async function executeDelete(
         actorType: 'system',
         event: 'discord_role.deleted',
         targetType: 'discord_role',
-        targetId: operation.roleId,
+        targetId: roleId,
         changes: {
           roleName: result.roleName ?? operation.roleName,
           scheduled: true,
