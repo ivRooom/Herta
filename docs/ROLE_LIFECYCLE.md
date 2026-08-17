@@ -14,6 +14,7 @@ Herta Role ManagerのDiscord Role本体に対する作成・削除・予約・�
 - Role操作履歴の表示
 - Worker再起動時のstale operation reconcile
 - deleteの安全な再試行
+- Herta設定 / Plugin configから参照中のRole削除防止
 - Discord Role削除成功後の孤児Studio Role Policy cleanup
 - Discord作成成功後にDB確定が失敗した場合の補償削除
 
@@ -50,8 +51,11 @@ StudioはBot Tokenを保持せず、Role操作を`discord_role_operations`へ予
 - 対象Guildのlive再確認
 - BotのManage Roles確認
 - Role ID validation
-- Managed Role / hierarchy / root Role保護
+- Managed Role / hierarchy / root Role / `@everyone`保護
+- Herta GuildSettings / Plugin configからの参照確認
 - bounded request body
+
+Role削除要求は、`modRoleIds` / `adminRoleIds` / `settingsJson` / Guild Plugin configから対象Role IDが参照されている場合に409で拒否する。削除成功後に自動cleanupするStudio Role Policyだけはこの参照判定から除外する。
 
 ### Worker
 
@@ -64,6 +68,8 @@ WorkerはDBを正本としてdue operationを走査する。
 - 5分を超えるstale claimをreconcile
 
 WorkerはDiscord Bot TokenをRole Lifecycleの実行には使用せず、既存のBot内部API secretでBotへ依頼する。
+
+削除OperationはDiscord APIを呼ぶ直前にもHerta設定 / Plugin configからのRole参照を再検証する。予約受付後にBirthday RoleやModeration等の設定が対象Roleを参照した場合も誤削除せず、`DiscordRoleStillReferencedByHertaConfig`としてfailed + Audit Logへ記録する。
 
 Discord Role作成成功後にoperation成功確定・TTL delete生成・Audit Log保存を行うDB transactionが失敗した場合は、作成済みRoleをBot経由で補償削除する。補償削除まで失敗した場合は、実際に作成されたDiscord Role IDとfailure contextをfailed operationとAudit Logへ残し、運用から追跡できる状態にする。
 
