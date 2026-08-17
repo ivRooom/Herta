@@ -8,6 +8,7 @@ CREATE TABLE "discord_role_operations" (
     "discord_role_id" TEXT,
     "role_name" VARCHAR(100),
     "role_color" INTEGER,
+    "idempotency_fingerprint" CHAR(64),
     "scheduled_for" TIMESTAMPTZ(3) NOT NULL,
     "expires_after_seconds" INTEGER,
     "next_attempt_at" TIMESTAMPTZ(3),
@@ -25,6 +26,7 @@ CREATE TABLE "discord_role_operations" (
     CONSTRAINT "discord_role_operations_status_check" CHECK ("status" IN ('pending', 'processing', 'succeeded', 'failed', 'cancelled')),
     CONSTRAINT "discord_role_operations_source_check" CHECK ("source" IN ('studio', 'temporary-expiry', 'rule-engine')),
     CONSTRAINT "discord_role_operations_role_color_check" CHECK ("role_color" IS NULL OR ("role_color" >= 0 AND "role_color" <= 16777215)),
+    CONSTRAINT "discord_role_operations_idempotency_fingerprint_check" CHECK ("idempotency_fingerprint" IS NULL OR "idempotency_fingerprint" ~ '^[0-9a-f]{64}$'),
     CONSTRAINT "discord_role_operations_expiry_check" CHECK ("expires_after_seconds" IS NULL OR ("expires_after_seconds" >= 60 AND "expires_after_seconds" <= 31536000)),
     CONSTRAINT "discord_role_operations_create_payload_check" CHECK ("operation" <> 'create' OR ("role_name" IS NOT NULL AND length(btrim("role_name")) BETWEEN 1 AND 100)),
     CONSTRAINT "discord_role_operations_delete_payload_check" CHECK ("operation" <> 'delete' OR "discord_role_id" ~ '^[0-9]{17,20}$')
