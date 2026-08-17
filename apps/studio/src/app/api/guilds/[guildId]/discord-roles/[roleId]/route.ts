@@ -90,13 +90,25 @@ async function findConfigurationReferences(guildId: string, roleId: string): Pro
   const references: string[] = [];
   if (settings?.modRoleIds.includes(roleId)) references.push('GuildSettings.modRoleIds');
   if (settings?.adminRoleIds.includes(roleId)) references.push('GuildSettings.adminRoleIds');
-  if (containsDiscordRoleReference(settings?.settingsJson, roleId))
+  if (containsNonPolicySettingsReference(settings?.settingsJson, roleId)) {
     references.push('GuildSettings.settingsJson');
+  }
   for (const plugin of plugins) {
-    if (containsDiscordRoleReference(plugin.config, roleId))
+    if (containsDiscordRoleReference(plugin.config, roleId)) {
       references.push(`Plugin:${plugin.pluginId}`);
+    }
   }
   return references.slice(0, 20);
+}
+
+function containsNonPolicySettingsReference(value: unknown, roleId: string): boolean {
+  if (!isRecord(value)) return containsDiscordRoleReference(value, roleId);
+  const { studioAccess: _studioAccess, ...nonPolicySettings } = value;
+  return containsDiscordRoleReference(nonPolicySettings, roleId);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 async function requireRoot(guildId: string, userId: string) {
