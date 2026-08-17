@@ -1,5 +1,7 @@
 const MANAGED_ACCESS_NAME_CONSTRAINTS = [
+  'studio_access_policies_guild_id_name_key',
   'studio_access_policies_guild_id_name_ci_key',
+  'studio_access_groups_guild_id_name_key',
   'studio_access_groups_guild_id_name_ci_key',
 ] as const;
 
