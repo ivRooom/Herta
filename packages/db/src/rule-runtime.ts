@@ -135,7 +135,7 @@ export async function listGuildIdsWithEnabledRuleTrigger(
 
 /**
  * Condition成立後、Action実行直前に呼び出すatomic claim。
- * Rule rowをlockして cooldown / max executions のraceを防止する。
+ * Rule rowをlockし、placeholder logも同じtransactionで作成して、同一eventの再配送を遮断する。
  */
 export async function reserveRuleRuntimeExecution(
   prisma: PrismaClient,
@@ -200,6 +200,28 @@ export async function reserveRuleRuntimeExecution(
       }
     }
 
+    await tx.ruleExecutionLog.create({
+      data: {
+        ruleId: input.ruleId,
+        guildId: input.guildId,
+        triggerEvent: {
+          executionId: triggerExecutionId,
+          type: 'reservation',
+          guildId: input.guildId,
+          data: {},
+          timestamp: input.now.toISOString(),
+        },
+        conditionsMet: true,
+        actionsResult: {
+          reservation: true,
+          actionsExecuted: false,
+          results: [],
+        },
+        durationMs: null,
+        executedAt: input.now,
+      },
+    });
+
     const updated = await tx.$queryRaw<Array<{ executionCount: number }>>`
       UPDATE "rules"
       SET "execution_count" = "execution_count" + 1,
@@ -229,29 +251,55 @@ export async function recordRuleRuntimeExecution(
   const executedAt = input.executedAt ?? new Date();
   assertValidDate(executedAt, 'executedAt');
 
-  const triggerEvent = toJsonValue({
+  const triggerEvent = {
     executionId: triggerExecutionId,
     type: input.event.type,
     guildId: input.event.guildId,
     data: input.event.data,
     timestamp: input.event.timestamp.toISOString(),
-  });
-  const actionsResult = toJsonValue({
+  };
+  const actionsResult = {
     triggerMatched: input.result.triggerMatched,
     actionsExecuted: input.result.actionsExecuted,
     actionSkipReason: input.result.actionSkipReason ?? null,
     results: input.result.actionResults,
-  });
+  };
+  const triggerEventJson = JSON.stringify(triggerEvent);
+  const actionsResultJson = JSON.stringify(actionsResult);
+  const normalizedError = normalizeLogError(input.result.error);
+  const durationMs = normalizeDuration(input.result.durationMs);
+
+  const updated = await prisma.$executeRaw`
+    WITH target AS (
+      SELECT "id"
+      FROM "rule_execution_logs"
+      WHERE "rule_id" = ${input.result.ruleId}::uuid
+        AND "guild_id" = ${input.event.guildId}
+        AND "trigger_event" ->> 'executionId' = ${triggerExecutionId}
+      ORDER BY "executed_at" DESC, "id" DESC
+      LIMIT 1
+    )
+    UPDATE "rule_execution_logs"
+    SET
+      "trigger_event" = ${triggerEventJson}::jsonb,
+      "conditions_met" = ${input.result.conditionsMet},
+      "actions_result" = ${actionsResultJson}::jsonb,
+      "error" = ${normalizedError},
+      "duration_ms" = ${durationMs},
+      "executed_at" = ${executedAt}
+    WHERE "id" IN (SELECT "id" FROM target)
+  `;
+  if (updated > 0) return;
 
   await prisma.ruleExecutionLog.create({
     data: {
       ruleId: input.result.ruleId,
       guildId: input.event.guildId,
-      triggerEvent,
+      triggerEvent: toJsonValue(triggerEvent),
       conditionsMet: input.result.conditionsMet,
-      actionsResult,
-      error: normalizeLogError(input.result.error),
-      durationMs: normalizeDuration(input.result.durationMs),
+      actionsResult: toJsonValue(actionsResult),
+      error: normalizedError,
+      durationMs,
       executedAt,
     },
   });
