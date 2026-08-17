@@ -74,7 +74,15 @@ export default async function PluginPermissionsPage({
 
       <PluginPermissionManager
         guildId={guildId}
-        roles={options.roles.map((role) => ({ id: role.id, name: role.name }))}
+        roles={options.roles.map((role) => ({
+          id: role.id,
+          name: role.name,
+          color: role.color,
+          position: role.position,
+          managed: role.managed,
+          mentionable: role.mentionable,
+          editable: role.editable,
+        }))}
         policies={policies}
         plugins={descriptors}
         rootRoleId={STUDIO_ROOT_DISCORD_ROLE_ID}
