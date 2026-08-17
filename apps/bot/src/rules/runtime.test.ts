@@ -122,10 +122,6 @@ function createHarness(input?: {
   };
 }
 
-function nextMinute(date: Date): Date {
-  return new Date(date.getTime() + 60_000);
-}
-
 describe('RuleProductionRuntime', () => {
   it('schedule production triggerからRole create Operationを生成する', async () => {
     const harness = createHarness();
@@ -159,7 +155,6 @@ describe('RuleProductionRuntime', () => {
     await harness.runtime.scanNow(NOW);
     expect(harness.enqueueRoleCreate).toHaveBeenCalledTimes(1);
 
-    // process再起動相当: 同じStore claimを共有する別runtimeへ同一minuteを再配送する。
     const replay = new RuleProductionRuntime({
       store: {
         listRules: async () => [storedRule()],
@@ -265,7 +260,7 @@ describe('RuleProductionRuntime', () => {
       ],
     });
 
-    await harness.runtime.scanNow(nextMinute(NOW));
+    await harness.runtime.scanNow(NOW);
 
     expect(harness.enqueueRoleCreate).not.toHaveBeenCalled();
   });
