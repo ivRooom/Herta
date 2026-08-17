@@ -7,6 +7,10 @@ const guildMemberOptionSchema = z.object({
   displayName: z.string().min(1),
   avatarUrl: z.string().url().nullable(),
   bot: z.boolean(),
+  roleIds: z
+    .array(z.string().regex(/^\d{17,20}$/u))
+    .max(250)
+    .default([]),
 });
 
 const guildMemberSearchResponseSchema = z.object({
@@ -57,4 +61,13 @@ export async function searchGuildMembers(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function getGuildMemberById(
+  guildId: string,
+  userId: string,
+): Promise<GuildMemberOption | null> {
+  if (!/^\d{17,20}$/u.test(userId)) return null;
+  const members = await searchGuildMembers(guildId, userId, 1);
+  return members?.find((member) => member.id === userId) ?? null;
 }

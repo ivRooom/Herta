@@ -14,6 +14,7 @@ test('選択中サーバーの主要管理画面を直接リンクする', () =>
       ['selected-server-overview', `/dashboard/guilds/${GUILD_ID}`],
       ['selected-server-message-studio', `/dashboard/guilds/${GUILD_ID}/daily-content`],
       ['selected-server-commands', `/dashboard/guilds/${GUILD_ID}/commands`],
+      ['selected-server-role-manager', `/dashboard/guilds/${GUILD_ID}/roles`],
       ['selected-server-plugins', `/dashboard/guilds/${GUILD_ID}/plugins`],
       ['selected-server-leaderboard', `/dashboard/guilds/${GUILD_ID}/leaderboard`],
       ['selected-server-moderation', `/dashboard/guilds/${GUILD_ID}/moderation`],

@@ -38,6 +38,13 @@ const SELECTED_SERVER_NAVIGATION_DEFINITIONS: readonly SelectedServerNavigationD
     icon: 'rules',
   },
   {
+    id: 'selected-server-role-manager',
+    path: 'roles',
+    label: 'Role Manager',
+    description: 'Studioの閲覧・編集・操作権限をDiscord Roleごとに管理する',
+    icon: 'rules',
+  },
+  {
     id: 'selected-server-plugins',
     path: 'plugins',
     label: 'プラグイン',
