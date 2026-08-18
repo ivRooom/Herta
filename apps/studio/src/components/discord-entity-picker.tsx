@@ -26,6 +26,7 @@ type PickerProps = {
   emptyMessage: string;
   icon: 'channel' | 'role' | 'emoji';
   ariaLabel?: string;
+  allowManualId?: boolean;
 };
 
 function channelKindLabel(kind: GuildChannelOption['kind']): string {
@@ -110,6 +111,7 @@ export function DiscordChannelPicker({
             emptyMessage="このForumにアクティブな既存投稿はありません"
             icon="channel"
             ariaLabel="Forumの投稿先"
+            allowManualId={false}
           />
           <p className="mt-2 text-[11px] leading-5 text-muted">
             新規投稿を作成するか、このForum配下で現在アクティブな既存投稿へBotで発言できます。
@@ -218,6 +220,7 @@ function DiscordEntityPicker({
   emptyMessage,
   icon,
   ariaLabel,
+  allowManualId = true,
 }: PickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -254,6 +257,7 @@ function DiscordEntityPicker({
   }
 
   function commitManualId() {
+    if (!allowManualId) return;
     const id = query.replace(/\D/gu, '');
     if (!id || optionMap.get(id)?.disabled) return;
     if (multiple) {
@@ -395,7 +399,7 @@ function DiscordEntityPicker({
           ) : (
             <div className="px-3 py-4 text-sm text-muted">
               <p>{emptyMessage}</p>
-              {/\d/u.test(query) ? (
+              {allowManualId && /\d/u.test(query) ? (
                 <button
                   type="button"
                   onClick={commitManualId}
