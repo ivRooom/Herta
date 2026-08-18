@@ -1,3 +1,4 @@
+import type { PrismaClient } from '@herta/db';
 import type { ModerationDetectionKind } from '@herta/plugin-catalog/moderation-service';
 import { toModerationConfigDraft } from './moderation-config-ui';
 
@@ -25,19 +26,10 @@ interface ModerationConfigHistoryRow {
   config: unknown;
 }
 
-export interface ModerationDetectionRuleHistoryClient {
-  guildPluginConfigHistory: {
-    findMany(args: {
-      where: {
-        guildId: string;
-        pluginId: string;
-        createdAt: { lte: Date };
-      };
-      orderBy: { createdAt: 'asc' };
-      select: { createdAt: true; config: true };
-    }): Promise<ModerationConfigHistoryRow[]>;
-  };
-}
+export type ModerationDetectionRuleHistoryClient = Pick<
+  PrismaClient,
+  'guildPluginConfigHistory'
+>;
 
 const WORD_RULE_META: Array<{
   kind: ModerationWordRuleKind;
@@ -86,7 +78,7 @@ export async function resolveModerationDetectionRuleSnapshots(
   const latestOccurredAt = new Date(
     Math.max(...candidates.map((detection) => detection.occurredAt.getTime())),
   );
-  const histories = await client.guildPluginConfigHistory.findMany({
+  const histories: ModerationConfigHistoryRow[] = await client.guildPluginConfigHistory.findMany({
     where: {
       guildId,
       pluginId: 'moderation',
