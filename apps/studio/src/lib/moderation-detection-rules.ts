@@ -28,10 +28,7 @@ interface ModerationConfigHistoryRow {
   config: unknown;
 }
 
-export type ModerationDetectionRuleHistoryClient = Pick<
-  PrismaClient,
-  'guildPluginConfigHistory'
->;
+export type ModerationDetectionRuleHistoryClient = Pick<PrismaClient, 'guildPluginConfigHistory'>;
 
 const WORD_RULE_META: Array<{
   kind: ModerationWordRuleKind;
