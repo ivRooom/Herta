@@ -298,10 +298,13 @@ function resolveAutomaticDecisionSummary(
   const outcome = stringValue(metadata['outcome']);
   const action = stringValue(metadata['action']);
   const severity = stringValue(metadata['severity']);
+  const outcomeLabel = outcome ? decisionOutcomeLabel(outcome) : null;
+  const actionLabel = action ? automaticActionLabel(action) : null;
+  const severityLabel = severity ? automaticSeverityLabel(severity) : null;
   const parts = [
-    outcome ? `判定: ${decisionOutcomeLabel(outcome)}` : null,
-    action ? `対応: ${automaticActionLabel(action)}` : null,
-    severity ? `危険度: ${automaticSeverityLabel(severity)}` : null,
+    outcomeLabel ? `判定: ${outcomeLabel}` : null,
+    actionLabel ? `対応: ${actionLabel}` : null,
+    severityLabel ? `危険度: ${severityLabel}` : null,
   ];
 
   if (action === 'delete' || action === 'warn_delete') {
@@ -325,37 +328,39 @@ function resolveAutomaticExecutionSummary(
   if (!metadata) return null;
   const actionOutcome = stringValue(metadata['actionOutcome']);
   const action = stringValue(metadata['action']);
-  const errorCode = stringOrNumberValue(metadata['discordErrorCode']);
-  const httpStatus = integerValue(metadata['discordHttpStatus']);
+  const actionOutcomeLabel = actionOutcome ? automaticActionOutcomeLabel(actionOutcome) : null;
+  const actionLabel = action ? automaticActionLabel(action) : null;
+  const errorCode = discordErrorCodeValue(metadata['discordErrorCode']);
+  const httpStatus = httpStatusValue(metadata['discordHttpStatus']);
   const parts = [
-    actionOutcome ? `実行結果: ${automaticActionOutcomeLabel(actionOutcome)}` : null,
-    action ? `対応: ${automaticActionLabel(action)}` : null,
+    actionOutcomeLabel ? `実行結果: ${actionOutcomeLabel}` : null,
+    actionLabel ? `対応: ${actionLabel}` : null,
     errorCode === null ? null : `Discord code: ${errorCode}`,
     httpStatus === null ? null : `HTTP: ${httpStatus}`,
   ].filter((part): part is string => part !== null);
   return parts.length > 0 ? parts.join(' / ') : null;
 }
 
-function decisionOutcomeLabel(value: string): string {
+function decisionOutcomeLabel(value: string): string | null {
   if (value === 'disabled') return '自動対応OFF（実行なし）';
   if (value === 'observe') return '監視のみ';
   if (value === 'execute') return '実行対象';
-  return value;
+  return null;
 }
 
-function automaticActionOutcomeLabel(value: string): string {
+function automaticActionOutcomeLabel(value: string): string | null {
   if (value === 'executed') return '成功';
   if (value === 'already_satisfied') return '既に目的達成';
   if (value === 'failed') return '失敗';
-  return value;
+  return null;
 }
 
-function automaticActionLabel(value: string): string {
-  return AUTOMATIC_ACTION_LABELS[value] ?? value;
+function automaticActionLabel(value: string): string | null {
+  return AUTOMATIC_ACTION_LABELS[value] ?? null;
 }
 
-function automaticSeverityLabel(value: string): string {
-  return AUTOMATIC_SEVERITY_LABELS[value] ?? value;
+function automaticSeverityLabel(value: string): string | null {
+  return AUTOMATIC_SEVERITY_LABELS[value] ?? null;
 }
 
 function buildAuditLogWhere(guildId: string, query: AuditLogQuery): Prisma.AuditLogWhereInput {
@@ -483,16 +488,24 @@ function positiveInteger(value: Prisma.JsonValue | undefined): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
-function integerValue(value: Prisma.JsonValue | undefined): number | null {
-  return typeof value === 'number' && Number.isSafeInteger(value) ? value : null;
+function discordErrorCodeValue(value: Prisma.JsonValue | undefined): string | number | null {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  }
+  return typeof value === 'string' && /^\d{1,10}$/u.test(value) ? value : null;
+}
+
+function httpStatusValue(value: Prisma.JsonValue | undefined): number | null {
+  return typeof value === 'number' &&
+    Number.isSafeInteger(value) &&
+    value >= 100 &&
+    value <= 599
+    ? value
+    : null;
 }
 
 function booleanValue(value: Prisma.JsonValue | undefined): boolean | null {
   return typeof value === 'boolean' ? value : null;
-}
-
-function stringOrNumberValue(value: Prisma.JsonValue | undefined): string | number | null {
-  return typeof value === 'string' || typeof value === 'number' ? value : null;
 }
 
 function stringValue(value: Prisma.JsonValue | undefined): string | null {
