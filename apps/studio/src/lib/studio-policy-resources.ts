@@ -34,6 +34,12 @@ export interface PluginPermissionCatalogInput {
   configSchema: Record<string, unknown>;
 }
 
+export interface ApplicableStudioPolicyContext {
+  roleIds: readonly string[];
+  policies: readonly { discordRoleId: string }[];
+  managedPolicies: readonly unknown[];
+}
+
 export function studioPageResource(guildId: string, pageId: StudioPageId): string {
   return `guild:${guildId}:page:${encodeSegment(pageId)}`;
 }
@@ -43,6 +49,12 @@ export function studioAccessPageResource(
   page: 'overview' | 'users' | 'groups' | 'roles' | 'policies',
 ): string {
   return `guild:${guildId}:access:${page}`;
+}
+
+export function hasApplicableStudioPolicy(access: ApplicableStudioPolicyContext): boolean {
+  if (access.managedPolicies.length > 0) return true;
+  const activeRoleIds = new Set(access.roleIds);
+  return access.policies.some((policy) => activeRoleIds.has(policy.discordRoleId));
 }
 
 export function buildStudioGranularPermissionOptions(
