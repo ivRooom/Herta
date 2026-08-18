@@ -42,9 +42,7 @@ export function GuildConsoleTerminal({ context }: { context: GuildConsoleContext
   const appendEntry = (entry: Omit<TerminalEntry, 'id'>) => {
     const id = nextId.current;
     nextId.current += 1;
-    setEntries((current) =>
-      [...current, { ...entry, id }].slice(-GUILD_CONSOLE_HISTORY_LIMIT),
-    );
+    setEntries((current) => [...current, { ...entry, id }].slice(-GUILD_CONSOLE_HISTORY_LIMIT));
   };
 
   const runCommand = (rawCommand: string) => {
