@@ -15,8 +15,8 @@ export interface CommunityCommandRangeWindow {
 export function normalizeCommunityCommandRange(
   value: string | string[] | undefined,
 ): CommunityCommandRange {
-  const candidate = Array.isArray(value) ? value[0] : value;
-  if (candidate === '24h' || candidate === '30d') return candidate;
+  if (Array.isArray(value)) return '7d';
+  if (value === '24h' || value === '30d') return value;
   return '7d';
 }
 
