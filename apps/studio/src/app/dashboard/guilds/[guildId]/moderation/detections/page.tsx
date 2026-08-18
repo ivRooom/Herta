@@ -96,7 +96,11 @@ export default async function ModerationDetectionsPage({
         toExclusive: filters.toExclusive,
       }),
     ]);
-    ruleSnapshots = await resolveModerationDetectionRuleSnapshots(prisma, guildId, result.items);
+    ruleSnapshots = await resolveModerationDetectionRuleSnapshots(
+      prisma,
+      guildId,
+      result.items,
+    );
   } catch (error) {
     console.error('Moderation detections page failed to load', error);
     loadError = '自動検知履歴を取得できませんでした。DB接続と設定履歴を確認してください。';
@@ -203,7 +207,8 @@ export default async function ModerationDetectionsPage({
 
         <div className="mt-4 flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs leading-5 text-muted">
-            追加・編集・削除は既存のModeration設定「検知ルール」から行い、保存するとBot Runtimeへ反映されます。
+            追加・編集・削除は既存のModeration設定「検知ルール」から行い、保存するとBot
+            Runtimeへ反映されます。
           </p>
           <Link
             href={`/dashboard/guilds/${guildId}/plugins/moderation`}
@@ -338,10 +343,7 @@ export default async function ModerationDetectionsPage({
                         </div>
                       </td>
                       <td className="max-w-xs px-4 py-4 text-muted">
-                        <DetectionEvidence
-                          item={item}
-                          ruleSnapshot={ruleSnapshots.get(item.id)}
-                        />
+                        <DetectionEvidence item={item} ruleSnapshot={ruleSnapshots.get(item.id)} />
                       </td>
                       <td className="px-4 py-4">
                         <span className={statusClassName(item.reviewStatus)}>
@@ -476,13 +478,7 @@ function DetectionMobileCard({
   );
 }
 
-function DetectionEvidence({
-  item,
-  ruleSnapshot,
-}: {
-  item: DetectionItem;
-  ruleSnapshot?: string;
-}) {
+function DetectionEvidence({ item, ruleSnapshot }: { item: DetectionItem; ruleSnapshot?: string }) {
   const legacyRule = legacyRuleReference(item.ruleIndex);
   const isWordRule =
     item.detectionKind === 'word_exact' ||
