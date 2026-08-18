@@ -75,6 +75,15 @@ test('openの不正targetはpathとして採用しない', () => {
   assert.doesNotMatch(result.lines.join('\n'), /\.\.\//u);
 });
 
+test('openはObject prototype由来のtargetを許可しない', () => {
+  for (const command of ['open constructor', 'open __proto__']) {
+    const result = executeGuildConsoleCommand(command, context);
+    assert.equal(result.type, 'output');
+    if (result.type !== 'output') continue;
+    assert.equal(result.tone, 'error');
+  }
+});
+
 test('Guild IDはnavigation pathへ埋め込む前にencodeする', () => {
   const unsafeContext = { ...context, guildId: 'guild/../other' };
   const result = executeGuildConsoleCommand('open plugins', unsafeContext);
