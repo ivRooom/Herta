@@ -1,6 +1,6 @@
 import { hasStudioPermission, resolveStudioAccess, type StudioAccessResult } from './studio-access.ts';
 import {
-  hasApplicableStudioPolicy,
+  hasConfiguredStudioPagePolicy,
   studioPageResource,
   type StudioPageId,
 } from './studio-policy-resources.ts';
@@ -14,9 +14,9 @@ export async function authorizeStudioPageView(
   if (!resolved.ok) return resolved;
   if (resolved.access.isRoot) return resolved;
 
-  // Managed/Legacy Policyをまだ割り当てていないManage Guildユーザーは従来挙動を維持する。
-  // Policyを1つでも適用した時点からdefault denyへ移行し、page resourceを明示的に評価する。
-  if (!hasApplicableStudioPolicy(resolved.access)) return resolved;
+  // page.viewをまだ導入していない既存Policyは従来のページ閲覧挙動を維持する。
+  // 実効Policyにpage.viewを1つでも定義した時点からpage単位のdefault denyへ移行する。
+  if (!hasConfiguredStudioPagePolicy(resolved.access)) return resolved;
 
   const resource = studioPageResource(guildId, pageId);
   if (hasStudioPermission(resolved.access, 'studio.page.view', resource)) return resolved;
