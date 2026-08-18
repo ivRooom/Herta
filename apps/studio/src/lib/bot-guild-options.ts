@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { resolveBotHealthRequestTimeoutMs } from './bot-health.ts';
 import { getBotInternalApiAuthorizationHeader } from './bot-internal-api-auth.ts';
 
-const guildChannelOptionSchema = z.object({
+export const guildChannelOptionSchema = z.object({
   id: z.string().regex(/^\d+$/u),
   name: z.string().min(1),
   kind: z.enum(['text', 'announcement', 'forum', 'thread']),
