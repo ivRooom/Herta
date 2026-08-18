@@ -12,6 +12,8 @@ import {
 } from '@/lib/studio-plugin-permissions';
 import type { StudioGranularPermissionOption } from '@/lib/studio-policy-resources';
 
+const MAX_POLICY_STATEMENTS = 64;
+
 interface GranularPolicyView {
   id: string;
   name: string;
@@ -67,6 +69,18 @@ export function GranularPolicyEditor({
 
   function changeMode(option: StudioGranularPermissionOption, mode: ExplicitPermissionMode) {
     if (!draft || !canEdit || pending) return;
+    const currentMode = getExplicitPermissionMode(draft, option.action, option.resource);
+    if (
+      currentMode === 'inherit' &&
+      mode !== 'inherit' &&
+      draft.Statement.length >= MAX_POLICY_STATEMENTS
+    ) {
+      setNotice({
+        kind: 'error',
+        text: `1つのPolicyは最大${MAX_POLICY_STATEMENTS} Statementです。権限セットを複数Policyへ分割してPrincipalへAttachしてください。`,
+      });
+      return;
+    }
     setDraft(setExplicitPermissionMode(draft, option.action, option.resource, mode));
     setNotice(null);
   }
@@ -168,6 +182,13 @@ export function GranularPolicyEditor({
             </label>
           </div>
 
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted">
+            <span className="rounded-full border border-border bg-background px-2.5 py-1">
+              Statements {draft?.Statement.length ?? 0}/{MAX_POLICY_STATEMENTS}
+            </span>
+            <span>多数の権限は用途別Policyへ分けて同じUser / Group / RoleへAttachできます。</span>
+          </div>
+
           <div className="mt-5 space-y-5">
             {groupedOptions.map(([category, categoryOptions]) => (
               <section key={category} className="overflow-hidden rounded-xl border border-border">
@@ -201,9 +222,10 @@ export function GranularPolicyEditor({
                           Effect
                           <select
                             value={mode}
-                            onChange={(event) =>
-                              changeMode(option, event.target.value as ExplicitPermissionMode)
-                            }
+                            onChange={(event) => {
+                              const nextMode = parseExplicitPermissionMode(event.target.value);
+                              if (nextMode) changeMode(option, nextMode);
+                            }}
                             disabled={!canEdit || pending || !draft}
                             aria-label={`${option.label}のEffect`}
                             className={`mt-1 w-full rounded-lg border px-3 py-2 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${effectClassName(mode)}`}
@@ -259,6 +281,10 @@ function groupByCategory(
     groups.set(option.category, current);
   }
   return [...groups.entries()];
+}
+
+function parseExplicitPermissionMode(value: string): ExplicitPermissionMode | null {
+  return value === 'inherit' || value === 'allow' || value === 'deny' ? value : null;
 }
 
 function effectClassName(mode: ExplicitPermissionMode): string {
