@@ -1,5 +1,10 @@
 import type { CommandUsageDay } from '@herta/db';
 import { BarChart3 } from 'lucide-react';
+import Link from 'next/link';
+import {
+  COMMUNITY_COMMAND_RANGES,
+  type CommunityCommandRange,
+} from '@/lib/community-dashboard-range';
 
 function formatDayLabel(value: string): string {
   const date = new Date(`${value}T00:00:00+09:00`);
@@ -10,10 +15,27 @@ function formatDayLabel(value: string): string {
   }).format(date);
 }
 
-export function GuildCommandTrendChart({ daily }: { daily: readonly CommandUsageDay[] }) {
+function rangeButtonLabel(range: CommunityCommandRange): string {
+  if (range === '24h') return '24h';
+  if (range === '30d') return '30d';
+  return '7d';
+}
+
+export function GuildCommandTrendChart({
+  daily,
+  guildId,
+  range,
+  rangeLabel,
+}: {
+  daily: readonly CommandUsageDay[];
+  guildId: string;
+  range: CommunityCommandRange;
+  rangeLabel: string;
+}) {
   const maximum = Math.max(...daily.map((day) => day.total), 1);
   const total = daily.reduce((sum, day) => sum + day.total, 0);
   const failed = daily.reduce((sum, day) => sum + day.failed, 0);
+  const minimumChartWidth = daily.length > 14 ? daily.length * 30 : undefined;
 
   return (
     <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
@@ -23,24 +45,49 @@ export function GuildCommandTrendChart({ daily }: { daily: readonly CommandUsage
             <BarChart3 className="h-5 w-5 text-primary" aria-hidden="true" />
             <h2 className="font-semibold">Command Activity</h2>
           </div>
-          <p className="mt-1 text-sm text-muted">直近7日・JSTの日次実行推移です。</p>
+          <p className="mt-1 text-sm text-muted">{rangeLabel}・JSTの日次実行推移です。</p>
         </div>
-        <div className="text-right text-xs text-muted">
-          <p>{total.toLocaleString()} executions</p>
-          <p className={failed > 0 ? 'text-amber-500' : undefined}>{failed} failed</p>
+        <div className="flex flex-col items-end gap-2">
+          <nav
+            className="inline-flex rounded-xl border border-border bg-background/60 p-1"
+            aria-label="Command分析期間"
+          >
+            {COMMUNITY_COMMAND_RANGES.map((candidate) => {
+              const active = candidate === range;
+              return (
+                <Link
+                  key={candidate}
+                  href={`/dashboard/guilds/${encodeURIComponent(guildId)}?range=${candidate}`}
+                  aria-current={active ? 'page' : undefined}
+                  className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    active
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted hover:bg-surface hover:text-foreground'
+                  }`}
+                >
+                  {rangeButtonLabel(candidate)}
+                </Link>
+              );
+            })}
+          </nav>
+          <div className="text-right text-xs text-muted">
+            <p>{total.toLocaleString()} executions</p>
+            <p className={failed > 0 ? 'text-amber-500' : undefined}>{failed} failed</p>
+          </div>
         </div>
       </div>
 
       {total === 0 ? (
         <div className="mt-6 flex h-44 items-center justify-center rounded-xl border border-dashed border-border bg-background/50 px-4 text-center text-sm text-muted">
-          直近7日のCommand実行履歴はまだありません。
+          {rangeLabel}のCommand実行履歴はまだありません。
         </div>
       ) : (
-        <div className="mt-6">
+        <div className="mt-6 overflow-x-auto pb-1">
           <div
             className="flex h-44 items-end gap-2 sm:gap-3"
+            style={minimumChartWidth ? { minWidth: `${minimumChartWidth}px` } : undefined}
             role="img"
-            aria-label={`直近7日のCommand実行推移。全${total}件、失敗${failed}件。`}
+            aria-label={`${rangeLabel}のCommand実行推移。全${total}件、失敗${failed}件。`}
           >
             {daily.map((day) => {
               const heightPercent = day.total === 0 ? 0 : Math.max(6, (day.total / maximum) * 100);
