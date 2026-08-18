@@ -95,6 +95,68 @@ test('Plugin設定変更は設定値を含めず安全な要約へ変換する',
   assert.equal(presentation.summary.includes('super-secret-token'), false);
 });
 
+test('Moderation decisionは実行可否・Action・権限状態を安全に表示する', () => {
+  const presentation = describeAuditEvent(
+    'moderation.automatic.decision',
+    'discord_user',
+    '688313716055343104',
+    {
+      outcome: 'execute',
+      action: 'delete',
+      severity: 'medium',
+      messageDeletable: true,
+      botCanManageMessages: true,
+      messageId: 'secret-message-id',
+      content: '画面へ出してはいけない本文',
+    },
+  );
+
+  assert.equal(presentation.eventLabel, '自動Moderation判定');
+  assert.equal(presentation.sourceLabel, 'Herta Bot');
+  assert.match(presentation.summary, /判定: 実行対象/u);
+  assert.match(presentation.summary, /対応: メッセージ削除/u);
+  assert.match(presentation.summary, /危険度: 中/u);
+  assert.match(presentation.summary, /メッセージ削除可能: はい/u);
+  assert.match(presentation.summary, /Botのメッセージ管理権限: あり/u);
+  assert.equal(presentation.summary.includes('secret-message-id'), false);
+  assert.equal(presentation.summary.includes('画面へ出してはいけない本文'), false);
+});
+
+test('Moderation decisionがdisabledなら実行されないことを明示する', () => {
+  const presentation = describeAuditEvent('moderation.automatic.decision', 'discord_user', '1', {
+    outcome: 'disabled',
+    action: 'delete',
+    severity: 'medium',
+  });
+
+  assert.match(presentation.summary, /自動対応OFF（実行なし）/u);
+});
+
+test('Moderation実行結果は既削除とDiscord失敗を判別できる', () => {
+  const alreadySatisfied = describeAuditEvent(
+    'moderation.automatic.executed',
+    'discord_user',
+    '1',
+    {
+      action: 'delete',
+      actionOutcome: 'already_satisfied',
+      discordErrorCode: 10008,
+    },
+  );
+  const failed = describeAuditEvent('moderation.automatic.failed', 'discord_user', '1', {
+    action: 'delete',
+    actionOutcome: 'failed',
+    discordErrorCode: 50013,
+    discordHttpStatus: 403,
+  });
+
+  assert.match(alreadySatisfied.summary, /実行結果: 既に目的達成/u);
+  assert.match(alreadySatisfied.summary, /Discord code: 10008/u);
+  assert.match(failed.summary, /実行結果: 失敗/u);
+  assert.match(failed.summary, /Discord code: 50013/u);
+  assert.match(failed.summary, /HTTP: 403/u);
+});
+
 test('未知イベントも生データを展開せず表示できる', () => {
   const presentation = describeAuditEvent('custom.operation', 'custom', 'target-1', {
     password: 'do-not-render',
