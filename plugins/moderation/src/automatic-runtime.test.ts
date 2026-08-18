@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { executeAutomaticDiscordAction } from './automatic-runtime.js';
+import {
+  executeAutomaticDiscordAction,
+  isAutomaticActionBlockedForGuildOwner,
+} from './automatic-runtime.js';
 import type { AutomaticEnforcementPolicy } from './enforcement-config.js';
 
 const BASE_POLICY: AutomaticEnforcementPolicy = {
@@ -11,6 +14,22 @@ const BASE_POLICY: AutomaticEnforcementPolicy = {
   warningMessage: null,
   banDeleteMessageSeconds: 0,
 };
+
+describe('automatic moderation Guild Owner protection', () => {
+  it.each(['observe', 'warn', 'delete', 'warn_delete'] as const)(
+    '%s はGuild Ownerでも実行対象にできる',
+    (action) => {
+      expect(isAutomaticActionBlockedForGuildOwner(action)).toBe(false);
+    },
+  );
+
+  it.each(['timeout', 'role', 'blacklist', 'kick', 'ban'] as const)(
+    '%s はGuild Ownerへの自動処罰として拒否する',
+    (action) => {
+      expect(isAutomaticActionBlockedForGuildOwner(action)).toBe(true);
+    },
+  );
+});
 
 describe('automatic moderation Discord action', () => {
   it('危険度mediumかつAction=deleteで検知メッセージを削除する', async () => {
