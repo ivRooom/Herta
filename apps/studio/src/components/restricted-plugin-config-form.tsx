@@ -207,7 +207,7 @@ function toEditorValues(config: Record<string, unknown>): Record<string, string>
   return Object.fromEntries(
     Object.entries(config).map(([key, value]) => [
       key,
-      value === undefined ? '' : JSON.stringify(value, null, 2),
+      value === undefined ? '' : (JSON.stringify(value, null, 2) ?? ''),
     ]),
   );
 }
