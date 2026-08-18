@@ -43,7 +43,8 @@ export function GuildCommandTrendChart({ daily }: { daily: readonly CommandUsage
             aria-label={`直近7日のCommand実行推移。全${total}件、失敗${failed}件。`}
           >
             {daily.map((day) => {
-              const heightPercent = Math.max(6, (day.total / maximum) * 100);
+              const heightPercent =
+                day.total === 0 ? 0 : Math.max(6, (day.total / maximum) * 100);
               const failurePercent = day.total === 0 ? 0 : (day.failed / day.total) * 100;
               return (
                 <div key={day.date} className="flex min-w-0 flex-1 flex-col items-center gap-2">
