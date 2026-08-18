@@ -1,6 +1,8 @@
 import type { PrismaClient } from '@herta/db';
-import type { ModerationDetectionKind } from '@herta/plugin-catalog/moderation-service';
-import { toModerationConfigDraft } from './moderation-config-ui';
+import {
+  normalizeModerationConfig,
+  type ModerationDetectionKind,
+} from '@herta/plugin-catalog/moderation-service';
 
 export type ModerationWordRuleKind = Extract<
   ModerationDetectionKind,
@@ -54,10 +56,10 @@ const WORD_RULE_META: Array<{
 ];
 
 export function listCurrentModerationWordRuleGroups(config: unknown): ModerationWordRuleGroup[] {
-  const draft = toModerationConfigDraft(config);
+  const normalized = normalizeModerationConfig(config);
   return WORD_RULE_META.map((meta) => ({
     ...meta,
-    values: ruleValues(draft, meta.kind),
+    values: ruleValues(normalized, meta.kind),
   }));
 }
 
@@ -93,7 +95,7 @@ export async function resolveModerationDetectionRuleSnapshots(
     if (!isWordRuleKind(detection.detectionKind) || detection.ruleIndex === null) continue;
     const history = findConfigAt(histories, detection.occurredAt);
     if (!history) continue;
-    const config = toModerationConfigDraft(history.config);
+    const config = normalizeModerationConfig(history.config);
     const value = ruleValues(config, detection.detectionKind)[detection.ruleIndex];
     if (value) snapshots.set(detection.id, value);
   }
@@ -120,7 +122,7 @@ function isWordRuleKind(kind: ModerationDetectionKind): kind is ModerationWordRu
 }
 
 function ruleValues(
-  config: ReturnType<typeof toModerationConfigDraft>,
+  config: ReturnType<typeof normalizeModerationConfig>,
   kind: ModerationWordRuleKind,
 ): string[] {
   if (kind === 'word_exact') return config.autoExactWords;
