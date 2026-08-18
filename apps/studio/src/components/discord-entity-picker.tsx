@@ -7,6 +7,7 @@ import type {
   GuildEmojiOption,
   GuildRoleOption,
 } from '@/lib/bot-guild-options';
+import { resolveDiscordForumPostTargetSelection } from '@/lib/discord-forum-post-targets';
 
 type PickerOption = {
   id: string;
@@ -24,6 +25,7 @@ type PickerProps = {
   placeholder: string;
   emptyMessage: string;
   icon: 'channel' | 'role' | 'emoji';
+  ariaLabel?: string;
 };
 
 function channelKindLabel(kind: GuildChannelOption['kind']): string {
@@ -47,21 +49,76 @@ export function DiscordChannelPicker({
   placeholder?: string;
 }) {
   const selected = Array.isArray(value) ? value : value ? [value] : [];
-  const normalized = options.map((option) => ({
+  const forumSelection =
+    !multiple && selected.length <= 1
+      ? resolveDiscordForumPostTargetSelection(options, selected[0] ?? null)
+      : null;
+  const forumIds = new Set(
+    options.filter((option) => option.kind === 'forum').map((option) => option.id),
+  );
+  const primaryOptions =
+    multiple || !forumSelection
+      ? options
+      : options.filter(
+          (option) =>
+            option.kind !== 'thread' || !option.parentId || !forumIds.has(option.parentId),
+        );
+  const normalized = primaryOptions.map((option) => ({
     id: option.id,
     name: option.name,
     meta: channelKindLabel(option.kind),
   }));
+  const primarySelected = forumSelection?.forumId
+    ? [forumSelection.primaryChannelId!]
+    : selected;
+  const forumTargetOptions = forumSelection?.forumId
+    ? [
+        {
+          id: forumSelection.forumId,
+          name: '新規投稿を作成',
+          meta: 'Forum',
+        },
+        ...forumSelection.threads.map((thread) => ({
+          id: thread.id,
+          name: thread.name,
+          meta: '既存投稿',
+        })),
+      ]
+    : [];
+  const forumTargetValue = forumSelection?.forumId
+    ? [forumSelection.threadId ?? forumSelection.forumId]
+    : [];
+
   return (
-    <DiscordEntityPicker
-      options={normalized}
-      value={selected}
-      onChange={(values) => onChange(multiple ? values : (values[0] ?? null))}
-      multiple={multiple}
-      placeholder={placeholder}
-      emptyMessage="利用できるチャンネル・フォーラム・スレッドが見つかりません"
-      icon="channel"
-    />
+    <div className="space-y-2">
+      <DiscordEntityPicker
+        options={normalized}
+        value={primarySelected}
+        onChange={(values) => onChange(multiple ? values : (values[0] ?? null))}
+        multiple={multiple}
+        placeholder={placeholder}
+        emptyMessage="利用できるチャンネル・フォーラム・スレッドが見つかりません"
+        icon="channel"
+        ariaLabel="Discord投稿先"
+      />
+      {forumSelection?.forumId ? (
+        <div className="rounded-xl border border-border bg-background/50 p-3">
+          <p className="mb-2 text-xs font-medium text-muted">Forum投稿先</p>
+          <DiscordEntityPicker
+            options={forumTargetOptions}
+            value={forumTargetValue}
+            onChange={(values) => onChange(values[0] ?? forumSelection.forumId)}
+            placeholder="既存投稿を検索"
+            emptyMessage="このForumにアクティブな既存投稿はありません"
+            icon="channel"
+            ariaLabel="Forumの投稿先"
+          />
+          <p className="mt-2 text-[11px] leading-5 text-muted">
+            新規投稿を作成するか、このForum配下で現在アクティブな既存投稿へBotで発言できます。
+          </p>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -162,6 +219,7 @@ function DiscordEntityPicker({
   placeholder,
   emptyMessage,
   icon,
+  ariaLabel,
 }: PickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -278,6 +336,7 @@ function DiscordEntityPicker({
           className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none placeholder:text-muted"
           role="combobox"
           aria-expanded={open}
+          aria-label={ariaLabel ?? placeholder}
         />
         {!multiple && value.length > 0 ? (
           <button
