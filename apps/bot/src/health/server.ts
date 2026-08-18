@@ -8,6 +8,10 @@ import {
 } from '../profile/guild-bot-profile.js';
 import { fetchGuildCommandCatalog, GuildCommandCatalogError } from './command-catalog.js';
 import type { HealthConfig } from './config.js';
+import {
+  fetchGuildArchivedForumThreads,
+  GuildForumThreadCatalogError,
+} from './forum-thread-catalog.js';
 import type { GuildConfigurationOptions } from './guild-options.js';
 import type { GuildMemberOption } from './guild-members.js';
 import {
@@ -168,6 +172,22 @@ export class HealthHttpServer {
     const requestUrl = new URL(request.url ?? '/', 'http://localhost');
     const pathname = requestUrl.pathname;
 
+    const guildArchivedForumThreadsMatch =
+      /^\/internal\/guilds\/(\d{17,20})\/message-studio\/forums\/(\d{17,20})\/threads$/u.exec(
+        pathname,
+      );
+    if (guildArchivedForumThreadsMatch) {
+      await this.handleArchivedForumThreadsRequest(
+        request,
+        response,
+        method,
+        guildArchivedForumThreadsMatch[1]!,
+        guildArchivedForumThreadsMatch[2]!,
+        requestUrl,
+      );
+      return;
+    }
+
     const guildMessageStudioMatch = /^\/internal\/guilds\/(\d+)\/message-studio\/send$/u.exec(
       pathname,
     );
@@ -312,6 +332,68 @@ export class HealthHttpServer {
     }
 
     this.sendJson(response, HTTP_STATUS_BY_HEALTH[health.status], health);
+  }
+
+  private async handleArchivedForumThreadsRequest(
+    request: IncomingMessage,
+    response: import('node:http').ServerResponse,
+    method: string,
+    guildId: string,
+    forumId: string,
+    requestUrl: URL,
+  ): Promise<void> {
+    const internalApiSecret = this.options.internalApiSecret;
+    if (!isConfiguredInternalApiSecret(internalApiSecret)) {
+      this.sendJson(response, 503, { status: 'internal_api_not_configured' });
+      return;
+    }
+    if (!isAuthorizedInternalApiRequest(request.headers.authorization, internalApiSecret)) {
+      this.sendJson(response, 401, { status: 'unauthorized' });
+      return;
+    }
+    if (method !== 'GET') {
+      response.setHeader('Allow', 'GET');
+      this.sendJson(response, 405, { status: 'method_not_allowed' });
+      return;
+    }
+
+    const token = process.env['DISCORD_BOT_TOKEN']?.trim();
+    if (!token) {
+      this.sendJson(response, 503, { status: 'discord_bot_not_configured' });
+      return;
+    }
+
+    const before = requestUrl.searchParams.get('before')?.trim() || null;
+    if (before && before.length > 64) {
+      this.sendJson(response, 400, { status: 'invalid_before' });
+      return;
+    }
+    const requestedLimit = Number.parseInt(requestUrl.searchParams.get('limit') ?? '50', 10);
+    const limit = Number.isFinite(requestedLimit)
+      ? Math.max(1, Math.min(50, requestedLimit))
+      : 50;
+
+    try {
+      const page = await withTimeout(
+        fetchGuildArchivedForumThreads(token, guildId, forumId, before, limit),
+        this.options.config.checkTimeoutMs + 5_000,
+      );
+      this.sendJson(response, 200, page);
+    } catch (error) {
+      if (error instanceof GuildForumThreadCatalogError) {
+        this.options.logger.warn(
+          { guildId, forumId, status: error.status, code: error.code, errorName: error.name },
+          'Archived Forum Thread Catalog取得に失敗しました',
+        );
+        this.sendJson(response, error.status, { status: error.code });
+        return;
+      }
+      this.options.logger.error(
+        { guildId, forumId, errorName: error instanceof Error ? error.name : 'UnknownError' },
+        'Archived Forum Thread Catalog取得で予期しないエラーが発生しました',
+      );
+      this.sendJson(response, 503, { status: 'unavailable' });
+    }
   }
 
   private async handleGuildRoleMutationRequest(
