@@ -56,9 +56,13 @@ export function GranularPolicyEditor({
     () =>
       options.filter((option) => {
         if (!normalizedQuery) return true;
-        return [option.category, option.label, option.description, option.action, option.resource].some(
-          (value) => value.toLocaleLowerCase('ja').includes(normalizedQuery),
-        );
+        return [
+          option.category,
+          option.label,
+          option.description,
+          option.action,
+          option.resource,
+        ].some((value) => value.toLocaleLowerCase('ja').includes(normalizedQuery));
       }),
     [normalizedQuery, options],
   );
@@ -133,7 +137,8 @@ export function GranularPolicyEditor({
             <h2 className="text-xl font-semibold">Granular permission matrix</h2>
           </div>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-            ページ単位、Pluginの設定項目単位で Allow / Deny / Inherit を指定します。明示DenyはRole・User・Groupの別PolicyにあるAllowより優先されます。
+            ページ単位、Pluginの設定項目単位で Allow / Deny / Inherit
+            を指定します。明示DenyはRole・User・Groupの別PolicyにあるAllowより優先されます。
           </p>
         </div>
         {!canEdit ? (

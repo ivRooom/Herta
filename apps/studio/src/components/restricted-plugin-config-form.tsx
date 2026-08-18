@@ -67,7 +67,9 @@ export function RestrictedPluginConfigForm({
         }
       }
     } catch {
-      setStatus('JSON値の形式が不正な設定項目があります。文字列は "value" のように入力してください。');
+      setStatus(
+        'JSON値の形式が不正な設定項目があります。文字列は "value" のように入力してください。',
+      );
       return;
     }
 
@@ -90,7 +92,9 @@ export function RestrictedPluginConfigForm({
       });
       const result = (await response.json().catch(() => null)) as PluginUpdateResponse | null;
       if (!response.ok) {
-        throw new Error(typeof result?.error === 'string' ? result.error : '設定の保存に失敗しました');
+        throw new Error(
+          typeof result?.error === 'string' ? result.error : '設定の保存に失敗しました',
+        );
       }
 
       const nextConfig = isRecord(result?.config) ? result.config : initialConfig;
@@ -117,7 +121,8 @@ export function RestrictedPluginConfigForm({
           </span>
           <h2 className="mt-3 text-xl font-semibold">許可された設定項目</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-            閲覧許可された値だけをClientへ読み込みます。編集はさらに `studio.settings.write` が許可された項目だけ可能です。見えない設定は部分更新から除外され、上書きされません。
+            閲覧許可された値だけをClientへ読み込みます。編集はさらに `studio.settings.write`
+            が許可された項目だけ可能です。見えない設定は部分更新から除外され、上書きされません。
           </p>
         </div>
         <label className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 text-sm">
@@ -167,13 +172,16 @@ export function RestrictedPluginConfigForm({
                 }
                 readOnly={!canEdit}
                 aria-readonly={!canEdit}
-                rows={Array.isArray(initialConfig[field.key]) || isRecord(initialConfig[field.key]) ? 5 : 2}
+                rows={
+                  Array.isArray(initialConfig[field.key]) || isRecord(initialConfig[field.key]) ? 5 : 2
+                }
                 spellCheck={false}
                 className="mt-3 w-full rounded-lg border border-border bg-surface p-3 font-mono text-sm leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring read-only:cursor-default read-only:opacity-70"
               />
               {canEdit ? (
                 <span className="mt-1 block text-[11px] text-muted">
-                  JSON値として入力します。空欄で設定項目を削除し、最終的なSchema validationはserver側で実行されます。
+                  JSON値として入力します。空欄で設定項目を削除し、最終的なSchema
+                  validationはserver側で実行されます。
                 </span>
               ) : null}
             </label>

@@ -59,7 +59,9 @@ export default async function AccessUsersPage({
       <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">IAM / Users</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+              IAM / Users
+            </p>
             <h1 className="mt-1 text-2xl font-semibold">Users</h1>
             <p className="mt-1 text-sm text-muted">
               Direct PolicyまたはHerta Group membershipを持つDiscord Userを一覧表示します。
@@ -100,7 +102,8 @@ export default async function AccessUsersPage({
             const rolePolicyIds = inventory.attachments
               .filter(
                 (attachment) =>
-                  attachment.principalType === 'role' && user.roleIds.includes(attachment.principalId),
+                  attachment.principalType === 'role' &&
+                  user.roleIds.includes(attachment.principalId),
               )
               .map((attachment) => attachment.policyId);
             const effectivePolicyIds = [
@@ -120,9 +123,15 @@ export default async function AccessUsersPage({
                     ) : null}
                     <code className="mt-1 block break-all text-[11px] text-muted">{user.id}</code>
                     <div className="mt-3 grid gap-3 text-xs sm:grid-cols-3">
-                      <Info label="Direct policies" value={policyNames(directPolicyIds, policyNameById)} />
+                      <Info
+                        label="Direct policies"
+                        value={policyNames(directPolicyIds, policyNameById)}
+                      />
                       <Info label="Groups" value={groupNames(groupIds, groupNameById)} />
-                      <Info label="Effective managed policies" value={policyNames(effectivePolicyIds, policyNameById)} />
+                      <Info
+                        label="Effective managed policies"
+                        value={policyNames(effectivePolicyIds, policyNameById)}
+                      />
                     </div>
                   </div>
                 </div>

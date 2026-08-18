@@ -14,7 +14,11 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-export default async function AccessPoliciesPage({ params }: { params: Promise<{ guildId: string }> }) {
+export default async function AccessPoliciesPage({
+  params,
+}: {
+  params: Promise<{ guildId: string }>;
+}) {
   const session = await auth();
   if (!session?.user) notFound();
   const { guildId } = await params;
@@ -45,10 +49,13 @@ export default async function AccessPoliciesPage({ params }: { params: Promise<{
       />
 
       <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
-        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">IAM / Policies</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+          IAM / Policies
+        </p>
         <h1 className="mt-1 text-2xl font-semibold">Policies</h1>
         <p className="mt-1 text-sm leading-6 text-muted">
-          Managed Policyを一覧し、User・Group・Discord RoleへAttachします。Policy documentはページ・設定項目・操作のResourceまで細かく指定できます。
+          Managed Policyを一覧し、User・Group・Discord RoleへAttachします。Policy
+          documentはページ・設定項目・操作のResourceまで細かく指定できます。
         </p>
         <div className="mt-5 divide-y divide-border overflow-hidden rounded-xl border border-border">
           {inventory.policies.map((policy) => {
@@ -88,7 +95,8 @@ export default async function AccessPoliciesPage({ params }: { params: Promise<{
         </div>
         {inventory.invalidPolicyCount > 0 ? (
           <p className="mt-3 text-sm text-red-300" role="alert">
-            無効なPolicy documentが{inventory.invalidPolicyCount}件あり、一覧・認可から安全側に除外されています。
+            無効なPolicy documentが{inventory.invalidPolicyCount}
+            件あり、一覧・認可から安全側に除外されています。
           </p>
         ) : null}
       </section>
@@ -119,7 +127,10 @@ export default async function AccessPoliciesPage({ params }: { params: Promise<{
 function Header({ guildId, guildName }: { guildId: string; guildName: string }) {
   return (
     <div>
-      <Link href={`/dashboard/guilds/${guildId}/access`} className="text-sm text-muted hover:text-foreground">
+      <Link
+        href={`/dashboard/guilds/${guildId}/access`}
+        className="text-sm text-muted hover:text-foreground"
+      >
         ← Access Controlへ戻る
       </Link>
       <p className="mt-4 text-xs font-semibold uppercase tracking-[0.14em] text-muted">

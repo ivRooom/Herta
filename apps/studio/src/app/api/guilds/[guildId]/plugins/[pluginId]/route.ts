@@ -184,14 +184,20 @@ function isPatchBody(value: unknown): value is PluginPatchBody {
   ) {
     return false;
   }
-  if (body.config !== undefined && (body.configPatch !== undefined || body.removeConfigFields !== undefined)) {
+  if (
+    body.config !== undefined &&
+    (body.configPatch !== undefined || body.removeConfigFields !== undefined)
+  ) {
     return false;
   }
   if (body.enabled !== undefined && typeof body.enabled !== 'boolean') return false;
   if (body.config !== undefined && !isRecord(body.config)) return false;
   if (body.configPatch !== undefined && !isRecord(body.configPatch)) return false;
   if (body.removeConfigFields !== undefined) {
-    if (!Array.isArray(body.removeConfigFields) || body.removeConfigFields.length > MAX_REMOVED_CONFIG_FIELDS) {
+    if (
+      !Array.isArray(body.removeConfigFields) ||
+      body.removeConfigFields.length > MAX_REMOVED_CONFIG_FIELDS
+    ) {
       return false;
     }
     if (

@@ -9,7 +9,11 @@ import { studioAccessPageResource } from '@/lib/studio-policy-resources';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AccessRolesPage({ params }: { params: Promise<{ guildId: string }> }) {
+export default async function AccessRolesPage({
+  params,
+}: {
+  params: Promise<{ guildId: string }>;
+}) {
   const session = await auth();
   if (!session?.user) notFound();
   const { guildId } = await params;
@@ -43,10 +47,13 @@ export default async function AccessRolesPage({ params }: { params: Promise<{ gu
       <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">IAM / Roles</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">
+              IAM / Roles
+            </p>
             <h1 className="mt-1 text-2xl font-semibold">Roles</h1>
             <p className="mt-1 text-sm text-muted">
-              Discord RoleとAttach済みManaged Policyを一覧表示します。Role本体の作成・削除はRole Managerで行います。
+              Discord RoleとAttach済みManaged Policyを一覧表示します。Role本体の作成・削除はRole
+              Managerで行います。
             </p>
           </div>
           <Link
@@ -68,7 +75,11 @@ export default async function AccessRolesPage({ params }: { params: Promise<{ gu
             return (
               <article key={role.id} className="bg-background px-4 py-4">
                 <div className="flex items-start gap-3">
-                  <span className="mt-1 h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: role.color || '#64748b' }} aria-hidden="true" />
+                  <span
+                    className="mt-1 h-3 w-3 shrink-0 rounded-full"
+                    style={{ backgroundColor: role.color || '#64748b' }}
+                    aria-hidden="true"
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <h2 className="font-semibold">{role.name}</h2>
@@ -85,8 +96,12 @@ export default async function AccessRolesPage({ params }: { params: Promise<{ gu
                     </div>
                     <code className="mt-1 block break-all text-[11px] text-muted">{role.id}</code>
                     <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                      <span className="rounded-full border border-border px-2.5 py-1">Position {role.position}</span>
-                      <span className="rounded-full border border-border px-2.5 py-1">Policies {policyNames.length}</span>
+                      <span className="rounded-full border border-border px-2.5 py-1">
+                        Position {role.position}
+                      </span>
+                      <span className="rounded-full border border-border px-2.5 py-1">
+                        Policies {policyNames.length}
+                      </span>
                       <span className="rounded-full border border-border px-2.5 py-1">
                         {role.editable ? 'Bot管理可能' : 'Bot管理不可'}
                       </span>
@@ -111,7 +126,10 @@ export default async function AccessRolesPage({ params }: { params: Promise<{ gu
 function Header({ guildId, guildName }: { guildId: string; guildName: string }) {
   return (
     <div>
-      <Link href={`/dashboard/guilds/${guildId}/access`} className="text-sm text-muted hover:text-foreground">
+      <Link
+        href={`/dashboard/guilds/${guildId}/access`}
+        className="text-sm text-muted hover:text-foreground"
+      >
         ← Access Controlへ戻る
       </Link>
       <p className="mt-4 text-xs font-semibold uppercase tracking-[0.14em] text-muted">

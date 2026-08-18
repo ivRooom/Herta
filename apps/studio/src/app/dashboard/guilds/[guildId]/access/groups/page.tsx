@@ -10,7 +10,11 @@ import { studioAccessPageResource } from '@/lib/studio-policy-resources';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AccessGroupsPage({ params }: { params: Promise<{ guildId: string }> }) {
+export default async function AccessGroupsPage({
+  params,
+}: {
+  params: Promise<{ guildId: string }>;
+}) {
   const session = await auth();
   if (!session?.user) notFound();
   const { guildId } = await params;
@@ -110,7 +114,10 @@ export default async function AccessGroupsPage({ params }: { params: Promise<{ g
 function Header({ guildId, guildName }: { guildId: string; guildName: string }) {
   return (
     <div>
-      <Link href={`/dashboard/guilds/${guildId}/access`} className="text-sm text-muted hover:text-foreground">
+      <Link
+        href={`/dashboard/guilds/${guildId}/access`}
+        className="text-sm text-muted hover:text-foreground"
+      >
         ← Access Controlへ戻る
       </Link>
       <p className="mt-4 text-xs font-semibold uppercase tracking-[0.14em] text-muted">

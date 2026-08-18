@@ -60,7 +60,8 @@ export default async function GuildAccessControlPage({
               Access Control Center
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              AWS IAMと同じ考え方で、Users・Groups・Discord Roles・Managed Policiesを独立したResourceとして確認します。Policyは複数PrincipalへAttachでき、明示DenyがAllowより優先されます。
+              AWS IAMと同じ考え方で、Users・Groups・Discord Roles・Managed
+              Policiesを独立したResourceとして確認します。Policyは複数PrincipalへAttachでき、明示DenyがAllowより優先されます。
             </p>
           </div>
         </div>
@@ -113,7 +114,8 @@ export default async function GuildAccessControlPage({
               <h2 className="text-sm font-semibold">Legacy Role Policy互換モード</h2>
               <p className="mt-1 text-xs leading-5 text-muted">
                 既存Role Policyが{inventory.legacyRolePolicyCount}
-                件あります。既存権限を壊さないため認可時のみ読み取り継続し、新規権限はManaged Policyへ集約します。
+                件あります。既存権限を壊さないため認可時のみ読み取り継続し、新規権限はManaged
+                Policyへ集約します。
               </p>
             </div>
           </div>
@@ -130,7 +132,8 @@ export default async function GuildAccessControlPage({
           </h2>
           <p className="mt-1 text-xs leading-5 text-muted">
             {inventory.invalidPolicyCount}
-            件のPolicy documentが現在のSchemaまたはGuild scopeを満たしていません。認可resolverも安全側に倒して拒否します。
+            件のPolicy documentが現在のSchemaまたはGuild
+            scopeを満たしていません。認可resolverも安全側に倒して拒否します。
           </p>
         </section>
       ) : null}
@@ -181,7 +184,10 @@ function AccessUnavailable({ guildId, status }: { guildId: string; status: numbe
       : 'Discordまたは権限データを確認できませんでした。安全のためAccess Controlを拒否しています。';
   return (
     <div className="space-y-6">
-      <Link href={`/dashboard/guilds/${guildId}`} className="text-sm text-muted hover:text-foreground">
+      <Link
+        href={`/dashboard/guilds/${guildId}`}
+        className="text-sm text-muted hover:text-foreground"
+      >
         ← サーバー概要へ戻る
       </Link>
       <section className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-6">

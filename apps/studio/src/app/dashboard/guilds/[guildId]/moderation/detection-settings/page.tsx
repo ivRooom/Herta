@@ -63,21 +63,39 @@ export default async function ModerationDetectionSettingsPage({
               自動検知の詳細パラメータ
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              NGワードだけでなく、メンション数、連投・重複投稿の件数と時間窓、本文最大長、Discord招待Allowlist、Alert閾値、Cooldown、Case保持などModeration Manifestが実際にサポートする値を細かく調整します。
+              NGワードだけでなく、メンション数、連投・重複投稿の件数と時間窓、本文最大長、Discord招待Allowlist、Alert閾値、Cooldown、Case保持などModeration
+              Manifestが実際にサポートする値を細かく調整します。
             </p>
           </div>
         </div>
       </section>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Hint title="大量メンション" value="0–100" description="0で無効。User・Role・everyone合計。" />
-        <Hint title="短時間の連投" value="0–50 / 1–300秒" description="投稿数と監視時間を別々に調整。" />
-        <Hint title="重複投稿" value="0–20 / 1–600秒" description="正規化後の同一本文を監視。" />
-        <Hint title="本文最大長" value="100–4000" description="自動検知で解析する本文長の上限。" />
+        <Hint
+          title="大量メンション"
+          value="0–100"
+          description="0で無効。User・Role・everyone合計。"
+        />
+        <Hint
+          title="短時間の連投"
+          value="0–50 / 1–300秒"
+          description="投稿数と監視時間を別々に調整。"
+        />
+        <Hint
+          title="重複投稿"
+          value="0–20 / 1–600秒"
+          description="正規化後の同一本文を監視。"
+        />
+        <Hint
+          title="本文最大長"
+          value="100–4000"
+          description="自動検知で解析する本文長の上限。"
+        />
       </section>
 
       <section className="rounded-2xl border border-border bg-surface p-4 text-sm leading-6 text-muted sm:p-5">
-        通常のNGワード追加は従来の「NGワード・自動検知」を使い、この画面では閾値・時間窓・Alert・除外・保持期間などを調整してください。設定項目検索に `auto`、`Alert`、`Case` などを入力すると絞り込めます。
+        通常のNGワード追加は従来の「NGワード・自動検知」を使い、この画面では閾値・時間窓・Alert・除外・保持期間などを調整してください。設定項目検索に
+        `auto`、`Alert`、`Case` などを入力すると絞り込めます。
       </section>
 
       {allReadable ? (
