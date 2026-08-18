@@ -604,7 +604,7 @@ function assertAutomaticTargetCanBeModerated(
   if (!guild) throw new Error('Guild情報を取得できません');
   const action = policy.action;
   if (message.author.id === guild.ownerId && isAutomaticActionBlockedForGuildOwner(action)) {
-    throw new Error('Guild Ownerにはこの自動対応を実行できません');
+    throw new Error('Guild Ownerにはメンバー状態を変更する自動対応を実行できません');
   }
   if (message.author.bot) throw new Error('Botアカウントは自動対応対象にできません');
 
