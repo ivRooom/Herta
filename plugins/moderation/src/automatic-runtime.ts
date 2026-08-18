@@ -146,9 +146,7 @@ export interface AutomaticDiscordActionResult {
   discordErrorCode: string | number | null;
 }
 
-export function isAutomaticActionBlockedForGuildOwner(
-  action: AutomaticEnforcementAction,
-): boolean {
+export function isAutomaticActionBlockedForGuildOwner(action: AutomaticEnforcementAction): boolean {
   return (
     action === 'timeout' ||
     action === 'role' ||
