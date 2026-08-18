@@ -92,7 +92,10 @@ test('未知commandと長すぎる入力を安全に拒否する', () => {
     assert.doesNotMatch(unknown.lines.join('\n'), /<script>/u);
   }
 
-  const tooLong = executeGuildConsoleCommand('x'.repeat(GUILD_CONSOLE_MAX_INPUT_LENGTH + 1), context);
+  const tooLong = executeGuildConsoleCommand(
+    'x'.repeat(GUILD_CONSOLE_MAX_INPUT_LENGTH + 1),
+    context,
+  );
   assert.equal(tooLong.type, 'output');
   if (tooLong.type === 'output') {
     assert.equal(tooLong.tone, 'error');
