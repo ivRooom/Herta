@@ -8,7 +8,10 @@ import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
 import { getDiscordAccessToken } from '@/lib/session';
 import { resolveStudioAccess } from '@/lib/studio-access';
-import { resolvePluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';
+import {
+  filterReadablePluginConfig,
+  resolvePluginConfigStudioAccess,
+} from '@/lib/studio-plugin-permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,6 +44,7 @@ export default async function ModerationEnforcementPage({
     'moderation',
     fieldKeys,
   );
+  const visibleConfig = filterReadablePluginConfig(plugin.config, configAccess);
   const canUseFullEditor =
     configAccess.readableFieldKeys.length === fieldKeys.length &&
     configAccess.editableFieldKeys.length === fieldKeys.length;
@@ -73,7 +77,7 @@ export default async function ModerationEnforcementPage({
         {canUseFullEditor ? (
           <ModerationEnforcementForm
             guildId={guildId}
-            initialConfig={plugin.config}
+            initialConfig={visibleConfig}
             discordOptions={discordOptions}
           />
         ) : (
