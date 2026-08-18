@@ -146,6 +146,18 @@ export interface AutomaticDiscordActionResult {
   discordErrorCode: string | number | null;
 }
 
+export function isAutomaticActionBlockedForGuildOwner(
+  action: AutomaticEnforcementAction,
+): boolean {
+  return (
+    action === 'timeout' ||
+    action === 'role' ||
+    action === 'blacklist' ||
+    action === 'kick' ||
+    action === 'ban'
+  );
+}
+
 const detectors = new Map<string, AutomaticModerationDetector>();
 // 現在の本番はBot単一プロセス構成。将来shard/複数process化する場合はRedis共有へ移行する。
 const alertCooldowns = new Map<string, number>();
@@ -592,14 +604,16 @@ function assertAutomaticTargetCanBeModerated(
 ): void {
   const guild = message.guild;
   if (!guild) throw new Error('Guild情報を取得できません');
-  if (message.author.id === guild.ownerId) throw new Error('Guild Ownerは自動対応対象にできません');
+  const action = policy.action;
+  if (message.author.id === guild.ownerId && isAutomaticActionBlockedForGuildOwner(action)) {
+    throw new Error('Guild Ownerにはこの自動対応を実行できません');
+  }
   if (message.author.bot) throw new Error('Botアカウントは自動対応対象にできません');
 
   const bot = guild.members.me;
   if (!bot) throw new Error('BotのGuild Member情報を取得できません');
   if (message.author.id === bot.id) throw new Error('Herta Bot自身は自動対応対象にできません');
 
-  const action = policy.action;
   if (
     (action === 'delete' || action === 'warn_delete') &&
     !bot.permissions.has(MANAGE_MESSAGES_PERMISSION)
