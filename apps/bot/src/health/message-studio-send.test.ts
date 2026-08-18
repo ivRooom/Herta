@@ -289,7 +289,9 @@ describe('sendGuildMessageStudioMessage thread safety', () => {
       .mockResolvedValueOnce(jsonResponse({ id: '323456789012345678' }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(sendGuildMessageStudioMessage('token', guildId, textMessageInput())).resolves.toEqual({
+    await expect(
+      sendGuildMessageStudioMessage('token', guildId, textMessageInput()),
+    ).resolves.toEqual({
       messageId: '323456789012345678',
       channelId: threadId,
       threadId: null,
@@ -297,7 +299,9 @@ describe('sendGuildMessageStudioMessage thread safety', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls[1]?.[0]).toBe(`https://discord.com/api/v10/channels/${threadId}`);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      `https://discord.com/api/v10/channels/${threadId}`,
+    );
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
       method: 'PATCH',
       body: JSON.stringify({ archived: false }),
