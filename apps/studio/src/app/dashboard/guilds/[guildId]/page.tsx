@@ -19,8 +19,13 @@ import {
 } from 'lucide-react';
 import { auth } from '@/auth';
 import { GuildAvatar } from '@/components/guild-avatar';
+import { GuildCommandTrendChart } from '@/components/guild-command-trend-chart';
+import { GuildConsoleTerminal } from '@/components/guild-console-terminal';
 import { ReconnectNotice } from '@/components/reconnect-notice';
-import { getCommunityDashboardSnapshot } from '@/lib/community-dashboard';
+import {
+  getCommunityCommandTrend,
+  getCommunityDashboardSnapshot,
+} from '@/lib/community-dashboard';
 import { getDiscordGuildInstallUrl } from '@/lib/discord-install';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
@@ -51,8 +56,9 @@ export default async function GuildDetailPage({
   if (!guild || !session?.user) notFound();
 
   await persistSelectedGuild(guild, session.user.id);
-  const [snapshot, installUrl] = await Promise.all([
+  const [snapshot, commandTrend, installUrl] = await Promise.all([
     getCommunityDashboardSnapshot(guild.id),
+    getCommunityCommandTrend(guild.id),
     Promise.resolve(getDiscordGuildInstallUrl(guild.id)),
   ]);
   const attentionCount =
@@ -121,6 +127,24 @@ export default async function GuildDetailPage({
             attentionCount > 0 ? '未処理・失敗項目があります' : '大きな要対応項目はありません'
           }
           attention={attentionCount > 0}
+        />
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+        <GuildCommandTrendChart daily={commandTrend} />
+        <GuildConsoleTerminal
+          context={{
+            guildId: guild.id,
+            guildName: guild.name,
+            enabledPlugins: snapshot.enabledPlugins,
+            totalPlugins: snapshot.totalPlugins,
+            commands7d: snapshot.commands7d,
+            failedCommands7d: snapshot.failedCommands7d,
+            commandSuccessRate7d: snapshot.commandSuccessRate7d,
+            attentionCount,
+            openSuggestions: snapshot.openSuggestions,
+            failedReminders: snapshot.failedReminders,
+          }}
         />
       </section>
 
