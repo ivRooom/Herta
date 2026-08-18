@@ -1,6 +1,15 @@
-import { fillCommandUsageDays, startOfJstDay, type CommandUsageDay } from '@herta/db';
+import {
+  calculateSuccessRate,
+  fillCommandUsageDays,
+  startOfJstDay,
+  type CommandUsageDay,
+} from '@herta/db';
 import { getAllPluginManifests } from '@herta/plugin-catalog';
 import { prisma } from '@/lib/db';
+import {
+  resolveCommunityCommandRangeWindow,
+  type CommunityCommandRange,
+} from '@/lib/community-dashboard-range';
 
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
@@ -17,6 +26,15 @@ export interface CommunityDashboardSnapshot {
   commands7d: number;
   failedCommands7d: number;
   commandSuccessRate7d: number;
+}
+
+export interface CommunityCommandWindow {
+  range: CommunityCommandRange;
+  label: string;
+  total: number;
+  failed: number;
+  successRate: number;
+  daily: CommandUsageDay[];
 }
 
 export async function getCommunityDashboardSnapshot(
@@ -70,12 +88,12 @@ export async function getCommunityDashboardSnapshot(
   };
 }
 
-export async function getCommunityCommandTrend(
+export async function getCommunityCommandWindow(
   guildId: string,
+  range: CommunityCommandRange,
   now = new Date(),
-): Promise<CommandUsageDay[]> {
-  const todayStart = startOfJstDay(now);
-  const rangeStart = new Date(todayStart.getTime() - 6 * DAY_MS);
+): Promise<CommunityCommandWindow> {
+  const window = resolveCommunityCommandRangeWindow(range, now);
   const rows = await prisma.$queryRaw<CommandUsageDay[]>`
     SELECT
       TO_CHAR(("executed_at" AT TIME ZONE 'Asia/Tokyo')::date, 'YYYY-MM-DD') AS "date",
@@ -84,11 +102,21 @@ export async function getCommunityCommandTrend(
       COUNT(*) FILTER (WHERE "status" = 'failure')::int AS "failed"
     FROM "command_execution_events"
     WHERE "guild_id" = ${guildId}
-      AND "executed_at" >= ${rangeStart}
+      AND "executed_at" >= ${window.startAt}
       AND "executed_at" < ${now}
     GROUP BY 1
     ORDER BY 1
   `;
+  const total = rows.reduce((sum, day) => sum + day.total, 0);
+  const succeeded = rows.reduce((sum, day) => sum + day.succeeded, 0);
+  const failed = rows.reduce((sum, day) => sum + day.failed, 0);
 
-  return fillCommandUsageDays(rows, now, 7);
+  return {
+    range,
+    label: window.label,
+    total,
+    failed,
+    successRate: calculateSuccessRate({ total, succeeded, failed }) ?? 100,
+    daily: fillCommandUsageDays(rows, now, window.chartDays),
+  };
 }
