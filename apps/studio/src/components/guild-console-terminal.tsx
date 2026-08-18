@@ -74,8 +74,12 @@ export function GuildConsoleTerminal({ context }: { context: GuildConsoleContext
   };
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-slate-700/70 bg-[#080b10] shadow-card">
-      <div className="flex items-center justify-between border-b border-slate-800 bg-slate-950/80 px-4 py-3">
+    <section
+      className="overflow-hidden rounded-2xl border border-slate-700/70 bg-[#080b10] shadow-card"
+    >
+      <div
+        className="flex items-center justify-between border-b border-slate-800 bg-slate-950/80 px-4 py-3"
+      >
         <div className="flex items-center gap-2 text-xs font-medium text-slate-300">
           <Terminal className="h-4 w-4 text-emerald-400" aria-hidden="true" />
           Herta Console
@@ -141,7 +145,9 @@ export function GuildConsoleTerminal({ context }: { context: GuildConsoleContext
           <label htmlFor="guild-console-command" className="sr-only">
             Herta Consoleコマンド
           </label>
-          <div className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 focus-within:border-emerald-500/60 focus-within:ring-1 focus-within:ring-emerald-500/40">
+          <div
+            className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 focus-within:border-emerald-500/60 focus-within:ring-1 focus-within:ring-emerald-500/40"
+          >
             <span className="shrink-0 font-mono text-sm text-emerald-400" aria-hidden="true">
               $
             </span>
