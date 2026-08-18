@@ -69,7 +69,10 @@ export async function getArchivedForumThreads(
       signal: controller.signal,
     });
     if (!response.ok) {
-      throw new BotForumThreadsError(messageForStatus(response.status), safeStatus(response.status));
+      throw new BotForumThreadsError(
+        messageForStatus(response.status),
+        safeStatus(response.status),
+      );
     }
 
     const payload = await response.json().catch(() => null);
