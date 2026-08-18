@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState, type ReactNode } from 'react';
 import {
   Ban,
@@ -8,6 +9,7 @@ import {
   ListChecks,
   Pencil,
   Plus,
+  Radar,
   Save,
   Settings2,
   ShieldCheck,
@@ -29,6 +31,7 @@ import {
   updateCustomRule,
   type CustomRuleKind,
   type ModerationConfigDraft,
+  type ModerationConfigSection,
 } from '@/lib/moderation-config-ui';
 
 type PluginUpdateResponse = {
@@ -37,7 +40,6 @@ type PluginUpdateResponse = {
   config?: Record<string, unknown>;
 };
 
-type SectionId = 'basic' | 'rules' | 'cases' | 'exemptions' | 'json';
 type BuiltInRuleKind = 'invite_link' | 'mention_burst' | 'message_burst' | 'duplicate_message';
 
 type EditingRule = {
@@ -47,12 +49,12 @@ type EditingRule = {
 };
 
 const SECTION_ITEMS: Array<{
-  id: SectionId;
+  id: ModerationConfigSection;
   label: string;
   icon: typeof Settings2;
 }> = [
   { id: 'basic', label: '基本設定', icon: Settings2 },
-  { id: 'rules', label: '検知ルール', icon: SlidersHorizontal },
+  { id: 'rules', label: 'NGワード・自動検知', icon: SlidersHorizontal },
   { id: 'cases', label: '自動Case化', icon: ListChecks },
   { id: 'exemptions', label: '除外設定', icon: Ban },
   { id: 'json', label: '高度なJSON', icon: Code2 },
@@ -113,17 +115,19 @@ export function ModerationConfigForm({
   guildId,
   initialEnabled,
   initialConfig,
+  initialSection,
   discordOptions,
 }: {
   guildId: string;
   initialEnabled: boolean;
   initialConfig: Record<string, unknown>;
+  initialSection: ModerationConfigSection;
   discordOptions: GuildConfigurationOptions | null;
 }) {
   const initialDraft = useMemo(() => toModerationConfigDraft(initialConfig), [initialConfig]);
   const [enabled, setEnabled] = useState(initialEnabled);
   const [config, setConfigState] = useState<ModerationConfigDraft>(initialDraft);
-  const [activeSection, setActiveSection] = useState<SectionId>('basic');
+  const [activeSection, setActiveSection] = useState<ModerationConfigSection>(initialSection);
   const [status, setStatus] = useState('');
   const [saving, setSaving] = useState(false);
   const [jsonText, setJsonText] = useState(JSON.stringify(initialConfig, null, 2));
@@ -150,6 +154,17 @@ export function ModerationConfigForm({
 
   function patchConfig(patch: Partial<ModerationConfigDraft>) {
     setConfig({ ...config, ...patch });
+  }
+
+  function selectSection(section: ModerationConfigSection) {
+    setActiveSection(section);
+    const url = new URL(window.location.href);
+    if (section === 'basic') {
+      url.searchParams.delete('section');
+    } else {
+      url.searchParams.set('section', section);
+    }
+    window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
   }
 
   async function save() {
@@ -243,15 +258,15 @@ export function ModerationConfigForm({
   }
 
   return (
-    <div className="min-w-0">
+    <div className="min-w-0" id="moderation-config">
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-primary" />
+            <ShieldCheck className="h-5 w-5 text-primary" aria-hidden="true" />
             <h2 className="text-lg font-semibold">Moderation 設定</h2>
           </div>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-            通常はこの画面だけで設定できます。JSONを直接編集する必要はありません。自動検知はobserveのみで、ここからメッセージ削除・Timeout・Kick・BANは実行しません。
+            通常はこの画面だけで設定できます。NGワード・自動検知、除外、自動Case化をGUIから管理できます。JSONを直接編集する必要はありません。
           </p>
         </div>
         <div className="flex shrink-0 items-center justify-between gap-3 rounded-xl border border-border bg-background px-4 py-3 lg:min-w-56">
@@ -263,7 +278,10 @@ export function ModerationConfigForm({
         </div>
       </div>
 
-      <div className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+      <nav
+        className="mt-6 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5"
+        aria-label="Moderation設定カテゴリ"
+      >
         {SECTION_ITEMS.map((item) => {
           const Icon = item.icon;
           const selected = activeSection === item.id;
@@ -271,19 +289,20 @@ export function ModerationConfigForm({
             <button
               key={item.id}
               type="button"
-              onClick={() => setActiveSection(item.id)}
-              className={`flex min-w-0 items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+              aria-pressed={selected}
+              onClick={() => selectSection(item.id)}
+              className={`flex min-w-0 items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 selected
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border bg-background text-foreground hover:border-primary/40'
               }`}
             >
-              <Icon className="h-4 w-4 shrink-0" />
+              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
               <span className="truncate">{item.label}</span>
             </button>
           );
         })}
-      </div>
+      </nav>
 
       <div className="mt-6">
         {activeSection === 'basic' ? (
@@ -296,6 +315,8 @@ export function ModerationConfigForm({
         ) : null}
         {activeSection === 'rules' ? (
           <RulesSection
+            guildId={guildId}
+            pluginEnabled={enabled}
             config={config}
             setConfig={setConfig}
             patchConfig={patchConfig}
@@ -340,7 +361,7 @@ export function ModerationConfigForm({
         <div className="min-w-0 text-sm text-muted" aria-live="polite">
           <p>{status || '変更後は保存してください'}</p>
           <p className="mt-1 text-xs">
-            カスタムルール {customRuleCount}件 · 有効な既存ルール {enabledBuiltInCount}件
+            NGワード {customRuleCount}件 · 有効な組み込み検知 {enabledBuiltInCount}件
           </p>
         </div>
         <button
@@ -349,7 +370,7 @@ export function ModerationConfigForm({
           disabled={saving}
           className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
         >
-          <Save className="h-4 w-4" />
+          <Save className="h-4 w-4" aria-hidden="true" />
           {saving ? '保存中…' : '設定を保存'}
         </button>
       </div>
@@ -467,6 +488,8 @@ function BasicSection({
 }
 
 function RulesSection({
+  guildId,
+  pluginEnabled,
   config,
   setConfig,
   patchConfig,
@@ -481,6 +504,8 @@ function RulesSection({
   deleteRule,
   ruleStatus,
 }: {
+  guildId: string;
+  pluginEnabled: boolean;
   config: ModerationConfigDraft;
   setConfig: (config: ModerationConfigDraft) => void;
   patchConfig: (patch: Partial<ModerationConfigDraft>) => void;
@@ -495,28 +520,92 @@ function RulesSection({
   deleteRule: (kind: CustomRuleKind, index: number) => void;
   ruleStatus: string;
 }) {
+  const customRuleCount =
+    config.autoExactWords.length +
+    config.autoContainsWords.length +
+    config.autoRegexPatterns.length;
+  const enabledBuiltInCount = BUILT_IN_RULE_META.filter((rule) =>
+    isBuiltInRuleEnabled(config, rule.kind),
+  ).length;
+  const automaticDetectionActive = pluginEnabled && config.automaticMode === 'observe';
+
   return (
     <div className="space-y-6">
+      <section className="rounded-2xl border border-primary/20 bg-primary/5 p-4 sm:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-semibold">NGワード・自動検知</h3>
+              <span
+                className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
+                  automaticDetectionActive
+                    ? 'border-emerald-500/30 text-emerald-600'
+                    : 'border-amber-500/30 text-amber-600'
+                }`}
+              >
+                {automaticDetectionActive ? '自動検知 ON' : '自動検知 OFF'}
+              </span>
+            </div>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
+              Guild独自のBad
+              Wordと、招待リンク・大量メンション・連投・重複投稿をここで管理します。検知後の内容は自動検知レビューで確認できます。
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
+              <span className="rounded-full border border-border bg-background px-2.5 py-1">
+                NGワード {customRuleCount}件
+              </span>
+              <span className="rounded-full border border-border bg-background px-2.5 py-1">
+                組み込み検知 {enabledBuiltInCount} / {BUILT_IN_RULE_META.length}件 ON
+              </span>
+            </div>
+          </div>
+          <Link
+            href={`/dashboard/guilds/${guildId}/moderation/detections`}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-primary/30 bg-background px-4 py-2.5 text-sm font-medium text-foreground hover:border-primary"
+          >
+            <Radar className="h-4 w-4" aria-hidden="true" /> 自動検知レビューを開く
+          </Link>
+        </div>
+      </section>
+
       <SectionPanel
-        title="カスタムルール"
-        description="完全一致・部分一致・制限付き正規表現をGUIから作成できます。"
+        title="NGワード"
+        description="禁止したい語句をGuildごとに追加できます。通常のBad Wordには「部分一致」がおすすめです。"
       >
-        <div className="rounded-xl border border-border bg-background p-4">
+        <div className="grid gap-3 md:grid-cols-3">
+          {(['word_contains', 'word_exact', 'word_regex'] as CustomRuleKind[]).map((kind) => (
+            <div key={kind} className="rounded-xl border border-border bg-background p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-medium">{CUSTOM_RULE_META[kind].label}</p>
+                {kind === 'word_contains' ? (
+                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                    おすすめ
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-1 text-xs leading-5 text-muted">
+                {CUSTOM_RULE_META[kind].description}
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 rounded-xl border border-border bg-background p-4">
           <div className="grid gap-3 md:grid-cols-[180px_minmax(0,1fr)_auto] md:items-end">
             <label className="block">
-              <span className="mb-1.5 block text-sm font-medium">ルール種類</span>
+              <span className="mb-1.5 block text-sm font-medium">一致方法</span>
               <select
                 value={newRuleKind}
                 onChange={(event) => setNewRuleKind(event.target.value as CustomRuleKind)}
                 className={inputClassName}
               >
+                <option value="word_contains">部分一致（おすすめ）</option>
                 <option value="word_exact">完全一致</option>
-                <option value="word_contains">部分一致</option>
-                <option value="word_regex">正規表現</option>
+                <option value="word_regex">正規表現（上級者向け）</option>
               </select>
             </label>
             <label className="block min-w-0">
-              <span className="mb-1.5 block text-sm font-medium">検知する文字列・パターン</span>
+              <span className="mb-1.5 block text-sm font-medium">NGワード・パターン</span>
               <input
                 value={newRuleValue}
                 onChange={(event) => setNewRuleValue(event.target.value)}
@@ -527,26 +616,37 @@ function RulesSection({
                   }
                 }}
                 maxLength={120}
-                placeholder={newRuleKind === 'word_regex' ? '例: foo.*bar' : '例: 検知したい文字列'}
+                placeholder={
+                  newRuleKind === 'word_regex'
+                    ? '例: foo.*bar'
+                    : newRuleKind === 'word_exact'
+                      ? '例: メッセージ全文として禁止する文字列'
+                      : '例: メッセージ内に含まれたら検知する文字列'
+                }
                 className={inputClassName}
               />
             </label>
             <button
               type="button"
               onClick={addRule}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <Plus className="h-4 w-4" /> 追加
+              <Plus className="h-4 w-4" aria-hidden="true" /> 追加
             </button>
           </div>
-          <p className="mt-2 text-xs text-muted">
+          <p className="mt-2 text-xs leading-5 text-muted">
+            {CUSTOM_RULE_META[newRuleKind].description}{' '}
             1ルール120文字まで。完全一致・部分一致は各100件、正規表現は20件までです。
           </p>
-          {ruleStatus ? <p className="mt-2 text-sm text-muted">{ruleStatus}</p> : null}
+          {ruleStatus ? (
+            <p className="mt-2 text-sm text-muted" aria-live="polite">
+              {ruleStatus}
+            </p>
+          ) : null}
         </div>
 
         <div className="mt-4 space-y-3">
-          {(['word_exact', 'word_contains', 'word_regex'] as CustomRuleKind[]).flatMap((kind) =>
+          {(['word_contains', 'word_exact', 'word_regex'] as CustomRuleKind[]).flatMap((kind) =>
             customRuleValues(config, kind).map((value, index) => {
               const selector = customRuleSelector(kind, index);
               const selectedForCase = config.autoCaseOnConfirmedRules.includes(selector);
@@ -562,7 +662,7 @@ function RulesSection({
                         <span className="text-xs text-muted">#{index + 1}</span>
                         {selectedForCase ? (
                           <span className="inline-flex items-center gap-1 text-xs text-primary">
-                            <CheckCircle2 className="h-3.5 w-3.5" /> 自動Case対象
+                            <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> 自動Case対象
                           </span>
                         ) : null}
                       </div>
@@ -602,14 +702,14 @@ function RulesSection({
                           onClick={() => setEditingRule({ kind, index, value })}
                           className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm hover:border-primary/40"
                         >
-                          <Pencil className="h-4 w-4" /> 編集
+                          <Pencil className="h-4 w-4" aria-hidden="true" /> 編集
                         </button>
                         <button
                           type="button"
                           onClick={() => deleteRule(kind, index)}
                           className="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm hover:border-red-400"
                         >
-                          <Trash2 className="h-4 w-4" /> 削除
+                          <Trash2 className="h-4 w-4" aria-hidden="true" /> 削除
                         </button>
                       </div>
                     ) : null}
@@ -618,20 +718,17 @@ function RulesSection({
               );
             }),
           )}
-          {config.autoExactWords.length +
-            config.autoContainsWords.length +
-            config.autoRegexPatterns.length ===
-          0 ? (
+          {customRuleCount === 0 ? (
             <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted">
-              カスタムルールはまだありません。上のフォームから追加できます。
+              NGワードはまだありません。上のフォームから追加できます。
             </div>
           ) : null}
         </div>
       </SectionPanel>
 
       <SectionPanel
-        title="既存ルール"
-        description="Hertaに組み込まれている検知をON/OFFし、閾値を設定します。"
+        title="その他の自動検知"
+        description="Hertaに組み込まれているDiscord招待・大量メンション・連投・重複投稿の検知をON/OFFし、閾値を設定します。"
       >
         <div className="space-y-4">
           <BuiltInRuleCard
@@ -788,7 +885,7 @@ function AutoCaseSection({
             config.autoRegexPatterns.length ===
           0 ? (
             <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted">
-              カスタムルールがありません。「検知ルール」から作成してください。
+              カスタムルールがありません。「NGワード・自動検知」から作成してください。
             </p>
           ) : null}
         </div>

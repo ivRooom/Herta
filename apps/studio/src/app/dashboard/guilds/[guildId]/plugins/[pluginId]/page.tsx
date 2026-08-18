@@ -7,17 +7,22 @@ import { PluginConfigForm } from '@/components/plugin-config-form';
 import { PluginSetupOverview } from '@/components/plugin-setup-overview';
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
 import { getGuildPlugin } from '@/lib/guild-plugins';
+import { resolveModerationConfigSection } from '@/lib/moderation-config-ui';
 import { resolveStudioAccess } from '@/lib/studio-access';
 import { resolvePluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';
 
 export const dynamic = 'force-dynamic';
 
+type SearchParams = Record<string, string | string[] | undefined>;
+
 export default async function PluginDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ guildId: string; pluginId: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
-  const { guildId, pluginId } = await params;
+  const [{ guildId, pluginId }, query] = await Promise.all([params, searchParams]);
   const session = await auth();
   if (!session?.user) notFound();
   const access = await resolveStudioAccess(guildId, session.user.id);
@@ -63,6 +68,7 @@ export default async function PluginDetailPage({
             guildId={guildId}
             initialEnabled={plugin.enabled}
             initialConfig={plugin.config}
+            initialSection={resolveModerationConfigSection(query.section)}
             discordOptions={discordOptions}
           />
         ) : (
