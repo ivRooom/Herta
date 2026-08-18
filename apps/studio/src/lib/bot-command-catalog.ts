@@ -1,4 +1,4 @@
-import { resolveBotHealthRequestTimeoutMs } from './bot-health';
+import { resolveBotHealthRequestTimeoutMs } from './bot-health.ts';
 
 const MIN_INTERNAL_API_SECRET_LENGTH = 32;
 
