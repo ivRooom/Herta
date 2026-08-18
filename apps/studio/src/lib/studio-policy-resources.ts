@@ -1,4 +1,4 @@
-import type { StudioPolicyAction } from './studio-access-policy.ts';
+import type { StudioAccessPolicy, StudioPolicyAction } from './studio-access-policy.ts';
 import {
   pluginConfigFieldResource,
   pluginEnabledControlResource,
@@ -36,8 +36,8 @@ export interface PluginPermissionCatalogInput {
 
 export interface ApplicableStudioPolicyContext {
   roleIds: readonly string[];
-  policies: readonly { discordRoleId: string }[];
-  managedPolicies: readonly unknown[];
+  policies: readonly { discordRoleId: string; policy: StudioAccessPolicy }[];
+  managedPolicies: readonly StudioAccessPolicy[];
 }
 
 export function studioPageResource(guildId: string, pageId: StudioPageId): string {
@@ -51,10 +51,17 @@ export function studioAccessPageResource(
   return `guild:${guildId}:access:${page}`;
 }
 
-export function hasApplicableStudioPolicy(access: ApplicableStudioPolicyContext): boolean {
-  if (access.managedPolicies.length > 0) return true;
+export function hasConfiguredStudioPagePolicy(access: ApplicableStudioPolicyContext): boolean {
   const activeRoleIds = new Set(access.roleIds);
-  return access.policies.some((policy) => activeRoleIds.has(policy.discordRoleId));
+  const policies = [
+    ...access.managedPolicies,
+    ...access.policies
+      .filter((policy) => activeRoleIds.has(policy.discordRoleId))
+      .map((policy) => policy.policy),
+  ];
+  return policies.some((policy) =>
+    policy.Statement.some((statement) => statement.Action.some(isPageViewActionPattern)),
+  );
 }
 
 export function buildStudioGranularPermissionOptions(
@@ -133,6 +140,10 @@ export function topLevelConfigFields(
       description: text(property['description']),
     };
   });
+}
+
+function isPageViewActionPattern(action: string): boolean {
+  return action === '*' || action === 'studio.*' || action === 'studio.page.*' || action === 'studio.page.view';
 }
 
 function permissionOptionId(action: StudioPolicyAction, resource: string): string {
