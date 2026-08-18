@@ -7,6 +7,11 @@ import {
   updateGuildPlugin,
   validatePluginConfig,
 } from '@/lib/guild-plugins';
+import {
+  changedTopLevelConfigFields,
+  resolvePluginConfigCandidate,
+  type PluginConfigPatchInput,
+} from '@/lib/plugin-config-patch';
 import { toPluginConfigValidationIssues } from '@/lib/plugin-config-validation-issues';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
 import { resolveStudioAccess } from '@/lib/studio-access';
@@ -23,12 +28,7 @@ const MAX_PLUGIN_PATCH_BODY_BYTES = 128 * 1024;
 const MAX_REMOVED_CONFIG_FIELDS = 256;
 const MAX_CONFIG_FIELD_KEY_LENGTH = 200;
 
-type PluginPatchBody = {
-  enabled?: boolean;
-  config?: Record<string, unknown>;
-  configPatch?: Record<string, unknown>;
-  removeConfigFields?: string[];
-};
+type PluginPatchBody = PluginConfigPatchInput & { enabled?: boolean };
 
 export async function GET(
   _request: Request,
@@ -87,7 +87,7 @@ export async function PATCH(
     }
   }
 
-  const candidateConfig = resolveCandidateConfig(current.config, body.value);
+  const candidateConfig = resolvePluginConfigCandidate(current.config, body.value);
   let validatedConfig: Record<string, unknown> | undefined;
   if (candidateConfig !== undefined) {
     const validation = validatePluginConfig(manifest, candidateConfig);
@@ -103,7 +103,7 @@ export async function PATCH(
     }
     validatedConfig = validation.config;
 
-    const changedFields = changedTopLevelFields(current.config, validation.config);
+    const changedFields = changedTopLevelConfigFields(current.config, validation.config);
     const deniedFields = changedFields.filter(
       (fieldKey) =>
         !hasEffectivePluginPermission(
@@ -208,33 +208,10 @@ function isPatchBody(value: unknown): value is PluginPatchBody {
   return true;
 }
 
-function resolveCandidateConfig(
-  current: Record<string, unknown>,
-  body: PluginPatchBody,
-): Record<string, unknown> | undefined {
-  if (body.config !== undefined) return body.config;
-  if (body.configPatch === undefined && body.removeConfigFields === undefined) return undefined;
-  const next = { ...current, ...(body.configPatch ?? {}) };
-  for (const field of body.removeConfigFields ?? []) delete next[field];
-  return next;
-}
-
 function topLevelConfigFieldKeys(schema: Record<string, unknown>): string[] {
   const properties = schema['properties'];
   if (!isRecord(properties)) return [];
   return Object.keys(properties);
-}
-
-function changedTopLevelFields(
-  before: Record<string, unknown>,
-  after: Record<string, unknown>,
-): string[] {
-  const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
-  return [...keys].filter((key) => !jsonEqual(before[key], after[key])).sort();
-}
-
-function jsonEqual(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
