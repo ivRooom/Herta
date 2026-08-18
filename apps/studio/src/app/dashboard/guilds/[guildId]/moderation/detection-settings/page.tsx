@@ -81,16 +81,8 @@ export default async function ModerationDetectionSettingsPage({
           value="0–50 / 1–300秒"
           description="投稿数と監視時間を別々に調整。"
         />
-        <Hint
-          title="重複投稿"
-          value="0–20 / 1–600秒"
-          description="正規化後の同一本文を監視。"
-        />
-        <Hint
-          title="本文最大長"
-          value="100–4000"
-          description="自動検知で解析する本文長の上限。"
-        />
+        <Hint title="重複投稿" value="0–20 / 1–600秒" description="正規化後の同一本文を監視。" />
+        <Hint title="本文最大長" value="100–4000" description="自動検知で解析する本文長の上限。" />
       </section>
 
       <section className="rounded-2xl border border-border bg-surface p-4 text-sm leading-6 text-muted sm:p-5">
@@ -144,11 +136,7 @@ function Hint({
 
 function topLevelConfigFieldKeys(schema: Record<string, unknown>): string[] {
   const properties = schema['properties'];
-  if (
-    typeof properties !== 'object' ||
-    properties === null ||
-    Array.isArray(properties)
-  ) {
+  if (typeof properties !== 'object' || properties === null || Array.isArray(properties)) {
     return [];
   }
   return Object.keys(properties);
