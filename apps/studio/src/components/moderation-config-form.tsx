@@ -547,7 +547,8 @@ function RulesSection({
               </span>
             </div>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Guild独自のBad Wordと、招待リンク・大量メンション・連投・重複投稿をここで管理します。検知後の内容は自動検知レビューで確認できます。
+              Guild独自のBad
+              Wordと、招待リンク・大量メンション・連投・重複投稿をここで管理します。検知後の内容は自動検知レビューで確認できます。
             </p>
             <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted">
               <span className="rounded-full border border-border bg-background px-2.5 py-1">
@@ -634,7 +635,8 @@ function RulesSection({
             </button>
           </div>
           <p className="mt-2 text-xs leading-5 text-muted">
-            {CUSTOM_RULE_META[newRuleKind].description} 1ルール120文字まで。完全一致・部分一致は各100件、正規表現は20件までです。
+            {CUSTOM_RULE_META[newRuleKind].description}{' '}
+            1ルール120文字まで。完全一致・部分一致は各100件、正規表現は20件までです。
           </p>
           {ruleStatus ? (
             <p className="mt-2 text-sm text-muted" aria-live="polite">
