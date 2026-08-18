@@ -39,10 +39,21 @@ test('production workflow installs failure diagnostics after checkout', () => {
   );
 });
 
-test('failure diagnostics do not print the production environment file', () => {
+test('failure diagnostics do not print production environment values', () => {
   const common = readFileSync('deploy/scripts/_common.sh', 'utf8');
-  assert.doesNotMatch(common, /\bcat\s+[^\n]*ENV_FILE/u);
-  assert.doesNotMatch(common, /\benv\b[^\n]*ENV_FILE/u);
-  assert.match(common, /Prisma migration history/u);
-  assert.match(common, /container runtime states/u);
+  const startMarker = 'print_deploy_diagnostics() (';
+  const endMarker = '\n)\n\n_deploy_exit_handler()';
+  const diagnosticsStart = common.indexOf(startMarker);
+  const diagnosticsEnd = common.indexOf(endMarker, diagnosticsStart);
+
+  assert.ok(diagnosticsStart >= 0, 'deploy diagnostics function must exist');
+  assert.ok(diagnosticsEnd > diagnosticsStart, 'deploy diagnostics function must have an end');
+
+  const diagnostics = common.slice(diagnosticsStart, diagnosticsEnd);
+
+  assert.doesNotMatch(diagnostics, /\bcat\b[^\n]*(?:ENV_FILE|\.env\.production)/u);
+  assert.doesNotMatch(diagnostics, /(^|[;&|]\s*)env(?:\s|$)/mu);
+  assert.doesNotMatch(diagnostics, /\bprintenv\b/u);
+  assert.match(diagnostics, /print_migration_history/u);
+  assert.match(diagnostics, /container runtime states/u);
 });
