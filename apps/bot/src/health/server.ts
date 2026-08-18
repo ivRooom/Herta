@@ -619,7 +619,10 @@ export class HealthHttpServer {
         }
         this.sendJson(response, 200, { profile });
       } catch (error) {
-        this.options.logger.warn({ err: error, guildId }, 'Bot Guildプロフィール取得に失敗しました');
+        this.options.logger.warn(
+          { err: error, guildId },
+          'Bot Guildプロフィール取得に失敗しました',
+        );
         this.sendJson(response, 503, { status: 'unavailable' });
       }
       return;
@@ -657,7 +660,10 @@ export class HealthHttpServer {
         }
         this.sendJson(response, 200, { profile });
       } catch (error) {
-        this.options.logger.warn({ err: error, guildId }, 'Bot Guildプロフィール更新に失敗しました');
+        this.options.logger.warn(
+          { err: error, guildId },
+          'Bot Guildプロフィール更新に失敗しました',
+        );
         this.sendJson(response, 503, { status: 'unavailable' });
       }
       return;
