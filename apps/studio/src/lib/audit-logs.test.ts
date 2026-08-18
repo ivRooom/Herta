@@ -158,16 +158,11 @@ test('Moderation実行結果は既削除とDiscord失敗を判別できる', () 
 });
 
 test('Discord error codeの数字文字列は監査要約へ表示できる', () => {
-  const presentation = describeAuditEvent(
-    'moderation.automatic.executed',
-    'discord_user',
-    '1',
-    {
-      action: 'delete',
-      actionOutcome: 'already_satisfied',
-      discordErrorCode: '10008',
-    },
-  );
+  const presentation = describeAuditEvent('moderation.automatic.executed', 'discord_user', '1', {
+    action: 'delete',
+    actionOutcome: 'already_satisfied',
+    discordErrorCode: '10008',
+  });
 
   assert.match(presentation.summary, /Discord code: 10008/u);
 });
