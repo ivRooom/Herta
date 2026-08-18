@@ -203,11 +203,11 @@ export default async function ModerationDetectionsPage({
 
         <div className="mt-4 flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs leading-5 text-muted">
-            追加・編集・削除は既存のModeration設定「検知ルール」から行い、保存するとBot
+            追加・編集・削除はModeration設定「NGワード・自動検知」から行い、保存するとBot
             Runtimeへ反映されます。
           </p>
           <Link
-            href={`/dashboard/guilds/${guildId}/plugins/moderation`}
+            href={`/dashboard/guilds/${guildId}/plugins/moderation?section=rules#moderation-config`}
             className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
           >
             <Pencil className="h-4 w-4" aria-hidden="true" /> NGワードを追加・編集
