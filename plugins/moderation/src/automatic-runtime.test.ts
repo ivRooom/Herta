@@ -15,6 +15,7 @@ const BASE_POLICY: AutomaticEnforcementPolicy = {
   banDeleteMessageSeconds: 0,
 };
 
+// Guild Ownerにはメッセージ単位の対応を許可し、member自体を変更する処罰だけを保護する。
 describe('automatic moderation Guild Owner protection', () => {
   it.each(['observe', 'warn', 'delete', 'warn_delete'] as const)(
     '%s はGuild Ownerでも実行対象にできる',
