@@ -40,7 +40,7 @@ export default async function AccessGroupsPage({
           users: inventory.users.length,
           groups: inventory.groups.length,
           roles: inventory.roles.length,
-          policies: inventory.storedPolicyCount,
+          policies: inventory.policies.length,
         }}
       />
 
