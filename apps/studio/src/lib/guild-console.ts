@@ -111,19 +111,19 @@ export function executeGuildConsoleCommand(
           lines: ['usage: open <plugins|commands|moderation|audit>'],
         };
       }
-      const target = args[0] as keyof typeof OPEN_TARGETS;
-      const route = OPEN_TARGETS[target];
-      if (!route) {
+      const target = args[0] ?? '';
+      if (!Object.hasOwn(OPEN_TARGETS, target)) {
         return {
           type: 'output',
           tone: 'error',
           lines: ['開ける画面は plugins / commands / moderation / audit のみです。'],
         };
       }
+      const route = OPEN_TARGETS[target as keyof typeof OPEN_TARGETS];
       const guildId = encodeURIComponent(context.guildId);
       return {
         type: 'navigate',
-        href: `/dashboard/guilds/${guildId}/${route}`,
+        href: `/dashboard/guilds/${guildId}/${encodeURIComponent(route)}`,
         lines: [`opening ${target}...`],
       };
     }
