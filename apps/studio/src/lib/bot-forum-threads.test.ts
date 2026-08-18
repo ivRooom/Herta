@@ -97,7 +97,8 @@ test('不正cursorをBotへ送信せず拒否する', async () => {
 
 test('Bot内部APIの401をStudio利用者の認証エラーとして公開しない', async () => {
   await withBotEnv(async () => {
-    const fetchImpl: typeof fetch = async () => Response.json({ error: 'unauthorized' }, { status: 401 });
+    const fetchImpl: typeof fetch = async () =>
+      Response.json({ error: 'unauthorized' }, { status: 401 });
     await assert.rejects(
       () => getArchivedForumThreads(guildId, forumId, null, 50, fetchImpl),
       (error: unknown) =>
