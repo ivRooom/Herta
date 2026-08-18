@@ -149,11 +149,7 @@ export function GuildConsoleTerminal({ context }: { context: GuildConsoleContext
       </div>
 
       <div className="border-t border-slate-800 px-4 py-3">
-        <div
-          className="mb-3 flex flex-wrap gap-2"
-          role="group"
-          aria-label="クイックコマンド"
-        >
+        <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="クイックコマンド">
           {QUICK_COMMANDS.map((command) => (
             <button
               key={command}
