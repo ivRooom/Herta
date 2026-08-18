@@ -1,5 +1,12 @@
+import {
+  fillCommandUsageDays,
+  startOfJstDay,
+  type CommandUsageDay,
+} from '@herta/db';
 import { getAllPluginManifests } from '@herta/plugin-catalog';
 import { prisma } from '@/lib/db';
+
+const DAY_MS = 24 * 60 * 60 * 1_000;
 
 export interface CommunityDashboardSnapshot {
   enabledPlugins: number;
@@ -63,4 +70,26 @@ export async function getCommunityDashboardSnapshot(
     commandSuccessRate7d:
       commands7d === 0 ? 100 : Math.round(((commands7d - failedCommands7d) / commands7d) * 100),
   };
+}
+
+export async function getCommunityCommandTrend(
+  guildId: string,
+  now = new Date(),
+): Promise<CommandUsageDay[]> {
+  const todayStart = startOfJstDay(now);
+  const rangeStart = new Date(todayStart.getTime() - 6 * DAY_MS);
+  const rows = await prisma.$queryRaw<CommandUsageDay[]>`
+    SELECT
+      TO_CHAR(("executed_at" AT TIME ZONE 'Asia/Tokyo')::date, 'YYYY-MM-DD') AS "date",
+      COUNT(*)::int AS "total",
+      COUNT(*) FILTER (WHERE "status" = 'success')::int AS "succeeded",
+      COUNT(*) FILTER (WHERE "status" = 'failure')::int AS "failed"
+    FROM "command_execution_events"
+    WHERE "guild_id" = ${guildId}
+      AND "executed_at" >= ${rangeStart}
+    GROUP BY 1
+    ORDER BY 1
+  `;
+
+  return fillCommandUsageDays(rows, now, 7);
 }
