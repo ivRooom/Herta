@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { LockKeyhole, Save, Search, ShieldCheck } from 'lucide-react';
+import { LockKeyhole, RotateCcw, Save, Search, ShieldCheck } from 'lucide-react';
 import { describeStudioApiError } from '@/lib/studio-api-feedback';
 import type { StudioAccessPolicy } from '@/lib/studio-access-policy';
 import {
@@ -13,6 +13,7 @@ import {
 import type { StudioGranularPermissionOption } from '@/lib/studio-policy-resources';
 
 const MAX_POLICY_STATEMENTS = 64;
+const SAVE_TIMEOUT_MS = 15_000;
 
 interface GranularPolicyView {
   id: string;
@@ -20,6 +21,12 @@ interface GranularPolicyView {
   description: string | null;
   policy: StudioAccessPolicy;
   revision: number;
+}
+
+interface PolicyDraftState {
+  policy: StudioAccessPolicy;
+  revision: number;
+  dirty: boolean;
 }
 
 export function GranularPolicyEditor({
@@ -35,21 +42,60 @@ export function GranularPolicyEditor({
 }) {
   const router = useRouter();
   const [selectedPolicyId, setSelectedPolicyId] = useState(policies[0]?.id ?? '');
-  const selectedPolicy = policies.find((policy) => policy.id === selectedPolicyId) ?? null;
-  const [draft, setDraft] = useState<StudioAccessPolicy | null>(selectedPolicy?.policy ?? null);
+  const [drafts, setDrafts] = useState<Record<string, PolicyDraftState>>(() =>
+    Object.fromEntries(
+      policies.map((policy) => [
+        policy.id,
+        { policy: policy.policy, revision: policy.revision, dirty: false },
+      ]),
+    ),
+  );
   const [query, setQuery] = useState('');
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<{ kind: 'success' | 'error'; text: string } | null>(null);
-  const lastSyncedKey = useRef<string | null>(null);
+
+  const selectedPolicy = policies.find((policy) => policy.id === selectedPolicyId) ?? null;
+  const selectedDraft = selectedPolicy
+    ? (drafts[selectedPolicy.id] ?? {
+        policy: selectedPolicy.policy,
+        revision: selectedPolicy.revision,
+        dirty: false,
+      })
+    : null;
+  const draft = selectedDraft?.policy ?? null;
+  const dirty = selectedDraft?.dirty ?? false;
+  const stale = Boolean(
+    selectedPolicy && selectedDraft && selectedDraft.revision !== selectedPolicy.revision,
+  );
 
   useEffect(() => {
-    const next = policies.find((policy) => policy.id === selectedPolicyId) ?? null;
-    const key = next ? `${next.id}:${next.revision}` : null;
-    if (!key || lastSyncedKey.current === key) return;
-    lastSyncedKey.current = key;
-    setDraft(next.policy);
-    setNotice(null);
-  }, [policies, selectedPolicyId]);
+    setDrafts((current) => {
+      const validPolicyIds = new Set(policies.map((policy) => policy.id));
+      const next = { ...current };
+      let changed = false;
+
+      for (const policy of policies) {
+        const existing = current[policy.id];
+        if (!existing || (!existing.dirty && existing.revision !== policy.revision)) {
+          next[policy.id] = {
+            policy: policy.policy,
+            revision: policy.revision,
+            dirty: false,
+          };
+          changed = true;
+        }
+      }
+
+      for (const policyId of Object.keys(next)) {
+        if (!validPolicyIds.has(policyId)) {
+          delete next[policyId];
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [policies]);
 
   const normalizedQuery = query.trim().toLocaleLowerCase('ja');
   const filteredOptions = useMemo(
@@ -67,12 +113,9 @@ export function GranularPolicyEditor({
     [normalizedQuery, options],
   );
   const groupedOptions = useMemo(() => groupByCategory(filteredOptions), [filteredOptions]);
-  const dirty = Boolean(
-    selectedPolicy && draft && JSON.stringify(selectedPolicy.policy) !== JSON.stringify(draft),
-  );
 
   function changeMode(option: StudioGranularPermissionOption, mode: ExplicitPermissionMode) {
-    if (!draft || !canEdit || pending) return;
+    if (!selectedPolicy || !selectedDraft || !draft || !canEdit || pending || stale) return;
     const currentMode = getExplicitPermissionMode(draft, option.action, option.resource);
     if (
       currentMode === 'inherit' &&
@@ -85,27 +128,67 @@ export function GranularPolicyEditor({
       });
       return;
     }
-    setDraft(setExplicitPermissionMode(draft, option.action, option.resource, mode));
+
+    const nextPolicy = setExplicitPermissionMode(draft, option.action, option.resource, mode);
+    setDrafts((current) => ({
+      ...current,
+      [selectedPolicy.id]: {
+        policy: nextPolicy,
+        revision: selectedDraft.revision,
+        dirty: !jsonEqual(selectedPolicy.policy, nextPolicy),
+      },
+    }));
     setNotice(null);
   }
 
+  function resetToLatestRevision() {
+    if (!selectedPolicy || pending) return;
+    if (selectedDraft?.dirty) {
+      const confirmed = window.confirm(
+        'このPolicyには未保存の変更があります。破棄してサーバー上の最新Revisionへ戻しますか？',
+      );
+      if (!confirmed) return;
+    }
+    setDrafts((current) => ({
+      ...current,
+      [selectedPolicy.id]: {
+        policy: selectedPolicy.policy,
+        revision: selectedPolicy.revision,
+        dirty: false,
+      },
+    }));
+    setNotice({ kind: 'success', text: 'サーバー上の最新Revisionへ戻しました。' });
+  }
+
   async function save() {
-    if (!selectedPolicy || !draft || !canEdit || pending || !dirty) return;
+    if (!selectedPolicy || !selectedDraft || !draft || !canEdit || pending || !dirty) return;
+    if (stale) {
+      setNotice({
+        kind: 'error',
+        text: 'このPolicyは別の操作で更新されています。未保存のdraftを確認し、最新Revisionへ戻してから再編集してください。',
+      });
+      return;
+    }
+
     setPending(true);
     setNotice(null);
     try {
       const response = await fetch(`/api/guilds/${guildId}/access-policies`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(SAVE_TIMEOUT_MS),
         body: JSON.stringify({
           policyId: selectedPolicy.id,
-          expectedRevision: selectedPolicy.revision,
+          expectedRevision: selectedDraft.revision,
           name: selectedPolicy.name,
           description: selectedPolicy.description ?? '',
           policy: draft,
         }),
       });
-      const result = (await response.json().catch(() => null)) as { error?: string } | null;
+      const result = (await response.json().catch(() => null)) as {
+        error?: string;
+        policy?: unknown;
+      } | null;
       if (!response.ok) {
         throw new Error(
           describeStudioApiError(
@@ -116,12 +199,26 @@ export function GranularPolicyEditor({
           ),
         );
       }
+
+      const savedRevision = readPolicyRevision(result?.policy) ?? selectedDraft.revision + 1;
+      setDrafts((current) => ({
+        ...current,
+        [selectedPolicy.id]: {
+          policy: draft,
+          revision: savedRevision,
+          dirty: false,
+        },
+      }));
       setNotice({ kind: 'success', text: 'ページ・設定項目の権限を保存しました。' });
       router.refresh();
     } catch (error) {
       setNotice({
         kind: 'error',
-        text: error instanceof Error ? error.message : '細粒度Policyの保存に失敗しました。',
+        text: isTimeoutError(error)
+          ? 'Policyの保存がタイムアウトしました。通信状態を確認して再実行してください。'
+          : error instanceof Error
+            ? error.message
+            : '細粒度Policyの保存に失敗しました。',
       });
     } finally {
       setPending(false);
@@ -159,7 +256,10 @@ export function GranularPolicyEditor({
               編集するPolicy
               <select
                 value={selectedPolicyId}
-                onChange={(event) => setSelectedPolicyId(event.target.value)}
+                onChange={(event) => {
+                  setSelectedPolicyId(event.target.value);
+                  setNotice(null);
+                }}
                 disabled={pending}
                 className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2.5 font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
@@ -193,6 +293,23 @@ export function GranularPolicyEditor({
             </span>
             <span>多数の権限は用途別Policyへ分けて同じUser / Group / RoleへAttachできます。</span>
           </div>
+
+          {stale ? (
+            <div className="mt-4 flex flex-col gap-3 rounded-xl border border-amber-400/30 bg-amber-400/5 p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+              <p className="leading-6 text-muted">
+                このPolicyはサーバー側でrev.{selectedPolicy?.revision}
+                へ更新されています。未保存draftは保持しているため、自動上書きしていません。
+              </p>
+              <button
+                type="button"
+                onClick={resetToLatestRevision}
+                disabled={pending}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 font-semibold disabled:opacity-50"
+              >
+                <RotateCcw className="h-4 w-4" aria-hidden="true" /> 最新Revisionへ戻す
+              </button>
+            </div>
+          ) : null}
 
           <div className="mt-5 space-y-5">
             {groupedOptions.map(([category, categoryOptions]) => (
@@ -231,7 +348,7 @@ export function GranularPolicyEditor({
                               const nextMode = parseExplicitPermissionMode(event.target.value);
                               if (nextMode) changeMode(option, nextMode);
                             }}
-                            disabled={!canEdit || pending || !draft}
+                            disabled={!canEdit || pending || !draft || stale}
                             aria-label={`${option.label}のEffect`}
                             className={`mt-1 w-full rounded-lg border px-3 py-2 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 ${effectClassName(mode)}`}
                           >
@@ -258,12 +375,17 @@ export function GranularPolicyEditor({
               className={`text-sm ${notice?.kind === 'error' ? 'text-red-300' : 'text-muted'}`}
               aria-live="polite"
             >
-              {notice?.text ?? (dirty ? '未保存の権限変更があります。' : 'Policyは保存済みです。')}
+              {notice?.text ??
+                (stale
+                  ? '最新Revisionへ同期するまで保存できません。'
+                  : dirty
+                    ? '未保存の権限変更があります。'
+                    : 'Policyは保存済みです。')}
             </p>
             <button
               type="button"
               onClick={save}
-              disabled={!canEdit || pending || !dirty}
+              disabled={!canEdit || pending || !dirty || stale}
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Save className="h-4 w-4" aria-hidden="true" />
@@ -301,4 +423,18 @@ function effectClassName(mode: ExplicitPermissionMode): string {
     default:
       return 'border-border bg-background text-foreground';
   }
+}
+
+function readPolicyRevision(value: unknown): number | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const revision = (value as Record<string, unknown>)['revision'];
+  return Number.isInteger(revision) && Number(revision) > 0 ? Number(revision) : null;
+}
+
+function isTimeoutError(error: unknown): boolean {
+  return error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
+}
+
+function jsonEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
