@@ -68,6 +68,24 @@ const ALLOWED_SEVERITIES = new Set<AuditLogSeverity>([
   'critical',
 ]);
 
+const AUTOMATIC_ACTION_LABELS: Record<string, string> = {
+  observe: '監視のみ',
+  warn: '警告',
+  delete: 'メッセージ削除',
+  warn_delete: '警告 + メッセージ削除',
+  timeout: 'タイムアウト',
+  role: 'ロール付与',
+  blacklist: 'ブラックリスト登録 + BAN',
+  kick: 'Kick',
+  ban: 'BAN',
+};
+const AUTOMATIC_SEVERITY_LABELS: Record<string, string> = {
+  low: '低',
+  medium: '中',
+  high: '高',
+  critical: '重大',
+};
+
 const EVENT_LABELS: Record<string, { label: string; summary: string }> = {
   'plugin.enable': {
     label: 'Pluginを有効化',
@@ -112,6 +130,18 @@ const EVENT_LABELS: Record<string, { label: string; summary: string }> = {
   'auto_response.delete': {
     label: '自動応答ルールを削除',
     summary: 'Auto Responseルールを削除しました。削除前の本文は表示しません。',
+  },
+  'moderation.automatic.decision': {
+    label: '自動Moderation判定',
+    summary: '自動対応ポリシーの判定結果が記録されました。',
+  },
+  'moderation.automatic.executed': {
+    label: '自動Moderation実行',
+    summary: '自動Moderationの対応が実行されました。',
+  },
+  'moderation.automatic.failed': {
+    label: '自動Moderation失敗',
+    summary: '自動Moderationの対応に失敗しました。',
   },
 };
 
@@ -236,11 +266,101 @@ export function describeAuditEvent(
 
   return {
     eventLabel: eventMeta?.label ?? event,
-    summary: eventMeta?.summary ?? '管理対象に対する操作が記録されました。',
+    summary: resolveAuditSummary(event, metadataRecord, eventMeta?.summary),
     category,
     targetLabel: resolveTargetLabel(targetType, targetId, quoteNumber),
     sourceLabel: resolveSourceLabel(event, operationSource),
   };
+}
+
+function resolveAuditSummary(
+  event: string,
+  metadata: Record<string, Prisma.JsonValue> | null,
+  fallback: string | undefined,
+): string {
+  if (event === 'moderation.automatic.decision') {
+    return (
+      resolveAutomaticDecisionSummary(metadata) ?? fallback ?? '自動Moderation判定を記録しました。'
+    );
+  }
+  if (event === 'moderation.automatic.executed' || event === 'moderation.automatic.failed') {
+    return (
+      resolveAutomaticExecutionSummary(metadata) ?? fallback ?? '自動Moderation結果を記録しました。'
+    );
+  }
+  return fallback ?? '管理対象に対する操作が記録されました。';
+}
+
+function resolveAutomaticDecisionSummary(
+  metadata: Record<string, Prisma.JsonValue> | null,
+): string | null {
+  if (!metadata) return null;
+  const outcome = stringValue(metadata['outcome']);
+  const action = stringValue(metadata['action']);
+  const severity = stringValue(metadata['severity']);
+  const outcomeLabel = outcome ? decisionOutcomeLabel(outcome) : null;
+  const actionLabel = action ? automaticActionLabel(action) : null;
+  const severityLabel = severity ? automaticSeverityLabel(severity) : null;
+  const parts = [
+    outcomeLabel ? `判定: ${outcomeLabel}` : null,
+    actionLabel ? `対応: ${actionLabel}` : null,
+    severityLabel ? `危険度: ${severityLabel}` : null,
+  ];
+
+  if (action === 'delete' || action === 'warn_delete') {
+    const deletable = booleanValue(metadata['messageDeletable']);
+    const canManageMessages = booleanValue(metadata['botCanManageMessages']);
+    parts.push(
+      deletable === null ? null : `メッセージ削除可能: ${deletable ? 'はい' : 'いいえ'}`,
+      canManageMessages === null
+        ? null
+        : `Botのメッセージ管理権限: ${canManageMessages ? 'あり' : 'なし'}`,
+    );
+  }
+
+  const visible = parts.filter((part): part is string => part !== null);
+  return visible.length > 0 ? visible.join(' / ') : null;
+}
+
+function resolveAutomaticExecutionSummary(
+  metadata: Record<string, Prisma.JsonValue> | null,
+): string | null {
+  if (!metadata) return null;
+  const actionOutcome = stringValue(metadata['actionOutcome']);
+  const action = stringValue(metadata['action']);
+  const actionOutcomeLabel = actionOutcome ? automaticActionOutcomeLabel(actionOutcome) : null;
+  const actionLabel = action ? automaticActionLabel(action) : null;
+  const errorCode = discordErrorCodeValue(metadata['discordErrorCode']);
+  const httpStatus = httpStatusValue(metadata['discordHttpStatus']);
+  const parts = [
+    actionOutcomeLabel ? `実行結果: ${actionOutcomeLabel}` : null,
+    actionLabel ? `対応: ${actionLabel}` : null,
+    errorCode === null ? null : `Discord code: ${errorCode}`,
+    httpStatus === null ? null : `HTTP: ${httpStatus}`,
+  ].filter((part): part is string => part !== null);
+  return parts.length > 0 ? parts.join(' / ') : null;
+}
+
+function decisionOutcomeLabel(value: string): string | null {
+  if (value === 'disabled') return '自動対応OFF（実行なし）';
+  if (value === 'observe') return '監視のみ';
+  if (value === 'execute') return '実行対象';
+  return null;
+}
+
+function automaticActionOutcomeLabel(value: string): string | null {
+  if (value === 'executed') return '成功';
+  if (value === 'already_satisfied') return '既に目的達成';
+  if (value === 'failed') return '失敗';
+  return null;
+}
+
+function automaticActionLabel(value: string): string | null {
+  return AUTOMATIC_ACTION_LABELS[value] ?? null;
+}
+
+function automaticSeverityLabel(value: string): string | null {
+  return AUTOMATIC_SEVERITY_LABELS[value] ?? null;
 }
 
 function buildAuditLogWhere(guildId: string, query: AuditLogQuery): Prisma.AuditLogWhereInput {
@@ -286,6 +406,7 @@ function resolveSourceLabel(event: string, operationSource: string | null): stri
   if (operationSource === 'dashboard') return 'Herta Studio';
   if (operationSource === 'discord') return 'Discord';
   if (event.startsWith('plugin.')) return 'Herta Studio';
+  if (event.startsWith('moderation.automatic.')) return 'Herta Bot';
   return null;
 }
 
@@ -365,6 +486,23 @@ function asRecord(value: Prisma.JsonValue | null): Record<string, Prisma.JsonVal
 
 function positiveInteger(value: Prisma.JsonValue | undefined): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+function discordErrorCodeValue(value: Prisma.JsonValue | undefined): string | number | null {
+  if (typeof value === 'number') {
+    return Number.isSafeInteger(value) && value >= 0 ? value : null;
+  }
+  return typeof value === 'string' && /^\d{1,10}$/u.test(value) ? value : null;
+}
+
+function httpStatusValue(value: Prisma.JsonValue | undefined): number | null {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 100 && value <= 599
+    ? value
+    : null;
+}
+
+function booleanValue(value: Prisma.JsonValue | undefined): boolean | null {
+  return typeof value === 'boolean' ? value : null;
 }
 
 function stringValue(value: Prisma.JsonValue | undefined): string | null {
