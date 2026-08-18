@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getArchivedForumThreads } from './bot-forum-threads.ts';
+import { BotForumThreadsError, getArchivedForumThreads } from './bot-forum-threads.ts';
 
 const guildId = '123456789012345678';
 const forumId = '223456789012345678';
@@ -92,5 +92,18 @@ test('不正cursorをBotへ送信せず拒否する', async () => {
       /cursor/u,
     );
     assert.equal(called, false);
+  });
+});
+
+test('Bot内部APIの401をStudio利用者の認証エラーとして公開しない', async () => {
+  await withBotEnv(async () => {
+    const fetchImpl: typeof fetch = async () => Response.json({ error: 'unauthorized' }, { status: 401 });
+    await assert.rejects(
+      () => getArchivedForumThreads(guildId, forumId, null, 50, fetchImpl),
+      (error: unknown) =>
+        error instanceof BotForumThreadsError &&
+        error.status === 502 &&
+        error.message === 'Forumの過去投稿を取得できませんでした',
+    );
   });
 });
