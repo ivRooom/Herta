@@ -104,15 +104,14 @@ function normalizeBefore(value: string | null): string | null {
 }
 
 function safeStatus(status: number): number {
-  if (status === 400 || status === 401 || status === 403 || status === 404 || status === 429) {
-    return status;
-  }
+  if (status === 401) return 502;
+  if (status === 400 || status === 403 || status === 404 || status === 429) return status;
   return 503;
 }
 
 function messageForStatus(status: number): string {
   if (status === 400) return '選択したForumまたはページング情報が不正です';
-  if (status === 401) return 'Bot内部APIの認証に失敗しました';
+  if (status === 401) return 'Forumの過去投稿を取得できませんでした';
   if (status === 403) return 'このForumの過去投稿をBotが読み取れません';
   if (status === 404) return '選択したForumが見つかりません';
   if (status === 429) return 'Discordの取得制限に達しました。少し待ってから再試行してください';
