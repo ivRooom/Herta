@@ -63,10 +63,48 @@ describe('fetchGuildArchivedForumThreads', () => {
           readMessageHistory: true,
         },
       ],
-      nextBefore: '2026-08-17T12:00:00.000Z',
+      nextBefore: '2026-08-16T12:00:00.000Z',
     });
     const archivedUrl = new URL(String(fetchImpl.mock.calls[1]?.[0]));
     expect(archivedUrl.searchParams.get('limit')).toBe('50');
+  });
+
+  it('全Threadがfilterされてもraw payloadの最古時刻でpaginationを継続する', async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({ id: forumId, guild_id: guildId, type: 15, position: 4 }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          has_more: true,
+          threads: [
+            {
+              id: '323456789012345678',
+              guild_id: guildId,
+              parent_id: '923456789012345678',
+              type: 11,
+              name: '別Forum 1',
+              thread_metadata: { archive_timestamp: '2026-08-17T12:00:00.000Z' },
+            },
+            {
+              id: '423456789012345678',
+              guild_id: guildId,
+              parent_id: '923456789012345678',
+              type: 11,
+              name: '別Forum 2',
+              thread_metadata: { archive_timestamp: '2026-08-15T12:00:00.000Z' },
+            },
+          ],
+        }),
+      );
+
+    await expect(
+      fetchGuildArchivedForumThreads('token', guildId, forumId, null, 20, fetchImpl),
+    ).resolves.toEqual({
+      threads: [],
+      nextBefore: '2026-08-15T12:00:00.000Z',
+    });
   });
 
   it('beforeをISOへ正規化してDiscordへ渡す', async () => {
