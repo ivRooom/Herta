@@ -247,7 +247,8 @@ export function GranularPolicyEditor({
 
       {policies.length === 0 ? (
         <div className="mt-5 rounded-xl border border-dashed border-border p-6 text-sm text-muted">
-          先にManaged Policyを1件作成してください。作成後、このMatrixからページ・設定項目単位の権限を指定できます。
+          先にManaged
+          Policyを1件作成してください。作成後、このMatrixからページ・設定項目単位の権限を指定できます。
         </div>
       ) : (
         <>
