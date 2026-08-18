@@ -5,7 +5,6 @@ import {
 } from './studio-plugin-permissions.ts';
 
 export const STUDIO_PAGE_DEFINITIONS = [
-  { id: 'overview', label: 'サーバー概要', description: '選択中サーバーの概要・Attention・状態を閲覧' },
   { id: 'message-studio', label: 'Botで発言', description: 'Message Studio、予約投稿、定期投稿を閲覧' },
   { id: 'commands', label: 'コマンド', description: 'Slash Command一覧・利用状況を閲覧' },
   { id: 'roles', label: 'Role Manager', description: 'Discord Role Lifecycle画面を閲覧' },
@@ -143,7 +142,12 @@ export function topLevelConfigFields(
 }
 
 function isPageViewActionPattern(action: string): boolean {
-  return action === '*' || action === 'studio.*' || action === 'studio.page.*' || action === 'studio.page.view';
+  return (
+    action === '*' ||
+    action === 'studio.*' ||
+    action === 'studio.page.*' ||
+    action === 'studio.page.view'
+  );
 }
 
 function permissionOptionId(action: StudioPolicyAction, resource: string): string {
