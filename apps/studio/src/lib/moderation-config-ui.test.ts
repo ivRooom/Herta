@@ -6,12 +6,27 @@ import {
   customRuleSelector,
   getEnforcementPolicy,
   removeCustomRule,
+  resolveModerationConfigSection,
   setAutoCaseRule,
   setBuiltInRuleEnabled,
   setEnforcementPolicy,
   toModerationConfigDraft,
   updateCustomRule,
 } from './moderation-config-ui.ts';
+
+test('Moderation設定sectionをallowlistから解決する', () => {
+  assert.equal(resolveModerationConfigSection('basic'), 'basic');
+  assert.equal(resolveModerationConfigSection('rules'), 'rules');
+  assert.equal(resolveModerationConfigSection('cases'), 'cases');
+  assert.equal(resolveModerationConfigSection('exemptions'), 'exemptions');
+  assert.equal(resolveModerationConfigSection('json'), 'json');
+});
+
+test('Moderation設定sectionの未指定・不正値・array入力は基本設定へ戻す', () => {
+  assert.equal(resolveModerationConfigSection(undefined), 'basic');
+  assert.equal(resolveModerationConfigSection('unknown'), 'basic');
+  assert.equal(resolveModerationConfigSection(['rules', 'json']), 'basic');
+});
 
 test('不足設定を既定値で補完する', () => {
   const config = toModerationConfigDraft({ automaticMode: 'observe', autoContainsWords: ['test'] });
