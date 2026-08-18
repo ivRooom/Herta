@@ -38,6 +38,7 @@ type ForumArchiveState = {
 };
 
 const MAX_ARCHIVED_THREADS_PER_FORUM = 500;
+const ARCHIVED_THREAD_REQUEST_TIMEOUT_MS = 15_000;
 
 function channelKindLabel(kind: GuildChannelOption['kind']): string {
   if (kind === 'announcement') return 'アナウンス';
@@ -125,6 +126,11 @@ export function DiscordChannelPicker({
           error: null,
         },
       }));
+      const controller = new AbortController();
+      const timeout = window.setTimeout(
+        () => controller.abort(),
+        ARCHIVED_THREAD_REQUEST_TIMEOUT_MS,
+      );
       try {
         const endpoint = new URL(
           `/api/guilds/${guildId}/message-studio/forums/${forumId}/threads`,
@@ -132,7 +138,10 @@ export function DiscordChannelPicker({
         );
         endpoint.searchParams.set('limit', '50');
         if (before) endpoint.searchParams.set('before', before);
-        const response = await fetch(endpoint, { cache: 'no-store' });
+        const response = await fetch(endpoint, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
         const payload = (await response.json().catch(() => null)) as {
           error?: string;
           threads?: GuildChannelOption[];
@@ -164,6 +173,12 @@ export function DiscordChannelPicker({
           };
         });
       } catch (error) {
+        const message =
+          error instanceof Error && error.name === 'AbortError'
+            ? 'Forumの過去投稿の取得がタイムアウトしました。再試行してください'
+            : error instanceof Error
+              ? error.message
+              : 'Forumの過去投稿を取得できませんでした';
         setArchiveByForum((current) => ({
           ...current,
           [forumId]: {
@@ -171,9 +186,11 @@ export function DiscordChannelPicker({
             nextBefore: current[forumId]?.nextBefore ?? null,
             loaded: true,
             loading: false,
-            error: error instanceof Error ? error.message : 'Forumの過去投稿を取得できませんでした',
+            error: message,
           },
         }));
+      } finally {
+        window.clearTimeout(timeout);
       }
     },
     [guildId],
