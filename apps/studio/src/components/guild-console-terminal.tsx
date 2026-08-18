@@ -1,12 +1,15 @@
 'use client';
 
-import { useRef, useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Circle, Terminal } from 'lucide-react';
 import {
+  addGuildConsoleCommandHistory,
   executeGuildConsoleCommand,
+  getGuildConsoleCommandSuggestions,
   GUILD_CONSOLE_HISTORY_LIMIT,
   GUILD_CONSOLE_MAX_INPUT_LENGTH,
+  stepGuildConsoleCommandHistory,
   type GuildConsoleContext,
 } from '@/lib/guild-console';
 
@@ -32,6 +35,8 @@ const INPUT_CLASS_NAME =
   'min-w-0 flex-1 bg-transparent font-mono text-sm text-slate-100 outline-none placeholder:text-slate-600';
 const RUN_BUTTON_CLASS_NAME =
   'shrink-0 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
+const SUGGESTION_BUTTON_CLASS_NAME =
+  'flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left font-mono text-xs text-slate-300 transition hover:bg-slate-800/80 hover:text-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
 const CONSOLE_DESCRIPTION =
   'Herta専用のread-only commandのみ実行できます。OS shellや任意Discord操作は実行されません。';
 
@@ -51,6 +56,8 @@ export function GuildConsoleTerminal({ context }: { context: GuildConsoleContext
   const inputRef = useRef<HTMLInputElement>(null);
   const nextId = useRef(3);
   const [input, setInput] = useState('');
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyCursor, setHistoryCursor] = useState<number | null>(null);
   const [entries, setEntries] = useState<TerminalEntry[]>([
     {
       id: 1,
@@ -65,6 +72,7 @@ export function GuildConsoleTerminal({ context }: { context: GuildConsoleContext
       tone: 'system',
     },
   ]);
+  const suggestions = getGuildConsoleCommandSuggestions(input);
 
   const appendEntry = (entry: Omit<TerminalEntry, 'id'>) => {
     const id = nextId.current;
@@ -78,6 +86,9 @@ export function GuildConsoleTerminal({ context }: { context: GuildConsoleContext
   const runCommand = (rawCommand: string) => {
     const command = rawCommand.trim();
     if (!command) return;
+
+    setCommandHistory((current) => addGuildConsoleCommandHistory(current, command));
+    setHistoryCursor(null);
 
     const result = executeGuildConsoleCommand(rawCommand, context);
     if (result.type === 'clear') {
@@ -101,6 +112,32 @@ export function GuildConsoleTerminal({ context }: { context: GuildConsoleContext
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     runCommand(input);
+  };
+
+  const handleInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      const step = stepGuildConsoleCommandHistory(
+        commandHistory,
+        historyCursor,
+        event.key === 'ArrowUp' ? 'older' : 'newer',
+      );
+      setHistoryCursor(step.cursor);
+      setInput(step.value);
+      return;
+    }
+
+    if (event.key === 'Tab' && suggestions[0]) {
+      event.preventDefault();
+      setInput(suggestions[0].command);
+      setHistoryCursor(null);
+    }
+  };
+
+  const selectSuggestion = (command: string) => {
+    setInput(command);
+    setHistoryCursor(null);
+    inputRef.current?.focus();
   };
 
   return (
@@ -173,21 +210,50 @@ export function GuildConsoleTerminal({ context }: { context: GuildConsoleContext
               ref={inputRef}
               id="guild-console-command"
               value={input}
-              onChange={(event) => setInput(event.target.value)}
+              onChange={(event) => {
+                setInput(event.target.value);
+                setHistoryCursor(null);
+              }}
+              onKeyDown={handleInputKeyDown}
               maxLength={GUILD_CONSOLE_MAX_INPUT_LENGTH}
               autoComplete="off"
               spellCheck={false}
               placeholder="help"
               className={INPUT_CLASS_NAME}
-              aria-describedby="guild-console-help"
+              aria-describedby="guild-console-help guild-console-shortcuts"
             />
             <button type="submit" className={RUN_BUTTON_CLASS_NAME}>
               Run
             </button>
           </div>
-          <p id="guild-console-help" className="mt-2 text-[11px] leading-5 text-slate-500">
-            {CONSOLE_DESCRIPTION}
-          </p>
+
+          {suggestions.length > 0 ? (
+            <div
+              className="mt-2 rounded-xl border border-slate-800 bg-slate-950 p-1.5"
+              aria-label="コマンド候補"
+            >
+              {suggestions.map((suggestion) => (
+                <button
+                  key={suggestion.command}
+                  type="button"
+                  className={SUGGESTION_BUTTON_CLASS_NAME}
+                  onClick={() => selectSuggestion(suggestion.command)}
+                >
+                  <span className="min-w-0 truncate text-emerald-300">{suggestion.command}</span>
+                  <span className="hidden min-w-0 truncate text-slate-500 sm:block">
+                    {suggestion.description}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-[11px] leading-5 text-slate-500">
+            <p id="guild-console-help">{CONSOLE_DESCRIPTION}</p>
+            <p id="guild-console-shortcuts" className="font-mono">
+              Tab: 補完 · ↑↓: 履歴
+            </p>
+          </div>
         </form>
       </div>
     </section>

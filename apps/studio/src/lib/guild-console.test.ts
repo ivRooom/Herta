@@ -1,8 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  addGuildConsoleCommandHistory,
   executeGuildConsoleCommand,
+  getGuildConsoleCommandSuggestions,
+  GUILD_CONSOLE_COMMAND_HISTORY_LIMIT,
   GUILD_CONSOLE_MAX_INPUT_LENGTH,
+  stepGuildConsoleCommandHistory,
   type GuildConsoleContext,
 } from './guild-console.ts';
 
@@ -114,4 +118,60 @@ test('未知commandと長すぎる入力を安全に拒否する', () => {
 
 test('clearは履歴消去命令として解釈する', () => {
   assert.deepEqual(executeGuildConsoleCommand('clear', context), { type: 'clear' });
+});
+
+test('autocompleteはprefixを優先しopen targetも候補化する', () => {
+  assert.deepEqual(
+    getGuildConsoleCommandSuggestions('op').map((suggestion) => suggestion.command),
+    ['open plugins', 'open commands', 'open moderation', 'open audit'],
+  );
+  assert.deepEqual(
+    getGuildConsoleCommandSuggestions('open c').map((suggestion) => suggestion.command),
+    ['open commands'],
+  );
+  assert.deepEqual(getGuildConsoleCommandSuggestions('open commands'), []);
+});
+
+test('autocompleteは空入力・過大入力・不正limitで候補を返さない', () => {
+  assert.deepEqual(getGuildConsoleCommandSuggestions('   '), []);
+  assert.deepEqual(
+    getGuildConsoleCommandSuggestions('x'.repeat(GUILD_CONSOLE_MAX_INPUT_LENGTH + 1)),
+    [],
+  );
+  assert.deepEqual(getGuildConsoleCommandSuggestions('o', 0), []);
+});
+
+test('command履歴は連続重複を除外して上限を維持する', () => {
+  let history: string[] = [];
+  history = addGuildConsoleCommandHistory(history, ' status ');
+  history = addGuildConsoleCommandHistory(history, 'status');
+  assert.deepEqual(history, ['status']);
+
+  for (let index = 0; index < GUILD_CONSOLE_COMMAND_HISTORY_LIMIT + 3; index += 1) {
+    history = addGuildConsoleCommandHistory(history, `open command-${index}`);
+  }
+
+  assert.equal(history.length, GUILD_CONSOLE_COMMAND_HISTORY_LIMIT);
+  assert.equal(history.at(-1), `open command-${GUILD_CONSOLE_COMMAND_HISTORY_LIMIT + 2}`);
+  assert.doesNotMatch(history[0] ?? '', /^status$/u);
+});
+
+test('ArrowUp/Down用履歴stepは端で安全に停止し最新入力へ戻れる', () => {
+  const history = ['status', 'plugins', 'open audit'];
+
+  const latest = stepGuildConsoleCommandHistory(history, null, 'older');
+  assert.deepEqual(latest, { cursor: 2, value: 'open audit' });
+
+  const older = stepGuildConsoleCommandHistory(history, latest.cursor, 'older');
+  assert.deepEqual(older, { cursor: 1, value: 'plugins' });
+
+  const first = stepGuildConsoleCommandHistory(history, 0, 'older');
+  assert.deepEqual(first, { cursor: 0, value: 'status' });
+
+  const newer = stepGuildConsoleCommandHistory(history, older.cursor, 'newer');
+  assert.deepEqual(newer, { cursor: 2, value: 'open audit' });
+
+  const cleared = stepGuildConsoleCommandHistory(history, newer.cursor, 'newer');
+  assert.deepEqual(cleared, { cursor: null, value: '' });
+  assert.deepEqual(stepGuildConsoleCommandHistory([], null, 'older'), { cursor: null, value: '' });
 });
