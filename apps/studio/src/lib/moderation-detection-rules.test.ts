@@ -25,19 +25,22 @@ test('現在設定のNGワードを部分一致優先で一覧化する', () => 
 });
 
 test('検知時点より後の設定変更を使わず当時のNGワードを解決する', async () => {
-  const findMany = async () => [
-    {
-      createdAt: new Date('2026-08-18T10:00:00.000Z'),
-      config: { autoContainsWords: ['old-word', 'second'] },
-    },
-    {
-      createdAt: new Date('2026-08-18T12:00:00.000Z'),
-      config: { autoContainsWords: ['new-word'] },
-    },
-  ];
   const client = {
-    guildPluginConfigHistory: { findMany },
-  } as ModerationDetectionRuleHistoryClient;
+    guildPluginConfigHistory: {
+      async findMany() {
+        return [
+          {
+            createdAt: new Date('2026-08-18T10:00:00.000Z'),
+            config: { autoContainsWords: ['old-word', 'second'] },
+          },
+          {
+            createdAt: new Date('2026-08-18T12:00:00.000Z'),
+            config: { autoContainsWords: ['new-word'] },
+          },
+        ];
+      },
+    },
+  } as unknown as ModerationDetectionRuleHistoryClient;
 
   const snapshots = await resolveModerationDetectionRuleSnapshots(client, '100', [
     {
@@ -60,9 +63,9 @@ test('検知時点より後の設定変更を使わず当時のNGワードを解
 
 test('削除でindexが詰まっても過去検知は当時の配列から解決する', async () => {
   const calls: unknown[] = [];
-  const client: ModerationDetectionRuleHistoryClient = {
+  const client = {
     guildPluginConfigHistory: {
-      async findMany(args) {
+      async findMany(args: unknown) {
         calls.push(args);
         return [
           {
@@ -76,7 +79,7 @@ test('削除でindexが詰まっても過去検知は当時の配列から解決
         ];
       },
     },
-  };
+  } as unknown as ModerationDetectionRuleHistoryClient;
 
   const snapshots = await resolveModerationDetectionRuleSnapshots(client, '100', [
     {
@@ -102,14 +105,14 @@ test('削除でindexが詰まっても過去検知は当時の配列から解決
 
 test('word以外・不正indexでは履歴queryを発行しない', async () => {
   let called = false;
-  const client: ModerationDetectionRuleHistoryClient = {
+  const client = {
     guildPluginConfigHistory: {
       async findMany() {
         called = true;
         return [];
       },
     },
-  };
+  } as unknown as ModerationDetectionRuleHistoryClient;
 
   const snapshots = await resolveModerationDetectionRuleSnapshots(client, '100', [
     {
