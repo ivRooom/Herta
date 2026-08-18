@@ -1,5 +1,8 @@
+import { fillCommandUsageDays, startOfJstDay, type CommandUsageDay } from '@herta/db';
 import { getAllPluginManifests } from '@herta/plugin-catalog';
 import { prisma } from '@/lib/db';
+
+const DAY_MS = 24 * 60 * 60 * 1_000;
 
 export interface CommunityDashboardSnapshot {
   enabledPlugins: number;
@@ -18,7 +21,9 @@ export interface CommunityDashboardSnapshot {
 
 export async function getCommunityDashboardSnapshot(
   guildId: string,
+  now = new Date(),
 ): Promise<CommunityDashboardSnapshot> {
+  const last7DaysStart = new Date(startOfJstDay(now).getTime() - 6 * DAY_MS);
   const [row] = await prisma.$queryRaw<
     Array<{
       enabledPlugins: bigint;
@@ -42,8 +47,8 @@ export async function getCommunityDashboardSnapshot(
       (SELECT COUNT(*) FROM "reminders" WHERE "guild_id" = ${guildId} AND "status" IN ('pending', 'processing', 'failed'))::bigint AS "pendingReminders",
       (SELECT COUNT(*) FROM "reminders" WHERE "guild_id" = ${guildId} AND "status" = 'failed')::bigint AS "failedReminders",
       (SELECT COUNT(*) FROM "xp_profiles" WHERE "guild_id" = ${guildId})::bigint AS "xpProfiles",
-      (SELECT COUNT(*) FROM "command_execution_events" WHERE "guild_id" = ${guildId} AND "executed_at" >= CURRENT_TIMESTAMP - INTERVAL '7 days')::bigint AS "commands7d",
-      (SELECT COUNT(*) FROM "command_execution_events" WHERE "guild_id" = ${guildId} AND "executed_at" >= CURRENT_TIMESTAMP - INTERVAL '7 days' AND "status" <> 'success')::bigint AS "failedCommands7d"
+      (SELECT COUNT(*) FROM "command_execution_events" WHERE "guild_id" = ${guildId} AND "executed_at" >= ${last7DaysStart} AND "executed_at" < ${now})::bigint AS "commands7d",
+      (SELECT COUNT(*) FROM "command_execution_events" WHERE "guild_id" = ${guildId} AND "executed_at" >= ${last7DaysStart} AND "executed_at" < ${now} AND "status" <> 'success')::bigint AS "failedCommands7d"
   `;
 
   const commands7d = Number(row?.commands7d ?? 0n);
@@ -63,4 +68,27 @@ export async function getCommunityDashboardSnapshot(
     commandSuccessRate7d:
       commands7d === 0 ? 100 : Math.round(((commands7d - failedCommands7d) / commands7d) * 100),
   };
+}
+
+export async function getCommunityCommandTrend(
+  guildId: string,
+  now = new Date(),
+): Promise<CommandUsageDay[]> {
+  const todayStart = startOfJstDay(now);
+  const rangeStart = new Date(todayStart.getTime() - 6 * DAY_MS);
+  const rows = await prisma.$queryRaw<CommandUsageDay[]>`
+    SELECT
+      TO_CHAR(("executed_at" AT TIME ZONE 'Asia/Tokyo')::date, 'YYYY-MM-DD') AS "date",
+      COUNT(*)::int AS "total",
+      COUNT(*) FILTER (WHERE "status" = 'success')::int AS "succeeded",
+      COUNT(*) FILTER (WHERE "status" = 'failure')::int AS "failed"
+    FROM "command_execution_events"
+    WHERE "guild_id" = ${guildId}
+      AND "executed_at" >= ${rangeStart}
+      AND "executed_at" < ${now}
+    GROUP BY 1
+    ORDER BY 1
+  `;
+
+  return fillCommandUsageDays(rows, now, 7);
 }

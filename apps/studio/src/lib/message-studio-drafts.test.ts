@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseMessageStudioDraftPayload } from './message-studio-drafts';
+import { parseMessageStudioDraftPayload } from './message-studio-drafts.ts';
 
 const base = {
   channelId: '123456789012345678',
