@@ -22,10 +22,7 @@ export function AccessResourceNavigation({
 }) {
   const base = `/dashboard/guilds/${guildId}/access`;
   return (
-    <nav
-      className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5"
-      aria-label="Access Control resources"
-    >
+    <nav className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5" aria-label="Access Control resources">
       {ITEMS.map((item) => {
         const Icon = item.icon;
         const selected = active === item.id;

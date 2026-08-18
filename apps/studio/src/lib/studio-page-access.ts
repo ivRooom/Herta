@@ -1,4 +1,8 @@
-import { hasStudioPermission, resolveStudioAccess, type StudioAccessResult } from './studio-access.ts';
+import {
+  hasStudioPermission,
+  resolveStudioAccess,
+  type StudioAccessResult,
+} from './studio-access.ts';
 import {
   hasConfiguredStudioPagePolicy,
   studioPageResource,

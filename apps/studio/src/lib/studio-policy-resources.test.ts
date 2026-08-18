@@ -17,10 +17,7 @@ test('Studio page resourceをGuild scopeで生成する', () => {
 });
 
 test('Access Control subpage resourceを個別に生成する', () => {
-  assert.equal(
-    studioAccessPageResource(GUILD_ID, 'policies'),
-    `guild:${GUILD_ID}:access:policies`,
-  );
+  assert.equal(studioAccessPageResource(GUILD_ID, 'policies'), `guild:${GUILD_ID}:access:policies`);
   assert.notEqual(
     studioAccessPageResource(GUILD_ID, 'users'),
     studioAccessPageResource(GUILD_ID, 'groups'),

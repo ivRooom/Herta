@@ -5,15 +5,27 @@ import {
 } from './studio-plugin-permissions.ts';
 
 export const STUDIO_PAGE_DEFINITIONS = [
-  { id: 'message-studio', label: 'Botで発言', description: 'Message Studio、予約投稿、定期投稿を閲覧' },
+  {
+    id: 'message-studio',
+    label: 'Botで発言',
+    description: 'Message Studio、予約投稿、定期投稿を閲覧',
+  },
   { id: 'commands', label: 'コマンド', description: 'Slash Command一覧・利用状況を閲覧' },
   { id: 'roles', label: 'Role Manager', description: 'Discord Role Lifecycle画面を閲覧' },
   { id: 'access', label: 'Access Control', description: 'Herta IAM / Access Control Centerを閲覧' },
   { id: 'plugins', label: 'プラグイン', description: 'Plugin一覧・Plugin設定画面を閲覧' },
   { id: 'leaderboard', label: 'Leaderboard', description: 'Guildランキングを閲覧' },
-  { id: 'moderation', label: 'Moderation', description: 'Case・自動検知・自動対応の管理画面を閲覧' },
+  {
+    id: 'moderation',
+    label: 'Moderation',
+    description: 'Case・自動検知・自動対応の管理画面を閲覧',
+  },
   { id: 'audit-logs', label: '監査ログ', description: 'Guildの監査ログを閲覧' },
-  { id: 'bot-profile', label: 'Botプロフィール', description: 'GuildごとのBotプロフィール設定を閲覧' },
+  {
+    id: 'bot-profile',
+    label: 'Botプロフィール',
+    description: 'GuildごとのBotプロフィール設定を閲覧',
+  },
 ] as const;
 
 export type StudioPageId = (typeof STUDIO_PAGE_DEFINITIONS)[number]['id'];

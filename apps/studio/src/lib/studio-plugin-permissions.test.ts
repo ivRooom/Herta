@@ -151,10 +151,9 @@ test('settings.readを導入すると項目単位のdefault denyで値を隠す'
   ]);
   assert.deepEqual(resolved.readableFieldKeys, ['theme']);
   assert.deepEqual(resolved.editableFieldKeys, ['theme']);
-  assert.deepEqual(
-    filterReadablePluginConfig({ theme: 'dark', secretValue: 'hidden' }, resolved),
-    { theme: 'dark' },
-  );
+  assert.deepEqual(filterReadablePluginConfig({ theme: 'dark', secretValue: 'hidden' }, resolved), {
+    theme: 'dark',
+  });
 });
 
 test('全体Allowより項目Denyを優先してConfig Studio権限を解決する', () => {
