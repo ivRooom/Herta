@@ -33,7 +33,10 @@ test('production workflow installs failure diagnostics after checkout', () => {
   assert.ok(sourceIndex >= 0, 'deploy workflow must source the shared deployment helpers');
   assert.ok(trapIndex > sourceIndex, 'diagnostic trap must be installed after sourcing helpers');
   assert.ok(composeUpIndex > trapIndex, 'diagnostic trap must be active before docker compose up');
-  assert.ok(clearIndex > composeUpIndex, 'diagnostic trap must only be cleared after deployment checks');
+  assert.ok(
+    clearIndex > composeUpIndex,
+    'diagnostic trap must only be cleared after deployment checks',
+  );
 });
 
 test('failure diagnostics do not print the production environment file', () => {
