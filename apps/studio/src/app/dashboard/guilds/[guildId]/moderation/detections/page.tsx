@@ -4,6 +4,8 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  ListFilter,
+  Pencil,
   Radar,
   ShieldCheck,
   TriangleAlert,
@@ -18,6 +20,12 @@ import {
 import { auth } from '@/auth';
 import { ModerationDetectionReview } from '@/components/moderation-detection-review';
 import { prisma } from '@/lib/db';
+import {
+  legacyRuleReference,
+  listCurrentModerationWordRuleGroups,
+  resolveModerationDetectionRuleSnapshots,
+} from '@/lib/moderation-detection-rules';
+import { toModerationConfigDraft } from '@/lib/moderation-config-ui';
 import { getDiscordAccessToken } from '@/lib/session';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
@@ -45,6 +53,12 @@ export default async function ModerationDetectionsPage({
   await persistSelectedGuild(guild, session.user.id);
   const plugin = await getGuildPlugin(guildId, 'moderation');
   if (!plugin) notFound();
+  const moderationConfig = toModerationConfigDraft(plugin.config);
+  const currentWordRuleGroups = listCurrentModerationWordRuleGroups(plugin.config);
+  const currentWordRuleCount = currentWordRuleGroups.reduce(
+    (sum, group) => sum + group.values.length,
+    0,
+  );
 
   const filters = {
     page: parsePositiveInteger(first(query.page)) ?? 1,
@@ -64,6 +78,7 @@ export default async function ModerationDetectionsPage({
   let loadError: string | null = null;
   let result: Awaited<ReturnType<typeof listModerationDetections>> = EMPTY_RESULT;
   let stats: Awaited<ReturnType<typeof getModerationDetectionStats>> = EMPTY_STATS;
+  let ruleSnapshots = new Map<string, string>();
   try {
     [result, stats] = await Promise.all([
       listModerationDetections(prisma as unknown as ModerationPrismaClient, {
@@ -81,9 +96,10 @@ export default async function ModerationDetectionsPage({
         toExclusive: filters.toExclusive,
       }),
     ]);
+    ruleSnapshots = await resolveModerationDetectionRuleSnapshots(prisma, guildId, result.items);
   } catch (error) {
     console.error('Moderation detections page failed to load', error);
-    loadError = '自動検知履歴を取得できませんでした。DB migrationを確認してください。';
+    loadError = '自動検知履歴を取得できませんでした。DB接続と設定履歴を確認してください。';
   }
 
   return (
@@ -92,17 +108,17 @@ export default async function ModerationDetectionsPage({
         href={`/dashboard/guilds/${guildId}/plugins/moderation`}
         className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground"
       >
-        <ArrowLeft className="h-4 w-4 shrink-0" /> Moderation Pluginへ戻る
+        <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden="true" /> Moderation Pluginへ戻る
       </Link>
 
       <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <Radar className="h-6 w-6 shrink-0 text-primary" />
+            <Radar className="h-6 w-6 shrink-0 text-primary" aria-hidden="true" />
             <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">自動検知レビュー</h1>
           </div>
           <p className="mt-2 break-words text-sm text-muted">
-            {guild.name} のobserve-only検知を分類します。
+            {guild.name} の自動検知を、検知したルールを確認しながらレビューします。
           </p>
         </div>
         <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
@@ -119,8 +135,84 @@ export default async function ModerationDetectionsPage({
       </div>
 
       <div className="mt-6 rounded-2xl border border-primary/20 bg-primary/5 p-4 text-sm leading-6 text-muted">
-        本文・一致語・正規表現・招待コードは保存していません。ID、種別、件数、長さ、レビュー結果のみ表示します。
+        Discordメッセージ本文・一致箇所・招待コードは保存していません。NGワード系の検知根拠は、検知時点より前のModeration設定履歴から管理者が登録したルールだけを復元して表示します。
       </div>
+
+      <section className="mt-6 rounded-2xl border border-border bg-surface p-4 shadow-card sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <ListFilter className="h-5 w-5 text-primary" aria-hidden="true" />
+              <h2 className="font-semibold">現在監視しているNGワード</h2>
+            </div>
+            <p className="mt-1 text-sm leading-6 text-muted">
+              部分一致は通常のBad Word向けです。完全一致・正規表現もGuildごとに追加できます。
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <span
+              className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
+                plugin.enabled && moderationConfig.automaticMode === 'observe'
+                  ? 'border-emerald-500/30 text-emerald-600'
+                  : 'border-amber-500/30 text-amber-600'
+              }`}
+            >
+              {plugin.enabled && moderationConfig.automaticMode === 'observe'
+                ? '自動検知 ON'
+                : '自動検知 OFF'}
+            </span>
+            <span className="rounded-full border border-border px-2.5 py-1 text-xs text-muted">
+              {currentWordRuleCount}件
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          {currentWordRuleGroups.map((group) => (
+            <details
+              key={group.kind}
+              open={group.kind === 'word_contains' && group.values.length > 0}
+              className="rounded-xl border border-border bg-background p-4"
+            >
+              <summary className="cursor-pointer list-none">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-medium">{group.label}</span>
+                  <span className="rounded-full bg-surface px-2 py-0.5 text-xs text-muted">
+                    {group.values.length}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-muted">{group.description}</p>
+              </summary>
+              {group.values.length > 0 ? (
+                <div className="mt-3 max-h-48 space-y-1.5 overflow-y-auto border-t border-border pt-3">
+                  {group.values.map((value, index) => (
+                    <div
+                      key={`${group.kind}:${index}:${value}`}
+                      className="break-all rounded-lg bg-surface px-2.5 py-2 font-mono text-xs"
+                    >
+                      {value}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 border-t border-border pt-3 text-xs text-muted">登録なし</p>
+              )}
+            </details>
+          ))}
+        </div>
+
+        <div className="mt-4 flex flex-col gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs leading-5 text-muted">
+            追加・編集・削除は既存のModeration設定「検知ルール」から行い、保存するとBot Runtimeへ反映されます。
+          </p>
+          <Link
+            href={`/dashboard/guilds/${guildId}/plugins/moderation`}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
+          >
+            <Pencil className="h-4 w-4" aria-hidden="true" /> NGワードを追加・編集
+          </Link>
+        </div>
+      </section>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={Radar} label="検知件数" value={stats.total} />
@@ -202,7 +294,12 @@ export default async function ModerationDetectionsPage({
         <>
           <div className="mt-6 space-y-3 md:hidden">
             {result.items.map((item) => (
-              <DetectionMobileCard key={item.id} guildId={guildId} item={item} />
+              <DetectionMobileCard
+                key={item.id}
+                guildId={guildId}
+                item={item}
+                ruleSnapshot={ruleSnapshots.get(item.id)}
+              />
             ))}
           </div>
 
@@ -213,7 +310,7 @@ export default async function ModerationDetectionsPage({
                   <tr>
                     <th className="px-4 py-3 font-medium">日時 / 種別</th>
                     <th className="px-4 py-3 font-medium">対象</th>
-                    <th className="px-4 py-3 font-medium">観測値</th>
+                    <th className="px-4 py-3 font-medium">検知根拠</th>
                     <th className="px-4 py-3 font-medium">状態</th>
                     <th className="px-4 py-3 font-medium">レビュー</th>
                   </tr>
@@ -240,12 +337,11 @@ export default async function ModerationDetectionsPage({
                           Message: {item.messageId}
                         </div>
                       </td>
-                      <td className="px-4 py-4 text-muted">
-                        <div>本文長: {item.messageLength}</div>
-                        <div className="mt-1 whitespace-nowrap text-xs">
-                          観測: {item.observedCount ?? '—'} / 閾値: {item.threshold ?? '—'}
-                        </div>
-                        <div className="mt-1 text-xs">Rule: {item.ruleIndex ?? '—'}</div>
+                      <td className="max-w-xs px-4 py-4 text-muted">
+                        <DetectionEvidence
+                          item={item}
+                          ruleSnapshot={ruleSnapshots.get(item.id)}
+                        />
                       </td>
                       <td className="px-4 py-4">
                         <span className={statusClassName(item.reviewStatus)}>
@@ -281,7 +377,7 @@ export default async function ModerationDetectionsPage({
         >
           {result.page > 1 ? (
             <Link href={buildPageHref(guildId, query, result.page - 1)} className={PAGE_LINK}>
-              <ChevronLeft className="h-4 w-4" /> 前へ
+              <ChevronLeft className="h-4 w-4" aria-hidden="true" /> 前へ
             </Link>
           ) : null}
           <span className="text-sm text-muted">
@@ -289,7 +385,7 @@ export default async function ModerationDetectionsPage({
           </span>
           {result.page < result.totalPages ? (
             <Link href={buildPageHref(guildId, query, result.page + 1)} className={PAGE_LINK}>
-              次へ <ChevronRight className="h-4 w-4" />
+              次へ <ChevronRight className="h-4 w-4" aria-hidden="true" />
             </Link>
           ) : null}
         </nav>
@@ -329,7 +425,15 @@ const EMPTY_STATS = {
   },
 };
 
-function DetectionMobileCard({ guildId, item }: { guildId: string; item: DetectionItem }) {
+function DetectionMobileCard({
+  guildId,
+  item,
+  ruleSnapshot,
+}: {
+  guildId: string;
+  item: DetectionItem;
+  ruleSnapshot?: string;
+}) {
   return (
     <article
       id={`detection-${item.id}`}
@@ -351,13 +455,8 @@ function DetectionMobileCard({ guildId, item }: { guildId: string; item: Detecti
         <IdRow label="Message ID" value={item.messageId} />
       </dl>
 
-      <div className="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-background p-3 text-center text-xs">
-        <Metric label="本文長" value={item.messageLength} />
-        <Metric
-          label="観測 / 閾値"
-          value={`${item.observedCount ?? '—'} / ${item.threshold ?? '—'}`}
-        />
-        <Metric label="Rule" value={item.ruleIndex ?? '—'} />
+      <div className="mt-4 rounded-xl bg-background p-3 text-xs">
+        <DetectionEvidence item={item} ruleSnapshot={ruleSnapshot} />
       </div>
 
       {item.reviewedAt ? (
@@ -374,6 +473,51 @@ function DetectionMobileCard({ guildId, item }: { guildId: string; item: Detecti
         />
       </div>
     </article>
+  );
+}
+
+function DetectionEvidence({
+  item,
+  ruleSnapshot,
+}: {
+  item: DetectionItem;
+  ruleSnapshot?: string;
+}) {
+  const legacyRule = legacyRuleReference(item.ruleIndex);
+  const isWordRule =
+    item.detectionKind === 'word_exact' ||
+    item.detectionKind === 'word_contains' ||
+    item.detectionKind === 'word_regex';
+
+  return (
+    <div className="space-y-2">
+      {isWordRule ? (
+        <div>
+          <div className="text-xs font-medium text-foreground">検知ルール</div>
+          {ruleSnapshot ? (
+            <code className="mt-1 block break-all rounded-lg border border-primary/20 bg-primary/5 px-2.5 py-2 text-xs text-foreground">
+              {ruleSnapshot}
+            </code>
+          ) : (
+            <div className="mt-1 text-xs text-amber-600">
+              {legacyRule ?? '当時のルール設定を特定できません'}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div>
+          <div className="text-xs font-medium text-foreground">組み込み検知</div>
+          <div className="mt-1 text-xs leading-5">{builtInEvidenceLabel(item.detectionKind)}</div>
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-2 border-t border-border pt-2 text-xs">
+        <Metric label="本文長" value={item.messageLength} />
+        <Metric
+          label="観測 / 閾値"
+          value={`${item.observedCount ?? '—'} / ${item.threshold ?? '—'}`}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -409,7 +553,7 @@ function StatCard({
   return (
     <div className="rounded-2xl border border-border bg-surface p-4 shadow-card sm:p-5">
       <div className="flex items-center gap-2 text-sm text-muted">
-        <Icon className="h-4 w-4" /> {label}
+        <Icon className="h-4 w-4" aria-hidden="true" /> {label}
       </div>
       <div className="mt-2 text-2xl font-semibold">{value}</div>
       {detail ? <div className="mt-1 text-xs text-muted">{detail}</div> : null}
@@ -531,6 +675,18 @@ function kindLabel(kind: ModerationDetectionKind) {
     mention_burst: '大量メンション',
     message_burst: '連投',
     duplicate_message: '重複投稿',
+  }[kind];
+}
+
+function builtInEvidenceLabel(kind: ModerationDetectionKind) {
+  return {
+    word_exact: 'カスタム完全一致ルール',
+    word_contains: 'カスタム部分一致ルール',
+    word_regex: 'カスタム正規表現ルール',
+    invite_link: '許可リストにないDiscord招待リンク',
+    mention_burst: '1メッセージ内の大量メンション',
+    message_burst: '指定時間内の連続投稿',
+    duplicate_message: '指定時間内の同一内容の繰り返し投稿',
   }[kind];
 }
 
