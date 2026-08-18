@@ -5,29 +5,6 @@ const FORUM_CHANNEL_TYPE = 15;
 const PUBLIC_THREAD_TYPE = 11;
 const MAX_ARCHIVED_THREADS_PER_PAGE = 50;
 
-interface DiscordForumChannelPayload {
-  id?: unknown;
-  guild_id?: unknown;
-  type?: unknown;
-  position?: unknown;
-}
-
-interface DiscordArchivedThreadPayload {
-  id?: unknown;
-  guild_id?: unknown;
-  parent_id?: unknown;
-  name?: unknown;
-  type?: unknown;
-  thread_metadata?: {
-    archive_timestamp?: unknown;
-  };
-}
-
-interface DiscordArchivedThreadsResponse {
-  threads?: unknown;
-  has_more?: unknown;
-}
-
 export interface GuildArchivedForumThreadPage {
   threads: GuildChannelOption[];
   nextBefore: string | null;
@@ -66,7 +43,7 @@ export async function fetchGuildArchivedForumThreads(
   );
 
   const forum = await fetchForumChannel(token, forumId, fetchImpl);
-  if (forum.guild_id !== guildId) {
+  if (forum.guildId !== guildId) {
     throw new GuildForumThreadCatalogError(
       '選択したForumはこのGuildに属していません',
       403,
@@ -103,8 +80,8 @@ export async function fetchGuildArchivedForumThreads(
     );
   }
 
-  const payload = (await response.json().catch(() => null)) as DiscordArchivedThreadsResponse | null;
-  if (!payload || !Array.isArray(payload.threads) || typeof payload.has_more !== 'boolean') {
+  const payload: unknown = await response.json().catch(() => null);
+  if (!isRecord(payload) || !Array.isArray(payload.threads) || typeof payload.has_more !== 'boolean') {
     throw new GuildForumThreadCatalogError(
       'Discordから不正なForum投稿一覧を受け取りました',
       502,
@@ -112,10 +89,9 @@ export async function fetchGuildArchivedForumThreads(
     );
   }
 
-  const forumPosition = Number.isInteger(forum.position) ? Number(forum.position) : 0;
   const accepted: Array<{ option: GuildChannelOption; archivedAt: string | null }> = [];
   for (const rawThread of payload.threads) {
-    const parsed = parseArchivedThread(rawThread, guildId, forumId, forumPosition);
+    const parsed = parseArchivedThread(rawThread, guildId, forumId, forum.position);
     if (parsed) accepted.push(parsed);
   }
 
@@ -136,7 +112,7 @@ async function fetchForumChannel(
   token: string,
   forumId: string,
   fetchImpl: typeof fetch,
-): Promise<{ guild_id: string; type: number; position: number }> {
+): Promise<{ guildId: string; type: number; position: number }> {
   const response = await fetchImpl(`${DISCORD_API_BASE_URL}/channels/${forumId}`, {
     headers: { Authorization: `Bot ${token}`, Accept: 'application/json' },
     signal: AbortSignal.timeout(10_000),
@@ -154,10 +130,9 @@ async function fetchForumChannel(
             : 'discord_unavailable',
     );
   }
-  const payload = (await response.json().catch(() => null)) as DiscordForumChannelPayload | null;
+  const payload: unknown = await response.json().catch(() => null);
   if (
-    !payload ||
-    typeof payload.id !== 'string' ||
+    !isRecord(payload) ||
     payload.id !== forumId ||
     typeof payload.guild_id !== 'string' ||
     typeof payload.type !== 'number'
@@ -169,7 +144,7 @@ async function fetchForumChannel(
     );
   }
   return {
-    guild_id: payload.guild_id,
+    guildId: payload.guild_id,
     type: payload.type,
     position: Number.isInteger(payload.position) ? Number(payload.position) : 0,
   };
@@ -182,24 +157,25 @@ function parseArchivedThread(
   forumPosition: number,
 ): { option: GuildChannelOption; archivedAt: string | null } | null {
   if (!isRecord(value)) return null;
-  const thread = value as DiscordArchivedThreadPayload;
   if (
-    typeof thread.id !== 'string' ||
-    !/^\d{17,20}$/u.test(thread.id) ||
-    thread.guild_id !== guildId ||
-    thread.parent_id !== forumId ||
-    thread.type !== PUBLIC_THREAD_TYPE ||
-    typeof thread.name !== 'string' ||
-    !thread.name.trim()
+    typeof value.id !== 'string' ||
+    !/^\d{17,20}$/u.test(value.id) ||
+    value.guild_id !== guildId ||
+    value.parent_id !== forumId ||
+    value.type !== PUBLIC_THREAD_TYPE ||
+    typeof value.name !== 'string' ||
+    !value.name.trim()
   ) {
     return null;
   }
-  const rawArchivedAt = thread.thread_metadata?.archive_timestamp;
+
+  const metadata = isRecord(value.thread_metadata) ? value.thread_metadata : null;
+  const rawArchivedAt = metadata?.archive_timestamp;
   const archivedAt = typeof rawArchivedAt === 'string' ? normalizeBefore(rawArchivedAt) : null;
   return {
     option: {
-      id: thread.id,
-      name: thread.name.trim().slice(0, 100),
+      id: value.id,
+      name: value.name.trim().slice(0, 100),
       kind: 'thread',
       position: forumPosition,
       parentId: forumId,
