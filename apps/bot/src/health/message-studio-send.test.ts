@@ -299,9 +299,7 @@ describe('sendGuildMessageStudioMessage thread safety', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls[1]?.[0]).toBe(
-      `https://discord.com/api/v10/channels/${threadId}`,
-    );
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(`https://discord.com/api/v10/channels/${threadId}`);
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
       method: 'PATCH',
       body: JSON.stringify({ archived: false }),
