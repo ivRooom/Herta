@@ -68,9 +68,7 @@ export function DiscordChannelPicker({
     name: option.name,
     meta: channelKindLabel(option.kind),
   }));
-  const primarySelected = forumSelection?.forumId
-    ? [forumSelection.primaryChannelId!]
-    : selected;
+  const primarySelected = forumSelection?.forumId ? [forumSelection.forumId] : selected;
   const forumTargetOptions = forumSelection?.forumId
     ? [
         {
