@@ -9,8 +9,12 @@ import {
   type ModerationPrismaClient,
 } from '@herta/plugin-catalog/moderation-service';
 import { auth } from '@/auth';
+import { RequestBodyTooLargeError, readRequestBodyBytes } from '@/lib/bounded-request-body';
 import { authorizeGuild, getGuildPlugin } from '@/lib/guild-plugins';
 import { prisma } from '@/lib/db';
+import { isSameOriginMutationRequest } from '@/lib/request-origin';
+
+const MAX_DETECTION_REVIEW_BODY_BYTES = 4 * 1024;
 
 export async function PATCH(
   request: Request,
@@ -19,6 +23,9 @@ export async function PATCH(
   const session = await auth();
   if (!session?.user) {
     return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
+  }
+  if (!isSameOriginMutationRequest(request)) {
+    return NextResponse.json({ error: '不正なリクエスト元です' }, { status: 403 });
   }
 
   const { guildId, detectionId } = await params;
@@ -45,6 +52,9 @@ export async function PATCH(
     });
     return NextResponse.json({ ...result, automaticCase });
   } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      return NextResponse.json({ error: 'レビュー更新内容が大きすぎます' }, { status: 413 });
+    }
     if (error instanceof SyntaxError) {
       return NextResponse.json({ error: 'JSON形式が不正です' }, { status: 400 });
     }
@@ -92,7 +102,8 @@ async function maybeCreateAutomaticCase({
 }
 
 async function readBody(request: Request): Promise<Record<string, unknown>> {
-  const body = (await request.json()) as unknown;
+  const bytes = await readRequestBodyBytes(request, MAX_DETECTION_REVIEW_BODY_BYTES);
+  const body = JSON.parse(Buffer.from(bytes).toString('utf8')) as unknown;
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     throw new ModerationValidationError('リクエスト本文が不正です');
   }

@@ -8,6 +8,7 @@ import {
 import { auth } from '@/auth';
 import { authorizeGuild } from '@/lib/guild-plugins';
 import { prisma } from '@/lib/db';
+import { isSameOriginMutationRequest } from '@/lib/request-origin';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,9 +32,12 @@ export async function GET(_request: Request, { params }: RouteContext) {
   }
 }
 
-export async function POST(_request: Request, { params }: RouteContext) {
+export async function POST(request: Request, { params }: RouteContext) {
   const authorization = await authorizeRequest(params);
   if ('response' in authorization) return authorization.response;
+  if (!isSameOriginMutationRequest(request)) {
+    return NextResponse.json({ error: '不正なリクエスト元です' }, { status: 403 });
+  }
 
   try {
     const result = await createModerationCaseFromDetection(
