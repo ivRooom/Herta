@@ -4,6 +4,8 @@ import { useMemo, useState } from 'react';
 import type { PluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';
 import { topLevelConfigFields } from '@/lib/studio-policy-resources';
 
+const SAVE_TIMEOUT_MS = 15_000;
+
 type PluginUpdateResponse = {
   error?: unknown;
   enabled?: boolean;
@@ -39,7 +41,9 @@ export function RestrictedPluginConfigForm({
   );
   const [enabled, setEnabled] = useState(initialEnabled);
   const [savedEnabled, setSavedEnabled] = useState(initialEnabled);
-  const [values, setValues] = useState<Record<string, string>>(() => toEditorValues(initialConfig));
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    toEditorValues(initialConfig),
+  );
   const [savedValues, setSavedValues] = useState<Record<string, string>>(() =>
     toEditorValues(initialConfig),
   );
@@ -88,6 +92,7 @@ export function RestrictedPluginConfigForm({
       const response = await fetch(`/api/guilds/${guildId}/plugins/${pluginId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(SAVE_TIMEOUT_MS),
         body: JSON.stringify(payload),
       });
       const result = (await response.json().catch(() => null)) as PluginUpdateResponse | null;
@@ -106,7 +111,13 @@ export function RestrictedPluginConfigForm({
       setSavedEnabled(nextEnabled);
       setStatus('許可された設定項目を保存しました');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '設定の保存に失敗しました');
+      setStatus(
+        isTimeoutError(error)
+          ? '設定の保存がタイムアウトしました。通信状態を確認して再実行してください。'
+          : error instanceof Error
+            ? error.message
+            : '設定の保存に失敗しました',
+      );
     } finally {
       setPending(false);
     }
@@ -173,7 +184,9 @@ export function RestrictedPluginConfigForm({
                 readOnly={!canEdit}
                 aria-readonly={!canEdit}
                 rows={
-                  Array.isArray(initialConfig[field.key]) || isRecord(initialConfig[field.key]) ? 5 : 2
+                  Array.isArray(initialConfig[field.key]) || isRecord(initialConfig[field.key])
+                    ? 5
+                    : 2
                 }
                 spellCheck={false}
                 className="mt-3 w-full rounded-lg border border-border bg-surface p-3 font-mono text-sm leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring read-only:cursor-default read-only:opacity-70"
@@ -222,4 +235,8 @@ function toEditorValues(config: Record<string, unknown>): Record<string, string>
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isTimeoutError(error: unknown): boolean {
+  return error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError');
 }
