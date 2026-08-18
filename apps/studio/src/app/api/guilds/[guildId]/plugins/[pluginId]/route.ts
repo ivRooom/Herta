@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { RequestBodyTooLargeError, readRequestBodyBytes } from '@/lib/bounded-request-body';
 import {
-  authorizeGuild,
   findPluginManifest,
   getGuildPlugin,
   updateGuildPlugin,
@@ -12,13 +11,24 @@ import { toPluginConfigValidationIssues } from '@/lib/plugin-config-validation-i
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
 import { resolveStudioAccess } from '@/lib/studio-access';
 import {
+  filterReadablePluginConfig,
   hasEffectivePluginPermission,
   pluginConfigFieldResource,
   pluginEnabledControlResource,
+  resolvePluginConfigStudioAccess,
 } from '@/lib/studio-plugin-permissions';
 
 export const dynamic = 'force-dynamic';
 const MAX_PLUGIN_PATCH_BODY_BYTES = 128 * 1024;
+const MAX_REMOVED_CONFIG_FIELDS = 256;
+const MAX_CONFIG_FIELD_KEY_LENGTH = 200;
+
+type PluginPatchBody = {
+  enabled?: boolean;
+  config?: Record<string, unknown>;
+  configPatch?: Record<string, unknown>;
+  removeConfigFields?: string[];
+};
 
 export async function GET(
   _request: Request,
@@ -27,12 +37,22 @@ export async function GET(
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
   const { guildId, pluginId } = await params;
-  const authorization = await authorizeGuild(guildId, session.user.id);
-  if ('response' in authorization) return authorization.response;
+  const access = await resolveStudioAccess(guildId, session.user.id);
+  if (!access.ok) return access.response;
 
   const plugin = await getGuildPlugin(guildId, pluginId);
   if (!plugin) return NextResponse.json({ error: 'Plugin が見つかりません' }, { status: 404 });
-  return NextResponse.json(plugin);
+  const configAccess = resolvePluginConfigStudioAccess(
+    access.access,
+    guildId,
+    pluginId,
+    topLevelConfigFieldKeys(plugin.manifest.configSchema),
+  );
+  return NextResponse.json({
+    ...plugin,
+    config: filterReadablePluginConfig(plugin.config, configAccess),
+    configAccess,
+  });
 }
 
 export async function PATCH(
@@ -67,8 +87,10 @@ export async function PATCH(
     }
   }
 
-  if (body.value.config !== undefined) {
-    const validation = validatePluginConfig(manifest, body.value.config);
+  const candidateConfig = resolveCandidateConfig(current.config, body.value);
+  let validatedConfig: Record<string, unknown> | undefined;
+  if (candidateConfig !== undefined) {
+    const validation = validatePluginConfig(manifest, candidateConfig);
     if (!validation.valid) {
       return NextResponse.json(
         {
@@ -79,6 +101,7 @@ export async function PATCH(
         { status: 400 },
       );
     }
+    validatedConfig = validation.config;
 
     const changedFields = changedTopLevelFields(current.config, validation.config);
     const deniedFields = changedFields.filter(
@@ -100,18 +123,30 @@ export async function PATCH(
     }
   }
 
-  const result = await updateGuildPlugin(guildId, pluginId, session.user.id, body.value);
+  const updateInput: { enabled?: boolean; config?: Record<string, unknown> } = {};
+  if (body.value.enabled !== undefined) updateInput.enabled = body.value.enabled;
+  if (validatedConfig !== undefined) updateInput.config = validatedConfig;
+  const result = await updateGuildPlugin(guildId, pluginId, session.user.id, updateInput);
   if (!result || !('manifest' in result)) {
     return NextResponse.json({ error: '設定が不正です' }, { status: 400 });
   }
-  return NextResponse.json(result);
+
+  const configAccess = resolvePluginConfigStudioAccess(
+    access.access,
+    guildId,
+    pluginId,
+    topLevelConfigFieldKeys(result.manifest.configSchema),
+  );
+  return NextResponse.json({
+    ...result,
+    config: filterReadablePluginConfig(result.config, configAccess),
+    configAccess,
+  });
 }
 
 async function parsePatchBody(
   request: Request,
-): Promise<
-  { value: { enabled?: boolean; config?: Record<string, unknown> } } | { response: Response }
-> {
+): Promise<{ value: PluginPatchBody } | { response: Response }> {
   try {
     const bytes = await readRequestBodyBytes(request, MAX_PLUGIN_PATCH_BODY_BYTES);
     const value = JSON.parse(Buffer.from(bytes).toString('utf8')) as unknown;
@@ -134,18 +169,60 @@ async function parsePatchBody(
   }
 }
 
-function isPatchBody(
-  value: unknown,
-): value is { enabled?: boolean; config?: Record<string, unknown> } {
+function isPatchBody(value: unknown): value is PluginPatchBody {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const body = value as Record<string, unknown>;
   const keys = Object.keys(body);
-  if (keys.some((key) => key !== 'enabled' && key !== 'config')) return false;
-  return (
-    (body.enabled === undefined || typeof body.enabled === 'boolean') &&
-    (body.config === undefined ||
-      (typeof body.config === 'object' && body.config !== null && !Array.isArray(body.config)))
-  );
+  if (
+    keys.some(
+      (key) =>
+        key !== 'enabled' &&
+        key !== 'config' &&
+        key !== 'configPatch' &&
+        key !== 'removeConfigFields',
+    )
+  ) {
+    return false;
+  }
+  if (body.config !== undefined && (body.configPatch !== undefined || body.removeConfigFields !== undefined)) {
+    return false;
+  }
+  if (body.enabled !== undefined && typeof body.enabled !== 'boolean') return false;
+  if (body.config !== undefined && !isRecord(body.config)) return false;
+  if (body.configPatch !== undefined && !isRecord(body.configPatch)) return false;
+  if (body.removeConfigFields !== undefined) {
+    if (!Array.isArray(body.removeConfigFields) || body.removeConfigFields.length > MAX_REMOVED_CONFIG_FIELDS) {
+      return false;
+    }
+    if (
+      body.removeConfigFields.some(
+        (field) =>
+          typeof field !== 'string' ||
+          field.length === 0 ||
+          field.length > MAX_CONFIG_FIELD_KEY_LENGTH,
+      )
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function resolveCandidateConfig(
+  current: Record<string, unknown>,
+  body: PluginPatchBody,
+): Record<string, unknown> | undefined {
+  if (body.config !== undefined) return body.config;
+  if (body.configPatch === undefined && body.removeConfigFields === undefined) return undefined;
+  const next = { ...current, ...(body.configPatch ?? {}) };
+  for (const field of body.removeConfigFields ?? []) delete next[field];
+  return next;
+}
+
+function topLevelConfigFieldKeys(schema: Record<string, unknown>): string[] {
+  const properties = schema['properties'];
+  if (!isRecord(properties)) return [];
+  return Object.keys(properties);
 }
 
 function changedTopLevelFields(
@@ -158,4 +235,8 @@ function changedTopLevelFields(
 
 function jsonEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
