@@ -496,10 +496,7 @@ function discordErrorCodeValue(value: Prisma.JsonValue | undefined): string | nu
 }
 
 function httpStatusValue(value: Prisma.JsonValue | undefined): number | null {
-  return typeof value === 'number' &&
-    Number.isSafeInteger(value) &&
-    value >= 100 &&
-    value <= 599
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 100 && value <= 599
     ? value
     : null;
 }
