@@ -13,6 +13,8 @@ ENV_FILE="${REPO_ROOT}/.env.production"
 COMPOSE="docker compose --env-file ${ENV_FILE} -f docker-compose.prod.yml"
 HEALTH_DOMAIN="${HEALTH_DOMAIN:-herta.ivrm.jp}"
 IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-ghcr.io/ivrooom/herta}"
+PRISMA_BIN="/app/packages/db/node_modules/.bin/prisma"
+PRISMA_SCHEMA="/app/packages/db/prisma/schema.prisma"
 
 require_env_file() {
   if [ ! -f "${ENV_FILE}" ]; then
@@ -86,6 +88,85 @@ verify_migration() {
   fi
 }
 
+service_runtime_state() {
+  local service="$1"
+  local container_id
+  container_id="$(${COMPOSE} ps -aq "${service}" 2>/dev/null | head -n 1 || true)"
+  if [ -z "${container_id}" ]; then
+    printf 'missing\n'
+    return 0
+  fi
+
+  docker inspect \
+    --format 'status={{.State.Status}} running={{.State.Running}} exit={{.State.ExitCode}} health={{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+    "${container_id}" 2>/dev/null || printf 'inspect_failed\n'
+}
+
+print_migration_history() {
+  local postgres_id
+  postgres_id="$(${COMPOSE} ps -q postgres 2>/dev/null || true)"
+  if [ -z "${postgres_id}" ] || \
+    [ "$(docker inspect --format '{{.State.Running}}' "${postgres_id}" 2>/dev/null || true)" != 'true' ]; then
+    echo "PostgreSQLが起動していないためmigration履歴確認をスキップします"
+    return 0
+  fi
+
+  echo "=== Prisma migration history (latest 10) ==="
+  ${COMPOSE} exec -T postgres sh -lc \
+    'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -P pager=off -c '\''SELECT migration_name, started_at, finished_at, rolled_back_at, applied_steps_count FROM "_prisma_migrations" ORDER BY started_at DESC LIMIT 10;'\''' \
+    2>&1 || true
+
+  echo "=== Prisma migrate status ==="
+  ${COMPOSE} run --rm --no-deps migrator \
+    "${PRISMA_BIN}" migrate status --schema "${PRISMA_SCHEMA}" 2>&1 || true
+}
+
+# Secretや環境変数そのものは出力せず、障害切り分けに必要な状態と安全な末尾ログだけを残す。
+print_deploy_diagnostics() (
+  set +e
+  local deploy_exit_code="${1:-1}"
+  local service
+
+  echo
+  echo "=== Deploy failure diagnostics (exit=${deploy_exit_code}) ==="
+  printf 'git HEAD: '
+  git rev-parse --short HEAD 2>/dev/null || echo unknown
+
+  echo "=== docker compose ps -a ==="
+  ${COMPOSE} ps -a 2>&1 || true
+
+  echo "=== container runtime states ==="
+  for service in postgres redis migrator api studio bot worker nginx caddy; do
+    printf '%s: %s\n' "${service}" "$(service_runtime_state "${service}")"
+  done
+
+  print_migration_history
+
+  for service in migrator api studio bot worker nginx caddy; do
+    echo "=== ${service} logs (tail 80) ==="
+    ${COMPOSE} logs --tail=80 "${service}" 2>&1 || true
+  done
+
+  echo "=== End deploy failure diagnostics ==="
+)
+
+_deploy_exit_handler() {
+  local status=$?
+  trap - EXIT
+  if [ "${status}" -ne 0 ]; then
+    print_deploy_diagnostics "${status}"
+  fi
+  exit "${status}"
+}
+
+install_deploy_exit_trap() {
+  trap _deploy_exit_handler EXIT
+}
+
+clear_deploy_exit_trap() {
+  trap - EXIT
+}
+
 wait_for_health() {
   local health_url="https://${HEALTH_DOMAIN}/api/v1/health"
   echo "=== Health check (${health_url}) ==="
@@ -123,18 +204,24 @@ wait_for_auth() {
 }
 
 wait_for_bot() {
-  local bot_container
+  local bot_container bot_health
   bot_container="$(${COMPOSE} ps -q bot)"
-  echo "=== Discord Botログイン確認 ==="
+  echo "=== Discord Bot health check ==="
+  if [ -z "${bot_container}" ]; then
+    echo "ERROR: Discord Botコンテナが存在しません。" >&2
+    return 1
+  fi
+
   for i in $(seq 1 12); do
-    if docker logs --since 5m "${bot_container}" 2>&1 | grep -q "Herta Bot がログインしました"; then
-      echo "Discord Botログイン成功"
+    bot_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${bot_container}" 2>/dev/null || true)"
+    if [ "${bot_health}" = 'healthy' ] || [ "${bot_health}" = 'running' ]; then
+      echo "Discord Bot health check 成功 (${bot_health})"
       return 0
     fi
-    echo "Botログイン待ち... (${i}/12)"
+    echo "Bot health待ち... (${i}/12, status=${bot_health:-unknown})"
     sleep 5
   done
-  echo "ERROR: Discord Botログインを確認できません。" >&2
+  echo "ERROR: Discord Botがhealthyになりませんでした。" >&2
   ${COMPOSE} logs --tail=100 bot || true
   return 1
 }
