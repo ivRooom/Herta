@@ -94,21 +94,28 @@ export async function fetchGuildArchivedForumThreads(
   }
 
   const accepted: Array<{ option: GuildChannelOption; archivedAt: string | null }> = [];
+  let oldestArchivedAt: string | null = null;
   for (const rawThread of payload.threads) {
+    const metadata = isRecord(rawThread) && isRecord(rawThread.thread_metadata)
+      ? rawThread.thread_metadata
+      : null;
+    const rawArchivedAt = typeof metadata?.archive_timestamp === 'string'
+      ? normalizeBefore(metadata.archive_timestamp)
+      : null;
+    if (
+      rawArchivedAt &&
+      (!oldestArchivedAt || Date.parse(rawArchivedAt) < Date.parse(oldestArchivedAt))
+    ) {
+      oldestArchivedAt = rawArchivedAt;
+    }
+
     const parsed = parseArchivedThread(rawThread, guildId, forumId, forum.position);
     if (parsed) accepted.push(parsed);
   }
 
-  const nextBefore = payload.has_more
-    ? (accepted
-        .map((entry) => entry.archivedAt)
-        .filter((value): value is string => value !== null)
-        .sort((a, b) => Date.parse(a) - Date.parse(b))[0] ?? null)
-    : null;
-
   return {
     threads: accepted.map((entry) => entry.option),
-    nextBefore,
+    nextBefore: payload.has_more ? oldestArchivedAt : null,
   };
 }
 
