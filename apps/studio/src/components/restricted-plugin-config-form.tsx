@@ -41,9 +41,7 @@ export function RestrictedPluginConfigForm({
   );
   const [enabled, setEnabled] = useState(initialEnabled);
   const [savedEnabled, setSavedEnabled] = useState(initialEnabled);
-  const [values, setValues] = useState<Record<string, string>>(() =>
-    toEditorValues(initialConfig),
-  );
+  const [values, setValues] = useState<Record<string, string>>(() => toEditorValues(initialConfig));
   const [savedValues, setSavedValues] = useState<Record<string, string>>(() =>
     toEditorValues(initialConfig),
   );
