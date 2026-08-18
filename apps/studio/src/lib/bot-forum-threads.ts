@@ -14,12 +14,12 @@ export interface ArchivedForumThreadPage {
 }
 
 export class BotForumThreadsError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
     super(message);
     this.name = 'BotForumThreadsError';
+    this.status = status;
   }
 }
 
