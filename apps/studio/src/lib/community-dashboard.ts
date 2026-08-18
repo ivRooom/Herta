@@ -25,7 +25,9 @@ export interface CommunityDashboardSnapshot {
 
 export async function getCommunityDashboardSnapshot(
   guildId: string,
+  now = new Date(),
 ): Promise<CommunityDashboardSnapshot> {
+  const last7DaysStart = new Date(startOfJstDay(now).getTime() - 6 * DAY_MS);
   const [row] = await prisma.$queryRaw<
     Array<{
       enabledPlugins: bigint;
@@ -49,8 +51,8 @@ export async function getCommunityDashboardSnapshot(
       (SELECT COUNT(*) FROM "reminders" WHERE "guild_id" = ${guildId} AND "status" IN ('pending', 'processing', 'failed'))::bigint AS "pendingReminders",
       (SELECT COUNT(*) FROM "reminders" WHERE "guild_id" = ${guildId} AND "status" = 'failed')::bigint AS "failedReminders",
       (SELECT COUNT(*) FROM "xp_profiles" WHERE "guild_id" = ${guildId})::bigint AS "xpProfiles",
-      (SELECT COUNT(*) FROM "command_execution_events" WHERE "guild_id" = ${guildId} AND "executed_at" >= CURRENT_TIMESTAMP - INTERVAL '7 days')::bigint AS "commands7d",
-      (SELECT COUNT(*) FROM "command_execution_events" WHERE "guild_id" = ${guildId} AND "executed_at" >= CURRENT_TIMESTAMP - INTERVAL '7 days' AND "status" <> 'success')::bigint AS "failedCommands7d"
+      (SELECT COUNT(*) FROM "command_execution_events" WHERE "guild_id" = ${guildId} AND "executed_at" >= ${last7DaysStart})::bigint AS "commands7d",
+      (SELECT COUNT(*) FROM "command_execution_events" WHERE "guild_id" = ${guildId} AND "executed_at" >= ${last7DaysStart} AND "status" <> 'success')::bigint AS "failedCommands7d"
   `;
 
   const commands7d = Number(row?.commands7d ?? 0n);
