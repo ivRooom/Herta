@@ -1,8 +1,4 @@
-import {
-  fillCommandUsageDays,
-  startOfJstDay,
-  type CommandUsageDay,
-} from '@herta/db';
+import { fillCommandUsageDays, startOfJstDay, type CommandUsageDay } from '@herta/db';
 import { getAllPluginManifests } from '@herta/plugin-catalog';
 import { prisma } from '@/lib/db';
 
