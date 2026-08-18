@@ -1,4 +1,5 @@
 export type CustomRuleKind = 'word_exact' | 'word_contains' | 'word_regex';
+export type ModerationConfigSection = 'basic' | 'rules' | 'cases' | 'exemptions' | 'json';
 export type AutomaticEnforcementActionDraft =
   'observe' | 'warn' | 'delete' | 'warn_delete' | 'timeout' | 'role' | 'blacklist' | 'kick' | 'ban';
 export type AutomaticModerationSeverityDraft = 'low' | 'medium' | 'high' | 'critical';
@@ -86,6 +87,13 @@ const CUSTOM_RULE_KEYS: Record<CustomRuleKind, keyof ModerationConfigDraft> = {
   word_contains: 'autoContainsWords',
   word_regex: 'autoRegexPatterns',
 };
+const MODERATION_CONFIG_SECTIONS = new Set<ModerationConfigSection>([
+  'basic',
+  'rules',
+  'cases',
+  'exemptions',
+  'json',
+]);
 
 const ENFORCEMENT_ACTIONS = new Set<AutomaticEnforcementActionDraft>([
   'observe',
@@ -99,6 +107,15 @@ const ENFORCEMENT_ACTIONS = new Set<AutomaticEnforcementActionDraft>([
   'ban',
 ]);
 const SEVERITIES = new Set<AutomaticModerationSeverityDraft>(['low', 'medium', 'high', 'critical']);
+
+export function resolveModerationConfigSection(
+  value: string | string[] | undefined,
+): ModerationConfigSection {
+  return typeof value === 'string' &&
+    MODERATION_CONFIG_SECTIONS.has(value as ModerationConfigSection)
+    ? (value as ModerationConfigSection)
+    : 'basic';
+}
 
 export function toModerationConfigDraft(value: unknown): ModerationConfigDraft {
   const source = isRecord(value) ? value : {};
