@@ -186,6 +186,16 @@ export function DiscordChannelPicker({
     void loadArchivedThreads(selectedForumId, null);
   }, [archiveByForum, guildId, loadArchivedThreads, selectedForumId]);
 
+  function retryArchiveLoad() {
+    if (!selectedForumId || !archiveState || archiveState.loading) return;
+    void loadArchivedThreads(selectedForumId, archiveState.nextBefore);
+  }
+
+  function loadMoreArchivedThreads() {
+    if (!selectedForumId || !archiveState?.nextBefore || archiveState.loading) return;
+    void loadArchivedThreads(selectedForumId, archiveState.nextBefore);
+  }
+
   return (
     <div className="space-y-2">
       <DiscordEntityPicker
@@ -213,7 +223,10 @@ export function DiscordChannelPicker({
           />
           {guildId ? (
             <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] leading-5 text-muted">
-              <span aria-live="polite">
+              <span
+                aria-live="polite"
+                className={archiveState?.error ? 'text-destructive' : undefined}
+              >
                 {archiveState?.loading
                   ? 'アーカイブ済み投稿を読み込み中…'
                   : archiveState?.error
@@ -222,13 +235,20 @@ export function DiscordChannelPicker({
                       ? `アーカイブ済み投稿 ${archiveState.threads.length}件を読込済み`
                       : 'アーカイブ済み投稿を読み込みます'}
               </span>
-              {archiveState?.nextBefore ? (
+              {archiveState?.error ? (
                 <button
                   type="button"
                   disabled={archiveState.loading}
-                  onClick={() =>
-                    void loadArchivedThreads(forumSelection.forumId!, archiveState.nextBefore)
-                  }
+                  onClick={retryArchiveLoad}
+                  className="font-medium text-primary hover:underline disabled:cursor-wait disabled:opacity-50"
+                >
+                  再試行
+                </button>
+              ) : archiveState?.nextBefore ? (
+                <button
+                  type="button"
+                  disabled={archiveState.loading}
+                  onClick={loadMoreArchivedThreads}
                   className="font-medium text-primary hover:underline disabled:cursor-wait disabled:opacity-50"
                 >
                   さらに過去の投稿を読み込む
