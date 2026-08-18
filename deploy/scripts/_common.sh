@@ -36,7 +36,39 @@ resolve_image_for_ref() {
   printf '%s:%s\n' "${IMAGE_REPOSITORY}" "${sha}"
 }
 
+reclaim_production_docker_space() {
+  local migrator_id migrator_running image_id
+
+  echo "=== Docker容量を事前回収 ==="
+  docker system df || true
+
+  # migratorは正常終了後に停止したまま残るため、次回deploy前にだけ削除する。
+  # 稼働中のcontainerは削除せず、volumeも一切pruneしない。
+  migrator_id="$(${COMPOSE} ps -aq migrator 2>/dev/null | head -n 1 || true)"
+  if [ -n "${migrator_id}" ]; then
+    migrator_running="$(docker inspect --format '{{.State.Running}}' "${migrator_id}" 2>/dev/null || true)"
+    if [ "${migrator_running}" != 'true' ]; then
+      docker rm "${migrator_id}" > /dev/null 2>&1 || true
+    fi
+  fi
+
+  # commit SHAごとに増えるHerta imageだけを削除対象にする。
+  # 現在の稼働containerが参照しているimageはDocker自身が削除を拒否するため保持される。
+  while IFS= read -r image_id; do
+    [ -n "${image_id}" ] || continue
+    docker image rm "${image_id}" > /dev/null 2>&1 || true
+  done < <(docker image ls "${IMAGE_REPOSITORY}" --format '{{.ID}}' 2>/dev/null | sort -u)
+
+  # dangling layerと古いbuild cacheだけを回収する。named volumeは触らない。
+  docker image prune -f > /dev/null 2>&1 || true
+  docker builder prune -f --filter 'until=24h' > /dev/null 2>&1 || true
+
+  docker system df || true
+  df -h /var/lib/docker 2>/dev/null || df -h / || true
+}
+
 pull_production_images() {
+  reclaim_production_docker_space
   echo "=== 本番imageを取得 (${HERTA_IMAGE}) ==="
   ${COMPOSE} pull postgres redis nginx caddy api
 }

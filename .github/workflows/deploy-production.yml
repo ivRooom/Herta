@@ -217,7 +217,7 @@ jobs:
             printf '%s' "${GHCR_TOKEN}" | \
               docker login ghcr.io --username "${GHCR_USERNAME}" --password-stdin
 
-            ${COMPOSE} pull postgres redis nginx caddy api
+            pull_production_images
 
             echo "=== 配布image内の成果物を検証 ==="
             docker run --rm --entrypoint sh "${HERTA_IMAGE}" -lc '

@@ -52,6 +52,7 @@ RUN rm -rf \
     apps/bot/src \
     apps/worker/src \
     apps/studio/src \
+    apps/studio/.next/cache \
     packages/db/src \
     packages/logger/src \
     packages/plugin-catalog/src \
@@ -82,6 +83,7 @@ RUN rm -rf \
   && test -f apps/worker/dist/main.js \
   && test -f apps/studio/.next/standalone/apps/studio/server.js \
   && test -x packages/db/node_modules/.bin/prisma \
+  && test ! -d apps/studio/.next/cache \
   && test ! -d apps/api/src \
   && test ! -d packages/shared/src \
   && test ! -d plugins/quote/src
