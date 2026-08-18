@@ -28,9 +28,7 @@ export function resolveDiscordForumPostTargetSelection(
     selected.kind === 'forum'
       ? selected
       : selected.kind === 'thread' && selected.parentId
-        ? options.find(
-            (option) => option.id === selected.parentId && option.kind === 'forum',
-          )
+        ? options.find((option) => option.id === selected.parentId && option.kind === 'forum')
         : undefined;
 
   if (!forum) {
@@ -43,8 +41,7 @@ export function resolveDiscordForumPostTargetSelection(
   }
 
   const threads = options.filter(
-    (option) =>
-      option.kind === 'thread' && option.parentId === forum.id && option.viewable,
+    (option) => option.kind === 'thread' && option.parentId === forum.id && option.viewable,
   );
 
   return {
