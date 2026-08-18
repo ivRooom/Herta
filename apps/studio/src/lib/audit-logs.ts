@@ -68,6 +68,24 @@ const ALLOWED_SEVERITIES = new Set<AuditLogSeverity>([
   'critical',
 ]);
 
+const AUTOMATIC_ACTION_LABELS: Record<string, string> = {
+  observe: '監視のみ',
+  warn: '警告',
+  delete: 'メッセージ削除',
+  warn_delete: '警告 + メッセージ削除',
+  timeout: 'タイムアウト',
+  role: 'ロール付与',
+  blacklist: 'ブラックリスト登録 + BAN',
+  kick: 'Kick',
+  ban: 'BAN',
+};
+const AUTOMATIC_SEVERITY_LABELS: Record<string, string> = {
+  low: '低',
+  medium: '中',
+  high: '高',
+  critical: '重大',
+};
+
 const EVENT_LABELS: Record<string, { label: string; summary: string }> = {
   'plugin.enable': {
     label: 'Pluginを有効化',
@@ -261,10 +279,14 @@ function resolveAuditSummary(
   fallback: string | undefined,
 ): string {
   if (event === 'moderation.automatic.decision') {
-    return resolveAutomaticDecisionSummary(metadata) ?? fallback ?? '自動Moderation判定を記録しました。';
+    return (
+      resolveAutomaticDecisionSummary(metadata) ?? fallback ?? '自動Moderation判定を記録しました。'
+    );
   }
   if (event === 'moderation.automatic.executed' || event === 'moderation.automatic.failed') {
-    return resolveAutomaticExecutionSummary(metadata) ?? fallback ?? '自動Moderation結果を記録しました。';
+    return (
+      resolveAutomaticExecutionSummary(metadata) ?? fallback ?? '自動Moderation結果を記録しました。'
+    );
   }
   return fallback ?? '管理対象に対する操作が記録されました。';
 }
@@ -329,23 +351,11 @@ function automaticActionOutcomeLabel(value: string): string {
 }
 
 function automaticActionLabel(value: string): string {
-  return (
-    {
-      observe: '監視のみ',
-      warn: '警告',
-      delete: 'メッセージ削除',
-      warn_delete: '警告 + メッセージ削除',
-      timeout: 'タイムアウト',
-      role: 'ロール付与',
-      blacklist: 'ブラックリスト登録 + BAN',
-      kick: 'Kick',
-      ban: 'BAN',
-    }[value] ?? value
-  );
+  return AUTOMATIC_ACTION_LABELS[value] ?? value;
 }
 
 function automaticSeverityLabel(value: string): string {
-  return ({ low: '低', medium: '中', high: '高', critical: '重大' }[value] ?? value);
+  return AUTOMATIC_SEVERITY_LABELS[value] ?? value;
 }
 
 function buildAuditLogWhere(guildId: string, query: AuditLogQuery): Prisma.AuditLogWhereInput {
