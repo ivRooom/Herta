@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { prisma } from '@/lib/db';
+import { prisma } from './db.ts';
 
 export interface MessageStudioDraftPayload {
   channelId: string;
