@@ -11,7 +11,7 @@
     "lint": "turbo run lint",
     "lint:fix": "turbo run lint:fix",
     "typecheck": "turbo run typecheck",
-    "test": "pnpm --filter @herta/bot test",
+    "test": "turbo run test",
     "test:unit": "turbo run test:unit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
