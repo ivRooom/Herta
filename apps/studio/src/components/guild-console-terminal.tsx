@@ -117,7 +117,12 @@ export function GuildConsoleTerminal({ context }: { context: GuildConsoleContext
         </div>
       </div>
 
-      <div className={OUTPUT_CLASS_NAME} role="log" aria-live="polite" aria-label="Herta Console出力">
+      <div
+        className={OUTPUT_CLASS_NAME}
+        role="log"
+        aria-live="polite"
+        aria-label="Herta Console出力"
+      >
         {entries.length === 0 ? (
           <p className="text-slate-500">Terminal履歴は空です。</p>
         ) : (
@@ -131,7 +136,10 @@ export function GuildConsoleTerminal({ context }: { context: GuildConsoleContext
                 </p>
               ) : null}
               {entry.lines.map((line, index) => (
-                <p key={`${entry.id}-${index}`} className={`break-words ${getToneClassName(entry.tone)}`}>
+                <p
+                  key={`${entry.id}-${index}`}
+                  className={`break-words ${getToneClassName(entry.tone)}`}
+                >
                   {line}
                 </p>
               ))}
@@ -141,7 +149,11 @@ export function GuildConsoleTerminal({ context }: { context: GuildConsoleContext
       </div>
 
       <div className="border-t border-slate-800 px-4 py-3">
-        <div className="mb-3 flex flex-wrap gap-2" aria-label="クイックコマンド">
+        <div
+          className="mb-3 flex flex-wrap gap-2"
+          role="group"
+          aria-label="クイックコマンド"
+        >
           {QUICK_COMMANDS.map((command) => (
             <button
               key={command}
