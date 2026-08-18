@@ -144,6 +144,12 @@ function Hint({
 
 function topLevelConfigFieldKeys(schema: Record<string, unknown>): string[] {
   const properties = schema['properties'];
-  if (typeof properties !== 'object' || properties === null || Array.isArray(properties)) return [];
+  if (
+    typeof properties !== 'object' ||
+    properties === null ||
+    Array.isArray(properties)
+  ) {
+    return [];
+  }
   return Object.keys(properties);
 }
