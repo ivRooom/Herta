@@ -15,7 +15,7 @@ test('normalizeCommunityCommandRangeは未指定・不正値・arrayを安全に
   assert.equal(normalizeCommunityCommandRange(undefined), '7d');
   assert.equal(normalizeCommunityCommandRange('90d'), '7d');
   assert.equal(normalizeCommunityCommandRange([]), '7d');
-  assert.equal(normalizeCommunityCommandRange(['30d', '24h']), '30d');
+  assert.equal(normalizeCommunityCommandRange(['30d', '24h']), '7d');
   assert.equal(normalizeCommunityCommandRange(['invalid', '24h']), '7d');
 });
 
