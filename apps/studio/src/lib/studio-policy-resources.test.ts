@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { createEmptyStudioAccessPolicy, setStudioGuiActions } from './studio-access-policy.ts';
 import {
   buildStudioGranularPermissionOptions,
-  hasApplicableStudioPolicy,
+  hasConfiguredStudioPagePolicy,
   studioAccessPageResource,
   studioPageResource,
   topLevelConfigFields,
@@ -26,26 +27,47 @@ test('Access Control subpage resourceを個別に生成する', () => {
   );
 });
 
-test('適用対象Policyがない場合はpage policyを段階導入できる', () => {
+test('page.viewが明示されるまでpage policyのdefault denyを有効化しない', () => {
+  const empty = createEmptyStudioAccessPolicy();
   assert.equal(
-    hasApplicableStudioPolicy({
+    hasConfiguredStudioPagePolicy({
       roleIds: ['role-a'],
-      policies: [{ discordRoleId: 'role-b' }],
+      policies: [{ discordRoleId: 'role-a', policy: empty }],
       managedPolicies: [],
     }),
     false,
   );
+
+  const pagePolicy = setStudioGuiActions(empty, GUILD_ID, ['studio.page.view']);
   assert.equal(
-    hasApplicableStudioPolicy({
+    hasConfiguredStudioPagePolicy({
       roleIds: ['role-a'],
-      policies: [{ discordRoleId: 'role-a' }],
+      policies: [{ discordRoleId: 'role-a', policy: pagePolicy }],
       managedPolicies: [],
     }),
     true,
   );
   assert.equal(
-    hasApplicableStudioPolicy({ roleIds: [], policies: [], managedPolicies: [{}] }),
+    hasConfiguredStudioPagePolicy({
+      roleIds: [],
+      policies: [],
+      managedPolicies: [pagePolicy],
+    }),
     true,
+  );
+});
+
+test('別Roleのpage policyはpage default denyを有効化しない', () => {
+  const pagePolicy = setStudioGuiActions(createEmptyStudioAccessPolicy(), GUILD_ID, [
+    'studio.page.view',
+  ]);
+  assert.equal(
+    hasConfiguredStudioPagePolicy({
+      roleIds: ['role-a'],
+      policies: [{ discordRoleId: 'role-b', policy: pagePolicy }],
+      managedPolicies: [],
+    }),
+    false,
   );
 });
 
