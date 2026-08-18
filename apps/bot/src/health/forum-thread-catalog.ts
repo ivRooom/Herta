@@ -97,9 +97,7 @@ export async function fetchGuildArchivedForumThreads(
   let oldestArchivedAt: string | null = null;
   for (const rawThread of payload.threads) {
     const metadata =
-      isRecord(rawThread) && isRecord(rawThread.thread_metadata)
-        ? rawThread.thread_metadata
-        : null;
+      isRecord(rawThread) && isRecord(rawThread.thread_metadata) ? rawThread.thread_metadata : null;
     const rawArchivedAt =
       typeof metadata?.archive_timestamp === 'string'
         ? normalizeBefore(metadata.archive_timestamp)
