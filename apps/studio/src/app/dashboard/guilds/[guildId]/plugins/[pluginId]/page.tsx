@@ -5,11 +5,15 @@ import { auth } from '@/auth';
 import { ModerationConfigForm } from '@/components/moderation-config-form';
 import { PluginConfigForm } from '@/components/plugin-config-form';
 import { PluginSetupOverview } from '@/components/plugin-setup-overview';
+import { RestrictedPluginConfigForm } from '@/components/restricted-plugin-config-form';
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
 import { getGuildPlugin } from '@/lib/guild-plugins';
 import { resolveModerationConfigSection } from '@/lib/moderation-config-ui';
 import { resolveStudioAccess } from '@/lib/studio-access';
-import { resolvePluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';
+import {
+  filterReadablePluginConfig,
+  resolvePluginConfigStudioAccess,
+} from '@/lib/studio-plugin-permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,12 +37,16 @@ export default async function PluginDetailPage({
     getGuildConfigurationOptions(guildId),
   ]);
   if (!plugin) notFound();
-  const configAccess = resolvePluginConfigStudioAccess(
-    access.access,
-    guildId,
-    pluginId,
-    topLevelConfigFieldKeys(plugin.manifest.configSchema),
-  );
+  const fieldKeys = topLevelConfigFieldKeys(plugin.manifest.configSchema);
+  const configAccess = resolvePluginConfigStudioAccess(access.access, guildId, pluginId, fieldKeys);
+  const visibleConfig = filterReadablePluginConfig(plugin.config, configAccess);
+  const allFieldsReadable = configAccess.readableFieldKeys.length === fieldKeys.length;
+  const allFieldsEditable = configAccess.editableFieldKeys.length === fieldKeys.length;
+  const canUseModerationGuidedEditor =
+    pluginId === 'moderation' &&
+    allFieldsReadable &&
+    allFieldsEditable &&
+    configAccess.canToggleEnabled;
 
   return (
     <div>
@@ -46,7 +54,7 @@ export default async function PluginDetailPage({
         href={`/dashboard/guilds/${guildId}/plugins`}
         className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-foreground"
       >
-        <ArrowLeft className="h-4 w-4" /> Plugin 一覧へ戻る
+        <ArrowLeft className="h-4 w-4" aria-hidden="true" /> Plugin 一覧へ戻る
       </Link>
       <div className="mt-6">
         <h1 className="text-2xl font-semibold tracking-tight">{plugin.manifest.name}</h1>
@@ -60,34 +68,48 @@ export default async function PluginDetailPage({
         <PluginSetupOverview
           manifest={plugin.manifest}
           enabled={plugin.enabled}
-          config={plugin.config}
+          config={visibleConfig}
         />
 
-        {pluginId === 'moderation' ? (
+        {canUseModerationGuidedEditor ? (
           <ModerationConfigForm
             guildId={guildId}
             initialEnabled={plugin.enabled}
-            initialConfig={plugin.config}
+            initialConfig={visibleConfig}
             initialSection={resolveModerationConfigSection(query.section)}
             discordOptions={discordOptions}
           />
-        ) : (
+        ) : allFieldsReadable ? (
           <div className="rounded-2xl border border-border bg-surface p-6 shadow-card">
             <PluginConfigForm
               guildId={guildId}
               pluginId={pluginId}
               initialEnabled={plugin.enabled}
-              initialConfig={plugin.config}
+              initialConfig={visibleConfig}
               schema={plugin.manifest.configSchema}
               discordOptions={discordOptions}
               configAccess={configAccess}
             />
           </div>
+        ) : (
+          <RestrictedPluginConfigForm
+            guildId={guildId}
+            pluginId={pluginId}
+            initialEnabled={plugin.enabled}
+            initialConfig={visibleConfig}
+            schema={plugin.manifest.configSchema}
+            configAccess={configAccess}
+          />
         )}
       </div>
 
       {pluginId === 'moderation' ? (
         <>
+          <ManagementLink
+            href={`/dashboard/guilds/${guildId}/moderation/detection-settings`}
+            title="自動検知の詳細パラメータ"
+            description="メンション閾値、連投・重複投稿の件数と時間窓、本文最大長、招待Allowlist、Alert、保持期間などをSchemaベースで細かく設定します。"
+          />
           <ManagementLink
             href={`/dashboard/guilds/${guildId}/moderation/enforcement`}
             title="自動対応ポリシー"
@@ -196,7 +218,7 @@ function ManagementLink({
         <h2 className="font-medium">{title}</h2>
         <p className="mt-1 text-sm text-muted">{description}</p>
       </div>
-      <ArrowRight className="h-5 w-5 text-muted" />
+      <ArrowRight className="h-5 w-5 text-muted" aria-hidden="true" />
     </Link>
   );
 }
