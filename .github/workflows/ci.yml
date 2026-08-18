@@ -8,33 +8,21 @@ permissions:
   contents: write
 
 jobs:
-  apply-format:
+  restore-ci:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.head_ref }}
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Apply Prettier
-        run: >-
-          pnpm exec prettier --write
-          apps/studio/src/lib/audit-logs.ts
-          plugins/moderation/src/automatic-runtime.ts
-      - name: Commit formatting
+          fetch-depth: 0
+      - name: Restore CI from main
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet -- apps/studio/src/lib/audit-logs.ts plugins/moderation/src/automatic-runtime.ts; then
-            echo "No formatting changes required"
-            exit 0
-          fi
+          git fetch origin main
+          git show origin/main:.github/workflows/ci.yml > .github/workflows/ci.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add apps/studio/src/lib/audit-logs.ts plugins/moderation/src/automatic-runtime.ts
-          git commit -m "chore: format moderation owner decision changes"
+          git add .github/workflows/ci.yml
+          git commit -m "chore: restore standard CI" || exit 0
           git push origin HEAD:${{ github.head_ref }}
