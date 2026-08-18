@@ -22,7 +22,11 @@ import { GuildAvatar } from '@/components/guild-avatar';
 import { GuildCommandTrendChart } from '@/components/guild-command-trend-chart';
 import { GuildConsoleTerminal } from '@/components/guild-console-terminal';
 import { ReconnectNotice } from '@/components/reconnect-notice';
-import { getCommunityCommandTrend, getCommunityDashboardSnapshot } from '@/lib/community-dashboard';
+import {
+  getCommunityCommandWindow,
+  getCommunityDashboardSnapshot,
+} from '@/lib/community-dashboard';
+import { normalizeCommunityCommandRange } from '@/lib/community-dashboard-range';
 import { getDiscordGuildInstallUrl } from '@/lib/discord-install';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
@@ -31,10 +35,13 @@ export const dynamic = 'force-dynamic';
 
 export default async function GuildDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ guildId: string }>;
+  searchParams: Promise<{ range?: string | string[] }>;
 }) {
-  const { guildId } = await params;
+  const [{ guildId }, query] = await Promise.all([params, searchParams]);
+  const commandRange = normalizeCommunityCommandRange(query.range);
   const session = await auth();
   const accessToken = await getDiscordAccessToken();
 
@@ -54,9 +61,9 @@ export default async function GuildDetailPage({
 
   await persistSelectedGuild(guild, session.user.id);
   const now = new Date();
-  const [snapshot, commandTrend, installUrl] = await Promise.all([
+  const [snapshot, commandWindow, installUrl] = await Promise.all([
     getCommunityDashboardSnapshot(guild.id, now),
-    getCommunityCommandTrend(guild.id, now),
+    getCommunityCommandWindow(guild.id, commandRange, now),
     Promise.resolve(getDiscordGuildInstallUrl(guild.id)),
   ]);
   const attentionCount =
@@ -113,9 +120,9 @@ export default async function GuildDetailPage({
         />
         <MetricCard
           icon={Activity}
-          label="7日間のコマンド"
-          value={snapshot.commands7d.toLocaleString()}
-          detail={`成功率 ${snapshot.commandSuccessRate7d}%`}
+          label={`${commandWindow.label}のコマンド`}
+          value={commandWindow.total.toLocaleString()}
+          detail={`成功率 ${commandWindow.successRate}% ・ 失敗 ${commandWindow.failed.toLocaleString()}件`}
         />
         <MetricCard
           icon={attentionCount > 0 ? AlertTriangle : CheckCircle2}
@@ -129,7 +136,12 @@ export default async function GuildDetailPage({
       </section>
 
       <section className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-        <GuildCommandTrendChart daily={commandTrend} />
+        <GuildCommandTrendChart
+          daily={commandWindow.daily}
+          guildId={guild.id}
+          range={commandWindow.range}
+          rangeLabel={commandWindow.label}
+        />
         <GuildConsoleTerminal
           context={{
             guildId: guild.id,
@@ -248,8 +260,8 @@ export default async function GuildDetailPage({
             />
             <CheckRow
               label="コマンド成功率"
-              detail={`直近7日 ${snapshot.commandSuccessRate7d}%`}
-              ok={snapshot.commandSuccessRate7d >= 95}
+              detail={`${commandWindow.label} ${commandWindow.successRate}%`}
+              ok={commandWindow.successRate >= 95}
             />
             <CheckRow
               label="Reminder配信"
