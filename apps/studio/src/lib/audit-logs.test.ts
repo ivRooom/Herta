@@ -157,6 +157,28 @@ test('Moderation実行結果は既削除とDiscord失敗を判別できる', () 
   assert.match(failed.summary, /HTTP: 403/u);
 });
 
+test('未知のModeration metadataやsecret-like値を監査要約へ露出しない', () => {
+  const decision = describeAuditEvent('moderation.automatic.decision', 'discord_user', '1', {
+    outcome: 'sk-proj-secret-outcome',
+    action: 'secret-action-value',
+    severity: 'secret-severity-value',
+  });
+  const failed = describeAuditEvent('moderation.automatic.failed', 'discord_user', '1', {
+    action: 'secret-action-value',
+    actionOutcome: 'secret-outcome-value',
+    discordErrorCode: 'sk-proj-secret-code',
+    discordHttpStatus: 999,
+  });
+
+  for (const presentation of [decision, failed]) {
+    assert.equal(presentation.summary.includes('sk-proj'), false);
+    assert.equal(presentation.summary.includes('secret-action-value'), false);
+    assert.equal(presentation.summary.includes('secret-outcome-value'), false);
+    assert.equal(presentation.summary.includes('secret-severity-value'), false);
+    assert.equal(presentation.summary.includes('999'), false);
+  }
+});
+
 test('未知イベントも生データを展開せず表示できる', () => {
   const presentation = describeAuditEvent('custom.operation', 'custom', 'target-1', {
     password: 'do-not-render',
