@@ -96,11 +96,7 @@ export default async function ModerationDetectionsPage({
         toExclusive: filters.toExclusive,
       }),
     ]);
-    ruleSnapshots = await resolveModerationDetectionRuleSnapshots(
-      prisma,
-      guildId,
-      result.items,
-    );
+    ruleSnapshots = await resolveModerationDetectionRuleSnapshots(prisma, guildId, result.items);
   } catch (error) {
     console.error('Moderation detections page failed to load', error);
     loadError = '自動検知履歴を取得できませんでした。DB接続と設定履歴を確認してください。';
