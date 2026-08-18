@@ -27,6 +27,8 @@ echo "現在:       $(git rev-parse HEAD)"
 echo "切り戻し先: ${TARGET} (${TARGET_SHA})"
 echo "配布image:  ${HERTA_IMAGE}"
 
+install_deploy_exit_trap
+
 git checkout "${TARGET_SHA}"
 ${COMPOSE} config --quiet
 pull_production_images
@@ -43,5 +45,6 @@ wait_for_health
 wait_for_auth
 wait_for_bot
 
+clear_deploy_exit_trap
 echo "=== ロールバック完了 (${TARGET_SHA}) ==="
 echo "mainへ戻す場合: git checkout main && ./deploy/scripts/deploy.sh"

@@ -24,6 +24,7 @@ git pull --ff-only origin "${DEPLOY_REF}"
 
 export HERTA_IMAGE="$(resolve_image_for_ref HEAD)"
 echo "配布image: ${HERTA_IMAGE}"
+install_deploy_exit_trap
 
 ${COMPOSE} config --quiet
 pull_production_images
@@ -40,4 +41,5 @@ wait_for_health
 wait_for_auth
 wait_for_bot
 
+clear_deploy_exit_trap
 echo "=== デプロイ完了 (${HERTA_IMAGE}) ==="

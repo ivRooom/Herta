@@ -11,6 +11,8 @@ require_env_file
 export HERTA_IMAGE="${HERTA_IMAGE:-${IMAGE_REPOSITORY}:latest}"
 
 echo "=== Herta. 本番スタックを起動します (${HERTA_IMAGE}) ==="
+install_deploy_exit_trap
+
 ${COMPOSE} config --quiet
 pull_production_images
 verify_app_image
@@ -26,4 +28,5 @@ wait_for_health
 wait_for_auth
 wait_for_bot
 
+clear_deploy_exit_trap
 echo "=== 起動完了 ==="

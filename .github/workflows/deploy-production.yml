@@ -207,6 +207,11 @@ jobs:
             upsert_env SPOTIFY_CLIENT_SECRET "${SPOTIFY_CLIENT_SECRET}"
             echo "Spotify runtime secretsを同期しました（値は非表示）"
 
+            # checkoutしたrefと同じdeploy helperを利用する。以降の失敗では
+            # container state / migration status / safe tail logを自動収集する。
+            source deploy/scripts/_common.sh
+            install_deploy_exit_trap
+
             ${COMPOSE} config --quiet
 
             printf '%s' "${GHCR_TOKEN}" | \
@@ -288,24 +293,10 @@ jobs:
               exit 1
             fi
 
-            echo "=== Discord Bot health check ==="
-            bot_ready=false
-            bot_container="$(${COMPOSE} ps -q bot)"
-            for i in $(seq 1 12); do
-              bot_health="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "${bot_container}")"
-              if [ "${bot_health}" = 'healthy' ] || [ "${bot_health}" = 'running' ]; then
-                bot_ready=true
-                break
-              fi
-              echo "Bot health待ち... (${i}/12, status=${bot_health})"
-              sleep 5
-            done
-            if [ "${bot_ready}" != 'true' ]; then
-              ${COMPOSE} logs --tail=100 bot
-              exit 1
-            fi
+            wait_for_bot
 
             docker logout ghcr.io > /dev/null 2>&1 || true
+            clear_deploy_exit_trap
             echo "=== Herta. 本番デプロイ成功 ==="
 
       - name: Cloudflare経由の外部Health check
