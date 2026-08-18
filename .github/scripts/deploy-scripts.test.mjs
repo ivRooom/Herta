@@ -39,6 +39,40 @@ test('production workflow installs failure diagnostics after checkout', () => {
   );
 });
 
+test('production deploy reclaims safe Docker space before pulling the next image', () => {
+  const common = readFileSync('deploy/scripts/_common.sh', 'utf8');
+  const workflow = readFileSync('.github/workflows/deploy-production.yml', 'utf8');
+  const reclaimStart = common.indexOf('reclaim_production_docker_space() {');
+  const pullStart = common.indexOf('pull_production_images() {');
+  const pullEnd = common.indexOf('\n}\n\nverify_app_image()', pullStart);
+
+  assert.ok(reclaimStart >= 0, 'Docker reclamation helper must exist');
+  assert.ok(pullStart > reclaimStart, 'image pull helper must be declared after reclamation helper');
+  assert.ok(pullEnd > pullStart, 'image pull helper must have an end');
+
+  const reclaim = common.slice(reclaimStart, pullStart);
+  const pull = common.slice(pullStart, pullEnd);
+
+  assert.match(reclaim, /docker image ls "\$\{IMAGE_REPOSITORY\}"/u);
+  assert.match(reclaim, /docker image prune -f/u);
+  assert.match(reclaim, /docker builder prune -f/u);
+  assert.doesNotMatch(reclaim, /docker\s+volume\s+prune/u);
+  assert.doesNotMatch(reclaim, /docker\s+system\s+prune/u);
+  assert.match(pull, /reclaim_production_docker_space/u);
+  assert.match(pull, /\$\{COMPOSE\} pull postgres redis nginx caddy api/u);
+  assert.match(workflow, /\n\s+pull_production_images\n/u);
+});
+
+test('runtime image excludes the Next.js webpack build cache', () => {
+  const dockerfile = readFileSync('Dockerfile', 'utf8');
+  const cacheRemovalIndex = dockerfile.indexOf('apps/studio/.next/cache');
+  const runtimeIndex = dockerfile.indexOf('FROM node:22-alpine AS runtime');
+
+  assert.ok(cacheRemovalIndex >= 0, 'Next.js build cache must be removed in the builder stage');
+  assert.ok(runtimeIndex > cacheRemovalIndex, 'Next.js build cache must be removed before runtime stage');
+  assert.match(dockerfile, /test ! -d apps\/studio\/\.next\/cache/u);
+});
+
 test('failure diagnostics do not print production environment values', () => {
   const common = readFileSync('deploy/scripts/_common.sh', 'utf8');
   const startMarker = 'print_deploy_diagnostics() (';
