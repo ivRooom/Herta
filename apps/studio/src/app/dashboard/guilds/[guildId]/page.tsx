@@ -56,9 +56,10 @@ export default async function GuildDetailPage({
   if (!guild || !session?.user) notFound();
 
   await persistSelectedGuild(guild, session.user.id);
+  const now = new Date();
   const [snapshot, commandTrend, installUrl] = await Promise.all([
-    getCommunityDashboardSnapshot(guild.id),
-    getCommunityCommandTrend(guild.id),
+    getCommunityDashboardSnapshot(guild.id, now),
+    getCommunityCommandTrend(guild.id, now),
     Promise.resolve(getDiscordGuildInstallUrl(guild.id)),
   ]);
   const attentionCount =
