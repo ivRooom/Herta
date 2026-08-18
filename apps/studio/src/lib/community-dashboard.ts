@@ -47,8 +47,8 @@ export async function getCommunityDashboardSnapshot(
       (SELECT COUNT(*) FROM "reminders" WHERE "guild_id" = ${guildId} AND "status" IN ('pending', 'processing', 'failed'))::bigint AS "pendingReminders",
       (SELECT COUNT(*) FROM "reminders" WHERE "guild_id" = ${guildId} AND "status" = 'failed')::bigint AS "failedReminders",
       (SELECT COUNT(*) FROM "xp_profiles" WHERE "guild_id" = ${guildId})::bigint AS "xpProfiles",
-      (SELECT COUNT(*) FROM "command_execution_events" WHERE "guild_id" = ${guildId} AND "executed_at" >= ${last7DaysStart})::bigint AS "commands7d",
-      (SELECT COUNT(*) FROM "command_execution_events" WHERE "guild_id" = ${guildId} AND "executed_at" >= ${last7DaysStart} AND "status" <> 'success')::bigint AS "failedCommands7d"
+      (SELECT COUNT(*) FROM "command_execution_events" WHERE "guild_id" = ${guildId} AND "executed_at" >= ${last7DaysStart} AND "executed_at" < ${now})::bigint AS "commands7d",
+      (SELECT COUNT(*) FROM "command_execution_events" WHERE "guild_id" = ${guildId} AND "executed_at" >= ${last7DaysStart} AND "executed_at" < ${now} AND "status" <> 'success')::bigint AS "failedCommands7d"
   `;
 
   const commands7d = Number(row?.commands7d ?? 0n);
@@ -85,6 +85,7 @@ export async function getCommunityCommandTrend(
     FROM "command_execution_events"
     WHERE "guild_id" = ${guildId}
       AND "executed_at" >= ${rangeStart}
+      AND "executed_at" < ${now}
     GROUP BY 1
     ORDER BY 1
   `;
