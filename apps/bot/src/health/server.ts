@@ -369,9 +369,7 @@ export class HealthHttpServer {
       return;
     }
     const requestedLimit = Number.parseInt(requestUrl.searchParams.get('limit') ?? '50', 10);
-    const limit = Number.isFinite(requestedLimit)
-      ? Math.max(1, Math.min(50, requestedLimit))
-      : 50;
+    const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(50, requestedLimit)) : 50;
 
     try {
       const page = await withTimeout(
@@ -621,10 +619,7 @@ export class HealthHttpServer {
         }
         this.sendJson(response, 200, { profile });
       } catch (error) {
-        this.options.logger.warn(
-          { err: error, guildId },
-          'Bot Guildプロフィール取得に失敗しました',
-        );
+        this.options.logger.warn({ err: error, guildId }, 'Bot Guildプロフィール取得に失敗しました');
         this.sendJson(response, 503, { status: 'unavailable' });
       }
       return;
@@ -662,10 +657,7 @@ export class HealthHttpServer {
         }
         this.sendJson(response, 200, { profile });
       } catch (error) {
-        this.options.logger.warn(
-          { err: error, guildId },
-          'Bot Guildプロフィール更新に失敗しました',
-        );
+        this.options.logger.warn({ err: error, guildId }, 'Bot Guildプロフィール更新に失敗しました');
         this.sendJson(response, 503, { status: 'unavailable' });
       }
       return;
