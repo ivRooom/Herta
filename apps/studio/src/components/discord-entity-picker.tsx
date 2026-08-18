@@ -1,12 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Check, ChevronDown, Hash, Search, Shield, Smile, X } from 'lucide-react';
 import type {
   GuildChannelOption,
   GuildEmojiOption,
   GuildRoleOption,
 } from '@/lib/bot-guild-options';
+import { resolveDiscordForumPostTargetSelection } from '@/lib/discord-forum-post-targets';
 
 type PickerOption = {
   id: string;
@@ -24,7 +25,20 @@ type PickerProps = {
   placeholder: string;
   emptyMessage: string;
   icon: 'channel' | 'role' | 'emoji';
+  ariaLabel?: string;
+  allowManualId?: boolean;
 };
+
+type ForumArchiveState = {
+  threads: GuildChannelOption[];
+  nextBefore: string | null;
+  loaded: boolean;
+  loading: boolean;
+  error: string | null;
+};
+
+const MAX_ARCHIVED_THREADS_PER_FORUM = 500;
+const ARCHIVED_THREAD_REQUEST_TIMEOUT_MS = 15_000;
 
 function channelKindLabel(kind: GuildChannelOption['kind']): string {
   if (kind === 'announcement') return 'アナウンス';
@@ -39,29 +53,232 @@ export function DiscordChannelPicker({
   onChange,
   multiple = false,
   placeholder = 'チャンネル名またはIDを検索',
+  guildId,
 }: {
   options: GuildChannelOption[];
   value: string | string[] | null;
   onChange: (value: string | string[] | null) => void;
   multiple?: boolean;
   placeholder?: string;
+  guildId?: string;
 }) {
+  const [archiveByForum, setArchiveByForum] = useState<Record<string, ForumArchiveState>>({});
+  const mergedOptions = useMemo(() => {
+    const byId = new Map(options.map((option) => [option.id, option]));
+    for (const archive of Object.values(archiveByForum)) {
+      for (const thread of archive.threads) {
+        if (!byId.has(thread.id)) byId.set(thread.id, thread);
+      }
+    }
+    return [...byId.values()];
+  }, [archiveByForum, options]);
   const selected = Array.isArray(value) ? value : value ? [value] : [];
-  const normalized = options.map((option) => ({
+  const forumSelection =
+    !multiple && selected.length <= 1
+      ? resolveDiscordForumPostTargetSelection(mergedOptions, selected[0] ?? null)
+      : null;
+  const forumIds = new Set(
+    mergedOptions.filter((option) => option.kind === 'forum').map((option) => option.id),
+  );
+  const primaryOptions =
+    multiple || !forumSelection
+      ? mergedOptions
+      : mergedOptions.filter(
+          (option) =>
+            option.kind !== 'thread' || !option.parentId || !forumIds.has(option.parentId),
+        );
+  const normalized = primaryOptions.map((option) => ({
     id: option.id,
     name: option.name,
     meta: channelKindLabel(option.kind),
   }));
+  const primarySelected = forumSelection?.forumId ? [forumSelection.forumId] : selected;
+  const forumTargetOptions = forumSelection?.forumId
+    ? [
+        {
+          id: forumSelection.forumId,
+          name: '新規投稿を作成',
+          meta: 'Forum',
+        },
+        ...forumSelection.threads.map((thread) => ({
+          id: thread.id,
+          name: thread.name,
+          meta: '既存投稿',
+        })),
+      ]
+    : [];
+  const forumTargetValue = forumSelection?.forumId
+    ? [forumSelection.threadId ?? forumSelection.forumId]
+    : [];
+  const selectedForumId = forumSelection?.forumId ?? null;
+  const archiveState = selectedForumId ? archiveByForum[selectedForumId] : undefined;
+
+  const loadArchivedThreads = useCallback(
+    async (forumId: string, before: string | null) => {
+      if (!guildId) return;
+      setArchiveByForum((current) => ({
+        ...current,
+        [forumId]: {
+          threads: current[forumId]?.threads ?? [],
+          nextBefore: current[forumId]?.nextBefore ?? null,
+          loaded: current[forumId]?.loaded ?? false,
+          loading: true,
+          error: null,
+        },
+      }));
+      const controller = new AbortController();
+      const timeout = window.setTimeout(
+        () => controller.abort(),
+        ARCHIVED_THREAD_REQUEST_TIMEOUT_MS,
+      );
+      try {
+        const endpoint = new URL(
+          `/api/guilds/${guildId}/message-studio/forums/${forumId}/threads`,
+          window.location.origin,
+        );
+        endpoint.searchParams.set('limit', '50');
+        if (before) endpoint.searchParams.set('before', before);
+        const response = await fetch(endpoint, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        const payload = (await response.json().catch(() => null)) as {
+          error?: string;
+          threads?: GuildChannelOption[];
+          nextBefore?: string | null;
+        } | null;
+        if (!response.ok || !Array.isArray(payload?.threads)) {
+          throw new Error(payload?.error || 'Forumの過去投稿を取得できませんでした');
+        }
+        const safeThreads = payload.threads.filter(
+          (thread) =>
+            thread.kind === 'thread' && thread.parentId === forumId && thread.viewable === true,
+        );
+        setArchiveByForum((current) => {
+          const previous = current[forumId]?.threads ?? [];
+          const byId = new Map(previous.map((thread) => [thread.id, thread]));
+          for (const thread of safeThreads) byId.set(thread.id, thread);
+          const threads = [...byId.values()].slice(0, MAX_ARCHIVED_THREADS_PER_FORUM);
+          const capped = threads.length >= MAX_ARCHIVED_THREADS_PER_FORUM;
+          return {
+            ...current,
+            [forumId]: {
+              threads,
+              nextBefore:
+                capped || typeof payload.nextBefore !== 'string' ? null : payload.nextBefore,
+              loaded: true,
+              loading: false,
+              error: null,
+            },
+          };
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error && error.name === 'AbortError'
+            ? 'Forumの過去投稿の取得がタイムアウトしました。再試行してください'
+            : error instanceof Error
+              ? error.message
+              : 'Forumの過去投稿を取得できませんでした';
+        setArchiveByForum((current) => ({
+          ...current,
+          [forumId]: {
+            threads: current[forumId]?.threads ?? [],
+            nextBefore: current[forumId]?.nextBefore ?? null,
+            loaded: true,
+            loading: false,
+            error: message,
+          },
+        }));
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    },
+    [guildId],
+  );
+
+  useEffect(() => {
+    if (!guildId || !selectedForumId) return;
+    const state = archiveByForum[selectedForumId];
+    if (state?.loaded || state?.loading) return;
+    void loadArchivedThreads(selectedForumId, null);
+  }, [archiveByForum, guildId, loadArchivedThreads, selectedForumId]);
+
+  function retryArchiveLoad() {
+    if (!selectedForumId || !archiveState || archiveState.loading) return;
+    void loadArchivedThreads(selectedForumId, archiveState.nextBefore);
+  }
+
+  function loadMoreArchivedThreads() {
+    if (!selectedForumId || !archiveState?.nextBefore || archiveState.loading) return;
+    void loadArchivedThreads(selectedForumId, archiveState.nextBefore);
+  }
+
   return (
-    <DiscordEntityPicker
-      options={normalized}
-      value={selected}
-      onChange={(values) => onChange(multiple ? values : (values[0] ?? null))}
-      multiple={multiple}
-      placeholder={placeholder}
-      emptyMessage="利用できるチャンネル・フォーラム・スレッドが見つかりません"
-      icon="channel"
-    />
+    <div className="space-y-2">
+      <DiscordEntityPicker
+        options={normalized}
+        value={primarySelected}
+        onChange={(values) => onChange(multiple ? values : (values[0] ?? null))}
+        multiple={multiple}
+        placeholder={placeholder}
+        emptyMessage="利用できるチャンネル・フォーラム・スレッドが見つかりません"
+        icon="channel"
+        ariaLabel="Discord投稿先"
+      />
+      {forumSelection?.forumId ? (
+        <div className="rounded-xl border border-border bg-background/50 p-3">
+          <p className="mb-2 text-xs font-medium text-muted">Forum投稿先</p>
+          <DiscordEntityPicker
+            options={forumTargetOptions}
+            value={forumTargetValue}
+            onChange={(values) => onChange(values[0] ?? forumSelection.forumId)}
+            placeholder="既存投稿を検索"
+            emptyMessage="このForumに既存投稿はありません"
+            icon="channel"
+            ariaLabel="Forumの投稿先"
+            allowManualId={false}
+          />
+          {guildId ? (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] leading-5 text-muted">
+              <span
+                aria-live="polite"
+                className={archiveState?.error ? 'text-destructive' : undefined}
+              >
+                {archiveState?.loading
+                  ? 'アーカイブ済み投稿を読み込み中…'
+                  : archiveState?.error
+                    ? archiveState.error
+                    : archiveState?.loaded
+                      ? `アーカイブ済み投稿 ${archiveState.threads.length}件を読込済み`
+                      : 'アーカイブ済み投稿を読み込みます'}
+              </span>
+              {archiveState?.error ? (
+                <button
+                  type="button"
+                  disabled={archiveState.loading}
+                  onClick={retryArchiveLoad}
+                  className="font-medium text-primary hover:underline disabled:cursor-wait disabled:opacity-50"
+                >
+                  再試行
+                </button>
+              ) : archiveState?.nextBefore ? (
+                <button
+                  type="button"
+                  disabled={archiveState.loading}
+                  onClick={loadMoreArchivedThreads}
+                  className="font-medium text-primary hover:underline disabled:cursor-wait disabled:opacity-50"
+                >
+                  さらに過去の投稿を読み込む
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          <p className="mt-2 text-[11px] leading-5 text-muted">
+            新規投稿を作成するか、このForum配下の既存投稿へBotで発言できます。
+          </p>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -162,6 +379,8 @@ function DiscordEntityPicker({
   placeholder,
   emptyMessage,
   icon,
+  ariaLabel,
+  allowManualId = true,
 }: PickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -198,6 +417,7 @@ function DiscordEntityPicker({
   }
 
   function commitManualId() {
+    if (!allowManualId) return;
     const id = query.replace(/\D/gu, '');
     if (!id || optionMap.get(id)?.disabled) return;
     if (multiple) {
@@ -278,6 +498,7 @@ function DiscordEntityPicker({
           className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none placeholder:text-muted"
           role="combobox"
           aria-expanded={open}
+          aria-label={ariaLabel ?? placeholder}
         />
         {!multiple && value.length > 0 ? (
           <button
@@ -338,7 +559,7 @@ function DiscordEntityPicker({
           ) : (
             <div className="px-3 py-4 text-sm text-muted">
               <p>{emptyMessage}</p>
-              {/\d/u.test(query) ? (
+              {allowManualId && /\d/u.test(query) ? (
                 <button
                   type="button"
                   onClick={commitManualId}

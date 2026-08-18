@@ -510,6 +510,7 @@ export function MessageStudioQuickSend({
             <Field label="投稿先">
               <DiscordChannelPicker
                 options={discordOptions?.channels ?? []}
+                guildId={guildId}
                 value={channelId || null}
                 placeholder="チャンネル / Forum / Threadを検索"
                 onChange={(next) => {

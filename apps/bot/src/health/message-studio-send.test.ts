@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { parseGuildMessageStudioSendInput } from './message-studio-send.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  parseGuildMessageStudioSendInput,
+  sendGuildMessageStudioMessage,
+  type GuildMessageStudioSendInput,
+} from './message-studio-send.js';
 
 describe('parseGuildMessageStudioSendInput', () => {
   it('本文だけの安全な投稿を受理する', () => {
@@ -239,5 +243,103 @@ describe('parseGuildMessageStudioSendInput', () => {
         },
       }),
     ).toBeNull();
+  });
+});
+
+const guildId = '123456789012345678';
+const threadId = '223456789012345678';
+
+function textMessageInput(): GuildMessageStudioSendInput {
+  return {
+    channelId: threadId,
+    content: 'hello',
+    forumTitle: '',
+    allowUserMentions: false,
+    publishAnnouncement: false,
+    embed: null,
+    image: null,
+    voice: null,
+  };
+}
+
+function jsonResponse(value: unknown, status = 200): Response {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe('sendGuildMessageStudioMessage thread safety', () => {
+  it('archived Threadを再開してから投稿する', async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        jsonResponse({
+          id: threadId,
+          guild_id: guildId,
+          type: 11,
+          thread_metadata: { archived: true, locked: false },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 200 }))
+      .mockResolvedValueOnce(jsonResponse({ id: '323456789012345678' }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      sendGuildMessageStudioMessage('token', guildId, textMessageInput()),
+    ).resolves.toEqual({
+      messageId: '323456789012345678',
+      channelId: threadId,
+      threadId: null,
+      channelType: 11,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(`https://discord.com/api/v10/channels/${threadId}`);
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      method: 'PATCH',
+      body: JSON.stringify({ archived: false }),
+    });
+    expect(fetchMock.mock.calls[2]?.[0]).toBe(
+      `https://discord.com/api/v10/channels/${threadId}/messages`,
+    );
+  });
+
+  it('locked Threadは再開も投稿もせず409で拒否する', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      jsonResponse({
+        id: threadId,
+        guild_id: guildId,
+        type: 11,
+        thread_metadata: { archived: true, locked: true },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      sendGuildMessageStudioMessage('token', guildId, textMessageInput()),
+    ).rejects.toMatchObject({ status: 409 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('別GuildのThreadはDiscord再検証後に403で拒否する', async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      jsonResponse({
+        id: threadId,
+        guild_id: '923456789012345678',
+        type: 11,
+        thread_metadata: { archived: false, locked: false },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(
+      sendGuildMessageStudioMessage('token', guildId, textMessageInput()),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
