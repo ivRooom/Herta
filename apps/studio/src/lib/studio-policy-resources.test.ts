@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildStudioGranularPermissionOptions,
+  hasApplicableStudioPolicy,
   studioAccessPageResource,
   studioPageResource,
   topLevelConfigFields,
@@ -22,6 +23,29 @@ test('Access Control subpage resourceを個別に生成する', () => {
   assert.notEqual(
     studioAccessPageResource(GUILD_ID, 'users'),
     studioAccessPageResource(GUILD_ID, 'groups'),
+  );
+});
+
+test('適用対象Policyがない場合はpage policyを段階導入できる', () => {
+  assert.equal(
+    hasApplicableStudioPolicy({
+      roleIds: ['role-a'],
+      policies: [{ discordRoleId: 'role-b' }],
+      managedPolicies: [],
+    }),
+    false,
+  );
+  assert.equal(
+    hasApplicableStudioPolicy({
+      roleIds: ['role-a'],
+      policies: [{ discordRoleId: 'role-a' }],
+      managedPolicies: [],
+    }),
+    true,
+  );
+  assert.equal(
+    hasApplicableStudioPolicy({ roleIds: [], policies: [], managedPolicies: [{}] }),
+    true,
   );
 });
 
