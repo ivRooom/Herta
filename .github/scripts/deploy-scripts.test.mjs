@@ -47,7 +47,10 @@ test('production deploy reclaims safe Docker space before pulling the next image
   const pullEnd = common.indexOf('\n}\n\nverify_app_image()', pullStart);
 
   assert.ok(reclaimStart >= 0, 'Docker reclamation helper must exist');
-  assert.ok(pullStart > reclaimStart, 'image pull helper must be declared after reclamation helper');
+  assert.ok(
+    pullStart > reclaimStart,
+    'image pull helper must be declared after reclamation helper',
+  );
   assert.ok(pullEnd > pullStart, 'image pull helper must have an end');
 
   const reclaim = common.slice(reclaimStart, pullStart);
@@ -69,7 +72,10 @@ test('runtime image excludes the Next.js webpack build cache', () => {
   const runtimeIndex = dockerfile.indexOf('FROM node:22-alpine AS runtime');
 
   assert.ok(cacheRemovalIndex >= 0, 'Next.js build cache must be removed in the builder stage');
-  assert.ok(runtimeIndex > cacheRemovalIndex, 'Next.js build cache must be removed before runtime stage');
+  assert.ok(
+    runtimeIndex > cacheRemovalIndex,
+    'Next.js build cache must be removed before runtime stage',
+  );
   assert.match(dockerfile, /test ! -d apps\/studio\/\.next\/cache/u);
 });
 
