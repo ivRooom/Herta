@@ -22,10 +22,7 @@ import { GuildAvatar } from '@/components/guild-avatar';
 import { GuildCommandTrendChart } from '@/components/guild-command-trend-chart';
 import { GuildConsoleTerminal } from '@/components/guild-console-terminal';
 import { ReconnectNotice } from '@/components/reconnect-notice';
-import {
-  getCommunityCommandTrend,
-  getCommunityDashboardSnapshot,
-} from '@/lib/community-dashboard';
+import { getCommunityCommandTrend, getCommunityDashboardSnapshot } from '@/lib/community-dashboard';
 import { getDiscordGuildInstallUrl } from '@/lib/discord-install';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
