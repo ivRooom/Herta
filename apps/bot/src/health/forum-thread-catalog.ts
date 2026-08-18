@@ -81,7 +81,11 @@ export async function fetchGuildArchivedForumThreads(
   }
 
   const payload: unknown = await response.json().catch(() => null);
-  if (!isRecord(payload) || !Array.isArray(payload.threads) || typeof payload.has_more !== 'boolean') {
+  if (
+    !isRecord(payload) ||
+    !Array.isArray(payload.threads) ||
+    typeof payload.has_more !== 'boolean'
+  ) {
     throw new GuildForumThreadCatalogError(
       'Discordから不正なForum投稿一覧を受け取りました',
       502,
@@ -96,10 +100,10 @@ export async function fetchGuildArchivedForumThreads(
   }
 
   const nextBefore = payload.has_more
-    ? accepted
+    ? (accepted
         .map((entry) => entry.archivedAt)
         .filter((value): value is string => value !== null)
-        .sort((a, b) => Date.parse(a) - Date.parse(b))[0] ?? null
+        .sort((a, b) => Date.parse(a) - Date.parse(b))[0] ?? null)
     : null;
 
   return {
