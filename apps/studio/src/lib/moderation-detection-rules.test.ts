@@ -7,11 +7,11 @@ import {
   type ModerationDetectionRuleHistoryClient,
 } from './moderation-detection-rules.ts';
 
-test('現在設定のNGワードを部分一致優先で一覧化する', () => {
+test('現在設定のNGワードをRuntimeと同じ正規化後に部分一致優先で一覧化する', () => {
   const groups = listCurrentModerationWordRuleGroups({
-    autoContainsWords: ['bad', 'danger'],
+    autoContainsWords: ['ＢＡＤ', 'bad', 'danger'],
     autoExactWords: ['exact'],
-    autoRegexPatterns: ['^spam\\d+$'],
+    autoRegexPatterns: ['(a+)+$', '^spam\\d+$'],
   });
 
   assert.deepEqual(
@@ -59,6 +59,32 @@ test('検知時点より後の設定変更を使わず当時のNGワードを解
 
   assert.equal(snapshots.get('before-change'), 'old-word');
   assert.equal(snapshots.get('after-change'), 'new-word');
+});
+
+test('Runtimeで除外されるunsafe regexがあっても正規化後indexで復元する', async () => {
+  const client = {
+    guildPluginConfigHistory: {
+      async findMany() {
+        return [
+          {
+            createdAt: new Date('2026-08-18T10:00:00.000Z'),
+            config: { autoRegexPatterns: ['(a+)+$', '^safe\\d+$'] },
+          },
+        ];
+      },
+    },
+  } as unknown as ModerationDetectionRuleHistoryClient;
+
+  const snapshots = await resolveModerationDetectionRuleSnapshots(client, '100', [
+    {
+      id: 'safe-regex',
+      detectionKind: 'word_regex',
+      ruleIndex: 0,
+      occurredAt: new Date('2026-08-18T11:00:00.000Z'),
+    },
+  ]);
+
+  assert.equal(snapshots.get('safe-regex'), '^safe\\d+$');
 });
 
 test('削除でindexが詰まっても過去検知は当時の配列から解決する', async () => {
