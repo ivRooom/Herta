@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  fetchGuildArchivedForumThreads,
-  GuildForumThreadCatalogError,
-} from './forum-thread-catalog.js';
+import { fetchGuildArchivedForumThreads } from './forum-thread-catalog.js';
 
 const guildId = '123456789012345678';
 const forumId = '223456789012345678';
@@ -102,7 +99,7 @@ describe('fetchGuildArchivedForumThreads', () => {
 
     await expect(
       fetchGuildArchivedForumThreads('token', guildId, forumId, null, 20, fetchImpl),
-    ).rejects.toMatchObject<Partial<GuildForumThreadCatalogError>>({
+    ).rejects.toMatchObject({
       status: 403,
       code: 'guild_mismatch',
     });
