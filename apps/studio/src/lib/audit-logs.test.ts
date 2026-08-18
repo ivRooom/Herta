@@ -157,6 +157,21 @@ test('Moderation実行結果は既削除とDiscord失敗を判別できる', () 
   assert.match(failed.summary, /HTTP: 403/u);
 });
 
+test('Discord error codeの数字文字列は監査要約へ表示できる', () => {
+  const presentation = describeAuditEvent(
+    'moderation.automatic.executed',
+    'discord_user',
+    '1',
+    {
+      action: 'delete',
+      actionOutcome: 'already_satisfied',
+      discordErrorCode: '10008',
+    },
+  );
+
+  assert.match(presentation.summary, /Discord code: 10008/u);
+});
+
 test('未知のModeration metadataやsecret-like値を監査要約へ露出しない', () => {
   const decision = describeAuditEvent('moderation.automatic.decision', 'discord_user', '1', {
     outcome: 'sk-proj-secret-outcome',
