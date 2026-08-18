@@ -14,7 +14,7 @@
     "test": "turbo run test",
     "test:unit": "turbo run test:unit",
     "format": "prettier --write .",
-    "format:check": "prettier --write apps/bot/src/health/forum-thread-catalog.ts apps/bot/src/health/server.ts apps/studio/src/lib/bot-forum-threads.ts && git diff -- apps/bot/src/health/forum-thread-catalog.ts apps/bot/src/health/server.ts apps/studio/src/lib/bot-forum-threads.ts && exit 1",
+    "format:check": "prettier --check .",
     "clean": "turbo run clean",
     "db:generate": "dotenv -- pnpm --filter @herta/db generate",
     "db:migrate": "dotenv -- pnpm --filter @herta/db migrate:dev",
