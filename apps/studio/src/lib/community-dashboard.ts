@@ -120,26 +120,3 @@ export async function getCommunityCommandWindow(
     daily: fillCommandUsageDays(rows, now, window.chartDays),
   };
 }
-
-export async function getCommunityCommandTrend(
-  guildId: string,
-  now = new Date(),
-): Promise<CommandUsageDay[]> {
-  const todayStart = startOfJstDay(now);
-  const rangeStart = new Date(todayStart.getTime() - 6 * DAY_MS);
-  const rows = await prisma.$queryRaw<CommandUsageDay[]>`
-    SELECT
-      TO_CHAR(("executed_at" AT TIME ZONE 'Asia/Tokyo')::date, 'YYYY-MM-DD') AS "date",
-      COUNT(*)::int AS "total",
-      COUNT(*) FILTER (WHERE "status" = 'success')::int AS "succeeded",
-      COUNT(*) FILTER (WHERE "status" = 'failure')::int AS "failed"
-    FROM "command_execution_events"
-    WHERE "guild_id" = ${guildId}
-      AND "executed_at" >= ${rangeStart}
-      AND "executed_at" < ${now}
-    GROUP BY 1
-    ORDER BY 1
-  `;
-
-  return fillCommandUsageDays(rows, now, 7);
-}
