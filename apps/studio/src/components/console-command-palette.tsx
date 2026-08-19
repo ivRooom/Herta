@@ -290,10 +290,14 @@ export function ConsoleCommandPaletteController() {
         scores: [],
         pending: true,
       });
-      const timeout = window.setTimeout(
-        () => controller.abort(),
-        SEMANTIC_SEARCH_CLIENT_TIMEOUT_MS,
-      );
+      const timeout = window.setTimeout(() => {
+        setSemanticSearch((current) =>
+          current?.query === querySnapshot && current.guildId === guildIdSnapshot
+            ? { ...current, mode: 'fallback', scores: [], pending: false }
+            : current,
+        );
+        controller.abort();
+      }, SEMANTIC_SEARCH_CLIENT_TIMEOUT_MS);
 
       void fetch('/api/search/semantic', {
         method: 'POST',
@@ -323,7 +327,7 @@ export function ConsoleCommandPaletteController() {
             pending: false,
           });
         })
-        .catch((error: unknown) => {
+        .catch(() => {
           if (controller.signal.aborted) return;
           setSemanticSearch({
             query: querySnapshot,
@@ -332,7 +336,6 @@ export function ConsoleCommandPaletteController() {
             scores: [],
             pending: false,
           });
-          if (error instanceof Error && error.name === 'AbortError') return;
         })
         .finally(() => window.clearTimeout(timeout));
     }, SEMANTIC_SEARCH_DEBOUNCE_MS);
