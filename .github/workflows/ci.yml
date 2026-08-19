@@ -46,12 +46,7 @@ jobs:
         run: pnpm db:generate
 
       - name: Format Check
-        run: |
-          pnpm format
-          echo '::group::Prettier diff'
-          git diff -- .
-          echo '::endgroup::'
-          test -z "$(git status --porcelain)"
+        run: pnpm format:check
 
       - name: Lint
         run: pnpm lint
