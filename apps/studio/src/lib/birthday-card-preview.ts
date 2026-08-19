@@ -48,10 +48,7 @@ export function birthdayCardAvatarGeometry(
   yPercent: number,
   sizePercent: number,
 ): BirthdayCardAvatarGeometry {
-  const diameter = Math.max(
-    64,
-    Math.round((BIRTHDAY_CARD_PREVIEW_WIDTH * sizePercent) / 100),
-  );
+  const diameter = Math.max(64, Math.round((BIRTHDAY_CARD_PREVIEW_WIDTH * sizePercent) / 100));
   const left = clamp(
     Math.round((BIRTHDAY_CARD_PREVIEW_WIDTH * xPercent) / 100 - diameter / 2),
     0,
