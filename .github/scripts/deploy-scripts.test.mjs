@@ -69,7 +69,7 @@ test('production deploy reclaims safe Docker space before pulling the next image
 test('runtime image excludes the Next.js webpack build cache', () => {
   const dockerfile = readFileSync('Dockerfile', 'utf8');
   const cacheRemovalIndex = dockerfile.indexOf('apps/studio/.next/cache');
-  const runtimeIndex = dockerfile.indexOf('FROM node:22-alpine AS runtime');
+  const runtimeIndex = dockerfile.indexOf('FROM node:22-bookworm-slim AS runtime');
 
   assert.ok(cacheRemovalIndex >= 0, 'Next.js build cache must be removed in the builder stage');
   assert.ok(
