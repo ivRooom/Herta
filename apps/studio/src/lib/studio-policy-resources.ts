@@ -16,6 +16,11 @@ export const STUDIO_PAGE_DEFINITIONS = [
   { id: 'plugins', label: 'プラグイン', description: 'Plugin一覧・Plugin設定画面を閲覧' },
   { id: 'leaderboard', label: 'Leaderboard', description: 'Guildランキングを閲覧' },
   {
+    id: 'birthday',
+    label: 'Birthday Management',
+    description: 'メンバー誕生日・生年・祝い実績・Birthday Cardを閲覧',
+  },
+  {
     id: 'moderation',
     label: 'Moderation',
     description: 'Case・自動検知・自動対応の管理画面を閲覧',
