@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { authorizeIvrmIntegrationRequest, readIvrmIntegrationConfig } from './ivrm-integration-auth.ts';
+import {
+  authorizeIvrmIntegrationRequest,
+  readIvrmIntegrationConfig,
+} from './ivrm-integration-auth.ts';
 
 const TOKEN = '0123456789abcdef0123456789abcdef';
 const GUILD_ID = '123456789012345678';
