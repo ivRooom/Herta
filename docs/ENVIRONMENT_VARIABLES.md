@@ -63,6 +63,22 @@ Herta で使用する環境変数の一覧です。開発は `.env` (`.env.examp
 | `NEXTAUTH_URL`    | Yes  | Dashboard の公開 URL (Discord Redirect URI のベース)       | `http://localhost:3000` |
 | `NEXTAUTH_SECRET` | Yes  | セッション JWT の署名鍵 (`openssl rand -base64 32` で生成) | -                       |
 
+### Command Palette Semantic Search
+
+Semantic Searchは明示的なopt-inです。既定の`disabled`では外部providerを呼び出さず、
+Command Paletteは既存のlexical / intent rankingだけで動作します。
+
+| 変数名                            | 必須                        | 説明                                               | 既定値                   |
+| --------------------------------- | --------------------------- | -------------------------------------------------- | ------------------------ |
+| `STUDIO_SEMANTIC_SEARCH_PROVIDER` | -                           | `disabled` または `openai`                         | `disabled`               |
+| `OPENAI_API_KEY`                  | provider=`openai` の場合Yes | Studio serverだけで利用するOpenAI API key          | -                        |
+| `OPENAI_EMBEDDING_MODEL`          | -                           | Semantic rankingに利用するembedding model          | `text-embedding-3-small` |
+
+`OPENAI_API_KEY`は`NEXT_PUBLIC_`変数へ移さず、ブラウザへ公開しないでください。
+Providerへ送信するCommand corpusはlabel / keywords / intents / group / sanitized routeに限定し、
+Discord本文、Moderation本文、Guild名・実Guild ID、Secret、ユーザー生成コンテンツは含めません。
+Provider失敗・timeout時はlexical searchへfallbackします。
+
 ## JWT / 内部通信
 
 | 変数名                   | 必須 | 説明                         | 備考             |
