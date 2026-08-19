@@ -12,15 +12,23 @@ import {
   parseStudioCommandSemanticResponse,
   STUDIO_COMMAND_SEMANTIC_SCORE_THRESHOLD,
 } from './command-semantic-search.ts';
-import { buildStudioCommandItems, filterStudioCommandItems } from './studio-navigation.ts';
+import {
+  buildStudioCommandItems,
+  filterStudioCommandItems,
+  STUDIO_COMMAND_SEARCH_QUERY_MAX_LENGTH,
+  STUDIO_COMMAND_SEARCH_RESULT_LIMIT,
+} from './studio-navigation.ts';
 
 const GUILD_ID = '123456789012345678';
 
 test('semantic requestはqueryと有効なGuild IDだけを受け付ける', () => {
-  assert.deepEqual(parseStudioCommandSemanticRequest({ query: '  予約投稿したい  ', guildId: GUILD_ID }), {
-    query: '予約投稿したい',
-    guildId: GUILD_ID,
-  });
+  assert.deepEqual(
+    parseStudioCommandSemanticRequest({ query: '  予約投稿したい  ', guildId: GUILD_ID }),
+    {
+      query: '予約投稿したい',
+      guildId: GUILD_ID,
+    },
+  );
   assert.deepEqual(parseStudioCommandSemanticRequest({ query: '稼働状況', guildId: null }), {
     query: '稼働状況',
     guildId: null,
@@ -28,6 +36,16 @@ test('semantic requestはqueryと有効なGuild IDだけを受け付ける', () 
   assert.equal(parseStudioCommandSemanticRequest({ query: 'a', guildId: null }), null);
   assert.equal(parseStudioCommandSemanticRequest({ query: '予約投稿', guildId: 'not-a-guild' }), null);
   assert.equal(parseStudioCommandSemanticRequest({ query: 123, guildId: null }), null);
+});
+
+test('semantic requestのqueryは正規化前に100文字へ制限する', () => {
+  const parsed = parseStudioCommandSemanticRequest({
+    query: 'x'.repeat(STUDIO_COMMAND_SEARCH_QUERY_MAX_LENGTH + 50),
+    guildId: null,
+  });
+
+  assert.ok(parsed);
+  assert.equal(parsed.query.length, STUDIO_COMMAND_SEARCH_QUERY_MAX_LENGTH);
 });
 
 test('semantic corpusはGuild名と実Guild IDをproviderへ送らない', () => {
@@ -68,6 +86,14 @@ test('semantic threshold未満・未知ID・不正scoreを検索結果へ追加�
   ]);
 
   assert.deepEqual(merged, lexical);
+});
+
+test('semantic mergeも検索結果を20件へ制限する', () => {
+  const commands = buildStudioCommandItems(GUILD_ID, 'Test Guild');
+  const semanticScores = commands.map((command) => ({ id: command.id, score: 1 }));
+  const merged = mergeStudioCommandSearchResults(commands, [], semanticScores);
+
+  assert.equal(merged.length, STUDIO_COMMAND_SEARCH_RESULT_LIMIT);
 });
 
 test('semantic responseはmodeと0..1の有限scoreだけを受け付ける', () => {
@@ -140,6 +166,20 @@ test('provider non-2xxとmalformed responseを明示的に失敗扱いする', a
   );
 });
 
+test('provider network failureをfallback可能な明示エラーへ変換する', async () => {
+  await assert.rejects(
+    scoreStudioCommandsWithOpenAI({
+      apiKey: 'test-key',
+      query: 'test',
+      documents: [{ id: 'one', text: 'one' }],
+      fetchImpl: async () => {
+        throw new Error('network unavailable');
+      },
+    }),
+    (error: unknown) => error instanceof StudioSemanticProviderError && error.code === 'network',
+  );
+});
+
 test('provider timeoutを固定時間で中断する', async () => {
   await assert.rejects(
     scoreStudioCommandsWithOpenAI({
@@ -149,7 +189,9 @@ test('provider timeoutを固定時間で中断する', async () => {
       timeoutMs: 5,
       fetchImpl: async (_input, init) =>
         new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError')),
+          );
         }),
     }),
     (error: unknown) => error instanceof StudioSemanticProviderError && error.code === 'timeout',
