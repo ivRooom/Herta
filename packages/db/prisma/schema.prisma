@@ -274,7 +274,7 @@ model RuleExecutionLog {
 
 model ServiceHealthSnapshot {
   id                String   @id @default(uuid()) @db.Uuid
-  serviceId         String
+  serviceId         String   @map("service_id")
   version           String
   status            String
   discordStatus     String   @map("discord_status")
