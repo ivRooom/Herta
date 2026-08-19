@@ -23,13 +23,14 @@ model Guild {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  settings             GuildSettings?
-  members              GuildMember[]
-  roles                Role[]
-  auditLogs            AuditLog[]
-  guildPlugins         GuildPlugin[]
-  rules                Rule[]
-  moderationDetections ModerationDetectionEvent[]
+  settings               GuildSettings?
+  birthdayCardBackground BirthdayCardBackground?
+  members                GuildMember[]
+  roles                  Role[]
+  auditLogs              AuditLog[]
+  guildPlugins           GuildPlugin[]
+  rules                  Rule[]
+  moderationDetections   ModerationDetectionEvent[]
 
   @@map("guilds")
 }
@@ -48,6 +49,25 @@ model GuildSettings {
   guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade)
 
   @@map("guild_settings")
+}
+
+model BirthdayCardBackground {
+  guildId     String   @id @map("guild_id")
+  contentType String   @map("content_type") @db.VarChar(32)
+  fileName    String   @map("file_name") @db.VarChar(120)
+  content     Bytes
+  sizeBytes   Int      @map("size_bytes")
+  width       Int
+  height      Int
+  sha256      String   @db.Char(64)
+  updatedBy   String   @map("updated_by")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  // content-type / bytes / dimensions / SHA-256 constraints are enforced by migration SQL.
+  @@map("birthday_card_backgrounds")
 }
 
 model User {
@@ -254,7 +274,7 @@ model RuleExecutionLog {
 
 model ServiceHealthSnapshot {
   id                String   @id @default(uuid()) @db.Uuid
-  serviceId         String   @map("service_id")
+  serviceId         String
   version           String
   status            String
   discordStatus     String   @map("discord_status")
