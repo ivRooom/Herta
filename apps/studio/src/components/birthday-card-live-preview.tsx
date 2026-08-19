@@ -22,6 +22,17 @@ export type BirthdayCardPositionXKey =
 export type BirthdayCardPositionYKey =
   'birthdayCardAvatarY' | 'birthdayCardNameY' | 'birthdayCardBirthdayY' | 'birthdayCardAgeY';
 
+const BIRTHDAY_CARD_POSITION_FIELD_KEYS = [
+  'birthdayCardAvatarX',
+  'birthdayCardAvatarY',
+  'birthdayCardNameX',
+  'birthdayCardNameY',
+  'birthdayCardBirthdayX',
+  'birthdayCardBirthdayY',
+  'birthdayCardAgeX',
+  'birthdayCardAgeY',
+] as const;
+
 interface BirthdayCardLivePreviewProps {
   config: BirthdayCardConfig;
   readable: ReadonlySet<string>;
@@ -54,6 +65,8 @@ export function BirthdayCardLivePreview({
   const svgRef = useRef<SVGSVGElement>(null);
   const preset = birthdayCardPreset(config.birthdayCardPreset);
   const canPreviewPreset = readable.has('birthdayCardPreset');
+  const canMovePreview =
+    !pending && BIRTHDAY_CARD_POSITION_FIELD_KEYS.some((key) => editable.has(key));
   const hiddenLayoutLabels: string[] = [];
 
   const avatarVisible =
@@ -198,7 +211,7 @@ export function BirthdayCardLivePreview({
           ) : null}
           <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-muted">
             <Move className="h-3.5 w-3.5" aria-hidden="true" />
-            ドラッグ / 矢印キーで移動
+            {canMovePreview ? 'ドラッグ / 矢印キーで移動' : '閲覧プレビュー'}
           </span>
         </div>
       </div>
@@ -296,10 +309,16 @@ export function BirthdayCardLivePreview({
           のプレビューは、表示に必要なIAM設定項目が一部非表示のため描画していません。
         </p>
       ) : null}
-      <p className="text-xs leading-5 text-muted">
-        プレビュー上の要素を直接ドラッグできます。キーボードでは矢印キーで1%、Shift +
-        矢印キーで5%ずつ移動します。右側のスライダー操作も即時反映されます。
-      </p>
+      {canMovePreview ? (
+        <p className="text-xs leading-5 text-muted">
+          プレビュー上の要素を直接ドラッグできます。キーボードでは矢印キーで1%、Shift +
+          矢印キーで5%ずつ移動します。右側のスライダー操作も即時反映されます。
+        </p>
+      ) : (
+        <p className="text-xs leading-5 text-muted">
+          この表示は閲覧専用です。位置調整は編集可能なプレビューまたはレイアウト設定から行ってください。
+        </p>
+      )}
     </div>
   );
 }
