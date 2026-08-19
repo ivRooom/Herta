@@ -49,10 +49,28 @@ export async function GET(
     return json({
       status: 'ok',
       guildId,
-      groups,
-      groupMembers,
-      policies,
-      policyAttachments,
+      groups: groups.map((group) => ({
+        id: group.id,
+        name: group.name,
+        description: group.description,
+        updatedAt: group.updatedAt.toISOString(),
+      })),
+      groupMembers: groupMembers.map((member) => ({
+        groupId: member.groupId,
+        userId: member.userId,
+      })),
+      policies: policies.map((policy) => ({
+        id: policy.id,
+        name: policy.name,
+        description: policy.description,
+        revision: policy.revision,
+        updatedAt: policy.updatedAt.toISOString(),
+      })),
+      policyAttachments: policyAttachments.map((attachment) => ({
+        policyId: attachment.policyId,
+        principalType: attachment.principalType,
+        principalId: attachment.principalId,
+      })),
     });
   } catch (error) {
     console.error('Failed to load ivRooom IAM integration overview', {
