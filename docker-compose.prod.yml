@@ -89,7 +89,13 @@ services:
       migrator:
         condition: service_completed_successfully
     healthcheck:
-      test: ['CMD', 'curl', '-f', 'http://localhost:3001/api/v1/health']
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://localhost:3001/api/v1/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -156,7 +162,13 @@ services:
       HEALTH_CACHE_TTL_MS: ${HEALTH_CACHE_TTL_MS:-5000}
       HEALTH_HEARTBEAT_STALE_MS: ${HEALTH_HEARTBEAT_STALE_MS:-120000}
     healthcheck:
-      test: ['CMD-SHELL', 'curl -fsS http://127.0.0.1:$${HEALTH_PORT:-3000}/healthz > /dev/null']
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:' + (process.env.HEALTH_PORT || '3000') + '/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3
