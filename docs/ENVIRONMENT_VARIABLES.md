@@ -68,11 +68,11 @@ Herta で使用する環境変数の一覧です。開発は `.env` (`.env.examp
 Semantic Searchは明示的なopt-inです。既定の`disabled`では外部providerを呼び出さず、
 Command Paletteは既存のlexical / intent rankingだけで動作します。
 
-| 変数名                            | 必須                        | 説明                                               | 既定値                   |
-| --------------------------------- | --------------------------- | -------------------------------------------------- | ------------------------ |
-| `STUDIO_SEMANTIC_SEARCH_PROVIDER` | -                           | `disabled` または `openai`                         | `disabled`               |
-| `OPENAI_API_KEY`                  | provider=`openai` の場合Yes | Studio serverだけで利用するOpenAI API key          | -                        |
-| `OPENAI_EMBEDDING_MODEL`          | -                           | Semantic rankingに利用するembedding model          | `text-embedding-3-small` |
+| 変数名                            | 必須                        | 説明                                      | 既定値                   |
+| --------------------------------- | --------------------------- | ----------------------------------------- | ------------------------ |
+| `STUDIO_SEMANTIC_SEARCH_PROVIDER` | -                           | `disabled` または `openai`                | `disabled`               |
+| `OPENAI_API_KEY`                  | provider=`openai` の場合Yes | Studio serverだけで利用するOpenAI API key | -                        |
+| `OPENAI_EMBEDDING_MODEL`          | -                           | Semantic rankingに利用するembedding model | `text-embedding-3-small` |
 
 `OPENAI_API_KEY`は`NEXT_PUBLIC_`変数へ移さず、ブラウザへ公開しないでください。
 Providerへ送信するCommand corpusはlabel / keywords / intents / group / sanitized routeに限定し、
