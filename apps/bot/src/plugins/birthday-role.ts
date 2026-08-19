@@ -1,6 +1,8 @@
 import type { PrismaClient } from '@herta/db';
 import { birthdayRoleManifest } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
+import { normalizeBirthdayCardConfig, type BirthdayCardConfig } from '@herta/shared';
+import { renderBirthdayCard } from './birthday-card.js';
 import {
   claimBirthdayDelivery,
   completeBirthdayDelivery,
@@ -12,6 +14,7 @@ import {
   listPendingBirthdayRoleAssignments,
   markBirthdayRoleAssignmentReconciled,
   recoverStaleBirthdayDelivery,
+  upsertBirthdayCelebration,
   upsertBirthdayRegistration,
 } from './birthday-role-repository.js';
 
@@ -24,10 +27,11 @@ const STALE_DELIVERY_MS = 2 * 60 * 60 * 1000;
 const ROLE_ASSIGNED_PREFIX = 'role-assigned:';
 const ROLE_REMOVED_PREFIX = 'role-removed:';
 const MAX_BIRTHDAY_SEARCH_YEARS = 8;
+const MIN_BIRTH_YEAR = 1900;
 
 export type LeapDayPolicy = 'february-28' | 'march-1' | 'skip';
 
-export interface BirthdayRoleConfig {
+export interface BirthdayRoleConfig extends BirthdayCardConfig {
   enabled: boolean;
   ephemeralResponses: boolean;
   allowSelfRegistration: boolean;
@@ -49,6 +53,12 @@ interface BirthdayRegistrationLike {
   userId: string;
   month: number;
   day: number;
+  birthYear?: number | null;
+}
+
+interface BirthdayAnnouncementContext {
+  age: number | null;
+  serverBirthdayNumber: number | null;
 }
 
 interface BirthdayCommandOptions {
@@ -86,6 +96,8 @@ interface BirthdayRole {
 }
 
 interface BirthdayMember {
+  displayName?: string;
+  displayAvatarURL?(options?: { extension?: 'png'; size?: number }): string;
   roles: {
     cache: { has(roleId: string): boolean };
     add(roleId: string): Promise<unknown>;
@@ -114,6 +126,7 @@ interface BirthdayChannel {
   send(options: {
     content: string;
     allowedMentions: { parse: []; users: string[] };
+    files?: Array<{ attachment: Buffer; name: string }>;
   }): Promise<{ id: string }>;
 }
 
@@ -154,7 +167,7 @@ export const birthdayRolePlugin = definePlugin<BirthdayRoleConfig, BirthdayClien
 export function normalizeBirthdayRoleConfig(value: unknown): BirthdayRoleConfig {
   const source = isRecord(value) ? value : {};
   const announcementMessage =
-    normalizeText(source.announcementMessage, 1000) ?? '🎂 {user} お誕生日おめでとう！';
+    normalizeText(source.announcementMessage, 1000) ?? '🎂 {user} {ageText}お誕生日おめでとう！';
   const leapDayPolicy: LeapDayPolicy =
     source.leapDayPolicy === 'march-1' || source.leapDayPolicy === 'skip'
       ? source.leapDayPolicy
@@ -173,6 +186,7 @@ export function normalizeBirthdayRoleConfig(value: unknown): BirthdayRoleConfig 
     announcementChannelId: normalizeDiscordId(source.announcementChannelId),
     announcementMessage,
     leapDayPolicy,
+    ...normalizeBirthdayCardConfig(source),
   };
 }
 
@@ -181,6 +195,15 @@ export function isValidBirthday(month: number, day: number): boolean {
   if (month < 1 || month > 12 || day < 1) return false;
   const daysInMonth = new Date(Date.UTC(2000, month, 0)).getUTCDate();
   return day <= daysInMonth;
+}
+
+export function isValidBirthYear(year: number, currentYear = new Date().getUTCFullYear()): boolean {
+  return Number.isInteger(year) && year >= MIN_BIRTH_YEAR && year <= currentYear;
+}
+
+export function calculateBirthdayAge(birthYear: number | null | undefined, year: number): number | null {
+  if (birthYear === null || birthYear === undefined || !isValidBirthYear(birthYear, year)) return null;
+  return year - birthYear;
 }
 
 export function isLeapYear(year: number): boolean {
@@ -219,14 +242,40 @@ export function formatLocalDate(parts: LocalDateParts): string {
   return `${parts.year.toString().padStart(4, '0')}-${parts.month.toString().padStart(2, '0')}-${parts.day.toString().padStart(2, '0')}`;
 }
 
+export function countServerBirthdaysSinceJoin(
+  joined: LocalDateParts | null,
+  registration: BirthdayRegistrationLike,
+  celebrationYear: number,
+  policy: LeapDayPolicy,
+): number | null {
+  if (!joined || joined.year > celebrationYear) return null;
+  const joinedUtc = Date.UTC(joined.year, joined.month - 1, joined.day);
+  let count = 0;
+  for (let year = joined.year; year <= celebrationYear; year += 1) {
+    const effective = resolveEffectiveBirthday(registration.month, registration.day, year, policy);
+    if (!effective) continue;
+    const birthdayUtc = Date.UTC(year, effective.month - 1, effective.day);
+    if (birthdayUtc >= joinedUtc) count += 1;
+  }
+  return count > 0 ? count : null;
+}
+
 export function renderBirthdayAnnouncement(
   template: string,
   registration: BirthdayRegistrationLike,
+  context: BirthdayAnnouncementContext = { age: null, serverBirthdayNumber: null },
 ): string {
+  const age = context.age === null ? '' : String(context.age);
+  const ageText = context.age === null ? '' : `${context.age}歳の`;
+  const serverBirthdayNumber =
+    context.serverBirthdayNumber === null ? '' : String(context.serverBirthdayNumber);
   return template
     .replaceAll('{user}', `<@${registration.userId}>`)
     .replaceAll('{month}', String(registration.month))
-    .replaceAll('{day}', String(registration.day));
+    .replaceAll('{day}', String(registration.day))
+    .replaceAll('{age}', age)
+    .replaceAll('{ageText}', ageText)
+    .replaceAll('{serverBirthdayNumber}', serverBirthdayNumber);
 }
 
 export function getDaysUntilBirthday(
@@ -304,6 +353,39 @@ export async function runBirthdayRoleCycle(
     const todaysUsers = new Set(todaysRegistrations.map((registration) => registration.userId));
     const guild = await context.client.guilds.fetch(context.guildId);
 
+    const storedMembers =
+      todaysRegistrations.length === 0
+        ? []
+        : await context.prisma.guildMember.findMany({
+            where: {
+              guildId: context.guildId,
+              userId: { in: todaysRegistrations.map((registration) => registration.userId) },
+            },
+            select: { userId: true, joinedAt: true },
+          });
+    const joinedAtByUserId = new Map(storedMembers.map((member) => [member.userId, member.joinedAt]));
+    const celebrationByUserId = new Map<string, BirthdayAnnouncementContext>();
+    for (const registration of todaysRegistrations) {
+      const joinedAt = joinedAtByUserId.get(registration.userId) ?? null;
+      const joinedLocal = joinedAt ? getLocalDateParts(joinedAt, timeZone) : null;
+      const age = calculateBirthdayAge(registration.birthYear, today.year);
+      const serverBirthdayNumber = countServerBirthdaysSinceJoin(
+        joinedLocal,
+        registration,
+        today.year,
+        config.leapDayPolicy,
+      );
+      celebrationByUserId.set(registration.userId, { age, serverBirthdayNumber });
+      await upsertBirthdayCelebration(context.prisma, {
+        guildId: context.guildId,
+        userId: registration.userId,
+        localDate,
+        birthYear: registration.birthYear,
+        age,
+        serverBirthdayNumber,
+      });
+    }
+
     await cleanupPreviousBirthdayRoles(context, guild, localDate, todaysUsers);
 
     if (config.assignRole && config.birthdayRoleId) {
@@ -345,13 +427,42 @@ export async function runBirthdayRoleCycle(
             context,
             { userId: registration.userId, localDate, kind: 'announcement' },
             async () => {
+              const celebration = celebrationByUserId.get(registration.userId) ?? {
+                age: null,
+                serverBirthdayNumber: null,
+              };
               const content = truncate(
-                renderBirthdayAnnouncement(config.announcementMessage, registration),
+                renderBirthdayAnnouncement(config.announcementMessage, registration, celebration),
                 MAX_RESPONSE_LENGTH,
               );
+              let files: Array<{ attachment: Buffer; name: string }> | undefined;
+              if (config.birthdayCardEnabled) {
+                try {
+                  const member = await guild.members.fetch(registration.userId);
+                  const card = await renderBirthdayCard({
+                    config,
+                    displayName: member.displayName || `Member ${registration.userId.slice(-4)}`,
+                    avatarUrl: member.displayAvatarURL?.({ extension: 'png', size: 512 }) ?? null,
+                    month: registration.month,
+                    day: registration.day,
+                    age: celebration.age,
+                  });
+                  files = [{ attachment: card, name: `birthday-${registration.userId}.png` }];
+                } catch (error) {
+                  context.logger.warn(
+                    {
+                      guildId: context.guildId,
+                      userId: registration.userId,
+                      errorName: error instanceof Error ? error.name : 'UnknownError',
+                    },
+                    'Birthday Cardの生成に失敗したためテキストのみで投稿します',
+                  );
+                }
+              }
               const message = await channel.send({
                 content,
                 allowedMentions: { parse: [], users: [registration.userId] },
+                ...(files ? { files } : {}),
               });
               return message.id;
             },
@@ -393,8 +504,17 @@ async function executeBirthdayCommand(
     }
     const month = interaction.options.getInteger('month', true);
     const day = interaction.options.getInteger('day', true);
+    const year = interaction.options.getInteger('year');
     if (month === null || day === null || !isValidBirthday(month, day)) {
       await respond(interaction, '存在する月日を指定してください。2月29日は登録できます。', true);
+      return;
+    }
+    if (year !== null && !isValidBirthYear(year)) {
+      await respond(
+        interaction,
+        `生年は${MIN_BIRTH_YEAR}年から現在年までで指定してください。未指定でも登録できます。`,
+        true,
+      );
       return;
     }
     await defer(interaction, config.ephemeralResponses);
@@ -404,14 +524,17 @@ async function executeBirthdayCommand(
       interaction.user.id,
       month,
       day,
+      year,
     );
     context.logger.info(
-      { guildId: interaction.guildId, userId: interaction.user.id, month, day },
+      { guildId: interaction.guildId, userId: interaction.user.id, month, day, hasBirthYear: year !== null },
       '誕生日を登録しました',
     );
     await respond(
       interaction,
-      `誕生日を ${month}月${day}日 として登録しました。生年は保存していません。`,
+      year === null
+        ? `誕生日を ${month}月${day}日 として登録しました。生年は未登録です。`
+        : `誕生日を ${year}年${month}月${day}日 として登録しました。`,
       config.ephemeralResponses,
     );
     return;
@@ -442,7 +565,7 @@ async function executeBirthdayCommand(
     await respond(
       interaction,
       registration
-        ? `登録中の誕生日: ${registration.month}月${registration.day}日\n生年は保存していません。`
+        ? `登録中の誕生日: ${registration.birthYear ? `${registration.birthYear}年` : ''}${registration.month}月${registration.day}日\n生年: ${registration.birthYear ?? '未登録'}`
         : '誕生日はまだ登録されていません。',
       config.ephemeralResponses,
     );
