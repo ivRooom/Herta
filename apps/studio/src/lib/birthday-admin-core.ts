@@ -1,9 +1,14 @@
 export const BIRTHDAY_ADMIN_DISCORD_ID_PATTERN = /^\d{17,20}$/u;
+export const MIN_BIRTH_YEAR = 1900;
 
 export interface BirthdayRegistration {
   userId: string;
   month: number;
   day: number;
+  birthYear: number | null;
+  latestAge?: number | null;
+  latestServerBirthdayNumber?: number | null;
+  celebrationCount?: number;
 }
 
 export interface BirthdayMemberCandidate {
@@ -20,6 +25,7 @@ export interface BirthdayAdminRequest {
   userId: string;
   month: number | null;
   day: number | null;
+  birthYear: number | null;
 }
 
 export function daysInBirthdayMonth(month: number): number {
@@ -30,6 +36,10 @@ export function daysInBirthdayMonth(month: number): number {
 export function isValidBirthdayDate(month: number, day: number): boolean {
   const maxDay = daysInBirthdayMonth(month);
   return Number.isInteger(day) && day >= 1 && day <= maxDay;
+}
+
+export function isValidBirthYear(year: number, currentYear = new Date().getUTCFullYear()): boolean {
+  return Number.isInteger(year) && year >= MIN_BIRTH_YEAR && year <= currentYear;
 }
 
 export function birthdayMemberEligibility(
@@ -66,13 +76,27 @@ export function filterBirthdayRegistrations(
 }
 
 export function buildBirthdayCsv(registrations: readonly BirthdayRegistration[]): string {
-  const rows = sortBirthdayRegistrations(registrations).map(
-    (registration) => `${registration.userId},${registration.month},${registration.day}`,
+  const rows = sortBirthdayRegistrations(registrations).map((registration) =>
+    [
+      registration.userId,
+      registration.month,
+      registration.day,
+      registration.birthYear ?? '',
+      registration.latestAge ?? '',
+      registration.latestServerBirthdayNumber ?? '',
+      registration.celebrationCount ?? 0,
+    ].join(','),
   );
-  return ['discord_user_id,month,day', ...rows].join('\n');
+  return [
+    'discord_user_id,month,day,birth_year,latest_age,latest_server_birthday_number,celebration_count',
+    ...rows,
+  ].join('\n');
 }
 
-export function parseBirthdayAdminRequest(value: unknown): BirthdayAdminRequest | null {
+export function parseBirthdayAdminRequest(
+  value: unknown,
+  currentYear = new Date().getUTCFullYear(),
+): BirthdayAdminRequest | null {
   if (!isRecord(value)) return null;
   if (value.action !== 'set' && value.action !== 'remove') return null;
 
@@ -80,13 +104,21 @@ export function parseBirthdayAdminRequest(value: unknown): BirthdayAdminRequest 
   if (!BIRTHDAY_ADMIN_DISCORD_ID_PATTERN.test(userId)) return null;
 
   if (value.action === 'remove') {
-    return { action: 'remove', userId, month: null, day: null };
+    return { action: 'remove', userId, month: null, day: null, birthYear: null };
   }
 
   const month = toInteger(value.month);
   const day = toInteger(value.day);
   if (month === null || day === null || !isValidBirthdayDate(month, day)) return null;
-  return { action: 'set', userId, month, day };
+
+  const birthYear = emptyToNullInteger(value.birthYear);
+  if (birthYear !== null && !isValidBirthYear(birthYear, currentYear)) return null;
+  return { action: 'set', userId, month, day, birthYear };
+}
+
+function emptyToNullInteger(value: unknown): number | null {
+  if (value === undefined || value === null || value === '') return null;
+  return toInteger(value);
 }
 
 function toInteger(value: unknown): number | null {

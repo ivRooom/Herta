@@ -10,3 +10,4 @@ export * from './achievement-catalog.js';
 export * from './community-challenge-catalog.js';
 export * from './community-leaderboard.js';
 export * from './activity-rules.js';
+export * from './birthday-card.js';

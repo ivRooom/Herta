@@ -6,11 +6,21 @@ import {
   removeBirthdayRegistration,
   setBirthdayRegistration,
 } from '@/lib/birthday-admin';
-import { birthdayMemberEligibility, parseBirthdayAdminRequest } from '@/lib/birthday-admin-core';
+import {
+  birthdayMemberEligibility,
+  parseBirthdayAdminRequest,
+  type BirthdayRegistration,
+} from '@/lib/birthday-admin-core';
 import { searchGuildMembers } from '@/lib/bot-guild-members';
-import { authorizeGuild } from '@/lib/guild-plugins';
+import { readJsonBodyWithLimit, RequestBodyTooLargeError } from '@/lib/bounded-request-body';
+import { isSameOriginMutationRequest } from '@/lib/request-origin';
+import { resolveStudioAccess } from '@/lib/studio-access';
+import { hasEffectivePluginPermission } from '@/lib/studio-plugin-permissions';
+import { studioBirthdayResource } from '@/lib/studio-policy-resources';
 
 export const dynamic = 'force-dynamic';
+
+const BIRTHDAY_ADMIN_BODY_MAX_BYTES = 8 * 1024;
 
 type GuildRouteContext = { params: Promise<{ guildId: string }> };
 
@@ -18,11 +28,22 @@ export async function GET(_request: Request, { params }: GuildRouteContext) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
   const { guildId } = await params;
-  const authorization = await authorizeGuild(guildId, session.user.id);
-  if ('response' in authorization) return authorization.response;
+  const access = await resolveStudioAccess(guildId, session.user.id);
+  if (!access.ok) return access.response;
+
+  if (!canReadBirthdayRegistrations(access.access, guildId)) {
+    return birthdayPermissionDenied('メンバー誕生日を閲覧する権限がありません');
+  }
+
   try {
+    const registrations = await listBirthdayRegistrations(guildId);
     return NextResponse.json(
-      { registrations: await listBirthdayRegistrations(guildId) },
+      {
+        registrations: redactCelebrationStats(
+          registrations,
+          canReadBirthdayCelebrations(access.access, guildId),
+        ),
+      },
       { headers: { 'Cache-Control': 'private, no-store' } },
     );
   } catch (error) {
@@ -33,11 +54,34 @@ export async function GET(_request: Request, { params }: GuildRouteContext) {
 export async function POST(request: Request, { params }: GuildRouteContext) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
-  const { guildId } = await params;
-  const authorization = await authorizeGuild(guildId, session.user.id);
-  if ('response' in authorization) return authorization.response;
+  if (!isSameOriginMutationRequest(request)) {
+    return NextResponse.json({ error: '不正なOriginです' }, { status: 403 });
+  }
 
-  const body = await request.json().catch(() => null);
+  const { guildId } = await params;
+  const access = await resolveStudioAccess(guildId, session.user.id);
+  if (!access.ok) return access.response;
+
+  if (
+    !hasEffectivePluginPermission(
+      access.access,
+      'studio.settings.write',
+      studioBirthdayResource(guildId, 'registrations'),
+    )
+  ) {
+    return birthdayPermissionDenied('メンバー誕生日を編集する権限がありません');
+  }
+
+  let body: unknown;
+  try {
+    body = await readJsonBodyWithLimit(request, BIRTHDAY_ADMIN_BODY_MAX_BYTES);
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      return NextResponse.json({ error: 'リクエストが大きすぎます' }, { status: 413 });
+    }
+    return NextResponse.json({ error: 'JSON形式が不正です' }, { status: 400 });
+  }
+
   const parsed = parseBirthdayAdminRequest(body);
   if (!parsed) {
     return NextResponse.json({ error: '誕生日管理操作の入力が不正です' }, { status: 400 });
@@ -76,6 +120,7 @@ export async function POST(request: Request, { params }: GuildRouteContext) {
         userId: parsed.userId,
         month: parsed.month,
         day: parsed.day,
+        birthYear: parsed.birthYear,
       });
     } else {
       await removeBirthdayRegistration({
@@ -84,16 +129,75 @@ export async function POST(request: Request, { params }: GuildRouteContext) {
         userId: parsed.userId,
       });
     }
-    return NextResponse.json({ registrations: await listBirthdayRegistrations(guildId) });
+
+    const canReadRegistrations = canReadBirthdayRegistrations(access.access, guildId);
+    if (!canReadRegistrations) {
+      return NextResponse.json({ updated: true });
+    }
+
+    const registrations = await listBirthdayRegistrations(guildId);
+    return NextResponse.json(
+      {
+        updated: true,
+        registrations: redactCelebrationStats(
+          registrations,
+          canReadBirthdayCelebrations(access.access, guildId),
+        ),
+      },
+      { headers: { 'Cache-Control': 'private, no-store' } },
+    );
   } catch (error) {
     return birthdayAdminErrorResponse(error);
   }
+}
+
+function canReadBirthdayRegistrations(
+  access: Parameters<typeof hasEffectivePluginPermission>[0],
+  guildId: string,
+): boolean {
+  return hasEffectivePluginPermission(
+    access,
+    'studio.settings.read',
+    studioBirthdayResource(guildId, 'registrations'),
+  );
+}
+
+function canReadBirthdayCelebrations(
+  access: Parameters<typeof hasEffectivePluginPermission>[0],
+  guildId: string,
+): boolean {
+  return hasEffectivePluginPermission(
+    access,
+    'studio.settings.read',
+    studioBirthdayResource(guildId, 'celebrations'),
+  );
+}
+
+function redactCelebrationStats(
+  registrations: readonly BirthdayRegistration[],
+  canReadCelebrations: boolean,
+): BirthdayRegistration[] {
+  if (canReadCelebrations) return [...registrations];
+  return registrations.map(
+    ({
+      latestAge: _age,
+      latestServerBirthdayNumber: _number,
+      celebrationCount: _count,
+      ...registration
+    }) => registration,
+  );
+}
+
+function birthdayPermissionDenied(message: string): NextResponse {
+  return NextResponse.json({ error: message }, { status: 403 });
 }
 
 function birthdayAdminErrorResponse(error: unknown): NextResponse {
   if (error instanceof BirthdayAdminValidationError) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
-  console.error('Birthday admin API request failed', error);
+  console.error('Birthday admin API request failed', {
+    errorName: error instanceof Error ? error.name : 'UnknownError',
+  });
   return NextResponse.json({ error: '誕生日管理操作に失敗しました' }, { status: 500 });
 }

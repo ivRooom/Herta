@@ -5,6 +5,7 @@ export interface BirthdayRegistrationRecord {
   userId: string;
   month: number;
   day: number;
+  birthYear: number | null;
 }
 
 export interface BirthdayDeliveryRecord {
@@ -25,16 +26,18 @@ export async function upsertBirthdayRegistration(
   userId: string,
   month: number,
   day: number,
+  birthYear: number | null,
 ): Promise<void> {
   await prisma.$executeRaw`
     INSERT INTO "birthday_registrations" (
-      "guild_id", "user_id", "month", "day", "updated_at"
+      "guild_id", "user_id", "month", "day", "birth_year", "updated_at"
     ) VALUES (
-      ${guildId}, ${userId}, ${month}, ${day}, CURRENT_TIMESTAMP
+      ${guildId}, ${userId}, ${month}, ${day}, ${birthYear}, CURRENT_TIMESTAMP
     )
     ON CONFLICT ("guild_id", "user_id") DO UPDATE SET
       "month" = EXCLUDED."month",
       "day" = EXCLUDED."day",
+      "birth_year" = EXCLUDED."birth_year",
       "updated_at" = CURRENT_TIMESTAMP
   `;
 }
@@ -54,9 +57,11 @@ export async function getBirthdayRegistration(
   prisma: PrismaClient,
   guildId: string,
   userId: string,
-): Promise<{ month: number; day: number } | null> {
-  const rows = await prisma.$queryRaw<Array<{ month: number; day: number }>>`
-    SELECT "month", "day"
+): Promise<{ month: number; day: number; birthYear: number | null } | null> {
+  const rows = await prisma.$queryRaw<
+    Array<{ month: number; day: number; birthYear: number | null }>
+  >`
+    SELECT "month", "day", "birth_year" AS "birthYear"
     FROM "birthday_registrations"
     WHERE "guild_id" = ${guildId} AND "user_id" = ${userId}
     LIMIT 1
@@ -69,9 +74,50 @@ export async function listBirthdayRegistrations(
   guildId: string,
 ): Promise<BirthdayRegistrationRecord[]> {
   return prisma.$queryRaw<BirthdayRegistrationRecord[]>`
-    SELECT "user_id" AS "userId", "month", "day"
+    SELECT
+      "user_id" AS "userId",
+      "month",
+      "day",
+      "birth_year" AS "birthYear"
     FROM "birthday_registrations"
     WHERE "guild_id" = ${guildId}
+  `;
+}
+
+export async function upsertBirthdayCelebration(
+  prisma: PrismaClient,
+  input: {
+    guildId: string;
+    userId: string;
+    localDate: string;
+    birthYear: number | null;
+    age: number | null;
+    serverBirthdayNumber: number | null;
+  },
+): Promise<void> {
+  await prisma.$executeRaw`
+    INSERT INTO "birthday_celebrations" (
+      "guild_id",
+      "user_id",
+      "local_date",
+      "birth_year",
+      "age",
+      "server_birthday_number",
+      "updated_at"
+    ) VALUES (
+      ${input.guildId},
+      ${input.userId},
+      ${input.localDate},
+      ${input.birthYear},
+      ${input.age},
+      ${input.serverBirthdayNumber},
+      CURRENT_TIMESTAMP
+    )
+    ON CONFLICT ("guild_id", "user_id", "local_date") DO UPDATE SET
+      "birth_year" = EXCLUDED."birth_year",
+      "age" = EXCLUDED."age",
+      "server_birthday_number" = EXCLUDED."server_birthday_number",
+      "updated_at" = CURRENT_TIMESTAMP
   `;
 }
 

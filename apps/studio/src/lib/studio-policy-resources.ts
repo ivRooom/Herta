@@ -16,6 +16,11 @@ export const STUDIO_PAGE_DEFINITIONS = [
   { id: 'plugins', label: 'プラグイン', description: 'Plugin一覧・Plugin設定画面を閲覧' },
   { id: 'leaderboard', label: 'Leaderboard', description: 'Guildランキングを閲覧' },
   {
+    id: 'birthday',
+    label: 'Birthday Management',
+    description: 'メンバー誕生日・生年・祝い実績・Birthday Cardを閲覧',
+  },
+  {
     id: 'moderation',
     label: 'Moderation',
     description: 'Case・自動検知・自動対応の管理画面を閲覧',
@@ -62,6 +67,17 @@ export function studioAccessPageResource(
   return `guild:${guildId}:access:${page}`;
 }
 
+export function studioBirthdayResource(
+  guildId: string,
+  resource: 'registrations' | 'celebrations',
+): string {
+  return `guild:${guildId}:birthday:${encodeSegment(resource)}`;
+}
+
+export function studioBotProfileSettingResource(guildId: string, setting: 'anniversary'): string {
+  return `guild:${guildId}:bot-profile:setting:${encodeSegment(setting)}`;
+}
+
 export function hasConfiguredStudioPagePolicy(access: ApplicableStudioPolicyContext): boolean {
   const activeRoleIds = new Set(access.roleIds);
   const policies = [
@@ -99,6 +115,55 @@ export function buildStudioGranularPermissionOptions(
       resource,
     });
   }
+
+  const birthdayRegistrations = studioBirthdayResource(guildId, 'registrations');
+  const birthdayCelebrations = studioBirthdayResource(guildId, 'celebrations');
+  options.push(
+    {
+      id: permissionOptionId('studio.settings.read', birthdayRegistrations),
+      category: 'Birthday',
+      label: 'メンバー誕生日 · 閲覧',
+      description: '登録済みの誕生日・任意の生年を閲覧',
+      action: 'studio.settings.read',
+      resource: birthdayRegistrations,
+    },
+    {
+      id: permissionOptionId('studio.settings.write', birthdayRegistrations),
+      category: 'Birthday',
+      label: 'メンバー誕生日 · 編集',
+      description: 'メンバーの誕生日・任意の生年を登録・更新・解除',
+      action: 'studio.settings.write',
+      resource: birthdayRegistrations,
+    },
+    {
+      id: permissionOptionId('studio.settings.read', birthdayCelebrations),
+      category: 'Birthday',
+      label: '祝い実績 · 閲覧',
+      description: 'お祝い回数・最新年齢・サーバー参加後何回目の誕生日かを閲覧',
+      action: 'studio.settings.read',
+      resource: birthdayCelebrations,
+    },
+  );
+
+  const anniversaryResource = studioBotProfileSettingResource(guildId, 'anniversary');
+  options.push(
+    {
+      id: permissionOptionId('studio.settings.read', anniversaryResource),
+      category: 'Bot Profile',
+      label: 'サーバー周年日 · 閲覧',
+      description: 'Bot自身の誕生日として扱うサーバー周年日を閲覧',
+      action: 'studio.settings.read',
+      resource: anniversaryResource,
+    },
+    {
+      id: permissionOptionId('studio.settings.write', anniversaryResource),
+      category: 'Bot Profile',
+      label: 'サーバー周年日 · 編集',
+      description: 'Bot自身の誕生日として扱うサーバー周年日を設定・解除',
+      action: 'studio.settings.write',
+      resource: anniversaryResource,
+    },
+  );
 
   for (const plugin of plugins) {
     const category = `Plugin / ${plugin.name}`;

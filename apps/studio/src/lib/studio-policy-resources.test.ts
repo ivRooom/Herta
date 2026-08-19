@@ -5,6 +5,7 @@ import {
   buildStudioGranularPermissionOptions,
   hasConfiguredStudioPagePolicy,
   studioAccessPageResource,
+  studioBirthdayResource,
   studioPageResource,
   topLevelConfigFields,
 } from './studio-policy-resources.ts';
@@ -21,6 +22,21 @@ test('Access Control subpage resourceを個別に生成する', () => {
   assert.notEqual(
     studioAccessPageResource(GUILD_ID, 'users'),
     studioAccessPageResource(GUILD_ID, 'groups'),
+  );
+});
+
+test('Birthday resourceは登録情報と祝い実績を分離する', () => {
+  assert.equal(
+    studioBirthdayResource(GUILD_ID, 'registrations'),
+    `guild:${GUILD_ID}:birthday:registrations`,
+  );
+  assert.equal(
+    studioBirthdayResource(GUILD_ID, 'celebrations'),
+    `guild:${GUILD_ID}:birthday:celebrations`,
+  );
+  assert.notEqual(
+    studioBirthdayResource(GUILD_ID, 'registrations'),
+    studioBirthdayResource(GUILD_ID, 'celebrations'),
   );
 });
 
@@ -84,7 +100,7 @@ test('Plugin schemaから設定項目の表示情報を解決する', () => {
   );
 });
 
-test('Policy catalogはpageとPlugin fieldのread/writeを別Resource権限として生成する', () => {
+test('Policy catalogはpage・Birthday・Plugin fieldを別Resource権限として生成する', () => {
   const options = buildStudioGranularPermissionOptions(GUILD_ID, [
     {
       id: 'moderation',
@@ -103,6 +119,20 @@ test('Policy catalogはpageとPlugin fieldのread/writeを別Resource権限と�
       (option) =>
         option.action === 'studio.page.view' &&
         option.resource === `guild:${GUILD_ID}:page:moderation`,
+    ),
+  );
+  assert.ok(
+    options.some(
+      (option) =>
+        option.action === 'studio.settings.write' &&
+        option.resource === `guild:${GUILD_ID}:birthday:registrations`,
+    ),
+  );
+  assert.ok(
+    options.some(
+      (option) =>
+        option.action === 'studio.settings.read' &&
+        option.resource === `guild:${GUILD_ID}:birthday:celebrations`,
     ),
   );
   assert.ok(

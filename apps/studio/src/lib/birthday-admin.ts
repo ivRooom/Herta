@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import {
   BIRTHDAY_ADMIN_DISCORD_ID_PATTERN,
   isValidBirthdayDate,
+  isValidBirthYear,
   type BirthdayRegistration,
 } from './birthday-admin-core';
 
@@ -15,12 +16,30 @@ export class BirthdayAdminValidationError extends Error {
 export async function listBirthdayRegistrations(guildId: string): Promise<BirthdayRegistration[]> {
   return prisma.$queryRaw<BirthdayRegistration[]>`
     SELECT
-      "user_id" AS "userId",
-      "month",
-      "day"
-    FROM "birthday_registrations"
-    WHERE "guild_id" = ${guildId}
-    ORDER BY "month" ASC, "day" ASC, "user_id" ASC
+      registrations."user_id" AS "userId",
+      registrations."month",
+      registrations."day",
+      registrations."birth_year" AS "birthYear",
+      latest."age" AS "latestAge",
+      latest."server_birthday_number" AS "latestServerBirthdayNumber",
+      COALESCE(stats."celebrationCount", 0)::INTEGER AS "celebrationCount"
+    FROM "birthday_registrations" registrations
+    LEFT JOIN LATERAL (
+      SELECT "age", "server_birthday_number"
+      FROM "birthday_celebrations"
+      WHERE "guild_id" = registrations."guild_id"
+        AND "user_id" = registrations."user_id"
+      ORDER BY "local_date" DESC
+      LIMIT 1
+    ) latest ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*)::INTEGER AS "celebrationCount"
+      FROM "birthday_celebrations"
+      WHERE "guild_id" = registrations."guild_id"
+        AND "user_id" = registrations."user_id"
+    ) stats ON TRUE
+    WHERE registrations."guild_id" = ${guildId}
+    ORDER BY registrations."month" ASC, registrations."day" ASC, registrations."user_id" ASC
   `;
 }
 
@@ -30,34 +49,30 @@ export async function setBirthdayRegistration(input: {
   userId: string;
   month: number;
   day: number;
+  birthYear: number | null;
 }): Promise<BirthdayRegistration> {
-  assertBirthdayInput(input.userId, input.month, input.day);
+  assertBirthdayInput(input.userId, input.month, input.day, input.birthYear);
 
   return prisma.$transaction(async (tx) => {
-    const beforeRows = await tx.$queryRaw<Array<{ month: number; day: number }>>`
-      SELECT "month", "day"
+    const previous = await tx.$queryRaw<
+      Array<{ month: number; day: number; birthYear: number | null }>
+    >`
+      SELECT "month", "day", "birth_year" AS "birthYear"
       FROM "birthday_registrations"
       WHERE "guild_id" = ${input.guildId} AND "user_id" = ${input.userId}
       LIMIT 1
     `;
-    const before = beforeRows[0]
-      ? { userId: input.userId, month: beforeRows[0].month, day: beforeRows[0].day }
-      : null;
-    const after: BirthdayRegistration = {
-      userId: input.userId,
-      month: input.month,
-      day: input.day,
-    };
 
     await tx.$executeRaw`
       INSERT INTO "birthday_registrations" (
-        "guild_id", "user_id", "month", "day", "updated_at"
+        "guild_id", "user_id", "month", "day", "birth_year", "updated_at"
       ) VALUES (
-        ${input.guildId}, ${input.userId}, ${input.month}, ${input.day}, CURRENT_TIMESTAMP
+        ${input.guildId}, ${input.userId}, ${input.month}, ${input.day}, ${input.birthYear}, CURRENT_TIMESTAMP
       )
       ON CONFLICT ("guild_id", "user_id") DO UPDATE SET
         "month" = EXCLUDED."month",
         "day" = EXCLUDED."day",
+        "birth_year" = EXCLUDED."birth_year",
         "updated_at" = CURRENT_TIMESTAMP
     `;
 
@@ -70,14 +85,25 @@ export async function setBirthdayRegistration(input: {
         targetId: input.userId,
         severity: 'info',
         changes: {
-          before,
-          after: { userId: input.userId, month: input.month, day: input.day },
+          before: previous[0]
+            ? {
+                month: previous[0].month,
+                day: previous[0].day,
+                hasBirthYear: previous[0].birthYear !== null,
+              }
+            : null,
+          after: { month: input.month, day: input.day, hasBirthYear: input.birthYear !== null },
         },
-        metadata: { operationSource: 'dashboard', storesBirthYear: false },
+        metadata: { operationSource: 'dashboard' },
       },
     });
 
-    return after;
+    return {
+      userId: input.userId,
+      month: input.month,
+      day: input.day,
+      birthYear: input.birthYear,
+    };
   });
 }
 
@@ -91,15 +117,14 @@ export async function removeBirthdayRegistration(input: {
   }
 
   return prisma.$transaction(async (tx) => {
-    const beforeRows = await tx.$queryRaw<Array<{ month: number; day: number }>>`
-      SELECT "month", "day"
+    const previous = await tx.$queryRaw<
+      Array<{ month: number; day: number; birthYear: number | null }>
+    >`
+      SELECT "month", "day", "birth_year" AS "birthYear"
       FROM "birthday_registrations"
       WHERE "guild_id" = ${input.guildId} AND "user_id" = ${input.userId}
       LIMIT 1
     `;
-    const before = beforeRows[0]
-      ? { userId: input.userId, month: beforeRows[0].month, day: beforeRows[0].day }
-      : null;
     const deleted = await tx.$executeRaw`
       DELETE FROM "birthday_registrations"
       WHERE "guild_id" = ${input.guildId} AND "user_id" = ${input.userId}
@@ -114,8 +139,18 @@ export async function removeBirthdayRegistration(input: {
         targetType: 'birthday_registration',
         targetId: input.userId,
         severity: 'info',
-        changes: { before, after: null, changed },
-        metadata: { operationSource: 'dashboard', storesBirthYear: false },
+        changes: {
+          before: previous[0]
+            ? {
+                month: previous[0].month,
+                day: previous[0].day,
+                hasBirthYear: previous[0].birthYear !== null,
+              }
+            : null,
+          after: null,
+          changed,
+        },
+        metadata: { operationSource: 'dashboard' },
       },
     });
 
@@ -123,11 +158,19 @@ export async function removeBirthdayRegistration(input: {
   });
 }
 
-function assertBirthdayInput(userId: string, month: number, day: number): void {
+function assertBirthdayInput(
+  userId: string,
+  month: number,
+  day: number,
+  birthYear: number | null,
+): void {
   if (!BIRTHDAY_ADMIN_DISCORD_ID_PATTERN.test(userId)) {
     throw new BirthdayAdminValidationError('DiscordユーザーIDが不正です');
   }
   if (!isValidBirthdayDate(month, day)) {
     throw new BirthdayAdminValidationError('誕生日の月日が不正です');
+  }
+  if (birthYear !== null && !isValidBirthYear(birthYear)) {
+    throw new BirthdayAdminValidationError('生年は1900年から現在年までで指定してください');
   }
 }
