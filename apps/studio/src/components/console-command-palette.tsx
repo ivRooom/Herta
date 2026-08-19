@@ -290,7 +290,10 @@ export function ConsoleCommandPaletteController() {
         scores: [],
         pending: true,
       });
-      const timeout = window.setTimeout(() => controller.abort(), SEMANTIC_SEARCH_CLIENT_TIMEOUT_MS);
+      const timeout = window.setTimeout(
+        () => controller.abort(),
+        SEMANTIC_SEARCH_CLIENT_TIMEOUT_MS,
+      );
 
       void fetch('/api/search/semantic', {
         method: 'POST',
