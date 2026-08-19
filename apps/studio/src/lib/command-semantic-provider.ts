@@ -15,11 +15,7 @@ const DEFAULT_OPENAI_EMBEDDING_MODEL = 'text-embedding-3-small';
 type SemanticFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export type StudioSemanticProviderErrorCode =
-  | 'timeout'
-  | 'network'
-  | 'non_2xx'
-  | 'response_too_large'
-  | 'malformed_response';
+  'timeout' | 'network' | 'non_2xx' | 'response_too_large' | 'malformed_response';
 
 export class StudioSemanticProviderError extends Error {
   constructor(public readonly code: StudioSemanticProviderErrorCode) {
@@ -72,7 +68,10 @@ export async function scoreStudioCommandsWithOpenAI(
 
   if (!response.ok) throw new StudioSemanticProviderError('non_2xx');
 
-  const payload = await readBoundedJson(response, STUDIO_COMMAND_SEMANTIC_PROVIDER_RESPONSE_MAX_BYTES);
+  const payload = await readBoundedJson(
+    response,
+    STUDIO_COMMAND_SEMANTIC_PROVIDER_RESPONSE_MAX_BYTES,
+  );
   const vectors = parseEmbeddingVectors(payload, options.documents.length + 1);
   const queryVector = vectors[0];
 
@@ -208,7 +207,8 @@ function parseEmbeddingVectors(value: unknown, expectedCount: number): number[][
   }
 
   const resolved = vectors.filter((vector): vector is number[] => vector !== undefined);
-  if (resolved.length !== expectedCount) throw new StudioSemanticProviderError('malformed_response');
+  if (resolved.length !== expectedCount)
+    throw new StudioSemanticProviderError('malformed_response');
   const dimension = resolved[0]?.length ?? 0;
   if (dimension === 0 || resolved.some((vector) => vector.length !== dimension)) {
     throw new StudioSemanticProviderError('malformed_response');
