@@ -179,7 +179,14 @@ function redactCelebrationStats(
   canReadCelebrations: boolean,
 ): BirthdayRegistration[] {
   if (canReadCelebrations) return [...registrations];
-  return registrations.map(({ latestAge: _age, latestServerBirthdayNumber: _number, celebrationCount: _count, ...registration }) => registration);
+  return registrations.map(
+    ({
+      latestAge: _age,
+      latestServerBirthdayNumber: _number,
+      celebrationCount: _count,
+      ...registration
+    }) => registration,
+  );
 }
 
 function birthdayPermissionDenied(message: string): NextResponse {
