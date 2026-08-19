@@ -117,7 +117,8 @@ export default async function BirthdayAdminPage({
               Birthday Management
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              {guild.name} のメンバー誕生日、生年（任意）、祝い実績、Birthday Cardを管理します。生年は年齢表示を利用したいメンバーだけ登録できます。
+              {guild.name} のメンバー誕生日、生年（任意）、祝い実績、Birthday
+              Cardを管理します。生年は年齢表示を利用したいメンバーだけ登録できます。
             </p>
           </div>
         </div>
