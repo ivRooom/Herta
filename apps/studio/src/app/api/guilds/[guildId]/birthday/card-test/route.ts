@@ -19,6 +19,7 @@ const TEST_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
 const MAX_MULTIPART_REQUEST_BYTES = TEST_IMAGE_MAX_BYTES + 256 * 1024;
 const TEST_SEND_RATE_LIMIT = 5;
 const TEST_SEND_WINDOW_MS = 60_000;
+const TEST_SEND_ATTEMPT_EVENT = 'birthday_card.test_send_attempt';
 
 export async function POST(request: Request, { params }: { params: Promise<{ guildId: string }> }) {
   if (!isSameOriginMutationRequest(request)) {
@@ -36,15 +37,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
   );
   if (!access.ok) return access.response;
 
-  if (!request.headers.get('content-type')?.toLowerCase().startsWith('multipart/form-data')) {
-    return NextResponse.json({ error: 'multipart/form-dataが必要です' }, { status: 415 });
-  }
-
   const recent = await prisma.auditLog.count({
     where: {
       guildId,
       actorId: session.user.id,
-      event: 'birthday_card.test_send',
+      event: TEST_SEND_ATTEMPT_EVENT,
       createdAt: { gte: new Date(Date.now() - TEST_SEND_WINDOW_MS) },
     },
   });
@@ -53,6 +50,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
       { error: 'テスト送信が連続しています。少し待ってから再実行してください' },
       { status: 429, headers: { 'Retry-After': '60' } },
     );
+  }
+
+  // 成否や入力validation結果に依存せず、認可済みの試行そのものをrate-limitへ計上する。
+  // Bot / Discord側で失敗し続けるリクエストでも内部APIへ無制限に到達させない。
+  await prisma.auditLog.create({
+    data: {
+      guildId,
+      actorId: session.user.id,
+      event: TEST_SEND_ATTEMPT_EVENT,
+      targetType: 'birthday_card',
+      targetId: guildId,
+    },
+  });
+
+  if (!request.headers.get('content-type')?.toLowerCase().startsWith('multipart/form-data')) {
+    return NextResponse.json({ error: 'multipart/form-dataが必要です' }, { status: 415 });
   }
 
   let body: Uint8Array<ArrayBuffer>;
