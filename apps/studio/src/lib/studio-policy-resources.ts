@@ -67,6 +67,13 @@ export function studioAccessPageResource(
   return `guild:${guildId}:access:${page}`;
 }
 
+export function studioBirthdayResource(
+  guildId: string,
+  resource: 'registrations' | 'celebrations',
+): string {
+  return `guild:${guildId}:birthday:${encodeSegment(resource)}`;
+}
+
 export function studioBotProfileSettingResource(
   guildId: string,
   setting: 'anniversary',
@@ -111,6 +118,35 @@ export function buildStudioGranularPermissionOptions(
       resource,
     });
   }
+
+  const birthdayRegistrations = studioBirthdayResource(guildId, 'registrations');
+  const birthdayCelebrations = studioBirthdayResource(guildId, 'celebrations');
+  options.push(
+    {
+      id: permissionOptionId('studio.settings.read', birthdayRegistrations),
+      category: 'Birthday',
+      label: 'メンバー誕生日 · 閲覧',
+      description: '登録済みの誕生日・任意の生年を閲覧',
+      action: 'studio.settings.read',
+      resource: birthdayRegistrations,
+    },
+    {
+      id: permissionOptionId('studio.settings.write', birthdayRegistrations),
+      category: 'Birthday',
+      label: 'メンバー誕生日 · 編集',
+      description: 'メンバーの誕生日・任意の生年を登録・更新・解除',
+      action: 'studio.settings.write',
+      resource: birthdayRegistrations,
+    },
+    {
+      id: permissionOptionId('studio.settings.read', birthdayCelebrations),
+      category: 'Birthday',
+      label: '祝い実績 · 閲覧',
+      description: 'お祝い回数・最新年齢・サーバー参加後何回目の誕生日かを閲覧',
+      action: 'studio.settings.read',
+      resource: birthdayCelebrations,
+    },
+  );
 
   const anniversaryResource = studioBotProfileSettingResource(guildId, 'anniversary');
   options.push(
