@@ -37,7 +37,10 @@ test('active Channel / Forum / Threadはcatalogを正本として解決する', 
     resolveMessageStudioPreviewTarget(catalog, activeChannel.id, archivedThread),
     activeChannel,
   );
-  assert.equal(resolveMessageStudioPreviewTarget(catalog, activeForum.id, archivedThread), activeForum);
+  assert.equal(
+    resolveMessageStudioPreviewTarget(catalog, activeForum.id, archivedThread),
+    activeForum,
+  );
   assert.equal(
     resolveMessageStudioPreviewTarget(catalog, activeThread.id, archivedThread),
     activeThread,
