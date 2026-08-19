@@ -1,9 +1,12 @@
 # ============================================================
 # Herta. — 本番用 Docker イメージ (モノレポ共通)
 # ============================================================
-FROM node:22-alpine AS builder
+# builder/runtimeは同じglibc基盤に揃え、Prisma / Sharpなどのnative artifactのABIを一致させる。
+FROM node:22-bookworm-slim AS builder
 
-RUN apk add --no-cache libc6-compat openssl bash
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates openssl bash \
+  && rm -rf /var/lib/apt/lists/*
 RUN corepack enable
 WORKDIR /app
 
@@ -92,10 +95,12 @@ RUN rm -rf \
   && test ! -d packages/shared/src \
   && test ! -d plugins/quote/src
 
-FROM node:22-alpine AS runtime
+FROM node:22-bookworm-slim AS runtime
 
 # Birthday CardはDiscord表示名・日付を画像へ描画するため、日本語を含むCJK glyphをRuntimeに用意する。
-RUN apk add --no-cache libc6-compat openssl curl font-noto-cjk \
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates openssl curl fonts-noto-cjk \
+  && rm -rf /var/lib/apt/lists/* \
   && rm -rf \
     /usr/local/lib/node_modules/npm \
     /usr/local/lib/node_modules/corepack \
