@@ -1,6 +1,6 @@
 'use client';
 
-import { Cake, Save, Trash2 } from 'lucide-react';
+import { Cake, LockKeyhole, Save, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 const SAVE_TIMEOUT_MS = 15_000;
@@ -8,9 +8,11 @@ const SAVE_TIMEOUT_MS = 15_000;
 export function GuildAnniversarySettings({
   guildId,
   initialDate,
+  canEdit,
 }: {
   guildId: string;
   initialDate: string | null;
+  canEdit: boolean;
 }) {
   const [date, setDate] = useState(initialDate ?? '');
   const [savedDate, setSavedDate] = useState(initialDate ?? '');
@@ -20,7 +22,7 @@ export function GuildAnniversarySettings({
   const dirty = date !== savedDate;
 
   async function save() {
-    if (!date || !dirty || pending) return;
+    if (!canEdit || !date || !dirty || pending) return;
     setPending(true);
     setStatus('保存中…');
     try {
@@ -52,7 +54,7 @@ export function GuildAnniversarySettings({
   }
 
   async function remove() {
-    if (!savedDate || pending) return;
+    if (!canEdit || !savedDate || pending) return;
     if (!window.confirm('Botの誕生日（サーバー周年日）を解除しますか？')) return;
     setPending(true);
     setStatus('解除中…');
@@ -81,16 +83,23 @@ export function GuildAnniversarySettings({
 
   return (
     <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
-      <div className="flex items-start gap-3">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Cake className="h-5 w-5" aria-hidden="true" />
-        </span>
-        <div>
-          <h2 className="font-semibold">Botの誕生日 / サーバー周年</h2>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-            このサーバーでのHerta自身の誕生日として扱う日です。サーバーの周年記念日・開設記念日を登録できます。
-          </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <Cake className="h-5 w-5" aria-hidden="true" />
+          </span>
+          <div>
+            <h2 className="font-semibold">Botの誕生日 / サーバー周年</h2>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
+              このサーバーでのHerta自身の誕生日として扱う日です。サーバーの周年記念日・開設記念日を登録できます。
+            </p>
+          </div>
         </div>
+        {!canEdit ? (
+          <span className="inline-flex items-center gap-1.5 self-start rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-xs text-amber-300">
+            <LockKeyhole className="h-3.5 w-3.5" aria-hidden="true" /> 閲覧のみ
+          </span>
+        ) : null}
       </div>
 
       <div className="mt-5 max-w-md">
@@ -103,12 +112,12 @@ export function GuildAnniversarySettings({
             type="date"
             max={today}
             value={date}
-            disabled={pending}
+            disabled={pending || !canEdit}
             onChange={(event) => {
               setDate(event.target.value);
               setStatus('未保存の変更があります');
             }}
-            className="block w-full min-w-0 border-0 bg-transparent p-0 text-base"
+            className="block w-full min-w-0 border-0 bg-transparent p-0 text-base disabled:opacity-70"
           />
         </div>
         <p className="mt-2 text-xs text-muted">
@@ -120,7 +129,7 @@ export function GuildAnniversarySettings({
         <button
           type="button"
           onClick={() => void save()}
-          disabled={!date || !dirty || pending}
+          disabled={!canEdit || !date || !dirty || pending}
           className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
         >
           <Save className="h-4 w-4" aria-hidden="true" /> {pending ? '処理中…' : '周年日を保存'}
@@ -128,7 +137,7 @@ export function GuildAnniversarySettings({
         <button
           type="button"
           onClick={() => void remove()}
-          disabled={!savedDate || pending}
+          disabled={!canEdit || !savedDate || pending}
           className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm disabled:opacity-50"
         >
           <Trash2 className="h-4 w-4" aria-hidden="true" /> 解除
