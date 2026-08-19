@@ -3,13 +3,17 @@
 import {
   BIRTHDAY_CARD_CONFIG_FIELD_KEYS,
   BIRTHDAY_CARD_PRESETS,
-  birthdayCardPreset,
   normalizeBirthdayCardConfig,
   type BirthdayCardConfig,
   type BirthdayCardConfigFieldKey,
 } from '@herta/shared';
 import { ImageIcon, Save } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import {
+  BirthdayCardLivePreview,
+  type BirthdayCardPositionXKey,
+  type BirthdayCardPositionYKey,
+} from '@/components/birthday-card-live-preview';
 import type { PluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';
 
 const SAVE_TIMEOUT_MS = 15_000;
@@ -42,12 +46,26 @@ export function BirthdayCardEditor({
   );
   const dirty = dirtyFieldKeys.length > 0;
   const hasEditableFields = BIRTHDAY_CARD_CONFIG_FIELD_KEYS.some((key) => editable.has(key));
-  const preset = birthdayCardPreset(config.birthdayCardPreset);
-  const canPreviewPreset = readable.has('birthdayCardPreset');
 
   function update<K extends keyof BirthdayCardConfig>(key: K, value: BirthdayCardConfig[K]) {
     if (!editable.has(key)) return;
     setConfig((current) => ({ ...current, [key]: value }));
+    setStatus('未保存の変更があります');
+  }
+
+  function updatePosition(
+    xKey: BirthdayCardPositionXKey,
+    yKey: BirthdayCardPositionYKey,
+    x: number,
+    y: number,
+  ) {
+    if (!editable.has(xKey) && !editable.has(yKey)) return;
+    setConfig((current) => {
+      const next = { ...current };
+      if (editable.has(xKey)) next[xKey] = x;
+      if (editable.has(yKey)) next[yKey] = y;
+      return next;
+    });
     setStatus('未保存の変更があります');
   }
 
@@ -103,7 +121,7 @@ export function BirthdayCardEditor({
             <h2 className="font-semibold">Birthday Card Studio</h2>
           </div>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-            プリセットを選び、名前・Avatar・誕生日・年齢の表示と位置・サイズを調整します。実際の投稿ではDiscordの表示名とAvatar、生年から算出した年齢を使います。
+            プリセットを選び、名前・Avatar・誕生日・年齢の表示と位置・サイズをライブプレビューで調整します。実際の投稿ではDiscordの表示名とAvatar、生年から算出した年齢を使います。
           </p>
         </div>
         {!hasEditableFields ? (
@@ -117,199 +135,152 @@ export function BirthdayCardEditor({
         ) : null}
       </div>
 
-      <div className="relative aspect-[1672/941] overflow-hidden rounded-2xl border border-border bg-background">
-        {canPreviewPreset ? (
-          <img
-            src={`/birthday-card-presets/${preset.assetFile}`}
-            alt={`${preset.label} Birthday Cardプリセット`}
-            className="absolute inset-0 h-full w-full object-cover"
-          />
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-background text-sm text-muted">
-            背景プリセットはIAM権限により非表示です
-          </div>
-        )}
-        {readable.has('birthdayCardShowAvatar') && config.birthdayCardShowAvatar ? (
-          <div
-            className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white/80 bg-primary/90 font-semibold text-white"
-            style={{
-              left: `${config.birthdayCardAvatarX}%`,
-              top: `${config.birthdayCardAvatarY}%`,
-              width: `${config.birthdayCardAvatarSize}%`,
-              aspectRatio: '1 / 1',
-              fontSize: 'clamp(10px, 2vw, 26px)',
-            }}
-            aria-label="Avatarプレビュー"
-          >
-            HM
-          </div>
-        ) : null}
-        {readable.has('birthdayCardShowName') && config.birthdayCardShowName ? (
-          <PreviewText
-            value="Herta Member"
-            x={config.birthdayCardNameX}
-            y={config.birthdayCardNameY}
-            size={config.birthdayCardNameSize}
-            color={preset.textColor}
-            stroke={preset.textStroke}
-          />
-        ) : null}
-        {readable.has('birthdayCardShowBirthday') && config.birthdayCardShowBirthday ? (
-          <PreviewText
-            value="8月19日"
-            x={config.birthdayCardBirthdayX}
-            y={config.birthdayCardBirthdayY}
-            size={config.birthdayCardBirthdaySize}
-            color={preset.textColor}
-            stroke={preset.textStroke}
-          />
-        ) : null}
-        {readable.has('birthdayCardShowAge') && config.birthdayCardShowAge ? (
-          <PreviewText
-            value="25歳"
-            x={config.birthdayCardAgeX}
-            y={config.birthdayCardAgeY}
-            size={config.birthdayCardAgeSize}
-            color={preset.textColor}
-            stroke={preset.textStroke}
-          />
-        ) : null}
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <div className="space-y-4 rounded-xl border border-border bg-background p-4">
-          <h3 className="font-medium">表示内容</h3>
-          {readable.has('birthdayCardPreset') ? (
-            <label className="text-sm">
-              プリセット
-              <select
-                value={config.birthdayCardPreset}
-                onChange={(event) =>
-                  update(
-                    'birthdayCardPreset',
-                    event.target.value as BirthdayCardConfig['birthdayCardPreset'],
-                  )
-                }
-                disabled={!editable.has('birthdayCardPreset') || pending}
-                className="mt-1 w-full rounded-xl border border-border bg-surface px-3 py-2 disabled:opacity-50"
-              >
-                {BIRTHDAY_CARD_PRESETS.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          <ToggleIfReadable
-            field="birthdayCardEnabled"
-            label="Birthday Cardを投稿する"
-            checked={config.birthdayCardEnabled}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(22rem,0.8fr)] xl:items-start">
+        <div className="xl:sticky xl:top-20">
+          <BirthdayCardLivePreview
+            config={config}
             readable={readable}
             editable={editable}
             pending={pending}
-            onChange={(value) => update('birthdayCardEnabled', value)}
-          />
-          <ToggleIfReadable
-            field="birthdayCardShowName"
-            label="名前"
-            checked={config.birthdayCardShowName}
-            readable={readable}
-            editable={editable}
-            pending={pending}
-            onChange={(value) => update('birthdayCardShowName', value)}
-          />
-          <ToggleIfReadable
-            field="birthdayCardShowAvatar"
-            label="Avatar"
-            checked={config.birthdayCardShowAvatar}
-            readable={readable}
-            editable={editable}
-            pending={pending}
-            onChange={(value) => update('birthdayCardShowAvatar', value)}
-          />
-          <ToggleIfReadable
-            field="birthdayCardShowBirthday"
-            label="誕生日"
-            checked={config.birthdayCardShowBirthday}
-            readable={readable}
-            editable={editable}
-            pending={pending}
-            onChange={(value) => update('birthdayCardShowBirthday', value)}
-          />
-          <ToggleIfReadable
-            field="birthdayCardShowAge"
-            label="年齢（生年登録時のみ）"
-            checked={config.birthdayCardShowAge}
-            readable={readable}
-            editable={editable}
-            pending={pending}
-            onChange={(value) => update('birthdayCardShowAge', value)}
+            onPositionChange={updatePosition}
           />
         </div>
 
-        <div className="space-y-4 rounded-xl border border-border bg-background p-4">
-          <h3 className="font-medium">レイアウト</h3>
-          <PositionControls
-            label="Avatar"
-            xKey="birthdayCardAvatarX"
-            yKey="birthdayCardAvatarY"
-            sizeKey="birthdayCardAvatarSize"
-            x={config.birthdayCardAvatarX}
-            y={config.birthdayCardAvatarY}
-            size={config.birthdayCardAvatarSize}
-            minSize={6}
-            maxSize={30}
-            readable={readable}
-            editable={editable}
-            pending={pending}
-            update={update}
-          />
-          <PositionControls
-            label="名前"
-            xKey="birthdayCardNameX"
-            yKey="birthdayCardNameY"
-            sizeKey="birthdayCardNameSize"
-            x={config.birthdayCardNameX}
-            y={config.birthdayCardNameY}
-            size={config.birthdayCardNameSize}
-            minSize={20}
-            maxSize={96}
-            readable={readable}
-            editable={editable}
-            pending={pending}
-            update={update}
-          />
-          <PositionControls
-            label="誕生日"
-            xKey="birthdayCardBirthdayX"
-            yKey="birthdayCardBirthdayY"
-            sizeKey="birthdayCardBirthdaySize"
-            x={config.birthdayCardBirthdayX}
-            y={config.birthdayCardBirthdayY}
-            size={config.birthdayCardBirthdaySize}
-            minSize={16}
-            maxSize={72}
-            readable={readable}
-            editable={editable}
-            pending={pending}
-            update={update}
-          />
-          <PositionControls
-            label="年齢"
-            xKey="birthdayCardAgeX"
-            yKey="birthdayCardAgeY"
-            sizeKey="birthdayCardAgeSize"
-            x={config.birthdayCardAgeX}
-            y={config.birthdayCardAgeY}
-            size={config.birthdayCardAgeSize}
-            minSize={16}
-            maxSize={72}
-            readable={readable}
-            editable={editable}
-            pending={pending}
-            update={update}
-          />
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
+          <div className="space-y-4 rounded-xl border border-border bg-background p-4">
+            <h3 className="font-medium">表示内容</h3>
+            {readable.has('birthdayCardPreset') ? (
+              <label className="text-sm">
+                プリセット
+                <select
+                  value={config.birthdayCardPreset}
+                  onChange={(event) =>
+                    update(
+                      'birthdayCardPreset',
+                      event.target.value as BirthdayCardConfig['birthdayCardPreset'],
+                    )
+                  }
+                  disabled={!editable.has('birthdayCardPreset') || pending}
+                  className="mt-1 w-full rounded-xl border border-border bg-surface px-3 py-2 disabled:opacity-50"
+                >
+                  {BIRTHDAY_CARD_PRESETS.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+            <ToggleIfReadable
+              field="birthdayCardEnabled"
+              label="Birthday Cardを投稿する"
+              checked={config.birthdayCardEnabled}
+              readable={readable}
+              editable={editable}
+              pending={pending}
+              onChange={(value) => update('birthdayCardEnabled', value)}
+            />
+            <ToggleIfReadable
+              field="birthdayCardShowName"
+              label="名前"
+              checked={config.birthdayCardShowName}
+              readable={readable}
+              editable={editable}
+              pending={pending}
+              onChange={(value) => update('birthdayCardShowName', value)}
+            />
+            <ToggleIfReadable
+              field="birthdayCardShowAvatar"
+              label="Avatar"
+              checked={config.birthdayCardShowAvatar}
+              readable={readable}
+              editable={editable}
+              pending={pending}
+              onChange={(value) => update('birthdayCardShowAvatar', value)}
+            />
+            <ToggleIfReadable
+              field="birthdayCardShowBirthday"
+              label="誕生日"
+              checked={config.birthdayCardShowBirthday}
+              readable={readable}
+              editable={editable}
+              pending={pending}
+              onChange={(value) => update('birthdayCardShowBirthday', value)}
+            />
+            <ToggleIfReadable
+              field="birthdayCardShowAge"
+              label="年齢（生年登録時のみ）"
+              checked={config.birthdayCardShowAge}
+              readable={readable}
+              editable={editable}
+              pending={pending}
+              onChange={(value) => update('birthdayCardShowAge', value)}
+            />
+          </div>
+
+          <div className="space-y-4 rounded-xl border border-border bg-background p-4">
+            <h3 className="font-medium">レイアウト</h3>
+            <PositionControls
+              label="Avatar"
+              xKey="birthdayCardAvatarX"
+              yKey="birthdayCardAvatarY"
+              sizeKey="birthdayCardAvatarSize"
+              x={config.birthdayCardAvatarX}
+              y={config.birthdayCardAvatarY}
+              size={config.birthdayCardAvatarSize}
+              minSize={6}
+              maxSize={30}
+              readable={readable}
+              editable={editable}
+              pending={pending}
+              update={update}
+            />
+            <PositionControls
+              label="名前"
+              xKey="birthdayCardNameX"
+              yKey="birthdayCardNameY"
+              sizeKey="birthdayCardNameSize"
+              x={config.birthdayCardNameX}
+              y={config.birthdayCardNameY}
+              size={config.birthdayCardNameSize}
+              minSize={20}
+              maxSize={96}
+              readable={readable}
+              editable={editable}
+              pending={pending}
+              update={update}
+            />
+            <PositionControls
+              label="誕生日"
+              xKey="birthdayCardBirthdayX"
+              yKey="birthdayCardBirthdayY"
+              sizeKey="birthdayCardBirthdaySize"
+              x={config.birthdayCardBirthdayX}
+              y={config.birthdayCardBirthdayY}
+              size={config.birthdayCardBirthdaySize}
+              minSize={16}
+              maxSize={72}
+              readable={readable}
+              editable={editable}
+              pending={pending}
+              update={update}
+            />
+            <PositionControls
+              label="年齢"
+              xKey="birthdayCardAgeX"
+              yKey="birthdayCardAgeY"
+              sizeKey="birthdayCardAgeSize"
+              x={config.birthdayCardAgeX}
+              y={config.birthdayCardAgeY}
+              size={config.birthdayCardAgeSize}
+              minSize={16}
+              maxSize={72}
+              readable={readable}
+              editable={editable}
+              pending={pending}
+              update={update}
+            />
+          </div>
         </div>
       </div>
 
@@ -470,38 +441,6 @@ function RangeControl({
       />
       <span className="text-right tabular-nums">{Math.round(value)}</span>
     </label>
-  );
-}
-
-function PreviewText({
-  value,
-  x,
-  y,
-  size,
-  color,
-  stroke,
-}: {
-  value: string;
-  x: number;
-  y: number;
-  size: number;
-  color: string;
-  stroke: string;
-}) {
-  return (
-    <span
-      className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap font-bold"
-      style={{
-        left: `${x}%`,
-        top: `${y}%`,
-        color,
-        WebkitTextStroke: `clamp(1px, 0.15vw, 3px) ${stroke}`,
-        paintOrder: 'stroke fill',
-        fontSize: `clamp(10px, ${Math.max(1, size / 28)}vw, ${Math.round(size / 1.5)}px)`,
-      }}
-    >
-      {value}
-    </span>
   );
 }
 
