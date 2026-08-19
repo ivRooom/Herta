@@ -27,7 +27,7 @@ import {
   Trash2,
   Underline,
 } from 'lucide-react';
-import type { GuildConfigurationOptions } from '@/lib/bot-guild-options';
+import type { GuildChannelOption, GuildConfigurationOptions } from '@/lib/bot-guild-options';
 import type { MessageStudioDraftPayload } from '@/lib/message-studio-drafts';
 import {
   MESSAGE_STUDIO_IMAGE_MAX_BYTES,
@@ -35,6 +35,7 @@ import {
   MESSAGE_STUDIO_VOICE_MAX_BYTES,
   type MessageStudioImmediateEmbedField,
 } from '@/lib/message-studio-discord';
+import { resolveMessageStudioPreviewTarget } from '@/lib/message-studio-preview-target';
 import { DiscordChannelPicker } from './discord-entity-picker';
 
 const INPUT_CLASS_NAME =
@@ -71,6 +72,7 @@ export function MessageStudioQuickSend({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const voiceInputRef = useRef<HTMLInputElement>(null);
   const [channelId, setChannelId] = useState('');
+  const [resolvedChannel, setResolvedChannel] = useState<GuildChannelOption | null>(null);
   const [forumTitle, setForumTitle] = useState('');
   const [content, setContent] = useState('');
   const [messageFormat, setMessageFormat] = useState<MessageFormat>('text');
@@ -126,8 +128,11 @@ export function MessageStudioQuickSend({
     };
   }, [voicePreviewUrl]);
 
-  const selectedChannel =
-    discordOptions?.channels.find((channel) => channel.id === channelId) ?? null;
+  const selectedChannel = resolveMessageStudioPreviewTarget(
+    discordOptions?.channels ?? [],
+    channelId,
+    resolvedChannel,
+  );
   const isForum = selectedChannel?.kind === 'forum';
   const isAnnouncement = selectedChannel?.kind === 'announcement';
   const hasEmbed =
@@ -513,6 +518,7 @@ export function MessageStudioQuickSend({
                 guildId={guildId}
                 value={channelId || null}
                 placeholder="チャンネル / Forum / Threadを検索"
+                onResolvedTarget={setResolvedChannel}
                 onChange={(next) => {
                   const value = Array.isArray(next) ? (next[0] ?? '') : (next ?? '');
                   setChannelId(value);
