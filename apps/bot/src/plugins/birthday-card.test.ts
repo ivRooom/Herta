@@ -16,23 +16,7 @@ describe('renderBirthdayCard custom background', () => {
       .png()
       .toBuffer();
 
-    const card = await renderBirthdayCard({
-      config: {
-        ...DEFAULT_BIRTHDAY_CARD_CONFIG,
-        birthdayCardBackgroundSource: 'custom',
-        birthdayCardShowAvatar: false,
-        birthdayCardShowName: false,
-        birthdayCardShowBirthday: false,
-        birthdayCardShowAge: false,
-      },
-      displayName: 'Herta Member',
-      avatarUrl: null,
-      month: 8,
-      day: 19,
-      age: 25,
-      customBackground,
-    });
-
+    const card = await renderWithCustomBackground(customBackground);
     const { data, info } = await sharp(card).raw().toBuffer({ resolveWithObject: true });
     expect(info.width).toBe(1672);
     expect(info.height).toBe(941);
@@ -40,26 +24,53 @@ describe('renderBirthdayCard custom background', () => {
   });
 
   it('custom sourceでも不正なbytesなら安全に組み込みpresetへfallbackする', async () => {
-    const card = await renderBirthdayCard({
-      config: {
-        ...DEFAULT_BIRTHDAY_CARD_CONFIG,
-        birthdayCardBackgroundSource: 'custom',
-        birthdayCardShowAvatar: false,
-        birthdayCardShowName: false,
-        birthdayCardShowBirthday: false,
-        birthdayCardShowAge: false,
-      },
-      displayName: 'Herta Member',
-      avatarUrl: null,
-      month: 8,
-      day: 19,
-      age: 25,
-      customBackground: new TextEncoder().encode('<svg></svg>'),
-    });
+    const card = await renderWithCustomBackground(new TextEncoder().encode('<svg></svg>'));
+    await expectValidBirthdayCard(card);
+  });
 
-    const metadata = await sharp(card).metadata();
-    expect(metadata.width).toBe(1672);
-    expect(metadata.height).toBe(941);
-    expect(metadata.format).toBe('png');
+  it('headerだけ有効な切断PNGでもdecode失敗時に安全にfallbackする', async () => {
+    const truncatedPng = Uint8Array.from([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49,
+      0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+    ]);
+
+    const card = await renderWithCustomBackground(truncatedPng);
+    await expectValidBirthdayCard(card);
+  });
+
+  it('headerだけ有効なWebPでもdecode失敗時に安全にfallbackする', async () => {
+    const headerOnlyWebp = new Uint8Array(30);
+    headerOnlyWebp.set([0x52, 0x49, 0x46, 0x46], 0);
+    headerOnlyWebp.set([0x57, 0x45, 0x42, 0x50], 8);
+    headerOnlyWebp.set([0x56, 0x50, 0x38, 0x58], 12);
+
+    const card = await renderWithCustomBackground(headerOnlyWebp);
+    await expectValidBirthdayCard(card);
   });
 });
+
+function renderWithCustomBackground(customBackground: Uint8Array) {
+  return renderBirthdayCard({
+    config: {
+      ...DEFAULT_BIRTHDAY_CARD_CONFIG,
+      birthdayCardBackgroundSource: 'custom',
+      birthdayCardShowAvatar: false,
+      birthdayCardShowName: false,
+      birthdayCardShowBirthday: false,
+      birthdayCardShowAge: false,
+    },
+    displayName: 'Herta Member',
+    avatarUrl: null,
+    month: 8,
+    day: 19,
+    age: 25,
+    customBackground,
+  });
+}
+
+async function expectValidBirthdayCard(card: Uint8Array) {
+  const metadata = await sharp(card).metadata();
+  expect(metadata.width).toBe(1672);
+  expect(metadata.height).toBe(941);
+  expect(metadata.format).toBe('png');
+}
