@@ -127,9 +127,7 @@ export async function POST(request: Request) {
   }
 }
 
-async function parseBody(
-  request: Request,
-): Promise<{ value: unknown } | { response: Response }> {
+async function parseBody(request: Request): Promise<{ value: unknown } | { response: Response }> {
   try {
     return { value: await readJsonBodyWithLimit(request, MAX_SEMANTIC_SEARCH_BODY_BYTES) };
   } catch (error) {
