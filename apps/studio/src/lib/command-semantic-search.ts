@@ -56,7 +56,7 @@ export function parseStudioCommandSemanticResponse(value: unknown): StudioComman
 
   const record = value as Record<string, unknown>;
   const mode = isSemanticMode(record.mode) ? record.mode : 'fallback';
-  if (!Array.isArray(record.scores)) return { mode, scores: [] };
+  if (mode !== 'semantic' || !Array.isArray(record.scores)) return { mode, scores: [] };
 
   const scores: StudioCommandSemanticScore[] = [];
   for (const candidate of record.scores.slice(0, STUDIO_COMMAND_SEARCH_RESULT_LIMIT)) {
