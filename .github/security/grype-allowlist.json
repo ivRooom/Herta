@@ -1,1 +1,32 @@
-[]
+[
+  {
+    "id": "CVE-2026-14456",
+    "reason": "Alpine 3.24.1は修正版OpenSSL 3.5.8未配布で、Herta runtimeはOpenSSL QUIC listenerを公開・利用しないため修正版package公開まで一時例外とする",
+    "expires": "2026-08-26",
+    "issue": "https://github.com/ivRooom/Herta/issues/51",
+    "package": {
+      "name": "openssl",
+      "type": "apk"
+    }
+  },
+  {
+    "id": "CVE-2026-14456",
+    "reason": "Alpine 3.24.1は修正版OpenSSL 3.5.8未配布で、Herta runtimeはOpenSSL QUIC listenerを公開・利用しないため修正版package公開まで一時例外とする",
+    "expires": "2026-08-26",
+    "issue": "https://github.com/ivRooom/Herta/issues/51",
+    "package": {
+      "name": "libssl3",
+      "type": "apk"
+    }
+  },
+  {
+    "id": "CVE-2026-14456",
+    "reason": "Alpine 3.24.1は修正版OpenSSL 3.5.8未配布で、Herta runtimeはOpenSSL QUIC listenerを公開・利用しないため修正版package公開まで一時例外とする",
+    "expires": "2026-08-26",
+    "issue": "https://github.com/ivRooom/Herta/issues/51",
+    "package": {
+      "name": "libcrypto3",
+      "type": "apk"
+    }
+  }
+]
