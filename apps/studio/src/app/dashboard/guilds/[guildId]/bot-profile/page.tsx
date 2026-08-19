@@ -3,8 +3,10 @@ import { ArrowLeft, Bot, ShieldCheck } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import { ReconnectNotice } from '@/components/reconnect-notice';
 import { BotProfileSettings } from '@/components/bot-profile-settings';
+import { GuildAnniversarySettings } from '@/components/guild-anniversary-settings';
 import { getManageableGuild } from '@/lib/guilds';
 import { prisma } from '@/lib/db';
+import { getGuildAnniversary } from '@/lib/guild-anniversary';
 import { getDiscordAccessToken } from '@/lib/session';
 import { auth } from '@/auth';
 
@@ -27,10 +29,13 @@ export default async function BotProfilePage({ params }: { params: Promise<{ gui
   const guild = await getManageableGuild(accessToken, guildId);
   if (!guild) notFound();
 
-  const currentUser = await prisma.user.findUnique({
-    where: { id: session.user.id },
-    select: { isAdmin: true },
-  });
+  const [currentUser, anniversary] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { isAdmin: true },
+    }),
+    getGuildAnniversary(guildId),
+  ]);
 
   return (
     <div className="space-y-7">
@@ -44,7 +49,7 @@ export default async function BotProfilePage({ params }: { params: Promise<{ gui
           <div>
             <h2 className="font-semibold">設定範囲を分離しています</h2>
             <p className="mt-1 text-sm leading-6 text-muted">
-              NicknameとAvatarはこのサーバーだけに反映されます。Online / Idle /
+              NicknameとAvatar、サーバー周年日はこのサーバーだけに反映されます。Online / Idle /
               DNDやActivityはDiscord Gateway上のBot全体設定なので、Herta管理者だけが変更できます。
             </p>
           </div>
@@ -56,6 +61,7 @@ export default async function BotProfilePage({ params }: { params: Promise<{ gui
         guildName={guild.name}
         canManageGlobalPresence={currentUser?.isAdmin ?? false}
       />
+      <GuildAnniversarySettings guildId={guildId} initialDate={anniversary?.anniversaryDate ?? null} />
     </div>
   );
 }
@@ -83,7 +89,7 @@ function PageHeader({ guildId, guildName }: { guildId: string; guildName: string
               Botプロフィール
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Discord上で見えるHertaのプロフィールとPresenceをStudioから安全に管理します。
+              Discord上で見えるHertaのプロフィール、Presence、Bot自身の誕生日（サーバー周年）をStudioから安全に管理します。
             </p>
           </div>
         </div>
