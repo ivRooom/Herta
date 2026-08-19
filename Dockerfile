@@ -1,12 +1,15 @@
 # ============================================================
 # Herta. — 本番用 Docker イメージ (モノレポ共通)
 # ============================================================
-# builder/runtimeは同じglibc基盤に揃え、Prisma / Sharpなどのnative artifactのABIを一致させる。
-FROM node:22-bookworm-slim AS builder
+# Node本体は現行の公式Node 22 Alpine imageから取得する。
+# builder/runtimeは同じAlpine 3.21基盤に揃え、Prisma / Sharpなどのnative artifactのABIを一致させる。
+# Alpine 3.21はOpenSSL 3.3系を提供するため、OpenSSL 3.5以降のQUIC実装由来CVEをruntimeへ持ち込まない。
+FROM node:22-alpine3.24 AS node-current
 
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates openssl bash \
-  && rm -rf /var/lib/apt/lists/*
+FROM alpine:3.21 AS builder
+
+RUN apk add --no-cache libc6-compat openssl bash libstdc++
+COPY --from=node-current /usr/local /usr/local
 RUN corepack enable
 WORKDIR /app
 
@@ -94,13 +97,15 @@ RUN rm -rf \
   && test ! -d packages/shared/src \
   && test ! -d plugins/quote/src
 
-FROM node:22-bookworm-slim AS runtime
+FROM alpine:3.21 AS runtime
 
+# Node binaryは現行公式imageから取得し、runtime OS packagesはAlpine 3.21のsecurity updatesを利用する。
 # Birthday CardはDiscord表示名・日付を画像へ描画するため、日本語を含むCJK glyphをRuntimeに用意する。
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends ca-certificates openssl curl fonts-noto-cjk \
-  && rm -rf /var/lib/apt/lists/* \
-  && rm -rf \
+RUN apk add --no-cache libc6-compat openssl curl font-noto-cjk libstdc++ \
+  && addgroup -g 1000 -S node \
+  && adduser -u 1000 -S -G node node
+COPY --from=node-current /usr/local /usr/local
+RUN rm -rf \
     /usr/local/lib/node_modules/npm \
     /usr/local/lib/node_modules/corepack \
   && rm -f \
