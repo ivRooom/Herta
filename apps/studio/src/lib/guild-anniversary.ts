@@ -1,4 +1,4 @@
-import { prisma } from '@/lib/db';
+import { prisma } from './db.ts';
 
 export const GUILD_ANNIVERSARY_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u;
 
