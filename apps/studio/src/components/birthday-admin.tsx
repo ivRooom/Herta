@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { DiscordUserPicker } from './discord-user-picker';
 import {
   buildBirthdayCsv,
   daysInBirthdayMonth,
@@ -9,6 +8,7 @@ import {
   MIN_BIRTH_YEAR,
   type BirthdayRegistration,
 } from '@/lib/birthday-admin-core';
+import { DiscordUserPicker } from './discord-user-picker';
 
 const SAVE_TIMEOUT_MS = 15_000;
 
@@ -20,9 +20,13 @@ type BirthdayAdminPayload = {
 export function BirthdayAdmin({
   guildId,
   initialRegistrations,
+  canEdit,
+  showCelebrationStats,
 }: {
   guildId: string;
   initialRegistrations: BirthdayRegistration[];
+  canEdit: boolean;
+  showCelebrationStats: boolean;
 }) {
   const [registrations, setRegistrations] = useState(initialRegistrations);
   const [userId, setUserId] = useState<string | null>(null);
@@ -62,6 +66,7 @@ export function BirthdayAdmin({
   }
 
   function selectRegistration(registration: BirthdayRegistration) {
+    if (!canEdit) return;
     setUserId(registration.userId);
     setMonth(registration.month);
     setDay(registration.day);
@@ -82,7 +87,7 @@ export function BirthdayAdmin({
   }
 
   async function update(action: 'set' | 'remove') {
-    if (!userId || (action === 'remove' && !existing)) return;
+    if (!canEdit || !userId || (action === 'remove' && !existing)) return;
     if (action === 'remove' && !window.confirm('このメンバーの誕生日登録を解除しますか？')) {
       return;
     }
@@ -140,114 +145,127 @@ export function BirthdayAdmin({
 
   return (
     <section className="space-y-6 rounded-2xl border border-border bg-surface p-5 shadow-card">
-      <div>
-        <h2 className="font-semibold">Member Birthday</h2>
-        <p className="mt-1 text-sm text-muted">
-          月日は必須、生年は任意です。生年を登録すると年齢付きのお祝いとBirthday Cardに利用できます。登録済み{' '}
-          {registrations.length} 人。
-        </p>
-      </div>
-
-      <div>
-        <label className="mb-2 block text-xs font-medium text-muted">対象メンバー</label>
-        <DiscordUserPicker
-          guildId={guildId}
-          value={userId}
-          onChange={selectUser}
-          includeBots={false}
-        />
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        <label className="text-sm">
-          月
-          <select
-            value={month}
-            onChange={(event) => selectMonth(Number(event.target.value))}
-            disabled={!userId || busy}
-            className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 disabled:opacity-50"
-          >
-            {Array.from({ length: 12 }, (_, index) => index + 1).map((value) => (
-              <option key={value} value={value}>
-                {value}月
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm">
-          日
-          <select
-            value={day}
-            onChange={(event) => setDay(Number(event.target.value))}
-            disabled={!userId || busy}
-            className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 disabled:opacity-50"
-          >
-            {Array.from({ length: maxDay }, (_, index) => index + 1).map((value) => (
-              <option key={value} value={value}>
-                {value}日
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm">
-          生年（任意）
-          <input
-            type="number"
-            inputMode="numeric"
-            min={MIN_BIRTH_YEAR}
-            max={currentYear}
-            value={birthYear}
-            onChange={(event) => setBirthYear(event.target.value)}
-            disabled={!userId || busy}
-            placeholder="例: 2000"
-            className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 disabled:opacity-50"
-          />
-        </label>
-      </div>
-
-      {existing ? (
-        <div className="rounded-xl border border-border bg-background p-3 text-xs text-muted">
-          <p>
-            現在の登録: {existing.birthYear ? `${existing.birthYear}年 ` : ''}
-            {existing.month}月{existing.day}日
-          </p>
-          <p className="mt-1">
-            Hertaがお祝いした回数: {existing.celebrationCount ?? 0}回
-            {existing.latestServerBirthdayNumber
-              ? ` ／ サーバー参加後 ${existing.latestServerBirthdayNumber}回目の誕生日`
-              : ''}
-            {existing.latestAge !== null && existing.latestAge !== undefined
-              ? ` ／ 最新年齢 ${existing.latestAge}歳`
-              : ''}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="font-semibold">Member Birthday</h2>
+          <p className="mt-1 text-sm text-muted">
+            月日は必須、生年は任意です。生年を登録すると年齢付きのお祝いとBirthday Cardに利用できます。登録済み{' '}
+            {registrations.length} 人。
           </p>
         </div>
-      ) : null}
-
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          onClick={() => void update('set')}
-          disabled={!userId || busy}
-          className="rounded-xl bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
-        >
-          {existing ? '更新' : '登録'}
-        </button>
-        <button
-          type="button"
-          onClick={() => void update('remove')}
-          disabled={!existing || busy}
-          className="rounded-xl border border-border px-4 py-2 text-sm disabled:opacity-50"
-        >
-          登録解除
-        </button>
+        {!canEdit ? (
+          <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-xs text-amber-300">
+            IAM閲覧モード
+          </span>
+        ) : null}
       </div>
+
+      {canEdit ? (
+        <>
+          <div>
+            <label className="mb-2 block text-xs font-medium text-muted">対象メンバー</label>
+            <DiscordUserPicker
+              guildId={guildId}
+              value={userId}
+              onChange={selectUser}
+              includeBots={false}
+            />
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <label className="text-sm">
+              月
+              <select
+                value={month}
+                onChange={(event) => selectMonth(Number(event.target.value))}
+                disabled={!userId || busy}
+                className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 disabled:opacity-50"
+              >
+                {Array.from({ length: 12 }, (_, index) => index + 1).map((value) => (
+                  <option key={value} value={value}>
+                    {value}月
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm">
+              日
+              <select
+                value={day}
+                onChange={(event) => setDay(Number(event.target.value))}
+                disabled={!userId || busy}
+                className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 disabled:opacity-50"
+              >
+                {Array.from({ length: maxDay }, (_, index) => index + 1).map((value) => (
+                  <option key={value} value={value}>
+                    {value}日
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm">
+              生年（任意）
+              <input
+                type="number"
+                inputMode="numeric"
+                min={MIN_BIRTH_YEAR}
+                max={currentYear}
+                value={birthYear}
+                onChange={(event) => setBirthYear(event.target.value)}
+                disabled={!userId || busy}
+                placeholder="例: 2000"
+                className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 disabled:opacity-50"
+              />
+            </label>
+          </div>
+
+          {existing ? (
+            <div className="rounded-xl border border-border bg-background p-3 text-xs text-muted">
+              <p>
+                現在の登録: {existing.birthYear ? `${existing.birthYear}年 ` : ''}
+                {existing.month}月{existing.day}日
+              </p>
+              {showCelebrationStats ? (
+                <p className="mt-1">
+                  Hertaがお祝いした回数: {existing.celebrationCount ?? 0}回
+                  {existing.latestServerBirthdayNumber
+                    ? ` ／ サーバー参加後 ${existing.latestServerBirthdayNumber}回目の誕生日`
+                    : ''}
+                  {existing.latestAge !== null && existing.latestAge !== undefined
+                    ? ` ／ 最新年齢 ${existing.latestAge}歳`
+                    : ''}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void update('set')}
+              disabled={!userId || busy}
+              className="rounded-xl bg-primary px-4 py-2 text-sm text-primary-foreground disabled:opacity-50"
+            >
+              {existing ? '更新' : '登録'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void update('remove')}
+              disabled={!existing || busy}
+              className="rounded-xl border border-border px-4 py-2 text-sm disabled:opacity-50"
+            >
+              登録解除
+            </button>
+          </div>
+        </>
+      ) : null}
 
       <div className="space-y-4 border-t border-border pt-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h3 className="font-medium">登録済みBirthday</h3>
             <p className="mt-1 text-xs text-muted">
-              月日順で確認できます。生年はStudio管理者だけが確認でき、公開Botコマンドの一覧には表示しません。
+              月日順で確認できます。生年はBirthdayの閲覧権限を持つStudioユーザーだけが確認でき、公開Botコマンドの一覧には表示しません。
             </p>
           </div>
           <button
@@ -259,6 +277,12 @@ export function BirthdayAdmin({
             CSV出力
           </button>
         </div>
+
+        {!showCelebrationStats ? (
+          <p className="rounded-xl border border-amber-400/20 bg-amber-400/5 p-3 text-xs text-muted">
+            祝い実績はIAM権限により非表示です。
+          </p>
+        ) : null}
 
         <div className="grid gap-3 sm:grid-cols-[1fr_180px]">
           <label className="text-xs font-medium text-muted">
@@ -301,8 +325,10 @@ export function BirthdayAdmin({
                 <tr className="border-b border-border text-xs text-muted">
                   <th className="px-3 py-2 font-medium">誕生日</th>
                   <th className="px-3 py-2 font-medium">Discord ID</th>
-                  <th className="px-3 py-2 font-medium">祝い実績</th>
-                  <th className="px-3 py-2 text-right font-medium">操作</th>
+                  {showCelebrationStats ? (
+                    <th className="px-3 py-2 font-medium">祝い実績</th>
+                  ) : null}
+                  {canEdit ? <th className="px-3 py-2 text-right font-medium">操作</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -317,21 +343,25 @@ export function BirthdayAdmin({
                       </span>
                     </td>
                     <td className="px-3 py-2 font-mono text-xs">{registration.userId}</td>
-                    <td className="px-3 py-2 text-xs">
-                      {registration.celebrationCount ?? 0}回
-                      {registration.latestServerBirthdayNumber
-                        ? ` ／ 参加後${registration.latestServerBirthdayNumber}回目`
-                        : ''}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => selectRegistration(registration)}
-                        className="rounded-lg border border-border px-2 py-1 text-xs"
-                      >
-                        編集
-                      </button>
-                    </td>
+                    {showCelebrationStats ? (
+                      <td className="px-3 py-2 text-xs">
+                        {registration.celebrationCount ?? 0}回
+                        {registration.latestServerBirthdayNumber
+                          ? ` ／ 参加後${registration.latestServerBirthdayNumber}回目`
+                          : ''}
+                      </td>
+                    ) : null}
+                    {canEdit ? (
+                      <td className="px-3 py-2 text-right">
+                        <button
+                          type="button"
+                          onClick={() => selectRegistration(registration)}
+                          className="rounded-lg border border-border px-2 py-1 text-xs"
+                        >
+                          編集
+                        </button>
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
