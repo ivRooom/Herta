@@ -74,10 +74,7 @@ export function studioBirthdayResource(
   return `guild:${guildId}:birthday:${encodeSegment(resource)}`;
 }
 
-export function studioBotProfileSettingResource(
-  guildId: string,
-  setting: 'anniversary',
-): string {
+export function studioBotProfileSettingResource(guildId: string, setting: 'anniversary'): string {
   return `guild:${guildId}:bot-profile:setting:${encodeSegment(setting)}`;
 }
 
