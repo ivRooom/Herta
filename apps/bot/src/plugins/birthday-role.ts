@@ -201,8 +201,12 @@ export function isValidBirthYear(year: number, currentYear = new Date().getUTCFu
   return Number.isInteger(year) && year >= MIN_BIRTH_YEAR && year <= currentYear;
 }
 
-export function calculateBirthdayAge(birthYear: number | null | undefined, year: number): number | null {
-  if (birthYear === null || birthYear === undefined || !isValidBirthYear(birthYear, year)) return null;
+export function calculateBirthdayAge(
+  birthYear: number | null | undefined,
+  year: number,
+): number | null {
+  if (birthYear === null || birthYear === undefined || !isValidBirthYear(birthYear, year))
+    return null;
   return year - birthYear;
 }
 
@@ -363,7 +367,9 @@ export async function runBirthdayRoleCycle(
             },
             select: { userId: true, joinedAt: true },
           });
-    const joinedAtByUserId = new Map(storedMembers.map((member) => [member.userId, member.joinedAt]));
+    const joinedAtByUserId = new Map(
+      storedMembers.map((member) => [member.userId, member.joinedAt]),
+    );
     const celebrationByUserId = new Map<string, BirthdayAnnouncementContext>();
     for (const registration of todaysRegistrations) {
       const joinedAt = joinedAtByUserId.get(registration.userId) ?? null;
@@ -527,7 +533,13 @@ async function executeBirthdayCommand(
       year,
     );
     context.logger.info(
-      { guildId: interaction.guildId, userId: interaction.user.id, month, day, hasBirthYear: year !== null },
+      {
+        guildId: interaction.guildId,
+        userId: interaction.user.id,
+        month,
+        day,
+        hasBirthYear: year !== null,
+      },
       '誕生日を登録しました',
     );
     await respond(
