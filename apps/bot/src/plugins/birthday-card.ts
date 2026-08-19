@@ -39,7 +39,9 @@ export async function renderBirthdayCard(input: BirthdayCardRenderInput): Promis
       const mask = Buffer.from(
         `<svg width="${diameter}" height="${diameter}" xmlns="http://www.w3.org/2000/svg"><circle cx="${diameter / 2}" cy="${diameter / 2}" r="${diameter / 2}" fill="white"/></svg>`,
       );
-      const avatar = await sharp(avatarBytes, { limitInputPixels: BIRTHDAY_CARD_BACKGROUND_MAX_PIXELS })
+      const avatar = await sharp(avatarBytes, {
+        limitInputPixels: BIRTHDAY_CARD_BACKGROUND_MAX_PIXELS,
+      })
         .resize(diameter, diameter, { fit: 'cover' })
         .composite([{ input: mask, blend: 'dest-in' }])
         .png()
