@@ -20,7 +20,20 @@ Semantic候補はlexical結果の後ろにだけ追加します。Providerが高
 
 `openai` を設定した場合、Studio serverからOpenAI Embeddings APIを利用します。API keyは`OPENAI_API_KEY`としてStudio serverだけへ渡し、Client Componentや`NEXT_PUBLIC_*`へ公開しません。モデルは`OPENAI_EMBEDDING_MODEL`で変更でき、未設定時は`text-embedding-3-small`です。
 
-現Phaseではnavigation corpusが小さく更新頻度も低いため、DB migrationやpgvector indexを先に導入せず、request時にserver-side providerでscoreを計算します。永続vector storeを導入する場合は、model / dimension / version / reindex手順をDB metadataとして管理する別Phaseにします。
+現Phaseではnavigation corpusが小さく更新頻度も低いため、DB migrationやpgvector indexを先に導入せず、Studio process内でnavigation document embeddingを再利用します。永続vector storeを導入する場合は、model / dimension / version / reindex手順をDB metadataとして管理する別Phaseにします。
+
+### Navigation embedding cache
+
+Command documentのembeddingは、embedding model名とsanitized navigation corpus全体のSHA-256 fingerprintをkeyとしてStudio process内へcacheします。
+
+- cache hit時はproviderへ検索queryだけを送信する
+- cold start / corpus変更 / model変更時だけCommand documentを再embeddingする
+- 同一fingerprintの同時cache missは1回のprovider requestへcoalesceする
+- cacheは最大8 corpusのLRUとし、無制限にmemoryを増やさない
+- cache値はprocess memoryだけに保持し、query本文やGuild固有値を保存しない
+- Studio再起動時はcacheを破棄し、安全に再生成する
+
+Guild command documentではroute内のGuild IDを`{guildId}`へ置換し、Guild名をcorpusへ含めないため、同じnavigation catalogならGuildが変わっても同一cacheを利用できます。
 
 ## Privacy boundary
 
@@ -68,10 +81,12 @@ Semantic providerのtimeout、network failure、non-2xx、malformed response、�
 
 Client側もquery / Guild contextごとにsemantic responseを関連付け、古いrequestの結果を現在の検索へ混ぜません。
 
+Document embeddingのcache生成が失敗した場合も失敗値はcacheしません。次回検索で再試行し、それまでは通常どおりlexical searchへfallbackします。
+
 ## 次Phase
 
-- navigation document embeddingのcache / pre-index化
 - pgvector採用時のmodel / dimension / version metadataとreindex設計
 - distributed rate limit
 - raw queryを保存しないsemantic採用率 / zero-result率 / latency観測
 - click-through / selected result rankのprivacy-safe集計
+- cache hit率 / provider input削減量のprivacy-safe観測
