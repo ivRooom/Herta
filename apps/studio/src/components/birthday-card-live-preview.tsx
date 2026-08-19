@@ -1,9 +1,11 @@
 'use client';
 
 import { birthdayCardPreset, type BirthdayCardConfig } from '@herta/shared';
-import { Move } from 'lucide-react';
+import { ImageOff, Move } from 'lucide-react';
 import {
+  useEffect,
   useRef,
+  useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
@@ -38,6 +40,8 @@ interface BirthdayCardLivePreviewProps {
   readable: ReadonlySet<string>;
   editable: ReadonlySet<string>;
   pending: boolean;
+  backgroundUrl: string | null;
+  backgroundLabel: string;
   onPositionChange(
     xKey: BirthdayCardPositionXKey,
     yKey: BirthdayCardPositionYKey,
@@ -79,14 +83,21 @@ export function BirthdayCardLivePreview({
   readable,
   editable,
   pending,
+  backgroundUrl,
+  backgroundLabel,
   onPositionChange,
   onSizeChange,
 }: BirthdayCardLivePreviewProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const activeResizeRef = useRef<ActiveResize | null>(null);
+  const [backgroundFailed, setBackgroundFailed] = useState(false);
   const preset = birthdayCardPreset(config.birthdayCardPreset);
-  const canPreviewPreset = readable.has('birthdayCardPreset');
+  const canPreviewTextPalette = readable.has('birthdayCardPreset');
   const hiddenLayoutLabels: string[] = [];
+
+  useEffect(() => {
+    setBackgroundFailed(false);
+  }, [backgroundUrl]);
 
   const avatarVisible =
     readable.has('birthdayCardShowAvatar') &&
@@ -102,7 +113,7 @@ export function BirthdayCardLivePreview({
   }
 
   const nameVisible =
-    canPreviewPreset &&
+    canPreviewTextPalette &&
     readable.has('birthdayCardShowName') &&
     config.birthdayCardShowName &&
     hasReadableLayout(readable, 'birthdayCardNameX', 'birthdayCardNameY', 'birthdayCardNameSize');
@@ -111,7 +122,7 @@ export function BirthdayCardLivePreview({
   }
 
   const birthdayVisible =
-    canPreviewPreset &&
+    canPreviewTextPalette &&
     readable.has('birthdayCardShowBirthday') &&
     config.birthdayCardShowBirthday &&
     hasReadableLayout(
@@ -129,7 +140,7 @@ export function BirthdayCardLivePreview({
   }
 
   const ageVisible =
-    canPreviewPreset &&
+    canPreviewTextPalette &&
     readable.has('birthdayCardShowAge') &&
     config.birthdayCardShowAge &&
     hasReadableLayout(readable, 'birthdayCardAgeX', 'birthdayCardAgeY', 'birthdayCardAgeSize');
@@ -333,15 +344,28 @@ export function BirthdayCardLivePreview({
       </div>
 
       <div className="relative aspect-[1672/941] overflow-hidden rounded-2xl border border-border bg-background shadow-inner">
-        {canPreviewPreset ? (
+        {backgroundUrl && !backgroundFailed ? (
           <img
-            src={`/birthday-card-presets/${preset.assetFile}`}
+            src={backgroundUrl}
             alt=""
+            aria-hidden="true"
+            onError={() => setBackgroundFailed(true)}
             className="absolute inset-0 h-full w-full object-cover"
           />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-background px-6 text-center text-sm text-muted">
-            背景プリセットはIAM権限により非表示です
+          <div
+            className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background px-6 text-center text-sm text-muted"
+            role="status"
+          >
+            <ImageOff className="h-8 w-8" aria-hidden="true" />
+            <span>
+              {backgroundFailed
+                ? `${backgroundLabel} を読み込めませんでした`
+                : '背景画像は未設定またはIAM権限により非表示です'}
+            </span>
+            {backgroundFailed ? (
+              <span className="text-xs">保存済みアセットとStudioのデプロイ状態を確認してください。</span>
+            ) : null}
           </div>
         )}
 
