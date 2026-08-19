@@ -280,13 +280,7 @@ export function BirthdayCardLivePreview({
         const nextSize =
           kind === 'avatar'
             ? resizeBirthdayCardAvatarSize(active.startSize, delta.x, minSize, maxSize)
-            : resizeBirthdayCardTextSize(
-                active.startSize,
-                delta.x,
-                valueLength,
-                minSize,
-                maxSize,
-              );
+            : resizeBirthdayCardTextSize(active.startSize, delta.x, valueLength, minSize, maxSize);
         onSizeChange(sizeKey, nextSize);
       },
       onPointerUp(event) {
