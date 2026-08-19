@@ -4,7 +4,7 @@ import {
 } from '@herta/shared';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import sharp from 'sharp';
+import sharp, { type OverlayOptions } from 'sharp';
 
 const CARD_WIDTH = 1672;
 const CARD_HEIGHT = 941;
@@ -27,7 +27,7 @@ export async function renderBirthdayCard(input: BirthdayCardRenderInput): Promis
     new URL(`../../assets/birthday-card-presets/${preset.assetFile}`, import.meta.url),
   );
   const background = await readFile(backgroundPath);
-  const layers: sharp.OverlayOptions[] = [];
+  const layers: OverlayOptions[] = [];
 
   if (input.config.birthdayCardShowAvatar && input.avatarUrl) {
     const avatarBytes = await downloadDiscordAvatar(input.avatarUrl).catch(() => null);
@@ -122,7 +122,7 @@ function textElement(
   const x = Math.round((CARD_WIDTH * xPercent) / 100);
   const y = Math.round((CARD_HEIGHT * yPercent) / 100);
   const strokeWidth = Math.max(2, Math.round(fontSize / 18));
-  return `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans JP, DejaVu Sans, sans-serif" font-size="${Math.round(fontSize)}" font-weight="700" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" paint-order="stroke fill" stroke-linejoin="round">${escapeXml(value)}</text>`;
+  return `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-family="Noto Sans CJK JP, Noto Sans CJK, sans-serif" font-size="${Math.round(fontSize)}" font-weight="700" fill="${fill}" stroke="${stroke}" stroke-width="${strokeWidth}" paint-order="stroke fill" stroke-linejoin="round">${escapeXml(value)}</text>`;
 }
 
 async function downloadDiscordAvatar(urlValue: string): Promise<Buffer | null> {
