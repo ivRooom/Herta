@@ -68,10 +68,7 @@ export function studioAccessPageResource(
 }
 
 export type StudioBirthdayResource =
-  | 'registrations'
-  | 'celebrations'
-  | 'card-background'
-  | 'card-test-send';
+  'registrations' | 'celebrations' | 'card-background' | 'card-test-send';
 
 export function studioBirthdayResource(guildId: string, resource: StudioBirthdayResource): string {
   return `guild:${guildId}:birthday:${encodeSegment(resource)}`;
