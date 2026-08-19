@@ -67,6 +67,13 @@ export function studioAccessPageResource(
   return `guild:${guildId}:access:${page}`;
 }
 
+export function studioBotProfileSettingResource(
+  guildId: string,
+  setting: 'anniversary',
+): string {
+  return `guild:${guildId}:bot-profile:setting:${encodeSegment(setting)}`;
+}
+
 export function hasConfiguredStudioPagePolicy(access: ApplicableStudioPolicyContext): boolean {
   const activeRoleIds = new Set(access.roleIds);
   const policies = [
@@ -104,6 +111,26 @@ export function buildStudioGranularPermissionOptions(
       resource,
     });
   }
+
+  const anniversaryResource = studioBotProfileSettingResource(guildId, 'anniversary');
+  options.push(
+    {
+      id: permissionOptionId('studio.settings.read', anniversaryResource),
+      category: 'Bot Profile',
+      label: 'サーバー周年日 · 閲覧',
+      description: 'Bot自身の誕生日として扱うサーバー周年日を閲覧',
+      action: 'studio.settings.read',
+      resource: anniversaryResource,
+    },
+    {
+      id: permissionOptionId('studio.settings.write', anniversaryResource),
+      category: 'Bot Profile',
+      label: 'サーバー周年日 · 編集',
+      description: 'Bot自身の誕生日として扱うサーバー周年日を設定・解除',
+      action: 'studio.settings.write',
+      resource: anniversaryResource,
+    },
+  );
 
   for (const plugin of plugins) {
     const category = `Plugin / ${plugin.name}`;
