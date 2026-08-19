@@ -149,8 +149,8 @@ export function BirthdayAdmin({
         <div>
           <h2 className="font-semibold">Member Birthday</h2>
           <p className="mt-1 text-sm text-muted">
-            月日は必須、生年は任意です。生年を登録すると年齢付きのお祝いとBirthday Cardに利用できます。登録済み{' '}
-            {registrations.length} 人。
+            月日は必須、生年は任意です。生年を登録すると年齢付きのお祝いとBirthday
+            Cardに利用できます。登録済み {registrations.length} 人。
           </p>
         </div>
         {!canEdit ? (
@@ -339,7 +339,9 @@ export function BirthdayAdmin({
                         {registration.month}月{registration.day}日
                       </span>
                       <span className="text-xs text-muted">
-                        {registration.birthYear ? `${registration.birthYear}年生まれ` : '生年未登録'}
+                        {registration.birthYear
+                          ? `${registration.birthYear}年生まれ`
+                          : '生年未登録'}
                       </span>
                     </td>
                     <td className="px-3 py-2 font-mono text-xs">{registration.userId}</td>
