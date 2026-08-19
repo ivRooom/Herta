@@ -13,6 +13,11 @@ export interface BirthdayCardPreviewPosition {
   y: number;
 }
 
+export interface BirthdayCardPreviewDelta {
+  x: number;
+  y: number;
+}
+
 export interface BirthdayCardAvatarGeometry {
   centerX: number;
   centerY: number;
@@ -32,6 +37,21 @@ export function pointerToBirthdayCardPosition(
   };
 }
 
+export function pointerDeltaToBirthdayCardPixels(
+  startClientX: number,
+  startClientY: number,
+  clientX: number,
+  clientY: number,
+  rect: BirthdayCardPreviewRect,
+): BirthdayCardPreviewDelta | null {
+  if (rect.width <= 0 || rect.height <= 0) return null;
+
+  return {
+    x: ((clientX - startClientX) / rect.width) * BIRTHDAY_CARD_PREVIEW_WIDTH,
+    y: ((clientY - startClientY) / rect.height) * BIRTHDAY_CARD_PREVIEW_HEIGHT,
+  };
+}
+
 export function nudgeBirthdayCardPosition(
   position: BirthdayCardPreviewPosition,
   deltaX: number,
@@ -41,6 +61,37 @@ export function nudgeBirthdayCardPosition(
     x: clampPercent(position.x + deltaX),
     y: clampPercent(position.y + deltaY),
   };
+}
+
+export function nudgeBirthdayCardSize(
+  size: number,
+  delta: number,
+  minSize: number,
+  maxSize: number,
+): number {
+  return clamp(Math.round(size + delta), minSize, maxSize);
+}
+
+export function resizeBirthdayCardAvatarSize(
+  startSizePercent: number,
+  deltaXPixels: number,
+  minSize: number,
+  maxSize: number,
+): number {
+  const deltaPercent = (deltaXPixels * 2 * 100) / BIRTHDAY_CARD_PREVIEW_WIDTH;
+  return clamp(Math.round(startSizePercent + deltaPercent), minSize, maxSize);
+}
+
+export function resizeBirthdayCardTextSize(
+  startSize: number,
+  deltaXPixels: number,
+  valueLength: number,
+  minSize: number,
+  maxSize: number,
+): number {
+  const widthFactor = birthdayCardTextWidthFactor(valueLength);
+  const deltaSize = (deltaXPixels * 2) / widthFactor;
+  return clamp(Math.round(startSize + deltaSize), minSize, maxSize);
 }
 
 export function birthdayCardAvatarGeometry(
@@ -67,8 +118,19 @@ export function birthdayCardAvatarGeometry(
   };
 }
 
+export function birthdayCardTextHitWidth(valueLength: number, fontSize: number): number {
+  return Math.min(
+    BIRTHDAY_CARD_PREVIEW_WIDTH * 0.88,
+    fontSize * birthdayCardTextWidthFactor(valueLength),
+  );
+}
+
 export function birthdayCardTextStrokeWidth(fontSize: number): number {
   return Math.max(2, Math.round(fontSize / 18));
+}
+
+function birthdayCardTextWidthFactor(valueLength: number): number {
+  return Math.max(4, Math.max(4, valueLength) * 0.78);
 }
 
 function clampPercent(value: number): number {

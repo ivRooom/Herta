@@ -208,6 +208,7 @@ export function BirthdayCardEditor({
             editable={previewEditable}
             pending={pending}
             onPositionChange={updatePosition}
+            onSizeChange={(sizeKey, size) => update(sizeKey, size)}
           />
         </div>
 
