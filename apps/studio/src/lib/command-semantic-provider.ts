@@ -188,7 +188,7 @@ function parseEmbeddingVectors(value: unknown, expectedCount: number): number[][
       throw new StudioSemanticProviderError('malformed_response');
     }
     const record = entry as Record<string, unknown>;
-    if (!Number.isSafeInteger(record.index) || typeof record.index !== 'number') {
+    if (typeof record.index !== 'number' || !Number.isSafeInteger(record.index)) {
       throw new StudioSemanticProviderError('malformed_response');
     }
     if (record.index < 0 || record.index >= expectedCount || vectors[record.index]) {
