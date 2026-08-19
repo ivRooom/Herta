@@ -260,10 +260,15 @@ export function BirthdayCardEditor({
         );
       }
       setBackground(null);
-      if (editable.has('birthdayCardBackgroundSource')) {
+      const resetSource = editable.has('birthdayCardBackgroundSource');
+      if (resetSource) {
         update('birthdayCardBackgroundSource', 'preset');
       }
-      setBackgroundStatus('カスタム背景を削除しました。背景ソースはプリセットへ戻してください。');
+      setBackgroundStatus(
+        resetSource
+          ? 'カスタム背景を削除し、背景ソースをプリセットへ戻しました。Card設定も保存してください。'
+          : 'カスタム背景を削除しました。背景ソースの変更にはIAM権限が必要です。',
+      );
     } catch (error) {
       setBackgroundStatus(
         isTimeoutError(error)
