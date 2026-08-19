@@ -1,38 +1,66 @@
 'use client';
 
 import {
+  BIRTHDAY_CARD_BACKGROUND_MAX_BYTES,
   BIRTHDAY_CARD_CONFIG_FIELD_KEYS,
   BIRTHDAY_CARD_PRESETS,
+  birthdayCardPreset,
   normalizeBirthdayCardConfig,
   type BirthdayCardConfig,
   type BirthdayCardConfigFieldKey,
 } from '@herta/shared';
-import { ImageIcon, RotateCcw, Save } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { ImageIcon, RotateCcw, Save, Send, Trash2, Upload } from 'lucide-react';
+import { useMemo, useState, type ChangeEvent } from 'react';
 import {
   BirthdayCardLivePreview,
   type BirthdayCardPositionXKey,
   type BirthdayCardPositionYKey,
 } from '@/components/birthday-card-live-preview';
+import { DiscordChannelPicker } from '@/components/discord-entity-picker';
+import type { GuildChannelOption } from '@/lib/bot-guild-options';
 import {
   birthdayCardDirtyFieldKeys,
   restoreBirthdayCardEditableConfig,
 } from '@/lib/birthday-card-editor-state';
+import { renderBirthdayCardPreviewPng } from '@/lib/birthday-card-preview-export';
 import type { PluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';
 
 const SAVE_TIMEOUT_MS = 15_000;
+const BACKGROUND_TIMEOUT_MS = 30_000;
+const TEST_SEND_TIMEOUT_MS = 30_000;
 const EMPTY_EDITABLE_FIELDS: ReadonlySet<string> = new Set<string>();
+const BACKGROUND_ACCEPT = 'image/png,image/jpeg,image/webp';
 
 type PreviewMode = 'draft' | 'saved';
+
+export interface BirthdayCardBackgroundMetadata {
+  contentType: string;
+  fileName: string;
+  sizeBytes: number;
+  width: number;
+  height: number;
+  sha256: string;
+  updatedAt: string;
+}
 
 export function BirthdayCardEditor({
   guildId,
   initialConfig,
   configAccess,
+  initialBackground,
+  canReadBackground,
+  canWriteBackground,
+  canTestSend,
+  channelOptions,
 }: {
   guildId: string;
   initialConfig: Record<string, unknown>;
   configAccess: PluginConfigStudioAccess;
+  initialBackground: BirthdayCardBackgroundMetadata | null;
+  canReadBackground: boolean;
+  canWriteBackground: boolean;
+  canTestSend: boolean;
+  channelOptions: GuildChannelOption[];
 }) {
   const initial = useMemo(() => normalizeBirthdayCardConfig(initialConfig), [initialConfig]);
   const [config, setConfig] = useState<BirthdayCardConfig>(initial);
@@ -40,6 +68,12 @@ export function BirthdayCardEditor({
   const [previewMode, setPreviewMode] = useState<PreviewMode>('draft');
   const [pending, setPending] = useState(false);
   const [status, setStatus] = useState('');
+  const [background, setBackground] = useState(initialBackground);
+  const [backgroundPending, setBackgroundPending] = useState(false);
+  const [backgroundStatus, setBackgroundStatus] = useState('');
+  const [testChannelId, setTestChannelId] = useState<string | null>(null);
+  const [testPending, setTestPending] = useState(false);
+  const [testStatus, setTestStatus] = useState('');
 
   const readable = useMemo(
     () => new Set(configAccess.readableFieldKeys),
@@ -54,6 +88,18 @@ export function BirthdayCardEditor({
   const hasEditableFields = BIRTHDAY_CARD_CONFIG_FIELD_KEYS.some((key) => editable.has(key));
   const previewConfig = previewMode === 'saved' ? saved : config;
   const previewEditable = previewMode === 'saved' ? EMPTY_EDITABLE_FIELDS : editable;
+  const interactionPending = pending || backgroundPending || testPending;
+  const preset = birthdayCardPreset(previewConfig.birthdayCardPreset);
+  const backgroundUrl =
+    previewConfig.birthdayCardBackgroundSource === 'custom'
+      ? canReadBackground && background
+        ? `/api/guilds/${guildId}/birthday/card-background?v=${background.sha256}`
+        : null
+      : `/birthday-card-presets/${preset.assetFile}`;
+  const backgroundLabel =
+    previewConfig.birthdayCardBackgroundSource === 'custom'
+      ? background?.fileName || 'カスタム背景'
+      : preset.label;
 
   function update<K extends keyof BirthdayCardConfig>(key: K, value: BirthdayCardConfig[K]) {
     if (!editable.has(key)) return;
@@ -80,7 +126,7 @@ export function BirthdayCardEditor({
   }
 
   function resetChanges() {
-    if (!dirty || pending) return;
+    if (!dirty || interactionPending) return;
     if (!window.confirm('未保存のBirthday Card変更を保存済み設定へ戻しますか？')) return;
 
     setConfig((current) => restoreBirthdayCardEditableConfig(current, saved, editable));
@@ -89,7 +135,7 @@ export function BirthdayCardEditor({
   }
 
   async function save() {
-    if (!dirty || pending) return;
+    if (!dirty || interactionPending) return;
     setPending(true);
     setStatus('保存中…');
     try {
@@ -132,6 +178,143 @@ export function BirthdayCardEditor({
     }
   }
 
+  async function uploadBackground(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || backgroundPending || testPending) return;
+    if (!canWriteBackground || !editable.has('birthdayCardBackgroundSource')) {
+      setBackgroundStatus('カスタム背景を変更するIAM権限がありません');
+      return;
+    }
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      setBackgroundStatus('PNG / JPEG / WebPを選択してください');
+      return;
+    }
+    if (file.size <= 0 || file.size > BIRTHDAY_CARD_BACKGROUND_MAX_BYTES) {
+      setBackgroundStatus('背景画像は5 MiB以下にしてください');
+      return;
+    }
+
+    setBackgroundPending(true);
+    setBackgroundStatus('背景画像をアップロード中…');
+    try {
+      const form = new FormData();
+      form.set('background', file, file.name);
+      const response = await fetch(`/api/guilds/${guildId}/birthday/card-background`, {
+        method: 'PUT',
+        body: form,
+        signal: AbortSignal.timeout(BACKGROUND_TIMEOUT_MS),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        error?: unknown;
+        background?: BirthdayCardBackgroundMetadata;
+      } | null;
+      if (!response.ok || !payload?.background) {
+        throw new Error(
+          typeof payload?.error === 'string' ? payload.error : '背景画像の保存に失敗しました',
+        );
+      }
+      setBackground(payload.background);
+      update('birthdayCardBackgroundSource', 'custom');
+      setBackgroundStatus(
+        `${payload.background.fileName}（${payload.background.width}×${payload.background.height}）を保存しました。Card設定も保存してください。`,
+      );
+    } catch (error) {
+      setBackgroundStatus(
+        isTimeoutError(error)
+          ? '背景画像のアップロードがタイムアウトしました'
+          : error instanceof Error
+            ? error.message
+            : '背景画像の保存に失敗しました',
+      );
+    } finally {
+      setBackgroundPending(false);
+    }
+  }
+
+  async function deleteBackground() {
+    if (!background || !canWriteBackground || interactionPending) return;
+    if (!window.confirm('Guild専用のBirthday Card背景を削除しますか？')) return;
+    setBackgroundPending(true);
+    setBackgroundStatus('カスタム背景を削除中…');
+    try {
+      const response = await fetch(`/api/guilds/${guildId}/birthday/card-background`, {
+        method: 'DELETE',
+        signal: AbortSignal.timeout(BACKGROUND_TIMEOUT_MS),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        error?: unknown;
+        deleted?: boolean;
+      } | null;
+      if (!response.ok) {
+        throw new Error(
+          typeof payload?.error === 'string' ? payload.error : '背景画像の削除に失敗しました',
+        );
+      }
+      setBackground(null);
+      if (editable.has('birthdayCardBackgroundSource')) {
+        update('birthdayCardBackgroundSource', 'preset');
+      }
+      setBackgroundStatus('カスタム背景を削除しました。背景ソースはプリセットへ戻してください。');
+    } catch (error) {
+      setBackgroundStatus(
+        isTimeoutError(error)
+          ? '背景画像の削除がタイムアウトしました'
+          : error instanceof Error
+            ? error.message
+            : '背景画像の削除に失敗しました',
+      );
+    } finally {
+      setBackgroundPending(false);
+    }
+  }
+
+  async function testSend() {
+    if (!canTestSend || interactionPending) return;
+    if (!testChannelId) {
+      setTestStatus('テスト送信先Channelを選択してください');
+      return;
+    }
+    if (!backgroundUrl) {
+      setTestStatus('テスト送信できる背景画像がありません');
+      return;
+    }
+
+    setTestPending(true);
+    setTestStatus('ライブプレビューをPNG化してDiscordへ送信中…');
+    try {
+      const blob = await renderBirthdayCardPreviewPng(previewConfig, backgroundUrl);
+      const form = new FormData();
+      form.set('channelId', testChannelId);
+      form.set('image', blob, 'birthday-card-preview.png');
+      const response = await fetch(`/api/guilds/${guildId}/birthday/card-test`, {
+        method: 'POST',
+        body: form,
+        signal: AbortSignal.timeout(TEST_SEND_TIMEOUT_MS),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        error?: unknown;
+        messageId?: string;
+      } | null;
+      if (!response.ok) {
+        throw new Error(
+          typeof payload?.error === 'string' ? payload.error : 'Birthday Cardのテスト送信に失敗しました',
+        );
+      }
+      setTestStatus('Birthday Cardのテスト画像をDiscordへ送信しました');
+    } catch (error) {
+      setTestStatus(
+        isTimeoutError(error)
+          ? 'テスト送信がタイムアウトしました'
+          : error instanceof Error
+            ? error.message
+            : 'Birthday Cardのテスト送信に失敗しました',
+      );
+    } finally {
+      setTestPending(false);
+    }
+  }
+
   return (
     <section className="space-y-6 rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -141,7 +324,7 @@ export function BirthdayCardEditor({
             <h2 className="font-semibold">Birthday Card Studio</h2>
           </div>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-            プリセットを選び、名前・Avatar・誕生日・年齢の表示と位置・サイズをライブプレビューで調整します。実際の投稿ではDiscordの表示名とAvatar、生年から算出した年齢を使います。
+            プリセットまたはGuild専用画像を背景にし、名前・Avatar・誕生日・年齢の表示と位置・サイズをライブプレビューで調整します。実際の投稿ではDiscordの表示名とAvatar、生年から算出した年齢を使います。
           </p>
         </div>
         {!hasEditableFields ? (
@@ -206,7 +389,9 @@ export function BirthdayCardEditor({
             config={previewConfig}
             readable={readable}
             editable={previewEditable}
-            pending={pending}
+            pending={interactionPending}
+            backgroundUrl={backgroundUrl}
+            backgroundLabel={backgroundLabel}
             onPositionChange={updatePosition}
             onSizeChange={(sizeKey, size) => update(sizeKey, size)}
           />
@@ -215,9 +400,32 @@ export function BirthdayCardEditor({
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
           <div className="space-y-4 rounded-xl border border-border bg-background p-4">
             <h3 className="font-medium">表示内容</h3>
+            {readable.has('birthdayCardBackgroundSource') ? (
+              <label className="text-sm">
+                背景ソース
+                <select
+                  value={config.birthdayCardBackgroundSource}
+                  onChange={(event) =>
+                    update(
+                      'birthdayCardBackgroundSource',
+                      event.target.value as BirthdayCardConfig['birthdayCardBackgroundSource'],
+                    )
+                  }
+                  disabled={!editable.has('birthdayCardBackgroundSource') || interactionPending}
+                  className="mt-1 w-full rounded-xl border border-border bg-surface px-3 py-2 disabled:opacity-50"
+                >
+                  <option value="preset">組み込みプリセット</option>
+                  <option value="custom" disabled={!canReadBackground || !background}>
+                    Guild専用アップロード画像
+                  </option>
+                </select>
+              </label>
+            ) : null}
             {readable.has('birthdayCardPreset') ? (
               <label className="text-sm">
-                プリセット
+                {config.birthdayCardBackgroundSource === 'custom'
+                  ? 'テキスト配色プリセット'
+                  : 'プリセット'}
                 <select
                   value={config.birthdayCardPreset}
                   onChange={(event) =>
@@ -226,7 +434,7 @@ export function BirthdayCardEditor({
                       event.target.value as BirthdayCardConfig['birthdayCardPreset'],
                     )
                   }
-                  disabled={!editable.has('birthdayCardPreset') || pending}
+                  disabled={!editable.has('birthdayCardPreset') || interactionPending}
                   className="mt-1 w-full rounded-xl border border-border bg-surface px-3 py-2 disabled:opacity-50"
                 >
                   {BIRTHDAY_CARD_PRESETS.map((item) => (
@@ -243,7 +451,7 @@ export function BirthdayCardEditor({
               checked={config.birthdayCardEnabled}
               readable={readable}
               editable={editable}
-              pending={pending}
+              pending={interactionPending}
               onChange={(value) => update('birthdayCardEnabled', value)}
             />
             <ToggleIfReadable
@@ -252,7 +460,7 @@ export function BirthdayCardEditor({
               checked={config.birthdayCardShowName}
               readable={readable}
               editable={editable}
-              pending={pending}
+              pending={interactionPending}
               onChange={(value) => update('birthdayCardShowName', value)}
             />
             <ToggleIfReadable
@@ -261,7 +469,7 @@ export function BirthdayCardEditor({
               checked={config.birthdayCardShowAvatar}
               readable={readable}
               editable={editable}
-              pending={pending}
+              pending={interactionPending}
               onChange={(value) => update('birthdayCardShowAvatar', value)}
             />
             <ToggleIfReadable
@@ -270,7 +478,7 @@ export function BirthdayCardEditor({
               checked={config.birthdayCardShowBirthday}
               readable={readable}
               editable={editable}
-              pending={pending}
+              pending={interactionPending}
               onChange={(value) => update('birthdayCardShowBirthday', value)}
             />
             <ToggleIfReadable
@@ -279,7 +487,7 @@ export function BirthdayCardEditor({
               checked={config.birthdayCardShowAge}
               readable={readable}
               editable={editable}
-              pending={pending}
+              pending={interactionPending}
               onChange={(value) => update('birthdayCardShowAge', value)}
             />
           </div>
@@ -298,7 +506,7 @@ export function BirthdayCardEditor({
               maxSize={30}
               readable={readable}
               editable={editable}
-              pending={pending}
+              pending={interactionPending}
               update={update}
             />
             <PositionControls
@@ -313,7 +521,7 @@ export function BirthdayCardEditor({
               maxSize={96}
               readable={readable}
               editable={editable}
-              pending={pending}
+              pending={interactionPending}
               update={update}
             />
             <PositionControls
@@ -328,7 +536,7 @@ export function BirthdayCardEditor({
               maxSize={72}
               readable={readable}
               editable={editable}
-              pending={pending}
+              pending={interactionPending}
               update={update}
             />
             <PositionControls
@@ -343,12 +551,105 @@ export function BirthdayCardEditor({
               maxSize={72}
               readable={readable}
               editable={editable}
-              pending={pending}
+              pending={interactionPending}
               update={update}
             />
           </div>
         </div>
       </div>
+
+      <section className="space-y-3 rounded-xl border border-border bg-background p-4">
+        <div>
+          <h3 className="font-medium">オリジナル背景</h3>
+          <p className="mt-1 text-xs leading-5 text-muted">
+            Guildごとに1枚のPNG / JPEG / WebPを保存できます。最大5 MiB・8192px・1600万画素です。
+          </p>
+        </div>
+        {!canReadBackground ? (
+          <p className="text-sm text-muted">カスタム背景を閲覧するIAM権限がありません。</p>
+        ) : (
+          <>
+            {background ? (
+              <div className="flex flex-col gap-3 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0 text-sm">
+                  <p className="truncate font-medium">{background.fileName}</p>
+                  <p className="mt-1 text-xs text-muted">
+                    {background.width}×{background.height} · {formatBytes(background.sizeBytes)}
+                  </p>
+                </div>
+                {canWriteBackground ? (
+                  <button
+                    type="button"
+                    onClick={() => void deleteBackground()}
+                    disabled={interactionPending}
+                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-400/30 px-3 py-2 text-sm text-red-300 disabled:opacity-50"
+                  >
+                    <Trash2 className="h-4 w-4" aria-hidden="true" /> 削除
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <p className="rounded-lg border border-dashed border-border p-3 text-sm text-muted">
+                カスタム背景はまだ登録されていません。
+              </p>
+            )}
+            {canWriteBackground ? (
+              <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 py-2.5 text-sm font-semibold transition-colors hover:border-primary/40 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+                <Upload className="h-4 w-4" aria-hidden="true" />
+                {backgroundPending ? 'アップロード中…' : background ? '背景を差し替え' : '背景をアップロード'}
+                <input
+                  type="file"
+                  accept={BACKGROUND_ACCEPT}
+                  disabled={
+                    interactionPending || !editable.has('birthdayCardBackgroundSource')
+                  }
+                  onChange={(event) => void uploadBackground(event)}
+                  className="sr-only"
+                />
+              </label>
+            ) : null}
+          </>
+        )}
+        <p className="text-xs text-muted" aria-live="polite">
+          {backgroundStatus}
+        </p>
+      </section>
+
+      {canTestSend ? (
+        <section className="space-y-3 rounded-xl border border-primary/20 bg-background p-4">
+          <div>
+            <h3 className="font-medium">Discordテスト送信</h3>
+            <p className="mt-1 text-xs leading-5 text-muted">
+              現在表示している「変更中 / 保存済み」のプレビューをPNG化し、指定Channelへ送信します。サンプル表示名・Avatar・8月19日・25歳を使用し、メンションは発生しません。
+            </p>
+          </div>
+          {channelOptions.length > 0 ? (
+            <DiscordChannelPicker
+              options={channelOptions}
+              value={testChannelId}
+              onChange={(value) => setTestChannelId(typeof value === 'string' ? value : null)}
+              placeholder="テスト送信先Channelを検索"
+              guildId={guildId}
+            />
+          ) : (
+            <p className="rounded-lg border border-dashed border-border p-3 text-sm text-muted">
+              Botからテスト送信可能なChannelを取得できませんでした。
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => void testSend()}
+            disabled={interactionPending || !testChannelId || !backgroundUrl}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+          >
+            <Send className="h-4 w-4" aria-hidden="true" />
+            {testPending ? 'Discordへ送信中…' : '現在のプレビューをテスト送信'}
+          </button>
+          <p className="text-sm text-muted" aria-live="polite">
+            {testStatus}
+          </p>
+        </section>
+      ) : null}
 
       <div className="sticky bottom-4 z-20 flex flex-col gap-3 rounded-xl border border-border bg-surface/95 p-3 shadow-2xl backdrop-blur sm:flex-row sm:items-center sm:justify-between">
         <p className="text-sm text-muted" aria-live="polite">
@@ -358,7 +659,7 @@ export function BirthdayCardEditor({
           <button
             type="button"
             onClick={resetChanges}
-            disabled={!dirty || pending}
+            disabled={!dirty || interactionPending}
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
           >
             <RotateCcw className="h-4 w-4" aria-hidden="true" />
@@ -367,7 +668,7 @@ export function BirthdayCardEditor({
           <button
             type="button"
             onClick={() => void save()}
-            disabled={!dirty || pending}
+            disabled={!dirty || interactionPending}
             className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Save className="h-4 w-4" aria-hidden="true" />{' '}
@@ -414,6 +715,7 @@ function ToggleIfReadable({
 type NumericCardKey = Exclude<
   BirthdayCardConfigFieldKey,
   | 'birthdayCardEnabled'
+  | 'birthdayCardBackgroundSource'
   | 'birthdayCardPreset'
   | 'birthdayCardShowName'
   | 'birthdayCardShowAvatar'
@@ -519,6 +821,12 @@ function RangeControl({
       <span className="text-right tabular-nums">{Math.round(value)}</span>
     </label>
   );
+}
+
+function formatBytes(value: number): string {
+  return value >= 1024 * 1024
+    ? `${(value / (1024 * 1024)).toFixed(1)} MiB`
+    : `${Math.max(1, Math.round(value / 1024))} KiB`;
 }
 
 function isTimeoutError(error: unknown): boolean {
