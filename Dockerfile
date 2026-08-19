@@ -90,7 +90,8 @@ RUN rm -rf \
 
 FROM node:22-alpine AS runtime
 
-RUN apk add --no-cache libc6-compat openssl curl \
+# Birthday CardはDiscord表示名・日付を画像へ描画するため、日本語を含むCJK glyphをRuntimeに用意する。
+RUN apk add --no-cache libc6-compat openssl curl font-noto-cjk \
   && rm -rf \
     /usr/local/lib/node_modules/npm \
     /usr/local/lib/node_modules/corepack \
