@@ -45,18 +45,36 @@ import {
   toggleFavoriteCommand,
   type CommandPalettePreferences,
 } from '@/lib/command-palette-preferences';
+import {
+  mergeStudioCommandSearchResults,
+  parseStudioCommandSemanticResponse,
+  STUDIO_COMMAND_SEMANTIC_QUERY_MIN_LENGTH,
+  type StudioCommandSemanticMode,
+  type StudioCommandSemanticScore,
+} from '@/lib/command-semantic-search';
 import { useStudioServerContext } from '@/components/studio-server-context';
 import {
   buildStudioCommandItems,
   filterStudioCommandItems,
+  STUDIO_COMMAND_SEARCH_QUERY_MAX_LENGTH,
   type StudioCommandItem,
   type StudioNavigationIcon,
 } from '@/lib/studio-navigation';
 
 const COMMAND_PALETTE_OPEN_EVENT = 'herta:command-palette-open';
 const RESULTS_ID = 'studio-command-palette-results';
+const SEMANTIC_SEARCH_DEBOUNCE_MS = 180;
+const SEMANTIC_SEARCH_CLIENT_TIMEOUT_MS = 2500;
 
 type OpenEventDetail = { trigger?: HTMLElement | null };
+
+interface SemanticSearchState {
+  query: string;
+  guildId: string | null;
+  mode: StudioCommandSemanticMode;
+  scores: StudioCommandSemanticScore[];
+  pending: boolean;
+}
 
 const ICONS: Record<StudioNavigationIcon, LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -138,6 +156,7 @@ export function ConsoleCommandPaletteController() {
     createDefaultCommandPalettePreferences(),
   );
   const [storageWarning, setStorageWarning] = useState(false);
+  const [semanticSearch, setSemanticSearch] = useState<SemanticSearchState | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
@@ -147,9 +166,24 @@ export function ConsoleCommandPaletteController() {
     () => buildStudioCommandItems(selectedGuild?.id ?? null, selectedGuild?.name ?? null),
     [selectedGuild?.id, selectedGuild?.name],
   );
-  const filteredCommands = useMemo(
+  const lexicalCommands = useMemo(
     () => filterStudioCommandItems(commands, query),
     [commands, query],
+  );
+  const semanticQuery = query.trim();
+  const semanticGuildId = selectedGuild?.id ?? null;
+  const currentSemanticSearch =
+    semanticSearch?.query === semanticQuery && semanticSearch.guildId === semanticGuildId
+      ? semanticSearch
+      : null;
+  const filteredCommands = useMemo(
+    () =>
+      mergeStudioCommandSearchResults(
+        commands,
+        lexicalCommands,
+        currentSemanticSearch?.scores ?? [],
+      ),
+    [commands, currentSemanticSearch?.scores, lexicalCommands],
   );
   const sections = useMemo(
     () => buildCommandPaletteSections(filteredCommands, preferences, query.trim().length === 0),
@@ -224,6 +258,7 @@ export function ConsoleCommandPaletteController() {
     if (!open) return;
     setQuery('');
     setActiveIndex(0);
+    setSemanticSearch(null);
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     const frame = requestAnimationFrame(() => inputRef.current?.focus());
@@ -233,6 +268,83 @@ export function ConsoleCommandPaletteController() {
       document.body.style.overflow = previousOverflow;
     };
   }, [open]);
+
+  useEffect(() => {
+    if (
+      !open ||
+      semanticQuery.length < STUDIO_COMMAND_SEMANTIC_QUERY_MIN_LENGTH ||
+      semanticQuery.length > STUDIO_COMMAND_SEARCH_QUERY_MAX_LENGTH
+    ) {
+      setSemanticSearch(null);
+      return;
+    }
+
+    const querySnapshot = semanticQuery;
+    const guildIdSnapshot = semanticGuildId;
+    const controller = new AbortController();
+    const debounce = window.setTimeout(() => {
+      setSemanticSearch({
+        query: querySnapshot,
+        guildId: guildIdSnapshot,
+        mode: 'disabled',
+        scores: [],
+        pending: true,
+      });
+      const timeout = window.setTimeout(() => {
+        setSemanticSearch((current) =>
+          current?.query === querySnapshot && current.guildId === guildIdSnapshot
+            ? { ...current, mode: 'fallback', scores: [], pending: false }
+            : current,
+        );
+        controller.abort();
+      }, SEMANTIC_SEARCH_CLIENT_TIMEOUT_MS);
+
+      void fetch('/api/search/semantic', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: querySnapshot, guildId: guildIdSnapshot }),
+        cache: 'no-store',
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            setSemanticSearch({
+              query: querySnapshot,
+              guildId: guildIdSnapshot,
+              mode: 'fallback',
+              scores: [],
+              pending: false,
+            });
+            return;
+          }
+          const parsed = parseStudioCommandSemanticResponse(await response.json());
+          if (controller.signal.aborted) return;
+          setSemanticSearch({
+            query: querySnapshot,
+            guildId: guildIdSnapshot,
+            mode: parsed.mode,
+            scores: parsed.scores,
+            pending: false,
+          });
+        })
+        .catch(() => {
+          if (controller.signal.aborted) return;
+          setSemanticSearch({
+            query: querySnapshot,
+            guildId: guildIdSnapshot,
+            mode: 'fallback',
+            scores: [],
+            pending: false,
+          });
+        })
+        .finally(() => window.clearTimeout(timeout));
+    }, SEMANTIC_SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(debounce);
+      controller.abort();
+    };
+  }, [open, semanticGuildId, semanticQuery]);
 
   useEffect(() => {
     setOpen(false);
@@ -281,6 +393,7 @@ export function ConsoleCommandPaletteController() {
     setOpen(false);
     setQuery('');
     setActiveIndex(0);
+    setSemanticSearch(null);
     if (restoreFocus) requestAnimationFrame(() => triggerRef.current?.focus());
   }
 
@@ -357,6 +470,14 @@ export function ConsoleCommandPaletteController() {
 
   if (!open || typeof document === 'undefined') return null;
 
+  const semanticStatus = currentSemanticSearch?.pending
+    ? '検索拡張中'
+    : currentSemanticSearch?.mode === 'semantic'
+      ? '検索: ハイブリッド'
+      : currentSemanticSearch?.mode === 'fallback'
+        ? '検索: キーワード（fallback）'
+        : '検索: キーワード';
+
   return createPortal(
     <div
       className="fixed inset-0 z-[90] flex items-start justify-center bg-black/45 px-4 pt-[12vh] backdrop-blur-sm sm:pt-[16vh]"
@@ -388,7 +509,7 @@ export function ConsoleCommandPaletteController() {
             aria-activedescendant={activeCommand ? commandOptionId(activeCommand.id) : undefined}
             value={query}
             onChange={(event) => {
-              setQuery(event.target.value.slice(0, 100));
+              setQuery(event.target.value.slice(0, STUDIO_COMMAND_SEARCH_QUERY_MAX_LENGTH));
               setActiveIndex(0);
             }}
             placeholder="ページ・機能を検索..."
@@ -524,6 +645,7 @@ export function ConsoleCommandPaletteController() {
           <span>Enter 移動</span>
           <span>Shift+Enter ★</span>
           <span>Esc 閉じる</span>
+          <span role="status">{semanticStatus}</span>
           <span role="status">
             {storageWarning
               ? '保存できないためこのタブのみ有効'
