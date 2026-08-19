@@ -2,7 +2,11 @@
 
 import { birthdayCardPreset, type BirthdayCardConfig } from '@herta/shared';
 import { Move } from 'lucide-react';
-import { useRef, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import {
+  useRef,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import {
   BIRTHDAY_CARD_PREVIEW_HEIGHT,
   BIRTHDAY_CARD_PREVIEW_WIDTH,
@@ -13,16 +17,10 @@ import {
 } from '@/lib/birthday-card-preview';
 
 export type BirthdayCardPositionXKey =
-  | 'birthdayCardAvatarX'
-  | 'birthdayCardNameX'
-  | 'birthdayCardBirthdayX'
-  | 'birthdayCardAgeX';
+  'birthdayCardAvatarX' | 'birthdayCardNameX' | 'birthdayCardBirthdayX' | 'birthdayCardAgeX';
 
 export type BirthdayCardPositionYKey =
-  | 'birthdayCardAvatarY'
-  | 'birthdayCardNameY'
-  | 'birthdayCardBirthdayY'
-  | 'birthdayCardAgeY';
+  'birthdayCardAvatarY' | 'birthdayCardNameY' | 'birthdayCardBirthdayY' | 'birthdayCardAgeY';
 
 interface BirthdayCardLivePreviewProps {
   config: BirthdayCardConfig;
@@ -35,6 +33,15 @@ interface BirthdayCardLivePreviewProps {
     x: number,
     y: number,
   ): void;
+}
+
+interface PreviewInteractionHandlers {
+  movable: boolean;
+  onPointerDown(event: ReactPointerEvent<SVGGElement>): void;
+  onPointerMove(event: ReactPointerEvent<SVGGElement>): void;
+  onPointerUp(event: ReactPointerEvent<SVGGElement>): void;
+  onPointerCancel(event: ReactPointerEvent<SVGGElement>): void;
+  onKeyDown(event: ReactKeyboardEvent<SVGGElement>): void;
 }
 
 export function BirthdayCardLivePreview({
@@ -52,12 +59,13 @@ export function BirthdayCardLivePreview({
   const avatarVisible =
     readable.has('birthdayCardShowAvatar') &&
     config.birthdayCardShowAvatar &&
-    hasReadableLayout(readable, 'birthdayCardAvatarX', 'birthdayCardAvatarY', 'birthdayCardAvatarSize');
-  if (
-    readable.has('birthdayCardShowAvatar') &&
-    config.birthdayCardShowAvatar &&
-    !avatarVisible
-  ) {
+    hasReadableLayout(
+      readable,
+      'birthdayCardAvatarX',
+      'birthdayCardAvatarY',
+      'birthdayCardAvatarSize',
+    );
+  if (readable.has('birthdayCardShowAvatar') && config.birthdayCardShowAvatar && !avatarVisible) {
     hiddenLayoutLabels.push('Avatar');
   }
 
@@ -122,31 +130,31 @@ export function BirthdayCardLivePreview({
     yKey: BirthdayCardPositionYKey,
     currentX: number,
     currentY: number,
-  ) {
+  ): PreviewInteractionHandlers {
     const movable = !pending && (editable.has(xKey) || editable.has(yKey));
     return {
       movable,
-      onPointerDown(event: ReactPointerEvent<SVGGElement>) {
+      onPointerDown(event) {
         if (!movable) return;
         event.preventDefault();
         event.currentTarget.setPointerCapture(event.pointerId);
         moveFromPointer(event, xKey, yKey, currentX, currentY);
       },
-      onPointerMove(event: ReactPointerEvent<SVGGElement>) {
+      onPointerMove(event) {
         if (!movable || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
         moveFromPointer(event, xKey, yKey, currentX, currentY);
       },
-      onPointerUp(event: ReactPointerEvent<SVGGElement>) {
+      onPointerUp(event) {
         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
           event.currentTarget.releasePointerCapture(event.pointerId);
         }
       },
-      onPointerCancel(event: ReactPointerEvent<SVGGElement>) {
+      onPointerCancel(event) {
         if (event.currentTarget.hasPointerCapture(event.pointerId)) {
           event.currentTarget.releasePointerCapture(event.pointerId);
         }
       },
-      onKeyDown(event: ReactKeyboardEvent<SVGGElement>) {
+      onKeyDown(event) {
         if (!movable) return;
         const step = event.shiftKey ? 5 : 1;
         const horizontal = editable.has(xKey);
@@ -213,7 +221,7 @@ export function BirthdayCardLivePreview({
           viewBox={`0 0 ${BIRTHDAY_CARD_PREVIEW_WIDTH} ${BIRTHDAY_CARD_PREVIEW_HEIGHT}`}
           className="absolute inset-0 h-full w-full select-none"
           aria-label="Birthday Cardライブプレビュー"
-          role="img"
+          role="group"
         >
           {avatarVisible ? (
             <PreviewAvatar
@@ -284,7 +292,8 @@ export function BirthdayCardLivePreview({
 
       {hiddenLayoutLabels.length > 0 ? (
         <p className="text-xs text-muted" role="status">
-          {hiddenLayoutLabels.join('・')} のプレビューは、表示に必要なIAM設定項目が一部非表示のため描画していません。
+          {hiddenLayoutLabels.join('・')}{' '}
+          のプレビューは、表示に必要なIAM設定項目が一部非表示のため描画していません。
         </p>
       ) : null}
       <p className="text-xs leading-5 text-muted">
@@ -293,21 +302,6 @@ export function BirthdayCardLivePreview({
       </p>
     </div>
   );
-}
-
-type PreviewInteractionHandlers = ReturnType<
-  typeof createPreviewInteractionHandlerShape
->;
-
-function createPreviewInteractionHandlerShape() {
-  return {
-    movable: false,
-    onPointerDown: (_event: ReactPointerEvent<SVGGElement>) => undefined,
-    onPointerMove: (_event: ReactPointerEvent<SVGGElement>) => undefined,
-    onPointerUp: (_event: ReactPointerEvent<SVGGElement>) => undefined,
-    onPointerCancel: (_event: ReactPointerEvent<SVGGElement>) => undefined,
-    onKeyDown: (_event: ReactKeyboardEvent<SVGGElement>) => undefined,
-  };
 }
 
 function PreviewAvatar({
@@ -339,7 +333,11 @@ function PreviewAvatar({
         stroke="rgba(255,255,255,0.95)"
         strokeWidth="4"
         strokeDasharray="12 10"
-        className={movable ? 'opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100' : 'opacity-0'}
+        className={
+          movable
+            ? 'opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100'
+            : 'opacity-0'
+        }
       />
       <circle
         cx={geometry.centerX}
@@ -413,7 +411,11 @@ function PreviewText({
         stroke="rgba(255,255,255,0.95)"
         strokeWidth="4"
         strokeDasharray="12 10"
-        className={movable ? 'opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100' : 'opacity-0'}
+        className={
+          movable
+            ? 'opacity-0 transition-opacity group-hover:opacity-100 group-focus:opacity-100'
+            : 'opacity-0'
+        }
       />
       <text
         x={xPx}
