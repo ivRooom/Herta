@@ -86,6 +86,22 @@ test('runtime image excludes the Next.js webpack build cache', () => {
   assert.match(dockerfile, /test ! -d apps\/studio\/\.next\/cache/u);
 });
 
+test('production app healthchecks do not require curl in the runtime image', () => {
+  const dockerfile = readFileSync('Dockerfile', 'utf8');
+  const compose = readFileSync('docker-compose.prod.yml', 'utf8');
+  const runtimeIndex = dockerfile.indexOf('FROM alpine:3.21 AS runtime');
+
+  assert.ok(runtimeIndex >= 0, 'production runtime stage must exist');
+  assert.doesNotMatch(
+    dockerfile.slice(runtimeIndex),
+    /apk add --no-cache[^\n]*\bcurl\b/u,
+    'production runtime must not install curl',
+  );
+  assert.doesNotMatch(compose, /\bcurl\b/u, 'production healthchecks must not require curl');
+  assert.match(compose, /fetch\('http:\/\/localhost:3001\/api\/v1\/health'\)/u);
+  assert.match(compose, /process\.env\.HEALTH_PORT/u);
+});
+
 test('failure diagnostics do not print production environment values', () => {
   const common = readFileSync('deploy/scripts/_common.sh', 'utf8');
   const startMarker = 'print_deploy_diagnostics() (';
