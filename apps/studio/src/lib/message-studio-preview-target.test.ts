@@ -18,51 +18,43 @@ const activeForum: GuildChannelOption = {
   name: 'announcements',
   kind: 'forum',
 };
-const archivedThread: GuildChannelOption = {
+const activeThread: GuildChannelOption = {
   ...activeChannel,
   id: '333333333333333333',
-  name: 'release-archive',
+  name: 'release-current',
   kind: 'thread',
   parentId: activeForum.id,
 };
+const archivedThread: GuildChannelOption = {
+  ...activeThread,
+  id: '444444444444444444',
+  name: 'release-archive',
+};
+const catalog = [activeChannel, activeForum, activeThread];
 
-test('active Channel / Forumはcatalogを正本として解決する', () => {
+test('active Channel / Forum / Threadはcatalogを正本として解決する', () => {
   assert.equal(
-    resolveMessageStudioPreviewTarget(
-      [activeChannel, activeForum],
-      activeChannel.id,
-      archivedThread,
-    ),
+    resolveMessageStudioPreviewTarget(catalog, activeChannel.id, archivedThread),
     activeChannel,
   );
+  assert.equal(resolveMessageStudioPreviewTarget(catalog, activeForum.id, archivedThread), activeForum);
   assert.equal(
-    resolveMessageStudioPreviewTarget(
-      [activeChannel, activeForum],
-      activeForum.id,
-      archivedThread,
-    ),
-    activeForum,
+    resolveMessageStudioPreviewTarget(catalog, activeThread.id, archivedThread),
+    activeThread,
   );
 });
 
 test('catalogにないarchived Threadはpickerで解決済みのtargetをfallback表示する', () => {
   assert.equal(
-    resolveMessageStudioPreviewTarget([activeChannel, activeForum], archivedThread.id, archivedThread),
+    resolveMessageStudioPreviewTarget(catalog, archivedThread.id, archivedThread),
     archivedThread,
   );
 });
 
 test('選択解除・別targetへ変更後は古いarchived fallbackを再利用しない', () => {
+  assert.equal(resolveMessageStudioPreviewTarget(catalog, '', archivedThread), null);
   assert.equal(
-    resolveMessageStudioPreviewTarget([activeChannel, activeForum], '', archivedThread),
-    null,
-  );
-  assert.equal(
-    resolveMessageStudioPreviewTarget(
-      [activeChannel, activeForum],
-      '444444444444444444',
-      archivedThread,
-    ),
+    resolveMessageStudioPreviewTarget(catalog, '555555555555555555', archivedThread),
     null,
   );
 });
