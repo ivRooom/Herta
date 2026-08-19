@@ -306,7 +306,9 @@ export function BirthdayCardEditor({
       } | null;
       if (!response.ok) {
         throw new Error(
-          typeof payload?.error === 'string' ? payload.error : 'Birthday Cardのテスト送信に失敗しました',
+          typeof payload?.error === 'string'
+            ? payload.error
+            : 'Birthday Cardのテスト送信に失敗しました',
         );
       }
       setTestStatus('Birthday Cardのテスト画像をDiscordへ送信しました');
@@ -604,13 +606,15 @@ export function BirthdayCardEditor({
             {canWriteBackground ? (
               <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 py-2.5 text-sm font-semibold transition-colors hover:border-primary/40 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
                 <Upload className="h-4 w-4" aria-hidden="true" />
-                {backgroundPending ? 'アップロード中…' : background ? '背景を差し替え' : '背景をアップロード'}
+                {backgroundPending
+                  ? 'アップロード中…'
+                  : background
+                    ? '背景を差し替え'
+                    : '背景をアップロード'}
                 <input
                   type="file"
                   accept={BACKGROUND_ACCEPT}
-                  disabled={
-                    interactionPending || !editable.has('birthdayCardBackgroundSource')
-                  }
+                  disabled={interactionPending || !editable.has('birthdayCardBackgroundSource')}
                   onChange={(event) => void uploadBackground(event)}
                   className="sr-only"
                 />
@@ -628,7 +632,8 @@ export function BirthdayCardEditor({
           <div>
             <h3 className="font-medium">Discordテスト送信</h3>
             <p className="mt-1 text-xs leading-5 text-muted">
-              現在表示している「変更中 / 保存済み」のプレビューをPNG化し、指定Channelへ送信します。サンプル表示名・Avatar・8月19日・25歳を使用し、メンションは発生しません。
+              現在表示している「変更中 /
+              保存済み」のプレビューをPNG化し、指定Channelへ送信します。サンプル表示名・Avatar・8月19日・25歳を使用し、メンションは発生しません。
             </p>
           </div>
           {channelOptions.length > 0 ? (
