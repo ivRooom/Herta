@@ -18,8 +18,11 @@ export type StudioSemanticProviderErrorCode =
   'timeout' | 'network' | 'non_2xx' | 'response_too_large' | 'malformed_response';
 
 export class StudioSemanticProviderError extends Error {
-  constructor(public readonly code: StudioSemanticProviderErrorCode) {
+  readonly code: StudioSemanticProviderErrorCode;
+
+  constructor(code: StudioSemanticProviderErrorCode) {
     super(`Studio semantic provider failed: ${code}`);
+    this.code = code;
     this.name = 'StudioSemanticProviderError';
   }
 }
@@ -83,12 +86,11 @@ export async function scoreStudioCommandsWithOpenAI(
 
 export class FixedWindowRateLimiter {
   private readonly buckets = new Map<string, { start: number; count: number }>();
+  private readonly limit: number;
+  private readonly windowMs: number;
+  private readonly maxKeys: number;
 
-  constructor(
-    private readonly limit: number,
-    private readonly windowMs: number,
-    private readonly maxKeys: number,
-  ) {
+  constructor(limit: number, windowMs: number, maxKeys: number) {
     if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError('limit must be positive');
     if (!Number.isSafeInteger(windowMs) || windowMs < 1) {
       throw new RangeError('windowMs must be positive');
@@ -96,6 +98,9 @@ export class FixedWindowRateLimiter {
     if (!Number.isSafeInteger(maxKeys) || maxKeys < 1) {
       throw new RangeError('maxKeys must be positive');
     }
+    this.limit = limit;
+    this.windowMs = windowMs;
+    this.maxKeys = maxKeys;
   }
 
   consume(key: string, now = Date.now()): { allowed: boolean; retryAfterMs: number } {
