@@ -32,9 +32,10 @@ export function GuildAnniversarySettings({
         signal: AbortSignal.timeout(SAVE_TIMEOUT_MS),
         body: JSON.stringify({ anniversaryDate: date }),
       });
-      const payload = (await response.json().catch(() => null)) as
-        | { error?: string; anniversary?: { anniversaryDate?: string } | null }
-        | null;
+      const payload = (await response.json().catch(() => null)) as {
+        error?: string;
+        anniversary?: { anniversaryDate?: string } | null;
+      } | null;
       if (!response.ok) throw new Error(payload?.error ?? 'サーバー周年日の保存に失敗しました');
       const next = payload?.anniversary?.anniversaryDate ?? date;
       setDate(next);
@@ -121,7 +122,8 @@ export function GuildAnniversarySettings({
           />
         </div>
         <p className="mt-2 text-xs text-muted">
-          将来日は設定できません。周年の自動投稿ルールはBirthday Roleの次フェーズでこの日付を利用できます。
+          将来日は設定できません。周年の自動投稿ルールはBirthday
+          Roleの次フェーズでこの日付を利用できます。
         </p>
       </div>
 
