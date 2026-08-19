@@ -14,7 +14,7 @@
     "test": "turbo run test",
     "test:unit": "turbo run test:unit",
     "format": "prettier --write .",
-    "format:check": "prettier --write apps/bot/src/plugins/birthday-card.ts apps/studio/src/app/api/guilds/[guildId]/birthday/card-background/route.ts apps/studio/src/app/api/guilds/[guildId]/birthday/card-test/route.ts apps/studio/src/components/birthday-card-editor.tsx apps/studio/src/components/birthday-card-live-preview.tsx apps/studio/src/lib/birthday-card-background.test.ts apps/studio/src/lib/studio-policy-resources.ts packages/shared/src/birthday-card-background.ts && git diff -- apps/bot/src/plugins/birthday-card.ts apps/studio/src/app/api/guilds/[guildId]/birthday/card-background/route.ts apps/studio/src/app/api/guilds/[guildId]/birthday/card-test/route.ts apps/studio/src/components/birthday-card-editor.tsx apps/studio/src/components/birthday-card-live-preview.tsx apps/studio/src/lib/birthday-card-background.test.ts apps/studio/src/lib/studio-policy-resources.ts packages/shared/src/birthday-card-background.ts && false",
+    "format:check": "prettier --check .",
     "clean": "turbo run clean",
     "db:generate": "dotenv -- pnpm --filter @herta/db generate",
     "db:migrate": "dotenv -- pnpm --filter @herta/db migrate:dev",
