@@ -27,6 +27,19 @@ export class StudioSemanticProviderError extends Error {
   }
 }
 
+export interface StudioCommandDocumentEmbedding {
+  id: string;
+  vector: readonly number[];
+}
+
+export interface OpenAIStudioEmbeddingOptions {
+  apiKey: string;
+  model?: string;
+  texts: readonly string[];
+  fetchImpl?: SemanticFetch;
+  timeoutMs?: number;
+}
+
 export interface OpenAIStudioSemanticOptions {
   apiKey: string;
   model?: string;
@@ -36,11 +49,19 @@ export interface OpenAIStudioSemanticOptions {
   timeoutMs?: number;
 }
 
-export async function scoreStudioCommandsWithOpenAI(
-  options: OpenAIStudioSemanticOptions,
-): Promise<StudioCommandSemanticScore[]> {
+export function resolveStudioSemanticEmbeddingModel(value: string | undefined): string {
+  const model = value?.trim();
+  if (!model || model.length > 100) return DEFAULT_OPENAI_EMBEDDING_MODEL;
+  return model;
+}
+
+export async function embedStudioSemanticTextsWithOpenAI(
+  options: OpenAIStudioEmbeddingOptions,
+): Promise<number[][]> {
+  if (options.texts.length === 0) return [];
+
   const fetchImpl = options.fetchImpl ?? fetch;
-  const model = normalizeModel(options.model);
+  const model = resolveStudioSemanticEmbeddingModel(options.model);
   const controller = new AbortController();
   const timeout = setTimeout(
     () => controller.abort(),
@@ -57,7 +78,7 @@ export async function scoreStudioCommandsWithOpenAI(
       },
       body: JSON.stringify({
         model,
-        input: [options.query, ...options.documents.map((document) => document.text)],
+        input: options.texts,
       }),
       cache: 'no-store',
       signal: controller.signal,
@@ -75,13 +96,46 @@ export async function scoreStudioCommandsWithOpenAI(
     response,
     STUDIO_COMMAND_SEMANTIC_PROVIDER_RESPONSE_MAX_BYTES,
   );
-  const vectors = parseEmbeddingVectors(payload, options.documents.length + 1);
-  const queryVector = vectors[0];
+  return parseEmbeddingVectors(payload, options.texts.length);
+}
 
-  return options.documents.map((document, index) => ({
-    id: document.id,
-    score: cosineSimilarity(queryVector, vectors[index + 1]),
-  }));
+export function scoreStudioCommandsFromEmbeddings(
+  queryVector: readonly number[],
+  documentEmbeddings: readonly StudioCommandDocumentEmbedding[],
+): StudioCommandSemanticScore[] {
+  if (queryVector.length === 0) throw new StudioSemanticProviderError('malformed_response');
+
+  return documentEmbeddings.map((document) => {
+    if (document.vector.length !== queryVector.length) {
+      throw new StudioSemanticProviderError('malformed_response');
+    }
+    return {
+      id: document.id,
+      score: cosineSimilarity(queryVector, document.vector),
+    };
+  });
+}
+
+export async function scoreStudioCommandsWithOpenAI(
+  options: OpenAIStudioSemanticOptions,
+): Promise<StudioCommandSemanticScore[]> {
+  const vectors = await embedStudioSemanticTextsWithOpenAI({
+    apiKey: options.apiKey,
+    model: options.model,
+    texts: [options.query, ...options.documents.map((document) => document.text)],
+    fetchImpl: options.fetchImpl,
+    timeoutMs: options.timeoutMs,
+  });
+  const queryVector = vectors[0];
+  if (!queryVector) throw new StudioSemanticProviderError('malformed_response');
+
+  const documentEmbeddings = options.documents.map((document, index) => {
+    const vector = vectors[index + 1];
+    if (!vector) throw new StudioSemanticProviderError('malformed_response');
+    return { id: document.id, vector };
+  });
+
+  return scoreStudioCommandsFromEmbeddings(queryVector, documentEmbeddings);
 }
 
 export class FixedWindowRateLimiter {
@@ -235,10 +289,4 @@ function cosineSimilarity(left: readonly number[], right: readonly number[]): nu
   if (leftNorm === 0 || rightNorm === 0) return 0;
   const similarity = dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
   return Math.max(0, Math.min(1, similarity));
-}
-
-function normalizeModel(value: string | undefined): string {
-  const model = value?.trim();
-  if (!model || model.length > 100) return DEFAULT_OPENAI_EMBEDDING_MODEL;
-  return model;
 }
