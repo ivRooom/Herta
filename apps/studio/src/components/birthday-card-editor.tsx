@@ -7,16 +7,23 @@ import {
   type BirthdayCardConfig,
   type BirthdayCardConfigFieldKey,
 } from '@herta/shared';
-import { ImageIcon, Save } from 'lucide-react';
+import { ImageIcon, RotateCcw, Save } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import {
   BirthdayCardLivePreview,
   type BirthdayCardPositionXKey,
   type BirthdayCardPositionYKey,
 } from '@/components/birthday-card-live-preview';
+import {
+  birthdayCardDirtyFieldKeys,
+  restoreBirthdayCardEditableConfig,
+} from '@/lib/birthday-card-editor-state';
 import type { PluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';
 
 const SAVE_TIMEOUT_MS = 15_000;
+const EMPTY_EDITABLE_FIELDS: ReadonlySet<string> = new Set<string>();
+
+type PreviewMode = 'draft' | 'saved';
 
 export function BirthdayCardEditor({
   guildId,
@@ -30,6 +37,7 @@ export function BirthdayCardEditor({
   const initial = useMemo(() => normalizeBirthdayCardConfig(initialConfig), [initialConfig]);
   const [config, setConfig] = useState<BirthdayCardConfig>(initial);
   const [saved, setSaved] = useState<BirthdayCardConfig>(initial);
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('draft');
   const [pending, setPending] = useState(false);
   const [status, setStatus] = useState('');
 
@@ -41,15 +49,16 @@ export function BirthdayCardEditor({
     () => new Set(configAccess.editableFieldKeys),
     [configAccess.editableFieldKeys],
   );
-  const dirtyFieldKeys = BIRTHDAY_CARD_CONFIG_FIELD_KEYS.filter(
-    (key) => editable.has(key) && !Object.is(config[key], saved[key]),
-  );
+  const dirtyFieldKeys = birthdayCardDirtyFieldKeys(config, saved, editable);
   const dirty = dirtyFieldKeys.length > 0;
   const hasEditableFields = BIRTHDAY_CARD_CONFIG_FIELD_KEYS.some((key) => editable.has(key));
+  const previewConfig = previewMode === 'saved' ? saved : config;
+  const previewEditable = previewMode === 'saved' ? EMPTY_EDITABLE_FIELDS : editable;
 
   function update<K extends keyof BirthdayCardConfig>(key: K, value: BirthdayCardConfig[K]) {
     if (!editable.has(key)) return;
     setConfig((current) => ({ ...current, [key]: value }));
+    setPreviewMode('draft');
     setStatus('未保存の変更があります');
   }
 
@@ -66,7 +75,17 @@ export function BirthdayCardEditor({
       if (editable.has(yKey)) next[yKey] = y;
       return next;
     });
+    setPreviewMode('draft');
     setStatus('未保存の変更があります');
+  }
+
+  function resetChanges() {
+    if (!dirty || pending) return;
+    if (!window.confirm('未保存のBirthday Card変更を保存済み設定へ戻しますか？')) return;
+
+    setConfig((current) => restoreBirthdayCardEditableConfig(current, saved, editable));
+    setPreviewMode('draft');
+    setStatus('未保存の変更を保存済み設定へ戻しました');
   }
 
   async function save() {
@@ -98,6 +117,7 @@ export function BirthdayCardEditor({
       });
       setConfig(next);
       setSaved(next);
+      setPreviewMode('draft');
       setStatus('許可されたBirthday Card設定を保存しました');
     } catch (error) {
       setStatus(
@@ -136,11 +156,56 @@ export function BirthdayCardEditor({
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(22rem,0.8fr)] xl:items-start">
-        <div className="xl:sticky xl:top-20">
+        <div className="space-y-3 xl:sticky xl:top-20">
+          {dirty ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-background p-2.5">
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-foreground">プレビュー比較</p>
+                <p className="mt-0.5 text-[11px] text-muted">
+                  {dirtyFieldKeys.length}項目の未保存変更があります
+                </p>
+              </div>
+              <div
+                role="group"
+                aria-label="Birthday Cardプレビュー表示"
+                className="inline-flex rounded-lg border border-border bg-surface p-1"
+              >
+                <button
+                  type="button"
+                  aria-pressed={previewMode === 'draft'}
+                  onClick={() => setPreviewMode('draft')}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    previewMode === 'draft'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted hover:text-foreground'
+                  }`}
+                >
+                  変更中
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={previewMode === 'saved'}
+                  onClick={() => setPreviewMode('saved')}
+                  className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                    previewMode === 'saved'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted hover:text-foreground'
+                  }`}
+                >
+                  保存済み
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-xl border border-border bg-background px-3 py-2 text-xs text-muted">
+              現在のプレビューは保存済み設定と一致しています。
+            </div>
+          )}
+
           <BirthdayCardLivePreview
-            config={config}
+            config={previewConfig}
             readable={readable}
-            editable={editable}
+            editable={previewEditable}
             pending={pending}
             onPositionChange={updatePosition}
           />
@@ -288,15 +353,26 @@ export function BirthdayCardEditor({
         <p className="text-sm text-muted" aria-live="polite">
           {status || (dirty ? '未保存の変更があります' : '設定は保存済みです')}
         </p>
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={!dirty || pending}
-          className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Save className="h-4 w-4" aria-hidden="true" />{' '}
-          {pending ? '保存中…' : '許可されたCard設定を保存'}
-        </button>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            onClick={resetChanges}
+            disabled={!dirty || pending}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-background px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RotateCcw className="h-4 w-4" aria-hidden="true" />
+            未保存変更を戻す
+          </button>
+          <button
+            type="button"
+            onClick={() => void save()}
+            disabled={!dirty || pending}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Save className="h-4 w-4" aria-hidden="true" />{' '}
+            {pending ? '保存中…' : '許可されたCard設定を保存'}
+          </button>
+        </div>
       </div>
     </section>
   );
