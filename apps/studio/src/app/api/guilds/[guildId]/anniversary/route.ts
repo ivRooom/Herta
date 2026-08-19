@@ -7,8 +7,10 @@ import {
   removeGuildAnniversary,
   setGuildAnniversary,
 } from '@/lib/guild-anniversary';
-import { authorizeGuild } from '@/lib/guild-plugins';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
+import { resolveStudioAccess } from '@/lib/studio-access';
+import { hasEffectivePluginPermission } from '@/lib/studio-plugin-permissions';
+import { studioBotProfileSettingResource } from '@/lib/studio-policy-resources';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,8 +22,12 @@ export async function GET(_request: Request, { params }: GuildRouteContext) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
   const { guildId } = await params;
-  const authorization = await authorizeGuild(guildId, session.user.id);
-  if ('response' in authorization) return authorization.response;
+  const authorization = await authorizeAnniversarySetting(
+    guildId,
+    session.user.id,
+    'studio.settings.read',
+  );
+  if (!authorization.ok) return authorization.response;
   try {
     return NextResponse.json(
       { anniversary: await getGuildAnniversary(guildId) },
@@ -56,8 +62,12 @@ async function mutateAnniversary(
   }
 
   const { guildId } = await params;
-  const authorization = await authorizeGuild(guildId, session.user.id);
-  if ('response' in authorization) return authorization.response;
+  const authorization = await authorizeAnniversarySetting(
+    guildId,
+    session.user.id,
+    'studio.settings.write',
+  );
+  if (!authorization.ok) return authorization.response;
 
   try {
     if (action === 'remove') {
@@ -94,6 +104,28 @@ async function mutateAnniversary(
     });
     return NextResponse.json({ error: 'サーバー周年日の更新に失敗しました' }, { status: 500 });
   }
+}
+
+async function authorizeAnniversarySetting(
+  guildId: string,
+  userId: string,
+  action: 'studio.settings.read' | 'studio.settings.write',
+) {
+  const resolved = await resolveStudioAccess(guildId, userId);
+  if (!resolved.ok) return resolved;
+  const allowed = hasEffectivePluginPermission(
+    resolved.access,
+    action,
+    studioBotProfileSettingResource(guildId, 'anniversary'),
+  );
+  if (allowed) return resolved;
+  return {
+    ok: false as const,
+    response: Response.json(
+      { error: 'サーバー周年日を操作するHerta Studio権限がありません' },
+      { status: 403 },
+    ),
+  };
 }
 
 function readAnniversaryDate(value: unknown): string | null {
