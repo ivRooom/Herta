@@ -2,8 +2,14 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { RequestBodyTooLargeError, readJsonBodyWithLimit } from '@/lib/bounded-request-body';
 import {
+  buildStudioCommandEmbeddingCacheKey,
+  StudioCommandEmbeddingCache,
+} from '@/lib/command-semantic-cache';
+import {
+  embedStudioSemanticTextsWithOpenAI,
   FixedWindowRateLimiter,
-  scoreStudioCommandsWithOpenAI,
+  resolveStudioSemanticEmbeddingModel,
+  scoreStudioCommandsFromEmbeddings,
   STUDIO_COMMAND_SEMANTIC_RATE_LIMIT,
   STUDIO_COMMAND_SEMANTIC_RATE_MAX_KEYS,
   STUDIO_COMMAND_SEMANTIC_RATE_WINDOW_MS,
@@ -30,6 +36,7 @@ const semanticRateLimiter = new FixedWindowRateLimiter(
   STUDIO_COMMAND_SEMANTIC_RATE_WINDOW_MS,
   STUDIO_COMMAND_SEMANTIC_RATE_MAX_KEYS,
 );
+const semanticDocumentEmbeddingCache = new StudioCommandEmbeddingCache();
 
 export async function POST(request: Request) {
   const session = await auth();
@@ -95,15 +102,40 @@ export async function POST(request: Request) {
 
   const commands = buildStudioCommandItems(parsed.guildId, guildName);
   const documents = buildStudioCommandSemanticDocuments(commands);
+  const model = resolveStudioSemanticEmbeddingModel(process.env.OPENAI_EMBEDDING_MODEL);
+  const cacheKey = buildStudioCommandEmbeddingCacheKey(model, documents);
   const startedAt = Date.now();
 
   try {
-    const scores = await scoreStudioCommandsWithOpenAI({
+    const documentEmbeddingsPromise = semanticDocumentEmbeddingCache.getOrLoad(
+      cacheKey,
+      async () => {
+        const vectors = await embedStudioSemanticTextsWithOpenAI({
+          apiKey,
+          model,
+          texts: documents.map((document) => document.text),
+        });
+        return documents.map((document, index) => {
+          const vector = vectors[index];
+          if (!vector) throw new StudioSemanticProviderError('malformed_response');
+          return { id: document.id, vector };
+        });
+      },
+    );
+    const queryEmbeddingPromise = embedStudioSemanticTextsWithOpenAI({
       apiKey,
-      model: process.env.OPENAI_EMBEDDING_MODEL,
-      query: parsed.query,
-      documents,
+      model,
+      texts: [parsed.query],
     });
+
+    const [cacheResult, queryVectors] = await Promise.all([
+      documentEmbeddingsPromise,
+      queryEmbeddingPromise,
+    ]);
+    const queryVector = queryVectors[0];
+    if (!queryVector) throw new StudioSemanticProviderError('malformed_response');
+
+    const scores = scoreStudioCommandsFromEmbeddings(queryVector, cacheResult.embeddings);
     const boundedScores = scores
       .filter((candidate) => candidate.score >= STUDIO_COMMAND_SEMANTIC_SCORE_THRESHOLD)
       .sort((left, right) => right.score - left.score)
