@@ -90,16 +90,24 @@ export function BirthdayCardEditor({
   const previewEditable = previewMode === 'saved' ? EMPTY_EDITABLE_FIELDS : editable;
   const interactionPending = pending || backgroundPending || testPending;
   const preset = birthdayCardPreset(previewConfig.birthdayCardPreset);
-  const backgroundUrl =
-    previewConfig.birthdayCardBackgroundSource === 'custom'
+  const canReadBackgroundSource = readable.has('birthdayCardBackgroundSource');
+  const canReadPreset = readable.has('birthdayCardPreset');
+  const backgroundUrl = !canReadBackgroundSource
+    ? null
+    : previewConfig.birthdayCardBackgroundSource === 'custom'
       ? canReadBackground && background
         ? `/api/guilds/${guildId}/birthday/card-background?v=${background.sha256}`
         : null
-      : `/birthday-card-presets/${preset.assetFile}`;
-  const backgroundLabel =
-    previewConfig.birthdayCardBackgroundSource === 'custom'
+      : canReadPreset
+        ? `/birthday-card-presets/${preset.assetFile}`
+        : null;
+  const backgroundLabel = !canReadBackgroundSource
+    ? '背景画像'
+    : previewConfig.birthdayCardBackgroundSource === 'custom'
       ? background?.fileName || 'カスタム背景'
-      : preset.label;
+      : canReadPreset
+        ? preset.label
+        : '背景プリセット';
 
   function update<K extends keyof BirthdayCardConfig>(key: K, value: BirthdayCardConfig[K]) {
     if (!editable.has(key)) return;
