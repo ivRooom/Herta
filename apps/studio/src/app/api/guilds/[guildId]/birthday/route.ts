@@ -8,9 +8,13 @@ import {
 } from '@/lib/birthday-admin';
 import { birthdayMemberEligibility, parseBirthdayAdminRequest } from '@/lib/birthday-admin-core';
 import { searchGuildMembers } from '@/lib/bot-guild-members';
+import { readBoundedRequestBody, RequestBodyTooLargeError } from '@/lib/bounded-request-body';
 import { authorizeGuild } from '@/lib/guild-plugins';
+import { isSameOriginMutationRequest } from '@/lib/request-origin';
 
 export const dynamic = 'force-dynamic';
+
+const BIRTHDAY_ADMIN_BODY_MAX_BYTES = 8 * 1024;
 
 type GuildRouteContext = { params: Promise<{ guildId: string }> };
 
@@ -33,11 +37,25 @@ export async function GET(_request: Request, { params }: GuildRouteContext) {
 export async function POST(request: Request, { params }: GuildRouteContext) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
+  if (!isSameOriginMutationRequest(request)) {
+    return NextResponse.json({ error: '不正なOriginです' }, { status: 403 });
+  }
+
   const { guildId } = await params;
   const authorization = await authorizeGuild(guildId, session.user.id);
   if ('response' in authorization) return authorization.response;
 
-  const body = await request.json().catch(() => null);
+  let body: unknown;
+  try {
+    const rawBody = await readBoundedRequestBody(request, BIRTHDAY_ADMIN_BODY_MAX_BYTES);
+    body = JSON.parse(rawBody) as unknown;
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError) {
+      return NextResponse.json({ error: 'リクエストが大きすぎます' }, { status: 413 });
+    }
+    return NextResponse.json({ error: 'JSON形式が不正です' }, { status: 400 });
+  }
+
   const parsed = parseBirthdayAdminRequest(body);
   if (!parsed) {
     return NextResponse.json({ error: '誕生日管理操作の入力が不正です' }, { status: 400 });
@@ -76,6 +94,7 @@ export async function POST(request: Request, { params }: GuildRouteContext) {
         userId: parsed.userId,
         month: parsed.month,
         day: parsed.day,
+        birthYear: parsed.birthYear,
       });
     } else {
       await removeBirthdayRegistration({
@@ -84,7 +103,10 @@ export async function POST(request: Request, { params }: GuildRouteContext) {
         userId: parsed.userId,
       });
     }
-    return NextResponse.json({ registrations: await listBirthdayRegistrations(guildId) });
+    return NextResponse.json(
+      { registrations: await listBirthdayRegistrations(guildId) },
+      { headers: { 'Cache-Control': 'private, no-store' } },
+    );
   } catch (error) {
     return birthdayAdminErrorResponse(error);
   }
@@ -94,6 +116,8 @@ function birthdayAdminErrorResponse(error: unknown): NextResponse {
   if (error instanceof BirthdayAdminValidationError) {
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
-  console.error('Birthday admin API request failed', error);
+  console.error('Birthday admin API request failed', {
+    errorName: error instanceof Error ? error.name : 'UnknownError',
+  });
   return NextResponse.json({ error: '誕生日管理操作に失敗しました' }, { status: 500 });
 }
