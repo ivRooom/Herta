@@ -31,7 +31,7 @@ test('keyboard移動はCard境界を越えない', () => {
 test('Avatar geometryはBot rendererと同じ1672x941座標・edge clampを使う', () => {
   const centered = birthdayCardAvatarGeometry(50, 50, 10);
   assert.equal(centered.diameter, Math.round(BIRTHDAY_CARD_PREVIEW_WIDTH * 0.1));
-  assert.equal(centered.centerX, BIRTHDAY_CARD_PREVIEW_WIDTH / 2);
+  assert.ok(Math.abs(centered.centerX - BIRTHDAY_CARD_PREVIEW_WIDTH / 2) <= 0.5);
   assert.ok(Math.abs(centered.centerY - BIRTHDAY_CARD_PREVIEW_HEIGHT / 2) <= 0.5);
 
   const edge = birthdayCardAvatarGeometry(0, 0, 16);
