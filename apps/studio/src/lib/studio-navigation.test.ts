@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { normalizeDashboardCallbackUrl } from './auth-navigation.ts';
-import { buildStudioCommandItems, filterStudioCommandItems } from './studio-navigation.ts';
+import {
+  buildStudioCommandItems,
+  filterStudioCommandItems,
+  STUDIO_COMMAND_SEARCH_QUERY_MAX_LENGTH,
+  STUDIO_COMMAND_SEARCH_RESULT_LIMIT,
+  type StudioCommandItem,
+} from './studio-navigation.ts';
 
 const GUILD_ID = '123456789012345678';
 
@@ -122,6 +128,79 @@ test('複数トークンはすべて一致するコマンドだけを返す', ()
   assert.deepEqual(
     results.map((command) => command.id),
     ['guild-moderation-blacklist'],
+  );
+});
+
+test('exact lexical一致をintent一致より優先する', () => {
+  const commands = buildStudioCommandItems(GUILD_ID, 'Test Guild');
+  const results = filterStudioCommandItems(commands, 'moderation');
+
+  assert.equal(results[0]?.id, 'guild-moderation');
+});
+
+test('自然文intentからMessage Studioへ到達できる', () => {
+  const commands = buildStudioCommandItems(GUILD_ID, 'Test Guild');
+
+  assert.equal(
+    filterStudioCommandItems(commands, 'Botで予約投稿したい')[0]?.id,
+    'guild-daily-content',
+  );
+  assert.equal(
+    filterStudioCommandItems(commands, '定期的に投稿したい')[0]?.id,
+    'guild-daily-content',
+  );
+});
+
+test('自然文intentから監査ログとModeration Enforcementへ到達できる', () => {
+  const commands = buildStudioCommandItems(GUILD_ID, 'Test Guild');
+
+  assert.equal(
+    filterStudioCommandItems(commands, '誰が設定を変更したか確認したい')[0]?.id,
+    'guild-audit-logs',
+  );
+  assert.equal(
+    filterStudioCommandItems(commands, 'サーバーの危険な設定を確認したい')[0]?.id,
+    'guild-moderation-enforcement',
+  );
+});
+
+test('Guild固有intentはGuild未選択時の検索結果へ漏らさない', () => {
+  const commands = buildStudioCommandItems(null, null);
+
+  assert.deepEqual(filterStudioCommandItems(commands, 'Botで予約投稿したい'), []);
+  assert.deepEqual(filterStudioCommandItems(commands, '誰が設定を変更したか確認したい'), []);
+});
+
+test('intent metadataへGuild名や動的ユーザーデータを混入しない', () => {
+  const commands = buildStudioCommandItems(GUILD_ID, 'Sensitive Guild Name');
+
+  assert.ok(
+    commands.every((command) =>
+      (command.intents ?? []).every((intent) => !intent.includes('Sensitive Guild Name')),
+    ),
+  );
+});
+
+test('検索queryは上限内へ制限し、結果件数も固定上限を超えない', () => {
+  assert.equal(STUDIO_COMMAND_SEARCH_QUERY_MAX_LENGTH, 100);
+  assert.equal(STUDIO_COMMAND_SEARCH_RESULT_LIMIT, 20);
+
+  const commands: StudioCommandItem[] = Array.from({ length: 30 }, (_, index) => ({
+    id: `command-${index}`,
+    href: `/dashboard/command-${index}`,
+    label: `Command ${index}`,
+    description: 'Common command',
+    keywords: ['common'],
+    icon: 'dashboard',
+    group: 'workspace',
+  }));
+  const oversizedQuery = `common${' '.repeat(STUDIO_COMMAND_SEARCH_QUERY_MAX_LENGTH * 4)}`;
+  const results = filterStudioCommandItems(commands, oversizedQuery);
+
+  assert.equal(results.length, STUDIO_COMMAND_SEARCH_RESULT_LIMIT);
+  assert.deepEqual(
+    results.map((command) => command.id),
+    Array.from({ length: STUDIO_COMMAND_SEARCH_RESULT_LIMIT }, (_, index) => `command-${index}`),
   );
 });
 
