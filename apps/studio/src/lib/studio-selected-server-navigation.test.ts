@@ -15,6 +15,7 @@ test('選択中サーバーの主要管理画面を直接リンクする', () =>
       ['selected-server-message-studio', `/dashboard/guilds/${GUILD_ID}/daily-content`],
       ['selected-server-commands', `/dashboard/guilds/${GUILD_ID}/commands`],
       ['selected-server-role-manager', `/dashboard/guilds/${GUILD_ID}/roles`],
+      ['selected-server-access', `/dashboard/guilds/${GUILD_ID}/access`],
       ['selected-server-plugins', `/dashboard/guilds/${GUILD_ID}/plugins`],
       ['selected-server-leaderboard', `/dashboard/guilds/${GUILD_ID}/leaderboard`],
       ['selected-server-moderation', `/dashboard/guilds/${GUILD_ID}/moderation`],
@@ -24,13 +25,15 @@ test('選択中サーバーの主要管理画面を直接リンクする', () =>
   );
 });
 
-test('Moderationは詳細画面でも親ナビゲーションをactiveにできる', () => {
-  const moderation = buildSelectedServerNavigationItems(GUILD_ID).find(
-    (item) => item.id === 'selected-server-moderation',
-  );
+test('ModerationとAccessは詳細画面でも親ナビゲーションをactiveにできる', () => {
+  const items = buildSelectedServerNavigationItems(GUILD_ID);
+  const moderation = items.find((item) => item.id === 'selected-server-moderation');
+  const access = items.find((item) => item.id === 'selected-server-access');
 
   assert.ok(moderation);
+  assert.ok(access);
   assert.notEqual(moderation.exact, true);
+  assert.notEqual(access.exact, true);
 });
 
 test('不正または未選択のGuildではサーバー固有リンクを作らない', () => {

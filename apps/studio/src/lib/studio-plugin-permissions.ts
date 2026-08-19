@@ -15,6 +15,7 @@ export interface EffectivePluginPermissionContext {
 
 export interface PluginConfigStudioAccess {
   canToggleEnabled: boolean;
+  readableFieldKeys: string[];
   editableFieldKeys: string[];
 }
 
@@ -36,15 +37,11 @@ export function hasEffectivePluginPermission(
   resource: string,
 ): boolean {
   if (access.isRoot) return true;
-  const activeRoleIds = new Set(access.roleIds);
-  const legacyPolicies = access.policies
-    .filter((policy) => activeRoleIds.has(policy.discordRoleId))
-    .map((policy) => policy.policy);
-  const managedPolicies = access.managedPolicies;
+  const policies = effectivePolicies(access);
 
   // Policy未導入のManage Guildユーザーは従来挙動を維持し、段階移行を可能にする。
-  if (legacyPolicies.length === 0 && managedPolicies.length === 0) return true;
-  return evaluateStudioPolicyDocuments([...managedPolicies, ...legacyPolicies], action, resource);
+  if (policies.length === 0) return true;
+  return evaluateStudioPolicyDocuments(policies, action, resource);
 }
 
 export function resolvePluginConfigStudioAccess(
@@ -54,12 +51,22 @@ export function resolvePluginConfigStudioAccess(
   fieldKeys: readonly string[],
 ): PluginConfigStudioAccess {
   const uniqueFieldKeys = [...new Set(fieldKeys)];
+  const enforceReadPolicy = hasConfiguredSettingsReadPolicy(access);
   return {
     canToggleEnabled: hasEffectivePluginPermission(
       access,
       'studio.operation.execute',
       pluginEnabledControlResource(guildId, pluginId),
     ),
+    readableFieldKeys: enforceReadPolicy
+      ? uniqueFieldKeys.filter((fieldKey) =>
+          hasEffectivePluginPermission(
+            access,
+            'studio.settings.read',
+            pluginConfigFieldResource(guildId, pluginId, fieldKey),
+          ),
+        )
+      : uniqueFieldKeys,
     editableFieldKeys: uniqueFieldKeys.filter((fieldKey) =>
       hasEffectivePluginPermission(
         access,
@@ -68,6 +75,14 @@ export function resolvePluginConfigStudioAccess(
       ),
     ),
   };
+}
+
+export function filterReadablePluginConfig(
+  config: Record<string, unknown>,
+  access: Pick<PluginConfigStudioAccess, 'readableFieldKeys'>,
+): Record<string, unknown> {
+  const readable = new Set(access.readableFieldKeys);
+  return Object.fromEntries(Object.entries(config).filter(([key]) => readable.has(key)));
 }
 
 export function getExplicitPermissionMode(
@@ -109,6 +124,31 @@ export function setExplicitPermissionMode(
       },
     ],
   };
+}
+
+function hasConfiguredSettingsReadPolicy(access: EffectivePluginPermissionContext): boolean {
+  return effectivePolicies(access).some((policy) =>
+    policy.Statement.some((statement) => statement.Action.some(isSettingsReadActionPattern)),
+  );
+}
+
+function effectivePolicies(access: EffectivePluginPermissionContext): StudioAccessPolicy[] {
+  const activeRoleIds = new Set(access.roleIds);
+  return [
+    ...access.managedPolicies,
+    ...access.policies
+      .filter((policy) => activeRoleIds.has(policy.discordRoleId))
+      .map((policy) => policy.policy),
+  ];
+}
+
+function isSettingsReadActionPattern(action: string): boolean {
+  return (
+    action === '*' ||
+    action === 'studio.*' ||
+    action === 'studio.settings.*' ||
+    action === 'studio.settings.read'
+  );
 }
 
 function generatedSid(action: StudioPolicyAction, resource: string): string {

@@ -5,6 +5,7 @@ import {
   createStudioRolePolicyFromActions,
 } from './studio-access-policy.ts';
 import {
+  filterReadablePluginConfig,
   getExplicitPermissionMode,
   hasEffectivePluginPermission,
   pluginConfigFieldResource,
@@ -100,7 +101,7 @@ test('適用対象PolicyがないManage Guildユーザーは従来権限を維�
   );
 });
 
-test('適用対象Policyが存在する場合はdefault denyになる', () => {
+test('適用対象Policyが存在する場合はwriteがdefault denyになる', () => {
   const access: EffectivePluginPermissionContext = {
     isRoot: false,
     roleIds: [ROLE_ID],
@@ -117,9 +118,48 @@ test('適用対象Policyが存在する場合はdefault denyになる', () => {
   );
 });
 
+test('settings.read未導入の既存Policyでは設定値の閲覧互換を維持する', () => {
+  const writeOnly = createStudioRolePolicyFromActions(GUILD_ID, ['studio.settings.write']);
+  const access: EffectivePluginPermissionContext = {
+    isRoot: false,
+    roleIds: [ROLE_ID],
+    policies: [{ discordRoleId: ROLE_ID, policy: writeOnly }],
+    managedPolicies: [],
+  };
+  const resolved = resolvePluginConfigStudioAccess(access, GUILD_ID, 'mini-games', [
+    'theme',
+    'complexity',
+  ]);
+  assert.deepEqual(resolved.readableFieldKeys, ['theme', 'complexity']);
+});
+
+test('settings.readを導入すると項目単位のdefault denyで値を隠す', () => {
+  const themeResource = pluginConfigFieldResource(GUILD_ID, 'mini-games', 'theme');
+  let policy = createEmptyStudioAccessPolicy();
+  policy = setExplicitPermissionMode(policy, 'studio.settings.read', themeResource, 'allow');
+  policy = setExplicitPermissionMode(policy, 'studio.settings.write', themeResource, 'allow');
+  const access: EffectivePluginPermissionContext = {
+    isRoot: false,
+    roleIds: [ROLE_ID],
+    policies: [{ discordRoleId: ROLE_ID, policy }],
+    managedPolicies: [],
+  };
+
+  const resolved = resolvePluginConfigStudioAccess(access, GUILD_ID, 'mini-games', [
+    'theme',
+    'secretValue',
+  ]);
+  assert.deepEqual(resolved.readableFieldKeys, ['theme']);
+  assert.deepEqual(resolved.editableFieldKeys, ['theme']);
+  assert.deepEqual(filterReadablePluginConfig({ theme: 'dark', secretValue: 'hidden' }, resolved), {
+    theme: 'dark',
+  });
+});
+
 test('全体Allowより項目Denyを優先してConfig Studio権限を解決する', () => {
   const deniedField = 'amidakujiTheme';
   let policy = createStudioRolePolicyFromActions(GUILD_ID, [
+    'studio.settings.read',
     'studio.settings.write',
     'studio.operation.execute',
   ]);
@@ -149,6 +189,7 @@ test('全体Allowより項目Denyを優先してConfig Studio権限を解決す�
     ]),
     {
       canToggleEnabled: false,
+      readableFieldKeys: [deniedField, 'amidakujiComplexity'],
       editableFieldKeys: ['amidakujiComplexity'],
     },
   );
@@ -190,7 +231,7 @@ test('Managed PolicyのDenyがLegacy Role PolicyのAllowより優先される', 
   assert.equal(hasEffectivePluginPermission(access, 'studio.settings.write', resource), false);
 });
 
-test('Managed Policyだけが存在する場合もdefault denyへ移行する', () => {
+test('Managed Policyだけが存在する場合もwriteはdefault denyへ移行する', () => {
   const access: EffectivePluginPermissionContext = {
     isRoot: false,
     roleIds: [ROLE_ID],

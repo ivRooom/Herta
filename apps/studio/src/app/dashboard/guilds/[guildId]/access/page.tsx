@@ -1,24 +1,11 @@
-import {
-  listManagedStudioAccessPolicies,
-  listStudioAccessGroupMembers,
-  listStudioAccessGroups,
-  listStudioAccessPolicyAttachments,
-} from '@herta/db';
 import Link from 'next/link';
-import { ArrowLeft, Blocks, ShieldCheck, Users } from 'lucide-react';
+import { ArrowLeft, Blocks, FileKey2, ShieldCheck, UserRound, UsersRound } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import { auth } from '@/auth';
-import { AccessGroupManager } from '@/components/access-group-manager';
-import { ManagedPolicyManager } from '@/components/managed-policy-manager';
-import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
-import { prisma } from '@/lib/db';
+import { AccessResourceNavigation } from '@/components/access-resource-navigation';
 import { authorizeStudioPermission } from '@/lib/studio-access';
-import {
-  STUDIO_ROOT_DISCORD_ROLE_ID,
-  validateStudioAccessPolicy,
-  type StudioAccessPolicy,
-} from '@/lib/studio-access-policy';
-import { listStudioRolePolicies } from '@/lib/studio-role-policy-store';
+import { loadStudioAccessInventory } from '@/lib/studio-access-inventory';
+import { studioAccessPageResource } from '@/lib/studio-policy-resources';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,58 +21,21 @@ export default async function GuildAccessControlPage({
     guildId,
     session.user.id,
     'studio.roles.read',
-    `guild:${guildId}:access:*`,
+    studioAccessPageResource(guildId, 'overview'),
   );
   if (!authorization.ok) {
     return <AccessUnavailable guildId={guildId} status={authorization.response.status} />;
   }
 
-  const options = await getGuildConfigurationOptions(guildId);
-  if (!options) return <AccessUnavailable guildId={guildId} status={503} />;
+  const inventory = await loadStudioAccessInventory(guildId);
+  if (!inventory) return <AccessUnavailable guildId={guildId} status={503} />;
 
-  const [storedPolicies, attachments, groups, members, legacyRolePolicies] = await Promise.all([
-    listManagedStudioAccessPolicies(prisma, guildId),
-    listStudioAccessPolicyAttachments(prisma, guildId),
-    listStudioAccessGroups(prisma, guildId),
-    listStudioAccessGroupMembers(prisma, guildId),
-    listStudioRolePolicies(guildId),
-  ]);
-
-  const policies: Array<{
-    id: string;
-    name: string;
-    description: string | null;
-    policy: StudioAccessPolicy;
-    revision: number;
-    updatedAt: string;
-  }> = [];
-  let invalidPolicyCount = 0;
-  for (const stored of storedPolicies) {
-    const validation = validateStudioAccessPolicy(stored.document, guildId);
-    if (!validation.valid || !validation.policy) {
-      invalidPolicyCount += 1;
-      continue;
-    }
-    policies.push({
-      id: stored.id,
-      name: stored.name,
-      description: stored.description,
-      policy: validation.policy,
-      revision: stored.revision,
-      updatedAt: stored.updatedAt.toISOString(),
-    });
-  }
-
-  const roleOptions = options.roles
-    .filter((role) => role.id !== STUDIO_ROOT_DISCORD_ROLE_ID)
-    .map((role) => ({ id: role.id, name: role.name }));
-  const groupOptions = groups.map((group) => ({ id: group.id, name: group.name }));
-  const directUserIds = new Set(
-    attachments
-      .filter((attachment) => attachment.principalType === 'user')
-      .map((attachment) => attachment.principalId),
-  );
-  for (const member of members) directUserIds.add(member.userId);
+  const counts = {
+    users: inventory.users.length,
+    groups: inventory.groups.length,
+    roles: inventory.roles.length,
+    policies: inventory.policies.length,
+  };
 
   return (
     <div className="space-y-7">
@@ -104,43 +54,75 @@ export default async function GuildAccessControlPage({
           </span>
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">
-              {options.guildName} · Herta IAM
+              {inventory.guildName} · Herta IAM
             </p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">
               Access Control Center
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Policyを独立した権限リソースとして作成し、Discord Role・User・Herta
-              GroupへAttachします。RoleごとのJSON複製ではなく、1つのPolicyを複数Principalから再利用できます。
+              AWS IAMと同じ考え方で、Users・Groups・Discord Roles・Managed
+              Policiesを独立したResourceとして確認します。Policyは複数PrincipalへAttachでき、明示DenyがAllowより優先されます。
             </p>
           </div>
         </div>
       </section>
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <SummaryCard label="Policies" value={storedPolicies.length} />
-        <SummaryCard label="Groups" value={groups.length} />
-        <SummaryCard label="Roles" value={roleOptions.length} />
-        <SummaryCard label="Users" value={directUserIds.size} />
-      </div>
+      <AccessResourceNavigation guildId={guildId} active="resources" counts={counts} />
 
-      {legacyRolePolicies.length > 0 ? (
+      <section>
+        <div className="mb-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">IAM</p>
+          <h2 className="mt-1 text-xl font-semibold">Resources</h2>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <ResourceCard
+            href={`/dashboard/guilds/${guildId}/access/users`}
+            label="Users"
+            value={counts.users}
+            description="直接PolicyまたはGroup membershipを持つDiscord User"
+            icon={<UserRound className="h-5 w-5" aria-hidden="true" />}
+          />
+          <ResourceCard
+            href={`/dashboard/guilds/${guildId}/access/groups`}
+            label="Groups"
+            value={counts.groups}
+            description="複数UserへPolicyをまとめて適用するHerta Group"
+            icon={<UsersRound className="h-5 w-5" aria-hidden="true" />}
+          />
+          <ResourceCard
+            href={`/dashboard/guilds/${guildId}/access/roles`}
+            label="Roles"
+            value={counts.roles}
+            description="Discord RoleへAttachされたHerta権限を確認"
+            icon={<ShieldCheck className="h-5 w-5" aria-hidden="true" />}
+          />
+          <ResourceCard
+            href={`/dashboard/guilds/${guildId}/access/policies`}
+            label="Policies"
+            value={counts.policies}
+            description="ページ・設定項目・操作単位のManaged Policy"
+            icon={<FileKey2 className="h-5 w-5" aria-hidden="true" />}
+          />
+        </div>
+      </section>
+
+      {inventory.legacyRolePolicyCount > 0 ? (
         <section className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 sm:p-5">
           <div className="flex gap-3">
             <Blocks className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" aria-hidden="true" />
             <div>
               <h2 className="text-sm font-semibold">Legacy Role Policy互換モード</h2>
               <p className="mt-1 text-xs leading-5 text-muted">
-                既存のRole Policyが{legacyRolePolicies.length}
-                件あります。既存ユーザーの権限を壊さないため認可時のみ読み取り継続します。新しい権限設定はManaged
-                Policyを使用してください。
+                既存Role Policyが{inventory.legacyRolePolicyCount}
+                件あります。既存権限を壊さないため認可時のみ読み取り継続し、新規権限はManaged
+                Policyへ集約します。
               </p>
             </div>
           </div>
         </section>
       ) : null}
 
-      {invalidPolicyCount > 0 ? (
+      {inventory.invalidPolicyCount > 0 ? (
         <section
           className="rounded-2xl border border-red-500/30 bg-red-500/5 p-4 sm:p-5"
           role="alert"
@@ -149,40 +131,15 @@ export default async function GuildAccessControlPage({
             無効なManaged Policyを検出しました
           </h2>
           <p className="mt-1 text-xs leading-5 text-muted">
-            {invalidPolicyCount}
-            件のPolicy documentが現在のPolicy schemaまたはGuild
+            {inventory.invalidPolicyCount}
+            件のPolicy documentが現在のSchemaまたはGuild
             scopeを満たしていません。認可resolverも安全側に倒して拒否します。
           </p>
         </section>
       ) : null}
 
-      <ManagedPolicyManager
-        guildId={guildId}
-        policies={policies}
-        attachments={attachments.map((attachment) => ({
-          policyId: attachment.policyId,
-          principalType: attachment.principalType,
-          principalId: attachment.principalId,
-        }))}
-        roles={roleOptions}
-        groups={groupOptions}
-        canEdit={authorization.access.isRoot}
-      />
-
-      <AccessGroupManager
-        guildId={guildId}
-        groups={groups.map((group) => ({
-          id: group.id,
-          name: group.name,
-          description: group.description,
-        }))}
-        members={members.map((member) => ({ groupId: member.groupId, userId: member.userId }))}
-        canEdit={authorization.access.isRoot}
-      />
-
       {!authorization.access.isRoot ? (
         <section className="rounded-2xl border border-border bg-surface p-4 text-sm text-muted">
-          <Users className="mr-2 inline h-4 w-4" aria-hidden="true" />
           閲覧モードです。Policy・Group・Attachmentの変更にはOWNER root Roleが必要です。
         </section>
       ) : null}
@@ -190,19 +147,40 @@ export default async function GuildAccessControlPage({
   );
 }
 
-function SummaryCard({ label, value }: { label: string; value: number }) {
+function ResourceCard({
+  href,
+  label,
+  value,
+  description,
+  icon,
+}: {
+  href: string;
+  label: string;
+  value: number;
+  description: string;
+  icon: React.ReactNode;
+}) {
   return (
-    <section className="rounded-2xl border border-border bg-surface p-4 shadow-card">
-      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted">{label}</p>
-      <p className="mt-1 text-2xl font-semibold">{value}</p>
-    </section>
+    <Link
+      href={href}
+      className="group rounded-2xl border border-border bg-surface p-5 shadow-card transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
+          {icon}
+        </span>
+        <span className="text-3xl font-semibold tracking-tight">{value}</span>
+      </div>
+      <h3 className="mt-4 text-lg font-semibold group-hover:text-primary">{label}</h3>
+      <p className="mt-1 text-xs leading-5 text-muted">{description}</p>
+    </Link>
   );
 }
 
 function AccessUnavailable({ guildId, status }: { guildId: string; status: number }) {
   const message =
     status === 403
-      ? 'Access Control Centerを閲覧する権限がありません。OWNER rootまたは許可されたPolicyが必要です。'
+      ? 'Access Control Centerを閲覧する権限がありません。許可されたPolicyが必要です。'
       : 'Discordまたは権限データを確認できませんでした。安全のためAccess Controlを拒否しています。';
   return (
     <div className="space-y-6">

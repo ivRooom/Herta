@@ -41,8 +41,15 @@ const SELECTED_SERVER_NAVIGATION_DEFINITIONS: readonly SelectedServerNavigationD
     id: 'selected-server-role-manager',
     path: 'roles',
     label: 'Role Manager',
-    description: 'Studioの閲覧・編集・操作権限をDiscord Roleごとに管理する',
+    description: 'Discord Roleの作成・階層・Self Role・Policy連携を管理する',
     icon: 'rules',
+  },
+  {
+    id: 'selected-server-access',
+    path: 'access',
+    label: 'Access / IAM',
+    description: 'Users・Groups・Roles・Policiesと細粒度権限を管理する',
+    icon: 'account',
   },
   {
     id: 'selected-server-plugins',
