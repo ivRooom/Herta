@@ -1,8 +1,8 @@
 import { BIRTHDAY_CARD_CONFIG_FIELD_KEYS } from '@herta/shared';
+import { ArrowLeft, Cake } from 'lucide-react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { ArrowLeft, Cake } from 'lucide-react';
 import { auth } from '@/auth';
 import { BirthdayAdmin } from '@/components/birthday-admin';
 import { BirthdayCardEditor } from '@/components/birthday-card-editor';
@@ -13,8 +13,10 @@ import { getDiscordAccessToken } from '@/lib/session';
 import { resolveStudioAccess } from '@/lib/studio-access';
 import {
   filterReadablePluginConfig,
+  hasEffectivePluginPermission,
   resolvePluginConfigStudioAccess,
 } from '@/lib/studio-plugin-permissions';
+import { studioBirthdayResource } from '@/lib/studio-policy-resources';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,11 +34,44 @@ export default async function BirthdayAdminPage({
   if (!guild) notFound();
   await persistSelectedGuild(guild, session.user.id);
 
-  const [registrations, plugin, studioAccess] = await Promise.all([
-    listBirthdayRegistrations(guildId),
+  const [plugin, studioAccess] = await Promise.all([
     getGuildPlugin(guildId, 'birthday-role'),
     resolveStudioAccess(guildId, session.user.id),
   ]);
+
+  const canReadRegistrations =
+    studioAccess.ok &&
+    hasEffectivePluginPermission(
+      studioAccess.access,
+      'studio.settings.read',
+      studioBirthdayResource(guildId, 'registrations'),
+    );
+  const canWriteRegistrations =
+    studioAccess.ok &&
+    hasEffectivePluginPermission(
+      studioAccess.access,
+      'studio.settings.write',
+      studioBirthdayResource(guildId, 'registrations'),
+    );
+  const canReadCelebrations =
+    studioAccess.ok &&
+    hasEffectivePluginPermission(
+      studioAccess.access,
+      'studio.settings.read',
+      studioBirthdayResource(guildId, 'celebrations'),
+    );
+
+  const registrations = canReadRegistrations ? await listBirthdayRegistrations(guildId) : [];
+  const visibleRegistrations = canReadCelebrations
+    ? registrations
+    : registrations.map(
+        ({
+          latestAge: _age,
+          latestServerBirthdayNumber: _number,
+          celebrationCount: _count,
+          ...registration
+        }) => registration,
+      );
 
   let cardEditor: ReactNode = null;
   if (plugin && studioAccess.ok) {
@@ -47,20 +82,18 @@ export default async function BirthdayAdminPage({
       BIRTHDAY_CARD_CONFIG_FIELD_KEYS,
     );
     const readableConfig = filterReadablePluginConfig(plugin.config, configAccess);
-    const canReadAllCardFields = BIRTHDAY_CARD_CONFIG_FIELD_KEYS.every((key) =>
-      configAccess.readableFieldKeys.includes(key),
-    );
-    cardEditor = canReadAllCardFields ? (
-      <BirthdayCardEditor
-        guildId={guildId}
-        initialConfig={readableConfig}
-        configAccess={configAccess}
-      />
-    ) : (
-      <section className="rounded-2xl border border-amber-400/20 bg-surface p-5 text-sm text-muted">
-        Birthday Cardの一部設定を閲覧するIAM権限がありません。許可された項目はBirthday RoleのPlugin設定から確認できます。
-      </section>
-    );
+    cardEditor =
+      configAccess.readableFieldKeys.length > 0 ? (
+        <BirthdayCardEditor
+          guildId={guildId}
+          initialConfig={readableConfig}
+          configAccess={configAccess}
+        />
+      ) : (
+        <PermissionNotice>
+          Birthday Card設定を閲覧するIAM権限がありません。Policyで必要な設定項目だけを許可できます。
+        </PermissionNotice>
+      );
   }
 
   return (
@@ -89,8 +122,33 @@ export default async function BirthdayAdminPage({
           </div>
         </div>
       </section>
-      <BirthdayAdmin guildId={guildId} initialRegistrations={registrations} />
+
+      {canReadRegistrations ? (
+        <BirthdayAdmin
+          guildId={guildId}
+          initialRegistrations={visibleRegistrations}
+          canEdit={canWriteRegistrations}
+          showCelebrationStats={canReadCelebrations}
+        />
+      ) : (
+        <PermissionNotice>
+          メンバーの誕生日・生年を閲覧するIAM権限がありません。Birthday
+          Cardの設定権限とは独立して制御されます。
+        </PermissionNotice>
+      )}
+
       {cardEditor}
     </div>
+  );
+}
+
+function PermissionNotice({ children }: { children: ReactNode }) {
+  return (
+    <section
+      className="rounded-2xl border border-amber-400/20 bg-surface p-5 text-sm text-muted"
+      role="status"
+    >
+      {children}
+    </section>
   );
 }
