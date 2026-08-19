@@ -27,7 +27,6 @@ export interface BirthdayCardRenderInput {
 
 export async function renderBirthdayCard(input: BirthdayCardRenderInput): Promise<Buffer> {
   const preset = birthdayCardPreset(input.config.birthdayCardPreset);
-  const background = await resolveBirthdayCardBackground(input, preset.assetFile);
   const layers: OverlayOptions[] = [];
 
   if (input.config.birthdayCardShowAvatar && input.avatarUrl) {
@@ -61,6 +60,32 @@ export async function renderBirthdayCard(input: BirthdayCardRenderInput): Promis
     top: 0,
   });
 
+  if (
+    input.config.birthdayCardBackgroundSource === 'custom' &&
+    input.customBackground &&
+    inspectBirthdayCardBackgroundImage(input.customBackground)
+  ) {
+    try {
+      return await composeBirthdayCard(Buffer.from(input.customBackground), layers);
+    } catch {
+      // Header validation cannot prove that compressed image payloads are fully decodable.
+      // Continue to the bundled preset instead of dropping the birthday card delivery.
+    }
+  }
+
+  const presetBackground = await readPresetBackground(preset.assetFile);
+  if (presetBackground && inspectBirthdayCardBackgroundImage(presetBackground)) {
+    try {
+      return await composeBirthdayCard(presetBackground, layers);
+    } catch {
+      // A corrupt packaged asset must not abort the birthday delivery cycle.
+    }
+  }
+
+  return composeBirthdayCard(await createSafeFallbackBackground(), layers);
+}
+
+function composeBirthdayCard(background: Buffer, layers: OverlayOptions[]): Promise<Buffer> {
   return sharp(background, { limitInputPixels: BIRTHDAY_CARD_BACKGROUND_MAX_PIXELS })
     .resize(CARD_WIDTH, CARD_HEIGHT, { fit: 'cover', position: 'centre' })
     .composite(layers)
@@ -68,28 +93,14 @@ export async function renderBirthdayCard(input: BirthdayCardRenderInput): Promis
     .toBuffer();
 }
 
-async function resolveBirthdayCardBackground(
-  input: BirthdayCardRenderInput,
-  presetAssetFile: string,
-): Promise<Buffer> {
-  if (
-    input.config.birthdayCardBackgroundSource === 'custom' &&
-    input.customBackground &&
-    inspectBirthdayCardBackgroundImage(input.customBackground)
-  ) {
-    return Buffer.from(input.customBackground);
-  }
-
+async function readPresetBackground(presetAssetFile: string): Promise<Buffer | null> {
   const backgroundPath = fileURLToPath(
     new URL(`../../assets/birthday-card-presets/${presetAssetFile}`, import.meta.url),
   );
-  const presetBackground = await readFile(backgroundPath);
-  if (inspectBirthdayCardBackgroundImage(presetBackground)) {
-    return presetBackground;
-  }
+  return readFile(backgroundPath).catch(() => null);
+}
 
-  // Bundled assets are expected to be trusted image files, but a corrupt deployment artifact must not
-  // abort the birthday delivery cycle. Keep rendering deterministic until the asset is replaced.
+function createSafeFallbackBackground(): Promise<Buffer> {
   return sharp({
     create: {
       width: CARD_WIDTH,
