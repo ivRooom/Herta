@@ -6,11 +6,17 @@ import {
   removeBirthdayRegistration,
   setBirthdayRegistration,
 } from '@/lib/birthday-admin';
-import { birthdayMemberEligibility, parseBirthdayAdminRequest } from '@/lib/birthday-admin-core';
+import {
+  birthdayMemberEligibility,
+  parseBirthdayAdminRequest,
+  type BirthdayRegistration,
+} from '@/lib/birthday-admin-core';
 import { searchGuildMembers } from '@/lib/bot-guild-members';
 import { readBoundedRequestBody, RequestBodyTooLargeError } from '@/lib/bounded-request-body';
-import { authorizeGuild } from '@/lib/guild-plugins';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
+import { resolveStudioAccess } from '@/lib/studio-access';
+import { hasEffectivePluginPermission } from '@/lib/studio-plugin-permissions';
+import { studioBirthdayResource } from '@/lib/studio-policy-resources';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,11 +28,22 @@ export async function GET(_request: Request, { params }: GuildRouteContext) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
   const { guildId } = await params;
-  const authorization = await authorizeGuild(guildId, session.user.id);
-  if ('response' in authorization) return authorization.response;
+  const access = await resolveStudioAccess(guildId, session.user.id);
+  if (!access.ok) return access.response;
+
+  if (!canReadBirthdayRegistrations(access.access, guildId)) {
+    return birthdayPermissionDenied('メンバー誕生日を閲覧する権限がありません');
+  }
+
   try {
+    const registrations = await listBirthdayRegistrations(guildId);
     return NextResponse.json(
-      { registrations: await listBirthdayRegistrations(guildId) },
+      {
+        registrations: redactCelebrationStats(
+          registrations,
+          canReadBirthdayCelebrations(access.access, guildId),
+        ),
+      },
       { headers: { 'Cache-Control': 'private, no-store' } },
     );
   } catch (error) {
@@ -42,8 +59,18 @@ export async function POST(request: Request, { params }: GuildRouteContext) {
   }
 
   const { guildId } = await params;
-  const authorization = await authorizeGuild(guildId, session.user.id);
-  if ('response' in authorization) return authorization.response;
+  const access = await resolveStudioAccess(guildId, session.user.id);
+  if (!access.ok) return access.response;
+
+  if (
+    !hasEffectivePluginPermission(
+      access.access,
+      'studio.settings.write',
+      studioBirthdayResource(guildId, 'registrations'),
+    )
+  ) {
+    return birthdayPermissionDenied('メンバー誕生日を編集する権限がありません');
+  }
 
   let body: unknown;
   try {
@@ -103,13 +130,60 @@ export async function POST(request: Request, { params }: GuildRouteContext) {
         userId: parsed.userId,
       });
     }
+
+    const canReadRegistrations = canReadBirthdayRegistrations(access.access, guildId);
+    if (!canReadRegistrations) {
+      return NextResponse.json({ updated: true });
+    }
+
+    const registrations = await listBirthdayRegistrations(guildId);
     return NextResponse.json(
-      { registrations: await listBirthdayRegistrations(guildId) },
+      {
+        updated: true,
+        registrations: redactCelebrationStats(
+          registrations,
+          canReadBirthdayCelebrations(access.access, guildId),
+        ),
+      },
       { headers: { 'Cache-Control': 'private, no-store' } },
     );
   } catch (error) {
     return birthdayAdminErrorResponse(error);
   }
+}
+
+function canReadBirthdayRegistrations(
+  access: Parameters<typeof hasEffectivePluginPermission>[0],
+  guildId: string,
+): boolean {
+  return hasEffectivePluginPermission(
+    access,
+    'studio.settings.read',
+    studioBirthdayResource(guildId, 'registrations'),
+  );
+}
+
+function canReadBirthdayCelebrations(
+  access: Parameters<typeof hasEffectivePluginPermission>[0],
+  guildId: string,
+): boolean {
+  return hasEffectivePluginPermission(
+    access,
+    'studio.settings.read',
+    studioBirthdayResource(guildId, 'celebrations'),
+  );
+}
+
+function redactCelebrationStats(
+  registrations: readonly BirthdayRegistration[],
+  canReadCelebrations: boolean,
+): BirthdayRegistration[] {
+  if (canReadCelebrations) return [...registrations];
+  return registrations.map(({ latestAge: _age, latestServerBirthdayNumber: _number, celebrationCount: _count, ...registration }) => registration);
+}
+
+function birthdayPermissionDenied(message: string): NextResponse {
+  return NextResponse.json({ error: message }, { status: 403 });
 }
 
 function birthdayAdminErrorResponse(error: unknown): NextResponse {
