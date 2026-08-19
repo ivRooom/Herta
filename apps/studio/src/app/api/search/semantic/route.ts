@@ -43,6 +43,24 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'application/jsonが必要です' }, { status: 415 });
   }
 
+  const body = await parseBody(request);
+  if ('response' in body) return body.response;
+  const parsed = parseStudioCommandSemanticRequest(body.value);
+  if (!parsed) {
+    return NextResponse.json({ error: '検索条件が不正です' }, { status: 400 });
+  }
+
+  const provider = process.env.STUDIO_SEMANTIC_SEARCH_PROVIDER?.trim().toLocaleLowerCase();
+  if (provider !== 'openai') {
+    return NextResponse.json({ mode: 'disabled', scores: [] });
+  }
+
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) {
+    console.warn('Studio semantic search provider is enabled without OPENAI_API_KEY');
+    return NextResponse.json({ mode: 'fallback', scores: [] });
+  }
+
   const rate = semanticRateLimiter.consume(session.user.id);
   if (!rate.allowed) {
     return NextResponse.json(
@@ -52,13 +70,6 @@ export async function POST(request: Request) {
         headers: { 'Retry-After': String(Math.ceil(rate.retryAfterMs / 1000)) },
       },
     );
-  }
-
-  const body = await parseBody(request);
-  if ('response' in body) return body.response;
-  const parsed = parseStudioCommandSemanticRequest(body.value);
-  if (!parsed) {
-    return NextResponse.json({ error: '検索条件が不正です' }, { status: 400 });
   }
 
   let guildName: string | null = null;
@@ -80,17 +91,6 @@ export async function POST(request: Request) {
       });
       return NextResponse.json({ mode: 'fallback', scores: [] });
     }
-  }
-
-  const provider = process.env.STUDIO_SEMANTIC_SEARCH_PROVIDER?.trim().toLocaleLowerCase();
-  if (provider !== 'openai') {
-    return NextResponse.json({ mode: 'disabled', scores: [] });
-  }
-
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) {
-    console.warn('Studio semantic search provider is enabled without OPENAI_API_KEY');
-    return NextResponse.json({ mode: 'fallback', scores: [] });
   }
 
   const commands = buildStudioCommandItems(parsed.guildId, guildName);
