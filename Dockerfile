@@ -25,16 +25,19 @@ RUN pnpm install --frozen-lockfile \
     --filter @herta/worker... \
   && pnpm --filter @herta/db exec prisma generate
 
-# Next.js standalone出力ではPrisma Query Engineが自動追跡されない場合があるため、
-# production依存から生成したClientとEngineをStudio standaloneへ明示的に配置する。
+# Next.js standalone出力ではPrisma Query Engine / static / publicが自動追跡されない場合があるため、
+# production依存から生成したClientとStudio配信アセットをstandaloneへ明示的に配置する。
 RUN PRISMA_SOURCE="$(find node_modules/.pnpm -path '*/node_modules/.prisma/client' -type d -print -quit)" \
   && PRISMA_DEST="apps/studio/.next/standalone/apps/studio/.prisma/client" \
+  && STUDIO_STANDALONE="apps/studio/.next/standalone/apps/studio" \
   && test -n "${PRISMA_SOURCE}" \
   && PRISMA_ENGINE="$(find "${PRISMA_SOURCE}" -maxdepth 1 -type f -name 'libquery_engine-*.so.node' -print -quit)" \
   && test -n "${PRISMA_ENGINE}" \
-  && mkdir -p "${PRISMA_DEST}" \
+  && mkdir -p "${PRISMA_DEST}" "${STUDIO_STANDALONE}/public" \
   && cp -r "${PRISMA_SOURCE}/." "${PRISMA_DEST}/" \
-  && cp -r apps/studio/.next/static apps/studio/.next/standalone/apps/studio/.next/static \
+  && cp -r apps/studio/.next/static "${STUDIO_STANDALONE}/.next/static" \
+  && cp -r apps/studio/public/. "${STUDIO_STANDALONE}/public/" \
+  && test -f "${STUDIO_STANDALONE}/public/birthday-card-presets/herta-lavender-tea.webp" \
   && test -n "$(find "${PRISMA_DEST}" -maxdepth 1 -type f -name 'libquery_engine-*.so.node' -print -quit)"
 
 # Runtimeへ持ち込まないworkspace source・test・開発設定をbuilder側で除去する。
@@ -82,6 +85,7 @@ RUN rm -rf \
   && test -f apps/bot/dist/main.js \
   && test -f apps/worker/dist/main.js \
   && test -f apps/studio/.next/standalone/apps/studio/server.js \
+  && test -f apps/studio/.next/standalone/apps/studio/public/birthday-card-presets/herta-lavender-tea.webp \
   && test -x packages/db/node_modules/.bin/prisma \
   && test ! -d apps/studio/.next/cache \
   && test ! -d apps/api/src \
