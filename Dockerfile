@@ -104,7 +104,8 @@ FROM alpine:3.21 AS runtime
 
 # Node binaryは現行公式imageから取得し、runtime OS packagesはAlpine 3.21のsecurity updatesを利用する。
 # Birthday CardはDiscord表示名・日付を画像へ描画するため、日本語を含むCJK glyphをRuntimeに用意する。
-RUN apk add --no-cache libc6-compat openssl curl font-noto-cjk libstdc++ \
+# HTTP healthcheckはNode標準fetchを使い、runtimeへ追加のcurl依存を持ち込まない。
+RUN apk add --no-cache libc6-compat openssl font-noto-cjk libstdc++ \
   && addgroup -g 1000 -S node \
   && adduser -u 1000 -S -G node node
 COPY --from=node-current /usr/local /usr/local
