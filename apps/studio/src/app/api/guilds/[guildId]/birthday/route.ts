@@ -12,7 +12,7 @@ import {
   type BirthdayRegistration,
 } from '@/lib/birthday-admin-core';
 import { searchGuildMembers } from '@/lib/bot-guild-members';
-import { readBoundedRequestBody, RequestBodyTooLargeError } from '@/lib/bounded-request-body';
+import { readJsonBodyWithLimit, RequestBodyTooLargeError } from '@/lib/bounded-request-body';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
 import { resolveStudioAccess } from '@/lib/studio-access';
 import { hasEffectivePluginPermission } from '@/lib/studio-plugin-permissions';
@@ -74,8 +74,7 @@ export async function POST(request: Request, { params }: GuildRouteContext) {
 
   let body: unknown;
   try {
-    const rawBody = await readBoundedRequestBody(request, BIRTHDAY_ADMIN_BODY_MAX_BYTES);
-    body = JSON.parse(rawBody) as unknown;
+    body = await readJsonBodyWithLimit(request, BIRTHDAY_ADMIN_BODY_MAX_BYTES);
   } catch (error) {
     if (error instanceof RequestBodyTooLargeError) {
       return NextResponse.json({ error: 'リクエストが大きすぎます' }, { status: 413 });
