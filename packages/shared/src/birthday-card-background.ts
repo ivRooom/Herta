@@ -44,7 +44,9 @@ function inspectPng(bytes: Uint8Array): BirthdayCardBackgroundImageInfo | null {
 function inspectJpeg(bytes: Uint8Array): BirthdayCardBackgroundImageInfo | null {
   if (bytes.byteLength < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
   let offset = 2;
-  const sofMarkers = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+  const sofMarkers = new Set([
+    0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf,
+  ]);
 
   while (offset + 3 < bytes.byteLength) {
     if (bytes[offset] !== 0xff) {
@@ -73,11 +75,7 @@ function inspectJpeg(bytes: Uint8Array): BirthdayCardBackgroundImageInfo | null 
 }
 
 function inspectWebp(bytes: Uint8Array): BirthdayCardBackgroundImageInfo | null {
-  if (
-    bytes.byteLength < 30 ||
-    ascii(bytes, 0, 4) !== 'RIFF' ||
-    ascii(bytes, 8, 12) !== 'WEBP'
-  ) {
+  if (bytes.byteLength < 30 || ascii(bytes, 0, 4) !== 'RIFF' || ascii(bytes, 8, 12) !== 'WEBP') {
     return null;
   }
   const kind = ascii(bytes, 12, 16);
@@ -101,12 +99,7 @@ function inspectWebp(bytes: Uint8Array): BirthdayCardBackgroundImageInfo | null 
     };
   }
   if (kind === 'VP8 ') {
-    if (
-      bytes.byteLength < 30 ||
-      bytes[23] !== 0x9d ||
-      bytes[24] !== 0x01 ||
-      bytes[25] !== 0x2a
-    ) {
+    if (bytes.byteLength < 30 || bytes[23] !== 0x9d || bytes[24] !== 0x01 || bytes[25] !== 0x2a) {
       return null;
     }
     return {
