@@ -13,6 +13,7 @@ const CARD_HEIGHT = 941;
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const AVATAR_FETCH_TIMEOUT_MS = 5_000;
 const DISCORD_CDN_HOSTS = new Set(['cdn.discordapp.com', 'media.discordapp.net']);
+const SAFE_FALLBACK_BACKGROUND = { r: 119, g: 101, b: 143 } as const;
 
 export interface BirthdayCardRenderInput {
   config: BirthdayCardConfig;
@@ -82,7 +83,23 @@ async function resolveBirthdayCardBackground(
   const backgroundPath = fileURLToPath(
     new URL(`../../assets/birthday-card-presets/${presetAssetFile}`, import.meta.url),
   );
-  return readFile(backgroundPath);
+  const presetBackground = await readFile(backgroundPath);
+  if (inspectBirthdayCardBackgroundImage(presetBackground)) {
+    return presetBackground;
+  }
+
+  // Bundled assets are expected to be trusted image files, but a corrupt deployment artifact must not
+  // abort the birthday delivery cycle. Keep rendering deterministic until the asset is replaced.
+  return sharp({
+    create: {
+      width: CARD_WIDTH,
+      height: CARD_HEIGHT,
+      channels: 3,
+      background: SAFE_FALLBACK_BACKGROUND,
+    },
+  })
+    .png()
+    .toBuffer();
 }
 
 function renderTextOverlay(
