@@ -31,10 +31,7 @@ export function buildStudioCommandEmbeddingCacheKey(
 
 export class StudioCommandEmbeddingCache {
   private readonly values = new Map<string, readonly StudioCommandDocumentEmbedding[]>();
-  private readonly pending = new Map<
-    string,
-    Promise<readonly StudioCommandDocumentEmbedding[]>
-  >();
+  private readonly pending = new Map<string, Promise<readonly StudioCommandDocumentEmbedding[]>>();
   private readonly maxEntries: number;
 
   constructor(maxEntries = STUDIO_COMMAND_SEMANTIC_CACHE_MAX_ENTRIES) {
