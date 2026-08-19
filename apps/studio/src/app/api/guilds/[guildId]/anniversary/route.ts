@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { readBoundedRequestBody, RequestBodyTooLargeError } from '@/lib/bounded-request-body';
+import { readJsonBodyWithLimit, RequestBodyTooLargeError } from '@/lib/bounded-request-body';
 import {
   getGuildAnniversary,
   isValidGuildAnniversaryDate,
@@ -75,8 +75,7 @@ async function mutateAnniversary(
       return NextResponse.json({ anniversary: null, changed });
     }
 
-    const rawBody = await readBoundedRequestBody(request, BODY_MAX_BYTES);
-    const body = JSON.parse(rawBody) as unknown;
+    const body = await readJsonBodyWithLimit(request, BODY_MAX_BYTES);
     const anniversaryDate = readAnniversaryDate(body);
     if (!anniversaryDate || !isValidGuildAnniversaryDate(anniversaryDate)) {
       return NextResponse.json(
