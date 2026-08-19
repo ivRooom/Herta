@@ -22,10 +22,7 @@ const MAX_MULTIPART_OVERHEAD_BYTES = 256 * 1024;
 const UPLOAD_RATE_LIMIT = 10;
 const UPLOAD_RATE_WINDOW_MS = 10 * 60 * 1000;
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ guildId: string }> },
-) {
+export async function GET(request: Request, { params }: { params: Promise<{ guildId: string }> }) {
   const { guildId } = await params;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
@@ -43,7 +40,10 @@ export async function GET(
 
   const etag = `"${background.sha256}"`;
   if (request.headers.get('if-none-match') === etag) {
-    return new Response(null, { status: 304, headers: responseHeaders(background.contentType, etag) });
+    return new Response(null, {
+      status: 304,
+      headers: responseHeaders(background.contentType, etag),
+    });
   }
 
   return new Response(new Uint8Array(background.content), {
@@ -56,10 +56,7 @@ export async function GET(
   });
 }
 
-export async function PUT(
-  request: Request,
-  { params }: { params: Promise<{ guildId: string }> },
-) {
+export async function PUT(request: Request, { params }: { params: Promise<{ guildId: string }> }) {
   const { guildId } = await params;
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
@@ -217,7 +214,12 @@ function responseHeaders(contentType: string, etag: string): Record<string, stri
 }
 
 function safeFileName(value: string, contentType: string): string {
-  const fallback = contentType === 'image/png' ? 'background.png' : contentType === 'image/webp' ? 'background.webp' : 'background.jpg';
+  const fallback =
+    contentType === 'image/png'
+      ? 'background.png'
+      : contentType === 'image/webp'
+        ? 'background.webp'
+        : 'background.jpg';
   const normalized = value
     .replaceAll('\\', '/')
     .split('/')
