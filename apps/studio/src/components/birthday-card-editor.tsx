@@ -29,13 +29,21 @@ export function BirthdayCardEditor({
   const [pending, setPending] = useState(false);
   const [status, setStatus] = useState('');
 
+  const readable = useMemo(
+    () => new Set(configAccess.readableFieldKeys),
+    [configAccess.readableFieldKeys],
+  );
   const editable = useMemo(
     () => new Set(configAccess.editableFieldKeys),
     [configAccess.editableFieldKeys],
   );
-  const canEditAll = BIRTHDAY_CARD_CONFIG_FIELD_KEYS.every((key) => editable.has(key));
-  const dirty = JSON.stringify(config) !== JSON.stringify(saved);
+  const dirtyFieldKeys = BIRTHDAY_CARD_CONFIG_FIELD_KEYS.filter(
+    (key) => editable.has(key) && !Object.is(config[key], saved[key]),
+  );
+  const dirty = dirtyFieldKeys.length > 0;
+  const hasEditableFields = BIRTHDAY_CARD_CONFIG_FIELD_KEYS.some((key) => editable.has(key));
   const preset = birthdayCardPreset(config.birthdayCardPreset);
+  const canPreviewPreset = readable.has('birthdayCardPreset');
 
   function update<K extends keyof BirthdayCardConfig>(key: K, value: BirthdayCardConfig[K]) {
     if (!editable.has(key)) return;
@@ -44,13 +52,11 @@ export function BirthdayCardEditor({
   }
 
   async function save() {
-    if (!dirty || pending || !canEditAll) return;
+    if (!dirty || pending) return;
     setPending(true);
     setStatus('保存中…');
     try {
-      const configPatch = Object.fromEntries(
-        BIRTHDAY_CARD_CONFIG_FIELD_KEYS.map((key) => [key, config[key]]),
-      );
+      const configPatch = Object.fromEntries(dirtyFieldKeys.map((key) => [key, config[key]]));
       const response = await fetch(`/api/guilds/${guildId}/plugins/birthday-role`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -65,10 +71,15 @@ export function BirthdayCardEditor({
           typeof payload?.error === 'string' ? payload.error : 'Birthday Cardの保存に失敗しました',
         );
       }
-      const next = normalizeBirthdayCardConfig(payload?.config ?? configPatch);
+
+      const next = normalizeBirthdayCardConfig({
+        ...config,
+        ...(payload?.config ?? {}),
+        ...configPatch,
+      });
       setConfig(next);
       setSaved(next);
-      setStatus('Birthday Cardを保存しました');
+      setStatus('許可されたBirthday Card設定を保存しました');
     } catch (error) {
       setStatus(
         isTimeoutError(error)
@@ -94,20 +105,30 @@ export function BirthdayCardEditor({
             プリセットを選び、名前・Avatar・誕生日・年齢の表示と位置・サイズを調整します。実際の投稿ではDiscordの表示名とAvatar、生年から算出した年齢を使います。
           </p>
         </div>
-        {!canEditAll ? (
+        {!hasEditableFields ? (
           <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-xs text-amber-300">
             IAM閲覧モード
+          </span>
+        ) : configAccess.editableFieldKeys.length < configAccess.readableFieldKeys.length ? (
+          <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-xs text-amber-300">
+            IAM部分編集
           </span>
         ) : null}
       </div>
 
       <div className="relative aspect-[1672/941] overflow-hidden rounded-2xl border border-border bg-background">
-        <img
-          src={`/birthday-card-presets/${preset.assetFile}`}
-          alt={`${preset.label} Birthday Cardプリセット`}
-          className="absolute inset-0 h-full w-full object-cover"
-        />
-        {config.birthdayCardShowAvatar ? (
+        {canPreviewPreset ? (
+          <img
+            src={`/birthday-card-presets/${preset.assetFile}`}
+            alt={`${preset.label} Birthday Cardプリセット`}
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center bg-background text-sm text-muted">
+            背景プリセットはIAM権限により非表示です
+          </div>
+        )}
+        {readable.has('birthdayCardShowAvatar') && config.birthdayCardShowAvatar ? (
           <div
             className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white/80 bg-primary/90 font-semibold text-white"
             style={{
@@ -122,7 +143,7 @@ export function BirthdayCardEditor({
             HM
           </div>
         ) : null}
-        {config.birthdayCardShowName ? (
+        {readable.has('birthdayCardShowName') && config.birthdayCardShowName ? (
           <PreviewText
             value="Herta Member"
             x={config.birthdayCardNameX}
@@ -132,7 +153,7 @@ export function BirthdayCardEditor({
             stroke={preset.textStroke}
           />
         ) : null}
-        {config.birthdayCardShowBirthday ? (
+        {readable.has('birthdayCardShowBirthday') && config.birthdayCardShowBirthday ? (
           <PreviewText
             value="8月19日"
             x={config.birthdayCardBirthdayX}
@@ -142,7 +163,7 @@ export function BirthdayCardEditor({
             stroke={preset.textStroke}
           />
         ) : null}
-        {config.birthdayCardShowAge ? (
+        {readable.has('birthdayCardShowAge') && config.birthdayCardShowAge ? (
           <PreviewText
             value="25歳"
             x={config.birthdayCardAgeX}
@@ -157,51 +178,71 @@ export function BirthdayCardEditor({
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="space-y-4 rounded-xl border border-border bg-background p-4">
           <h3 className="font-medium">表示内容</h3>
-          <label className="text-sm">
-            プリセット
-            <select
-              value={config.birthdayCardPreset}
-              onChange={(event) =>
-                update('birthdayCardPreset', event.target.value as BirthdayCardConfig['birthdayCardPreset'])
-              }
-              disabled={!editable.has('birthdayCardPreset') || pending}
-              className="mt-1 w-full rounded-xl border border-border bg-surface px-3 py-2 disabled:opacity-50"
-            >
-              {BIRTHDAY_CARD_PRESETS.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Toggle
+          {readable.has('birthdayCardPreset') ? (
+            <label className="text-sm">
+              プリセット
+              <select
+                value={config.birthdayCardPreset}
+                onChange={(event) =>
+                  update(
+                    'birthdayCardPreset',
+                    event.target.value as BirthdayCardConfig['birthdayCardPreset'],
+                  )
+                }
+                disabled={!editable.has('birthdayCardPreset') || pending}
+                className="mt-1 w-full rounded-xl border border-border bg-surface px-3 py-2 disabled:opacity-50"
+              >
+                {BIRTHDAY_CARD_PRESETS.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <ToggleIfReadable
+            field="birthdayCardEnabled"
             label="Birthday Cardを投稿する"
             checked={config.birthdayCardEnabled}
-            disabled={!editable.has('birthdayCardEnabled') || pending}
+            readable={readable}
+            editable={editable}
+            pending={pending}
             onChange={(value) => update('birthdayCardEnabled', value)}
           />
-          <Toggle
+          <ToggleIfReadable
+            field="birthdayCardShowName"
             label="名前"
             checked={config.birthdayCardShowName}
-            disabled={!editable.has('birthdayCardShowName') || pending}
+            readable={readable}
+            editable={editable}
+            pending={pending}
             onChange={(value) => update('birthdayCardShowName', value)}
           />
-          <Toggle
+          <ToggleIfReadable
+            field="birthdayCardShowAvatar"
             label="Avatar"
             checked={config.birthdayCardShowAvatar}
-            disabled={!editable.has('birthdayCardShowAvatar') || pending}
+            readable={readable}
+            editable={editable}
+            pending={pending}
             onChange={(value) => update('birthdayCardShowAvatar', value)}
           />
-          <Toggle
+          <ToggleIfReadable
+            field="birthdayCardShowBirthday"
             label="誕生日"
             checked={config.birthdayCardShowBirthday}
-            disabled={!editable.has('birthdayCardShowBirthday') || pending}
+            readable={readable}
+            editable={editable}
+            pending={pending}
             onChange={(value) => update('birthdayCardShowBirthday', value)}
           />
-          <Toggle
+          <ToggleIfReadable
+            field="birthdayCardShowAge"
             label="年齢（生年登録時のみ）"
             checked={config.birthdayCardShowAge}
-            disabled={!editable.has('birthdayCardShowAge') || pending}
+            readable={readable}
+            editable={editable}
+            pending={pending}
             onChange={(value) => update('birthdayCardShowAge', value)}
           />
         </div>
@@ -218,6 +259,7 @@ export function BirthdayCardEditor({
             size={config.birthdayCardAvatarSize}
             minSize={6}
             maxSize={30}
+            readable={readable}
             editable={editable}
             pending={pending}
             update={update}
@@ -232,6 +274,7 @@ export function BirthdayCardEditor({
             size={config.birthdayCardNameSize}
             minSize={20}
             maxSize={96}
+            readable={readable}
             editable={editable}
             pending={pending}
             update={update}
@@ -246,6 +289,7 @@ export function BirthdayCardEditor({
             size={config.birthdayCardBirthdaySize}
             minSize={16}
             maxSize={72}
+            readable={readable}
             editable={editable}
             pending={pending}
             update={update}
@@ -260,6 +304,7 @@ export function BirthdayCardEditor({
             size={config.birthdayCardAgeSize}
             minSize={16}
             maxSize={72}
+            readable={readable}
             editable={editable}
             pending={pending}
             update={update}
@@ -274,34 +319,42 @@ export function BirthdayCardEditor({
         <button
           type="button"
           onClick={() => void save()}
-          disabled={!dirty || pending || !canEditAll}
+          disabled={!dirty || pending}
           className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Save className="h-4 w-4" aria-hidden="true" /> {pending ? '保存中…' : 'Card設定を保存'}
+          <Save className="h-4 w-4" aria-hidden="true" />{' '}
+          {pending ? '保存中…' : '許可されたCard設定を保存'}
         </button>
       </div>
     </section>
   );
 }
 
-function Toggle({
+function ToggleIfReadable({
+  field,
   label,
   checked,
-  disabled,
+  readable,
+  editable,
+  pending,
   onChange,
 }: {
+  field: BirthdayCardConfigFieldKey;
   label: string;
   checked: boolean;
-  disabled: boolean;
+  readable: ReadonlySet<string>;
+  editable: ReadonlySet<string>;
+  pending: boolean;
   onChange(value: boolean): void;
 }) {
+  if (!readable.has(field)) return null;
   return (
     <label className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-sm">
       <span>{label}</span>
       <input
         type="checkbox"
         checked={checked}
-        disabled={disabled}
+        disabled={!editable.has(field) || pending}
         onChange={(event) => onChange(event.target.checked)}
         className="h-4 w-4 accent-primary disabled:opacity-50"
       />
@@ -329,6 +382,7 @@ function PositionControls({
   size,
   minSize,
   maxSize,
+  readable,
   editable,
   pending,
   update,
@@ -342,37 +396,45 @@ function PositionControls({
   size: number;
   minSize: number;
   maxSize: number;
+  readable: ReadonlySet<string>;
   editable: ReadonlySet<string>;
   pending: boolean;
   update<K extends keyof BirthdayCardConfig>(key: K, value: BirthdayCardConfig[K]): void;
 }) {
+  if (![xKey, yKey, sizeKey].some((key) => readable.has(key))) return null;
   return (
     <fieldset className="space-y-2 rounded-lg border border-border p-3">
       <legend className="px-1 text-sm font-medium">{label}</legend>
-      <RangeControl
-        label="X"
-        value={x}
-        min={0}
-        max={100}
-        disabled={!editable.has(xKey) || pending}
-        onChange={(value) => update(xKey, value)}
-      />
-      <RangeControl
-        label="Y"
-        value={y}
-        min={0}
-        max={100}
-        disabled={!editable.has(yKey) || pending}
-        onChange={(value) => update(yKey, value)}
-      />
-      <RangeControl
-        label="サイズ"
-        value={size}
-        min={minSize}
-        max={maxSize}
-        disabled={!editable.has(sizeKey) || pending}
-        onChange={(value) => update(sizeKey, value)}
-      />
+      {readable.has(xKey) ? (
+        <RangeControl
+          label="X"
+          value={x}
+          min={0}
+          max={100}
+          disabled={!editable.has(xKey) || pending}
+          onChange={(value) => update(xKey, value)}
+        />
+      ) : null}
+      {readable.has(yKey) ? (
+        <RangeControl
+          label="Y"
+          value={y}
+          min={0}
+          max={100}
+          disabled={!editable.has(yKey) || pending}
+          onChange={(value) => update(yKey, value)}
+        />
+      ) : null}
+      {readable.has(sizeKey) ? (
+        <RangeControl
+          label="サイズ"
+          value={size}
+          min={minSize}
+          max={maxSize}
+          disabled={!editable.has(sizeKey) || pending}
+          onChange={(value) => update(sizeKey, value)}
+        />
+      ) : null}
     </fieldset>
   );
 }
