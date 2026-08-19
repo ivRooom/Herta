@@ -10,7 +10,10 @@ FROM alpine:3.21 AS builder
 
 RUN apk add --no-cache libc6-compat openssl bash libstdc++
 COPY --from=node-current /usr/local /usr/local
-RUN corepack enable
+# node-currentのYarn shimは/usr/local外の/opt配下を参照するため、stage間copy後は壊れる。
+# HertaはpackageManagerでpnpmを固定しているので、不要なshimを除去してpnpmだけを有効化する。
+RUN rm -f /usr/local/bin/pnpm /usr/local/bin/pnpx /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+  && corepack enable pnpm
 WORKDIR /app
 
 COPY . .
