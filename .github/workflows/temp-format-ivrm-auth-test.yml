@@ -1,0 +1,36 @@
+name: Temporary IAM Auth Test Formatter
+
+on:
+  push:
+    branches:
+      - feat/ivrm-admin-iam-integration
+    paths:
+      - .github/workflows/temp-format-ivrm-auth-test.yml
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/ivrm-admin-iam-integration
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prettier --write apps/studio/src/lib/ivrm-integration-auth.test.ts
+      - name: Commit formatted test and remove temporary workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/temp-format-ivrm-auth-test.yml
+          git add apps/studio/src/lib/ivrm-integration-auth.test.ts
+          git commit -m "style(studio): format ivrm integration auth contract"
+          git push origin HEAD:feat/ivrm-admin-iam-integration
