@@ -54,7 +54,9 @@ export async function setBirthdayRegistration(input: {
   assertBirthdayInput(input.userId, input.month, input.day, input.birthYear);
 
   return prisma.$transaction(async (tx) => {
-    const previous = await tx.$queryRaw<Array<{ month: number; day: number; birthYear: number | null }>>`
+    const previous = await tx.$queryRaw<
+      Array<{ month: number; day: number; birthYear: number | null }>
+    >`
       SELECT "month", "day", "birth_year" AS "birthYear"
       FROM "birthday_registrations"
       WHERE "guild_id" = ${input.guildId} AND "user_id" = ${input.userId}
@@ -84,7 +86,11 @@ export async function setBirthdayRegistration(input: {
         severity: 'info',
         changes: {
           before: previous[0]
-            ? { month: previous[0].month, day: previous[0].day, hasBirthYear: previous[0].birthYear !== null }
+            ? {
+                month: previous[0].month,
+                day: previous[0].day,
+                hasBirthYear: previous[0].birthYear !== null,
+              }
             : null,
           after: { month: input.month, day: input.day, hasBirthYear: input.birthYear !== null },
         },
@@ -111,7 +117,9 @@ export async function removeBirthdayRegistration(input: {
   }
 
   return prisma.$transaction(async (tx) => {
-    const previous = await tx.$queryRaw<Array<{ month: number; day: number; birthYear: number | null }>>`
+    const previous = await tx.$queryRaw<
+      Array<{ month: number; day: number; birthYear: number | null }>
+    >`
       SELECT "month", "day", "birth_year" AS "birthYear"
       FROM "birthday_registrations"
       WHERE "guild_id" = ${input.guildId} AND "user_id" = ${input.userId}
@@ -133,7 +141,11 @@ export async function removeBirthdayRegistration(input: {
         severity: 'info',
         changes: {
           before: previous[0]
-            ? { month: previous[0].month, day: previous[0].day, hasBirthYear: previous[0].birthYear !== null }
+            ? {
+                month: previous[0].month,
+                day: previous[0].day,
+                hasBirthYear: previous[0].birthYear !== null,
+              }
             : null,
           after: null,
           changed,
