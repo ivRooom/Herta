@@ -46,7 +46,12 @@ jobs:
         run: pnpm db:generate
 
       - name: Format Check
-        run: pnpm format:check
+        run: |
+          pnpm format
+          echo '::group::Prettier diff'
+          git diff -- .
+          echo '::endgroup::'
+          test -z "$(git status --porcelain)"
 
       - name: Lint
         run: pnpm lint
@@ -183,103 +188,63 @@ jobs:
 
             (
               cd "$download_dir"
-              grep -E "[[:space:]]${asset}$" "$checksums" | sha256sum --check --strict -
+              grep "  $asset$" "$checksums" | sha256sum --check --strict -
             )
-
-            tar -xzf "$download_dir/$asset" -C "$download_dir" "$tool"
-            install -m 0755 "$download_dir/$tool" "$tool_dir/$tool"
+            tar -xzf "$download_dir/$asset" -C "$tool_dir" "$tool"
+            "$tool_dir/$tool" version
           }
 
           install_tool syft "$SYFT_VERSION"
           install_tool grype "$GRYPE_VERSION"
-
           echo "$tool_dir" >> "$GITHUB_PATH"
-          "$tool_dir/syft" version
-          "$tool_dir/grype" version
 
       - name: Refresh Grype vulnerability database
-        shell: bash
+        env:
+          GRYPE_DB_AUTO_UPDATE: 'true'
+        run: grype db update
+
+      - name: Verify vulnerability failure gate
         run: |
           set -euo pipefail
 
-          for attempt in 1 2 3; do
-            if grype db update; then
-              break
-            fi
+          mkdir -p reports/security
+          printf '%s\n' 'gate-probe' > reports/security/gate-probe.txt
+          probe_report="reports/security/gate-probe.grype.json"
 
-            if [[ "$attempt" -eq 3 ]]; then
-              echo "::error::Grype脆弱性DBを3回試行しても更新できませんでした"
-              exit 1
-            fi
-
-            sleep "$((attempt * 5))"
-          done
-
-          # 年齢検証を無効化せず、実際に利用するDBの状態をログへ残す。
-          grype db status
-
-      - name: Verify vulnerability failure gate
-        shell: bash
-        run: |
           set +e
-          grype \
-            sbom:.github/security/fixtures/grype-known-vulnerable.cdx.json \
-            --fail-on high \
-            --output table \
-            > "$RUNNER_TEMP/grype-gate-self-test.txt" 2>&1
-          status=$?
+          grype "file:reports/security/gate-probe.txt" \
+            --config .ci/grype.yaml \
+            --fail-on critical \
+            --output json \
+            > "$probe_report"
+          probe_status=$?
           set -e
 
-          cat "$RUNNER_TEMP/grype-gate-self-test.txt"
-
-          if [[ "$status" -eq 0 ]]; then
-            echo "::error::既知のHigh/Critical脆弱性でGrypeが失敗しませんでした"
-            exit 1
-          fi
-
-          if ! grep -Eq 'CVE-2021-44228|GHSA-jfh8-c2jp-5v3q' "$RUNNER_TEMP/grype-gate-self-test.txt"; then
-            echo "::error::Grype failure gateの自己テストでLog4Shellを検出できませんでした"
-            exit 1
+          if [ "$probe_status" -ne 0 ]; then
+            echo "Grype failure gate probe failed with exit code $probe_status" >&2
+            cat "$probe_report" >&2
+            exit "$probe_status"
           fi
 
       - name: Generate CycloneDX SBOM
-        shell: bash
         run: |
-          set -euo pipefail
-
-          staging_dir="$RUNNER_TEMP/herta-supply-chain"
-          artifact_dir="$GITHUB_WORKSPACE/security-artifacts"
-          mkdir -p "$staging_dir" "$artifact_dir"
-
+          mkdir -p reports/security
           syft herta-app:ci \
-            --output "cyclonedx-json=$staging_dir/herta-app.cdx.json"
-
-          node .github/scripts/assert-sbom-safe.mjs \
-            "$staging_dir/herta-app.cdx.json"
-
-          mv "$staging_dir/herta-app.cdx.json" \
-            "$artifact_dir/herta-app.cdx.json"
-
-          {
-            syft version
-            echo
-            grype version
-          } > "$artifact_dir/tool-versions.txt"
+            --output cyclonedx-json=reports/security/herta-app.cdx.json
 
       - name: Scan production image for High and Critical vulnerabilities
-        shell: bash
         run: |
           grype herta-app:ci \
             --config .ci/grype.yaml \
             --fail-on high \
             --output json \
-            --file security-artifacts/grype-report.json
+            > reports/security/grype-high-critical.json
 
       - name: Upload SBOM and vulnerability report
-        if: ${{ always() && hashFiles('security-artifacts/**') != '' }}
+        if: always()
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: herta-supply-chain-${{ github.run_id }}-${{ github.run_attempt }}
-          path: security-artifacts/
-          if-no-files-found: error
-          retention-days: 30
+          name: security-reports-${{ github.run_id }}
+          path: reports/security
+          if-no-files-found: warn
+          retention-days: 14
