@@ -4,6 +4,7 @@ import {
   type BirthdayCardConfigFieldKey,
 } from '@herta/shared';
 
+/** 編集権限があるBirthday Card項目のうち、保存済み値と異なるfieldだけを返す。 */
 export function birthdayCardDirtyFieldKeys(
   current: BirthdayCardConfig,
   saved: BirthdayCardConfig,
@@ -14,6 +15,7 @@ export function birthdayCardDirtyFieldKeys(
   );
 }
 
+/** 現在のdraftを維持しつつ、編集権限があるfieldだけを保存済み値へ復元する。 */
 export function restoreBirthdayCardEditableConfig(
   current: BirthdayCardConfig,
   saved: BirthdayCardConfig,
