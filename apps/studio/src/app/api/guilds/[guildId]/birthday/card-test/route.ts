@@ -20,10 +20,7 @@ const MAX_MULTIPART_REQUEST_BYTES = TEST_IMAGE_MAX_BYTES + 256 * 1024;
 const TEST_SEND_RATE_LIMIT = 5;
 const TEST_SEND_WINDOW_MS = 60_000;
 
-export async function POST(
-  request: Request,
-  { params }: { params: Promise<{ guildId: string }> },
-) {
+export async function POST(request: Request, { params }: { params: Promise<{ guildId: string }> }) {
   if (!isSameOriginMutationRequest(request)) {
     return NextResponse.json({ error: '不正な送信元からのリクエストです' }, { status: 403 });
   }
