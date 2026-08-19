@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   birthdayRolePlugin,
+  calculateBirthdayAge,
+  countServerBirthdaysSinceJoin,
   findNextBirthdays,
   formatBirthdayListPages,
   formatLocalDate,
@@ -8,6 +10,7 @@ import {
   getLocalDateParts,
   isLeapYear,
   isValidBirthday,
+  isValidBirthYear,
   normalizeBirthdayRoleConfig,
   renderBirthdayAnnouncement,
   resolveEffectiveBirthday,
@@ -25,21 +28,23 @@ describe('birthdayRolePlugin', () => {
     ]);
   });
 
-  it('monthとdayのDiscord入力範囲を公開する', () => {
+  it('month・dayと任意のyear入力範囲を公開する', () => {
     const setCommand = birthdayRolePlugin.manifest.commands[0]?.subcommands?.find(
       (item) => item.name === 'set',
     );
     const month = setCommand?.options?.find((item) => item.name === 'month');
     const day = setCommand?.options?.find((item) => item.name === 'day');
+    const year = setCommand?.options?.find((item) => item.name === 'year');
 
     expect(month).toMatchObject({ minValue: 1, maxValue: 12 });
     expect(day).toMatchObject({ minValue: 1, maxValue: 31 });
+    expect(year).toMatchObject({ required: false, minValue: 1900, maxValue: 2100 });
   });
 });
 
 describe('normalizeBirthdayRoleConfig', () => {
-  it('安全な既定値を補完する', () => {
-    expect(normalizeBirthdayRoleConfig({})).toEqual({
+  it('既存設定を壊さずBirthday Cardの安全な既定値を補完する', () => {
+    expect(normalizeBirthdayRoleConfig({})).toMatchObject({
       enabled: true,
       ephemeralResponses: true,
       allowSelfRegistration: true,
@@ -47,8 +52,14 @@ describe('normalizeBirthdayRoleConfig', () => {
       birthdayRoleId: null,
       sendAnnouncement: true,
       announcementChannelId: null,
-      announcementMessage: '🎂 {user} お誕生日おめでとう！',
+      announcementMessage: '🎂 {user} {ageText}お誕生日おめでとう！',
       leapDayPolicy: 'february-28',
+      birthdayCardEnabled: false,
+      birthdayCardPreset: 'herta-lavender-tea',
+      birthdayCardShowName: true,
+      birthdayCardShowAvatar: true,
+      birthdayCardShowBirthday: true,
+      birthdayCardShowAge: true,
     });
   });
 
@@ -72,14 +83,29 @@ describe('normalizeBirthdayRoleConfig', () => {
 });
 
 describe('birthday announcement', () => {
-  it('user・month・day変数をお祝い文へ展開する', () => {
+  it('user・month・day・age・serverBirthdayNumber変数を展開する', () => {
     expect(
-      renderBirthdayAnnouncement('🎂 {user} {month}月{day}日おめでとう！', {
+      renderBirthdayAnnouncement(
+        '🎂 {user} {month}月{day}日 {ageText}おめでとう！参加後{serverBirthdayNumber}回目',
+        {
+          userId: '123456789012345678',
+          month: 8,
+          day: 14,
+          birthYear: 2000,
+        },
+        { age: 26, serverBirthdayNumber: 3 },
+      ),
+    ).toBe('🎂 <@123456789012345678> 8月14日 26歳のおめでとう！参加後3回目');
+  });
+
+  it('生年未登録なら年齢変数を空文字にする', () => {
+    expect(
+      renderBirthdayAnnouncement('🎂 {user} {ageText}お誕生日おめでとう！', {
         userId: '123456789012345678',
         month: 8,
         day: 14,
       }),
-    ).toBe('🎂 <@123456789012345678> 8月14日おめでとう！');
+    ).toBe('🎂 <@123456789012345678> お誕生日おめでとう！');
   });
 });
 
@@ -90,6 +116,15 @@ describe('birthday validation', () => {
     expect(isValidBirthday(2, 30)).toBe(false);
     expect(isValidBirthday(4, 31)).toBe(false);
     expect(isValidBirthday(13, 1)).toBe(false);
+  });
+
+  it('生年は1900年から現在年までを許可する', () => {
+    expect(isValidBirthYear(1900, 2026)).toBe(true);
+    expect(isValidBirthYear(2026, 2026)).toBe(true);
+    expect(isValidBirthYear(1899, 2026)).toBe(false);
+    expect(isValidBirthYear(2027, 2026)).toBe(false);
+    expect(calculateBirthdayAge(2000, 2026)).toBe(26);
+    expect(calculateBirthdayAge(null, 2026)).toBeNull();
   });
 
   it('グレゴリオ暦のうるう年を判定する', () => {
@@ -103,6 +138,25 @@ describe('birthday validation', () => {
     expect(resolveEffectiveBirthday(2, 29, 2026, 'march-1')).toEqual({ month: 3, day: 1 });
     expect(resolveEffectiveBirthday(2, 29, 2026, 'skip')).toBeNull();
     expect(resolveEffectiveBirthday(2, 29, 2028, 'skip')).toEqual({ month: 2, day: 29 });
+  });
+
+  it('サーバー参加後の何回目の誕生日かを数える', () => {
+    expect(
+      countServerBirthdaysSinceJoin(
+        { year: 2024, month: 9, day: 1 },
+        { userId: '1', month: 8, day: 19 },
+        2026,
+        'february-28',
+      ),
+    ).toBe(2);
+    expect(
+      countServerBirthdaysSinceJoin(
+        { year: 2024, month: 1, day: 1 },
+        { userId: '1', month: 8, day: 19 },
+        2026,
+        'february-28',
+      ),
+    ).toBe(3);
   });
 });
 
@@ -165,16 +219,18 @@ describe('timezone and next birthday', () => {
 });
 
 describe('formatBirthdayListPages', () => {
-  it('月日順に並べる', () => {
+  it('月日順に並べ、生年は公開一覧へ出さない', () => {
     const pages = formatBirthdayListPages([
-      { userId: '300', month: 12, day: 1 },
-      { userId: '100', month: 1, day: 2 },
+      { userId: '300', month: 12, day: 1, birthYear: 2000 },
+      { userId: '100', month: 1, day: 2, birthYear: 1999 },
       { userId: '200', month: 1, day: 1 },
     ]);
     const text = pages.join('\n');
 
     expect(text.indexOf('01/01')).toBeLessThan(text.indexOf('01/02'));
     expect(text.indexOf('01/02')).toBeLessThan(text.indexOf('12/01'));
+    expect(text).not.toContain('1999');
+    expect(text).not.toContain('2000');
   });
 
   it('大量登録を1900文字以内でページ分割し全ユーザーを保持する', () => {
