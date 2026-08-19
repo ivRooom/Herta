@@ -392,12 +392,19 @@ export function filterStudioCommandItems(
   items: readonly StudioCommandItem[],
   query: string,
 ): StudioCommandItem[] {
-  const normalizedQuery = normalizeSearchValue(query).slice(0, STUDIO_COMMAND_SEARCH_QUERY_MAX_LENGTH);
+  const normalizedQuery = normalizeSearchValue(query).slice(
+    0,
+    STUDIO_COMMAND_SEARCH_QUERY_MAX_LENGTH,
+  );
   const tokens = normalizedQuery.split(/\s+/u).filter(Boolean);
   if (tokens.length === 0) return [...items];
 
   return items
-    .map((item, index) => ({ item, index, score: scoreStudioCommandItem(item, normalizedQuery, tokens) }))
+    .map((item, index) => ({
+      item,
+      index,
+      score: scoreStudioCommandItem(item, normalizedQuery, tokens),
+    }))
     .filter((entry) => entry.score > 0)
     .sort((left, right) => right.score - left.score || left.index - right.index)
     .slice(0, STUDIO_COMMAND_SEARCH_RESULT_LIMIT)
