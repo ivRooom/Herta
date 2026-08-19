@@ -61,6 +61,10 @@ test('authorizeIvrmIntegrationRequest rejects missing and invalid bearer tokens'
     authorizeIvrmIntegrationRequest(request('Bearer definitely-not-the-token'), environment),
     { status: 'unauthorized' },
   );
+  assert.deepEqual(
+    authorizeIvrmIntegrationRequest(request(`bearer ${TOKEN}`), environment),
+    { status: 'unauthorized' },
+  );
 });
 
 test('authorizeIvrmIntegrationRequest accepts the configured bearer token', () => {
