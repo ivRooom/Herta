@@ -51,6 +51,7 @@ export function DiscordChannelPicker({
   options,
   value,
   onChange,
+  onResolvedTarget,
   multiple = false,
   placeholder = 'チャンネル名またはIDを検索',
   guildId,
@@ -58,6 +59,7 @@ export function DiscordChannelPicker({
   options: GuildChannelOption[];
   value: string | string[] | null;
   onChange: (value: string | string[] | null) => void;
+  onResolvedTarget?: (target: GuildChannelOption | null) => void;
   multiple?: boolean;
   placeholder?: string;
   guildId?: string;
@@ -112,6 +114,10 @@ export function DiscordChannelPicker({
     : [];
   const selectedForumId = forumSelection?.forumId ?? null;
   const archiveState = selectedForumId ? archiveByForum[selectedForumId] : undefined;
+  const resolvedTarget =
+    !multiple && selected.length === 1
+      ? (mergedOptions.find((option) => option.id === selected[0]) ?? null)
+      : null;
 
   const loadArchivedThreads = useCallback(
     async (forumId: string, before: string | null) => {
@@ -195,6 +201,10 @@ export function DiscordChannelPicker({
     },
     [guildId],
   );
+
+  useEffect(() => {
+    onResolvedTarget?.(resolvedTarget);
+  }, [onResolvedTarget, resolvedTarget]);
 
   useEffect(() => {
     if (!guildId || !selectedForumId) return;
