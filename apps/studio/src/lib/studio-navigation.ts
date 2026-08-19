@@ -392,10 +392,9 @@ export function filterStudioCommandItems(
   items: readonly StudioCommandItem[],
   query: string,
 ): StudioCommandItem[] {
-  const normalizedQuery = normalizeSearchValue(query).slice(
-    0,
-    STUDIO_COMMAND_SEARCH_QUERY_MAX_LENGTH,
-  );
+  const normalizedQuery = normalizeSearchValue(
+    query.slice(0, STUDIO_COMMAND_SEARCH_QUERY_MAX_LENGTH),
+  ).slice(0, STUDIO_COMMAND_SEARCH_QUERY_MAX_LENGTH);
   const tokens = normalizedQuery.split(/\s+/u).filter(Boolean);
   if (tokens.length === 0) return [...items];
 
