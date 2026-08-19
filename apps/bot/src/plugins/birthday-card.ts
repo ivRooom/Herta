@@ -1,7 +1,4 @@
-import {
-  birthdayCardPreset,
-  type BirthdayCardConfig,
-} from '@herta/shared';
+import { birthdayCardPreset, type BirthdayCardConfig } from '@herta/shared';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import sharp, { type OverlayOptions } from 'sharp';
@@ -158,7 +155,10 @@ async function downloadDiscordAvatar(urlValue: string): Promise<Buffer | null> {
   } finally {
     reader.releaseLock();
   }
-  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)), total);
+  return Buffer.concat(
+    chunks.map((chunk) => Buffer.from(chunk)),
+    total,
+  );
 }
 
 function centeredLeft(xPercent: number, width: number): number {
