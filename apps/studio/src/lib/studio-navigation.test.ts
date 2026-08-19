@@ -141,8 +141,14 @@ test('exact lexical一致をintent一致より優先する', () => {
 test('自然文intentからMessage Studioへ到達できる', () => {
   const commands = buildStudioCommandItems(GUILD_ID, 'Test Guild');
 
-  assert.equal(filterStudioCommandItems(commands, 'Botで予約投稿したい')[0]?.id, 'guild-daily-content');
-  assert.equal(filterStudioCommandItems(commands, '定期的に投稿したい')[0]?.id, 'guild-daily-content');
+  assert.equal(
+    filterStudioCommandItems(commands, 'Botで予約投稿したい')[0]?.id,
+    'guild-daily-content',
+  );
+  assert.equal(
+    filterStudioCommandItems(commands, '定期的に投稿したい')[0]?.id,
+    'guild-daily-content',
+  );
 });
 
 test('自然文intentから監査ログとModeration Enforcementへ到達できる', () => {
