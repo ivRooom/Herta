@@ -1,6 +1,7 @@
 import { BIRTHDAY_CARD_CONFIG_FIELD_KEYS } from '@herta/shared';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import type { ReactNode } from 'react';
 import { ArrowLeft, Cake } from 'lucide-react';
 import { auth } from '@/auth';
 import { BirthdayAdmin } from '@/components/birthday-admin';
@@ -37,7 +38,7 @@ export default async function BirthdayAdminPage({
     resolveStudioAccess(guildId, session.user.id),
   ]);
 
-  let cardEditor: React.ReactNode = null;
+  let cardEditor: ReactNode = null;
   if (plugin && studioAccess.ok) {
     const configAccess = resolvePluginConfigStudioAccess(
       studioAccess.access,
