@@ -63,9 +63,10 @@ export function BirthdayCardEditor({
         signal: AbortSignal.timeout(SAVE_TIMEOUT_MS),
         body: JSON.stringify({ configPatch }),
       });
-      const payload = (await response.json().catch(() => null)) as
-        | { error?: unknown; config?: Record<string, unknown> }
-        | null;
+      const payload = (await response.json().catch(() => null)) as {
+        error?: unknown;
+        config?: Record<string, unknown>;
+      } | null;
       if (!response.ok) {
         throw new Error(
           typeof payload?.error === 'string' ? payload.error : 'Birthday Cardの保存に失敗しました',
