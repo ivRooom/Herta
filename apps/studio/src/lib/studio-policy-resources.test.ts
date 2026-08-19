@@ -25,7 +25,7 @@ test('Access Control subpage resourceを個別に生成する', () => {
   );
 });
 
-test('Birthday resourceは登録情報と祝い実績を分離する', () => {
+test('Birthday resourceは登録・祝い実績・Card背景・テスト送信を分離する', () => {
   assert.equal(
     studioBirthdayResource(GUILD_ID, 'registrations'),
     `guild:${GUILD_ID}:birthday:registrations`,
@@ -34,9 +34,22 @@ test('Birthday resourceは登録情報と祝い実績を分離する', () => {
     studioBirthdayResource(GUILD_ID, 'celebrations'),
     `guild:${GUILD_ID}:birthday:celebrations`,
   );
-  assert.notEqual(
-    studioBirthdayResource(GUILD_ID, 'registrations'),
-    studioBirthdayResource(GUILD_ID, 'celebrations'),
+  assert.equal(
+    studioBirthdayResource(GUILD_ID, 'card-background'),
+    `guild:${GUILD_ID}:birthday:card-background`,
+  );
+  assert.equal(
+    studioBirthdayResource(GUILD_ID, 'card-test-send'),
+    `guild:${GUILD_ID}:birthday:card-test-send`,
+  );
+  assert.equal(
+    new Set([
+      studioBirthdayResource(GUILD_ID, 'registrations'),
+      studioBirthdayResource(GUILD_ID, 'celebrations'),
+      studioBirthdayResource(GUILD_ID, 'card-background'),
+      studioBirthdayResource(GUILD_ID, 'card-test-send'),
+    ]).size,
+    4,
   );
 });
 
@@ -133,6 +146,20 @@ test('Policy catalogはpage・Birthday・Plugin fieldを別Resource権限とし�
       (option) =>
         option.action === 'studio.settings.read' &&
         option.resource === `guild:${GUILD_ID}:birthday:celebrations`,
+    ),
+  );
+  assert.ok(
+    options.some(
+      (option) =>
+        option.action === 'studio.settings.write' &&
+        option.resource === `guild:${GUILD_ID}:birthday:card-background`,
+    ),
+  );
+  assert.ok(
+    options.some(
+      (option) =>
+        option.action === 'studio.operation.execute' &&
+        option.resource === `guild:${GUILD_ID}:birthday:card-test-send`,
     ),
   );
   assert.ok(
