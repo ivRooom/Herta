@@ -34,7 +34,10 @@ test('semantic requestはqueryと有効なGuild IDだけを受け付ける', () 
     guildId: null,
   });
   assert.equal(parseStudioCommandSemanticRequest({ query: 'a', guildId: null }), null);
-  assert.equal(parseStudioCommandSemanticRequest({ query: '予約投稿', guildId: 'not-a-guild' }), null);
+  assert.equal(
+    parseStudioCommandSemanticRequest({ query: '予約投稿', guildId: 'not-a-guild' }),
+    null,
+  );
   assert.equal(parseStudioCommandSemanticRequest({ query: 123, guildId: null }), null);
 });
 
@@ -108,6 +111,13 @@ test('semantic responseはmodeと0..1の有限scoreだけを受け付ける', ()
     }),
     { mode: 'semantic', scores: [{ id: 'guild-lfg', score: 0.9 }] },
   );
+  assert.deepEqual(
+    parseStudioCommandSemanticResponse({
+      mode: 'fallback',
+      scores: [{ id: 'guild-lfg', score: 1 }],
+    }),
+    { mode: 'fallback', scores: [] },
+  );
   assert.deepEqual(parseStudioCommandSemanticResponse(null), { mode: 'fallback', scores: [] });
 });
 
@@ -149,8 +159,7 @@ test('provider non-2xxとmalformed responseを明示的に失敗扱いする', a
       documents: [{ id: 'one', text: 'one' }],
       fetchImpl: async () => new Response('{}', { status: 503 }),
     }),
-    (error: unknown) =>
-      error instanceof StudioSemanticProviderError && error.code === 'non_2xx',
+    (error: unknown) => error instanceof StudioSemanticProviderError && error.code === 'non_2xx',
   );
 
   await assert.rejects(
