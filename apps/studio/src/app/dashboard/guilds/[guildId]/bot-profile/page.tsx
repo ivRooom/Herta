@@ -1,14 +1,17 @@
-import Link from 'next/link';
 import { ArrowLeft, Bot, ShieldCheck } from 'lucide-react';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ReconnectNotice } from '@/components/reconnect-notice';
+import { auth } from '@/auth';
 import { BotProfileSettings } from '@/components/bot-profile-settings';
 import { GuildAnniversarySettings } from '@/components/guild-anniversary-settings';
-import { getManageableGuild } from '@/lib/guilds';
+import { ReconnectNotice } from '@/components/reconnect-notice';
 import { prisma } from '@/lib/db';
 import { getGuildAnniversary } from '@/lib/guild-anniversary';
+import { getManageableGuild } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
-import { auth } from '@/auth';
+import { resolveStudioAccess } from '@/lib/studio-access';
+import { hasEffectivePluginPermission } from '@/lib/studio-plugin-permissions';
+import { studioBotProfileSettingResource } from '@/lib/studio-policy-resources';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,13 +32,21 @@ export default async function BotProfilePage({ params }: { params: Promise<{ gui
   const guild = await getManageableGuild(accessToken, guildId);
   if (!guild) notFound();
 
-  const [currentUser, anniversary] = await Promise.all([
+  const [currentUser, studioAccess] = await Promise.all([
     prisma.user.findUnique({
       where: { id: session.user.id },
       select: { isAdmin: true },
     }),
-    getGuildAnniversary(guildId),
+    resolveStudioAccess(guildId, session.user.id),
   ]);
+  const anniversaryResource = studioBotProfileSettingResource(guildId, 'anniversary');
+  const canReadAnniversary =
+    studioAccess.ok &&
+    hasEffectivePluginPermission(studioAccess.access, 'studio.settings.read', anniversaryResource);
+  const canEditAnniversary =
+    studioAccess.ok &&
+    hasEffectivePluginPermission(studioAccess.access, 'studio.settings.write', anniversaryResource);
+  const anniversary = canReadAnniversary ? await getGuildAnniversary(guildId) : null;
 
   return (
     <div className="space-y-7">
@@ -61,7 +72,20 @@ export default async function BotProfilePage({ params }: { params: Promise<{ gui
         guildName={guild.name}
         canManageGlobalPresence={currentUser?.isAdmin ?? false}
       />
-      <GuildAnniversarySettings guildId={guildId} initialDate={anniversary?.anniversaryDate ?? null} />
+      {canReadAnniversary ? (
+        <GuildAnniversarySettings
+          guildId={guildId}
+          initialDate={anniversary?.anniversaryDate ?? null}
+          canEdit={canEditAnniversary}
+        />
+      ) : (
+        <section
+          className="rounded-2xl border border-amber-400/20 bg-surface p-5 text-sm text-muted"
+          role="status"
+        >
+          サーバー周年日はIAM権限により非表示です。Botプロフィール自体の閲覧権限とは独立して制御されます。
+        </section>
+      )}
     </div>
   );
 }
