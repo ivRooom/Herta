@@ -364,7 +364,9 @@ export function BirthdayCardLivePreview({
                 : '背景画像は未設定またはIAM権限により非表示です'}
             </span>
             {backgroundFailed ? (
-              <span className="text-xs">保存済みアセットとStudioのデプロイ状態を確認してください。</span>
+              <span className="text-xs">
+                保存済みアセットとStudioのデプロイ状態を確認してください。
+              </span>
             ) : null}
           </div>
         )}
