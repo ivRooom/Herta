@@ -62,7 +62,11 @@ export function parseStudioCommandSemanticResponse(value: unknown): StudioComman
   for (const candidate of record.scores.slice(0, STUDIO_COMMAND_SEARCH_RESULT_LIMIT)) {
     if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)) continue;
     const scoreRecord = candidate as Record<string, unknown>;
-    if (typeof scoreRecord.id !== 'string' || scoreRecord.id.length < 1 || scoreRecord.id.length > 100) {
+    if (
+      typeof scoreRecord.id !== 'string' ||
+      scoreRecord.id.length < 1 ||
+      scoreRecord.id.length > 100
+    ) {
       continue;
     }
     if (
@@ -108,10 +112,14 @@ export function mergeStudioCommandSearchResults(
   const bestSemanticScore = new Map<string, number>();
 
   for (const candidate of semanticScores) {
-    if (!Number.isFinite(candidate.score) || candidate.score < STUDIO_COMMAND_SEMANTIC_SCORE_THRESHOLD) {
+    if (
+      !Number.isFinite(candidate.score) ||
+      candidate.score < STUDIO_COMMAND_SEMANTIC_SCORE_THRESHOLD
+    ) {
       continue;
     }
-    if (candidate.score > 1 || lexicalIds.has(candidate.id) || !itemIndex.has(candidate.id)) continue;
+    if (candidate.score > 1 || lexicalIds.has(candidate.id) || !itemIndex.has(candidate.id))
+      continue;
     const current = bestSemanticScore.get(candidate.id) ?? -1;
     if (candidate.score > current) bestSemanticScore.set(candidate.id, candidate.score);
   }
@@ -121,7 +129,9 @@ export function mergeStudioCommandSearchResults(
       const resolved = itemIndex.get(id);
       return resolved ? { ...resolved, score } : null;
     })
-    .filter((entry): entry is { item: StudioCommandItem; index: number; score: number } => entry !== null)
+    .filter(
+      (entry): entry is { item: StudioCommandItem; index: number; score: number } => entry !== null,
+    )
     .sort((left, right) => right.score - left.score || left.index - right.index)
     .map((entry) => entry.item);
 
