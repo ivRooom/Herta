@@ -10,17 +10,11 @@ import { authorizeIvrmIntegrationRequest } from '@/lib/ivrm-integration-auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ guildId: string }> },
-) {
+export async function GET(request: Request, { params }: { params: Promise<{ guildId: string }> }) {
   const authorization = authorizeIvrmIntegrationRequest(request);
 
   if (authorization.status === 'unconfigured') {
-    return json(
-      { error: 'ivRooom integration is not configured' },
-      { status: 503 },
-    );
+    return json({ error: 'ivRooom integration is not configured' }, { status: 503 });
   }
 
   if (authorization.status === 'unauthorized') {
