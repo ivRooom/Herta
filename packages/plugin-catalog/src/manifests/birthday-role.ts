@@ -3,15 +3,15 @@ import type { PluginManifest } from '@herta/shared';
 export const birthdayRoleManifest: PluginManifest = {
   id: 'birthday-role',
   name: 'Birthday Role',
-  version: '1.1.0',
-  description: '誕生日の登録・確認と、誕生日当日のRole付与・お祝い通知を提供します',
+  version: '1.2.0',
+  description: '誕生日の登録・確認と、誕生日当日のRole付与・お祝い通知・Birthday Cardを提供します',
   author: { name: 'Herta' },
   category: 'fun',
   permissions: [
     {
       id: 'birthday-role.manage',
       name: 'Birthday Role 管理',
-      description: '誕生日Role・通知Channel・通知設定を管理します',
+      description: '誕生日Role・通知Channel・通知・Birthday Card設定を管理します',
     },
   ],
   dependencies: [],
@@ -72,10 +72,11 @@ export const birthdayRoleManifest: PluginManifest = {
       announcementMessage: {
         type: 'string',
         title: 'お祝いメッセージ',
-        description: '{user}を対象ユーザーのメンション、{month}を誕生月、{day}を誕生日へ置換します',
+        description:
+          '{user}・{month}・{day}・{age}・{ageText}・{serverBirthdayNumber}を利用できます。生年未登録時の{age}/{ageText}は空文字です。',
         minLength: 1,
         maxLength: 1000,
-        default: '🎂 {user} お誕生日おめでとう！',
+        default: '🎂 {user} {ageText}お誕生日おめでとう！',
       },
       leapDayPolicy: {
         type: 'string',
@@ -83,6 +84,58 @@ export const birthdayRoleManifest: PluginManifest = {
         enum: ['february-28', 'march-1', 'skip'],
         default: 'february-28',
       },
+      birthdayCardEnabled: {
+        type: 'boolean',
+        title: 'Birthday Cardを投稿する',
+        description: 'お祝い投稿へPNGのBirthday Cardを添付します。',
+        default: false,
+      },
+      birthdayCardPreset: {
+        type: 'string',
+        title: 'Birthday Cardプリセット',
+        enum: ['herta-night-board', 'herta-lavender-tea', 'herta-lavender-gifts'],
+        default: 'herta-lavender-tea',
+      },
+      birthdayCardShowName: {
+        type: 'boolean',
+        title: 'Birthday Cardに名前を表示',
+        default: true,
+      },
+      birthdayCardShowAvatar: {
+        type: 'boolean',
+        title: 'Birthday CardにAvatarを表示',
+        default: true,
+      },
+      birthdayCardShowBirthday: {
+        type: 'boolean',
+        title: 'Birthday Cardに誕生日を表示',
+        default: true,
+      },
+      birthdayCardShowAge: {
+        type: 'boolean',
+        title: 'Birthday Cardに年齢を表示',
+        description: '生年を登録したメンバーだけ年齢を表示します。',
+        default: true,
+      },
+      birthdayCardAvatarX: positionSchema('Avatar X位置', 74),
+      birthdayCardAvatarY: positionSchema('Avatar Y位置', 30),
+      birthdayCardAvatarSize: {
+        type: 'number',
+        title: 'Avatarサイズ',
+        description: 'カード横幅に対する直径の割合（%）です。',
+        minimum: 6,
+        maximum: 30,
+        default: 16,
+      },
+      birthdayCardNameX: positionSchema('名前 X位置', 74),
+      birthdayCardNameY: positionSchema('名前 Y位置', 54),
+      birthdayCardNameSize: fontSizeSchema('名前 文字サイズ', 58, 20, 96),
+      birthdayCardBirthdayX: positionSchema('誕生日 X位置', 74),
+      birthdayCardBirthdayY: positionSchema('誕生日 Y位置', 65),
+      birthdayCardBirthdaySize: fontSizeSchema('誕生日 文字サイズ', 38, 16, 72),
+      birthdayCardAgeX: positionSchema('年齢 X位置', 74),
+      birthdayCardAgeY: positionSchema('年齢 Y位置', 75),
+      birthdayCardAgeSize: fontSizeSchema('年齢 文字サイズ', 36, 16, 72),
     },
     required: [
       'enabled',
@@ -104,7 +157,7 @@ export const birthdayRoleManifest: PluginManifest = {
       subcommands: [
         {
           name: 'set',
-          description: '自分の誕生日を月日だけ登録します',
+          description: '自分の誕生日を登録します。生年は任意です',
           options: [
             {
               name: 'month',
@@ -121,6 +174,14 @@ export const birthdayRoleManifest: PluginManifest = {
               required: true,
               minValue: 1,
               maxValue: 31,
+            },
+            {
+              name: 'year',
+              description: '生年（西暦・任意）',
+              type: 'integer',
+              required: false,
+              minValue: 1900,
+              maxValue: 2100,
             },
           ],
         },
@@ -144,3 +205,25 @@ export const birthdayRoleManifest: PluginManifest = {
     },
   ],
 };
+
+function positionSchema(title: string, defaultValue: number) {
+  return {
+    type: 'number',
+    title,
+    description: 'カード左上を0、右下を100とした相対位置です。',
+    minimum: 0,
+    maximum: 100,
+    default: defaultValue,
+  };
+}
+
+function fontSizeSchema(title: string, defaultValue: number, minimum: number, maximum: number) {
+  return {
+    type: 'number',
+    title,
+    description: '1672×941の出力画像に対するpx相当の文字サイズです。',
+    minimum,
+    maximum,
+    default: defaultValue,
+  };
+}
