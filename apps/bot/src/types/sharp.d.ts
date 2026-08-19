@@ -52,10 +52,7 @@ declare module 'sharp' {
   }
 
   export interface SharpFactory {
-    (
-      input?: Buffer | Uint8Array | string | SharpCreateInput,
-      options?: SharpFactoryOptions,
-    ): Sharp;
+    (input?: Buffer | Uint8Array | string | SharpCreateInput, options?: SharpFactoryOptions): Sharp;
   }
 
   const sharp: SharpFactory;
