@@ -39,12 +39,13 @@ export async function GET(
   }
 
   try {
-    const [groups, groupMembers, policies, policyAttachments] = await Promise.all([
-      listStudioAccessGroups(prisma, guildId),
-      listStudioAccessGroupMembers(prisma, guildId),
-      listManagedStudioAccessPolicies(prisma, guildId),
-      listStudioAccessPolicyAttachments(prisma, guildId),
-    ]);
+    const [groups, groupMembers, policies, policyAttachments] =
+      await Promise.all([
+        listStudioAccessGroups(prisma, guildId),
+        listStudioAccessGroupMembers(prisma, guildId),
+        listManagedStudioAccessPolicies(prisma, guildId),
+        listStudioAccessPolicyAttachments(prisma, guildId),
+      ]);
 
     return json({
       status: 'ok',
