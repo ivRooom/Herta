@@ -80,10 +80,9 @@ RUN rm -rf \
     .prettierrc* \
     .prettierignore \
   && find apps packages plugins \
-    -path '*/node_modules' -prune -o \
-    -path '*/.next' -prune -o \
+    \( -path '*/node_modules' -o -path '*/.next' \) -prune -o \
     -type f \( -name 'tsconfig*.json' -o -name '*.test.ts' -o -name '*.spec.ts' \) \
-    -delete \
+    -exec rm -f {} + \
   && test -f apps/api/dist/main.js \
   && test -f apps/bot/dist/main.js \
   && test -f apps/worker/dist/main.js \
