@@ -22,8 +22,33 @@ export const STUDIO_PAGE_DEFINITIONS = [
   },
   {
     id: 'moderation',
-    label: 'Moderation',
-    description: 'Case・自動検知・自動対応の管理画面を閲覧',
+    label: 'Moderation · 全体',
+    description: 'Moderation配下をまとめて閲覧する互換・一括権限',
+  },
+  {
+    id: 'moderation-cases',
+    label: 'Moderation · Cases',
+    description: 'モデレーションCase一覧・Case詳細を閲覧',
+  },
+  {
+    id: 'moderation-detections',
+    label: 'Moderation · Detections',
+    description: '自動検知履歴・レビュー結果を閲覧',
+  },
+  {
+    id: 'moderation-detection-settings',
+    label: 'Moderation · Detection Settings',
+    description: '自動検知の詳細設定ページを閲覧',
+  },
+  {
+    id: 'moderation-enforcement',
+    label: 'Moderation · Enforcement',
+    description: '自動対応ポリシー・緊急Alert設定を閲覧',
+  },
+  {
+    id: 'moderation-blacklist',
+    label: 'Moderation · Blacklist',
+    description: 'Moderation Blacklistを閲覧',
   },
   { id: 'audit-logs', label: '監査ログ', description: 'Guildの監査ログを閲覧' },
   {
@@ -58,6 +83,19 @@ export interface ApplicableStudioPolicyContext {
 
 export function studioPageResource(guildId: string, pageId: StudioPageId): string {
   return `guild:${guildId}:page:${encodeSegment(pageId)}`;
+}
+
+export function studioParentPageId(pageId: StudioPageId): StudioPageId | null {
+  switch (pageId) {
+    case 'moderation-cases':
+    case 'moderation-detections':
+    case 'moderation-detection-settings':
+    case 'moderation-enforcement':
+    case 'moderation-blacklist':
+      return 'moderation';
+    default:
+      return null;
+  }
 }
 
 export function studioAccessPageResource(
