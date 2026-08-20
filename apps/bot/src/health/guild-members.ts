@@ -30,21 +30,27 @@ export async function searchGuildMemberOptions(
   const normalizedQuery = query.trim().slice(0, 64);
   if (!isAllowedMemberSearchQuery(normalizedQuery)) return [];
   const limit = Math.max(1, Math.min(20, Math.trunc(requestedLimit) || 20));
+  const exactMemberId = /^\d{17,20}$/u.test(normalizedQuery);
   const cacheKey = `${guildId}:${normalizedQuery.toLocaleLowerCase('ja')}:${limit}`;
   const now = Date.now();
-  const cached = memberSearchCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) return cached.members.map(cloneMemberOption);
-  if (cached) memberSearchCache.delete(cacheKey);
+
+  // Exact Snowflake lookup is used for authorization-sensitive flows such as Birthday self registration.
+  // Never reuse the short-lived search cache there: role removal / Guild leave must be observed immediately.
+  if (!exactMemberId) {
+    const cached = memberSearchCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) return cached.members.map(cloneMemberOption);
+    if (cached) memberSearchCache.delete(cacheKey);
+  }
 
   let members: GuildMemberOption[];
-  if (/^\d{17,20}$/u.test(normalizedQuery)) {
+  if (exactMemberId) {
     members = await searchExactMemberId(guild, normalizedQuery);
   } else {
     const result = await guild.members.search({ query: normalizedQuery, limit });
     members = [...result.values()].map(toMemberOption).slice(0, limit);
   }
 
-  rememberSearch(cacheKey, members, now);
+  if (!exactMemberId) rememberSearch(cacheKey, members, now);
   return members.map(cloneMemberOption);
 }
 
@@ -70,7 +76,7 @@ function cloneMemberOption(member: GuildMemberOption): GuildMemberOption {
 
 async function searchExactMemberId(guild: Guild, memberId: string): Promise<GuildMemberOption[]> {
   try {
-    const member = await guild.members.fetch(memberId);
+    const member = await guild.members.fetch({ user: memberId, force: true });
     return [toMemberOption(member)];
   } catch {
     return [];
