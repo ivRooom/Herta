@@ -37,6 +37,11 @@ interface UserWindow {
   messages: RecentMessage[];
 }
 
+interface WindowChecks {
+  burst: boolean;
+  duplicate: boolean;
+}
+
 const MAX_RECENT_MESSAGES_PER_USER = 100;
 const MAX_TRACKED_USERS = 5_000;
 const USER_STATE_TTL_MS = 10 * 60 * 1000;
@@ -122,43 +127,61 @@ export class AutomaticModerationDetector {
   ): void {
     if (config.autoBurstMessageLimit === 0 && config.autoDuplicateMessageLimit === 0) return;
 
-    const key = `${message.guildId}:${message.userId}`;
+    const checksByWindow = new Map<string, WindowChecks>();
+    if (config.autoBurstMessageLimit > 0) {
+      addWindowCheck(
+        checksByWindow,
+        windowKey(message, config.autoBurstScope),
+        'burst',
+      );
+    }
+    if (config.autoDuplicateMessageLimit > 0) {
+      addWindowCheck(
+        checksByWindow,
+        windowKey(message, config.autoDuplicateScope),
+        'duplicate',
+      );
+    }
+
     const maxWindowMs =
       Math.max(config.autoBurstWindowSeconds, config.autoDuplicateWindowSeconds) * 1000;
-    const existing = this.windows.get(key);
-    const messages = (existing?.messages ?? []).filter((item) => now - item.at <= maxWindowMs);
     const fingerprint = createFingerprint(normalizedContent);
-    messages.push({ at: now, fingerprint });
-    if (messages.length > MAX_RECENT_MESSAGES_PER_USER) {
-      messages.splice(0, messages.length - MAX_RECENT_MESSAGES_PER_USER);
-    }
-    this.windows.set(key, { lastSeenAt: now, messages });
 
-    if (config.autoBurstMessageLimit > 0) {
-      const burstWindowMs = config.autoBurstWindowSeconds * 1000;
-      const burstCount = messages.filter((item) => now - item.at <= burstWindowMs).length;
-      if (burstCount >= config.autoBurstMessageLimit) {
-        findings.push({
-          kind: 'message_burst',
-          messageLength: message.content.length,
-          observedCount: burstCount,
-          threshold: config.autoBurstMessageLimit,
-        });
+    for (const [key, checks] of checksByWindow) {
+      const existing = this.windows.get(key);
+      const messages = (existing?.messages ?? []).filter((item) => now - item.at <= maxWindowMs);
+      messages.push({ at: now, fingerprint });
+      if (messages.length > MAX_RECENT_MESSAGES_PER_USER) {
+        messages.splice(0, messages.length - MAX_RECENT_MESSAGES_PER_USER);
       }
-    }
+      this.windows.set(key, { lastSeenAt: now, messages });
 
-    if (config.autoDuplicateMessageLimit > 0) {
-      const duplicateWindowMs = config.autoDuplicateWindowSeconds * 1000;
-      const duplicateCount = messages.filter(
-        (item) => now - item.at <= duplicateWindowMs && item.fingerprint === fingerprint,
-      ).length;
-      if (duplicateCount >= config.autoDuplicateMessageLimit) {
-        findings.push({
-          kind: 'duplicate_message',
-          messageLength: message.content.length,
-          observedCount: duplicateCount,
-          threshold: config.autoDuplicateMessageLimit,
-        });
+      if (checks.burst) {
+        const burstWindowMs = config.autoBurstWindowSeconds * 1000;
+        const burstCount = messages.filter((item) => now - item.at <= burstWindowMs).length;
+        if (burstCount >= config.autoBurstMessageLimit) {
+          findings.push({
+            kind: 'message_burst',
+            messageLength: message.content.length,
+            observedCount: burstCount,
+            threshold: config.autoBurstMessageLimit,
+          });
+        }
+      }
+
+      if (checks.duplicate && normalizedContent.length >= config.autoDuplicateMinimumLength) {
+        const duplicateWindowMs = config.autoDuplicateWindowSeconds * 1000;
+        const duplicateCount = messages.filter(
+          (item) => now - item.at <= duplicateWindowMs && item.fingerprint === fingerprint,
+        ).length;
+        if (duplicateCount >= config.autoDuplicateMessageLimit) {
+          findings.push({
+            kind: 'duplicate_message',
+            messageLength: message.content.length,
+            observedCount: duplicateCount,
+            threshold: config.autoDuplicateMessageLimit,
+          });
+        }
       }
     }
   }
@@ -197,6 +220,25 @@ export function extractInviteCodes(content: string): string[] {
     if (code) codes.push(code);
   }
   return [...new Set(codes)];
+}
+
+function addWindowCheck(
+  checksByWindow: Map<string, WindowChecks>,
+  key: string,
+  check: keyof WindowChecks,
+): void {
+  const current = checksByWindow.get(key) ?? { burst: false, duplicate: false };
+  current[check] = true;
+  checksByWindow.set(key, current);
+}
+
+function windowKey(
+  message: Pick<AutomaticModerationMessageSnapshot, 'guildId' | 'channelId' | 'userId'>,
+  scope: ModerationConfig['autoBurstScope'],
+): string {
+  return scope === 'channel'
+    ? `${message.guildId}:channel:${message.channelId}:user:${message.userId}`
+    : `${message.guildId}:guild:user:${message.userId}`;
 }
 
 function createFingerprint(content: string): string {
