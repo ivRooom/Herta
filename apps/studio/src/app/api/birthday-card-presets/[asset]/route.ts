@@ -12,7 +12,10 @@ const PRESET_ASSETS: Readonly<Record<string, StaticImageData>> = {
   'herta-night-board.webp': hertaNightBoard,
 };
 
-export async function GET(request: Request, { params }: { params: Promise<{ asset: string }> }) {
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ asset: string }> },
+) {
   const { asset } = await params;
   const preset = PRESET_ASSETS[asset];
   if (!preset) {
