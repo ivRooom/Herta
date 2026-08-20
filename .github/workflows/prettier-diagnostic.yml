@@ -1,9 +1,7 @@
 name: Prettier Diagnostic
 
 on:
-  push:
-    branches:
-      - test/herta-iam-contract-conformance
+  pull_request:
 
 permissions:
   contents: read
