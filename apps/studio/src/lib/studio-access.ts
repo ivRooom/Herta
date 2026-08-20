@@ -3,6 +3,7 @@ import type { ManageableGuild } from '@/lib/discord';
 import { getGuildMemberById } from '@/lib/bot-guild-members';
 import { prisma } from '@/lib/db';
 import { authorizeGuild } from '@/lib/guild-plugins';
+import { hasEffectivePluginPermission } from '@/lib/studio-plugin-permissions';
 import {
   evaluateStudioPolicyDocuments,
   isStudioRootRole,
@@ -118,13 +119,28 @@ export async function authorizeStudioPermission(
   if (!resolved.ok) return resolved;
   if (hasStudioPermission(resolved.access, action, resource)) return resolved;
 
-  return {
-    ok: false,
-    response: Response.json(
-      { error: 'この操作を実行するHerta Studio権限がありません' },
-      { status: 403 },
-    ),
-  };
+  return studioPermissionDenied();
+}
+
+/**
+ * Authorizes resources that participate in Herta's staged IAM rollout.
+ *
+ * Manage Guild users with no effective Studio policy keep the legacy allow behavior,
+ * matching `hasEffectivePluginPermission` and the corresponding Studio UI. Once any
+ * effective policy is attached, normal policy evaluation (including explicit Deny)
+ * becomes authoritative.
+ */
+export async function authorizeEffectiveStudioPermission(
+  guildId: string,
+  userId: string,
+  action: StudioPolicyAction,
+  resource = `guild:${guildId}:*`,
+): Promise<StudioAccessResult> {
+  const resolved = await resolveStudioAccess(guildId, userId);
+  if (!resolved.ok) return resolved;
+  if (hasEffectivePluginPermission(resolved.access, action, resource)) return resolved;
+
+  return studioPermissionDenied();
 }
 
 export function hasStudioPermission(
@@ -142,4 +158,14 @@ export function hasStudioPermission(
     action,
     resource,
   );
+}
+
+function studioPermissionDenied(): StudioAccessResult {
+  return {
+    ok: false,
+    response: Response.json(
+      { error: 'この操作を実行するHerta Studio権限がありません' },
+      { status: 403 },
+    ),
+  };
 }
