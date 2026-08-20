@@ -4,11 +4,12 @@ import { getGuildMemberById } from '@/lib/bot-guild-members';
 import { prisma } from '@/lib/db';
 import { authorizeGuild } from '@/lib/guild-plugins';
 import {
-  evaluateStudioPolicyDocuments,
+  evaluateStudioPolicyDocumentsDecision,
   isStudioRootRole,
   validateStudioAccessPolicy,
   type StudioAccessPolicy,
   type StudioPolicyAction,
+  type StudioPolicyDecision,
 } from '@/lib/studio-access-policy';
 import {
   listStudioRolePolicies,
@@ -132,14 +133,22 @@ export function hasStudioPermission(
   action: StudioPolicyAction,
   resource = `guild:${access.guildId}:*`,
 ): boolean {
-  if (access.isRoot) return true;
+  return studioPermissionDecision(access, action, resource) === 'Allow';
+}
+
+export function studioPermissionDecision(
+  access: StudioAccessContext,
+  action: StudioPolicyAction,
+  resource = `guild:${access.guildId}:*`,
+): StudioPolicyDecision {
+  if (access.isRoot) return 'Allow';
+  return evaluateStudioPolicyDocumentsDecision(effectiveStudioPolicies(access), action, resource);
+}
+
+function effectiveStudioPolicies(access: StudioAccessContext): StudioAccessPolicy[] {
   const activeRoleIds = new Set(access.roleIds);
   const legacyPolicies = access.policies
     .filter((record) => activeRoleIds.has(record.discordRoleId))
     .map((record) => record.policy);
-  return evaluateStudioPolicyDocuments(
-    [...access.managedPolicies, ...legacyPolicies],
-    action,
-    resource,
-  );
+  return [...access.managedPolicies, ...legacyPolicies];
 }
