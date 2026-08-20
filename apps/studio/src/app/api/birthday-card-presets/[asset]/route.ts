@@ -14,7 +14,9 @@ const PRESET_ASSETS: Readonly<Record<string, StaticImageData>> = {
 
 export async function GET(request: Request, { params }: { params: Promise<{ asset: string }> }) {
   const { asset } = await params;
-  const preset = PRESET_ASSETS[asset];
+  const preset = Object.prototype.hasOwnProperty.call(PRESET_ASSETS, asset)
+    ? PRESET_ASSETS[asset]
+    : undefined;
   if (!preset) {
     return NextResponse.json(
       { error: 'Birthday Card presetが見つかりません' },
