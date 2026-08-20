@@ -24,7 +24,10 @@ export default async function BirthdayRegistrationPage({
 
   if (!DISCORD_ID_PATTERN.test(guildId)) {
     return (
-      <AccessState title="登録URLが正しくありません" detail="共有URLをもう一度確認してください。" />
+      <AccessState
+        title="登録URLが正しくありません"
+        detail="共有URLをもう一度確認してください。"
+      />
     );
   }
 
