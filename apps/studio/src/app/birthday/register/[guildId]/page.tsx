@@ -23,7 +23,12 @@ export default async function BirthdayRegistrationPage({
   }
 
   if (!DISCORD_ID_PATTERN.test(guildId)) {
-    return <AccessState title="登録URLが正しくありません" detail="共有URLをもう一度確認してください。" />;
+    return (
+      <AccessState
+        title="登録URLが正しくありません"
+        detail="共有URLをもう一度確認してください。"
+      />
+    );
   }
 
   const access = await resolveBirthdaySelfRegistrationAccess(guildId, session.user.id);
@@ -55,7 +60,7 @@ export default async function BirthdayRegistrationPage({
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
                 Herta Birthday
               </p>
-              <h2 className="mt-1 text-lg font-semibold">Member専用 誕生日登録</h2>
+              <h1 className="mt-1 text-lg font-semibold">Member専用 誕生日登録</h1>
               <p className="mt-2 text-sm leading-6 text-muted">
                 Discordでログインした本人の誕生日だけを登録できます。URLを共有されても、対象GuildのMemberロールを持たないユーザーは登録できません。
               </p>
