@@ -6,6 +6,8 @@ import {
   type BirthdayRegistration,
 } from './birthday-admin-core';
 
+export type BirthdayRegistrationOperationSource = 'dashboard' | 'discord';
+
 export class BirthdayAdminValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -70,7 +72,7 @@ export async function setBirthdayRegistration(input: {
   month: number;
   day: number;
   birthYear: number | null;
-  operationSource?: 'dashboard' | 'self-registration';
+  operationSource?: BirthdayRegistrationOperationSource;
 }): Promise<BirthdayRegistration> {
   assertBirthdayInput(input.userId, input.month, input.day, input.birthYear);
 
@@ -132,7 +134,7 @@ export async function removeBirthdayRegistration(input: {
   guildId: string;
   actorId: string;
   userId: string;
-  operationSource?: 'dashboard' | 'self-registration';
+  operationSource?: BirthdayRegistrationOperationSource;
 }): Promise<boolean> {
   if (!BIRTHDAY_ADMIN_DISCORD_ID_PATTERN.test(input.userId)) {
     throw new BirthdayAdminValidationError('DiscordユーザーIDが不正です');
