@@ -13,7 +13,7 @@ import { auth } from '@/auth';
 import { readRequestBodyBytes, RequestBodyTooLargeError } from '@/lib/bounded-request-body';
 import { prisma } from '@/lib/db';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
-import { authorizeStudioPermission } from '@/lib/studio-access';
+import { authorizeEffectiveStudioPermission } from '@/lib/studio-access';
 import { studioBirthdayResource } from '@/lib/studio-policy-resources';
 
 export const dynamic = 'force-dynamic';
@@ -27,7 +27,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ guil
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
 
-  const access = await authorizeStudioPermission(
+  const access = await authorizeEffectiveStudioPermission(
     guildId,
     session.user.id,
     'studio.settings.read',
@@ -67,7 +67,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ guil
     return NextResponse.json({ error: 'multipart/form-dataが必要です' }, { status: 415 });
   }
 
-  const access = await authorizeStudioPermission(
+  const access = await authorizeEffectiveStudioPermission(
     guildId,
     session.user.id,
     'studio.settings.write',
@@ -181,7 +181,7 @@ export async function DELETE(
     return NextResponse.json({ error: '不正なリクエスト元です' }, { status: 403 });
   }
 
-  const access = await authorizeStudioPermission(
+  const access = await authorizeEffectiveStudioPermission(
     guildId,
     session.user.id,
     'studio.settings.write',
