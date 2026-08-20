@@ -16,6 +16,22 @@ function member(roleIds: string[]): GuildMember {
   } as unknown as GuildMember;
 }
 
+function clientWithMemberFetch(fetchMember: ReturnType<typeof vi.fn>): Client {
+  return {
+    guilds: {
+      cache: new Map([
+        [
+          GUILD_ID,
+          {
+            id: GUILD_ID,
+            members: { fetch: fetchMember },
+          },
+        ],
+      ]),
+    },
+  } as unknown as Client;
+}
+
 describe('Guild member search query', () => {
   it('2文字以上の名前検索を許可する', () => {
     expect(isAllowedMemberSearchQuery('iv')).toBe(true);
@@ -41,19 +57,7 @@ describe('Guild member search query', () => {
       .fn()
       .mockResolvedValueOnce(member(['111111111111111111']))
       .mockResolvedValueOnce(member(['222222222222222222']));
-    const client = {
-      guilds: {
-        cache: new Map([
-          [
-            GUILD_ID,
-            {
-              id: GUILD_ID,
-              members: { fetch: fetchMember },
-            },
-          ],
-        ]),
-      },
-    } as unknown as Client;
+    const client = clientWithMemberFetch(fetchMember);
 
     const first = await searchGuildMemberOptions(client, GUILD_ID, USER_ID, 1);
     const second = await searchGuildMemberOptions(client, GUILD_ID, USER_ID, 1);
@@ -63,5 +67,22 @@ describe('Guild member search query', () => {
     expect(fetchMember).toHaveBeenNthCalledWith(2, { user: USER_ID, force: true });
     expect(first?.[0]?.roleIds).toEqual(['111111111111111111']);
     expect(second?.[0]?.roleIds).toEqual(['222222222222222222']);
+  });
+
+  it('Discord Unknown MemberはGuild未所属として空結果を返す', async () => {
+    const error = Object.assign(new Error('Unknown Member'), { code: 10_007 });
+    const fetchMember = vi.fn().mockRejectedValue(error);
+
+    await expect(
+      searchGuildMemberOptions(clientWithMemberFetch(fetchMember), GUILD_ID, USER_ID, 1),
+    ).resolves.toEqual([]);
+  });
+
+  it('Discord transport障害はMember不在へ変換せず上位へ伝播する', async () => {
+    const fetchMember = vi.fn().mockRejectedValue(new Error('network unavailable'));
+
+    await expect(
+      searchGuildMemberOptions(clientWithMemberFetch(fetchMember), GUILD_ID, USER_ID, 1),
+    ).rejects.toThrow('network unavailable');
   });
 });
