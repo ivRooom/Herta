@@ -9,7 +9,7 @@ import {
   type MessageStudioImageAttachment,
 } from '@/lib/message-studio-discord';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
-import { authorizeStudioPermission } from '@/lib/studio-access';
+import { authorizeEffectiveStudioPermission } from '@/lib/studio-access';
 import { studioBirthdayResource } from '@/lib/studio-policy-resources';
 
 export const dynamic = 'force-dynamic';
@@ -29,7 +29,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
 
   const { guildId } = await params;
-  const access = await authorizeStudioPermission(
+  const access = await authorizeEffectiveStudioPermission(
     guildId,
     session.user.id,
     'studio.operation.execute',
