@@ -104,7 +104,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
     return NextResponse.json({ error: 'Birthday Card画像が不正です' }, { status: 400 });
   }
   const bytes = new Uint8Array(await rawImage.arrayBuffer());
-  const imageInfo = inspectBirthdayCardBackgroundImage(bytes);
+  const imageInfo = inspectBirthdayCardBackgroundImage(bytes, { maxBytes: TEST_IMAGE_MAX_BYTES });
   if (!imageInfo || imageInfo.contentType !== 'image/png') {
     return NextResponse.json({ error: 'テスト送信には有効なPNG画像が必要です' }, { status: 400 });
   }
