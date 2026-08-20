@@ -94,6 +94,57 @@ describe('Moderation automatic detection', () => {
     expect(repeated.map((finding) => finding.kind)).toContain('duplicate_message');
   });
 
+  it('連投検知をchannel scopeへ分離できる', () => {
+    const detector = new AutomaticModerationDetector();
+    const config = normalizeModerationConfig({
+      autoBurstMessageLimit: 2,
+      autoBurstWindowSeconds: 10,
+      autoBurstScope: 'channel',
+    });
+
+    detector.evaluate(message({ channelId: '200', createdAtMs: 1_000 }), config);
+    const otherChannel = detector.evaluate(
+      message({ channelId: '201', createdAtMs: 2_000 }),
+      config,
+    );
+    const sameChannel = detector.evaluate(
+      message({ channelId: '201', createdAtMs: 3_000 }),
+      config,
+    );
+
+    expect(otherChannel.map((finding) => finding.kind)).not.toContain('message_burst');
+    expect(sameChannel.map((finding) => finding.kind)).toContain('message_burst');
+  });
+
+  it('重複投稿は最低文字数を満たす本文だけをchannel単位で集計する', () => {
+    const detector = new AutomaticModerationDetector();
+    const config = normalizeModerationConfig({
+      autoDuplicateMessageLimit: 2,
+      autoDuplicateWindowSeconds: 30,
+      autoDuplicateScope: 'channel',
+      autoDuplicateMinimumLength: 3,
+    });
+
+    detector.evaluate(message({ channelId: '200', content: 'ok', createdAtMs: 1_000 }), config);
+    const shortRepeated = detector.evaluate(
+      message({ channelId: '200', content: 'ok', createdAtMs: 2_000 }),
+      config,
+    );
+    detector.evaluate(message({ channelId: '200', content: 'same', createdAtMs: 3_000 }), config);
+    const otherChannel = detector.evaluate(
+      message({ channelId: '201', content: 'same', createdAtMs: 4_000 }),
+      config,
+    );
+    const sameChannel = detector.evaluate(
+      message({ channelId: '201', content: 'same', createdAtMs: 5_000 }),
+      config,
+    );
+
+    expect(shortRepeated.map((finding) => finding.kind)).not.toContain('duplicate_message');
+    expect(otherChannel.map((finding) => finding.kind)).not.toContain('duplicate_message');
+    expect(sameChannel.map((finding) => finding.kind)).toContain('duplicate_message');
+  });
+
   it('Guild・Channel・Role・User除外を適用する', () => {
     const config = normalizeModerationConfig({
       autoExemptChannelIds: ['200'],
