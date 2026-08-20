@@ -27,18 +27,14 @@ test('現在のBirthday pageと同じGuildのselectionだけを返す', () => {
   });
 
   assert.deepEqual(
-    getBirthdayCardPreviewSelectionForPathname(
-      '/dashboard/guilds/111111111111111111/birthday',
-    ),
+    getBirthdayCardPreviewSelectionForPathname('/dashboard/guilds/111111111111111111/birthday'),
     {
       guildId: '111111111111111111',
       userId: '222222222222222222',
     },
   );
   assert.equal(
-    getBirthdayCardPreviewSelectionForPathname(
-      '/dashboard/guilds/333333333333333333/birthday',
-    ),
+    getBirthdayCardPreviewSelectionForPathname('/dashboard/guilds/333333333333333333/birthday'),
     null,
   );
   assert.equal(getBirthdayCardPreviewSelectionForPathname('/dashboard'), null);
