@@ -1,7 +1,7 @@
 'use client';
 
 import { CalendarHeart, Save, Trash2 } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { useId, useState, type FormEvent } from 'react';
 import type { BirthdayRegistration } from '@/lib/birthday-admin-core';
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -17,6 +17,7 @@ export function BirthdaySelfRegistrationForm({
   initialRegistration: BirthdayRegistration | null;
   currentYear: number;
 }) {
+  const birthYearHelpId = useId();
   const [month, setMonth] = useState(String(initialRegistration?.month ?? ''));
   const [day, setDay] = useState(String(initialRegistration?.day ?? ''));
   const [birthYear, setBirthYear] = useState(String(initialRegistration?.birthYear ?? ''));
@@ -109,7 +110,7 @@ export function BirthdaySelfRegistrationForm({
           <CalendarHeart className="h-5 w-5" aria-hidden="true" />
         </span>
         <div>
-          <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">誕生日を登録</h1>
+          <h2 className="text-xl font-semibold tracking-tight sm:text-2xl">誕生日を登録</h2>
           <p className="mt-1 text-sm leading-6 text-muted">
             {displayName} として登録します。対象はログイン中のDiscordアカウント本人だけです。
           </p>
@@ -149,6 +150,7 @@ export function BirthdaySelfRegistrationForm({
             生年（任意）
             <input
               inputMode="numeric"
+              aria-describedby={birthYearHelpId}
               min={1900}
               max={currentYear}
               type="number"
@@ -157,10 +159,13 @@ export function BirthdaySelfRegistrationForm({
               placeholder="例: 2000"
               className="w-full rounded-xl border border-border bg-background px-3 py-2.5 text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
             />
-            <span className="block text-xs font-normal leading-5 text-muted">
-              年齢表示を利用したい場合だけ入力してください。未入力でも月日を登録できます。
-            </span>
           </label>
+          <span
+            id={birthYearHelpId}
+            className="text-xs font-normal leading-5 text-muted sm:col-span-2"
+          >
+            年齢表示を利用したい場合だけ入力してください。未入力でも月日を登録できます。
+          </span>
         </fieldset>
 
         <div className="flex flex-col gap-3 sm:flex-row">
