@@ -3,7 +3,10 @@ import {
   listStudioAccessGroups,
 } from '@herta/db';
 import { NextResponse } from 'next/server';
-import { RequestBodyTooLargeError, readRequestBodyBytes } from '@/lib/bounded-request-body';
+import {
+  RequestBodyTooLargeError,
+  readRequestBodyBytes,
+} from '@/lib/bounded-request-body';
 import { prisma } from '@/lib/db';
 import {
   createIvrmIamMutationUuid,
@@ -22,7 +25,10 @@ export async function POST(
 ) {
   const authorization = authorizeIvrmIntegrationRequest(request);
   if (authorization.status === 'unconfigured') {
-    return json({ error: 'ivRooom integration is not configured' }, { status: 503 });
+    return json(
+      { error: 'ivRooom integration is not configured' },
+      { status: 503 },
+    );
   }
   if (authorization.status === 'unauthorized') {
     return json(
@@ -41,10 +47,7 @@ export async function POST(
 
   const mutation = readIvrmIamMutationContext(request);
   if (!mutation) {
-    return json(
-      { error: 'Invalid mutation context' },
-      { status: 400 },
-    );
+    return json({ error: 'Invalid mutation context' }, { status: 400 });
   }
 
   const body = await parseJsonBody(request);
@@ -75,10 +78,14 @@ export async function POST(
     }
 
     const duplicateName = current.some(
-      (group) => group.name.toLocaleLowerCase() === input.name.toLocaleLowerCase(),
+      (group) =>
+        group.name.toLocaleLowerCase() === input.name.toLocaleLowerCase(),
     );
     if (duplicateName) {
-      return json({ error: 'A group with the same name already exists' }, { status: 409 });
+      return json(
+        { error: 'A group with the same name already exists' },
+        { status: 409 },
+      );
     }
 
     const group = await createStudioAccessGroupWithId(prisma, {
@@ -101,7 +108,10 @@ export async function POST(
       if (replay.status === 'conflict') {
         return json({ error: replay.message }, { status: 409 });
       }
-      return json({ error: 'A group with the same name already exists' }, { status: 409 });
+      return json(
+        { error: 'A group with the same name already exists' },
+        { status: 409 },
+      );
     }
 
     console.error('Failed to create ivRooom IAM access group', {
@@ -109,7 +119,10 @@ export async function POST(
       actorId: mutation.actorId,
       errorName: error instanceof Error ? error.name : 'UnknownError',
     });
-    return json({ error: 'Access group could not be created' }, { status: 500 });
+    return json(
+      { error: 'Access group could not be created' },
+      { status: 500 },
+    );
   }
 }
 
