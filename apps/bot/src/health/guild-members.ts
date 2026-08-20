@@ -16,6 +16,7 @@ interface CacheEntry {
 
 const MEMBER_SEARCH_CACHE_TTL_MS = 15_000;
 const MEMBER_SEARCH_CACHE_MAX_ENTRIES = 200;
+const DISCORD_UNKNOWN_MEMBER_ERROR_CODE = 10_007;
 const memberSearchCache = new Map<string, CacheEntry>();
 
 export async function searchGuildMemberOptions(
@@ -78,9 +79,18 @@ async function searchExactMemberId(guild: Guild, memberId: string): Promise<Guil
   try {
     const member = await guild.members.fetch({ user: memberId, force: true });
     return [toMemberOption(member)];
-  } catch {
-    return [];
+  } catch (error) {
+    if (discordErrorCode(error) === DISCORD_UNKNOWN_MEMBER_ERROR_CODE) return [];
+    throw error;
   }
+}
+
+function discordErrorCode(error: unknown): number | null {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return null;
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === 'number' && Number.isSafeInteger(code)) return code;
+  if (typeof code === 'string' && /^\d+$/u.test(code)) return Number.parseInt(code, 10);
+  return null;
 }
 
 function rememberSearch(key: string, members: GuildMemberOption[], now: number): void {
