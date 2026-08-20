@@ -1,0 +1,110 @@
+{
+  "bundleVersion": 1,
+  "contract": {
+    "id": "herta-iam",
+    "version": "1.0.0",
+    "sourceRepository": "ivRooom/ivrm-contracts"
+  },
+  "createAccessGroup": {
+    "method": "POST",
+    "pathTemplate": "/api/integrations/ivrm/guilds/{guildId}/iam/groups",
+    "authentication": {
+      "type": "http",
+      "scheme": "bearer"
+    },
+    "headers": {
+      "actorId": {
+        "name": "X-IVRM-Actor-ID",
+        "pattern": "^[0-9]{17,20}$",
+        "minLength": null,
+        "maxLength": null
+      },
+      "idempotencyKey": {
+        "name": "Idempotency-Key",
+        "pattern": "^[A-Za-z0-9._:-]{16,128}$",
+        "minLength": 16,
+        "maxLength": 128
+      }
+    },
+    "request": {
+      "contentType": "application/json",
+      "maxBytes": 16384,
+      "required": [
+        "name"
+      ],
+      "additionalProperties": true,
+      "fields": {
+        "name": {
+          "type": "string",
+          "normalization": "trim",
+          "normalizedMinLength": 1,
+          "normalizedMaxLength": 100
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "normalization": "trim-and-empty-to-null",
+          "normalizedMaxLength": 500
+        }
+      }
+    },
+    "response": {
+      "successStatusCodes": [
+        200,
+        201
+      ],
+      "errorStatusCodes": [
+        400,
+        401,
+        404,
+        409,
+        413,
+        500,
+        503
+      ],
+      "replayHeader": {
+        "name": "Idempotency-Replayed",
+        "value": "true"
+      },
+      "required": [
+        "status",
+        "replayed",
+        "group"
+      ],
+      "status": "ok",
+      "replayedType": "boolean",
+      "group": {
+        "required": [
+          "id",
+          "name",
+          "description",
+          "updatedAt"
+        ],
+        "fields": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 500
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  }
+}
