@@ -13,14 +13,42 @@ export type IvrmIamGroupCreateInput = {
   description: string | null;
 };
 
+export type IvrmIamGroupCreateResponseGroup = {
+  id: string;
+  name: string;
+  description: string | null;
+  updatedAt: Date;
+};
+
 export function readIvrmIamMutationContext(request: Request): IvrmIamMutationContext | null {
-  const actorId = request.headers.get('x-ivrm-actor-id')?.trim() ?? '';
-  const idempotencyKey = request.headers.get('idempotency-key')?.trim() ?? '';
+  const actorId = request.headers.get('x-ivrm-actor-id') ?? '';
+  const idempotencyKey = request.headers.get('idempotency-key') ?? '';
 
   if (!DISCORD_SNOWFLAKE_PATTERN.test(actorId)) return null;
   if (!IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) return null;
 
   return { actorId, idempotencyKey };
+}
+
+export function isIvrmIamJsonRequest(request: Request) {
+  const contentType = request.headers.get('content-type');
+  if (!contentType) return false;
+
+  const [mediaType] = contentType.split(';', 1);
+  return mediaType.trim().toLowerCase() === 'application/json';
+}
+
+export function isUnicodeCodePointLengthBetween(
+  value: string,
+  minimum: number,
+  maximum: number,
+) {
+  let length = 0;
+  for (const _character of value) {
+    length += 1;
+    if (length > maximum) return false;
+  }
+  return length >= minimum;
 }
 
 export function parseIvrmIamGroupCreateInput(value: unknown): IvrmIamGroupCreateInput | null {
@@ -39,10 +67,26 @@ export function parseIvrmIamGroupCreateInput(value: unknown): IvrmIamGroupCreate
   const name = record.name.trim();
   const description = typeof record.description === 'string' ? record.description.trim() : '';
 
-  if (name.length < 1 || name.length > 100) return null;
-  if (description.length > 500) return null;
+  if (!isUnicodeCodePointLengthBetween(name, 1, 100)) return null;
+  if (!isUnicodeCodePointLengthBetween(description, 0, 500)) return null;
 
   return { name, description: description || null };
+}
+
+export function serializeIvrmIamGroupCreateResponse(
+  group: IvrmIamGroupCreateResponseGroup,
+  replayed: boolean,
+) {
+  return {
+    status: 'ok' as const,
+    replayed,
+    group: {
+      id: group.id,
+      name: group.name,
+      description: group.description,
+      updatedAt: group.updatedAt.toISOString(),
+    },
+  };
 }
 
 export function createIvrmIamMutationUuid(
