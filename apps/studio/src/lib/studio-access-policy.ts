@@ -164,12 +164,13 @@ export function evaluateStudioPolicyDocumentsDecision(
   return allowed ? 'Allow' : 'ImplicitDeny';
 }
 
-export function inheritStudioPolicyDecision(
+export function mergeStudioPolicyDecisions(
   exact: StudioPolicyDecision,
-  parent: StudioPolicyDecision | null,
+  inherited: StudioPolicyDecision | null,
 ): StudioPolicyDecision {
-  if (exact !== 'ImplicitDeny') return exact;
-  return parent ?? 'ImplicitDeny';
+  if (exact === 'Deny' || inherited === 'Deny') return 'Deny';
+  if (exact === 'Allow' || inherited === 'Allow') return 'Allow';
+  return 'ImplicitDeny';
 }
 
 export function isStudioRootRole(roleIds: readonly string[]): boolean {
