@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { parseIvrmIamGroupCreateInput, readIvrmIamMutationContext } from './ivrm-iam-mutation.ts';
+import {
+  parseIvrmIamGroupCreateInput,
+  readIvrmIamMutationContext,
+} from './ivrm-iam-mutation.ts';
 
 type HertaIamBundle = {
   bundleVersion: number;
@@ -28,7 +31,10 @@ type HertaIamBundle = {
 };
 
 const bundle = JSON.parse(
-  readFileSync(new URL('../../../../contracts/ivrm/herta-iam.v1.bundle.json', import.meta.url), 'utf8'),
+  readFileSync(
+    new URL('../../../../contracts/ivrm/herta-iam.v1.bundle.json', import.meta.url),
+    'utf8',
+  ),
 ) as HertaIamBundle;
 const contract = bundle.createAccessGroup;
 
@@ -113,21 +119,27 @@ test('Herta IAM group input normalization conforms to portable request constrain
   );
 });
 
-test('Herta IAM route keeps bounded body, success status and replay semantics aligned with contract', () => {
-  const routeSource = readFileSync(
-    new URL('../app/api/integrations/ivrm/guilds/[guildId]/iam/groups/route.ts', import.meta.url),
-    'utf8',
-  );
+test(
+  'Herta IAM route keeps bounded body, success status and replay semantics aligned with contract',
+  () => {
+    const routeSource = readFileSync(
+      new URL(
+        '../app/api/integrations/ivrm/guilds/[guildId]/iam/groups/route.ts',
+        import.meta.url,
+      ),
+      'utf8',
+    );
 
-  assert.equal(contract.request.maxBytes, 16 * 1024);
-  assert.match(routeSource, /const MAX_GROUP_BODY_BYTES = 16 \* 1024;/u);
-  assert.deepEqual(contract.response.successStatusCodes, [200, 201]);
-  assert.match(routeSource, /return groupResponse\(replay\.group, true, 200\);/u);
-  assert.match(routeSource, /return groupResponse\(group, false, 201\);/u);
-  assert.equal(contract.response.replayHeader.name, 'Idempotency-Replayed');
-  assert.equal(contract.response.replayHeader.value, 'true');
-  assert.match(routeSource, /response\.headers\.set\('Idempotency-Replayed', 'true'\);/u);
-  for (const status of [400, 401, 404, 409, 413, 500, 503]) {
-    assert.ok(contract.response.errorStatusCodes.includes(status));
-  }
-});
+    assert.equal(contract.request.maxBytes, 16 * 1024);
+    assert.match(routeSource, /const MAX_GROUP_BODY_BYTES = 16 \* 1024;/u);
+    assert.deepEqual(contract.response.successStatusCodes, [200, 201]);
+    assert.match(routeSource, /return groupResponse\(replay\.group, true, 200\);/u);
+    assert.match(routeSource, /return groupResponse\(group, false, 201\);/u);
+    assert.equal(contract.response.replayHeader.name, 'Idempotency-Replayed');
+    assert.equal(contract.response.replayHeader.value, 'true');
+    assert.match(routeSource, /response\.headers\.set\('Idempotency-Replayed', 'true'\);/u);
+    for (const status of [400, 401, 404, 409, 413, 500, 503]) {
+      assert.ok(contract.response.errorStatusCodes.includes(status));
+    }
+  },
+);
