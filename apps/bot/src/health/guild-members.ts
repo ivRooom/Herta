@@ -16,6 +16,7 @@ interface CacheEntry {
 
 const MEMBER_SEARCH_CACHE_TTL_MS = 15_000;
 const MEMBER_SEARCH_CACHE_MAX_ENTRIES = 200;
+const DISCORD_UNKNOWN_MEMBER_ERROR_CODE = 10_007;
 const memberSearchCache = new Map<string, CacheEntry>();
 
 export async function searchGuildMemberOptions(
@@ -30,21 +31,27 @@ export async function searchGuildMemberOptions(
   const normalizedQuery = query.trim().slice(0, 64);
   if (!isAllowedMemberSearchQuery(normalizedQuery)) return [];
   const limit = Math.max(1, Math.min(20, Math.trunc(requestedLimit) || 20));
+  const exactMemberId = /^\d{17,20}$/u.test(normalizedQuery);
   const cacheKey = `${guildId}:${normalizedQuery.toLocaleLowerCase('ja')}:${limit}`;
   const now = Date.now();
-  const cached = memberSearchCache.get(cacheKey);
-  if (cached && cached.expiresAt > now) return cached.members.map(cloneMemberOption);
-  if (cached) memberSearchCache.delete(cacheKey);
+
+  // Exact Snowflake lookup is used for authorization-sensitive flows such as Birthday self registration.
+  // Never reuse the short-lived search cache there: role removal / Guild leave must be observed immediately.
+  if (!exactMemberId) {
+    const cached = memberSearchCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) return cached.members.map(cloneMemberOption);
+    if (cached) memberSearchCache.delete(cacheKey);
+  }
 
   let members: GuildMemberOption[];
-  if (/^\d{17,20}$/u.test(normalizedQuery)) {
+  if (exactMemberId) {
     members = await searchExactMemberId(guild, normalizedQuery);
   } else {
     const result = await guild.members.search({ query: normalizedQuery, limit });
     members = [...result.values()].map(toMemberOption).slice(0, limit);
   }
 
-  rememberSearch(cacheKey, members, now);
+  if (!exactMemberId) rememberSearch(cacheKey, members, now);
   return members.map(cloneMemberOption);
 }
 
@@ -70,11 +77,20 @@ function cloneMemberOption(member: GuildMemberOption): GuildMemberOption {
 
 async function searchExactMemberId(guild: Guild, memberId: string): Promise<GuildMemberOption[]> {
   try {
-    const member = await guild.members.fetch(memberId);
+    const member = await guild.members.fetch({ user: memberId, force: true });
     return [toMemberOption(member)];
-  } catch {
-    return [];
+  } catch (error) {
+    if (discordErrorCode(error) === DISCORD_UNKNOWN_MEMBER_ERROR_CODE) return [];
+    throw error;
   }
+}
+
+function discordErrorCode(error: unknown): number | null {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return null;
+  const code = (error as { code?: unknown }).code;
+  if (typeof code === 'number' && Number.isSafeInteger(code)) return code;
+  if (typeof code === 'string' && /^\d+$/u.test(code)) return Number.parseInt(code, 10);
+  return null;
 }
 
 function rememberSearch(key: string, members: GuildMemberOption[], now: number): void {
