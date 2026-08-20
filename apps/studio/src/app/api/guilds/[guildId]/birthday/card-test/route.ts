@@ -2,8 +2,6 @@ import { inspectBirthdayCardBackgroundImage } from '@herta/shared';
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { readRequestBodyBytes, RequestBodyTooLargeError } from '@/lib/bounded-request-body';
-import { parseBirthdayCardTestUserId } from '@/lib/birthday-card-test-send';
-import { getGuildMemberById } from '@/lib/bot-guild-members';
 import { prisma } from '@/lib/db';
 import {
   MessageStudioDiscordError,
@@ -101,24 +99,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
   if (!DISCORD_ID_PATTERN.test(channelId)) {
     return NextResponse.json({ error: '送信先Channelを選択してください' }, { status: 400 });
   }
-
-  const previewUserId = parseBirthdayCardTestUserId(form.get('userId'));
-  if (!previewUserId.ok) {
-    return NextResponse.json({ error: 'テスト対象メンバーが不正です' }, { status: 400 });
-  }
-
-  let previewMemberId: string | null = null;
-  if (previewUserId.userId) {
-    const member = await getGuildMemberById(guildId, previewUserId.userId);
-    if (!member || member.bot) {
-      return NextResponse.json(
-        { error: 'テスト対象メンバーをこのGuildで確認できませんでした' },
-        { status: 404 },
-      );
-    }
-    previewMemberId = member.id;
-  }
-
   const rawImage = form.get('image');
   if (!(rawImage instanceof File) || rawImage.size <= 0 || rawImage.size > TEST_IMAGE_MAX_BYTES) {
     return NextResponse.json({ error: 'Birthday Card画像が不正です' }, { status: 400 });
@@ -159,8 +139,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
           messageId: result.messageId,
           channelType: result.channelType,
           imageBytes: bytes.byteLength,
-          previewMemberId,
-          previewMode: previewMemberId ? 'member' : 'sample',
         },
       },
     });
