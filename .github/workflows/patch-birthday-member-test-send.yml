@@ -1,0 +1,170 @@
+name: Patch birthday member test send once
+
+on:
+  push:
+    branches:
+      - feat/birthday-card-member-test-send
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Apply targeted Birthday Card patches
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+
+          def replace_once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, got {count}')
+              return text.replace(old, new, 1)
+
+          live_path = Path('apps/studio/src/components/birthday-card-live-preview.tsx')
+          live = live_path.read_text()
+          live = replace_once(
+              live,
+              "} from '@/lib/birthday-card-preview';\nimport type { GuildMemberOption } from '@/lib/bot-guild-members';",
+              "} from '@/lib/birthday-card-preview';\nimport {\n  birthdayCardPreviewSubject,\n  type BirthdayCardPreviewMember,\n} from '@/lib/birthday-card-preview-subject';\nimport type { GuildMemberOption } from '@/lib/bot-guild-members';",
+              'live import',
+          )
+          live = replace_once(
+              live,
+              "export interface BirthdayCardPreviewMember {\n  userId: string;\n  displayName: string;\n  avatarUrl: string | null;\n  birthday: {\n    month: number;\n    day: number;\n    age: number | null;\n  } | null;\n}\n\n",
+              "",
+              'live member interface',
+          )
+          live = replace_once(
+              live,
+              "  memberPreview?: BirthdayCardPreviewMember;\n  onPositionChange(",
+              "  memberPreview?: BirthdayCardPreviewMember;\n  onMemberPreviewChange?(member: BirthdayCardPreviewMember | null): void;\n  onMemberPendingChange?(pending: boolean): void;\n  onPositionChange(",
+              'live props',
+          )
+          live = replace_once(
+              live,
+              "  memberPreview,\n  onPositionChange,\n  onSizeChange,",
+              "  memberPreview,\n  onMemberPreviewChange,\n  onMemberPendingChange,\n  onPositionChange,\n  onSizeChange,",
+              'live destructure',
+          )
+          live = replace_once(
+              live,
+              "  const hiddenLayoutLabels: string[] = [];\n  const nameValue = activeMemberPreview?.displayName ?? 'Herta Member';\n  const birthdayValue = activeMemberPreview\n    ? activeMemberPreview.birthday\n      ? `${activeMemberPreview.birthday.month}月${activeMemberPreview.birthday.day}日`\n      : '誕生日未登録'\n    : '8月19日';\n  const ageValue = activeMemberPreview\n    ? activeMemberPreview.birthday?.age === null || activeMemberPreview.birthday?.age === undefined\n      ? '年齢未登録'\n      : `${activeMemberPreview.birthday.age}歳`\n    : '25歳';\n  const avatarInitials = previewInitials(nameValue);",
+              "  const hiddenLayoutLabels: string[] = [];\n  const subject = birthdayCardPreviewSubject(activeMemberPreview);\n  const nameValue = subject.displayName;\n  const birthdayValue = subject.birthdayText;\n  const ageValue = subject.ageText;\n  const avatarInitials = subject.initials;",
+              'live subject',
+          )
+          live = replace_once(
+              live,
+              "    if (!guildId || !selectedMember) {\n      setResolvedMember(null);\n      setMemberPending(false);\n      setMemberStatus('');\n      return;\n    }",
+              "    if (!guildId || !selectedMember) {\n      setResolvedMember(null);\n      setMemberPending(false);\n      setMemberStatus('');\n      onMemberPreviewChange?.(null);\n      onMemberPendingChange?.(false);\n      return;\n    }",
+              'live clear callback',
+          )
+          live = replace_once(
+              live,
+              "    setResolvedMember(null);\n    setMemberPending(true);\n    setMemberStatus(`${selectedMember.displayName} の誕生日情報を確認中…`);",
+              "    setResolvedMember(null);\n    setMemberPending(true);\n    onMemberPreviewChange?.(null);\n    onMemberPendingChange?.(true);\n    setMemberStatus(`${selectedMember.displayName} の誕生日情報を確認中…`);",
+              'live pending callback',
+          )
+          live = replace_once(
+              live,
+              "        setResolvedMember(payload.member);\n        setMemberStatus(",
+              "        setResolvedMember(payload.member);\n        onMemberPreviewChange?.(payload.member);\n        setMemberStatus(",
+              'live success callback',
+          )
+          live = replace_once(
+              live,
+              "        setResolvedMember(null);\n        setMemberStatus(\n          timedOut",
+              "        setResolvedMember(null);\n        onMemberPreviewChange?.(null);\n        setMemberStatus(\n          timedOut",
+              'live error callback',
+          )
+          live = replace_once(
+              live,
+              "      .finally(() => {\n        window.clearTimeout(timeout);\n        if (!cancelled) setMemberPending(false);\n      });",
+              "      .finally(() => {\n        window.clearTimeout(timeout);\n        if (!cancelled) {\n          setMemberPending(false);\n          onMemberPendingChange?.(false);\n        }\n      });",
+              'live finally callback',
+          )
+          live = replace_once(
+              live,
+              "  }, [guildId, selectedMember]);",
+              "  }, [guildId, onMemberPendingChange, onMemberPreviewChange, selectedMember]);",
+              'live effect deps',
+          )
+          live = replace_once(
+              live,
+              "\nfunction previewInitials(value: string): string {\n  const normalized = value.trim();\n  if (!normalized) return 'HM';\n  const words = normalized.split(/\\s+/u).filter(Boolean);\n  if (words.length >= 2) {\n    const first = Array.from(words[0] ?? '')[0] ?? '';\n    const second = Array.from(words[1] ?? '')[0] ?? '';\n    return `${first}${second}`.toLocaleUpperCase('ja');\n  }\n  return Array.from(normalized).slice(0, 2).join('').toLocaleUpperCase('ja');\n}\n",
+              "\n",
+              'live initials helper',
+          )
+          live_path.write_text(live)
+
+          editor_path = Path('apps/studio/src/components/birthday-card-editor.tsx')
+          editor = editor_path.read_text()
+          editor = replace_once(
+              editor,
+              "import { renderBirthdayCardPreviewPng } from '@/lib/birthday-card-preview-export';\nimport type { PluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';",
+              "import { renderBirthdayCardPreviewPng } from '@/lib/birthday-card-preview-export';\nimport type { BirthdayCardPreviewMember } from '@/lib/birthday-card-preview-subject';\nimport type { PluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';",
+              'editor import',
+          )
+          editor = replace_once(
+              editor,
+              "  const [testChannelId, setTestChannelId] = useState<string | null>(null);\n  const [testPending, setTestPending] = useState(false);\n  const [testStatus, setTestStatus] = useState('');",
+              "  const [testChannelId, setTestChannelId] = useState<string | null>(null);\n  const [testPending, setTestPending] = useState(false);\n  const [testStatus, setTestStatus] = useState('');\n  const [testMemberPreview, setTestMemberPreview] = useState<BirthdayCardPreviewMember | null>(null);\n  const [testMemberPending, setTestMemberPending] = useState(false);",
+              'editor member state',
+          )
+          editor = replace_once(
+              editor,
+              "  async function testSend() {\n    if (!canTestSend || interactionPending) return;\n    if (!testChannelId) {",
+              "  async function testSend() {\n    if (!canTestSend || interactionPending) return;\n    if (testMemberPending) {\n      setTestStatus('実メンバー情報の取得完了後にテスト送信してください');\n      return;\n    }\n    if (!testChannelId) {",
+              'editor pending guard',
+          )
+          editor = replace_once(
+              editor,
+              "      const blob = await renderBirthdayCardPreviewPng(previewConfig, backgroundUrl);\n      const form = new FormData();\n      form.set('channelId', testChannelId);\n      form.set('image', blob, 'birthday-card-preview.png');",
+              "      const blob = await renderBirthdayCardPreviewPng(\n        previewConfig,\n        backgroundUrl,\n        testMemberPreview,\n      );\n      const form = new FormData();\n      form.set('channelId', testChannelId);\n      if (testMemberPreview) form.set('userId', testMemberPreview.userId);\n      form.set('image', blob, 'birthday-card-preview.png');",
+              'editor render member',
+          )
+          editor = replace_once(
+              editor,
+              "      setTestStatus('Birthday Cardのテスト画像をDiscordへ送信しました');",
+              "      setTestStatus(\n        testMemberPreview\n          ? `${testMemberPreview.displayName} のBirthday Cardテスト画像をDiscordへ送信しました`\n          : 'Birthday Cardのサンプルテスト画像をDiscordへ送信しました',\n      );",
+              'editor success text',
+          )
+          editor = replace_once(
+              editor,
+              "            backgroundLabel={backgroundLabel}\n            onPositionChange={updatePosition}",
+              "            backgroundLabel={backgroundLabel}\n            onMemberPreviewChange={setTestMemberPreview}\n            onMemberPendingChange={setTestMemberPending}\n            onPositionChange={updatePosition}",
+              'editor callbacks',
+          )
+          editor = replace_once(
+              editor,
+              "              現在表示している「変更中 /\n              保存済み」のプレビューをPNG化し、指定Channelへ送信します。サンプル表示名・Avatar・8月19日・25歳を使用し、メンションは発生しません。",
+              "              現在表示している「変更中 / 保存済み」のプレビューをPNG化し、指定Channelへ送信します。\n              実メンバー選択時は表示名・Avatar・登録済み誕生日を反映し、未選択時はサンプル表示を使用します。メンションは発生しません。",
+              'editor help text',
+          )
+          editor = replace_once(
+              editor,
+              "            disabled={interactionPending || !testChannelId || !backgroundUrl}",
+              "            disabled={interactionPending || testMemberPending || !testChannelId || !backgroundUrl}",
+              'editor button disabled',
+          )
+          editor_path.write_text(editor)
+          PY
+
+      - name: Commit patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/studio/src/components/birthday-card-live-preview.tsx apps/studio/src/components/birthday-card-editor.tsx
+          git diff --cached --check
+          git diff --cached --quiet && exit 0
+          git commit -m "feat(birthday): 実メンバーをtest-sendへ連携"
+          git push
