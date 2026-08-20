@@ -74,7 +74,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
     }
     console.error('Birthday self registration failed', {
       guildId: context.guildId,
-      actorId: context.userId,
       errorName: error instanceof Error ? error.name : 'UnknownError',
     });
     return json({ error: '誕生日を登録できませんでした' }, 500);
@@ -103,7 +102,6 @@ export async function DELETE(
   } catch (error) {
     console.error('Birthday self registration removal failed', {
       guildId: context.guildId,
-      actorId: context.userId,
       errorName: error instanceof Error ? error.name : 'UnknownError',
     });
     return json({ error: '誕生日登録を削除できませんでした' }, 500);
