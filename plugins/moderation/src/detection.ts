@@ -129,18 +129,10 @@ export class AutomaticModerationDetector {
 
     const checksByWindow = new Map<string, WindowChecks>();
     if (config.autoBurstMessageLimit > 0) {
-      addWindowCheck(
-        checksByWindow,
-        windowKey(message, config.autoBurstScope),
-        'burst',
-      );
+      addWindowCheck(checksByWindow, windowKey(message, config.autoBurstScope), 'burst');
     }
     if (config.autoDuplicateMessageLimit > 0) {
-      addWindowCheck(
-        checksByWindow,
-        windowKey(message, config.autoDuplicateScope),
-        'duplicate',
-      );
+      addWindowCheck(checksByWindow, windowKey(message, config.autoDuplicateScope), 'duplicate');
     }
 
     const maxWindowMs =
