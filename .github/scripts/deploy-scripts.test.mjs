@@ -102,15 +102,25 @@ test('production app healthchecks do not require curl in the runtime image', () 
   assert.match(compose, /process\.env\.HEALTH_PORT/u);
 });
 
-test('Studio proxy accepts bounded Birthday Card multipart uploads', () => {
+test('Birthday Card multipart uploadだけproduction proxy上限を10MiBへ拡張する', () => {
   const nginx = readFileSync('deploy/docker/nginx/default.conf', 'utf8');
+  const birthdayLocation =
+    nginx.match(
+      /location ~ \^\/api\/guilds\/\[0-9\]\+\/birthday\/\(card-background\|card-test\)\$ \{([\s\S]*?)\n    \}/u,
+    )?.[1] ?? '';
   const studioApiLocation = nginx.match(/location \/api\/ \{([\s\S]*?)\n    \}/u)?.[1] ?? '';
 
-  assert.ok(studioApiLocation, 'Studio /api/ nginx location must exist');
+  assert.ok(birthdayLocation, 'Birthday Card multipart nginx location must exist');
   assert.match(
-    studioApiLocation,
+    birthdayLocation,
     /client_max_body_size\s+10m;/u,
-    'nginx must not reject Birthday Card uploads before route-level size validation',
+    'nginx must not reject valid Birthday Card uploads before route-level validation',
+  );
+  assert.ok(studioApiLocation, 'Studio /api/ nginx location must exist');
+  assert.doesNotMatch(
+    studioApiLocation,
+    /client_max_body_size/u,
+    'unrelated Studio APIs must keep the nginx default request-body limit',
   );
 });
 
