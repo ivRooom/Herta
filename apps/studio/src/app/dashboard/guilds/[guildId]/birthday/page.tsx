@@ -7,6 +7,7 @@ import type { ReactNode } from 'react';
 import { auth } from '@/auth';
 import { BirthdayAdmin } from '@/components/birthday-admin';
 import { BirthdayCardEditor } from '@/components/birthday-card-editor';
+import { BirthdayRegistrationShare } from '@/components/birthday-registration-share';
 import { listBirthdayRegistrations } from '@/lib/birthday-admin';
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
 import { prisma } from '@/lib/db';
@@ -174,6 +175,8 @@ export default async function BirthdayAdminPage({
           </div>
         </div>
       </section>
+
+      {canReadRegistrations ? <BirthdayRegistrationShare guildId={guildId} /> : null}
 
       {canReadRegistrations ? (
         <BirthdayAdmin
