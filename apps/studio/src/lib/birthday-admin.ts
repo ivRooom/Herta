@@ -43,6 +43,26 @@ export async function listBirthdayRegistrations(guildId: string): Promise<Birthd
   `;
 }
 
+export async function getBirthdayRegistration(
+  guildId: string,
+  userId: string,
+): Promise<BirthdayRegistration | null> {
+  if (!BIRTHDAY_ADMIN_DISCORD_ID_PATTERN.test(userId)) return null;
+
+  const registrations = await prisma.$queryRaw<BirthdayRegistration[]>`
+    SELECT
+      "user_id" AS "userId",
+      "month",
+      "day",
+      "birth_year" AS "birthYear"
+    FROM "birthday_registrations"
+    WHERE "guild_id" = ${guildId}
+      AND "user_id" = ${userId}
+    LIMIT 1
+  `;
+  return registrations[0] ?? null;
+}
+
 export async function setBirthdayRegistration(input: {
   guildId: string;
   actorId: string;
