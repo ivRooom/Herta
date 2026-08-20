@@ -102,6 +102,18 @@ test('production app healthchecks do not require curl in the runtime image', () 
   assert.match(compose, /process\.env\.HEALTH_PORT/u);
 });
 
+test('Studio proxy accepts bounded Birthday Card multipart uploads', () => {
+  const nginx = readFileSync('deploy/docker/nginx/default.conf', 'utf8');
+  const studioApiLocation = nginx.match(/location \/api\/ \{([\s\S]*?)\n    \}/u)?.[1] ?? '';
+
+  assert.ok(studioApiLocation, 'Studio /api/ nginx location must exist');
+  assert.match(
+    studioApiLocation,
+    /client_max_body_size\s+10m;/u,
+    'nginx must not reject Birthday Card uploads before route-level size validation',
+  );
+});
+
 test('failure diagnostics do not print production environment values', () => {
   const common = readFileSync('deploy/scripts/_common.sh', 'utf8');
   const startMarker = 'print_deploy_diagnostics() (';
