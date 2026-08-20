@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   evaluateStudioPolicyDocuments,
+  evaluateStudioPolicyDocumentsDecision,
+  mergeStudioPolicyDecisions,
   validateStudioAccessPolicy,
   type StudioAccessPolicy,
 } from './studio-access-policy.ts';
@@ -51,6 +53,36 @@ test('User/Role/Group/legacyのどこか1つのExplicit DenyがAllowより優先
     ),
     false,
   );
+});
+
+test('Policy判定はExplicit DenyとImplicit Denyを区別できる', () => {
+  const resource = `guild:${GUILD_ID}:page:moderation-detections`;
+
+  assert.equal(
+    evaluateStudioPolicyDocumentsDecision(
+      [policy('Deny', 'studio.page.view', resource)],
+      'studio.page.view',
+      resource,
+    ),
+    'Deny',
+  );
+  assert.equal(
+    evaluateStudioPolicyDocumentsDecision(
+      [policy('Allow', 'studio.settings.read')],
+      'studio.page.view',
+      resource,
+    ),
+    'ImplicitDeny',
+  );
+});
+
+test('Moderation親Allowより子ページExplicit Denyを優先する', () => {
+  assert.equal(mergeStudioPolicyDecisions('Deny', 'Allow'), 'Deny');
+  assert.equal(mergeStudioPolicyDecisions('ImplicitDeny', 'Allow'), 'Allow');
+});
+
+test('Moderation親Explicit Denyは子ページAllowより優先する', () => {
+  assert.equal(mergeStudioPolicyDecisions('Allow', 'Deny'), 'Deny');
 });
 
 test('一致するAllowがない場合はdefault denyになる', () => {
