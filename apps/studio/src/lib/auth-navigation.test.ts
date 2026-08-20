@@ -18,5 +18,8 @@ test('外部URL・protocol-relative・不正なBirthday callbackをDashboardへ�
   assert.equal(normalizeStudioCallbackUrl('https://example.com/steal'), '/dashboard');
   assert.equal(normalizeStudioCallbackUrl('//example.com/steal'), '/dashboard');
   assert.equal(normalizeStudioCallbackUrl('/birthday/register/not-a-guild'), '/dashboard');
-  assert.equal(normalizeStudioCallbackUrl('/birthday/register/111111111111111111/extra'), '/dashboard');
+  assert.equal(
+    normalizeStudioCallbackUrl('/birthday/register/111111111111111111/extra'),
+    '/dashboard',
+  );
 });
