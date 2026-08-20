@@ -1,4 +1,5 @@
 import { birthdayCardPreset, type BirthdayCardConfig } from '@herta/shared';
+import { getBirthdayCardPreviewSelection } from './birthday-card-preview-selection.ts';
 import {
   birthdayCardPreviewSubject,
   type BirthdayCardPreviewMember,
@@ -11,6 +12,7 @@ import {
 } from './birthday-card-preview.ts';
 
 const PREVIEW_IMAGE_TIMEOUT_MS = 10_000;
+const MEMBER_PREVIEW_TIMEOUT_MS = 12_000;
 
 export interface BirthdayCardPreviewCoverRect {
   x: number;
@@ -47,6 +49,7 @@ export async function renderBirthdayCardPreviewPng(
     throw new Error('Birthday Cardプレビューはブラウザでのみ生成できます');
   }
 
+  const resolvedMember = member === undefined ? await resolveSelectedPreviewMember() : member;
   const background = await loadImage(backgroundUrl, false, '背景画像');
   const cover = birthdayCardPreviewCoverRect(background.naturalWidth, background.naturalHeight);
   if (!cover) throw new Error('背景画像のサイズを取得できませんでした');
@@ -59,7 +62,7 @@ export async function renderBirthdayCardPreviewPng(
 
   context.drawImage(background, cover.x, cover.y, cover.width, cover.height);
   const preset = birthdayCardPreset(config.birthdayCardPreset);
-  const subject = birthdayCardPreviewSubject(member);
+  const subject = birthdayCardPreviewSubject(resolvedMember);
 
   if (config.birthdayCardShowAvatar) {
     const avatar = birthdayCardAvatarGeometry(
@@ -142,6 +145,42 @@ export async function renderBirthdayCardPreviewPng(
       'image/png',
     );
   });
+}
+
+async function resolveSelectedPreviewMember(): Promise<BirthdayCardPreviewMember | null> {
+  const selection = getBirthdayCardPreviewSelection();
+  if (!selection) return null;
+
+  const endpoint = new URL(
+    `/api/guilds/${selection.guildId}/birthday/member-preview`,
+    window.location.origin,
+  );
+  endpoint.searchParams.set('userId', selection.userId);
+
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), MEMBER_PREVIEW_TIMEOUT_MS);
+  try {
+    const response = await fetch(endpoint, { cache: 'no-store', signal: controller.signal });
+    const payload = (await response.json().catch(() => null)) as {
+      error?: unknown;
+      member?: BirthdayCardPreviewMember;
+    } | null;
+    if (!response.ok || !payload?.member) {
+      throw new Error(
+        typeof payload?.error === 'string'
+          ? payload.error
+          : 'テスト送信用の実メンバー情報を取得できませんでした',
+      );
+    }
+    return payload.member;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('テスト送信用の実メンバー情報取得がタイムアウトしました');
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
 }
 
 function drawImageCover(
