@@ -30,6 +30,18 @@ const nextConfig: NextConfig = {
     '@herta/plugin-quote',
     '@herta/plugin-team-split',
   ],
+  async rewrites() {
+    return {
+      beforeFiles: [
+        {
+          source: '/birthday-card-presets/:asset',
+          destination: '/api/birthday-card-presets/:asset',
+        },
+      ],
+      afterFiles: [],
+      fallback: [],
+    };
+  },
   async headers() {
     return [
       {
