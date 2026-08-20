@@ -10,10 +10,17 @@ export interface BirthdayCardBackgroundImageInfo {
   height: number;
 }
 
+export interface BirthdayCardBackgroundInspectionOptions {
+  maxBytes?: number;
+}
+
 export function inspectBirthdayCardBackgroundImage(
   bytes: Uint8Array,
+  options: BirthdayCardBackgroundInspectionOptions = {},
 ): BirthdayCardBackgroundImageInfo | null {
-  if (bytes.byteLength === 0 || bytes.byteLength > BIRTHDAY_CARD_BACKGROUND_MAX_BYTES) return null;
+  const maxBytes = options.maxBytes ?? BIRTHDAY_CARD_BACKGROUND_MAX_BYTES;
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) return null;
+  if (bytes.byteLength === 0 || bytes.byteLength > maxBytes) return null;
 
   const info = inspectPng(bytes) ?? inspectJpeg(bytes) ?? inspectWebp(bytes);
   if (!info) return null;
