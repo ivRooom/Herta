@@ -65,7 +65,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
       month: input.month,
       day: input.day,
       birthYear: input.birthYear,
-      operationSource: 'self-registration',
+      operationSource: 'discord',
     });
     return json({ registration }, 200);
   } catch (error) {
@@ -96,7 +96,7 @@ export async function DELETE(
       guildId: context.guildId,
       actorId: context.userId,
       userId: context.userId,
-      operationSource: 'self-registration',
+      operationSource: 'discord',
     });
     return json({ deleted });
   } catch (error) {
