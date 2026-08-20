@@ -20,7 +20,10 @@ export interface BirthdaySelfRegistrationRole {
 }
 
 export type BirthdaySelfRegistrationEligibility =
-  'eligible' | 'not-member' | 'bot' | 'member-role-missing';
+  | 'eligible'
+  | 'not-member'
+  | 'bot'
+  | 'member-role-missing';
 
 export function parseBirthdaySelfRegistrationRequest(
   value: unknown,
