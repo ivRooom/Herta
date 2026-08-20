@@ -2,6 +2,7 @@
 
 import { birthdayCardPreset, type BirthdayCardConfig } from '@herta/shared';
 import { ImageOff, Move } from 'lucide-react';
+import { useParams } from 'next/navigation';
 import {
   useEffect,
   useRef,
@@ -9,6 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react';
+import { BirthdayCardMemberPicker } from '@/components/birthday-card-member-picker';
 import {
   BIRTHDAY_CARD_PREVIEW_HEIGHT,
   BIRTHDAY_CARD_PREVIEW_WIDTH,
@@ -22,6 +24,7 @@ import {
   resizeBirthdayCardAvatarSize,
   resizeBirthdayCardTextSize,
 } from '@/lib/birthday-card-preview';
+import type { GuildMemberOption } from '@/lib/bot-guild-members';
 
 export type BirthdayCardPositionXKey =
   'birthdayCardAvatarX' | 'birthdayCardNameX' | 'birthdayCardBirthdayX' | 'birthdayCardAgeX';
@@ -35,6 +38,17 @@ export type BirthdayCardSizeKey =
   | 'birthdayCardBirthdaySize'
   | 'birthdayCardAgeSize';
 
+export interface BirthdayCardPreviewMember {
+  userId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  birthday: {
+    month: number;
+    day: number;
+    age: number | null;
+  } | null;
+}
+
 interface BirthdayCardLivePreviewProps {
   config: BirthdayCardConfig;
   readable: ReadonlySet<string>;
@@ -42,6 +56,7 @@ interface BirthdayCardLivePreviewProps {
   pending: boolean;
   backgroundUrl: string | null;
   backgroundLabel: string;
+  memberPreview?: BirthdayCardPreviewMember;
   onPositionChange(
     xKey: BirthdayCardPositionXKey,
     yKey: BirthdayCardPositionYKey,
@@ -78,6 +93,8 @@ interface ActiveResize {
 
 type ResizeKind = 'avatar' | 'text';
 
+const MEMBER_PREVIEW_TIMEOUT_MS = 12_000;
+
 export function BirthdayCardLivePreview({
   config,
   readable,
@@ -85,19 +102,108 @@ export function BirthdayCardLivePreview({
   pending,
   backgroundUrl,
   backgroundLabel,
+  memberPreview,
   onPositionChange,
   onSizeChange,
 }: BirthdayCardLivePreviewProps) {
+  const params = useParams<{ guildId: string }>();
+  const guildId = params.guildId;
   const svgRef = useRef<SVGSVGElement>(null);
   const activeResizeRef = useRef<ActiveResize | null>(null);
   const [backgroundFailed, setBackgroundFailed] = useState(false);
+  const [selectedMember, setSelectedMember] = useState<GuildMemberOption | null>(null);
+  const [resolvedMember, setResolvedMember] = useState<BirthdayCardPreviewMember | null>(null);
+  const [memberStatus, setMemberStatus] = useState('');
+  const [memberPending, setMemberPending] = useState(false);
+  const activeMemberPreview = memberPreview ?? resolvedMember ?? undefined;
   const preset = birthdayCardPreset(config.birthdayCardPreset);
   const canPreviewTextPalette = readable.has('birthdayCardPreset');
   const hiddenLayoutLabels: string[] = [];
+  const nameValue = activeMemberPreview?.displayName ?? 'Herta Member';
+  const birthdayValue = activeMemberPreview
+    ? activeMemberPreview.birthday
+      ? `${activeMemberPreview.birthday.month}月${activeMemberPreview.birthday.day}日`
+      : '誕生日未登録'
+    : '8月19日';
+  const ageValue = activeMemberPreview
+    ? activeMemberPreview.birthday?.age === null || activeMemberPreview.birthday?.age === undefined
+      ? '年齢未登録'
+      : `${activeMemberPreview.birthday.age}歳`
+    : '25歳';
+  const avatarInitials = previewInitials(nameValue);
 
   useEffect(() => {
     setBackgroundFailed(false);
   }, [backgroundUrl]);
+
+  useEffect(() => {
+    if (!guildId || !selectedMember) {
+      setResolvedMember(null);
+      setMemberPending(false);
+      setMemberStatus('');
+      return;
+    }
+
+    const controller = new AbortController();
+    let cancelled = false;
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, MEMBER_PREVIEW_TIMEOUT_MS);
+    setResolvedMember(null);
+    setMemberPending(true);
+    setMemberStatus(`${selectedMember.displayName} の誕生日情報を確認中…`);
+
+    const endpoint = new URL(
+      `/api/guilds/${guildId}/birthday/member-preview`,
+      window.location.origin,
+    );
+    endpoint.searchParams.set('userId', selectedMember.id);
+    void fetch(endpoint, { cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        const payload = (await response.json().catch(() => null)) as {
+          error?: unknown;
+          member?: BirthdayCardPreviewMember;
+        } | null;
+        if (cancelled) return;
+        if (!response.ok || !payload?.member) {
+          throw new Error(
+            typeof payload?.error === 'string'
+              ? payload.error
+              : '実メンバーのBirthday情報を取得できませんでした',
+          );
+        }
+        setResolvedMember(payload.member);
+        setMemberStatus(
+          payload.member.birthday
+            ? `${payload.member.displayName} の登録済み誕生日をプレビューしています`
+            : `${payload.member.displayName} は誕生日未登録です`,
+        );
+      })
+      .catch((cause: unknown) => {
+        if (cancelled) return;
+        if (cause instanceof Error && cause.name === 'AbortError' && !timedOut) return;
+        setResolvedMember(null);
+        setMemberStatus(
+          timedOut
+            ? '実メンバーのBirthday情報取得がタイムアウトしました。再試行してください'
+            : cause instanceof Error
+              ? cause.message
+              : '実メンバーのBirthday情報を取得できませんでした',
+        );
+      })
+      .finally(() => {
+        window.clearTimeout(timeout);
+        if (!cancelled) setMemberPending(false);
+      });
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [guildId, selectedMember]);
 
   const avatarVisible =
     readable.has('birthdayCardShowAvatar') &&
@@ -148,8 +254,9 @@ export function BirthdayCardLivePreview({
     hiddenLayoutLabels.push('年齢');
   }
 
+  const previewPending = pending || memberPending;
   const canMovePreview =
-    !pending &&
+    !previewPending &&
     ((avatarVisible &&
       (editable.has('birthdayCardAvatarX') || editable.has('birthdayCardAvatarY'))) ||
       (nameVisible && (editable.has('birthdayCardNameX') || editable.has('birthdayCardNameY'))) ||
@@ -157,7 +264,7 @@ export function BirthdayCardLivePreview({
         (editable.has('birthdayCardBirthdayX') || editable.has('birthdayCardBirthdayY'))) ||
       (ageVisible && (editable.has('birthdayCardAgeX') || editable.has('birthdayCardAgeY'))));
   const canResizePreview =
-    !pending &&
+    !previewPending &&
     ((avatarVisible && editable.has('birthdayCardAvatarSize')) ||
       (nameVisible && editable.has('birthdayCardNameSize')) ||
       (birthdayVisible && editable.has('birthdayCardBirthdaySize')) ||
@@ -190,7 +297,7 @@ export function BirthdayCardLivePreview({
     currentX: number,
     currentY: number,
   ): PreviewInteractionHandlers {
-    const movable = !pending && (editable.has(xKey) || editable.has(yKey));
+    const movable = !previewPending && (editable.has(xKey) || editable.has(yKey));
     return {
       movable,
       onPointerDown(event) {
@@ -242,7 +349,7 @@ export function BirthdayCardLivePreview({
     kind: ResizeKind,
     valueLength = 0,
   ): PreviewResizeHandlers {
-    const resizable = !pending && editable.has(sizeKey);
+    const resizable = !previewPending && editable.has(sizeKey);
 
     function finishResize(event: ReactPointerEvent<SVGGElement>) {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -327,7 +434,10 @@ export function BirthdayCardLivePreview({
         <div>
           <h3 className="font-medium">ライブプレビュー</h3>
           <p className="mt-0.5 text-xs text-muted">
-            1672×941のBot描画と同じ座標系。表示名・Avatar・日付・年齢はサンプルです。
+            1672×941のBot描画と同じ座標系。
+            {activeMemberPreview
+              ? `${activeMemberPreview.displayName} のDiscord情報と登録済み誕生日を表示しています。`
+              : '表示名・Avatar・日付・年齢はサンプルです。'}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -336,12 +446,37 @@ export function BirthdayCardLivePreview({
               投稿OFF
             </span>
           ) : null}
+          {activeMemberPreview ? (
+            <span className="rounded-full border border-primary/20 bg-primary/10 px-2.5 py-1 text-[11px] font-medium text-primary">
+              実メンバー
+            </span>
+          ) : null}
           <span className="inline-flex items-center gap-1 rounded-full border border-border bg-background px-2.5 py-1 text-[11px] font-medium text-muted">
             <Move className="h-3.5 w-3.5" aria-hidden="true" />
             {canEditPreview ? 'プレビュー上で直接編集' : '閲覧プレビュー'}
           </span>
         </div>
       </div>
+
+      {guildId && !memberPreview ? (
+        <div className="space-y-2 rounded-xl border border-border bg-background p-3">
+          <div>
+            <p className="text-sm font-medium">実メンバーで確認</p>
+            <p className="mt-0.5 text-xs leading-5 text-muted">
+              Discordメンバーを選ぶと、表示名・Avatar・Hertaに登録済みの誕生日でCardを確認できます。
+            </p>
+          </div>
+          <BirthdayCardMemberPicker
+            guildId={guildId}
+            value={selectedMember}
+            onChange={setSelectedMember}
+            disabled={pending || memberPending}
+          />
+          <p className="text-xs text-muted" aria-live="polite">
+            {memberStatus}
+          </p>
+        </div>
+      ) : null}
 
       <div className="relative aspect-[1672/941] overflow-hidden rounded-2xl border border-border bg-background shadow-inner">
         {backgroundUrl && !backgroundFailed ? (
@@ -384,6 +519,8 @@ export function BirthdayCardLivePreview({
               y={config.birthdayCardAvatarY}
               size={config.birthdayCardAvatarSize}
               geometry={avatarGeometry}
+              avatarUrl={activeMemberPreview?.avatarUrl ?? null}
+              initials={avatarInitials}
               handlers={pointerHandlers(
                 'birthdayCardAvatarX',
                 'birthdayCardAvatarY',
@@ -402,7 +539,7 @@ export function BirthdayCardLivePreview({
           {nameVisible ? (
             <PreviewText
               label="名前"
-              value="Herta Member"
+              value={nameValue}
               x={config.birthdayCardNameX}
               y={config.birthdayCardNameY}
               size={config.birthdayCardNameSize}
@@ -422,14 +559,14 @@ export function BirthdayCardLivePreview({
                 20,
                 96,
                 'text',
-                'Herta Member'.length,
+                nameValue.length,
               )}
             />
           ) : null}
           {birthdayVisible ? (
             <PreviewText
               label="誕生日"
-              value="8月19日"
+              value={birthdayValue}
               x={config.birthdayCardBirthdayX}
               y={config.birthdayCardBirthdayY}
               size={config.birthdayCardBirthdaySize}
@@ -449,14 +586,14 @@ export function BirthdayCardLivePreview({
                 16,
                 72,
                 'text',
-                '8月19日'.length,
+                birthdayValue.length,
               )}
             />
           ) : null}
           {ageVisible ? (
             <PreviewText
               label="年齢"
-              value="25歳"
+              value={ageValue}
               x={config.birthdayCardAgeX}
               y={config.birthdayCardAgeY}
               size={config.birthdayCardAgeSize}
@@ -476,13 +613,22 @@ export function BirthdayCardLivePreview({
                 16,
                 72,
                 'text',
-                '25歳'.length,
+                ageValue.length,
               )}
             />
           ) : null}
         </svg>
       </div>
 
+      {activeMemberPreview && !activeMemberPreview.birthday ? (
+        <p className="text-xs text-amber-300" role="status">
+          このメンバーの誕生日はHertaに登録されていません。プレビューでは未登録状態を明示しています。
+        </p>
+      ) : activeMemberPreview?.birthday && activeMemberPreview.birthday.age === null ? (
+        <p className="text-xs text-muted" role="status">
+          生年が未登録のため年齢は表示できません。月日だけを実データとして表示しています。
+        </p>
+      ) : null}
       {hiddenLayoutLabels.length > 0 ? (
         <p className="text-xs text-muted" role="status">
           {hiddenLayoutLabels.join('・')}{' '}
@@ -513,6 +659,8 @@ function PreviewAvatar({
   y,
   size,
   geometry,
+  avatarUrl,
+  initials,
   handlers,
   resizeHandlers,
 }: {
@@ -520,10 +668,13 @@ function PreviewAvatar({
   y: number;
   size: number;
   geometry: ReturnType<typeof birthdayCardAvatarGeometry>;
+  avatarUrl: string | null;
+  initials: string;
   handlers: PreviewInteractionHandlers;
   resizeHandlers: PreviewResizeHandlers;
 }) {
   const { movable, ...interactionHandlers } = handlers;
+  const clipId = 'birthday-card-preview-avatar-clip';
   return (
     <>
       <g
@@ -548,6 +699,11 @@ function PreviewAvatar({
               : 'opacity-0'
           }
         />
+        <defs>
+          <clipPath id={clipId}>
+            <circle cx={geometry.centerX} cy={geometry.centerY} r={geometry.diameter / 2} />
+          </clipPath>
+        </defs>
         <circle
           cx={geometry.centerX}
           cy={geometry.centerY}
@@ -556,19 +712,32 @@ function PreviewAvatar({
           stroke="rgba(255,255,255,0.9)"
           strokeWidth="5"
         />
-        <text
-          x={geometry.centerX}
-          y={geometry.centerY}
-          textAnchor="middle"
-          dominantBaseline="middle"
-          fill="white"
-          fontFamily="Noto Sans CJK JP, Noto Sans CJK, sans-serif"
-          fontSize={Math.max(28, Math.round(geometry.diameter * 0.22))}
-          fontWeight="700"
-          pointerEvents="none"
-        >
-          HM
-        </text>
+        {avatarUrl ? (
+          <image
+            href={avatarUrl}
+            x={geometry.centerX - geometry.diameter / 2}
+            y={geometry.centerY - geometry.diameter / 2}
+            width={geometry.diameter}
+            height={geometry.diameter}
+            preserveAspectRatio="xMidYMid slice"
+            clipPath={`url(#${clipId})`}
+            pointerEvents="none"
+          />
+        ) : (
+          <text
+            x={geometry.centerX}
+            y={geometry.centerY}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill="white"
+            fontFamily="Noto Sans CJK JP, Noto Sans CJK, sans-serif"
+            fontSize={Math.max(28, Math.round(geometry.diameter * 0.22))}
+            fontWeight="700"
+            pointerEvents="none"
+          >
+            {initials}
+          </text>
+        )}
       </g>
       <ResizeHandle
         label="Avatar"
@@ -744,4 +913,16 @@ function hasReadableLayout(
   sizeKey: BirthdayCardSizeKey,
 ): boolean {
   return readable.has(xKey) && readable.has(yKey) && readable.has(sizeKey);
+}
+
+function previewInitials(value: string): string {
+  const normalized = value.trim();
+  if (!normalized) return 'HM';
+  const words = normalized.split(/\s+/u).filter(Boolean);
+  if (words.length >= 2) {
+    const first = Array.from(words[0] ?? '')[0] ?? '';
+    const second = Array.from(words[1] ?? '')[0] ?? '';
+    return `${first}${second}`.toLocaleUpperCase('ja');
+  }
+  return Array.from(normalized).slice(0, 2).join('').toLocaleUpperCase('ja');
 }
