@@ -2,6 +2,7 @@
 
 import { Check, Search, UserRound, X } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
+import { setBirthdayCardPreviewSelection } from '@/lib/birthday-card-preview-selection';
 import type { GuildMemberOption } from '@/lib/bot-guild-members';
 
 const SEARCH_DEBOUNCE_MS = 250;
@@ -25,6 +26,11 @@ export function BirthdayCardMemberPicker({
   const [error, setError] = useState('');
   const normalizedQuery = query.trim();
   const canSearch = /^\d{17,20}$/u.test(normalizedQuery) || normalizedQuery.length >= 2;
+
+  useEffect(() => {
+    setBirthdayCardPreviewSelection(value ? { guildId, userId: value.id } : null);
+    return () => setBirthdayCardPreviewSelection(null);
+  }, [guildId, value]);
 
   useEffect(() => {
     if (!canSearch || disabled) {
@@ -99,26 +105,31 @@ export function BirthdayCardMemberPicker({
 
   if (value) {
     return (
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface px-3 py-2.5">
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{value.displayName}</p>
-          <p className="truncate text-xs text-muted">
-            @{value.username} · {value.id}
-          </p>
+      <div className="space-y-1.5 rounded-xl border border-border bg-surface px-3 py-2.5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium">{value.displayName}</p>
+            <p className="truncate text-xs text-muted">
+              @{value.username} · {value.id}
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => {
+              onChange(null);
+              setQuery('');
+              setOptions([]);
+            }}
+            className="rounded-lg p-2 text-muted transition-colors hover:bg-background hover:text-foreground disabled:opacity-50"
+            aria-label="プレビューメンバーを解除"
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
-        <button
-          type="button"
-          disabled={disabled}
-          onClick={() => {
-            onChange(null);
-            setQuery('');
-            setOptions([]);
-          }}
-          className="rounded-lg p-2 text-muted transition-colors hover:bg-background hover:text-foreground disabled:opacity-50"
-          aria-label="プレビューメンバーを解除"
-        >
-          <X className="h-4 w-4" aria-hidden="true" />
-        </button>
+        <p className="text-[11px] text-muted">
+          このメンバーはライブプレビューとDiscordテスト送信の両方に使用されます。
+        </p>
       </div>
     );
   }
