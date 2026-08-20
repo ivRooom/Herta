@@ -53,10 +53,12 @@
         "value": "true"
       },
       "required": ["status", "replayed", "group"],
+      "additionalProperties": false,
       "status": "ok",
       "replayedType": "boolean",
       "group": {
         "required": ["id", "name", "description", "updatedAt"],
+        "additionalProperties": false,
         "fields": {
           "id": {
             "type": "string",
@@ -74,6 +76,16 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "error": {
+        "required": ["error"],
+        "additionalProperties": false,
+        "fields": {
+          "error": {
+            "type": "string",
+            "minLength": 1
           }
         }
       }
