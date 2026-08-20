@@ -7,6 +7,7 @@ import {
   studioAccessPageResource,
   studioBirthdayResource,
   studioPageResource,
+  studioParentPageId,
   topLevelConfigFields,
 } from './studio-policy-resources.ts';
 
@@ -15,6 +16,24 @@ const GUILD_ID = '123456789012345678';
 test('Studio page resourceをGuild scopeで生成する', () => {
   assert.equal(studioPageResource(GUILD_ID, 'moderation'), `guild:${GUILD_ID}:page:moderation`);
   assert.equal(studioPageResource(GUILD_ID, 'audit-logs'), `guild:${GUILD_ID}:page:audit-logs`);
+});
+
+test('Moderation subpage resourceを個別化し、旧Moderation pageを親権限として保持する', () => {
+  assert.equal(
+    studioPageResource(GUILD_ID, 'moderation-detections'),
+    `guild:${GUILD_ID}:page:moderation-detections`,
+  );
+  assert.equal(
+    studioPageResource(GUILD_ID, 'moderation-enforcement'),
+    `guild:${GUILD_ID}:page:moderation-enforcement`,
+  );
+  assert.notEqual(
+    studioPageResource(GUILD_ID, 'moderation-blacklist'),
+    studioPageResource(GUILD_ID, 'moderation-detection-settings'),
+  );
+  assert.equal(studioParentPageId('moderation-cases'), 'moderation');
+  assert.equal(studioParentPageId('moderation-blacklist'), 'moderation');
+  assert.equal(studioParentPageId('birthday'), null);
 });
 
 test('Access Control subpage resourceを個別に生成する', () => {
@@ -132,6 +151,20 @@ test('Policy catalogはpage・Birthday・Plugin fieldを別Resource権限とし�
       (option) =>
         option.action === 'studio.page.view' &&
         option.resource === `guild:${GUILD_ID}:page:moderation`,
+    ),
+  );
+  assert.ok(
+    options.some(
+      (option) =>
+        option.action === 'studio.page.view' &&
+        option.resource === `guild:${GUILD_ID}:page:moderation-detections`,
+    ),
+  );
+  assert.ok(
+    options.some(
+      (option) =>
+        option.action === 'studio.page.view' &&
+        option.resource === `guild:${GUILD_ID}:page:moderation-enforcement`,
     ),
   );
   assert.ok(
