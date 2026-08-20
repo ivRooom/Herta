@@ -30,6 +30,19 @@ test('Birthday自己登録payloadの不正日付・未来年を拒否する', ()
   );
 });
 
+test('非空の不正birthYearを未入力として扱わず拒否する', () => {
+  for (const birthYear of ['invalid', '-5', 2000.5, Number.NaN]) {
+    assert.equal(
+      parseBirthdaySelfRegistrationRequest({ month: 8, day: 19, birthYear }, 2026),
+      null,
+    );
+  }
+  assert.deepEqual(
+    parseBirthdaySelfRegistrationRequest({ month: 8, day: 19, birthYear: '   ' }, 2026),
+    { month: 8, day: 19, birthYear: null },
+  );
+});
+
 test('現在GuildのMemberロール保有ユーザーだけを許可する', () => {
   const roles = [
     { id: MEMBER_ROLE_ID, name: 'Member' },
