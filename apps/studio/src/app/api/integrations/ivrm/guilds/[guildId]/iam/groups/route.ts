@@ -4,8 +4,10 @@ import { RequestBodyTooLargeError, readRequestBodyBytes } from '@/lib/bounded-re
 import { prisma } from '@/lib/db';
 import {
   createIvrmIamMutationUuid,
+  isIvrmIamJsonRequest,
   parseIvrmIamGroupCreateInput,
   readIvrmIamMutationContext,
+  serializeIvrmIamGroupCreateResponse,
 } from '@/lib/ivrm-iam-mutation';
 import { authorizeIvrmIntegrationRequest } from '@/lib/ivrm-integration-auth';
 import { isPrismaRawUniqueViolation } from '@/lib/prisma-raw-error';
@@ -36,6 +38,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
   const mutation = readIvrmIamMutationContext(request);
   if (!mutation) {
     return json({ error: 'Invalid mutation context' }, { status: 400 });
+  }
+
+  if (!isIvrmIamJsonRequest(request)) {
+    return json({ error: 'Content-Type must be application/json' }, { status: 400 });
   }
 
   const body = await parseJsonBody(request);
@@ -120,19 +126,7 @@ function groupResponse(
   replayed: boolean,
   status: number,
 ) {
-  const response = json(
-    {
-      status: 'ok',
-      replayed,
-      group: {
-        id: group.id,
-        name: group.name,
-        description: group.description,
-        updatedAt: group.updatedAt.toISOString(),
-      },
-    },
-    { status },
-  );
+  const response = json(serializeIvrmIamGroupCreateResponse(group, replayed), { status });
   if (replayed) response.headers.set('Idempotency-Replayed', 'true');
   return response;
 }
