@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_MODERATION_CONFIG,
+  MAX_AUTOMATIC_DUPLICATE_MINIMUM_LENGTH,
   MAX_BAN_DELETE_MESSAGE_SECONDS,
   MAX_MODERATION_REASON_LENGTH,
   MAX_TIMEOUT_MINUTES,
@@ -29,6 +30,36 @@ describe('Moderation config', () => {
       caseRetentionDays: 30,
       logChannelId: '123',
       allowedModeratorRoleIds: ['456'],
+    });
+  });
+
+  it('連投・重複投稿の集計範囲と最低文字数を安全に正規化する', () => {
+    expect(DEFAULT_MODERATION_CONFIG.autoBurstScope).toBe('guild');
+    expect(DEFAULT_MODERATION_CONFIG.autoDuplicateScope).toBe('guild');
+    expect(DEFAULT_MODERATION_CONFIG.autoDuplicateMinimumLength).toBe(1);
+
+    expect(
+      normalizeModerationConfig({
+        autoBurstScope: 'channel',
+        autoDuplicateScope: 'channel',
+        autoDuplicateMinimumLength: MAX_AUTOMATIC_DUPLICATE_MINIMUM_LENGTH + 100,
+      }),
+    ).toMatchObject({
+      autoBurstScope: 'channel',
+      autoDuplicateScope: 'channel',
+      autoDuplicateMinimumLength: MAX_AUTOMATIC_DUPLICATE_MINIMUM_LENGTH,
+    });
+
+    expect(
+      normalizeModerationConfig({
+        autoBurstScope: 'invalid',
+        autoDuplicateScope: null,
+        autoDuplicateMinimumLength: 0,
+      }),
+    ).toMatchObject({
+      autoBurstScope: 'guild',
+      autoDuplicateScope: 'guild',
+      autoDuplicateMinimumLength: 1,
     });
   });
 
