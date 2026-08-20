@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import {
-  parseIvrmIamGroupCreateInput,
-  readIvrmIamMutationContext,
-} from './ivrm-iam-mutation.ts';
+import { parseIvrmIamGroupCreateInput, readIvrmIamMutationContext } from './ivrm-iam-mutation.ts';
 
 type HertaIamBundle = {
   bundleVersion: number;
@@ -123,10 +120,7 @@ test(
   'Herta IAM route keeps bounded body, success status and replay semantics aligned with contract',
   () => {
     const routeSource = readFileSync(
-      new URL(
-        '../app/api/integrations/ivrm/guilds/[guildId]/iam/groups/route.ts',
-        import.meta.url,
-      ),
+      new URL('../app/api/integrations/ivrm/guilds/[guildId]/iam/groups/route.ts', import.meta.url),
       'utf8',
     );
 
