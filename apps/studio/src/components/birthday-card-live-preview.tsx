@@ -147,7 +147,10 @@ export function BirthdayCardLivePreview({
     setMemberPending(true);
     setMemberStatus(`${selectedMember.displayName} の誕生日情報を確認中…`);
 
-    const endpoint = new URL(`/api/guilds/${guildId}/birthday/member-preview`, window.location.origin);
+    const endpoint = new URL(
+      `/api/guilds/${guildId}/birthday/member-preview`,
+      window.location.origin,
+    );
     endpoint.searchParams.set('userId', selectedMember.id);
     void fetch(endpoint, { cache: 'no-store', signal: controller.signal })
       .then(async (response) => {
