@@ -3,7 +3,7 @@ import { auth } from '@/auth';
 import { getBirthdayRegistration } from '@/lib/birthday-admin';
 import { BIRTHDAY_ADMIN_DISCORD_ID_PATTERN } from '@/lib/birthday-admin-core';
 import { getGuildMemberById } from '@/lib/bot-guild-members';
-import { authorizeStudioPermission } from '@/lib/studio-access';
+import { authorizeEffectiveStudioPermission } from '@/lib/studio-access';
 import { studioBirthdayResource } from '@/lib/studio-policy-resources';
 
 export const dynamic = 'force-dynamic';
@@ -23,7 +23,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ guil
     );
   }
 
-  const access = await authorizeStudioPermission(
+  const access = await authorizeEffectiveStudioPermission(
     guildId,
     session.user.id,
     'studio.settings.read',
