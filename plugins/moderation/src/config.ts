@@ -3,6 +3,7 @@ import { AUTOMATIC_CASE_RULE_SELECTOR_PATTERN } from './auto-case.js';
 export { shouldAutoCreateCaseOnConfirmed } from './auto-case.js';
 
 export type AutomaticModerationMode = 'disabled' | 'observe';
+export type AutomaticModerationScope = 'guild' | 'channel';
 
 export interface ModerationConfig {
   requireReason: boolean;
@@ -21,8 +22,11 @@ export interface ModerationConfig {
   autoMentionLimit: number;
   autoBurstMessageLimit: number;
   autoBurstWindowSeconds: number;
+  autoBurstScope: AutomaticModerationScope;
   autoDuplicateMessageLimit: number;
   autoDuplicateWindowSeconds: number;
+  autoDuplicateScope: AutomaticModerationScope;
+  autoDuplicateMinimumLength: number;
   autoCaseOnConfirmedEnabled: boolean;
   autoCaseOnConfirmedRules: string[];
   autoMaxMessageLength: number;
@@ -48,8 +52,11 @@ export const DEFAULT_MODERATION_CONFIG: ModerationConfig = {
   autoMentionLimit: 0,
   autoBurstMessageLimit: 0,
   autoBurstWindowSeconds: 10,
+  autoBurstScope: 'guild',
   autoDuplicateMessageLimit: 0,
   autoDuplicateWindowSeconds: 30,
+  autoDuplicateScope: 'guild',
+  autoDuplicateMinimumLength: 1,
   autoCaseOnConfirmedEnabled: false,
   autoCaseOnConfirmedRules: [],
   autoMaxMessageLength: 2000,
@@ -65,6 +72,7 @@ export const MAX_AUTOMATIC_WORD_PATTERNS = 100;
 export const MAX_AUTOMATIC_REGEX_PATTERNS = 20;
 export const MAX_AUTOMATIC_PATTERN_LENGTH = 120;
 export const MAX_AUTOMATIC_MESSAGE_LENGTH = 4000;
+export const MAX_AUTOMATIC_DUPLICATE_MINIMUM_LENGTH = 200;
 
 export class ModerationValidationError extends Error {
   constructor(message: string) {
@@ -126,6 +134,7 @@ export function normalizeModerationConfig(value: unknown): ModerationConfig {
       1,
       300,
     ),
+    autoBurstScope: normalizeAutomaticModerationScope(config.autoBurstScope),
     autoDuplicateMessageLimit: clampInteger(
       config.autoDuplicateMessageLimit,
       DEFAULT_MODERATION_CONFIG.autoDuplicateMessageLimit,
@@ -137,6 +146,13 @@ export function normalizeModerationConfig(value: unknown): ModerationConfig {
       DEFAULT_MODERATION_CONFIG.autoDuplicateWindowSeconds,
       1,
       600,
+    ),
+    autoDuplicateScope: normalizeAutomaticModerationScope(config.autoDuplicateScope),
+    autoDuplicateMinimumLength: clampInteger(
+      config.autoDuplicateMinimumLength,
+      DEFAULT_MODERATION_CONFIG.autoDuplicateMinimumLength,
+      1,
+      MAX_AUTOMATIC_DUPLICATE_MINIMUM_LENGTH,
     ),
     autoCaseOnConfirmedEnabled: booleanValue(
       config.autoCaseOnConfirmedEnabled,
@@ -224,6 +240,10 @@ export function normalizeDeleteMessageSeconds(value: unknown): number {
 
 function normalizeAutomaticModerationMode(value: unknown): AutomaticModerationMode {
   return value === 'observe' ? 'observe' : 'disabled';
+}
+
+function normalizeAutomaticModerationScope(value: unknown): AutomaticModerationScope {
+  return value === 'channel' ? 'channel' : 'guild';
 }
 
 function normalizeAutomaticWordPatterns(value: unknown): string[] {

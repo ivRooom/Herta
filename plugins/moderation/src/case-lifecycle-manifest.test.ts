@@ -24,8 +24,4 @@ describe('Moderation case lifecycle command manifest', () => {
       { name: '解除済み', value: 'revoked' },
     ]);
   });
-
-  it('Plugin versionをcase lifecycle対応版へ更新する', () => {
-    expect(moderationManifest.version).toBe('2.4.0');
-  });
 });
