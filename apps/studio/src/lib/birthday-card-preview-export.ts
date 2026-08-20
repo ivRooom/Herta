@@ -1,5 +1,5 @@
 import { birthdayCardPreset, type BirthdayCardConfig } from '@herta/shared';
-import { getBirthdayCardPreviewSelection } from './birthday-card-preview-selection.ts';
+import { getBirthdayCardPreviewSelectionForPathname } from './birthday-card-preview-selection.ts';
 import {
   birthdayCardPreviewSubject,
   type BirthdayCardPreviewMember,
@@ -148,7 +148,7 @@ export async function renderBirthdayCardPreviewPng(
 }
 
 async function resolveSelectedPreviewMember(): Promise<BirthdayCardPreviewMember | null> {
-  const selection = getBirthdayCardPreviewSelection();
+  const selection = getBirthdayCardPreviewSelectionForPathname(window.location.pathname);
   if (!selection) return null;
 
   const endpoint = new URL(
