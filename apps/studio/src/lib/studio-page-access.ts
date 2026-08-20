@@ -6,6 +6,7 @@ import {
 import {
   hasConfiguredStudioPagePolicy,
   studioPageResource,
+  studioParentPageId,
   type StudioPageId,
 } from './studio-policy-resources.ts';
 
@@ -24,6 +25,13 @@ export async function authorizeStudioPageView(
 
   const resource = studioPageResource(guildId, pageId);
   if (hasStudioPermission(resolved.access, 'studio.page.view', resource)) return resolved;
+
+  // Moderationの旧page権限はsubpage分割後も一括権限として扱い、既存Policyを壊さない。
+  const parentPageId = studioParentPageId(pageId);
+  if (parentPageId) {
+    const parentResource = studioPageResource(guildId, parentPageId);
+    if (hasStudioPermission(resolved.access, 'studio.page.view', parentResource)) return resolved;
+  }
 
   return {
     ok: false,
