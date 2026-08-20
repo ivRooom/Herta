@@ -78,6 +78,17 @@ test('Quote操作は本文を含めず安全な要約へ変換する', () => {
   assert.equal(presentation.summary.includes('画面へ出してはいけない本文'), false);
 });
 
+test('Birthday自己登録はDiscord認証導線として監査ソースを区別する', () => {
+  const presentation = describeAuditEvent(
+    'birthday.registration_set',
+    'birthday_registration',
+    '111111111111111111',
+    { operationSource: 'discord' },
+  );
+
+  assert.equal(presentation.sourceLabel, 'Discord');
+});
+
 test('既存Plugin監査ログはmetadataがなくてもStudio操作として表示する', () => {
   const presentation = describeAuditEvent('plugin.enable', 'plugin', 'quote', null);
 
