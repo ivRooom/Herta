@@ -35,10 +35,18 @@ export function BirthdayCardMemberPicker({
     }
 
     const controller = new AbortController();
+    let cancelled = false;
+    let timedOut = false;
+    let requestTimeout: number | undefined;
+    setOptions([]);
+    setLoading(true);
+    setError('');
+
     const debounce = window.setTimeout(() => {
-      const timeout = window.setTimeout(() => controller.abort(), SEARCH_TIMEOUT_MS);
-      setLoading(true);
-      setError('');
+      requestTimeout = window.setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, SEARCH_TIMEOUT_MS);
 
       const endpoint = new URL(`/api/guilds/${guildId}/discord/members`, window.location.origin);
       endpoint.searchParams.set('query', normalizedQuery);
@@ -49,6 +57,7 @@ export function BirthdayCardMemberPicker({
             error?: unknown;
             members?: GuildMemberOption[];
           } | null;
+          if (cancelled) return;
           if (!response.ok || !Array.isArray(payload?.members)) {
             throw new Error(
               typeof payload?.error === 'string'
@@ -59,23 +68,34 @@ export function BirthdayCardMemberPicker({
           setOptions(payload.members.filter((member) => !member.bot));
         })
         .catch((cause: unknown) => {
-          if (cause instanceof Error && cause.name === 'AbortError') return;
+          if (cancelled) return;
+          if (cause instanceof Error && cause.name === 'AbortError') {
+            if (!timedOut) return;
+            setOptions([]);
+            setError('Discordメンバー検索がタイムアウトしました。再試行してください');
+            return;
+          }
           setOptions([]);
           setError(
             cause instanceof Error ? cause.message : 'Discordメンバーを検索できませんでした',
           );
         })
         .finally(() => {
-          window.clearTimeout(timeout);
-          if (!controller.signal.aborted) setLoading(false);
+          if (requestTimeout !== undefined) window.clearTimeout(requestTimeout);
+          if (!cancelled) setLoading(false);
         });
     }, SEARCH_DEBOUNCE_MS);
 
     return () => {
+      cancelled = true;
       window.clearTimeout(debounce);
+      if (requestTimeout !== undefined) window.clearTimeout(requestTimeout);
       controller.abort();
     };
   }, [canSearch, disabled, guildId, normalizedQuery]);
+
+  const listboxVisible = canSearch && !loading && !error && options.length > 0;
+  const emptyStateVisible = canSearch && !loading && !error && options.length === 0;
 
   if (value) {
     return (
@@ -112,12 +132,13 @@ export function BirthdayCardMemberPicker({
         />
         <input
           type="search"
+          role="combobox"
           value={query}
           disabled={disabled}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="表示名・ユーザー名・Discord IDを検索"
-          aria-controls={canSearch ? listboxId : undefined}
-          aria-expanded={canSearch}
+          aria-controls={listboxVisible ? listboxId : undefined}
+          aria-expanded={listboxVisible}
           aria-autocomplete="list"
           className="w-full rounded-xl border border-border bg-surface py-2.5 pl-9 pr-3 text-sm outline-none transition focus:border-primary disabled:opacity-50"
         />
@@ -137,46 +158,45 @@ export function BirthdayCardMemberPicker({
         </p>
       ) : null}
 
-      {canSearch && !loading && !error ? (
+      {emptyStateVisible ? (
+        <p className="rounded-xl border border-border bg-surface px-3 py-4 text-center text-xs text-muted">
+          一致するDiscordメンバーが見つかりません。
+        </p>
+      ) : null}
+      {listboxVisible ? (
         <div
           id={listboxId}
           role="listbox"
           aria-label="Birthday Cardプレビューメンバー候補"
           className="max-h-64 overflow-y-auto rounded-xl border border-border bg-surface p-1"
         >
-          {options.length === 0 ? (
-            <p className="px-3 py-4 text-center text-xs text-muted">
-              一致するDiscordメンバーが見つかりません。
-            </p>
-          ) : (
-            options.map((member) => (
-              <button
-                key={member.id}
-                type="button"
-                role="option"
-                aria-selected="false"
-                onClick={() => {
-                  onChange(member);
-                  setQuery('');
-                  setOptions([]);
-                }}
-                className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-background">
-                  {member.avatarUrl ? (
-                    <img src={member.avatarUrl} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <UserRound className="h-4 w-4 text-muted" aria-hidden="true" />
-                  )}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium">{member.displayName}</span>
-                  <span className="block truncate text-xs text-muted">@{member.username}</span>
-                </span>
-                <Check className="h-4 w-4 text-primary opacity-0" aria-hidden="true" />
-              </button>
-            ))
-          )}
+          {options.map((member) => (
+            <button
+              key={member.id}
+              type="button"
+              role="option"
+              aria-selected="false"
+              onClick={() => {
+                onChange(member);
+                setQuery('');
+                setOptions([]);
+              }}
+              className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors hover:bg-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-background">
+                {member.avatarUrl ? (
+                  <img src={member.avatarUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <UserRound className="h-4 w-4 text-muted" aria-hidden="true" />
+                )}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">{member.displayName}</span>
+                <span className="block truncate text-xs text-muted">@{member.username}</span>
+              </span>
+              <Check className="h-4 w-4 text-primary opacity-0" aria-hidden="true" />
+            </button>
+          ))}
         </div>
       ) : null}
     </div>

@@ -48,7 +48,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ guil
   }
 
   const registration = await getBirthdayRegistration(guildId, userId);
-  const currentYear = new Date().getUTCFullYear();
+  const now = new Date();
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth() + 1;
+  const currentDay = now.getUTCDate();
+  const birthdayPassed =
+    registration !== null &&
+    (currentMonth > registration.month ||
+      (currentMonth === registration.month && currentDay >= registration.day));
 
   return NextResponse.json(
     {
@@ -63,7 +70,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ guil
               age:
                 registration.birthYear === null
                   ? null
-                  : Math.max(0, currentYear - registration.birthYear),
+                  : Math.max(0, currentYear - registration.birthYear - (birthdayPassed ? 0 : 1)),
             }
           : null,
       },

@@ -93,6 +93,8 @@ interface ActiveResize {
 
 type ResizeKind = 'avatar' | 'text';
 
+const MEMBER_PREVIEW_TIMEOUT_MS = 12_000;
+
 export function BirthdayCardLivePreview({
   config,
   readable,
@@ -143,6 +145,12 @@ export function BirthdayCardLivePreview({
     }
 
     const controller = new AbortController();
+    let cancelled = false;
+    let timedOut = false;
+    const timeout = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, MEMBER_PREVIEW_TIMEOUT_MS);
     setResolvedMember(null);
     setMemberPending(true);
     setMemberStatus(`${selectedMember.displayName} の誕生日情報を確認中…`);
@@ -158,6 +166,7 @@ export function BirthdayCardLivePreview({
           error?: unknown;
           member?: BirthdayCardPreviewMember;
         } | null;
+        if (cancelled) return;
         if (!response.ok || !payload?.member) {
           throw new Error(
             typeof payload?.error === 'string'
@@ -173,17 +182,27 @@ export function BirthdayCardLivePreview({
         );
       })
       .catch((cause: unknown) => {
-        if (cause instanceof Error && cause.name === 'AbortError') return;
+        if (cancelled) return;
+        if (cause instanceof Error && cause.name === 'AbortError' && !timedOut) return;
         setResolvedMember(null);
         setMemberStatus(
-          cause instanceof Error ? cause.message : '実メンバーのBirthday情報を取得できませんでした',
+          timedOut
+            ? '実メンバーのBirthday情報取得がタイムアウトしました。再試行してください'
+            : cause instanceof Error
+              ? cause.message
+              : '実メンバーのBirthday情報を取得できませんでした',
         );
       })
       .finally(() => {
-        if (!controller.signal.aborted) setMemberPending(false);
+        window.clearTimeout(timeout);
+        if (!cancelled) setMemberPending(false);
       });
 
-    return () => controller.abort();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
   }, [guildId, selectedMember]);
 
   const avatarVisible =
@@ -901,7 +920,9 @@ function previewInitials(value: string): string {
   if (!normalized) return 'HM';
   const words = normalized.split(/\s+/u).filter(Boolean);
   if (words.length >= 2) {
-    return `${words[0]?.[0] ?? ''}${words[1]?.[0] ?? ''}`.toLocaleUpperCase('ja');
+    const first = Array.from(words[0] ?? '')[0] ?? '';
+    const second = Array.from(words[1] ?? '')[0] ?? '';
+    return `${first}${second}`.toLocaleUpperCase('ja');
   }
-  return normalized.slice(0, 2).toLocaleUpperCase('ja');
+  return Array.from(normalized).slice(0, 2).join('').toLocaleUpperCase('ja');
 }
