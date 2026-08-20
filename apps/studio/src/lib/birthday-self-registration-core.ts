@@ -2,6 +2,8 @@ import { isValidBirthdayDate, isValidBirthYear } from './birthday-admin-core.ts'
 
 export const BIRTHDAY_SELF_REGISTRATION_MEMBER_ROLE_NAME = 'Member';
 
+const INVALID_INTEGER = Symbol('invalid-integer');
+
 export interface BirthdaySelfRegistrationRequest {
   month: number;
   day: number;
@@ -33,6 +35,7 @@ export function parseBirthdaySelfRegistrationRequest(
   if (month === null || day === null || !isValidBirthdayDate(month, day)) return null;
 
   const birthYear = emptyToNullInteger(value.birthYear);
+  if (birthYear === INVALID_INTEGER) return null;
   if (birthYear !== null && !isValidBirthYear(birthYear, currentYear)) return null;
 
   return { month, day, birthYear };
@@ -55,16 +58,17 @@ export function birthdaySelfRegistrationEligibility(
   return 'member-role-missing';
 }
 
-function emptyToNullInteger(value: unknown): number | null {
-  if (value === undefined || value === null || value === '') return null;
-  return toInteger(value);
+function emptyToNullInteger(value: unknown): number | null | typeof INVALID_INTEGER {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'string' && value.trim() === '') return null;
+  return toInteger(value) ?? INVALID_INTEGER;
 }
 
 function toInteger(value: unknown): number | null {
-  if (typeof value === 'number' && Number.isFinite(value)) return Math.trunc(value);
+  if (typeof value === 'number') return Number.isSafeInteger(value) ? value : null;
   if (typeof value !== 'string' || !/^\d+$/u.test(value.trim())) return null;
   const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : null;
+  return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
