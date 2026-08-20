@@ -69,14 +69,37 @@ test('production deploy reclaims safe Docker space before pulling the next image
 test('runtime image excludes the Next.js webpack build cache', () => {
   const dockerfile = readFileSync('Dockerfile', 'utf8');
   const cacheRemovalIndex = dockerfile.indexOf('apps/studio/.next/cache');
-  const runtimeIndex = dockerfile.indexOf('FROM node:22-alpine AS runtime');
+  const currentNodeIndex = dockerfile.indexOf('FROM node:22-alpine3.24 AS node-current');
+  const runtimeIndex = dockerfile.indexOf('FROM alpine:3.21 AS runtime');
 
+  assert.ok(currentNodeIndex >= 0, 'current Node 22 image must remain the Node binary source');
   assert.ok(cacheRemovalIndex >= 0, 'Next.js build cache must be removed in the builder stage');
   assert.ok(
     runtimeIndex > cacheRemovalIndex,
     'Next.js build cache must be removed before runtime stage',
   );
+  assert.ok(
+    runtimeIndex > currentNodeIndex,
+    'pinned Alpine runtime must be declared after the current Node source stage',
+  );
+  assert.match(dockerfile, /COPY --from=node-current \/usr\/local \/usr\/local/u);
   assert.match(dockerfile, /test ! -d apps\/studio\/\.next\/cache/u);
+});
+
+test('production app healthchecks do not require curl in the runtime image', () => {
+  const dockerfile = readFileSync('Dockerfile', 'utf8');
+  const compose = readFileSync('docker-compose.prod.yml', 'utf8');
+  const runtimeIndex = dockerfile.indexOf('FROM alpine:3.21 AS runtime');
+
+  assert.ok(runtimeIndex >= 0, 'production runtime stage must exist');
+  assert.doesNotMatch(
+    dockerfile.slice(runtimeIndex),
+    /apk add --no-cache[^\n]*\bcurl\b/u,
+    'production runtime must not install curl',
+  );
+  assert.doesNotMatch(compose, /\bcurl\b/u, 'production healthchecks must not require curl');
+  assert.match(compose, /fetch\('http:\/\/localhost:3001\/api\/v1\/health'\)/u);
+  assert.match(compose, /process\.env\.HEALTH_PORT/u);
 });
 
 test('failure diagnostics do not print production environment values', () => {

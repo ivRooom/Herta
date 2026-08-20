@@ -23,9 +23,11 @@ export const BIRTHDAY_CARD_PRESETS = [
 ] as const;
 
 export type BirthdayCardPresetId = (typeof BIRTHDAY_CARD_PRESETS)[number]['id'];
+export type BirthdayCardBackgroundSource = 'preset' | 'custom';
 
 export const BIRTHDAY_CARD_CONFIG_FIELD_KEYS = [
   'birthdayCardEnabled',
+  'birthdayCardBackgroundSource',
   'birthdayCardPreset',
   'birthdayCardShowName',
   'birthdayCardShowAvatar',
@@ -49,6 +51,7 @@ export type BirthdayCardConfigFieldKey = (typeof BIRTHDAY_CARD_CONFIG_FIELD_KEYS
 
 export interface BirthdayCardConfig {
   birthdayCardEnabled: boolean;
+  birthdayCardBackgroundSource: BirthdayCardBackgroundSource;
   birthdayCardPreset: BirthdayCardPresetId;
   birthdayCardShowName: boolean;
   birthdayCardShowAvatar: boolean;
@@ -70,6 +73,7 @@ export interface BirthdayCardConfig {
 
 export const DEFAULT_BIRTHDAY_CARD_CONFIG: BirthdayCardConfig = {
   birthdayCardEnabled: false,
+  birthdayCardBackgroundSource: 'preset',
   birthdayCardPreset: 'herta-lavender-tea',
   birthdayCardShowName: true,
   birthdayCardShowAvatar: true,
@@ -94,12 +98,15 @@ export function normalizeBirthdayCardConfig(value: unknown): BirthdayCardConfig 
   const preset = BIRTHDAY_CARD_PRESETS.some((item) => item.id === source.birthdayCardPreset)
     ? (source.birthdayCardPreset as BirthdayCardPresetId)
     : DEFAULT_BIRTHDAY_CARD_CONFIG.birthdayCardPreset;
+  const backgroundSource: BirthdayCardBackgroundSource =
+    source.birthdayCardBackgroundSource === 'custom' ? 'custom' : 'preset';
 
   return {
     birthdayCardEnabled: booleanValue(
       source.birthdayCardEnabled,
       DEFAULT_BIRTHDAY_CARD_CONFIG.birthdayCardEnabled,
     ),
+    birthdayCardBackgroundSource: backgroundSource,
     birthdayCardPreset: preset,
     birthdayCardShowName: booleanValue(
       source.birthdayCardShowName,

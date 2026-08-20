@@ -67,10 +67,10 @@ export function studioAccessPageResource(
   return `guild:${guildId}:access:${page}`;
 }
 
-export function studioBirthdayResource(
-  guildId: string,
-  resource: 'registrations' | 'celebrations',
-): string {
+export type StudioBirthdayResource =
+  'registrations' | 'celebrations' | 'card-background' | 'card-test-send';
+
+export function studioBirthdayResource(guildId: string, resource: StudioBirthdayResource): string {
   return `guild:${guildId}:birthday:${encodeSegment(resource)}`;
 }
 
@@ -118,6 +118,8 @@ export function buildStudioGranularPermissionOptions(
 
   const birthdayRegistrations = studioBirthdayResource(guildId, 'registrations');
   const birthdayCelebrations = studioBirthdayResource(guildId, 'celebrations');
+  const birthdayCardBackground = studioBirthdayResource(guildId, 'card-background');
+  const birthdayCardTestSend = studioBirthdayResource(guildId, 'card-test-send');
   options.push(
     {
       id: permissionOptionId('studio.settings.read', birthdayRegistrations),
@@ -142,6 +144,30 @@ export function buildStudioGranularPermissionOptions(
       description: 'お祝い回数・最新年齢・サーバー参加後何回目の誕生日かを閲覧',
       action: 'studio.settings.read',
       resource: birthdayCelebrations,
+    },
+    {
+      id: permissionOptionId('studio.settings.read', birthdayCardBackground),
+      category: 'Birthday',
+      label: 'Cardカスタム背景 · 閲覧',
+      description: 'Guild専用Birthday Card背景のプレビューとメタデータを閲覧',
+      action: 'studio.settings.read',
+      resource: birthdayCardBackground,
+    },
+    {
+      id: permissionOptionId('studio.settings.write', birthdayCardBackground),
+      category: 'Birthday',
+      label: 'Cardカスタム背景 · 編集',
+      description: 'Guild専用Birthday Card背景をアップロード・差し替え・削除',
+      action: 'studio.settings.write',
+      resource: birthdayCardBackground,
+    },
+    {
+      id: permissionOptionId('studio.operation.execute', birthdayCardTestSend),
+      category: 'Birthday',
+      label: 'Cardテスト送信',
+      description: '現在のBirthday Cardプレビューを指定したDiscord Channelへテスト送信',
+      action: 'studio.operation.execute',
+      resource: birthdayCardTestSend,
     },
   );
 

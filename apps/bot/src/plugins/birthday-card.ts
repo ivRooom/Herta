@@ -1,4 +1,9 @@
-import { birthdayCardPreset, type BirthdayCardConfig } from '@herta/shared';
+import {
+  BIRTHDAY_CARD_BACKGROUND_MAX_PIXELS,
+  birthdayCardPreset,
+  inspectBirthdayCardBackgroundImage,
+  type BirthdayCardConfig,
+} from '@herta/shared';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import sharp, { type OverlayOptions } from 'sharp';
@@ -8,6 +13,7 @@ const CARD_HEIGHT = 941;
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
 const AVATAR_FETCH_TIMEOUT_MS = 5_000;
 const DISCORD_CDN_HOSTS = new Set(['cdn.discordapp.com', 'media.discordapp.net']);
+const SAFE_FALLBACK_BACKGROUND = { r: 119, g: 101, b: 143 } as const;
 
 export interface BirthdayCardRenderInput {
   config: BirthdayCardConfig;
@@ -16,14 +22,11 @@ export interface BirthdayCardRenderInput {
   month: number;
   day: number;
   age: number | null;
+  customBackground?: Uint8Array | null;
 }
 
 export async function renderBirthdayCard(input: BirthdayCardRenderInput): Promise<Buffer> {
   const preset = birthdayCardPreset(input.config.birthdayCardPreset);
-  const backgroundPath = fileURLToPath(
-    new URL(`../../assets/birthday-card-presets/${preset.assetFile}`, import.meta.url),
-  );
-  const background = await readFile(backgroundPath);
   const layers: OverlayOptions[] = [];
 
   if (input.config.birthdayCardShowAvatar && input.avatarUrl) {
@@ -36,7 +39,9 @@ export async function renderBirthdayCard(input: BirthdayCardRenderInput): Promis
       const mask = Buffer.from(
         `<svg width="${diameter}" height="${diameter}" xmlns="http://www.w3.org/2000/svg"><circle cx="${diameter / 2}" cy="${diameter / 2}" r="${diameter / 2}" fill="white"/></svg>`,
       );
-      const avatar = await sharp(avatarBytes)
+      const avatar = await sharp(avatarBytes, {
+        limitInputPixels: BIRTHDAY_CARD_BACKGROUND_MAX_PIXELS,
+      })
         .resize(diameter, diameter, { fit: 'cover' })
         .composite([{ input: mask, blend: 'dest-in' }])
         .png()
@@ -55,10 +60,56 @@ export async function renderBirthdayCard(input: BirthdayCardRenderInput): Promis
     top: 0,
   });
 
-  return sharp(background)
-    .resize(CARD_WIDTH, CARD_HEIGHT, { fit: 'fill' })
+  if (
+    input.config.birthdayCardBackgroundSource === 'custom' &&
+    input.customBackground &&
+    inspectBirthdayCardBackgroundImage(input.customBackground)
+  ) {
+    try {
+      return await composeBirthdayCard(Buffer.from(input.customBackground), layers);
+    } catch {
+      // Header validation cannot prove that compressed image payloads are fully decodable.
+      // Continue to the bundled preset instead of dropping the birthday card delivery.
+    }
+  }
+
+  const presetBackground = await readPresetBackground(preset.assetFile);
+  if (presetBackground && inspectBirthdayCardBackgroundImage(presetBackground)) {
+    try {
+      return await composeBirthdayCard(presetBackground, layers);
+    } catch {
+      // A corrupt packaged asset must not abort the birthday delivery cycle.
+    }
+  }
+
+  return composeBirthdayCard(await createSafeFallbackBackground(), layers);
+}
+
+function composeBirthdayCard(background: Buffer, layers: OverlayOptions[]): Promise<Buffer> {
+  return sharp(background, { limitInputPixels: BIRTHDAY_CARD_BACKGROUND_MAX_PIXELS })
+    .resize(CARD_WIDTH, CARD_HEIGHT, { fit: 'cover', position: 'centre' })
     .composite(layers)
     .png({ compressionLevel: 9, adaptiveFiltering: true })
+    .toBuffer();
+}
+
+async function readPresetBackground(presetAssetFile: string): Promise<Buffer | null> {
+  const backgroundPath = fileURLToPath(
+    new URL(`../../assets/birthday-card-presets/${presetAssetFile}`, import.meta.url),
+  );
+  return readFile(backgroundPath).catch(() => null);
+}
+
+function createSafeFallbackBackground(): Promise<Buffer> {
+  return sharp({
+    create: {
+      width: CARD_WIDTH,
+      height: CARD_HEIGHT,
+      channels: 3,
+      background: SAFE_FALLBACK_BACKGROUND,
+    },
+  })
+    .png()
     .toBuffer();
 }
 

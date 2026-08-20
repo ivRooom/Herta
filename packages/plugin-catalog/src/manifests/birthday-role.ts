@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const birthdayRoleManifest: PluginManifest = {
   id: 'birthday-role',
   name: 'Birthday Role',
-  version: '1.2.0',
+  version: '1.3.0',
   description: '誕生日の登録・確認と、誕生日当日のRole付与・お祝い通知・Birthday Cardを提供します',
   author: { name: 'Herta' },
   category: 'fun',
@@ -89,6 +89,13 @@ export const birthdayRoleManifest: PluginManifest = {
         title: 'Birthday Cardを投稿する',
         description: 'お祝い投稿へPNGのBirthday Cardを添付します。',
         default: false,
+      },
+      birthdayCardBackgroundSource: {
+        type: 'string',
+        title: 'Birthday Card背景',
+        description: '組み込みプリセットまたはGuild専用のアップロード画像を利用します。',
+        enum: ['preset', 'custom'],
+        default: 'preset',
       },
       birthdayCardPreset: {
         type: 'string',

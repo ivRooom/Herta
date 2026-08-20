@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@herta/db';
+import { getBirthdayCardBackground, type PrismaClient } from '@herta/db';
 import { birthdayRoleManifest } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
 import { normalizeBirthdayCardConfig, type BirthdayCardConfig } from '@herta/shared';
@@ -428,6 +428,33 @@ export async function runBirthdayRoleCycle(
           'Birthday Roleのお祝い投稿Channelを利用できません',
         );
       } else {
+        const customBackground =
+          config.birthdayCardEnabled &&
+          config.birthdayCardBackgroundSource === 'custom' &&
+          todaysRegistrations.length > 0
+            ? await getBirthdayCardBackground(context.prisma, context.guildId).catch((error) => {
+                context.logger.warn(
+                  {
+                    guildId: context.guildId,
+                    errorName: error instanceof Error ? error.name : 'UnknownError',
+                  },
+                  'Birthday Cardカスタム背景を取得できないためプリセットへfallbackします',
+                );
+                return null;
+              })
+            : null;
+        if (
+          config.birthdayCardEnabled &&
+          config.birthdayCardBackgroundSource === 'custom' &&
+          todaysRegistrations.length > 0 &&
+          !customBackground
+        ) {
+          context.logger.warn(
+            { guildId: context.guildId },
+            'Birthday Cardカスタム背景が未登録のためプリセットへfallbackします',
+          );
+        }
+
         for (const registration of todaysRegistrations) {
           await processDelivery(
             context,
@@ -452,6 +479,7 @@ export async function runBirthdayRoleCycle(
                     month: registration.month,
                     day: registration.day,
                     age: celebration.age,
+                    customBackground: customBackground?.content ?? null,
                   });
                   files = [{ attachment: card, name: `birthday-${registration.userId}.png` }];
                 } catch (error) {

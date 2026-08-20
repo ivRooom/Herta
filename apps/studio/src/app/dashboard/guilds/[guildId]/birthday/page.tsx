@@ -1,3 +1,4 @@
+import { getBirthdayCardBackgroundMetadata } from '@herta/db';
 import { BIRTHDAY_CARD_CONFIG_FIELD_KEYS } from '@herta/shared';
 import { ArrowLeft, Cake } from 'lucide-react';
 import Link from 'next/link';
@@ -7,6 +8,8 @@ import { auth } from '@/auth';
 import { BirthdayAdmin } from '@/components/birthday-admin';
 import { BirthdayCardEditor } from '@/components/birthday-card-editor';
 import { listBirthdayRegistrations } from '@/lib/birthday-admin';
+import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { prisma } from '@/lib/db';
 import { getGuildPlugin } from '@/lib/guild-plugins';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
@@ -34,9 +37,10 @@ export default async function BirthdayAdminPage({
   if (!guild) notFound();
   await persistSelectedGuild(guild, session.user.id);
 
-  const [plugin, studioAccess] = await Promise.all([
+  const [plugin, studioAccess, discordOptions] = await Promise.all([
     getGuildPlugin(guildId, 'birthday-role'),
     resolveStudioAccess(guildId, session.user.id),
+    getGuildConfigurationOptions(guildId),
   ]);
 
   const canReadRegistrations =
@@ -60,8 +64,34 @@ export default async function BirthdayAdminPage({
       'studio.settings.read',
       studioBirthdayResource(guildId, 'celebrations'),
     );
+  const canReadCardBackground =
+    studioAccess.ok &&
+    hasEffectivePluginPermission(
+      studioAccess.access,
+      'studio.settings.read',
+      studioBirthdayResource(guildId, 'card-background'),
+    );
+  const canWriteCardBackground =
+    studioAccess.ok &&
+    hasEffectivePluginPermission(
+      studioAccess.access,
+      'studio.settings.write',
+      studioBirthdayResource(guildId, 'card-background'),
+    );
+  const canTestSendCard =
+    studioAccess.ok &&
+    hasEffectivePluginPermission(
+      studioAccess.access,
+      'studio.operation.execute',
+      studioBirthdayResource(guildId, 'card-test-send'),
+    );
 
-  const registrations = canReadRegistrations ? await listBirthdayRegistrations(guildId) : [];
+  const [registrations, backgroundMetadata] = await Promise.all([
+    canReadRegistrations ? listBirthdayRegistrations(guildId) : Promise.resolve([]),
+    canReadCardBackground
+      ? getBirthdayCardBackgroundMetadata(prisma, guildId)
+      : Promise.resolve(null),
+  ]);
   const visibleRegistrations = canReadCelebrations
     ? registrations
     : registrations.map(
@@ -72,6 +102,10 @@ export default async function BirthdayAdminPage({
           ...registration
         }) => registration,
       );
+
+  const messageTargets = (discordOptions?.messageTargets ?? discordOptions?.channels ?? []).filter(
+    (channel) => channel.viewable && channel.kind !== 'forum',
+  );
 
   let cardEditor: ReactNode = null;
   if (plugin && studioAccess.ok) {
@@ -88,6 +122,23 @@ export default async function BirthdayAdminPage({
           guildId={guildId}
           initialConfig={readableConfig}
           configAccess={configAccess}
+          initialBackground={
+            backgroundMetadata
+              ? {
+                  contentType: backgroundMetadata.contentType,
+                  fileName: backgroundMetadata.fileName,
+                  sizeBytes: backgroundMetadata.sizeBytes,
+                  width: backgroundMetadata.width,
+                  height: backgroundMetadata.height,
+                  sha256: backgroundMetadata.sha256,
+                  updatedAt: backgroundMetadata.updatedAt.toISOString(),
+                }
+              : null
+          }
+          canReadBackground={canReadCardBackground}
+          canWriteBackground={canWriteCardBackground}
+          canTestSend={canTestSendCard}
+          channelOptions={messageTargets}
         />
       ) : (
         <PermissionNotice>

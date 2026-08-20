@@ -1,5 +1,6 @@
 export { PrismaClient } from '@prisma/client';
 export type * from '@prisma/client';
+export * from './birthday-card-background.js';
 export * from './command-analytics.js';
 export * from './community-profile.js';
 export * from './community-leaderboard.js';

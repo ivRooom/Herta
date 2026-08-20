@@ -1,10 +1,19 @@
 # ============================================================
 # Herta. — 本番用 Docker イメージ (モノレポ共通)
 # ============================================================
-FROM node:22-alpine AS builder
+# Node本体は現行の公式Node 22 Alpine imageから取得する。
+# builder/runtimeは同じAlpine 3.21基盤に揃え、Prisma / Sharpなどのnative artifactのABIを一致させる。
+# Alpine 3.21はOpenSSL 3.3系を提供するため、OpenSSL 3.5以降のQUIC実装由来CVEをruntimeへ持ち込まない。
+FROM node:22-alpine3.24 AS node-current
 
-RUN apk add --no-cache libc6-compat openssl bash
-RUN corepack enable
+FROM alpine:3.21 AS builder
+
+RUN apk add --no-cache libc6-compat openssl bash libstdc++
+COPY --from=node-current /usr/local /usr/local
+# node-currentのYarn shimは/usr/local外の/opt配下を参照するため、stage間copy後は壊れる。
+# HertaはpackageManagerでpnpmを固定しているので、不要なshimを除去してpnpmだけを有効化する。
+RUN rm -f /usr/local/bin/pnpm /usr/local/bin/pnpx /usr/local/bin/yarn /usr/local/bin/yarnpkg \
+  && corepack enable pnpm
 WORKDIR /app
 
 COPY . .
@@ -25,16 +34,19 @@ RUN pnpm install --frozen-lockfile \
     --filter @herta/worker... \
   && pnpm --filter @herta/db exec prisma generate
 
-# Next.js standalone出力ではPrisma Query Engineが自動追跡されない場合があるため、
-# production依存から生成したClientとEngineをStudio standaloneへ明示的に配置する。
+# Next.js standalone出力ではPrisma Query Engine / static / publicが自動追跡されない場合があるため、
+# production依存から生成したClientとStudio配信アセットをstandaloneへ明示的に配置する。
 RUN PRISMA_SOURCE="$(find node_modules/.pnpm -path '*/node_modules/.prisma/client' -type d -print -quit)" \
   && PRISMA_DEST="apps/studio/.next/standalone/apps/studio/.prisma/client" \
+  && STUDIO_STANDALONE="apps/studio/.next/standalone/apps/studio" \
   && test -n "${PRISMA_SOURCE}" \
   && PRISMA_ENGINE="$(find "${PRISMA_SOURCE}" -maxdepth 1 -type f -name 'libquery_engine-*.so.node' -print -quit)" \
   && test -n "${PRISMA_ENGINE}" \
-  && mkdir -p "${PRISMA_DEST}" \
+  && mkdir -p "${PRISMA_DEST}" "${STUDIO_STANDALONE}/public" \
   && cp -r "${PRISMA_SOURCE}/." "${PRISMA_DEST}/" \
-  && cp -r apps/studio/.next/static apps/studio/.next/standalone/apps/studio/.next/static \
+  && cp -r apps/studio/.next/static "${STUDIO_STANDALONE}/.next/static" \
+  && cp -r apps/studio/public/. "${STUDIO_STANDALONE}/public/" \
+  && test -f "${STUDIO_STANDALONE}/public/birthday-card-presets/herta-lavender-tea.webp" \
   && test -n "$(find "${PRISMA_DEST}" -maxdepth 1 -type f -name 'libquery_engine-*.so.node' -print -quit)"
 
 # Runtimeへ持ち込まないworkspace source・test・開発設定をbuilder側で除去する。
@@ -74,25 +86,30 @@ RUN rm -rf \
     .prettierrc* \
     .prettierignore \
   && find apps packages plugins \
-    -path '*/node_modules' -prune -o \
-    -path '*/.next' -prune -o \
+    \( -path '*/node_modules' -o -path '*/.next' \) -prune -o \
     -type f \( -name 'tsconfig*.json' -o -name '*.test.ts' -o -name '*.spec.ts' \) \
-    -delete \
+    -exec rm -f {} + \
   && test -f apps/api/dist/main.js \
   && test -f apps/bot/dist/main.js \
   && test -f apps/worker/dist/main.js \
   && test -f apps/studio/.next/standalone/apps/studio/server.js \
+  && test -f apps/studio/.next/standalone/apps/studio/public/birthday-card-presets/herta-lavender-tea.webp \
   && test -x packages/db/node_modules/.bin/prisma \
   && test ! -d apps/studio/.next/cache \
   && test ! -d apps/api/src \
   && test ! -d packages/shared/src \
   && test ! -d plugins/quote/src
 
-FROM node:22-alpine AS runtime
+FROM alpine:3.21 AS runtime
 
+# Node binaryは現行公式imageから取得し、runtime OS packagesはAlpine 3.21のsecurity updatesを利用する。
 # Birthday CardはDiscord表示名・日付を画像へ描画するため、日本語を含むCJK glyphをRuntimeに用意する。
-RUN apk add --no-cache libc6-compat openssl curl font-noto-cjk \
-  && rm -rf \
+# HTTP healthcheckはNode標準fetchを使い、runtimeへ追加のcurl依存を持ち込まない。
+RUN apk add --no-cache libc6-compat openssl font-noto-cjk libstdc++ \
+  && addgroup -g 1000 -S node \
+  && adduser -u 1000 -S -G node node
+COPY --from=node-current /usr/local /usr/local
+RUN rm -rf \
     /usr/local/lib/node_modules/npm \
     /usr/local/lib/node_modules/corepack \
   && rm -f \

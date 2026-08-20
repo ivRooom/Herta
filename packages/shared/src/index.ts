@@ -11,3 +11,4 @@ export * from './community-challenge-catalog.js';
 export * from './community-leaderboard.js';
 export * from './activity-rules.js';
 export * from './birthday-card.js';
+export * from './birthday-card-background.js';
