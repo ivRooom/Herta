@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
+import type { StudioAccessGroupRecord } from './studio-access-control.js';
 
 export interface StudioAccessGroupMemberRecord {
   groupId: string;
@@ -14,6 +15,17 @@ interface GroupMemberRow {
   user_id: string;
   created_by: string;
   created_at: Date;
+}
+
+interface GroupRow {
+  id: string;
+  guild_id: string;
+  name: string;
+  description: string | null;
+  created_by: string;
+  updated_by: string;
+  created_at: Date;
+  updated_at: Date;
 }
 
 export async function listStudioAccessGroupMembers(
@@ -35,6 +47,28 @@ export async function listStudioAccessGroupMembers(
     createdBy: row.created_by,
     createdAt: row.created_at,
   }));
+}
+
+export async function createStudioAccessGroupWithId(
+  prisma: PrismaClient,
+  input: {
+    id: string;
+    guildId: string;
+    name: string;
+    description: string | null;
+    actorId: string;
+  },
+): Promise<StudioAccessGroupRecord> {
+  const rows = await prisma.$queryRaw<GroupRow[]>`
+    INSERT INTO studio_access_groups
+      (id, guild_id, name, description, created_by, updated_by)
+    VALUES
+      (${input.id.toLowerCase()}::uuid, ${input.guildId}, ${input.name}, ${input.description}, ${input.actorId}, ${input.actorId})
+    RETURNING id, guild_id, name, description, created_by, updated_by, created_at, updated_at
+  `;
+  const row = rows[0];
+  if (!row) throw new Error('Studio access group creation returned no row');
+  return mapGroupRow(row);
 }
 
 export async function updateStudioAccessGroup(
@@ -77,4 +111,17 @@ export async function deleteStudioAccessGroup(
     `;
     return deleted > 0;
   });
+}
+
+function mapGroupRow(row: GroupRow): StudioAccessGroupRecord {
+  return {
+    id: row.id,
+    guildId: row.guild_id,
+    name: row.name,
+    description: row.description,
+    createdBy: row.created_by,
+    updatedBy: row.updated_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
 }
