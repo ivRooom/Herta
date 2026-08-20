@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 
 const DISCORD_SNOWFLAKE_PATTERN = /^\d{17,20}$/u;
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/u;
+const GROUP_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export type IvrmIamMutationContext = {
   actorId: string;
@@ -21,6 +23,11 @@ export function readIvrmIamMutationContext(request: Request): IvrmIamMutationCon
   if (!IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) return null;
 
   return { actorId, idempotencyKey };
+}
+
+export function parseIvrmIamGroupId(value: string): string | null {
+  const groupId = value.trim().toLowerCase();
+  return GROUP_ID_PATTERN.test(groupId) ? groupId : null;
 }
 
 export function parseIvrmIamGroupCreateInput(value: unknown): IvrmIamGroupCreateInput | null {
