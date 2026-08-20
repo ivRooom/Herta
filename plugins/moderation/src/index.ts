@@ -3,6 +3,7 @@ export { moderationPlugin as default } from './plugin.js';
 export { moderationManifest } from './manifest.js';
 export {
   DEFAULT_MODERATION_CONFIG,
+  MAX_AUTOMATIC_DUPLICATE_MINIMUM_LENGTH,
   MAX_AUTOMATIC_MESSAGE_LENGTH,
   MAX_AUTOMATIC_PATTERN_LENGTH,
   MAX_AUTOMATIC_REGEX_PATTERNS,
@@ -15,7 +16,11 @@ export {
   normalizeTimeoutMinutes,
   normalizeDeleteMessageSeconds,
 } from './config.js';
-export type { AutomaticModerationMode, ModerationConfig } from './config.js';
+export type {
+  AutomaticModerationMode,
+  AutomaticModerationScope,
+  ModerationConfig,
+} from './config.js';
 export { AutomaticModerationDetector, extractInviteCodes, isExempt } from './detection.js';
 export type {
   AutomaticModerationFinding,
