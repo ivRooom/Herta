@@ -13,7 +13,9 @@ export type IvrmIamGroupCreateInput = {
   description: string | null;
 };
 
-export function readIvrmIamMutationContext(request: Request): IvrmIamMutationContext | null {
+export function readIvrmIamMutationContext(
+  request: Request,
+): IvrmIamMutationContext | null {
   const actorId = request.headers.get('x-ivrm-actor-id')?.trim() ?? '';
   const idempotencyKey = request.headers.get('idempotency-key')?.trim() ?? '';
 
@@ -23,17 +25,26 @@ export function readIvrmIamMutationContext(request: Request): IvrmIamMutationCon
   return { actorId, idempotencyKey };
 }
 
-export function parseIvrmIamGroupCreateInput(value: unknown): IvrmIamGroupCreateInput | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+export function parseIvrmIamGroupCreateInput(
+  value: unknown,
+): IvrmIamGroupCreateInput | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return null;
+  }
 
   const record = value as Record<string, unknown>;
   if (typeof record.name !== 'string') return null;
-  if (record.description !== undefined && record.description !== null && typeof record.description !== 'string') {
+  if (
+    record.description !== undefined &&
+    record.description !== null &&
+    typeof record.description !== 'string'
+  ) {
     return null;
   }
 
   const name = record.name.trim();
-  const description = typeof record.description === 'string' ? record.description.trim() : '';
+  const description =
+    typeof record.description === 'string' ? record.description.trim() : '';
 
   if (name.length < 1 || name.length > 100) return null;
   if (description.length > 500) return null;
