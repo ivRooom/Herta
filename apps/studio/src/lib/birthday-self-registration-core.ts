@@ -54,9 +54,8 @@ export function birthdaySelfRegistrationEligibility(
     roles.filter((role) => role.name === requiredRoleName).map((role) => role.id),
   );
   if (requiredRoleIds.size === 0) return 'member-role-missing';
-  return member.roleIds.some((roleId) => requiredRoleIds.has(roleId))
-    ? 'eligible'
-    : 'member-role-missing';
+  if (member.roleIds.some((roleId) => requiredRoleIds.has(roleId))) return 'eligible';
+  return 'member-role-missing';
 }
 
 function emptyToNullInteger(value: unknown): number | null {
