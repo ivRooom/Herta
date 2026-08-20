@@ -46,14 +46,7 @@ jobs:
         run: pnpm db:generate
 
       - name: Format Check
-        run: |
-          pnpm exec prettier --write \
-            'apps/studio/src/app/birthday/register/[guildId]/page.tsx' \
-            apps/studio/src/lib/birthday-self-registration-core.ts
-          git diff -- \
-            'apps/studio/src/app/birthday/register/[guildId]/page.tsx' \
-            apps/studio/src/lib/birthday-self-registration-core.ts
-          exit 1
+        run: pnpm format:check
 
       - name: Lint
         run: pnpm lint
