@@ -6,9 +6,7 @@ export interface BirthdayCardPreviewSelection {
 const BIRTHDAY_GUILD_PATH_PATTERN = /\/dashboard\/guilds\/(\d{17,20})\/birthday(?:\/|$)/u;
 let selection: BirthdayCardPreviewSelection | null = null;
 
-export function setBirthdayCardPreviewSelection(
-  next: BirthdayCardPreviewSelection | null,
-): void {
+export function setBirthdayCardPreviewSelection(next: BirthdayCardPreviewSelection | null): void {
   selection = next;
 }
 
