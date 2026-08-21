@@ -1,9 +1,9 @@
-import type { PluginManifest } from '@herta/shared';
+import { BIRTHDAY_CARD_ASSET_ID_PATTERN, type PluginManifest } from '@herta/shared';
 
 export const birthdayRoleManifest: PluginManifest = {
   id: 'birthday-role',
   name: 'Birthday Role',
-  version: '1.3.0',
+  version: '1.4.0',
   description: '誕生日の登録・確認と、誕生日当日のRole付与・お祝い通知・Birthday Cardを提供します',
   author: { name: 'Herta' },
   category: 'fun',
@@ -93,13 +93,21 @@ export const birthdayRoleManifest: PluginManifest = {
       birthdayCardBackgroundSource: {
         type: 'string',
         title: 'Birthday Card背景',
-        description: '組み込みプリセットまたはGuild専用のアップロード画像を利用します。',
-        enum: ['preset', 'custom'],
+        description:
+          '組み込みプリセット、画像ライブラリ、または既存Guild専用カスタム背景を利用します。',
+        enum: ['preset', 'asset', 'custom'],
         default: 'preset',
+      },
+      birthdayCardAssetId: {
+        type: ['string', 'null'],
+        title: 'Birthday Card画像ライブラリAsset',
+        description: 'Birthday Card Studioで登録したGuild専用画像のAsset IDです。',
+        pattern: BIRTHDAY_CARD_ASSET_ID_PATTERN,
+        default: null,
       },
       birthdayCardPreset: {
         type: 'string',
-        title: 'Birthday Cardプリセット',
+        title: 'Birthday Cardプリセット / テキスト配色',
         enum: ['herta-night-board', 'herta-lavender-tea', 'herta-lavender-gifts'],
         default: 'herta-lavender-tea',
       },
