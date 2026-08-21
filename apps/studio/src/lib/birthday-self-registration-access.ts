@@ -18,6 +18,8 @@ export async function resolveBirthdaySelfRegistrationAccess(
     return { ok: false, reason: 'not-member' };
   }
 
+  // Shared registration is intentionally based on current Guild membership, not a pre-existing
+  // Birthday record or a fixed role name. Exact ID lookup remains the server-side authorization gate.
   const members = await searchGuildMembers(guildId, userId, 1);
   if (members === null) {
     return { ok: false, reason: 'unavailable' };
