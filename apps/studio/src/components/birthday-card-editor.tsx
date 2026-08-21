@@ -358,8 +358,7 @@ export function BirthdayCardEditor({
     if (
       !canWriteAssets ||
       interactionPending ||
-      (config.birthdayCardBackgroundSource === 'asset' &&
-        asset.id === config.birthdayCardAssetId)
+      (config.birthdayCardBackgroundSource === 'asset' && asset.id === config.birthdayCardAssetId)
     )
       return;
     if (!window.confirm(`${asset.name} を画像ライブラリから削除しますか？`)) return;
