@@ -1,0 +1,34 @@
+name: Temporary format birthday PR301
+
+on:
+  push:
+    branches:
+      - fix/birthday-registration-first-time-users
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/birthday-registration-first-time-users
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prettier --write apps/studio/src/lib/birthday-self-registration-core.test.ts
+      - name: Commit formatting
+        run: |
+          if git diff --quiet -- apps/studio/src/lib/birthday-self-registration-core.test.ts; then
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add apps/studio/src/lib/birthday-self-registration-core.test.ts
+          git commit -m "style(birthday): format self registration test"
+          git push origin HEAD:fix/birthday-registration-first-time-users
