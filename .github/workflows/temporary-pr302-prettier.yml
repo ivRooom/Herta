@@ -1,0 +1,35 @@
+name: Temporary PR302 Prettier
+
+on:
+  push:
+    branches:
+      - feat/birthday-first-registration
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/birthday-first-registration
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format target and remove temporary workflow
+        run: |
+          pnpm exec prettier --write apps/studio/src/lib/birthday-self-registration-core.test.ts
+          git rm .github/workflows/temporary-pr302-prettier.yml
+          if git diff --quiet --cached && git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add apps/studio/src/lib/birthday-self-registration-core.test.ts
+          git commit -m "style(birthday): apply prettier"
+          git push origin HEAD:feat/birthday-first-registration
