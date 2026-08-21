@@ -44,32 +44,24 @@ test('Access Control subpage resourceを個別に生成する', () => {
   );
 });
 
-test('Birthday resourceは登録・祝い実績・Card背景・テスト送信を分離する', () => {
-  assert.equal(
+test('Birthday resourceは登録・祝い実績・Card背景・Asset・Preset・テスト送信を分離する', () => {
+  const resources = [
     studioBirthdayResource(GUILD_ID, 'registrations'),
-    `guild:${GUILD_ID}:birthday:registrations`,
-  );
-  assert.equal(
     studioBirthdayResource(GUILD_ID, 'celebrations'),
-    `guild:${GUILD_ID}:birthday:celebrations`,
-  );
-  assert.equal(
     studioBirthdayResource(GUILD_ID, 'card-background'),
-    `guild:${GUILD_ID}:birthday:card-background`,
-  );
-  assert.equal(
+    studioBirthdayResource(GUILD_ID, 'card-assets'),
+    studioBirthdayResource(GUILD_ID, 'card-presets'),
     studioBirthdayResource(GUILD_ID, 'card-test-send'),
+  ];
+  assert.deepEqual(resources, [
+    `guild:${GUILD_ID}:birthday:registrations`,
+    `guild:${GUILD_ID}:birthday:celebrations`,
+    `guild:${GUILD_ID}:birthday:card-background`,
+    `guild:${GUILD_ID}:birthday:card-assets`,
+    `guild:${GUILD_ID}:birthday:card-presets`,
     `guild:${GUILD_ID}:birthday:card-test-send`,
-  );
-  assert.equal(
-    new Set([
-      studioBirthdayResource(GUILD_ID, 'registrations'),
-      studioBirthdayResource(GUILD_ID, 'celebrations'),
-      studioBirthdayResource(GUILD_ID, 'card-background'),
-      studioBirthdayResource(GUILD_ID, 'card-test-send'),
-    ]).size,
-    4,
-  );
+  ]);
+  assert.equal(new Set(resources).size, 6);
 });
 
 test('page.viewが明示されるまでpage policyのdefault denyを有効化しない', () => {
@@ -186,6 +178,27 @@ test('Policy catalogはpage・Birthday・Plugin fieldを別Resource権限とし�
       (option) =>
         option.action === 'studio.settings.write' &&
         option.resource === `guild:${GUILD_ID}:birthday:card-background`,
+    ),
+  );
+  assert.ok(
+    options.some(
+      (option) =>
+        option.action === 'studio.settings.read' &&
+        option.resource === `guild:${GUILD_ID}:birthday:card-assets`,
+    ),
+  );
+  assert.ok(
+    options.some(
+      (option) =>
+        option.action === 'studio.settings.write' &&
+        option.resource === `guild:${GUILD_ID}:birthday:card-assets`,
+    ),
+  );
+  assert.ok(
+    options.some(
+      (option) =>
+        option.action === 'studio.settings.write' &&
+        option.resource === `guild:${GUILD_ID}:birthday:card-presets`,
     ),
   );
   assert.ok(

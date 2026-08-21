@@ -106,7 +106,12 @@ export function studioAccessPageResource(
 }
 
 export type StudioBirthdayResource =
-  'registrations' | 'celebrations' | 'card-background' | 'card-test-send';
+  | 'registrations'
+  | 'celebrations'
+  | 'card-background'
+  | 'card-assets'
+  | 'card-presets'
+  | 'card-test-send';
 
 export function studioBirthdayResource(guildId: string, resource: StudioBirthdayResource): string {
   return `guild:${guildId}:birthday:${encodeSegment(resource)}`;
@@ -157,6 +162,8 @@ export function buildStudioGranularPermissionOptions(
   const birthdayRegistrations = studioBirthdayResource(guildId, 'registrations');
   const birthdayCelebrations = studioBirthdayResource(guildId, 'celebrations');
   const birthdayCardBackground = studioBirthdayResource(guildId, 'card-background');
+  const birthdayCardAssets = studioBirthdayResource(guildId, 'card-assets');
+  const birthdayCardPresets = studioBirthdayResource(guildId, 'card-presets');
   const birthdayCardTestSend = studioBirthdayResource(guildId, 'card-test-send');
   options.push(
     {
@@ -186,18 +193,42 @@ export function buildStudioGranularPermissionOptions(
     {
       id: permissionOptionId('studio.settings.read', birthdayCardBackground),
       category: 'Birthday',
-      label: 'Cardカスタム背景 · 閲覧',
-      description: 'Guild専用Birthday Card背景のプレビューとメタデータを閲覧',
+      label: 'Card旧カスタム背景 · 閲覧',
+      description: '既存Guild専用Birthday Card背景のプレビューとメタデータを閲覧',
       action: 'studio.settings.read',
       resource: birthdayCardBackground,
     },
     {
       id: permissionOptionId('studio.settings.write', birthdayCardBackground),
       category: 'Birthday',
-      label: 'Cardカスタム背景 · 編集',
-      description: 'Guild専用Birthday Card背景をアップロード・差し替え・削除',
+      label: 'Card旧カスタム背景 · 編集',
+      description: '既存Guild専用Birthday Card背景を差し替え・削除',
       action: 'studio.settings.write',
       resource: birthdayCardBackground,
+    },
+    {
+      id: permissionOptionId('studio.settings.read', birthdayCardAssets),
+      category: 'Birthday',
+      label: 'Card画像ライブラリ · 閲覧',
+      description: 'Guild専用Birthday Card画像ライブラリとサムネイルを閲覧',
+      action: 'studio.settings.read',
+      resource: birthdayCardAssets,
+    },
+    {
+      id: permissionOptionId('studio.settings.write', birthdayCardAssets),
+      category: 'Birthday',
+      label: 'Card画像ライブラリ · 編集',
+      description: 'Birthday Card画像をアップロード・名称変更・削除・使用',
+      action: 'studio.settings.write',
+      resource: birthdayCardAssets,
+    },
+    {
+      id: permissionOptionId('studio.settings.write', birthdayCardPresets),
+      category: 'Birthday',
+      label: 'Card Guildプリセット · 管理',
+      description: '画像ライブラリの画像をGuildプリセットへ追加・解除',
+      action: 'studio.settings.write',
+      resource: birthdayCardPresets,
     },
     {
       id: permissionOptionId('studio.operation.execute', birthdayCardTestSend),

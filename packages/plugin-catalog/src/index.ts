@@ -163,6 +163,17 @@ export interface EnabledPlugin {
 }
 
 /**
+ * Runtimeでも永続configのbackground source discriminatorを保持する。
+ * Asset Libraryとlegacy customはBot側で明示的に分岐し、意味を潰さない。
+ */
+export function normalizeRuntimePluginConfig(
+  _pluginId: string,
+  config: Record<string, unknown>,
+): Record<string, unknown> {
+  return config;
+}
+
+/**
  * Guildで有効な公式Pluginと検証済み設定を返す。
  * RuntimeはDB内のコードやpackage名を評価せず、静的Registryだけから実装を解決する。
  */
@@ -179,10 +190,11 @@ export async function getEnabledPlugins(
     const manifest = getPluginManifest(row.pluginId);
     if (!manifest) return [];
 
+    const config = isRecord(row.config) ? row.config : {};
     return [
       {
         manifest,
-        config: isRecord(row.config) ? row.config : {},
+        config: normalizeRuntimePluginConfig(row.pluginId, config),
         configVersion: row.configVersion,
       },
     ];

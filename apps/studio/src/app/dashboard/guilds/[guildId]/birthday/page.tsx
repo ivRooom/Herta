@@ -1,4 +1,4 @@
-import { getBirthdayCardBackgroundMetadata } from '@herta/db';
+import { getBirthdayCardBackgroundMetadata, listBirthdayCardAssetMetadata } from '@herta/db';
 import { BIRTHDAY_CARD_CONFIG_FIELD_KEYS } from '@herta/shared';
 import { ArrowLeft, Cake } from 'lucide-react';
 import Link from 'next/link';
@@ -79,6 +79,27 @@ export default async function BirthdayAdminPage({
       'studio.settings.write',
       studioBirthdayResource(guildId, 'card-background'),
     );
+  const canReadAssets =
+    studioAccess.ok &&
+    hasEffectivePluginPermission(
+      studioAccess.access,
+      'studio.settings.read',
+      studioBirthdayResource(guildId, 'card-assets'),
+    );
+  const canWriteAssets =
+    studioAccess.ok &&
+    hasEffectivePluginPermission(
+      studioAccess.access,
+      'studio.settings.write',
+      studioBirthdayResource(guildId, 'card-assets'),
+    );
+  const canManagePresets =
+    studioAccess.ok &&
+    hasEffectivePluginPermission(
+      studioAccess.access,
+      'studio.settings.write',
+      studioBirthdayResource(guildId, 'card-presets'),
+    );
   const canTestSendCard =
     studioAccess.ok &&
     hasEffectivePluginPermission(
@@ -87,11 +108,12 @@ export default async function BirthdayAdminPage({
       studioBirthdayResource(guildId, 'card-test-send'),
     );
 
-  const [registrations, backgroundMetadata] = await Promise.all([
+  const [registrations, backgroundMetadata, assetMetadata] = await Promise.all([
     canReadRegistrations ? listBirthdayRegistrations(guildId) : Promise.resolve([]),
     canReadCardBackground
       ? getBirthdayCardBackgroundMetadata(prisma, guildId)
       : Promise.resolve(null),
+    canReadAssets ? listBirthdayCardAssetMetadata(prisma, guildId) : Promise.resolve([]),
   ]);
   const visibleRegistrations = canReadCelebrations
     ? registrations
@@ -117,8 +139,16 @@ export default async function BirthdayAdminPage({
       BIRTHDAY_CARD_CONFIG_FIELD_KEYS,
     );
     const readableConfig = filterReadablePluginConfig(plugin.config, configAccess);
+    const hasReadableCardConfig = configAccess.readableFieldKeys.length > 0;
+    const canAccessCardMedia =
+      canReadCardBackground ||
+      canWriteCardBackground ||
+      canReadAssets ||
+      canWriteAssets ||
+      canManagePresets;
+
     cardEditor =
-      configAccess.readableFieldKeys.length > 0 ? (
+      hasReadableCardConfig || canAccessCardMedia ? (
         <BirthdayCardEditor
           guildId={guildId}
           initialConfig={readableConfig}
@@ -136,8 +166,23 @@ export default async function BirthdayAdminPage({
                 }
               : null
           }
+          initialAssets={assetMetadata.map((asset) => ({
+            id: asset.id,
+            name: asset.name,
+            contentType: asset.contentType,
+            sizeBytes: asset.sizeBytes,
+            width: asset.width,
+            height: asset.height,
+            sha256: asset.sha256,
+            isPreset: asset.isPreset,
+            createdAt: asset.createdAt.toISOString(),
+            updatedAt: asset.updatedAt.toISOString(),
+          }))}
           canReadBackground={canReadCardBackground}
           canWriteBackground={canWriteCardBackground}
+          canReadAssets={canReadAssets}
+          canWriteAssets={canWriteAssets}
+          canManagePresets={canManagePresets}
           canTestSend={canTestSendCard}
           channelOptions={messageTargets}
         />
