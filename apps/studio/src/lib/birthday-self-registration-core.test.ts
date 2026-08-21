@@ -71,9 +71,25 @@ test('本人登録はBirthday pluginが有効かつallowSelfRegistrationが許�
     birthdaySelfRegistrationEnabled({
       installed: true,
       enabled: true,
-      config: { allowSelfRegistration: true },
+      config: { enabled: true, allowSelfRegistration: true },
     }),
     true,
+  );
+  assert.equal(
+    birthdaySelfRegistrationEnabled({
+      installed: true,
+      enabled: true,
+      config: { enabled: false, allowSelfRegistration: true },
+    }),
+    false,
+  );
+  assert.equal(
+    birthdaySelfRegistrationEnabled({
+      installed: true,
+      enabled: true,
+      config: { enabled: 'false', allowSelfRegistration: true },
+    }),
+    false,
   );
   assert.equal(
     birthdaySelfRegistrationEnabled({
