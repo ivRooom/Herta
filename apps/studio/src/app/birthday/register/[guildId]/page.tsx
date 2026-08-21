@@ -65,7 +65,8 @@ export default async function BirthdayRegistrationPage({
           </div>
           <div className="mt-4 flex items-start gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2.5 text-xs leading-5 text-emerald-300">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-            対象Guildへの現在の所属、本人のDiscord ID、本人登録設定は保存時にもserver-sideで再確認します。
+            対象Guildへの現在の所属、本人のDiscord
+            ID、本人登録設定は保存時にもserver-sideで再確認します。
           </div>
         </section>
 
