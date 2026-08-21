@@ -9,8 +9,12 @@ import {
   type BirthdayCardConfig,
   type BirthdayCardConfigFieldKey,
 } from '@herta/shared';
-import { ImageIcon, RotateCcw, Save, Send, Trash2, Upload } from 'lucide-react';
-import { useMemo, useState, type ChangeEvent } from 'react';
+import { ImageIcon, RotateCcw, Save, Send, Trash2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import {
+  BirthdayCardAssetLibrary,
+  type BirthdayCardAssetMetadata,
+} from '@/components/birthday-card-asset-library';
 import {
   BirthdayCardLivePreview,
   type BirthdayCardPositionXKey,
@@ -27,9 +31,10 @@ import type { PluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';
 
 const SAVE_TIMEOUT_MS = 15_000;
 const BACKGROUND_TIMEOUT_MS = 30_000;
+const ASSET_TIMEOUT_MS = 30_000;
 const TEST_SEND_TIMEOUT_MS = 30_000;
 const EMPTY_EDITABLE_FIELDS: ReadonlySet<string> = new Set<string>();
-const BACKGROUND_ACCEPT = 'image/png,image/jpeg,image/webp';
+const ALLOWED_BACKGROUND_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
 type PreviewMode = 'draft' | 'saved';
 
@@ -48,8 +53,12 @@ export function BirthdayCardEditor({
   initialConfig,
   configAccess,
   initialBackground,
+  initialAssets,
   canReadBackground,
   canWriteBackground,
+  canReadAssets,
+  canWriteAssets,
+  canManagePresets,
   canTestSend,
   channelOptions,
 }: {
@@ -57,8 +66,12 @@ export function BirthdayCardEditor({
   initialConfig: Record<string, unknown>;
   configAccess: PluginConfigStudioAccess;
   initialBackground: BirthdayCardBackgroundMetadata | null;
+  initialAssets: BirthdayCardAssetMetadata[];
   canReadBackground: boolean;
   canWriteBackground: boolean;
+  canReadAssets: boolean;
+  canWriteAssets: boolean;
+  canManagePresets: boolean;
   canTestSend: boolean;
   channelOptions: GuildChannelOption[];
 }) {
@@ -71,6 +84,9 @@ export function BirthdayCardEditor({
   const [background, setBackground] = useState(initialBackground);
   const [backgroundPending, setBackgroundPending] = useState(false);
   const [backgroundStatus, setBackgroundStatus] = useState('');
+  const [assets, setAssets] = useState(initialAssets);
+  const [assetPending, setAssetPending] = useState(false);
+  const [assetStatus, setAssetStatus] = useState('');
   const [testChannelId, setTestChannelId] = useState<string | null>(null);
   const [testPending, setTestPending] = useState(false);
   const [testStatus, setTestStatus] = useState('');
@@ -88,32 +104,63 @@ export function BirthdayCardEditor({
   const hasEditableFields = BIRTHDAY_CARD_CONFIG_FIELD_KEYS.some((key) => editable.has(key));
   const previewConfig = previewMode === 'saved' ? saved : config;
   const previewEditable = previewMode === 'saved' ? EMPTY_EDITABLE_FIELDS : editable;
-  const interactionPending = pending || backgroundPending || testPending;
+  const interactionPending = pending || backgroundPending || assetPending || testPending;
   const preset = birthdayCardPreset(previewConfig.birthdayCardPreset);
   const canReadBackgroundSource = readable.has('birthdayCardBackgroundSource');
+  const canReadAssetId = readable.has('birthdayCardAssetId');
   const canReadPreset = readable.has('birthdayCardPreset');
-  const backgroundUrl = !canReadBackgroundSource
-    ? null
-    : previewConfig.birthdayCardBackgroundSource === 'custom'
-      ? canReadBackground && background
-        ? `/api/guilds/${guildId}/birthday/card-background?v=${background.sha256}`
-        : null
-      : canReadPreset
-        ? `/birthday-card-presets/${preset.assetFile}`
-        : null;
+  const canUseAsset =
+    editable.has('birthdayCardBackgroundSource') && editable.has('birthdayCardAssetId');
+  const selectedPreviewAsset =
+    canReadAssetId && previewConfig.birthdayCardAssetId
+      ? assets.find((asset) => asset.id === previewConfig.birthdayCardAssetId) ?? null
+      : null;
+  const selectedDraftAsset =
+    config.birthdayCardAssetId
+      ? assets.find((asset) => asset.id === config.birthdayCardAssetId) ?? null
+      : null;
+  const backgroundUrl = resolveBackgroundUrl({
+    guildId,
+    config: previewConfig,
+    canReadBackgroundSource,
+    canReadBackground,
+    canReadAssets,
+    canReadAssetId,
+    canReadPreset,
+    background,
+    asset: selectedPreviewAsset,
+    presetAssetFile: preset.assetFile,
+  });
   const backgroundLabel = !canReadBackgroundSource
     ? '背景画像'
-    : previewConfig.birthdayCardBackgroundSource === 'custom'
-      ? background?.fileName || 'カスタム背景'
-      : canReadPreset
-        ? preset.label
-        : '背景プリセット';
+    : previewConfig.birthdayCardBackgroundSource === 'asset'
+      ? selectedPreviewAsset?.name || '画像ライブラリ'
+      : previewConfig.birthdayCardBackgroundSource === 'custom'
+        ? background?.fileName || '旧カスタム背景'
+        : canReadPreset
+          ? preset.label
+          : '背景プリセット';
 
   function update<K extends keyof BirthdayCardConfig>(key: K, value: BirthdayCardConfig[K]) {
     if (!editable.has(key)) return;
     setConfig((current) => ({ ...current, [key]: value }));
     setPreviewMode('draft');
     setStatus('未保存の変更があります');
+  }
+
+  function useAsset(asset: BirthdayCardAssetMetadata) {
+    if (!canUseAsset) {
+      setAssetStatus('この画像を使用するBirthday Card設定IAM権限がありません');
+      return;
+    }
+    setConfig((current) => ({
+      ...current,
+      birthdayCardBackgroundSource: 'asset',
+      birthdayCardAssetId: asset.id,
+    }));
+    setPreviewMode('draft');
+    setStatus('未保存の変更があります');
+    setAssetStatus(`${asset.name} を変更中の背景として選択しました。Card設定を保存してください。`);
   }
 
   function updatePosition(
@@ -186,65 +233,156 @@ export function BirthdayCardEditor({
     }
   }
 
-  async function uploadBackground(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file || backgroundPending || testPending) return;
-    if (!canWriteBackground || !editable.has('birthdayCardBackgroundSource')) {
-      setBackgroundStatus('カスタム背景を変更するIAM権限がありません');
+  async function uploadAsset(file: File) {
+    if (assetPending || interactionPending) return;
+    if (!canWriteAssets) {
+      setAssetStatus('画像ライブラリへ登録するIAM権限がありません');
       return;
     }
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-      setBackgroundStatus('PNG / JPEG / WebPを選択してください');
+    if (!ALLOWED_BACKGROUND_TYPES.has(file.type)) {
+      setAssetStatus('PNG / JPEG / WebPを選択してください');
       return;
     }
     if (file.size <= 0 || file.size > BIRTHDAY_CARD_BACKGROUND_MAX_BYTES) {
-      setBackgroundStatus('背景画像は5 MiB以下にしてください');
+      setAssetStatus('背景画像は5 MiB以下にしてください');
       return;
     }
 
-    setBackgroundPending(true);
-    setBackgroundStatus('背景画像をアップロード中…');
+    setAssetPending(true);
+    setAssetStatus('画像ライブラリへ登録中…');
     try {
       const form = new FormData();
       form.set('background', file, file.name);
-      const response = await fetch(`/api/guilds/${guildId}/birthday/card-background`, {
-        method: 'PUT',
+      const response = await fetch(`/api/guilds/${guildId}/birthday/card-assets`, {
+        method: 'POST',
         body: form,
-        signal: AbortSignal.timeout(BACKGROUND_TIMEOUT_MS),
+        signal: AbortSignal.timeout(ASSET_TIMEOUT_MS),
       });
       const payload = (await response.json().catch(() => null)) as {
         error?: unknown;
-        background?: BirthdayCardBackgroundMetadata;
+        asset?: BirthdayCardAssetMetadata;
       } | null;
-      if (!response.ok || !payload?.background) {
+      if (!response.ok || !payload?.asset) {
         throw new Error(
-          typeof payload?.error === 'string' ? payload.error : '背景画像の保存に失敗しました',
+          typeof payload?.error === 'string' ? payload.error : '画像ライブラリへの登録に失敗しました',
         );
       }
-      setBackground(payload.background);
-      update('birthdayCardBackgroundSource', 'custom');
-      setBackgroundStatus(
-        `${payload.background.fileName}（${payload.background.width}×${payload.background.height}）を保存しました。Card設定も保存してください。`,
-      );
+
+      setAssets((current) => [payload.asset!, ...current.filter((item) => item.id !== payload.asset!.id)]);
+      if (canUseAsset) {
+        useAsset(payload.asset);
+        setAssetStatus(
+          `${payload.asset.name}（${payload.asset.width}×${payload.asset.height}）を登録し、変更中の背景として選択しました。必要ならPresetに追加できます。`,
+        );
+      } else {
+        setAssetStatus(`${payload.asset.name} を画像ライブラリへ登録しました。`);
+      }
     } catch (error) {
-      setBackgroundStatus(
+      setAssetStatus(
         isTimeoutError(error)
-          ? '背景画像のアップロードがタイムアウトしました'
+          ? '画像の登録がタイムアウトしました'
           : error instanceof Error
             ? error.message
-            : '背景画像の保存に失敗しました',
+            : '画像ライブラリへの登録に失敗しました',
       );
     } finally {
-      setBackgroundPending(false);
+      setAssetPending(false);
+    }
+  }
+
+  async function renameAsset(asset: BirthdayCardAssetMetadata) {
+    if (!canWriteAssets || interactionPending) return;
+    const nextName = window.prompt('画像名を入力してください', asset.name)?.trim();
+    if (!nextName || nextName === asset.name) return;
+    await patchAsset(asset, { name: nextName }, '画像名を変更しました');
+  }
+
+  async function toggleAssetPreset(asset: BirthdayCardAssetMetadata) {
+    if (!canManagePresets || interactionPending) return;
+    await patchAsset(
+      asset,
+      { isPreset: !asset.isPreset },
+      asset.isPreset ? 'Guild Presetから解除しました' : 'Guild Presetへ追加しました',
+    );
+  }
+
+  async function patchAsset(
+    asset: BirthdayCardAssetMetadata,
+    patch: { name?: string; isPreset?: boolean },
+    successMessage: string,
+  ) {
+    setAssetPending(true);
+    setAssetStatus('画像情報を更新中…');
+    try {
+      const response = await fetch(`/api/guilds/${guildId}/birthday/card-assets/${asset.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(ASSET_TIMEOUT_MS),
+        body: JSON.stringify(patch),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        error?: unknown;
+        asset?: BirthdayCardAssetMetadata;
+      } | null;
+      if (!response.ok || !payload?.asset) {
+        throw new Error(typeof payload?.error === 'string' ? payload.error : '画像情報の更新に失敗しました');
+      }
+      setAssets((current) =>
+        current
+          .map((item) => (item.id === asset.id ? payload.asset! : item))
+          .toSorted((a, b) => Number(b.isPreset) - Number(a.isPreset) || b.updatedAt.localeCompare(a.updatedAt)),
+      );
+      setAssetStatus(`${payload.asset.name}: ${successMessage}`);
+    } catch (error) {
+      setAssetStatus(
+        isTimeoutError(error)
+          ? '画像情報の更新がタイムアウトしました'
+          : error instanceof Error
+            ? error.message
+            : '画像情報の更新に失敗しました',
+      );
+    } finally {
+      setAssetPending(false);
+    }
+  }
+
+  async function deleteAsset(asset: BirthdayCardAssetMetadata) {
+    if (!canWriteAssets || interactionPending || asset.id === config.birthdayCardAssetId) return;
+    if (!window.confirm(`${asset.name} を画像ライブラリから削除しますか？`)) return;
+    setAssetPending(true);
+    setAssetStatus('画像を削除中…');
+    try {
+      const response = await fetch(`/api/guilds/${guildId}/birthday/card-assets/${asset.id}`, {
+        method: 'DELETE',
+        signal: AbortSignal.timeout(ASSET_TIMEOUT_MS),
+      });
+      const payload = (await response.json().catch(() => null)) as {
+        error?: unknown;
+        deleted?: boolean;
+      } | null;
+      if (!response.ok || !payload?.deleted) {
+        throw new Error(typeof payload?.error === 'string' ? payload.error : '画像の削除に失敗しました');
+      }
+      setAssets((current) => current.filter((item) => item.id !== asset.id));
+      setAssetStatus(`${asset.name} を画像ライブラリから削除しました`);
+    } catch (error) {
+      setAssetStatus(
+        isTimeoutError(error)
+          ? '画像の削除がタイムアウトしました'
+          : error instanceof Error
+            ? error.message
+            : '画像の削除に失敗しました',
+      );
+    } finally {
+      setAssetPending(false);
     }
   }
 
   async function deleteBackground() {
     if (!background || !canWriteBackground || interactionPending) return;
-    if (!window.confirm('Guild専用のBirthday Card背景を削除しますか？')) return;
+    if (!window.confirm('旧Guild専用Birthday Card背景を削除しますか？')) return;
     setBackgroundPending(true);
-    setBackgroundStatus('カスタム背景を削除中…');
+    setBackgroundStatus('旧カスタム背景を削除中…');
     try {
       const response = await fetch(`/api/guilds/${guildId}/birthday/card-background`, {
         method: 'DELETE',
@@ -256,26 +394,26 @@ export function BirthdayCardEditor({
       } | null;
       if (!response.ok) {
         throw new Error(
-          typeof payload?.error === 'string' ? payload.error : '背景画像の削除に失敗しました',
+          typeof payload?.error === 'string' ? payload.error : '旧カスタム背景の削除に失敗しました',
         );
       }
       setBackground(null);
-      const resetSource = editable.has('birthdayCardBackgroundSource');
-      if (resetSource) {
-        update('birthdayCardBackgroundSource', 'preset');
-      }
+      const resetSource =
+        config.birthdayCardBackgroundSource === 'custom' &&
+        editable.has('birthdayCardBackgroundSource');
+      if (resetSource) update('birthdayCardBackgroundSource', 'preset');
       setBackgroundStatus(
         resetSource
-          ? 'カスタム背景を削除し、背景ソースをプリセットへ戻しました。Card設定も保存してください。'
-          : 'カスタム背景を削除しました。背景ソースの変更にはIAM権限が必要です。',
+          ? '旧カスタム背景を削除し、背景ソースを組み込みプリセットへ戻しました。Card設定も保存してください。'
+          : '旧カスタム背景を削除しました。',
       );
     } catch (error) {
       setBackgroundStatus(
         isTimeoutError(error)
-          ? '背景画像の削除がタイムアウトしました'
+          ? '旧カスタム背景の削除がタイムアウトしました'
           : error instanceof Error
             ? error.message
-            : '背景画像の削除に失敗しました',
+            : '旧カスタム背景の削除に失敗しました',
       );
     } finally {
       setBackgroundPending(false);
@@ -330,6 +468,9 @@ export function BirthdayCardEditor({
     }
   }
 
+  const presetAssets = assets.filter((asset) => asset.isPreset);
+  const libraryAssets = assets.filter((asset) => !asset.isPreset);
+
   return (
     <section className="space-y-6 rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -339,7 +480,7 @@ export function BirthdayCardEditor({
             <h2 className="font-semibold">Birthday Card Studio</h2>
           </div>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-            プリセットまたはGuild専用画像を背景にし、名前・Avatar・誕生日・年齢の表示と位置・サイズをライブプレビューで調整します。実際の投稿ではDiscordの表示名とAvatar、生年から算出した年齢を使います。
+            組み込みPresetまたはGuildの画像ライブラリを背景にし、名前・Avatar・誕生日・年齢の表示と位置・サイズをライブプレビューで調整します。画像は先にライブラリへ登録し、必要なものだけGuild Presetとして整理できます。
           </p>
         </div>
         {!hasEditableFields ? (
@@ -430,17 +571,57 @@ export function BirthdayCardEditor({
                   className="mt-1 w-full rounded-xl border border-border bg-surface px-3 py-2 disabled:opacity-50"
                 >
                   <option value="preset">組み込みプリセット</option>
-                  <option value="custom" disabled={!canReadBackground || !background}>
-                    Guild専用アップロード画像
+                  <option
+                    value="asset"
+                    disabled={!canReadAssets || !canReadAssetId || !config.birthdayCardAssetId}
+                  >
+                    画像ライブラリ
                   </option>
+                  {background ? <option value="custom">旧Guild専用アップロード画像</option> : null}
                 </select>
               </label>
             ) : null}
+
+            {canReadAssetId && canReadAssets ? (
+              <label className="text-sm">
+                ライブラリ画像
+                <select
+                  value={config.birthdayCardAssetId ?? ''}
+                  onChange={(event) => {
+                    const asset = assets.find((item) => item.id === event.target.value);
+                    if (asset) useAsset(asset);
+                  }}
+                  disabled={!canUseAsset || interactionPending || assets.length === 0}
+                  className="mt-1 w-full rounded-xl border border-border bg-surface px-3 py-2 disabled:opacity-50"
+                >
+                  <option value="">画像を選択</option>
+                  {presetAssets.length > 0 ? (
+                    <optgroup label="Guild Preset">
+                      {presetAssets.map((asset) => (
+                        <option key={asset.id} value={asset.id}>
+                          {asset.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
+                  {libraryAssets.length > 0 ? (
+                    <optgroup label="画像ライブラリ">
+                      {libraryAssets.map((asset) => (
+                        <option key={asset.id} value={asset.id}>
+                          {asset.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ) : null}
+                </select>
+              </label>
+            ) : null}
+
             {readable.has('birthdayCardPreset') ? (
               <label className="text-sm">
-                {config.birthdayCardBackgroundSource === 'custom'
-                  ? 'テキスト配色プリセット'
-                  : 'プリセット'}
+                {config.birthdayCardBackgroundSource === 'preset'
+                  ? '組み込みプリセット'
+                  : 'テキスト配色プリセット'}
                 <select
                   value={config.birthdayCardPreset}
                   onChange={(event) =>
@@ -573,64 +754,58 @@ export function BirthdayCardEditor({
         </div>
       </div>
 
-      <section className="space-y-3 rounded-xl border border-border bg-background p-4">
-        <div>
-          <h3 className="font-medium">オリジナル背景</h3>
-          <p className="mt-1 text-xs leading-5 text-muted">
-            Guildごとに1枚のPNG / JPEG / WebPを保存できます。最大5 MiB・8192px・1600万画素です。
-          </p>
-        </div>
-        {!canReadBackground ? (
-          <p className="text-sm text-muted">カスタム背景を閲覧するIAM権限がありません。</p>
-        ) : (
-          <>
-            {background ? (
-              <div className="flex flex-col gap-3 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="min-w-0 text-sm">
-                  <p className="truncate font-medium">{background.fileName}</p>
-                  <p className="mt-1 text-xs text-muted">
-                    {background.width}×{background.height} · {formatBytes(background.sizeBytes)}
-                  </p>
-                </div>
-                {canWriteBackground ? (
-                  <button
-                    type="button"
-                    onClick={() => void deleteBackground()}
-                    disabled={interactionPending}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-400/30 px-3 py-2 text-sm text-red-300 disabled:opacity-50"
-                  >
-                    <Trash2 className="h-4 w-4" aria-hidden="true" /> 削除
-                  </button>
-                ) : null}
+      <BirthdayCardAssetLibrary
+        assets={assets}
+        selectedAssetId={selectedDraftAsset?.id ?? null}
+        canRead={canReadAssets}
+        canWrite={canWriteAssets}
+        canManagePresets={canManagePresets}
+        canUse={canUseAsset}
+        pending={assetPending || interactionPending}
+        status={assetStatus}
+        contentUrl={(asset) => assetContentUrl(guildId, asset)}
+        onUpload={(file) => void uploadAsset(file)}
+        onUse={useAsset}
+        onRename={(asset) => void renameAsset(asset)}
+        onTogglePreset={(asset) => void toggleAssetPreset(asset)}
+        onDelete={(asset) => void deleteAsset(asset)}
+      />
+
+      {background ? (
+        <section className="space-y-3 rounded-xl border border-border bg-background p-4">
+          <div>
+            <h3 className="font-medium">旧カスタム背景（互換）</h3>
+            <p className="mt-1 text-xs leading-5 text-muted">
+              以前の1枚保存方式で登録された画像です。新規画像は上の画像ライブラリへ登録してください。
+            </p>
+          </div>
+          {!canReadBackground ? (
+            <p className="text-sm text-muted">旧カスタム背景を閲覧するIAM権限がありません。</p>
+          ) : (
+            <div className="flex flex-col gap-3 rounded-lg border border-border p-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 text-sm">
+                <p className="truncate font-medium">{background.fileName}</p>
+                <p className="mt-1 text-xs text-muted">
+                  {background.width}×{background.height} · {formatBytes(background.sizeBytes)}
+                </p>
               </div>
-            ) : (
-              <p className="rounded-lg border border-dashed border-border p-3 text-sm text-muted">
-                カスタム背景はまだ登録されていません。
-              </p>
-            )}
-            {canWriteBackground ? (
-              <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 py-2.5 text-sm font-semibold transition-colors hover:border-primary/40 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
-                <Upload className="h-4 w-4" aria-hidden="true" />
-                {backgroundPending
-                  ? 'アップロード中…'
-                  : background
-                    ? '背景を差し替え'
-                    : '背景をアップロード'}
-                <input
-                  type="file"
-                  accept={BACKGROUND_ACCEPT}
-                  disabled={interactionPending || !editable.has('birthdayCardBackgroundSource')}
-                  onChange={(event) => void uploadBackground(event)}
-                  className="sr-only"
-                />
-              </label>
-            ) : null}
-          </>
-        )}
-        <p className="text-xs text-muted" aria-live="polite">
-          {backgroundStatus}
-        </p>
-      </section>
+              {canWriteBackground ? (
+                <button
+                  type="button"
+                  onClick={() => void deleteBackground()}
+                  disabled={interactionPending}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg border border-red-400/30 px-3 py-2 text-sm text-red-300 disabled:opacity-50"
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" /> 削除
+                </button>
+              ) : null}
+            </div>
+          )}
+          <p className="text-xs text-muted" aria-live="polite">
+            {backgroundStatus}
+          </p>
+        </section>
+      ) : null}
 
       {canTestSend ? (
         <section className="space-y-3 rounded-xl border border-primary/20 bg-background p-4">
@@ -734,6 +909,7 @@ type NumericCardKey = Exclude<
   BirthdayCardConfigFieldKey,
   | 'birthdayCardEnabled'
   | 'birthdayCardBackgroundSource'
+  | 'birthdayCardAssetId'
   | 'birthdayCardPreset'
   | 'birthdayCardShowName'
   | 'birthdayCardShowAvatar'
@@ -839,6 +1015,45 @@ function RangeControl({
       <span className="text-right tabular-nums">{Math.round(value)}</span>
     </label>
   );
+}
+
+function resolveBackgroundUrl({
+  guildId,
+  config,
+  canReadBackgroundSource,
+  canReadBackground,
+  canReadAssets,
+  canReadAssetId,
+  canReadPreset,
+  background,
+  asset,
+  presetAssetFile,
+}: {
+  guildId: string;
+  config: BirthdayCardConfig;
+  canReadBackgroundSource: boolean;
+  canReadBackground: boolean;
+  canReadAssets: boolean;
+  canReadAssetId: boolean;
+  canReadPreset: boolean;
+  background: BirthdayCardBackgroundMetadata | null;
+  asset: BirthdayCardAssetMetadata | null;
+  presetAssetFile: string;
+}): string | null {
+  if (!canReadBackgroundSource) return null;
+  if (config.birthdayCardBackgroundSource === 'asset') {
+    return canReadAssets && canReadAssetId && asset ? assetContentUrl(guildId, asset) : null;
+  }
+  if (config.birthdayCardBackgroundSource === 'custom') {
+    return canReadBackground && background
+      ? `/api/guilds/${guildId}/birthday/card-background?v=${background.sha256}`
+      : null;
+  }
+  return canReadPreset ? `/birthday-card-presets/${presetAssetFile}` : null;
+}
+
+function assetContentUrl(guildId: string, asset: BirthdayCardAssetMetadata): string {
+  return `/api/guilds/${guildId}/birthday/card-assets/${asset.id}/content?v=${asset.sha256}`;
 }
 
 function formatBytes(value: number): string {
