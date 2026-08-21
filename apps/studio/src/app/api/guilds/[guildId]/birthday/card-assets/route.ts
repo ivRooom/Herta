@@ -1,5 +1,5 @@
 import {
-  countBirthdayCardAssets,
+  BirthdayCardAssetLimitExceededError,
   createBirthdayCardAsset,
   listBirthdayCardAssetMetadata,
 } from '@herta/db';
@@ -59,25 +59,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
   );
   if (!access.ok) return access.response;
 
-  const [assetCount, recentUploads] = await Promise.all([
-    countBirthdayCardAssets(prisma, guildId),
-    prisma.auditLog.count({
-      where: {
-        guildId,
-        actorId: session.user.id,
-        event: 'birthday_card.asset.created',
-        createdAt: { gte: new Date(Date.now() - UPLOAD_RATE_WINDOW_MS) },
-      },
-    }),
-  ]);
-  if (assetCount >= BIRTHDAY_CARD_ASSET_MAX_COUNT) {
-    return NextResponse.json(
-      {
-        error: `画像ライブラリは最大${BIRTHDAY_CARD_ASSET_MAX_COUNT}件です。不要な画像を削除してください`,
-      },
-      { status: 409 },
-    );
-  }
+  const recentUploads = await prisma.auditLog.count({
+    where: {
+      guildId,
+      actorId: session.user.id,
+      event: 'birthday_card.asset.created',
+      createdAt: { gte: new Date(Date.now() - UPLOAD_RATE_WINDOW_MS) },
+    },
+  });
   if (recentUploads >= UPLOAD_RATE_LIMIT) {
     return NextResponse.json(
       { error: '画像の登録回数が上限に達しました。しばらく待って再実行してください' },
@@ -134,17 +123,31 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
 
   const name = safeAssetName(file.name, image.contentType);
   const sha256 = createHash('sha256').update(content).digest('hex');
-  const asset = await createBirthdayCardAsset(prisma, {
-    guildId,
-    name,
-    contentType: image.contentType,
-    content: Buffer.from(content),
-    sizeBytes: content.byteLength,
-    width: image.width,
-    height: image.height,
-    sha256,
-    createdBy: session.user.id,
-  });
+  let asset;
+  try {
+    asset = await createBirthdayCardAsset(prisma, {
+      guildId,
+      name,
+      contentType: image.contentType,
+      content: Buffer.from(content),
+      sizeBytes: content.byteLength,
+      width: image.width,
+      height: image.height,
+      sha256,
+      createdBy: session.user.id,
+      maxAssets: BIRTHDAY_CARD_ASSET_MAX_COUNT,
+    });
+  } catch (error) {
+    if (error instanceof BirthdayCardAssetLimitExceededError) {
+      return NextResponse.json(
+        {
+          error: `画像ライブラリは最大${BIRTHDAY_CARD_ASSET_MAX_COUNT}件です。不要な画像を削除してください`,
+        },
+        { status: 409 },
+      );
+    }
+    throw error;
+  }
 
   await prisma.auditLog.create({
     data: {
