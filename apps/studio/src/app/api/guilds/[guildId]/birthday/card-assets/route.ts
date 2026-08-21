@@ -61,6 +61,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
   );
   if (!access.ok) return access.response;
 
+  // Write and read are intentionally independent capabilities. A write-only caller may create
+  // an asset, but must not learn library metadata from the mutation response.
+  const assetReadAccess = await authorizeBirthdayStudioPermission(
+    guildId,
+    session.user.id,
+    'studio.settings.read',
+    studioBirthdayResource(guildId, 'card-assets'),
+  );
+
   let bytes: Uint8Array<ArrayBuffer>;
   try {
     bytes = await readRequestBodyBytes(
@@ -144,6 +153,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
     throw error;
   }
 
+  if (!assetReadAccess.ok) return NextResponse.json({ created: true }, { status: 201 });
   return NextResponse.json({ asset: serializeAsset(asset) }, { status: 201 });
 }
 
