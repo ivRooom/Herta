@@ -22,10 +22,7 @@ test('Asset Library選択でIDが不正なら旧背景へfall backせずnullに�
     }),
     null,
   );
-  assert.equal(
-    resolveBirthdayCardAssetSelection({ birthdayCardBackgroundSource: 'asset' }),
-    null,
-  );
+  assert.equal(resolveBirthdayCardAssetSelection({ birthdayCardBackgroundSource: 'asset' }), null);
 });
 
 test('preset/customではlegacy background lookupを維持する', () => {

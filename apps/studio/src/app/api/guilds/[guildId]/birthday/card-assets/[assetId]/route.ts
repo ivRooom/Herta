@@ -111,7 +111,9 @@ export async function PATCH(
       data: {
         guildId,
         actorId: session.user.id,
-        event: input.isPreset ? 'birthday_card.asset.preset_added' : 'birthday_card.asset.preset_removed',
+        event: input.isPreset
+          ? 'birthday_card.asset.preset_added'
+          : 'birthday_card.asset.preset_removed',
         targetType: 'birthday_card_asset',
         targetId: assetId,
         changes: { isPreset: { before: previousPreset, after: input.isPreset } },
@@ -161,10 +163,7 @@ export async function DELETE(
     select: { config: true },
   });
   const config = normalizeBirthdayCardConfig(plugin?.config);
-  if (
-    config.birthdayCardBackgroundSource === 'asset' &&
-    config.birthdayCardAssetId === assetId
-  ) {
+  if (config.birthdayCardBackgroundSource === 'asset' && config.birthdayCardAssetId === assetId) {
     return NextResponse.json(
       { error: '現在使用中の画像は削除できません。別の背景へ切り替えて設定を保存してください' },
       { status: 409 },
@@ -198,10 +197,7 @@ export async function DELETE(
 
 async function readPatchBody(
   request: Request,
-): Promise<
-  | { ok: true; value: Record<string, unknown> }
-  | { ok: false; response: NextResponse }
-> {
+): Promise<{ ok: true; value: Record<string, unknown> } | { ok: false; response: NextResponse }> {
   let bytes: Uint8Array<ArrayBuffer>;
   try {
     bytes = await readRequestBodyBytes(request, MAX_PATCH_BODY_BYTES);
@@ -209,7 +205,12 @@ async function readPatchBody(
     return {
       ok: false,
       response: NextResponse.json(
-        { error: error instanceof RequestBodyTooLargeError ? 'リクエストが大きすぎます' : 'リクエストを読み取れませんでした' },
+        {
+          error:
+            error instanceof RequestBodyTooLargeError
+              ? 'リクエストが大きすぎます'
+              : 'リクエストを読み取れませんでした',
+        },
         { status: error instanceof RequestBodyTooLargeError ? 413 : 400 },
       ),
     };
@@ -224,7 +225,10 @@ async function readPatchBody(
 }
 
 function cleanAssetName(value: string): string | null {
-  const normalized = value.replace(/[\u0000-\u001f\u007f]/gu, '').trim().slice(0, 120);
+  const normalized = value
+    .replace(/[\u0000-\u001f\u007f]/gu, '')
+    .trim()
+    .slice(0, 120);
   return normalized || null;
 }
 

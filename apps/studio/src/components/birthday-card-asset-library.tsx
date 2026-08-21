@@ -104,7 +104,9 @@ export function BirthdayCardAssetLibrary({
                   role="img"
                   aria-label={`${asset.name} の背景画像プレビュー`}
                   className="aspect-[16/9] bg-cover bg-center bg-no-repeat"
-                  style={{ backgroundImage: `url(${JSON.stringify(contentUrl(asset)).slice(1, -1)})` }}
+                  style={{
+                    backgroundImage: `url(${JSON.stringify(contentUrl(asset)).slice(1, -1)})`,
+                  }}
                 />
                 <div className="space-y-3 p-3">
                   <div className="min-w-0">

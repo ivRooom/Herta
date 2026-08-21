@@ -72,7 +72,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
   ]);
   if (assetCount >= BIRTHDAY_CARD_ASSET_MAX_COUNT) {
     return NextResponse.json(
-      { error: `画像ライブラリは最大${BIRTHDAY_CARD_ASSET_MAX_COUNT}件です。不要な画像を削除してください` },
+      {
+        error: `画像ライブラリは最大${BIRTHDAY_CARD_ASSET_MAX_COUNT}件です。不要な画像を削除してください`,
+      },
       { status: 409 },
     );
   }

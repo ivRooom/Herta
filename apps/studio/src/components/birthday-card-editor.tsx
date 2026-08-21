@@ -113,12 +113,11 @@ export function BirthdayCardEditor({
     editable.has('birthdayCardBackgroundSource') && editable.has('birthdayCardAssetId');
   const selectedPreviewAsset =
     canReadAssetId && previewConfig.birthdayCardAssetId
-      ? assets.find((asset) => asset.id === previewConfig.birthdayCardAssetId) ?? null
+      ? (assets.find((asset) => asset.id === previewConfig.birthdayCardAssetId) ?? null)
       : null;
-  const selectedDraftAsset =
-    config.birthdayCardAssetId
-      ? assets.find((asset) => asset.id === config.birthdayCardAssetId) ?? null
-      : null;
+  const selectedDraftAsset = config.birthdayCardAssetId
+    ? (assets.find((asset) => asset.id === config.birthdayCardAssetId) ?? null)
+    : null;
   const backgroundUrl = resolveBackgroundUrl({
     guildId,
     config: previewConfig,
@@ -264,11 +263,16 @@ export function BirthdayCardEditor({
       } | null;
       if (!response.ok || !payload?.asset) {
         throw new Error(
-          typeof payload?.error === 'string' ? payload.error : '画像ライブラリへの登録に失敗しました',
+          typeof payload?.error === 'string'
+            ? payload.error
+            : '画像ライブラリへの登録に失敗しました',
         );
       }
 
-      setAssets((current) => [payload.asset!, ...current.filter((item) => item.id !== payload.asset!.id)]);
+      setAssets((current) => [
+        payload.asset!,
+        ...current.filter((item) => item.id !== payload.asset!.id),
+      ]);
       if (canUseAsset) {
         useAsset(payload.asset);
         setAssetStatus(
@@ -325,12 +329,17 @@ export function BirthdayCardEditor({
         asset?: BirthdayCardAssetMetadata;
       } | null;
       if (!response.ok || !payload?.asset) {
-        throw new Error(typeof payload?.error === 'string' ? payload.error : '画像情報の更新に失敗しました');
+        throw new Error(
+          typeof payload?.error === 'string' ? payload.error : '画像情報の更新に失敗しました',
+        );
       }
       setAssets((current) =>
         current
           .map((item) => (item.id === asset.id ? payload.asset! : item))
-          .toSorted((a, b) => Number(b.isPreset) - Number(a.isPreset) || b.updatedAt.localeCompare(a.updatedAt)),
+          .toSorted(
+            (a, b) =>
+              Number(b.isPreset) - Number(a.isPreset) || b.updatedAt.localeCompare(a.updatedAt),
+          ),
       );
       setAssetStatus(`${payload.asset.name}: ${successMessage}`);
     } catch (error) {
@@ -361,7 +370,9 @@ export function BirthdayCardEditor({
         deleted?: boolean;
       } | null;
       if (!response.ok || !payload?.deleted) {
-        throw new Error(typeof payload?.error === 'string' ? payload.error : '画像の削除に失敗しました');
+        throw new Error(
+          typeof payload?.error === 'string' ? payload.error : '画像の削除に失敗しました',
+        );
       }
       setAssets((current) => current.filter((item) => item.id !== asset.id));
       setAssetStatus(`${asset.name} を画像ライブラリから削除しました`);
@@ -480,7 +491,8 @@ export function BirthdayCardEditor({
             <h2 className="font-semibold">Birthday Card Studio</h2>
           </div>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-            組み込みPresetまたはGuildの画像ライブラリを背景にし、名前・Avatar・誕生日・年齢の表示と位置・サイズをライブプレビューで調整します。画像は先にライブラリへ登録し、必要なものだけGuild Presetとして整理できます。
+            組み込みPresetまたはGuildの画像ライブラリを背景にし、名前・Avatar・誕生日・年齢の表示と位置・サイズをライブプレビューで調整します。画像は先にライブラリへ登録し、必要なものだけGuild
+            Presetとして整理できます。
           </p>
         </div>
         {!hasEditableFields ? (
