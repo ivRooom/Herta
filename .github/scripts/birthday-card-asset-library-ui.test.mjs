@@ -13,4 +13,12 @@ test('Upload and Guild Preset promotion remain separate Birthday Card actions', 
   assert.match(library, /Presetに追加/u);
   assert.match(library, /Presetから解除/u);
   assert.match(library, /この背景を使用/u);
+  assert.match(
+    editor,
+    /selectedDraftAsset =\s*config\.birthdayCardBackgroundSource === 'asset' &&/su,
+  );
+  assert.match(
+    editor,
+    /config\.birthdayCardBackgroundSource === 'asset' &&\s*asset\.id === config\.birthdayCardAssetId/su,
+  );
 });

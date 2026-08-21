@@ -115,9 +115,10 @@ export function BirthdayCardEditor({
     canReadAssetId && previewConfig.birthdayCardAssetId
       ? (assets.find((asset) => asset.id === previewConfig.birthdayCardAssetId) ?? null)
       : null;
-  const selectedDraftAsset = config.birthdayCardAssetId
-    ? (assets.find((asset) => asset.id === config.birthdayCardAssetId) ?? null)
-    : null;
+  const selectedDraftAsset =
+    config.birthdayCardBackgroundSource === 'asset' && config.birthdayCardAssetId
+      ? (assets.find((asset) => asset.id === config.birthdayCardAssetId) ?? null)
+      : null;
   const backgroundUrl = resolveBackgroundUrl({
     guildId,
     config: previewConfig,
@@ -354,7 +355,13 @@ export function BirthdayCardEditor({
   }
 
   async function deleteAsset(asset: BirthdayCardAssetMetadata) {
-    if (!canWriteAssets || interactionPending || asset.id === config.birthdayCardAssetId) return;
+    if (
+      !canWriteAssets ||
+      interactionPending ||
+      (config.birthdayCardBackgroundSource === 'asset' &&
+        asset.id === config.birthdayCardAssetId)
+    )
+      return;
     if (!window.confirm(`${asset.name} を画像ライブラリから削除しますか？`)) return;
     setAssetPending(true);
     setAssetStatus('画像を削除中…');

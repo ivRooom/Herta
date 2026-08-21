@@ -72,6 +72,15 @@ export async function PATCH(
     if (!presetAccess.ok) return presetAccess.response;
   }
 
+  // Preset management and asset-library metadata intentionally have separate IAM resources.
+  // A preset-only mutation can succeed, but metadata is returned only with card-assets read access.
+  const assetReadAccess = await authorizeBirthdayStudioPermission(
+    guildId,
+    session.user.id,
+    'studio.settings.read',
+    studioBirthdayResource(guildId, 'card-assets'),
+  );
+
   const before = await getBirthdayCardAssetMetadata(prisma, guildId, assetId);
   if (!before) return NextResponse.json({ error: '画像が見つかりません' }, { status: 404 });
 
@@ -121,6 +130,7 @@ export async function PATCH(
     });
   }
 
+  if (!assetReadAccess.ok) return NextResponse.json({ updated: true });
   return NextResponse.json({ asset: serializeAsset(asset) });
 }
 
