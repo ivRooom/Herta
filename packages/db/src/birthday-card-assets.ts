@@ -8,6 +8,13 @@ export class BirthdayCardAssetLimitExceededError extends Error {
   }
 }
 
+export class BirthdayCardAssetUploadRateLimitExceededError extends Error {
+  constructor() {
+    super('BirthdayCardAssetUploadRateLimitExceeded');
+    this.name = 'BirthdayCardAssetUploadRateLimitExceededError';
+  }
+}
+
 export interface BirthdayCardAssetMetadata {
   id: string;
   guildId: string;
@@ -125,13 +132,30 @@ export async function createBirthdayCardAsset(
     sha256: string;
     createdBy: string;
     maxAssets: number;
+    uploadRateLimit: number;
+    uploadRateWindowStart: Date;
   },
 ): Promise<BirthdayCardAssetMetadata> {
   return prisma.$transaction(async (tx) => {
+    // A Guild-wide transaction lock intentionally serializes all Birthday Card uploads.
+    // This is stronger than an actor-only lock and makes both the 24-asset cap and the
+    // per-user upload rate limit atomic with the asset insert and its audit event.
     const lockKey = `birthday-card-assets:${input.guildId}`;
     await tx.$executeRaw`
       SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))
     `;
+
+    const recentUploads = await tx.auditLog.count({
+      where: {
+        guildId: input.guildId,
+        actorId: input.createdBy,
+        event: 'birthday_card.asset.created',
+        createdAt: { gte: input.uploadRateWindowStart },
+      },
+    });
+    if (recentUploads >= input.uploadRateLimit) {
+      throw new BirthdayCardAssetUploadRateLimitExceededError();
+    }
 
     const countRows = await tx.$queryRaw<Array<{ count: number }>>`
       SELECT COUNT(*)::INTEGER AS "count"
@@ -190,6 +214,26 @@ export async function createBirthdayCardAsset(
     `;
     const record = rows[0];
     if (!record) throw new Error('BirthdayCardAssetCreateFailed');
+
+    await tx.auditLog.create({
+      data: {
+        guildId: input.guildId,
+        actorId: input.createdBy,
+        event: 'birthday_card.asset.created',
+        targetType: 'birthday_card_asset',
+        targetId: record.id,
+        metadata: {
+          name: record.name,
+          contentType: record.contentType,
+          sizeBytes: record.sizeBytes,
+          width: record.width,
+          height: record.height,
+          sha256: record.sha256,
+          isPreset: record.isPreset,
+        },
+      },
+    });
+
     return record;
   });
 }
