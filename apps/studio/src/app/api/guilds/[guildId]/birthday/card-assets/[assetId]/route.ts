@@ -1,9 +1,4 @@
-import {
-  birthdayCardAssetGuildLockKey,
-  getBirthdayCardAssetMetadata,
-  renameBirthdayCardAsset,
-  setBirthdayCardAssetPreset,
-} from '@herta/db';
+import { birthdayCardAssetGuildLockKey, getBirthdayCardAssetMetadata } from '@herta/db';
 import { normalizeBirthdayCardAssetId, normalizeBirthdayCardConfig } from '@herta/shared';
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
@@ -16,6 +11,20 @@ import { studioBirthdayResource } from '@/lib/studio-policy-resources';
 export const dynamic = 'force-dynamic';
 
 const MAX_PATCH_BODY_BYTES = 8 * 1024;
+
+type BirthdayCardAssetPatchRecord = {
+  id: string;
+  guildId: string;
+  name: string;
+  contentType: string;
+  sizeBytes: number;
+  width: number;
+  height: number;
+  sha256: string;
+  isPreset: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 export async function PATCH(
   request: Request,
@@ -81,55 +90,114 @@ export async function PATCH(
     studioBirthdayResource(guildId, 'card-assets'),
   );
 
-  const before = await getBirthdayCardAssetMetadata(prisma, guildId, assetId);
-  if (!before) return NextResponse.json({ error: '画像が見つかりません' }, { status: 404 });
+  const asset = await prisma.$transaction(async (tx) => {
+    // PATCH shares the Guild lock with DELETE and preset changes. Mutations and their audit
+    // events commit as one unit so partial or unaudited metadata changes cannot escape.
+    const lockKey = birthdayCardAssetGuildLockKey(guildId);
+    await tx.$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))
+    `;
 
-  let asset = before;
-  if (name && name !== asset.name) {
-    const renamed = await renameBirthdayCardAsset(prisma, {
-      guildId,
-      assetId,
-      name,
-      updatedBy: session.user.id,
-    });
-    if (!renamed) return NextResponse.json({ error: '画像が見つかりません' }, { status: 404 });
-    asset = renamed;
-    await prisma.auditLog.create({
-      data: {
-        guildId,
-        actorId: session.user.id,
-        event: 'birthday_card.asset.renamed',
-        targetType: 'birthday_card_asset',
-        targetId: assetId,
-        changes: { name: { before: before.name, after: asset.name } },
+    const before = await tx.birthdayCardAsset.findFirst({
+      where: { guildId, id: assetId },
+      select: {
+        id: true,
+        guildId: true,
+        name: true,
+        contentType: true,
+        sizeBytes: true,
+        width: true,
+        height: true,
+        sha256: true,
+        isPreset: true,
+        createdAt: true,
+        updatedAt: true,
       },
     });
-  }
+    if (!before) return null;
 
-  if (typeof input.isPreset === 'boolean' && input.isPreset !== asset.isPreset) {
-    const previousPreset = asset.isPreset;
-    const updated = await setBirthdayCardAssetPreset(prisma, {
-      guildId,
-      assetId,
-      isPreset: input.isPreset,
-      updatedBy: session.user.id,
-    });
-    if (!updated) return NextResponse.json({ error: '画像が見つかりません' }, { status: 404 });
-    asset = updated;
-    await prisma.auditLog.create({
-      data: {
-        guildId,
-        actorId: session.user.id,
-        event: input.isPreset
-          ? 'birthday_card.asset.preset_added'
-          : 'birthday_card.asset.preset_removed',
-        targetType: 'birthday_card_asset',
-        targetId: assetId,
-        changes: { isPreset: { before: previousPreset, after: input.isPreset } },
-      },
-    });
-  }
+    let current: BirthdayCardAssetPatchRecord = before;
+    if (name && name !== current.name) {
+      const rows = await tx.$queryRaw<BirthdayCardAssetPatchRecord[]>`
+        UPDATE "birthday_card_assets"
+        SET
+          "name" = ${name},
+          "updated_by" = ${session.user.id},
+          "updated_at" = CURRENT_TIMESTAMP
+        WHERE "guild_id" = ${guildId} AND "id" = ${assetId}
+        RETURNING
+          "id",
+          "guild_id" AS "guildId",
+          "name",
+          "content_type" AS "contentType",
+          "size_bytes" AS "sizeBytes",
+          "width",
+          "height",
+          "sha256",
+          "is_preset" AS "isPreset",
+          "created_at" AS "createdAt",
+          "updated_at" AS "updatedAt"
+      `;
+      const renamed = rows[0];
+      if (!renamed) return null;
+      current = renamed;
 
+      await tx.auditLog.create({
+        data: {
+          guildId,
+          actorId: session.user.id,
+          event: 'birthday_card.asset.renamed',
+          targetType: 'birthday_card_asset',
+          targetId: assetId,
+          changes: { name: { before: before.name, after: current.name } },
+        },
+      });
+    }
+
+    if (typeof input.isPreset === 'boolean' && input.isPreset !== current.isPreset) {
+      const previousPreset = current.isPreset;
+      const rows = await tx.$queryRaw<BirthdayCardAssetPatchRecord[]>`
+        UPDATE "birthday_card_assets"
+        SET
+          "is_preset" = ${input.isPreset},
+          "updated_by" = ${session.user.id},
+          "updated_at" = CURRENT_TIMESTAMP
+        WHERE "guild_id" = ${guildId} AND "id" = ${assetId}
+        RETURNING
+          "id",
+          "guild_id" AS "guildId",
+          "name",
+          "content_type" AS "contentType",
+          "size_bytes" AS "sizeBytes",
+          "width",
+          "height",
+          "sha256",
+          "is_preset" AS "isPreset",
+          "created_at" AS "createdAt",
+          "updated_at" AS "updatedAt"
+      `;
+      const updated = rows[0];
+      if (!updated) return null;
+      current = updated;
+
+      await tx.auditLog.create({
+        data: {
+          guildId,
+          actorId: session.user.id,
+          event: input.isPreset
+            ? 'birthday_card.asset.preset_added'
+            : 'birthday_card.asset.preset_removed',
+          targetType: 'birthday_card_asset',
+          targetId: assetId,
+          changes: { isPreset: { before: previousPreset, after: input.isPreset } },
+        },
+      });
+    }
+
+    return current;
+  });
+
+  if (!asset) return NextResponse.json({ error: '画像が見つかりません' }, { status: 404 });
   if (!assetReadAccess.ok) return NextResponse.json({ updated: true });
   return NextResponse.json({ asset: serializeAsset(asset) });
 }
