@@ -74,6 +74,7 @@ export default async function BirthdayRegistrationPage({
           displayName={access.displayName}
           initialRegistration={registration}
           currentYear={new Date().getUTCFullYear()}
+          allowRegistration={access.allowSelfRegistration}
         />
       </div>
     </main>
