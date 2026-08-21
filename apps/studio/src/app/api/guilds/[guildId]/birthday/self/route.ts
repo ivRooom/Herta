@@ -38,6 +38,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
 
   const context = await authorizeSelfRegistration(params);
   if (!context.ok) return context.response;
+  if (!context.allowSelfRegistration) {
+    return json(
+      { error: '本人による誕生日登録は管理者設定で無効になっています' },
+      403,
+    );
+  }
 
   let raw: unknown;
   try {
@@ -139,7 +145,13 @@ async function authorizeSelfRegistration(params: Promise<{ guildId: string }>) {
     };
   }
 
-  return { ok: true as const, guildId, userId: session.user.id, displayName: access.displayName };
+  return {
+    ok: true as const,
+    guildId,
+    userId: session.user.id,
+    displayName: access.displayName,
+    allowSelfRegistration: access.allowSelfRegistration,
+  };
 }
 
 function json(body: unknown, status = 200) {
