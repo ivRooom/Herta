@@ -1,5 +1,6 @@
 import {
   BirthdayCardAssetLimitExceededError,
+  BirthdayCardAssetUploadRateLimitExceededError,
   createBirthdayCardAsset,
   listBirthdayCardAssetMetadata,
   type BirthdayCardAssetMetadata,
@@ -59,21 +60,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
     studioBirthdayResource(guildId, 'card-assets'),
   );
   if (!access.ok) return access.response;
-
-  const recentUploads = await prisma.auditLog.count({
-    where: {
-      guildId,
-      actorId: session.user.id,
-      event: 'birthday_card.asset.created',
-      createdAt: { gte: new Date(Date.now() - UPLOAD_RATE_WINDOW_MS) },
-    },
-  });
-  if (recentUploads >= UPLOAD_RATE_LIMIT) {
-    return NextResponse.json(
-      { error: '画像の登録回数が上限に達しました。しばらく待って再実行してください' },
-      { status: 429, headers: { 'Retry-After': String(UPLOAD_RATE_WINDOW_MS / 1000) } },
-    );
-  }
 
   let bytes: Uint8Array<ArrayBuffer>;
   try {
@@ -137,8 +123,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
       sha256,
       createdBy: session.user.id,
       maxAssets: BIRTHDAY_CARD_ASSET_MAX_COUNT,
+      uploadRateLimit: UPLOAD_RATE_LIMIT,
+      uploadRateWindowStart: new Date(Date.now() - UPLOAD_RATE_WINDOW_MS),
     });
   } catch (error) {
+    if (error instanceof BirthdayCardAssetUploadRateLimitExceededError) {
+      return NextResponse.json(
+        { error: '画像の登録回数が上限に達しました。しばらく待って再実行してください' },
+        { status: 429, headers: { 'Retry-After': String(UPLOAD_RATE_WINDOW_MS / 1000) } },
+      );
+    }
     if (error instanceof BirthdayCardAssetLimitExceededError) {
       return NextResponse.json(
         {
@@ -149,25 +143,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
     }
     throw error;
   }
-
-  await prisma.auditLog.create({
-    data: {
-      guildId,
-      actorId: session.user.id,
-      event: 'birthday_card.asset.created',
-      targetType: 'birthday_card_asset',
-      targetId: asset.id,
-      metadata: {
-        name: asset.name,
-        contentType: asset.contentType,
-        sizeBytes: asset.sizeBytes,
-        width: asset.width,
-        height: asset.height,
-        sha256: asset.sha256,
-        isPreset: asset.isPreset,
-      },
-    },
-  });
 
   return NextResponse.json({ asset: serializeAsset(asset) }, { status: 201 });
 }
