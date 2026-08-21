@@ -6,7 +6,6 @@ import {
 } from './birthday-self-registration-core.ts';
 
 const USER_ID = '111111111111111111';
-const MEMBER_ROLE_ID = '222222222222222222';
 
 test('Birthday自己登録payloadを正規化する', () => {
   assert.deepEqual(
@@ -43,53 +42,21 @@ test('非空の不正birthYearを未入力として扱わず拒否する', () =>
   );
 });
 
-test('現在GuildのMemberロール保有ユーザーだけを許可する', () => {
-  const roles = [
-    { id: MEMBER_ROLE_ID, name: 'Member' },
-    { id: '333333333333333333', name: 'Moderator' },
-  ];
+test('現在Guildに所属する非Botユーザーを初回登録でも許可する', () => {
   assert.equal(
-    birthdaySelfRegistrationEligibility(
-      USER_ID,
-      { id: USER_ID, bot: false, roleIds: [MEMBER_ROLE_ID] },
-      roles,
-    ),
+    birthdaySelfRegistrationEligibility(USER_ID, { id: USER_ID, bot: false }),
     'eligible',
   );
-  assert.equal(birthdaySelfRegistrationEligibility(USER_ID, null, roles), 'not-member');
+  assert.equal(birthdaySelfRegistrationEligibility(USER_ID, null), 'not-member');
   assert.equal(
-    birthdaySelfRegistrationEligibility(
-      USER_ID,
-      { id: USER_ID, bot: true, roleIds: [MEMBER_ROLE_ID] },
-      roles,
-    ),
+    birthdaySelfRegistrationEligibility(USER_ID, { id: USER_ID, bot: true }),
     'bot',
   );
   assert.equal(
-    birthdaySelfRegistrationEligibility(
-      USER_ID,
-      { id: USER_ID, bot: false, roleIds: ['333333333333333333'] },
-      roles,
-    ),
-    'member-role-missing',
-  );
-});
-
-test('Memberロール名は完全一致し、ロール定義がない場合もfail closedする', () => {
-  assert.equal(
-    birthdaySelfRegistrationEligibility(
-      USER_ID,
-      { id: USER_ID, bot: false, roleIds: [MEMBER_ROLE_ID] },
-      [{ id: MEMBER_ROLE_ID, name: 'member' }],
-    ),
-    'member-role-missing',
-  );
-  assert.equal(
-    birthdaySelfRegistrationEligibility(
-      USER_ID,
-      { id: USER_ID, bot: false, roleIds: [MEMBER_ROLE_ID] },
-      [],
-    ),
-    'member-role-missing',
+    birthdaySelfRegistrationEligibility(USER_ID, {
+      id: '222222222222222222',
+      bot: false,
+    }),
+    'not-member',
   );
 });
