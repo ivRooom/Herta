@@ -25,6 +25,7 @@ export const STUDIO_POLICY_ACTIONS = [
 
 export type StudioPolicyAction = (typeof STUDIO_POLICY_ACTIONS)[number];
 export type StudioPolicyEffect = 'Allow' | 'Deny';
+export type StudioPolicyDecision = 'Allow' | 'Deny' | 'ImplicitDeny';
 
 const policyStatementSchema = z.object({
   Sid: z.string().trim().min(1).max(64).optional(),
@@ -141,18 +142,35 @@ export function evaluateStudioPolicyDocuments(
   action: StudioPolicyAction,
   resource: string,
 ): boolean {
+  return evaluateStudioPolicyDocumentsDecision(policies, action, resource) === 'Allow';
+}
+
+export function evaluateStudioPolicyDocumentsDecision(
+  policies: readonly StudioAccessPolicy[],
+  action: StudioPolicyAction,
+  resource: string,
+): StudioPolicyDecision {
   let allowed = false;
 
   for (const policy of policies) {
     for (const statement of policy.Statement) {
       if (!matchesAny(statement.Action, action)) continue;
       if (!matchesAny(statement.Resource, resource)) continue;
-      if (statement.Effect === 'Deny') return false;
+      if (statement.Effect === 'Deny') return 'Deny';
       allowed = true;
     }
   }
 
-  return allowed;
+  return allowed ? 'Allow' : 'ImplicitDeny';
+}
+
+export function mergeStudioPolicyDecisions(
+  exact: StudioPolicyDecision,
+  inherited: StudioPolicyDecision | null,
+): StudioPolicyDecision {
+  if (exact === 'Deny' || inherited === 'Deny') return 'Deny';
+  if (exact === 'Allow' || inherited === 'Allow') return 'Allow';
+  return 'ImplicitDeny';
 }
 
 export function isStudioRootRole(roleIds: readonly string[]): boolean {
