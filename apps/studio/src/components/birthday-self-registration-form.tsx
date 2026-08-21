@@ -11,11 +11,13 @@ export function BirthdaySelfRegistrationForm({
   displayName,
   initialRegistration,
   currentYear,
+  registrationEnabled,
 }: {
   guildId: string;
   displayName: string;
   initialRegistration: BirthdayRegistration | null;
   currentYear: number;
+  registrationEnabled: boolean;
 }) {
   const birthYearHelpId = useId();
   const [month, setMonth] = useState(String(initialRegistration?.month ?? ''));
@@ -24,12 +26,22 @@ export function BirthdaySelfRegistrationForm({
   const [hasRegistration, setHasRegistration] = useState(initialRegistration !== null);
   const [pending, setPending] = useState(false);
   const [status, setStatus] = useState(
-    initialRegistration ? '登録済みの誕生日を表示しています。' : '誕生日はまだ登録されていません。',
+    registrationEnabled
+      ? initialRegistration
+        ? '登録済みの誕生日を表示しています。'
+        : '誕生日はまだ登録されていません。'
+      : initialRegistration
+        ? '本人による登録・更新は現在無効です。登録済みデータの削除は利用できます。'
+        : '本人による誕生日登録は現在無効です。',
   );
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending) return;
+    if (!registrationEnabled) {
+      setStatus('このGuildではメンバー本人による誕生日登録・更新が無効になっています。');
+      return;
+    }
     setPending(true);
     setStatus('保存中…');
     try {
@@ -118,7 +130,7 @@ export function BirthdaySelfRegistrationForm({
       </div>
 
       <form onSubmit={submit} className="mt-6 space-y-5">
-        <fieldset disabled={pending} className="grid gap-4 sm:grid-cols-2">
+        <fieldset disabled={pending || !registrationEnabled} className="grid gap-4 sm:grid-cols-2">
           <legend className="sr-only">誕生日</legend>
           <label className="space-y-1.5 text-sm font-medium">
             月
@@ -171,11 +183,11 @@ export function BirthdaySelfRegistrationForm({
         <div className="flex flex-col gap-3 sm:flex-row">
           <button
             type="submit"
-            disabled={pending}
+            disabled={pending || !registrationEnabled}
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Save className="h-4 w-4" aria-hidden="true" />
-            {pending ? '処理中…' : '誕生日を保存'}
+            {!registrationEnabled ? '本人登録は無効' : pending ? '処理中…' : '誕生日を保存'}
           </button>
           {hasRegistration ? (
             <button
