@@ -133,7 +133,7 @@ async function authorizeSelfRegistration(params: Promise<{ guildId: string }>) {
     return {
       ok: false as const,
       response: json(
-        { error: 'この誕生日登録URLは現在GuildのMemberロール保有者だけが利用できます' },
+        { error: 'この誕生日登録URLは対象Guildに現在参加しているユーザーだけが利用できます' },
         403,
       ),
     };

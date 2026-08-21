@@ -31,9 +31,9 @@ export function BirthdayRegistrationShare({ guildId }: { guildId: string }) {
           <Link2 className="h-4 w-4" aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
-          <h2 className="font-semibold">Member向け誕生日登録URL</h2>
+          <h2 className="font-semibold">メンバー向け誕生日登録URL</h2>
           <p className="mt-1 text-sm leading-6 text-muted">
-            このURLをDiscordで共有すると、Memberロールを持つメンバーが自分の誕生日を直接登録できます。ログイン後もGuild所属とMemberロールをserver-sideで確認します。
+            このURLをDiscordで共有すると、対象サーバーに参加中の非Botメンバーが自分の誕生日を直接登録できます。まだHertaに誕生日データがないユーザーも初回登録できます。ログイン後もGuild所属をserver-sideで確認します。
           </p>
         </div>
       </div>
