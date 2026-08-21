@@ -1,4 +1,8 @@
 import type { PrismaClient } from '@prisma/client';
+import { getBirthdayCardAsset } from './birthday-card-assets.js';
+
+const BIRTHDAY_CARD_ASSET_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export interface BirthdayCardBackgroundMetadata {
   contentType: string;
@@ -38,6 +42,27 @@ export async function getBirthdayCardBackground(
   prisma: PrismaClient,
   guildId: string,
 ): Promise<BirthdayCardBackgroundRecord | null> {
+  const plugin = await prisma.guildPlugin.findUnique({
+    where: { guildId_pluginId: { guildId, pluginId: 'birthday-role' } },
+    select: { config: true },
+  });
+  const assetSelection = resolveBirthdayCardAssetSelection(plugin?.config);
+  if (assetSelection !== undefined) {
+    if (!assetSelection) return null;
+    const asset = await getBirthdayCardAsset(prisma, guildId, assetSelection);
+    if (!asset) return null;
+    return {
+      contentType: asset.contentType,
+      fileName: asset.name,
+      content: asset.content,
+      sizeBytes: asset.sizeBytes,
+      width: asset.width,
+      height: asset.height,
+      sha256: asset.sha256,
+      updatedAt: asset.updatedAt,
+    };
+  }
+
   const rows = await prisma.$queryRaw<BirthdayCardBackgroundRecord[]>`
     SELECT
       "content_type" AS "contentType",
@@ -53,6 +78,19 @@ export async function getBirthdayCardBackground(
     LIMIT 1
   `;
   return rows[0] ?? null;
+}
+
+/**
+ * undefined: Asset Libraryを選択していないため旧1枚背景を利用する。
+ * null: Asset Libraryを選択しているがIDが不正なため安全に未登録扱いにする。
+ * string: Guild scopeで取得するAsset ID。
+ */
+export function resolveBirthdayCardAssetSelection(value: unknown): string | null | undefined {
+  if (!isRecord(value) || value['birthdayCardBackgroundSource'] !== 'asset') return undefined;
+  const assetId = value['birthdayCardAssetId'];
+  if (typeof assetId !== 'string') return null;
+  const normalized = assetId.trim().toLowerCase();
+  return BIRTHDAY_CARD_ASSET_ID_PATTERN.test(normalized) ? normalized : null;
 }
 
 export async function upsertBirthdayCardBackground(
@@ -127,4 +165,8 @@ export async function deleteBirthdayCardBackground(
     RETURNING "guild_id" AS "guildId"
   `;
   return rows.length > 0;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
