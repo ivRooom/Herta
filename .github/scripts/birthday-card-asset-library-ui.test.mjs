@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
+const page = readFileSync(
+  'apps/studio/src/app/dashboard/guilds/[guildId]/birthday/page.tsx',
+  'utf8',
+);
 const editor = readFileSync('apps/studio/src/components/birthday-card-editor.tsx', 'utf8');
 const library = readFileSync('apps/studio/src/components/birthday-card-asset-library.tsx', 'utf8');
 
@@ -23,4 +27,16 @@ test('Upload and Guild Preset promotion remain separate Birthday Card actions', 
     /saved\.birthdayCardBackgroundSource === 'asset' && asset\.id === saved\.birthdayCardAssetId/su,
   );
   assert.match(library, /protectedFromDelete/u);
+});
+
+test('Asset Library media permissions render independently from config-field read access', () => {
+  assert.match(page, /const hasReadableCardConfig = configAccess\.readableFieldKeys\.length > 0;/u);
+  assert.match(
+    page,
+    /const canAccessCardMedia =\s*canReadCardBackground \|\|\s*canWriteCardBackground \|\|\s*canReadAssets \|\|\s*canWriteAssets \|\|\s*canManagePresets;/su,
+  );
+  assert.match(page, /hasReadableCardConfig \|\| canAccessCardMedia \? \(/u);
+  assert.match(page, /canReadAssets=\{canReadAssets\}/u);
+  assert.match(page, /canWriteAssets=\{canWriteAssets\}/u);
+  assert.match(page, /canManagePresets=\{canManagePresets\}/u);
 });
