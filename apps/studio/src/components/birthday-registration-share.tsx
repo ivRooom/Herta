@@ -33,7 +33,7 @@ export function BirthdayRegistrationShare({ guildId }: { guildId: string }) {
         <div className="min-w-0 flex-1">
           <h2 className="font-semibold">Guildメンバー向け誕生日登録URL</h2>
           <p className="mt-1 text-sm leading-6 text-muted">
-            このURLをDiscordで共有すると、対象Guildに参加しているメンバーが自分の誕生日を直接登録できます。誕生日データがまだない初回ユーザーも利用でき、保存時にGuild所属をserver-sideで再確認します。
+            本人登録が有効な場合、このURLから対象Guildのメンバーが自分の誕生日を直接登録できます。誕生日データがまだない初回ユーザーも利用でき、保存時にGuild所属と本人登録設定をserver-sideで再確認します。
           </p>
         </div>
       </div>
