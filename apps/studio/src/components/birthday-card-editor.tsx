@@ -334,12 +334,10 @@ export function BirthdayCardEditor({
         );
       }
       setAssets((current) =>
-        current
-          .map((item) => (item.id === asset.id ? payload.asset! : item))
-          .toSorted(
-            (a, b) =>
-              Number(b.isPreset) - Number(a.isPreset) || b.updatedAt.localeCompare(a.updatedAt),
-          ),
+        [...current.map((item) => (item.id === asset.id ? payload.asset! : item))].sort(
+          (a, b) =>
+            Number(b.isPreset) - Number(a.isPreset) || b.updatedAt.localeCompare(a.updatedAt),
+        ),
       );
       setAssetStatus(`${payload.asset.name}: ${successMessage}`);
     } catch (error) {
