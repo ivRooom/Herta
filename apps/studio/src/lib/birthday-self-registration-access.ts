@@ -41,7 +41,7 @@ export async function resolveBirthdaySelfRegistrationAccess(
     return {
       ok: true,
       displayName: member?.displayName ?? userId,
-      registrationEnabled: birthdaySelfRegistrationEnabled(plugin.config),
+      registrationEnabled: birthdaySelfRegistrationEnabled(plugin),
     };
   } catch (error) {
     console.error('Birthday self registration access check failed', {
