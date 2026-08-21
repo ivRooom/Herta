@@ -1,5 +1,4 @@
 import { searchGuildMembers } from './bot-guild-members.ts';
-import { getGuildConfigurationOptions } from './bot-guild-options.ts';
 import {
   birthdaySelfRegistrationEligibility,
   type BirthdaySelfRegistrationEligibility,
@@ -19,16 +18,13 @@ export async function resolveBirthdaySelfRegistrationAccess(
     return { ok: false, reason: 'not-member' };
   }
 
-  const [members, options] = await Promise.all([
-    searchGuildMembers(guildId, userId, 1),
-    getGuildConfigurationOptions(guildId),
-  ]);
-  if (members === null || options === null) {
+  const members = await searchGuildMembers(guildId, userId, 1);
+  if (members === null) {
     return { ok: false, reason: 'unavailable' };
   }
 
   const member = members.find((candidate) => candidate.id === userId) ?? null;
-  const eligibility = birthdaySelfRegistrationEligibility(userId, member, options.roles);
+  const eligibility = birthdaySelfRegistrationEligibility(userId, member);
   if (eligibility !== 'eligible') return { ok: false, reason: eligibility };
 
   return { ok: true, displayName: member?.displayName ?? userId };
