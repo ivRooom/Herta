@@ -20,4 +20,6 @@ test('Birthday Card Asset Library migration keeps Guild scope and image constrai
   assert.match(migration, /"width"::BIGINT \* "height"::BIGINT <= 16000000/u);
   assert.match(migration, /"sha256" ~ '\^\[0-9a-f\]\{64\}\$'/u);
   assert.match(migration, /"is_preset" BOOLEAN NOT NULL DEFAULT FALSE/u);
+  assert.match(migration, /birthday_card_assets_guild_preset_updated_idx/u);
+  assert.match(migration, /birthday_card_assets_guild_sha256_idx/u);
 });
