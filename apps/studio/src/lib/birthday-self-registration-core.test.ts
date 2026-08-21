@@ -47,7 +47,10 @@ test('現在Guildに所属する非Botユーザーを初回登録でも許可す
     birthdaySelfRegistrationEligibility(USER_ID, { id: USER_ID, bot: false }),
     'eligible',
   );
-  assert.equal(birthdaySelfRegistrationEligibility(USER_ID, null), 'not-member');
+  assert.equal(
+    birthdaySelfRegistrationEligibility(USER_ID, null),
+    'not-member',
+  );
   assert.equal(
     birthdaySelfRegistrationEligibility(USER_ID, { id: USER_ID, bot: true }),
     'bot',
