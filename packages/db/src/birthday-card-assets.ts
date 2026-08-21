@@ -1,6 +1,13 @@
 import type { PrismaClient } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 
+export class BirthdayCardAssetLimitExceededError extends Error {
+  constructor() {
+    super('BirthdayCardAssetLimitExceeded');
+    this.name = 'BirthdayCardAssetLimitExceededError';
+  }
+}
+
 export interface BirthdayCardAssetMetadata {
   id: string;
   guildId: string;
@@ -117,57 +124,74 @@ export async function createBirthdayCardAsset(
     height: number;
     sha256: string;
     createdBy: string;
+    maxAssets: number;
   },
 ): Promise<BirthdayCardAssetMetadata> {
-  const id = randomUUID();
-  const rows = await prisma.$queryRaw<BirthdayCardAssetMetadata[]>`
-    INSERT INTO "birthday_card_assets" (
-      "id",
-      "guild_id",
-      "name",
-      "content_type",
-      "content",
-      "size_bytes",
-      "width",
-      "height",
-      "sha256",
-      "is_preset",
-      "created_by",
-      "updated_by",
-      "created_at",
-      "updated_at"
-    ) VALUES (
-      ${id},
-      ${input.guildId},
-      ${input.name},
-      ${input.contentType},
-      ${input.content},
-      ${input.sizeBytes},
-      ${input.width},
-      ${input.height},
-      ${input.sha256},
-      FALSE,
-      ${input.createdBy},
-      ${input.createdBy},
-      CURRENT_TIMESTAMP,
-      CURRENT_TIMESTAMP
-    )
-    RETURNING
-      "id",
-      "guild_id" AS "guildId",
-      "name",
-      "content_type" AS "contentType",
-      "size_bytes" AS "sizeBytes",
-      "width",
-      "height",
-      "sha256",
-      "is_preset" AS "isPreset",
-      "created_at" AS "createdAt",
-      "updated_at" AS "updatedAt"
-  `;
-  const record = rows[0];
-  if (!record) throw new Error('BirthdayCardAssetCreateFailed');
-  return record;
+  return prisma.$transaction(async (tx) => {
+    const lockKey = `birthday-card-assets:${input.guildId}`;
+    await tx.$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))
+    `;
+
+    const countRows = await tx.$queryRaw<Array<{ count: number }>>`
+      SELECT COUNT(*)::INTEGER AS "count"
+      FROM "birthday_card_assets"
+      WHERE "guild_id" = ${input.guildId}
+    `;
+    if ((countRows[0]?.count ?? 0) >= input.maxAssets) {
+      throw new BirthdayCardAssetLimitExceededError();
+    }
+
+    const id = randomUUID();
+    const rows = await tx.$queryRaw<BirthdayCardAssetMetadata[]>`
+      INSERT INTO "birthday_card_assets" (
+        "id",
+        "guild_id",
+        "name",
+        "content_type",
+        "content",
+        "size_bytes",
+        "width",
+        "height",
+        "sha256",
+        "is_preset",
+        "created_by",
+        "updated_by",
+        "created_at",
+        "updated_at"
+      ) VALUES (
+        ${id},
+        ${input.guildId},
+        ${input.name},
+        ${input.contentType},
+        ${input.content},
+        ${input.sizeBytes},
+        ${input.width},
+        ${input.height},
+        ${input.sha256},
+        FALSE,
+        ${input.createdBy},
+        ${input.createdBy},
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+      )
+      RETURNING
+        "id",
+        "guild_id" AS "guildId",
+        "name",
+        "content_type" AS "contentType",
+        "size_bytes" AS "sizeBytes",
+        "width",
+        "height",
+        "sha256",
+        "is_preset" AS "isPreset",
+        "created_at" AS "createdAt",
+        "updated_at" AS "updatedAt"
+    `;
+    const record = rows[0];
+    if (!record) throw new Error('BirthdayCardAssetCreateFailed');
+    return record;
+  });
 }
 
 export async function renameBirthdayCardAsset(
