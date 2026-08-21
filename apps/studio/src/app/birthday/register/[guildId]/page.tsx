@@ -37,8 +37,8 @@ export default async function BirthdayRegistrationPage({
       />
     ) : (
       <AccessState
-        title="Memberロールが必要です"
-        detail="この登録ページは対象Discordサーバーに参加し、Memberロールが付与されているアカウントだけ利用できます。"
+        title="Discordサーバーへの参加が必要です"
+        detail="この登録ページは対象Discordサーバーに現在参加しているユーザーだけ利用できます。"
       />
     );
   }
@@ -57,15 +57,15 @@ export default async function BirthdayRegistrationPage({
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
                 Herta Birthday
               </p>
-              <h1 className="mt-1 text-lg font-semibold">Member専用 誕生日登録</h1>
+              <h1 className="mt-1 text-lg font-semibold">Guildメンバー向け 誕生日登録</h1>
               <p className="mt-2 text-sm leading-6 text-muted">
-                Discordでログインした本人の誕生日だけを登録できます。URLを共有されても、対象GuildのMemberロールを持たないユーザーは登録できません。
+                Discordでログインした本人の誕生日だけを登録できます。誕生日データがまだない初回ユーザーも、このURLからそのまま登録できます。
               </p>
             </div>
           </div>
           <div className="mt-4 flex items-start gap-2 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2.5 text-xs leading-5 text-emerald-300">
             <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-            MemberロールとGuild所属は保存時にもserver-sideで再確認します。
+            対象Guildへの現在の所属と本人のDiscord IDは保存時にもserver-sideで再確認します。
           </div>
         </section>
 
