@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   birthdaySelfRegistrationEligibility,
+  isBirthdaySelfRegistrationAllowed,
   parseBirthdaySelfRegistrationRequest,
 } from './birthday-self-registration-core.ts';
 
@@ -53,4 +54,11 @@ test('現在Guildに所属する非Botユーザーを初回登録でも許可す
     birthdaySelfRegistrationEligibility(USER_ID, { id: '222222222222222222', bot: false }),
     'not-member',
   );
+});
+
+test('本人登録設定は既定ONで、明示的なOFFを尊重する', () => {
+  assert.equal(isBirthdaySelfRegistrationAllowed({}), true);
+  assert.equal(isBirthdaySelfRegistrationAllowed({ allowSelfRegistration: true }), true);
+  assert.equal(isBirthdaySelfRegistrationAllowed({ allowSelfRegistration: false }), false);
+  assert.equal(isBirthdaySelfRegistrationAllowed({ allowSelfRegistration: 'true' }), false);
 });
