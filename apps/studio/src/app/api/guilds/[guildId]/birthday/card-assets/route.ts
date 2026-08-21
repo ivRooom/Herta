@@ -2,6 +2,7 @@ import {
   BirthdayCardAssetLimitExceededError,
   createBirthdayCardAsset,
   listBirthdayCardAssetMetadata,
+  type BirthdayCardAssetMetadata,
 } from '@herta/db';
 import {
   BIRTHDAY_CARD_ASSET_MAX_COUNT,
@@ -123,7 +124,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
 
   const name = safeAssetName(file.name, image.contentType);
   const sha256 = createHash('sha256').update(content).digest('hex');
-  let asset;
+  let asset: BirthdayCardAssetMetadata;
   try {
     asset = await createBirthdayCardAsset(prisma, {
       guildId,
