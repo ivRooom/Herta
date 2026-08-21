@@ -22,12 +22,18 @@ export const BIRTHDAY_CARD_PRESETS = [
   },
 ] as const;
 
+export const BIRTHDAY_CARD_ASSET_MAX_COUNT = 24;
+export const BIRTHDAY_CARD_ASSET_ID_PATTERN =
+  '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$';
+const BIRTHDAY_CARD_ASSET_ID_REGEX = new RegExp(BIRTHDAY_CARD_ASSET_ID_PATTERN, 'i');
+
 export type BirthdayCardPresetId = (typeof BIRTHDAY_CARD_PRESETS)[number]['id'];
-export type BirthdayCardBackgroundSource = 'preset' | 'custom';
+export type BirthdayCardBackgroundSource = 'preset' | 'custom' | 'asset';
 
 export const BIRTHDAY_CARD_CONFIG_FIELD_KEYS = [
   'birthdayCardEnabled',
   'birthdayCardBackgroundSource',
+  'birthdayCardAssetId',
   'birthdayCardPreset',
   'birthdayCardShowName',
   'birthdayCardShowAvatar',
@@ -52,6 +58,7 @@ export type BirthdayCardConfigFieldKey = (typeof BIRTHDAY_CARD_CONFIG_FIELD_KEYS
 export interface BirthdayCardConfig {
   birthdayCardEnabled: boolean;
   birthdayCardBackgroundSource: BirthdayCardBackgroundSource;
+  birthdayCardAssetId: string | null;
   birthdayCardPreset: BirthdayCardPresetId;
   birthdayCardShowName: boolean;
   birthdayCardShowAvatar: boolean;
@@ -74,6 +81,7 @@ export interface BirthdayCardConfig {
 export const DEFAULT_BIRTHDAY_CARD_CONFIG: BirthdayCardConfig = {
   birthdayCardEnabled: false,
   birthdayCardBackgroundSource: 'preset',
+  birthdayCardAssetId: null,
   birthdayCardPreset: 'herta-lavender-tea',
   birthdayCardShowName: true,
   birthdayCardShowAvatar: true,
@@ -98,8 +106,13 @@ export function normalizeBirthdayCardConfig(value: unknown): BirthdayCardConfig 
   const preset = BIRTHDAY_CARD_PRESETS.some((item) => item.id === source.birthdayCardPreset)
     ? (source.birthdayCardPreset as BirthdayCardPresetId)
     : DEFAULT_BIRTHDAY_CARD_CONFIG.birthdayCardPreset;
+  const assetId = normalizeBirthdayCardAssetId(source.birthdayCardAssetId);
   const backgroundSource: BirthdayCardBackgroundSource =
-    source.birthdayCardBackgroundSource === 'custom' ? 'custom' : 'preset';
+    source.birthdayCardBackgroundSource === 'custom'
+      ? 'custom'
+      : source.birthdayCardBackgroundSource === 'asset' && assetId
+        ? 'asset'
+        : 'preset';
 
   return {
     birthdayCardEnabled: booleanValue(
@@ -107,6 +120,7 @@ export function normalizeBirthdayCardConfig(value: unknown): BirthdayCardConfig 
       DEFAULT_BIRTHDAY_CARD_CONFIG.birthdayCardEnabled,
     ),
     birthdayCardBackgroundSource: backgroundSource,
+    birthdayCardAssetId: assetId,
     birthdayCardPreset: preset,
     birthdayCardShowName: booleanValue(
       source.birthdayCardShowName,
@@ -201,6 +215,12 @@ export function normalizeBirthdayCardConfig(value: unknown): BirthdayCardConfig 
 
 export function birthdayCardPreset(id: BirthdayCardPresetId) {
   return BIRTHDAY_CARD_PRESETS.find((preset) => preset.id === id) ?? BIRTHDAY_CARD_PRESETS[0];
+}
+
+export function normalizeBirthdayCardAssetId(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return BIRTHDAY_CARD_ASSET_ID_REGEX.test(normalized) ? normalized.toLowerCase() : null;
 }
 
 function booleanValue(value: unknown, fallback: boolean): boolean {
