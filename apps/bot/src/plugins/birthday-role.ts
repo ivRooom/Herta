@@ -1,4 +1,4 @@
-import { getBirthdayCardBackground, type PrismaClient } from '@herta/db';
+import { getBirthdayCardRuntimeBackground, type PrismaClient } from '@herta/db';
 import { birthdayRoleManifest } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
 import { normalizeBirthdayCardConfig, type BirthdayCardConfig } from '@herta/shared';
@@ -432,16 +432,18 @@ export async function runBirthdayRoleCycle(
           config.birthdayCardEnabled &&
           config.birthdayCardBackgroundSource === 'custom' &&
           todaysRegistrations.length > 0
-            ? await getBirthdayCardBackground(context.prisma, context.guildId).catch((error) => {
-                context.logger.warn(
-                  {
-                    guildId: context.guildId,
-                    errorName: error instanceof Error ? error.name : 'UnknownError',
-                  },
-                  'Birthday Cardカスタム背景を取得できないためプリセットへfallbackします',
-                );
-                return null;
-              })
+            ? await getBirthdayCardRuntimeBackground(context.prisma, context.guildId).catch(
+                (error) => {
+                  context.logger.warn(
+                    {
+                      guildId: context.guildId,
+                      errorName: error instanceof Error ? error.name : 'UnknownError',
+                    },
+                    'Birthday Cardカスタム背景を取得できないためプリセットへfallbackします',
+                  );
+                  return null;
+                },
+              )
             : null;
         if (
           config.birthdayCardEnabled &&
