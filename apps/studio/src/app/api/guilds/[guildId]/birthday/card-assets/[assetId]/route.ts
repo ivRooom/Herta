@@ -1,5 +1,5 @@
 import {
-  deleteBirthdayCardAsset,
+  birthdayCardAssetGuildLockKey,
   getBirthdayCardAssetMetadata,
   renameBirthdayCardAsset,
   setBirthdayCardAssetPreset,
@@ -168,39 +168,77 @@ export async function DELETE(
     if (!presetAccess.ok) return presetAccess.response;
   }
 
-  const plugin = await prisma.guildPlugin.findUnique({
-    where: { guildId_pluginId: { guildId, pluginId: 'birthday-role' } },
-    select: { config: true },
+  const deletion = await prisma.$transaction(async (tx) => {
+    const lockKey = birthdayCardAssetGuildLockKey(guildId);
+    await tx.$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))
+    `;
+
+    const currentAsset = await tx.birthdayCardAsset.findFirst({
+      where: { guildId, id: assetId },
+      select: {
+        id: true,
+        name: true,
+        contentType: true,
+        sizeBytes: true,
+        width: true,
+        height: true,
+        sha256: true,
+        isPreset: true,
+      },
+    });
+    if (!currentAsset) return { kind: 'not-found' as const };
+    if (currentAsset.isPreset && !asset.isPreset) return { kind: 'preset-changed' as const };
+
+    const plugin = await tx.guildPlugin.findUnique({
+      where: { guildId_pluginId: { guildId, pluginId: 'birthday-role' } },
+      select: { config: true },
+    });
+    const config = normalizeBirthdayCardConfig(plugin?.config);
+    if (config.birthdayCardBackgroundSource === 'asset' && config.birthdayCardAssetId === assetId) {
+      return { kind: 'active' as const };
+    }
+
+    const deleted = await tx.birthdayCardAsset.deleteMany({ where: { guildId, id: assetId } });
+    if (deleted.count === 0) return { kind: 'not-found' as const };
+
+    await tx.auditLog.create({
+      data: {
+        guildId,
+        actorId: session.user.id,
+        event: 'birthday_card.asset.deleted',
+        targetType: 'birthday_card_asset',
+        targetId: assetId,
+        metadata: {
+          name: currentAsset.name,
+          contentType: currentAsset.contentType,
+          sizeBytes: currentAsset.sizeBytes,
+          width: currentAsset.width,
+          height: currentAsset.height,
+          sha256: currentAsset.sha256,
+          wasPreset: currentAsset.isPreset,
+        },
+      },
+    });
+
+    return { kind: 'deleted' as const };
   });
-  const config = normalizeBirthdayCardConfig(plugin?.config);
-  if (config.birthdayCardBackgroundSource === 'asset' && config.birthdayCardAssetId === assetId) {
+
+  if (deletion.kind === 'not-found') {
+    return NextResponse.json({ error: '画像が見つかりません' }, { status: 404 });
+  }
+  if (deletion.kind === 'preset-changed') {
+    return NextResponse.json(
+      { error: '画像のPreset状態が変更されました。画面を更新して再実行してください' },
+      { status: 409 },
+    );
+  }
+  if (deletion.kind === 'active') {
     return NextResponse.json(
       { error: '現在使用中の画像は削除できません。別の背景へ切り替えて設定を保存してください' },
       { status: 409 },
     );
   }
-
-  const deleted = await deleteBirthdayCardAsset(prisma, guildId, assetId);
-  if (!deleted) return NextResponse.json({ error: '画像が見つかりません' }, { status: 404 });
-
-  await prisma.auditLog.create({
-    data: {
-      guildId,
-      actorId: session.user.id,
-      event: 'birthday_card.asset.deleted',
-      targetType: 'birthday_card_asset',
-      targetId: assetId,
-      metadata: {
-        name: asset.name,
-        contentType: asset.contentType,
-        sizeBytes: asset.sizeBytes,
-        width: asset.width,
-        height: asset.height,
-        sha256: asset.sha256,
-        wasPreset: asset.isPreset,
-      },
-    },
-  });
 
   return NextResponse.json({ deleted: true });
 }

@@ -103,7 +103,6 @@ export const birthdayRoleManifest: PluginManifest = {
         title: 'Birthday Card画像ライブラリAsset',
         description: 'Birthday Card Studioで登録したGuild専用画像のAsset IDです。',
         pattern: BIRTHDAY_CARD_ASSET_ID_PATTERN,
-        default: null,
       },
       birthdayCardPreset: {
         type: 'string',

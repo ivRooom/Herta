@@ -33,6 +33,10 @@ export interface BirthdayCardAssetRecord extends BirthdayCardAssetMetadata {
   content: Buffer;
 }
 
+export function birthdayCardAssetGuildLockKey(guildId: string): string {
+  return `birthday-card-assets:${guildId}`;
+}
+
 export async function countBirthdayCardAssets(
   prisma: PrismaClient,
   guildId: string,
@@ -140,7 +144,7 @@ export async function createBirthdayCardAsset(
     // A Guild-wide transaction lock intentionally serializes all Birthday Card uploads.
     // This is stronger than an actor-only lock and makes both the 24-asset cap and the
     // per-user upload rate limit atomic with the asset insert and its audit event.
-    const lockKey = `birthday-card-assets:${input.guildId}`;
+    const lockKey = birthdayCardAssetGuildLockKey(input.guildId);
     await tx.$executeRaw`
       SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))
     `;

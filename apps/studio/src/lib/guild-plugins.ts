@@ -1,5 +1,5 @@
 import { type ErrorObject } from 'ajv';
-import type { Prisma } from '@herta/db';
+import { birthdayCardAssetGuildLockKey, type Prisma } from '@herta/db';
 import type { PluginManifest } from '@herta/shared';
 import { getAllPluginManifests, getPluginManifest } from '@herta/plugin-catalog';
 import { normalizeAutoResponseConfig } from '@herta/plugin-catalog/auto-response-service';
@@ -14,6 +14,13 @@ import { getDiscordAccessToken } from '@/lib/session';
 const ajv = createPluginConfigAjv();
 
 export type PluginConfig = Record<string, unknown>;
+
+export class BirthdayCardAssetSelectionUnavailableError extends Error {
+  constructor() {
+    super('BirthdayCardAssetSelectionUnavailable');
+    this.name = 'BirthdayCardAssetSelectionUnavailableError';
+  }
+}
 
 export function findPluginManifest(pluginId: string): PluginManifest | undefined {
   return getPluginManifest(pluginId);
@@ -126,6 +133,25 @@ export async function updateGuildPlugin(
   const nextVersion = (current?.configVersion ?? 0) + (runtimeChanged ? 1 : 0);
 
   const result = await prisma.$transaction(async (tx) => {
+    if (pluginId === 'birthday-role') {
+      const lockKey = birthdayCardAssetGuildLockKey(guildId);
+      await tx.$executeRaw`
+        SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))
+      `;
+
+      if (validation.config['birthdayCardBackgroundSource'] === 'asset') {
+        const assetId = validation.config['birthdayCardAssetId'];
+        const selectedAsset =
+          typeof assetId === 'string'
+            ? await tx.birthdayCardAsset.findFirst({
+                where: { guildId, id: assetId },
+                select: { id: true },
+              })
+            : null;
+        if (!selectedAsset) throw new BirthdayCardAssetSelectionUnavailableError();
+      }
+    }
+
     await tx.plugin.upsert({
       where: { id: manifest.id },
       create: {

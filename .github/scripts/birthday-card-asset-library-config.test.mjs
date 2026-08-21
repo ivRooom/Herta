@@ -14,6 +14,11 @@ test('Birthday Card Asset Library config remains explicit and Guild scoped', () 
   assert.match(shared, /BirthdayCardBackgroundSource = 'preset' \| 'custom' \| 'asset'/u);
   assert.match(shared, /birthdayCardAssetId: string \| null/u);
   assert.match(manifest, /enum: \['preset', 'asset', 'custom'\]/u);
+  const assetIdField = manifest.match(
+    /birthdayCardAssetId: \{(?<body>[\s\S]*?)\n      \},\n      birthdayCardPreset:/u,
+  );
+  assert.ok(assetIdField?.groups?.body, 'birthdayCardAssetId field must exist');
+  assert.doesNotMatch(assetIdField.groups.body, /default:/u);
   assert.match(policyResources, /'card-assets'/u);
   assert.match(policyResources, /'card-presets'/u);
   assert.match(pluginRoute, /studioBirthdayResource\(guildId, 'card-assets'\)/u);

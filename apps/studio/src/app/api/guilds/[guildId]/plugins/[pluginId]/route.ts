@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { RequestBodyTooLargeError, readRequestBodyBytes } from '@/lib/bounded-request-body';
 import {
+  BirthdayCardAssetSelectionUnavailableError,
   findPluginManifest,
   getGuildPlugin,
   updateGuildPlugin,
@@ -151,7 +152,18 @@ export async function PATCH(
   const updateInput: { enabled?: boolean; config?: Record<string, unknown> } = {};
   if (body.value.enabled !== undefined) updateInput.enabled = body.value.enabled;
   if (validatedConfig !== undefined) updateInput.config = validatedConfig;
-  const result = await updateGuildPlugin(guildId, pluginId, session.user.id, updateInput);
+  let result: Awaited<ReturnType<typeof updateGuildPlugin>>;
+  try {
+    result = await updateGuildPlugin(guildId, pluginId, session.user.id, updateInput);
+  } catch (error) {
+    if (error instanceof BirthdayCardAssetSelectionUnavailableError) {
+      return NextResponse.json(
+        { error: '選択したBirthday Card画像が見つかりません。画像を選び直してください' },
+        { status: 409 },
+      );
+    }
+    throw error;
+  }
   if (!result || !('manifest' in result)) {
     return NextResponse.json({ error: '設定が不正です' }, { status: 400 });
   }
