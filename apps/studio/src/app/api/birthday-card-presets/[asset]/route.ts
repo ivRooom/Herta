@@ -1,22 +1,11 @@
-import type { StaticImageData } from 'next/image';
 import { NextResponse } from 'next/server';
-import hertaLavenderGifts from '../../../../../public/birthday-card-presets/herta-lavender-gifts.webp';
-import hertaLavenderTea from '../../../../../public/birthday-card-presets/herta-lavender-tea.webp';
-import hertaNightBoard from '../../../../../public/birthday-card-presets/herta-night-board.webp';
+import { readBirthdayCardPresetAsset } from '@/lib/birthday-card-preset-assets';
 
 export const dynamic = 'force-dynamic';
 
-const PRESET_ASSETS: Readonly<Record<string, StaticImageData>> = {
-  'herta-lavender-gifts.webp': hertaLavenderGifts,
-  'herta-lavender-tea.webp': hertaLavenderTea,
-  'herta-night-board.webp': hertaNightBoard,
-};
-
-export async function GET(request: Request, { params }: { params: Promise<{ asset: string }> }) {
+export async function GET(_request: Request, { params }: { params: Promise<{ asset: string }> }) {
   const { asset } = await params;
-  const preset = Object.prototype.hasOwnProperty.call(PRESET_ASSETS, asset)
-    ? PRESET_ASSETS[asset]
-    : undefined;
+  const preset = await readBirthdayCardPresetAsset(asset);
   if (!preset) {
     return NextResponse.json(
       { error: 'Birthday Card presetが見つかりません' },
@@ -30,8 +19,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ asse
     );
   }
 
-  const response = NextResponse.redirect(new URL(preset.src, request.url), 307);
-  response.headers.set('Cache-Control', 'no-store');
-  response.headers.set('X-Content-Type-Options', 'nosniff');
-  return response;
+  return new Response(new Uint8Array(preset.bytes), {
+    status: 200,
+    headers: {
+      'Content-Type': preset.contentType,
+      'Content-Length': String(preset.bytes.byteLength),
+      'Cache-Control': 'no-store',
+      'X-Content-Type-Options': 'nosniff',
+    },
+  });
 }

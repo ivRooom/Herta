@@ -62,6 +62,27 @@ test('SVGや巨大画像、不正寸法を拒否する', () => {
   assert.equal(inspectBirthdayCardBackgroundImage(oversizedPng), null);
 });
 
+test('テスト送信用画像だけ明示した上限まで検証できる', () => {
+  const preview = new Uint8Array(BIRTHDAY_CARD_BACKGROUND_MAX_BYTES + 1);
+  preview.set([137, 80, 78, 71, 13, 10, 26, 10], 0);
+  preview.set([73, 72, 68, 82], 12);
+  writeUint32Be(preview, 16, 1672);
+  writeUint32Be(preview, 20, 941);
+
+  assert.equal(inspectBirthdayCardBackgroundImage(preview), null);
+  assert.deepEqual(
+    inspectBirthdayCardBackgroundImage(preview, {
+      maxBytes: BIRTHDAY_CARD_BACKGROUND_MAX_BYTES + 1024,
+    }),
+    {
+      contentType: 'image/png',
+      width: 1672,
+      height: 941,
+    },
+  );
+  assert.equal(inspectBirthdayCardBackgroundImage(preview, { maxBytes: 0 }), null);
+});
+
 function writeUint32Be(bytes: Uint8Array, offset: number, value: number) {
   bytes[offset] = (value >>> 24) & 0xff;
   bytes[offset + 1] = (value >>> 16) & 0xff;
