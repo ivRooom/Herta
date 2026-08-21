@@ -1,0 +1,56 @@
+name: Temporary Birthday Review Fixes
+
+on:
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.number == 300 && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/birthday-card-asset-library
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply review fixes
+        run: python .github/scripts/temporary-apply-birthday-review-fixes.py
+      - name: Format changed files
+        run: |
+          pnpm exec prettier --write \
+            apps/studio/src/components/birthday-card-editor.tsx \
+            apps/studio/src/components/birthday-card-asset-library.tsx \
+            apps/bot/src/plugins/birthday-role.ts \
+            packages/plugin-catalog/src/index.ts \
+            packages/plugin-catalog/src/birthday-runtime-config.test.ts \
+            'apps/studio/src/app/api/guilds/[guildId]/plugins/[pluginId]/route.ts' \
+            .github/scripts/nginx-birthday-card.test.mjs \
+            .github/scripts/birthday-card-asset-library-ui.test.mjs \
+            .github/scripts/birthday-card-asset-library-contract.test.mjs \
+            .github/scripts/birthday-card-asset-library-migration.test.mjs \
+            .github/scripts/birthday-card-asset-library-config.test.mjs
+          pnpm --filter @herta/db exec prisma format --schema prisma/schema.prisma
+      - name: Validate focused changes
+        run: |
+          pnpm format:check
+          pnpm typecheck
+          pnpm test
+      - name: Commit fixes and remove temporary helpers
+        run: |
+          rm .github/workflows/temporary-birthday-review-fixes.yml
+          rm .github/scripts/temporary-apply-birthday-review-fixes.py
+          rm -f .github/.birthday-300-review-trigger
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(birthday): address final asset library review findings'
+          git push origin HEAD:feat/birthday-card-asset-library
