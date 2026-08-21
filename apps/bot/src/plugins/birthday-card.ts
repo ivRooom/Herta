@@ -61,7 +61,8 @@ export async function renderBirthdayCard(input: BirthdayCardRenderInput): Promis
   });
 
   if (
-    input.config.birthdayCardBackgroundSource === 'custom' &&
+    (input.config.birthdayCardBackgroundSource === 'custom' ||
+      input.config.birthdayCardBackgroundSource === 'asset') &&
     input.customBackground &&
     inspectBirthdayCardBackgroundImage(input.customBackground)
   ) {
