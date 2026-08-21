@@ -25,7 +25,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ gui
   if (!context.ok) return context.response;
 
   const registration = await getBirthdayRegistration(context.guildId, context.userId);
-  return json({ registration });
+  return json({ registration, registrationEnabled: context.registrationEnabled });
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ guildId: string }> }) {
@@ -36,7 +36,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
     return json({ error: 'application/jsonが必要です' }, 415);
   }
 
-  const context = await authorizeSelfRegistration(params);
+  const context = await authorizeSelfRegistration(params, { requireRegistrationEnabled: true });
   if (!context.ok) return context.response;
 
   let raw: unknown;
@@ -108,7 +108,10 @@ export async function DELETE(
   }
 }
 
-async function authorizeSelfRegistration(params: Promise<{ guildId: string }>) {
+async function authorizeSelfRegistration(
+  params: Promise<{ guildId: string }>,
+  options: { requireRegistrationEnabled?: boolean } = {},
+) {
   const session = await auth();
   if (!session?.user?.id) {
     return { ok: false as const, response: json({ error: '認証が必要です' }, 401) };
@@ -133,13 +136,29 @@ async function authorizeSelfRegistration(params: Promise<{ guildId: string }>) {
     return {
       ok: false as const,
       response: json(
-        { error: 'この誕生日登録URLは現在GuildのMemberロール保有者だけが利用できます' },
+        { error: 'この誕生日登録URLは現在対象Guildに参加しているユーザーだけが利用できます' },
         403,
       ),
     };
   }
 
-  return { ok: true as const, guildId, userId: session.user.id, displayName: access.displayName };
+  if (options.requireRegistrationEnabled && !access.registrationEnabled) {
+    return {
+      ok: false as const,
+      response: json(
+        { error: 'このGuildではメンバー本人による誕生日登録・更新が無効になっています' },
+        403,
+      ),
+    };
+  }
+
+  return {
+    ok: true as const,
+    guildId,
+    userId: session.user.id,
+    displayName: access.displayName,
+    registrationEnabled: access.registrationEnabled,
+  };
 }
 
 function json(body: unknown, status = 200) {

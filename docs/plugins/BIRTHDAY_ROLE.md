@@ -24,6 +24,19 @@ Birthday Roleは、Guildメンバーの誕生日を管理し、当日のRole付�
 
 生年は1900年から実行時の現在年までをserver-sideでも検証します。Manifest上のSlash Command入力上限は2100ですが、未来年は保存時に拒否します。
 
+## 共有誕生日登録URL
+
+Herta StudioのBirthday Managementでは `/birthday/register/[guildId]` を共有できます。
+
+- 誕生日データがまだ存在しない初回ユーザーも、このURLから新規登録できます。
+- 利用条件はDiscord OAuthで本人確認でき、対象Guildに現在参加している非Botユーザーであることです。固定名の`Member`ロールは要求しません。
+- 新規登録・更新はBirthday Role Pluginがインストール済みかつ有効で、`allowSelfRegistration`が許可されている場合だけ利用できます。Plugin停止中や本人登録OFF時はserver-sideでも保存を拒否します。
+- 本人登録が無効でも、既存の本人データ確認と削除は利用できます。
+- 登録対象のDiscord User IDはclient入力を受け付けず、ログイン中のsession user IDに固定します。
+- ページ表示時だけでなくPOST / DELETE時にもBot内部API経由でGuild所属を再確認します。
+- Guild未所属、Bot、Discord所属確認不能時はfail closedします。
+- mutationはSame-Origin、2KiB JSON上限、Content-Type検証をserver-sideで強制します。
+
 ## 年齢とお祝いテンプレート
 
 `announcementMessage`では以下の変数を利用できます。
@@ -47,7 +60,7 @@ Birthday Roleは、Guildメンバーの誕生日を管理し、当日のRole付�
 
 - `enabled`: Plugin全体の有効/無効
 - `ephemeralResponses`: コマンド結果を本人だけへ表示
-- `allowSelfRegistration`: メンバー本人による`/birthday set`を許可するか。OFFでもStudio管理者による管理と本人の`/birthday remove`は利用できます。
+- `allowSelfRegistration`: メンバー本人による`/birthday set`と共有登録URLからの新規登録・更新を許可するか。OFFでもStudio管理者による管理と本人の`/birthday remove`、共有URLからの本人データ削除は利用できます。
 - `assignRole`: 誕生日当日のRole付与
 - `birthdayRoleId`: 誕生日Role。Role PickerではBotが編集可能なRoleだけを選択します。
 - `sendAnnouncement`: お祝い投稿の有効/無効
