@@ -1,7 +1,5 @@
 import { isValidBirthdayDate, isValidBirthYear } from './birthday-admin-core.ts';
 
-export const BIRTHDAY_SELF_REGISTRATION_MEMBER_ROLE_NAME = 'Member';
-
 const INVALID_INTEGER = Symbol('invalid-integer');
 
 export interface BirthdaySelfRegistrationRequest {
@@ -13,16 +11,9 @@ export interface BirthdaySelfRegistrationRequest {
 export interface BirthdaySelfRegistrationMember {
   id: string;
   bot: boolean;
-  roleIds: readonly string[];
 }
 
-export interface BirthdaySelfRegistrationRole {
-  id: string;
-  name: string;
-}
-
-export type BirthdaySelfRegistrationEligibility =
-  'eligible' | 'not-member' | 'bot' | 'member-role-missing';
+export type BirthdaySelfRegistrationEligibility = 'eligible' | 'not-member' | 'bot';
 
 export function parseBirthdaySelfRegistrationRequest(
   value: unknown,
@@ -44,18 +35,10 @@ export function parseBirthdaySelfRegistrationRequest(
 export function birthdaySelfRegistrationEligibility(
   userId: string,
   member: BirthdaySelfRegistrationMember | null,
-  roles: readonly BirthdaySelfRegistrationRole[],
-  requiredRoleName = BIRTHDAY_SELF_REGISTRATION_MEMBER_ROLE_NAME,
 ): BirthdaySelfRegistrationEligibility {
   if (!member || member.id !== userId) return 'not-member';
   if (member.bot) return 'bot';
-
-  const requiredRoleIds = new Set(
-    roles.filter((role) => role.name === requiredRoleName).map((role) => role.id),
-  );
-  if (requiredRoleIds.size === 0) return 'member-role-missing';
-  if (member.roleIds.some((roleId) => requiredRoleIds.has(roleId))) return 'eligible';
-  return 'member-role-missing';
+  return 'eligible';
 }
 
 function emptyToNullInteger(value: unknown): number | null | typeof INVALID_INTEGER {
