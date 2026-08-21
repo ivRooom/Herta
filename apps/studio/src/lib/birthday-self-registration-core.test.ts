@@ -62,9 +62,41 @@ test('Guild未所属・別ユーザー・Botは自己登録できない', () => 
   assert.equal(birthdaySelfRegistrationEligibility(USER_ID, { id: USER_ID, bot: true }), 'bot');
 });
 
-test('本人登録設定は未指定とtrueを許可し、falseや不正値はfail closedする', () => {
-  assert.equal(birthdaySelfRegistrationEnabled({}), true);
-  assert.equal(birthdaySelfRegistrationEnabled({ allowSelfRegistration: true }), true);
-  assert.equal(birthdaySelfRegistrationEnabled({ allowSelfRegistration: false }), false);
-  assert.equal(birthdaySelfRegistrationEnabled({ allowSelfRegistration: 'false' }), false);
+test('本人登録はBirthday pluginが有効かつallowSelfRegistrationが許可されている時だけ有効', () => {
+  assert.equal(
+    birthdaySelfRegistrationEnabled({ installed: true, enabled: true, config: {} }),
+    true,
+  );
+  assert.equal(
+    birthdaySelfRegistrationEnabled({
+      installed: true,
+      enabled: true,
+      config: { allowSelfRegistration: true },
+    }),
+    true,
+  );
+  assert.equal(
+    birthdaySelfRegistrationEnabled({
+      installed: true,
+      enabled: true,
+      config: { allowSelfRegistration: false },
+    }),
+    false,
+  );
+  assert.equal(
+    birthdaySelfRegistrationEnabled({
+      installed: true,
+      enabled: true,
+      config: { allowSelfRegistration: 'false' },
+    }),
+    false,
+  );
+  assert.equal(
+    birthdaySelfRegistrationEnabled({ installed: false, enabled: true, config: {} }),
+    false,
+  );
+  assert.equal(
+    birthdaySelfRegistrationEnabled({ installed: true, enabled: false, config: {} }),
+    false,
+  );
 });
