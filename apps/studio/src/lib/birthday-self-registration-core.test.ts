@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   birthdaySelfRegistrationEligibility,
+  birthdaySelfRegistrationEnabled,
   parseBirthdaySelfRegistrationRequest,
 } from './birthday-self-registration-core.ts';
 
@@ -59,4 +60,11 @@ test('Guild未所属・別ユーザー・Botは自己登録できない', () => 
     'not-member',
   );
   assert.equal(birthdaySelfRegistrationEligibility(USER_ID, { id: USER_ID, bot: true }), 'bot');
+});
+
+test('本人登録設定は未指定とtrueを許可し、falseや不正値はfail closedする', () => {
+  assert.equal(birthdaySelfRegistrationEnabled({}), true);
+  assert.equal(birthdaySelfRegistrationEnabled({ allowSelfRegistration: true }), true);
+  assert.equal(birthdaySelfRegistrationEnabled({ allowSelfRegistration: false }), false);
+  assert.equal(birthdaySelfRegistrationEnabled({ allowSelfRegistration: 'false' }), false);
 });
