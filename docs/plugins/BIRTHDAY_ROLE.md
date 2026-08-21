@@ -24,6 +24,17 @@ Birthday Roleは、Guildメンバーの誕生日を管理し、当日のRole付�
 
 生年は1900年から実行時の現在年までをserver-sideでも検証します。Manifest上のSlash Command入力上限は2100ですが、未来年は保存時に拒否します。
 
+## 共有誕生日登録URL
+
+Herta StudioのBirthday Managementでは `/birthday/register/[guildId]` を共有できます。
+
+- 誕生日データがまだ存在しない初回ユーザーも、このURLから新規登録できます。
+- 利用条件はDiscord OAuthで本人確認でき、対象Guildに現在参加している非Botユーザーであることです。固定名の`Member`ロールは要求しません。
+- 登録対象のDiscord User IDはclient入力を受け付けず、ログイン中のsession user IDに固定します。
+- ページ表示時だけでなくPOST / DELETE時にもBot内部API経由でGuild所属を再確認します。
+- Guild未所属、Bot、Discord所属確認不能時はfail closedします。
+- mutationはSame-Origin、2KiB JSON上限、Content-Type検証をserver-sideで強制します。
+
 ## 年齢とお祝いテンプレート
 
 `announcementMessage`では以下の変数を利用できます。
