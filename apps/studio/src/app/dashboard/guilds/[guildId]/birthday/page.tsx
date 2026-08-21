@@ -139,8 +139,16 @@ export default async function BirthdayAdminPage({
       BIRTHDAY_CARD_CONFIG_FIELD_KEYS,
     );
     const readableConfig = filterReadablePluginConfig(plugin.config, configAccess);
+    const hasReadableCardConfig = configAccess.readableFieldKeys.length > 0;
+    const canAccessCardMedia =
+      canReadCardBackground ||
+      canWriteCardBackground ||
+      canReadAssets ||
+      canWriteAssets ||
+      canManagePresets;
+
     cardEditor =
-      configAccess.readableFieldKeys.length > 0 ? (
+      hasReadableCardConfig || canAccessCardMedia ? (
         <BirthdayCardEditor
           guildId={guildId}
           initialConfig={readableConfig}
