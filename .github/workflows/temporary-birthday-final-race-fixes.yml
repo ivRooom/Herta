@@ -1,0 +1,52 @@
+name: Temporary Birthday Final Race Fixes
+
+on:
+  pull_request:
+    types: [synchronize]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.pull_request.number == 300 && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/birthday-card-asset-library
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply final race fixes
+        run: python .github/scripts/temporary-apply-birthday-final-race-fixes.py
+      - name: Format changed files
+        run: |
+          pnpm exec prettier --write \
+            packages/db/src/birthday-card-background.ts \
+            packages/db/src/birthday-card-assets.ts \
+            apps/bot/src/plugins/birthday-role.ts \
+            .github/scripts/birthday-card-asset-library-runtime-snapshot.test.mjs \
+            .github/scripts/birthday-card-asset-library-preset-lock.test.mjs
+      - name: Validate focused changes
+        run: |
+          pnpm db:generate
+          pnpm format:check
+          pnpm typecheck
+          pnpm test
+          node .github/scripts/birthday-card-asset-library-runtime-snapshot.test.mjs
+          node .github/scripts/birthday-card-asset-library-preset-lock.test.mjs
+      - name: Commit fixes and remove temporary helpers
+        run: |
+          rm .github/workflows/temporary-birthday-final-race-fixes.yml
+          rm .github/scripts/temporary-apply-birthday-final-race-fixes.py
+          rm -f .github/.birthday-300-final-race-trigger
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(birthday): close final asset race conditions'
+          git push origin HEAD:feat/birthday-card-asset-library
