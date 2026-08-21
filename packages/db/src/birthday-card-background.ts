@@ -38,7 +38,16 @@ export async function getBirthdayCardBackgroundMetadata(
   return rows[0] ?? null;
 }
 
+/** Legacy Guild custom background accessor used by the Studio card-background API. */
 export async function getBirthdayCardBackground(
+  prisma: PrismaClient,
+  guildId: string,
+): Promise<BirthdayCardBackgroundRecord | null> {
+  return getLegacyBirthdayCardBackground(prisma, guildId);
+}
+
+/** Bot-only resolver. Asset Library selection is never exposed through the legacy HTTP accessor. */
+export async function getBirthdayCardRuntimeBackground(
   prisma: PrismaClient,
   guildId: string,
 ): Promise<BirthdayCardBackgroundRecord | null> {
@@ -63,21 +72,7 @@ export async function getBirthdayCardBackground(
     };
   }
 
-  const rows = await prisma.$queryRaw<BirthdayCardBackgroundRecord[]>`
-    SELECT
-      "content_type" AS "contentType",
-      "file_name" AS "fileName",
-      "content",
-      "size_bytes" AS "sizeBytes",
-      "width",
-      "height",
-      "sha256",
-      "updated_at" AS "updatedAt"
-    FROM "birthday_card_backgrounds"
-    WHERE "guild_id" = ${guildId}
-    LIMIT 1
-  `;
-  return rows[0] ?? null;
+  return getLegacyBirthdayCardBackground(prisma, guildId);
 }
 
 /**
@@ -165,6 +160,27 @@ export async function deleteBirthdayCardBackground(
     RETURNING "guild_id" AS "guildId"
   `;
   return rows.length > 0;
+}
+
+async function getLegacyBirthdayCardBackground(
+  prisma: PrismaClient,
+  guildId: string,
+): Promise<BirthdayCardBackgroundRecord | null> {
+  const rows = await prisma.$queryRaw<BirthdayCardBackgroundRecord[]>`
+    SELECT
+      "content_type" AS "contentType",
+      "file_name" AS "fileName",
+      "content",
+      "size_bytes" AS "sizeBytes",
+      "width",
+      "height",
+      "sha256",
+      "updated_at" AS "updatedAt"
+    FROM "birthday_card_backgrounds"
+    WHERE "guild_id" = ${guildId}
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
