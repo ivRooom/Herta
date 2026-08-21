@@ -1,13 +1,15 @@
 import { searchGuildMembers } from './bot-guild-members.ts';
+import { getGuildPlugin } from './guild-plugins.ts';
 import {
   birthdaySelfRegistrationEligibility,
+  isBirthdaySelfRegistrationAllowed,
   type BirthdaySelfRegistrationEligibility,
 } from './birthday-self-registration-core.ts';
 
 const DISCORD_ID_PATTERN = /^\d{17,20}$/u;
 
 export type BirthdaySelfRegistrationAccess =
-  | { ok: true; displayName: string }
+  | { ok: true; displayName: string; allowSelfRegistration: boolean }
   | { ok: false; reason: BirthdaySelfRegistrationEligibility | 'unavailable' };
 
 export async function resolveBirthdaySelfRegistrationAccess(
@@ -20,7 +22,10 @@ export async function resolveBirthdaySelfRegistrationAccess(
 
   // Shared registration is intentionally based on current Guild membership, not a pre-existing
   // Birthday record or a fixed role name. Exact ID lookup remains the server-side authorization gate.
-  const members = await searchGuildMembers(guildId, userId, 1);
+  const [members, plugin] = await Promise.all([
+    searchGuildMembers(guildId, userId, 1),
+    getGuildPlugin(guildId, 'birthday-role'),
+  ]);
   if (members === null) {
     return { ok: false, reason: 'unavailable' };
   }
@@ -29,5 +34,9 @@ export async function resolveBirthdaySelfRegistrationAccess(
   const eligibility = birthdaySelfRegistrationEligibility(userId, member);
   if (eligibility !== 'eligible') return { ok: false, reason: eligibility };
 
-  return { ok: true, displayName: member?.displayName ?? userId };
+  return {
+    ok: true,
+    displayName: member?.displayName ?? userId,
+    allowSelfRegistration: isBirthdaySelfRegistrationAllowed(plugin?.config ?? {}),
+  };
 }
