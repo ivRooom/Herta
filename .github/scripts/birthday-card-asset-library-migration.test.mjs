@@ -6,6 +6,7 @@ const migration = readFileSync(
   'packages/db/prisma/migrations/20260821013000_birthday_card_asset_library/migration.sql',
   'utf8',
 );
+const schema = readFileSync('packages/db/prisma/schema.prisma', 'utf8');
 
 test('Birthday Card Asset Library migration keeps Guild scope and image constraints', () => {
   assert.match(migration, /CREATE TABLE "birthday_card_assets"/u);
@@ -22,4 +23,7 @@ test('Birthday Card Asset Library migration keeps Guild scope and image constrai
   assert.match(migration, /"is_preset" BOOLEAN NOT NULL DEFAULT FALSE/u);
   assert.match(migration, /birthday_card_assets_guild_preset_updated_idx/u);
   assert.match(migration, /birthday_card_assets_guild_sha256_idx/u);
+  assert.match(schema, /model BirthdayCardAsset/u);
+  assert.match(schema, /birthdayCardAssets\s+BirthdayCardAsset\[\]/u);
+  assert.match(schema, /@@map\("birthday_card_assets"\)/u);
 });

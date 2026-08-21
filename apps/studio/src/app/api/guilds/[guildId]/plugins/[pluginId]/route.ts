@@ -15,6 +15,7 @@ import {
 import { toPluginConfigValidationIssues } from '@/lib/plugin-config-validation-issues';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
 import { resolveStudioAccess } from '@/lib/studio-access';
+import { studioBirthdayResource } from '@/lib/studio-policy-resources';
 import {
   filterReadablePluginConfig,
   hasEffectivePluginPermission,
@@ -117,6 +118,30 @@ export async function PATCH(
         {
           error: '編集権限のないPlugin設定項目が含まれています',
           fields: deniedFields,
+        },
+        { status: 403 },
+      );
+    }
+
+    const selectsBirthdayAsset =
+      pluginId === 'birthday-role' &&
+      validation.config['birthdayCardBackgroundSource'] === 'asset' &&
+      changedFields.some(
+        (fieldKey) =>
+          fieldKey === 'birthdayCardBackgroundSource' || fieldKey === 'birthdayCardAssetId',
+      );
+    if (
+      selectsBirthdayAsset &&
+      !hasEffectivePluginPermission(
+        access.access,
+        'studio.settings.write',
+        studioBirthdayResource(guildId, 'card-assets'),
+      )
+    ) {
+      return NextResponse.json(
+        {
+          error: 'この画像をBirthday Card背景として使用する権限がありません',
+          resource: studioBirthdayResource(guildId, 'card-assets'),
         },
         { status: 403 },
       );

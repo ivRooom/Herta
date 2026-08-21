@@ -25,6 +25,7 @@ model Guild {
 
   settings               GuildSettings?
   birthdayCardBackground BirthdayCardBackground?
+  birthdayCardAssets     BirthdayCardAsset[]
   members                GuildMember[]
   roles                  Role[]
   auditLogs              AuditLog[]
@@ -68,6 +69,30 @@ model BirthdayCardBackground {
 
   // content-type / bytes / dimensions / SHA-256 constraints are enforced by migration SQL.
   @@map("birthday_card_backgrounds")
+}
+
+model BirthdayCardAsset {
+  id          String   @id
+  guildId     String   @map("guild_id")
+  name        String   @db.VarChar(120)
+  contentType String   @map("content_type") @db.VarChar(32)
+  content     Bytes
+  sizeBytes   Int      @map("size_bytes")
+  width       Int
+  height      Int
+  sha256      String   @db.Char(64)
+  isPreset    Boolean  @default(false) @map("is_preset")
+  createdBy   String   @map("created_by")
+  updatedBy   String   @map("updated_by")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  guild Guild @relation(fields: [guildId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  // Content, dimensions, and SHA-256 CHECK constraints are enforced by migration SQL.
+  @@index([guildId, isPreset(sort: Desc), updatedAt(sort: Desc)], map: "birthday_card_assets_guild_preset_updated_idx")
+  @@index([guildId, sha256], map: "birthday_card_assets_guild_sha256_idx")
+  @@map("birthday_card_assets")
 }
 
 model User {

@@ -110,7 +110,9 @@ export function BirthdayCardEditor({
   const canReadAssetId = readable.has('birthdayCardAssetId');
   const canReadPreset = readable.has('birthdayCardPreset');
   const canUseAsset =
-    editable.has('birthdayCardBackgroundSource') && editable.has('birthdayCardAssetId');
+    canWriteAssets &&
+    editable.has('birthdayCardBackgroundSource') &&
+    editable.has('birthdayCardAssetId');
   const selectedPreviewAsset =
     canReadAssetId && previewConfig.birthdayCardAssetId
       ? (assets.find((asset) => asset.id === previewConfig.birthdayCardAssetId) ?? null)
@@ -119,6 +121,8 @@ export function BirthdayCardEditor({
     config.birthdayCardBackgroundSource === 'asset' && config.birthdayCardAssetId
       ? (assets.find((asset) => asset.id === config.birthdayCardAssetId) ?? null)
       : null;
+  const persistedActiveAssetId =
+    saved.birthdayCardBackgroundSource === 'asset' ? (saved.birthdayCardAssetId ?? null) : null;
   const backgroundUrl = resolveBackgroundUrl({
     guildId,
     config: previewConfig,
@@ -358,7 +362,7 @@ export function BirthdayCardEditor({
     if (
       !canWriteAssets ||
       interactionPending ||
-      (config.birthdayCardBackgroundSource === 'asset' && asset.id === config.birthdayCardAssetId)
+      (saved.birthdayCardBackgroundSource === 'asset' && asset.id === saved.birthdayCardAssetId)
     )
       return;
     if (!window.confirm(`${asset.name} を画像ライブラリから削除しますか？`)) return;
@@ -589,7 +593,12 @@ export function BirthdayCardEditor({
                   <option value="preset">組み込みプリセット</option>
                   <option
                     value="asset"
-                    disabled={!canReadAssets || !canReadAssetId || !config.birthdayCardAssetId}
+                    disabled={
+                      !canWriteAssets ||
+                      !canReadAssets ||
+                      !canReadAssetId ||
+                      !config.birthdayCardAssetId
+                    }
                   >
                     画像ライブラリ
                   </option>
@@ -773,6 +782,7 @@ export function BirthdayCardEditor({
       <BirthdayCardAssetLibrary
         assets={assets}
         selectedAssetId={selectedDraftAsset?.id ?? null}
+        protectedAssetId={persistedActiveAssetId}
         canRead={canReadAssets}
         canWrite={canWriteAssets}
         canManagePresets={canManagePresets}

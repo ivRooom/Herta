@@ -163,18 +163,14 @@ export interface EnabledPlugin {
 }
 
 /**
- * Birthday Card Asset LibraryはStudio上では `asset` をSource of Truthとして保持する。
- * 既存Birthday Role runtimeはcustom background bytesを受け取る契約なので、Botへ渡す
- * runtime configだけ `custom` として扱い、永続configとDashboardの意味は変更しない。
+ * Runtimeでも永続configのbackground source discriminatorを保持する。
+ * Asset Libraryとlegacy customはBot側で明示的に分岐し、意味を潰さない。
  */
 export function normalizeRuntimePluginConfig(
-  pluginId: string,
+  _pluginId: string,
   config: Record<string, unknown>,
 ): Record<string, unknown> {
-  if (pluginId !== 'birthday-role' || config['birthdayCardBackgroundSource'] !== 'asset') {
-    return config;
-  }
-  return { ...config, birthdayCardBackgroundSource: 'custom' };
+  return config;
 }
 
 /**

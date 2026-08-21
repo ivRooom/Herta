@@ -428,9 +428,12 @@ export async function runBirthdayRoleCycle(
           'Birthday Roleのお祝い投稿Channelを利用できません',
         );
       } else {
+        const usesStoredBirthdayCardBackground =
+          config.birthdayCardBackgroundSource === 'custom' ||
+          config.birthdayCardBackgroundSource === 'asset';
         const customBackground =
           config.birthdayCardEnabled &&
-          config.birthdayCardBackgroundSource === 'custom' &&
+          usesStoredBirthdayCardBackground &&
           todaysRegistrations.length > 0
             ? await getBirthdayCardRuntimeBackground(context.prisma, context.guildId).catch(
                 (error) => {
@@ -439,7 +442,7 @@ export async function runBirthdayRoleCycle(
                       guildId: context.guildId,
                       errorName: error instanceof Error ? error.name : 'UnknownError',
                     },
-                    'Birthday Cardカスタム背景を取得できないためプリセットへfallbackします',
+                    'Birthday Card背景を取得できないためプリセットへfallbackします',
                   );
                   return null;
                 },
@@ -447,13 +450,13 @@ export async function runBirthdayRoleCycle(
             : null;
         if (
           config.birthdayCardEnabled &&
-          config.birthdayCardBackgroundSource === 'custom' &&
+          usesStoredBirthdayCardBackground &&
           todaysRegistrations.length > 0 &&
           !customBackground
         ) {
           context.logger.warn(
             { guildId: context.guildId },
-            'Birthday Cardカスタム背景が未登録のためプリセットへfallbackします',
+            'Birthday Card背景が未登録のためプリセットへfallbackします',
           );
         }
 

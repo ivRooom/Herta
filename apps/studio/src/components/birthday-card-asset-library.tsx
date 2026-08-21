@@ -22,6 +22,7 @@ export interface BirthdayCardAssetMetadata {
 export function BirthdayCardAssetLibrary({
   assets,
   selectedAssetId,
+  protectedAssetId,
   canRead,
   canWrite,
   canManagePresets,
@@ -37,6 +38,7 @@ export function BirthdayCardAssetLibrary({
 }: {
   assets: BirthdayCardAssetMetadata[];
   selectedAssetId: string | null;
+  protectedAssetId: string | null;
   canRead: boolean;
   canWrite: boolean;
   canManagePresets: boolean;
@@ -93,6 +95,7 @@ export function BirthdayCardAssetLibrary({
         <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
           {assets.map((asset) => {
             const selected = asset.id === selectedAssetId;
+            const protectedFromDelete = asset.id === protectedAssetId;
             return (
               <article
                 key={asset.id}
@@ -162,7 +165,12 @@ export function BirthdayCardAssetLibrary({
                     {canWrite ? (
                       <button
                         type="button"
-                        disabled={pending || selected || (asset.isPreset && !canManagePresets)}
+                        disabled={
+                          pending ||
+                          selected ||
+                          protectedFromDelete ||
+                          (asset.isPreset && !canManagePresets)
+                        }
                         onClick={() => onDelete(asset)}
                         className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-red-400/30 px-3 py-2 text-xs font-semibold text-red-300 disabled:opacity-50"
                       >

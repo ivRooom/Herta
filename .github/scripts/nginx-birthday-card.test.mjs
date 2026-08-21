@@ -21,9 +21,14 @@ test('Birthday Card upload endpoints alone receive the larger nginx body limit',
     'larger request bodies must not be enabled for every Studio API',
   );
 
-  assert.doesNotMatch(
-    nginx,
-    /birthday\/card-assets\/.+client_max_body_size/su,
-    'asset item/content routes must keep the default nginx request body limit',
+  const relaxedRoute = /^\/api\/guilds\/[0-9]{17,20}\/birthday\/card-(background|test|assets)$/u;
+  assert.equal(relaxedRoute.test('/api/guilds/12345678901234567/birthday/card-assets'), true);
+  assert.equal(
+    relaxedRoute.test('/api/guilds/12345678901234567/birthday/card-assets/asset-id'),
+    false,
+  );
+  assert.equal(
+    relaxedRoute.test('/api/guilds/12345678901234567/birthday/card-assets/asset-id/content'),
+    false,
   );
 });

@@ -11,7 +11,8 @@ test('Asset Library selection is wired through a Bot-only background resolver', 
   assert.match(dbBackground, /getBirthdayCardRuntimeBackground/u);
   assert.match(dbBackground, /getBirthdayCardAsset\(prisma, guildId, assetSelection\)/u);
   assert.match(botRole, /getBirthdayCardRuntimeBackground/u);
-  assert.match(catalog, /birthdayCardBackgroundSource: 'custom'/u);
+  assert.match(botRole, /birthdayCardBackgroundSource === 'asset'/u);
+  assert.match(catalog, /return config;/u);
   assert.match(editor, /birthdayCardBackgroundSource: 'asset'/u);
   assert.match(editor, /birthdayCardAssetId: asset\.id/u);
 });
