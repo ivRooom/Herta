@@ -4,7 +4,7 @@ import {
   BIRTHDAY_CARD_ASSET_MAX_COUNT,
   normalizeBirthdayCardAssetId,
   normalizeBirthdayCardConfig,
-} from './birthday-card.ts';
+} from './birthday-card.js';
 
 const ASSET_ID = '123e4567-e89b-42d3-a456-426614174000';
 
