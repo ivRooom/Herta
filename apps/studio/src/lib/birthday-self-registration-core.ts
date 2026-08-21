@@ -41,6 +41,11 @@ export function birthdaySelfRegistrationEligibility(
   return 'eligible';
 }
 
+export function birthdaySelfRegistrationEnabled(config: Record<string, unknown>): boolean {
+  const value = config['allowSelfRegistration'];
+  return value === undefined || value === true;
+}
+
 function emptyToNullInteger(value: unknown): number | null | typeof INVALID_INTEGER {
   if (value === undefined || value === null) return null;
   if (typeof value === 'string' && value.trim() === '') return null;
