@@ -6,9 +6,14 @@ import {
 
 const DISCORD_ID_PATTERN = /^\d{17,20}$/u;
 
+type BirthdaySelfRegistrationDenialReason = Exclude<
+  BirthdaySelfRegistrationEligibility,
+  'eligible'
+>;
+
 export type BirthdaySelfRegistrationAccess =
   | { ok: true; displayName: string }
-  | { ok: false; reason: BirthdaySelfRegistrationEligibility | 'unavailable' };
+  | { ok: false; reason: BirthdaySelfRegistrationDenialReason | 'unavailable' };
 
 export async function resolveBirthdaySelfRegistrationAccess(
   guildId: string,
