@@ -11,11 +11,13 @@ export function BirthdaySelfRegistrationForm({
   displayName,
   initialRegistration,
   currentYear,
+  allowRegistration,
 }: {
   guildId: string;
   displayName: string;
   initialRegistration: BirthdayRegistration | null;
   currentYear: number;
+  allowRegistration: boolean;
 }) {
   const birthYearHelpId = useId();
   const [month, setMonth] = useState(String(initialRegistration?.month ?? ''));
@@ -24,12 +26,21 @@ export function BirthdaySelfRegistrationForm({
   const [hasRegistration, setHasRegistration] = useState(initialRegistration !== null);
   const [pending, setPending] = useState(false);
   const [status, setStatus] = useState(
-    initialRegistration ? '登録済みの誕生日を表示しています。' : '誕生日はまだ登録されていません。',
+    allowRegistration
+      ? initialRegistration
+        ? '登録済みの誕生日を表示しています。'
+        : '誕生日はまだ登録されていません。'
+      : '本人による登録・更新は管理者設定で無効です。登録済みデータの削除はできます。',
   );
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (pending) return;
+    if (pending || !allowRegistration) {
+      if (!allowRegistration) {
+        setStatus('本人による誕生日登録は管理者設定で無効になっています。');
+      }
+      return;
+    }
     setPending(true);
     setStatus('保存中…');
     try {
@@ -117,8 +128,14 @@ export function BirthdaySelfRegistrationForm({
         </div>
       </div>
 
+      {!allowRegistration ? (
+        <p className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2.5 text-sm leading-6 text-amber-300">
+          サーバー管理者が本人による誕生日登録・更新を無効にしています。登録済みデータの削除は引き続き利用できます。
+        </p>
+      ) : null}
+
       <form onSubmit={submit} className="mt-6 space-y-5">
-        <fieldset disabled={pending} className="grid gap-4 sm:grid-cols-2">
+        <fieldset disabled={pending || !allowRegistration} className="grid gap-4 sm:grid-cols-2">
           <legend className="sr-only">誕生日</legend>
           <label className="space-y-1.5 text-sm font-medium">
             月
@@ -171,11 +188,11 @@ export function BirthdaySelfRegistrationForm({
         <div className="flex flex-col gap-3 sm:flex-row">
           <button
             type="submit"
-            disabled={pending}
+            disabled={pending || !allowRegistration}
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
           >
             <Save className="h-4 w-4" aria-hidden="true" />
-            {pending ? '処理中…' : '誕生日を保存'}
+            {pending ? '処理中…' : allowRegistration ? '誕生日を保存' : '本人登録は無効'}
           </button>
           {hasRegistration ? (
             <button
