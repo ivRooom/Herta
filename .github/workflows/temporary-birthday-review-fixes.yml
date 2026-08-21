@@ -42,6 +42,7 @@ jobs:
       - name: Validate focused changes
         run: |
           pnpm format:check
+          pnpm db:generate
           pnpm typecheck
           pnpm test
       - name: Commit fixes and remove temporary helpers
