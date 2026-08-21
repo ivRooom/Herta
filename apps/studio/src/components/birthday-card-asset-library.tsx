@@ -68,7 +68,7 @@ export function BirthdayCardAssetLibrary({
             件登録できます。登録後に必要な画像だけGuildプリセットへ追加できます。
           </p>
         </div>
-        {canWrite ? (
+        {canRead && canWrite ? (
           <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 py-2.5 text-sm font-semibold transition-colors hover:border-primary/40 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
             <Upload className="h-4 w-4" aria-hidden="true" />
             {pending ? '処理中…' : '画像を登録'}
