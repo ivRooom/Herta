@@ -39,10 +39,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
   const context = await authorizeSelfRegistration(params);
   if (!context.ok) return context.response;
   if (!context.allowSelfRegistration) {
-    return json(
-      { error: '本人による誕生日登録は管理者設定で無効になっています' },
-      403,
-    );
+    return json({ error: '本人による誕生日登録は管理者設定で無効になっています' }, 403);
   }
 
   let raw: unknown;
