@@ -13,6 +13,12 @@ export interface BirthdaySelfRegistrationMember {
   bot: boolean;
 }
 
+export interface BirthdaySelfRegistrationPluginState {
+  installed: boolean;
+  enabled: boolean;
+  config: Record<string, unknown>;
+}
+
 export type BirthdaySelfRegistrationEligibility = 'eligible' | 'not-member' | 'bot';
 
 export function parseBirthdaySelfRegistrationRequest(
@@ -41,8 +47,11 @@ export function birthdaySelfRegistrationEligibility(
   return 'eligible';
 }
 
-export function birthdaySelfRegistrationEnabled(config: Record<string, unknown>): boolean {
-  const value = config['allowSelfRegistration'];
+export function birthdaySelfRegistrationEnabled(
+  plugin: BirthdaySelfRegistrationPluginState,
+): boolean {
+  if (!plugin.installed || !plugin.enabled) return false;
+  const value = plugin.config['allowSelfRegistration'];
   return value === undefined || value === true;
 }
 
