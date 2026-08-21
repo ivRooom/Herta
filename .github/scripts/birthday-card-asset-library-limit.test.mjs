@@ -13,7 +13,12 @@ test('Asset Library keeps finite count and bounded upload limits', () => {
   assert.match(shared, /BIRTHDAY_CARD_ASSET_MAX_COUNT = 24/u);
   assert.match(repository, /input\.maxAssets/u);
   assert.match(repository, /pg_advisory_xact_lock/u);
+  assert.match(repository, /input\.uploadRateLimit/u);
+  assert.match(repository, /input\.uploadRateWindowStart/u);
+  assert.match(repository, /tx\.auditLog\.count/u);
+  assert.match(repository, /tx\.auditLog\.create/u);
   assert.match(route, /BIRTHDAY_CARD_BACKGROUND_MAX_BYTES \+ MAX_MULTIPART_OVERHEAD_BYTES/u);
   assert.match(route, /UPLOAD_RATE_LIMIT = 10/u);
   assert.match(route, /UPLOAD_RATE_WINDOW_MS = 10 \* 60 \* 1000/u);
+  assert.match(route, /BirthdayCardAssetUploadRateLimitExceededError/u);
 });
