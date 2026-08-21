@@ -51,8 +51,12 @@ export function birthdaySelfRegistrationEnabled(
   plugin: BirthdaySelfRegistrationPluginState,
 ): boolean {
   if (!plugin.installed || !plugin.enabled) return false;
-  const value = plugin.config['allowSelfRegistration'];
-  return value === undefined || value === true;
+
+  const configEnabled = plugin.config['enabled'];
+  if (configEnabled !== undefined && configEnabled !== true) return false;
+
+  const allowSelfRegistration = plugin.config['allowSelfRegistration'];
+  return allowSelfRegistration === undefined || allowSelfRegistration === true;
 }
 
 function emptyToNullInteger(value: unknown): number | null | typeof INVALID_INTEGER {
