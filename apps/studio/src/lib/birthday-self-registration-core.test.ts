@@ -58,8 +58,5 @@ test('Guild未所属・別ユーザー・Botは自己登録できない', () => 
     }),
     'not-member',
   );
-  assert.equal(
-    birthdaySelfRegistrationEligibility(USER_ID, { id: USER_ID, bot: true }),
-    'bot',
-  );
+  assert.equal(birthdaySelfRegistrationEligibility(USER_ID, { id: USER_ID, bot: true }), 'bot');
 });
