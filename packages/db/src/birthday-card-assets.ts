@@ -273,27 +273,34 @@ export async function setBirthdayCardAssetPreset(
   prisma: PrismaClient,
   input: { guildId: string; assetId: string; isPreset: boolean; updatedBy: string },
 ): Promise<BirthdayCardAssetMetadata | null> {
-  const rows = await prisma.$queryRaw<BirthdayCardAssetMetadata[]>`
-    UPDATE "birthday_card_assets"
-    SET
-      "is_preset" = ${input.isPreset},
-      "updated_by" = ${input.updatedBy},
-      "updated_at" = CURRENT_TIMESTAMP
-    WHERE "guild_id" = ${input.guildId} AND "id" = ${input.assetId}
-    RETURNING
-      "id",
-      "guild_id" AS "guildId",
-      "name",
-      "content_type" AS "contentType",
-      "size_bytes" AS "sizeBytes",
-      "width",
-      "height",
-      "sha256",
-      "is_preset" AS "isPreset",
-      "created_at" AS "createdAt",
-      "updated_at" AS "updatedAt"
-  `;
-  return rows[0] ?? null;
+  return prisma.$transaction(async (tx) => {
+    const lockKey = birthdayCardAssetGuildLockKey(input.guildId);
+    await tx.$executeRaw`
+      SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))
+    `;
+
+    const rows = await tx.$queryRaw<BirthdayCardAssetMetadata[]>`
+      UPDATE "birthday_card_assets"
+      SET
+        "is_preset" = ${input.isPreset},
+        "updated_by" = ${input.updatedBy},
+        "updated_at" = CURRENT_TIMESTAMP
+      WHERE "guild_id" = ${input.guildId} AND "id" = ${input.assetId}
+      RETURNING
+        "id",
+        "guild_id" AS "guildId",
+        "name",
+        "content_type" AS "contentType",
+        "size_bytes" AS "sizeBytes",
+        "width",
+        "height",
+        "sha256",
+        "is_preset" AS "isPreset",
+        "created_at" AS "createdAt",
+        "updated_at" AS "updatedAt"
+    `;
+    return rows[0] ?? null;
+  });
 }
 
 export async function deleteBirthdayCardAsset(

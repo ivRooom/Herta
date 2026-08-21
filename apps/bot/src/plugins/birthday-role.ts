@@ -435,7 +435,7 @@ export async function runBirthdayRoleCycle(
           config.birthdayCardEnabled &&
           usesStoredBirthdayCardBackground &&
           todaysRegistrations.length > 0
-            ? await getBirthdayCardRuntimeBackground(context.prisma, context.guildId).catch(
+            ? await getBirthdayCardRuntimeBackground(context.prisma, context.guildId, config).catch(
                 (error) => {
                   context.logger.warn(
                     {

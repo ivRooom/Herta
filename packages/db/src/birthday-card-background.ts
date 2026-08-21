@@ -50,12 +50,9 @@ export async function getBirthdayCardBackground(
 export async function getBirthdayCardRuntimeBackground(
   prisma: PrismaClient,
   guildId: string,
+  configSnapshot: unknown,
 ): Promise<BirthdayCardBackgroundRecord | null> {
-  const plugin = await prisma.guildPlugin.findUnique({
-    where: { guildId_pluginId: { guildId, pluginId: 'birthday-role' } },
-    select: { config: true },
-  });
-  const assetSelection = resolveBirthdayCardAssetSelection(plugin?.config);
+  const assetSelection = resolveBirthdayCardAssetSelection(configSnapshot);
   if (assetSelection !== undefined) {
     if (!assetSelection) return null;
     const asset = await getBirthdayCardAsset(prisma, guildId, assetSelection);
