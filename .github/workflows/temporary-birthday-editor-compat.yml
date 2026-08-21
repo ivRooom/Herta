@@ -1,0 +1,59 @@
+name: Temporary Birthday Editor Compatibility Fix
+
+on:
+  push:
+    branches:
+      - feat/birthday-card-asset-library
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: feat/birthday-card-asset-library
+
+      - name: Replace ES2023 toSorted with compatible sort
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = 'apps/studio/src/components/birthday-card-editor.tsx';
+          let source = fs.readFileSync(path, 'utf8');
+          const before = `      setAssets((current) =>
+        current
+          .map((item) => (item.id === asset.id ? payload.asset! : item))
+          .toSorted(
+            (a, b) =>
+              Number(b.isPreset) - Number(a.isPreset) || b.updatedAt.localeCompare(a.updatedAt),
+          ),
+      );`;
+          const after = `      setAssets((current) =>
+        [...current.map((item) => (item.id === asset.id ? payload.asset! : item))].sort(
+          (a, b) =>
+            Number(b.isPreset) - Number(a.isPreset) || b.updatedAt.localeCompare(a.updatedAt),
+        ),
+      );`;
+          if (!source.includes(before)) throw new Error('toSorted block not found');
+          source = source.replace(before, after);
+          fs.writeFileSync(path, source);
+          NODE
+
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec prettier --write apps/studio/src/components/birthday-card-editor.tsx
+
+      - name: Commit compatibility fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add apps/studio/src/components/birthday-card-editor.tsx
+          git commit -m 'fix(birthday): avoid unsupported toSorted in Studio'
+          git push origin HEAD:feat/birthday-card-asset-library
