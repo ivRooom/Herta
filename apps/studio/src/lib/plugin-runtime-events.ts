@@ -61,7 +61,7 @@ export async function publishPluginRuntimeEvent(input: {
       guildId: input.guildId,
       pluginId: input.pluginId,
       eventType: input.eventType,
-      error,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
     });
     await recordPluginRuntimePublishOutcome(event, {
       status: 'publish_failed',
