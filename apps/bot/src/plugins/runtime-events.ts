@@ -6,6 +6,7 @@ import {
   parsePluginRuntimeEvent,
   type PluginRuntimeEvent,
 } from '@herta/shared';
+import { defaultPluginRuntimeState } from './runtime-state.js';
 
 interface EventCursor {
   configVersion: number;
@@ -18,6 +19,7 @@ export type PluginRuntimeSyncReporter = (
   outcome: PluginRuntimeSyncOutcome,
   attempts: number,
 ) => Promise<void>;
+export type PluginRuntimeApplyVerifier = (event: PluginRuntimeEvent) => boolean;
 
 const MAX_SYNC_ATTEMPTS = 3;
 const SYNC_RETRY_BASE_MS = 500;
@@ -69,6 +71,8 @@ export class PluginRuntimeEventSubscriber {
     private readonly logger: Logger,
     private readonly debounceMs = 250,
     private readonly reportSyncOutcome: PluginRuntimeSyncReporter = recordPluginRuntimeSyncOutcome,
+    private readonly verifyApplied: PluginRuntimeApplyVerifier = (event) =>
+      defaultPluginRuntimeState.isEventApplied(event),
   ) {}
 
   async start(redisUrl: string): Promise<void> {
@@ -191,6 +195,22 @@ export class PluginRuntimeEventSubscriber {
     for (let attempt = 1; attempt <= MAX_SYNC_ATTEMPTS; attempt += 1) {
       try {
         await this.onGuildChanged(guildId);
+        const unappliedEvents = events.filter((event) => !this.verifyApplied(event));
+        if (unappliedEvents.length > 0) {
+          this.logger.warn(
+            {
+              guildId,
+              attempt,
+              plugins: unappliedEvents.map((event) => ({
+                pluginId: event.pluginId,
+                configVersion: event.configVersion,
+                eventType: event.eventType,
+              })),
+            },
+            'Plugin Runtime再同期後の適用状態を確認できませんでした',
+          );
+          throw new Error('PluginRuntimeStateNotApplied');
+        }
         if (attempt > 1) {
           this.logger.info(
             { guildId, attempt },
