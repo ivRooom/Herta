@@ -1,4 +1,5 @@
 import type { StudioAccessPolicy, StudioPolicyAction } from './studio-access-policy.ts';
+import { pluginConfigPermissionFields } from './plugin-config-paths.ts';
 import {
   pluginConfigFieldResource,
   pluginEnabledControlResource,
@@ -272,8 +273,8 @@ export function buildStudioGranularPermissionOptions(
       resource: enabledResource,
     });
 
-    for (const field of topLevelConfigFields(plugin.configSchema)) {
-      const resource = pluginConfigFieldResource(guildId, plugin.id, field.key);
+    for (const field of pluginConfigPermissionFields(plugin.configSchema)) {
+      const resource = pluginConfigFieldResource(guildId, plugin.id, field.path);
       options.push(
         {
           id: permissionOptionId('studio.settings.read', resource),
@@ -301,16 +302,9 @@ export function buildStudioGranularPermissionOptions(
 export function topLevelConfigFields(
   schema: Record<string, unknown>,
 ): Array<{ key: string; label: string; description: string }> {
-  const properties = schema['properties'];
-  if (!isRecord(properties)) return [];
-  return Object.entries(properties).map(([key, value]) => {
-    const property = isRecord(value) ? value : {};
-    return {
-      key,
-      label: text(property['title']) || humanizeKey(key),
-      description: text(property['description']),
-    };
-  });
+  return pluginConfigPermissionFields(schema)
+    .filter((field) => field.depth === 0)
+    .map((field) => ({ key: field.path, label: field.label, description: field.description }));
 }
 
 function isPageViewActionPattern(action: string): boolean {
@@ -341,21 +335,6 @@ function accessPageLabel(page: 'overview' | 'users' | 'groups' | 'roles' | 'poli
   }
 }
 
-function humanizeKey(value: string): string {
-  return value
-    .replace(/([a-z0-9])([A-Z])/gu, '$1 $2')
-    .replace(/[_-]+/gu, ' ')
-    .replace(/^./u, (character) => character.toUpperCase());
-}
-
 function encodeSegment(value: string): string {
   return encodeURIComponent(value.trim());
-}
-
-function text(value: unknown): string {
-  return typeof value === 'string' ? value.trim() : '';
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
