@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import {
   createIvrmIamMutationUuid,
   isIvrmIamJsonRequest,
+  IVRM_IAM_GROUP_BODY_MAX_BYTES,
   parseIvrmIamGroupCreateInput,
   readIvrmIamMutationContext,
   serializeIvrmIamGroupCreateResponse,
@@ -13,7 +14,6 @@ import { authorizeIvrmIntegrationRequest } from '@/lib/ivrm-integration-auth';
 import { isPrismaRawUniqueViolation } from '@/lib/prisma-raw-error';
 
 export const dynamic = 'force-dynamic';
-const MAX_GROUP_BODY_BYTES = 16 * 1024;
 
 export async function POST(request: Request, { params }: { params: Promise<{ guildId: string }> }) {
   const authorization = authorizeIvrmIntegrationRequest(request);
@@ -135,7 +135,7 @@ async function parseJsonBody(
   request: Request,
 ): Promise<{ value: unknown } | { response: Response }> {
   try {
-    const bytes = await readRequestBodyBytes(request, MAX_GROUP_BODY_BYTES);
+    const bytes = await readRequestBodyBytes(request, IVRM_IAM_GROUP_BODY_MAX_BYTES);
     return { value: JSON.parse(Buffer.from(bytes).toString('utf8')) as unknown };
   } catch (error) {
     return {
