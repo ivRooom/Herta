@@ -226,13 +226,10 @@ test('Herta IAM group input normalization conforms to portable request constrain
   assert.equal(name.normalization, 'trim');
   assert.equal(description.normalization, 'trim-and-empty-to-null');
   assert.equal(parseIvrmIamGroupCreateInput({ description: 'missing name' }), null);
-  assert.deepEqual(
-    parseIvrmIamGroupCreateInput({ name: minimumName, futureField: true }),
-    {
-      name: minimumName,
-      description: null,
-    },
-  );
+  assert.deepEqual(parseIvrmIamGroupCreateInput({ name: minimumName, futureField: true }), {
+    name: minimumName,
+    description: null,
+  });
   assert.deepEqual(parseIvrmIamGroupCreateInput({ name: ` ${minimumName} ` }), {
     name: minimumName,
     description: null,
@@ -289,10 +286,7 @@ test('Herta IAM success response serializer conforms to the portable response sc
     [...contract.response.group.required].sort(),
   );
   assert.match(serialized.group.id, /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu);
-  assert.equal(
-    serialized.group.name.length <= contract.response.group.fields.name.maxLength,
-    true,
-  );
+  assert.equal(serialized.group.name.length <= contract.response.group.fields.name.maxLength, true);
   assert.equal(serialized.group.description, null);
   assert.equal(serialized.group.updatedAt, '2026-08-20T00:00:00.000Z');
 });
@@ -300,10 +294,7 @@ test('Herta IAM success response serializer conforms to the portable response sc
 test('Herta IAM route keeps bounded body, success status and replay semantics aligned with contract', () => {
   const routeSource = readFileSync(routeFileUrl(), 'utf8');
 
-  assert.match(
-    routeSource,
-    /readRequestBodyBytes\(request, IVRM_IAM_GROUP_BODY_MAX_BYTES\)/u,
-  );
+  assert.match(routeSource, /readRequestBodyBytes\(request, IVRM_IAM_GROUP_BODY_MAX_BYTES\)/u);
   assert.match(routeSource, /isIvrmIamJsonRequest\(request\)/u);
   assert.deepEqual(contract.response.successStatusCodes, [200, 201]);
   assert.match(routeSource, /return groupResponse\(replay\.group, true, 200\);/u);
