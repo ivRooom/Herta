@@ -7,6 +7,7 @@ import {
 } from '@herta/db';
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
+import { parseAccessGroupMetadata } from '@/lib/access-group-metadata';
 import { RequestBodyTooLargeError, readRequestBodyBytes } from '@/lib/bounded-request-body';
 import { prisma } from '@/lib/db';
 import { isPrismaRawUniqueViolation } from '@/lib/prisma-raw-error';
@@ -184,12 +185,14 @@ async function requireRoot(guildId: string, userId: string) {
 }
 
 function parseGroupMetadata(value: Record<string, unknown>) {
-  const name = typeof value.name === 'string' ? value.name.trim() : '';
-  if (name.length < 1 || name.length > 100)
-    return { error: 'Group名は1〜100文字で指定してください' };
-  const description = typeof value.description === 'string' ? value.description.trim() : '';
-  if (description.length > 500) return { error: '説明は500文字以内で指定してください' };
-  return { name, description: description || null };
+  const parsed = parseAccessGroupMetadata(value);
+  if (parsed.ok) return parsed.value;
+  return {
+    error:
+      parsed.field === 'name'
+        ? 'Group名は1〜100文字で指定してください'
+        : '説明は500文字以内で指定してください',
+  };
 }
 
 async function parseJsonBody(

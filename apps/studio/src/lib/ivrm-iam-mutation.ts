@@ -1,21 +1,28 @@
 import { createHash } from 'node:crypto';
+import { parseAccessGroupMetadata, type AccessGroupMetadata } from './access-group-metadata.ts';
 
 const DISCORD_SNOWFLAKE_PATTERN = /^\d{17,20}$/u;
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/u;
+
+export const IVRM_IAM_GROUP_BODY_MAX_BYTES = 16 * 1024;
 
 export type IvrmIamMutationContext = {
   actorId: string;
   idempotencyKey: string;
 };
 
-export type IvrmIamGroupCreateInput = {
+export type IvrmIamGroupCreateInput = AccessGroupMetadata;
+
+export type IvrmIamGroupCreateResponseGroup = {
+  id: string;
   name: string;
   description: string | null;
+  updatedAt: Date;
 };
 
 export function readIvrmIamMutationContext(request: Request): IvrmIamMutationContext | null {
-  const actorId = request.headers.get('x-ivrm-actor-id')?.trim() ?? '';
-  const idempotencyKey = request.headers.get('idempotency-key')?.trim() ?? '';
+  const actorId = request.headers.get('x-ivrm-actor-id') ?? '';
+  const idempotencyKey = request.headers.get('idempotency-key') ?? '';
 
   if (!DISCORD_SNOWFLAKE_PATTERN.test(actorId)) return null;
   if (!IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) return null;
@@ -23,26 +30,33 @@ export function readIvrmIamMutationContext(request: Request): IvrmIamMutationCon
   return { actorId, idempotencyKey };
 }
 
+export function isIvrmIamJsonRequest(request: Request) {
+  const contentType = request.headers.get('content-type');
+  if (!contentType) return false;
+
+  const [mediaType] = contentType.split(';', 1);
+  return mediaType.trim().toLowerCase() === 'application/json';
+}
+
 export function parseIvrmIamGroupCreateInput(value: unknown): IvrmIamGroupCreateInput | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const parsed = parseAccessGroupMetadata(value);
+  return parsed.ok ? parsed.value : null;
+}
 
-  const record = value as Record<string, unknown>;
-  if (typeof record.name !== 'string') return null;
-  if (
-    record.description !== undefined &&
-    record.description !== null &&
-    typeof record.description !== 'string'
-  ) {
-    return null;
-  }
-
-  const name = record.name.trim();
-  const description = typeof record.description === 'string' ? record.description.trim() : '';
-
-  if (name.length < 1 || name.length > 100) return null;
-  if (description.length > 500) return null;
-
-  return { name, description: description || null };
+export function serializeIvrmIamGroupCreateResponse(
+  group: IvrmIamGroupCreateResponseGroup,
+  replayed: boolean,
+) {
+  return {
+    status: 'ok' as const,
+    replayed,
+    group: {
+      id: group.id,
+      name: group.name,
+      description: group.description,
+      updatedAt: group.updatedAt.toISOString(),
+    },
+  };
 }
 
 export function createIvrmIamMutationUuid(
