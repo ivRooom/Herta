@@ -3,6 +3,7 @@ import type { EnabledPlugin } from '@herta/plugin-catalog';
 import type { SlashCommand } from '../commands/registry.js';
 import type { GuildPluginCache } from './cache.js';
 import type { PluginRuntimeRegistry } from './registry.js';
+import { defaultPluginRuntimeState, type PluginRuntimeState } from './runtime-state.js';
 import type { GuildEventHandler, LoadedGuildPlugins } from './types.js';
 
 export interface GuildPluginLoaderDeps {
@@ -11,11 +12,13 @@ export interface GuildPluginLoaderDeps {
   logger: Logger;
   fetchEnabledPlugins(guildId: string): Promise<EnabledPlugin[]>;
   coreCommandNames?: string[];
+  runtimeState?: PluginRuntimeState;
 }
 
 interface ActivatedPlugin {
   pluginId: string;
   config: Record<string, unknown>;
+  configVersion: number;
 }
 
 export class GuildPluginLoader {
@@ -24,6 +27,7 @@ export class GuildPluginLoader {
   private readonly logger: Logger;
   private readonly fetchEnabledPlugins: (guildId: string) => Promise<EnabledPlugin[]>;
   private readonly coreCommandNames: Set<string>;
+  private readonly runtimeState: PluginRuntimeState;
   private readonly activatedPlugins = new Map<string, ActivatedPlugin>();
 
   constructor(deps: GuildPluginLoaderDeps) {
@@ -32,6 +36,7 @@ export class GuildPluginLoader {
     this.logger = deps.logger;
     this.fetchEnabledPlugins = deps.fetchEnabledPlugins;
     this.coreCommandNames = new Set(deps.coreCommandNames ?? []);
+    this.runtimeState = deps.runtimeState ?? defaultPluginRuntimeState;
   }
 
   private async getEnabled(guildId: string): Promise<EnabledPlugin[]> {
@@ -105,7 +110,9 @@ export class GuildPluginLoader {
           this.activatedPlugins.set(activationKey, {
             pluginId,
             config: structuredClone(enabled.config),
+            configVersion: enabled.configVersion,
           });
+          this.runtimeState.markActive(guildId, pluginId, enabled.configVersion);
         } catch (error) {
           const reason = 'Plugin onEnable の実行に失敗しました';
           this.logger.error({ guildId, pluginId, error }, 'Pluginの有効化に失敗しました');
@@ -144,13 +151,13 @@ export class GuildPluginLoader {
       const entry = this.registry.get(state.pluginId);
       try {
         await entry?.onDisable?.(guildId, state.config);
+        this.activatedPlugins.delete(activationKey);
+        this.runtimeState.markInactive(guildId, state.pluginId);
       } catch (error) {
         this.logger.error(
           { guildId, pluginId: state.pluginId, error },
           'Plugin の無効化に失敗しました',
         );
-      } finally {
-        this.activatedPlugins.delete(activationKey);
       }
     }
   }
