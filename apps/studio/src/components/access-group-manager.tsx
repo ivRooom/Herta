@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { describeStudioApiError } from '@/lib/studio-api-feedback';
+import { truncateUnicodeCodePoints } from '@/lib/access-group-metadata';
 import {
   PermissionDisabledHint,
   ReadOnlyPermissionNotice,
@@ -238,10 +239,9 @@ export function AccessGroupManager({
               Group名
               <input
                 value={name}
-                onChange={(event) => setName(event.target.value)}
+                onChange={(event) => setName(truncateUnicodeCodePoints(event.target.value, 100))}
                 disabled={!canEdit || pending}
                 title={!canEdit ? OWNER_ROOT_PERMISSION_HINT : undefined}
-                maxLength={100}
                 className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </label>
@@ -249,10 +249,11 @@ export function AccessGroupManager({
               説明
               <input
                 value={description}
-                onChange={(event) => setDescription(event.target.value)}
+                onChange={(event) =>
+                  setDescription(truncateUnicodeCodePoints(event.target.value, 500))
+                }
                 disabled={!canEdit || pending}
                 title={!canEdit ? OWNER_ROOT_PERMISSION_HINT : undefined}
-                maxLength={500}
                 className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 font-normal outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </label>
