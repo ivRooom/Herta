@@ -115,6 +115,31 @@ test('Runtime publish失敗とapply失敗をAttentionへ分類する', () => {
   assert.equal(resolvePluginOperationAttentionReason({ ...base, runtimeStatus: 'applied' }), null);
 });
 
+test('Plugin無効化のRuntime失敗をPausedではなくAttentionへ分類する', () => {
+  const row: PluginOperationInventoryRow = {
+    guildId: '10000000000000001',
+    pluginId: 'moderation',
+    pluginName: 'Moderation',
+    enabled: false,
+    configValid: true,
+    configVersion: 10,
+    installedAt: '2026-08-10T00:00:00.000Z',
+    updatedAt: '2026-08-22T04:00:00.000Z',
+    runtimeStatus: 'publish_failed',
+    runtimeConfigVersion: 10,
+    runtimeObservedAt: '2026-08-22T04:00:01.000Z',
+  };
+
+  const reason = resolvePluginOperationAttentionReason(row);
+  assert.equal(reason, 'runtime_publish_failed');
+  assert.equal(resolvePluginOperationStatus(row.enabled, row.configValid, reason), 'attention');
+
+  const result = summarizePluginOperations([row.guildId], 1, [row]);
+  assert.equal(result.enabledInstances, 0);
+  assert.equal(result.attentionInstances, 1);
+  assert.equal(result.pausedInstances, 0);
+});
+
 test('publish成功後にACKが閾値を超えて届かなければAttentionへ分類する', () => {
   const observedAt = Date.parse('2026-08-22T04:00:00.000Z');
   const row: PluginOperationInventoryRow = {
@@ -135,6 +160,28 @@ test('publish成功後にACKが閾値を超えて届かなければAttentionへ�
     resolvePluginOperationAttentionReason(row, observedAt + PLUGIN_RUNTIME_APPLY_DELAY_MS - 1),
     null,
   );
+  assert.equal(
+    resolvePluginOperationAttentionReason(row, observedAt + PLUGIN_RUNTIME_APPLY_DELAY_MS),
+    'runtime_apply_delayed',
+  );
+});
+
+test('無効化publishのACK遅延もAttentionへ分類する', () => {
+  const observedAt = Date.parse('2026-08-22T04:00:00.000Z');
+  const row: PluginOperationInventoryRow = {
+    guildId: '10000000000000001',
+    pluginId: 'quote',
+    pluginName: 'Quote',
+    enabled: false,
+    configValid: true,
+    configVersion: 6,
+    installedAt: '2026-08-10T00:00:00.000Z',
+    updatedAt: '2026-08-22T04:00:00.000Z',
+    runtimeStatus: 'published',
+    runtimeConfigVersion: 6,
+    runtimeObservedAt: new Date(observedAt).toISOString(),
+  };
+
   assert.equal(
     resolvePluginOperationAttentionReason(row, observedAt + PLUGIN_RUNTIME_APPLY_DELAY_MS),
     'runtime_apply_delayed',
