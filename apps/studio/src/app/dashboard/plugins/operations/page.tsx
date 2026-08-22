@@ -113,7 +113,7 @@ export default async function PluginOperationsPage() {
           icon={CirclePause}
           label="Paused"
           value={inventory.pausedInstances}
-          detail="設定済みでRuntime反映済みの無効状態"
+          detail="設定済みの無効状態"
         />
         <MetricCard
           icon={Activity}
