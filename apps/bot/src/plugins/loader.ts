@@ -48,8 +48,10 @@ export class GuildPluginLoader {
     try {
       const enabled = await this.fetchEnabledPlugins(guildId);
       this.cache.set(guildId, enabled);
+      this.runtimeState.markConfigurationLoaded(guildId);
       return enabled;
     } catch (error) {
+      this.runtimeState.markConfigurationLoadFailed(guildId);
       this.logger.error({ guildId, error }, '有効Pluginの取得に失敗しました');
       return [];
     }
@@ -142,6 +144,7 @@ export class GuildPluginLoader {
 
   /** Guild の有効化済みPluginを無効化し、SDKのlifecycleを通知する。 */
   async disableGuildPlugins(guildId: string): Promise<void> {
+    this.runtimeState.markReloadStarted(guildId);
     const prefix = `${guildId}:`;
     const activated = [...this.activatedPlugins.entries()].filter(([key]) =>
       key.startsWith(prefix),
