@@ -193,22 +193,17 @@ export class PluginRuntimeEventSubscriber {
     guildId: string,
     events: readonly PluginRuntimeEvent[],
   ): Promise<void> {
-    let remainingEvents = [...events];
-
     for (let attempt = 1; attempt <= MAX_SYNC_ATTEMPTS; attempt += 1) {
       try {
         await this.onGuildChanged(guildId);
 
         const appliedEvents: PluginRuntimeEvent[] = [];
         const unappliedEvents: PluginRuntimeEvent[] = [];
-        for (const event of remainingEvents) {
+        for (const event of events) {
           if (this.verifyApplied(event)) appliedEvents.push(event);
           else unappliedEvents.push(event);
         }
 
-        if (appliedEvents.length > 0) {
-          await this.reportOutcomeSafely(appliedEvents, 'applied', attempt);
-        }
         if (unappliedEvents.length === 0) {
           if (attempt > 1) {
             this.logger.info(
@@ -216,15 +211,15 @@ export class PluginRuntimeEventSubscriber {
               'Plugin Runtime Guild再同期の再試行に成功しました',
             );
           }
+          await this.reportOutcomeSafely(appliedEvents, 'applied', attempt);
           return;
         }
 
-        remainingEvents = unappliedEvents;
         this.logger.warn(
           {
             guildId,
             attempt,
-            plugins: remainingEvents.map((event) => ({
+            plugins: unappliedEvents.map((event) => ({
               pluginId: event.pluginId,
               configVersion: event.configVersion,
               eventType: event.eventType,
@@ -238,7 +233,10 @@ export class PluginRuntimeEventSubscriber {
             { errorName: RUNTIME_STATE_NOT_APPLIED, guildId, attempt },
             'Plugin RuntimeイベントによるGuild再同期に失敗しました',
           );
-          await this.reportOutcomeSafely(remainingEvents, 'apply_failed', attempt);
+          if (appliedEvents.length > 0) {
+            await this.reportOutcomeSafely(appliedEvents, 'applied', attempt);
+          }
+          await this.reportOutcomeSafely(unappliedEvents, 'apply_failed', attempt);
           return;
         }
 
@@ -252,7 +250,7 @@ export class PluginRuntimeEventSubscriber {
             { errorName: resolveErrorName(error), guildId, attempt },
             'Plugin RuntimeイベントによるGuild再同期に失敗しました',
           );
-          await this.reportOutcomeSafely(remainingEvents, 'apply_failed', attempt);
+          await this.reportOutcomeSafely(events, 'apply_failed', attempt);
           return;
         }
         this.logger.warn(
