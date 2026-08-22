@@ -156,8 +156,9 @@ export default async function PluginOperationsPage() {
                   : '現在、要対応のPluginはありません'}
               </h2>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-                有効なPluginの設定Schemaに加え、StudioからBotへのRuntime通知と反映ACKも確認します。
-                無効化中のPluginは障害扱いせずPausedとして分離しています。
+                {
+                  '有効なPluginの設定Schemaに加え、StudioからBotへのRuntime通知と反映ACKも確認します。無効化中のPluginは障害扱いせずPausedとして分離しています。'
+                }
               </p>
             </div>
           </div>
@@ -329,9 +330,9 @@ export default async function PluginOperationsPage() {
           <div>
             <h2 className="font-semibold">判定範囲と安全性</h2>
             <p className="mt-1 text-sm leading-6 text-muted">
-              保存済み設定と現在の公式Plugin Schemaを照合し、Runtime通知のpublish結果とBot反映ACKを
-              Audit Logへ永続化して現在のconfigVersionだけを判定します。publish後2分を超えてACKがない場合も
-              Attentionとして表示します。設定本文・Secret・Redis接続情報はRuntime監査イベントへ保存しません。
+              {
+                '保存済み設定と現在の公式Plugin Schemaを照合し、Runtime通知のpublish結果とBot反映ACKをAudit Logへ永続化して現在のconfigVersionだけを判定します。publish後2分を超えてACKがない場合もAttentionとして表示します。設定本文・Secret・Redis接続情報はRuntime監査イベントへ保存しません。'
+              }
             </p>
           </div>
         </div>
@@ -359,7 +360,9 @@ function PageHeader() {
             Plugin Operations Center
           </h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-            管理可能なDiscordサーバーの公式Pluginを横断し、設定整合性・Runtime反映状態・一時停止・最近の管理操作を安全に確認します。
+            {
+              '管理可能なDiscordサーバーの公式Pluginを横断し、設定整合性・Runtime反映状態・一時停止・最近の管理操作を安全に確認します。'
+            }
           </p>
         </div>
       </section>
@@ -381,7 +384,9 @@ function AttentionCard({ entry, guildName }: { entry: PluginOperationItem; guild
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted">
         <span>configVersion v{entry.configVersion}</span>
         <span>更新 {formatJst(entry.updatedAt)}</span>
-        {entry.runtimeObservedAt ? <span>Runtime {formatJst(entry.runtimeObservedAt)}</span> : null}
+        {entry.runtimeObservedAt ? (
+          <span>Runtime {formatJst(entry.runtimeObservedAt)}</span>
+        ) : null}
       </div>
       <div className="mt-4 flex flex-wrap gap-3">
         <Link
