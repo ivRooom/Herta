@@ -9,18 +9,25 @@ import {
   validatePluginConfig,
 } from '@/lib/guild-plugins';
 import {
+  changedPluginConfigPermissionPaths,
   changedTopLevelConfigFields,
+  PluginConfigPathPatchError,
   resolvePluginConfigCandidate,
   type PluginConfigPatchInput,
 } from '@/lib/plugin-config-patch';
+import {
+  pluginConfigPermissionPaths,
+  resolvePluginConfigPermissionPath,
+  type PluginConfigPathSegment,
+} from '@/lib/plugin-config-paths';
 import { toPluginConfigValidationIssues } from '@/lib/plugin-config-validation-issues';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
 import { resolveStudioAccess } from '@/lib/studio-access';
 import { studioBirthdayResource } from '@/lib/studio-policy-resources';
 import {
   filterReadablePluginConfig,
+  hasEffectivePluginConfigPermission,
   hasEffectivePluginPermission,
-  pluginConfigFieldResource,
   pluginEnabledControlResource,
   resolvePluginConfigStudioAccess,
 } from '@/lib/studio-plugin-permissions';
@@ -29,6 +36,8 @@ export const dynamic = 'force-dynamic';
 const MAX_PLUGIN_PATCH_BODY_BYTES = 128 * 1024;
 const MAX_REMOVED_CONFIG_FIELDS = 256;
 const MAX_CONFIG_FIELD_KEY_LENGTH = 200;
+const MAX_CONFIG_PATH_OPERATIONS = 256;
+const MAX_CONFIG_PATH_DEPTH = 16;
 
 type PluginPatchBody = PluginConfigPatchInput & { enabled?: boolean };
 
@@ -48,11 +57,11 @@ export async function GET(
     access.access,
     guildId,
     pluginId,
-    topLevelConfigFieldKeys(plugin.manifest.configSchema),
+    pluginConfigPermissionPaths(plugin.manifest.configSchema),
   );
   return NextResponse.json({
     ...plugin,
-    config: filterReadablePluginConfig(plugin.config, configAccess),
+    config: filterReadablePluginConfig(plugin.config, configAccess, plugin.manifest.configSchema),
     configAccess,
   });
 }
@@ -89,7 +98,27 @@ export async function PATCH(
     }
   }
 
-  const candidateConfig = resolvePluginConfigCandidate(current.config, body.value);
+  const schemaPaths = pluginConfigPermissionPaths(manifest.configSchema);
+  const requestedPathAuthorization = authorizeRequestedConfigPaths(
+    body.value,
+    manifest.configSchema,
+    schemaPaths,
+    access.access,
+    guildId,
+    pluginId,
+  );
+  if ('response' in requestedPathAuthorization) return requestedPathAuthorization.response;
+
+  let candidateConfig: Record<string, unknown> | undefined;
+  try {
+    candidateConfig = resolvePluginConfigCandidate(current.config, body.value);
+  } catch (error) {
+    if (error instanceof PluginConfigPathPatchError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    throw error;
+  }
+
   let validatedConfig: Record<string, unknown> | undefined;
   if (candidateConfig !== undefined) {
     const validation = validatePluginConfig(manifest, candidateConfig);
@@ -106,19 +135,56 @@ export async function PATCH(
     validatedConfig = validation.config;
 
     const changedFields = changedTopLevelConfigFields(current.config, validation.config);
-    const deniedFields = changedFields.filter(
-      (fieldKey) =>
-        !hasEffectivePluginPermission(
-          access.access,
-          'studio.settings.write',
-          pluginConfigFieldResource(guildId, pluginId, fieldKey),
+    if (requestedPathAuthorization.usesLegacyPatch) {
+      const deniedFields = changedFields.filter((fieldKey) =>
+        requiredConfigPermissionPaths(schemaPaths, fieldKey).some(
+          (configPath) =>
+            !hasEffectivePluginConfigPermission(
+              access.access,
+              'studio.settings.write',
+              guildId,
+              pluginId,
+              configPath,
+            ),
         ),
+      );
+      if (deniedFields.length > 0) {
+        return NextResponse.json(
+          {
+            error: '編集権限のないPlugin設定項目が含まれています',
+            fields: deniedFields,
+          },
+          { status: 403 },
+        );
+      }
+    }
+
+    const validationChangedPaths = changedPluginConfigPermissionPaths(
+      candidateConfig,
+      validation.config,
+      manifest.configSchema,
     );
-    if (deniedFields.length > 0) {
+    const deniedValidationPaths = new Set<string>();
+    for (const changedPath of validationChangedPaths) {
+      for (const requiredPath of requiredConfigPermissionPaths(schemaPaths, changedPath)) {
+        if (
+          !hasEffectivePluginConfigPermission(
+            access.access,
+            'studio.settings.write',
+            guildId,
+            pluginId,
+            requiredPath,
+          )
+        ) {
+          deniedValidationPaths.add(requiredPath);
+        }
+      }
+    }
+    if (deniedValidationPaths.size > 0) {
       return NextResponse.json(
         {
-          error: '編集権限のないPlugin設定項目が含まれています',
-          fields: deniedFields,
+          error: 'Plugin設定の検証中に編集権限のない設定パスが変更されました',
+          paths: [...deniedValidationPaths].sort(),
         },
         { status: 403 },
       );
@@ -172,13 +238,89 @@ export async function PATCH(
     access.access,
     guildId,
     pluginId,
-    topLevelConfigFieldKeys(result.manifest.configSchema),
+    pluginConfigPermissionPaths(result.manifest.configSchema),
   );
   return NextResponse.json({
     ...result,
-    config: filterReadablePluginConfig(result.config, configAccess),
+    config: filterReadablePluginConfig(result.config, configAccess, result.manifest.configSchema),
     configAccess,
   });
+}
+
+function authorizeRequestedConfigPaths(
+  body: PluginPatchBody,
+  schema: Record<string, unknown>,
+  schemaPaths: readonly string[],
+  access: Parameters<typeof hasEffectivePluginConfigPermission>[0],
+  guildId: string,
+  pluginId: string,
+): { usesLegacyPatch: boolean } | { response: Response } {
+  const pathOperations = [
+    ...(body.configPathPatch ?? []).map((operation) => operation.path),
+    ...(body.removeConfigPaths ?? []),
+  ];
+  const usesLegacyPatch =
+    body.config !== undefined ||
+    body.configPatch !== undefined ||
+    body.removeConfigFields !== undefined;
+  if (pathOperations.length === 0) return { usesLegacyPatch };
+
+  const invalidPaths: PluginConfigPathSegment[][] = [];
+  const deniedPaths = new Set<string>();
+  for (const path of pathOperations) {
+    const canonical = resolvePluginConfigPermissionPath(schema, path);
+    if (!canonical) {
+      invalidPaths.push([...path]);
+      continue;
+    }
+    for (const requiredPath of requiredConfigPermissionPaths(schemaPaths, canonical)) {
+      if (
+        !hasEffectivePluginConfigPermission(
+          access,
+          'studio.settings.write',
+          guildId,
+          pluginId,
+          requiredPath,
+        )
+      ) {
+        deniedPaths.add(requiredPath);
+      }
+    }
+  }
+
+  if (invalidPaths.length > 0) {
+    return {
+      response: NextResponse.json(
+        { error: 'Plugin設定パスがスキーマに存在しません', paths: invalidPaths },
+        { status: 400 },
+      ),
+    };
+  }
+  if (deniedPaths.size > 0) {
+    return {
+      response: NextResponse.json(
+        {
+          error: '編集権限のないPlugin設定パスが含まれています',
+          paths: [...deniedPaths].sort(),
+        },
+        { status: 403 },
+      ),
+    };
+  }
+  return { usesLegacyPatch: false };
+}
+
+function requiredConfigPermissionPaths(
+  schemaPaths: readonly string[],
+  canonicalPath: string,
+): string[] {
+  const required = schemaPaths.filter(
+    (path) =>
+      path === canonicalPath ||
+      path.startsWith(`${canonicalPath}.`) ||
+      path.startsWith(`${canonicalPath}[]`),
+  );
+  return required.length > 0 ? required : [canonicalPath];
 }
 
 async function parsePatchBody(
@@ -207,8 +349,8 @@ async function parsePatchBody(
 }
 
 function isPatchBody(value: unknown): value is PluginPatchBody {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
-  const body = value as Record<string, unknown>;
+  if (!isRecord(value)) return false;
+  const body = value;
   const keys = Object.keys(body);
   if (
     keys.some(
@@ -216,11 +358,20 @@ function isPatchBody(value: unknown): value is PluginPatchBody {
         key !== 'enabled' &&
         key !== 'config' &&
         key !== 'configPatch' &&
-        key !== 'removeConfigFields',
+        key !== 'removeConfigFields' &&
+        key !== 'configPathPatch' &&
+        key !== 'removeConfigPaths',
     )
   ) {
     return false;
   }
+
+  const hasPathPatch = body.configPathPatch !== undefined || body.removeConfigPaths !== undefined;
+  const hasLegacyPatch =
+    body.config !== undefined ||
+    body.configPatch !== undefined ||
+    body.removeConfigFields !== undefined;
+  if (hasPathPatch && hasLegacyPatch) return false;
   if (
     body.config !== undefined &&
     (body.configPatch !== undefined || body.removeConfigFields !== undefined)
@@ -248,13 +399,44 @@ function isPatchBody(value: unknown): value is PluginPatchBody {
       return false;
     }
   }
+  if (body.configPathPatch !== undefined) {
+    if (
+      !Array.isArray(body.configPathPatch) ||
+      body.configPathPatch.length > MAX_CONFIG_PATH_OPERATIONS ||
+      body.configPathPatch.some((operation) => !isConfigPathPatchOperation(operation))
+    ) {
+      return false;
+    }
+  }
+  if (body.removeConfigPaths !== undefined) {
+    if (
+      !Array.isArray(body.removeConfigPaths) ||
+      body.removeConfigPaths.length > MAX_CONFIG_PATH_OPERATIONS ||
+      body.removeConfigPaths.some((path) => !isConfigPath(path))
+    ) {
+      return false;
+    }
+  }
   return true;
 }
 
-function topLevelConfigFieldKeys(schema: Record<string, unknown>): string[] {
-  const properties = schema['properties'];
-  if (!isRecord(properties)) return [];
-  return Object.keys(properties);
+function isConfigPathPatchOperation(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (Object.keys(value).some((key) => key !== 'path' && key !== 'value')) return false;
+  return Object.hasOwn(value, 'value') && isConfigPath(value.path);
+}
+
+function isConfigPath(value: unknown): value is PluginConfigPathSegment[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_CONFIG_PATH_DEPTH) {
+    return false;
+  }
+  return value.every(
+    (segment) =>
+      (typeof segment === 'string' &&
+        segment.length > 0 &&
+        segment.length <= MAX_CONFIG_FIELD_KEY_LENGTH) ||
+      (typeof segment === 'number' && Number.isSafeInteger(segment) && segment >= 0),
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
