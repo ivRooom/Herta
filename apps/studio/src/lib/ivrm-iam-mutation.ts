@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 const DISCORD_SNOWFLAKE_PATTERN = /^\d{17,20}$/u;
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/u;
 
+export const IVRM_IAM_GROUP_BODY_MAX_BYTES = 16 * 1024;
+
 export type IvrmIamMutationContext = {
   actorId: string;
   idempotencyKey: string;
@@ -38,11 +40,7 @@ export function isIvrmIamJsonRequest(request: Request) {
   return mediaType.trim().toLowerCase() === 'application/json';
 }
 
-export function isUnicodeCodePointLengthBetween(
-  value: string,
-  minimum: number,
-  maximum: number,
-) {
+export function isUnicodeCodePointLengthBetween(value: string, minimum: number, maximum: number) {
   let length = 0;
   for (const _character of value) {
     length += 1;
