@@ -1,9 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  parseAccessGroupMetadata,
-  truncateUnicodeCodePoints,
-} from './access-group-metadata.ts';
+import { parseAccessGroupMetadata, truncateUnicodeCodePoints } from './access-group-metadata.ts';
 
 test('parseAccessGroupMetadata normalizes valid values and ignores unknown fields', () => {
   assert.deepEqual(
