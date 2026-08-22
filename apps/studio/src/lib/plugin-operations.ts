@@ -8,8 +8,16 @@ import {
   type PluginOperationInventoryRow,
   type PluginOperationsInventory,
 } from './plugin-operations-core.ts';
+import {
+  PLUGIN_RUNTIME_AUDIT_EVENTS,
+  buildPluginRuntimeOperationStateMap,
+  pluginRuntimeOperationStateKey,
+} from './plugin-runtime-operation-state.ts';
 
 const RECENT_OPERATION_LIMIT = 12;
+const MIN_RUNTIME_AUDIT_READ_LIMIT = 48;
+const MAX_RUNTIME_AUDIT_READ_LIMIT = 1_000;
+const RUNTIME_AUDIT_ROWS_PER_PLUGIN = 12;
 
 export interface RecentPluginOperation {
   id: string;
@@ -50,10 +58,39 @@ export async function getPluginOperationsInventory(
     },
   });
 
+  const runtimeReadLimit = Math.min(
+    MAX_RUNTIME_AUDIT_READ_LIMIT,
+    Math.max(MIN_RUNTIME_AUDIT_READ_LIMIT, rows.length * RUNTIME_AUDIT_ROWS_PER_PLUGIN),
+  );
+  const runtimeRows =
+    rows.length === 0
+      ? []
+      : await prisma.auditLog.findMany({
+          where: {
+            guildId: { in: [...guildIds] },
+            targetType: 'plugin',
+            targetId: { in: pluginIds },
+            event: { in: PLUGIN_RUNTIME_AUDIT_EVENTS },
+          },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: runtimeReadLimit,
+          select: {
+            guildId: true,
+            targetId: true,
+            event: true,
+            metadata: true,
+            createdAt: true,
+          },
+        });
+  const runtimeStateByPluginVersion = buildPluginRuntimeOperationStateMap(runtimeRows);
+
   const inventoryRows: PluginOperationInventoryRow[] = [];
   for (const row of rows) {
     const manifest = manifestById.get(row.pluginId);
     if (!manifest) continue;
+    const runtimeState = runtimeStateByPluginVersion.get(
+      pluginRuntimeOperationStateKey(row.guildId, row.pluginId, row.configVersion),
+    );
 
     inventoryRows.push({
       guildId: row.guildId,
@@ -64,6 +101,13 @@ export async function getPluginOperationsInventory(
       configVersion: row.configVersion,
       installedAt: row.installedAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
+      ...(runtimeState
+        ? {
+            runtimeStatus: runtimeState.status,
+            runtimeConfigVersion: runtimeState.configVersion,
+            runtimeObservedAt: runtimeState.observedAt,
+          }
+        : {}),
     });
   }
 
