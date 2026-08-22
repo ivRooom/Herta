@@ -9,6 +9,7 @@ import { RestrictedPluginConfigForm } from '@/components/restricted-plugin-confi
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
 import { getGuildPlugin } from '@/lib/guild-plugins';
 import { resolveModerationConfigSection } from '@/lib/moderation-config-ui';
+import { pluginConfigPermissionPaths } from '@/lib/plugin-config-paths';
 import { resolveStudioAccess } from '@/lib/studio-access';
 import {
   filterReadablePluginConfig,
@@ -37,11 +38,15 @@ export default async function PluginDetailPage({
     getGuildConfigurationOptions(guildId),
   ]);
   if (!plugin) notFound();
-  const fieldKeys = topLevelConfigFieldKeys(plugin.manifest.configSchema);
-  const configAccess = resolvePluginConfigStudioAccess(access.access, guildId, pluginId, fieldKeys);
-  const visibleConfig = filterReadablePluginConfig(plugin.config, configAccess);
-  const allFieldsReadable = configAccess.readableFieldKeys.length === fieldKeys.length;
-  const allFieldsEditable = configAccess.editableFieldKeys.length === fieldKeys.length;
+  const configPaths = pluginConfigPermissionPaths(plugin.manifest.configSchema);
+  const configAccess = resolvePluginConfigStudioAccess(access.access, guildId, pluginId, configPaths);
+  const visibleConfig = filterReadablePluginConfig(
+    plugin.config,
+    configAccess,
+    plugin.manifest.configSchema,
+  );
+  const allFieldsReadable = configAccess.allConfigPathsReadable;
+  const allFieldsEditable = configAccess.allConfigPathsEditable;
   const canUseModerationGuidedEditor =
     pluginId === 'moderation' &&
     allFieldsReadable &&
@@ -79,7 +84,7 @@ export default async function PluginDetailPage({
             initialSection={resolveModerationConfigSection(query.section)}
             discordOptions={discordOptions}
           />
-        ) : allFieldsReadable ? (
+        ) : allFieldsReadable && allFieldsEditable ? (
           <div className="rounded-2xl border border-border bg-surface p-6 shadow-card">
             <PluginConfigForm
               guildId={guildId}
@@ -221,10 +226,4 @@ function ManagementLink({
       <ArrowRight className="h-5 w-5 text-muted" aria-hidden="true" />
     </Link>
   );
-}
-
-function topLevelConfigFieldKeys(schema: Record<string, unknown>): string[] {
-  const properties = schema['properties'];
-  if (typeof properties !== 'object' || properties === null || Array.isArray(properties)) return [];
-  return Object.keys(properties);
 }
