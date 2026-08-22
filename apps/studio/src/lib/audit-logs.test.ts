@@ -106,6 +106,34 @@ test('Plugin設定変更は設定値を含めず安全な要約へ変換する',
   assert.equal(presentation.summary.includes('super-secret-token'), false);
 });
 
+test('Runtime publish失敗はStudio Runtimeとして安全に表示する', () => {
+  const presentation = describeAuditEvent('plugin.runtime_publish_failed', 'plugin', 'quote', {
+    operationSource: 'studio-runtime',
+    configVersion: 8,
+    failureReason: 'publish_error',
+    redisUrl: 'redis://secret-host:6379',
+  });
+
+  assert.equal(presentation.eventLabel, 'Runtime通知の送信に失敗');
+  assert.equal(presentation.sourceLabel, 'Studio Runtime');
+  assert.equal(presentation.category, 'plugin');
+  assert.equal(presentation.summary.includes('secret-host'), false);
+});
+
+test('Runtime apply失敗はBot Runtimeとして安全に表示する', () => {
+  const presentation = describeAuditEvent('plugin.runtime_apply_failed', 'plugin', 'moderation', {
+    operationSource: 'bot-runtime',
+    configVersion: 9,
+    attempts: 3,
+    token: 'super-secret-token',
+  });
+
+  assert.equal(presentation.eventLabel, 'Runtime設定のBot反映に失敗');
+  assert.equal(presentation.sourceLabel, 'Bot Runtime');
+  assert.equal(presentation.targetLabel, 'Plugin: moderation');
+  assert.equal(presentation.summary.includes('super-secret-token'), false);
+});
+
 test('Moderation decisionは実行可否・Action・権限状態を安全に表示する', () => {
   const presentation = describeAuditEvent(
     'moderation.automatic.decision',
