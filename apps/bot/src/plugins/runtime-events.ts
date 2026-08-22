@@ -1,4 +1,5 @@
 import { Redis } from 'ioredis';
+import { getPrismaClient } from '@herta/db';
 import type { Logger } from '@herta/logger';
 import {
   PLUGIN_RUNTIME_EVENT_CHANNEL,
@@ -11,8 +12,49 @@ interface EventCursor {
   occurredAt: number;
 }
 
+export type PluginRuntimeSyncOutcome = 'applied' | 'apply_failed';
+export type PluginRuntimeSyncReporter = (
+  events: readonly PluginRuntimeEvent[],
+  outcome: PluginRuntimeSyncOutcome,
+  attempts: number,
+) => Promise<void>;
+
 const MAX_SYNC_ATTEMPTS = 3;
 const SYNC_RETRY_BASE_MS = 500;
+
+async function recordPluginRuntimeSyncOutcome(
+  events: readonly PluginRuntimeEvent[],
+  outcome: PluginRuntimeSyncOutcome,
+  attempts: number,
+): Promise<void> {
+  if (!process.env['DATABASE_URL'] || events.length === 0) return;
+  const prisma = getPrismaClient();
+  await prisma.$transaction(
+    events.map((event) =>
+      prisma.auditLog.create({
+        data: {
+          guildId: event.guildId,
+          actorId: 'herta-bot',
+          actorType: 'service',
+          event:
+            outcome === 'applied'
+              ? 'plugin.runtime_apply_succeeded'
+              : 'plugin.runtime_apply_failed',
+          targetType: 'plugin',
+          targetId: event.pluginId,
+          severity: outcome === 'applied' ? 'info' : 'warning',
+          metadata: {
+            operationSource: 'bot-runtime',
+            eventId: event.eventId,
+            eventType: event.eventType,
+            configVersion: event.configVersion,
+            attempts,
+          },
+        },
+      }),
+    ),
+  );
+}
 
 export class PluginRuntimeEventSubscriber {
   private redis?: Redis;
@@ -20,11 +62,13 @@ export class PluginRuntimeEventSubscriber {
   private readonly seenEventIds = new Set<string>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
   private readonly guildQueues = new Map<string, Promise<void>>();
+  private readonly pendingEvents = new Map<string, Map<string, PluginRuntimeEvent>>();
 
   constructor(
     private readonly onGuildChanged: (guildId: string) => Promise<void>,
     private readonly logger: Logger,
     private readonly debounceMs = 250,
+    private readonly reportSyncOutcome: PluginRuntimeSyncReporter = recordPluginRuntimeSyncOutcome,
   ) {}
 
   async start(redisUrl: string): Promise<void> {
@@ -60,13 +104,17 @@ export class PluginRuntimeEventSubscriber {
     }
     if (!this.acceptEvent(event)) return;
 
+    const pending = this.pendingEvents.get(event.guildId) ?? new Map<string, PluginRuntimeEvent>();
+    pending.set(event.pluginId, event);
+    this.pendingEvents.set(event.guildId, pending);
+
     const existing = this.timers.get(event.guildId);
     if (existing) clearTimeout(existing);
     this.timers.set(
       event.guildId,
       setTimeout(() => {
         this.timers.delete(event.guildId);
-        this.enqueueGuildSync(event.guildId);
+        this.flushGuild(event.guildId);
       }, this.debounceMs),
     );
   }
@@ -98,18 +146,48 @@ export class PluginRuntimeEventSubscriber {
     return true;
   }
 
-  private enqueueGuildSync(guildId: string): void {
+  private flushGuild(guildId: string): void {
+    const pending = this.pendingEvents.get(guildId);
+    if (!pending || pending.size === 0) return;
+    this.pendingEvents.delete(guildId);
+    this.enqueueGuildSync(guildId, [...pending.values()]);
+  }
+
+  private enqueueGuildSync(guildId: string, events: readonly PluginRuntimeEvent[]): void {
     const previous = this.guildQueues.get(guildId) ?? Promise.resolve();
     const next = previous
       .catch(() => undefined)
-      .then(() => this.syncGuildWithRetry(guildId))
+      .then(() => this.syncGuildWithRetry(guildId, events))
       .finally(() => {
         if (this.guildQueues.get(guildId) === next) this.guildQueues.delete(guildId);
       });
     this.guildQueues.set(guildId, next);
   }
 
-  private async syncGuildWithRetry(guildId: string): Promise<void> {
+  private async reportOutcomeSafely(
+    events: readonly PluginRuntimeEvent[],
+    outcome: PluginRuntimeSyncOutcome,
+    attempts: number,
+  ): Promise<void> {
+    try {
+      await this.reportSyncOutcome(events, outcome, attempts);
+    } catch (error) {
+      this.logger.error(
+        {
+          err: error,
+          guildId: events[0]?.guildId,
+          eventIds: events.map((event) => event.eventId),
+          outcome,
+        },
+        'Plugin Runtime反映結果の永続化に失敗しました',
+      );
+    }
+  }
+
+  private async syncGuildWithRetry(
+    guildId: string,
+    events: readonly PluginRuntimeEvent[],
+  ): Promise<void> {
     for (let attempt = 1; attempt <= MAX_SYNC_ATTEMPTS; attempt += 1) {
       try {
         await this.onGuildChanged(guildId);
@@ -119,6 +197,7 @@ export class PluginRuntimeEventSubscriber {
             'Plugin Runtime Guild再同期の再試行に成功しました',
           );
         }
+        await this.reportOutcomeSafely(events, 'applied', attempt);
         return;
       } catch (error) {
         if (attempt === MAX_SYNC_ATTEMPTS) {
@@ -126,6 +205,7 @@ export class PluginRuntimeEventSubscriber {
             { err: error, guildId, attempt },
             'Plugin RuntimeイベントによるGuild再同期に失敗しました',
           );
+          await this.reportOutcomeSafely(events, 'apply_failed', attempt);
           return;
         }
         this.logger.warn(
@@ -140,6 +220,7 @@ export class PluginRuntimeEventSubscriber {
   async stop(): Promise<void> {
     for (const timer of this.timers.values()) clearTimeout(timer);
     this.timers.clear();
+    this.pendingEvents.clear();
     await Promise.allSettled(this.guildQueues.values());
     this.guildQueues.clear();
 
