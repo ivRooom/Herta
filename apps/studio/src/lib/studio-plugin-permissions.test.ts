@@ -388,7 +388,9 @@ test('Managed Policyだけが存在する場合もwriteはdefault denyへ移行�
   );
 });
 
-function roleAccess(policy: ReturnType<typeof createEmptyStudioAccessPolicy>): EffectivePluginPermissionContext {
+function roleAccess(
+  policy: ReturnType<typeof createEmptyStudioAccessPolicy>,
+): EffectivePluginPermissionContext {
   return {
     isRoot: false,
     roleIds: [ROLE_ID],

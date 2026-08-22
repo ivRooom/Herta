@@ -260,7 +260,9 @@ function authorizeRequestedConfigPaths(
     ...(body.removeConfigPaths ?? []),
   ];
   const usesLegacyPatch =
-    body.config !== undefined || body.configPatch !== undefined || body.removeConfigFields !== undefined;
+    body.config !== undefined ||
+    body.configPatch !== undefined ||
+    body.removeConfigFields !== undefined;
   if (pathOperations.length === 0) return { usesLegacyPatch };
 
   const invalidPaths: PluginConfigPathSegment[][] = [];
@@ -308,7 +310,10 @@ function authorizeRequestedConfigPaths(
   return { usesLegacyPatch: false };
 }
 
-function requiredConfigPermissionPaths(schemaPaths: readonly string[], canonicalPath: string): string[] {
+function requiredConfigPermissionPaths(
+  schemaPaths: readonly string[],
+  canonicalPath: string,
+): string[] {
   const required = schemaPaths.filter(
     (path) =>
       path === canonicalPath ||
@@ -363,7 +368,9 @@ function isPatchBody(value: unknown): value is PluginPatchBody {
 
   const hasPathPatch = body.configPathPatch !== undefined || body.removeConfigPaths !== undefined;
   const hasLegacyPatch =
-    body.config !== undefined || body.configPatch !== undefined || body.removeConfigFields !== undefined;
+    body.config !== undefined ||
+    body.configPatch !== undefined ||
+    body.removeConfigFields !== undefined;
   if (hasPathPatch && hasLegacyPatch) return false;
   if (
     body.config !== undefined &&

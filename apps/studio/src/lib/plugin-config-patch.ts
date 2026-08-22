@@ -30,7 +30,9 @@ export function resolvePluginConfigCandidate(
 ): Record<string, unknown> | undefined {
   const hasPathPatch = input.configPathPatch !== undefined || input.removeConfigPaths !== undefined;
   const hasLegacyPatch =
-    input.config !== undefined || input.configPatch !== undefined || input.removeConfigFields !== undefined;
+    input.config !== undefined ||
+    input.configPatch !== undefined ||
+    input.removeConfigFields !== undefined;
 
   if (hasPathPatch && hasLegacyPatch) {
     throw new PluginConfigPathPatchError('設定全体の変更と設定パスの変更は同時に指定できません');
@@ -118,7 +120,9 @@ function collectChangedPermissionPaths(
       return;
     }
 
-    const hasStructuredItems = Boolean(recordValue(items['properties']) || recordValue(items['items']));
+    const hasStructuredItems = Boolean(
+      recordValue(items['properties']) || recordValue(items['items']),
+    );
     if (!hasStructuredItems || before.length !== after.length) {
       if (permissionPath) changedPaths.add(permissionPath);
       return;

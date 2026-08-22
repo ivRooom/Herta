@@ -39,7 +39,12 @@ export default async function PluginDetailPage({
   ]);
   if (!plugin) notFound();
   const configPaths = pluginConfigPermissionPaths(plugin.manifest.configSchema);
-  const configAccess = resolvePluginConfigStudioAccess(access.access, guildId, pluginId, configPaths);
+  const configAccess = resolvePluginConfigStudioAccess(
+    access.access,
+    guildId,
+    pluginId,
+    configPaths,
+  );
   const visibleConfig = filterReadablePluginConfig(
     plugin.config,
     configAccess,

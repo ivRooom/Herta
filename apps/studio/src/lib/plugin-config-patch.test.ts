@@ -157,9 +157,7 @@ test('nested path patchは対象leafだけを変更し兄弟値を保持する',
   };
   assert.deepEqual(
     resolvePluginConfigCandidate(current, {
-      configPathPatch: [
-        { path: ['autoEnforcementPolicies', 1, 'action'], value: 'timeout' },
-      ],
+      configPathPatch: [{ path: ['autoEnforcementPolicies', 1, 'action'], value: 'timeout' }],
     }),
     {
       autoEnforcementPolicies: [

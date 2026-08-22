@@ -89,15 +89,16 @@ test('readable pathだけを残しarray shapeを保つ', () => {
 test('visible configからarray index付き編集pathを生成する', () => {
   const values = listConcretePluginConfigValues(
     {
-      policies: [
-        { action: 'delete' },
-        { action: 'timeout' },
-      ],
+      policies: [{ action: 'delete' }, { action: 'timeout' }],
     },
     schema,
   );
   assert.deepEqual(
-    values.map((entry) => ({ path: entry.path, permissionPath: entry.permissionPath, value: entry.value })),
+    values.map((entry) => ({
+      path: entry.path,
+      permissionPath: entry.permissionPath,
+      value: entry.value,
+    })),
     [
       { path: ['policies', 0, 'action'], permissionPath: 'policies[].action', value: 'delete' },
       { path: ['policies', 1, 'action'], permissionPath: 'policies[].action', value: 'timeout' },

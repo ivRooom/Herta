@@ -48,7 +48,9 @@ export function RestrictedPluginConfigForm({
   );
   const [enabled, setEnabled] = useState(initialEnabled);
   const [savedEnabled, setSavedEnabled] = useState(initialEnabled);
-  const [values, setValues] = useState<Record<string, string>>(() => toEditorValues(entries, initialConfig));
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    toEditorValues(entries, initialConfig),
+  );
   const [savedValues, setSavedValues] = useState<Record<string, string>>(() =>
     toEditorValues(entries, initialConfig),
   );
@@ -136,8 +138,9 @@ export function RestrictedPluginConfigForm({
           </span>
           <h2 className="mt-3 text-xl font-semibold">許可された設定パス</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-            閲覧許可された値だけをClientへ読み込みます。Object / Array内も設定パス単位で分離し、編集は
-            `studio.settings.write` が許可された値だけ送信します。非表示の兄弟設定は上書きしません。
+            閲覧許可された値だけをClientへ読み込みます。Object /
+            Array内も設定パス単位で分離し、編集は `studio.settings.write`
+            が許可された値だけ送信します。非表示の兄弟設定は上書きしません。
           </p>
         </div>
         <label className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 text-sm">
@@ -190,7 +193,8 @@ export function RestrictedPluginConfigForm({
             />
             {entry.canEdit ? (
               <span className="mt-1 block text-[11px] text-muted">
-                JSON値として入力します。空欄はこの設定パスの削除として扱い、最終Schema validationと権限確認はserver側で再実行されます。
+                JSON値として入力します。空欄はこの設定パスの削除として扱い、最終Schema
+                validationと権限確認はserver側で再実行されます。
               </span>
             ) : null}
           </label>
@@ -296,7 +300,10 @@ function toEditorValues(
   );
 }
 
-function valueAtPath(root: Record<string, unknown>, path: readonly PluginConfigPathSegment[]): unknown {
+function valueAtPath(
+  root: Record<string, unknown>,
+  path: readonly PluginConfigPathSegment[],
+): unknown {
   let current: unknown = root;
   for (const segment of path) {
     if (typeof segment === 'number') {

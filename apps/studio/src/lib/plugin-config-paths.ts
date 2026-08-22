@@ -113,7 +113,9 @@ export function listConcretePluginConfigValues(
   config: Record<string, unknown>,
   schema: Record<string, unknown>,
 ): ConcretePluginConfigValue[] {
-  const labels = new Map(pluginConfigPermissionFields(schema).map((field) => [field.path, field.label]));
+  const labels = new Map(
+    pluginConfigPermissionFields(schema).map((field) => [field.path, field.label]),
+  );
   const values: ConcretePluginConfigValue[] = [];
   collectConcreteValues(config, schema, [], '', '', labels, values);
   return values;
@@ -260,7 +262,11 @@ function collectConcreteValues(
   }
 
   const items = recordValue(schema['items']);
-  if (items && Array.isArray(value) && (recordValue(items['properties']) || recordValue(items['items']))) {
+  if (
+    items &&
+    Array.isArray(value) &&
+    (recordValue(items['properties']) || recordValue(items['items']))
+  ) {
     value.forEach((item, index) => {
       collectConcreteValues(
         item,
@@ -287,7 +293,9 @@ function collectConcreteValues(
 function cloneJsonValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(cloneJsonValue);
   if (isRecord(value)) {
-    return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, cloneJsonValue(child)]));
+    return Object.fromEntries(
+      Object.entries(value).map(([key, child]) => [key, cloneJsonValue(child)]),
+    );
   }
   return value;
 }
