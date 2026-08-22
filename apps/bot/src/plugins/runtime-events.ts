@@ -23,6 +23,7 @@ export type PluginRuntimeApplyVerifier = (event: PluginRuntimeEvent) => boolean;
 
 const MAX_SYNC_ATTEMPTS = 3;
 const SYNC_RETRY_BASE_MS = 500;
+const RUNTIME_STATE_NOT_APPLIED = 'PluginRuntimeStateNotApplied';
 
 async function recordPluginRuntimeSyncOutcome(
   events: readonly PluginRuntimeEvent[],
@@ -192,48 +193,75 @@ export class PluginRuntimeEventSubscriber {
     guildId: string,
     events: readonly PluginRuntimeEvent[],
   ): Promise<void> {
+    let remainingEvents = [...events];
+
     for (let attempt = 1; attempt <= MAX_SYNC_ATTEMPTS; attempt += 1) {
       try {
         await this.onGuildChanged(guildId);
-        const unappliedEvents = events.filter((event) => !this.verifyApplied(event));
-        if (unappliedEvents.length > 0) {
-          this.logger.warn(
-            {
-              guildId,
-              attempt,
-              plugins: unappliedEvents.map((event) => ({
-                pluginId: event.pluginId,
-                configVersion: event.configVersion,
-                eventType: event.eventType,
-              })),
-            },
-            'Plugin Runtime再同期後の適用状態を確認できませんでした',
-          );
-          throw new Error('PluginRuntimeStateNotApplied');
+
+        const appliedEvents: PluginRuntimeEvent[] = [];
+        const unappliedEvents: PluginRuntimeEvent[] = [];
+        for (const event of remainingEvents) {
+          if (this.verifyApplied(event)) appliedEvents.push(event);
+          else unappliedEvents.push(event);
         }
-        if (attempt > 1) {
-          this.logger.info(
-            { guildId, attempt },
-            'Plugin Runtime Guild再同期の再試行に成功しました',
-          );
+
+        if (appliedEvents.length > 0) {
+          await this.reportOutcomeSafely(appliedEvents, 'applied', attempt);
         }
-        await this.reportOutcomeSafely(events, 'applied', attempt);
-        return;
+        if (unappliedEvents.length === 0) {
+          if (attempt > 1) {
+            this.logger.info(
+              { guildId, attempt },
+              'Plugin Runtime Guild再同期の再試行に成功しました',
+            );
+          }
+          return;
+        }
+
+        remainingEvents = unappliedEvents;
+        this.logger.warn(
+          {
+            guildId,
+            attempt,
+            plugins: remainingEvents.map((event) => ({
+              pluginId: event.pluginId,
+              configVersion: event.configVersion,
+              eventType: event.eventType,
+            })),
+          },
+          'Plugin Runtime再同期後の適用状態を確認できませんでした',
+        );
+
+        if (attempt === MAX_SYNC_ATTEMPTS) {
+          this.logger.error(
+            { errorName: RUNTIME_STATE_NOT_APPLIED, guildId, attempt },
+            'Plugin RuntimeイベントによるGuild再同期に失敗しました',
+          );
+          await this.reportOutcomeSafely(remainingEvents, 'apply_failed', attempt);
+          return;
+        }
+
+        this.logger.warn(
+          { errorName: RUNTIME_STATE_NOT_APPLIED, guildId, attempt },
+          'Plugin Runtime Guild再同期に失敗したため再試行します',
+        );
       } catch (error) {
         if (attempt === MAX_SYNC_ATTEMPTS) {
           this.logger.error(
             { errorName: resolveErrorName(error), guildId, attempt },
             'Plugin RuntimeイベントによるGuild再同期に失敗しました',
           );
-          await this.reportOutcomeSafely(events, 'apply_failed', attempt);
+          await this.reportOutcomeSafely(remainingEvents, 'apply_failed', attempt);
           return;
         }
         this.logger.warn(
           { errorName: resolveErrorName(error), guildId, attempt },
           'Plugin Runtime Guild再同期に失敗したため再試行します',
         );
-        await new Promise((resolve) => setTimeout(resolve, SYNC_RETRY_BASE_MS * attempt));
       }
+
+      await new Promise((resolve) => setTimeout(resolve, SYNC_RETRY_BASE_MS * attempt));
     }
   }
 
