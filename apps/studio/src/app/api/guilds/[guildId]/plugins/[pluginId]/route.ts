@@ -97,9 +97,11 @@ export async function PATCH(
     }
   }
 
+  const schemaPaths = pluginConfigPermissionPaths(manifest.configSchema);
   const requestedPathAuthorization = authorizeRequestedConfigPaths(
     body.value,
     manifest.configSchema,
+    schemaPaths,
     access.access,
     guildId,
     pluginId,
@@ -133,15 +135,17 @@ export async function PATCH(
 
     const changedFields = changedTopLevelConfigFields(current.config, validation.config);
     if (requestedPathAuthorization.usesLegacyPatch) {
-      const deniedFields = changedFields.filter(
-        (fieldKey) =>
-          !hasEffectivePluginConfigPermission(
-            access.access,
-            'studio.settings.write',
-            guildId,
-            pluginId,
-            fieldKey,
-          ),
+      const deniedFields = changedFields.filter((fieldKey) =>
+        requiredConfigPermissionPaths(schemaPaths, fieldKey).some(
+          (configPath) =>
+            !hasEffectivePluginConfigPermission(
+              access.access,
+              'studio.settings.write',
+              guildId,
+              pluginId,
+              configPath,
+            ),
+        ),
       );
       if (deniedFields.length > 0) {
         return NextResponse.json(
@@ -214,6 +218,7 @@ export async function PATCH(
 function authorizeRequestedConfigPaths(
   body: PluginPatchBody,
   schema: Record<string, unknown>,
+  schemaPaths: readonly string[],
   access: Parameters<typeof hasEffectivePluginConfigPermission>[0],
   guildId: string,
   pluginId: string,
@@ -234,16 +239,18 @@ function authorizeRequestedConfigPaths(
       invalidPaths.push([...path]);
       continue;
     }
-    if (
-      !hasEffectivePluginConfigPermission(
-        access,
-        'studio.settings.write',
-        guildId,
-        pluginId,
-        canonical,
-      )
-    ) {
-      deniedPaths.add(canonical);
+    for (const requiredPath of requiredConfigPermissionPaths(schemaPaths, canonical)) {
+      if (
+        !hasEffectivePluginConfigPermission(
+          access,
+          'studio.settings.write',
+          guildId,
+          pluginId,
+          requiredPath,
+        )
+      ) {
+        deniedPaths.add(requiredPath);
+      }
     }
   }
 
@@ -267,6 +274,16 @@ function authorizeRequestedConfigPaths(
     };
   }
   return { usesLegacyPatch: false };
+}
+
+function requiredConfigPermissionPaths(schemaPaths: readonly string[], canonicalPath: string): string[] {
+  const required = schemaPaths.filter(
+    (path) =>
+      path === canonicalPath ||
+      path.startsWith(`${canonicalPath}.`) ||
+      path.startsWith(`${canonicalPath}[]`),
+  );
+  return required.length > 0 ? required : [canonicalPath];
 }
 
 async function parsePatchBody(
