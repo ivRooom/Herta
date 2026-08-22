@@ -120,9 +120,12 @@ export function resolvePluginConfigStudioAccess(
       pluginEnabledControlResource(guildId, pluginId),
     ),
     readableFieldKeys: topLevelKeys.filter((key) => readableTopLevelKeys.has(key)),
-    // Whole-field editing can replace child values, so only expose the legacy top-level editor
-    // when the top-level resource itself is writable. Child-only permissions use path patches.
-    editableFieldKeys: topLevelKeys.filter((key) => editablePathSet.has(key)),
+    // Whole-field replacement can mutate every descendant. Only enable the legacy top-level
+    // editor when every schema path below the field is writable; otherwise the UI/API must use
+    // path patches so an explicit child Deny cannot be bypassed.
+    editableFieldKeys: topLevelKeys.filter((key) =>
+      configPathsForTopLevelKey(uniqueConfigPaths, key).every((path) => editablePathSet.has(path)),
+    ),
     readableConfigPaths,
     editableConfigPaths,
     allConfigPathsReadable: readableConfigPaths.length === uniqueConfigPaths.length,
@@ -202,6 +205,10 @@ function effectivePolicies(access: EffectivePluginPermissionContext): StudioAcce
 
 function uniqueTopLevelKeys(configPaths: readonly string[]): string[] {
   return [...new Set(configPaths.map(topLevelConfigKey).filter(Boolean))];
+}
+
+function configPathsForTopLevelKey(configPaths: readonly string[], key: string): string[] {
+  return configPaths.filter((path) => topLevelConfigKey(path) === key);
 }
 
 function topLevelConfigKey(configPath: string): string {
