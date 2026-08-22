@@ -32,6 +32,19 @@ export function parseAccessGroupMetadata(value: unknown): AccessGroupMetadataPar
   return { ok: true, value: { name, description: description || null } };
 }
 
+export function truncateUnicodeCodePoints(value: string, maximum: number) {
+  if (maximum <= 0) return '';
+
+  let result = '';
+  let length = 0;
+  for (const character of value) {
+    if (length >= maximum) break;
+    result += character;
+    length += 1;
+  }
+  return result;
+}
+
 function isUnicodeCodePointLengthBetween(value: string, minimum: number, maximum: number) {
   let length = 0;
   for (const _character of value) {
