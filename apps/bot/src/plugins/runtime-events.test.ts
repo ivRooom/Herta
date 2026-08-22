@@ -220,6 +220,46 @@ describe('PluginRuntimeEventSubscriber', () => {
     expect(reportSyncOutcome).not.toHaveBeenCalledWith([event], 'applied', expect.any(Number));
   });
 
+  it('ACK永続化失敗は再同期を再実行せずerrorNameだけをログへ残す', async () => {
+    vi.useFakeTimers();
+    const onGuildChanged = vi.fn(async () => undefined);
+    const logger = createLogger();
+    const persistenceError = new Error('redis://user:secret@example.invalid');
+    persistenceError.name = 'AuditPersistenceError';
+    const reportSyncOutcome = vi.fn(async () => {
+      throw persistenceError;
+    });
+    const event = createPluginRuntimeEvent({
+      guildId: 'guild-a',
+      pluginId: 'quote',
+      configVersion: 9,
+      eventType: 'config_updated',
+    });
+    const subscriber = new PluginRuntimeEventSubscriber(
+      onGuildChanged,
+      logger,
+      10,
+      reportSyncOutcome,
+      applied,
+    );
+
+    subscriber.handleMessage(JSON.stringify(event));
+    await vi.runAllTimersAsync();
+
+    expect(onGuildChanged).toHaveBeenCalledTimes(1);
+    expect(reportSyncOutcome).toHaveBeenCalledTimes(1);
+    expect(logger.error).toHaveBeenCalledWith(
+      {
+        errorName: 'AuditPersistenceError',
+        guildId: 'guild-a',
+        eventIds: [event.eventId],
+        outcome: 'applied',
+      },
+      'Plugin Runtime反映結果の永続化に失敗しました',
+    );
+    expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain('user:secret');
+  });
+
   it('不正なpayloadを破棄する', async () => {
     vi.useFakeTimers();
     const onGuildChanged = vi.fn(async () => undefined);
