@@ -26,6 +26,7 @@ describe('PluginRuntimeEventSubscriber', () => {
       },
       createLogger(),
       10,
+      vi.fn(async () => undefined),
     );
     const event = createPluginRuntimeEvent({
       guildId: 'guild-a',
@@ -51,6 +52,7 @@ describe('PluginRuntimeEventSubscriber', () => {
       },
       createLogger(),
       10,
+      vi.fn(async () => undefined),
     );
     const newest = createPluginRuntimeEvent({
       guildId: 'guild-a',
@@ -77,6 +79,7 @@ describe('PluginRuntimeEventSubscriber', () => {
   it('Guildごとに独立して同期し失敗したGuildだけ最大3回再試行する', async () => {
     vi.useFakeTimers();
     const synced: string[] = [];
+    const reportSyncOutcome = vi.fn(async () => undefined);
     const subscriber = new PluginRuntimeEventSubscriber(
       async (guildId) => {
         synced.push(guildId);
@@ -84,6 +87,7 @@ describe('PluginRuntimeEventSubscriber', () => {
       },
       createLogger(),
       10,
+      reportSyncOutcome,
     );
 
     for (const guildId of ['guild-a', 'guild-b']) {
@@ -103,12 +107,29 @@ describe('PluginRuntimeEventSubscriber', () => {
 
     expect(synced.filter((guildId) => guildId === 'guild-a')).toHaveLength(3);
     expect(synced.filter((guildId) => guildId === 'guild-b')).toHaveLength(1);
+    expect(reportSyncOutcome).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ guildId: 'guild-a', pluginId: 'quote' })]),
+      'apply_failed',
+      3,
+    );
+    expect(reportSyncOutcome).toHaveBeenCalledWith(
+      expect.arrayContaining([expect.objectContaining({ guildId: 'guild-b', pluginId: 'quote' })]),
+      'applied',
+      1,
+    );
   });
 
-  it('一時的な同期失敗から再試行で復旧する', async () => {
+  it('一時的な同期失敗から再試行で復旧し適用済みACKを記録する', async () => {
     vi.useFakeTimers();
     let attempts = 0;
     const logger = createLogger();
+    const reportSyncOutcome = vi.fn(async () => undefined);
+    const event = createPluginRuntimeEvent({
+      guildId: 'guild-a',
+      pluginId: 'mini-games',
+      configVersion: 4,
+      eventType: 'enabled',
+    });
     const subscriber = new PluginRuntimeEventSubscriber(
       async () => {
         attempts += 1;
@@ -116,31 +137,63 @@ describe('PluginRuntimeEventSubscriber', () => {
       },
       logger,
       10,
+      reportSyncOutcome,
     );
-    subscriber.handleMessage(
-      JSON.stringify(
-        createPluginRuntimeEvent({
-          guildId: 'guild-a',
-          pluginId: 'mini-games',
-          configVersion: 4,
-          eventType: 'enabled',
-        }),
-      ),
-    );
+    subscriber.handleMessage(JSON.stringify(event));
 
     await vi.runAllTimersAsync();
 
     expect(attempts).toBe(2);
+    expect(reportSyncOutcome).toHaveBeenCalledWith([event], 'applied', 2);
     expect(logger.info).toHaveBeenCalledWith(
       { guildId: 'guild-a', attempt: 2 },
       'Plugin Runtime Guild再同期の再試行に成功しました',
     );
   });
 
+  it('同一Guildの複数Pluginイベントを1回の同期でまとめてACKする', async () => {
+    vi.useFakeTimers();
+    const reportSyncOutcome = vi.fn(async () => undefined);
+    const subscriber = new PluginRuntimeEventSubscriber(
+      vi.fn(async () => undefined),
+      createLogger(),
+      10,
+      reportSyncOutcome,
+    );
+    const quote = createPluginRuntimeEvent({
+      guildId: 'guild-a',
+      pluginId: 'quote',
+      configVersion: 2,
+      eventType: 'config_updated',
+    });
+    const lfg = createPluginRuntimeEvent({
+      guildId: 'guild-a',
+      pluginId: 'lfg',
+      configVersion: 3,
+      eventType: 'enabled',
+    });
+
+    subscriber.handleMessage(JSON.stringify(quote));
+    subscriber.handleMessage(JSON.stringify(lfg));
+    await vi.runAllTimersAsync();
+
+    expect(reportSyncOutcome).toHaveBeenCalledTimes(1);
+    expect(reportSyncOutcome).toHaveBeenCalledWith(
+      expect.arrayContaining([quote, lfg]),
+      'applied',
+      1,
+    );
+  });
+
   it('不正なpayloadを破棄する', async () => {
     vi.useFakeTimers();
     const onGuildChanged = vi.fn(async () => undefined);
-    const subscriber = new PluginRuntimeEventSubscriber(onGuildChanged, createLogger(), 10);
+    const subscriber = new PluginRuntimeEventSubscriber(
+      onGuildChanged,
+      createLogger(),
+      10,
+      vi.fn(async () => undefined),
+    );
 
     subscriber.handleMessage('{invalid');
     await vi.runAllTimersAsync();
