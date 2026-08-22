@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { parseAccessGroupMetadata, type AccessGroupMetadata } from './access-group-metadata.ts';
 
 const DISCORD_SNOWFLAKE_PATTERN = /^\d{17,20}$/u;
 const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{16,128}$/u;
@@ -10,10 +11,7 @@ export type IvrmIamMutationContext = {
   idempotencyKey: string;
 };
 
-export type IvrmIamGroupCreateInput = {
-  name: string;
-  description: string | null;
-};
+export type IvrmIamGroupCreateInput = AccessGroupMetadata;
 
 export type IvrmIamGroupCreateResponseGroup = {
   id: string;
@@ -40,35 +38,9 @@ export function isIvrmIamJsonRequest(request: Request) {
   return mediaType.trim().toLowerCase() === 'application/json';
 }
 
-export function isUnicodeCodePointLengthBetween(value: string, minimum: number, maximum: number) {
-  let length = 0;
-  for (const _character of value) {
-    length += 1;
-    if (length > maximum) return false;
-  }
-  return length >= minimum;
-}
-
 export function parseIvrmIamGroupCreateInput(value: unknown): IvrmIamGroupCreateInput | null {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
-
-  const record = value as Record<string, unknown>;
-  if (typeof record.name !== 'string') return null;
-  if (
-    record.description !== undefined &&
-    record.description !== null &&
-    typeof record.description !== 'string'
-  ) {
-    return null;
-  }
-
-  const name = record.name.trim();
-  const description = typeof record.description === 'string' ? record.description.trim() : '';
-
-  if (!isUnicodeCodePointLengthBetween(name, 1, 100)) return null;
-  if (!isUnicodeCodePointLengthBetween(description, 0, 500)) return null;
-
-  return { name, description: description || null };
+  const parsed = parseAccessGroupMetadata(value);
+  return parsed.ok ? parsed.value : null;
 }
 
 export function serializeIvrmIamGroupCreateResponse(
