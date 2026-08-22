@@ -4,8 +4,7 @@ export type AccessGroupMetadata = {
 };
 
 export type AccessGroupMetadataParseResult =
-  | { ok: true; value: AccessGroupMetadata }
-  | { ok: false; field: 'name' | 'description' };
+  { ok: true; value: AccessGroupMetadata } | { ok: false; field: 'name' | 'description' };
 
 export function parseAccessGroupMetadata(value: unknown): AccessGroupMetadataParseResult {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
