@@ -158,7 +158,9 @@ export function resolvePluginOperationAttentionReason(
 
   const observedAt = Date.parse(row.runtimeObservedAt);
   if (!Number.isFinite(observedAt)) return null;
-  return nowMs - observedAt >= PLUGIN_RUNTIME_APPLY_DELAY_MS ? 'runtime_apply_delayed' : null;
+  return nowMs - observedAt >= PLUGIN_RUNTIME_APPLY_DELAY_MS
+    ? 'runtime_apply_delayed'
+    : null;
 }
 
 export function resolvePluginOperationStatus(
