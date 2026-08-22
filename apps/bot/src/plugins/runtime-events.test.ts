@@ -12,6 +12,8 @@ function createLogger(): Logger {
   } as unknown as Logger;
 }
 
+const applied = () => true;
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -27,6 +29,7 @@ describe('PluginRuntimeEventSubscriber', () => {
       createLogger(),
       10,
       vi.fn(async () => undefined),
+      applied,
     );
     const event = createPluginRuntimeEvent({
       guildId: 'guild-a',
@@ -53,6 +56,7 @@ describe('PluginRuntimeEventSubscriber', () => {
       createLogger(),
       10,
       vi.fn(async () => undefined),
+      applied,
     );
     const newest = createPluginRuntimeEvent({
       guildId: 'guild-a',
@@ -88,6 +92,7 @@ describe('PluginRuntimeEventSubscriber', () => {
       createLogger(),
       10,
       reportSyncOutcome,
+      applied,
     );
 
     for (const guildId of ['guild-a', 'guild-b']) {
@@ -138,6 +143,7 @@ describe('PluginRuntimeEventSubscriber', () => {
       logger,
       10,
       reportSyncOutcome,
+      applied,
     );
     subscriber.handleMessage(JSON.stringify(event));
 
@@ -159,6 +165,7 @@ describe('PluginRuntimeEventSubscriber', () => {
       createLogger(),
       10,
       reportSyncOutcome,
+      applied,
     );
     const quote = createPluginRuntimeEvent({
       guildId: 'guild-a',
@@ -185,6 +192,34 @@ describe('PluginRuntimeEventSubscriber', () => {
     );
   });
 
+  it('同期処理がresolveしても対象Pluginの適用状態を確認できなければ失敗ACKにする', async () => {
+    vi.useFakeTimers();
+    const onGuildChanged = vi.fn(async () => undefined);
+    const reportSyncOutcome = vi.fn(async () => undefined);
+    const verifyApplied = vi.fn(() => false);
+    const event = createPluginRuntimeEvent({
+      guildId: 'guild-a',
+      pluginId: 'broken-plugin',
+      configVersion: 7,
+      eventType: 'config_updated',
+    });
+    const subscriber = new PluginRuntimeEventSubscriber(
+      onGuildChanged,
+      createLogger(),
+      10,
+      reportSyncOutcome,
+      verifyApplied,
+    );
+
+    subscriber.handleMessage(JSON.stringify(event));
+    await vi.runAllTimersAsync();
+
+    expect(onGuildChanged).toHaveBeenCalledTimes(3);
+    expect(verifyApplied).toHaveBeenCalledTimes(3);
+    expect(reportSyncOutcome).toHaveBeenCalledWith([event], 'apply_failed', 3);
+    expect(reportSyncOutcome).not.toHaveBeenCalledWith([event], 'applied', expect.any(Number));
+  });
+
   it('不正なpayloadを破棄する', async () => {
     vi.useFakeTimers();
     const onGuildChanged = vi.fn(async () => undefined);
@@ -193,6 +228,7 @@ describe('PluginRuntimeEventSubscriber', () => {
       createLogger(),
       10,
       vi.fn(async () => undefined),
+      applied,
     );
 
     subscriber.handleMessage('{invalid');
