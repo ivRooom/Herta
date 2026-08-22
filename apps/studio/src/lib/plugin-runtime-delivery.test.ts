@@ -41,7 +41,12 @@ test('publish失敗時にSecretや例外本文ではなく分類済みreasonだ�
 
   assert.equal(data.event, 'plugin.runtime_publish_failed');
   assert.equal(data.severity, 'warning');
-  assert.equal(data.metadata.failureReason, 'publish_error');
-  assert.equal(data.metadata.configVersion, 7);
+  assert.deepEqual(data.metadata, {
+    operationSource: 'studio-runtime',
+    eventId: event.eventId,
+    eventType: event.eventType,
+    configVersion: 7,
+    failureReason: 'publish_error',
+  });
   assert.equal('subscriberCount' in data.metadata, false);
 });
