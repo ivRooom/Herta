@@ -1,4 +1,14 @@
 export type PluginOperationStatus = 'attention' | 'healthy' | 'paused';
+export type PluginRuntimeDeliveryStatus =
+  | 'published'
+  | 'applied'
+  | 'publish_failed'
+  | 'apply_failed';
+export type PluginOperationAttentionReason =
+  | 'config_invalid'
+  | 'runtime_publish_failed'
+  | 'runtime_apply_failed'
+  | 'runtime_apply_delayed';
 
 export interface PluginOperationInventoryRow {
   guildId: string;
@@ -9,10 +19,14 @@ export interface PluginOperationInventoryRow {
   configVersion: number;
   installedAt: string;
   updatedAt: string;
+  runtimeStatus?: PluginRuntimeDeliveryStatus;
+  runtimeConfigVersion?: number;
+  runtimeObservedAt?: string;
 }
 
 export interface PluginOperationItem extends PluginOperationInventoryRow {
   status: PluginOperationStatus;
+  attentionReason: PluginOperationAttentionReason | null;
 }
 
 export interface PluginOperationGuildSummary {
@@ -37,6 +51,8 @@ export interface PluginOperationsInventory {
   entries: PluginOperationItem[];
 }
 
+export const PLUGIN_RUNTIME_APPLY_DELAY_MS = 120_000;
+
 const STATUS_PRIORITY: Record<PluginOperationStatus, number> = {
   attention: 0,
   healthy: 1,
@@ -47,6 +63,7 @@ export function summarizePluginOperations(
   guildIds: readonly string[],
   availablePlugins: number,
   rows: readonly PluginOperationInventoryRow[],
+  nowMs = Date.now(),
 ): PluginOperationsInventory {
   const normalizedAvailablePlugins = Number.isSafeInteger(availablePlugins)
     ? Math.max(0, availablePlugins)
@@ -71,8 +88,9 @@ export function summarizePluginOperations(
   for (const row of rows) {
     if (!guildIdSet.has(row.guildId)) continue;
 
-    const status = resolvePluginOperationStatus(row.enabled, row.configValid);
-    entries.push({ ...row, status });
+    const attentionReason = resolvePluginOperationAttentionReason(row, nowMs);
+    const status = resolvePluginOperationStatus(row.enabled, row.configValid, attentionReason);
+    entries.push({ ...row, status, attentionReason });
 
     const summary = byGuild[row.guildId];
     if (!summary) continue;
@@ -119,10 +137,35 @@ export function summarizePluginOperations(
   };
 }
 
+export function resolvePluginOperationAttentionReason(
+  row: PluginOperationInventoryRow,
+  nowMs = Date.now(),
+): PluginOperationAttentionReason | null {
+  if (!row.enabled) return null;
+  if (!row.configValid) return 'config_invalid';
+
+  if (
+    row.runtimeStatus === undefined ||
+    row.runtimeConfigVersion === undefined ||
+    row.runtimeConfigVersion !== row.configVersion
+  ) {
+    return null;
+  }
+
+  if (row.runtimeStatus === 'publish_failed') return 'runtime_publish_failed';
+  if (row.runtimeStatus === 'apply_failed') return 'runtime_apply_failed';
+  if (row.runtimeStatus !== 'published' || !row.runtimeObservedAt) return null;
+
+  const observedAt = Date.parse(row.runtimeObservedAt);
+  if (!Number.isFinite(observedAt)) return null;
+  return nowMs - observedAt >= PLUGIN_RUNTIME_APPLY_DELAY_MS ? 'runtime_apply_delayed' : null;
+}
+
 export function resolvePluginOperationStatus(
   enabled: boolean,
   configValid: boolean,
+  attentionReason: PluginOperationAttentionReason | null = configValid ? null : 'config_invalid',
 ): PluginOperationStatus {
   if (!enabled) return 'paused';
-  return configValid ? 'healthy' : 'attention';
+  return attentionReason ? 'attention' : 'healthy';
 }
