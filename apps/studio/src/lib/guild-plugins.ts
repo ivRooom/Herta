@@ -241,7 +241,7 @@ export async function updateGuildPlugin(
       guildId,
       pluginId,
       configVersion: result.configVersion,
-      eventType: enabledChanged ? (result.enabled ? 'enabled' : 'disabled') : 'config_updated',
+      eventType: result.enabled ? (enabledChanged ? 'enabled' : 'config_updated') : 'disabled',
     });
   }
 
