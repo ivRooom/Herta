@@ -63,7 +63,8 @@ export function configPathAncestorPaths(path: string): string[] {
 
   for (const token of tokens) {
     prefix = prefix ? `${prefix}.${token}` : token;
-    const containerPath = prefix.replace(/(?:\[\])+$/u, '');
+    let containerPath = prefix;
+    while (containerPath.endsWith('[]')) containerPath = containerPath.slice(0, -2);
     if (containerPath && !ancestors.includes(containerPath)) ancestors.push(containerPath);
   }
   if (!ancestors.includes(normalized)) ancestors.push(normalized);
@@ -278,7 +279,7 @@ function collectConcreteValues(
   output.push({
     path: segments,
     permissionPath,
-    label: labels.get(permissionPath) ?? fallbackLabel || permissionPath,
+    label: labels.get(permissionPath) ?? (fallbackLabel || permissionPath),
     value: cloneJsonValue(value),
   });
 }
