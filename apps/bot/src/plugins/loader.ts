@@ -29,6 +29,7 @@ export class GuildPluginLoader {
   private readonly coreCommandNames: Set<string>;
   private readonly runtimeState: PluginRuntimeState;
   private readonly activatedPlugins = new Map<string, ActivatedPlugin>();
+  private readonly reloadBlockedGuilds = new Set<string>();
 
   constructor(deps: GuildPluginLoaderDeps) {
     this.registry = deps.registry;
@@ -66,6 +67,10 @@ export class GuildPluginLoader {
   }
 
   async loadGuildPlugins(guildId: string): Promise<LoadedGuildPlugins> {
+    if (this.reloadBlockedGuilds.has(guildId)) {
+      throw new Error('Plugin onDisable の失敗によりGuild再同期を継続できません');
+    }
+
     const commands: SlashCommand[] = [];
     const events: GuildEventHandler[] = [];
     const loaded: string[] = [];
@@ -145,10 +150,12 @@ export class GuildPluginLoader {
   /** Guild の有効化済みPluginを無効化し、SDKのlifecycleを通知する。 */
   async disableGuildPlugins(guildId: string): Promise<void> {
     this.runtimeState.markReloadStarted(guildId);
+    this.reloadBlockedGuilds.delete(guildId);
     const prefix = `${guildId}:`;
     const activated = [...this.activatedPlugins.entries()].filter(([key]) =>
       key.startsWith(prefix),
     );
+    let disableFailed = false;
 
     for (const [activationKey, state] of activated) {
       const entry = this.registry.get(state.pluginId);
@@ -157,12 +164,15 @@ export class GuildPluginLoader {
         this.activatedPlugins.delete(activationKey);
         this.runtimeState.markInactive(guildId, state.pluginId);
       } catch (error) {
+        disableFailed = true;
         this.logger.error(
           { guildId, pluginId: state.pluginId, error },
           'Plugin の無効化に失敗しました',
         );
       }
     }
+
+    if (disableFailed) this.reloadBlockedGuilds.add(guildId);
   }
 
   private findDuplicateCommandName(
