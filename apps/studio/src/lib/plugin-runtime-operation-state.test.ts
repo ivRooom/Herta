@@ -36,6 +36,48 @@ test('最新のRuntime監査イベントをconfigVersion単位で状態化する
   );
 });
 
+test('同一eventのapply ACKがpublish監査より先に保存されてもapply結果を優先する', () => {
+  const eventId = 'runtime-event-4';
+  const states = buildPluginRuntimeOperationStateMap([
+    row(
+      'plugin.runtime_publish_succeeded',
+      { configVersion: 4, eventId },
+      '2026-08-22T04:00:03.000Z',
+    ),
+    row(
+      'plugin.runtime_apply_succeeded',
+      { configVersion: 4, eventId },
+      '2026-08-22T04:00:02.000Z',
+    ),
+  ]);
+
+  assert.deepEqual(states.get(pluginRuntimeOperationStateKey(guildId, pluginId, 4)), {
+    status: 'applied',
+    configVersion: 4,
+    observedAt: '2026-08-22T04:00:02.000Z',
+  });
+});
+
+test('同じversionでも別eventなら新しいeventの状態を維持する', () => {
+  const states = buildPluginRuntimeOperationStateMap([
+    row(
+      'plugin.runtime_publish_succeeded',
+      { configVersion: 4, eventId: 'new-event' },
+      '2026-08-22T04:00:03.000Z',
+    ),
+    row(
+      'plugin.runtime_apply_succeeded',
+      { configVersion: 4, eventId: 'old-event' },
+      '2026-08-22T04:00:02.000Z',
+    ),
+  ]);
+
+  assert.equal(
+    states.get(pluginRuntimeOperationStateKey(guildId, pluginId, 4))?.status,
+    'published',
+  );
+});
+
 test('publish失敗と未ACK publishを区別する', () => {
   const states = buildPluginRuntimeOperationStateMap([
     row('plugin.runtime_publish_failed', { configVersion: 8 }, '2026-08-22T04:00:02.000Z'),
