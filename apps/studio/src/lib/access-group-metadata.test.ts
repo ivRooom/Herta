@@ -26,24 +26,18 @@ test('parseAccessGroupMetadata enforces Unicode code-point boundaries', () => {
     ok: true,
     value: { name: '😀'.repeat(100), description: null },
   });
-  assert.deepEqual(
-    parseAccessGroupMetadata({ name: 'Members', description: '🧩'.repeat(500) }),
-    {
-      ok: true,
-      value: { name: 'Members', description: '🧩'.repeat(500) },
-    },
-  );
+  assert.deepEqual(parseAccessGroupMetadata({ name: 'Members', description: '🧩'.repeat(500) }), {
+    ok: true,
+    value: { name: 'Members', description: '🧩'.repeat(500) },
+  });
   assert.deepEqual(parseAccessGroupMetadata({ name: '😀'.repeat(101) }), {
     ok: false,
     field: 'name',
   });
-  assert.deepEqual(
-    parseAccessGroupMetadata({ name: 'Members', description: '🧩'.repeat(501) }),
-    {
-      ok: false,
-      field: 'description',
-    },
-  );
+  assert.deepEqual(parseAccessGroupMetadata({ name: 'Members', description: '🧩'.repeat(501) }), {
+    ok: false,
+    field: 'description',
+  });
 });
 
 test('parseAccessGroupMetadata rejects missing names and invalid description types', () => {
