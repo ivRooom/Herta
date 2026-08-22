@@ -154,8 +154,9 @@ export function resolvePluginOperationAttentionReason(
 export function resolvePluginOperationStatus(
   enabled: boolean,
   configValid: boolean,
-  attentionReason: PluginOperationAttentionReason | null =
-    enabled && !configValid ? 'config_invalid' : null,
+  attentionReason: PluginOperationAttentionReason | null = enabled && !configValid
+    ? 'config_invalid'
+    : null,
 ): PluginOperationStatus {
   if (attentionReason) return 'attention';
   if (!enabled) return 'paused';
