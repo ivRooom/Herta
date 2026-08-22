@@ -41,9 +41,8 @@ assert.match(restrictedForm, /aria-readonly/);
 for (const page of [moderationEnforcementPage, moderationDetectionPage]) {
   assert.match(page, /pluginConfigPermissionPaths\(plugin\.manifest\.configSchema\)/);
   assert.match(page, /filterReadablePluginConfig\([\s\S]*plugin\.manifest\.configSchema[\s\S]*\)/);
+  assert.match(page, /allConfigPathsReadable/);
+  assert.match(page, /allConfigPathsEditable/);
 }
-assert.match(moderationEnforcementPage, /allConfigPathsReadable/);
-assert.match(moderationEnforcementPage, /allConfigPathsEditable/);
-assert.match(moderationDetectionPage, /allConfigPathsReadable/);
 
 console.log('plugin config path IAM contract checks passed');
