@@ -1,5 +1,4 @@
 import type { PluginRuntimeEvent } from '@herta/shared';
-import { prisma } from '@/lib/db';
 
 export type PluginRuntimePublishOutcome =
   | { status: 'published'; subscriberCount: number }
@@ -35,6 +34,9 @@ export async function recordPluginRuntimePublishOutcome(
   outcome: PluginRuntimePublishOutcome,
 ): Promise<void> {
   try {
+    // Keep the pure audit-data builder testable by Node's native test runner without
+    // resolving the Studio-only @/* alias until persistence is actually requested.
+    const { prisma } = await import('@/lib/db');
     await prisma.auditLog.create({ data: createPluginRuntimePublishAuditData(event, outcome) });
   } catch (error) {
     console.error('Plugin Runtime publish結果の監査ログ保存に失敗しました', {
