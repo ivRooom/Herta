@@ -15,28 +15,6 @@ import {
 } from './plugin-runtime-operation-state.ts';
 
 const RECENT_OPERATION_LIMIT = 12;
-const MIN_RUNTIME_AUDIT_READ_LIMIT = 48;
-const MAX_RUNTIME_AUDIT_READ_LIMIT = 1_000;
-const RUNTIME_AUDIT_ROWS_PER_PLUGIN = 12;
-
-const RUNTIME_EVENT_PRESENTATION: Record<string, { eventLabel: string; sourceLabel: string }> = {
-  'plugin.runtime_publish_succeeded': {
-    eventLabel: 'Runtime通知を送信',
-    sourceLabel: 'Studio Runtime',
-  },
-  'plugin.runtime_publish_failed': {
-    eventLabel: 'Runtime通知の送信に失敗',
-    sourceLabel: 'Studio Runtime',
-  },
-  'plugin.runtime_apply_succeeded': {
-    eventLabel: 'Runtime設定をBotへ反映',
-    sourceLabel: 'Bot Runtime',
-  },
-  'plugin.runtime_apply_failed': {
-    eventLabel: 'Runtime設定のBot反映に失敗',
-    sourceLabel: 'Bot Runtime',
-  },
-};
 
 export interface RecentPluginOperation {
   id: string;
@@ -77,10 +55,6 @@ export async function getPluginOperationsInventory(
     },
   });
 
-  const runtimeReadLimit = Math.min(
-    MAX_RUNTIME_AUDIT_READ_LIMIT,
-    Math.max(MIN_RUNTIME_AUDIT_READ_LIMIT, rows.length * RUNTIME_AUDIT_ROWS_PER_PLUGIN),
-  );
   const runtimeRows =
     rows.length === 0
       ? []
@@ -90,9 +64,16 @@ export async function getPluginOperationsInventory(
             targetType: 'plugin',
             targetId: { in: pluginIds },
             event: { in: PLUGIN_RUNTIME_AUDIT_EVENTS },
+            OR: rows.map((row) => ({
+              guildId: row.guildId,
+              targetId: row.pluginId,
+              metadata: {
+                path: ['configVersion'],
+                equals: row.configVersion,
+              },
+            })),
           },
           orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-          take: runtimeReadLimit,
           select: {
             guildId: true,
             targetId: true,
@@ -168,7 +149,6 @@ export async function listRecentPluginOperations(
     const manifest = manifestById.get(row.targetId);
     if (!manifest) return [];
     const presentation = describeAuditEvent(row.event, 'plugin', row.targetId, row.metadata);
-    const runtimePresentation = RUNTIME_EVENT_PRESENTATION[row.event];
     return [
       {
         id: row.id,
@@ -176,8 +156,8 @@ export async function listRecentPluginOperations(
         pluginId: row.targetId,
         pluginName: manifest.name,
         event: row.event,
-        eventLabel: runtimePresentation?.eventLabel ?? presentation.eventLabel,
-        sourceLabel: runtimePresentation?.sourceLabel ?? presentation.sourceLabel,
+        eventLabel: presentation.eventLabel,
+        sourceLabel: presentation.sourceLabel,
         severity: row.severity,
         createdAt: row.createdAt.toISOString(),
       },
