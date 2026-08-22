@@ -10,11 +10,20 @@ const restrictedForm = await readFile(
   'apps/studio/src/components/restricted-plugin-config-form.tsx',
   'utf8',
 );
+const moderationEnforcementPage = await readFile(
+  'apps/studio/src/app/dashboard/guilds/[guildId]/moderation/enforcement/page.tsx',
+  'utf8',
+);
+const moderationDetectionPage = await readFile(
+  'apps/studio/src/app/dashboard/guilds/[guildId]/moderation/detection-settings/page.tsx',
+  'utf8',
+);
 
 assert.match(route, /configPathPatch/);
 assert.match(route, /removeConfigPaths/);
 assert.match(route, /resolvePluginConfigPermissionPath/);
 assert.match(route, /requiredConfigPermissionPaths/);
+assert.match(route, /changedPluginConfigPermissionPaths/);
 assert.match(route, /hasEffectivePluginConfigPermission/);
 assert.match(route, /isSameOriginMutationRequest/);
 assert.match(route, /MAX_CONFIG_PATH_OPERATIONS = 256/);
@@ -28,5 +37,16 @@ assert.match(permissions, /allConfigPathsEditable/);
 assert.match(restrictedForm, /configPathPatch/);
 assert.match(restrictedForm, /IAM: \{entry\.permissionPath\}/);
 assert.match(restrictedForm, /aria-readonly/);
+
+for (const page of [moderationEnforcementPage, moderationDetectionPage]) {
+  assert.match(page, /pluginConfigPermissionPaths\(plugin\.manifest\.configSchema\)/);
+  assert.match(
+    page,
+    /filterReadablePluginConfig\([\s\S]*plugin\.manifest\.configSchema[\s\S]*\)/,
+  );
+}
+assert.match(moderationEnforcementPage, /allConfigPathsReadable/);
+assert.match(moderationEnforcementPage, /allConfigPathsEditable/);
+assert.match(moderationDetectionPage, /allConfigPathsReadable/);
 
 console.log('plugin config path IAM contract checks passed');

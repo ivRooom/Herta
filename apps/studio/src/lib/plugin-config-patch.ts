@@ -2,6 +2,7 @@ import type { PluginConfigPathSegment } from './plugin-config-paths.ts';
 
 const MAX_CONFIG_PATH_DEPTH = 16;
 const UNSAFE_PATH_SEGMENTS = new Set(['__proto__', 'prototype', 'constructor']);
+const MISSING_CONFIG_VALUE = Symbol('missing-plugin-config-value');
 
 export interface PluginConfigPathPatchOperation {
   path: readonly PluginConfigPathSegment[];
@@ -60,6 +61,82 @@ export function changedTopLevelConfigFields(
 ): string[] {
   const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
   return [...keys].filter((key) => !jsonEqual(before[key], after[key])).sort();
+}
+
+export function changedPluginConfigPermissionPaths(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  schema: Record<string, unknown>,
+): string[] {
+  const changedPaths = new Set<string>();
+  collectChangedPermissionPaths(before, after, schema, '', changedPaths);
+  return [...changedPaths].sort();
+}
+
+function collectChangedPermissionPaths(
+  before: unknown | typeof MISSING_CONFIG_VALUE,
+  after: unknown | typeof MISSING_CONFIG_VALUE,
+  schema: Record<string, unknown>,
+  permissionPath: string,
+  changedPaths: Set<string>,
+): void {
+  if (configValuesEqual(before, after)) return;
+
+  const properties = recordValue(schema['properties']);
+  if (properties) {
+    if (!isRecord(before) || !isRecord(after)) {
+      if (permissionPath) changedPaths.add(permissionPath);
+      return;
+    }
+
+    const schemaKeys = new Set(Object.keys(properties));
+    for (const [key, rawChildSchema] of Object.entries(properties)) {
+      const childSchema = recordValue(rawChildSchema);
+      if (!childSchema) continue;
+      const childPath = permissionPath ? `${permissionPath}.${key}` : key;
+      collectChangedPermissionPaths(
+        Object.hasOwn(before, key) ? before[key] : MISSING_CONFIG_VALUE,
+        Object.hasOwn(after, key) ? after[key] : MISSING_CONFIG_VALUE,
+        childSchema,
+        childPath,
+        changedPaths,
+      );
+    }
+
+    const unknownKeys = new Set([...Object.keys(before), ...Object.keys(after)]);
+    for (const key of unknownKeys) {
+      if (schemaKeys.has(key) || jsonEqual(before[key], after[key])) continue;
+      changedPaths.add(permissionPath || key);
+    }
+    return;
+  }
+
+  const items = recordValue(schema['items']);
+  if (items) {
+    if (!Array.isArray(before) || !Array.isArray(after)) {
+      if (permissionPath) changedPaths.add(permissionPath);
+      return;
+    }
+
+    const hasStructuredItems = Boolean(recordValue(items['properties']) || recordValue(items['items']));
+    if (!hasStructuredItems || before.length !== after.length) {
+      if (permissionPath) changedPaths.add(permissionPath);
+      return;
+    }
+
+    for (let index = 0; index < before.length; index += 1) {
+      collectChangedPermissionPaths(
+        before[index],
+        after[index],
+        items,
+        `${permissionPath}[]`,
+        changedPaths,
+      );
+    }
+    return;
+  }
+
+  if (permissionPath) changedPaths.add(permissionPath);
 }
 
 function setExistingConfigPath(
@@ -153,8 +230,20 @@ function cloneJsonValue(value: unknown): unknown {
   return value;
 }
 
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return isRecord(value) ? value : null;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function configValuesEqual(
+  left: unknown | typeof MISSING_CONFIG_VALUE,
+  right: unknown | typeof MISSING_CONFIG_VALUE,
+): boolean {
+  if (left === MISSING_CONFIG_VALUE || right === MISSING_CONFIG_VALUE) return left === right;
+  return jsonEqual(left, right);
 }
 
 function jsonEqual(left: unknown, right: unknown): boolean {

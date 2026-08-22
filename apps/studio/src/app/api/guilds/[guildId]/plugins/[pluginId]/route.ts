@@ -9,6 +9,7 @@ import {
   validatePluginConfig,
 } from '@/lib/guild-plugins';
 import {
+  changedPluginConfigPermissionPaths,
   changedTopLevelConfigFields,
   PluginConfigPathPatchError,
   resolvePluginConfigCandidate,
@@ -156,6 +157,37 @@ export async function PATCH(
           { status: 403 },
         );
       }
+    }
+
+    const validationChangedPaths = changedPluginConfigPermissionPaths(
+      candidateConfig,
+      validation.config,
+      manifest.configSchema,
+    );
+    const deniedValidationPaths = new Set<string>();
+    for (const changedPath of validationChangedPaths) {
+      for (const requiredPath of requiredConfigPermissionPaths(schemaPaths, changedPath)) {
+        if (
+          !hasEffectivePluginConfigPermission(
+            access.access,
+            'studio.settings.write',
+            guildId,
+            pluginId,
+            requiredPath,
+          )
+        ) {
+          deniedValidationPaths.add(requiredPath);
+        }
+      }
+    }
+    if (deniedValidationPaths.size > 0) {
+      return NextResponse.json(
+        {
+          error: 'Plugin設定の検証中に編集権限のない設定パスが変更されました',
+          paths: [...deniedValidationPaths].sort(),
+        },
+        { status: 403 },
+      );
     }
 
     const selectsBirthdayAsset =

@@ -6,6 +6,7 @@ import { PluginConfigForm } from '@/components/plugin-config-form';
 import { RestrictedPluginConfigForm } from '@/components/restricted-plugin-config-form';
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
 import { getGuildPlugin } from '@/lib/guild-plugins';
+import { pluginConfigPermissionPaths } from '@/lib/plugin-config-paths';
 import { resolveStudioAccess } from '@/lib/studio-access';
 import {
   filterReadablePluginConfig,
@@ -30,15 +31,19 @@ export default async function ModerationDetectionSettingsPage({
     getGuildConfigurationOptions(guildId),
   ]);
   if (!plugin) notFound();
-  const fieldKeys = topLevelConfigFieldKeys(plugin.manifest.configSchema);
+  const configPaths = pluginConfigPermissionPaths(plugin.manifest.configSchema);
   const configAccess = resolvePluginConfigStudioAccess(
     access.access,
     guildId,
     'moderation',
-    fieldKeys,
+    configPaths,
   );
-  const visibleConfig = filterReadablePluginConfig(plugin.config, configAccess);
-  const allReadable = configAccess.readableFieldKeys.length === fieldKeys.length;
+  const visibleConfig = filterReadablePluginConfig(
+    plugin.config,
+    configAccess,
+    plugin.manifest.configSchema,
+  );
+  const allReadable = configAccess.allConfigPathsReadable;
 
   return (
     <div className="space-y-6">
@@ -132,12 +137,4 @@ function Hint({
       <p className="mt-1 text-xs leading-5 text-muted">{description}</p>
     </div>
   );
-}
-
-function topLevelConfigFieldKeys(schema: Record<string, unknown>): string[] {
-  const properties = schema['properties'];
-  if (typeof properties !== 'object' || properties === null || Array.isArray(properties)) {
-    return [];
-  }
-  return Object.keys(properties);
 }

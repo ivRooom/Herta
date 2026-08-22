@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  changedPluginConfigPermissionPaths,
   changedTopLevelConfigFields,
   PluginConfigPathPatchError,
   resolvePluginConfigCandidate,
@@ -47,6 +48,102 @@ test('changed fieldsは追加・変更・削除だけを安定順で返す', () 
       { unchanged: [1, 2], changed: 2, added: 'new' },
     ),
     ['added', 'changed', 'removed'],
+  );
+});
+
+test('validation後のnested差分はcanonical permission pathで返す', () => {
+  const schema = {
+    type: 'object',
+    properties: {
+      limits: {
+        type: 'object',
+        properties: {
+          burst: { type: 'number' },
+          sustained: { type: 'number' },
+        },
+      },
+      policies: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            action: { type: 'string' },
+            severity: { type: 'string' },
+          },
+        },
+      },
+      tags: { type: 'array', items: { type: 'string' } },
+    },
+  };
+
+  assert.deepEqual(
+    changedPluginConfigPermissionPaths(
+      {
+        limits: { burst: 2 },
+        policies: [{ action: 'warn', severity: 'medium' }],
+        tags: ['one'],
+      },
+      {
+        limits: { burst: 2, sustained: 5 },
+        policies: [{ action: 'timeout', severity: 'medium' }],
+        tags: ['one', 'two'],
+      },
+      schema,
+    ),
+    ['limits.sustained', 'policies[].action', 'tags'],
+  );
+});
+
+test('structured arrayの要素数変更はcontainer全体の差分として扱う', () => {
+  const schema = {
+    type: 'object',
+    properties: {
+      policies: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            action: { type: 'string' },
+            severity: { type: 'string' },
+          },
+        },
+      },
+    },
+  };
+
+  assert.deepEqual(
+    changedPluginConfigPermissionPaths(
+      { policies: [{ action: 'warn', severity: 'medium' }] },
+      {
+        policies: [
+          { action: 'warn', severity: 'medium' },
+          { action: 'ban', severity: 'critical' },
+        ],
+      },
+      schema,
+    ),
+    ['policies'],
+  );
+});
+
+test('schema外のvalidation差分は最も近い保護可能なcontainerへ寄せる', () => {
+  const schema = {
+    type: 'object',
+    properties: {
+      limits: {
+        type: 'object',
+        properties: { burst: { type: 'number' } },
+      },
+    },
+  };
+
+  assert.deepEqual(
+    changedPluginConfigPermissionPaths(
+      { limits: { burst: 2, legacy: true }, topLevelLegacy: 'remove-me' },
+      { limits: { burst: 2 } },
+      schema,
+    ),
+    ['limits', 'topLevelLegacy'],
   );
 });
 

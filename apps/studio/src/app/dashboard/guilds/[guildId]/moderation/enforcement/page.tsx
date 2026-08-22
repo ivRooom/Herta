@@ -6,6 +6,7 @@ import { ModerationEnforcementForm } from '@/components/moderation-enforcement-f
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
+import { pluginConfigPermissionPaths } from '@/lib/plugin-config-paths';
 import { getDiscordAccessToken } from '@/lib/session';
 import { resolveStudioAccess } from '@/lib/studio-access';
 import {
@@ -37,17 +38,20 @@ export default async function ModerationEnforcementPage({
     getGuildConfigurationOptions(guildId),
   ]);
   if (!plugin) notFound();
-  const fieldKeys = topLevelConfigFieldKeys(plugin.manifest.configSchema);
+  const configPaths = pluginConfigPermissionPaths(plugin.manifest.configSchema);
   const configAccess = resolvePluginConfigStudioAccess(
     studioAccess.access,
     guildId,
     'moderation',
-    fieldKeys,
+    configPaths,
   );
-  const visibleConfig = filterReadablePluginConfig(plugin.config, configAccess);
+  const visibleConfig = filterReadablePluginConfig(
+    plugin.config,
+    configAccess,
+    plugin.manifest.configSchema,
+  );
   const canUseFullEditor =
-    configAccess.readableFieldKeys.length === fieldKeys.length &&
-    configAccess.editableFieldKeys.length === fieldKeys.length;
+    configAccess.allConfigPathsReadable && configAccess.allConfigPathsEditable;
 
   return (
     <div className="min-w-0">
@@ -102,10 +106,4 @@ export default async function ModerationEnforcementPage({
       </div>
     </div>
   );
-}
-
-function topLevelConfigFieldKeys(schema: Record<string, unknown>): string[] {
-  const properties = schema['properties'];
-  if (typeof properties !== 'object' || properties === null || Array.isArray(properties)) return [];
-  return Object.keys(properties);
 }
