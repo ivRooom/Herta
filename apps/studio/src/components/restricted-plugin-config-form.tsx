@@ -1,6 +1,11 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import {
+  listConcretePluginConfigValues,
+  pluginConfigPermissionFields,
+  type PluginConfigPathSegment,
+} from '@/lib/plugin-config-paths';
 import type { PluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';
 import { topLevelConfigFields } from '@/lib/studio-policy-resources';
 
@@ -11,6 +16,16 @@ type PluginUpdateResponse = {
   enabled?: boolean;
   config?: Record<string, unknown>;
 };
+
+interface RestrictedEditorEntry {
+  id: string;
+  label: string;
+  description: string;
+  path: PluginConfigPathSegment[];
+  permissionPath: string;
+  canEdit: boolean;
+  rows: number;
+}
 
 export function RestrictedPluginConfigForm({
   guildId,
@@ -27,45 +42,36 @@ export function RestrictedPluginConfigForm({
   schema: Record<string, unknown>;
   configAccess: PluginConfigStudioAccess;
 }) {
-  const readable = useMemo(
-    () => new Set(configAccess.readableFieldKeys),
-    [configAccess.readableFieldKeys],
-  );
-  const editable = useMemo(
-    () => new Set(configAccess.editableFieldKeys),
-    [configAccess.editableFieldKeys],
-  );
-  const fields = useMemo(
-    () => topLevelConfigFields(schema).filter((field) => readable.has(field.key)),
-    [readable, schema],
+  const entries = useMemo(
+    () => buildEditorEntries(initialConfig, schema, configAccess),
+    [configAccess, initialConfig, schema],
   );
   const [enabled, setEnabled] = useState(initialEnabled);
   const [savedEnabled, setSavedEnabled] = useState(initialEnabled);
-  const [values, setValues] = useState<Record<string, string>>(() => toEditorValues(initialConfig));
+  const [values, setValues] = useState<Record<string, string>>(() => toEditorValues(entries, initialConfig));
   const [savedValues, setSavedValues] = useState<Record<string, string>>(() =>
-    toEditorValues(initialConfig),
+    toEditorValues(entries, initialConfig),
   );
   const [pending, setPending] = useState(false);
   const [status, setStatus] = useState('');
 
-  const dirtyFieldKeys = fields
-    .filter((field) => editable.has(field.key))
-    .map((field) => field.key)
-    .filter((key) => (values[key] ?? '') !== (savedValues[key] ?? ''));
+  const dirtyEntries = entries.filter(
+    (entry) => entry.canEdit && (values[entry.id] ?? '') !== (savedValues[entry.id] ?? ''),
+  );
   const enabledDirty = enabled !== savedEnabled;
-  const dirty = enabledDirty || dirtyFieldKeys.length > 0;
+  const dirty = enabledDirty || dirtyEntries.length > 0;
 
   async function save() {
     if (!dirty || pending) return;
-    const configPatch: Record<string, unknown> = {};
-    const removeConfigFields: string[] = [];
+    const configPathPatch: Array<{ path: PluginConfigPathSegment[]; value: unknown }> = [];
+    const removeConfigPaths: PluginConfigPathSegment[][] = [];
     try {
-      for (const key of dirtyFieldKeys) {
-        const raw = (values[key] ?? '').trim();
+      for (const entry of dirtyEntries) {
+        const raw = (values[entry.id] ?? '').trim();
         if (!raw) {
-          removeConfigFields.push(key);
+          removeConfigPaths.push(entry.path);
         } else {
-          configPatch[key] = JSON.parse(raw) as unknown;
+          configPathPatch.push({ path: entry.path, value: JSON.parse(raw) as unknown });
         }
       }
     } catch {
@@ -80,12 +86,12 @@ export function RestrictedPluginConfigForm({
     try {
       const payload: {
         enabled?: boolean;
-        configPatch?: Record<string, unknown>;
-        removeConfigFields?: string[];
+        configPathPatch?: Array<{ path: PluginConfigPathSegment[]; value: unknown }>;
+        removeConfigPaths?: PluginConfigPathSegment[][];
       } = {};
       if (enabledDirty) payload.enabled = enabled;
-      if (Object.keys(configPatch).length > 0) payload.configPatch = configPatch;
-      if (removeConfigFields.length > 0) payload.removeConfigFields = removeConfigFields;
+      if (configPathPatch.length > 0) payload.configPathPatch = configPathPatch;
+      if (removeConfigPaths.length > 0) payload.removeConfigPaths = removeConfigPaths;
 
       const response = await fetch(`/api/guilds/${guildId}/plugins/${pluginId}`, {
         method: 'PATCH',
@@ -101,13 +107,13 @@ export function RestrictedPluginConfigForm({
       }
 
       const nextConfig = isRecord(result?.config) ? result.config : initialConfig;
-      const nextValues = toEditorValues(nextConfig);
+      const nextValues = toEditorValues(entries, nextConfig);
       const nextEnabled = typeof result?.enabled === 'boolean' ? result.enabled : enabled;
       setValues(nextValues);
       setSavedValues(nextValues);
       setEnabled(nextEnabled);
       setSavedEnabled(nextEnabled);
-      setStatus('許可された設定項目を保存しました');
+      setStatus('許可された設定パスを保存しました');
     } catch (error) {
       setStatus(
         isTimeoutError(error)
@@ -128,10 +134,10 @@ export function RestrictedPluginConfigForm({
           <span className="rounded-full border border-amber-400/20 bg-amber-400/10 px-2.5 py-1 text-xs font-medium text-amber-300">
             IAM制限モード
           </span>
-          <h2 className="mt-3 text-xl font-semibold">許可された設定項目</h2>
+          <h2 className="mt-3 text-xl font-semibold">許可された設定パス</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-            閲覧許可された値だけをClientへ読み込みます。編集はさらに `studio.settings.write`
-            が許可された項目だけ可能です。見えない設定は部分更新から除外され、上書きされません。
+            閲覧許可された値だけをClientへ読み込みます。Object / Array内も設定パス単位で分離し、編集は
+            `studio.settings.write` が許可された値だけ送信します。非表示の兄弟設定は上書きしません。
           </p>
         </div>
         <label className="flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 text-sm">
@@ -151,54 +157,45 @@ export function RestrictedPluginConfigForm({
       </div>
 
       <div className="grid gap-4">
-        {fields.map((field) => {
-          const canEdit = editable.has(field.key);
-          return (
-            <label
-              key={field.key}
-              className="block rounded-xl border border-border bg-background p-4"
-            >
-              <span className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold">{field.label}</span>
-                <span
-                  className={`rounded-full border px-2 py-0.5 text-[11px] ${
-                    canEdit
-                      ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300'
-                      : 'border-amber-400/20 bg-amber-400/10 text-amber-300'
-                  }`}
-                >
-                  {canEdit ? '編集可能' : '閲覧のみ'}
-                </span>
+        {entries.map((entry) => (
+          <label key={entry.id} className="block rounded-xl border border-border bg-background p-4">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold">{entry.label}</span>
+              <span
+                className={`rounded-full border px-2 py-0.5 text-[11px] ${
+                  entry.canEdit
+                    ? 'border-emerald-400/20 bg-emerald-400/10 text-emerald-300'
+                    : 'border-amber-400/20 bg-amber-400/10 text-amber-300'
+                }`}
+              >
+                {entry.canEdit ? '編集可能' : '閲覧のみ'}
               </span>
-              <code className="mt-1 block break-all text-[11px] text-muted">{field.key}</code>
-              {field.description ? (
-                <span className="mt-2 block text-xs leading-5 text-muted">{field.description}</span>
-              ) : null}
-              <textarea
-                value={values[field.key] ?? ''}
-                onChange={(event) =>
-                  setValues((current) => ({ ...current, [field.key]: event.target.value }))
-                }
-                readOnly={!canEdit}
-                aria-readonly={!canEdit}
-                rows={
-                  Array.isArray(initialConfig[field.key]) || isRecord(initialConfig[field.key])
-                    ? 5
-                    : 2
-                }
-                spellCheck={false}
-                className="mt-3 w-full rounded-lg border border-border bg-surface p-3 font-mono text-sm leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring read-only:cursor-default read-only:opacity-70"
-              />
-              {canEdit ? (
-                <span className="mt-1 block text-[11px] text-muted">
-                  JSON値として入力します。空欄で設定項目を削除し、最終的なSchema
-                  validationはserver側で実行されます。
-                </span>
-              ) : null}
-            </label>
-          );
-        })}
-        {fields.length === 0 ? (
+            </span>
+            <code className="mt-1 block break-all text-[11px] text-muted">
+              {formatConcretePath(entry.path)} · IAM: {entry.permissionPath}
+            </code>
+            {entry.description ? (
+              <span className="mt-2 block text-xs leading-5 text-muted">{entry.description}</span>
+            ) : null}
+            <textarea
+              value={values[entry.id] ?? ''}
+              onChange={(event) =>
+                setValues((current) => ({ ...current, [entry.id]: event.target.value }))
+              }
+              readOnly={!entry.canEdit}
+              aria-readonly={!entry.canEdit}
+              rows={entry.rows}
+              spellCheck={false}
+              className="mt-3 w-full rounded-lg border border-border bg-surface p-3 font-mono text-sm leading-6 outline-none focus-visible:ring-2 focus-visible:ring-ring read-only:cursor-default read-only:opacity-70"
+            />
+            {entry.canEdit ? (
+              <span className="mt-1 block text-[11px] text-muted">
+                JSON値として入力します。空欄はこの設定パスの削除として扱い、最終Schema validationと権限確認はserver側で再実行されます。
+              </span>
+            ) : null}
+          </label>
+        ))}
+        {entries.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted">
             このPluginで閲覧を許可された設定項目はありません。
           </div>
@@ -222,13 +219,115 @@ export function RestrictedPluginConfigForm({
   );
 }
 
-function toEditorValues(config: Record<string, unknown>): Record<string, string> {
+function buildEditorEntries(
+  config: Record<string, unknown>,
+  schema: Record<string, unknown>,
+  access: PluginConfigStudioAccess,
+): RestrictedEditorEntry[] {
+  const readable = new Set(access.readableConfigPaths);
+  const editable = new Set(access.editableConfigPaths);
+  const wholeEditable = new Set(access.editableFieldKeys);
+  const permissionFields = pluginConfigPermissionFields(schema);
+  const permissionFieldMap = new Map(permissionFields.map((field) => [field.path, field]));
+  const schemaPathsByTopLevel = new Map<string, string[]>();
+  for (const field of permissionFields) {
+    const paths = schemaPathsByTopLevel.get(field.topLevelKey) ?? [];
+    paths.push(field.path);
+    schemaPathsByTopLevel.set(field.topLevelKey, paths);
+  }
+  const concreteValues = listConcretePluginConfigValues(config, schema);
+  const concreteByTopLevel = new Map<string, typeof concreteValues>();
+  for (const concrete of concreteValues) {
+    const topLevel = typeof concrete.path[0] === 'string' ? concrete.path[0] : '';
+    if (!topLevel) continue;
+    const entries = concreteByTopLevel.get(topLevel) ?? [];
+    entries.push(concrete);
+    concreteByTopLevel.set(topLevel, entries);
+  }
+
+  const output: RestrictedEditorEntry[] = [];
+  for (const field of topLevelConfigFields(schema)) {
+    const schemaPaths = schemaPathsByTopLevel.get(field.key) ?? [field.key];
+    const readablePaths = schemaPaths.filter((path) => readable.has(path));
+    if (readablePaths.length === 0) continue;
+
+    const canUseWholeField =
+      wholeEditable.has(field.key) && schemaPaths.every((path) => readable.has(path));
+    const concrete = concreteByTopLevel.get(field.key) ?? [];
+    if (canUseWholeField || concrete.length === 0) {
+      output.push({
+        id: pathId([field.key]),
+        label: field.label,
+        description: field.description,
+        path: [field.key],
+        permissionPath: field.key,
+        canEdit: canUseWholeField,
+        rows: rowsForValue(config[field.key]),
+      });
+      continue;
+    }
+
+    for (const entry of concrete) {
+      if (!readable.has(entry.permissionPath)) continue;
+      const metadata = permissionFieldMap.get(entry.permissionPath);
+      output.push({
+        id: pathId(entry.path),
+        label: entry.label,
+        description: metadata?.description ?? '',
+        path: [...entry.path],
+        permissionPath: entry.permissionPath,
+        canEdit: editable.has(entry.permissionPath),
+        rows: rowsForValue(entry.value),
+      });
+    }
+  }
+  return output;
+}
+
+function toEditorValues(
+  entries: readonly RestrictedEditorEntry[],
+  config: Record<string, unknown>,
+): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(config).map(([key, value]) => [
-      key,
-      value === undefined ? '' : (JSON.stringify(value, null, 2) ?? ''),
-    ]),
+    entries.map((entry) => {
+      const value = valueAtPath(config, entry.path);
+      return [entry.id, value === undefined ? '' : (JSON.stringify(value, null, 2) ?? '')];
+    }),
   );
+}
+
+function valueAtPath(root: Record<string, unknown>, path: readonly PluginConfigPathSegment[]): unknown {
+  let current: unknown = root;
+  for (const segment of path) {
+    if (typeof segment === 'number') {
+      if (!Array.isArray(current) || segment < 0 || segment >= current.length) return undefined;
+      current = current[segment];
+      continue;
+    }
+    if (!isRecord(current) || !Object.hasOwn(current, segment)) return undefined;
+    current = current[segment];
+  }
+  return current;
+}
+
+function pathId(path: readonly PluginConfigPathSegment[]): string {
+  return JSON.stringify(path);
+}
+
+function formatConcretePath(path: readonly PluginConfigPathSegment[]): string {
+  let output = '';
+  for (const segment of path) {
+    if (typeof segment === 'number') {
+      output += `[${segment}]`;
+    } else {
+      output += output ? `.${segment}` : segment;
+    }
+  }
+  return output;
+}
+
+function rowsForValue(value: unknown): number {
+  return Array.isArray(value) || isRecord(value) ? 5 : 2;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
