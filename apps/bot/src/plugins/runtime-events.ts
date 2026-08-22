@@ -178,7 +178,7 @@ export class PluginRuntimeEventSubscriber {
     } catch (error) {
       this.logger.error(
         {
-          err: error,
+          errorName: resolveErrorName(error),
           guildId: events[0]?.guildId,
           eventIds: events.map((event) => event.eventId),
           outcome,
@@ -222,14 +222,14 @@ export class PluginRuntimeEventSubscriber {
       } catch (error) {
         if (attempt === MAX_SYNC_ATTEMPTS) {
           this.logger.error(
-            { err: error, guildId, attempt },
+            { errorName: resolveErrorName(error), guildId, attempt },
             'Plugin RuntimeイベントによるGuild再同期に失敗しました',
           );
           await this.reportOutcomeSafely(events, 'apply_failed', attempt);
           return;
         }
         this.logger.warn(
-          { err: error, guildId, attempt },
+          { errorName: resolveErrorName(error), guildId, attempt },
           'Plugin Runtime Guild再同期に失敗したため再試行します',
         );
         await new Promise((resolve) => setTimeout(resolve, SYNC_RETRY_BASE_MS * attempt));
@@ -250,4 +250,8 @@ export class PluginRuntimeEventSubscriber {
     await redis.unsubscribe(PLUGIN_RUNTIME_EVENT_CHANNEL).catch(() => undefined);
     await redis.quit().catch(() => redis.disconnect());
   }
+}
+
+function resolveErrorName(error: unknown): string {
+  return error instanceof Error && error.name.trim() ? error.name : 'UnknownError';
 }
