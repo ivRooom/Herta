@@ -43,7 +43,8 @@ export default async function ModerationDetectionSettingsPage({
     configAccess,
     plugin.manifest.configSchema,
   );
-  const allReadable = configAccess.allConfigPathsReadable;
+  const canUseFullEditor =
+    configAccess.allConfigPathsReadable && configAccess.allConfigPathsEditable;
 
   return (
     <div className="space-y-6">
@@ -95,7 +96,7 @@ export default async function ModerationDetectionSettingsPage({
         `auto`、`Alert`、`Case` などを入力すると絞り込めます。
       </section>
 
-      {allReadable ? (
+      {canUseFullEditor ? (
         <div className="rounded-2xl border border-border bg-surface p-6 shadow-card">
           <PluginConfigForm
             guildId={guildId}
