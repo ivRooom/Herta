@@ -113,7 +113,7 @@ export default async function PluginOperationsPage() {
           icon={CirclePause}
           label="Paused"
           value={inventory.pausedInstances}
-          detail="設定済みだが意図的に無効"
+          detail="設定済みでRuntime反映済みの無効状態"
         />
         <MetricCard
           icon={Activity}
@@ -157,7 +157,7 @@ export default async function PluginOperationsPage() {
               </h2>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
                 {
-                  '有効なPluginの設定Schemaに加え、StudioからBotへのRuntime通知と反映ACKも確認します。無効化中のPluginは障害扱いせずPausedとして分離しています。'
+                  '設定Schemaに加え、StudioからBotへのRuntime通知と反映ACKも確認します。無効化操作のpublish・反映失敗やACK遅延もAttentionとして検知します。'
                 }
               </p>
             </div>
@@ -384,9 +384,7 @@ function AttentionCard({ entry, guildName }: { entry: PluginOperationItem; guild
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted">
         <span>configVersion v{entry.configVersion}</span>
         <span>更新 {formatJst(entry.updatedAt)}</span>
-        {entry.runtimeObservedAt ? (
-          <span>Runtime {formatJst(entry.runtimeObservedAt)}</span>
-        ) : null}
+        {entry.runtimeObservedAt ? <span>Runtime {formatJst(entry.runtimeObservedAt)}</span> : null}
       </div>
       <div className="mt-4 flex flex-wrap gap-3">
         <Link
