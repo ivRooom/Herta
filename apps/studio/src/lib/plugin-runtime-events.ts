@@ -10,6 +10,7 @@ import {
   type PluginRuntimeEventType,
   type XpRoleSweepReason,
 } from '@herta/shared';
+import { recordPluginRuntimePublishOutcome } from '@/lib/plugin-runtime-delivery';
 
 const PLUGIN_RUNTIME_PUBLISH_ATTEMPTS = 3;
 const PLUGIN_RUNTIME_RETRY_MS = 200;
@@ -20,15 +21,27 @@ export async function publishPluginRuntimeEvent(input: {
   configVersion: number;
   eventType: PluginRuntimeEventType;
 }): Promise<boolean> {
+  const event = createPluginRuntimeEvent(input);
   const redisUrl = process.env['REDIS_URL'];
-  if (!redisUrl) return false;
+  if (!redisUrl) {
+    await recordPluginRuntimePublishOutcome(event, {
+      status: 'publish_failed',
+      reason: 'redis_unconfigured',
+    });
+    return false;
+  }
 
   try {
-    const event = createPluginRuntimeEvent(input);
     const payload = JSON.stringify(event);
     for (let attempt = 1; attempt <= PLUGIN_RUNTIME_PUBLISH_ATTEMPTS; attempt += 1) {
       const subscribers = await publish(redisUrl, PLUGIN_RUNTIME_EVENT_CHANNEL, payload);
-      if (subscribers > 0) return true;
+      if (subscribers > 0) {
+        await recordPluginRuntimePublishOutcome(event, {
+          status: 'published',
+          subscriberCount: subscribers,
+        });
+        return true;
+      }
       if (attempt < PLUGIN_RUNTIME_PUBLISH_ATTEMPTS) {
         await delay(PLUGIN_RUNTIME_RETRY_MS * attempt);
       }
@@ -38,6 +51,10 @@ export async function publishPluginRuntimeEvent(input: {
       pluginId: input.pluginId,
       eventType: input.eventType,
     });
+    await recordPluginRuntimePublishOutcome(event, {
+      status: 'publish_failed',
+      reason: 'no_subscribers',
+    });
     return false;
   } catch (error) {
     console.error('Plugin Runtime更新イベントの発行に失敗しました', {
@@ -45,6 +62,10 @@ export async function publishPluginRuntimeEvent(input: {
       pluginId: input.pluginId,
       eventType: input.eventType,
       error,
+    });
+    await recordPluginRuntimePublishOutcome(event, {
+      status: 'publish_failed',
+      reason: 'publish_error',
     });
     return false;
   }
