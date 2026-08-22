@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseAccessGroupMetadata } from './access-group-metadata.ts';
+import {
+  parseAccessGroupMetadata,
+  truncateUnicodeCodePoints,
+} from './access-group-metadata.ts';
 
 test('parseAccessGroupMetadata normalizes valid values and ignores unknown fields', () => {
   assert.deepEqual(
@@ -38,6 +41,13 @@ test('parseAccessGroupMetadata enforces Unicode code-point boundaries', () => {
     ok: false,
     field: 'description',
   });
+});
+
+test('truncateUnicodeCodePoints applies UI limits by Unicode code point', () => {
+  assert.equal(truncateUnicodeCodePoints('😀'.repeat(101), 100), '😀'.repeat(100));
+  assert.equal(truncateUnicodeCodePoints('🧩'.repeat(501), 500), '🧩'.repeat(500));
+  assert.equal(truncateUnicodeCodePoints('abc', 100), 'abc');
+  assert.equal(truncateUnicodeCodePoints('abc', 0), '');
 });
 
 test('parseAccessGroupMetadata rejects missing names and invalid description types', () => {
