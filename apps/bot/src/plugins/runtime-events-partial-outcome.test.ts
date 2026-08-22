@@ -17,7 +17,7 @@ afterEach(() => {
 });
 
 describe('PluginRuntimeEventSubscriber partial outcomes', () => {
-  it('同一Guildの一部Pluginだけ検証失敗した場合は失敗Pluginだけを再試行・失敗ACKする', async () => {
+  it('同一Guildの一部Pluginだけ検証失敗した場合は最終状態で成功/失敗を分割ACKする', async () => {
     vi.useFakeTimers();
     const onGuildChanged = vi.fn(async () => undefined);
     const reportSyncOutcome = vi.fn(async () => undefined);
@@ -46,7 +46,7 @@ describe('PluginRuntimeEventSubscriber partial outcomes', () => {
     await vi.runAllTimersAsync();
 
     expect(onGuildChanged).toHaveBeenCalledTimes(3);
-    expect(reportSyncOutcome).toHaveBeenCalledWith([healthy], 'applied', 1);
+    expect(reportSyncOutcome).toHaveBeenCalledWith([healthy], 'applied', 3);
     expect(reportSyncOutcome).toHaveBeenCalledWith([broken], 'apply_failed', 3);
     expect(reportSyncOutcome).not.toHaveBeenCalledWith(
       expect.arrayContaining([healthy]),
