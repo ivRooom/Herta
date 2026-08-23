@@ -196,7 +196,9 @@ describe('Plugin Runtime startup reconciliation', () => {
     } as unknown as PrismaClient;
 
     try {
-      await expect(reconcilePluginRuntimeStartup(prisma, guildId, logger, state)).resolves.toBeUndefined();
+      await expect(
+        reconcilePluginRuntimeStartup(prisma, guildId, logger, state),
+      ).resolves.toBeUndefined();
       expect(logger.error).toHaveBeenCalledWith(
         { guildId, errorName: 'AuditPersistenceError' },
         'Plugin Runtime startup recoveryの監査処理に失敗しました',
