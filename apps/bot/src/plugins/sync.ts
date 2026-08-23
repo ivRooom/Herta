@@ -1,4 +1,5 @@
 import {
+  Events,
   Routes,
   type Client,
   type RESTPostAPIChatInputApplicationCommandsJSONBody,
@@ -6,6 +7,12 @@ import {
 import type { Logger } from '@herta/logger';
 import type { SlashCommand } from '../commands/registry.js';
 import { toDiscordCommandJSON } from '../commands/registry.js';
+import {
+  reconcilePluginRuntimeStartupOnce,
+  resetPluginRuntimeStartupReconciliation,
+} from './runtime-startup-reconciliation.js';
+
+const startupReconciliationLifecycleClients = new WeakSet<Client>();
 
 export function buildGuildCommandBodies(
   coreCommands: SlashCommand[],
@@ -33,6 +40,8 @@ export async function syncGuildCommands(
   pluginCommands: SlashCommand[],
   logger: Logger,
 ): Promise<void> {
+  ensureStartupReconciliationLifecycle(client);
+
   const appId = client.application?.id ?? process.env['DISCORD_CLIENT_ID'];
   if (!appId) {
     const error = new Error('Discord Application ID is unavailable');
@@ -48,6 +57,7 @@ export async function syncGuildCommands(
   try {
     await client.rest.put(Routes.applicationGuildCommands(appId, guildId), { body });
     logger.info({ guildId, count: body.length, commandNames }, 'Guild Commandを登録しました');
+    await reconcilePluginRuntimeStartupOnce(guildId, logger);
   } catch (error) {
     logger.error(
       { err: error, guildId, appId, count: body.length, commandNames },
@@ -55,4 +65,12 @@ export async function syncGuildCommands(
     );
     throw error;
   }
+}
+
+function ensureStartupReconciliationLifecycle(client: Client): void {
+  if (startupReconciliationLifecycleClients.has(client)) return;
+  startupReconciliationLifecycleClients.add(client);
+  client.on(Events.GuildDelete, (guild) => {
+    resetPluginRuntimeStartupReconciliation(guild.id);
+  });
 }

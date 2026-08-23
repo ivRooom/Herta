@@ -294,6 +294,9 @@ function resolveAuditSummary(
   metadata: Record<string, Prisma.JsonValue> | null,
   fallback: string | undefined,
 ): string {
+  if (event === 'plugin.runtime_apply_succeeded' && booleanValue(metadata?.['recovery']) === true) {
+    return 'Bot起動時の再同期でPlugin Runtime設定の復旧を確認しました。';
+  }
   if (event === 'moderation.automatic.decision') {
     return (
       resolveAutomaticDecisionSummary(metadata) ?? fallback ?? '自動Moderation判定を記録しました。'
@@ -421,6 +424,7 @@ function resolveCategory(event: string): Exclude<AuditLogCategory, 'all'> {
 function resolveSourceLabel(event: string, operationSource: string | null): string | null {
   if (operationSource === 'studio-runtime') return 'Studio Runtime';
   if (operationSource === 'bot-runtime') return 'Bot Runtime';
+  if (operationSource === 'bot-runtime-startup-recovery') return 'Bot Runtime Recovery';
   if (operationSource === 'dashboard') return 'Herta Studio';
   if (operationSource === 'discord') return 'Discord';
   if (event.startsWith('plugin.')) return 'Herta Studio';
