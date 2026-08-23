@@ -19,8 +19,9 @@ const RUNTIME_STATUS_BY_EVENT: Record<RuntimeAuditEvent, RuntimeStatus> = {
   'plugin.runtime_apply_failed': 'apply_failed',
 };
 
-const startupReconciledGuilds = new Set<string>();
-const startupReconciliationInFlightGuilds = new Set<string>();
+const startupReconciliationEpochs = new Map<string, number>();
+const startupReconciledEpochs = new Map<string, number>();
+const startupReconciliationInFlightEpochs = new Map<string, number>();
 
 export interface PluginRuntimeStartupTarget {
   pluginId: string;
@@ -68,6 +69,19 @@ export function selectPluginRuntimeRecoveryCandidates(
 }
 
 /**
+ * Guild membership cycleが変わったときにonce-markerを破棄する。
+ * 実行中の古いcycleが後から完了しても、新しいcycleをreconciled扱いしないようepochで分離する。
+ */
+export function resetPluginRuntimeStartupReconciliation(guildId: string): void {
+  const nextEpoch = currentStartupReconciliationEpoch(guildId) + 1;
+  startupReconciliationEpochs.set(guildId, nextEpoch);
+  startupReconciledEpochs.delete(guildId);
+  if (startupReconciliationInFlightEpochs.get(guildId) !== nextEpoch) {
+    startupReconciliationInFlightEpochs.delete(guildId);
+  }
+}
+
+/**
  * Guild Commandの初回同期成功後だけstartup reconciliationを実行する。
  * Runtimeイベントによる後続resyncでは通常ACK側へ任せるが、一時的なDB/Audit障害時は
  * 次回の成功したGuild同期でrecovery判定を再試行できるようにする。
@@ -76,21 +90,29 @@ export async function reconcilePluginRuntimeStartupOnce(
   guildId: string,
   logger: Logger,
 ): Promise<void> {
-  if (startupReconciledGuilds.has(guildId) || startupReconciliationInFlightGuilds.has(guildId)) {
+  const epoch = currentStartupReconciliationEpoch(guildId);
+  if (
+    startupReconciledEpochs.get(guildId) === epoch ||
+    startupReconciliationInFlightEpochs.get(guildId) === epoch
+  ) {
     return;
   }
 
-  startupReconciliationInFlightGuilds.add(guildId);
+  startupReconciliationInFlightEpochs.set(guildId, epoch);
   try {
     const succeeded = await reconcilePluginRuntimeStartup(getPrismaClient(), guildId, logger);
-    if (succeeded) startupReconciledGuilds.add(guildId);
+    if (succeeded && currentStartupReconciliationEpoch(guildId) === epoch) {
+      startupReconciledEpochs.set(guildId, epoch);
+    }
   } catch (error) {
     logger.error(
       { guildId, errorName: resolveErrorName(error) },
       'Plugin Runtime startup recoveryの初期化に失敗しました',
     );
   } finally {
-    startupReconciliationInFlightGuilds.delete(guildId);
+    if (startupReconciliationInFlightEpochs.get(guildId) === epoch) {
+      startupReconciliationInFlightEpochs.delete(guildId);
+    }
   }
 }
 
@@ -211,6 +233,10 @@ function buildLatestRuntimeStates(
   }
 
   return states;
+}
+
+function currentStartupReconciliationEpoch(guildId: string): number {
+  return startupReconciliationEpochs.get(guildId) ?? 0;
 }
 
 function runtimeStateKey(pluginId: string, configVersion: number): string {
