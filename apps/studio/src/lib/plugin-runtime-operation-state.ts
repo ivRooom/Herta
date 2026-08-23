@@ -43,8 +43,11 @@ export function buildPluginRuntimeConsumerOperationStateMap(
   rows: readonly PluginRuntimeAuditRow[],
   consumer: PluginRuntimeConsumer,
 ): Map<string, PluginRuntimeOperationState> {
-  return buildPluginRuntimeOperationStateMapForConsumer(rows, consumer, (guildId, pluginId, version) =>
-    pluginRuntimeConsumerOperationStateKey(guildId, pluginId, version, consumer),
+  return buildPluginRuntimeOperationStateMapForConsumer(
+    rows,
+    consumer,
+    (guildId, pluginId, version) =>
+      pluginRuntimeConsumerOperationStateKey(guildId, pluginId, version, consumer),
   );
 }
 
