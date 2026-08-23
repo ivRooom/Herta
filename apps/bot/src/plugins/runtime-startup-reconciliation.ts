@@ -51,12 +51,7 @@ export function selectPluginRuntimeRecoveryCandidates(
     const latest = latestStates.get(runtimeStateKey(target.pluginId, target.configVersion));
     if (!latest || latest.status === 'applied') continue;
     if (
-      !runtimeState.isTargetApplied(
-        guildId,
-        target.pluginId,
-        target.configVersion,
-        target.enabled,
-      )
+      !runtimeState.isTargetApplied(guildId, target.pluginId, target.configVersion, target.enabled)
     ) {
       continue;
     }
