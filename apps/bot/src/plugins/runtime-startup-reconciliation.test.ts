@@ -181,6 +181,33 @@ describe('Plugin Runtime startup reconciliation', () => {
     }
   });
 
+  it('未解決current failureが未適用ならreconciliationを完了扱いにしない', async () => {
+    const previousDatabaseUrl = process.env['DATABASE_URL'];
+    process.env['DATABASE_URL'] = 'postgresql://test.invalid/herta';
+    const state = new PluginRuntimeState();
+    state.markConfigurationLoaded(guildId);
+    const logger = createLogger();
+    const transaction = vi.fn();
+    const prisma = {
+      guildPlugin: { findMany: vi.fn(async () => [target]) },
+      auditLog: {
+        findMany: vi.fn(async () => [audit('plugin.runtime_apply_failed', 4)]),
+        create: vi.fn(),
+      },
+      $transaction: transaction,
+    } as unknown as PrismaClient;
+
+    try {
+      await expect(reconcilePluginRuntimeStartup(prisma, guildId, logger, state)).resolves.toBe(
+        false,
+      );
+      expect(transaction).not.toHaveBeenCalled();
+    } finally {
+      if (previousDatabaseUrl === undefined) delete process.env['DATABASE_URL'];
+      else process.env['DATABASE_URL'] = previousDatabaseUrl;
+    }
+  });
+
   it('並行した後続同期はin-flight失敗を待ってから再試行する', async () => {
     const concurrentGuildId = 'guild-concurrent-retry';
     resetPluginRuntimeStartupReconciliation(concurrentGuildId);
