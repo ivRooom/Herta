@@ -104,6 +104,10 @@ export function startupRuntimeAuditGraceMs(
   return Math.max(0, Math.ceil(remainingMs));
 }
 
+/**
+ * Guild membership cycleが変わったときにonce-markerを破棄する。
+ * 実行中の古いcycleが後から完了しても、新しいcycleをreconciled扱いしないようepochで分離する。
+ */
 export function resetPluginRuntimeStartupReconciliation(guildId: string): void {
   const nextEpoch = currentStartupReconciliationEpoch(guildId) + 1;
   startupReconciliationEpochs.set(guildId, nextEpoch);
@@ -111,6 +115,11 @@ export function resetPluginRuntimeStartupReconciliation(guildId: string): void {
   startupReconciliationAttempts.delete(guildId);
 }
 
+/**
+ * Guild Commandの初回同期成功後だけstartup reconciliationを実行する。
+ * Runtimeイベントによる後続resyncでは通常ACK側へ任せるが、一時的なDB/Audit障害時は
+ * 次回の成功したGuild同期でrecovery判定を再試行できるようにする。
+ */
 export async function reconcilePluginRuntimeStartupOnce(
   guildId: string,
   logger: Logger,
@@ -303,6 +312,8 @@ function buildLatestRuntimeStates(
       continue;
     }
 
+    // publish結果とBot ACKは別プロセスから書かれるためcreatedAt順が逆転し得る。
+    // 同一eventIdではterminalなapply結果を優先する。
     if (
       eventId &&
       existing.eventId === eventId &&
