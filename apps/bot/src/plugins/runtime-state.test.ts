@@ -89,20 +89,39 @@ describe('PluginRuntimeState', () => {
     expect(state.isEventApplied(staleEvent, latestEnable)).toBe(true);
   });
 
-  it('同じversionのactive eventは一致時だけ適用済みになる', () => {
+  it('DB再読込失敗後は以前のactive versionをACK根拠にしない', () => {
+    const state = new PluginRuntimeState();
+    const event = createPluginRuntimeEvent({
+      guildId: 'guild-a',
+      pluginId: 'quote',
+      configVersion: 2,
+      eventType: 'config_updated',
+    });
+
+    state.markConfigurationLoaded('guild-a');
+    state.markActive('guild-a', 'quote', 3);
+    expect(state.isEventApplied(event)).toBe(true);
+
+    state.markReloadStarted('guild-a');
+    expect(state.isEventApplied(event)).toBe(false);
+
+    state.markConfigurationLoadFailed('guild-a');
+    expect(state.isEventApplied(event)).toBe(false);
+  });
+
+  it('同じversionのactive eventはfreshな設定取得後の一致時だけ適用済みになる', () => {
     const state = new PluginRuntimeState();
     state.markActive('guild-a', 'quote', 4);
+    const event = createPluginRuntimeEvent({
+      guildId: 'guild-a',
+      pluginId: 'quote',
+      configVersion: 4,
+      eventType: 'enabled',
+    });
 
-    expect(
-      state.isEventApplied(
-        createPluginRuntimeEvent({
-          guildId: 'guild-a',
-          pluginId: 'quote',
-          configVersion: 4,
-          eventType: 'enabled',
-        }),
-      ),
-    ).toBe(true);
+    expect(state.isEventApplied(event)).toBe(false);
+    state.markConfigurationLoaded('guild-a');
+    expect(state.isEventApplied(event)).toBe(true);
     expect(
       state.isEventApplied(
         createPluginRuntimeEvent({
