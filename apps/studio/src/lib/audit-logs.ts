@@ -99,6 +99,22 @@ const EVENT_LABELS: Record<string, { label: string; summary: string }> = {
     label: 'Plugin設定を更新',
     summary: 'Pluginの設定を更新しました。設定値は監査画面には表示しません。',
   },
+  'plugin.runtime_publish_succeeded': {
+    label: 'Runtime通知を送信',
+    summary: 'Plugin Runtime更新イベントをBotへ送信しました。',
+  },
+  'plugin.runtime_publish_failed': {
+    label: 'Runtime通知の送信に失敗',
+    summary: 'Plugin Runtime更新イベントをBotへ送信できませんでした。',
+  },
+  'plugin.runtime_apply_succeeded': {
+    label: 'Runtime設定をBotへ反映',
+    summary: 'BotがPlugin Runtime設定を再同期しました。',
+  },
+  'plugin.runtime_apply_failed': {
+    label: 'Runtime設定のBot反映に失敗',
+    summary: 'BotがPlugin Runtime設定を再同期できませんでした。',
+  },
   'quote.create': {
     label: 'Quoteを登録',
     summary: 'Quoteを新しく登録しました。本文は監査画面には表示しません。',
@@ -403,6 +419,8 @@ function resolveCategory(event: string): Exclude<AuditLogCategory, 'all'> {
 }
 
 function resolveSourceLabel(event: string, operationSource: string | null): string | null {
+  if (operationSource === 'studio-runtime') return 'Studio Runtime';
+  if (operationSource === 'bot-runtime') return 'Bot Runtime';
   if (operationSource === 'dashboard') return 'Herta Studio';
   if (operationSource === 'discord') return 'Discord';
   if (event.startsWith('plugin.')) return 'Herta Studio';
@@ -428,6 +446,7 @@ function resolveActorLabel(
 ): string {
   if (actorType === 'bot') return 'Herta Bot';
   if (actorType === 'system') return 'システム';
+  if (actorType === 'service') return 'Herta Service';
   if (!user) return 'Discordユーザー';
   if (user.discriminator && user.discriminator !== '0') {
     return `${user.username}#${user.discriminator}`;

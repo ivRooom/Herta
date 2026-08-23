@@ -1,21 +1,27 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { EnabledPlugin } from '@herta/plugin-catalog';
 import type { Logger } from '@herta/logger';
+import { createPluginRuntimeEvent } from '@herta/shared';
 import type { SlashCommand } from '../commands/registry.js';
 import { InMemoryGuildPluginCache } from './cache.js';
 import { GuildPluginLoader } from './loader.js';
 import { PluginRuntimeRegistry } from './registry.js';
+import { PluginRuntimeState } from './runtime-state.js';
 
 const logger = {
   warn: vi.fn(),
   error: vi.fn(),
 } as unknown as Logger;
 
-function enabled(pluginId: string, config: Record<string, unknown> = {}): EnabledPlugin {
+function enabled(
+  pluginId: string,
+  config: Record<string, unknown> = {},
+  configVersion = 1,
+): EnabledPlugin {
   return {
     manifest: { id: pluginId } as EnabledPlugin['manifest'],
     config,
-    configVersion: 1,
+    configVersion,
   };
 }
 
@@ -210,5 +216,103 @@ describe('GuildPluginLoader', () => {
     expect(onDisable).toHaveBeenCalledTimes(1);
     await loader.loadGuildPlugins('guild-a');
     expect(onEnable).toHaveBeenCalledTimes(2);
+  });
+
+  it('ロード済みPluginのconfigVersionをRuntime適用状態として追跡する', async () => {
+    const runtimeState = new PluginRuntimeState();
+    const loader = new GuildPluginLoader({
+      registry: new PluginRuntimeRegistry([
+        { pluginId: 'quote', provideCommands: () => [command('quote')] },
+      ]),
+      cache: new InMemoryGuildPluginCache(),
+      logger,
+      runtimeState,
+      fetchEnabledPlugins: vi.fn(async () => [enabled('quote', {}, 4)]),
+    });
+
+    await loader.loadGuildPlugins('guild-a');
+
+    expect(
+      runtimeState.isEventApplied(
+        createPluginRuntimeEvent({
+          guildId: 'guild-a',
+          pluginId: 'quote',
+          configVersion: 4,
+          eventType: 'config_updated',
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      runtimeState.isEventApplied(
+        createPluginRuntimeEvent({
+          guildId: 'guild-a',
+          pluginId: 'quote',
+          configVersion: 3,
+          eventType: 'config_updated',
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('onDisable失敗時はRuntime状態をactiveのまま保持してdisable ACKを拒否する', async () => {
+    const runtimeState = new PluginRuntimeState();
+    const onDisable = vi.fn(async () => {
+      throw new Error('disable failed');
+    });
+    const loader = new GuildPluginLoader({
+      registry: new PluginRuntimeRegistry([
+        { pluginId: 'moderation', provideCommands: () => [], onDisable },
+      ]),
+      cache: new InMemoryGuildPluginCache(),
+      logger,
+      runtimeState,
+      fetchEnabledPlugins: vi.fn(async () => [enabled('moderation', {}, 6)]),
+    });
+
+    await loader.loadGuildPlugins('guild-a');
+    await loader.disableGuildPlugins('guild-a');
+
+    expect(onDisable).toHaveBeenCalledTimes(1);
+    expect(
+      runtimeState.isEventApplied(
+        createPluginRuntimeEvent({
+          guildId: 'guild-a',
+          pluginId: 'moderation',
+          configVersion: 7,
+          eventType: 'disabled',
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it('providerでスキップされたPluginはRuntime適用済みにしない', async () => {
+    const runtimeState = new PluginRuntimeState();
+    const loader = new GuildPluginLoader({
+      registry: new PluginRuntimeRegistry([
+        {
+          pluginId: 'broken',
+          provideCommands: () => {
+            throw new Error('broken');
+          },
+        },
+      ]),
+      cache: new InMemoryGuildPluginCache(),
+      logger,
+      runtimeState,
+      fetchEnabledPlugins: vi.fn(async () => [enabled('broken', {}, 2)]),
+    });
+
+    await loader.loadGuildPlugins('guild-a');
+
+    expect(
+      runtimeState.isEventApplied(
+        createPluginRuntimeEvent({
+          guildId: 'guild-a',
+          pluginId: 'broken',
+          configVersion: 2,
+          eventType: 'enabled',
+        }),
+      ),
+    ).toBe(false);
   });
 });

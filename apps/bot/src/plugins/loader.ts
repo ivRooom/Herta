@@ -3,6 +3,7 @@ import type { EnabledPlugin } from '@herta/plugin-catalog';
 import type { SlashCommand } from '../commands/registry.js';
 import type { GuildPluginCache } from './cache.js';
 import type { PluginRuntimeRegistry } from './registry.js';
+import { defaultPluginRuntimeState, type PluginRuntimeState } from './runtime-state.js';
 import type { GuildEventHandler, LoadedGuildPlugins } from './types.js';
 
 export interface GuildPluginLoaderDeps {
@@ -11,11 +12,13 @@ export interface GuildPluginLoaderDeps {
   logger: Logger;
   fetchEnabledPlugins(guildId: string): Promise<EnabledPlugin[]>;
   coreCommandNames?: string[];
+  runtimeState?: PluginRuntimeState;
 }
 
 interface ActivatedPlugin {
   pluginId: string;
   config: Record<string, unknown>;
+  configVersion: number;
 }
 
 export class GuildPluginLoader {
@@ -24,7 +27,9 @@ export class GuildPluginLoader {
   private readonly logger: Logger;
   private readonly fetchEnabledPlugins: (guildId: string) => Promise<EnabledPlugin[]>;
   private readonly coreCommandNames: Set<string>;
+  private readonly runtimeState: PluginRuntimeState;
   private readonly activatedPlugins = new Map<string, ActivatedPlugin>();
+  private readonly reloadBlockedGuilds = new Set<string>();
 
   constructor(deps: GuildPluginLoaderDeps) {
     this.registry = deps.registry;
@@ -32,6 +37,7 @@ export class GuildPluginLoader {
     this.logger = deps.logger;
     this.fetchEnabledPlugins = deps.fetchEnabledPlugins;
     this.coreCommandNames = new Set(deps.coreCommandNames ?? []);
+    this.runtimeState = deps.runtimeState ?? defaultPluginRuntimeState;
   }
 
   private async getEnabled(guildId: string): Promise<EnabledPlugin[]> {
@@ -43,8 +49,10 @@ export class GuildPluginLoader {
     try {
       const enabled = await this.fetchEnabledPlugins(guildId);
       this.cache.set(guildId, enabled);
+      this.runtimeState.markConfigurationLoaded(guildId);
       return enabled;
     } catch (error) {
+      this.runtimeState.markConfigurationLoadFailed(guildId);
       this.logger.error({ guildId, error }, '有効Pluginの取得に失敗しました');
       return [];
     }
@@ -59,6 +67,10 @@ export class GuildPluginLoader {
   }
 
   async loadGuildPlugins(guildId: string): Promise<LoadedGuildPlugins> {
+    if (this.reloadBlockedGuilds.has(guildId)) {
+      throw new Error('Plugin onDisable の失敗によりGuild再同期を継続できません');
+    }
+
     const commands: SlashCommand[] = [];
     const events: GuildEventHandler[] = [];
     const loaded: string[] = [];
@@ -105,7 +117,9 @@ export class GuildPluginLoader {
           this.activatedPlugins.set(activationKey, {
             pluginId,
             config: structuredClone(enabled.config),
+            configVersion: enabled.configVersion,
           });
+          this.runtimeState.markActive(guildId, pluginId, enabled.configVersion);
         } catch (error) {
           const reason = 'Plugin onEnable の実行に失敗しました';
           this.logger.error({ guildId, pluginId, error }, 'Pluginの有効化に失敗しました');
@@ -135,24 +149,30 @@ export class GuildPluginLoader {
 
   /** Guild の有効化済みPluginを無効化し、SDKのlifecycleを通知する。 */
   async disableGuildPlugins(guildId: string): Promise<void> {
+    this.runtimeState.markReloadStarted(guildId);
+    this.reloadBlockedGuilds.delete(guildId);
     const prefix = `${guildId}:`;
     const activated = [...this.activatedPlugins.entries()].filter(([key]) =>
       key.startsWith(prefix),
     );
+    let disableFailed = false;
 
     for (const [activationKey, state] of activated) {
       const entry = this.registry.get(state.pluginId);
       try {
         await entry?.onDisable?.(guildId, state.config);
+        this.activatedPlugins.delete(activationKey);
+        this.runtimeState.markInactive(guildId, state.pluginId);
       } catch (error) {
+        disableFailed = true;
         this.logger.error(
           { guildId, pluginId: state.pluginId, error },
           'Plugin の無効化に失敗しました',
         );
-      } finally {
-        this.activatedPlugins.delete(activationKey);
       }
     }
+
+    if (disableFailed) this.reloadBlockedGuilds.add(guildId);
   }
 
   private findDuplicateCommandName(
