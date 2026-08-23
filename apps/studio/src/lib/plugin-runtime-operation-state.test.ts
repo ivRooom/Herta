@@ -78,7 +78,10 @@ test('Worker ACKはBot状態を上書きせずconsumer別に集計できる', ()
   const botStates = buildPluginRuntimeOperationStateMap(rows);
   const workerStates = buildPluginRuntimeConsumerOperationStateMap(rows, 'worker');
 
-  assert.equal(botStates.get(pluginRuntimeOperationStateKey(guildId, pluginId, 4))?.status, 'applied');
+  assert.equal(
+    botStates.get(pluginRuntimeOperationStateKey(guildId, pluginId, 4))?.status,
+    'applied',
+  );
   assert.equal(
     workerStates.get(pluginRuntimeConsumerOperationStateKey(guildId, pluginId, 4, 'worker'))
       ?.status,
@@ -96,7 +99,10 @@ test('未知consumerのapply ACKは安全側に無視する', () => {
     row('plugin.runtime_publish_succeeded', { configVersion: 4 }, '2026-08-22T04:00:02.000Z'),
   ]);
 
-  assert.equal(states.get(pluginRuntimeOperationStateKey(guildId, pluginId, 4))?.status, 'published');
+  assert.equal(
+    states.get(pluginRuntimeOperationStateKey(guildId, pluginId, 4))?.status,
+    'published',
+  );
 });
 
 test('同一eventのapply ACKがpublish監査より先に保存されてもapply結果を優先する', () => {
