@@ -76,10 +76,7 @@ export async function reconcilePluginRuntimeStartupOnce(
   guildId: string,
   logger: Logger,
 ): Promise<void> {
-  if (
-    startupReconciledGuilds.has(guildId) ||
-    startupReconciliationInFlightGuilds.has(guildId)
-  ) {
+  if (startupReconciledGuilds.has(guildId) || startupReconciliationInFlightGuilds.has(guildId)) {
     return;
   }
 
