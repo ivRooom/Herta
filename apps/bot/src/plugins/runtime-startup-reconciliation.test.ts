@@ -326,6 +326,7 @@ describe('Plugin Runtime startup reconciliation', () => {
       severity: 'info',
       metadata: {
         operationSource: 'bot-runtime-startup-recovery',
+        consumer: 'bot',
         recovery: true,
         recoveredFrom: 'apply_failed',
         eventId: 'runtime-event-4',
