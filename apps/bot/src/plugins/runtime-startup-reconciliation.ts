@@ -190,7 +190,11 @@ export async function reconcilePluginRuntimeStartup(
     if (targets.length === 0) return true;
 
     let auditRows = await loadCurrentRuntimeAuditRows(prisma, guildId, targets);
-    const graceMs = startupRuntimeAuditGraceMs(targets, auditRows, (options.now ?? Date.now)());
+    const graceMs = startupRuntimeAuditGraceMs(
+      targets,
+      auditRows,
+      (options.now ?? Date.now)(),
+    );
     if (graceMs > 0) {
       await (options.wait ?? delay)(graceMs);
       auditRows = await loadCurrentRuntimeAuditRows(prisma, guildId, targets);
