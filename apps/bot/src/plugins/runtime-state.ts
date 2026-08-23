@@ -41,15 +41,15 @@ export class PluginRuntimeState {
     const appliedVersion = this.appliedVersions.get(this.key(event.guildId, event.pluginId));
     const configurationLoaded = this.configurationLoadedGuilds.has(event.guildId);
 
-    if (latestTarget && latestTarget.configVersion > event.configVersion && configurationLoaded) {
+    if (!configurationLoaded) return false;
+
+    if (latestTarget && latestTarget.configVersion > event.configVersion) {
       if (latestTarget.eventType === 'disabled') return appliedVersion === undefined;
       return appliedVersion !== undefined && appliedVersion >= latestTarget.configVersion;
     }
 
     if (appliedVersion !== undefined && appliedVersion > event.configVersion) return true;
-    if (event.eventType === 'disabled') {
-      return configurationLoaded && appliedVersion === undefined;
-    }
+    if (event.eventType === 'disabled') return appliedVersion === undefined;
     return appliedVersion === event.configVersion;
   }
 
