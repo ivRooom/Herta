@@ -1,4 +1,9 @@
 import type { Prisma, PrismaClient } from '@herta/db';
+import {
+  DEFAULT_PLUGIN_RUNTIME_CONSUMER,
+  isPluginRuntimeConsumer,
+  type PluginRuntimeConsumer,
+} from '@herta/shared';
 
 export type AuditLogCategory = 'all' | 'plugin' | 'quote' | 'other';
 export type AuditLogSeverity = 'all' | 'info' | 'warning' | 'error' | 'critical';
@@ -54,6 +59,8 @@ interface CalendarDateParts {
   day: number;
 }
 
+type RuntimeConsumerResolution = PluginRuntimeConsumer | 'unknown' | null;
+
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 50;
 const MAX_SEARCH_LENGTH = 100;
@@ -101,19 +108,19 @@ const EVENT_LABELS: Record<string, { label: string; summary: string }> = {
   },
   'plugin.runtime_publish_succeeded': {
     label: 'Runtime通知を送信',
-    summary: 'Plugin Runtime更新イベントをBotへ送信しました。',
+    summary: 'Plugin Runtime更新イベントを送信しました。',
   },
   'plugin.runtime_publish_failed': {
     label: 'Runtime通知の送信に失敗',
-    summary: 'Plugin Runtime更新イベントをBotへ送信できませんでした。',
+    summary: 'Plugin Runtime更新イベントを送信できませんでした。',
   },
   'plugin.runtime_apply_succeeded': {
-    label: 'Runtime設定をBotへ反映',
-    summary: 'BotがPlugin Runtime設定を再同期しました。',
+    label: 'Runtime設定を反映',
+    summary: 'Runtime consumerがPlugin Runtime設定を再同期しました。',
   },
   'plugin.runtime_apply_failed': {
-    label: 'Runtime設定のBot反映に失敗',
-    summary: 'BotがPlugin Runtime設定を再同期できませんでした。',
+    label: 'Runtime設定の反映に失敗',
+    summary: 'Runtime consumerがPlugin Runtime設定を再同期できませんでした。',
   },
   'quote.create': {
     label: 'Quoteを登録',
@@ -279,23 +286,45 @@ export function describeAuditEvent(
   const metadataRecord = asRecord(metadata);
   const quoteNumber = positiveInteger(metadataRecord?.['quoteNumber']);
   const operationSource = stringValue(metadataRecord?.['operationSource']);
+  const runtimeConsumer = resolveRuntimeConsumer(event, metadataRecord);
 
   return {
-    eventLabel: eventMeta?.label ?? event,
-    summary: resolveAuditSummary(event, metadataRecord, eventMeta?.summary),
+    eventLabel: resolveAuditEventLabel(event, runtimeConsumer, eventMeta?.label),
+    summary: resolveAuditSummary(event, metadataRecord, runtimeConsumer, eventMeta?.summary),
     category,
     targetLabel: resolveTargetLabel(targetType, targetId, quoteNumber),
-    sourceLabel: resolveSourceLabel(event, operationSource),
+    sourceLabel: resolveSourceLabel(event, operationSource, runtimeConsumer),
   };
+}
+
+function resolveAuditEventLabel(
+  event: string,
+  runtimeConsumer: RuntimeConsumerResolution,
+  fallback: string | undefined,
+): string {
+  if (event === 'plugin.runtime_apply_succeeded') {
+    return `Runtime設定を${runtimeConsumerDisplayLabel(runtimeConsumer)}へ反映`;
+  }
+  if (event === 'plugin.runtime_apply_failed') {
+    return `Runtime設定の${runtimeConsumerDisplayLabel(runtimeConsumer)}反映に失敗`;
+  }
+  return fallback ?? event;
 }
 
 function resolveAuditSummary(
   event: string,
   metadata: Record<string, Prisma.JsonValue> | null,
+  runtimeConsumer: RuntimeConsumerResolution,
   fallback: string | undefined,
 ): string {
   if (event === 'plugin.runtime_apply_succeeded' && booleanValue(metadata?.['recovery']) === true) {
-    return 'Bot起動時の再同期でPlugin Runtime設定の復旧を確認しました。';
+    return `${runtimeConsumerDisplayLabel(runtimeConsumer)}起動時の再同期でPlugin Runtime設定の復旧を確認しました。`;
+  }
+  if (event === 'plugin.runtime_apply_succeeded') {
+    return `${runtimeConsumerDisplayLabel(runtimeConsumer)}がPlugin Runtime設定を再同期しました。`;
+  }
+  if (event === 'plugin.runtime_apply_failed') {
+    return `${runtimeConsumerDisplayLabel(runtimeConsumer)}がPlugin Runtime設定を再同期できませんでした。`;
   }
   if (event === 'moderation.automatic.decision') {
     return (
@@ -421,15 +450,46 @@ function resolveCategory(event: string): Exclude<AuditLogCategory, 'all'> {
   return 'other';
 }
 
-function resolveSourceLabel(event: string, operationSource: string | null): string | null {
+function resolveSourceLabel(
+  event: string,
+  operationSource: string | null,
+  runtimeConsumer: RuntimeConsumerResolution,
+): string | null {
   if (operationSource === 'studio-runtime') return 'Studio Runtime';
   if (operationSource === 'bot-runtime') return 'Bot Runtime';
   if (operationSource === 'bot-runtime-startup-recovery') return 'Bot Runtime Recovery';
+  if (operationSource === 'worker-runtime') return 'Worker Runtime';
+  if (operationSource === 'worker-runtime-startup-recovery') return 'Worker Runtime Recovery';
   if (operationSource === 'dashboard') return 'Herta Studio';
   if (operationSource === 'discord') return 'Discord';
+  if (isRuntimeApplyEvent(event) && runtimeConsumer !== null) {
+    return runtimeConsumer === 'unknown'
+      ? 'Runtime Consumer'
+      : `${runtimeConsumerDisplayLabel(runtimeConsumer)} Runtime`;
+  }
   if (event.startsWith('plugin.')) return 'Herta Studio';
   if (event.startsWith('moderation.automatic.')) return 'Herta Bot';
   return null;
+}
+
+function resolveRuntimeConsumer(
+  event: string,
+  metadata: Record<string, Prisma.JsonValue> | null,
+): RuntimeConsumerResolution {
+  if (!isRuntimeApplyEvent(event)) return null;
+  const value = metadata?.['consumer'];
+  if (value === undefined) return DEFAULT_PLUGIN_RUNTIME_CONSUMER;
+  return isPluginRuntimeConsumer(value) ? value : 'unknown';
+}
+
+function runtimeConsumerDisplayLabel(consumer: RuntimeConsumerResolution): string {
+  if (consumer === 'bot') return 'Bot';
+  if (consumer === 'worker') return 'Worker';
+  return 'Runtime consumer';
+}
+
+function isRuntimeApplyEvent(event: string): boolean {
+  return event === 'plugin.runtime_apply_succeeded' || event === 'plugin.runtime_apply_failed';
 }
 
 function resolveTargetLabel(
