@@ -260,6 +260,53 @@ describe('PluginRuntimeEventSubscriber', () => {
     expect(JSON.stringify(vi.mocked(logger.error).mock.calls)).not.toContain('user:secret');
   });
 
+  it('処理待ちeventの検証時に同Pluginの最新desired stateを渡す', async () => {
+    vi.useFakeTimers();
+    let releaseFirstSync: (() => void) | undefined;
+    const firstSyncBlocked = new Promise<void>((resolve) => {
+      releaseFirstSync = resolve;
+    });
+    const onGuildChanged = vi
+      .fn<() => Promise<void>>()
+      .mockImplementationOnce(() => firstSyncBlocked)
+      .mockResolvedValue(undefined);
+    const reportSyncOutcome = vi.fn(async () => undefined);
+    const verifyApplied = vi.fn((_event, latestTarget) => latestTarget?.configVersion === 3);
+    const subscriber = new PluginRuntimeEventSubscriber(
+      onGuildChanged,
+      createLogger(),
+      10,
+      reportSyncOutcome,
+      verifyApplied,
+    );
+    const staleEnable = createPluginRuntimeEvent({
+      guildId: 'guild-a',
+      pluginId: 'quote',
+      configVersion: 2,
+      eventType: 'enabled',
+      occurredAt: new Date('2026-07-14T00:00:00.000Z'),
+    });
+    const latestDisable = createPluginRuntimeEvent({
+      guildId: 'guild-a',
+      pluginId: 'quote',
+      configVersion: 3,
+      eventType: 'disabled',
+      occurredAt: new Date('2026-07-14T00:00:01.000Z'),
+    });
+
+    subscriber.handleMessage(JSON.stringify(staleEnable));
+    await vi.advanceTimersByTimeAsync(10);
+    subscriber.handleMessage(JSON.stringify(latestDisable));
+    releaseFirstSync?.();
+    await vi.runAllTimersAsync();
+
+    expect(verifyApplied).toHaveBeenCalledWith(staleEnable, {
+      configVersion: 3,
+      eventType: 'disabled',
+    });
+    expect(reportSyncOutcome).toHaveBeenCalledWith([staleEnable], 'applied', 1);
+  });
+
   it('不正なpayloadを破棄する', async () => {
     vi.useFakeTimers();
     const onGuildChanged = vi.fn(async () => undefined);
