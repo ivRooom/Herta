@@ -43,6 +43,22 @@ Redis切断中はioredisの再接続を利用します。通知は永続化さ�
 Bot起動時の全Guild同期と60秒TTLによる実行時再取得で回復します。Redisが利用できない場合も
 Core CommandとTTL同期を維持し、Bot全体は停止しません。
 
+## Consumer別 apply ACK
+
+Runtime apply監査のmetadataには`consumer`を記録します。既知consumerはshared契約で管理し、
+現在実際にRuntime eventを購読してapply ACKを生成するconsumerは`bot`です。
+
+- 通常のBot反映: `operationSource=bot-runtime`, `consumer=bot`
+- Bot起動時の復旧ACK: `operationSource=bot-runtime-startup-recovery`, `consumer=bot`
+
+`consumer`が存在しない既存Audit rowは後方互換のため`bot`として解釈します。未知consumerの
+apply ACKは安全側に無視し、Botの反映状態を誤って上書きしません。StudioのRuntime状態集計は
+consumerごとのkeyを持つため、将来WorkerがRuntime consumerになった場合もBot/Workerの成功・失敗を
+独立して扱えます。
+
+Workerは現時点では`herta:plugin-runtime:v1`を購読していないため、`consumer=worker`のACKを
+生成しません。実際の購読・適用確認が実装されるまでWorker成功を推測して記録しないことを契約とします。
+
 ## エラー分離
 
 DB の取得障害は空の Plugin 一覧として扱い、Core Command のみで Bot を継続します。未登録
