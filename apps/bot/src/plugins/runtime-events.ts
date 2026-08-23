@@ -6,10 +6,7 @@ import {
   parsePluginRuntimeEvent,
   type PluginRuntimeEvent,
 } from '@herta/shared';
-import {
-  defaultPluginRuntimeState,
-  type PluginRuntimeTargetState,
-} from './runtime-state.js';
+import { defaultPluginRuntimeState, type PluginRuntimeTargetState } from './runtime-state.js';
 
 interface EventCursor extends PluginRuntimeTargetState {
   occurredAt: number;
