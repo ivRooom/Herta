@@ -290,7 +290,10 @@ function buildLatestRuntimeStates(
     const configVersion = readConfigVersion(row.metadata);
     if (configVersion === undefined) continue;
     const status = RUNTIME_STATUS_BY_EVENT[row.event];
-    if (isApplyStatus(status) && runtimeConsumerForMetadata(row.metadata) !== DEFAULT_PLUGIN_RUNTIME_CONSUMER)
+    if (
+      isApplyStatus(status) &&
+      runtimeConsumerForMetadata(row.metadata) !== DEFAULT_PLUGIN_RUNTIME_CONSUMER
+    )
       continue;
     const key = runtimeStateKey(row.targetId, configVersion);
     const eventId = readEventId(row.metadata);
