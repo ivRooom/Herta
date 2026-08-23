@@ -84,6 +84,11 @@ export async function reconcilePluginRuntimeStartupOnce(
   try {
     const succeeded = await reconcilePluginRuntimeStartup(getPrismaClient(), guildId, logger);
     if (succeeded) startupReconciledGuilds.add(guildId);
+  } catch (error) {
+    logger.error(
+      { guildId, errorName: resolveErrorName(error) },
+      'Plugin Runtime startup recoveryの初期化に失敗しました',
+    );
   } finally {
     startupReconciliationInFlightGuilds.delete(guildId);
   }
@@ -96,6 +101,7 @@ export async function reconcilePluginRuntimeStartup(
   runtimeState: PluginRuntimeState = defaultPluginRuntimeState,
 ): Promise<boolean> {
   if (!process.env['DATABASE_URL']) return true;
+  if (!runtimeState.isConfigurationLoaded(guildId)) return false;
 
   try {
     const targets = await prisma.guildPlugin.findMany({
