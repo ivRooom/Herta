@@ -37,20 +37,24 @@ export class PluginRuntimeState {
     this.configurationLoadedGuilds.delete(guildId);
   }
 
+  isConfigurationLoaded(guildId: string): boolean {
+    return this.configurationLoadedGuilds.has(guildId);
+  }
+
   isTargetApplied(
     guildId: string,
     pluginId: string,
     configVersion: number,
     enabled: boolean,
   ): boolean {
-    if (!this.configurationLoadedGuilds.has(guildId)) return false;
+    if (!this.isConfigurationLoaded(guildId)) return false;
     const appliedVersion = this.appliedVersions.get(this.key(guildId, pluginId));
     return enabled ? appliedVersion === configVersion : appliedVersion === undefined;
   }
 
   isEventApplied(event: PluginRuntimeEvent, latestTarget?: PluginRuntimeTargetState): boolean {
     const appliedVersion = this.appliedVersions.get(this.key(event.guildId, event.pluginId));
-    const configurationLoaded = this.configurationLoadedGuilds.has(event.guildId);
+    const configurationLoaded = this.isConfigurationLoaded(event.guildId);
 
     if (!configurationLoaded) return false;
 
