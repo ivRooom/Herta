@@ -9,6 +9,8 @@ const RUNTIME_AUDIT_EVENTS = [
   'plugin.runtime_apply_failed',
 ] as const;
 
+const STARTUP_RUNTIME_AUDIT_GRACE_MS = 7_000;
+
 type RuntimeAuditEvent = (typeof RUNTIME_AUDIT_EVENTS)[number];
 type RuntimeStatus = 'published' | 'publish_failed' | 'applied' | 'apply_failed';
 
@@ -24,6 +26,11 @@ interface StartupReconciliationAttempt {
   promise: Promise<boolean>;
 }
 
+interface StartupReconciliationOptions {
+  now?: () => number;
+  wait?: (ms: number) => Promise<void>;
+}
+
 const startupReconciliationEpochs = new Map<string, number>();
 const startupReconciledEpochs = new Map<string, number>();
 const startupReconciliationAttempts = new Map<string, StartupReconciliationAttempt>();
@@ -32,6 +39,7 @@ export interface PluginRuntimeStartupTarget {
   pluginId: string;
   enabled: boolean;
   configVersion: number;
+  updatedAt?: Date;
 }
 
 export interface PluginRuntimeStartupAuditRow {
@@ -71,6 +79,27 @@ export function selectPluginRuntimeRecoveryCandidates(
   }
 
   return candidates;
+}
+
+export function startupRuntimeAuditGraceMs(
+  targets: readonly PluginRuntimeStartupTarget[],
+  auditRows: readonly PluginRuntimeStartupAuditRow[],
+  nowMs: number,
+): number {
+  const latestStates = buildLatestRuntimeStates(auditRows);
+  let remainingMs = 0;
+
+  for (const target of targets) {
+    if (latestStates.has(runtimeStateKey(target.pluginId, target.configVersion))) continue;
+    const updatedAtMs = target.updatedAt?.getTime();
+    if (updatedAtMs === undefined || !Number.isFinite(updatedAtMs)) continue;
+    remainingMs = Math.max(
+      remainingMs,
+      updatedAtMs + STARTUP_RUNTIME_AUDIT_GRACE_MS - nowMs,
+    );
+  }
+
+  return Math.max(0, Math.ceil(remainingMs));
 }
 
 /**
@@ -148,6 +177,7 @@ export async function reconcilePluginRuntimeStartup(
   guildId: string,
   logger: Logger,
   runtimeState: PluginRuntimeState = defaultPluginRuntimeState,
+  options: StartupReconciliationOptions = {},
 ): Promise<boolean> {
   if (!process.env['DATABASE_URL']) return true;
   if (!runtimeState.isConfigurationLoaded(guildId)) return false;
@@ -155,27 +185,16 @@ export async function reconcilePluginRuntimeStartup(
   try {
     const targets = await prisma.guildPlugin.findMany({
       where: { guildId },
-      select: { pluginId: true, enabled: true, configVersion: true },
+      select: { pluginId: true, enabled: true, configVersion: true, updatedAt: true },
     });
     if (targets.length === 0) return true;
 
-    const auditRows = await prisma.auditLog.findMany({
-      where: {
-        guildId,
-        targetType: 'plugin',
-        targetId: { in: targets.map((target) => target.pluginId) },
-        event: { in: [...RUNTIME_AUDIT_EVENTS] },
-        OR: targets.map((target) => ({
-          targetId: target.pluginId,
-          metadata: {
-            path: ['configVersion'],
-            equals: target.configVersion,
-          },
-        })),
-      },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      select: { targetId: true, event: true, metadata: true, createdAt: true },
-    });
+    let auditRows = await loadCurrentRuntimeAuditRows(prisma, guildId, targets);
+    const graceMs = startupRuntimeAuditGraceMs(targets, auditRows, (options.now ?? Date.now)());
+    if (graceMs > 0) {
+      await (options.wait ?? delay)(graceMs);
+      auditRows = await loadCurrentRuntimeAuditRows(prisma, guildId, targets);
+    }
 
     const unresolvedTargetCount = countUnresolvedRuntimeTargets(targets, auditRows);
     const candidates = selectPluginRuntimeRecoveryCandidates(
@@ -228,6 +247,30 @@ export function createStartupRecoveryAuditData(
       configVersion: candidate.configVersion,
     },
   };
+}
+
+async function loadCurrentRuntimeAuditRows(
+  prisma: PrismaClient,
+  guildId: string,
+  targets: readonly PluginRuntimeStartupTarget[],
+): Promise<PluginRuntimeStartupAuditRow[]> {
+  return prisma.auditLog.findMany({
+    where: {
+      guildId,
+      targetType: 'plugin',
+      targetId: { in: targets.map((target) => target.pluginId) },
+      event: { in: [...RUNTIME_AUDIT_EVENTS] },
+      OR: targets.map((target) => ({
+        targetId: target.pluginId,
+        metadata: {
+          path: ['configVersion'],
+          equals: target.configVersion,
+        },
+      })),
+    },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    select: { targetId: true, event: true, metadata: true, createdAt: true },
+  });
 }
 
 function countUnresolvedRuntimeTargets(
@@ -306,6 +349,10 @@ function readEventId(metadata: unknown): string | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function resolveErrorName(error: unknown): string {
