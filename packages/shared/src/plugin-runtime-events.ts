@@ -62,7 +62,9 @@ export function parsePluginRuntimeEvent(value: string): PluginRuntimeEvent | und
 }
 
 export function isPluginRuntimeConsumer(value: unknown): value is PluginRuntimeConsumer {
-  return typeof value === 'string' && PLUGIN_RUNTIME_CONSUMERS.includes(value as PluginRuntimeConsumer);
+  return (
+    typeof value === 'string' && PLUGIN_RUNTIME_CONSUMERS.includes(value as PluginRuntimeConsumer)
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
