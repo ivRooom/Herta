@@ -20,6 +20,7 @@ const RUNTIME_STATUS_BY_EVENT: Record<RuntimeAuditEvent, RuntimeStatus> = {
 };
 
 const startupReconciledGuilds = new Set<string>();
+const startupReconciliationInFlightGuilds = new Set<string>();
 
 export interface PluginRuntimeStartupTarget {
   pluginId: string;
@@ -36,6 +37,7 @@ export interface PluginRuntimeStartupAuditRow {
 
 export interface PluginRuntimeRecoveryCandidate extends PluginRuntimeStartupTarget {
   recoveredFrom: Exclude<RuntimeStatus, 'applied'>;
+  eventId?: string;
 }
 
 export function selectPluginRuntimeRecoveryCandidates(
@@ -55,7 +57,11 @@ export function selectPluginRuntimeRecoveryCandidates(
     ) {
       continue;
     }
-    candidates.push({ ...target, recoveredFrom: latest.status });
+    candidates.push({
+      ...target,
+      recoveredFrom: latest.status,
+      ...(latest.eventId ? { eventId: latest.eventId } : {}),
+    });
   }
 
   return candidates;
@@ -63,15 +69,27 @@ export function selectPluginRuntimeRecoveryCandidates(
 
 /**
  * Guild Commandの初回同期成功後だけstartup reconciliationを実行する。
- * Runtimeイベントによる後続resyncでは通常ACK側へ任せ、recovery ACKを重複生成しない。
+ * Runtimeイベントによる後続resyncでは通常ACK側へ任せるが、一時的なDB/Audit障害時は
+ * 次回の成功したGuild同期でrecovery判定を再試行できるようにする。
  */
 export async function reconcilePluginRuntimeStartupOnce(
   guildId: string,
   logger: Logger,
 ): Promise<void> {
-  if (startupReconciledGuilds.has(guildId)) return;
-  startupReconciledGuilds.add(guildId);
-  await reconcilePluginRuntimeStartup(getPrismaClient(), guildId, logger);
+  if (
+    startupReconciledGuilds.has(guildId) ||
+    startupReconciliationInFlightGuilds.has(guildId)
+  ) {
+    return;
+  }
+
+  startupReconciliationInFlightGuilds.add(guildId);
+  try {
+    const succeeded = await reconcilePluginRuntimeStartup(getPrismaClient(), guildId, logger);
+    if (succeeded) startupReconciledGuilds.add(guildId);
+  } finally {
+    startupReconciliationInFlightGuilds.delete(guildId);
+  }
 }
 
 export async function reconcilePluginRuntimeStartup(
@@ -79,15 +97,15 @@ export async function reconcilePluginRuntimeStartup(
   guildId: string,
   logger: Logger,
   runtimeState: PluginRuntimeState = defaultPluginRuntimeState,
-): Promise<void> {
-  if (!process.env['DATABASE_URL']) return;
+): Promise<boolean> {
+  if (!process.env['DATABASE_URL']) return true;
 
   try {
     const targets = await prisma.guildPlugin.findMany({
       where: { guildId },
       select: { pluginId: true, enabled: true, configVersion: true },
     });
-    if (targets.length === 0) return;
+    if (targets.length === 0) return true;
 
     const auditRows = await prisma.auditLog.findMany({
       where: {
@@ -113,7 +131,7 @@ export async function reconcilePluginRuntimeStartup(
       auditRows,
       runtimeState,
     );
-    if (candidates.length === 0) return;
+    if (candidates.length === 0) return true;
 
     await prisma.$transaction(
       candidates.map((candidate) =>
@@ -126,11 +144,13 @@ export async function reconcilePluginRuntimeStartup(
       { guildId, plugins: candidates.map((candidate) => candidate.pluginId) },
       'Plugin Runtime startup recovery ACKを記録しました',
     );
+    return true;
   } catch (error) {
     logger.error(
       { guildId, errorName: resolveErrorName(error) },
       'Plugin Runtime startup recoveryの監査処理に失敗しました',
     );
+    return false;
   }
 }
 
@@ -150,6 +170,7 @@ export function createStartupRecoveryAuditData(
       operationSource: 'bot-runtime-startup-recovery',
       recovery: true,
       recoveredFrom: candidate.recoveredFrom,
+      ...(candidate.eventId ? { eventId: candidate.eventId } : {}),
       eventType: candidate.enabled ? 'enabled' : 'disabled',
       configVersion: candidate.configVersion,
     },
