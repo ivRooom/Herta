@@ -114,8 +114,11 @@ export async function reconcilePluginRuntimeStartupOnceWith(
       continue;
     }
 
-    let attemptPromise: Promise<boolean>;
-    attemptPromise = (async () => {
+    const attempt: StartupReconciliationAttempt = {
+      epoch,
+      promise: Promise.resolve(false),
+    };
+    attempt.promise = (async () => {
       try {
         return await reconcile();
       } catch (error) {
@@ -125,15 +128,14 @@ export async function reconcilePluginRuntimeStartupOnceWith(
         );
         return false;
       } finally {
-        const active = startupReconciliationAttempts.get(guildId);
-        if (active?.epoch === epoch && active.promise === attemptPromise) {
+        if (startupReconciliationAttempts.get(guildId) === attempt) {
           startupReconciliationAttempts.delete(guildId);
         }
       }
     })();
 
-    startupReconciliationAttempts.set(guildId, { epoch, promise: attemptPromise });
-    const succeeded = await attemptPromise;
+    startupReconciliationAttempts.set(guildId, attempt);
+    const succeeded = await attempt.promise;
     if (succeeded && currentStartupReconciliationEpoch(guildId) === epoch) {
       startupReconciledEpochs.set(guildId, epoch);
     }
