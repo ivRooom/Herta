@@ -1,6 +1,10 @@
 export const PLUGIN_RUNTIME_EVENT_CHANNEL = 'herta:plugin-runtime:v1';
 export const PLUGIN_RUNTIME_EVENT_SCHEMA_VERSION = 1 as const;
 
+export const PLUGIN_RUNTIME_CONSUMERS = ['bot', 'worker'] as const;
+export type PluginRuntimeConsumer = (typeof PLUGIN_RUNTIME_CONSUMERS)[number];
+export const DEFAULT_PLUGIN_RUNTIME_CONSUMER: PluginRuntimeConsumer = 'bot';
+
 export type PluginRuntimeEventType = 'enabled' | 'disabled' | 'config_updated';
 
 export interface PluginRuntimeEvent {
@@ -55,6 +59,12 @@ export function parsePluginRuntimeEvent(value: string): PluginRuntimeEvent | und
     return undefined;
 
   return candidate as unknown as PluginRuntimeEvent;
+}
+
+export function isPluginRuntimeConsumer(value: unknown): value is PluginRuntimeConsumer {
+  return (
+    typeof value === 'string' && PLUGIN_RUNTIME_CONSUMERS.includes(value as PluginRuntimeConsumer)
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

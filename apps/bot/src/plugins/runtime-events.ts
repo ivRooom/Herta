@@ -2,6 +2,7 @@ import { Redis } from 'ioredis';
 import { getPrismaClient } from '@herta/db';
 import type { Logger } from '@herta/logger';
 import {
+  DEFAULT_PLUGIN_RUNTIME_CONSUMER,
   PLUGIN_RUNTIME_EVENT_CHANNEL,
   parsePluginRuntimeEvent,
   type PluginRuntimeEvent,
@@ -50,6 +51,7 @@ async function recordPluginRuntimeSyncOutcome(
           severity: outcome === 'applied' ? 'info' : 'warning',
           metadata: {
             operationSource: 'bot-runtime',
+            consumer: DEFAULT_PLUGIN_RUNTIME_CONSUMER,
             eventId: event.eventId,
             eventType: event.eventType,
             configVersion: event.configVersion,

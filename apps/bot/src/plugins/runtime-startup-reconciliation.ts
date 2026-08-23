@@ -1,5 +1,10 @@
 import { getPrismaClient, type Prisma, type PrismaClient } from '@herta/db';
 import type { Logger } from '@herta/logger';
+import {
+  DEFAULT_PLUGIN_RUNTIME_CONSUMER,
+  isPluginRuntimeConsumer,
+  type PluginRuntimeConsumer,
+} from '@herta/shared';
 import { defaultPluginRuntimeState, type PluginRuntimeState } from './runtime-state.js';
 
 const RUNTIME_AUDIT_EVENTS = [
@@ -237,6 +242,7 @@ export function createStartupRecoveryAuditData(
     severity: 'info',
     metadata: {
       operationSource: 'bot-runtime-startup-recovery',
+      consumer: DEFAULT_PLUGIN_RUNTIME_CONSUMER,
       recovery: true,
       recoveredFrom: candidate.recoveredFrom,
       ...(candidate.eventId ? { eventId: candidate.eventId } : {}),
@@ -292,8 +298,13 @@ function buildLatestRuntimeStates(
     if (!row.targetId || !isRuntimeAuditEvent(row.event)) continue;
     const configVersion = readConfigVersion(row.metadata);
     if (configVersion === undefined) continue;
-    const key = runtimeStateKey(row.targetId, configVersion);
     const status = RUNTIME_STATUS_BY_EVENT[row.event];
+    if (
+      isApplyStatus(status) &&
+      runtimeConsumerForMetadata(row.metadata) !== DEFAULT_PLUGIN_RUNTIME_CONSUMER
+    )
+      continue;
+    const key = runtimeStateKey(row.targetId, configVersion);
     const eventId = readEventId(row.metadata);
     const existing = states.get(key);
     if (!existing) {
@@ -342,6 +353,13 @@ function readEventId(metadata: unknown): string | undefined {
   if (!isRecord(metadata)) return undefined;
   const value = metadata['eventId'];
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function runtimeConsumerForMetadata(metadata: unknown): PluginRuntimeConsumer | undefined {
+  if (!isRecord(metadata)) return DEFAULT_PLUGIN_RUNTIME_CONSUMER;
+  const value = metadata['consumer'];
+  if (value === undefined) return DEFAULT_PLUGIN_RUNTIME_CONSUMER;
+  return isPluginRuntimeConsumer(value) ? value : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
