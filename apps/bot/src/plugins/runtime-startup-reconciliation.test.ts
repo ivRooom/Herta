@@ -7,6 +7,7 @@ import {
   reconcilePluginRuntimeStartupOnceWith,
   resetPluginRuntimeStartupReconciliation,
   selectPluginRuntimeRecoveryCandidates,
+  startupRuntimeAuditGraceMs,
   type PluginRuntimeStartupAuditRow,
   type PluginRuntimeStartupTarget,
 } from './runtime-startup-reconciliation.js';
@@ -153,6 +154,66 @@ describe('Plugin Runtime startup reconciliation', () => {
         state,
       ),
     ).toEqual([]);
+  });
+
+  it('直近更新でcurrent Auditがまだ無い場合だけpublish確定graceを取る', () => {
+    const updatedAt = new Date('2026-08-23T06:00:00.000Z');
+    const recentTarget = { ...target, updatedAt };
+
+    expect(startupRuntimeAuditGraceMs([recentTarget], [], updatedAt.getTime())).toBe(7_000);
+    expect(
+      startupRuntimeAuditGraceMs(
+        [recentTarget],
+        [audit('plugin.runtime_publish_failed', 4)],
+        updatedAt.getTime(),
+      ),
+    ).toBe(0);
+    expect(startupRuntimeAuditGraceMs([recentTarget], [], updatedAt.getTime() + 7_001)).toBe(0);
+  });
+
+  it('startupとpublish監査が競合した場合はgrace後に再照会してfailureをrecoveryする', async () => {
+    const previousDatabaseUrl = process.env['DATABASE_URL'];
+    process.env['DATABASE_URL'] = 'postgresql://test.invalid/herta';
+    const updatedAt = new Date('2026-08-23T06:00:00.000Z');
+    const recentTarget = { ...target, updatedAt };
+    const wait = vi.fn(async () => undefined);
+    const create = vi.fn(async () => ({ id: 'recovery-audit' }));
+    const findAuditRows = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        audit('plugin.runtime_publish_failed', 4, '2026-08-23T06:00:05.500Z', 'runtime-event-4'),
+      ]);
+    const prisma = {
+      guildPlugin: { findMany: vi.fn(async () => [recentTarget]) },
+      auditLog: { findMany: findAuditRows, create },
+      $transaction: vi.fn(async (operations: Promise<unknown>[]) => Promise.all(operations)),
+    } as unknown as PrismaClient;
+
+    try {
+      await expect(
+        reconcilePluginRuntimeStartup(prisma, guildId, createLogger(), loadedState(), {
+          now: () => updatedAt.getTime(),
+          wait,
+        }),
+      ).resolves.toBe(true);
+      expect(wait).toHaveBeenCalledWith(7_000);
+      expect(findAuditRows).toHaveBeenCalledTimes(2);
+      expect(create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          event: 'plugin.runtime_apply_succeeded',
+          targetId: 'quote',
+          metadata: expect.objectContaining({
+            recovery: true,
+            eventId: 'runtime-event-4',
+            configVersion: 4,
+          }),
+        }),
+      });
+    } finally {
+      if (previousDatabaseUrl === undefined) delete process.env['DATABASE_URL'];
+      else process.env['DATABASE_URL'] = previousDatabaseUrl;
+    }
   });
 
   it('DB設定load失敗時はreconciliation未完了として後続同期の再試行を許可する', async () => {
