@@ -65,6 +65,23 @@ describe('Plugin Runtime startup reconciliation', () => {
     ]);
   });
 
+  it('recovery候補へ元Runtime eventIdを引き継ぐ', () => {
+    expect(
+      selectPluginRuntimeRecoveryCandidates(
+        guildId,
+        [target],
+        [audit('plugin.runtime_apply_failed', 4, undefined, 'runtime-event-4')],
+        loadedState(),
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        pluginId: 'quote',
+        configVersion: 4,
+        eventId: 'runtime-event-4',
+      }),
+    ]);
+  });
+
   it('既にapply成功済みのcurrent versionへ重複recovery ACKを出さない', () => {
     expect(
       selectPluginRuntimeRecoveryCandidates(
@@ -151,11 +168,12 @@ describe('Plugin Runtime startup reconciliation', () => {
     ).toEqual([]);
   });
 
-  it('recovery Audit metadataへ設定本文や例外本文を含めない', () => {
+  it('recovery Audit metadataへ元eventIdを保持し設定本文や例外本文を含めない', () => {
     expect(
       createStartupRecoveryAuditData(guildId, {
         ...target,
         recoveredFrom: 'apply_failed',
+        eventId: 'runtime-event-4',
       }),
     ).toEqual({
       guildId,
@@ -169,13 +187,14 @@ describe('Plugin Runtime startup reconciliation', () => {
         operationSource: 'bot-runtime-startup-recovery',
         recovery: true,
         recoveredFrom: 'apply_failed',
+        eventId: 'runtime-event-4',
         eventType: 'enabled',
         configVersion: 4,
       },
     });
   });
 
-  it('recovery audit保存失敗でもstartup reconciliation自体はrejectしない', async () => {
+  it('recovery audit保存失敗はfalseを返してstartup自体をrejectしない', async () => {
     const previousDatabaseUrl = process.env['DATABASE_URL'];
     process.env['DATABASE_URL'] = 'postgresql://test.invalid/herta';
     const logger = createLogger();
@@ -198,7 +217,7 @@ describe('Plugin Runtime startup reconciliation', () => {
     try {
       await expect(
         reconcilePluginRuntimeStartup(prisma, guildId, logger, state),
-      ).resolves.toBeUndefined();
+      ).resolves.toBe(false);
       expect(logger.error).toHaveBeenCalledWith(
         { guildId, errorName: 'AuditPersistenceError' },
         'Plugin Runtime startup recoveryの監査処理に失敗しました',
