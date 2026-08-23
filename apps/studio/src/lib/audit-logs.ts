@@ -294,10 +294,7 @@ function resolveAuditSummary(
   metadata: Record<string, Prisma.JsonValue> | null,
   fallback: string | undefined,
 ): string {
-  if (
-    event === 'plugin.runtime_apply_succeeded' &&
-    booleanValue(metadata?.['recovery']) === true
-  ) {
+  if (event === 'plugin.runtime_apply_succeeded' && booleanValue(metadata?.['recovery']) === true) {
     return 'Bot起動時の再同期でPlugin Runtime設定の復旧を確認しました。';
   }
   if (event === 'moderation.automatic.decision') {
