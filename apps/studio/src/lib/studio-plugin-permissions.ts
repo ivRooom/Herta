@@ -1,8 +1,15 @@
 import {
   evaluateStudioPolicyDocuments,
+  evaluateStudioPolicyDocumentsDecision,
+  mergeStudioPolicyDecisions,
   type StudioAccessPolicy,
   type StudioPolicyAction,
+  type StudioPolicyDecision,
 } from './studio-access-policy.ts';
+import {
+  configPathAncestorPaths,
+  filterPluginConfigByReadablePaths,
+} from './plugin-config-paths.ts';
 
 export type ExplicitPermissionMode = 'inherit' | 'allow' | 'deny';
 
@@ -17,14 +24,18 @@ export interface PluginConfigStudioAccess {
   canToggleEnabled: boolean;
   readableFieldKeys: string[];
   editableFieldKeys: string[];
+  readableConfigPaths: string[];
+  editableConfigPaths: string[];
+  allConfigPathsReadable: boolean;
+  allConfigPathsEditable: boolean;
 }
 
 export function pluginConfigFieldResource(
   guildId: string,
   pluginId: string,
-  fieldKey: string,
+  configPath: string,
 ): string {
-  return `guild:${guildId}:plugin:${encodeSegment(pluginId)}:config:${encodeSegment(fieldKey)}`;
+  return `guild:${guildId}:plugin:${encodeSegment(pluginId)}:config:${encodeSegment(configPath)}`;
 }
 
 export function pluginEnabledControlResource(guildId: string, pluginId: string): string {
@@ -44,43 +55,93 @@ export function hasEffectivePluginPermission(
   return evaluateStudioPolicyDocuments(policies, action, resource);
 }
 
+export function hasEffectivePluginConfigPermission(
+  access: EffectivePluginPermissionContext,
+  action: 'studio.settings.read' | 'studio.settings.write',
+  guildId: string,
+  pluginId: string,
+  configPath: string,
+): boolean {
+  if (access.isRoot) return true;
+  const policies = effectivePolicies(access);
+  if (policies.length === 0) return true;
+
+  let decision: StudioPolicyDecision = 'ImplicitDeny';
+  for (const inheritedPath of configPathAncestorPaths(configPath)) {
+    decision = mergeStudioPolicyDecisions(
+      evaluateStudioPolicyDocumentsDecision(
+        policies,
+        action,
+        pluginConfigFieldResource(guildId, pluginId, inheritedPath),
+      ),
+      decision,
+    );
+    if (decision === 'Deny') return false;
+  }
+  return decision === 'Allow';
+}
+
 export function resolvePluginConfigStudioAccess(
   access: EffectivePluginPermissionContext,
   guildId: string,
   pluginId: string,
-  fieldKeys: readonly string[],
+  configPaths: readonly string[],
 ): PluginConfigStudioAccess {
-  const uniqueFieldKeys = [...new Set(fieldKeys)];
+  const uniqueConfigPaths = [...new Set(configPaths)];
   const enforceReadPolicy = hasConfiguredSettingsReadPolicy(access);
+  const readableConfigPaths = enforceReadPolicy
+    ? uniqueConfigPaths.filter((configPath) =>
+        hasEffectivePluginConfigPermission(
+          access,
+          'studio.settings.read',
+          guildId,
+          pluginId,
+          configPath,
+        ),
+      )
+    : uniqueConfigPaths;
+  const editableConfigPaths = uniqueConfigPaths.filter((configPath) =>
+    hasEffectivePluginConfigPermission(
+      access,
+      'studio.settings.write',
+      guildId,
+      pluginId,
+      configPath,
+    ),
+  );
+  const topLevelKeys = uniqueTopLevelKeys(uniqueConfigPaths);
+  const readableTopLevelKeys = new Set(readableConfigPaths.map(topLevelConfigKey));
+  const editablePathSet = new Set(editableConfigPaths);
+
   return {
     canToggleEnabled: hasEffectivePluginPermission(
       access,
       'studio.operation.execute',
       pluginEnabledControlResource(guildId, pluginId),
     ),
-    readableFieldKeys: enforceReadPolicy
-      ? uniqueFieldKeys.filter((fieldKey) =>
-          hasEffectivePluginPermission(
-            access,
-            'studio.settings.read',
-            pluginConfigFieldResource(guildId, pluginId, fieldKey),
-          ),
-        )
-      : uniqueFieldKeys,
-    editableFieldKeys: uniqueFieldKeys.filter((fieldKey) =>
-      hasEffectivePluginPermission(
-        access,
-        'studio.settings.write',
-        pluginConfigFieldResource(guildId, pluginId, fieldKey),
-      ),
+    readableFieldKeys: topLevelKeys.filter((key) => readableTopLevelKeys.has(key)),
+    // Whole-field replacement can mutate every descendant. Only enable the legacy top-level
+    // editor when every schema path below the field is writable; otherwise the UI/API must use
+    // path patches so an explicit child Deny cannot be bypassed.
+    editableFieldKeys: topLevelKeys.filter((key) =>
+      configPathsForTopLevelKey(uniqueConfigPaths, key).every((path) => editablePathSet.has(path)),
     ),
+    readableConfigPaths,
+    editableConfigPaths,
+    allConfigPathsReadable: readableConfigPaths.length === uniqueConfigPaths.length,
+    allConfigPathsEditable: editableConfigPaths.length === uniqueConfigPaths.length,
   };
 }
 
 export function filterReadablePluginConfig(
   config: Record<string, unknown>,
-  access: Pick<PluginConfigStudioAccess, 'readableFieldKeys'>,
+  access: Pick<PluginConfigStudioAccess, 'readableFieldKeys' | 'readableConfigPaths'>,
+  schema?: Record<string, unknown>,
 ): Record<string, unknown> {
+  if (schema) {
+    const readablePaths = new Set(access.readableConfigPaths);
+    return filterPluginConfigByReadablePaths(config, schema, (path) => readablePaths.has(path));
+  }
   const readable = new Set(access.readableFieldKeys);
   return Object.fromEntries(Object.entries(config).filter(([key]) => readable.has(key)));
 }
@@ -140,6 +201,19 @@ function effectivePolicies(access: EffectivePluginPermissionContext): StudioAcce
       .filter((policy) => activeRoleIds.has(policy.discordRoleId))
       .map((policy) => policy.policy),
   ];
+}
+
+function uniqueTopLevelKeys(configPaths: readonly string[]): string[] {
+  return [...new Set(configPaths.map(topLevelConfigKey).filter(Boolean))];
+}
+
+function configPathsForTopLevelKey(configPaths: readonly string[], key: string): string[] {
+  return configPaths.filter((path) => topLevelConfigKey(path) === key);
+}
+
+function topLevelConfigKey(configPath: string): string {
+  const first = configPath.split('.', 1)[0] ?? '';
+  return first.endsWith('[]') ? first.slice(0, -2) : first;
 }
 
 function isSettingsReadActionPattern(action: string): boolean {

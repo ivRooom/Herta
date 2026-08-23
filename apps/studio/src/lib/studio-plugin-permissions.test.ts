@@ -7,6 +7,7 @@ import {
 import {
   filterReadablePluginConfig,
   getExplicitPermissionMode,
+  hasEffectivePluginConfigPermission,
   hasEffectivePluginPermission,
   pluginConfigFieldResource,
   pluginEnabledControlResource,
@@ -191,7 +192,145 @@ test('全体Allowより項目Denyを優先してConfig Studio権限を解決す�
       canToggleEnabled: false,
       readableFieldKeys: [deniedField, 'amidakujiComplexity'],
       editableFieldKeys: ['amidakujiComplexity'],
+      readableConfigPaths: [deniedField, 'amidakujiComplexity'],
+      editableConfigPaths: ['amidakujiComplexity'],
+      allConfigPathsReadable: true,
+      allConfigPathsEditable: false,
     },
+  );
+});
+
+test('親Config Allowを子設定へ継承する', () => {
+  const parent = pluginConfigFieldResource(GUILD_ID, 'moderation', 'autoEnforcementPolicies');
+  let policy = createEmptyStudioAccessPolicy();
+  policy = setExplicitPermissionMode(policy, 'studio.settings.write', parent, 'allow');
+  const access = roleAccess(policy);
+
+  assert.equal(
+    hasEffectivePluginConfigPermission(
+      access,
+      'studio.settings.write',
+      GUILD_ID,
+      'moderation',
+      'autoEnforcementPolicies[].action',
+    ),
+    true,
+  );
+});
+
+test('子Config Denyは親Allowより優先される', () => {
+  const parent = pluginConfigFieldResource(GUILD_ID, 'moderation', 'autoEnforcementPolicies');
+  const child = pluginConfigFieldResource(
+    GUILD_ID,
+    'moderation',
+    'autoEnforcementPolicies[].action',
+  );
+  let policy = createEmptyStudioAccessPolicy();
+  policy = setExplicitPermissionMode(policy, 'studio.settings.write', parent, 'allow');
+  policy = setExplicitPermissionMode(policy, 'studio.settings.write', child, 'deny');
+
+  assert.equal(
+    hasEffectivePluginConfigPermission(
+      roleAccess(policy),
+      'studio.settings.write',
+      GUILD_ID,
+      'moderation',
+      'autoEnforcementPolicies[].action',
+    ),
+    false,
+  );
+});
+
+test('親Config Denyは子Allowより優先される', () => {
+  const parent = pluginConfigFieldResource(GUILD_ID, 'moderation', 'autoEnforcementPolicies');
+  const child = pluginConfigFieldResource(
+    GUILD_ID,
+    'moderation',
+    'autoEnforcementPolicies[].action',
+  );
+  let policy = createEmptyStudioAccessPolicy();
+  policy = setExplicitPermissionMode(policy, 'studio.settings.write', parent, 'deny');
+  policy = setExplicitPermissionMode(policy, 'studio.settings.write', child, 'allow');
+
+  assert.equal(
+    hasEffectivePluginConfigPermission(
+      roleAccess(policy),
+      'studio.settings.write',
+      GUILD_ID,
+      'moderation',
+      'autoEnforcementPolicies[].action',
+    ),
+    false,
+  );
+});
+
+test('親がImplicitDenyでも子Configの明示Allowを利用できる', () => {
+  const child = pluginConfigFieldResource(
+    GUILD_ID,
+    'moderation',
+    'autoEnforcementPolicies[].action',
+  );
+  let policy = createEmptyStudioAccessPolicy();
+  policy = setExplicitPermissionMode(policy, 'studio.settings.write', child, 'allow');
+
+  assert.equal(
+    hasEffectivePluginConfigPermission(
+      roleAccess(policy),
+      'studio.settings.write',
+      GUILD_ID,
+      'moderation',
+      'autoEnforcementPolicies[].action',
+    ),
+    true,
+  );
+});
+
+test('nested read permissionで兄弟設定を漏らさない', () => {
+  const action = pluginConfigFieldResource(
+    GUILD_ID,
+    'moderation',
+    'autoEnforcementPolicies[].action',
+  );
+  let policy = createEmptyStudioAccessPolicy();
+  policy = setExplicitPermissionMode(policy, 'studio.settings.read', action, 'allow');
+  const access = roleAccess(policy);
+  const configPaths = [
+    'autoEnforcementPolicies',
+    'autoEnforcementPolicies[].selector',
+    'autoEnforcementPolicies[].action',
+    'autoEnforcementPolicies[].severity',
+  ];
+  const resolved = resolvePluginConfigStudioAccess(access, GUILD_ID, 'moderation', configPaths);
+  const schema = {
+    type: 'object',
+    properties: {
+      autoEnforcementPolicies: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            selector: { type: 'string' },
+            action: { type: 'string' },
+            severity: { type: 'string' },
+          },
+        },
+      },
+    },
+  } satisfies Record<string, unknown>;
+
+  assert.deepEqual(resolved.readableConfigPaths, ['autoEnforcementPolicies[].action']);
+  assert.deepEqual(
+    filterReadablePluginConfig(
+      {
+        autoEnforcementPolicies: [
+          { selector: 'invite', action: 'delete', severity: 'high' },
+          { selector: 'spam', action: 'timeout', severity: 'medium' },
+        ],
+      },
+      resolved,
+      schema,
+    ),
+    { autoEnforcementPolicies: [{ action: 'delete' }, { action: 'timeout' }] },
   );
 });
 
@@ -248,3 +387,14 @@ test('Managed Policyだけが存在する場合もwriteはdefault denyへ移行�
     false,
   );
 });
+
+function roleAccess(
+  policy: ReturnType<typeof createEmptyStudioAccessPolicy>,
+): EffectivePluginPermissionContext {
+  return {
+    isRoot: false,
+    roleIds: [ROLE_ID],
+    policies: [{ discordRoleId: ROLE_ID, policy }],
+    managedPolicies: [],
+  };
+}
