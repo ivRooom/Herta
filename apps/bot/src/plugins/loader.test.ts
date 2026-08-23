@@ -251,7 +251,7 @@ describe('GuildPluginLoader', () => {
           eventType: 'config_updated',
         }),
       ),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it('onDisable失敗時はRuntime状態をactiveのまま保持してdisable ACKを拒否する', async () => {
