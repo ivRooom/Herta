@@ -32,12 +32,26 @@ export interface PluginRuntimeOperationState {
 export function buildPluginRuntimeOperationStateMap(
   rows: readonly PluginRuntimeAuditRow[],
 ): Map<string, PluginRuntimeOperationState> {
-  return buildPluginRuntimeConsumerOperationStateMap(rows, DEFAULT_PLUGIN_RUNTIME_CONSUMER);
+  return buildPluginRuntimeOperationStateMapForConsumer(
+    rows,
+    DEFAULT_PLUGIN_RUNTIME_CONSUMER,
+    pluginRuntimeOperationStateKey,
+  );
 }
 
 export function buildPluginRuntimeConsumerOperationStateMap(
   rows: readonly PluginRuntimeAuditRow[],
   consumer: PluginRuntimeConsumer,
+): Map<string, PluginRuntimeOperationState> {
+  return buildPluginRuntimeOperationStateMapForConsumer(rows, consumer, (guildId, pluginId, version) =>
+    pluginRuntimeConsumerOperationStateKey(guildId, pluginId, version, consumer),
+  );
+}
+
+function buildPluginRuntimeOperationStateMapForConsumer(
+  rows: readonly PluginRuntimeAuditRow[],
+  consumer: PluginRuntimeConsumer,
+  keyFor: (guildId: string, pluginId: string, configVersion: number) => string,
 ): Map<string, PluginRuntimeOperationState> {
   const states = new Map<string, PluginRuntimeOperationState>();
   const eventIds = new Map<string, string | undefined>();
@@ -50,12 +64,7 @@ export function buildPluginRuntimeConsumerOperationStateMap(
     if (configVersion === undefined) continue;
     if (isApplyOutcome(status) && runtimeConsumerForMetadata(row.metadata) !== consumer) continue;
 
-    const key = pluginRuntimeConsumerOperationStateKey(
-      row.guildId,
-      row.targetId,
-      configVersion,
-      consumer,
-    );
+    const key = keyFor(row.guildId, row.targetId, configVersion);
     const eventId = readEventId(row.metadata);
     const existing = states.get(key);
     if (!existing) {
@@ -97,12 +106,7 @@ export function pluginRuntimeOperationStateKey(
   pluginId: string,
   configVersion: number,
 ): string {
-  return pluginRuntimeConsumerOperationStateKey(
-    guildId,
-    pluginId,
-    configVersion,
-    DEFAULT_PLUGIN_RUNTIME_CONSUMER,
-  );
+  return `${guildId}:${pluginId}:${configVersion}`;
 }
 
 export function pluginRuntimeConsumerOperationStateKey(
