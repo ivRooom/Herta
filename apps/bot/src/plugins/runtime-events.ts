@@ -6,10 +6,12 @@ import {
   parsePluginRuntimeEvent,
   type PluginRuntimeEvent,
 } from '@herta/shared';
-import { defaultPluginRuntimeState } from './runtime-state.js';
+import {
+  defaultPluginRuntimeState,
+  type PluginRuntimeTargetState,
+} from './runtime-state.js';
 
-interface EventCursor {
-  configVersion: number;
+interface EventCursor extends PluginRuntimeTargetState {
   occurredAt: number;
 }
 
@@ -19,7 +21,10 @@ export type PluginRuntimeSyncReporter = (
   outcome: PluginRuntimeSyncOutcome,
   attempts: number,
 ) => Promise<void>;
-export type PluginRuntimeApplyVerifier = (event: PluginRuntimeEvent) => boolean;
+export type PluginRuntimeApplyVerifier = (
+  event: PluginRuntimeEvent,
+  latestTarget?: PluginRuntimeTargetState,
+) => boolean;
 
 const MAX_SYNC_ATTEMPTS = 3;
 const SYNC_RETRY_BASE_MS = 500;
@@ -72,8 +77,8 @@ export class PluginRuntimeEventSubscriber {
     private readonly logger: Logger,
     private readonly debounceMs = 250,
     private readonly reportSyncOutcome: PluginRuntimeSyncReporter = recordPluginRuntimeSyncOutcome,
-    private readonly verifyApplied: PluginRuntimeApplyVerifier = (event) =>
-      defaultPluginRuntimeState.isEventApplied(event),
+    private readonly verifyApplied: PluginRuntimeApplyVerifier = (event, latestTarget) =>
+      defaultPluginRuntimeState.isEventApplied(event, latestTarget),
   ) {}
 
   async start(redisUrl: string): Promise<void> {
@@ -132,7 +137,7 @@ export class PluginRuntimeEventSubscriber {
       if (oldest) this.seenEventIds.delete(oldest);
     }
 
-    const key = `${event.guildId}:${event.pluginId}`;
+    const key = this.eventKey(event.guildId, event.pluginId);
     const occurredAt = Date.parse(event.occurredAt);
     const cursor = this.cursors.get(key);
     if (
@@ -147,7 +152,11 @@ export class PluginRuntimeEventSubscriber {
       return false;
     }
 
-    this.cursors.set(key, { configVersion: event.configVersion, occurredAt });
+    this.cursors.set(key, {
+      configVersion: event.configVersion,
+      eventType: event.eventType,
+      occurredAt,
+    });
     return true;
   }
 
@@ -200,7 +209,7 @@ export class PluginRuntimeEventSubscriber {
         const appliedEvents: PluginRuntimeEvent[] = [];
         const unappliedEvents: PluginRuntimeEvent[] = [];
         for (const event of events) {
-          if (this.verifyApplied(event)) appliedEvents.push(event);
+          if (this.verifyApplied(event, this.latestTargetFor(event))) appliedEvents.push(event);
           else unappliedEvents.push(event);
         }
 
@@ -261,6 +270,16 @@ export class PluginRuntimeEventSubscriber {
 
       await new Promise((resolve) => setTimeout(resolve, SYNC_RETRY_BASE_MS * attempt));
     }
+  }
+
+  private latestTargetFor(event: PluginRuntimeEvent): PluginRuntimeTargetState | undefined {
+    const cursor = this.cursors.get(this.eventKey(event.guildId, event.pluginId));
+    if (!cursor) return undefined;
+    return { configVersion: cursor.configVersion, eventType: cursor.eventType };
+  }
+
+  private eventKey(guildId: string, pluginId: string): string {
+    return `${guildId}:${pluginId}`;
   }
 
   async stop(): Promise<void> {
