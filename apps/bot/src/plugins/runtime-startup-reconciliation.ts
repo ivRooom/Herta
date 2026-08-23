@@ -93,10 +93,7 @@ export function startupRuntimeAuditGraceMs(
     if (latestStates.has(runtimeStateKey(target.pluginId, target.configVersion))) continue;
     const updatedAtMs = target.updatedAt?.getTime();
     if (updatedAtMs === undefined || !Number.isFinite(updatedAtMs)) continue;
-    remainingMs = Math.max(
-      remainingMs,
-      updatedAtMs + STARTUP_RUNTIME_AUDIT_GRACE_MS - nowMs,
-    );
+    remainingMs = Math.max(remainingMs, updatedAtMs + STARTUP_RUNTIME_AUDIT_GRACE_MS - nowMs);
   }
 
   return Math.max(0, Math.ceil(remainingMs));
@@ -190,11 +187,7 @@ export async function reconcilePluginRuntimeStartup(
     if (targets.length === 0) return true;
 
     let auditRows = await loadCurrentRuntimeAuditRows(prisma, guildId, targets);
-    const graceMs = startupRuntimeAuditGraceMs(
-      targets,
-      auditRows,
-      (options.now ?? Date.now)(),
-    );
+    const graceMs = startupRuntimeAuditGraceMs(targets, auditRows, (options.now ?? Date.now)());
     if (graceMs > 0) {
       await (options.wait ?? delay)(graceMs);
       auditRows = await loadCurrentRuntimeAuditRows(prisma, guildId, targets);
