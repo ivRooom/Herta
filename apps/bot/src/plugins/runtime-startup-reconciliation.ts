@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from '@herta/db';
+import { getPrismaClient, type Prisma, type PrismaClient } from '@herta/db';
 import type { Logger } from '@herta/logger';
 import { defaultPluginRuntimeState, type PluginRuntimeState } from './runtime-state.js';
 
@@ -18,6 +18,8 @@ const RUNTIME_STATUS_BY_EVENT: Record<RuntimeAuditEvent, RuntimeStatus> = {
   'plugin.runtime_apply_succeeded': 'applied',
   'plugin.runtime_apply_failed': 'apply_failed',
 };
+
+const startupReconciledGuilds = new Set<string>();
 
 export interface PluginRuntimeStartupTarget {
   pluginId: string;
@@ -62,6 +64,19 @@ export function selectPluginRuntimeRecoveryCandidates(
   }
 
   return candidates;
+}
+
+/**
+ * Guild Commandの初回同期成功後だけstartup reconciliationを実行する。
+ * Runtimeイベントによる後続resyncでは通常ACK側へ任せ、recovery ACKを重複生成しない。
+ */
+export async function reconcilePluginRuntimeStartupOnce(
+  guildId: string,
+  logger: Logger,
+): Promise<void> {
+  if (startupReconciledGuilds.has(guildId)) return;
+  startupReconciledGuilds.add(guildId);
+  await reconcilePluginRuntimeStartup(getPrismaClient(), guildId, logger);
 }
 
 export async function reconcilePluginRuntimeStartup(
@@ -127,7 +142,7 @@ export async function reconcilePluginRuntimeStartup(
 export function createStartupRecoveryAuditData(
   guildId: string,
   candidate: PluginRuntimeRecoveryCandidate,
-): Prisma.AuditLogCreateInput {
+): Prisma.AuditLogUncheckedCreateInput {
   return {
     guildId,
     actorId: 'herta-bot',
