@@ -50,6 +50,45 @@ describe('PluginRuntimeState', () => {
     ).toBe(true);
   });
 
+  it('新しいdisableが適用済みなら待機中の旧enable eventをsupersededとして扱う', () => {
+    const state = new PluginRuntimeState();
+    const staleEnable = createPluginRuntimeEvent({
+      guildId: 'guild-a',
+      pluginId: 'quote',
+      configVersion: 2,
+      eventType: 'enabled',
+    });
+    const latestDisable = { configVersion: 3, eventType: 'disabled' as const };
+
+    state.markReloadStarted('guild-a');
+    state.markInactive('guild-a', 'quote');
+    expect(state.isEventApplied(staleEnable, latestDisable)).toBe(false);
+
+    state.markConfigurationLoaded('guild-a');
+    expect(state.isEventApplied(staleEnable, latestDisable)).toBe(true);
+
+    state.markConfigurationLoadFailed('guild-a');
+    expect(state.isEventApplied(staleEnable, latestDisable)).toBe(false);
+  });
+
+  it('新しいenableはそのversionがactiveになった場合だけ旧eventをsupersedeする', () => {
+    const state = new PluginRuntimeState();
+    const staleEvent = createPluginRuntimeEvent({
+      guildId: 'guild-a',
+      pluginId: 'quote',
+      configVersion: 2,
+      eventType: 'config_updated',
+    });
+    const latestEnable = { configVersion: 3, eventType: 'enabled' as const };
+
+    state.markConfigurationLoaded('guild-a');
+    state.markInactive('guild-a', 'quote');
+    expect(state.isEventApplied(staleEvent, latestEnable)).toBe(false);
+
+    state.markActive('guild-a', 'quote', 3);
+    expect(state.isEventApplied(staleEvent, latestEnable)).toBe(true);
+  });
+
   it('同じversionのactive eventは一致時だけ適用済みになる', () => {
     const state = new PluginRuntimeState();
     state.markActive('guild-a', 'quote', 4);
