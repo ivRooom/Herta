@@ -1,5 +1,10 @@
 import type { PluginRuntimeEvent } from '@herta/shared';
 
+export interface PluginRuntimeTargetState {
+  configVersion: number;
+  eventType: PluginRuntimeEvent['eventType'];
+}
+
 export class PluginRuntimeState {
   private readonly appliedVersions = new Map<string, number>();
   private readonly configurationLoadedGuilds = new Set<string>();
@@ -32,12 +37,18 @@ export class PluginRuntimeState {
     this.configurationLoadedGuilds.delete(guildId);
   }
 
-  isEventApplied(event: PluginRuntimeEvent): boolean {
+  isEventApplied(event: PluginRuntimeEvent, latestTarget?: PluginRuntimeTargetState): boolean {
     const appliedVersion = this.appliedVersions.get(this.key(event.guildId, event.pluginId));
+    const configurationLoaded = this.configurationLoadedGuilds.has(event.guildId);
+
+    if (latestTarget && latestTarget.configVersion > event.configVersion && configurationLoaded) {
+      if (latestTarget.eventType === 'disabled') return appliedVersion === undefined;
+      return appliedVersion !== undefined && appliedVersion >= latestTarget.configVersion;
+    }
 
     if (appliedVersion !== undefined && appliedVersion > event.configVersion) return true;
     if (event.eventType === 'disabled') {
-      return this.configurationLoadedGuilds.has(event.guildId) && appliedVersion === undefined;
+      return configurationLoaded && appliedVersion === undefined;
     }
     return appliedVersion === event.configVersion;
   }
