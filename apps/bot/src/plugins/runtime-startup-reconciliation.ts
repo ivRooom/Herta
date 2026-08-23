@@ -177,13 +177,14 @@ export async function reconcilePluginRuntimeStartup(
       select: { targetId: true, event: true, metadata: true, createdAt: true },
     });
 
+    const unresolvedTargetCount = countUnresolvedRuntimeTargets(targets, auditRows);
     const candidates = selectPluginRuntimeRecoveryCandidates(
       guildId,
       targets,
       auditRows,
       runtimeState,
     );
-    if (candidates.length === 0) return true;
+    if (candidates.length === 0) return unresolvedTargetCount === 0;
 
     await prisma.$transaction(
       candidates.map((candidate) =>
@@ -196,7 +197,7 @@ export async function reconcilePluginRuntimeStartup(
       { guildId, plugins: candidates.map((candidate) => candidate.pluginId) },
       'Plugin Runtime startup recovery ACKを記録しました',
     );
-    return true;
+    return candidates.length === unresolvedTargetCount;
   } catch (error) {
     logger.error(
       { guildId, errorName: resolveErrorName(error) },
@@ -227,6 +228,19 @@ export function createStartupRecoveryAuditData(
       configVersion: candidate.configVersion,
     },
   };
+}
+
+function countUnresolvedRuntimeTargets(
+  targets: readonly PluginRuntimeStartupTarget[],
+  rows: readonly PluginRuntimeStartupAuditRow[],
+): number {
+  const latestStates = buildLatestRuntimeStates(rows);
+  let count = 0;
+  for (const target of targets) {
+    const latest = latestStates.get(runtimeStateKey(target.pluginId, target.configVersion));
+    if (latest && latest.status !== 'applied') count += 1;
+  }
+  return count;
 }
 
 function buildLatestRuntimeStates(
