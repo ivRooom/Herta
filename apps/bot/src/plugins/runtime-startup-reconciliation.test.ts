@@ -4,6 +4,8 @@ import type { Logger } from '@herta/logger';
 import {
   createStartupRecoveryAuditData,
   reconcilePluginRuntimeStartup,
+  reconcilePluginRuntimeStartupOnceWith,
+  resetPluginRuntimeStartupReconciliation,
   selectPluginRuntimeRecoveryCandidates,
   type PluginRuntimeStartupAuditRow,
   type PluginRuntimeStartupTarget,
@@ -177,6 +179,31 @@ describe('Plugin Runtime startup reconciliation', () => {
       if (previousDatabaseUrl === undefined) delete process.env['DATABASE_URL'];
       else process.env['DATABASE_URL'] = previousDatabaseUrl;
     }
+  });
+
+  it('並行した後続同期はin-flight失敗を待ってから再試行する', async () => {
+    const concurrentGuildId = 'guild-concurrent-retry';
+    resetPluginRuntimeStartupReconciliation(concurrentGuildId);
+    const logger = createLogger();
+    let resolveFirst: ((value: boolean) => void) | undefined;
+    const reconcile = vi
+      .fn<() => Promise<boolean>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<boolean>((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(true);
+
+    const first = reconcilePluginRuntimeStartupOnceWith(concurrentGuildId, logger, reconcile);
+    await Promise.resolve();
+    const second = reconcilePluginRuntimeStartupOnceWith(concurrentGuildId, logger, reconcile);
+
+    expect(reconcile).toHaveBeenCalledTimes(1);
+    resolveFirst?.(false);
+    await Promise.all([first, second]);
+    expect(reconcile).toHaveBeenCalledTimes(2);
   });
 
   it('同一eventでpublish監査が後書きされてもterminal apply成功を優先する', () => {
