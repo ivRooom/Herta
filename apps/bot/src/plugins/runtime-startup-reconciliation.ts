@@ -19,9 +19,14 @@ const RUNTIME_STATUS_BY_EVENT: Record<RuntimeAuditEvent, RuntimeStatus> = {
   'plugin.runtime_apply_failed': 'apply_failed',
 };
 
+interface StartupReconciliationAttempt {
+  epoch: number;
+  promise: Promise<boolean>;
+}
+
 const startupReconciliationEpochs = new Map<string, number>();
 const startupReconciledEpochs = new Map<string, number>();
-const startupReconciliationInFlightEpochs = new Map<string, number>();
+const startupReconciliationAttempts = new Map<string, StartupReconciliationAttempt>();
 
 export interface PluginRuntimeStartupTarget {
   pluginId: string;
@@ -76,9 +81,7 @@ export function resetPluginRuntimeStartupReconciliation(guildId: string): void {
   const nextEpoch = currentStartupReconciliationEpoch(guildId) + 1;
   startupReconciliationEpochs.set(guildId, nextEpoch);
   startupReconciledEpochs.delete(guildId);
-  if (startupReconciliationInFlightEpochs.get(guildId) !== nextEpoch) {
-    startupReconciliationInFlightEpochs.delete(guildId);
-  }
+  startupReconciliationAttempts.delete(guildId);
 }
 
 /**
@@ -90,29 +93,51 @@ export async function reconcilePluginRuntimeStartupOnce(
   guildId: string,
   logger: Logger,
 ): Promise<void> {
-  const epoch = currentStartupReconciliationEpoch(guildId);
-  if (
-    startupReconciledEpochs.get(guildId) === epoch ||
-    startupReconciliationInFlightEpochs.get(guildId) === epoch
-  ) {
-    return;
-  }
+  await reconcilePluginRuntimeStartupOnceWith(guildId, logger, () =>
+    reconcilePluginRuntimeStartup(getPrismaClient(), guildId, logger),
+  );
+}
 
-  startupReconciliationInFlightEpochs.set(guildId, epoch);
-  try {
-    const succeeded = await reconcilePluginRuntimeStartup(getPrismaClient(), guildId, logger);
+export async function reconcilePluginRuntimeStartupOnceWith(
+  guildId: string,
+  logger: Logger,
+  reconcile: () => Promise<boolean>,
+): Promise<void> {
+  while (true) {
+    const epoch = currentStartupReconciliationEpoch(guildId);
+    if (startupReconciledEpochs.get(guildId) === epoch) return;
+
+    const existing = startupReconciliationAttempts.get(guildId);
+    if (existing?.epoch === epoch) {
+      const succeeded = await existing.promise;
+      if (succeeded || currentStartupReconciliationEpoch(guildId) !== epoch) return;
+      continue;
+    }
+
+    let attemptPromise: Promise<boolean>;
+    attemptPromise = (async () => {
+      try {
+        return await reconcile();
+      } catch (error) {
+        logger.error(
+          { guildId, errorName: resolveErrorName(error) },
+          'Plugin Runtime startup recoveryの初期化に失敗しました',
+        );
+        return false;
+      } finally {
+        const active = startupReconciliationAttempts.get(guildId);
+        if (active?.epoch === epoch && active.promise === attemptPromise) {
+          startupReconciliationAttempts.delete(guildId);
+        }
+      }
+    })();
+
+    startupReconciliationAttempts.set(guildId, { epoch, promise: attemptPromise });
+    const succeeded = await attemptPromise;
     if (succeeded && currentStartupReconciliationEpoch(guildId) === epoch) {
       startupReconciledEpochs.set(guildId, epoch);
     }
-  } catch (error) {
-    logger.error(
-      { guildId, errorName: resolveErrorName(error) },
-      'Plugin Runtime startup recoveryの初期化に失敗しました',
-    );
-  } finally {
-    if (startupReconciliationInFlightEpochs.get(guildId) === epoch) {
-      startupReconciliationInFlightEpochs.delete(guildId);
-    }
+    return;
   }
 }
 
