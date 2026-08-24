@@ -86,7 +86,8 @@ function createHarness(overrides: Partial<DailyContentRecord> = {}) {
         if (!delivery) throw new Error('delivery missing');
         const rawData = (args['data'] ?? {}) as Record<string, unknown>;
         const attemptUpdate = rawData['attemptCount'];
-        const { attemptCount: _attemptCount, ...data } = rawData;
+        const data = { ...rawData };
+        delete data['attemptCount'];
         delivery = {
           ...delivery,
           ...(data as Partial<DailyContentDeliveryRecord>),
