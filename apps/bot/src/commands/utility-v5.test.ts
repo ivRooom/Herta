@@ -59,8 +59,7 @@ describe('Core Utility v5', () => {
   });
 
   it('巨大整数・指数・高精度小数のlexemeを変更しない', () => {
-    const input =
-      '{"id":9007199254740993,"overflow":1e400,"fraction":0.12345678901234567890}';
+    const input = '{"id":9007199254740993,"overflow":1e400,"fraction":0.12345678901234567890}';
     expect(minifyJsonText(input)).toBe(input);
 
     const pretty = prettyJsonText(input);
