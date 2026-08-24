@@ -7,6 +7,16 @@ const operationsPageSource = readFileSync(
   'utf8',
 );
 
+function inventoryMobileCardSource(): string {
+  const start = operationsPageSource.indexOf('function InventoryMobileCard');
+  const end = operationsPageSource.indexOf('\nfunction attentionDetail', start);
+
+  assert.notEqual(start, -1, 'InventoryMobileCard should exist');
+  assert.notEqual(end, -1, 'InventoryMobileCard should have a stable function boundary');
+
+  return operationsPageSource.slice(start, end);
+}
+
 test('Plugin Operations inventory keeps separate mobile cards and desktop table views', () => {
   assert.match(operationsPageSource, /className="mt-5 space-y-3 md:hidden"/u);
   assert.match(operationsPageSource, /function InventoryMobileCard/u);
@@ -21,15 +31,17 @@ test('Plugin Operations inventory keeps separate mobile cards and desktop table 
 });
 
 test('Plugin Operations mobile cards expose the same safe inventory metadata', () => {
-  assert.match(operationsPageSource, /<StatusBadge status=\{entry\.status\} \/>/u);
+  const mobileCardSource = inventoryMobileCardSource();
+
+  assert.match(mobileCardSource, /<StatusBadge status=\{entry\.status\} \/>/u);
   assert.match(
-    operationsPageSource,
+    mobileCardSource,
     /<RuntimeConsumerBadges states=\{entry\.runtimeConsumers\} \/>/u,
   );
-  assert.match(operationsPageSource, /configVersion/u);
-  assert.match(operationsPageSource, /formatJst\(entry\.updatedAt\)/u);
-  assert.match(operationsPageSource, /break-all text-\[11px\] text-muted/u);
-  assert.doesNotMatch(operationsPageSource, /JSON\.stringify\(entry\.config/u);
+  assert.match(mobileCardSource, /entry\.configVersion/u);
+  assert.match(mobileCardSource, /formatJst\(entry\.updatedAt\)/u);
+  assert.match(mobileCardSource, /break-all text-\[11px\] text-muted/u);
+  assert.doesNotMatch(mobileCardSource, /entry\.config/u);
 });
 
 test('Plugin Operations navigation has explicit keyboard focus treatment', () => {
