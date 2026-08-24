@@ -198,7 +198,8 @@ export default async function PluginOperationsPage() {
               設定済みPlugin
             </h2>
             <p className="mt-1 text-sm text-muted">
-              設定本文は表示せず、状態・Runtime consumer・configVersion・更新日時だけを確認できます。
+              設定本文は表示せず、状態・Runtime
+              consumer・configVersion・更新日時だけを確認できます。
             </p>
           </div>
           <span className="text-xs text-muted">
