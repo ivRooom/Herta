@@ -89,6 +89,29 @@ test('Worker ACKはBot状態を上書きせずconsumer別に集計できる', ()
   );
 });
 
+test('publish成功はWorker mapでもACK待ちのpublished状態として保持する', () => {
+  const workerStates = buildPluginRuntimeConsumerOperationStateMap(
+    [
+      row(
+        'plugin.runtime_publish_succeeded',
+        { configVersion: 4, eventId: 'runtime-event-4' },
+        '2026-08-22T04:00:02.000Z',
+      ),
+    ],
+    'worker',
+  );
+
+  assert.deepEqual(
+    workerStates.get(pluginRuntimeConsumerOperationStateKey(guildId, pluginId, 4, 'worker')),
+    {
+      status: 'published',
+      configVersion: 4,
+      observedAt: '2026-08-22T04:00:02.000Z',
+      consumer: 'worker',
+    },
+  );
+});
+
 test('未知consumerのapply ACKは安全側に無視する', () => {
   const states = buildPluginRuntimeOperationStateMap([
     row(
