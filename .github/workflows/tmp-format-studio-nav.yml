@@ -1,6 +1,9 @@
 name: Temporary Studio Navigation Formatter
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - feat/studio-navigation-context-settings
