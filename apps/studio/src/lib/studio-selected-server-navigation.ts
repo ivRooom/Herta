@@ -77,13 +77,15 @@ export function buildSelectedServerNavigationItems(
     href: href(guildId),
   }));
   const visible = new Set(visiblePluginTabIds);
-  const pluginItems = STUDIO_PINNABLE_SERVER_TABS.filter((tab) => visible.has(tab.id)).map((tab) => ({
-    id: `selected-server-plugin-${tab.id}`,
-    href: `/dashboard/guilds/${guildId}/${tab.path}`,
-    label: tab.label,
-    description: tab.description,
-    icon: tab.icon,
-  }));
+  const pluginItems = STUDIO_PINNABLE_SERVER_TABS.filter((tab) => visible.has(tab.id)).map(
+    (tab) => ({
+      id: `selected-server-plugin-${tab.id}`,
+      href: `/dashboard/guilds/${guildId}/${tab.path}`,
+      label: tab.label,
+      description: tab.description,
+      icon: tab.icon,
+    }),
+  );
 
   return [...coreItems, ...pluginItems];
 }
