@@ -133,7 +133,9 @@ export function StudioNavigationContextProvider({ children }: { children: ReactN
     [canManage, loadState, reload, saveVisiblePluginTabIds, visiblePluginTabIds],
   );
 
-  return <StudioNavigationContext.Provider value={value}>{children}</StudioNavigationContext.Provider>;
+  return (
+    <StudioNavigationContext.Provider value={value}>{children}</StudioNavigationContext.Provider>
+  );
 }
 
 export function useStudioNavigationContext(): StudioNavigationContextValue {
