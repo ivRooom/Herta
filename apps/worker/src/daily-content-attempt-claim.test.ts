@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { claimDailyContentDeliveryAttempt } from './daily-content.js';
+import {
+  claimDailyContentDeliveryAttempt,
+  markDailyContentDeliveryQueued,
+} from './daily-content.js';
 
 type ClaimPrisma = Parameters<typeof claimDailyContentDeliveryAttempt>[0];
 
@@ -27,6 +30,17 @@ function createClaimHarness(initial: { attemptCount: number; status: string }) {
       status = 'processing';
       attemptCount += 1;
       return [{ attemptCount }];
+    },
+    $executeRawUnsafe: async (query: string) => {
+      queries.push(query);
+      if (
+        query.includes("SET status = 'queued'") &&
+        ['pending', 'queued', 'retrying'].includes(status)
+      ) {
+        status = 'queued';
+        return 1;
+      }
+      return 0;
     },
   } as unknown as ClaimPrisma;
 
@@ -87,6 +101,25 @@ test('retry budget到達済みのdeliveryはclaimせずattemptCountを増やさ�
   assert.equal(claimed, null);
   assert.equal(harness.getAttemptCount(), 2);
   assert.equal(harness.getStatus(), 'retrying');
+});
+
+test('enqueue完了通知はclaim済みprocessingをqueuedへ戻さない', async () => {
+  const harness = createClaimHarness({ attemptCount: 0, status: 'pending' });
+
+  const claimed = await claimDailyContentDeliveryAttempt(harness.prisma, {
+    deliveryId: 'delivery-1',
+    expectedAttemptCount: 0,
+    maxAttempts: 5,
+  });
+  await markDailyContentDeliveryQueued(
+    harness.prisma,
+    'delivery-1',
+    new Date('2030-01-01T00:00:01Z'),
+  );
+
+  assert.equal(claimed, 1);
+  assert.equal(harness.getAttemptCount(), 1);
+  assert.equal(harness.getStatus(), 'processing');
 });
 
 test('claim SQLはattemptCount・maxAttempts・claim可能statusを同じUPDATE条件で検証する', async () => {
