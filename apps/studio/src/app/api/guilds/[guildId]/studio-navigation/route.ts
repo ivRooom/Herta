@@ -16,10 +16,7 @@ export const dynamic = 'force-dynamic';
 
 const MAX_NAVIGATION_PATCH_BODY_BYTES = 4 * 1024;
 
-export async function GET(
-  _request: Request,
-  { params }: { params: Promise<{ guildId: string }> },
-) {
+export async function GET(_request: Request, { params }: { params: Promise<{ guildId: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: '認証が必要です' }, { status: 401 });
 
@@ -130,8 +127,7 @@ export async function PATCH(
 async function readNavigationPatchBody(
   request: Request,
 ): Promise<
-  | { value: ReturnType<typeof parseStoredStudioNavigationConfig> }
-  | { response: Response }
+  { value: ReturnType<typeof parseStoredStudioNavigationConfig> } | { response: Response }
 > {
   try {
     const bytes = await readRequestBodyBytes(request, MAX_NAVIGATION_PATCH_BODY_BYTES);
