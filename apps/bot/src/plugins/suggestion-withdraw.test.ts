@@ -176,6 +176,73 @@ describe('Suggestion author withdraw', () => {
     );
   });
 
+  it('古い投票描画が取下げ表示を上書きしても最新状態へ再同期する', async () => {
+    let txQueryCount = 0;
+    const tx = {
+      $queryRaw: vi.fn(async () => {
+        txQueryCount += 1;
+        return txQueryCount === 1 ? [{ votingEnabled: true, status: 'pending' }] : [];
+      }),
+      $executeRaw: vi.fn(async () => 1),
+    };
+    const pendingSnapshot = makeSnapshot({ status: 'pending', upvotes: 4 });
+    const withdrawnSnapshot = makeSnapshot({ status: 'withdrawn', upvotes: 4 });
+    let rootQueryCount = 0;
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) =>
+        callback(tx),
+      ),
+      $queryRaw: vi.fn(async () => {
+        rootQueryCount += 1;
+        return rootQueryCount === 1 ? [pendingSnapshot] : [withdrawnSnapshot];
+      }),
+    };
+    const edit = vi.fn(async () => undefined);
+    const fetchMessage = vi.fn(async () => ({ id: '999', edit }));
+    const fetchChannel = vi.fn(async () => ({
+      isTextBased: () => true,
+      messages: { fetch: fetchMessage },
+    }));
+    const context = {
+      client: {
+        channels: { fetch: fetchChannel },
+        users: { fetch: vi.fn() },
+      },
+      prisma,
+      logger: { warn: vi.fn() },
+      guildId: '123',
+      config: normalizeSuggestionConfig(undefined),
+      manifest: suggestionPlugin.manifest,
+    };
+    const update = vi.fn(async () => undefined);
+    const interaction = {
+      guildId: '123',
+      customId: `herta:suggestion:v1:vote:${ID}:up`,
+      user: { id: '777' },
+      isButton: () => true,
+      reply: vi.fn(async () => undefined),
+      update,
+    };
+    const event = suggestionPlugin.provideEvents?.()[0];
+    if (!event) throw new Error('Suggestion event is not available');
+
+    await event.handler(context as never, interaction as never);
+
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining('📝 未確認'),
+      }),
+    );
+    expect(fetchChannel).toHaveBeenCalledWith('789');
+    expect(fetchMessage).toHaveBeenCalledWith('999');
+    expect(edit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining('↩️ 取下げ'),
+        components: [],
+      }),
+    );
+  });
+
   it('処理済みSuggestionは投稿者本人でも取下げできない', async () => {
     const auditCreate = vi.fn(async () => undefined);
     const tx = {
