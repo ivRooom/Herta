@@ -1,6 +1,6 @@
 'use client';
 
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import {
   createContext,
   useCallback,
@@ -46,7 +46,12 @@ export function StudioServerContextProvider({
   children: ReactNode;
 }) {
   const pathname = usePathname();
-  const routeGuildId = getGuildConsoleContext(pathname)?.guildId ?? null;
+  const searchParams = useSearchParams();
+  const queryGuildId =
+    pathname === '/dashboard/community' || pathname === '/dashboard/analytics'
+      ? searchParams.get('guild')
+      : null;
+  const routeGuildId = getGuildConsoleContext(pathname)?.guildId ?? queryGuildId;
   const initialSelectedGuildId = resolveSelectedGuildId({
     guildIds: guilds.map((guild) => guild.id),
     routeGuildId,

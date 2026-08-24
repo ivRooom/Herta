@@ -22,6 +22,10 @@ test('Guildコンソールの主要画面を判定する', () => {
     guildId: GUILD_ID,
     section: 'plugins',
   });
+  assert.deepEqual(getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/commands`), {
+    guildId: GUILD_ID,
+    section: 'commands',
+  });
   assert.deepEqual(getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/leaderboard`), {
     guildId: GUILD_ID,
     section: 'leaderboard',
@@ -37,6 +41,10 @@ test('Guildコンソールの主要画面を判定する', () => {
   assert.deepEqual(getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/audit-logs`), {
     guildId: GUILD_ID,
     section: 'audit-logs',
+  });
+  assert.deepEqual(getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/access/policies`), {
+    guildId: GUILD_ID,
+    section: 'access',
   });
   assert.deepEqual(getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/bot-profile`), {
     guildId: GUILD_ID,
@@ -82,6 +90,7 @@ test('Guild一覧や不正なGuild IDではコンテキストを生成しない'
 test('Guildコンソールの主要hrefを一元生成する', () => {
   assert.equal(getGuildConsoleHref(GUILD_ID, 'overview'), `/dashboard/guilds/${GUILD_ID}`);
   assert.equal(getGuildConsoleHref(GUILD_ID, 'plugins'), `/dashboard/guilds/${GUILD_ID}/plugins`);
+  assert.equal(getGuildConsoleHref(GUILD_ID, 'commands'), `/dashboard/guilds/${GUILD_ID}/commands`);
   assert.equal(
     getGuildConsoleHref(GUILD_ID, 'leaderboard'),
     `/dashboard/guilds/${GUILD_ID}/leaderboard`,
@@ -94,6 +103,7 @@ test('Guildコンソールの主要hrefを一元生成する', () => {
     getGuildConsoleHref(GUILD_ID, 'audit-logs'),
     `/dashboard/guilds/${GUILD_ID}/audit-logs`,
   );
+  assert.equal(getGuildConsoleHref(GUILD_ID, 'access'), `/dashboard/guilds/${GUILD_ID}/access`);
   assert.equal(
     getGuildConsoleHref(GUILD_ID, 'bot-profile'),
     `/dashboard/guilds/${GUILD_ID}/bot-profile`,
@@ -103,9 +113,11 @@ test('Guildコンソールの主要hrefを一元生成する', () => {
 test('Guild切替では主要セクションを安全に維持する', () => {
   for (const section of [
     'plugins',
+    'commands',
     'leaderboard',
     'moderation',
     'audit-logs',
+    'access',
     'bot-profile',
   ] as const) {
     assert.equal(

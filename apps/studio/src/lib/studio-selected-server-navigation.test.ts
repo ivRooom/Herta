@@ -5,35 +5,40 @@ import { buildSelectedServerNavigationItems } from './studio-selected-server-nav
 
 const GUILD_ID = '123456789012345678';
 
-test('選択中サーバーの主要管理画面を直接リンクする', () => {
+test('選択中サーバーは主要6タブへ整理する', () => {
   const items = buildSelectedServerNavigationItems(GUILD_ID);
 
   assert.deepEqual(
     items.map((item) => [item.id, item.href]),
     [
       ['selected-server-overview', `/dashboard/guilds/${GUILD_ID}`],
-      ['selected-server-message-studio', `/dashboard/guilds/${GUILD_ID}/daily-content`],
-      ['selected-server-commands', `/dashboard/guilds/${GUILD_ID}/commands`],
-      ['selected-server-role-manager', `/dashboard/guilds/${GUILD_ID}/roles`],
-      ['selected-server-access', `/dashboard/guilds/${GUILD_ID}/access`],
       ['selected-server-plugins', `/dashboard/guilds/${GUILD_ID}/plugins`],
-      ['selected-server-leaderboard', `/dashboard/guilds/${GUILD_ID}/leaderboard`],
+      ['selected-server-commands', `/dashboard/guilds/${GUILD_ID}/commands`],
+      ['selected-server-community', `/dashboard/community?guild=${GUILD_ID}`],
       ['selected-server-moderation', `/dashboard/guilds/${GUILD_ID}/moderation`],
-      ['selected-server-audit-logs', `/dashboard/guilds/${GUILD_ID}/audit-logs`],
-      ['selected-server-bot-profile', `/dashboard/guilds/${GUILD_ID}/bot-profile`],
+      ['selected-server-analytics', `/dashboard/analytics?guild=${GUILD_ID}`],
     ],
   );
 });
 
-test('ModerationとAccessは詳細画面でも親ナビゲーションをactiveにできる', () => {
+test('設定した個別Pluginタブだけを主要6タブの後ろへ追加する', () => {
+  const items = buildSelectedServerNavigationItems(GUILD_ID, ['message-studio', 'birthday']);
+
+  assert.deepEqual(
+    items.slice(6).map((item) => [item.id, item.href]),
+    [
+      ['selected-server-plugin-message-studio', `/dashboard/guilds/${GUILD_ID}/daily-content`],
+      ['selected-server-plugin-birthday', `/dashboard/guilds/${GUILD_ID}/birthday`],
+    ],
+  );
+});
+
+test('Moderationは詳細画面でも親ナビゲーションをactiveにできる', () => {
   const items = buildSelectedServerNavigationItems(GUILD_ID);
   const moderation = items.find((item) => item.id === 'selected-server-moderation');
-  const access = items.find((item) => item.id === 'selected-server-access');
 
   assert.ok(moderation);
-  assert.ok(access);
   assert.notEqual(moderation.exact, true);
-  assert.notEqual(access.exact, true);
 });
 
 test('不正または未選択のGuildではサーバー固有リンクを作らない', () => {

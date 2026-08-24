@@ -49,6 +49,26 @@ export const STUDIO_ACCOUNT_NAV_ITEM = {
   icon: 'account',
 } as const satisfies StudioNavigationItem;
 
+export const STUDIO_PLUGIN_OPERATIONS_NAV_ITEM = {
+  id: 'plugin-operations',
+  href: '/dashboard/plugins/operations',
+  label: 'Plugin Operations',
+  description: 'Plugin Runtime・Attention・反映状態を確認する',
+  keywords: ['plugin', 'operations', 'runtime', 'attention', 'プラグイン', '運用'],
+  intents: ['Pluginの稼働状態を確認したい', 'Pluginの反映状況やAttentionを確認したい'],
+  icon: 'plugin',
+} as const satisfies StudioNavigationItem;
+
+export const STUDIO_SETTINGS_NAV_ITEM = {
+  id: 'settings',
+  href: '/dashboard/settings',
+  label: 'Settings',
+  description: 'Studioとサーバー別ナビゲーションを設定する',
+  keywords: ['settings', 'navigation', 'tabs', '設定', 'ナビゲーション', 'タブ'],
+  intents: ['Studioの表示を設定したい', 'Current Serverに表示するPluginタブを変更したい'],
+  icon: 'account',
+} as const satisfies StudioNavigationItem;
+
 export const STUDIO_NAV_ITEMS: readonly StudioNavigationItem[] = [
   {
     id: 'dashboard',
@@ -91,6 +111,7 @@ export const STUDIO_NAV_ITEMS: readonly StudioNavigationItem[] = [
     ],
     icon: 'activity',
   },
+  STUDIO_PLUGIN_OPERATIONS_NAV_ITEM,
   {
     id: 'analytics',
     href: '/dashboard/analytics',
@@ -127,6 +148,7 @@ export const STUDIO_NAV_ITEMS: readonly StudioNavigationItem[] = [
     intents: ['独自機能を追加したい', 'カスタム機能を管理したい'],
     icon: 'custom-plugin',
   },
+  STUDIO_SETTINGS_NAV_ITEM,
   STUDIO_ACCOUNT_NAV_ITEM,
 ];
 
