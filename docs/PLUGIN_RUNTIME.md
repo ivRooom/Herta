@@ -94,6 +94,44 @@ Plugin × consumerの追加DB queryは発行しません。DB migrationやGuild�
 Workerを`expectedRuntimeConsumers`へ追加するのは、対象PluginについてWorker側のRuntime event購読・
 設定反映・ACK生成が実装されてからです。現時点では既存PluginをWorker requiredにしません。
 
+## Worker Runtime consumer requirement discovery
+
+2026-08-24時点のWorker実装を確認した結果、現行PluginにはWorker process内へGuild Plugin設定を
+長期保持してRuntime eventで再適用すべき対象がありません。そのため、Worker subscriber、
+`consumer=worker` ACK、Worker startup reconciliationはまだ導入しません。
+
+| Worker処理 | Plugin設定の参照方法 | process内のPlugin設定state | enable / disableの収束 | Runtime apply |
+| --- | --- | --- | --- | --- |
+| Daily Content | due判定、enqueue、stale recovery、配信実行時にDBを再取得 | なし | scan / job実行時のDB再検証で収束 | 不要 |
+| LFG | expire / message同期 / recoveryでenabledをDB確認、prune時にconfigをDB取得 | なし | 定期scanで収束 | 不要 |
+| Team Split | 各scanでenabled Guildを一括取得、prune時にconfigをDB取得 | なし | 定期scanで収束 | 不要 |
+| Community Season Snapshot | `GuildPlugin`設定を参照しないbackground maintenance | なし | Plugin Runtime対象外 | 不要 |
+| Discord Role Operation | 永続化済みoperationをDBからclaimして実行 | なし | Plugin Runtime対象外 | 不要 |
+
+Daily Contentが持つDiscord permission cacheはDiscord権限情報の短期cacheであり、Guild Plugin configの
+Runtime stateではありません。また、Plugin無効化後に既存deliveryが残っていても、配信実行直前に
+`GuildPlugin.enabled`を再確認してskipします。再有効化後は定期scanの`initializeMissingNextRuns()`が
+現在のDB状態から`nextRunAt`を再構築します。
+
+LFGとTeam SplitもWorker起動時にPlugin別timerを動的登録しておらず、Worker process自体は常時起動した
+まま、各scanで現在のDB状態から処理対象を決めます。このためRedis Pub/Sub停止中の設定変更も、次回scan
+またはjob実行時のDB readで最終的に現在状態へ収束します。
+
+この構成でWorker ACKだけを追加すると、実際には再適用するWorker stateが存在しないにもかかわらず
+Operations上でWorker apply成功を表現することになります。したがって現行Manifestは引き続きdefault
+`['bot']`を使用し、Daily Content / LFG / Team Splitへ機械的に`worker`を追加しません。
+
+WorkerをRuntime consumer化するのは、対象Pluginが次のいずれかを持つようになった場合です。
+
+- Guild Plugin configをWorker process内へscan間隔を超えて保持する
+- configに基づくtimer、scheduler、job registrationをWorker内へ動的に保持する
+- enable / disableを通常scanより速く即時反映する必要がある
+- job実行時にDBを再取得せず、Worker process内stateを正として処理する
+
+その場合はManifestだけを先行変更せず、既存`herta:plugin-runtime:v1` contractを再利用したsubscriber、
+stale / duplicate protection、対象Pluginだけのapply、`consumer=worker`成功/失敗ACK、Pub/Sub取りこぼしを
+回復するstartup reconciliationを同一変更として実装してから`expectedRuntimeConsumers`へWorkerを追加します。
+
 ## エラー分離
 
 DB の取得障害は空の Plugin 一覧として扱い、Core Command のみで Bot を継続します。未登録
