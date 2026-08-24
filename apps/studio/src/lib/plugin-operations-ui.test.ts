@@ -32,7 +32,7 @@ test('Plugin Operations mobile card exposes only safe inventory metadata', () =>
   assert.ok(mobileCardSource.includes('entry.configVersion'));
   assert.ok(mobileCardSource.includes('formatJst(entry.updatedAt)'));
   assert.ok(mobileCardSource.includes('break-all text-[11px] text-muted'));
-  assert.equal(mobileCardSource.includes('entry.config'), false);
+  assert.doesNotMatch(mobileCardSource, /entry\.config(?!Version)/u);
 });
 
 test('Plugin Operations navigation has explicit keyboard focus treatment', () => {
