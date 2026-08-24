@@ -26,6 +26,14 @@ describe('Daily Content Queue hardening', () => {
     expect(resolveDailyContentQueueJobDisposition('unknown')).toBe('enqueue');
   });
 
+  it.each(['waiting', 'active', 'delayed'])(
+    'maxAttempts減少時も既存%s Jobは置換せず、実行時budget判定へ任せる',
+    (state) => {
+      expect(resolveDailyContentQueueJobDisposition(state)).toBe('keep');
+      expect(canStartDailyContentDeliveryAttempt(2, 2)).toBe(false);
+    },
+  );
+
   it('BullMQ attemptsをmanifest上限と同じtransport安全上限に固定する', () => {
     expect(DAILY_CONTENT_QUEUE_TRANSPORT_ATTEMPTS).toBe(10);
   });
