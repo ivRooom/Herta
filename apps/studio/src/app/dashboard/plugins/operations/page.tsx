@@ -33,6 +33,8 @@ const JST_DATE_TIME = new Intl.DateTimeFormat('ja-JP', {
   minute: '2-digit',
   hourCycle: 'h23',
 });
+const FOCUS_RING =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 
 export default async function PluginOperationsPage() {
   const accessToken = await getDiscordAccessToken();
@@ -169,7 +171,7 @@ export default async function PluginOperationsPage() {
           </div>
           <Link
             href="/dashboard/plugins"
-            className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-primary hover:underline"
+            className={`${FOCUS_RING} inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-primary hover:underline`}
           >
             Plugin管理へ戻る <ArrowRight className="h-4 w-4" aria-hidden="true" />
           </Link>
@@ -209,68 +211,84 @@ export default async function PluginOperationsPage() {
         </div>
 
         {inventory.entries.length > 0 ? (
-          <div className="mt-5 overflow-x-auto rounded-2xl border border-border bg-surface shadow-card">
-            <table className="w-full min-w-[960px] text-left text-sm">
-              <thead className="border-b border-border bg-background/60 text-xs text-muted">
-                <tr>
-                  <th scope="col" className="px-4 py-3 font-semibold">
-                    サーバー
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-semibold">
-                    Plugin
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-semibold">
-                    状態
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-semibold">
-                    Runtime
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-semibold">
-                    configVersion
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-semibold">
-                    最終更新
-                  </th>
-                  <th scope="col" className="px-4 py-3 font-semibold">
-                    操作
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {inventory.entries.map((entry) => (
-                  <tr key={`${entry.guildId}:${entry.pluginId}`} className="align-middle">
-                    <td className="px-4 py-3">
-                      <p className="max-w-48 truncate font-medium">
-                        {guildNameById.get(entry.guildId) ?? entry.guildId}
-                      </p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="font-medium">{entry.pluginName}</p>
-                      <p className="mt-0.5 text-[11px] text-muted">{entry.pluginId}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status={entry.status} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <RuntimeConsumerBadges states={entry.runtimeConsumers} />
-                    </td>
-                    <td className="px-4 py-3 font-medium tabular-nums">v{entry.configVersion}</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-xs text-muted">
-                      {formatJst(entry.updatedAt)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/dashboard/guilds/${entry.guildId}/plugins/${entry.pluginId}`}
-                        className="inline-flex items-center gap-1.5 font-semibold text-primary hover:underline"
-                      >
-                        <Settings2 className="h-3.5 w-3.5" aria-hidden="true" /> 設定
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <ul className="mt-5 space-y-3 md:hidden" aria-label="設定済みPlugin一覧">
+              {inventory.entries.map((entry) => (
+                <InventoryMobileCard
+                  key={`${entry.guildId}:${entry.pluginId}`}
+                  entry={entry}
+                  guildName={guildNameById.get(entry.guildId) ?? entry.guildId}
+                />
+              ))}
+            </ul>
+
+            <div className="mt-5 hidden overflow-hidden rounded-2xl border border-border bg-surface shadow-card md:block">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[960px] text-left text-sm">
+                  <thead className="border-b border-border bg-background/60 text-xs text-muted">
+                    <tr>
+                      <th scope="col" className="px-4 py-3 font-semibold">
+                        サーバー
+                      </th>
+                      <th scope="col" className="px-4 py-3 font-semibold">
+                        Plugin
+                      </th>
+                      <th scope="col" className="px-4 py-3 font-semibold">
+                        状態
+                      </th>
+                      <th scope="col" className="px-4 py-3 font-semibold">
+                        Runtime
+                      </th>
+                      <th scope="col" className="px-4 py-3 font-semibold">
+                        configVersion
+                      </th>
+                      <th scope="col" className="px-4 py-3 font-semibold">
+                        最終更新
+                      </th>
+                      <th scope="col" className="px-4 py-3 font-semibold">
+                        操作
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {inventory.entries.map((entry) => (
+                      <tr key={`${entry.guildId}:${entry.pluginId}`} className="align-middle">
+                        <td className="px-4 py-3">
+                          <p className="max-w-48 truncate font-medium">
+                            {guildNameById.get(entry.guildId) ?? entry.guildId}
+                          </p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="font-medium">{entry.pluginName}</p>
+                          <p className="mt-0.5 text-[11px] text-muted">{entry.pluginId}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <StatusBadge status={entry.status} />
+                        </td>
+                        <td className="px-4 py-3">
+                          <RuntimeConsumerBadges states={entry.runtimeConsumers} />
+                        </td>
+                        <td className="px-4 py-3 font-medium tabular-nums">
+                          v{entry.configVersion}
+                        </td>
+                        <td className="px-4 py-3 whitespace-nowrap text-xs text-muted">
+                          {formatJst(entry.updatedAt)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <Link
+                            href={`/dashboard/guilds/${entry.guildId}/plugins/${entry.pluginId}`}
+                            className={`${FOCUS_RING} inline-flex items-center gap-1.5 font-semibold text-primary hover:underline`}
+                          >
+                            <Settings2 className="h-3.5 w-3.5" aria-hidden="true" /> 設定
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </>
         ) : (
           <EmptyPanel
             title="設定済みPluginはありません"
@@ -317,7 +335,7 @@ export default async function PluginOperationsPage() {
                     <Link
                       href={`/dashboard/guilds/${operation.guildId}/audit-logs?category=plugin`}
                       aria-label={`${guildName}のPlugin監査ログを開く`}
-                      className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted transition-colors hover:border-primary/40 hover:text-primary"
+                      className={`${FOCUS_RING} inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-muted transition-colors hover:border-primary/40 hover:text-primary`}
                     >
                       <History className="h-4 w-4" aria-hidden="true" />
                     </Link>
@@ -358,7 +376,7 @@ function PageHeader() {
     <>
       <Link
         href="/dashboard/plugins"
-        className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground"
+        className={`${FOCUS_RING} inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground`}
       >
         <ArrowLeft className="h-4 w-4" aria-hidden="true" /> プラグイン管理へ戻る
       </Link>
@@ -404,17 +422,63 @@ function AttentionCard({ entry, guildName }: { entry: PluginOperationItem; guild
       <div className="mt-4 flex flex-wrap gap-3">
         <Link
           href={`/dashboard/guilds/${entry.guildId}/plugins/${entry.pluginId}`}
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline"
+          className={`${FOCUS_RING} inline-flex items-center gap-1.5 text-sm font-semibold text-primary hover:underline`}
         >
           <Settings2 className="h-4 w-4" aria-hidden="true" /> 設定を確認
         </Link>
         <Link
           href={`/dashboard/guilds/${entry.guildId}/audit-logs?category=plugin`}
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted hover:text-foreground"
+          className={`${FOCUS_RING} inline-flex items-center gap-1.5 text-sm font-semibold text-muted hover:text-foreground`}
         >
           <History className="h-4 w-4" aria-hidden="true" /> 監査ログ
         </Link>
       </div>
+    </li>
+  );
+}
+
+function InventoryMobileCard({
+  entry,
+  guildName,
+}: {
+  entry: PluginOperationItem;
+  guildName: string;
+}) {
+  return (
+    <li className="rounded-2xl border border-border bg-surface p-4 shadow-card">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-xs font-medium text-muted">{guildName}</p>
+          <p className="mt-1 font-semibold">{entry.pluginName}</p>
+          <p className="mt-1 break-all text-[11px] text-muted">{entry.pluginId}</p>
+        </div>
+        <StatusBadge status={entry.status} />
+      </div>
+
+      <div className="mt-4">
+        <p className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.12em] text-muted">
+          Runtime
+        </p>
+        <RuntimeConsumerBadges states={entry.runtimeConsumers} />
+      </div>
+
+      <dl className="mt-4 grid grid-cols-2 gap-3 text-xs">
+        <div className="rounded-xl bg-background px-3 py-2.5">
+          <dt className="text-muted">configVersion</dt>
+          <dd className="mt-1 font-semibold tabular-nums">v{entry.configVersion}</dd>
+        </div>
+        <div className="rounded-xl bg-background px-3 py-2.5">
+          <dt className="text-muted">最終更新</dt>
+          <dd className="mt-1 font-medium leading-5">{formatJst(entry.updatedAt)}</dd>
+        </div>
+      </dl>
+
+      <Link
+        href={`/dashboard/guilds/${entry.guildId}/plugins/${entry.pluginId}`}
+        className={`${FOCUS_RING} mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-background px-3 py-2.5 text-sm font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5`}
+      >
+        <Settings2 className="h-4 w-4" aria-hidden="true" /> 設定を確認
+      </Link>
     </li>
   );
 }
