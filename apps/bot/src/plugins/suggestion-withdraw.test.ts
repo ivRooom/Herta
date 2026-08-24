@@ -50,9 +50,15 @@ describe('Suggestion author withdraw', () => {
     const auditCreate = vi.fn(async () => undefined);
     const snapshot = makeSnapshot({ status: 'withdrawn' });
     const rootQueryRaw = vi.fn(async () => [snapshot]);
-    const tx = { $queryRaw: txQueryRaw, $executeRaw: txExecuteRaw, auditLog: { create: auditCreate } };
+    const tx = {
+      $queryRaw: txQueryRaw,
+      $executeRaw: txExecuteRaw,
+      auditLog: { create: auditCreate },
+    };
     const prisma = {
-      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
+      $transaction: vi.fn(
+        async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+      ),
       $queryRaw: rootQueryRaw,
     };
 
@@ -86,7 +92,9 @@ describe('Suggestion author withdraw', () => {
     };
     const snapshot = makeSnapshot({ status: 'withdrawn' });
     const prisma = {
-      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
+      $transaction: vi.fn(
+        async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+      ),
       $queryRaw: vi.fn(async () => [snapshot]),
     };
 
@@ -110,7 +118,9 @@ describe('Suggestion author withdraw', () => {
     };
     const rootQueryRaw = vi.fn(async () => [makeSnapshot()]);
     const prisma = {
-      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx)),
+      $transaction: vi.fn(
+        async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+      ),
       $queryRaw: rootQueryRaw,
     };
 
