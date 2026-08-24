@@ -157,7 +157,7 @@ export default async function PluginOperationsPage() {
               </h2>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
                 {
-                  '設定Schemaに加え、StudioからBotへのRuntime通知と反映ACKも確認します。無効化操作のpublish・反映失敗やACK遅延もAttentionとして検知します。'
+                  '設定Schemaに加え、StudioからのRuntime通知とBot反映ACKも確認します。無効化操作のpublish・反映失敗やACK遅延もAttentionとして検知します。'
                 }
               </p>
             </div>
@@ -409,7 +409,7 @@ function attentionDetail(entry: PluginOperationItem): string {
     config_invalid:
       '有効な設定が現在のPlugin Schemaに適合していません。保存し直す前に設定内容を確認してください。',
     runtime_publish_failed:
-      '設定は保存されましたが、Runtime更新イベントをBotへpublishできませんでした。Redis接続とBot稼働状態を確認してください。',
+      '設定は保存されましたが、Runtime更新イベントをpublishできませんでした。Redis接続とRuntime配信経路を確認してください。',
     runtime_apply_failed:
       'Runtime更新イベントは届きましたが、BotがGuildの再同期を3回試行しても反映できませんでした。監査ログとBotログを確認してください。',
     runtime_apply_delayed:

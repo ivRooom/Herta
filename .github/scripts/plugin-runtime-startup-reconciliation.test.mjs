@@ -25,6 +25,7 @@ assert.match(sync, /Events\.GuildDelete/);
 assert.match(sync, /resetPluginRuntimeStartupReconciliation\(guild\.id\)/);
 assert.match(sync, /WeakSet<Client>/);
 assert.match(auditLogs, /Bot Runtime Recovery/);
-assert.match(auditLogs, /Bot起動時の再同期でPlugin Runtime設定の復旧を確認しました/);
+assert.match(auditLogs, /booleanValue\(metadata\?\.\['recovery'\]\) === true/);
+assert.match(auditLogs, /起動時の再同期でPlugin Runtime設定の復旧を確認しました/);
 
 console.log('plugin runtime startup reconciliation contract checks passed');
