@@ -2,21 +2,11 @@ import { PLUGIN_RUNTIME_CONSUMERS, type PluginRuntimeConsumer } from '@herta/sha
 
 export type PluginOperationStatus = 'attention' | 'healthy' | 'paused';
 export type PluginRuntimeDeliveryStatus =
-  | 'published'
-  | 'applied'
-  | 'publish_failed'
-  | 'apply_failed';
+  'published' | 'applied' | 'publish_failed' | 'apply_failed';
 export type PluginRuntimeConsumerStatus =
-  | 'applied'
-  | 'failed'
-  | 'pending'
-  | 'not_expected'
-  | 'no_signal';
+  'applied' | 'failed' | 'pending' | 'not_expected' | 'no_signal';
 export type PluginOperationAttentionReason =
-  | 'config_invalid'
-  | 'runtime_publish_failed'
-  | 'runtime_apply_failed'
-  | 'runtime_apply_delayed';
+  'config_invalid' | 'runtime_publish_failed' | 'runtime_apply_failed' | 'runtime_apply_delayed';
 
 export interface PluginRuntimeConsumerSignal {
   consumer: PluginRuntimeConsumer;
