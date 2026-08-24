@@ -100,13 +100,11 @@ Workerを`expectedRuntimeConsumers`へ追加するのは、対象Pluginについ
 長期保持してRuntime eventで再適用すべき対象がありません。そのため、Worker subscriber、
 `consumer=worker` ACK、Worker startup reconciliationはまだ導入しません。
 
-| Worker処理 | Plugin設定の参照方法 | process内のPlugin設定state | enable / disableの収束 | Runtime apply |
-| --- | --- | --- | --- | --- |
-| Daily Content | due判定、enqueue、stale recovery、配信実行時にDBを再取得 | なし | scan / job実行時のDB再検証で収束 | 不要 |
-| LFG | expire / message同期 / recoveryでenabledをDB確認、prune時にconfigをDB取得 | なし | 定期scanで収束 | 不要 |
-| Team Split | 各scanでenabled Guildを一括取得、prune時にconfigをDB取得 | なし | 定期scanで収束 | 不要 |
-| Community Season Snapshot | `GuildPlugin`設定を参照しないbackground maintenance | なし | Plugin Runtime対象外 | 不要 |
-| Discord Role Operation | 永続化済みoperationをDBからclaimして実行 | なし | Plugin Runtime対象外 | 不要 |
+- Daily Content: due判定、enqueue、stale recovery、配信実行時にDBから設定を再取得します。process内のPlugin設定stateは持たず、scan / job実行時のDB再検証でenable / disableへ収束するためRuntime applyは不要です。
+- LFG: expire、message同期、recoveryでenabledをDB確認し、prune時にconfigをDB取得します。process内のPlugin設定stateは持たず、定期scanで収束するためRuntime applyは不要です。
+- Team Split: 各scanでenabled Guildを一括取得し、prune時にconfigをDB取得します。process内のPlugin設定stateは持たず、定期scanで収束するためRuntime applyは不要です。
+- Community Season Snapshot: `GuildPlugin`設定を参照しないbackground maintenanceのためPlugin Runtime対象外です。
+- Discord Role Operation: 永続化済みoperationをDBからclaimして実行するためPlugin Runtime対象外です。
 
 Daily Contentが持つDiscord permission cacheはDiscord権限情報の短期cacheであり、Guild Plugin configの
 Runtime stateではありません。また、Plugin無効化後に既存deliveryが残っていても、配信実行直前に
