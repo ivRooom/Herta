@@ -59,6 +59,41 @@ consumerごとのkeyを持つため、将来WorkerがRuntime consumerになっ�
 Workerは現時点では`herta:plugin-runtime:v1`を購読していないため、`consumer=worker`のACKを
 生成しません。実際の購読・適用確認が実装されるまでWorker成功を推測して記録しないことを契約とします。
 
+## Expected Runtime consumers
+
+Pluginごとに必要なRuntime apply ACKは、Plugin Manifestの`expectedRuntimeConsumers`をSource of
+Truthとして定義します。値はsharedの`PluginRuntimeConsumer` allowlistだけを受け付けます。
+Studio専用mappingやPlugin ID switchは持ちません。
+
+```ts
+expectedRuntimeConsumers?: PluginRuntimeConsumer[];
+```
+
+既存Pluginとの後方互換のため、property未指定・空配列・解決可能な既知consumerがない場合は
+`resolveExpectedRuntimeConsumers()`が`['bot']`へ解決します。このため既存Pluginが突然Worker ACKを
+待つことはありません。重複指定はresolverで除去します。
+
+Operations Centerは既知consumerごとに次の状態を組み立てます。
+
+- `Applied`: expected consumerのapply ACK成功
+- `Failed`: expected consumerのapply ACK失敗
+- `Pending`: publish成功後、expected consumerのACK待ち
+- `No signal`: 現在のconfigVersionにconsumerのRuntime signalがない
+- `Not expected`: Manifest上quorumに含まれないconsumer
+
+Runtime publishはproducer側の共通配送結果でありconsumer別イベントではありません。そのため
+publish失敗はexpected consumerに関係なくAttentionです。一方、apply失敗とACK遅延は
+`expected=true`のconsumerだけを対象にします。publish後2分未満のPendingは即Attentionにせず、
+2分以上ACKがない場合にAttentionへ移行します。Not expectedなconsumerのACKや未知consumerのACKは
+quorumを満たしたり壊したりしません。
+
+AuditLogは既存の一括queryを使用し、取得済みrowからconsumer別state mapをin-memoryで構築します。
+Plugin × consumerの追加DB queryは発行しません。DB migrationやGuildごとのexpected consumer設定も
+不要です。
+
+Workerを`expectedRuntimeConsumers`へ追加するのは、対象PluginについてWorker側のRuntime event購読・
+設定反映・ACK生成が実装されてからです。現時点では既存PluginをWorker requiredにしません。
+
 ## エラー分離
 
 DB の取得障害は空の Plugin 一覧として扱い、Core Command のみで Bot を継続します。未登録
