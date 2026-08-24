@@ -364,6 +364,12 @@ async function handleWithdraw(
     await reply(interaction, 'このSuggestionは現在の状態では取り下げできません。');
     return;
   }
+  await reply(
+    interaction,
+    result.outcome === 'already_withdrawn'
+      ? `Suggestion \`${id}\` はすでに取り下げ済みです。`
+      : `Suggestion \`${id}\` を取り下げました。`,
+  );
   if (result.snapshot) {
     await updateStoredMessage(context, result.snapshot).catch((error) =>
       context.logger.warn(
@@ -372,11 +378,6 @@ async function handleWithdraw(
       ),
     );
   }
-  if (result.outcome === 'already_withdrawn') {
-    await reply(interaction, `Suggestion \`${id}\` はすでに取り下げ済みです。`);
-    return;
-  }
-  await reply(interaction, `Suggestion \`${id}\` を取り下げました。`);
 }
 
 async function handleStatus(
@@ -413,6 +414,7 @@ async function handleStatus(
     await reply(interaction, 'Suggestionが見つからないか、すでに取り下げ済みです。');
     return;
   }
+  await reply(interaction, `Suggestion \`${id}\` を「${statusLabel(status)}」へ変更しました。`);
   await updateStoredMessage(context, snapshot).catch((error) =>
     context.logger.warn({ err: error, suggestionId: id }, 'Suggestionメッセージ更新に失敗しました'),
   );
@@ -427,7 +429,6 @@ async function handleStatus(
       )
       .catch(() => undefined);
   }
-  await reply(interaction, `Suggestion \`${id}\` を「${statusLabel(status)}」へ変更しました。`);
 }
 
 async function handleSuggestionComponent(
