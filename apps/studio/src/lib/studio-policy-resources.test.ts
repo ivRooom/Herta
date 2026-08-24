@@ -124,7 +124,7 @@ test('Plugin schemaから設定項目の表示情報を解決する', () => {
   );
 });
 
-test('Policy catalogはpage・Birthday・Plugin nested fieldを別Resource権限として生成する', () => {
+test('Policy catalogはpage・Studio設定・Birthday・Plugin nested fieldを別Resource権限として生成する', () => {
   const options = buildStudioGranularPermissionOptions(GUILD_ID, [
     {
       id: 'moderation',
@@ -169,6 +169,14 @@ test('Policy catalogはpage・Birthday・Plugin nested fieldを別Resource権限
       (option) =>
         option.action === 'studio.page.view' &&
         option.resource === `guild:${GUILD_ID}:page:moderation-enforcement`,
+    ),
+  );
+  assert.ok(
+    options.some(
+      (option) =>
+        option.action === 'studio.settings.write' &&
+        option.resource === `guild:${GUILD_ID}:studio-navigation` &&
+        option.label === 'Server Navigation · 編集',
     ),
   );
   assert.ok(
