@@ -41,7 +41,10 @@ test('更新payloadはallowlist内の一意なPluginタブだけ受理する', (
   });
 
   assert.equal(parseStudioNavigationPatch({ visiblePluginTabIds: ['unknown'] }).ok, false);
-  assert.equal(parseStudioNavigationPatch({ visiblePluginTabIds: ['birthday', 'birthday'] }).ok, false);
+  assert.equal(
+    parseStudioNavigationPatch({ visiblePluginTabIds: ['birthday', 'birthday'] }).ok,
+    false,
+  );
   assert.equal(parseStudioNavigationPatch({ visiblePluginTabIds: 'birthday' }).ok, false);
   assert.equal(parseStudioNavigationPatch({ visiblePluginTabIds: [], extra: true }).ok, false);
 });
