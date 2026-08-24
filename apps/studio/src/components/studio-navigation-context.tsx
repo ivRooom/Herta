@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -29,6 +30,8 @@ const StudioNavigationContext = createContext<StudioNavigationContextValue | nul
 
 export function StudioNavigationContextProvider({ children }: { children: ReactNode }) {
   const { selectedGuildId } = useStudioServerContext();
+  const selectedGuildIdRef = useRef<string | null>(selectedGuildId);
+  selectedGuildIdRef.current = selectedGuildId;
   const [loadedGuildId, setLoadedGuildId] = useState<string | null>(null);
   const [storedVisiblePluginTabIds, setStoredVisiblePluginTabIds] = useState<
     StudioPinnableServerTabId[]
@@ -96,21 +99,23 @@ export function StudioNavigationContextProvider({ children }: { children: ReactN
   const saveVisiblePluginTabIds = useCallback(
     async (ids: readonly StudioPinnableServerTabId[]): Promise<boolean> => {
       if (!selectedGuildId || !canManage) return false;
+      const requestGuildId = selectedGuildId;
       const normalized = resolveEffectiveStudioPluginTabIds(ids);
 
       try {
-        const response = await fetch(`/api/guilds/${selectedGuildId}/studio-navigation`, {
+        const response = await fetch(`/api/guilds/${requestGuildId}/studio-navigation`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ visiblePluginTabIds: normalized }),
         });
         if (!response.ok) return false;
         const payload = (await response.json()) as StudioNavigationResponse;
+        if (selectedGuildIdRef.current !== requestGuildId) return false;
         setStoredVisiblePluginTabIds(
           resolveEffectiveStudioPluginTabIds(normalizeResponseIds(payload.visiblePluginTabIds)),
         );
         setStoredCanManage(payload.canManage === true);
-        setLoadedGuildId(selectedGuildId);
+        setLoadedGuildId(requestGuildId);
         setStoredLoadState('ready');
         return true;
       } catch {
