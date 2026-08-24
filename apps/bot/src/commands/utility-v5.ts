@@ -22,7 +22,7 @@ export function jsonValueType(value: unknown): string {
 
 export function formatJsonResult(value: unknown, pretty: boolean): string | null {
   const serialized = JSON.stringify(value, null, pretty ? 2 : undefined);
-  if (serialized.length > MAX_JSON_OUTPUT_LENGTH) return null;
+  if (serialized === undefined || serialized.length > MAX_JSON_OUTPUT_LENGTH) return null;
   return `\`\`\`json\n${serialized.replace(/```/g, '``\u200b`')}\n\`\`\``;
 }
 
@@ -90,12 +90,18 @@ export const jsonCommand: SlashCommand = {
 
     const parsed = parseJson(text);
     if (!parsed.ok) {
-      await reply(interaction, '有効なJSONではありません。引用符・カンマ・括弧を確認してください。');
+      await reply(
+        interaction,
+        '有効なJSONではありません。引用符・カンマ・括弧を確認してください。',
+      );
       return;
     }
 
     if (subcommand === 'validate') {
-      await reply(interaction, `✅ 有効なJSONです。トップレベル型: \`${jsonValueType(parsed.value)}\``);
+      await reply(
+        interaction,
+        `✅ 有効なJSONです。トップレベル型: \`${jsonValueType(parsed.value)}\``,
+      );
       return;
     }
 
@@ -106,7 +112,10 @@ export const jsonCommand: SlashCommand = {
 
     const content = formatJsonResult(parsed.value, subcommand === 'pretty');
     if (!content) {
-      await reply(interaction, '整形結果がDiscordのメッセージ上限を超えます。入力を短くしてください。');
+      await reply(
+        interaction,
+        '整形結果がDiscordのメッセージ上限を超えます。入力を短くしてください。',
+      );
       return;
     }
     await reply(interaction, content);
