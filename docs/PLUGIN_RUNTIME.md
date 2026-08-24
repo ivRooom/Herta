@@ -100,7 +100,7 @@ Workerを`expectedRuntimeConsumers`へ追加するのは、対象Pluginについ
 長期保持してRuntime eventで再適用すべき対象がありません。そのため、Worker subscriber、
 `consumer=worker` ACK、Worker startup reconciliationはまだ導入しません。
 
-- Daily Content: due判定、enqueue、stale recovery、配信実行時にDBから設定を再取得します。process内のPlugin設定stateは持たず、scan / job実行時のDB再検証でenable / disableへ収束するためRuntime applyは不要です。
+- Daily Content: due判定、stale recovery、配信実行時にDBからenabled/configを再取得し、process内のPlugin設定stateは持ちません。ただし`maxAttempts`だけはenqueue時にBullMQ `job.opts.attempts`へsnapshotされ、既存waiting / active / delayed jobは旧retry budgetを保持します。このdurable queue stateの整合は #318 で別途扱います。
 - LFG: expire、message同期、recoveryでenabledをDB確認し、prune時にconfigをDB取得します。process内のPlugin設定stateは持たず、定期scanで収束するためRuntime applyは不要です。
 - Team Split: 各scanでenabled Guildを一括取得し、prune時にconfigをDB取得します。process内のPlugin設定stateは持たず、定期scanで収束するためRuntime applyは不要です。
 - Community Season Snapshot: `GuildPlugin`設定を参照しないbackground maintenanceのためPlugin Runtime対象外です。
@@ -111,11 +111,16 @@ Runtime stateではありません。また、Plugin無効化後に既存deliver
 `GuildPlugin.enabled`を再確認してskipします。再有効化後は定期scanの`initializeMissingNextRuns()`が
 現在のDB状態から`nextRunAt`を再構築します。
 
+一方、`maxAttempts`はqueue job生成時のtransport optionへコピーされるため、既存jobについてはDB再読込だけで
+現在値へ収束しません。これはWorker process内Runtimeを再構築する問題とは分離し、queue retry policyとして
+#318で修正します。現時点でこの差分だけを根拠にWorker apply ACKを生成すると、実際にqueue stateを
+更新していないのにAppliedと記録できてしまうため、Worker consumer化は行いません。
+
 LFGとTeam SplitもWorker起動時にPlugin別timerを動的登録しておらず、Worker process自体は常時起動した
 まま、各scanで現在のDB状態から処理対象を決めます。このためRedis Pub/Sub停止中の設定変更も、次回scan
 またはjob実行時のDB readで最終的に現在状態へ収束します。
 
-この構成でWorker ACKだけを追加すると、実際には再適用するWorker stateが存在しないにもかかわらず
+この構成でWorker ACKだけを追加すると、実際には再適用するWorker process stateが存在しないにもかかわらず
 Operations上でWorker apply成功を表現することになります。したがって現行Manifestは引き続きdefault
 `['bot']`を使用し、Daily Content / LFG / Team Splitへ機械的に`worker`を追加しません。
 
