@@ -1,7 +1,14 @@
 import type { PrismaClient } from '@herta/db';
 import { randomUUID } from 'node:crypto';
 
-export type SuggestionStatus = 'pending' | 'reviewing' | 'accepted' | 'rejected' | 'completed';
+export type SuggestionStatus =
+  | 'pending'
+  | 'reviewing'
+  | 'accepted'
+  | 'rejected'
+  | 'completed'
+  | 'withdrawn';
+export type ManagedSuggestionStatus = 'reviewing' | 'accepted' | 'rejected' | 'completed';
 
 export interface SuggestionSnapshot {
   id: string;
@@ -24,6 +31,17 @@ export interface SuggestionListRecord {
   content: string;
   status: SuggestionStatus;
   createdAt: Date;
+}
+
+export type WithdrawSuggestionOutcome =
+  | 'withdrawn'
+  | 'already_withdrawn'
+  | 'not_found_or_forbidden'
+  | 'not_withdrawable';
+
+export interface WithdrawSuggestionResult {
+  outcome: WithdrawSuggestionOutcome;
+  snapshot: SuggestionSnapshot | null;
 }
 
 export async function createSuggestion(
@@ -127,6 +145,56 @@ export async function listAuthorSuggestions(
   `;
 }
 
+export async function withdrawSuggestion(
+  prisma: PrismaClient,
+  input: { id: string; guildId: string; authorId: string },
+): Promise<WithdrawSuggestionResult> {
+  const outcome = await prisma.$transaction(async (tx): Promise<WithdrawSuggestionOutcome> => {
+    const rows = await tx.$queryRaw<Array<{ authorId: string; status: SuggestionStatus }>>`
+      SELECT "author_id" AS "authorId", "status"
+      FROM "suggestions"
+      WHERE "id" = ${input.id}::uuid AND "guild_id" = ${input.guildId}
+      FOR UPDATE
+    `;
+    const suggestion = rows[0];
+    if (!suggestion || suggestion.authorId !== input.authorId) return 'not_found_or_forbidden';
+    if (suggestion.status === 'withdrawn') return 'already_withdrawn';
+    if (suggestion.status !== 'pending' && suggestion.status !== 'reviewing') {
+      return 'not_withdrawable';
+    }
+
+    await tx.$executeRaw`
+      UPDATE "suggestions"
+      SET "status" = 'withdrawn', "updated_at" = CURRENT_TIMESTAMP
+      WHERE "id" = ${input.id}::uuid
+        AND "guild_id" = ${input.guildId}
+        AND "author_id" = ${input.authorId}
+        AND "status" IN ('pending', 'reviewing')
+    `;
+    await tx.auditLog.create({
+      data: {
+        guildId: input.guildId,
+        actorId: input.authorId,
+        event: 'suggestion.withdraw',
+        targetType: 'suggestion',
+        targetId: input.id,
+        changes: {
+          before: { status: suggestion.status },
+          after: { status: 'withdrawn' },
+        },
+        metadata: { operationSource: 'discord' },
+      },
+    });
+    return 'withdrawn';
+  });
+
+  const snapshot =
+    outcome === 'withdrawn' || outcome === 'already_withdrawn'
+      ? await getSuggestionSnapshot(prisma, input.id, input.guildId)
+      : null;
+  return { outcome, snapshot };
+}
+
 export async function voteSuggestion(
   prisma: PrismaClient,
   input: { id: string; guildId: string; userId: string; value: 1 | -1 },
@@ -175,7 +243,7 @@ export async function updateSuggestionStatus(
   input: {
     id: string;
     guildId: string;
-    status: SuggestionStatus;
+    status: ManagedSuggestionStatus;
     staffNote: string | null;
   },
 ): Promise<SuggestionSnapshot | null> {
@@ -184,7 +252,9 @@ export async function updateSuggestionStatus(
     SET "status" = ${input.status},
         "staff_note" = ${input.staffNote},
         "updated_at" = CURRENT_TIMESTAMP
-    WHERE "id" = ${input.id}::uuid AND "guild_id" = ${input.guildId}
+    WHERE "id" = ${input.id}::uuid
+      AND "guild_id" = ${input.guildId}
+      AND "status" <> 'withdrawn'
     RETURNING "id"::text AS "id"
   `;
   return rows.length > 0 ? getSuggestionSnapshot(prisma, input.id, input.guildId) : null;
