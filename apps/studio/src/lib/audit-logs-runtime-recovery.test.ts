@@ -63,8 +63,9 @@ test('Worker apply ACKはBotと誤表示せずconsumer別に表示する', () =>
   assert.equal(failed.summary, 'WorkerがPlugin Runtime設定を再同期できませんでした。');
 });
 
-test('未知consumerはmetadata値を表示せず安全な汎用表現へfallbackする', () => {
+test('未知consumerはmetadata値や矛盾したsourceを表示せず安全な汎用表現へfallbackする', () => {
   const unknown = describeAuditEvent('plugin.runtime_apply_succeeded', 'plugin', 'quote', {
+    operationSource: 'bot-runtime',
     consumer: '<script>alert(1)</script>',
     configVersion: 4,
   });
