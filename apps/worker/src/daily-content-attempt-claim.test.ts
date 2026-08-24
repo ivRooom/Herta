@@ -31,10 +31,13 @@ function createClaimHarness(initial: { attemptCount: number; status: string }) {
       attemptCount += 1;
       return [{ attemptCount }];
     },
-    $executeRawUnsafe: async (query: string) => {
+    $executeRawUnsafe: async (query: string, ...values: unknown[]) => {
       queries.push(query);
+      const [, expectedAttemptCount] = values;
       if (
         query.includes("SET status = 'queued'") &&
+        typeof expectedAttemptCount === 'number' &&
+        attemptCount === expectedAttemptCount &&
         ['pending', 'queued', 'retrying'].includes(status)
       ) {
         status = 'queued';
@@ -114,12 +117,41 @@ test('enqueue完了通知はclaim済みprocessingをqueuedへ戻さない', asyn
   await markDailyContentDeliveryQueued(
     harness.prisma,
     'delivery-1',
+    0,
     new Date('2030-01-01T00:00:01Z'),
   );
 
   assert.equal(claimed, 1);
   assert.equal(harness.getAttemptCount(), 1);
   assert.equal(harness.getStatus(), 'processing');
+});
+
+test('workerがretryingへ進んだ後の古いenqueue ACKはretryingをqueuedへ戻さない', async () => {
+  const harness = createClaimHarness({ attemptCount: 1, status: 'retrying' });
+
+  await markDailyContentDeliveryQueued(
+    harness.prisma,
+    'delivery-1',
+    0,
+    new Date('2030-01-01T00:00:02Z'),
+  );
+
+  assert.equal(harness.getAttemptCount(), 1);
+  assert.equal(harness.getStatus(), 'retrying');
+});
+
+test('実行前のretrying deliveryは同じattemptCountのenqueue ACKでqueuedへ遷移する', async () => {
+  const harness = createClaimHarness({ attemptCount: 1, status: 'retrying' });
+
+  await markDailyContentDeliveryQueued(
+    harness.prisma,
+    'delivery-1',
+    1,
+    new Date('2030-01-01T00:00:02Z'),
+  );
+
+  assert.equal(harness.getAttemptCount(), 1);
+  assert.equal(harness.getStatus(), 'queued');
 });
 
 test('claim SQLはattemptCount・maxAttempts・claim可能statusを同じUPDATE条件で検証する', async () => {
@@ -137,4 +169,15 @@ test('claim SQLはattemptCount・maxAttempts・claim可能statusを同じUPDATE�
   assert.match(query, /attempt_count < \$3/);
   assert.match(query, /status IN \('pending', 'queued', 'retrying'\)/);
   assert.match(query, /RETURNING attempt_count AS "attemptCount"/);
+});
+
+test('enqueue ACK SQLもattemptCount CASで実行後のretryingを保護する', async () => {
+  const harness = createClaimHarness({ attemptCount: 0, status: 'pending' });
+
+  await markDailyContentDeliveryQueued(harness.prisma, 'delivery-1', 0);
+
+  const query = harness.getQueries()[0] ?? '';
+  assert.match(query, /SET status = 'queued'/);
+  assert.match(query, /attempt_count = \$2/);
+  assert.match(query, /status IN \('pending', 'queued', 'retrying'\)/);
 });
