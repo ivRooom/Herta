@@ -109,7 +109,8 @@ export function DashboardNav({ variant = 'sidebar' }: { variant?: 'sidebar' | 'm
         </NavigationGroup>
       ) : (
         <div className="rounded-xl border border-dashed border-border px-3 py-3 text-xs leading-5 text-muted">
-          Server Switcherでサーバーを選択すると、Overview・Plugins・Commands・Community・Moderation・Analyticsが表示されます。
+          Server
+          Switcherでサーバーを選択すると、Overview・Plugins・Commands・Community・Moderation・Analyticsが表示されます。
         </div>
       )}
 
