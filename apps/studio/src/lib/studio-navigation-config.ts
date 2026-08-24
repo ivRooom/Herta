@@ -110,7 +110,9 @@ export function parseStoredStudioNavigationConfig(settingsJson: unknown): Studio
   };
 }
 
-export function parseStudioNavigationPatch(value: unknown): StudioNavigationPatchResult | StudioNavigationPatchError {
+export function parseStudioNavigationPatch(
+  value: unknown,
+): StudioNavigationPatchResult | StudioNavigationPatchError {
   if (!isRecord(value)) return { ok: false, error: '更新内容が不正です' };
   const keys = Object.keys(value);
   if (keys.length !== 1 || keys[0] !== 'visiblePluginTabIds') {
