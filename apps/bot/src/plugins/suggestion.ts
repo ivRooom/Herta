@@ -25,6 +25,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0
 const MAX_CONTENT_LENGTH = 1000;
 const MAX_NOTE_LENGTH = 300;
 const MAX_LIST_PAGE_LENGTH = 1900;
+const MAX_INFO_LENGTH = 1900;
 
 export interface SuggestionConfig {
   enabled: boolean;
@@ -191,6 +192,32 @@ export function buildSuggestionMessage(snapshot: SuggestionSnapshot): Suggestion
   };
 }
 
+export function canViewSuggestion(
+  snapshot: SuggestionSnapshot,
+  viewer: { userId: string; canManage: boolean },
+): boolean {
+  return snapshot.authorId === viewer.userId || viewer.canManage;
+}
+
+export function formatSuggestionInfo(snapshot: SuggestionSnapshot, viewerUserId: string): string {
+  const author = snapshot.anonymous
+    ? '匿名'
+    : snapshot.authorId === viewerUserId
+      ? 'あなた'
+      : `<@${snapshot.authorId}>`;
+  const lines = [
+    `💡 **Suggestion詳細** · ${statusLabel(snapshot.status)}`,
+    snapshot.content,
+    '',
+    `投稿者: ${author}`,
+    snapshot.votingEnabled ? `👍 ${snapshot.upvotes} · 👎 ${snapshot.downvotes}` : '投票: 無効',
+    snapshot.staffNote ? `Staff: ${snapshot.staffNote}` : null,
+    `作成: <t:${Math.floor(snapshot.createdAt.getTime() / 1000)}:F>`,
+    `ID: \`${snapshot.id}\``,
+  ].filter((line): line is string => Boolean(line));
+  return truncate(lines.join('\n'), MAX_INFO_LENGTH);
+}
+
 async function executeSuggestionCommand(
   context: SuggestionContext,
   interaction: CommandInteraction,
@@ -208,6 +235,7 @@ async function executeSuggestionCommand(
   const subcommand = interaction.options.getSubcommand();
   if (subcommand === 'create') return handleCreate(context, config, interaction);
   if (subcommand === 'list') return handleList(context, interaction);
+  if (subcommand === 'info') return handleInfo(context, config, interaction);
   if (subcommand === 'status') return handleStatus(context, config, interaction);
   await reply(interaction, '不明なSuggestion操作です。');
 }
@@ -285,6 +313,27 @@ async function handleList(
       flags: EPHEMERAL_FLAG,
       allowedMentions: { parse: [] },
     });
+}
+
+async function handleInfo(
+  context: SuggestionContext,
+  config: SuggestionConfig,
+  interaction: CommandInteraction,
+): Promise<void> {
+  const id = interaction.options.getString('id', true)?.trim() ?? '';
+  if (!UUID_PATTERN.test(id)) {
+    await reply(interaction, 'Suggestion IDが正しくありません。');
+    return;
+  }
+
+  const snapshot = await getSuggestionSnapshot(context.prisma, id, interaction.guildId!);
+  const canManage = canManageSuggestion(interaction, config);
+  if (!snapshot || !canViewSuggestion(snapshot, { userId: interaction.user.id, canManage })) {
+    await reply(interaction, 'Suggestionが見つからないか、表示権限がありません。');
+    return;
+  }
+
+  await reply(interaction, formatSuggestionInfo(snapshot, interaction.user.id));
 }
 
 async function handleStatus(
