@@ -467,6 +467,16 @@ async function handleSuggestionComponent(
     return;
   }
   await interaction.update(buildSuggestionMessage(snapshot));
+
+  const current = await getSuggestionSnapshot(context.prisma, parsed.id, interaction.guildId);
+  if (current && shouldRepairSuggestionMessage(snapshot, current)) {
+    await updateStoredMessage(context, current).catch((error) =>
+      context.logger.warn(
+        { err: error, suggestionId: parsed.id },
+        '投票後のSuggestionメッセージ再同期に失敗しました',
+      ),
+    );
+  }
 }
 
 async function resolveSuggestionChannel(
@@ -510,6 +520,19 @@ export function formatSuggestionListPages(records: readonly SuggestionListRecord
   }
   pages.push(current);
   return pages;
+}
+
+function shouldRepairSuggestionMessage(
+  rendered: SuggestionSnapshot,
+  current: SuggestionSnapshot,
+): boolean {
+  return (
+    rendered.status !== current.status ||
+    rendered.votingEnabled !== current.votingEnabled ||
+    rendered.upvotes !== current.upvotes ||
+    rendered.downvotes !== current.downvotes ||
+    rendered.staffNote !== current.staffNote
+  );
 }
 
 function canManageSuggestion(interaction: CommandInteraction, config: SuggestionConfig): boolean {
