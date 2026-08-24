@@ -3,6 +3,7 @@ import type { SlashCommand } from './registry.js';
 
 const MAX_JSON_INPUT_LENGTH = 2_000;
 const MAX_JSON_OUTPUT_LENGTH = 1_800;
+const MAX_DISCORD_CONTENT_LENGTH = 2_000;
 
 export type JsonParseResult = { ok: true; value: unknown } | { ok: false };
 
@@ -20,10 +21,106 @@ export function jsonValueType(value: unknown): string {
   return typeof value;
 }
 
-export function formatJsonResult(value: unknown, pretty: boolean): string | null {
-  const serialized = JSON.stringify(value, null, pretty ? 2 : undefined);
-  if (serialized === undefined || serialized.length > MAX_JSON_OUTPUT_LENGTH) return null;
-  return `\`\`\`json\n${serialized.replace(/```/g, '``\u200b`')}\n\`\`\``;
+function isJsonWhitespace(value: string): boolean {
+  return value === ' ' || value === '\t' || value === '\n' || value === '\r';
+}
+
+export function minifyJsonText(value: string): string {
+  let result = '';
+  let inString = false;
+  let escaped = false;
+
+  for (const character of value) {
+    if (inString) {
+      result += character;
+      if (escaped) {
+        escaped = false;
+      } else if (character === '\\') {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+      result += character;
+      continue;
+    }
+    if (!isJsonWhitespace(character)) result += character;
+  }
+
+  return result;
+}
+
+export function prettyJsonText(value: string): string {
+  const minified = minifyJsonText(value);
+  let result = '';
+  let indent = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < minified.length; index += 1) {
+    const character = minified[index] ?? '';
+
+    if (inString) {
+      result += character;
+      if (escaped) {
+        escaped = false;
+      } else if (character === '\\') {
+        escaped = true;
+      } else if (character === '"') {
+        inString = false;
+      }
+      continue;
+    }
+
+    if (character === '"') {
+      inString = true;
+      result += character;
+      continue;
+    }
+
+    if (character === '{' || character === '[') {
+      result += character;
+      indent += 1;
+      const closing = character === '{' ? '}' : ']';
+      if (minified[index + 1] !== closing) result += `\n${'  '.repeat(indent)}`;
+      continue;
+    }
+
+    if (character === '}' || character === ']') {
+      indent = Math.max(0, indent - 1);
+      const opening = character === '}' ? '{' : '[';
+      if (minified[index - 1] !== opening) result += `\n${'  '.repeat(indent)}`;
+      result += character;
+      continue;
+    }
+
+    if (character === ',') {
+      result += `,\n${'  '.repeat(indent)}`;
+      continue;
+    }
+
+    if (character === ':') {
+      result += ': ';
+      continue;
+    }
+
+    result += character;
+  }
+
+  return result;
+}
+
+export function formatJsonResult(value: string, pretty: boolean): string | null {
+  const formatted = pretty ? prettyJsonText(value) : minifyJsonText(value);
+  const safeJson = formatted.replace(/```/g, '\\u0060\\u0060\\u0060');
+  if (safeJson.length > MAX_JSON_OUTPUT_LENGTH) return null;
+
+  const content = `\`\`\`json\n${safeJson}\n\`\`\``;
+  return content.length <= MAX_DISCORD_CONTENT_LENGTH ? content : null;
 }
 
 async function reply(
@@ -110,7 +207,7 @@ export const jsonCommand: SlashCommand = {
       return;
     }
 
-    const content = formatJsonResult(parsed.value, subcommand === 'pretty');
+    const content = formatJsonResult(text, subcommand === 'pretty');
     if (!content) {
       await reply(
         interaction,
