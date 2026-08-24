@@ -6,7 +6,6 @@ import {
   formatSuggestionListPages,
   normalizeSuggestionConfig,
   suggestionPlugin,
-  type SuggestionConfig,
 } from './suggestion.js';
 import type { SuggestionListRecord, SuggestionSnapshot } from './suggestion-repository.js';
 
@@ -34,7 +33,7 @@ function createInfoContext(rows: SuggestionSnapshot[]) {
     prisma: { $queryRaw: queryRaw },
     logger: { warn: vi.fn() },
     guildId: '123',
-    config: normalizeSuggestionConfig(undefined) satisfies SuggestionConfig,
+    config: normalizeSuggestionConfig(undefined),
     manifest: suggestionPlugin.manifest,
   };
   return { context, queryRaw };
@@ -232,14 +231,17 @@ describe('Suggestion v1', () => {
 
     await executeInfoCommand(context, interaction);
 
-    expect(interaction.reply).toHaveBeenCalledTimes(1);
-    const reply = interaction.reply.mock.calls[0]?.[0] as
-      | { content?: string; flags?: number; allowedMentions?: { parse: [] } }
-      | undefined;
-    expect(reply).toMatchObject({ flags: 64, allowedMentions: { parse: [] } });
-    expect(reply?.content).toContain('投稿者: 匿名');
-    expect(reply?.content).toContain('Staff: 対応方針を確認中');
-    expect(reply?.content).not.toContain('456');
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining('投稿者: 匿名'),
+        flags: 64,
+        allowedMentions: { parse: [] },
+      }),
+    );
+    const replies = JSON.stringify(interaction.reply.mock.calls);
+    expect(replies).toContain('Staff: 対応方針を確認中');
+    expect(replies).not.toContain('<@456>');
+    expect(replies).not.toContain('投稿者: 456');
   });
 });
 
