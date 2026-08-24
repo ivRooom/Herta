@@ -23,6 +23,18 @@ test('通常Bot apply ACKとstartup recovery ACKを表示上区別する', () =>
   assert.equal(recovery.summary, 'Bot起動時の再同期でPlugin Runtime設定の復旧を確認しました。');
 });
 
+test('明示的なBot apply failureはBot反映失敗として表示する', () => {
+  const failed = describeAuditEvent('plugin.runtime_apply_failed', 'plugin', 'quote', {
+    operationSource: 'bot-runtime',
+    consumer: 'bot',
+    configVersion: 4,
+  });
+
+  assert.equal(failed.eventLabel, 'Runtime設定のBot反映に失敗');
+  assert.equal(failed.sourceLabel, 'Bot Runtime');
+  assert.equal(failed.summary, 'BotがPlugin Runtime設定を再同期できませんでした。');
+});
+
 test('consumerなしのlegacy apply ACKはBotとして後方互換に表示する', () => {
   const legacy = describeAuditEvent('plugin.runtime_apply_failed', 'plugin', 'quote', {
     configVersion: 4,
@@ -35,7 +47,6 @@ test('consumerなしのlegacy apply ACKはBotとして後方互換に表示す�
 
 test('Worker apply ACKはBotと誤表示せずconsumer別に表示する', () => {
   const applied = describeAuditEvent('plugin.runtime_apply_succeeded', 'plugin', 'quote', {
-    operationSource: 'worker-runtime',
     consumer: 'worker',
     configVersion: 4,
   });
@@ -64,8 +75,12 @@ test('未知consumerはmetadata値を表示せず安全な汎用表現へfallbac
   assert.equal(JSON.stringify(unknown).includes('<script>'), false);
 });
 
-test('Runtime publish監査は特定consumerへの配信成功と誤認しない中立表現にする', () => {
+test('Runtime publish監査は特定consumerへの配信と誤認しない中立表現にする', () => {
   const published = describeAuditEvent('plugin.runtime_publish_succeeded', 'plugin', 'quote', {
+    operationSource: 'studio-runtime',
+    configVersion: 4,
+  });
+  const failed = describeAuditEvent('plugin.runtime_publish_failed', 'plugin', 'quote', {
     operationSource: 'studio-runtime',
     configVersion: 4,
   });
@@ -73,4 +88,7 @@ test('Runtime publish監査は特定consumerへの配信成功と誤認しない
   assert.equal(published.eventLabel, 'Runtime通知を送信');
   assert.equal(published.sourceLabel, 'Studio Runtime');
   assert.equal(published.summary, 'Plugin Runtime更新イベントを送信しました。');
+  assert.equal(failed.eventLabel, 'Runtime通知の送信に失敗');
+  assert.equal(failed.sourceLabel, 'Studio Runtime');
+  assert.equal(failed.summary, 'Plugin Runtime更新イベントを送信できませんでした。');
 });
