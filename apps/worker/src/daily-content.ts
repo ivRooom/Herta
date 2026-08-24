@@ -15,7 +15,6 @@ import {
   listPendingDeliveries,
   listStaleDeliveries,
   markDeliveryFailed,
-  markDeliveryProcessing,
   markDeliveryQueued,
   markDeliveryRetrying,
   markDeliverySent,
@@ -43,6 +42,7 @@ const DISCORD_API_BASE_URL = 'https://discord.com/api/v10';
 const DAILY_CONTENT_SCAN_LIMIT = 200;
 const BASE_RETRY_DELAY_MS = 15_000;
 const RETRY_BUDGET_EXHAUSTED_ERROR = 'DailyContentRetryBudgetExhausted';
+const DELIVERY_ALREADY_CLAIMED_ERROR = 'DailyContentDeliveryAlreadyClaimed';
 const MESSAGE_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12]);
 const FORUM_CHANNEL_TYPES = new Set([15]);
 const SUPPORTED_CHANNEL_TYPES = new Set([...MESSAGE_CHANNEL_TYPES, ...FORUM_CHANNEL_TYPES]);
@@ -102,6 +102,35 @@ export function createDeliveryNonce(idempotencyKey: string): string {
     .update(idempotencyKey)
     .digest('hex')
     .slice(0, DISCORD_NONCE_MAX_LENGTH);
+}
+
+export async function claimDailyContentDeliveryAttempt(
+  prisma: DailyContentPrismaClient,
+  input: {
+    deliveryId: string;
+    expectedAttemptCount: number;
+    maxAttempts: number;
+    startedAt?: Date;
+  },
+): Promise<number | null> {
+  const startedAt = input.startedAt ?? new Date();
+  const rows = (await prisma.$queryRawUnsafe(
+    `UPDATE daily_content_deliveries
+     SET status = 'processing',
+         started_at = $4,
+         attempt_count = attempt_count + 1
+     WHERE id = $1
+       AND attempt_count = $2
+       AND attempt_count < $3
+       AND status IN ('pending', 'queued', 'retrying')
+     RETURNING attempt_count AS "attemptCount"`,
+    input.deliveryId,
+    input.expectedAttemptCount,
+    input.maxAttempts,
+    startedAt,
+  )) as Array<{ attemptCount?: unknown }>;
+  const attemptCount = rows[0]?.attemptCount;
+  return typeof attemptCount === 'number' ? attemptCount : null;
 }
 
 export async function startDailyContentRuntime(
@@ -278,16 +307,28 @@ async function processDelivery(
   }
 
   const config = normalizeDailyContentConfig(plugin.config);
-  if (!canStartDailyContentDeliveryAttempt(delivery.attemptCount, config.maxAttempts)) {
-    await markDeliveryFailed(prisma, {
-      deliveryId: delivery.id,
-      errorName: RETRY_BUDGET_EXHAUSTED_ERROR,
-    });
-    throw new UnrecoverableError(RETRY_BUDGET_EXHAUSTED_ERROR);
+  const attemptCountAfterAttempt = await claimDailyContentDeliveryAttempt(prisma, {
+    deliveryId: delivery.id,
+    expectedAttemptCount: delivery.attemptCount,
+    maxAttempts: config.maxAttempts,
+  });
+  if (attemptCountAfterAttempt === null) {
+    const current = await getDeliveryWithSchedule(prisma, delivery.id);
+    if (!current) throw new UnrecoverableError('DailyContentDeliveryNotFound');
+    if (current.status === 'sent' || current.status === 'skipped') return;
+    if (current.status === 'processing') {
+      throw new UnrecoverableError(DELIVERY_ALREADY_CLAIMED_ERROR);
+    }
+    if (!canStartDailyContentDeliveryAttempt(current.attemptCount, config.maxAttempts)) {
+      await markDeliveryFailed(prisma, {
+        deliveryId: current.id,
+        errorName: RETRY_BUDGET_EXHAUSTED_ERROR,
+      });
+      throw new UnrecoverableError(RETRY_BUDGET_EXHAUSTED_ERROR);
+    }
+    throw new UnrecoverableError(DELIVERY_ALREADY_CLAIMED_ERROR);
   }
 
-  await markDeliveryProcessing(prisma, delivery.id);
-  const attemptCountAfterAttempt = delivery.attemptCount + 1;
   try {
     const messageId = await publishDiscordMessage({
       token: options.discordBotToken,
