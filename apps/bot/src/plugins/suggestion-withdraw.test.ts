@@ -223,7 +223,7 @@ describe('Suggestion author withdraw', () => {
       reply: vi.fn(async () => undefined),
       update,
     };
-    const event = suggestionPlugin.provideEvents?.()[0];
+    const event = suggestionPlugin.provideEvents?.(context as never)[0];
     if (!event) throw new Error('Suggestion event is not available');
 
     await event.handler(context as never, interaction as never);
