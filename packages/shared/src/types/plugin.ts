@@ -1,3 +1,9 @@
+import {
+  DEFAULT_PLUGIN_RUNTIME_CONSUMER,
+  isPluginRuntimeConsumer,
+  type PluginRuntimeConsumer,
+} from '../plugin-runtime-events.js';
+
 /** Plugin のカテゴリ */
 export type PluginCategory = 'core' | 'moderation' | 'fun' | 'game' | 'utility' | 'analytics';
 
@@ -67,6 +73,20 @@ export interface PluginManifest {
   events: string[];
   /** 登録する Slash Command */
   commands: CommandDefinition[];
+  /** Runtime 設定の反映 ACK を期待する consumer。未指定時は Bot */
+  expectedRuntimeConsumers?: PluginRuntimeConsumer[];
   /** 最小 Herta バージョン */
   minHertaVersion?: string;
+}
+
+/**
+ * 既存PluginはBot Runtimeのみを前提としているため、expected consumer未指定をBotへ解決する。
+ * 静的Manifestが不正値や空配列を含んでもquorumを空にせず、安全側のBot互換へfallbackする。
+ */
+export function resolveExpectedRuntimeConsumers(
+  manifest: Pick<PluginManifest, 'expectedRuntimeConsumers'>,
+): PluginRuntimeConsumer[] {
+  const configured = manifest.expectedRuntimeConsumers?.filter(isPluginRuntimeConsumer) ?? [];
+  if (configured.length === 0) return [DEFAULT_PLUGIN_RUNTIME_CONSUMER];
+  return [...new Set(configured)];
 }

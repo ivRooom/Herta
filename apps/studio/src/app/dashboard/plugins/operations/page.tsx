@@ -14,7 +14,12 @@ import {
 import { ReconnectNotice } from '@/components/reconnect-notice';
 import { getManageableGuilds } from '@/lib/guilds';
 import { getPluginOperationsInventory, listRecentPluginOperations } from '@/lib/plugin-operations';
-import type { PluginOperationItem, PluginOperationStatus } from '@/lib/plugin-operations-core';
+import type {
+  PluginOperationItem,
+  PluginOperationStatus,
+  PluginRuntimeConsumerState,
+  PluginRuntimeConsumerStatus,
+} from '@/lib/plugin-operations-core';
 import { getDiscordAccessToken } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
@@ -157,7 +162,7 @@ export default async function PluginOperationsPage() {
               </h2>
               <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
                 {
-                  '設定Schemaに加え、StudioからのRuntime通知とBot反映ACKも確認します。無効化操作のpublish・反映失敗やACK遅延もAttentionとして検知します。'
+                  '設定Schemaに加え、StudioからのRuntime通知とPluginごとにexpectedなRuntime consumerの反映ACKを確認します。無効化操作のpublish・反映失敗やACK遅延もAttentionとして検知します。'
                 }
               </p>
             </div>
@@ -193,7 +198,8 @@ export default async function PluginOperationsPage() {
               設定済みPlugin
             </h2>
             <p className="mt-1 text-sm text-muted">
-              設定本文は表示せず、状態・configVersion・更新日時だけを確認できます。
+              設定本文は表示せず、状態・Runtime
+              consumer・configVersion・更新日時だけを確認できます。
             </p>
           </div>
           <span className="text-xs text-muted">
@@ -204,7 +210,7 @@ export default async function PluginOperationsPage() {
 
         {inventory.entries.length > 0 ? (
           <div className="mt-5 overflow-x-auto rounded-2xl border border-border bg-surface shadow-card">
-            <table className="w-full min-w-[760px] text-left text-sm">
+            <table className="w-full min-w-[960px] text-left text-sm">
               <thead className="border-b border-border bg-background/60 text-xs text-muted">
                 <tr>
                   <th scope="col" className="px-4 py-3 font-semibold">
@@ -215,6 +221,9 @@ export default async function PluginOperationsPage() {
                   </th>
                   <th scope="col" className="px-4 py-3 font-semibold">
                     状態
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-semibold">
+                    Runtime
                   </th>
                   <th scope="col" className="px-4 py-3 font-semibold">
                     configVersion
@@ -241,6 +250,9 @@ export default async function PluginOperationsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <StatusBadge status={entry.status} />
+                    </td>
+                    <td className="px-4 py-3">
+                      <RuntimeConsumerBadges states={entry.runtimeConsumers} />
                     </td>
                     <td className="px-4 py-3 font-medium tabular-nums">v{entry.configVersion}</td>
                     <td className="px-4 py-3 whitespace-nowrap text-xs text-muted">
@@ -331,7 +343,7 @@ export default async function PluginOperationsPage() {
             <h2 className="font-semibold">判定範囲と安全性</h2>
             <p className="mt-1 text-sm leading-6 text-muted">
               {
-                '保存済み設定と現在の公式Plugin Schemaを照合し、Runtime通知のpublish結果とBot反映ACKをAudit Logへ永続化して現在のconfigVersionだけを判定します。publish後2分を超えてACKがない場合もAttentionとして表示します。設定本文・Secret・Redis接続情報はRuntime監査イベントへ保存しません。'
+                '保存済み設定と現在の公式Plugin Schemaを照合し、Runtime通知のpublish結果とManifestでexpectedなRuntime consumerの反映ACKをAudit Logから現在のconfigVersionだけ判定します。publish後2分を超えて必要なACKがない場合もAttentionとして表示します。Not expectedなconsumerや未知consumerはquorumへ含めず、設定本文・Secret・Redis接続情報も表示しません。'
               }
             </p>
           </div>
@@ -381,6 +393,9 @@ function AttentionCard({ entry, guildName }: { entry: PluginOperationItem; guild
         <StatusBadge status="attention" />
       </div>
       <p className="mt-3 text-sm leading-6 text-muted">{attentionDetail(entry)}</p>
+      <div className="mt-3">
+        <RuntimeConsumerBadges states={entry.runtimeConsumers} />
+      </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted">
         <span>configVersion v{entry.configVersion}</span>
         <span>更新 {formatJst(entry.updatedAt)}</span>
@@ -411,13 +426,49 @@ function attentionDetail(entry: PluginOperationItem): string {
     runtime_publish_failed:
       '設定は保存されましたが、Runtime更新イベントをpublishできませんでした。Redis接続とRuntime配信経路を確認してください。',
     runtime_apply_failed:
-      'Runtime更新イベントは届きましたが、BotがGuildの再同期を3回試行しても反映できませんでした。監査ログとBotログを確認してください。',
+      'Runtime更新イベントは届きましたが、expectedなRuntime consumerのうち少なくとも1つが反映できませんでした。監査ログと対象consumerのログを確認してください。',
     runtime_apply_delayed:
-      'Runtime更新イベントのpublish後2分を超えてBot反映ACKがありません。Botの接続・再同期状態を確認してください。',
+      'Runtime更新イベントのpublish後2分を超えてexpectedなRuntime consumerの反映ACKがありません。対象consumerの接続・再同期状態を確認してください。',
   };
   return entry.attentionReason
     ? details[entry.attentionReason]
     : 'Pluginの運用状態を確認してください。';
+}
+
+function RuntimeConsumerBadges({ states }: { states: PluginRuntimeConsumerState[] | undefined }) {
+  if (!states || states.length === 0) return <span className="text-xs text-muted">—</span>;
+
+  const consumerLabels: Record<PluginRuntimeConsumerState['consumer'], string> = {
+    bot: 'Bot',
+    worker: 'Worker',
+  };
+  const statusLabels: Record<PluginRuntimeConsumerStatus, string> = {
+    applied: 'Applied',
+    failed: 'Failed',
+    pending: 'Pending',
+    not_expected: 'Not expected',
+    no_signal: 'No signal',
+  };
+  const statusStyles: Record<PluginRuntimeConsumerStatus, string> = {
+    applied: 'border-emerald-400/20 bg-emerald-400/10 text-emerald-400',
+    failed: 'border-red-400/20 bg-red-400/10 text-red-300',
+    pending: 'border-amber-400/20 bg-amber-400/10 text-amber-300',
+    not_expected: 'border-border bg-background text-muted',
+    no_signal: 'border-border bg-border/30 text-muted',
+  };
+
+  return (
+    <div className="flex flex-wrap gap-1.5" aria-label="Runtime consumer状態">
+      {states.map((state) => (
+        <span
+          key={state.consumer}
+          className={`inline-flex whitespace-nowrap rounded-full border px-2 py-1 text-[10px] font-semibold ${statusStyles[state.status]}`}
+        >
+          {consumerLabels[state.consumer]}: {statusLabels[state.status]}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 function MetricCard({
