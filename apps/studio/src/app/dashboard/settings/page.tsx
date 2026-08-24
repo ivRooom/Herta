@@ -10,7 +10,8 @@ export default function StudioSettingsPage() {
       </div>
       <h1 className="mt-2 text-2xl font-semibold tracking-tight">Studio設定</h1>
       <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-        Server Switcherを中心に、Current Serverへ常時表示する個別Pluginタブをサーバー単位で調整します。
+        Server Switcherを中心に、Current
+        Serverへ常時表示する個別Pluginタブをサーバー単位で調整します。
       </p>
 
       <div className="mt-8">
