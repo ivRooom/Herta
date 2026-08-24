@@ -5,6 +5,8 @@ import type { Logger } from 'pino';
 import { Redis } from 'ioredis';
 import { QueueNames, type JobData } from '@herta/queue';
 import {
+  DAILY_CONTENT_QUEUE_TRANSPORT_ATTEMPTS,
+  canStartDailyContentDeliveryAttempt,
   checkDailyContentSendPermissions,
   computeDiscordChannelPermissions,
   getDeliveryWithSchedule,
@@ -25,8 +27,10 @@ import {
   normalizeDailyContentScanIntervalSeconds,
   redisReconnectDelay,
   resolveDailyContentQueueJobDisposition,
+  resolveDailyContentRetryDelayMs,
   recoverStaleDelivery,
   reserveDueDelivery,
+  shouldRetryDailyContentDelivery,
   type DailyContentConfig,
   type DailyContentDeliveryRecord,
   type DiscordPermissionMember,
@@ -38,6 +42,7 @@ import {
 const DISCORD_API_BASE_URL = 'https://discord.com/api/v10';
 const DAILY_CONTENT_SCAN_LIMIT = 200;
 const BASE_RETRY_DELAY_MS = 15_000;
+const RETRY_BUDGET_EXHAUSTED_ERROR = 'DailyContentRetryBudgetExhausted';
 const MESSAGE_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12]);
 const FORUM_CHANNEL_TYPES = new Set([15]);
 const SUPPORTED_CHANNEL_TYPES = new Set([...MESSAGE_CHANNEL_TYPES, ...FORUM_CHANNEL_TYPES]);
@@ -179,8 +184,7 @@ export async function startDailyContentRuntime(
 
       const pending = await listPendingDeliveries(prisma, now, DAILY_CONTENT_SCAN_LIMIT);
       for (const delivery of pending) {
-        const config = await resolveGuildConfig(options.prisma, delivery.guildId);
-        await ensureDeliveryJob(queue, prisma, delivery, config, now);
+        await ensureDeliveryJob(queue, prisma, delivery, now);
       }
     } catch (error) {
       options.logger.error(
@@ -217,7 +221,6 @@ async function ensureDeliveryJob(
   queue: Queue<DailyContentJobData>,
   prisma: DailyContentPrismaClient,
   delivery: DailyContentDeliveryRecord,
-  config: DailyContentConfig,
   now: Date,
 ): Promise<void> {
   const existing = await queue.getJob(delivery.id);
@@ -241,7 +244,7 @@ async function ensureDeliveryJob(
     },
     {
       jobId: delivery.id,
-      attempts: config.maxAttempts,
+      attempts: DAILY_CONTENT_QUEUE_TRANSPORT_ATTEMPTS,
       backoff: { type: 'exponential', delay: BASE_RETRY_DELAY_MS },
     },
   );
@@ -275,7 +278,16 @@ async function processDelivery(
   }
 
   const config = normalizeDailyContentConfig(plugin.config);
+  if (!canStartDailyContentDeliveryAttempt(delivery.attemptCount, config.maxAttempts)) {
+    await markDeliveryFailed(prisma, {
+      deliveryId: delivery.id,
+      errorName: RETRY_BUDGET_EXHAUSTED_ERROR,
+    });
+    throw new UnrecoverableError(RETRY_BUDGET_EXHAUSTED_ERROR);
+  }
+
   await markDeliveryProcessing(prisma, delivery.id);
+  const attemptCountAfterAttempt = delivery.attemptCount + 1;
   try {
     const messageId = await publishDiscordMessage({
       token: options.discordBotToken,
@@ -329,18 +341,23 @@ async function processDelivery(
     );
   } catch (error) {
     const errorName = resolveErrorName(error);
-    const attempts = typeof job.opts.attempts === 'number' ? job.opts.attempts : 1;
-    const hasNextAttempt = isRetryable(error) && job.attemptsMade + 1 < attempts;
+    const hasNextAttempt = shouldRetryDailyContentDelivery(
+      attemptCountAfterAttempt,
+      config.maxAttempts,
+      isRetryable(error),
+    );
     if (hasNextAttempt) {
       const nextAttemptAt = new Date(
-        Date.now() + BASE_RETRY_DELAY_MS * 2 ** Math.max(0, job.attemptsMade),
+        Date.now() + resolveDailyContentRetryDelayMs(attemptCountAfterAttempt, BASE_RETRY_DELAY_MS),
       );
       await markDeliveryRetrying(prisma, {
         deliveryId: delivery.id,
         errorName,
         nextAttemptAt,
       });
-      throw error;
+      // Domain retryはDBのnextAttemptAtを正本にする。現在のBullMQ Jobはここで終了し、
+      // 次回scanが同じdeliveryIdを安全に再queueする。
+      throw new UnrecoverableError(errorName);
     }
 
     await markDeliveryFailed(prisma, { deliveryId: delivery.id, errorName });
@@ -717,6 +734,17 @@ async function recoverStale(
     const config = await resolveGuildConfig(prisma as unknown as PrismaClient, delivery.guildId);
     const guildStaleBefore = now.getTime() - config.staleAfterMinutes * 60 * 1000;
     if (!delivery.startedAt || delivery.startedAt.getTime() >= guildStaleBefore) continue;
+    if (!canStartDailyContentDeliveryAttempt(delivery.attemptCount, config.maxAttempts)) {
+      await markDeliveryFailed(prisma, {
+        deliveryId: delivery.id,
+        errorName: RETRY_BUDGET_EXHAUSTED_ERROR,
+      });
+      logger.warn(
+        { deliveryId: delivery.id, guildId: delivery.guildId },
+        'staleなDaily Content配信はretry上限到達のため失敗として確定しました',
+      );
+      continue;
+    }
     await recoverStaleDelivery(prisma, delivery.id, now);
     logger.warn(
       { deliveryId: delivery.id, guildId: delivery.guildId },
