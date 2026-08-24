@@ -11,6 +11,7 @@ import { communityActivityCommands } from './community-activity.js';
 import { configureHelpCommandProvider, helpV2Command } from './help-v2.js';
 import { coreUtilityV3Commands } from './utility-v3.js';
 import { coreUtilityV4Commands } from './utility-v4.js';
+import { coreUtilityV5Commands } from './utility-v5.js';
 
 export type SlashCommand = CommandHandler<ChatInputCommandInteraction>;
 
@@ -112,6 +113,7 @@ export class CommandRegistry {
       ...coreInformationCommands,
       ...coreUtilityV3Commands,
       ...coreUtilityV4Commands,
+      ...coreUtilityV5Commands,
       ...communityActivityCommands,
     ]) {
       if (PLUGIN_OWNED_COMMAND_NAMES.has(command.definition.name)) continue;

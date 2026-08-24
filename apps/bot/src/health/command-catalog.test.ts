@@ -33,6 +33,12 @@ describe('Guild command catalog', () => {
           ],
         },
         {
+          id: '555555555555555555',
+          name: 'json',
+          description: 'json command',
+          options: [],
+        },
+        {
           id: '444444444444444444',
           name: 'amidakuji',
           description: 'amidakuji command',
@@ -52,6 +58,7 @@ describe('Guild command catalog', () => {
     expect(catalog.commands).toEqual([
       expect.objectContaining({ name: 'amidakuji', source: 'plugin' }),
       expect.objectContaining({ name: 'color', source: 'core' }),
+      expect.objectContaining({ name: 'json', source: 'core' }),
     ]);
     expect(catalog.commands[1]?.options[0]).toMatchObject({
       name: 'value',
@@ -109,6 +116,7 @@ describe('Guild command catalog', () => {
   it('Plugin所有のcoinflipとdiceをCore扱いしない', () => {
     expect(isCoreCommandName('color')).toBe(true);
     expect(isCoreCommandName('hash')).toBe(true);
+    expect(isCoreCommandName('json')).toBe(true);
     expect(isCoreCommandName('coinflip')).toBe(false);
     expect(isCoreCommandName('dice')).toBe(false);
   });

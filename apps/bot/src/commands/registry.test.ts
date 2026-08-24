@@ -5,6 +5,7 @@ import { coreInformationCommands } from './core-info.js';
 import { CommandRegistry, PLUGIN_OWNED_COMMAND_NAMES, type SlashCommand } from './registry.js';
 import { coreUtilityV3Commands } from './utility-v3.js';
 import { coreUtilityV4Commands } from './utility-v4.js';
+import { coreUtilityV5Commands } from './utility-v5.js';
 
 function createLogger(): Logger {
   return {
@@ -17,6 +18,7 @@ function expectedCoreCommandNames(): string[] {
     ...coreInformationCommands,
     ...coreUtilityV3Commands,
     ...coreUtilityV4Commands,
+    ...coreUtilityV5Commands,
     ...communityActivityCommands,
   ]
     .map((command) => command.definition.name)
@@ -52,6 +54,11 @@ describe('CommandRegistry command ownership audit', () => {
     for (const name of ['color', 'base64', 'url', 'textstats']) {
       expect(registry.get(name), `${name} should be registered`).toBeDefined();
     }
+  });
+
+  it('Utility v5コマンドをRegistryへ登録する', () => {
+    const registry = new CommandRegistry(createLogger());
+    expect(registry.get('json')).toBeDefined();
   });
 
   it('Mini Gamesが所有するcoinflipとdiceをCore登録から除外する', () => {
