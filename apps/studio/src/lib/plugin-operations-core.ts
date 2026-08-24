@@ -1,8 +1,37 @@
+import { PLUGIN_RUNTIME_CONSUMERS, type PluginRuntimeConsumer } from '@herta/shared';
+
 export type PluginOperationStatus = 'attention' | 'healthy' | 'paused';
 export type PluginRuntimeDeliveryStatus =
-  'published' | 'applied' | 'publish_failed' | 'apply_failed';
+  | 'published'
+  | 'applied'
+  | 'publish_failed'
+  | 'apply_failed';
+export type PluginRuntimeConsumerStatus =
+  | 'applied'
+  | 'failed'
+  | 'pending'
+  | 'not_expected'
+  | 'no_signal';
 export type PluginOperationAttentionReason =
-  'config_invalid' | 'runtime_publish_failed' | 'runtime_apply_failed' | 'runtime_apply_delayed';
+  | 'config_invalid'
+  | 'runtime_publish_failed'
+  | 'runtime_apply_failed'
+  | 'runtime_apply_delayed';
+
+export interface PluginRuntimeConsumerSignal {
+  consumer: PluginRuntimeConsumer;
+  status: PluginRuntimeDeliveryStatus;
+  configVersion: number;
+  observedAt: string;
+}
+
+export interface PluginRuntimeConsumerState {
+  consumer: PluginRuntimeConsumer;
+  expected: boolean;
+  status: PluginRuntimeConsumerStatus;
+  configVersion?: number;
+  observedAt?: string;
+}
 
 export interface PluginOperationInventoryRow {
   guildId: string;
@@ -16,6 +45,7 @@ export interface PluginOperationInventoryRow {
   runtimeStatus?: PluginRuntimeDeliveryStatus;
   runtimeConfigVersion?: number;
   runtimeObservedAt?: string;
+  runtimeConsumers?: PluginRuntimeConsumerState[];
 }
 
 export interface PluginOperationItem extends PluginOperationInventoryRow {
@@ -52,6 +82,44 @@ const STATUS_PRIORITY: Record<PluginOperationStatus, number> = {
   healthy: 1,
   paused: 2,
 };
+
+export function buildPluginRuntimeConsumerStates(
+  expectedConsumers: readonly PluginRuntimeConsumer[],
+  signals: readonly PluginRuntimeConsumerSignal[],
+): PluginRuntimeConsumerState[] {
+  const expected = new Set(expectedConsumers);
+  const signalByConsumer = new Map(signals.map((signal) => [signal.consumer, signal]));
+
+  return PLUGIN_RUNTIME_CONSUMERS.map((consumer) => {
+    if (!expected.has(consumer)) {
+      return {
+        consumer,
+        expected: false,
+        status: 'not_expected' as const,
+      };
+    }
+
+    const signal = signalByConsumer.get(consumer);
+    if (!signal) {
+      return {
+        consumer,
+        expected: true,
+        status: 'no_signal' as const,
+      };
+    }
+
+    const observed = {
+      consumer,
+      expected: true,
+      configVersion: signal.configVersion,
+      observedAt: signal.observedAt,
+    };
+    if (signal.status === 'applied') return { ...observed, status: 'applied' as const };
+    if (signal.status === 'apply_failed') return { ...observed, status: 'failed' as const };
+    if (signal.status === 'published') return { ...observed, status: 'pending' as const };
+    return { ...observed, status: 'no_signal' as const };
+  });
+}
 
 export function summarizePluginOperations(
   guildIds: readonly string[],
@@ -134,15 +202,55 @@ export function resolvePluginOperationAttentionReason(
 ): PluginOperationAttentionReason | null {
   if (row.enabled && !row.configValid) return 'config_invalid';
 
-  if (
-    row.runtimeStatus === undefined ||
-    row.runtimeConfigVersion === undefined ||
-    row.runtimeConfigVersion !== row.configVersion
-  ) {
+  const hasCurrentRuntimeState =
+    row.runtimeStatus !== undefined &&
+    row.runtimeConfigVersion !== undefined &&
+    row.runtimeConfigVersion === row.configVersion;
+
+  // Publishはproducer共通の配送結果なので、expected consumerに関係なく失敗を検知する。
+  if (hasCurrentRuntimeState && row.runtimeStatus === 'publish_failed') {
+    return 'runtime_publish_failed';
+  }
+
+  if (row.runtimeConsumers) {
+    for (const runtimeConsumer of row.runtimeConsumers) {
+      if (!runtimeConsumer.expected || runtimeConsumer.status !== 'failed') continue;
+      if (
+        runtimeConsumer.configVersion !== undefined &&
+        runtimeConsumer.configVersion !== row.configVersion
+      ) {
+        continue;
+      }
+      return 'runtime_apply_failed';
+    }
+
+    for (const runtimeConsumer of row.runtimeConsumers) {
+      if (
+        !runtimeConsumer.expected ||
+        runtimeConsumer.status !== 'pending' ||
+        !runtimeConsumer.observedAt
+      ) {
+        continue;
+      }
+      if (
+        runtimeConsumer.configVersion !== undefined &&
+        runtimeConsumer.configVersion !== row.configVersion
+      ) {
+        continue;
+      }
+
+      const observedAt = Date.parse(runtimeConsumer.observedAt);
+      if (!Number.isFinite(observedAt)) continue;
+      if (nowMs - observedAt >= PLUGIN_RUNTIME_APPLY_DELAY_MS) {
+        return 'runtime_apply_delayed';
+      }
+    }
+
     return null;
   }
 
-  if (row.runtimeStatus === 'publish_failed') return 'runtime_publish_failed';
+  // consumer別state導入前の呼び出し・fixtureは従来のBot互換stateで判定する。
+  if (!hasCurrentRuntimeState) return null;
   if (row.runtimeStatus === 'apply_failed') return 'runtime_apply_failed';
   if (row.runtimeStatus !== 'published' || !row.runtimeObservedAt) return null;
 
