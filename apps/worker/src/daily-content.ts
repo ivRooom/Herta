@@ -135,14 +135,17 @@ export async function claimDailyContentDeliveryAttempt(
 export async function markDailyContentDeliveryQueued(
   prisma: DailyContentPrismaClient,
   deliveryId: string,
+  expectedAttemptCount: number,
   queuedAt = new Date(),
 ): Promise<void> {
   await prisma.$executeRawUnsafe(
     `UPDATE daily_content_deliveries
-     SET status = 'queued', queued_at = $2
+     SET status = 'queued', queued_at = $3
      WHERE id = $1
+       AND attempt_count = $2
        AND status IN ('pending', 'queued', 'retrying')`,
     deliveryId,
+    expectedAttemptCount,
     queuedAt,
   );
 }
@@ -270,7 +273,7 @@ async function ensureDeliveryJob(
   const state = existing ? await existing.getState() : null;
   const disposition = resolveDailyContentQueueJobDisposition(state);
   if (disposition === 'keep') {
-    await markDailyContentDeliveryQueued(prisma, delivery.id, now);
+    await markDailyContentDeliveryQueued(prisma, delivery.id, delivery.attemptCount, now);
     return;
   }
   if (disposition === 'replace' && existing) {
@@ -291,7 +294,7 @@ async function ensureDeliveryJob(
       backoff: { type: 'exponential', delay: BASE_RETRY_DELAY_MS },
     },
   );
-  await markDailyContentDeliveryQueued(prisma, delivery.id, now);
+  await markDailyContentDeliveryQueued(prisma, delivery.id, delivery.attemptCount, now);
 }
 
 async function processDelivery(
