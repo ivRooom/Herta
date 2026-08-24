@@ -29,21 +29,25 @@ const StudioNavigationContext = createContext<StudioNavigationContextValue | nul
 
 export function StudioNavigationContextProvider({ children }: { children: ReactNode }) {
   const { selectedGuildId } = useStudioServerContext();
-  const [visiblePluginTabIds, setVisiblePluginTabIds] = useState<StudioPinnableServerTabId[]>([]);
-  const [loadState, setLoadState] = useState<StudioNavigationLoadState>('idle');
-  const [canManage, setCanManage] = useState(false);
+  const [loadedGuildId, setLoadedGuildId] = useState<string | null>(null);
+  const [storedVisiblePluginTabIds, setStoredVisiblePluginTabIds] = useState<
+    StudioPinnableServerTabId[]
+  >([]);
+  const [storedLoadState, setStoredLoadState] = useState<StudioNavigationLoadState>('idle');
+  const [storedCanManage, setStoredCanManage] = useState(false);
   const [reloadVersion, setReloadVersion] = useState(0);
 
   useEffect(() => {
     if (!selectedGuildId) {
-      setVisiblePluginTabIds([]);
-      setCanManage(false);
-      setLoadState('idle');
+      setLoadedGuildId(null);
+      setStoredVisiblePluginTabIds([]);
+      setStoredCanManage(false);
+      setStoredLoadState('idle');
       return;
     }
 
     const controller = new AbortController();
-    setLoadState('loading');
+    setStoredLoadState('loading');
 
     void fetch(`/api/guilds/${selectedGuildId}/studio-navigation`, {
       method: 'GET',
@@ -56,17 +60,19 @@ export function StudioNavigationContextProvider({ children }: { children: ReactN
       })
       .then((payload) => {
         if (controller.signal.aborted) return;
-        setVisiblePluginTabIds(
+        setStoredVisiblePluginTabIds(
           resolveEffectiveStudioPluginTabIds(normalizeResponseIds(payload.visiblePluginTabIds)),
         );
-        setCanManage(payload.canManage === true);
-        setLoadState('ready');
+        setStoredCanManage(payload.canManage === true);
+        setLoadedGuildId(selectedGuildId);
+        setStoredLoadState('ready');
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
-        setVisiblePluginTabIds([]);
-        setCanManage(false);
-        setLoadState('error');
+        setStoredVisiblePluginTabIds([]);
+        setStoredCanManage(false);
+        setLoadedGuildId(selectedGuildId);
+        setStoredLoadState('error');
         console.error('Studio navigation settings could not be loaded', {
           errorName: error instanceof Error ? error.name : 'UnknownError',
         });
@@ -74,6 +80,18 @@ export function StudioNavigationContextProvider({ children }: { children: ReactN
 
     return () => controller.abort();
   }, [reloadVersion, selectedGuildId]);
+
+  // Guild切替直後は前Guildの設定を決して表示・更新権限へ流用しない。
+  // Effectが新Guildを読み込む前のrenderでもloadedGuildIdとの一致を要求することで、
+  // Server Aのoptional tabsがServer Bへ一瞬残ることを防ぐ。
+  const hasLoadedSelectedGuild = loadedGuildId !== null && loadedGuildId === selectedGuildId;
+  const visiblePluginTabIds = hasLoadedSelectedGuild ? storedVisiblePluginTabIds : [];
+  const canManage = hasLoadedSelectedGuild ? storedCanManage : false;
+  const loadState: StudioNavigationLoadState = selectedGuildId
+    ? hasLoadedSelectedGuild
+      ? storedLoadState
+      : 'loading'
+    : 'idle';
 
   const saveVisiblePluginTabIds = useCallback(
     async (ids: readonly StudioPinnableServerTabId[]): Promise<boolean> => {
@@ -88,11 +106,12 @@ export function StudioNavigationContextProvider({ children }: { children: ReactN
         });
         if (!response.ok) return false;
         const payload = (await response.json()) as StudioNavigationResponse;
-        setVisiblePluginTabIds(
+        setStoredVisiblePluginTabIds(
           resolveEffectiveStudioPluginTabIds(normalizeResponseIds(payload.visiblePluginTabIds)),
         );
-        setCanManage(payload.canManage === true);
-        setLoadState('ready');
+        setStoredCanManage(payload.canManage === true);
+        setLoadedGuildId(selectedGuildId);
+        setStoredLoadState('ready');
         return true;
       } catch {
         return false;
