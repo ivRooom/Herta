@@ -15,6 +15,14 @@ test('保存設定がない場合は個別Pluginタブを表示しない', () =>
   assert.deepEqual(parseStoredStudioNavigationConfig({}), { visiblePluginTabIds: [] });
 });
 
+test('studioNavigationがobject以外でも個別Pluginタブを表示しない', () => {
+  for (const studioNavigation of ['invalid', 42, true, [], null]) {
+    assert.deepEqual(parseStoredStudioNavigationConfig({ studioNavigation }), {
+      visiblePluginTabIds: [],
+    });
+  }
+});
+
 test('保存済みPluginタブはcatalog順へ正規化し未知IDを無視する', () => {
   const config = parseStoredStudioNavigationConfig({
     untouched: true,
