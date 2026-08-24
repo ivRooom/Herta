@@ -161,6 +161,11 @@ describe('Suggestion author withdraw', () => {
 
     await command.execute(interaction as never);
 
+    expect(reply).toHaveBeenCalledWith({
+      content: `Suggestion \`${ID}\` はすでに取り下げ済みです。`,
+      flags: 64,
+      allowedMentions: { parse: [] },
+    });
     expect(fetchChannel).toHaveBeenCalledWith('789');
     expect(fetchMessage).toHaveBeenCalledWith('999');
     expect(edit).toHaveBeenCalledWith(
@@ -169,11 +174,33 @@ describe('Suggestion author withdraw', () => {
         components: [],
       }),
     );
-    expect(reply).toHaveBeenCalledWith({
-      content: `Suggestion \`${ID}\` はすでに取り下げ済みです。`,
-      flags: 64,
-      allowedMentions: { parse: [] },
+  });
+
+  it('処理済みSuggestionは投稿者本人でも取下げできない', async () => {
+    const auditCreate = vi.fn(async () => undefined);
+    const tx = {
+      $queryRaw: vi.fn(async () => [{ authorId: '456', status: 'accepted' }]),
+      $executeRaw: vi.fn(async () => 1),
+      auditLog: { create: auditCreate },
+    };
+    const rootQueryRaw = vi.fn(async () => [makeSnapshot()]);
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) =>
+        callback(tx),
+      ),
+      $queryRaw: rootQueryRaw,
+    };
+
+    const result = await withdrawSuggestion(prisma as never, {
+      id: ID,
+      guildId: '123',
+      authorId: '456',
     });
+
+    expect(result).toEqual({ outcome: 'not_withdrawable', snapshot: null });
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
+    expect(auditCreate).not.toHaveBeenCalled();
+    expect(rootQueryRaw).not.toHaveBeenCalled();
   });
 
   it('第三者は取下げできずSuggestion内容も再照会しない', async () => {
