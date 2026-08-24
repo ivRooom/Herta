@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, LockKeyhole, ServerCog, SlidersHorizontal } from 'lucide-react';
 import { useStudioNavigationContext } from '@/components/studio-navigation-context';
 import { useStudioServerContext } from '@/components/studio-server-context';
@@ -20,6 +20,8 @@ const CORE_SERVER_TABS = [
 
 export function StudioNavigationSettings() {
   const { selectedGuild } = useStudioServerContext();
+  const selectedGuildIdRef = useRef<string | null>(selectedGuild?.id ?? null);
+  selectedGuildIdRef.current = selectedGuild?.id ?? null;
   const { visiblePluginTabIds, loadState, canManage, saveVisiblePluginTabIds, reload } =
     useStudioNavigationContext();
   const [draftIds, setDraftIds] = useState<StudioPinnableServerTabId[]>([]);
@@ -28,8 +30,11 @@ export function StudioNavigationSettings() {
 
   useEffect(() => {
     setDraftIds([...visiblePluginTabIds]);
-    setMessage(null);
   }, [selectedGuild?.id, visiblePluginTabIds]);
+
+  useEffect(() => {
+    setMessage(null);
+  }, [selectedGuild?.id]);
 
   const dirty = useMemo(
     () =>
@@ -66,10 +71,12 @@ export function StudioNavigationSettings() {
 
   const save = async () => {
     if (!dirty || !canManage || saving) return;
+    const requestGuildId = selectedGuild.id;
     setSaving(true);
     setMessage(null);
     const saved = await saveVisiblePluginTabIds(draftIds);
     setSaving(false);
+    if (selectedGuildIdRef.current !== requestGuildId) return;
     setMessage(saved ? 'タブ表示設定を保存しました' : 'タブ表示設定を保存できませんでした');
   };
 
@@ -139,19 +146,20 @@ export function StudioNavigationSettings() {
           <div className="mt-5 grid gap-3 md:grid-cols-2">
             {STUDIO_PINNABLE_SERVER_TABS.map((tab) => {
               const checked = draftIds.includes(tab.id);
+              const disabled = !canManage || loadState !== 'ready' || saving;
               return (
                 <label
                   key={tab.id}
-                  className={`flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition-colors focus-within:ring-2 focus-within:ring-ring ${
+                  className={`flex items-start gap-3 rounded-xl border p-4 transition-colors focus-within:ring-2 focus-within:ring-ring ${
                     checked ? 'border-primary/40 bg-primary/5' : 'border-border bg-background'
-                  } ${!canManage ? 'cursor-not-allowed opacity-70' : ''}`}
+                  } ${disabled ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}
                 >
                   <input
                     type="checkbox"
                     className="mt-1 h-4 w-4 accent-primary"
                     checked={checked}
                     onChange={() => toggleTab(tab.id)}
-                    disabled={!canManage || loadState !== 'ready'}
+                    disabled={disabled}
                   />
                   <span>
                     <span className="block text-sm font-medium">{tab.label}</span>
