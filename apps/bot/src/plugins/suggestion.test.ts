@@ -205,9 +205,7 @@ describe('Suggestion v1', () => {
       flags: 64,
       allowedMentions: { parse: [] },
     });
-    expect(JSON.stringify(interaction.reply.mock.calls)).not.toContain(
-      '第三者へ開示しない内容',
-    );
+    expect(JSON.stringify(interaction.reply.mock.calls)).not.toContain('第三者へ開示しない内容');
   });
 
   it('別GuildのID照会ではinteraction Guildをrepository scopeへ渡す', async () => {
