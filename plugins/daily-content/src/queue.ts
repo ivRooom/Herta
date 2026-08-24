@@ -35,7 +35,9 @@ export function canStartDailyContentDeliveryAttempt(
   attemptCount: number,
   maxAttempts: number,
 ): boolean {
-  return normalizeAttemptCount(attemptCount) < normalizeMaxAttempts(maxAttempts);
+  return (
+    normalizeAttemptCount(attemptCount) < normalizeMaxAttempts(maxAttempts)
+  );
 }
 
 /**
@@ -49,7 +51,8 @@ export function shouldRetryDailyContentDelivery(
 ): boolean {
   return (
     retryable &&
-    normalizeAttemptCount(attemptCountAfterAttempt) < normalizeMaxAttempts(maxAttempts)
+    normalizeAttemptCount(attemptCountAfterAttempt) <
+      normalizeMaxAttempts(maxAttempts)
   );
 }
 
@@ -60,12 +63,19 @@ export function resolveDailyContentRetryDelayMs(
   attemptCountAfterAttempt: number,
   baseDelayMs: number,
 ): number {
-  const normalizedBaseDelay = Number.isFinite(baseDelayMs) ? Math.max(0, baseDelayMs) : 0;
-  const exponent = Math.max(0, normalizeAttemptCount(attemptCountAfterAttempt) - 1);
+  const normalizedBaseDelay = Number.isFinite(baseDelayMs)
+    ? Math.max(0, baseDelayMs)
+    : 0;
+  const exponent = Math.max(
+    0,
+    normalizeAttemptCount(attemptCountAfterAttempt) - 1,
+  );
   return normalizedBaseDelay * 2 ** exponent;
 }
 
-export function normalizeDailyContentScanIntervalSeconds(value: unknown): number {
+export function normalizeDailyContentScanIntervalSeconds(
+  value: unknown,
+): number {
   if (typeof value !== 'string' || !value.trim()) return 30;
   const parsed = Number.parseInt(value, 10);
   if (!Number.isFinite(parsed)) return 30;
@@ -73,7 +83,9 @@ export function normalizeDailyContentScanIntervalSeconds(value: unknown): number
 }
 
 export function redisReconnectDelay(attempt: number): number {
-  const normalizedAttempt = Number.isFinite(attempt) ? Math.max(1, Math.floor(attempt)) : 1;
+  const normalizedAttempt = Number.isFinite(attempt)
+    ? Math.max(1, Math.floor(attempt))
+    : 1;
   return Math.min(30_000, normalizedAttempt * 500);
 }
 
