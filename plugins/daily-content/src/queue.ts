@@ -1,9 +1,5 @@
 export type DailyContentQueueJobDisposition = 'enqueue' | 'keep' | 'replace';
 
-/**
- * BullMQのattemptsはDaily Contentの設定値そのものではなく、transport層の安全上限として扱う。
- * Domain retryはDBのattemptCountと実行時に取得した現在のmaxAttemptsを正本にする。
- */
 export const DAILY_CONTENT_QUEUE_TRANSPORT_ATTEMPTS = 10;
 
 const ACTIVE_JOB_STATES = new Set([
@@ -27,42 +23,26 @@ export function resolveDailyContentQueueJobDisposition(
   return 'keep';
 }
 
-/**
- * attemptCountは「このdeliveryで既に開始した総配信試行回数」。
- * 新しいDiscord publishを開始してよいかを現在のmaxAttemptsだけで判定する。
- */
 export function canStartDailyContentDeliveryAttempt(
   attemptCount: number,
   maxAttempts: number,
 ): boolean {
-  return normalizeAttemptCount(attemptCount) < normalizeMaxAttempts(maxAttempts);
+  return attemptCount < maxAttempts;
 }
 
-/**
- * 1回の配信試行が失敗した後に、Domain retryを予約してよいかを判定する。
- * BullMQ attemptsMadeはJob再作成でresetされるため、この判定には使用しない。
- */
 export function shouldRetryDailyContentDelivery(
   attemptCountAfterAttempt: number,
   maxAttempts: number,
   retryable: boolean,
 ): boolean {
-  return (
-    retryable &&
-    normalizeAttemptCount(attemptCountAfterAttempt) < normalizeMaxAttempts(maxAttempts)
-  );
+  return retryable && attemptCountAfterAttempt < maxAttempts;
 }
 
-/**
- * retry delayもdelivery全体の総試行回数から計算し、BullMQ Jobの再作成でbackoffがresetされないようにする。
- */
 export function resolveDailyContentRetryDelayMs(
   attemptCountAfterAttempt: number,
   baseDelayMs: number,
 ): number {
-  const normalizedBaseDelay = Number.isFinite(baseDelayMs) ? Math.max(0, baseDelayMs) : 0;
-  const exponent = Math.max(0, normalizeAttemptCount(attemptCountAfterAttempt) - 1);
-  return normalizedBaseDelay * 2 ** exponent;
+  return baseDelayMs * 2 ** Math.max(0, attemptCountAfterAttempt - 1);
 }
 
 export function normalizeDailyContentScanIntervalSeconds(value: unknown): number {
@@ -75,14 +55,4 @@ export function normalizeDailyContentScanIntervalSeconds(value: unknown): number
 export function redisReconnectDelay(attempt: number): number {
   const normalizedAttempt = Number.isFinite(attempt) ? Math.max(1, Math.floor(attempt)) : 1;
   return Math.min(30_000, normalizedAttempt * 500);
-}
-
-function normalizeAttemptCount(value: number): number {
-  if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.floor(value));
-}
-
-function normalizeMaxAttempts(value: number): number {
-  if (!Number.isFinite(value)) return 1;
-  return Math.min(DAILY_CONTENT_QUEUE_TRANSPORT_ATTEMPTS, Math.max(1, Math.floor(value)));
 }
