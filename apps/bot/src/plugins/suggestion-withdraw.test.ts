@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { buildSuggestionMessage, suggestionPlugin } from './suggestion.js';
+import {
+  buildSuggestionMessage,
+  normalizeSuggestionConfig,
+  suggestionPlugin,
+} from './suggestion.js';
 import {
   updateSuggestionStatus,
   withdrawSuggestion,
@@ -107,6 +111,69 @@ describe('Suggestion author withdraw', () => {
     expect(result.outcome).toBe('already_withdrawn');
     expect(tx.$executeRaw).not.toHaveBeenCalled();
     expect(auditCreate).not.toHaveBeenCalled();
+  });
+
+  it('取下げ再実行時に公開メッセージを取下げ状態へ再同期する', async () => {
+    const tx = {
+      $queryRaw: vi.fn(async () => [{ authorId: '456', status: 'withdrawn' }]),
+      $executeRaw: vi.fn(async () => 1),
+      auditLog: { create: vi.fn(async () => undefined) },
+    };
+    const snapshot = makeSnapshot({ status: 'withdrawn' });
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) =>
+        callback(tx),
+      ),
+      $queryRaw: vi.fn(async () => [snapshot]),
+    };
+    const edit = vi.fn(async () => undefined);
+    const fetchMessage = vi.fn(async () => ({ id: '999', edit }));
+    const fetchChannel = vi.fn(async () => ({
+      isTextBased: () => true,
+      messages: { fetch: fetchMessage },
+    }));
+    const reply = vi.fn(async () => undefined);
+    const context = {
+      client: {
+        channels: { fetch: fetchChannel },
+        users: { fetch: vi.fn() },
+      },
+      prisma,
+      logger: { warn: vi.fn() },
+      guildId: '123',
+      config: normalizeSuggestionConfig(undefined),
+      manifest: suggestionPlugin.manifest,
+    };
+    const interaction = {
+      guildId: '123',
+      channelId: '789',
+      channel: null,
+      user: { id: '456' },
+      options: {
+        getSubcommand: () => 'withdraw',
+        getString: (name: string) => (name === 'id' ? ID : null),
+      },
+      reply,
+      followUp: vi.fn(async () => undefined),
+    };
+    const command = suggestionPlugin.provideCommands?.(context as never)[0];
+    if (!command) throw new Error('Suggestion command is not available');
+
+    await command.execute(interaction as never);
+
+    expect(fetchChannel).toHaveBeenCalledWith('789');
+    expect(fetchMessage).toHaveBeenCalledWith('999');
+    expect(edit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining('↩️ 取下げ'),
+        components: [],
+      }),
+    );
+    expect(reply).toHaveBeenCalledWith({
+      content: `Suggestion \`${ID}\` はすでに取り下げ済みです。`,
+      flags: 64,
+      allowedMentions: { parse: [] },
+    });
   });
 
   it('第三者は取下げできずSuggestion内容も再照会しない', async () => {
