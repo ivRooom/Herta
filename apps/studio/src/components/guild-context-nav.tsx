@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import {
   Check,
@@ -50,6 +50,7 @@ export function GuildContextNav({
   guildsState: GuildSwitcherState;
 }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const router = useRouter();
   const routeContext = getGuildConsoleContext(pathname);
   const { guilds, selectedGuild, defaultGuildId, selectGuild, setDefaultGuild } =
@@ -104,7 +105,16 @@ export function GuildContextNav({
     if (!selectGuild(guild.id)) return;
     setMenuOpen(false);
     setQuery('');
-    if (routeContext) router.push(getGuildSwitchHref(guild.id, routeContext));
+    if (routeContext) {
+      router.push(getGuildSwitchHref(guild.id, routeContext));
+      return;
+    }
+    if (pathname === '/dashboard/community' || pathname === '/dashboard/analytics') {
+      const nextSearchParams = new URLSearchParams(searchParams.toString());
+      nextSearchParams.set('guild', guild.id);
+      nextSearchParams.delete('page');
+      router.push(`${pathname}?${nextSearchParams.toString()}`);
+    }
   }
 
   async function handleDefaultToggle() {
