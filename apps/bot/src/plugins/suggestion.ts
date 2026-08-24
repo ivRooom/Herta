@@ -28,6 +28,7 @@ const MAX_CONTENT_LENGTH = 1000;
 const MAX_NOTE_LENGTH = 300;
 const MAX_LIST_PAGE_LENGTH = 1900;
 const MAX_INFO_LENGTH = 1900;
+const MAX_MESSAGE_RECONCILE_ATTEMPTS = 5;
 
 export interface SuggestionConfig {
   enabled: boolean;
@@ -371,10 +372,10 @@ async function handleWithdraw(
       : `Suggestion \`${id}\` を取り下げました。`,
   );
   if (result.snapshot) {
-    await updateStoredMessage(context, result.snapshot).catch((error) =>
+    await reconcileSuggestionMessage(context, result.snapshot).catch((error) =>
       context.logger.warn(
         { err: error, suggestionId: id },
-        '取下げ後のSuggestionメッセージ更新に失敗しました',
+        '取下げ後のSuggestionメッセージ再同期に失敗しました',
       ),
     );
   }
@@ -415,8 +416,11 @@ async function handleStatus(
     return;
   }
   await reply(interaction, `Suggestion \`${id}\` を「${statusLabel(status)}」へ変更しました。`);
-  await updateStoredMessage(context, snapshot).catch((error) =>
-    context.logger.warn({ err: error, suggestionId: id }, 'Suggestionメッセージ更新に失敗しました'),
+  await reconcileSuggestionMessage(context, snapshot).catch((error) =>
+    context.logger.warn(
+      { err: error, suggestionId: id },
+      'Suggestionメッセージ再同期に失敗しました',
+    ),
   );
   if (config.notifyAuthorOnStatusChange) {
     await context.client.users
@@ -467,16 +471,12 @@ async function handleSuggestionComponent(
     return;
   }
   await interaction.update(buildSuggestionMessage(snapshot));
-
-  const current = await getSuggestionSnapshot(context.prisma, parsed.id, interaction.guildId);
-  if (current && shouldRepairSuggestionMessage(snapshot, current)) {
-    await updateStoredMessage(context, current).catch((error) =>
-      context.logger.warn(
-        { err: error, suggestionId: parsed.id },
-        '投票後のSuggestionメッセージ再同期に失敗しました',
-      ),
-    );
-  }
+  await reconcileSuggestionMessage(context, snapshot, true).catch((error) =>
+    context.logger.warn(
+      { err: error, suggestionId: parsed.id },
+      '投票後のSuggestionメッセージ再同期に失敗しました',
+    ),
+  );
 }
 
 async function resolveSuggestionChannel(
@@ -491,6 +491,27 @@ async function resolveSuggestionChannel(
     return channel?.isTextBased() ? channel : null;
   }
   return interaction.channelId && interaction.channel?.isTextBased() ? interaction.channel : null;
+}
+
+async function reconcileSuggestionMessage(
+  context: SuggestionContext,
+  initial: SuggestionSnapshot,
+  initiallyRendered = false,
+): Promise<void> {
+  let rendered = initial;
+  if (!initiallyRendered) await updateStoredMessage(context, rendered);
+
+  for (let attempt = 0; attempt < MAX_MESSAGE_RECONCILE_ATTEMPTS; attempt += 1) {
+    const current = await getSuggestionSnapshot(context.prisma, rendered.id, rendered.guildId);
+    if (!current || !shouldRepairSuggestionMessage(rendered, current)) return;
+    await updateStoredMessage(context, current);
+    rendered = current;
+  }
+
+  const current = await getSuggestionSnapshot(context.prisma, rendered.id, rendered.guildId);
+  if (current && shouldRepairSuggestionMessage(rendered, current)) {
+    throw new Error('SuggestionMessageReconciliationDidNotConverge');
+  }
 }
 
 async function updateStoredMessage(
