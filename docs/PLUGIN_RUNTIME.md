@@ -101,8 +101,8 @@ Workerを`expectedRuntimeConsumers`へ追加するのは、対象Pluginについ
 `consumer=worker` ACK、Worker startup reconciliationはまだ導入しません。
 
 - Daily Content: due判定、stale recovery、配信実行時にDBからenabled/configを再取得し、process内のPlugin設定stateは持ちません。ただし`maxAttempts`だけはenqueue時にBullMQ `job.opts.attempts`へsnapshotされ、既存waiting / active / delayed jobは旧retry budgetを保持します。このdurable queue stateの整合は #318 で別途扱います。
-- LFG: expire、message同期、recoveryでenabledをDB確認し、prune時にconfigをDB取得します。process内のPlugin設定stateは持たず、定期scanで収束するためRuntime applyは不要です。
-- Team Split: 各scanでenabled Guildを一括取得し、prune時にconfigをDB取得します。process内のPlugin設定stateは持たず、定期scanで収束するためRuntime applyは不要です。
+- LFG: expire、message同期、recoveryではenabledを通常scanごとにDB確認します。`retentionDays`はhourly pruneでconfigをDB取得するため、enabled変更は次回通常scan、retention変更は次回prune cycleで反映されます。process内のPlugin設定stateは持ちません。
+- Team Split: 各通常scanでenabled Guildを一括取得します。`retentionDays`はhourly pruneでconfigをDB取得するため、enabled変更は次回通常scan、retention変更は次回prune cycleで反映されます。process内のPlugin設定stateは持ちません。
 - Community Season Snapshot: `GuildPlugin`設定を参照しないbackground maintenanceのためPlugin Runtime対象外です。
 - Discord Role Operation: 永続化済みoperationをDBからclaimして実行するためPlugin Runtime対象外です。
 
@@ -117,8 +117,9 @@ Runtime stateではありません。また、Plugin無効化後に既存deliver
 更新していないのにAppliedと記録できてしまうため、Worker consumer化は行いません。
 
 LFGとTeam SplitもWorker起動時にPlugin別timerを動的登録しておらず、Worker process自体は常時起動した
-まま、各scanで現在のDB状態から処理対象を決めます。このためRedis Pub/Sub停止中の設定変更も、次回scan
-またはjob実行時のDB readで最終的に現在状態へ収束します。
+まま現在のDB状態から処理対象を決めます。enabledは次回通常scan、`retentionDays`は最大約1時間後の
+次回prune cycleで再取得されます。Redis Pub/Sub停止中に変更があっても、それぞれのpolling cycleで
+現在のDB状態へ収束します。
 
 この構成でWorker ACKだけを追加すると、実際には再適用するWorker process stateが存在しないにもかかわらず
 Operations上でWorker apply成功を表現することになります。したがって現行Manifestは引き続きdefault
