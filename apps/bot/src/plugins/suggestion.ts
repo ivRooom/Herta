@@ -365,12 +365,19 @@ async function handleWithdraw(
     await reply(interaction, 'このSuggestionは現在の状態では取り下げできません。');
     return;
   }
-  await reply(
-    interaction,
-    result.outcome === 'already_withdrawn'
-      ? `Suggestion \`${id}\` はすでに取り下げ済みです。`
-      : `Suggestion \`${id}\` を取り下げました。`,
-  );
+
+  let acknowledgementError: unknown;
+  try {
+    await reply(
+      interaction,
+      result.outcome === 'already_withdrawn'
+        ? `Suggestion \`${id}\` はすでに取り下げ済みです。`
+        : `Suggestion \`${id}\` を取り下げました。`,
+    );
+  } catch (error) {
+    acknowledgementError = error;
+  }
+
   if (result.snapshot) {
     await reconcileSuggestionMessage(context, result.snapshot).catch((error) =>
       context.logger.warn(
@@ -379,6 +386,8 @@ async function handleWithdraw(
       ),
     );
   }
+
+  if (acknowledgementError) throw acknowledgementError;
 }
 
 async function handleStatus(
