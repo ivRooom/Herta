@@ -3,6 +3,8 @@ name: Temporary Suggestion Formatter
 on:
   push:
     branches: [feat/suggestion-author-withdraw]
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
