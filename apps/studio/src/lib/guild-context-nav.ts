@@ -2,7 +2,15 @@ const DISCORD_GUILD_ID = /^\d{17,20}$/u;
 const GUILD_DASHBOARD_PATH = /^\/dashboard\/guilds\/(\d{17,20})(?:\/|$)/u;
 
 export type GuildConsoleSection =
-  'overview' | 'plugins' | 'leaderboard' | 'moderation' | 'audit-logs' | 'bot-profile' | 'other';
+  | 'overview'
+  | 'plugins'
+  | 'commands'
+  | 'leaderboard'
+  | 'moderation'
+  | 'audit-logs'
+  | 'access'
+  | 'bot-profile'
+  | 'other';
 
 export interface GuildConsoleContext {
   guildId: string;
@@ -25,6 +33,9 @@ export function getGuildConsoleContext(pathname: string): GuildConsoleContext | 
   if (isRouteOrChild(pathname, `${basePath}/plugins`)) {
     return { guildId, section: 'plugins' };
   }
+  if (isRouteOrChild(pathname, `${basePath}/commands`)) {
+    return { guildId, section: 'commands' };
+  }
   if (isRouteOrChild(pathname, `${basePath}/leaderboard`)) {
     return { guildId, section: 'leaderboard' };
   }
@@ -33,6 +44,9 @@ export function getGuildConsoleContext(pathname: string): GuildConsoleContext | 
   }
   if (isRouteOrChild(pathname, `${basePath}/audit-logs`)) {
     return { guildId, section: 'audit-logs' };
+  }
+  if (isRouteOrChild(pathname, `${basePath}/access`)) {
+    return { guildId, section: 'access' };
   }
   if (isRouteOrChild(pathname, `${basePath}/bot-profile`)) {
     return { guildId, section: 'bot-profile' };
