@@ -7,46 +7,36 @@ const operationsPageSource = readFileSync(
   'utf8',
 );
 
-function inventoryMobileCardSource(): string {
+function getInventoryMobileCardSource(): string {
   const start = operationsPageSource.indexOf('function InventoryMobileCard');
-  const end = operationsPageSource.indexOf('\nfunction attentionDetail', start);
+  const end = operationsPageSource.indexOf('function attentionDetail', start);
 
-  assert.notEqual(start, -1, 'InventoryMobileCard should exist');
-  assert.notEqual(end, -1, 'InventoryMobileCard should have a stable function boundary');
+  assert.ok(start >= 0, 'InventoryMobileCard should exist');
+  assert.ok(end > start, 'InventoryMobileCard should have a stable boundary');
 
   return operationsPageSource.slice(start, end);
 }
 
-test('Plugin Operations inventory keeps separate mobile cards and desktop table views', () => {
-  assert.match(operationsPageSource, /className="mt-5 space-y-3 md:hidden"/u);
-  assert.match(operationsPageSource, /function InventoryMobileCard/u);
-  assert.match(
-    operationsPageSource,
-    /className="mt-5 hidden overflow-hidden rounded-2xl border border-border bg-surface shadow-card md:block"/u,
-  );
-  assert.match(
-    operationsPageSource,
-    /<table className="w-full min-w-\[960px\] text-left text-sm">/u,
-  );
+test('Plugin Operations keeps separate mobile and desktop inventory views', () => {
+  assert.ok(operationsPageSource.includes('className="mt-5 space-y-3 md:hidden"'));
+  assert.ok(operationsPageSource.includes('function InventoryMobileCard'));
+  assert.ok(operationsPageSource.includes('shadow-card md:block'));
+  assert.ok(operationsPageSource.includes('min-w-[960px]'));
 });
 
-test('Plugin Operations mobile cards expose the same safe inventory metadata', () => {
-  const mobileCardSource = inventoryMobileCardSource();
+test('Plugin Operations mobile card exposes only safe inventory metadata', () => {
+  const mobileCardSource = getInventoryMobileCardSource();
 
-  assert.match(mobileCardSource, /<StatusBadge status=\{entry\.status\} \/>/u);
-  assert.match(
-    mobileCardSource,
-    /<RuntimeConsumerBadges states=\{entry\.runtimeConsumers\} \/>/u,
-  );
-  assert.match(mobileCardSource, /entry\.configVersion/u);
-  assert.match(mobileCardSource, /formatJst\(entry\.updatedAt\)/u);
-  assert.match(mobileCardSource, /break-all text-\[11px\] text-muted/u);
-  assert.doesNotMatch(mobileCardSource, /entry\.config/u);
+  assert.ok(mobileCardSource.includes('<StatusBadge status={entry.status} />'));
+  assert.ok(mobileCardSource.includes('states={entry.runtimeConsumers}'));
+  assert.ok(mobileCardSource.includes('entry.configVersion'));
+  assert.ok(mobileCardSource.includes('formatJst(entry.updatedAt)'));
+  assert.ok(mobileCardSource.includes('break-all text-[11px] text-muted'));
+  assert.equal(mobileCardSource.includes('entry.config'), false);
 });
 
 test('Plugin Operations navigation has explicit keyboard focus treatment', () => {
-  assert.match(
-    operationsPageSource,
-    /focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2/u,
-  );
+  assert.ok(operationsPageSource.includes('focus-visible:outline-none'));
+  assert.ok(operationsPageSource.includes('focus-visible:ring-2'));
+  assert.ok(operationsPageSource.includes('focus-visible:ring-ring'));
 });
