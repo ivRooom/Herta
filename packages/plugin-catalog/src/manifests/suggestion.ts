@@ -118,6 +118,18 @@ export const suggestionManifest: PluginManifest = {
           description: '自分が投稿した最近の要望を表示します',
         },
         {
+          name: 'info',
+          description: 'Suggestionの詳細を表示します（投稿者本人 / Staff）',
+          options: [
+            {
+              name: 'id',
+              description: 'Suggestion ID',
+              type: 'string',
+              required: true,
+            },
+          ],
+        },
+        {
           name: 'status',
           description: 'Suggestionの状態を変更します（Staff向け）',
           options: [
