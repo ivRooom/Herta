@@ -1,4 +1,5 @@
 import type { StudioAccessPolicy, StudioPolicyAction } from './studio-access-policy.ts';
+import { studioNavigationSettingsResource } from './studio-navigation-config.ts';
 import { pluginConfigPermissionFields } from './plugin-config-paths.ts';
 import {
   pluginConfigFieldResource,
@@ -159,6 +160,16 @@ export function buildStudioGranularPermissionOptions(
       resource,
     });
   }
+
+  const navigationSettings = studioNavigationSettingsResource(guildId);
+  options.push({
+    id: permissionOptionId('studio.settings.write', navigationSettings),
+    category: 'Studio Settings',
+    label: 'Server Navigation · 編集',
+    description: 'Current Serverへ表示する個別Pluginタブを変更',
+    action: 'studio.settings.write',
+    resource: navigationSettings,
+  });
 
   const birthdayRegistrations = studioBirthdayResource(guildId, 'registrations');
   const birthdayCelebrations = studioBirthdayResource(guildId, 'celebrations');
