@@ -94,7 +94,10 @@ export function StudioNavigationSettings() {
 
         <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {CORE_SERVER_TABS.map(([label, description]) => (
-            <div key={label} className="flex items-start gap-2 rounded-xl border border-border bg-background p-3">
+            <div
+              key={label}
+              className="flex items-start gap-2 rounded-xl border border-border bg-background p-3"
+            >
               <Check className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
               <div>
                 <p className="text-sm font-medium">{label}</p>
@@ -109,12 +112,16 @@ export function StudioNavigationSettings() {
         <div>
           <h2 className="font-medium">個別Pluginタブ</h2>
           <p className="mt-1 text-sm leading-6 text-muted">
-            日常的に使う機能だけをCurrent Serverへ表示します。非表示にしてもページや機能は削除されません。
+            日常的に使う機能だけをCurrent
+            Serverへ表示します。非表示にしてもページや機能は削除されません。
           </p>
         </div>
 
         {loadState === 'loading' ? (
-          <p className="mt-5 rounded-xl border border-border bg-background p-4 text-sm text-muted" role="status">
+          <p
+            className="mt-5 rounded-xl border border-border bg-background p-4 text-sm text-muted"
+            role="status"
+          >
             ナビゲーション設定を読み込んでいます…
           </p>
         ) : loadState === 'error' ? (
@@ -148,7 +155,9 @@ export function StudioNavigationSettings() {
                   />
                   <span>
                     <span className="block text-sm font-medium">{tab.label}</span>
-                    <span className="mt-1 block text-xs leading-5 text-muted">{tab.description}</span>
+                    <span className="mt-1 block text-xs leading-5 text-muted">
+                      {tab.description}
+                    </span>
                   </span>
                 </label>
               );
@@ -186,7 +195,8 @@ export function StudioNavigationSettings() {
       <section className="rounded-2xl border border-border bg-surface p-5">
         <h2 className="font-medium">将来のロール別表示</h2>
         <p className="mt-2 text-sm leading-6 text-muted">
-          Guild設定で選んだタブを基準に、将来admin.ivrm.jp側のロール設定でユーザーごとの表示候補を絞り込める境界を分離しています。表示可否に関係なく、実際の操作権限はHerta IAMで判定します。
+          Guild設定で選んだタブを基準に、将来admin.ivrm.jp側のロール設定でユーザーごとの表示候補を絞り込める境界を分離しています。表示可否に関係なく、実際の操作権限はHerta
+          IAMで判定します。
         </p>
       </section>
     </div>
