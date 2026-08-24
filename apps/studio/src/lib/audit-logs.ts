@@ -455,18 +455,23 @@ function resolveSourceLabel(
   operationSource: string | null,
   runtimeConsumer: RuntimeConsumerResolution,
 ): string | null {
-  if (operationSource === 'studio-runtime') return 'Studio Runtime';
-  if (operationSource === 'bot-runtime') return 'Bot Runtime';
-  if (operationSource === 'bot-runtime-startup-recovery') return 'Bot Runtime Recovery';
-  if (operationSource === 'worker-runtime') return 'Worker Runtime';
-  if (operationSource === 'worker-runtime-startup-recovery') return 'Worker Runtime Recovery';
-  if (operationSource === 'dashboard') return 'Herta Studio';
-  if (operationSource === 'discord') return 'Discord';
+  if (
+    event === 'plugin.runtime_apply_succeeded' &&
+    runtimeConsumer === 'bot' &&
+    operationSource === 'bot-runtime-startup-recovery'
+  ) {
+    return 'Bot Runtime Recovery';
+  }
   if (isRuntimeApplyEvent(event) && runtimeConsumer !== null) {
     return runtimeConsumer === 'unknown'
       ? 'Runtime Consumer'
       : `${runtimeConsumerDisplayLabel(runtimeConsumer)} Runtime`;
   }
+  if (operationSource === 'studio-runtime') return 'Studio Runtime';
+  if (operationSource === 'bot-runtime') return 'Bot Runtime';
+  if (operationSource === 'bot-runtime-startup-recovery') return 'Bot Runtime Recovery';
+  if (operationSource === 'dashboard') return 'Herta Studio';
+  if (operationSource === 'discord') return 'Discord';
   if (event.startsWith('plugin.')) return 'Herta Studio';
   if (event.startsWith('moderation.automatic.')) return 'Herta Bot';
   return null;
