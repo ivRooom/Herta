@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildSuggestionMessage,
+  canViewSuggestion,
+  formatSuggestionInfo,
   formatSuggestionListPages,
   normalizeSuggestionConfig,
+  suggestionPlugin,
 } from './suggestion.js';
 import type { SuggestionListRecord, SuggestionSnapshot } from './suggestion-repository.js';
 
@@ -70,6 +73,46 @@ describe('Suggestion v1', () => {
     expect(pages.length).toBeGreaterThan(1);
     expect(pages.every((page) => page.length <= 1900)).toBe(true);
     for (const record of records) expect(pages.join('\n')).toContain(record.id);
+  });
+
+  it('info subcommandをPlugin command定義へ公開する', () => {
+    const info = suggestionPlugin.manifest.commands[0]?.subcommands?.find(
+      (subcommand) => subcommand.name === 'info',
+    );
+    expect(info).toMatchObject({
+      name: 'info',
+      options: [{ name: 'id', type: 'string', required: true }],
+    });
+  });
+
+  it('詳細表示は投稿者本人またはStaffだけに許可する', () => {
+    const snapshot = makeSnapshot();
+    expect(canViewSuggestion(snapshot, { userId: '456', canManage: false })).toBe(true);
+    expect(canViewSuggestion(snapshot, { userId: '999', canManage: true })).toBe(true);
+    expect(canViewSuggestion(snapshot, { userId: '999', canManage: false })).toBe(false);
+  });
+
+  it('匿名Suggestionの詳細で投稿者IDを漏らさない', () => {
+    const output = formatSuggestionInfo(
+      makeSnapshot({
+        anonymous: true,
+        staffNote: 'Staffだけの識別情報は含めない',
+        content: 'x'.repeat(1000),
+      }),
+      '999',
+    );
+    expect(output).toContain('投稿者: 匿名');
+    expect(output).toContain('Staff: Staffだけの識別情報は含めない');
+    expect(output).not.toContain('<@456>');
+    expect(output).not.toContain('投稿者: 456');
+    expect(output.length).toBeLessThanOrEqual(1900);
+  });
+
+  it('投稿者本人の詳細では本人だと分かる表示にする', () => {
+    const output = formatSuggestionInfo(makeSnapshot(), '456');
+    expect(output).toContain('投稿者: あなた');
+    expect(output).toContain('ID: `11111111-1111-4111-8111-111111111111`');
+    expect(output).toContain('作成: <t:');
   });
 });
 
