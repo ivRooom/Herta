@@ -100,7 +100,7 @@ Workerを`expectedRuntimeConsumers`へ追加するのは、対象Pluginについ
 長期保持してRuntime eventで再適用すべき対象がありません。そのため、Worker subscriber、
 `consumer=worker` ACK、Worker startup reconciliationはまだ導入しません。
 
-- Daily Content: due判定、stale recovery、配信実行時にDBからenabled/configを再取得し、process内のPlugin設定stateは持ちません。ただし`maxAttempts`だけはenqueue時にBullMQ `job.opts.attempts`へsnapshotされ、既存waiting / active / delayed jobは旧retry budgetを保持します。このdurable queue stateの整合は #318 で別途扱います。
+- Daily Content: due判定、stale recovery、配信実行時にDBからenabled/configを再取得し、process内のPlugin設定stateは持ちません。Issue #318では`maxAttempts`のdurable queue snapshot問題をWorker Runtime化せず解消し、DB `attemptCount`と実行直前の現在`maxAttempts`をDomain retryの正本、BullMQ `attempts=10`をtransport安全上限として分離します。
 - LFG: expire、message同期、recoveryではenabledを通常scanごとにDB確認します。`retentionDays`はhourly pruneでconfigをDB取得するため、enabled変更は次回通常scan、retention変更は次回prune cycleで反映されます。process内のPlugin設定stateは持ちません。
 - Team Split: 各通常scanでenabled Guildを一括取得します。`retentionDays`はhourly pruneでconfigをDB取得するため、enabled変更は次回通常scan、retention変更は次回prune cycleで反映されます。process内のPlugin設定stateは持ちません。
 - Community Season Snapshot: `GuildPlugin`設定を参照しないbackground maintenanceのためPlugin Runtime対象外です。
@@ -111,10 +111,13 @@ Runtime stateではありません。また、Plugin無効化後に既存deliver
 `GuildPlugin.enabled`を再確認してskipします。再有効化後は定期scanの`initializeMissingNextRuns()`が
 現在のDB状態から`nextRunAt`を再構築します。
 
-一方、`maxAttempts`はqueue job生成時のtransport optionへコピーされるため、既存jobについてはDB再読込だけで
-現在値へ収束しません。これはWorker process内Runtimeを再構築する問題とは分離し、queue retry policyとして
-#318で修正します。現時点でこの差分だけを根拠にWorker apply ACKを生成すると、実際にqueue stateを
-更新していないのにAppliedと記録できてしまうため、Worker consumer化は行いません。
+Daily Contentの`maxAttempts`もWorker Runtime apply対象ではありません。Queue投入時にPlugin設定値を
+BullMQ `job.opts.attempts`へsnapshotする設計をやめ、既存waiting / active / delayed Jobは安全のため
+保持したまま、各実行直前に現在configと永続化済み`attemptCount`からretry budgetを判定します。
+retryableなDiscord失敗はDBの`retrying` / `nextAttemptAt`へ戻して現在Jobを終了し、次回scanで同じ
+deliveryを再queueします。Job再作成でresetされる`attemptsMade`はDomain retry判定やbackoffへ使用しません。
+これにより設定変更・Worker restart・stale recoveryはDB stateから再収束し、Worker subscriberやapply ACKを
+追加する必要はありません。
 
 LFGとTeam SplitもWorker起動時にPlugin別timerを動的登録しておらず、Worker process自体は常時起動した
 まま現在のDB状態から処理対象を決めます。enabledは次回通常scan、`retentionDays`は最大約1時間後の

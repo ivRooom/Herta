@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { normalizeDailyContentConfig } from './config.js';
+import { retryDailyContentDelivery } from './retry.js';
 import {
+  markDeliveryFailed,
+  markDeliveryProcessing,
   markDeliverySent,
   reserveDueDelivery,
   updateDailyContent,
@@ -81,8 +84,19 @@ function createHarness(overrides: Partial<DailyContentRecord> = {}) {
       },
       update: async (args: Record<string, unknown>) => {
         if (!delivery) throw new Error('delivery missing');
-        const data = (args['data'] ?? {}) as Partial<DailyContentDeliveryRecord>;
-        delivery = { ...delivery, ...data };
+        const rawData = (args['data'] ?? {}) as Record<string, unknown>;
+        const attemptUpdate = rawData['attemptCount'];
+        const data = { ...rawData };
+        delete data['attemptCount'];
+        delivery = {
+          ...delivery,
+          ...(data as Partial<DailyContentDeliveryRecord>),
+          ...(typeof attemptUpdate === 'number'
+            ? { attemptCount: attemptUpdate }
+            : isIncrement(attemptUpdate)
+              ? { attemptCount: delivery.attemptCount + attemptUpdate.increment }
+              : {}),
+        };
         return delivery;
       },
     },
@@ -99,6 +113,15 @@ function createHarness(overrides: Partial<DailyContentRecord> = {}) {
   } as unknown as DailyContentPrismaClient;
 
   return { prisma, scheduledFor, getSchedule: () => schedule, getDelivery: () => delivery };
+}
+
+function isIncrement(value: unknown): value is { increment: number } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'increment' in value &&
+    typeof (value as { increment?: unknown }).increment === 'number'
+  );
 }
 
 describe('Message Studio one-shot delivery lifecycle', () => {
@@ -170,5 +193,32 @@ describe('Message Studio one-shot delivery lifecycle', () => {
     expect(harness.getSchedule().enabled).toBe(true);
     expect(harness.getSchedule().onceAt).toEqual(editedAt);
     expect(harness.getSchedule().nextRunAt).toEqual(editedAt);
+  });
+});
+
+describe('Daily Content attempt accounting', () => {
+  it('attemptCountは手動retryや再queueでresetせず、配信開始ごとに累積する', async () => {
+    const harness = createHarness();
+    const reserved = await reserveDueDelivery(harness.prisma, 'schedule-1', harness.scheduledFor);
+
+    await markDeliveryProcessing(harness.prisma, reserved!.id);
+    expect(harness.getDelivery()?.attemptCount).toBe(1);
+
+    await markDeliveryFailed(harness.prisma, {
+      deliveryId: reserved!.id,
+      errorName: 'DailyContentDiscordPublishFailed',
+    });
+    const retried = await retryDailyContentDelivery(harness.prisma, {
+      guildId: 'guild-1',
+      deliveryId: reserved!.id,
+      actorId: 'user-2',
+      now: new Date('2030-01-01T00:11:00Z'),
+    });
+
+    expect(retried?.status).toBe('retrying');
+    expect(retried?.attemptCount).toBe(1);
+
+    await markDeliveryProcessing(harness.prisma, reserved!.id);
+    expect(harness.getDelivery()?.attemptCount).toBe(2);
   });
 });

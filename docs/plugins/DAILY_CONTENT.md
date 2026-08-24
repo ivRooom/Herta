@@ -8,7 +8,7 @@ Daily Content Pluginは、Guildごとに登録したテキストコンテンツ�
 2. Workerが`next_run_at <= now()`のスケジュールを走査する
 3. `daily_content_deliveries`へ配信予約を作成する
 4. Redisへ本文ではなく`deliveryId`、`scheduleId`、idempotency key、予定日時だけをenqueueする
-5. Workerが配信直前にDBから本文と最新のPlugin状態を取得する
+5. Workerが配信直前にDBから本文と最新のPlugin状態・設定を取得する
 6. Discord APIへ送信し、成功・失敗・再試行状態をDBへ記録する
 
 本文はBullMQジョブ、Audit Log、Workerログへ保存しません。
@@ -43,17 +43,54 @@ Daily Content Pluginは、Guildごとに登録したテキストコンテンツ�
 
 Discord送信が成功した直後にDB更新だけが失敗した場合も、短時間の再試行では同じnonceを使用します。長時間経過後の手動再実行まで完全なExactly Onceを保証するものではないため、履歴のmessage IDとDiscordチャンネルを確認してから再実行してください。
 
+Forumの新規thread作成はDiscord nonceによる同じ冪等契約を利用できないため、通信結果が不明な`DailyContentForumPublishAmbiguous`は自動retryしません。Announcementの元メッセージ送信後にCrosspostだけが失敗した場合も、元投稿の重複を避けるためCrosspost失敗だけを理由に元メッセージを再送しません。
+
 ## Worker全体設定
 
 Workerのdue走査間隔はGuild設定ではなく環境変数`DAILY_CONTENT_SCAN_INTERVAL_SECONDS`で指定します。既定30秒、最小10秒、最大300秒です。Redis接続は段階的な再接続delayを使用し、最大30秒で再試行します。
 
-## 再試行とstale recovery
+## 再試行の正本
 
-- HTTP 429、5xx、通信エラー、timeoutは指数バックオフで再試行します。
-- 既定の最大試行回数は5回です。
-- `processing`のままGuild設定の`staleAfterMinutes`を超えた配信は`retrying`へ戻します。
-- BullMQに同じ`jobId`の`failed`・`completed` Jobが残っている場合は削除して再投入します。
+Daily Contentの配信retry policyは、BullMQ Jobではなく次のDB状態と実行時設定を正本にします。
+
+- `daily_content_deliveries.attempt_count`: そのdeliveryで**既に開始した総配信試行回数**
+- `GuildPlugin.config.maxAttempts`: 配信実行直前にDBから再取得した**現在の最大試行回数**
+- `daily_content_deliveries.next_attempt_at`: 次のDomain retryを開始してよい時刻
+
+`attempt_count`は`processing`へ遷移するときに1増えます。自動retry、failed Jobの再queue、Worker再起動、stale recovery、Studioからの手動retryでは0へ戻しません。したがってBullMQ Jobが作り直されてもdelivery全体の総試行回数は失われません。
+
+`maxAttempts=1`では初回だけを許可します。例えば現在の`attempt_count=1`かつ`maxAttempts=2`なら2回目を開始できますが、`attempt_count=2`ならDiscord APIを呼ぶ前にretry budget exhaustedとして終了します。
+
+## BullMQ attempts / attemptsMadeの役割
+
+BullMQの`attempts`はPlugin設定のsnapshotではなく、transport層で予期しないWorker/DB処理エラーが発生した場合の安全上限として、Config Schema上限と同じ`10`に固定します。
+
+`job.attemptsMade`は1つのBullMQ Job内だけのtransport試行回数です。failed/completed Jobを再作成するとresetされるため、Daily ContentのDomain retry判定、総試行回数、backoff計算には使用しません。
+
+Discord publishがretryableな理由（HTTP 429、5xx、通信エラー、timeout）で失敗した場合は、現在のBullMQ Jobをそのまま自動retryさせません。WorkerはDBを`retrying`へ更新して`next_attempt_at`を設定し、そのJobを終了させます。次回Worker scanが期限到来後に同じ`deliveryId`を再queueします。このためDomain retryとBullMQ transport retryのどちらが正本か曖昧になりません。
+
+指数backoffも`attempt_count`を基準に15秒、30秒、60秒…と計算するため、BullMQ Jobの置換やWorker restartでbackoff段階がresetされません。
+
+## maxAttempts変更時の既存Job
+
+既存の`active`・`waiting`・`delayed`・`prioritized`・`waiting-children` Jobは、設定変更だけを理由にremove/replaceしません。実行中Jobを危険に差し替えず、同じ`jobId`による二重enqueueを防止する既存方針を維持します。
+
+Workerは各配信の実行直前に最新Plugin configをDBから読み直すため、既存Jobの古い`job.opts.attempts`はDomain retry判定へ影響しません。
+
+- `maxAttempts: 5 → 2`: `attempt_count`が0なら初回、1なら2回目まで許可します。2以上ならDiscord publishを開始せず`failed`へ確定し、不要な3回目以降を送りません。
+- `maxAttempts: 2 → 5`: 旧Jobが`attempts=2`で作成済みでも、現在の`attempt_count`が5未満なら現行設定の範囲で配信を継続できます。retryable failure後はDB retryへ移行し、次のJobはtransport上限10で作成されるため旧BullMQ上限だけを理由に早期terminalになりません。
+
+設定変更より前にすでに`failed`へ確定したdeliveryを自動復活させることはしません。Studioから明示的にretryすると`attempt_count`を保持したまま`retrying`へ戻ります。現在の`maxAttempts`まで残りbudgetがある場合に再試行できます。上限到達済みdeliveryを再試行する場合は、許容範囲内で`maxAttempts`を増やしてから明示retryします。
+
+## stale recovery / restart
+
+- `processing`のままGuild設定の`staleAfterMinutes`を超えた配信は、現在の`attempt_count`と`maxAttempts`を確認します。
+- retry budgetが残っていれば`attempt_count`を保持したまま`retrying`へ戻します。
+- retry budgetを使い切っていれば、新しいDiscord publishを行わず`failed`へ確定します。
+- BullMQに同じ`jobId`の`failed`・`completed` Jobが残っている場合は、安全に削除して同じdeliveryを再投入します。
 - `active`・`waiting`・`delayed`のJobは既存処理へ任せ、二重enqueueしません。
+- Worker restart後もDBの`retrying` / `next_attempt_at` / `attempt_count`から再収束します。
+- Redis切断・再接続後もQueueとDBの同じdelivery IDを使い、failed/completedの残骸だけを置換します。
 - Pluginが無効なGuildはdue予約を作成せず、該当スケジュールの`next_run_at`をNULLへ退避します。再有効化後のWorker走査で未来時刻へ再初期化します。
 - 既に予約済みの配信でPluginまたは個別スケジュールが無効の場合、送信せず`skipped`として記録します。
 - Studioでは`failed`または`skipped`の履歴だけを再実行できます。
@@ -96,6 +133,8 @@ pnpm --filter @herta/db migrate:deploy
 - due判定用Indexを単独`CREATE INDEX CONCURRENTLY` migrationで追加
 - 既存`daily_contents`の時刻CHECK制約を`NOT VALID`で追加
 
+Issue #318のretry policy修正では既存の`attempt_count`、`next_attempt_at`、Guild Plugin configだけを利用するため、追加migrationはありません。
+
 既存データの時刻を確認した後、低負荷時間帯に制約を検証します。
 
 ```sql
@@ -117,11 +156,13 @@ ALTER TABLE daily_contents
 6. `daily_content_deliveries.status = 'sent'`とmessage IDを確認する
 7. 同じdeliveryを再enqueueしてDiscord投稿が重複しないことを確認する
 8. Bot権限を外し、失敗・retry・Studio再実行を確認する
-9. 通常チャンネルとThreadで事前権限判定を確認する
-10. Workerを配信中に停止し、stale recoveryを確認する
-11. Plugin無効化後に`next_run_at`がNULLになり、新しいdue履歴が作られないことを確認する
-12. Plugin再有効化後に`next_run_at`が未来時刻へ戻ることを確認する
-13. スケジュール削除後も配信履歴とmessage IDが残ることを確認する
+9. `maxAttempts`を5→2へ下げ、既存waiting/delayed/retrying deliveryが新上限を超えて送信されないことを確認する
+10. `maxAttempts`を2→5へ上げ、旧BullMQ Jobの`attempts=2`だけを理由に早期failedにならないことを確認する
+11. 通常チャンネルとThreadで事前権限判定を確認する
+12. Workerを配信中に停止し、stale recovery後も`attempt_count`がresetされないことを確認する
+13. Plugin無効化後に`next_run_at`がNULLになり、新しいdue履歴が作られないことを確認する
+14. Plugin再有効化後に`next_run_at`が未来時刻へ戻ることを確認する
+15. スケジュール削除後も配信履歴とmessage IDが残ることを確認する
 
 ## rollback
 
@@ -144,4 +185,4 @@ pg_restore --clean --if-exists --dbname=herta_restore herta-before-daily-content
 - `/daily preview schedule_id:<ID>`: 本人だけに本文をプレビュー
 - `/daily publish schedule_id:<ID>`: 手動配信を予約
 
-Studioではスケジュール作成・編集・停止・削除、次回配信、直近履歴、手動配信、失敗再実行を管理できます。削除はSoft Deleteとして扱い、過去の配信履歴とmessage IDを保持します。v1はテキスト配信のみで、Embed・添付ファイル・外部URL取得を行わないためSSRFの入力面を持ちません。
+Studioではスケジュール作成・編集・停止・削除、次回配信、直近履歴、手動配信、失敗再実行を管理できます。削除はSoft Deleteとして扱い、過去の配信履歴とmessage IDを保持します。

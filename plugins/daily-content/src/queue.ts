@@ -1,5 +1,7 @@
 export type DailyContentQueueJobDisposition = 'enqueue' | 'keep' | 'replace';
 
+export const DAILY_CONTENT_QUEUE_TRANSPORT_ATTEMPTS = 10;
+
 const ACTIVE_JOB_STATES = new Set([
   'active',
   'waiting',
@@ -19,6 +21,28 @@ export function resolveDailyContentQueueJobDisposition(
   if (state === 'failed' || state === 'completed') return 'replace';
   if (ACTIVE_JOB_STATES.has(state)) return 'keep';
   return 'keep';
+}
+
+export function canStartDailyContentDeliveryAttempt(
+  attemptCount: number,
+  maxAttempts: number,
+): boolean {
+  return attemptCount < maxAttempts;
+}
+
+export function shouldRetryDailyContentDelivery(
+  attemptCountAfterAttempt: number,
+  maxAttempts: number,
+  retryable: boolean,
+): boolean {
+  return retryable && attemptCountAfterAttempt < maxAttempts;
+}
+
+export function resolveDailyContentRetryDelayMs(
+  attemptCountAfterAttempt: number,
+  baseDelayMs: number,
+): number {
+  return baseDelayMs * 2 ** Math.max(0, attemptCountAfterAttempt - 1);
 }
 
 export function normalizeDailyContentScanIntervalSeconds(value: unknown): number {

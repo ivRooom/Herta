@@ -5,6 +5,8 @@ import type { Logger } from 'pino';
 import { Redis } from 'ioredis';
 import { QueueNames, type JobData } from '@herta/queue';
 import {
+  DAILY_CONTENT_QUEUE_TRANSPORT_ATTEMPTS,
+  canStartDailyContentDeliveryAttempt,
   checkDailyContentSendPermissions,
   computeDiscordChannelPermissions,
   getDeliveryWithSchedule,
@@ -13,8 +15,6 @@ import {
   listPendingDeliveries,
   listStaleDeliveries,
   markDeliveryFailed,
-  markDeliveryProcessing,
-  markDeliveryQueued,
   markDeliveryRetrying,
   markDeliverySent,
   markDeliverySkipped,
@@ -25,8 +25,10 @@ import {
   normalizeDailyContentScanIntervalSeconds,
   redisReconnectDelay,
   resolveDailyContentQueueJobDisposition,
+  resolveDailyContentRetryDelayMs,
   recoverStaleDelivery,
   reserveDueDelivery,
+  shouldRetryDailyContentDelivery,
   type DailyContentConfig,
   type DailyContentDeliveryRecord,
   type DiscordPermissionMember,
@@ -38,6 +40,8 @@ import {
 const DISCORD_API_BASE_URL = 'https://discord.com/api/v10';
 const DAILY_CONTENT_SCAN_LIMIT = 200;
 const BASE_RETRY_DELAY_MS = 15_000;
+const RETRY_BUDGET_EXHAUSTED_ERROR = 'DailyContentRetryBudgetExhausted';
+const DELIVERY_ALREADY_CLAIMED_ERROR = 'DailyContentDeliveryAlreadyClaimed';
 const MESSAGE_CHANNEL_TYPES = new Set([0, 5, 10, 11, 12]);
 const FORUM_CHANNEL_TYPES = new Set([15]);
 const SUPPORTED_CHANNEL_TYPES = new Set([...MESSAGE_CHANNEL_TYPES, ...FORUM_CHANNEL_TYPES]);
@@ -97,6 +101,53 @@ export function createDeliveryNonce(idempotencyKey: string): string {
     .update(idempotencyKey)
     .digest('hex')
     .slice(0, DISCORD_NONCE_MAX_LENGTH);
+}
+
+export async function claimDailyContentDeliveryAttempt(
+  prisma: DailyContentPrismaClient,
+  input: {
+    deliveryId: string;
+    expectedAttemptCount: number;
+    maxAttempts: number;
+    startedAt?: Date;
+  },
+): Promise<number | null> {
+  const startedAt = input.startedAt ?? new Date();
+  const rows = (await prisma.$queryRawUnsafe(
+    `UPDATE daily_content_deliveries
+     SET status = 'processing',
+         started_at = $4,
+         attempt_count = attempt_count + 1
+     WHERE id = $1
+       AND attempt_count = $2
+       AND attempt_count < $3
+       AND status IN ('pending', 'queued', 'retrying')
+     RETURNING attempt_count AS "attemptCount"`,
+    input.deliveryId,
+    input.expectedAttemptCount,
+    input.maxAttempts,
+    startedAt,
+  )) as Array<{ attemptCount?: unknown }>;
+  const attemptCount = rows[0]?.attemptCount;
+  return typeof attemptCount === 'number' ? attemptCount : null;
+}
+
+export async function markDailyContentDeliveryQueued(
+  prisma: DailyContentPrismaClient,
+  deliveryId: string,
+  expectedAttemptCount: number,
+  queuedAt = new Date(),
+): Promise<void> {
+  await prisma.$executeRawUnsafe(
+    `UPDATE daily_content_deliveries
+     SET status = 'queued', queued_at = $3
+     WHERE id = $1
+       AND attempt_count = $2
+       AND status IN ('pending', 'queued', 'retrying')`,
+    deliveryId,
+    expectedAttemptCount,
+    queuedAt,
+  );
 }
 
 export async function startDailyContentRuntime(
@@ -179,8 +230,7 @@ export async function startDailyContentRuntime(
 
       const pending = await listPendingDeliveries(prisma, now, DAILY_CONTENT_SCAN_LIMIT);
       for (const delivery of pending) {
-        const config = await resolveGuildConfig(options.prisma, delivery.guildId);
-        await ensureDeliveryJob(queue, prisma, delivery, config, now);
+        await ensureDeliveryJob(queue, prisma, delivery, now);
       }
     } catch (error) {
       options.logger.error(
@@ -217,14 +267,13 @@ async function ensureDeliveryJob(
   queue: Queue<DailyContentJobData>,
   prisma: DailyContentPrismaClient,
   delivery: DailyContentDeliveryRecord,
-  config: DailyContentConfig,
   now: Date,
 ): Promise<void> {
   const existing = await queue.getJob(delivery.id);
   const state = existing ? await existing.getState() : null;
   const disposition = resolveDailyContentQueueJobDisposition(state);
   if (disposition === 'keep') {
-    await markDeliveryQueued(prisma, delivery.id, now);
+    await markDailyContentDeliveryQueued(prisma, delivery.id, delivery.attemptCount, now);
     return;
   }
   if (disposition === 'replace' && existing) {
@@ -241,11 +290,11 @@ async function ensureDeliveryJob(
     },
     {
       jobId: delivery.id,
-      attempts: config.maxAttempts,
+      attempts: DAILY_CONTENT_QUEUE_TRANSPORT_ATTEMPTS,
       backoff: { type: 'exponential', delay: BASE_RETRY_DELAY_MS },
     },
   );
-  await markDeliveryQueued(prisma, delivery.id, now);
+  await markDailyContentDeliveryQueued(prisma, delivery.id, delivery.attemptCount, now);
 }
 
 async function processDelivery(
@@ -275,7 +324,28 @@ async function processDelivery(
   }
 
   const config = normalizeDailyContentConfig(plugin.config);
-  await markDeliveryProcessing(prisma, delivery.id);
+  const attemptCountAfterAttempt = await claimDailyContentDeliveryAttempt(prisma, {
+    deliveryId: delivery.id,
+    expectedAttemptCount: delivery.attemptCount,
+    maxAttempts: config.maxAttempts,
+  });
+  if (attemptCountAfterAttempt === null) {
+    const current = await getDeliveryWithSchedule(prisma, delivery.id);
+    if (!current) throw new UnrecoverableError('DailyContentDeliveryNotFound');
+    if (current.status === 'sent' || current.status === 'skipped') return;
+    if (current.status === 'processing') {
+      throw new UnrecoverableError(DELIVERY_ALREADY_CLAIMED_ERROR);
+    }
+    if (!canStartDailyContentDeliveryAttempt(current.attemptCount, config.maxAttempts)) {
+      await markDeliveryFailed(prisma, {
+        deliveryId: current.id,
+        errorName: RETRY_BUDGET_EXHAUSTED_ERROR,
+      });
+      throw new UnrecoverableError(RETRY_BUDGET_EXHAUSTED_ERROR);
+    }
+    throw new UnrecoverableError(DELIVERY_ALREADY_CLAIMED_ERROR);
+  }
+
   try {
     const messageId = await publishDiscordMessage({
       token: options.discordBotToken,
@@ -329,18 +399,23 @@ async function processDelivery(
     );
   } catch (error) {
     const errorName = resolveErrorName(error);
-    const attempts = typeof job.opts.attempts === 'number' ? job.opts.attempts : 1;
-    const hasNextAttempt = isRetryable(error) && job.attemptsMade + 1 < attempts;
+    const hasNextAttempt = shouldRetryDailyContentDelivery(
+      attemptCountAfterAttempt,
+      config.maxAttempts,
+      isRetryable(error),
+    );
     if (hasNextAttempt) {
       const nextAttemptAt = new Date(
-        Date.now() + BASE_RETRY_DELAY_MS * 2 ** Math.max(0, job.attemptsMade),
+        Date.now() + resolveDailyContentRetryDelayMs(attemptCountAfterAttempt, BASE_RETRY_DELAY_MS),
       );
       await markDeliveryRetrying(prisma, {
         deliveryId: delivery.id,
         errorName,
         nextAttemptAt,
       });
-      throw error;
+      // Domain retryはDBのnextAttemptAtを正本にする。現在のBullMQ Jobはここで終了し、
+      // 次回scanが同じdeliveryIdを安全に再queueする。
+      throw new UnrecoverableError(errorName);
     }
 
     await markDeliveryFailed(prisma, { deliveryId: delivery.id, errorName });
@@ -717,6 +792,17 @@ async function recoverStale(
     const config = await resolveGuildConfig(prisma as unknown as PrismaClient, delivery.guildId);
     const guildStaleBefore = now.getTime() - config.staleAfterMinutes * 60 * 1000;
     if (!delivery.startedAt || delivery.startedAt.getTime() >= guildStaleBefore) continue;
+    if (!canStartDailyContentDeliveryAttempt(delivery.attemptCount, config.maxAttempts)) {
+      await markDeliveryFailed(prisma, {
+        deliveryId: delivery.id,
+        errorName: RETRY_BUDGET_EXHAUSTED_ERROR,
+      });
+      logger.warn(
+        { deliveryId: delivery.id, guildId: delivery.guildId },
+        'staleなDaily Content配信はretry上限到達のため失敗として確定しました',
+      );
+      continue;
+    }
     await recoverStaleDelivery(prisma, delivery.id, now);
     logger.warn(
       { deliveryId: delivery.id, guildId: delivery.guildId },
