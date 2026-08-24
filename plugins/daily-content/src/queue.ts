@@ -47,7 +47,10 @@ export function shouldRetryDailyContentDelivery(
   maxAttempts: number,
   retryable: boolean,
 ): boolean {
-  return retryable && normalizeAttemptCount(attemptCountAfterAttempt) < normalizeMaxAttempts(maxAttempts);
+  return (
+    retryable &&
+    normalizeAttemptCount(attemptCountAfterAttempt) < normalizeMaxAttempts(maxAttempts)
+  );
 }
 
 /**
@@ -81,5 +84,8 @@ function normalizeAttemptCount(value: number): number {
 
 function normalizeMaxAttempts(value: number): number {
   if (!Number.isFinite(value)) return 1;
-  return Math.min(DAILY_CONTENT_QUEUE_TRANSPORT_ATTEMPTS, Math.max(1, Math.floor(value)));
+  return Math.min(
+    DAILY_CONTENT_QUEUE_TRANSPORT_ATTEMPTS,
+    Math.max(1, Math.floor(value)),
+  );
 }
