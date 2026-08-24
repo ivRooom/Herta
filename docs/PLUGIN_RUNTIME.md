@@ -94,6 +94,48 @@ Plugin × consumerの追加DB queryは発行しません。DB migrationやGuild�
 Workerを`expectedRuntimeConsumers`へ追加するのは、対象PluginについてWorker側のRuntime event購読・
 設定反映・ACK生成が実装されてからです。現時点では既存PluginをWorker requiredにしません。
 
+## Worker Runtime consumer requirement discovery
+
+2026-08-24時点のWorker実装を確認した結果、現行PluginにはWorker process内へGuild Plugin設定を
+長期保持してRuntime eventで再適用すべき対象がありません。そのため、Worker subscriber、
+`consumer=worker` ACK、Worker startup reconciliationはまだ導入しません。
+
+- Daily Content: due判定、stale recovery、配信実行時にDBからenabled/configを再取得し、process内のPlugin設定stateは持ちません。ただし`maxAttempts`だけはenqueue時にBullMQ `job.opts.attempts`へsnapshotされ、既存waiting / active / delayed jobは旧retry budgetを保持します。このdurable queue stateの整合は #318 で別途扱います。
+- LFG: expire、message同期、recoveryではenabledを通常scanごとにDB確認します。`retentionDays`はhourly pruneでconfigをDB取得するため、enabled変更は次回通常scan、retention変更は次回prune cycleで反映されます。process内のPlugin設定stateは持ちません。
+- Team Split: 各通常scanでenabled Guildを一括取得します。`retentionDays`はhourly pruneでconfigをDB取得するため、enabled変更は次回通常scan、retention変更は次回prune cycleで反映されます。process内のPlugin設定stateは持ちません。
+- Community Season Snapshot: `GuildPlugin`設定を参照しないbackground maintenanceのためPlugin Runtime対象外です。
+- Discord Role Operation: 永続化済みoperationをDBからclaimして実行するためPlugin Runtime対象外です。
+
+Daily Contentが持つDiscord permission cacheはDiscord権限情報の短期cacheであり、Guild Plugin configの
+Runtime stateではありません。また、Plugin無効化後に既存deliveryが残っていても、配信実行直前に
+`GuildPlugin.enabled`を再確認してskipします。再有効化後は定期scanの`initializeMissingNextRuns()`が
+現在のDB状態から`nextRunAt`を再構築します。
+
+一方、`maxAttempts`はqueue job生成時のtransport optionへコピーされるため、既存jobについてはDB再読込だけで
+現在値へ収束しません。これはWorker process内Runtimeを再構築する問題とは分離し、queue retry policyとして
+#318で修正します。現時点でこの差分だけを根拠にWorker apply ACKを生成すると、実際にqueue stateを
+更新していないのにAppliedと記録できてしまうため、Worker consumer化は行いません。
+
+LFGとTeam SplitもWorker起動時にPlugin別timerを動的登録しておらず、Worker process自体は常時起動した
+まま現在のDB状態から処理対象を決めます。enabledは次回通常scan、`retentionDays`は最大約1時間後の
+次回prune cycleで再取得されます。Redis Pub/Sub停止中に変更があっても、それぞれのpolling cycleで
+現在のDB状態へ収束します。
+
+この構成でWorker ACKだけを追加すると、実際には再適用するWorker process stateが存在しないにもかかわらず
+Operations上でWorker apply成功を表現することになります。したがって現行Manifestは引き続きdefault
+`['bot']`を使用し、Daily Content / LFG / Team Splitへ機械的に`worker`を追加しません。
+
+WorkerをRuntime consumer化するのは、対象Pluginが次のいずれかを持つようになった場合です。
+
+- Guild Plugin configをWorker process内へscan間隔を超えて保持する
+- configに基づくtimer、scheduler、job registrationをWorker内へ動的に保持する
+- enable / disableを通常scanより速く即時反映する必要がある
+- job実行時にDBを再取得せず、Worker process内stateを正として処理する
+
+その場合はManifestだけを先行変更せず、既存`herta:plugin-runtime:v1` contractを再利用したsubscriber、
+stale / duplicate protection、対象Pluginだけのapply、`consumer=worker`成功/失敗ACK、Pub/Sub取りこぼしを
+回復するstartup reconciliationを同一変更として実装してから`expectedRuntimeConsumers`へWorkerを追加します。
+
 ## エラー分離
 
 DB の取得障害は空の Plugin 一覧として扱い、Core Command のみで Bot を継続します。未登録
