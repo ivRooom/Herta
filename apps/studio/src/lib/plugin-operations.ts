@@ -90,10 +90,10 @@ export async function getPluginOperationsInventory(
           },
         });
   const runtimeStateByConsumer = new Map(
-    PLUGIN_RUNTIME_CONSUMERS.map((consumer) => [
-      consumer,
-      buildPluginRuntimeConsumerOperationStateMap(runtimeRows, consumer),
-    ]),
+    PLUGIN_RUNTIME_CONSUMERS.map(
+      (consumer) =>
+        [consumer, buildPluginRuntimeConsumerOperationStateMap(runtimeRows, consumer)] as const,
+    ),
   );
 
   const inventoryRows: PluginOperationInventoryRow[] = [];
