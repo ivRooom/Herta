@@ -98,14 +98,25 @@ export async function PATCH(
 
   // settingsJson全体をread-modify-writeしない。DB側のjsonb部分更新にすることで、
   // 別設定の同時更新を上書きせずstudioNavigation配下の対象fieldだけを変更する。
+  // 古いデータや手動編集でroot/studioNavigationがobject以外になっていても、
+  // object部分だけを安全に再初期化して今回の設定更新で復旧できるようにする。
   const visiblePluginTabIdsJson = JSON.stringify(body.value.visiblePluginTabIds);
   await prisma.$executeRaw`
     UPDATE guild_settings
     SET settings_json = jsonb_set(
-          COALESCE(settings_json, '{}'::jsonb),
+          CASE
+            WHEN jsonb_typeof(COALESCE(settings_json, '{}'::jsonb)) = 'object'
+              THEN COALESCE(settings_json, '{}'::jsonb)
+            ELSE '{}'::jsonb
+          END,
           '{studioNavigation}',
-          COALESCE(settings_json -> 'studioNavigation', '{}'::jsonb)
-            || jsonb_build_object('visiblePluginTabIds', ${visiblePluginTabIdsJson}::jsonb),
+          (
+            CASE
+              WHEN jsonb_typeof(COALESCE(settings_json -> 'studioNavigation', '{}'::jsonb)) = 'object'
+                THEN COALESCE(settings_json -> 'studioNavigation', '{}'::jsonb)
+              ELSE '{}'::jsonb
+            END
+          ) || jsonb_build_object('visiblePluginTabIds', ${visiblePluginTabIdsJson}::jsonb),
           true
         ),
         version = version + 1,
