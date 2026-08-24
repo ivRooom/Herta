@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  coreUtilityV5Commands,
-  formatJsonResult,
-  jsonValueType,
-  parseJson,
-} from './utility-v5.js';
+import { coreUtilityV5Commands, formatJsonResult, jsonValueType, parseJson } from './utility-v5.js';
 
 describe('Core Utility v5', () => {
   it('json Commandと3つのsubcommandを定義する', () => {
@@ -45,9 +40,7 @@ describe('Core Utility v5', () => {
     expect(formatJsonResult(value, true)).toContain(
       '{\n  "name": "Herta",\n  "nested": {\n    "enabled": true\n  }\n}',
     );
-    expect(formatJsonResult(value, false)).toContain(
-      '{"name":"Herta","nested":{"enabled":true}}',
-    );
+    expect(formatJsonResult(value, false)).toContain('{"name":"Herta","nested":{"enabled":true}}');
   });
 
   it('code fenceを無害化し、長すぎる結果を拒否する', () => {
