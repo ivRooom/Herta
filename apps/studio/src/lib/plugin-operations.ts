@@ -1,17 +1,24 @@
 import { getAllPluginManifests } from '@herta/plugin-catalog';
-import type { PluginManifest } from '@herta/shared';
+import {
+  DEFAULT_PLUGIN_RUNTIME_CONSUMER,
+  PLUGIN_RUNTIME_CONSUMERS,
+  resolveExpectedRuntimeConsumers,
+  type PluginManifest,
+} from '@herta/shared';
 import { describeAuditEvent } from '@/lib/audit-logs';
 import { prisma } from '@/lib/db';
 import { validatePluginConfig } from '@/lib/guild-plugins';
 import {
+  buildPluginRuntimeConsumerStates,
   summarizePluginOperations,
   type PluginOperationInventoryRow,
   type PluginOperationsInventory,
+  type PluginRuntimeConsumerSignal,
 } from './plugin-operations-core.ts';
 import {
   PLUGIN_RUNTIME_AUDIT_EVENTS,
-  buildPluginRuntimeOperationStateMap,
-  pluginRuntimeOperationStateKey,
+  buildPluginRuntimeConsumerOperationStateMap,
+  pluginRuntimeConsumerOperationStateKey,
 } from './plugin-runtime-operation-state.ts';
 
 const RECENT_OPERATION_LIMIT = 12;
@@ -82,15 +89,56 @@ export async function getPluginOperationsInventory(
             createdAt: true,
           },
         });
-  const runtimeStateByPluginVersion = buildPluginRuntimeOperationStateMap(runtimeRows);
+  const runtimeStateByConsumer = new Map(
+    PLUGIN_RUNTIME_CONSUMERS.map((consumer) => [
+      consumer,
+      buildPluginRuntimeConsumerOperationStateMap(runtimeRows, consumer),
+    ]),
+  );
 
   const inventoryRows: PluginOperationInventoryRow[] = [];
   for (const row of rows) {
     const manifest = manifestById.get(row.pluginId);
     if (!manifest) continue;
-    const runtimeState = runtimeStateByPluginVersion.get(
-      pluginRuntimeOperationStateKey(row.guildId, row.pluginId, row.configVersion),
+
+    const runtimeSignals: PluginRuntimeConsumerSignal[] = PLUGIN_RUNTIME_CONSUMERS.flatMap(
+      (consumer) => {
+        const state = runtimeStateByConsumer
+          .get(consumer)
+          ?.get(
+            pluginRuntimeConsumerOperationStateKey(
+              row.guildId,
+              row.pluginId,
+              row.configVersion,
+              consumer,
+            ),
+          );
+        return state
+          ? [
+              {
+                consumer,
+                status: state.status,
+                configVersion: state.configVersion,
+                observedAt: state.observedAt,
+              },
+            ]
+          : [];
+      },
     );
+    const runtimeConsumers = buildPluginRuntimeConsumerStates(
+      resolveExpectedRuntimeConsumers(manifest),
+      runtimeSignals,
+    );
+    const defaultRuntimeState = runtimeStateByConsumer
+      .get(DEFAULT_PLUGIN_RUNTIME_CONSUMER)
+      ?.get(
+        pluginRuntimeConsumerOperationStateKey(
+          row.guildId,
+          row.pluginId,
+          row.configVersion,
+          DEFAULT_PLUGIN_RUNTIME_CONSUMER,
+        ),
+      );
 
     inventoryRows.push({
       guildId: row.guildId,
@@ -101,11 +149,12 @@ export async function getPluginOperationsInventory(
       configVersion: row.configVersion,
       installedAt: row.installedAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
-      ...(runtimeState
+      runtimeConsumers,
+      ...(defaultRuntimeState
         ? {
-            runtimeStatus: runtimeState.status,
-            runtimeConfigVersion: runtimeState.configVersion,
-            runtimeObservedAt: runtimeState.observedAt,
+            runtimeStatus: defaultRuntimeState.status,
+            runtimeConfigVersion: defaultRuntimeState.configVersion,
+            runtimeObservedAt: defaultRuntimeState.observedAt,
           }
         : {}),
     });
