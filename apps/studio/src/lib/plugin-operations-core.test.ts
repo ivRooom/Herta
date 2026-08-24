@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { resolveExpectedRuntimeConsumers } from '@herta/shared';
 import {
   PLUGIN_RUNTIME_APPLY_DELAY_MS,
+  buildPluginRuntimeConsumerStates,
   resolvePluginOperationAttentionReason,
   resolvePluginOperationStatus,
   summarizePluginOperations,
@@ -51,11 +53,170 @@ const rows: PluginOperationInventoryRow[] = [
   },
 ];
 
+function runtimeRow(
+  runtimeConsumers: PluginOperationInventoryRow['runtimeConsumers'],
+): PluginOperationInventoryRow {
+  return {
+    guildId: '10000000000000001',
+    pluginId: 'quote',
+    pluginName: 'Quote',
+    enabled: true,
+    configValid: true,
+    configVersion: 8,
+    installedAt: '2026-08-10T00:00:00.000Z',
+    updatedAt: '2026-08-22T04:00:00.000Z',
+    runtimeStatus: 'applied',
+    runtimeConfigVersion: 8,
+    runtimeObservedAt: '2026-08-22T04:00:03.000Z',
+    runtimeConsumers,
+  };
+}
+
 test('Plugin状態をHealthy / Attention / Pausedへ分類する', () => {
   assert.equal(resolvePluginOperationStatus(true, true), 'healthy');
   assert.equal(resolvePluginOperationStatus(true, false), 'attention');
   assert.equal(resolvePluginOperationStatus(false, true), 'paused');
   assert.equal(resolvePluginOperationStatus(false, false), 'paused');
+});
+
+test('expected Runtime consumer未指定・空配列はBotへ後方互換し明示値は重複排除する', () => {
+  assert.deepEqual(resolveExpectedRuntimeConsumers({}), ['bot']);
+  assert.deepEqual(resolveExpectedRuntimeConsumers({ expectedRuntimeConsumers: [] }), ['bot']);
+  assert.deepEqual(
+    resolveExpectedRuntimeConsumers({ expectedRuntimeConsumers: ['worker', 'bot', 'worker'] }),
+    ['worker', 'bot'],
+  );
+});
+
+test('Bot onlyではBot Applied / Worker Not expectedとなりHealthyを維持する', () => {
+  const runtimeConsumers = buildPluginRuntimeConsumerStates(['bot'], [
+    {
+      consumer: 'bot',
+      status: 'applied',
+      configVersion: 8,
+      observedAt: '2026-08-22T04:00:03.000Z',
+    },
+  ]);
+
+  assert.deepEqual(runtimeConsumers, [
+    {
+      consumer: 'bot',
+      expected: true,
+      status: 'applied',
+      configVersion: 8,
+      observedAt: '2026-08-22T04:00:03.000Z',
+    },
+    { consumer: 'worker', expected: false, status: 'not_expected' },
+  ]);
+  assert.equal(resolvePluginOperationAttentionReason(runtimeRow(runtimeConsumers)), null);
+});
+
+test('unexpected Worker ACKはBot only quorumを満たしたり壊したりしない', () => {
+  const runtimeConsumers = buildPluginRuntimeConsumerStates(['bot'], [
+    {
+      consumer: 'bot',
+      status: 'applied',
+      configVersion: 8,
+      observedAt: '2026-08-22T04:00:03.000Z',
+    },
+    {
+      consumer: 'worker',
+      status: 'apply_failed',
+      configVersion: 8,
+      observedAt: '2026-08-22T04:00:04.000Z',
+    },
+  ]);
+
+  assert.deepEqual(runtimeConsumers[1], {
+    consumer: 'worker',
+    expected: false,
+    status: 'not_expected',
+  });
+  assert.equal(resolvePluginOperationAttentionReason(runtimeRow(runtimeConsumers)), null);
+});
+
+test('Bot + Worker expectedで両方AppliedならHealthyになる', () => {
+  const runtimeConsumers = buildPluginRuntimeConsumerStates(['bot', 'worker'], [
+    {
+      consumer: 'bot',
+      status: 'applied',
+      configVersion: 8,
+      observedAt: '2026-08-22T04:00:03.000Z',
+    },
+    {
+      consumer: 'worker',
+      status: 'applied',
+      configVersion: 8,
+      observedAt: '2026-08-22T04:00:04.000Z',
+    },
+  ]);
+
+  assert.equal(runtimeConsumers[0]?.status, 'applied');
+  assert.equal(runtimeConsumers[1]?.status, 'applied');
+  assert.equal(resolvePluginOperationAttentionReason(runtimeRow(runtimeConsumers)), null);
+});
+
+test('expected Worker apply失敗はBot成功でもAttentionになる', () => {
+  const runtimeConsumers = buildPluginRuntimeConsumerStates(['bot', 'worker'], [
+    {
+      consumer: 'bot',
+      status: 'applied',
+      configVersion: 8,
+      observedAt: '2026-08-22T04:00:03.000Z',
+    },
+    {
+      consumer: 'worker',
+      status: 'apply_failed',
+      configVersion: 8,
+      observedAt: '2026-08-22T04:00:04.000Z',
+    },
+  ]);
+
+  assert.equal(runtimeConsumers[1]?.status, 'failed');
+  assert.equal(
+    resolvePluginOperationAttentionReason(runtimeRow(runtimeConsumers)),
+    'runtime_apply_failed',
+  );
+});
+
+test('expected Worker ACK待ちは閾値まではPending、超過後にAttentionになる', () => {
+  const observedAt = Date.parse('2026-08-22T04:00:00.000Z');
+  const runtimeConsumers = buildPluginRuntimeConsumerStates(['bot', 'worker'], [
+    {
+      consumer: 'bot',
+      status: 'applied',
+      configVersion: 8,
+      observedAt: '2026-08-22T04:00:01.000Z',
+    },
+    {
+      consumer: 'worker',
+      status: 'published',
+      configVersion: 8,
+      observedAt: new Date(observedAt).toISOString(),
+    },
+  ]);
+  const row = runtimeRow(runtimeConsumers);
+
+  assert.equal(runtimeConsumers[1]?.status, 'pending');
+  assert.equal(
+    resolvePluginOperationAttentionReason(row, observedAt + PLUGIN_RUNTIME_APPLY_DELAY_MS - 1),
+    null,
+  );
+  assert.equal(
+    resolvePluginOperationAttentionReason(row, observedAt + PLUGIN_RUNTIME_APPLY_DELAY_MS),
+    'runtime_apply_delayed',
+  );
+});
+
+test('Runtime signalがないexpected consumerはNo signalで即Attentionにしない', () => {
+  const runtimeConsumers = buildPluginRuntimeConsumerStates(['bot'], []);
+  const row = runtimeRow(runtimeConsumers);
+  delete row.runtimeStatus;
+  delete row.runtimeConfigVersion;
+  delete row.runtimeObservedAt;
+
+  assert.equal(runtimeConsumers[0]?.status, 'no_signal');
+  assert.equal(resolvePluginOperationAttentionReason(row), null);
 });
 
 test('管理対象Guildだけを横断集計しAttentionを優先表示する', () => {
@@ -113,6 +274,30 @@ test('Runtime publish失敗とapply失敗をAttentionへ分類する', () => {
     'runtime_apply_failed',
   );
   assert.equal(resolvePluginOperationAttentionReason({ ...base, runtimeStatus: 'applied' }), null);
+});
+
+test('publish失敗はconsumer quorumに関係なくAttentionになる', () => {
+  const runtimeConsumers = buildPluginRuntimeConsumerStates(['worker'], [
+    {
+      consumer: 'bot',
+      status: 'publish_failed',
+      configVersion: 8,
+      observedAt: '2026-08-22T04:00:01.000Z',
+    },
+    {
+      consumer: 'worker',
+      status: 'publish_failed',
+      configVersion: 8,
+      observedAt: '2026-08-22T04:00:01.000Z',
+    },
+  ]);
+  const row = runtimeRow(runtimeConsumers);
+  row.runtimeStatus = 'publish_failed';
+  row.runtimeObservedAt = '2026-08-22T04:00:01.000Z';
+
+  assert.equal(runtimeConsumers[0]?.status, 'not_expected');
+  assert.equal(runtimeConsumers[1]?.status, 'no_signal');
+  assert.equal(resolvePluginOperationAttentionReason(row), 'runtime_publish_failed');
 });
 
 test('Plugin無効化のRuntime失敗をPausedではなくAttentionへ分類する', () => {
