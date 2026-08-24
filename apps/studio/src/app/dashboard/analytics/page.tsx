@@ -549,8 +549,13 @@ export default async function AnalyticsDashboardPage({
     }
   }
 
-  const analyticsPromise = allowedGuildIds
-    ? getCommandUsageAnalytics(prisma, { days: rangeDays, guildIds: allowedGuildIds })
+  const analyticsGuildIds = allowedGuildIds
+    ? guildId
+      ? allowedGuildIds.filter((allowedGuildId) => allowedGuildId === guildId)
+      : allowedGuildIds
+    : null;
+  const analyticsPromise = analyticsGuildIds
+    ? getCommandUsageAnalytics(prisma, { days: rangeDays, guildIds: analyticsGuildIds })
     : Promise.resolve<CommandUsageAnalytics | null>(null);
   const historyPromise = allowedGuildIds
     ? searchCommandExecutionEvents(prisma, {
