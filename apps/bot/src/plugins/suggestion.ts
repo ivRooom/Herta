@@ -11,12 +11,16 @@ import {
   deleteSuggestion,
   getSuggestionSnapshot,
   listAuthorSuggestions,
+  listSuggestionQueue,
   setSuggestionMessageId,
+  SUGGESTION_QUEUE_MAX_PAGE,
   updateSuggestionStatus,
   voteSuggestion,
   withdrawSuggestion,
   type ManagedSuggestionStatus,
   type SuggestionListRecord,
+  type SuggestionQueueFilter,
+  type SuggestionQueuePage,
   type SuggestionSnapshot,
   type SuggestionStatus,
 } from './suggestion-repository.js';
@@ -28,6 +32,7 @@ const MAX_CONTENT_LENGTH = 1000;
 const MAX_NOTE_LENGTH = 300;
 const MAX_LIST_PAGE_LENGTH = 1900;
 const MAX_INFO_LENGTH = 1900;
+const MAX_QUEUE_LENGTH = 1900;
 const MAX_MESSAGE_RECONCILE_ATTEMPTS = 5;
 const suggestionMessageQueues = new Map<string, Promise<void>>();
 
@@ -44,6 +49,7 @@ export interface SuggestionConfig {
 interface SuggestionOptions {
   getSubcommand(): string;
   getString(name: string, required?: boolean): string | null;
+  getInteger(name: string, required?: boolean): number | null;
 }
 
 interface TextMessage {
@@ -225,6 +231,30 @@ export function formatSuggestionInfo(snapshot: SuggestionSnapshot, viewerUserId:
   return truncate(lines.join('\n'), MAX_INFO_LENGTH);
 }
 
+export function formatSuggestionQueuePage(
+  result: SuggestionQueuePage,
+  filter: SuggestionQueueFilter,
+  page: number,
+): string {
+  const header = `**Suggestion Staff Queue** · ${queueFilterLabel(filter)} · Page ${page}`;
+  if (result.records.length === 0) {
+    return `${header}\n\n該当するSuggestionはありません。`;
+  }
+
+  const records = result.records.map((record) => {
+    const author = record.anonymous ? '匿名' : `<@${record.authorId}>`;
+    return [
+      `${statusLabel(record.status)} · 👍 ${record.upvotes} / 👎 ${record.downvotes} · <t:${Math.floor(record.createdAt.getTime() / 1000)}:R>`,
+      `\`${record.id}\` · 投稿者: ${author}`,
+      truncate(record.content, 90),
+    ].join('\n');
+  });
+  const footer = result.hasNext
+    ? `\n\n次ページ: \`/suggest queue status:${filter} page:${page + 1}\``
+    : '\n\nこの条件のQueueはここまでです。';
+  return truncate([header, '', ...records].join('\n\n') + footer, MAX_QUEUE_LENGTH);
+}
+
 async function executeSuggestionCommand(
   context: SuggestionContext,
   interaction: CommandInteraction,
@@ -244,6 +274,7 @@ async function executeSuggestionCommand(
   if (subcommand === 'list') return handleList(context, interaction);
   if (subcommand === 'info') return handleInfo(context, config, interaction);
   if (subcommand === 'withdraw') return handleWithdraw(context, interaction);
+  if (subcommand === 'queue') return handleQueue(context, config, interaction);
   if (subcommand === 'status') return handleStatus(context, config, interaction);
   await reply(interaction, '不明なSuggestion操作です。');
 }
@@ -390,6 +421,38 @@ async function handleWithdraw(
   }
 
   if (acknowledgementError) throw acknowledgementError;
+}
+
+async function handleQueue(
+  context: SuggestionContext,
+  config: SuggestionConfig,
+  interaction: CommandInteraction,
+): Promise<void> {
+  if (!canManageSuggestion(interaction, config)) {
+    await reply(
+      interaction,
+      'Suggestion Queueの表示にはManage Server権限または設定済みStaff Roleが必要です。',
+    );
+    return;
+  }
+
+  const filter = interaction.options.getString('status')?.trim() || 'open';
+  const page = interaction.options.getInteger('page') ?? 1;
+  if (!isSuggestionQueueFilter(filter)) {
+    await reply(interaction, 'Suggestion Queueのstatusが正しくありません。');
+    return;
+  }
+  if (!Number.isInteger(page) || page < 1 || page > SUGGESTION_QUEUE_MAX_PAGE) {
+    await reply(interaction, `pageは1〜${SUGGESTION_QUEUE_MAX_PAGE}で指定してください。`);
+    return;
+  }
+
+  const result = await listSuggestionQueue(context.prisma, {
+    guildId: interaction.guildId!,
+    filter,
+    page,
+  });
+  await reply(interaction, formatSuggestionQueuePage(result, filter, page));
 }
 
 async function handleStatus(
@@ -622,6 +685,25 @@ function isManagedSuggestionStatus(value: unknown): value is ManagedSuggestionSt
   return (
     value === 'reviewing' || value === 'accepted' || value === 'rejected' || value === 'completed'
   );
+}
+
+function isSuggestionQueueFilter(value: unknown): value is SuggestionQueueFilter {
+  return (
+    value === 'open' ||
+    value === 'all' ||
+    value === 'pending' ||
+    value === 'reviewing' ||
+    value === 'accepted' ||
+    value === 'rejected' ||
+    value === 'completed' ||
+    value === 'withdrawn'
+  );
+}
+
+function queueFilterLabel(filter: SuggestionQueueFilter): string {
+  if (filter === 'open') return '未処理';
+  if (filter === 'all') return 'すべて';
+  return statusLabel(filter);
 }
 
 function statusLabel(status: SuggestionStatus): string {
