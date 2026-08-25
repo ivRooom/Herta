@@ -157,7 +157,9 @@ describe('Suggestion message reconciliation', () => {
     const pending = makeSnapshot({ upvotes: 4 });
     const { context, edit } = createVoteContext([pending]);
     const acknowledgementError = new Error('Discord interaction expired');
-    const interaction = createVoteInteraction(vi.fn(async () => Promise.reject(acknowledgementError)));
+    const interaction = createVoteInteraction(
+      vi.fn(async () => Promise.reject(acknowledgementError)),
+    );
 
     await expect(executeVote(context, interaction)).rejects.toBe(acknowledgementError);
 
