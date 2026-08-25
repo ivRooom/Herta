@@ -8,6 +8,7 @@ const shellScripts = [
   'deploy/scripts/deploy.sh',
   'deploy/scripts/start.sh',
   'deploy/scripts/rollback.sh',
+  'deploy/scripts/health-check.sh',
   'deploy/scripts/deploy-common.test.sh',
 ];
 
@@ -105,6 +106,7 @@ test('production app healthchecks do not require curl in the runtime image', () 
 test('production readiness checks remain valid after Authenticated Origin Pulls is enabled', () => {
   const common = readFileSync('deploy/scripts/_common.sh', 'utf8');
   const workflow = readFileSync('.github/workflows/deploy-production.yml', 'utf8');
+  const manualHealth = readFileSync('deploy/scripts/health-check.sh', 'utf8');
 
   assert.match(common, /\$\{COMPOSE\} exec -T api node -e/u);
   assert.match(common, /http:\/\/127\.0\.0\.1:3001\/api\/v1\/health/u);
@@ -117,6 +119,11 @@ test('production readiness checks remain valid after Authenticated Origin Pulls 
   assert.doesNotMatch(workflow, /--resolve\s+herta\.ivrm\.jp:443:127\.0\.0\.1/u);
   assert.match(workflow, /https:\/\/herta\.ivrm\.jp\/api\/v1\/health/u);
   assert.match(workflow, /https:\/\/herta\.ivrm\.jp\/api\/auth\/providers/u);
+
+  assert.match(manualHealth, /wait_for_health/u);
+  assert.match(manualHealth, /wait_for_auth/u);
+  assert.match(manualHealth, /https:\/\/\$\{HEALTH_DOMAIN\}\/api\/v1\/health/u);
+  assert.doesNotMatch(manualHealth, /--resolve[^\n]*127\.0\.0\.1/u);
 });
 
 test('failure diagnostics do not print production environment values', () => {
