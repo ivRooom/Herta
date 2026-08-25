@@ -95,4 +95,74 @@ describe('Suggestion message reconciliation', () => {
     );
     expect(rootQueryCount).toBeGreaterThanOrEqual(4);
   });
+
+  it('再同期上限直後に取下げを検出した場合も最終snapshotを公開表示へ反映する', async () => {
+    let txQueryCount = 0;
+    const tx = {
+      $queryRaw: vi.fn(async () => {
+        txQueryCount += 1;
+        return txQueryCount === 1 ? [{ votingEnabled: true, status: 'pending' }] : [];
+      }),
+      $executeRaw: vi.fn(async () => 1),
+    };
+    const snapshots = [
+      makeSnapshot({ upvotes: 4 }),
+      makeSnapshot({ upvotes: 5 }),
+      makeSnapshot({ upvotes: 6 }),
+      makeSnapshot({ upvotes: 7 }),
+      makeSnapshot({ upvotes: 8 }),
+      makeSnapshot({ upvotes: 9 }),
+      makeSnapshot({ status: 'withdrawn', upvotes: 9 }),
+    ];
+    let rootQueryCount = 0;
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) =>
+        callback(tx),
+      ),
+      $queryRaw: vi.fn(async () => {
+        const snapshot = snapshots[Math.min(rootQueryCount, snapshots.length - 1)]!;
+        rootQueryCount += 1;
+        return [snapshot];
+      }),
+    };
+    const edit = vi.fn(async () => undefined);
+    const fetchMessage = vi.fn(async () => ({ id: '999', edit }));
+    const fetchChannel = vi.fn(async () => ({
+      isTextBased: () => true,
+      messages: { fetch: fetchMessage },
+    }));
+    const context = {
+      client: {
+        channels: { fetch: fetchChannel },
+        users: { fetch: vi.fn() },
+      },
+      prisma,
+      logger: { warn: vi.fn() },
+      guildId: '123',
+      config: normalizeSuggestionConfig(undefined),
+      manifest: suggestionPlugin.manifest,
+    };
+    const update = vi.fn(async () => undefined);
+    const interaction = {
+      guildId: '123',
+      customId: `herta:suggestion:v1:vote:${ID}:up`,
+      user: { id: '777' },
+      isButton: () => true,
+      reply: vi.fn(async () => undefined),
+      update,
+    };
+    const event = suggestionPlugin.provideEvents?.(context as never)[0];
+    if (!event) throw new Error('Suggestion event is not available');
+
+    await event.handler(context as never, interaction as never);
+
+    expect(edit).toHaveBeenCalledTimes(6);
+    expect(edit).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining('↩️ 取下げ'),
+        components: [],
+      }),
+    );
+    expect(rootQueryCount).toBe(7);
+  });
 });
