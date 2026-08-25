@@ -102,7 +102,7 @@ jobs:
     timeout-minutes: 20
     environment: production
     env:
-      DEPLOY_REF: ${{ github.event.inputs.ref || github.ref }}
+      DEPLOY_REF: ${{ github.event.inputs.ref || 'main' }}
       HERTA_IMAGE: ${{ needs.build-image.outputs.image_ref }}
       GHCR_USERNAME: ${{ github.actor }}
       GHCR_TOKEN: ${{ github.token }}
