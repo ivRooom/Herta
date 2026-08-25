@@ -102,6 +102,23 @@ test('production app healthchecks do not require curl in the runtime image', () 
   assert.match(compose, /process\.env\.HEALTH_PORT/u);
 });
 
+test('production readiness checks remain valid after Authenticated Origin Pulls is enabled', () => {
+  const common = readFileSync('deploy/scripts/_common.sh', 'utf8');
+  const workflow = readFileSync('.github/workflows/deploy-production.yml', 'utf8');
+
+  assert.match(common, /\$\{COMPOSE\} exec -T api node -e/u);
+  assert.match(common, /http:\/\/127\.0\.0\.1:3001\/api\/v1\/health/u);
+  assert.match(common, /\$\{COMPOSE\} exec -T studio node -e/u);
+  assert.match(common, /http:\/\/127\.0\.0\.1:3000\/api\/auth\/providers/u);
+  assert.doesNotMatch(common, /--resolve[^\n]*127\.0\.0\.1/u);
+
+  assert.match(workflow, /\n\s+wait_for_health\n/u);
+  assert.match(workflow, /\n\s+wait_for_auth\n/u);
+  assert.doesNotMatch(workflow, /--resolve\s+herta\.ivrm\.jp:443:127\.0\.0\.1/u);
+  assert.match(workflow, /https:\/\/herta\.ivrm\.jp\/api\/v1\/health/u);
+  assert.match(workflow, /https:\/\/herta\.ivrm\.jp\/api\/auth\/providers/u);
+});
+
 test('failure diagnostics do not print production environment values', () => {
   const common = readFileSync('deploy/scripts/_common.sh', 'utf8');
   const startMarker = 'print_deploy_diagnostics() (';
