@@ -147,7 +147,9 @@ describe('AiFoundationService', () => {
       config: makeConfig(),
       provider,
       guardStore,
-      telemetry: (event) => events.push(event),
+      telemetry: (event) => {
+      events.push(event);
+    },
       requestId: () => 'request-1',
       now: (() => {
         let now = 1000;
@@ -360,7 +362,9 @@ describe('AiFoundationService', () => {
       config: makeConfig(),
       provider: staticProvider(successProviderResult(rawResponse)),
       guardStore: new MemoryGuardStore(),
-      telemetry: (event) => events.push(event),
+      telemetry: (event) => {
+      events.push(event);
+    },
     });
 
     const result = await service.generate(makeRequest({ input: rawPrompt }));
@@ -389,7 +393,7 @@ describe('OpenAiResponsesProvider', () => {
   };
 
   it('Responses APIへstore:falseとbounded outputを送信しusageを解析する', async () => {
-    const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    const fetchImpl = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       expect(body).toMatchObject({
         model: 'gpt-5.6-terra',
