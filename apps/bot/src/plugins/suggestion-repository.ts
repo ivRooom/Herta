@@ -298,9 +298,18 @@ export async function editSuggestion(
 ): Promise<EditSuggestionResult> {
   const outcome = await prisma.$transaction(async (tx): Promise<EditSuggestionOutcome> => {
     const rows = await tx.$queryRaw<
-      Array<{ authorId: string; status: SuggestionStatus; content: string }>
+      Array<{
+        authorId: string;
+        status: SuggestionStatus;
+        content: string;
+        staffNotePresent: boolean;
+      }>
     >`
-      SELECT "author_id" AS "authorId", "status", "content"
+      SELECT
+        "author_id" AS "authorId",
+        "status",
+        "content",
+        ("staff_note" IS NOT NULL) AS "staffNotePresent"
       FROM "suggestions"
       WHERE "id" = ${input.id}::uuid AND "guild_id" = ${input.guildId}
       FOR UPDATE
@@ -327,6 +336,12 @@ export async function editSuggestion(
       DELETE FROM "suggestion_votes"
       WHERE "suggestion_id" = ${input.id}::uuid
     `;
+    const staffNotePresenceChanges = suggestion.staffNotePresent
+      ? {
+          before: { staffNotePresent: true },
+          after: { staffNotePresent: false },
+        }
+      : null;
     await tx.auditLog.create({
       data: {
         guildId: input.guildId,
@@ -335,8 +350,16 @@ export async function editSuggestion(
         targetType: 'suggestion',
         targetId: input.id,
         changes: {
-          before: { contentLength: suggestion.content.length, status: suggestion.status },
-          after: { contentLength: input.content.length, status: 'pending' },
+          before: {
+            contentLength: suggestion.content.length,
+            status: suggestion.status,
+            ...(staffNotePresenceChanges?.before ?? {}),
+          },
+          after: {
+            contentLength: input.content.length,
+            status: 'pending',
+            ...(staffNotePresenceChanges?.after ?? {}),
+          },
         },
         metadata: {
           operationSource: 'discord',
@@ -453,19 +476,60 @@ export async function updateSuggestionStatus(
   input: {
     id: string;
     guildId: string;
+    actorId: string;
     status: ManagedSuggestionStatus;
     staffNote: string | null;
   },
 ): Promise<SuggestionSnapshot | null> {
-  const rows = await prisma.$queryRaw<Array<{ id: string }>>`
-    UPDATE "suggestions"
-    SET "status" = ${input.status},
-        "staff_note" = ${input.staffNote},
-        "updated_at" = CURRENT_TIMESTAMP
-    WHERE "id" = ${input.id}::uuid
-      AND "guild_id" = ${input.guildId}
-      AND "status" <> 'withdrawn'
-    RETURNING "id"::text AS "id"
-  `;
-  return rows.length > 0 ? getSuggestionSnapshot(prisma, input.id, input.guildId) : null;
+  const outcome = await prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<Array<{ status: SuggestionStatus; staffNote: string | null }>>`
+      SELECT "status", "staff_note" AS "staffNote"
+      FROM "suggestions"
+      WHERE "id" = ${input.id}::uuid AND "guild_id" = ${input.guildId}
+      FOR UPDATE
+    `;
+    const suggestion = rows[0];
+    if (!suggestion || suggestion.status === 'withdrawn') return 'not_found' as const;
+    if (suggestion.status === input.status && suggestion.staffNote === input.staffNote) {
+      return 'unchanged' as const;
+    }
+
+    await tx.$executeRaw`
+      UPDATE "suggestions"
+      SET "status" = ${input.status},
+          "staff_note" = ${input.staffNote},
+          "updated_at" = CURRENT_TIMESTAMP
+      WHERE "id" = ${input.id}::uuid
+        AND "guild_id" = ${input.guildId}
+        AND "status" <> 'withdrawn'
+    `;
+    await tx.auditLog.create({
+      data: {
+        guildId: input.guildId,
+        actorId: input.actorId,
+        event: 'suggestion.status',
+        targetType: 'suggestion',
+        targetId: input.id,
+        changes: {
+          before: {
+            status: suggestion.status,
+            staffNotePresent: suggestion.staffNote !== null,
+            staffNoteLength: suggestion.staffNote?.length ?? 0,
+          },
+          after: {
+            status: input.status,
+            staffNotePresent: input.staffNote !== null,
+            staffNoteLength: input.staffNote?.length ?? 0,
+          },
+        },
+        metadata: {
+          operationSource: 'discord',
+          staffNoteChanged: suggestion.staffNote !== input.staffNote,
+        },
+      },
+    });
+    return 'updated' as const;
+  });
+
+  return outcome === 'not_found' ? null : getSuggestionSnapshot(prisma, input.id, input.guildId);
 }

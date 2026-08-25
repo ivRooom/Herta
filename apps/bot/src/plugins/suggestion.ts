@@ -7,6 +7,11 @@ import {
   type PluginRuntimeContext,
 } from '@herta/plugin-sdk';
 import {
+  formatSuggestionHistoryPage,
+  listSuggestionHistory,
+  SUGGESTION_HISTORY_MAX_PAGE,
+} from './suggestion-history.js';
+import {
   createSuggestion,
   deleteSuggestion,
   editSuggestion,
@@ -277,6 +282,7 @@ async function executeSuggestionCommand(
   if (subcommand === 'edit') return handleEdit(context, interaction);
   if (subcommand === 'withdraw') return handleWithdraw(context, interaction);
   if (subcommand === 'queue') return handleQueue(context, config, interaction);
+  if (subcommand === 'history') return handleHistory(context, config, interaction);
   if (subcommand === 'status') return handleStatus(context, config, interaction);
   await reply(interaction, '不明なSuggestion操作です。');
 }
@@ -511,6 +517,44 @@ async function handleQueue(
   await reply(interaction, formatSuggestionQueuePage(result, filter, page));
 }
 
+async function handleHistory(
+  context: SuggestionContext,
+  config: SuggestionConfig,
+  interaction: CommandInteraction,
+): Promise<void> {
+  if (!canManageSuggestion(interaction, config)) {
+    await reply(
+      interaction,
+      'Suggestion Historyの表示にはManage Server権限または設定済みStaff Roleが必要です。',
+    );
+    return;
+  }
+
+  const id = interaction.options.getString('id', true)?.trim() ?? '';
+  const page = interaction.options.getInteger('page') ?? 1;
+  if (!UUID_PATTERN.test(id)) {
+    await reply(interaction, 'Suggestion IDが正しくありません。');
+    return;
+  }
+  if (!Number.isInteger(page) || page < 1 || page > SUGGESTION_HISTORY_MAX_PAGE) {
+    await reply(interaction, `pageは1〜${SUGGESTION_HISTORY_MAX_PAGE}で指定してください。`);
+    return;
+  }
+
+  const snapshot = await getSuggestionSnapshot(context.prisma, id, interaction.guildId!);
+  if (!snapshot) {
+    await reply(interaction, 'Suggestionが見つからないか、表示権限がありません。');
+    return;
+  }
+
+  const result = await listSuggestionHistory(context.prisma, {
+    guildId: interaction.guildId!,
+    suggestionId: id,
+    page,
+  });
+  await reply(interaction, formatSuggestionHistoryPage(result, id, page));
+}
+
 async function handleStatus(
   context: SuggestionContext,
   config: SuggestionConfig,
@@ -538,6 +582,7 @@ async function handleStatus(
   const snapshot = await updateSuggestionStatus(context.prisma, {
     id,
     guildId: interaction.guildId!,
+    actorId: interaction.user.id,
     status,
     staffNote: note,
   });

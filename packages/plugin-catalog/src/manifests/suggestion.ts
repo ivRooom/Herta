@@ -188,6 +188,25 @@ export const suggestionManifest: PluginManifest = {
           ],
         },
         {
+          name: 'history',
+          description: 'Suggestionの操作履歴を表示します（Staff向け）',
+          options: [
+            {
+              name: 'id',
+              description: 'Suggestion ID',
+              type: 'string',
+              required: true,
+            },
+            {
+              name: 'page',
+              description: 'ページ番号（1〜100）',
+              type: 'integer',
+              minValue: 1,
+              maxValue: 100,
+            },
+          ],
+        },
+        {
           name: 'status',
           description: 'Suggestionの状態を変更します（Staff向け）',
           options: [

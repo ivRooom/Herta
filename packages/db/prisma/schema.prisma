@@ -176,6 +176,7 @@ model AuditLog {
   @@index([guildId, createdAt(sort: Desc)])
   @@index([guildId, event])
   @@index([guildId, actorId])
+  @@index([guildId, targetType, targetId, createdAt(sort: Desc), id(sort: Desc)], map: "audit_logs_guild_target_created_id_idx")
   @@map("audit_logs")
 }
 
