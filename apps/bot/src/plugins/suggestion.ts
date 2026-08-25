@@ -14,6 +14,8 @@ import {
   setSuggestionMessageId,
   updateSuggestionStatus,
   voteSuggestion,
+  withdrawSuggestion,
+  type ManagedSuggestionStatus,
   type SuggestionListRecord,
   type SuggestionSnapshot,
   type SuggestionStatus,
@@ -26,6 +28,8 @@ const MAX_CONTENT_LENGTH = 1000;
 const MAX_NOTE_LENGTH = 300;
 const MAX_LIST_PAGE_LENGTH = 1900;
 const MAX_INFO_LENGTH = 1900;
+const MAX_MESSAGE_RECONCILE_ATTEMPTS = 5;
+const suggestionMessageQueues = new Map<string, Promise<void>>();
 
 export interface SuggestionConfig {
   enabled: boolean;
@@ -77,10 +81,11 @@ interface CommandInteraction {
 interface ComponentInteraction {
   guildId: string | null;
   customId?: string;
+  message?: TextMessage;
   user: { id: string };
   isButton?(): boolean;
   reply(options: ReplyOptions): Promise<unknown>;
-  update(options: SuggestionMessage): Promise<unknown>;
+  deferUpdate(): Promise<unknown>;
 }
 
 interface ReplyOptions {
@@ -162,8 +167,10 @@ export function buildSuggestionMessage(snapshot: SuggestionSnapshot): Suggestion
     snapshot.staffNote ? `Staff: ${snapshot.staffNote}` : null,
     `ID: \`${snapshot.id}\``,
   ].filter((line): line is string => Boolean(line));
+  const canVote =
+    snapshot.votingEnabled && (snapshot.status === 'pending' || snapshot.status === 'reviewing');
 
-  const components = snapshot.votingEnabled
+  const components = canVote
     ? [
         {
           type: 1,
@@ -236,6 +243,7 @@ async function executeSuggestionCommand(
   if (subcommand === 'create') return handleCreate(context, config, interaction);
   if (subcommand === 'list') return handleList(context, interaction);
   if (subcommand === 'info') return handleInfo(context, config, interaction);
+  if (subcommand === 'withdraw') return handleWithdraw(context, interaction);
   if (subcommand === 'status') return handleStatus(context, config, interaction);
   await reply(interaction, '不明なSuggestion操作です。');
 }
@@ -336,6 +344,54 @@ async function handleInfo(
   await reply(interaction, formatSuggestionInfo(snapshot, interaction.user.id));
 }
 
+async function handleWithdraw(
+  context: SuggestionContext,
+  interaction: CommandInteraction,
+): Promise<void> {
+  const id = interaction.options.getString('id', true)?.trim() ?? '';
+  if (!UUID_PATTERN.test(id)) {
+    await reply(interaction, 'Suggestion IDが正しくありません。');
+    return;
+  }
+
+  const result = await withdrawSuggestion(context.prisma, {
+    id,
+    guildId: interaction.guildId!,
+    authorId: interaction.user.id,
+  });
+  if (result.outcome === 'not_found_or_forbidden') {
+    await reply(interaction, 'Suggestionが見つからないか、取下げ権限がありません。');
+    return;
+  }
+  if (result.outcome === 'not_withdrawable') {
+    await reply(interaction, 'このSuggestionは現在の状態では取り下げできません。');
+    return;
+  }
+
+  let acknowledgementError: unknown;
+  try {
+    await reply(
+      interaction,
+      result.outcome === 'already_withdrawn'
+        ? `Suggestion \`${id}\` はすでに取り下げ済みです。`
+        : `Suggestion \`${id}\` を取り下げました。`,
+    );
+  } catch (error) {
+    acknowledgementError = error;
+  }
+
+  if (result.snapshot) {
+    await reconcileSuggestionMessage(context, result.snapshot).catch((error) =>
+      context.logger.warn(
+        { err: error, suggestionId: id },
+        '取下げ後のSuggestionメッセージ再同期に失敗しました',
+      ),
+    );
+  }
+
+  if (acknowledgementError) throw acknowledgementError;
+}
+
 async function handleStatus(
   context: SuggestionContext,
   config: SuggestionConfig,
@@ -349,9 +405,9 @@ async function handleStatus(
     return;
   }
   const id = interaction.options.getString('id', true)?.trim() ?? '';
-  const status = interaction.options.getString('status', true) as SuggestionStatus | null;
+  const status = interaction.options.getString('status', true) as ManagedSuggestionStatus | null;
   const note = interaction.options.getString('note')?.trim() || null;
-  if (!UUID_PATTERN.test(id) || !isSuggestionStatus(status)) {
+  if (!UUID_PATTERN.test(id) || !isManagedSuggestionStatus(status)) {
     await reply(interaction, 'Suggestion IDまたはstatusが正しくありません。');
     return;
   }
@@ -367,11 +423,22 @@ async function handleStatus(
     staffNote: note,
   });
   if (!snapshot) {
-    await reply(interaction, 'Suggestionが見つかりません。');
+    await reply(interaction, 'Suggestionが見つからないか、すでに取り下げ済みです。');
     return;
   }
-  await updateStoredMessage(context, snapshot).catch((error) =>
-    context.logger.warn({ err: error, suggestionId: id }, 'Suggestionメッセージ更新に失敗しました'),
+
+  let acknowledgementError: unknown;
+  try {
+    await reply(interaction, `Suggestion \`${id}\` を「${statusLabel(status)}」へ変更しました。`);
+  } catch (error) {
+    acknowledgementError = error;
+  }
+
+  await reconcileSuggestionMessage(context, snapshot).catch((error) =>
+    context.logger.warn(
+      { err: error, suggestionId: id },
+      'Suggestionメッセージ再同期に失敗しました',
+    ),
   );
   if (config.notifyAuthorOnStatusChange) {
     await context.client.users
@@ -384,7 +451,8 @@ async function handleStatus(
       )
       .catch(() => undefined);
   }
-  await reply(interaction, `Suggestion \`${id}\` を「${statusLabel(status)}」へ変更しました。`);
+
+  if (acknowledgementError) throw acknowledgementError;
 }
 
 async function handleSuggestionComponent(
@@ -422,7 +490,22 @@ async function handleSuggestionComponent(
     });
     return;
   }
-  await interaction.update(buildSuggestionMessage(snapshot));
+
+  let acknowledgementError: unknown;
+  try {
+    await interaction.deferUpdate();
+  } catch (error) {
+    acknowledgementError = error;
+  }
+
+  await reconcileSuggestionMessage(context, snapshot, interaction.message).catch((error) =>
+    context.logger.warn(
+      { err: error, suggestionId: parsed.id },
+      '投票後のSuggestionメッセージ再同期に失敗しました',
+    ),
+  );
+
+  if (acknowledgementError) throw acknowledgementError;
 }
 
 async function resolveSuggestionChannel(
@@ -439,10 +522,49 @@ async function resolveSuggestionChannel(
   return interaction.channelId && interaction.channel?.isTextBased() ? interaction.channel : null;
 }
 
+async function reconcileSuggestionMessage(
+  context: SuggestionContext,
+  initial: SuggestionSnapshot,
+  fallbackMessage?: TextMessage,
+): Promise<void> {
+  const queueKey = `${initial.guildId}:${initial.id}`;
+  const previous = suggestionMessageQueues.get(queueKey) ?? Promise.resolve();
+  const task = previous
+    .catch(() => undefined)
+    .then(async () => {
+      let rendered = initial;
+      await updateStoredMessage(context, rendered, fallbackMessage);
+
+      for (let attempt = 0; attempt < MAX_MESSAGE_RECONCILE_ATTEMPTS; attempt += 1) {
+        const current = await getSuggestionSnapshot(context.prisma, rendered.id, rendered.guildId);
+        if (!current || !shouldRepairSuggestionMessage(rendered, current)) return;
+        await updateStoredMessage(context, current, fallbackMessage);
+        rendered = current;
+      }
+
+      const current = await getSuggestionSnapshot(context.prisma, rendered.id, rendered.guildId);
+      if (current && shouldRepairSuggestionMessage(rendered, current)) {
+        await updateStoredMessage(context, current, fallbackMessage);
+      }
+    });
+
+  suggestionMessageQueues.set(queueKey, task);
+  try {
+    await task;
+  } finally {
+    if (suggestionMessageQueues.get(queueKey) === task) suggestionMessageQueues.delete(queueKey);
+  }
+}
+
 async function updateStoredMessage(
   context: SuggestionContext,
   snapshot: SuggestionSnapshot,
+  fallbackMessage?: TextMessage,
 ): Promise<void> {
+  if (fallbackMessage) {
+    await fallbackMessage.edit(buildSuggestionMessage(snapshot));
+    return;
+  }
   if (!snapshot.messageId) return;
   const channel = await context.client.channels.fetch(snapshot.channelId);
   if (!channel?.isTextBased()) throw new Error('SuggestionChannelUnavailable');
@@ -468,6 +590,19 @@ export function formatSuggestionListPages(records: readonly SuggestionListRecord
   return pages;
 }
 
+function shouldRepairSuggestionMessage(
+  rendered: SuggestionSnapshot,
+  current: SuggestionSnapshot,
+): boolean {
+  return (
+    rendered.status !== current.status ||
+    rendered.votingEnabled !== current.votingEnabled ||
+    rendered.upvotes !== current.upvotes ||
+    rendered.downvotes !== current.downvotes ||
+    rendered.staffNote !== current.staffNote
+  );
+}
+
 function canManageSuggestion(interaction: CommandInteraction, config: SuggestionConfig): boolean {
   if (interaction.memberPermissions?.has('ManageGuild')) return true;
   return config.staffRoleIds.some(
@@ -483,7 +618,7 @@ function parseVoteCustomId(customId: string): { id: string; value: 1 | -1 } | nu
   return null;
 }
 
-function isSuggestionStatus(value: unknown): value is SuggestionStatus {
+function isManagedSuggestionStatus(value: unknown): value is ManagedSuggestionStatus {
   return (
     value === 'reviewing' || value === 'accepted' || value === 'rejected' || value === 'completed'
   );
@@ -494,6 +629,7 @@ function statusLabel(status: SuggestionStatus): string {
   if (status === 'reviewing') return '🔎 検討中';
   if (status === 'accepted') return '✅ 採用';
   if (status === 'rejected') return '❌ 却下';
+  if (status === 'withdrawn') return '↩️ 取下げ';
   return '🏁 完了';
 }
 

@@ -130,6 +130,18 @@ export const suggestionManifest: PluginManifest = {
           ],
         },
         {
+          name: 'withdraw',
+          description: '自分の未処理Suggestionを取り下げます',
+          options: [
+            {
+              name: 'id',
+              description: 'Suggestion ID',
+              type: 'string',
+              required: true,
+            },
+          ],
+        },
+        {
           name: 'status',
           description: 'Suggestionの状態を変更します（Staff向け）',
           options: [
