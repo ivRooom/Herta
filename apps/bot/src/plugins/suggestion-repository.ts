@@ -280,8 +280,7 @@ export async function listSuggestionQueue(
 
   return {
     records: rows.slice(0, SUGGESTION_QUEUE_PAGE_SIZE),
-    hasNext:
-      input.page < SUGGESTION_QUEUE_MAX_PAGE && rows.length > SUGGESTION_QUEUE_PAGE_SIZE,
+    hasNext: input.page < SUGGESTION_QUEUE_MAX_PAGE && rows.length > SUGGESTION_QUEUE_PAGE_SIZE,
   };
 }
 
