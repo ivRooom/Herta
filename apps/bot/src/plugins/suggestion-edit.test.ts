@@ -83,7 +83,9 @@ function createCommandHarness(
     input.row === undefined
       ? { authorId: AUTHOR_ID, status: 'pending' as const, content: '編集前のSuggestion' }
       : input.row;
-  const snapshots = input.snapshots ?? [makeSnapshot({ guildId, authorId: AUTHOR_ID, content })];
+  const snapshots =
+    input.snapshots ??
+    [makeSnapshot({ guildId, authorId: AUTHOR_ID, content, upvotes: 0, downvotes: 0 })];
   const prisma = createPrismaHarness(row, snapshots);
   const edit = input.messageEditError
     ? vi.fn(async (_options: unknown) => Promise.reject(input.messageEditError))
@@ -158,10 +160,10 @@ describe('Suggestion author edit', () => {
     });
   });
 
-  it('pendingをrow lock下で編集しprivacy-safe Auditを同一transactionへ記録する', async () => {
+  it('pendingをrow lock下で編集しvoteをresetしてprivacy-safe Auditを同一transactionへ記録する', async () => {
     const before = 'raw-before-secret';
     const after = 'raw-after-secret';
-    const snapshot = makeSnapshot({ content: after });
+    const snapshot = makeSnapshot({ content: after, upvotes: 0, downvotes: 0 });
     const harness = createPrismaHarness(
       { authorId: AUTHOR_ID, status: 'pending', content: before },
       [snapshot],
@@ -180,9 +182,14 @@ describe('Suggestion author edit', () => {
     expect(lockQuery.join(' ')).toContain('FOR UPDATE');
     expect(lockQuery.join(' ')).toContain('"guild_id" =');
     expect(harness.txQueryRaw.mock.calls[0]?.slice(1)).toEqual([ID, GUILD_ID]);
-    expect(harness.txExecuteRaw).toHaveBeenCalledTimes(1);
+    expect(harness.txExecuteRaw).toHaveBeenCalledTimes(2);
     const updateQuery = harness.txExecuteRaw.mock.calls[0]?.[0] as readonly string[];
+    expect(updateQuery.join(' ')).toContain(`"status" = 'pending'`);
+    expect(updateQuery.join(' ')).toContain('"staff_note" = NULL');
     expect(updateQuery.join(' ')).toContain(`"status" IN ('pending', 'reviewing')`);
+    const deleteVotesQuery = harness.txExecuteRaw.mock.calls[1]?.[0] as readonly string[];
+    expect(deleteVotesQuery.join(' ')).toContain('DELETE FROM "suggestion_votes"');
+    expect(harness.txExecuteRaw.mock.calls[1]?.slice(1)).toEqual([ID]);
     expect(harness.auditCreate).toHaveBeenCalledWith({
       data: {
         guildId: GUILD_ID,
@@ -191,10 +198,10 @@ describe('Suggestion author edit', () => {
         targetType: 'suggestion',
         targetId: ID,
         changes: {
-          before: { contentLength: before.length },
-          after: { contentLength: after.length },
+          before: { contentLength: before.length, status: 'pending' },
+          after: { contentLength: after.length, status: 'pending' },
         },
-        metadata: { operationSource: 'discord' },
+        metadata: { operationSource: 'discord', votesReset: true, reviewReset: false },
       },
     });
     const auditPayload = JSON.stringify(harness.auditCreate.mock.calls);
@@ -202,10 +209,17 @@ describe('Suggestion author edit', () => {
     expect(auditPayload).not.toContain(after);
   });
 
-  it('reviewingも編集できる', async () => {
+  it('reviewingの本文変更はpendingへ戻しstaff noteとvoteをresetする', async () => {
+    const snapshot = makeSnapshot({
+      status: 'pending',
+      staffNote: null,
+      content: 'after',
+      upvotes: 0,
+      downvotes: 0,
+    });
     const harness = createPrismaHarness(
       { authorId: AUTHOR_ID, status: 'reviewing', content: 'before' },
-      [makeSnapshot({ status: 'reviewing', content: 'after' })],
+      [snapshot],
     );
 
     const result = await editSuggestion(harness.prisma as never, {
@@ -215,11 +229,23 @@ describe('Suggestion author edit', () => {
       content: 'after',
     });
 
-    expect(result.outcome).toBe('edited');
-    expect(harness.txExecuteRaw).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ outcome: 'edited', snapshot });
+    expect(harness.txExecuteRaw).toHaveBeenCalledTimes(2);
+    const updateQuery = harness.txExecuteRaw.mock.calls[0]?.[0] as readonly string[];
+    expect(updateQuery.join(' ')).toContain(`"status" = 'pending'`);
+    expect(updateQuery.join(' ')).toContain('"staff_note" = NULL');
+    expect(harness.auditCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        changes: {
+          before: { contentLength: 'before'.length, status: 'reviewing' },
+          after: { contentLength: 'after'.length, status: 'pending' },
+        },
+        metadata: { operationSource: 'discord', votesReset: true, reviewReset: true },
+      }),
+    });
   });
 
-  it('同一本文の再実行はUPDATE/Auditを増やさず再同期用snapshotを返す', async () => {
+  it('同一本文の再実行はUPDATE/vote reset/Auditを増やさず再同期用snapshotを返す', async () => {
     const snapshot = makeSnapshot({ content: 'same' });
     const harness = createPrismaHarness(
       { authorId: AUTHOR_ID, status: 'pending', content: 'same' },
@@ -303,7 +329,12 @@ describe('Suggestion author edit', () => {
     { label: '1000 chars', content: 'x'.repeat(1000), accepted: true },
     { label: '1001 chars', content: 'x'.repeat(1001), accepted: false },
   ])('content境界: $label', async ({ content, accepted }) => {
-    const snapshot = makeSnapshot({ content: content.trim(), messageId: null });
+    const snapshot = makeSnapshot({
+      content: content.trim(),
+      messageId: null,
+      upvotes: 0,
+      downvotes: 0,
+    });
     const harness = createCommandHarness({ content, snapshots: [snapshot] });
 
     await executeEdit(harness.context, harness.interaction);
@@ -361,7 +392,7 @@ describe('Suggestion author edit', () => {
 
   it('anonymous編集後もauthor identityを漏らさずsafe mentionsを維持する', async () => {
     const content = '@everyone 新しい内容 <@999999999999999999>';
-    const snapshot = makeSnapshot({ anonymous: true, content });
+    const snapshot = makeSnapshot({ anonymous: true, content, upvotes: 0, downvotes: 0 });
     const harness = createCommandHarness({
       content,
       snapshots: [snapshot, snapshot],
@@ -383,7 +414,7 @@ describe('Suggestion author edit', () => {
 
   it('公開message更新失敗でもDB変更をrollbackしない', async () => {
     const content = 'DBでは確定済み';
-    const snapshot = makeSnapshot({ content });
+    const snapshot = makeSnapshot({ content, upvotes: 0, downvotes: 0 });
     const harness = createCommandHarness({
       content,
       snapshots: [snapshot],
@@ -393,7 +424,7 @@ describe('Suggestion author edit', () => {
     await executeEdit(harness.context, harness.interaction);
 
     expect(harness.transaction).toHaveBeenCalledTimes(1);
-    expect(harness.txExecuteRaw).toHaveBeenCalledTimes(1);
+    expect(harness.txExecuteRaw).toHaveBeenCalledTimes(2);
     expect(harness.auditCreate).toHaveBeenCalledTimes(1);
     expect(harness.reply).toHaveBeenCalledWith({
       content: `Suggestion \`${ID}\` を更新しました。`,
@@ -407,8 +438,8 @@ describe('Suggestion author edit', () => {
   });
 
   it('競合した後発editの最新contentへ公開messageをreconcileする', async () => {
-    const first = makeSnapshot({ content: 'first edit' });
-    const latest = makeSnapshot({ content: 'latest edit' });
+    const first = makeSnapshot({ content: 'first edit', upvotes: 0, downvotes: 0 });
+    const latest = makeSnapshot({ content: 'latest edit', upvotes: 0, downvotes: 0 });
     const harness = createCommandHarness({
       content: 'first edit',
       snapshots: [first, latest, latest],
