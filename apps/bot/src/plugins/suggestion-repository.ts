@@ -298,9 +298,18 @@ export async function editSuggestion(
 ): Promise<EditSuggestionResult> {
   const outcome = await prisma.$transaction(async (tx): Promise<EditSuggestionOutcome> => {
     const rows = await tx.$queryRaw<
-      Array<{ authorId: string; status: SuggestionStatus; content: string }>
+      Array<{
+        authorId: string;
+        status: SuggestionStatus;
+        content: string;
+        staffNotePresent: boolean;
+      }>
     >`
-      SELECT "author_id" AS "authorId", "status", "content"
+      SELECT
+        "author_id" AS "authorId",
+        "status",
+        "content",
+        ("staff_note" IS NOT NULL) AS "staffNotePresent"
       FROM "suggestions"
       WHERE "id" = ${input.id}::uuid AND "guild_id" = ${input.guildId}
       FOR UPDATE
@@ -327,6 +336,12 @@ export async function editSuggestion(
       DELETE FROM "suggestion_votes"
       WHERE "suggestion_id" = ${input.id}::uuid
     `;
+    const staffNotePresenceChanges = suggestion.staffNotePresent
+      ? {
+          before: { staffNotePresent: true },
+          after: { staffNotePresent: false },
+        }
+      : null;
     await tx.auditLog.create({
       data: {
         guildId: input.guildId,
@@ -335,8 +350,16 @@ export async function editSuggestion(
         targetType: 'suggestion',
         targetId: input.id,
         changes: {
-          before: { contentLength: suggestion.content.length, status: suggestion.status },
-          after: { contentLength: input.content.length, status: 'pending' },
+          before: {
+            contentLength: suggestion.content.length,
+            status: suggestion.status,
+            ...(staffNotePresenceChanges?.before ?? {}),
+          },
+          after: {
+            contentLength: input.content.length,
+            status: 'pending',
+            ...(staffNotePresenceChanges?.after ?? {}),
+          },
         },
         metadata: {
           operationSource: 'discord',
@@ -499,7 +522,10 @@ export async function updateSuggestionStatus(
             staffNoteLength: input.staffNote?.length ?? 0,
           },
         },
-        metadata: { operationSource: 'discord' },
+        metadata: {
+          operationSource: 'discord',
+          staffNoteChanged: suggestion.staffNote !== input.staffNote,
+        },
       },
     });
     return 'updated' as const;
