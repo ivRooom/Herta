@@ -153,7 +153,10 @@ function describeStaffNoteChange(
   return '';
 }
 
-function staffNoteLengthTransition(beforeLength: number | null, afterLength: number | null): string {
+function staffNoteLengthTransition(
+  beforeLength: number | null,
+  afterLength: number | null,
+): string {
   if (beforeLength === null && afterLength === null) return '';
   if (beforeLength === null) return ` (${afterLength}文字)`;
   if (afterLength === null) return ` (${beforeLength}文字)`;
