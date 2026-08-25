@@ -57,8 +57,6 @@ cd /app/herta
 bash deploy/scripts/enable-origin-protection.sh --activate
 ```
 
-`--activate` / `--rollback` はCaddyだけを `--no-deps --force-recreate` で再作成し、migrator / api / studio / workerなどのapplication serviceを巻き込みません。
-
 ## 動作確認
 
 ### Cloudflare経由
