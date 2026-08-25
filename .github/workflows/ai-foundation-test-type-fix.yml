@@ -1,0 +1,44 @@
+name: AI Foundation Test Type Fix
+
+on:
+  push:
+    branches:
+      - feat/ai-foundation-console-credentials
+
+permissions:
+  contents: write
+
+jobs:
+  fix-test-types:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Fix strict test typings
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('packages/plugin-catalog/src/ai-service.test.ts')
+          text = path.read_text()
+          old = 'telemetry: (event) => events.push(event),'
+          new = '''telemetry: (event) => {
+                events.push(event);
+              },'''
+          if text.count(old) != 2:
+              raise SystemExit(f'expected 2 telemetry push sites, found {text.count(old)}')
+          text = text.replace(old, new)
+          old_request = 'const fetchImpl = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {'
+          new_request = 'const fetchImpl = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {'
+          if old_request not in text:
+              raise SystemExit('RequestInfo test site not found')
+          path.write_text(text.replace(old_request, new_request))
+          PY
+          pnpm exec prettier --write packages/plugin-catalog/src/ai-service.test.ts
+          git diff --check
+      - name: Commit test typing fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add packages/plugin-catalog/src/ai-service.test.ts
+          git commit -m 'test(ai): fix strict TypeScript callbacks'
+          git push origin HEAD:feat/ai-foundation-console-credentials
