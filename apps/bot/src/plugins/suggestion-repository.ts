@@ -310,7 +310,9 @@ export async function editSuggestion(
     `;
     const suggestion = rows[0];
     if (!suggestion || suggestion.authorId !== input.authorId) return 'not_found_or_forbidden';
-    if (suggestion.status !== 'pending' && suggestion.status !== 'reviewing') return 'not_editable';
+    if (suggestion.status !== 'pending' && suggestion.status !== 'reviewing') {
+      return 'not_editable';
+    }
     if (suggestion.content === input.content) return 'unchanged';
 
     await tx.$executeRaw`
