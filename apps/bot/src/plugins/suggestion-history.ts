@@ -48,8 +48,7 @@ export async function listSuggestionHistory(
 
   return {
     records: rows.slice(0, SUGGESTION_HISTORY_PAGE_SIZE),
-    hasNext:
-      input.page < SUGGESTION_HISTORY_MAX_PAGE && rows.length > SUGGESTION_HISTORY_PAGE_SIZE,
+    hasNext: input.page < SUGGESTION_HISTORY_MAX_PAGE && rows.length > SUGGESTION_HISTORY_PAGE_SIZE,
   };
 }
 
