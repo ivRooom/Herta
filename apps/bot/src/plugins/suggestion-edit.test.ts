@@ -83,9 +83,9 @@ function createCommandHarness(
     input.row === undefined
       ? { authorId: AUTHOR_ID, status: 'pending' as const, content: '編集前のSuggestion' }
       : input.row;
-  const snapshots =
-    input.snapshots ??
-    [makeSnapshot({ guildId, authorId: AUTHOR_ID, content, upvotes: 0, downvotes: 0 })];
+  const snapshots = input.snapshots ?? [
+    makeSnapshot({ guildId, authorId: AUTHOR_ID, content, upvotes: 0, downvotes: 0 }),
+  ];
   const prisma = createPrismaHarness(row, snapshots);
   const edit = input.messageEditError
     ? vi.fn(async (_options: unknown) => Promise.reject(input.messageEditError))
