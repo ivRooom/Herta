@@ -36,8 +36,8 @@ function makeSnapshot(overrides: Partial<SuggestionSnapshot> = {}): SuggestionSn
 }
 
 function createPrismaHarness(row: EditRow | null, snapshots: SuggestionSnapshot[] = []) {
-  const txQueryRaw = vi.fn(async () => (row ? [row] : []));
-  const txExecuteRaw = vi.fn(async () => 1);
+  const txQueryRaw = vi.fn(async (..._args: unknown[]) => (row ? [row] : []));
+  const txExecuteRaw = vi.fn(async (..._args: unknown[]) => 1);
   const auditCreate = vi.fn(async () => undefined);
   const tx = {
     $queryRaw: txQueryRaw,
@@ -86,8 +86,8 @@ function createCommandHarness(
   const snapshots = input.snapshots ?? [makeSnapshot({ guildId, authorId: AUTHOR_ID, content })];
   const prisma = createPrismaHarness(row, snapshots);
   const edit = input.messageEditError
-    ? vi.fn(async () => Promise.reject(input.messageEditError))
-    : vi.fn(async () => undefined);
+    ? vi.fn(async (_options: unknown) => Promise.reject(input.messageEditError))
+    : vi.fn(async (_options: unknown) => undefined);
   const fetchMessage = vi.fn(async () => ({ id: '999', edit }));
   const fetchChannel = vi.fn(async () => ({
     isTextBased: () => true,
@@ -417,7 +417,9 @@ describe('Suggestion author edit', () => {
     await executeEdit(harness.context, harness.interaction);
 
     expect(harness.edit).toHaveBeenCalledTimes(2);
-    expect(harness.edit.mock.calls[0]?.[0].content).toContain('first edit');
-    expect(harness.edit.mock.calls[1]?.[0].content).toContain('latest edit');
+    const firstPayload = harness.edit.mock.calls[0]?.[0] as { content: string } | undefined;
+    const latestPayload = harness.edit.mock.calls[1]?.[0] as { content: string } | undefined;
+    expect(firstPayload?.content).toContain('first edit');
+    expect(latestPayload?.content).toContain('latest edit');
   });
 });
