@@ -142,6 +142,34 @@ export const suggestionManifest: PluginManifest = {
           ],
         },
         {
+          name: 'queue',
+          description: 'Staff向けSuggestion Queueを表示します',
+          options: [
+            {
+              name: 'status',
+              description: '表示する状態。省略時は未処理（pending / reviewing）',
+              type: 'string',
+              choices: [
+                { name: '未処理', value: 'open' },
+                { name: '未確認', value: 'pending' },
+                { name: '検討中', value: 'reviewing' },
+                { name: '採用', value: 'accepted' },
+                { name: '却下', value: 'rejected' },
+                { name: '完了', value: 'completed' },
+                { name: '取下げ', value: 'withdrawn' },
+                { name: 'すべて', value: 'all' },
+              ],
+            },
+            {
+              name: 'page',
+              description: 'ページ番号（1〜100）',
+              type: 'integer',
+              minValue: 1,
+              maxValue: 100,
+            },
+          ],
+        },
+        {
           name: 'status',
           description: 'Suggestionの状態を変更します（Staff向け）',
           options: [
