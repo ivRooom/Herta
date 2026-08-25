@@ -314,11 +314,18 @@ export async function editSuggestion(
 
     await tx.$executeRaw`
       UPDATE "suggestions"
-      SET "content" = ${input.content}, "updated_at" = CURRENT_TIMESTAMP
+      SET "content" = ${input.content},
+          "status" = 'pending',
+          "staff_note" = NULL,
+          "updated_at" = CURRENT_TIMESTAMP
       WHERE "id" = ${input.id}::uuid
         AND "guild_id" = ${input.guildId}
         AND "author_id" = ${input.authorId}
         AND "status" IN ('pending', 'reviewing')
+    `;
+    await tx.$executeRaw`
+      DELETE FROM "suggestion_votes"
+      WHERE "suggestion_id" = ${input.id}::uuid
     `;
     await tx.auditLog.create({
       data: {
@@ -328,10 +335,14 @@ export async function editSuggestion(
         targetType: 'suggestion',
         targetId: input.id,
         changes: {
-          before: { contentLength: suggestion.content.length },
-          after: { contentLength: input.content.length },
+          before: { contentLength: suggestion.content.length, status: suggestion.status },
+          after: { contentLength: input.content.length, status: 'pending' },
         },
-        metadata: { operationSource: 'discord' },
+        metadata: {
+          operationSource: 'discord',
+          votesReset: true,
+          reviewReset: suggestion.status === 'reviewing',
+        },
       },
     });
     return 'edited';
