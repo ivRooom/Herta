@@ -105,12 +105,35 @@ function describeSuggestionAuditEvent(record: SuggestionHistoryRecord): string {
       beforeStatus && afterStatus
         ? ` · ${statusLabel(beforeStatus)} → ${statusLabel(afterStatus)}`
         : '';
-    const notePresent = booleanValue(after?.['staffNotePresent']);
-    const noteSummary = notePresent === true ? ' · Staffコメントあり' : '';
+    const noteSummary = describeStaffNoteChange(before, after);
     return `🛠️ Staff状態変更${transition}${noteSummary}${sourceSuffix}`;
   }
 
   return `🧾 Suggestion操作 · ${truncate(record.event, MAX_EVENT_NAME_LENGTH)}${sourceSuffix}`;
+}
+
+function describeStaffNoteChange(
+  before: Record<string, unknown> | null,
+  after: Record<string, unknown> | null,
+): string {
+  const beforePresent = booleanValue(before?.['staffNotePresent']);
+  const afterPresent = booleanValue(after?.['staffNotePresent']);
+  const beforeLength = nonNegativeInteger(before?.['staffNoteLength']);
+  const afterLength = nonNegativeInteger(after?.['staffNoteLength']);
+
+  if (beforePresent === true && afterPresent === false) return ' · Staffコメント削除';
+  if (beforePresent === false && afterPresent === true) return ' · Staffコメント追加';
+  if (
+    beforePresent === true &&
+    afterPresent === true &&
+    beforeLength !== null &&
+    afterLength !== null &&
+    beforeLength !== afterLength
+  ) {
+    return ' · Staffコメント更新';
+  }
+  if (afterPresent === true) return ' · Staffコメントあり';
+  return '';
 }
 
 function statusLabel(status: SuggestionStatus): string {
