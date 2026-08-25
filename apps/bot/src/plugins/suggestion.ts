@@ -84,7 +84,7 @@ interface ComponentInteraction {
   user: { id: string };
   isButton?(): boolean;
   reply(options: ReplyOptions): Promise<unknown>;
-  update(options: SuggestionMessage): Promise<unknown>;
+  deferUpdate(): Promise<unknown>;
 }
 
 interface ReplyOptions {
@@ -489,14 +489,22 @@ async function handleSuggestionComponent(
     });
     return;
   }
-  await reconcileSuggestionMessage(context, snapshot, () =>
-    interaction.update(buildSuggestionMessage(snapshot)),
-  ).catch((error) =>
+
+  let acknowledgementError: unknown;
+  try {
+    await interaction.deferUpdate();
+  } catch (error) {
+    acknowledgementError = error;
+  }
+
+  await reconcileSuggestionMessage(context, snapshot).catch((error) =>
     context.logger.warn(
       { err: error, suggestionId: parsed.id },
       '投票後のSuggestionメッセージ再同期に失敗しました',
     ),
   );
+
+  if (acknowledgementError) throw acknowledgementError;
 }
 
 async function resolveSuggestionChannel(
@@ -516,7 +524,6 @@ async function resolveSuggestionChannel(
 async function reconcileSuggestionMessage(
   context: SuggestionContext,
   initial: SuggestionSnapshot,
-  renderInitial?: () => Promise<unknown>,
 ): Promise<void> {
   const queueKey = `${initial.guildId}:${initial.id}`;
   const previous = suggestionMessageQueues.get(queueKey) ?? Promise.resolve();
@@ -524,25 +531,11 @@ async function reconcileSuggestionMessage(
     .catch(() => undefined)
     .then(async () => {
       let rendered = initial;
-      let initialRenderError: unknown;
-
-      if (renderInitial) {
-        try {
-          await renderInitial();
-        } catch (error) {
-          initialRenderError = error;
-          await updateStoredMessage(context, rendered);
-        }
-      } else {
-        await updateStoredMessage(context, rendered);
-      }
+      await updateStoredMessage(context, rendered);
 
       for (let attempt = 0; attempt < MAX_MESSAGE_RECONCILE_ATTEMPTS; attempt += 1) {
         const current = await getSuggestionSnapshot(context.prisma, rendered.id, rendered.guildId);
-        if (!current || !shouldRepairSuggestionMessage(rendered, current)) {
-          if (initialRenderError) throw initialRenderError;
-          return;
-        }
+        if (!current || !shouldRepairSuggestionMessage(rendered, current)) return;
         await updateStoredMessage(context, current);
         rendered = current;
       }
@@ -551,8 +544,6 @@ async function reconcileSuggestionMessage(
       if (current && shouldRepairSuggestionMessage(rendered, current)) {
         await updateStoredMessage(context, current);
       }
-
-      if (initialRenderError) throw initialRenderError;
     });
 
   suggestionMessageQueues.set(queueKey, task);
