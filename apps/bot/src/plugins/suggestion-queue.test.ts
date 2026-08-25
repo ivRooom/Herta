@@ -75,8 +75,8 @@ function createQueueInteraction(
     member: { roles: { cache: { has: (id) => staffRoleIds.has(id) } } },
     options: {
       getSubcommand: () => 'queue',
-      getString: (name) => (name === 'status' ? input.status ?? null : null),
-      getInteger: (name) => (name === 'page' ? input.page ?? null : null),
+      getString: (name) => (name === 'status' ? (input.status ?? null) : null),
+      getInteger: (name) => (name === 'page' ? (input.page ?? null) : null),
     },
     reply: vi.fn(async () => undefined),
     followUp: vi.fn(async () => undefined),
@@ -276,10 +276,11 @@ describe('Suggestion staff queue', () => {
     ];
     const queryRaw = vi.fn(async (..._args: unknown[]) => rows);
 
-    const result = await listSuggestionQueue(
-      { $queryRaw: queryRaw } as never,
-      { guildId: '123', filter: 'all', page: 1 },
-    );
+    const result = await listSuggestionQueue({ $queryRaw: queryRaw } as never, {
+      guildId: '123',
+      filter: 'all',
+      page: 1,
+    });
 
     expect(queryRaw).toHaveBeenCalledTimes(1);
     const query = queryRaw.mock.calls[0]?.[0] as readonly string[];
@@ -292,10 +293,11 @@ describe('Suggestion staff queue', () => {
     const queryRaw = vi.fn(async (..._args: unknown[]) => []);
 
     await expect(
-      listSuggestionQueue(
-        { $queryRaw: queryRaw } as never,
-        { guildId: '123', filter: 'open', page: 0 },
-      ),
+      listSuggestionQueue({ $queryRaw: queryRaw } as never, {
+        guildId: '123',
+        filter: 'open',
+        page: 0,
+      }),
     ).rejects.toThrow('SuggestionQueuePageOutOfRange');
     expect(queryRaw).not.toHaveBeenCalled();
   });
