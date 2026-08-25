@@ -130,19 +130,34 @@ function describeStaffNoteChange(
   const afterPresent = booleanValue(after?.['staffNotePresent']);
   const beforeLength = nonNegativeInteger(before?.['staffNoteLength']);
   const afterLength = nonNegativeInteger(after?.['staffNoteLength']);
+  const lengthTransition = staffNoteLengthTransition(beforeLength, afterLength);
 
-  if (beforePresent === true && afterPresent === false) return ' · Staffコメント削除';
-  if (beforePresent === false && afterPresent === true) return ' · Staffコメント追加';
+  if (beforePresent === true && afterPresent === false) {
+    return ` · Staffコメント削除${lengthTransition}`;
+  }
+  if (beforePresent === false && afterPresent === true) {
+    return ` · Staffコメント追加${lengthTransition}`;
+  }
   if (
     beforePresent === true &&
     afterPresent === true &&
     (staffNoteChanged === true ||
       (beforeLength !== null && afterLength !== null && beforeLength !== afterLength))
   ) {
-    return ' · Staffコメント更新';
+    return ` · Staffコメント更新${lengthTransition}`;
   }
-  if (afterPresent === true) return ' · Staffコメントあり';
+  if (afterPresent === true) {
+    const currentLength = afterLength !== null ? ` (${afterLength}文字)` : '';
+    return ` · Staffコメントあり${currentLength}`;
+  }
   return '';
+}
+
+function staffNoteLengthTransition(beforeLength: number | null, afterLength: number | null): string {
+  if (beforeLength === null && afterLength === null) return '';
+  if (beforeLength === null) return ` (${afterLength}文字)`;
+  if (afterLength === null) return ` (${beforeLength}文字)`;
+  return ` (${beforeLength}文字 → ${afterLength}文字)`;
 }
 
 function statusLabel(status: SuggestionStatus): string {
