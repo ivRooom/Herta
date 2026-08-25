@@ -48,6 +48,17 @@ export interface SuggestionQueuePage {
   hasNext: boolean;
 }
 
+export type EditSuggestionOutcome =
+  | 'edited'
+  | 'unchanged'
+  | 'not_found_or_forbidden'
+  | 'not_editable';
+
+export interface EditSuggestionResult {
+  outcome: EditSuggestionOutcome;
+  snapshot: SuggestionSnapshot | null;
+}
+
 export type WithdrawSuggestionOutcome =
   'withdrawn' | 'already_withdrawn' | 'not_found_or_forbidden' | 'not_withdrawable';
 
@@ -282,6 +293,56 @@ export async function listSuggestionQueue(
     records: rows.slice(0, SUGGESTION_QUEUE_PAGE_SIZE),
     hasNext: input.page < SUGGESTION_QUEUE_MAX_PAGE && rows.length > SUGGESTION_QUEUE_PAGE_SIZE,
   };
+}
+
+export async function editSuggestion(
+  prisma: PrismaClient,
+  input: { id: string; guildId: string; authorId: string; content: string },
+): Promise<EditSuggestionResult> {
+  const outcome = await prisma.$transaction(async (tx): Promise<EditSuggestionOutcome> => {
+    const rows = await tx.$queryRaw<
+      Array<{ authorId: string; status: SuggestionStatus; content: string }>
+    >`
+      SELECT "author_id" AS "authorId", "status", "content"
+      FROM "suggestions"
+      WHERE "id" = ${input.id}::uuid AND "guild_id" = ${input.guildId}
+      FOR UPDATE
+    `;
+    const suggestion = rows[0];
+    if (!suggestion || suggestion.authorId !== input.authorId) return 'not_found_or_forbidden';
+    if (suggestion.status !== 'pending' && suggestion.status !== 'reviewing') return 'not_editable';
+    if (suggestion.content === input.content) return 'unchanged';
+
+    await tx.$executeRaw`
+      UPDATE "suggestions"
+      SET "content" = ${input.content}, "updated_at" = CURRENT_TIMESTAMP
+      WHERE "id" = ${input.id}::uuid
+        AND "guild_id" = ${input.guildId}
+        AND "author_id" = ${input.authorId}
+        AND "status" IN ('pending', 'reviewing')
+    `;
+    await tx.auditLog.create({
+      data: {
+        guildId: input.guildId,
+        actorId: input.authorId,
+        event: 'suggestion.edit',
+        targetType: 'suggestion',
+        targetId: input.id,
+        changes: {
+          before: { contentLength: suggestion.content.length },
+          after: { contentLength: input.content.length },
+        },
+        metadata: { operationSource: 'discord' },
+      },
+    });
+    return 'edited';
+  });
+
+  const snapshot =
+    outcome === 'edited' || outcome === 'unchanged'
+      ? await getSuggestionSnapshot(prisma, input.id, input.guildId)
+      : null;
+  return { outcome, snapshot };
 }
 
 export async function withdrawSuggestion(
