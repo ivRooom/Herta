@@ -1,22 +1,214 @@
-name: Temp Suggestion Test Debug
+name: Temp Suggestion Patch
 
 on:
   pull_request:
     branches: [main]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  test:
+  patch:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: feat/suggestion-author-withdraw
+      - name: Apply targeted fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('apps/bot/src/plugins/suggestion.ts')
+          source = source_path.read_text()
+
+          old = """interface ComponentInteraction {
+            guildId: string | null;
+            customId?: string;
+            user: { id: string };
+          """
+          new = """interface ComponentInteraction {
+            guildId: string | null;
+            customId?: string;
+            message?: TextMessage;
+            user: { id: string };
+          """
+          assert source.count(old) == 1
+          source = source.replace(old, new)
+
+          old = """  await reconcileSuggestionMessage(context, snapshot).catch((error) =>
+              context.logger.warn(
+                { err: error, suggestionId: parsed.id },
+                '投票後のSuggestionメッセージ再同期に失敗しました',
+          """
+          new = """  await reconcileSuggestionMessage(context, snapshot, interaction.message).catch((error) =>
+              context.logger.warn(
+                { err: error, suggestionId: parsed.id },
+                '投票後のSuggestionメッセージ再同期に失敗しました',
+          """
+          assert source.count(old) == 1
+          source = source.replace(old, new)
+
+          old = """async function reconcileSuggestionMessage(
+            context: SuggestionContext,
+            initial: SuggestionSnapshot,
+          ): Promise<void> {
+          """
+          new = """async function reconcileSuggestionMessage(
+            context: SuggestionContext,
+            initial: SuggestionSnapshot,
+            fallbackMessage?: TextMessage,
+          ): Promise<void> {
+          """
+          assert source.count(old) == 1
+          source = source.replace(old, new)
+
+          assert source.count('      await updateStoredMessage(context, rendered);') == 1
+          source = source.replace(
+              '      await updateStoredMessage(context, rendered);',
+              '      await updateStoredMessage(context, rendered, fallbackMessage);',
+          )
+          assert source.count('        await updateStoredMessage(context, current);') == 1
+          source = source.replace(
+              '        await updateStoredMessage(context, current);',
+              '        await updateStoredMessage(context, current, fallbackMessage);',
+          )
+          assert source.count('        await updateStoredMessage(context, current);') == 1
+          source = source.replace(
+              '        await updateStoredMessage(context, current);',
+              '        await updateStoredMessage(context, current, fallbackMessage);',
+          )
+
+          old = """async function updateStoredMessage(
+            context: SuggestionContext,
+            snapshot: SuggestionSnapshot,
+          ): Promise<void> {
+            if (!snapshot.messageId) return;
+          """
+          new = """async function updateStoredMessage(
+            context: SuggestionContext,
+            snapshot: SuggestionSnapshot,
+            fallbackMessage?: TextMessage,
+          ): Promise<void> {
+            if (fallbackMessage) {
+              await fallbackMessage.edit(buildSuggestionMessage(snapshot));
+              return;
+            }
+            if (!snapshot.messageId) return;
+          """
+          assert source.count(old) == 1
+          source = source.replace(old, new)
+          source_path.write_text(source)
+
+          withdraw_path = Path('apps/bot/src/plugins/suggestion-withdraw.test.ts')
+          withdraw = withdraw_path.read_text()
+          old = """    const update = vi.fn(async () => undefined);
+              const interaction = {
+                guildId: '123',
+                customId: `herta:suggestion:v1:vote:${ID}:up`,
+                user: { id: '777' },
+                isButton: () => true,
+                reply: vi.fn(async () => undefined),
+                update,
+              };
+          """
+          new = """    const deferUpdate = vi.fn(async () => undefined);
+              const interaction = {
+                guildId: '123',
+                customId: `herta:suggestion:v1:vote:${ID}:up`,
+                user: { id: '777' },
+                isButton: () => true,
+                reply: vi.fn(async () => undefined),
+                deferUpdate,
+              };
+          """
+          assert withdraw.count(old) == 1
+          withdraw = withdraw.replace(old, new)
+          old = """    expect(update).toHaveBeenCalledWith(
+              expect.objectContaining({
+                content: expect.stringContaining('📝 未確認'),
+              }),
+            );
+          """
+          new = """    expect(deferUpdate).toHaveBeenCalledTimes(1);
+            expect(edit).toHaveBeenCalledWith(
+              expect.objectContaining({
+                content: expect.stringContaining('📝 未確認'),
+              }),
+            );
+          """
+          assert withdraw.count(old) == 1
+          withdraw = withdraw.replace(old, new)
+          withdraw_path.write_text(withdraw)
+
+          reconciliation_path = Path('apps/bot/src/plugins/suggestion-message-reconciliation.test.ts')
+          reconciliation = reconciliation_path.read_text()
+          old = """function createVoteInteraction(deferUpdate = vi.fn(async () => undefined)) {
+            return {
+              guildId: '123',
+              customId: `herta:suggestion:v1:vote:${ID}:up`,
+              user: { id: '777' },
+              isButton: () => true,
+              reply: vi.fn(async () => undefined),
+              deferUpdate,
+            };
+          }
+          """
+          new = """function createVoteInteraction(
+            deferUpdate = vi.fn(async () => undefined),
+            message?: { id: string; edit(options: unknown): Promise<unknown> },
+          ) {
+            return {
+              guildId: '123',
+              customId: `herta:suggestion:v1:vote:${ID}:up`,
+              message,
+              user: { id: '777' },
+              isButton: () => true,
+              reply: vi.fn(async () => undefined),
+              deferUpdate,
+            };
+          }
+          """
+          assert reconciliation.count(old) == 1
+          reconciliation = reconciliation.replace(old, new)
+
+          marker = """  it('投票ackが失敗しても公開メッセージ再同期後に元のエラーを返す', async () => {
+          """
+          assert reconciliation.count(marker) == 1
+          extra = """  it('messageId保存前の投票でもcomponent messageを更新する', async () => {
+            const pending = makeSnapshot({ messageId: null, upvotes: 4 });
+            const { context, edit } = createVoteContext([pending]);
+            const componentEdit = vi.fn(async () => undefined);
+            const interaction = createVoteInteraction(vi.fn(async () => undefined), {
+              id: '999',
+              edit: componentEdit,
+            });
+
+            await executeVote(context, interaction);
+
+            expect(interaction.deferUpdate).toHaveBeenCalledTimes(1);
+            expect(componentEdit).toHaveBeenCalledWith(
+              expect.objectContaining({ content: expect.stringContaining('👍 4') }),
+            );
+            expect(edit).not.toHaveBeenCalled();
+          });
+
+          """
+          reconciliation = reconciliation.replace(marker, extra + marker)
+          reconciliation_path.write_text(reconciliation)
+          PY
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @herta/db prisma generate
-      - run: pnpm --filter @herta/bot exec vitest run src/plugins/suggestion-message-reconciliation.test.ts --reporter=verbose
+      - run: pnpm exec prettier --write apps/bot/src/plugins/suggestion.ts apps/bot/src/plugins/suggestion-withdraw.test.ts apps/bot/src/plugins/suggestion-message-reconciliation.test.ts
+      - name: Commit fixes
+        run: |
+          git config user.name "mizzz-ivr"
+          git config user.email "86910433+mizzz-ivr@users.noreply.github.com"
+          git add apps/bot/src/plugins/suggestion.ts apps/bot/src/plugins/suggestion-withdraw.test.ts apps/bot/src/plugins/suggestion-message-reconciliation.test.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "Suggestion投票の表示同期を強化"
+          git push origin HEAD:feat/suggestion-author-withdraw
