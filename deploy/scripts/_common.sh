@@ -199,39 +199,40 @@ clear_deploy_exit_trap() {
   trap - EXIT
 }
 
+# AOP有効後はlocalhost -> Caddy HTTPSがCloudflare client certificateを持たず
+# 正常系healthとして成立しない。API container自身のloopback endpointを確認する。
 wait_for_health() {
-  local health_url="https://${HEALTH_DOMAIN}/api/v1/health"
-  echo "=== Health check (${health_url}) ==="
+  echo "=== Internal API health check (api:3001) ==="
   for i in $(seq 1 24); do
-    if curl -fsS -k --resolve "${HEALTH_DOMAIN}:443:127.0.0.1" "${health_url}" > /dev/null 2>&1; then
-      echo "API health check 成功"
+    if ${COMPOSE} exec -T api node -e \
+      "fetch('http://127.0.0.1:3001/api/v1/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))" \
+      > /dev/null 2>&1; then
+      echo "API internal health check 成功"
       return 0
     fi
     echo "API 応答待ち... (${i}/24)"
     sleep 5
   done
-  echo "ERROR: API health check に失敗しました。" >&2
+  echo "ERROR: API internal health check に失敗しました。" >&2
   ${COMPOSE} logs --tail=100 api || true
-  ${COMPOSE} logs --tail=100 nginx || true
-  ${COMPOSE} logs --tail=100 caddy || true
   return 1
 }
 
+# Studio/Auth.jsもCaddyを経由せずcontainer内部で確認する。
 wait_for_auth() {
-  local auth_url="https://${HEALTH_DOMAIN}/api/auth/providers"
-  echo "=== Auth.js health check (${auth_url}) ==="
+  echo "=== Internal Auth.js health check (studio:3000) ==="
   for i in $(seq 1 12); do
-    if curl -fsS -k --resolve "${HEALTH_DOMAIN}:443:127.0.0.1" "${auth_url}" > /dev/null 2>&1; then
-      echo "Auth.js health check 成功"
+    if ${COMPOSE} exec -T studio node -e \
+      "fetch('http://127.0.0.1:3000/api/auth/providers').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))" \
+      > /dev/null 2>&1; then
+      echo "Auth.js internal health check 成功"
       return 0
     fi
     echo "Studio認証応答待ち... (${i}/12)"
     sleep 5
   done
-  echo "ERROR: Auth.js health check に失敗しました。" >&2
+  echo "ERROR: Auth.js internal health check に失敗しました。" >&2
   ${COMPOSE} logs --tail=100 studio || true
-  ${COMPOSE} logs --tail=100 nginx || true
-  ${COMPOSE} logs --tail=100 caddy || true
   return 1
 }
 
