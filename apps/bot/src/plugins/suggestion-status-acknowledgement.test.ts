@@ -25,13 +25,18 @@ function makeSnapshot(): SuggestionSnapshot {
 describe('Suggestion status acknowledgement failure', () => {
   it('ephemeral応答が失敗しても公開メッセージを再同期してから元のエラーを返す', async () => {
     const snapshot = makeSnapshot();
-    let queryCount = 0;
-    const queryRaw = vi.fn(async () => {
-      queryCount += 1;
-      if (queryCount === 1) return [{ id: ID }];
-      return [snapshot];
-    });
-    const prisma = { $queryRaw: queryRaw };
+    const tx = {
+      $queryRaw: vi.fn(async () => [{ status: 'pending', staffNote: null }]),
+      $executeRaw: vi.fn(async () => 1),
+      auditLog: { create: vi.fn(async () => undefined) },
+    };
+    const queryRaw = vi.fn(async () => [snapshot]);
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) =>
+        callback(tx),
+      ),
+      $queryRaw: queryRaw,
+    };
     const edit = vi.fn(async () => undefined);
     const fetchMessage = vi.fn(async () => ({ id: '999', edit }));
     const fetchChannel = vi.fn(async () => ({
@@ -77,6 +82,9 @@ describe('Suggestion status acknowledgement failure', () => {
 
     await expect(command.execute(interaction as never)).rejects.toBe(replyError);
 
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+    expect(tx.auditLog.create).toHaveBeenCalledTimes(1);
     expect(fetchChannel).toHaveBeenCalledWith('789');
     expect(fetchMessage).toHaveBeenCalledWith('999');
     expect(edit).toHaveBeenCalledWith(
@@ -85,6 +93,6 @@ describe('Suggestion status acknowledgement failure', () => {
         components: [],
       }),
     );
-    expect(queryCount).toBeGreaterThanOrEqual(3);
+    expect(queryRaw).toHaveBeenCalledTimes(2);
   });
 });
