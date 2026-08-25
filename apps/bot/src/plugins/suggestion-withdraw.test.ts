@@ -299,17 +299,31 @@ describe('Suggestion author withdraw', () => {
   });
 
   it('Staff status更新ではwithdrawnを復活させない', async () => {
-    const queryRaw = vi.fn(async () => []);
-    const prisma = { $queryRaw: queryRaw };
+    const auditCreate = vi.fn(async () => undefined);
+    const tx = {
+      $queryRaw: vi.fn(async () => [{ status: 'withdrawn', staffNote: null }]),
+      $executeRaw: vi.fn(async () => 1),
+      auditLog: { create: auditCreate },
+    };
+    const rootQueryRaw = vi.fn(async () => [makeSnapshot()]);
+    const prisma = {
+      $transaction: vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) =>
+        callback(tx),
+      ),
+      $queryRaw: rootQueryRaw,
+    };
 
     const result = await updateSuggestionStatus(prisma as never, {
       id: ID,
       guildId: '123',
+      actorId: '777',
       status: 'accepted',
       staffNote: null,
     });
 
     expect(result).toBeNull();
-    expect(queryRaw).toHaveBeenCalledTimes(1);
+    expect(tx.$executeRaw).not.toHaveBeenCalled();
+    expect(auditCreate).not.toHaveBeenCalled();
+    expect(rootQueryRaw).not.toHaveBeenCalled();
   });
 });
