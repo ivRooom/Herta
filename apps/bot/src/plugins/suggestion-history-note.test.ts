@@ -47,4 +47,14 @@ describe('Suggestion history Staff comment transitions', () => {
     expect(output).toContain('採用 → 採用');
     expect(output).toContain('Staffコメント更新');
   });
+
+  it('状態と文字数が同じでもStaffコメント差し替えAuditを更新として表示する', () => {
+    const output = formatStatusChange(
+      { status: 'reviewing', staffNotePresent: true, staffNoteLength: 12 },
+      { status: 'reviewing', staffNotePresent: true, staffNoteLength: 12 },
+    );
+
+    expect(output).toContain('検討中 → 検討中');
+    expect(output).toContain('Staffコメント更新');
+  });
 });
