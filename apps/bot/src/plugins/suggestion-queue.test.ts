@@ -43,10 +43,7 @@ function makeRecord(overrides: Partial<SuggestionQueueRecord> = {}): SuggestionQ
   };
 }
 
-function createQueueContext(
-  rows: SuggestionQueueRecord[],
-  config: Record<string, unknown> = {},
-) {
+function createQueueContext(rows: SuggestionQueueRecord[], config: Record<string, unknown> = {}) {
   const queryRaw = vi.fn(async (..._args: unknown[]) => rows);
   const context = {
     client: {},
