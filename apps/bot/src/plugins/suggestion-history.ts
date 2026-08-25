@@ -160,7 +160,7 @@ function booleanValue(value: unknown): boolean | null {
 }
 
 function nonNegativeInteger(value: unknown): number | null {
-  return Number.isInteger(value) && Number(value) >= 0 ? Number(value) : null;
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 function truncate(value: string, max: number): string {
