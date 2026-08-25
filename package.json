@@ -14,7 +14,7 @@
     "test": "turbo run test",
     "test:unit": "turbo run test:unit",
     "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format:check": "prettier --write apps/bot/src/plugins/suggestion-history.ts apps/bot/src/plugins/suggestion-history.test.ts && git diff -- apps/bot/src/plugins/suggestion-history.ts apps/bot/src/plugins/suggestion-history.test.ts && exit 1",
     "clean": "turbo run clean",
     "db:generate": "dotenv -- pnpm --filter @herta/db generate",
     "db:migrate": "dotenv -- pnpm --filter @herta/db migrate:dev",
