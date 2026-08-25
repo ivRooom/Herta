@@ -1,0 +1,41 @@
+name: AI Foundation Compose Fix
+
+on:
+  push:
+    branches:
+      - feat/ai-foundation-console-credentials
+
+permissions:
+  contents: write
+
+jobs:
+  fix-compose-generator:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Make model profile the only production model selector
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('.github/workflows/ai-foundation-draft-validate.yml')
+          text = path.read_text()
+          targets = [
+              '                HERTA_AI_MODEL: ${HERTA_AI_MODEL:-}\n',
+              '          # 通常は空欄。server-side allowlist内で明示overrideする場合のみ指定する。\n',
+              '          HERTA_AI_MODEL=\n',
+          ]
+          for target in targets:
+              if target not in text:
+                  raise SystemExit(f'expected workflow generator line not found: {target!r}')
+              text = text.replace(target, '', 1)
+          path.write_text(text)
+          PY
+          git diff --check
+      - name: Commit compose generator fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/ai-foundation-draft-validate.yml
+          git commit -m 'fix(ai): select production model through profile only'
+          git push origin HEAD:feat/ai-foundation-console-credentials
