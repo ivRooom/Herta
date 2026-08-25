@@ -57,6 +57,8 @@ cd /app/herta
 bash deploy/scripts/enable-origin-protection.sh --activate
 ```
 
+`--activate` / `--rollback` はCaddyだけを `--no-deps --force-recreate` で再作成し、migrator / api / studio / workerなどのapplication serviceを巻き込みません。
+
 ## 動作確認
 
 ### Cloudflare経由
@@ -67,6 +69,11 @@ curl -I https://herta.ivrm.jp/login
 ```
 
 期待結果は`200`です。
+
+GitHub Actionsのproduction deployでも、最終的なedge/E2E checkはrunnerからCloudflare経由で次を確認します。
+
+- `https://herta.ivrm.jp/api/v1/health`
+- `https://herta.ivrm.jp/api/auth/providers`
 
 ### Origin直アクセス
 
@@ -80,12 +87,32 @@ curl -vk --resolve herta.ivrm.jp:443:ORIGIN_IP https://herta.ivrm.jp/api/v1/heal
 
 ### アプリ内部health check
 
-AOP有効後、Origin上の通常curlはクライアント証明書を持たないためCaddyのHTTPS経路を通せません。内部確認はDocker network内のAPI health endpointを使います。
+AOP有効後、Origin上の通常curlはクライアント証明書を持たないためCaddyのHTTPS経路を通せません。正常系のapplication readinessはCaddyを経由せず、それぞれのcontainer内部loopback endpointを確認します。
+
+API:
 
 ```bash
 docker compose --env-file .env.production -f docker-compose.prod.yml \
-  exec -T api curl -fsS http://127.0.0.1:3001/api/v1/health
+  exec -T api node -e \
+  "fetch('http://127.0.0.1:3001/api/v1/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
 ```
+
+Studio/Auth.js:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml \
+  exec -T studio node -e \
+  "fetch('http://127.0.0.1:3000/api/auth/providers').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+```
+
+通常の運用確認では共通scriptを使用できます。
+
+```bash
+cd /app/herta
+bash deploy/scripts/health-check.sh
+```
+
+このscriptはAPI / Studio / Botの内部healthと、Cloudflare経由のexternal healthを分離して確認します。localhostからCaddy HTTPSへ接続して`200`を期待するcheckは使用しません。
 
 ## Firewall
 
@@ -125,6 +152,7 @@ bash deploy/scripts/enable-origin-protection.sh --rollback
 
 ```bash
 curl --fail --show-error --silent https://herta.ivrm.jp/api/v1/health
+bash deploy/scripts/health-check.sh
 docker compose --env-file .env.production -f docker-compose.prod.yml logs --tail=100 caddy
 ```
 
