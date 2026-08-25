@@ -89,7 +89,12 @@ function describeSuggestionAuditEvent(record: SuggestionHistoryRecord): string {
         : '';
     const votesReset = metadata?.['votesReset'] === true ? ' · 投票リセット' : '';
     const reviewReset = metadata?.['reviewReset'] === true ? ' · reviewリセット' : '';
-    return `✏️ 投稿者編集${lengthSummary}${votesReset}${reviewReset}${sourceSuffix}`;
+    const staffNoteRemoved =
+      booleanValue(before?.['staffNotePresent']) === true &&
+      booleanValue(after?.['staffNotePresent']) === false
+        ? ' · Staffコメント削除'
+        : '';
+    return `✏️ 投稿者編集${lengthSummary}${votesReset}${reviewReset}${staffNoteRemoved}${sourceSuffix}`;
   }
 
   if (record.event === 'suggestion.withdraw') {
@@ -105,7 +110,11 @@ function describeSuggestionAuditEvent(record: SuggestionHistoryRecord): string {
       beforeStatus && afterStatus
         ? ` · ${statusLabel(beforeStatus)} → ${statusLabel(afterStatus)}`
         : '';
-    const noteSummary = describeStaffNoteChange(before, after, beforeStatus, afterStatus);
+    const noteSummary = describeStaffNoteChange(
+      before,
+      after,
+      booleanValue(metadata?.['staffNoteChanged']),
+    );
     return `🛠️ Staff状態変更${transition}${noteSummary}${sourceSuffix}`;
   }
 
@@ -115,8 +124,7 @@ function describeSuggestionAuditEvent(record: SuggestionHistoryRecord): string {
 function describeStaffNoteChange(
   before: Record<string, unknown> | null,
   after: Record<string, unknown> | null,
-  beforeStatus: SuggestionStatus | null,
-  afterStatus: SuggestionStatus | null,
+  staffNoteChanged: boolean | null,
 ): string {
   const beforePresent = booleanValue(before?.['staffNotePresent']);
   const afterPresent = booleanValue(after?.['staffNotePresent']);
@@ -128,13 +136,8 @@ function describeStaffNoteChange(
   if (
     beforePresent === true &&
     afterPresent === true &&
-    beforeLength !== null &&
-    afterLength !== null &&
-    (beforeLength !== afterLength ||
-      (beforeLength === afterLength &&
-        beforeStatus !== null &&
-        afterStatus !== null &&
-        beforeStatus === afterStatus))
+    (staffNoteChanged === true ||
+      (beforeLength !== null && afterLength !== null && beforeLength !== afterLength))
   ) {
     return ' · Staffコメント更新';
   }
