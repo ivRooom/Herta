@@ -424,7 +424,14 @@ async function handleStatus(
     await reply(interaction, 'Suggestionが見つからないか、すでに取り下げ済みです。');
     return;
   }
-  await reply(interaction, `Suggestion \`${id}\` を「${statusLabel(status)}」へ変更しました。`);
+
+  let acknowledgementError: unknown;
+  try {
+    await reply(interaction, `Suggestion \`${id}\` を「${statusLabel(status)}」へ変更しました。`);
+  } catch (error) {
+    acknowledgementError = error;
+  }
+
   await reconcileSuggestionMessage(context, snapshot).catch((error) =>
     context.logger.warn(
       { err: error, suggestionId: id },
@@ -442,6 +449,8 @@ async function handleStatus(
       )
       .catch(() => undefined);
   }
+
+  if (acknowledgementError) throw acknowledgementError;
 }
 
 async function handleSuggestionComponent(
