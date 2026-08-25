@@ -44,8 +44,8 @@ function createPrismaHarness(row: EditRow | null, snapshots: SuggestionSnapshot[
     $executeRaw: txExecuteRaw,
     auditLog: { create: auditCreate },
   };
-  const transaction = vi.fn(
-    async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+  const transaction = vi.fn(async (callback: (client: typeof tx) => Promise<unknown>) =>
+    callback(tx),
   );
   let snapshotIndex = 0;
   const rootQueryRaw = vi.fn(async () => {
@@ -83,8 +83,7 @@ function createCommandHarness(
     input.row === undefined
       ? { authorId: AUTHOR_ID, status: 'pending' as const, content: '編集前のSuggestion' }
       : input.row;
-  const snapshots =
-    input.snapshots ?? [makeSnapshot({ guildId, authorId: AUTHOR_ID, content })];
+  const snapshots = input.snapshots ?? [makeSnapshot({ guildId, authorId: AUTHOR_ID, content })];
   const prisma = createPrismaHarness(row, snapshots);
   const edit = input.messageEditError
     ? vi.fn(async () => Promise.reject(input.messageEditError))
@@ -263,7 +262,10 @@ describe('Suggestion author edit', () => {
   );
 
   it.each([
-    { label: 'third-party', row: { authorId: AUTHOR_ID, status: 'pending' as const, content: 'secret' } },
+    {
+      label: 'third-party',
+      row: { authorId: AUTHOR_ID, status: 'pending' as const, content: 'secret' },
+    },
     { label: 'missing', row: null },
   ])('$labelは同じoutcomeで存在推測を抑制する', async ({ row }) => {
     const harness = createPrismaHarness(row, [makeSnapshot({ content: 'secret' })]);
