@@ -9,6 +9,7 @@ import type { PluginManifest } from '@herta/shared';
 import { achievementsManifest } from './manifests/achievements.js';
 import { activityRulesManifest } from './manifests/activity-rules.js';
 import { afkManifest } from './manifests/afk.js';
+import { aiManifest } from './manifests/ai.js';
 import { birthdayRoleManifest } from './manifests/birthday-role.js';
 import { channelPolicyManifest } from './manifests/channel-policy.js';
 import { communityProfileManifest } from './manifests/community-profile.js';
@@ -27,6 +28,7 @@ import { xpLevelManifest } from './manifests/xp-level.js';
 export { achievementsManifest } from './manifests/achievements.js';
 export { activityRulesManifest } from './manifests/activity-rules.js';
 export { afkManifest } from './manifests/afk.js';
+export { aiManifest } from './manifests/ai.js';
 export { birthdayRoleManifest } from './manifests/birthday-role.js';
 export { channelPolicyManifest } from './manifests/channel-policy.js';
 export { communityProfileManifest } from './manifests/community-profile.js';
@@ -69,7 +71,7 @@ function applyDiscordPickerMetadata(schema: unknown, insideMessageTarget = false
         if (!isRecord(property)) return [key, property];
 
         const expected = DISCORD_ENTITY_FIELDS.find(({ pattern }) => pattern.test(key));
-        const propertyUi = isRecord(property['x-herta-ui']) ? property['x-herta-ui'] : undefined;
+        const propertyUi = isRecord(property['x-herta-ui']) ? schemaPropertyUi(property) : undefined;
         const shouldInfer =
           expected && !propertyUi?.widget && !(messageTarget && /^channelId$/i.test(key));
         const withPicker = shouldInfer
@@ -111,6 +113,10 @@ function applyDiscordPickerMetadata(schema: unknown, insideMessageTarget = false
   return normalized;
 }
 
+function schemaPropertyUi(property: Record<string, unknown>): Record<string, unknown> | undefined {
+  return isRecord(property['x-herta-ui']) ? property['x-herta-ui'] : undefined;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -119,6 +125,7 @@ const rawPluginManifests: PluginManifest[] = [
   achievementsManifest,
   activityRulesManifest,
   afkManifest,
+  aiManifest,
   autoResponseManifest,
   birthdayRoleManifest,
   channelPolicyManifest,
