@@ -71,7 +71,7 @@ function applyDiscordPickerMetadata(schema: unknown, insideMessageTarget = false
         if (!isRecord(property)) return [key, property];
 
         const expected = DISCORD_ENTITY_FIELDS.find(({ pattern }) => pattern.test(key));
-        const propertyUi = isRecord(property['x-herta-ui']) ? schemaPropertyUi(property) : undefined;
+        const propertyUi = isRecord(property['x-herta-ui']) ? property['x-herta-ui'] : undefined;
         const shouldInfer =
           expected && !propertyUi?.widget && !(messageTarget && /^channelId$/i.test(key));
         const withPicker = shouldInfer
@@ -111,10 +111,6 @@ function applyDiscordPickerMetadata(schema: unknown, insideMessageTarget = false
   }
 
   return normalized;
-}
-
-function schemaPropertyUi(property: Record<string, unknown>): Record<string, unknown> | undefined {
-  return isRecord(property['x-herta-ui']) ? property['x-herta-ui'] : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
