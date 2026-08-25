@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  formatSuggestionHistoryPage,
-  type SuggestionHistoryRecord,
-} from './suggestion-history.js';
+import { formatSuggestionHistoryPage, type SuggestionHistoryRecord } from './suggestion-history.js';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 
