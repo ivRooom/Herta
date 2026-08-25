@@ -29,6 +29,7 @@ const MAX_NOTE_LENGTH = 300;
 const MAX_LIST_PAGE_LENGTH = 1900;
 const MAX_INFO_LENGTH = 1900;
 const MAX_MESSAGE_RECONCILE_ATTEMPTS = 5;
+const suggestionMessageQueues = new Map<string, Promise<void>>();
 
 export interface SuggestionConfig {
   enabled: boolean;
@@ -488,8 +489,9 @@ async function handleSuggestionComponent(
     });
     return;
   }
-  await interaction.update(buildSuggestionMessage(snapshot));
-  await reconcileSuggestionMessage(context, snapshot, true).catch((error) =>
+  await reconcileSuggestionMessage(context, snapshot, () =>
+    interaction.update(buildSuggestionMessage(snapshot)),
+  ).catch((error) =>
     context.logger.warn(
       { err: error, suggestionId: parsed.id },
       '投票後のSuggestionメッセージ再同期に失敗しました',
@@ -514,21 +516,48 @@ async function resolveSuggestionChannel(
 async function reconcileSuggestionMessage(
   context: SuggestionContext,
   initial: SuggestionSnapshot,
-  initiallyRendered = false,
+  renderInitial?: () => Promise<unknown>,
 ): Promise<void> {
-  let rendered = initial;
-  if (!initiallyRendered) await updateStoredMessage(context, rendered);
+  const queueKey = `${initial.guildId}:${initial.id}`;
+  const previous = suggestionMessageQueues.get(queueKey) ?? Promise.resolve();
+  const task = previous.catch(() => undefined).then(async () => {
+    let rendered = initial;
+    let initialRenderError: unknown;
 
-  for (let attempt = 0; attempt < MAX_MESSAGE_RECONCILE_ATTEMPTS; attempt += 1) {
+    if (renderInitial) {
+      try {
+        await renderInitial();
+      } catch (error) {
+        initialRenderError = error;
+        await updateStoredMessage(context, rendered);
+      }
+    } else {
+      await updateStoredMessage(context, rendered);
+    }
+
+    for (let attempt = 0; attempt < MAX_MESSAGE_RECONCILE_ATTEMPTS; attempt += 1) {
+      const current = await getSuggestionSnapshot(context.prisma, rendered.id, rendered.guildId);
+      if (!current || !shouldRepairSuggestionMessage(rendered, current)) {
+        if (initialRenderError) throw initialRenderError;
+        return;
+      }
+      await updateStoredMessage(context, current);
+      rendered = current;
+    }
+
     const current = await getSuggestionSnapshot(context.prisma, rendered.id, rendered.guildId);
-    if (!current || !shouldRepairSuggestionMessage(rendered, current)) return;
-    await updateStoredMessage(context, current);
-    rendered = current;
-  }
+    if (current && shouldRepairSuggestionMessage(rendered, current)) {
+      await updateStoredMessage(context, current);
+    }
 
-  const current = await getSuggestionSnapshot(context.prisma, rendered.id, rendered.guildId);
-  if (current && shouldRepairSuggestionMessage(rendered, current)) {
-    throw new Error('SuggestionMessageReconciliationDidNotConverge');
+    if (initialRenderError) throw initialRenderError;
+  });
+
+  suggestionMessageQueues.set(queueKey, task);
+  try {
+    await task;
+  } finally {
+    if (suggestionMessageQueues.get(queueKey) === task) suggestionMessageQueues.delete(queueKey);
   }
 }
 
