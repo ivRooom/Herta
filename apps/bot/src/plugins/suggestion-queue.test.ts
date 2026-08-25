@@ -132,11 +132,7 @@ describe('Suggestion staff queue', () => {
     const query = queryRaw.mock.calls[0]?.[0] as readonly string[];
     expect(query.join(' ')).toContain(`s."status" IN ('pending', 'reviewing')`);
     expect(query.join(' ')).toContain('ORDER BY s."created_at" DESC, s."id" DESC');
-    expect(queryRaw.mock.calls[0]?.slice(1)).toEqual([
-      '123',
-      SUGGESTION_QUEUE_PAGE_SIZE + 1,
-      0,
-    ]);
+    expect(queryRaw.mock.calls[0]?.slice(1)).toEqual(['123', SUGGESTION_QUEUE_PAGE_SIZE + 1, 0]);
     expect(interaction.reply).toHaveBeenCalledWith(
       expect.objectContaining({
         content: expect.stringContaining('Suggestion Staff Queue'),
