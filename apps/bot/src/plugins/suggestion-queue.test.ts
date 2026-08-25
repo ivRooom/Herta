@@ -205,7 +205,9 @@ describe('Suggestion staff queue', () => {
 
     await executeQueueCommand(context, interaction);
 
-    expect(interaction.reply.mock.calls[0]?.[0].content).toContain('該当するSuggestionはありません。');
+    expect(interaction.reply.mock.calls[0]?.[0].content).toContain(
+      '該当するSuggestionはありません。',
+    );
   });
 
   it('page上限は許可し、上限外はDB照会前に拒否する', async () => {
