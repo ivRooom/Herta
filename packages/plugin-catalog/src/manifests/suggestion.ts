@@ -130,6 +130,24 @@ export const suggestionManifest: PluginManifest = {
           ],
         },
         {
+          name: 'edit',
+          description: '自分の未処理Suggestionを編集します',
+          options: [
+            {
+              name: 'id',
+              description: 'Suggestion ID',
+              type: 'string',
+              required: true,
+            },
+            {
+              name: 'content',
+              description: '新しい要望内容（1〜1000文字）',
+              type: 'string',
+              required: true,
+            },
+          ],
+        },
+        {
           name: 'withdraw',
           description: '自分の未処理Suggestionを取り下げます',
           options: [
