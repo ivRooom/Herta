@@ -19,34 +19,34 @@ function formatStatusChange(
 }
 
 describe('Suggestion history Staff comment transitions', () => {
-  it('Staffコメント削除を本文なしで履歴へ表示する', () => {
+  it('Staffコメント削除を本文なし・文字数遷移付きで履歴へ表示する', () => {
     const output = formatStatusChange(
       { status: 'reviewing', staffNotePresent: true, staffNoteLength: 12 },
       { status: 'reviewing', staffNotePresent: false, staffNoteLength: 0 },
     );
 
     expect(output).toContain('検討中 → 検討中');
-    expect(output).toContain('Staffコメント削除');
+    expect(output).toContain('Staffコメント削除 (12文字 → 0文字)');
   });
 
-  it('Staffコメント追加を本文なしで履歴へ表示する', () => {
+  it('Staffコメント追加を本文なし・文字数遷移付きで履歴へ表示する', () => {
     const output = formatStatusChange(
       { status: 'pending', staffNotePresent: false, staffNoteLength: 0 },
       { status: 'reviewing', staffNotePresent: true, staffNoteLength: 8 },
     );
 
     expect(output).toContain('未確認 → 検討中');
-    expect(output).toContain('Staffコメント追加');
+    expect(output).toContain('Staffコメント追加 (0文字 → 8文字)');
   });
 
-  it('Staffコメント文字数変更を更新として履歴へ表示する', () => {
+  it('Staffコメント文字数変更を更新として文字数遷移付きで表示する', () => {
     const output = formatStatusChange(
       { status: 'accepted', staffNotePresent: true, staffNoteLength: 8 },
       { status: 'accepted', staffNotePresent: true, staffNoteLength: 15 },
     );
 
     expect(output).toContain('採用 → 採用');
-    expect(output).toContain('Staffコメント更新');
+    expect(output).toContain('Staffコメント更新 (8文字 → 15文字)');
   });
 
   it('状態と文字数が同じでもStaffコメント差し替えAuditを更新として表示する', () => {
@@ -57,6 +57,6 @@ describe('Suggestion history Staff comment transitions', () => {
     );
 
     expect(output).toContain('検討中 → 検討中');
-    expect(output).toContain('Staffコメント更新');
+    expect(output).toContain('Staffコメント更新 (12文字 → 12文字)');
   });
 });
