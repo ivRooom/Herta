@@ -9,6 +9,7 @@ import {
 import {
   createSuggestion,
   deleteSuggestion,
+  editSuggestion,
   getSuggestionSnapshot,
   listAuthorSuggestions,
   listSuggestionQueue,
@@ -273,6 +274,7 @@ async function executeSuggestionCommand(
   if (subcommand === 'create') return handleCreate(context, config, interaction);
   if (subcommand === 'list') return handleList(context, interaction);
   if (subcommand === 'info') return handleInfo(context, config, interaction);
+  if (subcommand === 'edit') return handleEdit(context, interaction);
   if (subcommand === 'withdraw') return handleWithdraw(context, interaction);
   if (subcommand === 'queue') return handleQueue(context, config, interaction);
   if (subcommand === 'status') return handleStatus(context, config, interaction);
@@ -373,6 +375,60 @@ async function handleInfo(
   }
 
   await reply(interaction, formatSuggestionInfo(snapshot, interaction.user.id));
+}
+
+async function handleEdit(
+  context: SuggestionContext,
+  interaction: CommandInteraction,
+): Promise<void> {
+  const id = interaction.options.getString('id', true)?.trim() ?? '';
+  const content = interaction.options.getString('content', true)?.trim() ?? '';
+  if (!UUID_PATTERN.test(id)) {
+    await reply(interaction, 'Suggestion IDが正しくありません。');
+    return;
+  }
+  if (!content || content.length > MAX_CONTENT_LENGTH) {
+    await reply(interaction, 'contentは1〜1000文字で入力してください。');
+    return;
+  }
+
+  const result = await editSuggestion(context.prisma, {
+    id,
+    guildId: interaction.guildId!,
+    authorId: interaction.user.id,
+    content,
+  });
+  if (result.outcome === 'not_found_or_forbidden') {
+    await reply(interaction, 'Suggestionが見つからないか、編集権限がありません。');
+    return;
+  }
+  if (result.outcome === 'not_editable') {
+    await reply(interaction, 'このSuggestionは現在の状態では編集できません。');
+    return;
+  }
+
+  let acknowledgementError: unknown;
+  try {
+    await reply(
+      interaction,
+      result.outcome === 'unchanged'
+        ? `Suggestion \`${id}\` はすでに同じ内容です。`
+        : `Suggestion \`${id}\` を更新しました。`,
+    );
+  } catch (error) {
+    acknowledgementError = error;
+  }
+
+  if (result.snapshot) {
+    await reconcileSuggestionMessage(context, result.snapshot).catch((error) =>
+      context.logger.warn(
+        { err: error, suggestionId: id },
+        '編集後のSuggestionメッセージ再同期に失敗しました',
+      ),
+    );
+  }
+
+  if (acknowledgementError) throw acknowledgementError;
 }
 
 async function handleWithdraw(
@@ -658,6 +714,7 @@ function shouldRepairSuggestionMessage(
   current: SuggestionSnapshot,
 ): boolean {
   return (
+    rendered.content !== current.content ||
     rendered.status !== current.status ||
     rendered.votingEnabled !== current.votingEnabled ||
     rendered.upvotes !== current.upvotes ||
