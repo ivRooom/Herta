@@ -49,10 +49,7 @@ export interface SuggestionQueuePage {
 }
 
 export type EditSuggestionOutcome =
-  | 'edited'
-  | 'unchanged'
-  | 'not_found_or_forbidden'
-  | 'not_editable';
+  'edited' | 'unchanged' | 'not_found_or_forbidden' | 'not_editable';
 
 export interface EditSuggestionResult {
   outcome: EditSuggestionOutcome;
