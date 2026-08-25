@@ -4,6 +4,10 @@ import { randomUUID } from 'node:crypto';
 export type SuggestionStatus =
   'pending' | 'reviewing' | 'accepted' | 'rejected' | 'completed' | 'withdrawn';
 export type ManagedSuggestionStatus = 'reviewing' | 'accepted' | 'rejected' | 'completed';
+export type SuggestionQueueFilter = 'open' | SuggestionStatus | 'all';
+
+export const SUGGESTION_QUEUE_PAGE_SIZE = 7;
+export const SUGGESTION_QUEUE_MAX_PAGE = 100;
 
 export interface SuggestionSnapshot {
   id: string;
@@ -26,6 +30,22 @@ export interface SuggestionListRecord {
   content: string;
   status: SuggestionStatus;
   createdAt: Date;
+}
+
+export interface SuggestionQueueRecord {
+  id: string;
+  authorId: string;
+  content: string;
+  anonymous: boolean;
+  status: SuggestionStatus;
+  upvotes: number;
+  downvotes: number;
+  createdAt: Date;
+}
+
+export interface SuggestionQueuePage {
+  records: SuggestionQueueRecord[];
+  hasNext: boolean;
 }
 
 export type WithdrawSuggestionOutcome =
@@ -135,6 +155,133 @@ export async function listAuthorSuggestions(
     ORDER BY "created_at" DESC
     LIMIT 25
   `;
+}
+
+export async function listSuggestionQueue(
+  prisma: PrismaClient,
+  input: { guildId: string; filter: SuggestionQueueFilter; page: number },
+): Promise<SuggestionQueuePage> {
+  if (!Number.isInteger(input.page) || input.page < 1 || input.page > SUGGESTION_QUEUE_MAX_PAGE) {
+    throw new RangeError('SuggestionQueuePageOutOfRange');
+  }
+
+  const offset = (input.page - 1) * SUGGESTION_QUEUE_PAGE_SIZE;
+  const limit = SUGGESTION_QUEUE_PAGE_SIZE + 1;
+  let rows: SuggestionQueueRecord[];
+
+  if (input.filter === 'open') {
+    rows = await prisma.$queryRaw<SuggestionQueueRecord[]>`
+      WITH page AS (
+        SELECT
+          s."id",
+          s."author_id",
+          s."content",
+          s."anonymous",
+          s."status",
+          s."created_at"
+        FROM "suggestions" s
+        WHERE s."guild_id" = ${input.guildId}
+          AND s."status" IN ('pending', 'reviewing')
+        ORDER BY s."created_at" DESC, s."id" DESC
+        LIMIT ${limit} OFFSET ${offset}
+      )
+      SELECT
+        page."id"::text AS "id",
+        page."author_id" AS "authorId",
+        page."content",
+        page."anonymous",
+        page."status",
+        page."created_at" AS "createdAt",
+        COUNT(*) FILTER (WHERE v."value" = 1)::int AS "upvotes",
+        COUNT(*) FILTER (WHERE v."value" = -1)::int AS "downvotes"
+      FROM page
+      LEFT JOIN "suggestion_votes" v ON v."suggestion_id" = page."id"
+      GROUP BY
+        page."id",
+        page."author_id",
+        page."content",
+        page."anonymous",
+        page."status",
+        page."created_at"
+      ORDER BY page."created_at" DESC, page."id" DESC
+    `;
+  } else if (input.filter === 'all') {
+    rows = await prisma.$queryRaw<SuggestionQueueRecord[]>`
+      WITH page AS (
+        SELECT
+          s."id",
+          s."author_id",
+          s."content",
+          s."anonymous",
+          s."status",
+          s."created_at"
+        FROM "suggestions" s
+        WHERE s."guild_id" = ${input.guildId}
+        ORDER BY s."created_at" DESC, s."id" DESC
+        LIMIT ${limit} OFFSET ${offset}
+      )
+      SELECT
+        page."id"::text AS "id",
+        page."author_id" AS "authorId",
+        page."content",
+        page."anonymous",
+        page."status",
+        page."created_at" AS "createdAt",
+        COUNT(*) FILTER (WHERE v."value" = 1)::int AS "upvotes",
+        COUNT(*) FILTER (WHERE v."value" = -1)::int AS "downvotes"
+      FROM page
+      LEFT JOIN "suggestion_votes" v ON v."suggestion_id" = page."id"
+      GROUP BY
+        page."id",
+        page."author_id",
+        page."content",
+        page."anonymous",
+        page."status",
+        page."created_at"
+      ORDER BY page."created_at" DESC, page."id" DESC
+    `;
+  } else {
+    rows = await prisma.$queryRaw<SuggestionQueueRecord[]>`
+      WITH page AS (
+        SELECT
+          s."id",
+          s."author_id",
+          s."content",
+          s."anonymous",
+          s."status",
+          s."created_at"
+        FROM "suggestions" s
+        WHERE s."guild_id" = ${input.guildId}
+          AND s."status" = ${input.filter}
+        ORDER BY s."created_at" DESC, s."id" DESC
+        LIMIT ${limit} OFFSET ${offset}
+      )
+      SELECT
+        page."id"::text AS "id",
+        page."author_id" AS "authorId",
+        page."content",
+        page."anonymous",
+        page."status",
+        page."created_at" AS "createdAt",
+        COUNT(*) FILTER (WHERE v."value" = 1)::int AS "upvotes",
+        COUNT(*) FILTER (WHERE v."value" = -1)::int AS "downvotes"
+      FROM page
+      LEFT JOIN "suggestion_votes" v ON v."suggestion_id" = page."id"
+      GROUP BY
+        page."id",
+        page."author_id",
+        page."content",
+        page."anonymous",
+        page."status",
+        page."created_at"
+      ORDER BY page."created_at" DESC, page."id" DESC
+    `;
+  }
+
+  return {
+    records: rows.slice(0, SUGGESTION_QUEUE_PAGE_SIZE),
+    hasNext: rows.length > SUGGESTION_QUEUE_PAGE_SIZE,
+  };
 }
 
 export async function withdrawSuggestion(
