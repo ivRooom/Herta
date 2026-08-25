@@ -75,9 +75,7 @@ export async function DELETE(request: Request) {
   });
 }
 
-async function authorizedAdminUserId(): Promise<
-  { userId: string } | { response: NextResponse }
-> {
+async function authorizedAdminUserId(): Promise<{ userId: string } | { response: NextResponse }> {
   const session = await auth();
   const userId = session?.user?.id?.trim();
   if (!userId) return { response: noStoreJson({ error: '認証が必要です' }, 401) };
@@ -110,9 +108,7 @@ function isCredentialBody(value: unknown): value is OpenAiCredentialBody {
   if (typeof value.apiKey !== 'string') return false;
   const apiKey = value.apiKey.trim();
   return (
-    apiKey.length > 0 &&
-    apiKey.length <= MAX_OPENAI_API_KEY_CHARS &&
-    !/[\u0000\r\n]/.test(apiKey)
+    apiKey.length > 0 && apiKey.length <= MAX_OPENAI_API_KEY_CHARS && !/[\u0000\r\n]/.test(apiKey)
   );
 }
 

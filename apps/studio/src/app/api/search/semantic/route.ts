@@ -1,9 +1,5 @@
 import { NextResponse } from 'next/server';
-import {
-  OPENAI_API_KEY_RUNTIME_SECRET,
-  readRuntimeSecret,
-  RuntimeSecretError,
-} from '@herta/db';
+import { OPENAI_API_KEY_RUNTIME_SECRET, readRuntimeSecret, RuntimeSecretError } from '@herta/db';
 import { auth } from '@/auth';
 import { RequestBodyTooLargeError, readJsonBodyWithLimit } from '@/lib/bounded-request-body';
 import {
@@ -177,10 +173,13 @@ async function resolveOpenAiApiKey(): Promise<string | null> {
       });
       return null;
     }
-    console.warn('Studio semantic runtime credential store is unavailable; env fallback remains active', {
-      provider: 'openai',
-      failure: error instanceof Error ? error.name : 'UnknownError',
-    });
+    console.warn(
+      'Studio semantic runtime credential store is unavailable; env fallback remains active',
+      {
+        provider: 'openai',
+        failure: error instanceof Error ? error.name : 'UnknownError',
+      },
+    );
   }
 
   return process.env.OPENAI_API_KEY?.trim() || null;

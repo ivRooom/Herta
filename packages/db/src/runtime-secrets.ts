@@ -232,11 +232,7 @@ export function validateRuntimeSecretValue(value: string): string {
   if (typeof value !== 'string') throw new RuntimeSecretError('invalid_secret_value');
   const normalized = value.trim();
   const bytes = Buffer.byteLength(normalized, 'utf8');
-  if (
-    !normalized ||
-    bytes > MAX_SECRET_VALUE_BYTES ||
-    /[\u0000\r\n]/.test(normalized)
-  ) {
+  if (!normalized || bytes > MAX_SECRET_VALUE_BYTES || /[\u0000\r\n]/.test(normalized)) {
     throw new RuntimeSecretError('invalid_secret_value');
   }
   return normalized;

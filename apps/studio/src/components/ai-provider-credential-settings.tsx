@@ -83,7 +83,9 @@ export function AiProviderCredentialSettings() {
 
   const remove = async () => {
     if (!status?.configured || saving || deleting) return;
-    if (!window.confirm('保存済みのOpenAI APIキーを削除しますか？ AI機能は利用できなくなります。')) {
+    if (
+      !window.confirm('保存済みのOpenAI APIキーを削除しますか？ AI機能は利用できなくなります。')
+    ) {
       return;
     }
     setDeleting(true);
@@ -124,7 +126,8 @@ export function AiProviderCredentialSettings() {
           </div>
           <h2 className="mt-2 text-lg font-semibold">OpenAI APIキー</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">
-            Herta全体のAI機能とStudio Semantic Searchで使うserver-side credentialです。Herta管理者だけが変更できます。
+            Herta全体のAI機能とStudio Semantic Searchで使うserver-side
+            credentialです。Herta管理者だけが変更できます。
           </p>
         </div>
         {loadState === 'ready' && status ? (
@@ -141,12 +144,17 @@ export function AiProviderCredentialSettings() {
       </div>
 
       {loadState === 'loading' ? (
-        <p className="mt-5 rounded-xl border border-border bg-background p-4 text-sm text-muted" role="status">
+        <p
+          className="mt-5 rounded-xl border border-border bg-background p-4 text-sm text-muted"
+          role="status"
+        >
           Credential状態を確認しています…
         </p>
       ) : loadState === 'error' ? (
         <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 p-4">
-          <p className="text-sm text-red-700 dark:text-red-300">Credential状態を読み込めませんでした。</p>
+          <p className="text-sm text-red-700 dark:text-red-300">
+            Credential状態を読み込めませんでした。
+          </p>
           <button
             type="button"
             onClick={() => void load()}
@@ -175,7 +183,9 @@ export function AiProviderCredentialSettings() {
               autoCorrect="off"
               spellCheck={false}
               maxLength={4096}
-              placeholder={status.configured ? '新しいキーを入力して置き換え' : 'OpenAI APIキーを入力'}
+              placeholder={
+                status.configured ? '新しいキーを入力して置き換え' : 'OpenAI APIキーを入力'
+              }
               disabled={saving || deleting}
               className="mt-3 w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
             />
@@ -185,7 +195,8 @@ export function AiProviderCredentialSettings() {
             <div className="flex items-start gap-2 text-xs leading-5 text-muted">
               <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
               <p>
-                キーはAES-256-GCMで暗号化して保存し、ブラウザへ読み戻しません。raw keyをログやPlugin設定へ保存しません。
+                キーはAES-256-GCMで暗号化して保存し、ブラウザへ読み戻しません。raw
+                keyをログやPlugin設定へ保存しません。
                 {status.configured && status.updatedAt
                   ? ` 最終更新: ${formatDateTime(status.updatedAt)}`
                   : ''}

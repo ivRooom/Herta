@@ -28,7 +28,7 @@ test('Studio credential UI is write-only and never asks the API for plaintext', 
 test('Semantic Search prefers encrypted runtime credential before env fallback', () => {
   const route = readFileSync(semanticRoutePath, 'utf8');
   const runtimeIndex = route.indexOf('readRuntimeSecret(prisma, OPENAI_API_KEY_RUNTIME_SECRET)');
-  const envIndex = route.indexOf("process.env.OPENAI_API_KEY?.trim() || null");
+  const envIndex = route.indexOf('process.env.OPENAI_API_KEY?.trim() || null');
 
   assert.ok(runtimeIndex >= 0, 'runtime secret resolver must be used');
   assert.ok(envIndex > runtimeIndex, 'OPENAI_API_KEY must remain fallback-only');
