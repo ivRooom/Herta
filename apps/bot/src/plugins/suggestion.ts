@@ -520,38 +520,40 @@ async function reconcileSuggestionMessage(
 ): Promise<void> {
   const queueKey = `${initial.guildId}:${initial.id}`;
   const previous = suggestionMessageQueues.get(queueKey) ?? Promise.resolve();
-  const task = previous.catch(() => undefined).then(async () => {
-    let rendered = initial;
-    let initialRenderError: unknown;
+  const task = previous
+    .catch(() => undefined)
+    .then(async () => {
+      let rendered = initial;
+      let initialRenderError: unknown;
 
-    if (renderInitial) {
-      try {
-        await renderInitial();
-      } catch (error) {
-        initialRenderError = error;
+      if (renderInitial) {
+        try {
+          await renderInitial();
+        } catch (error) {
+          initialRenderError = error;
+          await updateStoredMessage(context, rendered);
+        }
+      } else {
         await updateStoredMessage(context, rendered);
       }
-    } else {
-      await updateStoredMessage(context, rendered);
-    }
 
-    for (let attempt = 0; attempt < MAX_MESSAGE_RECONCILE_ATTEMPTS; attempt += 1) {
-      const current = await getSuggestionSnapshot(context.prisma, rendered.id, rendered.guildId);
-      if (!current || !shouldRepairSuggestionMessage(rendered, current)) {
-        if (initialRenderError) throw initialRenderError;
-        return;
+      for (let attempt = 0; attempt < MAX_MESSAGE_RECONCILE_ATTEMPTS; attempt += 1) {
+        const current = await getSuggestionSnapshot(context.prisma, rendered.id, rendered.guildId);
+        if (!current || !shouldRepairSuggestionMessage(rendered, current)) {
+          if (initialRenderError) throw initialRenderError;
+          return;
+        }
+        await updateStoredMessage(context, current);
+        rendered = current;
       }
-      await updateStoredMessage(context, current);
-      rendered = current;
-    }
 
-    const current = await getSuggestionSnapshot(context.prisma, rendered.id, rendered.guildId);
-    if (current && shouldRepairSuggestionMessage(rendered, current)) {
-      await updateStoredMessage(context, current);
-    }
+      const current = await getSuggestionSnapshot(context.prisma, rendered.id, rendered.guildId);
+      if (current && shouldRepairSuggestionMessage(rendered, current)) {
+        await updateStoredMessage(context, current);
+      }
 
-    if (initialRenderError) throw initialRenderError;
-  });
+      if (initialRenderError) throw initialRenderError;
+    });
 
   suggestionMessageQueues.set(queueKey, task);
   try {
