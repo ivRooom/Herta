@@ -6,12 +6,13 @@ const ID = '11111111-1111-4111-8111-111111111111';
 function formatStatusChange(
   before: Record<string, unknown>,
   after: Record<string, unknown>,
+  metadata: Record<string, unknown> = { operationSource: 'discord' },
 ): string {
   const record: SuggestionHistoryRecord = {
     id: '22222222-2222-4222-8222-222222222222',
     event: 'suggestion.status',
     changes: { before, after },
-    metadata: { operationSource: 'discord' },
+    metadata,
     createdAt: new Date('2026-08-25T00:00:00.000Z'),
   };
   return formatSuggestionHistoryPage({ records: [record], hasNext: false }, ID, 1);
@@ -52,6 +53,7 @@ describe('Suggestion history Staff comment transitions', () => {
     const output = formatStatusChange(
       { status: 'reviewing', staffNotePresent: true, staffNoteLength: 12 },
       { status: 'reviewing', staffNotePresent: true, staffNoteLength: 12 },
+      { operationSource: 'discord', staffNoteChanged: true },
     );
 
     expect(output).toContain('検討中 → 検討中');
