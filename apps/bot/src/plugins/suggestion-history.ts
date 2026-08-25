@@ -105,7 +105,7 @@ function describeSuggestionAuditEvent(record: SuggestionHistoryRecord): string {
       beforeStatus && afterStatus
         ? ` · ${statusLabel(beforeStatus)} → ${statusLabel(afterStatus)}`
         : '';
-    const noteSummary = describeStaffNoteChange(before, after);
+    const noteSummary = describeStaffNoteChange(before, after, beforeStatus, afterStatus);
     return `🛠️ Staff状態変更${transition}${noteSummary}${sourceSuffix}`;
   }
 
@@ -115,6 +115,8 @@ function describeSuggestionAuditEvent(record: SuggestionHistoryRecord): string {
 function describeStaffNoteChange(
   before: Record<string, unknown> | null,
   after: Record<string, unknown> | null,
+  beforeStatus: SuggestionStatus | null,
+  afterStatus: SuggestionStatus | null,
 ): string {
   const beforePresent = booleanValue(before?.['staffNotePresent']);
   const afterPresent = booleanValue(after?.['staffNotePresent']);
@@ -128,7 +130,11 @@ function describeStaffNoteChange(
     afterPresent === true &&
     beforeLength !== null &&
     afterLength !== null &&
-    beforeLength !== afterLength
+    (beforeLength !== afterLength ||
+      (beforeLength === afterLength &&
+        beforeStatus !== null &&
+        afterStatus !== null &&
+        beforeStatus === afterStatus))
   ) {
     return ' · Staffコメント更新';
   }
