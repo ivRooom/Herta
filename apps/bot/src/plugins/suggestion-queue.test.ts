@@ -75,8 +75,8 @@ function createQueueInteraction(
     member: { roles: { cache: { has: (id) => staffRoleIds.has(id) } } },
     options: {
       getSubcommand: () => 'queue',
-      getString: (name) => (name === 'status' ? (input.status ?? null) : null),
-      getInteger: (name) => (name === 'page' ? (input.page ?? null) : null),
+      getString: (name) => (name === 'status' ? input.status ?? null : null),
+      getInteger: (name) => (name === 'page' ? input.page ?? null : null),
     },
     reply: vi.fn(async () => undefined),
     followUp: vi.fn(async () => undefined),
