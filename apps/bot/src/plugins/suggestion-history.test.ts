@@ -400,7 +400,7 @@ describe('Suggestion status audit regression', () => {
             staffNoteLength: afterNote.length,
           },
         },
-        metadata: { operationSource: 'discord' },
+        metadata: { operationSource: 'discord', staffNoteChanged: true },
       },
     });
     const auditPayload = JSON.stringify(auditCreate.mock.calls);
