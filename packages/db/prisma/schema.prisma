@@ -176,6 +176,7 @@ model AuditLog {
   @@index([guildId, createdAt(sort: Desc)])
   @@index([guildId, event])
   @@index([guildId, actorId])
+  @@index([guildId, targetType, targetId, createdAt(sort: Desc), id(sort: Desc)], map: "audit_logs_guild_target_created_id_idx")
   @@map("audit_logs")
 }
 
@@ -489,7 +490,7 @@ model AutoResponseExecutionEvent {
   status     String
   durationMs Int      @map("duration_ms")
   errorName  String?  @map("error_name")
-  executedAt DateTime @default(now()) @map("executed_at") @db.Timestamptz(3)
+  executedAt DateTime @default(now()) @map("executed_at")
 
   rule AutoResponse @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 
@@ -560,9 +561,9 @@ model ModerationSettings {
   enableInviteFilter Boolean  @default(false) @map("enable_invite_filter")
   enableSpamFilter   Boolean  @default(true) @map("enable_spam_filter")
   logChannelId       String?  @map("log_channel_id")
-  exemptRoles        String[] @default([]) @map("exempt_roles")
-  exemptChannels     String[] @default([]) @map("exempt_channels")
-  allowedInvites     String[] @default([]) @map("allowed_invites")
+  exemptRoles        String[] @map("exempt_roles")
+  exemptChannels     String[] @map("exempt_channels")
+  allowedInvites     String[] @map("allowed_invites")
   inviteAction       String   @default("delete") @map("invite_action")
   updatedAt          DateTime @updatedAt @map("updated_at")
 
@@ -665,7 +666,7 @@ model LfgPost {
   createdBy        String?   @map("created_by")
   updatedBy        String?   @map("updated_by")
   deletedAt        DateTime? @map("deleted_at") @db.Timestamptz(3)
-  version          Int       @default(1)
+  version          Int      @default(1)
   createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
