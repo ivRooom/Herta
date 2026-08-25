@@ -81,6 +81,7 @@ interface CommandInteraction {
 interface ComponentInteraction {
   guildId: string | null;
   customId?: string;
+  message?: TextMessage;
   user: { id: string };
   isButton?(): boolean;
   reply(options: ReplyOptions): Promise<unknown>;
@@ -497,7 +498,7 @@ async function handleSuggestionComponent(
     acknowledgementError = error;
   }
 
-  await reconcileSuggestionMessage(context, snapshot).catch((error) =>
+  await reconcileSuggestionMessage(context, snapshot, interaction.message).catch((error) =>
     context.logger.warn(
       { err: error, suggestionId: parsed.id },
       '投票後のSuggestionメッセージ再同期に失敗しました',
@@ -524,6 +525,7 @@ async function resolveSuggestionChannel(
 async function reconcileSuggestionMessage(
   context: SuggestionContext,
   initial: SuggestionSnapshot,
+  fallbackMessage?: TextMessage,
 ): Promise<void> {
   const queueKey = `${initial.guildId}:${initial.id}`;
   const previous = suggestionMessageQueues.get(queueKey) ?? Promise.resolve();
@@ -531,18 +533,18 @@ async function reconcileSuggestionMessage(
     .catch(() => undefined)
     .then(async () => {
       let rendered = initial;
-      await updateStoredMessage(context, rendered);
+      await updateStoredMessage(context, rendered, fallbackMessage);
 
       for (let attempt = 0; attempt < MAX_MESSAGE_RECONCILE_ATTEMPTS; attempt += 1) {
         const current = await getSuggestionSnapshot(context.prisma, rendered.id, rendered.guildId);
         if (!current || !shouldRepairSuggestionMessage(rendered, current)) return;
-        await updateStoredMessage(context, current);
+        await updateStoredMessage(context, current, fallbackMessage);
         rendered = current;
       }
 
       const current = await getSuggestionSnapshot(context.prisma, rendered.id, rendered.guildId);
       if (current && shouldRepairSuggestionMessage(rendered, current)) {
-        await updateStoredMessage(context, current);
+        await updateStoredMessage(context, current, fallbackMessage);
       }
     });
 
@@ -557,7 +559,12 @@ async function reconcileSuggestionMessage(
 async function updateStoredMessage(
   context: SuggestionContext,
   snapshot: SuggestionSnapshot,
+  fallbackMessage?: TextMessage,
 ): Promise<void> {
+  if (fallbackMessage) {
+    await fallbackMessage.edit(buildSuggestionMessage(snapshot));
+    return;
+  }
   if (!snapshot.messageId) return;
   const channel = await context.client.channels.fetch(snapshot.channelId);
   if (!channel?.isTextBased()) throw new Error('SuggestionChannelUnavailable');

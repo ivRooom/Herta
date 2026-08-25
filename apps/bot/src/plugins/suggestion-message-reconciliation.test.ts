@@ -61,10 +61,14 @@ function createVoteContext(snapshots: SuggestionSnapshot[]) {
   return { context, edit, getRootQueryCount: () => rootQueryCount };
 }
 
-function createVoteInteraction(deferUpdate = vi.fn(async () => undefined)) {
+function createVoteInteraction(
+  deferUpdate = vi.fn(async () => undefined),
+  message?: { id: string; edit(options: unknown): Promise<unknown> },
+) {
   return {
     guildId: '123',
     customId: `herta:suggestion:v1:vote:${ID}:up`,
+    message,
     user: { id: '777' },
     isButton: () => true,
     reply: vi.fn(async () => undefined),
@@ -151,6 +155,27 @@ describe('Suggestion message reconciliation', () => {
     expect(acknowledgementOrder).toBeDefined();
     expect(editOrder).toBeDefined();
     expect(acknowledgementOrder!).toBeLessThan(editOrder!);
+  });
+
+  it('messageId保存前の投票でもcomponent messageを更新する', async () => {
+    const pending = makeSnapshot({ messageId: null, upvotes: 4 });
+    const { context, edit } = createVoteContext([pending]);
+    const componentEdit = vi.fn(async () => undefined);
+    const interaction = createVoteInteraction(
+      vi.fn(async () => undefined),
+      {
+        id: '999',
+        edit: componentEdit,
+      },
+    );
+
+    await executeVote(context, interaction);
+
+    expect(interaction.deferUpdate).toHaveBeenCalledTimes(1);
+    expect(componentEdit).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('👍 4') }),
+    );
+    expect(edit).not.toHaveBeenCalled();
   });
 
   it('投票ackが失敗しても公開メッセージ再同期後に元のエラーを返す', async () => {

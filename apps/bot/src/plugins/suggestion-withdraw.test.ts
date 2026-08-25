@@ -214,21 +214,22 @@ describe('Suggestion author withdraw', () => {
       config: normalizeSuggestionConfig(undefined),
       manifest: suggestionPlugin.manifest,
     };
-    const update = vi.fn(async () => undefined);
+    const deferUpdate = vi.fn(async () => undefined);
     const interaction = {
       guildId: '123',
       customId: `herta:suggestion:v1:vote:${ID}:up`,
       user: { id: '777' },
       isButton: () => true,
       reply: vi.fn(async () => undefined),
-      update,
+      deferUpdate,
     };
     const event = suggestionPlugin.provideEvents?.(context as never)[0];
     if (!event) throw new Error('Suggestion event is not available');
 
     await event.handler(context as never, interaction as never);
 
-    expect(update).toHaveBeenCalledWith(
+    expect(deferUpdate).toHaveBeenCalledTimes(1);
+    expect(edit).toHaveBeenCalledWith(
       expect.objectContaining({
         content: expect.stringContaining('📝 未確認'),
       }),
