@@ -5,3 +5,5 @@ dist
 coverage
 pnpm-lock.yaml
 packages/db/src/generated
+.env.example
+.env.production.example
