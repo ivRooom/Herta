@@ -102,7 +102,7 @@ jobs:
     timeout-minutes: 20
     environment: production
     env:
-      DEPLOY_REF: ${{ github.event.inputs.ref || 'main' }}
+      DEPLOY_REF: ${{ github.event.inputs.ref || github.ref }}
       HERTA_IMAGE: ${{ needs.build-image.outputs.image_ref }}
       GHCR_USERNAME: ${{ github.actor }}
       GHCR_TOKEN: ${{ github.token }}
@@ -237,62 +237,13 @@ jobs:
             sleep 10
             ${COMPOSE} ps -a
 
-            echo "=== コンテナ稼働確認 ==="
-            for service in postgres redis api studio bot worker nginx caddy; do
-              container_id="$(${COMPOSE} ps -q "${service}")"
-              if [ -z "${container_id}" ]; then
-                echo "ERROR: ${service}コンテナが存在しません。" >&2
-                exit 1
-              fi
-              if [ "$(docker inspect --format '{{.State.Running}}' "${container_id}")" != 'true' ]; then
-                echo "ERROR: ${service}コンテナが停止しています。" >&2
-                ${COMPOSE} logs --tail=100 "${service}"
-                exit 1
-              fi
-            done
+            verify_running_services
+            verify_migration
 
-            migrator_id="$(${COMPOSE} ps -aq migrator)"
-            if [ -z "${migrator_id}" ] || \
-              [ "$(docker inspect --format '{{.State.ExitCode}}' "${migrator_id}")" != '0' ]; then
-              echo "ERROR: migrationが正常終了していません。" >&2
-              ${COMPOSE} logs --tail=100 migrator
-              exit 1
-            fi
-
-            echo "=== Origin API health check ==="
-            api_healthy=false
-            for i in $(seq 1 24); do
-              if curl -fsS -k \
-                --resolve herta.ivrm.jp:443:127.0.0.1 \
-                https://herta.ivrm.jp/api/v1/health > /dev/null; then
-                api_healthy=true
-                break
-              fi
-              echo "API応答待ち... (${i}/24)"
-              sleep 5
-            done
-            if [ "${api_healthy}" != 'true' ]; then
-              ${COMPOSE} logs --tail=100 api nginx caddy
-              exit 1
-            fi
-
-            echo "=== Origin Auth.js health check ==="
-            auth_healthy=false
-            for i in $(seq 1 12); do
-              if curl -fsS -k \
-                --resolve herta.ivrm.jp:443:127.0.0.1 \
-                https://herta.ivrm.jp/api/auth/providers > /dev/null; then
-                auth_healthy=true
-                break
-              fi
-              echo "Studio認証応答待ち... (${i}/12)"
-              sleep 5
-            done
-            if [ "${auth_healthy}" != 'true' ]; then
-              ${COMPOSE} logs --tail=100 studio nginx caddy
-              exit 1
-            fi
-
+            # AOP有効後、localhost -> Caddy HTTPSはclient certificateなしで
+            # 拒否されるのが正常。application healthはcontainer内部で確認する。
+            wait_for_health
+            wait_for_auth
             wait_for_bot
 
             docker logout ghcr.io > /dev/null 2>&1 || true
