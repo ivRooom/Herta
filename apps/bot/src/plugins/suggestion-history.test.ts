@@ -7,10 +7,7 @@ import {
   type SuggestionHistoryRecord,
 } from './suggestion-history.js';
 import { normalizeSuggestionConfig, suggestionPlugin } from './suggestion.js';
-import {
-  updateSuggestionStatus,
-  type SuggestionSnapshot,
-} from './suggestion-repository.js';
+import { updateSuggestionStatus, type SuggestionSnapshot } from './suggestion-repository.js';
 
 const ID = '11111111-1111-4111-8111-111111111111';
 const GUILD_ID = '123';
@@ -51,11 +48,13 @@ function makeHistoryRecord(
   };
 }
 
-function createHistoryContext(input: {
-  snapshot?: SuggestionSnapshot | null;
-  history?: SuggestionHistoryRecord[];
-  config?: Record<string, unknown>;
-} = {}) {
+function createHistoryContext(
+  input: {
+    snapshot?: SuggestionSnapshot | null;
+    history?: SuggestionHistoryRecord[];
+    config?: Record<string, unknown>;
+  } = {},
+) {
   const snapshot = input.snapshot === undefined ? makeSnapshot() : input.snapshot;
   const queryRaw = vi.fn(async (..._args: unknown[]) => (snapshot ? [snapshot] : []));
   const findMany = vi.fn(async (_args: unknown) => input.history ?? []);
@@ -70,13 +69,15 @@ function createHistoryContext(input: {
   return { context, queryRaw, findMany };
 }
 
-function createHistoryInteraction(input: {
-  guildId?: string;
-  id?: string;
-  page?: number | null;
-  canManage?: boolean;
-  staffRoleIds?: string[];
-} = {}) {
+function createHistoryInteraction(
+  input: {
+    guildId?: string;
+    id?: string;
+    page?: number | null;
+    canManage?: boolean;
+    staffRoleIds?: string[];
+  } = {},
+) {
   const staffRoles = new Set(input.staffRoleIds ?? []);
   return {
     guildId: input.guildId ?? GUILD_ID,
@@ -215,10 +216,11 @@ describe('Suggestion staff history', () => {
     const rows = [makeHistoryRecord()];
     const findMany = vi.fn(async () => rows);
 
-    const result = await listSuggestionHistory(
-      { auditLog: { findMany } } as never,
-      { guildId: GUILD_ID, suggestionId: ID, page: 1 },
-    );
+    const result = await listSuggestionHistory({ auditLog: { findMany } } as never, {
+      guildId: GUILD_ID,
+      suggestionId: ID,
+      page: 1,
+    });
 
     expect(result.records).toHaveLength(1);
     expect(findMany).toHaveBeenCalledTimes(1);
@@ -244,10 +246,11 @@ describe('Suggestion staff history', () => {
 
   it('max pageは許可し、上限外はrepositoryでもDB前に拒否する', async () => {
     const findMany = vi.fn(async () => []);
-    await listSuggestionHistory(
-      { auditLog: { findMany } } as never,
-      { guildId: GUILD_ID, suggestionId: ID, page: SUGGESTION_HISTORY_MAX_PAGE },
-    );
+    await listSuggestionHistory({ auditLog: { findMany } } as never, {
+      guildId: GUILD_ID,
+      suggestionId: ID,
+      page: SUGGESTION_HISTORY_MAX_PAGE,
+    });
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         skip: (SUGGESTION_HISTORY_MAX_PAGE - 1) * SUGGESTION_HISTORY_PAGE_SIZE,
@@ -256,10 +259,11 @@ describe('Suggestion staff history', () => {
 
     const invalidFindMany = vi.fn(async () => []);
     await expect(
-      listSuggestionHistory(
-        { auditLog: { findMany: invalidFindMany } } as never,
-        { guildId: GUILD_ID, suggestionId: ID, page: SUGGESTION_HISTORY_MAX_PAGE + 1 },
-      ),
+      listSuggestionHistory({ auditLog: { findMany: invalidFindMany } } as never, {
+        guildId: GUILD_ID,
+        suggestionId: ID,
+        page: SUGGESTION_HISTORY_MAX_PAGE + 1,
+      }),
     ).rejects.toThrow('SuggestionHistoryPageOutOfRange');
     expect(invalidFindMany).not.toHaveBeenCalled();
   });
