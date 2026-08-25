@@ -91,8 +91,8 @@ function createHistoryInteraction(
       getString: (name: string) => (name === 'id' ? (input.id ?? ID) : null),
       getInteger: (name: string) => (name === 'page' ? (input.page ?? null) : null),
     },
-    reply: vi.fn(async () => undefined),
-    followUp: vi.fn(async () => undefined),
+    reply: vi.fn(async (_options: { content: string }) => undefined),
+    followUp: vi.fn(async (_options: unknown) => undefined),
   };
 }
 
@@ -350,7 +350,9 @@ describe('Suggestion status audit regression', () => {
   it('Staff status変更をrow lockとprivacy-safe Auditで同一transactionへ記録する', async () => {
     const beforeNote = '旧Staffコメント本文';
     const afterNote = '新Staffコメント本文';
-    const txQueryRaw = vi.fn(async () => [{ status: 'pending', staffNote: beforeNote }]);
+    const txQueryRaw = vi.fn(async (..._args: unknown[]) => [
+      { status: 'pending', staffNote: beforeNote },
+    ]);
     const txExecuteRaw = vi.fn(async () => 1);
     const auditCreate = vi.fn(async () => undefined);
     const tx = {
