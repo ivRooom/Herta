@@ -326,7 +326,7 @@ describe('Suggestion staff history', () => {
     );
 
     expect(output).toContain('本文 12文字 → 20文字');
-    expect(output).toContain('Staffコメントあり');
+    expect(output).toContain('Staffコメント追加');
     expect(output).not.toContain(rawContent);
     expect(output).not.toContain(rawNote);
     expect(output).not.toContain(actorId);
