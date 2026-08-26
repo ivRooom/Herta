@@ -14,6 +14,10 @@
       "types": "./src/ai-service.ts",
       "default": "./dist/ai-service.js"
     },
+    "./ai-runtime-policy": {
+      "types": "./src/ai-runtime-policy.ts",
+      "default": "./dist/ai-runtime-policy.js"
+    },
     "./moderation-runtime": {
       "types": "./src/moderation-runtime.ts",
       "default": "./dist/moderation-runtime.js"
