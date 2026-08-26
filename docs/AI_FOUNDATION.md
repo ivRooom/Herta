@@ -19,7 +19,9 @@ Hertaの生成AI機能をDiscord/RAG機能から分離し、provider呼び出し
 | balanced | `gpt-5.6-terra` |               $2.00 |               $12.00 |
 | economy  | `gpt-5.6-luna`  |               $0.20 |                $1.20 |
 
-2026-08-26時点のOpenAI標準text token価格をcode-reviewed constantとして保持します。Herta v1の入力上限は24,000 bytesのため、272K tokens超リクエスト向けの高倍率価格帯には到達しません。cost guardはcached-input割引を前提にせず標準価格で保守的に見積もります。
+2026-08-26時点のOpenAI standard short-context text token価格をcode-reviewed constantとして保持します。Herta v1の入力上限は24,000 bytesのため、272K tokens超リクエスト向けの高倍率価格帯には到達しません。cost guardはcached-input割引を前提にせず標準価格で保守的に見積もります。
+
+`gpt-5.6-sol` の $4 / $20 はOpenAIが **2026-11-21まで少なくとも利用可能** と案内しているpromotional pricingです。価格変更後も古い安価な定数で課金を過小評価しないため、Hertaは2026-11-22 UTC以降、pricing constantがcode reviewで更新されるまでSol/quality provider callをfail closedします。期限延長だけでこのguardを無効化しません。
 
 ## Default guards
 
@@ -29,14 +31,16 @@ Hertaの生成AI機能をDiscord/RAG機能から分離し、provider呼び出し
 - provider response body: 512 KiB
 - per-user: 6 req / 60s
 - per-Guild: 30 req / 60s
-- per-Guild budget: $1 / 24h
+- per-Guild budget: $1 / fixed 24h window
 - global concurrency: 4
-- per-request preflight cost cap: $0.03
+- per-request preflight cost cap: $0.12
 - global kill switch: `HERTA_AI_KILL_SWITCH`
 
 preflightの入力token予約はtokenizerの平均圧縮率を仮定せず、UTF-8 byte長を保守的なproxyとして使用します。provider完了後はResponseのauthoritative usageで実コストへsettleします。
 
-`quality` profileの最大入力+最大出力は既定$0.03 request capを超え得ます。これは意図したcost guardで、qualityを使う場合も無条件にcapを広げず、利用実績を確認してserver-side envで明示調整します。
+現在の価格で24,000-byte input + 800-token outputを最大予約した場合、qualityは $0.112、balancedは $0.0576、economyは $0.00576 です。既定 $0.12 cap は公開済みinput/output boundを全profileで到達可能にしつつ、1 requestの異常な費用をserver-sideで制限します。管理者がenvで既定より低いcapを明示した場合は、そのcost policyが優先されます。
+
+Guild quotaはwindow開始時にだけTTLを設定します。2回目以降のaccepted reservationで期限を延長せず、reservation hashもquota total keyの残TTLへ合わせます。settle後にtotalが0になっても既存TTLを維持し、quota超過時の`retryAfterMs`は現在のfixed window残時間を返します。
 
 ## Enablement gates
 
@@ -53,6 +57,7 @@ Provider callにはすべて必要です。
 9. per-Guild quota reservation
 10. global concurrency lease
 11. provider/model allowlist
+12. current code-reviewed pricing guard
 
 ## Credential resolution
 
@@ -96,7 +101,7 @@ raw prompt / raw responseはdefaultで永続保存・structured loggingしませ
 - result category
 - error category
 
-Redis rate/quota keyではraw Guild ID / User IDをSHA-256由来の短いprivacy keyへ変換します。
+Redis rate/quota keyではraw Guild ID / User IDをSHA-256由来の短いprivacy keyへ変換します。telemetry sinkはuser-facing response/errorの完了をblockしないbest-effort deliveryとし、sink failureやstallをprovider requestの成功/失敗へ伝播させません。
 
 ## OpenAI Responses API
 
@@ -107,6 +112,7 @@ Redis rate/quota keyではraw Guild ID / User IDをSHA-256由来の短いprivacy
 - `max_output_tokens` server-side bound
 - AbortController timeoutをHTTP headers受信だけでなくresponse body完読まで適用
 - bounded provider response parsing
+- top-level `status=incomplete` を成功扱いせず、`max_output_tokens`は`output_too_large`、その他のincomplete/non-completed statusはprovider rejectionとして扱う
 
 `store:false`はHerta側のprivacy方針の一部ですが、provider側のabuse-monitoring retention等をゼロにする保証として扱いません。
 
