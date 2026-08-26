@@ -30,101 +30,37 @@ jobs:
           path = Path('.github/ai-foundation-generator.yml')
           text = path.read_text()
 
-          # Production model selection is profile-only. Do not expose an arbitrary
-          # HERTA_AI_MODEL override through Compose or committed env templates.
           model_compose = '                HERTA_AI_MODEL: ${HERTA_AI_MODEL:-}\n'
           if model_compose not in text:
               raise SystemExit('generated HERTA_AI_MODEL compose line not found')
           text = text.replace(model_compose, '', 1)
 
-          model_env = (
-              '          # 通常は空欄。server-side allowlist内で明示overrideする場合のみ指定する。\n'
-              '          HERTA_AI_MODEL=\n'
-          )
+          model_env = '          # 通常は空欄。server-side allowlist内で明示overrideする場合のみ指定する。\n          HERTA_AI_MODEL=\n'
           if model_env not in text:
               raise SystemExit('generated HERTA_AI_MODEL env block not found')
           text = text.replace(model_env, '', 1)
 
-          # The generator's multiline Compose fragment accidentally carried the
-          # Python source indentation into YAML. Normalize Bot environment keys
-          # to the same six-space indentation as REDIS_URL/DISCORD_CLIENT_ID.
           text = text.replace('\n                HERTA_', '\n      HERTA_')
           text = text.replace('\n                OPENAI_API_KEY:', '\n      OPENAI_API_KEY:')
           text = text.replace('\n                DISCORD_CLIENT_ID:', '\n      DISCORD_CLIENT_ID:')
 
-          # Runtime Secret Store failures must never silently reactivate a legacy
-          # OPENAI_API_KEY. Environment fallback is allowed only after a successful
-          # secret-store read proves that no console credential is registered.
-          old_failure = """            } catch (error) {
-              if (error instanceof RuntimeSecretError) {
-                return { apiKey: null, source: null, failure: error.code };
-              }
-              // DB障害時だけmigration/emergency fallbackを許可する。
-              // raw provider errorやcredential値はここではlogしない。
-            }
-"""
-          new_failure = """            } catch (error) {
-              const failure =
-                error instanceof RuntimeSecretError ? error.code : 'runtime_secret_unavailable';
-              return { apiKey: null, source: null, failure };
-            }
-"""
+          old_failure = "            } catch (error) {\n              if (error instanceof RuntimeSecretError) {\n                return { apiKey: null, source: null, failure: error.code };\n              }\n              // DB障害時だけmigration/emergency fallbackを許可する。\n              // raw provider errorやcredential値はここではlogしない。\n            }\n"
+          new_failure = "            } catch (error) {\n              const failure =\n                error instanceof RuntimeSecretError ? error.code : 'runtime_secret_unavailable';\n              return { apiKey: null, source: null, failure };\n            }\n"
           if old_failure not in text:
               raise SystemExit('credential failure block not found')
           text = text.replace(old_failure, new_failure, 1)
 
-          old_test = """            it('DB unavailable時はemergency env fallbackを許可する', async () => {
-              const result = await resolveAiOpenAiCredential({
-                prisma,
-                env: { OPENAI_API_KEY: 'env-key' },
-                readSecret: async () => {
-                  throw new Error('database unavailable');
-                },
-              });
-              expect(result).toEqual({ apiKey: 'env-key', source: 'environment', failure: null });
-            });
-"""
-          new_test = """            it('DB unavailable時もenv fallbackへ逃がさずfail closedする', async () => {
-              const result = await resolveAiOpenAiCredential({
-                prisma,
-                env: { OPENAI_API_KEY: 'env-key' },
-                readSecret: async () => {
-                  throw new Error('database unavailable');
-                },
-              });
-              expect(result).toEqual({
-                apiKey: null,
-                source: null,
-                failure: 'runtime_secret_unavailable',
-              });
-            });
-"""
-          if old_test not in text:
-              raise SystemExit('DB fallback regression test not found')
-          text = text.replace(old_test, new_test, 1)
+          text = text.replace("            it('DB unavailable時はemergency env fallbackを許可する', async () => {", "            it('DB unavailable時もenv fallbackへ逃がさずfail closedする', async () => {", 1)
+          old_db_expect = "                  throw new Error('database unavailable');\n                },\n              });\n              expect(result).toEqual({ apiKey: 'env-key', source: 'environment', failure: null });"
+          new_db_expect = "                  throw new Error('database unavailable');\n                },\n              });\n              expect(result).toEqual({\n                apiKey: null,\n                source: null,\n                failure: 'runtime_secret_unavailable',\n              });"
+          if old_db_expect not in text:
+              raise SystemExit('DB fallback regression expectation not found')
+          text = text.replace(old_db_expect, new_db_expect, 1)
 
-          text = text.replace(
-              '           * encrypted secretが存在するのにmaster key不正/復号失敗ならfail closedし、envへ逃がさない。',
-              '           * Runtime Secret Storeのread/decrypt障害はfail closedし、envへ逃がさない。',
-              1,
-          )
-          text = text.replace(
-              '- `OPENAI_API_KEY`: migration / emergency fallback only',
-              '- `OPENAI_API_KEY`: migration fallback only (secret未登録時のみ)',
-              1,
-          )
-          old_docs = """          1. encrypted Runtime Secret Store `openai.api_key`
-          2. secret未登録時のみ `OPENAI_API_KEY`
-          3. DB自体がunavailableの場合はemergency fallbackとして `OPENAI_API_KEY`
-
-          Runtime Secretが存在するのにmaster key不正/復号失敗の場合はfail closedし、env fallbackへ逃がしません。credential値はstructured log、telemetry、Plugin configへ出しません。
-"""
-          new_docs = """          1. encrypted Runtime Secret Store `openai.api_key`
-          2. secret-store readが成功しsecret未登録の場合のみ `OPENAI_API_KEY`
-          3. DB/master key/decrypt等のsecret-store read障害はfail closed
-
-          Runtime Secret Storeのreadに失敗した場合はcredentialの有無を安全に判定できないため、legacy env fallbackへ逃がしません。credential値はstructured log、telemetry、Plugin configへ出しません。
-"""
+          text = text.replace('           * encrypted secretが存在するのにmaster key不正/復号失敗ならfail closedし、envへ逃がさない。', '           * Runtime Secret Storeのread/decrypt障害はfail closedし、envへ逃がさない。', 1)
+          text = text.replace('- `OPENAI_API_KEY`: migration / emergency fallback only', '- `OPENAI_API_KEY`: migration fallback only (secret未登録時のみ)', 1)
+          old_docs = "          1. encrypted Runtime Secret Store `openai.api_key`\n          2. secret未登録時のみ `OPENAI_API_KEY`\n          3. DB自体がunavailableの場合はemergency fallbackとして `OPENAI_API_KEY`\n\n          Runtime Secretが存在するのにmaster key不正/復号失敗の場合はfail closedし、env fallbackへ逃がしません。credential値はstructured log、telemetry、Plugin configへ出しません。\n"
+          new_docs = "          1. encrypted Runtime Secret Store `openai.api_key`\n          2. secret-store readが成功しsecret未登録の場合のみ `OPENAI_API_KEY`\n          3. DB/master key/decrypt等のsecret-store read障害はfail closed\n\n          Runtime Secret Storeのreadに失敗した場合はcredentialの有無を安全に判定できないため、legacy env fallbackへ逃がしません。credential値はstructured log、telemetry、Plugin configへ出しません。\n"
           if old_docs not in text:
               raise SystemExit('credential resolution docs block not found')
           text = text.replace(old_docs, new_docs, 1)
@@ -146,10 +82,7 @@ jobs:
           end = source.index(end_marker, run_line + 1)
           raw = source[run_line + 1:end]
           prefix = '          '
-          script = '\n'.join(
-              line[len(prefix):] if line.startswith(prefix) else line
-              for line in raw
-          ) + '\n'
+          script = '\n'.join(line[len(prefix):] if line.startswith(prefix) else line for line in raw) + '\n'
           Path('/tmp/apply-ai-foundation.sh').write_text(script)
           PY
           bash /tmp/apply-ai-foundation.sh
@@ -168,11 +101,7 @@ jobs:
           for env_name in ['.env.example', '.env.production.example']:
               path = Path(env_name)
               text = path.read_text()
-              text = text.replace(
-                  '# 通常は空欄。server-side allowlist内で明示overrideする場合のみ指定する。\nHERTA_AI_MODEL=\n',
-                  '',
-                  1,
-              )
+              text = text.replace('# 通常は空欄。server-side allowlist内で明示overrideする場合のみ指定する。\nHERTA_AI_MODEL=\n', '', 1)
               path.write_text(text)
           PY
           git diff --check
