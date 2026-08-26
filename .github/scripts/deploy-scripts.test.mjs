@@ -153,9 +153,15 @@ test('manual deploy reloads target revision helpers after checkout', () => {
   const healthIndex = deploy.indexOf('\nwait_for_health\n');
 
   assert.ok(initialSourceIndex >= 0, 'deploy must source bootstrap helpers');
-  assert.ok(checkoutIndex > initialSourceIndex, 'deploy must checkout after bootstrap helpers load');
+  assert.ok(
+    checkoutIndex > initialSourceIndex,
+    'deploy must checkout after bootstrap helpers load',
+  );
   assert.ok(pullIndex > checkoutIndex, 'deploy must fast-forward the selected ref after checkout');
-  assert.ok(reloadIndex > pullIndex, 'deploy must reload helpers from the deployment target revision');
+  assert.ok(
+    reloadIndex > pullIndex,
+    'deploy must reload helpers from the deployment target revision',
+  );
   assert.ok(healthIndex > reloadIndex, 'readiness checks must use the reloaded target helpers');
 });
 
