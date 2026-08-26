@@ -141,10 +141,7 @@ function maskSqlCommentsAndLiterals(
       continue;
     }
 
-    if (
-      sql[index] === '$' &&
-      (index === 0 || !isIdentifierContinuationChar(sql[index - 1]))
-    ) {
+    if (sql[index] === '$' && (index === 0 || !isIdentifierContinuationChar(sql[index - 1]))) {
       const tagMatch = sql.slice(index).match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/u);
       if (tagMatch) {
         const tag = tagMatch[0];
