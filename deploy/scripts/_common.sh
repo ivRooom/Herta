@@ -236,6 +236,20 @@ wait_for_auth() {
   return 1
 }
 
+# Cloudflare -> Caddy -> nginx -> application のpublic edge経路を確認する。
+# rollbackではこの関数をcheckout前にsourceしておくことで、古いrevisionの
+# health-check.shへ依存せずAOP対応checkを維持する。
+wait_for_edge() {
+  echo "=== Cloudflare経由 external health ==="
+  curl --fail --show-error --silent \
+    --retry 3 --retry-delay 2 --retry-all-errors \
+    "https://${HEALTH_DOMAIN}/api/v1/health" > /dev/null
+  curl --fail --show-error --silent \
+    --retry 3 --retry-delay 2 --retry-all-errors \
+    "https://${HEALTH_DOMAIN}/api/auth/providers" > /dev/null
+  echo "External health check 成功"
+}
+
 wait_for_bot() {
   local bot_container bot_health
   bot_container="$(${COMPOSE} ps -q bot)"
