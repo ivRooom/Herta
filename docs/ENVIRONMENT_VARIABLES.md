@@ -68,13 +68,20 @@ Herta で使用する環境変数の一覧です。開発は `.env` (`.env.examp
 Semantic Searchは明示的なopt-inです。既定の`disabled`では外部providerを呼び出さず、
 Command Paletteは既存のlexical / intent rankingだけで動作します。
 
-| 変数名                            | 必須                        | 説明                                      | 既定値                   |
-| --------------------------------- | --------------------------- | ----------------------------------------- | ------------------------ |
-| `STUDIO_SEMANTIC_SEARCH_PROVIDER` | -                           | `disabled` または `openai`                | `disabled`               |
-| `OPENAI_API_KEY`                  | provider=`openai` の場合Yes | Studio serverだけで利用するOpenAI API key | -                        |
-| `OPENAI_EMBEDDING_MODEL`          | -                           | Semantic rankingに利用するembedding model | `text-embedding-3-small` |
+| 変数名                            | 必須                        | 説明                                                                 | 既定値                   |
+| --------------------------------- | --------------------------- | -------------------------------------------------------------------- | ------------------------ |
+| `STUDIO_SEMANTIC_SEARCH_PROVIDER` | -                           | `disabled` または `openai`                                           | `disabled`               |
+| `HERTA_RUNTIME_SECRET_KEY`        | provider=`openai` の場合Yes | Runtime Secret StoreのAES-256-GCM master key（32-byte base64/64桁hex） | -                        |
+| `OPENAI_API_KEY`                  | -                           | console credential未登録時だけ利用するmigration fallback             | -                        |
+| `OPENAI_EMBEDDING_MODEL`          | -                           | Semantic rankingに利用するembedding model                            | `text-embedding-3-small` |
 
-`OPENAI_API_KEY`は`NEXT_PUBLIC_`変数へ移さず、ブラウザへ公開しないでください。
+OpenAI credentialはStudio Settingsの `AI Provider Credentials` から登録するconsole-managed secretを優先します。
+`HERTA_RUNTIME_SECRET_KEY` はOpenAI API keyそのものではなく、Runtime Secret Storeの暗号化・復号に使うbootstrap master keyです。
+`STUDIO_SEMANTIC_SEARCH_PROVIDER=openai` の場合、保存済みcredentialがまだ無い場合でもRuntime Secret Storeを安全に確認するため、このmaster keyを必ず設定してください。
+
+`OPENAI_API_KEY` は移行期間だけのfallbackです。Runtime Secret Storeのreadが正常に完了し、master keyが有効で、`openai.api_key`が未登録の場合にだけ利用されます。DB unavailable、master key未設定・不正、decrypt failure、その他secret-store read failureでは **fail closed** し、`OPENAI_API_KEY`へ切り替えません。その場合Semantic Searchはlexical searchへfallbackします。
+
+`HERTA_RUNTIME_SECRET_KEY` と `OPENAI_API_KEY` は `NEXT_PUBLIC_` 変数へ移さず、ブラウザへ公開しないでください。master keyの生成・保管・rollout手順とcredential運用の詳細は [RUNTIME_SECRETS.md](./RUNTIME_SECRETS.md) を参照してください。
 Providerへ送信するCommand corpusはlabel / keywords / intents / group / sanitized routeに限定し、
 Discord本文、Moderation本文、Guild名・実Guild ID、Secret、ユーザー生成コンテンツは含めません。
 Provider失敗・timeout時はlexical searchへfallbackします。
@@ -104,3 +111,4 @@ Provider失敗・timeout時はlexical searchへfallbackします。
 - `NEXTAUTH_SECRET`
 - `JWT_SECRET` / `JWT_REFRESH_SECRET` / `INTERNAL_JWT_SECRET`
 - `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` / `DISCORD_BOT_TOKEN`
+- `STUDIO_SEMANTIC_SEARCH_PROVIDER=openai` を有効化する場合は `HERTA_RUNTIME_SECRET_KEY`
