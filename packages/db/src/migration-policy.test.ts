@@ -184,7 +184,9 @@ function codePointBefore(value: string, index: number): string | undefined {
 }
 
 function isIdentifierContinuationChar(value: string | undefined): boolean {
-  return value !== undefined && /[\p{L}\p{N}_$]/u.test(value);
+  if (value === undefined) return false;
+  const codePoint = value.codePointAt(0);
+  return codePoint !== undefined && (codePoint >= 0x80 || /[A-Za-z0-9_$]/u.test(value));
 }
 
 test('concurrent index matcher treats SQL comments as whitespace and ignores comment/literal text', () => {
@@ -230,8 +232,17 @@ test('concurrent index matcher honors PostgreSQL identifier boundaries', () => {
 
   assert.equal(
     countConcurrentIndexes(`
+      CREATE INDEX CONCURRENTLY first😀$tag$ ON example (id);
+      CREATE INDEX CONCURRENTLY second😀$tag$ ON example (name);
+    `),
+    2,
+  );
+
+  assert.equal(
+    countConcurrentIndexes(`
       CREATE INDEX concurrently$archive ON example (id);
       CREATE INDEX concurrently𐐀 ON example (name);
+      CREATE INDEX concurrently😀 ON example (created_at);
       𐐀CREATE INDEX CONCURRENTLY archive_idx ON example (created_at);
       ANALYZE example;
     `),
