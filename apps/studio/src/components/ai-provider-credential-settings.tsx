@@ -85,7 +85,7 @@ export function AiProviderCredentialSettings() {
   const remove = async () => {
     if (!status?.configured || saving || deleting) return;
     const confirmation = status.environmentFallbackConfigured
-      ? '保存済みのOpenAI APIキーを削除しますか？ OPENAI_API_KEY環境変数fallbackが引き続き使用されるため、AIアクセスは停止しません。'
+      ? '保存済みのOpenAI APIキーを削除しますか？ OPENAI_API_KEY migration fallbackが構成されています。Runtime Secret Storeが正常な場合はfallbackが使用されるため、この操作だけではAIアクセス停止を保証しません。'
       : '保存済みのOpenAI APIキーを削除しますか？ AI機能は利用できなくなります。';
     if (!window.confirm(confirmation)) return;
 
@@ -109,7 +109,7 @@ export function AiProviderCredentialSettings() {
       setApiKey('');
       setMessage(
         body.environmentFallbackConfigured
-          ? 'Console APIキーを削除しました。OPENAI_API_KEY環境変数fallbackは引き続き有効です。'
+          ? 'Console APIキーを削除しました。OPENAI_API_KEY migration fallbackが構成されています。'
           : 'OpenAI APIキーを削除しました',
       );
     } catch {
@@ -152,7 +152,7 @@ export function AiProviderCredentialSettings() {
             {status.configured
               ? 'Console設定済み'
               : environmentFallbackActive
-                ? '環境変数fallback'
+                ? 'migration fallback構成済み'
                 : '未設定'}
           </span>
         ) : null}
@@ -175,10 +175,10 @@ export function AiProviderCredentialSettings() {
         <>
           {status.environmentFallbackConfigured ? (
             <div className="mt-5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-5 text-amber-800 dark:text-amber-200">
-              <strong>OPENAI_API_KEY環境変数fallbackが設定されています。</strong>{' '}
+              <strong>OPENAI_API_KEY migration fallbackが構成されています。</strong>{' '}
               {status.configured
-                ? 'Console credentialを削除すると、このfallbackが再び使用されます。AIアクセスを完全に停止するにはproduction環境変数も削除してください。'
-                : '現在はこのfallbackが使用されます。AIアクセスを完全に停止するにはproduction環境変数を削除してください。'}
+                ? 'Console credentialを削除すると、Runtime Secret Storeが正常な場合はこのfallbackが使用されます。AIアクセスを完全に停止するにはproduction環境変数も削除してください。'
+                : 'Runtime Secret Storeが正常な場合にのみmigration fallbackとして使用されます。store障害・master key異常時はfail closedです。AIアクセスを完全に停止するにはproduction環境変数も削除してください。'}
             </div>
           ) : null}
 
@@ -204,7 +204,7 @@ export function AiProviderCredentialSettings() {
                 status.configured
                   ? '新しいキーを入力して置き換え'
                   : status.environmentFallbackConfigured
-                    ? '環境変数fallbackを置き換えるキーを入力'
+                    ? 'migration fallbackを置き換えるキーを入力'
                     : 'OpenAI APIキーを入力'
               }
               disabled={saving || deleting}

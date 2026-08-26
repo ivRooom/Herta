@@ -59,10 +59,11 @@ openssl rand -base64 32
 `Dashboard > Settings > AI Provider Credentials` からOpenAI API keyを設定します。
 
 - 保存済みkeyの再表示はしない
-- Console credentialの設定状態、`OPENAI_API_KEY` environment fallbackの有無、最終更新時刻を表示する
+- Console credentialの設定状態、`OPENAI_API_KEY` migration fallbackの有無、最終更新時刻を表示する
 - 更新時は新しいkeyで置き換える
 - 削除するとDBのencrypted credential自体を削除する
-- `OPENAI_API_KEY` environment fallbackが残っている状態で削除した場合、fallbackが再び使われることを削除前後に明示する
+- `OPENAI_API_KEY` migration fallbackが残っている状態で削除した場合、Runtime Secret Storeのreadが正常に完了する場合だけfallbackが再び使用され得ることを削除前後に明示する
+- store障害、master key未設定・不正、decrypt failureではfail closedし、`OPENAI_API_KEY`へfallbackしない
 - AI provider accessを完全に停止する場合はConsole credentialだけでなくproductionの`OPENAI_API_KEY`も削除する
 - password inputの値をURL/query stringへ入れない
 
@@ -71,13 +72,13 @@ openssl rand -base64 32
 Studio Command Palette Semantic Searchは次の優先順位でOpenAI credentialを解決します。
 
 1. encrypted runtime secret `openai.api_key`
-2. `OPENAI_API_KEY` environment variable（migration / emergency fallback）
+2. `OPENAI_API_KEY` environment variable（migration fallback）
 
-`OPENAI_API_KEY` fallbackへ進むのは、runtime secret storeへの読み取りが正常に完了し、`openai.api_key` recordが存在しない場合だけです。
+`OPENAI_API_KEY` fallbackへ進むのは、runtime secret storeへの読み取りが正常に完了し、master keyが有効で、`openai.api_key` recordが存在しない場合だけです。
 
-runtime secretの復号失敗、master key異常、DB read failureなどcredential store自体の失敗時はfail closedし、env fallbackで障害を隠しません。
+runtime secretの復号失敗、master key未設定・不正、DB read failureなどcredential store自体の失敗時はfail closedし、env fallbackで障害を隠しません。
 
-`OPENAI_API_KEY`は既存productionから即削除する必要はありません。console登録と動作確認後にfallbackを段階的に外せます。
+`OPENAI_API_KEY`はsecret-store障害時のbypassではありません。既存productionから即削除する必要はなく、console登録と動作確認後にmigration fallbackを段階的に外します。
 
 ## Privacy / Logging
 
@@ -92,11 +93,11 @@ runtime secretの復号失敗、master key異常、DB read failureなどcredenti
 
 ## Failure Behavior
 
-- master key未設定 / 不正: console保存APIは503。既存非AI機能は継続
+- master key未設定 / 不正: console保存APIは503。credential resolverはfail closedし、env fallbackへ切り替えない。既存非AI機能は継続
 - credential未設定かつenv fallbackなし: AI provider機能はdisabled/fallbackとして扱う
-- ciphertext改ざん / master key不一致: AES-GCM認証で復号失敗し、credentialを返さない
+- ciphertext改ざん / master key不一致: AES-GCM認証で復号失敗し、credentialを返さずenv fallbackへ切り替えない
 - DB unavailable: credential store failureとしてfail closedし、env fallbackへ切り替えない
-- Console credential削除後にenv fallbackが残る場合: UI/API statusでその状態を明示し、AI accessは継続する
+- Console credential削除後にenv fallbackが残る場合: UI/API statusはそのpresenceだけを明示する。Runtime Secret Store read成功 + master key正常 + secret未登録の場合だけmigration fallbackとして利用する
 
 ## Production Rollout
 
@@ -109,7 +110,7 @@ runtime secretの復号失敗、master key異常、DB read failureなどcredenti
 5. OpenAI API keyをconsoleから登録
 6. 保存後もkey本体が再表示されないことを確認
 7. Semantic Search / AI Foundationからcredentialを利用できることを確認
-8. Console credentialをprimary sourceとして確認できたら旧 `OPENAI_API_KEY` env fallbackを削除する
+8. Console credentialをprimary sourceとして確認できたら旧 `OPENAI_API_KEY` migration fallbackを削除する
 9. fallback削除後にSettingsがenvironment fallbackなしと表示することを確認する
 
 ## Future

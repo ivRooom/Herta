@@ -17,7 +17,7 @@ test('OpenAI credential mutation remains platform-admin and same-origin protecte
   assert.doesNotMatch(route, /console\.(?:log|info|warn|error)\([^\n]*apiKey/u);
 });
 
-test('Studio credential UI is write-only, authorization-gated, and explicit about env fallback', () => {
+test('Studio credential UI is write-only, authorization-gated, and explicit about migration fallback', () => {
   const settings = readFileSync(settingsPath, 'utf8');
 
   assert.match(settings, /type="password"/u);
@@ -26,8 +26,10 @@ test('Studio credential UI is write-only, authorization-gated, and explicit abou
     settings,
     /if \(loadState === 'loading' \|\| loadState === 'hidden'\) return null;/u,
   );
-  assert.match(settings, /OPENAI_API_KEY環境変数fallbackが設定されています/u);
-  assert.match(settings, /AIアクセスは停止しません/u);
+  assert.match(settings, /OPENAI_API_KEY migration fallbackが構成されています/u);
+  assert.match(settings, /この操作だけではAIアクセス停止を保証しません/u);
+  assert.match(settings, /store障害・master key異常時はfail closed/u);
+  assert.doesNotMatch(settings, /AIアクセスは停止しません/u);
   assert.doesNotMatch(settings, /setApiKey\([^)]*status/u);
   assert.doesNotMatch(settings, /value=\{status\./u);
 });
