@@ -59,9 +59,11 @@ openssl rand -base64 32
 `Dashboard > Settings > AI Provider Credentials` からOpenAI API keyを設定します。
 
 - 保存済みkeyの再表示はしない
-- statusは「設定済み / 未設定」と最終更新時刻だけ
+- Console credentialの設定状態、`OPENAI_API_KEY` environment fallbackの有無、最終更新時刻を表示する
 - 更新時は新しいkeyで置き換える
 - 削除するとDBのencrypted credential自体を削除する
+- `OPENAI_API_KEY` environment fallbackが残っている状態で削除した場合、fallbackが再び使われることを削除前後に明示する
+- AI provider accessを完全に停止する場合はConsole credentialだけでなくproductionの`OPENAI_API_KEY`も削除する
 - password inputの値をURL/query stringへ入れない
 
 ## Existing Semantic Search
@@ -71,7 +73,9 @@ Studio Command Palette Semantic Searchは次の優先順位でOpenAI credential�
 1. encrypted runtime secret `openai.api_key`
 2. `OPENAI_API_KEY` environment variable（migration / emergency fallback）
 
-runtime secretが存在するが復号に失敗した場合はfail closedし、env fallbackで障害を隠しません。
+`OPENAI_API_KEY` fallbackへ進むのは、runtime secret storeへの読み取りが正常に完了し、`openai.api_key` recordが存在しない場合だけです。
+
+runtime secretの復号失敗、master key異常、DB read failureなどcredential store自体の失敗時はfail closedし、env fallbackで障害を隠しません。
 
 `OPENAI_API_KEY`は既存productionから即削除する必要はありません。console登録と動作確認後にfallbackを段階的に外せます。
 
@@ -89,9 +93,10 @@ runtime secretが存在するが復号に失敗した場合はfail closedし、e
 ## Failure Behavior
 
 - master key未設定 / 不正: console保存APIは503。既存非AI機能は継続
-- credential未設定: AI provider機能はdisabled/fallbackとして扱う
+- credential未設定かつenv fallbackなし: AI provider機能はdisabled/fallbackとして扱う
 - ciphertext改ざん / master key不一致: AES-GCM認証で復号失敗し、credentialを返さない
-- DB unavailable: credentialを返さない。既存Semantic Searchだけはmigration互換のenv fallbackを許可する
+- DB unavailable: credential store failureとしてfail closedし、env fallbackへ切り替えない
+- Console credential削除後にenv fallbackが残る場合: UI/API statusでその状態を明示し、AI accessは継続する
 
 ## Production Rollout
 
@@ -104,7 +109,8 @@ runtime secretが存在するが復号に失敗した場合はfail closedし、e
 5. OpenAI API keyをconsoleから登録
 6. 保存後もkey本体が再表示されないことを確認
 7. Semantic Search / AI Foundationからcredentialを利用できることを確認
-8. 必要なら旧 `OPENAI_API_KEY` env fallbackを後日削除
+8. Console credentialをprimary sourceとして確認できたら旧 `OPENAI_API_KEY` env fallbackを削除する
+9. fallback削除後にSettingsがenvironment fallbackなしと表示することを確認する
 
 ## Future
 

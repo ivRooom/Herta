@@ -6,6 +6,7 @@ import { KeyRound, Save, ShieldCheck, Trash2 } from 'lucide-react';
 type CredentialStatus = {
   provider: 'openai';
   configured: boolean;
+  environmentFallbackConfigured: boolean;
   updatedAt: string | null;
   keyVersion: number | null;
 };
@@ -83,11 +84,11 @@ export function AiProviderCredentialSettings() {
 
   const remove = async () => {
     if (!status?.configured || saving || deleting) return;
-    if (
-      !window.confirm('保存済みのOpenAI APIキーを削除しますか？ AI機能は利用できなくなります。')
-    ) {
-      return;
-    }
+    const confirmation = status.environmentFallbackConfigured
+      ? '保存済みのOpenAI APIキーを削除しますか？ OPENAI_API_KEY環境変数fallbackが引き続き使用されるため、AIアクセスは停止しません。'
+      : '保存済みのOpenAI APIキーを削除しますか？ AI機能は利用できなくなります。';
+    if (!window.confirm(confirmation)) return;
+
     setDeleting(true);
     setMessage(null);
     try {
@@ -106,7 +107,11 @@ export function AiProviderCredentialSettings() {
       }
       setStatus(body);
       setApiKey('');
-      setMessage('OpenAI APIキーを削除しました');
+      setMessage(
+        body.environmentFallbackConfigured
+          ? 'Console APIキーを削除しました。OPENAI_API_KEY環境変数fallbackは引き続き有効です。'
+          : 'OpenAI APIキーを削除しました',
+      );
     } catch {
       setMessage('APIキーを削除できませんでした');
     } finally {
@@ -114,7 +119,11 @@ export function AiProviderCredentialSettings() {
     }
   };
 
-  if (loadState === 'hidden') return null;
+  if (loadState === 'loading' || loadState === 'hidden') return null;
+
+  const environmentFallbackActive = Boolean(
+    status && !status.configured && status.environmentFallbackConfigured,
+  );
 
   return (
     <section className="rounded-2xl border border-border bg-surface p-5 shadow-card">
@@ -135,22 +144,21 @@ export function AiProviderCredentialSettings() {
             className={`rounded-lg border px-2.5 py-1 text-xs ${
               status.configured
                 ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
-                : 'border-border bg-background text-muted'
+                : environmentFallbackActive
+                  ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                  : 'border-border bg-background text-muted'
             }`}
           >
-            {status.configured ? '設定済み' : '未設定'}
+            {status.configured
+              ? 'Console設定済み'
+              : environmentFallbackActive
+                ? '環境変数fallback'
+                : '未設定'}
           </span>
         ) : null}
       </div>
 
-      {loadState === 'loading' ? (
-        <p
-          className="mt-5 rounded-xl border border-border bg-background p-4 text-sm text-muted"
-          role="status"
-        >
-          Credential状態を確認しています…
-        </p>
-      ) : loadState === 'error' ? (
+      {loadState === 'error' ? (
         <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 p-4">
           <p className="text-sm text-red-700 dark:text-red-300">
             Credential状態を読み込めませんでした。
@@ -165,6 +173,15 @@ export function AiProviderCredentialSettings() {
         </div>
       ) : status ? (
         <>
+          {status.environmentFallbackConfigured ? (
+            <div className="mt-5 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs leading-5 text-amber-800 dark:text-amber-200">
+              <strong>OPENAI_API_KEY環境変数fallbackが設定されています。</strong>{' '}
+              {status.configured
+                ? 'Console credentialを削除すると、このfallbackが再び使用されます。AIアクセスを完全に停止するにはproduction環境変数も削除してください。'
+                : '現在はこのfallbackが使用されます。AIアクセスを完全に停止するにはproduction環境変数を削除してください。'}
+            </div>
+          ) : null}
+
           <div className="mt-5 rounded-xl border border-border bg-background p-4">
             <label htmlFor="openai-api-key" className="text-sm font-medium">
               新しいAPIキー
@@ -184,7 +201,11 @@ export function AiProviderCredentialSettings() {
               spellCheck={false}
               maxLength={4096}
               placeholder={
-                status.configured ? '新しいキーを入力して置き換え' : 'OpenAI APIキーを入力'
+                status.configured
+                  ? '新しいキーを入力して置き換え'
+                  : status.environmentFallbackConfigured
+                    ? '環境変数fallbackを置き換えるキーを入力'
+                    : 'OpenAI APIキーを入力'
               }
               disabled={saving || deleting}
               className="mt-3 w-full rounded-xl border border-border bg-surface px-3 py-2.5 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
@@ -240,6 +261,7 @@ function isCredentialStatus(value: unknown): value is CredentialStatus {
   return (
     record.provider === 'openai' &&
     typeof record.configured === 'boolean' &&
+    typeof record.environmentFallbackConfigured === 'boolean' &&
     (record.updatedAt === null || typeof record.updatedAt === 'string') &&
     (record.keyVersion === null || typeof record.keyVersion === 'number')
   );

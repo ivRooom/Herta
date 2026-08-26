@@ -27,6 +27,7 @@ export async function GET() {
   return noStoreJson({
     provider: 'openai',
     configured: status.configured,
+    environmentFallbackConfigured: hasOpenAiEnvironmentFallback(),
     updatedAt: status.updatedAt?.toISOString() ?? null,
     keyVersion: status.keyVersion,
   });
@@ -51,6 +52,7 @@ export async function PUT(request: Request) {
     return noStoreJson({
       provider: 'openai',
       configured: true,
+      environmentFallbackConfigured: hasOpenAiEnvironmentFallback(),
       updatedAt: status.updatedAt?.toISOString() ?? null,
       keyVersion: status.keyVersion,
     });
@@ -70,6 +72,7 @@ export async function DELETE(request: Request) {
   return noStoreJson({
     provider: 'openai',
     configured: false,
+    environmentFallbackConfigured: hasOpenAiEnvironmentFallback(),
     updatedAt: null,
     keyVersion: null,
   });
@@ -110,6 +113,10 @@ function isCredentialBody(value: unknown): value is OpenAiCredentialBody {
   return (
     apiKey.length > 0 && apiKey.length <= MAX_OPENAI_API_KEY_CHARS && !/[\u0000\r\n]/.test(apiKey)
   );
+}
+
+function hasOpenAiEnvironmentFallback(): boolean {
+  return Boolean(process.env.OPENAI_API_KEY?.trim());
 }
 
 function runtimeSecretFailureResponse(error: unknown): NextResponse {
