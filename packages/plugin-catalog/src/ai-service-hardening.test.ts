@@ -154,9 +154,7 @@ describe('AI Foundation post-merge hardening', () => {
 
     const script = String(evalMock.mock.calls[0]?.[0]);
     expect(script).toContain("local startsNewWindow = redis.call('EXISTS', KEYS[1]) == 0");
-    expect(script).toContain(
-      "if startsNewWindow then redis.call('PEXPIRE', KEYS[1], ARGV[4]) end",
-    );
+    expect(script).toContain("if startsNewWindow then redis.call('PEXPIRE', KEYS[1], ARGV[4]) end");
     expect(script).toContain("local ttl = redis.call('PTTL', KEYS[1])");
     expect(script).toContain("redis.call('PEXPIRE', KEYS[2], ttl)");
     expect(script).not.toContain(
