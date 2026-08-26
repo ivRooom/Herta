@@ -107,6 +107,11 @@ test('production readiness checks remain valid after Authenticated Origin Pulls 
   const common = readFileSync('deploy/scripts/_common.sh', 'utf8');
   const workflow = readFileSync('.github/workflows/deploy-production.yml', 'utf8');
   const manualHealth = readFileSync('deploy/scripts/health-check.sh', 'utf8');
+  const directDeployScripts = [
+    'deploy/scripts/deploy.sh',
+    'deploy/scripts/start.sh',
+    'deploy/scripts/rollback.sh',
+  ];
 
   assert.match(common, /\$\{COMPOSE\} exec -T api node -e/u);
   assert.match(common, /http:\/\/127\.0\.0\.1:3001\/api\/v1\/health/u);
@@ -123,7 +128,17 @@ test('production readiness checks remain valid after Authenticated Origin Pulls 
   assert.match(manualHealth, /wait_for_health/u);
   assert.match(manualHealth, /wait_for_auth/u);
   assert.match(manualHealth, /https:\/\/\$\{HEALTH_DOMAIN\}\/api\/v1\/health/u);
+  assert.match(manualHealth, /https:\/\/\$\{HEALTH_DOMAIN\}\/api\/auth\/providers/u);
   assert.doesNotMatch(manualHealth, /--resolve[^\n]*127\.0\.0\.1/u);
+
+  for (const scriptPath of directDeployScripts) {
+    const script = readFileSync(scriptPath, 'utf8');
+    assert.match(
+      script,
+      /\.\/deploy\/scripts\/health-check\.sh/u,
+      `${scriptPath} must verify Cloudflare-facing health before reporting success`,
+    );
+  }
 });
 
 test('failure diagnostics do not print production environment values', () => {
