@@ -159,9 +159,7 @@ test('manual deploy uses an absolute helper path and only falls back for legacy 
     'source "${SCRIPT_DIR}/_common.sh"',
     initialSourceIndex + 'source "${SCRIPT_DIR}/_common.sh"'.length,
   );
-  const fallbackConditionIndex = deploy.indexOf(
-    'if ! declare -F wait_for_health >/dev/null',
-  );
+  const fallbackConditionIndex = deploy.indexOf('if ! declare -F wait_for_health >/dev/null');
   const restoreHealthIndex = deploy.indexOf('eval "${AOP_WAIT_FOR_HEALTH_DEF}"');
   const conditionEndIndex = deploy.indexOf('\nfi\n', fallbackConditionIndex);
   const healthIndex = deploy.indexOf('\nwait_for_health\n');
@@ -178,14 +176,8 @@ test('manual deploy uses an absolute helper path and only falls back for legacy 
     preserveHealthIndex > initialSourceIndex,
     'deploy must preserve current AOP-aware helpers before changing refs',
   );
-  assert.ok(
-    checkoutIndex > preserveHealthIndex,
-    'deploy must preserve helpers before checkout',
-  );
-  assert.ok(
-    pullIndex > checkoutIndex,
-    'deploy must fast-forward the selected ref after checkout',
-  );
+  assert.ok(checkoutIndex > preserveHealthIndex, 'deploy must preserve helpers before checkout');
+  assert.ok(pullIndex > checkoutIndex, 'deploy must fast-forward the selected ref after checkout');
   assert.ok(
     unsetIndex > pullIndex,
     'target health functions must be cleared before target helper reload',
@@ -208,14 +200,8 @@ test('manual deploy uses an absolute helper path and only falls back for legacy 
   );
   assert.match(deploy, /! declare -F wait_for_auth >\/dev\/null/u);
   assert.match(deploy, /! declare -F wait_for_edge >\/dev\/null/u);
-  assert.match(
-    deploy,
-    /AOP_WAIT_FOR_AUTH_DEF="\$\(declare -f wait_for_auth\)"/u,
-  );
-  assert.match(
-    deploy,
-    /AOP_WAIT_FOR_EDGE_DEF="\$\(declare -f wait_for_edge\)"/u,
-  );
+  assert.match(deploy, /AOP_WAIT_FOR_AUTH_DEF="\$\(declare -f wait_for_auth\)"/u);
+  assert.match(deploy, /AOP_WAIT_FOR_EDGE_DEF="\$\(declare -f wait_for_edge\)"/u);
   assert.match(deploy, /eval "\$\{AOP_WAIT_FOR_AUTH_DEF\}"/u);
   assert.match(deploy, /eval "\$\{AOP_WAIT_FOR_EDGE_DEF\}"/u);
   assert.doesNotMatch(
