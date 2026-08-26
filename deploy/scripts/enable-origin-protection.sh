@@ -63,7 +63,10 @@ activate() {
 
   cp "${CADDY_DIR}/Caddyfile" "${CADDY_DIR}/Caddyfile.rollback"
   cp "${CADDY_DIR}/Caddyfile.aop" "${CADDY_DIR}/Caddyfile"
-  ${COMPOSE} up -d --no-build caddy
+  # Caddyだけを再作成する。依存サービスへ伝播させると、現在のHERTA_IMAGE解決値によって
+  # migrator/api/studioまで不要に起動・pullし、本番切替を巻き込む可能性がある。
+  # Caddyfileはbind mountなので、内容変更を確実に読み込むためforce-recreateする。
+  ${COMPOSE} up -d --no-build --no-deps --force-recreate caddy
   ${COMPOSE} logs --tail=50 caddy
 
   echo "AOP対応Caddy設定を有効化しました。Cloudflare経由の外部health checkを確認してください。"
@@ -74,7 +77,8 @@ rollback() {
   require_file "${CADDY_DIR}/Caddyfile.rollback"
 
   cp "${CADDY_DIR}/Caddyfile.rollback" "${CADDY_DIR}/Caddyfile"
-  ${COMPOSE} up -d --no-build caddy
+  # activateと同様、ロールバックもCaddy以外の本番サービスへ伝播させない。
+  ${COMPOSE} up -d --no-build --no-deps --force-recreate caddy
   ${COMPOSE} logs --tail=50 caddy
   echo "通常のCaddy設定へロールバックしました。"
 }

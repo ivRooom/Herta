@@ -17,7 +17,7 @@ test('OpenAI credential mutation remains platform-admin and same-origin protecte
   assert.doesNotMatch(route, /console\.(?:log|info|warn|error)\([^\n]*apiKey/u);
 });
 
-test('Studio credential UI is write-only, authorization-gated, and explicit about env fallback', () => {
+test('Studio credential UI is write-only, authorization-gated, and explicit about migration fallback', () => {
   const settings = readFileSync(settingsPath, 'utf8');
 
   assert.match(settings, /type="password"/u);
@@ -26,18 +26,27 @@ test('Studio credential UI is write-only, authorization-gated, and explicit abou
     settings,
     /if \(loadState === 'loading' \|\| loadState === 'hidden'\) return null;/u,
   );
-  assert.match(settings, /OPENAI_API_KEY環境変数fallbackが設定されています/u);
-  assert.match(settings, /AIアクセスは停止しません/u);
+  assert.match(settings, /OPENAI_API_KEY migration fallbackが構成されています/u);
+  assert.match(settings, /この操作だけではAIアクセス停止を保証しません/u);
+  assert.match(settings, /store障害・master key異常時はfail closed/u);
+  assert.doesNotMatch(settings, /AIアクセスは停止しません/u);
   assert.doesNotMatch(settings, /setApiKey\([^)]*status/u);
   assert.doesNotMatch(settings, /value=\{status\./u);
 });
 
-test('Semantic Search prefers encrypted runtime credential and fails closed on store errors', () => {
+test('Semantic Search rate-limits before credential lookup and fails closed on store errors', () => {
   const route = readFileSync(semanticRoutePath, 'utf8');
+  const rateIndex = route.indexOf('semanticRateLimiter.consume(session.user.id)');
+  const credentialResolveIndex = route.indexOf('const apiKey = await resolveOpenAiApiKey()');
   const runtimeIndex = route.indexOf('readRuntimeSecret(prisma, OPENAI_API_KEY_RUNTIME_SECRET)');
   const envIndex = route.indexOf('process.env.OPENAI_API_KEY?.trim() || null');
 
-  assert.ok(runtimeIndex >= 0, 'runtime secret resolver must be used');
+  assert.ok(rateIndex >= 0, 'semantic search must apply the user rate limit');
+  assert.ok(
+    credentialResolveIndex > rateIndex,
+    'credential lookup must happen after rate limiting',
+  );
+  assert.ok(runtimeIndex > credentialResolveIndex, 'runtime secret resolver must be used');
   assert.ok(envIndex > runtimeIndex, 'OPENAI_API_KEY must remain fallback-only');
   assert.match(route, /error instanceof RuntimeSecretError/u);
   assert.match(route, /credential store is unavailable; failing closed/u);

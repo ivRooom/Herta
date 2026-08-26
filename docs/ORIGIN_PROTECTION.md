@@ -68,6 +68,11 @@ curl -I https://herta.ivrm.jp/login
 
 期待結果は`200`です。
 
+GitHub Actionsのproduction deployでも、最終的なedge/E2E checkはrunnerからCloudflare経由で次を確認します。
+
+- `https://herta.ivrm.jp/api/v1/health`
+- `https://herta.ivrm.jp/api/auth/providers`
+
 ### Origin直アクセス
 
 Cloudflareのクライアント証明書を持たない接続はTLS handshakeで拒否される必要があります。
@@ -80,12 +85,48 @@ curl -vk --resolve herta.ivrm.jp:443:ORIGIN_IP https://herta.ivrm.jp/api/v1/heal
 
 ### アプリ内部health check
 
-AOP有効後、Origin上の通常curlはクライアント証明書を持たないためCaddyのHTTPS経路を通せません。内部確認はDocker network内のAPI health endpointを使います。
+AOP有効後、Origin上の通常curlはクライアント証明書を持たないためCaddyのHTTPS経路を通せません。正常系のapplication readinessはCaddyを経由せず、それぞれのcontainer内部loopback endpointを確認します。
+
+API:
 
 ```bash
 docker compose --env-file .env.production -f docker-compose.prod.yml \
-  exec -T api curl -fsS http://127.0.0.1:3001/api/v1/health
+  exec -T api node -e \
+  "fetch('http://127.0.0.1:3001/api/v1/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
 ```
+
+Studio/Auth.js:
+
+```bash
+docker compose --env-file .env.production -f docker-compose.prod.yml \
+  exec -T studio node -e \
+  "fetch('http://127.0.0.1:3000/api/auth/providers').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+```
+
+通常の運用確認では共通scriptを使用できます。
+
+```bash
+cd /app/herta
+bash deploy/scripts/health-check.sh
+```
+
+このscriptはAPI / Studio / Botの内部healthと、Cloudflare経由のexternal healthを分離して確認します。localhostからCaddy HTTPSへ接続して`200`を期待するcheckは使用しません。
+
+### 手動deploy script更新時のbootstrap
+
+`deploy/scripts/deploy.sh`はdeployment refをcheckout / fast-forwardした後にtarget revisionの`_common.sh`を再読込します。ただし、AOP-awareな`wait_for_health` / `wait_for_auth` / `wait_for_edge`はcheckout前のcurrent scriptから保持して再適用します。そのため、AOP導入前の古いtagやbranchをdeploy対象にしても、正常系healthがlocalhost → Caddy HTTPSへ退行しません。
+
+ただし、この仕組みが入る前の古いcheckoutから実行中の旧`deploy.sh`プロセス自体へ、新しいcontrol flowを後付けすることはできません。AOP-aware deploy scriptを初めて導入する際に手動deployを使う場合は、先にrepositoryを更新してから新しいscriptを起動します。
+
+```bash
+cd /app/herta
+git fetch --prune --tags origin
+git checkout main
+git pull --ff-only origin main
+bash deploy/scripts/deploy.sh main
+```
+
+GitHub Actionsのproduction deployはrepository checkout後にshared helperをsourceするため、このbootstrap制約の対象外です。AOP切替そのものはdeploy script更新とは分離し、通常のcode deployが正常であることを確認してから別フェーズで実施します。
 
 ## Firewall
 
@@ -125,6 +166,7 @@ bash deploy/scripts/enable-origin-protection.sh --rollback
 
 ```bash
 curl --fail --show-error --silent https://herta.ivrm.jp/api/v1/health
+bash deploy/scripts/health-check.sh
 docker compose --env-file .env.production -f docker-compose.prod.yml logs --tail=100 caddy
 ```
 

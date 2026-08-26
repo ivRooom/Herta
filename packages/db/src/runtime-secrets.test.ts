@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { PrismaClient } from '@prisma/client';
 import {
   decryptRuntimeSecret,
   encryptRuntimeSecret,
+  readRuntimeSecret,
   resolveRuntimeSecretMasterKey,
   RuntimeSecretError,
   validateRuntimeSecretName,
@@ -56,6 +58,26 @@ test('master key accepts exact 32-byte base64 and rejects missing or invalid val
   assert.throws(
     () => resolveRuntimeSecretMasterKey({ HERTA_RUNTIME_SECRET_KEY: 'too-short' }),
     (error: unknown) => error instanceof RuntimeSecretError && error.code === 'invalid_master_key',
+  );
+});
+
+test('runtime secret reads fail closed on a missing master key even when no secret is stored', async () => {
+  const prisma = {
+    runtimeSecret: {
+      findUnique: async () => null,
+    },
+  } as unknown as PrismaClient;
+
+  await assert.rejects(
+    () => readRuntimeSecret(prisma, 'openai.api_key', {}),
+    (error: unknown) => error instanceof RuntimeSecretError && error.code === 'missing_master_key',
+  );
+
+  assert.equal(
+    await readRuntimeSecret(prisma, 'openai.api_key', {
+      HERTA_RUNTIME_SECRET_KEY: MASTER_KEY_BASE64,
+    }),
+    null,
   );
 });
 
