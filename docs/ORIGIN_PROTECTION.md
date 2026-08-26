@@ -112,6 +112,22 @@ bash deploy/scripts/health-check.sh
 
 このscriptはAPI / Studio / Botの内部healthと、Cloudflare経由のexternal healthを分離して確認します。localhostからCaddy HTTPSへ接続して`200`を期待するcheckは使用しません。
 
+### 手動deploy script更新時のbootstrap
+
+`deploy/scripts/deploy.sh`はdeployment refをcheckout / fast-forwardした後に`_common.sh`を再読込し、readiness判定をtarget revisionのhelperで実行します。
+
+ただし、この仕組みが入る前の古いcheckoutから実行中の旧`deploy.sh`プロセス自体へ、新しいcontrol flowを後付けすることはできません。AOP-aware deploy scriptを初めて導入する際に手動deployを使う場合は、先にrepositoryを更新してから新しいscriptを起動します。
+
+```bash
+cd /app/herta
+git fetch --prune --tags origin
+git checkout main
+git pull --ff-only origin main
+bash deploy/scripts/deploy.sh main
+```
+
+GitHub Actionsのproduction deployはrepository checkout後にshared helperをsourceするため、このbootstrap制約の対象外です。AOP切替そのものはdeploy script更新とは分離し、通常のcode deployが正常であることを確認してから別フェーズで実施します。
+
 ## Firewall
 
 AOPに加えて、Lightsail NetworkingとOS Firewallで80・443の送信元をCloudflare公開IPレンジへ限定します。
