@@ -166,10 +166,7 @@ export function parseAiRuntimeStoredValue(value: unknown): AiRuntimeStoredValue 
 export function resolveAiRuntimeEnvDefault(
   env: Record<string, string | undefined> = process.env,
 ): AiRuntimeStoredValue {
-  const provider = normalizeOrDefault(
-    env['HERTA_AI_PROVIDER'],
-    AI_RUNTIME_SAFE_DEFAULT.provider,
-  );
+  const provider = normalizeOrDefault(env['HERTA_AI_PROVIDER'], AI_RUNTIME_SAFE_DEFAULT.provider);
   const modelProfile = normalizeOrDefault(
     env['HERTA_AI_MODEL_PROFILE'],
     AI_RUNTIME_SAFE_DEFAULT.modelProfile,
@@ -204,6 +201,14 @@ export function getAiRuntimePolicyEntry(
   modelProfile: AiModelProfile,
 ): AiRuntimePolicyEntry {
   return AI_RUNTIME_POLICY[provider][modelProfile];
+}
+
+export function getOpenAiRuntimePolicyEntryByModel(model: AiOpenAiModel): AiRuntimePolicyEntry {
+  for (const modelProfile of AI_MODEL_PROFILES) {
+    const entry = AI_RUNTIME_POLICY.openai[modelProfile];
+    if (entry.model === model) return entry;
+  }
+  throw new AiRuntimePolicyError('invalid_model_profile');
 }
 
 export function isAiProvider(value: string): value is AiProviderName {
