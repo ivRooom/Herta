@@ -1,4 +1,5 @@
 import { Settings2 } from 'lucide-react';
+import { AiProviderCredentialSettings } from '@/components/ai-provider-credential-settings';
 import { StudioNavigationSettings } from '@/components/studio-navigation-settings';
 
 export default function StudioSettingsPage() {
@@ -11,10 +12,11 @@ export default function StudioSettingsPage() {
       <h1 className="mt-2 text-2xl font-semibold tracking-tight">Studio設定</h1>
       <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
         Server Switcherを中心に、Current
-        Serverへ常時表示する個別Pluginタブをサーバー単位で調整します。
+        Serverへ常時表示する個別Pluginタブや、Herta管理者向けのserver-side設定を管理します。
       </p>
 
-      <div className="mt-8">
+      <div className="mt-8 space-y-6">
+        <AiProviderCredentialSettings />
         <StudioNavigationSettings />
       </div>
     </div>

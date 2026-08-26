@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { OPENAI_API_KEY_RUNTIME_SECRET, readRuntimeSecret, RuntimeSecretError } from '@herta/db';
 import { auth } from '@/auth';
 import { RequestBodyTooLargeError, readJsonBodyWithLimit } from '@/lib/bounded-request-body';
 import {
@@ -20,6 +21,7 @@ import {
   parseStudioCommandSemanticRequest,
   STUDIO_COMMAND_SEMANTIC_SCORE_THRESHOLD,
 } from '@/lib/command-semantic-search';
+import { prisma } from '@/lib/db';
 import { getManageableGuild } from '@/lib/guilds';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
 import { getDiscordAccessToken } from '@/lib/session';
@@ -62,12 +64,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ mode: 'disabled', scores: [] });
   }
 
-  const apiKey = process.env.OPENAI_API_KEY?.trim();
-  if (!apiKey) {
-    console.warn('Studio semantic search provider is enabled without OPENAI_API_KEY');
-    return NextResponse.json({ mode: 'fallback', scores: [] });
-  }
-
   const rate = semanticRateLimiter.consume(session.user.id);
   if (!rate.allowed) {
     return NextResponse.json(
@@ -77,6 +73,12 @@ export async function POST(request: Request) {
         headers: { 'Retry-After': String(Math.ceil(rate.retryAfterMs / 1000)) },
       },
     );
+  }
+
+  const apiKey = await resolveOpenAiApiKey();
+  if (!apiKey) {
+    console.warn('Studio semantic search provider is enabled without a usable OpenAI credential');
+    return NextResponse.json({ mode: 'fallback', scores: [] });
   }
 
   let guildName: string | null = null;
@@ -157,6 +159,26 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ mode: 'fallback', scores: [] });
   }
+}
+
+async function resolveOpenAiApiKey(): Promise<string | null> {
+  try {
+    const stored = await readRuntimeSecret(prisma, OPENAI_API_KEY_RUNTIME_SECRET);
+    if (stored) return stored;
+  } catch (error) {
+    console.warn('Studio semantic runtime credential store is unavailable; failing closed', {
+      provider: 'openai',
+      failure:
+        error instanceof RuntimeSecretError
+          ? error.code
+          : error instanceof Error
+            ? error.name
+            : 'UnknownError',
+    });
+    return null;
+  }
+
+  return process.env.OPENAI_API_KEY?.trim() || null;
 }
 
 async function parseBody(request: Request): Promise<{ value: unknown } | { response: Response }> {

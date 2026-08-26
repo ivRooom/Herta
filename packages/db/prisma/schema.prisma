@@ -957,3 +957,21 @@ model StudioAccessPolicyAttachment {
   @@index([guildId, policyId])
   @@map("studio_access_policy_attachments")
 }
+
+// ============================================================
+// Global Runtime Secrets
+// ============================================================
+
+model RuntimeSecret {
+  name       String   @id @db.VarChar(100)
+  ciphertext Bytes
+  iv         Bytes
+  authTag    Bytes    @map("auth_tag")
+  keyVersion Int      @default(1) @map("key_version")
+  updatedBy  String   @map("updated_by") @db.VarChar(128)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  // IV/tag/value bounds are enforced by migration SQL.
+  @@map("runtime_secrets")
+}
