@@ -40,7 +40,7 @@ verify_migration
 wait_for_health
 wait_for_auth
 wait_for_bot
-./deploy/scripts/health-check.sh
+wait_for_edge
 
 clear_deploy_exit_trap
 echo "=== デプロイ完了 (${HERTA_IMAGE}) ==="
