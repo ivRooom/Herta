@@ -166,20 +166,16 @@ async function resolveOpenAiApiKey(): Promise<string | null> {
     const stored = await readRuntimeSecret(prisma, OPENAI_API_KEY_RUNTIME_SECRET);
     if (stored) return stored;
   } catch (error) {
-    if (error instanceof RuntimeSecretError) {
-      console.warn('Studio semantic runtime credential cannot be decrypted', {
-        provider: 'openai',
-        failure: error.code,
-      });
-      return null;
-    }
-    console.warn(
-      'Studio semantic runtime credential store is unavailable; env fallback remains active',
-      {
-        provider: 'openai',
-        failure: error instanceof Error ? error.name : 'UnknownError',
-      },
-    );
+    console.warn('Studio semantic runtime credential store is unavailable; failing closed', {
+      provider: 'openai',
+      failure:
+        error instanceof RuntimeSecretError
+          ? error.code
+          : error instanceof Error
+            ? error.name
+            : 'UnknownError',
+    });
+    return null;
   }
 
   return process.env.OPENAI_API_KEY?.trim() || null;
