@@ -46,7 +46,10 @@ jobs:
         run: pnpm db:generate
 
       - name: Format Check
-        run: pnpm format:check
+        run: |
+          pnpm exec prettier .github/scripts/deploy-scripts.test.mjs > /tmp/deploy-scripts.formatted.mjs
+          diff -u .github/scripts/deploy-scripts.test.mjs /tmp/deploy-scripts.formatted.mjs
+          pnpm format:check
 
       - name: Lint
         run: pnpm lint
