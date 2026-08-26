@@ -60,7 +60,7 @@ export async function PUT(request: Request) {
   try {
     const stored = await setRuntimeConfiguration(prisma, {
       name: AI_RUNTIME_CONFIGURATION,
-      value: body.value,
+      value: { ...body.value },
       updatedBy: userId.userId,
     });
     return noStoreJson({
