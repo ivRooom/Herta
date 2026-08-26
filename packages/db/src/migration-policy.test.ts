@@ -17,6 +17,9 @@ const historicalMultiConcurrentIndexMigrations = new Map([
   ],
 ]);
 
+const dollarQuoteTagPattern =
+  /^\$(?:[A-Za-z_\u0080-\u{10ffff}][A-Za-z0-9_\u0080-\u{10ffff}]*)?\$/u;
+
 type SqlAnalysis = {
   concurrentIndexCount: number;
   executableStatementCount: number;
@@ -149,7 +152,7 @@ function maskSqlCommentsAndLiterals(
     }
 
     if (sql[index] === '$' && !isIdentifierContinuationChar(codePointBefore(sql, index))) {
-      const tagMatch = sql.slice(index).match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/u);
+      const tagMatch = sql.slice(index).match(dollarQuoteTagPattern);
       if (tagMatch) {
         const tag = tagMatch[0];
         const endIndex = sql.indexOf(tag, index + tag.length);
@@ -209,6 +212,14 @@ test('concurrent index matcher treats SQL comments as whitespace and ignores com
       SELECT "CREATE INDEX CONCURRENTLY fake_identifier" FROM example;
     `),
     0,
+  );
+
+  assert.equal(
+    countConcurrentIndexes(`
+      SELECT $索引$CREATE INDEX CONCURRENTLY fake_unicode_tag_idx ON example (id);$索引$;
+      CREATE INDEX CONCURRENTLY real_unicode_tag_idx ON example (id);
+    `),
+    1,
   );
 
   assert.equal(
@@ -273,6 +284,16 @@ test('concurrent index migration must contain exactly one executable statement',
     concurrentIndexCount: 1,
     executableStatementCount: 1,
   });
+
+  assert.deepEqual(
+    analyzeSqlConservatively(`
+      CREATE INDEX CONCURRENTLY idx ON example (id) WHERE value = $é$a;b$é$;
+    `),
+    {
+      concurrentIndexCount: 1,
+      executableStatementCount: 1,
+    },
+  );
 
   assert.equal(
     analyzeSqlConservatively(`
