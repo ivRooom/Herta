@@ -524,9 +524,8 @@ export class OpenAiResponsesProvider implements AiGenerationProvider {
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), request.timeoutMs);
-    let response: Response;
     try {
-      response = await this.fetchImpl(this.endpoint, {
+      const response = await this.fetchImpl(this.endpoint, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
@@ -543,34 +542,39 @@ export class OpenAiResponsesProvider implements AiGenerationProvider {
         cache: 'no-store',
         signal: controller.signal,
       });
-    } catch {
+
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        if (
+          response.status === 408 ||
+          response.status === 409 ||
+          response.status === 429 ||
+          response.status >= 500
+        ) {
+          throw new AiFoundationError('provider_unavailable');
+        }
+        throw new AiFoundationError('provider_rejected');
+      }
+
+      const payload = await readBoundedJson(response, request.maxResponseBytes);
+      return parseOpenAiResponse(payload);
+    } catch (error) {
+      if (error instanceof AiFoundationError) throw error;
       if (controller.signal.aborted) throw new AiFoundationError('timeout');
       throw new AiFoundationError('provider_unavailable');
     } finally {
       clearTimeout(timeout);
     }
-
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined);
-      if (
-        response.status === 408 ||
-        response.status === 409 ||
-        response.status === 429 ||
-        response.status >= 500
-      ) {
-        throw new AiFoundationError('provider_unavailable');
-      }
-      throw new AiFoundationError('provider_rejected');
-    }
-
-    const payload = await readBoundedJson(response, request.maxResponseBytes);
-    return parseOpenAiResponse(payload);
   }
 }
 
+/**
+ * Preflight billing guards must not underestimate token usage. UTF-8 byte length is used as
+ * a deliberately conservative upper bound instead of a compression-ratio heuristic; actual
+ * provider usage is still settled from the authoritative response usage after generation.
+ */
 export function estimateInputTokens(input: string): number {
-  const bytes = new TextEncoder().encode(input).byteLength;
-  return Math.max(1, Math.ceil(bytes / 3));
+  return Math.max(1, new TextEncoder().encode(input).byteLength);
 }
 
 export function estimateOpenAiCostMicroUsd(
