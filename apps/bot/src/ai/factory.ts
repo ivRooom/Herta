@@ -1,15 +1,26 @@
-import { OPENAI_API_KEY_RUNTIME_SECRET, RuntimeSecretError, readRuntimeSecret } from '@herta/db';
 import {
-  AiFoundationService,
-  OpenAiResponsesProvider,
+  OPENAI_API_KEY_RUNTIME_SECRET,
+  RuntimeSecretError,
+  getRuntimeConfiguration,
+  readRuntimeSecret,
+} from '@herta/db';
+import {
   RedisAiGuardStore,
   resolveAiFoundationConfig,
   type AiTelemetrySink,
   type RedisEvalClient,
 } from '@herta/plugin-catalog/ai-service';
+import { AiRuntimeConfigurationResolver } from '@herta/plugin-catalog/ai-runtime-config';
+import {
+  OpenAiRuntimeGenerationService,
+  type AiRuntimeGenerationService,
+} from './runtime-service.js';
 
 type RuntimeSecretPrisma = Parameters<typeof readRuntimeSecret>[0];
+type RuntimeConfigurationPrisma = Parameters<typeof getRuntimeConfiguration>[0];
+type AiRuntimePrisma = RuntimeSecretPrisma & RuntimeConfigurationPrisma;
 type RuntimeSecretReader = typeof readRuntimeSecret;
+type RuntimeConfigurationReader = typeof getRuntimeConfiguration;
 
 export type AiCredentialSource = 'runtime_secret' | 'environment';
 export type AiRuntimeBootstrapStatus = 'disabled' | 'credential_unavailable' | 'ready';
@@ -21,17 +32,20 @@ export interface AiCredentialResolution {
 }
 
 export interface AiFoundationRuntimeBootstrap {
-  service: AiFoundationService | null;
+  service: AiRuntimeGenerationService | null;
   status: AiRuntimeBootstrapStatus;
   credentialSource: AiCredentialSource | null;
 }
 
 export interface AiFoundationRuntimeOptions {
-  prisma: RuntimeSecretPrisma;
+  prisma: AiRuntimePrisma;
   redis: RedisEvalClient;
   env?: Record<string, string | undefined>;
   telemetry?: AiTelemetrySink;
   readSecret?: RuntimeSecretReader;
+  readRuntimeConfiguration?: RuntimeConfigurationReader;
+  runtimeConfigTtlMs?: number;
+  fetchImpl?: typeof fetch;
 }
 
 /**
@@ -59,14 +73,15 @@ export async function resolveAiOpenAiCredential(
 
 /**
  * Bot-side bootstrap。AIがOFF/kill-switch中、またはcredential不成立でもBot本体は起動可能にする。
- * 実際のDiscord Q&A surfaceは後続PRからこのserviceを利用する。
+ * Global enable / kill-switchはconsole runtime settingに移さずenv gateのまま維持する。
+ * Model/reasoningはrequest-time resolverが最大5秒程度のbounded staleで追随する。
  */
 export async function createAiFoundationRuntime(
   options: AiFoundationRuntimeOptions,
 ): Promise<AiFoundationRuntimeBootstrap> {
   const env = options.env ?? process.env;
-  const config = resolveAiFoundationConfig(env);
-  if (!config.enabled || config.killSwitch) {
+  const baseConfig = resolveAiFoundationConfig(env);
+  if (!baseConfig.enabled || baseConfig.killSwitch) {
     return { service: null, status: 'disabled', credentialSource: null };
   }
 
@@ -75,12 +90,21 @@ export async function createAiFoundationRuntime(
     return { service: null, status: 'credential_unavailable', credentialSource: null };
   }
 
+  const runtimeResolver = new AiRuntimeConfigurationResolver({
+    prisma: options.prisma,
+    env,
+    ttlMs: options.runtimeConfigTtlMs,
+    readConfiguration: options.readRuntimeConfiguration,
+  });
+
   return {
-    service: new AiFoundationService({
-      config,
-      provider: new OpenAiResponsesProvider({ apiKey: credential.apiKey }),
+    service: new OpenAiRuntimeGenerationService({
+      baseConfig,
+      apiKey: credential.apiKey,
       guardStore: new RedisAiGuardStore({ redis: options.redis }),
+      runtimeResolver,
       telemetry: options.telemetry,
+      fetchImpl: options.fetchImpl,
     }),
     status: 'ready',
     credentialSource: credential.source,
