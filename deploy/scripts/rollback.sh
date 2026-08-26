@@ -44,6 +44,7 @@ verify_migration
 wait_for_health
 wait_for_auth
 wait_for_bot
+./deploy/scripts/health-check.sh
 
 clear_deploy_exit_trap
 echo "=== ロールバック完了 (${TARGET_SHA}) ==="
