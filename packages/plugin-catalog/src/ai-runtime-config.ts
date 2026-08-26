@@ -1,6 +1,7 @@
 import {
   AI_RUNTIME_CONFIGURATION,
   getRuntimeConfiguration,
+  RuntimeConfigurationError,
   type RuntimeConfigurationRecord,
 } from '@herta/db';
 import {
@@ -74,11 +75,12 @@ export class AiRuntimeConfigurationResolver {
     const now = this.now();
     if (this.cache && now < this.cache.expiresAt) return this.cache.value;
 
-    const fallback = resolveFallback(this.env);
     let stored: RuntimeConfigurationRecord | null;
     try {
       stored = await this.readConfiguration(this.prisma, AI_RUNTIME_CONFIGURATION);
-    } catch {
+    } catch (error) {
+      if (error instanceof RuntimeConfigurationError) throw error;
+      const fallback = resolveFallback(this.env);
       const resolved = {
         ...fallback,
         storeAvailable: false,
@@ -88,6 +90,7 @@ export class AiRuntimeConfigurationResolver {
     }
 
     if (!stored) {
+      const fallback = resolveFallback(this.env);
       const resolved = {
         ...fallback,
         storeAvailable: true,
@@ -118,8 +121,8 @@ function resolveFallback(
 ): Omit<ResolvedAiRuntimeConfiguration, 'storeAvailable'> {
   const hasExplicitEnvDefault = Boolean(
     env['HERTA_AI_PROVIDER']?.trim() ||
-      env['HERTA_AI_MODEL_PROFILE']?.trim() ||
-      env['HERTA_AI_REASONING_EFFORT']?.trim(),
+    env['HERTA_AI_MODEL_PROFILE']?.trim() ||
+    env['HERTA_AI_REASONING_EFFORT']?.trim(),
   );
   const value = hasExplicitEnvDefault ? resolveAiRuntimeEnvDefault(env) : AI_RUNTIME_SAFE_DEFAULT;
   return {
