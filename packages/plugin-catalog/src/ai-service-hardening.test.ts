@@ -10,6 +10,7 @@ import {
   type AiFoundationConfig,
   type AiGenerationProvider,
   type AiGuardStore,
+  type AiProviderRequest,
   type RedisEvalClient,
 } from './ai-service.js';
 
@@ -41,6 +42,18 @@ function staticProvider(): AiGenerationProvider {
   };
 }
 
+function providerRequest(overrides: Partial<AiProviderRequest> = {}): AiProviderRequest {
+  return {
+    requestId: 'req-1',
+    model: 'gpt-5.6-terra',
+    input: 'hello',
+    maxOutputTokens: 100,
+    timeoutMs: 100,
+    maxResponseBytes: 16_384,
+    ...overrides,
+  };
+}
+
 describe('AI Foundation post-merge hardening', () => {
   it('公開済み最大入力・出力boundを全profileの既定cost cap内で予約できる', () => {
     const input = 'あ'.repeat(AI_DEFAULTS.maxInputChars);
@@ -59,37 +72,39 @@ describe('AI Foundation post-merge hardening', () => {
     expect(AI_DEFAULTS.perRequestCostLimitMicroUsd).toBeGreaterThanOrEqual(112_000);
   });
 
-  it('telemetry sinkがsettleしなくてもuser-facing generationをblockしない', async () => {
-    let telemetryCalled = false;
+  it('telemetry sinkはgeneration settlement pathの外で実行する', async () => {
+    let generationReturned = false;
+    let telemetryObservedReturnedGeneration = false;
     const service = new AiFoundationService({
       config: makeConfig(),
       provider: staticProvider(),
       guardStore: allowAllGuardStore(),
       now: () => fixedNow,
       telemetry: () => {
-        telemetryCalled = true;
+        telemetryObservedReturnedGeneration = generationReturned;
+        const blockedUntil = Date.now() + 20;
+        while (Date.now() < blockedUntil) {
+          // Simulate a synchronously blocking sink before it returns a promise.
+        }
         return new Promise<void>(() => undefined);
       },
     });
 
-    const result = await Promise.race([
-      service.generate({
-        feature: 'hardening.test',
-        input: 'hello',
-        guildId: 'guild-1',
-        scopeGuildId: 'guild-1',
-        userId: 'user-1',
-        authorized: true,
-        pluginEnabled: true,
-        guildOptIn: true,
-      }),
-      new Promise<never>((_resolve, reject) => {
-        setTimeout(() => reject(new Error('telemetry blocked the response')), 50);
-      }),
-    ]);
+    const result = await service.generate({
+      feature: 'hardening.test',
+      input: 'hello',
+      guildId: 'guild-1',
+      scopeGuildId: 'guild-1',
+      userId: 'user-1',
+      authorized: true,
+      pluginEnabled: true,
+      guildOptIn: true,
+    });
+    generationReturned = true;
 
     expect(result.text).toBe('ok');
-    expect(telemetryCalled).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(telemetryObservedReturnedGeneration).toBe(true);
   });
 
   it('Sol promotional pricing review deadline後はprice refreshなしでprovider callしない', async () => {
@@ -117,33 +132,50 @@ describe('AI Foundation post-merge hardening', () => {
     expect(generateSpy).not.toHaveBeenCalled();
   });
 
-  it('Responses APIのincomplete partial outputを成功扱いしない', async () => {
+  it.each(['max_output_tokens', 'max_tokens'])(
+    'Responses APIのincomplete reason=%sをoutput_too_largeとして拒否する',
+    async (reason) => {
+      const provider = new OpenAiResponsesProvider({
+        apiKey: 'server-secret',
+        fetchImpl: async () =>
+          Response.json({
+            status: 'incomplete',
+            incomplete_details: { reason },
+            output: [
+              {
+                type: 'message',
+                content: [{ type: 'output_text', text: 'partial', annotations: [] }],
+              },
+            ],
+            usage: { input_tokens: 5, output_tokens: 100, total_tokens: 105 },
+          }),
+      });
+
+      await expect(provider.generate(providerRequest())).rejects.toMatchObject({
+        category: 'output_too_large',
+      });
+    },
+  );
+
+  it.each([undefined, null, 'queued'])('Responses API status=%sを成功扱いしない', async (status) => {
     const provider = new OpenAiResponsesProvider({
       apiKey: 'server-secret',
       fetchImpl: async () =>
         Response.json({
-          status: 'incomplete',
-          incomplete_details: { reason: 'max_output_tokens' },
+          ...(status === undefined ? {} : { status }),
           output: [
             {
               type: 'message',
-              content: [{ type: 'output_text', text: 'partial', annotations: [] }],
+              content: [{ type: 'output_text', text: 'should-not-return', annotations: [] }],
             },
           ],
-          usage: { input_tokens: 5, output_tokens: 100, total_tokens: 105 },
+          usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
         }),
     });
 
-    await expect(
-      provider.generate({
-        requestId: 'req-1',
-        model: 'gpt-5.6-terra',
-        input: 'hello',
-        maxOutputTokens: 100,
-        timeoutMs: 100,
-        maxResponseBytes: 16_384,
-      }),
-    ).rejects.toMatchObject({ category: 'output_too_large' });
+    await expect(provider.generate(providerRequest())).rejects.toMatchObject({
+      category: 'provider_rejected',
+    });
   });
 
   it('Guild quota Luaはaccepted reservationでtotal TTLを再延長せずreservationsを残TTLへ合わせる', async () => {
