@@ -122,6 +122,20 @@ test('production readiness checks remain valid after Authenticated Origin Pulls 
   assert.match(common, /https:\/\/\$\{HEALTH_DOMAIN\}\/api\/auth\/providers/u);
   assert.doesNotMatch(common, /--resolve[^\n]*127\.0\.0\.1/u);
 
+  const workflowSourceIndex = workflow.indexOf('source deploy/scripts/_common.sh');
+  const workflowHealthIndex = workflow.indexOf('wait_for_health() {', workflowSourceIndex);
+  const workflowAuthIndex = workflow.indexOf('wait_for_auth() {', workflowSourceIndex);
+  assert.ok(workflowSourceIndex >= 0, 'workflow must load target deployment helpers');
+  assert.ok(
+    workflowHealthIndex > workflowSourceIndex,
+    'workflow must override target API readiness with the AOP-safe check',
+  );
+  assert.ok(
+    workflowAuthIndex > workflowHealthIndex,
+    'workflow must override target auth readiness with the AOP-safe check',
+  );
+  assert.match(workflow, /http:\/\/127\.0\.0\.1:3001\/api\/v1\/health/u);
+  assert.match(workflow, /http:\/\/127\.0\.0\.1:3000\/api\/auth\/providers/u);
   assert.match(workflow, /\n\s+wait_for_health\n/u);
   assert.match(workflow, /\n\s+wait_for_auth\n/u);
   assert.doesNotMatch(workflow, /--resolve\s+herta\.ivrm\.jp:443:127\.0\.0\.1/u);
