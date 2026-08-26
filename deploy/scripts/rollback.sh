@@ -29,6 +29,8 @@ echo "配布image:  ${HERTA_IMAGE}"
 
 install_deploy_exit_trap
 
+# _common.shはcheckout前にsource済み。以降のhealth関数はrollback先の
+# 古いdeploy scriptへ依存せず、現在のAOP対応ロジックを使い続ける。
 git checkout "${TARGET_SHA}"
 ${COMPOSE} config --quiet
 pull_production_images
@@ -44,7 +46,7 @@ verify_migration
 wait_for_health
 wait_for_auth
 wait_for_bot
-./deploy/scripts/health-check.sh
+wait_for_edge
 
 clear_deploy_exit_trap
 echo "=== ロールバック完了 (${TARGET_SHA}) ==="
