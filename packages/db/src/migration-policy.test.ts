@@ -57,7 +57,9 @@ function countConcurrentIndexStatements(matchableSql: string): number {
     const startsAtKeywordBoundary = !isIdentifierContinuationChar(
       codePointBefore(matchableSql, startIndex),
     );
-    const endsAtKeywordBoundary = !isIdentifierContinuationChar(codePointAt(matchableSql, endIndex));
+    const endsAtKeywordBoundary = !isIdentifierContinuationChar(
+      codePointAt(matchableSql, endIndex),
+    );
     if (startsAtKeywordBoundary && endsAtKeywordBoundary) count += 1;
   }
 
