@@ -129,9 +129,7 @@ export function validateRuntimeConfigurationName(name: string): RuntimeConfigura
   throw new RuntimeConfigurationError('invalid_name');
 }
 
-export function validateRuntimeConfigurationValue(
-  value: unknown,
-): Record<string, unknown> {
+export function validateRuntimeConfigurationValue(value: unknown): Record<string, unknown> {
   if (!isRecord(value) || containsForbiddenSecretKey(value)) {
     throw new RuntimeConfigurationError('invalid_value');
   }
