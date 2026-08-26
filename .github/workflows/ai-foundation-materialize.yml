@@ -149,8 +149,9 @@ jobs:
           ! grep -q 'HERTA_AI_MODEL:' docker-compose.prod.yml
           ! grep -q '^HERTA_AI_MODEL=' .env.example
           ! grep -q '^HERTA_AI_MODEL=' .env.production.example
-          grep -q "failure: 'runtime_secret_unavailable'" apps/bot/src/ai/factory.ts
+          grep -q "'runtime_secret_unavailable'" apps/bot/src/ai/factory.ts
           grep -q "DB unavailable時もenv fallbackへ逃がさずfail closedする" apps/bot/src/ai/factory.test.ts
+          ! grep -q 'environment fallback remains active' apps/bot/src/ai/factory.ts
           ! grep -q 'DB自体がunavailableの場合はemergency fallback' docs/AI_FOUNDATION.md
           git diff --check
           pnpm format:check
