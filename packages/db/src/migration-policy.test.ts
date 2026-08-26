@@ -33,9 +33,7 @@ function sha256(value: string): string {
 
 function countConcurrentIndexes(sql: string): number {
   const matchableSql = maskSqlCommentsAndLiterals(sql);
-  return (
-    matchableSql.match(/\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\b/gi) ?? []
-  ).length;
+  return (matchableSql.match(/\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\b/gi) ?? []).length;
 }
 
 function maskSqlCommentsAndLiterals(sql: string): string {
@@ -118,40 +116,37 @@ function maskSqlCommentsAndLiterals(sql: string): string {
   return output;
 }
 
-test(
-  'concurrent index matcher treats SQL comments as whitespace and ignores comment/literal text',
-  () => {
-    assert.equal(
-      countConcurrentIndexes(`
+test('concurrent index matcher treats SQL comments as whitespace and ignores comment/literal text', () => {
+  assert.equal(
+    countConcurrentIndexes(`
       CREATE /* reason */ INDEX CONCURRENTLY first_idx ON example (id);
       CREATE
       -- operational note
       UNIQUE INDEX CONCURRENTLY second_idx ON example (name);
     `),
-      2,
-    );
+    2,
+  );
 
-    assert.equal(
-      countConcurrentIndexes(`
+  assert.equal(
+    countConcurrentIndexes(`
       -- CREATE INDEX CONCURRENTLY fake_comment_idx ON example (id);
       /* CREATE UNIQUE INDEX CONCURRENTLY fake_block_idx ON example (id); */
       SELECT 'CREATE INDEX CONCURRENTLY fake_string_idx ON example (id)';
       SELECT $$CREATE INDEX CONCURRENTLY fake_dollar_idx ON example (id)$$;
       SELECT "CREATE INDEX CONCURRENTLY fake_identifier" FROM example;
     `),
-      0,
-    );
+    0,
+  );
 
-    assert.equal(
-      countConcurrentIndexes(String.raw`
+  assert.equal(
+    countConcurrentIndexes(String.raw`
       SELECT E'it\'s still a string: CREATE INDEX CONCURRENTLY fake_escape_idx ON example (id)';
       CREATE INDEX CONCURRENTLY first_real_idx ON example (id);
       CREATE UNIQUE INDEX CONCURRENTLY second_real_idx ON example (name);
     `),
-      2,
-    );
-  },
-);
+    2,
+  );
+});
 
 test('new migrations contain at most one CREATE INDEX CONCURRENTLY statement', async () => {
   const migrations = await listMigrationSqlFiles();
