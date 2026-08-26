@@ -34,12 +34,16 @@ test('Studio credential UI is write-only, authorization-gated, and explicit abou
   assert.doesNotMatch(settings, /value=\{status\./u);
 });
 
-test('Semantic Search prefers encrypted runtime credential and fails closed on store errors', () => {
+test('Semantic Search rate-limits before credential lookup and fails closed on store errors', () => {
   const route = readFileSync(semanticRoutePath, 'utf8');
+  const rateIndex = route.indexOf('semanticRateLimiter.consume(session.user.id)');
+  const credentialResolveIndex = route.indexOf('const apiKey = await resolveOpenAiApiKey()');
   const runtimeIndex = route.indexOf('readRuntimeSecret(prisma, OPENAI_API_KEY_RUNTIME_SECRET)');
   const envIndex = route.indexOf('process.env.OPENAI_API_KEY?.trim() || null');
 
-  assert.ok(runtimeIndex >= 0, 'runtime secret resolver must be used');
+  assert.ok(rateIndex >= 0, 'semantic search must apply the user rate limit');
+  assert.ok(credentialResolveIndex > rateIndex, 'credential lookup must happen after rate limiting');
+  assert.ok(runtimeIndex > credentialResolveIndex, 'runtime secret resolver must be used');
   assert.ok(envIndex > runtimeIndex, 'OPENAI_API_KEY must remain fallback-only');
   assert.match(route, /error instanceof RuntimeSecretError/u);
   assert.match(route, /credential store is unavailable; failing closed/u);
