@@ -112,28 +112,31 @@ function maskSqlCommentsAndLiterals(sql: string): string {
   return output;
 }
 
-test('concurrent index matcher treats SQL comments as whitespace and ignores comment/literal text', () => {
-  assert.equal(
-    countConcurrentIndexes(`
+test(
+  'concurrent index matcher treats SQL comments as whitespace and ignores comment/literal text',
+  () => {
+    assert.equal(
+      countConcurrentIndexes(`
       CREATE /* reason */ INDEX CONCURRENTLY first_idx ON example (id);
       CREATE
       -- operational note
       UNIQUE INDEX CONCURRENTLY second_idx ON example (name);
     `),
-    2,
-  );
+      2,
+    );
 
-  assert.equal(
-    countConcurrentIndexes(`
+    assert.equal(
+      countConcurrentIndexes(`
       -- CREATE INDEX CONCURRENTLY fake_comment_idx ON example (id);
       /* CREATE UNIQUE INDEX CONCURRENTLY fake_block_idx ON example (id); */
       SELECT 'CREATE INDEX CONCURRENTLY fake_string_idx ON example (id)';
       SELECT $$CREATE INDEX CONCURRENTLY fake_dollar_idx ON example (id)$$;
       SELECT "CREATE INDEX CONCURRENTLY fake_identifier" FROM example;
     `),
-    0,
-  );
-});
+      0,
+    );
+  },
+);
 
 test('new migrations contain at most one CREATE INDEX CONCURRENTLY statement', async () => {
   const migrations = await listMigrationSqlFiles();
