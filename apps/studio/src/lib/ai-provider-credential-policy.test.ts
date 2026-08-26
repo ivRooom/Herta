@@ -16,11 +16,15 @@ test('OpenAI credential mutation remains platform-admin and same-origin protecte
   assert.doesNotMatch(route, /console\.(?:log|info|warn|error)\([^\n]*apiKey/u);
 });
 
-test('Studio credential UI is write-only and never asks the API for plaintext', () => {
+test('Studio credential UI is write-only and hidden until authorization completes', () => {
   const settings = readFileSync(settingsPath, 'utf8');
 
   assert.match(settings, /type="password"/u);
   assert.match(settings, /保存済みキーは再表示しません/u);
+  assert.match(
+    settings,
+    /if \(loadState === 'loading' \|\| loadState === 'hidden'\) return null;/u,
+  );
   assert.doesNotMatch(settings, /setApiKey\([^)]*status/u);
   assert.doesNotMatch(settings, /value=\{status\./u);
 });
