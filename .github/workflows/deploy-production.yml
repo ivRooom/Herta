@@ -207,9 +207,43 @@ jobs:
             upsert_env SPOTIFY_CLIENT_SECRET "${SPOTIFY_CLIENT_SECRET}"
             echo "Spotify runtime secretsを同期しました（値は非表示）"
 
-            # checkoutしたrefと同じdeploy helperを利用する。以降の失敗では
-            # container state / migration status / safe tail logを自動収集する。
+            # target revisionのdeploy helperを使ってimage/migration/service操作を行う。
+            # readinessだけはworkflow側の現行security boundaryとして固定し、
+            # workflow_dispatchでAOP-aware helper導入前のrefを選んでも
+            # certificateなしlocalhost -> Caddy checkへ退行させない。
             source deploy/scripts/_common.sh
+            wait_for_health() {
+              echo "=== Internal API health check (api:3001) ==="
+              for i in $(seq 1 24); do
+                if ${COMPOSE} exec -T api node -e \
+                  "fetch('http://127.0.0.1:3001/api/v1/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))" \
+                  > /dev/null 2>&1; then
+                  echo "API internal health check 成功"
+                  return 0
+                fi
+                echo "API 応答待ち... (${i}/24)"
+                sleep 5
+              done
+              echo "ERROR: API internal health check に失敗しました。" >&2
+              ${COMPOSE} logs --tail=100 api || true
+              return 1
+            }
+            wait_for_auth() {
+              echo "=== Internal Auth.js health check (studio:3000) ==="
+              for i in $(seq 1 12); do
+                if ${COMPOSE} exec -T studio node -e \
+                  "fetch('http://127.0.0.1:3000/api/auth/providers').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))" \
+                  > /dev/null 2>&1; then
+                  echo "Auth.js internal health check 成功"
+                  return 0
+                fi
+                echo "Studio認証応答待ち... (${i}/12)"
+                sleep 5
+              done
+              echo "ERROR: Auth.js internal health check に失敗しました。" >&2
+              ${COMPOSE} logs --tail=100 studio || true
+              return 1
+            }
             install_deploy_exit_trap
 
             ${COMPOSE} config --quiet
@@ -237,62 +271,13 @@ jobs:
             sleep 10
             ${COMPOSE} ps -a
 
-            echo "=== コンテナ稼働確認 ==="
-            for service in postgres redis api studio bot worker nginx caddy; do
-              container_id="$(${COMPOSE} ps -q "${service}")"
-              if [ -z "${container_id}" ]; then
-                echo "ERROR: ${service}コンテナが存在しません。" >&2
-                exit 1
-              fi
-              if [ "$(docker inspect --format '{{.State.Running}}' "${container_id}")" != 'true' ]; then
-                echo "ERROR: ${service}コンテナが停止しています。" >&2
-                ${COMPOSE} logs --tail=100 "${service}"
-                exit 1
-              fi
-            done
+            verify_running_services
+            verify_migration
 
-            migrator_id="$(${COMPOSE} ps -aq migrator)"
-            if [ -z "${migrator_id}" ] || \
-              [ "$(docker inspect --format '{{.State.ExitCode}}' "${migrator_id}")" != '0' ]; then
-              echo "ERROR: migrationが正常終了していません。" >&2
-              ${COMPOSE} logs --tail=100 migrator
-              exit 1
-            fi
-
-            echo "=== Origin API health check ==="
-            api_healthy=false
-            for i in $(seq 1 24); do
-              if curl -fsS -k \
-                --resolve herta.ivrm.jp:443:127.0.0.1 \
-                https://herta.ivrm.jp/api/v1/health > /dev/null; then
-                api_healthy=true
-                break
-              fi
-              echo "API応答待ち... (${i}/24)"
-              sleep 5
-            done
-            if [ "${api_healthy}" != 'true' ]; then
-              ${COMPOSE} logs --tail=100 api nginx caddy
-              exit 1
-            fi
-
-            echo "=== Origin Auth.js health check ==="
-            auth_healthy=false
-            for i in $(seq 1 12); do
-              if curl -fsS -k \
-                --resolve herta.ivrm.jp:443:127.0.0.1 \
-                https://herta.ivrm.jp/api/auth/providers > /dev/null; then
-                auth_healthy=true
-                break
-              fi
-              echo "Studio認証応答待ち... (${i}/12)"
-              sleep 5
-            done
-            if [ "${auth_healthy}" != 'true' ]; then
-              ${COMPOSE} logs --tail=100 studio nginx caddy
-              exit 1
-            fi
-
+            # AOP有効後、localhost -> Caddy HTTPSはclient certificateなしで
+            # 拒否されるのが正常。application healthはcontainer内部で確認する。
+            wait_for_health
+            wait_for_auth
             wait_for_bot
 
             docker logout ghcr.io > /dev/null 2>&1 || true
