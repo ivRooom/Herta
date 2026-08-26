@@ -18,12 +18,4 @@ wait_for_auth
 wait_for_bot
 
 echo ""
-echo "=== Cloudflare経由 external health ==="
-curl --fail --show-error --silent \
-  --retry 3 --retry-delay 2 --retry-all-errors \
-  "https://${HEALTH_DOMAIN}/api/v1/health" > /dev/null
-curl --fail --show-error --silent \
-  --retry 3 --retry-delay 2 --retry-all-errors \
-  "https://${HEALTH_DOMAIN}/api/auth/providers" > /dev/null
-
-echo "External health check 成功"
+wait_for_edge
