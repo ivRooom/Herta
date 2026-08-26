@@ -143,6 +143,22 @@ test('production readiness checks remain valid after Authenticated Origin Pulls 
   }
 });
 
+test('manual deploy reloads target revision helpers after checkout', () => {
+  const deploy = readFileSync('deploy/scripts/deploy.sh', 'utf8');
+  const sourceNeedle = 'source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"';
+  const initialSourceIndex = deploy.indexOf(sourceNeedle);
+  const checkoutIndex = deploy.indexOf('git checkout "${DEPLOY_REF}"');
+  const pullIndex = deploy.indexOf('git pull --ff-only origin "${DEPLOY_REF}"');
+  const reloadIndex = deploy.indexOf(sourceNeedle, initialSourceIndex + sourceNeedle.length);
+  const healthIndex = deploy.indexOf('\nwait_for_health\n');
+
+  assert.ok(initialSourceIndex >= 0, 'deploy must source bootstrap helpers');
+  assert.ok(checkoutIndex > initialSourceIndex, 'deploy must checkout after bootstrap helpers load');
+  assert.ok(pullIndex > checkoutIndex, 'deploy must fast-forward the selected ref after checkout');
+  assert.ok(reloadIndex > pullIndex, 'deploy must reload helpers from the deployment target revision');
+  assert.ok(healthIndex > reloadIndex, 'readiness checks must use the reloaded target helpers');
+});
+
 test('rollback keeps AOP-aware edge checks independent from the target revision', () => {
   const rollback = readFileSync('deploy/scripts/rollback.sh', 'utf8');
   const sourceIndex = rollback.indexOf('source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"');
