@@ -5,6 +5,7 @@ import {
   AiFoundationService,
   OpenAiResponsesProvider,
   RedisAiGuardStore,
+  estimateInputTokens,
   estimateOpenAiCostMicroUsd,
   resolveAiFoundationConfig,
   toSafeAiFoundationError,
@@ -337,6 +338,20 @@ describe('AiFoundationService', () => {
     expect(provider.generate).not.toHaveBeenCalled();
   });
 
+  it('preflight cost guardはUTF-8 byte長を保守的token上限として使う', async () => {
+    const provider = staticProvider();
+    const store = new MemoryGuardStore();
+    const service = new AiFoundationService({
+      config: makeConfig({ maxOutputTokens: 1, perRequestCostLimitMicroUsd: 31 }),
+      provider,
+      guardStore: store,
+    });
+
+    await expectCategory(service.generate(makeRequest({ input: 'abcdefghij' })), 'quota_exceeded');
+    expect(store.quotaKeys).toEqual([]);
+    expect(provider.generate).not.toHaveBeenCalled();
+  });
+
   it('global concurrency limit拒否時はproviderを呼ばずquota予約を解放する', async () => {
     const store = new MemoryGuardStore();
     store.denyConcurrency = true;
@@ -487,11 +502,36 @@ describe('OpenAiResponsesProvider', () => {
     });
     await expectCategory(provider.generate({ ...request, timeoutMs: 1 }), 'timeout');
   });
+
+  it('headers受信後にresponse bodyがstallしてもtimeoutする', async () => {
+    const provider = new OpenAiResponsesProvider({
+      apiKey: 'secret',
+      fetchImpl: async (_input, init) => {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            init?.signal?.addEventListener(
+              'abort',
+              () => controller.error(new DOMException('aborted', 'AbortError')),
+              { once: true },
+            );
+          },
+        });
+        return new Response(stream, { status: 200 });
+      },
+    });
+
+    await expectCategory(provider.generate({ ...request, timeoutMs: 5 }), 'timeout');
+  });
 });
 
 describe('cost estimation', () => {
   it('gpt-5.6-terra standard pricingからmicro USDを算出する', () => {
     expect(estimateOpenAiCostMicroUsd('gpt-5.6-terra', 20, 10)).toBe(160);
+  });
+
+  it('preflight input token estimateはUTF-8 byte長を保守的上限として使う', () => {
+    expect(estimateInputTokens('abc')).toBe(3);
+    expect(estimateInputTokens('あ')).toBe(3);
   });
 });
 
