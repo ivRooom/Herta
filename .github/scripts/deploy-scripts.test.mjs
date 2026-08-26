@@ -143,39 +143,57 @@ test('production readiness checks remain valid after Authenticated Origin Pulls 
   }
 });
 
-test('manual deploy reloads target helpers without downgrading AOP health checks', () => {
+test('manual deploy uses an absolute helper path and only falls back for legacy targets', () => {
   const deploy = readFileSync('deploy/scripts/deploy.sh', 'utf8');
-  const sourceNeedle = 'source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"';
-  const initialSourceIndex = deploy.indexOf(sourceNeedle);
+  const scriptDirIndex = deploy.indexOf(
+    'SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"',
+  );
+  const initialSourceIndex = deploy.indexOf('source "${SCRIPT_DIR}/_common.sh"');
   const preserveHealthIndex = deploy.indexOf(
     'AOP_WAIT_FOR_HEALTH_DEF="$(declare -f wait_for_health)"',
   );
   const checkoutIndex = deploy.indexOf('git checkout "${DEPLOY_REF}"');
   const pullIndex = deploy.indexOf('git pull --ff-only origin "${DEPLOY_REF}"');
-  const reloadIndex = deploy.indexOf(sourceNeedle, initialSourceIndex + sourceNeedle.length);
+  const unsetIndex = deploy.indexOf('unset -f wait_for_health wait_for_auth wait_for_edge');
+  const reloadIndex = deploy.indexOf(
+    'source "${SCRIPT_DIR}/_common.sh"',
+    initialSourceIndex + 'source "${SCRIPT_DIR}/_common.sh"'.length,
+  );
+  const fallbackConditionIndex = deploy.indexOf('if ! declare -F wait_for_health >/dev/null');
   const restoreHealthIndex = deploy.indexOf('eval "${AOP_WAIT_FOR_HEALTH_DEF}"');
+  const conditionEndIndex = deploy.indexOf('\nfi\n', fallbackConditionIndex);
   const healthIndex = deploy.indexOf('\nwait_for_health\n');
 
-  assert.ok(initialSourceIndex >= 0, 'deploy must source bootstrap helpers');
+  assert.ok(scriptDirIndex >= 0, 'deploy must capture an absolute script directory before sourcing');
+  assert.ok(initialSourceIndex > scriptDirIndex, 'bootstrap helper source must use the absolute path');
   assert.ok(
     preserveHealthIndex > initialSourceIndex,
-    'deploy must preserve AOP-aware health helpers before changing refs',
+    'deploy must preserve current AOP-aware helpers before changing refs',
   );
   assert.ok(checkoutIndex > preserveHealthIndex, 'deploy must preserve helpers before checkout');
   assert.ok(pullIndex > checkoutIndex, 'deploy must fast-forward the selected ref after checkout');
+  assert.ok(unsetIndex > pullIndex, 'target health functions must be cleared before target helper reload');
+  assert.ok(reloadIndex > unsetIndex, 'deploy must reload helpers from the deployment target revision');
   assert.ok(
-    reloadIndex > pullIndex,
-    'deploy must reload target-specific helpers from the deployment revision',
+    fallbackConditionIndex > reloadIndex,
+    'legacy fallback detection must happen after loading target helpers',
   );
   assert.ok(
-    restoreHealthIndex > reloadIndex,
-    'deploy must restore AOP-aware health helpers after loading target helpers',
+    restoreHealthIndex > fallbackConditionIndex && restoreHealthIndex < conditionEndIndex,
+    'preserved helpers must only be restored inside the legacy fallback branch',
   );
-  assert.ok(healthIndex > restoreHealthIndex, 'readiness checks must use preserved AOP helpers');
+  assert.ok(healthIndex > conditionEndIndex, 'readiness checks must run after helper selection completes');
+  assert.match(deploy, /! declare -F wait_for_auth >\/dev\/null/u);
+  assert.match(deploy, /! declare -F wait_for_edge >\/dev\/null/u);
   assert.match(deploy, /AOP_WAIT_FOR_AUTH_DEF="\$\(declare -f wait_for_auth\)"/u);
   assert.match(deploy, /AOP_WAIT_FOR_EDGE_DEF="\$\(declare -f wait_for_edge\)"/u);
   assert.match(deploy, /eval "\$\{AOP_WAIT_FOR_AUTH_DEF\}"/u);
   assert.match(deploy, /eval "\$\{AOP_WAIT_FOR_EDGE_DEF\}"/u);
+  assert.doesNotMatch(
+    deploy,
+    /source "\$\(dirname "\$\{BASH_SOURCE\[0\]\}"\)\/_common\.sh"/u,
+    'helper reload must not depend on a relative BASH_SOURCE path after _common changes cwd',
+  );
 });
 
 test('rollback keeps AOP-aware edge checks independent from the target revision', () => {
