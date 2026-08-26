@@ -39,14 +39,24 @@ function sha256(value: string): string {
 function analyzeSql(sql: string, backslashEscapesInStandardStrings: boolean): SqlAnalysis {
   const matchableSql = maskSqlCommentsAndLiterals(sql, backslashEscapesInStandardStrings);
   return {
-    concurrentIndexCount: (
-      matchableSql.match(/\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\b/gi) ?? []
-    ).length,
+    concurrentIndexCount: countConcurrentIndexStatements(matchableSql),
     executableStatementCount: matchableSql
       .split(';')
       .map((statement) => statement.trim())
       .filter(Boolean).length,
   };
+}
+
+function countConcurrentIndexStatements(matchableSql: string): number {
+  const pattern = /\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY/gi;
+  let count = 0;
+
+  for (const match of matchableSql.matchAll(pattern)) {
+    const endIndex = (match.index ?? 0) + match[0].length;
+    if (!isIdentifierContinuationChar(matchableSql[endIndex])) count += 1;
+  }
+
+  return count;
 }
 
 function analyzeSqlConservatively(sql: string): SqlAnalysis {
@@ -187,18 +197,23 @@ test('concurrent index matcher treats SQL comments as whitespace and ignores com
   );
 });
 
-test(
-  'concurrent index matcher does not mistake dollar signs inside identifiers for dollar quotes',
-  () => {
-    assert.equal(
-      countConcurrentIndexes(`
-        CREATE INDEX CONCURRENTLY first$tag$ ON example (id);
-        CREATE INDEX CONCURRENTLY second$tag$ ON example (name);
-      `),
-      2,
-    );
-  },
-);
+test('concurrent index matcher honors PostgreSQL identifier boundaries around dollar signs', () => {
+  assert.equal(
+    countConcurrentIndexes(`
+      CREATE INDEX CONCURRENTLY first$tag$ ON example (id);
+      CREATE INDEX CONCURRENTLY second$tag$ ON example (name);
+    `),
+    2,
+  );
+
+  assert.equal(
+    countConcurrentIndexes(`
+      CREATE INDEX concurrently$archive ON example (id);
+      ANALYZE example;
+    `),
+    0,
+  );
+});
 
 test('concurrent index matcher is conservative across standard string backslash modes', () => {
   const standardConformingSql = String.raw`
