@@ -64,12 +64,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ mode: 'disabled', scores: [] });
   }
 
-  const apiKey = await resolveOpenAiApiKey();
-  if (!apiKey) {
-    console.warn('Studio semantic search provider is enabled without a usable OpenAI credential');
-    return NextResponse.json({ mode: 'fallback', scores: [] });
-  }
-
   const rate = semanticRateLimiter.consume(session.user.id);
   if (!rate.allowed) {
     return NextResponse.json(
@@ -79,6 +73,12 @@ export async function POST(request: Request) {
         headers: { 'Retry-After': String(Math.ceil(rate.retryAfterMs / 1000)) },
       },
     );
+  }
+
+  const apiKey = await resolveOpenAiApiKey();
+  if (!apiKey) {
+    console.warn('Studio semantic search provider is enabled without a usable OpenAI credential');
+    return NextResponse.json({ mode: 'fallback', scores: [] });
   }
 
   let guildName: string | null = null;
