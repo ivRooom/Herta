@@ -11,6 +11,7 @@ import {
   type RedisEvalClient,
 } from '@herta/plugin-catalog/ai-service';
 import { AiRuntimeConfigurationResolver } from '@herta/plugin-catalog/ai-runtime-config';
+import { AI_RUNTIME_SAFE_DEFAULT } from '@herta/plugin-catalog/ai-runtime-policy';
 import {
   OpenAiRuntimeGenerationService,
   type AiRuntimeGenerationService,
@@ -80,7 +81,12 @@ export async function createAiFoundationRuntime(
   options: AiFoundationRuntimeOptions,
 ): Promise<AiFoundationRuntimeBootstrap> {
   const env = options.env ?? process.env;
-  const baseConfig = resolveAiFoundationConfig(env);
+  const baseConfig = resolveAiFoundationConfig({
+    ...env,
+    HERTA_AI_PROVIDER: AI_RUNTIME_SAFE_DEFAULT.provider,
+    HERTA_AI_MODEL_PROFILE: AI_RUNTIME_SAFE_DEFAULT.modelProfile,
+    HERTA_AI_MODEL: undefined,
+  });
   if (!baseConfig.enabled || baseConfig.killSwitch) {
     return { service: null, status: 'disabled', credentialSource: null };
   }
