@@ -1,0 +1,54 @@
+name: AI Foundation Final Aggregate Validation
+
+on:
+  push:
+    branches:
+      - feat/ai-foundation-console-credentials
+    paths:
+      - .github/workflows/ai-foundation-final-validate.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Prisma Generate
+        run: pnpm db:generate
+      - name: Format Check
+        run: pnpm format:check
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+      - name: Production Compose Validation
+        env:
+          DISCORD_CLIENT_ID: ci-client-id
+          DISCORD_CLIENT_SECRET: ci-client-secret
+          DISCORD_BOT_TOKEN: ci-bot-token
+          TEAM_SPLIT_SECRET: ci-team-split-secret-for-compose-validation
+        run: docker compose --env-file .env.production.example -f docker-compose.prod.yml config --quiet
+      - name: Fail-closed regression verification
+        shell: bash
+        run: |
+          grep -q "'runtime_secret_unavailable'" apps/bot/src/ai/factory.ts
+          grep -q "DB unavailable時もenv fallbackへ逃がさずfail closedする" apps/bot/src/ai/factory.test.ts
+          grep -q 'secret-store readが成功しsecret未登録の場合のみ' docs/AI_FOUNDATION.md
+          grep -q 'Runtime Secret Storeのread成功かつsecret未登録時だけ使うmigration fallback' .env.example
+          grep -q 'Runtime Secret Storeのread成功かつsecret未登録時だけ使うmigration fallback' .env.production.example
+          ! grep -q 'HERTA_AI_MODEL:' docker-compose.prod.yml
+          ! grep -q '^HERTA_AI_MODEL=' .env.example
+          ! grep -q '^HERTA_AI_MODEL=' .env.production.example
