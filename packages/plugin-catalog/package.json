@@ -18,6 +18,10 @@
       "types": "./src/ai-runtime-policy.ts",
       "default": "./dist/ai-runtime-policy.js"
     },
+    "./ai-runtime-config": {
+      "types": "./src/ai-runtime-config.ts",
+      "default": "./dist/ai-runtime-config.js"
+    },
     "./moderation-runtime": {
       "types": "./src/moderation-runtime.ts",
       "default": "./dist/moderation-runtime.js"
