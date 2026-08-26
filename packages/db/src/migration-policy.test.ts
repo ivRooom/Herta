@@ -48,12 +48,17 @@ function analyzeSql(sql: string, backslashEscapesInStandardStrings: boolean): Sq
 }
 
 function countConcurrentIndexStatements(matchableSql: string): number {
-  const pattern = /\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY/gi;
+  const pattern = /CREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY/gi;
   let count = 0;
 
   for (const match of matchableSql.matchAll(pattern)) {
-    const endIndex = (match.index ?? 0) + match[0].length;
-    if (!isIdentifierContinuationChar(matchableSql[endIndex])) count += 1;
+    const startIndex = match.index ?? 0;
+    const endIndex = startIndex + match[0].length;
+    const startsAtKeywordBoundary = !isIdentifierContinuationChar(
+      codePointBefore(matchableSql, startIndex),
+    );
+    const endsAtKeywordBoundary = !isIdentifierContinuationChar(codePointAt(matchableSql, endIndex));
+    if (startsAtKeywordBoundary && endsAtKeywordBoundary) count += 1;
   }
 
   return count;
@@ -117,7 +122,7 @@ function maskSqlCommentsAndLiterals(
       const isEscapeString =
         quote === "'" &&
         (sql[index - 1] === 'E' || sql[index - 1] === 'e') &&
-        (index < 2 || !isIdentifierContinuationChar(sql[index - 2]));
+        !isIdentifierContinuationChar(codePointBefore(sql, index - 1));
       const backslashEscapes =
         quote === "'" && (isEscapeString || backslashEscapesInStandardStrings);
       const doubledQuote = `${quote}${quote}`;
@@ -141,7 +146,7 @@ function maskSqlCommentsAndLiterals(
       continue;
     }
 
-    if (sql[index] === '$' && (index === 0 || !isIdentifierContinuationChar(sql[index - 1]))) {
+    if (sql[index] === '$' && !isIdentifierContinuationChar(codePointBefore(sql, index))) {
       const tagMatch = sql.slice(index).match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/u);
       if (tagMatch) {
         const tag = tagMatch[0];
@@ -156,6 +161,24 @@ function maskSqlCommentsAndLiterals(
   }
 
   return output;
+}
+
+function codePointAt(value: string, index: number): string | undefined {
+  if (index < 0 || index >= value.length) return undefined;
+  const codePoint = value.codePointAt(index);
+  return codePoint === undefined ? undefined : String.fromCodePoint(codePoint);
+}
+
+function codePointBefore(value: string, index: number): string | undefined {
+  if (index <= 0 || index > value.length) return undefined;
+  const trailingCodeUnit = value.charCodeAt(index - 1);
+  if (trailingCodeUnit >= 0xdc00 && trailingCodeUnit <= 0xdfff && index >= 2) {
+    const leadingCodeUnit = value.charCodeAt(index - 2);
+    if (leadingCodeUnit >= 0xd800 && leadingCodeUnit <= 0xdbff) {
+      return value.slice(index - 2, index);
+    }
+  }
+  return value[index - 1];
 }
 
 function isIdentifierContinuationChar(value: string | undefined): boolean {
@@ -194,7 +217,7 @@ test('concurrent index matcher treats SQL comments as whitespace and ignores com
   );
 });
 
-test('concurrent index matcher honors PostgreSQL identifier boundaries around dollar signs', () => {
+test('concurrent index matcher honors PostgreSQL identifier boundaries', () => {
   assert.equal(
     countConcurrentIndexes(`
       CREATE INDEX CONCURRENTLY first$tag$ ON example (id);
@@ -206,6 +229,8 @@ test('concurrent index matcher honors PostgreSQL identifier boundaries around do
   assert.equal(
     countConcurrentIndexes(`
       CREATE INDEX concurrently$archive ON example (id);
+      CREATE INDEX concurrently𐐀 ON example (name);
+      𐐀CREATE INDEX CONCURRENTLY archive_idx ON example (created_at);
       ANALYZE example;
     `),
     0,
