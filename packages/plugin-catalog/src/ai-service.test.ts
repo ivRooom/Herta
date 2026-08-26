@@ -129,7 +129,9 @@ describe('resolveAiFoundationConfig', () => {
   });
 
   it('unsupported modelとprofileを拒否する', () => {
-    expect(() => resolveAiFoundationConfig({ HERTA_AI_MODEL: 'client-selected-model' })).toThrowError(
+    expect(() =>
+      resolveAiFoundationConfig({ HERTA_AI_MODEL: 'client-selected-model' }),
+    ).toThrowError(
       expect.objectContaining<Partial<AiConfigurationError>>({ code: 'invalid_model' }),
     );
     expect(() => resolveAiFoundationConfig({ HERTA_AI_MODEL_PROFILE: 'ultra' })).toThrowError(
@@ -148,8 +150,8 @@ describe('AiFoundationService', () => {
       provider,
       guardStore,
       telemetry: (event) => {
-      events.push(event);
-    },
+        events.push(event);
+      },
       requestId: () => 'request-1',
       now: (() => {
         let now = 1000;
@@ -166,7 +168,7 @@ describe('AiFoundationService', () => {
       text: '回答です',
       usage: { inputTokens: 20, outputTokens: 10, totalTokens: 30 },
     });
-    expect(result.estimatedCost).toBe(0.0001);
+    expect(result.estimatedCost).toBe(0.00016);
     expect(provider.generate).toHaveBeenCalledWith(
       expect.objectContaining({ maxOutputTokens: 800, model: 'gpt-5.6-terra' }),
     );
@@ -186,14 +188,21 @@ describe('AiFoundationService', () => {
   it('global disabledとkill switchではproviderを呼ばない', async () => {
     for (const config of [makeConfig({ enabled: false }), makeConfig({ killSwitch: true })]) {
       const provider = staticProvider();
-      const service = new AiFoundationService({ config, provider, guardStore: new MemoryGuardStore() });
+      const service = new AiFoundationService({
+        config,
+        provider,
+        guardStore: new MemoryGuardStore(),
+      });
       await expectCategory(service.generate(makeRequest()), 'disabled');
       expect(provider.generate).not.toHaveBeenCalled();
     }
   });
 
   it('Plugin disabledまたはGuild opt-inなしではproviderを呼ばない', async () => {
-    for (const request of [makeRequest({ pluginEnabled: false }), makeRequest({ guildOptIn: false })]) {
+    for (const request of [
+      makeRequest({ pluginEnabled: false }),
+      makeRequest({ guildOptIn: false }),
+    ]) {
       const provider = staticProvider();
       const service = new AiFoundationService({
         config: makeConfig(),
@@ -238,7 +247,9 @@ describe('AiFoundationService', () => {
       guardStore: new MemoryGuardStore(),
     });
     await expect(service.generate(makeRequest({ input: 'a' }))).resolves.toBeDefined();
-    await expect(service.generate(makeRequest({ input: 'abc', userId: 'user-2' }))).resolves.toBeDefined();
+    await expect(
+      service.generate(makeRequest({ input: 'abc', userId: 'user-2' })),
+    ).resolves.toBeDefined();
   });
 
   it('empty・character oversized・byte oversized inputを拒否する', async () => {
@@ -295,10 +306,7 @@ describe('AiFoundationService', () => {
       guardStore: new MemoryGuardStore(),
     });
     await service.generate(makeRequest({ userId: 'user-1' }));
-    await expectCategory(
-      service.generate(makeRequest({ userId: 'user-2' })),
-      'rate_limited',
-    );
+    await expectCategory(service.generate(makeRequest({ userId: 'user-2' })), 'rate_limited');
   });
 
   it('Guild quotaをprovider呼び出し前に予約して超過を拒否する', async () => {
@@ -347,7 +355,9 @@ describe('AiFoundationService', () => {
       provider: staticProvider(),
       guardStore: store,
     });
-    await service.generate(makeRequest({ guildId: 'guild-secret', scopeGuildId: 'guild-secret', userId: 'user-secret' }));
+    await service.generate(
+      makeRequest({ guildId: 'guild-secret', scopeGuildId: 'guild-secret', userId: 'user-secret' }),
+    );
 
     const keys = [...store.rateKeys, ...store.quotaKeys].join(' ');
     expect(keys).not.toContain('guild-secret');
@@ -363,8 +373,8 @@ describe('AiFoundationService', () => {
       provider: staticProvider(successProviderResult(rawResponse)),
       guardStore: new MemoryGuardStore(),
       telemetry: (event) => {
-      events.push(event);
-    },
+        events.push(event);
+      },
     });
 
     const result = await service.generate(makeRequest({ input: rawPrompt }));
@@ -402,7 +412,9 @@ describe('OpenAiResponsesProvider', () => {
         store: false,
         truncation: 'disabled',
       });
-      expect((init?.headers as Record<string, string>)['Authorization']).toBe('Bearer server-secret');
+      expect((init?.headers as Record<string, string>)['Authorization']).toBe(
+        'Bearer server-secret',
+      );
       return Response.json({
         status: 'completed',
         output: [
@@ -457,7 +469,10 @@ describe('OpenAiResponsesProvider', () => {
           headers: { 'content-length': '999999' },
         }),
     });
-    await expectCategory(provider.generate({ ...request, maxResponseBytes: 100 }), 'malformed_response');
+    await expectCategory(
+      provider.generate({ ...request, maxResponseBytes: 100 }),
+      'malformed_response',
+    );
   });
 
   it('AbortController timeoutをtimeoutへ変換する', async () => {
@@ -465,7 +480,9 @@ describe('OpenAiResponsesProvider', () => {
       apiKey: 'secret',
       fetchImpl: (_input, init) =>
         new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError')),
+          );
         }),
     });
     await expectCategory(provider.generate({ ...request, timeoutMs: 1 }), 'timeout');
@@ -474,7 +491,7 @@ describe('OpenAiResponsesProvider', () => {
 
 describe('cost estimation', () => {
   it('gpt-5.6-terra standard pricingからmicro USDを算出する', () => {
-    expect(estimateOpenAiCostMicroUsd('gpt-5.6-terra', 20, 10)).toBe(100);
+    expect(estimateOpenAiCostMicroUsd('gpt-5.6-terra', 20, 10)).toBe(160);
   });
 });
 
@@ -493,7 +510,9 @@ describe('RedisAiGuardStore', () => {
       allowed: true,
       retryAfterMs: 0,
     });
-    await expect(store.reserveGuildQuota('guild:hash', 'req', 100, 1000, 86_400_000)).resolves.toEqual({
+    await expect(
+      store.reserveGuildQuota('guild:hash', 'req', 100, 1000, 86_400_000),
+    ).resolves.toEqual({
       allowed: true,
       retryAfterMs: 0,
     });

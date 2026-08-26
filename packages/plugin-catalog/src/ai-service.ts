@@ -38,9 +38,9 @@ const OPENAI_STANDARD_PRICING: Record<
   AiOpenAiModel,
   { inputUsdPerMillion: number; outputUsdPerMillion: number }
 > = {
-  'gpt-5.6-sol': { inputUsdPerMillion: 2.5, outputUsdPerMillion: 15 },
-  'gpt-5.6-terra': { inputUsdPerMillion: 1.25, outputUsdPerMillion: 7.5 },
-  'gpt-5.6-luna': { inputUsdPerMillion: 0.5, outputUsdPerMillion: 3 },
+  'gpt-5.6-sol': { inputUsdPerMillion: 4, outputUsdPerMillion: 20 },
+  'gpt-5.6-terra': { inputUsdPerMillion: 2, outputUsdPerMillion: 12 },
+  'gpt-5.6-luna': { inputUsdPerMillion: 0.2, outputUsdPerMillion: 1.2 },
 };
 
 export const AI_DEFAULTS = {
@@ -143,11 +143,7 @@ export interface AiGuardStore {
     limitMicroUsd: number,
     windowMs: number,
   ): Promise<AiQuotaReservationResult>;
-  settleGuildQuota(
-    guildKey: string,
-    requestId: string,
-    actualMicroUsd: number,
-  ): Promise<number>;
+  settleGuildQuota(guildKey: string, requestId: string, actualMicroUsd: number): Promise<number>;
   acquireConcurrency(requestId: string, limit: number, leaseMs: number): Promise<boolean>;
   releaseConcurrency(requestId: string): Promise<void>;
 }
@@ -224,8 +220,10 @@ export function toSafeAiFoundationError(error: unknown): AiFoundationError {
 export function resolveAiFoundationConfig(
   env: Record<string, string | undefined> = process.env,
 ): AiFoundationConfig {
-  const providerValue = (env['HERTA_AI_PROVIDER']?.trim().toLowerCase() || AI_DEFAULTS.provider) as string;
-  if (!isAiProvider(providerValue)) throw new AiConfigurationError('invalid_provider', 'HERTA_AI_PROVIDER');
+  const providerValue = (env['HERTA_AI_PROVIDER']?.trim().toLowerCase() ||
+    AI_DEFAULTS.provider) as string;
+  if (!isAiProvider(providerValue))
+    throw new AiConfigurationError('invalid_provider', 'HERTA_AI_PROVIDER');
 
   const profileValue = (env['HERTA_AI_MODEL_PROFILE']?.trim().toLowerCase() ||
     AI_DEFAULTS.modelProfile) as string;
@@ -235,7 +233,8 @@ export function resolveAiFoundationConfig(
 
   const configuredModel = env['HERTA_AI_MODEL']?.trim();
   const modelValue = configuredModel || MODEL_BY_PROFILE[profileValue];
-  if (!isAiOpenAiModel(modelValue)) throw new AiConfigurationError('invalid_model', 'HERTA_AI_MODEL');
+  if (!isAiOpenAiModel(modelValue))
+    throw new AiConfigurationError('invalid_model', 'HERTA_AI_MODEL');
 
   return {
     enabled: envFlag(env['HERTA_AI_ENABLED'], AI_DEFAULTS.enabled),
@@ -243,10 +242,34 @@ export function resolveAiFoundationConfig(
     provider: providerValue,
     modelProfile: profileValue,
     model: modelValue,
-    maxInputChars: boundedInteger(env, 'HERTA_AI_MAX_INPUT_CHARS', AI_DEFAULTS.maxInputChars, 1, 16_000),
-    maxInputBytes: boundedInteger(env, 'HERTA_AI_MAX_INPUT_BYTES', AI_DEFAULTS.maxInputBytes, 1, 64_000),
-    maxOutputTokens: boundedInteger(env, 'HERTA_AI_MAX_OUTPUT_TOKENS', AI_DEFAULTS.maxOutputTokens, 1, 2_048),
-    maxOutputChars: boundedInteger(env, 'HERTA_AI_MAX_OUTPUT_CHARS', AI_DEFAULTS.maxOutputChars, 1, 12_000),
+    maxInputChars: boundedInteger(
+      env,
+      'HERTA_AI_MAX_INPUT_CHARS',
+      AI_DEFAULTS.maxInputChars,
+      1,
+      16_000,
+    ),
+    maxInputBytes: boundedInteger(
+      env,
+      'HERTA_AI_MAX_INPUT_BYTES',
+      AI_DEFAULTS.maxInputBytes,
+      1,
+      64_000,
+    ),
+    maxOutputTokens: boundedInteger(
+      env,
+      'HERTA_AI_MAX_OUTPUT_TOKENS',
+      AI_DEFAULTS.maxOutputTokens,
+      1,
+      2_048,
+    ),
+    maxOutputChars: boundedInteger(
+      env,
+      'HERTA_AI_MAX_OUTPUT_CHARS',
+      AI_DEFAULTS.maxOutputChars,
+      1,
+      12_000,
+    ),
     timeoutMs: boundedInteger(env, 'HERTA_AI_TIMEOUT_MS', AI_DEFAULTS.timeoutMs, 1_000, 30_000),
     providerResponseMaxBytes: boundedInteger(
       env,
@@ -255,9 +278,27 @@ export function resolveAiFoundationConfig(
       16 * 1024,
       2 * 1024 * 1024,
     ),
-    userRateLimit: boundedInteger(env, 'HERTA_AI_USER_RATE_LIMIT', AI_DEFAULTS.userRateLimit, 1, 120),
-    guildRateLimit: boundedInteger(env, 'HERTA_AI_GUILD_RATE_LIMIT', AI_DEFAULTS.guildRateLimit, 1, 600),
-    rateWindowMs: boundedInteger(env, 'HERTA_AI_RATE_WINDOW_MS', AI_DEFAULTS.rateWindowMs, 1_000, 60 * 60 * 1_000),
+    userRateLimit: boundedInteger(
+      env,
+      'HERTA_AI_USER_RATE_LIMIT',
+      AI_DEFAULTS.userRateLimit,
+      1,
+      120,
+    ),
+    guildRateLimit: boundedInteger(
+      env,
+      'HERTA_AI_GUILD_RATE_LIMIT',
+      AI_DEFAULTS.guildRateLimit,
+      1,
+      600,
+    ),
+    rateWindowMs: boundedInteger(
+      env,
+      'HERTA_AI_RATE_WINDOW_MS',
+      AI_DEFAULTS.rateWindowMs,
+      1_000,
+      60 * 60 * 1_000,
+    ),
     guildQuotaMicroUsd: boundedInteger(
       env,
       'HERTA_AI_GUILD_QUOTA_MICRO_USD',
@@ -511,7 +552,12 @@ export class OpenAiResponsesProvider implements AiGenerationProvider {
 
     if (!response.ok) {
       await response.body?.cancel().catch(() => undefined);
-      if (response.status === 408 || response.status === 409 || response.status === 429 || response.status >= 500) {
+      if (
+        response.status === 408 ||
+        response.status === 409 ||
+        response.status === 429 ||
+        response.status >= 500
+      ) {
         throw new AiFoundationError('provider_unavailable');
       }
       throw new AiFoundationError('provider_rejected');
@@ -868,13 +914,19 @@ export class RedisAiGuardStore implements AiGuardStore {
   }
 }
 
-function numericTuple(value: unknown, length: number): number[] {
-  if (!Array.isArray(value) || value.length < length) throw new AiFoundationError('internal_error');
-  return value.slice(0, length).map((item) => numericScalar(item));
+function numericTuple(value: unknown, length: 2): [number, number];
+function numericTuple(value: unknown, length: 3): [number, number, number];
+function numericTuple(value: unknown, length: 2 | 3): [number, number] | [number, number, number] {
+  if (!Array.isArray(value) || value.length < length) {
+    throw new AiFoundationError('internal_error');
+  }
+  if (length === 2) return [numericScalar(value[0]), numericScalar(value[1])];
+  return [numericScalar(value[0]), numericScalar(value[1]), numericScalar(value[2])];
 }
 
 function numericScalar(value: unknown): number {
-  const numberValue = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  const numberValue =
+    typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
   if (!Number.isFinite(numberValue)) throw new AiFoundationError('internal_error');
   return numberValue;
 }

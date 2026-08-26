@@ -232,6 +232,7 @@ const officialPluginIds = [
   'achievements',
   'activity-rules',
   'afk',
+  'ai',
   'auto-response',
   'birthday-role',
   'channel-policy',
