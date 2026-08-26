@@ -1,0 +1,50 @@
+name: AI Foundation Finalizer Env Repair
+
+on:
+  push:
+    branches:
+      - feat/ai-foundation-console-credentials
+    paths:
+      - .github/workflows/ai-foundation-finalizer-env-repair.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Align compose validation with normal CI
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/ai-foundation-compose-fix.yml')
+          text = path.read_text()
+          command = 'docker compose --env-file .env.production.example -f docker-compose.prod.yml config >/dev/null'
+          validated = (
+              'DISCORD_CLIENT_ID=ci-client-id '
+              'DISCORD_CLIENT_SECRET=ci-client-secret '
+              'DISCORD_BOT_TOKEN=ci-bot-token '
+              'TEAM_SPLIT_SECRET=ci-team-split-secret-for-compose-validation '
+              + command
+          )
+          if text.count(command) != 2:
+              raise SystemExit(f'expected 2 compose validation commands, found {text.count(command)}')
+          path.write_text(text.replace(command, validated))
+          PY
+          git diff --check
+
+      - name: Commit repair and remove temporary workflow
+        shell: bash
+        run: |
+          rm -f .github/workflows/ai-foundation-finalizer-env-repair.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(ci): align AI compose validation environment'
+          git push origin HEAD:feat/ai-foundation-console-credentials
