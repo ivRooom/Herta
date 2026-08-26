@@ -17,8 +17,7 @@ const historicalMultiConcurrentIndexMigrations = new Map([
   ],
 ]);
 
-const dollarQuoteTagPattern =
-  /^\$(?:[A-Za-z_\u0080-\u{10ffff}][A-Za-z0-9_\u0080-\u{10ffff}]*)?\$/u;
+const dollarQuoteTagPattern = /^\$(?:[A-Za-z_\u0080-\u{10ffff}][A-Za-z0-9_\u0080-\u{10ffff}]*)?\$/u;
 
 type SqlAnalysis = {
   concurrentIndexCount: number;
