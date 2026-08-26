@@ -118,6 +118,8 @@ test('production readiness checks remain valid after Authenticated Origin Pulls 
   assert.match(common, /\$\{COMPOSE\} exec -T studio node -e/u);
   assert.match(common, /http:\/\/127\.0\.0\.1:3000\/api\/auth\/providers/u);
   assert.match(common, /wait_for_edge\(\)/u);
+  assert.match(common, /--connect-timeout 5 --max-time 15/u);
+  assert.match(common, /--retry 3 --retry-delay 2 --retry-max-time 60 --retry-all-errors/u);
   assert.match(common, /https:\/\/\$\{HEALTH_DOMAIN\}\/api\/v1\/health/u);
   assert.match(common, /https:\/\/\$\{HEALTH_DOMAIN\}\/api\/auth\/providers/u);
   assert.doesNotMatch(common, /--resolve[^\n]*127\.0\.0\.1/u);
