@@ -1,3 +1,4 @@
+import { RuntimeConfigurationError } from '@herta/db';
 import { describe, expect, it, vi } from 'vitest';
 import {
   AiRuntimeConfigurationResolver,
@@ -19,9 +20,11 @@ function record(value: Record<string, unknown>, updatedAt = new Date('2026-08-27
 
 describe('AiRuntimeConfigurationResolver', () => {
   it('valid console settingをenv defaultより優先する', async () => {
-    const readConfiguration = vi.fn<ConfigurationReader>().mockResolvedValue(
-      record({ provider: 'openai', modelProfile: 'economy', reasoningEffort: 'medium' }),
-    );
+    const readConfiguration = vi
+      .fn<ConfigurationReader>()
+      .mockResolvedValue(
+        record({ provider: 'openai', modelProfile: 'economy', reasoningEffort: 'medium' }),
+      );
     const resolver = new AiRuntimeConfigurationResolver({
       prisma,
       env: {
@@ -37,6 +40,23 @@ describe('AiRuntimeConfigurationResolver', () => {
       storeAvailable: true,
       value: { provider: 'openai', modelProfile: 'economy', reasoningEffort: 'medium' },
       selection: { model: 'gpt-5.6-luna' },
+    });
+  });
+
+  it('valid console settingはinvalid env defaultより優先する', async () => {
+    const resolver = new AiRuntimeConfigurationResolver({
+      prisma,
+      env: { HERTA_AI_PROVIDER: 'unsupported' },
+      readConfiguration: vi
+        .fn<ConfigurationReader>()
+        .mockResolvedValue(
+          record({ provider: 'openai', modelProfile: 'balanced', reasoningEffort: 'low' }),
+        ),
+    });
+
+    await expect(resolver.resolve()).resolves.toMatchObject({
+      source: 'console',
+      value: { provider: 'openai', modelProfile: 'balanced', reasoningEffort: 'low' },
     });
   });
 
@@ -75,13 +95,27 @@ describe('AiRuntimeConfigurationResolver', () => {
     });
   });
 
+  it('persisted storage validation errorはfallbackせずfail closedする', async () => {
+    const resolver = new AiRuntimeConfigurationResolver({
+      prisma,
+      env: {},
+      readConfiguration: vi
+        .fn<ConfigurationReader>()
+        .mockRejectedValue(new RuntimeConfigurationError('invalid_value')),
+    });
+
+    await expect(resolver.resolve()).rejects.toMatchObject({ code: 'invalid_value' });
+  });
+
   it('persisted invalid settingはsilently downgradeせずfail closedする', async () => {
     const resolver = new AiRuntimeConfigurationResolver({
       prisma,
       env: { HERTA_AI_MODEL_PROFILE: 'balanced' },
-      readConfiguration: vi.fn<ConfigurationReader>().mockResolvedValue(
-        record({ provider: 'openai', modelProfile: 'balanced', reasoningEffort: 'turbo' }),
-      ),
+      readConfiguration: vi
+        .fn<ConfigurationReader>()
+        .mockResolvedValue(
+          record({ provider: 'openai', modelProfile: 'balanced', reasoningEffort: 'turbo' }),
+        ),
     });
 
     await expect(resolver.resolve()).rejects.toMatchObject({ code: 'invalid_reasoning_effort' });
