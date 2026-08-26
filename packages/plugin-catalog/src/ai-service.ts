@@ -407,7 +407,7 @@ export class AiFoundationService {
         this.config.maxOutputTokens,
       );
       if (reservationMicroUsd > this.config.perRequestCostLimitMicroUsd) {
-        throw new AiFoundationError('invalid_input');
+        throw new AiFoundationError('quota_exceeded');
       }
 
       const quota = await this.guardStore.reserveGuildQuota(
@@ -602,12 +602,16 @@ function parseOpenAiResponse(value: unknown): AiProviderResult {
   const status = value['status'];
   if (status === 'incomplete') {
     const incompleteDetails = value['incomplete_details'];
-    if (isRecord(incompleteDetails) && incompleteDetails['reason'] === 'max_output_tokens') {
+    if (
+      isRecord(incompleteDetails) &&
+      (incompleteDetails['reason'] === 'max_output_tokens' ||
+        incompleteDetails['reason'] === 'max_tokens')
+    ) {
       throw new AiFoundationError('output_too_large');
     }
     throw new AiFoundationError('provider_rejected');
   }
-  if (typeof status === 'string' && status !== 'completed') {
+  if (status !== 'completed') {
     throw new AiFoundationError('provider_rejected');
   }
 
@@ -741,12 +745,14 @@ function assertOpenAiPricingGuardCurrent(model: AiOpenAiModel, nowMs: number): v
 
 function emitTelemetrySafely(sink: AiTelemetrySink | undefined, event: AiTelemetryEvent): void {
   if (!sink) return;
-  try {
-    const pending = sink(event);
-    void Promise.resolve(pending).catch(() => undefined);
-  } catch {
-    // Telemetry must never change the user-facing AI result or expose raw content via fallback logs.
-  }
+  setTimeout(() => {
+    try {
+      const pending = sink(event);
+      void Promise.resolve(pending).catch(() => undefined);
+    } catch {
+      // Telemetry must never change the user-facing AI result or expose raw content via fallback logs.
+    }
+  }, 0);
 }
 
 function isAiProvider(value: string): value is AiProviderName {
