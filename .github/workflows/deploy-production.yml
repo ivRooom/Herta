@@ -207,9 +207,43 @@ jobs:
             upsert_env SPOTIFY_CLIENT_SECRET "${SPOTIFY_CLIENT_SECRET}"
             echo "Spotify runtime secretsを同期しました（値は非表示）"
 
-            # checkoutしたrefと同じdeploy helperを利用する。以降の失敗では
-            # container state / migration status / safe tail logを自動収集する。
+            # target revisionのdeploy helperを使ってimage/migration/service操作を行う。
+            # readinessだけはworkflow側の現行security boundaryとして固定し、
+            # workflow_dispatchでAOP-aware helper導入前のrefを選んでも
+            # certificateなしlocalhost -> Caddy checkへ退行させない。
             source deploy/scripts/_common.sh
+            wait_for_health() {
+              echo "=== Internal API health check (api:3001) ==="
+              for i in $(seq 1 24); do
+                if ${COMPOSE} exec -T api node -e \
+                  "fetch('http://127.0.0.1:3001/api/v1/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))" \
+                  > /dev/null 2>&1; then
+                  echo "API internal health check 成功"
+                  return 0
+                fi
+                echo "API 応答待ち... (${i}/24)"
+                sleep 5
+              done
+              echo "ERROR: API internal health check に失敗しました。" >&2
+              ${COMPOSE} logs --tail=100 api || true
+              return 1
+            }
+            wait_for_auth() {
+              echo "=== Internal Auth.js health check (studio:3000) ==="
+              for i in $(seq 1 12); do
+                if ${COMPOSE} exec -T studio node -e \
+                  "fetch('http://127.0.0.1:3000/api/auth/providers').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))" \
+                  > /dev/null 2>&1; then
+                  echo "Auth.js internal health check 成功"
+                  return 0
+                fi
+                echo "Studio認証応答待ち... (${i}/12)"
+                sleep 5
+              done
+              echo "ERROR: Auth.js internal health check に失敗しました。" >&2
+              ${COMPOSE} logs --tail=100 studio || true
+              return 1
+            }
             install_deploy_exit_trap
 
             ${COMPOSE} config --quiet
