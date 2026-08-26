@@ -114,7 +114,7 @@ bash deploy/scripts/health-check.sh
 
 ### 手動deploy script更新時のbootstrap
 
-`deploy/scripts/deploy.sh`はdeployment refをcheckout / fast-forwardした後に`_common.sh`を再読込し、readiness判定をtarget revisionのhelperで実行します。
+`deploy/scripts/deploy.sh`はdeployment refをcheckout / fast-forwardした後にtarget revisionの`_common.sh`を再読込します。ただし、AOP-awareな`wait_for_health` / `wait_for_auth` / `wait_for_edge`はcheckout前のcurrent scriptから保持して再適用します。そのため、AOP導入前の古いtagやbranchをdeploy対象にしても、正常系healthがlocalhost → Caddy HTTPSへ退行しません。
 
 ただし、この仕組みが入る前の古いcheckoutから実行中の旧`deploy.sh`プロセス自体へ、新しいcontrol flowを後付けすることはできません。AOP-aware deploy scriptを初めて導入する際に手動deployを使う場合は、先にrepositoryを更新してから新しいscriptを起動します。
 
