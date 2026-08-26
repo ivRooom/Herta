@@ -187,15 +187,18 @@ test('concurrent index matcher treats SQL comments as whitespace and ignores com
   );
 });
 
-test('concurrent index matcher does not mistake dollar signs inside identifiers for dollar quotes', () => {
-  assert.equal(
-    countConcurrentIndexes(`
-      CREATE INDEX CONCURRENTLY first$tag$ ON example (id);
-      CREATE INDEX CONCURRENTLY second$tag$ ON example (name);
-    `),
-    2,
-  );
-});
+test(
+  'concurrent index matcher does not mistake dollar signs inside identifiers for dollar quotes',
+  () => {
+    assert.equal(
+      countConcurrentIndexes(`
+        CREATE INDEX CONCURRENTLY first$tag$ ON example (id);
+        CREATE INDEX CONCURRENTLY second$tag$ ON example (name);
+      `),
+      2,
+    );
+  },
+);
 
 test('concurrent index matcher is conservative across standard string backslash modes', () => {
   const standardConformingSql = String.raw`
@@ -258,7 +261,9 @@ test('new migrations keep CREATE INDEX CONCURRENTLY isolated as a single stateme
     }
 
     if (analysis.concurrentIndexCount > 1) {
-      violations.push(`${migration.migrationName}: ${analysis.concurrentIndexCount} concurrent indexes`);
+      violations.push(
+        `${migration.migrationName}: ${analysis.concurrentIndexCount} concurrent indexes`,
+      );
       continue;
     }
 
