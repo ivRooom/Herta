@@ -173,7 +173,7 @@ describe('AiFoundationService', () => {
     expect(provider.generate).toHaveBeenCalledWith(
       expect.objectContaining({ maxOutputTokens: 800, model: 'gpt-5.6-terra' }),
     );
-    expect(events).toHaveLength(1);
+    await vi.waitFor(() => expect(events).toHaveLength(1));
     expect(events[0]).toMatchObject({
       requestId: 'request-1',
       feature: 'knowledge.qa',
@@ -470,7 +470,7 @@ describe('OpenAiResponsesProvider', () => {
   it('malformed provider responseを拒否する', async () => {
     const provider = new OpenAiResponsesProvider({
       apiKey: 'secret',
-      fetchImpl: async () => Response.json({ output: [], usage: null }),
+      fetchImpl: async () => Response.json({ status: 'completed', output: [], usage: null }),
     });
     await expectCategory(provider.generate(request), 'malformed_response');
   });
