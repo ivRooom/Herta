@@ -197,10 +197,9 @@ export async function readRuntimeSecret(
 ): Promise<string | null> {
   const normalizedName = validateRuntimeSecretName(name);
   const record = await prisma.runtimeSecret.findUnique({ where: { name: normalizedName } });
-  if (!record) return null;
-
   const masterKey = resolveRuntimeSecretMasterKey(env);
   try {
+    if (!record) return null;
     return decryptRuntimeSecret(
       normalizedName,
       {
