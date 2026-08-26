@@ -143,26 +143,39 @@ test('production readiness checks remain valid after Authenticated Origin Pulls 
   }
 });
 
-test('manual deploy reloads target revision helpers after checkout', () => {
+test('manual deploy reloads target helpers without downgrading AOP health checks', () => {
   const deploy = readFileSync('deploy/scripts/deploy.sh', 'utf8');
   const sourceNeedle = 'source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"';
   const initialSourceIndex = deploy.indexOf(sourceNeedle);
+  const preserveHealthIndex = deploy.indexOf(
+    'AOP_WAIT_FOR_HEALTH_DEF="$(declare -f wait_for_health)"',
+  );
   const checkoutIndex = deploy.indexOf('git checkout "${DEPLOY_REF}"');
   const pullIndex = deploy.indexOf('git pull --ff-only origin "${DEPLOY_REF}"');
   const reloadIndex = deploy.indexOf(sourceNeedle, initialSourceIndex + sourceNeedle.length);
+  const restoreHealthIndex = deploy.indexOf('eval "${AOP_WAIT_FOR_HEALTH_DEF}"');
   const healthIndex = deploy.indexOf('\nwait_for_health\n');
 
   assert.ok(initialSourceIndex >= 0, 'deploy must source bootstrap helpers');
   assert.ok(
-    checkoutIndex > initialSourceIndex,
-    'deploy must checkout after bootstrap helpers load',
+    preserveHealthIndex > initialSourceIndex,
+    'deploy must preserve AOP-aware health helpers before changing refs',
   );
+  assert.ok(checkoutIndex > preserveHealthIndex, 'deploy must preserve helpers before checkout');
   assert.ok(pullIndex > checkoutIndex, 'deploy must fast-forward the selected ref after checkout');
   assert.ok(
     reloadIndex > pullIndex,
-    'deploy must reload helpers from the deployment target revision',
+    'deploy must reload target-specific helpers from the deployment revision',
   );
-  assert.ok(healthIndex > reloadIndex, 'readiness checks must use the reloaded target helpers');
+  assert.ok(
+    restoreHealthIndex > reloadIndex,
+    'deploy must restore AOP-aware health helpers after loading target helpers',
+  );
+  assert.ok(healthIndex > restoreHealthIndex, 'readiness checks must use preserved AOP helpers');
+  assert.match(deploy, /AOP_WAIT_FOR_AUTH_DEF="\$\(declare -f wait_for_auth\)"/u);
+  assert.match(deploy, /AOP_WAIT_FOR_EDGE_DEF="\$\(declare -f wait_for_edge\)"/u);
+  assert.match(deploy, /eval "\$\{AOP_WAIT_FOR_AUTH_DEF\}"/u);
+  assert.match(deploy, /eval "\$\{AOP_WAIT_FOR_EDGE_DEF\}"/u);
 });
 
 test('rollback keeps AOP-aware edge checks independent from the target revision', () => {
