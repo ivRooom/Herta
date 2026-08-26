@@ -12,10 +12,7 @@ export interface RuntimeConfigurationRecord {
   updatedAt: Date;
 }
 
-export type RuntimeConfigurationErrorCode =
-  | 'invalid_name'
-  | 'invalid_value'
-  | 'invalid_actor';
+export type RuntimeConfigurationErrorCode = 'invalid_name' | 'invalid_value' | 'invalid_actor';
 
 export class RuntimeConfigurationError extends Error {
   readonly code: RuntimeConfigurationErrorCode;
