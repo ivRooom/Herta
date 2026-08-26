@@ -34,6 +34,8 @@ Hertaの生成AI機能をDiscord/RAG機能から分離し、provider呼び出し
 - per-request preflight cost cap: $0.03
 - global kill switch: `HERTA_AI_KILL_SWITCH`
 
+preflightの入力token予約はtokenizerの平均圧縮率を仮定せず、UTF-8 byte長を保守的なproxyとして使用します。provider完了後はResponseのauthoritative usageで実コストへsettleします。
+
 `quality` profileの最大入力+最大出力は既定$0.03 request capを超え得ます。これは意図したcost guardで、qualityを使う場合も無条件にcapを広げず、利用実績を確認してserver-side envで明示調整します。
 
 ## Enablement gates
@@ -103,7 +105,7 @@ Redis rate/quota keyではraw Guild ID / User IDをSHA-256由来の短いprivacy
 - `truncation:'disabled'`
 - `reasoning.effort:'low'`
 - `max_output_tokens` server-side bound
-- AbortController timeout
+- AbortController timeoutをHTTP headers受信だけでなくresponse body完読まで適用
 - bounded provider response parsing
 
 `store:false`はHerta側のprivacy方針の一部ですが、provider側のabuse-monitoring retention等をゼロにする保証として扱いません。
