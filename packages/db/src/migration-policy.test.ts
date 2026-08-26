@@ -76,9 +76,17 @@ function maskSqlCommentsAndLiterals(sql: string): string {
 
     const quote = sql[index];
     if (quote === "'" || quote === '"') {
+      const isEscapeString =
+        quote === "'" &&
+        (sql[index - 1] === 'E' || sql[index - 1] === 'e') &&
+        (index < 2 || !/[A-Za-z0-9_$]/u.test(sql[index - 2] ?? ''));
       const doubledQuote = `${quote}${quote}`;
       let cursor = index + 1;
       while (cursor < sql.length) {
+        if (isEscapeString && sql[cursor] === '\\') {
+          cursor += cursor + 1 < sql.length ? 2 : 1;
+          continue;
+        }
         if (sql.startsWith(doubledQuote, cursor)) {
           cursor += 2;
           continue;
@@ -94,9 +102,7 @@ function maskSqlCommentsAndLiterals(sql: string): string {
     }
 
     if (sql[index] === '$') {
-      const tagMatch = sql
-        .slice(index)
-        .match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/u);
+      const tagMatch = sql.slice(index).match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/u);
       if (tagMatch) {
         const tag = tagMatch[0];
         const endIndex = sql.indexOf(tag, index + tag.length);
@@ -135,6 +141,15 @@ test(
     `),
       0,
     );
+
+    assert.equal(
+      countConcurrentIndexes(String.raw`
+      SELECT E'it\'s still a string: CREATE INDEX CONCURRENTLY fake_escape_idx ON example (id)';
+      CREATE INDEX CONCURRENTLY first_real_idx ON example (id);
+      CREATE UNIQUE INDEX CONCURRENTLY second_real_idx ON example (name);
+    `),
+      2,
+    );
   },
 );
 
@@ -166,9 +181,7 @@ test('new migrations contain at most one CREATE INDEX CONCURRENTLY statement', a
     }
 
     if (concurrentIndexCount > 1) {
-      violations.push(
-        `${migration.migrationName}: ${concurrentIndexCount} concurrent indexes`,
-      );
+      violations.push(`${migration.migrationName}: ${concurrentIndexCount} concurrent indexes`);
     }
   }
 
