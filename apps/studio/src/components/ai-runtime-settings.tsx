@@ -99,10 +99,10 @@ export function AiRuntimeSettings() {
   );
   const canSave = Boolean(
     runtime &&
-      profilePolicy &&
-      reasoningEffort &&
-      profilePolicy.supportedReasoningEfforts.includes(reasoningEffort) &&
-      !saving,
+    profilePolicy &&
+    reasoningEffort &&
+    profilePolicy.supportedReasoningEfforts.includes(reasoningEffort) &&
+    !saving,
   );
 
   const selectProvider = (nextProvider: Provider) => {
