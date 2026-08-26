@@ -17,6 +17,11 @@ const historicalMultiConcurrentIndexMigrations = new Map([
   ],
 ]);
 
+type SqlAnalysis = {
+  concurrentIndexCount: number;
+  executableStatementCount: number;
+};
+
 async function listMigrationSqlFiles() {
   const entries = await readdir(migrationsDir, { withFileTypes: true });
   return entries
@@ -31,12 +36,37 @@ function sha256(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
-function countConcurrentIndexes(sql: string): number {
-  const matchableSql = maskSqlCommentsAndLiterals(sql);
-  return (matchableSql.match(/\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\b/gi) ?? []).length;
+function analyzeSql(sql: string, backslashEscapesInStandardStrings: boolean): SqlAnalysis {
+  const matchableSql = maskSqlCommentsAndLiterals(sql, backslashEscapesInStandardStrings);
+  return {
+    concurrentIndexCount: (
+      matchableSql.match(/\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\b/gi) ?? []
+    ).length,
+    executableStatementCount: matchableSql
+      .split(';')
+      .map((statement) => statement.trim())
+      .filter(Boolean).length,
+  };
 }
 
-function maskSqlCommentsAndLiterals(sql: string): string {
+function analyzeSqlConservatively(sql: string): SqlAnalysis {
+  const analyses = [analyzeSql(sql, false), analyzeSql(sql, true)];
+  return {
+    concurrentIndexCount: Math.max(...analyses.map((analysis) => analysis.concurrentIndexCount)),
+    executableStatementCount: Math.max(
+      ...analyses.map((analysis) => analysis.executableStatementCount),
+    ),
+  };
+}
+
+function countConcurrentIndexes(sql: string): number {
+  return analyzeSqlConservatively(sql).concurrentIndexCount;
+}
+
+function maskSqlCommentsAndLiterals(
+  sql: string,
+  backslashEscapesInStandardStrings: boolean,
+): string {
   let output = '';
   let index = 0;
 
@@ -77,11 +107,13 @@ function maskSqlCommentsAndLiterals(sql: string): string {
       const isEscapeString =
         quote === "'" &&
         (sql[index - 1] === 'E' || sql[index - 1] === 'e') &&
-        (index < 2 || !/[A-Za-z0-9_$]/u.test(sql[index - 2] ?? ''));
+        (index < 2 || !isIdentifierContinuationChar(sql[index - 2]));
+      const backslashEscapes =
+        quote === "'" && (isEscapeString || backslashEscapesInStandardStrings);
       const doubledQuote = `${quote}${quote}`;
       let cursor = index + 1;
       while (cursor < sql.length) {
-        if (isEscapeString && sql[cursor] === '\\') {
+        if (backslashEscapes && sql[cursor] === '\\') {
           cursor += cursor + 1 < sql.length ? 2 : 1;
           continue;
         }
@@ -99,7 +131,10 @@ function maskSqlCommentsAndLiterals(sql: string): string {
       continue;
     }
 
-    if (sql[index] === '$') {
+    if (
+      sql[index] === '$' &&
+      (index === 0 || !isIdentifierContinuationChar(sql[index - 1]))
+    ) {
       const tagMatch = sql.slice(index).match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/u);
       if (tagMatch) {
         const tag = tagMatch[0];
@@ -114,6 +149,10 @@ function maskSqlCommentsAndLiterals(sql: string): string {
   }
 
   return output;
+}
+
+function isIdentifierContinuationChar(value: string | undefined): boolean {
+  return value !== undefined && /[\p{L}\p{N}_$]/u.test(value);
 }
 
 test('concurrent index matcher treats SQL comments as whitespace and ignores comment/literal text', () => {
@@ -148,14 +187,57 @@ test('concurrent index matcher treats SQL comments as whitespace and ignores com
   );
 });
 
-test('new migrations contain at most one CREATE INDEX CONCURRENTLY statement', async () => {
+test('concurrent index matcher does not mistake dollar signs inside identifiers for dollar quotes', () => {
+  assert.equal(
+    countConcurrentIndexes(`
+      CREATE INDEX CONCURRENTLY first$tag$ ON example (id);
+      CREATE INDEX CONCURRENTLY second$tag$ ON example (name);
+    `),
+    2,
+  );
+});
+
+test('concurrent index matcher is conservative across standard string backslash modes', () => {
+  const standardConformingSql = String.raw`
+    SELECT 'C:\';
+    CREATE INDEX CONCURRENTLY first_real_idx ON example (id);
+    CREATE INDEX CONCURRENTLY second_real_idx ON example (name);
+  `;
+  assert.equal(analyzeSql(standardConformingSql, false).concurrentIndexCount, 2);
+  assert.equal(countConcurrentIndexes(standardConformingSql), 2);
+
+  const legacyBackslashSql = String.raw`
+    SELECT 'it\'s still a string: CREATE INDEX CONCURRENTLY fake_escape_idx ON example (id)';
+    CREATE INDEX CONCURRENTLY first_real_idx ON example (id);
+    CREATE INDEX CONCURRENTLY second_real_idx ON example (name);
+  `;
+  assert.equal(analyzeSql(legacyBackslashSql, true).concurrentIndexCount, 2);
+  assert.equal(countConcurrentIndexes(legacyBackslashSql), 2);
+});
+
+test('concurrent index migration must contain exactly one executable statement', () => {
+  assert.deepEqual(analyzeSqlConservatively('CREATE INDEX CONCURRENTLY idx ON example (id);'), {
+    concurrentIndexCount: 1,
+    executableStatementCount: 1,
+  });
+
+  assert.equal(
+    analyzeSqlConservatively(`
+      CREATE INDEX CONCURRENTLY idx ON example (id);
+      ANALYZE example;
+    `).executableStatementCount,
+    2,
+  );
+});
+
+test('new migrations keep CREATE INDEX CONCURRENTLY isolated as a single statement', async () => {
   const migrations = await listMigrationSqlFiles();
   const violations: string[] = [];
   const historicalExceptionsSeen = new Set<string>();
 
   for (const migration of migrations) {
     const sql = await readFile(migration.sqlPath, 'utf8');
-    const concurrentIndexCount = countConcurrentIndexes(sql);
+    const analysis = analyzeSqlConservatively(sql);
     const expectedHistoricalSha256 = historicalMultiConcurrentIndexMigrations.get(
       migration.migrationName,
     );
@@ -168,15 +250,22 @@ test('new migrations contain at most one CREATE INDEX CONCURRENTLY statement', a
         `${migration.migrationName} is already applied in production and its full SQL must remain immutable`,
       );
       assert.equal(
-        concurrentIndexCount,
+        analysis.concurrentIndexCount,
         2,
         `${migration.migrationName} must remain the exact historical two-index incident`,
       );
       continue;
     }
 
-    if (concurrentIndexCount > 1) {
-      violations.push(`${migration.migrationName}: ${concurrentIndexCount} concurrent indexes`);
+    if (analysis.concurrentIndexCount > 1) {
+      violations.push(`${migration.migrationName}: ${analysis.concurrentIndexCount} concurrent indexes`);
+      continue;
+    }
+
+    if (analysis.concurrentIndexCount === 1 && analysis.executableStatementCount !== 1) {
+      violations.push(
+        `${migration.migrationName}: CREATE INDEX CONCURRENTLY must be the only executable SQL statement (${analysis.executableStatementCount} found)`,
+      );
     }
   }
 
@@ -188,6 +277,6 @@ test('new migrations contain at most one CREATE INDEX CONCURRENTLY statement', a
   assert.deepEqual(
     violations,
     [],
-    `Split concurrent indexes into separate Prisma migrations:\n${violations.join('\n')}`,
+    `Keep each concurrent index in its own single-statement Prisma migration:\n${violations.join('\n')}`,
   );
 });

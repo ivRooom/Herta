@@ -10,11 +10,15 @@ Prisma は適用済み migration の履歴と checksum を前提にするため�
 
 ## `CREATE INDEX CONCURRENTLY` policy
 
-新規 migration は原則として次を守ります。
+新規 migration は次を守ります。
 
-- `1 migration = 1 CREATE INDEX CONCURRENTLY`
-- 2本以上の concurrent index を同一 `migration.sql` へ入れない
+- `CREATE INDEX CONCURRENTLY` を含む migration は、**そのindex文だけのsingle-statement migration**にする
+- 同一 `migration.sql` に2本以上の concurrent index を入れない
+- concurrent index と `ALTER TABLE` / `ANALYZE` / `SET` 等の別の実行SQLを同居させない
 - SQL comment / quoted literal / dollar string 内の文字列は実行文として数えない
+- dollar-quote tagはunquoted identifier中の `$tag$` と区別する
+- string literalのbackslash解釈差でguardを迂回できないよう、CI scannerは `standard_conforming_strings` の両解釈を保守的に検査する
+- 新規SQLでbackslash escapeが必要な文字列は、挙動を明示できる `E'...'` を優先する
 - CI の `packages/db/src/migration-policy.test.ts` を無効化・緩和して通さない
 
 `20260825022000_suggestion_staff_queue_index` は 2026-08-25 の production incident で既に適用履歴へ入った historical exception です。checksum/history を守るため、そのSQL全体を SHA-256 で固定し、新しい例外の追加は認めません。
@@ -42,7 +46,8 @@ production で migration が失敗した場合は、次の順序を崩しませ�
 
 - migration は既存production migrationを書き換えていない
 - destructive DDL / long lock / table rewrite の影響を確認した
-- `CREATE INDEX CONCURRENTLY` は1 migrationにつき最大1本
+- `CREATE INDEX CONCURRENTLY` を含む場合、その文だけのsingle-statement migrationになっている
+- concurrent indexを複数本作る場合はmigration自体を分割した
 - index / unique / FK がexisting dataと互換である
 - rollbackが必要な場合のforward-fixまたはrestore方針が明確
 - `pnpm db:generate`
