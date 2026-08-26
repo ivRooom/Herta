@@ -63,7 +63,9 @@ describe('AiRuntimeConfigurationResolver', () => {
     const resolver = new AiRuntimeConfigurationResolver({
       prisma,
       env: {},
-      readConfiguration: vi.fn<ConfigurationReader>().mockRejectedValue(new Error('db unavailable')),
+      readConfiguration: vi
+        .fn<ConfigurationReader>()
+        .mockRejectedValue(new Error('db unavailable')),
     });
 
     await expect(resolver.resolve()).resolves.toMatchObject({
