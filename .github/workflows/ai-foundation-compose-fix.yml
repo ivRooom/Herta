@@ -1,4 +1,4 @@
-name: AI Foundation Compose Fix
+name: AI Foundation Finalize Source
 
 on:
   push:
@@ -9,33 +9,131 @@ permissions:
   contents: write
 
 jobs:
-  fix-compose-generator:
+  finalize-source:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      - name: Make model profile the only production model selector
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Normalize reviewed integration generator
+        shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
+
           path = Path('.github/workflows/ai-foundation-draft-validate.yml')
           text = path.read_text()
-          targets = [
+
+          # Production model selection is profile-only. Do not expose an arbitrary
+          # HERTA_AI_MODEL override through Compose or committed env templates.
+          text = text.replace(
               '                HERTA_AI_MODEL: ${HERTA_AI_MODEL:-}\n',
-              '          # 通常は空欄。server-side allowlist内で明示overrideする場合のみ指定する。\n',
+              '',
+              1,
+          )
+          text = text.replace(
+              '          # 通常は空欄。server-side allowlist内で明示overrideする場合のみ指定する。\n'
               '          HERTA_AI_MODEL=\n',
-          ]
-          for target in targets:
-              if target not in text:
-                  raise SystemExit(f'expected workflow generator line not found: {target!r}')
-              text = text.replace(target, '', 1)
+              '',
+              1,
+          )
+
+          # The generator's multiline Compose fragment accidentally carried the
+          # Python source indentation into YAML. Normalize Bot environment keys
+          # to the same six-space indentation as REDIS_URL/DISCORD_CLIENT_ID.
+          text = text.replace('\n                HERTA_', '\n      HERTA_')
+          text = text.replace('\n                OPENAI_API_KEY:', '\n      OPENAI_API_KEY:')
+          text = text.replace('\n                DISCORD_CLIENT_ID:', '\n      DISCORD_CLIENT_ID:')
+
           path.write_text(text)
           PY
+
+      - name: Apply AI Foundation integration as source files
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import textwrap
+
+          source = Path('.github/workflows/ai-foundation-draft-validate.yml').read_text().splitlines()
+          start_marker = '      - name: Apply AI Foundation integration'
+          end_marker = '      - name: Prisma Generate'
+          start = source.index(start_marker)
+          run_line = next(i for i in range(start + 1, len(source)) if source[i].strip() == 'run: |')
+          end = source.index(end_marker, run_line + 1)
+          script = textwrap.dedent('\n'.join(source[run_line + 1:end])) + '\n'
+          Path('/tmp/apply-ai-foundation.sh').write_text(script)
+          PY
+          bash /tmp/apply-ai-foundation.sh
+
+      - name: Enforce profile-only production model selection
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          compose = Path('docker-compose.prod.yml')
+          text = compose.read_text()
+          text = text.replace('      HERTA_AI_MODEL: ${HERTA_AI_MODEL:-}\n', '', 1)
+          compose.write_text(text)
+
+          for env_name in ['.env.example', '.env.production.example']:
+              path = Path(env_name)
+              text = path.read_text()
+              text = text.replace(
+                  '# 通常は空欄。server-side allowlist内で明示overrideする場合のみ指定する。\nHERTA_AI_MODEL=\n',
+                  '',
+                  1,
+              )
+              path.write_text(text)
+          PY
           git diff --check
-      - name: Commit compose generator fix
+
+      - name: Prisma Generate
+        run: pnpm db:generate
+      - name: Format Check
+        run: pnpm format:check
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+      - name: Production Compose Validation
+        run: docker compose --env-file .env.production.example -f docker-compose.prod.yml config >/dev/null
+
+      - name: Remove temporary validation machinery
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          ignore = Path('.prettierignore')
+          text = ignore.read_text()
+          text = text.replace('\n.env.example\n.env.production.example', '')
+          ignore.write_text(text)
+          PY
+          rm -f \
+            .github/workflows/ai-foundation-compose-fix.yml \
+            .github/workflows/ai-foundation-draft-validate.yml \
+            .github/workflows/ai-foundation-finalize-validation.yml
+          git diff --check
+          pnpm format:check
+          docker compose --env-file .env.production.example -f docker-compose.prod.yml config >/dev/null
+
+      - name: Commit validated source integration
+        shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/workflows/ai-foundation-draft-validate.yml
-          git commit -m 'fix(ai): select production model through profile only'
+          git add -A
+          git commit -m 'feat(ai): finalize runtime credential foundation'
           git push origin HEAD:feat/ai-foundation-console-credentials
