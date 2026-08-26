@@ -10,6 +10,10 @@
       "types": "./src/index.ts",
       "default": "./dist/index.js"
     },
+    "./ai-service": {
+      "types": "./src/ai-service.ts",
+      "default": "./dist/ai-service.js"
+    },
     "./moderation-runtime": {
       "types": "./src/moderation-runtime.ts",
       "default": "./dist/moderation-runtime.js"

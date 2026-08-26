@@ -9,6 +9,7 @@ import type { PluginManifest } from '@herta/shared';
 import { achievementsManifest } from './manifests/achievements.js';
 import { activityRulesManifest } from './manifests/activity-rules.js';
 import { afkManifest } from './manifests/afk.js';
+import { aiManifest } from './manifests/ai.js';
 import { birthdayRoleManifest } from './manifests/birthday-role.js';
 import { channelPolicyManifest } from './manifests/channel-policy.js';
 import { communityProfileManifest } from './manifests/community-profile.js';
@@ -27,6 +28,7 @@ import { xpLevelManifest } from './manifests/xp-level.js';
 export { achievementsManifest } from './manifests/achievements.js';
 export { activityRulesManifest } from './manifests/activity-rules.js';
 export { afkManifest } from './manifests/afk.js';
+export { aiManifest } from './manifests/ai.js';
 export { birthdayRoleManifest } from './manifests/birthday-role.js';
 export { channelPolicyManifest } from './manifests/channel-policy.js';
 export { communityProfileManifest } from './manifests/community-profile.js';
@@ -119,6 +121,7 @@ const rawPluginManifests: PluginManifest[] = [
   achievementsManifest,
   activityRulesManifest,
   afkManifest,
+  aiManifest,
   autoResponseManifest,
   birthdayRoleManifest,
   channelPolicyManifest,
