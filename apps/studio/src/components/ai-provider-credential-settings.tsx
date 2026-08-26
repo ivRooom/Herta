@@ -114,7 +114,7 @@ export function AiProviderCredentialSettings() {
     }
   };
 
-  if (loadState === 'hidden') return null;
+  if (loadState === 'loading' || loadState === 'hidden') return null;
 
   return (
     <section className="rounded-2xl border border-border bg-surface p-5 shadow-card">
@@ -143,14 +143,7 @@ export function AiProviderCredentialSettings() {
         ) : null}
       </div>
 
-      {loadState === 'loading' ? (
-        <p
-          className="mt-5 rounded-xl border border-border bg-background p-4 text-sm text-muted"
-          role="status"
-        >
-          Credential状態を確認しています…
-        </p>
-      ) : loadState === 'error' ? (
+      {loadState === 'error' ? (
         <div className="mt-5 rounded-xl border border-red-500/30 bg-red-500/10 p-4">
           <p className="text-sm text-red-700 dark:text-red-300">
             Credential状態を読み込めませんでした。
