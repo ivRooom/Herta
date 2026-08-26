@@ -157,26 +157,29 @@ describe('AI Foundation post-merge hardening', () => {
     },
   );
 
-  it.each([undefined, null, 'queued'])('Responses API status=%sを成功扱いしない', async (status) => {
-    const provider = new OpenAiResponsesProvider({
-      apiKey: 'server-secret',
-      fetchImpl: async () =>
-        Response.json({
-          ...(status === undefined ? {} : { status }),
-          output: [
-            {
-              type: 'message',
-              content: [{ type: 'output_text', text: 'should-not-return', annotations: [] }],
-            },
-          ],
-          usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
-        }),
-    });
+  it.each([undefined, null, 'queued'])(
+    'Responses API status=%sを成功扱いしない',
+    async (status) => {
+      const provider = new OpenAiResponsesProvider({
+        apiKey: 'server-secret',
+        fetchImpl: async () =>
+          Response.json({
+            ...(status === undefined ? {} : { status }),
+            output: [
+              {
+                type: 'message',
+                content: [{ type: 'output_text', text: 'should-not-return', annotations: [] }],
+              },
+            ],
+            usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
+          }),
+      });
 
-    await expect(provider.generate(providerRequest())).rejects.toMatchObject({
-      category: 'provider_rejected',
-    });
-  });
+      await expect(provider.generate(providerRequest())).rejects.toMatchObject({
+        category: 'provider_rejected',
+      });
+    },
+  );
 
   it('Guild quota Luaはaccepted reservationでtotal TTLを再延長せずreservationsを残TTLへ合わせる', async () => {
     const evalMock = vi.fn<RedisEvalClient['eval']>().mockResolvedValue([1, 100, 42_000]);
