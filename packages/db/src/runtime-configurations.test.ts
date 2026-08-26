@@ -11,8 +11,7 @@ test('allowlisted global runtime configuration nameだけを許可する', () =>
   assert.equal(validateRuntimeConfigurationName(AI_RUNTIME_CONFIGURATION), 'ai.runtime');
   assert.throws(
     () => validateRuntimeConfigurationName('arbitrary.runtime'),
-    (error: unknown) =>
-      error instanceof RuntimeConfigurationError && error.code === 'invalid_name',
+    (error: unknown) => error instanceof RuntimeConfigurationError && error.code === 'invalid_name',
   );
 });
 
