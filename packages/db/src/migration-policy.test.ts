@@ -82,6 +82,14 @@ function countConcurrentIndexes(sql: string): number {
   return analyzeSqlConservatively(sql).concurrentIndexCount;
 }
 
+function findLineCommentEnd(sql: string, startIndex: number): number {
+  const lineFeedIndex = sql.indexOf('\n', startIndex);
+  const carriageReturnIndex = sql.indexOf('\r', startIndex);
+  if (lineFeedIndex === -1) return carriageReturnIndex === -1 ? sql.length : carriageReturnIndex;
+  if (carriageReturnIndex === -1) return lineFeedIndex;
+  return Math.min(lineFeedIndex, carriageReturnIndex);
+}
+
 function maskSqlCommentsAndLiterals(
   sql: string,
   backslashEscapesInStandardStrings: boolean,
@@ -98,8 +106,7 @@ function maskSqlCommentsAndLiterals(
 
   while (index < sql.length) {
     if (sql.startsWith('--', index)) {
-      const endIndex = sql.indexOf('\n', index + 2);
-      maskUntil(endIndex === -1 ? sql.length : endIndex);
+      maskUntil(findLineCommentEnd(sql, index + 2));
       continue;
     }
 
@@ -211,6 +218,17 @@ test('concurrent index matcher treats SQL comments as whitespace and ignores com
       SELECT "CREATE INDEX CONCURRENTLY fake_identifier" FROM example;
     `),
     0,
+  );
+
+  assert.equal(
+    countConcurrentIndexes(
+      [
+        '-- CREATE INDEX CONCURRENTLY fake_cr_comment_idx ON example (id);',
+        'CREATE INDEX CONCURRENTLY first_cr_idx ON example (id);',
+        'CREATE UNIQUE INDEX CONCURRENTLY second_cr_idx ON example (name);',
+      ].join('\r'),
+    ),
+    2,
   );
 
   assert.equal(
