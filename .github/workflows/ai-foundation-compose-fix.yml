@@ -99,6 +99,23 @@ jobs:
           PY
           git diff --check
 
+      - name: Prepare final source tree
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          ignore = Path('.prettierignore')
+          text = ignore.read_text()
+          text = text.replace('\n.env.example\n.env.production.example', '')
+          ignore.write_text(text)
+          PY
+          rm -f \
+            .github/workflows/ai-foundation-compose-fix.yml \
+            .github/workflows/ai-foundation-draft-validate.yml \
+            .github/workflows/ai-foundation-finalize-validation.yml
+          git diff --check
+
       - name: Prisma Generate
         run: pnpm db:generate
       - name: Format Check
@@ -114,21 +131,17 @@ jobs:
       - name: Production Compose Validation
         run: docker compose --env-file .env.production.example -f docker-compose.prod.yml config >/dev/null
 
-      - name: Remove temporary validation machinery
+      - name: Final source verification
         shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          ignore = Path('.prettierignore')
-          text = ignore.read_text()
-          text = text.replace('\n.env.example\n.env.production.example', '')
-          ignore.write_text(text)
-          PY
-          rm -f \
-            .github/workflows/ai-foundation-compose-fix.yml \
-            .github/workflows/ai-foundation-draft-validate.yml \
-            .github/workflows/ai-foundation-finalize-validation.yml
+          test ! -e .github/workflows/ai-foundation-compose-fix.yml
+          test ! -e .github/workflows/ai-foundation-draft-validate.yml
+          test ! -e .github/workflows/ai-foundation-finalize-validation.yml
+          ! grep -q '^\.env\.example$' .prettierignore
+          ! grep -q '^\.env\.production\.example$' .prettierignore
+          ! grep -q 'HERTA_AI_MODEL:' docker-compose.prod.yml
+          ! grep -q '^HERTA_AI_MODEL=' .env.example
+          ! grep -q '^HERTA_AI_MODEL=' .env.production.example
           git diff --check
           pnpm format:check
           docker compose --env-file .env.production.example -f docker-compose.prod.yml config >/dev/null
