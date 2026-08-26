@@ -126,10 +126,7 @@ test(
 
     assert.match(workflow, /\n\s+wait_for_health\n/u);
     assert.match(workflow, /\n\s+wait_for_auth\n/u);
-    assert.doesNotMatch(
-      workflow,
-      /--resolve\s+herta\.ivrm\.jp:443:127\.0\.0\.1/u,
-    );
+    assert.doesNotMatch(workflow, /--resolve\s+herta\.ivrm\.jp:443:127\.0\.0\.1/u);
     assert.match(workflow, /https:\/\/herta\.ivrm\.jp\/api\/v1\/health/u);
     assert.match(workflow, /https:\/\/herta\.ivrm\.jp\/api\/auth\/providers/u);
 
@@ -149,32 +146,21 @@ test(
   },
 );
 
-test(
-  'rollback keeps AOP-aware edge checks independent from the target revision',
-  () => {
-    const rollback = readFileSync('deploy/scripts/rollback.sh', 'utf8');
-    const sourceIndex = rollback.indexOf(
-      'source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"',
-    );
-    const checkoutIndex = rollback.indexOf('git checkout "${TARGET_SHA}"');
-    const edgeIndex = rollback.indexOf('wait_for_edge');
+test('rollback keeps AOP-aware edge checks independent from the target revision', () => {
+  const rollback = readFileSync('deploy/scripts/rollback.sh', 'utf8');
+  const sourceIndex = rollback.indexOf('source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"');
+  const checkoutIndex = rollback.indexOf('git checkout "${TARGET_SHA}"');
+  const edgeIndex = rollback.indexOf('wait_for_edge');
 
-    assert.ok(sourceIndex >= 0, 'rollback must source current deployment helpers');
-    assert.ok(
-      checkoutIndex > sourceIndex,
-      'current helpers must be loaded before checkout',
-    );
-    assert.ok(
-      edgeIndex > checkoutIndex,
-      'edge health must run after the target is started',
-    );
-    assert.doesNotMatch(
-      rollback.slice(checkoutIndex),
-      /health-check\.sh/u,
-      'rollback must not execute a health-check script from the target revision',
-    );
-  },
-);
+  assert.ok(sourceIndex >= 0, 'rollback must source current deployment helpers');
+  assert.ok(checkoutIndex > sourceIndex, 'current helpers must be loaded before checkout');
+  assert.ok(edgeIndex > checkoutIndex, 'edge health must run after the target is started');
+  assert.doesNotMatch(
+    rollback.slice(checkoutIndex),
+    /health-check\.sh/u,
+    'rollback must not execute a health-check script from the target revision',
+  );
+});
 
 test('failure diagnostics do not print production environment values', () => {
   const common = readFileSync('deploy/scripts/_common.sh', 'utf8');
