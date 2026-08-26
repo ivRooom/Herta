@@ -42,7 +42,10 @@ test('Semantic Search rate-limits before credential lookup and fails closed on s
   const envIndex = route.indexOf('process.env.OPENAI_API_KEY?.trim() || null');
 
   assert.ok(rateIndex >= 0, 'semantic search must apply the user rate limit');
-  assert.ok(credentialResolveIndex > rateIndex, 'credential lookup must happen after rate limiting');
+  assert.ok(
+    credentialResolveIndex > rateIndex,
+    'credential lookup must happen after rate limiting',
+  );
   assert.ok(runtimeIndex > credentialResolveIndex, 'runtime secret resolver must be used');
   assert.ok(envIndex > runtimeIndex, 'OPENAI_API_KEY must remain fallback-only');
   assert.match(route, /error instanceof RuntimeSecretError/u);
