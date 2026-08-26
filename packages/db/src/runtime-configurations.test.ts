@@ -45,6 +45,8 @@ describe('runtime configurations', () => {
   it('oversized valueを拒否する', () => {
     expect(() =>
       validateRuntimeConfigurationValue({ payload: 'a'.repeat(20 * 1024) }),
-    ).toThrowError(expect.objectContaining<Partial<RuntimeConfigurationError>>({ code: 'invalid_value' }));
+    ).toThrowError(
+      expect.objectContaining<Partial<RuntimeConfigurationError>>({ code: 'invalid_value' }),
+    );
   });
 });
