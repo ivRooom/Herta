@@ -91,9 +91,7 @@ async function authorizedAdminUserId(): Promise<{ userId: string } | { response:
 
 async function parseRuntimeSettingsBody(
   request: Request,
-): Promise<
-  { value: ReturnType<typeof parseAiRuntimeStoredValue> } | { response: NextResponse }
-> {
+): Promise<{ value: ReturnType<typeof parseAiRuntimeStoredValue> } | { response: NextResponse }> {
   try {
     const bytes = await readRequestBodyBytes(request, MAX_REQUEST_BODY_BYTES);
     const decoded = JSON.parse(Buffer.from(bytes).toString('utf8')) as unknown;
