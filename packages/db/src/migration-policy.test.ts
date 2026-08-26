@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,12 +13,7 @@ const migrationsDir = path.resolve(
 const historicalMultiConcurrentIndexMigrations = new Map([
   [
     '20260825022000_suggestion_staff_queue_index',
-    `-- Prisma migration transaction外で適用すること。
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "suggestions_staff_queue_idx"
-  ON "suggestions" ("guild_id", "status", "created_at" DESC, "id" DESC);
-
-CREATE INDEX CONCURRENTLY IF NOT EXISTS "suggestions_staff_queue_recent_idx"
-  ON "suggestions" ("guild_id", "created_at" DESC, "id" DESC);`,
+    'cde65acc824d2895dc83f58465192de4ef002d0268fd2a2f93adc0388d90ed5c',
   ],
 ]);
 
@@ -31,9 +27,15 @@ async function listMigrationSqlFiles() {
     }));
 }
 
+function sha256(value: string): string {
+  return createHash('sha256').update(value, 'utf8').digest('hex');
+}
+
 function countConcurrentIndexes(sql: string): number {
   const matchableSql = maskSqlCommentsAndLiterals(sql);
-  return (matchableSql.match(/\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\b/gi) ?? []).length;
+  return (
+    matchableSql.match(/\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\b/gi) ?? []
+  ).length;
 }
 
 function maskSqlCommentsAndLiterals(sql: string): string {
@@ -92,7 +94,9 @@ function maskSqlCommentsAndLiterals(sql: string): string {
     }
 
     if (sql[index] === '$') {
-      const tagMatch = sql.slice(index).match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/u);
+      const tagMatch = sql
+        .slice(index)
+        .match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/u);
       if (tagMatch) {
         const tag = tagMatch[0];
         const endIndex = sql.indexOf(tag, index + tag.length);
@@ -139,13 +143,15 @@ test('new migrations contain at most one CREATE INDEX CONCURRENTLY statement', a
   for (const migration of migrations) {
     const sql = await readFile(migration.sqlPath, 'utf8');
     const concurrentIndexCount = countConcurrentIndexes(sql);
-    const expectedHistoricalSql = historicalMultiConcurrentIndexMigrations.get(migration.migrationName);
+    const expectedHistoricalSha256 = historicalMultiConcurrentIndexMigrations.get(
+      migration.migrationName,
+    );
 
-    if (expectedHistoricalSql !== undefined) {
+    if (expectedHistoricalSha256 !== undefined) {
       historicalExceptionsSeen.add(migration.migrationName);
       assert.equal(
-        sql,
-        expectedHistoricalSql,
+        sha256(sql),
+        expectedHistoricalSha256,
         `${migration.migrationName} is already applied in production and its full SQL must remain immutable`,
       );
       assert.equal(
@@ -157,7 +163,9 @@ test('new migrations contain at most one CREATE INDEX CONCURRENTLY statement', a
     }
 
     if (concurrentIndexCount > 1) {
-      violations.push(`${migration.migrationName}: ${concurrentIndexCount} concurrent indexes`);
+      violations.push(
+        `${migration.migrationName}: ${concurrentIndexCount} concurrent indexes`,
+      );
     }
   }
 
