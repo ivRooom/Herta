@@ -13,10 +13,11 @@ test('OpenAI credential mutation remains platform-admin and same-origin protecte
   assert.match(route, /isSameOriginMutationRequest/u);
   assert.match(route, /readRequestBodyBytes\(request, MAX_REQUEST_BODY_BYTES\)/u);
   assert.match(route, /'Cache-Control': 'no-store'/u);
+  assert.match(route, /environmentFallbackConfigured: hasOpenAiEnvironmentFallback\(\)/u);
   assert.doesNotMatch(route, /console\.(?:log|info|warn|error)\([^\n]*apiKey/u);
 });
 
-test('Studio credential UI is write-only and hidden until authorization completes', () => {
+test('Studio credential UI is write-only, authorization-gated, and explicit about env fallback', () => {
   const settings = readFileSync(settingsPath, 'utf8');
 
   assert.match(settings, /type="password"/u);
@@ -25,11 +26,13 @@ test('Studio credential UI is write-only and hidden until authorization complete
     settings,
     /if \(loadState === 'loading' \|\| loadState === 'hidden'\) return null;/u,
   );
+  assert.match(settings, /OPENAI_API_KEY環境変数fallbackが設定されています/u);
+  assert.match(settings, /AIアクセスは停止しません/u);
   assert.doesNotMatch(settings, /setApiKey\([^)]*status/u);
   assert.doesNotMatch(settings, /value=\{status\./u);
 });
 
-test('Semantic Search prefers encrypted runtime credential before env fallback', () => {
+test('Semantic Search prefers encrypted runtime credential and fails closed on store errors', () => {
   const route = readFileSync(semanticRoutePath, 'utf8');
   const runtimeIndex = route.indexOf('readRuntimeSecret(prisma, OPENAI_API_KEY_RUNTIME_SECRET)');
   const envIndex = route.indexOf('process.env.OPENAI_API_KEY?.trim() || null');
@@ -37,4 +40,6 @@ test('Semantic Search prefers encrypted runtime credential before env fallback',
   assert.ok(runtimeIndex >= 0, 'runtime secret resolver must be used');
   assert.ok(envIndex > runtimeIndex, 'OPENAI_API_KEY must remain fallback-only');
   assert.match(route, /error instanceof RuntimeSecretError/u);
+  assert.match(route, /credential store is unavailable; failing closed/u);
+  assert.doesNotMatch(route, /credential store is unavailable; env fallback remains active/u);
 });
