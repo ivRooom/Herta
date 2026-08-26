@@ -159,21 +159,35 @@ test('manual deploy uses an absolute helper path and only falls back for legacy 
     'source "${SCRIPT_DIR}/_common.sh"',
     initialSourceIndex + 'source "${SCRIPT_DIR}/_common.sh"'.length,
   );
-  const fallbackConditionIndex = deploy.indexOf('if ! declare -F wait_for_health >/dev/null');
+  const fallbackConditionIndex = deploy.indexOf(
+    'if ! declare -F wait_for_health >/dev/null',
+  );
   const restoreHealthIndex = deploy.indexOf('eval "${AOP_WAIT_FOR_HEALTH_DEF}"');
   const conditionEndIndex = deploy.indexOf('\nfi\n', fallbackConditionIndex);
   const healthIndex = deploy.indexOf('\nwait_for_health\n');
 
-  assert.ok(scriptDirIndex >= 0, 'deploy must capture an absolute script directory before sourcing');
-  assert.ok(initialSourceIndex > scriptDirIndex, 'bootstrap helper source must use the absolute path');
+  assert.ok(
+    scriptDirIndex >= 0,
+    'deploy must capture an absolute script directory before sourcing',
+  );
+  assert.ok(
+    initialSourceIndex > scriptDirIndex,
+    'bootstrap helper source must use the absolute path',
+  );
   assert.ok(
     preserveHealthIndex > initialSourceIndex,
     'deploy must preserve current AOP-aware helpers before changing refs',
   );
   assert.ok(checkoutIndex > preserveHealthIndex, 'deploy must preserve helpers before checkout');
   assert.ok(pullIndex > checkoutIndex, 'deploy must fast-forward the selected ref after checkout');
-  assert.ok(unsetIndex > pullIndex, 'target health functions must be cleared before target helper reload');
-  assert.ok(reloadIndex > unsetIndex, 'deploy must reload helpers from the deployment target revision');
+  assert.ok(
+    unsetIndex > pullIndex,
+    'target health functions must be cleared before target helper reload',
+  );
+  assert.ok(
+    reloadIndex > unsetIndex,
+    'deploy must reload helpers from the deployment target revision',
+  );
   assert.ok(
     fallbackConditionIndex > reloadIndex,
     'legacy fallback detection must happen after loading target helpers',
@@ -182,7 +196,10 @@ test('manual deploy uses an absolute helper path and only falls back for legacy 
     restoreHealthIndex > fallbackConditionIndex && restoreHealthIndex < conditionEndIndex,
     'preserved helpers must only be restored inside the legacy fallback branch',
   );
-  assert.ok(healthIndex > conditionEndIndex, 'readiness checks must run after helper selection completes');
+  assert.ok(
+    healthIndex > conditionEndIndex,
+    'readiness checks must run after helper selection completes',
+  );
   assert.match(deploy, /! declare -F wait_for_auth >\/dev\/null/u);
   assert.match(deploy, /! declare -F wait_for_edge >\/dev\/null/u);
   assert.match(deploy, /AOP_WAIT_FOR_AUTH_DEF="\$\(declare -f wait_for_auth\)"/u);
