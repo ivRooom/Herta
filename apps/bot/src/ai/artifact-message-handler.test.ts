@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { AiArtifactRuntime } from './artifact-runtime.js';
 import {
   handleAiArtifactMessage,
+  isAiArtifactMessageCandidate,
   stripBotMention,
   type DiscordSafeTextReplyOptions,
 } from './artifact-message-handler.js';
@@ -174,11 +175,26 @@ describe('artifact Discord mention handler', () => {
   });
 });
 
+describe('artifact message candidate', () => {
+  it('bot mentionのあるuser messageだけruntime bootstrap候補にする', () => {
+    expect(isAiArtifactMessageCandidate(message('通常メッセージ'), '123456789')).toBe(false);
+    expect(isAiArtifactMessageCandidate(message('<@123456789>   '), '123456789')).toBe(false);
+    expect(
+      isAiArtifactMessageCandidate(message('<@123456789> Pythonコードを書いて'), '123456789'),
+    ).toBe(true);
+  });
+});
+
 describe('stripBotMention', () => {
   it('Discord mentionだけ除去しuser inputを保持する', () => {
     expect(stripBotMention('<@123456789> Pythonコードを書いて', '123456789')).toBe(
       'Pythonコードを書いて',
     );
     expect(stripBotMention('<@!123456789>   README作って', '123456789')).toBe('README作って');
+  });
+
+  it('内部の改行とindentationを壊さない', () => {
+    const input = '<@123456789> 変換して\nif ok:\n    print("yes")\n';
+    expect(stripBotMention(input, '123456789')).toBe('変換して\nif ok:\n    print("yes")');
   });
 });
