@@ -211,7 +211,7 @@ function webpHasAnimation(bytes: Uint8Array): boolean {
 
 function readUint32Be(bytes: Uint8Array, offset: number): number {
   return (
-    ((bytes[offset] ?? 0) * 0x1000000) +
+    (bytes[offset] ?? 0) * 0x1000000 +
     ((bytes[offset + 1] ?? 0) << 16) +
     ((bytes[offset + 2] ?? 0) << 8) +
     (bytes[offset + 3] ?? 0)
@@ -223,7 +223,7 @@ function readUint32Le(bytes: Uint8Array, offset: number): number {
     (bytes[offset] ?? 0) +
     ((bytes[offset + 1] ?? 0) << 8) +
     ((bytes[offset + 2] ?? 0) << 16) +
-    ((bytes[offset + 3] ?? 0) * 0x1000000)
+    (bytes[offset + 3] ?? 0) * 0x1000000
   );
 }
 
