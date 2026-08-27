@@ -17,6 +17,10 @@ import {
   type AiCodeExecutionService,
 } from './code-execution-service.js';
 import {
+  OpenAiImageGenerationService,
+  type AiImageGenerationService,
+} from './image-generation-service.js';
+import {
   OpenAiRuntimeGenerationService,
   type AiRuntimeGenerationService,
 } from './runtime-service.js';
@@ -39,6 +43,7 @@ export interface AiCredentialResolution {
 export interface AiFoundationRuntimeBootstrap {
   service: AiRuntimeGenerationService | null;
   executionService?: AiCodeExecutionService | null;
+  imageGenerationService?: AiImageGenerationService | null;
   status: AiRuntimeBootstrapStatus;
   credentialSource: AiCredentialSource | null;
 }
@@ -108,6 +113,10 @@ export async function createAiFoundationRuntime(
     readConfiguration: options.readRuntimeConfiguration,
   });
   const guardStore = new RedisAiGuardStore({ redis: options.redis });
+  const imageToolGuardStore = new RedisAiGuardStore({
+    redis: options.redis,
+    prefix: 'herta:ai:image-generation',
+  });
   const service = new OpenAiRuntimeGenerationService({
     baseConfig,
     apiKey: credential.apiKey,
@@ -124,10 +133,20 @@ export async function createAiFoundationRuntime(
     telemetry: options.telemetry,
     fetchImpl: options.fetchImpl,
   });
+  const imageGenerationService = new OpenAiImageGenerationService({
+    baseConfig,
+    apiKey: credential.apiKey,
+    guardStore,
+    toolGuardStore: imageToolGuardStore,
+    runtimeResolver,
+    telemetry: options.telemetry,
+    fetchImpl: options.fetchImpl,
+  });
 
   return {
     service,
     executionService,
+    imageGenerationService,
     status: 'ready',
     credentialSource: credential.source,
   };

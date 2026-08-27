@@ -1,6 +1,7 @@
 import { AiFoundationError } from '@herta/plugin-catalog/ai-service';
 import { AiArtifactRuntime, AiArtifactRuntimeError } from './artifact-runtime.js';
 import { AiCodeExecutionError } from './code-execution-service.js';
+import { AiImageGenerationError } from './image-generation-service.js';
 import {
   buildExecutionTextSummary,
   deliverDiscordArtifacts,
@@ -133,6 +134,9 @@ function toSafeArtifactMessageError(error: unknown): { category: string; userMes
   }
   if (error instanceof AiCodeExecutionError) {
     return { category: `execution:${error.category}`, userMessage: error.userMessage };
+  }
+  if (error instanceof AiImageGenerationError) {
+    return { category: `image_generation:${error.category}`, userMessage: error.userMessage };
   }
   if (error instanceof AiArtifactRuntimeError) {
     return { category: `artifact:${error.category}`, userMessage: error.userMessage };

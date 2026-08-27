@@ -1,6 +1,6 @@
-# AI Tool & Artifact Runtime — Phase 1 / Phase 2
+# AI Tool & Artifact Runtime — Phase 1 / Phase 2 / Phase 3
 
-Issue #345 の Tool & Artifact Runtimeとして、Herta AIが生成したコード/テキスト成果物と、明示的に要求されたPython実行結果をproviderやDiscordから独立したArtifactとして検証し、Discordへ安全に返す基盤を定義する。
+Issue #345 の Tool & Artifact Runtimeとして、Herta AIが生成したコード/テキスト成果物、明示的なPython実行結果、画像生成結果をproviderやDiscordから独立したArtifactとして検証し、安全にDiscordへ返す基盤を定義する。
 
 ## Scope
 
@@ -8,51 +8,29 @@ Issue #345 の Tool & Artifact Runtimeとして、Herta AIが生成したコー�
 
 - `code_artifact`
 - `file_artifact`
-- `code_execution` — Phase 2で追加
-
-型として定義するが、このPhaseでは実行しない:
-
-- `image_generation`
+- `code_execution` — Phase 2
+- `image_generation` — Phase 3
 
 通常会話/詳細回答のrouteもartifact runtime側では保持するが、既存会話surfaceを奪わない。
 
 - `chat`
 - `detailed_answer`
 
-## Request flow
-
-### Artifact generation
+## Common request flow
 
 ```text
 Discord @mention
   -> Guild AI Plugin enabled + config.enabled=true
   -> server-side intent resolution
-  -> existing AiFoundation / runtime snapshot
-  -> responseMode=artifact
-  -> server-authored artifact capability instructions
-  -> strict artifact envelope parse
-  -> Artifact validation
+  -> existing AiFoundation / request-time runtime snapshot
+  -> existing user/guild rate limit + Guild quota + per-request cost + concurrency + timeout
+  -> capability-specific provider adapter
+  -> capability-specific validation
+  -> validated Artifact bytes
   -> Discord attachment delivery
 ```
 
-### Python execution
-
-```text
-Discord @mention
-  -> server-side explicit execution intent
-  -> existing runtime snapshot / rate limits / Guild quota / cost guard / concurrency / timeout
-  -> OpenAI explicit 1 GB Code Interpreter container
-  -> verify memory=1g + network_policy=disabled
-  -> Responses API with Code Interpreter as the only required tool
-  -> verify actual code_interpreter_call
-  -> collect container_file_citation entries only
-  -> bounded container file download
-  -> existing Artifact validation
-  -> explicit container DELETE
-  -> only then return execution success / Discord attachments
-```
-
-provider/model/reasoning、rate limit、Guild quota、per-request cost guard、concurrency、timeoutは既存AiFoundation経路を維持する。Phase 2はBot/Lightsail host上のPython/shell実行を追加しない。
+`provider/model/reasoning`、rate limit、Guild quota、per-request cost guard、global concurrency、timeout、hallucination/grounding policyは既存AiFoundation経路を維持する。加えてImage GenerationはRedis別scopeでtool concurrency=2を強制する。Phase 3も別の無制限provider pathを追加しない。
 
 ## Artifact domain
 
@@ -67,9 +45,7 @@ Artifact modelはprovider/Discord型に依存しない。
 
 任意filesystem pathは持たない。`size`はdeclared metadataではなく実bytesから計算する。
 
-## Allowlist
-
-Phase 2 execution outputもPhase 1と同じallowlistへ必ず通す。
+## Text allowlist
 
 | Extension | MIME               |
 | --------- | ------------------ |
@@ -81,209 +57,175 @@ Phase 2 execution outputもPhase 1と同じallowlistへ必ず通す。
 | `.yml`    | `application/yaml` |
 | `.csv`    | `text/csv`         |
 
-filenameはNFKC正規化後にbasenameとして検証し、`/`、`\\`、`..`、control characters、NUL、Windows reserved characters/names、encoded separatorを拒否する。
+filenameはNFKC正規化後にbasenameとして検証し、path separator、`..`、control characters、NUL、Windows reserved characters/names、encoded separatorを拒否する。
 
-Execution file downloadでは、providerのContent-Typeが具体的なMIMEを返した場合にextension由来のallowlist MIMEと一致することを確認する。`application/octet-stream`はtransport用generic MIMEとしてのみ許容し、最終Artifact MIMEはallowlistから決定する。現在のexecution outputはtext系allowlistだけなのでUTF-8としても検証する。
+既存text Artifact既定値はmax 512 KiB / 3 files。server-side override `HERTA_AI_ARTIFACT_MAX_BYTES` / `HERTA_AI_ARTIFACT_MAX_FILES`は従来どおりで、invalid overrideはfail closedする。
 
-## Bounded configuration
-
-Artifact既定値:
-
-- max artifact bytes: `524288` (512 KiB)
-- max artifact files: `3`
-
-optional server-side overrides:
-
-- `HERTA_AI_ARTIFACT_MAX_BYTES`
-  - min: 1024
-  - max: 8388608
-- `HERTA_AI_ARTIFACT_MAX_FILES`
-  - min: 1
-  - max: 5
-
-invalid overrideはdefaultへsilent fallbackせずfail closedする。
-
-Phase 2 executionでHertaが追加で固定するbound:
-
-- Code Interpreter memory: `1g`
-- outbound network: `disabled`
-- max built-in tool calls: `8`
-- provider response bytes: existing `HERTA_AI_PROVIDER_RESPONSE_MAX_BYTES`
-- wall-clock timeout: existing `HERTA_AI_TIMEOUT_MS`
-- execution file count: existing Artifact max files
-- each execution file bytes: existing Artifact max bytes
-- global concurrency: existing AI Foundation guard
-
-## Python code artifact
-
-`PythonでFizzBuzzのコードを書いて` は `code_artifact` へrouteし、実行しない。
-
-Python code artifactは次を満たす。
-
-- `.py`
-- `text/x-python`
-- `kind=code`
-- source全文をartifact bytesとして保持
-- Discord本文へsource全文を重複しない
-- attachmentを成果物の正本とする
-
-Discord本文の成功文言はprovider responseから信用せず、validation済みArtifact metadataからのみ生成する。
-
-## Explicit execution contract
+## Phase 2 — Python code execution
 
 `code_artifact` と `code_execution` は別intent。
 
-- `Pythonコードを書いて` → `code_artifact`、実行しない
+- `Pythonコードを書いて` → source artifactのみ
 - `Pythonコードを書いて。実行しないで` → executionしない
-- `Pythonコードの実行方法を教えて` → `chat`、executionしない
+- `Pythonコードの実行方法を教えて` → chat
 - `このPythonコードを実行して` → `code_execution`
 
-Phase 2の`code_execution`はprovider-native OpenAI Code Interpreterを使用する。Responses API requestではCode Interpreterを唯一のtoolとして`tool_choice=required`にし、response内に実際の`code_interpreter_call`が存在することを確認する。toolが呼ばれていないresponseは成功扱いにしない。
+Phase 2はOpenAI Code Interpreterをprovider-native sandboxとして使用する。1 GB memory、outbound network disabled、tool call count、bounded response/file bytes、explicit container DELETEをHerta側で強制し、実際の`code_interpreter_call`、output validation、cleanupが完了するまで成功扱いにしない。
 
-### Sandbox security contract
+Code Interpreter 1 GB session costは2026-08-27確認のcode-reviewed policy `30000 microUSD`。review-afterは`2026-09-27T00:00:00Z`で、期限後は再確認までfail closedする。
 
-Hertaが明示的に設定/確認するもの:
+## Phase 3 — Image generation
 
-- explicit ephemeral container
-- `memory_limit=1g`
-- `network_policy.type=disabled`
-- containerへRuntime Secret / production envを渡さない
-- containerへhost filesystemを渡さない
-- Docker socketを渡さない
-- privileged executionを使わない
-- Responsesへraw Code Interpreter output includeを要求しない
-- execution終了時にexplicit DELETE
-- DELETE完了前にsuccessを返さない
+### Provider contract
 
-provider仕様として隔離されるが、Herta APIから数値指定できないもの:
+Phase 3は既存`OpenAiRuntimeGenerationService`のResponses API requestをcapability adapterで拡張する。
 
-- CPU quota
-- process count quota
-- container disk quota
+```text
+AiFoundation
+  -> Responses API
+  -> tools=[image_generation]
+  -> tool_choice={type:image_generation}
+  -> max_tool_calls=1
+  -> quality=low / size=1024x1024
+  -> require actual image_generation_call
+  -> bounded JSON read
+  -> strict inline base64 decode
+  -> binary validation
+  -> Discord attachment
+```
 
-これらはOpenAI provider-managed isolation/resource controlであり、Herta側が指定した保証としては扱わない。Herta側ではwall-clock timeout、memory tier、tool call count、response bytes、file count/bytes、rate/quota/concurrencyで追加のboundを設ける。
+OpenAI公式Image Generation guideでは、Responses APIの`image_generation` built-in toolが`image_generation_call.result`としてbase64 imageを返す。Hertaはこのinline resultだけを受理する。
 
-OpenAI側の20分idle expiryはcleanupのbackupであり、Hertaの正常終了条件ではない。正常成功にはexplicit DELETE成功を要求する。
+Phase 3ではprovider URLを一切downloadしない。`url`返却、またはHTTP(S) URLをresultとして返すresponseは`provider_url_rejected`としてfail closedする。このためprovider生成URLをDiscordへ永続URLとして渡さず、SSRF/download redirect/private-network surfaceも作らない。
 
-### Network
+### Server-side image policy
 
-Hosted containerはoutbound networkなしを前提とし、Hertaはcontainer create時に`network_policy={type:"disabled"}`を明示する。create responseでもdisabledを確認し、確認できなければfail closedする。allowlist networkはPhase 2では使用しない。
+Phase 3 Herta policy:
 
-### Secret / environment isolation
+- output files: max `1`
+- generated format expected from Responses default: PNG
+- validator allowlist: PNG / WebP
+- max encoded/decoded image bytes: `4 MiB`
+- max width: `2048`
+- max height: `2048`
+- max total pixels: `4,194,304`
+- zero/unknown dimensions: reject
+- multi-page/animated payload: reject
+- safe filename: existing basename/NFKC policy
 
-OpenAI API keyはOpenAI control-plane APIのAuthorizationにのみ使用する。container create body、Responses tool definition、file内容、sandbox envへAPI keyやRuntime Secretを注入しない。
+Provider result filenameは信用せず、Phase 3 adapterはserver-defined `generated-image.png`を使用する。
 
-production environment variablesをsandboxへ継承する仕組みも追加しない。
+### Binary validation order
 
-## Execution output collection
+```text
+non-empty + max bytes
+  -> safe filename
+  -> extension / declared MIME allowlist
+  -> PNG/WebP magic-byte sniff
+  -> declared MIME / extension / sniffed MIME equality
+  -> APNG acTL / WebP animation structure reject
+  -> sharp metadata under pixel/channel limit
+  -> width / height / total pixel checks
+  -> decoder format check
+  -> full raw decode under the same bounds
+  -> validated AiArtifact(kind=image)
+```
 
-Raw Code Interpreter stdout/stderrを取得するための`include`は指定しない。
+Sharp 0.35では入力`metadata()`の型にframe/page countを依存させず、allowlist対象であるPNG/WebPについてAPNG `acTL` chunkとWebP `VP8X` animation flag / `ANIM` / `ANMF` chunkをbounded parserで先にrejectする。`metadata()`だけではtruncated compressed streamを検出できないため、delivery前にfull decodeまで行う。Sharp/libvipsのinput pixel/channel limitとHerta側のdimension/pixel checksを重ね、pathological dimension/decompression bombをbounded memoryでfail closedする。
 
-成果物はassistant messageの`container_file_citation`だけから収集する。
+### Base64 / provider response bounds
 
-- citation container IDが今回作成したcontainer IDと一致すること
-- file IDがbounded provider IDであること
-- filenameが既存Artifact filename validationを通ること
-- extensionがallowlistにあること
-- downloadがmax bytes以内であること
-- specific Content-Typeがallowlist MIMEと一致すること
-- downloaded bytesを既存`validateAiArtifactBatch`へ再投入すること
+`Buffer.from(value, "base64")`だけに依存しない。
 
-citation数がArtifact max filesを超えた場合はdownload前に拒否する。
+- canonical base64 alphabet/padding
+- length multiple of 4
+- encoded length preflight
+- decoded bytes max 4 MiB
+- decode後re-encode一致
+- empty result reject
+- image_generation_call 0件/2件以上 reject
+- raw provider JSON自体もbase64上限に対応したbounded read
 
-PNG等のbinary image outputはこのPhaseではallowlistへ追加しない。画像生成・binary sniffing・dimensions/pixel limitsは後続Phaseで扱う。
+画像bytes/base64を通常application logやtelemetryへ渡さない。AiFoundationへ返すprovider responseは、actual image tool callとstrict base64取得が確認できた後にusage + short synthetic textだけへsanitizeし、既存の小さいprovider-response guardを維持する。synthetic textはDiscord成功文言には使用しない。
 
-## Cost contract
+## Image pricing / quota contract
 
-Code Interpreterの1 GB container session価格は2026-08-27時点のOpenAI公式pricingに基づき、`$0.03 / 20-minute session`としてserver-side code-reviewed policyへ固定する。
+2026-08-27にOpenAI公式pricing / image generation guideで再確認したcode-reviewed policy:
 
-- tool cost reservation: `30000 microUSD`
-- model token cost: existing AI Foundation pricing/cost guard
-- tool costも同じGuild quota storeへ予約/settleする
-- token最大見積 + tool固定費がper-request cost limitを超える場合、container作成前に拒否する
+- billing policy model: `gpt-image-2`
+- image text input: `$5 / 1M tokens`
+- image output: `$30 / 1M tokens`
+- `1024x1024`, `quality=low`: approximately `$0.006` image output
+- Herta fixed image-output reservation: `6000 microUSD`
+- tool-specific concurrency: `2`（Redis prefix `herta:ai:image-generation`）
+- image text input reservation: conservative estimated input tokens × `5 microUSD/token`
+- existing mainline Responses model token reservation/costは別途AiFoundationが管理
 
-Provider pricingの変更を推測して継続しないため、Code Interpreter pricingにはfreshness deadlineを設ける。現在のreview-afterは`2026-09-27T00:00:00Z`で、期限後は価格を再確認してcode-reviewed valueを更新するまでexecutionをfail closedする。
+Responses image toolはGPT Image model selectionをprovider側で行うため、Hertaはmodel aliasをrequestで偽装固定しない。pricing policyは現在のGPT Image 2 pricingを明示的にreview対象とし、review-after `2026-09-27T00:00:00Z`以降は再確認・code reviewされるまでimage generationをfail closedする。
 
-AI Foundationの既存token telemetry/cost settlementはtoken分を表し、execution-specific result/telemetryではtool session costを加味する。Guild quotaにはtool固定費を別reservationとして含める。
+image tool costも既存と同じprivacy-preserving Guild quota key/storeへ追加reservationする。mainline modelの最大token見積 + image tool reservationが`perRequestCostLimitMicroUsd`を超える場合はprovider image generation前に拒否する。
 
 ## Failure contract
 
 次をfake successしない。
 
-- Code Interpreter toolが呼ばれていない
-- Foundation timeout
-- provider/container failure
-- sandbox policy confirmation failure
-- execution output count/size超過
-- malformed response/citation
-- unsafe filename
-- MIME mismatch
-- file download failure
+- image/code tool未実行
+- provider failure / provider rejection / timeout
+- empty image result
+- invalid/non-canonical base64
+- provider URL return
+- multiple image results
+- bad magic bytes
+- MIME / extension mismatch
+- malformed / truncated image
+- oversized bytes
+- zero/unknown dimension
+- dimension / total pixel limit超過
 - Artifact validation failure
-- container DELETE failure
-- Discord delivery failure
+- Python sandbox policy / output / cleanup failure
+- Discord attachment delivery failure
 
-`実行が完了しました`は、tool実行確認・output validation・container cleanup完了後の結果からのみ生成する。
-
-## Discord delivery
-
-Artifact validationとDiscord deliveryを分離する。
-
-```text
-Execution/provider file
-  -> bounded download
-  -> validate
-  -> validated Artifact bytes
-  -> sandbox DELETE
-  -> Discord attachment adapter
-```
-
-Discord SDK delivery errorはattachment bytesを含む可能性があるため、AI Pluginのログへraw error objectを渡さずsafe error name/categoryだけを記録する。delivery failure時に二重返信で成功を装わない。
+`作成しました` / `実行が完了しました`は、capability実行とvalidationを通過したArtifactからのみ生成する。Discord SDK delivery errorはcallerへ伝播し、成功の二重返信を行わない。
 
 ## Logging / privacy
 
 telemetryへ出してよいもの:
 
 - intent
-- result category
-- execution status
+- safe result/error category
+- execution/image status
 - duration
-- provider/model
-- artifact count
-- total bytes
-- artifact kind
-- MIME
-- size
-- safe error category
+- provider/mainline model
+- artifact count / total bytes
+- artifact kind / MIME / size
 
 出さないもの:
 
 - raw user prompt
-- raw source code
-- raw stdout/stderr
+- raw source code / stdout / stderr
+- image bytes / base64
 - generated file content
 - provider raw response
-- Runtime Secret / API key / credentials
-- user/model derived filename
+- Runtime Secret / OpenAI API key / credentials
+- provider/user-derived filename
+
+AI Pluginのouter delivery catchでもDiscord error objectをstructured logへ直接渡さず、safe error name/categoryのみ記録する。
 
 ## Production impact
 
-Phase 2でも次を行わない。
+Phase 3でも次は変更しない。
 
 - DB migration
+- production secret
+- `HERTA_AI_ENABLED` default (`false`のまま)
+- AOP
+- Discord command sync
 - production deployの手動実行
-- secret追加/変更
-- `HERTA_AI_ENABLED=true` への変更
-- AOP変更
-- Discord slash command sync
 
-Production defaultは引き続きAI OFFで、AI PluginのGuild opt-inも必要。
+Productionではserver-side AI gate + Guild opt-inが引き続き必要。Image GenerationのOpenAI organization verificationがprovider側で必要な場合、その4xxはfake successせずprovider rejectionとして返す。
 
-## Remaining Issue #345 scope
+## Issue #345 acceptance reevaluation
 
-Phase 2完了後もIssue #345はcloseしない。
+Phase 3でImage Generation / binary validation / Discord attachment / cost-quota-concurrency-timeout-telemetry integrationが完了する。
 
-- image generation adapter
-- image binary validation / MIME sniffing
-- dimensions / pixel limits
-- richer artifact/tool orchestration and UX
+Issue #345全体のclose可否はPRのfull CI/security/review hardening後に再評価する。Issue bodyに残るartifact UX/orchestration等がAcceptance Criteria外のfollow-up scopeであればclose candidate、未達ACが残る場合はopen維持とする。

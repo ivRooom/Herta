@@ -65,7 +65,7 @@ describe('AI Foundation Bot credential bootstrap', () => {
     expect(result).toEqual({ service: null, status: 'disabled', credentialSource: null });
   });
 
-  it('AI ONかつcredentialありでserviceを構築する', async () => {
+  it('AI ONかつcredentialありでchat/execution/image serviceを構築する', async () => {
     const result = await createAiFoundationRuntime({
       prisma,
       redis,
@@ -75,6 +75,8 @@ describe('AI Foundation Bot credential bootstrap', () => {
     expect(result.status).toBe('ready');
     expect(result.credentialSource).toBe('runtime_secret');
     expect(result.service).not.toBeNull();
+    expect(result.executionService).not.toBeNull();
+    expect(result.imageGenerationService).not.toBeNull();
   });
 
   it('runtime provider/profile/modelのenv不正値はbootstrapを妨げない', async () => {
@@ -92,5 +94,6 @@ describe('AI Foundation Bot credential bootstrap', () => {
 
     expect(result.status).toBe('ready');
     expect(result.service).not.toBeNull();
+    expect(result.imageGenerationService).not.toBeNull();
   });
 });
