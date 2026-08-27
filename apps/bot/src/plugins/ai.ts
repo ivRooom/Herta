@@ -10,11 +10,12 @@ import type { Client } from 'discord.js';
 import { Redis } from 'ioredis';
 import { AiArtifactRuntime } from '../ai/artifact-runtime.js';
 import {
-  handleAiArtifactMessage,
   isAiArtifactMessageCandidate,
   type AiArtifactDiscordMessage,
 } from '../ai/artifact-message-handler.js';
+import { handleAiConversationMessage } from '../ai/conversation-message-handler.js';
 import { createAiFoundationRuntime } from '../ai/factory.js';
+import type { AiRuntimeGenerationService } from '../ai/runtime-service.js';
 
 export interface AiPluginConfig {
   enabled: boolean;
@@ -22,7 +23,12 @@ export interface AiPluginConfig {
 
 type AiPluginRuntimeContext = PluginRuntimeContext<AiPluginConfig, Client, PrismaClient>;
 
-let sharedRuntimePromise: Promise<AiArtifactRuntime | null> | undefined;
+interface AiPluginSharedRuntime {
+  artifactRuntime: AiArtifactRuntime;
+  generationService: AiRuntimeGenerationService;
+}
+
+let sharedRuntimePromise: Promise<AiPluginSharedRuntime | null> | undefined;
 let sharedRedis: Redis | undefined;
 const enabledGuilds = new Set<string>();
 
@@ -63,8 +69,9 @@ async function handleAiMessage(
 
   try {
     const runtime = await getSharedRuntime(context);
-    const result = await handleAiArtifactMessage(message, {
-      runtime,
+    const result = await handleAiConversationMessage(message, {
+      runtime: runtime?.artifactRuntime ?? null,
+      generationService: runtime?.generationService ?? null,
       botUserId,
       getAiPluginConfig: async (guildId) =>
         guildId === context.guildId
@@ -74,37 +81,43 @@ async function handleAiMessage(
 
     if (result.status === 'handled') {
       context.logger.info(
-        { guildId: context.guildId, intent: result.intent, result: 'handled' },
-        'AI Artifact requestを処理しました',
+        {
+          guildId: context.guildId,
+          intent: result.intent,
+          responseMode: result.responseMode ?? null,
+          groundingState: result.groundingState ?? null,
+          result: 'handled',
+        },
+        'AI Discord requestを処理しました',
       );
     } else if (result.status === 'failed') {
       context.logger.warn(
         { guildId: context.guildId, category: result.category, result: 'failed' },
-        'AI Artifact requestを安全に処理できませんでした',
+        'AI Discord requestを安全に処理できませんでした',
       );
     }
   } catch (error) {
     // Discord SDK errors can carry request payload details. Never pass the raw error object to
-    // structured logging on the artifact path because attachment bytes are sensitive content.
+    // structured logging because conversation text or attachment bytes can be retained there.
     context.logger.warn(
       {
         guildId: context.guildId,
         errorName: error instanceof Error ? error.name : 'UnknownError',
         result: 'delivery_failed',
       },
-      'AI Artifact Discord deliveryに失敗しました',
+      'AI Discord deliveryに失敗しました',
     );
   }
 }
 
 async function getSharedRuntime(
   context: AiPluginRuntimeContext,
-): Promise<AiArtifactRuntime | null> {
+): Promise<AiPluginSharedRuntime | null> {
   if (!sharedRuntimePromise) {
     const pending = createSharedRuntime(context).catch((error: unknown) => {
       context.logger.warn(
         { errorName: error instanceof Error ? error.name : 'UnknownError' },
-        'AI Artifact runtimeの初期化に失敗しました',
+        'AI runtimeの初期化に失敗しました',
       );
       return null;
     });
@@ -118,10 +131,10 @@ async function getSharedRuntime(
 
 async function createSharedRuntime(
   context: AiPluginRuntimeContext,
-): Promise<AiArtifactRuntime | null> {
+): Promise<AiPluginSharedRuntime | null> {
   const redisUrl = process.env['REDIS_URL']?.trim();
   if (!redisUrl) {
-    context.logger.warn('REDIS_URLが未設定のためAI Artifact runtimeを有効化できません');
+    context.logger.warn('REDIS_URLが未設定のためAI runtimeを有効化できません');
     return null;
   }
 
@@ -138,12 +151,15 @@ async function createSharedRuntime(
     prisma: context.prisma,
     redis,
     env: process.env,
+    telemetry: (event) => {
+      context.logger.info(event, 'AI Foundation telemetry');
+    },
   });
   if (!bootstrap.service) {
     redis.disconnect();
     context.logger.info(
       { status: bootstrap.status, credentialSource: bootstrap.credentialSource },
-      'AI Artifact runtimeはserver-side gateにより無効です',
+      'AI runtimeはserver-side gateにより無効です',
     );
     return null;
   }
@@ -174,9 +190,10 @@ async function createSharedRuntime(
       executionAvailable: Boolean(bootstrap.executionService),
       imageGenerationAvailable: Boolean(bootstrap.imageGenerationService),
     },
-    'AI Artifact runtimeを初期化しました',
+    'AI runtimeを初期化しました',
   );
-  return new AiArtifactRuntime({
+
+  const artifactRuntime = new AiArtifactRuntime({
     generationService: bootstrap.service,
     executionService: bootstrap.executionService ?? undefined,
     imageGenerationService: bootstrap.imageGenerationService ?? undefined,
@@ -185,6 +202,11 @@ async function createSharedRuntime(
       context.logger.info(event, 'AI Artifact telemetry');
     },
   });
+
+  return {
+    artifactRuntime,
+    generationService: bootstrap.service,
+  };
 }
 
 async function closeSharedRuntime(): Promise<void> {
