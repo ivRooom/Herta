@@ -1,7 +1,10 @@
 import { AiFoundationError } from '@herta/plugin-catalog/ai-service';
 import { AiArtifactRuntime, AiArtifactRuntimeError } from './artifact-runtime.js';
+import { AiCodeExecutionError } from './code-execution-service.js';
 import {
+  buildExecutionTextSummary,
   deliverDiscordArtifacts,
+  deliverDiscordExecutionArtifacts,
   type DiscordArtifactReplyOptions,
 } from './discord-artifact-delivery.js';
 
@@ -79,6 +82,18 @@ export async function handleAiArtifactMessage(
     return { status: 'handled', intent: result.intent };
   }
 
+  if (result.status === 'executed') {
+    if (result.artifacts.length > 0) {
+      await deliverDiscordExecutionArtifacts(message, result.summary, result.artifacts);
+    } else {
+      await message.reply({
+        content: buildExecutionTextSummary(result.summary),
+        allowedMentions: { parse: [] },
+      });
+    }
+    return { status: 'handled', intent: 'code_execution' };
+  }
+
   // Success wording is created only here, from already validated artifact metadata.
   // If Discord delivery itself fails, let the caller observe/log that failure rather than
   // sending a second message that could incorrectly describe the attachment state.
@@ -115,6 +130,9 @@ function hasBotMentionInContent(content: string, botUserId: string): boolean {
 function toSafeArtifactMessageError(error: unknown): { category: string; userMessage: string } {
   if (error instanceof AiFoundationError) {
     return { category: `foundation:${error.category}`, userMessage: error.userMessage };
+  }
+  if (error instanceof AiCodeExecutionError) {
+    return { category: `execution:${error.category}`, userMessage: error.userMessage };
   }
   if (error instanceof AiArtifactRuntimeError) {
     return { category: `artifact:${error.category}`, userMessage: error.userMessage };

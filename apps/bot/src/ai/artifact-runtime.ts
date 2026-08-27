@@ -8,10 +8,15 @@ import {
   type AiArtifactIntent,
 } from '@herta/plugin-catalog/ai-artifact';
 import { AiFoundationError } from '@herta/plugin-catalog/ai-service';
+import {
+  AiCodeExecutionError,
+  type AiCodeExecutionErrorCategory,
+  type AiCodeExecutionService,
+} from './code-execution-service.js';
 import type { AiRuntimeGenerationService } from './runtime-service.js';
 
 export type AiArtifactRuntimeErrorCategory =
-  'malformed_generation' | 'validation_failed' | 'internal_error';
+  'malformed_generation' | 'validation_failed' | 'execution_failed' | 'internal_error';
 
 export class AiArtifactRuntimeError extends Error {
   readonly category: AiArtifactRuntimeErrorCategory;
@@ -38,6 +43,12 @@ export type AiArtifactRuntimeResult =
       status: 'ready';
       intent: 'code_artifact' | 'file_artifact';
       artifacts: AiArtifact[];
+    }
+  | {
+      status: 'executed';
+      intent: 'code_execution';
+      summary: string;
+      artifacts: AiArtifact[];
     };
 
 export interface AiArtifactRuntimeRequest {
@@ -63,12 +74,18 @@ export interface AiArtifactTelemetryEvent {
   totalBytes: number;
   artifacts: AiArtifactTelemetryArtifact[];
   errorCategory: AiArtifactRuntimeErrorCategory | 'foundation_error' | null;
+  executionStatus?: 'success' | 'failed' | 'not_run';
+  executionErrorCategory?: AiCodeExecutionErrorCategory | null;
+  durationMs?: number;
+  provider?: string;
+  model?: string;
 }
 
 export type AiArtifactTelemetrySink = (event: AiArtifactTelemetryEvent) => void | Promise<void>;
 
 export interface AiArtifactRuntimeOptions {
   generationService: AiRuntimeGenerationService;
+  executionService?: AiCodeExecutionService;
   artifactConfig: AiArtifactConfig;
   telemetry?: AiArtifactTelemetrySink;
 }
@@ -90,11 +107,13 @@ const FILE_ARTIFACT_INSTRUCTION = [
 
 export class AiArtifactRuntime {
   private readonly generationService: AiRuntimeGenerationService;
+  private readonly executionService: AiCodeExecutionService | undefined;
   private readonly artifactConfig: AiArtifactConfig;
   private readonly telemetry: AiArtifactTelemetrySink | undefined;
 
   constructor(options: AiArtifactRuntimeOptions) {
     this.generationService = options.generationService;
+    this.executionService = options.executionService;
     this.artifactConfig = options.artifactConfig;
     this.telemetry = options.telemetry;
   }
@@ -114,19 +133,7 @@ export class AiArtifactRuntime {
     }
 
     if (intent === 'code_execution') {
-      this.emitTelemetry({
-        intent,
-        resultCategory: 'rejected',
-        artifactCount: 0,
-        totalBytes: 0,
-        artifacts: [],
-        errorCategory: null,
-      });
-      return {
-        status: 'unsupported',
-        intent,
-        userMessage: 'Python実行はまだ有効化されていません。コードは実行していません。',
-      };
+      return this.executeCode(request);
     }
 
     if (intent === 'image_generation') {
@@ -208,6 +215,94 @@ export class AiArtifactRuntime {
         totalBytes: 0,
         artifacts: [],
         errorCategory: safeError.category,
+      });
+      throw safeError;
+    }
+  }
+
+  private async executeCode(request: AiArtifactRuntimeRequest): Promise<AiArtifactRuntimeResult> {
+    if (!this.executionService) {
+      this.emitTelemetry({
+        intent: 'code_execution',
+        resultCategory: 'rejected',
+        artifactCount: 0,
+        totalBytes: 0,
+        artifacts: [],
+        errorCategory: null,
+        executionStatus: 'not_run',
+      });
+      return {
+        status: 'unsupported',
+        intent: 'code_execution',
+        userMessage: 'Python実行は現在利用できません。コードは実行していません。',
+      };
+    }
+
+    try {
+      const result = await this.executionService.execute({
+        ...request,
+        artifactConfig: this.artifactConfig,
+      });
+      const artifacts =
+        result.files.length === 0
+          ? []
+          : validateAiArtifactBatch(
+              result.files.map((file) => ({
+                filename: file.filename,
+                mimeType: file.mimeType,
+                content: file.bytes,
+                kind: file.kind,
+              })),
+              this.artifactConfig,
+            );
+      if (!result.sandboxDestroyed) throw new AiCodeExecutionError('cleanup_failed');
+
+      this.emitTelemetry({
+        ...successTelemetry('code_execution', artifacts),
+        executionStatus: 'success',
+        executionErrorCategory: null,
+        durationMs: result.durationMs,
+        provider: result.provider,
+        model: result.model,
+      });
+      return { status: 'executed', intent: 'code_execution', summary: result.summary, artifacts };
+    } catch (error) {
+      if (error instanceof AiFoundationError) {
+        this.emitTelemetry({
+          intent: 'code_execution',
+          resultCategory: 'failed',
+          artifactCount: 0,
+          totalBytes: 0,
+          artifacts: [],
+          errorCategory: 'foundation_error',
+          executionStatus: 'failed',
+        });
+        throw error;
+      }
+      if (error instanceof AiCodeExecutionError) {
+        this.emitTelemetry({
+          intent: 'code_execution',
+          resultCategory: 'failed',
+          artifactCount: 0,
+          totalBytes: 0,
+          artifacts: [],
+          errorCategory: 'execution_failed',
+          executionStatus: 'failed',
+          executionErrorCategory: error.category,
+        });
+        throw error;
+      }
+      const safeError = new AiArtifactRuntimeError(
+        isArtifactValidationError(error) ? 'validation_failed' : 'internal_error',
+      );
+      this.emitTelemetry({
+        intent: 'code_execution',
+        resultCategory: 'failed',
+        artifactCount: 0,
+        totalBytes: 0,
+        artifacts: [],
+        errorCategory: safeError.category,
+        executionStatus: 'failed',
       });
       throw safeError;
     }
@@ -302,7 +397,7 @@ function assertIntentMatchesArtifacts(
 }
 
 function successTelemetry(
-  intent: 'code_artifact' | 'file_artifact',
+  intent: 'code_artifact' | 'file_artifact' | 'code_execution',
   artifacts: readonly AiArtifact[],
 ): AiArtifactTelemetryEvent {
   return {

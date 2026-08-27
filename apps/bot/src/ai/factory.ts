@@ -13,6 +13,10 @@ import {
 import { AiRuntimeConfigurationResolver } from '@herta/plugin-catalog/ai-runtime-config';
 import { AI_RUNTIME_SAFE_DEFAULT } from '@herta/plugin-catalog/ai-runtime-policy';
 import {
+  OpenAiCodeExecutionService,
+  type AiCodeExecutionService,
+} from './code-execution-service.js';
+import {
   OpenAiRuntimeGenerationService,
   type AiRuntimeGenerationService,
 } from './runtime-service.js';
@@ -34,6 +38,7 @@ export interface AiCredentialResolution {
 
 export interface AiFoundationRuntimeBootstrap {
   service: AiRuntimeGenerationService | null;
+  executionService?: AiCodeExecutionService | null;
   status: AiRuntimeBootstrapStatus;
   credentialSource: AiCredentialSource | null;
 }
@@ -102,16 +107,27 @@ export async function createAiFoundationRuntime(
     ttlMs: options.runtimeConfigTtlMs,
     readConfiguration: options.readRuntimeConfiguration,
   });
+  const guardStore = new RedisAiGuardStore({ redis: options.redis });
+  const service = new OpenAiRuntimeGenerationService({
+    baseConfig,
+    apiKey: credential.apiKey,
+    guardStore,
+    runtimeResolver,
+    telemetry: options.telemetry,
+    fetchImpl: options.fetchImpl,
+  });
+  const executionService = new OpenAiCodeExecutionService({
+    baseConfig,
+    apiKey: credential.apiKey,
+    guardStore,
+    runtimeResolver,
+    telemetry: options.telemetry,
+    fetchImpl: options.fetchImpl,
+  });
 
   return {
-    service: new OpenAiRuntimeGenerationService({
-      baseConfig,
-      apiKey: credential.apiKey,
-      guardStore: new RedisAiGuardStore({ redis: options.redis }),
-      runtimeResolver,
-      telemetry: options.telemetry,
-      fetchImpl: options.fetchImpl,
-    }),
+    service,
+    executionService,
     status: 'ready',
     credentialSource: credential.source,
   };
