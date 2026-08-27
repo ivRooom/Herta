@@ -1,15 +1,15 @@
 import type { PluginManifest } from '@herta/shared';
 
 /**
- * AI FoundationのGuild opt-inを表すcatalog manifest。
+ * AI FoundationのGuild opt-inとDiscord mention surfaceを表すcatalog manifest。
  * model / provider / quota / Secretはserver-side設定だけで解決し、Plugin configへ保存しない。
- * Discord surfaceはKnowledge/RAGとQ&Aの後続PRで追加する。
+ * Phase 1ではcode/file artifactをattachmentとして返し、code execution / image generationは行わない。
  */
 export const aiManifest: PluginManifest = {
   id: 'ai',
   name: 'Herta AI',
   version: '1.0.0',
-  description: 'Herta Knowledge Baseを利用するAI機能のGuild opt-inを管理します',
+  description: 'Herta AIの会話・成果物生成機能をGuild単位で管理します',
   author: { name: 'Herta' },
   category: 'utility',
   permissions: [
@@ -36,6 +36,6 @@ export const aiManifest: PluginManifest = {
     },
     required: ['enabled'],
   },
-  events: [],
+  events: ['messageCreate'],
   commands: [],
 };

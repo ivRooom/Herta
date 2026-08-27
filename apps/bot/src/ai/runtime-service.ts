@@ -22,6 +22,11 @@ export interface AiRuntimeGenerationRequest extends AiGenerationRequest {
   responseMode?: AiResponseMode;
   /** Trusted retrieval/tool state. Do not allow a client to self-declare successful grounding. */
   groundingState?: AiGroundingState;
+  /**
+   * Bounded server-authored instructions for a concrete capability such as artifact serialization.
+   * Never copy arbitrary user input into this field.
+   */
+  trustedInstructions?: readonly string[];
 }
 
 export interface AiRuntimeGenerationService {
@@ -83,8 +88,15 @@ export class OpenAiRuntimeGenerationService implements AiRuntimeGenerationServic
         responseMode: request.responseMode,
         groundingState: request.groundingState,
       });
+      const trustedInstructions = normalizeTrustedInstructions(request.trustedInstructions);
+      if (trustedInstructions.length > 0) {
+        conversationPolicy = {
+          ...conversationPolicy,
+          instructions: [conversationPolicy.instructions, ...trustedInstructions].join(' '),
+        };
+      }
     } catch {
-      // Response mode / grounding are trusted server policy inputs, never arbitrary strings.
+      // Response mode / grounding / capability instructions are trusted server policy inputs.
       throw new AiFoundationError('internal_error');
     }
 
@@ -177,6 +189,24 @@ function validateAndNormalizeUserInput(input: string, config: AiFoundationConfig
     throw new AiFoundationError('invalid_input');
   }
   return normalized;
+}
+
+function normalizeTrustedInstructions(value: readonly string[] | undefined): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 4) throw new AiFoundationError('internal_error');
+  return value.map((instruction) => {
+    if (typeof instruction !== 'string') throw new AiFoundationError('internal_error');
+    const normalized = instruction.trim();
+    if (
+      characterLength(normalized) < 1 ||
+      characterLength(normalized) > 4_000 ||
+      utf8ByteLength(normalized) > 12_000 ||
+      normalized.includes('\u0000')
+    ) {
+      throw new AiFoundationError('internal_error');
+    }
+    return normalized;
+  });
 }
 
 function buildGuardedInput(instructions: string, userInput: string): string {
