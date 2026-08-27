@@ -32,7 +32,18 @@ describe('AI artifact intent', () => {
     expect(resolveAiArtifactIntent('このPythonコードを実行してCSVに変換して')).toBe(
       'code_execution',
     );
+    expect(resolveAiArtifactIntent('Run this SQL query and create a CSV file')).toBe(
+      'code_execution',
+    );
+    expect(resolveAiArtifactIntent('Can you run this query and create a CSV file?')).toBe(
+      'code_execution',
+    );
     expect(resolveAiArtifactIntent('この疑似コードをPythonコードに変換して')).toBe('code_artifact');
+  });
+
+  it('実行方法の説明質問はcode_executionに誤routeしない', () => {
+    expect(resolveAiArtifactIntent('How do I execute Python code?')).toBe('chat');
+    expect(resolveAiArtifactIntent('Pythonコードの実行方法を教えて')).toBe('chat');
   });
 
   it('短い言語名を通常単語のsubstringとして誤検知しない', () => {
@@ -44,6 +55,13 @@ describe('AI artifact intent', () => {
     expect(resolveAiArtifactIntent('Write a JavaScript program')).toBe('code_artifact');
     expect(isPythonCodeArtifactRequest('Write a JavaScript program')).toBe(false);
     expect(isPythonCodeArtifactRequest('Pythonコードを書いて')).toBe(true);
+  });
+
+  it('Pythonが明示的に否定されたcode artifactをPython対応扱いしない', () => {
+    expect(isPythonCodeArtifactRequest('Write JavaScript, not Python')).toBe(false);
+    expect(isPythonCodeArtifactRequest('JavaScriptで書いて、Pythonではなく')).toBe(false);
+    expect(isPythonCodeArtifactRequest('Write Python, not JavaScript')).toBe(true);
+    expect(isPythonCodeArtifactRequest('Pythonで書いて、JavaScriptではなく')).toBe(true);
   });
 
   it('generic file artifactとimage generationをtyped intentへ分離する', () => {
