@@ -38,19 +38,11 @@ export async function handleAiArtifactMessage(
   message: AiArtifactDiscordMessage,
   options: AiArtifactMessageHandlerOptions,
 ): Promise<AiArtifactMessageHandleResult> {
-  if (
-    !options.runtime ||
-    !options.botUserId ||
-    !message.guildId ||
-    message.author.bot ||
-    message.webhookId ||
-    !message.mentions.users.has(options.botUserId)
-  ) {
+  if (!options.runtime || !isAiArtifactMessageCandidate(message, options.botUserId)) {
     return { status: 'ignored' };
   }
 
   const input = stripBotMention(message.content, options.botUserId);
-  if (!input) return { status: 'ignored' };
 
   const pluginConfig = await options.getAiPluginConfig(message.guildId);
   if (!pluginConfig || pluginConfig['enabled'] !== true) return { status: 'ignored' };
@@ -91,12 +83,24 @@ export async function handleAiArtifactMessage(
   return { status: 'handled', intent: result.intent };
 }
 
+export function isAiArtifactMessageCandidate(
+  message: AiArtifactDiscordMessage | undefined,
+  botUserId: string | null,
+): message is AiArtifactDiscordMessage {
+  return Boolean(
+    message &&
+      botUserId &&
+      message.guildId &&
+      !message.author.bot &&
+      !message.webhookId &&
+      message.mentions.users.has(botUserId) &&
+      stripBotMention(message.content, botUserId),
+  );
+}
+
 export function stripBotMention(content: string, botUserId: string): string {
   if (typeof content !== 'string' || !/^\d+$/.test(botUserId)) return '';
-  return content
-    .replace(new RegExp(`<@!?${botUserId}>`, 'g'), ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return content.replace(new RegExp(`<@!?${botUserId}>`, 'g'), ' ').trim();
 }
 
 function toSafeArtifactMessageError(error: unknown): { category: string; userMessage: string } {
