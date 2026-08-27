@@ -171,11 +171,13 @@ async function createSharedRuntime(
       credentialSource: bootstrap.credentialSource,
       artifactMaxBytes: artifactConfig.maxBytes,
       artifactMaxFiles: artifactConfig.maxFiles,
+      executionAvailable: Boolean(bootstrap.executionService),
     },
     'AI Artifact runtimeを初期化しました',
   );
   return new AiArtifactRuntime({
     generationService: bootstrap.service,
+    executionService: bootstrap.executionService ?? undefined,
     artifactConfig,
     telemetry: (event) => {
       context.logger.info(event, 'AI Artifact telemetry');
