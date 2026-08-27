@@ -98,20 +98,18 @@ mutationはStudio認証・Guild access・Same-Origin・Plugin permission validat
 
 ## 6. Limited Guild E2E
 
-1つの限定Guildで、各ケースを別messageとして確認します。同一messageにartifact replyとchat replyが二重送信されないことも確認してください。
+1つの限定Guildで各ケースを別messageとして確認します。同一messageへartifact replyとchat replyが二重送信されないことも確認してください。
 
-| Case | 例 | 期待結果 |
-| --- | --- | --- |
-| ordinary chat | `@Herta TypeScriptって何？` | `chat` policyで1回だけtext reply |
-| detailed | `@Herta ReactとVueを詳しく比較して` | `detailed` policyで1回だけtext reply |
-| code artifact | `@Herta Pythonコードを書いて` | 既存Artifact Runtimeからattachmentのみ |
-| file artifact | `@Herta READMEを作って` | allowlisted text artifact attachment |
-| Python execution | `@Herta このPythonを実行して` | 既存Code Interpreter runtime。未実行をfake successしない |
-| image generation | `@Herta 猫の画像を作って` | validated PNG/WebP attachment |
-| unsupported | 非対応artifact format等 | safe unsupported reply、成果物を生成したと主張しない |
-| source-dependent | `@Herta GitHubの最新PR状態を確認して` | `insufficient`。確認した/citation取得済みと捏造しない |
-| no mention | 通常message | provider callなし |
-| bot/webhook/DM | 対象外message | provider callなし |
+- ordinary chat: `@Herta TypeScriptって何？` → `chat` policyで1回だけtext reply
+- detailed: `@Herta ReactとVueを詳しく比較して` → `detailed` policyで1回だけtext reply
+- code artifact: `@Herta Pythonコードを書いて` → 既存Artifact Runtimeからattachmentのみ
+- file artifact: `@Herta READMEを作って` → allowlisted text artifact attachment
+- Python execution: `@Herta このPythonを実行して` → 既存Code Interpreter runtime。未実行をfake successしない
+- image generation: `@Herta 猫の画像を作って` → validated PNG/WebP attachment
+- unsupported: 非対応artifact format等 → safe unsupported reply、成果物を生成したと主張しない
+- source-dependent: `@Herta GitHubの最新PR状態を確認して` → `insufficient`。確認した/citation取得済みと捏造しない
+- no mention: 通常message → provider callなし
+- bot / webhook / DM: 対象外message → provider callなし
 
 ### Rate limit
 
