@@ -11,9 +11,7 @@ import { AiFoundationError } from '@herta/plugin-catalog/ai-service';
 import type { AiRuntimeGenerationService } from './runtime-service.js';
 
 export type AiArtifactRuntimeErrorCategory =
-  | 'malformed_generation'
-  | 'validation_failed'
-  | 'internal_error';
+  'malformed_generation' | 'validation_failed' | 'internal_error';
 
 export class AiArtifactRuntimeError extends Error {
   readonly category: AiArtifactRuntimeErrorCategory;
@@ -67,9 +65,7 @@ export interface AiArtifactTelemetryEvent {
   errorCategory: AiArtifactRuntimeErrorCategory | 'foundation_error' | null;
 }
 
-export type AiArtifactTelemetrySink = (
-  event: AiArtifactTelemetryEvent,
-) => void | Promise<void>;
+export type AiArtifactTelemetrySink = (event: AiArtifactTelemetryEvent) => void | Promise<void>;
 
 export interface AiArtifactRuntimeOptions {
   generationService: AiRuntimeGenerationService;
