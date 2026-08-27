@@ -113,6 +113,8 @@ const CODE_REQUEST_PATTERN =
   /\b(?:python|py|typescript|javascript|java|golang|go|rust|program)\b|c#|source code|コード|スクリプト/i;
 const CODE_OUTPUT_NOUN_PATTERN =
   /\b(?:source\s+code|code|program|script)\b|コード|スクリプト|プログラム/i;
+const DIRECT_CODE_ARTIFACT_REQUEST_PATTERN =
+  /^(?:please\s+)?(?:write|create)\s+(?:an?\s+)?(?:python|py)\b/i;
 const NEGATED_CODE_LANGUAGE_PATTERN =
   /\b(?:not(?:\s+in)?|no|without|rather\s+than|instead\s+of)\s+(?:python|py|typescript|javascript|java|golang|go|rust|c#)\b|(?:python|py|typescript|javascript|java|golang|go|rust|c#)(?:ではなく|じゃなく|以外|を使わず)/gi;
 const CODE_LANGUAGE_TOKEN = '(?:python|py|typescript|javascript|java|golang|go|rust|c#)';
@@ -165,7 +167,11 @@ export function resolveAiArtifactIntent(input: string): AiArtifactIntent {
   if (creationRequested && imageRequested && directImageCreationRequested) {
     return 'image_generation';
   }
-  if (creationRequested && codeRequested && CODE_OUTPUT_NOUN_PATTERN.test(normalized)) {
+  if (
+    creationRequested &&
+    codeRequested &&
+    (CODE_OUTPUT_NOUN_PATTERN.test(normalized) || DIRECT_CODE_ARTIFACT_REQUEST_PATTERN.test(normalized))
+  ) {
     return 'code_artifact';
   }
   if (creationRequested && imageRequested) return 'image_generation';
