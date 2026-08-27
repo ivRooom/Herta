@@ -112,6 +112,25 @@ describe('AiArtifactRuntime', () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
+  it('Pythonを明示的に否定したcode artifactはprovider call前にrejectする', async () => {
+    const generate = vi.fn<AiRuntimeGenerationService['generate']>();
+    const runtime = new AiArtifactRuntime({
+      generationService: { generate },
+      artifactConfig,
+    });
+
+    const result = await runtime.prepare({
+      ...request,
+      input: 'Write JavaScript, not Python',
+    });
+
+    expect(result).toMatchObject({ status: 'unsupported', intent: 'code_artifact' });
+    if (result.status !== 'unsupported') throw new Error('expected unsupported result');
+    expect(result.userMessage).toContain('Pythonコードのみ');
+    expect(result.userMessage).toContain('作成していません');
+    expect(generate).not.toHaveBeenCalled();
+  });
+
   it('既存chat modeはartifact provider callへrouteしない', async () => {
     const generate = vi.fn<AiRuntimeGenerationService['generate']>();
     const runtime = new AiArtifactRuntime({
