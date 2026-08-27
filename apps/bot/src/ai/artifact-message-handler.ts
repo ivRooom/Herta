@@ -99,9 +99,7 @@ export function stripBotMention(content: string, botUserId: string): string {
     .trim();
 }
 
-function toSafeArtifactMessageError(
-  error: unknown,
-): { category: string; userMessage: string } {
+function toSafeArtifactMessageError(error: unknown): { category: string; userMessage: string } {
   if (error instanceof AiFoundationError) {
     return { category: `foundation:${error.category}`, userMessage: error.userMessage };
   }
