@@ -1,7 +1,11 @@
 import type { PrismaClient } from '@herta/db';
 import { aiManifest } from '@herta/plugin-catalog';
 import { resolveAiArtifactConfig } from '@herta/plugin-catalog/ai-artifact';
-import { definePlugin, type PluginEventHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
+import {
+  definePlugin,
+  type PluginEventHandler,
+  type PluginRuntimeContext,
+} from '@herta/plugin-sdk';
 import type { Client } from 'discord.js';
 import { Redis } from 'ioredis';
 import { AiArtifactRuntime } from '../ai/artifact-runtime.js';
@@ -87,7 +91,9 @@ async function handleAiMessage(
   }
 }
 
-async function getSharedRuntime(context: AiPluginRuntimeContext): Promise<AiArtifactRuntime | null> {
+async function getSharedRuntime(
+  context: AiPluginRuntimeContext,
+): Promise<AiArtifactRuntime | null> {
   if (!sharedRuntimePromise) {
     const pending = createSharedRuntime(context).catch((error: unknown) => {
       context.logger.warn(
@@ -104,7 +110,9 @@ async function getSharedRuntime(context: AiPluginRuntimeContext): Promise<AiArti
   return sharedRuntimePromise;
 }
 
-async function createSharedRuntime(context: AiPluginRuntimeContext): Promise<AiArtifactRuntime | null> {
+async function createSharedRuntime(
+  context: AiPluginRuntimeContext,
+): Promise<AiArtifactRuntime | null> {
   const redisUrl = process.env['REDIS_URL']?.trim();
   if (!redisUrl) {
     context.logger.warn('REDIS_URLが未設定のためAI Artifact runtimeを有効化できません');
