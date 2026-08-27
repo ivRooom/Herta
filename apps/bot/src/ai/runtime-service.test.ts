@@ -76,7 +76,7 @@ describe('OpenAiRuntimeGenerationService', () => {
   it('resolved model/reasoningとserver conversation policyを同一request snapshotへ適用する', async () => {
     const readConfiguration = vi
       .fn()
-      .mockResolvedValueOnce(stored('quality', 'high'))
+      .mockResolvedValueOnce(stored('balanced', 'high'))
       .mockResolvedValueOnce(stored('economy', 'none'));
     const resolver = new AiRuntimeConfigurationResolver({
       prisma,
@@ -97,11 +97,11 @@ describe('OpenAiRuntimeGenerationService', () => {
       fetchImpl,
     });
 
-    const quality = await service.generate(request);
+    const balanced = await service.generate(request);
     const economy = await service.generate({ ...request, userId: 'user-2' });
 
     expect(bodies[0]).toMatchObject({
-      model: 'gpt-5.6-sol',
+      model: 'gpt-5.6-terra',
       input: 'hello',
       reasoning: { effort: 'high' },
       text: { verbosity: 'low' },
@@ -111,8 +111,8 @@ describe('OpenAiRuntimeGenerationService', () => {
     expect(String(bodies[0]?.['instructions'])).toContain(
       'Never present a guess as a confirmed fact',
     );
-    expect(quality.model).toBe('gpt-5.6-sol');
-    expect(quality.estimatedCost).toBe(0.00014);
+    expect(balanced.model).toBe('gpt-5.6-terra');
+    expect(balanced.estimatedCost).toBe(0.00008);
 
     expect(bodies[1]).toMatchObject({
       model: 'gpt-5.6-luna',
