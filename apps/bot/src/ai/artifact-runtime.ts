@@ -66,7 +66,9 @@ export interface AiArtifactTelemetryEvent {
   errorCategory: AiArtifactRuntimeErrorCategory | 'foundation_error' | null;
 }
 
-export type AiArtifactTelemetrySink = (event: AiArtifactTelemetryEvent) => void | Promise<void>;
+export type AiArtifactTelemetrySink = (
+  event: AiArtifactTelemetryEvent,
+) => void | Promise<void>;
 
 export interface AiArtifactRuntimeOptions {
   generationService: AiRuntimeGenerationService;
