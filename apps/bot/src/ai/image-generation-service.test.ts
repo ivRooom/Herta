@@ -111,6 +111,7 @@ function service(
   guard: AiGuardStore,
   overrides: Partial<ReturnType<typeof resolveAiFoundationConfig>> = {},
   now = () => Date.parse('2026-08-27T09:00:00Z'),
+  toolGuard: AiGuardStore = guard,
 ) {
   return new OpenAiImageGenerationService({
     baseConfig: {
@@ -119,7 +120,7 @@ function service(
     },
     apiKey: 'server-secret',
     guardStore: guard,
-    toolGuardStore: guard,
+    toolGuardStore: toolGuard,
     runtimeResolver: resolver(),
     fetchImpl,
     now,
@@ -222,7 +223,7 @@ describe('OpenAiImageGenerationService', () => {
     });
   });
 
-  it('provider 5xx/429/4xxを既存Foundation taxonomyで返す', async () => {
+  it('provider 5xx/4xxを既存Foundation taxonomyで返す', async () => {
     const unavailable = vi.fn<typeof fetch>(async () => new Response('fail', { status: 503 }));
     await expect(service(unavailable, guardStore(observation())).generate(request)).rejects.toMatchObject({
       category: 'provider_unavailable',
@@ -252,7 +253,7 @@ describe('OpenAiImageGenerationService', () => {
     ).rejects.toMatchObject({ category: 'timeout' });
   });
 
-  it('Guild quota / global+tool concurrency / per-request cost guardを迂回しない', async () => {
+  it('Guild quota / concurrency / per-request cost guardを迂回しない', async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => imageResponse());
     const quotaSeen = observation();
     await expect(
@@ -260,10 +261,20 @@ describe('OpenAiImageGenerationService', () => {
     ).rejects.toMatchObject({ category: 'quota_exceeded' });
 
     const concurrencyFetch = vi.fn<typeof fetch>(async () => imageResponse());
+    const commonConcurrencySeen = observation();
+    const toolConcurrencySeen = observation();
     await expect(
-      service(concurrencyFetch, guardStore(observation(), { denyConcurrency: true })).generate(request),
+      service(
+        concurrencyFetch,
+        guardStore(commonConcurrencySeen),
+        {},
+        () => Date.parse('2026-08-27T09:00:00Z'),
+        guardStore(toolConcurrencySeen, { denyConcurrency: true }),
+      ).generate(request),
     ).rejects.toMatchObject({ category: 'rate_limited' });
     expect(concurrencyFetch).not.toHaveBeenCalled();
+    expect(commonConcurrencySeen.concurrencyCalls).toBe(1);
+    expect(toolConcurrencySeen.concurrencyCalls).toBe(1);
 
     const costFetch = vi.fn<typeof fetch>(async () => imageResponse());
     await expect(
@@ -272,6 +283,23 @@ describe('OpenAiImageGenerationService', () => {
       ),
     ).rejects.toMatchObject({ category: 'quota_exceeded' });
     expect(costFetch).not.toHaveBeenCalled();
+  });
+
+  it('common Foundation認可前にimage tool concurrencyを消費しない', async () => {
+    const fetchImpl = vi.fn<typeof fetch>();
+    const commonSeen = observation();
+    const toolSeen = observation();
+    await expect(
+      service(
+        fetchImpl,
+        guardStore(commonSeen),
+        {},
+        () => Date.parse('2026-08-27T09:00:00Z'),
+        guardStore(toolSeen),
+      ).generate({ ...request, authorized: false }),
+    ).rejects.toMatchObject({ category: 'unauthorized' });
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(toolSeen.concurrencyCalls).toBe(0);
   });
 
   it('pricing freshness期限後はproviderを呼ばずfail closedする', async () => {
