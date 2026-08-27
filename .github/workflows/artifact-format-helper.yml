@@ -1,0 +1,41 @@
+name: Artifact Format Helper
+
+on:
+  push:
+    branches:
+      - feat/ai-artifact-runtime
+
+permissions:
+  contents: read
+
+jobs:
+  prettier-diff:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+          run_install: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format affected files
+        run: >-
+          pnpm exec prettier --write
+          apps/bot/src/ai/artifact-message-handler.test.ts
+          apps/bot/src/ai/artifact-message-handler.ts
+          apps/bot/src/ai/artifact-runtime.ts
+          packages/plugin-catalog/src/ai-artifact-hardening.test.ts
+          packages/plugin-catalog/src/ai-artifact.test.ts
+          packages/plugin-catalog/src/ai-artifact.ts
+      - name: Print exact formatter diff
+        run: git diff --no-ext-diff --unified=5 --
+          apps/bot/src/ai/artifact-message-handler.test.ts
+          apps/bot/src/ai/artifact-message-handler.ts
+          apps/bot/src/ai/artifact-runtime.ts
+          packages/plugin-catalog/src/ai-artifact-hardening.test.ts
+          packages/plugin-catalog/src/ai-artifact.test.ts
+          packages/plugin-catalog/src/ai-artifact.ts
