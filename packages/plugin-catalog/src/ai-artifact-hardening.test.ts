@@ -7,8 +7,12 @@ import {
 
 describe('AI artifact hardening', () => {
   it('明示的に実行しない依頼はcode_executionへ誤routeしない', () => {
-    expect(resolveAiArtifactIntent('Pythonコードを書いて。実行はしないで')).toBe('code_artifact');
-    expect(resolveAiArtifactIntent('Write Python code but do not execute it')).toBe('code_artifact');
+    expect(resolveAiArtifactIntent('Pythonコードを書いて。実行はしないで')).toBe(
+      'code_artifact',
+    );
+    expect(resolveAiArtifactIntent('Write Python code but do not execute it')).toBe(
+      'code_artifact',
+    );
   });
 
   it('artifact configはbounded defaultを使いinvalid overrideをfail closedする', () => {
