@@ -1,7 +1,4 @@
-import {
-  resolveAiArtifactIntent,
-  type AiArtifactIntent,
-} from '@herta/plugin-catalog/ai-artifact';
+import { resolveAiArtifactIntent, type AiArtifactIntent } from '@herta/plugin-catalog/ai-artifact';
 import {
   type AiGroundingState,
   type AiResponseMode,
