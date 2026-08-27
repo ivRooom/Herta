@@ -57,10 +57,7 @@ async function handleAiMessage(
   if (context.config.enabled !== true) return;
 
   const botUserId = context.client.user?.id ?? null;
-  if (
-    !isAiArtifactMessageCandidate(message, botUserId) ||
-    message.guildId !== context.guildId
-  ) {
+  if (!isAiArtifactMessageCandidate(message, botUserId) || message.guildId !== context.guildId) {
     return;
   }
 
