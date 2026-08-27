@@ -96,6 +96,7 @@ export interface OpenAiCodeExecutionServiceOptions {
 interface CapturedExecution {
   files: AiCodeExecutionFile[];
   sandboxDestroyed: boolean;
+  error: AiCodeExecutionError | null;
 }
 
 interface SandboxDescriptor {
@@ -140,7 +141,7 @@ export class OpenAiCodeExecutionService implements AiCodeExecutionService {
   async execute(request: AiCodeExecutionRequest): Promise<AiCodeExecutionResult> {
     const startedAt = this.now();
     assertContainerPricingCurrent(startedAt);
-    const captured: CapturedExecution = { files: [], sandboxDestroyed: false };
+    const captured: CapturedExecution = { files: [], sandboxDestroyed: false, error: null };
     const generationService = new OpenAiRuntimeGenerationService({
       baseConfig: this.baseConfig,
       apiKey: this.apiKey,
@@ -150,19 +151,24 @@ export class OpenAiCodeExecutionService implements AiCodeExecutionService {
       fetchImpl: (input, init) => this.executeResponsesRequest(input, init, request, captured),
     });
 
-    const response = await generationService.generate({
-      feature: 'ai.code_execution',
-      input: request.input,
-      guildId: request.guildId,
-      scopeGuildId: request.scopeGuildId,
-      userId: request.userId,
-      authorized: request.authorized,
-      pluginEnabled: request.pluginEnabled,
-      guildOptIn: request.guildOptIn,
-      responseMode: 'artifact',
-      groundingState: 'not_required',
-      trustedInstructions: [EXECUTION_INSTRUCTION],
-    });
+    const response = await generationService
+      .generate({
+        feature: 'ai.code_execution',
+        input: request.input,
+        guildId: request.guildId,
+        scopeGuildId: request.scopeGuildId,
+        userId: request.userId,
+        authorized: request.authorized,
+        pluginEnabled: request.pluginEnabled,
+        guildOptIn: request.guildOptIn,
+        responseMode: 'artifact',
+        groundingState: 'not_required',
+        trustedInstructions: [EXECUTION_INSTRUCTION],
+      })
+      .catch((error: unknown) => {
+        if (captured.error) throw captured.error;
+        throw error;
+      });
 
     if (!captured.sandboxDestroyed) throw new AiCodeExecutionError('cleanup_failed');
     return {
@@ -266,14 +272,21 @@ export class OpenAiCodeExecutionService implements AiCodeExecutionService {
       }
     }
 
-    if (failure) throw failure;
-    if (!responseResult) throw new AiCodeExecutionError('malformed_output');
+    if (failure) {
+      if (failure instanceof AiCodeExecutionError) {
+        captured.error = failure;
+        throw new AiFoundationError('internal_error');
+      }
+      throw failure;
+    }
+    if (!responseResult) {
+      captured.error = new AiCodeExecutionError('malformed_output');
+      throw new AiFoundationError('internal_error');
+    }
     return responseResult;
   }
 
-  private async createSandbox(
-    signal: AbortSignal | null | undefined,
-  ): Promise<SandboxDescriptor> {
+  private async createSandbox(signal: AbortSignal | null | undefined): Promise<SandboxDescriptor> {
     const response = await this.fetchImpl(`${OPENAI_API_BASE}/containers`, {
       method: 'POST',
       headers: openAiHeaders(this.apiKey),
@@ -504,7 +517,9 @@ function parseJsonBytes(bytes: Uint8Array): Record<string, unknown> {
 
 async function readBoundedJson(response: Response, maxBytes: number): Promise<unknown> {
   try {
-    return JSON.parse(new TextDecoder().decode(await readBoundedBytes(response, maxBytes))) as unknown;
+    return JSON.parse(
+      new TextDecoder().decode(await readBoundedBytes(response, maxBytes)),
+    ) as unknown;
   } catch (error) {
     if (error instanceof AiCodeExecutionError) throw error;
     throw new AiCodeExecutionError('malformed_output');

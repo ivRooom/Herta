@@ -80,7 +80,10 @@ describe('AiArtifactRuntime Phase 2 execution', () => {
   });
 
   it('execution service未構成ならfail closedして未実行を明示する', async () => {
-    const runtime = new AiArtifactRuntime({ generationService: generationService(), artifactConfig });
+    const runtime = new AiArtifactRuntime({
+      generationService: generationService(),
+      artifactConfig,
+    });
 
     const result = await runtime.prepare(request);
 

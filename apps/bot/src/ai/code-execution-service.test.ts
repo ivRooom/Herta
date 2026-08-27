@@ -141,7 +141,9 @@ describe('OpenAiCodeExecutionService', () => {
     expect(result.estimatedCost).toBeGreaterThanOrEqual(0.03);
     expect(reservations).toContain(30_000);
 
-    const createBody = JSON.parse(calls.find((call) => call.url.endsWith('/containers'))?.body ?? '{}');
+    const createBody = JSON.parse(
+      calls.find((call) => call.url.endsWith('/containers'))?.body ?? '{}',
+    );
     expect(createBody).toEqual({
       name: 'herta-python-execution',
       memory_limit: '1g',
@@ -151,7 +153,9 @@ describe('OpenAiCodeExecutionService', () => {
     expect(createBody).not.toHaveProperty('env');
     expect(createBody).not.toHaveProperty('files');
 
-    const responseBody = JSON.parse(calls.find((call) => call.url.endsWith('/responses'))?.body ?? '{}');
+    const responseBody = JSON.parse(
+      calls.find((call) => call.url.endsWith('/responses'))?.body ?? '{}',
+    );
     expect(responseBody.tools).toEqual([{ type: 'code_interpreter', container: 'cntr_test' }]);
     expect(responseBody.tool_choice).toBe('required');
     expect(responseBody.max_tool_calls).toBe(8);
@@ -284,7 +288,9 @@ describe('OpenAiCodeExecutionService', () => {
       if (url.endsWith('/containers') && init?.method === 'POST') return containerResponse();
       if (url.endsWith('/responses')) {
         return new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('Aborted', 'AbortError')),
+          );
         });
       }
       if (url.endsWith('/containers/cntr_test') && init?.method === 'DELETE') {
@@ -343,6 +349,8 @@ describe('OpenAiCodeExecutionService', () => {
     });
 
     await expect(service.execute(request)).rejects.toBeInstanceOf(AiCodeExecutionError);
-    await expect(service.execute(request)).rejects.toMatchObject({ category: 'sandbox_policy_failed' });
+    await expect(service.execute(request)).rejects.toMatchObject({
+      category: 'sandbox_policy_failed',
+    });
   });
 });

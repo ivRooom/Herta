@@ -16,10 +16,7 @@ import {
 import type { AiRuntimeGenerationService } from './runtime-service.js';
 
 export type AiArtifactRuntimeErrorCategory =
-  | 'malformed_generation'
-  | 'validation_failed'
-  | 'execution_failed'
-  | 'internal_error';
+  'malformed_generation' | 'validation_failed' | 'execution_failed' | 'internal_error';
 
 export class AiArtifactRuntimeError extends Error {
   readonly category: AiArtifactRuntimeErrorCategory;
@@ -242,7 +239,10 @@ export class AiArtifactRuntime {
     }
 
     try {
-      const result = await this.executionService.execute({ ...request, artifactConfig: this.artifactConfig });
+      const result = await this.executionService.execute({
+        ...request,
+        artifactConfig: this.artifactConfig,
+      });
       const artifacts =
         result.files.length === 0
           ? []
