@@ -156,9 +156,7 @@ export function resolveAiArtifactIntent(input: string): AiArtifactIntent {
   if (creationRequested && codeRequested) return 'code_artifact';
 
   const fileRequested =
-    /(markdown|readme|\.md\b|json\b|yaml\b|yml\b|csv\b|txt\b|テキスト|ファイル)/i.test(
-      normalized,
-    );
+    /(markdown|readme|\.md\b|json\b|yaml\b|yml\b|csv\b|txt\b|テキスト|ファイル)/i.test(normalized);
   if (creationRequested && fileRequested) return 'file_artifact';
 
   if (/(詳しく|詳細に|丁寧に|step[- ]by[- ]step|in detail|detailed)/i.test(normalized)) {
@@ -185,10 +183,7 @@ export function validateAiArtifactBatch(
   return drafts.map((draft) => validateAiArtifact(draft, config));
 }
 
-export function validateAiArtifact(
-  draft: AiArtifactDraft,
-  config: AiArtifactConfig,
-): AiArtifact {
+export function validateAiArtifact(draft: AiArtifactDraft, config: AiArtifactConfig): AiArtifact {
   const filename = normalizeArtifactFilename(draft.filename);
   const extension = extensionOf(filename);
   if (!isSupportedExtension(extension)) {
