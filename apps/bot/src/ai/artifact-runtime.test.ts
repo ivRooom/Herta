@@ -131,6 +131,57 @@ describe('AiArtifactRuntime', () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
+  it('cross-language変換でtargetがPythonならproviderへ進める', async () => {
+    const requests: AiRuntimeGenerationRequest[] = [];
+    const runtime = new AiArtifactRuntime({
+      generationService: serviceReturning(
+        JSON.stringify({
+          artifacts: [
+            {
+              filename: 'converted.py',
+              mimeType: 'text/x-python',
+              content: 'print("converted")\n',
+            },
+          ],
+        }),
+        requests,
+      ),
+      artifactConfig,
+    });
+
+    const result = await runtime.prepare({
+      ...request,
+      input: 'Convert this JavaScript code to Python',
+    });
+
+    expect(result).toMatchObject({ status: 'ready', intent: 'code_artifact' });
+    expect(requests).toHaveLength(1);
+  });
+
+  it('generic file routeでproviderが.pyを返してもdelivery前にrejectする', async () => {
+    const runtime = new AiArtifactRuntime({
+      generationService: serviceReturning(
+        JSON.stringify({
+          artifacts: [
+            {
+              filename: 'script.py',
+              mimeType: 'text/x-python',
+              content: 'print(1)\n',
+            },
+          ],
+        }),
+      ),
+      artifactConfig,
+    });
+
+    await expect(
+      runtime.prepare({
+        ...request,
+        input: 'READMEをMarkdownで作って',
+      }),
+    ).rejects.toMatchObject({ category: 'validation_failed' });
+  });
+
   it('既存chat modeはartifact provider callへrouteしない', async () => {
     const generate = vi.fn<AiRuntimeGenerationService['generate']>();
     const runtime = new AiArtifactRuntime({
