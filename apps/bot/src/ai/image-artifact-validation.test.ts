@@ -21,9 +21,20 @@ async function webp(width = 64, height = 64): Promise<Uint8Array> {
     await sharp({
       create: { width, height, channels: 4, background: { r: 32, g: 64, b: 96, alpha: 1 } },
     })
-      .webp()
+      .toFormat('webp')
       .toBuffer(),
   );
+}
+
+function animatedWebpHeader(): Uint8Array {
+  const bytes = new Uint8Array(30);
+  bytes.set(new TextEncoder().encode('RIFF'), 0);
+  bytes.set([22, 0, 0, 0], 4);
+  bytes.set(new TextEncoder().encode('WEBP'), 8);
+  bytes.set(new TextEncoder().encode('VP8X'), 12);
+  bytes.set([10, 0, 0, 0], 16);
+  bytes[20] = 0x02;
+  return bytes;
 }
 
 describe('AI image artifact validation', () => {
@@ -48,6 +59,16 @@ describe('AI image artifact validation', () => {
       bytes: await webp(),
     });
     expect(artifact).toMatchObject({ mimeType: 'image/webp', kind: 'image' });
+  });
+
+  it('animated WebPをdecoder前にrejectする', async () => {
+    await expect(
+      validateAiImageArtifact({
+        filename: 'animated.webp',
+        mimeType: 'image/webp',
+        bytes: animatedWebpHeader(),
+      }),
+    ).rejects.toMatchObject({ code: 'malformed_image' });
   });
 
   it('MIME spoof / extension mismatchをrejectする', async () => {
