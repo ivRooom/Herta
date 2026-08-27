@@ -76,4 +76,21 @@ describe('AI Foundation Bot credential bootstrap', () => {
     expect(result.credentialSource).toBe('runtime_secret');
     expect(result.service).not.toBeNull();
   });
+
+  it('runtime provider/profile/modelのenv不正値はbootstrapを妨げない', async () => {
+    const result = await createAiFoundationRuntime({
+      prisma,
+      redis,
+      env: {
+        HERTA_AI_ENABLED: 'true',
+        HERTA_AI_PROVIDER: 'unsupported',
+        HERTA_AI_MODEL_PROFILE: 'ultra',
+        HERTA_AI_MODEL: 'arbitrary-model',
+      },
+      readSecret: async () => 'stored-key',
+    });
+
+    expect(result.status).toBe('ready');
+    expect(result.service).not.toBeNull();
+  });
 });

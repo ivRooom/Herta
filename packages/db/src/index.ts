@@ -13,6 +13,7 @@ export * from './studio-access-control.js';
 export * from './studio-access-groups-admin.js';
 export * from './rule-runtime.js';
 export * from './runtime-secrets.js';
+export * from './runtime-configurations.js';
 
 import { PrismaClient } from '@prisma/client';
 

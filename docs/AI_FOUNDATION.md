@@ -5,9 +5,10 @@ Hertaの生成AI機能をDiscord/RAG機能から分離し、provider呼び出し
 ## Rollout state
 
 - production既定: `HERTA_AI_ENABLED=false`
-- provider: `openai` only
+- implemented provider: `openai` only
 - provider credential: Studio Runtime Secret Store `openai.api_key` をprimary source
 - `OPENAI_API_KEY`: migration fallback only (secret未登録時のみ)
+- model profile / reasoning: Studio global admin向けnon-secret Runtime Settings。未登録時のみallowlisted env defaultを使用
 - Guild Plugin configへprovider secret/model/quotaは保存しない
 - Discord mention/Q&A surfaceとRAG corpusは後続PR
 
@@ -19,9 +20,27 @@ Hertaの生成AI機能をDiscord/RAG機能から分離し、provider呼び出し
 | balanced | `gpt-5.6-terra` |               $2.00 |               $12.00 |
 | economy  | `gpt-5.6-luna`  |               $0.20 |                $1.20 |
 
-2026-08-26時点のOpenAI standard short-context text token価格をcode-reviewed constantとして保持します。Herta v1の入力上限は24,000 bytesのため、272K tokens超リクエスト向けの高倍率価格帯には到達しません。cost guardはcached-input割引を前提にせず標準価格で保守的に見積もります。
+2026-08-26時点のOpenAI standard short-context text token価格をcode-reviewed cost guardとして保持します。Studioへ返すpricing metadataも同じdeterministic cost計算から導出し、UI表示とpreflight/settlementで価格がdriftしないようにします。Herta v1の入力上限は24,000 bytesのため、272K tokens超リクエスト向けの高倍率価格帯には到達しません。cost guardはcached-input割引を前提にせず標準価格で保守的に見積もります。
 
 `gpt-5.6-sol` の $4 / $20 はOpenAIが **2026-11-21まで少なくとも利用可能** と案内しているpromotional pricingです。価格変更後も古い安価な定数で課金を過小評価しないため、Hertaは2026-11-22 UTC以降、pricing constantがcode reviewで更新されるまでSol/quality provider callをfail closedします。期限延長だけでこのguardを無効化しません。
+
+## Runtime model / reasoning settings
+
+Model / reasoningはsecretではないため`runtime_secrets`へ保存せず、typed `runtime_configurations` storeの`ai.runtime`へ保存します。credentialは引き続きRuntime Secret Storeへ分離します。
+
+解決順序は以下です。
+
+1. valid Studio console runtime setting
+2. allowlisted env default: `HERTA_AI_PROVIDER` / `HERTA_AI_MODEL_PROFILE` / `HERTA_AI_REASONING_EFFORT`
+3. hard-coded safe default: `openai / balanced / low`
+
+server-side policyがprovider、`quality / balanced / economy`、concrete model、modelごとのreasoning allowlist、pricing metadataをSource of Truthとして管理します。clientからarbitrary provider/model/reasoning stringは受け付けません。unsupported combinationや保存済みinvalid valueはsilently downgradeせずfail closedします。non-secret store自体のread failureだけはallowlisted env/defaultへfallbackします。
+
+Botはinstanceごとに5秒TTLのbounded-stale resolverを持ち、request開始時に1つのimmutable runtime snapshotを解決します。同一requestではprovider/model/reasoning/pricingの選択を途中変更せず、複数Bot instanceもTTL内で同じ永続設定へ収束します。Console保存後にproduction deployやBot restartは不要です。
+
+Studio Admin API `/api/admin/runtime-config/ai` はHerta global admin only、mutation Same-Origin、4 KiB bounded body、`Cache-Control: no-store`、server allowlist validationを必須とします。
+
+`HERTA_AI_ENABLED`、kill switch、rate/quota/cost/concurrency等のsecurity guardはConsoleへ移さずserver-side gateとして維持します。
 
 ## Default guards
 
@@ -56,7 +75,7 @@ Provider callにはすべて必要です。
 8. per-user / per-Guild rate limit
 9. per-Guild quota reservation
 10. global concurrency lease
-11. provider/model allowlist
+11. provider/model/reasoning allowlist
 12. current code-reviewed pricing guard
 
 ## Credential resolution
@@ -108,7 +127,7 @@ Redis rate/quota keyではraw Guild ID / User IDをSHA-256由来の短いprivacy
 - endpoint: `/v1/responses`
 - `store:false`
 - `truncation:'disabled'`
-- `reasoning.effort:'low'`
+- `reasoning.effort`: request開始時に解決したserver-side runtime snapshotのallowlisted値
 - `max_output_tokens` server-side bound
 - AbortController timeoutをHTTP headers受信だけでなくresponse body完読まで適用
 - bounded provider response parsing
@@ -122,12 +141,13 @@ Gate 0 / AOPとCredential Consoleを先に完了します。
 
 1. #328/#333等のorigin protection deployment pathをproductionへ反映
 2. Cloudflare Global AOPを有効化しCloudflare経由200 / direct-origin TLS拒否を確認
-3. Credential Console migrationを適用
+3. Credential Console migrationと`runtime_configurations` migrationをproduction手順に従って適用
 4. `HERTA_RUNTIME_SECRET_KEY` をserver-sideへ一度設定
 5. Studio SettingsからOpenAI API keyを登録
-6. Semantic Search等でconsole credentialを確認
-7. AI Foundation自体は `HERTA_AI_ENABLED=false` のままdeploy
-8. Discord Q&A/RAG surface完成後、限定Guildでopt-inして段階有効化
+6. AI Runtime Settingsのread/saveとBot bounded-stale refreshを確認
+7. Semantic Search等でconsole credentialを確認
+8. AI Foundation自体は `HERTA_AI_ENABLED=false` のままdeploy
+9. Discord Q&A/RAG surface完成後、限定Guildでopt-inして段階有効化
 
 ## Emergency response
 
