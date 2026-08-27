@@ -160,7 +160,7 @@ export function resolveAiArtifactIntent(input: string): AiArtifactIntent {
     );
   const imageRequested = /(画像|イラスト|image\b|picture\b|png\b|webp\b)/i.test(normalized);
   const directImageCreationRequested =
-    /^(?:please\s+)?(?:create|generate|make)\s+(?:an?\s+)?(?:png\s+|webp\s+)?(?:image|picture)\b/i.test(
+    /^(?:please\s+)?(?:create|generate|make)\s+(?:an?\s+)?(?:png\s+|webp\s+)?(?:image|picture)(?![-\w])/i.test(
       normalized,
     ) || /(?:画像|イラスト).*?(?:を)?(?:作って|生成して)\s*$/i.test(normalized);
 
