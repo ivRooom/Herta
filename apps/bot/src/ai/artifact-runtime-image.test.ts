@@ -148,7 +148,9 @@ describe('AiArtifactRuntime image generation', () => {
         })),
       },
       artifactConfig: { maxBytes: 4096, maxFiles: 2 },
-      telemetry: (event) => events.push(event),
+      telemetry: (event) => {
+        events.push(event);
+      },
     });
 
     await runtime.prepare(request);
