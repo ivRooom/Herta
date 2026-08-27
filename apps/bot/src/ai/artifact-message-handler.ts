@@ -97,6 +97,7 @@ export function isAiArtifactMessageCandidate(
     !message.author.bot &&
     !message.webhookId &&
     message.mentions.users.has(botUserId) &&
+    hasBotMentionInContent(message.content, botUserId) &&
     stripBotMention(message.content, botUserId),
   );
 }
@@ -104,6 +105,11 @@ export function isAiArtifactMessageCandidate(
 export function stripBotMention(content: string, botUserId: string): string {
   if (typeof content !== 'string' || !/^\d+$/.test(botUserId)) return '';
   return content.replace(new RegExp(`<@!?${botUserId}>`, 'g'), ' ').trim();
+}
+
+function hasBotMentionInContent(content: string, botUserId: string): boolean {
+  if (typeof content !== 'string' || !/^\d+$/.test(botUserId)) return false;
+  return content.includes(`<@${botUserId}>`) || content.includes(`<@!${botUserId}>`);
 }
 
 function toSafeArtifactMessageError(error: unknown): { category: string; userMessage: string } {
