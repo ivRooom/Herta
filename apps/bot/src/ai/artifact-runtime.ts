@@ -1,4 +1,5 @@
 import {
+  isPythonCodeArtifactRequest,
   resolveAiArtifactIntent,
   validateAiArtifactBatch,
   type AiArtifact,
@@ -32,7 +33,7 @@ export type AiArtifactRuntimeResult =
     }
   | {
       status: 'unsupported';
-      intent: 'code_execution' | 'image_generation';
+      intent: 'code_artifact' | 'code_execution' | 'image_generation';
       userMessage: string;
     }
   | {
@@ -145,6 +146,22 @@ export class AiArtifactRuntime {
         status: 'unsupported',
         intent,
         userMessage: '画像生成はまだ有効化されていません。画像は生成していません。',
+      };
+    }
+
+    if (intent === 'code_artifact' && !isPythonCodeArtifactRequest(request.input)) {
+      this.emitTelemetry({
+        intent,
+        resultCategory: 'rejected',
+        artifactCount: 0,
+        totalBytes: 0,
+        artifacts: [],
+        errorCategory: null,
+      });
+      return {
+        status: 'unsupported',
+        intent,
+        userMessage: 'Phase 1ではPythonコードのみ対応しています。成果物は作成していません。',
       };
     }
 
