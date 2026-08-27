@@ -1,8 +1,21 @@
 import type { AiGenerationResponse } from '@herta/plugin-catalog/ai-service';
 import { describe, expect, it, vi } from 'vitest';
 import { AiArtifactRuntime } from './artifact-runtime.js';
-import { handleAiArtifactMessage, stripBotMention } from './artifact-message-handler.js';
+import {
+  handleAiArtifactMessage,
+  stripBotMention,
+  type DiscordSafeTextReplyOptions,
+} from './artifact-message-handler.js';
+import type { DiscordArtifactReplyOptions } from './discord-artifact-delivery.js';
 import type { AiRuntimeGenerationService } from './runtime-service.js';
+
+type ArtifactReply = (
+  options: DiscordArtifactReplyOptions | DiscordSafeTextReplyOptions,
+) => Promise<unknown>;
+
+function replyMock() {
+  return vi.fn<ArtifactReply>(async () => undefined);
+}
 
 function successService(source = 'print("hello")\n'): AiRuntimeGenerationService {
   return {
@@ -19,7 +32,7 @@ function successService(source = 'print("hello")\n'): AiRuntimeGenerationService
   };
 }
 
-function message(content: string, reply = vi.fn(async () => undefined)) {
+function message(content: string, reply = replyMock()) {
   return {
     guildId: 'guild-1',
     content,
@@ -46,7 +59,7 @@ describe('artifact Discord mention handler', () => {
       generationService: successService(source),
       artifactConfig: { maxBytes: 4096, maxFiles: 2 },
     });
-    const reply = vi.fn(async () => undefined);
+    const reply = replyMock();
 
     const result = await handleAiArtifactMessage(
       message('<@123456789> Pythonコードを書いて', reply),
@@ -65,7 +78,7 @@ describe('artifact Discord mention handler', () => {
 
   it('artifact生成失敗時は成功messageを返さない', async () => {
     const generationService: AiRuntimeGenerationService = {
-      generate: vi.fn(async () => ({
+      generate: vi.fn(async (): Promise<AiGenerationResponse> => ({
         requestId: 'request-1',
         provider: 'openai',
         model: 'gpt-5.6-terra',
@@ -86,7 +99,7 @@ describe('artifact Discord mention handler', () => {
       generationService,
       artifactConfig: { maxBytes: 4096, maxFiles: 2 },
     });
-    const reply = vi.fn(async () => undefined);
+    const reply = replyMock();
 
     const result = await handleAiArtifactMessage(
       message('<@123456789> Pythonコードを書いて', reply),
@@ -107,7 +120,7 @@ describe('artifact Discord mention handler', () => {
       generationService,
       artifactConfig: { maxBytes: 4096, maxFiles: 2 },
     });
-    const reply = vi.fn(async () => undefined);
+    const reply = replyMock();
 
     const result = await handleAiArtifactMessage(
       message('<@123456789> Pythonコードを実行して', reply),
@@ -126,7 +139,7 @@ describe('artifact Discord mention handler', () => {
       generationService,
       artifactConfig: { maxBytes: 4096, maxFiles: 2 },
     });
-    const reply = vi.fn(async () => undefined);
+    const reply = replyMock();
 
     const result = await handleAiArtifactMessage(
       message('<@123456789> おはよう', reply),
@@ -144,7 +157,7 @@ describe('artifact Discord mention handler', () => {
       generationService,
       artifactConfig: { maxBytes: 4096, maxFiles: 2 },
     });
-    const reply = vi.fn(async () => undefined);
+    const reply = replyMock();
 
     const result = await handleAiArtifactMessage(
       message('<@123456789> Pythonコードを書いて', reply),
