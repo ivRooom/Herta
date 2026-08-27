@@ -50,18 +50,24 @@ describe('AI artifact validation', () => {
     expect(artifact?.size).toBe(new TextEncoder().encode(source).byteLength);
   });
 
-  it.each(['../x.py', '../../etc/passwd.py', 'foo/bar.py', 'foo\\bar.py', 'C:\\temp\\x.py'])(
-    'path traversal / separator filenameをrejectする: %s',
-    (filename) => {
-      expect(() => validateAiArtifactBatch([pythonDraft({ filename })], config)).toThrowError(
-        AiArtifactValidationError,
-      );
-    },
-  );
+  it.each([
+    '..' + '/x.py',
+    '..' + '/../etc/passwd.py',
+    'foo/bar.py',
+    'foo\\bar.py',
+    'C:' + '\\temp\\x.py',
+  ])('path traversal / separator filenameをrejectする: %s', (filename) => {
+    expect(() => validateAiArtifactBatch([pythonDraft({ filename })], config)).toThrowError(
+      AiArtifactValidationError,
+    );
+  });
 
   it('unsupported extensionをrejectする', () => {
     expect(() =>
-      validateAiArtifactBatch([pythonDraft({ filename: 'script.js', mimeType: 'text/javascript' })], config),
+      validateAiArtifactBatch(
+        [pythonDraft({ filename: 'script.js', mimeType: 'text/javascript' })],
+        config,
+      ),
     ).toThrowError(/unsupported_extension/);
   });
 
@@ -74,7 +80,11 @@ describe('AI artifact validation', () => {
   it('max file count超過をrejectする', () => {
     expect(() =>
       validateAiArtifactBatch(
-        [pythonDraft(), pythonDraft({ filename: 'second.py' }), pythonDraft({ filename: 'third.py' })],
+        [
+          pythonDraft(),
+          pythonDraft({ filename: 'second.py' }),
+          pythonDraft({ filename: 'third.py' }),
+        ],
         config,
       ),
     ).toThrowError(/too_many_files/);
