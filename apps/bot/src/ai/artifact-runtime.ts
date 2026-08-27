@@ -261,6 +261,7 @@ function parseGeneratedArtifactEnvelope(
 
 function artifactKindForFilename(filename: string): AiArtifact['kind'] {
   const lower = filename.toLowerCase();
+  if (lower.endsWith('.py')) return 'code';
   if (lower.endsWith('.md') || lower.endsWith('.txt')) return 'document';
   if (
     lower.endsWith('.json') ||
@@ -288,7 +289,14 @@ function assertIntentMatchesArtifacts(
     }
     return;
   }
-  if (artifacts.some((artifact) => artifact.kind === 'code' || artifact.kind === 'image')) {
+  if (
+    artifacts.some(
+      (artifact) =>
+        artifact.kind === 'code' ||
+        artifact.kind === 'image' ||
+        artifact.filename.toLowerCase().endsWith('.py'),
+    )
+  ) {
     throw new AiArtifactRuntimeError('validation_failed');
   }
 }
