@@ -76,6 +76,7 @@ describe('AI artifact intent', () => {
     expect(resolveAiArtifactIntent('Write Python code to generate a PNG image')).toBe(
       'code_artifact',
     );
+    expect(resolveAiArtifactIntent('Write Python to generate a PNG image')).toBe('code_artifact');
     expect(resolveAiArtifactIntent('Create a Python image-processing script')).toBe(
       'code_artifact',
     );
