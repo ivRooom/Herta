@@ -62,6 +62,13 @@ export class AiArtifactValidationError extends Error {
   }
 }
 
+export class AiArtifactConfigurationError extends Error {
+  constructor(field: string) {
+    super(`AI artifact configuration is invalid: ${field}`);
+    this.name = 'AiArtifactConfigurationError';
+  }
+}
+
 const MIME_BY_EXTENSION = {
   '.py': 'text/x-python',
   '.md': 'text/markdown',
@@ -106,11 +113,18 @@ export function resolveAiArtifactConfig(
   return {
     maxBytes: boundedInteger(
       env['HERTA_AI_ARTIFACT_MAX_BYTES'],
+      'HERTA_AI_ARTIFACT_MAX_BYTES',
       AI_ARTIFACT_DEFAULTS.maxBytes,
       1024,
       8 * 1024 * 1024,
     ),
-    maxFiles: boundedInteger(env['HERTA_AI_ARTIFACT_MAX_FILES'], AI_ARTIFACT_DEFAULTS.maxFiles, 1, 5),
+    maxFiles: boundedInteger(
+      env['HERTA_AI_ARTIFACT_MAX_FILES'],
+      'HERTA_AI_ARTIFACT_MAX_FILES',
+      AI_ARTIFACT_DEFAULTS.maxFiles,
+      1,
+      5,
+    ),
   };
 }
 
@@ -118,7 +132,12 @@ export function resolveAiArtifactIntent(input: string): AiArtifactIntent {
   const normalized = normalizeIntentInput(input);
   if (!normalized) return 'chat';
 
+  const executionExplicitlyDenied =
+    /(実行しない|実行はしない|実行せず|動かさない|走らせない|runしない|do not (?:run|execute)|don't (?:run|execute)|without (?:running|executing))/i.test(
+      normalized,
+    );
   const executionRequested =
+    !executionExplicitlyDenied &&
     /(実行|動かして|走らせて|計算して|変換して|run\b|execute\b|execution\b)/i.test(normalized);
   const codeRequested =
     /(python|py\b|typescript|javascript|java\b|golang|\bgo\b|rust|c#|コード|スクリプト|program|source code)/i.test(
@@ -251,10 +270,18 @@ function isSupportedMimeType(value: string): value is SupportedMimeType {
   return Object.values(MIME_BY_EXTENSION).includes(value as SupportedMimeType);
 }
 
-function boundedInteger(value: string | undefined, fallback: number, min: number, max: number): number {
+function boundedInteger(
+  value: string | undefined,
+  field: string,
+  fallback: number,
+  min: number,
+  max: number,
+): number {
   const normalized = value?.trim();
   if (!normalized) return fallback;
   const parsed = Number(normalized);
-  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) return fallback;
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+    throw new AiArtifactConfigurationError(field);
+  }
   return parsed;
 }
