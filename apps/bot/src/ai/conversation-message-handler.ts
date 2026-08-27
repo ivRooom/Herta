@@ -23,6 +23,8 @@ const DISCORD_CONVERSATION_INSTRUCTION = [
   'Do not claim that retrieval, web access, tools, code execution, or artifact generation happened unless trusted application context confirms it.',
 ].join(' ');
 
+const EXPLICIT_DETAIL_REQUEST_PATTERN =
+  /(?:詳しく|詳細に|丁寧に|手順(?:を)?(?:全部|すべて|全て)|(?:全部|すべて|全て)の?手順|比較して|比較してください|比較を|step[- ]by[- ]step|all\s+(?:the\s+)?steps|compare\b|comparison\b|in\s+detail|detailed)/i;
 const EXPLICIT_SOURCE_REQUEST_PATTERN =
   /(?:出典|引用元|citation|citations|source(?:s)?|ソース(?:を|が|は)?|web\s*検索|ウェブ\s*検索|search\s+(?:the\s+)?web|look\s+up)/i;
 const CURRENT_EXTERNAL_FACT_PATTERN =
@@ -60,7 +62,7 @@ export async function handleAiConversationMessage(
   const pluginConfig = await options.getAiPluginConfig(message.guildId);
   if (!pluginConfig || pluginConfig['enabled'] !== true) return { status: 'ignored' };
 
-  const intent = resolveAiArtifactIntent(input);
+  const intent = resolveAiDiscordIntent(input);
   if (intent !== 'chat' && intent !== 'detailed_answer') {
     return handleAiArtifactMessage(message, options);
   }
@@ -119,6 +121,12 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
   }
 
   return 'not_required';
+}
+
+function resolveAiDiscordIntent(input: string): AiArtifactIntent {
+  const artifactIntent = resolveAiArtifactIntent(input);
+  if (artifactIntent !== 'chat') return artifactIntent;
+  return EXPLICIT_DETAIL_REQUEST_PATTERN.test(input) ? 'detailed_answer' : 'chat';
 }
 
 function validateDiscordConversationReply(value: string): string {
