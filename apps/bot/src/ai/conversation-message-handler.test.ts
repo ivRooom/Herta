@@ -245,7 +245,7 @@ describe('Discord conversational Q&A handler', () => {
     expect(reply.mock.calls[0]?.[0]?.content).toBe('AI機能の処理中にエラーが発生しました。');
   });
 
-  it('Discord delivery failureをsuccess扱いせずcallerへ伝播する', async () => {
+  it('Discord delivery failureをsuccess扱いせずcallerへ伝播し二重返信しない', async () => {
     const service = generationService();
     const reply = vi.fn<Reply>(async () => {
       throw new Error('discord delivery failed');
@@ -257,7 +257,7 @@ describe('Discord conversational Q&A handler', () => {
         options(service),
       ),
     ).rejects.toThrow('discord delivery failed');
-    expect(reply).toHaveBeenCalledTimes(2);
+    expect(reply).toHaveBeenCalledTimes(1);
   });
 });
 
