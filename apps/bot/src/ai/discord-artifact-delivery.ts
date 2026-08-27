@@ -32,7 +32,9 @@ export async function deliverDiscordExecutionArtifacts(
   summary: string,
   artifacts: readonly AiArtifact[],
 ): Promise<void> {
-  if (artifacts.length < 1) throw new Error('Validated execution artifacts are required for delivery');
+  if (artifacts.length < 1) {
+    throw new Error('Validated execution artifacts are required for delivery');
+  }
   const filenames = artifacts.map((artifact) => artifact.filename);
   await target.reply({
     content: buildExecutionDeliverySummary(summary, filenames),
