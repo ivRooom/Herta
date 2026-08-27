@@ -64,6 +64,24 @@ describe('AI artifact intent', () => {
     expect(isPythonCodeArtifactRequest('Pythonで書いて、JavaScriptではなく')).toBe(true);
   });
 
+  it('cross-language変換ではsource言語ではなくtarget言語を判定する', () => {
+    expect(isPythonCodeArtifactRequest('Convert this JavaScript code to Python')).toBe(true);
+    expect(isPythonCodeArtifactRequest('Rewrite this JavaScript code in Python')).toBe(true);
+    expect(isPythonCodeArtifactRequest('Convert this Python code to JavaScript')).toBe(false);
+    expect(isPythonCodeArtifactRequest('JavaScriptコードをPythonに変換して')).toBe(true);
+    expect(isPythonCodeArtifactRequest('PythonコードをJavaScriptに変換して')).toBe(false);
+  });
+
+  it('画像がコードの出力/題材ならcode artifactを優先する', () => {
+    expect(resolveAiArtifactIntent('Write Python code to generate a PNG image')).toBe(
+      'code_artifact',
+    );
+    expect(resolveAiArtifactIntent('Create a Python image-processing script')).toBe(
+      'code_artifact',
+    );
+    expect(resolveAiArtifactIntent('Generate an image of Python code')).toBe('image_generation');
+  });
+
   it('generic file artifactとimage generationをtyped intentへ分離する', () => {
     expect(resolveAiArtifactIntent('READMEをMarkdownで作って')).toBe('file_artifact');
     expect(resolveAiArtifactIntent('猫の画像を生成して')).toBe('image_generation');
