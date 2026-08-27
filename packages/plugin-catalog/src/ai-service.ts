@@ -30,7 +30,7 @@ const MODEL_BY_PROFILE: Record<AiModelProfile, AiOpenAiModel> = {
 };
 
 /**
- * OpenAI standard pricing (USD / 1M tokens) captured for deterministic cost guards.
+ * OpenAI standard short-context pricing (USD / 1M tokens) captured for deterministic cost guards.
  * This is intentionally code-reviewed rather than fetched at runtime. When prices change,
  * update these values and docs in the same PR.
  */
@@ -42,6 +42,9 @@ const OPENAI_STANDARD_PRICING: Record<
   'gpt-5.6-terra': { inputUsdPerMillion: 2, outputUsdPerMillion: 12 },
   'gpt-5.6-luna': { inputUsdPerMillion: 0.2, outputUsdPerMillion: 1.2 },
 };
+
+/** OpenAI guarantees the current Sol promotional price at least through 2026-11-21. */
+const OPENAI_SOL_PROMOTIONAL_PRICING_REVIEW_AFTER_MS = Date.parse('2026-11-22T00:00:00.000Z');
 
 export const AI_DEFAULTS = {
   enabled: false,
@@ -60,7 +63,7 @@ export const AI_DEFAULTS = {
   guildQuotaMicroUsd: 1_000_000,
   quotaWindowMs: 24 * 60 * 60 * 1_000,
   globalConcurrency: 4,
-  perRequestCostLimitMicroUsd: 30_000,
+  perRequestCostLimitMicroUsd: 120_000,
 } as const;
 
 export interface AiFoundationConfig {
@@ -373,6 +376,7 @@ export class AiFoundationService {
         throw new AiFoundationError('unauthorized');
       }
       if (!request.pluginEnabled || !request.guildOptIn) throw new AiFoundationError('disabled');
+      assertOpenAiPricingGuardCurrent(this.config.model, startedAt);
 
       const input = validateAndNormalizeInput(request.input, this.config);
       const userKey = privacyKey('user', request.guildId, request.userId);
@@ -483,7 +487,7 @@ export class AiFoundationService {
       // the quota window expires. This avoids under-counting requests whose billing outcome
       // is unknown after timeout/malformed responses.
       void quotaReserved;
-      await emitTelemetrySafely(this.telemetry, {
+      emitTelemetrySafely(this.telemetry, {
         requestId,
         feature,
         provider: this.config.provider,
@@ -594,6 +598,22 @@ export function estimateOpenAiCostMicroUsd(
 
 function parseOpenAiResponse(value: unknown): AiProviderResult {
   if (!isRecord(value)) throw new AiFoundationError('malformed_response');
+
+  const status = value['status'];
+  if (status === 'incomplete') {
+    const incompleteDetails = value['incomplete_details'];
+    if (
+      isRecord(incompleteDetails) &&
+      (incompleteDetails['reason'] === 'max_output_tokens' ||
+        incompleteDetails['reason'] === 'max_tokens')
+    ) {
+      throw new AiFoundationError('output_too_large');
+    }
+    throw new AiFoundationError('provider_rejected');
+  }
+  if (status !== 'completed') {
+    throw new AiFoundationError('provider_rejected');
+  }
 
   const usageValue = value['usage'];
   if (!isRecord(usageValue)) throw new AiFoundationError('malformed_response');
@@ -716,16 +736,23 @@ function microUsdToUsd(value: number): number {
   return Math.round(Math.max(0, value)) / 1_000_000;
 }
 
-async function emitTelemetrySafely(
-  sink: AiTelemetrySink | undefined,
-  event: AiTelemetryEvent,
-): Promise<void> {
-  if (!sink) return;
-  try {
-    await sink(event);
-  } catch {
-    // Telemetry must never change the user-facing AI result or expose raw content via fallback logs.
+function assertOpenAiPricingGuardCurrent(model: AiOpenAiModel, nowMs: number): void {
+  if (!Number.isFinite(nowMs)) throw new AiFoundationError('internal_error');
+  if (model === 'gpt-5.6-sol' && nowMs >= OPENAI_SOL_PROMOTIONAL_PRICING_REVIEW_AFTER_MS) {
+    throw new AiFoundationError('disabled');
   }
+}
+
+function emitTelemetrySafely(sink: AiTelemetrySink | undefined, event: AiTelemetryEvent): void {
+  if (!sink) return;
+  setTimeout(() => {
+    try {
+      const pending = sink(event);
+      void Promise.resolve(pending).catch(() => undefined);
+    } catch {
+      // Telemetry must never change the user-facing AI result or expose raw content via fallback logs.
+    }
+  }, 0);
 }
 
 function isAiProvider(value: string): value is AiProviderName {
@@ -787,8 +814,16 @@ return {count, ttl}
 const QUOTA_RESERVE_SCRIPT = `
 if redis.call('HEXISTS', KEYS[2], ARGV[1]) == 1 then
   local current = tonumber(redis.call('GET', KEYS[1]) or '0')
-  return {1, current, redis.call('PTTL', KEYS[1])}
+  local ttl = redis.call('PTTL', KEYS[1])
+  if ttl < 0 then
+    redis.call('PEXPIRE', KEYS[1], ARGV[4])
+    ttl = tonumber(ARGV[4])
+  end
+  local reservationsTtl = redis.call('PTTL', KEYS[2])
+  if reservationsTtl < 0 or reservationsTtl > ttl then redis.call('PEXPIRE', KEYS[2], ttl) end
+  return {1, current, ttl}
 end
+local startsNewWindow = redis.call('EXISTS', KEYS[1]) == 0
 local current = tonumber(redis.call('GET', KEYS[1]) or '0')
 local amount = tonumber(ARGV[2])
 local limit = tonumber(ARGV[3])
@@ -798,10 +833,15 @@ if current + amount > limit then
   return {0, current, ttl}
 end
 local total = redis.call('INCRBY', KEYS[1], amount)
+if startsNewWindow then redis.call('PEXPIRE', KEYS[1], ARGV[4]) end
+local ttl = redis.call('PTTL', KEYS[1])
+if ttl < 0 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[4])
+  ttl = tonumber(ARGV[4])
+end
 redis.call('HSET', KEYS[2], ARGV[1], amount)
-redis.call('PEXPIRE', KEYS[1], ARGV[4])
-redis.call('PEXPIRE', KEYS[2], ARGV[4])
-return {1, total, tonumber(ARGV[4])}
+redis.call('PEXPIRE', KEYS[2], ttl)
+return {1, total, ttl}
 `;
 
 const QUOTA_SETTLE_SCRIPT = `
