@@ -170,7 +170,8 @@ export function resolveAiArtifactIntent(input: string): AiArtifactIntent {
   if (
     creationRequested &&
     codeRequested &&
-    (CODE_OUTPUT_NOUN_PATTERN.test(normalized) || DIRECT_CODE_ARTIFACT_REQUEST_PATTERN.test(normalized))
+    (CODE_OUTPUT_NOUN_PATTERN.test(normalized) ||
+      DIRECT_CODE_ARTIFACT_REQUEST_PATTERN.test(normalized))
   ) {
     return 'code_artifact';
   }
