@@ -70,6 +70,7 @@ export async function handleAiConversationMessage(
   const responseMode: AiResponseMode = intent === 'detailed_answer' ? 'detailed' : 'chat';
   const groundingState = resolveAiConversationGroundingState(input);
 
+  let content: string;
   try {
     const response = await options.generationService.generate({
       feature: 'ai.conversation',
@@ -84,13 +85,7 @@ export async function handleAiConversationMessage(
       groundingState,
       trustedInstructions: [DISCORD_CONVERSATION_INSTRUCTION],
     });
-
-    const content = validateDiscordConversationReply(response.text);
-    await message.reply({
-      content,
-      allowedMentions: { parse: [] },
-    });
-    return { status: 'handled', intent, responseMode, groundingState };
+    content = validateDiscordConversationReply(response.text);
   } catch (error) {
     const safeError =
       error instanceof AiFoundationError ? error : new AiFoundationError('internal_error');
@@ -100,6 +95,14 @@ export async function handleAiConversationMessage(
     });
     return { status: 'failed', category: `foundation:${safeError.category}` };
   }
+
+  // Discord SDK errors can retain request payloads. Delivery happens outside the provider error
+  // boundary so a failed send is never converted into a second reply or a false success.
+  await message.reply({
+    content,
+    allowedMentions: { parse: [] },
+  });
+  return { status: 'handled', intent, responseMode, groundingState };
 }
 
 export function resolveAiConversationGroundingState(input: string): AiGroundingState {
