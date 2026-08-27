@@ -123,15 +123,15 @@ non-empty + max bytes
   -> extension / declared MIME allowlist
   -> PNG/WebP magic-byte sniff
   -> declared MIME / extension / sniffed MIME equality
+  -> APNG acTL / WebP animation structure reject
   -> sharp metadata under pixel/channel limit
   -> width / height / total pixel checks
-  -> single-page check
   -> decoder format check
   -> full raw decode under the same bounds
   -> validated AiArtifact(kind=image)
 ```
 
-`metadata()`だけではtruncated compressed streamを検出できないため、delivery前にfull decodeまで行う。Sharp/libvipsのinput pixel/channel limitとHerta側のdimension/pixel checksを重ね、pathological dimension/decompression bombをbounded memoryでfail closedする。
+Sharp 0.35では入力`metadata()`の型にframe/page countを依存させず、allowlist対象であるPNG/WebPについてAPNG `acTL` chunkとWebP `VP8X` animation flag / `ANIM` / `ANMF` chunkをbounded parserで先にrejectする。`metadata()`だけではtruncated compressed streamを検出できないため、delivery前にfull decodeまで行う。Sharp/libvipsのinput pixel/channel limitとHerta側のdimension/pixel checksを重ね、pathological dimension/decompression bombをbounded memoryでfail closedする。
 
 ### Base64 / provider response bounds
 
