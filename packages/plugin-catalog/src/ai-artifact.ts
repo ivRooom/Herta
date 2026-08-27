@@ -145,9 +145,8 @@ export function resolveAiArtifactIntent(input: string): AiArtifactIntent {
     );
   if (executionRequested && codeRequested) return 'code_execution';
 
-  const creationRequested = /(書いて|作って|生成して|出力して|create\b|write\b|generate\b|make\b)/i.test(
-    normalized,
-  );
+  const creationRequested =
+    /(書いて|作って|生成して|出力して|create\b|write\b|generate\b|make\b)/i.test(normalized);
   const imageRequested = /(画像|イラスト|image\b|picture\b|png\b|webp\b)/i.test(normalized);
   if (creationRequested && imageRequested) return 'image_generation';
 
