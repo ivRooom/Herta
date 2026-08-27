@@ -1,0 +1,42 @@
+name: PR349 maintenance
+
+on:
+  push:
+    branches:
+      - 'feat/345-image-generation-runtime'
+
+permissions:
+  contents: write
+
+jobs:
+  format-and-cleanup:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format Phase 3 files
+        run: >-
+          pnpm exec prettier --write
+          apps/bot/src/ai/artifact-runtime.ts
+          apps/bot/src/ai/image-artifact-validation.ts
+          apps/bot/src/ai/image-generation-service.test.ts
+          apps/bot/src/ai/image-generation-service.ts
+      - name: Remove temporary workflow and commit formatting
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/pr349-maintenance.yml
+          git add apps/bot/src/ai/artifact-runtime.ts \
+            apps/bot/src/ai/image-artifact-validation.ts \
+            apps/bot/src/ai/image-generation-service.test.ts \
+            apps/bot/src/ai/image-generation-service.ts
+          git commit -m 'style(ai): format Phase 3 image runtime'
+          git push
