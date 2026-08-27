@@ -107,8 +107,9 @@ describe('OpenAiRuntimeGenerationService', () => {
       text: { verbosity: 'low' },
     });
     expect(String(bodies[0]?.['instructions'])).toContain('usually two to five sentences');
+    expect(String(bodies[0]?.['instructions'])).toContain('Do not invent factual claims');
     expect(String(bodies[0]?.['instructions'])).toContain(
-      'Do not invent or claim unverified facts',
+      'Never present a guess as a confirmed fact',
     );
     expect(quality.model).toBe('gpt-5.6-sol');
     expect(quality.estimatedCost).toBe(0.00014);
