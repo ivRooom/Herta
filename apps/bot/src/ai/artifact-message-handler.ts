@@ -34,15 +34,18 @@ export type AiArtifactMessageHandleResult =
     }
   | { status: 'failed'; category: string };
 
+type AiArtifactCandidateMessage = AiArtifactDiscordMessage & { guildId: string };
+
 export async function handleAiArtifactMessage(
   message: AiArtifactDiscordMessage,
   options: AiArtifactMessageHandlerOptions,
 ): Promise<AiArtifactMessageHandleResult> {
-  if (!options.runtime || !isAiArtifactMessageCandidate(message, options.botUserId)) {
+  const botUserId = options.botUserId;
+  if (!options.runtime || !botUserId || !isAiArtifactMessageCandidate(message, botUserId)) {
     return { status: 'ignored' };
   }
 
-  const input = stripBotMention(message.content, options.botUserId);
+  const input = stripBotMention(message.content, botUserId);
 
   const pluginConfig = await options.getAiPluginConfig(message.guildId);
   if (!pluginConfig || pluginConfig['enabled'] !== true) return { status: 'ignored' };
@@ -86,7 +89,7 @@ export async function handleAiArtifactMessage(
 export function isAiArtifactMessageCandidate(
   message: AiArtifactDiscordMessage | undefined,
   botUserId: string | null,
-): message is AiArtifactDiscordMessage {
+): message is AiArtifactCandidateMessage {
   return Boolean(
     message &&
     botUserId &&
