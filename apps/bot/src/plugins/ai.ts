@@ -41,7 +41,7 @@ export const aiPlugin = definePlugin<AiPluginConfig, Client, PrismaClient>({
           );
         },
       },
-    ] as PluginEventHandler<AiPluginConfig>[];
+    ] as PluginEventHandler<AiPluginConfig, Client, PrismaClient>[];
   },
 });
 
@@ -51,36 +51,55 @@ async function handleAiMessage(
 ): Promise<void> {
   if (!message || context.config.enabled !== true) return;
 
-  const runtime = await getSharedRuntime(context);
-  const result = await handleAiArtifactMessage(message, {
-    runtime,
-    botUserId: context.client.user?.id ?? null,
-    getAiPluginConfig: async (guildId) =>
-      guildId === context.guildId ? ({ enabled: context.config.enabled } as Record<string, unknown>) : null,
-  });
+  try {
+    const runtime = await getSharedRuntime(context);
+    const result = await handleAiArtifactMessage(message, {
+      runtime,
+      botUserId: context.client.user?.id ?? null,
+      getAiPluginConfig: async (guildId) =>
+        guildId === context.guildId
+          ? ({ enabled: context.config.enabled } as Record<string, unknown>)
+          : null,
+    });
 
-  if (result.status === 'handled') {
-    context.logger.info(
-      { guildId: context.guildId, intent: result.intent, result: 'handled' },
-      'AI Artifact requestを処理しました',
-    );
-  } else if (result.status === 'failed') {
+    if (result.status === 'handled') {
+      context.logger.info(
+        { guildId: context.guildId, intent: result.intent, result: 'handled' },
+        'AI Artifact requestを処理しました',
+      );
+    } else if (result.status === 'failed') {
+      context.logger.warn(
+        { guildId: context.guildId, category: result.category, result: 'failed' },
+        'AI Artifact requestを安全に処理できませんでした',
+      );
+    }
+  } catch (error) {
+    // Discord SDK errors can carry request payload details. Never pass the raw error object to
+    // structured logging on the artifact path because attachment bytes are sensitive content.
     context.logger.warn(
-      { guildId: context.guildId, category: result.category, result: 'failed' },
-      'AI Artifact requestを安全に処理できませんでした',
+      {
+        guildId: context.guildId,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+        result: 'delivery_failed',
+      },
+      'AI Artifact Discord deliveryに失敗しました',
     );
   }
 }
 
 async function getSharedRuntime(context: AiPluginRuntimeContext): Promise<AiArtifactRuntime | null> {
   if (!sharedRuntimePromise) {
-    sharedRuntimePromise = createSharedRuntime(context).catch((error: unknown) => {
+    const pending = createSharedRuntime(context).catch((error: unknown) => {
       context.logger.warn(
         { errorName: error instanceof Error ? error.name : 'UnknownError' },
         'AI Artifact runtimeの初期化に失敗しました',
       );
       return null;
     });
+    sharedRuntimePromise = pending;
+    const runtime = await pending;
+    if (!runtime && sharedRuntimePromise === pending) sharedRuntimePromise = undefined;
+    return runtime;
   }
   return sharedRuntimePromise;
 }
@@ -115,8 +134,14 @@ async function createSharedRuntime(context: AiPluginRuntimeContext): Promise<AiA
     return null;
   }
 
+  let artifactConfig;
+  try {
+    artifactConfig = resolveAiArtifactConfig(process.env);
+  } catch (error) {
+    redis.disconnect();
+    throw error;
+  }
   sharedRedis = redis;
-  const artifactConfig = resolveAiArtifactConfig(process.env);
   context.logger.info(
     {
       status: bootstrap.status,
