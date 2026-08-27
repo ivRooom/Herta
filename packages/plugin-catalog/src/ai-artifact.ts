@@ -111,7 +111,8 @@ const PYTHON_CODE_PATTERN = /\b(?:python|py)\b/i;
 const NON_PYTHON_CODE_PATTERN = /\b(?:typescript|javascript|java|golang|go|rust)\b|c#/i;
 const CODE_REQUEST_PATTERN =
   /\b(?:python|py|typescript|javascript|java|golang|go|rust|program)\b|c#|source code|コード|スクリプト/i;
-const CODE_OUTPUT_NOUN_PATTERN = /\b(?:source\s+code|code|program|script)\b|コード|スクリプト|プログラム/i;
+const CODE_OUTPUT_NOUN_PATTERN =
+  /\b(?:source\s+code|code|program|script)\b|コード|スクリプト|プログラム/i;
 const NEGATED_CODE_LANGUAGE_PATTERN =
   /\b(?:not(?:\s+in)?|no|without|rather\s+than|instead\s+of)\s+(?:python|py|typescript|javascript|java|golang|go|rust|c#)\b|(?:python|py|typescript|javascript|java|golang|go|rust|c#)(?:ではなく|じゃなく|以外|を使わず)/gi;
 const CODE_LANGUAGE_TOKEN = '(?:python|py|typescript|javascript|java|golang|go|rust|c#)';
@@ -297,17 +298,14 @@ function requestedConversionTargetLanguage(input: string): 'python' | 'non_pytho
 
   const japaneseTarget = input.match(
     new RegExp(
-      `${BOUNDED_CODE_LANGUAGE}(?:\\s*コード)?\\s*(?:に|へ)\\s*(?:変換|書き換え|変えて)` ,
+      `${BOUNDED_CODE_LANGUAGE}(?:\\s*コード)?\\s*(?:に|へ)\\s*(?:変換|書き換え|変えて)`,
       'i',
     ),
   )?.[1];
   if (japaneseTarget) return classifyCodeLanguage(japaneseTarget);
 
   const japaneseRewriteTarget = input.match(
-    new RegExp(
-      `${BOUNDED_CODE_LANGUAGE}(?:\\s*コード)?\\s*で\\s*(?:書き換え|書いて)`,
-      'i',
-    ),
+    new RegExp(`${BOUNDED_CODE_LANGUAGE}(?:\\s*コード)?\\s*で\\s*(?:書き換え|書いて)`, 'i'),
   )?.[1];
   return japaneseRewriteTarget ? classifyCodeLanguage(japaneseRewriteTarget) : null;
 }
