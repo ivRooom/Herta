@@ -1,11 +1,18 @@
-export const AI_SUPPORTED_PROVIDERS = ['openai'] as const;
-export const AI_MODEL_PROFILES = ['quality', 'balanced', 'economy'] as const;
-export const AI_OPENAI_MODELS = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'] as const;
+import {
+  AI_MODEL_PROFILES,
+  AI_OPENAI_MODELS,
+  AI_SUPPORTED_PROVIDERS,
+  estimateOpenAiCostMicroUsd,
+  type AiModelProfile,
+  type AiOpenAiModel,
+  type AiProviderName,
+} from './ai-service.js';
+
+export { AI_MODEL_PROFILES, AI_OPENAI_MODELS, AI_SUPPORTED_PROVIDERS } from './ai-service.js';
+export type { AiModelProfile, AiOpenAiModel, AiProviderName } from './ai-service.js';
+
 export const AI_REASONING_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 
-export type AiProviderName = (typeof AI_SUPPORTED_PROVIDERS)[number];
-export type AiModelProfile = (typeof AI_MODEL_PROFILES)[number];
-export type AiOpenAiModel = (typeof AI_OPENAI_MODELS)[number];
 export type AiReasoningEffort = (typeof AI_REASONING_EFFORTS)[number];
 
 export interface AiTokenPricing {
@@ -63,8 +70,9 @@ const OPENAI_REASONING_EFFORTS: readonly AiReasoningEffort[] = [
 ];
 
 /**
- * Code-reviewed provider/model/reasoning/pricing policy.
- * Update only after checking the provider's official model and pricing documentation.
+ * Code-reviewed provider/model/reasoning policy.
+ * Pricing metadata is derived from the same deterministic cost-guard function used by
+ * AiFoundationService so Studio display and preflight/settlement cannot drift apart.
  */
 const AI_RUNTIME_POLICY: Record<AiProviderName, Record<AiModelProfile, AiRuntimePolicyEntry>> = {
   openai: {
@@ -73,33 +81,21 @@ const AI_RUNTIME_POLICY: Record<AiProviderName, Record<AiModelProfile, AiRuntime
       modelProfile: 'quality',
       model: 'gpt-5.6-sol',
       supportedReasoningEfforts: OPENAI_REASONING_EFFORTS,
-      pricing: {
-        inputUsdPerMillion: 4,
-        outputUsdPerMillion: 20,
-        reviewAfterIso: '2026-11-22T00:00:00.000Z',
-      },
+      pricing: openAiTokenPricing('gpt-5.6-sol', '2026-11-22T00:00:00.000Z'),
     },
     balanced: {
       provider: 'openai',
       modelProfile: 'balanced',
       model: 'gpt-5.6-terra',
       supportedReasoningEfforts: OPENAI_REASONING_EFFORTS,
-      pricing: {
-        inputUsdPerMillion: 2,
-        outputUsdPerMillion: 12,
-        reviewAfterIso: null,
-      },
+      pricing: openAiTokenPricing('gpt-5.6-terra', null),
     },
     economy: {
       provider: 'openai',
       modelProfile: 'economy',
       model: 'gpt-5.6-luna',
       supportedReasoningEfforts: OPENAI_REASONING_EFFORTS,
-      pricing: {
-        inputUsdPerMillion: 0.2,
-        outputUsdPerMillion: 1.2,
-        reviewAfterIso: null,
-      },
+      pricing: openAiTokenPricing('gpt-5.6-luna', null),
     },
   },
 };
@@ -225,6 +221,14 @@ export function isAiOpenAiModel(value: string): value is AiOpenAiModel {
 
 export function isAiReasoningEffort(value: string): value is AiReasoningEffort {
   return (AI_REASONING_EFFORTS as readonly string[]).includes(value);
+}
+
+function openAiTokenPricing(model: AiOpenAiModel, reviewAfterIso: string | null): AiTokenPricing {
+  return {
+    inputUsdPerMillion: estimateOpenAiCostMicroUsd(model, 1_000_000, 0) / 1_000_000,
+    outputUsdPerMillion: estimateOpenAiCostMicroUsd(model, 0, 1_000_000) / 1_000_000,
+    reviewAfterIso,
+  };
 }
 
 function normalizeOrDefault(value: string | undefined, fallback: string): string {
