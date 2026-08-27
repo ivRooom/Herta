@@ -167,19 +167,23 @@ describe('OpenAiImageGenerationService', () => {
         usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
       }),
     );
-    await expect(service(fetchImpl, guardStore(observation())).generate(request)).rejects.toMatchObject(
-      { category: 'tool_not_invoked' },
-    );
+    await expect(
+      service(fetchImpl, guardStore(observation())).generate(request),
+    ).rejects.toMatchObject({ category: 'tool_not_invoked' });
   });
 
   it('empty result / invalid base64を拒否する', async () => {
     const empty = vi.fn<typeof fetch>(async () => imageResponse(null));
-    await expect(service(empty, guardStore(observation())).generate(request)).rejects.toMatchObject({
-      category: 'empty_result',
-    });
+    await expect(service(empty, guardStore(observation())).generate(request)).rejects.toMatchObject(
+      {
+        category: 'empty_result',
+      },
+    );
 
     const invalid = vi.fn<typeof fetch>(async () => imageResponse('%%%not-base64%%%'));
-    await expect(service(invalid, guardStore(observation())).generate(request)).rejects.toMatchObject({
+    await expect(
+      service(invalid, guardStore(observation())).generate(request),
+    ).rejects.toMatchObject({
       category: 'invalid_base64',
     });
   });
@@ -200,7 +204,9 @@ describe('OpenAiImageGenerationService', () => {
       }),
     );
 
-    await expect(service(fetchImpl, guardStore(observation())).generate(request)).rejects.toMatchObject({
+    await expect(
+      service(fetchImpl, guardStore(observation())).generate(request),
+    ).rejects.toMatchObject({
       category: 'provider_url_rejected',
     });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -218,14 +224,18 @@ describe('OpenAiImageGenerationService', () => {
         usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
       }),
     );
-    await expect(service(fetchImpl, guardStore(observation())).generate(request)).rejects.toMatchObject({
+    await expect(
+      service(fetchImpl, guardStore(observation())).generate(request),
+    ).rejects.toMatchObject({
       category: 'output_limit_exceeded',
     });
   });
 
   it('provider 5xx/4xxを既存Foundation taxonomyで返す', async () => {
     const unavailable = vi.fn<typeof fetch>(async () => new Response('fail', { status: 503 }));
-    await expect(service(unavailable, guardStore(observation())).generate(request)).rejects.toMatchObject({
+    await expect(
+      service(unavailable, guardStore(observation())).generate(request),
+    ).rejects.toMatchObject({
       category: 'provider_unavailable',
     });
 
@@ -235,18 +245,21 @@ describe('OpenAiImageGenerationService', () => {
     ).rejects.toMatchObject({ category: 'provider_unavailable' });
 
     const rejected = vi.fn<typeof fetch>(async () => new Response('bad', { status: 400 }));
-    await expect(service(rejected, guardStore(observation())).generate(request)).rejects.toMatchObject({
+    await expect(
+      service(rejected, guardStore(observation())).generate(request),
+    ).rejects.toMatchObject({
       category: 'provider_rejected',
     });
   });
 
   it('既存Foundation timeout signalをそのまま利用する', async () => {
-    const fetchImpl = vi.fn<typeof fetch>(async (_input, init) =>
-      new Promise<Response>((_resolve, reject) => {
-        init?.signal?.addEventListener('abort', () =>
-          reject(new DOMException('Aborted', 'AbortError')),
-        );
-      }),
+    const fetchImpl = vi.fn<typeof fetch>(
+      async (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('Aborted', 'AbortError')),
+          );
+        }),
     );
     await expect(
       service(fetchImpl, guardStore(observation()), { timeoutMs: 10 }).generate(request),
@@ -278,9 +291,9 @@ describe('OpenAiImageGenerationService', () => {
 
     const costFetch = vi.fn<typeof fetch>(async () => imageResponse());
     await expect(
-      service(costFetch, guardStore(observation()), { perRequestCostLimitMicroUsd: 5_000 }).generate(
-        request,
-      ),
+      service(costFetch, guardStore(observation()), {
+        perRequestCostLimitMicroUsd: 5_000,
+      }).generate(request),
     ).rejects.toMatchObject({ category: 'quota_exceeded' });
     expect(costFetch).not.toHaveBeenCalled();
   });
@@ -305,11 +318,8 @@ describe('OpenAiImageGenerationService', () => {
   it('pricing freshness期限後はproviderを呼ばずfail closedする', async () => {
     const fetchImpl = vi.fn<typeof fetch>();
     await expect(
-      service(
-        fetchImpl,
-        guardStore(observation()),
-        {},
-        () => Date.parse('2026-09-27T00:00:00Z'),
+      service(fetchImpl, guardStore(observation()), {}, () =>
+        Date.parse('2026-09-27T00:00:00Z'),
       ).generate(request),
     ).rejects.toMatchObject({ category: 'disabled' });
     expect(fetchImpl).not.toHaveBeenCalled();

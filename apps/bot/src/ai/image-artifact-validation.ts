@@ -1,8 +1,5 @@
 import sharp from 'sharp';
-import {
-  normalizeArtifactFilename,
-  type AiArtifact,
-} from '@herta/plugin-catalog/ai-artifact';
+import { normalizeArtifactFilename, type AiArtifact } from '@herta/plugin-catalog/ai-artifact';
 
 export const AI_IMAGE_ARTIFACT_DEFAULTS = {
   maxBytes: 4 * 1024 * 1024,
@@ -167,11 +164,7 @@ export function sniffImageMime(bytes: Uint8Array): ImageMime | null {
   ) {
     return 'image/png';
   }
-  if (
-    bytes.byteLength >= 12 &&
-    ascii(bytes, 0, 4) === 'RIFF' &&
-    ascii(bytes, 8, 12) === 'WEBP'
-  ) {
+  if (bytes.byteLength >= 12 && ascii(bytes, 0, 4) === 'RIFF' && ascii(bytes, 8, 12) === 'WEBP') {
     return 'image/webp';
   }
   return null;

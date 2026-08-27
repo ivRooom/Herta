@@ -226,9 +226,7 @@ export class AiArtifactRuntime {
     }
   }
 
-  private async generateImage(
-    request: AiArtifactRuntimeRequest,
-  ): Promise<AiArtifactRuntimeResult> {
+  private async generateImage(request: AiArtifactRuntimeRequest): Promise<AiArtifactRuntimeResult> {
     if (!this.imageGenerationService) {
       this.emitTelemetry({
         intent: 'image_generation',

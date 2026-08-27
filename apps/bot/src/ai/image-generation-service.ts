@@ -307,8 +307,7 @@ function imageToolReservationMicroUsd(
 ): number {
   const guardedInput = guardedInputFromProviderBody(body);
   const estimatedImageTextTokens = estimateInputTokens(guardedInput) + config.maxOutputTokens;
-  const textInputMicroUsd =
-    estimatedImageTextTokens * OPENAI_IMAGE_TEXT_INPUT_MICRO_USD_PER_TOKEN;
+  const textInputMicroUsd = estimatedImageTextTokens * OPENAI_IMAGE_TEXT_INPUT_MICRO_USD_PER_TOKEN;
   const total = OPENAI_IMAGE_OUTPUT_MICRO_USD + textInputMicroUsd;
   if (!Number.isSafeInteger(total) || total < 1) throw new AiFoundationError('internal_error');
   return total;
