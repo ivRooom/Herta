@@ -99,7 +99,7 @@ export async function validateAiImageArtifact(
 
   const inputOptions = {
     failOn: 'warning' as const,
-    limitInputPixels: Math.max(config.maxPixels, config.maxWidth * config.maxHeight),
+    limitInputPixels: config.maxPixels,
     limitInputChannels: 4,
     sequentialRead: true,
   };
