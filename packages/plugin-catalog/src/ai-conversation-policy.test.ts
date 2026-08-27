@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  AI_GROUNDING_STATES,
+  AI_RESPONSE_MODES,
   AiConversationPolicyError,
   resolveAiConversationPolicy,
 } from './ai-conversation-policy.js';
+import { AI_DEFAULTS, estimateInputTokens, estimateOpenAiCostMicroUsd } from './ai-service.js';
 
 describe('AI conversation policy', () => {
   it('通常chatはconcise low verbosityをdefaultにする', () => {
@@ -44,6 +47,24 @@ describe('AI conversation policy', () => {
       'rely on the trusted sources supplied by the application',
     );
     expect(policy.instructions).toContain('say so instead of filling the gap from memory');
+  });
+
+  it('全policy envelope込みでも公開済み最大input/outputがdefault quality cost cap内に収まる', () => {
+    const maxUserInput = 'あ'.repeat(AI_DEFAULTS.maxInputChars);
+
+    for (const responseMode of AI_RESPONSE_MODES) {
+      for (const groundingState of AI_GROUNDING_STATES) {
+        const policy = resolveAiConversationPolicy({ responseMode, groundingState });
+        const guardedInput = `Server instructions:\n${policy.instructions}\n\nUser input:\n${maxUserInput}`;
+        const reservationMicroUsd = estimateOpenAiCostMicroUsd(
+          'gpt-5.6-sol',
+          estimateInputTokens(guardedInput),
+          AI_DEFAULTS.maxOutputTokens,
+        );
+
+        expect(reservationMicroUsd).toBeLessThanOrEqual(AI_DEFAULTS.perRequestCostLimitMicroUsd);
+      }
+    }
   });
 
   it('server policyを無効化する任意mode/stateを拒否する', () => {
