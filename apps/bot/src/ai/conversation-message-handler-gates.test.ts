@@ -99,9 +99,9 @@ describe('Discord conversation gates', () => {
     });
     const { message } = createMessage({ reply });
 
-    await expect(
-      handleAiConversationMessage(message, createOptions(service)),
-    ).rejects.toThrow('discord delivery failed');
+    await expect(handleAiConversationMessage(message, createOptions(service))).rejects.toThrow(
+      'discord delivery failed',
+    );
     expect(reply).toHaveBeenCalledTimes(1);
   });
 });
