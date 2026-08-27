@@ -28,7 +28,10 @@ export interface AiArtifactMessageHandlerOptions {
 
 export type AiArtifactMessageHandleResult =
   | { status: 'ignored' }
-  | { status: 'handled'; intent: 'code_artifact' | 'file_artifact' | 'code_execution' | 'image_generation' }
+  | {
+      status: 'handled';
+      intent: 'code_artifact' | 'file_artifact' | 'code_execution' | 'image_generation';
+    }
   | { status: 'failed'; category: string };
 
 export async function handleAiArtifactMessage(
@@ -90,10 +93,15 @@ export async function handleAiArtifactMessage(
 
 export function stripBotMention(content: string, botUserId: string): string {
   if (typeof content !== 'string' || !/^\d+$/.test(botUserId)) return '';
-  return content.replace(new RegExp(`<@!?${botUserId}>`, 'g'), ' ').replace(/\s+/g, ' ').trim();
+  return content
+    .replace(new RegExp(`<@!?${botUserId}>`, 'g'), ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-function toSafeArtifactMessageError(error: unknown): { category: string; userMessage: string } {
+function toSafeArtifactMessageError(
+  error: unknown,
+): { category: string; userMessage: string } {
   if (error instanceof AiFoundationError) {
     return { category: `foundation:${error.category}`, userMessage: error.userMessage };
   }
