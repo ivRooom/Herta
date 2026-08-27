@@ -16,23 +16,25 @@ import {
 } from './artifact-message-handler.js';
 import type { AiRuntimeGenerationService } from './runtime-service.js';
 
-const DISCORD_CONVERSATION_MAX_CHARS = 1_900;
+const DISCORD_CONVERSATION_MAX_UTF16_UNITS = 1_900;
 const DISCORD_CONVERSATION_INSTRUCTION = [
   'Return only the answer intended for the Discord user.',
-  'Keep the final response within 1800 Unicode characters so it fits one Discord reply.',
+  'Keep the final response comfortably below the Discord 2000-character message limit.',
   'Do not claim that retrieval, web access, tools, code execution, or artifact generation happened unless trusted application context confirms it.',
 ].join(' ');
 
 const EXPLICIT_DETAIL_REQUEST_PATTERN =
   /(?:詳しく|詳細に|丁寧に|手順(?:を)?(?:全部|すべて|全て)|(?:全部|すべて|全て)の?手順|比較して|比較してください|比較を|step[- ]by[- ]step|all\s+(?:the\s+)?steps|compare\b|comparison\b|in\s+detail|detailed)/i;
 const EXPLICIT_SOURCE_REQUEST_PATTERN =
-  /(?:出典|引用元|citation|citations|source(?:s)?|ソース(?:を|が|は)?|web\s*検索|ウェブ\s*検索|search\s+(?:the\s+)?web|look\s+up)/i;
+  /(?:出典|引用元|citation|citations|source(?:s)?(?!\s+code\b)|ソース(?:を|が|は)?|web\s*検索|ウェブ\s*検索|search\s+(?:the\s+)?web|look\s+up)/i;
 const CURRENT_EXTERNAL_FACT_PATTERN =
-  /(?:最新|現在の).{0,40}(?:状態|状況|価格|料金|バージョン|version|リリース|release|PR|Issue|CI|デプロイ|deploy|稼働|障害|ニュース|天気|株価|為替)|\b(?:latest|current)\b.{0,40}\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b/i;
+  /(?:最新|現在の|今の|今日の|本日の).{0,60}(?:状態|状況|価格|料金|バージョン|version|リリース|release|PR|Issue|CI|デプロイ|deploy|稼働|障害|ニュース|天気|株価|為替)|\b(?:latest|current|today(?:'s)?|now)\b.{0,60}\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b/i;
 const EXTERNAL_TARGET_PATTERN =
   /(?:GitHub|repository|リポジトリ|pull request|\bPR\b|\bIssue\b|\bCI\b|production|本番|deploy|デプロイ|release|リリース|公式(?:ドキュメント|docs?)?|website|サイト|ニュース|天気|株価|為替)/i;
 const EXPLICIT_CHECK_PATTERN =
   /(?:確認して|調べて|検索して|検証して|verify\b|check\b|confirm\b|search\b)/i;
+const EXTERNAL_STATE_PATTERN =
+  /(?:GitHub|repository|リポジトリ|pull request|\bPR\b|\bIssue\b|\bCI\b|production|本番|deploy|デプロイ|release|リリース).{0,80}(?:状態|状況|結果|成功|失敗|merge|merged|open|closed|green|red|何番|version|バージョン)/i;
 const URL_PATTERN = /https?:\/\/\S+/i;
 
 export interface AiConversationMessageHandlerOptions extends AiArtifactMessageHandlerOptions {
@@ -115,6 +117,7 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
     URL_PATTERN.test(normalized) ||
     EXPLICIT_SOURCE_REQUEST_PATTERN.test(normalized) ||
     CURRENT_EXTERNAL_FACT_PATTERN.test(normalized) ||
+    EXTERNAL_STATE_PATTERN.test(normalized) ||
     (EXTERNAL_TARGET_PATTERN.test(normalized) && EXPLICIT_CHECK_PATTERN.test(normalized))
   ) {
     return 'insufficient';
@@ -132,9 +135,11 @@ function resolveAiDiscordIntent(input: string): AiArtifactIntent {
 function validateDiscordConversationReply(value: string): string {
   if (typeof value !== 'string') throw new AiFoundationError('malformed_response');
   const normalized = value.trim();
-  const chars = Array.from(normalized).length;
-  if (chars < 1) throw new AiFoundationError('malformed_response');
-  if (chars > DISCORD_CONVERSATION_MAX_CHARS) {
+  if (normalized.length < 1) throw new AiFoundationError('malformed_response');
+  // Discord.js sends JavaScript strings and Discord applies its message limit to the encoded
+  // string length. Count UTF-16 code units here so astral characters such as emoji cannot slip
+  // past a code-point-only guard and cause delivery failure.
+  if (normalized.length > DISCORD_CONVERSATION_MAX_UTF16_UNITS) {
     throw new AiFoundationError('output_too_large');
   }
   return normalized;
