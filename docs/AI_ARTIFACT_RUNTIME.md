@@ -52,15 +52,15 @@ Artifact modelはprovider/Discord型に依存しない。
 
 Phase 1では次の組み合わせのみ許可する。
 
-| Extension | MIME |
-| --- | --- |
-| `.py` | `text/x-python` |
-| `.md` | `text/markdown` |
-| `.txt` | `text/plain` |
-| `.json` | `application/json` |
-| `.yaml` | `application/yaml` |
-| `.yml` | `application/yaml` |
-| `.csv` | `text/csv` |
+| Extension | MIME               |
+| --------- | ------------------ |
+| `.py`     | `text/x-python`    |
+| `.md`     | `text/markdown`    |
+| `.txt`    | `text/plain`       |
+| `.json`   | `application/json` |
+| `.yaml`   | `application/yaml` |
+| `.yml`    | `application/yaml` |
+| `.csv`    | `text/csv`         |
 
 filenameはNFKC正規化後にbasenameとして検証し、`/`、`\\`、`..`、control characters、NUL、Windows reserved characters/names、encoded separatorを拒否する。
 
