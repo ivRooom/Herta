@@ -16,14 +16,15 @@ async function png(width = 64, height = 64): Promise<Uint8Array> {
   );
 }
 
+interface SharpWebpFixtureEncoder {
+  webp(options?: { lossless?: boolean }): { toBuffer(): Promise<Buffer> };
+}
+
 async function webp(width = 64, height = 64): Promise<Uint8Array> {
-  return new Uint8Array(
-    await sharp({
-      create: { width, height, channels: 4, background: { r: 32, g: 64, b: 96, alpha: 1 } },
-    })
-      .toFormat('webp')
-      .toBuffer(),
-  );
+  const encoder = sharp({
+    create: { width, height, channels: 4, background: { r: 32, g: 64, b: 96, alpha: 1 } },
+  }) as unknown as SharpWebpFixtureEncoder;
+  return new Uint8Array(await encoder.webp({ lossless: true }).toBuffer());
 }
 
 function animatedWebpHeader(): Uint8Array {
