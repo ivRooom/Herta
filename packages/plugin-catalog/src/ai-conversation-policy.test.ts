@@ -38,14 +38,14 @@ describe('AI conversation policy', () => {
   it('groundedでもsourceにない内容を埋めない', () => {
     const policy = resolveAiConversationPolicy({ groundingState: 'grounded' });
 
-    expect(policy.instructions).toContain('rely on the trusted sources supplied by the application');
+    expect(policy.instructions).toContain(
+      'rely on the trusted sources supplied by the application',
+    );
     expect(policy.instructions).toContain('say so instead of filling the gap from memory');
   });
 
   it('server policyを無効化する任意mode/stateを拒否する', () => {
-    expect(() =>
-      resolveAiConversationPolicy({ responseMode: 'unbounded' as never }),
-    ).toThrowError(
+    expect(() => resolveAiConversationPolicy({ responseMode: 'unbounded' as never })).toThrowError(
       expect.objectContaining<Partial<AiConversationPolicyError>>({
         code: 'invalid_response_mode',
       }),
