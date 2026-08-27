@@ -111,8 +111,11 @@ const PYTHON_CODE_PATTERN = /\b(?:python|py)\b/i;
 const NON_PYTHON_CODE_PATTERN = /\b(?:typescript|javascript|java|golang|go|rust)\b|c#/i;
 const CODE_REQUEST_PATTERN =
   /\b(?:python|py|typescript|javascript|java|golang|go|rust|program)\b|c#|source code|コード|スクリプト/i;
+const CODE_OUTPUT_NOUN_PATTERN = /\b(?:source\s+code|code|program|script)\b|コード|スクリプト|プログラム/i;
 const NEGATED_CODE_LANGUAGE_PATTERN =
   /\b(?:not(?:\s+in)?|no|without|rather\s+than|instead\s+of)\s+(?:python|py|typescript|javascript|java|golang|go|rust|c#)\b|(?:python|py|typescript|javascript|java|golang|go|rust|c#)(?:ではなく|じゃなく|以外|を使わず)/gi;
+const CODE_LANGUAGE_TOKEN = '(?:python|py|typescript|javascript|java|golang|go|rust|c#)';
+const BOUNDED_CODE_LANGUAGE = `(?<![A-Za-z0-9_])(${CODE_LANGUAGE_TOKEN})(?![A-Za-z0-9_])`;
 
 export function resolveAiArtifactConfig(
   env: Record<string, string | undefined> = process.env,
@@ -153,8 +156,18 @@ export function resolveAiArtifactIntent(input: string): AiArtifactIntent {
       normalized,
     );
   const imageRequested = /(画像|イラスト|image\b|picture\b|png\b|webp\b)/i.test(normalized);
-  if (creationRequested && imageRequested) return 'image_generation';
+  const directImageCreationRequested =
+    /^(?:please\s+)?(?:create|generate|make)\s+(?:an?\s+)?(?:png\s+|webp\s+)?(?:image|picture)\b/i.test(
+      normalized,
+    ) || /(?:画像|イラスト).*?(?:を)?(?:作って|生成して)\s*$/i.test(normalized);
 
+  if (creationRequested && imageRequested && directImageCreationRequested) {
+    return 'image_generation';
+  }
+  if (creationRequested && codeRequested && CODE_OUTPUT_NOUN_PATTERN.test(normalized)) {
+    return 'code_artifact';
+  }
+  if (creationRequested && imageRequested) return 'image_generation';
   if (creationRequested && codeRequested) return 'code_artifact';
 
   const fileRequested =
@@ -169,10 +182,11 @@ export function resolveAiArtifactIntent(input: string): AiArtifactIntent {
 }
 
 export function isPythonCodeArtifactRequest(input: string): boolean {
-  const affirmativeLanguages = normalizeIntentInput(input).replace(
-    NEGATED_CODE_LANGUAGE_PATTERN,
-    ' ',
-  );
+  const normalized = normalizeIntentInput(input);
+  const conversionTarget = requestedConversionTargetLanguage(normalized);
+  if (conversionTarget) return conversionTarget === 'python';
+
+  const affirmativeLanguages = normalized.replace(NEGATED_CODE_LANGUAGE_PATTERN, ' ');
   return (
     PYTHON_CODE_PATTERN.test(affirmativeLanguages) &&
     !NON_PYTHON_CODE_PATTERN.test(affirmativeLanguages)
@@ -270,6 +284,36 @@ function isExplicitExecutionActionRequest(input: string): boolean {
     /\b(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:run|execute)\b/i.test(input) ||
     /\b(?:i want you to|i'd like you to)\s+(?:run|execute)\b/i.test(input)
   );
+}
+
+function requestedConversionTargetLanguage(input: string): 'python' | 'non_python' | null {
+  const englishTarget = input.match(
+    new RegExp(
+      `\\b(?:convert|translate|rewrite)\\b[\\s\\S]{0,240}?\\b(?:to|into|in|using)\\s+${BOUNDED_CODE_LANGUAGE}`,
+      'i',
+    ),
+  )?.[1];
+  if (englishTarget) return classifyCodeLanguage(englishTarget);
+
+  const japaneseTarget = input.match(
+    new RegExp(
+      `${BOUNDED_CODE_LANGUAGE}(?:\\s*コード)?\\s*(?:に|へ)\\s*(?:変換|書き換え|変えて)` ,
+      'i',
+    ),
+  )?.[1];
+  if (japaneseTarget) return classifyCodeLanguage(japaneseTarget);
+
+  const japaneseRewriteTarget = input.match(
+    new RegExp(
+      `${BOUNDED_CODE_LANGUAGE}(?:\\s*コード)?\\s*で\\s*(?:書き換え|書いて)`,
+      'i',
+    ),
+  )?.[1];
+  return japaneseRewriteTarget ? classifyCodeLanguage(japaneseRewriteTarget) : null;
+}
+
+function classifyCodeLanguage(value: string): 'python' | 'non_python' {
+  return /^(?:python|py)$/i.test(value) ? 'python' : 'non_python';
 }
 
 function normalizeIntentInput(input: string): string {
