@@ -1,9 +1,5 @@
 import type { RuntimeConfigurationRecord } from '@herta/db';
-import {
-  AiFoundationError,
-  resolveAiFoundationConfig,
-  type AiGuardStore,
-} from '@herta/plugin-catalog/ai-service';
+import { resolveAiFoundationConfig, type AiGuardStore } from '@herta/plugin-catalog/ai-service';
 import { AiRuntimeConfigurationResolver } from '@herta/plugin-catalog/ai-runtime-config';
 import { describe, expect, it, vi } from 'vitest';
 import {
