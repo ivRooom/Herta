@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AiArtifact } from '@herta/plugin-catalog/ai-artifact';
-import { deliverDiscordArtifacts } from './discord-artifact-delivery.js';
+import {
+  deliverDiscordArtifacts,
+  type DiscordArtifactReplyOptions,
+} from './discord-artifact-delivery.js';
+
+type ArtifactReply = (options: DiscordArtifactReplyOptions) => Promise<unknown>;
 
 function artifact(content: string): AiArtifact {
   const bytes = new TextEncoder().encode(content);
@@ -16,7 +21,7 @@ function artifact(content: string): AiArtifact {
 describe('Discord artifact delivery', () => {
   it('本文は短いsummaryだけにしsource全文はattachmentの正本として保持する', async () => {
     const source = 'for i in range(1, 101):\n    print(i)\n';
-    const reply = vi.fn(async () => undefined);
+    const reply = vi.fn<ArtifactReply>(async () => undefined);
 
     await deliverDiscordArtifacts({ reply }, [artifact(source)]);
 
@@ -31,7 +36,7 @@ describe('Discord artifact delivery', () => {
   });
 
   it('Discord送信失敗を成功扱いせずcallerへ伝播する', async () => {
-    const reply = vi.fn(async () => {
+    const reply = vi.fn<ArtifactReply>(async () => {
       throw new Error('discord unavailable');
     });
 
