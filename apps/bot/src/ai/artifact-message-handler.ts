@@ -89,12 +89,12 @@ export function isAiArtifactMessageCandidate(
 ): message is AiArtifactDiscordMessage {
   return Boolean(
     message &&
-      botUserId &&
-      message.guildId &&
-      !message.author.bot &&
-      !message.webhookId &&
-      message.mentions.users.has(botUserId) &&
-      stripBotMention(message.content, botUserId),
+    botUserId &&
+    message.guildId &&
+    !message.author.bot &&
+    !message.webhookId &&
+    message.mentions.users.has(botUserId) &&
+    stripBotMention(message.content, botUserId),
   );
 }
 
