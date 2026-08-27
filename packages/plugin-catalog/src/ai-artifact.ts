@@ -169,7 +169,10 @@ export function resolveAiArtifactIntent(input: string): AiArtifactIntent {
 }
 
 export function isPythonCodeArtifactRequest(input: string): boolean {
-  const affirmativeLanguages = normalizeIntentInput(input).replace(NEGATED_CODE_LANGUAGE_PATTERN, ' ');
+  const affirmativeLanguages = normalizeIntentInput(input).replace(
+    NEGATED_CODE_LANGUAGE_PATTERN,
+    ' ',
+  );
   return (
     PYTHON_CODE_PATTERN.test(affirmativeLanguages) &&
     !NON_PYTHON_CODE_PATTERN.test(affirmativeLanguages)
