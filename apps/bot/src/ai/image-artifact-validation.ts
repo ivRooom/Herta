@@ -93,6 +93,9 @@ export async function validateAiImageArtifact(
   if (sniffedMime !== mimeType) {
     throw new AiImageArtifactValidationError('mime_extension_mismatch');
   }
+  if (hasAnimatedImageStructure(bytes, mimeType)) {
+    throw new AiImageArtifactValidationError('malformed_image');
+  }
 
   const inputOptions = {
     failOn: 'warning' as const,
@@ -124,9 +127,6 @@ export async function validateAiImageArtifact(
   const pixels = width! * height!;
   if (!Number.isSafeInteger(pixels) || pixels > config.maxPixels) {
     throw new AiImageArtifactValidationError('pixel_limit_exceeded');
-  }
-  if ((metadata.pages ?? 1) !== 1) {
-    throw new AiImageArtifactValidationError('malformed_image');
   }
   if (metadata.format !== formatForMime(mimeType)) {
     throw new AiImageArtifactValidationError('mime_extension_mismatch');
@@ -168,6 +168,63 @@ export function sniffImageMime(bytes: Uint8Array): ImageMime | null {
     return 'image/webp';
   }
   return null;
+}
+
+function hasAnimatedImageStructure(bytes: Uint8Array, mimeType: ImageMime): boolean {
+  return mimeType === 'image/png' ? pngHasChunk(bytes, 'acTL') : webpHasAnimation(bytes);
+}
+
+function pngHasChunk(bytes: Uint8Array, targetType: string): boolean {
+  let offset = 8;
+  while (offset + 12 <= bytes.byteLength) {
+    const length = readUint32Be(bytes, offset);
+    const remaining = bytes.byteLength - offset - 12;
+    if (length > remaining) return false;
+
+    const chunkType = ascii(bytes, offset + 4, offset + 8);
+    if (chunkType === targetType) return true;
+    if (chunkType === 'IEND') return false;
+    offset += 12 + length;
+  }
+  return false;
+}
+
+function webpHasAnimation(bytes: Uint8Array): boolean {
+  let offset = 12;
+  while (offset + 8 <= bytes.byteLength) {
+    const chunkType = ascii(bytes, offset, offset + 4);
+    const chunkSize = readUint32Le(bytes, offset + 4);
+    const remaining = bytes.byteLength - offset - 8;
+    if (chunkSize > remaining) return false;
+
+    if (chunkType === 'ANIM' || chunkType === 'ANMF') return true;
+    if (chunkType === 'VP8X' && chunkSize >= 1 && ((bytes[offset + 8] ?? 0) & 0x02) !== 0) {
+      return true;
+    }
+
+    const paddedChunkSize = chunkSize + (chunkSize % 2);
+    if (paddedChunkSize > remaining) return false;
+    offset += 8 + paddedChunkSize;
+  }
+  return false;
+}
+
+function readUint32Be(bytes: Uint8Array, offset: number): number {
+  return (
+    ((bytes[offset] ?? 0) * 0x1000000) +
+    ((bytes[offset + 1] ?? 0) << 16) +
+    ((bytes[offset + 2] ?? 0) << 8) +
+    (bytes[offset + 3] ?? 0)
+  );
+}
+
+function readUint32Le(bytes: Uint8Array, offset: number): number {
+  return (
+    (bytes[offset] ?? 0) +
+    ((bytes[offset + 1] ?? 0) << 8) +
+    ((bytes[offset + 2] ?? 0) << 16) +
+    ((bytes[offset + 3] ?? 0) * 0x1000000)
+  );
 }
 
 function ascii(bytes: Uint8Array, start: number, end: number): string {
