@@ -32,9 +32,7 @@ describe('AI artifact intent', () => {
     expect(resolveAiArtifactIntent('このPythonコードを実行してCSVに変換して')).toBe(
       'code_execution',
     );
-    expect(resolveAiArtifactIntent('この疑似コードをPythonコードに変換して')).toBe(
-      'code_artifact',
-    );
+    expect(resolveAiArtifactIntent('この疑似コードをPythonコードに変換して')).toBe('code_artifact');
   });
 
   it('短い言語名を通常単語のsubstringとして誤検知しない', () => {
