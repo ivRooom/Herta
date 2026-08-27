@@ -98,6 +98,11 @@ interface CapturedExecution {
   sandboxDestroyed: boolean;
 }
 
+interface SandboxDescriptor {
+  id: string;
+  policyConfirmed: boolean;
+}
+
 interface ContainerFileCitation {
   containerId: string;
   fileId: string;
@@ -136,7 +141,6 @@ export class OpenAiCodeExecutionService implements AiCodeExecutionService {
     const startedAt = this.now();
     assertContainerPricingCurrent(startedAt);
     const captured: CapturedExecution = { files: [], sandboxDestroyed: false };
-
     const generationService = new OpenAiRuntimeGenerationService({
       baseConfig: this.baseConfig,
       apiKey: this.apiKey,
@@ -161,13 +165,13 @@ export class OpenAiCodeExecutionService implements AiCodeExecutionService {
     });
 
     if (!captured.sandboxDestroyed) throw new AiCodeExecutionError('cleanup_failed');
-
     return {
       requestId: response.requestId,
       provider: response.provider,
       model: response.model,
       usage: response.usage,
-      estimatedCost: response.estimatedCost + microUsdToUsd(OPENAI_CODE_INTERPRETER_SESSION_MICRO_USD),
+      estimatedCost:
+        response.estimatedCost + microUsdToUsd(OPENAI_CODE_INTERPRETER_SESSION_MICRO_USD),
       durationMs: Math.max(0, this.now() - startedAt),
       summary: boundedSummary(response.text),
       files: captured.files,
@@ -183,7 +187,6 @@ export class OpenAiCodeExecutionService implements AiCodeExecutionService {
     captured: CapturedExecution,
   ): Promise<Response> {
     if (typeof init?.body !== 'string') throw new AiFoundationError('internal_error');
-
     const originalBody = parseJsonRecord(init.body);
     assertCombinedExecutionCostWithinLimit(originalBody, this.baseConfig);
 
@@ -201,16 +204,21 @@ export class OpenAiCodeExecutionService implements AiCodeExecutionService {
     }
 
     let containerId: string | null = null;
-    let result: Response | null = null;
+    let responseResult: Response | null = null;
     let failure: unknown = null;
 
     try {
-      containerId = await this.createSandbox(init.signal);
+      const sandbox = await this.createSandbox(init.signal);
+      containerId = sandbox.id;
+
+      // Container creation is the billable tool event. Settle the fixed reservation as soon as
+      // creation is confirmed, even if a subsequent policy check or execution step fails.
       await this.guardStore.settleGuildQuota(
         guildKey,
         toolReservationId,
         OPENAI_CODE_INTERPRETER_SESSION_MICRO_USD,
       );
+      if (!sandbox.policyConfirmed) throw new AiCodeExecutionError('sandbox_policy_failed');
 
       const response = await this.fetchImpl(input, {
         ...init,
@@ -224,7 +232,10 @@ export class OpenAiCodeExecutionService implements AiCodeExecutionService {
           include: undefined,
         }),
       });
-      const responseBytes = await readBoundedBytes(response, this.baseConfig.providerResponseMaxBytes);
+      const responseBytes = await readBoundedBytes(
+        response,
+        this.baseConfig.providerResponseMaxBytes,
+      );
 
       if (response.ok) {
         const payload = parseJsonBytes(responseBytes);
@@ -241,8 +252,7 @@ export class OpenAiCodeExecutionService implements AiCodeExecutionService {
           );
         }
       }
-
-      result = rebuildResponse(response, responseBytes);
+      responseResult = rebuildResponse(response, responseBytes);
     } catch (error) {
       failure = error;
     }
@@ -257,11 +267,13 @@ export class OpenAiCodeExecutionService implements AiCodeExecutionService {
     }
 
     if (failure) throw failure;
-    if (!result) throw new AiCodeExecutionError('malformed_output');
-    return result;
+    if (!responseResult) throw new AiCodeExecutionError('malformed_output');
+    return responseResult;
   }
 
-  private async createSandbox(signal: AbortSignal | null | undefined): Promise<string> {
+  private async createSandbox(
+    signal: AbortSignal | null | undefined,
+  ): Promise<SandboxDescriptor> {
     const response = await this.fetchImpl(`${OPENAI_API_BASE}/containers`, {
       method: 'POST',
       headers: openAiHeaders(this.apiKey),
@@ -281,16 +293,15 @@ export class OpenAiCodeExecutionService implements AiCodeExecutionService {
     const payload = await readBoundedJson(response, CONTROL_RESPONSE_MAX_BYTES);
     if (!isRecord(payload)) throw new AiCodeExecutionError('sandbox_policy_failed');
     const id = safeProviderId(payload['id']);
+    if (!id) throw new AiCodeExecutionError('sandbox_policy_failed');
     const networkPolicy = payload['network_policy'];
-    if (
-      !id ||
-      payload['memory_limit'] !== OPENAI_CODE_INTERPRETER_MEMORY_LIMIT ||
-      !isRecord(networkPolicy) ||
-      networkPolicy['type'] !== 'disabled'
-    ) {
-      throw new AiCodeExecutionError('sandbox_policy_failed');
-    }
-    return id;
+    return {
+      id,
+      policyConfirmed:
+        payload['memory_limit'] === OPENAI_CODE_INTERPRETER_MEMORY_LIMIT &&
+        isRecord(networkPolicy) &&
+        networkPolicy['type'] === 'disabled',
+    };
   }
 
   private async destroySandbox(containerId: string): Promise<void> {
@@ -379,7 +390,10 @@ function assertCombinedExecutionCostWithinLimit(
     estimateInputTokens(`${instructions}\n${input}`),
     maxOutputTokens,
   );
-  if (tokenReservation + OPENAI_CODE_INTERPRETER_SESSION_MICRO_USD > config.perRequestCostLimitMicroUsd) {
+  if (
+    tokenReservation + OPENAI_CODE_INTERPRETER_SESSION_MICRO_USD >
+    config.perRequestCostLimitMicroUsd
+  ) {
     throw new AiFoundationError('quota_exceeded');
   }
 }
@@ -489,7 +503,12 @@ function parseJsonBytes(bytes: Uint8Array): Record<string, unknown> {
 }
 
 async function readBoundedJson(response: Response, maxBytes: number): Promise<unknown> {
-  return JSON.parse(new TextDecoder().decode(await readBoundedBytes(response, maxBytes))) as unknown;
+  try {
+    return JSON.parse(new TextDecoder().decode(await readBoundedBytes(response, maxBytes))) as unknown;
+  } catch (error) {
+    if (error instanceof AiCodeExecutionError) throw error;
+    throw new AiCodeExecutionError('malformed_output');
+  }
 }
 
 async function readBoundedBytes(response: Response, maxBytes: number): Promise<Uint8Array> {
@@ -536,7 +555,7 @@ function assertUtf8Text(bytes: Uint8Array): void {
 }
 
 function rebuildResponse(response: Response, bytes: Uint8Array): Response {
-  return new Response(bytes, {
+  return new Response(bytes.slice().buffer, {
     status: response.status,
     statusText: response.statusText,
     headers: response.headers,
