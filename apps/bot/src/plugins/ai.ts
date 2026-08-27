@@ -11,6 +11,7 @@ import { Redis } from 'ioredis';
 import { AiArtifactRuntime } from '../ai/artifact-runtime.js';
 import {
   handleAiArtifactMessage,
+  isAiArtifactMessageCandidate,
   type AiArtifactDiscordMessage,
 } from '../ai/artifact-message-handler.js';
 import { createAiFoundationRuntime } from '../ai/factory.js';
@@ -53,13 +54,21 @@ async function handleAiMessage(
   context: AiPluginRuntimeContext,
   message: AiArtifactDiscordMessage | undefined,
 ): Promise<void> {
-  if (!message || context.config.enabled !== true) return;
+  if (context.config.enabled !== true) return;
+
+  const botUserId = context.client.user?.id ?? null;
+  if (
+    !isAiArtifactMessageCandidate(message, botUserId) ||
+    message.guildId !== context.guildId
+  ) {
+    return;
+  }
 
   try {
     const runtime = await getSharedRuntime(context);
     const result = await handleAiArtifactMessage(message, {
       runtime,
-      botUserId: context.client.user?.id ?? null,
+      botUserId,
       getAiPluginConfig: async (guildId) =>
         guildId === context.guildId
           ? ({ enabled: context.config.enabled } as Record<string, unknown>)
@@ -141,6 +150,10 @@ async function createSharedRuntime(
     );
     return null;
   }
+  if (enabledGuilds.size === 0) {
+    redis.disconnect();
+    return null;
+  }
 
   let artifactConfig;
   try {
@@ -149,6 +162,11 @@ async function createSharedRuntime(
     redis.disconnect();
     throw error;
   }
+  if (enabledGuilds.size === 0) {
+    redis.disconnect();
+    return null;
+  }
+
   sharedRedis = redis;
   context.logger.info(
     {
