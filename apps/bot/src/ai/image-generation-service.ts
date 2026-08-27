@@ -132,15 +132,6 @@ export class OpenAiImageGenerationService implements AiImageGenerationService {
       reservedMicroUsd: 0,
       error: null,
     };
-    const toolConcurrencyId = `image-tool-concurrency:${randomUUID()}`;
-    const toolConcurrencyAcquired = await this.toolGuardStore.acquireConcurrency(
-      toolConcurrencyId,
-      OPENAI_IMAGE_TOOL_CONCURRENCY,
-      this.baseConfig.timeoutMs + 5_000,
-    );
-    if (!toolConcurrencyAcquired) {
-      throw new AiFoundationError('rate_limited', { retryAfterMs: 1_000 });
-    }
     const generationService = new OpenAiRuntimeGenerationService({
       baseConfig: this.baseConfig,
       apiKey: this.apiKey,
@@ -150,47 +141,43 @@ export class OpenAiImageGenerationService implements AiImageGenerationService {
       fetchImpl: (input, init) => this.executeImageResponsesRequest(input, init, request, captured),
     });
 
-    try {
-      const response = await generationService
-        .generate({
-          feature: 'ai.image_generation',
-          input: request.input,
-          guildId: request.guildId,
-          scopeGuildId: request.scopeGuildId,
-          userId: request.userId,
-          authorized: request.authorized,
-          pluginEnabled: request.pluginEnabled,
-          guildOptIn: request.guildOptIn,
-          responseMode: 'artifact',
-          groundingState: 'not_required',
-          trustedInstructions: [IMAGE_GENERATION_INSTRUCTION],
-        })
-        .catch((error: unknown) => {
-          if (captured.error) throw captured.error;
-          throw error;
-        });
+    const response = await generationService
+      .generate({
+        feature: 'ai.image_generation',
+        input: request.input,
+        guildId: request.guildId,
+        scopeGuildId: request.scopeGuildId,
+        userId: request.userId,
+        authorized: request.authorized,
+        pluginEnabled: request.pluginEnabled,
+        guildOptIn: request.guildOptIn,
+        responseMode: 'artifact',
+        groundingState: 'not_required',
+        trustedInstructions: [IMAGE_GENERATION_INSTRUCTION],
+      })
+      .catch((error: unknown) => {
+        if (captured.error) throw captured.error;
+        throw error;
+      });
 
-      if (!captured.bytes || captured.bytes.byteLength < 1) {
-        throw new AiImageGenerationError('empty_result');
-      }
-      return {
-        requestId: response.requestId,
-        provider: response.provider,
-        model: response.model,
-        imageBillingModel: OPENAI_IMAGE_BILLING_MODEL,
-        usage: response.usage,
-        estimatedCost: response.estimatedCost + microUsdToUsd(captured.reservedMicroUsd),
-        durationMs: Math.max(0, this.now() - startedAt),
-        file: {
-          filename: 'generated-image.png',
-          mimeType: 'image/png',
-          bytes: captured.bytes,
-        },
-        pricingVerifiedAt: OPENAI_IMAGE_PRICING_VERIFIED_AT,
-      };
-    } finally {
-      await this.toolGuardStore.releaseConcurrency(toolConcurrencyId).catch(() => undefined);
+    if (!captured.bytes || captured.bytes.byteLength < 1) {
+      throw new AiImageGenerationError('empty_result');
     }
+    return {
+      requestId: response.requestId,
+      provider: response.provider,
+      model: response.model,
+      imageBillingModel: OPENAI_IMAGE_BILLING_MODEL,
+      usage: response.usage,
+      estimatedCost: response.estimatedCost + microUsdToUsd(captured.reservedMicroUsd),
+      durationMs: Math.max(0, this.now() - startedAt),
+      file: {
+        filename: 'generated-image.png',
+        mimeType: 'image/png',
+        bytes: captured.bytes,
+      },
+      pricingVerifiedAt: OPENAI_IMAGE_PRICING_VERIFIED_AT,
+    };
   }
 
   private async executeImageResponsesRequest(
@@ -210,60 +197,74 @@ export class OpenAiImageGenerationService implements AiImageGenerationService {
     captured.reservedMicroUsd = imageReservationMicroUsd;
     assertCombinedImageCostWithinLimit(originalBody, this.baseConfig, imageReservationMicroUsd);
 
-    const reservationId = `image-tool:${randomUUID()}`;
-    const guildKey = privacyGuildKey(request.guildId);
-    const quota = await this.guardStore.reserveGuildQuota(
-      guildKey,
-      reservationId,
-      imageReservationMicroUsd,
-      this.baseConfig.guildQuotaMicroUsd,
-      this.baseConfig.quotaWindowMs,
+    const toolConcurrencyId = `image-tool-concurrency:${randomUUID()}`;
+    const toolConcurrencyAcquired = await this.toolGuardStore.acquireConcurrency(
+      toolConcurrencyId,
+      OPENAI_IMAGE_TOOL_CONCURRENCY,
+      this.baseConfig.timeoutMs + 5_000,
     );
-    if (!quota.allowed) {
-      throw new AiFoundationError('quota_exceeded', { retryAfterMs: quota.retryAfterMs });
+    if (!toolConcurrencyAcquired) {
+      throw new AiFoundationError('rate_limited', { retryAfterMs: 1_000 });
     }
 
-    let toolChargeConfirmed = false;
     try {
-      const response = await this.fetchImpl(input, {
-        ...init,
-        body: JSON.stringify({
-          ...originalBody,
-          tools: [
-            {
-              type: 'image_generation',
-              size: OPENAI_IMAGE_SIZE,
-              quality: OPENAI_IMAGE_QUALITY,
-            },
-          ],
-          tool_choice: { type: 'image_generation' },
-          max_tool_calls: OPENAI_IMAGE_MAX_TOOL_CALLS,
-          parallel_tool_calls: false,
-        }),
-      });
-
-      if (!response.ok) return response;
-      const responseBytes = await readBoundedBytes(response, IMAGE_RESPONSE_MAX_BYTES);
-      const payload = parseJsonBytes(responseBytes);
-      const imageResult = extractSingleImageResult(payload);
-
-      // A returned image_generation_call is the billable image event. Settle the conservative
-      // image reservation even if transport validation below later rejects malformed base64.
-      await this.guardStore.settleGuildQuota(guildKey, reservationId, imageReservationMicroUsd);
-      toolChargeConfirmed = true;
-
-      captured.bytes = decodeStrictBase64(imageResult, AI_IMAGE_ARTIFACT_DEFAULTS.maxBytes);
-      return sanitizedCompletedResponse(response, payload);
-    } catch (error) {
-      if (error instanceof AiImageGenerationError) {
-        captured.error = error;
-        throw new AiFoundationError('internal_error');
+      const reservationId = `image-tool:${randomUUID()}`;
+      const guildKey = privacyGuildKey(request.guildId);
+      const quota = await this.guardStore.reserveGuildQuota(
+        guildKey,
+        reservationId,
+        imageReservationMicroUsd,
+        this.baseConfig.guildQuotaMicroUsd,
+        this.baseConfig.quotaWindowMs,
+      );
+      if (!quota.allowed) {
+        throw new AiFoundationError('quota_exceeded', { retryAfterMs: quota.retryAfterMs });
       }
-      throw error;
+
+      let toolChargeConfirmed = false;
+      try {
+        const response = await this.fetchImpl(input, {
+          ...init,
+          body: JSON.stringify({
+            ...originalBody,
+            tools: [
+              {
+                type: 'image_generation',
+                size: OPENAI_IMAGE_SIZE,
+                quality: OPENAI_IMAGE_QUALITY,
+              },
+            ],
+            tool_choice: { type: 'image_generation' },
+            max_tool_calls: OPENAI_IMAGE_MAX_TOOL_CALLS,
+            parallel_tool_calls: false,
+          }),
+        });
+
+        if (!response.ok) return response;
+        const responseBytes = await readBoundedBytes(response, IMAGE_RESPONSE_MAX_BYTES);
+        const payload = parseJsonBytes(responseBytes);
+        const imageResult = extractSingleImageResult(payload);
+
+        // A returned image_generation_call is the billable image event. Settle the conservative
+        // image reservation even if transport validation below later rejects malformed base64.
+        await this.guardStore.settleGuildQuota(guildKey, reservationId, imageReservationMicroUsd);
+        toolChargeConfirmed = true;
+
+        captured.bytes = decodeStrictBase64(imageResult, AI_IMAGE_ARTIFACT_DEFAULTS.maxBytes);
+        return sanitizedCompletedResponse(response, payload);
+      } catch (error) {
+        if (error instanceof AiImageGenerationError) {
+          captured.error = error;
+          throw new AiFoundationError('internal_error');
+        }
+        throw error;
+      } finally {
+        // If the provider outcome is unknown, retain the conservative reservation until the quota
+        // window expires, matching AiFoundationService's timeout/provider-failure accounting.
+        void toolChargeConfirmed;
+      }
     } finally {
-      // If the provider outcome is unknown, retain the conservative reservation until the quota
-      // window expires, matching AiFoundationService's timeout/provider-failure accounting.
-      void toolChargeConfirmed;
+      await this.toolGuardStore.releaseConcurrency(toolConcurrencyId).catch(() => undefined);
     }
   }
 }
