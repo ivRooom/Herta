@@ -70,7 +70,13 @@ describe('artifact Discord mention handler', () => {
         provider: 'openai',
         model: 'gpt-5.6-terra',
         text: JSON.stringify({
-          artifacts: [{ filename: '../unsafe.py', mimeType: 'text/x-python', content: 'print(1)' }],
+          artifacts: [
+            {
+              filename: '../unsafe.py',
+              mimeType: 'text/x-python',
+              content: 'print(1)',
+            },
+          ],
         }),
         usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
         estimatedCost: 0,
@@ -140,11 +146,14 @@ describe('artifact Discord mention handler', () => {
     });
     const reply = vi.fn(async () => undefined);
 
-    const result = await handleAiArtifactMessage(message('<@123456789> Pythonコードを書いて', reply), {
-      runtime,
-      botUserId: '123456789',
-      getAiPluginConfig: vi.fn(async () => ({ enabled: false })),
-    });
+    const result = await handleAiArtifactMessage(
+      message('<@123456789> Pythonコードを書いて', reply),
+      {
+        runtime,
+        botUserId: '123456789',
+        getAiPluginConfig: vi.fn(async () => ({ enabled: false })),
+      },
+    );
 
     expect(result).toEqual({ status: 'ignored' });
     expect(generationService.generate).not.toHaveBeenCalled();
@@ -157,6 +166,8 @@ describe('stripBotMention', () => {
     expect(stripBotMention('<@123456789> Pythonコードを書いて', '123456789')).toBe(
       'Pythonコードを書いて',
     );
-    expect(stripBotMention('<@!123456789>   README作って', '123456789')).toBe('README作って');
+    expect(stripBotMention('<@!123456789>   README作って', '123456789')).toBe(
+      'README作って',
+    );
   });
 });
