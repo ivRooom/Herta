@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   AiArtifactValidationError,
+  isPythonCodeArtifactRequest,
   resolveAiArtifactConfig,
   resolveAiArtifactIntent,
   validateAiArtifactBatch,
@@ -31,6 +32,20 @@ describe('AI artifact intent', () => {
     expect(resolveAiArtifactIntent('このPythonコードを実行してCSVに変換して')).toBe(
       'code_execution',
     );
+    expect(resolveAiArtifactIntent('この疑似コードをPythonコードに変換して')).toBe(
+      'code_artifact',
+    );
+  });
+
+  it('短い言語名を通常単語のsubstringとして誤検知しない', () => {
+    expect(resolveAiArtifactIntent('Create a happy birthday message')).toBe('chat');
+    expect(resolveAiArtifactIntent('Write a trust policy')).toBe('chat');
+  });
+
+  it('非Python言語もcode_artifact intentとして識別しruntime側でcapability判定できる', () => {
+    expect(resolveAiArtifactIntent('Write a JavaScript program')).toBe('code_artifact');
+    expect(isPythonCodeArtifactRequest('Write a JavaScript program')).toBe(false);
+    expect(isPythonCodeArtifactRequest('Pythonコードを書いて')).toBe(true);
   });
 
   it('generic file artifactとimage generationをtyped intentへ分離する', () => {
