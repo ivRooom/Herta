@@ -5,6 +5,7 @@ import test from 'node:test';
 const routePath = 'src/app/api/admin/runtime-secrets/openai/route.ts';
 const settingsPath = 'src/components/ai-provider-credential-settings.tsx';
 const semanticRoutePath = 'src/app/api/search/semantic/route.ts';
+const runtimeSettingsRoutePath = 'src/app/api/admin/runtime-config/ai/route.ts';
 
 test('OpenAI credential mutation remains platform-admin and same-origin protected', () => {
   const route = readFileSync(routePath, 'utf8');
@@ -51,4 +52,19 @@ test('Semantic Search rate-limits before credential lookup and fails closed on s
   assert.match(route, /error instanceof RuntimeSecretError/u);
   assert.match(route, /credential store is unavailable; failing closed/u);
   assert.doesNotMatch(route, /credential store is unavailable; env fallback remains active/u);
+});
+
+test('AI Runtime Settings only exposes and saves providers with usable credentials', () => {
+  const route = readFileSync(runtimeSettingsRoutePath, 'utf8');
+  const availabilityIndex = route.indexOf('resolveProviderPolicyView()');
+  const saveIndex = route.indexOf('setRuntimeConfiguration(prisma');
+
+  assert.ok(availabilityIndex >= 0, 'runtime API must resolve provider credential availability');
+  assert.ok(saveIndex > availabilityIndex, 'credential availability must be checked before saving');
+  assert.match(route, /readRuntimeSecret\(prisma, OPENAI_API_KEY_RUNTIME_SECRET, process\.env\)/u);
+  assert.match(route, /getAiRuntimePolicyMetadata\(\)\.filter/u);
+  assert.match(route, /if \(!availability\?\.available\)/u);
+  assert.match(route, /missingCredential \? 409 : 503/u);
+  assert.match(route, /providerAvailability: providerView\.providerAvailability/u);
+  assert.doesNotMatch(route, /console\.(?:log|info|warn|error)\([^\n]*(?:apiKey|credential)/u);
 });
