@@ -107,7 +107,10 @@ export async function validateAiImageArtifact(
   let metadata: Awaited<ReturnType<ReturnType<typeof sharp>['metadata']>>;
   try {
     metadata = await sharp(Buffer.from(bytes), inputOptions).metadata();
-  } catch {
+  } catch (error) {
+    if (isSharpPixelLimitError(error)) {
+      throw new AiImageArtifactValidationError('pixel_limit_exceeded');
+    }
     throw new AiImageArtifactValidationError('malformed_image');
   }
 
@@ -246,6 +249,10 @@ function isImageMime(value: string): value is ImageMime {
 
 function formatForMime(mimeType: ImageMime): 'png' | 'webp' {
   return mimeType === 'image/png' ? 'png' : 'webp';
+}
+
+function isSharpPixelLimitError(error: unknown): boolean {
+  return error instanceof Error && error.message.toLowerCase().includes('pixel limit');
 }
 
 function assertValidConfig(config: AiImageArtifactConfig): void {
