@@ -93,6 +93,25 @@ describe('AiArtifactRuntime', () => {
     expect(generate).not.toHaveBeenCalled();
   });
 
+  it('Phase 1非対応言語はPythonへ変換せずprovider call前にrejectする', async () => {
+    const generate = vi.fn<AiRuntimeGenerationService['generate']>();
+    const runtime = new AiArtifactRuntime({
+      generationService: { generate },
+      artifactConfig,
+    });
+
+    const result = await runtime.prepare({
+      ...request,
+      input: 'Write a JavaScript program',
+    });
+
+    expect(result).toMatchObject({ status: 'unsupported', intent: 'code_artifact' });
+    if (result.status !== 'unsupported') throw new Error('expected unsupported result');
+    expect(result.userMessage).toContain('Pythonコードのみ');
+    expect(result.userMessage).toContain('作成していません');
+    expect(generate).not.toHaveBeenCalled();
+  });
+
   it('既存chat modeはartifact provider callへrouteしない', async () => {
     const generate = vi.fn<AiRuntimeGenerationService['generate']>();
     const runtime = new AiArtifactRuntime({
@@ -122,7 +141,7 @@ describe('AiArtifactRuntime', () => {
         JSON.stringify({
           artifacts: [
             {
-              filename: '../fizzbuzz.py',
+              filename: '..' + '/fizzbuzz.py',
               mimeType: 'text/plain',
               content: 'print(1)',
             },
