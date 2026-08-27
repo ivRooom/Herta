@@ -107,6 +107,10 @@ const WINDOWS_RESERVED_NAMES = new Set([
   'lpt9',
 ]);
 
+const PYTHON_CODE_PATTERN = /\b(?:python|py)\b/i;
+const CODE_REQUEST_PATTERN =
+  /\b(?:python|py|typescript|javascript|java|golang|go|rust|program)\b|c#|source code|コード|スクリプト/i;
+
 export function resolveAiArtifactConfig(
   env: Record<string, string | undefined> = process.env,
 ): AiArtifactConfig {
@@ -138,15 +142,14 @@ export function resolveAiArtifactIntent(input: string): AiArtifactIntent {
     );
   const executionRequested =
     !executionExplicitlyDenied &&
-    /(実行|動かして|走らせて|計算して|変換して|run\b|execute\b|execution\b)/i.test(normalized);
-  const codeRequested =
-    /(python|py\b|typescript|javascript|java\b|golang|\bgo\b|rust|c#|コード|スクリプト|program|source code)/i.test(
-      normalized,
-    );
+    /(実行|動かして|走らせて|\brun\b|\bexecute\b|\bexecution\b)/i.test(normalized);
+  const codeRequested = CODE_REQUEST_PATTERN.test(normalized);
   if (executionRequested && codeRequested) return 'code_execution';
 
   const creationRequested =
-    /(書いて|作って|生成して|出力して|create\b|write\b|generate\b|make\b)/i.test(normalized);
+    /(書いて|作って|生成して|出力して|変換して|create\b|write\b|generate\b|make\b|convert\b)/i.test(
+      normalized,
+    );
   const imageRequested = /(画像|イラスト|image\b|picture\b|png\b|webp\b)/i.test(normalized);
   if (creationRequested && imageRequested) return 'image_generation';
 
@@ -163,6 +166,10 @@ export function resolveAiArtifactIntent(input: string): AiArtifactIntent {
   }
 
   return 'chat';
+}
+
+export function isPythonCodeArtifactRequest(input: string): boolean {
+  return PYTHON_CODE_PATTERN.test(normalizeIntentInput(input));
 }
 
 export function validateAiArtifactBatch(
