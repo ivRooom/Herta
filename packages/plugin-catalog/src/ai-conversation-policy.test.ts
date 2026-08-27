@@ -12,8 +12,10 @@ describe('AI conversation policy', () => {
     expect(policy.groundingState).toBe('not_required');
     expect(policy.textVerbosity).toBe('low');
     expect(policy.instructions).toContain('usually two to five sentences');
-    expect(policy.instructions).toContain('Do not invent or claim unverified facts');
-    expect(policy.instructions).toContain('cannot confirm it or do not know');
+    expect(policy.instructions).toContain('Do not invent factual claims');
+    expect(policy.instructions).toContain('Never present a guess as a confirmed fact');
+    expect(policy.instructions).toContain('cannot confirm it, or do not know');
+    expect(policy.instructions).toContain('Answer normally without pretending');
   });
 
   it('detailed/artifactは必要な長さを禁止しない', () => {
