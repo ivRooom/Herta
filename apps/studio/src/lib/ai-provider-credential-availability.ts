@@ -1,8 +1,6 @@
 export type AiProviderCredentialSource = 'runtime_secret' | 'environment';
 export type AiProviderCredentialStatus =
-  | 'ready'
-  | 'missing_credential'
-  | 'credential_store_unavailable';
+  'ready' | 'missing_credential' | 'credential_store_unavailable';
 
 export interface AiProviderCredentialAvailability {
   provider: 'openai';
