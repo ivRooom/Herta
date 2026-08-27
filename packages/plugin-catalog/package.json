@@ -22,6 +22,10 @@
       "types": "./src/ai-runtime-config.ts",
       "default": "./dist/ai-runtime-config.js"
     },
+    "./ai-conversation-policy": {
+      "types": "./src/ai-conversation-policy.ts",
+      "default": "./dist/ai-conversation-policy.js"
+    },
     "./moderation-runtime": {
       "types": "./src/moderation-runtime.ts",
       "default": "./dist/moderation-runtime.js"
