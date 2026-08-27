@@ -166,8 +166,6 @@ describe('stripBotMention', () => {
     expect(stripBotMention('<@123456789> Pythonコードを書いて', '123456789')).toBe(
       'Pythonコードを書いて',
     );
-    expect(stripBotMention('<@!123456789>   README作って', '123456789')).toBe(
-      'README作って',
-    );
+    expect(stripBotMention('<@!123456789>   README作って', '123456789')).toBe('README作って');
   });
 });
