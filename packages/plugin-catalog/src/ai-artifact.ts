@@ -108,8 +108,11 @@ const WINDOWS_RESERVED_NAMES = new Set([
 ]);
 
 const PYTHON_CODE_PATTERN = /\b(?:python|py)\b/i;
+const NON_PYTHON_CODE_PATTERN = /\b(?:typescript|javascript|java|golang|go|rust)\b|c#/i;
 const CODE_REQUEST_PATTERN =
   /\b(?:python|py|typescript|javascript|java|golang|go|rust|program)\b|c#|source code|コード|スクリプト/i;
+const NEGATED_CODE_LANGUAGE_PATTERN =
+  /\b(?:not(?:\s+in)?|no|without|rather\s+than|instead\s+of)\s+(?:python|py|typescript|javascript|java|golang|go|rust|c#)\b|(?:python|py|typescript|javascript|java|golang|go|rust|c#)(?:ではなく|じゃなく|以外|を使わず)/gi;
 
 export function resolveAiArtifactConfig(
   env: Record<string, string | undefined> = process.env,
@@ -141,11 +144,10 @@ export function resolveAiArtifactIntent(input: string): AiArtifactIntent {
       normalized,
     );
   const executionRequested =
-    !executionExplicitlyDenied &&
-    /(実行|動かして|走らせて|\brun\b|\bexecute\b|\bexecution\b)/i.test(normalized);
-  const codeRequested = CODE_REQUEST_PATTERN.test(normalized);
-  if (executionRequested && codeRequested) return 'code_execution';
+    !executionExplicitlyDenied && isExplicitExecutionActionRequest(normalized);
+  if (executionRequested) return 'code_execution';
 
+  const codeRequested = CODE_REQUEST_PATTERN.test(normalized);
   const creationRequested =
     /(書いて|作って|生成して|出力して|変換して|create\b|write\b|generate\b|make\b|convert\b)/i.test(
       normalized,
@@ -167,7 +169,11 @@ export function resolveAiArtifactIntent(input: string): AiArtifactIntent {
 }
 
 export function isPythonCodeArtifactRequest(input: string): boolean {
-  return PYTHON_CODE_PATTERN.test(normalizeIntentInput(input));
+  const affirmativeLanguages = normalizeIntentInput(input).replace(NEGATED_CODE_LANGUAGE_PATTERN, ' ');
+  return (
+    PYTHON_CODE_PATTERN.test(affirmativeLanguages) &&
+    !NON_PYTHON_CODE_PATTERN.test(affirmativeLanguages)
+  );
 }
 
 export function validateAiArtifactBatch(
@@ -248,6 +254,19 @@ export function normalizeArtifactFilename(value: string): string {
 export function mimeTypeForArtifactFilename(filename: string): string | null {
   const extension = extensionOf(normalizeArtifactFilename(filename));
   return isSupportedExtension(extension) ? MIME_BY_EXTENSION[extension] : null;
+}
+
+function isExplicitExecutionActionRequest(input: string): boolean {
+  if (
+    /(?:実行して|実行してください|実行してほしい|実行をお願いします|動かして|走らせて)/i.test(input)
+  ) {
+    return true;
+  }
+  return (
+    /^(?:please\s+)?(?:run|execute)\b/i.test(input) ||
+    /\b(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:run|execute)\b/i.test(input) ||
+    /\b(?:i want you to|i'd like you to)\s+(?:run|execute)\b/i.test(input)
+  );
 }
 
 function normalizeIntentInput(input: string): string {
