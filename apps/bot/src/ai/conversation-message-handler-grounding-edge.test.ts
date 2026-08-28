@@ -18,12 +18,22 @@ describe('Discord grounding external source boundary', () => {
     expect(resolveAiConversationGroundingState(input)).toBe('insufficient');
   });
 
-  it.each(['What does website design mean?', 'Explain website architecture'])(
-    '%s は一般説明として扱う',
-    (input) => {
-      expect(resolveAiConversationGroundingState(input)).toBe('not_required');
-    },
-  );
+  it.each([
+    'Look up https://example.com',
+    'Verify https://example.com',
+    'https://example.com を確認して',
+    'https://example.com を調べて',
+  ])('%s の明示URL lookupをfail closedする', (input) => {
+    expect(resolveAiConversationGroundingState(input)).toBe('insufficient');
+  });
+
+  it.each([
+    'What does website design mean?',
+    'Explain website architecture',
+    'Write Python code to look up a key in a dictionary',
+  ])('%s は外部参照不要として扱う', (input) => {
+    expect(resolveAiConversationGroundingState(input)).toBe('not_required');
+  });
 });
 
 describe('Discord grounding runtime-value clause boundary', () => {
