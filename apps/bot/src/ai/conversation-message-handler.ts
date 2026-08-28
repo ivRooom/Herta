@@ -25,7 +25,7 @@ const INSUFFICIENT_GROUNDING_ARTIFACT_REPLY =
 const EXPLICIT_DETAIL_REQUEST_PATTERN =
   /(?:詳しく|詳細に|丁寧に|手順(?:を)?(?:全部|すべて|全て)|(?:全部|すべて|全て)の?手順|比較して|比較してください|比較を|step[- ]by[- ]step|all\s+(?:the\s+)?steps|compare\b|comparison\b|in\s+detail|detailed)/i;
 const EXPLICIT_SOURCE_REQUEST_PATTERN =
-  /(?:出典|引用元|citation|citations|source(?:s)?(?!\s+code\b)|ソース(?!コード)(?:を|が|は)?|web\s*検索|ウェブ\s*検索|search\s+(?:the\s+)?web|look\s+up)/i;
+  /(?:出典|引用元|citation|citations|(?<!open[\s_-])\bsource(?:s)?(?![\s_-]+code\b)|(?<!オープン)ソース(?!コード)(?:を|が|は)?|web\s*検索|ウェブ\s*検索|search\s+(?:the\s+)?web|look\s+up)/i;
 const CURRENT_EXTERNAL_FACT_PATTERN =
   /(?:最新|現在の|今の|今日の|本日の).{0,60}(?:状態|状況|価格|料金|バージョン|version|リリース|release|PR|Issue|CI|デプロイ|deploy|稼働|障害|ニュース|天気|株価|為替)|(?:状態|状況|価格|料金|バージョン|リリース|PR|Issue|CI|デプロイ|稼働|障害|ニュース|天気|株価|為替).{0,60}(?:最新|現在|今|今日|本日)|\b(?:latest|current|today(?:'s)?|now)\b.{0,60}\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b|\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b.{0,60}\b(?:latest|current|today(?:'s)?|now)\b/i;
 const CURRENT_REQUEST_MARKER_PATTERN =
@@ -34,6 +34,8 @@ const CURRENT_REQUEST_FACT_PATTERN =
   /(?:[?？]|教えて|知りたい|誰|何|いつ|どこ|いくら|何時|結果|スコア|状態|状況|\b(?:tell me|show me|give me|who|what|when|where|which|how much|how many|score|time)\b)/i;
 const EVERGREEN_CURRENT_CONCEPT_PATTERN =
   /(?:\b(?:what does|what is|define|explain)\s+(?:electric\s+|electrical\s+)?current\b|\b(?:electric|electrical|alternating|direct)\s+current\b|\bcurrent\s+(?:flow|density|source|mirror|loop|operator|keyword|concept|term)\b)/i;
+const CODE_RUNTIME_CURRENT_VALUE_PATTERN =
+  /(?:現在|今|今日)(?:の)?(?:時刻|時間|日時|日付)|\b(?:current|local)\s+(?:time|date|datetime)\b|\b(?:time|date)\s+(?:now|today)\b/i;
 const LIVE_EXTERNAL_QUERY_PATTERN =
   /(?:天気|天候|株価|為替|ニュース|障害状況)(?:は|って)?(?:どう(?!やって|して|いう)|いくら|何円|教えて|を教えて|見せて|[?？])|\b(?:what(?:'s| is)|how(?:'s| is))\s+the\s+(?:weather|forecast|stock price|exchange rate|news|outage status)(?:\s+(?:in|for|at|of)\s+[^?]+)?\s*\?|\b(?:weather|forecast|stock price|exchange rate|outage status)(?:\s+(?:in|for|at|of)\s+[^?]+)?\s*\?/i;
 const EXTERNAL_TARGET_PATTERN =
@@ -44,7 +46,7 @@ const EXTERNAL_STATE_PATTERN =
   /(?:GitHub|repository|リポジトリ|production|本番|deploy|デプロイ|release|リリース).{0,80}(?:状態|状況|結果|成功|失敗|稼働|障害|何番)|(?:pull request|\bPR\b|\bIssue\b|\bCI\b).{0,80}(?:状態|状況|結果|成功|失敗|\b(?:merged|open|closed|green|red)\b|何番)/i;
 const URL_PATTERN = /https?:\/\/\S+/i;
 const URL_DEREFERENCE_PATTERN =
-  /(?:https?:\/\/\S+.{0,80}(?:を元に|をもとに|の内容(?:を|について)?|を開いて|を読んで|を取得して|を要約して|を解析して)|(?:を元に|をもとに|内容を|開いて|読んで|取得して|要約して|解析して|\bbased on\b|\busing\b|\bfrom\b|\bread\b|\bopen\b|\bvisit\b|\bfetch\b|\bsummarize\b|\banaly[sz]e\b).{0,80}https?:\/\/\S+)/i;
+  /(?:https?:\/\/\S+.{0,80}(?:を元に|をもとに|の内容(?:を|について)?|を開いて|を読んで|を取得して|を要約して|を解析して)|(?:を元に|をもとに|内容を|開いて|読んで|取得して|要約して|解析して|\bbased on\b|\busing\b|\bfrom\b|\bread\b|\bopen\b|\bvisit\b|\bfetch\b|\binspect\b|\bsummarize\b|\banaly[sz]e\b).{0,80}https?:\/\/\S+|\bwhat does\s+https?:\/\/\S+\s+(?:say|contain|show)\b|\bwhat is\s+on\s+https?:\/\/\S+|\btell me\s+what(?:'s| is)\s+on\s+https?:\/\/\S+|\bcan you\s+inspect\s+https?:\/\/\S+)/i;
 
 export interface AiConversationMessageHandlerOptions extends AiArtifactMessageHandlerOptions {
   generationService: AiRuntimeGenerationService | null;
@@ -129,10 +131,14 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
   const normalized = typeof input === 'string' ? input.normalize('NFKC').trim() : '';
   if (!normalized) return 'not_required';
 
+  const isCodeRuntimeValueRequest =
+    resolveAiArtifactIntent(normalized) === 'code_artifact' &&
+    CODE_RUNTIME_CURRENT_VALUE_PATTERN.test(normalized);
   const requiresCurrentGrounding =
     CURRENT_REQUEST_MARKER_PATTERN.test(normalized) &&
     CURRENT_REQUEST_FACT_PATTERN.test(normalized) &&
-    !EVERGREEN_CURRENT_CONCEPT_PATTERN.test(normalized);
+    !EVERGREEN_CURRENT_CONCEPT_PATTERN.test(normalized) &&
+    !isCodeRuntimeValueRequest;
   const requiresUrlGrounding =
     URL_PATTERN.test(normalized) && URL_DEREFERENCE_PATTERN.test(normalized);
 

@@ -55,7 +55,16 @@ describe('Discord conversation delivery bounds', () => {
 describe('Discord grounding fail-safe boundary', () => {
   it('一般的なsource code説明はnot_requiredのまま扱う', () => {
     expect(resolveAiConversationGroundingState('source codeって何？')).toBe('not_required');
+    expect(resolveAiConversationGroundingState('source-codeって何？')).toBe('not_required');
+    expect(resolveAiConversationGroundingState('source_codeって何？')).toBe('not_required');
     expect(resolveAiConversationGroundingState('ソースコードって何？')).toBe('not_required');
+  });
+
+  it('open source artifactはsource lookupと誤判定しない', () => {
+    expect(resolveAiConversationGroundingState('Create an open source README')).toBe(
+      'not_required',
+    );
+    expect(resolveAiConversationGroundingState('オープンソースREADMEを作って')).toBe('not_required');
   });
 
   it('今日のニュースと具体的なPR状態はinsufficientにする', () => {
@@ -75,6 +84,12 @@ describe('Discord grounding fail-safe boundary', () => {
     );
     expect(resolveAiConversationGroundingState('What was the score today?')).toBe('insufficient');
     expect(resolveAiConversationGroundingState('What time is it now?')).toBe('insufficient');
+  });
+
+  it('current値を取得するコード生成は外部事実の回答と誤判定しない', () => {
+    expect(resolveAiConversationGroundingState('Write Python code that prints the current time')).toBe(
+      'not_required',
+    );
   });
 
   it('liveカテゴリを含む一般説明はnot_requiredのまま扱う', () => {
@@ -103,6 +118,21 @@ describe('Discord grounding fail-safe boundary', () => {
     expect(
       resolveAiConversationGroundingState('Turn https://example.com into a Markdown link'),
     ).toBe('not_required');
+  });
+
+  it('URL内容を直接尋ねる依頼はsource不足へfail closedする', () => {
+    expect(resolveAiConversationGroundingState('What does https://example.com say?')).toBe(
+      'insufficient',
+    );
+    expect(resolveAiConversationGroundingState('What is on https://example.com?')).toBe(
+      'insufficient',
+    );
+    expect(resolveAiConversationGroundingState('Tell me what is on https://example.com')).toBe(
+      'insufficient',
+    );
+    expect(resolveAiConversationGroundingState('Can you inspect https://example.com?')).toBe(
+      'insufficient',
+    );
   });
 
   it('source依存artifact requestはproviderを呼ばず成果物生成を拒否する', async () => {
