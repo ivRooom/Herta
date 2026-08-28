@@ -27,7 +27,7 @@ const EXPLICIT_DETAIL_REQUEST_PATTERN =
 const EXPLICIT_SOURCE_REQUEST_PATTERN =
   /(?:出典|引用元|citation|citations|(?:^\s*(?:please\s+)?|\b(?:can|could|would)\s+you\s+)(?:cite|reference)\b|\b(?:provide|include|show|give|list)\b.{0,30}\breferences?\b|\b(?:provide|show|give|list|cite|include|find|check|verify|look\s+up)\b.{0,30}\bsources?\b|(?<!open[\s_-])\bsources?\b(?:\s*[?？]|.{0,30}\b(?:for|of|about|used|behind)\b)|(?<!オープン)ソース(?!コード)(?:を|が|は)(?:[?？]|.{0,20}(?:教えて|示して|見せて|確認して|調べて|提示して))|web\s*検索|ウェブ\s*検索|search\s+(?:the\s+)?web)/i;
 const CURRENT_EXTERNAL_FACT_PATTERN =
-  /(?:最新|現在の|今の|今日の|本日の).{0,60}(?:状態|状況|価格|料金|バージョン|version|リリース|release|PR|Issue|CI|デプロイ|deploy|稼働|障害|ニュース|天気|株価|為替)|(?:状態|状況|価格|料金|バージョン|リリース|PR|Issue|CI|デプロイ|稼働|障害|ニュース|天気|株価|為替).{0,60}(?:最新|現在|今|今日|本日)|\b(?:latest|current|today(?:'s)?|now)\b.{0,60}\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b|\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b.{0,60}\b(?:latest|current|today(?:'s)?|now)\b/i;
+  /(?:最新|現在の|今の|今日の|本日の).{0,60}(?:状態|状況|価格|料金|バージョン|version|リリース|release|PR|Issue|CI|デプロイ|deploy|稼働|障害|ニュース|天気|株価|為替)|(?:状態|状況|価格|料金|バージョン|リリース|PR|Issue|CI|デプロイ|deploy|稼働|障害|ニュース|天気|株価|為替).{0,60}(?:最新|現在|今|今日|本日)|\b(?:latest|current|today(?:'s)?|now)\b.{0,60}\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b|\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b.{0,60}\b(?:latest|current|today(?:'s)?|now)\b/i;
 const CURRENT_REQUEST_MARKER_PATTERN =
   /(?:最新|今日|本日|今(?!後)|現在の|現在(?=(?:時刻|時間|日時|日付|価格|料金|状態|状況|天気|株価|為替|結果|スコア)))|\b(?:latest|today(?:'s)?|now|current)\b/i;
 const CURRENT_REQUEST_FACT_PATTERN =
@@ -62,7 +62,7 @@ const STATE_BEFORE_EXTERNAL_TARGET_PATTERN =
   /\b(?:what(?:'s| is)\s+(?:the\s+)?)?(?:status|state|result)\s+of\s+(?:pull request|PR|issue|CI|deployment|production|release)\b|\b(?:what(?:'s| is)\s+(?:the\s+)?)?(?:deployment|production|release)\s+(?:status|state|result)\b/i;
 const URL_PATTERN = /https?:\/\/\S+/i;
 const URL_DEREFERENCE_PATTERN =
-  /(?:https?:\/\/\S+[\s\S]{0,80}(?:を元に|をもとに|の内容(?:を|について)?|を開いて|を読んで|を取得して|を要約して|を解析して)|(?:を元に|をもとに|内容を|開いて|読んで|取得して|要約して|解析して|\bbased on\b|\busing\b|\bfrom\b|\bread\b|\bopen\b|\bvisit\b|\bfetch\b|\binspect\b|\bsummarize\b|\banaly[sz]e\b)[\s\S]{0,80}https?:\/\/\S+|\bwhat does\s+https?:\/\/\S+\s+(?:say|contain|show)\b|\bwhat is\s+on\s+https?:\/\/\S+|\btell me\s+what(?:'s| is)\s+on\s+https?:\/\/\S+|\bcan you\s+inspect\s+https?:\/\/\S+)/i;
+  /(?:https?:\/\/\S+[\s\S]{0,80}(?:を元に|をもとに|の内容(?:を|について)?|を開いて|を読んで|を取得して|を要約して|を解析して|を確認して|を調べて|を検索して|を検証して)|(?:を元に|をもとに|内容を|開いて|読んで|取得して|要約して|解析して|確認して|調べて|検索して|検証して|\bbased on\b|\busing\b|\bfrom\b|\bread\b|\bopen\b|\bvisit\b|\bfetch\b|\binspect\b|\bsummarize\b|\banaly[sz]e\b|\blook\s+up\b|\bcheck\b|\bverify\b|\bconfirm\b|\bsearch\b)[\s\S]{0,80}https?:\/\/\S+|\bwhat does\s+https?:\/\/\S+\s+(?:say|contain|show)\b|\bwhat is\s+on\s+https?:\/\/\S+|\btell me\s+what(?:'s| is)\s+on\s+https?:\/\/\S+|\bcan you\s+inspect\s+https?:\/\/\S+)/i;
 
 export interface AiConversationMessageHandlerOptions extends AiArtifactMessageHandlerOptions {
   generationService: AiRuntimeGenerationService | null;
@@ -135,8 +135,6 @@ export async function handleAiConversationMessage(
     return { status: 'failed', category: `foundation:${safeError.category}` };
   }
 
-  // Discord SDK errors can retain request payloads. Delivery happens outside the provider error
-  // boundary so a failed send is never converted into a second reply or a false success.
   await message.reply({
     content,
     allowedMentions: { parse: [] },
@@ -208,9 +206,6 @@ function validateDiscordConversationReply(value: string): string {
   if (typeof value !== 'string') throw new AiFoundationError('malformed_response');
   const normalized = value.trim();
   if (normalized.length < 1) throw new AiFoundationError('malformed_response');
-  // Discord.js sends JavaScript strings and Discord applies its message limit to the encoded
-  // string length. Count UTF-16 code units here so astral characters such as emoji cannot slip
-  // past a code-point-only guard and cause delivery failure.
   if (normalized.length > DISCORD_CONVERSATION_MAX_UTF16_UNITS) {
     throw new AiFoundationError('output_too_large');
   }
