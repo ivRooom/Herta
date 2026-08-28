@@ -11,6 +11,13 @@ describe('Discord grounding external source boundary', () => {
     expect(resolveAiConversationGroundingState(input)).toBe('insufficient');
   });
 
+  it.each([
+    'Create a README based on\nhttps://example.com',
+    'https://example.com\nの内容を要約して',
+  ])('%s の改行をまたぐURL参照をfail closedする', (input) => {
+    expect(resolveAiConversationGroundingState(input)).toBe('insufficient');
+  });
+
   it.each(['What does website design mean?', 'Explain website architecture'])(
     '%s は一般説明として扱う',
     (input) => {
