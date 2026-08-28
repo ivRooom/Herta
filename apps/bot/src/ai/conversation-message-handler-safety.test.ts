@@ -8,13 +8,10 @@ import {
 } from './conversation-message-handler.js';
 import type { AiRuntimeGenerationService } from './runtime-service.js';
 
-function message(
-  reply: AiArtifactDiscordMessage['reply'],
-  content = '<@123456789> emojiで答えて',
-): AiArtifactDiscordMessage {
+function message(reply: AiArtifactDiscordMessage['reply']): AiArtifactDiscordMessage {
   return {
     guildId: 'guild-1',
-    content,
+    content: '<@123456789> emojiで答えて',
     webhookId: null,
     author: { id: 'user-1', bot: false },
     member: { id: 'user-1' },
@@ -66,19 +63,19 @@ describe('Discord grounding fail-safe boundary', () => {
     expect(resolveAiConversationGroundingState('PR #351の状態は？')).toBe('insufficient');
   });
 
-  it.each([
-    ["What is Bitcoin's price today?", '現在語がcategoryより後ろにあるprice query'],
-    ['What is the weather now?', '現在語がcategoryより後ろにあるweather query'],
-    ['東京の天気は？', '現在語を省略したlive weather query'],
-  ])('%s をsource不足へfail closedする', (input) => {
-    expect(resolveAiConversationGroundingState(input)).toBe('insufficient');
+  it('現在語の語順と暗黙live queryをsource不足へfail closedする', () => {
+    expect(resolveAiConversationGroundingState('Bitcoin price today?')).toBe('insufficient');
+    expect(resolveAiConversationGroundingState('What is the weather now?')).toBe('insufficient');
+    expect(resolveAiConversationGroundingState('東京の天気は？')).toBe('insufficient');
   });
 
-  it.each([
-    ['GitHubでPRをmergeする手順を教えて', '一般的なPR操作手順'],
-    ['repositoryのversion管理を説明して', '一般的なversion管理説明'],
-  ])('%s はlive stateと誤判定しない', (input) => {
-    expect(resolveAiConversationGroundingState(input)).toBe('not_required');
+  it('一般的なrepository操作やversion管理はlive stateと誤判定しない', () => {
+    expect(resolveAiConversationGroundingState('GitHubでPRをmergeする手順を教えて')).toBe(
+      'not_required',
+    );
+    expect(resolveAiConversationGroundingState('repositoryのversion管理を説明して')).toBe(
+      'not_required',
+    );
   });
 
   it('source依存artifact requestはproviderを呼ばず成果物生成を拒否する', async () => {
@@ -97,16 +94,15 @@ describe('Discord grounding fail-safe boundary', () => {
       generationService: service,
       artifactConfig: { maxBytes: 4096, maxFiles: 2 },
     });
+    const sourceDependentMessage = message(reply);
+    sourceDependentMessage.content = '<@123456789> https://example.com/project を元にREADMEを作って';
 
-    const result = await handleAiConversationMessage(
-      message(reply, '<@123456789> https://example.com/project を元にREADMEを作って'),
-      {
-        runtime,
-        generationService: service,
-        botUserId: '123456789',
-        getAiPluginConfig: vi.fn(async () => ({ enabled: true })),
-      },
-    );
+    const result = await handleAiConversationMessage(sourceDependentMessage, {
+      runtime,
+      generationService: service,
+      botUserId: '123456789',
+      getAiPluginConfig: vi.fn(async () => ({ enabled: true })),
+    });
 
     expect(result).toEqual({ status: 'failed', category: 'grounding:insufficient' });
     expect(service.generate).not.toHaveBeenCalled();
