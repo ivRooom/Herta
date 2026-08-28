@@ -97,6 +97,15 @@ describe('Discord grounding fail-safe boundary', () => {
     expect(resolveAiConversationGroundingState('Could you reference a study?')).toBe(
       'insufficient',
     );
+    expect(resolveAiConversationGroundingState('Provide references supporting this claim')).toBe(
+      'insufficient',
+    );
+    expect(resolveAiConversationGroundingState('Please include references for each claim')).toBe(
+      'insufficient',
+    );
+    expect(resolveAiConversationGroundingState('What is a reference implementation?')).toBe(
+      'not_required',
+    );
   });
 
   it('今日のニュースと具体的なPR状態はinsufficientにする', () => {
@@ -139,6 +148,9 @@ describe('Discord grounding fail-safe boundary', () => {
       'insufficient',
     );
     expect(resolveAiConversationGroundingState('Provide the latest inflation rate')).toBe(
+      'insufficient',
+    );
+    expect(resolveAiConversationGroundingState('Can you explain current events?')).toBe(
       'insufficient',
     );
   });
