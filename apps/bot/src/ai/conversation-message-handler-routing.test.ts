@@ -29,7 +29,7 @@ function createService(text = 'TypeScriptはJavaScriptに型を追加する言�
     estimatedCost: 0.0001,
   };
   return {
-    generate: vi.fn(async () => response),
+    generate: vi.fn<AiRuntimeGenerationService['generate']>(async () => response),
   } satisfies AiRuntimeGenerationService;
 }
 
