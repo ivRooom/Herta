@@ -32,7 +32,7 @@ describe('Discord conversation delivery bounds', () => {
         estimatedCost: 0.0001,
       })),
     };
-    const reply = vi.fn(async () => undefined);
+    const reply = vi.fn<AiArtifactDiscordMessage['reply']>(async () => undefined);
     const runtime = new AiArtifactRuntime({
       generationService: service,
       artifactConfig: { maxBytes: 4096, maxFiles: 2 },
