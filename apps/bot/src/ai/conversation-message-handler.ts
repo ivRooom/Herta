@@ -32,8 +32,13 @@ const CURRENT_REQUEST_MARKER_PATTERN =
   /(?:最新|今日|本日|今(?!後)|現在の|現在(?=(?:時刻|時間|日時|日付|価格|料金|状態|状況|天気|株価|為替|結果|スコア)))|\b(?:latest|today(?:'s)?|now|current)\b/i;
 const CURRENT_REQUEST_FACT_PATTERN =
   /(?:[?？]|教えて|知りたい|誰|何|いつ|どこ|いくら|何時|結果|スコア|状態|状況|\b(?:tell me|show me|give me|list|provide|who|what|when|where|which|how much|how many|score|time)\b)/i;
-const EVERGREEN_CURRENT_CONCEPT_PATTERN =
-  /(?:\b(?:what does|what is|define|explain)\s+(?:electric(?:al)?\s+)?current(?:\s+(?:mean|means|in\s+(?:electricity|electronics?|circuits?)))?\s*[?？.]?$|\b(?:electric|electrical|alternating|direct)\s+current\b|\bcurrent\s+(?:flow|density|source|mirror|loop|operator|keyword|concept|term)\b|\b(?:how|what|why)\b.{0,80}\bDate\.now\(\)|\bhow\b.{0,80}\bcurrent\s+(?:directory|working\s+directory)\b)/i;
+const EVERGREEN_CURRENT_CLAUSE_PATTERNS: readonly RegExp[] = [
+  /\b(?:what does|what is|define|explain)\s+(?:electric(?:al)?\s+)?current(?:\s+(?:mean|means|in\s+(?:electricity|electronics?|circuits?)))?/gi,
+  /\b(?:electric|electrical|alternating|direct)\s+current\b/gi,
+  /\bcurrent\s+(?:flow|density|source|mirror|loop|operator|keyword|concept|term)\b/gi,
+  /\bhow\s+does\s+Date\.now\(\)\s+work\b/gi,
+  /\bhow\s+do\s+i\s+get\s+the\s+current\s+(?:directory|working\s+directory)\b/gi,
+];
 const CODE_RUNTIME_VALUE_INPUT_PATTERN =
   /(?:現在|今|今日)(?:の)?(?:時刻|時間|日時|日付)|\b(?:current|local)\s+(?:time|date|datetime)\b|\b(?:time|date)\s+(?:now|today)\b|(?:引数|パラメータ|入力値|入力).{0,40}(?:受け取|渡され|与えられ|使|表示|出力)|(?:受け取|渡され|与えられ|使).{0,40}(?:引数|パラメータ|入力値|入力)|\b(?:passed|provided|supplied)\b.{0,40}\b(?:argument|parameter|input|value)\b|\b(?:argument|parameter|input)\b.{0,40}\b(?:passed|provided|supplied)\b|\b(?:at\s+runtime|runtime)\b.{0,40}\b(?:fetch|retrieve|read|obtain|request|receive|use)\b|\b(?:fetch|retrieve|read|obtain|request|receive|use)\b.{0,40}\b(?:at\s+runtime|runtime|api|endpoint)\b/i;
 const CODE_RUNTIME_VALUE_CLAUSE_PATTERNS: readonly RegExp[] = [
@@ -100,6 +105,26 @@ export async function handleAiConversationMessage(
   if (intent !== 'chat' && intent !== 'detailed_answer') {
     if (!options.runtime) return { status: 'ignored' };
     if (groundingState === 'insufficient') {
+      if (!options.generationService?.consumeRateLimit) return { status: 'ignored' };
+      try {
+        await options.generationService.consumeRateLimit({
+          input,
+          guildId: message.guildId,
+          scopeGuildId: message.guildId,
+          userId: message.author.id,
+          authorized: message.member !== null && message.member !== undefined,
+          pluginEnabled: true,
+          guildOptIn: true,
+        });
+      } catch (error) {
+        const safeError =
+          error instanceof AiFoundationError ? error : new AiFoundationError('internal_error');
+        await message.reply({
+          content: safeError.userMessage,
+          allowedMentions: { parse: [] },
+        });
+        return { status: 'failed', category: `foundation:${safeError.category}` };
+      }
       await message.reply({
         content: INSUFFICIENT_GROUNDING_ARTIFACT_REPLY,
         allowedMentions: { parse: [] },
@@ -160,15 +185,15 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
   const currentFactInput = isCodeRuntimeValueRequest
     ? stripCodeRuntimeValueClauses(normalized)
     : normalized;
+  const currentGroundingInput = stripEvergreenCurrentClauses(currentFactInput);
   const requiresHardCodedCurrentGrounding =
     artifactIntent === 'code_artifact' &&
     HARD_CODED_CURRENT_VALUE_PATTERN.test(normalized) &&
     CURRENT_REQUEST_MARKER_PATTERN.test(normalized);
   const requiresEnumeratedCurrentGrounding = CURRENT_EXTERNAL_FACT_PATTERN.test(currentFactInput);
   const requiresCurrentGrounding =
-    CURRENT_REQUEST_MARKER_PATTERN.test(currentFactInput) &&
-    CURRENT_REQUEST_FACT_PATTERN.test(currentFactInput) &&
-    !EVERGREEN_CURRENT_CONCEPT_PATTERN.test(currentFactInput);
+    CURRENT_REQUEST_MARKER_PATTERN.test(currentGroundingInput) &&
+    CURRENT_REQUEST_FACT_PATTERN.test(currentGroundingInput);
   const requiresLiveExternalGrounding = LIVE_EXTERNAL_QUERY_PATTERN.test(currentFactInput);
   const requiresRepositoryContentGrounding =
     CONCRETE_REPOSITORY_REFERENCE_PATTERN.test(normalized) &&
@@ -197,6 +222,13 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
 
 function stripCodeRuntimeValueClauses(input: string): string {
   return CODE_RUNTIME_VALUE_CLAUSE_PATTERNS.reduce(
+    (value, pattern) => value.replace(pattern, ' '),
+    input,
+  );
+}
+
+function stripEvergreenCurrentClauses(input: string): string {
+  return EVERGREEN_CURRENT_CLAUSE_PATTERNS.reduce(
     (value, pattern) => value.replace(pattern, ' '),
     input,
   );

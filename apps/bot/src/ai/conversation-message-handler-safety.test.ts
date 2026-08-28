@@ -1,4 +1,4 @@
-import type { AiGenerationResponse } from '@herta/plugin-catalog/ai-service';
+import { AiFoundationError, type AiGenerationResponse } from '@herta/plugin-catalog/ai-service';
 import { describe, expect, it, vi } from 'vitest';
 import { AiArtifactRuntime } from './artifact-runtime.js';
 import type { AiArtifactDiscordMessage } from './artifact-message-handler.js';
@@ -155,6 +155,17 @@ describe('Discord grounding fail-safe boundary', () => {
     );
   });
 
+  it('evergreen current説明とvolatile current factが混在してもvolatile部分をfail closedする', () => {
+    expect(
+      resolveAiConversationGroundingState(
+        'Explain electrical current and list the current cabinet members',
+      ),
+    ).toBe('insufficient');
+    expect(
+      resolveAiConversationGroundingState('How does Date.now() work and what time is it now?'),
+    ).toBe('insufficient');
+  });
+
   it('current値を取得または入力で受けるコード生成は外部事実の回答と誤判定しない', () => {
     expect(
       resolveAiConversationGroundingState('Write Python code that prints the current time'),
@@ -233,8 +244,10 @@ describe('Discord grounding fail-safe boundary', () => {
     );
   });
 
-  it('source依存artifact requestはproviderを呼ばず成果物生成を拒否する', async () => {
+  it('source依存artifact requestはrate limit後にproviderを呼ばず成果物生成を拒否する', async () => {
+    const consumeRateLimit = vi.fn(async () => undefined);
     const service: AiRuntimeGenerationService = {
+      consumeRateLimit,
       generate: vi.fn(async (): Promise<AiGenerationResponse> => ({
         requestId: 'request-1',
         provider: 'openai',
@@ -261,11 +274,53 @@ describe('Discord grounding fail-safe boundary', () => {
     });
 
     expect(result).toEqual({ status: 'failed', category: 'grounding:insufficient' });
+    expect(consumeRateLimit).toHaveBeenCalledTimes(1);
+    expect(consumeRateLimit).toHaveBeenCalledWith(
+      expect.objectContaining({ guildId: 'guild-1', userId: 'user-1' }),
+    );
     expect(service.generate).not.toHaveBeenCalled();
     expect(reply).toHaveBeenCalledTimes(1);
     expect(reply.mock.calls[0]?.[0]).toEqual({
       content:
         'この依頼には外部情報の確認が必要ですが、現在は参照できません。成果物は作成していません。',
+      allowedMentions: { parse: [] },
+    });
+  });
+
+  it('source依存artifact requestのrate limit超過をsafe replyへ変換する', async () => {
+    const service: AiRuntimeGenerationService = {
+      consumeRateLimit: vi.fn(async () => {
+        throw new AiFoundationError('rate_limited', { retryAfterMs: 500 });
+      }),
+      generate: vi.fn(async (): Promise<AiGenerationResponse> => ({
+        requestId: 'request-1',
+        provider: 'openai',
+        model: 'gpt-5.6-terra',
+        text: 'unused',
+        usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
+        estimatedCost: 0.0001,
+      })),
+    };
+    const reply = vi.fn<AiArtifactDiscordMessage['reply']>(async () => undefined);
+    const runtime = new AiArtifactRuntime({
+      generationService: service,
+      artifactConfig: { maxBytes: 4096, maxFiles: 2 },
+    });
+    const sourceDependentMessage = message(reply);
+    sourceDependentMessage.content = '<@123456789> PR #351 を元にREADMEを作って';
+
+    const result = await handleAiConversationMessage(sourceDependentMessage, {
+      runtime,
+      generationService: service,
+      botUserId: '123456789',
+      getAiPluginConfig: vi.fn(async () => ({ enabled: true })),
+    });
+
+    expect(result).toEqual({ status: 'failed', category: 'foundation:rate_limited' });
+    expect(service.generate).not.toHaveBeenCalled();
+    expect(reply).toHaveBeenCalledTimes(1);
+    expect(reply.mock.calls[0]?.[0]).toEqual({
+      content: 'AI機能の利用が集中しています。時間をおいて再度お試しください。',
       allowedMentions: { parse: [] },
     });
   });
