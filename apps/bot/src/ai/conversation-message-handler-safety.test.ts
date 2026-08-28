@@ -146,7 +146,9 @@ describe('Discord grounding fail-safe boundary', () => {
     expect(
       resolveAiConversationGroundingState('Write Python code with the current time hard-coded'),
     ).toBe('insufficient');
-    expect(resolveAiConversationGroundingState('現在時刻をハードコードしたPythonコードを書いて')).toBe('insufficient');
+    expect(
+      resolveAiConversationGroundingState('現在時刻をハードコードしたPythonコードを書いて'),
+    ).toBe('insufficient');
   });
 
   it('liveカテゴリを含む一般説明はnot_requiredのまま扱う', () => {
