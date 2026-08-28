@@ -70,12 +70,8 @@ describe('Discord grounding fail-safe boundary', () => {
   });
 
   it('一般的なrepository操作やversion管理はlive stateと誤判定しない', () => {
-    expect(resolveAiConversationGroundingState('GitHubでPRをmergeする手順を教えて')).toBe(
-      'not_required',
-    );
-    expect(resolveAiConversationGroundingState('repositoryのversion管理を説明して')).toBe(
-      'not_required',
-    );
+    expect(resolveAiConversationGroundingState('GitHubでPRをmergeする手順を教えて')).toBe('not_required');
+    expect(resolveAiConversationGroundingState('repositoryのversion管理を説明して')).toBe('not_required');
   });
 
   it('source依存artifact requestはproviderを呼ばず成果物生成を拒否する', async () => {
