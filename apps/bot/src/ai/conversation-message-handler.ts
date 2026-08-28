@@ -33,7 +33,7 @@ const CURRENT_REQUEST_MARKER_PATTERN =
 const CURRENT_REQUEST_FACT_PATTERN =
   /(?:[?？]|教えて|知りたい|誰|何|いつ|どこ|いくら|何時|結果|スコア|状態|状況|\b(?:tell me|show me|give me|list|provide|who|what|when|where|which|how much|how many|score|time)\b)/i;
 const EVERGREEN_CURRENT_CLAUSE_PATTERNS: readonly RegExp[] = [
-  /\b(?:what does|what is|define|explain)\s+(?:electric(?:al)?\s+)?current(?:\s+(?:mean|means|in\s+(?:electricity|electronics?|circuits?)))?/gi,
+  /\b(?:what does|what is|define|explain)\s+(?:electric(?:al)?\s+)?current(?:\s+(?:mean|means|in\s+(?:electricity|electronics?|circuits?)))?(?=\s*(?:[?!.;,]|$|\b(?:and|or)\b))/gi,
   /\b(?:electric|electrical|alternating|direct)\s+current\b/gi,
   /\bcurrent\s+(?:flow|density|source|mirror|loop|operator|keyword|concept|term)\b/gi,
   /\bhow\s+does\s+Date\.now\(\)\s+work\b/gi,
