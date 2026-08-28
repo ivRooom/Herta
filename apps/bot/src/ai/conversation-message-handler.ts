@@ -61,6 +61,8 @@ const EXPLICIT_CHECK_PATTERN =
   /(?:確認して|調べて|検索して|検証して|verify\b|check\b|confirm\b|search\b|look\s+up)/i;
 const EXTERNAL_CONTENT_REQUEST_PATTERN =
   /(?:\bwhat\s+(?:does|do)\s+(?:the\s+)?(?:official\s+(?:documentation|docs?)|website|site)\b.{0,60}\b(?:say|contain|state|mention|show)\b|\b(?:summarize|inspect|read)\b.{0,30}\b(?:(?:the|this|that)\s+(?:website|site)|(?:the\s+)?official\s+(?:documentation|docs?))\b|(?:公式(?:ドキュメント|docs?)|ウェブサイト|website|サイト).{0,60}(?:何(?:が|と)|内容|書いて|記載|要約|読んで))/i;
+const ATTACHMENT_CONTENT_REQUEST_PATTERN =
+  /(?:\bwhat\s+(?:does|is|are)\b.{0,60}\b(?:the\s+)?(?:attached|uploaded)\b|\b(?:summari[sz]e|analy[sz]e|read|inspect|describe)\b.{0,60}\b(?:the\s+)?(?:attached|uploaded)\b|(?:添付|アップロード).{0,50}(?:内容|要約|まとめ|読ん|解析|分析|説明|何が|何を|教えて|を元に|をもとに))/i;
 const EXTERNAL_STATE_PATTERN =
   /(?:GitHub|repository|リポジトリ|production|本番|deploy|デプロイ|release|リリース).{0,80}(?:状態|状況|結果|成功|失敗|稼働|障害|何番)|(?:pull request|\bPR\b|\bIssue\b|\bCI\b).{0,80}(?:状態|状況|結果|成功|失敗|\b(?:merged|open|closed|green|red)\b|何番)/i;
 const STATE_BEFORE_EXTERNAL_TARGET_PATTERN =
@@ -179,7 +181,7 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
 
   const artifactIntent = resolveAiArtifactIntent(normalized);
   const isCodeRuntimeValueRequest =
-    artifactIntent === 'code_artifact' &&
+    (artifactIntent === 'code_artifact' || artifactIntent === 'code_execution') &&
     CODE_RUNTIME_VALUE_INPUT_PATTERN.test(normalized) &&
     !HARD_CODED_CURRENT_VALUE_PATTERN.test(normalized);
   const currentFactInput = isCodeRuntimeValueRequest
@@ -210,6 +212,7 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
     requiresCurrentGrounding ||
     requiresLiveExternalGrounding ||
     EXTERNAL_CONTENT_REQUEST_PATTERN.test(normalized) ||
+    ATTACHMENT_CONTENT_REQUEST_PATTERN.test(normalized) ||
     EXTERNAL_STATE_PATTERN.test(normalized) ||
     STATE_BEFORE_EXTERNAL_TARGET_PATTERN.test(normalized) ||
     (EXTERNAL_TARGET_PATTERN.test(normalized) && EXPLICIT_CHECK_PATTERN.test(normalized))
