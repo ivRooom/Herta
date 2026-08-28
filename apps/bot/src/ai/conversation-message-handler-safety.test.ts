@@ -64,7 +64,9 @@ describe('Discord grounding fail-safe boundary', () => {
     expect(resolveAiConversationGroundingState('Create an open source README')).toBe(
       'not_required',
     );
-    expect(resolveAiConversationGroundingState('オープンソースREADMEを作って')).toBe('not_required');
+    expect(resolveAiConversationGroundingState('オープンソースREADMEを作って')).toBe(
+      'not_required',
+    );
   });
 
   it('今日のニュースと具体的なPR状態はinsufficientにする', () => {
@@ -87,9 +89,9 @@ describe('Discord grounding fail-safe boundary', () => {
   });
 
   it('current値を取得するコード生成は外部事実の回答と誤判定しない', () => {
-    expect(resolveAiConversationGroundingState('Write Python code that prints the current time')).toBe(
-      'not_required',
-    );
+    expect(
+      resolveAiConversationGroundingState('Write Python code that prints the current time'),
+    ).toBe('not_required');
   });
 
   it('liveカテゴリを含む一般説明はnot_requiredのまま扱う', () => {
