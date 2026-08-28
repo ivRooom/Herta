@@ -76,7 +76,19 @@ describe('Discord grounding fail-safe boundary', () => {
     expect(resolveAiConversationGroundingState('Give me sources for this claim')).toBe(
       'insufficient',
     );
+    expect(resolveAiConversationGroundingState('Give open sources for Herta release notes')).toBe(
+      'insufficient',
+    );
     expect(resolveAiConversationGroundingState('ソースを教えて')).toBe('insufficient');
+  });
+
+  it('直接citationを要求する依頼はsource不足へfail closedする', () => {
+    expect(
+      resolveAiConversationGroundingState('Cite a peer-reviewed study supporting this claim'),
+    ).toBe('insufficient');
+    expect(resolveAiConversationGroundingState('Reference a study supporting this claim')).toBe(
+      'insufficient',
+    );
   });
 
   it('今日のニュースと具体的なPR状態はinsufficientにする', () => {
@@ -109,6 +121,12 @@ describe('Discord grounding fail-safe boundary', () => {
     expect(resolveAiConversationGroundingState('What was the score today?')).toBe('insufficient');
     expect(resolveAiConversationGroundingState('What time is it now?')).toBe('insufficient');
     expect(resolveAiConversationGroundingState('現在時刻は？')).toBe('insufficient');
+    expect(resolveAiConversationGroundingState('List the current cabinet members')).toBe(
+      'insufficient',
+    );
+    expect(resolveAiConversationGroundingState('Provide the latest inflation rate')).toBe(
+      'insufficient',
+    );
   });
 
   it('current値を取得または入力で受けるコード生成は外部事実の回答と誤判定しない', () => {
@@ -125,6 +143,12 @@ describe('Discord grounding fail-safe boundary', () => {
         'Write Python code with the current AAPL stock price hard-coded',
       ),
     ).toBe('insufficient');
+    expect(
+      resolveAiConversationGroundingState('Write Python code with the current time hard-coded'),
+    ).toBe('insufficient');
+    expect(resolveAiConversationGroundingState('現在時刻をハードコードしたPythonコードを書いて')).toBe(
+      'insufficient',
+    );
   });
 
   it('liveカテゴリを含む一般説明はnot_requiredのまま扱う', () => {
@@ -135,6 +159,10 @@ describe('Discord grounding fail-safe boundary', () => {
       'not_required',
     );
     expect(resolveAiConversationGroundingState('What is electric current?')).toBe('not_required');
+    expect(resolveAiConversationGroundingState('How does Date.now() work?')).toBe('not_required');
+    expect(resolveAiConversationGroundingState('How do I get the current directory in Python?')).toBe(
+      'not_required',
+    );
   });
 
   it('local lookupは外部検索と誤判定しない', () => {
