@@ -23,9 +23,7 @@ describe('Discord conversation grounding review regressions', () => {
     expect(resolveAiConversationGroundingState('Summarize the uploaded document')).toBe(
       'insufficient',
     );
-    expect(resolveAiConversationGroundingState('添付ファイルの内容を教えて')).toBe(
-      'insufficient',
-    );
+    expect(resolveAiConversationGroundingState('添付ファイルの内容を教えて')).toBe('insufficient');
     expect(resolveAiConversationGroundingState('How do Discord attachments work?')).toBe(
       'not_required',
     );
