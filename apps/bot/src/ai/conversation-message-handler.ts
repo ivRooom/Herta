@@ -25,7 +25,9 @@ const EXPLICIT_DETAIL_REQUEST_PATTERN =
 const EXPLICIT_SOURCE_REQUEST_PATTERN =
   /(?:出典|引用元|citation|citations|source(?:s)?(?!\s+code\b)|ソース(?:を|が|は)?|web\s*検索|ウェブ\s*検索|search\s+(?:the\s+)?web|look\s+up)/i;
 const CURRENT_EXTERNAL_FACT_PATTERN =
-  /(?:最新|現在の|今の|今日の|本日の).{0,60}(?:状態|状況|価格|料金|バージョン|version|リリース|release|PR|Issue|CI|デプロイ|deploy|稼働|障害|ニュース|天気|株価|為替)|\b(?:latest|current|today(?:'s)?|now)\b.{0,60}\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b/i;
+  /(?:最新|現在の|今の|今日の|本日の).{0,60}(?:状態|状況|価格|料金|バージョン|version|リリース|release|PR|Issue|CI|デプロイ|deploy|稼働|障害|ニュース|天気|株価|為替)|(?:状態|状況|価格|料金|バージョン|リリース|PR|Issue|CI|デプロイ|稼働|障害|ニュース|天気|株価|為替).{0,60}(?:最新|現在|今|今日|本日)|\b(?:latest|current|today(?:'s)?|now)\b.{0,60}\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b|\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b.{0,60}\b(?:latest|current|today(?:'s)?|now)\b/i;
+const LIVE_EXTERNAL_QUERY_PATTERN =
+  /(?:天気|天候|株価|為替|ニュース|障害状況)(?:は|どう|教えて|を教えて|知りたい|見せて|[?？])|\b(?:weather|forecast|stock price|exchange rate|news|outage status)\b.{0,40}\?/i;
 const EXTERNAL_TARGET_PATTERN =
   /(?:GitHub|repository|リポジトリ|pull request|\bPR\b|\bIssue\b|\bCI\b|production|本番|deploy|デプロイ|release|リリース|公式(?:ドキュメント|docs?)?|website|サイト|ニュース|天気|株価|為替)/i;
 const EXPLICIT_CHECK_PATTERN =
@@ -114,6 +116,7 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
     URL_PATTERN.test(normalized) ||
     EXPLICIT_SOURCE_REQUEST_PATTERN.test(normalized) ||
     CURRENT_EXTERNAL_FACT_PATTERN.test(normalized) ||
+    LIVE_EXTERNAL_QUERY_PATTERN.test(normalized) ||
     EXTERNAL_STATE_PATTERN.test(normalized) ||
     (EXTERNAL_TARGET_PATTERN.test(normalized) && EXPLICIT_CHECK_PATTERN.test(normalized))
   ) {

@@ -61,4 +61,12 @@ describe('Discord grounding fail-safe boundary', () => {
     expect(resolveAiConversationGroundingState('今日のニュースを教えて')).toBe('insufficient');
     expect(resolveAiConversationGroundingState('PR #351の状態は？')).toBe('insufficient');
   });
+
+  it.each([
+    ["What is Bitcoin's price today?", '現在語がcategoryより後ろにあるprice query'],
+    ['What is the weather now?', '現在語がcategoryより後ろにあるweather query'],
+    ['東京の天気は？', '現在語を省略したlive weather query'],
+  ])('%s をsource不足へfail closedする', (input) => {
+    expect(resolveAiConversationGroundingState(input)).toBe('insufficient');
+  });
 });
