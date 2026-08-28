@@ -28,8 +28,14 @@ const EXPLICIT_SOURCE_REQUEST_PATTERN =
   /(?:出典|引用元|citation|citations|source(?:s)?(?!\s+code\b)|ソース(?!コード)(?:を|が|は)?|web\s*検索|ウェブ\s*検索|search\s+(?:the\s+)?web|look\s+up)/i;
 const CURRENT_EXTERNAL_FACT_PATTERN =
   /(?:最新|現在の|今の|今日の|本日の).{0,60}(?:状態|状況|価格|料金|バージョン|version|リリース|release|PR|Issue|CI|デプロイ|deploy|稼働|障害|ニュース|天気|株価|為替)|(?:状態|状況|価格|料金|バージョン|リリース|PR|Issue|CI|デプロイ|稼働|障害|ニュース|天気|株価|為替).{0,60}(?:最新|現在|今|今日|本日)|\b(?:latest|current|today(?:'s)?|now)\b.{0,60}\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b|\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b.{0,60}\b(?:latest|current|today(?:'s)?|now)\b/i;
+const CURRENT_REQUEST_MARKER_PATTERN =
+  /(?:最新|今日|本日|今(?!後)|現在の)|\b(?:latest|today(?:'s)?|now|current)\b/i;
+const CURRENT_REQUEST_FACT_PATTERN =
+  /(?:[?？]|教えて|知りたい|誰|何|いつ|どこ|いくら|何時|結果|スコア|状態|状況|\b(?:tell me|show me|give me|who|what|when|where|which|how much|how many|score|time)\b)/i;
+const EVERGREEN_CURRENT_CONCEPT_PATTERN =
+  /(?:\b(?:what does|what is|define|explain)\s+(?:electric\s+|electrical\s+)?current\b|\b(?:electric|electrical|alternating|direct)\s+current\b|\bcurrent\s+(?:flow|density|source|mirror|loop|operator|keyword|concept|term)\b)/i;
 const LIVE_EXTERNAL_QUERY_PATTERN =
-  /(?:天気|天候|株価|為替|ニュース|障害状況)(?:は|どう|教えて|を教えて|知りたい|見せて|[?？])|\b(?:weather|forecast|stock price|exchange rate|news|outage status)\b.{0,40}\?/i;
+  /(?:天気|天候|株価|為替|ニュース|障害状況)(?:は|って)?(?:どう(?!やって|して|いう)|いくら|何円|教えて|を教えて|見せて|[?？])|\b(?:what(?:'s| is)|how(?:'s| is))\s+the\s+(?:weather|forecast|stock price|exchange rate|news|outage status)(?:\s+(?:in|for|at|of)\s+[^?]+)?\s*\?|\b(?:weather|forecast|stock price|exchange rate|outage status)(?:\s+(?:in|for|at|of)\s+[^?]+)?\s*\?/i;
 const EXTERNAL_TARGET_PATTERN =
   /(?:GitHub|repository|リポジトリ|pull request|\bPR\b|\bIssue\b|\bCI\b|production|本番|deploy|デプロイ|release|リリース|公式(?:ドキュメント|docs?)?|website|サイト|ニュース|天気|株価|為替)/i;
 const EXPLICIT_CHECK_PATTERN =
@@ -37,6 +43,8 @@ const EXPLICIT_CHECK_PATTERN =
 const EXTERNAL_STATE_PATTERN =
   /(?:GitHub|repository|リポジトリ|production|本番|deploy|デプロイ|release|リリース).{0,80}(?:状態|状況|結果|成功|失敗|稼働|障害|何番)|(?:pull request|\bPR\b|\bIssue\b|\bCI\b).{0,80}(?:状態|状況|結果|成功|失敗|\b(?:merged|open|closed|green|red)\b|何番)/i;
 const URL_PATTERN = /https?:\/\/\S+/i;
+const URL_DEREFERENCE_PATTERN =
+  /(?:https?:\/\/\S+.{0,80}(?:を元に|をもとに|の内容(?:を|について)?|を開いて|を読んで|を取得して|を要約して|を解析して)|(?:を元に|をもとに|内容を|開いて|読んで|取得して|要約して|解析して|\bbased on\b|\busing\b|\bfrom\b|\bread\b|\bopen\b|\bvisit\b|\bfetch\b|\bsummarize\b|\banaly[sz]e\b).{0,80}https?:\/\/\S+)/i;
 
 export interface AiConversationMessageHandlerOptions extends AiArtifactMessageHandlerOptions {
   generationService: AiRuntimeGenerationService | null;
@@ -121,10 +129,18 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
   const normalized = typeof input === 'string' ? input.normalize('NFKC').trim() : '';
   if (!normalized) return 'not_required';
 
+  const requiresCurrentGrounding =
+    CURRENT_REQUEST_MARKER_PATTERN.test(normalized) &&
+    CURRENT_REQUEST_FACT_PATTERN.test(normalized) &&
+    !EVERGREEN_CURRENT_CONCEPT_PATTERN.test(normalized);
+  const requiresUrlGrounding =
+    URL_PATTERN.test(normalized) && URL_DEREFERENCE_PATTERN.test(normalized);
+
   if (
-    URL_PATTERN.test(normalized) ||
+    requiresUrlGrounding ||
     EXPLICIT_SOURCE_REQUEST_PATTERN.test(normalized) ||
     CURRENT_EXTERNAL_FACT_PATTERN.test(normalized) ||
+    requiresCurrentGrounding ||
     LIVE_EXTERNAL_QUERY_PATTERN.test(normalized) ||
     EXTERNAL_STATE_PATTERN.test(normalized) ||
     (EXTERNAL_TARGET_PATTERN.test(normalized) && EXPLICIT_CHECK_PATTERN.test(normalized))

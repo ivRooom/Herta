@@ -69,6 +69,24 @@ describe('Discord grounding fail-safe boundary', () => {
     expect(resolveAiConversationGroundingState('東京の天気は？')).toBe('insufficient');
   });
 
+  it('列挙外の明示的な現在情報もsource不足へfail closedする', () => {
+    expect(resolveAiConversationGroundingState('Who is the current president of France?')).toBe(
+      'insufficient',
+    );
+    expect(resolveAiConversationGroundingState('What was the score today?')).toBe('insufficient');
+    expect(resolveAiConversationGroundingState('What time is it now?')).toBe('insufficient');
+  });
+
+  it('liveカテゴリを含む一般説明はnot_requiredのまま扱う', () => {
+    expect(resolveAiConversationGroundingState('How does weather forecasting work?')).toBe(
+      'not_required',
+    );
+    expect(resolveAiConversationGroundingState('What causes stock prices to change?')).toBe(
+      'not_required',
+    );
+    expect(resolveAiConversationGroundingState('What is electric current?')).toBe('not_required');
+  });
+
   it('一般的なrepository操作やversion管理はlive stateと誤判定しない', () => {
     expect(resolveAiConversationGroundingState('GitHubでPRをmergeする手順を教えて')).toBe(
       'not_required',
@@ -76,6 +94,15 @@ describe('Discord grounding fail-safe boundary', () => {
     expect(resolveAiConversationGroundingState('repositoryのversion管理を説明して')).toBe(
       'not_required',
     );
+  });
+
+  it('URL文字列だけを変換する依頼は外部参照扱いにしない', () => {
+    expect(
+      resolveAiConversationGroundingState('Create a text file containing https://example.com'),
+    ).toBe('not_required');
+    expect(
+      resolveAiConversationGroundingState('Turn https://example.com into a Markdown link'),
+    ).toBe('not_required');
   });
 
   it('source依存artifact requestはproviderを呼ばず成果物生成を拒否する', async () => {
