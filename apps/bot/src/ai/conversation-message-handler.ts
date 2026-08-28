@@ -33,6 +33,8 @@ const EXPLICIT_CHECK_PATTERN =
 const EXTERNAL_STATE_PATTERN =
   /(?:GitHub|repository|リポジトリ|pull request|\bPR\b|\bIssue\b|\bCI\b|production|本番|deploy|デプロイ|release|リリース).{0,80}(?:状態|状況|結果|成功|失敗|merge|merged|open|closed|green|red|何番|version|バージョン)/i;
 const URL_PATTERN = /https?:\/\/\S+/i;
+const SERVER_POLICY_ASSIGNMENT_PATTERN =
+  /\b(?:responseMode|groundingState|trustedInstructions)\s*=\s*[^\s,;]+/gi;
 
 export interface AiConversationMessageHandlerOptions extends AiArtifactMessageHandlerOptions {
   generationService: AiRuntimeGenerationService | null;
@@ -124,9 +126,10 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
 }
 
 function resolveAiDiscordIntent(input: string): AiArtifactIntent {
-  const artifactIntent = resolveAiArtifactIntent(input);
+  const routingInput = input.replace(SERVER_POLICY_ASSIGNMENT_PATTERN, ' ');
+  const artifactIntent = resolveAiArtifactIntent(routingInput);
   if (artifactIntent !== 'chat') return artifactIntent;
-  return EXPLICIT_DETAIL_REQUEST_PATTERN.test(input) ? 'detailed_answer' : 'chat';
+  return EXPLICIT_DETAIL_REQUEST_PATTERN.test(routingInput) ? 'detailed_answer' : 'chat';
 }
 
 function validateDiscordConversationReply(value: string): string {
