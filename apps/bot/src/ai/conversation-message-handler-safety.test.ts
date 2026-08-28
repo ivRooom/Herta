@@ -70,9 +70,9 @@ describe('Discord grounding fail-safe boundary', () => {
   });
 
   it('literal source text artifactはsource lookupと誤判定しない', () => {
-    expect(resolveAiConversationGroundingState('Create a .txt file containing the word source')).toBe(
-      'not_required',
-    );
+    expect(
+      resolveAiConversationGroundingState('Create a .txt file containing the word source'),
+    ).toBe('not_required');
     expect(resolveAiConversationGroundingState('Give me sources for this claim')).toBe(
       'insufficient',
     );
