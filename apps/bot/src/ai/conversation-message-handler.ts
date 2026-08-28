@@ -36,14 +36,26 @@ const EVERGREEN_CURRENT_CONCEPT_PATTERN =
   /(?:\b(?:what does|what is|define|explain)\s+(?:electric(?:al)?\s+)?current(?:\s+(?:mean|means|in\s+(?:electricity|electronics?|circuits?)))?\s*[?？.]?$|\b(?:electric|electrical|alternating|direct)\s+current\b|\bcurrent\s+(?:flow|density|source|mirror|loop|operator|keyword|concept|term)\b|\b(?:how|what|why)\b.{0,80}\bDate\.now\(\)|\bhow\b.{0,80}\bcurrent\s+(?:directory|working\s+directory)\b)/i;
 const CODE_RUNTIME_VALUE_INPUT_PATTERN =
   /(?:現在|今|今日)(?:の)?(?:時刻|時間|日時|日付)|\b(?:current|local)\s+(?:time|date|datetime)\b|\b(?:time|date)\s+(?:now|today)\b|(?:引数|パラメータ|入力値|入力).{0,40}(?:受け取|渡され|与えられ|使|表示|出力)|(?:受け取|渡され|与えられ|使).{0,40}(?:引数|パラメータ|入力値|入力)|\b(?:passed|provided|supplied)\b.{0,40}\b(?:argument|parameter|input|value)\b|\b(?:argument|parameter|input)\b.{0,40}\b(?:passed|provided|supplied)\b|\b(?:at\s+runtime|runtime)\b.{0,40}\b(?:fetch|retrieve|read|obtain|request|receive|use)\b|\b(?:fetch|retrieve|read|obtain|request|receive|use)\b.{0,40}\b(?:at\s+runtime|runtime|api|endpoint)\b/i;
+const CODE_RUNTIME_VALUE_CLAUSE_PATTERNS: readonly RegExp[] = [
+  /(?:現在|今)(?:の)?(?:時刻|時間|日時|日付)/gi,
+  /\b(?:current|local)\s+(?:time|date|datetime)\b/gi,
+  /\b(?:time|date)\s+(?:now|today)\b/gi,
+  /\b(?:current|latest|today(?:'s)?)\b.{0,60}\b(?:passed|provided|supplied)\b.{0,40}\b(?:as\s+an?\s+)?(?:argument|parameter|input|value)\b/gi,
+  /\b(?:passed|provided|supplied)\b.{0,40}\b(?:argument|parameter|input|value)\b.{0,60}\b(?:current|latest|today(?:'s)?)\b/gi,
+  /(?:現在|今|今日)(?:の)?(?:価格|株価|為替|天気|天候).{0,60}(?:引数|パラメータ|入力値|入力).{0,30}(?:受け取|渡され|与えられ|使)/gi,
+  /(?:引数|パラメータ|入力値|入力).{0,30}(?:受け取|渡され|与えられ|使).{0,60}(?:現在|今|今日)(?:の)?(?:価格|株価|為替|天気|天候)/gi,
+  /\b(?:current|latest|today(?:'s)?)\b.{0,60}\b(?:fetch|retrieve|read|obtain|request|receive|use)\b.{0,40}\b(?:at\s+runtime|runtime|api|endpoint)\b/gi,
+];
 const HARD_CODED_CURRENT_VALUE_PATTERN =
   /(?:hard[- ]?cod(?:e|ed|ing)|literal(?:ly)?|fixed\s+value|ハードコード|固定値)/i;
 const LIVE_EXTERNAL_QUERY_PATTERN =
   /(?:天気|天候|株価|為替|ニュース|障害状況)(?:は|って)?(?:どう(?!やって|して|いう)|いくら|何円|教えて|を教えて|見せて|[?？])|\b(?:what(?:'s| is)|how(?:'s| is))\s+the\s+(?:weather|forecast|stock price|exchange rate|news|outage status)(?:\s+(?:in|for|at|of)\s+[^?]+)?\s*\?|\b(?:weather|forecast|stock price|exchange rate|outage status)(?:\s+(?:in|for|at|of)\s+[^?]+)?\s*\?|\b(?:give|tell|show)\s+me\s+(?:the\s+)?(?:weather|forecast|stock price|exchange rate|news|outage status)(?:\s+(?:in|for|at|of)\s+.+)?$/i;
 const EXTERNAL_TARGET_PATTERN =
-  /(?:GitHub|repository|リポジトリ|pull request|\bPR\b|\bIssue\b|\bCI\b|production|本番|deploy|デプロイ|release|リリース|公式(?:ドキュメント|docs?)?|website|サイト|ニュース|天気|株価|為替)/i;
+  /(?:GitHub|repository|リポジトリ|pull request|\bPR\b|\bIssue\b|\bCI\b|production|本番|deploy|デプロイ|release|リリース|公式(?:ドキュメント|docs?)?|\bofficial\s+(?:documentation|docs?)\b|website|サイト|ニュース|天気|株価|為替)/i;
 const EXPLICIT_CHECK_PATTERN =
   /(?:確認して|調べて|検索して|検証して|verify\b|check\b|confirm\b|search\b|look\s+up)/i;
+const EXTERNAL_CONTENT_REQUEST_PATTERN =
+  /(?:\bwhat\s+(?:does|do)\s+(?:the\s+)?(?:official\s+(?:documentation|docs?)|website|site)\b.{0,60}\b(?:say|contain|state|mention|show)\b|\b(?:summarize|inspect|read)\b.{0,30}\b(?:(?:the|this|that)\s+(?:website|site)|(?:the\s+)?official\s+(?:documentation|docs?))\b|(?:公式(?:ドキュメント|docs?)|ウェブサイト|website|サイト).{0,60}(?:何(?:が|と)|内容|書いて|記載|要約|読んで))/i;
 const EXTERNAL_STATE_PATTERN =
   /(?:GitHub|repository|リポジトリ|production|本番|deploy|デプロイ|release|リリース).{0,80}(?:状態|状況|結果|成功|失敗|稼働|障害|何番)|(?:pull request|\bPR\b|\bIssue\b|\bCI\b).{0,80}(?:状態|状況|結果|成功|失敗|\b(?:merged|open|closed|green|red)\b|何番)/i;
 const STATE_BEFORE_EXTERNAL_TARGET_PATTERN =
@@ -141,19 +153,19 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
     artifactIntent === 'code_artifact' &&
     CODE_RUNTIME_VALUE_INPUT_PATTERN.test(normalized) &&
     !HARD_CODED_CURRENT_VALUE_PATTERN.test(normalized);
+  const currentFactInput = isCodeRuntimeValueRequest
+    ? stripCodeRuntimeValueClauses(normalized)
+    : normalized;
   const requiresHardCodedCurrentGrounding =
     artifactIntent === 'code_artifact' &&
     HARD_CODED_CURRENT_VALUE_PATTERN.test(normalized) &&
     CURRENT_REQUEST_MARKER_PATTERN.test(normalized);
-  const requiresEnumeratedCurrentGrounding =
-    CURRENT_EXTERNAL_FACT_PATTERN.test(normalized) && !isCodeRuntimeValueRequest;
+  const requiresEnumeratedCurrentGrounding = CURRENT_EXTERNAL_FACT_PATTERN.test(currentFactInput);
   const requiresCurrentGrounding =
-    CURRENT_REQUEST_MARKER_PATTERN.test(normalized) &&
-    CURRENT_REQUEST_FACT_PATTERN.test(normalized) &&
-    !EVERGREEN_CURRENT_CONCEPT_PATTERN.test(normalized) &&
-    !isCodeRuntimeValueRequest;
-  const requiresLiveExternalGrounding =
-    LIVE_EXTERNAL_QUERY_PATTERN.test(normalized) && !isCodeRuntimeValueRequest;
+    CURRENT_REQUEST_MARKER_PATTERN.test(currentFactInput) &&
+    CURRENT_REQUEST_FACT_PATTERN.test(currentFactInput) &&
+    !EVERGREEN_CURRENT_CONCEPT_PATTERN.test(currentFactInput);
+  const requiresLiveExternalGrounding = LIVE_EXTERNAL_QUERY_PATTERN.test(currentFactInput);
   const requiresUrlGrounding =
     URL_PATTERN.test(normalized) && URL_DEREFERENCE_PATTERN.test(normalized);
 
@@ -164,6 +176,7 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
     requiresEnumeratedCurrentGrounding ||
     requiresCurrentGrounding ||
     requiresLiveExternalGrounding ||
+    EXTERNAL_CONTENT_REQUEST_PATTERN.test(normalized) ||
     EXTERNAL_STATE_PATTERN.test(normalized) ||
     STATE_BEFORE_EXTERNAL_TARGET_PATTERN.test(normalized) ||
     (EXTERNAL_TARGET_PATTERN.test(normalized) && EXPLICIT_CHECK_PATTERN.test(normalized))
@@ -172,6 +185,13 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
   }
 
   return 'not_required';
+}
+
+function stripCodeRuntimeValueClauses(input: string): string {
+  return CODE_RUNTIME_VALUE_CLAUSE_PATTERNS.reduce(
+    (value, pattern) => value.replace(pattern, ' '),
+    input,
+  );
 }
 
 function resolveAiDiscordIntent(input: string): AiArtifactIntent {
