@@ -89,11 +89,23 @@ describe('Discord grounding fail-safe boundary', () => {
     expect(resolveAiConversationGroundingState('Reference a study supporting this claim')).toBe(
       'insufficient',
     );
+    expect(
+      resolveAiConversationGroundingState('Can you cite a peer-reviewed study supporting this claim?'),
+    ).toBe('insufficient');
+    expect(resolveAiConversationGroundingState('Could you reference a study?')).toBe(
+      'insufficient',
+    );
   });
 
   it('今日のニュースと具体的なPR状態はinsufficientにする', () => {
     expect(resolveAiConversationGroundingState('今日のニュースを教えて')).toBe('insufficient');
     expect(resolveAiConversationGroundingState('PR #351の状態は？')).toBe('insufficient');
+    expect(resolveAiConversationGroundingState('What is the status of PR #351?')).toBe(
+      'insufficient',
+    );
+    expect(resolveAiConversationGroundingState('What is the deployment status?')).toBe(
+      'insufficient',
+    );
   });
 
   it('現在語の語順と暗黙live queryをsource不足へfail closedする', () => {
