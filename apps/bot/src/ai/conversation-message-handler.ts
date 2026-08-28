@@ -25,17 +25,17 @@ const INSUFFICIENT_GROUNDING_ARTIFACT_REPLY =
 const EXPLICIT_DETAIL_REQUEST_PATTERN =
   /(?:詳しく|詳細に|丁寧に|手順(?:を)?(?:全部|すべて|全て)|(?:全部|すべて|全て)の?手順|比較して|比較してください|比較を|step[- ]by[- ]step|all\s+(?:the\s+)?steps|compare\b|comparison\b|in\s+detail|detailed)/i;
 const EXPLICIT_SOURCE_REQUEST_PATTERN =
-  /(?:出典|引用元|citation|citations|(?<!open[\s_-])\bsource(?:s)?(?![\s_-]+code\b)|(?<!オープン)ソース(?!コード)(?:を|が|は)?|web\s*検索|ウェブ\s*検索|search\s+(?:the\s+)?web|look\s+up)/i;
+  /(?:出典|引用元|citation|citations|\b(?:provide|show|give|list|cite|include|find|check|verify)\b.{0,30}(?<!open[\s_-])\bsources?\b|(?<!open[\s_-])\bsources?\b(?:\s*[?？]|.{0,30}\b(?:for|of|about|used|behind)\b)|(?<!オープン)ソース(?!コード)(?:を|が|は)(?:[?？]|.{0,20}(?:教えて|示して|見せて|確認して|調べて|提示して))|web\s*検索|ウェブ\s*検索|search\s+(?:the\s+)?web|look\s+up)/i;
 const CURRENT_EXTERNAL_FACT_PATTERN =
   /(?:最新|現在の|今の|今日の|本日の).{0,60}(?:状態|状況|価格|料金|バージョン|version|リリース|release|PR|Issue|CI|デプロイ|deploy|稼働|障害|ニュース|天気|株価|為替)|(?:状態|状況|価格|料金|バージョン|リリース|PR|Issue|CI|デプロイ|稼働|障害|ニュース|天気|株価|為替).{0,60}(?:最新|現在|今|今日|本日)|\b(?:latest|current|today(?:'s)?|now)\b.{0,60}\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b|\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b.{0,60}\b(?:latest|current|today(?:'s)?|now)\b/i;
 const CURRENT_REQUEST_MARKER_PATTERN =
-  /(?:最新|今日|本日|今(?!後)|現在の)|\b(?:latest|today(?:'s)?|now|current)\b/i;
+  /(?:最新|今日|本日|今(?!後)|現在の|現在(?=(?:時刻|時間|日時|日付|価格|料金|状態|状況|天気|株価|為替|結果|スコア)))|\b(?:latest|today(?:'s)?|now|current)\b/i;
 const CURRENT_REQUEST_FACT_PATTERN =
   /(?:[?？]|教えて|知りたい|誰|何|いつ|どこ|いくら|何時|結果|スコア|状態|状況|\b(?:tell me|show me|give me|who|what|when|where|which|how much|how many|score|time)\b)/i;
 const EVERGREEN_CURRENT_CONCEPT_PATTERN =
   /(?:\b(?:what does|what is|define|explain)\s+(?:electric\s+|electrical\s+)?current\b|\b(?:electric|electrical|alternating|direct)\s+current\b|\bcurrent\s+(?:flow|density|source|mirror|loop|operator|keyword|concept|term)\b)/i;
-const CODE_RUNTIME_CURRENT_VALUE_PATTERN =
-  /(?:現在|今|今日)(?:の)?(?:時刻|時間|日時|日付)|\b(?:current|local)\s+(?:time|date|datetime)\b|\b(?:time|date)\s+(?:now|today)\b/i;
+const CODE_RUNTIME_VALUE_INPUT_PATTERN =
+  /(?:現在|今|今日)(?:の)?(?:時刻|時間|日時|日付)|\b(?:current|local)\s+(?:time|date|datetime)\b|\b(?:time|date)\s+(?:now|today)\b|(?:引数|パラメータ|入力値|入力).{0,40}(?:受け取|渡され|与えられ|使|表示|出力)|(?:受け取|渡され|与えられ|使).{0,40}(?:引数|パラメータ|入力値|入力)|\b(?:passed|provided|supplied)\b.{0,40}\b(?:argument|parameter|input|value)\b|\b(?:argument|parameter|input)\b.{0,40}\b(?:passed|provided|supplied)\b|\b(?:at\s+runtime|runtime)\b.{0,40}\b(?:fetch|retrieve|read|obtain|request|receive|use)\b|\b(?:fetch|retrieve|read|obtain|request|receive|use)\b.{0,40}\b(?:at\s+runtime|runtime|api|endpoint)\b/i;
 const LIVE_EXTERNAL_QUERY_PATTERN =
   /(?:天気|天候|株価|為替|ニュース|障害状況)(?:は|って)?(?:どう(?!やって|して|いう)|いくら|何円|教えて|を教えて|見せて|[?？])|\b(?:what(?:'s| is)|how(?:'s| is))\s+the\s+(?:weather|forecast|stock price|exchange rate|news|outage status)(?:\s+(?:in|for|at|of)\s+[^?]+)?\s*\?|\b(?:weather|forecast|stock price|exchange rate|outage status)(?:\s+(?:in|for|at|of)\s+[^?]+)?\s*\?/i;
 const EXTERNAL_TARGET_PATTERN =
@@ -133,21 +133,25 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
 
   const isCodeRuntimeValueRequest =
     resolveAiArtifactIntent(normalized) === 'code_artifact' &&
-    CODE_RUNTIME_CURRENT_VALUE_PATTERN.test(normalized);
+    CODE_RUNTIME_VALUE_INPUT_PATTERN.test(normalized);
+  const requiresEnumeratedCurrentGrounding =
+    CURRENT_EXTERNAL_FACT_PATTERN.test(normalized) && !isCodeRuntimeValueRequest;
   const requiresCurrentGrounding =
     CURRENT_REQUEST_MARKER_PATTERN.test(normalized) &&
     CURRENT_REQUEST_FACT_PATTERN.test(normalized) &&
     !EVERGREEN_CURRENT_CONCEPT_PATTERN.test(normalized) &&
     !isCodeRuntimeValueRequest;
+  const requiresLiveExternalGrounding =
+    LIVE_EXTERNAL_QUERY_PATTERN.test(normalized) && !isCodeRuntimeValueRequest;
   const requiresUrlGrounding =
     URL_PATTERN.test(normalized) && URL_DEREFERENCE_PATTERN.test(normalized);
 
   if (
     requiresUrlGrounding ||
     EXPLICIT_SOURCE_REQUEST_PATTERN.test(normalized) ||
-    CURRENT_EXTERNAL_FACT_PATTERN.test(normalized) ||
+    requiresEnumeratedCurrentGrounding ||
     requiresCurrentGrounding ||
-    LIVE_EXTERNAL_QUERY_PATTERN.test(normalized) ||
+    requiresLiveExternalGrounding ||
     EXTERNAL_STATE_PATTERN.test(normalized) ||
     (EXTERNAL_TARGET_PATTERN.test(normalized) && EXPLICIT_CHECK_PATTERN.test(normalized))
   ) {
