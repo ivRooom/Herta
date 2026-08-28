@@ -25,7 +25,7 @@ const INSUFFICIENT_GROUNDING_ARTIFACT_REPLY =
 const EXPLICIT_DETAIL_REQUEST_PATTERN =
   /(?:詳しく|詳細に|丁寧に|手順(?:を)?(?:全部|すべて|全て)|(?:全部|すべて|全て)の?手順|比較して|比較してください|比較を|step[- ]by[- ]step|all\s+(?:the\s+)?steps|compare\b|comparison\b|in\s+detail|detailed)/i;
 const EXPLICIT_SOURCE_REQUEST_PATTERN =
-  /(?:出典|引用元|citation|citations|^\s*(?:please\s+)?(?:cite|reference)\b|\b(?:provide|show|give|list|cite|include|find|check|verify|look\s+up)\b.{0,30}\bsources?\b|(?<!open[\s_-])\bsources?\b(?:\s*[?？]|.{0,30}\b(?:for|of|about|used|behind)\b)|(?<!オープン)ソース(?!コード)(?:を|が|は)(?:[?？]|.{0,20}(?:教えて|示して|見せて|確認して|調べて|提示して))|web\s*検索|ウェブ\s*検索|search\s+(?:the\s+)?web)/i;
+  /(?:出典|引用元|citation|citations|(?:^\s*(?:please\s+)?|\b(?:can|could|would)\s+you\s+)(?:cite|reference)\b|\b(?:provide|show|give|list|cite|include|find|check|verify|look\s+up)\b.{0,30}\bsources?\b|(?<!open[\s_-])\bsources?\b(?:\s*[?？]|.{0,30}\b(?:for|of|about|used|behind)\b)|(?<!オープン)ソース(?!コード)(?:を|が|は)(?:[?？]|.{0,20}(?:教えて|示して|見せて|確認して|調べて|提示して))|web\s*検索|ウェブ\s*検索|search\s+(?:the\s+)?web)/i;
 const CURRENT_EXTERNAL_FACT_PATTERN =
   /(?:最新|現在の|今の|今日の|本日の).{0,60}(?:状態|状況|価格|料金|バージョン|version|リリース|release|PR|Issue|CI|デプロイ|deploy|稼働|障害|ニュース|天気|株価|為替)|(?:状態|状況|価格|料金|バージョン|リリース|PR|Issue|CI|デプロイ|稼働|障害|ニュース|天気|株価|為替).{0,60}(?:最新|現在|今|今日|本日)|\b(?:latest|current|today(?:'s)?|now)\b.{0,60}\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b|\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b.{0,60}\b(?:latest|current|today(?:'s)?|now)\b/i;
 const CURRENT_REQUEST_MARKER_PATTERN =
@@ -46,6 +46,8 @@ const EXPLICIT_CHECK_PATTERN =
   /(?:確認して|調べて|検索して|検証して|verify\b|check\b|confirm\b|search\b|look\s+up)/i;
 const EXTERNAL_STATE_PATTERN =
   /(?:GitHub|repository|リポジトリ|production|本番|deploy|デプロイ|release|リリース).{0,80}(?:状態|状況|結果|成功|失敗|稼働|障害|何番)|(?:pull request|\bPR\b|\bIssue\b|\bCI\b).{0,80}(?:状態|状況|結果|成功|失敗|\b(?:merged|open|closed|green|red)\b|何番)/i;
+const STATE_BEFORE_EXTERNAL_TARGET_PATTERN =
+  /\b(?:what(?:'s| is)\s+(?:the\s+)?)?(?:status|state|result)\s+of\s+(?:pull request|PR|issue|CI|deployment|production|release)\b|\b(?:what(?:'s| is)\s+(?:the\s+)?)?(?:deployment|production|release)\s+(?:status|state|result)\b/i;
 const URL_PATTERN = /https?:\/\/\S+/i;
 const URL_DEREFERENCE_PATTERN =
   /(?:https?:\/\/\S+.{0,80}(?:を元に|をもとに|の内容(?:を|について)?|を開いて|を読んで|を取得して|を要約して|を解析して)|(?:を元に|をもとに|内容を|開いて|読んで|取得して|要約して|解析して|\bbased on\b|\busing\b|\bfrom\b|\bread\b|\bopen\b|\bvisit\b|\bfetch\b|\binspect\b|\bsummarize\b|\banaly[sz]e\b).{0,80}https?:\/\/\S+|\bwhat does\s+https?:\/\/\S+\s+(?:say|contain|show)\b|\bwhat is\s+on\s+https?:\/\/\S+|\btell me\s+what(?:'s| is)\s+on\s+https?:\/\/\S+|\bcan you\s+inspect\s+https?:\/\/\S+)/i;
@@ -80,6 +82,7 @@ export async function handleAiConversationMessage(
   const intent = resolveAiDiscordIntent(input);
   const groundingState = resolveAiConversationGroundingState(input);
   if (intent !== 'chat' && intent !== 'detailed_answer') {
+    if (!options.runtime) return { status: 'ignored' };
     if (groundingState === 'insufficient') {
       await message.reply({
         content: INSUFFICIENT_GROUNDING_ARTIFACT_REPLY,
@@ -162,6 +165,7 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
     requiresCurrentGrounding ||
     requiresLiveExternalGrounding ||
     EXTERNAL_STATE_PATTERN.test(normalized) ||
+    STATE_BEFORE_EXTERNAL_TARGET_PATTERN.test(normalized) ||
     (EXTERNAL_TARGET_PATTERN.test(normalized) && EXPLICIT_CHECK_PATTERN.test(normalized))
   ) {
     return 'insufficient';
