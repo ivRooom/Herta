@@ -90,7 +90,9 @@ describe('Discord grounding fail-safe boundary', () => {
       'insufficient',
     );
     expect(
-      resolveAiConversationGroundingState('Can you cite a peer-reviewed study supporting this claim?'),
+      resolveAiConversationGroundingState(
+        'Can you cite a peer-reviewed study supporting this claim?',
+      ),
     ).toBe('insufficient');
     expect(resolveAiConversationGroundingState('Could you reference a study?')).toBe(
       'insufficient',
