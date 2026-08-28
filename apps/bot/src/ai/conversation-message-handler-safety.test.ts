@@ -69,6 +69,16 @@ describe('Discord grounding fail-safe boundary', () => {
     );
   });
 
+  it('literal source text artifactはsource lookupと誤判定しない', () => {
+    expect(resolveAiConversationGroundingState('Create a .txt file containing the word source')).toBe(
+      'not_required',
+    );
+    expect(resolveAiConversationGroundingState('Give me sources for this claim')).toBe(
+      'insufficient',
+    );
+    expect(resolveAiConversationGroundingState('ソースを教えて')).toBe('insufficient');
+  });
+
   it('今日のニュースと具体的なPR状態はinsufficientにする', () => {
     expect(resolveAiConversationGroundingState('今日のニュースを教えて')).toBe('insufficient');
     expect(resolveAiConversationGroundingState('PR #351の状態は？')).toBe('insufficient');
@@ -86,12 +96,23 @@ describe('Discord grounding fail-safe boundary', () => {
     );
     expect(resolveAiConversationGroundingState('What was the score today?')).toBe('insufficient');
     expect(resolveAiConversationGroundingState('What time is it now?')).toBe('insufficient');
+    expect(resolveAiConversationGroundingState('現在時刻は？')).toBe('insufficient');
   });
 
-  it('current値を取得するコード生成は外部事実の回答と誤判定しない', () => {
+  it('current値を取得または入力で受けるコード生成は外部事実の回答と誤判定しない', () => {
     expect(
       resolveAiConversationGroundingState('Write Python code that prints the current time'),
     ).toBe('not_required');
+    expect(
+      resolveAiConversationGroundingState(
+        'Write Python code that displays the current stock price passed in as an argument',
+      ),
+    ).toBe('not_required');
+    expect(
+      resolveAiConversationGroundingState(
+        'Write Python code with the current AAPL stock price hard-coded',
+      ),
+    ).toBe('insufficient');
   });
 
   it('liveカテゴリを含む一般説明はnot_requiredのまま扱う', () => {
