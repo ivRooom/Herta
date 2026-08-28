@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@herta/db';
+import { createLogger, type Logger } from '@herta/logger';
 import { aiManifest } from '@herta/plugin-catalog';
 import { resolveAiArtifactConfig } from '@herta/plugin-catalog/ai-artifact';
 import {
@@ -30,6 +31,7 @@ interface AiPluginSharedRuntime {
 
 let sharedRuntimePromise: Promise<AiPluginSharedRuntime | null> | undefined;
 let sharedRedis: Redis | undefined;
+let sharedRuntimeLogger: Logger | undefined;
 const enabledGuilds = new Set<string>();
 
 export const aiPlugin = definePlugin<AiPluginConfig, Client, PrismaClient>({
@@ -115,8 +117,11 @@ async function getSharedRuntime(
 ): Promise<AiPluginSharedRuntime | null> {
   if (!sharedRuntimePromise) {
     const pending = createSharedRuntime(context).catch((error: unknown) => {
-      context.logger.warn(
-        { errorName: error instanceof Error ? error.name : 'UnknownError' },
+      getSharedRuntimeLogger().warn(
+        {
+          initializingGuildId: context.guildId,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        },
         'AI runtimeの初期化に失敗しました',
       );
       return null;
@@ -132,9 +137,13 @@ async function getSharedRuntime(
 async function createSharedRuntime(
   context: AiPluginRuntimeContext,
 ): Promise<AiPluginSharedRuntime | null> {
+  const logger = getSharedRuntimeLogger();
   const redisUrl = process.env['REDIS_URL']?.trim();
   if (!redisUrl) {
-    context.logger.warn('REDIS_URLが未設定のためAI runtimeを有効化できません');
+    logger.warn(
+      { initializingGuildId: context.guildId },
+      'REDIS_URLが未設定のためAI runtimeを有効化できません',
+    );
     return null;
   }
 
@@ -144,7 +153,7 @@ async function createSharedRuntime(
     enableReadyCheck: true,
   });
   redis.on('error', () => {
-    context.logger.warn('AI guard用Redis接続でエラーが発生しました');
+    logger.warn('AI guard用Redis接続でエラーが発生しました');
   });
 
   const bootstrap = await createAiFoundationRuntime({
@@ -152,12 +161,14 @@ async function createSharedRuntime(
     redis,
     env: process.env,
     telemetry: (event) => {
-      context.logger.info(event, 'AI Foundation telemetry');
+      // The Foundation runtime is process-wide. Never use a Guild-scoped Plugin logger here,
+      // otherwise the first Guild that initializes the runtime would be attached to all events.
+      logger.info(event, 'AI Foundation telemetry');
     },
   });
   if (!bootstrap.service) {
     redis.disconnect();
-    context.logger.info(
+    logger.info(
       { status: bootstrap.status, credentialSource: bootstrap.credentialSource },
       'AI runtimeはserver-side gateにより無効です',
     );
@@ -181,7 +192,7 @@ async function createSharedRuntime(
   }
 
   sharedRedis = redis;
-  context.logger.info(
+  logger.info(
     {
       status: bootstrap.status,
       credentialSource: bootstrap.credentialSource,
@@ -199,7 +210,8 @@ async function createSharedRuntime(
     imageGenerationService: bootstrap.imageGenerationService ?? undefined,
     artifactConfig,
     telemetry: (event) => {
-      context.logger.info(event, 'AI Artifact telemetry');
+      // Artifact runtime is shared for the same reason as Foundation runtime telemetry.
+      logger.info(event, 'AI Artifact telemetry');
     },
   });
 
@@ -207,6 +219,14 @@ async function createSharedRuntime(
     artifactRuntime,
     generationService: bootstrap.service,
   };
+}
+
+function getSharedRuntimeLogger(): Logger {
+  sharedRuntimeLogger ??= createLogger({
+    name: 'herta-bot-ai-runtime',
+    level: process.env['BOT_LOG_LEVEL'],
+  });
+  return sharedRuntimeLogger;
 }
 
 async function closeSharedRuntime(): Promise<void> {
