@@ -146,9 +146,7 @@ describe('Discord grounding fail-safe boundary', () => {
     expect(
       resolveAiConversationGroundingState('Write Python code with the current time hard-coded'),
     ).toBe('insufficient');
-    expect(resolveAiConversationGroundingState('現在時刻をハードコードしたPythonコードを書いて')).toBe(
-      'insufficient',
-    );
+    expect(resolveAiConversationGroundingState('現在時刻をハードコードしたPythonコードを書いて')).toBe('insufficient');
   });
 
   it('liveカテゴリを含む一般説明はnot_requiredのまま扱う', () => {
@@ -160,9 +158,9 @@ describe('Discord grounding fail-safe boundary', () => {
     );
     expect(resolveAiConversationGroundingState('What is electric current?')).toBe('not_required');
     expect(resolveAiConversationGroundingState('How does Date.now() work?')).toBe('not_required');
-    expect(resolveAiConversationGroundingState('How do I get the current directory in Python?')).toBe(
-      'not_required',
-    );
+    expect(
+      resolveAiConversationGroundingState('How do I get the current directory in Python?'),
+    ).toBe('not_required');
   });
 
   it('local lookupは外部検索と誤判定しない', () => {
