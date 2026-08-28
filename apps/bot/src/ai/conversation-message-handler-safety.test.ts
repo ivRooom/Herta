@@ -90,6 +90,18 @@ describe('Discord grounding fail-safe boundary', () => {
     expect(resolveAiConversationGroundingState('東京の天気は？')).toBe('insufficient');
   });
 
+  it('英語imperative live queryをsource不足へfail closedする', () => {
+    expect(resolveAiConversationGroundingState('Give me the weather for Tokyo')).toBe(
+      'insufficient',
+    );
+    expect(resolveAiConversationGroundingState('Tell me the stock price for AAPL')).toBe(
+      'insufficient',
+    );
+    expect(resolveAiConversationGroundingState('Show me the exchange rate for USD/JPY')).toBe(
+      'insufficient',
+    );
+  });
+
   it('列挙外の明示的な現在情報もsource不足へfail closedする', () => {
     expect(resolveAiConversationGroundingState('Who is the current president of France?')).toBe(
       'insufficient',
@@ -123,6 +135,15 @@ describe('Discord grounding fail-safe boundary', () => {
       'not_required',
     );
     expect(resolveAiConversationGroundingState('What is electric current?')).toBe('not_required');
+  });
+
+  it('local lookupは外部検索と誤判定しない', () => {
+    expect(
+      resolveAiConversationGroundingState('Write Python code to look up a key in a dictionary'),
+    ).toBe('not_required');
+    expect(resolveAiConversationGroundingState('Look up the Herta release notes')).toBe(
+      'insufficient',
+    );
   });
 
   it('一般的なrepository操作やversion管理はlive stateと誤判定しない', () => {
