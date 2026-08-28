@@ -108,6 +108,7 @@ mutationはStudio認証・Guild access・Same-Origin・Plugin permission validat
 - image generation: `@Herta 猫の画像を作って` → validated PNG/WebP attachment
 - unsupported: 非対応artifact format等 → safe unsupported reply、成果物を生成したと主張しない
 - source-dependent: `@Herta GitHubの最新PR状態を確認して` → `insufficient`。確認した/citation取得済みと捏造しない
+- source-dependent artifact: `@Herta https://example.com/project を元にREADMEを作って` → provider callなし。外部参照不可と成果物未生成を明示する
 - no mention: 通常message → provider callなし
 - bot / webhook / DM: 対象外message → provider callなし
 
@@ -117,7 +118,7 @@ mutationはStudio認証・Guild access・Same-Origin・Plugin permission validat
 
 ### Quota
 
-quota guardそのものは自動testで検証します。production E2Eで閾値到達を再現する必要がある場合だけ、限定Guild・短いmaintenance windowでproduction envの現行値をバックアップし、server-side quotaを安全な低い検証値へ一時変更します。検証後は必ず元の値へ戻してBotをrecreateします。実課金を増やす方向へ閾値を緩和して検証しないでください。
+quota guardそのものは自動testで検証します。production E2Eで閾値到達を再現する必要がある場合は、対象Guild以外のAI Plugin / Guild opt-inが無効であることを事前に確認し、限定Guild・短いmaintenance windowでproduction envの現行値をバックアップしてからserver-side quotaを安全な低い検証値へ一時変更します。対象外Guildのopt-in状態を確認できない場合は共有production環境の`HERTA_AI_GUILD_QUOTA_MICRO_USD`を変更せず、隔離したstaging / verification configurationで検証してください。検証後は必ず元の値へ戻してBotをrecreateします。実課金を増やす方向へ閾値を緩和して検証しないでください。
 
 ### Timeout
 

@@ -8,10 +8,13 @@ import {
 } from './conversation-message-handler.js';
 import type { AiRuntimeGenerationService } from './runtime-service.js';
 
-function message(reply: AiArtifactDiscordMessage['reply']): AiArtifactDiscordMessage {
+function message(
+  reply: AiArtifactDiscordMessage['reply'],
+  content = '<@123456789> emojiで答えて',
+): AiArtifactDiscordMessage {
   return {
     guildId: 'guild-1',
-    content: '<@123456789> emojiで答えて',
+    content,
     webhookId: null,
     author: { id: 'user-1', bot: false },
     member: { id: 'user-1' },
@@ -55,6 +58,7 @@ describe('Discord conversation delivery bounds', () => {
 describe('Discord grounding fail-safe boundary', () => {
   it('一般的なsource code説明はnot_requiredのまま扱う', () => {
     expect(resolveAiConversationGroundingState('source codeって何？')).toBe('not_required');
+    expect(resolveAiConversationGroundingState('ソースコードって何？')).toBe('not_required');
   });
 
   it('今日のニュースと具体的なPR状態はinsufficientにする', () => {
@@ -68,5 +72,48 @@ describe('Discord grounding fail-safe boundary', () => {
     ['東京の天気は？', '現在語を省略したlive weather query'],
   ])('%s をsource不足へfail closedする', (input) => {
     expect(resolveAiConversationGroundingState(input)).toBe('insufficient');
+  });
+
+  it.each([
+    ['GitHubでPRをmergeする手順を教えて', '一般的なPR操作手順'],
+    ['repositoryのversion管理を説明して', '一般的なversion管理説明'],
+  ])('%s はlive stateと誤判定しない', (input) => {
+    expect(resolveAiConversationGroundingState(input)).toBe('not_required');
+  });
+
+  it('source依存artifact requestはproviderを呼ばず成果物生成を拒否する', async () => {
+    const service: AiRuntimeGenerationService = {
+      generate: vi.fn(async (): Promise<AiGenerationResponse> => ({
+        requestId: 'request-1',
+        provider: 'openai',
+        model: 'gpt-5.6-terra',
+        text: 'unused',
+        usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
+        estimatedCost: 0.0001,
+      })),
+    };
+    const reply = vi.fn<AiArtifactDiscordMessage['reply']>(async () => undefined);
+    const runtime = new AiArtifactRuntime({
+      generationService: service,
+      artifactConfig: { maxBytes: 4096, maxFiles: 2 },
+    });
+
+    const result = await handleAiConversationMessage(
+      message(reply, '<@123456789> https://example.com/project を元にREADMEを作って'),
+      {
+        runtime,
+        generationService: service,
+        botUserId: '123456789',
+        getAiPluginConfig: vi.fn(async () => ({ enabled: true })),
+      },
+    );
+
+    expect(result).toEqual({ status: 'failed', category: 'grounding:insufficient' });
+    expect(service.generate).not.toHaveBeenCalled();
+    expect(reply).toHaveBeenCalledTimes(1);
+    expect(reply.mock.calls[0]?.[0]).toEqual({
+      content: 'この依頼には外部情報の確認が必要ですが、現在は参照できません。成果物は作成していません。',
+      allowedMentions: { parse: [] },
+    });
   });
 });
