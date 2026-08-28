@@ -74,6 +74,24 @@ describe('Discord conversation gates', () => {
     expect(reply).not.toHaveBeenCalled();
   });
 
+  it('global AI unavailableではsource依存artifactにも返信しない', async () => {
+    const service = createService();
+    const { message, reply } = createMessage({
+      content: '<@123456789> https://example.com/project を元にREADMEを作って',
+    });
+
+    const result = await handleAiConversationMessage(message, {
+      runtime: null,
+      generationService: null,
+      botUserId: '123456789',
+      getAiPluginConfig: vi.fn(async () => ({ enabled: true })),
+    });
+
+    expect(result).toEqual({ status: 'ignored' });
+    expect(service.generate).not.toHaveBeenCalled();
+    expect(reply).not.toHaveBeenCalled();
+  });
+
   it('provider raw errorをDiscordへ返さない', async () => {
     const service: AiRuntimeGenerationService = {
       generate: vi.fn(async () => {
