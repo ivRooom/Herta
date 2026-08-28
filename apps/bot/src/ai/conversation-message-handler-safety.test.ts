@@ -70,8 +70,12 @@ describe('Discord grounding fail-safe boundary', () => {
   });
 
   it('一般的なrepository操作やversion管理はlive stateと誤判定しない', () => {
-    expect(resolveAiConversationGroundingState('GitHubでPRをmergeする手順を教えて')).toBe('not_required');
-    expect(resolveAiConversationGroundingState('repositoryのversion管理を説明して')).toBe('not_required');
+    expect(resolveAiConversationGroundingState('GitHubでPRをmergeする手順を教えて')).toBe(
+      'not_required',
+    );
+    expect(resolveAiConversationGroundingState('repositoryのversion管理を説明して')).toBe(
+      'not_required',
+    );
   });
 
   it('source依存artifact requestはproviderを呼ばず成果物生成を拒否する', async () => {
@@ -91,7 +95,8 @@ describe('Discord grounding fail-safe boundary', () => {
       artifactConfig: { maxBytes: 4096, maxFiles: 2 },
     });
     const sourceDependentMessage = message(reply);
-    sourceDependentMessage.content = '<@123456789> https://example.com/project を元にREADMEを作って';
+    sourceDependentMessage.content =
+      '<@123456789> https://example.com/project を元にREADMEを作って';
 
     const result = await handleAiConversationMessage(sourceDependentMessage, {
       runtime,
@@ -104,7 +109,8 @@ describe('Discord grounding fail-safe boundary', () => {
     expect(service.generate).not.toHaveBeenCalled();
     expect(reply).toHaveBeenCalledTimes(1);
     expect(reply.mock.calls[0]?.[0]).toEqual({
-      content: 'この依頼には外部情報の確認が必要ですが、現在は参照できません。成果物は作成していません。',
+      content:
+        'この依頼には外部情報の確認が必要ですが、現在は参照できません。成果物は作成していません。',
       allowedMentions: { parse: [] },
     });
   });
