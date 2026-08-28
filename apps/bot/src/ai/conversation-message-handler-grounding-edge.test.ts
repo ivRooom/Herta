@@ -11,7 +11,7 @@ describe('Discord grounding external source boundary', () => {
     expect(resolveAiConversationGroundingState(input)).toBe('insufficient');
   });
 
-  it.each(['What does website design mean?', 'Explain website architecture']) (
+  it.each(['What does website design mean?', 'Explain website architecture'])(
     '%s は一般説明として扱う',
     (input) => {
       expect(resolveAiConversationGroundingState(input)).toBe('not_required');
