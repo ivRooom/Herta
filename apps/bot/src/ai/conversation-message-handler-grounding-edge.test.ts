@@ -28,9 +28,20 @@ describe('Discord grounding external source boundary', () => {
   });
 
   it.each([
+    'Create a README based on GitHub PR #351',
+    'PR #351 を元にREADMEを作って',
+    'Summarize Issue #350',
+    'What does PR #351 say?',
+  ])('%s の具体的repository参照をfail closedする', (input) => {
+    expect(resolveAiConversationGroundingState(input)).toBe('insufficient');
+  });
+
+  it.each([
     'What does website design mean?',
     'Explain website architecture',
     'Write Python code to look up a key in a dictionary',
+    'Create a text file containing "PR #351"',
+    'Create a README explaining GitHub pull requests',
   ])('%s は外部参照不要として扱う', (input) => {
     expect(resolveAiConversationGroundingState(input)).toBe('not_required');
   });

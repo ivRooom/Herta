@@ -60,6 +60,10 @@ const EXTERNAL_STATE_PATTERN =
   /(?:GitHub|repository|リポジトリ|production|本番|deploy|デプロイ|release|リリース).{0,80}(?:状態|状況|結果|成功|失敗|稼働|障害|何番)|(?:pull request|\bPR\b|\bIssue\b|\bCI\b).{0,80}(?:状態|状況|結果|成功|失敗|\b(?:merged|open|closed|green|red)\b|何番)/i;
 const STATE_BEFORE_EXTERNAL_TARGET_PATTERN =
   /\b(?:what(?:'s| is)\s+(?:the\s+)?)?(?:status|state|result)\s+of\s+(?:pull request|PR|issue|CI|deployment|production|release)\b|\b(?:what(?:'s| is)\s+(?:the\s+)?)?(?:deployment|production|release)\s+(?:status|state|result)\b/i;
+const CONCRETE_REPOSITORY_REFERENCE_PATTERN =
+  /(?:\b(?:pull request|PR|Issue)\s*#\d+\b|\b(?:repository|リポジトリ)\s+[\w.-]+\/[\w.-]+\b|github\.com\/[\w.-]+\/[\w.-]+(?:\/(?:pull|issues)\/\d+)?)/i;
+const REPOSITORY_CONTENT_REQUEST_PATTERN =
+  /(?:[?？]|を元に|をもとに|に基づいて|(?:内容|詳細)(?:を|について)|(?:要約|まとめ)(?:して|て)|について(?:教えて|説明して|まとめて|README)|\b(?:based on|using|from|about|summari[sz]e|what|show|tell|describe|explain)\b)/i;
 const URL_PATTERN = /https?:\/\/\S+/i;
 const URL_DEREFERENCE_PATTERN =
   /(?:https?:\/\/\S+[\s\S]{0,80}(?:を元に|をもとに|の内容(?:を|について)?|を開いて|を読んで|を取得して|を要約して|を解析して|を確認して|を調べて|を検索して|を検証して)|(?:を元に|をもとに|内容を|開いて|読んで|取得して|要約して|解析して|確認して|調べて|検索して|検証して|\bbased on\b|\busing\b|\bfrom\b|\bread\b|\bopen\b|\bvisit\b|\bfetch\b|\binspect\b|\bsummarize\b|\banaly[sz]e\b|\blook\s+up\b|\bcheck\b|\bverify\b|\bconfirm\b|\bsearch\b)[\s\S]{0,80}https?:\/\/\S+|\bwhat does\s+https?:\/\/\S+\s+(?:say|contain|show)\b|\bwhat is\s+on\s+https?:\/\/\S+|\btell me\s+what(?:'s| is)\s+on\s+https?:\/\/\S+|\bcan you\s+inspect\s+https?:\/\/\S+)/i;
@@ -166,11 +170,15 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
     CURRENT_REQUEST_FACT_PATTERN.test(currentFactInput) &&
     !EVERGREEN_CURRENT_CONCEPT_PATTERN.test(currentFactInput);
   const requiresLiveExternalGrounding = LIVE_EXTERNAL_QUERY_PATTERN.test(currentFactInput);
+  const requiresRepositoryContentGrounding =
+    CONCRETE_REPOSITORY_REFERENCE_PATTERN.test(normalized) &&
+    REPOSITORY_CONTENT_REQUEST_PATTERN.test(normalized);
   const requiresUrlGrounding =
     URL_PATTERN.test(normalized) && URL_DEREFERENCE_PATTERN.test(normalized);
 
   if (
     requiresUrlGrounding ||
+    requiresRepositoryContentGrounding ||
     EXPLICIT_SOURCE_REQUEST_PATTERN.test(normalized) ||
     requiresHardCodedCurrentGrounding ||
     requiresEnumeratedCurrentGrounding ||
