@@ -62,9 +62,9 @@ const EXPLICIT_CHECK_PATTERN =
 const EXTERNAL_CONTENT_REQUEST_PATTERN =
   /(?:\bwhat\s+(?:does|do)\s+(?:the\s+)?(?:official\s+(?:documentation|docs?)|website|site)\b.{0,60}\b(?:say|contain|state|mention|show)\b|\b(?:summarize|inspect|read)\b.{0,30}\b(?:(?:the|this|that)\s+(?:website|site)|(?:the\s+)?official\s+(?:documentation|docs?))\b|(?:公式(?:ドキュメント|docs?)|ウェブサイト|website|サイト).{0,60}(?:何(?:が|と)|内容|書いて|記載|要約|読んで))/i;
 const ATTACHMENT_CONTENT_REQUEST_PATTERN =
-  /(?:\bwhat\s+(?:does|is|are)\b.{0,60}\b(?:the\s+)?(?:attached|uploaded)\b|\b(?:summari[sz]e|analy[sz]e|read|inspect|describe|convert|transform|extract|translate)\b.{0,60}\b(?:the\s+)?(?:attached|uploaded)\b|(?:添付|アップロード).{0,50}(?:内容|要約|まとめ|読ん|解析|分析|説明|変換|抽出|翻訳|何が|何を|教えて|を元に|をもとに))/i;
+  /(?:\bwhat\s+(?:does|is|are)\b.{0,60}\b(?:the\s+)?(?:attached|uploaded)\b|\b(?:summari[sz]e|analy[sz]e|read|inspect|describe|convert|transform|extract|translate|create|make|generate|build)\b.{0,60}\b(?:the\s+)?(?:attached|uploaded)\b|(?:添付|アップロード).{0,50}(?:内容|要約|まとめ|読ん|解析|分析|説明|変換|抽出|翻訳|作成|作って|生成|何が|何を|教えて|を元に|をもとに))/i;
 const DEICTIC_FILE_CONTENT_REQUEST_PATTERN =
-  /(?:\b(?:summari[sz]e|analy[sz]e|read|inspect|describe|convert|transform|extract|translate)\b.{0,30}\b(?:this|that)\s+(?:file|document|report)\b|\bwhat\s+(?:does|is|are)\s+(?:in\s+)?(?:this|that)\s+(?:file|document|report)\b|(?:この|その)(?:ファイル|文書|資料|レポート).{0,30}(?:内容|要約|まとめ|読ん|解析|分析|説明|変換|抽出|翻訳|何が|何を|教えて))/i;
+  /(?:\b(?:summari[sz]e|analy[sz]e|read|inspect|describe|convert|transform|extract|translate|create|make|generate|build)\b.{0,30}\b(?:this|that)\s+(?:file|document|report)\b|\bwhat\s+(?:does|is|are)\s+(?:in\s+)?(?:this|that)\s+(?:file|document|report)\b|(?:この|その)(?:ファイル|文書|資料|レポート).{0,30}(?:内容|要約|まとめ|読ん|解析|分析|説明|変換|抽出|翻訳|作成|作って|生成|何が|何を|教えて))/i;
 const EXTERNAL_STATE_PATTERN =
   /(?:GitHub|repository|リポジトリ|production|本番|deploy|デプロイ|release|リリース).{0,80}(?:状態|状況|結果|成功|失敗|稼働|障害|何番)|(?:pull request|\bPR\b|\bIssue\b|\bCI\b).{0,80}(?:状態|状況|結果|成功|失敗|\b(?:merged|open|closed|green|red)\b|何番)/i;
 const STATE_BEFORE_EXTERNAL_TARGET_PATTERN =
