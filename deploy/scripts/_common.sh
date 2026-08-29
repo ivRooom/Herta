@@ -38,6 +38,11 @@ assert_runtime_secret_key() {
   line="$(grep -E '^HERTA_RUNTIME_SECRET_KEY=' "${ENV_FILE}" | tail -n 1 || true)"
   raw="${line#HERTA_RUNTIME_SECRET_KEY=}"
   raw="${raw%$'\r'}"
+  # docker compose --env-file と同様に、対応する外側のquoteを1組だけ除去する。
+  case "${raw}" in
+    '"'*'"') raw="${raw#\"}"; raw="${raw%\"}" ;;
+    "'"*"'") raw="${raw#\'}"; raw="${raw%\'}" ;;
+  esac
 
   if [ -z "${line}" ] || [ -z "${raw}" ]; then
     echo "ERROR: HERTA_RUNTIME_SECRET_KEY が .env.production に設定されていません。" >&2

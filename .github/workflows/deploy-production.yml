@@ -223,16 +223,28 @@ jobs:
               exit 1
             fi
 
-            # 既に .env.production へ別の有効なmaster keyが入っている場合、渡された値で
+            # 既に .env.production へ「有効な」master keyが入っている場合のみ、渡された値で
             # 上書きすると runtime_secrets の既存行が復号不能になる (v1はオンライン
-            # rotation未対応)。値の不一致では fail closed し、意図的な回転は
+            # rotation未対応)。既存値が不正形式なら保護すべき暗号文が存在しないので
+            # そのまま修復を許可する。値の不一致では fail closed し、意図的な回転は
             # 手動手順 (docs/RUNTIME_SECRETS.md) に委ねる。値そのものは出力しない。
-            # compose --env-file および resolveRuntimeSecretMasterKey() は最後の代入を採用するため、
-            # assert_runtime_secret_key (_common.sh) と同じく末尾行を effective value として比較する。
+            # compose --env-file および resolveRuntimeSecretMasterKey() は最後の代入を採用し、
+            # 対応する外側のquoteを1組除去するため、ここでも同じ正規化を行ってから比較する。
+            strip_surrounding_quotes() {
+              s="$1"
+              case "${s}" in
+                '"'*'"') s="${s#\"}"; s="${s%\"}" ;;
+                "'"*"'") s="${s#\'}"; s="${s%\'}" ;;
+              esac
+              printf '%s' "${s}"
+            }
             existing_runtime_key="$(grep -E '^HERTA_RUNTIME_SECRET_KEY=' "${ENV_FILE}" | tail -n 1 | tr -d '\r' || true)"
             existing_runtime_key="${existing_runtime_key#HERTA_RUNTIME_SECRET_KEY=}"
-            if [ -n "${existing_runtime_key}" ] && [ "${existing_runtime_key}" != "${HERTA_RUNTIME_SECRET_KEY}" ]; then
-              echo "ERROR: .env.production の既存 HERTA_RUNTIME_SECRET_KEY と渡された値が一致しません。" >&2
+            existing_runtime_key="$(strip_surrounding_quotes "${existing_runtime_key}")"
+            if [ -n "${existing_runtime_key}" ] \
+              && validate_runtime_secret_key "${existing_runtime_key}" \
+              && [ "${existing_runtime_key}" != "${HERTA_RUNTIME_SECRET_KEY}" ]; then
+              echo "ERROR: .env.production の既存の有効な HERTA_RUNTIME_SECRET_KEY と渡された値が一致しません。" >&2
               echo "       master key を置き換えると登録済み runtime secret を復号できなくなります。" >&2
               echo "       意図的な rotation は docs/RUNTIME_SECRETS.md の手順に従って手動で行ってください。" >&2
               exit 1

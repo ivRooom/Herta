@@ -94,4 +94,10 @@ run_assert_case "${TMP_DIR}/env-wrong-length" fail
 printf 'HERTA_RUNTIME_SECRET_KEY=%s\n' "${VALID_B64%=}" > "${TMP_DIR}/env-unpadded-b64"
 run_assert_case "${TMP_DIR}/env-unpadded-b64" fail
 
+# docker compose --env-file と同様に、対応する外側のquoteを除去してから判定する。
+printf 'HERTA_RUNTIME_SECRET_KEY="%s"\n' "${VALID_B64}" > "${TMP_DIR}/env-dquoted-b64"
+run_assert_case "${TMP_DIR}/env-dquoted-b64" pass
+printf "HERTA_RUNTIME_SECRET_KEY='%s'\n" "${VALID_B64}" > "${TMP_DIR}/env-squoted-b64"
+run_assert_case "${TMP_DIR}/env-squoted-b64" pass
+
 echo "deploy common tests passed"

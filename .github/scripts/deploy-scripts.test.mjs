@@ -279,7 +279,12 @@ test('production deploy injects the runtime secret master key from a GitHub secr
 
   const presenceIdx = workflow.indexOf('HERTA_RUNTIME_SECRET_KEYが渡されていません');
   const validateIdx = workflow.indexOf('validate_runtime_secret_key "${HERTA_RUNTIME_SECRET_KEY}"');
-  const mismatchIdx = workflow.indexOf('既存 HERTA_RUNTIME_SECRET_KEY と渡された値が一致しません');
+  const mismatchIdx = workflow.indexOf(
+    '既存の有効な HERTA_RUNTIME_SECRET_KEY と渡された値が一致しません',
+  );
+  const existingGuardIdx = workflow.indexOf(
+    'validate_runtime_secret_key "${existing_runtime_key}"',
+  );
   const upsertIdx = workflow.indexOf(
     'upsert_env HERTA_RUNTIME_SECRET_KEY "${HERTA_RUNTIME_SECRET_KEY}"',
   );
@@ -288,8 +293,13 @@ test('production deploy injects the runtime secret master key from a GitHub secr
   assert.ok(validateIdx >= 0, 'workflow must validate the master key format before writing it');
   assert.ok(
     mismatchIdx >= 0,
-    'workflow must abort when the local key differs from the incoming value',
+    'workflow must abort when an existing valid key differs from the incoming value',
   );
+  assert.ok(
+    existingGuardIdx >= 0,
+    'mismatch guard must only fire when the existing local key is itself valid',
+  );
+  assert.match(workflow, /strip_surrounding_quotes/u);
   assert.ok(
     validateIdx < upsertIdx && mismatchIdx < upsertIdx,
     'format and mismatch guards must run before the environment file is overwritten',
