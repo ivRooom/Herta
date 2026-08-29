@@ -1,4 +1,4 @@
-# AI Tool & Artifact Runtime — Phase 1 / Phase 2 / Phase 3
+# AI Tool & Artifact Runtime — Phase 1 / Phase 2 / Phase 3 / Phase 4
 
 Issue #345 の Tool & Artifact Runtimeとして、Herta AIが生成したコード/テキスト成果物、明示的なPython実行結果、画像生成結果をproviderやDiscordから独立したArtifactとして検証し、安全にDiscordへ返す基盤を定義する。
 
@@ -8,7 +8,7 @@ Issue #345 の Tool & Artifact Runtimeとして、Herta AIが生成したコー�
 
 - `code_artifact`
 - `file_artifact`
-- `code_execution` — Phase 2
+- `code_execution` — Phase 2 / Phase 4 binary extension
 - `image_generation` — Phase 3
 
 通常会話/詳細回答のrouteもartifact runtime側では保持するが、既存会話surfaceを奪わない。
@@ -24,13 +24,26 @@ Discord @mention
   -> server-side intent resolution
   -> existing AiFoundation / request-time runtime snapshot
   -> existing user/guild rate limit + Guild quota + per-request cost + concurrency + timeout
+  -> server-side provider capability allowlist
   -> capability-specific provider adapter
   -> capability-specific validation
   -> validated Artifact bytes
   -> Discord attachment delivery
 ```
 
-`provider/model/reasoning`、rate limit、Guild quota、per-request cost guard、global concurrency、timeout、hallucination/grounding policyは既存AiFoundation経路を維持する。加えてImage GenerationはRedis別scopeでtool concurrency=2を強制する。Phase 3も別の無制限provider pathを追加しない。
+`provider/model/reasoning`、rate limit、Guild quota、per-request cost guard、global concurrency、timeout、hallucination/grounding policyは既存AiFoundation経路を維持する。加えてImage GenerationはRedis別scopeでtool concurrency=2を強制する。Phase 4も別の無制限provider pathを追加しない。
+
+### Provider capability policy
+
+providerが利用できるtool capabilityはclient入力やUI状態ではなく、`ai-runtime-policy` のcode-reviewed allowlistをSource of Truthとする。
+
+現在のOpenAI allowlist:
+
+- `text`
+- `code_interpreter`
+- `image_generation`
+
+Studio runtime policy metadataも同じallowlistから返し、Bot bootstrapも同じpolicyを参照してCode Interpreter / Image Generation adapterを構築する。未定義capability、arbitrary tool name、client-selected provider capabilityでserver adapterを有効化しない。
 
 ## Artifact domain
 
@@ -74,6 +87,46 @@ Phase 2はOpenAI Code Interpreterをprovider-native sandboxとして使用する
 
 Code Interpreter 1 GB session costは2026-08-27確認のcode-reviewed policy `30000 microUSD`。review-afterは`2026-09-27T00:00:00Z`で、期限後は再確認までfail closedする。
 
+## Phase 4 — Code Interpreter binary artifacts
+
+Phase 2時点のcontainer file downloadはtext MIME allowlist + UTF-8 validationを前提としていたため、CSV等は配信できる一方、Code Interpreterが生成したPNG/WebPはrejectしていた。
+
+Phase 4ではOpenAIの正式なcontainer file content endpointから取得するfile citationを、download前にserver-side policyへ解決する。
+
+```text
+container_file_citation
+  -> safe basename / extension policy
+  -> text or image download policy
+  -> bounded container file download
+  -> declared Content-Type consistency
+  -> text: UTF-8 validation
+  -> image: existing Phase 3 binary validator
+  -> validated AiArtifact
+  -> Discord attachment delivery
+```
+
+### Execution download policy
+
+text成果物は従来どおり:
+
+- extension/MIME:既存Text allowlist
+- max bytes: `HERTA_AI_ARTIFACT_MAX_BYTES`
+- UTF-8: fatal decodeで検証
+- total files: `HERTA_AI_ARTIFACT_MAX_FILES`
+
+binary成果物はPNG/WebPだけを追加許可する。
+
+- `.png` = `image/png`
+- `.webp` = `image/webp`
+- max image bytes: `4 MiB`
+- max image files per execution: `1`
+- `application/octet-stream`またはexpected image MIME以外のdeclared MIMEはreject
+- ZIP/PDF/office/archive/executable等は未許可のままfail closed
+
+imageはdownload時点ではbytesを実行・展開せず、Artifact RuntimeでPhase 3と同じmagic-byte / MIME / animation / dimensions / pixel count / Sharp full decodeを必須にする。Code Interpreter専用の緩いimage validatorは作らない。
+
+これによりtext設定の512 KiB既定値を画像へ誤適用せず、一方でbinary全般を無制限に許可しない。最大メモリ量も1 image × 4 MiB + bounded text filesに制限される。
+
 ## Phase 3 — Image generation
 
 ### Provider contract
@@ -100,7 +153,7 @@ Phase 3ではprovider URLを一切downloadしない。`url`返却、またはHTT
 
 ### Server-side image policy
 
-Phase 3 Herta policy:
+Phase 3 / Phase 4 Herta image policy:
 
 - output files: max `1`
 - generated format expected from Responses default: PNG
@@ -113,7 +166,7 @@ Phase 3 Herta policy:
 - multi-page/animated payload: reject
 - safe filename: existing basename/NFKC policy
 
-Provider result filenameは信用せず、Phase 3 adapterはserver-defined `generated-image.png`を使用する。
+Provider Image Generation result filenameは信用せず、Phase 3 adapterはserver-defined `generated-image.png`を使用する。Phase 4 Code Interpreterはcontainer citation filenameをsafe basename policyで検証したうえで使用する。
 
 ### Binary validation order
 
@@ -175,6 +228,7 @@ image tool costも既存と同じprivacy-preserving Guild quota key/storeへ追�
 - invalid/non-canonical base64
 - provider URL return
 - multiple image results
+- unsupported execution binary extension
 - bad magic bytes
 - MIME / extension mismatch
 - malformed / truncated image
@@ -213,7 +267,7 @@ AI Pluginのouter delivery catchでもDiscord error objectをstructured logへ�
 
 ## Production impact
 
-Phase 3でも次は変更しない。
+Phase 4でも次は変更しない。
 
 - DB migration
 - production secret
@@ -226,6 +280,11 @@ Productionではserver-side AI gate + Guild opt-inが引き続き必要。Image 
 
 ## Issue #345 acceptance reevaluation
 
-Phase 3でImage Generation / binary validation / Discord attachment / cost-quota-concurrency-timeout-telemetry integrationが完了する。
+Phase 3までにImage Generation / binary image validation / Discord attachment / cost-quota-concurrency-timeout-telemetry integrationが完了した。
 
-Issue #345全体のclose可否はPRのfull CI/security/review hardening後に再評価する。Issue bodyに残るartifact UX/orchestration等がAcceptance Criteria外のfollow-up scopeであればclose candidate、未達ACが残る場合はopen維持とする。
+Phase 4でIssueコメント上の残件だった以下を実装する。
+
+1. Code Interpreter生成PNG/WebPのbinary execution artifact
+2. provider capability metadata / routingのserver-side Source of Truth化
+
+PRのfull CI / Production Docker / SBOM / Grype / review hardening、およびmerge後のmain CI / production deploy acceptanceがGREENになれば、Issue #345はclose candidateとする。merge前にはcloseしない。
