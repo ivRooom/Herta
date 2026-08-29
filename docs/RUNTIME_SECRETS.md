@@ -72,9 +72,15 @@ SSM Parameter Store同期経路で注入します。
 - `deploy/scripts/{deploy,start,rollback}.sh` は起動前に `assert_runtime_secret_key` で
   `.env.production` にAES-256向けの正しい長さ (32 bytes) で存在することを検証します。
 
-初回のparameter作成 (値は生成後に安全に保管し、logへ残さないこと):
+初回のparameter作成。`deploy-production.yml` が assume する deploy role
+(`arn:aws:iam::911291529944:role/ivrm-web-github-deploy-role`) と**同じ AWS account
+`911291529944` / region `ap-northeast-1`** に作成すること。別 account に作ると deploy は
+fail closed する。値は生成後に安全に保管し、logへ残さない。
 
 ```bash
+# 先に対象 account を確認する
+aws sts get-caller-identity --query Account --output text   # => 911291529944 であること
+
 MASTER_KEY="$(openssl rand -base64 32)"
 aws ssm put-parameter \
   --region ap-northeast-1 \
@@ -84,6 +90,9 @@ aws ssm put-parameter \
   --no-overwrite
 unset MASTER_KEY
 ```
+
+既に本番 `.env.production` へ手動で値を注入済みの場合は、その同一値を SSM へ登録すること
+(異なる値だと次回 deploy の `upsert_env` が上書きし、登録済み runtime secret が復号不能になる)。
 
 ## Studio UX
 
