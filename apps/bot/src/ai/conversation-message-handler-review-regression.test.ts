@@ -26,7 +26,20 @@ describe('Discord conversation grounding review regressions', () => {
     expect(resolveAiConversationGroundingState('添付ファイルの内容を教えて')).toBe('insufficient');
     expect(resolveAiConversationGroundingState('Summarize this file')).toBe('insufficient');
     expect(resolveAiConversationGroundingState('このファイルを要約して')).toBe('insufficient');
+    expect(resolveAiConversationGroundingState('Convert this file to CSV')).toBe('insufficient');
+    expect(resolveAiConversationGroundingState('Extract data from that document')).toBe(
+      'insufficient',
+    );
+    expect(resolveAiConversationGroundingState('Convert the uploaded file to JSON')).toBe(
+      'insufficient',
+    );
+    expect(resolveAiConversationGroundingState('このファイルをCSVに変換して')).toBe(
+      'insufficient',
+    );
     expect(resolveAiConversationGroundingState('How do Discord attachments work?')).toBe(
+      'not_required',
+    );
+    expect(resolveAiConversationGroundingState('Explain how to convert a CSV file to JSON')).toBe(
       'not_required',
     );
   });
