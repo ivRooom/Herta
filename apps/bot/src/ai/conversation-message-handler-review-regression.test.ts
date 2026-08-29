@@ -38,17 +38,13 @@ describe('Discord conversation grounding review regressions', () => {
     expect(grounding('Download https://example.com/data.csv and convert it to JSON')).toBe(
       'insufficient',
     );
-    expect(grounding('https://example.com/data.csv and convert it to JSON')).toBe(
-      'insufficient',
-    );
-    expect(grounding('Create a file containing https://example.com/data.csv')).toBe(
-      'not_required',
-    );
+    expect(grounding('https://example.com/data.csv and convert it to JSON')).toBe('insufficient');
+    expect(grounding('Create a file containing https://example.com/data.csv')).toBe('not_required');
   });
 
   it('直近の相対日時を使う外部事実依頼はfail closedする', () => {
-    expect(grounding('Who won yesterday\'s Yankees game?')).toBe('insufficient');
-    expect(grounding('What was last night\'s score?')).toBe('insufficient');
+    expect(grounding("Who won yesterday's Yankees game?")).toBe('insufficient');
+    expect(grounding("What was last night's score?")).toBe('insufficient');
     expect(grounding('昨日の試合結果を教えて')).toBe('insufficient');
     expect(grounding('昨夜のニュースを教えて')).toBe('insufficient');
   });
