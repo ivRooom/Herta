@@ -300,6 +300,9 @@ test('production deploy injects the runtime secret master key from a GitHub secr
     'mismatch guard must only fire when the existing local key is itself valid',
   );
   assert.match(workflow, /strip_surrounding_quotes/u);
+  // 等価判定は文字列ではなく decode 後の byte fingerprint で行う。
+  assert.match(workflow, /runtime_key_fingerprint "\$\{existing_runtime_key\}"/u);
+  assert.match(workflow, /runtime_key_fingerprint "\$\{HERTA_RUNTIME_SECRET_KEY\}"/u);
   assert.ok(
     validateIdx < upsertIdx && mismatchIdx < upsertIdx,
     'format and mismatch guards must run before the environment file is overwritten',

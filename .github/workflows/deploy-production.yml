@@ -238,12 +238,24 @@ jobs:
               esac
               printf '%s' "${s}"
             }
+            # base64 / 64桁hex は同じ32 bytesを別表現で表せるため、文字列ではなく
+            # decode後のbyte列 (hex fingerprint) で等価判定する。fingerprintは
+            # master key相当の機微情報なので [ ] 比較専用とし、出力しない。
+            runtime_key_fingerprint() {
+              v="$1"
+              if printf '%s' "${v}" | grep -qE '^[0-9a-fA-F]{64}$'; then
+                printf '%s' "${v}" | tr 'A-F' 'a-f'
+                return 0
+              fi
+              printf '%s' "${v}" | base64 -d 2>/dev/null | od -An -v -tx1 | tr -d ' \n'
+            }
             existing_runtime_key="$(grep -E '^HERTA_RUNTIME_SECRET_KEY=' "${ENV_FILE}" | tail -n 1 | tr -d '\r' || true)"
             existing_runtime_key="${existing_runtime_key#HERTA_RUNTIME_SECRET_KEY=}"
             existing_runtime_key="$(strip_surrounding_quotes "${existing_runtime_key}")"
             if [ -n "${existing_runtime_key}" ] \
               && validate_runtime_secret_key "${existing_runtime_key}" \
-              && [ "${existing_runtime_key}" != "${HERTA_RUNTIME_SECRET_KEY}" ]; then
+              && [ "$(runtime_key_fingerprint "${existing_runtime_key}")" \
+                   != "$(runtime_key_fingerprint "${HERTA_RUNTIME_SECRET_KEY}")" ]; then
               echo "ERROR: .env.production の既存の有効な HERTA_RUNTIME_SECRET_KEY と渡された値が一致しません。" >&2
               echo "       master key を置き換えると登録済み runtime secret を復号できなくなります。" >&2
               echo "       意図的な rotation は docs/RUNTIME_SECRETS.md の手順に従って手動で行ってください。" >&2
