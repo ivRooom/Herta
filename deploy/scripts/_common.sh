@@ -29,6 +29,44 @@ require_env_file() {
   fi
 }
 
+# Runtime Secret Encryption master key (HERTA_RUNTIME_SECRET_KEY) が
+# .env.production へ注入済みで、かつAES-256向けに正しい長さ (32 bytes) であることを確認する。
+# 値そのものはstdout / stderr へ出さず、長さと形式だけを検証する。
+# 本番のCI/CDでは production Environment secret HERTA_RUNTIME_SECRET_KEY から注入される。
+assert_runtime_secret_key() {
+  local line raw decoded_bytes
+  line="$(grep -E '^HERTA_RUNTIME_SECRET_KEY=' "${ENV_FILE}" | tail -n 1 || true)"
+  raw="${line#HERTA_RUNTIME_SECRET_KEY=}"
+  raw="${raw%$'\r'}"
+  # docker compose --env-file と同様に、対応する外側のquoteを1組だけ除去する。
+  case "${raw}" in
+    '"'*'"') raw="${raw#\"}"; raw="${raw%\"}" ;;
+    "'"*"'") raw="${raw#\'}"; raw="${raw%\'}" ;;
+  esac
+
+  if [ -z "${line}" ] || [ -z "${raw}" ]; then
+    echo "ERROR: HERTA_RUNTIME_SECRET_KEY が .env.production に設定されていません。" >&2
+    echo "       Runtime Secret Encryption (Studio > AI Provider Credentials) に必須です。" >&2
+    echo "       GitHub production Environment の secret HERTA_RUNTIME_SECRET_KEY を確認してください。" >&2
+    return 1
+  fi
+
+  if printf '%s' "${raw}" | grep -qE '^[0-9a-fA-F]{64}$'; then
+    return 0
+  fi
+
+  # base64判定は resolveRuntimeSecretMasterKey() と同じく長さが4の倍数であることも要求する。
+  if printf '%s' "${raw}" | grep -qE '^[A-Za-z0-9+/]+={0,2}$' && [ $(( ${#raw} % 4 )) -eq 0 ]; then
+    decoded_bytes="$(printf '%s' "${raw}" | base64 -d 2>/dev/null | wc -c | tr -d ' ' || true)"
+    if [ "${decoded_bytes}" = '32' ]; then
+      return 0
+    fi
+  fi
+
+  echo "ERROR: HERTA_RUNTIME_SECRET_KEY の形式が不正です (32-byte base64 または 64桁hexが必要)。" >&2
+  return 1
+}
+
 resolve_image_for_ref() {
   local ref="$1"
   local sha

@@ -8,6 +8,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 require_env_file
+assert_runtime_secret_key
 export HERTA_IMAGE="${HERTA_IMAGE:-${IMAGE_REPOSITORY}:latest}"
 
 echo "=== Herta. 本番スタックを起動します (${HERTA_IMAGE}) ==="

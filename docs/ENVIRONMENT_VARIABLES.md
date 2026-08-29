@@ -68,20 +68,26 @@ Herta で使用する環境変数の一覧です。開発は `.env` (`.env.examp
 Semantic Searchは明示的なopt-inです。既定の`disabled`では外部providerを呼び出さず、
 Command Paletteは既存のlexical / intent rankingだけで動作します。
 
-| 変数名                            | 必須                        | 説明                                      | 既定値                   |
-| --------------------------------- | --------------------------- | ----------------------------------------- | ------------------------ |
-| `STUDIO_SEMANTIC_SEARCH_PROVIDER` | -                           | `disabled` または `openai`                | `disabled`               |
-| `HERTA_RUNTIME_SECRET_KEY`        | provider=`openai` の場合Yes | Runtime Secret Store master key           | -                        |
-| `OPENAI_API_KEY`                  | migration fallbackのみ      | Console未登録時のOpenAI API key           | -                        |
-| `OPENAI_EMBEDDING_MODEL`          | -                           | Semantic rankingに利用するembedding model | `text-embedding-3-small` |
+| 変数名                            | 必須                   | 説明                                      | 既定値                   |
+| --------------------------------- | ---------------------- | ----------------------------------------- | ------------------------ |
+| `STUDIO_SEMANTIC_SEARCH_PROVIDER` | -                      | `disabled` または `openai`                | `disabled`               |
+| `HERTA_RUNTIME_SECRET_KEY`        | 本番Yes (下記参照)     | Runtime Secret Store master key           | -                        |
+| `OPENAI_API_KEY`                  | migration fallbackのみ | Console未登録時のOpenAI API key           | -                        |
+| `OPENAI_EMBEDDING_MODEL`          | -                      | Semantic rankingに利用するembedding model | `text-embedding-3-small` |
 
 OpenAI credentialはStudio Settingsの `AI Provider Credentials` から登録する
 console-managed secretを優先します。`HERTA_RUNTIME_SECRET_KEY`はOpenAI API keyそのものではなく、
 Runtime Secret StoreのAES-256-GCM暗号化・復号に使うbootstrap master keyです。32-byte base64または
 64桁hexを設定します。
 
-`STUDIO_SEMANTIC_SEARCH_PROVIDER=openai`の場合、保存済みcredentialがまだ無い場合でもRuntime Secret
-Storeを安全に確認するため、`HERTA_RUNTIME_SECRET_KEY`を必ず設定してください。
+本番では`HERTA_RUNTIME_SECRET_KEY`は必須です。Studioの`AI Provider Credential Settings`からの
+OpenAI API key保存、AI Foundation、および`STUDIO_SEMANTIC_SEARCH_PROVIDER=openai`のいずれも、
+保存済みcredentialがまだ無い場合でもRuntime Secret Storeを安全に確認するためにこの値を要求します。
+未設定だとcredential保存は`Secret暗号化設定がまだ準備されていません` (HTTP 503) になります。
+
+本番では`HERTA_RUNTIME_SECRET_KEY`を`.env.production`へ手入力せず、`Deploy Production` workflowが
+`production` GitHub Environment の secret `HERTA_RUNTIME_SECRET_KEY` から取得して`studio` / `bot`へ
+注入します。手順は[RUNTIME_SECRETS.md](./RUNTIME_SECRETS.md)を参照してください。
 
 `OPENAI_API_KEY`は移行期間だけのfallbackです。Runtime Secret Storeのreadが正常に完了し、master keyが
 有効で、`openai.api_key`が未登録の場合にだけ利用されます。DB unavailable、master key未設定・不正、
@@ -121,4 +127,5 @@ Provider失敗・timeout時はlexical searchへfallbackします。
 - `NEXTAUTH_SECRET`
 - `JWT_SECRET` / `JWT_REFRESH_SECRET` / `INTERNAL_JWT_SECRET`
 - `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` / `DISCORD_BOT_TOKEN`
-- `STUDIO_SEMANTIC_SEARCH_PROVIDER=openai`を有効化する場合は`HERTA_RUNTIME_SECRET_KEY`
+- `HERTA_RUNTIME_SECRET_KEY` (本番必須。`production` GitHub Environment secret から
+  `Deploy Production` workflowが注入。詳細は [RUNTIME_SECRETS.md](./RUNTIME_SECRETS.md))

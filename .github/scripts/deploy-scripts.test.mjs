@@ -261,3 +261,50 @@ test('failure diagnostics do not print production environment values', () => {
   assert.match(diagnostics, /print_migration_history/u);
   assert.match(diagnostics, /container runtime states/u);
 });
+
+test('production deploy injects the runtime secret master key from a GitHub secret and guards it', () => {
+  const workflow = readFileSync('.github/workflows/deploy-production.yml', 'utf8');
+
+  // production Environment secret -> job env -> SSH envs -> upsert_env の経路が揃っていること。
+  assert.match(workflow, /environment:\s*production/u);
+  assert.match(
+    workflow,
+    /HERTA_RUNTIME_SECRET_KEY:\s*\$\{\{\s*secrets\.HERTA_RUNTIME_SECRET_KEY\s*\}\}/u,
+  );
+  assert.match(workflow, /envs:[^\n]*HERTA_RUNTIME_SECRET_KEY/u);
+  assert.match(workflow, /upsert_env HERTA_RUNTIME_SECRET_KEY "\$\{HERTA_RUNTIME_SECRET_KEY\}"/u);
+
+  // master key はSSMからは取得しない (Spotifyのみ)。
+  assert.doesNotMatch(workflow, /fetch_ssm_secret '\/ivrm\/runtime\/herta\/runtime-secret-key'/u);
+
+  const presenceIdx = workflow.indexOf('HERTA_RUNTIME_SECRET_KEYが渡されていません');
+  const validateIdx = workflow.indexOf('validate_runtime_secret_key "${HERTA_RUNTIME_SECRET_KEY}"');
+  const mismatchIdx = workflow.indexOf(
+    '既存の有効な HERTA_RUNTIME_SECRET_KEY と渡された値が一致しません',
+  );
+  const existingGuardIdx = workflow.indexOf(
+    'validate_runtime_secret_key "${existing_runtime_key}"',
+  );
+  const upsertIdx = workflow.indexOf(
+    'upsert_env HERTA_RUNTIME_SECRET_KEY "${HERTA_RUNTIME_SECRET_KEY}"',
+  );
+
+  assert.ok(presenceIdx >= 0, 'workflow must fail closed when the master key secret is missing');
+  assert.ok(validateIdx >= 0, 'workflow must validate the master key format before writing it');
+  assert.ok(
+    mismatchIdx >= 0,
+    'workflow must abort when an existing valid key differs from the incoming value',
+  );
+  assert.ok(
+    existingGuardIdx >= 0,
+    'mismatch guard must only fire when the existing local key is itself valid',
+  );
+  assert.match(workflow, /strip_surrounding_quotes/u);
+  // 等価判定は文字列ではなく decode 後の byte fingerprint で行う。
+  assert.match(workflow, /runtime_key_fingerprint "\$\{existing_runtime_key\}"/u);
+  assert.match(workflow, /runtime_key_fingerprint "\$\{HERTA_RUNTIME_SECRET_KEY\}"/u);
+  assert.ok(
+    validateIdx < upsertIdx && mismatchIdx < upsertIdx,
+    'format and mismatch guards must run before the environment file is overwritten',
+  );
+});
