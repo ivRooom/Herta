@@ -4,6 +4,7 @@ import { resolveAiConversationGroundingState } from './conversation-message-hand
 const grounding = resolveAiConversationGroundingState;
 const suppliedStockPriceCode =
   'Execute Python code that displays the current stock price passed in as an argument';
+const runtimeUrlCode = 'Write Python code that downloads https://example.com at runtime';
 
 describe('Discord conversation grounding review regressions', () => {
   it('code executionがローカルで取得するcurrent値は外部grounding不要にする', () => {
@@ -29,6 +30,8 @@ describe('Discord conversation grounding review regressions', () => {
     expect(grounding('Create a CSV from this file')).toBe('insufficient');
     expect(grounding('From this file, create a CSV')).toBe('insufficient');
     expect(grounding('このファイルからCSVを作って')).toBe('insufficient');
+    expect(grounding('Convert the attachment to JSON')).toBe('insufficient');
+    expect(grounding('Create a CSV from my attachment')).toBe('insufficient');
     expect(grounding('How do Discord attachments work?')).toBe('not_required');
     expect(grounding('Explain how to convert a CSV file to JSON')).toBe('not_required');
     expect(grounding('Explain how to create a CSV file')).toBe('not_required');
@@ -40,6 +43,16 @@ describe('Discord conversation grounding review regressions', () => {
     );
     expect(grounding('https://example.com/data.csv and convert it to JSON')).toBe('insufficient');
     expect(grounding('Create a file containing https://example.com/data.csv')).toBe('not_required');
+    expect(grounding(runtimeUrlCode)).toBe('not_required');
+    expect(grounding('Write Python code using the contents of https://example.com')).toBe(
+      'insufficient',
+    );
+  });
+
+  it('検索エンジンやonline検索は外部grounding必須として扱う', () => {
+    expect(grounding('Search Google for Herta and summarize the results')).toBe('insufficient');
+    expect(grounding('Search online for Herta release notes')).toBe('insufficient');
+    expect(grounding('Explain how Google Search ranking works')).toBe('not_required');
   });
 
   it('直近の相対日時を使う外部事実依頼はfail closedする', () => {
