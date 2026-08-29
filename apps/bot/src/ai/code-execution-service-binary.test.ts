@@ -5,7 +5,10 @@ import {
 } from '@herta/plugin-catalog/ai-service';
 import { AiRuntimeConfigurationResolver } from '@herta/plugin-catalog/ai-runtime-config';
 import { describe, expect, it, vi } from 'vitest';
-import { OpenAiCodeExecutionService, type AiCodeExecutionRequest } from './code-execution-service.js';
+import {
+  OpenAiCodeExecutionService,
+  type AiCodeExecutionRequest,
+} from './code-execution-service.js';
 
 const prisma = {} as ConstructorParameters<typeof AiRuntimeConfigurationResolver>[0]['prisma'];
 
@@ -110,7 +113,8 @@ describe('OpenAiCodeExecutionService binary artifacts', () => {
     const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
       const url = urlOf(input);
       if (url.endsWith('/containers') && init?.method === 'POST') return containerResponse();
-      if (url.endsWith('/responses')) return executionResponse([annotation('cfile_1', 'chart.png')]);
+      if (url.endsWith('/responses'))
+        return executionResponse([annotation('cfile_1', 'chart.png')]);
       if (url.endsWith('/files/cfile_1/content')) {
         return new Response(binary, { headers: { 'content-type': 'image/png' } });
       }
@@ -138,7 +142,10 @@ describe('OpenAiCodeExecutionService binary artifacts', () => {
       const url = urlOf(input);
       if (url.endsWith('/containers') && init?.method === 'POST') return containerResponse();
       if (url.endsWith('/responses')) {
-        return executionResponse([annotation('cfile_1', 'a.png'), annotation('cfile_2', 'b.webp')]);
+        return executionResponse([
+          annotation('cfile_1', 'a.png'),
+          annotation('cfile_2', 'b.webp'),
+        ]);
       }
       if (url.includes('/files/')) {
         downloads += 1;
@@ -160,7 +167,8 @@ describe('OpenAiCodeExecutionService binary artifacts', () => {
     const fetchImpl = vi.fn<typeof fetch>(async (input, init) => {
       const url = urlOf(input);
       if (url.endsWith('/containers') && init?.method === 'POST') return containerResponse();
-      if (url.endsWith('/responses')) return executionResponse([annotation('cfile_1', 'chart.png')]);
+      if (url.endsWith('/responses'))
+        return executionResponse([annotation('cfile_1', 'chart.png')]);
       if (url.endsWith('/files/cfile_1/content')) {
         return new Response(new Uint8Array([1, 2, 3]), {
           headers: { 'content-type': 'image/webp' },
