@@ -72,7 +72,7 @@ const EXTERNAL_STATE_PATTERN =
 const STATE_BEFORE_EXTERNAL_TARGET_PATTERN =
   /\b(?:what(?:'s| is)\s+(?:the\s+)?)?(?:status|state|result)\s+of\s+(?:pull request|PR|issue|CI|deployment|production|release)\b|\b(?:what(?:'s| is)\s+(?:the\s+)?)?(?:deployment|production|release)\s+(?:status|state|result)\b/i;
 const CONCRETE_REPOSITORY_REFERENCE_PATTERN =
-  /(?:\b(?:pull request|PR|Issue)\s*#\d+\b|\b(?:repository|リポジトリ)\s+[\w.-]+\/[\w.-]+\b|github\.com\/[\w.-]+\/[\w.-]+(?:\/(?:pull|issues)\/\d+)?)/i;
+  /(?:\b(?:pull request|PR|Issue)\s*#?\d+\b|\b(?:repository|リポジトリ)\s+[\w.-]+\/[\w.-]+\b|github\.com\/[\w.-]+\/[\w.-]+(?:\/(?:pull|issues)\/\d+)?)/i;
 const REPOSITORY_CONTENT_REQUEST_PATTERN =
   /(?:[?？]|を元に|をもとに|に基づいて|(?:内容|詳細)(?:を|について)|(?:要約|まとめ)(?:して|て)|について(?:教えて|説明して|まとめて|README)|\b(?:based on|using|from|about|summari[sz]e|what|show|tell|describe|explain)\b)/i;
 const URL_PATTERN = /https?:\/\/\S+/i;
