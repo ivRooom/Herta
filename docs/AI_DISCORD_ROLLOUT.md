@@ -1,21 +1,25 @@
 # Discord AI Q&A Limited Guild Rollout Runbook
 
-Issue #350で追加するDiscord会話Q&A surfaceを、production既定OFFのまま限定Guildへ段階導入するためのRunbookです。
+Issue #350で追加したDiscord会話Q&A surfaceとIssue #345で完成したTool / Artifact Runtimeを、production既定OFFのまま限定Guildで受入確認するためのRunbookです。Issue #354のproduction E2E acceptanceではこの手順を基準にします。
 
 このRunbookはOpenAI credentialの値を読み出したり、Issue / PR / logへ記録したりしません。`HERTA_AI_ENABLED`を有効化しても、AI PluginとGuild configの両方が有効なGuildだけがprovider callへ進みます。
 
-## 1. 前提
+## 1. Production preflight
 
-実施前に以下を満たしてください。
+実施前に以下をすべて満たしてください。
 
-- 対象PRがmainへmerge済みで、main CI / Production Docker runtime / SBOM / Grype High-Critical gateがGREEN
+- rollout対象revisionがmainへmerge済み
+- main CI / Production Docker runtime / SBOM / Grype High-Critical gateがGREEN
 - Deploy ProductionがGREEN
+- deploy image SHAとmain HEADが一致
+- production migrationが成功し、pending migrationがない
 - Cloudflare経由のexternal health checkがGREEN
-- `HERTA_AI_ENABLED=false` のproduction既定値はRepository上で維持されている
+- `HERTA_AI_ENABLED=false` のproduction既定値がRepository上で維持されている
 - rollout対象Guildを1つに限定している
-- rollback担当者がLightsailのproduction envとStudioのGuild Plugin設定を変更できる
+- rollback担当者がproduction envとStudioのGuild Plugin設定を変更できる
+- rollback前状態をSecret値なしで記録済み
 
-Repository上の既定値を`true`へ変更してglobal rolloutしないでください。限定rolloutで必要なglobal gate変更はLightsail上の未コミット`/app/herta/.env.production`だけで行います。
+Repository上の既定値を`true`へ変更してglobal rolloutしないでください。限定rolloutで必要なglobal gate変更はproduction runtime envだけで行います。
 
 ## 2. Credential availabilityをsafe metadataだけで確認
 
@@ -38,7 +42,7 @@ configured = true
 
 レスポンスにAPI key値は含まれません。`updatedAt` / `keyVersion`はsafe metadataとして確認できます。Secret値のread-back、DB直接select、log出力は行わないでください。
 
-## 3. AI Runtime Settingsをallowlistとして確認
+## 3. AI Runtime Settingsをserver-side allowlistとして確認
 
 安全確認用API:
 
@@ -52,13 +56,30 @@ GET /api/admin/runtime-config/ai
 - `resolved.provider`がserver policy上のallowlistに含まれる
 - `resolved.model` / model profileが返却`policy`と一致する
 - `resolved.reasoningEffort`が対象modelのallowlistに含まれる
+- provider capability resolutionがserver-side policyと一致する
 - 保存済み設定が不正な場合に503となり、silent downgradeしていない
 
-Discord messageからprovider / concrete model ID / reasoning / tool名を指定してこのselectionを変更できないことが前提です。
+Discord messageからprovider / concrete model ID / reasoning / capability / tool名を指定してこのselectionを変更できないことが前提です。
 
-## 4. Global AI gateを限定rollout用に有効化
+## 4. Rollout前状態を記録
 
-Lightsail上で、現在値をSecret値を含めずに作業記録へ残したうえで`/app/herta/.env.production`を編集します。
+Secret値を含めず、最低限以下の変更前状態をIssue #354へ記録します。
+
+- deployed main SHA / image SHA
+- global AI gate
+- kill switch
+- rollout対象Guild名または運用上識別できる名称
+- rollout対象GuildのAI Plugin enabled状態
+- rollout対象GuildのAI config enabled状態
+- provider / model profile / reasoningのsafe metadata
+- credential `configured` metadata
+- quota / rate / concurrency / timeout / per-request cost設定
+
+対象外GuildでAI PluginまたはAI configが有効になっていないことも確認します。
+
+## 5. Global AI gateを限定rollout用に有効化
+
+production envの現在値をSecret値なしで記録してから次を設定します。
 
 ```dotenv
 HERTA_AI_ENABLED=true
@@ -67,25 +88,23 @@ HERTA_AI_KILL_SWITCH=false
 
 `OPENAI_API_KEY`の値をshell history、Issue、PR、Runbook、chatへ貼り付けないでください。Runtime Secret Storeを利用している場合は、このrolloutでOpenAI API key自体を変更する必要はありません。
 
-既存deployment pathでBotをrecreateします。main merge後は通常の`Deploy Production` workflowを使用します。envだけを緊急反映する場合も、既存production Docker Compose運用手順に従い、Botが新しいenvを読んだことをsafe startup metadataで確認します。
-
-起動時に確認してよいmetadata:
+既存deployment pathでBotをrecreateします。起動後に確認してよいmetadata:
 
 - AI runtime status
 - credential source (`runtime_secret` / migration fallback)
-- execution/image capability availability
-- provider/modelのrequest telemetry
+- code execution / image generation capability availability
+- provider / modelのrequest telemetry
 - safe error category
 
 Secret値、raw prompt、raw provider responseは確認対象にしません。
 
-## 5. 対象GuildだけAI Pluginをopt-in
+## 6. 対象GuildだけAI Pluginをopt-in
 
 Studioの対象Guild Plugin画面で`ai` Pluginを開きます。
 
 1. Plugin自体を`enabled=true`にする
 2. AI Plugin configの`enabled=true`を保存する
-3. rollout対象外のGuildではAI Pluginを無効のまま維持する
+3. rollout対象外GuildではAI Plugin / AI configを無効のまま維持する
 
 Studio APIを利用する場合は既存のGuild Plugin endpointを使用します。
 
@@ -96,21 +115,92 @@ PATCH /api/guilds/{guildId}/plugins/ai
 
 mutationはStudio認証・Guild access・Same-Origin・Plugin permission validationを通します。外部スクリプトから認証を迂回して直接DBを書き換えないでください。
 
-## 6. Limited Guild E2E
+Global gateをONにしても、Guild opt-inがないGuildからprovider callが発生しないことを最初に確認します。
+
+## 7. Discord production E2E
 
 1つの限定Guildで各ケースを別messageとして確認します。同一messageへartifact replyとchat replyが二重送信されないことも確認してください。
 
-- ordinary chat: `@Herta TypeScriptって何？` → `chat` policyで1回だけtext reply
-- detailed: `@Herta ReactとVueを詳しく比較して` → `detailed` policyで1回だけtext reply
-- code artifact: `@Herta Pythonコードを書いて` → 既存Artifact Runtimeからattachmentのみ
-- file artifact: `@Herta READMEを作って` → allowlisted text artifact attachment
-- Python execution: `@Herta このPythonを実行して` → 既存Code Interpreter runtime。未実行をfake successしない
-- image generation: `@Herta 猫の画像を作って` → validated PNG/WebP attachment
-- unsupported: 非対応artifact format等 → safe unsupported reply、成果物を生成したと主張しない
-- source-dependent: `@Herta GitHubの最新PR状態を確認して` → `insufficient`。確認した/citation取得済みと捏造しない
-- source-dependent artifact: `@Herta https://example.com/project を元にREADMEを作って` → provider callなし。外部参照不可と成果物未生成を明示する
-- no mention: 通常message → provider callなし
-- bot / webhook / DM: 対象外message → provider callなし
+### Conversation
+
+1. ordinary chat: `@Herta TypeScriptって何？` → `chat` policyで1回だけtext reply
+2. detailed: `@Herta ReactとVueを詳しく比較して` → `detailed` policyで1回だけtext reply
+3. source-dependent: `@Herta GitHubの最新PR状態を確認して` → retrieval sourceがない場合は`insufficient`。確認した/citation取得済みと捏造しない
+
+### Artifact generation
+
+4. code artifact: `@Herta Pythonコードを書いて` → code attachmentを生成するだけでexecutionしない
+5. CSV artifact: allowlisted CSV生成要求 → validated text attachment
+6. image generation: image生成要求 → validated PNG / WebP attachment
+7. unsupported artifact: 非対応format → safe failure。成果物を生成したと主張しない
+8. malformed artifact: validationで壊れたartifactを検出した場合 → attachmentせずsafe failure
+
+### Explicit Code Interpreter execution
+
+9. Python execution: 明示的な実行要求 → sandboxed Code Interpreter runtimeを通す
+10. PNG execution artifact: Python実行でPNGを生成 → strict binary validation後にattachment
+11. WebP execution artifact: Python実行でWebPを生成 → strict binary validation後にattachment
+
+Code artifact生成だけのrequestでCode Interpreterが実行されないことを必ず確認します。
+
+### Failure honesty
+
+以下はprovider/tool/validationの成功として説明しないことを確認します。
+
+- provider timeout
+- provider failure
+- tool failure
+- artifact validation failure
+- quota exceeded
+- rate exceeded
+
+fake success、架空のfilename、架空のattachment、架空のtool resultを返してはいけません。
+
+### Artifact evidence
+
+生成した各artifactについて次を記録します。binary bytesそのものは記録しません。
+
+- filename
+- MIME
+- file size
+- Discord attachment成功/失敗
+- validation result / safe error category
+
+## 8. Security / Reliability acceptance
+
+### Server-side authority
+
+以下をDiscord入力から任意指定できないことを確認します。
+
+- provider
+- concrete model ID
+- reasoning policy
+- capability
+- privileged tool
+
+Runtime Secretがclient response / Discord / normal logへ露出しないことも確認します。
+
+### Sandbox boundary
+
+Code Interpreter経路で以下をHerta host上の成功として扱わないことを確認します。
+
+- host shell execution
+- host filesystem access
+- unrestricted host network access
+
+provider-managed sandboxの実行結果とHerta host executionを混同しません。
+
+### Guards
+
+最低限以下のguardが有効であることをsafe metadata / test / E2Eで確認します。
+
+- per-user rate limit
+- per-Guild rate limit
+- Guild quota
+- per-request cost limit
+- global concurrency
+- timeout
+- artifact size / dimensions / pixel limits
 
 ### Rate limit
 
@@ -118,13 +208,15 @@ mutationはStudio認証・Guild access・Same-Origin・Plugin permission validat
 
 ### Quota
 
-quota guardそのものは自動testで検証します。production E2Eで閾値到達を再現する必要がある場合は、対象Guild以外のAI Plugin / Guild opt-inが無効であることを事前に確認し、限定Guild・短いmaintenance windowでproduction envの現行値をバックアップしてからserver-side quotaを安全な低い検証値へ一時変更します。対象外Guildのopt-in状態を確認できない場合は共有production環境の`HERTA_AI_GUILD_QUOTA_MICRO_USD`を変更せず、隔離したstaging / verification configurationで検証してください。検証後は必ず元の値へ戻してBotをrecreateします。実課金を増やす方向へ閾値を緩和して検証しないでください。
+quota guardそのものは自動testを正本とします。production E2Eで閾値到達を再現する必要がある場合は、対象Guild以外のAI Plugin / Guild opt-inが無効であることを事前に確認し、限定Guild・短いmaintenance windowで現行値をバックアップしてからserver-side quotaを安全な低い検証値へ一時変更します。
+
+対象外Guildのopt-in状態を確認できない場合は共有production環境のquotaを変更せず、隔離したverification configurationで検証してください。実課金を増やす方向へ閾値を緩和して検証しません。
 
 ### Timeout
 
-provider応答を意図的に長時間化させるためのunbounded prompt/tool requestは禁止です。timeout contractは自動testを正本とし、productionでは実際のprovider timeoutが発生した場合にsafe timeout messageとなり、raw provider bodyが出ないことを確認します。
+provider応答を意図的に長時間化させるunbounded prompt/tool requestは禁止です。timeout contractは自動testを正本とし、productionでは実際のtimeout発生時にsafe timeout messageとなり、raw provider bodyが出ないことを確認します。
 
-## 7. Observability確認
+## 9. Observability確認
 
 通常application log / telemetryに以下が出ていないことを確認します。
 
@@ -140,30 +232,21 @@ provider応答を意図的に長時間化させるためのunbounded prompt/tool
 
 許可するmetadataはGuild ID、intent、response mode、grounding state、provider、model、result/status、safe error category、duration、token usage、estimated cost等に限定します。
 
-## 8. Kill switch rollback
+## 10. Rollback acceptance
 
-Provider障害、予算異常、abuse、予期しない出力が発生した場合は最優先でglobal kill switchを使用します。
+production acceptance中に、実際にprovider callを停止できることを順番に確認します。各操作の前後状態をIssue #354へ記録します。
 
-```dotenv
-HERTA_AI_KILL_SWITCH=true
-```
+### 10.1 Guild opt-out
 
-Botをrecreate後、対象Guildでprovider callが停止し、非AI Pluginが継続稼働していることを確認します。
+対象GuildのAI PluginまたはAI configをdisabledにします。
 
-復旧時は原因とguardを確認してから`HERTA_AI_KILL_SWITCH=false`へ戻します。原因未確認のまま再開しないでください。
+- 対象GuildのAI requestでprovider callが発生しない
+- 対象外Guildの状態を変更しない
+- 非AI Pluginは継続する
 
-## 9. Guild opt-out rollback
+確認後、E2E継続に必要な場合だけ対象Guild opt-inを元へ戻します。
 
-問題が特定Guildだけに限定される場合はglobal AIを落とさず、対象GuildのStudio設定で次のどちらかを実行します。
-
-- AI Pluginをdisabled
-- AI Plugin configを`enabled=false`
-
-変更後、対象Guildの`@Herta` AI requestでprovider callが発生しないことをsafe telemetryで確認します。
-
-## 10. Global rollback
-
-限定rollout自体を終了する場合はLightsail production envを次へ戻します。
+### 10.2 Global AI gate OFF
 
 ```dotenv
 HERTA_AI_ENABLED=false
@@ -172,9 +255,21 @@ HERTA_AI_KILL_SWITCH=false
 
 Botをrecreateし、AI requestでprovider callが発生しないことを確認します。Repositoryの`.env.production.example`は常に`HERTA_AI_ENABLED=false`を維持します。
 
+### 10.3 Kill switch
+
+Provider障害、予算異常、abuse、予期しない出力が発生した場合の最優先停止経路です。
+
+```dotenv
+HERTA_AI_KILL_SWITCH=true
+```
+
+Botをrecreate後、provider callが停止し、非AI Pluginが継続稼働していることを確認します。
+
+復旧時は原因とguardを確認してから`HERTA_AI_KILL_SWITCH=false`へ戻します。原因未確認のまま再開しません。
+
 ## 11. RAG / retrieval境界
 
-Issue #350ではRAG corpus、vector search、web retrievalを実装しません。
+現時点のDiscord AI Q&A surfaceでは、source-dependentな質問を回答するための一般web / repository retrievalを自動実行しません。
 
 `not_required`として回答可能:
 
@@ -192,6 +287,23 @@ Issue #350ではRAG corpus、vector search、web retrievalを実装しません�
 
 `insufficient`ではcitation、tool result、外部確認済み事実を捏造しません。将来のretrieval integrationはこのserver-side grounding境界へ接続します。
 
-## 12. #345との境界
+## 12. Issue #345との現在の境界
 
-このrolloutでIssue #345をcloseしません。Code Interpreter generated PNG等のbinary execution artifactは、現行text MIME / UTF-8 download validationとは別のfollow-upとして扱います。Issue #350へbinary execution artifact実装を混在させないでください。
+Issue #345 Tool & Artifact Runtimeはcompletedです。Code Interpreter generated PNG / WebP binary execution artifactもmainに実装済みで、strict filename / extension / MIME / byte / dimensions / pixel count / full decode validationを通してDiscord attachmentへ渡します。
+
+Issue #354では新しいArtifact Runtime機能を追加するのではなく、現在のmainがproduction Discord上でも同じsecurity boundaryを維持することをE2Eで受け入れます。
+
+## 13. Issue #354 completion record
+
+Acceptance完了時はIssue #354へ最低限以下を記録します。
+
+- deployed main SHA / image SHA
+- 対象Guild
+- 実施したE2E一覧と成功/失敗
+- artifact filename / MIME / size / attachment / validation結果
+- Security確認結果
+- rate / quota / cost / concurrency / timeout確認結果
+- Guild opt-out / global gate OFF / kill switch rollback結果
+- unresolvedな残課題
+
+Acceptance Criteriaをすべて満たした場合のみIssue #354をcompletedとしてcloseします。未確認項目を推測で成功扱いしません。
