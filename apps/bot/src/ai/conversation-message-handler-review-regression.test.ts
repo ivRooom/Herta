@@ -22,7 +22,12 @@ describe('Discord conversation grounding review regressions', () => {
     expect(grounding('Extract data from that document')).toBe('insufficient');
     expect(grounding('Convert the uploaded file to JSON')).toBe('insufficient');
     expect(grounding('このファイルをCSVに変換して')).toBe('insufficient');
+    expect(grounding('Create a CSV from the attached report')).toBe('insufficient');
+    expect(grounding('Generate JSON using the uploaded file')).toBe('insufficient');
+    expect(grounding('Create a CSV from this file')).toBe('insufficient');
+    expect(grounding('このファイルからCSVを作って')).toBe('insufficient');
     expect(grounding('How do Discord attachments work?')).toBe('not_required');
     expect(grounding('Explain how to convert a CSV file to JSON')).toBe('not_required');
+    expect(grounding('Explain how to create a CSV file')).toBe('not_required');
   });
 });
