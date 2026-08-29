@@ -89,4 +89,9 @@ run_assert_case "${TMP_DIR}/env-empty" fail
 printf 'HERTA_RUNTIME_SECRET_KEY=%s\n' "${SECRET_SENTINEL}" > "${TMP_DIR}/env-wrong-length"
 run_assert_case "${TMP_DIR}/env-wrong-length" fail
 
+# 復号すると32 bytesだが長さが4の倍数でないunpadded base64は
+# resolveRuntimeSecretMasterKey() と同様に拒否する。
+printf 'HERTA_RUNTIME_SECRET_KEY=%s\n' "${VALID_B64%=}" > "${TMP_DIR}/env-unpadded-b64"
+run_assert_case "${TMP_DIR}/env-unpadded-b64" fail
+
 echo "deploy common tests passed"

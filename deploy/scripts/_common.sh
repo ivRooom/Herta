@@ -50,8 +50,9 @@ assert_runtime_secret_key() {
     return 0
   fi
 
-  if printf '%s' "${raw}" | grep -qE '^[A-Za-z0-9+/]+={0,2}$'; then
-    decoded_bytes="$(printf '%s' "${raw}" | base64 -d 2>/dev/null | wc -c | tr -d ' ')"
+  # base64判定は resolveRuntimeSecretMasterKey() と同じく長さが4の倍数であることも要求する。
+  if printf '%s' "${raw}" | grep -qE '^[A-Za-z0-9+/]+={0,2}$' && [ $(( ${#raw} % 4 )) -eq 0 ]; then
+    decoded_bytes="$(printf '%s' "${raw}" | base64 -d 2>/dev/null | wc -c | tr -d ' ' || true)"
     if [ "${decoded_bytes}" = '32' ]; then
       return 0
     fi
