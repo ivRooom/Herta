@@ -1,10 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import {
-  mimeTypeForArtifactFilename,
-  normalizeArtifactFilename,
-  type AiArtifactConfig,
-  type AiArtifactKind,
-} from '@herta/plugin-catalog/ai-artifact';
+import type { AiArtifactConfig, AiArtifactKind } from '@herta/plugin-catalog/ai-artifact';
 import {
   AI_OPENAI_MODELS,
   AiFoundationError,
@@ -17,6 +12,12 @@ import {
   type AiUsage,
 } from '@herta/plugin-catalog/ai-service';
 import type { AiRuntimeConfigurationResolver } from '@herta/plugin-catalog/ai-runtime-config';
+import { AI_IMAGE_ARTIFACT_DEFAULTS } from './image-artifact-validation.js';
+import {
+  isAiExecutionImageArtifactPolicy,
+  resolveAiExecutionArtifactDownloadPolicy,
+  type AiExecutionArtifactDownloadPolicy,
+} from './execution-artifact-validation.js';
 import { OpenAiRuntimeGenerationService } from './runtime-service.js';
 
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
@@ -251,10 +252,28 @@ export class OpenAiCodeExecutionService implements AiCodeExecutionService {
           if (citations.length > request.artifactConfig.maxFiles) {
             throw new AiCodeExecutionError('output_limit_exceeded');
           }
+
+          let policies: AiExecutionArtifactDownloadPolicy[];
+          try {
+            policies = citations.map((citation) =>
+              resolveAiExecutionArtifactDownloadPolicy(citation.filename, request.artifactConfig),
+            );
+          } catch {
+            throw new AiCodeExecutionError('artifact_download_failed');
+          }
+          if (
+            policies.filter(isAiExecutionImageArtifactPolicy).length >
+            AI_IMAGE_ARTIFACT_DEFAULTS.maxFiles
+          ) {
+            throw new AiCodeExecutionError('output_limit_exceeded');
+          }
+
           captured.files = await Promise.all(
-            citations.map((citation) =>
-              this.downloadContainerFile(citation, request.artifactConfig, init.signal),
-            ),
+            citations.map((citation, index) => {
+              const policy = policies[index];
+              if (!policy) throw new AiCodeExecutionError('malformed_output');
+              return this.downloadContainerFile(citation, policy, init.signal);
+            }),
           );
         }
       }
@@ -342,13 +361,9 @@ export class OpenAiCodeExecutionService implements AiCodeExecutionService {
 
   private async downloadContainerFile(
     citation: ContainerFileCitation,
-    artifactConfig: AiArtifactConfig,
+    policy: AiExecutionArtifactDownloadPolicy,
     signal: AbortSignal | null | undefined,
   ): Promise<AiCodeExecutionFile> {
-    const filename = normalizeArtifactFilename(citation.filename);
-    const mimeType = mimeTypeForArtifactFilename(filename);
-    if (!mimeType) throw new AiCodeExecutionError('artifact_download_failed');
-
     const response = await this.fetchImpl(
       `${OPENAI_API_BASE}/containers/${encodeURIComponent(citation.containerId)}/files/${encodeURIComponent(citation.fileId)}/content`,
       {
@@ -367,14 +382,23 @@ export class OpenAiCodeExecutionService implements AiCodeExecutionService {
     }
 
     const declaredMime = normalizeContentType(response.headers.get('content-type'));
-    if (declaredMime && declaredMime !== 'application/octet-stream' && declaredMime !== mimeType) {
+    if (
+      declaredMime &&
+      declaredMime !== 'application/octet-stream' &&
+      declaredMime !== policy.mimeType
+    ) {
       await response.body?.cancel().catch(() => undefined);
       throw new AiCodeExecutionError('artifact_download_failed');
     }
 
-    const bytes = await readBoundedBytes(response, artifactConfig.maxBytes);
-    assertUtf8Text(bytes);
-    return { filename, mimeType, bytes, kind: artifactKindForFilename(filename) };
+    const bytes = await readBoundedBytes(response, policy.maxBytes);
+    if (policy.requiresUtf8) assertUtf8Text(bytes);
+    return {
+      filename: policy.filename,
+      mimeType: policy.mimeType,
+      bytes,
+      kind: policy.kind,
+    };
   }
 }
 
@@ -469,21 +493,6 @@ function assertCodeInterpreterInvoked(payload: Record<string, unknown>): void {
 
 function isCompletedResponse(payload: Record<string, unknown>): boolean {
   return payload['status'] === 'completed';
-}
-
-function artifactKindForFilename(filename: string): AiArtifactKind {
-  const lower = filename.toLowerCase();
-  if (lower.endsWith('.py')) return 'code';
-  if (lower.endsWith('.md') || lower.endsWith('.txt')) return 'document';
-  if (
-    lower.endsWith('.json') ||
-    lower.endsWith('.yaml') ||
-    lower.endsWith('.yml') ||
-    lower.endsWith('.csv')
-  ) {
-    return 'data';
-  }
-  return 'file';
 }
 
 function boundedSummary(value: string): string {

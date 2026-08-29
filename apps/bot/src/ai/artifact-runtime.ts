@@ -14,6 +14,10 @@ import {
   type AiCodeExecutionService,
 } from './code-execution-service.js';
 import {
+  AiExecutionArtifactValidationError,
+  validateAiExecutionArtifactBatch,
+} from './execution-artifact-validation.js';
+import {
   AiImageGenerationError,
   type AiImageGenerationErrorCategory,
   type AiImageGenerationService,
@@ -327,18 +331,7 @@ export class AiArtifactRuntime {
         ...request,
         artifactConfig: this.artifactConfig,
       });
-      const artifacts =
-        result.files.length === 0
-          ? []
-          : validateAiArtifactBatch(
-              result.files.map((file) => ({
-                filename: file.filename,
-                mimeType: file.mimeType,
-                content: file.bytes,
-                kind: file.kind,
-              })),
-              this.artifactConfig,
-            );
+      const artifacts = await validateAiExecutionArtifactBatch(result.files, this.artifactConfig);
       if (!result.sandboxDestroyed) throw new AiCodeExecutionError('cleanup_failed');
 
       this.emitTelemetry({
@@ -499,7 +492,11 @@ function successTelemetry(
 }
 
 function isArtifactValidationError(error: unknown): boolean {
-  return error instanceof Error && error.name === 'AiArtifactValidationError';
+  return (
+    error instanceof AiExecutionArtifactValidationError ||
+    error instanceof AiImageArtifactValidationError ||
+    (error instanceof Error && error.name === 'AiArtifactValidationError')
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
