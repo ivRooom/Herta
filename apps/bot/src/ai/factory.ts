@@ -11,7 +11,10 @@ import {
   type RedisEvalClient,
 } from '@herta/plugin-catalog/ai-service';
 import { AiRuntimeConfigurationResolver } from '@herta/plugin-catalog/ai-runtime-config';
-import { AI_RUNTIME_SAFE_DEFAULT } from '@herta/plugin-catalog/ai-runtime-policy';
+import {
+  AI_RUNTIME_SAFE_DEFAULT,
+  isAiProviderCapabilityEnabled,
+} from '@herta/plugin-catalog/ai-runtime-policy';
 import {
   OpenAiCodeExecutionService,
   type AiCodeExecutionService,
@@ -86,6 +89,7 @@ export async function resolveAiOpenAiCredential(
  * Bot-side bootstrap。AIがOFF/kill-switch中、またはcredential不成立でもBot本体は起動可能にする。
  * Global enable / kill-switchはconsole runtime settingに移さずenv gateのまま維持する。
  * Model/reasoningはrequest-time resolverが最大5秒程度のbounded staleで追随する。
+ * Provider tool adapterはserver-side capability policyに存在するものだけbootstrapする。
  */
 export async function createAiFoundationRuntime(
   options: AiFoundationRuntimeOptions,
@@ -97,7 +101,11 @@ export async function createAiFoundationRuntime(
     HERTA_AI_MODEL_PROFILE: AI_RUNTIME_SAFE_DEFAULT.modelProfile,
     HERTA_AI_MODEL: undefined,
   });
-  if (!baseConfig.enabled || baseConfig.killSwitch) {
+  if (
+    !baseConfig.enabled ||
+    baseConfig.killSwitch ||
+    !isAiProviderCapabilityEnabled(baseConfig.provider, 'text')
+  ) {
     return { service: null, status: 'disabled', credentialSource: null };
   }
 
@@ -113,10 +121,6 @@ export async function createAiFoundationRuntime(
     readConfiguration: options.readRuntimeConfiguration,
   });
   const guardStore = new RedisAiGuardStore({ redis: options.redis });
-  const imageToolGuardStore = new RedisAiGuardStore({
-    redis: options.redis,
-    prefix: 'herta:ai:image-generation',
-  });
   const service = new OpenAiRuntimeGenerationService({
     baseConfig,
     apiKey: credential.apiKey,
@@ -125,23 +129,33 @@ export async function createAiFoundationRuntime(
     telemetry: options.telemetry,
     fetchImpl: options.fetchImpl,
   });
-  const executionService = new OpenAiCodeExecutionService({
-    baseConfig,
-    apiKey: credential.apiKey,
-    guardStore,
-    runtimeResolver,
-    telemetry: options.telemetry,
-    fetchImpl: options.fetchImpl,
-  });
-  const imageGenerationService = new OpenAiImageGenerationService({
-    baseConfig,
-    apiKey: credential.apiKey,
-    guardStore,
-    toolGuardStore: imageToolGuardStore,
-    runtimeResolver,
-    telemetry: options.telemetry,
-    fetchImpl: options.fetchImpl,
-  });
+  const executionService = isAiProviderCapabilityEnabled(baseConfig.provider, 'code_interpreter')
+    ? new OpenAiCodeExecutionService({
+        baseConfig,
+        apiKey: credential.apiKey,
+        guardStore,
+        runtimeResolver,
+        telemetry: options.telemetry,
+        fetchImpl: options.fetchImpl,
+      })
+    : null;
+  const imageGenerationService = isAiProviderCapabilityEnabled(
+    baseConfig.provider,
+    'image_generation',
+  )
+    ? new OpenAiImageGenerationService({
+        baseConfig,
+        apiKey: credential.apiKey,
+        guardStore,
+        toolGuardStore: new RedisAiGuardStore({
+          redis: options.redis,
+          prefix: 'herta:ai:image-generation',
+        }),
+        runtimeResolver,
+        telemetry: options.telemetry,
+        fetchImpl: options.fetchImpl,
+      })
+    : null;
 
   return {
     service,
