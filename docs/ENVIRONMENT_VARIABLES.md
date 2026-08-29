@@ -83,6 +83,12 @@ Runtime Secret StoreのAES-256-GCM暗号化・復号に使うbootstrap master ke
 `STUDIO_SEMANTIC_SEARCH_PROVIDER=openai`の場合、保存済みcredentialがまだ無い場合でもRuntime Secret
 Storeを安全に確認するため、`HERTA_RUNTIME_SECRET_KEY`を必ず設定してください。
 
+本番では`HERTA_RUNTIME_SECRET_KEY`を`.env.production`へ手入力せず、`Deploy Production` workflowが
+SSM SecureString `/ivrm/runtime/herta/runtime-secret-key`から取得して注入します。`studio`起動時に
+値が未設定だと、`AI Provider Credential Settings`からのOpenAI API key保存は
+`Secret暗号化設定がまだ準備されていません` (HTTP 503) になります。手順は
+[RUNTIME_SECRETS.md](./RUNTIME_SECRETS.md)を参照してください。
+
 `OPENAI_API_KEY`は移行期間だけのfallbackです。Runtime Secret Storeのreadが正常に完了し、master keyが
 有効で、`openai.api_key`が未登録の場合にだけ利用されます。DB unavailable、master key未設定・不正、
 decrypt failure、その他secret-store read failureでは **fail closed** し、`OPENAI_API_KEY`へ切り替えません。

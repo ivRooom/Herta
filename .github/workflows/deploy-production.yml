@@ -116,39 +116,38 @@ jobs:
           allowed-account-ids: '911291529944'
           role-session-name: HertaProductionDeploy
 
-      - name: Spotify runtime secretsをSSMから取得
+      - name: Runtime secretsをSSMから取得
         shell: bash
         run: |
           set -euo pipefail
 
-          SPOTIFY_CLIENT_ID_VALUE="$(aws ssm get-parameter \
-            --region ap-northeast-1 \
-            --name '/ivrm/runtime/spotify/client-id' \
-            --with-decryption \
-            --query 'Parameter.Value' \
-            --output text)"
-          SPOTIFY_CLIENT_SECRET_VALUE="$(aws ssm get-parameter \
-            --region ap-northeast-1 \
-            --name '/ivrm/runtime/spotify/client-secret' \
-            --with-decryption \
-            --query 'Parameter.Value' \
-            --output text)"
+          # SSM SecureStringから値を取得し、maskしてからGITHUB_ENVへ渡す共通処理。
+          # 値そのものはlogへ出さず、長さだけを診断用に表示する。
+          fetch_ssm_secret() {
+            ssm_name="$1"
+            env_key="$2"
+            value="$(aws ssm get-parameter \
+              --region ap-northeast-1 \
+              --name "${ssm_name}" \
+              --with-decryption \
+              --query 'Parameter.Value' \
+              --output text)"
+            if [ -z "${value}" ] || [ "${value}" = 'None' ]; then
+              echo "ERROR: SSM parameter ${ssm_name} が未設定です。" >&2
+              exit 1
+            fi
+            echo "::add-mask::${value}"
+            printf '%s=%s\n' "${env_key}" "${value}" >> "${GITHUB_ENV}"
+            echo "  ${ssm_name} -> ${env_key} を取得しました（値は非表示、${#value} chars）"
+            unset value
+          }
 
-          if [ -z "${SPOTIFY_CLIENT_ID_VALUE}" ] || [ "${SPOTIFY_CLIENT_ID_VALUE}" = 'None' ] || \
-             [ -z "${SPOTIFY_CLIENT_SECRET_VALUE}" ] || [ "${SPOTIFY_CLIENT_SECRET_VALUE}" = 'None' ]; then
-            echo "ERROR: Spotify runtime secretsがSSMにありません。" >&2
-            exit 1
-          fi
+          echo "=== Spotify runtime secrets ==="
+          fetch_ssm_secret '/ivrm/runtime/spotify/client-id' SPOTIFY_CLIENT_ID
+          fetch_ssm_secret '/ivrm/runtime/spotify/client-secret' SPOTIFY_CLIENT_SECRET
 
-          echo "::add-mask::${SPOTIFY_CLIENT_ID_VALUE}"
-          echo "::add-mask::${SPOTIFY_CLIENT_SECRET_VALUE}"
-          {
-            echo "SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID_VALUE}"
-            echo "SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET_VALUE}"
-          } >> "${GITHUB_ENV}"
-
-          echo "Spotify runtime secretsをGitHub Actions側で取得しました（値は非表示、ID=${#SPOTIFY_CLIENT_ID_VALUE} chars / Secret=${#SPOTIFY_CLIENT_SECRET_VALUE} chars）"
-          unset SPOTIFY_CLIENT_ID_VALUE SPOTIFY_CLIENT_SECRET_VALUE
+          echo "=== Runtime Secret Encryption master key ==="
+          fetch_ssm_secret '/ivrm/runtime/herta/runtime-secret-key' HERTA_RUNTIME_SECRET_KEY
 
       - name: LightsailへSSHデプロイ
         uses: appleboy/ssh-action@v1.2.5
@@ -156,7 +155,7 @@ jobs:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          envs: DEPLOY_REF,HERTA_IMAGE,GHCR_USERNAME,GHCR_TOKEN,SPOTIFY_CLIENT_ID,SPOTIFY_CLIENT_SECRET
+          envs: DEPLOY_REF,HERTA_IMAGE,GHCR_USERNAME,GHCR_TOKEN,SPOTIFY_CLIENT_ID,SPOTIFY_CLIENT_SECRET,HERTA_RUNTIME_SECRET_KEY
           command_timeout: 15m
           script: |
             set -euo pipefail
@@ -188,9 +187,14 @@ jobs:
               git checkout --detach "${DEPLOY_REF}"
             fi
 
-            echo "=== Optional runtime secretsをGitHub Actionsから同期 ==="
+            echo "=== Runtime secretsをGitHub Actionsから同期 ==="
             if [ -z "${SPOTIFY_CLIENT_ID:-}" ] || [ -z "${SPOTIFY_CLIENT_SECRET:-}" ]; then
               echo "ERROR: GitHub ActionsからSpotify runtime secretsが渡されていません。" >&2
+              exit 1
+            fi
+            if [ -z "${HERTA_RUNTIME_SECRET_KEY:-}" ]; then
+              echo "ERROR: GitHub ActionsからHERTA_RUNTIME_SECRET_KEYが渡されていません。" >&2
+              echo "       SSM parameter /ivrm/runtime/herta/runtime-secret-key を確認してください。" >&2
               exit 1
             fi
 
@@ -205,7 +209,8 @@ jobs:
             }
             upsert_env SPOTIFY_CLIENT_ID "${SPOTIFY_CLIENT_ID}"
             upsert_env SPOTIFY_CLIENT_SECRET "${SPOTIFY_CLIENT_SECRET}"
-            echo "Spotify runtime secretsを同期しました（値は非表示）"
+            upsert_env HERTA_RUNTIME_SECRET_KEY "${HERTA_RUNTIME_SECRET_KEY}"
+            echo "Runtime secretsを同期しました（値は非表示）"
 
             # target revisionのdeploy helperを使ってimage/migration/service操作を行う。
             # readinessだけはworkflow側の現行security boundaryとして固定し、

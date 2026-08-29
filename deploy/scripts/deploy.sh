@@ -43,6 +43,7 @@ if ! declare -F wait_for_health >/dev/null || \
   eval "${AOP_WAIT_FOR_EDGE_DEF}"
 fi
 require_env_file
+assert_runtime_secret_key
 
 export HERTA_IMAGE="$(resolve_image_for_ref HEAD)"
 echo "配布image: ${HERTA_IMAGE}"

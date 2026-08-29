@@ -54,6 +54,37 @@ openssl rand -base64 32
 - この値を失うとDB内のcredentialを復号できない
 - v1ではmaster keyのオンラインrotation/re-encryptionは未実装。安易に値を変更しない
 
+### Production Secret Injection (AWS SSM Parameter Store)
+
+本番の`.env.production`へは手作業で書かず、既存のSpotify runtime secretと同じ
+SSM Parameter Store同期経路で注入します。
+
+| SSM parameter (`ap-northeast-1`)         | type         | 注入先 env variable        |
+| ---------------------------------------- | ------------ | -------------------------- |
+| `/ivrm/runtime/herta/runtime-secret-key` | SecureString | `HERTA_RUNTIME_SECRET_KEY` |
+
+- `Deploy Production` workflow (`.github/workflows/deploy-production.yml`) が deploy 時に
+  `aws ssm get-parameter --with-decryption` で取得し、`::add-mask::` した上でSSH経由の
+  `upsert_env` で Lightsail の `.env.production` へ書き込みます。
+- 値がCI log / shell outputへ出ないよう、長さ以外は表示しません。
+- SSM parameterが未設定の場合、deployは明示的に失敗します（fail closed）。
+- `docker-compose.prod.yml` は `studio` / `bot` サービスへ `HERTA_RUNTIME_SECRET_KEY` を渡します。
+- `deploy/scripts/{deploy,start,rollback}.sh` は起動前に `assert_runtime_secret_key` で
+  `.env.production` にAES-256向けの正しい長さ (32 bytes) で存在することを検証します。
+
+初回のparameter作成 (値は生成後に安全に保管し、logへ残さないこと):
+
+```bash
+MASTER_KEY="$(openssl rand -base64 32)"
+aws ssm put-parameter \
+  --region ap-northeast-1 \
+  --name '/ivrm/runtime/herta/runtime-secret-key' \
+  --type SecureString \
+  --value "${MASTER_KEY}" \
+  --no-overwrite
+unset MASTER_KEY
+```
+
 ## Studio UX
 
 `Dashboard > Settings > AI Provider Credentials` からOpenAI API keyを設定します。
@@ -104,8 +135,10 @@ runtime secretの復号失敗、master key未設定・不正、DB read failure�
 この機能をproductionで利用する前に以下を満たします。
 
 1. DB migration `20260826102000_runtime_secrets` を適用
-2. `HERTA_RUNTIME_SECRET_KEY` をproductionへ一度だけ設定
-3. Studioを再作成してmaster key envを反映
+2. SSM parameter `/ivrm/runtime/herta/runtime-secret-key` (SecureString) を一度だけ作成
+   （[Production Secret Injection](#production-secret-injection-aws-ssm-parameter-store) 参照）
+3. `Deploy Production` workflowを実行し、`HERTA_RUNTIME_SECRET_KEY` を `.env.production` へ注入して
+   `studio` / `bot` を再作成する
 4. Herta管理者でSettingsを開く
 5. OpenAI API keyをconsoleから登録
 6. 保存後もkey本体が再表示されないことを確認

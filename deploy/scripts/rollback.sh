@@ -16,6 +16,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 require_env_file
+assert_runtime_secret_key
 
 git fetch --prune --tags origin
 TARGET="${1:-HEAD~1}"
