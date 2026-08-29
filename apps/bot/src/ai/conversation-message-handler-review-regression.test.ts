@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { resolveAiConversationGroundingState } from './conversation-message-handler.js';
 
 const grounding = resolveAiConversationGroundingState;
+const suppliedStockPriceCode =
+  'Execute Python code that displays the current stock price passed in as an argument';
 
 describe('Discord conversation grounding review regressions', () => {
   it('code executionがローカルで取得するcurrent値は外部grounding不要にする', () => {
     expect(grounding('Run Python code that prints the current time')).toBe('not_required');
-    expect(
-      grounding('Execute Python code that displays the current stock price passed in as an argument'),
-    ).toBe('not_required');
+    expect(grounding(suppliedStockPriceCode)).toBe('not_required');
     expect(grounding('Run Python code with the current time hard-coded')).toBe('insufficient');
   });
 
