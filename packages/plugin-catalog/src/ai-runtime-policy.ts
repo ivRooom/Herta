@@ -204,7 +204,9 @@ export function getAiRuntimePolicyMetadata() {
   }));
 }
 
-export function getAiProviderCapabilities(provider: AiProviderName): readonly AiProviderCapability[] {
+export function getAiProviderCapabilities(
+  provider: AiProviderName,
+): readonly AiProviderCapability[] {
   return AI_PROVIDER_CAPABILITY_POLICY[provider];
 }
 
