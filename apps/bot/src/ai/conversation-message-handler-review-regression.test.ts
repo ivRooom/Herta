@@ -1,46 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { resolveAiConversationGroundingState } from './conversation-message-handler.js';
 
+const grounding = resolveAiConversationGroundingState;
+
 describe('Discord conversation grounding review regressions', () => {
   it('code executionがローカルで取得するcurrent値は外部grounding不要にする', () => {
+    expect(grounding('Run Python code that prints the current time')).toBe('not_required');
     expect(
-      resolveAiConversationGroundingState('Run Python code that prints the current time'),
+      grounding('Execute Python code that displays the current stock price passed in as an argument'),
     ).toBe('not_required');
-    expect(
-      resolveAiConversationGroundingState(
-        'Execute Python code that displays the current stock price passed in as an argument',
-      ),
-    ).toBe('not_required');
-    expect(
-      resolveAiConversationGroundingState('Run Python code with the current time hard-coded'),
-    ).toBe('insufficient');
+    expect(grounding('Run Python code with the current time hard-coded')).toBe('insufficient');
   });
 
   it('未取得のDiscord添付内容に依存する依頼はfail closedする', () => {
-    expect(resolveAiConversationGroundingState('What does the attached report say?')).toBe(
-      'insufficient',
-    );
-    expect(resolveAiConversationGroundingState('Summarize the uploaded document')).toBe(
-      'insufficient',
-    );
-    expect(resolveAiConversationGroundingState('添付ファイルの内容を教えて')).toBe('insufficient');
-    expect(resolveAiConversationGroundingState('Summarize this file')).toBe('insufficient');
-    expect(resolveAiConversationGroundingState('このファイルを要約して')).toBe('insufficient');
-    expect(resolveAiConversationGroundingState('Convert this file to CSV')).toBe('insufficient');
-    expect(resolveAiConversationGroundingState('Extract data from that document')).toBe(
-      'insufficient',
-    );
-    expect(resolveAiConversationGroundingState('Convert the uploaded file to JSON')).toBe(
-      'insufficient',
-    );
-    expect(resolveAiConversationGroundingState('このファイルをCSVに変換して')).toBe(
-      'insufficient',
-    );
-    expect(resolveAiConversationGroundingState('How do Discord attachments work?')).toBe(
-      'not_required',
-    );
-    expect(resolveAiConversationGroundingState('Explain how to convert a CSV file to JSON')).toBe(
-      'not_required',
-    );
+    expect(grounding('What does the attached report say?')).toBe('insufficient');
+    expect(grounding('Summarize the uploaded document')).toBe('insufficient');
+    expect(grounding('添付ファイルの内容を教えて')).toBe('insufficient');
+    expect(grounding('Summarize this file')).toBe('insufficient');
+    expect(grounding('このファイルを要約して')).toBe('insufficient');
+    expect(grounding('Convert this file to CSV')).toBe('insufficient');
+    expect(grounding('Extract data from that document')).toBe('insufficient');
+    expect(grounding('Convert the uploaded file to JSON')).toBe('insufficient');
+    expect(grounding('このファイルをCSVに変換して')).toBe('insufficient');
+    expect(grounding('How do Discord attachments work?')).toBe('not_required');
+    expect(grounding('Explain how to convert a CSV file to JSON')).toBe('not_required');
   });
 });
