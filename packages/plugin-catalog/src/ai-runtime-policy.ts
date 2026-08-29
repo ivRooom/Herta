@@ -12,8 +12,10 @@ export { AI_MODEL_PROFILES, AI_OPENAI_MODELS, AI_SUPPORTED_PROVIDERS } from './a
 export type { AiModelProfile, AiOpenAiModel, AiProviderName } from './ai-service.js';
 
 export const AI_REASONING_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+export const AI_PROVIDER_CAPABILITIES = ['text', 'code_interpreter', 'image_generation'] as const;
 
 export type AiReasoningEffort = (typeof AI_REASONING_EFFORTS)[number];
+export type AiProviderCapability = (typeof AI_PROVIDER_CAPABILITIES)[number];
 
 export interface AiTokenPricing {
   inputUsdPerMillion: number;
@@ -68,6 +70,15 @@ const OPENAI_REASONING_EFFORTS: readonly AiReasoningEffort[] = [
   'xhigh',
   'max',
 ];
+
+/**
+ * Tool/provider capability routing is code-reviewed server policy. Client input may select neither
+ * arbitrary provider IDs nor arbitrary tool names. A capability is available only when it is
+ * present in this provider allowlist and the matching server adapter is bootstrapped.
+ */
+const AI_PROVIDER_CAPABILITY_POLICY: Record<AiProviderName, readonly AiProviderCapability[]> = {
+  openai: ['text', 'code_interpreter', 'image_generation'],
+};
 
 /**
  * Code-reviewed provider/model/reasoning policy.
@@ -180,6 +191,7 @@ export function resolveAiRuntimeEnvDefault(
 export function getAiRuntimePolicyMetadata() {
   return AI_SUPPORTED_PROVIDERS.map((provider) => ({
     provider,
+    capabilities: [...AI_PROVIDER_CAPABILITY_POLICY[provider]],
     profiles: AI_MODEL_PROFILES.map((modelProfile) => {
       const entry = AI_RUNTIME_POLICY[provider][modelProfile];
       return {
@@ -190,6 +202,17 @@ export function getAiRuntimePolicyMetadata() {
       };
     }),
   }));
+}
+
+export function getAiProviderCapabilities(provider: AiProviderName): readonly AiProviderCapability[] {
+  return AI_PROVIDER_CAPABILITY_POLICY[provider];
+}
+
+export function isAiProviderCapabilityEnabled(
+  provider: AiProviderName,
+  capability: AiProviderCapability,
+): boolean {
+  return AI_PROVIDER_CAPABILITY_POLICY[provider].includes(capability);
 }
 
 export function getAiRuntimePolicyEntry(
