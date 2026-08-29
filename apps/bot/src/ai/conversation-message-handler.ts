@@ -29,7 +29,7 @@ const EXPLICIT_SOURCE_REQUEST_PATTERN =
 const CURRENT_EXTERNAL_FACT_PATTERN =
   /(?:最新|現在の|今の|今日の|本日の).{0,60}(?:状態|状況|価格|料金|バージョン|version|リリース|release|PR|Issue|CI|デプロイ|deploy|稼働|障害|ニュース|天気|株価|為替)|(?:状態|状況|価格|料金|バージョン|リリース|PR|Issue|CI|デプロイ|稼働|障害|ニュース|天気|株価|為替).{0,60}(?:最新|現在|今|今日|本日)|\b(?:latest|current|today(?:'s)?|now)\b.{0,60}\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b|\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b.{0,60}\b(?:latest|current|today(?:'s)?|now)\b/i;
 const CURRENT_REQUEST_MARKER_PATTERN =
-  /(?:最新|今日|本日|今(?!後)|現在の|現在(?=(?:時刻|時間|日時|日付|価格|料金|状態|状況|天気|株価|為替|結果|スコア)))|\b(?:latest|today(?:'s)?|now|current)\b/i;
+  /(?:最新|今日|本日|昨日|昨夜|昨晩|前日|今(?!後)|現在の|現在(?=(?:時刻|時間|日時|日付|価格|料金|状態|状況|天気|株価|為替|結果|スコア)))|\b(?:latest|today(?:'s)?|yesterday(?:'s)?|last\s+night(?:'s)?|now|current)\b/i;
 const CURRENT_REQUEST_FACT_PATTERN =
   /(?:[?？]|教えて|知りたい|誰|何|いつ|どこ|いくら|何時|結果|スコア|状態|状況|\b(?:tell me|show me|give me|list|provide|who|what|when|where|which|how much|how many|score|time)\b)/i;
 const EVERGREEN_CURRENT_CLAUSE_PATTERNS: readonly RegExp[] = [
@@ -62,9 +62,9 @@ const EXPLICIT_CHECK_PATTERN =
 const EXTERNAL_CONTENT_REQUEST_PATTERN =
   /(?:\bwhat\s+(?:does|do)\s+(?:the\s+)?(?:official\s+(?:documentation|docs?)|website|site)\b.{0,60}\b(?:say|contain|state|mention|show)\b|\b(?:summarize|inspect|read)\b.{0,30}\b(?:(?:the|this|that)\s+(?:website|site)|(?:the\s+)?official\s+(?:documentation|docs?))\b|(?:公式(?:ドキュメント|docs?)|ウェブサイト|website|サイト).{0,60}(?:何(?:が|と)|内容|書いて|記載|要約|読んで))/i;
 const ATTACHMENT_CONTENT_REQUEST_PATTERN =
-  /(?:\bwhat\s+(?:does|is|are)\b.{0,60}\b(?:the\s+)?(?:attached|uploaded)\b|\b(?:summari[sz]e|analy[sz]e|read|inspect|describe|convert|transform|extract|translate|create|make|generate|build)\b.{0,60}\b(?:the\s+)?(?:attached|uploaded)\b|(?:添付|アップロード).{0,50}(?:内容|要約|まとめ|読ん|解析|分析|説明|変換|抽出|翻訳|作成|作って|生成|何が|何を|教えて|を元に|をもとに))/i;
+  /(?:\bwhat\s+(?:does|is|are)\b.{0,60}\b(?:the\s+)?(?:attached|uploaded)\b|\b(?:summari[sz]e|analy[sz]e|read|inspect|describe|convert|transform|extract|translate|create|make|generate|build)\b.{0,60}\b(?:the\s+)?(?:attached|uploaded)\b|\b(?:the\s+)?(?:attached|uploaded)\b.{0,60}\b(?:summari[sz]e|analy[sz]e|read|inspect|describe|convert|transform|extract|translate|create|make|generate|build)\b|(?:添付|アップロード).{0,50}(?:内容|要約|まとめ|読ん|解析|分析|説明|変換|抽出|翻訳|作成|作って|生成|何が|何を|教えて|を元に|をもとに))/i;
 const DEICTIC_FILE_CONTENT_REQUEST_PATTERN =
-  /(?:\b(?:summari[sz]e|analy[sz]e|read|inspect|describe|convert|transform|extract|translate|create|make|generate|build)\b.{0,30}\b(?:this|that)\s+(?:file|document|report)\b|\bwhat\s+(?:does|is|are)\s+(?:in\s+)?(?:this|that)\s+(?:file|document|report)\b|(?:この|その)(?:ファイル|文書|資料|レポート).{0,30}(?:内容|要約|まとめ|読ん|解析|分析|説明|変換|抽出|翻訳|作成|作って|生成|何が|何を|教えて))/i;
+  /(?:\b(?:summari[sz]e|analy[sz]e|read|inspect|describe|convert|transform|extract|translate|create|make|generate|build)\b.{0,30}\b(?:this|that)\s+(?:file|document|report)\b|\b(?:this|that)\s+(?:file|document|report)\b.{0,60}\b(?:summari[sz]e|analy[sz]e|read|inspect|describe|convert|transform|extract|translate|create|make|generate|build)\b|\bwhat\s+(?:does|is|are)\s+(?:in\s+)?(?:this|that)\s+(?:file|document|report)\b|(?:この|その)(?:ファイル|文書|資料|レポート).{0,30}(?:内容|要約|まとめ|読ん|解析|分析|説明|変換|抽出|翻訳|作成|作って|生成|何が|何を|教えて))/i;
 const EXTERNAL_STATE_PATTERN =
   /(?:GitHub|repository|リポジトリ|production|本番|deploy|デプロイ|release|リリース).{0,80}(?:状態|状況|結果|成功|失敗|稼働|障害|何番)|(?:pull request|\bPR\b|\bIssue\b|\bCI\b).{0,80}(?:状態|状況|結果|成功|失敗|\b(?:merged|open|closed|green|red)\b|何番)/i;
 const STATE_BEFORE_EXTERNAL_TARGET_PATTERN =
@@ -75,7 +75,7 @@ const REPOSITORY_CONTENT_REQUEST_PATTERN =
   /(?:[?？]|を元に|をもとに|に基づいて|(?:内容|詳細)(?:を|について)|(?:要約|まとめ)(?:して|て)|について(?:教えて|説明して|まとめて|README)|\b(?:based on|using|from|about|summari[sz]e|what|show|tell|describe|explain)\b)/i;
 const URL_PATTERN = /https?:\/\/\S+/i;
 const URL_DEREFERENCE_PATTERN =
-  /(?:https?:\/\/\S+[\s\S]{0,80}(?:を元に|をもとに|の内容(?:を|について)?|を開いて|を読んで|を取得して|を要約して|を解析して|を確認して|を調べて|を検索して|を検証して)|(?:を元に|をもとに|内容を|開いて|読んで|取得して|要約して|解析して|確認して|調べて|検索して|検証して|\bbased on\b|\busing\b|\bfrom\b|\bread\b|\bopen\b|\bvisit\b|\bfetch\b|\binspect\b|\bsummarize\b|\banaly[sz]e\b|\blook\s+up\b|\bcheck\b|\bverify\b|\bconfirm\b|\bsearch\b)[\s\S]{0,80}https?:\/\/\S+|\bwhat does\s+https?:\/\/\S+\s+(?:say|contain|show)\b|\bwhat is\s+on\s+https?:\/\/\S+|\btell me\s+what(?:'s| is)\s+on\s+https?:\/\/\S+|\bcan you\s+inspect\s+https?:\/\/\S+)/i;
+  /(?:https?:\/\/\S+[\s\S]{0,80}(?:を元に|をもとに|の内容(?:を|について)?|を開いて|を読んで|を取得して|を要約して|を解析して|を確認して|を調べて|を検索して|を検証して|\b(?:read|open|visit|fetch|inspect|summarize|analy[sz]e|look\s+up|check|verify|confirm|search|download|convert|transform|extract|translate)\b)|(?:を元に|をもとに|内容を|開いて|読んで|取得して|要約して|解析して|確認して|調べて|検索して|検証して|\bbased on\b|\busing\b|\bfrom\b|\bread\b|\bopen\b|\bvisit\b|\bfetch\b|\binspect\b|\bsummarize\b|\banaly[sz]e\b|\blook\s+up\b|\bcheck\b|\bverify\b|\bconfirm\b|\bsearch\b|\bdownload\b|\bconvert\b|\btransform\b|\bextract\b|\btranslate\b)[\s\S]{0,80}https?:\/\/\S+|\bwhat does\s+https?:\/\/\S+\s+(?:say|contain|show)\b|\bwhat is\s+on\s+https?:\/\/\S+|\btell me\s+what(?:'s| is)\s+on\s+https?:\/\/\S+|\bcan you\s+inspect\s+https?:\/\/\S+)/i;
 
 export interface AiConversationMessageHandlerOptions extends AiArtifactMessageHandlerOptions {
   generationService: AiRuntimeGenerationService | null;
