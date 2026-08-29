@@ -47,8 +47,8 @@ describe('Discord conversation grounding review regressions', () => {
   });
 
   it('直近の相対日時を使う外部事実依頼はfail closedする', () => {
-    expect(grounding("Who won yesterday's Yankees game?")).toBe('insufficient');
-    expect(grounding("What was last night's score?")).toBe('insufficient');
+    expect(grounding('Who won yesterday\'s Yankees game?')).toBe('insufficient');
+    expect(grounding('What was last night\'s score?')).toBe('insufficient');
     expect(grounding('昨日の試合結果を教えて')).toBe('insufficient');
     expect(grounding('昨夜のニュースを教えて')).toBe('insufficient');
   });
