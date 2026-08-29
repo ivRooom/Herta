@@ -54,49 +54,42 @@ openssl rand -base64 32
 - この値を失うとDB内のcredentialを復号できない
 - v1ではmaster keyのオンラインrotation/re-encryptionは未実装。安易に値を変更しない
 
-### Production Secret Injection (AWS SSM Parameter Store)
+### Production Secret Injection (GitHub Environment Secret)
 
-本番の`.env.production`へは手作業で書かず、既存のSpotify runtime secretと同じ
-SSM Parameter Store同期経路で注入します。
+本番の`.env.production`へは手作業で書かず、`Deploy Production` workflow が
+`production` GitHub Environment の secret から注入します。Spotify runtime secret は
+複数の `ivrm-web` インフラで共有するため SSM Parameter Store にありますが、
+`HERTA_RUNTIME_SECRET_KEY` は Herta 専用のため GitHub Environment secret で管理します。
 
-| SSM parameter (`ap-northeast-1`)         | type         | 注入先 env variable        |
-| ---------------------------------------- | ------------ | -------------------------- |
-| `/ivrm/runtime/herta/runtime-secret-key` | SecureString | `HERTA_RUNTIME_SECRET_KEY` |
+| GitHub secret (Environment `production`) | 注入先 env variable        |
+| ---------------------------------------- | -------------------------- |
+| `HERTA_RUNTIME_SECRET_KEY`               | `HERTA_RUNTIME_SECRET_KEY` |
 
-- `Deploy Production` workflow (`.github/workflows/deploy-production.yml`) が deploy 時に
-  `aws ssm get-parameter --with-decryption` で取得し、`::add-mask::` した上でSSH経由の
+- `deploy` job (`environment: production`) が `${{ secrets.HERTA_RUNTIME_SECRET_KEY }}` を
+  job env に取り込み、`appleboy/ssh-action` の `envs:` 経由でSSHセッションへ渡し、
   `upsert_env` で Lightsail の `.env.production` へ書き込みます。
-- 値がCI log / shell outputへ出ないよう、長さ以外は表示しません。
-- SSM parameterが未設定の場合、deployは明示的に失敗します（fail closed）。
-- 取得した値は書き込み前に形式を検証します（64桁hex、または長さが4の倍数で復号すると
+- GitHub Actions は `secrets.*` の値をlogから自動的にマスクします。SSHスクリプトも値を出力しません。
+- secret が未設定の場合、deployは明示的に失敗します（fail closed）。
+- 渡された値は書き込み前に形式を検証します（64桁hex、または長さが4の倍数で復号すると
   32 bytesになるbase64のみ許可）。不正形式ではdeployを中止します。
-- `.env.production` に既存の別master keyが入っている状態でSSM値がそれと異なる場合、
+- `.env.production` に既存の別master keyが入っている状態で渡された値がそれと異なる場合、
   deployは中止します（既存の暗号化済みcredentialを復号不能にしないため）。
 - `docker-compose.prod.yml` は `studio` / `bot` サービスへ `HERTA_RUNTIME_SECRET_KEY` を渡します。
 - `deploy/scripts/{deploy,start,rollback}.sh` は起動前に `assert_runtime_secret_key` で
   `.env.production` にAES-256向けの正しい長さ (32 bytes) で存在することを検証します。
 
-初回のparameter作成。`deploy-production.yml` が assume する deploy role
-(`arn:aws:iam::911291529944:role/ivrm-web-github-deploy-role`) と**同じ AWS account
-`911291529944` / region `ap-northeast-1`** に作成すること。別 account に作ると deploy は
-fail closed する。値は生成後に安全に保管し、logへ残さない。
+初回の secret 登録（repo 管理者が実行。値は stdin で渡し、コマンドライン履歴やlogに残さない）:
 
 ```bash
-# 先に対象 account を確認する
-aws sts get-caller-identity --query Account --output text   # => 911291529944 であること
+# 新規生成する場合
+printf '%s' "$(openssl rand -base64 32)" | gh secret set HERTA_RUNTIME_SECRET_KEY \
+  --repo ivRooom/Herta --env production
 
-MASTER_KEY="$(openssl rand -base64 32)"
-aws ssm put-parameter \
-  --region ap-northeast-1 \
-  --name '/ivrm/runtime/herta/runtime-secret-key' \
-  --type SecureString \
-  --value "${MASTER_KEY}" \
-  --no-overwrite
-unset MASTER_KEY
+# 既に本番 .env.production へ注入済みの場合は「同一値」を登録する
+# (異なる値だと次回 deploy が「既存keyと渡された値が不一致」で中止する)
+ssh <lightsail-host> "grep '^HERTA_RUNTIME_SECRET_KEY=' /app/herta/.env.production | tail -1 | cut -d= -f2-" \
+  | tr -d '\n' | gh secret set HERTA_RUNTIME_SECRET_KEY --repo ivRooom/Herta --env production
 ```
-
-既に本番 `.env.production` へ手動で値を注入済みの場合は、その同一値を SSM へ登録すること
-(異なる値だと次回 deploy が「既存keyとSSM値が不一致」で中止する)。
 
 ### Master Key Rotation (v1: 手動)
 
@@ -106,8 +99,9 @@ v1 はオンライン rotation / 再暗号化に未対応です。やむを得�
    (旧 key で暗号化済みの `runtime_secrets` は復号不能になる前提)
 2. 本番ホストで `.env.production` の `HERTA_RUNTIME_SECRET_KEY` を新値へ更新し、`studio` / `bot` を再作成
 3. Studio から OpenAI 等の credential を再登録
-4. SSM parameter `/ivrm/runtime/herta/runtime-secret-key` を `--overwrite` で新値へ更新
-   (ホストと SSM の値を一致させ、次回 deploy の不一致チェックを通す)
+4. `production` Environment secret `HERTA_RUNTIME_SECRET_KEY` を新値へ更新
+   (`gh secret set HERTA_RUNTIME_SECRET_KEY --env production`。ホストと secret の値を一致させ、
+   次回 deploy の不一致チェックを通す)
 
 ## Studio UX
 
@@ -159,8 +153,8 @@ runtime secretの復号失敗、master key未設定・不正、DB read failure�
 この機能をproductionで利用する前に以下を満たします。
 
 1. DB migration `20260826102000_runtime_secrets` を適用
-2. SSM parameter `/ivrm/runtime/herta/runtime-secret-key` (SecureString) を一度だけ作成
-   （[Production Secret Injection](#production-secret-injection-aws-ssm-parameter-store) 参照）
+2. `production` GitHub Environment に secret `HERTA_RUNTIME_SECRET_KEY` を一度だけ登録
+   （[Production Secret Injection](#production-secret-injection-github-environment-secret) 参照）
 3. `Deploy Production` workflowを実行し、`HERTA_RUNTIME_SECRET_KEY` を `.env.production` へ注入して
    `studio` / `bot` を再作成する
 4. Herta管理者でSettingsを開く

@@ -86,8 +86,8 @@ OpenAI API key保存、AI Foundation、および`STUDIO_SEMANTIC_SEARCH_PROVIDER
 未設定だとcredential保存は`Secret暗号化設定がまだ準備されていません` (HTTP 503) になります。
 
 本番では`HERTA_RUNTIME_SECRET_KEY`を`.env.production`へ手入力せず、`Deploy Production` workflowが
-SSM SecureString `/ivrm/runtime/herta/runtime-secret-key`から取得して`studio` / `bot`へ注入します。
-手順は[RUNTIME_SECRETS.md](./RUNTIME_SECRETS.md)を参照してください。
+`production` GitHub Environment の secret `HERTA_RUNTIME_SECRET_KEY` から取得して`studio` / `bot`へ
+注入します。手順は[RUNTIME_SECRETS.md](./RUNTIME_SECRETS.md)を参照してください。
 
 `OPENAI_API_KEY`は移行期間だけのfallbackです。Runtime Secret Storeのreadが正常に完了し、master keyが
 有効で、`openai.api_key`が未登録の場合にだけ利用されます。DB unavailable、master key未設定・不正、
@@ -127,5 +127,5 @@ Provider失敗・timeout時はlexical searchへfallbackします。
 - `NEXTAUTH_SECRET`
 - `JWT_SECRET` / `JWT_REFRESH_SECRET` / `INTERNAL_JWT_SECRET`
 - `DISCORD_CLIENT_ID` / `DISCORD_CLIENT_SECRET` / `DISCORD_BOT_TOKEN`
-- `HERTA_RUNTIME_SECRET_KEY` (本番必須。SSM `/ivrm/runtime/herta/runtime-secret-key` から
+- `HERTA_RUNTIME_SECRET_KEY` (本番必須。`production` GitHub Environment secret から
   `Deploy Production` workflowが注入。詳細は [RUNTIME_SECRETS.md](./RUNTIME_SECRETS.md))

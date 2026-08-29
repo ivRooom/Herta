@@ -106,6 +106,9 @@ jobs:
       HERTA_IMAGE: ${{ needs.build-image.outputs.image_ref }}
       GHCR_USERNAME: ${{ github.actor }}
       GHCR_TOKEN: ${{ github.token }}
+      # Runtime Secret Encryption master key。production Environment secretから注入する
+      # (Spotifyと違いHerta専用のためSSMではなくGitHub Environment secretで管理)。
+      HERTA_RUNTIME_SECRET_KEY: ${{ secrets.HERTA_RUNTIME_SECRET_KEY }}
 
     steps:
       - name: AWS credentialsを設定
@@ -116,7 +119,7 @@ jobs:
           allowed-account-ids: '911291529944'
           role-session-name: HertaProductionDeploy
 
-      - name: Runtime secretsをSSMから取得
+      - name: Spotify runtime secretsをSSMから取得
         shell: bash
         run: |
           set -euo pipefail
@@ -150,9 +153,6 @@ jobs:
           echo "=== Spotify runtime secrets ==="
           fetch_ssm_secret '/ivrm/runtime/spotify/client-id' SPOTIFY_CLIENT_ID
           fetch_ssm_secret '/ivrm/runtime/spotify/client-secret' SPOTIFY_CLIENT_SECRET
-
-          echo "=== Runtime Secret Encryption master key ==="
-          fetch_ssm_secret '/ivrm/runtime/herta/runtime-secret-key' HERTA_RUNTIME_SECRET_KEY
 
       - name: LightsailへSSHデプロイ
         uses: appleboy/ssh-action@v1.2.5
@@ -198,8 +198,8 @@ jobs:
               exit 1
             fi
             if [ -z "${HERTA_RUNTIME_SECRET_KEY:-}" ]; then
-              echo "ERROR: GitHub ActionsからHERTA_RUNTIME_SECRET_KEYが渡されていません。" >&2
-              echo "       SSM parameter /ivrm/runtime/herta/runtime-secret-key を確認してください。" >&2
+              echo "ERROR: HERTA_RUNTIME_SECRET_KEYが渡されていません。" >&2
+              echo "       GitHub production Environment の secret HERTA_RUNTIME_SECRET_KEY を設定してください。" >&2
               exit 1
             fi
 
@@ -219,11 +219,11 @@ jobs:
             }
             if ! validate_runtime_secret_key "${HERTA_RUNTIME_SECRET_KEY}"; then
               echo "ERROR: HERTA_RUNTIME_SECRET_KEY の形式が不正です (32-byte base64 または 64桁hexが必要)。" >&2
-              echo "       SSM parameter /ivrm/runtime/herta/runtime-secret-key の値を確認してください。" >&2
+              echo "       GitHub production Environment の secret HERTA_RUNTIME_SECRET_KEY の値を確認してください。" >&2
               exit 1
             fi
 
-            # 既に .env.production へ別の有効なmaster keyが入っている場合、SSMの値で
+            # 既に .env.production へ別の有効なmaster keyが入っている場合、渡された値で
             # 上書きすると runtime_secrets の既存行が復号不能になる (v1はオンライン
             # rotation未対応)。値の不一致では fail closed し、意図的な回転は
             # 手動手順 (docs/RUNTIME_SECRETS.md) に委ねる。値そのものは出力しない。
@@ -232,7 +232,7 @@ jobs:
             existing_runtime_key="$(grep -E '^HERTA_RUNTIME_SECRET_KEY=' "${ENV_FILE}" | tail -n 1 | tr -d '\r' || true)"
             existing_runtime_key="${existing_runtime_key#HERTA_RUNTIME_SECRET_KEY=}"
             if [ -n "${existing_runtime_key}" ] && [ "${existing_runtime_key}" != "${HERTA_RUNTIME_SECRET_KEY}" ]; then
-              echo "ERROR: .env.production の既存 HERTA_RUNTIME_SECRET_KEY と SSM の値が一致しません。" >&2
+              echo "ERROR: .env.production の既存 HERTA_RUNTIME_SECRET_KEY と渡された値が一致しません。" >&2
               echo "       master key を置き換えると登録済み runtime secret を復号できなくなります。" >&2
               echo "       意図的な rotation は docs/RUNTIME_SECRETS.md の手順に従って手動で行ってください。" >&2
               exit 1

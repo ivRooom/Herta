@@ -32,7 +32,7 @@ require_env_file() {
 # Runtime Secret Encryption master key (HERTA_RUNTIME_SECRET_KEY) が
 # .env.production へ注入済みで、かつAES-256向けに正しい長さ (32 bytes) であることを確認する。
 # 値そのものはstdout / stderr へ出さず、長さと形式だけを検証する。
-# 本番のCI/CDでは /ivrm/runtime/herta/runtime-secret-key (SSM SecureString) から注入される。
+# 本番のCI/CDでは production Environment secret HERTA_RUNTIME_SECRET_KEY から注入される。
 assert_runtime_secret_key() {
   local line raw decoded_bytes
   line="$(grep -E '^HERTA_RUNTIME_SECRET_KEY=' "${ENV_FILE}" | tail -n 1 || true)"
@@ -42,7 +42,7 @@ assert_runtime_secret_key() {
   if [ -z "${line}" ] || [ -z "${raw}" ]; then
     echo "ERROR: HERTA_RUNTIME_SECRET_KEY が .env.production に設定されていません。" >&2
     echo "       Runtime Secret Encryption (Studio > AI Provider Credentials) に必須です。" >&2
-    echo "       SSM parameter /ivrm/runtime/herta/runtime-secret-key を確認してください。" >&2
+    echo "       GitHub production Environment の secret HERTA_RUNTIME_SECRET_KEY を確認してください。" >&2
     return 1
   fi
 
