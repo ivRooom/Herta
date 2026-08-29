@@ -277,4 +277,73 @@ describe('OpenAiRuntimeGenerationService', () => {
     await expect(service.generate(request)).rejects.toMatchObject({ category: 'internal_error' });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  it('server-local refusal用rate guardはprovider・quotaを使わずuser/Guild rateを消費する', async () => {
+    const rateCalls: Array<{ key: string; limit: number; windowMs: number }> = [];
+    const reservations: number[] = [];
+    const store = guardStore(reservations);
+    store.consumeRateLimit = vi.fn(async (key, limit, windowMs) => {
+      rateCalls.push({ key, limit, windowMs });
+      return { allowed: true, retryAfterMs: 0 };
+    });
+    const fetchImpl = vi.fn<typeof fetch>();
+    const service = new OpenAiRuntimeGenerationService({
+      baseConfig: resolveAiFoundationConfig({
+        HERTA_AI_ENABLED: 'true',
+        HERTA_AI_USER_RATE_LIMIT: '7',
+        HERTA_AI_GUILD_RATE_LIMIT: '31',
+      }),
+      apiKey: 'server-secret',
+      guardStore: store,
+      runtimeResolver: resolverFor(),
+      fetchImpl,
+    });
+
+    await service.consumeRateLimit({
+      input: 'PR #351 を元にREADMEを作って',
+      guildId: 'guild-1',
+      scopeGuildId: 'guild-1',
+      userId: 'user-1',
+      authorized: true,
+      pluginEnabled: true,
+      guildOptIn: true,
+    });
+
+    expect(rateCalls).toHaveLength(2);
+    expect(rateCalls.map((call) => call.limit)).toEqual([7, 31]);
+    expect(rateCalls[0]?.key).toMatch(/^user:[a-f0-9]{32}$/);
+    expect(rateCalls[1]?.key).toMatch(/^guild:[a-f0-9]{32}$/);
+    expect(rateCalls[0]?.windowMs).toBe(60_000);
+    expect(reservations).toEqual([]);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('server-local refusal用rate guardはlimit超過をprovider call前に拒否する', async () => {
+    const store = guardStore();
+    store.consumeRateLimit = vi
+      .fn()
+      .mockResolvedValueOnce({ allowed: true, retryAfterMs: 0 })
+      .mockResolvedValueOnce({ allowed: false, retryAfterMs: 500 });
+    const fetchImpl = vi.fn<typeof fetch>();
+    const service = new OpenAiRuntimeGenerationService({
+      baseConfig: resolveAiFoundationConfig({ HERTA_AI_ENABLED: 'true' }),
+      apiKey: 'server-secret',
+      guardStore: store,
+      runtimeResolver: resolverFor(),
+      fetchImpl,
+    });
+
+    await expect(
+      service.consumeRateLimit({
+        input: 'PR #351 を元にREADMEを作って',
+        guildId: 'guild-1',
+        scopeGuildId: 'guild-1',
+        userId: 'user-1',
+        authorized: true,
+        pluginEnabled: true,
+        guildOptIn: true,
+      }),
+    ).rejects.toMatchObject({ category: 'rate_limited', retryAfterMs: 500 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
 });

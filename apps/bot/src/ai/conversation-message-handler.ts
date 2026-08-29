@@ -1,0 +1,283 @@
+import { resolveAiArtifactIntent, type AiArtifactIntent } from '@herta/plugin-catalog/ai-artifact';
+import {
+  type AiGroundingState,
+  type AiResponseMode,
+} from '@herta/plugin-catalog/ai-conversation-policy';
+import { AiFoundationError } from '@herta/plugin-catalog/ai-service';
+import {
+  handleAiArtifactMessage,
+  isAiArtifactMessageCandidate,
+  stripBotMention,
+  type AiArtifactDiscordMessage,
+  type AiArtifactMessageHandlerOptions,
+} from './artifact-message-handler.js';
+import type { AiRuntimeGenerationService } from './runtime-service.js';
+
+const DISCORD_CONVERSATION_MAX_UTF16_UNITS = 1_900;
+const DISCORD_CONVERSATION_INSTRUCTION = [
+  'Return only the answer intended for the Discord user.',
+  'Keep the final response comfortably below the Discord 2000-character message limit.',
+  'Do not claim that retrieval, web access, tools, code execution, or artifact generation happened unless trusted application context confirms it.',
+].join(' ');
+const INSUFFICIENT_GROUNDING_ARTIFACT_REPLY =
+  'この依頼には外部情報の確認が必要ですが、現在は参照できません。成果物は作成していません。';
+
+const EXPLICIT_DETAIL_REQUEST_PATTERN =
+  /(?:詳しく|詳細に|丁寧に|手順(?:を)?(?:全部|すべて|全て)|(?:全部|すべて|全て)の?手順|比較して|比較してください|比較を|step[- ]by[- ]step|all\s+(?:the\s+)?steps|compare\b|comparison\b|in\s+detail|detailed)/i;
+const EXPLICIT_SOURCE_REQUEST_PATTERN =
+  /(?:出典|引用元|citation|citations|(?:^\s*(?:please\s+)?|\b(?:can|could|would)\s+you\s+)(?:cite|reference)\b|\b(?:provide|include|show|give|list)\b.{0,30}\breferences?\b|\b(?:provide|show|give|list|cite|include|find|check|verify|look\s+up)\b.{0,30}\bsources?\b|(?<!open[\s_-])\bsources?\b(?:\s*[?？]|.{0,30}\b(?:for|of|about|used|behind)\b)|(?<!オープン)ソース(?!コード)(?:を|が|は)(?:[?？]|.{0,20}(?:教えて|示して|見せて|確認して|調べて|提示して))|web\s*検索|ウェブ\s*検索|(?:Google|Bing|オンライン|ネット)(?:で|を)?検索(?:して|する|してください)?|search\s+(?:(?:the\s+)?web|online|(?:on\s+)?(?:google|bing)|(?:the\s+)?internet)|browse\s+(?:the\s+)?web)/i;
+const CURRENT_EXTERNAL_FACT_PATTERN =
+  /(?:最新|現在の|今の|今日の|本日の).{0,60}(?:状態|状況|価格|料金|バージョン|version|リリース|release|PR|Issue|CI|デプロイ|deploy|稼働|障害|ニュース|天気|株価|為替)|(?:状態|状況|価格|料金|バージョン|リリース|PR|Issue|CI|デプロイ|稼働|障害|ニュース|天気|株価|為替).{0,60}(?:最新|現在|今|今日|本日)|\b(?:latest|current|today(?:'s)?|now)\b.{0,60}\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b|\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b.{0,60}\b(?:latest|current|today(?:'s)?|now)\b/i;
+const CURRENT_REQUEST_MARKER_PATTERN =
+  /(?:最新|今日|本日|昨日|昨夜|昨晩|前日|今(?!後)|現在の|現在(?=(?:時刻|時間|日時|日付|価格|料金|状態|状況|天気|株価|為替|結果|スコア)))|\b(?:latest|today(?:'s)?|yesterday(?:'s)?|last\s+night(?:'s)?|now|current)\b/i;
+const CURRENT_REQUEST_FACT_PATTERN =
+  /(?:[?？]|教えて|知りたい|誰|何|いつ|どこ|いくら|何時|結果|スコア|状態|状況|\b(?:tell me|show me|give me|list|provide|who|what|when|where|which|how much|how many|score|time)\b)/i;
+const EVERGREEN_CURRENT_CLAUSE_PATTERNS: readonly RegExp[] = [
+  /\b(?:what does|what is|define|explain)\s+(?:electric(?:al)?\s+)?current(?:\s+(?:mean|means|in\s+(?:electricity|electronics?|circuits?)))?(?=\s*(?:[?!.;,]|$|\b(?:and|or)\b))/gi,
+  /\b(?:electric|electrical|alternating|direct)\s+current\b/gi,
+  /\bcurrent\s+(?:flow|density|source|mirror|loop|operator|keyword|concept|term)\b/gi,
+  /\bhow\s+does\s+Date\.now\(\)\s+work\b/gi,
+  /\bhow\s+do\s+i\s+get\s+the\s+current\s+(?:directory|working\s+directory)\b/gi,
+];
+const CODE_RUNTIME_VALUE_INPUT_PATTERN =
+  /(?:現在|今|今日)(?:の)?(?:時刻|時間|日時|日付)|\b(?:current|local)\s+(?:time|date|datetime)\b|\b(?:time|date)\s+(?:now|today)\b|(?:引数|パラメータ|入力値|入力).{0,40}(?:受け取|渡され|与えられ|使|表示|出力)|(?:受け取|渡され|与えられ|使).{0,40}(?:引数|パラメータ|入力値|入力)|\b(?:passed|provided|supplied)\b.{0,40}\b(?:argument|parameter|input|value)\b|\b(?:argument|parameter|input)\b.{0,40}\b(?:passed|provided|supplied)\b|\b(?:at\s+runtime|runtime)\b.{0,40}\b(?:fetch|retrieve|read|obtain|request|receive|use)\b|\b(?:fetch|retrieve|read|obtain|request|receive|use)\b.{0,40}\b(?:at\s+runtime|runtime|api|endpoint)\b/i;
+const CODE_RUNTIME_VALUE_CLAUSE_PATTERNS: readonly RegExp[] = [
+  /(?:現在|今)(?:の)?(?:時刻|時間|日時|日付)/gi,
+  /\b(?:current|local)\s+(?:time|date|datetime)\b/gi,
+  /\b(?:time|date)\s+(?:now|today)\b/gi,
+  /\b(?:current|latest|today(?:'s)?)\b.{0,60}\b(?:passed|provided|supplied)\b.{0,40}\b(?:as\s+an?\s+)?(?:argument|parameter|input|value)\b/gi,
+  /\b(?:passed|provided|supplied)\b.{0,40}\b(?:argument|parameter|input|value)\b.{0,60}\b(?:current|latest|today(?:'s)?)\b/gi,
+  /(?:現在|今|今日)(?:の)?(?:価格|株価|為替|天気|天候).{0,60}(?:引数|パラメータ|入力値|入力).{0,30}(?:受け取|渡され|与えられ|使)/gi,
+  /(?:引数|パラメータ|入力値|入力).{0,30}(?:受け取|渡され|与えられ|使).{0,60}(?:現在|今|今日)(?:の)?(?:価格|株価|為替|天気|天候)/gi,
+  /\b(?:current|latest|today(?:'s)?)\b.{0,60}\b(?:fetch|retrieve|read|obtain|request|receive|use)\b.{0,40}\b(?:at\s+runtime|runtime|api|endpoint)\b/gi,
+];
+const HARD_CODED_CURRENT_VALUE_PATTERN =
+  /(?:hard[- ]?cod(?:e|ed|ing)|literal(?:ly)?|fixed\s+value|ハードコード|固定値)/i;
+const LIVE_EXTERNAL_QUERY_PATTERN =
+  /(?:天気|天候|株価|為替|ニュース|障害状況)(?:は|って)?(?:どう(?!やって|して|いう)|いくら|何円|教えて|を教えて|見せて|[?？])|\b(?:what(?:'s| is)|how(?:'s| is))\s+the\s+(?:weather|forecast|stock price|exchange rate|news|outage status)(?:\s+(?:in|for|at|of)\s+[^?]+)?\s*\?|\b(?:weather|forecast|stock price|exchange rate|outage status)(?:\s+(?:in|for|at|of)\s+[^?]+)?\s*\?|\b(?:give|tell|show)\s+me\s+(?:the\s+)?(?:weather|forecast|stock price|exchange rate|news|outage status)(?:\s+(?:in|for|at|of)\s+.+)?$/i;
+const FUTURE_FORECAST_QUERY_PATTERN =
+  /(?:(?:明日|明後日|今夜).{0,60}(?:天気|天候|雨|雪|降水|予報)|(?:天気|天候|雨|雪|降水|予報).{0,60}(?:明日|明後日|今夜)|\b(?:weather|forecast|rain|snow|precipitation)\b.{0,60}\b(?:tomorrow|tonight|next\s+(?:day|week))\b|\b(?:tomorrow|tonight|next\s+(?:day|week))\b.{0,60}\b(?:weather|forecast|rain|snow|precipitation)\b)/i;
+const EXTERNAL_TARGET_PATTERN =
+  /(?:GitHub|repository|リポジトリ|pull request|\bPR\b|\bIssue\b|\bCI\b|production|本番|deploy|デプロイ|release|リリース|公式(?:ドキュメント|docs?)?|\bofficial\s+(?:documentation|docs?)\b|website|サイト|ニュース|天気|株価|為替)/i;
+const EXPLICIT_CHECK_PATTERN =
+  /(?:確認して|調べて|検索して|検証して|verify\b|check\b|confirm\b|search\b|look\s+up)/i;
+const EXTERNAL_CONTENT_REQUEST_PATTERN =
+  /(?:\bwhat\s+(?:does|do)\s+(?:the\s+)?(?:official\s+(?:documentation|docs?)|website|site)\b.{0,60}\b(?:say|contain|state|mention|show)\b|\b(?:summarize|inspect|read)\b.{0,30}\b(?:(?:the|this|that)\s+(?:website|site)|(?:the\s+)?official\s+(?:documentation|docs?))\b|(?:公式(?:ドキュメント|docs?)|ウェブサイト|website|サイト).{0,60}(?:何(?:が|と)|内容|書いて|記載|要約|読んで))/i;
+const ATTACHMENT_CONTENT_REQUEST_PATTERN =
+  /(?:\bwhat\s+(?:does|is|are)\b.{0,60}\b(?:(?:the\s+)?(?:attached|uploaded)|(?:(?:the|this|that|my|your)\s+)?(?:attachments?|uploads?))\b|\b(?:summari[sz]e|analy[sz]e|read|inspect|describe|convert|transform|extract|translate|create|make|generate|build)\b.{0,60}\b(?:(?:the\s+)?(?:attached|uploaded)|(?:(?:the|this|that|my|your)\s+)?(?:attachments?|uploads?))\b|\b(?:(?:the\s+)?(?:attached|uploaded)|(?:(?:the|this|that|my|your)\s+)?(?:attachments?|uploads?))\b.{0,60}\b(?:summari[sz]e|analy[sz]e|read|inspect|describe|convert|transform|extract|translate|create|make|generate|build)\b|(?:添付|アップロード).{0,50}(?:内容|要約|まとめ|読ん|解析|分析|説明|変換|抽出|翻訳|作成|作って|生成|何が|何を|教えて|を元に|をもとに))/i;
+const DEICTIC_FILE_CONTENT_REQUEST_PATTERN =
+  /(?:\b(?:summari[sz]e|analy[sz]e|read|inspect|describe|convert|transform|extract|translate|create|make|generate|build)\b.{0,30}\b(?:this|that)\s+(?:file|document|report)\b|\b(?:this|that)\s+(?:file|document|report)\b.{0,60}\b(?:summari[sz]e|analy[sz]e|read|inspect|describe|convert|transform|extract|translate|create|make|generate|build)\b|\bwhat\s+(?:does|is|are)\s+(?:in\s+)?(?:this|that)\s+(?:file|document|report)\b|(?:この|その)(?:ファイル|文書|資料|レポート).{0,30}(?:内容|要約|まとめ|読ん|解析|分析|説明|変換|抽出|翻訳|作成|作って|生成|何が|何を|教えて))/i;
+const EXTERNAL_STATE_PATTERN =
+  /(?:GitHub|repository|リポジトリ|production|本番|deploy|デプロイ|release|リリース).{0,80}(?:状態|状況|結果|成功|失敗|稼働|障害|何番)|(?:pull request|\bPR\b|\bIssue\b|\bCI\b).{0,80}(?:状態|状況|結果|成功|失敗|\b(?:merged|open|closed|green|red)\b|何番)/i;
+const STATE_BEFORE_EXTERNAL_TARGET_PATTERN =
+  /\b(?:what(?:'s| is)\s+(?:the\s+)?)?(?:status|state|result)\s+of\s+(?:pull request|PR|issue|CI|deployment|production|release)\b|\b(?:what(?:'s| is)\s+(?:the\s+)?)?(?:deployment|production|release)\s+(?:status|state|result)\b/i;
+const CONCRETE_REPOSITORY_REFERENCE_PATTERN =
+  /(?:\b(?:pull request|PR|Issue)\s*#?\d+\b|\b(?:repository|リポジトリ)\s+[\w.-]+\/[\w.-]+\b|github\.com\/[\w.-]+\/[\w.-]+(?:\/(?:pull|issues)\/\d+)?)/i;
+const REPOSITORY_CONTENT_REQUEST_PATTERN =
+  /(?:[?？]|を元に|をもとに|に基づいて|(?:内容|詳細)(?:を|について)|(?:要約|まとめ)(?:して|て)|について(?:教えて|説明して|まとめて|README)|\b(?:based on|using|from|about|summari[sz]e|what|show|tell|describe|explain)\b)/i;
+const URL_PATTERN = /https?:\/\/\S+/i;
+const CODE_RUNTIME_URL_ACCESS_PATTERN =
+  /(?:\b(?:downloads?|fetch(?:es)?|requests?|retrieves?|opens?|reads?)\b[\s\S]{0,80}https?:\/\/\S+[\s\S]{0,40}\b(?:at\s+runtime|runtime)\b|\b(?:at\s+runtime|runtime)\b[\s\S]{0,40}\b(?:downloads?|fetch(?:es)?|requests?|retrieves?|opens?|reads?)\b[\s\S]{0,80}https?:\/\/\S+)/i;
+const URL_DERIVED_CONTENT_REQUEST_PATTERN =
+  /\b(?:summari[sz]e|describe|quote|extract|translate|convert|analy[sz]e|inspect|read)\b[\s\S]{0,80}\b(?:that|this|the)\s+(?:page|content|response)\b/i;
+const RUNTIME_URL_DERIVED_CONTENT_PATTERN =
+  /\b(?:summari[sz]e|describe|quote|extract|translate|convert|analy[sz]e|inspect|read)\b[\s\S]{0,80}\b(?:that|this|the)\s+(?:page|content|response)\b[\s\S]{0,40}\b(?:at\s+runtime|runtime)\b/i;
+const URL_DEREFERENCE_PATTERN =
+  /(?:https?:\/\/\S+[\s\S]{0,80}(?:を元に|をもとに|の内容(?:を|について)?|を開いて|を読んで|を取得して|を要約して|を解析して|を確認して|を調べて|を検索して|を検証して|\b(?:read|open|visit|fetch|inspect|summarize|analy[sz]e|look\s+up|check|verify|confirm|search|download|convert|transform|extract|translate)\b)|(?:を元に|をもとに|内容を|開いて|読んで|取得して|要約して|解析して|確認して|調べて|検索して|検証して|\bbased on\b|\busing\b|\bfrom\b|\bread\b|\bopen\b|\bvisit\b|\bfetch\b|\binspect\b|\bsummarize\b|\banaly[sz]e\b|\blook\s+up\b|\bcheck\b|\bverify\b|\bconfirm\b|\bsearch\b|\bdownload\b|\bconvert\b|\btransform\b|\bextract\b|\btranslate\b)[\s\S]{0,80}https?:\/\/\S+|\bwhat does\s+https?:\/\/\S+\s+(?:say|contain|show)\b|\bwhat is\s+on\s+https?:\/\/\S+|\btell me\s+what(?:'s| is)\s+on\s+https?:\/\/\S+|\bcan you\s+inspect\s+https?:\/\/\S+)/i;
+
+export interface AiConversationMessageHandlerOptions extends AiArtifactMessageHandlerOptions {
+  generationService: AiRuntimeGenerationService | null;
+}
+
+export type AiConversationMessageHandleResult =
+  | { status: 'ignored' }
+  | {
+      status: 'handled';
+      intent: AiArtifactIntent;
+      responseMode?: AiResponseMode;
+      groundingState?: AiGroundingState;
+    }
+  | { status: 'failed'; category: string };
+
+export async function handleAiConversationMessage(
+  message: AiArtifactDiscordMessage,
+  options: AiConversationMessageHandlerOptions,
+): Promise<AiConversationMessageHandleResult> {
+  const botUserId = options.botUserId;
+  if (!botUserId || !isAiArtifactMessageCandidate(message, botUserId)) {
+    return { status: 'ignored' };
+  }
+
+  const input = stripBotMention(message.content, botUserId);
+  const pluginConfig = await options.getAiPluginConfig(message.guildId);
+  if (!pluginConfig || pluginConfig['enabled'] !== true) return { status: 'ignored' };
+
+  const intent = resolveAiDiscordIntent(input);
+  const groundingState = resolveAiConversationGroundingState(input);
+  if (intent !== 'chat' && intent !== 'detailed_answer') {
+    if (!options.runtime) return { status: 'ignored' };
+    if (groundingState === 'insufficient') {
+      if (!options.generationService?.consumeRateLimit) return { status: 'ignored' };
+      try {
+        await options.generationService.consumeRateLimit({
+          input,
+          guildId: message.guildId,
+          scopeGuildId: message.guildId,
+          userId: message.author.id,
+          authorized: message.member !== null && message.member !== undefined,
+          pluginEnabled: true,
+          guildOptIn: true,
+        });
+      } catch (error) {
+        const safeError =
+          error instanceof AiFoundationError ? error : new AiFoundationError('internal_error');
+        await message.reply({
+          content: safeError.userMessage,
+          allowedMentions: { parse: [] },
+        });
+        return { status: 'failed', category: `foundation:${safeError.category}` };
+      }
+      await message.reply({
+        content: INSUFFICIENT_GROUNDING_ARTIFACT_REPLY,
+        allowedMentions: { parse: [] },
+      });
+      return { status: 'failed', category: 'grounding:insufficient' };
+    }
+    return handleAiArtifactMessage(message, options);
+  }
+
+  if (!options.generationService) return { status: 'ignored' };
+
+  const responseMode: AiResponseMode = intent === 'detailed_answer' ? 'detailed' : 'chat';
+
+  let content: string;
+  try {
+    const response = await options.generationService.generate({
+      feature: 'ai.conversation',
+      input,
+      guildId: message.guildId,
+      scopeGuildId: message.guildId,
+      userId: message.author.id,
+      authorized: message.member !== null && message.member !== undefined,
+      pluginEnabled: true,
+      guildOptIn: true,
+      responseMode,
+      groundingState,
+      trustedInstructions: [DISCORD_CONVERSATION_INSTRUCTION],
+    });
+    content = validateDiscordConversationReply(response.text);
+  } catch (error) {
+    const safeError =
+      error instanceof AiFoundationError ? error : new AiFoundationError('internal_error');
+    await message.reply({
+      content: safeError.userMessage,
+      allowedMentions: { parse: [] },
+    });
+    return { status: 'failed', category: `foundation:${safeError.category}` };
+  }
+
+  // Discord SDK errors can retain request payloads. Delivery happens outside the provider error
+  // boundary so a failed send is never converted into a second reply or a false success.
+  await message.reply({
+    content,
+    allowedMentions: { parse: [] },
+  });
+  return { status: 'handled', intent, responseMode, groundingState };
+}
+
+export function resolveAiConversationGroundingState(input: string): AiGroundingState {
+  const normalized = typeof input === 'string' ? input.normalize('NFKC').trim() : '';
+  if (!normalized) return 'not_required';
+
+  const artifactIntent = resolveAiArtifactIntent(normalized);
+  const isCodeRuntimeValueRequest =
+    (artifactIntent === 'code_artifact' || artifactIntent === 'code_execution') &&
+    CODE_RUNTIME_VALUE_INPUT_PATTERN.test(normalized) &&
+    !HARD_CODED_CURRENT_VALUE_PATTERN.test(normalized);
+  const hasImmediateUrlDerivedContent =
+    URL_DERIVED_CONTENT_REQUEST_PATTERN.test(normalized) &&
+    !RUNTIME_URL_DERIVED_CONTENT_PATTERN.test(normalized);
+  const isCodeRuntimeUrlAccessRequest =
+    artifactIntent === 'code_artifact' &&
+    CODE_RUNTIME_URL_ACCESS_PATTERN.test(normalized) &&
+    !hasImmediateUrlDerivedContent;
+  const currentFactInput = isCodeRuntimeValueRequest
+    ? stripCodeRuntimeValueClauses(normalized)
+    : normalized;
+  const currentGroundingInput = stripEvergreenCurrentClauses(currentFactInput);
+  const requiresHardCodedCurrentGrounding =
+    artifactIntent === 'code_artifact' &&
+    HARD_CODED_CURRENT_VALUE_PATTERN.test(normalized) &&
+    CURRENT_REQUEST_MARKER_PATTERN.test(normalized);
+  const requiresEnumeratedCurrentGrounding = CURRENT_EXTERNAL_FACT_PATTERN.test(currentFactInput);
+  const requiresCurrentGrounding =
+    CURRENT_REQUEST_MARKER_PATTERN.test(currentGroundingInput) &&
+    CURRENT_REQUEST_FACT_PATTERN.test(currentGroundingInput);
+  const requiresLiveExternalGrounding = LIVE_EXTERNAL_QUERY_PATTERN.test(currentFactInput);
+  const requiresFutureForecastGrounding = FUTURE_FORECAST_QUERY_PATTERN.test(currentFactInput);
+  const requiresRepositoryContentGrounding =
+    CONCRETE_REPOSITORY_REFERENCE_PATTERN.test(normalized) &&
+    REPOSITORY_CONTENT_REQUEST_PATTERN.test(normalized);
+  const requiresUrlGrounding =
+    !isCodeRuntimeUrlAccessRequest &&
+    URL_PATTERN.test(normalized) &&
+    URL_DEREFERENCE_PATTERN.test(normalized);
+
+  if (
+    requiresUrlGrounding ||
+    requiresRepositoryContentGrounding ||
+    EXPLICIT_SOURCE_REQUEST_PATTERN.test(normalized) ||
+    requiresHardCodedCurrentGrounding ||
+    requiresEnumeratedCurrentGrounding ||
+    requiresCurrentGrounding ||
+    requiresLiveExternalGrounding ||
+    requiresFutureForecastGrounding ||
+    EXTERNAL_CONTENT_REQUEST_PATTERN.test(normalized) ||
+    ATTACHMENT_CONTENT_REQUEST_PATTERN.test(normalized) ||
+    DEICTIC_FILE_CONTENT_REQUEST_PATTERN.test(normalized) ||
+    EXTERNAL_STATE_PATTERN.test(normalized) ||
+    STATE_BEFORE_EXTERNAL_TARGET_PATTERN.test(normalized) ||
+    (EXTERNAL_TARGET_PATTERN.test(normalized) && EXPLICIT_CHECK_PATTERN.test(normalized))
+  ) {
+    return 'insufficient';
+  }
+
+  return 'not_required';
+}
+
+function stripCodeRuntimeValueClauses(input: string): string {
+  return CODE_RUNTIME_VALUE_CLAUSE_PATTERNS.reduce(
+    (value, pattern) => value.replace(pattern, ' '),
+    input,
+  );
+}
+
+function stripEvergreenCurrentClauses(input: string): string {
+  return EVERGREEN_CURRENT_CLAUSE_PATTERNS.reduce(
+    (value, pattern) => value.replace(pattern, ' '),
+    input,
+  );
+}
+
+function resolveAiDiscordIntent(input: string): AiArtifactIntent {
+  const routingInput = input.replace(
+    /\b(?:responseMode|groundingState|trustedInstructions)\s*=\s*[^\s,;]+/gi,
+    ' ',
+  );
+  const artifactIntent = resolveAiArtifactIntent(routingInput);
+  if (artifactIntent !== 'chat') return artifactIntent;
+  return EXPLICIT_DETAIL_REQUEST_PATTERN.test(routingInput) ? 'detailed_answer' : 'chat';
+}
+
+function validateDiscordConversationReply(value: string): string {
+  if (typeof value !== 'string') throw new AiFoundationError('malformed_response');
+  const normalized = value.trim();
+  if (normalized.length < 1) throw new AiFoundationError('malformed_response');
+  // Discord.js sends JavaScript strings and Discord applies its message limit to the encoded
+  // string length. Count UTF-16 code units here so astral characters such as emoji cannot slip
+  // past a code-point-only guard and cause delivery failure.
+  if (normalized.length > DISCORD_CONVERSATION_MAX_UTF16_UNITS) {
+    throw new AiFoundationError('output_too_large');
+  }
+  return normalized;
+}

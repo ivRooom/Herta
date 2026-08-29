@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   resolveAiConversationPolicy,
   type AiConversationPolicy,
@@ -29,8 +30,23 @@ export interface AiRuntimeGenerationRequest extends AiGenerationRequest {
   trustedInstructions?: readonly string[];
 }
 
+export interface AiRuntimeRateLimitRequest {
+  input: string;
+  guildId: string;
+  scopeGuildId: string;
+  userId: string;
+  authorized: boolean;
+  pluginEnabled: boolean;
+  guildOptIn: boolean;
+}
+
 export interface AiRuntimeGenerationService {
   generate(request: AiRuntimeGenerationRequest): Promise<AiGenerationResponse>;
+  /**
+   * Consume only the shared user/Guild request rate limits without calling a provider or reserving
+   * quota. Server-local rejection paths use this before emitting their bounded response.
+   */
+  consumeRateLimit?(request: AiRuntimeRateLimitRequest): Promise<void>;
 }
 
 export interface OpenAiRuntimeGenerationServiceOptions {
@@ -65,6 +81,37 @@ export class OpenAiRuntimeGenerationService implements AiRuntimeGenerationServic
     this.runtimeResolver = options.runtimeResolver;
     this.telemetry = options.telemetry;
     this.fetchImpl = options.fetchImpl ?? fetch;
+  }
+
+  async consumeRateLimit(request: AiRuntimeRateLimitRequest): Promise<void> {
+    if (!this.baseConfig.enabled || this.baseConfig.killSwitch) {
+      throw new AiFoundationError('disabled');
+    }
+    if (!request.authorized || request.scopeGuildId !== request.guildId) {
+      throw new AiFoundationError('unauthorized');
+    }
+    if (!request.pluginEnabled || !request.guildOptIn) {
+      throw new AiFoundationError('disabled');
+    }
+
+    validateAndNormalizeUserInput(request.input, this.baseConfig);
+    const userRate = await this.guardStore.consumeRateLimit(
+      privacyRateKey('user', request.guildId, request.userId),
+      this.baseConfig.userRateLimit,
+      this.baseConfig.rateWindowMs,
+    );
+    if (!userRate.allowed) {
+      throw new AiFoundationError('rate_limited', { retryAfterMs: userRate.retryAfterMs });
+    }
+
+    const guildRate = await this.guardStore.consumeRateLimit(
+      privacyRateKey('guild', request.guildId),
+      this.baseConfig.guildRateLimit,
+      this.baseConfig.rateWindowMs,
+    );
+    if (!guildRate.allowed) {
+      throw new AiFoundationError('rate_limited', { retryAfterMs: guildRate.retryAfterMs });
+    }
   }
 
   async generate(request: AiRuntimeGenerationRequest): Promise<AiGenerationResponse> {
@@ -211,6 +258,13 @@ function normalizeTrustedInstructions(value: readonly string[] | undefined): str
 
 function buildGuardedInput(instructions: string, userInput: string): string {
   return `Server instructions:\n${instructions}\n\nUser input:\n${userInput}`;
+}
+
+function privacyRateKey(kind: 'user' | 'guild', ...values: string[]): string {
+  // Keep rate-limit keys identical to AiFoundationService so provider and local rejection paths
+  // share the same privacy-safe counters without exposing raw Guild/user identifiers.
+  const digest = createHash('sha256').update(values.join('\u0000')).digest('hex').slice(0, 32);
+  return `${kind}:${digest}`;
 }
 
 function characterLength(value: string): number {

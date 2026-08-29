@@ -110,6 +110,7 @@ export function isAiArtifactMessageCandidate(
     message &&
     botUserId &&
     message.guildId &&
+    message.author.id !== botUserId &&
     !message.author.bot &&
     !message.webhookId &&
     message.mentions.users.has(botUserId) &&
