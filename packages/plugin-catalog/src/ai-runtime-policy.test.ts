@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   AI_RUNTIME_SAFE_DEFAULT,
   AiRuntimePolicyError,
+  getAiProviderCapabilities,
   getAiRuntimePolicyMetadata,
+  isAiProviderCapabilityEnabled,
   parseAiRuntimeStoredValue,
   resolveAiRuntimeEnvDefault,
   resolveAiRuntimeSelection,
@@ -60,10 +62,22 @@ describe('AI runtime policy', () => {
     expect(resolveAiRuntimeEnvDefault({})).toEqual(AI_RUNTIME_SAFE_DEFAULT);
   });
 
-  it('metadataはclientへarbitrary model入力欄を作らずserver allowlistを返す', () => {
+  it('provider tool capabilityはserver-side allowlistをSoTにする', () => {
+    expect(getAiProviderCapabilities('openai')).toEqual([
+      'text',
+      'code_interpreter',
+      'image_generation',
+    ]);
+    expect(isAiProviderCapabilityEnabled('openai', 'text')).toBe(true);
+    expect(isAiProviderCapabilityEnabled('openai', 'code_interpreter')).toBe(true);
+    expect(isAiProviderCapabilityEnabled('openai', 'image_generation')).toBe(true);
+  });
+
+  it('metadataはclientへarbitrary model/tool入力欄を作らずserver allowlistを返す', () => {
     expect(getAiRuntimePolicyMetadata()).toEqual([
       {
         provider: 'openai',
+        capabilities: ['text', 'code_interpreter', 'image_generation'],
         profiles: [
           expect.objectContaining({
             modelProfile: 'quality',
