@@ -1,8 +1,5 @@
 import type { RuntimeConfigurationRecord } from '@herta/db';
-import {
-  resolveAiFoundationConfig,
-  type AiGuardStore,
-} from '@herta/plugin-catalog/ai-service';
+import { resolveAiFoundationConfig, type AiGuardStore } from '@herta/plugin-catalog/ai-service';
 import { AiRuntimeConfigurationResolver } from '@herta/plugin-catalog/ai-runtime-config';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -142,10 +139,7 @@ describe('OpenAiCodeExecutionService binary artifacts', () => {
       const url = urlOf(input);
       if (url.endsWith('/containers') && init?.method === 'POST') return containerResponse();
       if (url.endsWith('/responses')) {
-        return executionResponse([
-          annotation('cfile_1', 'a.png'),
-          annotation('cfile_2', 'b.webp'),
-        ]);
+        return executionResponse([annotation('cfile_1', 'a.png'), annotation('cfile_2', 'b.webp')]);
       }
       if (url.includes('/files/')) {
         downloads += 1;
