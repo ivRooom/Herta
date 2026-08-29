@@ -227,7 +227,10 @@ jobs:
             # 上書きすると runtime_secrets の既存行が復号不能になる (v1はオンライン
             # rotation未対応)。値の不一致では fail closed し、意図的な回転は
             # 手動手順 (docs/RUNTIME_SECRETS.md) に委ねる。値そのものは出力しない。
-            existing_runtime_key="$(awk -F= '$1=="HERTA_RUNTIME_SECRET_KEY"{ sub(/^HERTA_RUNTIME_SECRET_KEY=/, ""); print; exit }' "${ENV_FILE}" || true)"
+            # compose --env-file および resolveRuntimeSecretMasterKey() は最後の代入を採用するため、
+            # assert_runtime_secret_key (_common.sh) と同じく末尾行を effective value として比較する。
+            existing_runtime_key="$(grep -E '^HERTA_RUNTIME_SECRET_KEY=' "${ENV_FILE}" | tail -n 1 | tr -d '\r' || true)"
+            existing_runtime_key="${existing_runtime_key#HERTA_RUNTIME_SECRET_KEY=}"
             if [ -n "${existing_runtime_key}" ] && [ "${existing_runtime_key}" != "${HERTA_RUNTIME_SECRET_KEY}" ]; then
               echo "ERROR: .env.production の既存 HERTA_RUNTIME_SECRET_KEY と SSM の値が一致しません。" >&2
               echo "       master key を置き換えると登録済み runtime secret を復号できなくなります。" >&2
