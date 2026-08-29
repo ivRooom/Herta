@@ -68,6 +68,10 @@ SSM Parameter Store同期経路で注入します。
   `upsert_env` で Lightsail の `.env.production` へ書き込みます。
 - 値がCI log / shell outputへ出ないよう、長さ以外は表示しません。
 - SSM parameterが未設定の場合、deployは明示的に失敗します（fail closed）。
+- 取得した値は書き込み前に形式を検証します（64桁hex、または長さが4の倍数で復号すると
+  32 bytesになるbase64のみ許可）。不正形式ではdeployを中止します。
+- `.env.production` に既存の別master keyが入っている状態でSSM値がそれと異なる場合、
+  deployは中止します（既存の暗号化済みcredentialを復号不能にしないため）。
 - `docker-compose.prod.yml` は `studio` / `bot` サービスへ `HERTA_RUNTIME_SECRET_KEY` を渡します。
 - `deploy/scripts/{deploy,start,rollback}.sh` は起動前に `assert_runtime_secret_key` で
   `.env.production` にAES-256向けの正しい長さ (32 bytes) で存在することを検証します。
@@ -92,7 +96,18 @@ unset MASTER_KEY
 ```
 
 既に本番 `.env.production` へ手動で値を注入済みの場合は、その同一値を SSM へ登録すること
-(異なる値だと次回 deploy の `upsert_env` が上書きし、登録済み runtime secret が復号不能になる)。
+(異なる値だと次回 deploy が「既存keyとSSM値が不一致」で中止する)。
+
+### Master Key Rotation (v1: 手動)
+
+v1 はオンライン rotation / 再暗号化に未対応です。やむを得ず master key を変更する場合:
+
+1. 新しい key を生成し、Studio から全 provider credential を再登録できる状態にする
+   (旧 key で暗号化済みの `runtime_secrets` は復号不能になる前提)
+2. 本番ホストで `.env.production` の `HERTA_RUNTIME_SECRET_KEY` を新値へ更新し、`studio` / `bot` を再作成
+3. Studio から OpenAI 等の credential を再登録
+4. SSM parameter `/ivrm/runtime/herta/runtime-secret-key` を `--overwrite` で新値へ更新
+   (ホストと SSM の値を一致させ、次回 deploy の不一致チェックを通す)
 
 ## Studio UX
 

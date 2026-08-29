@@ -261,3 +261,30 @@ test('failure diagnostics do not print production environment values', () => {
   assert.match(diagnostics, /print_migration_history/u);
   assert.match(diagnostics, /container runtime states/u);
 });
+
+test('production deploy injects the runtime secret master key from SSM and guards it', () => {
+  const workflow = readFileSync('.github/workflows/deploy-production.yml', 'utf8');
+
+  // SSM取得 -> mask -> GITHUB_ENV -> SSH envs -> upsert_env の経路が揃っていること。
+  assert.match(workflow, /\/ivrm\/runtime\/herta\/runtime-secret-key/u);
+  assert.match(workflow, /envs:[^\n]*HERTA_RUNTIME_SECRET_KEY/u);
+  assert.match(workflow, /upsert_env HERTA_RUNTIME_SECRET_KEY "\$\{HERTA_RUNTIME_SECRET_KEY\}"/u);
+
+  const fetchIdx = workflow.indexOf("fetch_ssm_secret '/ivrm/runtime/herta/runtime-secret-key'");
+  const validateIdx = workflow.indexOf('validate_runtime_secret_key "${HERTA_RUNTIME_SECRET_KEY}"');
+  const mismatchIdx = workflow.indexOf('既存 HERTA_RUNTIME_SECRET_KEY と SSM の値が一致しません');
+  const upsertIdx = workflow.indexOf(
+    'upsert_env HERTA_RUNTIME_SECRET_KEY "${HERTA_RUNTIME_SECRET_KEY}"',
+  );
+
+  assert.ok(fetchIdx >= 0, 'workflow must fetch the runtime secret master key from SSM');
+  assert.ok(validateIdx >= 0, 'workflow must validate the master key format before writing it');
+  assert.ok(mismatchIdx >= 0, 'workflow must abort when the local key differs from the SSM value');
+  assert.ok(
+    validateIdx < upsertIdx && mismatchIdx < upsertIdx,
+    'format and mismatch guards must run before the environment file is overwritten',
+  );
+
+  // control文字を含むSSM値はGITHUB_ENVへ書く前に拒否すること。
+  assert.match(workflow, /LC_ALL=C grep -q '\[\[:cntrl:\]\]'/u);
+});
