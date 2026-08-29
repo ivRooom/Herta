@@ -11,6 +11,21 @@ import {
   validateAiImageArtifact,
 } from './image-artifact-validation.js';
 
+export type AiExecutionArtifactValidationErrorCode =
+  | 'unsupported_type'
+  | 'invalid_batch'
+  | 'too_many_images';
+
+export class AiExecutionArtifactValidationError extends Error {
+  readonly code: AiExecutionArtifactValidationErrorCode;
+
+  constructor(code: AiExecutionArtifactValidationErrorCode) {
+    super(`AI execution artifact validation failed: ${code}`);
+    this.name = 'AiExecutionArtifactValidationError';
+    this.code = code;
+  }
+}
+
 export interface AiExecutionArtifactDownloadPolicy {
   filename: string;
   mimeType: string;
@@ -53,7 +68,7 @@ export function resolveAiExecutionArtifactDownloadPolicy(
     };
   }
 
-  throw new Error('unsupported execution artifact');
+  throw new AiExecutionArtifactValidationError('unsupported_type');
 }
 
 export async function validateAiExecutionArtifactBatch(
@@ -61,12 +76,12 @@ export async function validateAiExecutionArtifactBatch(
   artifactConfig: AiArtifactConfig,
 ): Promise<AiArtifact[]> {
   if (!Array.isArray(drafts) || drafts.length > artifactConfig.maxFiles) {
-    throw new Error('invalid execution artifact batch');
+    throw new AiExecutionArtifactValidationError('invalid_batch');
   }
 
   const imageCount = drafts.filter((draft) => draft.kind === 'image').length;
   if (imageCount > AI_IMAGE_ARTIFACT_DEFAULTS.maxFiles) {
-    throw new Error('too many execution image artifacts');
+    throw new AiExecutionArtifactValidationError('too_many_images');
   }
 
   return Promise.all(
