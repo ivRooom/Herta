@@ -55,6 +55,8 @@ const HARD_CODED_CURRENT_VALUE_PATTERN =
   /(?:hard[- ]?cod(?:e|ed|ing)|literal(?:ly)?|fixed\s+value|ハードコード|固定値)/i;
 const LIVE_EXTERNAL_QUERY_PATTERN =
   /(?:天気|天候|株価|為替|ニュース|障害状況)(?:は|って)?(?:どう(?!やって|して|いう)|いくら|何円|教えて|を教えて|見せて|[?？])|\b(?:what(?:'s| is)|how(?:'s| is))\s+the\s+(?:weather|forecast|stock price|exchange rate|news|outage status)(?:\s+(?:in|for|at|of)\s+[^?]+)?\s*\?|\b(?:weather|forecast|stock price|exchange rate|outage status)(?:\s+(?:in|for|at|of)\s+[^?]+)?\s*\?|\b(?:give|tell|show)\s+me\s+(?:the\s+)?(?:weather|forecast|stock price|exchange rate|news|outage status)(?:\s+(?:in|for|at|of)\s+.+)?$/i;
+const FUTURE_FORECAST_QUERY_PATTERN =
+  /(?:(?:明日|明後日|今夜).{0,60}(?:天気|天候|雨|雪|降水|予報)|(?:天気|天候|雨|雪|降水|予報).{0,60}(?:明日|明後日|今夜)|\b(?:weather|forecast|rain|snow|precipitation)\b.{0,60}\b(?:tomorrow|tonight|next\s+(?:day|week))\b|\b(?:tomorrow|tonight|next\s+(?:day|week))\b.{0,60}\b(?:weather|forecast|rain|snow|precipitation)\b)/i;
 const EXTERNAL_TARGET_PATTERN =
   /(?:GitHub|repository|リポジトリ|pull request|\bPR\b|\bIssue\b|\bCI\b|production|本番|deploy|デプロイ|release|リリース|公式(?:ドキュメント|docs?)?|\bofficial\s+(?:documentation|docs?)\b|website|サイト|ニュース|天気|株価|為替)/i;
 const EXPLICIT_CHECK_PATTERN =
@@ -76,6 +78,10 @@ const REPOSITORY_CONTENT_REQUEST_PATTERN =
 const URL_PATTERN = /https?:\/\/\S+/i;
 const CODE_RUNTIME_URL_ACCESS_PATTERN =
   /(?:\b(?:downloads?|fetch(?:es)?|requests?|retrieves?|opens?|reads?)\b[\s\S]{0,80}https?:\/\/\S+[\s\S]{0,40}\b(?:at\s+runtime|runtime)\b|\b(?:at\s+runtime|runtime)\b[\s\S]{0,40}\b(?:downloads?|fetch(?:es)?|requests?|retrieves?|opens?|reads?)\b[\s\S]{0,80}https?:\/\/\S+)/i;
+const URL_DERIVED_CONTENT_REQUEST_PATTERN =
+  /\b(?:summari[sz]e|describe|quote|extract|translate|convert|analy[sz]e|inspect|read)\b[\s\S]{0,80}\b(?:that|this|the)\s+(?:page|content|response)\b/i;
+const RUNTIME_URL_DERIVED_CONTENT_PATTERN =
+  /\b(?:summari[sz]e|describe|quote|extract|translate|convert|analy[sz]e|inspect|read)\b[\s\S]{0,80}\b(?:that|this|the)\s+(?:page|content|response)\b[\s\S]{0,40}\b(?:at\s+runtime|runtime)\b/i;
 const URL_DEREFERENCE_PATTERN =
   /(?:https?:\/\/\S+[\s\S]{0,80}(?:を元に|をもとに|の内容(?:を|について)?|を開いて|を読んで|を取得して|を要約して|を解析して|を確認して|を調べて|を検索して|を検証して|\b(?:read|open|visit|fetch|inspect|summarize|analy[sz]e|look\s+up|check|verify|confirm|search|download|convert|transform|extract|translate)\b)|(?:を元に|をもとに|内容を|開いて|読んで|取得して|要約して|解析して|確認して|調べて|検索して|検証して|\bbased on\b|\busing\b|\bfrom\b|\bread\b|\bopen\b|\bvisit\b|\bfetch\b|\binspect\b|\bsummarize\b|\banaly[sz]e\b|\blook\s+up\b|\bcheck\b|\bverify\b|\bconfirm\b|\bsearch\b|\bdownload\b|\bconvert\b|\btransform\b|\bextract\b|\btranslate\b)[\s\S]{0,80}https?:\/\/\S+|\bwhat does\s+https?:\/\/\S+\s+(?:say|contain|show)\b|\bwhat is\s+on\s+https?:\/\/\S+|\btell me\s+what(?:'s| is)\s+on\s+https?:\/\/\S+|\bcan you\s+inspect\s+https?:\/\/\S+)/i;
 
@@ -188,8 +194,13 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
     (artifactIntent === 'code_artifact' || artifactIntent === 'code_execution') &&
     CODE_RUNTIME_VALUE_INPUT_PATTERN.test(normalized) &&
     !HARD_CODED_CURRENT_VALUE_PATTERN.test(normalized);
+  const hasImmediateUrlDerivedContent =
+    URL_DERIVED_CONTENT_REQUEST_PATTERN.test(normalized) &&
+    !RUNTIME_URL_DERIVED_CONTENT_PATTERN.test(normalized);
   const isCodeRuntimeUrlAccessRequest =
-    artifactIntent === 'code_artifact' && CODE_RUNTIME_URL_ACCESS_PATTERN.test(normalized);
+    artifactIntent === 'code_artifact' &&
+    CODE_RUNTIME_URL_ACCESS_PATTERN.test(normalized) &&
+    !hasImmediateUrlDerivedContent;
   const currentFactInput = isCodeRuntimeValueRequest
     ? stripCodeRuntimeValueClauses(normalized)
     : normalized;
@@ -203,6 +214,7 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
     CURRENT_REQUEST_MARKER_PATTERN.test(currentGroundingInput) &&
     CURRENT_REQUEST_FACT_PATTERN.test(currentGroundingInput);
   const requiresLiveExternalGrounding = LIVE_EXTERNAL_QUERY_PATTERN.test(currentFactInput);
+  const requiresFutureForecastGrounding = FUTURE_FORECAST_QUERY_PATTERN.test(currentFactInput);
   const requiresRepositoryContentGrounding =
     CONCRETE_REPOSITORY_REFERENCE_PATTERN.test(normalized) &&
     REPOSITORY_CONTENT_REQUEST_PATTERN.test(normalized);
@@ -219,6 +231,7 @@ export function resolveAiConversationGroundingState(input: string): AiGroundingS
     requiresEnumeratedCurrentGrounding ||
     requiresCurrentGrounding ||
     requiresLiveExternalGrounding ||
+    requiresFutureForecastGrounding ||
     EXTERNAL_CONTENT_REQUEST_PATTERN.test(normalized) ||
     ATTACHMENT_CONTENT_REQUEST_PATTERN.test(normalized) ||
     DEICTIC_FILE_CONTENT_REQUEST_PATTERN.test(normalized) ||
