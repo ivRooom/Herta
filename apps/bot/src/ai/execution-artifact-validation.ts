@@ -12,9 +12,7 @@ import {
 } from './image-artifact-validation.js';
 
 export type AiExecutionArtifactValidationErrorCode =
-  | 'unsupported_type'
-  | 'invalid_batch'
-  | 'too_many_images';
+  'unsupported_type' | 'invalid_batch' | 'too_many_images';
 
 export class AiExecutionArtifactValidationError extends Error {
   readonly code: AiExecutionArtifactValidationErrorCode;
