@@ -236,11 +236,11 @@ async function createSharedRuntime(
     new AiArtifactRuntime({
       generationService,
       executionService: withAiDirectReplyCodeExecutionContext(
-        bootstrap.executionService,
+        bootstrap.executionService ?? undefined,
         directReplyContext,
       ),
       imageGenerationService: withAiDirectReplyImageGenerationContext(
-        bootstrap.imageGenerationService,
+        bootstrap.imageGenerationService ?? undefined,
         directReplyContext,
       ),
       artifactConfig,
