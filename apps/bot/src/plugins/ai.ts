@@ -82,10 +82,7 @@ async function handleAiMessage(
   if (message.reference?.messageId) {
     await verifyAiReplyToBot(message, botUserId);
   }
-  if (
-    !wasCandidateBeforeReplyVerification &&
-    !isAiArtifactMessageCandidate(message, botUserId)
-  ) {
+  if (!wasCandidateBeforeReplyVerification && !isAiArtifactMessageCandidate(message, botUserId)) {
     return;
   }
 
