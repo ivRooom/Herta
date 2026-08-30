@@ -15,6 +15,11 @@ import {
 import type { AiImageGenerationService } from './image-generation-service.js';
 import type { AiRuntimeGenerationService } from './runtime-service.js';
 
+type GenerationRequest = Parameters<AiRuntimeGenerationService['generate']>[0];
+type RateLimitRequest = Parameters<NonNullable<AiRuntimeGenerationService['consumeRateLimit']>>[0];
+type CodeExecutionRequest = Parameters<AiCodeExecutionService['execute']>[0];
+type ImageGenerationRequest = Parameters<AiImageGenerationService['generate']>[0];
+
 function generationResponse(): AiGenerationResponse {
   return {
     requestId: 'request-1',
@@ -67,8 +72,12 @@ describe('AI direct reply context', () => {
     const context = getVerifiedAiReplyContext(message);
     expect(context).toBe('TypeScriptの型安全性について話していたよ。');
 
-    const generate = vi.fn(async () => generationResponse());
-    const consumeRateLimit = vi.fn(async () => undefined);
+    let forwarded: GenerationRequest | null = null;
+    const generate = vi.fn(async (request: GenerationRequest) => {
+      forwarded = request;
+      return generationResponse();
+    });
+    const consumeRateLimit = vi.fn(async (_request: RateLimitRequest) => undefined);
     const service: AiRuntimeGenerationService = { generate, consumeRateLimit };
     const contextualService = withAiDirectReplyContext(service, context);
 
@@ -87,14 +96,15 @@ describe('AI direct reply context', () => {
     });
 
     expect(generate).toHaveBeenCalledTimes(1);
-    const forwarded = generate.mock.calls[0]?.[0];
-    expect(JSON.parse(forwarded?.input ?? '{}')).toEqual({
+    expect(forwarded).not.toBeNull();
+    if (!forwarded) throw new Error('expected forwarded generation request');
+    expect(JSON.parse(forwarded.input)).toEqual({
       referencedHertaMessage: 'TypeScriptの型安全性について話していたよ。',
       currentUserMessage: 'それを詳しく',
     });
-    expect(forwarded?.trustedInstructions).toContain('existing trusted instruction');
-    expect(forwarded?.trustedInstructions?.join('\n')).toContain('bounded conversation context');
-    expect(forwarded?.trustedInstructions?.join('\n')).not.toContain(
+    expect(forwarded.trustedInstructions).toContain('existing trusted instruction');
+    expect(forwarded.trustedInstructions?.join('\n')).toContain('bounded conversation context');
+    expect(forwarded.trustedInstructions?.join('\n')).not.toContain(
       'TypeScriptの型安全性について話していたよ。',
     );
 
@@ -113,7 +123,11 @@ describe('AI direct reply context', () => {
   });
 
   it('artifact runtimeにもverified contextをuser-input planeのまま渡せる', async () => {
-    const generate = vi.fn(async () => artifactGenerationResponse());
+    let forwarded: GenerationRequest | null = null;
+    const generate = vi.fn(async (request: GenerationRequest) => {
+      forwarded = request;
+      return artifactGenerationResponse();
+    });
     const service: AiRuntimeGenerationService = { generate };
     const runtime = new AiArtifactRuntime({
       generationService: withAiDirectReplyContext(service, '前のHerta返答'),
@@ -132,16 +146,19 @@ describe('AI direct reply context', () => {
 
     expect(result.status).toBe('ready');
     expect(generate).toHaveBeenCalledTimes(1);
-    const forwarded = generate.mock.calls[0]?.[0];
-    expect(JSON.parse(forwarded?.input ?? '{}')).toEqual({
+    expect(forwarded).not.toBeNull();
+    if (!forwarded) throw new Error('expected forwarded artifact request');
+    expect(JSON.parse(forwarded.input)).toEqual({
       referencedHertaMessage: '前のHerta返答',
       currentUserMessage: 'READMEをMarkdownで作って',
     });
-    expect(forwarded?.trustedInstructions?.join('\n')).not.toContain('前のHerta返答');
+    expect(forwarded.trustedInstructions?.join('\n')).not.toContain('前のHerta返答');
   });
 
   it('Code Interpreterと画像生成にもverified contextをuser-input planeで渡す', async () => {
-    const execute = vi.fn(async () => {
+    let executionRequest: CodeExecutionRequest | null = null;
+    const execute = vi.fn(async (request: CodeExecutionRequest) => {
+      executionRequest = request;
       throw new Error('captured execution request');
     });
     const executionService: AiCodeExecutionService = { execute };
@@ -149,9 +166,10 @@ describe('AI direct reply context', () => {
       executionService,
       '前のHerta返答',
     );
+    if (!contextualExecutionService) throw new Error('expected contextual execution service');
 
     await expect(
-      contextualExecutionService?.execute({
+      contextualExecutionService.execute({
         input: 'そのコードを実行して',
         guildId: 'guild-1',
         scopeGuildId: 'guild-1',
@@ -162,12 +180,16 @@ describe('AI direct reply context', () => {
         artifactConfig: { maxBytes: 4096, maxFiles: 2 },
       }),
     ).rejects.toThrow('captured execution request');
-    expect(JSON.parse(execute.mock.calls[0]?.[0].input ?? '{}')).toEqual({
+    expect(executionRequest).not.toBeNull();
+    if (!executionRequest) throw new Error('expected execution request');
+    expect(JSON.parse(executionRequest.input)).toEqual({
       referencedHertaMessage: '前のHerta返答',
       currentUserMessage: 'そのコードを実行して',
     });
 
-    const generateImage = vi.fn(async () => {
+    let imageRequest: ImageGenerationRequest | null = null;
+    const generateImage = vi.fn(async (request: ImageGenerationRequest) => {
+      imageRequest = request;
       throw new Error('captured image request');
     });
     const imageGenerationService: AiImageGenerationService = { generate: generateImage };
@@ -175,9 +197,12 @@ describe('AI direct reply context', () => {
       imageGenerationService,
       '前のHerta返答',
     );
+    if (!contextualImageGenerationService) {
+      throw new Error('expected contextual image generation service');
+    }
 
     await expect(
-      contextualImageGenerationService?.generate({
+      contextualImageGenerationService.generate({
         input: 'その内容で画像を作って',
         guildId: 'guild-1',
         scopeGuildId: 'guild-1',
@@ -187,7 +212,9 @@ describe('AI direct reply context', () => {
         guildOptIn: true,
       }),
     ).rejects.toThrow('captured image request');
-    expect(JSON.parse(generateImage.mock.calls[0]?.[0].input ?? '{}')).toEqual({
+    expect(imageRequest).not.toBeNull();
+    if (!imageRequest) throw new Error('expected image generation request');
+    expect(JSON.parse(imageRequest.input)).toEqual({
       referencedHertaMessage: '前のHerta返答',
       currentUserMessage: 'その内容で画像を作って',
     });
