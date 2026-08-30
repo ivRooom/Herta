@@ -9,11 +9,14 @@ import {
   type DiscordArtifactReplyOptions,
 } from './discord-artifact-delivery.js';
 
+const AI_DIRECT_REPLY_CONTEXT_MAX_UTF16_UNITS = 1_900;
 const verifiedBotReplyMessages = new WeakSet<object>();
+const verifiedBotReplyContexts = new WeakMap<object, string>();
 
 export interface AiReferencedDiscordMessage {
   guildId?: string | null;
   author: { id: string };
+  content?: string | null;
 }
 
 export interface AiArtifactDiscordMessage {
@@ -132,6 +135,16 @@ export function isAiArtifactMessageCandidate(
 }
 
 /**
+ * Return the bounded referenced Herta text captured only after server-side direct-reply
+ * verification. The value is conversation context, never a trusted instruction.
+ */
+export function getVerifiedAiReplyContext(
+  message: AiArtifactDiscordMessage | undefined,
+): string | null {
+  return message ? (verifiedBotReplyContexts.get(message) ?? null) : null;
+}
+
+/**
  * Discord reply metadata alone is not trusted. Fetch the referenced message and only mark this
  * message as an AI candidate when the referenced author is the currently running Herta Bot.
  * Fetch failures are a normal ignore path and the raw Discord error is deliberately discarded.
@@ -147,6 +160,9 @@ export async function verifyAiReplyToBot(
     const referenced = await message.fetchReference();
     if (referenced.author.id !== botUserId) return false;
     if (referenced.guildId && referenced.guildId !== message.guildId) return false;
+
+    const context = normalizeVerifiedBotReplyContext(referenced.content);
+    if (context) verifiedBotReplyContexts.set(message, context);
     verifiedBotReplyMessages.add(message);
     return true;
   } catch {
@@ -174,6 +190,17 @@ function isSafeAiMessageBase(
     typeof message.content === 'string' &&
     message.content.trim(),
   );
+}
+
+function normalizeVerifiedBotReplyContext(content: string | null | undefined): string | null {
+  if (typeof content !== 'string') return null;
+  const normalized = content.trim();
+  if (!normalized) return null;
+  if (normalized.length <= AI_DIRECT_REPLY_CONTEXT_MAX_UTF16_UNITS) return normalized;
+
+  const bounded = normalized.slice(0, AI_DIRECT_REPLY_CONTEXT_MAX_UTF16_UNITS);
+  const lastCodeUnit = bounded.charCodeAt(bounded.length - 1);
+  return lastCodeUnit >= 0xd800 && lastCodeUnit <= 0xdbff ? bounded.slice(0, -1) : bounded;
 }
 
 function hasBotMentionInContent(content: string, botUserId: string): boolean {

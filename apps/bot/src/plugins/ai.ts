@@ -11,11 +11,13 @@ import type { Client } from 'discord.js';
 import { Redis } from 'ioredis';
 import { AiArtifactRuntime } from '../ai/artifact-runtime.js';
 import {
+  getVerifiedAiReplyContext,
   isAiArtifactMessageCandidate,
   verifyAiReplyToBot,
   type AiArtifactDiscordMessage,
 } from '../ai/artifact-message-handler.js';
 import { handleAiConversationMessage } from '../ai/conversation-message-handler.js';
+import { withAiDirectReplyContext } from '../ai/direct-reply-context.js';
 import { createAiFoundationRuntime } from '../ai/factory.js';
 import type { AiRuntimeGenerationService } from '../ai/runtime-service.js';
 
@@ -75,9 +77,12 @@ async function handleAiMessage(
 
   try {
     const runtime = await getSharedRuntime(context);
+    const generationService = runtime?.generationService
+      ? withAiDirectReplyContext(runtime.generationService, getVerifiedAiReplyContext(message))
+      : null;
     const result = await handleAiConversationMessage(message, {
       runtime: runtime?.artifactRuntime ?? null,
-      generationService: runtime?.generationService ?? null,
+      generationService,
       botUserId,
       getAiPluginConfig: async (guildId) =>
         guildId === context.guildId
