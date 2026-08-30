@@ -17,7 +17,11 @@ import {
   type AiArtifactDiscordMessage,
 } from '../ai/artifact-message-handler.js';
 import { handleAiConversationMessage } from '../ai/conversation-message-handler.js';
-import { withAiDirectReplyContext } from '../ai/direct-reply-context.js';
+import {
+  withAiDirectReplyCodeExecutionContext,
+  withAiDirectReplyContext,
+  withAiDirectReplyImageGenerationContext,
+} from '../ai/direct-reply-context.js';
 import { createAiFoundationRuntime } from '../ai/factory.js';
 import type { AiRuntimeGenerationService } from '../ai/runtime-service.js';
 
@@ -29,7 +33,10 @@ type AiPluginRuntimeContext = PluginRuntimeContext<AiPluginConfig, Client, Prism
 
 interface AiPluginSharedRuntime {
   artifactRuntime: AiArtifactRuntime;
-  createArtifactRuntime(generationService: AiRuntimeGenerationService): AiArtifactRuntime;
+  createArtifactRuntime(
+    generationService: AiRuntimeGenerationService,
+    directReplyContext?: string | null,
+  ): AiArtifactRuntime;
   generationService: AiRuntimeGenerationService;
 }
 
@@ -90,7 +97,7 @@ async function handleAiMessage(
       : null;
     let artifactRuntime = runtime?.artifactRuntime ?? null;
     if (runtime && generationService && directReplyContext) {
-      artifactRuntime = runtime.createArtifactRuntime(generationService);
+      artifactRuntime = runtime.createArtifactRuntime(generationService, directReplyContext);
     }
     const result = await handleAiConversationMessage(message, {
       runtime: artifactRuntime,
@@ -225,11 +232,20 @@ async function createSharedRuntime(
     'AI runtimeを初期化しました',
   );
 
-  const createArtifactRuntime = (generationService: AiRuntimeGenerationService) =>
+  const createArtifactRuntime = (
+    generationService: AiRuntimeGenerationService,
+    directReplyContext: string | null = null,
+  ) =>
     new AiArtifactRuntime({
       generationService,
-      executionService: bootstrap.executionService ?? undefined,
-      imageGenerationService: bootstrap.imageGenerationService ?? undefined,
+      executionService: withAiDirectReplyCodeExecutionContext(
+        bootstrap.executionService,
+        directReplyContext,
+      ),
+      imageGenerationService: withAiDirectReplyImageGenerationContext(
+        bootstrap.imageGenerationService,
+        directReplyContext,
+      ),
       artifactConfig,
       telemetry: (event) => {
         // Artifact runtime is shared for the same reason as Foundation runtime telemetry.
