@@ -6,7 +6,13 @@ import {
   verifyAiReplyToBot,
   type AiArtifactDiscordMessage,
 } from './artifact-message-handler.js';
-import { withAiDirectReplyContext } from './direct-reply-context.js';
+import type { AiCodeExecutionService } from './code-execution-service.js';
+import {
+  withAiDirectReplyCodeExecutionContext,
+  withAiDirectReplyContext,
+  withAiDirectReplyImageGenerationContext,
+} from './direct-reply-context.js';
+import type { AiImageGenerationService } from './image-generation-service.js';
 import type { AiRuntimeGenerationService } from './runtime-service.js';
 
 function generationResponse(): AiGenerationResponse {
@@ -132,6 +138,59 @@ describe('AI direct reply context', () => {
       currentUserMessage: 'READMEをMarkdownで作って',
     });
     expect(forwarded?.trustedInstructions?.join('\n')).not.toContain('前のHerta返答');
+  });
+
+  it('Code Interpreterと画像生成にもverified contextをuser-input planeで渡す', async () => {
+    const execute = vi.fn(async () => {
+      throw new Error('captured execution request');
+    });
+    const executionService: AiCodeExecutionService = { execute };
+    const contextualExecutionService = withAiDirectReplyCodeExecutionContext(
+      executionService,
+      '前のHerta返答',
+    );
+
+    await expect(
+      contextualExecutionService?.execute({
+        input: 'そのコードを実行して',
+        guildId: 'guild-1',
+        scopeGuildId: 'guild-1',
+        userId: 'user-1',
+        authorized: true,
+        pluginEnabled: true,
+        guildOptIn: true,
+        artifactConfig: { maxBytes: 4096, maxFiles: 2 },
+      }),
+    ).rejects.toThrow('captured execution request');
+    expect(JSON.parse(execute.mock.calls[0]?.[0].input ?? '{}')).toEqual({
+      referencedHertaMessage: '前のHerta返答',
+      currentUserMessage: 'そのコードを実行して',
+    });
+
+    const generateImage = vi.fn(async () => {
+      throw new Error('captured image request');
+    });
+    const imageGenerationService: AiImageGenerationService = { generate: generateImage };
+    const contextualImageGenerationService = withAiDirectReplyImageGenerationContext(
+      imageGenerationService,
+      '前のHerta返答',
+    );
+
+    await expect(
+      contextualImageGenerationService?.generate({
+        input: 'その内容で画像を作って',
+        guildId: 'guild-1',
+        scopeGuildId: 'guild-1',
+        userId: 'user-1',
+        authorized: true,
+        pluginEnabled: true,
+        guildOptIn: true,
+      }),
+    ).rejects.toThrow('captured image request');
+    expect(JSON.parse(generateImage.mock.calls[0]?.[0].input ?? '{}')).toEqual({
+      referencedHertaMessage: '前のHerta返答',
+      currentUserMessage: 'その内容で画像を作って',
+    });
   });
 
   it('referenced Herta本文はDiscord境界内へboundedに保持する', async () => {
