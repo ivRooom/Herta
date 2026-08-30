@@ -78,7 +78,10 @@ async function handleAiMessage(
   try {
     const runtime = await getSharedRuntime(context);
     const generationService = runtime?.generationService
-      ? withAiDirectReplyContext(runtime.generationService, getVerifiedAiReplyContext(message))
+      ? withAiDirectReplyContext(
+          runtime.generationService,
+          getVerifiedAiReplyContext(message),
+        )
       : null;
     const result = await handleAiConversationMessage(message, {
       runtime: runtime?.artifactRuntime ?? null,
