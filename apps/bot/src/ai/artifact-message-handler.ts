@@ -136,7 +136,7 @@ export function isAiArtifactMessageCandidate(
 
   return Boolean(
     (hasRealMention || isVerifiedBotReply || isFollowUp) &&
-      stripBotMention(message.content, botUserId),
+    stripBotMention(message.content, botUserId),
   );
 }
 
@@ -196,14 +196,14 @@ function isSafeAiMessageBase(
 ): message is AiArtifactCandidateMessage {
   return Boolean(
     message &&
-      botUserId &&
-      /^\d+$/.test(botUserId) &&
-      message.guildId &&
-      message.author.id !== botUserId &&
-      !message.author.bot &&
-      !message.webhookId &&
-      typeof message.content === 'string' &&
-      message.content.trim(),
+    botUserId &&
+    /^\d+$/.test(botUserId) &&
+    message.guildId &&
+    message.author.id !== botUserId &&
+    !message.author.bot &&
+    !message.webhookId &&
+    typeof message.content === 'string' &&
+    message.content.trim(),
   );
 }
 
