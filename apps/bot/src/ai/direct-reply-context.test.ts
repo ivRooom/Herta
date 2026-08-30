@@ -72,11 +72,7 @@ describe('AI direct reply context', () => {
     const context = getVerifiedAiReplyContext(message);
     expect(context).toBe('TypeScriptの型安全性について話していたよ。');
 
-    let forwarded: GenerationRequest | null = null;
-    const generate = vi.fn(async (request: GenerationRequest) => {
-      forwarded = request;
-      return generationResponse();
-    });
+    const generate = vi.fn(async (_request: GenerationRequest) => generationResponse());
     const consumeRateLimit = vi.fn(async (_request: RateLimitRequest) => undefined);
     const service: AiRuntimeGenerationService = { generate, consumeRateLimit };
     const contextualService = withAiDirectReplyContext(service, context);
@@ -96,7 +92,8 @@ describe('AI direct reply context', () => {
     });
 
     expect(generate).toHaveBeenCalledTimes(1);
-    expect(forwarded).not.toBeNull();
+    const forwarded = generate.mock.calls[0]?.[0];
+    expect(forwarded).toBeDefined();
     if (!forwarded) throw new Error('expected forwarded generation request');
     expect(JSON.parse(forwarded.input)).toEqual({
       referencedHertaMessage: 'TypeScriptの型安全性について話していたよ。',
@@ -123,11 +120,7 @@ describe('AI direct reply context', () => {
   });
 
   it('artifact runtimeにもverified contextをuser-input planeのまま渡せる', async () => {
-    let forwarded: GenerationRequest | null = null;
-    const generate = vi.fn(async (request: GenerationRequest) => {
-      forwarded = request;
-      return artifactGenerationResponse();
-    });
+    const generate = vi.fn(async (_request: GenerationRequest) => artifactGenerationResponse());
     const service: AiRuntimeGenerationService = { generate };
     const runtime = new AiArtifactRuntime({
       generationService: withAiDirectReplyContext(service, '前のHerta返答'),
@@ -146,7 +139,8 @@ describe('AI direct reply context', () => {
 
     expect(result.status).toBe('ready');
     expect(generate).toHaveBeenCalledTimes(1);
-    expect(forwarded).not.toBeNull();
+    const forwarded = generate.mock.calls[0]?.[0];
+    expect(forwarded).toBeDefined();
     if (!forwarded) throw new Error('expected forwarded artifact request');
     expect(JSON.parse(forwarded.input)).toEqual({
       referencedHertaMessage: '前のHerta返答',
@@ -156,9 +150,7 @@ describe('AI direct reply context', () => {
   });
 
   it('Code Interpreterと画像生成にもverified contextをuser-input planeで渡す', async () => {
-    let executionRequest: CodeExecutionRequest | null = null;
-    const execute = vi.fn(async (request: CodeExecutionRequest) => {
-      executionRequest = request;
+    const execute = vi.fn(async (_request: CodeExecutionRequest) => {
       throw new Error('captured execution request');
     });
     const executionService: AiCodeExecutionService = { execute };
@@ -180,16 +172,15 @@ describe('AI direct reply context', () => {
         artifactConfig: { maxBytes: 4096, maxFiles: 2 },
       }),
     ).rejects.toThrow('captured execution request');
-    expect(executionRequest).not.toBeNull();
+    const executionRequest = execute.mock.calls[0]?.[0];
+    expect(executionRequest).toBeDefined();
     if (!executionRequest) throw new Error('expected execution request');
     expect(JSON.parse(executionRequest.input)).toEqual({
       referencedHertaMessage: '前のHerta返答',
       currentUserMessage: 'そのコードを実行して',
     });
 
-    let imageRequest: ImageGenerationRequest | null = null;
-    const generateImage = vi.fn(async (request: ImageGenerationRequest) => {
-      imageRequest = request;
+    const generateImage = vi.fn(async (_request: ImageGenerationRequest) => {
       throw new Error('captured image request');
     });
     const imageGenerationService: AiImageGenerationService = { generate: generateImage };
@@ -212,7 +203,8 @@ describe('AI direct reply context', () => {
         guildOptIn: true,
       }),
     ).rejects.toThrow('captured image request');
-    expect(imageRequest).not.toBeNull();
+    const imageRequest = generateImage.mock.calls[0]?.[0];
+    expect(imageRequest).toBeDefined();
     if (!imageRequest) throw new Error('expected image generation request');
     expect(JSON.parse(imageRequest.input)).toEqual({
       referencedHertaMessage: '前のHerta返答',
