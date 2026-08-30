@@ -11,7 +11,10 @@ import type { Client } from 'discord.js';
 import { Redis } from 'ioredis';
 import { AiArtifactRuntime } from '../ai/artifact-runtime.js';
 import {
+  activateAiConversationFollowUp,
+  clearAiConversationFollowUps,
   isAiArtifactMessageCandidate,
+  verifyAiReplyToBot,
   type AiArtifactDiscordMessage,
 } from '../ai/artifact-message-handler.js';
 import { handleAiConversationMessage } from '../ai/conversation-message-handler.js';
@@ -65,8 +68,11 @@ async function handleAiMessage(
   if (context.config.enabled !== true) return;
 
   const botUserId = context.client.user?.id ?? null;
-  if (!isAiArtifactMessageCandidate(message, botUserId) || message.guildId !== context.guildId) {
-    return;
+  if (!message || !botUserId || message.guildId !== context.guildId) return;
+
+  if (!isAiArtifactMessageCandidate(message, botUserId)) {
+    const verifiedReply = await verifyAiReplyToBot(message, botUserId);
+    if (!verifiedReply || !isAiArtifactMessageCandidate(message, botUserId)) return;
   }
 
   try {
@@ -82,6 +88,9 @@ async function handleAiMessage(
     });
 
     if (result.status === 'handled') {
+      if (result.intent === 'chat' || result.intent === 'detailed_answer') {
+        activateAiConversationFollowUp(message);
+      }
       context.logger.info(
         {
           guildId: context.guildId,
@@ -231,6 +240,7 @@ function getSharedRuntimeLogger(): Logger {
 
 async function closeSharedRuntime(): Promise<void> {
   sharedRuntimePromise = undefined;
+  clearAiConversationFollowUps();
   const redis = sharedRedis;
   sharedRedis = undefined;
   if (redis) await redis.quit().catch(() => redis.disconnect());
