@@ -29,6 +29,7 @@ type AiPluginRuntimeContext = PluginRuntimeContext<AiPluginConfig, Client, Prism
 
 interface AiPluginSharedRuntime {
   artifactRuntime: AiArtifactRuntime;
+  createArtifactRuntime(generationService: AiRuntimeGenerationService): AiArtifactRuntime;
   generationService: AiRuntimeGenerationService;
 }
 
@@ -70,21 +71,29 @@ async function handleAiMessage(
   const botUserId = context.client.user?.id ?? null;
   if (!message || !botUserId || message.guildId !== context.guildId) return;
 
-  if (!isAiArtifactMessageCandidate(message, botUserId)) {
-    const verifiedReply = await verifyAiReplyToBot(message, botUserId);
-    if (!verifiedReply || !isAiArtifactMessageCandidate(message, botUserId)) return;
+  const wasCandidateBeforeReplyVerification = isAiArtifactMessageCandidate(message, botUserId);
+  if (message.reference?.messageId) {
+    await verifyAiReplyToBot(message, botUserId);
+  }
+  if (
+    !wasCandidateBeforeReplyVerification &&
+    !isAiArtifactMessageCandidate(message, botUserId)
+  ) {
+    return;
   }
 
   try {
     const runtime = await getSharedRuntime(context);
+    const directReplyContext = getVerifiedAiReplyContext(message);
     const generationService = runtime?.generationService
-      ? withAiDirectReplyContext(
-          runtime.generationService,
-          getVerifiedAiReplyContext(message),
-        )
+      ? withAiDirectReplyContext(runtime.generationService, directReplyContext)
       : null;
+    const artifactRuntime =
+      runtime && generationService && directReplyContext
+        ? runtime.createArtifactRuntime(generationService)
+        : (runtime?.artifactRuntime ?? null);
     const result = await handleAiConversationMessage(message, {
-      runtime: runtime?.artifactRuntime ?? null,
+      runtime: artifactRuntime,
       generationService,
       botUserId,
       getAiPluginConfig: async (guildId) =>
@@ -216,19 +225,22 @@ async function createSharedRuntime(
     'AI runtimeを初期化しました',
   );
 
-  const artifactRuntime = new AiArtifactRuntime({
-    generationService: bootstrap.service,
-    executionService: bootstrap.executionService ?? undefined,
-    imageGenerationService: bootstrap.imageGenerationService ?? undefined,
-    artifactConfig,
-    telemetry: (event) => {
-      // Artifact runtime is shared for the same reason as Foundation runtime telemetry.
-      logger.info(event, 'AI Artifact telemetry');
-    },
-  });
+  const createArtifactRuntime = (generationService: AiRuntimeGenerationService) =>
+    new AiArtifactRuntime({
+      generationService,
+      executionService: bootstrap.executionService ?? undefined,
+      imageGenerationService: bootstrap.imageGenerationService ?? undefined,
+      artifactConfig,
+      telemetry: (event) => {
+        // Artifact runtime is shared for the same reason as Foundation runtime telemetry.
+        logger.info(event, 'AI Artifact telemetry');
+      },
+    });
+  const artifactRuntime = createArtifactRuntime(bootstrap.service);
 
   return {
     artifactRuntime,
+    createArtifactRuntime,
     generationService: bootstrap.service,
   };
 }
