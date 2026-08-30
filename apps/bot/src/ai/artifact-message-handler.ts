@@ -185,7 +185,7 @@ function isSafeAiMessageBase(
     /^\d+$/.test(botUserId) &&
     message.guildId &&
     message.author.id !== botUserId &&
-    !message.author.bot &&
+    message.author.bot === false &&
     !message.webhookId &&
     typeof message.content === 'string' &&
     message.content.trim(),
