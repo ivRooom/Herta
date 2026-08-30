@@ -127,7 +127,7 @@ export function isAiArtifactMessageCandidate(
   botUserId: string | null,
   nowMs = Date.now(),
 ): message is AiArtifactCandidateMessage {
-  if (!isSafeAiMessageBase(message, botUserId)) return false;
+  if (!botUserId || !isSafeAiMessageBase(message, botUserId)) return false;
 
   const hasRealMention =
     message.mentions.users.has(botUserId) && hasBotMentionInContent(message.content, botUserId);
