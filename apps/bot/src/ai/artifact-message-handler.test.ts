@@ -1,9 +1,7 @@
 import type { AiGenerationResponse } from '@herta/plugin-catalog/ai-service';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AiArtifactRuntime } from './artifact-runtime.js';
 import {
-  activateAiConversationFollowUp,
-  clearAiConversationFollowUps,
   handleAiArtifactMessage,
   isAiArtifactMessageCandidate,
   stripBotMention,
@@ -44,7 +42,6 @@ function message(
 ): AiArtifactDiscordMessage {
   return {
     guildId: 'guild-1',
-    channelId: 'channel-1',
     content,
     webhookId: null,
     author: { id: 'user-1', bot: false },
@@ -62,10 +59,6 @@ function options(runtime: AiArtifactRuntime | null) {
     getAiPluginConfig: vi.fn(async () => ({ enabled: true })),
   };
 }
-
-beforeEach(() => {
-  clearAiConversationFollowUps();
-});
 
 describe('artifact Discord mention handler', () => {
   it('validated artifactだけを短い本文 + attachmentとして返信する', async () => {
@@ -230,30 +223,8 @@ describe('artifact message candidate', () => {
     expect(isAiArtifactMessageCandidate(missingReply, '123456789')).toBe(false);
   });
 
-  it('成功した会話後は同一user/channelだけ5分間mentionなしfollow-upを許可する', () => {
-    const startedAt = 1_000;
-    activateAiConversationFollowUp(message('<@123456789> 話そう'), startedAt);
-
-    expect(isAiArtifactMessageCandidate(message('遊びたい'), '123456789', startedAt + 1)).toBe(
-      true,
-    );
-    expect(
-      isAiArtifactMessageCandidate(
-        message('別channel', replyMock(), { channelId: 'channel-2' }),
-        '123456789',
-        startedAt + 1,
-      ),
-    ).toBe(false);
-    expect(
-      isAiArtifactMessageCandidate(
-        message('別user', replyMock(), { author: { id: 'user-2', bot: false } }),
-        '123456789',
-        startedAt + 1,
-      ),
-    ).toBe(false);
-    expect(
-      isAiArtifactMessageCandidate(message('期限切れ'), '123456789', startedAt + 5 * 60 * 1_000),
-    ).toBe(false);
+  it('通常のmentionなしmessageはdirect replyでなければ候補にしない', () => {
+    expect(isAiArtifactMessageCandidate(message('遊びたい'), '123456789')).toBe(false);
   });
 });
 

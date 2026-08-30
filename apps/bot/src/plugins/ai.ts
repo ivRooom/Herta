@@ -11,8 +11,6 @@ import type { Client } from 'discord.js';
 import { Redis } from 'ioredis';
 import { AiArtifactRuntime } from '../ai/artifact-runtime.js';
 import {
-  activateAiConversationFollowUp,
-  clearAiConversationFollowUps,
   isAiArtifactMessageCandidate,
   verifyAiReplyToBot,
   type AiArtifactDiscordMessage,
@@ -88,9 +86,6 @@ async function handleAiMessage(
     });
 
     if (result.status === 'handled') {
-      if (result.intent === 'chat' || result.intent === 'detailed_answer') {
-        activateAiConversationFollowUp(message);
-      }
       context.logger.info(
         {
           guildId: context.guildId,
@@ -240,7 +235,6 @@ function getSharedRuntimeLogger(): Logger {
 
 async function closeSharedRuntime(): Promise<void> {
   sharedRuntimePromise = undefined;
-  clearAiConversationFollowUps();
   const redis = sharedRedis;
   sharedRedis = undefined;
   if (redis) await redis.quit().catch(() => redis.disconnect());
