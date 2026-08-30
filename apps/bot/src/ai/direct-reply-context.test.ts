@@ -1,5 +1,6 @@
 import type { AiGenerationResponse } from '@herta/plugin-catalog/ai-service';
 import { describe, expect, it, vi } from 'vitest';
+import { AiArtifactRuntime } from './artifact-runtime.js';
 import {
   getVerifiedAiReplyContext,
   verifyAiReplyToBot,
@@ -16,6 +17,21 @@ function generationResponse(): AiGenerationResponse {
     text: '詳しく話すね。',
     usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
     estimatedCost: 0.0001,
+  };
+}
+
+function artifactGenerationResponse(): AiGenerationResponse {
+  return {
+    ...generationResponse(),
+    text: JSON.stringify({
+      artifacts: [
+        {
+          filename: 'README.md',
+          mimeType: 'text/markdown',
+          content: '# README\n',
+        },
+      ],
+    }),
   };
 }
 
@@ -85,7 +101,37 @@ describe('AI direct reply context', () => {
       pluginEnabled: true,
       guildOptIn: true,
     });
-    expect(consumeRateLimit).toHaveBeenCalledWith(expect.objectContaining({ input: 'それを詳しく' }));
+    expect(consumeRateLimit).toHaveBeenCalledWith(
+      expect.objectContaining({ input: 'それを詳しく' }),
+    );
+  });
+
+  it('artifact runtimeにもverified contextをuser-input planeのまま渡せる', async () => {
+    const generate = vi.fn(async () => artifactGenerationResponse());
+    const service: AiRuntimeGenerationService = { generate };
+    const runtime = new AiArtifactRuntime({
+      generationService: withAiDirectReplyContext(service, '前のHerta返答'),
+      artifactConfig: { maxBytes: 4096, maxFiles: 2 },
+    });
+
+    const result = await runtime.prepare({
+      input: 'READMEをMarkdownで作って',
+      guildId: 'guild-1',
+      scopeGuildId: 'guild-1',
+      userId: 'user-1',
+      authorized: true,
+      pluginEnabled: true,
+      guildOptIn: true,
+    });
+
+    expect(result.status).toBe('ready');
+    expect(generate).toHaveBeenCalledTimes(1);
+    const forwarded = generate.mock.calls[0]?.[0];
+    expect(JSON.parse(forwarded?.input ?? '{}')).toEqual({
+      referencedHertaMessage: '前のHerta返答',
+      currentUserMessage: 'READMEをMarkdownで作って',
+    });
+    expect(forwarded?.trustedInstructions?.join('\n')).not.toContain('前のHerta返答');
   });
 
   it('referenced Herta本文はDiscord境界内へboundedに保持する', async () => {
