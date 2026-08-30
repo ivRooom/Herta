@@ -88,10 +88,10 @@ async function handleAiMessage(
     const generationService = runtime?.generationService
       ? withAiDirectReplyContext(runtime.generationService, directReplyContext)
       : null;
-    const artifactRuntime =
-      runtime && generationService && directReplyContext
-        ? runtime.createArtifactRuntime(generationService)
-        : (runtime?.artifactRuntime ?? null);
+    let artifactRuntime = runtime?.artifactRuntime ?? null;
+    if (runtime && generationService && directReplyContext) {
+      artifactRuntime = runtime.createArtifactRuntime(generationService);
+    }
     const result = await handleAiConversationMessage(message, {
       runtime: artifactRuntime,
       generationService,
