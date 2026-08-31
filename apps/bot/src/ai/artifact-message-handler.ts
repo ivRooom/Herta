@@ -15,12 +15,14 @@ const verifiedBotReplyContexts = new WeakMap<object, string>();
 
 export interface AiReferencedDiscordMessage {
   guildId?: string | null;
+  channelId?: string | null;
   author: { id: string };
   content?: string | null;
 }
 
 export interface AiArtifactDiscordMessage {
   guildId: string | null;
+  channelId?: string | null;
   content: string;
   webhookId?: string | null;
   author: { id: string; bot?: boolean };
@@ -146,8 +148,9 @@ export function getVerifiedAiReplyContext(
 
 /**
  * Discord reply metadata alone is not trusted. Fetch the referenced message and only mark this
- * message as an AI candidate when the referenced author is the currently running Herta Bot.
- * Fetch failures are a normal ignore path and the raw Discord error is deliberately discarded.
+ * message as an AI candidate when the reference stays in the same Discord channel and its author
+ * is the currently running Herta Bot. Fetch failures are a normal ignore path and the raw Discord
+ * error is deliberately discarded.
  */
 export async function verifyAiReplyToBot(
   message: AiArtifactDiscordMessage | undefined,
@@ -158,6 +161,9 @@ export async function verifyAiReplyToBot(
 
   try {
     const referenced = await message.fetchReference();
+    if (!message.channelId || !referenced.channelId || referenced.channelId !== message.channelId) {
+      return false;
+    }
     if (referenced.author.id !== botUserId) return false;
     if (referenced.guildId && referenced.guildId !== message.guildId) return false;
 
