@@ -9,13 +9,27 @@ import {
   type DiscordArtifactReplyOptions,
 } from './discord-artifact-delivery.js';
 
+const AI_DIRECT_REPLY_CONTEXT_MAX_UTF16_UNITS = 1_900;
+const verifiedBotReplyMessages = new WeakSet<object>();
+const verifiedBotReplyContexts = new WeakMap<object, string>();
+
+export interface AiReferencedDiscordMessage {
+  guildId?: string | null;
+  channelId?: string | null;
+  author: { id: string };
+  content?: string | null;
+}
+
 export interface AiArtifactDiscordMessage {
   guildId: string | null;
+  channelId?: string | null;
   content: string;
   webhookId?: string | null;
   author: { id: string; bot?: boolean };
   member?: unknown | null;
   mentions: { users: { has(userId: string): boolean } };
+  reference?: { messageId?: string | null } | null;
+  fetchReference?(): Promise<AiReferencedDiscordMessage>;
   reply(options: DiscordArtifactReplyOptions | DiscordSafeTextReplyOptions): Promise<unknown>;
 }
 
@@ -102,26 +116,97 @@ export async function handleAiArtifactMessage(
   return { status: 'handled', intent: result.intent };
 }
 
+/**
+ * A Discord message is an AI candidate only when it is a safe Guild user message and either
+ * contains a real mention of the running Herta Bot or has already been verified as a direct reply
+ * to a message authored by that Bot.
+ */
 export function isAiArtifactMessageCandidate(
+  message: AiArtifactDiscordMessage | undefined,
+  botUserId: string | null,
+): message is AiArtifactCandidateMessage {
+  if (!botUserId || !isSafeAiMessageBase(message, botUserId)) return false;
+
+  const hasRealMention =
+    message.mentions.users.has(botUserId) && hasBotMentionInContent(message.content, botUserId);
+  const isVerifiedBotReply = verifiedBotReplyMessages.has(message);
+
+  return Boolean(
+    (hasRealMention || isVerifiedBotReply) && stripBotMention(message.content, botUserId),
+  );
+}
+
+/**
+ * Return the bounded referenced Herta text captured only after server-side direct-reply
+ * verification. The value is conversation context, never a trusted instruction.
+ */
+export function getVerifiedAiReplyContext(
+  message: AiArtifactDiscordMessage | undefined,
+): string | null {
+  return message ? (verifiedBotReplyContexts.get(message) ?? null) : null;
+}
+
+/**
+ * Discord reply metadata alone is not trusted. Fetch the referenced message and only mark this
+ * message as an AI candidate when the reference stays in the same Discord channel and its author
+ * is the currently running Herta Bot. Fetch failures are a normal ignore path and the raw Discord
+ * error is deliberately discarded.
+ */
+export async function verifyAiReplyToBot(
+  message: AiArtifactDiscordMessage | undefined,
+  botUserId: string | null,
+): Promise<boolean> {
+  if (!isSafeAiMessageBase(message, botUserId)) return false;
+  if (!message.reference?.messageId || typeof message.fetchReference !== 'function') return false;
+
+  try {
+    const referenced = await message.fetchReference();
+    if (!message.channelId || !referenced.channelId || referenced.channelId !== message.channelId) {
+      return false;
+    }
+    if (referenced.author.id !== botUserId) return false;
+    if (referenced.guildId && referenced.guildId !== message.guildId) return false;
+
+    const context = normalizeVerifiedBotReplyContext(referenced.content);
+    if (context) verifiedBotReplyContexts.set(message, context);
+    verifiedBotReplyMessages.add(message);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function stripBotMention(content: string, botUserId: string): string {
+  if (typeof content !== 'string' || !/^\d+$/.test(botUserId)) return '';
+  return content.replace(new RegExp(`<@!?${botUserId}>`, 'g'), ' ').trim();
+}
+
+function isSafeAiMessageBase(
   message: AiArtifactDiscordMessage | undefined,
   botUserId: string | null,
 ): message is AiArtifactCandidateMessage {
   return Boolean(
     message &&
     botUserId &&
+    /^\d+$/.test(botUserId) &&
     message.guildId &&
     message.author.id !== botUserId &&
-    !message.author.bot &&
+    message.author.bot === false &&
     !message.webhookId &&
-    message.mentions.users.has(botUserId) &&
-    hasBotMentionInContent(message.content, botUserId) &&
-    stripBotMention(message.content, botUserId),
+    typeof message.content === 'string' &&
+    message.content.trim(),
   );
 }
 
-export function stripBotMention(content: string, botUserId: string): string {
-  if (typeof content !== 'string' || !/^\d+$/.test(botUserId)) return '';
-  return content.replace(new RegExp(`<@!?${botUserId}>`, 'g'), ' ').trim();
+function normalizeVerifiedBotReplyContext(content: string | null | undefined): string | null {
+  if (typeof content !== 'string') return null;
+  const normalized = content.trim();
+  if (!normalized) return null;
+  if (normalized.length <= AI_DIRECT_REPLY_CONTEXT_MAX_UTF16_UNITS) return normalized;
+
+  const bounded = normalized.slice(0, AI_DIRECT_REPLY_CONTEXT_MAX_UTF16_UNITS);
+  const lastCodeUnit = bounded.charCodeAt(bounded.length - 1);
+  return lastCodeUnit >= 0xd800 && lastCodeUnit <= 0xdbff ? bounded.slice(0, -1) : bounded;
 }
 
 function hasBotMentionInContent(content: string, botUserId: string): boolean {

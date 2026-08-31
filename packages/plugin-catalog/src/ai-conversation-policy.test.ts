@@ -8,13 +8,19 @@ import {
 import { AI_DEFAULTS, estimateInputTokens, estimateOpenAiCostMicroUsd } from './ai-service.js';
 
 describe('AI conversation policy', () => {
-  it('通常chatはconcise low verbosityをdefaultにする', () => {
+  it('通常chatはHerta persona + concise low verbosityをdefaultにする', () => {
     const policy = resolveAiConversationPolicy();
 
     expect(policy.responseMode).toBe('chat');
     expect(policy.groundingState).toBe('not_required');
     expect(policy.textVerbosity).toBe('low');
-    expect(policy.instructions).toContain('usually two to five sentences');
+    expect(policy.instructions).toContain("ivRooom's Discord companion");
+    expect(policy.instructions).toContain('not a customer-support bot');
+    expect(policy.instructions).toContain('confident, curious, playful');
+    expect(policy.instructions).toContain('natural conversation rather than stiff templates');
+    expect(policy.instructions).toContain('usually one to four short sentences');
+    expect(policy.instructions).toContain('prefer flowing sentences over bullet lists');
+    expect(policy.instructions).toContain('one natural question or playful suggestion');
     expect(policy.instructions).toContain('Do not invent factual claims');
     expect(policy.instructions).toContain('Never present a guess as a confirmed fact');
     expect(policy.instructions).toContain('cannot confirm it, or do not know');
@@ -26,6 +32,7 @@ describe('AI conversation policy', () => {
     const artifact = resolveAiConversationPolicy({ responseMode: 'artifact' });
 
     expect(detailed.textVerbosity).toBe('medium');
+    expect(detailed.instructions).toContain("Keep Herta's natural voice");
     expect(detailed.instructions).toContain('Do not omit necessary steps merely to be brief');
     expect(artifact.textVerbosity).toBe('medium');
     expect(artifact.instructions).toContain('Do not truncate requested code');

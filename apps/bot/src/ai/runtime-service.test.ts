@@ -106,7 +106,7 @@ describe('OpenAiRuntimeGenerationService', () => {
       reasoning: { effort: 'high' },
       text: { verbosity: 'low' },
     });
-    expect(String(bodies[0]?.['instructions'])).toContain('usually two to five sentences');
+    expect(String(bodies[0]?.['instructions'])).toContain('usually one to four short sentences');
     expect(String(bodies[0]?.['instructions'])).toContain('Do not invent factual claims');
     expect(String(bodies[0]?.['instructions'])).toContain(
       'Never present a guess as a confirmed fact',

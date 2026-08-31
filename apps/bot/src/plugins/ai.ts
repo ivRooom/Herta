@@ -11,10 +11,17 @@ import type { Client } from 'discord.js';
 import { Redis } from 'ioredis';
 import { AiArtifactRuntime } from '../ai/artifact-runtime.js';
 import {
+  getVerifiedAiReplyContext,
   isAiArtifactMessageCandidate,
+  verifyAiReplyToBot,
   type AiArtifactDiscordMessage,
 } from '../ai/artifact-message-handler.js';
 import { handleAiConversationMessage } from '../ai/conversation-message-handler.js';
+import {
+  withAiDirectReplyCodeExecutionContext,
+  withAiDirectReplyContext,
+  withAiDirectReplyImageGenerationContext,
+} from '../ai/direct-reply-context.js';
 import { createAiFoundationRuntime } from '../ai/factory.js';
 import type { AiRuntimeGenerationService } from '../ai/runtime-service.js';
 
@@ -26,6 +33,10 @@ type AiPluginRuntimeContext = PluginRuntimeContext<AiPluginConfig, Client, Prism
 
 interface AiPluginSharedRuntime {
   artifactRuntime: AiArtifactRuntime;
+  createArtifactRuntime(
+    generationService: AiRuntimeGenerationService,
+    directReplyContext?: string | null,
+  ): AiArtifactRuntime;
   generationService: AiRuntimeGenerationService;
 }
 
@@ -65,15 +76,29 @@ async function handleAiMessage(
   if (context.config.enabled !== true) return;
 
   const botUserId = context.client.user?.id ?? null;
-  if (!isAiArtifactMessageCandidate(message, botUserId) || message.guildId !== context.guildId) {
+  if (!message || !botUserId || message.guildId !== context.guildId) return;
+
+  const wasCandidateBeforeReplyVerification = isAiArtifactMessageCandidate(message, botUserId);
+  if (message.reference?.messageId) {
+    await verifyAiReplyToBot(message, botUserId);
+  }
+  if (!wasCandidateBeforeReplyVerification && !isAiArtifactMessageCandidate(message, botUserId)) {
     return;
   }
 
   try {
     const runtime = await getSharedRuntime(context);
+    const directReplyContext = getVerifiedAiReplyContext(message);
+    const generationService = runtime?.generationService
+      ? withAiDirectReplyContext(runtime.generationService, directReplyContext)
+      : null;
+    let artifactRuntime = runtime?.artifactRuntime ?? null;
+    if (runtime && generationService && directReplyContext) {
+      artifactRuntime = runtime.createArtifactRuntime(generationService, directReplyContext);
+    }
     const result = await handleAiConversationMessage(message, {
-      runtime: runtime?.artifactRuntime ?? null,
-      generationService: runtime?.generationService ?? null,
+      runtime: artifactRuntime,
+      generationService,
       botUserId,
       getAiPluginConfig: async (guildId) =>
         guildId === context.guildId
@@ -204,19 +229,31 @@ async function createSharedRuntime(
     'AI runtimeを初期化しました',
   );
 
-  const artifactRuntime = new AiArtifactRuntime({
-    generationService: bootstrap.service,
-    executionService: bootstrap.executionService ?? undefined,
-    imageGenerationService: bootstrap.imageGenerationService ?? undefined,
-    artifactConfig,
-    telemetry: (event) => {
-      // Artifact runtime is shared for the same reason as Foundation runtime telemetry.
-      logger.info(event, 'AI Artifact telemetry');
-    },
-  });
+  const createArtifactRuntime = (
+    generationService: AiRuntimeGenerationService,
+    directReplyContext: string | null = null,
+  ) =>
+    new AiArtifactRuntime({
+      generationService,
+      executionService: withAiDirectReplyCodeExecutionContext(
+        bootstrap.executionService ?? undefined,
+        directReplyContext,
+      ),
+      imageGenerationService: withAiDirectReplyImageGenerationContext(
+        bootstrap.imageGenerationService ?? undefined,
+        directReplyContext,
+      ),
+      artifactConfig,
+      telemetry: (event) => {
+        // Artifact runtime is shared for the same reason as Foundation runtime telemetry.
+        logger.info(event, 'AI Artifact telemetry');
+      },
+    });
+  const artifactRuntime = createArtifactRuntime(bootstrap.service);
 
   return {
     artifactRuntime,
+    createArtifactRuntime,
     generationService: bootstrap.service,
   };
 }

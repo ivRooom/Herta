@@ -5,6 +5,8 @@ import {
   handleAiArtifactMessage,
   isAiArtifactMessageCandidate,
   stripBotMention,
+  verifyAiReplyToBot,
+  type AiArtifactDiscordMessage,
   type DiscordSafeTextReplyOptions,
 } from './artifact-message-handler.js';
 import type { DiscordArtifactReplyOptions } from './discord-artifact-delivery.js';
@@ -33,15 +35,21 @@ function successService(source = 'print("hello")\n'): AiRuntimeGenerationService
   };
 }
 
-function message(content: string, reply = replyMock()) {
+function message(
+  content: string,
+  reply = replyMock(),
+  overrides: Partial<AiArtifactDiscordMessage> = {},
+): AiArtifactDiscordMessage {
   return {
     guildId: 'guild-1',
+    channelId: 'channel-1',
     content,
     webhookId: null,
     author: { id: 'user-1', bot: false },
     member: { id: 'user-1' },
     mentions: { users: { has: (id: string) => id === '123456789' } },
     reply,
+    ...overrides,
   };
 }
 
@@ -176,12 +184,69 @@ describe('artifact Discord mention handler', () => {
 });
 
 describe('artifact message candidate', () => {
-  it('bot mentionのあるuser messageだけruntime bootstrap候補にする', () => {
+  it('bot mentionのあるuser messageだけ初回runtime bootstrap候補にする', () => {
     expect(isAiArtifactMessageCandidate(message('通常メッセージ'), '123456789')).toBe(false);
     expect(isAiArtifactMessageCandidate(message('<@123456789>   '), '123456789')).toBe(false);
     expect(
       isAiArtifactMessageCandidate(message('<@123456789> Pythonコードを書いて'), '123456789'),
     ).toBe(true);
+  });
+
+  it('Herta自身へのdirect replyは参照先をserver-side検証した後だけ候補にする', async () => {
+    const directReply = message('遊びたい', replyMock(), {
+      reference: { messageId: 'herta-message-1' },
+      fetchReference: vi.fn(async () => ({
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        author: { id: '123456789' },
+      })),
+    });
+
+    expect(isAiArtifactMessageCandidate(directReply, '123456789')).toBe(false);
+    await expect(verifyAiReplyToBot(directReply, '123456789')).resolves.toBe(true);
+    expect(isAiArtifactMessageCandidate(directReply, '123456789')).toBe(true);
+  });
+
+  it('別channelのHerta replyは候補にせずcontext境界を越えさせない', async () => {
+    const crossChannelReply = message('それを詳しく', replyMock(), {
+      channelId: 'channel-1',
+      reference: { messageId: 'herta-message-other-channel' },
+      fetchReference: vi.fn(async () => ({
+        guildId: 'guild-1',
+        channelId: 'channel-2',
+        author: { id: '123456789' },
+        content: '別channelのHerta本文',
+      })),
+    });
+
+    await expect(verifyAiReplyToBot(crossChannelReply, '123456789')).resolves.toBe(false);
+    expect(isAiArtifactMessageCandidate(crossChannelReply, '123456789')).toBe(false);
+  });
+
+  it('他ユーザーへのreplyや参照取得失敗は候補にしない', async () => {
+    const otherUserReply = message('遊びたい', replyMock(), {
+      reference: { messageId: 'other-message-1' },
+      fetchReference: vi.fn(async () => ({
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        author: { id: 'user-2' },
+      })),
+    });
+    const missingReply = message('遊びたい', replyMock(), {
+      reference: { messageId: 'deleted-message' },
+      fetchReference: vi.fn(async () => {
+        throw new Error('not found');
+      }),
+    });
+
+    await expect(verifyAiReplyToBot(otherUserReply, '123456789')).resolves.toBe(false);
+    await expect(verifyAiReplyToBot(missingReply, '123456789')).resolves.toBe(false);
+    expect(isAiArtifactMessageCandidate(otherUserReply, '123456789')).toBe(false);
+    expect(isAiArtifactMessageCandidate(missingReply, '123456789')).toBe(false);
+  });
+
+  it('通常のmentionなしmessageはdirect replyでなければ候補にしない', () => {
+    expect(isAiArtifactMessageCandidate(message('遊びたい'), '123456789')).toBe(false);
   });
 });
 
@@ -191,6 +256,7 @@ describe('stripBotMention', () => {
       'Pythonコードを書いて',
     );
     expect(stripBotMention('<@!123456789>   README作って', '123456789')).toBe('README作って');
+    expect(stripBotMention('遊びたい', '123456789')).toBe('遊びたい');
   });
 
   it('内部の改行とindentationを壊さない', () => {
