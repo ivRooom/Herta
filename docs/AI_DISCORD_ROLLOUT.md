@@ -188,6 +188,12 @@ Hertaの直前返答を前提に `その内容で画像を作って` と直接re
 
 fake success、架空のfilename、架空のattachment、架空のtool resultを返してはいけません。
 
+### Discord delivery failure — automated test evidence
+
+Discord delivery failureをproductionで意図的に再現するためにBotのchannel permissionを剥奪したり、production Discord設定を壊したりしません。この境界は`conversation-message-handler-gates.test.ts`と`artifact-message-handler-execution.test.ts`のsynthetic failure testをSource of Truthとし、delivery失敗時にfake successを返さないことを確認します。
+
+production E2E中に実際のdelivery failureが自然発生した場合はsafe error metadataだけを記録します。再現目的の破壊的操作は行いません。この項目もIssue #354へ`automated test evidence`として記録します。
+
 ### Artifact evidence
 
 生成した各artifactについて次を記録します。binary bytesそのものは記録しません。
@@ -340,6 +346,7 @@ Acceptance完了時はIssue #354へ最低限以下を記録します。
 - 実施したE2E一覧と成功/失敗
 - direct reply / mention+reply / mentionless ignore / mentionless other-user・other-bot ignore / Herta mention + other-user・other-bot reply eligibility / Herta personaのproduction E2E結果
 - same-channel fail-closed boundaryのautomated-test evidence
+- Discord delivery failure / fake-success preventionのautomated-test evidence
 - artifact filename / MIME / size / attachment / validation結果
 - Security確認結果
 - rate / quota / cost / concurrency / timeout確認結果と、各項目がproduction E2Eかautomated testかの区別
