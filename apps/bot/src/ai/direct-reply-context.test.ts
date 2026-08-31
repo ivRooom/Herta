@@ -49,6 +49,7 @@ function artifactGenerationResponse(): AiGenerationResponse {
 function directReply(referencedContent: string): AiArtifactDiscordMessage {
   return {
     guildId: 'guild-1',
+    channelId: 'channel-1',
     content: 'それを詳しく',
     webhookId: null,
     author: { id: 'user-1', bot: false },
@@ -57,6 +58,7 @@ function directReply(referencedContent: string): AiArtifactDiscordMessage {
     reference: { messageId: 'herta-message-1' },
     fetchReference: vi.fn(async () => ({
       guildId: 'guild-1',
+      channelId: 'channel-1',
       author: { id: '123456789' },
       content: referencedContent,
     })),
