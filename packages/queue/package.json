@@ -21,7 +21,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "bullmq": "^5.81.3"
+    "bullmq": "^5.81.4"
   },
   "devDependencies": {
     "typescript": "^5.7.2"
