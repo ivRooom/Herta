@@ -42,6 +42,7 @@ function message(
 ): AiArtifactDiscordMessage {
   return {
     guildId: 'guild-1',
+    channelId: 'channel-1',
     content,
     webhookId: null,
     author: { id: 'user-1', bot: false },
@@ -196,6 +197,7 @@ describe('artifact message candidate', () => {
       reference: { messageId: 'herta-message-1' },
       fetchReference: vi.fn(async () => ({
         guildId: 'guild-1',
+        channelId: 'channel-1',
         author: { id: '123456789' },
       })),
     });
@@ -205,10 +207,30 @@ describe('artifact message candidate', () => {
     expect(isAiArtifactMessageCandidate(directReply, '123456789')).toBe(true);
   });
 
+  it('別channelのHerta replyは候補にせずcontext境界を越えさせない', async () => {
+    const crossChannelReply = message('それを詳しく', replyMock(), {
+      channelId: 'channel-1',
+      reference: { messageId: 'herta-message-other-channel' },
+      fetchReference: vi.fn(async () => ({
+        guildId: 'guild-1',
+        channelId: 'channel-2',
+        author: { id: '123456789' },
+        content: '別channelのHerta本文',
+      })),
+    });
+
+    await expect(verifyAiReplyToBot(crossChannelReply, '123456789')).resolves.toBe(false);
+    expect(isAiArtifactMessageCandidate(crossChannelReply, '123456789')).toBe(false);
+  });
+
   it('他ユーザーへのreplyや参照取得失敗は候補にしない', async () => {
     const otherUserReply = message('遊びたい', replyMock(), {
       reference: { messageId: 'other-message-1' },
-      fetchReference: vi.fn(async () => ({ guildId: 'guild-1', author: { id: 'user-2' } })),
+      fetchReference: vi.fn(async () => ({
+        guildId: 'guild-1',
+        channelId: 'channel-1',
+        author: { id: 'user-2' },
+      })),
     });
     const missingReply = message('遊びたい', replyMock(), {
       reference: { messageId: 'deleted-message' },
