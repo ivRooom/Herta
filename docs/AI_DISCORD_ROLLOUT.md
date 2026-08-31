@@ -140,11 +140,16 @@ Global gateをONにしても、Guild opt-inがないGuildからprovider callが�
 4. mention + direct reply: Hertaの返答へ `<@Herta> その内容で続けて` と直接reply → mentionがあっても参照Herta本文を失わず、bounded user-input contextとして継続
 5. normal mentionless: Hertaへのdirect replyではない通常のmentionなしmessage → AI処理しない
 6. other-user / other-bot reply: 他userまたは他Botのmessageへのreply → AI処理しない
-7. same-channel boundary: 別channelのHerta messageを参照したreply → AI candidate化せず、参照contextを取り込まない
-8. persona / continuity: casual Japaneseの雑談で、Herta persona・自然な会話温度・直前の検証済みreply contextを維持する。案内Bot調の定型敬語やprovider固有personaへ戻らない
-9. source-dependent: `@Herta GitHubの最新PR状態を確認して` → retrieval sourceがない場合は`insufficient`。確認した/citation取得済みと捏造しない
+7. persona / continuity: casual Japaneseの雑談で、Herta persona・自然な会話温度・直前の検証済みreply contextを維持する。案内Bot調の定型敬語やprovider固有personaへ戻らない
+8. source-dependent: `@Herta GitHubの最新PR状態を確認して` → retrieval sourceがない場合は`insufficient`。確認した/citation取得済みと捏造しない
 
 Direct replyの参照本文はtrusted instructionへ昇格させません。通常のmentionなしmessageを会話候補へ拡張する5分間sessionはIssue #358のacceptance対象外です。
+
+### Direct reply channel boundary — automated test evidence
+
+Discordネイティブのdirect replyは別channelのmessageを参照できないため、`#コンソール`だけを使うproduction E2Eでcross-channel referenceを再現しません。same-channel fail-closed境界はcurrent automated testをSource of Truthとし、incoming / referenced messageのchannel IDが一致しない場合にAI candidate化せず、参照contextを取り込まないことを確認します。
+
+この項目はIssue #354へ `automated test evidence` と明記し、production E2E成功として記録しません。
 
 ### Artifact generation
 
@@ -321,7 +326,7 @@ Issue #345 Tool & Artifact Runtimeはcompletedです。Code Interpreter generate
 
 Issue #358もcompletedです。AI candidateはreal mentionまたはserver-sideで検証済みのHerta direct replyだけです。direct reply contextは同一Guild / 同一channelのHerta自身のmessageに限定し、最大1,900 UTF-16 unitsのuser-input contextとしてgeneration / Artifact Runtime / Code Interpreter / Image Generationへ渡します。通常のmentionなしmessageはAI処理しません。
 
-Issue #354では新しいArtifact Runtime機能やconversation sessionを追加するのではなく、現在のmainがproduction Discord上でも同じsecurity / conversation boundaryを維持することをE2Eで受け入れます。
+Issue #354では新しいArtifact Runtime機能やconversation sessionを追加するのではなく、現在のmainがproduction Discord上でも同じsecurity / conversation boundaryを維持することをE2Eとautomated-test evidenceの組み合わせで受け入れます。
 
 ## 13. Issue #354 completion record
 
@@ -330,7 +335,8 @@ Acceptance完了時はIssue #354へ最低限以下を記録します。
 - deployed main SHA / image SHA
 - 対象Guild / E2E channel
 - 実施したE2E一覧と成功/失敗
-- direct reply / mention+reply / mentionless ignore / other-user・other-bot ignore / same-channel boundary / Herta personaの結果
+- direct reply / mention+reply / mentionless ignore / other-user・other-bot ignore / Herta personaのproduction E2E結果
+- same-channel fail-closed boundaryのautomated-test evidence
 - artifact filename / MIME / size / attachment / validation結果
 - Security確認結果
 - rate / quota / cost / concurrency / timeout確認結果と、各項目がproduction E2Eかautomated testかの区別
