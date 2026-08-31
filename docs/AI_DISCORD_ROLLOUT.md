@@ -4,6 +4,17 @@ Issue #350で追加したDiscord会話Q&A surfaceとIssue #345で完成したToo
 
 このRunbookはOpenAI credentialの値を読み出したり、Issue / PR / logへ記録したりしません。`HERTA_AI_ENABLED`を有効化しても、AI PluginとGuild configの両方が有効なGuildだけがprovider callへ進みます。
 
+## Production acceptance target
+
+Issue #354 の production acceptance は次の1 Guild / 1 channelだけで実施します。
+
+- Target Guild: `いゔる。ーむ`
+- Guild ID: `964326043420872704`
+- E2E Channel: `#コンソール`
+- Channel ID: `1175075504940908635`
+
+production E2E messageとartifact生成は必ずこのchannelだけで実施します。対象外GuildへAI Plugin / AI configを有効化せず、全Guild enableは行いません。
+
 ## 1. Production preflight
 
 実施前に以下をすべて満たしてください。
@@ -119,29 +130,43 @@ Global gateをONにしても、Guild opt-inがないGuildからprovider callが�
 
 ## 7. Discord production E2E
 
-1つの限定Guildで各ケースを別messageとして確認します。同一messageへartifact replyとchat replyが二重送信されないことも確認してください。
+対象Guild `964326043420872704` の `#コンソール` (`1175075504940908635`) で各ケースを別messageとして確認します。同一messageへartifact replyとchat replyが二重送信されないことも確認してください。
 
 ### Conversation
 
 1. ordinary chat: `@Herta TypeScriptって何？` → `chat` policyで1回だけtext reply
 2. detailed: `@Herta ReactとVueを詳しく比較して` → `detailed` policyで1回だけtext reply
-3. source-dependent: `@Herta GitHubの最新PR状態を確認して` → retrieval sourceがない場合は`insufficient`。確認した/citation取得済みと捏造しない
+3. Herta direct reply: ordinary mentionで得たHertaの返答へ、mentionなしで `それをもう少し詳しく` と直接reply → 同一channelのHerta自身のmessageをserver-side検証した場合だけ、boundedな参照contextを使って継続応答
+4. mention + direct reply: Hertaの返答へ `<@Herta> その内容で続けて` と直接reply → mentionがあっても参照Herta本文を失わず、bounded user-input contextとして継続
+5. normal mentionless: Hertaへのdirect replyではない通常のmentionなしmessage → AI処理しない
+6. other-user / other-bot reply: 他userまたは他Botのmessageへのreply → AI処理しない
+7. same-channel boundary: 別channelのHerta messageを参照したreply → AI candidate化せず、参照contextを取り込まない
+8. persona / continuity: casual Japaneseの雑談で、Herta persona・自然な会話温度・直前の検証済みreply contextを維持する。案内Bot調の定型敬語やprovider固有personaへ戻らない
+9. source-dependent: `@Herta GitHubの最新PR状態を確認して` → retrieval sourceがない場合は`insufficient`。確認した/citation取得済みと捏造しない
+
+Direct replyの参照本文はtrusted instructionへ昇格させません。通常のmentionなしmessageを会話候補へ拡張する5分間sessionはIssue #358のacceptance対象外です。
 
 ### Artifact generation
 
-4. code artifact: `@Herta Pythonコードを書いて` → code attachmentを生成するだけでexecutionしない
-5. CSV artifact: allowlisted CSV生成要求 → validated text attachment
-6. image generation: image生成要求 → validated PNG / WebP attachment
-7. unsupported artifact: 非対応format → safe failure。成果物を生成したと主張しない
-8. malformed artifact: validationで壊れたartifactを検出した場合 → attachmentせずsafe failure
+1. code artifact: `@Herta Pythonコードを書いて` → code attachmentを生成するだけでexecutionしない
+2. CSV artifact: allowlisted CSV生成要求 → validated text attachment
+3. image generation: image生成要求 → validated PNG / WebP attachment
+4. unsupported artifact: 非対応format → safe failure。成果物を生成したと主張しない
+5. malformed artifact: validationで壊れたartifactを検出した場合 → attachmentせずsafe failure
+6. direct-reply artifact continuity: Hertaの返答へ `その内容でREADMEをMarkdownで作って` と直接reply → 検証済み参照contextをuser-input planeとしてArtifact Runtimeへ渡す
 
 ### Explicit Code Interpreter execution
 
-9. Python execution: 明示的な実行要求 → sandboxed Code Interpreter runtimeを通す
-10. PNG execution artifact: Python実行でPNGを生成 → strict binary validation後にattachment
-11. WebP execution artifact: Python実行でWebPを生成 → strict binary validation後にattachment
+1. Python execution: 明示的な実行要求 → sandboxed Code Interpreter runtimeを通す
+2. PNG execution artifact: Python実行でPNGを生成 → strict binary validation後にattachment
+3. WebP execution artifact: Python実行でWebPを生成 → strict binary validation後にattachment
+4. direct-reply execution continuity: Hertaのコード返答へ `そのコードを実行して` と直接reply → 検証済み参照contextをCode Interpreter requestへ渡す
 
 Code artifact生成だけのrequestでCode Interpreterが実行されないことを必ず確認します。
+
+### Image generation continuity
+
+Hertaの直前返答を前提に `その内容で画像を作って` と直接replyした場合も、検証済み参照contextをimage generation requestへ渡し、参照contextなしの新規promptとして扱わないことを確認します。
 
 ### Failure honesty
 
@@ -153,6 +178,7 @@ Code artifact生成だけのrequestでCode Interpreterが実行されないこ�
 - artifact validation failure
 - quota exceeded
 - rate exceeded
+- Discord delivery failure
 
 fake success、架空のfilename、架空のattachment、架空のtool resultを返してはいけません。
 
@@ -201,6 +227,8 @@ provider-managed sandboxの実行結果とHerta host executionを混同しませ
 - global concurrency
 - timeout
 - artifact size / dimensions / pixel limits
+
+productionで危険な負荷試験や高額requestを行いません。安全にproduction再現できないguardはautomated testをSource of Truthとしてよいですが、Issue #354の記録では `production E2E` と `automated test` を明確に区別します。
 
 ### Rate limit
 
@@ -287,23 +315,27 @@ Botをrecreate後、provider callが停止し、非AI Pluginが継続稼働し�
 
 `insufficient`ではcitation、tool result、外部確認済み事実を捏造しません。将来のretrieval integrationはこのserver-side grounding境界へ接続します。
 
-## 12. Issue #345との現在の境界
+## 12. Issue #345 / #358との現在の境界
 
 Issue #345 Tool & Artifact Runtimeはcompletedです。Code Interpreter generated PNG / WebP binary execution artifactもmainに実装済みで、strict filename / extension / MIME / byte / dimensions / pixel count / full decode validationを通してDiscord attachmentへ渡します。
 
-Issue #354では新しいArtifact Runtime機能を追加するのではなく、現在のmainがproduction Discord上でも同じsecurity boundaryを維持することをE2Eで受け入れます。
+Issue #358もcompletedです。AI candidateはreal mentionまたはserver-sideで検証済みのHerta direct replyだけです。direct reply contextは同一Guild / 同一channelのHerta自身のmessageに限定し、最大1,900 UTF-16 unitsのuser-input contextとしてgeneration / Artifact Runtime / Code Interpreter / Image Generationへ渡します。通常のmentionなしmessageはAI処理しません。
+
+Issue #354では新しいArtifact Runtime機能やconversation sessionを追加するのではなく、現在のmainがproduction Discord上でも同じsecurity / conversation boundaryを維持することをE2Eで受け入れます。
 
 ## 13. Issue #354 completion record
 
 Acceptance完了時はIssue #354へ最低限以下を記録します。
 
 - deployed main SHA / image SHA
-- 対象Guild
+- 対象Guild / E2E channel
 - 実施したE2E一覧と成功/失敗
+- direct reply / mention+reply / mentionless ignore / other-user・other-bot ignore / same-channel boundary / Herta personaの結果
 - artifact filename / MIME / size / attachment / validation結果
 - Security確認結果
-- rate / quota / cost / concurrency / timeout確認結果
+- rate / quota / cost / concurrency / timeout確認結果と、各項目がproduction E2Eかautomated testかの区別
 - Guild opt-out / global gate OFF / kill switch rollback結果
+- 最終production state
 - unresolvedな残課題
 
 Acceptance Criteriaをすべて満たした場合のみIssue #354をcompletedとしてcloseします。未確認項目を推測で成功扱いしません。
