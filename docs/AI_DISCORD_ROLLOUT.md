@@ -139,9 +139,10 @@ Global gateをONにしても、Guild opt-inがないGuildからprovider callが�
 3. Herta direct reply: ordinary mentionで得たHertaの返答へ、mentionなしで `それをもう少し詳しく` と直接reply → 同一channelのHerta自身のmessageをserver-side検証した場合だけ、boundedな参照contextを使って継続応答
 4. mention + direct reply: Hertaの返答へ `<@Herta> その内容で続けて` と直接reply → mentionがあっても参照Herta本文を失わず、bounded user-input contextとして継続
 5. normal mentionless: Hertaへのdirect replyではない通常のmentionなしmessage → AI処理しない
-6. other-user / other-bot reply: 他userまたは他Botのmessageへのreply → AI処理しない
-7. persona / continuity: casual Japaneseの雑談で、Herta persona・自然な会話温度・直前の検証済みreply contextを維持する。案内Bot調の定型敬語やprovider固有personaへ戻らない
-8. source-dependent: `@Herta GitHubの最新PR状態を確認して` → retrieval sourceがない場合は`insufficient`。確認した/citation取得済みと捏造しない
+6. mentionless other-user / other-bot reply: Hertaへのreal mentionなしで他userまたは他Botのmessageへreply → AI処理しない
+7. Herta mention + other-user / other-bot reply: 他userまたは他Botのmessageへreplyしながら `<@Herta> TypeScriptって何？` とreal mention → mentionによるAI candidateとして処理する。ただし他user / 他Botの参照本文をHerta direct-reply contextとして取り込まない
+8. persona / continuity: casual Japaneseの雑談で、Herta persona・自然な会話温度・直前の検証済みreply contextを維持する。案内Bot調の定型敬語やprovider固有personaへ戻らない
+9. source-dependent: `@Herta GitHubの最新PR状態を確認して` → retrieval sourceがない場合は`insufficient`。確認した/citation取得済みと捏造しない
 
 Direct replyの参照本文はtrusted instructionへ昇格させません。通常のmentionなしmessageを会話候補へ拡張する5分間sessionはIssue #358のacceptance対象外です。
 
@@ -237,7 +238,9 @@ productionで危険な負荷試験や高額requestを行いません。安全に
 
 ### Rate limit
 
-限定Guildで既定のper-user / per-Guild windowを超える連続requestを行い、safe rate-limit replyへ移行することを確認します。通常利用者へ負荷を与えない時間帯で行い、provider raw errorをlogへ出さないでください。
+対象Guild `964326043420872704` の `#コンソール` (`1175075504940908635`) だけで既定のper-user windowを超える軽量requestを行い、safe rate-limit replyへ移行することを確認します。通常利用者へ負荷を与えない時間帯で行い、provider raw errorをlogへ出さないでください。
+
+per-Guild rate limitのために30件超のproduction requestを意図的に発生させる必要はありません。per-Guild rate / quota / concurrencyなどproductionで負荷・課金を増やすguardはautomated testをSource of Truthとし、productionでは通常E2E中のsafe telemetryだけ確認します。
 
 ### Quota
 
@@ -324,7 +327,7 @@ Botをrecreate後、provider callが停止し、非AI Pluginが継続稼働し�
 
 Issue #345 Tool & Artifact Runtimeはcompletedです。Code Interpreter generated PNG / WebP binary execution artifactもmainに実装済みで、strict filename / extension / MIME / byte / dimensions / pixel count / full decode validationを通してDiscord attachmentへ渡します。
 
-Issue #358もcompletedです。AI candidateはreal mentionまたはserver-sideで検証済みのHerta direct replyだけです。direct reply contextは同一Guild / 同一channelのHerta自身のmessageに限定し、最大1,900 UTF-16 unitsのuser-input contextとしてgeneration / Artifact Runtime / Code Interpreter / Image Generationへ渡します。通常のmentionなしmessageはAI処理しません。
+Issue #358もcompletedです。AI candidateはreal mentionまたはserver-sideで検証済みのHerta direct replyだけです。direct reply contextは同一Guild / 同一channelのHerta自身のmessageに限定し、最大1,900 UTF-16 unitsのuser-input contextとしてgeneration / Artifact Runtime / Code Interpreter / Image Generationへ渡します。通常のmentionなしmessageはAI処理しません。real Herta mentionがあるmessageは、他user / 他Botへのreplyであってもmentionによるcandidate eligibilityを維持しますが、その参照本文をHerta direct-reply contextとして採用しません。
 
 Issue #354では新しいArtifact Runtime機能やconversation sessionを追加するのではなく、現在のmainがproduction Discord上でも同じsecurity / conversation boundaryを維持することをE2Eとautomated-test evidenceの組み合わせで受け入れます。
 
@@ -335,7 +338,7 @@ Acceptance完了時はIssue #354へ最低限以下を記録します。
 - deployed main SHA / image SHA
 - 対象Guild / E2E channel
 - 実施したE2E一覧と成功/失敗
-- direct reply / mention+reply / mentionless ignore / other-user・other-bot ignore / Herta personaのproduction E2E結果
+- direct reply / mention+reply / mentionless ignore / mentionless other-user・other-bot ignore / Herta mention + other-user・other-bot reply eligibility / Herta personaのproduction E2E結果
 - same-channel fail-closed boundaryのautomated-test evidence
 - artifact filename / MIME / size / attachment / validation結果
 - Security確認結果
