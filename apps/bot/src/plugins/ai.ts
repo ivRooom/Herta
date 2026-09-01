@@ -24,6 +24,7 @@ import {
 } from '../ai/direct-reply-context.js';
 import { createAiFoundationRuntime } from '../ai/factory.js';
 import type { AiRuntimeGenerationService } from '../ai/runtime-service.js';
+import { startAiTypingIndicator } from '../ai/typing-indicator.js';
 
 export interface AiPluginConfig {
   enabled: boolean;
@@ -86,6 +87,7 @@ async function handleAiMessage(
     return;
   }
 
+  const typingIndicator = startAiTypingIndicator(message, botUserId, context.logger);
   try {
     const runtime = await getSharedRuntime(context);
     const directReplyContext = getVerifiedAiReplyContext(message);
@@ -134,6 +136,8 @@ async function handleAiMessage(
       },
       'AI Discord deliveryに失敗しました',
     );
+  } finally {
+    typingIndicator.stop();
   }
 }
 
