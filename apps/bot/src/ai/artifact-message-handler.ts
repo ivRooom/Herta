@@ -27,7 +27,10 @@ export interface AiArtifactDiscordMessage {
   webhookId?: string | null;
   author: { id: string; bot?: boolean };
   member?: unknown | null;
-  mentions: { users: { has(userId: string): boolean } };
+  mentions: {
+    users: { has(userId: string): boolean };
+    roles?: { has(roleId: string): boolean };
+  };
   reference?: { messageId?: string | null } | null;
   fetchReference?(): Promise<AiReferencedDiscordMessage>;
   reply(options: DiscordArtifactReplyOptions | DiscordSafeTextReplyOptions): Promise<unknown>;
@@ -41,6 +44,7 @@ export interface DiscordSafeTextReplyOptions {
 export interface AiArtifactMessageHandlerOptions {
   runtime: AiArtifactRuntime | null;
   botUserId: string | null;
+  triggerRoleId?: string | null;
   getAiPluginConfig(guildId: string): Promise<Record<string, unknown> | null>;
 }
 
@@ -59,11 +63,16 @@ export async function handleAiArtifactMessage(
   options: AiArtifactMessageHandlerOptions,
 ): Promise<AiArtifactMessageHandleResult> {
   const botUserId = options.botUserId;
-  if (!options.runtime || !botUserId || !isAiArtifactMessageCandidate(message, botUserId)) {
+  const triggerRoleId = normalizeAiTriggerRoleId(options.triggerRoleId);
+  if (
+    !options.runtime ||
+    !botUserId ||
+    !isAiArtifactMessageCandidate(message, botUserId, triggerRoleId)
+  ) {
     return { status: 'ignored' };
   }
 
-  const input = stripBotMention(message.content, botUserId);
+  const input = stripBotMention(message.content, botUserId, triggerRoleId);
 
   const pluginConfig = await options.getAiPluginConfig(message.guildId);
   if (!pluginConfig || pluginConfig['enabled'] !== true) return { status: 'ignored' };
@@ -118,21 +127,29 @@ export async function handleAiArtifactMessage(
 
 /**
  * A Discord message is an AI candidate only when it is a safe Guild user message and either
- * contains a real mention of the running Herta Bot or has already been verified as a direct reply
- * to a message authored by that Bot.
+ * contains a real mention of the running Herta Bot, contains a real mention of the single
+ * server-configured trigger Role, or has already been verified as a direct reply to Herta.
  */
 export function isAiArtifactMessageCandidate(
   message: AiArtifactDiscordMessage | undefined,
   botUserId: string | null,
+  triggerRoleId: string | null = null,
 ): message is AiArtifactCandidateMessage {
   if (!botUserId || !isSafeAiMessageBase(message, botUserId)) return false;
 
+  const normalizedTriggerRoleId = normalizeAiTriggerRoleId(triggerRoleId);
   const hasRealMention =
     message.mentions.users.has(botUserId) && hasBotMentionInContent(message.content, botUserId);
+  const hasRealRoleMention = Boolean(
+    normalizedTriggerRoleId &&
+      message.mentions.roles?.has(normalizedTriggerRoleId) &&
+      hasRoleMentionInContent(message.content, normalizedTriggerRoleId),
+  );
   const isVerifiedBotReply = verifiedBotReplyMessages.has(message);
 
   return Boolean(
-    (hasRealMention || isVerifiedBotReply) && stripBotMention(message.content, botUserId),
+    (hasRealMention || hasRealRoleMention || isVerifiedBotReply) &&
+      stripBotMention(message.content, botUserId, normalizedTriggerRoleId),
   );
 }
 
@@ -176,9 +193,25 @@ export async function verifyAiReplyToBot(
   }
 }
 
-export function stripBotMention(content: string, botUserId: string): string {
+export function normalizeAiTriggerRoleId(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim();
+  return /^\d+$/.test(normalized) ? normalized : null;
+}
+
+export function stripBotMention(
+  content: string,
+  botUserId: string,
+  triggerRoleId: string | null = null,
+): string {
   if (typeof content !== 'string' || !/^\d+$/.test(botUserId)) return '';
-  return content.replace(new RegExp(`<@!?${botUserId}>`, 'g'), ' ').trim();
+
+  let normalized = content.replace(new RegExp(`<@!?${botUserId}>`, 'g'), ' ');
+  const normalizedTriggerRoleId = normalizeAiTriggerRoleId(triggerRoleId);
+  if (normalizedTriggerRoleId) {
+    normalized = normalized.replace(new RegExp(`<@&${normalizedTriggerRoleId}>`, 'g'), ' ');
+  }
+  return normalized.trim();
 }
 
 function isSafeAiMessageBase(
@@ -212,6 +245,11 @@ function normalizeVerifiedBotReplyContext(content: string | null | undefined): s
 function hasBotMentionInContent(content: string, botUserId: string): boolean {
   if (typeof content !== 'string' || !/^\d+$/.test(botUserId)) return false;
   return content.includes(`<@${botUserId}>`) || content.includes(`<@!${botUserId}>`);
+}
+
+function hasRoleMentionInContent(content: string, roleId: string): boolean {
+  if (typeof content !== 'string' || !/^\d+$/.test(roleId)) return false;
+  return content.includes(`<@&${roleId}>`);
 }
 
 function toSafeArtifactMessageError(error: unknown): { category: string; userMessage: string } {
