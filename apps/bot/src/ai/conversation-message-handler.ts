@@ -14,6 +14,7 @@ import {
 import type { AiRuntimeGenerationService } from './runtime-service.js';
 
 const DISCORD_CONVERSATION_MAX_UTF16_UNITS = 1_900;
+const DISCORD_CONVERSATION_TRUNCATION_SUFFIX = '…';
 const DISCORD_CONVERSATION_INSTRUCTION = [
   'Return only the answer intended for the Discord user.',
   'Keep the final response comfortably below the Discord 2000-character message limit.',
@@ -27,7 +28,7 @@ const EXPLICIT_DETAIL_REQUEST_PATTERN =
 const EXPLICIT_SOURCE_REQUEST_PATTERN =
   /(?:出典|引用元|citation|citations|(?:^\s*(?:please\s+)?|\b(?:can|could|would)\s+you\s+)(?:cite|reference)\b|\b(?:provide|include|show|give|list)\b.{0,30}\breferences?\b|\b(?:provide|show|give|list|cite|include|find|check|verify|look\s+up)\b.{0,30}\bsources?\b|(?<!open[\s_-])\bsources?\b(?:\s*[?？]|.{0,30}\b(?:for|of|about|used|behind)\b)|(?<!オープン)ソース(?!コード)(?:を|が|は)(?:[?？]|.{0,20}(?:教えて|示して|見せて|確認して|調べて|提示して))|web\s*検索|ウェブ\s*検索|(?:Google|Bing|オンライン|ネット)(?:で|を)?検索(?:して|する|してください)?|search\s+(?:(?:the\s+)?web|online|(?:on\s+)?(?:google|bing)|(?:the\s+)?internet)|browse\s+(?:the\s+)?web)/i;
 const CURRENT_EXTERNAL_FACT_PATTERN =
-  /(?:最新|現在の|今の|今日の|本日の).{0,60}(?:状態|状況|価格|料金|バージョン|version|リリース|release|PR|Issue|CI|デプロイ|deploy|稼働|障害|ニュース|天気|株価|為替)|(?:状態|状況|価格|料金|バージョン|リリース|PR|Issue|CI|デプロイ|稼働|障害|ニュース|天気|株価|為替).{0,60}(?:最新|現在|今|今日|本日)|\b(?:latest|current|today(?:'s)?|now)\b.{0,60}\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b|\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b.{0,60}\b(?:latest|current|today(?:'s)?|now)\b/i;
+  /(?:最新|現在の|今の|今日の|本日の).{0,60}(?:状態|状況|価格|料金|バージョン|version|リリース|release|PR|Issue|CI|デプロイ|deploy|稼働|障害|ニュース|天気|株価|為替)|(?:状態|状況|価格|料金|バージョン|リリース|release|PR|Issue|CI|デプロイ|deploy|稼働|障害|ニュース|天気|株価|為替).{0,60}(?:最新|現在|今|今日|本日)|\b(?:latest|current|today(?:'s)?|now)\b.{0,60}\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b|\b(?:status|price|pricing|version|release|pull request|issue|ci|deployment|outage|news|weather|stock|exchange rate)\b.{0,60}\b(?:latest|current|today(?:'s)?|now)\b/i;
 const CURRENT_REQUEST_MARKER_PATTERN =
   /(?:最新|今日|本日|昨日|昨夜|昨晩|前日|今(?!後)|現在の|現在(?=(?:時刻|時間|日時|日付|価格|料金|状態|状況|天気|株価|為替|結果|スコア)))|\b(?:latest|today(?:'s)?|yesterday(?:'s)?|last\s+night(?:'s)?|now|current)\b/i;
 const CURRENT_REQUEST_FACT_PATTERN =
@@ -273,11 +274,17 @@ function validateDiscordConversationReply(value: string): string {
   if (typeof value !== 'string') throw new AiFoundationError('malformed_response');
   const normalized = value.trim();
   if (normalized.length < 1) throw new AiFoundationError('malformed_response');
-  // Discord.js sends JavaScript strings and Discord applies its message limit to the encoded
-  // string length. Count UTF-16 code units here so astral characters such as emoji cannot slip
-  // past a code-point-only guard and cause delivery failure.
-  if (normalized.length > DISCORD_CONVERSATION_MAX_UTF16_UNITS) {
-    throw new AiFoundationError('output_too_large');
+  // Foundation maxOutputChars remains the fail-closed bound for abnormal provider output. The
+  // Discord surface only adapts a Foundation-accepted response to the one-message delivery limit.
+  if (normalized.length <= DISCORD_CONVERSATION_MAX_UTF16_UNITS) return normalized;
+
+  const prefixBudget =
+    DISCORD_CONVERSATION_MAX_UTF16_UNITS - DISCORD_CONVERSATION_TRUNCATION_SUFFIX.length;
+  let prefix = normalized.slice(0, prefixBudget);
+  const lastCodeUnit = prefix.charCodeAt(prefix.length - 1);
+  if (lastCodeUnit >= 0xd800 && lastCodeUnit <= 0xdbff) {
+    prefix = prefix.slice(0, -1);
   }
-  return normalized;
+
+  return `${prefix.trimEnd()}${DISCORD_CONVERSATION_TRUNCATION_SUFFIX}`;
 }
