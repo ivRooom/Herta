@@ -43,7 +43,7 @@ export const aiManifest: PluginManifest = {
           widget: 'discord-role',
           mentionableOnly: true,
           placeholder: 'AI呼び出しに使うRoleを選択（任意）',
-          help: '設定した単一Roleへのreal mentionだけをHerta本人へのmentionと同じAI triggerとして扱います。未設定時はRole mentionで反応しません。',
+          help: '設定した単一Roleへのreal mentionだけをHerta本人へのmentionと同じAI triggerとして扱います。Roleだけで呼び出すにはDiscord Developer PortalとBot runtimeのMessage Content Intentが有効である必要があります。未設定時はRole mentionで反応しません。',
         },
       },
     },
