@@ -1,9 +1,6 @@
 import type { Logger } from '@herta/logger';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  verifyAiReplyToBot,
-  type AiArtifactDiscordMessage,
-} from './artifact-message-handler.js';
+import { verifyAiReplyToBot, type AiArtifactDiscordMessage } from './artifact-message-handler.js';
 import { startAiTypingIndicator } from './typing-indicator.js';
 
 const BOT_USER_ID = '123456789';
