@@ -135,7 +135,7 @@ Global gateをONにしても、Guild opt-inがないGuildからprovider callが�
 ### Conversation
 
 1. ordinary chat: `@Herta TypeScriptって何？` → `chat` policyで1回だけtext reply
-2. detailed: `@Herta ReactとVueを詳しく比較して` → `detailed` policyで1回だけtext reply
+2. detailed: `@Herta ReactとVueを詳しく比較して` → `detailed` policyで1回だけtext reply。Foundation hard bound内でDiscord 1,900 UTF-16 unitsを超えたresponseはsurrogate pairを分断せず末尾`…`付きで1 messageへ収束し、異常長文はFoundation `output_too_large`でfail closedする
 3. Herta direct reply: ordinary mentionで得たHertaの返答へ、mentionなしで `それをもう少し詳しく` と直接reply → 同一channelのHerta自身のmessageをserver-side検証した場合だけ、boundedな参照contextを使って継続応答
 4. mention + direct reply: Hertaの返答へ `<@Herta> その内容で続けて` と直接reply → mentionがあっても参照Herta本文を失わず、bounded user-input contextとして継続
 5. normal mentionless: Hertaへのdirect replyではない通常のmentionなしmessage → AI処理しない
