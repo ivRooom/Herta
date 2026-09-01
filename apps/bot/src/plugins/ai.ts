@@ -171,7 +171,10 @@ function normalizeConfiguredRoleTriggerMessage(
     return message;
   }
 
-  const content = message.content.replace(new RegExp(`<@&${triggerRoleId}>`, 'g'), `<@${botUserId}>`);
+  const content = message.content.replace(
+    new RegExp(`<@&${triggerRoleId}>`, 'g'),
+    `<@${botUserId}>`,
+  );
   return {
     guildId: message.guildId,
     channelId: message.channelId,
