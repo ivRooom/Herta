@@ -14,6 +14,7 @@ import {
 import type { AiRuntimeGenerationService } from './runtime-service.js';
 
 const DISCORD_CONVERSATION_MAX_UTF16_UNITS = 1_900;
+const DISCORD_CONVERSATION_TRUNCATION_SUFFIX = '…';
 const DISCORD_CONVERSATION_INSTRUCTION = [
   'Return only the answer intended for the Discord user.',
   'Keep the final response comfortably below the Discord 2000-character message limit.',
@@ -273,11 +274,17 @@ function validateDiscordConversationReply(value: string): string {
   if (typeof value !== 'string') throw new AiFoundationError('malformed_response');
   const normalized = value.trim();
   if (normalized.length < 1) throw new AiFoundationError('malformed_response');
-  // Discord.js sends JavaScript strings and Discord applies its message limit to the encoded
-  // string length. Count UTF-16 code units here so astral characters such as emoji cannot slip
-  // past a code-point-only guard and cause delivery failure.
-  if (normalized.length > DISCORD_CONVERSATION_MAX_UTF16_UNITS) {
-    throw new AiFoundationError('output_too_large');
+  // Foundation maxOutputChars remains the fail-closed bound for abnormal provider output. The
+  // Discord surface only adapts a Foundation-accepted response to the one-message delivery limit.
+  if (normalized.length <= DISCORD_CONVERSATION_MAX_UTF16_UNITS) return normalized;
+
+  const prefixBudget =
+    DISCORD_CONVERSATION_MAX_UTF16_UNITS - DISCORD_CONVERSATION_TRUNCATION_SUFFIX.length;
+  let prefix = normalized.slice(0, prefixBudget);
+  const lastCodeUnit = prefix.charCodeAt(prefix.length - 1);
+  if (lastCodeUnit >= 0xd800 && lastCodeUnit <= 0xdbff) {
+    prefix = prefix.slice(0, -1);
   }
-  return normalized;
+
+  return `${prefix.trimEnd()}${DISCORD_CONVERSATION_TRUNCATION_SUFFIX}`;
 }

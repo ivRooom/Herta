@@ -21,7 +21,45 @@ function message(reply: AiArtifactDiscordMessage['reply']): AiArtifactDiscordMes
 }
 
 describe('Discord conversation delivery bounds', () => {
-  it('astral文字をUTF-16単位でboundしDiscordへoversized textを送らない', async () => {
+  it('1900 UTF-16を少し超えるreplyを1 messageへ安全に収束する', async () => {
+    const service: AiRuntimeGenerationService = {
+      generate: vi.fn(async (): Promise<AiGenerationResponse> => ({
+        requestId: 'request-1',
+        provider: 'openai',
+        model: 'gpt-5.6-terra',
+        text: `${'a'.repeat(1_899)}😀tail`,
+        usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
+        estimatedCost: 0.0001,
+      })),
+    };
+    const reply = vi.fn<AiArtifactDiscordMessage['reply']>(async () => undefined);
+    const runtime = new AiArtifactRuntime({
+      generationService: service,
+      artifactConfig: { maxBytes: 4096, maxFiles: 2 },
+    });
+
+    const result = await handleAiConversationMessage(message(reply), {
+      runtime,
+      generationService: service,
+      botUserId: '123456789',
+      getAiPluginConfig: vi.fn(async () => ({ enabled: true })),
+    });
+
+    expect(result).toEqual({
+      status: 'handled',
+      intent: 'chat',
+      responseMode: 'chat',
+      groundingState: 'not_required',
+    });
+    expect(reply).toHaveBeenCalledTimes(1);
+    expect(reply.mock.calls[0]?.[0]).toEqual({
+      content: `${'a'.repeat(1_899)}…`,
+      allowedMentions: { parse: [] },
+    });
+    expect(reply.mock.calls[0]?.[0]?.content.length).toBeLessThanOrEqual(1_900);
+  });
+
+  it('astral文字をtruncateしてもsurrogate pairを分断しない', async () => {
     const service: AiRuntimeGenerationService = {
       generate: vi.fn(async (): Promise<AiGenerationResponse> => ({
         requestId: 'request-1',
@@ -45,10 +83,34 @@ describe('Discord conversation delivery bounds', () => {
       getAiPluginConfig: vi.fn(async () => ({ enabled: true })),
     });
 
+    expect(result.status).toBe('handled');
+    expect(reply).toHaveBeenCalledTimes(1);
+    expect(reply.mock.calls[0]?.[0]?.content).toBe(`${'😀'.repeat(949)}…`);
+    expect(reply.mock.calls[0]?.[0]?.content.length).toBe(1_899);
+  });
+
+  it('Foundationの異常長文fail-closedをsafe replyへ維持する', async () => {
+    const service: AiRuntimeGenerationService = {
+      generate: vi.fn(async (): Promise<AiGenerationResponse> => {
+        throw new AiFoundationError('output_too_large');
+      }),
+    };
+    const reply = vi.fn<AiArtifactDiscordMessage['reply']>(async () => undefined);
+    const runtime = new AiArtifactRuntime({
+      generationService: service,
+      artifactConfig: { maxBytes: 4096, maxFiles: 2 },
+    });
+
+    const result = await handleAiConversationMessage(message(reply), {
+      runtime,
+      generationService: service,
+      botUserId: '123456789',
+      getAiPluginConfig: vi.fn(async () => ({ enabled: true })),
+    });
+
     expect(result).toEqual({ status: 'failed', category: 'foundation:output_too_large' });
     expect(reply).toHaveBeenCalledTimes(1);
     expect(reply.mock.calls[0]?.[0]?.content).toBe('AIの応答が許容サイズを超えました。');
-    expect(reply.mock.calls[0]?.[0]?.content).not.toContain('😀');
   });
 });
 
