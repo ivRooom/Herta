@@ -55,7 +55,7 @@ export const AI_DEFAULTS = {
   maxInputBytes: 24_000,
   maxOutputTokens: 800,
   maxOutputChars: 6_000,
-  timeoutMs: 12_000,
+  timeoutMs: 30_000,
   providerResponseMaxBytes: 512 * 1024,
   userRateLimit: 6,
   guildRateLimit: 30,
