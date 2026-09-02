@@ -52,6 +52,14 @@ export const aiPlugin = definePlugin<AiPluginConfig, Client, PrismaClient>({
   manifest: aiManifest,
   async onEnable(context) {
     enabledGuilds.add(context.guildId);
+
+    const triggerRoleId = normalizeAiTriggerRoleId(context.config.triggerRoleId);
+    if (triggerRoleId && !messageContentIntentEnabled()) {
+      context.logger.warn(
+        { guildId: context.guildId, triggerRoleConfigured: true },
+        'AI Role mention triggerにはDISCORD_ENABLE_MESSAGE_CONTENT_INTENT=trueが必要です',
+      );
+    }
   },
   async onDisable(context) {
     enabledGuilds.delete(context.guildId);
@@ -192,6 +200,11 @@ function normalizeConfiguredRoleTriggerMessage(
     fetchReference: message.fetchReference ? message.fetchReference.bind(message) : undefined,
     reply: message.reply.bind(message),
   };
+}
+
+function messageContentIntentEnabled(): boolean {
+  const value = process.env['DISCORD_ENABLE_MESSAGE_CONTENT_INTENT']?.trim().toLowerCase();
+  return value === 'true' || value === '1';
 }
 
 async function getSharedRuntime(
