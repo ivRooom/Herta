@@ -26,8 +26,11 @@ export function startAiTypingIndicator(
   message: AiArtifactDiscordMessage | undefined,
   botUserId: string | null,
   logger: Pick<Logger, 'warn'>,
+  triggerRoleId: string | null = null,
 ): AiTypingIndicator {
-  if (!isAiArtifactMessageCandidate(message, botUserId)) return NOOP_TYPING_INDICATOR;
+  if (!isAiArtifactMessageCandidate(message, botUserId, triggerRoleId)) {
+    return NOOP_TYPING_INDICATOR;
+  }
 
   const typingMessage = message as AiTypingCapableMessage;
   const sendTyping = typingMessage.channel?.sendTyping;

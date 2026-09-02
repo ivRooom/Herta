@@ -13,6 +13,7 @@ import { AiArtifactRuntime } from '../ai/artifact-runtime.js';
 import {
   getVerifiedAiReplyContext,
   isAiArtifactMessageCandidate,
+  normalizeAiTriggerRoleId,
   verifyAiReplyToBot,
   type AiArtifactDiscordMessage,
 } from '../ai/artifact-message-handler.js';
@@ -28,6 +29,7 @@ import { startAiTypingIndicator } from '../ai/typing-indicator.js';
 
 export interface AiPluginConfig {
   enabled: boolean;
+  triggerRoleId?: string | null;
 }
 
 type AiPluginRuntimeContext = PluginRuntimeContext<AiPluginConfig, Client, PrismaClient>;
@@ -50,6 +52,14 @@ export const aiPlugin = definePlugin<AiPluginConfig, Client, PrismaClient>({
   manifest: aiManifest,
   async onEnable(context) {
     enabledGuilds.add(context.guildId);
+
+    const triggerRoleId = normalizeAiTriggerRoleId(context.config.triggerRoleId);
+    if (triggerRoleId && !messageContentIntentEnabled()) {
+      context.logger.warn(
+        { guildId: context.guildId, triggerRoleConfigured: true },
+        'AI Role mention triggerにはDISCORD_ENABLE_MESSAGE_CONTENT_INTENT=trueが必要です',
+      );
+    }
   },
   async onDisable(context) {
     enabledGuilds.delete(context.guildId);
@@ -79,15 +89,24 @@ async function handleAiMessage(
   const botUserId = context.client.user?.id ?? null;
   if (!message || !botUserId || message.guildId !== context.guildId) return;
 
-  const wasCandidateBeforeReplyVerification = isAiArtifactMessageCandidate(message, botUserId);
+  const triggerRoleId = normalizeAiTriggerRoleId(context.config.triggerRoleId);
+  const wasCandidateBeforeReplyVerification = isAiArtifactMessageCandidate(
+    message,
+    botUserId,
+    triggerRoleId,
+  );
   if (message.reference?.messageId) {
     await verifyAiReplyToBot(message, botUserId);
   }
-  if (!wasCandidateBeforeReplyVerification && !isAiArtifactMessageCandidate(message, botUserId)) {
+  if (
+    !wasCandidateBeforeReplyVerification &&
+    !isAiArtifactMessageCandidate(message, botUserId, triggerRoleId)
+  ) {
     return;
   }
 
-  const typingIndicator = startAiTypingIndicator(message, botUserId, context.logger);
+  const typingIndicator = startAiTypingIndicator(message, botUserId, context.logger, triggerRoleId);
+  const handlerMessage = normalizeConfiguredRoleTriggerMessage(message, botUserId, triggerRoleId);
   try {
     const runtime = await getSharedRuntime(context);
     const directReplyContext = getVerifiedAiReplyContext(message);
@@ -98,7 +117,7 @@ async function handleAiMessage(
     if (runtime && generationService && directReplyContext) {
       artifactRuntime = runtime.createArtifactRuntime(generationService, directReplyContext);
     }
-    const result = await handleAiConversationMessage(message, {
+    const result = await handleAiConversationMessage(handlerMessage, {
       runtime: artifactRuntime,
       generationService,
       botUserId,
@@ -139,6 +158,53 @@ async function handleAiMessage(
   } finally {
     typingIndicator.stop();
   }
+}
+
+/**
+ * Existing conversation/artifact handlers intentionally keep Herta user-mention semantics as
+ * their internal contract. After the configured Role mention has been server-side verified, adapt
+ * only that trusted trigger token into the same internal form. Arbitrary Role text never reaches
+ * this adapter because candidate verification requires both Discord mention metadata and `<@&id>`.
+ */
+function normalizeConfiguredRoleTriggerMessage(
+  message: AiArtifactDiscordMessage,
+  botUserId: string,
+  triggerRoleId: string | null,
+): AiArtifactDiscordMessage {
+  if (
+    !triggerRoleId ||
+    !message.mentions.roles?.has(triggerRoleId) ||
+    !message.content.includes(`<@&${triggerRoleId}>`)
+  ) {
+    return message;
+  }
+
+  const content = message.content.replace(
+    new RegExp(`<@&${triggerRoleId}>`, 'g'),
+    `<@${botUserId}>`,
+  );
+  return {
+    guildId: message.guildId,
+    channelId: message.channelId,
+    content,
+    webhookId: message.webhookId,
+    author: message.author,
+    member: message.member,
+    mentions: {
+      users: {
+        has: (userId: string) => userId === botUserId || message.mentions.users.has(userId),
+      },
+      roles: message.mentions.roles,
+    },
+    reference: message.reference,
+    fetchReference: message.fetchReference ? message.fetchReference.bind(message) : undefined,
+    reply: message.reply.bind(message),
+  };
+}
+
+function messageContentIntentEnabled(): boolean {
+  const value = process.env['DISCORD_ENABLE_MESSAGE_CONTENT_INTENT']?.trim().toLowerCase();
+  return value === 'true' || value === '1';
 }
 
 async function getSharedRuntime(
