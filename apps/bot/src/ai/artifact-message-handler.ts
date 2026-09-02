@@ -27,10 +27,7 @@ export interface AiArtifactDiscordMessage {
   webhookId?: string | null;
   author: { id: string; bot?: boolean };
   member?: unknown | null;
-  mentions: {
-    users: { has(userId: string): boolean };
-    roles?: { has(roleId: string): boolean };
-  };
+  mentions: { users: { has(userId: string): boolean }; roles?: { has(roleId: string): boolean } };
   reference?: { messageId?: string | null } | null;
   fetchReference?(): Promise<AiReferencedDiscordMessage>;
   reply(options: DiscordArtifactReplyOptions | DiscordSafeTextReplyOptions): Promise<unknown>;
