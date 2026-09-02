@@ -139,14 +139,14 @@ export function isAiArtifactMessageCandidate(
     message.mentions.users.has(botUserId) && hasBotMentionInContent(message.content, botUserId);
   const hasRealRoleMention = Boolean(
     normalizedTriggerRoleId &&
-      message.mentions.roles?.has(normalizedTriggerRoleId) &&
-      hasRoleMentionInContent(message.content, normalizedTriggerRoleId),
+    message.mentions.roles?.has(normalizedTriggerRoleId) &&
+    hasRoleMentionInContent(message.content, normalizedTriggerRoleId),
   );
   const isVerifiedBotReply = verifiedBotReplyMessages.has(message);
 
   return Boolean(
     (hasRealMention || hasRealRoleMention || isVerifiedBotReply) &&
-      stripBotMention(message.content, botUserId, normalizedTriggerRoleId),
+    stripBotMention(message.content, botUserId, normalizedTriggerRoleId),
   );
 }
 
