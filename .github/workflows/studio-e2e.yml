@@ -1,0 +1,64 @@
+name: Studio E2E
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'apps/studio/**'
+      - 'packages/plugin-catalog/**'
+      - 'packages/ui/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/studio-e2e.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'apps/studio/**'
+      - 'packages/plugin-catalog/**'
+      - 'packages/ui/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/studio-e2e.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: studio-e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mobile-picker:
+    name: Mobile Config Studio picker
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Prisma Generate
+        run: pnpm db:generate
+
+      - name: Install Playwright Chromium
+        run: pnpm --filter @herta/studio exec playwright install --with-deps chromium
+
+      - name: Mobile Config Studio E2E
+        run: pnpm --filter @herta/studio test:e2e
+
+      - name: Upload Playwright evidence
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: studio-e2e-${{ github.run_id }}
+          path: apps/studio/test-results
+          if-no-files-found: warn
+          retention-days: 7
