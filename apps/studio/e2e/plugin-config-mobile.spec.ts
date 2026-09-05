@@ -18,7 +18,7 @@ test('last Discord Role picker stays interactive outside the Config Studio card 
     });
   });
 
-  await page.goto('/__e2e__/plugin-config-mobile');
+  await page.goto('/e2e-test/plugin-config-mobile');
   await expect(page.getByRole('heading', { name: 'Plugin設定' })).toBeVisible();
 
   const roleInput = page.getByRole('combobox', { name: 'AI Roleを選択' });
