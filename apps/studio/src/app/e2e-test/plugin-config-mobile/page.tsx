@@ -14,7 +14,9 @@ const fieldKeys = [
 ] as const;
 
 export default function PluginConfigMobileE2EPage() {
-  if (process.env.HERTA_STUDIO_E2E !== '1') notFound();
+  if (process.env.NODE_ENV === 'production' || process.env.HERTA_STUDIO_E2E !== '1') {
+    notFound();
+  }
 
   return (
     <main className="mx-auto min-h-screen max-w-2xl p-4 sm:p-8">
