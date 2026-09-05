@@ -12,11 +12,7 @@ async function readOverrides() {
 test('Production imageで既知脆弱版へ戻さないSecurity overrideを固定する', async () => {
   const overrides = await readOverrides();
 
-  assert.equal(
-    overrides.browserslist,
-    '4.28.7',
-    'CVE-2026-73088/CVE-2026-73089修正版を維持する',
-  );
+  assert.equal(overrides.browserslist, '4.28.7', 'CVE-2026-73088/CVE-2026-73089修正版を維持する');
   assert.equal(
     overrides['fast-uri'],
     '4.1.3',
