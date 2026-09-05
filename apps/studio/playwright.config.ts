@@ -24,7 +24,7 @@ export default defineConfig({
   ],
   webServer: {
     command: 'HERTA_STUDIO_E2E=1 pnpm exec next dev --hostname 127.0.0.1 --port 3000',
-    url: 'http://127.0.0.1:3000/__e2e__/plugin-config-mobile',
+    url: 'http://127.0.0.1:3000/__e2e__/health',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
   },
