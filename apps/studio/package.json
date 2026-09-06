@@ -9,6 +9,7 @@
     "lint": "echo 'lint: skipped (ESLint config pending)'",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test \"src/lib/*.test.ts\"",
+    "test:e2e": "playwright test",
     "clean": "rm -rf .next"
   },
   "dependencies": {
@@ -26,6 +27,7 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "autoprefixer": "^10.5.4",
