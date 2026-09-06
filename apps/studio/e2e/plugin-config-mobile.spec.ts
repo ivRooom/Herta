@@ -1,8 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('last Discord Role picker stays interactive outside the Config Studio card on mobile', async ({
-  page,
-}, testInfo) => {
+test.beforeEach(async ({ page }) => {
   await page.route('**/api/guilds/123456789012345678/plugins/herta-ai-e2e', async (route) => {
     const payload = route.request().postDataJSON() as {
       enabled?: boolean;
@@ -20,7 +18,11 @@ test('last Discord Role picker stays interactive outside the Config Studio card 
 
   await page.goto('/e2e-test/plugin-config-mobile');
   await expect(page.getByRole('heading', { name: 'Plugin設定' })).toBeVisible();
+});
 
+test('last Discord Role picker stays interactive outside the Config Studio card on mobile', async ({
+  page,
+}, testInfo) => {
   const roleInput = page.getByRole('combobox', { name: 'AI Roleを選択' });
   await roleInput.evaluate((element) => element.scrollIntoView({ block: 'center' }));
   await roleInput.focus();
@@ -69,6 +71,40 @@ test('last Discord Role picker stays interactive outside the Config Studio card 
   await roleOption.click();
   await expect(roleInput).toHaveAttribute('aria-expanded', 'false');
   await expect(roleInput).toHaveAttribute('placeholder', 'Herta AI Tester');
+
+  await page.getByRole('button', { name: '設定を保存' }).click();
+  await expect(page.getByText('保存しました')).toBeVisible();
+});
+
+test('Channel and Emoji pickers keep keyboard and focus behavior on mobile', async ({ page }) => {
+  const channelInput = page.getByRole('combobox', { name: 'Discord投稿先' });
+  await channelInput.evaluate((element) => element.scrollIntoView({ block: 'center' }));
+  await channelInput.focus();
+  await expect(channelInput).toBeFocused();
+  await expect(channelInput).toHaveAttribute('aria-expanded', 'true');
+
+  await channelInput.press('Escape');
+  await expect(channelInput).toHaveAttribute('aria-expanded', 'false');
+  await expect(channelInput).toBeFocused();
+
+  await channelInput.fill('general');
+  await expect(channelInput).toHaveAttribute('aria-expanded', 'true');
+  await channelInput.press('Enter');
+  await expect(channelInput).toHaveAttribute('aria-expanded', 'false');
+  await expect(channelInput).toHaveAttribute('placeholder', 'general');
+  await expect(channelInput).toBeFocused();
+
+  const emojiInput = page.getByRole('combobox', { name: 'E2E Emojiを選択' });
+  await emojiInput.evaluate((element) => element.scrollIntoView({ block: 'center' }));
+  await emojiInput.focus();
+  await expect(emojiInput).toBeFocused();
+  await expect(emojiInput).toHaveAttribute('aria-expanded', 'true');
+
+  await emojiInput.fill('herta_wave');
+  await emojiInput.press('Enter');
+  await expect(emojiInput).toHaveAttribute('aria-expanded', 'false');
+  await expect(emojiInput).toHaveAttribute('placeholder', 'herta_wave');
+  await expect(emojiInput).toBeFocused();
 
   await page.getByRole('button', { name: '設定を保存' }).click();
   await expect(page.getByText('保存しました')).toBeVisible();
