@@ -10,6 +10,8 @@ const fieldKeys = [
   'language',
   'historySummary',
   'fallbackMessage',
+  'notificationChannelId',
+  'reactionEmojiId',
   'allowedRoleId',
 ] as const;
 
@@ -30,6 +32,8 @@ export default function PluginConfigMobileE2EPage() {
           language: 'ja',
           historySummary: '直近の会話を参照する',
           fallbackMessage: 'うまく答えられないときは正直に伝える',
+          notificationChannelId: '',
+          reactionEmojiId: '',
           allowedRoleId: '',
         }}
         schema={{
@@ -61,6 +65,24 @@ export default function PluginConfigMobileE2EPage() {
               title: 'Fallback Message',
               description: '応答できない場合の案内を指定します。',
             },
+            notificationChannelId: {
+              type: 'string',
+              title: '通知Channel',
+              description: '通知先のDiscord Channelを選択します。',
+              'x-herta-ui': {
+                widget: 'discord-channel',
+                placeholder: 'E2E Channelを選択',
+              },
+            },
+            reactionEmojiId: {
+              type: 'string',
+              title: 'Reaction Emoji',
+              description: 'リアクションに使うGuild Emojiを選択します。',
+              'x-herta-ui': {
+                widget: 'discord-emoji',
+                placeholder: 'E2E Emojiを選択',
+              },
+            },
             allowedRoleId: {
               type: 'string',
               title: 'AIを呼び出すRole',
@@ -75,7 +97,26 @@ export default function PluginConfigMobileE2EPage() {
         discordOptions={{
           guildId: '123456789012345678',
           guildName: 'E2E Guild',
-          channels: [],
+          channels: [
+            {
+              id: '333333333333333333',
+              name: 'general',
+              kind: 'text',
+              position: 2,
+              parentId: null,
+              viewable: true,
+              readMessageHistory: true,
+            },
+            {
+              id: '444444444444444444',
+              name: 'announcements',
+              kind: 'announcement',
+              position: 1,
+              parentId: null,
+              viewable: true,
+              readMessageHistory: true,
+            },
+          ],
           roles: [
             {
               id: '111111111111111111',
@@ -96,7 +137,22 @@ export default function PluginConfigMobileE2EPage() {
               editable: true,
             },
           ],
-          emojis: [],
+          emojis: [
+            {
+              id: '555555555555555555',
+              name: 'herta_wave',
+              animated: false,
+              available: true,
+              managed: false,
+            },
+            {
+              id: '666666666666666666',
+              name: 'herta_spin',
+              animated: true,
+              available: true,
+              managed: false,
+            },
+          ],
           bot: {
             manageMessages: true,
             manageRoles: true,
