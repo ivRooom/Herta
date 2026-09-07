@@ -18,6 +18,8 @@ import {
 import type { AiRuntimeConfigurationResolver } from '@herta/plugin-catalog/ai-runtime-config';
 import type { AiReasoningEffort } from '@herta/plugin-catalog/ai-runtime-policy';
 
+const AI_CHAT_MAX_OUTPUT_TOKENS = 800;
+
 export interface AiRuntimeGenerationRequest extends AiGenerationRequest {
   /** Trusted server-side response shape. Do not bind this directly to arbitrary client input. */
   responseMode?: AiResponseMode;
@@ -156,6 +158,13 @@ export class OpenAiRuntimeGenerationService implements AiRuntimeGenerationServic
       provider: runtime.selection.provider,
       modelProfile: runtime.selection.modelProfile,
       model: runtime.selection.model,
+      // Keep ordinary chat on the established 800-token budget even when operators raise the
+      // server hard cap for detailed/artifact work. Detailed/artifact requests may use the full
+      // configured cap, which is still validated by AiFoundationConfig (maximum 2,048 tokens).
+      maxOutputTokens: resolveAiRuntimeOutputTokenBudget(
+        this.baseConfig.maxOutputTokens,
+        conversationPolicy.responseMode,
+      ),
       // User-input limits remain unchanged because userInput is validated above. These expanded
       // bounds only allow AiFoundationService to account for the trusted instruction envelope.
       maxInputChars: this.baseConfig.maxInputChars + characterLength(guardOverhead),
@@ -187,6 +196,15 @@ export class OpenAiRuntimeGenerationService implements AiRuntimeGenerationServic
       guildOptIn: request.guildOptIn,
     });
   }
+}
+
+export function resolveAiRuntimeOutputTokenBudget(
+  configuredMaxOutputTokens: number,
+  responseMode: AiResponseMode,
+): number {
+  return responseMode === 'chat'
+    ? Math.min(configuredMaxOutputTokens, AI_CHAT_MAX_OUTPUT_TOKENS)
+    : configuredMaxOutputTokens;
 }
 
 interface OpenAiRuntimePolicyOptions {
