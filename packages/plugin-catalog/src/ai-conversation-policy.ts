@@ -8,6 +8,8 @@ export type AiTextVerbosity = 'low' | 'medium' | 'high';
 export interface AiConversationPolicyContext {
   responseMode?: AiResponseMode;
   groundingState?: AiGroundingState;
+  /** Overridable for deterministic tests; defaults to the real current time. */
+  now?: Date;
 }
 
 export interface AiConversationPolicy {
@@ -39,7 +41,13 @@ const BASE_INSTRUCTIONS = [
   'Never present a guess as a confirmed fact. If you are genuinely uncertain whether a factual claim is correct, clearly say that you are unsure, cannot confirm it, or do not know instead of guessing.',
   'Distinguish confirmed information from inference, and label inference as such.',
   'Never claim that retrieval, a tool call, code execution, or artifact generation happened unless trusted source or tool context confirms it.',
+  'If a requested file format, extension, or output type is not supported, say so explicitly instead of silently substituting a different format while reporting success.',
 ].join(' ');
+
+function buildCurrentDateInstruction(now: Date): string {
+  const isoDate = now.toISOString().slice(0, 10);
+  return `Today's actual date is ${isoDate} (UTC). Treat this as ground truth for judging whether other dates are in the past, present, or future; do not rely on your training cutoff to decide this.`;
+}
 
 const RESPONSE_MODE_INSTRUCTIONS: Record<AiResponseMode, string> = {
   chat: [
@@ -80,6 +88,7 @@ export function resolveAiConversationPolicy(
 ): AiConversationPolicy {
   const responseMode = context.responseMode ?? 'chat';
   const groundingState = context.groundingState ?? 'not_required';
+  const now = context.now ?? new Date();
 
   if (!isAiResponseMode(responseMode)) {
     throw new AiConversationPolicyError('invalid_response_mode');
@@ -92,6 +101,7 @@ export function resolveAiConversationPolicy(
     responseMode,
     groundingState,
     instructions: [
+      buildCurrentDateInstruction(now),
       BASE_INSTRUCTIONS,
       RESPONSE_MODE_INSTRUCTIONS[responseMode],
       GROUNDING_INSTRUCTIONS[groundingState],

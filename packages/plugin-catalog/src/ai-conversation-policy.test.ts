@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   AI_GROUNDING_STATES,
   AI_RESPONSE_MODES,
@@ -25,6 +25,27 @@ describe('AI conversation policy', () => {
     expect(policy.instructions).toContain('Never present a guess as a confirmed fact');
     expect(policy.instructions).toContain('cannot confirm it, or do not know');
     expect(policy.instructions).toContain('Answer normally without pretending');
+    expect(policy.instructions).toContain(
+      'say so explicitly instead of silently substituting a different format',
+    );
+  });
+
+  it('現在日付をtraining cutoffではなくrequest時点のUTC日付でinstructionsへ渡す', () => {
+    const policy = resolveAiConversationPolicy({ now: new Date('2026-09-18T03:00:00.000Z') });
+
+    expect(policy.instructions).toContain("Today's actual date is 2026-09-18");
+    expect(policy.instructions).toContain('do not rely on your training cutoff');
+  });
+
+  it('nowを省略すると実際の現在時刻の日付を使う', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-18T12:00:00.000Z'));
+    try {
+      const policy = resolveAiConversationPolicy();
+      expect(policy.instructions).toContain("Today's actual date is 2026-09-18");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('detailed/artifactは必要な長さを禁止しない', () => {
