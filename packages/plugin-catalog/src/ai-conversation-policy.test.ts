@@ -30,19 +30,33 @@ describe('AI conversation policy', () => {
     );
   });
 
-  it('現在日付をtraining cutoffではなくrequest時点のUTC日付でinstructionsへ渡す', () => {
+  it('現在日付をtraining cutoffではなくrequest時点の日付でinstructionsへ渡す(既定timezone: Asia/Tokyo)', () => {
     const policy = resolveAiConversationPolicy({ now: new Date('2026-09-18T03:00:00.000Z') });
 
-    expect(policy.instructions).toContain("Today's actual date is 2026-09-18");
+    expect(policy.instructions).toContain("Today's actual date is 2026-09-18 (Asia/Tokyo)");
     expect(policy.instructions).toContain('do not rely on your training cutoff');
   });
 
-  it('nowを省略すると実際の現在時刻の日付を使う', () => {
+  it('timezoneによって同じ瞬間でも日付が変わることをJST基準で正しく扱う', () => {
+    // 2026-09-17T16:00:00Z はJST(UTC+9)では2026-09-18の日付になる。
+    const utcMidnightCrossing = new Date('2026-09-17T16:00:00.000Z');
+
+    const jstPolicy = resolveAiConversationPolicy({
+      now: utcMidnightCrossing,
+      timezone: 'Asia/Tokyo',
+    });
+    expect(jstPolicy.instructions).toContain("Today's actual date is 2026-09-18 (Asia/Tokyo)");
+
+    const utcPolicy = resolveAiConversationPolicy({ now: utcMidnightCrossing, timezone: 'UTC' });
+    expect(utcPolicy.instructions).toContain("Today's actual date is 2026-09-17 (UTC)");
+  });
+
+  it('timezoneを省略すると既定でAsia/Tokyoを使う', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-09-18T12:00:00.000Z'));
     try {
       const policy = resolveAiConversationPolicy();
-      expect(policy.instructions).toContain("Today's actual date is 2026-09-18");
+      expect(policy.instructions).toContain("Today's actual date is 2026-09-18 (Asia/Tokyo)");
     } finally {
       vi.useRealTimers();
     }

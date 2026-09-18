@@ -10,6 +10,11 @@ export interface AiConversationPolicyContext {
   groundingState?: AiGroundingState;
   /** Overridable for deterministic tests; defaults to the real current time. */
   now?: Date;
+  /**
+   * IANA timezone used to phrase today's date for the model (e.g. `HERTA_AI_TIMEZONE`).
+   * Defaults to Asia/Tokyo (JST); the caller is responsible for validating this value.
+   */
+  timezone?: string;
 }
 
 export interface AiConversationPolicy {
@@ -44,9 +49,16 @@ const BASE_INSTRUCTIONS = [
   'If a requested file format, extension, or output type is not supported, say so explicitly instead of silently substituting a different format while reporting success.',
 ].join(' ');
 
-function buildCurrentDateInstruction(now: Date): string {
-  const isoDate = now.toISOString().slice(0, 10);
-  return `Today's actual date is ${isoDate} (UTC). Treat this as ground truth for judging whether other dates are in the past, present, or future; do not rely on your training cutoff to decide this.`;
+export const AI_CONVERSATION_POLICY_DEFAULT_TIMEZONE = 'Asia/Tokyo';
+
+function buildCurrentDateInstruction(now: Date, timezone: string): string {
+  const isoDate = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+  return `Today's actual date is ${isoDate} (${timezone}). Treat this as ground truth for judging whether other dates are in the past, present, or future; do not rely on your training cutoff to decide this.`;
 }
 
 const RESPONSE_MODE_INSTRUCTIONS: Record<AiResponseMode, string> = {
@@ -89,6 +101,7 @@ export function resolveAiConversationPolicy(
   const responseMode = context.responseMode ?? 'chat';
   const groundingState = context.groundingState ?? 'not_required';
   const now = context.now ?? new Date();
+  const timezone = context.timezone ?? AI_CONVERSATION_POLICY_DEFAULT_TIMEZONE;
 
   if (!isAiResponseMode(responseMode)) {
     throw new AiConversationPolicyError('invalid_response_mode');
@@ -101,7 +114,7 @@ export function resolveAiConversationPolicy(
     responseMode,
     groundingState,
     instructions: [
-      buildCurrentDateInstruction(now),
+      buildCurrentDateInstruction(now, timezone),
       BASE_INSTRUCTIONS,
       RESPONSE_MODE_INSTRUCTIONS[responseMode],
       GROUNDING_INSTRUCTIONS[groundingState],

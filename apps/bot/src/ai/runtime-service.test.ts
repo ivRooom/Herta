@@ -169,6 +169,27 @@ describe('OpenAiRuntimeGenerationService', () => {
     expect(String(bodies[0]?.['instructions'])).toContain('Do not truncate requested code');
   });
 
+  it('HERTA_AI_TIMEZONEで設定した現在日付をprovider instructionsへ反映する', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const service = new OpenAiRuntimeGenerationService({
+      baseConfig: resolveAiFoundationConfig({
+        HERTA_AI_ENABLED: 'true',
+        HERTA_AI_TIMEZONE: 'America/New_York',
+      }),
+      apiKey: 'server-secret',
+      guardStore: guardStore(),
+      runtimeResolver: resolverFor(),
+      fetchImpl: async (_input, init) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return completedResponse();
+      },
+    });
+
+    await service.generate(request);
+
+    expect(String(bodies[0]?.['instructions'])).toContain('(America/New_York)');
+  });
+
   it('user promptはserver instructionsを上書きせず別inputとして保持する', async () => {
     const bodies: Array<Record<string, unknown>> = [];
     const maliciousInput =

@@ -136,6 +136,7 @@ export class OpenAiRuntimeGenerationService implements AiRuntimeGenerationServic
       conversationPolicy = resolveAiConversationPolicy({
         responseMode: request.responseMode,
         groundingState: request.groundingState,
+        timezone: this.baseConfig.timezone,
       });
       const trustedInstructions = normalizeTrustedInstructions(request.trustedInstructions);
       if (trustedInstructions.length > 0) {
