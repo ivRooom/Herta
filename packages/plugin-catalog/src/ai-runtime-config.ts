@@ -122,7 +122,8 @@ function resolveFallback(
   const hasExplicitEnvDefault = Boolean(
     env['HERTA_AI_PROVIDER']?.trim() ||
     env['HERTA_AI_MODEL_PROFILE']?.trim() ||
-    env['HERTA_AI_REASONING_EFFORT']?.trim(),
+    env['HERTA_AI_REASONING_EFFORT']?.trim() ||
+    env['HERTA_AI_TIMEZONE']?.trim(),
   );
   const value = hasExplicitEnvDefault ? resolveAiRuntimeEnvDefault(env) : AI_RUNTIME_SAFE_DEFAULT;
   return {

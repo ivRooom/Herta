@@ -11,6 +11,7 @@ type RuntimeValue = {
   provider: Provider;
   modelProfile: ModelProfile;
   reasoningEffort: ReasoningEffort;
+  timezone: string;
 };
 
 type PolicyProfile = {
@@ -51,6 +52,7 @@ export function AiRuntimeSettings() {
   const [provider, setProvider] = useState<Provider>('openai');
   const [modelProfile, setModelProfile] = useState<ModelProfile>('balanced');
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort | ''>('low');
+  const [timezone, setTimezone] = useState('Asia/Tokyo');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -59,6 +61,7 @@ export function AiRuntimeSettings() {
     setProvider(next.current.provider);
     setModelProfile(next.current.modelProfile);
     setReasoningEffort(next.current.reasoningEffort);
+    setTimezone(next.current.timezone);
   }, []);
 
   const load = useCallback(async () => {
@@ -97,11 +100,13 @@ export function AiRuntimeSettings() {
     () => providerPolicy?.profiles.find((entry) => entry.modelProfile === modelProfile) ?? null,
     [modelProfile, providerPolicy],
   );
+  const timezoneValid = isValidIanaTimezone(timezone.trim());
   const canSave = Boolean(
     runtime &&
     profilePolicy &&
     reasoningEffort &&
     profilePolicy.supportedReasoningEfforts.includes(reasoningEffort) &&
+    timezoneValid &&
     !saving,
   );
 
@@ -132,7 +137,12 @@ export function AiRuntimeSettings() {
         method: 'PUT',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ provider, modelProfile, reasoningEffort }),
+        body: JSON.stringify({
+          provider,
+          modelProfile,
+          reasoningEffort,
+          timezone: timezone.trim(),
+        }),
       });
       const body = (await response.json().catch(() => ({}))) as unknown;
       if (!response.ok) {
@@ -197,7 +207,7 @@ export function AiRuntimeSettings() {
             </div>
           ) : null}
 
-          <div className="mt-5 grid gap-4 lg:grid-cols-3">
+          <div className="mt-5 grid gap-4 lg:grid-cols-4">
             <label className="text-sm font-medium">
               Provider
               <select
@@ -245,6 +255,26 @@ export function AiRuntimeSettings() {
                   </option>
                 ))}
               </select>
+            </label>
+
+            <label className="text-sm font-medium">
+              Timezone(今日の日付の基準)
+              <input
+                type="text"
+                value={timezone}
+                onChange={(event) => {
+                  setTimezone(event.target.value);
+                  setMessage(null);
+                }}
+                disabled={saving}
+                placeholder="Asia/Tokyo"
+                className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm"
+              />
+              {!timezoneValid ? (
+                <span className="mt-1 block text-xs text-red-600 dark:text-red-300">
+                  IANA timezone名(例: Asia/Tokyo)で入力してください
+                </span>
+              ) : null}
             </label>
           </div>
 
@@ -301,11 +331,23 @@ function isRuntimeResponse(value: unknown): value is RuntimeResponse {
     value.current.provider === 'openai' &&
     typeof value.current.modelProfile === 'string' &&
     typeof value.current.reasoningEffort === 'string' &&
+    typeof value.current.timezone === 'string' &&
     typeof value.resolved.model === 'string' &&
     (value.source === 'console' || value.source === 'environment' || value.source === 'default') &&
     typeof value.storeAvailable === 'boolean' &&
     (value.updatedAt === null || typeof value.updatedAt === 'string')
   );
+}
+
+/** Mirrors the server-side IANA timezone check (packages/plugin-catalog/src/ai-service.ts). */
+function isValidIanaTimezone(value: string): boolean {
+  if (!value) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function sourceLabel(source: RuntimeResponse['source']): string {

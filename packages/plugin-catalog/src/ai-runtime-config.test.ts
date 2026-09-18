@@ -20,11 +20,14 @@ function record(value: Record<string, unknown>, updatedAt = new Date('2026-08-27
 
 describe('AiRuntimeConfigurationResolver', () => {
   it('valid console settingをenv defaultより優先する', async () => {
-    const readConfiguration = vi
-      .fn<ConfigurationReader>()
-      .mockResolvedValue(
-        record({ provider: 'openai', modelProfile: 'economy', reasoningEffort: 'medium' }),
-      );
+    const readConfiguration = vi.fn<ConfigurationReader>().mockResolvedValue(
+      record({
+        provider: 'openai',
+        modelProfile: 'economy',
+        reasoningEffort: 'medium',
+        timezone: 'Asia/Tokyo',
+      }),
+    );
     const resolver = new AiRuntimeConfigurationResolver({
       prisma,
       env: {
@@ -38,7 +41,12 @@ describe('AiRuntimeConfigurationResolver', () => {
     await expect(resolver.resolve()).resolves.toMatchObject({
       source: 'console',
       storeAvailable: true,
-      value: { provider: 'openai', modelProfile: 'economy', reasoningEffort: 'medium' },
+      value: {
+        provider: 'openai',
+        modelProfile: 'economy',
+        reasoningEffort: 'medium',
+        timezone: 'Asia/Tokyo',
+      },
       selection: { model: 'gpt-5.6-luna' },
     });
   });
@@ -47,16 +55,24 @@ describe('AiRuntimeConfigurationResolver', () => {
     const resolver = new AiRuntimeConfigurationResolver({
       prisma,
       env: { HERTA_AI_PROVIDER: 'unsupported' },
-      readConfiguration: vi
-        .fn<ConfigurationReader>()
-        .mockResolvedValue(
-          record({ provider: 'openai', modelProfile: 'balanced', reasoningEffort: 'low' }),
-        ),
+      readConfiguration: vi.fn<ConfigurationReader>().mockResolvedValue(
+        record({
+          provider: 'openai',
+          modelProfile: 'balanced',
+          reasoningEffort: 'low',
+          timezone: 'Asia/Tokyo',
+        }),
+      ),
     });
 
     await expect(resolver.resolve()).resolves.toMatchObject({
       source: 'console',
-      value: { provider: 'openai', modelProfile: 'balanced', reasoningEffort: 'low' },
+      value: {
+        provider: 'openai',
+        modelProfile: 'balanced',
+        reasoningEffort: 'low',
+        timezone: 'Asia/Tokyo',
+      },
     });
   });
 
@@ -111,14 +127,34 @@ describe('AiRuntimeConfigurationResolver', () => {
     const resolver = new AiRuntimeConfigurationResolver({
       prisma,
       env: { HERTA_AI_MODEL_PROFILE: 'balanced' },
-      readConfiguration: vi
-        .fn<ConfigurationReader>()
-        .mockResolvedValue(
-          record({ provider: 'openai', modelProfile: 'balanced', reasoningEffort: 'turbo' }),
-        ),
+      readConfiguration: vi.fn<ConfigurationReader>().mockResolvedValue(
+        record({
+          provider: 'openai',
+          modelProfile: 'balanced',
+          reasoningEffort: 'turbo',
+          timezone: 'Asia/Tokyo',
+        }),
+      ),
     });
 
     await expect(resolver.resolve()).rejects.toMatchObject({ code: 'invalid_reasoning_effort' });
+  });
+
+  it('persisted invalid timezoneはsilently downgradeせずfail closedする', async () => {
+    const resolver = new AiRuntimeConfigurationResolver({
+      prisma,
+      env: {},
+      readConfiguration: vi.fn<ConfigurationReader>().mockResolvedValue(
+        record({
+          provider: 'openai',
+          modelProfile: 'balanced',
+          reasoningEffort: 'low',
+          timezone: 'Not/A_Timezone',
+        }),
+      ),
+    });
+
+    await expect(resolver.resolve()).rejects.toMatchObject({ code: 'invalid_timezone' });
   });
 
   it('TTL内は同一snapshotを返しTTL経過後にstoreを再読込する', async () => {
@@ -126,10 +162,20 @@ describe('AiRuntimeConfigurationResolver', () => {
     const readConfiguration = vi
       .fn<ConfigurationReader>()
       .mockResolvedValueOnce(
-        record({ provider: 'openai', modelProfile: 'balanced', reasoningEffort: 'low' }),
+        record({
+          provider: 'openai',
+          modelProfile: 'balanced',
+          reasoningEffort: 'low',
+          timezone: 'Asia/Tokyo',
+        }),
       )
       .mockResolvedValueOnce(
-        record({ provider: 'openai', modelProfile: 'economy', reasoningEffort: 'high' }),
+        record({
+          provider: 'openai',
+          modelProfile: 'economy',
+          reasoningEffort: 'high',
+          timezone: 'Asia/Tokyo',
+        }),
       );
     const resolver = new AiRuntimeConfigurationResolver({
       prisma,

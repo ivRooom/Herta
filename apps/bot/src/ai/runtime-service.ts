@@ -136,7 +136,9 @@ export class OpenAiRuntimeGenerationService implements AiRuntimeGenerationServic
       conversationPolicy = resolveAiConversationPolicy({
         responseMode: request.responseMode,
         groundingState: request.groundingState,
-        timezone: this.baseConfig.timezone,
+        // Sourced from the live console/env-resolved runtime selection (like provider/model)
+        // rather than the bootstrap-only baseConfig, so a Studio change takes effect without restart.
+        timezone: runtime.selection.timezone,
       });
       const trustedInstructions = normalizeTrustedInstructions(request.trustedInstructions);
       if (trustedInstructions.length > 0) {

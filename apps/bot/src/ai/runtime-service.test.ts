@@ -38,10 +38,11 @@ function guardStore(reservations: number[] = []): AiGuardStore {
 function stored(
   modelProfile: 'quality' | 'balanced' | 'economy',
   reasoningEffort: 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max',
+  timezone = 'Asia/Tokyo',
 ): RuntimeConfigurationRecord {
   return {
     name: 'ai.runtime',
-    value: { provider: 'openai', modelProfile, reasoningEffort },
+    value: { provider: 'openai', modelProfile, reasoningEffort, timezone },
     updatedBy: 'admin-1',
     updatedAt: new Date('2026-08-27T00:00:00Z'),
   };
@@ -169,16 +170,19 @@ describe('OpenAiRuntimeGenerationService', () => {
     expect(String(bodies[0]?.['instructions'])).toContain('Do not truncate requested code');
   });
 
-  it('HERTA_AI_TIMEZONEで設定した現在日付をprovider instructionsへ反映する', async () => {
+  it('runtime resolverで解決したtimezoneをprovider instructionsへ反映する', async () => {
     const bodies: Array<Record<string, unknown>> = [];
+    const runtimeResolver = new AiRuntimeConfigurationResolver({
+      prisma,
+      env: { HERTA_AI_TIMEZONE: 'America/New_York' },
+      ttlMs: 0,
+      readConfiguration: vi.fn().mockResolvedValue(null),
+    });
     const service = new OpenAiRuntimeGenerationService({
-      baseConfig: resolveAiFoundationConfig({
-        HERTA_AI_ENABLED: 'true',
-        HERTA_AI_TIMEZONE: 'America/New_York',
-      }),
+      baseConfig: resolveAiFoundationConfig({ HERTA_AI_ENABLED: 'true' }),
       apiKey: 'server-secret',
       guardStore: guardStore(),
-      runtimeResolver: resolverFor(),
+      runtimeResolver,
       fetchImpl: async (_input, init) => {
         bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
         return completedResponse();
@@ -188,6 +192,29 @@ describe('OpenAiRuntimeGenerationService', () => {
     await service.generate(request);
 
     expect(String(bodies[0]?.['instructions'])).toContain('(America/New_York)');
+  });
+
+  it('Studioで保存されたconsole timezone設定をprovider instructionsへ反映する', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const service = new OpenAiRuntimeGenerationService({
+      baseConfig: resolveAiFoundationConfig({ HERTA_AI_ENABLED: 'true' }),
+      apiKey: 'server-secret',
+      guardStore: guardStore(),
+      runtimeResolver: new AiRuntimeConfigurationResolver({
+        prisma,
+        env: {},
+        ttlMs: 0,
+        readConfiguration: vi.fn().mockResolvedValue(stored('balanced', 'low', 'UTC')),
+      }),
+      fetchImpl: async (_input, init) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return completedResponse();
+      },
+    });
+
+    await service.generate(request);
+
+    expect(String(bodies[0]?.['instructions'])).toContain('(UTC)');
   });
 
   it('user promptはserver instructionsを上書きせず別inputとして保持する', async () => {

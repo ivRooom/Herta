@@ -784,7 +784,7 @@ function envFlag(value: string | undefined, fallback: boolean): boolean {
   throw new AiConfigurationError('invalid_value', 'boolean');
 }
 
-function isValidIanaTimezone(value: string): boolean {
+export function isValidIanaTimezone(value: string): boolean {
   try {
     new Intl.DateTimeFormat('en-US', { timeZone: value });
     return true;
