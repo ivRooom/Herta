@@ -14,7 +14,12 @@ const prisma = {} as ConstructorParameters<typeof AiRuntimeConfigurationResolver
 function stored(): RuntimeConfigurationRecord {
   return {
     name: 'ai.runtime',
-    value: { provider: 'openai', modelProfile: 'balanced', reasoningEffort: 'low' },
+    value: {
+      provider: 'openai',
+      modelProfile: 'balanced',
+      reasoningEffort: 'low',
+      timezone: 'Asia/Tokyo',
+    },
     updatedBy: 'admin-1',
     updatedAt: new Date('2026-08-27T00:00:00Z'),
   };

@@ -1,8 +1,10 @@
 import {
+  AI_DEFAULTS,
   AI_MODEL_PROFILES,
   AI_OPENAI_MODELS,
   AI_SUPPORTED_PROVIDERS,
   estimateOpenAiCostMicroUsd,
+  isValidIanaTimezone,
   type AiModelProfile,
   type AiOpenAiModel,
   type AiProviderName,
@@ -37,18 +39,23 @@ export interface AiRuntimeSelection {
   model: AiOpenAiModel;
   reasoningEffort: AiReasoningEffort;
   pricing: AiTokenPricing;
+  /** IANA timezone used to tell the model today's actual date. */
+  timezone: string;
 }
 
 export interface AiRuntimeStoredValue {
   provider: AiProviderName;
   modelProfile: AiModelProfile;
   reasoningEffort: AiReasoningEffort;
+  /** IANA timezone, e.g. "Asia/Tokyo". Case-sensitive; never lowercased. */
+  timezone: string;
 }
 
 export type AiRuntimePolicyErrorCode =
   | 'invalid_provider'
   | 'invalid_model_profile'
   | 'invalid_reasoning_effort'
+  | 'invalid_timezone'
   | 'unsupported_combination'
   | 'invalid_shape';
 
@@ -115,6 +122,7 @@ export const AI_RUNTIME_SAFE_DEFAULT: AiRuntimeStoredValue = {
   provider: 'openai',
   modelProfile: 'balanced',
   reasoningEffort: 'low',
+  timezone: AI_DEFAULTS.timezone,
 };
 
 export function resolveAiRuntimeSelection(value: AiRuntimeStoredValue): AiRuntimeSelection {
@@ -124,6 +132,9 @@ export function resolveAiRuntimeSelection(value: AiRuntimeStoredValue): AiRuntim
   }
   if (!isAiReasoningEffort(value.reasoningEffort)) {
     throw new AiRuntimePolicyError('invalid_reasoning_effort');
+  }
+  if (typeof value.timezone !== 'string' || !isValidIanaTimezone(value.timezone)) {
+    throw new AiRuntimePolicyError('invalid_timezone');
   }
 
   const entry = AI_RUNTIME_POLICY[value.provider][value.modelProfile];
@@ -137,6 +148,7 @@ export function resolveAiRuntimeSelection(value: AiRuntimeStoredValue): AiRuntim
     model: entry.model,
     reasoningEffort: value.reasoningEffort,
     pricing: entry.pricing,
+    timezone: value.timezone,
   };
 }
 
@@ -144,10 +156,11 @@ export function parseAiRuntimeStoredValue(value: unknown): AiRuntimeStoredValue 
   if (!isRecord(value)) throw new AiRuntimePolicyError('invalid_shape');
   const keys = Object.keys(value);
   if (
-    keys.length !== 3 ||
+    keys.length !== 4 ||
     !keys.includes('provider') ||
     !keys.includes('modelProfile') ||
-    !keys.includes('reasoningEffort')
+    !keys.includes('reasoningEffort') ||
+    !keys.includes('timezone')
   ) {
     throw new AiRuntimePolicyError('invalid_shape');
   }
@@ -155,6 +168,7 @@ export function parseAiRuntimeStoredValue(value: unknown): AiRuntimeStoredValue 
   const provider = value['provider'];
   const modelProfile = value['modelProfile'];
   const reasoningEffort = value['reasoningEffort'];
+  const timezone = value['timezone'];
   if (typeof provider !== 'string' || !isAiProvider(provider)) {
     throw new AiRuntimePolicyError('invalid_provider');
   }
@@ -164,8 +178,11 @@ export function parseAiRuntimeStoredValue(value: unknown): AiRuntimeStoredValue 
   if (typeof reasoningEffort !== 'string' || !isAiReasoningEffort(reasoningEffort)) {
     throw new AiRuntimePolicyError('invalid_reasoning_effort');
   }
+  if (typeof timezone !== 'string' || !isValidIanaTimezone(timezone)) {
+    throw new AiRuntimePolicyError('invalid_timezone');
+  }
 
-  const parsed = { provider, modelProfile, reasoningEffort };
+  const parsed = { provider, modelProfile, reasoningEffort, timezone };
   resolveAiRuntimeSelection(parsed);
   return parsed;
 }
@@ -182,8 +199,10 @@ export function resolveAiRuntimeEnvDefault(
     env['HERTA_AI_REASONING_EFFORT'],
     AI_RUNTIME_SAFE_DEFAULT.reasoningEffort,
   );
+  // IANA timezone identifiers are case-sensitive (e.g. "Asia/Tokyo"); never lowercase them.
+  const timezone = env['HERTA_AI_TIMEZONE']?.trim() || AI_RUNTIME_SAFE_DEFAULT.timezone;
 
-  const parsed = parseAiRuntimeStoredValue({ provider, modelProfile, reasoningEffort });
+  const parsed = parseAiRuntimeStoredValue({ provider, modelProfile, reasoningEffort, timezone });
   resolveAiRuntimeSelection(parsed);
   return parsed;
 }

@@ -55,6 +55,7 @@ export const AI_DEFAULTS = {
   maxInputBytes: 24_000,
   maxOutputTokens: 800,
   maxOutputChars: 6_000,
+  timezone: 'Asia/Tokyo',
   timeoutMs: 30_000,
   providerResponseMaxBytes: 512 * 1024,
   userRateLimit: 6,
@@ -76,6 +77,8 @@ export interface AiFoundationConfig {
   maxInputBytes: number;
   maxOutputTokens: number;
   maxOutputChars: number;
+  /** IANA timezone used to tell the model today's actual date. Default: Asia/Tokyo (JST). */
+  timezone: string;
   timeoutMs: number;
   providerResponseMaxBytes: number;
   userRateLimit: number;
@@ -239,6 +242,11 @@ export function resolveAiFoundationConfig(
   if (!isAiOpenAiModel(modelValue))
     throw new AiConfigurationError('invalid_model', 'HERTA_AI_MODEL');
 
+  const timezoneValue = env['HERTA_AI_TIMEZONE']?.trim() || AI_DEFAULTS.timezone;
+  if (!isValidIanaTimezone(timezoneValue)) {
+    throw new AiConfigurationError('invalid_value', 'HERTA_AI_TIMEZONE');
+  }
+
   return {
     enabled: envFlag(env['HERTA_AI_ENABLED'], AI_DEFAULTS.enabled),
     killSwitch: envFlag(env['HERTA_AI_KILL_SWITCH'], AI_DEFAULTS.killSwitch),
@@ -273,6 +281,7 @@ export function resolveAiFoundationConfig(
       1,
       12_000,
     ),
+    timezone: timezoneValue,
     timeoutMs: boundedInteger(env, 'HERTA_AI_TIMEOUT_MS', AI_DEFAULTS.timeoutMs, 1_000, 30_000),
     providerResponseMaxBytes: boundedInteger(
       env,
@@ -773,6 +782,15 @@ function envFlag(value: string | undefined, fallback: boolean): boolean {
   if (normalized === 'true' || normalized === '1') return true;
   if (normalized === 'false' || normalized === '0') return false;
   throw new AiConfigurationError('invalid_value', 'boolean');
+}
+
+export function isValidIanaTimezone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function boundedInteger(

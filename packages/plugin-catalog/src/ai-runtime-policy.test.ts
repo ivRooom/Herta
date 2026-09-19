@@ -11,25 +11,33 @@ import {
 } from './ai-runtime-policy.js';
 
 describe('AI runtime policy', () => {
-  it('hard-coded safe defaultはOpenAI balanced/low', () => {
+  it('hard-coded safe defaultはOpenAI balanced/low/Asia-Tokyo', () => {
     expect(AI_RUNTIME_SAFE_DEFAULT).toEqual({
       provider: 'openai',
       modelProfile: 'balanced',
       reasoningEffort: 'low',
+      timezone: 'Asia/Tokyo',
     });
     expect(resolveAiRuntimeSelection(AI_RUNTIME_SAFE_DEFAULT)).toMatchObject({
       provider: 'openai',
       modelProfile: 'balanced',
       model: 'gpt-5.6-terra',
       reasoningEffort: 'low',
+      timezone: 'Asia/Tokyo',
     });
   });
 
-  it('arbitrary provider/profile/reasoningを拒否する', () => {
+  it('arbitrary provider/profile/reasoning/timezoneを拒否する', () => {
     for (const value of [
-      { provider: 'anthropic', modelProfile: 'balanced', reasoningEffort: 'low' },
-      { provider: 'openai', modelProfile: 'custom', reasoningEffort: 'low' },
-      { provider: 'openai', modelProfile: 'balanced', reasoningEffort: 'turbo' },
+      { provider: 'anthropic', modelProfile: 'balanced', reasoningEffort: 'low', timezone: 'UTC' },
+      { provider: 'openai', modelProfile: 'custom', reasoningEffort: 'low', timezone: 'UTC' },
+      { provider: 'openai', modelProfile: 'balanced', reasoningEffort: 'turbo', timezone: 'UTC' },
+      {
+        provider: 'openai',
+        modelProfile: 'balanced',
+        reasoningEffort: 'low',
+        timezone: 'Not/A_Timezone',
+      },
     ]) {
       expect(() => parseAiRuntimeStoredValue(value)).toThrowError(AiRuntimePolicyError);
     }
@@ -54,8 +62,26 @@ describe('AI runtime policy', () => {
         HERTA_AI_PROVIDER: ' OPENAI ',
         HERTA_AI_MODEL_PROFILE: 'QUALITY',
         HERTA_AI_REASONING_EFFORT: 'HIGH',
+        HERTA_AI_TIMEZONE: ' America/New_York ',
       }),
-    ).toEqual({ provider: 'openai', modelProfile: 'quality', reasoningEffort: 'high' });
+    ).toEqual({
+      provider: 'openai',
+      modelProfile: 'quality',
+      reasoningEffort: 'high',
+      timezone: 'America/New_York',
+    });
+  });
+
+  it('HERTA_AI_TIMEZONEは大文字小文字を保持する(IANA名はcase-sensitive)', () => {
+    expect(resolveAiRuntimeEnvDefault({ HERTA_AI_TIMEZONE: 'Asia/Tokyo' }).timezone).toBe(
+      'Asia/Tokyo',
+    );
+  });
+
+  it('不正なHERTA_AI_TIMEZONEはfail closedする', () => {
+    expect(() => resolveAiRuntimeEnvDefault({ HERTA_AI_TIMEZONE: 'Not/A_Timezone' })).toThrowError(
+      expect.objectContaining<Partial<AiRuntimePolicyError>>({ code: 'invalid_timezone' }),
+    );
   });
 
   it('env未設定時はhard-coded safe defaultへ解決する', () => {
