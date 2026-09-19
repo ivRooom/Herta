@@ -30,6 +30,10 @@
       "types": "./src/ai-conversation-policy.ts",
       "default": "./dist/ai-conversation-policy.js"
     },
+    "./jma-weather-policy": {
+      "types": "./src/jma-weather-policy.ts",
+      "default": "./dist/jma-weather-policy.js"
+    },
     "./moderation-runtime": {
       "types": "./src/moderation-runtime.ts",
       "default": "./dist/moderation-runtime.js"

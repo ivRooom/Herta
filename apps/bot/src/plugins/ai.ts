@@ -24,6 +24,7 @@ import {
   withAiDirectReplyImageGenerationContext,
 } from '../ai/direct-reply-context.js';
 import { createAiFoundationRuntime } from '../ai/factory.js';
+import { withAiJmaWeatherGroundingContext } from '../ai/jma-weather-service.js';
 import type { AiRuntimeGenerationService } from '../ai/runtime-service.js';
 import { startAiTypingIndicator } from '../ai/typing-indicator.js';
 
@@ -111,7 +112,21 @@ async function handleAiMessage(
     const runtime = await getSharedRuntime(context);
     const directReplyContext = getVerifiedAiReplyContext(message);
     const generationService = runtime?.generationService
-      ? withAiDirectReplyContext(runtime.generationService, directReplyContext)
+      ? withAiJmaWeatherGroundingContext(
+          withAiDirectReplyContext(runtime.generationService, directReplyContext),
+          {
+            onLookupFailed: ({ areaDisplayName, errorName }) =>
+              context.logger.warn(
+                {
+                  guildId: context.guildId,
+                  areaDisplayName,
+                  errorName,
+                  result: 'jma_lookup_failed',
+                },
+                'JMA天気データの取得に失敗しました',
+              ),
+          },
+        )
       : null;
     let artifactRuntime = runtime?.artifactRuntime ?? null;
     if (runtime && generationService && directReplyContext) {
