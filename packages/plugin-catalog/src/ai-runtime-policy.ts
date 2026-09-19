@@ -155,12 +155,15 @@ export function resolveAiRuntimeSelection(value: AiRuntimeStoredValue): AiRuntim
 export function parseAiRuntimeStoredValue(value: unknown): AiRuntimeStoredValue {
   if (!isRecord(value)) throw new AiRuntimePolicyError('invalid_shape');
   const keys = Object.keys(value);
+  // timezoneはこの後に追加したフィールドなので、既存保存済みの3フィールド値(provider/
+  // modelProfile/reasoningEffortのみ)も後方互換で受け付け、その場合はsafe defaultへ
+  // fallbackする。timezoneキーが存在する場合は依然として厳格に検証する。
+  const hasTimezone = keys.includes('timezone');
   if (
-    keys.length !== 4 ||
+    keys.length !== (hasTimezone ? 4 : 3) ||
     !keys.includes('provider') ||
     !keys.includes('modelProfile') ||
-    !keys.includes('reasoningEffort') ||
-    !keys.includes('timezone')
+    !keys.includes('reasoningEffort')
   ) {
     throw new AiRuntimePolicyError('invalid_shape');
   }
@@ -168,7 +171,7 @@ export function parseAiRuntimeStoredValue(value: unknown): AiRuntimeStoredValue 
   const provider = value['provider'];
   const modelProfile = value['modelProfile'];
   const reasoningEffort = value['reasoningEffort'];
-  const timezone = value['timezone'];
+  const timezone = hasTimezone ? value['timezone'] : AI_RUNTIME_SAFE_DEFAULT.timezone;
   if (typeof provider !== 'string' || !isAiProvider(provider)) {
     throw new AiRuntimePolicyError('invalid_provider');
   }

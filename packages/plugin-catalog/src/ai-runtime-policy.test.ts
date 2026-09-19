@@ -27,6 +27,21 @@ describe('AI runtime policy', () => {
     });
   });
 
+  it('timezone追加以前に保存された3フィールドのstored valueを後方互換で受け付ける', () => {
+    expect(
+      parseAiRuntimeStoredValue({
+        provider: 'openai',
+        modelProfile: 'economy',
+        reasoningEffort: 'medium',
+      }),
+    ).toEqual({
+      provider: 'openai',
+      modelProfile: 'economy',
+      reasoningEffort: 'medium',
+      timezone: 'Asia/Tokyo',
+    });
+  });
+
   it('arbitrary provider/profile/reasoning/timezoneを拒否する', () => {
     for (const value of [
       { provider: 'anthropic', modelProfile: 'balanced', reasoningEffort: 'low', timezone: 'UTC' },
