@@ -76,6 +76,30 @@ describe('AiRuntimeConfigurationResolver', () => {
     });
   });
 
+  it('timezone追加以前にproductionへ保存された3フィールドのレコードを引き続き読み込める', async () => {
+    const resolver = new AiRuntimeConfigurationResolver({
+      prisma,
+      env: {},
+      readConfiguration: vi
+        .fn<ConfigurationReader>()
+        .mockResolvedValue(
+          record({ provider: 'openai', modelProfile: 'economy', reasoningEffort: 'low' }),
+        ),
+    });
+
+    await expect(resolver.resolve()).resolves.toMatchObject({
+      source: 'console',
+      storeAvailable: true,
+      value: {
+        provider: 'openai',
+        modelProfile: 'economy',
+        reasoningEffort: 'low',
+        timezone: 'Asia/Tokyo',
+      },
+      selection: { model: 'gpt-5.6-luna', timezone: 'Asia/Tokyo' },
+    });
+  });
+
   it('store未登録時はallowlisted env defaultへfallbackする', async () => {
     const resolver = new AiRuntimeConfigurationResolver({
       prisma,
