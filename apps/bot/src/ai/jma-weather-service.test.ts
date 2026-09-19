@@ -21,23 +21,61 @@ function textResponse(text: string): Response {
   return new Response(text, { status: 200, headers: { 'content-length': String(text.length) } });
 }
 
-describe('fetchJmaForecastSummary', () => {
-  it('weathersとpopsを正しく抽出する', async () => {
-    const fetchImpl = vi.fn<typeof fetch>(async () =>
-      jsonResponse([
+/** Mirrors the real JMA short-term forecast shape: 3 days of weathers, finer-grained pops. */
+function forecastFixture() {
+  return [
+    {
+      timeSeries: [
         {
-          timeSeries: [
-            { areas: [{ weathers: ['晴れ時々くもり'] }] },
-            { areas: [{ pops: ['', '10', '20'] }] },
+          timeDefines: [
+            '2026-09-19T17:00:00+09:00',
+            '2026-09-20T00:00:00+09:00',
+            '2026-09-21T00:00:00+09:00',
           ],
+          areas: [{ weathers: ['くもり', '晴れ時々くもり', '雨'] }],
         },
-      ]),
-    );
+        {
+          timeDefines: [
+            '2026-09-19T18:00:00+09:00',
+            '2026-09-20T00:00:00+09:00',
+            '2026-09-20T06:00:00+09:00',
+            '2026-09-20T12:00:00+09:00',
+            '2026-09-20T18:00:00+09:00',
+          ],
+          areas: [{ pops: ['', '10', '20', '30', '40'] }],
+        },
+      ],
+    },
+  ];
+}
 
-    await expect(fetchJmaForecastSummary(TOKYO_AREA, fetchImpl)).resolves.toEqual({
-      weatherText: '晴れ時々くもり',
-      precipitationProbabilityPercent: 10,
+describe('fetchJmaForecastSummary', () => {
+  it('指定した日付(targetDateJst)のweathers/popsだけを抽出する', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => jsonResponse(forecastFixture()));
+
+    await expect(fetchJmaForecastSummary(TOKYO_AREA, fetchImpl, '2026-09-19')).resolves.toEqual({
+      forDateJst: '2026-09-19',
+      weatherText: 'くもり',
+      precipitationProbabilityPercent: null,
     });
+  });
+
+  it('翌日を指定すると前日ではなく翌日のweathers/popsを返す(日付を無視する回帰を防ぐ)', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => jsonResponse(forecastFixture()));
+
+    await expect(fetchJmaForecastSummary(TOKYO_AREA, fetchImpl, '2026-09-20')).resolves.toEqual({
+      forDateJst: '2026-09-20',
+      weatherText: '晴れ時々くもり',
+      precipitationProbabilityPercent: 40,
+    });
+  });
+
+  it('JMAの予報範囲(約2日先まで)を超える日付はfake dataを作らずnot_foundにする', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => jsonResponse(forecastFixture()));
+
+    await expect(
+      fetchJmaForecastSummary(TOKYO_AREA, fetchImpl, '2026-09-25'),
+    ).rejects.toMatchObject({ code: 'not_found' });
   });
 
   it('不正なJSONはinvalid_responseとしてfail closedする', async () => {
@@ -45,17 +83,17 @@ describe('fetchJmaForecastSummary', () => {
       async () => new Response('not json', { status: 200, headers: { 'content-length': '8' } }),
     );
 
-    await expect(fetchJmaForecastSummary(TOKYO_AREA, fetchImpl)).rejects.toMatchObject({
-      code: 'invalid_response',
-    });
+    await expect(
+      fetchJmaForecastSummary(TOKYO_AREA, fetchImpl, '2026-09-19'),
+    ).rejects.toMatchObject({ code: 'invalid_response' });
   });
 
-  it('weathersが存在しない応答はinvalid_responseにする(fake dataを作らない)', async () => {
+  it('timeSeriesが空の応答はnot_foundにする(fake dataを作らない)', async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => jsonResponse([{ timeSeries: [] }]));
 
-    await expect(fetchJmaForecastSummary(TOKYO_AREA, fetchImpl)).rejects.toMatchObject({
-      code: 'invalid_response',
-    });
+    await expect(
+      fetchJmaForecastSummary(TOKYO_AREA, fetchImpl, '2026-09-19'),
+    ).rejects.toMatchObject({ code: 'not_found' });
   });
 
   it('宣言されたcontent-lengthが上限を超える場合は本文を読まずrejectする', async () => {
@@ -63,9 +101,9 @@ describe('fetchJmaForecastSummary', () => {
       jsonResponse([{ timeSeries: [] }], 10_000_000),
     );
 
-    await expect(fetchJmaForecastSummary(TOKYO_AREA, fetchImpl)).rejects.toMatchObject({
-      code: 'invalid_response',
-    });
+    await expect(
+      fetchJmaForecastSummary(TOKYO_AREA, fetchImpl, '2026-09-19'),
+    ).rejects.toMatchObject({ code: 'invalid_response' });
   });
 
   it('AbortErrorはJmaWeatherErrorのtimeoutコードへ変換する', async () => {
@@ -75,9 +113,9 @@ describe('fetchJmaForecastSummary', () => {
       throw error;
     });
 
-    await expect(fetchJmaForecastSummary(TOKYO_AREA, fetchImpl)).rejects.toMatchObject({
-      code: 'timeout',
-    });
+    await expect(
+      fetchJmaForecastSummary(TOKYO_AREA, fetchImpl, '2026-09-19'),
+    ).rejects.toMatchObject({ code: 'timeout' });
   });
 });
 
@@ -192,12 +230,13 @@ describe('withAiJmaWeatherGroundingContext', () => {
       const href = String(url);
       if (href.includes('latest_time.txt')) return textResponse('2026-09-19T21:20:00+09:00');
       if (href.includes('/amedas/data/map/')) return jsonResponse({ '44132': { temp: [20, 0] } });
-      if (href.includes('/forecast/data/forecast/')) {
-        return jsonResponse([{ timeSeries: [{ areas: [{ weathers: ['晴れ'] }] }] }]);
-      }
+      if (href.includes('/forecast/data/forecast/')) return jsonResponse(forecastFixture());
       throw new Error(`unexpected URL in test: ${href}`);
     });
-    const service = withAiJmaWeatherGroundingContext({ generate }, { fetchImpl });
+    const service = withAiJmaWeatherGroundingContext(
+      { generate },
+      { fetchImpl, now: () => new Date('2026-09-19T13:00:00+09:00') },
+    );
 
     await service.generate(baseRequest());
 
@@ -206,10 +245,65 @@ describe('withAiJmaWeatherGroundingContext', () => {
     expect(sentRequest?.groundingState).toBe('grounded');
     expect(sentRequest?.input).toContain('weatherGroundingContext');
     expect(sentRequest?.input).toContain('東京');
-    expect(sentRequest?.input).toContain('20');
+    expect(sentRequest?.input).toContain('くもり');
     expect(sentRequest?.trustedInstructions).toEqual(
       expect.arrayContaining([expect.stringContaining('weatherGroundingContext')]),
     );
+  });
+
+  it('「明日」の質問には翌日のforecastを返し、実況(observation)は取得しない', async () => {
+    const generate = vi.fn<AiRuntimeGenerationService['generate']>(async () => successResponse());
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+      const href = String(url);
+      if (href.includes('/forecast/data/forecast/')) return jsonResponse(forecastFixture());
+      throw new Error(`observation should not be fetched for a future day: ${href}`);
+    });
+    const service = withAiJmaWeatherGroundingContext(
+      { generate },
+      { fetchImpl, now: () => new Date('2026-09-19T13:00:00+09:00') },
+    );
+
+    await service.generate(baseRequest({ input: '東京の明日の天気は？' }));
+
+    const sentRequest = generate.mock.calls[0]?.[0];
+    expect(sentRequest?.groundingState).toBe('grounded');
+    expect(sentRequest?.input).toContain('forecastDate: 2026-09-20');
+    expect(sentRequest?.input).toContain('晴れ時々くもり');
+    expect(sentRequest?.input).not.toContain('observedTempCelsius');
+  });
+
+  it('JMAの予報範囲を超える日付を聞かれた場合はfail closedし、fake successにしない', async () => {
+    const generate = vi.fn<AiRuntimeGenerationService['generate']>(async () => successResponse());
+    // Only today/tomorrow are covered — 明後日 (day+2) falls outside this forecast's range.
+    const shortRangeForecast = [
+      {
+        timeSeries: [
+          {
+            timeDefines: ['2026-09-19T17:00:00+09:00', '2026-09-20T00:00:00+09:00'],
+            areas: [{ weathers: ['くもり', '晴れ'] }],
+          },
+        ],
+      },
+    ];
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+      const href = String(url);
+      if (href.includes('/forecast/data/forecast/')) return jsonResponse(shortRangeForecast);
+      throw new Error(`unexpected URL in test: ${href}`);
+    });
+    const onLookupFailed = vi.fn();
+    const service = withAiJmaWeatherGroundingContext(
+      { generate },
+      { fetchImpl, onLookupFailed, now: () => new Date('2026-09-19T13:00:00+09:00') },
+    );
+    const request = baseRequest({ input: '東京の明後日の天気は？' });
+
+    await service.generate(request);
+
+    expect(generate).toHaveBeenCalledWith(request);
+    expect(onLookupFailed).toHaveBeenCalledWith({
+      areaDisplayName: '東京',
+      errorName: 'JmaWeatherError',
+    });
   });
 
   it('取得失敗時はrequestを変更せずfail closedし、raw errorをsinkへ渡さない', async () => {

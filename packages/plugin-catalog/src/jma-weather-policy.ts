@@ -43,6 +43,20 @@ const JMA_AREA_ALIASES: Record<string, keyof typeof JMA_AREA_TABLE> = {
   神奈川: '横浜',
 };
 
+const DAY_AFTER_TOMORROW_PATTERN = /明後日|あさって|day\s+after\s+tomorrow/i;
+const TOMORROW_PATTERN = /明日|あす|tomorrow/i;
+
+/**
+ * Detect which day (0 = today, 1 = tomorrow, 2 = day after tomorrow) a weather question is about.
+ * Defaults to 0 (today) when no explicit day is mentioned. JMA's short-term forecast only covers
+ * up to 2 days ahead, so the caller must treat any further day as unavailable rather than guessing.
+ */
+export function resolveJmaDayOffset(input: string): number {
+  if (DAY_AFTER_TOMORROW_PATTERN.test(input)) return 2;
+  if (TOMORROW_PATTERN.test(input)) return 1;
+  return 0;
+}
+
 const WEATHER_QUERY_PATTERN =
   /天気|天候|気温|降水|雨(?:雲|量)?|雪(?:雲|量)?|気象(?:情報|観測|データ)?|weather|forecast|temperature/i;
 

@@ -3,6 +3,7 @@ import {
   isJmaWeatherQuery,
   listJmaAreaNames,
   resolveJmaAreaFromText,
+  resolveJmaDayOffset,
 } from './jma-weather-policy.js';
 
 describe('JMA weather policy', () => {
@@ -47,6 +48,15 @@ describe('JMA weather policy', () => {
   it('任意の文字列をarea codeとして注入できない(allowlist以外は常にnull)', () => {
     expect(resolveJmaAreaFromText('130000')).toBeNull();
     expect(resolveJmaAreaFromText('<script>alert(1)</script>')).toBeNull();
+  });
+
+  it('明日・明後日を検知し、指定がなければ今日として扱う', () => {
+    expect(resolveJmaDayOffset('東京の天気は？')).toBe(0);
+    expect(resolveJmaDayOffset('東京の今の天気は？')).toBe(0);
+    expect(resolveJmaDayOffset('東京の明日の天気は？')).toBe(1);
+    expect(resolveJmaDayOffset('tomorrow weather in Tokyo')).toBe(1);
+    expect(resolveJmaDayOffset('東京の明後日の天気は？')).toBe(2);
+    expect(resolveJmaDayOffset('東京のあさっての天気は？')).toBe(2);
   });
 
   it('allowlistは空でない主要都市の一覧を返す', () => {

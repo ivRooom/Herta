@@ -1,6 +1,7 @@
 import {
   isJmaWeatherQuery,
   resolveJmaAreaFromText,
+  resolveJmaDayOffset,
   type JmaAreaEntry,
 } from '@herta/plugin-catalog/jma-weather-policy';
 import type { AiRuntimeGenerationService } from './runtime-service.js';
@@ -15,9 +16,10 @@ const JMA_LATEST_TIME_MAX_BYTES = 4 * 1024;
 
 const JMA_GROUNDING_INSTRUCTION =
   'A weatherGroundingContext field, when present in user input, contains real Japan ' +
-  'Meteorological Agency (JMA) data fetched by the application for the named area. Answer using ' +
-  'only those values. Do not add temperature, precipitation, or forecast details beyond what it ' +
-  'contains, and do not claim data for a different area or time than what it states.';
+  'Meteorological Agency (JMA) data fetched by the application for the named area and the exact ' +
+  'forecastDate shown. Answer using only those values, for that date only. Do not add temperature, ' +
+  'precipitation, or forecast details beyond what it contains, and do not claim data for a ' +
+  'different area or date than what it states.';
 
 export type JmaWeatherErrorCode = 'timeout' | 'fetch_failed' | 'invalid_response' | 'not_found';
 
@@ -38,6 +40,7 @@ export interface JmaObservationSummary {
 }
 
 export interface JmaForecastSummary {
+  forDateJst: string;
   weatherText: string | null;
   precipitationProbabilityPercent: number | null;
 }
@@ -108,9 +111,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * Fetch the forecast for exactly `targetDateJst` (a `YYYY-MM-DD` JST calendar date). JMA's
+ * `timeDefines` entries are JST wall-clock ISO timestamps, so the leading 10 characters are the
+ * calendar date to match against — no timezone conversion is needed. If no `timeDefines` entry
+ * falls on that date (the short-term forecast only covers ~2 days ahead), this fails closed rather
+ * than silently substituting a different day's data.
+ */
 export async function fetchJmaForecastSummary(
   area: JmaAreaEntry,
   fetchImpl: typeof fetch,
+  targetDateJst: string,
 ): Promise<JmaForecastSummary> {
   const url = `https://www.jma.go.jp/bosai/forecast/data/forecast/${area.officeCode}.json`;
   const bytes = await fetchBounded(url, fetchImpl, JMA_FORECAST_TIMEOUT_MS, JMA_FORECAST_MAX_BYTES);
@@ -125,24 +136,58 @@ export async function fetchJmaForecastSummary(
   let weatherText: string | null = null;
   let precipitationProbabilityPercent: number | null = null;
   for (const series of shortTerm['timeSeries']) {
-    if (!isRecord(series) || !Array.isArray(series['areas'])) continue;
+    if (
+      !isRecord(series) ||
+      !Array.isArray(series['timeDefines']) ||
+      !Array.isArray(series['areas'])
+    ) {
+      continue;
+    }
     const [firstArea] = series['areas'];
     if (!isRecord(firstArea)) continue;
+    const dateIndexes = series['timeDefines']
+      .map((value, index) =>
+        typeof value === 'string' && value.startsWith(targetDateJst) ? index : -1,
+      )
+      .filter((index) => index >= 0);
+    if (dateIndexes.length === 0) continue;
+
     if (weatherText === null && Array.isArray(firstArea['weathers'])) {
-      const [first] = firstArea['weathers'];
-      if (typeof first === 'string') weatherText = first;
+      const value = firstArea['weathers'][dateIndexes[0] as number];
+      if (typeof value === 'string') weatherText = value;
     }
     if (precipitationProbabilityPercent === null && Array.isArray(firstArea['pops'])) {
-      const value = firstArea['pops'].find((pop: unknown) => typeof pop === 'string' && pop !== '');
-      if (typeof value === 'string') {
+      let maxPop: number | null = null;
+      for (const index of dateIndexes) {
+        const value = firstArea['pops'][index];
+        if (typeof value !== 'string' || value === '') continue;
         const parsedPop = Number(value);
-        if (Number.isFinite(parsedPop)) precipitationProbabilityPercent = parsedPop;
+        if (Number.isFinite(parsedPop) && (maxPop === null || parsedPop > maxPop))
+          maxPop = parsedPop;
       }
+      precipitationProbabilityPercent = maxPop;
     }
   }
 
-  if (weatherText === null) throw new JmaWeatherError('invalid_response');
-  return { weatherText, precipitationProbabilityPercent };
+  if (weatherText === null) throw new JmaWeatherError('not_found');
+  return { forDateJst: targetDateJst, weatherText, precipitationProbabilityPercent };
+}
+
+/** JST calendar date (`YYYY-MM-DD`) for a given instant. */
+function jstDateString(date: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+/** Add whole days to a JST calendar date string, returning a new JST calendar date string. */
+function addJstDays(jstDateStr: string, days: number): string {
+  const anchor = new Date(`${jstDateStr}T00:00:00+09:00`);
+  anchor.setUTCDate(anchor.getUTCDate() + days);
+  return jstDateString(anchor);
 }
 
 export async function fetchJmaObservationSummary(
@@ -196,6 +241,8 @@ function formatAmedasTimestamp(latestTimeText: string): string {
 
 export interface JmaWeatherGroundingOptions {
   fetchImpl?: typeof fetch;
+  /** Overridable for deterministic tests; defaults to the real current time. */
+  now?: () => Date;
   /** Only safe metadata (area name, error name) is ever passed to this sink. */
   onLookupFailed?: (context: { areaDisplayName: string; errorName: string }) => void;
 }
@@ -213,6 +260,7 @@ export function withAiJmaWeatherGroundingContext(
   options: JmaWeatherGroundingOptions = {},
 ): AiRuntimeGenerationService {
   const fetchImpl = options.fetchImpl ?? fetch;
+  const now = options.now ?? (() => new Date());
 
   const wrapped: AiRuntimeGenerationService = {
     generate: async (request) => {
@@ -222,10 +270,14 @@ export function withAiJmaWeatherGroundingContext(
       const area = resolveJmaAreaFromText(request.input);
       if (!area) return service.generate(request);
 
+      const dayOffset = resolveJmaDayOffset(request.input);
+      const targetDateJst = addJstDays(jstDateString(now()), dayOffset);
+
       try {
+        // Real-time observation only describes "right now" — it never applies to a future day.
         const [observation, forecast] = await Promise.all([
-          fetchJmaObservationSummary(area, fetchImpl),
-          fetchJmaForecastSummary(area, fetchImpl),
+          dayOffset === 0 ? fetchJmaObservationSummary(area, fetchImpl) : Promise.resolve(null),
+          fetchJmaForecastSummary(area, fetchImpl, targetDateJst),
         ]);
         const groundingContext = buildGroundingContextText(area, observation, forecast);
         return service.generate({
@@ -253,17 +305,21 @@ export function withAiJmaWeatherGroundingContext(
 
 function buildGroundingContextText(
   area: JmaAreaEntry,
-  observation: JmaObservationSummary,
+  observation: JmaObservationSummary | null,
   forecast: JmaForecastSummary,
 ): string {
-  const parts: string[] = [`area: ${area.displayName}`];
-  if (observation.tempCelsius !== null)
-    parts.push(`observedTempCelsius: ${observation.tempCelsius}`);
-  if (observation.humidityPercent !== null) {
-    parts.push(`observedHumidityPercent: ${observation.humidityPercent}`);
+  const parts: string[] = [`area: ${area.displayName}`, `forecastDate: ${forecast.forDateJst}`];
+  if (observation) {
+    if (observation.tempCelsius !== null) {
+      parts.push(`observedTempCelsius: ${observation.tempCelsius}`);
+    }
+    if (observation.humidityPercent !== null) {
+      parts.push(`observedHumidityPercent: ${observation.humidityPercent}`);
+    }
+    if (observation.windSpeedMs !== null) {
+      parts.push(`observedWindSpeedMs: ${observation.windSpeedMs}`);
+    }
   }
-  if (observation.windSpeedMs !== null)
-    parts.push(`observedWindSpeedMs: ${observation.windSpeedMs}`);
   if (forecast.weatherText !== null) parts.push(`forecastWeather: ${forecast.weatherText}`);
   if (forecast.precipitationProbabilityPercent !== null) {
     parts.push(
