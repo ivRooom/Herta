@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
   AI_RUNTIME_CONFIGURATION,
+  ANTHROPIC_API_KEY_RUNTIME_SECRET,
   OPENAI_API_KEY_RUNTIME_SECRET,
   RuntimeConfigurationError,
   readRuntimeSecret,
@@ -15,6 +16,7 @@ import {
 } from '@herta/plugin-catalog/ai-runtime-policy';
 import { auth } from '@/auth';
 import {
+  resolveAnthropicProviderCredentialAvailability,
   resolveOpenAiProviderCredentialAvailability,
   type AiProviderCredentialAvailability,
 } from '@/lib/ai-provider-credential-availability';
@@ -116,12 +118,19 @@ export async function PUT(request: Request) {
 }
 
 async function resolveProviderPolicyView(): Promise<ProviderPolicyView> {
-  const openAiAvailability = await resolveOpenAiProviderCredentialAvailability({
-    readRuntimeCredential: () =>
-      readRuntimeSecret(prisma, OPENAI_API_KEY_RUNTIME_SECRET, process.env),
-    environmentCredential: process.env.OPENAI_API_KEY,
-  });
-  const providerAvailability = [openAiAvailability];
+  const [openAiAvailability, anthropicAvailability] = await Promise.all([
+    resolveOpenAiProviderCredentialAvailability({
+      readRuntimeCredential: () =>
+        readRuntimeSecret(prisma, OPENAI_API_KEY_RUNTIME_SECRET, process.env),
+      environmentCredential: process.env.OPENAI_API_KEY,
+    }),
+    resolveAnthropicProviderCredentialAvailability({
+      readRuntimeCredential: () =>
+        readRuntimeSecret(prisma, ANTHROPIC_API_KEY_RUNTIME_SECRET, process.env),
+      environmentCredential: process.env.ANTHROPIC_API_KEY,
+    }),
+  ]);
+  const providerAvailability = [openAiAvailability, anthropicAvailability];
   const availableProviders = new Set(
     providerAvailability.filter((entry) => entry.available).map((entry) => entry.provider),
   );

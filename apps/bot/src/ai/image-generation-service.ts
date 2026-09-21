@@ -165,8 +165,11 @@ export class OpenAiImageGenerationService implements AiImageGenerationService {
     }
     return {
       requestId: response.requestId,
-      provider: response.provider,
-      model: response.model,
+      // image_generation is only ever enabled for the 'openai' provider capability policy
+      // (packages/plugin-catalog/src/ai-runtime-policy.ts), so this narrowing is safe: this
+      // service is never constructed for any other provider (see factory.ts).
+      provider: response.provider as 'openai',
+      model: response.model as AiOpenAiModel,
       imageBillingModel: OPENAI_IMAGE_BILLING_MODEL,
       usage: response.usage,
       estimatedCost: response.estimatedCost + microUsdToUsd(captured.reservedMicroUsd),

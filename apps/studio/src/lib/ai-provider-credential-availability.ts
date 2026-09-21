@@ -3,20 +3,23 @@ export type AiProviderCredentialStatus =
   'ready' | 'missing_credential' | 'credential_store_unavailable';
 
 export interface AiProviderCredentialAvailability {
-  provider: 'openai';
+  provider: 'openai' | 'anthropic';
   available: boolean;
   source: AiProviderCredentialSource | null;
   status: AiProviderCredentialStatus;
 }
 
-export async function resolveOpenAiProviderCredentialAvailability(options: {
-  readRuntimeCredential: () => Promise<string | null>;
-  environmentCredential?: string;
-}): Promise<AiProviderCredentialAvailability> {
+async function resolveAiProviderCredentialAvailability(
+  provider: 'openai' | 'anthropic',
+  options: {
+    readRuntimeCredential: () => Promise<string | null>;
+    environmentCredential?: string;
+  },
+): Promise<AiProviderCredentialAvailability> {
   try {
     if (await options.readRuntimeCredential()) {
       return {
-        provider: 'openai',
+        provider,
         available: true,
         source: 'runtime_secret',
         status: 'ready',
@@ -26,7 +29,7 @@ export async function resolveOpenAiProviderCredentialAvailability(options: {
     // Keep the same fail-closed boundary as the Bot runtime: a store/decrypt failure
     // must never activate the environment fallback.
     return {
-      provider: 'openai',
+      provider,
       available: false,
       source: null,
       status: 'credential_store_unavailable',
@@ -35,7 +38,7 @@ export async function resolveOpenAiProviderCredentialAvailability(options: {
 
   if (options.environmentCredential?.trim()) {
     return {
-      provider: 'openai',
+      provider,
       available: true,
       source: 'environment',
       status: 'ready',
@@ -43,9 +46,23 @@ export async function resolveOpenAiProviderCredentialAvailability(options: {
   }
 
   return {
-    provider: 'openai',
+    provider,
     available: false,
     source: null,
     status: 'missing_credential',
   };
+}
+
+export async function resolveOpenAiProviderCredentialAvailability(options: {
+  readRuntimeCredential: () => Promise<string | null>;
+  environmentCredential?: string;
+}): Promise<AiProviderCredentialAvailability> {
+  return resolveAiProviderCredentialAvailability('openai', options);
+}
+
+export async function resolveAnthropicProviderCredentialAvailability(options: {
+  readRuntimeCredential: () => Promise<string | null>;
+  environmentCredential?: string;
+}): Promise<AiProviderCredentialAvailability> {
+  return resolveAiProviderCredentialAvailability('anthropic', options);
 }

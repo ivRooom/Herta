@@ -1,6 +1,7 @@
 import { Settings2 } from 'lucide-react';
 import { AiProviderCredentialSettings } from '@/components/ai-provider-credential-settings';
 import { AiRuntimeSettings } from '@/components/ai-runtime-settings';
+import { AnthropicProviderCredentialSettings } from '@/components/anthropic-provider-credential-settings';
 import { StudioNavigationSettings } from '@/components/studio-navigation-settings';
 
 export default function StudioSettingsPage() {
@@ -19,6 +20,7 @@ export default function StudioSettingsPage() {
       <div className="mt-8 space-y-6">
         <AiRuntimeSettings />
         <AiProviderCredentialSettings />
+        <AnthropicProviderCredentialSettings />
         <StudioNavigationSettings />
       </div>
     </div>

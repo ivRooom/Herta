@@ -1,4 +1,5 @@
 import {
+  ANTHROPIC_API_KEY_RUNTIME_SECRET,
   OPENAI_API_KEY_RUNTIME_SECRET,
   RuntimeSecretError,
   getRuntimeConfiguration,
@@ -24,6 +25,8 @@ import {
   type AiImageGenerationService,
 } from './image-generation-service.js';
 import {
+  AnthropicRuntimeGenerationService,
+  MultiProviderAiRuntimeGenerationService,
   OpenAiRuntimeGenerationService,
   type AiRuntimeGenerationService,
 } from './runtime-service.js';
@@ -86,6 +89,29 @@ export async function resolveAiOpenAiCredential(
 }
 
 /**
+ * Anthropic counterpart to resolveAiOpenAiCredential. Same fail-closed contract: a Runtime
+ * Secret Store read/decrypt failure never falls through to the ANTHROPIC_API_KEY env fallback.
+ */
+export async function resolveAiAnthropicCredential(
+  options: Pick<AiFoundationRuntimeOptions, 'prisma' | 'env' | 'readSecret'>,
+): Promise<AiCredentialResolution> {
+  const env = options.env ?? process.env;
+  const readSecret = options.readSecret ?? readRuntimeSecret;
+  try {
+    const stored = await readSecret(options.prisma, ANTHROPIC_API_KEY_RUNTIME_SECRET, env);
+    if (stored) return { apiKey: stored, source: 'runtime_secret', failure: null };
+  } catch (error) {
+    const failure = error instanceof RuntimeSecretError ? error.code : 'runtime_secret_unavailable';
+    return { apiKey: null, source: null, failure };
+  }
+
+  const fallback = env['ANTHROPIC_API_KEY']?.trim();
+  return fallback
+    ? { apiKey: fallback, source: 'environment', failure: null }
+    : { apiKey: null, source: null, failure: 'missing_credential' };
+}
+
+/**
  * Bot-side bootstrap。AIがOFF/kill-switch中、またはcredential不成立でもBot本体は起動可能にする。
  * Global enable / kill-switchはconsole runtime settingに移さずenv gateのまま維持する。
  * Model/reasoningはrequest-time resolverが最大5秒程度のbounded staleで追随する。
@@ -121,7 +147,7 @@ export async function createAiFoundationRuntime(
     readConfiguration: options.readRuntimeConfiguration,
   });
   const guardStore = new RedisAiGuardStore({ redis: options.redis });
-  const service = new OpenAiRuntimeGenerationService({
+  const openAiRuntimeService = new OpenAiRuntimeGenerationService({
     baseConfig,
     apiKey: credential.apiKey,
     guardStore,
@@ -129,6 +155,30 @@ export async function createAiFoundationRuntime(
     telemetry: options.telemetry,
     fetchImpl: options.fetchImpl,
   });
+
+  // Anthropic credential is resolved best-effort. Unlike the OpenAI credential above, it never
+  // gates the whole AI subsystem's bootstrap (the enable/kill-switch/text-capability gate above
+  // is still evaluated against baseConfig.provider, which resolveAiFoundationConfig always
+  // resolves to the hard-coded safe default 'openai' regardless of the console-selected
+  // provider — pre-existing behavior, unchanged by this PR). If the Anthropic credential is
+  // unavailable, selecting 'anthropic' via Studio Runtime Settings fails closed per-request
+  // (AiFoundationError('disabled')) rather than silently falling back to OpenAI or blocking the
+  // OpenAI path.
+  const anthropicCredential = await resolveAiAnthropicCredential(options);
+  const services: ConstructorParameters<
+    typeof MultiProviderAiRuntimeGenerationService
+  >[0]['services'] = { openai: openAiRuntimeService };
+  if (anthropicCredential.apiKey) {
+    services.anthropic = new AnthropicRuntimeGenerationService({
+      baseConfig,
+      apiKey: anthropicCredential.apiKey,
+      guardStore,
+      runtimeResolver,
+      telemetry: options.telemetry,
+      fetchImpl: options.fetchImpl,
+    });
+  }
+  const service = new MultiProviderAiRuntimeGenerationService({ runtimeResolver, services });
   const executionService = isAiProviderCapabilityEnabled(baseConfig.provider, 'code_interpreter')
     ? new OpenAiCodeExecutionService({
         baseConfig,

@@ -1,7 +1,11 @@
 import { RuntimeSecretError, readRuntimeSecret } from '@herta/db';
 import type { RedisEvalClient } from '@herta/plugin-catalog/ai-service';
 import { describe, expect, it } from 'vitest';
-import { createAiFoundationRuntime, resolveAiOpenAiCredential } from './factory.js';
+import {
+  createAiFoundationRuntime,
+  resolveAiAnthropicCredential,
+  resolveAiOpenAiCredential,
+} from './factory.js';
 
 const prisma = {} as Parameters<typeof readRuntimeSecret>[0];
 const redis: RedisEvalClient = {
@@ -77,6 +81,61 @@ describe('AI Foundation Bot credential bootstrap', () => {
     expect(result.service).not.toBeNull();
     expect(result.executionService).not.toBeNull();
     expect(result.imageGenerationService).not.toBeNull();
+  });
+
+  it('Anthropic runtime secretをANTHROPIC_API_KEY fallbackより優先する', async () => {
+    const result = await resolveAiAnthropicCredential({
+      prisma,
+      env: { ANTHROPIC_API_KEY: 'env-key' },
+      readSecret: async () => 'stored-anthropic-key',
+    });
+    expect(result).toEqual({
+      apiKey: 'stored-anthropic-key',
+      source: 'runtime_secret',
+      failure: null,
+    });
+  });
+
+  it('Anthropic runtime secret未登録時だけANTHROPIC_API_KEY fallbackを使う', async () => {
+    const result = await resolveAiAnthropicCredential({
+      prisma,
+      env: { ANTHROPIC_API_KEY: 'env-key' },
+      readSecret: async () => null,
+    });
+    expect(result).toEqual({ apiKey: 'env-key', source: 'environment', failure: null });
+  });
+
+  it('Anthropic credentialのstore失敗はenv fallbackへ逃がさずfail closedする', async () => {
+    const result = await resolveAiAnthropicCredential({
+      prisma,
+      env: { ANTHROPIC_API_KEY: 'env-key' },
+      readSecret: async () => {
+        throw new RuntimeSecretError('decrypt_failed');
+      },
+    });
+    expect(result).toEqual({ apiKey: null, source: null, failure: 'decrypt_failed' });
+  });
+
+  it('Anthropic credentialが無くてもOpenAIがあればbootstrapはreadyになる', async () => {
+    const result = await createAiFoundationRuntime({
+      prisma,
+      redis,
+      env: { HERTA_AI_ENABLED: 'true' },
+      readSecret: async (_prisma, name) => (name === 'openai.api_key' ? 'stored-key' : null),
+    });
+    expect(result.status).toBe('ready');
+    expect(result.service).not.toBeNull();
+  });
+
+  it('Anthropic credentialが利用可能な場合もOpenAI credential必須のbootstrapを壊さない', async () => {
+    const result = await createAiFoundationRuntime({
+      prisma,
+      redis,
+      env: { HERTA_AI_ENABLED: 'true' },
+      readSecret: async () => 'stored-key',
+    });
+    expect(result.status).toBe('ready');
+    expect(result.service).not.toBeNull();
   });
 
   it('runtime provider/profile/modelのenv不正値はbootstrapを妨げない', async () => {

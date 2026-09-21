@@ -174,8 +174,11 @@ export class OpenAiCodeExecutionService implements AiCodeExecutionService {
     if (!captured.sandboxDestroyed) throw new AiCodeExecutionError('cleanup_failed');
     return {
       requestId: response.requestId,
-      provider: response.provider,
-      model: response.model,
+      // code_interpreter is only ever enabled for the 'openai' provider capability policy
+      // (packages/plugin-catalog/src/ai-runtime-policy.ts), so this narrowing is safe: this
+      // service is never constructed for any other provider (see factory.ts).
+      provider: response.provider as 'openai',
+      model: response.model as AiOpenAiModel,
       usage: response.usage,
       estimatedCost:
         response.estimatedCost + microUsdToUsd(OPENAI_CODE_INTERPRETER_SESSION_MICRO_USD),

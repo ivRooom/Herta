@@ -44,7 +44,7 @@ describe('AI runtime policy', () => {
 
   it('arbitrary provider/profile/reasoning/timezoneを拒否する', () => {
     for (const value of [
-      { provider: 'anthropic', modelProfile: 'balanced', reasoningEffort: 'low', timezone: 'UTC' },
+      { provider: 'other', modelProfile: 'balanced', reasoningEffort: 'low', timezone: 'UTC' },
       { provider: 'openai', modelProfile: 'custom', reasoningEffort: 'low', timezone: 'UTC' },
       { provider: 'openai', modelProfile: 'balanced', reasoningEffort: 'turbo', timezone: 'UTC' },
       {
@@ -112,6 +112,11 @@ describe('AI runtime policy', () => {
     expect(isAiProviderCapabilityEnabled('openai', 'text')).toBe(true);
     expect(isAiProviderCapabilityEnabled('openai', 'code_interpreter')).toBe(true);
     expect(isAiProviderCapabilityEnabled('openai', 'image_generation')).toBe(true);
+
+    expect(getAiProviderCapabilities('anthropic')).toEqual(['text']);
+    expect(isAiProviderCapabilityEnabled('anthropic', 'text')).toBe(true);
+    expect(isAiProviderCapabilityEnabled('anthropic', 'code_interpreter')).toBe(false);
+    expect(isAiProviderCapabilityEnabled('anthropic', 'image_generation')).toBe(false);
   });
 
   it('metadataはclientへarbitrary model/tool入力欄を作らずserver allowlistを返す', () => {
@@ -129,6 +134,75 @@ describe('AI runtime policy', () => {
           expect.objectContaining({ modelProfile: 'economy', model: 'gpt-5.6-luna' }),
         ],
       },
+      {
+        provider: 'anthropic',
+        capabilities: ['text'],
+        profiles: [
+          expect.objectContaining({
+            modelProfile: 'quality',
+            model: 'claude-opus-5',
+            supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+          }),
+          expect.objectContaining({
+            modelProfile: 'balanced',
+            model: 'claude-sonnet-5',
+            supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+          }),
+          expect.objectContaining({
+            modelProfile: 'economy',
+            model: 'claude-haiku-4-5-20251001',
+            supportedReasoningEfforts: ['none'],
+          }),
+        ],
+      },
     ]);
+  });
+
+  it('Anthropic quality/balancedはfull effort rangeをbalanced/economyへ渡さない', () => {
+    expect(() =>
+      resolveAiRuntimeSelection({
+        provider: 'anthropic',
+        modelProfile: 'quality',
+        reasoningEffort: 'none',
+        timezone: 'UTC',
+      }),
+    ).toThrowError(
+      expect.objectContaining<Partial<AiRuntimePolicyError>>({ code: 'unsupported_combination' }),
+    );
+
+    expect(
+      resolveAiRuntimeSelection({
+        provider: 'anthropic',
+        modelProfile: 'quality',
+        reasoningEffort: 'xhigh',
+        timezone: 'UTC',
+      }),
+    ).toMatchObject({ model: 'claude-opus-5', reasoningEffort: 'xhigh' });
+  });
+
+  it('Claude Haiku 4.5 (economy)は"none"以外のreasoning effortを拒否する', () => {
+    for (const reasoningEffort of ['low', 'medium', 'high', 'xhigh', 'max'] as const) {
+      expect(() =>
+        resolveAiRuntimeSelection({
+          provider: 'anthropic',
+          modelProfile: 'economy',
+          reasoningEffort,
+          timezone: 'UTC',
+        }),
+      ).toThrowError(
+        expect.objectContaining<Partial<AiRuntimePolicyError>>({
+          code: 'unsupported_combination',
+        }),
+      );
+    }
+
+    expect(
+      resolveAiRuntimeSelection({
+        provider: 'anthropic',
+        modelProfile: 'economy',
+        reasoningEffort: 'none',
+        timezone: 'UTC',
+      }),
+    ).toMatchObject({ model: 'claude-haiku-4-5-20251001', reasoningEffort: 'none' });
   });
 });
