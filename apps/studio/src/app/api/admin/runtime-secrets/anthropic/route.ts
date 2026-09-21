@@ -111,7 +111,9 @@ function isCredentialBody(value: unknown): value is AnthropicCredentialBody {
   if (typeof value.apiKey !== 'string') return false;
   const apiKey = value.apiKey.trim();
   return (
-    apiKey.length > 0 && apiKey.length <= MAX_ANTHROPIC_API_KEY_CHARS && !/[\u0000\r\n]/.test(apiKey)
+    apiKey.length > 0 &&
+    apiKey.length <= MAX_ANTHROPIC_API_KEY_CHARS &&
+    !/[\u0000\r\n]/.test(apiKey)
   );
 }
 
