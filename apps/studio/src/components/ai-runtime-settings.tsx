@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BrainCircuit, Save, ShieldCheck } from 'lucide-react';
 
-type Provider = 'openai';
+type Provider = 'openai' | 'anthropic';
 type ModelProfile = 'quality' | 'balanced' | 'economy';
 type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -328,7 +328,7 @@ function isRuntimeResponse(value: unknown): value is RuntimeResponse {
   if (!isRecord(value) || !isRecord(value.current) || !isRecord(value.resolved)) return false;
   if (!Array.isArray(value.policy)) return false;
   return (
-    value.current.provider === 'openai' &&
+    (value.current.provider === 'openai' || value.current.provider === 'anthropic') &&
     typeof value.current.modelProfile === 'string' &&
     typeof value.current.reasoningEffort === 'string' &&
     typeof value.current.timezone === 'string' &&
@@ -358,6 +358,7 @@ function sourceLabel(source: RuntimeResponse['source']): string {
 
 function providerLabel(provider: Provider): string {
   if (provider === 'openai') return 'OpenAI';
+  if (provider === 'anthropic') return 'Anthropic';
   return provider;
 }
 

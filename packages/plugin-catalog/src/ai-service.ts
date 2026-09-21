@@ -1,12 +1,19 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-export const AI_SUPPORTED_PROVIDERS = ['openai'] as const;
+export const AI_SUPPORTED_PROVIDERS = ['openai', 'anthropic'] as const;
 export const AI_MODEL_PROFILES = ['quality', 'balanced', 'economy'] as const;
 export const AI_OPENAI_MODELS = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'] as const;
+export const AI_ANTHROPIC_MODELS = [
+  'claude-opus-5',
+  'claude-sonnet-5',
+  'claude-haiku-4-5-20251001',
+] as const;
 
 export type AiProviderName = (typeof AI_SUPPORTED_PROVIDERS)[number];
 export type AiModelProfile = (typeof AI_MODEL_PROFILES)[number];
 export type AiOpenAiModel = (typeof AI_OPENAI_MODELS)[number];
+export type AiAnthropicModel = (typeof AI_ANTHROPIC_MODELS)[number];
+export type AiModel = AiOpenAiModel | AiAnthropicModel;
 
 export type AiFailureCategory =
   | 'disabled'
@@ -23,10 +30,23 @@ export type AiFailureCategory =
 
 export type AiResultCategory = 'success' | 'rejected' | 'failed';
 
-const MODEL_BY_PROFILE: Record<AiModelProfile, AiOpenAiModel> = {
-  quality: 'gpt-5.6-sol',
-  balanced: 'gpt-5.6-terra',
-  economy: 'gpt-5.6-luna',
+/**
+ * Provider/profile -> model resolution is a code-reviewed server allowlist. Client input never
+ * selects a model directly; it only selects a provider + profile, which resolves through this
+ * map (or the explicit HERTA_AI_MODEL override, itself still validated against the resolved
+ * provider's model allowlist below).
+ */
+const MODEL_BY_PROFILE: Record<AiProviderName, Record<AiModelProfile, AiModel>> = {
+  openai: {
+    quality: 'gpt-5.6-sol',
+    balanced: 'gpt-5.6-terra',
+    economy: 'gpt-5.6-luna',
+  },
+  anthropic: {
+    quality: 'claude-opus-5',
+    balanced: 'claude-sonnet-5',
+    economy: 'claude-haiku-4-5-20251001',
+  },
 };
 
 /**
@@ -45,6 +65,19 @@ const OPENAI_STANDARD_PRICING: Record<
 
 /** OpenAI guarantees the current Sol promotional price at least through 2026-11-21. */
 const OPENAI_SOL_PROMOTIONAL_PRICING_REVIEW_AFTER_MS = Date.parse('2026-11-22T00:00:00.000Z');
+
+/**
+ * Anthropic standard pricing (USD / 1M tokens) captured for deterministic cost guards, same
+ * code-reviewed convention as OPENAI_STANDARD_PRICING above.
+ */
+const ANTHROPIC_STANDARD_PRICING: Record<
+  AiAnthropicModel,
+  { inputUsdPerMillion: number; outputUsdPerMillion: number }
+> = {
+  'claude-opus-5': { inputUsdPerMillion: 5, outputUsdPerMillion: 25 },
+  'claude-sonnet-5': { inputUsdPerMillion: 2, outputUsdPerMillion: 10 },
+  'claude-haiku-4-5-20251001': { inputUsdPerMillion: 1, outputUsdPerMillion: 5 },
+};
 
 export const AI_DEFAULTS = {
   enabled: false,
@@ -72,7 +105,7 @@ export interface AiFoundationConfig {
   killSwitch: boolean;
   provider: AiProviderName;
   modelProfile: AiModelProfile;
-  model: AiOpenAiModel;
+  model: AiModel;
   maxInputChars: number;
   maxInputBytes: number;
   maxOutputTokens: number;
@@ -115,7 +148,7 @@ export interface AiProviderResult {
 
 export interface AiProviderRequest {
   requestId: string;
-  model: AiOpenAiModel;
+  model: AiModel;
   input: string;
   maxOutputTokens: number;
   timeoutMs: number;
@@ -169,7 +202,7 @@ export interface AiGenerationRequest {
 export interface AiGenerationResponse {
   requestId: string;
   provider: AiProviderName;
-  model: AiOpenAiModel;
+  model: AiModel;
   text: string;
   usage: AiUsage;
   estimatedCost: number;
@@ -179,7 +212,7 @@ export interface AiTelemetryEvent {
   requestId: string;
   feature: string;
   provider: AiProviderName;
-  model: AiOpenAiModel;
+  model: AiModel;
   latencyMs: number;
   inputTokens: number;
   outputTokens: number;
@@ -238,9 +271,10 @@ export function resolveAiFoundationConfig(
   }
 
   const configuredModel = env['HERTA_AI_MODEL']?.trim();
-  const modelValue = configuredModel || MODEL_BY_PROFILE[profileValue];
-  if (!isAiOpenAiModel(modelValue))
+  const modelValue = configuredModel || MODEL_BY_PROFILE[providerValue][profileValue];
+  if (!isAiModelForProvider(providerValue, modelValue)) {
     throw new AiConfigurationError('invalid_model', 'HERTA_AI_MODEL');
+  }
 
   const timezoneValue = env['HERTA_AI_TIMEZONE']?.trim() || AI_DEFAULTS.timezone;
   if (!isValidIanaTimezone(timezoneValue)) {
@@ -385,7 +419,7 @@ export class AiFoundationService {
         throw new AiFoundationError('unauthorized');
       }
       if (!request.pluginEnabled || !request.guildOptIn) throw new AiFoundationError('disabled');
-      assertOpenAiPricingGuardCurrent(this.config.model, startedAt);
+      assertProviderPricingGuardCurrent(this.config.provider, this.config.model, startedAt);
 
       const input = validateAndNormalizeInput(request.input, this.config);
       const userKey = privacyKey('user', request.guildId, request.userId);
@@ -410,7 +444,8 @@ export class AiFoundationService {
       }
 
       const estimatedInputTokens = estimateInputTokens(input);
-      const reservationMicroUsd = estimateOpenAiCostMicroUsd(
+      const reservationMicroUsd = estimateProviderCostMicroUsd(
+        this.config.provider,
         this.config.model,
         estimatedInputTokens,
         this.config.maxOutputTokens,
@@ -451,7 +486,8 @@ export class AiFoundationService {
         maxResponseBytes: this.config.providerResponseMaxBytes,
       });
       usage = providerResult.usage;
-      estimatedCostMicroUsd = estimateOpenAiCostMicroUsd(
+      estimatedCostMicroUsd = estimateProviderCostMicroUsd(
+        this.config.provider,
         this.config.model,
         usage.inputTokens,
         usage.outputTokens,
@@ -581,6 +617,101 @@ export class OpenAiResponsesProvider implements AiGenerationProvider {
   }
 }
 
+const ANTHROPIC_API_VERSION = '2023-06-01';
+
+/**
+ * Claude Haiku 4.5 rejects `output_config.effort` outright. Every other model in
+ * AI_ANTHROPIC_MODELS supports the full low/medium/high/xhigh/max range. This is tracked as a
+ * per-model attribute (not per-profile) so a future model swap in MODEL_BY_PROFILE keeps the
+ * right behavior automatically.
+ */
+const ANTHROPIC_MODELS_WITHOUT_EFFORT_SUPPORT: ReadonlySet<AiAnthropicModel> = new Set([
+  'claude-haiku-4-5-20251001',
+]);
+
+export interface AnthropicMessagesProviderOptions {
+  apiKey: string;
+  fetchImpl?: typeof fetch;
+  endpoint?: string;
+}
+
+export class AnthropicMessagesProvider implements AiGenerationProvider {
+  private readonly apiKey: string;
+  private readonly fetchImpl: typeof fetch;
+  private readonly endpoint: string;
+
+  constructor(options: AnthropicMessagesProviderOptions) {
+    const apiKey = options.apiKey.trim();
+    if (!apiKey) throw new AiConfigurationError('invalid_value', 'ANTHROPIC_API_KEY');
+    this.apiKey = apiKey;
+    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.endpoint = options.endpoint ?? 'https://api.anthropic.com/v1/messages';
+  }
+
+  async generate(request: AiProviderRequest): Promise<AiProviderResult> {
+    if (!isAiAnthropicModel(request.model)) {
+      throw new AiConfigurationError('invalid_model', 'model');
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), request.timeoutMs);
+    try {
+      const body: Record<string, unknown> = {
+        model: request.model,
+        max_tokens: request.maxOutputTokens,
+        messages: [{ role: 'user', content: request.input }],
+      };
+      // Divergence from OpenAI's 'none' semantics: Anthropic's effort vocabulary has no 'none'
+      // value at all (only low/medium/high/xhigh/max, default 'high'). This base adapter has no
+      // caller-supplied effort input yet (mirrors OpenAiResponsesProvider's hardcoded default
+      // below, which the runtime layer overrides via a wrapped fetchImpl) — it only decides
+      // whether to send output_config at all. The runtime layer
+      // (apps/bot/src/ai/runtime-service.ts) is what maps the shared AiReasoningEffort union's
+      // 'none' member to "omit output_config entirely" for this provider, which is a
+      // provider-specific reinterpretation of 'none' distinct from OpenAI's, where 'none' is a
+      // literal accepted effort value sent on the wire.
+      if (!ANTHROPIC_MODELS_WITHOUT_EFFORT_SUPPORT.has(request.model)) {
+        body['output_config'] = { effort: 'high' };
+      }
+
+      const response = await this.fetchImpl(this.endpoint, {
+        method: 'POST',
+        headers: {
+          'x-api-key': this.apiKey,
+          'anthropic-version': ANTHROPIC_API_VERSION,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        // Anthropic error taxonomy -> shared category, mirroring OpenAiResponsesProvider's
+        // status-code bucketing above: 429/5xx (rate_limit_error/api_error/timeout_error/
+        // overloaded_error) are transient provider-side conditions; everything else
+        // (400/401/402/403/404/409/413) is a rejected request that must not be retried or
+        // silently fall back to another provider. The raw Anthropic error body/message is never
+        // read or logged here.
+        if (response.status === 429 || response.status >= 500) {
+          throw new AiFoundationError('provider_unavailable');
+        }
+        throw new AiFoundationError('provider_rejected');
+      }
+
+      const payload = await readBoundedJson(response, request.maxResponseBytes);
+      return parseAnthropicResponse(payload);
+    } catch (error) {
+      if (error instanceof AiFoundationError) throw error;
+      if (controller.signal.aborted) throw new AiFoundationError('timeout');
+      throw new AiFoundationError('provider_unavailable');
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 /**
  * Preflight billing guards must not underestimate token usage. UTF-8 byte length is used as
  * a deliberately conservative upper bound instead of a compression-ratio heuristic; actual
@@ -603,6 +734,32 @@ export function estimateOpenAiCostMicroUsd(
         Math.max(0, outputTokens) * pricing.outputUsdPerMillion,
     ),
   );
+}
+
+export function estimateAnthropicCostMicroUsd(
+  model: AiAnthropicModel,
+  inputTokens: number,
+  outputTokens: number,
+): number {
+  const pricing = ANTHROPIC_STANDARD_PRICING[model];
+  return Math.max(
+    0,
+    Math.ceil(
+      Math.max(0, inputTokens) * pricing.inputUsdPerMillion +
+        Math.max(0, outputTokens) * pricing.outputUsdPerMillion,
+    ),
+  );
+}
+
+function estimateProviderCostMicroUsd(
+  provider: AiProviderName,
+  model: AiModel,
+  inputTokens: number,
+  outputTokens: number,
+): number {
+  return provider === 'openai'
+    ? estimateOpenAiCostMicroUsd(model as AiOpenAiModel, inputTokens, outputTokens)
+    : estimateAnthropicCostMicroUsd(model as AiAnthropicModel, inputTokens, outputTokens);
 }
 
 function parseOpenAiResponse(value: unknown): AiProviderResult {
@@ -657,6 +814,50 @@ function parseOpenAiResponse(value: unknown): AiProviderResult {
   const text = texts.join('').trim();
   if (!text) {
     if (refused) throw new AiFoundationError('provider_rejected');
+    throw new AiFoundationError('malformed_response');
+  }
+
+  return {
+    text,
+    usage: { inputTokens, outputTokens, totalTokens },
+  };
+}
+
+function parseAnthropicResponse(value: unknown): AiProviderResult {
+  if (!isRecord(value)) throw new AiFoundationError('malformed_response');
+
+  const stopReason = value['stop_reason'];
+  if (stopReason === 'max_tokens') throw new AiFoundationError('output_too_large');
+
+  const usageValue = value['usage'];
+  if (!isRecord(usageValue)) throw new AiFoundationError('malformed_response');
+  const inputTokens = safeNonNegativeInteger(usageValue['input_tokens']);
+  const outputTokens = safeNonNegativeInteger(usageValue['output_tokens']);
+  if (inputTokens === null || outputTokens === null) {
+    throw new AiFoundationError('malformed_response');
+  }
+  // Anthropic's usage object has no single total_tokens field. cache_creation_input_tokens /
+  // cache_read_input_tokens are intentionally excluded from this normalized total: they are not
+  // part of the shared AiUsage contract used for billing today. This is a known simplification
+  // (issue #340) — a follow-up can fold cache token accounting into cost estimation once the
+  // shared AiUsage shape is extended.
+  const totalTokens = inputTokens + outputTokens;
+
+  const content = value['content'];
+  if (!Array.isArray(content)) throw new AiFoundationError('malformed_response');
+  const texts: string[] = [];
+  for (const part of content) {
+    if (!isRecord(part)) continue;
+    if (part['type'] === 'text' && typeof part['text'] === 'string') {
+      texts.push(part['text']);
+    }
+    // thinking / redacted_thinking / tool_use blocks are intentionally ignored: Herta's
+    // Anthropic integration is plain-text generation only (issue #340 scope).
+  }
+
+  const text = texts.join('').trim();
+  if (!text) {
+    if (stopReason === 'refusal') throw new AiFoundationError('provider_rejected');
     throw new AiFoundationError('malformed_response');
   }
 
@@ -745,9 +946,17 @@ function microUsdToUsd(value: number): number {
   return Math.round(Math.max(0, value)) / 1_000_000;
 }
 
-function assertOpenAiPricingGuardCurrent(model: AiOpenAiModel, nowMs: number): void {
+function assertProviderPricingGuardCurrent(
+  provider: AiProviderName,
+  model: AiModel,
+  nowMs: number,
+): void {
   if (!Number.isFinite(nowMs)) throw new AiFoundationError('internal_error');
-  if (model === 'gpt-5.6-sol' && nowMs >= OPENAI_SOL_PROMOTIONAL_PRICING_REVIEW_AFTER_MS) {
+  if (
+    provider === 'openai' &&
+    model === 'gpt-5.6-sol' &&
+    nowMs >= OPENAI_SOL_PROMOTIONAL_PRICING_REVIEW_AFTER_MS
+  ) {
     throw new AiFoundationError('disabled');
   }
 }
@@ -774,6 +983,14 @@ function isAiModelProfile(value: string): value is AiModelProfile {
 
 function isAiOpenAiModel(value: string): value is AiOpenAiModel {
   return (AI_OPENAI_MODELS as readonly string[]).includes(value);
+}
+
+function isAiAnthropicModel(value: string): value is AiAnthropicModel {
+  return (AI_ANTHROPIC_MODELS as readonly string[]).includes(value);
+}
+
+function isAiModelForProvider(provider: AiProviderName, value: string): value is AiModel {
+  return provider === 'openai' ? isAiOpenAiModel(value) : isAiAnthropicModel(value);
 }
 
 function envFlag(value: string | undefined, fallback: boolean): boolean {

@@ -3,8 +3,10 @@ import {
   AiConfigurationError,
   AiFoundationError,
   AiFoundationService,
+  AnthropicMessagesProvider,
   OpenAiResponsesProvider,
   RedisAiGuardStore,
+  estimateAnthropicCostMicroUsd,
   estimateInputTokens,
   estimateOpenAiCostMicroUsd,
   resolveAiFoundationConfig,
@@ -139,6 +141,29 @@ describe('resolveAiFoundationConfig', () => {
       expect.objectContaining<Partial<AiConfigurationError>>({ code: 'invalid_model' }),
     );
   });
+
+  it('anthropic providerはbalanced profileをclaude-sonnet-5へ解決する', () => {
+    const config = resolveAiFoundationConfig({ HERTA_AI_PROVIDER: 'anthropic' });
+    expect(config.provider).toBe('anthropic');
+    expect(config.modelProfile).toBe('balanced');
+    expect(config.model).toBe('claude-sonnet-5');
+  });
+
+  it('anthropic providerでOpenAI model IDを指定すると拒否する', () => {
+    expect(() =>
+      resolveAiFoundationConfig({ HERTA_AI_PROVIDER: 'anthropic', HERTA_AI_MODEL: 'gpt-5.6-sol' }),
+    ).toThrowError(
+      expect.objectContaining<Partial<AiConfigurationError>>({ code: 'invalid_model' }),
+    );
+  });
+
+  it('openai providerでAnthropic model IDを指定すると拒否する', () => {
+    expect(() =>
+      resolveAiFoundationConfig({ HERTA_AI_PROVIDER: 'openai', HERTA_AI_MODEL: 'claude-opus-5' }),
+    ).toThrowError(
+      expect.objectContaining<Partial<AiConfigurationError>>({ code: 'invalid_model' }),
+    );
+  });
 });
 
 describe('AiFoundationService', () => {
@@ -184,6 +209,31 @@ describe('AiFoundationService', () => {
       totalTokens: 30,
     });
     expect(guardStore.activeConcurrency).toBe(0);
+  });
+
+  it('anthropic providerでもguard/cost pipelineが同一に機能する', async () => {
+    const guardStore = new MemoryGuardStore();
+    const provider = staticProvider();
+    const service = new AiFoundationService({
+      config: makeConfig({
+        provider: 'anthropic',
+        modelProfile: 'balanced',
+        model: 'claude-sonnet-5',
+      }),
+      provider,
+      guardStore,
+    });
+
+    const result = await service.generate(makeRequest());
+
+    expect(result).toMatchObject({
+      provider: 'anthropic',
+      model: 'claude-sonnet-5',
+      text: '回答です',
+    });
+    // usage: inputTokens 20, outputTokens 10 -> 20*2 + 10*10 = 140 micro-USD
+    expect(result.estimatedCost).toBe(0.00014);
+    expect(guardStore.quotaKeys.length).toBe(1);
   });
 
   it('global disabledとkill switchではproviderを呼ばない', async () => {
@@ -524,6 +574,164 @@ describe('OpenAiResponsesProvider', () => {
   });
 });
 
+describe('AnthropicMessagesProvider', () => {
+  const request: AiProviderRequest = {
+    requestId: 'req-1',
+    model: 'claude-sonnet-5',
+    input: 'hello',
+    maxOutputTokens: 100,
+    timeoutMs: 100,
+    maxResponseBytes: 16_384,
+  };
+
+  it('Messages APIへx-api-key/anthropic-versionを送信しusageを解析する', async () => {
+    const fetchImpl = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        model: 'claude-sonnet-5',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hello' }],
+        output_config: { effort: 'high' },
+      });
+      const headers = init?.headers as Record<string, string>;
+      expect(headers['x-api-key']).toBe('server-secret');
+      expect(headers['anthropic-version']).toBe('2023-06-01');
+      return Response.json({
+        id: 'msg_1',
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'world' }],
+        model: 'claude-sonnet-5',
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 12, output_tokens: 7 },
+      });
+    });
+    const provider = new AnthropicMessagesProvider({ apiKey: 'server-secret', fetchImpl });
+
+    await expect(provider.generate(request)).resolves.toEqual({
+      text: 'world',
+      usage: { inputTokens: 12, outputTokens: 7, totalTokens: 19 },
+    });
+  });
+
+  it('claude-haiku-4-5-20251001はoutput_configを一切送らない', async () => {
+    const fetchImpl = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(body).not.toHaveProperty('output_config');
+      return Response.json({
+        content: [{ type: 'text', text: 'ok' }],
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 3, output_tokens: 2 },
+      });
+    });
+    const provider = new AnthropicMessagesProvider({ apiKey: 'secret', fetchImpl });
+    await provider.generate({ ...request, model: 'claude-haiku-4-5-20251001' });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('stop_reason max_tokensをoutput_too_largeへ変換する', async () => {
+    const provider = new AnthropicMessagesProvider({
+      apiKey: 'secret',
+      fetchImpl: async () =>
+        Response.json({
+          content: [{ type: 'text', text: 'partial' }],
+          stop_reason: 'max_tokens',
+          usage: { input_tokens: 3, output_tokens: 2 },
+        }),
+    });
+    await expectCategory(provider.generate(request), 'output_too_large');
+  });
+
+  it('400/401/403/404/409/413をprovider_rejectedへ安全に変換する', async () => {
+    for (const status of [400, 401, 403, 404, 409, 413]) {
+      const provider = new AnthropicMessagesProvider({
+        apiKey: 'secret',
+        fetchImpl: async () => new Response('anthropic raw error', { status }),
+      });
+      await expectCategory(provider.generate(request), 'provider_rejected');
+    }
+  });
+
+  it('429/5xxをprovider_unavailableへ変換する', async () => {
+    for (const status of [429, 500, 504, 529]) {
+      const provider = new AnthropicMessagesProvider({
+        apiKey: 'secret',
+        fetchImpl: async () => new Response('anthropic raw error', { status }),
+      });
+      await expectCategory(provider.generate(request), 'provider_unavailable');
+    }
+  });
+
+  it('malformed provider responseを拒否する', async () => {
+    const provider = new AnthropicMessagesProvider({
+      apiKey: 'secret',
+      fetchImpl: async () => Response.json({ content: [], usage: null }),
+    });
+    await expectCategory(provider.generate(request), 'malformed_response');
+  });
+
+  it('refusal stop_reasonでtextが空の場合はprovider_rejectedにする', async () => {
+    const provider = new AnthropicMessagesProvider({
+      apiKey: 'secret',
+      fetchImpl: async () =>
+        Response.json({
+          content: [],
+          stop_reason: 'refusal',
+          usage: { input_tokens: 3, output_tokens: 0 },
+        }),
+    });
+    await expectCategory(provider.generate(request), 'provider_rejected');
+  });
+
+  it('provider response byte上限を強制する', async () => {
+    const provider = new AnthropicMessagesProvider({
+      apiKey: 'secret',
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ content: [], usage: {} }), {
+          status: 200,
+          headers: { 'content-length': '999999' },
+        }),
+    });
+    await expectCategory(
+      provider.generate({ ...request, maxResponseBytes: 100 }),
+      'malformed_response',
+    );
+  });
+
+  it('AbortController timeoutをtimeoutへ変換する', async () => {
+    const provider = new AnthropicMessagesProvider({
+      apiKey: 'secret',
+      fetchImpl: (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError')),
+          );
+        }),
+    });
+    await expectCategory(provider.generate({ ...request, timeoutMs: 1 }), 'timeout');
+  });
+
+  it('raw error responseをAiFoundationErrorのmessageへ含めない', async () => {
+    const provider = new AnthropicMessagesProvider({
+      apiKey: 'secret',
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            type: 'error',
+            error: { type: 'invalid_request_error', message: 'RAW_ANTHROPIC_ERROR_DETAIL' },
+          }),
+          { status: 400 },
+        ),
+    });
+    try {
+      await provider.generate(request);
+      throw new Error('expected rejection');
+    } catch (error) {
+      expect(String((error as Error).message)).not.toContain('RAW_ANTHROPIC_ERROR_DETAIL');
+    }
+  });
+});
+
 describe('cost estimation', () => {
   it('gpt-5.6-terra standard pricingからmicro USDを算出する', () => {
     expect(estimateOpenAiCostMicroUsd('gpt-5.6-terra', 20, 10)).toBe(160);
@@ -532,6 +740,23 @@ describe('cost estimation', () => {
   it('preflight input token estimateはUTF-8 byte長を保守的上限として使う', () => {
     expect(estimateInputTokens('abc')).toBe(3);
     expect(estimateInputTokens('あ')).toBe(3);
+  });
+
+  it('claude-sonnet-5 standard pricingからmicro USDを算出する', () => {
+    expect(estimateAnthropicCostMicroUsd('claude-sonnet-5', 20, 10)).toBe(140);
+  });
+
+  it('全Anthropic profileのpricingを算出する', () => {
+    expect(estimateAnthropicCostMicroUsd('claude-opus-5', 1_000_000, 0)).toBe(5_000_000);
+    expect(estimateAnthropicCostMicroUsd('claude-opus-5', 0, 1_000_000)).toBe(25_000_000);
+    expect(estimateAnthropicCostMicroUsd('claude-sonnet-5', 1_000_000, 0)).toBe(2_000_000);
+    expect(estimateAnthropicCostMicroUsd('claude-sonnet-5', 0, 1_000_000)).toBe(10_000_000);
+    expect(estimateAnthropicCostMicroUsd('claude-haiku-4-5-20251001', 1_000_000, 0)).toBe(
+      1_000_000,
+    );
+    expect(estimateAnthropicCostMicroUsd('claude-haiku-4-5-20251001', 0, 1_000_000)).toBe(
+      5_000_000,
+    );
   });
 });
 

@@ -1,17 +1,32 @@
 import {
+  AI_ANTHROPIC_MODELS,
   AI_DEFAULTS,
   AI_MODEL_PROFILES,
   AI_OPENAI_MODELS,
   AI_SUPPORTED_PROVIDERS,
+  estimateAnthropicCostMicroUsd,
   estimateOpenAiCostMicroUsd,
   isValidIanaTimezone,
+  type AiAnthropicModel,
+  type AiModel,
   type AiModelProfile,
   type AiOpenAiModel,
   type AiProviderName,
 } from './ai-service.js';
 
-export { AI_MODEL_PROFILES, AI_OPENAI_MODELS, AI_SUPPORTED_PROVIDERS } from './ai-service.js';
-export type { AiModelProfile, AiOpenAiModel, AiProviderName } from './ai-service.js';
+export {
+  AI_ANTHROPIC_MODELS,
+  AI_MODEL_PROFILES,
+  AI_OPENAI_MODELS,
+  AI_SUPPORTED_PROVIDERS,
+} from './ai-service.js';
+export type {
+  AiAnthropicModel,
+  AiModel,
+  AiModelProfile,
+  AiOpenAiModel,
+  AiProviderName,
+} from './ai-service.js';
 
 export const AI_REASONING_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 export const AI_PROVIDER_CAPABILITIES = ['text', 'code_interpreter', 'image_generation'] as const;
@@ -28,7 +43,7 @@ export interface AiTokenPricing {
 export interface AiRuntimePolicyEntry {
   provider: AiProviderName;
   modelProfile: AiModelProfile;
-  model: AiOpenAiModel;
+  model: AiModel;
   supportedReasoningEfforts: readonly AiReasoningEffort[];
   pricing: AiTokenPricing;
 }
@@ -36,7 +51,7 @@ export interface AiRuntimePolicyEntry {
 export interface AiRuntimeSelection {
   provider: AiProviderName;
   modelProfile: AiModelProfile;
-  model: AiOpenAiModel;
+  model: AiModel;
   reasoningEffort: AiReasoningEffort;
   pricing: AiTokenPricing;
   /** IANA timezone used to tell the model today's actual date. */
@@ -79,12 +94,29 @@ const OPENAI_REASONING_EFFORTS: readonly AiReasoningEffort[] = [
 ];
 
 /**
+ * Anthropic has no 'none' effort value on the wire; the shared 'none' union member is repurposed
+ * here to mean "omit output_config.effort entirely" for models that reject the field outright
+ * (Claude Haiku 4.5). See AnthropicMessagesProvider in ai-service.ts for where this is applied.
+ */
+const ANTHROPIC_FULL_REASONING_EFFORTS: readonly AiReasoningEffort[] = [
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+];
+const ANTHROPIC_NO_EFFORT_REASONING_EFFORTS: readonly AiReasoningEffort[] = ['none'];
+
+/**
  * Tool/provider capability routing is code-reviewed server policy. Client input may select neither
  * arbitrary provider IDs nor arbitrary tool names. A capability is available only when it is
  * present in this provider allowlist and the matching server adapter is bootstrapped.
  */
 const AI_PROVIDER_CAPABILITY_POLICY: Record<AiProviderName, readonly AiProviderCapability[]> = {
   openai: ['text', 'code_interpreter', 'image_generation'],
+  // Anthropic integration is plain-text generation only for issue #340; no code-interpreter or
+  // image-generation tool adapter exists for this provider yet.
+  anthropic: ['text'],
 };
 
 /**
@@ -114,6 +146,33 @@ const AI_RUNTIME_POLICY: Record<AiProviderName, Record<AiModelProfile, AiRuntime
       model: 'gpt-5.6-luna',
       supportedReasoningEfforts: OPENAI_REASONING_EFFORTS,
       pricing: openAiTokenPricing('gpt-5.6-luna', null),
+    },
+  },
+  anthropic: {
+    quality: {
+      provider: 'anthropic',
+      modelProfile: 'quality',
+      model: 'claude-opus-5',
+      supportedReasoningEfforts: ANTHROPIC_FULL_REASONING_EFFORTS,
+      pricing: anthropicTokenPricing('claude-opus-5', null),
+    },
+    balanced: {
+      provider: 'anthropic',
+      modelProfile: 'balanced',
+      model: 'claude-sonnet-5',
+      supportedReasoningEfforts: ANTHROPIC_FULL_REASONING_EFFORTS,
+      pricing: anthropicTokenPricing('claude-sonnet-5', null),
+    },
+    economy: {
+      provider: 'anthropic',
+      modelProfile: 'economy',
+      // Claude Haiku 4.5 does not support output_config.effort at all. supportedReasoningEfforts
+      // is deliberately restricted to ['none'] here so the shared runtime policy validator
+      // (resolveAiRuntimeSelection) rejects any other effort for this specific profile, and
+      // 'none' is reinterpreted by the Anthropic adapter as "send no output_config field".
+      model: 'claude-haiku-4-5-20251001',
+      supportedReasoningEfforts: ANTHROPIC_NO_EFFORT_REASONING_EFFORTS,
+      pricing: anthropicTokenPricing('claude-haiku-4-5-20251001', null),
     },
   },
 };
@@ -266,6 +325,10 @@ export function isAiOpenAiModel(value: string): value is AiOpenAiModel {
   return (AI_OPENAI_MODELS as readonly string[]).includes(value);
 }
 
+export function isAiAnthropicModel(value: string): value is AiAnthropicModel {
+  return (AI_ANTHROPIC_MODELS as readonly string[]).includes(value);
+}
+
 export function isAiReasoningEffort(value: string): value is AiReasoningEffort {
   return (AI_REASONING_EFFORTS as readonly string[]).includes(value);
 }
@@ -274,6 +337,17 @@ function openAiTokenPricing(model: AiOpenAiModel, reviewAfterIso: string | null)
   return {
     inputUsdPerMillion: estimateOpenAiCostMicroUsd(model, 1_000_000, 0) / 1_000_000,
     outputUsdPerMillion: estimateOpenAiCostMicroUsd(model, 0, 1_000_000) / 1_000_000,
+    reviewAfterIso,
+  };
+}
+
+function anthropicTokenPricing(
+  model: AiAnthropicModel,
+  reviewAfterIso: string | null,
+): AiTokenPricing {
+  return {
+    inputUsdPerMillion: estimateAnthropicCostMicroUsd(model, 1_000_000, 0) / 1_000_000,
+    outputUsdPerMillion: estimateAnthropicCostMicroUsd(model, 0, 1_000_000) / 1_000_000,
     reviewAfterIso,
   };
 }

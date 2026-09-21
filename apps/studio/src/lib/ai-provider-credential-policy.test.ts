@@ -4,6 +4,8 @@ import test from 'node:test';
 
 const routePath = 'src/app/api/admin/runtime-secrets/openai/route.ts';
 const settingsPath = 'src/components/ai-provider-credential-settings.tsx';
+const anthropicRoutePath = 'src/app/api/admin/runtime-secrets/anthropic/route.ts';
+const anthropicSettingsPath = 'src/components/anthropic-provider-credential-settings.tsx';
 const semanticRoutePath = 'src/app/api/search/semantic/route.ts';
 const runtimeSettingsRoutePath = 'src/app/api/admin/runtime-config/ai/route.ts';
 
@@ -31,6 +33,33 @@ test('Studio credential UI is write-only, authorization-gated, and explicit abou
   assert.match(settings, /この操作だけではAIアクセス停止を保証しません/u);
   assert.match(settings, /store障害・master key異常時はfail closed/u);
   assert.doesNotMatch(settings, /AIアクセスは停止しません/u);
+  assert.doesNotMatch(settings, /setApiKey\([^)]*status/u);
+  assert.doesNotMatch(settings, /value=\{status\./u);
+});
+
+test('Anthropic credential mutation remains platform-admin and same-origin protected', () => {
+  const route = readFileSync(anthropicRoutePath, 'utf8');
+
+  assert.match(route, /isStudioPlatformAdmin/u);
+  assert.match(route, /isSameOriginMutationRequest/u);
+  assert.match(route, /readRequestBodyBytes\(request, MAX_REQUEST_BODY_BYTES\)/u);
+  assert.match(route, /'Cache-Control': 'no-store'/u);
+  assert.match(route, /environmentFallbackConfigured: hasAnthropicEnvironmentFallback\(\)/u);
+  assert.doesNotMatch(route, /console\.(?:log|info|warn|error)\([^\n]*apiKey/u);
+});
+
+test('Studio Anthropic credential UI is write-only, authorization-gated, and explicit about migration fallback', () => {
+  const settings = readFileSync(anthropicSettingsPath, 'utf8');
+
+  assert.match(settings, /type="password"/u);
+  assert.match(settings, /保存済みキーは再表示しません/u);
+  assert.match(
+    settings,
+    /if \(loadState === 'loading' \|\| loadState === 'hidden'\) return null;/u,
+  );
+  assert.match(settings, /ANTHROPIC_API_KEY migration fallbackが構成されています/u);
+  assert.match(settings, /この操作だけではAIアクセス停止を保証しません/u);
+  assert.match(settings, /store障害・master key異常時はfail closed/u);
   assert.doesNotMatch(settings, /setApiKey\([^)]*status/u);
   assert.doesNotMatch(settings, /value=\{status\./u);
 });

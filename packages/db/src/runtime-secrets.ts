@@ -2,6 +2,7 @@ import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import type { PrismaClient } from '@prisma/client';
 
 export const OPENAI_API_KEY_RUNTIME_SECRET = 'openai.api_key';
+export const ANTHROPIC_API_KEY_RUNTIME_SECRET = 'anthropic.api_key';
 export const RUNTIME_SECRET_KEY_VERSION = 1;
 
 const RUNTIME_SECRET_MASTER_KEY_ENV = 'HERTA_RUNTIME_SECRET_KEY';

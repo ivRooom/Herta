@@ -8,11 +8,13 @@ import {
 import {
   AiFoundationError,
   AiFoundationService,
+  AnthropicMessagesProvider,
   OpenAiResponsesProvider,
   type AiFoundationConfig,
   type AiGenerationRequest,
   type AiGenerationResponse,
   type AiGuardStore,
+  type AiProviderName,
   type AiTelemetrySink,
 } from '@herta/plugin-catalog/ai-service';
 import type { AiRuntimeConfigurationResolver } from '@herta/plugin-catalog/ai-runtime-config';
@@ -201,6 +203,190 @@ export class OpenAiRuntimeGenerationService implements AiRuntimeGenerationServic
   }
 }
 
+export interface AnthropicRuntimeGenerationServiceOptions {
+  baseConfig: AiFoundationConfig;
+  apiKey: string;
+  guardStore: AiGuardStore;
+  runtimeResolver: AiRuntimeConfigurationResolver;
+  telemetry?: AiTelemetrySink;
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * Anthropic counterpart to OpenAiRuntimeGenerationService. Structurally identical (same guard
+ * order, same conversation-policy resolution, same input/instruction envelope accounting); only
+ * the wire-format adapter and the fetchImpl-rewriting policy wrapper differ per provider.
+ */
+export class AnthropicRuntimeGenerationService implements AiRuntimeGenerationService {
+  private readonly baseConfig: AiFoundationConfig;
+  private readonly apiKey: string;
+  private readonly guardStore: AiGuardStore;
+  private readonly runtimeResolver: AiRuntimeConfigurationResolver;
+  private readonly telemetry: AiTelemetrySink | undefined;
+  private readonly fetchImpl: typeof fetch;
+
+  constructor(options: AnthropicRuntimeGenerationServiceOptions) {
+    this.baseConfig = options.baseConfig;
+    this.apiKey = options.apiKey;
+    this.guardStore = options.guardStore;
+    this.runtimeResolver = options.runtimeResolver;
+    this.telemetry = options.telemetry;
+    this.fetchImpl = options.fetchImpl ?? fetch;
+  }
+
+  async consumeRateLimit(request: AiRuntimeRateLimitRequest): Promise<void> {
+    if (!this.baseConfig.enabled || this.baseConfig.killSwitch) {
+      throw new AiFoundationError('disabled');
+    }
+    if (!request.authorized || request.scopeGuildId !== request.guildId) {
+      throw new AiFoundationError('unauthorized');
+    }
+    if (!request.pluginEnabled || !request.guildOptIn) {
+      throw new AiFoundationError('disabled');
+    }
+
+    validateAndNormalizeUserInput(request.input, this.baseConfig);
+    const userRate = await this.guardStore.consumeRateLimit(
+      privacyRateKey('user', request.guildId, request.userId),
+      this.baseConfig.userRateLimit,
+      this.baseConfig.rateWindowMs,
+    );
+    if (!userRate.allowed) {
+      throw new AiFoundationError('rate_limited', { retryAfterMs: userRate.retryAfterMs });
+    }
+
+    const guildRate = await this.guardStore.consumeRateLimit(
+      privacyRateKey('guild', request.guildId),
+      this.baseConfig.guildRateLimit,
+      this.baseConfig.rateWindowMs,
+    );
+    if (!guildRate.allowed) {
+      throw new AiFoundationError('rate_limited', { retryAfterMs: guildRate.retryAfterMs });
+    }
+  }
+
+  async generate(request: AiRuntimeGenerationRequest): Promise<AiGenerationResponse> {
+    let runtime;
+    try {
+      runtime = await this.runtimeResolver.resolve();
+    } catch {
+      throw new AiFoundationError('internal_error');
+    }
+
+    if (runtime.selection.provider !== 'anthropic') {
+      // Mirrors OpenAiRuntimeGenerationService's explicit allowlist dispatch: only implemented
+      // providers reach a provider adapter.
+      throw new AiFoundationError('disabled');
+    }
+
+    let conversationPolicy: AiConversationPolicy;
+    try {
+      conversationPolicy = resolveAiConversationPolicy({
+        responseMode: request.responseMode,
+        groundingState: request.groundingState,
+        timezone: runtime.selection.timezone,
+      });
+      const trustedInstructions = normalizeTrustedInstructions(request.trustedInstructions);
+      if (trustedInstructions.length > 0) {
+        conversationPolicy = {
+          ...conversationPolicy,
+          instructions: [conversationPolicy.instructions, ...trustedInstructions].join(' '),
+        };
+      }
+    } catch {
+      throw new AiFoundationError('internal_error');
+    }
+
+    const userInput = validateAndNormalizeUserInput(request.input, this.baseConfig);
+    const guardedInput = buildGuardedInput(conversationPolicy.instructions, userInput);
+    const guardOverhead = guardedInput.slice(0, guardedInput.length - userInput.length);
+
+    const config: AiFoundationConfig = {
+      ...this.baseConfig,
+      provider: runtime.selection.provider,
+      modelProfile: runtime.selection.modelProfile,
+      model: runtime.selection.model,
+      maxOutputTokens: resolveAiRuntimeOutputTokenBudget(
+        this.baseConfig.maxOutputTokens,
+        conversationPolicy.responseMode,
+      ),
+      maxInputChars: this.baseConfig.maxInputChars + characterLength(guardOverhead),
+      maxInputBytes: this.baseConfig.maxInputBytes + utf8ByteLength(guardOverhead),
+    };
+    const provider = new AnthropicMessagesProvider({
+      apiKey: this.apiKey,
+      fetchImpl: withAnthropicRuntimePolicy(this.fetchImpl, {
+        effort: runtime.selection.reasoningEffort,
+        conversationPolicy,
+        userInput,
+      }),
+    });
+    const service = new AiFoundationService({
+      config,
+      provider,
+      guardStore: this.guardStore,
+      telemetry: this.telemetry,
+    });
+
+    return service.generate({
+      feature: request.feature,
+      input: guardedInput,
+      guildId: request.guildId,
+      scopeGuildId: request.scopeGuildId,
+      userId: request.userId,
+      authorized: request.authorized,
+      pluginEnabled: request.pluginEnabled,
+      guildOptIn: request.guildOptIn,
+    });
+  }
+}
+
+export interface MultiProviderAiRuntimeGenerationServiceOptions {
+  runtimeResolver: AiRuntimeConfigurationResolver;
+  services: Partial<Record<AiProviderName, AiRuntimeGenerationService>>;
+}
+
+/**
+ * Dispatches each request to the sub-service matching the currently resolved runtime provider
+ * selection (from Studio/console/env, via runtimeResolver). Never falls back from one provider
+ * to another: a provider that resolved without a usable credential (and therefore has no entry
+ * in `services`) fails closed with the same 'disabled' category the single-provider services use
+ * for any provider they don't implement themselves.
+ */
+export class MultiProviderAiRuntimeGenerationService implements AiRuntimeGenerationService {
+  private readonly runtimeResolver: AiRuntimeConfigurationResolver;
+  private readonly services: Partial<Record<AiProviderName, AiRuntimeGenerationService>>;
+
+  constructor(options: MultiProviderAiRuntimeGenerationServiceOptions) {
+    this.runtimeResolver = options.runtimeResolver;
+    this.services = options.services;
+  }
+
+  async consumeRateLimit(request: AiRuntimeRateLimitRequest): Promise<void> {
+    const service = Object.values(this.services)[0];
+    if (!service?.consumeRateLimit) throw new AiFoundationError('disabled');
+    await service.consumeRateLimit(request);
+  }
+
+  async generate(request: AiRuntimeGenerationRequest): Promise<AiGenerationResponse> {
+    let provider: AiProviderName;
+    try {
+      const runtime = await this.runtimeResolver.resolve();
+      provider = runtime.selection.provider;
+    } catch {
+      throw new AiFoundationError('internal_error');
+    }
+
+    const service = this.services[provider];
+    if (!service) {
+      // The selected provider has no bootstrapped credential/adapter. Fail closed rather than
+      // silently using a different provider's service.
+      throw new AiFoundationError('disabled');
+    }
+    return service.generate(request);
+  }
+}
+
 export function resolveAiRuntimeOutputTokenBudget(
   configuredMaxOutputTokens: number,
   responseMode: AiResponseMode,
@@ -245,6 +431,55 @@ function withOpenAiRuntimePolicy(
         reasoning: { effort: options.effort },
       }),
     });
+  };
+}
+
+interface AnthropicRuntimePolicyOptions {
+  effort: AiReasoningEffort;
+  conversationPolicy: AiConversationPolicy;
+  userInput: string;
+}
+
+function withAnthropicRuntimePolicy(
+  fetchImpl: typeof fetch,
+  options: AnthropicRuntimePolicyOptions,
+): typeof fetch {
+  return async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    if (typeof init?.body !== 'string') throw new AiFoundationError('internal_error');
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(init.body) as unknown;
+    } catch {
+      throw new AiFoundationError('internal_error');
+    }
+    if (!isRecord(parsed)) throw new AiFoundationError('internal_error');
+
+    // Anthropic's Messages API has no verbosity parameter; fold the same textVerbosity signal
+    // OpenAI receives as a structured field into a short system-instruction directive instead so
+    // the two providers stay behaviorally aligned.
+    const instructions = `${options.conversationPolicy.instructions} Aim for ${options.conversationPolicy.textVerbosity} verbosity in your response length.`;
+
+    const next: Record<string, unknown> = {
+      ...parsed,
+      system: instructions,
+      messages: [{ role: 'user', content: options.userInput }],
+    };
+    // Divergence from OpenAI's 'none': the shared AiReasoningEffort union's 'none' member is
+    // resolved by ai-runtime-policy.ts to mean "this profile's model does not support
+    // output_config.effort" (Claude Haiku 4.5 / economy). Sending output_config at all to that
+    // model is rejected by Anthropic, so the field must be omitted rather than sent with a
+    // placeholder value. For every other Anthropic profile, 'none' is not a valid resolved
+    // effort (see AI_RUNTIME_POLICY.anthropic.*.supportedReasoningEfforts in
+    // packages/plugin-catalog/src/ai-runtime-policy.ts), so this check never incorrectly drops
+    // output_config for a model that does support it.
+    if (options.effort === 'none') {
+      delete next['output_config'];
+    } else {
+      next['output_config'] = { effort: options.effort };
+    }
+
+    return fetchImpl(input, { ...init, body: JSON.stringify(next) });
   };
 }
 
