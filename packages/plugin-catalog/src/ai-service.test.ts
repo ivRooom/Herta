@@ -5,11 +5,13 @@ import {
   AiFoundationService,
   AnthropicMessagesProvider,
   GeminiGenerateContentProvider,
+  MoonshotChatCompletionsProvider,
   OpenAiResponsesProvider,
   RedisAiGuardStore,
   estimateAnthropicCostMicroUsd,
   estimateGoogleCostMicroUsd,
   estimateInputTokens,
+  estimateMoonshotCostMicroUsd,
   estimateOpenAiCostMicroUsd,
   resolveAiFoundationConfig,
   toSafeAiFoundationError,
@@ -979,6 +981,192 @@ describe('GeminiGenerateContentProvider', () => {
   });
 });
 
+describe('MoonshotChatCompletionsProvider', () => {
+  const request: AiProviderRequest = {
+    requestId: 'req-1',
+    model: 'kimi-k2.6',
+    input: 'hello',
+    maxOutputTokens: 100,
+    timeoutMs: 100,
+    maxResponseBytes: 16_384,
+  };
+
+  it('chat/completionsへAuthorization Bearerとmessagesを送信しusageを解析する', async () => {
+    const fetchImpl = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      expect(String(input)).toContain('/chat/completions');
+      expect((init?.headers as Record<string, string>)['authorization']).toBe(
+        'Bearer server-secret',
+      );
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        model: 'kimi-k2.6',
+        max_tokens: 100,
+        messages: [{ role: 'user', content: 'hello' }],
+        thinking: { type: 'enabled' },
+      });
+      return Response.json({
+        choices: [{ message: { role: 'assistant', content: 'world' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 12, completion_tokens: 7, total_tokens: 19 },
+      });
+    });
+    const provider = new MoonshotChatCompletionsProvider({
+      apiKey: 'server-secret',
+      fetchImpl,
+    });
+
+    await expect(provider.generate(request)).resolves.toEqual({
+      text: 'world',
+      usage: { inputTokens: 12, outputTokens: 7, totalTokens: 19 },
+    });
+  });
+
+  it('kimi-k3ではreasoning_effortを送信しthinkingフィールドは送らない', async () => {
+    const fetchImpl = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(body['reasoning_effort']).toBe('high');
+      expect(body).not.toHaveProperty('thinking');
+      return Response.json({
+        choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      });
+    });
+    const provider = new MoonshotChatCompletionsProvider({ apiKey: 'secret', fetchImpl });
+    await provider.generate({ ...request, model: 'kimi-k3' });
+  });
+
+  it('kimi-k2.7-code(economy)は常にthinking:{type:enabled}を固定で送信する', async () => {
+    const fetchImpl = vi.fn(async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(body['thinking']).toEqual({ type: 'enabled' });
+      expect(body).not.toHaveProperty('reasoning_effort');
+      return Response.json({
+        choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+      });
+    });
+    const provider = new MoonshotChatCompletionsProvider({ apiKey: 'secret', fetchImpl });
+    await provider.generate({ ...request, model: 'kimi-k2.7-code' });
+  });
+
+  it('finish_reason lengthをoutput_too_largeへ変換する', async () => {
+    const provider = new MoonshotChatCompletionsProvider({
+      apiKey: 'secret',
+      fetchImpl: async () =>
+        Response.json({
+          choices: [{ message: { content: 'partial' }, finish_reason: 'length' }],
+          usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+        }),
+    });
+    await expectCategory(provider.generate(request), 'output_too_large');
+  });
+
+  it('finish_reason content_filterでtextが空の場合はprovider_rejectedにする', async () => {
+    const provider = new MoonshotChatCompletionsProvider({
+      apiKey: 'secret',
+      fetchImpl: async () =>
+        Response.json({
+          choices: [{ message: { content: '' }, finish_reason: 'content_filter' }],
+          usage: { prompt_tokens: 3, completion_tokens: 0, total_tokens: 3 },
+        }),
+    });
+    await expectCategory(provider.generate(request), 'provider_rejected');
+  });
+
+  it('400/401/403/404をprovider_rejectedへ安全に変換する', async () => {
+    for (const status of [400, 401, 403, 404]) {
+      const provider = new MoonshotChatCompletionsProvider({
+        apiKey: 'secret',
+        fetchImpl: async () => new Response('moonshot raw error', { status }),
+      });
+      await expectCategory(provider.generate(request), 'provider_rejected');
+    }
+  });
+
+  it('429/5xxをprovider_unavailableへ変換する', async () => {
+    for (const status of [429, 500, 503, 504]) {
+      const provider = new MoonshotChatCompletionsProvider({
+        apiKey: 'secret',
+        fetchImpl: async () => new Response('moonshot raw error', { status }),
+      });
+      await expectCategory(provider.generate(request), 'provider_unavailable');
+    }
+  });
+
+  it('malformed provider responseを拒否する', async () => {
+    const provider = new MoonshotChatCompletionsProvider({
+      apiKey: 'secret',
+      fetchImpl: async () => Response.json({ choices: [], usage: null }),
+    });
+    await expectCategory(provider.generate(request), 'malformed_response');
+  });
+
+  it('usage内部整合性(total_tokens不整合)を拒否する', async () => {
+    const provider = new MoonshotChatCompletionsProvider({
+      apiKey: 'secret',
+      fetchImpl: async () =>
+        Response.json({
+          choices: [{ message: { content: 'x' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 100, completion_tokens: 5, total_tokens: 10 },
+        }),
+    });
+    await expectCategory(provider.generate(request), 'malformed_response');
+  });
+
+  it('provider response byte上限を強制する', async () => {
+    const provider = new MoonshotChatCompletionsProvider({
+      apiKey: 'secret',
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ choices: [], usage: {} }), {
+          status: 200,
+          headers: { 'content-length': '999999' },
+        }),
+    });
+    await expectCategory(
+      provider.generate({ ...request, maxResponseBytes: 100 }),
+      'malformed_response',
+    );
+  });
+
+  it('AbortController timeoutをtimeoutへ変換する', async () => {
+    const provider = new MoonshotChatCompletionsProvider({
+      apiKey: 'secret',
+      fetchImpl: (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError')),
+          );
+        }),
+    });
+    await expectCategory(provider.generate({ ...request, timeoutMs: 1 }), 'timeout');
+  });
+
+  it('raw error responseをAiFoundationErrorのmessageへ含めない', async () => {
+    const provider = new MoonshotChatCompletionsProvider({
+      apiKey: 'secret',
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ error: { message: 'RAW_MOONSHOT_ERROR_DETAIL' } }), {
+          status: 400,
+        }),
+    });
+    try {
+      await provider.generate(request);
+      throw new Error('expected rejection');
+    } catch (error) {
+      expect(String((error as Error).message)).not.toContain('RAW_MOONSHOT_ERROR_DETAIL');
+    }
+  });
+
+  it('存在しないMoonshot model IDを拒否する', async () => {
+    const provider = new MoonshotChatCompletionsProvider({
+      apiKey: 'secret',
+      fetchImpl: async () => Response.json({}),
+    });
+    await expect(
+      provider.generate({ ...request, model: 'kimi-9000-ultra' as never }),
+    ).rejects.toThrow(AiConfigurationError);
+  });
+});
+
 describe('cost estimation', () => {
   it('gpt-5.6-terra standard pricingからmicro USDを算出する', () => {
     expect(estimateOpenAiCostMicroUsd('gpt-5.6-terra', 20, 10)).toBe(160);
@@ -1013,6 +1201,15 @@ describe('cost estimation', () => {
     expect(estimateGoogleCostMicroUsd('gemini-3.6-flash', 0, 1_000_000)).toBe(3_750_000);
     expect(estimateGoogleCostMicroUsd('gemini-3.5-flash-lite', 1_000_000, 0)).toBe(300_000);
     expect(estimateGoogleCostMicroUsd('gemini-3.5-flash-lite', 0, 1_000_000)).toBe(2_500_000);
+  });
+
+  it('全Moonshot profileのpricingを算出する', () => {
+    expect(estimateMoonshotCostMicroUsd('kimi-k3', 1_000_000, 0)).toBe(3_000_000);
+    expect(estimateMoonshotCostMicroUsd('kimi-k3', 0, 1_000_000)).toBe(15_000_000);
+    expect(estimateMoonshotCostMicroUsd('kimi-k2.6', 1_000_000, 0)).toBe(950_000);
+    expect(estimateMoonshotCostMicroUsd('kimi-k2.6', 0, 1_000_000)).toBe(4_000_000);
+    expect(estimateMoonshotCostMicroUsd('kimi-k2.7-code', 1_000_000, 0)).toBe(950_000);
+    expect(estimateMoonshotCostMicroUsd('kimi-k2.7-code', 0, 1_000_000)).toBe(4_000_000);
   });
 });
 

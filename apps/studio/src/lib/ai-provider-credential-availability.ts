@@ -3,14 +3,14 @@ export type AiProviderCredentialStatus =
   'ready' | 'missing_credential' | 'credential_store_unavailable';
 
 export interface AiProviderCredentialAvailability {
-  provider: 'openai' | 'anthropic' | 'google';
+  provider: 'openai' | 'anthropic' | 'google' | 'moonshot';
   available: boolean;
   source: AiProviderCredentialSource | null;
   status: AiProviderCredentialStatus;
 }
 
 async function resolveAiProviderCredentialAvailability(
-  provider: 'openai' | 'anthropic' | 'google',
+  provider: 'openai' | 'anthropic' | 'google' | 'moonshot',
   options: {
     readRuntimeCredential: () => Promise<string | null>;
     environmentCredential?: string;
@@ -72,4 +72,11 @@ export async function resolveGoogleProviderCredentialAvailability(options: {
   environmentCredential?: string;
 }): Promise<AiProviderCredentialAvailability> {
   return resolveAiProviderCredentialAvailability('google', options);
+}
+
+export async function resolveMoonshotProviderCredentialAvailability(options: {
+  readRuntimeCredential: () => Promise<string | null>;
+  environmentCredential?: string;
+}): Promise<AiProviderCredentialAvailability> {
+  return resolveAiProviderCredentialAvailability('moonshot', options);
 }

@@ -3,6 +3,7 @@ import { AiProviderCredentialSettings } from '@/components/ai-provider-credentia
 import { AiRuntimeSettings } from '@/components/ai-runtime-settings';
 import { AnthropicProviderCredentialSettings } from '@/components/anthropic-provider-credential-settings';
 import { GoogleProviderCredentialSettings } from '@/components/google-provider-credential-settings';
+import { MoonshotProviderCredentialSettings } from '@/components/moonshot-provider-credential-settings';
 import { StudioNavigationSettings } from '@/components/studio-navigation-settings';
 
 export default function StudioSettingsPage() {
@@ -23,6 +24,7 @@ export default function StudioSettingsPage() {
         <AiProviderCredentialSettings />
         <AnthropicProviderCredentialSettings />
         <GoogleProviderCredentialSettings />
+        <MoonshotProviderCredentialSettings />
         <StudioNavigationSettings />
       </div>
     </div>
