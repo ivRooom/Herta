@@ -1,5 +1,6 @@
 import {
   ANTHROPIC_API_KEY_RUNTIME_SECRET,
+  GOOGLE_GEMINI_API_KEY_RUNTIME_SECRET,
   OPENAI_API_KEY_RUNTIME_SECRET,
   RuntimeSecretError,
   getRuntimeConfiguration,
@@ -26,6 +27,7 @@ import {
 } from './image-generation-service.js';
 import {
   AnthropicRuntimeGenerationService,
+  GoogleRuntimeGenerationService,
   MultiProviderAiRuntimeGenerationService,
   OpenAiRuntimeGenerationService,
   type AiRuntimeGenerationService,
@@ -112,6 +114,32 @@ export async function resolveAiAnthropicCredential(
 }
 
 /**
+ * Google/Gemini counterpart to resolveAiOpenAiCredential/resolveAiAnthropicCredential. Same
+ * fail-closed contract: a Runtime Secret Store read/decrypt failure never falls through to the
+ * GEMINI_API_KEY env fallback. Note the env var name mismatch with the Runtime Secret Store name
+ * (google.gemini_api_key) is intentional: GEMINI_API_KEY mirrors Google's own SDK/docs
+ * convention, per issue #341.
+ */
+export async function resolveAiGoogleCredential(
+  options: Pick<AiFoundationRuntimeOptions, 'prisma' | 'env' | 'readSecret'>,
+): Promise<AiCredentialResolution> {
+  const env = options.env ?? process.env;
+  const readSecret = options.readSecret ?? readRuntimeSecret;
+  try {
+    const stored = await readSecret(options.prisma, GOOGLE_GEMINI_API_KEY_RUNTIME_SECRET, env);
+    if (stored) return { apiKey: stored, source: 'runtime_secret', failure: null };
+  } catch (error) {
+    const failure = error instanceof RuntimeSecretError ? error.code : 'runtime_secret_unavailable';
+    return { apiKey: null, source: null, failure };
+  }
+
+  const fallback = env['GEMINI_API_KEY']?.trim();
+  return fallback
+    ? { apiKey: fallback, source: 'environment', failure: null }
+    : { apiKey: null, source: null, failure: 'missing_credential' };
+}
+
+/**
  * Bot-side bootstrap。AIがOFF/kill-switch中、またはcredential不成立でもBot本体は起動可能にする。
  * Global enable / kill-switchはconsole runtime settingに移さずenv gateのまま維持する。
  * Model/reasoningはrequest-time resolverが最大5秒程度のbounded staleで追随する。
@@ -172,6 +200,22 @@ export async function createAiFoundationRuntime(
     services.anthropic = new AnthropicRuntimeGenerationService({
       baseConfig,
       apiKey: anthropicCredential.apiKey,
+      guardStore,
+      runtimeResolver,
+      telemetry: options.telemetry,
+      fetchImpl: options.fetchImpl,
+    });
+  }
+
+  // Google credential is resolved best-effort, same fail-closed-per-request contract as
+  // Anthropic above: a missing Google credential never gates the whole AI subsystem bootstrap
+  // (baseConfig.provider always resolves to the hard-coded safe default 'openai'), and selecting
+  // 'google' via Studio Runtime Settings without a usable credential fails closed per-request.
+  const googleCredential = await resolveAiGoogleCredential(options);
+  if (googleCredential.apiKey) {
+    services.google = new GoogleRuntimeGenerationService({
+      baseConfig,
+      apiKey: googleCredential.apiKey,
       guardStore,
       runtimeResolver,
       telemetry: options.telemetry,

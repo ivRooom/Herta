@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import {
   AI_RUNTIME_CONFIGURATION,
   ANTHROPIC_API_KEY_RUNTIME_SECRET,
+  GOOGLE_GEMINI_API_KEY_RUNTIME_SECRET,
   OPENAI_API_KEY_RUNTIME_SECRET,
   RuntimeConfigurationError,
   readRuntimeSecret,
@@ -17,6 +18,7 @@ import {
 import { auth } from '@/auth';
 import {
   resolveAnthropicProviderCredentialAvailability,
+  resolveGoogleProviderCredentialAvailability,
   resolveOpenAiProviderCredentialAvailability,
   type AiProviderCredentialAvailability,
 } from '@/lib/ai-provider-credential-availability';
@@ -118,7 +120,7 @@ export async function PUT(request: Request) {
 }
 
 async function resolveProviderPolicyView(): Promise<ProviderPolicyView> {
-  const [openAiAvailability, anthropicAvailability] = await Promise.all([
+  const [openAiAvailability, anthropicAvailability, googleAvailability] = await Promise.all([
     resolveOpenAiProviderCredentialAvailability({
       readRuntimeCredential: () =>
         readRuntimeSecret(prisma, OPENAI_API_KEY_RUNTIME_SECRET, process.env),
@@ -129,8 +131,13 @@ async function resolveProviderPolicyView(): Promise<ProviderPolicyView> {
         readRuntimeSecret(prisma, ANTHROPIC_API_KEY_RUNTIME_SECRET, process.env),
       environmentCredential: process.env.ANTHROPIC_API_KEY,
     }),
+    resolveGoogleProviderCredentialAvailability({
+      readRuntimeCredential: () =>
+        readRuntimeSecret(prisma, GOOGLE_GEMINI_API_KEY_RUNTIME_SECRET, process.env),
+      environmentCredential: process.env.GEMINI_API_KEY,
+    }),
   ]);
-  const providerAvailability = [openAiAvailability, anthropicAvailability];
+  const providerAvailability = [openAiAvailability, anthropicAvailability, googleAvailability];
   const availableProviders = new Set(
     providerAvailability.filter((entry) => entry.available).map((entry) => entry.provider),
   );

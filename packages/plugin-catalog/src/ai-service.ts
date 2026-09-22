@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-export const AI_SUPPORTED_PROVIDERS = ['openai', 'anthropic'] as const;
+export const AI_SUPPORTED_PROVIDERS = ['openai', 'anthropic', 'google'] as const;
 export const AI_MODEL_PROFILES = ['quality', 'balanced', 'economy'] as const;
 export const AI_OPENAI_MODELS = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'] as const;
 export const AI_ANTHROPIC_MODELS = [
@@ -8,12 +8,18 @@ export const AI_ANTHROPIC_MODELS = [
   'claude-sonnet-5',
   'claude-haiku-4-5-20251001',
 ] as const;
+export const AI_GOOGLE_MODELS = [
+  'gemini-3.8-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash-lite',
+] as const;
 
 export type AiProviderName = (typeof AI_SUPPORTED_PROVIDERS)[number];
 export type AiModelProfile = (typeof AI_MODEL_PROFILES)[number];
 export type AiOpenAiModel = (typeof AI_OPENAI_MODELS)[number];
 export type AiAnthropicModel = (typeof AI_ANTHROPIC_MODELS)[number];
-export type AiModel = AiOpenAiModel | AiAnthropicModel;
+export type AiGoogleModel = (typeof AI_GOOGLE_MODELS)[number];
+export type AiModel = AiOpenAiModel | AiAnthropicModel | AiGoogleModel;
 
 export type AiFailureCategory =
   | 'disabled'
@@ -47,6 +53,16 @@ const MODEL_BY_PROFILE: Record<AiProviderName, Record<AiModelProfile, AiModel>> 
     balanced: 'claude-sonnet-5',
     economy: 'claude-haiku-4-5-20251001',
   },
+  google: {
+    // No GA Pro-class Gemini 3.x model exists yet (gemini-3.1-pro-preview is still Preview).
+    // Following the same "never hardcode a preview model into a production allowlist"
+    // principle used for OpenAI's GPT-6/Astra, quality/balanced map to the two GA Flash-tier
+    // models until Google ships a GA Pro-class model. See GOOGLE_STANDARD_PRICING below: this
+    // means quality and balanced currently carry identical per-token pricing.
+    quality: 'gemini-3.8-flash',
+    balanced: 'gemini-3.6-flash',
+    economy: 'gemini-3.5-flash-lite',
+  },
 };
 
 /**
@@ -77,6 +93,20 @@ const ANTHROPIC_STANDARD_PRICING: Record<
   'claude-opus-5': { inputUsdPerMillion: 5, outputUsdPerMillion: 25 },
   'claude-sonnet-5': { inputUsdPerMillion: 2, outputUsdPerMillion: 10 },
   'claude-haiku-4-5-20251001': { inputUsdPerMillion: 1, outputUsdPerMillion: 5 },
+};
+
+/**
+ * Google Gemini standard pricing (USD / 1M tokens) captured for deterministic cost guards, same
+ * code-reviewed convention as OPENAI_STANDARD_PRICING/ANTHROPIC_STANDARD_PRICING above. Output
+ * pricing includes thinking tokens (Google bills thinking tokens at the output rate).
+ */
+const GOOGLE_STANDARD_PRICING: Record<
+  AiGoogleModel,
+  { inputUsdPerMillion: number; outputUsdPerMillion: number }
+> = {
+  'gemini-3.8-flash': { inputUsdPerMillion: 0.75, outputUsdPerMillion: 3.75 },
+  'gemini-3.6-flash': { inputUsdPerMillion: 0.75, outputUsdPerMillion: 3.75 },
+  'gemini-3.5-flash-lite': { inputUsdPerMillion: 0.3, outputUsdPerMillion: 2.5 },
 };
 
 export const AI_DEFAULTS = {
@@ -712,6 +742,102 @@ export class AnthropicMessagesProvider implements AiGenerationProvider {
   }
 }
 
+const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
+
+/**
+ * Gemini has no 'none' thinking level. The shared AiReasoningEffort union's 'none' member is
+ * reinterpreted by ai-runtime-policy.ts as Gemini's 'minimal' thinking level, but only for the
+ * economy profile (gemini-3.5-flash-lite), which is the only Gemini model that supports
+ * 'minimal'. This base adapter has no caller-supplied effort input yet (mirrors
+ * AnthropicMessagesProvider's hardcoded default below, which the runtime layer overrides via a
+ * wrapped fetchImpl in apps/bot/src/ai/runtime-service.ts) — it only decides the default
+ * thinkingLevel to send when no runtime override is threaded through. This is now the THIRD
+ * distinct provider-specific reinterpretation of the shared 'none' member: OpenAI sends it as a
+ * literal accepted effort value, Anthropic's adapter omits output_config entirely when it sees
+ * 'none', and Gemini's adapter translates 'none' to the literal string "minimal" on the wire.
+ */
+const GEMINI_MODELS_WITH_MINIMAL_THINKING: ReadonlySet<AiGoogleModel> = new Set([
+  'gemini-3.5-flash-lite',
+]);
+
+export interface GeminiGenerateContentProviderOptions {
+  apiKey: string;
+  fetchImpl?: typeof fetch;
+  endpoint?: string;
+}
+
+export class GeminiGenerateContentProvider implements AiGenerationProvider {
+  private readonly apiKey: string;
+  private readonly fetchImpl: typeof fetch;
+  private readonly endpoint: string | null;
+
+  constructor(options: GeminiGenerateContentProviderOptions) {
+    const apiKey = options.apiKey.trim();
+    if (!apiKey) throw new AiConfigurationError('invalid_value', 'GEMINI_API_KEY');
+    this.apiKey = apiKey;
+    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.endpoint = options.endpoint ?? null;
+  }
+
+  async generate(request: AiProviderRequest): Promise<AiProviderResult> {
+    if (!isAiGoogleModel(request.model)) throw new AiConfigurationError('invalid_model', 'model');
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), request.timeoutMs);
+    try {
+      const defaultThinkingLevel = GEMINI_MODELS_WITH_MINIMAL_THINKING.has(request.model)
+        ? 'minimal'
+        : 'medium';
+      const body: Record<string, unknown> = {
+        contents: [{ role: 'user', parts: [{ text: request.input }] }],
+        generationConfig: {
+          maxOutputTokens: request.maxOutputTokens,
+          thinkingConfig: { thinkingLevel: defaultThinkingLevel },
+        },
+      };
+
+      // The API key is a URL query parameter for Gemini's REST API (unlike OpenAI's Authorization
+      // header or Anthropic's x-api-key header). Never log the constructed URL: only the path/
+      // model may ever be logged, never the full URL with the key embedded in the query string.
+      const url = `${this.endpoint ?? GEMINI_API_BASE_URL}/${encodeURIComponent(
+        request.model,
+      )}:generateContent?key=${encodeURIComponent(this.apiKey)}`;
+
+      const response = await this.fetchImpl(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        // Gemini error taxonomy -> shared category, dispatched purely on HTTP status (never on
+        // any error.status/error.message body field), mirroring OpenAiResponsesProvider/
+        // AnthropicMessagesProvider above: 429/5xx (rate_limit_exceeded/api_error/
+        // service_unavailable/deadline_exceeded) are transient provider-side conditions;
+        // everything else (400/401/403/404) is a rejected request that must not be retried or
+        // silently fall back to another provider. The raw Gemini error body/message (which may
+        // include Google's "Your API key was reported as leaked" text) is never read or logged.
+        if (response.status === 429 || response.status >= 500) {
+          throw new AiFoundationError('provider_unavailable');
+        }
+        throw new AiFoundationError('provider_rejected');
+      }
+
+      const payload = await readBoundedJson(response, request.maxResponseBytes);
+      return parseGeminiResponse(payload);
+    } catch (error) {
+      if (error instanceof AiFoundationError) throw error;
+      if (controller.signal.aborted) throw new AiFoundationError('timeout');
+      throw new AiFoundationError('provider_unavailable');
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 /**
  * Preflight billing guards must not underestimate token usage. UTF-8 byte length is used as
  * a deliberately conservative upper bound instead of a compression-ratio heuristic; actual
@@ -751,15 +877,34 @@ export function estimateAnthropicCostMicroUsd(
   );
 }
 
+export function estimateGoogleCostMicroUsd(
+  model: AiGoogleModel,
+  inputTokens: number,
+  outputTokens: number,
+): number {
+  const pricing = GOOGLE_STANDARD_PRICING[model];
+  return Math.max(
+    0,
+    Math.ceil(
+      Math.max(0, inputTokens) * pricing.inputUsdPerMillion +
+        Math.max(0, outputTokens) * pricing.outputUsdPerMillion,
+    ),
+  );
+}
+
 function estimateProviderCostMicroUsd(
   provider: AiProviderName,
   model: AiModel,
   inputTokens: number,
   outputTokens: number,
 ): number {
-  return provider === 'openai'
-    ? estimateOpenAiCostMicroUsd(model as AiOpenAiModel, inputTokens, outputTokens)
-    : estimateAnthropicCostMicroUsd(model as AiAnthropicModel, inputTokens, outputTokens);
+  if (provider === 'openai') {
+    return estimateOpenAiCostMicroUsd(model as AiOpenAiModel, inputTokens, outputTokens);
+  }
+  if (provider === 'google') {
+    return estimateGoogleCostMicroUsd(model as AiGoogleModel, inputTokens, outputTokens);
+  }
+  return estimateAnthropicCostMicroUsd(model as AiAnthropicModel, inputTokens, outputTokens);
 }
 
 function parseOpenAiResponse(value: unknown): AiProviderResult {
@@ -864,6 +1009,75 @@ function parseAnthropicResponse(value: unknown): AiProviderResult {
   return {
     text,
     usage: { inputTokens, outputTokens, totalTokens },
+  };
+}
+
+function parseGeminiResponse(value: unknown): AiProviderResult {
+  if (!isRecord(value)) throw new AiFoundationError('malformed_response');
+
+  const usageValue = value['usageMetadata'];
+  if (!isRecord(usageValue)) throw new AiFoundationError('malformed_response');
+  const promptTokenCount = safeNonNegativeInteger(usageValue['promptTokenCount']);
+  const candidatesTokenCount = safeNonNegativeInteger(usageValue['candidatesTokenCount']);
+  // thoughtsTokenCount may be absent when the model produced no thinking tokens; treat missing
+  // as 0 rather than rejecting, but a present-and-invalid value is still malformed.
+  const thoughtsTokenCountRaw = usageValue['thoughtsTokenCount'];
+  const thoughtsTokenCount =
+    thoughtsTokenCountRaw === undefined ? 0 : safeNonNegativeInteger(thoughtsTokenCountRaw);
+  const totalTokenCount = safeNonNegativeInteger(usageValue['totalTokenCount']);
+  if (
+    promptTokenCount === null ||
+    candidatesTokenCount === null ||
+    thoughtsTokenCount === null ||
+    totalTokenCount === null
+  ) {
+    throw new AiFoundationError('malformed_response');
+  }
+
+  // Thinking tokens are billed at the output rate and totalTokenCount already includes prompt +
+  // thoughts + candidates per Google's docs, so outputTokens folds thoughtsTokenCount in for the
+  // cost guard. Defensive internal-consistency validation mirrors the OpenAI/Anthropic parsers:
+  // never silently clamp or guess when the provider's own numbers don't add up.
+  const outputTokens = candidatesTokenCount + thoughtsTokenCount;
+  if (totalTokenCount < promptTokenCount || totalTokenCount < outputTokens) {
+    throw new AiFoundationError('malformed_response');
+  }
+
+  const candidates = value['candidates'];
+  if (!Array.isArray(candidates) || candidates.length === 0) {
+    throw new AiFoundationError('malformed_response');
+  }
+  const primaryCandidate = candidates[0];
+  if (!isRecord(primaryCandidate)) throw new AiFoundationError('malformed_response');
+
+  const finishReason = primaryCandidate['finishReason'];
+  if (finishReason === 'MAX_TOKENS') throw new AiFoundationError('output_too_large');
+
+  const content = primaryCandidate['content'];
+  const texts: string[] = [];
+  if (isRecord(content) && Array.isArray(content['parts'])) {
+    for (const part of content['parts']) {
+      if (isRecord(part) && typeof part['text'] === 'string') {
+        texts.push(part['text']);
+      }
+    }
+  }
+
+  const text = texts.join('').trim();
+  if (!text) {
+    const isBlockReason =
+      finishReason === 'SAFETY' || finishReason === 'RECITATION' || finishReason === 'OTHER';
+    if (isBlockReason) throw new AiFoundationError('provider_rejected');
+    throw new AiFoundationError('malformed_response');
+  }
+
+  return {
+    text,
+    usage: {
+      inputTokens: promptTokenCount,
+      outputTokens,
+      totalTokens: totalTokenCount,
+    },
   };
 }
 
@@ -989,8 +1203,14 @@ function isAiAnthropicModel(value: string): value is AiAnthropicModel {
   return (AI_ANTHROPIC_MODELS as readonly string[]).includes(value);
 }
 
+function isAiGoogleModel(value: string): value is AiGoogleModel {
+  return (AI_GOOGLE_MODELS as readonly string[]).includes(value);
+}
+
 function isAiModelForProvider(provider: AiProviderName, value: string): value is AiModel {
-  return provider === 'openai' ? isAiOpenAiModel(value) : isAiAnthropicModel(value);
+  if (provider === 'openai') return isAiOpenAiModel(value);
+  if (provider === 'google') return isAiGoogleModel(value);
+  return isAiAnthropicModel(value);
 }
 
 function envFlag(value: string | undefined, fallback: boolean): boolean {

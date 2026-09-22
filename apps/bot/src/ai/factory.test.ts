@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createAiFoundationRuntime,
   resolveAiAnthropicCredential,
+  resolveAiGoogleCredential,
   resolveAiOpenAiCredential,
 } from './factory.js';
 
@@ -133,6 +134,50 @@ describe('AI Foundation Bot credential bootstrap', () => {
       redis,
       env: { HERTA_AI_ENABLED: 'true' },
       readSecret: async () => 'stored-key',
+    });
+    expect(result.status).toBe('ready');
+    expect(result.service).not.toBeNull();
+  });
+
+  it('Google runtime secretをGEMINI_API_KEY fallbackより優先する', async () => {
+    const result = await resolveAiGoogleCredential({
+      prisma,
+      env: { GEMINI_API_KEY: 'env-key' },
+      readSecret: async () => 'stored-google-key',
+    });
+    expect(result).toEqual({
+      apiKey: 'stored-google-key',
+      source: 'runtime_secret',
+      failure: null,
+    });
+  });
+
+  it('Google runtime secret未登録時だけGEMINI_API_KEY fallbackを使う', async () => {
+    const result = await resolveAiGoogleCredential({
+      prisma,
+      env: { GEMINI_API_KEY: 'env-key' },
+      readSecret: async () => null,
+    });
+    expect(result).toEqual({ apiKey: 'env-key', source: 'environment', failure: null });
+  });
+
+  it('Google credentialのstore失敗はenv fallbackへ逃がさずfail closedする', async () => {
+    const result = await resolveAiGoogleCredential({
+      prisma,
+      env: { GEMINI_API_KEY: 'env-key' },
+      readSecret: async () => {
+        throw new RuntimeSecretError('decrypt_failed');
+      },
+    });
+    expect(result).toEqual({ apiKey: null, source: null, failure: 'decrypt_failed' });
+  });
+
+  it('Google credentialが無くてもOpenAIがあればbootstrapはreadyになる', async () => {
+    const result = await createAiFoundationRuntime({
+      prisma,
+      redis,
+      env: { HERTA_AI_ENABLED: 'true' },
+      readSecret: async (_prisma, name) => (name === 'openai.api_key' ? 'stored-key' : null),
     });
     expect(result.status).toBe('ready');
     expect(result.service).not.toBeNull();
