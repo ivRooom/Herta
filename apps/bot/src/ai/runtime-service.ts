@@ -10,11 +10,13 @@ import {
   AiFoundationService,
   AnthropicMessagesProvider,
   GeminiGenerateContentProvider,
+  MoonshotChatCompletionsProvider,
   OpenAiResponsesProvider,
   type AiFoundationConfig,
   type AiGenerationRequest,
   type AiGenerationResponse,
   type AiGuardStore,
+  type AiModel,
   type AiProviderName,
   type AiTelemetrySink,
 } from '@herta/plugin-catalog/ai-service';
@@ -481,6 +483,146 @@ export class GoogleRuntimeGenerationService implements AiRuntimeGenerationServic
   }
 }
 
+export interface MoonshotRuntimeGenerationServiceOptions {
+  baseConfig: AiFoundationConfig;
+  apiKey: string;
+  guardStore: AiGuardStore;
+  runtimeResolver: AiRuntimeConfigurationResolver;
+  telemetry?: AiTelemetrySink;
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * Moonshot/Kimi counterpart to OpenAiRuntimeGenerationService/AnthropicRuntimeGenerationService/
+ * GoogleRuntimeGenerationService. Structurally identical (same guard order, same
+ * conversation-policy resolution, same input/instruction envelope accounting); only the
+ * wire-format adapter and the fetchImpl-rewriting policy wrapper differ per provider.
+ */
+export class MoonshotRuntimeGenerationService implements AiRuntimeGenerationService {
+  private readonly baseConfig: AiFoundationConfig;
+  private readonly apiKey: string;
+  private readonly guardStore: AiGuardStore;
+  private readonly runtimeResolver: AiRuntimeConfigurationResolver;
+  private readonly telemetry: AiTelemetrySink | undefined;
+  private readonly fetchImpl: typeof fetch;
+
+  constructor(options: MoonshotRuntimeGenerationServiceOptions) {
+    this.baseConfig = options.baseConfig;
+    this.apiKey = options.apiKey;
+    this.guardStore = options.guardStore;
+    this.runtimeResolver = options.runtimeResolver;
+    this.telemetry = options.telemetry;
+    this.fetchImpl = options.fetchImpl ?? fetch;
+  }
+
+  async consumeRateLimit(request: AiRuntimeRateLimitRequest): Promise<void> {
+    if (!this.baseConfig.enabled || this.baseConfig.killSwitch) {
+      throw new AiFoundationError('disabled');
+    }
+    if (!request.authorized || request.scopeGuildId !== request.guildId) {
+      throw new AiFoundationError('unauthorized');
+    }
+    if (!request.pluginEnabled || !request.guildOptIn) {
+      throw new AiFoundationError('disabled');
+    }
+
+    validateAndNormalizeUserInput(request.input, this.baseConfig);
+    const userRate = await this.guardStore.consumeRateLimit(
+      privacyRateKey('user', request.guildId, request.userId),
+      this.baseConfig.userRateLimit,
+      this.baseConfig.rateWindowMs,
+    );
+    if (!userRate.allowed) {
+      throw new AiFoundationError('rate_limited', { retryAfterMs: userRate.retryAfterMs });
+    }
+
+    const guildRate = await this.guardStore.consumeRateLimit(
+      privacyRateKey('guild', request.guildId),
+      this.baseConfig.guildRateLimit,
+      this.baseConfig.rateWindowMs,
+    );
+    if (!guildRate.allowed) {
+      throw new AiFoundationError('rate_limited', { retryAfterMs: guildRate.retryAfterMs });
+    }
+  }
+
+  async generate(request: AiRuntimeGenerationRequest): Promise<AiGenerationResponse> {
+    let runtime;
+    try {
+      runtime = await this.runtimeResolver.resolve();
+    } catch {
+      throw new AiFoundationError('internal_error');
+    }
+
+    if (runtime.selection.provider !== 'moonshot') {
+      // Mirrors the other single-provider runtime services' explicit allowlist dispatch: only
+      // implemented providers reach a provider adapter.
+      throw new AiFoundationError('disabled');
+    }
+
+    let conversationPolicy: AiConversationPolicy;
+    try {
+      conversationPolicy = resolveAiConversationPolicy({
+        responseMode: request.responseMode,
+        groundingState: request.groundingState,
+        timezone: runtime.selection.timezone,
+      });
+      const trustedInstructions = normalizeTrustedInstructions(request.trustedInstructions);
+      if (trustedInstructions.length > 0) {
+        conversationPolicy = {
+          ...conversationPolicy,
+          instructions: [conversationPolicy.instructions, ...trustedInstructions].join(' '),
+        };
+      }
+    } catch {
+      throw new AiFoundationError('internal_error');
+    }
+
+    const userInput = validateAndNormalizeUserInput(request.input, this.baseConfig);
+    const guardedInput = buildGuardedInput(conversationPolicy.instructions, userInput);
+    const guardOverhead = guardedInput.slice(0, guardedInput.length - userInput.length);
+
+    const config: AiFoundationConfig = {
+      ...this.baseConfig,
+      provider: runtime.selection.provider,
+      modelProfile: runtime.selection.modelProfile,
+      model: runtime.selection.model,
+      maxOutputTokens: resolveAiRuntimeOutputTokenBudget(
+        this.baseConfig.maxOutputTokens,
+        conversationPolicy.responseMode,
+      ),
+      maxInputChars: this.baseConfig.maxInputChars + characterLength(guardOverhead),
+      maxInputBytes: this.baseConfig.maxInputBytes + utf8ByteLength(guardOverhead),
+    };
+    const provider = new MoonshotChatCompletionsProvider({
+      apiKey: this.apiKey,
+      fetchImpl: withMoonshotRuntimePolicy(this.fetchImpl, {
+        model: config.model,
+        effort: runtime.selection.reasoningEffort,
+        conversationPolicy,
+        userInput,
+      }),
+    });
+    const service = new AiFoundationService({
+      config,
+      provider,
+      guardStore: this.guardStore,
+      telemetry: this.telemetry,
+    });
+
+    return service.generate({
+      feature: request.feature,
+      input: guardedInput,
+      guildId: request.guildId,
+      scopeGuildId: request.scopeGuildId,
+      userId: request.userId,
+      authorized: request.authorized,
+      pluginEnabled: request.pluginEnabled,
+      guildOptIn: request.guildOptIn,
+    });
+  }
+}
+
 export interface MultiProviderAiRuntimeGenerationServiceOptions {
   runtimeResolver: AiRuntimeConfigurationResolver;
   services: Partial<Record<AiProviderName, AiRuntimeGenerationService>>;
@@ -676,6 +818,67 @@ function withGoogleRuntimePolicy(
         thinkingConfig: { ...existingThinkingConfig, thinkingLevel },
       },
     };
+
+    return fetchImpl(input, { ...init, body: JSON.stringify(next) });
+  };
+}
+
+interface MoonshotRuntimePolicyOptions {
+  model: AiModel;
+  effort: AiReasoningEffort;
+  conversationPolicy: AiConversationPolicy;
+  userInput: string;
+}
+
+function withMoonshotRuntimePolicy(
+  fetchImpl: typeof fetch,
+  options: MoonshotRuntimePolicyOptions,
+): typeof fetch {
+  return async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    if (typeof init?.body !== 'string') throw new AiFoundationError('internal_error');
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(init.body) as unknown;
+    } catch {
+      throw new AiFoundationError('internal_error');
+    }
+    if (!isRecord(parsed)) throw new AiFoundationError('internal_error');
+
+    // Moonshot's Chat Completions API has no system-instruction/verbosity parameter comparable to
+    // OpenAI's `instructions`/`text.verbosity` fields; fold both signals into the single user
+    // message the same way AnthropicRuntimePolicy/GoogleRuntimePolicy fold verbosity into their
+    // own single-turn envelopes.
+    const instructions = `${options.conversationPolicy.instructions} Aim for ${options.conversationPolicy.textVerbosity} verbosity in your response length.`;
+    const combinedInput = `${instructions}\n\n${options.userInput}`;
+
+    const next: Record<string, unknown> = {
+      ...parsed,
+      messages: [{ role: 'user', content: combinedInput }],
+    };
+    delete next['reasoning_effort'];
+    delete next['thinking'];
+
+    // Moonshot has its own THIRD reasoning vocabulary, split across models, distinct from
+    // OpenAI/Anthropic/Google above (see MOONSHOT_QUALITY/BALANCED/ECONOMY_REASONING_EFFORTS in
+    // packages/plugin-catalog/src/ai-runtime-policy.ts for the allowlist backing this):
+    //  - kimi-k3 (quality): graded reasoning_effort (low/high/max, no 'none'/'medium').
+    //  - kimi-k2.6 (balanced): binary thinking.type toggle. 'none' -> disabled, 'high' -> enabled.
+    //  - kimi-k2.7-code (economy): thinking is always enabled and cannot be disabled at all, so
+    //    only 'none' is a valid resolved effort, and the fixed thinking:{type:'enabled'} is sent
+    //    regardless of the value — the FOURTH distinct meaning of the shared 'none' member
+    //    (OpenAI: literal value, Anthropic: omit output_config, Gemini: translate to "minimal",
+    //    Moonshot economy: send-fixed-enabled).
+    if (options.model === 'kimi-k3') {
+      next['reasoning_effort'] = options.effort;
+    } else if (options.model === 'kimi-k2.6') {
+      next['thinking'] = { type: options.effort === 'none' ? 'disabled' : 'enabled' };
+    } else {
+      // kimi-k2.7-code (economy): thinking cannot be disabled. The only valid resolved effort is
+      // 'none' (see MOONSHOT_ECONOMY_REASONING_EFFORTS), so this is always a fixed 'enabled'
+      // regardless of the value, not a translation of it.
+      next['thinking'] = { type: 'enabled' };
+    }
 
     return fetchImpl(input, { ...init, body: JSON.stringify(next) });
   };

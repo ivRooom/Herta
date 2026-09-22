@@ -8,6 +8,8 @@ const anthropicRoutePath = 'src/app/api/admin/runtime-secrets/anthropic/route.ts
 const anthropicSettingsPath = 'src/components/anthropic-provider-credential-settings.tsx';
 const googleRoutePath = 'src/app/api/admin/runtime-secrets/google/route.ts';
 const googleSettingsPath = 'src/components/google-provider-credential-settings.tsx';
+const moonshotRoutePath = 'src/app/api/admin/runtime-secrets/moonshot/route.ts';
+const moonshotSettingsPath = 'src/components/moonshot-provider-credential-settings.tsx';
 const semanticRoutePath = 'src/app/api/search/semantic/route.ts';
 const runtimeSettingsRoutePath = 'src/app/api/admin/runtime-config/ai/route.ts';
 
@@ -93,6 +95,33 @@ test('Studio Google credential UI is write-only, authorization-gated, and explic
   assert.doesNotMatch(settings, /value=\{status\./u);
 });
 
+test('Moonshot credential mutation remains platform-admin and same-origin protected', () => {
+  const route = readFileSync(moonshotRoutePath, 'utf8');
+
+  assert.match(route, /isStudioPlatformAdmin/u);
+  assert.match(route, /isSameOriginMutationRequest/u);
+  assert.match(route, /readRequestBodyBytes\(request, MAX_REQUEST_BODY_BYTES\)/u);
+  assert.match(route, /'Cache-Control': 'no-store'/u);
+  assert.match(route, /environmentFallbackConfigured: hasMoonshotEnvironmentFallback\(\)/u);
+  assert.doesNotMatch(route, /console\.(?:log|info|warn|error)\([^\n]*apiKey/u);
+});
+
+test('Studio Moonshot credential UI is write-only, authorization-gated, and explicit about migration fallback', () => {
+  const settings = readFileSync(moonshotSettingsPath, 'utf8');
+
+  assert.match(settings, /type="password"/u);
+  assert.match(settings, /保存済みキーは再表示しません/u);
+  assert.match(
+    settings,
+    /if \(loadState === 'loading' \|\| loadState === 'hidden'\) return null;/u,
+  );
+  assert.match(settings, /MOONSHOT_API_KEY migration fallbackが構成されています/u);
+  assert.match(settings, /この操作だけではAIアクセス停止を保証しません/u);
+  assert.match(settings, /store障害・master key異常時はfail closed/u);
+  assert.doesNotMatch(settings, /setApiKey\([^)]*status/u);
+  assert.doesNotMatch(settings, /value=\{status\./u);
+});
+
 test('Semantic Search rate-limits before credential lookup and fails closed on store errors', () => {
   const route = readFileSync(semanticRoutePath, 'utf8');
   const rateIndex = route.indexOf('semanticRateLimiter.consume(session.user.id)');
@@ -123,6 +152,10 @@ test('AI Runtime Settings only exposes and saves providers with usable credentia
   assert.match(
     route,
     /readRuntimeSecret\(prisma, GOOGLE_GEMINI_API_KEY_RUNTIME_SECRET, process\.env\)/u,
+  );
+  assert.match(
+    route,
+    /readRuntimeSecret\(prisma, MOONSHOT_API_KEY_RUNTIME_SECRET, process\.env\)/u,
   );
   assert.match(route, /getAiRuntimePolicyMetadata\(\)\.filter/u);
   assert.match(route, /if \(!availability\?\.available\)/u);

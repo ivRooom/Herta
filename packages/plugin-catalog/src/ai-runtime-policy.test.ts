@@ -181,7 +181,108 @@ describe('AI runtime policy', () => {
           }),
         ],
       },
+      {
+        provider: 'moonshot',
+        capabilities: ['text'],
+        profiles: [
+          expect.objectContaining({
+            modelProfile: 'quality',
+            model: 'kimi-k3',
+            supportedReasoningEfforts: ['low', 'high', 'max'],
+          }),
+          expect.objectContaining({
+            modelProfile: 'balanced',
+            model: 'kimi-k2.6',
+            supportedReasoningEfforts: ['none', 'high'],
+          }),
+          expect.objectContaining({
+            modelProfile: 'economy',
+            model: 'kimi-k2.7-code',
+            supportedReasoningEfforts: ['none'],
+          }),
+        ],
+      },
     ]);
+  });
+
+  it('Moonshot quality(kimi-k3)はlow/high/maxのみ許可しnone/mediumを拒否する', () => {
+    for (const reasoningEffort of ['none', 'medium', 'xhigh'] as const) {
+      expect(() =>
+        resolveAiRuntimeSelection({
+          provider: 'moonshot',
+          modelProfile: 'quality',
+          reasoningEffort,
+          timezone: 'UTC',
+        }),
+      ).toThrowError(
+        expect.objectContaining<Partial<AiRuntimePolicyError>>({
+          code: 'unsupported_combination',
+        }),
+      );
+    }
+    for (const reasoningEffort of ['low', 'high', 'max'] as const) {
+      expect(
+        resolveAiRuntimeSelection({
+          provider: 'moonshot',
+          modelProfile: 'quality',
+          reasoningEffort,
+          timezone: 'UTC',
+        }),
+      ).toMatchObject({ model: 'kimi-k3', reasoningEffort });
+    }
+  });
+
+  it('Moonshot balanced(kimi-k2.6)はnone/highのみ許可する(binary thinking toggle)', () => {
+    for (const reasoningEffort of ['low', 'medium', 'xhigh', 'max'] as const) {
+      expect(() =>
+        resolveAiRuntimeSelection({
+          provider: 'moonshot',
+          modelProfile: 'balanced',
+          reasoningEffort,
+          timezone: 'UTC',
+        }),
+      ).toThrowError(
+        expect.objectContaining<Partial<AiRuntimePolicyError>>({
+          code: 'unsupported_combination',
+        }),
+      );
+    }
+    for (const reasoningEffort of ['none', 'high'] as const) {
+      expect(
+        resolveAiRuntimeSelection({
+          provider: 'moonshot',
+          modelProfile: 'balanced',
+          reasoningEffort,
+          timezone: 'UTC',
+        }),
+      ).toMatchObject({ model: 'kimi-k2.6', reasoningEffort });
+    }
+  });
+
+  it('Moonshot economy(kimi-k2.7-code)は"none"以外のreasoning effortを拒否する(thinking常時有効)', () => {
+    for (const reasoningEffort of ['low', 'medium', 'high', 'xhigh', 'max'] as const) {
+      expect(() =>
+        resolveAiRuntimeSelection({
+          provider: 'moonshot',
+          modelProfile: 'economy',
+          reasoningEffort,
+          timezone: 'UTC',
+        }),
+      ).toThrowError(
+        expect.objectContaining<Partial<AiRuntimePolicyError>>({
+          code: 'unsupported_combination',
+        }),
+      );
+    }
+
+    expect(
+      resolveAiRuntimeSelection({
+        provider: 'moonshot',
+        modelProfile: 'economy',
+        reasoningEffort: 'none',
+        timezone: 'UTC',
+      }),
+    ).toMatchObject({ model: 'kimi-k2.7-code', reasoningEffort: 'none' });
   });
 
   it('Anthropic quality/balancedはfull effort rangeをbalanced/economyへ渡さない', () => {

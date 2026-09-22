@@ -5,6 +5,7 @@ import {
   createAiFoundationRuntime,
   resolveAiAnthropicCredential,
   resolveAiGoogleCredential,
+  resolveAiMoonshotCredential,
   resolveAiOpenAiCredential,
 } from './factory.js';
 
@@ -173,6 +174,50 @@ describe('AI Foundation Bot credential bootstrap', () => {
   });
 
   it('Google credentialが無くてもOpenAIがあればbootstrapはreadyになる', async () => {
+    const result = await createAiFoundationRuntime({
+      prisma,
+      redis,
+      env: { HERTA_AI_ENABLED: 'true' },
+      readSecret: async (_prisma, name) => (name === 'openai.api_key' ? 'stored-key' : null),
+    });
+    expect(result.status).toBe('ready');
+    expect(result.service).not.toBeNull();
+  });
+
+  it('Moonshot runtime secretをMOONSHOT_API_KEY fallbackより優先する', async () => {
+    const result = await resolveAiMoonshotCredential({
+      prisma,
+      env: { MOONSHOT_API_KEY: 'env-key' },
+      readSecret: async () => 'stored-moonshot-key',
+    });
+    expect(result).toEqual({
+      apiKey: 'stored-moonshot-key',
+      source: 'runtime_secret',
+      failure: null,
+    });
+  });
+
+  it('Moonshot runtime secret未登録時だけMOONSHOT_API_KEY fallbackを使う', async () => {
+    const result = await resolveAiMoonshotCredential({
+      prisma,
+      env: { MOONSHOT_API_KEY: 'env-key' },
+      readSecret: async () => null,
+    });
+    expect(result).toEqual({ apiKey: 'env-key', source: 'environment', failure: null });
+  });
+
+  it('Moonshot credentialのstore失敗はenv fallbackへ逃がさずfail closedする', async () => {
+    const result = await resolveAiMoonshotCredential({
+      prisma,
+      env: { MOONSHOT_API_KEY: 'env-key' },
+      readSecret: async () => {
+        throw new RuntimeSecretError('decrypt_failed');
+      },
+    });
+    expect(result).toEqual({ apiKey: null, source: null, failure: 'decrypt_failed' });
+  });
+
+  it('Moonshot credentialが無くてもOpenAIがあればbootstrapはreadyになる', async () => {
     const result = await createAiFoundationRuntime({
       prisma,
       redis,

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 
-export const AI_SUPPORTED_PROVIDERS = ['openai', 'anthropic', 'google'] as const;
+export const AI_SUPPORTED_PROVIDERS = ['openai', 'anthropic', 'google', 'moonshot'] as const;
 export const AI_MODEL_PROFILES = ['quality', 'balanced', 'economy'] as const;
 export const AI_OPENAI_MODELS = ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'] as const;
 export const AI_ANTHROPIC_MODELS = [
@@ -13,13 +13,15 @@ export const AI_GOOGLE_MODELS = [
   'gemini-3.6-flash',
   'gemini-3.5-flash-lite',
 ] as const;
+export const AI_MOONSHOT_MODELS = ['kimi-k3', 'kimi-k2.6', 'kimi-k2.7-code'] as const;
 
 export type AiProviderName = (typeof AI_SUPPORTED_PROVIDERS)[number];
 export type AiModelProfile = (typeof AI_MODEL_PROFILES)[number];
 export type AiOpenAiModel = (typeof AI_OPENAI_MODELS)[number];
 export type AiAnthropicModel = (typeof AI_ANTHROPIC_MODELS)[number];
 export type AiGoogleModel = (typeof AI_GOOGLE_MODELS)[number];
-export type AiModel = AiOpenAiModel | AiAnthropicModel | AiGoogleModel;
+export type AiMoonshotModel = (typeof AI_MOONSHOT_MODELS)[number];
+export type AiModel = AiOpenAiModel | AiAnthropicModel | AiGoogleModel | AiMoonshotModel;
 
 export type AiFailureCategory =
   | 'disabled'
@@ -62,6 +64,16 @@ const MODEL_BY_PROFILE: Record<AiProviderName, Record<AiModelProfile, AiModel>> 
     quality: 'gemini-3.8-flash',
     balanced: 'gemini-3.6-flash',
     economy: 'gemini-3.5-flash-lite',
+  },
+  moonshot: {
+    // No general-purpose "lite" Kimi model exists yet; the two cheaper models
+    // (kimi-k2.7-code / kimi-k2.7-code-highspeed) are code-specialized, not general chat models.
+    // economy reuses the cheaper of the two (plain kimi-k2.7-code) as a documented compromise,
+    // same spirit as Google's quality/balanced pricing-parity note above. Revisit if/when
+    // Moonshot ships a general-purpose lite model.
+    quality: 'kimi-k3',
+    balanced: 'kimi-k2.6',
+    economy: 'kimi-k2.7-code',
   },
 };
 
@@ -107,6 +119,21 @@ const GOOGLE_STANDARD_PRICING: Record<
   'gemini-3.8-flash': { inputUsdPerMillion: 0.75, outputUsdPerMillion: 3.75 },
   'gemini-3.6-flash': { inputUsdPerMillion: 0.75, outputUsdPerMillion: 3.75 },
   'gemini-3.5-flash-lite': { inputUsdPerMillion: 0.3, outputUsdPerMillion: 2.5 },
+};
+
+/**
+ * Moonshot AI (Kimi) standard pricing (USD / 1M tokens), same code-reviewed convention as the
+ * other *_STANDARD_PRICING tables above. Verified against current (non-deprecated) platform.moonshot.ai
+ * pricing at implementation time; kimi-k2 / kimi-k2.5 / moonshot-v1-* are deprecated and must never
+ * be added here.
+ */
+const MOONSHOT_STANDARD_PRICING: Record<
+  AiMoonshotModel,
+  { inputUsdPerMillion: number; outputUsdPerMillion: number }
+> = {
+  'kimi-k3': { inputUsdPerMillion: 3, outputUsdPerMillion: 15 },
+  'kimi-k2.6': { inputUsdPerMillion: 0.95, outputUsdPerMillion: 4 },
+  'kimi-k2.7-code': { inputUsdPerMillion: 0.95, outputUsdPerMillion: 4 },
 };
 
 export const AI_DEFAULTS = {
@@ -838,6 +865,106 @@ export class GeminiGenerateContentProvider implements AiGenerationProvider {
   }
 }
 
+const MOONSHOT_API_BASE_URL = 'https://api.moonshot.ai/v1/chat/completions';
+
+/**
+ * Moonshot (Kimi) has a THIRD distinct reasoning vocabulary, and it isn't uniform across its own
+ * model lineup:
+ *  - kimi-k3 exposes a graded `reasoning_effort` field (low/high/max, no 'medium', thinking
+ *    always on and cannot be disabled).
+ *  - kimi-k2.6 exposes a binary `thinking.type` toggle (enabled/disabled).
+ *  - kimi-k2.7-code (used for the 'economy' profile) has thinking always enabled and offers no
+ *    way to disable or grade it at all - the field is simply omitted/fixed.
+ * This base adapter has no caller-supplied effort input yet (mirrors AnthropicMessagesProvider/
+ * GeminiGenerateContentProvider above, whose runtime overrides are threaded through a wrapped
+ * fetchImpl in apps/bot/src/ai/runtime-service.ts) - it only decides the default to send when no
+ * runtime override is present. This is the FOURTH distinct provider-specific reinterpretation of
+ * the shared AiReasoningEffort union's 'none' member: OpenAI sends it literally, Anthropic omits
+ * output_config, Gemini translates it to "minimal", and Moonshot's economy tier (kimi-k2.7-code)
+ * always sends a FIXED thinking:{type:'enabled'} regardless of the nominally resolved value -
+ * the opposite mechanism from Anthropic (send-fixed vs omit) but the same "only one value is ever
+ * meaningfully valid" pattern.
+ */
+const MOONSHOT_MODELS_WITH_THINKING_TOGGLE: ReadonlySet<AiMoonshotModel> = new Set(['kimi-k2.6']);
+
+export interface MoonshotChatCompletionsProviderOptions {
+  apiKey: string;
+  fetchImpl?: typeof fetch;
+  endpoint?: string;
+}
+
+export class MoonshotChatCompletionsProvider implements AiGenerationProvider {
+  private readonly apiKey: string;
+  private readonly fetchImpl: typeof fetch;
+  private readonly endpoint: string;
+
+  constructor(options: MoonshotChatCompletionsProviderOptions) {
+    const apiKey = options.apiKey.trim();
+    if (!apiKey) throw new AiConfigurationError('invalid_value', 'MOONSHOT_API_KEY');
+    this.apiKey = apiKey;
+    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.endpoint = options.endpoint ?? MOONSHOT_API_BASE_URL;
+  }
+
+  async generate(request: AiProviderRequest): Promise<AiProviderResult> {
+    if (!isAiMoonshotModel(request.model)) {
+      throw new AiConfigurationError('invalid_model', 'model');
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), request.timeoutMs);
+    try {
+      const body: Record<string, unknown> = {
+        model: request.model,
+        max_tokens: request.maxOutputTokens,
+        messages: [{ role: 'user', content: request.input }],
+      };
+      if (request.model === 'kimi-k3') {
+        body['reasoning_effort'] = 'high';
+      } else if (MOONSHOT_MODELS_WITH_THINKING_TOGGLE.has(request.model)) {
+        body['thinking'] = { type: 'enabled' };
+      } else {
+        // kimi-k2.7-code: thinking is always enabled and cannot be toggled off, so the field is
+        // sent fixed rather than being derived from any resolved reasoning effort.
+        body['thinking'] = { type: 'enabled' };
+      }
+
+      const response = await this.fetchImpl(this.endpoint, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${this.apiKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        // Moonshot's Chat Completions API is OpenAI-compatible; error taxonomy -> shared category
+        // dispatched purely on HTTP status (never on any error body field), mirroring the other
+        // adapters above: 429/5xx are transient provider-side conditions; everything else
+        // (400/401/403/404) is a rejected request that must not be retried or silently fall back
+        // to another provider. The raw Moonshot error body/message is never read or logged here.
+        if (response.status === 429 || response.status >= 500) {
+          throw new AiFoundationError('provider_unavailable');
+        }
+        throw new AiFoundationError('provider_rejected');
+      }
+
+      const payload = await readBoundedJson(response, request.maxResponseBytes);
+      return parseMoonshotResponse(payload);
+    } catch (error) {
+      if (error instanceof AiFoundationError) throw error;
+      if (controller.signal.aborted) throw new AiFoundationError('timeout');
+      throw new AiFoundationError('provider_unavailable');
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+
 /**
  * Preflight billing guards must not underestimate token usage. UTF-8 byte length is used as
  * a deliberately conservative upper bound instead of a compression-ratio heuristic; actual
@@ -892,6 +1019,21 @@ export function estimateGoogleCostMicroUsd(
   );
 }
 
+export function estimateMoonshotCostMicroUsd(
+  model: AiMoonshotModel,
+  inputTokens: number,
+  outputTokens: number,
+): number {
+  const pricing = MOONSHOT_STANDARD_PRICING[model];
+  return Math.max(
+    0,
+    Math.ceil(
+      Math.max(0, inputTokens) * pricing.inputUsdPerMillion +
+        Math.max(0, outputTokens) * pricing.outputUsdPerMillion,
+    ),
+  );
+}
+
 function estimateProviderCostMicroUsd(
   provider: AiProviderName,
   model: AiModel,
@@ -903,6 +1045,9 @@ function estimateProviderCostMicroUsd(
   }
   if (provider === 'google') {
     return estimateGoogleCostMicroUsd(model as AiGoogleModel, inputTokens, outputTokens);
+  }
+  if (provider === 'moonshot') {
+    return estimateMoonshotCostMicroUsd(model as AiMoonshotModel, inputTokens, outputTokens);
   }
   return estimateAnthropicCostMicroUsd(model as AiAnthropicModel, inputTokens, outputTokens);
 }
@@ -1081,6 +1226,54 @@ function parseGeminiResponse(value: unknown): AiProviderResult {
   };
 }
 
+function parseMoonshotResponse(value: unknown): AiProviderResult {
+  if (!isRecord(value)) throw new AiFoundationError('malformed_response');
+
+  const usageValue = value['usage'];
+  if (!isRecord(usageValue)) throw new AiFoundationError('malformed_response');
+  const promptTokens = safeNonNegativeInteger(usageValue['prompt_tokens']);
+  const completionTokens = safeNonNegativeInteger(usageValue['completion_tokens']);
+  const totalTokens = safeNonNegativeInteger(usageValue['total_tokens']);
+  if (promptTokens === null || completionTokens === null || totalTokens === null) {
+    throw new AiFoundationError('malformed_response');
+  }
+  // Defensive internal-consistency validation, same convention as the OpenAI/Anthropic/Gemini
+  // parsers above: never silently clamp or guess when the provider's own numbers don't add up.
+  if (totalTokens < promptTokens || totalTokens < completionTokens) {
+    throw new AiFoundationError('malformed_response');
+  }
+
+  const choices = value['choices'];
+  if (!Array.isArray(choices) || choices.length === 0) {
+    throw new AiFoundationError('malformed_response');
+  }
+  const primaryChoice = choices[0];
+  if (!isRecord(primaryChoice)) throw new AiFoundationError('malformed_response');
+
+  if (primaryChoice['finish_reason'] === 'length') {
+    throw new AiFoundationError('output_too_large');
+  }
+
+  const message = primaryChoice['message'];
+  const text =
+    isRecord(message) && typeof message['content'] === 'string' ? message['content'].trim() : '';
+  if (!text) {
+    if (primaryChoice['finish_reason'] === 'content_filter') {
+      throw new AiFoundationError('provider_rejected');
+    }
+    throw new AiFoundationError('malformed_response');
+  }
+
+  return {
+    text,
+    usage: {
+      inputTokens: promptTokens,
+      outputTokens: completionTokens,
+      totalTokens,
+    },
+  };
+}
+
 async function readBoundedJson(response: Response, maxBytes: number): Promise<unknown> {
   const declaredLength = Number(response.headers.get('content-length'));
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
@@ -1207,9 +1400,14 @@ function isAiGoogleModel(value: string): value is AiGoogleModel {
   return (AI_GOOGLE_MODELS as readonly string[]).includes(value);
 }
 
+function isAiMoonshotModel(value: string): value is AiMoonshotModel {
+  return (AI_MOONSHOT_MODELS as readonly string[]).includes(value);
+}
+
 function isAiModelForProvider(provider: AiProviderName, value: string): value is AiModel {
   if (provider === 'openai') return isAiOpenAiModel(value);
   if (provider === 'google') return isAiGoogleModel(value);
+  if (provider === 'moonshot') return isAiMoonshotModel(value);
   return isAiAnthropicModel(value);
 }
 

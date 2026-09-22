@@ -3,16 +3,19 @@ import {
   AI_DEFAULTS,
   AI_GOOGLE_MODELS,
   AI_MODEL_PROFILES,
+  AI_MOONSHOT_MODELS,
   AI_OPENAI_MODELS,
   AI_SUPPORTED_PROVIDERS,
   estimateAnthropicCostMicroUsd,
   estimateGoogleCostMicroUsd,
+  estimateMoonshotCostMicroUsd,
   estimateOpenAiCostMicroUsd,
   isValidIanaTimezone,
   type AiAnthropicModel,
   type AiGoogleModel,
   type AiModel,
   type AiModelProfile,
+  type AiMoonshotModel,
   type AiOpenAiModel,
   type AiProviderName,
 } from './ai-service.js';
@@ -21,6 +24,7 @@ export {
   AI_ANTHROPIC_MODELS,
   AI_GOOGLE_MODELS,
   AI_MODEL_PROFILES,
+  AI_MOONSHOT_MODELS,
   AI_OPENAI_MODELS,
   AI_SUPPORTED_PROVIDERS,
 } from './ai-service.js';
@@ -29,6 +33,7 @@ export type {
   AiGoogleModel,
   AiModel,
   AiModelProfile,
+  AiMoonshotModel,
   AiOpenAiModel,
   AiProviderName,
 } from './ai-service.js';
@@ -130,6 +135,21 @@ const GOOGLE_ECONOMY_REASONING_EFFORTS: readonly AiReasoningEffort[] = [
 ];
 
 /**
+ * Moonshot (Kimi) has its own graded vocabulary per model, not a single uniform set: kimi-k3
+ * (quality) only exposes low/high/max via `reasoning_effort` (no 'medium', thinking cannot be
+ * disabled). kimi-k2.6 (balanced) exposes a binary thinking.type toggle, so the shared 'none'
+ * union member is reinterpreted here as "thinking.type: disabled" and 'high' as "enabled" (see
+ * MoonshotChatCompletionsProvider in ai-service.ts). kimi-k2.7-code (economy) cannot disable
+ * thinking at all, so only 'none' is allowed and the adapter always sends a FIXED
+ * thinking:{type:'enabled'} regardless of the resolved value — the FOURTH distinct
+ * provider-specific meaning of the shared 'none' member (OpenAI: literal value, Anthropic: omit
+ * output_config, Gemini: translate to "minimal", Moonshot economy: send-fixed-enabled).
+ */
+const MOONSHOT_QUALITY_REASONING_EFFORTS: readonly AiReasoningEffort[] = ['low', 'high', 'max'];
+const MOONSHOT_BALANCED_REASONING_EFFORTS: readonly AiReasoningEffort[] = ['none', 'high'];
+const MOONSHOT_ECONOMY_REASONING_EFFORTS: readonly AiReasoningEffort[] = ['none'];
+
+/**
  * Tool/provider capability routing is code-reviewed server policy. Client input may select neither
  * arbitrary provider IDs nor arbitrary tool names. A capability is available only when it is
  * present in this provider allowlist and the matching server adapter is bootstrapped.
@@ -142,6 +162,9 @@ const AI_PROVIDER_CAPABILITY_POLICY: Record<AiProviderName, readonly AiProviderC
   // Google/Gemini integration is plain-text generation only for issue #341; no code-interpreter
   // or image-generation tool adapter exists for this provider yet.
   google: ['text'],
+  // Moonshot/Kimi integration is plain-text generation only for issue #342; no code-interpreter
+  // or image-generation tool adapter exists for this provider yet.
+  moonshot: ['text'],
 };
 
 /**
@@ -224,6 +247,34 @@ const AI_RUNTIME_POLICY: Record<AiProviderName, Record<AiModelProfile, AiRuntime
       model: 'gemini-3.5-flash-lite',
       supportedReasoningEfforts: GOOGLE_ECONOMY_REASONING_EFFORTS,
       pricing: googleTokenPricing('gemini-3.5-flash-lite', null),
+    },
+  },
+  moonshot: {
+    quality: {
+      provider: 'moonshot',
+      modelProfile: 'quality',
+      model: 'kimi-k3',
+      supportedReasoningEfforts: MOONSHOT_QUALITY_REASONING_EFFORTS,
+      pricing: moonshotTokenPricing('kimi-k3', null),
+    },
+    balanced: {
+      provider: 'moonshot',
+      modelProfile: 'balanced',
+      model: 'kimi-k2.6',
+      supportedReasoningEfforts: MOONSHOT_BALANCED_REASONING_EFFORTS,
+      pricing: moonshotTokenPricing('kimi-k2.6', null),
+    },
+    economy: {
+      provider: 'moonshot',
+      modelProfile: 'economy',
+      // kimi-k2.7-code is a code-specialized model reused for economy since no general-purpose
+      // cheap Kimi model currently exists (same documented compromise as Google's quality/
+      // balanced pricing-parity note above). Thinking is always enabled and cannot be disabled,
+      // so supportedReasoningEfforts is restricted to ['none'] (see
+      // MOONSHOT_ECONOMY_REASONING_EFFORTS above).
+      model: 'kimi-k2.7-code',
+      supportedReasoningEfforts: MOONSHOT_ECONOMY_REASONING_EFFORTS,
+      pricing: moonshotTokenPricing('kimi-k2.7-code', null),
     },
   },
 };
@@ -384,6 +435,10 @@ export function isAiGoogleModel(value: string): value is AiGoogleModel {
   return (AI_GOOGLE_MODELS as readonly string[]).includes(value);
 }
 
+export function isAiMoonshotModel(value: string): value is AiMoonshotModel {
+  return (AI_MOONSHOT_MODELS as readonly string[]).includes(value);
+}
+
 export function isAiReasoningEffort(value: string): value is AiReasoningEffort {
   return (AI_REASONING_EFFORTS as readonly string[]).includes(value);
 }
@@ -411,6 +466,17 @@ function googleTokenPricing(model: AiGoogleModel, reviewAfterIso: string | null)
   return {
     inputUsdPerMillion: estimateGoogleCostMicroUsd(model, 1_000_000, 0) / 1_000_000,
     outputUsdPerMillion: estimateGoogleCostMicroUsd(model, 0, 1_000_000) / 1_000_000,
+    reviewAfterIso,
+  };
+}
+
+function moonshotTokenPricing(
+  model: AiMoonshotModel,
+  reviewAfterIso: string | null,
+): AiTokenPricing {
+  return {
+    inputUsdPerMillion: estimateMoonshotCostMicroUsd(model, 1_000_000, 0) / 1_000_000,
+    outputUsdPerMillion: estimateMoonshotCostMicroUsd(model, 0, 1_000_000) / 1_000_000,
     reviewAfterIso,
   };
 }
