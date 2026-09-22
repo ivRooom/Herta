@@ -4,9 +4,11 @@ import {
   AiFoundationError,
   AiFoundationService,
   AnthropicMessagesProvider,
+  GeminiGenerateContentProvider,
   OpenAiResponsesProvider,
   RedisAiGuardStore,
   estimateAnthropicCostMicroUsd,
+  estimateGoogleCostMicroUsd,
   estimateInputTokens,
   estimateOpenAiCostMicroUsd,
   resolveAiFoundationConfig,
@@ -164,6 +166,29 @@ describe('resolveAiFoundationConfig', () => {
       expect.objectContaining<Partial<AiConfigurationError>>({ code: 'invalid_model' }),
     );
   });
+
+  it('google providerはbalanced profileをgemini-3.6-flashへ解決する', () => {
+    const config = resolveAiFoundationConfig({ HERTA_AI_PROVIDER: 'google' });
+    expect(config.provider).toBe('google');
+    expect(config.modelProfile).toBe('balanced');
+    expect(config.model).toBe('gemini-3.6-flash');
+  });
+
+  it('google providerで未知/他providerのmodel IDを指定すると拒否する', () => {
+    expect(() =>
+      resolveAiFoundationConfig({ HERTA_AI_PROVIDER: 'google', HERTA_AI_MODEL: 'gpt-5.6-sol' }),
+    ).toThrowError(
+      expect.objectContaining<Partial<AiConfigurationError>>({ code: 'invalid_model' }),
+    );
+    expect(() =>
+      resolveAiFoundationConfig({
+        HERTA_AI_PROVIDER: 'google',
+        HERTA_AI_MODEL: 'gemini-9000-ultra',
+      }),
+    ).toThrowError(
+      expect.objectContaining<Partial<AiConfigurationError>>({ code: 'invalid_model' }),
+    );
+  });
 });
 
 describe('AiFoundationService', () => {
@@ -233,6 +258,31 @@ describe('AiFoundationService', () => {
     });
     // usage: inputTokens 20, outputTokens 10 -> 20*2 + 10*10 = 140 micro-USD
     expect(result.estimatedCost).toBe(0.00014);
+    expect(guardStore.quotaKeys.length).toBe(1);
+  });
+
+  it('google providerでもguard/cost pipelineが同一に機能する', async () => {
+    const guardStore = new MemoryGuardStore();
+    const provider = staticProvider();
+    const service = new AiFoundationService({
+      config: makeConfig({
+        provider: 'google',
+        modelProfile: 'balanced',
+        model: 'gemini-3.6-flash',
+      }),
+      provider,
+      guardStore,
+    });
+
+    const result = await service.generate(makeRequest());
+
+    expect(result).toMatchObject({
+      provider: 'google',
+      model: 'gemini-3.6-flash',
+      text: '回答です',
+    });
+    // usage: inputTokens 20, outputTokens 10 -> 20*0.75 + 10*3.75 = 52.5 -> ceil 53 micro-USD
+    expect(result.estimatedCost).toBe(0.000053);
     expect(guardStore.quotaKeys.length).toBe(1);
   });
 
@@ -732,6 +782,203 @@ describe('AnthropicMessagesProvider', () => {
   });
 });
 
+describe('GeminiGenerateContentProvider', () => {
+  const request: AiProviderRequest = {
+    requestId: 'req-1',
+    model: 'gemini-3.6-flash',
+    input: 'hello',
+    maxOutputTokens: 100,
+    timeoutMs: 100,
+    maxResponseBytes: 16_384,
+  };
+
+  it('generateContentへcontents/generationConfigを送信しusageを解析する', async () => {
+    const fetchImpl = vi.fn(async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const url = String(input);
+      expect(url).toContain('gemini-3.6-flash:generateContent');
+      expect(url).toContain('key=server-secret');
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      expect(body).toMatchObject({
+        contents: [{ role: 'user', parts: [{ text: 'hello' }] }],
+        generationConfig: { maxOutputTokens: 100 },
+      });
+      expect(init?.headers).not.toHaveProperty('Authorization');
+      expect(init?.headers).not.toHaveProperty('x-api-key');
+      return Response.json({
+        candidates: [
+          {
+            content: { role: 'model', parts: [{ text: 'world' }] },
+            finishReason: 'STOP',
+          },
+        ],
+        usageMetadata: {
+          promptTokenCount: 12,
+          candidatesTokenCount: 7,
+          thoughtsTokenCount: 3,
+          totalTokenCount: 22,
+        },
+      });
+    });
+    const provider = new GeminiGenerateContentProvider({ apiKey: 'server-secret', fetchImpl });
+
+    await expect(provider.generate(request)).resolves.toEqual({
+      text: 'world',
+      usage: { inputTokens: 12, outputTokens: 10, totalTokens: 22 },
+    });
+  });
+
+  it('API keyはURL query parameterで送信されヘッダには含まれない', async () => {
+    let capturedUrl = '';
+    const fetchImpl = vi.fn(async (input: Parameters<typeof fetch>[0]) => {
+      capturedUrl = String(input);
+      return Response.json({
+        candidates: [{ content: { parts: [{ text: 'ok' }] }, finishReason: 'STOP' }],
+        usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+      });
+    });
+    const provider = new GeminiGenerateContentProvider({ apiKey: 'secret-key-value', fetchImpl });
+    await provider.generate(request);
+    expect(capturedUrl).toContain('key=secret-key-value');
+  });
+
+  it('thoughtsTokenCountが無い場合は0として扱う', async () => {
+    const fetchImpl = vi.fn(async () =>
+      Response.json({
+        candidates: [{ content: { parts: [{ text: 'ok' }] }, finishReason: 'STOP' }],
+        usageMetadata: { promptTokenCount: 4, candidatesTokenCount: 5, totalTokenCount: 9 },
+      }),
+    );
+    const provider = new GeminiGenerateContentProvider({ apiKey: 'secret', fetchImpl });
+    await expect(provider.generate(request)).resolves.toEqual({
+      text: 'ok',
+      usage: { inputTokens: 4, outputTokens: 5, totalTokens: 9 },
+    });
+  });
+
+  it('finishReason MAX_TOKENSをoutput_too_largeへ変換する', async () => {
+    const provider = new GeminiGenerateContentProvider({
+      apiKey: 'secret',
+      fetchImpl: async () =>
+        Response.json({
+          candidates: [{ content: { parts: [{ text: 'partial' }] }, finishReason: 'MAX_TOKENS' }],
+          usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5 },
+        }),
+    });
+    await expectCategory(provider.generate(request), 'output_too_large');
+  });
+
+  it('finishReason SAFETY/RECITATION/OTHERでtextが空の場合はprovider_rejectedにする', async () => {
+    for (const finishReason of ['SAFETY', 'RECITATION', 'OTHER']) {
+      const provider = new GeminiGenerateContentProvider({
+        apiKey: 'secret',
+        fetchImpl: async () =>
+          Response.json({
+            candidates: [{ content: { parts: [] }, finishReason }],
+            usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 0, totalTokenCount: 3 },
+          }),
+      });
+      await expectCategory(provider.generate(request), 'provider_rejected');
+    }
+  });
+
+  it('400/401/403/404をprovider_rejectedへ安全に変換する', async () => {
+    for (const status of [400, 401, 403, 404]) {
+      const provider = new GeminiGenerateContentProvider({
+        apiKey: 'secret',
+        fetchImpl: async () => new Response('gemini raw error', { status }),
+      });
+      await expectCategory(provider.generate(request), 'provider_rejected');
+    }
+  });
+
+  it('429/5xxをprovider_unavailableへ変換する', async () => {
+    for (const status of [429, 500, 503, 504]) {
+      const provider = new GeminiGenerateContentProvider({
+        apiKey: 'secret',
+        fetchImpl: async () => new Response('gemini raw error', { status }),
+      });
+      await expectCategory(provider.generate(request), 'provider_unavailable');
+    }
+  });
+
+  it('malformed provider responseを拒否する', async () => {
+    const provider = new GeminiGenerateContentProvider({
+      apiKey: 'secret',
+      fetchImpl: async () => Response.json({ candidates: [], usageMetadata: null }),
+    });
+    await expectCategory(provider.generate(request), 'malformed_response');
+  });
+
+  it('usage内部整合性(totalTokenCount不整合)を拒否する', async () => {
+    const provider = new GeminiGenerateContentProvider({
+      apiKey: 'secret',
+      fetchImpl: async () =>
+        Response.json({
+          candidates: [{ content: { parts: [{ text: 'x' }] }, finishReason: 'STOP' }],
+          usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 5, totalTokenCount: 10 },
+        }),
+    });
+    await expectCategory(provider.generate(request), 'malformed_response');
+  });
+
+  it('provider response byte上限を強制する', async () => {
+    const provider = new GeminiGenerateContentProvider({
+      apiKey: 'secret',
+      fetchImpl: async () =>
+        new Response(JSON.stringify({ candidates: [], usageMetadata: {} }), {
+          status: 200,
+          headers: { 'content-length': '999999' },
+        }),
+    });
+    await expectCategory(
+      provider.generate({ ...request, maxResponseBytes: 100 }),
+      'malformed_response',
+    );
+  });
+
+  it('AbortController timeoutをtimeoutへ変換する', async () => {
+    const provider = new GeminiGenerateContentProvider({
+      apiKey: 'secret',
+      fetchImpl: (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError')),
+          );
+        }),
+    });
+    await expectCategory(provider.generate({ ...request, timeoutMs: 1 }), 'timeout');
+  });
+
+  it('raw error responseをAiFoundationErrorのmessageへ含めない', async () => {
+    const provider = new GeminiGenerateContentProvider({
+      apiKey: 'secret',
+      fetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            error: { code: 400, message: 'RAW_GEMINI_ERROR_DETAIL' },
+          }),
+          { status: 400 },
+        ),
+    });
+    try {
+      await provider.generate(request);
+      throw new Error('expected rejection');
+    } catch (error) {
+      expect(String((error as Error).message)).not.toContain('RAW_GEMINI_ERROR_DETAIL');
+    }
+  });
+
+  it('存在しないGoogle model IDを拒否する', async () => {
+    const provider = new GeminiGenerateContentProvider({
+      apiKey: 'secret',
+      fetchImpl: async () => Response.json({}),
+    });
+    await expect(
+      provider.generate({ ...request, model: 'gemini-9000-ultra' as never }),
+    ).rejects.toThrow(AiConfigurationError);
+  });
+});
+
 describe('cost estimation', () => {
   it('gpt-5.6-terra standard pricingからmicro USDを算出する', () => {
     expect(estimateOpenAiCostMicroUsd('gpt-5.6-terra', 20, 10)).toBe(160);
@@ -757,6 +1004,15 @@ describe('cost estimation', () => {
     expect(estimateAnthropicCostMicroUsd('claude-haiku-4-5-20251001', 0, 1_000_000)).toBe(
       5_000_000,
     );
+  });
+
+  it('全Google profileのpricingを算出する(thinking tokenはoutput rateで課金)', () => {
+    expect(estimateGoogleCostMicroUsd('gemini-3.8-flash', 1_000_000, 0)).toBe(750_000);
+    expect(estimateGoogleCostMicroUsd('gemini-3.8-flash', 0, 1_000_000)).toBe(3_750_000);
+    expect(estimateGoogleCostMicroUsd('gemini-3.6-flash', 1_000_000, 0)).toBe(750_000);
+    expect(estimateGoogleCostMicroUsd('gemini-3.6-flash', 0, 1_000_000)).toBe(3_750_000);
+    expect(estimateGoogleCostMicroUsd('gemini-3.5-flash-lite', 1_000_000, 0)).toBe(300_000);
+    expect(estimateGoogleCostMicroUsd('gemini-3.5-flash-lite', 0, 1_000_000)).toBe(2_500_000);
   });
 });
 

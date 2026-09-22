@@ -117,6 +117,11 @@ describe('AI runtime policy', () => {
     expect(isAiProviderCapabilityEnabled('anthropic', 'text')).toBe(true);
     expect(isAiProviderCapabilityEnabled('anthropic', 'code_interpreter')).toBe(false);
     expect(isAiProviderCapabilityEnabled('anthropic', 'image_generation')).toBe(false);
+
+    expect(getAiProviderCapabilities('google')).toEqual(['text']);
+    expect(isAiProviderCapabilityEnabled('google', 'text')).toBe(true);
+    expect(isAiProviderCapabilityEnabled('google', 'code_interpreter')).toBe(false);
+    expect(isAiProviderCapabilityEnabled('google', 'image_generation')).toBe(false);
   });
 
   it('metadataはclientへarbitrary model/tool入力欄を作らずserver allowlistを返す', () => {
@@ -152,6 +157,27 @@ describe('AI runtime policy', () => {
             modelProfile: 'economy',
             model: 'claude-haiku-4-5-20251001',
             supportedReasoningEfforts: ['none'],
+          }),
+        ],
+      },
+      {
+        provider: 'google',
+        capabilities: ['text'],
+        profiles: [
+          expect.objectContaining({
+            modelProfile: 'quality',
+            model: 'gemini-3.8-flash',
+            supportedReasoningEfforts: ['low', 'medium', 'high'],
+          }),
+          expect.objectContaining({
+            modelProfile: 'balanced',
+            model: 'gemini-3.6-flash',
+            supportedReasoningEfforts: ['low', 'medium', 'high'],
+          }),
+          expect.objectContaining({
+            modelProfile: 'economy',
+            model: 'gemini-3.5-flash-lite',
+            supportedReasoningEfforts: ['none', 'low', 'medium', 'high'],
           }),
         ],
       },
@@ -204,5 +230,72 @@ describe('AI runtime policy', () => {
         timezone: 'UTC',
       }),
     ).toMatchObject({ model: 'claude-haiku-4-5-20251001', reasoningEffort: 'none' });
+  });
+
+  it('Google quality/balancedはlow/medium/highのみ許可しnone/xhigh/maxを拒否する', () => {
+    for (const modelProfile of ['quality', 'balanced'] as const) {
+      for (const reasoningEffort of ['none', 'xhigh', 'max'] as const) {
+        expect(() =>
+          resolveAiRuntimeSelection({
+            provider: 'google',
+            modelProfile,
+            reasoningEffort,
+            timezone: 'UTC',
+          }),
+        ).toThrowError(
+          expect.objectContaining<Partial<AiRuntimePolicyError>>({
+            code: 'unsupported_combination',
+          }),
+        );
+      }
+      for (const reasoningEffort of ['low', 'medium', 'high'] as const) {
+        expect(
+          resolveAiRuntimeSelection({
+            provider: 'google',
+            modelProfile,
+            reasoningEffort,
+            timezone: 'UTC',
+          }),
+        ).toMatchObject({ reasoningEffort });
+      }
+    }
+  });
+
+  it('Google economy(gemini-3.5-flash-lite)はnoneを含む4段階を許可しxhigh/maxを拒否する', () => {
+    for (const reasoningEffort of ['none', 'low', 'medium', 'high'] as const) {
+      expect(
+        resolveAiRuntimeSelection({
+          provider: 'google',
+          modelProfile: 'economy',
+          reasoningEffort,
+          timezone: 'UTC',
+        }),
+      ).toMatchObject({ model: 'gemini-3.5-flash-lite', reasoningEffort });
+    }
+    for (const reasoningEffort of ['xhigh', 'max'] as const) {
+      expect(() =>
+        resolveAiRuntimeSelection({
+          provider: 'google',
+          modelProfile: 'economy',
+          reasoningEffort,
+          timezone: 'UTC',
+        }),
+      ).toThrowError(
+        expect.objectContaining<Partial<AiRuntimePolicyError>>({
+          code: 'unsupported_combination',
+        }),
+      );
+    }
+  });
+
+  it('存在しないGoogle model IDをmetadataやselectionへ紛れ込ませない(allowlist外のprovider/profile組み合わせは拒否する)', () => {
+    expect(() =>
+      parseAiRuntimeStoredValue({
+        provider: 'google',
+        modelProfile: 'ultra' as never,
+        reasoningEffort: 'low',
+        timezone: 'UTC',
+      }),
+    ).toThrowError(AiRuntimePolicyError);
   });
 });

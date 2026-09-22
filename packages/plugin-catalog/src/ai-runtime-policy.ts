@@ -1,13 +1,16 @@
 import {
   AI_ANTHROPIC_MODELS,
   AI_DEFAULTS,
+  AI_GOOGLE_MODELS,
   AI_MODEL_PROFILES,
   AI_OPENAI_MODELS,
   AI_SUPPORTED_PROVIDERS,
   estimateAnthropicCostMicroUsd,
+  estimateGoogleCostMicroUsd,
   estimateOpenAiCostMicroUsd,
   isValidIanaTimezone,
   type AiAnthropicModel,
+  type AiGoogleModel,
   type AiModel,
   type AiModelProfile,
   type AiOpenAiModel,
@@ -16,12 +19,14 @@ import {
 
 export {
   AI_ANTHROPIC_MODELS,
+  AI_GOOGLE_MODELS,
   AI_MODEL_PROFILES,
   AI_OPENAI_MODELS,
   AI_SUPPORTED_PROVIDERS,
 } from './ai-service.js';
 export type {
   AiAnthropicModel,
+  AiGoogleModel,
   AiModel,
   AiModelProfile,
   AiOpenAiModel,
@@ -108,6 +113,23 @@ const ANTHROPIC_FULL_REASONING_EFFORTS: readonly AiReasoningEffort[] = [
 const ANTHROPIC_NO_EFFORT_REASONING_EFFORTS: readonly AiReasoningEffort[] = ['none'];
 
 /**
+ * Gemini's thinking-level vocabulary has no 'xhigh'/'max'. gemini-3.8-flash/gemini-3.6-flash
+ * (quality/balanced) support low/medium/high only; gemini-3.5-flash-lite (economy) additionally
+ * supports the shared 'none' union member, which the Gemini adapter (GeminiGenerateContentProvider
+ * in ai-service.ts) reinterprets as thinkingLevel "minimal" for that model only — the only Gemini
+ * model with a 'minimal' thinking level. This is a third distinct meaning for the shared 'none'
+ * member: OpenAI sends it literally, Anthropic omits output_config entirely, Gemini translates it
+ * to the string "minimal" on the wire.
+ */
+const GOOGLE_STANDARD_REASONING_EFFORTS: readonly AiReasoningEffort[] = ['low', 'medium', 'high'];
+const GOOGLE_ECONOMY_REASONING_EFFORTS: readonly AiReasoningEffort[] = [
+  'none',
+  'low',
+  'medium',
+  'high',
+];
+
+/**
  * Tool/provider capability routing is code-reviewed server policy. Client input may select neither
  * arbitrary provider IDs nor arbitrary tool names. A capability is available only when it is
  * present in this provider allowlist and the matching server adapter is bootstrapped.
@@ -117,6 +139,9 @@ const AI_PROVIDER_CAPABILITY_POLICY: Record<AiProviderName, readonly AiProviderC
   // Anthropic integration is plain-text generation only for issue #340; no code-interpreter or
   // image-generation tool adapter exists for this provider yet.
   anthropic: ['text'],
+  // Google/Gemini integration is plain-text generation only for issue #341; no code-interpreter
+  // or image-generation tool adapter exists for this provider yet.
+  google: ['text'],
 };
 
 /**
@@ -173,6 +198,32 @@ const AI_RUNTIME_POLICY: Record<AiProviderName, Record<AiModelProfile, AiRuntime
       model: 'claude-haiku-4-5-20251001',
       supportedReasoningEfforts: ANTHROPIC_NO_EFFORT_REASONING_EFFORTS,
       pricing: anthropicTokenPricing('claude-haiku-4-5-20251001', null),
+    },
+  },
+  google: {
+    quality: {
+      provider: 'google',
+      modelProfile: 'quality',
+      model: 'gemini-3.8-flash',
+      supportedReasoningEfforts: GOOGLE_STANDARD_REASONING_EFFORTS,
+      pricing: googleTokenPricing('gemini-3.8-flash', null),
+    },
+    balanced: {
+      provider: 'google',
+      modelProfile: 'balanced',
+      model: 'gemini-3.6-flash',
+      supportedReasoningEfforts: GOOGLE_STANDARD_REASONING_EFFORTS,
+      pricing: googleTokenPricing('gemini-3.6-flash', null),
+    },
+    economy: {
+      provider: 'google',
+      modelProfile: 'economy',
+      // gemini-3.5-flash-lite is the only Gemini model supporting the 'minimal' thinking level,
+      // which the shared 'none' reasoning effort union member is reinterpreted as for this
+      // profile only (see GOOGLE_ECONOMY_REASONING_EFFORTS above).
+      model: 'gemini-3.5-flash-lite',
+      supportedReasoningEfforts: GOOGLE_ECONOMY_REASONING_EFFORTS,
+      pricing: googleTokenPricing('gemini-3.5-flash-lite', null),
     },
   },
 };
@@ -329,6 +380,10 @@ export function isAiAnthropicModel(value: string): value is AiAnthropicModel {
   return (AI_ANTHROPIC_MODELS as readonly string[]).includes(value);
 }
 
+export function isAiGoogleModel(value: string): value is AiGoogleModel {
+  return (AI_GOOGLE_MODELS as readonly string[]).includes(value);
+}
+
 export function isAiReasoningEffort(value: string): value is AiReasoningEffort {
   return (AI_REASONING_EFFORTS as readonly string[]).includes(value);
 }
@@ -348,6 +403,14 @@ function anthropicTokenPricing(
   return {
     inputUsdPerMillion: estimateAnthropicCostMicroUsd(model, 1_000_000, 0) / 1_000_000,
     outputUsdPerMillion: estimateAnthropicCostMicroUsd(model, 0, 1_000_000) / 1_000_000,
+    reviewAfterIso,
+  };
+}
+
+function googleTokenPricing(model: AiGoogleModel, reviewAfterIso: string | null): AiTokenPricing {
+  return {
+    inputUsdPerMillion: estimateGoogleCostMicroUsd(model, 1_000_000, 0) / 1_000_000,
+    outputUsdPerMillion: estimateGoogleCostMicroUsd(model, 0, 1_000_000) / 1_000_000,
     reviewAfterIso,
   };
 }
