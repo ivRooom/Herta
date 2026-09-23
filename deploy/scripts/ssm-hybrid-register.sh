@@ -16,17 +16,26 @@
 set -euo pipefail
 
 REGION="${SSM_REGION:-ap-northeast-1}"
-# drone-ssh経由の非対話シェルではPATHに/snap/binが含まれず、command -vでの解決に
-# 失敗する（`snap list`はsnapdへ直接問い合わせるためPATHに依存せず動作する）。
-# そのため実行ファイルはsnap classic installの既定配置場所を直接絶対パスで指定し、
-# command -vには依存しない。
-SSM_AGENT_BIN="/snap/bin/amazon-ssm-agent"
 
 if [ -z "${SSM_ACTIVATION_CODE:-}" ] || [ -z "${SSM_ACTIVATION_ID:-}" ]; then
   echo "ERROR: SSM_ACTIVATION_CODE / SSM_ACTIVATION_ID が設定されていません。" >&2
   exit 1
 fi
 
+dump_ssm_agent_diagnostics() {
+  echo "--- diagnostics: snap list ---" >&2
+  snap list 2>&1 >&2 || true
+  echo "--- diagnostics: /snap/bin (ssm関連のみ) ---" >&2
+  (ls -la /snap/bin 2>&1 | grep -i ssm) >&2 || true
+  echo "--- diagnostics: find /snap -iname '*ssm*' ---" >&2
+  find /snap -maxdepth 4 -iname '*ssm*' 2>/dev/null >&2 || true
+  echo "--- diagnostics: systemctl (ssm関連のみ) ---" >&2
+  (systemctl list-units --all 2>&1 | grep -i ssm) >&2 || true
+}
+
+# drone-ssh経由の非対話シェルではPATHに/snap/binが含まれず、command -vでの解決に
+# 失敗する（`snap list`はsnapdへ直接問い合わせるためPATHに依存せず動作する）。
+# そのため実行ファイルはPATHに頼らず、既知の候補パスを直接探索して解決する。
 echo "=== SSM Agentのインストール状態を確認 ==="
 if snap list amazon-ssm-agent &> /dev/null; then
   echo "amazon-ssm-agent は既にインストール済みです"
@@ -35,10 +44,30 @@ else
   sudo snap install amazon-ssm-agent --classic
 fi
 
-if [ ! -x "${SSM_AGENT_BIN}" ]; then
-  echo "ERROR: ${SSM_AGENT_BIN} が見つかりません（snapのインストール先が想定と異なります）。" >&2
+SSM_AGENT_BIN=""
+for candidate in \
+  /snap/bin/amazon-ssm-agent \
+  /snap/amazon-ssm-agent/current/amazon-ssm-agent \
+  /usr/bin/amazon-ssm-agent \
+  /usr/local/bin/amazon-ssm-agent; do
+  if [ -x "${candidate}" ]; then
+    SSM_AGENT_BIN="${candidate}"
+    break
+  fi
+done
+if [ -z "${SSM_AGENT_BIN}" ]; then
+  found="$(find /snap -maxdepth 4 -type f -iname 'amazon-ssm-agent' -perm -u+x 2>/dev/null | head -n1 || true)"
+  if [ -n "${found}" ]; then
+    SSM_AGENT_BIN="${found}"
+  fi
+fi
+
+if [ -z "${SSM_AGENT_BIN}" ]; then
+  echo "ERROR: amazon-ssm-agentの実行ファイルが既知の候補パスに見つかりません。" >&2
+  dump_ssm_agent_diagnostics
   exit 1
 fi
+echo "実行ファイルを検出しました: ${SSM_AGENT_BIN}"
 
 echo "=== 既存の登録状態を確認 ==="
 # サービスの稼働有無ではなく、registrationファイルの有無で「登録済みか」を判定する
