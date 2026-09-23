@@ -84,6 +84,9 @@ jobs:
             -v "$PWD/deploy/docker/caddy/Caddyfile.aop:/etc/caddy/Caddyfile:ro" \
             caddy:2-alpine caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /dev/null
 
+      - name: SSM hybrid activation script構文検証
+        run: bash -n deploy/scripts/ssm-hybrid-register.sh
+
       - name: Production Docker Build
         run: docker build --tag herta-app:ci .
 

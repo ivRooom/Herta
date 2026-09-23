@@ -1,0 +1,121 @@
+# ============================================================
+# SSM Hybrid Activation — Lightsail instance登録 (手動実行専用)
+# ------------------------------------------------------------
+# Issue #381 / docs/LIGHTSAIL_ACCESS_HARDENING.md 「2. SSM Session Managerへの
+# 移行」の一回限りの登録作業を、レビュー可能な形で自動化する。
+#
+# 実行前の必須前提 (このworkflowでは行わない。事前に人手でAWS側を準備する):
+#   1. IAM role `ivrm-herta-ssm-hybrid-role` を作成し、
+#      `AmazonSSMManagedInstanceCore` managed policyをattachする。
+#   2. `ivrm-web-github-deploy-role` (このworkflowがOIDCでassumeする既存role) に
+#      以下を追加する (すべて対象リソースへ最小権限でスコープする):
+#        - ssm:CreateActivation
+#        - iam:PassRole (Resource: ivrm-herta-ssm-hybrid-roleのARNのみ)
+#        - ssm:DescribeInstanceInformation
+#   上記が未整備の場合、このworkflowは`aws ssm create-activation`ステップで
+#   AccessDenied を返して失敗する (それ自体は安全なfail closed)。
+#
+# Activation Code / Activation ID は生成後すぐ登録に使い切り、ログへは一切
+# 出力しない (::add-mask:: でmaskした上でGITHUB_ENVへ渡す)。
+# ============================================================
+name: SSM Hybrid Activation (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: '本番Lightsail instanceへSSM hybrid activationを登録する場合は "yes" と入力'
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ssm-hybrid-activation
+  cancel-in-progress: false
+
+jobs:
+  register:
+    name: SSM hybrid activationを発行しinstanceへ登録
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+
+    steps:
+      - name: 入力を確認
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ '${{ github.event.inputs.confirm }}' != 'yes' ]; then
+            echo 'ERROR: confirm入力が "yes" ではないため中止します。' >&2
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+
+      - name: AWS credentialsを設定
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: arn:aws:iam::911291529944:role/ivrm-web-github-deploy-role
+          aws-region: ap-northeast-1
+          allowed-account-ids: '911291529944'
+          role-session-name: HertaSsmHybridActivation
+
+      - name: SSM activationを発行
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Activation Code/IDは短命なsecretとして扱い、値そのものをログへ出さない。
+          # registration-limit 1 で単一instance専用にし、期限は既定の24hより短い1hに絞る。
+          activation_json="$(aws ssm create-activation \
+            --region ap-northeast-1 \
+            --description 'Herta ivrm-herta hybrid activation (Issue #381)' \
+            --iam-role ivrm-herta-ssm-hybrid-role \
+            --registration-limit 1 \
+            --expiration-date "$(date -u -d '+1 hour' '+%Y-%m-%dT%H:%M:%S')" \
+            --output json)"
+
+          activation_code="$(echo "${activation_json}" | jq -r '.ActivationCode')"
+          activation_id="$(echo "${activation_json}" | jq -r '.ActivationId')"
+          unset activation_json
+
+          if [ -z "${activation_code}" ] || [ "${activation_code}" = 'null' ] \
+            || [ -z "${activation_id}" ] || [ "${activation_id}" = 'null' ]; then
+            echo 'ERROR: activation発行に失敗しました。' >&2
+            exit 1
+          fi
+
+          echo "::add-mask::${activation_code}"
+          echo "::add-mask::${activation_id}"
+          printf 'SSM_ACTIVATION_CODE=%s\n' "${activation_code}" >> "${GITHUB_ENV}"
+          printf 'SSM_ACTIVATION_ID=%s\n' "${activation_id}" >> "${GITHUB_ENV}"
+          unset activation_code activation_id
+          echo "Activationを発行しました（値は非表示）"
+
+      - name: LightsailインスタンスへSSHしSSM Agentを登録
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          envs: SSM_ACTIVATION_CODE,SSM_ACTIVATION_ID
+          command_timeout: 5m
+          script: |
+            set -euo pipefail
+            APP_DIR="${{ secrets.LIGHTSAIL_APP_DIR }}"
+            cd "${APP_DIR}"
+            export SSM_REGION=ap-northeast-1
+            bash deploy/scripts/ssm-hybrid-register.sh
+
+      - name: 登録結果を確認 (Online状態のみ、値は表示しない)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== 数秒待機してからinstance情報を確認 ==="
+          sleep 10
+          aws ssm describe-instance-information \
+            --region ap-northeast-1 \
+            --query 'InstanceInformationList[].{Id:InstanceId,Ping:PingStatus,Platform:PlatformName}' \
+            --output table

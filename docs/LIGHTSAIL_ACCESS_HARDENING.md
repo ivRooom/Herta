@@ -30,14 +30,18 @@ Production hostの管理経路を、公開SSH依存から段階的に離脱さ�
 
 LightsailインスタンスはEC2と異なりIAM instance profileを直接attachできないため、標準のEC2向けSSM自動登録は使えない。AWSが提供する**Systems Manager hybrid activation**（オンプレミス/Lightsail向けの登録方式）を使う。
 
-手順（すべて実施前に個別確認が必要）:
+登録の自動化には`.github/workflows/ssm-hybrid-activation.yml`（`workflow_dispatch`専用、手動実行のみ）と`deploy/scripts/ssm-hybrid-register.sh`を用意した。実行前に次のAWS側の準備が必要（IAM role/policy変更のため、実施は別途人手で行う）:
 
-1. Hybrid managed instance用のIAM role（`AmazonSSMManagedInstanceCore`ポリシーを含む）を作成する。
-2. `aws ssm create-activation` でActivation Code / Activation IDを発行する（有効期限は既定24時間、必要に応じて`--registration-limit 1`を指定）。Activation Code/IDは短命なsecretとして扱い、Issue/PR/logに出力しない。
-3. インスタンス上でSSM Agentのインストール状態を確認する（Ubuntu blueprintでは未同梱の可能性があるため、`snap install amazon-ssm-agent` 等の導入が必要な場合がある）。
-4. `amazon-ssm-agent -register -code "<activation-code>" -id "<activation-id>" -region ap-northeast-1` で登録し、`mi-xxxxxxxxx` のmanaged instance IDが払い出されることを確認する。
-5. `aws ssm start-session --target mi-xxxxxxxxx` で接続確認する。
-6. Session Managerのセッションログ（コマンド実行内容）をS3またはCloudWatch Logsへ記録する設定を有効化する（監査証跡の確保。直接SSHではauditログが取れていなかった分の補強）。
+1. Hybrid managed instance用のIAM role `ivrm-herta-ssm-hybrid-role`を作成し、`AmazonSSMManagedInstanceCore`ポリシーをattachする。
+2. 既存のGitHub Actions OIDC role (`ivrm-web-github-deploy-role`) に、`ivrm-herta-ssm-hybrid-role`のARNへスコープした`iam:PassRole`、および`ssm:CreateActivation` / `ssm:DescribeInstanceInformation`を追加する。
+
+上記が整った後、`ssm-hybrid-activation.yml`を`workflow_dispatch`で手動実行すると:
+
+1. `aws ssm create-activation`でActivation Code / Activation ID を発行する（`registration-limit 1`、有効期限1時間。値はマスクしログへ出力しない）。
+2. 既存のSSH secret (`LIGHTSAIL_HOST` / `LIGHTSAIL_USER` / `LIGHTSAIL_SSH_KEY`) 経由でinstanceへ接続し、`deploy/scripts/ssm-hybrid-register.sh`を実行してSSM Agentのインストール（未導入時）と`amazon-ssm-agent -register`による登録を行う。
+3. `aws ssm describe-instance-information`でPingStatusがOnlineになっていることを確認する。
+
+登録後は`aws ssm start-session --target mi-xxxxxxxxx`で接続確認する。Session Managerのセッションログ（コマンド実行内容）をS3またはCloudWatch Logsへ記録する設定は別途有効化する（監査証跡の確保。直接SSHではauditログが取れていなかった分の補強）。
 
 この段階では**既存のSSHは並行して残す**（切り戻し可能性の確保）。
 
@@ -135,8 +139,8 @@ aws lightsail delete-instance-snapshot \
 
 各stepは独立してrollback可能。**前のstepが本番で実運用検証できるまで次のstepへ進まない。**
 
-1. **Automatic snapshotの有効化**（運用リスクほぼゼロ、純粋な安全網の追加）。
-2. **SSM hybrid activation + agent登録**。既存SSHと並行稼働させ、`aws ssm start-session`が実際に接続できることを確認する。この時点ではfirewallは一切変更しない。
+1. **Automatic snapshotの有効化**（運用リスクほぼゼロ、純粋な安全網の追加）。**[完了]** 2026-09-23、日次18:00 UTC (JST 03:00台) で有効化済み。
+2. **SSM hybrid activation + agent登録**。既存SSHと並行稼働させ、`aws ssm start-session`が実際に接続できることを確認する。この時点ではfirewallは一切変更しない。**[準備中]** 自動化workflow (`ssm-hybrid-activation.yml`) は用意済みだが、前提のIAM role/policy変更（本ドキュメント「2. SSM Session Managerへの移行」参照）が未実施のため未実行。
 3. **deploy workflowのSSM移行**（別PR）。実際に1回以上、本番デプロイをSSM経由で成功させて検証する。
 4. **SSH firewall ruleの縮小**。(2)(3)が実運用で確認できてから、`0.0.0.0/0`/`::/0`を特定の管理者IPへ縮小する（完全に閉じるか、緊急fallback用に限定IPを残すかはこの時点で再検討する）。
 5. 本ドキュメントとIssue #381を最終状態に更新する。
