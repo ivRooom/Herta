@@ -16,6 +16,11 @@
 set -euo pipefail
 
 REGION="${SSM_REGION:-ap-northeast-1}"
+# drone-ssh経由の非対話シェルではPATHに/snap/binが含まれず、command -vでの解決に
+# 失敗する（`snap list`はsnapdへ直接問い合わせるためPATHに依存せず動作する）。
+# そのため実行ファイルはsnap classic installの既定配置場所を直接絶対パスで指定し、
+# command -vには依存しない。
+SSM_AGENT_BIN="/snap/bin/amazon-ssm-agent"
 
 if [ -z "${SSM_ACTIVATION_CODE:-}" ] || [ -z "${SSM_ACTIVATION_ID:-}" ]; then
   echo "ERROR: SSM_ACTIVATION_CODE / SSM_ACTIVATION_ID が設定されていません。" >&2
@@ -23,11 +28,16 @@ if [ -z "${SSM_ACTIVATION_CODE:-}" ] || [ -z "${SSM_ACTIVATION_ID:-}" ]; then
 fi
 
 echo "=== SSM Agentのインストール状態を確認 ==="
-if command -v amazon-ssm-agent &> /dev/null || snap list amazon-ssm-agent &> /dev/null; then
+if snap list amazon-ssm-agent &> /dev/null; then
   echo "amazon-ssm-agent は既にインストール済みです"
 else
   echo "amazon-ssm-agent が見つからないためインストールします (snap)"
   sudo snap install amazon-ssm-agent --classic
+fi
+
+if [ ! -x "${SSM_AGENT_BIN}" ]; then
+  echo "ERROR: ${SSM_AGENT_BIN} が見つかりません（snapのインストール先が想定と異なります）。" >&2
+  exit 1
 fi
 
 echo "=== 既存の登録状態を確認 ==="
@@ -42,11 +52,7 @@ fi
 
 echo "=== SSM hybrid activationでregister ==="
 # activation code/idは引数にもログにも残さないよう、値そのものを表示するコマンドは実行しない。
-#
-# amazon-ssm-agentの実行ファイルパスは、sudo配下のsecure_pathがユーザーPATH
-# (snapの/snap/binを含む)を引き継がないため、事前にcommand -vで絶対パスへ解決
-# してからsudoへ渡す (「sudo: amazon-ssm-agent: command not found」を防ぐ)。
-AGENT_BIN="$(command -v amazon-ssm-agent)"
+# ${SSM_AGENT_BIN}は絶対パスのため、sudoのsecure_pathによるPATHリセットの影響を受けない。
 
 # register失敗時にserviceを停止したまま放置しないよう、この時点以降は必ず
 # 復旧を試みるtrapを設定する (登録成功時は明示的にstartするので二重実行になるが
@@ -56,11 +62,14 @@ restart_agent_on_exit() {
 }
 trap restart_agent_on_exit EXIT
 
+echo "既存serviceを停止します"
 sudo snap stop amazon-ssm-agent 2>/dev/null || true
-sudo "${AGENT_BIN}" -register \
+echo "registerを実行します"
+sudo "${SSM_AGENT_BIN}" -register \
   -code "${SSM_ACTIVATION_CODE}" \
   -id "${SSM_ACTIVATION_ID}" \
   -region "${REGION}"
+echo "serviceを再開します"
 sudo snap start amazon-ssm-agent
 trap - EXIT
 
