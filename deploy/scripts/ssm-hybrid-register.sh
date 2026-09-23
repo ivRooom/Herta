@@ -42,12 +42,27 @@ fi
 
 echo "=== SSM hybrid activationでregister ==="
 # activation code/idは引数にもログにも残さないよう、値そのものを表示するコマンドは実行しない。
+#
+# amazon-ssm-agentの実行ファイルパスは、sudo配下のsecure_pathがユーザーPATH
+# (snapの/snap/binを含む)を引き継がないため、事前にcommand -vで絶対パスへ解決
+# してからsudoへ渡す (「sudo: amazon-ssm-agent: command not found」を防ぐ)。
+AGENT_BIN="$(command -v amazon-ssm-agent)"
+
+# register失敗時にserviceを停止したまま放置しないよう、この時点以降は必ず
+# 復旧を試みるtrapを設定する (登録成功時は明示的にstartするので二重実行になるが
+# 冪等な操作のため問題ない)。
+restart_agent_on_exit() {
+  sudo snap start amazon-ssm-agent 2>/dev/null || true
+}
+trap restart_agent_on_exit EXIT
+
 sudo snap stop amazon-ssm-agent 2>/dev/null || true
-sudo amazon-ssm-agent -register \
+sudo "${AGENT_BIN}" -register \
   -code "${SSM_ACTIVATION_CODE}" \
   -id "${SSM_ACTIVATION_ID}" \
   -region "${REGION}"
 sudo snap start amazon-ssm-agent
+trap - EXIT
 
 echo "=== 登録結果を確認 (managed instance IDのみ表示、activation code/idは表示しない) ==="
 sleep 3
