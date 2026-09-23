@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { Logger } from 'pino';
 import { communityActivityCommands } from './community-activity.js';
+import { communityStatsCommands } from './community-stats.js';
 import { coreInformationCommands } from './core-info.js';
 import { CommandRegistry, PLUGIN_OWNED_COMMAND_NAMES, type SlashCommand } from './registry.js';
 import { coreUtilityV3Commands } from './utility-v3.js';
@@ -20,6 +21,7 @@ function expectedCoreCommandNames(): string[] {
     ...coreUtilityV4Commands,
     ...coreUtilityV5Commands,
     ...communityActivityCommands,
+    ...communityStatsCommands,
   ]
     .map((command) => command.definition.name)
     .filter((name) => !PLUGIN_OWNED_COMMAND_NAMES.has(name));
