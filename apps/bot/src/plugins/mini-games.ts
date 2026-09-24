@@ -11,7 +11,7 @@ import {
   type User,
 } from 'discord.js';
 import type { PrismaClient } from '@herta/db';
-import { miniGamesManifest } from '@herta/plugin-catalog';
+import { MBTI_TYPE_KEYS, mbtiRoleConfigKey, miniGamesManifest } from '@herta/plugin-catalog';
 import {
   definePlugin,
   type CommandHandler,
@@ -58,6 +58,8 @@ export interface MiniGamesConfig {
   blackjackDealerHitsSoft17: boolean;
   blackjackAnimation: boolean;
   blackjackAnimationDelayMs: number;
+  /** MBTIタイプ(例: 'INTJ')ごとに付与するRole ID。未設定タイプはnull。 */
+  mbtiRoles: Record<string, string | null>;
 }
 
 type MiniGamesRuntimeContext = PluginRuntimeContext<MiniGamesConfig, unknown, PrismaClient>;
@@ -141,7 +143,10 @@ export const miniGamesPlugin = definePlugin<MiniGamesConfig, unknown, PrismaClie
         await executeGameStats(context, interaction);
       },
     };
-    const mbti = createMbtiCommandHandler(miniGamesManifest.commands[8]!);
+    const mbti = createMbtiCommandHandler(miniGamesManifest.commands[8]!, {
+      logger: context.logger,
+      getRoleMap: () => normalizeMiniGamesConfig(context.config).mbtiRoles,
+    });
     return [
       coinflip,
       highlow,
@@ -178,6 +183,7 @@ export function normalizeMiniGamesConfig(value: unknown): MiniGamesConfig {
     blackjackAnimation:
       source.blackjackAnimation === undefined ? true : source.blackjackAnimation === true,
     blackjackAnimationDelayMs: clamp(toInteger(source.blackjackAnimationDelayMs, 450), 250, 1_500),
+    mbtiRoles: readMbtiRoleMap(source),
   };
 }
 
@@ -1049,6 +1055,18 @@ function clamp(value: number, min: number, max: number): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const DISCORD_ID_PATTERN = /^\d{17,20}$/;
+
+function nullableDiscordId(value: unknown): string | null {
+  return typeof value === 'string' && DISCORD_ID_PATTERN.test(value) ? value : null;
+}
+
+function readMbtiRoleMap(source: Record<string, unknown>): Record<string, string | null> {
+  return Object.fromEntries(
+    MBTI_TYPE_KEYS.map((type) => [type, nullableDiscordId(source[mbtiRoleConfigKey(type)])]),
+  );
 }
 
 function delay(ms: number): Promise<void> {
