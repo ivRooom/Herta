@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const miniGamesManifest: PluginManifest = {
   id: 'mini-games',
   name: 'Mini Games',
-  version: '3.4.0',
+  version: '3.5.0',
   description:
     'Coin Flip・High-Low・Blackjack・Dice・チンチロ・あみだくじを戦績とArcadeランキング付きで遊べるPluginです',
   author: { name: 'Herta' },
@@ -283,6 +283,10 @@ export const miniGamesManifest: PluginManifest = {
           type: 'boolean',
         },
       ],
+    },
+    {
+      name: 'mbti',
+      description: '12個の二択に答えてMBTI風の性格診断を行います',
     },
   ],
 };
