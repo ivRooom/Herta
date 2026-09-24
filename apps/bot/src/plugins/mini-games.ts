@@ -44,6 +44,7 @@ import { blackjackSettlementMetrics } from './mini-games-blackjack-metrics.js';
 import { isBlackjackHandComplete, settleBlackjackPvp } from './mini-games-blackjack-pvp.js';
 import { publishMiniGameCompletion } from './mini-games-completion-events.js';
 import { createMiniGamesV3CommandHandlers } from './mini-games-v3.js';
+import { clearMbtiGuildSessions, createMbtiCommandHandler } from './mini-games-mbti.js';
 
 const CUSTOM_ID_PREFIX = 'herta:mini-games:v1:';
 const COIN_FLIP_ANIMATION_MS = 1_100;
@@ -113,6 +114,7 @@ export const miniGamesPlugin = definePlugin<MiniGamesConfig, unknown, PrismaClie
   manifest: miniGamesManifest,
   async onDisable(context) {
     clearGuildGameSessions(context.guildId);
+    clearMbtiGuildSessions(context.guildId);
   },
   provideCommands(context) {
     const coinflip: CommandHandler<ChatInputCommandInteraction> = {
@@ -139,7 +141,15 @@ export const miniGamesPlugin = definePlugin<MiniGamesConfig, unknown, PrismaClie
         await executeGameStats(context, interaction);
       },
     };
-    return [coinflip, highlow, blackjack, gamestats, ...createMiniGamesV3CommandHandlers(context)];
+    const mbti = createMbtiCommandHandler(miniGamesManifest.commands[8]!);
+    return [
+      coinflip,
+      highlow,
+      blackjack,
+      gamestats,
+      ...createMiniGamesV3CommandHandlers(context),
+      mbti,
+    ];
   },
   provideEvents() {
     return [

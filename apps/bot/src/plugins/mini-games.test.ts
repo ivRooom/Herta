@@ -84,6 +84,7 @@ describe('Mini Games Plugin', () => {
       'chinchiro',
       'gameleaderboard',
       'amidakuji',
+      'mbti',
     ]);
     const blackjack = miniGamesManifest.commands.find((command) => command.name === 'blackjack');
     expect(blackjack?.options?.find((option) => option.name === 'member1')?.type).toBe('user');
