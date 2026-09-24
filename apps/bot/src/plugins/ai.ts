@@ -10,6 +10,7 @@ import {
 } from '@herta/plugin-sdk';
 import type { Client } from 'discord.js';
 import { Redis } from 'ioredis';
+import { clearAkinatorGuildSessions, createAkinatorCommandHandler } from '../ai/akinator-game.js';
 import { AiArtifactRuntime } from '../ai/artifact-runtime.js';
 import {
   getVerifiedAiReplyContext,
@@ -65,7 +66,15 @@ export const aiPlugin = definePlugin<AiPluginConfig, Client, PrismaClient>({
   },
   async onDisable(context) {
     enabledGuilds.delete(context.guildId);
+    clearAkinatorGuildSessions(context.guildId);
     if (enabledGuilds.size === 0) await closeSharedRuntime();
+  },
+  provideCommands(context) {
+    const akinator = createAkinatorCommandHandler(aiManifest.commands[0]!, async () => {
+      const runtime = await getSharedRuntime(context);
+      return runtime?.generationService ?? null;
+    });
+    return [akinator];
   },
   provideEvents() {
     return [

@@ -8,7 +8,7 @@ import type { PluginManifest } from '@herta/shared';
 export const aiManifest: PluginManifest = {
   id: 'ai',
   name: 'Herta AI',
-  version: '1.0.0',
+  version: '1.1.0',
   description: 'Herta AIの会話・成果物生成機能をGuild単位で管理します',
   author: { name: 'Herta' },
   category: 'utility',
@@ -50,5 +50,11 @@ export const aiManifest: PluginManifest = {
     required: ['enabled'],
   },
   events: ['messageCreate'],
-  commands: [],
+  commands: [
+    {
+      name: 'akinator',
+      description:
+        '思い浮かべた人物・キャラクターをAIがYes/No質問で当てるキャラ当てゲームを開始します',
+    },
+  ],
 };
