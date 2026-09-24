@@ -268,8 +268,11 @@ export interface AiGenerationResponse {
 export interface AiTelemetryEvent {
   requestId: string;
   feature: string;
+  /** Raw Discord Guild ID for per-Guild usage analytics, same precedent as command_execution_events. */
+  guildId: string;
   provider: AiProviderName;
   model: AiModel;
+  modelProfile: AiModelProfile;
   latencyMs: number;
   inputTokens: number;
   outputTokens: number;
@@ -592,8 +595,10 @@ export class AiFoundationService {
       emitTelemetrySafely(this.telemetry, {
         requestId,
         feature,
+        guildId: request.guildId,
         provider: this.config.provider,
         model: this.config.model,
+        modelProfile: this.config.modelProfile,
         latencyMs: Math.max(0, this.now() - startedAt),
         inputTokens: usage.inputTokens,
         outputTokens: usage.outputTokens,

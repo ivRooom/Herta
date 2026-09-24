@@ -1,5 +1,6 @@
 import {
   getPrismaClient,
+  pruneAiGenerationEvents,
   pruneCommandExecutionEvents,
   pruneServiceHealthSnapshots,
   recordServiceHealthSnapshot,
@@ -110,14 +111,16 @@ async function pruneRetainedData(): Promise<void> {
   retentionPruneInFlight = true;
   try {
     const prisma = getPrismaClient();
-    const [commandDeleted, autoResponseDeleted, healthSnapshotDeleted] = await Promise.all([
-      pruneCommandExecutionEvents(prisma, EXECUTION_ANALYTICS_RETENTION_DAYS),
-      pruneAutoResponseExecutionEvents(
-        prisma as unknown as AutoResponsePrismaClient,
-        EXECUTION_ANALYTICS_RETENTION_DAYS,
-      ),
-      pruneServiceHealthSnapshots(prisma, HEALTH_SNAPSHOT_RETENTION_DAYS),
-    ]);
+    const [commandDeleted, autoResponseDeleted, healthSnapshotDeleted, aiGenerationDeleted] =
+      await Promise.all([
+        pruneCommandExecutionEvents(prisma, EXECUTION_ANALYTICS_RETENTION_DAYS),
+        pruneAutoResponseExecutionEvents(
+          prisma as unknown as AutoResponsePrismaClient,
+          EXECUTION_ANALYTICS_RETENTION_DAYS,
+        ),
+        pruneServiceHealthSnapshots(prisma, HEALTH_SNAPSHOT_RETENTION_DAYS),
+        pruneAiGenerationEvents(prisma, EXECUTION_ANALYTICS_RETENTION_DAYS),
+      ]);
     if (commandDeleted > 0) {
       logger.info(
         { deleted: commandDeleted, retentionDays: EXECUTION_ANALYTICS_RETENTION_DAYS },
@@ -134,6 +137,12 @@ async function pruneRetainedData(): Promise<void> {
       logger.info(
         { deleted: healthSnapshotDeleted, retentionDays: HEALTH_SNAPSHOT_RETENTION_DAYS },
         '古いHealth Snapshotを削除しました',
+      );
+    }
+    if (aiGenerationDeleted > 0) {
+      logger.info(
+        { deleted: aiGenerationDeleted, retentionDays: EXECUTION_ANALYTICS_RETENTION_DAYS },
+        '古いAI利用状況履歴を削除しました',
       );
     }
   } catch (error) {

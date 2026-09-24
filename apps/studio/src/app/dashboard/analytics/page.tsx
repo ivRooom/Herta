@@ -8,17 +8,21 @@ import {
   CircleAlert,
   Clock3,
   Command,
+  DollarSign,
   Gauge,
   History,
   Search,
   Server,
+  Sparkles,
   TrendingUp,
   TriangleAlert,
   XCircle,
 } from 'lucide-react';
 import {
+  getAiUsageAnalytics,
   getCommandUsageAnalytics,
   searchCommandExecutionEvents,
+  type AiUsageAnalytics,
   type CommandExecutionSearchResult,
   type CommandUsageAnalytics,
 } from '@herta/db';
@@ -516,6 +520,139 @@ function CommandHistory({
   );
 }
 
+function formatUsd(value: number): string {
+  if (value < 0.01 && value > 0) return '<$0.01';
+  return `$${value.toFixed(2)}`;
+}
+
+function AiProviderBreakdown({ analytics }: { analytics: AiUsageAnalytics }) {
+  const maximum = Math.max(...analytics.byProvider.map((provider) => provider.total), 1);
+
+  return (
+    <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-5 w-5 text-primary" aria-hidden="true" />
+        <h2 className="font-medium">Provider別内訳</h2>
+      </div>
+      <p className="mt-1 text-sm text-muted">リクエスト数・成功率・推定コストの内訳。</p>
+
+      {analytics.byProvider.length === 0 ? (
+        <p className="mt-6 text-sm text-muted">選択期間内のAI利用はありません。</p>
+      ) : (
+        <div className="mt-5 space-y-4">
+          {analytics.byProvider.map((provider) => (
+            <div key={provider.provider}>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="truncate font-medium">{provider.provider}</span>
+                <span className="shrink-0 tabular-nums text-muted">
+                  {provider.total}件 · {formatUsd(provider.estimatedCostUsd)}
+                </span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-background">
+                <div
+                  className="h-full rounded-full bg-primary"
+                  style={{ width: `${Math.max(4, (provider.total / maximum) * 100)}%` }}
+                />
+              </div>
+              <p className="mt-1 text-xs text-muted">
+                成功率 {provider.successRate === null ? '—' : `${provider.successRate}%`}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AiErrorRanking({ analytics }: { analytics: AiUsageAnalytics }) {
+  const maximum = Math.max(...analytics.errors.map((error) => error.total), 1);
+
+  return (
+    <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
+      <div className="flex items-center gap-2">
+        <TriangleAlert className="h-5 w-5 text-amber-500" aria-hidden="true" />
+        <h2 className="font-medium">AI失敗理由</h2>
+      </div>
+      <p className="mt-1 text-sm text-muted">失敗カテゴリの発生回数を多い順に表示。</p>
+
+      {analytics.errors.length === 0 ? (
+        <div className="mt-6 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-sm text-emerald-800 dark:text-emerald-200">
+          選択期間内のAI生成失敗はありません。
+        </div>
+      ) : (
+        <div className="mt-5 space-y-4">
+          {analytics.errors.map((error) => (
+            <div key={error.errorCategory}>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="truncate font-medium">{error.errorCategory}</span>
+                <span className="shrink-0 tabular-nums text-muted">{error.total}件</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-background">
+                <div
+                  className="h-full rounded-full bg-amber-500"
+                  style={{ width: `${Math.max(4, (error.total / maximum) * 100)}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function AiUsageSection({ analytics }: { analytics: AiUsageAnalytics }) {
+  return (
+    <div className="mt-10">
+      <div className="flex items-center gap-2 text-sm font-medium text-primary">
+        <Sparkles className="h-4 w-4" aria-hidden="true" />
+        AI Foundation利用状況
+      </div>
+      <h2 className="mt-2 text-xl font-semibold tracking-tight">AI生成リクエスト</h2>
+      <p className="mt-1 text-sm text-muted">
+        raw prompt・応答本文は保存しません。件数・成否・推定コストのみを集計しています。
+      </p>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <SummaryCard
+          title="本日のAIリクエスト"
+          value={`${analytics.today.total}件`}
+          description={`成功 ${analytics.today.succeeded} / 失敗 ${analytics.today.failed}`}
+          icon={Sparkles}
+        />
+        <SummaryCard
+          title={`${analytics.rangeDays}日間のAIリクエスト`}
+          value={`${analytics.range.total}件`}
+          description={`1日平均 ${(analytics.range.total / analytics.rangeDays).toFixed(1)}件`}
+          icon={Bot}
+        />
+        <SummaryCard
+          title="AI成功率"
+          value={analytics.range.successRate === null ? '—' : `${analytics.range.successRate}%`}
+          description={`失敗 ${analytics.range.failed}件`}
+          icon={CheckCircle2}
+        />
+        <SummaryCard
+          title="推定コスト合計"
+          value={formatUsd(analytics.range.estimatedCostUsd)}
+          description={`過去${analytics.rangeDays}日間`}
+          icon={DollarSign}
+        />
+      </div>
+
+      {analytics.range.total > 0 ? (
+        <div className="mt-6 grid gap-6 xl:grid-cols-2">
+          <AiProviderBreakdown analytics={analytics} />
+          <AiErrorRanking analytics={analytics} />
+        </div>
+      ) : (
+        <p className="mt-6 text-sm text-muted">選択期間内のAI利用実績はまだありません。</p>
+      )}
+    </div>
+  );
+}
+
 function EmptyAnalytics() {
   return (
     <section className="rounded-2xl border border-dashed border-border bg-surface p-8 text-center">
@@ -557,6 +694,9 @@ export default async function AnalyticsDashboardPage({
   const analyticsPromise = analyticsGuildIds
     ? getCommandUsageAnalytics(prisma, { days: rangeDays, guildIds: analyticsGuildIds })
     : Promise.resolve<CommandUsageAnalytics | null>(null);
+  const aiAnalyticsPromise = analyticsGuildIds
+    ? getAiUsageAnalytics(prisma, { days: rangeDays, guildIds: analyticsGuildIds })
+    : Promise.resolve<AiUsageAnalytics | null>(null);
   const historyPromise = allowedGuildIds
     ? searchCommandExecutionEvents(prisma, {
         rangeDays,
@@ -568,12 +708,14 @@ export default async function AnalyticsDashboardPage({
       })
     : Promise.resolve<CommandExecutionSearchResult | null>(null);
 
-  const [analyticsResult, historyResult] = await Promise.allSettled([
+  const [analyticsResult, aiAnalyticsResult, historyResult] = await Promise.allSettled([
     analyticsPromise,
+    aiAnalyticsPromise,
     historyPromise,
   ]);
 
   const analytics = analyticsResult.status === 'fulfilled' ? analyticsResult.value : null;
+  const aiAnalytics = aiAnalyticsResult.status === 'fulfilled' ? aiAnalyticsResult.value : null;
   const history = historyResult.status === 'fulfilled' ? historyResult.value : null;
   const manageableGuildCount = allowedGuildIds?.length ?? null;
 
@@ -695,6 +837,8 @@ export default async function AnalyticsDashboardPage({
           </p>
         </>
       )}
+
+      {aiAnalytics ? <AiUsageSection analytics={aiAnalytics} /> : null}
 
       {history ? (
         <CommandHistory

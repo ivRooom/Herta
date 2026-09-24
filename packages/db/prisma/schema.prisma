@@ -195,6 +195,30 @@ model CommandExecutionEvent {
   @@map("command_execution_events")
 }
 
+// AI Foundationのprovider別利用状況。raw prompt/provider response/生成本文/Discordユーザー
+// ID/チャンネルIDは一切保存しない（command_execution_eventsと同じ、メタデータのみの方針）。
+model AiGenerationEvent {
+  id            String   @id
+  guildId       String   @map("guild_id")
+  provider      String
+  model         String
+  modelProfile  String   @map("model_profile")
+  feature       String
+  resultCategory String  @map("result_category")
+  errorCategory String?  @map("error_category")
+  inputTokens   Int      @map("input_tokens")
+  outputTokens  Int      @map("output_tokens")
+  totalTokens   Int      @map("total_tokens")
+  estimatedCostUsd Float @map("estimated_cost_usd")
+  durationMs    Int      @map("duration_ms")
+  occurredAt    DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+
+  @@index([occurredAt(sort: Desc)])
+  @@index([provider, occurredAt(sort: Desc)])
+  @@index([guildId, occurredAt(sort: Desc)])
+  @@map("ai_generation_events")
+}
+
 // ============================================================
 // Plugin System
 // ============================================================

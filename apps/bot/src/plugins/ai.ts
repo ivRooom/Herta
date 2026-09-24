@@ -1,7 +1,8 @@
-import type { PrismaClient } from '@herta/db';
+import { recordAiGenerationEvent, type PrismaClient } from '@herta/db';
 import { createLogger, type Logger } from '@herta/logger';
 import { aiManifest } from '@herta/plugin-catalog';
 import { resolveAiArtifactConfig } from '@herta/plugin-catalog/ai-artifact';
+import type { AiTelemetryEvent } from '@herta/plugin-catalog/ai-service';
 import {
   definePlugin,
   type PluginEventHandler,
@@ -244,6 +245,38 @@ async function getSharedRuntime(
   return sharedRuntimePromise;
 }
 
+async function recordAiUsageAnalytics(
+  prisma: PrismaClient,
+  logger: Logger,
+  event: AiTelemetryEvent,
+): Promise<void> {
+  try {
+    await recordAiGenerationEvent(prisma, {
+      guildId: event.guildId,
+      provider: event.provider,
+      model: event.model,
+      modelProfile: event.modelProfile,
+      feature: event.feature,
+      resultCategory: event.resultCategory,
+      errorCategory: event.errorCategory,
+      inputTokens: event.inputTokens,
+      outputTokens: event.outputTokens,
+      totalTokens: event.totalTokens,
+      estimatedCostUsd: event.estimatedCost,
+      durationMs: event.latencyMs,
+    });
+  } catch (error) {
+    logger.warn(
+      {
+        err: error,
+        provider: event.provider,
+        feature: event.feature,
+      },
+      'AI利用状況の記録に失敗しました',
+    );
+  }
+}
+
 async function createSharedRuntime(
   context: AiPluginRuntimeContext,
 ): Promise<AiPluginSharedRuntime | null> {
@@ -274,6 +307,7 @@ async function createSharedRuntime(
       // The Foundation runtime is process-wide. Never use a Guild-scoped Plugin logger here,
       // otherwise the first Guild that initializes the runtime would be attached to all events.
       logger.info(event, 'AI Foundation telemetry');
+      void recordAiUsageAnalytics(context.prisma, logger, event);
     },
   });
   if (!bootstrap.service) {
