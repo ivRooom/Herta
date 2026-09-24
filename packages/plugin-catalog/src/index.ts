@@ -35,7 +35,7 @@ export { communityProfileManifest } from './manifests/community-profile.js';
 export { communityChallengeManifest } from './manifests/community-challenge.js';
 export { eventRsvpManifest } from './manifests/event-rsvp.js';
 export { giveawayManifest } from './manifests/giveaway.js';
-export { miniGamesManifest } from './manifests/mini-games.js';
+export { miniGamesManifest, MBTI_TYPE_KEYS, mbtiRoleConfigKey } from './manifests/mini-games.js';
 export { onboardingManifest } from './manifests/onboarding.js';
 export { pollManifest } from './manifests/poll.js';
 export { reminderManifest } from './manifests/reminder.js';

@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { miniGamesManifest } from '@herta/plugin-catalog';
+import { MBTI_TYPE_KEYS, mbtiRoleConfigKey, miniGamesManifest } from '@herta/plugin-catalog';
 import { createCoinFlipGif } from './mini-games-coinflip-animation.js';
 import {
   formatCoinFlipResult,
   normalizeMiniGamesConfig,
   parseMiniGameCustomId,
 } from './mini-games.js';
+
+function emptyMbtiRoles(): Record<string, string | null> {
+  return Object.fromEntries(MBTI_TYPE_KEYS.map((type) => [type, null]));
+}
 
 describe('Mini Games Plugin', () => {
   it('設定を安全な範囲へ正規化する', () => {
@@ -18,6 +22,7 @@ describe('Mini Games Plugin', () => {
       blackjackDealerHitsSoft17: false,
       blackjackAnimation: true,
       blackjackAnimationDelayMs: 450,
+      mbtiRoles: emptyMbtiRoles(),
     });
     expect(
       normalizeMiniGamesConfig({
@@ -39,7 +44,19 @@ describe('Mini Games Plugin', () => {
       blackjackDealerHitsSoft17: true,
       blackjackAnimation: false,
       blackjackAnimationDelayMs: 1_500,
+      mbtiRoles: emptyMbtiRoles(),
     });
+  });
+
+  it('MBTI Role IDを正規化し不正な値はnullへフォールバックする', () => {
+    const normalized = normalizeMiniGamesConfig({
+      [mbtiRoleConfigKey('INTJ')]: '123456789012345678',
+      [mbtiRoleConfigKey('ENFP')]: 'not-a-discord-id',
+    });
+    expect(normalized.mbtiRoles.INTJ).toBe('123456789012345678');
+    expect(normalized.mbtiRoles.ENFP).toBeNull();
+    expect(normalized.mbtiRoles.ISTJ).toBeNull();
+    expect(Object.keys(normalized.mbtiRoles).sort()).toEqual([...MBTI_TYPE_KEYS].sort());
   });
 
   it('Coin Flip結果と予想の当落を表示する', () => {
