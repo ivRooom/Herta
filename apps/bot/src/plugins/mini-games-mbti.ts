@@ -10,6 +10,8 @@ import {
   type ChatInputCommandInteraction,
   type GuildMember,
 } from 'discord.js';
+import type { PrismaClient } from '@herta/db';
+import { recordMbtiQuizCompletion, type MbtiQuizAnswerInput } from '@herta/db';
 import type { Logger } from '@herta/logger';
 import type { CommandHandler } from '@herta/plugin-sdk';
 import {
@@ -35,6 +37,7 @@ const SESSION_ABSOLUTE_TIMEOUT_MS = 30 * 60 * 1000;
 
 export interface MbtiCommandOptions {
   logger: Logger;
+  prisma: PrismaClient;
   getRoleMap: () => Record<string, string | null>;
 }
 
@@ -44,6 +47,7 @@ interface MbtiSession {
   userId: string;
   questionIndex: number;
   scores: MbtiScores;
+  answers: MbtiQuizAnswerInput[];
 }
 
 const sessions = new Map<string, MbtiSession>();
@@ -84,6 +88,7 @@ async function startMbtiQuiz(
     userId: interaction.user.id,
     questionIndex: 0,
     scores: createEmptyMbtiScores(),
+    answers: [],
   };
   sessions.set(session.id, session);
 
@@ -140,12 +145,18 @@ async function handleMbtiButton(
   if (!question) return false;
 
   session.scores[question.axis] += mbtiLikertWeight(parsed.answer);
+  session.answers.push({
+    questionIndex: session.questionIndex,
+    axis: question.axis,
+    answer: parsed.answer,
+  });
   session.questionIndex += 1;
 
   if (session.questionIndex >= MBTI_QUESTIONS.length) {
     const type = computeMbtiType(session.scores);
     sessions.delete(session.id);
 
+    await recordMbtiStats(options.prisma, options.logger, session, type);
     const roleNote = await tryAssignMbtiRole(interaction, type, options);
     await interaction.update({
       embeds: [buildResultEmbed(type, session.scores, roleNote)],
@@ -159,6 +170,31 @@ async function handleMbtiButton(
     components: [buildAnswerRow(session)],
   });
   return false;
+}
+
+/**
+ * 診断結果と全回答を匿名集計テーブルへ記録する（LLMの学習・分析用途）。
+ * Discordユーザーへの応答をブロックしないよう、失敗はwarnログのみで握りつぶす。
+ */
+async function recordMbtiStats(
+  prisma: PrismaClient,
+  logger: Logger,
+  session: MbtiSession,
+  type: string,
+): Promise<void> {
+  try {
+    await recordMbtiQuizCompletion(prisma, {
+      guildId: session.guildId,
+      resultType: type,
+      eiScore: session.scores.EI,
+      snScore: session.scores.SN,
+      tfScore: session.scores.TF,
+      jpScore: session.scores.JP,
+      answers: session.answers,
+    });
+  } catch (error) {
+    logger.warn({ err: error, guildId: session.guildId, type }, 'MBTI統計の記録に失敗しました');
+  }
 }
 
 async function tryAssignMbtiRole(

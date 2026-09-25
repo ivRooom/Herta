@@ -145,6 +145,7 @@ export const miniGamesPlugin = definePlugin<MiniGamesConfig, unknown, PrismaClie
     };
     const mbti = createMbtiCommandHandler(miniGamesManifest.commands[8]!, {
       logger: context.logger,
+      prisma: context.prisma,
       getRoleMap: () => normalizeMiniGamesConfig(context.config).mbtiRoles,
     });
     return [

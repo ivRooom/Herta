@@ -198,25 +198,62 @@ model CommandExecutionEvent {
 // AI Foundationのprovider別利用状況。raw prompt/provider response/生成本文/Discordユーザー
 // ID/チャンネルIDは一切保存しない（command_execution_eventsと同じ、メタデータのみの方針）。
 model AiGenerationEvent {
-  id            String   @id
-  guildId       String   @map("guild_id")
-  provider      String
-  model         String
-  modelProfile  String   @map("model_profile")
-  feature       String
-  resultCategory String  @map("result_category")
-  errorCategory String?  @map("error_category")
-  inputTokens   Int      @map("input_tokens")
-  outputTokens  Int      @map("output_tokens")
-  totalTokens   Int      @map("total_tokens")
-  estimatedCostUsd Float @map("estimated_cost_usd")
-  durationMs    Int      @map("duration_ms")
-  occurredAt    DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  id               String   @id
+  guildId          String   @map("guild_id")
+  provider         String
+  model            String
+  modelProfile     String   @map("model_profile")
+  feature          String
+  resultCategory   String   @map("result_category")
+  errorCategory    String?  @map("error_category")
+  inputTokens      Int      @map("input_tokens")
+  outputTokens     Int      @map("output_tokens")
+  totalTokens      Int      @map("total_tokens")
+  estimatedCostUsd Float    @map("estimated_cost_usd")
+  durationMs       Int      @map("duration_ms")
+  occurredAt       DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
 
   @@index([occurredAt(sort: Desc)])
   @@index([provider, occurredAt(sort: Desc)])
   @@index([guildId, occurredAt(sort: Desc)])
   @@map("ai_generation_events")
+}
+
+// MBTI診断1回の完了ごとの匿名集計イベント。Discordユーザー名・ユーザーIDは保存しない
+// （ai_generation_eventsと同じ、メタデータのみの方針）。completionIdはこのセッション限りの
+// ランダム値で、同じ回答者のquestion answer eventsと結果を結びつけるためだけに使う。
+model MbtiQuizResultEvent {
+  id           String   @id
+  completionId String   @map("completion_id")
+  guildId      String   @map("guild_id")
+  resultType   String   @map("result_type")
+  eiScore      Int      @map("ei_score")
+  snScore      Int      @map("sn_score")
+  tfScore      Int      @map("tf_score")
+  jpScore      Int      @map("jp_score")
+  completedAt  DateTime @default(now()) @map("completed_at") @db.Timestamptz(3)
+
+  @@index([completedAt(sort: Desc)])
+  @@index([guildId, completedAt(sort: Desc)])
+  @@index([resultType, completedAt(sort: Desc)])
+  @@map("mbti_quiz_result_events")
+}
+
+// MBTI診断の設問ごとの回答分布（LLMの学習・分析用途）。完了イベントと同じcompletionIdで
+// 1回の診断内の50件がまとめて紐付く。userIdは保存しない。
+model MbtiQuestionAnswerEvent {
+  id            String   @id
+  completionId  String   @map("completion_id")
+  guildId       String   @map("guild_id")
+  questionIndex Int      @map("question_index")
+  axis          String
+  answer        String
+  answeredAt    DateTime @default(now()) @map("answered_at") @db.Timestamptz(3)
+
+  @@index([completionId])
+  @@index([guildId, answeredAt(sort: Desc)])
+  @@index([questionIndex, answer])
+  @@map("mbti_question_answer_events")
 }
 
 // ============================================================
