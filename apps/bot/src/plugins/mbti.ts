@@ -14,7 +14,8 @@ import {
 import type { PrismaClient } from '@herta/db';
 import { recordMbtiQuizCompletion, type MbtiQuizAnswerInput } from '@herta/db';
 import type { Logger } from '@herta/logger';
-import type { CommandHandler } from '@herta/plugin-sdk';
+import { MBTI_TYPE_KEYS, mbtiManifest, mbtiRoleConfigKey } from '@herta/plugin-catalog';
+import { definePlugin, type CommandHandler } from '@herta/plugin-sdk';
 import {
   MBTI_AXES,
   MBTI_LIKERT_ANSWERS,
@@ -27,15 +28,61 @@ import {
   mbtiLikertLabel,
   mbtiLikertWeight,
   type MbtiScores,
-} from './mini-games-mbti-core.js';
-import { renderMbtiQuestionCard } from './mini-games-mbti-card.js';
-import { reconcileMbtiRole } from './mini-games-mbti-roles.js';
+} from './mbti-core.js';
+import { renderMbtiQuestionCard } from './mbti-card.js';
+import { reconcileMbtiRole } from './mbti-roles.js';
 
 const PREFIX = 'herta:mbti:v1:';
 // 50問を5段階で回答するため、以前の12問2択より長時間を要する。1問あたりidleで
 // タイムアウトをリセットしつつ、全体には上限(absolute time)を設ける。
 const QUESTION_IDLE_MS = 3 * 60 * 1000;
 const SESSION_ABSOLUTE_TIMEOUT_MS = 30 * 60 * 1000;
+
+export interface MbtiPluginConfig {
+  enabled: boolean;
+  /** MBTIタイプ(例: 'INTJ')ごとに付与するRole ID。未設定タイプはnull。 */
+  mbtiRoles: Record<string, string | null>;
+}
+
+const DISCORD_ID_PATTERN = /^\d{17,20}$/;
+
+function nullableDiscordId(value: unknown): string | null {
+  return typeof value === 'string' && DISCORD_ID_PATTERN.test(value) ? value : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readMbtiRoleMap(source: Record<string, unknown>): Record<string, string | null> {
+  return Object.fromEntries(
+    MBTI_TYPE_KEYS.map((type) => [type, nullableDiscordId(source[mbtiRoleConfigKey(type)])]),
+  );
+}
+
+export function normalizeMbtiConfig(value: unknown): MbtiPluginConfig {
+  const source = isRecord(value) ? value : {};
+  return {
+    enabled: source.enabled === undefined ? true : source.enabled === true,
+    mbtiRoles: readMbtiRoleMap(source),
+  };
+}
+
+export const mbtiPlugin = definePlugin<MbtiPluginConfig, unknown, PrismaClient>({
+  manifest: mbtiManifest,
+  async onDisable(context) {
+    clearMbtiGuildSessions(context.guildId);
+  },
+  provideCommands(context) {
+    return [
+      createMbtiCommandHandler(mbtiManifest.commands[0]!, {
+        logger: context.logger,
+        prisma: context.prisma,
+        getRoleMap: () => normalizeMbtiConfig(context.config).mbtiRoles,
+      }),
+    ];
+  },
+});
 
 export interface MbtiCommandOptions {
   logger: Logger;

@@ -11,7 +11,7 @@ import {
   type User,
 } from 'discord.js';
 import type { PrismaClient } from '@herta/db';
-import { MBTI_TYPE_KEYS, mbtiRoleConfigKey, miniGamesManifest } from '@herta/plugin-catalog';
+import { miniGamesManifest } from '@herta/plugin-catalog';
 import {
   definePlugin,
   type CommandHandler,
@@ -44,7 +44,6 @@ import { blackjackSettlementMetrics } from './mini-games-blackjack-metrics.js';
 import { isBlackjackHandComplete, settleBlackjackPvp } from './mini-games-blackjack-pvp.js';
 import { publishMiniGameCompletion } from './mini-games-completion-events.js';
 import { createMiniGamesV3CommandHandlers } from './mini-games-v3.js';
-import { clearMbtiGuildSessions, createMbtiCommandHandler } from './mini-games-mbti.js';
 
 const CUSTOM_ID_PREFIX = 'herta:mini-games:v1:';
 const COIN_FLIP_ANIMATION_MS = 1_100;
@@ -58,8 +57,6 @@ export interface MiniGamesConfig {
   blackjackDealerHitsSoft17: boolean;
   blackjackAnimation: boolean;
   blackjackAnimationDelayMs: number;
-  /** MBTIタイプ(例: 'INTJ')ごとに付与するRole ID。未設定タイプはnull。 */
-  mbtiRoles: Record<string, string | null>;
 }
 
 type MiniGamesRuntimeContext = PluginRuntimeContext<MiniGamesConfig, unknown, PrismaClient>;
@@ -116,7 +113,6 @@ export const miniGamesPlugin = definePlugin<MiniGamesConfig, unknown, PrismaClie
   manifest: miniGamesManifest,
   async onDisable(context) {
     clearGuildGameSessions(context.guildId);
-    clearMbtiGuildSessions(context.guildId);
   },
   provideCommands(context) {
     const coinflip: CommandHandler<ChatInputCommandInteraction> = {
@@ -143,19 +139,7 @@ export const miniGamesPlugin = definePlugin<MiniGamesConfig, unknown, PrismaClie
         await executeGameStats(context, interaction);
       },
     };
-    const mbti = createMbtiCommandHandler(miniGamesManifest.commands[8]!, {
-      logger: context.logger,
-      prisma: context.prisma,
-      getRoleMap: () => normalizeMiniGamesConfig(context.config).mbtiRoles,
-    });
-    return [
-      coinflip,
-      highlow,
-      blackjack,
-      gamestats,
-      ...createMiniGamesV3CommandHandlers(context),
-      mbti,
-    ];
+    return [coinflip, highlow, blackjack, gamestats, ...createMiniGamesV3CommandHandlers(context)];
   },
   provideEvents() {
     return [
@@ -184,7 +168,6 @@ export function normalizeMiniGamesConfig(value: unknown): MiniGamesConfig {
     blackjackAnimation:
       source.blackjackAnimation === undefined ? true : source.blackjackAnimation === true,
     blackjackAnimationDelayMs: clamp(toInteger(source.blackjackAnimationDelayMs, 450), 250, 1_500),
-    mbtiRoles: readMbtiRoleMap(source),
   };
 }
 
@@ -1056,18 +1039,6 @@ function clamp(value: number, min: number, max: number): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-const DISCORD_ID_PATTERN = /^\d{17,20}$/;
-
-function nullableDiscordId(value: unknown): string | null {
-  return typeof value === 'string' && DISCORD_ID_PATTERN.test(value) ? value : null;
-}
-
-function readMbtiRoleMap(source: Record<string, unknown>): Record<string, string | null> {
-  return Object.fromEntries(
-    MBTI_TYPE_KEYS.map((type) => [type, nullableDiscordId(source[mbtiRoleConfigKey(type)])]),
-  );
 }
 
 function delay(ms: number): Promise<void> {
