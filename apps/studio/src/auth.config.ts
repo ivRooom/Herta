@@ -21,7 +21,9 @@ export const authConfig = {
   pages: {
     signIn: '/login',
   },
-  session: { strategy: 'jwt' },
+  // updateAge(既定24h) > maxAge(8h)のため、8h以内のアクセスでセッションが延長される
+  // ことはなく、ログインから常に8h経過で確実に失効する。
+  session: { strategy: 'jwt', maxAge: 8 * 60 * 60 },
   callbacks: {
     /** /dashboard 配下は認証必須。未ログインなら /login へリダイレクトされる。 */
     authorized({ auth, request: { nextUrl } }) {
