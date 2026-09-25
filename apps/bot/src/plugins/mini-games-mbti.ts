@@ -116,6 +116,8 @@ async function startMbtiQuiz(
         content: '⌛ 時間切れのため診断を終了しました。もう一度 `/mbti` を実行してください。',
         embeds: [],
         components: [],
+        files: [],
+        attachments: [],
       })
       .catch(() => undefined);
   });
@@ -154,14 +156,33 @@ async function handleMbtiButton(
       embeds: [buildResultEmbed(type, session.scores, roleNote)],
       components: [],
       files: [],
+      attachments: [],
     });
     return true;
   }
 
-  await interaction.update({
-    ...(await buildQuestionPayload(session)),
-    components: [buildAnswerRow(session)],
-  });
+  try {
+    await interaction.update({
+      ...(await buildQuestionPayload(session)),
+      components: [buildAnswerRow(session)],
+    });
+  } catch (error) {
+    options.logger.warn(
+      { err: error, guildId: session.guildId, userId: session.userId },
+      'MBTI質問カードの生成・送信に失敗しました',
+    );
+    sessions.delete(session.id);
+    await interaction
+      .update({
+        content: '⚠️ 質問の表示に失敗しました。もう一度 `/mbti` を実行してください。',
+        embeds: [],
+        components: [],
+        files: [],
+        attachments: [],
+      })
+      .catch(() => undefined);
+    return true;
+  }
   return false;
 }
 
@@ -209,7 +230,7 @@ function isGuildMember(member: unknown): member is GuildMember {
 
 async function buildQuestionPayload(
   session: MbtiSession,
-): Promise<{ content: string; files: AttachmentBuilder[]; embeds: [] }> {
+): Promise<{ content: string; files: AttachmentBuilder[]; attachments: []; embeds: [] }> {
   const question = MBTI_QUESTIONS[session.questionIndex]!;
   const png = await renderMbtiQuestionCard({
     questionIndex: session.questionIndex,
@@ -219,10 +240,11 @@ async function buildQuestionPayload(
   });
   const attachment = new AttachmentBuilder(png, {
     name: `mbti-${session.id}-${session.questionIndex}.png`,
-  });
+  }).setDescription(question.prompt);
   return {
     content: '当てはまる度合いに近いボタンを選んでください（簡易診断です）',
     files: [attachment],
+    attachments: [],
     embeds: [],
   };
 }
