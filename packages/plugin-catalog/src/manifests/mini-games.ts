@@ -1,50 +1,9 @@
 import type { PluginManifest } from '@herta/shared';
 
-export const MBTI_TYPE_KEYS = [
-  'INTJ',
-  'INTP',
-  'ENTJ',
-  'ENTP',
-  'INFJ',
-  'INFP',
-  'ENFJ',
-  'ENFP',
-  'ISTJ',
-  'ISFJ',
-  'ESTJ',
-  'ESFJ',
-  'ISTP',
-  'ISFP',
-  'ESTP',
-  'ESFP',
-] as const;
-
-export function mbtiRoleConfigKey(type: string): string {
-  return `mbtiRole${type}`;
-}
-
-const MBTI_ROLE_CONFIG_PROPERTIES: Record<string, unknown> = Object.fromEntries(
-  MBTI_TYPE_KEYS.map((type) => [
-    mbtiRoleConfigKey(type),
-    {
-      type: ['string', 'null'],
-      title: `MBTI Role: ${type}`,
-      default: null,
-      'x-herta-ui': {
-        section: 'MBTI Role',
-        widget: 'discord-role',
-        editableOnly: true,
-        placeholder: `診断結果が${type}のメンバーへ付与するRoleを選択（任意）`,
-        help: '未設定のタイプはRole付与をスキップします。全タイプ未設定ならMBTI Role機能は無効です。',
-      },
-    },
-  ]),
-);
-
 export const miniGamesManifest: PluginManifest = {
   id: 'mini-games',
   name: 'Mini Games',
-  version: '3.6.1',
+  version: '4.0.0',
   description:
     'Coin Flip・High-Low・Blackjack・Dice・チンチロ・あみだくじを戦績とArcadeランキング付きで遊べるPluginです',
   author: { name: 'Herta' },
@@ -205,7 +164,6 @@ export const miniGamesManifest: PluginManifest = {
           help: 'OFFではDealerはSoft 17でもStandします。',
         },
       },
-      ...MBTI_ROLE_CONFIG_PROPERTIES,
     },
     required: [
       'enabled',
@@ -325,10 +283,6 @@ export const miniGamesManifest: PluginManifest = {
           type: 'boolean',
         },
       ],
-    },
-    {
-      name: 'mbti',
-      description: '50問の5段階評価に答えてMBTI風の性格診断を行います',
     },
   ],
 };

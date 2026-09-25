@@ -11,7 +11,7 @@ import {
   isMbtiLikertAnswer,
   mbtiLikertLabel,
   mbtiLikertWeight,
-} from './mini-games-mbti-core.js';
+} from './mbti-core.js';
 
 describe('Mini Games MBTI core', () => {
   it('計50問を4軸(EI/SN/TF/JP)へ分配して定義する', () => {

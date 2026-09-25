@@ -1,5 +1,5 @@
 import sharp from 'sharp';
-import type { MbtiAxis } from './mini-games-mbti-core.js';
+import type { MbtiAxis } from './mbti-core.js';
 
 const CARD_WIDTH = 1200;
 const CARD_HEIGHT = 630;

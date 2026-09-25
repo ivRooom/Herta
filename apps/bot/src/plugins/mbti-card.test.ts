@@ -1,10 +1,6 @@
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
-import {
-  buildMbtiQuestionCardSvg,
-  renderMbtiQuestionCard,
-  wrapJapaneseText,
-} from './mini-games-mbti-card.js';
+import { buildMbtiQuestionCardSvg, renderMbtiQuestionCard, wrapJapaneseText } from './mbti-card.js';
 
 describe('wrapJapaneseText', () => {
   it('指定文字数ごとに折り返す', () => {
