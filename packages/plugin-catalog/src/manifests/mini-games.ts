@@ -44,7 +44,7 @@ const MBTI_ROLE_CONFIG_PROPERTIES: Record<string, unknown> = Object.fromEntries(
 export const miniGamesManifest: PluginManifest = {
   id: 'mini-games',
   name: 'Mini Games',
-  version: '3.6.0',
+  version: '3.6.1',
   description:
     'Coin Flip・High-Low・Blackjack・Dice・チンチロ・あみだくじを戦績とArcadeランキング付きで遊べるPluginです',
   author: { name: 'Herta' },
@@ -328,7 +328,7 @@ export const miniGamesManifest: PluginManifest = {
     },
     {
       name: 'mbti',
-      description: '12個の二択に答えてMBTI風の性格診断を行います',
+      description: '50問の5段階評価に答えてMBTI風の性格診断を行います',
     },
   ],
 };

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   ActionRowBuilder,
+  AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
   ComponentType,
@@ -25,6 +26,7 @@ import {
   mbtiLikertWeight,
   type MbtiScores,
 } from './mini-games-mbti-core.js';
+import { renderMbtiQuestionCard } from './mini-games-mbti-card.js';
 import { reconcileMbtiRole } from './mini-games-mbti-roles.js';
 
 const PREFIX = 'herta:mbti:v1:';
@@ -88,7 +90,7 @@ async function startMbtiQuiz(
   sessions.set(session.id, session);
 
   await interaction.reply({
-    embeds: [buildQuestionEmbed(session)],
+    ...(await buildQuestionPayload(session)),
     components: [buildAnswerRow(session)],
     flags: MessageFlags.Ephemeral,
   });
@@ -148,14 +150,16 @@ async function handleMbtiButton(
 
     const roleNote = await tryAssignMbtiRole(interaction, type, options);
     await interaction.update({
+      content: null,
       embeds: [buildResultEmbed(type, session.scores, roleNote)],
       components: [],
+      files: [],
     });
     return true;
   }
 
   await interaction.update({
-    embeds: [buildQuestionEmbed(session)],
+    ...(await buildQuestionPayload(session)),
     components: [buildAnswerRow(session)],
   });
   return false;
@@ -203,13 +207,24 @@ function isGuildMember(member: unknown): member is GuildMember {
   return 'cache' in roles;
 }
 
-function buildQuestionEmbed(session: MbtiSession): EmbedBuilder {
+async function buildQuestionPayload(
+  session: MbtiSession,
+): Promise<{ content: string; files: AttachmentBuilder[]; embeds: [] }> {
   const question = MBTI_QUESTIONS[session.questionIndex]!;
-  return new EmbedBuilder()
-    .setTitle(`🧭 MBTI風性格診断 (${session.questionIndex + 1}/${MBTI_QUESTIONS.length})`)
-    .setDescription(question.prompt)
-    .setColor(0x7c6df2)
-    .setFooter({ text: '当てはまる度合いに近いボタンを選んでください（簡易診断です）' });
+  const png = await renderMbtiQuestionCard({
+    questionIndex: session.questionIndex,
+    totalQuestions: MBTI_QUESTIONS.length,
+    prompt: question.prompt,
+    axis: question.axis,
+  });
+  const attachment = new AttachmentBuilder(png, {
+    name: `mbti-${session.id}-${session.questionIndex}.png`,
+  });
+  return {
+    content: '当てはまる度合いに近いボタンを選んでください（簡易診断です）',
+    files: [attachment],
+    embeds: [],
+  };
 }
 
 function buildAnswerRow(session: MbtiSession): ActionRowBuilder<ButtonBuilder> {
