@@ -156,7 +156,7 @@ async function handleMbtiButton(
     const type = computeMbtiType(session.scores);
     sessions.delete(session.id);
 
-    await recordMbtiStats(options.prisma, options.logger, session, type);
+    void recordMbtiStats(options.prisma, options.logger, session, type);
     const roleNote = await tryAssignMbtiRole(interaction, type, options);
     await interaction.update({
       embeds: [buildResultEmbed(type, session.scores, roleNote)],
