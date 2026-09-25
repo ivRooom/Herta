@@ -79,6 +79,7 @@ export const mbtiPlugin = definePlugin<MbtiPluginConfig, unknown, PrismaClient>(
         logger: context.logger,
         prisma: context.prisma,
         getRoleMap: () => normalizeMbtiConfig(context.config).mbtiRoles,
+        isEnabled: () => normalizeMbtiConfig(context.config).enabled,
       }),
     ];
   },
@@ -88,6 +89,7 @@ export interface MbtiCommandOptions {
   logger: Logger;
   prisma: PrismaClient;
   getRoleMap: () => Record<string, string | null>;
+  isEnabled: () => boolean;
 }
 
 interface MbtiSession {
@@ -126,6 +128,13 @@ async function startMbtiQuiz(
   if (!interaction.guildId) {
     await interaction.reply({
       content: 'サーバー内でのみ利用できます。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  if (!options.isEnabled()) {
+    await interaction.reply({
+      content: 'MBTI Pluginは現在無効です。',
       flags: MessageFlags.Ephemeral,
     });
     return;
@@ -191,6 +200,18 @@ async function handleMbtiButton(
     return false;
   }
   if (sessions.get(session.id) !== session) return false;
+
+  if (!options.isEnabled()) {
+    sessions.delete(session.id);
+    await interaction.update({
+      content: 'MBTI Pluginが無効になったため診断を終了しました。',
+      embeds: [],
+      components: [],
+      files: [],
+      attachments: [],
+    });
+    return true;
+  }
 
   const question = MBTI_QUESTIONS[session.questionIndex];
   if (!question) return false;
