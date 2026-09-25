@@ -2,6 +2,7 @@ import {
   getPrismaClient,
   pruneAiGenerationEvents,
   pruneCommandExecutionEvents,
+  pruneMbtiStatsEvents,
   pruneServiceHealthSnapshots,
   recordServiceHealthSnapshot,
   type ServiceHealthSnapshotInput,
@@ -92,6 +93,8 @@ const healthServer = healthConfig.enabled
 const RETENTION_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1_000;
 const EXECUTION_ANALYTICS_RETENTION_DAYS = 90;
 const HEALTH_SNAPSHOT_RETENTION_DAYS = 31;
+// LLMの学習・分析用途で蓄積するため、他のoperational telemetryより長く保持する。
+const MBTI_STATS_RETENTION_DAYS = 365;
 const HEALTH_SNAPSHOT_INTERVAL_MS = 5 * 60 * 1_000;
 const HEALTH_SNAPSHOT_BUFFER_LIMIT = Math.ceil(
   (HEALTH_SNAPSHOT_RETENTION_DAYS * 24 * 60 * 60 * 1_000) / HEALTH_SNAPSHOT_INTERVAL_MS,
@@ -111,16 +114,22 @@ async function pruneRetainedData(): Promise<void> {
   retentionPruneInFlight = true;
   try {
     const prisma = getPrismaClient();
-    const [commandDeleted, autoResponseDeleted, healthSnapshotDeleted, aiGenerationDeleted] =
-      await Promise.all([
-        pruneCommandExecutionEvents(prisma, EXECUTION_ANALYTICS_RETENTION_DAYS),
-        pruneAutoResponseExecutionEvents(
-          prisma as unknown as AutoResponsePrismaClient,
-          EXECUTION_ANALYTICS_RETENTION_DAYS,
-        ),
-        pruneServiceHealthSnapshots(prisma, HEALTH_SNAPSHOT_RETENTION_DAYS),
-        pruneAiGenerationEvents(prisma, EXECUTION_ANALYTICS_RETENTION_DAYS),
-      ]);
+    const [
+      commandDeleted,
+      autoResponseDeleted,
+      healthSnapshotDeleted,
+      aiGenerationDeleted,
+      mbtiStatsDeleted,
+    ] = await Promise.all([
+      pruneCommandExecutionEvents(prisma, EXECUTION_ANALYTICS_RETENTION_DAYS),
+      pruneAutoResponseExecutionEvents(
+        prisma as unknown as AutoResponsePrismaClient,
+        EXECUTION_ANALYTICS_RETENTION_DAYS,
+      ),
+      pruneServiceHealthSnapshots(prisma, HEALTH_SNAPSHOT_RETENTION_DAYS),
+      pruneAiGenerationEvents(prisma, EXECUTION_ANALYTICS_RETENTION_DAYS),
+      pruneMbtiStatsEvents(prisma, MBTI_STATS_RETENTION_DAYS),
+    ]);
     if (commandDeleted > 0) {
       logger.info(
         { deleted: commandDeleted, retentionDays: EXECUTION_ANALYTICS_RETENTION_DAYS },
@@ -143,6 +152,12 @@ async function pruneRetainedData(): Promise<void> {
       logger.info(
         { deleted: aiGenerationDeleted, retentionDays: EXECUTION_ANALYTICS_RETENTION_DAYS },
         '古いAI利用状況履歴を削除しました',
+      );
+    }
+    if (mbtiStatsDeleted > 0) {
+      logger.info(
+        { deleted: mbtiStatsDeleted, retentionDays: MBTI_STATS_RETENTION_DAYS },
+        '古いMBTI診断統計を削除しました',
       );
     }
   } catch (error) {
