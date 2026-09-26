@@ -1,8 +1,10 @@
 import NextAuth from 'next-auth';
 import type { JWT } from 'next-auth/jwt';
-import { authConfig } from '@/auth.config';
+import { authConfig, SESSION_MAX_AGE_SECONDS } from '@/auth.config';
 import { DISCORD_API_BASE } from '@/lib/discord';
 import { upsertUserFromDiscord } from '@/lib/users';
+
+const SESSION_MAX_AGE_MS = SESSION_MAX_AGE_SECONDS * 1000;
 
 /** Discord OAuth の profile レスポンス (利用するフィールドのみ) */
 interface DiscordProfile {
@@ -67,6 +69,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.accessTokenExpires = account.expires_at
           ? account.expires_at * 1000
           : Date.now() + 604800 * 1000;
+        // 以後のjwtコールバックでは更新しない。sessionアクションは呼ばれるたびに
+        // Cookieのmax-ageを延長するため、このフィールドだけが絶対期限の基準になる。
+        token.loginAt = Date.now();
 
         await upsertUserFromDiscord({
           id: p.id,
@@ -78,6 +83,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         });
 
         return token;
+      }
+
+      // ログインから絶対期限を超えていたらセッションを強制的に無効化する
+      // (jwtコールバックがnullを返すとCookieがクリアされる)。
+      if (typeof token.loginAt === 'number' && Date.now() - token.loginAt > SESSION_MAX_AGE_MS) {
+        return null;
       }
 
       // 有効期限内はそのまま返す
