@@ -5,6 +5,7 @@ import {
   pruneMbtiStatsEvents,
   pruneServiceHealthSnapshots,
   recordServiceHealthSnapshot,
+  MBTI_STATS_DEFAULT_RETENTION_DAYS,
   type ServiceHealthSnapshotInput,
 } from '@herta/db';
 import {
@@ -94,7 +95,8 @@ const RETENTION_PRUNE_INTERVAL_MS = 24 * 60 * 60 * 1_000;
 const EXECUTION_ANALYTICS_RETENTION_DAYS = 90;
 const HEALTH_SNAPSHOT_RETENTION_DAYS = 31;
 // LLMの学習・分析用途で蓄積するため、他のoperational telemetryより長く保持する。
-const MBTI_STATS_RETENTION_DAYS = 365;
+// Studioダッシュボードの表示ラベルとも一致させるため、@herta/dbの共有定数を使う。
+const MBTI_STATS_RETENTION_DAYS = MBTI_STATS_DEFAULT_RETENTION_DAYS;
 const HEALTH_SNAPSHOT_INTERVAL_MS = 5 * 60 * 1_000;
 const HEALTH_SNAPSHOT_BUFFER_LIMIT = Math.ceil(
   (HEALTH_SNAPSHOT_RETENTION_DAYS * 24 * 60 * 60 * 1_000) / HEALTH_SNAPSHOT_INTERVAL_MS,

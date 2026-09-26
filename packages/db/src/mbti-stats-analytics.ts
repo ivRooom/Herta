@@ -37,7 +37,13 @@ const MAX_GUILD_ID_LENGTH = 64;
 const MAX_SCORE = 30;
 const MAX_QUESTION_INDEX = 99;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const DEFAULT_RETENTION_DAYS = 365;
+/**
+ * MBTI統計イベントの既定保持日数。main.tsのpruneMbtiStatsEvents呼び出しと
+ * Studioダッシュボードの表示ラベル（「全期間」ではなく実際の保持期間を示す）の
+ * 両方がこの値を参照し、実際の削除挙動と表示の食い違いを防ぐ。
+ */
+export const MBTI_STATS_DEFAULT_RETENTION_DAYS = 365;
+const DEFAULT_RETENTION_DAYS = MBTI_STATS_DEFAULT_RETENTION_DAYS;
 const MAX_RETENTION_DAYS = 3_650;
 const MAX_ANALYTICS_DAYS = 3_650;
 

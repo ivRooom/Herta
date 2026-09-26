@@ -25,6 +25,7 @@ import {
   getCommandUsageAnalytics,
   getMbtiUsageAnalytics,
   searchCommandExecutionEvents,
+  MBTI_STATS_DEFAULT_RETENTION_DAYS,
   type AiUsageAnalytics,
   type CommandExecutionSearchResult,
   type CommandUsageAnalytics,
@@ -665,7 +666,7 @@ const MBTI_AXIS_LABELS: Record<string, [string, string]> = {
 };
 
 function MbtiTypeDistribution({ analytics }: { analytics: MbtiUsageAnalytics }) {
-  const maximum = Math.max(...analytics.typeDistribution.map((entry) => entry.total), 1);
+  const total = Math.max(1, analytics.totalCompletions);
 
   return (
     <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
@@ -679,21 +680,27 @@ function MbtiTypeDistribution({ analytics }: { analytics: MbtiUsageAnalytics }) 
         <p className="mt-6 text-sm text-muted">まだ診断結果がありません。</p>
       ) : (
         <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {analytics.typeDistribution.map((entry) => (
-            <div
-              key={entry.resultType}
-              className="rounded-xl border border-border bg-background p-3"
-            >
-              <p className="text-xs text-muted">{entry.resultType}</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums">{entry.total}</p>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface">
-                <div
-                  className="h-full rounded-full bg-primary"
-                  style={{ width: `${Math.max(4, (entry.total / maximum) * 100)}%` }}
-                />
+          {analytics.typeDistribution.map((entry) => {
+            const percent = Math.round((entry.total / total) * 100);
+            return (
+              <div
+                key={entry.resultType}
+                className="rounded-xl border border-border bg-background p-3"
+              >
+                <p className="text-xs text-muted">{entry.resultType}</p>
+                <p className="mt-1 text-lg font-semibold tabular-nums">
+                  {entry.total}
+                  <span className="ml-1 text-xs font-normal text-muted">({percent}%)</span>
+                </p>
+                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface">
+                  <div
+                    className="h-full rounded-full bg-primary"
+                    style={{ width: `${Math.max(4, percent)}%` }}
+                  />
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </section>
@@ -830,9 +837,9 @@ function MbtiUsageSection({ analytics }: { analytics: MbtiUsageAnalytics }) {
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <SummaryCard
-          title="診断完了数（全期間）"
+          title={`診断完了数（直近${MBTI_STATS_DEFAULT_RETENTION_DAYS}日）`}
           value={`${analytics.totalCompletions}件`}
-          description="管理権限のあるGuildの合計"
+          description={`管理権限のあるGuildの合計。${MBTI_STATS_DEFAULT_RETENTION_DAYS}日を超えたデータは自動削除されます`}
           icon={Brain}
         />
         <SummaryCard
