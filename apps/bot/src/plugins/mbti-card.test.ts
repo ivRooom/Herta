@@ -30,6 +30,17 @@ describe('wrapJapaneseText', () => {
     const lines = wrapJapaneseText('議論では場の調和より正しさの方が大事だと思う方だ');
     expect(lines[0]).toHaveLength(16);
   });
+
+  it('「が」を「〜がる」動詞語尾として誤って区切り文字にしない(CodeRabbit指摘)', () => {
+    const lines = wrapJapaneseText('賑やかな場所にいると気分が上がる方だ');
+    expect(lines).toEqual(['賑やかな場所にいると気分が', '上がる方だ']);
+    expect(lines.some((line) => line.endsWith('上が'))).toBe(false);
+  });
+
+  it('「が」を「〜ながら」の一部として誤って区切り文字にしない', () => {
+    const lines = wrapJapaneseText('目に見える成果を確認しながら進めたい方だ');
+    expect(lines.some((line) => line.startsWith('ら'))).toBe(false);
+  });
 });
 
 describe('buildMbtiQuestionCardSvg', () => {

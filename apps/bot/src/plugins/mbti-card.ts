@@ -72,10 +72,18 @@ const BREAK_AFTER_CHARS = new Set([
   'ど',
   'り',
   'く',
-  'ら',
   'ず',
   'ん',
 ]);
+
+/**
+ * 「が」は「〜が」(主語の助詞)であることが多いが、「上がる」「〜ながら」のように
+ * 動詞語尾・接続助詞の一部として現れることもある。この組み合わせの直後で
+ * 改行すると単語が分断されるため、区切り文字としては採用しない。
+ */
+function isSuppressedBreak(before: string, after: string | undefined): boolean {
+  return before === 'が' && (after === 'る' || after === 'ら');
+}
 
 /** 行頭に来ると読みにくい(または不自然な)文字。小書き仮名・長音符・句読点など。 */
 const AVOID_LINE_START_CHARS = new Set([
@@ -127,7 +135,8 @@ export function wrapJapaneseText(
       if (
         before &&
         BREAK_AFTER_CHARS.has(before) &&
-        (!after || !AVOID_LINE_START_CHARS.has(after))
+        (!after || !AVOID_LINE_START_CHARS.has(after)) &&
+        !isSuppressedBreak(before, after)
       ) {
         breakAt = candidate;
         break;
