@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 
 export type MbtiAxis = 'EI' | 'SN' | 'TF' | 'JP';
 export type MbtiLikertAnswer =
@@ -39,6 +39,14 @@ const MAX_QUESTION_INDEX = 99;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_RETENTION_DAYS = 365;
 const MAX_RETENTION_DAYS = 3_650;
+const MAX_ANALYTICS_DAYS = 3_650;
+
+/**
+ * 各軸の設問数(mini-games-mbti-core.tsのMBTI_AXIS_QUESTION_COUNTSと同じ値)。
+ * 出題プールから抽出する設問数を変えない限りこの値は変わらないため、
+ * computeMbtiAxisPercentと同じ「50 + (score/maxScore)*50」の式をここでも使う。
+ */
+const MBTI_AXIS_QUESTION_COUNTS: Record<MbtiAxis, number> = { EI: 13, SN: 13, TF: 12, JP: 12 };
 
 export interface MbtiQuizAnswerInput {
   questionIndex: number;
@@ -152,6 +160,174 @@ export async function recordMbtiQuizCompletion(
       })),
     }),
   ]);
+}
+
+export interface MbtiUsageAnalyticsOptions {
+  now?: Date;
+  /** 未指定なら全期間を対象にする（MBTI診断は低頻度のため、既定は無期限集計）。 */
+  days?: number;
+  guildIds?: readonly string[];
+}
+
+export interface MbtiTypeCount {
+  resultType: string;
+  total: number;
+}
+
+export interface MbtiGuildBreakdown {
+  guildId: string;
+  total: number;
+  topType: string | null;
+}
+
+export interface MbtiAxisAverage {
+  axis: MbtiAxis;
+  /** 正方向の文字(E/S/T/J)寄りの強さ。0〜100、50が中立。 */
+  averagePercent: number;
+}
+
+export interface MbtiQuestionAnswerBreakdown {
+  questionIndex: number;
+  axis: MbtiAxis;
+  total: number;
+  counts: Record<MbtiLikertAnswer, number>;
+}
+
+export interface MbtiUsageAnalytics {
+  generatedAt: string;
+  totalCompletions: number;
+  typeDistribution: MbtiTypeCount[];
+  guildBreakdown: MbtiGuildBreakdown[];
+  axisAverages: MbtiAxisAverage[];
+  questionAnswers: MbtiQuestionAnswerBreakdown[];
+}
+
+function normalizeGuildIdsFilter(guildIds: readonly string[] | undefined): string[] | undefined {
+  if (guildIds === undefined) return undefined;
+  return [
+    ...new Set(guildIds.map((id) => id.trim().slice(0, MAX_GUILD_ID_LENGTH)).filter(Boolean)),
+  ];
+}
+
+function guildScopeSql(column: Prisma.Sql, guildIds: readonly string[] | undefined): Prisma.Sql {
+  const normalized = normalizeGuildIdsFilter(guildIds);
+  if (normalized === undefined) return Prisma.sql``;
+  if (normalized.length === 0) return Prisma.sql`AND FALSE`;
+  return Prisma.sql`AND ${column} IN (${Prisma.join(normalized)})`;
+}
+
+function daysSinceSql(column: Prisma.Sql, now: Date, days: number | undefined): Prisma.Sql {
+  if (days === undefined) return Prisma.sql``;
+  const normalizedDays = Math.min(MAX_ANALYTICS_DAYS, Math.max(1, Math.floor(days)));
+  const since = new Date(now.getTime() - normalizedDays * DAY_MS);
+  return Prisma.sql`AND ${column} >= ${since}`;
+}
+
+export function axisPercentFromAverageScore(axis: MbtiAxis, averageScore: number): number {
+  const maxScore = MBTI_AXIS_QUESTION_COUNTS[axis] * 2;
+  if (maxScore <= 0) return 50;
+  const percent = 50 + (averageScore / maxScore) * 50;
+  return Math.round(Math.min(100, Math.max(0, percent)));
+}
+
+export async function getMbtiUsageAnalytics(
+  prisma: PrismaClient,
+  options: MbtiUsageAnalyticsOptions = {},
+): Promise<MbtiUsageAnalytics> {
+  const now = options.now ?? new Date();
+  const guildScope = guildScopeSql(Prisma.sql`"guild_id"`, options.guildIds);
+  const daysScope = daysSinceSql(Prisma.sql`"completed_at"`, now, options.days);
+  const answerDaysScope = daysSinceSql(Prisma.sql`"answered_at"`, now, options.days);
+
+  const [totalRows, typeRows, guildRows, axisRows, answerRows] = await Promise.all([
+    prisma.$queryRaw<Array<{ total: number }>>`
+      SELECT COUNT(*)::int AS "total"
+      FROM "mbti_quiz_result_events"
+      WHERE TRUE ${guildScope} ${daysScope}
+    `,
+    prisma.$queryRaw<MbtiTypeCount[]>`
+      SELECT "result_type" AS "resultType", COUNT(*)::int AS "total"
+      FROM "mbti_quiz_result_events"
+      WHERE TRUE ${guildScope} ${daysScope}
+      GROUP BY 1
+      ORDER BY "total" DESC, "resultType" ASC
+    `,
+    prisma.$queryRaw<Array<{ guildId: string; total: number; topType: string | null }>>`
+      SELECT
+        "guild_id" AS "guildId",
+        COUNT(*)::int AS "total",
+        (
+          SELECT "result_type"
+          FROM "mbti_quiz_result_events" AS "inner"
+          WHERE "inner"."guild_id" = "outer"."guild_id" ${daysScope}
+          GROUP BY "result_type"
+          ORDER BY COUNT(*) DESC, "result_type" ASC
+          LIMIT 1
+        ) AS "topType"
+      FROM "mbti_quiz_result_events" AS "outer"
+      WHERE TRUE ${guildScope} ${daysScope}
+      GROUP BY "guild_id"
+      ORDER BY "total" DESC, "guildId" ASC
+    `,
+    prisma.$queryRaw<Array<{ eiAvg: number; snAvg: number; tfAvg: number; jpAvg: number }>>`
+      SELECT
+        COALESCE(AVG("ei_score"), 0)::float AS "eiAvg",
+        COALESCE(AVG("sn_score"), 0)::float AS "snAvg",
+        COALESCE(AVG("tf_score"), 0)::float AS "tfAvg",
+        COALESCE(AVG("jp_score"), 0)::float AS "jpAvg"
+      FROM "mbti_quiz_result_events"
+      WHERE TRUE ${guildScope} ${daysScope}
+    `,
+    prisma.$queryRaw<
+      Array<{ questionIndex: number; axis: MbtiAxis; answer: MbtiLikertAnswer; total: number }>
+    >`
+      SELECT
+        "question_index" AS "questionIndex",
+        "axis" AS "axis",
+        "answer" AS "answer",
+        COUNT(*)::int AS "total"
+      FROM "mbti_question_answer_events"
+      WHERE TRUE ${guildScope} ${answerDaysScope}
+      GROUP BY 1, 2, 3
+      ORDER BY 1 ASC
+    `,
+  ]);
+
+  const questionMap = new Map<number, MbtiQuestionAnswerBreakdown>();
+  for (const row of answerRows) {
+    const existing = questionMap.get(row.questionIndex);
+    if (existing) {
+      existing.counts[row.answer] = row.total;
+      existing.total += row.total;
+    } else {
+      const counts = Object.fromEntries(
+        MBTI_LIKERT_ANSWERS.map((answer) => [answer, answer === row.answer ? row.total : 0]),
+      ) as Record<MbtiLikertAnswer, number>;
+      questionMap.set(row.questionIndex, {
+        questionIndex: row.questionIndex,
+        axis: row.axis,
+        total: row.total,
+        counts,
+      });
+    }
+  }
+
+  const axisAveragesRow = axisRows[0] ?? { eiAvg: 0, snAvg: 0, tfAvg: 0, jpAvg: 0 };
+  const axisAverages: MbtiAxisAverage[] = [
+    { axis: 'EI', averagePercent: axisPercentFromAverageScore('EI', axisAveragesRow.eiAvg) },
+    { axis: 'SN', averagePercent: axisPercentFromAverageScore('SN', axisAveragesRow.snAvg) },
+    { axis: 'TF', averagePercent: axisPercentFromAverageScore('TF', axisAveragesRow.tfAvg) },
+    { axis: 'JP', averagePercent: axisPercentFromAverageScore('JP', axisAveragesRow.jpAvg) },
+  ];
+
+  return {
+    generatedAt: now.toISOString(),
+    totalCompletions: totalRows[0]?.total ?? 0,
+    typeDistribution: typeRows,
+    guildBreakdown: guildRows,
+    axisAverages,
+    questionAnswers: [...questionMap.values()].sort((a, b) => a.questionIndex - b.questionIndex),
+  };
 }
 
 export async function pruneMbtiStatsEvents(

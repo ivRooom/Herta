@@ -4,6 +4,7 @@ import {
   Activity,
   BarChart3,
   Bot,
+  Brain,
   CheckCircle2,
   CircleAlert,
   Clock3,
@@ -16,15 +17,18 @@ import {
   Sparkles,
   TrendingUp,
   TriangleAlert,
+  Users,
   XCircle,
 } from 'lucide-react';
 import {
   getAiUsageAnalytics,
   getCommandUsageAnalytics,
+  getMbtiUsageAnalytics,
   searchCommandExecutionEvents,
   type AiUsageAnalytics,
   type CommandExecutionSearchResult,
   type CommandUsageAnalytics,
+  type MbtiUsageAnalytics,
 } from '@herta/db';
 import { RefreshHealthButton } from '@/components/refresh-health-button';
 import { prisma } from '@/lib/db';
@@ -653,6 +657,210 @@ function AiUsageSection({ analytics }: { analytics: AiUsageAnalytics }) {
   );
 }
 
+const MBTI_AXIS_LABELS: Record<string, [string, string]> = {
+  EI: ['E (外向)', 'I (内向)'],
+  SN: ['S (感覚)', 'N (直観)'],
+  TF: ['T (思考)', 'F (感情)'],
+  JP: ['J (判断)', 'P (知覚)'],
+};
+
+function MbtiTypeDistribution({ analytics }: { analytics: MbtiUsageAnalytics }) {
+  const maximum = Math.max(...analytics.typeDistribution.map((entry) => entry.total), 1);
+
+  return (
+    <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
+      <div className="flex items-center gap-2">
+        <Brain className="h-5 w-5 text-primary" aria-hidden="true" />
+        <h2 className="font-medium">タイプ別分布</h2>
+      </div>
+      <p className="mt-1 text-sm text-muted">診断結果16タイプの人数・割合。</p>
+
+      {analytics.typeDistribution.length === 0 ? (
+        <p className="mt-6 text-sm text-muted">まだ診断結果がありません。</p>
+      ) : (
+        <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {analytics.typeDistribution.map((entry) => (
+            <div
+              key={entry.resultType}
+              className="rounded-xl border border-border bg-background p-3"
+            >
+              <p className="text-xs text-muted">{entry.resultType}</p>
+              <p className="mt-1 text-lg font-semibold tabular-nums">{entry.total}</p>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface">
+                <div
+                  className="h-full rounded-full bg-primary"
+                  style={{ width: `${Math.max(4, (entry.total / maximum) * 100)}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MbtiGuildBreakdown({ analytics }: { analytics: MbtiUsageAnalytics }) {
+  return (
+    <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
+      <div className="flex items-center gap-2">
+        <Users className="h-5 w-5 text-primary" aria-hidden="true" />
+        <h2 className="font-medium">Guild別集計</h2>
+      </div>
+      <p className="mt-1 text-sm text-muted">管理権限のあるGuildごとの診断回数と最多タイプ。</p>
+
+      {analytics.guildBreakdown.length === 0 ? (
+        <p className="mt-6 text-sm text-muted">まだ診断結果がありません。</p>
+      ) : (
+        <div className="mt-5 divide-y divide-border overflow-hidden rounded-xl border border-border">
+          {analytics.guildBreakdown.map((entry) => (
+            <div
+              key={entry.guildId}
+              className="flex items-center justify-between gap-3 bg-background px-4 py-3"
+            >
+              <span className="truncate font-mono text-xs text-muted">{entry.guildId}</span>
+              <span className="shrink-0 text-sm">
+                <span className="font-medium tabular-nums">{entry.total}件</span>
+                {entry.topType ? (
+                  <span className="ml-2 text-xs text-muted">最多: {entry.topType}</span>
+                ) : null}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MbtiAxisAverages({ analytics }: { analytics: MbtiUsageAnalytics }) {
+  return (
+    <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
+      <div className="flex items-center gap-2">
+        <Gauge className="h-5 w-5 text-primary" aria-hidden="true" />
+        <h2 className="font-medium">軸ごとの傾向</h2>
+      </div>
+      <p className="mt-1 text-sm text-muted">コミュニティ全体の平均的な傾き。50%が中立。</p>
+
+      <div className="mt-5 space-y-4">
+        {analytics.axisAverages.map((entry) => {
+          const [positiveLabel, negativeLabel] = MBTI_AXIS_LABELS[entry.axis] ?? [
+            entry.axis,
+            entry.axis,
+          ];
+          return (
+            <div key={entry.axis}>
+              <div className="flex items-center justify-between text-xs text-muted">
+                <span>{negativeLabel}</span>
+                <span>{positiveLabel}</span>
+              </div>
+              <div className="mt-1.5 h-2.5 overflow-hidden rounded-full bg-background">
+                <div
+                  className="h-full rounded-full bg-primary"
+                  style={{ width: `${entry.averagePercent}%` }}
+                />
+              </div>
+              <p className="mt-1 text-right text-xs tabular-nums text-muted">
+                {entry.averagePercent}%
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function MbtiQuestionAnswers({ analytics }: { analytics: MbtiUsageAnalytics }) {
+  return (
+    <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
+      <div className="flex items-center gap-2">
+        <BarChart3 className="h-5 w-5 text-primary" aria-hidden="true" />
+        <h2 className="font-medium">設問ごとの回答分布</h2>
+      </div>
+      <p className="mt-1 text-sm text-muted">どの設問に意見が割れているかの分析用データ。</p>
+
+      {analytics.questionAnswers.length === 0 ? (
+        <p className="mt-6 text-sm text-muted">まだ回答データがありません。</p>
+      ) : (
+        <div className="mt-5 max-h-96 overflow-y-auto overflow-x-auto rounded-xl border border-border">
+          <table className="min-w-[520px] w-full text-left text-xs">
+            <thead className="sticky top-0 border-b border-border bg-background/90 text-muted">
+              <tr>
+                <th className="px-3 py-2 font-medium">#</th>
+                <th className="px-3 py-2 font-medium">軸</th>
+                <th className="px-3 py-2 font-medium">当てはまる</th>
+                <th className="px-3 py-2 font-medium">やや当てはまる</th>
+                <th className="px-3 py-2 font-medium">どちらでもない</th>
+                <th className="px-3 py-2 font-medium">やや当てはまらない</th>
+                <th className="px-3 py-2 font-medium">当てはまらない</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {analytics.questionAnswers.map((entry) => (
+                <tr key={entry.questionIndex} className="bg-surface">
+                  <td className="px-3 py-2 tabular-nums text-muted">{entry.questionIndex + 1}</td>
+                  <td className="px-3 py-2 text-muted">{entry.axis}</td>
+                  <td className="px-3 py-2 tabular-nums">{entry.counts.agree}</td>
+                  <td className="px-3 py-2 tabular-nums">{entry.counts.slightly_agree}</td>
+                  <td className="px-3 py-2 tabular-nums">{entry.counts.neutral}</td>
+                  <td className="px-3 py-2 tabular-nums">{entry.counts.slightly_disagree}</td>
+                  <td className="px-3 py-2 tabular-nums">{entry.counts.disagree}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MbtiUsageSection({ analytics }: { analytics: MbtiUsageAnalytics }) {
+  return (
+    <div className="mt-10">
+      <div className="flex items-center gap-2 text-sm font-medium text-primary">
+        <Brain className="h-4 w-4" aria-hidden="true" />
+        MBTI診断統計
+      </div>
+      <h2 className="mt-2 text-xl font-semibold tracking-tight">MBTI風性格診断</h2>
+      <p className="mt-1 text-sm text-muted">
+        Discordユーザー ID等は保存していません。Guild単位の匿名集計のみを表示します。
+      </p>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <SummaryCard
+          title="診断完了数（全期間）"
+          value={`${analytics.totalCompletions}件`}
+          description="管理権限のあるGuildの合計"
+          icon={Brain}
+        />
+        <SummaryCard
+          title="集計対象Guild数"
+          value={`${analytics.guildBreakdown.length}件`}
+          description="1件以上の診断があるGuild数"
+          icon={Users}
+        />
+      </div>
+
+      {analytics.totalCompletions > 0 ? (
+        <>
+          <div className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <MbtiTypeDistribution analytics={analytics} />
+            <MbtiAxisAverages analytics={analytics} />
+          </div>
+          <div className="mt-6 grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+            <MbtiGuildBreakdown analytics={analytics} />
+            <MbtiQuestionAnswers analytics={analytics} />
+          </div>
+        </>
+      ) : (
+        <p className="mt-6 text-sm text-muted">まだ/mbtiの診断実績がありません。</p>
+      )}
+    </div>
+  );
+}
+
 function EmptyAnalytics() {
   return (
     <section className="rounded-2xl border border-dashed border-border bg-surface p-8 text-center">
@@ -697,6 +905,9 @@ export default async function AnalyticsDashboardPage({
   const aiAnalyticsPromise = analyticsGuildIds
     ? getAiUsageAnalytics(prisma, { days: rangeDays, guildIds: analyticsGuildIds })
     : Promise.resolve<AiUsageAnalytics | null>(null);
+  const mbtiAnalyticsPromise = analyticsGuildIds
+    ? getMbtiUsageAnalytics(prisma, { guildIds: analyticsGuildIds })
+    : Promise.resolve<MbtiUsageAnalytics | null>(null);
   const historyPromise = allowedGuildIds
     ? searchCommandExecutionEvents(prisma, {
         rangeDays,
@@ -708,14 +919,18 @@ export default async function AnalyticsDashboardPage({
       })
     : Promise.resolve<CommandExecutionSearchResult | null>(null);
 
-  const [analyticsResult, aiAnalyticsResult, historyResult] = await Promise.allSettled([
-    analyticsPromise,
-    aiAnalyticsPromise,
-    historyPromise,
-  ]);
+  const [analyticsResult, aiAnalyticsResult, mbtiAnalyticsResult, historyResult] =
+    await Promise.allSettled([
+      analyticsPromise,
+      aiAnalyticsPromise,
+      mbtiAnalyticsPromise,
+      historyPromise,
+    ]);
 
   const analytics = analyticsResult.status === 'fulfilled' ? analyticsResult.value : null;
   const aiAnalytics = aiAnalyticsResult.status === 'fulfilled' ? aiAnalyticsResult.value : null;
+  const mbtiAnalytics =
+    mbtiAnalyticsResult.status === 'fulfilled' ? mbtiAnalyticsResult.value : null;
   const history = historyResult.status === 'fulfilled' ? historyResult.value : null;
   const manageableGuildCount = allowedGuildIds?.length ?? null;
 
@@ -839,6 +1054,8 @@ export default async function AnalyticsDashboardPage({
       )}
 
       {aiAnalytics ? <AiUsageSection analytics={aiAnalytics} /> : null}
+
+      {mbtiAnalytics ? <MbtiUsageSection analytics={mbtiAnalytics} /> : null}
 
       {history ? (
         <CommandHistory
