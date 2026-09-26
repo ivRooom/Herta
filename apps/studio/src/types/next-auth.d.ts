@@ -25,5 +25,7 @@ declare module 'next-auth/jwt' {
     accessTokenExpires?: number;
     /** リフレッシュ失敗時のエラー */
     error?: 'RefreshAccessTokenError';
+    /** 初回ログイン時刻 (epoch ミリ秒)。以後のjwtコールバックでは更新しない。 */
+    loginAt?: number;
   }
 }
