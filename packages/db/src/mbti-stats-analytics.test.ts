@@ -1,6 +1,28 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { isKnownMbtiResultType, normalizeMbtiQuizCompletionInput } from './mbti-stats-analytics.js';
+import {
+  axisPercentFromAverageScore,
+  isKnownMbtiResultType,
+  normalizeMbtiQuizCompletionInput,
+} from './mbti-stats-analytics.js';
+
+test('axisPercentFromAverageScoreは平均スコア0を50%に変換する', () => {
+  assert.equal(axisPercentFromAverageScore('EI', 0), 50);
+});
+
+test('axisPercentFromAverageScoreは最大スコアを100%に変換する', () => {
+  assert.equal(axisPercentFromAverageScore('EI', 26), 100);
+  assert.equal(axisPercentFromAverageScore('TF', 24), 100);
+});
+
+test('axisPercentFromAverageScoreは最小スコアを0%に変換する', () => {
+  assert.equal(axisPercentFromAverageScore('EI', -26), 0);
+});
+
+test('axisPercentFromAverageScoreは範囲外の値を0〜100にクランプする', () => {
+  assert.equal(axisPercentFromAverageScore('JP', 999), 100);
+  assert.equal(axisPercentFromAverageScore('JP', -999), 0);
+});
 
 test('既知の16タイプはisKnownMbtiResultTypeでtrueになる', () => {
   assert.equal(isKnownMbtiResultType('INTJ'), true);
