@@ -40,15 +40,30 @@ export function mbtiLikertWeight(answer: MbtiLikertAnswer): number {
 }
 
 export interface MbtiQuestion {
+  /** 出題プール内での固定ID。人によって選ばれる設問が変わっても集計で同一設問だと分かるようにする。 */
+  id: number;
   axis: MbtiAxis;
   /** 「当てはまる」と答えるとaxisの正方向(EI:E / SN:S / TF:T / JP:J)へ加点される設問文。 */
   prompt: string;
 }
 
-// 各軸12〜13問、計50問。5段階Likertのため、以前の2択(奇数問)時のような
+/**
+ * 1回の診断で各軸から抽出する設問数。出題プール(MBTI_QUESTION_POOL)を拡張しても
+ * この値は変えない設計にし、スコア計算(computeMbtiAxisPercentの最大値)への影響を防ぐ。
+ */
+export const MBTI_AXIS_QUESTION_COUNTS: Record<MbtiAxis, number> = {
+  EI: 13,
+  SN: 13,
+  TF: 12,
+  JP: 12,
+};
+
+// 各軸26/26/24/24問、計100問のプール。5段階Likertのため、以前の2択(奇数問)時のような
 // 「合計が0にならない」保証はなく、タイブレーク処理が必要(computeMbtiTypeで正方向優先)。
-export const MBTI_QUESTIONS: readonly MbtiQuestion[] = [
-  // EI (13問)
+// selectMbtiQuestions()が人ごとにMBTI_AXIS_QUESTION_COUNTS分をランダム抽出し、順序も
+// シャッフルするため、diagnosisごとに出題される設問・順序が変わる。
+const MBTI_QUESTION_PROMPTS: readonly { axis: MbtiAxis; prompt: string }[] = [
+  // EI (26問)
   { axis: 'EI', prompt: '大人数で集まるとエネルギーが湧いてくる方だ' },
   { axis: 'EI', prompt: '初対面の人ともすぐに打ち解けられる方だ' },
   { axis: 'EI', prompt: '考えるより先に声に出して話し始めることが多い' },
@@ -62,7 +77,20 @@ export const MBTI_QUESTIONS: readonly MbtiQuestion[] = [
   { axis: 'EI', prompt: '沈黙が続くと自分から話題を振りたくなる方だ' },
   { axis: 'EI', prompt: '週末は外に出て人と会いたい方だ' },
   { axis: 'EI', prompt: 'グループでの作業に活気を感じる方だ' },
-  // SN (13問)
+  { axis: 'EI', prompt: '誰かと過ごす時間が長いほど元気が出る方だ' },
+  { axis: 'EI', prompt: '気になったことはすぐ声に出して確認したくなる方だ' },
+  { axis: 'EI', prompt: '初対面の相手にも自分から話しかけられる方だ' },
+  { axis: 'EI', prompt: '賑やかな飲み会やイベントに顔を出すのが好きな方だ' },
+  { axis: 'EI', prompt: 'チームで動く方が一人で動くより楽しいと感じる方だ' },
+  { axis: 'EI', prompt: '思いついたアイデアをすぐ誰かに話したくなる方だ' },
+  { axis: 'EI', prompt: '人前に立って発表するのは苦にならない方だ' },
+  { axis: 'EI', prompt: '知り合いが多いコミュニティに参加するのが楽しい方だ' },
+  { axis: 'EI', prompt: '長時間一人でいると刺激が足りないと感じる方だ' },
+  { axis: 'EI', prompt: '会話のキャッチボールが多い方が心地よい方だ' },
+  { axis: 'EI', prompt: 'SNSやチャットでも積極的に発信する方だ' },
+  { axis: 'EI', prompt: 'みんなでワイワイ盛り上がる場が好きな方だ' },
+  { axis: 'EI', prompt: '初めての集まりでも自分から輪に入っていける方だ' },
+  // SN (26問)
   { axis: 'SN', prompt: '具体的な事実やデータを重視して考える方だ' },
   { axis: 'SN', prompt: '今、目の前にあることに集中するのが得意な方だ' },
   { axis: 'SN', prompt: '経験したことをもとに物事を判断する方だ' },
@@ -76,7 +104,20 @@ export const MBTI_QUESTIONS: readonly MbtiQuestion[] = [
   { axis: 'SN', prompt: '実際に手を動かして学ぶのが得意な方だ' },
   { axis: 'SN', prompt: '空想より現実的な話をする方が落ち着く方だ' },
   { axis: 'SN', prompt: '決まった手順があると安心する方だ' },
-  // TF (12問)
+  { axis: 'SN', prompt: '理論より実際に起きた事例を重視する方だ' },
+  { axis: 'SN', prompt: '目に見える成果を確認しながら進めたい方だ' },
+  { axis: 'SN', prompt: 'これまでのやり方を踏襲する方が安心する方だ' },
+  { axis: 'SN', prompt: '抽象的なアイデアより具体的な手順を求める方だ' },
+  { axis: 'SN', prompt: '実際に試してみて確かめるのが好きな方だ' },
+  { axis: 'SN', prompt: '詳細な情報を一つずつ確認しながら進める方だ' },
+  { axis: 'SN', prompt: '経験に基づいたアドバイスを信頼する方だ' },
+  { axis: 'SN', prompt: '現状の事実をまず正確に把握したい方だ' },
+  { axis: 'SN', prompt: '説明書やマニュアルに沿って進める方が安心する方だ' },
+  { axis: 'SN', prompt: '新しい可能性より確実な方法を選びたい方だ' },
+  { axis: 'SN', prompt: 'データや記録をもとに判断する方だ' },
+  { axis: 'SN', prompt: '目の前の作業に集中して取り組む方だ' },
+  { axis: 'SN', prompt: '実務的で現実に即した解決策を好む方だ' },
+  // TF (24問)
   { axis: 'TF', prompt: '決断するときは感情より論理を優先する方だ' },
   { axis: 'TF', prompt: '率直な指摘は相手のためにも必要だと思う方だ' },
   { axis: 'TF', prompt: '議論では場の調和より正しさの方が大事だと思う方だ' },
@@ -89,7 +130,19 @@ export const MBTI_QUESTIONS: readonly MbtiQuestion[] = [
   { axis: 'TF', prompt: '筋道立てて説明されると納得しやすい方だ' },
   { axis: 'TF', prompt: '議論で感情的になることは少ない方だ' },
   { axis: 'TF', prompt: 'ルールや基準は例外なく適用すべきだと思う方だ' },
-  // JP (12問)
+  { axis: 'TF', prompt: '決断の場面では感情より結果の合理性を重視する方だ' },
+  { axis: 'TF', prompt: '議論では正確さを優先し情に流されない方だ' },
+  { axis: 'TF', prompt: '問題点は率直に指摘する方が良いと思う方だ' },
+  { axis: 'TF', prompt: '感情的な反応より論理的な説明を優先する方だ' },
+  { axis: 'TF', prompt: 'ルールに基づいた公平な判断を重視する方だ' },
+  { axis: 'TF', prompt: '意見が対立しても事実に基づいて結論を出したい方だ' },
+  { axis: 'TF', prompt: '効率を重視して無駄を省きたい方だ' },
+  { axis: 'TF', prompt: '分析的に物事を捉えるのが得意な方だ' },
+  { axis: 'TF', prompt: '批判は成長のために必要だと考える方だ' },
+  { axis: 'TF', prompt: '感情より整合性を重視して話を進める方だ' },
+  { axis: 'TF', prompt: '客観的な基準で評価されたい方だ' },
+  { axis: 'TF', prompt: '議論の場では冷静でいられる方だ' },
+  // JP (24問)
   { axis: 'JP', prompt: '行動する前に計画を立てておきたい方だ' },
   { axis: 'JP', prompt: '締め切りは早めに終わらせておきたい方だ' },
   { axis: 'JP', prompt: '物事がきちんと整理されていると安心する方だ' },
@@ -102,15 +155,48 @@ export const MBTI_QUESTIONS: readonly MbtiQuestion[] = [
   { axis: 'JP', prompt: '曖昧な状態が続くと落ち着かない方だ' },
   { axis: 'JP', prompt: '期限のあるタスクは前倒しで進めたい方だ' },
   { axis: 'JP', prompt: 'ルーティンが決まっていると安心する方だ' },
-] as const;
+  { axis: 'JP', prompt: '事前に計画を立てて動く方が安心する方だ' },
+  { axis: 'JP', prompt: 'やるべきことは早めに片付けたい方だ' },
+  { axis: 'JP', prompt: 'スケジュールが決まっている方が落ち着く方だ' },
+  { axis: 'JP', prompt: '物事は順序立てて進めたい方だ' },
+  { axis: 'JP', prompt: '予定が急に変わるとストレスを感じる方だ' },
+  { axis: 'JP', prompt: 'タスクは早めに終わらせておきたい方だ' },
+  { axis: 'JP', prompt: '計画通りに進んでいるか確認したくなる方だ' },
+  { axis: 'JP', prompt: '整理整頓された環境が落ち着く方だ' },
+  { axis: 'JP', prompt: '締め切りより早く仕上げることを目指す方だ' },
+  { axis: 'JP', prompt: '決まった手順に沿って進めると安心する方だ' },
+  { axis: 'JP', prompt: '先の予定を把握しておきたい方だ' },
+  { axis: 'JP', prompt: 'やり残しがあると気になってしまう方だ' },
+];
 
-export const MBTI_AXIS_QUESTION_COUNTS: Record<MbtiAxis, number> = MBTI_AXES.reduce(
-  (counts, axis) => {
-    counts[axis] = MBTI_QUESTIONS.filter((question) => question.axis === axis).length;
-    return counts;
-  },
-  {} as Record<MbtiAxis, number>,
+export const MBTI_QUESTION_POOL: readonly MbtiQuestion[] = MBTI_QUESTION_PROMPTS.map(
+  (entry, id) => ({ id, axis: entry.axis, prompt: entry.prompt }),
 );
+
+function shuffleInPlace<T>(items: T[], random: () => number): T[] {
+  for (let i = items.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    const temp = items[i]!;
+    items[i] = items[j]!;
+    items[j] = temp;
+  }
+  return items;
+}
+
+/**
+ * 出題プールから各軸MBTI_AXIS_QUESTION_COUNTS分をランダムに抽出し、全体の出題順序も
+ * シャッフルして返す。人によって選ばれる設問・順序が変わるが、各軸の設問数自体は
+ * 固定のためスコア計算(computeMbtiAxisPercent)に影響しない。
+ */
+export function selectMbtiQuestions(random: () => number = Math.random): MbtiQuestion[] {
+  const selected: MbtiQuestion[] = [];
+  for (const axis of MBTI_AXES) {
+    const axisPool = MBTI_QUESTION_POOL.filter((question) => question.axis === axis);
+    const shuffledPool = shuffleInPlace([...axisPool], random);
+    selected.push(...shuffledPool.slice(0, MBTI_AXIS_QUESTION_COUNTS[axis]));
+  }
+  return shuffleInPlace(selected, random);
+}
 
 export interface MbtiTypeInfo {
   title: string;
