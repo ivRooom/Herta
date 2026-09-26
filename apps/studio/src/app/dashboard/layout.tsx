@@ -13,6 +13,7 @@ import {
   type GuildSwitcherItem,
   type GuildSwitcherState,
 } from '@/components/guild-context-nav';
+import { SessionExpiryWatcher } from '@/components/session-expiry-watcher';
 import { StudioNavigationContextProvider } from '@/components/studio-navigation-context';
 import { StudioServerContextProvider } from '@/components/studio-server-context';
 import { getManageableGuilds } from '@/lib/guilds';
@@ -78,6 +79,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <StudioServerContextProvider guilds={guilds} initialDefaultGuildId={initialDefaultGuildId}>
       <StudioNavigationContextProvider>
         <div className="min-h-screen bg-background">
+          <SessionExpiryWatcher />
           <ConsoleCommandPaletteController />
 
           <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-border bg-surface/80 px-4 py-5 backdrop-blur-xl lg:flex">
