@@ -18,6 +18,29 @@ describe('wrapJapaneseText', () => {
   it('maxCharsPerLineより短い文字列は1行のまま', () => {
     expect(wrapJapaneseText('短い文', 16)).toEqual(['短い文']);
   });
+
+  it('単語の途中(例: 安心)で改行せず、直前の助詞で区切る', () => {
+    const lines = wrapJapaneseText('物事がきちんと整理されていると安心する方だ');
+    expect(lines).toEqual(['物事がきちんと整理されていると', '安心する方だ']);
+    // 「安心」が分割されていないことを明示的に確認する
+    expect(lines.some((line) => line.endsWith('安'))).toBe(false);
+  });
+
+  it('自然な区切り文字が近くに無ければmaxCharsPerLineまで詰める', () => {
+    const lines = wrapJapaneseText('議論では場の調和より正しさの方が大事だと思う方だ');
+    expect(lines[0]).toHaveLength(16);
+  });
+
+  it('「が」を「〜がる」動詞語尾として誤って区切り文字にしない(CodeRabbit指摘)', () => {
+    const lines = wrapJapaneseText('賑やかな場所にいると気分が上がる方だ');
+    expect(lines).toEqual(['賑やかな場所にいると気分が', '上がる方だ']);
+    expect(lines.some((line) => line.endsWith('上が'))).toBe(false);
+  });
+
+  it('「が」を「〜ながら」の一部として誤って区切り文字にしない', () => {
+    const lines = wrapJapaneseText('目に見える成果を確認しながら進めたい方だ');
+    expect(lines.some((line) => line.startsWith('ら'))).toBe(false);
+  });
 });
 
 describe('buildMbtiQuestionCardSvg', () => {
@@ -62,13 +85,45 @@ describe('buildMbtiQuestionCardSvg', () => {
       axis: 'JP',
     });
     const widthOf = (svg: string) => {
-      const match = /rx="12" fill="#a855f7"/.exec(svg);
+      const match = /<rect[^>]*fill="#a855f7"[^>]*\/>/.exec(svg);
       expect(match).not.toBeNull();
-      const rectStart = svg.lastIndexOf('<rect', match!.index);
-      const widthMatch = /width="(\d+)"/.exec(svg.slice(rectStart, match!.index));
+      const widthMatch = /width="(\d+)"/.exec(match![0]);
       return Number(widthMatch![1]);
     };
     expect(widthOf(last)).toBeGreaterThan(widthOf(first));
+  });
+
+  it('軸ごとに異なるアイコン(SVGパス)を描画する', () => {
+    const axes = ['EI', 'SN', 'TF', 'JP'] as const;
+    const bodies = axes.map(
+      (axis) =>
+        buildMbtiQuestionCardSvg({ questionIndex: 0, totalQuestions: 50, prompt: 'テスト', axis })
+          .split('translate(96,88)')[1]!
+          .split('</g>')[0]!,
+    );
+    expect(new Set(bodies).size).toBe(axes.length);
+  });
+
+  it('背景はグラデーションを使わず単色でカード間の統一感を保つ', () => {
+    const svg = buildMbtiQuestionCardSvg({
+      questionIndex: 0,
+      totalQuestions: 50,
+      prompt: 'テスト',
+      axis: 'EI',
+    });
+    expect(svg).not.toContain('linearGradient');
+    expect(svg).not.toContain('radialGradient');
+    expect(svg).toContain('fill="#17162a"');
+  });
+
+  it('小さくivRoomのブランド表記を含む', () => {
+    const svg = buildMbtiQuestionCardSvg({
+      questionIndex: 0,
+      totalQuestions: 50,
+      prompt: 'テスト',
+      axis: 'EI',
+    });
+    expect(svg).toContain('>ivRoom<');
   });
 });
 
@@ -84,5 +139,18 @@ describe('renderMbtiQuestionCard', () => {
     expect(metadata.format).toBe('png');
     expect(metadata.width).toBe(1200);
     expect(metadata.height).toBe(630);
+  });
+
+  it('4軸すべてでSVG(アイコン含む)が有効なPNGとしてレンダリングできる', async () => {
+    for (const axis of ['EI', 'SN', 'TF', 'JP'] as const) {
+      const buffer = await renderMbtiQuestionCard({
+        questionIndex: 0,
+        totalQuestions: 50,
+        prompt: 'テスト',
+        axis,
+      });
+      const metadata = await sharp(buffer).metadata();
+      expect(metadata.format).toBe('png');
+    }
   });
 });
