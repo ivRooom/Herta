@@ -19,7 +19,6 @@ import { definePlugin, type CommandHandler } from '@herta/plugin-sdk';
 import {
   MBTI_AXES,
   MBTI_LIKERT_ANSWERS,
-  MBTI_QUESTIONS,
   MBTI_TYPES,
   computeMbtiAxisPercent,
   computeMbtiType,
@@ -27,6 +26,8 @@ import {
   isMbtiLikertAnswer,
   mbtiLikertLabel,
   mbtiLikertWeight,
+  selectMbtiQuestions,
+  type MbtiQuestion,
   type MbtiScores,
 } from './mbti-core.js';
 import { renderMbtiQuestionCard } from './mbti-card.js';
@@ -96,6 +97,8 @@ interface MbtiSession {
   id: string;
   guildId: string;
   userId: string;
+  /** 人ごとにselectMbtiQuestions()で抽出・シャッフルした、この診断で出題する設問一覧。 */
+  questions: MbtiQuestion[];
   questionIndex: number;
   scores: MbtiScores;
   answers: MbtiQuizAnswerInput[];
@@ -144,6 +147,7 @@ async function startMbtiQuiz(
     id: randomUUID().replaceAll('-', ''),
     guildId: interaction.guildId,
     userId: interaction.user.id,
+    questions: selectMbtiQuestions(),
     questionIndex: 0,
     scores: createEmptyMbtiScores(),
     answers: [],
@@ -213,18 +217,20 @@ async function handleMbtiButton(
     return true;
   }
 
-  const question = MBTI_QUESTIONS[session.questionIndex];
+  const question = session.questions[session.questionIndex];
   if (!question) return false;
 
   session.scores[question.axis] += mbtiLikertWeight(parsed.answer);
   session.answers.push({
-    questionIndex: session.questionIndex,
+    // question.idは出題プール内の固定IDで、人によって選ばれる設問・順序が変わっても
+    // 集計側(question_index列)で同一設問だと判別できるようにする。
+    questionIndex: question.id,
     axis: question.axis,
     answer: parsed.answer,
   });
   session.questionIndex += 1;
 
-  if (session.questionIndex >= MBTI_QUESTIONS.length) {
+  if (session.questionIndex >= session.questions.length) {
     const type = computeMbtiType(session.scores);
     sessions.delete(session.id);
 
@@ -335,10 +341,10 @@ function isGuildMember(member: unknown): member is GuildMember {
 async function buildQuestionPayload(
   session: MbtiSession,
 ): Promise<{ content: string; files: AttachmentBuilder[]; attachments: []; embeds: [] }> {
-  const question = MBTI_QUESTIONS[session.questionIndex]!;
+  const question = session.questions[session.questionIndex]!;
   const png = await renderMbtiQuestionCard({
     questionIndex: session.questionIndex,
-    totalQuestions: MBTI_QUESTIONS.length,
+    totalQuestions: session.questions.length,
     prompt: question.prompt,
     axis: question.axis,
   });
