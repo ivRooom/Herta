@@ -32,6 +32,7 @@ import {
 } from './mbti-core.js';
 import { renderMbtiQuestionCard } from './mbti-card.js';
 import { reconcileMbtiRole } from './mbti-roles.js';
+import { pushMbtiResultToIvrmWeb, resolveMbtiIvrmSyncConfig } from './mbti-ivrm-sync.js';
 
 const PREFIX = 'herta:mbti:v1:';
 // 50問を5段階で回答するため、以前の12問2択より長時間を要する。1問あたりidleで
@@ -235,6 +236,7 @@ async function handleMbtiButton(
     sessions.delete(session.id);
 
     void recordMbtiStats(options.prisma, options.logger, session, type);
+    void syncMbtiResultToIvrmWeb(session, type, options.logger);
     const roleNote = await tryAssignMbtiRole(interaction, type, options);
     await interaction.update({
       content: null,
@@ -294,6 +296,33 @@ async function recordMbtiStats(
   } catch (error) {
     logger.warn({ err: error, guildId: session.guildId, type }, 'MBTI統計の記録に失敗しました');
   }
+}
+
+/**
+ * member.ivrm.jp側でDiscordアカウントを連携しているmemberの公開プロフィールへ
+ * MBTI診断結果を反映するため、ivrm-webへfire-and-forgetでpushする。
+ * Hertaは自身でDiscordユーザーID⇔診断結果のペアを永続化しない設計方針のため、
+ * ここで送信した後はこのプロセス内のメモリ(session)からも破棄される。
+ * `IVRM_WEB_API_BASE_URL` / `HERTA_MBTI_SYNC_SECRET` が未設定の場合は何もしない。
+ */
+async function syncMbtiResultToIvrmWeb(
+  session: MbtiSession,
+  type: string,
+  logger: Logger,
+): Promise<void> {
+  const config = resolveMbtiIvrmSyncConfig(process.env);
+  if (!config) return;
+
+  await pushMbtiResultToIvrmWeb(
+    config,
+    {
+      eventId: randomUUID(),
+      discordUserId: session.userId,
+      mbtiType: type,
+      occurredAt: new Date().toISOString(),
+    },
+    logger,
+  );
 }
 
 async function tryAssignMbtiRole(
