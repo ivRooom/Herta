@@ -154,13 +154,16 @@ jobs:
           fetch_ssm_secret '/ivrm/runtime/spotify/client-id' SPOTIFY_CLIENT_ID
           fetch_ssm_secret '/ivrm/runtime/spotify/client-secret' SPOTIFY_CLIENT_SECRET
 
+          echo "=== ivrm-web MBTI同期 runtime secret ==="
+          fetch_ssm_secret '/ivrm/runtime/herta/mbti-sync-secret' HERTA_MBTI_SYNC_SECRET
+
       - name: LightsailへSSHデプロイ
         uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          envs: DEPLOY_REF,HERTA_IMAGE,GHCR_USERNAME,GHCR_TOKEN,SPOTIFY_CLIENT_ID,SPOTIFY_CLIENT_SECRET,HERTA_RUNTIME_SECRET_KEY
+          envs: DEPLOY_REF,HERTA_IMAGE,GHCR_USERNAME,GHCR_TOKEN,SPOTIFY_CLIENT_ID,SPOTIFY_CLIENT_SECRET,HERTA_RUNTIME_SECRET_KEY,HERTA_MBTI_SYNC_SECRET
           command_timeout: 15m
           script: |
             set -euo pipefail
@@ -200,6 +203,10 @@ jobs:
             if [ -z "${HERTA_RUNTIME_SECRET_KEY:-}" ]; then
               echo "ERROR: HERTA_RUNTIME_SECRET_KEYが渡されていません。" >&2
               echo "       GitHub production Environment の secret HERTA_RUNTIME_SECRET_KEY を設定してください。" >&2
+              exit 1
+            fi
+            if [ -z "${HERTA_MBTI_SYNC_SECRET:-}" ]; then
+              echo "ERROR: HERTA_MBTI_SYNC_SECRETが渡されていません。" >&2
               exit 1
             fi
 
@@ -275,6 +282,8 @@ jobs:
             upsert_env SPOTIFY_CLIENT_ID "${SPOTIFY_CLIENT_ID}"
             upsert_env SPOTIFY_CLIENT_SECRET "${SPOTIFY_CLIENT_SECRET}"
             upsert_env HERTA_RUNTIME_SECRET_KEY "${HERTA_RUNTIME_SECRET_KEY}"
+            upsert_env HERTA_MBTI_SYNC_SECRET "${HERTA_MBTI_SYNC_SECRET}"
+            upsert_env IVRM_WEB_API_BASE_URL "https://api.ivrm.jp"
             echo "Runtime secretsを同期しました（値は非表示）"
 
             # target revisionのdeploy helperを使ってimage/migration/service操作を行う。
