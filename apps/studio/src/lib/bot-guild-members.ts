@@ -77,3 +77,21 @@ export async function getGuildMemberById(
   const members = await searchGuildMembers(guildId, userId, 1);
   return members?.find((member) => member.id === userId) ?? null;
 }
+
+/**
+ * Studioへログインしたことがないguild memberでも、bot側のlive member cacheから
+ * username/avatarを解決するための一括lookup。UserテーブルはStudioログイン時
+ * のみ更新されるため、活動ログ・リーダーボード等の表示にはこちらを使う。
+ */
+export async function resolveGuildMemberDisplays(
+  guildId: string,
+  userIds: readonly string[],
+): Promise<Map<string, GuildMemberOption>> {
+  const uniqueIds = [...new Set(userIds)];
+  const resolved = await Promise.all(
+    uniqueIds.map(async (userId) => [userId, await getGuildMemberById(guildId, userId)] as const),
+  );
+  return new Map(
+    resolved.flatMap(([userId, member]) => (member ? [[userId, member] as const] : [])),
+  );
+}

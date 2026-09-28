@@ -13,6 +13,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { redirect } from 'next/navigation';
+import { resolveGuildMemberDisplays } from '@/lib/bot-guild-members';
+import { DiscordMemberIdentity } from '@/components/discord-member-identity';
 import { prisma } from '@/lib/db';
 import { getManageableGuilds } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
@@ -164,13 +166,12 @@ export default async function CommunityDashboardPage({
     total: Number(row._sum.value ?? 0n),
   }));
 
-  const users = top.length
-    ? await prisma.user.findMany({
-        where: { id: { in: top.map((item) => item.userId) } },
-        select: { id: true, username: true },
-      })
-    : [];
-  const userNames = new Map(users.map((user) => [user.id, user.username]));
+  const memberMap = top.length
+    ? await resolveGuildMemberDisplays(
+        guild.id,
+        top.map((item) => item.userId),
+      )
+    : new Map();
 
   const max = Math.max(...top.map((item) => item.total), 1);
   const selectedTotal = totalMap.get(metric) ?? 0;
@@ -370,14 +371,12 @@ export default async function CommunityDashboardPage({
             {top.map((item, index) => (
               <div key={item.userId} className="rounded-xl border border-border bg-background p-4">
                 <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
-                      <span className="mr-2 text-muted">#{index + 1}</span>
-                      {userNames.get(item.userId) ?? `Discord ID: ${item.userId}`}
-                    </p>
-                    {userNames.has(item.userId) ? (
-                      <p className="mt-0.5 truncate text-[11px] text-muted">{item.userId}</p>
-                    ) : null}
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="shrink-0 text-sm text-muted">#{index + 1}</span>
+                    <DiscordMemberIdentity
+                      member={memberMap.get(item.userId)}
+                      userId={item.userId}
+                    />
                   </div>
                   <span className="shrink-0 text-sm font-semibold tabular-nums">
                     {formatMetric(metric, item.total)}

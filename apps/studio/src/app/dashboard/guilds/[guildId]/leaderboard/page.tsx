@@ -16,7 +16,11 @@ import {
   Users,
 } from 'lucide-react';
 import { auth } from '@/auth';
-import { searchGuildMembers, type GuildMemberOption } from '@/lib/bot-guild-members';
+import { resolveGuildMemberDisplays, type GuildMemberOption } from '@/lib/bot-guild-members';
+import {
+  DiscordMemberIdentity,
+  discordMemberDisplayName,
+} from '@/components/discord-member-identity';
 import {
   COMMUNITY_LEADERBOARD_DEFINITIONS,
   communityLeaderboardPeriodLabel,
@@ -69,9 +73,9 @@ export default async function CommunityLeaderboardPage({
     seasonKey: query.metric === 'season' ? selectedSeason.key : null,
     viewerUserId: session.user.id ?? null,
   });
-  const memberMap = await resolveMemberNames(
+  const memberMap = await resolveGuildMemberDisplays(
     guildId,
-    snapshot.entries.slice(0, 10).map((entry) => entry.userId),
+    snapshot.entries.map((entry) => entry.userId),
   );
   const topEntry = snapshot.entries[0];
 
@@ -121,7 +125,11 @@ export default async function CommunityLeaderboardPage({
         <SummaryCard
           icon={Crown}
           label={query.metric === 'season' ? 'Season 1位' : '現在の1位'}
-          value={topEntry ? displayName(memberMap.get(topEntry.userId), topEntry.userId) : '—'}
+          value={
+            topEntry
+              ? discordMemberDisplayName(memberMap.get(topEntry.userId), topEntry.userId)
+              : '—'
+          }
           detail={
             topEntry
               ? formatEntryValue(query.metric, topEntry.value, topEntry.secondaryValue)
@@ -301,7 +309,9 @@ export default async function CommunityLeaderboardPage({
               <div className="min-w-0">
                 <p className="text-xs font-medium text-muted">Season Champion</p>
                 <p className="mt-1 truncate text-sm font-semibold">
-                  {topEntry ? displayName(memberMap.get(topEntry.userId), topEntry.userId) : '—'}
+                  {topEntry
+                    ? discordMemberDisplayName(memberMap.get(topEntry.userId), topEntry.userId)
+                    : '—'}
                 </p>
                 <p className="mt-0.5 text-xs text-muted">
                   {topEntry
@@ -365,7 +375,7 @@ export default async function CommunityLeaderboardPage({
                   <span className="text-xs font-semibold text-muted">#{award.rank}</span>
                 </div>
                 <p className="mt-3 truncate text-sm font-semibold">
-                  {displayName(memberMap.get(award.userId), award.userId)}
+                  {discordMemberDisplayName(memberMap.get(award.userId), award.userId)}
                 </p>
                 <p className="mt-1 text-xs text-muted">{award.points.toLocaleString()} pt</p>
               </article>
@@ -381,7 +391,7 @@ export default async function CommunityLeaderboardPage({
               <PodiumCard
                 key={entry.userId}
                 rank={entry.rank}
-                name={displayName(memberMap.get(entry.userId), entry.userId)}
+                member={memberMap.get(entry.userId)}
                 userId={entry.userId}
                 value={formatEntryValue(query.metric, entry.value, entry.secondaryValue)}
               />
@@ -409,12 +419,7 @@ export default async function CommunityLeaderboardPage({
                     <span className="text-center text-sm font-semibold text-muted">
                       #{entry.rank}
                     </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">
-                        {displayName(member, entry.userId)}
-                      </p>
-                      <p className="mt-0.5 truncate text-xs text-muted">{entry.userId}</p>
-                    </div>
+                    <DiscordMemberIdentity member={member} userId={entry.userId} />
                     <span className="text-right text-sm font-semibold">
                       {formatEntryValue(query.metric, entry.value, entry.secondaryValue)}
                     </span>
@@ -479,12 +484,12 @@ function SummaryCard({
 
 function PodiumCard({
   rank,
-  name,
+  member,
   userId,
   value,
 }: {
   rank: number;
-  name: string;
+  member: GuildMemberOption | undefined;
   userId: string;
   value: string;
 }) {
@@ -497,8 +502,9 @@ function PodiumCard({
         </span>
         <span className="text-xs font-semibold text-muted">#{rank}</span>
       </div>
-      <p className="mt-4 truncate font-semibold">{name}</p>
-      <p className="mt-1 truncate text-xs text-muted">{userId}</p>
+      <div className="mt-4">
+        <DiscordMemberIdentity member={member} userId={userId} subtitle="" />
+      </div>
       <p className="mt-4 text-lg font-semibold text-primary">{value}</p>
     </article>
   );
@@ -549,26 +555,6 @@ function formatSeasonDateRange(season: CommunitySeasonWindow): string {
   });
   const inclusiveEnd = new Date(season.endsAt.getTime() - 1);
   return `${formatter.format(season.startsAt)} – ${formatter.format(inclusiveEnd)}`;
-}
-
-async function resolveMemberNames(
-  guildId: string,
-  userIds: string[],
-): Promise<Map<string, GuildMemberOption>> {
-  const resolved = await Promise.all(
-    userIds.map(async (userId) => {
-      const members = await searchGuildMembers(guildId, userId, 1);
-      return [userId, members?.[0] ?? null] as const;
-    }),
-  );
-  return new Map(
-    resolved.flatMap(([userId, member]) => (member ? [[userId, member] as const] : [])),
-  );
-}
-
-function displayName(member: GuildMemberOption | undefined, userId: string): string {
-  if (member) return member.displayName || member.username;
-  return `User ${userId.slice(-6)}`;
 }
 
 function first(value: string | string[] | undefined): string | undefined {
