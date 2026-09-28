@@ -766,15 +766,25 @@ function SchemaField({
         path={path}
         issues={issues}
       >
-        <DiscordRolePicker
-          options={discordOptions?.roles ?? []}
-          value={normalizeDiscordEntityValue(value, discordMultiple)}
-          multiple={discordMultiple}
-          placeholder={ui.placeholder}
-          editableOnly={ui.editableOnly}
-          mentionableOnly={ui.mentionableOnly}
-          onChange={(next) => onChange(path, next)}
-        />
+        <div className="space-y-1.5">
+          <DiscordRolePicker
+            options={discordOptions?.roles ?? []}
+            value={normalizeDiscordEntityValue(value, discordMultiple)}
+            multiple={discordMultiple}
+            placeholder={ui.placeholder}
+            editableOnly={ui.editableOnly}
+            mentionableOnly={ui.mentionableOnly}
+            onChange={(next) => onChange(path, next)}
+          />
+          <a
+            href={`/dashboard/guilds/${guildId}/roles`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          >
+            + 新しいRoleを作成
+          </a>
+        </div>
       </FieldShell>
     );
   }
