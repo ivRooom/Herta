@@ -9,10 +9,12 @@ import {
   Pickaxe,
   Sparkles,
   TrendingUp,
+  UserPlus,
   Users,
   type LucideIcon,
 } from 'lucide-react';
 import { redirect } from 'next/navigation';
+import { getCommunityActiveUserCounts, getCommunityNewVsReturningUsers } from '@herta/db';
 import { resolveGuildMemberDisplays } from '@/lib/bot-guild-members';
 import { DiscordMemberIdentity } from '@/components/discord-member-identity';
 import { PeriodRangePicker } from '@/components/period-range-picker';
@@ -196,40 +198,43 @@ export default async function CommunityDashboardPage({
   const previousEnd = new Date(start.getTime() - 1);
   const previousStart = new Date(previousEnd.getTime() - (rangeDays - 1) * 86_400_000);
 
-  const [rows, totals, activeUsers, dailyRows, previousRows] = await Promise.all([
-    prisma.communityActivityDaily.groupBy({
-      by: ['userId'],
-      where: { guildId: guild.id, metric, activityDate: { gte: start, lte: end } },
-      _sum: { value: true },
-      orderBy: [{ _sum: { value: 'desc' } }, { userId: 'asc' }],
-      take: 25,
-    }),
-    prisma.communityActivityDaily.groupBy({
-      by: ['metric'],
-      where: { guildId: guild.id, activityDate: { gte: start, lte: end } },
-      _sum: { value: true },
-    }),
-    prisma.communityActivityDaily.findMany({
-      where: { guildId: guild.id, activityDate: { gte: start, lte: end } },
-      distinct: ['userId'],
-      select: { userId: true },
-    }),
-    prisma.communityActivityDaily.groupBy({
-      by: ['activityDate'],
-      where: { guildId: guild.id, metric, activityDate: { gte: start, lte: end } },
-      _sum: { value: true },
-      orderBy: { activityDate: 'asc' },
-    }),
-    prisma.communityActivityDaily.groupBy({
-      by: ['metric'],
-      where: {
-        guildId: guild.id,
-        metric,
-        activityDate: { gte: previousStart, lte: previousEnd },
-      },
-      _sum: { value: true },
-    }),
-  ]);
+  const [rows, totals, activeUsers, dailyRows, previousRows, activeUserCounts, newVsReturning] =
+    await Promise.all([
+      prisma.communityActivityDaily.groupBy({
+        by: ['userId'],
+        where: { guildId: guild.id, metric, activityDate: { gte: start, lte: end } },
+        _sum: { value: true },
+        orderBy: [{ _sum: { value: 'desc' } }, { userId: 'asc' }],
+        take: 25,
+      }),
+      prisma.communityActivityDaily.groupBy({
+        by: ['metric'],
+        where: { guildId: guild.id, activityDate: { gte: start, lte: end } },
+        _sum: { value: true },
+      }),
+      prisma.communityActivityDaily.findMany({
+        where: { guildId: guild.id, activityDate: { gte: start, lte: end } },
+        distinct: ['userId'],
+        select: { userId: true },
+      }),
+      prisma.communityActivityDaily.groupBy({
+        by: ['activityDate'],
+        where: { guildId: guild.id, metric, activityDate: { gte: start, lte: end } },
+        _sum: { value: true },
+        orderBy: { activityDate: 'asc' },
+      }),
+      prisma.communityActivityDaily.groupBy({
+        by: ['metric'],
+        where: {
+          guildId: guild.id,
+          metric,
+          activityDate: { gte: previousStart, lte: previousEnd },
+        },
+        _sum: { value: true },
+      }),
+      getCommunityActiveUserCounts(prisma, { guildId: guild.id, asOf: end }),
+      getCommunityNewVsReturningUsers(prisma, { guildId: guild.id, start, end }),
+    ]);
 
   const totalMap = new Map(totals.map((item) => [item.metric, Number(item._sum.value ?? 0n)]));
   const top = rows.map((row) => ({
@@ -372,6 +377,32 @@ export default async function CommunityDashboardPage({
       </div>
 
       <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
+        <div className="flex items-center gap-2">
+          <Users className="h-5 w-5 text-primary" />
+          <h2 className="font-medium">アクティブユーザー</h2>
+        </div>
+        <p className="mt-1 text-sm text-muted">
+          {dateKey(end)}時点のDAU/WAU/MAU、および選択期間内の新規・復帰ユーザー内訳。
+        </p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <ActiveUserStat label="DAU" sublabel="当日" value={activeUserCounts.dau} />
+          <ActiveUserStat label="WAU" sublabel="直近7日" value={activeUserCounts.wau} />
+          <ActiveUserStat label="MAU" sublabel="直近30日" value={activeUserCounts.mau} />
+          <ActiveUserStat
+            label="新規"
+            sublabel="期間内が初活動"
+            value={newVsReturning.newUsers}
+            icon={UserPlus}
+          />
+          <ActiveUserStat
+            label="復帰/継続"
+            sublabel="期間前から活動歴あり"
+            value={newVsReturning.returningUsers}
+          />
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
           <div>
             <div className="flex items-center gap-2">
@@ -498,6 +529,29 @@ export default async function CommunityDashboardPage({
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+function ActiveUserStat({
+  label,
+  sublabel,
+  value,
+  icon: Icon = Users,
+}: {
+  label: string;
+  sublabel: string;
+  value: number;
+  icon?: LucideIcon;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-background p-4">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium text-muted">{label}</p>
+        <Icon className="h-4 w-4 text-primary" />
+      </div>
+      <p className="mt-2 text-xl font-semibold">{value.toLocaleString('ja-JP')}</p>
+      <p className="mt-1 text-[11px] text-muted">{sublabel}</p>
     </div>
   );
 }
