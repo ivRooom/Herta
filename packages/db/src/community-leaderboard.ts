@@ -38,6 +38,7 @@ export async function queryCommunityLeaderboardData(
     metric: CommunityLeaderboardStorageMetric;
     limit: number;
     start?: Date;
+    end?: Date;
     seasonKey?: string;
   },
 ): Promise<CommunityLeaderboardDataSnapshot> {
@@ -60,6 +61,7 @@ export async function queryCommunityLeaderboardRank(
     userId: string;
     metric: CommunityLeaderboardStorageMetric;
     start?: Date;
+    end?: Date;
     seasonKey?: string;
   },
 ): Promise<CommunityLeaderboardRankData | null> {
@@ -81,6 +83,7 @@ async function listRows(
     metric: CommunityLeaderboardStorageMetric;
     limit: number;
     start?: Date;
+    end?: Date;
     seasonKey?: string;
   },
 ): Promise<RankedRow[]> {
@@ -103,12 +106,14 @@ async function listRows(
 
   if (input.metric === 'achievements') {
     const start = input.start ?? new Date('1970-01-01T00:00:00.000Z');
+    const end = input.end ?? new Date('9999-12-31T23:59:59.999Z');
     return prisma.$queryRaw<RankedRow[]>`
       WITH totals AS (
         SELECT "user_id", COUNT(*)::bigint AS "total"
         FROM "achievement_unlocks"
         WHERE "guild_id" = ${input.guildId}
           AND "unlocked_at" >= ${start}
+          AND "unlocked_at" <= ${end}
           AND "achievement_id" NOT LIKE 'blocked:%'
         GROUP BY "user_id"
       )
@@ -168,6 +173,7 @@ async function listRows(
   }
 
   const start = input.start ?? new Date('1970-01-01T00:00:00.000Z');
+  const end = input.end ?? new Date('9999-12-31T23:59:59.999Z');
   if (input.metric === 'reactions') {
     return prisma.$queryRaw<RankedRow[]>`
       WITH totals AS (
@@ -176,6 +182,7 @@ async function listRows(
         WHERE "guild_id" = ${input.guildId}
           AND "metric" IN ('reactions_given', 'reactions_received')
           AND "activity_date" >= ${start}
+          AND "activity_date" <= ${end}
         GROUP BY "user_id"
       )
       SELECT
@@ -196,6 +203,7 @@ async function listRows(
       WHERE "guild_id" = ${input.guildId}
         AND "metric" = ${databaseMetric}
         AND "activity_date" >= ${start}
+        AND "activity_date" <= ${end}
       GROUP BY "user_id"
     )
     SELECT
@@ -215,6 +223,7 @@ async function rankRows(
     userId: string;
     metric: CommunityLeaderboardStorageMetric;
     start?: Date;
+    end?: Date;
     seasonKey?: string;
   },
 ): Promise<RankRow[]> {
@@ -238,12 +247,14 @@ async function rankRows(
 
   if (input.metric === 'achievements') {
     const start = input.start ?? new Date('1970-01-01T00:00:00.000Z');
+    const end = input.end ?? new Date('9999-12-31T23:59:59.999Z');
     return prisma.$queryRaw<RankRow[]>`
       WITH totals AS (
         SELECT "user_id", COUNT(*)::bigint AS "total"
         FROM "achievement_unlocks"
         WHERE "guild_id" = ${input.guildId}
           AND "unlocked_at" >= ${start}
+          AND "unlocked_at" <= ${end}
           AND "achievement_id" NOT LIKE 'blocked:%'
         GROUP BY "user_id"
       ), ranked AS (
@@ -306,6 +317,7 @@ async function rankRows(
   }
 
   const start = input.start ?? new Date('1970-01-01T00:00:00.000Z');
+  const end = input.end ?? new Date('9999-12-31T23:59:59.999Z');
   if (input.metric === 'reactions') {
     return prisma.$queryRaw<RankRow[]>`
       WITH totals AS (
@@ -314,6 +326,7 @@ async function rankRows(
         WHERE "guild_id" = ${input.guildId}
           AND "metric" IN ('reactions_given', 'reactions_received')
           AND "activity_date" >= ${start}
+          AND "activity_date" <= ${end}
         GROUP BY "user_id"
       ), ranked AS (
         SELECT
@@ -338,6 +351,7 @@ async function rankRows(
       WHERE "guild_id" = ${input.guildId}
         AND "metric" = ${databaseMetric}
         AND "activity_date" >= ${start}
+        AND "activity_date" <= ${end}
       GROUP BY "user_id"
     ), ranked AS (
       SELECT

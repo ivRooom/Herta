@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  communityActivityPeriodEnd,
   communityActivityPeriodStart,
   communityLeaderboardLevelForXp,
+  communityLeaderboardPeriodLabel,
   communityLeaderboardSeasonDaysRemaining,
   communityLeaderboardSeasonStatus,
+  communityTimestampPeriodEnd,
   communityTimestampPeriodStart,
   formatCommunityLeaderboardValue,
   listCommunityLeaderboardSeasons,
@@ -17,16 +20,19 @@ test('Metricごとに利用可能な期間へLeaderboard queryを正規化する
     metric: 'messages',
     period: '30d',
     limit: 10,
+    customRange: null,
   });
   assert.deepEqual(normalizeCommunityLeaderboardQuery({ metric: 'xp', period: '7d', limit: 25 }), {
     metric: 'xp',
     period: 'all',
     limit: 25,
+    customRange: null,
   });
   assert.deepEqual(normalizeCommunityLeaderboardQuery({ metric: 'season', period: 'all' }), {
     metric: 'season',
     period: 'season',
     limit: 10,
+    customRange: null,
   });
 });
 
@@ -37,6 +43,7 @@ test('Top 25は文字列queryでも正規化できる', () => {
       metric: 'messages',
       period: '7d',
       limit: 25,
+      customRange: null,
     },
   );
 });
@@ -48,8 +55,51 @@ test('未知Metricと不正limitは安全な既定値へ戻す', () => {
       metric: 'xp',
       period: 'all',
       limit: 10,
+      customRange: null,
     },
   );
+});
+
+test('customRangeを指定すると1日〜10年の範囲でperiod=customを受理する', () => {
+  const result = normalizeCommunityLeaderboardQuery({
+    metric: 'messages',
+    period: 'custom',
+    from: '2026-01-01',
+    to: '2026-01-31',
+  });
+  assert.equal(result.period, 'custom');
+  assert.deepEqual(result.customRange, {
+    start: new Date('2026-01-01T00:00:00.000Z'),
+    end: new Date('2026-01-31T00:00:00.000Z'),
+  });
+});
+
+test('不正なcustom rangeはmetricの既定periodへfail closedする', () => {
+  const invalidOrder = normalizeCommunityLeaderboardQuery({
+    metric: 'messages',
+    period: 'custom',
+    from: '2026-02-01',
+    to: '2026-01-01',
+  });
+  assert.equal(invalidOrder.period, '7d');
+  assert.equal(invalidOrder.customRange, null);
+
+  const tooLong = normalizeCommunityLeaderboardQuery({
+    metric: 'messages',
+    period: 'custom',
+    from: '2000-01-01',
+    to: '2026-01-01',
+  });
+  assert.equal(tooLong.period, '7d');
+  assert.equal(tooLong.customRange, null);
+
+  const missingTo = normalizeCommunityLeaderboardQuery({
+    metric: 'messages',
+    period: 'custom',
+    from: '2026-01-01',
+  });
+  assert.equal(missingTo.period, '7d');
+  assert.equal(missingTo.customRange, null);
 });
 
 test('XPからLevelを既存XP式と同じルールで算出する', () => {
@@ -80,6 +130,45 @@ test('All TimeはActivityとTimestampの両方で共通の下限を返す', () =
   const now = new Date('2026-08-13T01:00:00.000Z');
   assert.equal(communityActivityPeriodStart('all', now).toISOString(), '1970-01-01T00:00:00.000Z');
   assert.equal(communityTimestampPeriodStart('all', now).toISOString(), '1970-01-01T00:00:00.000Z');
+});
+
+test('customRangeを渡すとActivity/Timestamp双方の開始・終了がその範囲になる', () => {
+  const now = new Date('2026-08-13T01:00:00.000Z');
+  const customRange = {
+    start: new Date('2026-01-01T00:00:00.000Z'),
+    end: new Date('2026-01-31T00:00:00.000Z'),
+  };
+  assert.equal(
+    communityActivityPeriodStart('custom', now, customRange).toISOString(),
+    '2026-01-01T00:00:00.000Z',
+  );
+  assert.equal(
+    communityActivityPeriodEnd('custom', now, customRange).toISOString(),
+    '2026-01-31T00:00:00.000Z',
+  );
+  assert.equal(
+    communityTimestampPeriodStart('custom', now, customRange).toISOString(),
+    '2025-12-31T15:00:00.000Z',
+  );
+  assert.equal(
+    communityTimestampPeriodEnd('custom', now, customRange).toISOString(),
+    '2026-01-31T14:59:59.999Z',
+  );
+});
+
+test('preset periodのActivity上限は当日、Timestamp上限は現在時刻', () => {
+  const now = new Date('2026-08-13T01:00:00.000Z');
+  assert.equal(communityActivityPeriodEnd('7d', now).toISOString(), '2026-08-13T00:00:00.000Z');
+  assert.equal(communityTimestampPeriodEnd('7d', now).toISOString(), now.toISOString());
+});
+
+test('customRange指定時のperiod labelは実際の日付範囲を表示する', () => {
+  const customRange = {
+    start: new Date('2026-01-01T00:00:00.000Z'),
+    end: new Date('2026-01-31T00:00:00.000Z'),
+  };
+  assert.equal(communityLeaderboardPeriodLabel('custom', customRange), '2026/01/01 〜 2026/01/31');
+  assert.equal(communityLeaderboardPeriodLabel('10y'), '直近10年');
 });
 
 test('直近Season履歴を現在から新しい順に生成する', () => {
