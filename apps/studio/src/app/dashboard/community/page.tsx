@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   BarChart3,
+  Hash,
   MessageSquare,
   Mic2,
   Pickaxe,
@@ -14,8 +15,13 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { redirect } from 'next/navigation';
-import { getCommunityActiveUserCounts, getCommunityNewVsReturningUsers } from '@herta/db';
+import {
+  getCommunityActiveUserCounts,
+  getCommunityChannelBreakdown,
+  getCommunityNewVsReturningUsers,
+} from '@herta/db';
 import { resolveGuildMemberDisplays } from '@/lib/bot-guild-members';
+import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
 import { DiscordMemberIdentity } from '@/components/discord-member-identity';
 import { PeriodRangePicker } from '@/components/period-range-picker';
 import { prisma } from '@/lib/db';
@@ -198,43 +204,61 @@ export default async function CommunityDashboardPage({
   const previousEnd = new Date(start.getTime() - 1);
   const previousStart = new Date(previousEnd.getTime() - (rangeDays - 1) * 86_400_000);
 
-  const [rows, totals, activeUsers, dailyRows, previousRows, activeUserCounts, newVsReturning] =
-    await Promise.all([
-      prisma.communityActivityDaily.groupBy({
-        by: ['userId'],
-        where: { guildId: guild.id, metric, activityDate: { gte: start, lte: end } },
-        _sum: { value: true },
-        orderBy: [{ _sum: { value: 'desc' } }, { userId: 'asc' }],
-        take: 25,
-      }),
-      prisma.communityActivityDaily.groupBy({
-        by: ['metric'],
-        where: { guildId: guild.id, activityDate: { gte: start, lte: end } },
-        _sum: { value: true },
-      }),
-      prisma.communityActivityDaily.findMany({
-        where: { guildId: guild.id, activityDate: { gte: start, lte: end } },
-        distinct: ['userId'],
-        select: { userId: true },
-      }),
-      prisma.communityActivityDaily.groupBy({
-        by: ['activityDate'],
-        where: { guildId: guild.id, metric, activityDate: { gte: start, lte: end } },
-        _sum: { value: true },
-        orderBy: { activityDate: 'asc' },
-      }),
-      prisma.communityActivityDaily.groupBy({
-        by: ['metric'],
-        where: {
-          guildId: guild.id,
-          metric,
-          activityDate: { gte: previousStart, lte: previousEnd },
-        },
-        _sum: { value: true },
-      }),
-      getCommunityActiveUserCounts(prisma, { guildId: guild.id, asOf: end }),
-      getCommunityNewVsReturningUsers(prisma, { guildId: guild.id, start, end }),
-    ]);
+  const [
+    rows,
+    totals,
+    activeUsers,
+    dailyRows,
+    previousRows,
+    activeUserCounts,
+    newVsReturning,
+    channelBreakdown,
+    guildOptions,
+  ] = await Promise.all([
+    prisma.communityActivityDaily.groupBy({
+      by: ['userId'],
+      where: { guildId: guild.id, metric, activityDate: { gte: start, lte: end } },
+      _sum: { value: true },
+      orderBy: [{ _sum: { value: 'desc' } }, { userId: 'asc' }],
+      take: 25,
+    }),
+    prisma.communityActivityDaily.groupBy({
+      by: ['metric'],
+      where: { guildId: guild.id, activityDate: { gte: start, lte: end } },
+      _sum: { value: true },
+    }),
+    prisma.communityActivityDaily.findMany({
+      where: { guildId: guild.id, activityDate: { gte: start, lte: end } },
+      distinct: ['userId'],
+      select: { userId: true },
+    }),
+    prisma.communityActivityDaily.groupBy({
+      by: ['activityDate'],
+      where: { guildId: guild.id, metric, activityDate: { gte: start, lte: end } },
+      _sum: { value: true },
+      orderBy: { activityDate: 'asc' },
+    }),
+    prisma.communityActivityDaily.groupBy({
+      by: ['metric'],
+      where: {
+        guildId: guild.id,
+        metric,
+        activityDate: { gte: previousStart, lte: previousEnd },
+      },
+      _sum: { value: true },
+    }),
+    getCommunityActiveUserCounts(prisma, { guildId: guild.id, asOf: end }),
+    getCommunityNewVsReturningUsers(prisma, { guildId: guild.id, start, end }),
+    getCommunityChannelBreakdown(prisma, { guildId: guild.id, metric, start, end, limit: 10 }),
+    getGuildConfigurationOptions(guild.id),
+  ]);
+
+  const channelNameMap = new Map(
+    (guildOptions?.channels ?? []).map((channel) => [channel.id, channel.name]),
+  );
+  const channelDisplayName = (channelId: string) =>
+    channelNameMap.get(channelId) ?? `# ${channelId.slice(-6)}`;
+  const channelBreakdownMax = Math.max(...channelBreakdown.map((item) => item.value), 1);
 
   const totalMap = new Map(totals.map((item) => [item.metric, Number(item._sum.value ?? 0n)]));
   const top = rows.map((row) => ({
@@ -458,6 +482,38 @@ export default async function CommunityDashboardPage({
             );
           })}
         </div>
+      </section>
+
+      <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
+        <div className="flex items-center gap-2">
+          <Hash className="h-5 w-5 text-primary" />
+          <h2 className="font-medium">チャンネル別内訳</h2>
+        </div>
+        <p className="mt-1 text-sm text-muted">
+          {metricLabels[metric]}が多いチャンネル上位{channelBreakdown.length}件。
+        </p>
+        {channelBreakdown.length === 0 ? (
+          <p className="mt-6 text-sm text-muted">この期間の活動データはまだありません。</p>
+        ) : (
+          <div className="mt-4 space-y-2">
+            {channelBreakdown.map((item) => (
+              <div key={item.channelId} className="flex items-center gap-3">
+                <span className="w-32 shrink-0 truncate text-sm text-muted sm:w-48">
+                  {channelDisplayName(item.channelId)}
+                </span>
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-background">
+                  <div
+                    className="h-full rounded-full bg-primary/70"
+                    style={{ width: `${Math.max(3, (item.value / channelBreakdownMax) * 100)}%` }}
+                  />
+                </div>
+                <span className="w-24 shrink-0 text-right text-sm font-semibold">
+                  {formatMetric(metric, item.value)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">

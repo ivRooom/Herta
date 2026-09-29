@@ -56,6 +56,7 @@ export async function incrementCommunityActivity(
   metric: CommunityActivityMetric,
   amount = 1,
   occurredAt = new Date(),
+  channelId?: string,
 ): Promise<void> {
   if (!Number.isFinite(amount) || amount <= 0) return;
   const activityDate = jstDate(occurredAt);
@@ -64,6 +65,53 @@ export async function incrementCommunityActivity(
       guildId_userId_activityDate_metric: { guildId, userId, activityDate, metric },
     },
     create: { guildId, userId, activityDate, metric, value: BigInt(Math.floor(amount)) },
+    update: { value: { increment: BigInt(Math.floor(amount)) } },
+  });
+  if (channelId) {
+    await incrementCommunityChannelActivity(
+      prisma,
+      guildId,
+      channelId,
+      userId,
+      metric,
+      amount,
+      activityDate,
+    );
+  }
+}
+
+/**
+ * community_activity_dailyと同じ集計を、channel単位の内訳として別テーブルへも
+ * 記録する。実際にactivityがあったguild/channel/user/日/metricの組だけ行を
+ * 持つ(sparse)。既存のcommunity_activity_dailyクエリ・集計へは影響しない。
+ */
+async function incrementCommunityChannelActivity(
+  prisma: PrismaClient,
+  guildId: string,
+  channelId: string,
+  userId: string,
+  metric: CommunityActivityMetric,
+  amount: number,
+  activityDate: Date,
+): Promise<void> {
+  await prisma.communityActivityChannelDaily.upsert({
+    where: {
+      guildId_channelId_userId_activityDate_metric: {
+        guildId,
+        channelId,
+        userId,
+        activityDate,
+        metric,
+      },
+    },
+    create: {
+      guildId,
+      channelId,
+      userId,
+      activityDate,
+      metric,
+      value: BigInt(Math.floor(amount)),
+    },
     update: { value: { increment: BigInt(Math.floor(amount)) } },
   });
 }
@@ -206,6 +254,26 @@ export async function finishVoiceSession(
         },
         create: {
           guildId,
+          userId,
+          activityDate: chunk.date,
+          metric: 'voice_seconds',
+          value: BigInt(chunk.seconds),
+        },
+        update: { value: { increment: BigInt(chunk.seconds) } },
+      });
+      await tx.communityActivityChannelDaily.upsert({
+        where: {
+          guildId_channelId_userId_activityDate_metric: {
+            guildId,
+            channelId: session.channelId,
+            userId,
+            activityDate: chunk.date,
+            metric: 'voice_seconds',
+          },
+        },
+        create: {
+          guildId,
+          channelId: session.channelId,
           userId,
           activityDate: chunk.date,
           metric: 'voice_seconds',

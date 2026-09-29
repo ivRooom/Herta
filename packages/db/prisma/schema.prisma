@@ -411,6 +411,24 @@ model CommunityVoiceSession {
   @@map("community_voice_sessions")
 }
 
+// CommunityActivityDailyと同じmetric/value/日次集計だが、channel単位の内訳のため
+// 別テーブルとした(既存のCommunityActivityDaily・そのクエリへは一切影響しない)。
+// 実際にactivityがあったchannelだけ行を持つ(upsert-per-eventのため疎)。
+model CommunityActivityChannelDaily {
+  guildId      String   @map("guild_id")
+  channelId    String   @map("channel_id")
+  userId       String   @map("user_id")
+  activityDate DateTime @map("activity_date") @db.Date
+  metric       String   @db.VarChar(32)
+  value        BigInt   @default(0)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@id([guildId, channelId, userId, activityDate, metric])
+  @@index([guildId, channelId, metric, activityDate])
+  @@index([guildId, metric, activityDate])
+  @@map("community_activity_channel_daily")
+}
+
 // ============================================================
 // Plugin: Achievements / Badges
 // ============================================================

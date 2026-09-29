@@ -322,6 +322,9 @@ export class HertaBot {
               message.guildId,
               message.author.id,
               'messages',
+              1,
+              new Date(),
+              message.channelId,
             );
             this.activityMessageLastCountedAt.set(cooldownKey, now);
           }
@@ -415,7 +418,15 @@ export class HertaBot {
             contentAvailable: false,
           });
           if (giverAllowed && activityRules.countReactionsGiven) {
-            await incrementCommunityActivity(this.prisma, guildId, user.id, 'reactions_given');
+            await incrementCommunityActivity(
+              this.prisma,
+              guildId,
+              user.id,
+              'reactions_given',
+              1,
+              new Date(),
+              resolvedMessage.channelId,
+            );
           }
 
           const receiver = resolvedMessage.author;
@@ -436,6 +447,9 @@ export class HertaBot {
               guildId,
               receiver.id,
               'reactions_received',
+              1,
+              new Date(),
+              resolvedMessage.channelId,
             );
           }
         } catch (error) {
