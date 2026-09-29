@@ -8,10 +8,13 @@ import {
   type CommunitySeasonSnapshotMetadata,
 } from '@herta/db';
 import {
+  communityActivityPeriodEnd,
   communityActivityPeriodStart,
   communityLeaderboardLevelForXp,
+  communityTimestampPeriodEnd,
   communityTimestampPeriodStart,
   getCommunitySeasonWindow,
+  type CommunityLeaderboardCustomRange,
   type CommunityLeaderboardMetric,
   type CommunityLeaderboardQuery,
 } from '@herta/shared';
@@ -27,6 +30,7 @@ export interface CommunityLeaderboardEntry {
 export interface CommunityLeaderboardSnapshot {
   metric: CommunityLeaderboardMetric;
   period: CommunityLeaderboardQuery['period'];
+  customRange: CommunityLeaderboardCustomRange | null;
   entries: CommunityLeaderboardEntry[];
   participants: number;
   seasonKey: string | null;
@@ -46,10 +50,12 @@ export async function getCommunityLeaderboardSnapshot(
   const seasonKey =
     query.metric === 'season' ? requestedSeasonKey || getCommunitySeasonWindow(now).key : null;
   const start = resolveStart(query, now);
+  const end = resolveEnd(query, now);
   const storageQuery = {
     guildId,
     metric: storageMetric,
     ...(start ? { start } : {}),
+    ...(end ? { end } : {}),
     ...(seasonKey ? { seasonKey } : {}),
   };
 
@@ -75,6 +81,7 @@ export async function getCommunityLeaderboardSnapshot(
         : query.metric === 'season'
           ? 'season'
           : query.period,
+    customRange: query.period === 'custom' ? query.customRange : null,
     participants: data.participants,
     seasonKey,
     viewerRank: viewerRank ? mapLeaderboardEntry(query.metric, viewerRank) : null,
@@ -105,7 +112,17 @@ function resolveStart(query: CommunityLeaderboardQuery, now: Date): Date | undef
     return undefined;
   }
   if (query.metric === 'achievements') {
-    return communityTimestampPeriodStart(query.period, now);
+    return communityTimestampPeriodStart(query.period, now, query.customRange);
   }
-  return communityActivityPeriodStart(query.period, now);
+  return communityActivityPeriodStart(query.period, now, query.customRange);
+}
+
+function resolveEnd(query: CommunityLeaderboardQuery, now: Date): Date | undefined {
+  if (query.metric === 'xp' || query.metric === 'level' || query.metric === 'season') {
+    return undefined;
+  }
+  if (query.metric === 'achievements') {
+    return communityTimestampPeriodEnd(query.period, now, query.customRange);
+  }
+  return communityActivityPeriodEnd(query.period, now, query.customRange);
 }

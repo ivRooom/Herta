@@ -15,8 +15,44 @@ export const COMMUNITY_LEADERBOARD_METRICS = [
 ] as const;
 
 export type CommunityLeaderboardMetric = (typeof COMMUNITY_LEADERBOARD_METRICS)[number];
-export type CommunityLeaderboardPeriod = 'all' | '7d' | '30d' | 'season';
+export type CommunityLeaderboardPeriod =
+  | 'all'
+  | '1d'
+  | '7d'
+  | '14d'
+  | '30d'
+  | '90d'
+  | '180d'
+  | '365d'
+  | '3y'
+  | '5y'
+  | '10y'
+  | 'season'
+  | 'custom';
 export type CommunityLeaderboardSeasonStatus = 'current' | 'completed';
+
+/** カスタム期間の開始・終了日(JST calendar date、両端含む)。 */
+export interface CommunityLeaderboardCustomRange {
+  start: Date;
+  end: Date;
+}
+
+const CUSTOM_RANGE_MIN_DAYS = 1;
+const CUSTOM_RANGE_MAX_DAYS = 3_653; // 約10年(うるう年考慮の安全マージン込み)
+
+/** 日数ベースpreset(all/season/customを除く)のオフセット日数。「7d」なら当日を含む直近7日。 */
+const PRESET_DAYS: Partial<Record<CommunityLeaderboardPeriod, number>> = {
+  '1d': 1,
+  '7d': 7,
+  '14d': 14,
+  '30d': 30,
+  '90d': 90,
+  '180d': 180,
+  '365d': 365,
+  '3y': 1_095,
+  '5y': 1_825,
+  '10y': 3_650,
+};
 
 export const COMMUNITY_LEADERBOARD_SEASON_HISTORY_LIMIT = 6;
 
@@ -24,6 +60,8 @@ export interface CommunityLeaderboardQuery {
   metric: CommunityLeaderboardMetric;
   period: CommunityLeaderboardPeriod;
   limit: 10 | 25;
+  /** period === 'custom' のときのみ非null。 */
+  customRange: CommunityLeaderboardCustomRange | null;
 }
 
 export interface CommunityLeaderboardMetricDefinition {
@@ -33,6 +71,21 @@ export interface CommunityLeaderboardMetricDefinition {
   description: string;
   periods: readonly CommunityLeaderboardPeriod[];
 }
+
+const ACTIVITY_PERIODS: readonly CommunityLeaderboardPeriod[] = [
+  '7d',
+  '1d',
+  '14d',
+  '30d',
+  '90d',
+  '180d',
+  '365d',
+  '3y',
+  '5y',
+  '10y',
+  'all',
+  'custom',
+];
 
 export const COMMUNITY_LEADERBOARD_DEFINITIONS: readonly CommunityLeaderboardMetricDefinition[] = [
   {
@@ -54,35 +107,35 @@ export const COMMUNITY_LEADERBOARD_DEFINITIONS: readonly CommunityLeaderboardMet
     label: 'Messages',
     shortLabel: '発言',
     description: 'Activity Rulesで集計された発言数',
-    periods: ['7d', '30d', 'all'],
+    periods: ACTIVITY_PERIODS,
   },
   {
     metric: 'reactions',
     label: 'Reactions',
     shortLabel: 'Reaction',
     description: '送受信したReactionの合計',
-    periods: ['7d', '30d', 'all'],
+    periods: ACTIVITY_PERIODS,
   },
   {
     metric: 'voice',
     label: 'Voice',
     shortLabel: 'VC',
     description: 'Voice Channelで活動した時間',
-    periods: ['7d', '30d', 'all'],
+    periods: ACTIVITY_PERIODS,
   },
   {
     metric: 'minecraft',
     label: 'Minecraft',
     shortLabel: 'Minecraft',
     description: 'Minecraft連携で記録された活動時間',
-    periods: ['7d', '30d', 'all'],
+    periods: ACTIVITY_PERIODS,
   },
   {
     metric: 'achievements',
     label: 'Achievements',
     shortLabel: 'Badge',
     description: '解除したAchievement / Badge数',
-    periods: ['7d', '30d', 'all'],
+    periods: ACTIVITY_PERIODS,
   },
   {
     metric: 'season',
@@ -95,9 +148,18 @@ export const COMMUNITY_LEADERBOARD_DEFINITIONS: readonly CommunityLeaderboardMet
 
 const PERIOD_LABELS: Record<CommunityLeaderboardPeriod, string> = {
   all: 'All Time',
+  '1d': '直近1日',
   '7d': '直近7日',
+  '14d': '直近2週間',
   '30d': '直近30日',
+  '90d': '直近3ヶ月',
+  '180d': '直近6ヶ月',
+  '365d': '直近1年',
+  '3y': '直近3年',
+  '5y': '直近5年',
+  '10y': '直近10年',
   season: 'Current Season',
+  custom: 'カスタム期間',
 };
 
 const METRIC_SET = new Set<string>(COMMUNITY_LEADERBOARD_METRICS);
@@ -106,24 +168,57 @@ export function normalizeCommunityLeaderboardQuery(input: {
   metric?: string | null;
   period?: string | null;
   limit?: string | number | null;
+  from?: string | null;
+  to?: string | null;
 }): CommunityLeaderboardQuery {
   const metric = METRIC_SET.has(input.metric ?? '')
     ? (input.metric as CommunityLeaderboardMetric)
     : 'xp';
   const definition = getCommunityLeaderboardDefinition(metric);
   const requestedPeriod = input.period as CommunityLeaderboardPeriod | undefined;
-  const period =
+  let period =
     requestedPeriod && definition.periods.includes(requestedPeriod)
       ? requestedPeriod
       : definition.periods[0]!;
   const parsedLimit =
     typeof input.limit === 'number' ? input.limit : Number.parseInt(input.limit ?? '', 10);
 
+  let customRange: CommunityLeaderboardCustomRange | null = null;
+  if (period === 'custom') {
+    customRange = parseCustomRange(input.from, input.to);
+    // カスタム期間が不正(日付でない、順序逆、10年超過等)な場合はこのmetricの
+    // 既定periodへfail closedする。無効な巨大範囲でDBへ問い合わせないため。
+    if (!customRange)
+      period =
+        definition.periods.find((candidate) => candidate !== 'custom') ?? definition.periods[0]!;
+  }
+
   return {
     metric,
     period,
     limit: parsedLimit === 25 ? 25 : 10,
+    customRange,
   };
+}
+
+function parseCustomRange(
+  from: string | null | undefined,
+  to: string | null | undefined,
+): CommunityLeaderboardCustomRange | null {
+  const start = parseDateOnly(from);
+  const end = parseDateOnly(to);
+  if (!start || !end) return null;
+  if (end.getTime() < start.getTime()) return null;
+  const days = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
+  if (days < CUSTOM_RANGE_MIN_DAYS || days > CUSTOM_RANGE_MAX_DAYS) return null;
+  return { start, end };
+}
+
+function parseDateOnly(value: string | null | undefined): Date | null {
+  const trimmed = value?.trim();
+  if (!trimmed || !/^\d{4}-\d{2}-\d{2}$/u.test(trimmed)) return null;
+  const date = new Date(`${trimmed}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 export function getCommunityLeaderboardDefinition(
@@ -132,8 +227,23 @@ export function getCommunityLeaderboardDefinition(
   return COMMUNITY_LEADERBOARD_DEFINITIONS.find((definition) => definition.metric === metric)!;
 }
 
-export function communityLeaderboardPeriodLabel(period: CommunityLeaderboardPeriod): string {
+export function communityLeaderboardPeriodLabel(
+  period: CommunityLeaderboardPeriod,
+  customRange: CommunityLeaderboardCustomRange | null = null,
+): string {
+  if (period === 'custom' && customRange) {
+    return `${dateOnlyLabel(customRange.start)} 〜 ${dateOnlyLabel(customRange.end)}`;
+  }
   return PERIOD_LABELS[period];
+}
+
+function dateOnlyLabel(value: Date): string {
+  return new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'UTC',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(value);
 }
 
 export function communityLeaderboardLevelForXp(xp: number): number {
@@ -155,27 +265,61 @@ export function formatCommunityLeaderboardValue(
   return Math.max(0, Math.trunc(value)).toLocaleString();
 }
 
+/**
+ * @param customRange period === 'custom' のときだけ渡す。既存呼び出し元(Discord
+ * `/leaderboard`コマンド等)は省略でき、挙動は変わらない。
+ */
 export function communityActivityPeriodStart(
   period: CommunityLeaderboardPeriod,
   now = new Date(),
+  customRange: CommunityLeaderboardCustomRange | null = null,
 ): Date {
+  if (period === 'custom' && customRange) return jstActivityDate(customRange.start);
   const today = jstActivityDate(now);
   if (period === 'all' || period === 'season') return new Date('1970-01-01T00:00:00.000Z');
-  const days = period === '7d' ? 6 : 29;
-  return new Date(today.getTime() - days * 86_400_000);
+  const days = PRESET_DAYS[period] ?? 7;
+  return new Date(today.getTime() - (days - 1) * 86_400_000);
+}
+
+/** activity_date(DATE列)の上限。customRange指定時のみ過去日で打ち切り、それ以外は当日。 */
+export function communityActivityPeriodEnd(
+  period: CommunityLeaderboardPeriod,
+  now = new Date(),
+  customRange: CommunityLeaderboardCustomRange | null = null,
+): Date {
+  if (period === 'custom' && customRange) return jstActivityDate(customRange.end);
+  return jstActivityDate(now);
 }
 
 export function communityTimestampPeriodStart(
   period: CommunityLeaderboardPeriod,
   now = new Date(),
+  customRange: CommunityLeaderboardCustomRange | null = null,
 ): Date {
+  if (period === 'custom' && customRange) return jstMidnightUtc(customRange.start);
   if (period === 'all' || period === 'season') return new Date('1970-01-01T00:00:00.000Z');
-  const shifted = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const localMidnightUtc =
+  const days = PRESET_DAYS[period] ?? 7;
+  return new Date(jstMidnightUtc(now).getTime() - (days - 1) * 86_400_000);
+}
+
+/** timestamptz列の上限。customRange指定時はその終了日の23:59:59.999(JST)、それ以外は現在時刻。 */
+export function communityTimestampPeriodEnd(
+  period: CommunityLeaderboardPeriod,
+  now = new Date(),
+  customRange: CommunityLeaderboardCustomRange | null = null,
+): Date {
+  if (period === 'custom' && customRange) {
+    return new Date(jstMidnightUtc(customRange.end).getTime() + 86_400_000 - 1);
+  }
+  return now;
+}
+
+function jstMidnightUtc(value: Date): Date {
+  const shifted = new Date(value.getTime() + 9 * 60 * 60 * 1000);
+  return new Date(
     Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()) -
-    9 * 60 * 60 * 1000;
-  const days = period === '7d' ? 6 : 29;
-  return new Date(localMidnightUtc - days * 86_400_000);
+      9 * 60 * 60 * 1000,
+  );
 }
 
 export function listCommunityLeaderboardSeasons(

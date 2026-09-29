@@ -21,6 +21,7 @@ import {
   DiscordMemberIdentity,
   discordMemberDisplayName,
 } from '@/components/discord-member-identity';
+import { PeriodRangePicker } from '@/components/period-range-picker';
 import {
   COMMUNITY_LEADERBOARD_DEFINITIONS,
   communityLeaderboardPeriodLabel,
@@ -59,10 +60,14 @@ export default async function CommunityLeaderboardPage({
   if (!guild) notFound();
   await persistSelectedGuild(guild, session.user.id);
 
+  const customFromParam = first(queryParams.from);
+  const customToParam = first(queryParams.to);
   const query = normalizeCommunityLeaderboardQuery({
     metric: first(queryParams.metric),
     period: first(queryParams.period),
     limit: first(queryParams.limit),
+    from: customFromParam,
+    to: customToParam,
   });
   const definition = getCommunityLeaderboardDefinition(query.metric);
   const now = new Date();
@@ -109,7 +114,8 @@ export default async function CommunityLeaderboardPage({
           <div className="rounded-2xl border border-border bg-background/70 px-4 py-3 text-sm">
             <p className="text-xs text-muted">現在のランキング</p>
             <p className="mt-1 font-semibold">
-              {definition.label} · {communityLeaderboardPeriodLabel(snapshot.period)}
+              {definition.label} ·{' '}
+              {communityLeaderboardPeriodLabel(snapshot.period, snapshot.customRange)}
             </p>
           </div>
         </div>
@@ -139,7 +145,7 @@ export default async function CommunityLeaderboardPage({
         <SummaryCard
           icon={Gauge}
           label="集計期間"
-          value={communityLeaderboardPeriodLabel(snapshot.period)}
+          value={communityLeaderboardPeriodLabel(snapshot.period, snapshot.customRange)}
           detail={definition.description}
         />
         <SummaryCard
@@ -196,27 +202,35 @@ export default async function CommunityLeaderboardPage({
         </div>
 
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-          <div className="flex flex-wrap gap-2">
-            {definition.periods.map((period) => (
-              <Link
-                key={period}
-                href={leaderboardHref(
-                  guildId,
-                  query.metric,
-                  period,
-                  query.limit,
-                  query.metric === 'season' ? selectedSeason.key : null,
-                )}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${
-                  period === query.period
-                    ? 'bg-foreground text-background'
-                    : 'bg-background text-muted hover:text-foreground'
-                }`}
-              >
-                {communityLeaderboardPeriodLabel(period)}
-              </Link>
-            ))}
-          </div>
+          {definition.periods.length > 1 ? (
+            <PeriodRangePicker
+              basePath={`/dashboard/guilds/${guildId}/leaderboard`}
+              preservedParams={{ metric: query.metric, limit: String(query.limit) }}
+              presets={definition.periods
+                .filter((period) => period !== 'custom')
+                .map((period) => ({
+                  value: period,
+                  label: communityLeaderboardPeriodLabel(period),
+                }))}
+              activePeriod={query.period}
+              customFrom={customFromParam}
+              customTo={customToParam}
+              maxDate={todayDateOnly(now)}
+              minDate={minCustomDate(now)}
+            />
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {definition.periods.map((period) => (
+                <Link
+                  key={period}
+                  href={leaderboardHref(guildId, query.metric, period, query.limit, null)}
+                  className="rounded-lg bg-foreground px-3 py-1.5 text-xs font-semibold text-background"
+                >
+                  {communityLeaderboardPeriodLabel(period)}
+                </Link>
+              ))}
+            </div>
+          )}
           <div className="flex gap-2">
             {[10, 25].map((limit) => (
               <Link
@@ -559,4 +573,13 @@ function formatSeasonDateRange(season: CommunitySeasonWindow): string {
 
 function first(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
+}
+
+function todayDateOnly(now: Date): string {
+  return new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function minCustomDate(now: Date): string {
+  const tenYearsAgo = new Date(now.getTime() - 3_653 * 86_400_000);
+  return new Date(tenYearsAgo.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
