@@ -71,7 +71,7 @@ const SETTINGS_NAV_ITEM: StudioNavigationItem = {
   icon: 'account',
 };
 
-export function DashboardNav({ variant = 'sidebar' }: { variant?: 'sidebar' | 'mobile' }) {
+export function DashboardNav() {
   const pathname = usePathname();
   const { selectedGuild } = useStudioServerContext();
   const { visiblePluginTabIds } = useStudioNavigationContext();
@@ -81,17 +81,6 @@ export function DashboardNav({ variant = 'sidebar' }: { variant?: 'sidebar' | 'm
   );
   const studioItems = DASHBOARD_NAV_ITEM ? [DASHBOARD_NAV_ITEM] : [];
   const controlCenterItems = buildControlCenterItems(selectedGuild?.id ?? null);
-
-  if (variant === 'mobile') {
-    const items = [...studioItems, ...selectedServerItems, ...controlCenterItems];
-    return (
-      <nav className="flex gap-1 overflow-x-auto px-3 py-2" aria-label="Studioナビゲーション">
-        {items.map((item) => (
-          <NavigationLink key={item.id} item={item} pathname={pathname} compact />
-        ))}
-      </nav>
-    );
-  }
 
   return (
     <nav className="space-y-5" aria-label="Studioナビゲーション">
@@ -176,33 +165,13 @@ function NavigationGroup({
 function NavigationLink({
   item,
   pathname,
-  compact = false,
 }: {
   item: StudioNavigationItem | ReturnType<typeof buildSelectedServerNavigationItems>[number];
   pathname: string;
-  compact?: boolean;
 }) {
   const active = isActive(pathname, item.href, item.exact);
   const Icon = NAV_ICONS[item.icon];
   if (!Icon) return null;
-
-  if (compact) {
-    return (
-      <Link
-        href={item.href}
-        aria-current={active ? 'page' : undefined}
-        title={item.description}
-        className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-          active
-            ? 'bg-primary/15 text-primary'
-            : 'text-muted hover:bg-surface hover:text-foreground'
-        }`}
-      >
-        <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-        {item.label}
-      </Link>
-    );
-  }
 
   return (
     <Link

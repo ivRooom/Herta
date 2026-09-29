@@ -13,6 +13,7 @@ import {
   type GuildSwitcherItem,
   type GuildSwitcherState,
 } from '@/components/guild-context-nav';
+import { MobileNavDrawer } from '@/components/mobile-nav-drawer';
 import { SessionExpiryWatcher } from '@/components/session-expiry-watcher';
 import { StudioNavigationContextProvider } from '@/components/studio-navigation-context';
 import { StudioServerContextProvider } from '@/components/studio-server-context';
@@ -149,12 +150,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
             <header className="sticky top-0 z-20 border-b border-border bg-background/85 backdrop-blur-xl lg:hidden">
               <div className="flex h-14 items-center justify-between gap-3 px-4 sm:px-6">
-                <Link href="/dashboard" className="flex min-w-0 items-center gap-2 font-semibold">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-400 text-sm font-black text-white">
-                    H
-                  </span>
-                  <span className="truncate tracking-tight">Herta Studio</span>
-                </Link>
+                <div className="flex min-w-0 items-center gap-2">
+                  <MobileNavDrawer />
+                  <Link href="/dashboard" className="flex min-w-0 items-center gap-2 font-semibold">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-violet-400 text-sm font-black text-white">
+                      H
+                    </span>
+                    <span className="truncate tracking-tight">Herta Studio</span>
+                  </Link>
+                </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <ConsoleCommandPaletteTrigger variant="mobile" />
                   <GuildContextNav variant="mobile" guildsState={guildsState} />
@@ -166,9 +170,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
                     variant="mobile"
                   />
                 </div>
-              </div>
-              <div className="border-t border-border/70">
-                <DashboardNav variant="mobile" />
               </div>
             </header>
 
