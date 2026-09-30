@@ -49,15 +49,23 @@ import {
 } from './health/guild-options.js';
 import type { DiscordHealthObservation } from './health/types.js';
 import {
+  finishGameSession,
+  finishPresenceSession,
   finishVoiceSession,
   incrementCommunityActivity,
+  resetGameSessions,
+  resetPresenceSessions,
   resetVoiceSessions,
+  startGameSession,
+  startPresenceSession,
   startVoiceSession,
 } from './activity/community-activity.js';
 import {
   hasMessageCooldownElapsed,
   normalizeActivityRulesConfig,
+  shouldCountGamePresence,
   shouldCountMessage,
+  shouldCountOnlinePresence,
   shouldCountVoice,
   type ActivityRulesConfig,
 } from './activity/activity-rules.js';
@@ -93,6 +101,30 @@ function guildMembersIntentEnabled(): boolean {
   return envFlagEnabled('DISCORD_ENABLE_GUILD_MEMBERS_INTENT');
 }
 
+function presenceIntentEnabled(): boolean {
+  return envFlagEnabled('DISCORD_ENABLE_PRESENCE_INTENT');
+}
+
+interface PresenceLike {
+  status?: string;
+  activities?: ReadonlyArray<{ type: number; name: string }>;
+}
+
+/** 'offline'/'invisible'/未取得を全てoffline扱いにする('在席'とみなさない)。 */
+function presenceStatus(presence: PresenceLike | null | undefined): 'offline' | 'online' {
+  const status = presence?.status;
+  if (!status || status === 'offline' || status === 'invisible') return 'offline';
+  return 'online';
+}
+
+/** 「プレイ中」(ActivityType.Playing)のアクティビティ名を1つだけ返す。複数ある場合は先頭。 */
+function primaryGameActivityName(presence: PresenceLike | null | undefined): string | null {
+  const activity = presence?.activities?.find(
+    (candidate) => candidate.type === ActivityType.Playing,
+  );
+  return activity?.name?.trim() || null;
+}
+
 export interface RuleRuntimeEventSink {
   memberJoined(input: { guildId: string; userId: string; joinedAt: Date }): Promise<void>;
 }
@@ -125,6 +157,14 @@ function resolveGatewayIntents(logger: Logger): GatewayIntentBits[] {
   } else {
     logger.warn(
       'DISCORD_ENABLE_GUILD_MEMBERS_INTENTが無効なためブラックリスト再参加BAN / member.joined Ruleは実行されません',
+    );
+  }
+  if (presenceIntentEnabled()) {
+    intents.push(GatewayIntentBits.GuildPresences);
+    logger.info('オンライン時間・プレイ中ゲーム集計用Presence Intentを有効化します');
+  } else {
+    logger.warn(
+      'DISCORD_ENABLE_PRESENCE_INTENTが無効なためオンライン時間・プレイ中ゲームの集計は実行されません',
     );
   }
   return intents;
@@ -235,6 +275,32 @@ export class HertaBot {
           }
         } catch (error) {
           this.logger.warn({ err: error, guildId }, 'VCセッション初期化に失敗しました');
+        }
+
+        try {
+          await resetPresenceSessions(this.prisma, guildId);
+          await resetGameSessions(this.prisma, guildId);
+          const guild = client.guilds.cache.get(guildId);
+          if (guild) {
+            const activityRules = await this.getActivityRules(guildId);
+            for (const presence of guild.presences.cache.values()) {
+              if (presence.member?.user.bot) continue;
+              const roleIds = presence.member ? [...presence.member.roles.cache.keys()] : [];
+              if (
+                shouldCountOnlinePresence(activityRules, { roleIds }) &&
+                presenceStatus(presence) === 'online'
+              ) {
+                await startPresenceSession(this.prisma, guildId, presence.userId);
+              }
+              if (shouldCountGamePresence(activityRules, { roleIds })) {
+                const gameName = primaryGameActivityName(presence);
+                if (gameName)
+                  await startGameSession(this.prisma, guildId, presence.userId, gameName);
+              }
+            }
+          }
+        } catch (error) {
+          this.logger.warn({ err: error, guildId }, 'プレゼンスセッション初期化に失敗しました');
         }
       }
     });
@@ -492,6 +558,43 @@ export class HertaBot {
       }
 
       await this.dispatchGuildPluginEvent(guildId, Events.VoiceStateUpdate, oldState, newState);
+    });
+
+    this.client.on(Events.PresenceUpdate, async (oldPresence, newPresence) => {
+      const guildId = newPresence?.guild?.id ?? oldPresence?.guild?.id;
+      const userId = newPresence?.userId ?? oldPresence?.userId;
+      if (!guildId || !userId) return;
+      if (newPresence?.member?.user.bot ?? oldPresence?.member?.user.bot) return;
+
+      try {
+        const activityRules = await this.getActivityRules(guildId);
+        const roleIds = newPresence?.member
+          ? [...newPresence.member.roles.cache.keys()]
+          : oldPresence?.member
+            ? [...oldPresence.member.roles.cache.keys()]
+            : [];
+
+        if (shouldCountOnlinePresence(activityRules, { roleIds })) {
+          const wasOnline = presenceStatus(oldPresence) !== 'offline';
+          const isOnline = presenceStatus(newPresence) !== 'offline';
+          if (wasOnline && !isOnline) {
+            await finishPresenceSession(this.prisma, guildId, userId);
+          } else if (!wasOnline && isOnline) {
+            await startPresenceSession(this.prisma, guildId, userId);
+          }
+        }
+
+        if (shouldCountGamePresence(activityRules, { roleIds })) {
+          const previousGame = primaryGameActivityName(oldPresence);
+          const currentGame = primaryGameActivityName(newPresence);
+          if (previousGame !== currentGame) {
+            if (previousGame) await finishGameSession(this.prisma, guildId, userId);
+            if (currentGame) await startGameSession(this.prisma, guildId, userId, currentGame);
+          }
+        }
+      } catch (error) {
+        this.logger.warn({ err: error, guildId, userId }, 'プレゼンスの記録に失敗しました');
+      }
     });
 
     this.client.on(Events.InteractionCreate, async (interaction) => {

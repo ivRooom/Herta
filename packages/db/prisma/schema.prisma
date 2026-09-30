@@ -429,6 +429,49 @@ model CommunityActivityChannelDaily {
   @@map("community_activity_channel_daily")
 }
 
+// CommunityVoiceSessionと同じ「現在進行中の状態」を保持するセッションテーブル。
+// presenceUpdateでステータスがoffline以外<->offlineへ切り替わるたびに開始/終了し、
+// 終了時にcommunity_activity_dailyへmetric='online_seconds'として日次集計する。
+model CommunityPresenceSession {
+  guildId   String   @map("guild_id")
+  userId    String   @map("user_id")
+  startedAt DateTime @map("started_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@id([guildId, userId])
+  @@index([guildId, startedAt])
+  @@map("community_presence_sessions")
+}
+
+// 同上だが「プレイ中」アクティビティ(ゲーム名等)の切り替わりで開始/終了する。
+model CommunityGameSession {
+  guildId      String   @map("guild_id")
+  userId       String   @map("user_id")
+  activityName String   @map("activity_name") @db.VarChar(128)
+  startedAt    DateTime @map("started_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@id([guildId, userId])
+  @@index([guildId, startedAt])
+  @@map("community_game_sessions")
+}
+
+// CommunityActivityChannelDailyと同じ設計(実際にplayされたゲームだけ行を持つ、
+// sparse)。community_activity_dailyとは独立したテーブルとし、既存クエリへの
+// 影響をゼロにする。
+model CommunityGameActivityDaily {
+  guildId      String   @map("guild_id")
+  userId       String   @map("user_id")
+  activityName String   @map("activity_name") @db.VarChar(128)
+  activityDate DateTime @map("activity_date") @db.Date
+  value        BigInt   @default(0)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@id([guildId, userId, activityName, activityDate])
+  @@index([guildId, activityName, activityDate])
+  @@map("community_game_activity_daily")
+}
+
 // ============================================================
 // Plugin: Achievements / Badges
 // ============================================================

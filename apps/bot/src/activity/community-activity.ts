@@ -6,6 +6,7 @@ export const COMMUNITY_ACTIVITY_METRICS = [
   'reactions_received',
   'voice_seconds',
   'minecraft_seconds',
+  'online_seconds',
 ] as const;
 
 export type CommunityActivityMetric = (typeof COMMUNITY_ACTIVITY_METRICS)[number];
@@ -28,6 +29,7 @@ export interface CommunityActivityTotals {
   reactionsReceived: number;
   voiceSeconds: number;
   minecraftSeconds: number;
+  onlineSeconds: number;
 }
 
 interface CommunityUserRankRow {
@@ -191,6 +193,7 @@ export async function getCommunityActivityTotals(
     reactionsReceived: totals.get('reactions_received') ?? 0,
     voiceSeconds: totals.get('voice_seconds') ?? 0,
     minecraftSeconds: totals.get('minecraft_seconds') ?? 0,
+    onlineSeconds: totals.get('online_seconds') ?? 0,
   };
 }
 
@@ -288,4 +291,134 @@ export async function finishVoiceSession(
 
 export async function resetVoiceSessions(prisma: PrismaClient, guildId: string): Promise<void> {
   await prisma.communityVoiceSession.deleteMany({ where: { guildId } });
+}
+
+/**
+ * Discordのステータスがoffline以外になったタイミングで開始する「在席」セッション。
+ * CommunityVoiceSessionと同じ設計で、PK(guildId, userId)のため同時に1本だけ持つ。
+ */
+export async function startPresenceSession(
+  prisma: PrismaClient,
+  guildId: string,
+  userId: string,
+  startedAt = new Date(),
+): Promise<void> {
+  await prisma.communityPresenceSession.upsert({
+    where: { guildId_userId: { guildId, userId } },
+    create: { guildId, userId, startedAt },
+    update: { startedAt },
+  });
+}
+
+export async function finishPresenceSession(
+  prisma: PrismaClient,
+  guildId: string,
+  userId: string,
+  endedAt = new Date(),
+): Promise<number> {
+  return prisma.$transaction(async (tx) => {
+    const session = await tx.communityPresenceSession.findUnique({
+      where: { guildId_userId: { guildId, userId } },
+    });
+    if (!session) return 0;
+
+    await tx.communityPresenceSession.delete({
+      where: { guildId_userId: { guildId, userId } },
+    });
+
+    let total = 0;
+    for (const chunk of voiceChunks(session.startedAt, endedAt)) {
+      total += chunk.seconds;
+      await tx.communityActivityDaily.upsert({
+        where: {
+          guildId_userId_activityDate_metric: {
+            guildId,
+            userId,
+            activityDate: chunk.date,
+            metric: 'online_seconds',
+          },
+        },
+        create: {
+          guildId,
+          userId,
+          activityDate: chunk.date,
+          metric: 'online_seconds',
+          value: BigInt(chunk.seconds),
+        },
+        update: { value: { increment: BigInt(chunk.seconds) } },
+      });
+    }
+    return total;
+  });
+}
+
+export async function resetPresenceSessions(prisma: PrismaClient, guildId: string): Promise<void> {
+  await prisma.communityPresenceSession.deleteMany({ where: { guildId } });
+}
+
+/**
+ * Discordプレゼンスの「プレイ中」アクティビティ(ゲーム・アプリ名)の
+ * 開始セッション。activityNameが変わるたびに前のセッションを終了し
+ * 新しいセッションを開始する(bot.ts側で切り替え判定を行う)。
+ */
+export async function startGameSession(
+  prisma: PrismaClient,
+  guildId: string,
+  userId: string,
+  activityName: string,
+  startedAt = new Date(),
+): Promise<void> {
+  const normalizedName = activityName.trim().slice(0, 128);
+  if (!normalizedName) return;
+  await prisma.communityGameSession.upsert({
+    where: { guildId_userId: { guildId, userId } },
+    create: { guildId, userId, activityName: normalizedName, startedAt },
+    update: { activityName: normalizedName, startedAt },
+  });
+}
+
+export async function finishGameSession(
+  prisma: PrismaClient,
+  guildId: string,
+  userId: string,
+  endedAt = new Date(),
+): Promise<number> {
+  return prisma.$transaction(async (tx) => {
+    const session = await tx.communityGameSession.findUnique({
+      where: { guildId_userId: { guildId, userId } },
+    });
+    if (!session) return 0;
+
+    await tx.communityGameSession.delete({
+      where: { guildId_userId: { guildId, userId } },
+    });
+
+    let total = 0;
+    for (const chunk of voiceChunks(session.startedAt, endedAt)) {
+      total += chunk.seconds;
+      await tx.communityGameActivityDaily.upsert({
+        where: {
+          guildId_userId_activityName_activityDate: {
+            guildId,
+            userId,
+            activityName: session.activityName,
+            activityDate: chunk.date,
+          },
+        },
+        create: {
+          guildId,
+          userId,
+          activityName: session.activityName,
+          activityDate: chunk.date,
+          value: BigInt(chunk.seconds),
+        },
+        update: { value: { increment: BigInt(chunk.seconds) } },
+      });
+    }
+    return total;
+  });
+}
+
+export async function resetGameSessions(prisma: PrismaClient, guildId: string): Promise<void> {
+  await prisma.communityGameSession.deleteMany({ where: { guildId } });
 }

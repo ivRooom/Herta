@@ -2,7 +2,9 @@ export {
   evaluateMessageActivity,
   hasMessageCooldownElapsed,
   normalizeActivityRulesConfig,
+  shouldCountGamePresence,
   shouldCountMessage,
+  shouldCountOnlinePresence,
   shouldCountVoice,
 } from '@herta/shared/activity-rules';
 export type {
@@ -11,5 +13,6 @@ export type {
   MessageActivityCandidate,
   MessageActivityEvaluation,
   MessageActivityNotice,
+  PresenceActivityCandidate,
   VoiceActivityCandidate,
 } from '@herta/shared/activity-rules';

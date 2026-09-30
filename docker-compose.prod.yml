@@ -176,6 +176,9 @@ services:
       # Discord Developer Portal側でもServer Members Intentを有効化する。
       # 本番標準機能のため.env.productionの古いfalse設定よりこちらを優先する。
       DISCORD_ENABLE_GUILD_MEMBERS_INTENT: 'true'
+      # Community Activityのオンライン(在席)時間・プレイ中ゲーム集計で使用。
+      # Discord Developer Portal側でPresence Intentを有効化した上でtrueにする。
+      DISCORD_ENABLE_PRESENCE_INTENT: ${DISCORD_ENABLE_PRESENCE_INTENT:-false}
       DISCORD_GUILD_ID_DEV: ${DISCORD_GUILD_ID_DEV:-}
       BOT_LOG_LEVEL: ${BOT_LOG_LEVEL:-info}
       HERTA_VERSION: ${HERTA_VERSION:-0.1.0}

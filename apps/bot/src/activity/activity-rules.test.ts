@@ -3,7 +3,9 @@ import {
   evaluateMessageActivity,
   hasMessageCooldownElapsed,
   normalizeActivityRulesConfig,
+  shouldCountGamePresence,
   shouldCountMessage,
+  shouldCountOnlinePresence,
   shouldCountVoice,
 } from './activity-rules.js';
 
@@ -24,6 +26,8 @@ describe('Activity Rules v1.3', () => {
       countServerMutedVoice: true,
       countSelfDeafenedVoice: true,
       countServerDeafenedVoice: true,
+      countOnlinePresence: true,
+      countGamePresence: true,
     });
   });
 
@@ -193,5 +197,23 @@ describe('Activity Rules v1.3', () => {
     expect(shouldCountVoice(config, { channelId: '301', selfDeaf: true })).toBe(false);
     expect(shouldCountVoice(config, { channelId: '301', serverDeaf: true })).toBe(false);
     expect(shouldCountVoice(config, { channelId: '301' })).toBe(true);
+  });
+
+  it('プレゼンス集計は設定OFFまたは除外Roleで無効化できる', () => {
+    const defaultConfig = normalizeActivityRulesConfig(undefined);
+    expect(shouldCountOnlinePresence(defaultConfig, {})).toBe(true);
+    expect(shouldCountGamePresence(defaultConfig, {})).toBe(true);
+
+    const disabledConfig = normalizeActivityRulesConfig({
+      countOnlinePresence: false,
+      countGamePresence: false,
+    });
+    expect(shouldCountOnlinePresence(disabledConfig, {})).toBe(false);
+    expect(shouldCountGamePresence(disabledConfig, {})).toBe(false);
+
+    const excludedRoleConfig = normalizeActivityRulesConfig({ excludedRoleIds: ['400'] });
+    expect(shouldCountOnlinePresence(excludedRoleConfig, { roleIds: ['400'] })).toBe(false);
+    expect(shouldCountGamePresence(excludedRoleConfig, { roleIds: ['400'] })).toBe(false);
+    expect(shouldCountOnlinePresence(excludedRoleConfig, { roleIds: ['999'] })).toBe(true);
   });
 });

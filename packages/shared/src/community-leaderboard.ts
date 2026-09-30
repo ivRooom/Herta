@@ -10,6 +10,7 @@ export const COMMUNITY_LEADERBOARD_METRICS = [
   'reactions',
   'voice',
   'minecraft',
+  'online',
   'achievements',
   'season',
 ] as const;
@@ -128,6 +129,13 @@ export const COMMUNITY_LEADERBOARD_DEFINITIONS: readonly CommunityLeaderboardMet
     label: 'Minecraft',
     shortLabel: 'Minecraft',
     description: 'Minecraft連携で記録された活動時間',
+    periods: ACTIVITY_PERIODS,
+  },
+  {
+    metric: 'online',
+    label: 'Online',
+    shortLabel: '在席',
+    description: 'Discordのステータスがオフライン以外だった時間(要Presence Intent)',
     periods: ACTIVITY_PERIODS,
   },
   {
@@ -260,7 +268,8 @@ export function formatCommunityLeaderboardValue(
     const xp = Math.max(0, Math.trunc(secondaryValue ?? 0));
     return `Lv.${Math.max(0, Math.trunc(value))} · ${xp.toLocaleString()} XP`;
   }
-  if (metric === 'voice' || metric === 'minecraft') return formatDuration(value);
+  if (metric === 'voice' || metric === 'minecraft' || metric === 'online')
+    return formatDuration(value);
   if (metric === 'season') return `${Math.max(0, Math.trunc(value)).toLocaleString()} pt`;
   return Math.max(0, Math.trunc(value)).toLocaleString();
 }

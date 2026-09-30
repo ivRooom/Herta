@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   BarChart3,
+  Gamepad2,
   Hash,
   MessageSquare,
   Mic2,
@@ -18,6 +19,7 @@ import { redirect } from 'next/navigation';
 import {
   getCommunityActiveUserCounts,
   getCommunityChannelBreakdown,
+  getCommunityGameBreakdown,
   getCommunityNewVsReturningUsers,
 } from '@herta/db';
 import { resolveGuildMemberDisplays } from '@/lib/bot-guild-members';
@@ -37,6 +39,7 @@ const metrics = [
   'reactions_given',
   'reactions_received',
   'minecraft_seconds',
+  'online_seconds',
 ] as const;
 type Metric = (typeof metrics)[number];
 
@@ -46,6 +49,7 @@ const metricLabels: Record<Metric, string> = {
   reactions_given: 'リアクション',
   reactions_received: 'もらったリアクション',
   minecraft_seconds: 'Minecraft',
+  online_seconds: 'オンライン時間',
 };
 
 function single(value: string | string[] | undefined): string {
@@ -214,6 +218,7 @@ export default async function CommunityDashboardPage({
     newVsReturning,
     channelBreakdown,
     guildOptions,
+    gameBreakdown,
   ] = await Promise.all([
     prisma.communityActivityDaily.groupBy({
       by: ['userId'],
@@ -251,6 +256,7 @@ export default async function CommunityDashboardPage({
     getCommunityNewVsReturningUsers(prisma, { guildId: guild.id, start, end }),
     getCommunityChannelBreakdown(prisma, { guildId: guild.id, metric, start, end, limit: 10 }),
     getGuildConfigurationOptions(guild.id),
+    getCommunityGameBreakdown(prisma, { guildId: guild.id, start, end, limit: 10 }),
   ]);
 
   const channelNameMap = new Map(
@@ -259,6 +265,7 @@ export default async function CommunityDashboardPage({
   const channelDisplayName = (channelId: string) =>
     channelNameMap.get(channelId) ?? `# ${channelId.slice(-6)}`;
   const channelBreakdownMax = Math.max(...channelBreakdown.map((item) => item.value), 1);
+  const gameBreakdownMax = Math.max(...gameBreakdown.map((item) => item.value), 1);
 
   const totalMap = new Map(totals.map((item) => [item.metric, Number(item._sum.value ?? 0n)]));
   const top = rows.map((row) => ({
@@ -509,6 +516,39 @@ export default async function CommunityDashboardPage({
                 </div>
                 <span className="w-24 shrink-0 text-right text-sm font-semibold">
                   {formatMetric(metric, item.value)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
+        <div className="flex items-center gap-2">
+          <Gamepad2 className="h-5 w-5 text-primary" />
+          <h2 className="font-medium">よくプレイされているゲーム・アプリ</h2>
+        </div>
+        <p className="mt-1 text-sm text-muted">
+          Discordのプレゼンスに基づくプレイ時間上位{gameBreakdown.length}件(Presence
+          Intent有効時のみ記録されます)。
+        </p>
+        {gameBreakdown.length === 0 ? (
+          <p className="mt-6 text-sm text-muted">この期間のプレゼンスデータはまだありません。</p>
+        ) : (
+          <div className="mt-4 space-y-2">
+            {gameBreakdown.map((item) => (
+              <div key={item.activityName} className="flex items-center gap-3">
+                <span className="w-32 shrink-0 truncate text-sm text-muted sm:w-48">
+                  {item.activityName}
+                </span>
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-background">
+                  <div
+                    className="h-full rounded-full bg-primary/70"
+                    style={{ width: `${Math.max(3, (item.value / gameBreakdownMax) * 100)}%` }}
+                  />
+                </div>
+                <span className="w-24 shrink-0 text-right text-sm font-semibold">
+                  {formatSeconds(item.value)}
                 </span>
               </div>
             ))}
