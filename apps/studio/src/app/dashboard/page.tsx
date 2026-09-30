@@ -3,9 +3,7 @@ import {
   Activity,
   ArrowRight,
   BarChart3,
-  Bot,
   CalendarDays,
-  CheckCircle2,
   MessageCircleReply,
   Plug,
   Puzzle,
@@ -125,46 +123,17 @@ export default async function DashboardPage() {
                   aria-hidden="true"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-3 text-xs">
+              <div className="grid grid-cols-3 gap-3 text-xs">
                 <MiniMetric label="Gateway" value={gatewayLabel(gatewayStatus)} />
                 <MiniMetric label="Version" value={`v${version}`} />
+                <MiniMetric
+                  label="Guilds"
+                  value={accessToken && guildResult.ok ? `${guildResult.guilds.length}` : '---'}
+                />
               </div>
             </div>
           </div>
         </div>
-      </section>
-
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          icon={ServerCog}
-          label="管理可能なサーバー"
-          value={accessToken && guildResult.ok ? `${guildResult.guilds.length}` : '---'}
-          description="Discord OAuthで管理権限を確認"
-        />
-        <MetricCard
-          icon={Bot}
-          label="Herta Bot"
-          value={statusLabel(healthStatus)}
-          description={
-            health.available ? `${health.health.guild_count} Guildで認識` : '状態を取得できません'
-          }
-        />
-        <MetricCard
-          icon={Activity}
-          label="Discord Gateway"
-          value={gatewayLabel(gatewayStatus)}
-          description={
-            health.available && health.health.checks.discord.ready
-              ? 'Gateway Ready'
-              : '接続状態を確認してください'
-          }
-        />
-        <MetricCard
-          icon={CheckCircle2}
-          label="Runtime"
-          value={version === '---' ? '---' : `v${version}`}
-          description="Production Bot runtime"
-        />
       </section>
 
       {quickGuilds.length > 0 ? (
@@ -335,32 +304,6 @@ export default async function DashboardPage() {
         </div>
       </section>
     </div>
-  );
-}
-
-function MetricCard({
-  icon: Icon,
-  label,
-  value,
-  description,
-}: {
-  icon: typeof ServerCog;
-  label: string;
-  value: string;
-  description: string;
-}) {
-  return (
-    <article className="rounded-2xl border border-border bg-surface p-5 shadow-card">
-      <div className="flex items-center justify-between gap-3">
-        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Icon className="h-4 w-4" aria-hidden="true" />
-        </span>
-        <span className="text-[10px] uppercase tracking-[0.14em] text-muted">Live</span>
-      </div>
-      <p className="mt-4 text-xs font-medium text-muted">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tracking-tight">{value}</p>
-      <p className="mt-2 text-xs leading-5 text-muted">{description}</p>
-    </article>
   );
 }
 
