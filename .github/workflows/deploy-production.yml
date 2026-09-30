@@ -284,6 +284,7 @@ jobs:
             upsert_env HERTA_RUNTIME_SECRET_KEY "${HERTA_RUNTIME_SECRET_KEY}"
             upsert_env HERTA_MBTI_SYNC_SECRET "${HERTA_MBTI_SYNC_SECRET}"
             upsert_env IVRM_WEB_API_BASE_URL "https://api.ivrm.jp"
+            upsert_env DISCORD_ENABLE_PRESENCE_INTENT "true"
             echo "Runtime secretsを同期しました（値は非表示）"
 
             # target revisionのdeploy helperを使ってimage/migration/service操作を行う。
