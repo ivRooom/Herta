@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  communityPointsRatesFromConfig,
   evaluateMessageActivity,
   hasMessageCooldownElapsed,
   normalizeActivityRulesConfig,
+  shouldCountCommandPoints,
   shouldCountGamePresence,
   shouldCountMessage,
   shouldCountOnlinePresence,
@@ -28,6 +30,17 @@ describe('Activity Rules v1.3', () => {
       countServerDeafenedVoice: true,
       countOnlinePresence: true,
       countGamePresence: true,
+      countCommandPoints: true,
+      messagePointsPerMessage: 2,
+      reactionPointsPerReaction: 1,
+      voicePointsPer10Minutes: 1,
+      onlinePointsPerHour: 1,
+      onlinePointsDailyCap: 2,
+      gamePointsPerHour: 1,
+      gamePointsDailyCap: 2,
+      achievementPoints: 5,
+      commandPointsPerUse: 1,
+      commandPointsDailyCap: 10,
     });
   });
 
@@ -215,5 +228,43 @@ describe('Activity Rules v1.3', () => {
     expect(shouldCountOnlinePresence(excludedRoleConfig, { roleIds: ['400'] })).toBe(false);
     expect(shouldCountGamePresence(excludedRoleConfig, { roleIds: ['400'] })).toBe(false);
     expect(shouldCountOnlinePresence(excludedRoleConfig, { roleIds: ['999'] })).toBe(true);
+  });
+
+  it('コマンド使用ポイントは設定OFFまたは除外Roleで無効化できる', () => {
+    const defaultConfig = normalizeActivityRulesConfig(undefined);
+    expect(shouldCountCommandPoints(defaultConfig, {})).toBe(true);
+
+    const disabledConfig = normalizeActivityRulesConfig({ countCommandPoints: false });
+    expect(shouldCountCommandPoints(disabledConfig, {})).toBe(false);
+
+    const excludedRoleConfig = normalizeActivityRulesConfig({ excludedRoleIds: ['400'] });
+    expect(shouldCountCommandPoints(excludedRoleConfig, { roleIds: ['400'] })).toBe(false);
+    expect(shouldCountCommandPoints(excludedRoleConfig, { roleIds: ['999'] })).toBe(true);
+  });
+
+  it('オンライン・ゲームは既定で低単価+1日上限、OFF時は単価0になる', () => {
+    const defaultConfig = normalizeActivityRulesConfig(undefined);
+    expect(communityPointsRatesFromConfig(defaultConfig)).toEqual({
+      messagePointsPerMessage: 2,
+      reactionPointsPerReaction: 1,
+      voicePointsPer10Minutes: 1,
+      onlinePointsPerHour: 1,
+      onlinePointsDailyCap: 2,
+      gamePointsPerHour: 1,
+      gamePointsDailyCap: 2,
+      achievementPoints: 5,
+      commandPointsPerUse: 1,
+      commandPointsDailyCap: 10,
+    });
+
+    const disabledConfig = normalizeActivityRulesConfig({
+      countOnlinePresence: false,
+      countGamePresence: false,
+      countCommandPoints: false,
+    });
+    const disabledRates = communityPointsRatesFromConfig(disabledConfig);
+    expect(disabledRates.onlinePointsPerHour).toBe(0);
+    expect(disabledRates.gamePointsPerHour).toBe(0);
+    expect(disabledRates.commandPointsPerUse).toBe(0);
   });
 });

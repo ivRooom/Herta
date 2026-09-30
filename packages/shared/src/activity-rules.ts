@@ -18,6 +18,46 @@ export interface ActivityRulesConfig {
   countServerDeafenedVoice: boolean;
   countOnlinePresence: boolean;
   countGamePresence: boolean;
+  countCommandPoints: boolean;
+  messagePointsPerMessage: number;
+  reactionPointsPerReaction: number;
+  voicePointsPer10Minutes: number;
+  onlinePointsPerHour: number;
+  onlinePointsDailyCap: number;
+  gamePointsPerHour: number;
+  gamePointsDailyCap: number;
+  achievementPoints: number;
+  commandPointsPerUse: number;
+  commandPointsDailyCap: number;
+}
+
+/** Community Pointsの各加点単価・1日上限。getCommunityPointsLeaderboard()等へそのまま渡す。 */
+export interface CommunityPointsRates {
+  messagePointsPerMessage: number;
+  reactionPointsPerReaction: number;
+  voicePointsPer10Minutes: number;
+  onlinePointsPerHour: number;
+  onlinePointsDailyCap: number;
+  gamePointsPerHour: number;
+  gamePointsDailyCap: number;
+  achievementPoints: number;
+  commandPointsPerUse: number;
+  commandPointsDailyCap: number;
+}
+
+export function communityPointsRatesFromConfig(config: ActivityRulesConfig): CommunityPointsRates {
+  return {
+    messagePointsPerMessage: config.messagePointsPerMessage,
+    reactionPointsPerReaction: config.reactionPointsPerReaction,
+    voicePointsPer10Minutes: config.voicePointsPer10Minutes,
+    onlinePointsPerHour: config.countOnlinePresence ? config.onlinePointsPerHour : 0,
+    onlinePointsDailyCap: config.onlinePointsDailyCap,
+    gamePointsPerHour: config.countGamePresence ? config.gamePointsPerHour : 0,
+    gamePointsDailyCap: config.gamePointsDailyCap,
+    achievementPoints: config.achievementPoints,
+    commandPointsPerUse: config.countCommandPoints ? config.commandPointsPerUse : 0,
+    commandPointsDailyCap: config.commandPointsDailyCap,
+  };
 }
 
 export interface MessageActivityCandidate {
@@ -79,6 +119,20 @@ export function normalizeActivityRulesConfig(value: unknown): ActivityRulesConfi
       source.countOnlinePresence === undefined ? true : source.countOnlinePresence === true,
     countGamePresence:
       source.countGamePresence === undefined ? true : source.countGamePresence === true,
+    countCommandPoints:
+      source.countCommandPoints === undefined ? true : source.countCommandPoints === true,
+    messagePointsPerMessage: clamp(toInteger(source.messagePointsPerMessage, 2), 0, 20),
+    reactionPointsPerReaction: clamp(toInteger(source.reactionPointsPerReaction, 1), 0, 10),
+    voicePointsPer10Minutes: clamp(toInteger(source.voicePointsPer10Minutes, 1), 0, 10),
+    // オンライン・ゲームは放置/個人的なプレイ時間でも稼げてしまうため、既定値を
+    // 低単価(1時間=1pt)+1日上限(2pt = 実質2時間分まで)にして弱く設計する。
+    onlinePointsPerHour: clamp(toInteger(source.onlinePointsPerHour, 1), 0, 5),
+    onlinePointsDailyCap: clamp(toInteger(source.onlinePointsDailyCap, 2), 0, 50),
+    gamePointsPerHour: clamp(toInteger(source.gamePointsPerHour, 1), 0, 5),
+    gamePointsDailyCap: clamp(toInteger(source.gamePointsDailyCap, 2), 0, 50),
+    achievementPoints: clamp(toInteger(source.achievementPoints, 5), 0, 50),
+    commandPointsPerUse: clamp(toInteger(source.commandPointsPerUse, 1), 0, 10),
+    commandPointsDailyCap: clamp(toInteger(source.commandPointsDailyCap, 10), 0, 100),
   };
 }
 
@@ -171,6 +225,15 @@ export function shouldCountGamePresence(
   candidate: PresenceActivityCandidate,
 ): boolean {
   if (!config.countGamePresence) return false;
+  if (hasExcludedRole(config, candidate.roleIds)) return false;
+  return true;
+}
+
+export function shouldCountCommandPoints(
+  config: ActivityRulesConfig,
+  candidate: PresenceActivityCandidate,
+): boolean {
+  if (!config.countCommandPoints) return false;
   if (hasExcludedRole(config, candidate.roleIds)) return false;
   return true;
 }

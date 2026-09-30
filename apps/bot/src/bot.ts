@@ -63,6 +63,7 @@ import {
 import {
   hasMessageCooldownElapsed,
   normalizeActivityRulesConfig,
+  shouldCountCommandPoints,
   shouldCountGamePresence,
   shouldCountMessage,
   shouldCountOnlinePresence,
@@ -123,6 +124,20 @@ function primaryGameActivityName(presence: PresenceLike | null | undefined): str
     (candidate) => candidate.type === ActivityType.Playing,
   );
   return activity?.name?.trim() || null;
+}
+
+/**
+ * ChatInputCommandInteraction.memberはGuildMember(client cache済み)か、
+ * rolesがstring[]の生APIオブジェクト(APIInteractionGuildMember)のいずれかになりうる。
+ */
+function interactionMemberRoleIds(
+  member: { roles: { cache: Map<string, unknown> } | string[] } | null | undefined,
+): string[] {
+  if (!member) return [];
+  const roles = member.roles;
+  if (Array.isArray(roles)) return roles;
+  if (roles && typeof roles === 'object' && 'cache' in roles) return [...roles.cache.keys()];
+  return [];
 }
 
 export interface RuleRuntimeEventSink {
@@ -651,6 +666,25 @@ export class HertaBot {
 
       try {
         await command.execute(interaction);
+        if (interaction.guildId && !interaction.user.bot) {
+          try {
+            const activityRules = await this.getActivityRules(interaction.guildId);
+            const roleIds = interactionMemberRoleIds(interaction.member);
+            if (shouldCountCommandPoints(activityRules, { roleIds })) {
+              await incrementCommunityActivity(
+                this.prisma,
+                interaction.guildId,
+                interaction.user.id,
+                'commands',
+              );
+            }
+          } catch (error) {
+            this.logger.warn(
+              { err: error, guildId: interaction.guildId, userId: interaction.user.id },
+              'コマンド使用ポイントの記録に失敗しました',
+            );
+          }
+        }
       } catch (error) {
         status = 'failure';
         errorName = resolveErrorName(error);

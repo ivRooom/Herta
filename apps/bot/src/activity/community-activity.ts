@@ -7,6 +7,7 @@ export const COMMUNITY_ACTIVITY_METRICS = [
   'voice_seconds',
   'minecraft_seconds',
   'online_seconds',
+  'commands',
 ] as const;
 
 export type CommunityActivityMetric = (typeof COMMUNITY_ACTIVITY_METRICS)[number];

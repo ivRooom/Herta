@@ -19,6 +19,7 @@ const metricLabels: Record<CommunityActivityMetric, string> = {
   voice_seconds: 'VC滞在時間',
   minecraft_seconds: 'Minecraftプレイ時間',
   online_seconds: 'オンライン時間',
+  commands: 'コマンド使用数',
 };
 
 const periodLabels: Record<CommunityActivityPeriod, string> = {
