@@ -7,6 +7,7 @@ const metricChoices = [
   { name: 'Reaction', value: 'reactions' },
   { name: 'Voice', value: 'voice' },
   { name: 'Minecraft', value: 'minecraft' },
+  { name: 'Online', value: 'online' },
   { name: 'Achievements', value: 'achievements' },
   { name: 'Season Point', value: 'season' },
 ] as const;
@@ -21,7 +22,7 @@ const periodChoices = [
 export const xpLevelManifest: PluginManifest = {
   id: 'xp-level',
   name: 'XP / Level',
-  version: '1.1.0',
+  version: '1.2.0',
   description: 'XP・Level・Community活動ランキング・Level Roleを提供します',
   author: { name: 'Herta' },
   category: 'utility',

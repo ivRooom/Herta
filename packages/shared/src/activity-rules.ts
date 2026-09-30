@@ -16,6 +16,8 @@ export interface ActivityRulesConfig {
   countServerMutedVoice: boolean;
   countSelfDeafenedVoice: boolean;
   countServerDeafenedVoice: boolean;
+  countOnlinePresence: boolean;
+  countGamePresence: boolean;
 }
 
 export interface MessageActivityCandidate {
@@ -73,6 +75,10 @@ export function normalizeActivityRulesConfig(value: unknown): ActivityRulesConfi
       source.countServerDeafenedVoice === undefined
         ? true
         : source.countServerDeafenedVoice === true,
+    countOnlinePresence:
+      source.countOnlinePresence === undefined ? true : source.countOnlinePresence === true,
+    countGamePresence:
+      source.countGamePresence === undefined ? true : source.countGamePresence === true,
   };
 }
 
@@ -144,6 +150,28 @@ export function shouldCountVoice(
   if (!config.countServerMutedVoice && candidate.serverMute) return false;
   if (!config.countSelfDeafenedVoice && candidate.selfDeaf) return false;
   if (!config.countServerDeafenedVoice && candidate.serverDeaf) return false;
+  return true;
+}
+
+export interface PresenceActivityCandidate {
+  roleIds?: readonly string[];
+}
+
+export function shouldCountOnlinePresence(
+  config: ActivityRulesConfig,
+  candidate: PresenceActivityCandidate,
+): boolean {
+  if (!config.countOnlinePresence) return false;
+  if (hasExcludedRole(config, candidate.roleIds)) return false;
+  return true;
+}
+
+export function shouldCountGamePresence(
+  config: ActivityRulesConfig,
+  candidate: PresenceActivityCandidate,
+): boolean {
+  if (!config.countGamePresence) return false;
+  if (hasExcludedRole(config, candidate.roleIds)) return false;
   return true;
 }
 

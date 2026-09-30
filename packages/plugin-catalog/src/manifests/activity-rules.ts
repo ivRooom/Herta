@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const activityRulesManifest: PluginManifest = {
   id: 'activity-rules',
   name: 'Activity Rules',
-  version: '1.2.0',
+  version: '1.3.0',
   description:
     'Community Activityの発言・リアクション・VC集計へ除外ルールとanti-spam設定を適用します',
   author: { name: 'Herta' },
@@ -155,6 +155,24 @@ export const activityRulesManifest: PluginManifest = {
         default: true,
         'x-herta-ui': { section: 'VC集計' },
       },
+      countOnlinePresence: {
+        type: 'boolean',
+        title: 'オンライン(在席)時間を集計する',
+        default: true,
+        'x-herta-ui': {
+          section: 'プレゼンス集計',
+          help: 'Discordのステータスがオフライン以外(オンライン・退席中・取り込み中)の時間を集計します。Presence Intentの有効化が必要です。',
+        },
+      },
+      countGamePresence: {
+        type: 'boolean',
+        title: 'プレイ中のゲーム・アプリ時間を集計する',
+        default: true,
+        'x-herta-ui': {
+          section: 'プレゼンス集計',
+          help: 'Discordのプレゼンスに表示される「プレイ中」のアクティビティ名ごとの時間を集計します。Presence Intentの有効化が必要です。',
+        },
+      },
     },
     required: [
       'excludedTextChannelIds',
@@ -171,6 +189,8 @@ export const activityRulesManifest: PluginManifest = {
       'countServerMutedVoice',
       'countSelfDeafenedVoice',
       'countServerDeafenedVoice',
+      'countOnlinePresence',
+      'countGamePresence',
     ],
   },
   events: [],

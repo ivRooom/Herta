@@ -175,7 +175,7 @@ describe('XP / Level v1', () => {
     expect(message).toContain('2. <@2> — Lv.2 / 400 XP');
   });
 
-  it('RankとLeaderboardが8種類のCommunity指標を公開する', () => {
+  it('RankとLeaderboardが9種類のCommunity指標を公開する', () => {
     const expectedMetrics = [
       'xp',
       'level',
@@ -183,6 +183,7 @@ describe('XP / Level v1', () => {
       'reactions',
       'voice',
       'minecraft',
+      'online',
       'achievements',
       'season',
     ];

@@ -1,7 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 
 export type CommunityLeaderboardStorageMetric =
-  'xp' | 'messages' | 'reactions' | 'voice' | 'minecraft' | 'achievements' | 'season';
+  'xp' | 'messages' | 'reactions' | 'voice' | 'minecraft' | 'online' | 'achievements' | 'season';
 
 export interface CommunityLeaderboardDataEntry {
   rank: number;
@@ -372,6 +372,7 @@ function activityMetric(metric: CommunityLeaderboardStorageMetric): string {
   if (metric === 'messages') return 'messages';
   if (metric === 'voice') return 'voice_seconds';
   if (metric === 'minecraft') return 'minecraft_seconds';
+  if (metric === 'online') return 'online_seconds';
   throw new Error(`Unsupported activity metric: ${metric}`);
 }
 

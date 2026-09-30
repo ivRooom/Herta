@@ -18,6 +18,7 @@ const metricLabels: Record<CommunityActivityMetric, string> = {
   reactions_received: 'もらったリアクション',
   voice_seconds: 'VC滞在時間',
   minecraft_seconds: 'Minecraftプレイ時間',
+  online_seconds: 'オンライン時間',
 };
 
 const periodLabels: Record<CommunityActivityPeriod, string> = {
@@ -40,6 +41,7 @@ const metricChoices = [
   { name: 'もらったリアクション', value: 'reactions_received' },
   { name: 'VC滞在時間', value: 'voice_seconds' },
   { name: 'Minecraftプレイ時間', value: 'minecraft_seconds' },
+  { name: 'オンライン時間', value: 'online_seconds' },
 ];
 
 function readPeriod(value: string | null): CommunityActivityPeriod {
@@ -51,7 +53,8 @@ function readMetric(value: string | null): CommunityActivityMetric {
     value === 'reactions_given' ||
     value === 'reactions_received' ||
     value === 'voice_seconds' ||
-    value === 'minecraft_seconds'
+    value === 'minecraft_seconds' ||
+    value === 'online_seconds'
   ) {
     return value;
   }
@@ -59,7 +62,7 @@ function readMetric(value: string | null): CommunityActivityMetric {
 }
 
 function formatMetric(metric: CommunityActivityMetric, value: number): string {
-  if (metric === 'voice_seconds' || metric === 'minecraft_seconds') {
+  if (metric === 'voice_seconds' || metric === 'minecraft_seconds' || metric === 'online_seconds') {
     const hours = Math.floor(value / 3600);
     const minutes = Math.floor((value % 3600) / 60);
     return `${hours}時間${minutes}分`;
