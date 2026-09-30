@@ -1,7 +1,9 @@
 export {
+  communityPointsRatesFromConfig,
   evaluateMessageActivity,
   hasMessageCooldownElapsed,
   normalizeActivityRulesConfig,
+  shouldCountCommandPoints,
   shouldCountGamePresence,
   shouldCountMessage,
   shouldCountOnlinePresence,
@@ -9,6 +11,7 @@ export {
 } from '@herta/shared/activity-rules';
 export type {
   ActivityRulesConfig,
+  CommunityPointsRates,
   MessageActivityBlockingReason,
   MessageActivityCandidate,
   MessageActivityEvaluation,

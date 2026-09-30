@@ -4,6 +4,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   BarChart3,
+  Coins,
   Gamepad2,
   Hash,
   MessageSquare,
@@ -21,9 +22,15 @@ import {
   getCommunityChannelBreakdown,
   getCommunityGameBreakdown,
   getCommunityNewVsReturningUsers,
+  getCommunityPointsLeaderboard,
 } from '@herta/db';
+import {
+  communityPointsRatesFromConfig,
+  normalizeActivityRulesConfig,
+} from '@herta/shared/activity-rules';
 import { resolveGuildMemberDisplays } from '@/lib/bot-guild-members';
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { getGuildPlugin } from '@/lib/guild-plugins';
 import { DiscordMemberIdentity } from '@/components/discord-member-identity';
 import { PeriodRangePicker } from '@/components/period-range-picker';
 import { prisma } from '@/lib/db';
@@ -208,6 +215,11 @@ export default async function CommunityDashboardPage({
   const previousEnd = new Date(start.getTime() - 1);
   const previousStart = new Date(previousEnd.getTime() - (rangeDays - 1) * 86_400_000);
 
+  const activityRulesPlugin = await getGuildPlugin(guild.id, 'activity-rules');
+  const pointsRates = communityPointsRatesFromConfig(
+    normalizeActivityRulesConfig(activityRulesPlugin?.config),
+  );
+
   const [
     rows,
     totals,
@@ -219,6 +231,7 @@ export default async function CommunityDashboardPage({
     channelBreakdown,
     guildOptions,
     gameBreakdown,
+    pointsLeaderboard,
   ] = await Promise.all([
     prisma.communityActivityDaily.groupBy({
       by: ['userId'],
@@ -257,6 +270,13 @@ export default async function CommunityDashboardPage({
     getCommunityChannelBreakdown(prisma, { guildId: guild.id, metric, start, end, limit: 10 }),
     getGuildConfigurationOptions(guild.id),
     getCommunityGameBreakdown(prisma, { guildId: guild.id, start, end, limit: 10 }),
+    getCommunityPointsLeaderboard(prisma, {
+      guildId: guild.id,
+      start,
+      end,
+      rates: pointsRates,
+      limit: 10,
+    }),
   ]);
 
   const channelNameMap = new Map(
@@ -273,11 +293,14 @@ export default async function CommunityDashboardPage({
     total: Number(row._sum.value ?? 0n),
   }));
 
-  const memberMap = top.length
-    ? await resolveGuildMemberDisplays(
-        guild.id,
-        top.map((item) => item.userId),
-      )
+  const memberLookupIds = [
+    ...new Set([
+      ...top.map((item) => item.userId),
+      ...pointsLeaderboard.map((item) => item.userId),
+    ]),
+  ];
+  const memberMap = memberLookupIds.length
+    ? await resolveGuildMemberDisplays(guild.id, memberLookupIds)
     : new Map();
 
   const max = Math.max(...top.map((item) => item.total), 1);
@@ -406,6 +429,41 @@ export default async function CommunityDashboardPage({
           </section>
         ))}
       </div>
+
+      <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
+        <div className="flex items-center gap-2">
+          <Coins className="h-5 w-5 text-primary" />
+          <h2 className="font-medium">Community Points</h2>
+        </div>
+        <p className="mt-1 text-sm text-muted">
+          発言・リアクション・VC・コマンド使用・Achievement解除を高めの単価で、オンライン(在席)時間・プレイ中ゲーム時間は低い単価+1日上限で弱めに合算したスコアです。単価はActivity
+          Rulesプラグイン設定から調整できます。
+        </p>
+        {pointsLeaderboard.length === 0 ? (
+          <p className="mt-6 text-sm text-muted">この期間のポイントデータはまだありません。</p>
+        ) : (
+          <ol className="mt-4 space-y-2">
+            {pointsLeaderboard.map((item, index) => (
+              <li
+                key={item.userId}
+                className="flex items-center gap-3 rounded-xl border border-border bg-background p-3"
+              >
+                <span className="w-6 shrink-0 text-center text-sm font-semibold text-muted">
+                  #{index + 1}
+                </span>
+                <DiscordMemberIdentity
+                  member={memberMap.get(item.userId)}
+                  userId={item.userId}
+                  subtitle=""
+                />
+                <span className="ml-auto shrink-0 text-sm font-semibold text-primary">
+                  {item.points.toLocaleString('ja-JP')} pt
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
 
       <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
         <div className="flex items-center gap-2">
