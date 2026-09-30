@@ -9,7 +9,9 @@ import {
   type ChatInputCommandInteraction,
 } from 'discord.js';
 import { Redis } from 'ioredis';
+import { randomUUID } from 'node:crypto';
 import {
+  getCommunityPointsLeaderboard,
   getPrismaClient,
   recordCommandExecution as persistCommandExecution,
   type CommandExecutionInput,
@@ -52,6 +54,7 @@ import {
   finishGameSession,
   finishPresenceSession,
   finishVoiceSession,
+  getCommunityActivityTotals,
   incrementCommunityActivity,
   resetGameSessions,
   resetPresenceSessions,
@@ -61,6 +64,7 @@ import {
   startVoiceSession,
 } from './activity/community-activity.js';
 import {
+  communityPointsRatesFromConfig,
   hasMessageCooldownElapsed,
   normalizeActivityRulesConfig,
   shouldCountCommandPoints,
@@ -70,6 +74,11 @@ import {
   shouldCountVoice,
   type ActivityRulesConfig,
 } from './activity/activity-rules.js';
+import {
+  pushActivityStatsToIvrmWeb,
+  resolveActivityIvrmSyncConfig,
+  type ActivityIvrmSyncConfig,
+} from './plugins/community-activity-ivrm-sync.js';
 import { searchGuildMemberOptions, type GuildMemberOption } from './health/guild-members.js';
 import {
   getGuildBotProfile as getDiscordGuildBotProfile,
@@ -105,6 +114,10 @@ function guildMembersIntentEnabled(): boolean {
 function presenceIntentEnabled(): boolean {
   return envFlagEnabled('DISCORD_ENABLE_PRESENCE_INTENT');
 }
+
+const ACTIVITY_IVRM_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const ACTIVITY_IVRM_SYNC_USER_LIMIT = 25;
+const ACTIVITY_IVRM_SYNC_EPOCH = new Date('1970-01-01T00:00:00.000Z');
 
 interface PresenceLike {
   status?: string;
@@ -200,6 +213,7 @@ export class HertaBot {
   private readonly discordHealth = new DiscordHealthTracker();
   private readonly gatewayObservationIntervalMs: number;
   private gatewayObservationTimer?: NodeJS.Timeout;
+  private activityIvrmSyncTimer?: NodeJS.Timeout;
   private healthRedis?: Redis;
   private readonly activityMessageLastCountedAt = new Map<string, number>();
   private ruleRuntimeEvents?: RuleRuntimeEventSink;
@@ -832,6 +846,8 @@ export class HertaBot {
     }, this.gatewayObservationIntervalMs);
     this.gatewayObservationTimer.unref();
 
+    this.startActivityIvrmSync();
+
     const redisUrl = process.env['REDIS_URL'];
     if (!redisUrl) {
       this.logger.warn('REDIS_URLが未設定のためPlugin Runtimeイベント購読を無効化します');
@@ -1180,6 +1196,74 @@ export class HertaBot {
     return this.client.guilds.cache.size;
   }
 
+  getGuildIds(): string[] {
+    return [...this.client.guilds.cache.keys()];
+  }
+
+  /**
+   * ivrm-web (member.ivrm.jp) 側への活動統計fire-and-forget同期を開始する。
+   * `IVRM_WEB_API_BASE_URL` / `HERTA_ACTIVITY_SYNC_SECRET` 未設定時は何もしない
+   * (この機能はivrm-web連携が任意のため、Community Points等の既存挙動には影響しない)。
+   */
+  private startActivityIvrmSync(): void {
+    const config = resolveActivityIvrmSyncConfig(process.env);
+    if (!config) return;
+
+    void this.runActivityIvrmSync(config);
+    this.activityIvrmSyncTimer = setInterval(() => {
+      void this.runActivityIvrmSync(config);
+    }, ACTIVITY_IVRM_SYNC_INTERVAL_MS);
+    this.activityIvrmSyncTimer.unref();
+  }
+
+  private async runActivityIvrmSync(config: ActivityIvrmSyncConfig): Promise<void> {
+    for (const guildId of this.getGuildIds()) {
+      try {
+        await this.syncGuildActivityToIvrmWeb(guildId, config);
+      } catch (error) {
+        this.logger.warn({ err: error, guildId }, 'ivrm-webへの活動統計同期に失敗しました');
+      }
+    }
+  }
+
+  /**
+   * Community Points上位（現状のクエリ実装の上限である最大25人）を対象にmember.ivrm.jpへ
+   * 活動統計スナップショットを同期する。全ユーザーを対象にするにはより大きな候補集合を返す
+   * 専用クエリが必要なため、v1では上位ユーザーへの同期に限定する。
+   */
+  private async syncGuildActivityToIvrmWeb(
+    guildId: string,
+    config: ActivityIvrmSyncConfig,
+  ): Promise<void> {
+    const activityRules = await this.getActivityRules(guildId);
+    const rates = communityPointsRatesFromConfig(activityRules);
+    const leaderboard = await getCommunityPointsLeaderboard(this.prisma, {
+      guildId,
+      start: ACTIVITY_IVRM_SYNC_EPOCH,
+      end: new Date(),
+      rates,
+      limit: ACTIVITY_IVRM_SYNC_USER_LIMIT,
+    });
+    if (leaderboard.length === 0) return;
+
+    const occurredAt = new Date().toISOString();
+    for (const entry of leaderboard) {
+      const totals = await getCommunityActivityTotals(this.prisma, guildId, entry.userId, 'all');
+      await pushActivityStatsToIvrmWeb(
+        config,
+        {
+          eventId: randomUUID(),
+          discordUserId: entry.userId,
+          messagesTotal: totals.messages,
+          voiceSecondsTotal: totals.voiceSeconds,
+          pointsTotal: entry.points,
+          occurredAt,
+        },
+        this.logger,
+      );
+    }
+  }
+
   async probeDatabase(): Promise<void> {
     await this.prisma.$queryRaw`SELECT 1`;
   }
@@ -1199,6 +1283,10 @@ export class HertaBot {
     if (this.gatewayObservationTimer) {
       clearInterval(this.gatewayObservationTimer);
       this.gatewayObservationTimer = undefined;
+    }
+    if (this.activityIvrmSyncTimer) {
+      clearInterval(this.activityIvrmSyncTimer);
+      this.activityIvrmSyncTimer = undefined;
     }
 
     await Promise.allSettled([
