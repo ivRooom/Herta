@@ -100,7 +100,15 @@ describe('Achievements v3', () => {
     expect(ids.has('first-challenge')).toBe(true);
     expect(ids.has('challenge-master')).toBe(true);
     expect(ids.has('season-legend')).toBe(true);
-    expect(ACHIEVEMENTS).toHaveLength(54);
+    expect(ids.has('personality-explorer')).toBe(true);
+    expect(ACHIEVEMENTS).toHaveLength(55);
+  });
+
+  it('personality-explorerはmetric/targetを持たず、常にlockedとして表示される(手動解除専用)', () => {
+    const achievement = ACHIEVEMENTS.find((candidate) => candidate.id === 'personality-explorer')!;
+    expect(achievement.metric).toBeUndefined();
+    expect(achievement.target).toBeUndefined();
+    expect(unlockedAchievementIds(emptyMetrics)).not.toContain('personality-explorer');
   });
 
   it('Activity Rules集計後の発言・リアクション・VCから実績を解除する', () => {
@@ -319,7 +327,7 @@ describe('Achievements v3', () => {
       config,
     );
     expect(leaderboard).toContain('75pt');
-    expect(leaderboard).toContain('1/55');
+    expect(leaderboard).toContain('1/56');
   });
 
   it('Category・Rarity・Statusで一覧を絞り込む', () => {

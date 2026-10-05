@@ -16,6 +16,7 @@ import { recordMbtiQuizCompletion, type MbtiQuizAnswerInput } from '@herta/db';
 import type { Logger } from '@herta/logger';
 import { MBTI_TYPE_KEYS, mbtiManifest, mbtiRoleConfigKey } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler } from '@herta/plugin-sdk';
+import { syncAchievementUnlocks } from './achievements-repository.js';
 import {
   MBTI_AXES,
   MBTI_LIKERT_ANSWERS,
@@ -82,16 +83,25 @@ export const mbtiPlugin = definePlugin<MbtiPluginConfig, unknown, PrismaClient>(
         prisma: context.prisma,
         getRoleMap: () => normalizeMbtiConfig(context.config).mbtiRoles,
         isEnabled: () => normalizeMbtiConfig(context.config).enabled,
+        unlockCompletionAchievement: (userId: string) =>
+          syncAchievementUnlocks(context.prisma, context.guildId, userId, [
+            MBTI_COMPLETION_ACHIEVEMENT_ID,
+          ]),
       }),
     ];
   },
 });
+
+/** Achievementカタログ(packages/shared/src/achievement-catalog.ts)のID。metric/targetを持たない手動解除。 */
+const MBTI_COMPLETION_ACHIEVEMENT_ID = 'personality-explorer';
 
 export interface MbtiCommandOptions {
   logger: Logger;
   prisma: PrismaClient;
   getRoleMap: () => Record<string, string | null>;
   isEnabled: () => boolean;
+  /** 診断完了時に一回限りのAchievementを解除する(Community Pointsの加点要素)。再診断時は既存解除のため無視される。 */
+  unlockCompletionAchievement: (userId: string) => Promise<string[]>;
 }
 
 interface MbtiSession {
@@ -237,6 +247,12 @@ async function handleMbtiButton(
 
     void recordMbtiStats(options.prisma, options.logger, session, type);
     void syncMbtiResultToIvrmWeb(session, type, options.logger);
+    options.unlockCompletionAchievement(session.userId).catch((error: unknown) => {
+      options.logger.warn(
+        { err: error, guildId: session.guildId, userId: session.userId },
+        'MBTI診断完了Achievementの解除に失敗しました',
+      );
+    });
     const roleNote = await tryAssignMbtiRole(interaction, type, options);
     await interaction.update({
       content: null,

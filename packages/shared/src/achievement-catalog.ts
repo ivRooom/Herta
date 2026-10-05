@@ -585,6 +585,15 @@ export const ACHIEVEMENTS: readonly AchievementDefinition[] = [
     category: 'community',
     secret: true,
   },
+  {
+    id: 'personality-explorer',
+    name: 'Personality Explorer',
+    description: 'MBTI診断を完了する',
+    emoji: '🧬',
+    rarity: 'uncommon',
+    category: 'community',
+    // metric/targetなし: /mbti診断完了時にmbti.tsから直接unlockされる手動解除Achievement。
+  },
 ];
 
 export const ACHIEVEMENT_BY_ID: ReadonlyMap<string, AchievementDefinition> = new Map(
