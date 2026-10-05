@@ -472,6 +472,7 @@ async function executeTeamSplitButton(
       await respond(interaction, 'このセッションの参加受付は終了しています');
       return;
     }
+    await context.onCommunityAction?.('team_split_joins', interaction.user.id);
     await updateButtonMessage(context, interaction, result.session);
     return;
   }

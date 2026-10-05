@@ -62,6 +62,7 @@ import {
   startGameSession,
   startPresenceSession,
   startVoiceSession,
+  type CommunityActivityMetric,
 } from './activity/community-activity.js';
 import {
   communityPointsRatesFromConfig,
@@ -69,8 +70,11 @@ import {
   normalizeActivityRulesConfig,
   shouldCountCommandPoints,
   shouldCountGamePresence,
+  shouldCountLfgPoints,
   shouldCountMessage,
   shouldCountOnlinePresence,
+  shouldCountPollPoints,
+  shouldCountTeamSplitPoints,
   shouldCountVoice,
   type ActivityRulesConfig,
 } from './activity/activity-rules.js';
@@ -118,6 +122,16 @@ function presenceIntentEnabled(): boolean {
 const ACTIVITY_IVRM_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
 const ACTIVITY_IVRM_SYNC_USER_LIMIT = 25;
 const ACTIVITY_IVRM_SYNC_EPOCH = new Date('1970-01-01T00:00:00.000Z');
+
+/** Plugin由来の`onCommunityAction`metric名 -> Activity Rules判定関数。 */
+const COMMUNITY_ACTION_GUARDS: Record<
+  string,
+  (config: ActivityRulesConfig, candidate: { roleIds: string[] }) => boolean
+> = {
+  lfg_joins: shouldCountLfgPoints,
+  team_split_joins: shouldCountTeamSplitPoints,
+  poll_votes: shouldCountPollPoints,
+};
 
 interface PresenceLike {
   status?: string;
@@ -237,6 +251,8 @@ export class HertaBot {
       client: this.client,
       prisma: this.prisma,
       logger: this.logger,
+      onCommunityAction: (guildId, metric, userId) =>
+        this.handlePluginCommunityAction(guildId, metric, userId),
     });
     this.pluginLoader = new GuildPluginLoader({
       registry: pluginRegistry,
@@ -728,6 +744,39 @@ export class HertaBot {
     return normalizeActivityRulesConfig(
       await this.pluginLoader.getGuildPluginConfig(guildId, 'activity-rules'),
     );
+  }
+
+  /**
+   * lfg/team-split等のPluginが提供する`onCommunityAction`hookの実装。PluginはDBアクセスを
+   * 持たない設計のため、Activity Rulesの判定(有効/無効・除外Role)とDB書き込みはここで行う。
+   * bot起動シーケンス・Plugin本来の処理を止めないよう、失敗時はログのみ。
+   */
+  private async handlePluginCommunityAction(
+    guildId: string,
+    metric: string,
+    userId: string,
+  ): Promise<void> {
+    try {
+      const guard = COMMUNITY_ACTION_GUARDS[metric];
+      if (!guard) return;
+
+      const activityRules = await this.getActivityRules(guildId);
+      const member = this.client.guilds.cache.get(guildId)?.members.cache.get(userId);
+      const roleIds = interactionMemberRoleIds(member ?? null);
+      if (!guard(activityRules, { roleIds })) return;
+
+      await incrementCommunityActivity(
+        this.prisma,
+        guildId,
+        userId,
+        metric as CommunityActivityMetric,
+      );
+    } catch (error) {
+      this.logger.warn(
+        { err: error, guildId, userId, metric },
+        'Plugin由来のCommunity Points加点に失敗しました',
+      );
+    }
   }
 
   private isCountableVoiceState(

@@ -29,6 +29,15 @@ export interface ActivityRulesConfig {
   achievementPoints: number;
   commandPointsPerUse: number;
   commandPointsDailyCap: number;
+  countLfgPoints: boolean;
+  lfgPointsPerJoin: number;
+  lfgPointsDailyCap: number;
+  countTeamSplitPoints: boolean;
+  teamSplitPointsPerJoin: number;
+  teamSplitPointsDailyCap: number;
+  countPollPoints: boolean;
+  pollPointsPerVote: number;
+  pollPointsDailyCap: number;
 }
 
 /** Community Pointsの各加点単価・1日上限。getCommunityPointsLeaderboard()等へそのまま渡す。 */
@@ -43,6 +52,12 @@ export interface CommunityPointsRates {
   achievementPoints: number;
   commandPointsPerUse: number;
   commandPointsDailyCap: number;
+  lfgPointsPerJoin: number;
+  lfgPointsDailyCap: number;
+  teamSplitPointsPerJoin: number;
+  teamSplitPointsDailyCap: number;
+  pollPointsPerVote: number;
+  pollPointsDailyCap: number;
 }
 
 export function communityPointsRatesFromConfig(config: ActivityRulesConfig): CommunityPointsRates {
@@ -57,6 +72,12 @@ export function communityPointsRatesFromConfig(config: ActivityRulesConfig): Com
     achievementPoints: config.achievementPoints,
     commandPointsPerUse: config.countCommandPoints ? config.commandPointsPerUse : 0,
     commandPointsDailyCap: config.commandPointsDailyCap,
+    lfgPointsPerJoin: config.countLfgPoints ? config.lfgPointsPerJoin : 0,
+    lfgPointsDailyCap: config.lfgPointsDailyCap,
+    teamSplitPointsPerJoin: config.countTeamSplitPoints ? config.teamSplitPointsPerJoin : 0,
+    teamSplitPointsDailyCap: config.teamSplitPointsDailyCap,
+    pollPointsPerVote: config.countPollPoints ? config.pollPointsPerVote : 0,
+    pollPointsDailyCap: config.pollPointsDailyCap,
   };
 }
 
@@ -133,6 +154,16 @@ export function normalizeActivityRulesConfig(value: unknown): ActivityRulesConfi
     achievementPoints: clamp(toInteger(source.achievementPoints, 5), 0, 50),
     commandPointsPerUse: clamp(toInteger(source.commandPointsPerUse, 1), 0, 10),
     commandPointsDailyCap: clamp(toInteger(source.commandPointsDailyCap, 10), 0, 100),
+    countLfgPoints: source.countLfgPoints === undefined ? true : source.countLfgPoints === true,
+    lfgPointsPerJoin: clamp(toInteger(source.lfgPointsPerJoin, 3), 0, 20),
+    lfgPointsDailyCap: clamp(toInteger(source.lfgPointsDailyCap, 15), 0, 100),
+    countTeamSplitPoints:
+      source.countTeamSplitPoints === undefined ? true : source.countTeamSplitPoints === true,
+    teamSplitPointsPerJoin: clamp(toInteger(source.teamSplitPointsPerJoin, 3), 0, 20),
+    teamSplitPointsDailyCap: clamp(toInteger(source.teamSplitPointsDailyCap, 15), 0, 100),
+    countPollPoints: source.countPollPoints === undefined ? true : source.countPollPoints === true,
+    pollPointsPerVote: clamp(toInteger(source.pollPointsPerVote, 1), 0, 10),
+    pollPointsDailyCap: clamp(toInteger(source.pollPointsDailyCap, 10), 0, 100),
   };
 }
 
@@ -234,6 +265,33 @@ export function shouldCountCommandPoints(
   candidate: PresenceActivityCandidate,
 ): boolean {
   if (!config.countCommandPoints) return false;
+  if (hasExcludedRole(config, candidate.roleIds)) return false;
+  return true;
+}
+
+export function shouldCountLfgPoints(
+  config: ActivityRulesConfig,
+  candidate: PresenceActivityCandidate,
+): boolean {
+  if (!config.countLfgPoints) return false;
+  if (hasExcludedRole(config, candidate.roleIds)) return false;
+  return true;
+}
+
+export function shouldCountTeamSplitPoints(
+  config: ActivityRulesConfig,
+  candidate: PresenceActivityCandidate,
+): boolean {
+  if (!config.countTeamSplitPoints) return false;
+  if (hasExcludedRole(config, candidate.roleIds)) return false;
+  return true;
+}
+
+export function shouldCountPollPoints(
+  config: ActivityRulesConfig,
+  candidate: PresenceActivityCandidate,
+): boolean {
+  if (!config.countPollPoints) return false;
   if (hasExcludedRole(config, candidate.roleIds)) return false;
   return true;
 }

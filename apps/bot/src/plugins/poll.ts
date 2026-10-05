@@ -451,6 +451,8 @@ async function handlePollComponent(
     return;
   }
 
+  await context.onCommunityAction?.('poll_votes', interaction.user.id);
+
   const snapshot = await getPollSnapshot(context.prisma, parsed.pollId, interaction.guildId);
   if (!snapshot) {
     await interaction.reply({

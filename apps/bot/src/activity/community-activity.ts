@@ -8,6 +8,9 @@ export const COMMUNITY_ACTIVITY_METRICS = [
   'minecraft_seconds',
   'online_seconds',
   'commands',
+  'lfg_joins',
+  'team_split_joins',
+  'poll_votes',
 ] as const;
 
 export type CommunityActivityMetric = (typeof COMMUNITY_ACTIVITY_METRICS)[number];

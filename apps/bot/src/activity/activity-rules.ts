@@ -5,8 +5,11 @@ export {
   normalizeActivityRulesConfig,
   shouldCountCommandPoints,
   shouldCountGamePresence,
+  shouldCountLfgPoints,
   shouldCountMessage,
   shouldCountOnlinePresence,
+  shouldCountPollPoints,
+  shouldCountTeamSplitPoints,
   shouldCountVoice,
 } from '@herta/shared/activity-rules';
 export type {
