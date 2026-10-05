@@ -6,8 +6,11 @@ import {
   normalizeActivityRulesConfig,
   shouldCountCommandPoints,
   shouldCountGamePresence,
+  shouldCountLfgPoints,
   shouldCountMessage,
   shouldCountOnlinePresence,
+  shouldCountPollPoints,
+  shouldCountTeamSplitPoints,
   shouldCountVoice,
 } from './activity-rules.js';
 
@@ -41,6 +44,15 @@ describe('Activity Rules v1.3', () => {
       achievementPoints: 5,
       commandPointsPerUse: 1,
       commandPointsDailyCap: 10,
+      countLfgPoints: true,
+      lfgPointsPerJoin: 3,
+      lfgPointsDailyCap: 15,
+      countTeamSplitPoints: true,
+      teamSplitPointsPerJoin: 3,
+      teamSplitPointsDailyCap: 15,
+      countPollPoints: true,
+      pollPointsPerVote: 1,
+      pollPointsDailyCap: 10,
     });
   });
 
@@ -255,16 +267,50 @@ describe('Activity Rules v1.3', () => {
       achievementPoints: 5,
       commandPointsPerUse: 1,
       commandPointsDailyCap: 10,
+      lfgPointsPerJoin: 3,
+      lfgPointsDailyCap: 15,
+      teamSplitPointsPerJoin: 3,
+      teamSplitPointsDailyCap: 15,
+      pollPointsPerVote: 1,
+      pollPointsDailyCap: 10,
     });
 
     const disabledConfig = normalizeActivityRulesConfig({
       countOnlinePresence: false,
       countGamePresence: false,
       countCommandPoints: false,
+      countLfgPoints: false,
+      countTeamSplitPoints: false,
+      countPollPoints: false,
     });
     const disabledRates = communityPointsRatesFromConfig(disabledConfig);
     expect(disabledRates.onlinePointsPerHour).toBe(0);
     expect(disabledRates.gamePointsPerHour).toBe(0);
     expect(disabledRates.commandPointsPerUse).toBe(0);
+    expect(disabledRates.lfgPointsPerJoin).toBe(0);
+    expect(disabledRates.teamSplitPointsPerJoin).toBe(0);
+    expect(disabledRates.pollPointsPerVote).toBe(0);
+  });
+
+  it('LFG・Team Split・Poll参加ポイントは設定OFFまたは除外Roleで無効化できる', () => {
+    const defaultConfig = normalizeActivityRulesConfig(undefined);
+    expect(shouldCountLfgPoints(defaultConfig, {})).toBe(true);
+    expect(shouldCountTeamSplitPoints(defaultConfig, {})).toBe(true);
+    expect(shouldCountPollPoints(defaultConfig, {})).toBe(true);
+
+    const disabledConfig = normalizeActivityRulesConfig({
+      countLfgPoints: false,
+      countTeamSplitPoints: false,
+      countPollPoints: false,
+    });
+    expect(shouldCountLfgPoints(disabledConfig, {})).toBe(false);
+    expect(shouldCountTeamSplitPoints(disabledConfig, {})).toBe(false);
+    expect(shouldCountPollPoints(disabledConfig, {})).toBe(false);
+
+    const excludedRoleConfig = normalizeActivityRulesConfig({ excludedRoleIds: ['400'] });
+    expect(shouldCountLfgPoints(excludedRoleConfig, { roleIds: ['400'] })).toBe(false);
+    expect(shouldCountTeamSplitPoints(excludedRoleConfig, { roleIds: ['400'] })).toBe(false);
+    expect(shouldCountPollPoints(excludedRoleConfig, { roleIds: ['400'] })).toBe(false);
+    expect(shouldCountLfgPoints(excludedRoleConfig, { roleIds: ['999'] })).toBe(true);
   });
 });

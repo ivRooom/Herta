@@ -20,6 +20,9 @@ const metricLabels: Record<CommunityActivityMetric, string> = {
   minecraft_seconds: 'Minecraftプレイ時間',
   online_seconds: 'オンライン時間',
   commands: 'コマンド使用数',
+  lfg_joins: 'LFG参加数',
+  team_split_joins: 'Team Split参加数',
+  poll_votes: 'Poll投票数',
 };
 
 const periodLabels: Record<CommunityActivityPeriod, string> = {

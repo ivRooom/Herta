@@ -15,6 +15,13 @@ export interface PluginRuntimeContext<TConfig, TClient = unknown, TPrisma = unkn
   config: TConfig;
   /** 実行中 Plugin の manifest */
   manifest: PluginManifest;
+  /**
+   * メンバーの能動的な参加行動をCommunity Pointsへ加点する。Activity Rulesの
+   * 設定(有効/無効・単価・1日上限・除外Role)の判定はhost側(apps/bot)で行い、
+   * Pluginは加点対象のmetric名とuserIdだけを渡す。host側がこれを提供しない
+   * 環境(テスト等)ではundefinedになる。
+   */
+  onCommunityAction?: (metric: string, userId: string) => Promise<void>;
 }
 
 export interface CreatePluginContextOptions<TConfig, TClient, TPrisma> {
@@ -24,6 +31,7 @@ export interface CreatePluginContextOptions<TConfig, TClient, TPrisma> {
   guildId: string;
   config: TConfig;
   manifest: PluginManifest;
+  onCommunityAction?: (metric: string, userId: string) => Promise<void>;
 }
 
 /** Guild と Plugin に紐づいたコンテキストを生成する */

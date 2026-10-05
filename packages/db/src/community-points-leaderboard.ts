@@ -11,6 +11,12 @@ export interface CommunityPointsRatesInput {
   achievementPoints: number;
   commandPointsPerUse: number;
   commandPointsDailyCap: number;
+  lfgPointsPerJoin: number;
+  lfgPointsDailyCap: number;
+  teamSplitPointsPerJoin: number;
+  teamSplitPointsDailyCap: number;
+  pollPointsPerVote: number;
+  pollPointsDailyCap: number;
 }
 
 export interface CommunityPointsEntry {
@@ -64,13 +70,22 @@ async function queryPointsRows(
             LEAST(("value" / 3600) * ${r.onlinePointsPerHour}::bigint, ${r.onlinePointsDailyCap}::bigint)
           WHEN 'commands' THEN
             LEAST("value" * ${r.commandPointsPerUse}::bigint, ${r.commandPointsDailyCap}::bigint)
+          WHEN 'lfg_joins' THEN
+            LEAST("value" * ${r.lfgPointsPerJoin}::bigint, ${r.lfgPointsDailyCap}::bigint)
+          WHEN 'team_split_joins' THEN
+            LEAST("value" * ${r.teamSplitPointsPerJoin}::bigint, ${r.teamSplitPointsDailyCap}::bigint)
+          WHEN 'poll_votes' THEN
+            LEAST("value" * ${r.pollPointsPerVote}::bigint, ${r.pollPointsDailyCap}::bigint)
           ELSE 0::bigint
         END AS "points"
       FROM "community_activity_daily"
       WHERE "guild_id" = ${input.guildId}
         AND "activity_date" >= ${input.start}
         AND "activity_date" <= ${input.end}
-        AND "metric" IN ('messages', 'reactions_given', 'reactions_received', 'voice_seconds', 'online_seconds', 'commands')
+        AND "metric" IN (
+          'messages', 'reactions_given', 'reactions_received', 'voice_seconds', 'online_seconds',
+          'commands', 'lfg_joins', 'team_split_joins', 'poll_votes'
+        )
     ),
     game_points AS (
       SELECT

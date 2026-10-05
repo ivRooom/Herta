@@ -40,6 +40,8 @@ export interface DefaultPluginRegistryDeps {
   client: unknown;
   prisma: unknown;
   logger: Logger;
+  /** lfg/team-split等のPluginが自発的な参加行動をCommunity Pointsへ加点するためのhook。 */
+  onCommunityAction?: (guildId: string, metric: string, userId: string) => Promise<void>;
 }
 
 const pluginIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -270,6 +272,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof achievementsPlugin.onEnable>>[0],
       )
     : undefined;
@@ -284,6 +289,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof afkPlugin.onEnable>>[0],
       )
     : undefined;
@@ -298,6 +306,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof aiPlugin.onEnable>>[0],
       )
     : undefined;
@@ -312,6 +323,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof autoResponsePlugin.onEnable>>[0],
       )
     : undefined;
@@ -326,6 +340,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof birthdayRolePlugin.onEnable>>[0],
       )
     : undefined;
@@ -340,6 +357,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof channelPolicyPlugin.onEnable>>[0],
       )
     : undefined;
@@ -354,6 +374,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof communityProfilePlugin.onEnable>>[0],
       )
     : undefined;
@@ -368,6 +391,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof communityChallengePlugin.onEnable>>[0],
       )
     : undefined;
@@ -382,6 +408,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof dailyContentPlugin.onEnable>>[0],
       )
     : undefined;
@@ -396,6 +425,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof eventRsvpPlugin.onEnable>>[0],
       )
     : undefined;
@@ -410,6 +442,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof giveawayPlugin.onEnable>>[0],
       )
     : undefined;
@@ -424,6 +459,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof lfgPlugin.onEnable>>[0],
       )
     : undefined;
@@ -438,6 +476,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof mbtiPlugin.onEnable>>[0],
       )
     : undefined;
@@ -452,6 +493,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof miniGamesPlugin.onEnable>>[0],
       )
     : undefined;
@@ -466,6 +510,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof moderationPlugin.onEnable>>[0],
       )
     : undefined;
@@ -480,6 +527,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof onboardingPlugin.onEnable>>[0],
       )
     : undefined;
@@ -494,6 +544,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof pollPlugin.onEnable>>[0],
       )
     : undefined;
@@ -508,6 +561,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof reminderPlugin.onEnable>>[0],
       )
     : undefined;
@@ -522,6 +578,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof quotePlugin.onEnable>>[0],
       )
     : undefined;
@@ -536,6 +595,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof roleManagerPlugin.onEnable>>[0],
       )
     : undefined;
@@ -550,6 +612,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof suggestionPlugin.onEnable>>[0],
       )
     : undefined;
@@ -564,6 +629,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof xpLevelPlugin.onEnable>>[0],
       )
     : undefined;
@@ -578,6 +646,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof serverStatsPlugin.onEnable>>[0],
       )
     : undefined;
@@ -592,6 +663,9 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
             guildId,
             config,
             manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
           }) as Parameters<NonNullable<typeof teamSplitPlugin.onEnable>>[0],
       )
     : undefined;

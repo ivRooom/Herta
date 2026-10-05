@@ -377,6 +377,7 @@ async function executeLfgButton(
       await respond(interaction, 'この募集は終了しています');
       return;
     }
+    await context.onCommunityAction?.('lfg_joins', interaction.user.id);
     await updateButtonMessage(context, interaction, result.post);
     return;
   }
