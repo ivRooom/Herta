@@ -163,13 +163,16 @@ jobs:
           echo "=== ivrm-web IAM連携 runtime secret ==="
           fetch_ssm_secret '/ivrm/runtime/herta/ivrm-integration-token' IVRM_INTEGRATION_TOKEN
 
+          echo "=== Valorant (HenrikDev API) runtime secret ==="
+          fetch_ssm_secret '/ivrm/runtime/herta/henrikdev-api-key' HENRIKDEV_API_KEY
+
       - name: LightsailへSSHデプロイ
         uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
-          envs: DEPLOY_REF,HERTA_IMAGE,GHCR_USERNAME,GHCR_TOKEN,SPOTIFY_CLIENT_ID,SPOTIFY_CLIENT_SECRET,HERTA_RUNTIME_SECRET_KEY,HERTA_MBTI_SYNC_SECRET,HERTA_ACTIVITY_SYNC_SECRET,IVRM_INTEGRATION_TOKEN
+          envs: DEPLOY_REF,HERTA_IMAGE,GHCR_USERNAME,GHCR_TOKEN,SPOTIFY_CLIENT_ID,SPOTIFY_CLIENT_SECRET,HERTA_RUNTIME_SECRET_KEY,HERTA_MBTI_SYNC_SECRET,HERTA_ACTIVITY_SYNC_SECRET,IVRM_INTEGRATION_TOKEN,HENRIKDEV_API_KEY
           command_timeout: 15m
           script: |
             set -euo pipefail
@@ -221,6 +224,10 @@ jobs:
             fi
             if [ -z "${IVRM_INTEGRATION_TOKEN:-}" ]; then
               echo "ERROR: IVRM_INTEGRATION_TOKENが渡されていません。" >&2
+              exit 1
+            fi
+            if [ -z "${HENRIKDEV_API_KEY:-}" ]; then
+              echo "ERROR: HENRIKDEV_API_KEYが渡されていません。" >&2
               exit 1
             fi
 
@@ -300,6 +307,7 @@ jobs:
             upsert_env HERTA_ACTIVITY_SYNC_SECRET "${HERTA_ACTIVITY_SYNC_SECRET}"
             upsert_env IVRM_INTEGRATION_TOKEN "${IVRM_INTEGRATION_TOKEN}"
             upsert_env IVRM_INTEGRATION_GUILD_ID "964326043420872704"
+            upsert_env HENRIKDEV_API_KEY "${HENRIKDEV_API_KEY}"
             upsert_env IVRM_WEB_API_BASE_URL "https://api.ivrm.jp"
             upsert_env DISCORD_ENABLE_PRESENCE_INTENT "true"
             echo "Runtime secretsを同期しました（値は非表示）"
