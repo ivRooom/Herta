@@ -26,6 +26,7 @@ import { reminderPlugin } from './reminder.js';
 import { roleManagerPlugin } from './role-manager.js';
 import { suggestionPlugin } from './suggestion.js';
 import { serverStatsPlugin } from './server-stats.js';
+import { valorantPlugin } from './valorant.js';
 import { xpLevelPlugin } from './xp-level.js';
 import type { RuntimePluginEntry } from './types.js';
 
@@ -257,6 +258,7 @@ const officialPluginIds = [
   'suggestion',
   'server-stats',
   'team-split',
+  'valorant',
   'xp-level',
 ] as const;
 
@@ -669,6 +671,23 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
           }) as Parameters<NonNullable<typeof teamSplitPlugin.onEnable>>[0],
       )
     : undefined;
+  const valorantEntry = deps
+    ? toRuntimePluginEntry(
+        valorantPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
+          }) as Parameters<NonNullable<typeof valorantPlugin.onEnable>>[0],
+      )
+    : undefined;
 
   return officialPluginIds.flatMap((pluginId) => {
     if (pluginId === 'achievements' && achievementsEntry) return [achievementsEntry];
@@ -696,6 +715,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (pluginId === 'suggestion' && suggestionEntry) return [suggestionEntry];
     if (pluginId === 'server-stats' && serverStatsEntry) return [serverStatsEntry];
     if (pluginId === 'team-split' && teamSplitEntry) return [teamSplitEntry];
+    if (pluginId === 'valorant' && valorantEntry) return [valorantEntry];
     if (pluginId === 'xp-level' && xpLevelEntry) return [xpLevelEntry];
     return [{ pluginId }];
   });

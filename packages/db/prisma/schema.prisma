@@ -1097,3 +1097,20 @@ model RuntimeSecret {
   // IV/tag/value bounds are enforced by migration SQL.
   @@map("runtime_secrets")
 }
+
+// ============================================================
+// Plugin: Valorant
+// ============================================================
+
+model ValorantAccountLink {
+  guildId   String   @map("guild_id")
+  userId    String   @map("user_id")
+  riotName  String   @map("riot_name") @db.VarChar(16)
+  riotTag   String   @map("riot_tag") @db.VarChar(8)
+  region    String   @db.VarChar(8)
+  linkedAt  DateTime @default(now()) @map("linked_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@id([guildId, userId])
+  @@map("valorant_account_links")
+}
