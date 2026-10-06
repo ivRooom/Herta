@@ -10,6 +10,7 @@ import { createPluginContext } from '@herta/plugin-sdk';
 import type { HertaPlugin } from '@herta/plugin-sdk';
 import type { SlashCommand } from '../commands/registry.js';
 import { achievementsPlugin } from './achievements.js';
+import { activityLogPlugin } from './activity-log.js';
 import { afkPlugin } from './afk.js';
 import { aiPlugin } from './ai.js';
 import { birthdayRolePlugin } from './birthday-role.js';
@@ -235,6 +236,7 @@ function validateRuntimeEntry(
 
 const officialPluginIds = [
   'achievements',
+  'activity-log',
   'activity-rules',
   'afk',
   'ai',
@@ -278,6 +280,23 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
               ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
               : undefined,
           }) as Parameters<NonNullable<typeof achievementsPlugin.onEnable>>[0],
+      )
+    : undefined;
+  const activityLogEntry = deps
+    ? toRuntimePluginEntry(
+        activityLogPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
+          }) as Parameters<NonNullable<typeof activityLogPlugin.onEnable>>[0],
       )
     : undefined;
   const afkEntry = deps
@@ -691,6 +710,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
 
   return officialPluginIds.flatMap((pluginId) => {
     if (pluginId === 'achievements' && achievementsEntry) return [achievementsEntry];
+    if (pluginId === 'activity-log' && activityLogEntry) return [activityLogEntry];
     if (pluginId === 'afk' && afkEntry) return [afkEntry];
     if (!getPluginManifest(pluginId)) return [];
     if (pluginId === 'ai' && aiEntry) return [aiEntry];
