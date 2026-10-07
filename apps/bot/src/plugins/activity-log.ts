@@ -6,8 +6,11 @@ import {
   type ChatInputCommandInteraction,
   type Guild,
   type GuildEmoji,
+  type GuildMember,
   type Message,
+  type PartialGuildMember,
   type PartialMessage,
+  type User,
   type VoiceState,
 } from 'discord.js';
 import type { PrismaClient } from '@herta/db';
@@ -26,6 +29,7 @@ export interface ActivityLogConfig {
   trackVoice: boolean;
   trackMessages: boolean;
   trackEmoji: boolean;
+  trackProfile: boolean;
   excludedChannelIds: string[];
   excludedRoleIds: string[];
   moderationAlertsEnabled: boolean;
@@ -67,6 +71,7 @@ export function normalizeActivityLogConfig(value: unknown): ActivityLogConfig {
     trackVoice: source.trackVoice === undefined ? true : source.trackVoice === true,
     trackMessages: source.trackMessages === undefined ? true : source.trackMessages === true,
     trackEmoji: source.trackEmoji === undefined ? true : source.trackEmoji === true,
+    trackProfile: source.trackProfile === undefined ? true : source.trackProfile === true,
     excludedChannelIds: normalizedIds(source.excludedChannelIds, 50),
     excludedRoleIds: normalizedIds(source.excludedRoleIds, 50),
     moderationAlertsEnabled: source.moderationAlertsEnabled === true,
@@ -353,6 +358,117 @@ async function handleEmojiEvent(
   }
 }
 
+async function handleGuildMemberUpdate(
+  context: ActivityLogRuntimeContext,
+  oldMember: GuildMember | PartialGuildMember,
+  newMember: GuildMember,
+): Promise<void> {
+  const config = normalizeActivityLogConfig(context.config);
+  if (!config.enabled || !config.trackProfile || newMember.user.bot) return;
+  const roleIds = [...newMember.roles.cache.keys()];
+  if (hasExcludedRole(config, roleIds)) return;
+
+  if (oldMember.nickname !== newMember.nickname) {
+    await record(context, {
+      guildId: context.guildId,
+      userId: newMember.id,
+      event: 'nickname_update',
+      metadata: { before: oldMember.nickname, after: newMember.nickname },
+    });
+  }
+  if (oldMember.avatar !== newMember.avatar) {
+    await record(context, {
+      guildId: context.guildId,
+      userId: newMember.id,
+      event: 'avatar_update',
+      metadata: { scope: 'guild' },
+    });
+  }
+
+  const oldRoleIds = new Set(oldMember.roles?.cache.keys() ?? []);
+  const newRoleIds = new Set(roleIds);
+  for (const roleId of newRoleIds) {
+    if (!oldRoleIds.has(roleId)) {
+      await record(context, {
+        guildId: context.guildId,
+        userId: newMember.id,
+        event: 'role_add',
+        metadata: { roleId },
+      });
+    }
+  }
+  for (const roleId of oldRoleIds) {
+    if (!newRoleIds.has(roleId)) {
+      await record(context, {
+        guildId: context.guildId,
+        userId: newMember.id,
+        event: 'role_remove',
+        metadata: { roleId },
+      });
+    }
+  }
+}
+
+async function handleUserAvatarUpdate(
+  context: ActivityLogRuntimeContext,
+  oldUser: User,
+  newUser: User,
+): Promise<void> {
+  const config = normalizeActivityLogConfig(context.config);
+  if (!config.enabled || !config.trackProfile || newUser.bot) return;
+  if (oldUser.avatar === newUser.avatar) return;
+
+  await record(context, {
+    guildId: context.guildId,
+    userId: newUser.id,
+    event: 'avatar_update',
+    metadata: { scope: 'global' },
+  });
+}
+
+async function handleGuildUpdate(
+  context: ActivityLogRuntimeContext,
+  oldGuild: Guild,
+  newGuild: Guild,
+): Promise<void> {
+  const config = normalizeActivityLogConfig(context.config);
+  if (!config.enabled || !config.trackProfile) return;
+
+  if (oldGuild.icon !== newGuild.icon) {
+    await record(context, { guildId: context.guildId, userId: null, event: 'guild_icon_update' });
+  }
+  if (oldGuild.banner !== newGuild.banner) {
+    await record(context, {
+      guildId: context.guildId,
+      userId: null,
+      event: 'guild_banner_update',
+    });
+  }
+}
+
+function describeEventMetadata(row: {
+  event: MemberActivityEventType;
+  metadata: Record<string, unknown> | null;
+}): string {
+  const metadata = row.metadata;
+  if (!metadata) return '';
+  if (row.event === 'nickname_update') {
+    const before = typeof metadata.before === 'string' ? metadata.before : '(なし)';
+    const after = typeof metadata.after === 'string' ? metadata.after : '(なし)';
+    return ` — \`${before}\` → \`${after}\``;
+  }
+  if (row.event === 'role_add' || row.event === 'role_remove') {
+    const roleId = typeof metadata.roleId === 'string' ? metadata.roleId : null;
+    return roleId ? ` — <@&${roleId}>` : '';
+  }
+  if (row.event === 'avatar_update') {
+    return typeof metadata.scope === 'string'
+      ? ` — (${metadata.scope === 'global' ? 'グローバル' : 'サーバー個別'})`
+      : '';
+  }
+  return '';
+}
+
 async function executeActivityLogCommand(
   context: ActivityLogRuntimeContext,
   interaction: ChatInputCommandInteraction,
@@ -401,7 +517,7 @@ async function executeActivityLogCommand(
       ? ` — \`${row.content.slice(0, 80)}${row.content.length > 80 ? '…' : ''}\``
       : row.contentScrubbedAt
         ? ' (本文は保持期間終了のため削除済み)'
-        : '';
+        : describeEventMetadata(row);
     return `${timestamp} **${row.event}** ${who} ${where}${snippet}`;
   });
 
@@ -491,6 +607,28 @@ export const activityLogPlugin = definePlugin<ActivityLogConfig, unknown, Prisma
             AuditLogEvent.EmojiDelete,
             args[0] as GuildEmoji,
           );
+        },
+      },
+      {
+        event: 'guildMemberUpdate',
+        async handler(_ctx, ...args) {
+          await handleGuildMemberUpdate(
+            context,
+            args[0] as GuildMember | PartialGuildMember,
+            args[1] as GuildMember,
+          );
+        },
+      },
+      {
+        event: 'userAvatarUpdate',
+        async handler(_ctx, ...args) {
+          await handleUserAvatarUpdate(context, args[0] as User, args[1] as User);
+        },
+      },
+      {
+        event: 'guildUpdate',
+        async handler(_ctx, ...args) {
+          await handleGuildUpdate(context, args[0] as Guild, args[1] as Guild);
         },
       },
     ];

@@ -8,6 +8,7 @@ describe('normalizeActivityLogConfig', () => {
       trackVoice: true,
       trackMessages: true,
       trackEmoji: true,
+      trackProfile: true,
       excludedChannelIds: [],
       excludedRoleIds: [],
       moderationAlertsEnabled: false,
@@ -36,15 +37,17 @@ describe('normalizeActivityLogConfig', () => {
     expect(config.excludedRoleIds).toEqual(['456']);
   });
 
-  it('trackVoice/trackMessages/trackEmojiを個別にfalseへできる', () => {
+  it('trackVoice/trackMessages/trackEmoji/trackProfileを個別にfalseへできる', () => {
     const config = normalizeActivityLogConfig({
       trackVoice: false,
       trackMessages: false,
       trackEmoji: false,
+      trackProfile: false,
     });
     expect(config.trackVoice).toBe(false);
     expect(config.trackMessages).toBe(false);
     expect(config.trackEmoji).toBe(false);
+    expect(config.trackProfile).toBe(false);
   });
 
   it('moderationAlertsEnabledはtrueを明示しない限りfalseになる(オプトイン)', () => {

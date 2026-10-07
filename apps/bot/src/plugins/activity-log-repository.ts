@@ -9,6 +9,12 @@ export const MEMBER_ACTIVITY_EVENT_TYPES = [
   'emoji_create',
   'emoji_update',
   'emoji_delete',
+  'avatar_update',
+  'nickname_update',
+  'role_add',
+  'role_remove',
+  'guild_icon_update',
+  'guild_banner_update',
 ] as const;
 
 export type MemberActivityEventType = (typeof MEMBER_ACTIVITY_EVENT_TYPES)[number];

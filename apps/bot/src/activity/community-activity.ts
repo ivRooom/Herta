@@ -14,6 +14,7 @@ export const COMMUNITY_ACTIVITY_METRICS = [
   'messages_edited',
   'messages_deleted',
   'emoji_actions',
+  'message_char_units',
 ] as const;
 
 export type CommunityActivityMetric = (typeof COMMUNITY_ACTIVITY_METRICS)[number];
@@ -37,6 +38,7 @@ export interface CommunityActivityTotals {
   voiceSeconds: number;
   minecraftSeconds: number;
   onlineSeconds: number;
+  messageCharUnits: number;
 }
 
 interface CommunityUserRankRow {
@@ -45,7 +47,7 @@ interface CommunityUserRankRow {
   participants: bigint;
 }
 
-function jstDate(value = new Date()): Date {
+export function jstDate(value = new Date()): Date {
   const key = new Date(value.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
   return new Date(`${key}T00:00:00.000Z`);
 }
@@ -201,6 +203,7 @@ export async function getCommunityActivityTotals(
     voiceSeconds: totals.get('voice_seconds') ?? 0,
     minecraftSeconds: totals.get('minecraft_seconds') ?? 0,
     onlineSeconds: totals.get('online_seconds') ?? 0,
+    messageCharUnits: totals.get('message_char_units') ?? 0,
   };
 }
 

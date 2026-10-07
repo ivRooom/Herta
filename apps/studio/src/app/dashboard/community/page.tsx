@@ -50,6 +50,7 @@ const metrics = [
   'messages_edited',
   'messages_deleted',
   'emoji_actions',
+  'message_char_units',
 ] as const;
 type Metric = (typeof metrics)[number];
 
@@ -63,6 +64,7 @@ const metricLabels: Record<Metric, string> = {
   messages_edited: 'メッセージ編集',
   messages_deleted: 'メッセージ削除',
   emoji_actions: '絵文字登録/変更/削除',
+  message_char_units: '文字ポイント',
 };
 
 function single(value: string | string[] | undefined): string {
@@ -76,7 +78,14 @@ function formatSeconds(value: number): string {
 }
 
 function formatMetric(metric: string, value: number): string {
-  return metric.endsWith('_seconds') ? formatSeconds(value) : value.toLocaleString('ja-JP');
+  if (metric.endsWith('_seconds')) return formatSeconds(value);
+  if (metric === 'message_char_units') {
+    // 半角=1unit(0.5pt)・全角等=2unit(1pt)で記録しているため、表示はunit/2のptへ変換する
+    // (Botの apps/bot/src/activity/char-score.ts と同じ変換。整数BigInt保存のための単位)。
+    const points = Math.round((value / 2) * 10) / 10;
+    return `${points.toLocaleString('ja-JP', { maximumFractionDigits: 1 })}pt`;
+  }
+  return value.toLocaleString('ja-JP');
 }
 
 const PERIOD_PRESETS = [
