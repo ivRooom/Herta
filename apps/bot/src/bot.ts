@@ -184,6 +184,8 @@ function resolveGatewayIntents(logger: Logger): GatewayIntentBits[] {
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.GuildMessageReactions,
     GatewayIntentBits.GuildVoiceStates,
+    // 絵文字登録等のGuild Expressionsイベント。特権Intentではないため常時有効化する。
+    GatewayIntentBits.GuildExpressions,
   ];
   if (messageContentIntentEnabled()) {
     intents.push(GatewayIntentBits.MessageContent);
@@ -404,6 +406,26 @@ export class HertaBot {
 
     this.client.on(Events.GuildMemberRemove, async (member) => {
       await this.dispatchGuildPluginEvent(member.guild.id, Events.GuildMemberRemove, member);
+    });
+
+    this.client.on(Events.GuildEmojiCreate, async (emoji) => {
+      if (!emoji.guild) return;
+      await this.dispatchGuildPluginEvent(emoji.guild.id, Events.GuildEmojiCreate, emoji);
+    });
+
+    this.client.on(Events.GuildEmojiUpdate, async (oldEmoji, newEmoji) => {
+      if (!newEmoji.guild) return;
+      await this.dispatchGuildPluginEvent(
+        newEmoji.guild.id,
+        Events.GuildEmojiUpdate,
+        oldEmoji,
+        newEmoji,
+      );
+    });
+
+    this.client.on(Events.GuildEmojiDelete, async (emoji) => {
+      if (!emoji.guild) return;
+      await this.dispatchGuildPluginEvent(emoji.guild.id, Events.GuildEmojiDelete, emoji);
     });
 
     this.client.on(Events.MessageCreate, async (message) => {

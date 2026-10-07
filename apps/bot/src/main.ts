@@ -15,6 +15,7 @@ import {
 import { createLogger } from '@herta/logger';
 import { HERTA_STUDIO_ROOT_DISCORD_ROLE_ID } from '@herta/shared';
 import { HertaBot } from './bot.js';
+import { scrubExpiredMemberActivityContent } from './plugins/activity-log-repository.js';
 import { loadHealthConfig } from './health/config.js';
 import { HealthHttpServer } from './health/server.js';
 import { HertaHealthService } from './health/service.js';
@@ -97,6 +98,9 @@ const HEALTH_SNAPSHOT_RETENTION_DAYS = 31;
 // LLMの学習・分析用途で蓄積するため、他のoperational telemetryより長く保持する。
 // Studioダッシュボードの表示ラベルとも一致させるため、@herta/dbの共有定数を使う。
 const MBTI_STATS_RETENTION_DAYS = MBTI_STATS_DEFAULT_RETENTION_DAYS;
+// Activity Logのevent自体(誰が・いつ・何を)は保持期間を設けない。本文(編集前/削除時の
+// スナップショット)だけをこの期間でscrubし、個人情報の蓄積を抑える。
+const ACTIVITY_LOG_CONTENT_RETENTION_DAYS = 180;
 const HEALTH_SNAPSHOT_INTERVAL_MS = 5 * 60 * 1_000;
 const HEALTH_SNAPSHOT_BUFFER_LIMIT = Math.ceil(
   (HEALTH_SNAPSHOT_RETENTION_DAYS * 24 * 60 * 60 * 1_000) / HEALTH_SNAPSHOT_INTERVAL_MS,
@@ -122,6 +126,7 @@ async function pruneRetainedData(): Promise<void> {
       healthSnapshotDeleted,
       aiGenerationDeleted,
       mbtiStatsDeleted,
+      activityLogContentScrubbed,
     ] = await Promise.all([
       pruneCommandExecutionEvents(prisma, EXECUTION_ANALYTICS_RETENTION_DAYS),
       pruneAutoResponseExecutionEvents(
@@ -131,6 +136,7 @@ async function pruneRetainedData(): Promise<void> {
       pruneServiceHealthSnapshots(prisma, HEALTH_SNAPSHOT_RETENTION_DAYS),
       pruneAiGenerationEvents(prisma, EXECUTION_ANALYTICS_RETENTION_DAYS),
       pruneMbtiStatsEvents(prisma, MBTI_STATS_RETENTION_DAYS),
+      scrubExpiredMemberActivityContent(prisma, ACTIVITY_LOG_CONTENT_RETENTION_DAYS),
     ]);
     if (commandDeleted > 0) {
       logger.info(
@@ -160,6 +166,15 @@ async function pruneRetainedData(): Promise<void> {
       logger.info(
         { deleted: mbtiStatsDeleted, retentionDays: MBTI_STATS_RETENTION_DAYS },
         '古いMBTI診断統計を削除しました',
+      );
+    }
+    if (activityLogContentScrubbed > 0) {
+      logger.info(
+        {
+          scrubbed: activityLogContentScrubbed,
+          retentionDays: ACTIVITY_LOG_CONTENT_RETENTION_DAYS,
+        },
+        '古いActivity Logの本文をscrubしました',
       );
     }
   } catch (error) {

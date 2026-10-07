@@ -1114,3 +1114,27 @@ model ValorantAccountLink {
   @@id([guildId, userId])
   @@map("valorant_account_links")
 }
+
+// ============================================================
+// Plugin: Activity Log
+// ============================================================
+
+model MemberActivityEvent {
+  id        String    @id @default(uuid())
+  guildId   String    @map("guild_id")
+  userId    String?   @map("user_id")
+  event     String    @db.VarChar(32)
+  channelId String?   @map("channel_id")
+  messageId String?   @map("message_id")
+  /** message_update(編集前)・message_delete(削除時)の本文スナップショット。6ヶ月経過後にscrubされnullになる。 */
+  content   String?
+  /** content が実際にscrubされた日時。scrub未実施・元々contentを持たないeventはnull。 */
+  contentScrubbedAt DateTime? @map("content_scrubbed_at") @db.Timestamptz(3)
+  metadata  Json?
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+
+  @@index([guildId, occurredAt(sort: Desc)])
+  @@index([guildId, userId, occurredAt(sort: Desc)])
+  @@index([guildId, event, occurredAt(sort: Desc)])
+  @@map("member_activity_events")
+}
