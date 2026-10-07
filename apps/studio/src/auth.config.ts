@@ -25,6 +25,11 @@ export const authConfig = {
     Discord({
       clientId: process.env.DISCORD_CLIENT_ID,
       clientSecret: process.env.DISCORD_CLIENT_SECRET,
+      // Discordが認可レスポンスへ"iss": "https://discord.com"を返すようになったが、
+      // @auth/core(現行バージョン)のDiscordプロバイダはissuerを既定で設定しておらず、
+      // 内部のplaceholder("https://authjs.dev")と不一致でログイン全体が失敗していた。
+      // 上流の既知の問題: https://github.com/nextauthjs/next-auth/issues/12687
+      issuer: 'https://discord.com',
       authorization: { params: { scope: DISCORD_SCOPES } },
     }),
   ],
