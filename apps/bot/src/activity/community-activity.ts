@@ -11,6 +11,9 @@ export const COMMUNITY_ACTIVITY_METRICS = [
   'lfg_joins',
   'team_split_joins',
   'poll_votes',
+  'messages_edited',
+  'messages_deleted',
+  'emoji_actions',
 ] as const;
 
 export type CommunityActivityMetric = (typeof COMMUNITY_ACTIVITY_METRICS)[number];
