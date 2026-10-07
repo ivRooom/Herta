@@ -1,4 +1,5 @@
 import { communityActivityCommands } from '../commands/community-activity.js';
+import { communityActivityExportCommands } from '../commands/community-activity-export.js';
 import { coreInformationCommands } from '../commands/core-info.js';
 import { pingCommand } from '../commands/ping.js';
 import { PLUGIN_OWNED_COMMAND_NAMES } from '../commands/registry.js';
@@ -68,6 +69,7 @@ const CORE_COMMAND_NAMES = new Set(
     ...coreUtilityV4Commands,
     ...coreUtilityV5Commands,
     ...communityActivityCommands,
+    ...communityActivityExportCommands,
     pingCommand,
   ]
     .map((command) => command.definition.name)
