@@ -10,6 +10,12 @@ describe('normalizeActivityLogConfig', () => {
       trackEmoji: true,
       excludedChannelIds: [],
       excludedRoleIds: [],
+      moderationAlertsEnabled: false,
+      alertChannelId: null,
+      messageBurstThreshold: 8,
+      messageBurstWindowSeconds: 10,
+      deleteBurstThreshold: 5,
+      deleteBurstWindowSeconds: 30,
     });
   });
 
@@ -39,5 +45,36 @@ describe('normalizeActivityLogConfig', () => {
     expect(config.trackVoice).toBe(false);
     expect(config.trackMessages).toBe(false);
     expect(config.trackEmoji).toBe(false);
+  });
+
+  it('moderationAlertsEnabledはtrueを明示しない限りfalseになる(オプトイン)', () => {
+    expect(
+      normalizeActivityLogConfig({ moderationAlertsEnabled: true }).moderationAlertsEnabled,
+    ).toBe(true);
+    expect(normalizeActivityLogConfig({}).moderationAlertsEnabled).toBe(false);
+  });
+
+  it('alertChannelIdは数字のみ許可し、それ以外はnullになる', () => {
+    expect(normalizeActivityLogConfig({ alertChannelId: '123456' }).alertChannelId).toBe('123456');
+    expect(
+      normalizeActivityLogConfig({ alertChannelId: 'not-a-channel' }).alertChannelId,
+    ).toBeNull();
+    expect(normalizeActivityLogConfig({ alertChannelId: null }).alertChannelId).toBeNull();
+  });
+
+  it('burstしきい値・時間幅は範囲外なら既定値へ、範囲内ならその値へclampする', () => {
+    expect(normalizeActivityLogConfig({ messageBurstThreshold: 1 }).messageBurstThreshold).toBe(3);
+    expect(normalizeActivityLogConfig({ messageBurstThreshold: 999 }).messageBurstThreshold).toBe(
+      50,
+    );
+    expect(normalizeActivityLogConfig({ messageBurstThreshold: 20 }).messageBurstThreshold).toBe(
+      20,
+    );
+    expect(normalizeActivityLogConfig({ messageBurstThreshold: 'bad' }).messageBurstThreshold).toBe(
+      8,
+    );
+    expect(
+      normalizeActivityLogConfig({ deleteBurstWindowSeconds: 1 }).deleteBurstWindowSeconds,
+    ).toBe(5);
   });
 });

@@ -23,6 +23,9 @@ const metricLabels: Record<CommunityActivityMetric, string> = {
   lfg_joins: 'LFG参加数',
   team_split_joins: 'Team Split参加数',
   poll_votes: 'Poll投票数',
+  messages_edited: 'メッセージ編集数',
+  messages_deleted: 'メッセージ削除数',
+  emoji_actions: '絵文字登録/変更/削除数',
 };
 
 const periodLabels: Record<CommunityActivityPeriod, string> = {
@@ -46,6 +49,9 @@ const metricChoices = [
   { name: 'VC滞在時間', value: 'voice_seconds' },
   { name: 'Minecraftプレイ時間', value: 'minecraft_seconds' },
   { name: 'オンライン時間', value: 'online_seconds' },
+  { name: 'メッセージ編集数', value: 'messages_edited' },
+  { name: 'メッセージ削除数', value: 'messages_deleted' },
+  { name: '絵文字登録/変更/削除数', value: 'emoji_actions' },
 ];
 
 function readPeriod(value: string | null): CommunityActivityPeriod {
@@ -58,7 +64,10 @@ function readMetric(value: string | null): CommunityActivityMetric {
     value === 'reactions_received' ||
     value === 'voice_seconds' ||
     value === 'minecraft_seconds' ||
-    value === 'online_seconds'
+    value === 'online_seconds' ||
+    value === 'messages_edited' ||
+    value === 'messages_deleted' ||
+    value === 'emoji_actions'
   ) {
     return value;
   }

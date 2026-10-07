@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '@herta/db';
 import {
+  countRecentUserEvents,
   listMemberActivityEvents,
   recordMemberActivityEvent,
   scrubExpiredMemberActivityContent,
@@ -12,6 +13,7 @@ function mockPrisma(overrides: Record<string, unknown> = {}) {
       create: vi.fn().mockResolvedValue(undefined),
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
       findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
       ...overrides,
     },
   } as unknown as PrismaClient;
@@ -75,6 +77,31 @@ describe('scrubExpiredMemberActivityContent', () => {
     expect(call.data.content).toBeNull();
     expect(call.data.contentScrubbedAt).toBeInstanceOf(Date);
     expect(call.where.occurredAt.lt).toBeInstanceOf(Date);
+  });
+});
+
+describe('countRecentUserEvents', () => {
+  it('guildId/userId/event/occurredAt(since以降)で絞り込んでcountする', async () => {
+    const count = vi.fn().mockResolvedValue(4);
+    const prisma = mockPrisma({ count });
+    const since = new Date('2026-01-01T00:00:00Z');
+
+    const result = await countRecentUserEvents(prisma, {
+      guildId: 'guild-1',
+      userId: 'user-1',
+      event: 'message_create',
+      since,
+    });
+
+    expect(result).toBe(4);
+    expect(count).toHaveBeenCalledWith({
+      where: {
+        guildId: 'guild-1',
+        userId: 'user-1',
+        event: 'message_create',
+        occurredAt: { gte: since },
+      },
+    });
   });
 });
 

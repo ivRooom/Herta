@@ -13,7 +13,9 @@ import {
 import type { PrismaClient } from '@herta/db';
 import { activityLogManifest } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
+import { incrementCommunityActivity } from '../activity/community-activity.js';
 import {
+  countRecentUserEvents,
   listMemberActivityEvents,
   recordMemberActivityEvent,
   type MemberActivityEventType,
@@ -26,6 +28,12 @@ export interface ActivityLogConfig {
   trackEmoji: boolean;
   excludedChannelIds: string[];
   excludedRoleIds: string[];
+  moderationAlertsEnabled: boolean;
+  alertChannelId: string | null;
+  messageBurstThreshold: number;
+  messageBurstWindowSeconds: number;
+  deleteBurstThreshold: number;
+  deleteBurstWindowSeconds: number;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -42,6 +50,16 @@ function normalizedIds(value: unknown, maxItems: number): string[] {
   ].slice(0, maxItems);
 }
 
+function clampInt(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === 'number' ? Math.trunc(value) : NaN;
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
+function normalizedChannelId(value: unknown): string | null {
+  return typeof value === 'string' && /^\d+$/.test(value) ? value : null;
+}
+
 export function normalizeActivityLogConfig(value: unknown): ActivityLogConfig {
   const source = isRecord(value) ? value : {};
   return {
@@ -51,6 +69,12 @@ export function normalizeActivityLogConfig(value: unknown): ActivityLogConfig {
     trackEmoji: source.trackEmoji === undefined ? true : source.trackEmoji === true,
     excludedChannelIds: normalizedIds(source.excludedChannelIds, 50),
     excludedRoleIds: normalizedIds(source.excludedRoleIds, 50),
+    moderationAlertsEnabled: source.moderationAlertsEnabled === true,
+    alertChannelId: normalizedChannelId(source.alertChannelId),
+    messageBurstThreshold: clampInt(source.messageBurstThreshold, 8, 3, 50),
+    messageBurstWindowSeconds: clampInt(source.messageBurstWindowSeconds, 10, 5, 300),
+    deleteBurstThreshold: clampInt(source.deleteBurstThreshold, 5, 3, 50),
+    deleteBurstWindowSeconds: clampInt(source.deleteBurstWindowSeconds, 30, 5, 300),
   };
 }
 
@@ -74,6 +98,53 @@ async function record(
     context.logger.warn(
       { err: error, guildId: context.guildId, event: input.event },
       'Activity Logの記録に失敗しました',
+    );
+  }
+}
+
+/**
+ * burst alert(連投・連続削除の検知通知)のcooldown管理。guild+user+種別ごとに
+ * 直近の通知時刻だけプロセス内メモリで持つ(再起動で消えても実害はない)。
+ */
+const lastBurstAlertAt = new Map<string, number>();
+
+function burstAlertKey(guildId: string, userId: string, kind: string): string {
+  return `${guildId}:${userId}:${kind}`;
+}
+
+async function maybeSendBurstAlert(
+  context: ActivityLogRuntimeContext,
+  guild: Guild,
+  config: ActivityLogConfig,
+  userId: string,
+  kind: 'message_burst' | 'delete_burst',
+  count: number,
+  windowSeconds: number,
+): Promise<void> {
+  if (!config.alertChannelId) return;
+  const key = burstAlertKey(context.guildId, userId, kind);
+  const now = Date.now();
+  const last = lastBurstAlertAt.get(key) ?? 0;
+  if (now - last < windowSeconds * 1000) return;
+  lastBurstAlertAt.set(key, now);
+
+  try {
+    const channel = await guild.channels.fetch(config.alertChannelId);
+    if (!channel?.isTextBased()) return;
+    const title =
+      kind === 'message_burst' ? '⚠️ 短時間の大量投稿を検知' : '⚠️ 短時間の大量削除を検知';
+    const embed = new EmbedBuilder()
+      .setTitle(title)
+      .setDescription(
+        `<@${userId}> が直近${windowSeconds}秒間に${count}件のイベントを記録しました。`,
+      )
+      .setColor(0xed4245)
+      .setTimestamp(new Date());
+    await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+  } catch (error) {
+    context.logger.warn(
+      { err: error, guildId: context.guildId, userId, kind },
+      'Burst Alertの送信に失敗しました',
     );
   }
 }
@@ -133,36 +204,60 @@ function handleVoiceStateUpdate(
   return Promise.all(tasks).then(() => undefined);
 }
 
-function handleMessageCreate(context: ActivityLogRuntimeContext, message: Message): Promise<void> {
+async function handleMessageCreate(
+  context: ActivityLogRuntimeContext,
+  message: Message,
+): Promise<void> {
   const config = normalizeActivityLogConfig(context.config);
-  if (!config.enabled || !config.trackMessages) return Promise.resolve();
-  if (message.author.bot || message.webhookId) return Promise.resolve();
-  if (isExcludedChannel(config, message.channelId)) return Promise.resolve();
+  if (!config.enabled || !config.trackMessages) return;
+  if (message.author.bot || message.webhookId) return;
+  if (isExcludedChannel(config, message.channelId)) return;
   const roleIds = message.member ? [...message.member.roles.cache.keys()] : [];
-  if (hasExcludedRole(config, roleIds)) return Promise.resolve();
+  if (hasExcludedRole(config, roleIds)) return;
 
-  return record(context, {
+  await record(context, {
     guildId: context.guildId,
     userId: message.author.id,
     event: 'message_create',
     channelId: message.channelId,
     messageId: message.id,
   });
+
+  if (config.moderationAlertsEnabled && message.guild) {
+    const since = new Date(Date.now() - config.messageBurstWindowSeconds * 1000);
+    const count = await countRecentUserEvents(context.prisma, {
+      guildId: context.guildId,
+      userId: message.author.id,
+      event: 'message_create',
+      since,
+    });
+    if (count >= config.messageBurstThreshold) {
+      await maybeSendBurstAlert(
+        context,
+        message.guild,
+        config,
+        message.author.id,
+        'message_burst',
+        count,
+        config.messageBurstWindowSeconds,
+      );
+    }
+  }
 }
 
-function handleMessageUpdate(
+async function handleMessageUpdate(
   context: ActivityLogRuntimeContext,
   oldMessage: Message | PartialMessage,
   newMessage: Message | PartialMessage,
 ): Promise<void> {
   const config = normalizeActivityLogConfig(context.config);
-  if (!config.enabled || !config.trackMessages) return Promise.resolve();
+  if (!config.enabled || !config.trackMessages) return;
   const author = newMessage.author ?? oldMessage.author;
   const channelId = newMessage.channelId ?? oldMessage.channelId;
-  if (!author || author.bot || !channelId) return Promise.resolve();
-  if (isExcludedChannel(config, channelId)) return Promise.resolve();
+  if (!author || author.bot || !channelId) return;
+  if (isExcludedChannel(config, channelId)) return;
 
-  return record(context, {
+  await record(context, {
     guildId: context.guildId,
     userId: author.id,
     event: 'message_update',
@@ -170,19 +265,29 @@ function handleMessageUpdate(
     messageId: newMessage.id ?? oldMessage.id ?? undefined,
     content: oldMessage.content ?? null,
   });
+
+  await incrementCommunityActivity(
+    context.prisma,
+    context.guildId,
+    author.id,
+    'messages_edited',
+    1,
+    new Date(),
+    channelId,
+  );
 }
 
-function handleMessageDelete(
+async function handleMessageDelete(
   context: ActivityLogRuntimeContext,
   message: Message | PartialMessage,
 ): Promise<void> {
   const config = normalizeActivityLogConfig(context.config);
-  if (!config.enabled || !config.trackMessages) return Promise.resolve();
-  if (!message.channelId) return Promise.resolve();
-  if (message.author?.bot) return Promise.resolve();
-  if (isExcludedChannel(config, message.channelId)) return Promise.resolve();
+  if (!config.enabled || !config.trackMessages) return;
+  if (!message.channelId) return;
+  if (message.author?.bot) return;
+  if (isExcludedChannel(config, message.channelId)) return;
 
-  return record(context, {
+  await record(context, {
     guildId: context.guildId,
     userId: message.author?.id ?? null,
     event: 'message_delete',
@@ -190,6 +295,40 @@ function handleMessageDelete(
     messageId: message.id,
     content: message.content ?? null,
   });
+
+  const userId = message.author?.id;
+  if (!userId) return;
+
+  await incrementCommunityActivity(
+    context.prisma,
+    context.guildId,
+    userId,
+    'messages_deleted',
+    1,
+    new Date(),
+    message.channelId,
+  );
+
+  if (config.moderationAlertsEnabled && message.guild) {
+    const since = new Date(Date.now() - config.deleteBurstWindowSeconds * 1000);
+    const count = await countRecentUserEvents(context.prisma, {
+      guildId: context.guildId,
+      userId,
+      event: 'message_delete',
+      since,
+    });
+    if (count >= config.deleteBurstThreshold) {
+      await maybeSendBurstAlert(
+        context,
+        message.guild,
+        config,
+        userId,
+        'delete_burst',
+        count,
+        config.deleteBurstWindowSeconds,
+      );
+    }
+  }
 }
 
 async function handleEmojiEvent(
@@ -208,6 +347,10 @@ async function handleEmojiEvent(
     event,
     metadata: { emojiId: emoji.id, emojiName: emoji.name },
   });
+
+  if (actorId) {
+    await incrementCommunityActivity(context.prisma, context.guildId, actorId, 'emoji_actions', 1);
+  }
 }
 
 async function executeActivityLogCommand(

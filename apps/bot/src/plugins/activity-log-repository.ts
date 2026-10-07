@@ -59,6 +59,28 @@ export async function scrubExpiredMemberActivityContent(
   return result.count;
 }
 
+export interface CountRecentUserEventsInput {
+  guildId: string;
+  userId: string;
+  event: MemberActivityEventType;
+  since: Date;
+}
+
+/** 直近since以降の、guild+user+event種別の件数。連投・連続削除の検知に使う。 */
+export async function countRecentUserEvents(
+  prisma: PrismaClient,
+  input: CountRecentUserEventsInput,
+): Promise<number> {
+  return prisma.memberActivityEvent.count({
+    where: {
+      guildId: input.guildId,
+      userId: input.userId,
+      event: input.event,
+      occurredAt: { gte: input.since },
+    },
+  });
+}
+
 export interface MemberActivityEventRecord {
   id: string;
   userId: string | null;
