@@ -47,6 +47,9 @@ const metrics = [
   'reactions_received',
   'minecraft_seconds',
   'online_seconds',
+  'messages_edited',
+  'messages_deleted',
+  'emoji_actions',
 ] as const;
 type Metric = (typeof metrics)[number];
 
@@ -57,6 +60,9 @@ const metricLabels: Record<Metric, string> = {
   reactions_received: 'もらったリアクション',
   minecraft_seconds: 'Minecraft',
   online_seconds: 'オンライン時間',
+  messages_edited: 'メッセージ編集',
+  messages_deleted: 'メッセージ削除',
+  emoji_actions: '絵文字登録/変更/削除',
 };
 
 function single(value: string | string[] | undefined): string {
