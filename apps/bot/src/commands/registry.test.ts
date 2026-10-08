@@ -4,6 +4,7 @@ import { communityActivityCommands } from './community-activity.js';
 import { communityActivityExportCommands } from './community-activity-export.js';
 import { communityStatsCommands } from './community-stats.js';
 import { coreInformationCommands } from './core-info.js';
+import { leaderboardCommands } from './leaderboard.js';
 import { CommandRegistry, PLUGIN_OWNED_COMMAND_NAMES, type SlashCommand } from './registry.js';
 import { coreUtilityCommands } from './utility.js';
 
@@ -20,6 +21,7 @@ function expectedCoreCommandNames(): string[] {
     ...communityActivityCommands,
     ...communityActivityExportCommands,
     ...communityStatsCommands,
+    ...leaderboardCommands,
   ]
     .map((command) => command.definition.name)
     .filter((name) => !PLUGIN_OWNED_COMMAND_NAMES.has(name));

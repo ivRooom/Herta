@@ -23,7 +23,7 @@ const ARCADE_METRICS = [
   'dice_sixes',
 ] as const;
 
-type ArcadeMetric = (typeof ARCADE_METRICS)[number];
+export type ArcadeMetric = (typeof ARCADE_METRICS)[number];
 
 type MiniGamesV3Context = {
   guildId: string;
