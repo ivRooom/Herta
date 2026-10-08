@@ -11,9 +11,7 @@ import { communityActivityCommands } from './community-activity.js';
 import { communityActivityExportCommands } from './community-activity-export.js';
 import { communityStatsCommands } from './community-stats.js';
 import { configureHelpCommandProvider, helpV2Command } from './help-v2.js';
-import { coreUtilityV3Commands } from './utility-v3.js';
-import { coreUtilityV4Commands } from './utility-v4.js';
-import { coreUtilityV5Commands } from './utility-v5.js';
+import { coreUtilityCommands } from './utility.js';
 
 export type SlashCommand = CommandHandler<ChatInputCommandInteraction>;
 
@@ -113,15 +111,12 @@ export class CommandRegistry {
   constructor(private logger: Logger) {
     for (const command of [
       ...coreInformationCommands,
-      ...coreUtilityV3Commands,
-      ...coreUtilityV4Commands,
-      ...coreUtilityV5Commands,
+      ...coreUtilityCommands,
       ...communityActivityCommands,
       ...communityActivityExportCommands,
       ...communityStatsCommands,
     ]) {
       if (PLUGIN_OWNED_COMMAND_NAMES.has(command.definition.name)) continue;
-      if (command.definition.name === 'help') continue;
       this.register(command);
     }
 
