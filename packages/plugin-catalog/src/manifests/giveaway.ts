@@ -119,7 +119,7 @@ export const giveawayManifest: PluginManifest = {
       subcommands: [
         {
           name: 'create',
-          description: '新しいGiveawayを作成します',
+          description: '新しいGiveawayを作成します（「サーバーの管理」権限が必要）',
           options: [
             {
               name: 'prize',

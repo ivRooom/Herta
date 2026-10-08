@@ -26,6 +26,7 @@ import {
 } from './giveaway-repository.js';
 
 const EPHEMERAL_FLAG = 64;
+const MANAGE_GUILD_PERMISSION = 32n;
 const GIVEAWAY_CUSTOM_ID_PREFIX = 'herta:giveaway:v1:';
 const WORKER_INTERVAL_MS = 30_000;
 const MAX_DURATION_MINUTES = 10_080;
@@ -86,6 +87,7 @@ interface GiveawayCommandInteraction {
   channel: GiveawayTextChannel | null;
   user: { id: string };
   options: GiveawayCommandOptions;
+  memberPermissions?: { has(permission: bigint): boolean } | null;
   reply(options: GiveawayReplyOptions): Promise<unknown>;
   followUp(options: GiveawayReplyOptions): Promise<unknown>;
 }
@@ -238,7 +240,17 @@ async function executeGiveawayCommand(
   }
 
   const subcommand = interaction.options.getSubcommand();
-  if (subcommand === 'create') return handleCreate(context, config, interaction);
+  if (subcommand === 'create') {
+    if (!interaction.memberPermissions?.has(MANAGE_GUILD_PERMISSION)) {
+      await interaction.reply({
+        content: 'Giveawayの作成には「サーバーの管理」権限が必要です。',
+        flags: EPHEMERAL_FLAG,
+        allowedMentions: { parse: [] },
+      });
+      return;
+    }
+    return handleCreate(context, config, interaction);
+  }
   if (subcommand === 'list') return handleList(context, interaction);
   if (subcommand === 'info') return handleInfo(context, interaction);
   if (subcommand === 'end') return handleEnd(context, interaction);
