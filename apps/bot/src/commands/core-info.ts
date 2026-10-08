@@ -10,26 +10,6 @@ import type { SlashCommand } from './registry.js';
 
 const EMBED_FIELD_VALUE_LIMIT = 1_024;
 
-const CORE_COMMANDS = [
-  ['/ping', 'Botとの疎通とWebSocketレイテンシを確認'],
-  ['/help', 'HertaのCore Command一覧を表示'],
-  ['/server', '現在のDiscordサーバー情報を表示'],
-  ['/userinfo [user]', 'Discordユーザー情報を表示'],
-  ['/avatar [user]', 'ユーザーのアバターを高解像度で表示'],
-  ['/botinfo', 'Herta Botの稼働情報を表示'],
-  ['/roleinfo role', 'Discord Roleの情報を表示'],
-  ['/channelinfo channel', 'Discord Channelの情報を表示'],
-  ['/permissions [user]', 'サーバー内での主要権限を確認'],
-  ['/choose choices', '候補の中からランダムに1つ選択'],
-  ['/dice [sides] [count]', '指定したダイスを振る'],
-  ['/coinflip', 'コインを投げて表か裏を決定'],
-  ['/random min max', '指定範囲からランダムな整数を生成'],
-  ['/8ball question', '質問にHertaが8ボール風に回答'],
-  ['/rps hand', 'Hertaとじゃんけん'],
-  ['/shuffle choices', '候補をランダムな順番に並べ替え'],
-  ['/rate subject', 'お題を0〜100%で採点'],
-] as const;
-
 const PERMISSION_LABELS: Array<[bigint, string]> = [
   [PermissionFlagsBits.Administrator, '管理者'],
   [PermissionFlagsBits.ManageGuild, 'サーバー管理'],
@@ -112,25 +92,6 @@ export function formatRoleMentions(roleMentions: readonly string[]): string {
   if (visible.length === 0) return `ほか${omitted}件`;
   return `${visible.join(' ')}\nほか${omitted}件`;
 }
-
-export const helpCommand: SlashCommand = {
-  definition: {
-    name: 'help',
-    description: 'Hertaで利用できるCore Commandの一覧を表示します',
-  },
-  async execute(interaction) {
-    const description = CORE_COMMANDS.map(([name, detail]) => `**${name}**\n${detail}`).join(
-      '\n\n',
-    );
-    const embed = new EmbedBuilder()
-      .setTitle('Herta Command Help')
-      .setDescription(description)
-      .setColor(0x7c6df2)
-      .setFooter({ text: 'Plugin Commandは有効化されたPluginに応じて追加されます' });
-
-    await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
-  },
-};
 
 export const serverCommand: SlashCommand = {
   definition: {
@@ -388,7 +349,6 @@ export const permissionsCommand: SlashCommand = {
 };
 
 export const coreInformationCommands: SlashCommand[] = [
-  helpCommand,
   serverCommand,
   userInfoCommand,
   avatarCommand,

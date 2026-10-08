@@ -5,9 +5,7 @@ import { communityActivityExportCommands } from './community-activity-export.js'
 import { communityStatsCommands } from './community-stats.js';
 import { coreInformationCommands } from './core-info.js';
 import { CommandRegistry, PLUGIN_OWNED_COMMAND_NAMES, type SlashCommand } from './registry.js';
-import { coreUtilityV3Commands } from './utility-v3.js';
-import { coreUtilityV4Commands } from './utility-v4.js';
-import { coreUtilityV5Commands } from './utility-v5.js';
+import { coreUtilityCommands } from './utility.js';
 
 function createLogger(): Logger {
   return {
@@ -16,17 +14,17 @@ function createLogger(): Logger {
 }
 
 function expectedCoreCommandNames(): string[] {
-  return [
+  const names = [
     ...coreInformationCommands,
-    ...coreUtilityV3Commands,
-    ...coreUtilityV4Commands,
-    ...coreUtilityV5Commands,
+    ...coreUtilityCommands,
     ...communityActivityCommands,
     ...communityActivityExportCommands,
     ...communityStatsCommands,
   ]
     .map((command) => command.definition.name)
     .filter((name) => !PLUGIN_OWNED_COMMAND_NAMES.has(name));
+  // helpV2Commandはloopの外でCommandRegistryへ直接登録されるため、ここへ明示的に加える。
+  return [...names, 'help'];
 }
 
 describe('CommandRegistry command ownership audit', () => {
@@ -53,16 +51,22 @@ describe('CommandRegistry command ownership audit', () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
-  it('Utility v4コマンドをRegistryへ登録する', () => {
+  it('Utilityコマンドを漏れなくRegistryへ登録する', () => {
     const registry = new CommandRegistry(createLogger());
-    for (const name of ['color', 'base64', 'url', 'textstats']) {
+    for (const name of [
+      'teams',
+      'uuid',
+      'timestamp',
+      'snowflake',
+      'hash',
+      'color',
+      'base64',
+      'url',
+      'textstats',
+      'json',
+    ]) {
       expect(registry.get(name), `${name} should be registered`).toBeDefined();
     }
-  });
-
-  it('Utility v5コマンドをRegistryへ登録する', () => {
-    const registry = new CommandRegistry(createLogger());
-    expect(registry.get('json')).toBeDefined();
   });
 
   it('Mini Gamesが所有するcoinflipとdiceをCore登録から除外する', () => {

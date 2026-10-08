@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { coreInformationCommands, formatRoleMentions } from './core-info.js';
 
 const expectedCommandNames = [
-  'help',
   'server',
   'userinfo',
   'avatar',

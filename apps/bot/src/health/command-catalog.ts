@@ -3,9 +3,7 @@ import { communityActivityExportCommands } from '../commands/community-activity-
 import { coreInformationCommands } from '../commands/core-info.js';
 import { pingCommand } from '../commands/ping.js';
 import { PLUGIN_OWNED_COMMAND_NAMES } from '../commands/registry.js';
-import { coreUtilityV3Commands } from '../commands/utility-v3.js';
-import { coreUtilityV4Commands } from '../commands/utility-v4.js';
-import { coreUtilityV5Commands } from '../commands/utility-v5.js';
+import { coreUtilityCommands } from '../commands/utility.js';
 
 export type GuildCommandCatalogSource = 'core' | 'plugin';
 
@@ -65,9 +63,7 @@ export class GuildCommandCatalogError extends Error {
 const CORE_COMMAND_NAMES = new Set(
   [
     ...coreInformationCommands,
-    ...coreUtilityV3Commands,
-    ...coreUtilityV4Commands,
-    ...coreUtilityV5Commands,
+    ...coreUtilityCommands,
     ...communityActivityCommands,
     ...communityActivityExportCommands,
     pingCommand,
