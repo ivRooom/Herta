@@ -167,3 +167,46 @@ v1 後は次を独立した変更として追加します。
 3. Policy Simulator と Allow / Deny source 表示
 4. Policy revision history / diff / rollback
 5. Plugin field / operation Resource の Managed Policy Visual Builder
+
+## ivRooom integration (herta-iam v1.1.0)
+
+ivRooom の管理画面(admin.ivrm.jp / `ivRooom/ivrm-web`)から、Group と Policy Attachment を管理するための連携 API です。契約は `ivRooom/ivrm-contracts` の `herta-iam`(`contracts/ivrm/herta-iam.v1.bundle.json` が Producer 側の pin)。
+
+```text
+/api/integrations/ivrm/guilds/{guildId}/iam
+  GET                                              概要(capabilities を含む)
+  PATCH|DELETE /groups/{groupId}                   Group の編集 / 削除
+  PUT|DELETE   /groups/{groupId}/members/{userId}  Group Member の追加 / 削除
+  POST         /groups/{groupId}/members/batch     一括(最大 500 件・全か無か)
+  PUT|DELETE   /policies/{policyId}/attachments/{principalType}/{principalId}
+  POST         /policies/{policyId}/attachments/batch
+```
+
+### 認可の委譲
+
+Studio の Access Control mutation は OWNER root Role のみ実行できます(上記 Mutation authorization)。連携 API は Studio の Auth.js セッションではなく、次で認可します。
+
+- `IVRM_INTEGRATION_TOKEN` による bearer 認証と、`IVRM_INTEGRATION_GUILD_ID` によるギルド境界
+- `X-IVRM-Actor-ID`: ivrm-web が認証・認可した操作者(ivRooom の **Owner / Admin**)の Discord ID
+
+つまり、**Herta の OWNER root Role を持たない ivRooom の Admin も、連携経由で Group / Policy Attachment を変更できます**(運営者の決定、2026-10-08)。操作者は Audit Log に残ります。`IVRM_INTEGRATION_TOKEN` は Studio の root 権限と同等の変更権限を持つ秘密として扱ってください。
+
+Policy の document(本文)の作成・編集は連携 API の対象外で、引き続き Studio の OWNER root Role だけが行えます。
+
+### Studio と同じ不変条件
+
+連携経由でも、上記と同じ規則を守ります。
+
+- OWNER root Role には Policy を Attach できない(400)
+- Attach 時は Role / User / Group がギルドに現在存在することを検証する(Role 一覧が取得できなければ 503)。Detach と Member 削除は存在確認をしない
+- Group / Policy 名はギルド内で case-insensitive unique(409)
+- Group 削除: 既定(`cascade=false`)では、Member または Policy Attachment が残っていれば削除せず、残っているものを 409 `group_has_dependencies` で返す。`cascade=true` で、Attachment と Member を同一トランザクションで削除してから削除する
+- Group の編集と削除は `expectedUpdatedAt` で楽観的同時実行制御(不一致は 409 `stale_group`)。Group の Member 数に上限はなく、一括操作は 1 リクエスト 500 件まで(本文上限は単体 16 KiB、一括 32 KiB)
+
+### レート制限
+
+integration token ごとに 1 分あたり 120 リクエスト(`IVRM_INTEGRATION_RATE_LIMIT_PER_MINUTE` で変更)。超過は 429 + `Retry-After`。プロセス内メモリで数えるため、Studio を複数インスタンスにする場合は共有ストアへ移してください。
+
+### Audit
+
+Studio と同じイベント名(`studio_access_group.updated` / `.deleted` / `.member_added` / `.member_removed`、`studio_access_policy.attached` / `.detached`)を記録します。`operationSource` は `ivrm-admin`(Studio からの操作は `studio`)。一括操作は、変更のあった種別ごとに 1 件(件数と最大 100 件の ID を `changes` に保存)。`changed = false` の操作は記録しません。

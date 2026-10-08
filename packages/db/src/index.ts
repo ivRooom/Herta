@@ -17,6 +17,7 @@ export * from './discord-role-operations.js';
 export * from './discord-role-references.js';
 export * from './studio-access-control.js';
 export * from './studio-access-groups-admin.js';
+export * from './studio-access-management.js';
 export * from './rule-runtime.js';
 export * from './runtime-secrets.js';
 export * from './runtime-configurations.js';
