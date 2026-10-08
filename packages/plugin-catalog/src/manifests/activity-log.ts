@@ -5,7 +5,7 @@ export const activityLogManifest: PluginManifest = {
   name: 'Activity Log',
   version: '1.0.0',
   description:
-    'VC入退室・メッセージ作成/編集/削除・絵文字登録等のメンバー行動を記録します。モデレーション調査・統計分析の両方に使え、短時間の大量投稿/削除も検知できます',
+    'VC入退室・メッセージ作成/編集/削除・絵文字登録・アバター/ニックネーム/ロール/サーバーアイコン変更等のメンバー行動を記録します。モデレーション調査・統計分析の両方に使え、短時間の大量投稿/削除も検知できます',
   author: { name: 'Herta' },
   category: 'moderation',
   permissions: [
@@ -47,6 +47,12 @@ export const activityLogManifest: PluginManifest = {
       trackEmoji: {
         type: 'boolean',
         title: '絵文字の登録・変更・削除を記録する',
+        default: true,
+        'x-herta-ui': { section: '記録対象' },
+      },
+      trackProfile: {
+        type: 'boolean',
+        title: 'アバター・ニックネーム・ロール・サーバーアイコン等の変更を記録する',
         default: true,
         'x-herta-ui': { section: '記録対象' },
       },
@@ -137,6 +143,7 @@ export const activityLogManifest: PluginManifest = {
       'trackVoice',
       'trackMessages',
       'trackEmoji',
+      'trackProfile',
       'excludedChannelIds',
       'excludedRoleIds',
       'moderationAlertsEnabled',
@@ -167,6 +174,12 @@ export const activityLogManifest: PluginManifest = {
             { name: '絵文字登録', value: 'emoji_create' },
             { name: '絵文字変更', value: 'emoji_update' },
             { name: '絵文字削除', value: 'emoji_delete' },
+            { name: 'アバター変更', value: 'avatar_update' },
+            { name: 'ニックネーム変更', value: 'nickname_update' },
+            { name: 'ロール付与', value: 'role_add' },
+            { name: 'ロール剥奪', value: 'role_remove' },
+            { name: 'サーバーアイコン変更', value: 'guild_icon_update' },
+            { name: 'サーバーバナー変更', value: 'guild_banner_update' },
           ],
         },
         {

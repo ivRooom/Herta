@@ -8,6 +8,7 @@ import {
   type CommunityActivityPeriod,
   type CommunityUserRank,
 } from '../activity/community-activity.js';
+import { charScoreUnitsToPoints } from '../activity/char-score.js';
 import type { SlashCommand } from './registry.js';
 
 const prisma = getPrismaClient();
@@ -26,6 +27,7 @@ const metricLabels: Record<CommunityActivityMetric, string> = {
   messages_edited: 'メッセージ編集数',
   messages_deleted: 'メッセージ削除数',
   emoji_actions: '絵文字登録/変更/削除数',
+  message_char_units: '文字ポイント',
 };
 
 const periodLabels: Record<CommunityActivityPeriod, string> = {
@@ -52,6 +54,7 @@ const metricChoices = [
   { name: 'メッセージ編集数', value: 'messages_edited' },
   { name: 'メッセージ削除数', value: 'messages_deleted' },
   { name: '絵文字登録/変更/削除数', value: 'emoji_actions' },
+  { name: '文字ポイント', value: 'message_char_units' },
 ];
 
 function readPeriod(value: string | null): CommunityActivityPeriod {
@@ -67,7 +70,8 @@ function readMetric(value: string | null): CommunityActivityMetric {
     value === 'online_seconds' ||
     value === 'messages_edited' ||
     value === 'messages_deleted' ||
-    value === 'emoji_actions'
+    value === 'emoji_actions' ||
+    value === 'message_char_units'
   ) {
     return value;
   }
@@ -79,6 +83,9 @@ function formatMetric(metric: CommunityActivityMetric, value: number): string {
     const hours = Math.floor(value / 3600);
     const minutes = Math.floor((value % 3600) / 60);
     return `${hours}時間${minutes}分`;
+  }
+  if (metric === 'message_char_units') {
+    return `${charScoreUnitsToPoints(value).toLocaleString('ja-JP', { maximumFractionDigits: 1 })}pt`;
   }
   return value.toLocaleString('ja-JP');
 }
@@ -215,6 +222,14 @@ export const activityCommand: SlashCommand = {
       embed.addFields({
         name: '⛏️ Minecraft',
         value: formatMetric('minecraft_seconds', totals.minecraftSeconds),
+        inline: true,
+      });
+    }
+
+    if (totals.messageCharUnits > 0) {
+      embed.addFields({
+        name: '⌨️ 文字ポイント',
+        value: formatMetric('message_char_units', totals.messageCharUnits),
         inline: true,
       });
     }

@@ -64,6 +64,7 @@ import {
   startVoiceSession,
   type CommunityActivityMetric,
 } from './activity/community-activity.js';
+import { computeCharScoreUnits } from './activity/char-score.js';
 import {
   communityPointsRatesFromConfig,
   hasMessageCooldownElapsed,
@@ -428,6 +429,32 @@ export class HertaBot {
       await this.dispatchGuildPluginEvent(emoji.guild.id, Events.GuildEmojiDelete, emoji);
     });
 
+    this.client.on(Events.GuildMemberUpdate, async (oldMember, newMember) => {
+      await this.dispatchGuildPluginEvent(
+        newMember.guild.id,
+        Events.GuildMemberUpdate,
+        oldMember,
+        newMember,
+      );
+    });
+
+    this.client.on(Events.GuildUpdate, async (oldGuild, newGuild) => {
+      await this.dispatchGuildPluginEvent(newGuild.id, Events.GuildUpdate, oldGuild, newGuild);
+    });
+
+    // UserUpdateはguildを跨いだグローバルイベントのため、Botと共有しているguildそれぞれへ
+    // 個別にdispatchする(memberキャッシュに存在するguildのみ・ベストエフォート)。
+    this.client.on(Events.UserUpdate, async (oldUser, newUser) => {
+      if (newUser.bot) return;
+      if (oldUser.avatar === newUser.avatar) return;
+      const guildIds = this.client.guilds.cache
+        .filter((guild) => guild.members.cache.has(newUser.id))
+        .map((guild) => guild.id);
+      for (const guildId of guildIds) {
+        await this.dispatchGuildPluginEvent(guildId, 'userAvatarUpdate', oldUser, newUser);
+      }
+    });
+
     this.client.on(Events.MessageCreate, async (message) => {
       if (!message.guildId) return;
       if (!message.author.bot && !message.webhookId) {
@@ -466,6 +493,30 @@ export class HertaBot {
             { err: error, guildId: message.guildId, userId: message.author.id },
             '発言数の記録に失敗しました',
           );
+        }
+
+        // 文字数ポイントはactivity rules(channel除外・cooldown)の対象外とし、
+        // 「これまで送信した文字数」を正確に積算する(ポイント経済ではなく可視化目的のため)。
+        if (messageContentIntentEnabled()) {
+          try {
+            const units = computeCharScoreUnits(message.content);
+            if (units > 0) {
+              await incrementCommunityActivity(
+                this.prisma,
+                message.guildId,
+                message.author.id,
+                'message_char_units',
+                units,
+                new Date(),
+                message.channelId,
+              );
+            }
+          } catch (error) {
+            this.logger.warn(
+              { err: error, guildId: message.guildId, userId: message.author.id },
+              '文字数ポイントの記録に失敗しました',
+            );
+          }
         }
       }
 
