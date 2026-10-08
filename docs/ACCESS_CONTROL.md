@@ -201,7 +201,7 @@ Policy の document(本文)の作成・編集は連携 API の対象外で、引
 - Attach 時は Role / User / Group がギルドに現在存在することを検証する(Role 一覧が取得できなければ 503)。Detach と Member 削除は存在確認をしない
 - Group / Policy 名はギルド内で case-insensitive unique(409)
 - Group 削除: 既定(`cascade=false`)では、Member または Policy Attachment が残っていれば削除せず、残っているものを 409 `group_has_dependencies` で返す。`cascade=true` で、Attachment と Member を同一トランザクションで削除してから削除する
-- Group の編集と削除は `expectedUpdatedAt` で楽観的同時実行制御(不一致は 409 `stale_group`)。Group の Member 数に上限はなく、一括操作は 1 リクエスト 500 件まで
+- Group の編集と削除は `expectedUpdatedAt` で楽観的同時実行制御(不一致は 409 `stale_group`)。Group の Member 数に上限はなく、一括操作は 1 リクエスト 500 件まで(本文上限は単体 16 KiB、一括 32 KiB)
 
 ### レート制限
 

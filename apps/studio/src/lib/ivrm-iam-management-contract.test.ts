@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
+  IVRM_IAM_BATCH_BODY_MAX_BYTES,
   IVRM_IAM_BATCH_MAX_ITEMS,
   IVRM_IAM_BODY_MAX_BYTES,
   IVRM_IAM_CAPABILITIES,
@@ -27,6 +28,7 @@ type HertaIamBundle = {
     limits: {
       batchMaxItems: number;
       bodyMaxBytes: number;
+      batchBodyMaxBytes: number;
       membersLimitOptions: number[];
       membersLimitDefault: number;
       groupMembershipLimit: number | null;
@@ -64,6 +66,7 @@ test('実装の上限値・capabilitiesが契約のlimits/capabilitiesと一致�
   const { limits } = bundle.management;
   assert.equal(limits.batchMaxItems, IVRM_IAM_BATCH_MAX_ITEMS);
   assert.equal(limits.bodyMaxBytes, IVRM_IAM_BODY_MAX_BYTES);
+  assert.equal(limits.batchBodyMaxBytes, IVRM_IAM_BATCH_BODY_MAX_BYTES);
   assert.deepEqual(limits.membersLimitOptions, [...IVRM_IAM_MEMBERS_LIMIT_OPTIONS]);
   assert.equal(limits.membersLimitDefault, IVRM_IAM_MEMBERS_LIMIT_DEFAULT);
   // グループのメンバー数に上限はない。
@@ -115,7 +118,10 @@ test('グループ削除はexpectedUpdatedAt必須・cascade既定false・member
 
 test('一括operationのボディ上限は契約と一致し、概要(GET /iam)はcapabilitiesを返す', () => {
   for (const operationId of ['changeHertaIamGroupMembers', 'changeHertaIamPolicyAttachments']) {
-    assert.equal(bundle.management.operations[operationId]?.bodyMaxBytes, IVRM_IAM_BODY_MAX_BYTES);
+    assert.equal(
+      bundle.management.operations[operationId]?.bodyMaxBytes,
+      IVRM_IAM_BATCH_BODY_MAX_BYTES,
+    );
   }
   const overview = readFileSync(
     routeFileFor(bundle.management.operations['getHertaIamOverview']!.pathTemplate),

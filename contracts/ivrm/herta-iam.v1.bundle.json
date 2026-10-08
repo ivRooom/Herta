@@ -95,6 +95,7 @@
     "limits": {
       "batchMaxItems": 500,
       "bodyMaxBytes": 16384,
+      "batchBodyMaxBytes": 32768,
       "membersLimitOptions": [25, 50, 100, 500, 1000],
       "membersLimitDefault": 50,
       "groupMembershipLimit": null
@@ -179,7 +180,7 @@
         "requiredHeaders": ["X-IVRM-Actor-ID"],
         "optionalHeaders": ["Idempotency-Key"],
         "queryParameters": [],
-        "bodyMaxBytes": 16384,
+        "bodyMaxBytes": 32768,
         "successStatusCodes": [200],
         "errorStatusCodes": [400, 401, 404, 413, 429, 500, 503]
       },
@@ -212,7 +213,7 @@
         "requiredHeaders": ["X-IVRM-Actor-ID"],
         "optionalHeaders": ["Idempotency-Key"],
         "queryParameters": [],
-        "bodyMaxBytes": 16384,
+        "bodyMaxBytes": 32768,
         "successStatusCodes": [200],
         "errorStatusCodes": [400, 401, 404, 413, 429, 500, 503]
       }

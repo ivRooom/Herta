@@ -7,6 +7,7 @@ import type {
 import { RequestBodyTooLargeError, readRequestBodyBytes } from './bounded-request-body.ts';
 import type { IvrmIntegrationAuthorization } from './ivrm-integration-auth.ts';
 import {
+  IVRM_IAM_BATCH_BODY_MAX_BYTES,
   IVRM_IAM_BODY_MAX_BYTES,
   checkAttachPrincipals,
   findMissingGuildMembers,
@@ -147,6 +148,7 @@ export function createIvrmIamHandlers(deps: IvrmIamDeps) {
 
   async function readJson(
     request: Request,
+    maxBytes: number = IVRM_IAM_BODY_MAX_BYTES,
   ): Promise<{ ok: true; value: unknown } | { ok: false; response: Response }> {
     const contentType = request.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase();
     if (contentType !== 'application/json') {
@@ -156,7 +158,7 @@ export function createIvrmIamHandlers(deps: IvrmIamDeps) {
       };
     }
     try {
-      const bytes = await readRequestBodyBytes(request, IVRM_IAM_BODY_MAX_BYTES);
+      const bytes = await readRequestBodyBytes(request, maxBytes);
       return { ok: true, value: JSON.parse(Buffer.from(bytes).toString('utf8')) as unknown };
     } catch (error) {
       const tooLarge = error instanceof RequestBodyTooLargeError;
@@ -359,7 +361,7 @@ export function createIvrmIamHandlers(deps: IvrmIamDeps) {
       const groupId = parseUuid(params.groupId);
       if (!groupId) return reply({ error: 'Invalid group id' }, 400);
 
-      const body = await readJson(request);
+      const body = await readJson(request, IVRM_IAM_BATCH_BODY_MAX_BYTES);
       if (!body.ok) return body.response;
       const parsed = parseMemberBatch(body.value);
       if (!parsed.ok) {
@@ -490,7 +492,7 @@ export function createIvrmIamHandlers(deps: IvrmIamDeps) {
       const policyId = parseUuid(params.policyId);
       if (!policyId) return reply({ error: 'Invalid policy id' }, 400);
 
-      const body = await readJson(request);
+      const body = await readJson(request, IVRM_IAM_BATCH_BODY_MAX_BYTES);
       if (!body.ok) return body.response;
       const parsed = parseAttachmentBatch(body.value);
       if (!parsed.ok) {

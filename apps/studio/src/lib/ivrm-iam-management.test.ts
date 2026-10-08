@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  IVRM_IAM_BATCH_BODY_MAX_BYTES,
   IVRM_IAM_BATCH_MAX_ITEMS,
   IVRM_IAM_CAPABILITIES,
   checkAttachPrincipals,
@@ -264,4 +265,23 @@ test('レート制限の設定値: 既定120/分、不正な値は既定に戻�
   for (const bad of ['0', '-1', 'abc', '1.5', '1000000']) {
     assert.equal(readRateLimitPerMinute({ IVRM_INTEGRATION_RATE_LIMIT_PER_MINUTE: bad }), 120);
   }
+});
+
+test('500件の一括リクエストは、メンバー・割り当てとも一括の本文上限(32 KiB)に収まる', () => {
+  const ids = Array.from({ length: IVRM_IAM_BATCH_MAX_ITEMS }, (_, index) =>
+    String(400_000_000_000_000_000n + BigInt(index)),
+  );
+  const members = JSON.stringify({ add: ids });
+  const attachments = JSON.stringify({ attach: ids.map((id) => ({ type: 'user', id })) });
+
+  assert.ok(
+    Buffer.byteLength(members) < IVRM_IAM_BATCH_BODY_MAX_BYTES,
+    `members ${Buffer.byteLength(members)}`,
+  );
+  assert.ok(
+    Buffer.byteLength(attachments) < IVRM_IAM_BATCH_BODY_MAX_BYTES,
+    `attachments ${Buffer.byteLength(attachments)}`,
+  );
+  // 割り当ては単体操作の上限(16 KiB)を超える。これが一括の上限を分けている理由。
+  assert.ok(Buffer.byteLength(attachments) > 16 * 1024);
 });

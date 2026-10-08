@@ -156,8 +156,17 @@ test('本文はapplication/json・16 KiB以内・有効なJSONだけ受け付け
     body: '{',
   });
   assert.equal((await handlers.changeMembersBatch(badJson, groupParams)).status, 400);
-  const big = req('POST', '/x', { add: [USER], pad: 'x'.repeat(17 * 1024) });
-  assert.equal((await handlers.changeMembersBatch(big, groupParams)).status, 413);
+  // 単体操作は 16 KiB、一括は 32 KiB が上限(500 件の principal が約 23 KB のため)。
+  const single = req('PATCH', '/x', {
+    name: 'a',
+    expectedUpdatedAt: '2026-10-08T12:00:00Z',
+    pad: 'x'.repeat(17 * 1024),
+  });
+  assert.equal((await handlers.updateGroup(single, groupParams)).status, 413);
+  const batchOk = req('POST', '/x', { add: [USER], pad: 'x'.repeat(17 * 1024) });
+  assert.equal((await handlers.changeMembersBatch(batchOk, groupParams)).status, 200);
+  const batchBig = req('POST', '/x', { add: [USER], pad: 'x'.repeat(33 * 1024) });
+  assert.equal((await handlers.changeMembersBatch(batchBig, groupParams)).status, 413);
 });
 
 // ---------------------------------------------------------------- グループ編集

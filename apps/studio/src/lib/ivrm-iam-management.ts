@@ -16,6 +16,8 @@ export const IVRM_IAM_CAPABILITIES = [
 ] as const;
 
 export const IVRM_IAM_BODY_MAX_BYTES = 16 * 1024;
+/** 一括操作の本文上限。500 件の principal(`{type,id}` 約 46 byte)が約 23 KB になり、16 KiB を超えるため。 */
+export const IVRM_IAM_BATCH_BODY_MAX_BYTES = 32 * 1024;
 export const IVRM_IAM_BATCH_MAX_ITEMS = 500;
 export const IVRM_IAM_MEMBERS_LIMIT_OPTIONS = [25, 50, 100, 500, 1000] as const;
 export const IVRM_IAM_MEMBERS_LIMIT_DEFAULT = 50;
