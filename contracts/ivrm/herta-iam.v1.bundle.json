@@ -100,7 +100,14 @@
       "membersLimitDefault": 50,
       "groupMembershipLimit": null
     },
-    "capabilities": ["group.delete", "group.member", "group.member.batch", "group.update", "policy.attach", "policy.attach.batch"],
+    "capabilities": [
+      "group.delete",
+      "group.member",
+      "group.member.batch",
+      "group.update",
+      "policy.attach",
+      "policy.attach.batch"
+    ],
     "operations": {
       "getHertaIamOverview": {
         "method": "GET",
