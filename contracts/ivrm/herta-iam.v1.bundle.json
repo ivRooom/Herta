@@ -2,7 +2,7 @@
   "bundleVersion": 1,
   "contract": {
     "id": "herta-iam",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "sourceRepository": "ivRooom/ivrm-contracts"
   },
   "createAccessGroup": {
@@ -88,6 +88,133 @@
             "minLength": 1
           }
         }
+      }
+    }
+  },
+  "management": {
+    "limits": {
+      "batchMaxItems": 500,
+      "bodyMaxBytes": 16384,
+      "membersLimitOptions": [25, 50, 100, 500, 1000],
+      "membersLimitDefault": 50,
+      "groupMembershipLimit": null
+    },
+    "capabilities": ["group.delete", "group.member", "group.member.batch", "group.update", "policy.attach", "policy.attach.batch"],
+    "operations": {
+      "getHertaIamOverview": {
+        "method": "GET",
+        "pathTemplate": "/api/integrations/ivrm/guilds/{guildId}/iam",
+        "capability": "overview",
+        "requiredHeaders": [],
+        "optionalHeaders": [],
+        "queryParameters": [],
+        "bodyMaxBytes": null,
+        "successStatusCodes": [200],
+        "errorStatusCodes": [401, 404, 500, 503]
+      },
+      "updateHertaIamAccessGroup": {
+        "method": "PATCH",
+        "pathTemplate": "/api/integrations/ivrm/guilds/{guildId}/iam/groups/{groupId}",
+        "capability": "group.update",
+        "requiredHeaders": ["X-IVRM-Actor-ID"],
+        "optionalHeaders": ["Idempotency-Key"],
+        "queryParameters": [],
+        "bodyMaxBytes": 16384,
+        "successStatusCodes": [200],
+        "errorStatusCodes": [400, 401, 404, 409, 413, 429, 500, 503]
+      },
+      "deleteHertaIamAccessGroup": {
+        "method": "DELETE",
+        "pathTemplate": "/api/integrations/ivrm/guilds/{guildId}/iam/groups/{groupId}",
+        "capability": "group.delete",
+        "requiredHeaders": ["X-IVRM-Actor-ID"],
+        "optionalHeaders": ["Idempotency-Key"],
+        "queryParameters": [
+          {
+            "name": "expectedUpdatedAt",
+            "required": true
+          },
+          {
+            "name": "cascade",
+            "required": false,
+            "default": false
+          },
+          {
+            "name": "membersLimit",
+            "required": false,
+            "default": 50,
+            "enum": [25, 50, 100, 500, 1000]
+          }
+        ],
+        "bodyMaxBytes": null,
+        "successStatusCodes": [200],
+        "errorStatusCodes": [400, 401, 404, 409, 413, 429, 500, 503]
+      },
+      "addHertaIamGroupMember": {
+        "method": "PUT",
+        "pathTemplate": "/api/integrations/ivrm/guilds/{guildId}/iam/groups/{groupId}/members/{userId}",
+        "capability": "group.member",
+        "requiredHeaders": ["X-IVRM-Actor-ID"],
+        "optionalHeaders": ["Idempotency-Key"],
+        "queryParameters": [],
+        "bodyMaxBytes": null,
+        "successStatusCodes": [200],
+        "errorStatusCodes": [400, 401, 404, 413, 429, 500, 503]
+      },
+      "removeHertaIamGroupMember": {
+        "method": "DELETE",
+        "pathTemplate": "/api/integrations/ivrm/guilds/{guildId}/iam/groups/{groupId}/members/{userId}",
+        "capability": "group.member",
+        "requiredHeaders": ["X-IVRM-Actor-ID"],
+        "optionalHeaders": ["Idempotency-Key"],
+        "queryParameters": [],
+        "bodyMaxBytes": null,
+        "successStatusCodes": [200],
+        "errorStatusCodes": [400, 401, 404, 413, 429, 500, 503]
+      },
+      "changeHertaIamGroupMembers": {
+        "method": "POST",
+        "pathTemplate": "/api/integrations/ivrm/guilds/{guildId}/iam/groups/{groupId}/members/batch",
+        "capability": "group.member.batch",
+        "requiredHeaders": ["X-IVRM-Actor-ID"],
+        "optionalHeaders": ["Idempotency-Key"],
+        "queryParameters": [],
+        "bodyMaxBytes": 16384,
+        "successStatusCodes": [200],
+        "errorStatusCodes": [400, 401, 404, 413, 429, 500, 503]
+      },
+      "attachHertaIamPolicy": {
+        "method": "PUT",
+        "pathTemplate": "/api/integrations/ivrm/guilds/{guildId}/iam/policies/{policyId}/attachments/{principalType}/{principalId}",
+        "capability": "policy.attach",
+        "requiredHeaders": ["X-IVRM-Actor-ID"],
+        "optionalHeaders": ["Idempotency-Key"],
+        "queryParameters": [],
+        "bodyMaxBytes": null,
+        "successStatusCodes": [200],
+        "errorStatusCodes": [400, 401, 404, 413, 429, 500, 503]
+      },
+      "detachHertaIamPolicy": {
+        "method": "DELETE",
+        "pathTemplate": "/api/integrations/ivrm/guilds/{guildId}/iam/policies/{policyId}/attachments/{principalType}/{principalId}",
+        "capability": "policy.attach",
+        "requiredHeaders": ["X-IVRM-Actor-ID"],
+        "optionalHeaders": ["Idempotency-Key"],
+        "queryParameters": [],
+        "bodyMaxBytes": null,
+        "successStatusCodes": [200],
+        "errorStatusCodes": [400, 401, 404, 413, 429, 500, 503]
+      },
+      "changeHertaIamPolicyAttachments": {
+        "method": "POST",
+        "pathTemplate": "/api/integrations/ivrm/guilds/{guildId}/iam/policies/{policyId}/attachments/batch",
+        "capability": "policy.attach.batch",
+        "requiredHeaders": ["X-IVRM-Actor-ID"],
+        "optionalHeaders": ["Idempotency-Key"],
+        "queryParameters": [],
+        "bodyMaxBytes": 16384,
+        "successStatusCodes": [200],
+        "errorStatusCodes": [400, 401, 404, 413, 429, 500, 503]
       }
     }
   }

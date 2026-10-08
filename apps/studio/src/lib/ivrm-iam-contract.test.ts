@@ -106,7 +106,7 @@ function mutationRequest(actorId: string, idempotencyKey: string, contentType?: 
 test('Herta IAM producer pins the canonical portable contract', () => {
   assert.equal(bundle.bundleVersion, 1);
   assert.equal(bundle.contract.id, 'herta-iam');
-  assert.equal(bundle.contract.version, '1.0.0');
+  assert.equal(bundle.contract.version, '1.1.0');
   assert.equal(bundle.contract.sourceRepository, 'ivRooom/ivrm-contracts');
   assert.equal(contract.method, 'POST');
   assert.equal(contract.pathTemplate, '/api/integrations/ivrm/guilds/{guildId}/iam/groups');

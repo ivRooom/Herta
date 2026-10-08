@@ -7,6 +7,7 @@ import {
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { authorizeIvrmIntegrationRequest } from '@/lib/ivrm-integration-auth';
+import { IVRM_IAM_CAPABILITIES } from '@/lib/ivrm-iam-management';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,6 +66,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ guil
         principalType: attachment.principalType,
         principalId: attachment.principalId,
       })),
+      // herta-iam v1.1.0: 管理操作の機能検出。consumer は、ここに無い操作を呼ばない。
+      capabilities: [...IVRM_IAM_CAPABILITIES],
     });
   } catch (error) {
     console.error('Failed to load ivRooom IAM integration overview', {
