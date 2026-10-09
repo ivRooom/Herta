@@ -48,7 +48,7 @@ export function StudioPreview() {
   };
 
   return (
-    <div className="overflow-hidden rounded-3xl border border-border bg-surface/90 shadow-card backdrop-blur-xl">
+    <div className="overflow-hidden rounded-lg border border-border bg-surface">
       <div
         className="flex flex-wrap items-center gap-1 border-b border-border p-2"
         role="tablist"
@@ -68,8 +68,8 @@ export function StudioPreview() {
               aria-selected={active}
               tabIndex={active ? 0 : -1}
               onClick={() => setTab(item.id)}
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                active ? 'bg-primary text-primary-foreground' : 'text-muted hover:bg-background'
+              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                active ? 'bg-foreground text-background' : 'text-muted hover:text-foreground'
               }`}
             >
               <Icon className="h-3.5 w-3.5" aria-hidden="true" />
@@ -77,9 +77,7 @@ export function StudioPreview() {
             </button>
           );
         })}
-        <span className="ml-auto mr-2 rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">
-          デモ表示
-        </span>
+        <span className="ml-auto mr-2 text-[11px] text-muted">デモ表示</span>
       </div>
 
       {/* key でタブ切替のたびにアニメーションを再生する */}
@@ -95,7 +93,7 @@ export function StudioPreview() {
             {PLUGINS.map((plugin, index) => (
               <li
                 key={plugin.name}
-                className="lp-msg flex items-center gap-3 rounded-2xl border border-border bg-background/70 px-4 py-3"
+                className="lp-msg flex items-center gap-3 rounded-md border border-border bg-background px-4 py-3"
                 style={{ animationDelay: `${index * 90}ms` }}
               >
                 <div className="min-w-0 flex-1">
@@ -126,15 +124,15 @@ export function StudioPreview() {
                 <p className="text-xs text-muted">アクティブユーザー(イメージ)</p>
                 <p className="mt-1 text-2xl font-semibold tracking-tight">DAU / WAU / MAU</p>
               </div>
-              <span className="rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-semibold text-emerald-500">
-                ▲ 成長中
+              <span className="rounded-full px-0 py-1 text-xs font-semibold text-emerald-600">
+                サンプル表示
               </span>
             </div>
             <div className="mt-6 flex h-44 items-end gap-2" aria-hidden="true">
               {BARS.map((height, index) => (
                 <div
                   key={index}
-                  className="lp-bar flex-1 rounded-t-lg bg-gradient-to-t from-primary/40 to-primary"
+                  className="lp-bar flex-1 rounded-t-sm bg-primary/80"
                   style={{ height: `${height}%`, '--lp-delay': `${index * 70}ms` } as CSSProperties}
                 />
               ))}
@@ -150,7 +148,7 @@ export function StudioPreview() {
             {BADGES.map((badge, index) => (
               <li
                 key={badge.name}
-                className="lp-msg rounded-2xl border border-border bg-background/70 p-4"
+                className="lp-msg rounded-md border border-border bg-background p-4"
                 style={{ animationDelay: `${index * 100}ms` }}
               >
                 <div className="flex items-center gap-2">
@@ -163,7 +161,7 @@ export function StudioPreview() {
                 </div>
                 <div className="mt-3 h-2 overflow-hidden rounded-full bg-border">
                   <div
-                    className="lp-xp-fill h-full rounded-full bg-gradient-to-r from-primary to-fuchsia-500"
+                    className="lp-xp-fill h-full rounded-full bg-primary"
                     style={{
                       width: `${badge.progress}%`,
                       animationDelay: `${index * 100 + 200}ms`,

@@ -9,7 +9,7 @@ interface RevealProps {
   className?: string;
 }
 
-/** ビューポートに入ったらフェード+スライドで表示する。 */
+/** ビューポートに入ったら、控えめにフェードしながら表示する。 */
 export function Reveal({ children, delay = 0, className = '' }: RevealProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [armed, setArmed] = useState(false);
@@ -36,7 +36,7 @@ export function Reveal({ children, delay = 0, className = '' }: RevealProps) {
           observer.disconnect();
         }
       },
-      { threshold: 0.15, rootMargin: '0px 0px -8% 0px' },
+      { threshold: 0.1, rootMargin: '0px 0px -6% 0px' },
     );
     observer.observe(el);
     return () => observer.disconnect();
