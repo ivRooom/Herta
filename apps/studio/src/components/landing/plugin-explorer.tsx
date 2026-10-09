@@ -11,6 +11,16 @@ export interface ExplorerPlugin {
   commandCount: number;
 }
 
+/** カテゴリの色 (アニメ風の鮮やかなアクセント) */
+const CATEGORY_COLOR: Record<string, string> = {
+  moderation: 'var(--pink)',
+  utility: 'var(--purple)',
+  fun: 'var(--yellow)',
+  game: 'var(--cyan)',
+  analytics: 'var(--signal)',
+};
+const colorOf = (id: string) => CATEGORY_COLOR[id] ?? 'var(--muted)';
+
 export interface ExplorerCategory {
   id: string;
   label: string;
@@ -62,10 +72,15 @@ export function PluginExplorer({
                   type="button"
                   aria-pressed={selected}
                   onClick={() => setCategory(item.id)}
-                  className={`rounded-full border px-3.5 py-1.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple)] ${
+                  style={
                     selected
-                      ? 'border-[var(--ink)] bg-[var(--ink)] text-[var(--bg)]'
-                      : 'border-[var(--line)] text-[var(--muted)] hover:border-white/25 hover:text-[var(--ink)]'
+                      ? { backgroundColor: item.id === 'all' ? '#fff' : colorOf(item.id) }
+                      : undefined
+                  }
+                  className={`rounded-full border-2 px-3.5 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white ${
+                    selected
+                      ? 'border-white text-[var(--pop-ink)] shadow-[2px_2px_0_rgb(0_0_0/0.6)]'
+                      : 'border-[var(--line)] text-[var(--muted)] hover:border-white/40 hover:text-[var(--ink)]'
                   }`}
                 >
                   {item.label}
@@ -97,12 +112,18 @@ export function PluginExplorer({
         {filtered.map((plugin, position) => (
           <li
             key={plugin.id}
-            className="lp-card-in bg-[var(--surface)] p-5 transition-colors hover:bg-[var(--surface-2)]"
-            style={{ animationDelay: `${Math.min(position, 12) * 25}ms` }}
+            className="lp-card-in border-t-[3px] bg-[var(--surface)] p-5 transition-colors hover:bg-[var(--surface-2)]"
+            style={{
+              animationDelay: `${Math.min(position, 12) * 25}ms`,
+              borderTopColor: colorOf(plugin.category),
+            }}
           >
             <div className="flex items-start justify-between gap-3">
               <h3 className="text-[15px] font-semibold leading-snug">{plugin.name}</h3>
-              <span className="lp-mono shrink-0 rounded border border-[var(--line)] px-1.5 py-0.5 text-[10px] text-[var(--muted)]">
+              <span
+                className="lp-mono shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold text-[var(--pop-ink)]"
+                style={{ backgroundColor: colorOf(plugin.category) }}
+              >
                 {label(plugin.category)}
               </span>
             </div>

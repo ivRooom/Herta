@@ -88,7 +88,9 @@ export function StudioScrolly({ children }: { children: ReactNode }) {
                     key={item.id}
                     aria-current={active ? 'step' : undefined}
                     className={`-ml-px border-l-2 py-1.5 pl-4 text-base font-medium transition-colors duration-500 ${
-                      active ? 'border-white text-white' : 'border-transparent text-[var(--muted)]'
+                      active
+                        ? 'border-[var(--yellow)] text-white'
+                        : 'border-transparent text-[var(--muted)]'
                     }`}
                   >
                     {CAPTIONS[item.id]}

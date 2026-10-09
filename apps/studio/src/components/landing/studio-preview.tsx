@@ -86,7 +86,7 @@ export function StudioPreview({
                 onClick={() => setTab(item.id)}
                 className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple)] ${
                   active
-                    ? 'bg-white/[0.12] text-[var(--ink)]'
+                    ? 'bg-[var(--yellow)] font-bold text-[var(--pop-ink)]'
                     : 'text-[var(--muted)] hover:text-[var(--ink)]'
                 }`}
               >
@@ -143,7 +143,7 @@ export function StudioPreview({
                 <p className="text-xs text-[var(--muted)]">アクティブユーザー(イメージ)</p>
                 <p className="mt-1 text-2xl font-semibold tracking-tight">DAU / WAU / MAU</p>
               </div>
-              <span className="rounded-full bg-[var(--lavender)] px-2.5 py-1 text-[11px] font-semibold text-[var(--purple)]">
+              <span className="rounded-full bg-[var(--cyan)] px-2.5 py-1 text-[11px] font-bold text-[var(--pop-ink)]">
                 サンプル
               </span>
             </div>
@@ -151,8 +151,14 @@ export function StudioPreview({
               {BARS.map((height, index) => (
                 <div
                   key={index}
-                  className="lp-bar flex-1 rounded-t-md bg-[var(--purple)]"
-                  style={{ height: `${height}%`, '--lp-delay': `${index * 60}ms` } as CSSProperties}
+                  className="lp-bar flex-1 rounded-t-md"
+                  style={
+                    {
+                      height: `${height}%`,
+                      '--lp-delay': `${index * 60}ms`,
+                      backgroundColor: ['var(--purple)', 'var(--pink)', 'var(--cyan)'][index % 3],
+                    } as CSSProperties
+                  }
                 />
               ))}
             </div>
@@ -180,7 +186,7 @@ export function StudioPreview({
                 </div>
                 <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
                   <div
-                    className="lp-fill h-full rounded-full bg-[var(--purple)]"
+                    className="lp-fill h-full rounded-full bg-[var(--pink)]"
                     style={{
                       width: `${badge.progress}%`,
                       animationDelay: `${index * 90 + 200}ms`,

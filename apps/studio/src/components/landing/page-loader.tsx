@@ -118,8 +118,8 @@ export function PageLoader() {
         読み込み中
       </span>
       <div aria-hidden="true" className="flex flex-col items-center gap-5">
-        <p className="lp-mono text-[11px] font-medium tracking-[0.3em] text-[var(--muted)]">
-          HERTA STUDIO
+        <p className="lp-loader-title">
+          <span>NOW LOADING</span>
         </p>
         <p className="lp-loader-number">
           {pct}
@@ -128,7 +128,9 @@ export function PageLoader() {
         <div className="lp-loader-track">
           <div className="lp-loader-fill" style={{ ['--pct' as string]: pct / 100 }} />
         </div>
-        <p className="lp-mono text-[11px] tracking-[0.25em] text-[var(--muted)]">{status}</p>
+        <p className="lp-mono text-[11px] font-bold tracking-[0.25em] text-[var(--cyan)]">
+          {status}
+        </p>
       </div>
     </div>
   );

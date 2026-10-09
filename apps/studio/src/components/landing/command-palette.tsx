@@ -119,7 +119,7 @@ export function CommandPalette({
       ref={rootRef}
       onPointerDown={stopAutoplay}
       onFocusCapture={stopAutoplay}
-      className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)] text-left shadow-[0_50px_100px_-40px_rgb(0_0_0/0.9),0_0_0_1px_rgb(255_255_255/0.03)]"
+      className="overflow-hidden rounded-2xl border-[3px] border-white bg-[var(--surface)] text-left shadow-[8px_9px_0_var(--pink)]"
     >
       <div className="flex items-center gap-3 border-b border-[var(--line)] px-5 py-4">
         <Search className="h-5 w-5 shrink-0 text-[var(--muted)]" aria-hidden="true" />
@@ -176,7 +176,7 @@ export function CommandPalette({
                   {selected ? (
                     <span
                       aria-hidden="true"
-                      className="absolute inset-y-2 left-0 w-[2px] rounded-full bg-[var(--purple)]"
+                      className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-[var(--yellow)]"
                     />
                   ) : null}
                   <span className="lp-mono shrink-0 text-sm font-medium">/{command.name}</span>
@@ -205,7 +205,7 @@ export function CommandPalette({
                 <span className="rounded-full border border-[var(--line)] px-3 py-1 text-[var(--muted)]">
                   Plugin
                 </span>
-                <span className="rounded-full bg-[var(--lavender)] px-3 py-1 font-medium text-[var(--purple)]">
+                <span className="rounded-full bg-[var(--yellow)] px-3 py-1 font-bold text-[var(--pop-ink)]">
                   {current.pluginName}
                 </span>
               </div>

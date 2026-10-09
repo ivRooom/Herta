@@ -97,7 +97,7 @@ const AUTOPLAY_COMMANDS = SPOTLIGHT_COMMANDS.filter((name) =>
 
 /* ---------- 機能 (ベントー) ---------- */
 
-type Tone = 'dark' | 'accent' | 'light';
+type Tone = 'dark' | 'accent' | 'light' | 'pink' | 'cyan' | 'yellow';
 
 interface Feature {
   title: string;
@@ -134,7 +134,7 @@ const FEATURES: readonly Feature[] = [
     description: '発言やVCでXPが貯まり、レベルに応じてロールや称号がもらえます。',
     tags: ['/leaderboard', '報酬ロール', 'Achievements'],
     icon: Trophy,
-    tone: 'dark',
+    tone: 'yellow',
     span: 1,
     viz: 'xp',
   },
@@ -152,7 +152,7 @@ const FEATURES: readonly Feature[] = [
     description: '遊ぶ相手の募集、チーム分け、投票、プレゼント企画までDiscordの中で完結します。',
     tags: ['/lfg', 'チーム分け', 'Poll', '/giveaway'],
     icon: Users,
-    tone: 'dark',
+    tone: 'pink',
     span: 1,
   },
   {
@@ -160,7 +160,7 @@ const FEATURES: readonly Feature[] = [
     description: 'ミニゲームやMBTI診断、VALORANTの戦績確認など、雑談が盛り上がる機能です。',
     tags: ['ミニゲーム', 'MBTI診断', '/valorant', 'Akinator'],
     icon: Gamepad2,
-    tone: 'light',
+    tone: 'cyan',
     span: 1,
   },
   {
@@ -176,7 +176,7 @@ const FEATURES: readonly Feature[] = [
     description: '会話、画像生成、コード実行、天気の確認。使うAIプロバイダも管理画面で設定します。',
     tags: ['AI会話', '画像生成', 'コード実行', '天気'],
     icon: Bot,
-    tone: 'accent',
+    tone: 'light',
     span: 1,
   },
   {
@@ -205,19 +205,44 @@ const TONE: Record<Tone, { tile: string; body: string; tag: string }> = {
     body: 'text-[#55555e]',
     tag: 'bg-black/[0.07] text-[#2a2a31]',
   },
+  pink: {
+    tile: 'bg-[var(--pink)] text-[var(--pop-ink)]',
+    body: 'text-[#14091f] opacity-80',
+    tag: 'bg-black/15 text-[#14091f]',
+  },
+  cyan: {
+    tile: 'bg-[var(--cyan)] text-[var(--pop-ink)]',
+    body: 'text-[#14091f] opacity-80',
+    tag: 'bg-black/15 text-[#14091f]',
+  },
+  yellow: {
+    tile: 'bg-[var(--yellow)] text-[var(--pop-ink)]',
+    body: 'text-[#14091f] opacity-80',
+    tag: 'bg-black/15 text-[#14091f]',
+  },
 };
 
+/** 明るい面(黄・水色・ピンクなど)の上では、図の配色を反転させる */
+const LIGHT_TONES: readonly Tone[] = ['pink', 'cyan', 'yellow', 'light'];
+
 /** 面の中の小さな図。表示されたときに1回だけ動き、JS無効では完成形のまま表示される。 */
-function VizFrame({ children }: { children: ReactNode }) {
+function VizFrame({ children, light = false }: { children: ReactNode; light?: boolean }) {
   return (
-    <div className="mt-6 rounded-xl border border-white/[0.08] bg-black/25 p-4" aria-hidden="true">
-      <p className="lp-mono mb-3 text-[10px] tracking-widest text-white/35">IMAGE</p>
+    <div
+      className={`mt-6 rounded-xl border p-4 ${light ? 'border-black/15 bg-black/10' : 'border-white/[0.08] bg-black/25'}`}
+      aria-hidden="true"
+    >
+      <p
+        className={`lp-mono mb-3 text-[10px] font-bold tracking-widest ${light ? 'text-black/45' : 'text-white/35'}`}
+      >
+        IMAGE
+      </p>
       {children}
     </div>
   );
 }
 
-function Viz({ kind }: { kind: NonNullable<Feature['viz']> }) {
+function Viz({ kind, light = false }: { kind: NonNullable<Feature['viz']>; light?: boolean }) {
   if (kind === 'moderation') {
     return (
       <VizFrame>
@@ -248,15 +273,16 @@ function Viz({ kind }: { kind: NonNullable<Feature['viz']> }) {
   }
   if (kind === 'xp') {
     return (
-      <VizFrame>
+      <VizFrame light={light}>
         <div className="flex items-end justify-between">
           <p className="text-4xl font-semibold tracking-tight">
-            Lv.<span className="text-[var(--purple)]">12</span>
+            Lv.
+            <span className={light ? 'text-[var(--purple-deep)]' : 'text-[var(--purple)]'}>12</span>
           </p>
-          <p className="lp-mono text-[11px] text-white/45">72%</p>
+          <p className="lp-mono text-[11px] text-black/55">72%</p>
         </div>
-        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
-          <div className="viz-fill h-full w-[72%] origin-left rounded-full bg-[var(--purple)]" />
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/15">
+          <div className="viz-fill h-full w-[72%] origin-left rounded-full bg-[var(--purple-deep)]" />
         </div>
       </VizFrame>
     );
@@ -313,6 +339,32 @@ function vars(values: Record<string, string>): CSSProperties {
   return values as CSSProperties;
 }
 
+/** きらめく星 (装飾。表示時に1回だけ回りながら現れる) */
+function Sparkle({ className, delay }: { className: string; delay: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      className={`lp-star pointer-events-none absolute hidden sm:block ${className}`}
+      style={vars({ '--lp-d': delay })}
+    >
+      <path
+        d="M12 0c.9 6.4 5.6 11.1 12 12-6.4.9-11.1 5.6-12 12-.9-6.4-5.6-11.1-12-12C6.4 11.1 11.1 6.4 12 0z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
+/** セクションの見出し上に付ける、斜めのリボンラベル */
+function Ribbon({ color, children }: { color: string; children: string }) {
+  return (
+    <span className="lp-ribbon lp-mono" style={{ backgroundColor: color }}>
+      <span>{children}</span>
+    </span>
+  );
+}
+
 /**
  * 読み込み表示の要否を、画面が描画される前に決めるための小さなスクリプト。
  * - 同じタブで2回目以降 → lp-seen (読み込み表示を出さない)
@@ -331,7 +383,7 @@ export default async function HomePage() {
   const primaryCta = isLoggedIn ? (
     <Link
       href="/dashboard"
-      className="inline-flex items-center gap-2 rounded-full bg-[var(--ink)] px-7 py-3.5 text-base font-semibold text-[#0c0c0e] transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]"
+      className="lp-hard inline-flex items-center gap-2 rounded-full border-2 border-white bg-[var(--yellow)] px-7 py-3.5 text-base font-black text-[var(--pop-ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]"
     >
       ダッシュボードを開く
       <ArrowRight className="lp-nudge h-4 w-4" aria-hidden="true" />
@@ -341,7 +393,7 @@ export default async function HomePage() {
       <input type="hidden" name="callbackUrl" value="/dashboard" />
       <button
         type="submit"
-        className="inline-flex items-center gap-2.5 rounded-full bg-[#5865F2] px-7 py-3.5 text-base font-semibold text-white transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]"
+        className="lp-hard inline-flex items-center gap-2.5 rounded-full border-2 border-white bg-[#5865F2] px-7 py-3.5 text-base font-black text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--bg)]"
       >
         <DiscordIcon className="h-5 w-5" />
         Discordでログイン
@@ -402,27 +454,37 @@ export default async function HomePage() {
 
       {/* ---------- ヒーロー ---------- */}
       <HeroSpot className="overflow-hidden">
+        <div aria-hidden="true" className="lp-burst absolute inset-x-0 top-0 h-[46rem]" />
+        <span
+          aria-hidden="true"
+          className="lp-halftone absolute -left-24 top-16 h-80 w-80 text-[var(--pink)]"
+        />
+        <span
+          aria-hidden="true"
+          className="lp-halftone absolute -right-24 top-[30rem] h-96 w-96 text-[var(--cyan)]"
+        />
         <div className="relative z-10 mx-auto w-full max-w-6xl px-5 pb-16 pt-16 text-center sm:px-6 sm:pt-24 lg:px-8">
-          <p
-            className="lp-rise lp-mono mx-auto inline-flex items-center gap-2.5 rounded-full border border-[var(--line)] bg-white/[0.03] px-4 py-1.5 text-[11px] tracking-wider text-[var(--muted)]"
-            style={vars({ '--lp-d': '0ms' })}
-          >
-            <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-[var(--signal)]" />
-            DISCORD COMMUNITY OS
+          <p className="lp-rise" style={vars({ '--lp-d': '0ms' })}>
+            <Ribbon color="var(--yellow)">DISCORD COMMUNITY OS</Ribbon>
           </p>
 
-          <h1
-            aria-label={`${HEADLINE_1}${HEADLINE_2}`}
-            className="mt-7 text-[1.9rem] font-bold leading-[1.25] tracking-[-0.035em] max-[374px]:text-[1.6rem] sm:text-6xl sm:leading-[1.15] lg:text-[5.25rem] lg:leading-[1.08]"
-          >
-            <span className="block">
-              <Chars text={HEADLINE_1} />
-            </span>
-            <span className="block">
-              <Chars text="Herta" start={HEADLINE_1.length} className="text-[var(--purple)]" />
-              <Chars text="にまかせて。" start={HEADLINE_1.length + 5} />
-            </span>
-          </h1>
+          <div className="relative mx-auto mt-8 w-fit max-w-full">
+            <Sparkle className="-left-9 top-0 h-7 w-7 text-[var(--yellow)]" delay="900ms" />
+            <Sparkle className="-right-8 -top-5 h-5 w-5 text-[var(--cyan)]" delay="1050ms" />
+            <Sparkle className="-right-12 bottom-1 h-9 w-9 text-[var(--pink)]" delay="1200ms" />
+            <h1
+              aria-label={`${HEADLINE_1}${HEADLINE_2}`}
+              className="-skew-x-6 text-[1.9rem] font-black leading-[1.25] tracking-[-0.035em] max-[374px]:text-[1.6rem] sm:text-6xl sm:leading-[1.15] lg:text-[5.25rem] lg:leading-[1.08]"
+            >
+              <span className="block">
+                <Chars text={HEADLINE_1} />
+              </span>
+              <span className="block">
+                <Chars text="Herta" start={HEADLINE_1.length} className="lp-pop-name" />
+                <Chars text="にまかせて。" start={HEADLINE_1.length + 5} />
+              </span>
+            </h1>
+          </div>
 
           <p
             className="lp-rise mx-auto mt-7 max-w-2xl text-lg leading-8 text-[var(--muted)] sm:text-xl"
@@ -440,7 +502,7 @@ export default async function HomePage() {
             {primaryCta}
             <a
               href="#plugins"
-              className="inline-flex items-center gap-0.5 text-base font-medium text-[var(--purple)] transition hover:text-white"
+              className="inline-flex items-center gap-0.5 text-base font-bold text-[var(--cyan)] underline decoration-2 underline-offset-4 transition hover:text-white"
             >
               Pluginを見る
               <ChevronRight className="h-4 w-4" aria-hidden="true" />
@@ -452,12 +514,15 @@ export default async function HomePage() {
             style={vars({ '--lp-d': '940ms' })}
           >
             {[
-              { label: 'PLUGINS', value: MANIFESTS.length },
-              { label: 'COMMANDS', value: COMMANDS.length },
-              { label: 'CATEGORIES', value: CATEGORIES.length },
+              { label: 'PLUGINS', value: MANIFESTS.length, color: 'var(--pink)' },
+              { label: 'COMMANDS', value: COMMANDS.length, color: 'var(--cyan)' },
+              { label: 'CATEGORIES', value: CATEGORIES.length, color: 'var(--yellow)' },
             ].map((stat) => (
               <div key={stat.label} className="flex-1 px-4">
-                <dd className="text-3xl font-medium tracking-tight sm:text-4xl">
+                <dd
+                  className="inline-block -skew-x-6 text-4xl font-black tracking-tight sm:text-5xl"
+                  style={{ color: stat.color }}
+                >
                   <CountUp to={stat.value} />
                 </dd>
                 <dt className="mt-1 text-[10px] tracking-[0.2em] text-[var(--muted)]">
@@ -468,9 +533,18 @@ export default async function HomePage() {
           </dl>
 
           <div className="lp-rise mx-auto mt-16 max-w-3xl" style={vars({ '--lp-d': '1060ms' })}>
-            <ScrollScale>
-              <CommandPalette commands={COMMANDS} autoplay={AUTOPLAY_COMMANDS} />
-            </ScrollScale>
+            <div className="relative">
+              <span
+                aria-hidden="true"
+                className="lp-sticker absolute -right-2 -top-5 z-10 hidden bg-[var(--cyan)] text-sm sm:block"
+                style={vars({ '--rot': '5deg', '--lp-d': '1500ms' })}
+              >
+                触ってみて！
+              </span>
+              <ScrollScale>
+                <CommandPalette commands={COMMANDS} autoplay={AUTOPLAY_COMMANDS} />
+              </ScrollScale>
+            </div>
             <p className="mt-4 text-xs text-[var(--muted)]">
               Hertaの実際のコマンドです。検索して、触ってみてください。
             </p>
@@ -489,7 +563,7 @@ export default async function HomePage() {
       <section id="features" className="scroll-mt-14 pb-28">
         <div className="mx-auto w-full max-w-6xl px-5 sm:px-6 lg:px-8">
           <Reveal>
-            <p className="lp-mono text-xs tracking-[0.2em] text-[var(--purple)]">01 / FEATURES</p>
+            <Ribbon color="var(--pink)">01 / FEATURES</Ribbon>
             <h2 className="mt-4 text-3xl font-bold tracking-[-0.035em] sm:text-5xl">
               Hertaにできること。
             </h2>
@@ -516,7 +590,9 @@ export default async function HomePage() {
                         <p className={`mt-2 max-w-md text-[15px] leading-7 ${tone.body}`}>
                           {feature.description}
                         </p>
-                        {feature.viz ? <Viz kind={feature.viz} /> : null}
+                        {feature.viz ? (
+                          <Viz kind={feature.viz} light={LIGHT_TONES.includes(feature.tone)} />
+                        ) : null}
                         <ul className="mt-auto flex flex-wrap gap-1.5 pt-6">
                           {feature.tags.map((tag) => (
                             <li
@@ -543,7 +619,7 @@ export default async function HomePage() {
       <section id="plugins" className="scroll-mt-14 border-t border-[var(--line)] py-28">
         <div className="mx-auto w-full max-w-6xl px-5 sm:px-6 lg:px-8">
           <Reveal>
-            <p className="lp-mono text-xs tracking-[0.2em] text-[var(--purple)]">02 / PLUGINS</p>
+            <Ribbon color="var(--cyan)">02 / PLUGINS</Ribbon>
             <h2 className="mt-4 text-3xl font-bold tracking-[-0.035em] sm:text-5xl">
               {`公式 Plugin、${MANIFESTS.length}種。`}
             </h2>
@@ -560,7 +636,7 @@ export default async function HomePage() {
       {/* ---------- Studio ---------- */}
       <StudioScrolly>
         <Reveal>
-          <p className="lp-mono text-xs tracking-[0.2em] text-[var(--purple)]">03 / STUDIO</p>
+          <Ribbon color="var(--yellow)">03 / STUDIO</Ribbon>
           <h2 className="mt-4 text-4xl font-bold leading-[1.2] tracking-[-0.035em] sm:text-5xl sm:leading-[1.2]">
             設定は、
             <br />
@@ -577,7 +653,7 @@ export default async function HomePage() {
       {/* ---------- はじめ方 ---------- */}
       <section className="mx-auto w-full max-w-6xl px-5 py-28 sm:px-6 lg:px-8">
         <Reveal>
-          <p className="lp-mono text-xs tracking-[0.2em] text-[var(--purple)]">04 / START</p>
+          <Ribbon color="var(--pink)">04 / START</Ribbon>
           <h2 className="mt-4 text-3xl font-bold tracking-[-0.035em] sm:text-5xl">
             はじめ方は、3ステップ。
           </h2>
@@ -587,8 +663,10 @@ export default async function HomePage() {
             <li key={step.title}>
               <Reveal delay={index * 120}>
                 <p
-                  className="lp-mono text-7xl font-medium leading-none tracking-tighter text-transparent"
-                  style={{ WebkitTextStroke: '1px var(--purple)' }}
+                  className="lp-mono -skew-x-6 text-7xl font-black leading-none tracking-tighter text-transparent"
+                  style={{
+                    WebkitTextStroke: `2px ${['var(--yellow)', 'var(--pink)', 'var(--cyan)'][index]}`,
+                  }}
                 >
                   {String(index + 1).padStart(2, '0')}
                 </p>
@@ -603,13 +681,20 @@ export default async function HomePage() {
       {/* ---------- 最後のCTA ---------- */}
       <section className="mx-auto w-full max-w-6xl px-5 pb-24 sm:px-6 lg:px-8">
         <Reveal>
-          <div className="relative overflow-hidden rounded-3xl border border-[var(--line)] bg-[var(--surface)] px-6 py-16 text-center sm:py-24">
-            <div aria-hidden="true" className="lp-grid" />
+          <div className="relative overflow-hidden rounded-3xl border-[3px] border-white bg-[var(--yellow)] px-6 py-16 text-center text-[var(--pop-ink)] shadow-[9px_10px_0_var(--pink)] sm:py-24">
+            <span
+              aria-hidden="true"
+              className="lp-halftone absolute -left-20 -top-20 h-72 w-72 text-[var(--pink)]"
+            />
+            <span
+              aria-hidden="true"
+              className="lp-halftone absolute -bottom-24 -right-16 h-80 w-80 text-[var(--purple-deep)]"
+            />
             <div className="relative">
               <h2 className="text-3xl font-bold tracking-[-0.035em] sm:text-5xl">
                 まずは、自分のサーバーで。
               </h2>
-              <p className="mt-4 text-lg text-[var(--muted)]">
+              <p className="mt-4 text-lg font-bold opacity-80">
                 ログインするだけで、管理しているサーバーが表示されます。
               </p>
               <div className="mt-8 flex justify-center">{primaryCta}</div>
