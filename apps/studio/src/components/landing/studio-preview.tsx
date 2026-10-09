@@ -3,13 +3,13 @@
 import { useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { BarChart3, Medal, Puzzle } from 'lucide-react';
 
-const TABS = [
+export const TABS = [
   { id: 'plugins', label: 'Plugin', icon: Puzzle },
   { id: 'analytics', label: '分析', icon: BarChart3 },
   { id: 'achievements', label: 'Achievements', icon: Medal },
 ] as const;
 
-type TabId = (typeof TABS)[number]['id'];
+export type TabId = (typeof TABS)[number]['id'];
 
 const PLUGINS = [
   { name: 'Moderation', desc: 'NGワード・スパム検知', on: true },
@@ -29,8 +29,20 @@ const BADGES = [
 ];
 
 /** Studio画面のイメージをタブで切り替えて見せる(表示用のダミーデータ)。 */
-export function StudioPreview() {
-  const [tab, setTab] = useState<TabId>('plugins');
+export function StudioPreview({
+  tab: controlledTab,
+  onTabChange,
+}: {
+  /** 親から表示中のタブを指定する場合に渡す (スクロール連動用) */
+  tab?: TabId;
+  onTabChange?: (tab: TabId) => void;
+} = {}) {
+  const [innerTab, setInnerTab] = useState<TabId>('plugins');
+  const tab = controlledTab ?? innerTab;
+  const setTab = (next: TabId) => {
+    setInnerTab(next);
+    onTabChange?.(next);
+  };
 
   /** ARIA tabsパターンに沿った左右キー・Home/Endでのタブ移動 */
   const onTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -50,7 +62,7 @@ export function StudioPreview() {
   return (
     <div className="overflow-hidden pop rounded-2xl bg-white">
       <div
-        className="flex flex-wrap items-center gap-1 border-b-[2.5px] border-[var(--ink)] bg-[var(--purple-soft)] p-2.5"
+        className="flex flex-wrap items-center gap-1 border-b-[2px] border-[var(--ink)] bg-[var(--purple-soft)] p-2.5"
         role="tablist"
         aria-label="Studioの画面イメージ"
         onKeyDown={onTabKeyDown}

@@ -127,9 +127,9 @@ export function HeroChatDemo() {
   return (
     <div
       className="pop overflow-hidden rounded-2xl bg-white"
-      style={{ boxShadow: '7px 7px 0 var(--ink)' }}
+      style={{ boxShadow: '5px 5px 0 var(--ink)' }}
     >
-      <div className="flex items-center gap-2 border-b-[2.5px] border-[var(--ink)] bg-[var(--yellow)] px-4 py-2.5">
+      <div className="flex items-center gap-2 border-b-[2px] border-[var(--ink)] bg-[var(--yellow)] px-4 py-2.5">
         <span className="flex gap-1.5" aria-hidden="true">
           <span className="h-3 w-3 rounded-full border-2 border-[var(--ink)] bg-[var(--pink)]" />
           <span className="h-3 w-3 rounded-full border-2 border-[var(--ink)] bg-white" />

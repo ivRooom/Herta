@@ -10,7 +10,6 @@ import {
   MessagesSquare,
   Puzzle,
   ShieldCheck,
-  Star,
   Trophy,
   Users,
   type LucideIcon,
@@ -21,7 +20,9 @@ import { DiscordIcon } from '@/components/discord-icon';
 import { CommandTyper } from '@/components/landing/command-typer';
 import { HeroChatDemo } from '@/components/landing/hero-chat-demo';
 import { Reveal } from '@/components/landing/reveal';
-import { StudioPreview } from '@/components/landing/studio-preview';
+import { ScrollFx } from '@/components/landing/scroll-fx';
+import { StepsProgress } from '@/components/landing/steps-progress';
+import { StudioScrolly } from '@/components/landing/studio-scrolly';
 import { signInWithDiscord } from '@/lib/actions';
 import './landing.css';
 
@@ -41,7 +42,6 @@ interface Feature {
   icon: LucideIcon;
   /** カードの背景色 (landing.css の変数) */
   color: string;
-  tilt: string;
 }
 
 const FEATURES: readonly Feature[] = [
@@ -51,7 +51,6 @@ const FEATURES: readonly Feature[] = [
     tags: ['検知ルール', 'ケース管理', '監査ログ', 'チャンネルポリシー'],
     icon: ShieldCheck,
     color: 'var(--mint-soft)',
-    tilt: '-1deg',
   },
   {
     title: '自動化と Plugin',
@@ -59,7 +58,6 @@ const FEATURES: readonly Feature[] = [
     tags: ['Auto Response', '予約・定期投稿', 'ルールエンジン', 'Custom Plugin'],
     icon: Puzzle,
     color: 'var(--purple-soft)',
-    tilt: '0.8deg',
   },
   {
     title: 'XP と Achievements',
@@ -67,7 +65,6 @@ const FEATURES: readonly Feature[] = [
     tags: ['/leaderboard', '報酬ロール', 'Achievements', 'Community Points'],
     icon: Trophy,
     color: 'var(--yellow-soft)',
-    tilt: '-0.6deg',
   },
   {
     title: 'アクティビティ分析',
@@ -75,7 +72,6 @@ const FEATURES: readonly Feature[] = [
     tags: ['DAU / WAU / MAU', 'チャンネル別', '/community-stats', '/activity-export'],
     icon: Activity,
     color: 'var(--blue-soft)',
-    tilt: '1deg',
   },
   {
     title: '募集とイベント',
@@ -83,7 +79,6 @@ const FEATURES: readonly Feature[] = [
     tags: ['/lfg', 'チーム分け', 'Poll', '/giveaway'],
     icon: Users,
     color: 'var(--pink-soft)',
-    tilt: '-0.8deg',
   },
   {
     title: 'ゲームと診断',
@@ -91,7 +86,6 @@ const FEATURES: readonly Feature[] = [
     tags: ['ミニゲーム', 'MBTI診断', '/valorant', 'Akinator'],
     icon: Gamepad2,
     color: 'var(--orange-soft)',
-    tilt: '0.6deg',
   },
   {
     title: 'Birthday',
@@ -99,7 +93,6 @@ const FEATURES: readonly Feature[] = [
     tags: ['登録ページ', 'Birthday Card', 'Birthday Role'],
     icon: Cake,
     color: 'var(--pink-soft)',
-    tilt: '0.9deg',
   },
   {
     title: 'AI',
@@ -107,7 +100,6 @@ const FEATURES: readonly Feature[] = [
     tags: ['AI会話', '画像生成', 'コード実行', '天気'],
     icon: Bot,
     color: 'var(--blue-soft)',
-    tilt: '-0.7deg',
   },
   {
     title: 'ユーティリティ',
@@ -115,7 +107,6 @@ const FEATURES: readonly Feature[] = [
     tags: ['/help', 'Reminder', 'AFK', 'Role Manager'],
     icon: MessagesSquare,
     color: 'var(--mint-soft)',
-    tilt: '0.5deg',
   },
 ];
 
@@ -145,7 +136,7 @@ export default async function HomePage() {
   const primaryCta = isLoggedIn ? (
     <Link
       href="/dashboard"
-      className="pop pop-hover inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3.5 text-base font-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)]"
+      className="pop pop-hover inline-flex items-center gap-2 rounded-xl bg-white px-6 py-3.5 text-base font-extrabold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)]"
     >
       ダッシュボードを開く
       <ArrowRight className="lp-nudge h-5 w-5" aria-hidden="true" />
@@ -155,7 +146,7 @@ export default async function HomePage() {
       <input type="hidden" name="callbackUrl" value="/dashboard" />
       <button
         type="submit"
-        className="pop pop-hover inline-flex items-center gap-2.5 rounded-xl bg-[#5865F2] px-6 py-3.5 text-base font-black text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)]"
+        className="pop pop-hover inline-flex items-center gap-2.5 rounded-xl bg-[#5865F2] px-6 py-3.5 text-base font-extrabold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ink)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--paper)]"
       >
         <DiscordIcon className="h-5 w-5" />
         Discordでログイン
@@ -166,6 +157,7 @@ export default async function HomePage() {
 
   return (
     <main className="lp-root min-h-screen overflow-x-clip">
+      <ScrollFx />
       {/* 丸ゴシックのWebフォント (読み込めない環境ではシステムフォントにフォールバック) */}
       <link rel="preconnect" href="https://fonts.googleapis.com" />
       <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -176,10 +168,7 @@ export default async function HomePage() {
         <div aria-hidden="true" className="lp-dots pointer-events-none absolute inset-0" />
 
         <header className="relative mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-5 py-5 sm:px-6 lg:px-8">
-          <p
-            className="pop-sm inline-block -rotate-2 rounded-xl bg-[var(--purple)] px-3.5 py-1 text-xl font-black text-white"
-            style={vars({ '--lp-tilt': '-2deg' })}
-          >
+          <p className="pop-sm inline-block rounded-xl bg-[var(--purple)] px-3.5 py-1 text-xl font-extrabold text-white">
             Herta.
           </p>
           <nav
@@ -210,14 +199,14 @@ export default async function HomePage() {
         <section className="relative mx-auto grid w-full max-w-6xl items-center gap-14 px-5 pb-24 pt-8 sm:px-6 sm:pt-12 lg:grid-cols-[1.05fr_0.95fr] lg:gap-12 lg:px-8 lg:pb-32">
           <div>
             <p
-              className="lp-pop-in pop-sm inline-block rounded-full bg-[var(--mint)] px-4 py-1 text-xs font-black"
-              style={vars({ '--lp-tilt': '-2deg', '--lp-d': '0ms' })}
+              className="lp-pop-in pop-sm inline-block rounded-full bg-[var(--mint)] px-4 py-1 text-xs font-extrabold"
+              style={vars({ '--lp-d': '0ms' })}
             >
               Discordサーバー運営のおともBot
             </p>
 
             <h1
-              className="lp-pop-in mt-5 text-[1.9rem] font-black leading-[1.4] tracking-tight sm:text-[2.6rem] sm:leading-[1.3] lg:text-[2.9rem]"
+              className="lp-pop-in mt-5 text-[1.9rem] font-extrabold leading-[1.4] tracking-tight sm:text-[2.6rem] sm:leading-[1.3] lg:text-[2.9rem]"
               style={vars({ '--lp-d': '100ms' })}
             >
               サーバーの面倒ごとは、
@@ -260,37 +249,33 @@ export default async function HomePage() {
           </div>
 
           <div className="relative">
-            {/* 飾りのステッカー (静止) */}
             <span
               aria-hidden="true"
-              className="lp-pop-in lp-wiggle pop-sm absolute -top-5 right-6 z-10 hidden rotate-6 items-center gap-1.5 rounded-full bg-[var(--pink)] px-3.5 py-1.5 text-sm font-black sm:flex"
-              style={vars({ '--lp-tilt': '6deg', '--lp-d': '700ms' })}
-            >
-              <Star className="h-4 w-4" fill="currentColor" aria-hidden="true" />
-              +25 XP
-            </span>
+              className="lp-parallax absolute -right-8 -top-10 h-28 w-28 rounded-full bg-[var(--yellow-soft)]"
+              style={vars({ '--k': '-0.12' })}
+            />
             <span
               aria-hidden="true"
-              className="lp-pop-in lp-wiggle pop-sm absolute -bottom-5 -left-3 z-10 hidden -rotate-6 rounded-full bg-[var(--yellow)] px-3.5 py-1.5 text-sm font-black sm:block"
-              style={vars({ '--lp-tilt': '-6deg', '--lp-d': '850ms' })}
-            >
-              LEVEL UP!
-            </span>
-            <div className="lp-pop-in" style={vars({ '--lp-d': '250ms' })}>
-              <HeroChatDemo />
+              className="lp-parallax absolute -bottom-10 -left-8 h-24 w-24 rounded-full bg-[var(--pink-soft)]"
+              style={vars({ '--k': '-0.04' })}
+            />
+            <div className="lp-parallax relative" style={vars({ '--k': '-0.06' })}>
+              <div className="lp-pop-in" style={vars({ '--lp-d': '250ms' })}>
+                <HeroChatDemo />
+              </div>
             </div>
           </div>
         </section>
       </div>
 
       {/* ---------- 機能 ---------- */}
-      <section id="features" className="scroll-mt-4 border-y-[2.5px] border-[var(--ink)] bg-white">
+      <section id="features" className="scroll-mt-4 border-y-[2px] border-[var(--ink)] bg-white">
         <div className="mx-auto w-full max-w-6xl px-5 py-20 sm:px-6 lg:px-8">
           <Reveal>
-            <p className="pop-sm inline-block -rotate-1 rounded-lg bg-[var(--pink)] px-3 py-1 text-xs font-black">
+            <p className="pop-sm inline-block rounded-lg bg-[var(--pink)] px-3 py-1 text-xs font-extrabold">
               FEATURES
             </p>
-            <h2 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">
+            <h2 className="mt-4 text-3xl font-extrabold tracking-tight sm:text-4xl">
               Hertaにできること
             </h2>
             <p className="mt-3 max-w-2xl text-sm font-medium leading-7">
@@ -306,13 +291,13 @@ export default async function HomePage() {
                   <Reveal delay={(index % 3) * 70} className="h-full">
                     <article
                       className="pop pop-hover h-full rounded-2xl p-5"
-                      style={vars({ backgroundColor: feature.color, '--lp-tilt': feature.tilt })}
+                      style={{ backgroundColor: feature.color }}
                     >
                       <div className="flex items-center gap-3">
                         <span className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-[var(--ink)] bg-white">
                           <Icon className="h-5 w-5" aria-hidden="true" />
                         </span>
-                        <h3 className="text-lg font-black">{feature.title}</h3>
+                        <h3 className="text-lg font-extrabold">{feature.title}</h3>
                       </div>
                       <p className="mt-3 text-sm font-medium leading-7">{feature.description}</p>
                       <ul className="mt-4 flex flex-wrap gap-1.5">
@@ -337,59 +322,35 @@ export default async function HomePage() {
       </section>
 
       {/* ---------- Studio ---------- */}
-      <section id="studio" className="scroll-mt-4 bg-[var(--purple)] text-white">
-        <div className="mx-auto grid w-full max-w-6xl items-center gap-12 px-5 py-20 sm:px-6 lg:grid-cols-[0.85fr_1.15fr] lg:gap-16 lg:px-8">
-          <Reveal>
-            <p className="inline-block rotate-1 rounded-lg border-2 border-[var(--ink)] bg-[var(--yellow)] px-3 py-1 text-xs font-black text-[var(--ink)] shadow-[3px_3px_0_var(--ink)]">
-              STUDIO
-            </p>
-            <h2 className="mt-4 text-3xl font-black leading-snug tracking-tight sm:text-4xl">
-              設定は、ブラウザの
-              <br />
-              管理画面から。
-            </h2>
-            <p className="mt-4 text-sm font-medium leading-7">
-              {
-                'Discordでログインすると、自分が管理者のサーバーだけが並びます。普段の設定はフォームで、細かい調整が必要なときはJSONでも編集できます。BotのTokenがブラウザに渡ることはありません。'
-              }
-            </p>
-          </Reveal>
-          <Reveal delay={100}>
-            <div className="text-[var(--ink)]">
-              <StudioPreview />
-            </div>
-          </Reveal>
-        </div>
-      </section>
+      <StudioScrolly>
+        <Reveal>
+          <p className="inline-block rounded-lg border-[1.5px] border-[var(--ink)] bg-[var(--yellow)] px-3 py-1 text-xs font-extrabold text-[var(--ink)] shadow-[2px_2px_0_var(--ink)]">
+            STUDIO
+          </p>
+          <h2 className="mt-4 text-3xl font-extrabold leading-snug tracking-tight sm:text-4xl">
+            設定は、ブラウザの
+            <br />
+            管理画面から。
+          </h2>
+          <p className="mt-4 text-sm font-medium leading-7">
+            {
+              'Discordでログインすると、自分が管理者のサーバーだけが並びます。普段の設定はフォームで、細かい調整が必要なときはJSONでも編集できます。BotのTokenがブラウザに渡ることはありません。'
+            }
+          </p>
+        </Reveal>
+      </StudioScrolly>
 
       {/* ---------- はじめ方 ---------- */}
       <section className="mx-auto w-full max-w-6xl px-5 py-20 sm:px-6 lg:px-8">
         <Reveal>
-          <p className="pop-sm inline-block rotate-1 rounded-lg bg-[var(--mint)] px-3 py-1 text-xs font-black">
+          <p className="pop-sm inline-block rounded-lg bg-[var(--mint)] px-3 py-1 text-xs font-extrabold">
             HOW TO START
           </p>
-          <h2 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">
+          <h2 className="mt-4 text-3xl font-extrabold tracking-tight sm:text-4xl">
             はじめ方は、3ステップ。
           </h2>
         </Reveal>
-        <ol className="mt-10 grid gap-6 md:grid-cols-3">
-          {STEPS.map((step, index) => (
-            <li key={step.title}>
-              <Reveal delay={index * 100} className="h-full">
-                <div className="pop h-full rounded-2xl bg-white p-5">
-                  <span
-                    className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-[var(--ink)] text-xl font-black"
-                    style={{ backgroundColor: step.color }}
-                  >
-                    {index + 1}
-                  </span>
-                  <h3 className="mt-4 text-lg font-black">{step.title}</h3>
-                  <p className="mt-1.5 text-sm font-medium leading-7">{step.body}</p>
-                </div>
-              </Reveal>
-            </li>
-          ))}
-        </ol>
+        <StepsProgress steps={STEPS} />
       </section>
 
       {/* ---------- 最後のCTA ---------- */}
@@ -397,10 +358,10 @@ export default async function HomePage() {
         <Reveal>
           <div
             className="pop flex flex-col items-start gap-6 rounded-3xl bg-[var(--yellow)] p-7 sm:p-10 md:flex-row md:items-center md:justify-between"
-            style={{ boxShadow: '7px 7px 0 var(--ink)' }}
+            style={{ boxShadow: '5px 5px 0 var(--ink)' }}
           >
             <div>
-              <h2 className="text-2xl font-black tracking-tight sm:text-4xl">
+              <h2 className="text-2xl font-extrabold tracking-tight sm:text-4xl">
                 まずは、自分のサーバーで。
               </h2>
               <p className="mt-2 text-sm font-bold">
@@ -412,7 +373,7 @@ export default async function HomePage() {
         </Reveal>
       </section>
 
-      <footer className="border-t-[2.5px] border-[var(--ink)] bg-white px-5 py-6 text-center text-xs font-bold">
+      <footer className="border-t-[2px] border-[var(--ink)] bg-white px-5 py-6 text-center text-xs font-bold">
         Herta. — Discord Community OS
       </footer>
     </main>

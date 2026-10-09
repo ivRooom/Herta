@@ -7,19 +7,19 @@
  * ============================================================ */
 
 .lp-root {
-  --ink: #1b1536;
-  --paper: #fff7e6;
+  --ink: #2a2547;
+  --paper: #fffaf0;
   --card: #ffffff;
   --purple: #5b3df5;
-  --purple-soft: #d9ccff;
-  --yellow: #ffd84d;
-  --yellow-soft: #fff0a8;
-  --pink: #ff8ac7;
-  --pink-soft: #ffc9e4;
-  --mint: #4fe3c1;
-  --mint-soft: #b4f3e2;
-  --blue-soft: #c4e3ff;
-  --orange-soft: #ffcfa8;
+  --purple-soft: #e6deff;
+  --yellow: #ffdf6b;
+  --yellow-soft: #fff4c4;
+  --pink: #ff9fd0;
+  --pink-soft: #ffe0ef;
+  --mint: #6fe8cb;
+  --mint-soft: #d3f8ee;
+  --blue-soft: #dbeeff;
+  --orange-soft: #ffe5d0;
   color-scheme: light;
   color: var(--ink);
   background-color: var(--paper);
@@ -33,18 +33,18 @@
 .lp-dots {
   background-image: radial-gradient(var(--ink) 1.1px, transparent 1.3px);
   background-size: 22px 22px;
-  opacity: 0.14;
+  opacity: 0.09;
   mask-image: linear-gradient(to bottom, black 40%, transparent);
 }
 
 /* ---------- 枠線・影・押し込み ---------- */
 .pop {
-  border: 2.5px solid var(--ink);
-  box-shadow: 4px 4px 0 var(--ink);
-}
-.pop-sm {
   border: 2px solid var(--ink);
   box-shadow: 3px 3px 0 var(--ink);
+}
+.pop-sm {
+  border: 1.5px solid var(--ink);
+  box-shadow: 2px 2px 0 var(--ink);
 }
 .pop-hover {
   transition:
@@ -53,8 +53,8 @@
 }
 .pop-hover:hover,
 .pop-hover:focus-visible {
-  transform: translate(-2px, -2px) rotate(var(--lp-tilt, 0deg));
-  box-shadow: 7px 7px 0 var(--ink);
+  transform: translate(-2px, -2px);
+  box-shadow: 5px 5px 0 var(--ink);
 }
 .pop-hover:active {
   transform: translate(3px, 3px);
@@ -100,19 +100,6 @@
 .lp-reveal.lp-armed:not(.lp-in) {
   opacity: 0;
   transform: translateY(22px) scale(0.97);
-}
-
-/* ---------- ステッカーのホバー ---------- */
-.lp-wiggle:hover {
-  animation: lp-wiggle 0.5s ease;
-}
-@keyframes lp-wiggle {
-  25% {
-    transform: rotate(calc(var(--lp-tilt, 0deg) - 6deg)) scale(1.06);
-  }
-  60% {
-    transform: rotate(calc(var(--lp-tilt, 0deg) + 5deg)) scale(1.06);
-  }
 }
 
 /* ---------- キャレット ---------- */
@@ -208,7 +195,6 @@ button:hover > .lp-nudge {
     opacity: 1;
     transform: rotate(var(--lp-tilt, 0deg));
   }
-  .lp-wiggle:hover,
   .lp-caret,
   .lp-dot,
   .lp-fill,
@@ -234,5 +220,57 @@ button:hover > .lp-nudge {
   }
   .lp-demo-ctl {
     display: none;
+  }
+}
+
+/* ============================================================
+ * スクロール連動
+ *  --sy: スクロール量(px, 上限1200) / --sp: ページ全体の進捗(0〜1)
+ *  どちらも ScrollFx が更新する。動き低減設定では更新されず、全て静止のまま。
+ * ============================================================ */
+.lp-progress {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 60;
+  height: 4px;
+  background: var(--purple);
+  transform-origin: left;
+  transform: scaleX(var(--sp, 0));
+  pointer-events: none;
+}
+.lp-parallax {
+  transform: translate3d(0, calc(var(--sy, 0) * var(--k, 0) * 1px), 0);
+  will-change: transform;
+}
+
+/* ---------- タイムライン (はじめ方) ---------- */
+.lp-line-fill {
+  transform-origin: top;
+  transform: scaleY(var(--p, 0));
+}
+.lp-step-dot {
+  transition:
+    background-color 0.3s ease,
+    transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.lp-step-dot[data-reached='true'] {
+  transform: scale(1.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-progress {
+    display: none;
+  }
+  .lp-parallax {
+    transform: none;
+    will-change: auto;
+  }
+  .lp-line-fill {
+    transform: scaleY(1);
+  }
+  .lp-step-dot,
+  .lp-step-dot[data-reached='true'] {
+    transition: none;
+    transform: none;
   }
 }
