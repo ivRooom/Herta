@@ -125,7 +125,9 @@ export function PageLoader() {
       <span className="sr-only" role="status">
         読み込み中
       </span>
-      <div aria-hidden="true" className="flex flex-col items-center gap-5">
+      <div aria-hidden="true" className="lp-loader-scan" />
+      <div aria-hidden="true" className="lp-loader-edge" />
+      <div aria-hidden="true" className="lp-loader-body flex flex-col items-center gap-5">
         <p className="lp-loader-title">
           <span>NOW LOADING</span>
         </p>

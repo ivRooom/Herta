@@ -30,6 +30,7 @@ import {
 } from '@/components/landing/plugin-explorer';
 import { Reveal } from '@/components/landing/reveal';
 import { ScrambleText } from '@/components/landing/scramble-text';
+import { ScrollFx } from '@/components/landing/scroll-fx';
 import { ScrollScale } from '@/components/landing/scroll-scale';
 import { ScrollText } from '@/components/landing/scroll-text';
 import { StudioScrolly } from '@/components/landing/studio-scrolly';
@@ -426,6 +427,18 @@ function Ribbon({ color, children }: { color: string; children: string }) {
  */
 const LOADER_BOOT_SCRIPT = `(function(){try{var r=document.currentScript.parentElement;if(sessionStorage.getItem('lp-seen')){r.classList.add('lp-seen');return;}r.classList.add('lp-loading');setTimeout(function(){r.classList.remove('lp-loading')},6000)}catch(e){}})()`;
 
+const BAND_WORDS = [
+  'MODERATION',
+  'XP & LEVEL',
+  'ANALYTICS',
+  'GIVEAWAY',
+  'LFG',
+  'BIRTHDAY',
+  'POLL',
+  'AUTO RESPONSE',
+  'AI',
+] as const;
+
 const HEADLINE_1 = 'サーバーの面倒ごとは、';
 const HEADLINE_2 = 'Hertaにまかせて。';
 
@@ -465,6 +478,7 @@ export default async function HomePage() {
         <style>{'.lp-loader{display:none!important}'}</style>
       </noscript>
       <PageLoader />
+      <ScrollFx />
 
       {/* ---------- ナビゲーション ---------- */}
       <header className="sticky top-0 z-40 border-b border-[var(--line)] bg-[rgb(8_8_10/0.7)] backdrop-blur-xl">
@@ -507,14 +521,20 @@ export default async function HomePage() {
 
       {/* ---------- ヒーロー ---------- */}
       <HeroSpot className="overflow-hidden">
-        <div aria-hidden="true" className="lp-burst absolute inset-x-0 top-0 h-[46rem]" />
-        <span
+        <div
           aria-hidden="true"
-          className="lp-halftone absolute -left-24 top-16 h-80 w-80 text-[var(--pink)]"
+          className="lp-burst lp-par absolute inset-x-0 top-0 h-[46rem]"
+          style={vars({ '--ps': '0.12' })}
         />
         <span
           aria-hidden="true"
-          className="lp-halftone absolute -right-24 top-[30rem] h-96 w-96 text-[var(--cyan)]"
+          className="lp-halftone lp-par absolute -left-24 top-16 h-80 w-80 text-[var(--pink)]"
+          style={vars({ '--ps': '0.3' })}
+        />
+        <span
+          aria-hidden="true"
+          className="lp-halftone lp-par absolute -right-24 top-[30rem] h-96 w-96 text-[var(--cyan)]"
+          style={vars({ '--ps': '-0.18' })}
         />
         <div className="relative z-10 mx-auto w-full max-w-6xl px-5 pb-16 pt-16 text-center sm:px-6 sm:pt-24 lg:px-8">
           <p className="lp-rise" style={vars({ '--lp-d': '0ms' })}>
@@ -608,6 +628,16 @@ export default async function HomePage() {
         </div>
       </HeroSpot>
 
+      {/* ---------- 流れる帯 (スクロールに連動して横へ動く装飾) ---------- */}
+      <div aria-hidden="true" className="lp-band">
+        <p className="lp-band-row" style={vars({ '--dir': '-1' })}>
+          {BAND_WORDS.join('  ✦  ')} ✦ {BAND_WORDS.join('  ✦  ')}
+        </p>
+        <p className="lp-band-row lp-band-row--fill" style={vars({ '--dir': '1' })}>
+          {[...BAND_WORDS].reverse().join('  ✦  ')} ✦ {[...BAND_WORDS].reverse().join('  ✦  ')}
+        </p>
+      </div>
+
       {/* ---------- ステートメント (スクロールで文字が濃くなる) ---------- */}
       <section className="mx-auto w-full max-w-4xl px-5 py-28 sm:px-6 sm:py-40 lg:px-8">
         <div className="text-[1.65rem] font-bold leading-[1.55] tracking-[-0.02em] sm:text-4xl sm:leading-[1.5] lg:text-5xl lg:leading-[1.45]">
@@ -618,7 +648,7 @@ export default async function HomePage() {
       {/* ---------- 機能 ---------- */}
       <section id="features" className="scroll-mt-14 pb-28">
         <div className="mx-auto w-full max-w-6xl px-5 sm:px-6 lg:px-8">
-          <Reveal>
+          <Reveal className="lp-wipe">
             <div aria-hidden="true" className="lp-ticks mb-8" />
             <Ribbon color="var(--pink)">01 / FEATURES</Ribbon>
             <h2 className="mt-4 text-3xl font-bold tracking-[-0.035em] sm:text-5xl">
@@ -639,7 +669,7 @@ export default async function HomePage() {
               const number = String(index + 1).padStart(2, '0');
               return (
                 <li key={feature.title} className={feature.span === 2 ? 'lg:col-span-2' : ''}>
-                  <Reveal delay={(index % 3) * 80} className="h-full">
+                  <Reveal delay={(index % 3) * 80} className="lp-pop h-full">
                     <TiltCard
                       className="h-full rounded-3xl"
                       bracket={light ? '#14091f' : 'var(--cyan)'}
@@ -744,7 +774,7 @@ export default async function HomePage() {
       {/* ---------- Plugin 一覧 (実データ) ---------- */}
       <section id="plugins" className="scroll-mt-14 border-t border-[var(--line)] py-28">
         <div className="mx-auto w-full max-w-6xl px-5 sm:px-6 lg:px-8">
-          <Reveal>
+          <Reveal className="lp-wipe">
             <div aria-hidden="true" className="lp-ticks mb-8" />
             <Ribbon color="var(--cyan)">02 / PLUGINS</Ribbon>
             <h2 className="mt-4 text-3xl font-bold tracking-[-0.035em] sm:text-5xl">
@@ -779,7 +809,7 @@ export default async function HomePage() {
 
       {/* ---------- はじめ方 ---------- */}
       <section className="mx-auto w-full max-w-6xl px-5 py-28 sm:px-6 lg:px-8">
-        <Reveal>
+        <Reveal className="lp-wipe">
           <Ribbon color="var(--pink)">04 / START</Ribbon>
           <h2 className="mt-4 text-3xl font-bold tracking-[-0.035em] sm:text-5xl">
             はじめ方は、3ステップ。
