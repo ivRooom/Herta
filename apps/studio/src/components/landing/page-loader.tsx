@@ -31,8 +31,8 @@ const STATUS = [
  * 数字は見た目の演出で、実際の読み込みと次のように連動する。
  *  - 通常は最短時間で 90% まで進み、フォントとページの読み込み完了を待つ。
  *  - 完了したら 100% まで進め、画面が上へ抜けて本体が現れる。
- * 同じタブでの2回目以降、動きを減らす設定、JS無効では表示しない
- * (表示の抑止は page.tsx のインラインスクリプトと landing.css が担う)。
+ * 再読み込みや2回目以降は短く表示する。動きを減らす設定でも表示する(退場は薄くなるだけ)。
+ * JS無効では表示しない(<noscript> のスタイルで隠す)。
  */
 export function PageLoader() {
   const ref = useRef<HTMLDivElement>(null);
@@ -42,6 +42,9 @@ export function PageLoader() {
 
   useEffect(() => {
     const root = ref.current?.closest<HTMLElement>('.lp-root');
+    // 画面遷移(戻る操作など)でこのページが描画し直された場合は、page.tsx のインライン
+    // スクリプトが実行されないため、ここでヒーローの出現待ちを設定する
+    root?.classList.add('lp-loading');
     const finish = () => {
       root?.classList.remove('lp-loading');
       try {
