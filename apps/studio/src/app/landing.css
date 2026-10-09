@@ -476,9 +476,6 @@ button:hover > .lp-nudge {
     pointer-events: none;
   }
 }
-.lp-root.lp-seen .lp-loader {
-  display: none;
-}
 
 /* ============================================================
  * アニメ・マンガ風の部品 (すべて静止の装飾。動くのは1回の出現だけ)
@@ -585,22 +582,13 @@ button:hover > .lp-nudge {
   box-shadow: 1px 1px 0 var(--pink);
 }
 
+/* 動きを減らす設定: 位置・拡大・ぼかしの動きは止めるが、フェードやロード表示などの
+ * 穏やかな変化は残す (完全に静止させると、演出が壊れたように見えるため)。 */
 @media (prefers-reduced-motion: reduce) {
-  .lp-loader {
-    display: none;
-  }
-  .lp-root.lp-loading .lp-rise,
-  .lp-root.lp-loading .lp-char {
-    animation-play-state: running;
-  }
   .lp-rise {
-    animation: none;
-    opacity: 1;
     transform: none;
   }
   .lp-char {
-    animation: none;
-    opacity: 1;
     transform: none;
     filter: none;
   }
@@ -617,10 +605,10 @@ button:hover > .lp-nudge {
     animation: none;
   }
   .lp-reveal {
-    transition: none;
+    transition: opacity 0.7s ease;
+    transition-delay: var(--lp-delay, 0ms);
   }
   .lp-reveal.lp-armed:not(.lp-in) {
-    opacity: 1;
     transform: none;
   }
   .lp-scale,
@@ -955,12 +943,24 @@ button:hover > .lp-nudge {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lp-progress {
-    display: none;
-  }
   .lp-loader-scan,
+  .lp-loader-edge,
   .lp-loader-number {
     animation: none;
+  }
+  .lp-loader-scan,
+  .lp-loader-edge {
+    display: none;
+  }
+  /* ロードの退場は、拡大や色帯の代わりに、ただ薄くなる */
+  .lp-loader--out {
+    background: var(--bg);
+    opacity: 0;
+    transition: opacity 0.6s ease;
+  }
+  .lp-loader--out .lp-loader-body {
+    transform: none;
+    filter: none;
   }
   .lp-band-row,
   .lp-band-row--fill {
@@ -968,11 +968,11 @@ button:hover > .lp-nudge {
   }
   .lp-reveal.lp-wipe,
   .lp-reveal.lp-pop {
-    transition: none;
+    transition: opacity 0.7s ease;
+    transition-delay: var(--lp-delay, 0ms);
   }
   .lp-reveal.lp-wipe.lp-armed:not(.lp-in),
   .lp-reveal.lp-pop.lp-armed:not(.lp-in) {
-    opacity: 1;
     transform: none;
     clip-path: none;
   }

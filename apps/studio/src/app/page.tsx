@@ -421,11 +421,10 @@ function Ribbon({ color, children }: { color: string; children: string }) {
 
 /**
  * 読み込み表示の要否を、画面が描画される前に決めるための小さなスクリプト。
- * - 同じタブで2回目以降 → lp-seen (読み込み表示を出さない)
  * - 初回 → lp-loading (表示中はヒーローの出現を待たせる)。念のため6秒で必ず解除する。
  * JSが動かない環境では何も付かず、読み込み表示は <noscript> のスタイルで隠れる。
  */
-const LOADER_BOOT_SCRIPT = `(function(){try{var r=document.currentScript.parentElement;if(sessionStorage.getItem('lp-seen')){r.classList.add('lp-seen');return;}r.classList.add('lp-loading');setTimeout(function(){r.classList.remove('lp-loading')},6000)}catch(e){}})()`;
+const LOADER_BOOT_SCRIPT = `(function(){try{var r=document.currentScript.parentElement;r.classList.add('lp-loading');setTimeout(function(){r.classList.remove('lp-loading')},6000)}catch(e){}})()`;
 
 const BAND_WORDS = [
   'MODERATION',
