@@ -15,6 +15,7 @@ import {
 import { auth } from '@/auth';
 import { DiscordIcon } from '@/components/discord-icon';
 import { CountUp } from '@/components/landing/count-up';
+import { Marquee } from '@/components/landing/marquee';
 import { HeroChatDemo } from '@/components/landing/hero-chat-demo';
 import { Reveal } from '@/components/landing/reveal';
 import { SpotlightCard } from '@/components/landing/spotlight-card';
@@ -269,27 +270,25 @@ export default async function HomePage() {
 
       {/* ---------- マーキー ---------- */}
       <section aria-label="機能一覧" className="relative border-y border-border bg-surface/40 py-4">
-        <div className="lp-marquee overflow-hidden">
-          <div className="lp-marquee-track">
-            {[0, 1].map((copy) => (
-              <ul
-                key={copy}
-                aria-hidden={copy === 1}
-                className="flex shrink-0 items-center gap-3 pr-3"
-              >
-                {MARQUEE_ITEMS.map((item) => (
-                  <li
-                    key={`${copy}-${item}`}
-                    className="flex items-center gap-3 whitespace-nowrap rounded-full border border-border bg-background/70 px-4 py-1.5 text-xs font-medium"
-                  >
-                    <Sparkles className="h-3 w-3 text-primary" aria-hidden="true" />
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            ))}
-          </div>
-        </div>
+        <Marquee>
+          {[0, 1].map((copy) => (
+            <ul
+              key={copy}
+              aria-hidden={copy === 1}
+              className="flex shrink-0 items-center gap-3 pr-3"
+            >
+              {MARQUEE_ITEMS.map((item) => (
+                <li
+                  key={`${copy}-${item}`}
+                  className="flex items-center gap-3 whitespace-nowrap rounded-full border border-border bg-background/70 px-4 py-1.5 text-xs font-medium"
+                >
+                  <Sparkles className="h-3 w-3 text-primary" aria-hidden="true" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+          ))}
+        </Marquee>
       </section>
 
       {/* ---------- 機能 ---------- */}
