@@ -1,92 +1,90 @@
 /* ============================================================
- * Herta Studio — 公開トップ (ポップ版)
- * ベタ塗りの色 + 太い枠線 + ずらした影 + 少し傾けたステッカーで賑やかさを出す。
- * グラデーションや発光は使わない。動きは「出現のポップ」「ホバーで跳ねる」が中心で、
- * 常時動き続けるのはチャットデモ(一時停止ボタン付き)だけ。
- * OSのダーク設定に左右されないよう、このページは専用の配色に固定する。
+ * Herta Studio — 公開トップ
+ * 墨色・紫・ライムの3色に絞り、角の立った枠線とモノスペースのラベルで
+ * 「かわいさ」より「道具としての頼もしさ」を出す。賑やかさは情報量と
+ * スクロール連動の動きで作り、グラデーション・発光・丸い装飾は使わない。
+ * OSのダーク設定に左右されないよう、このページは専用配色に固定する。
  * ============================================================ */
 
 .lp-root {
-  --ink: #2a2547;
-  --paper: #fffaf0;
+  --ink: #16141f;
+  --paper: #f4f3ee;
   --card: #ffffff;
   --purple: #5b3df5;
-  --purple-soft: #e6deff;
-  --yellow: #ffdf6b;
-  --yellow-soft: #fff4c4;
-  --pink: #ff9fd0;
-  --pink-soft: #ffe0ef;
-  --mint: #6fe8cb;
-  --mint-soft: #d3f8ee;
-  --blue-soft: #dbeeff;
-  --orange-soft: #ffe5d0;
+  --lime: #d8f35c;
+  --lavender: #e9e5ff;
   color-scheme: light;
   color: var(--ink);
   background-color: var(--paper);
   font-family:
-    'M PLUS Rounded 1c', 'Hiragino Maru Gothic ProN', 'Yu Gothic', 'Hiragino Sans', 'Noto Sans JP',
-    ui-sans-serif, system-ui, sans-serif;
+    'Zen Kaku Gothic New', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic',
+    'Noto Sans JP', ui-sans-serif, system-ui, sans-serif;
   font-feature-settings: 'palt';
 }
+.lp-mono {
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace;
+  font-feature-settings: normal;
+  letter-spacing: 0.04em;
+}
 
-/* ---------- ドット柄の背景 (静止) ---------- */
-.lp-dots {
-  background-image: radial-gradient(var(--ink) 1.1px, transparent 1.3px);
-  background-size: 22px 22px;
-  opacity: 0.09;
-  mask-image: linear-gradient(to bottom, black 40%, transparent);
+/* ---------- 方眼の背景 (静止) ---------- */
+.lp-grid {
+  background-image:
+    linear-gradient(rgb(22 20 31 / 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(22 20 31 / 0.07) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, black 30%, transparent 95%);
 }
 
 /* ---------- 枠線・影・押し込み ---------- */
-.pop {
-  border: 2px solid var(--ink);
-  box-shadow: 3px 3px 0 var(--ink);
+.box {
+  border: 1.5px solid var(--ink);
 }
-.pop-sm {
+.box-sm {
   border: 1.5px solid var(--ink);
   box-shadow: 2px 2px 0 var(--ink);
 }
-.pop-hover {
+.box-hover {
   transition:
-    transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
     box-shadow 0.18s ease;
 }
-.pop-hover:hover,
-.pop-hover:focus-visible {
+.box-hover:hover,
+.box-hover:focus-visible {
   transform: translate(-2px, -2px);
-  box-shadow: 5px 5px 0 var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
 }
-.pop-hover:active {
-  transform: translate(3px, 3px);
-  box-shadow: 1px 1px 0 var(--ink);
+.box-hover:active {
+  transform: translate(1px, 1px);
+  box-shadow: 0 0 0 var(--ink);
 }
 
 /* ---------- マーカー (ハイライト) ---------- */
 .lp-mark {
-  background-image: linear-gradient(var(--yellow), var(--yellow));
+  background-image: linear-gradient(var(--lime), var(--lime));
   background-repeat: no-repeat;
   background-position: 0 88%;
-  background-size: 0% 45%;
+  background-size: 0% 42%;
   animation: lp-mark 0.7s cubic-bezier(0.5, 0, 0.2, 1) 0.8s forwards;
   padding: 0 0.1em;
 }
 @keyframes lp-mark {
   to {
-    background-size: 100% 45%;
+    background-size: 100% 42%;
   }
 }
 
 /* ---------- 出現 (少し跳ねる) ---------- */
-.lp-pop-in {
+.lp-rise {
   opacity: 0;
-  transform: translateY(18px) scale(0.96) rotate(var(--lp-tilt, 0deg));
-  animation: lp-pop-in 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  transform: translateY(16px);
+  animation: lp-rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
   animation-delay: var(--lp-d, 0ms);
 }
-@keyframes lp-pop-in {
+@keyframes lp-rise {
   to {
     opacity: 1;
-    transform: rotate(var(--lp-tilt, 0deg));
+    transform: none;
   }
 }
 
@@ -94,12 +92,12 @@
 .lp-reveal {
   transition:
     opacity 0.45s ease,
-    transform 0.55s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
   transition-delay: var(--lp-delay, 0ms);
 }
 .lp-reveal.lp-armed:not(.lp-in) {
   opacity: 0;
-  transform: translateY(22px) scale(0.97);
+  transform: translateY(18px);
 }
 
 /* ---------- キャレット ---------- */
@@ -129,12 +127,12 @@ button:hover > .lp-nudge {
 
 /* ---------- チャットデモ ---------- */
 .lp-msg {
-  animation: lp-msg-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: lp-msg-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 @keyframes lp-msg-in {
   from {
     opacity: 0;
-    transform: translateY(14px) scale(0.94);
+    transform: translateY(10px);
   }
   to {
     opacity: 1;
@@ -170,7 +168,7 @@ button:hover > .lp-nudge {
 }
 .lp-bar {
   transform-origin: bottom;
-  animation: lp-bar-grow 0.7s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: lp-bar-grow 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   animation-delay: var(--lp-delay, 0ms);
 }
 @keyframes lp-bar-grow {
@@ -182,18 +180,18 @@ button:hover > .lp-nudge {
   transition: background-color 0.25s;
 }
 .lp-switch > span {
-  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .lp-mark {
     animation: none;
-    background-size: 100% 45%;
+    background-size: 100% 42%;
   }
-  .lp-pop-in {
+  .lp-rise {
     animation: none;
     opacity: 1;
-    transform: rotate(var(--lp-tilt, 0deg));
+    transform: none;
   }
   .lp-caret,
   .lp-dot,
@@ -209,9 +207,9 @@ button:hover > .lp-nudge {
     opacity: 1;
     transform: none;
   }
-  .pop-hover,
-  .pop-hover:hover,
-  .pop-hover:active,
+  .box-hover,
+  .box-hover:hover,
+  .box-hover:active,
   .lp-nudge,
   .lp-switch,
   .lp-switch > span {
@@ -251,7 +249,7 @@ button:hover > .lp-nudge {
 .lp-step-dot {
   transition:
     background-color 0.3s ease,
-    transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .lp-step-dot[data-reached='true'] {
   transform: scale(1.1);

@@ -60,9 +60,9 @@ export function StudioPreview({
   };
 
   return (
-    <div className="overflow-hidden pop rounded-2xl bg-white">
+    <div className="overflow-hidden rounded-lg border-[1.5px] border-[var(--ink)] bg-white shadow-[5px_5px_0_var(--purple)]">
       <div
-        className="flex flex-wrap items-center gap-1 border-b-[2px] border-[var(--ink)] bg-[var(--purple-soft)] p-2.5"
+        className="flex flex-wrap items-center gap-1 border-b-[1.5px] border-[var(--ink)] bg-[var(--lavender)] p-2"
         role="tablist"
         aria-label="Studioの画面イメージ"
         onKeyDown={onTabKeyDown}
@@ -80,9 +80,9 @@ export function StudioPreview({
               aria-selected={active}
               tabIndex={active ? 0 : -1}
               onClick={() => setTab(item.id)}
-              className={`inline-flex items-center gap-1.5 rounded-lg border-2 px-3 py-1.5 text-xs font-extrabold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ink)] ${
+              className={`inline-flex items-center gap-1.5 rounded-md border-[1.5px] px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ink)] ${
                 active
-                  ? 'border-[var(--ink)] bg-[var(--yellow)] shadow-[2px_2px_0_var(--ink)]'
+                  ? 'border-[var(--ink)] bg-[var(--lime)]'
                   : 'border-transparent hover:border-[var(--ink)] hover:bg-white'
               }`}
             >
@@ -91,7 +91,7 @@ export function StudioPreview({
             </button>
           );
         })}
-        <span className="ml-auto mr-2 text-[11px] font-bold">デモ表示</span>
+        <span className="ml-auto mr-2 lp-mono text-[10px] font-bold opacity-70">デモ表示</span>
       </div>
 
       {/* key でタブ切替のたびにアニメーションを再生する */}
@@ -107,21 +107,21 @@ export function StudioPreview({
             {PLUGINS.map((plugin, index) => (
               <li
                 key={plugin.name}
-                className="lp-msg flex items-center gap-3 rounded-xl border-2 border-[var(--ink)] bg-white px-4 py-3"
+                className="lp-msg flex items-center gap-3 rounded-md border-[1.5px] border-[var(--ink)] bg-white px-4 py-3"
                 style={{ animationDelay: `${index * 90}ms` }}
               >
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-extrabold">{plugin.name}</p>
+                  <p className="text-sm font-bold">{plugin.name}</p>
                   <p className="text-xs font-medium opacity-70">{plugin.desc}</p>
                 </div>
                 <span
-                  className={`lp-switch relative h-7 w-12 shrink-0 rounded-full border-2 border-[var(--ink)] ${
-                    plugin.on ? 'bg-[var(--mint)]' : 'bg-white'
+                  className={`lp-switch relative h-7 w-12 shrink-0 rounded-md border-[1.5px] border-[var(--ink)] ${
+                    plugin.on ? 'bg-[var(--purple)]' : 'bg-white'
                   }`}
                   aria-hidden="true"
                 >
                   <span
-                    className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full border-2 border-[var(--ink)] bg-[var(--yellow)] ${
+                    className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-[4px] border-[1.5px] border-[var(--ink)] bg-[var(--lime)] ${
                       plugin.on ? 'translate-x-5' : ''
                     }`}
                   />
@@ -138,15 +138,15 @@ export function StudioPreview({
                 <p className="text-xs font-medium opacity-70">アクティブユーザー(イメージ)</p>
                 <p className="mt-1 text-2xl font-semibold tracking-tight">DAU / WAU / MAU</p>
               </div>
-              <span className="rounded-full rounded-md border-2 border-[var(--ink)] bg-[var(--mint)] px-2 py-0.5 text-xs font-extrabold">
-                サンプル表示
+              <span className="lp-mono rounded-sm bg-[var(--lime)] px-2 py-0.5 text-[10px] font-bold">
+                SAMPLE
               </span>
             </div>
             <div className="mt-6 flex h-44 items-end gap-2" aria-hidden="true">
               {BARS.map((height, index) => (
                 <div
                   key={index}
-                  className="lp-bar flex-1 rounded-t-md border-2 border-[var(--ink)] bg-[var(--purple)]"
+                  className="lp-bar flex-1 rounded-t-sm border-[1.5px] border-[var(--ink)] bg-[var(--purple)]"
                   style={{ height: `${height}%`, '--lp-delay': `${index * 70}ms` } as CSSProperties}
                 />
               ))}
@@ -162,7 +162,7 @@ export function StudioPreview({
             {BADGES.map((badge, index) => (
               <li
                 key={badge.name}
-                className="lp-msg rounded-xl border-2 border-[var(--ink)] bg-white p-4"
+                className="lp-msg rounded-md border-[1.5px] border-[var(--ink)] bg-white p-4"
                 style={{ animationDelay: `${index * 100}ms` }}
               >
                 <div className="flex items-center gap-2">
@@ -170,12 +170,12 @@ export function StudioPreview({
                     className={`h-4 w-4 ${badge.progress === 100 ? 'text-[var(--ink)]' : 'opacity-50'}`}
                     aria-hidden="true"
                   />
-                  <p className="text-sm font-extrabold">{badge.name}</p>
+                  <p className="text-sm font-bold">{badge.name}</p>
                   <span className="ml-auto text-xs font-medium opacity-70">{badge.progress}%</span>
                 </div>
-                <div className="mt-3 h-3 overflow-hidden rounded-full border-2 border-[var(--ink)] bg-white">
+                <div className="mt-3 h-2.5 overflow-hidden rounded-sm border-[1.5px] border-[var(--ink)] bg-white">
                   <div
-                    className="lp-fill h-full bg-[var(--pink)]"
+                    className="lp-fill h-full bg-[var(--purple)]"
                     style={{
                       width: `${badge.progress}%`,
                       animationDelay: `${index * 100 + 200}ms`,

@@ -70,7 +70,7 @@ export function StudioScrolly({ children }: { children: ReactNode }) {
     <section
       id="studio"
       ref={sectionRef}
-      className={`scroll-mt-4 bg-[var(--purple)] text-white ${enabled ? 'h-[250vh]' : ''}`}
+      className={`scroll-mt-4 bg-[var(--ink)] text-white ${enabled ? 'h-[250vh]' : ''}`}
     >
       <div className={enabled ? 'sticky top-0 flex h-screen items-center' : ''}>
         <div
@@ -87,13 +87,13 @@ export function StudioScrolly({ children }: { children: ReactNode }) {
                   <li
                     key={item.id}
                     aria-current={active ? 'step' : undefined}
-                    className={`flex items-center gap-3 rounded-xl border-2 px-3 py-2 text-sm font-bold transition-colors duration-300 ${
+                    className={`flex items-center gap-3 rounded-md border-[1.5px] px-3 py-2 text-sm font-medium transition-colors duration-300 ${
                       active
-                        ? 'border-[var(--ink)] bg-[var(--yellow)] text-[var(--ink)]'
-                        : 'border-white/30 text-white/85'
+                        ? 'border-[var(--lime)] bg-[var(--lime)] font-bold text-[var(--ink)]'
+                        : 'border-white/25 text-white/80'
                     }`}
                   >
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-current text-xs font-extrabold">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border-[1.5px] border-current text-[11px] font-bold lp-mono">
                       {index + 1}
                     </span>
                     {CAPTIONS[item.id]}

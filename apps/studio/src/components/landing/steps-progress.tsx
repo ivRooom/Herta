@@ -49,11 +49,11 @@ export function StepsProgress({ steps }: { steps: readonly Step[] }) {
     >
       <span
         aria-hidden="true"
-        className="absolute bottom-6 left-[1.4rem] top-6 w-[3px] rounded-full bg-[var(--ink)]/15"
+        className="absolute bottom-6 left-[1.4rem] top-6 w-[3px] rounded-sm bg-[var(--ink)]/15"
       />
       <span
         aria-hidden="true"
-        className="lp-line-fill absolute bottom-6 left-[1.4rem] top-6 w-[3px] rounded-full bg-[var(--purple)]"
+        className="lp-line-fill absolute bottom-6 left-[1.4rem] top-6 w-[3px] rounded-sm bg-[var(--purple)]"
       />
       {steps.map((step, index) => {
         const reached = progress >= index / (steps.length - 1) - 0.04;
@@ -61,13 +61,16 @@ export function StepsProgress({ steps }: { steps: readonly Step[] }) {
           <li key={step.title} className="relative">
             <span
               data-reached={reached}
-              className="lp-step-dot absolute -left-16 top-4 flex h-11 w-11 items-center justify-center rounded-full border-2 border-[var(--ink)] text-lg font-extrabold"
-              style={{ backgroundColor: reached ? step.color : '#ffffff' }}
+              className="lp-step-dot absolute -left-16 top-4 flex h-11 w-11 items-center justify-center rounded-md border-[1.5px] border-[var(--ink)] text-base font-bold lp-mono"
+              style={{
+                backgroundColor: reached ? step.color : '#ffffff',
+                color: reached && step.color === 'var(--purple)' ? '#ffffff' : undefined,
+              }}
             >
               {index + 1}
             </span>
-            <div className="pop rounded-2xl bg-white p-5">
-              <h3 className="text-lg font-extrabold">{step.title}</h3>
+            <div className="box rounded-lg bg-white p-5">
+              <h3 className="text-lg font-bold">{step.title}</h3>
               <p className="mt-1.5 text-sm font-medium leading-7">{step.body}</p>
             </div>
           </li>
