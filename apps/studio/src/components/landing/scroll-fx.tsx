@@ -14,9 +14,9 @@ export function ScrollFx() {
   useEffect(() => {
     const root = barRef.current?.closest<HTMLElement>('.lp-root');
     if (!root) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
     let frame = 0;
+    let active = false;
     const update = () => {
       frame = 0;
       const max = document.documentElement.scrollHeight - window.innerHeight;
@@ -27,16 +27,34 @@ export function ScrollFx() {
     const onScroll = () => {
       if (!frame) frame = requestAnimationFrame(update);
     };
-
-    update();
-    root.classList.add('lp-fx');
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll);
-    return () => {
+    const stop = () => {
+      if (!active) return;
+      active = false;
       window.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
       if (frame) cancelAnimationFrame(frame);
+      frame = 0;
       root.classList.remove('lp-fx');
+    };
+    const start = () => {
+      if (active) return;
+      active = true;
+      update();
+      root.classList.add('lp-fx');
+      window.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('resize', onScroll);
+    };
+    // 表示中に「動きを減らす」設定が切り替わっても追従する
+    const onMotionChange = () => {
+      if (motionQuery.matches) stop();
+      else start();
+    };
+
+    motionQuery.addEventListener('change', onMotionChange);
+    onMotionChange();
+    return () => {
+      motionQuery.removeEventListener('change', onMotionChange);
+      stop();
     };
   }, []);
 
