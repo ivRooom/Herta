@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type CSSProperties } from 'react';
+import { useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { BarChart3, Medal, Puzzle } from 'lucide-react';
 
 const TABS = [
@@ -32,9 +32,29 @@ const BADGES = [
 export function StudioPreview() {
   const [tab, setTab] = useState<TabId>('plugins');
 
+  /** ARIA tabsパターンに沿った左右キー・Home/Endでのタブ移動 */
+  const onTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const index = TABS.findIndex((item) => item.id === tab);
+    let next = index;
+    if (event.key === 'ArrowRight') next = (index + 1) % TABS.length;
+    else if (event.key === 'ArrowLeft') next = (index - 1 + TABS.length) % TABS.length;
+    else if (event.key === 'Home') next = 0;
+    else if (event.key === 'End') next = TABS.length - 1;
+    else return;
+    event.preventDefault();
+    const nextId = TABS[next]!.id;
+    setTab(nextId);
+    document.getElementById(`studio-tab-${nextId}`)?.focus();
+  };
+
   return (
     <div className="overflow-hidden rounded-3xl border border-border bg-surface/90 shadow-card backdrop-blur-xl">
-      <div className="flex items-center gap-1 border-b border-border p-2" role="tablist">
+      <div
+        className="flex flex-wrap items-center gap-1 border-b border-border p-2"
+        role="tablist"
+        aria-label="Studioの画面イメージ"
+        onKeyDown={onTabKeyDown}
+      >
         {TABS.map((item) => {
           const Icon = item.icon;
           const active = tab === item.id;
@@ -43,7 +63,10 @@ export function StudioPreview() {
               key={item.id}
               type="button"
               role="tab"
+              id={`studio-tab-${item.id}`}
+              aria-controls="studio-tabpanel"
               aria-selected={active}
+              tabIndex={active ? 0 : -1}
               onClick={() => setTab(item.id)}
               className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 active ? 'bg-primary text-primary-foreground' : 'text-muted hover:bg-background'
@@ -60,7 +83,13 @@ export function StudioPreview() {
       </div>
 
       {/* key でタブ切替のたびにアニメーションを再生する */}
-      <div key={tab} className="min-h-[18rem] p-5" role="tabpanel">
+      <div
+        key={tab}
+        id="studio-tabpanel"
+        className="min-h-[18rem] p-5"
+        role="tabpanel"
+        aria-labelledby={`studio-tab-${tab}`}
+      >
         {tab === 'plugins' ? (
           <ul className="space-y-2.5">
             {PLUGINS.map((plugin, index) => (

@@ -314,6 +314,10 @@
   .lp-msg {
     animation: none !important;
   }
+  .lp-switch,
+  .lp-switch > span {
+    transition: none;
+  }
   .lp-pop {
     animation: none !important;
     opacity: 1;
