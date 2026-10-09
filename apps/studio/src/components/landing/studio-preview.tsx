@@ -60,68 +60,70 @@ export function StudioPreview({
   };
 
   return (
-    <div className="overflow-hidden rounded-lg border-[1.5px] border-[var(--ink)] bg-white shadow-[5px_5px_0_var(--purple)]">
-      <div
-        className="flex flex-wrap items-center gap-1 border-b-[1.5px] border-[var(--ink)] bg-[var(--lavender)] p-2"
-        role="tablist"
-        aria-label="Studioの画面イメージ"
-        onKeyDown={onTabKeyDown}
-      >
-        {TABS.map((item) => {
-          const Icon = item.icon;
-          const active = tab === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              id={`studio-tab-${item.id}`}
-              aria-controls="studio-tabpanel"
-              aria-selected={active}
-              tabIndex={active ? 0 : -1}
-              onClick={() => setTab(item.id)}
-              className={`inline-flex items-center gap-1.5 rounded-md border-[1.5px] px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ink)] ${
-                active
-                  ? 'border-[var(--ink)] bg-[var(--lime)]'
-                  : 'border-transparent hover:border-[var(--ink)] hover:bg-white'
-              }`}
-            >
-              <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-              {item.label}
-            </button>
-          );
-        })}
-        <span className="ml-auto mr-2 lp-mono text-[10px] font-bold opacity-70">デモ表示</span>
+    <div className="overflow-hidden rounded-[28px] bg-white text-[var(--ink)] shadow-[0_40px_80px_-30px_rgb(0_0_0/0.5)]">
+      <div className="flex flex-wrap items-center gap-3 border-b border-black/5 px-4 py-3">
+        <div
+          className="flex gap-1 rounded-full bg-[var(--tint)] p-1"
+          role="tablist"
+          aria-label="Studioの画面イメージ"
+          onKeyDown={onTabKeyDown}
+        >
+          {TABS.map((item) => {
+            const Icon = item.icon;
+            const active = tab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                id={`studio-tab-${item.id}`}
+                aria-controls="studio-tabpanel"
+                aria-selected={active}
+                tabIndex={active ? 0 : -1}
+                onClick={() => setTab(item.id)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple)] ${
+                  active
+                    ? 'bg-white shadow-[0_1px_3px_rgb(0_0_0/0.15)]'
+                    : 'text-[var(--muted)] hover:text-[var(--ink)]'
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+        <span className="ml-auto text-[11px] text-[var(--muted)]">デモ表示</span>
       </div>
 
       {/* key でタブ切替のたびにアニメーションを再生する */}
       <div
         key={tab}
         id="studio-tabpanel"
-        className="min-h-[18rem] p-5"
+        className="min-h-[19rem] p-5"
         role="tabpanel"
         aria-labelledby={`studio-tab-${tab}`}
       >
         {tab === 'plugins' ? (
-          <ul className="space-y-2.5">
+          <ul className="divide-y divide-black/5">
             {PLUGINS.map((plugin, index) => (
               <li
                 key={plugin.name}
-                className="lp-msg flex items-center gap-3 rounded-md border-[1.5px] border-[var(--ink)] bg-white px-4 py-3"
-                style={{ animationDelay: `${index * 90}ms` }}
+                className="lp-msg flex items-center gap-3 py-3"
+                style={{ animationDelay: `${index * 80}ms` }}
               >
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold">{plugin.name}</p>
-                  <p className="text-xs font-medium opacity-70">{plugin.desc}</p>
+                  <p className="text-sm font-semibold">{plugin.name}</p>
+                  <p className="text-xs text-[var(--muted)]">{plugin.desc}</p>
                 </div>
                 <span
-                  className={`lp-switch relative h-7 w-12 shrink-0 rounded-md border-[1.5px] border-[var(--ink)] ${
-                    plugin.on ? 'bg-[var(--purple)]' : 'bg-white'
+                  className={`lp-switch relative h-7 w-12 shrink-0 rounded-full ${
+                    plugin.on ? 'bg-[var(--purple)]' : 'bg-[#e5e5ea]'
                   }`}
                   aria-hidden="true"
                 >
                   <span
-                    className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-[4px] border-[1.5px] border-[var(--ink)] bg-[var(--lime)] ${
+                    className={`absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/0.3)] ${
                       plugin.on ? 'translate-x-5' : ''
                     }`}
                   />
@@ -135,23 +137,23 @@ export function StudioPreview({
           <div>
             <div className="flex items-end justify-between">
               <div>
-                <p className="text-xs font-medium opacity-70">アクティブユーザー(イメージ)</p>
+                <p className="text-xs text-[var(--muted)]">アクティブユーザー(イメージ)</p>
                 <p className="mt-1 text-2xl font-semibold tracking-tight">DAU / WAU / MAU</p>
               </div>
-              <span className="lp-mono rounded-sm bg-[var(--lime)] px-2 py-0.5 text-[10px] font-bold">
-                SAMPLE
+              <span className="rounded-full bg-[var(--lavender)] px-2.5 py-1 text-[11px] font-semibold text-[var(--purple)]">
+                サンプル
               </span>
             </div>
             <div className="mt-6 flex h-44 items-end gap-2" aria-hidden="true">
               {BARS.map((height, index) => (
                 <div
                   key={index}
-                  className="lp-bar flex-1 rounded-t-sm border-[1.5px] border-[var(--ink)] bg-[var(--purple)]"
-                  style={{ height: `${height}%`, '--lp-delay': `${index * 70}ms` } as CSSProperties}
+                  className="lp-bar flex-1 rounded-t-md bg-[var(--purple)]"
+                  style={{ height: `${height}%`, '--lp-delay': `${index * 60}ms` } as CSSProperties}
                 />
               ))}
             </div>
-            <p className="mt-3 text-xs font-medium opacity-70">
+            <p className="mt-3 text-xs text-[var(--muted)]">
               発言・リアクション・VC・オンライン時間を期間指定で集計
             </p>
           </div>
@@ -162,23 +164,23 @@ export function StudioPreview({
             {BADGES.map((badge, index) => (
               <li
                 key={badge.name}
-                className="lp-msg rounded-md border-[1.5px] border-[var(--ink)] bg-white p-4"
-                style={{ animationDelay: `${index * 100}ms` }}
+                className="lp-msg rounded-2xl bg-[var(--tint)] p-4"
+                style={{ animationDelay: `${index * 90}ms` }}
               >
                 <div className="flex items-center gap-2">
                   <Medal
-                    className={`h-4 w-4 ${badge.progress === 100 ? 'text-[var(--ink)]' : 'opacity-50'}`}
+                    className={`h-4 w-4 ${badge.progress === 100 ? 'text-[var(--purple)]' : 'text-[var(--faint)]'}`}
                     aria-hidden="true"
                   />
-                  <p className="text-sm font-bold">{badge.name}</p>
-                  <span className="ml-auto text-xs font-medium opacity-70">{badge.progress}%</span>
+                  <p className="text-sm font-semibold">{badge.name}</p>
+                  <span className="ml-auto text-xs text-[var(--muted)]">{badge.progress}%</span>
                 </div>
-                <div className="mt-3 h-2.5 overflow-hidden rounded-sm border-[1.5px] border-[var(--ink)] bg-white">
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e5e5ea]">
                   <div
-                    className="lp-fill h-full bg-[var(--purple)]"
+                    className="lp-fill h-full rounded-full bg-[var(--purple)]"
                     style={{
                       width: `${badge.progress}%`,
-                      animationDelay: `${index * 100 + 200}ms`,
+                      animationDelay: `${index * 90 + 200}ms`,
                     }}
                   />
                 </div>

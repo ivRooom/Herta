@@ -1,84 +1,38 @@
 /* ============================================================
  * Herta Studio — 公開トップ
- * 墨色・紫・ライムの3色に絞り、角の立った枠線とモノスペースのラベルで
- * 「かわいさ」より「道具としての頼もしさ」を出す。賑やかさは情報量と
- * スクロール連動の動きで作り、グラデーション・発光・丸い装飾は使わない。
+ * 白と薄いグレーの地に、大きく詰めた見出しと大きな角丸の面。色は紫を少しだけ。
+ * 動きは「出現」「スクロールで濃くなる文字」「ヒーロー画面の拡大」「読み込み表示」など
+ * 意味のあるものに絞る。グラデーション・発光・常時の装飾アニメーションは使わない。
  * OSのダーク設定に左右されないよう、このページは専用配色に固定する。
  * ============================================================ */
 
 .lp-root {
-  --ink: #16141f;
-  --paper: #f4f3ee;
-  --card: #ffffff;
+  --ink: #1d1d1f;
+  --muted: #6e6e73;
+  --faint: #c7c7cc;
+  --bg: #ffffff;
+  --tint: #f5f5f7;
   --purple: #5b3df5;
-  --lime: #d8f35c;
-  --lavender: #e9e5ff;
+  --lavender: #efeaff;
   color-scheme: light;
   color: var(--ink);
-  background-color: var(--paper);
+  background-color: var(--bg);
   font-family:
-    'Zen Kaku Gothic New', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic',
-    'Noto Sans JP', ui-sans-serif, system-ui, sans-serif;
+    -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Hiragino Sans',
+    'Hiragino Kaku Gothic ProN', 'Noto Sans JP', 'Yu Gothic', ui-sans-serif, system-ui, sans-serif;
   font-feature-settings: 'palt';
+  -webkit-font-smoothing: antialiased;
 }
 .lp-mono {
-  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
   font-feature-settings: normal;
-  letter-spacing: 0.04em;
 }
 
-/* ---------- 方眼の背景 (静止) ---------- */
-.lp-grid {
-  background-image:
-    linear-gradient(rgb(22 20 31 / 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(22 20 31 / 0.07) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: linear-gradient(to bottom, black 30%, transparent 95%);
-}
-
-/* ---------- 枠線・影・押し込み ---------- */
-.box {
-  border: 1.5px solid var(--ink);
-}
-.box-sm {
-  border: 1.5px solid var(--ink);
-  box-shadow: 2px 2px 0 var(--ink);
-}
-.box-hover {
-  transition:
-    transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
-    box-shadow 0.18s ease;
-}
-.box-hover:hover,
-.box-hover:focus-visible {
-  transform: translate(-2px, -2px);
-  box-shadow: 4px 4px 0 var(--ink);
-}
-.box-hover:active {
-  transform: translate(1px, 1px);
-  box-shadow: 0 0 0 var(--ink);
-}
-
-/* ---------- マーカー (ハイライト) ---------- */
-.lp-mark {
-  background-image: linear-gradient(var(--lime), var(--lime));
-  background-repeat: no-repeat;
-  background-position: 0 88%;
-  background-size: 0% 42%;
-  animation: lp-mark 0.7s cubic-bezier(0.5, 0, 0.2, 1) 0.8s forwards;
-  padding: 0 0.1em;
-}
-@keyframes lp-mark {
-  to {
-    background-size: 100% 42%;
-  }
-}
-
-/* ---------- 出現 (少し跳ねる) ---------- */
+/* ---------- 出現 ---------- */
 .lp-rise {
   opacity: 0;
-  transform: translateY(16px);
-  animation: lp-rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  transform: translateY(18px);
+  animation: lp-rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   animation-delay: var(--lp-d, 0ms);
 }
 @keyframes lp-rise {
@@ -87,47 +41,58 @@
     transform: none;
   }
 }
+/* 読み込み表示が出ている間は、ヒーローの出現を待たせる */
+.lp-root.lp-loading .lp-rise {
+  animation-play-state: paused;
+}
 
 /* ---------- スクロール出現 (JS実行後に画面外にある要素だけ隠す) ---------- */
 .lp-reveal {
   transition:
-    opacity 0.45s ease,
-    transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
+    opacity 0.8s ease,
+    transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
   transition-delay: var(--lp-delay, 0ms);
 }
 .lp-reveal.lp-armed:not(.lp-in) {
   opacity: 0;
-  transform: translateY(18px);
+  transform: translateY(28px);
 }
 
-/* ---------- キャレット ---------- */
-.lp-caret {
-  display: inline-block;
-  width: 0.5ch;
-  height: 1.1em;
-  margin-left: 1px;
-  vertical-align: -0.15em;
-  background: currentColor;
-  animation: lp-blink 1.1s steps(1) infinite;
-}
-@keyframes lp-blink {
-  50% {
-    opacity: 0;
-  }
+/* ---------- ヒーローの画面: スクロールで少し大きくなる ---------- */
+.lp-scale {
+  transform: scale(var(--s, 1));
+  transform-origin: 50% 0;
+  will-change: transform;
 }
 
-/* ---------- 矢印 ---------- */
+/* ---------- スクロールで濃くなる文字 ---------- */
+.lp-word {
+  transition: color 0.2s linear;
+}
+
+/* ---------- 面 (ベントー) ---------- */
+.lp-tile {
+  transition:
+    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.5s ease;
+}
+.lp-tile:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 24px 48px -24px rgb(0 0 0 / 0.25);
+}
+
+/* ---------- リンク・矢印 ---------- */
 .lp-nudge {
-  transition: transform 0.2s ease;
+  transition: transform 0.25s ease;
 }
 a:hover > .lp-nudge,
 button:hover > .lp-nudge {
-  transform: translateX(4px);
+  transform: translateX(3px);
 }
 
 /* ---------- チャットデモ ---------- */
 .lp-msg {
-  animation: lp-msg-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: lp-msg-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 @keyframes lp-msg-in {
   from {
@@ -153,13 +118,15 @@ button:hover > .lp-nudge {
   60%,
   100% {
     transform: translateY(0);
+    opacity: 0.35;
   }
   30% {
-    transform: translateY(-5px);
+    transform: translateY(-3px);
+    opacity: 1;
   }
 }
 .lp-fill {
-  animation: lp-fill 1s cubic-bezier(0.34, 1.2, 0.64, 1) 0.15s both;
+  animation: lp-fill 1s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
 }
 @keyframes lp-fill {
   from {
@@ -168,7 +135,7 @@ button:hover > .lp-nudge {
 }
 .lp-bar {
   transform-origin: bottom;
-  animation: lp-bar-grow 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: lp-bar-grow 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: var(--lp-delay, 0ms);
 }
 @keyframes lp-bar-grow {
@@ -177,23 +144,90 @@ button:hover > .lp-nudge {
   }
 }
 .lp-switch {
-  transition: background-color 0.25s;
+  transition: background-color 0.3s;
 }
 .lp-switch > span {
-  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ============================================================
+ * 読み込み表示 (0% → 100%)
+ * 初回のみ。ハイドレーションに失敗してもCSSだけで必ず消える。
+ * ============================================================ */
+.lp-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  background: var(--bg);
+  color: var(--ink);
+  transition:
+    transform 0.9s cubic-bezier(0.76, 0, 0.24, 1),
+    opacity 0.4s ease 0.5s;
+  /* JSが動かなかった場合の保険: 一定時間後に自動で消える */
+  animation: lp-loader-failsafe 0.5s ease 7s forwards;
+}
+.lp-loader--out {
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+.lp-loader-number {
+  font-size: clamp(4.5rem, 16vw, 9rem);
+  font-weight: 200;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+.lp-loader-number small {
+  font-size: 0.32em;
+  font-weight: 300;
+  margin-left: 0.1em;
+  color: var(--muted);
+  letter-spacing: 0;
+}
+.lp-loader-track {
+  width: min(18rem, 70vw);
+  height: 2px;
+  background: var(--tint);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+.lp-loader-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--purple);
+  transform-origin: left;
+  transform: scaleX(var(--pct, 0));
+}
+@keyframes lp-loader-failsafe {
+  to {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+/* 2回目以降(同じタブ)は出さない */
+.lp-root.lp-seen .lp-loader {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lp-mark {
-    animation: none;
-    background-size: 100% 42%;
+  .lp-loader {
+    display: none;
+  }
+  .lp-root.lp-loading .lp-rise {
+    animation-play-state: running;
   }
   .lp-rise {
     animation: none;
     opacity: 1;
     transform: none;
   }
-  .lp-caret,
   .lp-dot,
   .lp-fill,
   .lp-bar,
@@ -207,68 +241,21 @@ button:hover > .lp-nudge {
     opacity: 1;
     transform: none;
   }
-  .box-hover,
-  .box-hover:hover,
-  .box-hover:active,
+  .lp-scale {
+    transform: none;
+    will-change: auto;
+  }
+  .lp-word,
+  .lp-tile,
   .lp-nudge,
   .lp-switch,
   .lp-switch > span {
     transition: none;
+  }
+  .lp-tile:hover {
     transform: none;
   }
   .lp-demo-ctl {
     display: none;
-  }
-}
-
-/* ============================================================
- * スクロール連動
- *  --sy: スクロール量(px, 上限1200) / --sp: ページ全体の進捗(0〜1)
- *  どちらも ScrollFx が更新する。動き低減設定では更新されず、全て静止のまま。
- * ============================================================ */
-.lp-progress {
-  position: fixed;
-  inset: 0 0 auto 0;
-  z-index: 60;
-  height: 4px;
-  background: var(--purple);
-  transform-origin: left;
-  transform: scaleX(var(--sp, 0));
-  pointer-events: none;
-}
-.lp-parallax {
-  transform: translate3d(0, calc(var(--sy, 0) * var(--k, 0) * 1px), 0);
-  will-change: transform;
-}
-
-/* ---------- タイムライン (はじめ方) ---------- */
-.lp-line-fill {
-  transform-origin: top;
-  transform: scaleY(var(--p, 0));
-}
-.lp-step-dot {
-  transition:
-    background-color 0.3s ease,
-    transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.lp-step-dot[data-reached='true'] {
-  transform: scale(1.1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .lp-progress {
-    display: none;
-  }
-  .lp-parallax {
-    transform: none;
-    will-change: auto;
-  }
-  .lp-line-fill {
-    transform: scaleY(1);
-  }
-  .lp-step-dot,
-  .lp-step-dot[data-reached='true'] {
-    transition: none;
-    transform: none;
   }
 }

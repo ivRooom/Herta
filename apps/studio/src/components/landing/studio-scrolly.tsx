@@ -70,39 +70,34 @@ export function StudioScrolly({ children }: { children: ReactNode }) {
     <section
       id="studio"
       ref={sectionRef}
-      className={`scroll-mt-4 bg-[var(--ink)] text-white ${enabled ? 'h-[250vh]' : ''}`}
+      className={`scroll-mt-4 bg-black text-white ${enabled ? 'h-[250vh]' : ''}`}
     >
       <div className={enabled ? 'sticky top-0 flex h-screen items-center' : ''}>
         <div
           className={`mx-auto grid w-full max-w-6xl items-center gap-12 px-5 sm:px-6 lg:grid-cols-[0.85fr_1.15fr] lg:gap-16 lg:px-8 ${
-            enabled ? 'py-8' : 'py-20'
+            enabled ? 'py-8' : 'py-24'
           }`}
         >
           <div>
             {children}
-            <ol className="mt-8 space-y-2">
-              {TABS.map((item, index) => {
+            <ol className="mt-10 space-y-1 border-l border-white/15">
+              {TABS.map((item) => {
                 const active = tab === item.id;
                 return (
                   <li
                     key={item.id}
                     aria-current={active ? 'step' : undefined}
-                    className={`flex items-center gap-3 rounded-md border-[1.5px] px-3 py-2 text-sm font-medium transition-colors duration-300 ${
-                      active
-                        ? 'border-[var(--lime)] bg-[var(--lime)] font-bold text-[var(--ink)]'
-                        : 'border-white/25 text-white/80'
+                    className={`-ml-px border-l-2 py-1.5 pl-4 text-base font-medium transition-colors duration-500 ${
+                      active ? 'border-white text-white' : 'border-transparent text-[#6e6e73]'
                     }`}
                   >
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-sm border-[1.5px] border-current text-[11px] font-bold lp-mono">
-                      {index + 1}
-                    </span>
                     {CAPTIONS[item.id]}
                   </li>
                 );
               })}
             </ol>
             {enabled ? (
-              <p className="mt-4 text-xs font-medium text-white/75">
+              <p className="mt-6 text-xs text-[#86868b]">
                 スクロールすると、右の画面が切り替わります。
               </p>
             ) : null}

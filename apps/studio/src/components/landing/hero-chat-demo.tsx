@@ -9,8 +9,8 @@ interface DemoMessage {
 }
 
 const AVATAR_TONES = {
-  guest: 'bg-[var(--lavender)]',
-  guest2: 'bg-[var(--lime)]',
+  guest: 'bg-[#e5e5ea] text-[var(--ink)]',
+  guest2: 'bg-[var(--lavender)] text-[var(--purple)]',
   bot: 'bg-[var(--purple)] text-white',
 } as const;
 
@@ -28,21 +28,21 @@ function Line({
   return (
     <div className="lp-msg flex gap-3">
       <span
-        className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border-[1.5px] border-[var(--ink)] text-xs font-black ${AVATAR_TONES[tone]}`}
+        className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${AVATAR_TONES[tone]}`}
         aria-hidden="true"
       >
         {who.slice(0, 1)}
       </span>
       <div className="min-w-0">
-        <p className="flex items-center gap-1.5 text-[13px] font-bold">
+        <p className="flex items-center gap-1.5 text-[13px] font-semibold">
           {who}
           {bot ? (
-            <span className="lp-mono rounded-sm bg-[var(--ink)] px-1 py-px text-[9px] font-bold leading-none text-white">
+            <span className="rounded bg-[var(--ink)] px-1 py-px text-[9px] font-semibold leading-none text-white">
               BOT
             </span>
           ) : null}
         </p>
-        <div className="mt-0.5 text-sm font-medium leading-6">{children}</div>
+        <div className="mt-0.5 text-[15px] leading-6">{children}</div>
       </div>
     </div>
   );
@@ -61,11 +61,11 @@ const MESSAGES: DemoMessage[] = [
     id: 'm2',
     render: () => (
       <Line who="Herta" tone="bot" bot>
-        <div className="mt-1 w-64 max-w-full rounded-md border-[1.5px] border-[var(--ink)] border-l-[5px] border-l-[var(--purple)] bg-white p-3">
-          <p className="text-[13px] font-bold">VALORANT 募集</p>
-          <p className="lp-mono mt-0.5 text-[11px] opacity-70">今日 20:00〜 / 参加 2 / 5</p>
-          <div className="mt-2 h-2 overflow-hidden rounded-sm border-[1.5px] border-[var(--ink)] bg-white">
-            <div className="lp-fill h-full w-2/5 bg-[var(--purple)]" />
+        <div className="mt-1.5 w-72 max-w-full rounded-2xl bg-[var(--tint)] p-4">
+          <p className="text-sm font-semibold">VALORANT 募集</p>
+          <p className="mt-0.5 text-xs text-[var(--muted)]">今日 20:00〜 ・ 参加 2 / 5</p>
+          <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e5e5ea]">
+            <div className="lp-fill h-full w-2/5 rounded-full bg-[var(--purple)]" />
           </div>
         </div>
       </Line>
@@ -83,18 +83,18 @@ const MESSAGES: DemoMessage[] = [
     id: 'm4',
     render: () => (
       <Line who="Herta" tone="bot" bot>
-        <span className="lp-mono inline-block rounded-sm bg-[var(--lime)] px-2 py-0.5 text-xs font-bold">
-          LEVEL UP / ミオ → Lv.12
+        <span className="inline-block rounded-full bg-[var(--lavender)] px-3 py-1 text-[13px] font-semibold text-[var(--purple)]">
+          ミオが Lv.12 に到達
         </span>
-        <span className="mt-1 block text-xs opacity-70">ロール「常連」を付与しました</span>
+        <span className="mt-1 block text-xs text-[var(--muted)]">ロール「常連」を付与しました</span>
       </Line>
     ),
   },
   {
     id: 'm5',
     render: () => (
-      <p className="lp-msg border-l-[3px] border-emerald-500 bg-emerald-50 py-1.5 pl-3 pr-2 text-xs leading-5">
-        <span className="lp-mono font-bold">MODERATION</span>{' '}
+      <p className="lp-msg rounded-xl bg-[var(--tint)] px-3.5 py-2.5 text-xs leading-5 text-[var(--muted)]">
+        <span className="font-semibold text-[var(--ink)]">Moderation</span>　
         招待リンクのスパムを検知し、メッセージを削除しました
       </p>
     ),
@@ -125,16 +125,23 @@ export function HeroChatDemo() {
   const typing = count > 0 && count < MESSAGES.length;
 
   return (
-    <div className="box overflow-hidden rounded-lg bg-white shadow-[6px_6px_0_var(--ink)]">
-      <div className="flex items-center gap-3 bg-[var(--ink)] px-4 py-2.5 text-white">
-        <span className="lp-mono text-xs font-bold"># general</span>
-        <span className="lp-mono ml-auto text-[10px] opacity-70">DEMO</span>
+    <div className="overflow-hidden rounded-[28px] bg-white shadow-[0_40px_80px_-30px_rgb(0_0_0/0.28),0_0_0_1px_rgb(0_0_0/0.06)]">
+      <div className="flex items-center gap-3 border-b border-black/5 px-5 py-3.5">
+        <span className="flex gap-1.5" aria-hidden="true">
+          <span className="h-3 w-3 rounded-full bg-[#ff5f57]" />
+          <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
+          <span className="h-3 w-3 rounded-full bg-[#28c840]" />
+        </span>
+        <p className="flex-1 text-center text-[13px] font-semibold text-[var(--muted)]">
+          # general
+        </p>
+        <span className="text-[11px] text-[var(--muted)]">デモ</span>
         <button
           type="button"
           onClick={() => setPaused((value) => !value)}
           aria-pressed={paused}
           aria-label={paused ? 'デモの自動再生を再開' : 'デモの自動再生を一時停止'}
-          className="lp-demo-ctl flex h-6 w-6 items-center justify-center rounded-sm border border-white/40 transition hover:bg-white/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+          className="lp-demo-ctl flex h-7 w-7 items-center justify-center rounded-full bg-[var(--tint)] text-[var(--muted)] transition hover:text-[var(--ink)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple)]"
         >
           {paused ? (
             <Play className="h-3 w-3" aria-hidden="true" fill="currentColor" />
@@ -145,7 +152,7 @@ export function HeroChatDemo() {
       </div>
 
       <div
-        className="flex h-[25rem] flex-col justify-end gap-4 overflow-hidden px-4 py-4"
+        className="flex h-[26rem] flex-col justify-end gap-5 overflow-hidden px-5 py-5"
         aria-label="Hertaの動作デモ"
         role="img"
       >
@@ -153,10 +160,10 @@ export function HeroChatDemo() {
           <div key={message.id}>{message.render()}</div>
         ))}
         {typing ? (
-          <div className="flex items-center gap-1.5 pl-11" aria-hidden="true">
-            <span className="lp-dot h-1.5 w-1.5 rounded-sm bg-[var(--ink)]" />
-            <span className="lp-dot h-1.5 w-1.5 rounded-sm bg-[var(--ink)]" />
-            <span className="lp-dot h-1.5 w-1.5 rounded-sm bg-[var(--ink)]" />
+          <div className="flex items-center gap-1.5 pl-12" aria-hidden="true">
+            <span className="lp-dot h-1.5 w-1.5 rounded-full bg-[var(--muted)]" />
+            <span className="lp-dot h-1.5 w-1.5 rounded-full bg-[var(--muted)]" />
+            <span className="lp-dot h-1.5 w-1.5 rounded-full bg-[var(--muted)]" />
           </div>
         ) : null}
       </div>
