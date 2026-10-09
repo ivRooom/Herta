@@ -9,12 +9,12 @@ import { useRef, type ReactNode } from 'react';
 export function TiltCard({
   children,
   className = '',
-  dark = false,
+  bracket,
 }: {
   children: ReactNode;
   className?: string;
-  /** 暗い面の上では、反射を控えめにする */
-  dark?: boolean;
+  /** ホバー時に四隅へ出るカッコの色 (面の色に合わせて、読める色を渡す) */
+  bracket?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -47,7 +47,7 @@ export function TiltCard({
       onPointerMove={onMove}
       onPointerLeave={onLeave}
       className={`lp-tilt ${className}`}
-      data-dark={dark}
+      style={bracket ? ({ '--bracket': bracket } as React.CSSProperties) : undefined}
     >
       {children}
       <span aria-hidden="true" className="lp-sheen" />

@@ -70,7 +70,7 @@ export function StudioScrolly({ children }: { children: ReactNode }) {
     <section
       id="studio"
       ref={sectionRef}
-      className={`scroll-mt-4 bg-black text-white ${enabled ? 'h-[250vh]' : ''}`}
+      className={`scroll-mt-4 border-t border-[var(--line)] bg-[#050507] text-white ${enabled ? 'h-[250vh]' : ''}`}
     >
       <div className={enabled ? 'sticky top-0 flex h-screen items-center' : ''}>
         <div
@@ -88,7 +88,9 @@ export function StudioScrolly({ children }: { children: ReactNode }) {
                     key={item.id}
                     aria-current={active ? 'step' : undefined}
                     className={`-ml-px border-l-2 py-1.5 pl-4 text-base font-medium transition-colors duration-500 ${
-                      active ? 'border-white text-white' : 'border-transparent text-[var(--muted)]'
+                      active
+                        ? 'border-[var(--yellow)] text-white'
+                        : 'border-transparent text-[var(--muted)]'
                     }`}
                   >
                     {CAPTIONS[item.id]}

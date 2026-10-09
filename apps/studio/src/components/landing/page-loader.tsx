@@ -8,6 +8,14 @@ const MIN_MS = 1700;
 /** 読み込みが終わらなくても、これ以上は待たない。 */
 const MAX_MS = 4500;
 
+/** 読み込み中に流れるブートログ風の表示 (見た目の演出)。% に達すると1行ずつ現れ、次の行が出ると OK になる。 */
+const BOOT_LOG = [
+  { at: 0, label: 'MOUNT UI' },
+  { at: 25, label: 'LOAD FONTS' },
+  { at: 55, label: 'LOAD PLUGIN CATALOG' },
+  { at: 85, label: 'BOOT COMMAND PALETTE' },
+] as const;
+
 const STATUS = [
   { upTo: 30, label: 'INITIALIZING' },
   { upTo: 70, label: 'LOADING ASSETS' },
@@ -118,8 +126,8 @@ export function PageLoader() {
         読み込み中
       </span>
       <div aria-hidden="true" className="flex flex-col items-center gap-5">
-        <p className="lp-mono text-[11px] font-medium tracking-[0.3em] text-[var(--muted)]">
-          HERTA STUDIO
+        <p className="lp-loader-title">
+          <span>NOW LOADING</span>
         </p>
         <p className="lp-loader-number">
           {pct}
@@ -128,7 +136,26 @@ export function PageLoader() {
         <div className="lp-loader-track">
           <div className="lp-loader-fill" style={{ ['--pct' as string]: pct / 100 }} />
         </div>
-        <p className="lp-mono text-[11px] tracking-[0.25em] text-[var(--muted)]">{status}</p>
+        <p className="lp-mono text-[11px] font-bold tracking-[0.25em] text-[var(--cyan)]">
+          {status}
+        </p>
+        <ul className="lp-mono mt-1 w-64 space-y-1 text-left text-[11px] text-[var(--muted)]">
+          {BOOT_LOG.map((line, index) => {
+            if (pct < line.at) return null;
+            const next = BOOT_LOG[index + 1];
+            const done = next ? pct >= next.at : pct >= 100;
+            return (
+              <li key={line.label} className="flex items-center justify-between gap-3">
+                <span>
+                  <span className="text-[var(--pink)]">&gt;</span> {line.label}
+                </span>
+                <span className={done ? 'font-bold text-[var(--signal)]' : 'opacity-50'}>
+                  {done ? 'OK' : '...'}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
       </div>
     </div>
   );

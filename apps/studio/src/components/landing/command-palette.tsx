@@ -119,7 +119,7 @@ export function CommandPalette({
       ref={rootRef}
       onPointerDown={stopAutoplay}
       onFocusCapture={stopAutoplay}
-      className="overflow-hidden rounded-[28px] bg-white text-left shadow-[0_40px_80px_-30px_rgb(0_0_0/0.28),0_0_0_1px_rgb(0_0_0/0.06)]"
+      className="lp-scan overflow-hidden rounded-2xl border-[3px] border-white bg-[var(--surface)] text-left shadow-[8px_9px_0_var(--pink)]"
     >
       <div className="flex items-center gap-3 border-b border-[var(--line)] px-5 py-4">
         <Search className="h-5 w-5 shrink-0 text-[var(--muted)]" aria-hidden="true" />
@@ -140,7 +140,7 @@ export function CommandPalette({
           placeholder="コマンドを検索…  例: lfg, giveaway"
           autoComplete="off"
           spellCheck={false}
-          className="lp-mono min-w-0 flex-1 bg-transparent text-base text-[var(--ink)] outline-none placeholder:text-[#a1a1a6]"
+          className="lp-mono min-w-0 flex-1 bg-transparent text-base text-[var(--ink)] outline-none placeholder:text-[#6d6d76]"
         />
         {typing ? <span className="lp-caret" aria-hidden="true" /> : null}
         <span className="lp-mono hidden rounded border border-[var(--line)] px-1.5 py-0.5 text-[10px] text-[var(--muted)] sm:inline">
@@ -170,13 +170,13 @@ export function CommandPalette({
                   aria-selected={selected}
                   onMouseEnter={() => setActive(position)}
                   className={`relative flex cursor-default items-center gap-3 rounded-lg px-3 py-2.5 transition-colors ${
-                    selected ? 'bg-[var(--surface-2)]' : ''
+                    selected ? 'bg-white/[0.07]' : ''
                   }`}
                 >
                   {selected ? (
                     <span
                       aria-hidden="true"
-                      className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-[var(--purple)]"
+                      className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-[var(--yellow)]"
                     />
                   ) : null}
                   <span className="lp-mono shrink-0 text-sm font-medium">/{command.name}</span>
@@ -200,12 +200,12 @@ export function CommandPalette({
             <div key={current.name} className="lp-msg">
               <p className="lp-mono text-xs text-[var(--muted)]">SLASH COMMAND</p>
               <p className="lp-mono mt-2 text-3xl font-medium tracking-tight">/{current.name}</p>
-              <p className="mt-4 text-[15px] leading-7 text-[var(--ink)]">{current.description}</p>
+              <p className="mt-4 text-[15px] leading-7 text-[#e4e4e8]">{current.description}</p>
               <div className="mt-6 flex flex-wrap items-center gap-2 text-xs">
                 <span className="rounded-full border border-[var(--line)] px-3 py-1 text-[var(--muted)]">
                   Plugin
                 </span>
-                <span className="rounded-full bg-[var(--lavender)] px-3 py-1 font-semibold text-[var(--purple)]">
+                <span className="rounded-full bg-[var(--yellow)] px-3 py-1 font-bold text-[var(--pop-ink)]">
                   {current.pluginName}
                 </span>
               </div>
