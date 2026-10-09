@@ -1,0 +1,331 @@
+/* ============================================================
+ * Herta Studio — 公開ランディング用アニメーション
+ * すべて prefers-reduced-motion では停止/即時表示にフォールバックする。
+ * ============================================================ */
+
+@property --lp-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.lp-root {
+  --lp-accent-2: 281 78% 62%;
+  --lp-accent-3: 199 89% 56%;
+}
+
+/* ---------- 背景オーロラ ---------- */
+.lp-aurora {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(80px);
+  opacity: 0.5;
+  will-change: transform;
+  animation: lp-drift 18s ease-in-out infinite alternate;
+}
+.lp-aurora--1 {
+  background: hsl(var(--primary) / 0.55);
+}
+.lp-aurora--2 {
+  background: hsl(var(--lp-accent-2) / 0.4);
+  animation-duration: 24s;
+  animation-delay: -6s;
+}
+.lp-aurora--3 {
+  background: hsl(var(--lp-accent-3) / 0.32);
+  animation-duration: 30s;
+  animation-delay: -12s;
+}
+@keyframes lp-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(60px, 40px, 0) scale(1.15);
+  }
+  100% {
+    transform: translate3d(-40px, 70px, 0) scale(0.95);
+  }
+}
+
+.lp-grid {
+  background-image:
+    linear-gradient(hsl(var(--foreground) / 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--foreground) / 0.07) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse at 50% 20%, black 20%, transparent 70%);
+  animation: lp-grid-pan 40s linear infinite;
+}
+@keyframes lp-grid-pan {
+  to {
+    background-position:
+      56px 56px,
+      56px 56px;
+  }
+}
+
+/* ---------- テキスト ---------- */
+.lp-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    hsl(var(--primary)) 0%,
+    hsl(var(--lp-accent-2)) 35%,
+    hsl(var(--lp-accent-3)) 60%,
+    hsl(var(--primary)) 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: lp-shimmer 6s linear infinite;
+}
+@keyframes lp-shimmer {
+  to {
+    background-position: -250% 0;
+  }
+}
+
+.lp-pop {
+  opacity: 0;
+  transform: translateY(18px) scale(0.98);
+  animation: lp-pop 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+@keyframes lp-pop {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- スクロールで出現 ---------- */
+.lp-reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition:
+    opacity 0.7s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform 0.7s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition-delay: var(--lp-delay, 0ms);
+}
+.lp-reveal.lp-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* ---------- 浮遊 ---------- */
+.lp-float {
+  animation: lp-float 6s ease-in-out infinite;
+  animation-delay: var(--lp-delay, 0ms);
+}
+@keyframes lp-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(var(--lp-rot, 0deg));
+  }
+  50% {
+    transform: translateY(-12px) rotate(var(--lp-rot, 0deg));
+  }
+}
+
+/* ---------- ステータスのパルス ---------- */
+.lp-ping {
+  animation: lp-ping 2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+@keyframes lp-ping {
+  75%,
+  100% {
+    transform: scale(2.4);
+    opacity: 0;
+  }
+}
+
+/* ---------- マーキー ---------- */
+.lp-marquee {
+  mask-image: linear-gradient(90deg, transparent, black 12%, black 88%, transparent);
+}
+.lp-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: lp-marquee 38s linear infinite;
+}
+.lp-marquee:hover .lp-marquee-track {
+  animation-play-state: paused;
+}
+@keyframes lp-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+/* ---------- スポットライトカード ---------- */
+.lp-spot {
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1),
+    border-color 0.35s,
+    box-shadow 0.35s;
+}
+.lp-spot::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    320px circle at var(--mx, 50%) var(--my, 0%),
+    hsl(var(--primary) / 0.22),
+    transparent 60%
+  );
+  opacity: 0;
+  transition: opacity 0.35s;
+  pointer-events: none;
+}
+.lp-spot:hover {
+  transform: translateY(-4px);
+  border-color: hsl(var(--primary) / 0.5);
+  box-shadow: 0 18px 40px -18px hsl(var(--primary) / 0.45);
+}
+.lp-spot:hover::before {
+  opacity: 1;
+}
+.lp-spot > * {
+  position: relative;
+}
+
+/* ---------- 回転するボーダー(CTA) ---------- */
+.lp-glow-border {
+  position: relative;
+  border-radius: 1.75rem;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--lp-angle),
+    hsl(var(--primary)),
+    hsl(var(--lp-accent-2)),
+    hsl(var(--lp-accent-3)),
+    hsl(var(--primary))
+  );
+  animation: lp-spin 6s linear infinite;
+}
+@keyframes lp-spin {
+  to {
+    --lp-angle: 360deg;
+  }
+}
+
+/* ---------- ボタンの光沢 ---------- */
+.lp-btn-shine {
+  position: relative;
+  overflow: hidden;
+}
+.lp-btn-shine::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    110deg,
+    transparent 30%,
+    rgb(255 255 255 / 0.35) 50%,
+    transparent 70%
+  );
+  transform: translateX(-120%);
+  animation: lp-shine 3.6s ease-in-out infinite;
+}
+@keyframes lp-shine {
+  60%,
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+/* ---------- チャットデモ ---------- */
+.lp-msg {
+  animation: lp-msg-in 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes lp-msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.lp-dot {
+  animation: lp-bounce 1.1s ease-in-out infinite;
+}
+.lp-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.lp-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes lp-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+.lp-xp-fill {
+  animation: lp-xp 1.6s cubic-bezier(0.2, 0.8, 0.2, 1) 0.2s both;
+}
+@keyframes lp-xp {
+  from {
+    width: 0;
+  }
+}
+
+/* ---------- ミニ棒グラフ ---------- */
+.lp-bar {
+  transform-origin: bottom;
+  animation: lp-bar-grow 1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: var(--lp-delay, 0ms);
+}
+@keyframes lp-bar-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+/* ---------- スイッチ ---------- */
+.lp-switch {
+  transition: background-color 0.4s;
+}
+.lp-switch > span {
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-aurora,
+  .lp-grid,
+  .lp-shimmer,
+  .lp-float,
+  .lp-ping,
+  .lp-marquee-track,
+  .lp-glow-border,
+  .lp-btn-shine::after,
+  .lp-dot,
+  .lp-xp-fill,
+  .lp-bar,
+  .lp-msg {
+    animation: none !important;
+  }
+  .lp-pop {
+    animation: none !important;
+    opacity: 1;
+    transform: none;
+  }
+  .lp-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .lp-spot,
+  .lp-spot:hover {
+    transform: none;
+  }
+}

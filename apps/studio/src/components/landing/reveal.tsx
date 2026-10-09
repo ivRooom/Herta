@@ -1,0 +1,46 @@
+'use client';
+
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+
+interface RevealProps {
+  children: ReactNode;
+  /** 出現を遅らせるミリ秒 (連続表示のずらし用) */
+  delay?: number;
+  className?: string;
+}
+
+/** ビューポートに入ったらフェード+スライドで表示する。 */
+export function Reveal({ children, delay = 0, className = '' }: RevealProps) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [shown, setShown] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setShown(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setShown(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.15, rootMargin: '0px 0px -8% 0px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={ref}
+      className={`lp-reveal ${shown ? 'lp-in' : ''} ${className}`}
+      style={{ '--lp-delay': `${delay}ms` } as CSSProperties}
+    >
+      {children}
+    </div>
+  );
+}
