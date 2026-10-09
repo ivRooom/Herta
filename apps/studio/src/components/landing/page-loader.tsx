@@ -5,6 +5,8 @@ import { useEffect, useRef, useState } from 'react';
 const SEEN_KEY = 'lp-seen';
 /** 見せる最短時間。これより早く読み込めても、0→100%の流れは見せる。 */
 const MIN_MS = 1700;
+/** 同じタブで2回目以降は短くする (毎回長く待たせない)。 */
+const MIN_MS_REPEAT = 1000;
 /** 読み込みが終わらなくても、これ以上は待たない。 */
 const MAX_MS = 4500;
 
@@ -55,15 +57,7 @@ export function PageLoader() {
     } catch {
       // 読み取れない環境では、初回扱いにする
     }
-    if (
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches ||
-      seen ||
-      root?.classList.contains('lp-seen')
-    ) {
-      finish();
-      setGone(true);
-      return;
-    }
+    const minMs = seen ? MIN_MS_REPEAT : MIN_MS;
 
     let ready = false;
     const markReady = () => {
@@ -87,10 +81,10 @@ export function PageLoader() {
       const elapsed = now - start;
       if (finishAt === 0) {
         // 最短時間をかけて 0 → 90% へ。以降は読み込み完了を待つ
-        const t = Math.min(elapsed / MIN_MS, 1);
+        const t = Math.min(elapsed / minMs, 1);
         const eased = 1 - Math.pow(1 - t, 2.2);
         setPct(Math.floor(eased * 90));
-        if ((ready && elapsed >= MIN_MS) || elapsed >= MAX_MS) finishAt = now;
+        if ((ready && elapsed >= minMs) || elapsed >= MAX_MS) finishAt = now;
       } else {
         const t = Math.min((now - finishAt) / 450, 1);
         setPct(Math.floor(90 + t * 10));
