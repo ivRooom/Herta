@@ -9,9 +9,12 @@ import { useRef, type ReactNode } from 'react';
 export function TiltCard({
   children,
   className = '',
+  dark = false,
 }: {
   children: ReactNode;
   className?: string;
+  /** 暗い面の上では、反射を控えめにする */
+  dark?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
@@ -44,6 +47,7 @@ export function TiltCard({
       onPointerMove={onMove}
       onPointerLeave={onLeave}
       className={`lp-tilt ${className}`}
+      data-dark={dark}
     >
       {children}
       <span aria-hidden="true" className="lp-sheen" />
