@@ -12,6 +12,7 @@ import {
   Trophy,
   Users,
 } from 'lucide-react';
+import { getAllPluginManifests } from '@herta/plugin-catalog';
 import { auth } from '@/auth';
 import { DiscordIcon } from '@/components/discord-icon';
 import { CountUp } from '@/components/landing/count-up';
@@ -108,6 +109,9 @@ const FEATURE_GROUPS = [
     ],
   },
 ] as const;
+
+/** 公式Pluginカタログの件数。手書きの数字だと実態とずれるため、カタログから導く。 */
+const PLUGIN_COUNT = getAllPluginManifests().length;
 
 const FEATURE_COUNT = FEATURE_GROUPS.reduce((total, group) => total + group.items.length, 0);
 
@@ -257,7 +261,7 @@ export default async function HomePage() {
             <div className="rounded-2xl border border-border bg-surface/70 p-3.5 backdrop-blur">
               <dt className="text-[11px] text-muted">公式Plugin</dt>
               <dd className="mt-1 text-2xl font-semibold tracking-tight text-primary">
-                <CountUp to={6} />
+                <CountUp to={PLUGIN_COUNT} />
               </dd>
             </div>
           </dl>
