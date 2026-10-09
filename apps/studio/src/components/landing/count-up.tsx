@@ -11,7 +11,8 @@ interface CountUpProps {
 /** ビューポートに入ったら 0 から目標値までカウントアップする。 */
 export function CountUp({ to, suffix = '', durationMs = 1400 }: CountUpProps) {
   const ref = useRef<HTMLSpanElement>(null);
-  const [value, setValue] = useState(0);
+  // JS無効・ハイドレーション失敗時でも正しい値が読めるよう、初期値は目標値にしておく。
+  const [value, setValue] = useState(to);
 
   useEffect(() => {
     const el = ref.current;
@@ -21,6 +22,8 @@ export function CountUp({ to, suffix = '', durationMs = 1400 }: CountUpProps) {
       setValue(to);
       return;
     }
+    // クライアントで動作が確認できてから、0 からのカウントアップを始める。
+    setValue(0);
 
     let frame = 0;
     const observer = new IntersectionObserver((entries) => {

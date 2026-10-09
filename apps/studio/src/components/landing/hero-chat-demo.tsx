@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
-import { Crown, ShieldCheck, Sparkles, Trophy } from 'lucide-react';
+import { Crown, Pause, Play, ShieldCheck, Sparkles, Trophy } from 'lucide-react';
 
 interface DemoMessage {
   id: string;
@@ -123,18 +123,20 @@ const HOLD_MS = 3800;
 /** Hertaの動作イメージを見せる、ループするチャットのデモ(表示用のダミーデータ)。 */
 export function HeroChatDemo() {
   const [count, setCount] = useState(0);
+  const [paused, setPaused] = useState(false);
 
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       setCount(MESSAGES.length);
       return;
     }
+    if (paused) return;
     const timer = window.setTimeout(
       () => setCount((current) => (current >= MESSAGES.length ? 0 : current + 1)),
       count >= MESSAGES.length ? HOLD_MS : count === 0 ? 700 : STEP_MS,
     );
     return () => window.clearTimeout(timer);
-  }, [count]);
+  }, [count, paused]);
 
   const typing = count > 0 && count < MESSAGES.length;
 
@@ -166,6 +168,19 @@ export function HeroChatDemo() {
           <span className="ml-auto rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">
             デモ表示
           </span>
+          <button
+            type="button"
+            onClick={() => setPaused((value) => !value)}
+            aria-pressed={paused}
+            aria-label={paused ? 'デモの自動再生を再開' : 'デモの自動再生を一時停止'}
+            className="lp-marquee-ctl flex h-6 w-6 items-center justify-center rounded-full border border-border text-muted transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {paused ? (
+              <Play className="h-3 w-3" aria-hidden="true" />
+            ) : (
+              <Pause className="h-3 w-3" aria-hidden="true" />
+            )}
+          </button>
         </div>
 
         <div
