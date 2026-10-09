@@ -338,9 +338,81 @@ button:hover > .lp-nudge {
   position: relative;
 }
 .lp-loader--out {
-  transform: translateY(-100%);
-  opacity: 0;
+  background: transparent;
   pointer-events: none;
+  transition: background 0s linear 0.42s;
+}
+.lp-loader--out::before {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+/* 退場: 中身が少し拡大しながら消え、色の帯が下から上へ走って画面が開く */
+.lp-loader--out .lp-loader-body {
+  opacity: 0;
+  transform: scale(1.12);
+  filter: blur(6px);
+  transition:
+    opacity 0.35s ease,
+    transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+    filter 0.35s ease;
+}
+.lp-loader-edge {
+  position: absolute;
+  inset: 0;
+  transform: translateY(101%);
+  background: linear-gradient(
+    to bottom,
+    var(--pink) 0 86%,
+    var(--yellow) 86% 92%,
+    var(--cyan) 92% 100%
+  );
+}
+.lp-loader--out .lp-loader-edge {
+  animation: lp-edge 0.95s cubic-bezier(0.76, 0, 0.24, 1) both;
+}
+@keyframes lp-edge {
+  0% {
+    transform: translateY(101%);
+  }
+  45% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(-101%);
+  }
+}
+/* 読み込み中: 走査線がゆっくり降りてくる */
+.lp-loader-scan {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 22%;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, rgb(34 211 238 / 0.09), transparent);
+  animation: lp-scan 2.6s linear infinite;
+}
+@keyframes lp-scan {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(520%);
+  }
+}
+.lp-loader-number {
+  animation: lp-num-glitch 3.2s steps(1, end) infinite;
+}
+@keyframes lp-num-glitch {
+  0%,
+  92%,
+  100% {
+    filter: none;
+  }
+  93% {
+    filter: drop-shadow(-5px 0 var(--cyan)) drop-shadow(5px 0 var(--pink));
+  }
+  96% {
+    filter: drop-shadow(4px 0 var(--cyan)) drop-shadow(-4px 0 var(--pink));
+  }
 }
 .lp-loader-title {
   transform: skewX(-10deg);
@@ -792,5 +864,116 @@ button:hover > .lp-nudge {
 @media (prefers-reduced-motion: reduce) {
   .lp-in .lp-sweep::before {
     animation: none;
+  }
+}
+
+/* ============================================================
+ * スクロール演出 (邪魔にならない範囲で少し派手に)
+ * ============================================================ */
+
+/* 上部の進捗バー */
+.lp-progress {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 60;
+  height: 3px;
+  pointer-events: none;
+  transform-origin: left;
+  transform: scaleX(var(--sp, 0));
+  background: linear-gradient(90deg, var(--pink), var(--yellow), var(--cyan));
+}
+
+/* 視差: 装飾だけがスクロールに少し遅れて/逆らって動く。translate は他のtransformと干渉しない */
+.lp-fx .lp-par {
+  translate: 0 calc(var(--sy, 0) * var(--ps, 0) * 1px);
+}
+
+/* 流れる帯 */
+.lp-band {
+  overflow: hidden;
+  padding: 1.6rem 0;
+  border-block: 1px solid var(--line);
+  background: rgb(255 255 255 / 0.015);
+}
+.lp-band-row {
+  margin: 0;
+  width: max-content;
+  white-space: pre;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: clamp(2.2rem, 7vw, 5rem);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: transparent;
+  -webkit-text-stroke: 1.5px rgb(255 255 255 / 0.28);
+  translate: -12% 0;
+}
+.lp-band-row--fill {
+  color: rgb(255 255 255 / 0.9);
+  -webkit-text-stroke: 0;
+  background: linear-gradient(90deg, var(--pink), var(--cyan));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  translate: -45% 0;
+}
+.lp-fx .lp-band-row {
+  translate: calc(-12% + var(--sy, 0) * var(--dir, 1) * 0.35px) 0;
+}
+.lp-fx .lp-band-row--fill {
+  translate: calc(-45% + var(--sy, 0) * var(--dir, 1) * 0.35px) 0;
+}
+
+/* 見出しブロック: 左からワイプしながら現れる */
+.lp-reveal.lp-wipe {
+  transition:
+    opacity 0.6s ease,
+    transform 0.9s cubic-bezier(0.16, 1, 0.3, 1),
+    clip-path 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: var(--lp-delay, 0ms);
+}
+.lp-reveal.lp-wipe.lp-armed:not(.lp-in) {
+  opacity: 0;
+  transform: translateX(-28px);
+  clip-path: inset(-12px 100% -12px -24px);
+}
+.lp-reveal.lp-wipe.lp-in {
+  clip-path: inset(-24px -48px -24px -48px);
+}
+
+/* 機能カード: 少し傾いて弾みながら立ち上がる */
+.lp-reveal.lp-pop {
+  transition:
+    opacity 0.6s ease,
+    transform 0.85s cubic-bezier(0.34, 1.45, 0.5, 1);
+  transition-delay: var(--lp-delay, 0ms);
+}
+.lp-reveal.lp-pop.lp-armed:not(.lp-in) {
+  opacity: 0;
+  transform: translateY(46px) scale(0.93) rotate(-1.4deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-progress {
+    display: none;
+  }
+  .lp-loader-scan,
+  .lp-loader-number {
+    animation: none;
+  }
+  .lp-band-row,
+  .lp-band-row--fill {
+    translate: none;
+  }
+  .lp-reveal.lp-wipe,
+  .lp-reveal.lp-pop {
+    transition: none;
+  }
+  .lp-reveal.lp-wipe.lp-armed:not(.lp-in),
+  .lp-reveal.lp-pop.lp-armed:not(.lp-in) {
+    opacity: 1;
+    transform: none;
+    clip-path: none;
   }
 }
