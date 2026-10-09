@@ -169,6 +169,7 @@ export function CommandPalette({
                   role="option"
                   aria-selected={selected}
                   onMouseEnter={() => setActive(position)}
+                  onClick={() => setActive(position)}
                   className={`relative flex cursor-default items-center gap-3 rounded-lg px-3 py-2.5 transition-colors ${
                     selected ? 'bg-white/[0.07]' : ''
                   }`}
