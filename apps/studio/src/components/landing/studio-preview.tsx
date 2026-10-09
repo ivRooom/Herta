@@ -3,13 +3,13 @@
 import { useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { BarChart3, Medal, Puzzle } from 'lucide-react';
 
-const TABS = [
+export const TABS = [
   { id: 'plugins', label: 'Plugin', icon: Puzzle },
   { id: 'analytics', label: '分析', icon: BarChart3 },
   { id: 'achievements', label: 'Achievements', icon: Medal },
 ] as const;
 
-type TabId = (typeof TABS)[number]['id'];
+export type TabId = (typeof TABS)[number]['id'];
 
 const PLUGINS = [
   { name: 'Moderation', desc: 'NGワード・スパム検知', on: true },
@@ -29,12 +29,27 @@ const BADGES = [
 ];
 
 /** Studio画面のイメージをタブで切り替えて見せる(表示用のダミーデータ)。 */
-export function StudioPreview() {
-  const [tab, setTab] = useState<TabId>('plugins');
+export function StudioPreview({
+  tab: controlledTab,
+  onTabChange,
+}: {
+  /** 親から表示中のタブを指定する場合に渡す (スクロール連動用) */
+  tab?: TabId;
+  onTabChange?: (tab: TabId) => void;
+} = {}) {
+  const [innerTab, setInnerTab] = useState<TabId>('plugins');
+  const tab = controlledTab ?? innerTab;
+  const setTab = (next: TabId) => {
+    setInnerTab(next);
+    onTabChange?.(next);
+  };
 
   /** ARIA tabsパターンに沿った左右キー・Home/Endでのタブ移動 */
   const onTabKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const index = TABS.findIndex((item) => item.id === tab);
+    // 基準はフォーカス中のタブ (なければ選択中のタブ)
+    const focusedId = (document.activeElement as HTMLElement | null)?.id;
+    const focusedIndex = TABS.findIndex((item) => `studio-tab-${item.id}` === focusedId);
+    const index = focusedIndex >= 0 ? focusedIndex : TABS.findIndex((item) => item.id === tab);
     let next = index;
     if (event.key === 'ArrowRight') next = (index + 1) % TABS.length;
     else if (event.key === 'ArrowLeft') next = (index - 1 + TABS.length) % TABS.length;
@@ -48,66 +63,70 @@ export function StudioPreview() {
   };
 
   return (
-    <div className="overflow-hidden rounded-lg border border-border bg-surface">
-      <div
-        className="flex flex-wrap items-center gap-1 border-b border-border p-2"
-        role="tablist"
-        aria-label="Studioの画面イメージ"
-        onKeyDown={onTabKeyDown}
-      >
-        {TABS.map((item) => {
-          const Icon = item.icon;
-          const active = tab === item.id;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              id={`studio-tab-${item.id}`}
-              aria-controls="studio-tabpanel"
-              aria-selected={active}
-              tabIndex={active ? 0 : -1}
-              onClick={() => setTab(item.id)}
-              className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                active ? 'bg-foreground text-background' : 'text-muted hover:text-foreground'
-              }`}
-            >
-              <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-              {item.label}
-            </button>
-          );
-        })}
-        <span className="ml-auto mr-2 text-[11px] text-muted">デモ表示</span>
+    <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)] text-[var(--ink)] shadow-[0_50px_100px_-40px_rgb(0_0_0/0.9)]">
+      <div className="flex flex-wrap items-center gap-3 border-b border-[var(--line)] px-4 py-3">
+        <div
+          className="flex gap-1 rounded-full bg-white/[0.06] p-1"
+          role="tablist"
+          aria-label="Studioの画面イメージ"
+          onKeyDown={onTabKeyDown}
+        >
+          {TABS.map((item) => {
+            const Icon = item.icon;
+            const active = tab === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                id={`studio-tab-${item.id}`}
+                aria-controls="studio-tabpanel"
+                aria-selected={active}
+                tabIndex={active ? 0 : -1}
+                onClick={() => setTab(item.id)}
+                className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--purple)] ${
+                  active
+                    ? 'bg-[var(--yellow)] font-bold text-[var(--pop-ink)]'
+                    : 'text-[var(--muted)] hover:text-[var(--ink)]'
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+        <span className="ml-auto text-[11px] text-[var(--muted)]">デモ表示</span>
       </div>
 
       {/* key でタブ切替のたびにアニメーションを再生する */}
       <div
         key={tab}
         id="studio-tabpanel"
-        className="min-h-[18rem] p-5"
+        className="min-h-[19rem] p-5"
         role="tabpanel"
         aria-labelledby={`studio-tab-${tab}`}
       >
         {tab === 'plugins' ? (
-          <ul className="space-y-2.5">
+          <ul className="divide-y divide-white/[0.07]">
             {PLUGINS.map((plugin, index) => (
               <li
                 key={plugin.name}
-                className="lp-msg flex items-center gap-3 rounded-md border border-border bg-background px-4 py-3"
-                style={{ animationDelay: `${index * 90}ms` }}
+                className="lp-msg flex items-center gap-3 py-3"
+                style={{ animationDelay: `${index * 80}ms` }}
               >
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold">{plugin.name}</p>
-                  <p className="text-xs text-muted">{plugin.desc}</p>
+                  <p className="text-xs text-[var(--muted)]">{plugin.desc}</p>
                 </div>
                 <span
-                  className={`lp-switch relative h-6 w-11 shrink-0 rounded-full ${
-                    plugin.on ? 'bg-primary' : 'bg-border'
+                  className={`lp-switch relative h-7 w-12 shrink-0 rounded-full ${
+                    plugin.on ? 'bg-[var(--purple)]' : 'bg-white/15'
                   }`}
                   aria-hidden="true"
                 >
                   <span
-                    className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow ${
+                    className={`absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/0.4)] ${
                       plugin.on ? 'translate-x-5' : ''
                     }`}
                   />
@@ -121,23 +140,29 @@ export function StudioPreview() {
           <div>
             <div className="flex items-end justify-between">
               <div>
-                <p className="text-xs text-muted">アクティブユーザー(イメージ)</p>
+                <p className="text-xs text-[var(--muted)]">アクティブユーザー(イメージ)</p>
                 <p className="mt-1 text-2xl font-semibold tracking-tight">DAU / WAU / MAU</p>
               </div>
-              <span className="rounded-full px-0 py-1 text-xs font-semibold text-emerald-600">
-                サンプル表示
+              <span className="rounded-full bg-[var(--cyan)] px-2.5 py-1 text-[11px] font-bold text-[var(--pop-ink)]">
+                サンプル
               </span>
             </div>
             <div className="mt-6 flex h-44 items-end gap-2" aria-hidden="true">
               {BARS.map((height, index) => (
                 <div
                   key={index}
-                  className="lp-bar flex-1 rounded-t-sm bg-primary/80"
-                  style={{ height: `${height}%`, '--lp-delay': `${index * 70}ms` } as CSSProperties}
+                  className="lp-bar flex-1 rounded-t-md"
+                  style={
+                    {
+                      height: `${height}%`,
+                      '--lp-delay': `${index * 60}ms`,
+                      backgroundColor: ['var(--purple)', 'var(--pink)', 'var(--cyan)'][index % 3],
+                    } as CSSProperties
+                  }
                 />
               ))}
             </div>
-            <p className="mt-3 text-xs text-muted">
+            <p className="mt-3 text-xs text-[var(--muted)]">
               発言・リアクション・VC・オンライン時間を期間指定で集計
             </p>
           </div>
@@ -148,23 +173,23 @@ export function StudioPreview() {
             {BADGES.map((badge, index) => (
               <li
                 key={badge.name}
-                className="lp-msg rounded-md border border-border bg-background p-4"
-                style={{ animationDelay: `${index * 100}ms` }}
+                className="lp-msg rounded-xl border border-[var(--line)] bg-white/[0.04] p-4"
+                style={{ animationDelay: `${index * 90}ms` }}
               >
                 <div className="flex items-center gap-2">
                   <Medal
-                    className={`h-4 w-4 ${badge.progress === 100 ? 'text-amber-500' : 'text-muted'}`}
+                    className={`h-4 w-4 ${badge.progress === 100 ? 'text-[var(--purple)]' : 'text-white/25'}`}
                     aria-hidden="true"
                   />
                   <p className="text-sm font-semibold">{badge.name}</p>
-                  <span className="ml-auto text-xs text-muted">{badge.progress}%</span>
+                  <span className="ml-auto text-xs text-[var(--muted)]">{badge.progress}%</span>
                 </div>
-                <div className="mt-3 h-2 overflow-hidden rounded-full bg-border">
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
                   <div
-                    className="lp-xp-fill h-full rounded-full bg-primary"
+                    className="lp-fill h-full rounded-full bg-[var(--pink)]"
                     style={{
                       width: `${badge.progress}%`,
-                      animationDelay: `${index * 100 + 200}ms`,
+                      animationDelay: `${index * 90 + 200}ms`,
                     }}
                   />
                 </div>

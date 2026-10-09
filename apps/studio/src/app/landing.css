@@ -1,18 +1,97 @@
 /* ============================================================
  * Herta Studio — 公開トップ
- * 装飾的なアニメーションは使わず、「出現」「線を描く」「タイピング」など
- * 意味のある動きだけに絞る。prefers-reduced-motion では全て停止する。
+ * 暗い地に、細い罫線・粒状感・方眼。装飾ではなく「触れる」「動く」「本物のデータで見せる」で
+ * 先進性を出す。グラデーションの発光・オーロラは使わない。
+ * OSの設定に左右されないよう、このページは専用配色に固定する。
  * ============================================================ */
 
 .lp-root {
+  --bg: #08080a;
+  --surface: #111114;
+  --surface-2: #17171c;
+  --line: rgb(255 255 255 / 0.09);
+  --ink: #f4f4f6;
+  --muted: #9a9aa4;
+  --faint: #3a3a42;
+  --purple: #8b6cff;
+  --purple-deep: #5b3df5;
+  --signal: #3ddc97;
+  --pink: #ff4fa3;
+  --cyan: #36e2ff;
+  --yellow: #ffe14a;
+  --pop-ink: #14091f;
+  --tint: #17171c;
+  --lavender: rgb(139 108 255 / 0.16);
+  color-scheme: dark;
+  color: var(--ink);
+  background-color: var(--bg);
+  position: relative;
+  font-family:
+    var(--font-geist),
+    -apple-system,
+    BlinkMacSystemFont,
+    'Hiragino Sans',
+    'Hiragino Kaku Gothic ProN',
+    'Noto Sans JP',
+    'Yu Gothic',
+    ui-sans-serif,
+    system-ui,
+    sans-serif;
   font-feature-settings: 'palt';
+  -webkit-font-smoothing: antialiased;
+}
+.lp-mono {
+  font-family:
+    var(--font-geist-mono), ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+  font-feature-settings: normal;
 }
 
-/* ---------- 初回表示のふわっとした出現 ---------- */
+/* ---------- 粒状感 (静止) ---------- */
+.lp-grain::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.07;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ---------- 方眼 + カーソルを照らす懐中電灯 ---------- */
+.lp-grid,
+.lp-grid-lit {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-size: 56px 56px;
+}
+.lp-grid {
+  background-image:
+    linear-gradient(rgb(255 255 255 / 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.045) 1px, transparent 1px);
+  mask-image: linear-gradient(to bottom, black 35%, transparent 95%);
+}
+.lp-grid-lit {
+  background-image:
+    linear-gradient(rgb(139 108 255 / 0.55) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(139 108 255 / 0.55) 1px, transparent 1px);
+  mask-image: radial-gradient(
+    260px circle at var(--mx, -999px) var(--my, -999px),
+    black,
+    transparent 70%
+  );
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.lp-hero:hover .lp-grid-lit {
+  opacity: 1;
+}
+
+/* ---------- 出現 ---------- */
 .lp-rise {
   opacity: 0;
-  transform: translateY(14px);
-  animation: lp-rise 0.7s cubic-bezier(0.22, 0.8, 0.3, 1) forwards;
+  transform: translateY(18px);
+  animation: lp-rise 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   animation-delay: var(--lp-d, 0ms);
 }
 @keyframes lp-rise {
@@ -21,95 +100,145 @@
     transform: none;
   }
 }
+.lp-root.lp-loading .lp-rise,
+.lp-root.lp-loading .lp-char {
+  animation-play-state: paused;
+}
+
+/* ---------- 見出し: 1文字ずつ、ぼかしから現れる ---------- */
+.lp-char {
+  display: inline-block;
+  opacity: 0;
+  transform: translateY(0.45em);
+  filter: blur(10px);
+  animation: lp-char 0.9s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: calc(var(--lp-base, 0ms) + var(--i) * 32ms);
+}
+@keyframes lp-char {
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
 
 /* ---------- スクロール出現 (JS実行後に画面外にある要素だけ隠す) ---------- */
 .lp-reveal {
   transition:
-    opacity 0.6s ease,
-    transform 0.6s cubic-bezier(0.22, 0.8, 0.3, 1);
+    opacity 0.8s ease,
+    transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
   transition-delay: var(--lp-delay, 0ms);
 }
 .lp-reveal.lp-armed:not(.lp-in) {
   opacity: 0;
-  transform: translateY(12px);
+  transform: translateY(28px);
 }
 
-/* ---------- 手書き風の下線 ---------- */
-.lp-underline path {
-  stroke-dasharray: 1;
-  stroke-dashoffset: 1;
-  animation: lp-draw 0.9s cubic-bezier(0.5, 0, 0.2, 1) 0.9s forwards;
+.lp-scale {
+  transform: scale(var(--s, 1));
+  transform-origin: 50% 0;
+  will-change: transform;
 }
-@keyframes lp-draw {
-  to {
-    stroke-dashoffset: 0;
-  }
+.lp-word {
+  transition: color 0.2s linear;
 }
 
-/* ---------- キャレット ---------- */
-.lp-caret {
-  display: inline-block;
-  width: 0.5ch;
-  height: 1.1em;
-  margin-left: 1px;
-  vertical-align: -0.15em;
-  background: currentColor;
-  animation: lp-blink 1.1s steps(1) infinite;
-}
-@keyframes lp-blink {
-  50% {
-    opacity: 0;
-  }
-}
-
-/* ---------- 機能一覧の行 ---------- */
-.lp-row {
+/* ---------- 面 (ポインタ追従の傾き + 反射) ---------- */
+.lp-tilt {
   position: relative;
-  transition: background-color 0.25s;
+  transform: perspective(1000px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-style: preserve-3d;
 }
-.lp-row::before {
-  content: '';
+.lp-tilt.lp-tilting {
+  transition: transform 0.08s linear;
+}
+.lp-sheen {
+  transform: translateZ(1px);
   position: absolute;
-  left: 0;
-  top: -1px;
-  height: 1px;
-  width: 100%;
-  background: hsl(var(--primary));
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform 0.45s cubic-bezier(0.22, 0.8, 0.3, 1);
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  background: radial-gradient(
+    360px circle at var(--mx, 50%) var(--my, 0%),
+    rgb(255 255 255 / 0.07),
+    transparent 60%
+  );
 }
-.lp-row:hover {
-  background-color: hsl(var(--surface) / 0.7);
-}
-.lp-row:hover::before {
-  transform: scaleX(1);
+.lp-tilt:hover .lp-sheen {
+  opacity: 1;
 }
 
-/* ---------- リンクの下線・矢印 ---------- */
-.lp-link {
-  background-image: linear-gradient(currentColor, currentColor);
-  background-size: 0% 1px;
-  background-position: 0 100%;
+/* ---------- 面の中の小さな図 (表示されたときに1回だけ動く) ---------- */
+.lp-in .viz-strike {
+  animation: viz-strike 0.6s ease 1.1s both;
+}
+.lp-in .viz-badge {
+  animation: viz-badge 0.4s cubic-bezier(0.16, 1, 0.3, 1) 1.5s both;
+}
+.lp-in .viz-fill {
+  animation: viz-fill 1.4s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
+}
+.lp-in .viz-bar {
+  transform-origin: bottom;
+  animation: viz-bar 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(0.2s + var(--i) * 70ms);
+}
+.lp-in .viz-knob {
+  animation: viz-knob 0.5s cubic-bezier(0.16, 1, 0.3, 1) calc(0.5s + var(--i) * 180ms) both;
+}
+@keyframes viz-strike {
+  from {
+    background-size: 0% 1.5px;
+    opacity: 1;
+  }
+  to {
+    background-size: 100% 1.5px;
+    opacity: 0.45;
+  }
+}
+@keyframes viz-badge {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+}
+@keyframes viz-fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes viz-bar {
+  from {
+    transform: scaleY(0);
+  }
+}
+@keyframes viz-knob {
+  from {
+    transform: translateX(-100%);
+  }
+}
+.viz-strike {
+  background-image: linear-gradient(#ff6b6b, #ff6b6b);
   background-repeat: no-repeat;
-  transition: background-size 0.3s ease;
+  background-position: 0 55%;
+  background-size: 100% 1.5px;
 }
-.lp-link:hover,
-.lp-link:focus-visible {
-  background-size: 100% 1px;
-}
+
+/* ---------- リンク・矢印 ---------- */
 .lp-nudge {
   transition: transform 0.25s ease;
 }
 a:hover > .lp-nudge,
-button:hover > .lp-nudge,
-a:focus-visible > .lp-nudge {
+button:hover > .lp-nudge {
   transform: translateX(3px);
 }
 
-/* ---------- チャットデモ ---------- */
+/* ---------- Studio のプレビュー ---------- */
 .lp-msg {
-  animation: lp-msg-in 0.4s cubic-bezier(0.22, 0.8, 0.3, 1) both;
+  animation: lp-msg-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 @keyframes lp-msg-in {
   from {
@@ -121,29 +250,8 @@ a:focus-visible > .lp-nudge {
     transform: none;
   }
 }
-.lp-dot {
-  animation: lp-bounce 1.1s ease-in-out infinite;
-}
-.lp-dot:nth-child(2) {
-  animation-delay: 0.15s;
-}
-.lp-dot:nth-child(3) {
-  animation-delay: 0.3s;
-}
-@keyframes lp-bounce {
-  0%,
-  60%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.4;
-  }
-  30% {
-    transform: translateY(-3px);
-    opacity: 1;
-  }
-}
 .lp-fill {
-  animation: lp-fill 1.1s cubic-bezier(0.22, 0.8, 0.3, 1) 0.15s both;
+  animation: lp-fill 1s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
 }
 @keyframes lp-fill {
   from {
@@ -152,7 +260,7 @@ a:focus-visible > .lp-nudge {
 }
 .lp-bar {
   transform-origin: bottom;
-  animation: lp-bar-grow 0.8s cubic-bezier(0.22, 0.8, 0.3, 1) both;
+  animation: lp-bar-grow 0.9s cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: var(--lp-delay, 0ms);
 }
 @keyframes lp-bar-grow {
@@ -164,24 +272,276 @@ a:focus-visible > .lp-nudge {
   transition: background-color 0.3s;
 }
 .lp-switch > span {
-  transition: transform 0.3s cubic-bezier(0.22, 0.8, 0.3, 1);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ---------- コマンドパレット ---------- */
+.lp-caret {
+  display: inline-block;
+  width: 1px;
+  height: 1.1em;
+  margin-left: 1px;
+  vertical-align: -0.15em;
+  background: var(--purple);
+  animation: lp-blink 1.1s steps(1) infinite;
+}
+@keyframes lp-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* ---------- Plugin 一覧: 絞り込み時にふわっと入れ替わる ---------- */
+.lp-card-in {
+  animation: lp-card-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes lp-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* ============================================================
+ * 読み込み表示 (NOW LOADING  0% → 100%)
+ * 初回のみ。ハイドレーションに失敗してもCSSだけで必ず消える。
+ * ============================================================ */
+.lp-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.4rem;
+  background: var(--bg);
+  color: var(--ink);
+  overflow: hidden;
+  transition:
+    transform 0.9s cubic-bezier(0.76, 0, 0.24, 1),
+    opacity 0.4s ease 0.5s;
+  animation: lp-loader-failsafe 0.5s ease 7s forwards;
+}
+.lp-loader::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-conic-gradient(
+    from 0deg at 50% 50%,
+    rgb(255 255 255 / 0.05) 0 1.5deg,
+    transparent 1.5deg 7deg
+  );
+  mask-image: radial-gradient(circle at 50% 50%, transparent 14%, black 55%, transparent 88%);
+}
+.lp-loader > * {
+  position: relative;
+}
+.lp-loader--out {
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+.lp-loader-title {
+  transform: skewX(-10deg);
+  font-size: 0.95rem;
+  font-weight: 900;
+  letter-spacing: 0.32em;
+  padding: 0.25rem 0.9rem;
+  color: var(--pop-ink);
+  background: var(--yellow);
+  box-shadow: 4px 4px 0 var(--pink);
+}
+.lp-loader-title > span {
+  display: inline-block;
+  transform: skewX(10deg);
+}
+.lp-loader-number {
+  font-size: clamp(5rem, 18vw, 10rem);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  font-variant-numeric: tabular-nums;
+  transform: skewX(-8deg);
+  color: var(--ink);
+  text-shadow: 0.04em 0.05em 0 var(--pink);
+}
+.lp-loader-number small {
+  font-size: 0.34em;
+  font-weight: 900;
+  margin-left: 0.06em;
+  color: var(--cyan);
+  text-shadow: none;
+  letter-spacing: 0;
+}
+.lp-loader-track {
+  width: min(20rem, 72vw);
+  height: 12px;
+  background: var(--surface-2);
+  border: 2px solid var(--ink);
+  border-radius: 9999px;
+  overflow: hidden;
+  transform: skewX(-10deg);
+}
+.lp-loader-fill {
+  height: 100%;
+  width: 100%;
+  background: repeating-linear-gradient(-45deg, var(--pink) 0 8px, #ff7fbd 8px 16px);
+  background-size: 22px 22px;
+  transform-origin: left;
+  transform: scaleX(var(--pct, 0));
+  animation: lp-stripes 0.6s linear infinite;
+}
+@keyframes lp-stripes {
+  to {
+    background-position: 22px 0;
+  }
+}
+@keyframes lp-loader-failsafe {
+  to {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+.lp-root.lp-seen .lp-loader {
+  display: none;
+}
+
+/* ============================================================
+ * アニメ・マンガ風の部品 (すべて静止の装飾。動くのは1回の出現だけ)
+ * ============================================================ */
+
+/* ハーフトーン (網点) */
+.lp-halftone {
+  background-image: radial-gradient(currentColor 1.6px, transparent 2px);
+  background-size: 12px 12px;
+  mask-image: radial-gradient(circle at 50% 50%, black 0%, transparent 68%);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+/* 集中線 */
+.lp-burst {
+  background: repeating-conic-gradient(
+    from 0deg at 50% 38%,
+    rgb(255 255 255 / 0.06) 0 1.4deg,
+    transparent 1.4deg 6.5deg
+  );
+  mask-image: radial-gradient(
+    ellipse 70% 62% at 50% 38%,
+    transparent 16%,
+    black 52%,
+    transparent 92%
+  );
+  pointer-events: none;
+}
+
+/* 見出しの強調語: 太い縁取りの影つき */
+.lp-pop-name {
+  color: var(--pink);
+  text-shadow: 0.045em 0.055em 0 var(--purple-deep);
+}
+
+/* ステッカー (白い縁 + ずらした影)。出現時に1回だけ弾む */
+.lp-sticker {
+  display: inline-block;
+  padding: 0.35rem 0.9rem;
+  border: 3px solid #fff;
+  border-radius: 0.75rem;
+  font-weight: 900;
+  line-height: 1.2;
+  color: var(--pop-ink);
+  box-shadow: 3px 4px 0 rgb(0 0 0 / 0.55);
+  transform: rotate(var(--rot, -4deg));
+  animation: lp-stick 0.7s cubic-bezier(0.34, 1.7, 0.5, 1) both;
+  animation-delay: var(--lp-d, 0ms);
+}
+.lp-root.lp-loading .lp-sticker,
+.lp-root.lp-loading .lp-star {
+  animation-play-state: paused;
+}
+@keyframes lp-stick {
+  from {
+    opacity: 0;
+    transform: rotate(calc(var(--rot, -4deg) - 14deg)) scale(0.4);
+  }
+}
+
+/* リボン (斜めのラベル) */
+.lp-ribbon {
+  display: inline-block;
+  transform: skewX(-12deg);
+  padding: 0.3rem 1rem;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  font-size: 0.72rem;
+  color: var(--pop-ink);
+  box-shadow: 3px 3px 0 rgb(255 255 255 / 0.9);
+}
+.lp-ribbon > span {
+  display: inline-block;
+  transform: skewX(12deg);
+}
+
+/* きらめく星 (出現時に1回だけ回りながら現れる) */
+.lp-star {
+  animation: lp-star 0.9s cubic-bezier(0.34, 1.6, 0.5, 1) both;
+  animation-delay: var(--lp-d, 0ms);
+}
+@keyframes lp-star {
+  from {
+    opacity: 0;
+    transform: scale(0) rotate(-120deg);
+  }
+}
+
+/* ボタン・面のずらし影 */
+.lp-hard {
+  box-shadow: 4px 4px 0 var(--pink);
+  transition:
+    transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.16s ease;
+}
+.lp-hard:hover,
+.lp-hard:focus-visible {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--pink);
+}
+.lp-hard:active {
+  transform: translate(3px, 3px);
+  box-shadow: 1px 1px 0 var(--pink);
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .lp-loader {
+    display: none;
+  }
+  .lp-root.lp-loading .lp-rise,
+  .lp-root.lp-loading .lp-char {
+    animation-play-state: running;
+  }
   .lp-rise {
     animation: none;
     opacity: 1;
     transform: none;
   }
-  .lp-underline path {
+  .lp-char {
     animation: none;
-    stroke-dashoffset: 0;
+    opacity: 1;
+    transform: none;
+    filter: none;
   }
-  .lp-caret,
-  .lp-dot,
+  .lp-msg,
   .lp-fill,
   .lp-bar,
-  .lp-msg {
+  .lp-caret,
+  .lp-card-in,
+  .lp-in .viz-strike,
+  .lp-in .viz-badge,
+  .lp-in .viz-fill,
+  .lp-in .viz-bar,
+  .lp-in .viz-knob {
     animation: none;
   }
   .lp-reveal {
@@ -191,14 +551,246 @@ a:focus-visible > .lp-nudge {
     opacity: 1;
     transform: none;
   }
-  .lp-row::before,
-  .lp-link,
+  .lp-scale,
+  .lp-tilt,
+  .lp-tilt.lp-tilting {
+    transform: none;
+    transition: none;
+    will-change: auto;
+  }
+  .lp-grid-lit,
+  .lp-sheen {
+    display: none;
+  }
+  .lp-sticker,
+  .lp-star {
+    animation: none;
+  }
+  .lp-loader-fill {
+    animation: none;
+  }
+  .lp-hard,
+  .lp-hard:hover,
+  .lp-hard:active {
+    transition: none;
+    transform: none;
+  }
+  .lp-word,
   .lp-nudge,
   .lp-switch,
   .lp-switch > span {
     transition: none;
   }
-  .lp-demo-ctl {
-    display: none;
+}
+
+/* ============================================================
+ * デジタル / HUD 風の部品 (すべて静止の装飾。動くのは出現時の1回だけ)
+ * ============================================================ */
+
+/* 四隅のカッコ (ターゲットを捉えるレティクル) */
+.lp-reticle,
+.lp-tilt::after {
+  --c: var(--cyan);
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c)),
+    linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c)),
+    linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c)),
+    linear-gradient(var(--c), var(--c)), linear-gradient(var(--c), var(--c));
+  background-position:
+    0 0,
+    0 0,
+    100% 0,
+    100% 0,
+    0 100%,
+    0 100%,
+    100% 100%,
+    100% 100%;
+  background-size:
+    var(--arm, 22px) 2px,
+    2px var(--arm, 22px),
+    var(--arm, 22px) 2px,
+    2px var(--arm, 22px),
+    var(--arm, 22px) 2px,
+    2px var(--arm, 22px),
+    var(--arm, 22px) 2px,
+    2px var(--arm, 22px);
+  background-repeat: no-repeat;
+}
+.lp-reticle {
+  position: absolute;
+  inset: -16px;
+  animation: lp-lock 0.9s cubic-bezier(0.16, 1, 0.3, 1) 1.5s both;
+}
+.lp-root.lp-loading .lp-reticle {
+  animation-play-state: paused;
+}
+@keyframes lp-lock {
+  from {
+    opacity: 0;
+    transform: scale(1.1);
+  }
+}
+/* 機能の面: マウスを乗せると、四隅にカッコが現れる (背景色に応じて色が反転する) */
+.lp-tilt::after {
+  --c: var(--bracket, #fff);
+  --arm: 16px;
+  content: '';
+  position: absolute;
+  inset: 18px;
+  opacity: 0;
+  /* 3D の傾きの中でも、面の裏に回らないよう少し手前に出す */
+  transform: translateZ(2px);
+  transition:
+    opacity 0.25s ease,
+    inset 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.lp-tilt:hover::after {
+  opacity: 0.9;
+  inset: 12px;
+}
+
+/* 走査線 */
+.lp-scan {
+  position: relative;
+}
+.lp-scan::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgb(255 255 255 / 0.035) 0 1px, transparent 1px 3px);
+  mix-blend-mode: overlay;
+}
+
+/* 目盛り線 */
+.lp-ticks {
+  height: 10px;
+  background-image:
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.22) 0 1px, transparent 1px 10px),
+    repeating-linear-gradient(90deg, rgb(255 255 255 / 0.5) 0 1px, transparent 1px 50px);
+  background-size:
+    100% 5px,
+    100% 10px;
+  background-position:
+    0 100%,
+    0 100%;
+  background-repeat: no-repeat;
+  mask-image: linear-gradient(90deg, black 60%, transparent);
+}
+
+/* 強調語のグリッチ (読み込み後に1回、ホバーでもう一度) */
+.lp-glitch {
+  animation: lp-glitch 0.7s steps(2, end) 2.4s both;
+}
+.lp-glitch:hover {
+  animation: lp-glitch-b 0.7s steps(2, end) both;
+}
+.lp-root.lp-loading .lp-glitch {
+  animation-play-state: paused;
+}
+@keyframes lp-glitch {
+  0%,
+  100% {
+    filter: none;
+    transform: none;
+  }
+  14% {
+    filter: drop-shadow(-4px 0 var(--cyan)) drop-shadow(4px 0 var(--pink));
+    transform: translateX(-2px);
+  }
+  28% {
+    filter: none;
+    transform: translateX(3px);
+  }
+  44% {
+    filter: drop-shadow(3px 0 var(--cyan)) drop-shadow(-3px 0 var(--pink));
+    transform: translateX(1px) skewX(-8deg);
+  }
+  60% {
+    filter: none;
+    transform: none;
+  }
+  76% {
+    filter: drop-shadow(-2px 0 var(--cyan)) drop-shadow(2px 0 var(--pink));
+    transform: translateX(-1px);
+  }
+}
+@keyframes lp-glitch-b {
+  0%,
+  100% {
+    filter: none;
+    transform: none;
+  }
+  14% {
+    filter: drop-shadow(-4px 0 var(--cyan)) drop-shadow(4px 0 var(--pink));
+    transform: translateX(-2px);
+  }
+  28% {
+    filter: none;
+    transform: translateX(3px);
+  }
+  44% {
+    filter: drop-shadow(3px 0 var(--cyan)) drop-shadow(-3px 0 var(--pink));
+    transform: translateX(1px) skewX(-8deg);
+  }
+  60% {
+    filter: none;
+    transform: none;
+  }
+  76% {
+    filter: drop-shadow(-2px 0 var(--cyan)) drop-shadow(2px 0 var(--pink));
+    transform: translateX(-1px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-reticle {
+    animation: none;
+  }
+  .lp-tilt::after {
+    transition: none;
+  }
+  .lp-glitch,
+  .lp-glitch:hover {
+    animation: none;
+  }
+}
+
+/* 機能カード: 表示されたときに1回だけ、走査線が上から下へ走る */
+.lp-sweep {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.lp-sweep::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -30%;
+  height: 30%;
+  opacity: 0;
+  background: linear-gradient(to bottom, transparent, rgb(255 255 255 / 0.28), transparent);
+}
+.lp-in .lp-sweep::before {
+  animation: lp-sweep 1.2s ease-out 0.25s both;
+}
+@keyframes lp-sweep {
+  0% {
+    opacity: 1;
+    top: -30%;
+  }
+  100% {
+    opacity: 0;
+    top: 110%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-in .lp-sweep::before {
+    animation: none;
   }
 }
