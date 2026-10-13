@@ -5,10 +5,11 @@ import { resolveAiArtifactConfig } from '@herta/plugin-catalog/ai-artifact';
 import type { AiTelemetryEvent } from '@herta/plugin-catalog/ai-service';
 import {
   definePlugin,
+  type CommandHandler,
   type PluginEventHandler,
   type PluginRuntimeContext,
 } from '@herta/plugin-sdk';
-import type { Client } from 'discord.js';
+import { MessageFlags, type ChatInputCommandInteraction, type Client } from 'discord.js';
 import { Redis } from 'ioredis';
 import { clearAkinatorGuildSessions, createAkinatorCommandHandler } from '../ai/akinator-game.js';
 import { AiArtifactRuntime } from '../ai/artifact-runtime.js';
@@ -33,15 +34,43 @@ import { startAiTypingIndicator } from '../ai/typing-indicator.js';
 export interface AiPluginConfig {
   enabled: boolean;
   triggerRoleId?: string | null;
+  imageGenerationEnabled?: boolean;
+  codeExecutionEnabled?: boolean;
+  weatherGroundingEnabled?: boolean;
+}
+
+export interface NormalizedAiPluginConfig {
+  enabled: boolean;
+  triggerRoleId: string | null;
+  imageGenerationEnabled: boolean;
+  codeExecutionEnabled: boolean;
+  weatherGroundingEnabled: boolean;
+}
+
+/** 既定は従来どおり全機能有効(`!== false`)。古いGuild configに新フィールドが無くても壊れない。 */
+export function normalizeAiPluginConfig(value: AiPluginConfig): NormalizedAiPluginConfig {
+  return {
+    enabled: value.enabled === true,
+    triggerRoleId: normalizeAiTriggerRoleId(value.triggerRoleId ?? null),
+    imageGenerationEnabled: value.imageGenerationEnabled !== false,
+    codeExecutionEnabled: value.codeExecutionEnabled !== false,
+    weatherGroundingEnabled: value.weatherGroundingEnabled !== false,
+  };
 }
 
 type AiPluginRuntimeContext = PluginRuntimeContext<AiPluginConfig, Client, PrismaClient>;
+
+interface AiArtifactFeatureOverrides {
+  imageGenerationEnabled?: boolean;
+  codeExecutionEnabled?: boolean;
+}
 
 interface AiPluginSharedRuntime {
   artifactRuntime: AiArtifactRuntime;
   createArtifactRuntime(
     generationService: AiRuntimeGenerationService,
     directReplyContext?: string | null,
+    featureOverrides?: AiArtifactFeatureOverrides,
   ): AiArtifactRuntime;
   generationService: AiRuntimeGenerationService;
 }
@@ -74,7 +103,13 @@ export const aiPlugin = definePlugin<AiPluginConfig, Client, PrismaClient>({
       const runtime = await getSharedRuntime(context);
       return runtime?.generationService ?? null;
     });
-    return [akinator];
+    const ask: CommandHandler<ChatInputCommandInteraction> = {
+      definition: aiManifest.commands[1]!,
+      async execute(interaction) {
+        await executeAiAskCommand(context as AiPluginRuntimeContext, interaction);
+      },
+    };
+    return [akinator, ask];
   },
   provideEvents() {
     return [
@@ -95,12 +130,13 @@ async function handleAiMessage(
   context: AiPluginRuntimeContext,
   message: AiArtifactDiscordMessage | undefined,
 ): Promise<void> {
-  if (context.config.enabled !== true) return;
+  const config = normalizeAiPluginConfig(context.config);
+  if (!config.enabled) return;
 
   const botUserId = context.client.user?.id ?? null;
   if (!message || !botUserId || message.guildId !== context.guildId) return;
 
-  const triggerRoleId = normalizeAiTriggerRoleId(context.config.triggerRoleId);
+  const triggerRoleId = config.triggerRoleId;
   const wasCandidateBeforeReplyVerification = isAiArtifactMessageCandidate(
     message,
     botUserId,
@@ -121,10 +157,12 @@ async function handleAiMessage(
   try {
     const runtime = await getSharedRuntime(context);
     const directReplyContext = getVerifiedAiReplyContext(message);
-    const generationService = runtime?.generationService
-      ? withAiJmaWeatherGroundingContext(
-          withAiDirectReplyContext(runtime.generationService, directReplyContext),
-          {
+    const baseGenerationService = runtime?.generationService
+      ? withAiDirectReplyContext(runtime.generationService, directReplyContext)
+      : null;
+    const generationService =
+      baseGenerationService && config.weatherGroundingEnabled
+        ? withAiJmaWeatherGroundingContext(baseGenerationService, {
             onLookupFailed: ({ areaDisplayName, errorName }) =>
               context.logger.warn(
                 {
@@ -135,12 +173,16 @@ async function handleAiMessage(
                 },
                 'JMA天気データの取得に失敗しました',
               ),
-          },
-        )
-      : null;
+          })
+        : baseGenerationService;
     let artifactRuntime = runtime?.artifactRuntime ?? null;
-    if (runtime && generationService && directReplyContext) {
-      artifactRuntime = runtime.createArtifactRuntime(generationService, directReplyContext);
+    const needsScopedArtifactRuntime =
+      Boolean(directReplyContext) || !config.imageGenerationEnabled || !config.codeExecutionEnabled;
+    if (runtime && generationService && needsScopedArtifactRuntime) {
+      artifactRuntime = runtime.createArtifactRuntime(generationService, directReplyContext, {
+        imageGenerationEnabled: config.imageGenerationEnabled,
+        codeExecutionEnabled: config.codeExecutionEnabled,
+      });
     }
     const result = await handleAiConversationMessage(handlerMessage, {
       runtime: artifactRuntime,
@@ -148,7 +190,7 @@ async function handleAiMessage(
       botUserId,
       getAiPluginConfig: async (guildId) =>
         guildId === context.guildId
-          ? ({ enabled: context.config.enabled } as Record<string, unknown>)
+          ? ({ enabled: config.enabled } as Record<string, unknown>)
           : null,
     });
 
@@ -182,6 +224,127 @@ async function handleAiMessage(
     );
   } finally {
     typingIndicator.stop();
+  }
+}
+
+/**
+ * `/ai ask`はmention無しでメッセージ会話経路を呼び出す入り口。既存のcandidate判定・strip処理を
+ * そのまま再利用するため、実在のmentionメッセージと同じ形（botへのmention token入りcontent、
+ * mentions.users.has(botUserId) === true）の合成messageを組み立てて同じhandlerへ渡す。
+ */
+async function executeAiAskCommand(
+  context: AiPluginRuntimeContext,
+  interaction: ChatInputCommandInteraction,
+): Promise<void> {
+  if (!interaction.guildId || interaction.guildId !== context.guildId) {
+    await interaction.reply({
+      content: 'サーバー内でのみ利用できます。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const config = normalizeAiPluginConfig(context.config);
+  if (!config.enabled) {
+    await interaction.reply({
+      content: 'Herta AIは現在このサーバーで無効です。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const botUserId = context.client.user?.id ?? null;
+  if (!botUserId) {
+    await interaction.reply({
+      content: '現在Herta AIを利用できません。しばらくしてから再度お試しください。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const prompt = interaction.options.getString('prompt', true).trim();
+  if (!prompt) {
+    await interaction.reply({
+      content: 'promptを入力してください。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  await interaction.deferReply();
+
+  const guildId = interaction.guildId;
+  const syntheticMessage: AiArtifactDiscordMessage = {
+    guildId,
+    channelId: interaction.channelId,
+    content: `<@${botUserId}> ${prompt}`,
+    webhookId: null,
+    author: { id: interaction.user.id, bot: false },
+    member: interaction.member ?? null,
+    mentions: {
+      users: { has: (userId: string) => userId === botUserId },
+      roles: { has: () => false },
+    },
+    reference: null,
+    async reply(options) {
+      return interaction.editReply(options as Parameters<typeof interaction.editReply>[0]);
+    },
+  };
+
+  try {
+    const runtime = await getSharedRuntime(context);
+    if (!runtime?.generationService) {
+      await interaction.editReply({
+        content: '現在Herta AIを利用できません。しばらくしてから再度お試しください。',
+      });
+      return;
+    }
+
+    const generationService = config.weatherGroundingEnabled
+      ? withAiJmaWeatherGroundingContext(runtime.generationService, {
+          onLookupFailed: ({ areaDisplayName, errorName }) =>
+            context.logger.warn(
+              { guildId, areaDisplayName, errorName, result: 'jma_lookup_failed' },
+              'JMA天気データの取得に失敗しました',
+            ),
+        })
+      : runtime.generationService;
+    const artifactRuntime = runtime.createArtifactRuntime(generationService, null, {
+      imageGenerationEnabled: config.imageGenerationEnabled,
+      codeExecutionEnabled: config.codeExecutionEnabled,
+    });
+
+    const result = await handleAiConversationMessage(syntheticMessage, {
+      runtime: artifactRuntime,
+      generationService,
+      botUserId,
+      getAiPluginConfig: async (lookupGuildId) =>
+        lookupGuildId === context.guildId
+          ? ({ enabled: config.enabled } as Record<string, unknown>)
+          : null,
+    });
+
+    if (result.status === 'ignored') {
+      await interaction.editReply({ content: '現在Herta AIを利用できません。' });
+    } else if (result.status === 'handled') {
+      context.logger.info(
+        { guildId: context.guildId, intent: result.intent, result: 'handled', source: 'ai.ask' },
+        'AI Discord requestを処理しました',
+      );
+    }
+  } catch (error) {
+    context.logger.warn(
+      {
+        guildId: context.guildId,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+        result: 'delivery_failed',
+        source: 'ai.ask',
+      },
+      'AI Discord deliveryに失敗しました',
+    );
+    await interaction
+      .editReply({ content: 'AIの応答中にエラーが発生しました。' })
+      .catch(() => undefined);
   }
 }
 
@@ -360,17 +523,24 @@ async function createSharedRuntime(
   const createArtifactRuntime = (
     generationService: AiRuntimeGenerationService,
     directReplyContext: string | null = null,
+    featureOverrides: AiArtifactFeatureOverrides = {},
   ) =>
     new AiArtifactRuntime({
       generationService,
-      executionService: withAiDirectReplyCodeExecutionContext(
-        bootstrap.executionService ?? undefined,
-        directReplyContext,
-      ),
-      imageGenerationService: withAiDirectReplyImageGenerationContext(
-        bootstrap.imageGenerationService ?? undefined,
-        directReplyContext,
-      ),
+      executionService:
+        featureOverrides.codeExecutionEnabled === false
+          ? undefined
+          : withAiDirectReplyCodeExecutionContext(
+              bootstrap.executionService ?? undefined,
+              directReplyContext,
+            ),
+      imageGenerationService:
+        featureOverrides.imageGenerationEnabled === false
+          ? undefined
+          : withAiDirectReplyImageGenerationContext(
+              bootstrap.imageGenerationService ?? undefined,
+              directReplyContext,
+            ),
       artifactConfig,
       telemetry: (event) => {
         // Artifact runtime is shared for the same reason as Foundation runtime telemetry.

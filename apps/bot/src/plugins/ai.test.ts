@@ -1,10 +1,10 @@
 import type { PrismaClient } from '@herta/db';
 import type { Logger } from '@herta/logger';
 import type { PluginRuntimeContext } from '@herta/plugin-sdk';
-import type { Client } from 'discord.js';
+import type { ChatInputCommandInteraction, Client } from 'discord.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AiArtifactDiscordMessage } from '../ai/artifact-message-handler.js';
-import { aiPlugin, type AiPluginConfig } from './ai.js';
+import { aiPlugin, normalizeAiPluginConfig, type AiPluginConfig } from './ai.js';
 
 const BOT_USER_ID = '123456789';
 const OTHER_BOT_ID = '999999999';
@@ -265,5 +265,115 @@ describe('aiPlugin typing indicator lifecycle', () => {
 
     expect(sendTyping).not.toHaveBeenCalled();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('normalizeAiPluginConfig', () => {
+  it('既定値は全機能trueで、triggerRoleIdは未設定ならnull', () => {
+    expect(normalizeAiPluginConfig({ enabled: true })).toEqual({
+      enabled: true,
+      triggerRoleId: null,
+      imageGenerationEnabled: true,
+      codeExecutionEnabled: true,
+      weatherGroundingEnabled: true,
+    });
+  });
+
+  it('各機能別トグルを明示的にfalseへできる', () => {
+    const config = normalizeAiPluginConfig({
+      enabled: true,
+      imageGenerationEnabled: false,
+      codeExecutionEnabled: false,
+      weatherGroundingEnabled: false,
+    });
+    expect(config.imageGenerationEnabled).toBe(false);
+    expect(config.codeExecutionEnabled).toBe(false);
+    expect(config.weatherGroundingEnabled).toBe(false);
+  });
+
+  it('enabledはtrueを明示しない限りfalseになる(オプトイン)', () => {
+    expect(normalizeAiPluginConfig({ enabled: false }).enabled).toBe(false);
+  });
+});
+
+describe('/ai ask command', () => {
+  let context: Ctx;
+
+  beforeEach(async () => {
+    process.env['REDIS_URL'] = 'redis://localhost:6379';
+    handleAiConversationMessageMock.mockReset();
+    createAiFoundationRuntimeMock.mockReset();
+    createAiFoundationRuntimeMock.mockResolvedValue({
+      service: { generate: vi.fn() },
+      executionService: undefined,
+      imageGenerationService: undefined,
+      status: 'ready',
+      credentialSource: 'runtime_secret_store',
+    });
+    handleAiConversationMessageMock.mockResolvedValue({ status: 'handled', intent: 'chat' });
+    context = createContext();
+    await aiPlugin.onEnable?.(context);
+  });
+
+  afterEach(async () => {
+    await aiPlugin.onDisable?.(context);
+  });
+
+  function getAskHandler(ctx: Ctx) {
+    const commands = aiPlugin.provideCommands?.(ctx) ?? [];
+    const command = commands.find((candidate) => candidate.definition.name === 'ai');
+    if (!command) throw new Error('/ai ask handler is not registered');
+    return command;
+  }
+
+  function createAskInteraction(prompt: string | null): ChatInputCommandInteraction {
+    return {
+      guildId: 'guild-1',
+      channelId: 'channel-1',
+      user: { id: 'user-1' },
+      member: { id: 'user-1' },
+      options: { getString: () => prompt },
+      deferReply: vi.fn(async () => undefined),
+      editReply: vi.fn(async () => undefined),
+      reply: vi.fn(async () => undefined),
+    } as unknown as ChatInputCommandInteraction;
+  }
+
+  it('promptをHerta mention形式の合成messageへ変換して会話handlerへ渡す', async () => {
+    const command = getAskHandler(context);
+    const interaction = createAskInteraction('こんにちは');
+
+    await command.execute(interaction);
+
+    expect(interaction.deferReply).toHaveBeenCalledTimes(1);
+    expect(handleAiConversationMessageMock).toHaveBeenCalledTimes(1);
+    const [message] = handleAiConversationMessageMock.mock.calls[0] as [AiArtifactDiscordMessage];
+    expect(message.content).toBe(`<@${BOT_USER_ID}> こんにちは`);
+    expect(message.mentions.users.has(BOT_USER_ID)).toBe(true);
+  });
+
+  it('Pluginが無効ならephemeralで案内し会話handlerを呼ばない', async () => {
+    context = createContext({ enabled: false });
+    const command = getAskHandler(context);
+    const interaction = createAskInteraction('こんにちは');
+
+    await command.execute(interaction);
+
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('無効') }),
+    );
+    expect(handleAiConversationMessageMock).not.toHaveBeenCalled();
+  });
+
+  it('空のpromptはephemeralで案内し会話handlerを呼ばない', async () => {
+    const command = getAskHandler(context);
+    const interaction = createAskInteraction('   ');
+
+    await command.execute(interaction);
+
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('prompt') }),
+    );
+    expect(handleAiConversationMessageMock).not.toHaveBeenCalled();
   });
 });
