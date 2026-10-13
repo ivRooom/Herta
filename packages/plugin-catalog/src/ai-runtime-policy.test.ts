@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AI_RUNTIME_SAFE_DEFAULT,
   AiRuntimePolicyError,
+  applyAiRuntimeSelectionOverride,
   getAiProviderCapabilities,
   getAiRuntimePolicyMetadata,
   isAiProviderCapabilityEnabled,
@@ -398,5 +399,59 @@ describe('AI runtime policy', () => {
         timezone: 'UTC',
       }),
     ).toThrowError(AiRuntimePolicyError);
+  });
+});
+
+describe('applyAiRuntimeSelectionOverride', () => {
+  const base = resolveAiRuntimeSelection({
+    provider: 'openai',
+    modelProfile: 'balanced',
+    reasoningEffort: 'low',
+    timezone: 'Asia/Tokyo',
+  });
+
+  it('overrideが無ければbaseをそのまま返す', () => {
+    expect(applyAiRuntimeSelectionOverride(base, undefined)).toBe(base);
+  });
+
+  it('provider/modelProfileを差し替え、timezoneはbaseを維持する', () => {
+    const result = applyAiRuntimeSelectionOverride(base, {
+      provider: 'anthropic',
+      modelProfile: 'quality',
+    });
+    expect(result).toMatchObject({
+      provider: 'anthropic',
+      modelProfile: 'quality',
+      model: 'claude-opus-5',
+      timezone: 'Asia/Tokyo',
+    });
+  });
+
+  it('baseのreasoningEffortがoverride先で未対応なら、override先が対応する最初の値へfallbackする', () => {
+    // base reasoningEffort 'low' is not in claude-haiku-4-5's supportedReasoningEfforts (['none']).
+    const result = applyAiRuntimeSelectionOverride(base, {
+      provider: 'anthropic',
+      modelProfile: 'economy',
+    });
+    expect(result).toMatchObject({
+      provider: 'anthropic',
+      modelProfile: 'economy',
+      model: 'claude-haiku-4-5-20251001',
+      reasoningEffort: 'none',
+    });
+  });
+
+  it('baseのreasoningEffortがoverride先でも対応していればそのまま使う', () => {
+    const highBase = resolveAiRuntimeSelection({
+      provider: 'openai',
+      modelProfile: 'balanced',
+      reasoningEffort: 'high',
+      timezone: 'UTC',
+    });
+    const result = applyAiRuntimeSelectionOverride(highBase, {
+      provider: 'google',
+      modelProfile: 'quality',
+    });
+    expect(result.reasoningEffort).toBe('high');
   });
 });

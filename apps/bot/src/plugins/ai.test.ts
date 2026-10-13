@@ -32,15 +32,54 @@ vi.mock('ioredis', () => {
 
 type Ctx = PluginRuntimeContext<AiPluginConfig, Client, PrismaClient>;
 
-function createContext(configOverrides: Partial<AiPluginConfig> = {}): Ctx {
+function createContext(
+  configOverrides: Partial<AiPluginConfig> = {},
+  prisma: PrismaClient = {} as PrismaClient,
+): Ctx {
   return {
     client: { user: { id: BOT_USER_ID } } as unknown as Client,
-    prisma: {} as PrismaClient,
+    prisma,
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as unknown as Logger,
     guildId: 'guild-1',
     config: { enabled: true, triggerRoleId: null, ...configOverrides },
     manifest: { id: 'ai' } as never,
   };
+}
+
+/** aiUserModelPreferenceのみをin-memoryで実装する最小限のPrismaClientモック。 */
+function createFakeModelPreferencePrisma(): PrismaClient {
+  const store = new Map<string, { provider: string; modelProfile: string }>();
+  const key = (guildId: string, userId: string) => `${guildId}:${userId}`;
+  return {
+    aiUserModelPreference: {
+      findUnique: vi.fn(
+        async ({ where }: { where: { guildId_userId: { guildId: string; userId: string } } }) => {
+          const { guildId, userId } = where.guildId_userId;
+          const record = store.get(key(guildId, userId));
+          return record ? { guildId, userId, ...record, updatedAt: new Date() } : null;
+        },
+      ),
+      upsert: vi.fn(
+        async ({
+          where,
+          create,
+        }: {
+          where: { guildId_userId: { guildId: string; userId: string } };
+          create: { guildId: string; userId: string; provider: string; modelProfile: string };
+        }) => {
+          const { guildId, userId } = where.guildId_userId;
+          store.set(key(guildId, userId), {
+            provider: create.provider,
+            modelProfile: create.modelProfile,
+          });
+        },
+      ),
+      deleteMany: vi.fn(async ({ where }: { where: { guildId: string; userId: string } }) => {
+        const existed = store.delete(key(where.guildId, where.userId));
+        return { count: existed ? 1 : 0 };
+      }),
+    },
+  } as unknown as PrismaClient;
 }
 
 type TypingMessage = AiArtifactDiscordMessage & {
@@ -276,6 +315,7 @@ describe('normalizeAiPluginConfig', () => {
       imageGenerationEnabled: true,
       codeExecutionEnabled: true,
       weatherGroundingEnabled: true,
+      premiumModelRoleId: null,
     });
   });
 
@@ -331,8 +371,8 @@ describe('/ai ask command', () => {
       guildId: 'guild-1',
       channelId: 'channel-1',
       user: { id: 'user-1' },
-      member: { id: 'user-1' },
-      options: { getString: () => prompt },
+      member: { id: 'user-1', roles: { cache: { has: () => false } } },
+      options: { getString: () => prompt, getSubcommand: () => 'ask' },
       deferReply: vi.fn(async () => undefined),
       editReply: vi.fn(async () => undefined),
       reply: vi.fn(async () => undefined),
@@ -375,5 +415,155 @@ describe('/ai ask command', () => {
       expect.objectContaining({ content: expect.stringContaining('prompt') }),
     );
     expect(handleAiConversationMessageMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('/ai model command', () => {
+  function getModelHandler(ctx: Ctx) {
+    const commands = aiPlugin.provideCommands?.(ctx) ?? [];
+    const command = commands.find((candidate) => candidate.definition.name === 'ai');
+    if (!command) throw new Error('/ai model handler is not registered');
+    return command;
+  }
+
+  function createModelInteraction(options: {
+    action: string;
+    provider?: string | null;
+    profile?: string | null;
+    roleIds?: string[];
+  }): ChatInputCommandInteraction {
+    const values: Record<string, string | null> = {
+      action: options.action,
+      provider: options.provider ?? null,
+      profile: options.profile ?? null,
+    };
+    return {
+      guildId: 'guild-1',
+      user: { id: 'user-1' },
+      member: {
+        id: 'user-1',
+        roles: { cache: { has: (id: string) => (options.roleIds ?? []).includes(id) } },
+      },
+      options: {
+        getSubcommand: () => 'model',
+        getString: (name: string) => values[name] ?? null,
+      },
+      reply: vi.fn(async () => undefined),
+    } as unknown as ChatInputCommandInteraction;
+  }
+
+  it('action:showは未設定なら「サーバー既定」と案内する', async () => {
+    const context = createContext({}, createFakeModelPreferencePrisma());
+    const command = getModelHandler(context);
+    const interaction = createModelInteraction({ action: 'show' });
+
+    await command.execute(interaction);
+
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('未設定') }),
+    );
+  });
+
+  it('action:setでbalancedを選ぶとRole不要で保存され、showに反映される', async () => {
+    const context = createContext({}, createFakeModelPreferencePrisma());
+    const command = getModelHandler(context);
+
+    await command.execute(
+      createModelInteraction({ action: 'set', provider: 'anthropic', profile: 'balanced' }),
+    );
+    const showInteraction = createModelInteraction({ action: 'show' });
+    await command.execute(showInteraction);
+
+    expect(showInteraction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('Anthropic') }),
+    );
+  });
+
+  it('premiumModelRoleId未設定ではqualityを誰も選べない', async () => {
+    const context = createContext({ premiumModelRoleId: null }, createFakeModelPreferencePrisma());
+    const command = getModelHandler(context);
+    const interaction = createModelInteraction({
+      action: 'set',
+      provider: 'openai',
+      profile: 'quality',
+    });
+
+    await command.execute(interaction);
+
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('誰も利用できません') }),
+    );
+  });
+
+  it('premiumModelRoleId設定済みでRole未保持ならqualityを拒否する', async () => {
+    const context = createContext(
+      { premiumModelRoleId: '999999999999999999' },
+      createFakeModelPreferencePrisma(),
+    );
+    const command = getModelHandler(context);
+    const interaction = createModelInteraction({
+      action: 'set',
+      provider: 'openai',
+      profile: 'quality',
+      roleIds: ['888888888888888888'],
+    });
+
+    await command.execute(interaction);
+
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('専用Role') }),
+    );
+  });
+
+  it('premiumModelRoleIdを保持していればqualityを設定できる', async () => {
+    const context = createContext(
+      { premiumModelRoleId: '999999999999999999' },
+      createFakeModelPreferencePrisma(),
+    );
+    const command = getModelHandler(context);
+    const interaction = createModelInteraction({
+      action: 'set',
+      provider: 'openai',
+      profile: 'quality',
+      roleIds: ['999999999999999999'],
+    });
+
+    await command.execute(interaction);
+
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('高品質') }),
+    );
+  });
+
+  it('action:clearで個人設定を削除する', async () => {
+    const context = createContext({}, createFakeModelPreferencePrisma());
+    const command = getModelHandler(context);
+
+    await command.execute(
+      createModelInteraction({ action: 'set', provider: 'google', profile: 'economy' }),
+    );
+    const clearInteraction = createModelInteraction({ action: 'clear' });
+    await command.execute(clearInteraction);
+    const showInteraction = createModelInteraction({ action: 'show' });
+    await command.execute(showInteraction);
+
+    expect(clearInteraction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('解除しました') }),
+    );
+    expect(showInteraction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('未設定') }),
+    );
+  });
+
+  it('action:setでprovider/profileどちらか欠けていればephemeralで案内する', async () => {
+    const context = createContext({}, createFakeModelPreferencePrisma());
+    const command = getModelHandler(context);
+    const interaction = createModelInteraction({ action: 'set', provider: 'openai' });
+
+    await command.execute(interaction);
+
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('両方') }),
+    );
   });
 });

@@ -1,8 +1,23 @@
-import { recordAiGenerationEvent, type PrismaClient } from '@herta/db';
+import {
+  clearAiUserModelPreference,
+  getAiUserModelPreference,
+  recordAiGenerationEvent,
+  setAiUserModelPreference,
+  type PrismaClient,
+} from '@herta/db';
 import { createLogger, type Logger } from '@herta/logger';
 import { aiManifest } from '@herta/plugin-catalog';
 import { resolveAiArtifactConfig } from '@herta/plugin-catalog/ai-artifact';
 import type { AiTelemetryEvent } from '@herta/plugin-catalog/ai-service';
+import {
+  AI_MODEL_PROFILES,
+  AI_SUPPORTED_PROVIDERS,
+  isAiModelProfile,
+  isAiProvider,
+  type AiModelProfile,
+  type AiProviderName,
+  type AiRuntimeSelectionOverride,
+} from '@herta/plugin-catalog/ai-runtime-policy';
 import {
   definePlugin,
   type CommandHandler,
@@ -29,6 +44,7 @@ import {
 import { createAiFoundationRuntime } from '../ai/factory.js';
 import { withAiJmaWeatherGroundingContext } from '../ai/jma-weather-service.js';
 import type { AiRuntimeGenerationService } from '../ai/runtime-service.js';
+import { withAiRuntimeOverrideContext } from '../ai/runtime-override-context.js';
 import { startAiTypingIndicator } from '../ai/typing-indicator.js';
 
 export interface AiPluginConfig {
@@ -37,6 +53,7 @@ export interface AiPluginConfig {
   imageGenerationEnabled?: boolean;
   codeExecutionEnabled?: boolean;
   weatherGroundingEnabled?: boolean;
+  premiumModelRoleId?: string | null;
 }
 
 export interface NormalizedAiPluginConfig {
@@ -45,6 +62,7 @@ export interface NormalizedAiPluginConfig {
   imageGenerationEnabled: boolean;
   codeExecutionEnabled: boolean;
   weatherGroundingEnabled: boolean;
+  premiumModelRoleId: string | null;
 }
 
 /** 既定は従来どおり全機能有効(`!== false`)。古いGuild configに新フィールドが無くても壊れない。 */
@@ -55,6 +73,7 @@ export function normalizeAiPluginConfig(value: AiPluginConfig): NormalizedAiPlug
     imageGenerationEnabled: value.imageGenerationEnabled !== false,
     codeExecutionEnabled: value.codeExecutionEnabled !== false,
     weatherGroundingEnabled: value.weatherGroundingEnabled !== false,
+    premiumModelRoleId: normalizeAiTriggerRoleId(value.premiumModelRoleId ?? null),
   };
 }
 
@@ -103,13 +122,13 @@ export const aiPlugin = definePlugin<AiPluginConfig, Client, PrismaClient>({
       const runtime = await getSharedRuntime(context);
       return runtime?.generationService ?? null;
     });
-    const ask: CommandHandler<ChatInputCommandInteraction> = {
+    const ai: CommandHandler<ChatInputCommandInteraction> = {
       definition: aiManifest.commands[1]!,
       async execute(interaction) {
-        await executeAiAskCommand(context as AiPluginRuntimeContext, interaction);
+        await executeAiCommand(context as AiPluginRuntimeContext, interaction);
       },
     };
-    return [akinator, ask];
+    return [akinator, ai];
   },
   provideEvents() {
     return [
@@ -157,10 +176,11 @@ async function handleAiMessage(
   try {
     const runtime = await getSharedRuntime(context);
     const directReplyContext = getVerifiedAiReplyContext(message);
+    const runtimeOverride = await resolveUserRuntimeOverride(context, message.author.id);
     const baseGenerationService = runtime?.generationService
       ? withAiDirectReplyContext(runtime.generationService, directReplyContext)
       : null;
-    const generationService =
+    const weatherWrapped =
       baseGenerationService && config.weatherGroundingEnabled
         ? withAiJmaWeatherGroundingContext(baseGenerationService, {
             onLookupFailed: ({ areaDisplayName, errorName }) =>
@@ -175,9 +195,15 @@ async function handleAiMessage(
               ),
           })
         : baseGenerationService;
+    const generationService = weatherWrapped
+      ? withAiRuntimeOverrideContext(weatherWrapped, runtimeOverride)
+      : weatherWrapped;
     let artifactRuntime = runtime?.artifactRuntime ?? null;
     const needsScopedArtifactRuntime =
-      Boolean(directReplyContext) || !config.imageGenerationEnabled || !config.codeExecutionEnabled;
+      Boolean(directReplyContext) ||
+      Boolean(runtimeOverride) ||
+      !config.imageGenerationEnabled ||
+      !config.codeExecutionEnabled;
     if (runtime && generationService && needsScopedArtifactRuntime) {
       artifactRuntime = runtime.createArtifactRuntime(generationService, directReplyContext, {
         imageGenerationEnabled: config.imageGenerationEnabled,
@@ -225,6 +251,150 @@ async function handleAiMessage(
   } finally {
     typingIndicator.stop();
   }
+}
+
+/** 保存済みの個人設定を読み、provider/modelProfileとして依然有効な場合だけoverrideとして返す。 */
+async function resolveUserRuntimeOverride(
+  context: AiPluginRuntimeContext,
+  userId: string,
+): Promise<AiRuntimeSelectionOverride | null> {
+  try {
+    const preference = await getAiUserModelPreference(context.prisma, context.guildId, userId);
+    if (!preference) return null;
+    if (!isAiProvider(preference.provider) || !isAiModelProfile(preference.modelProfile)) {
+      return null;
+    }
+    return { provider: preference.provider, modelProfile: preference.modelProfile };
+  } catch (error) {
+    context.logger.warn(
+      { err: error, guildId: context.guildId, userId, result: 'preference_lookup_failed' },
+      'AIモデル個人設定の取得に失敗しました',
+    );
+    return null;
+  }
+}
+
+const AI_PROVIDER_LABELS: Record<AiProviderName, string> = {
+  openai: 'OpenAI',
+  anthropic: 'Anthropic (Claude)',
+  google: 'Google (Gemini)',
+  moonshot: 'Moonshot (Kimi)',
+};
+
+const AI_MODEL_PROFILE_LABELS: Record<AiModelProfile, string> = {
+  quality: '高品質 (quality)',
+  balanced: 'バランス (balanced)',
+  economy: '経済的 (economy)',
+};
+
+async function executeAiModelCommand(
+  context: AiPluginRuntimeContext,
+  interaction: ChatInputCommandInteraction,
+): Promise<void> {
+  if (!interaction.guildId || interaction.guildId !== context.guildId) {
+    await interaction.reply({
+      content: 'サーバー内でのみ利用できます。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const config = normalizeAiPluginConfig(context.config);
+  if (!config.enabled) {
+    await interaction.reply({
+      content: 'Herta AIは現在このサーバーで無効です。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const action = interaction.options.getString('action', true);
+
+  if (action === 'show') {
+    const preference = await getAiUserModelPreference(
+      context.prisma,
+      context.guildId,
+      interaction.user.id,
+    );
+    const content = preference
+      ? `現在の個人設定: **${AI_PROVIDER_LABELS[preference.provider as AiProviderName] ?? preference.provider}** / **${AI_MODEL_PROFILE_LABELS[preference.modelProfile as AiModelProfile] ?? preference.modelProfile}**`
+      : '個人設定は未設定です（サーバー既定のモデルを使用しています）。';
+    await interaction.reply({ content, flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  if (action === 'clear') {
+    const cleared = await clearAiUserModelPreference(
+      context.prisma,
+      context.guildId,
+      interaction.user.id,
+    );
+    await interaction.reply({
+      content: cleared
+        ? '個人設定を解除しました。サーバー既定のモデルに戻ります。'
+        : '個人設定は元々ありません。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  // action === 'set'
+  const providerInput = interaction.options.getString('provider');
+  const profileInput = interaction.options.getString('profile');
+  if (!providerInput || !profileInput) {
+    await interaction.reply({
+      content: 'action:setではproviderとprofileの両方を指定してください。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  if (!isAiProvider(providerInput) || !isAiModelProfile(profileInput)) {
+    await interaction.reply({
+      content: `providerは${AI_SUPPORTED_PROVIDERS.join('/')}、profileは${AI_MODEL_PROFILES.join('/')}から選択してください。`,
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  if (profileInput === 'quality') {
+    const hasPremiumRole =
+      Boolean(config.premiumModelRoleId) &&
+      (Array.isArray(interaction.member?.roles)
+        ? interaction.member.roles.includes(config.premiumModelRoleId!)
+        : (interaction.member?.roles?.cache?.has(config.premiumModelRoleId!) ?? false));
+    if (!hasPremiumRole) {
+      await interaction.reply({
+        content: config.premiumModelRoleId
+          ? '高品質 (quality) モデルの利用には専用Roleが必要です。'
+          : '高品質 (quality) モデルは現在このサーバーで誰も利用できません（管理者がRole未設定のため）。',
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+  }
+
+  await setAiUserModelPreference(context.prisma, {
+    guildId: context.guildId,
+    userId: interaction.user.id,
+    provider: providerInput,
+    modelProfile: profileInput,
+  });
+  await interaction.reply({
+    content: `個人設定を更新しました: **${AI_PROVIDER_LABELS[providerInput]}** / **${AI_MODEL_PROFILE_LABELS[profileInput]}**`,
+    flags: MessageFlags.Ephemeral,
+  });
+}
+
+async function executeAiCommand(
+  context: AiPluginRuntimeContext,
+  interaction: ChatInputCommandInteraction,
+): Promise<void> {
+  const subcommand = interaction.options.getSubcommand();
+  if (subcommand === 'model') {
+    await executeAiModelCommand(context, interaction);
+    return;
+  }
+  await executeAiAskCommand(context, interaction);
 }
 
 /**
@@ -300,7 +470,8 @@ async function executeAiAskCommand(
       return;
     }
 
-    const generationService = config.weatherGroundingEnabled
+    const runtimeOverride = await resolveUserRuntimeOverride(context, interaction.user.id);
+    const weatherWrapped = config.weatherGroundingEnabled
       ? withAiJmaWeatherGroundingContext(runtime.generationService, {
           onLookupFailed: ({ areaDisplayName, errorName }) =>
             context.logger.warn(
@@ -309,6 +480,7 @@ async function executeAiAskCommand(
             ),
         })
       : runtime.generationService;
+    const generationService = withAiRuntimeOverrideContext(weatherWrapped, runtimeOverride);
     const artifactRuntime = runtime.createArtifactRuntime(generationService, null, {
       imageGenerationEnabled: config.imageGenerationEnabled,
       codeExecutionEnabled: config.codeExecutionEnabled,

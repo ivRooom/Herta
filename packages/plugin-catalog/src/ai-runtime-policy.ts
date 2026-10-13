@@ -286,6 +286,34 @@ export const AI_RUNTIME_SAFE_DEFAULT: AiRuntimeStoredValue = {
   timezone: AI_DEFAULTS.timezone,
 };
 
+export interface AiRuntimeSelectionOverride {
+  provider: AiProviderName;
+  modelProfile: AiModelProfile;
+}
+
+/**
+ * Per-request self-service override of provider/modelProfile (e.g. from `/ai model`), layered on
+ * top of the console/env-resolved base selection. reasoningEffort and timezone always come from
+ * the base selection; if the base reasoningEffort isn't supported by the override's model, the
+ * override model's first supported effort is used instead rather than failing the request closed.
+ */
+export function applyAiRuntimeSelectionOverride(
+  base: AiRuntimeSelection,
+  override: AiRuntimeSelectionOverride | undefined,
+): AiRuntimeSelection {
+  if (!override) return base;
+  const entry = getAiRuntimePolicyEntry(override.provider, override.modelProfile);
+  const reasoningEffort = entry.supportedReasoningEfforts.includes(base.reasoningEffort)
+    ? base.reasoningEffort
+    : entry.supportedReasoningEfforts[0]!;
+  return resolveAiRuntimeSelection({
+    provider: override.provider,
+    modelProfile: override.modelProfile,
+    reasoningEffort,
+    timezone: base.timezone,
+  });
+}
+
 export function resolveAiRuntimeSelection(value: AiRuntimeStoredValue): AiRuntimeSelection {
   if (!isAiProvider(value.provider)) throw new AiRuntimePolicyError('invalid_provider');
   if (!isAiModelProfile(value.modelProfile)) {

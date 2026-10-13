@@ -21,7 +21,11 @@ import {
   type AiTelemetrySink,
 } from '@herta/plugin-catalog/ai-service';
 import type { AiRuntimeConfigurationResolver } from '@herta/plugin-catalog/ai-runtime-config';
-import type { AiReasoningEffort } from '@herta/plugin-catalog/ai-runtime-policy';
+import {
+  applyAiRuntimeSelectionOverride,
+  type AiReasoningEffort,
+  type AiRuntimeSelectionOverride,
+} from '@herta/plugin-catalog/ai-runtime-policy';
 
 const AI_CHAT_MAX_OUTPUT_TOKENS = 800;
 
@@ -35,6 +39,8 @@ export interface AiRuntimeGenerationRequest extends AiGenerationRequest {
    * Never copy arbitrary user input into this field.
    */
   trustedInstructions?: readonly string[];
+  /** Per-user self-service override of provider/modelProfile (e.g. from `/ai model`). */
+  runtimeOverride?: AiRuntimeSelectionOverride;
 }
 
 export interface AiRuntimeRateLimitRequest {
@@ -129,8 +135,9 @@ export class OpenAiRuntimeGenerationService implements AiRuntimeGenerationServic
       // Persisted invalid/unsupported runtime configuration must never silently downgrade.
       throw new AiFoundationError('internal_error');
     }
+    const selection = applyAiRuntimeSelectionOverride(runtime.selection, request.runtimeOverride);
 
-    if (runtime.selection.provider !== 'openai') {
+    if (selection.provider !== 'openai') {
       // Only implemented providers can reach a provider adapter. Future provider PRs extend
       // this dispatch explicitly rather than accepting arbitrary provider strings.
       throw new AiFoundationError('disabled');
@@ -143,7 +150,7 @@ export class OpenAiRuntimeGenerationService implements AiRuntimeGenerationServic
         groundingState: request.groundingState,
         // Sourced from the live console/env-resolved runtime selection (like provider/model)
         // rather than the bootstrap-only baseConfig, so a Studio change takes effect without restart.
-        timezone: runtime.selection.timezone,
+        timezone: selection.timezone,
       });
       const trustedInstructions = normalizeTrustedInstructions(request.trustedInstructions);
       if (trustedInstructions.length > 0) {
@@ -163,9 +170,9 @@ export class OpenAiRuntimeGenerationService implements AiRuntimeGenerationServic
 
     const config: AiFoundationConfig = {
       ...this.baseConfig,
-      provider: runtime.selection.provider,
-      modelProfile: runtime.selection.modelProfile,
-      model: runtime.selection.model,
+      provider: selection.provider,
+      modelProfile: selection.modelProfile,
+      model: selection.model,
       // Keep ordinary chat on the established 800-token budget even when operators raise the
       // server hard cap for detailed/artifact work. Detailed/artifact requests may use the full
       // configured cap, which is still validated by AiFoundationConfig (maximum 2,048 tokens).
@@ -181,7 +188,7 @@ export class OpenAiRuntimeGenerationService implements AiRuntimeGenerationServic
     const provider = new OpenAiResponsesProvider({
       apiKey: this.apiKey,
       fetchImpl: withOpenAiRuntimePolicy(this.fetchImpl, {
-        effort: runtime.selection.reasoningEffort,
+        effort: selection.reasoningEffort,
         conversationPolicy,
         userInput,
       }),
@@ -275,8 +282,9 @@ export class AnthropicRuntimeGenerationService implements AiRuntimeGenerationSer
     } catch {
       throw new AiFoundationError('internal_error');
     }
+    const selection = applyAiRuntimeSelectionOverride(runtime.selection, request.runtimeOverride);
 
-    if (runtime.selection.provider !== 'anthropic') {
+    if (selection.provider !== 'anthropic') {
       // Mirrors OpenAiRuntimeGenerationService's explicit allowlist dispatch: only implemented
       // providers reach a provider adapter.
       throw new AiFoundationError('disabled');
@@ -287,7 +295,7 @@ export class AnthropicRuntimeGenerationService implements AiRuntimeGenerationSer
       conversationPolicy = resolveAiConversationPolicy({
         responseMode: request.responseMode,
         groundingState: request.groundingState,
-        timezone: runtime.selection.timezone,
+        timezone: selection.timezone,
       });
       const trustedInstructions = normalizeTrustedInstructions(request.trustedInstructions);
       if (trustedInstructions.length > 0) {
@@ -306,9 +314,9 @@ export class AnthropicRuntimeGenerationService implements AiRuntimeGenerationSer
 
     const config: AiFoundationConfig = {
       ...this.baseConfig,
-      provider: runtime.selection.provider,
-      modelProfile: runtime.selection.modelProfile,
-      model: runtime.selection.model,
+      provider: selection.provider,
+      modelProfile: selection.modelProfile,
+      model: selection.model,
       maxOutputTokens: resolveAiRuntimeOutputTokenBudget(
         this.baseConfig.maxOutputTokens,
         conversationPolicy.responseMode,
@@ -319,7 +327,7 @@ export class AnthropicRuntimeGenerationService implements AiRuntimeGenerationSer
     const provider = new AnthropicMessagesProvider({
       apiKey: this.apiKey,
       fetchImpl: withAnthropicRuntimePolicy(this.fetchImpl, {
-        effort: runtime.selection.reasoningEffort,
+        effort: selection.reasoningEffort,
         conversationPolicy,
         userInput,
       }),
@@ -414,8 +422,9 @@ export class GoogleRuntimeGenerationService implements AiRuntimeGenerationServic
     } catch {
       throw new AiFoundationError('internal_error');
     }
+    const selection = applyAiRuntimeSelectionOverride(runtime.selection, request.runtimeOverride);
 
-    if (runtime.selection.provider !== 'google') {
+    if (selection.provider !== 'google') {
       // Mirrors OpenAiRuntimeGenerationService/AnthropicRuntimeGenerationService's explicit
       // allowlist dispatch: only implemented providers reach a provider adapter.
       throw new AiFoundationError('disabled');
@@ -426,7 +435,7 @@ export class GoogleRuntimeGenerationService implements AiRuntimeGenerationServic
       conversationPolicy = resolveAiConversationPolicy({
         responseMode: request.responseMode,
         groundingState: request.groundingState,
-        timezone: runtime.selection.timezone,
+        timezone: selection.timezone,
       });
       const trustedInstructions = normalizeTrustedInstructions(request.trustedInstructions);
       if (trustedInstructions.length > 0) {
@@ -445,9 +454,9 @@ export class GoogleRuntimeGenerationService implements AiRuntimeGenerationServic
 
     const config: AiFoundationConfig = {
       ...this.baseConfig,
-      provider: runtime.selection.provider,
-      modelProfile: runtime.selection.modelProfile,
-      model: runtime.selection.model,
+      provider: selection.provider,
+      modelProfile: selection.modelProfile,
+      model: selection.model,
       maxOutputTokens: resolveAiRuntimeOutputTokenBudget(
         this.baseConfig.maxOutputTokens,
         conversationPolicy.responseMode,
@@ -458,7 +467,7 @@ export class GoogleRuntimeGenerationService implements AiRuntimeGenerationServic
     const provider = new GeminiGenerateContentProvider({
       apiKey: this.apiKey,
       fetchImpl: withGoogleRuntimePolicy(this.fetchImpl, {
-        effort: runtime.selection.reasoningEffort,
+        effort: selection.reasoningEffort,
         conversationPolicy,
         userInput,
       }),
@@ -553,8 +562,9 @@ export class MoonshotRuntimeGenerationService implements AiRuntimeGenerationServ
     } catch {
       throw new AiFoundationError('internal_error');
     }
+    const selection = applyAiRuntimeSelectionOverride(runtime.selection, request.runtimeOverride);
 
-    if (runtime.selection.provider !== 'moonshot') {
+    if (selection.provider !== 'moonshot') {
       // Mirrors the other single-provider runtime services' explicit allowlist dispatch: only
       // implemented providers reach a provider adapter.
       throw new AiFoundationError('disabled');
@@ -565,7 +575,7 @@ export class MoonshotRuntimeGenerationService implements AiRuntimeGenerationServ
       conversationPolicy = resolveAiConversationPolicy({
         responseMode: request.responseMode,
         groundingState: request.groundingState,
-        timezone: runtime.selection.timezone,
+        timezone: selection.timezone,
       });
       const trustedInstructions = normalizeTrustedInstructions(request.trustedInstructions);
       if (trustedInstructions.length > 0) {
@@ -584,9 +594,9 @@ export class MoonshotRuntimeGenerationService implements AiRuntimeGenerationServ
 
     const config: AiFoundationConfig = {
       ...this.baseConfig,
-      provider: runtime.selection.provider,
-      modelProfile: runtime.selection.modelProfile,
-      model: runtime.selection.model,
+      provider: selection.provider,
+      modelProfile: selection.modelProfile,
+      model: selection.model,
       maxOutputTokens: resolveAiRuntimeOutputTokenBudget(
         this.baseConfig.maxOutputTokens,
         conversationPolicy.responseMode,
@@ -598,7 +608,7 @@ export class MoonshotRuntimeGenerationService implements AiRuntimeGenerationServ
       apiKey: this.apiKey,
       fetchImpl: withMoonshotRuntimePolicy(this.fetchImpl, {
         model: config.model,
-        effort: runtime.selection.reasoningEffort,
+        effort: selection.reasoningEffort,
         conversationPolicy,
         userInput,
       }),
@@ -653,8 +663,12 @@ export class MultiProviderAiRuntimeGenerationService implements AiRuntimeGenerat
   async generate(request: AiRuntimeGenerationRequest): Promise<AiGenerationResponse> {
     let provider: AiProviderName;
     try {
-      const runtime = await this.runtimeResolver.resolve();
-      provider = runtime.selection.provider;
+      if (request.runtimeOverride) {
+        provider = request.runtimeOverride.provider;
+      } else {
+        const runtime = await this.runtimeResolver.resolve();
+        provider = runtime.selection.provider;
+      }
     } catch {
       throw new AiFoundationError('internal_error');
     }

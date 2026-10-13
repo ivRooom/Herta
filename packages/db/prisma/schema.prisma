@@ -219,6 +219,20 @@ model AiGenerationEvent {
   @@map("ai_generation_events")
 }
 
+// `/ai model set`によるユーザー個人のprovider/modelProfile上書き設定。未登録ならGuildの
+// console/env既定(ai.runtime)をそのまま使う。reasoningEffort・timezoneは個人設定の対象外
+// (常にGuild既定を使い、対象modelが非対応なら自動fallbackする。applyAiRuntimeSelectionOverride参照)。
+model AiUserModelPreference {
+  guildId      String   @map("guild_id")
+  userId       String   @map("user_id")
+  provider     String   @db.VarChar(16)
+  modelProfile String   @map("model_profile") @db.VarChar(16)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@id([guildId, userId])
+  @@map("ai_user_model_preferences")
+}
+
 // MBTI診断1回の完了ごとの匿名集計イベント。Discordユーザー名・ユーザーIDは保存しない
 // （ai_generation_eventsと同じ、メタデータのみの方針）。completionIdはこのセッション限りの
 // ランダム値で、同じ回答者のquestion answer eventsと結果を結びつけるためだけに使う。
