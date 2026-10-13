@@ -112,7 +112,7 @@
       "getHertaIamOverview": {
         "method": "GET",
         "pathTemplate": "/api/integrations/ivrm/guilds/{guildId}/iam",
-        "capability": "overview",
+        "capability": null,
         "requiredHeaders": [],
         "optionalHeaders": [],
         "queryParameters": [],
