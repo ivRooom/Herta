@@ -12,6 +12,7 @@ const OTHER_USER_ID = '555555555';
 
 const handleAiConversationMessageMock = vi.fn();
 const createAiFoundationRuntimeMock = vi.fn();
+const getAiUsageAnalyticsMock = vi.fn();
 
 vi.mock('../ai/conversation-message-handler.js', () => ({
   handleAiConversationMessage: (...args: unknown[]) => handleAiConversationMessageMock(...args),
@@ -20,6 +21,14 @@ vi.mock('../ai/conversation-message-handler.js', () => ({
 vi.mock('../ai/factory.js', () => ({
   createAiFoundationRuntime: (...args: unknown[]) => createAiFoundationRuntimeMock(...args),
 }));
+
+vi.mock('@herta/db', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@herta/db')>();
+  return {
+    ...actual,
+    getAiUsageAnalytics: (...args: unknown[]) => getAiUsageAnalyticsMock(...args),
+  };
+});
 
 vi.mock('ioredis', () => {
   class FakeRedis {
@@ -564,6 +573,116 @@ describe('/ai model command', () => {
 
     expect(interaction.reply).toHaveBeenCalledWith(
       expect.objectContaining({ content: expect.stringContaining('両方') }),
+    );
+  });
+});
+
+describe('/ai usage command', () => {
+  function getUsageHandler(ctx: Ctx) {
+    const commands = aiPlugin.provideCommands?.(ctx) ?? [];
+    const command = commands.find((candidate) => candidate.definition.name === 'ai');
+    if (!command) throw new Error('/ai usage handler is not registered');
+    return command;
+  }
+
+  function createUsageInteraction(options: {
+    days?: number | null;
+    hasManageGuild?: boolean;
+  }): ChatInputCommandInteraction {
+    return {
+      guildId: 'guild-1',
+      memberPermissions: { has: () => options.hasManageGuild ?? true },
+      options: {
+        getSubcommand: () => 'usage',
+        getInteger: () => options.days ?? null,
+      },
+      deferReply: vi.fn(async () => undefined),
+      editReply: vi.fn(async () => undefined),
+      reply: vi.fn(async () => undefined),
+    } as unknown as ChatInputCommandInteraction;
+  }
+
+  beforeEach(() => {
+    getAiUsageAnalyticsMock.mockReset();
+    getAiUsageAnalyticsMock.mockResolvedValue({
+      generatedAt: '2026-10-13T00:00:00.000Z',
+      timeZone: 'Asia/Tokyo',
+      rangeDays: 7,
+      today: { total: 3, succeeded: 3, failed: 0 },
+      last7Days: { total: 10, succeeded: 9, failed: 1, successRate: 0.9 },
+      range: { total: 10, succeeded: 9, failed: 1, successRate: 0.9, estimatedCostUsd: 0.1234 },
+      daily: [],
+      byProvider: [
+        {
+          provider: 'openai',
+          total: 10,
+          succeeded: 9,
+          failed: 1,
+          successRate: 0.9,
+          estimatedCostUsd: 0.1234,
+          inputTokens: 1000,
+          outputTokens: 500,
+        },
+      ],
+      errors: [{ errorCategory: 'rate_limited', total: 1 }],
+    });
+  });
+
+  it('ManageGuild権限が無ければ拒否する', async () => {
+    const context = createContext();
+    const command = getUsageHandler(context);
+    const interaction = createUsageInteraction({ hasManageGuild: false });
+
+    await command.execute(interaction);
+
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('サーバーの管理') }),
+    );
+    expect(getAiUsageAnalyticsMock).not.toHaveBeenCalled();
+  });
+
+  it('ManageGuild権限があればguildIdでscopeしてusage analyticsを取得し表示する', async () => {
+    const context = createContext();
+    const command = getUsageHandler(context);
+    const interaction = createUsageInteraction({ hasManageGuild: true, days: 14 });
+
+    await command.execute(interaction);
+
+    expect(interaction.deferReply).toHaveBeenCalledWith(
+      expect.objectContaining({ flags: expect.anything() }),
+    );
+    expect(getAiUsageAnalyticsMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ days: 14, guildIds: ['guild-1'] }),
+    );
+    expect(interaction.editReply).toHaveBeenCalledWith(
+      expect.objectContaining({ embeds: expect.any(Array) }),
+    );
+  });
+
+  it('daysを省略すると既定7日で取得する', async () => {
+    const context = createContext();
+    const command = getUsageHandler(context);
+    const interaction = createUsageInteraction({ hasManageGuild: true });
+
+    await command.execute(interaction);
+
+    expect(getAiUsageAnalyticsMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ days: 7 }),
+    );
+  });
+
+  it('取得失敗時はエラーメッセージへeditReplyする', async () => {
+    getAiUsageAnalyticsMock.mockRejectedValueOnce(new Error('db down'));
+    const context = createContext();
+    const command = getUsageHandler(context);
+    const interaction = createUsageInteraction({ hasManageGuild: true });
+
+    await command.execute(interaction);
+
+    expect(interaction.editReply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('失敗') }),
     );
   });
 });

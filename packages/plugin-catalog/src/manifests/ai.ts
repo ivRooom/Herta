@@ -156,6 +156,19 @@ export const aiManifest: PluginManifest = {
             },
           ],
         },
+        {
+          name: 'usage',
+          description: 'AIの利用状況・推定コストを確認します（管理者のみ）',
+          options: [
+            {
+              name: 'days',
+              description: '集計期間（日数、既定7、最大90）',
+              type: 'integer',
+              minValue: 1,
+              maxValue: 90,
+            },
+          ],
+        },
       ],
     },
   ],

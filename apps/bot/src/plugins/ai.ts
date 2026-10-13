@@ -1,5 +1,6 @@
 import {
   clearAiUserModelPreference,
+  getAiUsageAnalytics,
   getAiUserModelPreference,
   recordAiGenerationEvent,
   setAiUserModelPreference,
@@ -24,7 +25,13 @@ import {
   type PluginEventHandler,
   type PluginRuntimeContext,
 } from '@herta/plugin-sdk';
-import { MessageFlags, type ChatInputCommandInteraction, type Client } from 'discord.js';
+import {
+  EmbedBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+  type ChatInputCommandInteraction,
+  type Client,
+} from 'discord.js';
 import { Redis } from 'ioredis';
 import { clearAkinatorGuildSessions, createAkinatorCommandHandler } from '../ai/akinator-game.js';
 import { AiArtifactRuntime } from '../ai/artifact-runtime.js';
@@ -394,7 +401,108 @@ async function executeAiCommand(
     await executeAiModelCommand(context, interaction);
     return;
   }
+  if (subcommand === 'usage') {
+    await executeAiUsageCommand(context, interaction);
+    return;
+  }
   await executeAiAskCommand(context, interaction);
+}
+
+function formatUsdMicro(estimatedCostUsd: number): string {
+  return `$${estimatedCostUsd.toFixed(estimatedCostUsd < 1 ? 4 : 2)}`;
+}
+
+function formatSuccessRate(rate: number | null): string {
+  return rate === null ? '—' : `${Math.round(rate * 100)}%`;
+}
+
+async function executeAiUsageCommand(
+  context: AiPluginRuntimeContext,
+  interaction: ChatInputCommandInteraction,
+): Promise<void> {
+  if (!interaction.guildId || interaction.guildId !== context.guildId) {
+    await interaction.reply({
+      content: 'サーバー内でのみ利用できます。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const hasPermission =
+    interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) ?? false;
+  if (!hasPermission) {
+    await interaction.reply({
+      content: 'このコマンドは「サーバーの管理」権限を持つユーザーだけが利用できます。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const days = interaction.options.getInteger('days') ?? 7;
+
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  try {
+    const analytics = await getAiUsageAnalytics(context.prisma, {
+      days,
+      guildIds: [context.guildId],
+    });
+
+    const embed = new EmbedBuilder()
+      .setTitle('📊 Herta AI Usage')
+      .setColor(0x7c6df2)
+      .addFields(
+        {
+          name: '今日',
+          value: `${analytics.today.total.toLocaleString('ja-JP')}件（成功${analytics.today.succeeded.toLocaleString('ja-JP')} / 失敗${analytics.today.failed.toLocaleString('ja-JP')}）`,
+          inline: true,
+        },
+        {
+          name: '直近7日',
+          value: `${analytics.last7Days.total.toLocaleString('ja-JP')}件（成功率${formatSuccessRate(analytics.last7Days.successRate)}）`,
+          inline: true,
+        },
+        {
+          name: `指定期間（${analytics.rangeDays}日）`,
+          value: `${analytics.range.total.toLocaleString('ja-JP')}件・成功率${formatSuccessRate(analytics.range.successRate)}\n推定コスト: **${formatUsdMicro(analytics.range.estimatedCostUsd)}**`,
+          inline: false,
+        },
+      );
+
+    if (analytics.byProvider.length > 0) {
+      const lines = analytics.byProvider.map(
+        (provider) =>
+          `**${provider.provider}** — ${provider.total.toLocaleString('ja-JP')}件・成功率${formatSuccessRate(provider.successRate)}・${formatUsdMicro(provider.estimatedCostUsd)}\n` +
+          `  入力${provider.inputTokens.toLocaleString('ja-JP')} / 出力${provider.outputTokens.toLocaleString('ja-JP')} tokens`,
+      );
+      embed.addFields({ name: 'プロバイダ別', value: lines.join('\n'), inline: false });
+    }
+
+    if (analytics.errors.length > 0) {
+      const lines = analytics.errors
+        .slice(0, 5)
+        .map((error) => `\`${error.errorCategory}\` — ${error.total.toLocaleString('ja-JP')}件`);
+      embed.addFields({ name: 'エラー上位', value: lines.join('\n'), inline: false });
+    }
+
+    embed.setFooter({
+      text: `${analytics.timeZone} · ${new Date(analytics.generatedAt).toLocaleString('ja-JP')}時点`,
+    });
+
+    await interaction.editReply({ embeds: [embed] });
+  } catch (error) {
+    context.logger.warn(
+      {
+        guildId: context.guildId,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+        result: 'usage_query_failed',
+      },
+      'AI利用状況の取得に失敗しました',
+    );
+    await interaction
+      .editReply({ content: '利用状況の取得に失敗しました。しばらくしてから再度お試しください。' })
+      .catch(() => undefined);
+  }
 }
 
 /**
