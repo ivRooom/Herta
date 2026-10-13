@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import test, { after, before, beforeEach } from 'node:test';
 import { PrismaClient } from '@prisma/client';
+import { attachStudioAccessPolicy } from './studio-access-control.js';
+import { deleteStudioAccessGroup, updateStudioAccessGroup } from './studio-access-groups-admin.js';
 import {
   changeStudioAccessGroupMembers,
   changeStudioAccessPolicyAttachments,
@@ -482,5 +484,58 @@ test(
     });
     assert.equal(ok.status, 'ok');
     assert.deepEqual(await attachmentKeys(policy), [`group:${real.id}`]);
+  },
+);
+
+test(
+  'Studioの更新経路でも updated_at は必ず進み、削除・割り当てはグループ行のロックで孤児を残さない',
+  { skip },
+  async () => {
+    const group = await seedGroup('StudioPath');
+    let expected = group.updatedAt;
+    for (let index = 0; index < 3; index += 1) {
+      assert.equal(
+        await updateStudioAccessGroup(prisma, {
+          guildId: GUILD,
+          groupId: group.id,
+          name: `Studio ${index}`,
+          description: null,
+          actorId: ACTOR,
+        }),
+        true,
+      );
+      const [row] = await prisma.$queryRaw<Array<{ updated_at: Date }>>`
+      SELECT updated_at FROM studio_access_groups WHERE id = ${group.id}::uuid
+    `;
+      assert.ok(row!.updated_at.getTime() > expected.getTime());
+      expected = row!.updated_at;
+    }
+
+    const policy = await seedPolicy('P2');
+    // 存在しないグループへの Studio からの割り当ては挿入されない。
+    assert.equal(
+      await attachStudioAccessPolicy(prisma, {
+        guildId: GUILD,
+        policyId: policy,
+        principalType: 'group',
+        principalId: randomUUID(),
+        actorId: ACTOR,
+      }),
+      false,
+    );
+    assert.deepEqual(await attachmentKeys(policy), []);
+
+    assert.equal(
+      await attachStudioAccessPolicy(prisma, {
+        guildId: GUILD,
+        policyId: policy,
+        principalType: 'group',
+        principalId: group.id,
+        actorId: ACTOR,
+      }),
+      true,
+    );
+    assert.equal(await deleteStudioAccessGroup(prisma, GUILD, group.id), true);
+    assert.deepEqual(await attachmentKeys(policy), []);
   },
 );
