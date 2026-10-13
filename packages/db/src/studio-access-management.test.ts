@@ -411,3 +411,76 @@ test('割り当て一括: 存在しないポリシー・他ギルドのポリシ
   }
   assert.deepEqual(await attachmentKeys(foreign), []);
 });
+
+test('グループ編集: 同じミリ秒内に連続して更新しても updated_at は必ず進む', { skip }, async () => {
+  const group = await seedGroup('Rapid');
+  let expected = group.updatedAt;
+  for (let index = 0; index < 5; index += 1) {
+    const updated = await updateStudioAccessGroupIfCurrent(prisma, {
+      guildId: GUILD,
+      groupId: group.id,
+      name: `Rapid ${index}`,
+      description: null,
+      actorId: ACTOR,
+      expectedUpdatedAt: expected,
+    });
+    assert.ok(updated, `update ${index} should succeed`);
+    assert.ok(
+      updated.updatedAt.getTime() > expected.getTime(),
+      `updated_at must strictly advance (${index})`,
+    );
+    // 直前の値で再送すると、同じミリ秒内でも更新されない。
+    assert.equal(
+      await updateStudioAccessGroupIfCurrent(prisma, {
+        guildId: GUILD,
+        groupId: group.id,
+        name: 'Stale',
+        description: null,
+        actorId: ACTOR,
+        expectedUpdatedAt: expected,
+      }),
+      null,
+    );
+    expected = updated.updatedAt;
+  }
+});
+
+test(
+  '割り当て一括: 存在しない・他ギルドのグループへの割り当ては group_not_found(何も変更しない)',
+  { skip },
+  async () => {
+    const policy = await seedPolicy('P');
+    const foreignGroup = await seedGroup('Foreign', OTHER_GUILD);
+    const real = await seedGroup('Real');
+    const missing = randomUUID();
+
+    const result = await changeStudioAccessPolicyAttachments(prisma, {
+      guildId: GUILD,
+      policyId: policy,
+      attach: [
+        { type: 'user', id: snowflake(1) },
+        { type: 'group', id: real.id },
+        { type: 'group', id: missing },
+        { type: 'group', id: foreignGroup.id },
+      ],
+      detach: [],
+      actorId: ACTOR,
+    });
+    assert.equal(result.status, 'group_not_found');
+    if (result.status === 'group_not_found') {
+      assert.deepEqual([...result.groupIds].sort(), [missing, foreignGroup.id].sort());
+    }
+    // 全か無か: 存在するユーザー・グループの割り当ても適用されない。
+    assert.deepEqual(await attachmentKeys(policy), []);
+
+    const ok = await changeStudioAccessPolicyAttachments(prisma, {
+      guildId: GUILD,
+      policyId: policy,
+      attach: [{ type: 'group', id: real.id.toUpperCase() }],
+      detach: [],
+      actorId: ACTOR,
+    });
+    assert.equal(ok.status, 'ok');
+    assert.deepEqual(await attachmentKeys(policy), [`group:${real.id}`]);
+  },
+);

@@ -664,3 +664,72 @@ test('監査の書き込みが失敗しても操作自体は成功として返�
     console.error = original;
   }
 });
+
+test('割り当て一括: 確認後に割り当て先のグループが消えていたら、該当要素のgroup_not_foundで400(適用しない)', async () => {
+  const { handlers, audits } = setup({
+    changeAttachments: async () => ({ status: 'group_not_found', groupIds: new Set([GROUP]) }),
+  });
+  const response = await handlers.changeAttachmentsBatch(
+    req('POST', '/x', {
+      attach: [
+        { type: 'user', id: USER },
+        { type: 'group', id: GROUP },
+      ],
+    }),
+    { guildId: GUILD, policyId: POLICY },
+  );
+  assert.equal(response.status, 400);
+  assert.deepEqual((await json(response))['itemErrors'], [
+    { list: 'attach', index: 1, code: 'group_not_found' },
+  ]);
+  assert.deepEqual(audits, []);
+});
+
+test('割り当て(単体): 確認後にグループが消えていたら404', async () => {
+  const { handlers } = setup({
+    changeAttachments: async () => ({ status: 'group_not_found', groupIds: new Set([GROUP]) }),
+  });
+  const response = await handlers.changeAttachment(
+    req('PUT', '/x'),
+    { guildId: GUILD, policyId: POLICY, principalType: 'group', principalId: GROUP },
+    'attach',
+  );
+  assert.equal(response.status, 404);
+});
+
+test('予期しない例外は内容を漏らさない500のJSONにする(全ハンドラ)', async () => {
+  const boom = async () => {
+    throw new Error('connection to 10.0.0.5 refused');
+  };
+  const { handlers } = setup({
+    listGroups: boom,
+    findPolicy: boom,
+    deleteGroupIfCurrent: boom,
+    changeMembers: boom,
+  });
+  const originalError = console.error;
+  console.error = () => undefined;
+  try {
+    const responses = await Promise.all([
+      handlers.updateGroup(
+        req('PATCH', '/x', { name: 'A', expectedUpdatedAt: UPDATED_AT.toISOString() }),
+        groupParams,
+      ),
+      handlers.deleteGroup(
+        req('DELETE', `/x?expectedUpdatedAt=${encodeURIComponent(UPDATED_AT.toISOString())}`),
+        groupParams,
+      ),
+      handlers.changeMembersBatch(req('POST', '/x', { add: [USER] }), groupParams),
+      handlers.changeAttachmentsBatch(req('POST', '/x', { detach: [{ type: 'user', id: USER }] }), {
+        guildId: GUILD,
+        policyId: POLICY,
+      }),
+    ]);
+    for (const response of responses) {
+      assert.equal(response.status, 500);
+      assert.deepEqual(await json(response), { error: 'Internal server error' });
+    }
+  } finally {
+    console.error = originalError;
+  }
+});

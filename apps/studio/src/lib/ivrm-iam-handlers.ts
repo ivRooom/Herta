@@ -211,7 +211,7 @@ export function createIvrmIamHandlers(deps: IvrmIamDeps) {
     duplicate_in_both_lists: () => reply({ error: 'Invalid principal' }, 400),
   } as const;
 
-  return {
+  const handlers = {
     async updateGroup(request: Request, params: { guildId: string; groupId: string }) {
       const begun = begin(request, params.guildId);
       if (!begun.ok) return begun.response;
@@ -466,6 +466,7 @@ export function createIvrmIamHandlers(deps: IvrmIamDeps) {
         actorId: begun.actorId,
       });
       if (result.status === 'not_found') return reply({ error: 'Policy not found' }, 404);
+      if (result.status === 'group_not_found') return ATTACH_ERROR_RESPONSES.group_not_found();
 
       const key = principalKey(principal);
       const changed = operation === 'attach' ? result.attached.has(key) : result.detached.has(key);
@@ -526,6 +527,22 @@ export function createIvrmIamHandlers(deps: IvrmIamDeps) {
         actorId: begun.actorId,
       });
       if (result.status === 'not_found') return reply({ error: 'Policy not found' }, 404);
+      if (result.status === 'group_not_found') {
+        const missing = result.groupIds;
+        return batchValidationFailure(
+          parsed.value.attach.flatMap((principal, index) =>
+            principal.type === 'group' && missing.has(principal.id.toLowerCase())
+              ? [
+                  {
+                    list: 'attach' as const,
+                    index: parsed.value.attachIndexes[index] ?? index,
+                    code: 'group_not_found' as const,
+                  },
+                ]
+              : [],
+          ),
+        );
+      }
 
       const toRef = (principals: IamPrincipal[], changed: Set<string>) =>
         principals.filter((principal) => changed.has(principalKey(principal)));
@@ -569,6 +586,32 @@ export function createIvrmIamHandlers(deps: IvrmIamDeps) {
       });
     },
   };
+
+  return guardHandlers(handlers);
+}
+
+/**
+ * 予期しない例外(DB 障害など)を、内容を漏らさない 500 の JSON に変換する。
+ * Next.js のルートが既定のエラーページを返さず、連携側が常に JSON を受け取れるようにする。
+ */
+function guardHandlers<T extends Record<string, (...args: never[]) => Promise<Response>>>(
+  handlers: T,
+): T {
+  const guarded = {} as Record<string, unknown>;
+  for (const [name, handler] of Object.entries(handlers)) {
+    guarded[name] = async (...args: never[]) => {
+      try {
+        return await handler(...args);
+      } catch (error) {
+        console.error('ivRooom IAM handler failed', {
+          handler: name,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        });
+        return reply({ error: 'Internal server error' }, 500);
+      }
+    };
+  }
+  return guarded as T;
 }
 
 export type IvrmIamHandlers = ReturnType<typeof createIvrmIamHandlers>;

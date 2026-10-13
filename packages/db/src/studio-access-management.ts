@@ -63,7 +63,9 @@ export async function updateStudioAccessGroupIfCurrent(
     SET name = ${input.name},
         description = ${input.description},
         updated_by = ${input.actorId},
-        updated_at = CURRENT_TIMESTAMP
+        -- 同じミリ秒内の連続更新でも updated_at を必ず進める(楽観的同時実行制御の比較値が変わらないと、
+        -- 古い expectedUpdatedAt の更新が通ってしまう)。
+        updated_at = GREATEST(CURRENT_TIMESTAMP, updated_at + interval '1 millisecond')
     WHERE guild_id = ${input.guildId}
       AND id = ${input.groupId.toLowerCase()}::uuid
       AND updated_at = ${input.expectedUpdatedAt}::timestamptz
@@ -236,8 +238,16 @@ export function studioAccessPrincipalKey(principal: StudioAccessPrincipalRef) {
   return `${principal.type}:${principal.id}`;
 }
 
+/** group の principal id は UUID なので小文字に正規化する(ロール・ユーザーの snowflake はそのまま)。 */
+function normalizedPrincipalId(principal: StudioAccessPrincipalRef) {
+  return principal.type === 'group' ? principal.id.toLowerCase() : principal.id;
+}
+
 export type ChangeStudioAccessPolicyAttachmentsResult =
-  { status: 'not_found' } | { status: 'ok'; attached: Set<string>; detached: Set<string> };
+  | { status: 'not_found' }
+  /** 割り当て先のグループが(同時に削除されるなどして)存在しない。何も変更しない。 */
+  | { status: 'group_not_found'; groupIds: Set<string> }
+  | { status: 'ok'; attached: Set<string>; detached: Set<string> };
 
 /** 割り当て・解除を 1 トランザクションで適用し、実際に変わった principal(`type:id`)を返す。 */
 export async function changeStudioAccessPolicyAttachments(
@@ -260,6 +270,29 @@ export async function changeStudioAccessPolicyAttachments(
     `;
     if (policy.length === 0) return { status: 'not_found' } as const;
 
+    // 割り当て先のグループをこのトランザクション内で共有ロックする。グループ削除は FOR UPDATE で
+    // ロックしてから割り当てを消すため、確認から挿入までの間にグループが消えて、存在しないグループへの
+    // 割り当てが残る(孤児になる)競合を防ぐ。
+    const groupIds = [
+      ...new Set(
+        input.attach
+          .filter((principal) => principal.type === 'group')
+          .map((principal) => principal.id.toLowerCase()),
+      ),
+    ];
+    if (groupIds.length > 0) {
+      const existing = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id::text AS id FROM studio_access_groups
+        WHERE guild_id = ${input.guildId} AND id = ANY(${groupIds}::uuid[])
+        FOR SHARE
+      `;
+      const found = new Set(existing.map((row) => row.id.toLowerCase()));
+      const missing = groupIds.filter((id) => !found.has(id));
+      if (missing.length > 0) {
+        return { status: 'group_not_found', groupIds: new Set(missing) } as const;
+      }
+    }
+
     const attached =
       input.attach.length === 0
         ? []
@@ -270,7 +303,7 @@ export async function changeStudioAccessPolicyAttachments(
             FROM unnest(
               ${input.attach.map(() => randomUUID())}::uuid[],
               ${input.attach.map((principal) => principal.type)}::text[],
-              ${input.attach.map((principal) => principal.id)}::text[]
+              ${input.attach.map(normalizedPrincipalId)}::text[]
             ) AS i(id, principal_type, principal_id)
             ON CONFLICT (policy_id, principal_type, principal_id) DO NOTHING
             RETURNING principal_type, principal_id
@@ -282,7 +315,7 @@ export async function changeStudioAccessPolicyAttachments(
             DELETE FROM studio_access_policy_attachments a
             USING unnest(
               ${input.detach.map((principal) => principal.type)}::text[],
-              ${input.detach.map((principal) => principal.id)}::text[]
+              ${input.detach.map(normalizedPrincipalId)}::text[]
             ) AS d(principal_type, principal_id)
             WHERE a.guild_id = ${input.guildId}
               AND a.policy_id = ${policyId}::uuid
