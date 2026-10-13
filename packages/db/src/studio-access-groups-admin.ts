@@ -86,7 +86,8 @@ export async function updateStudioAccessGroup(
     SET name = ${input.name},
         description = ${input.description},
         updated_by = ${input.actorId},
-        updated_at = CURRENT_TIMESTAMP
+        -- ivRooom 連携の expectedUpdatedAt(楽観的同時実行制御)と同じ規則で、必ず進める。
+        updated_at = GREATEST(CURRENT_TIMESTAMP, updated_at + interval '1 millisecond')
     WHERE guild_id = ${input.guildId} AND id = ${input.groupId.toLowerCase()}::uuid
   `;
   return updated > 0;
@@ -99,6 +100,13 @@ export async function deleteStudioAccessGroup(
 ): Promise<boolean> {
   const canonicalGroupId = groupId.toLowerCase();
   return prisma.$transaction(async (tx) => {
+    // 先にグループ行を FOR UPDATE でロックしてから割り当てを消す。グループへの割り当て(FOR SHARE)が
+    // 並行しても、削除後に孤児の割り当てが挿入されない。
+    await tx.$queryRaw`
+      SELECT id FROM studio_access_groups
+      WHERE guild_id = ${guildId} AND id = ${canonicalGroupId}::uuid
+      FOR UPDATE
+    `;
     await tx.$executeRaw`
       DELETE FROM studio_access_policy_attachments
       WHERE guild_id = ${guildId}

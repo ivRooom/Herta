@@ -212,7 +212,7 @@ export async function attachStudioAccessPolicy(
   },
 ): Promise<boolean> {
   const id = randomUUID();
-  const inserted = await prisma.$executeRaw`
+  const insert = (client: Pick<PrismaClient, '$executeRaw'>) => client.$executeRaw`
     INSERT INTO studio_access_policy_attachments
       (id, policy_id, guild_id, principal_type, principal_id, created_by)
     SELECT ${id}::uuid, p.id, p.guild_id, ${input.principalType}, ${input.principalId}, ${input.actorId}
@@ -220,7 +220,20 @@ export async function attachStudioAccessPolicy(
     WHERE p.id = ${input.policyId}::uuid AND p.guild_id = ${input.guildId}
     ON CONFLICT (policy_id, principal_type, principal_id) DO NOTHING
   `;
-  return inserted > 0;
+
+  if (input.principalType !== 'group') return (await insert(prisma)) > 0;
+
+  // グループへの割り当ては、グループ行を共有ロックしてから挿入する。グループ削除(FOR UPDATE)と
+  // 競合しても、削除済みのグループへの割り当てが残らない。
+  return prisma.$transaction(async (tx) => {
+    const group = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT id FROM studio_access_groups
+      WHERE guild_id = ${input.guildId} AND id = ${input.principalId.toLowerCase()}::uuid
+      FOR SHARE
+    `;
+    if (group.length === 0) return false;
+    return (await insert(tx)) > 0;
+  });
 }
 
 export async function detachStudioAccessPolicy(
