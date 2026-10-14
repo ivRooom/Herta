@@ -27,6 +27,7 @@ import {
   COMMUNITY_PERIOD_PRESETS as PERIOD_PRESETS,
   communityJstToday as jstToday,
   communityPeriodLabel as periodLabel,
+  communityPeriodQueryParams as periodQueryParams,
   resolveCommunityPeriodRange as resolvePeriodRange,
 } from '@/lib/community-period';
 import { getGuildPlugin } from '@/lib/guild-plugins';
@@ -136,14 +137,23 @@ export default async function CommunityMemberDetailPage({
   const bucketMax = Math.max(...buckets.map((item) => item.value), 1);
 
   const queryHref = (overrides: Record<string, string>) => {
-    const query = new URLSearchParams({ guild: guild.id, metric, period, ...overrides });
+    const query = new URLSearchParams({
+      guild: guild.id,
+      metric,
+      ...periodQueryParams({ period, start, end }),
+      ...overrides,
+    });
     return `/dashboard/community/members/${userId}?${query.toString()}`;
   };
+  const backHref = `/dashboard/community?${new URLSearchParams({
+    guild: guild.id,
+    ...periodQueryParams({ period, start, end }),
+  }).toString()}`;
 
   return (
     <div className="space-y-6">
       <Link
-        href={`/dashboard/community?guild=${guild.id}&period=${period}`}
+        href={backHref}
         className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />

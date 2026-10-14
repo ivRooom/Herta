@@ -60,6 +60,24 @@ export function resolveCommunityPeriodRange(
   };
 }
 
+/**
+ * period/start/endから、他ページへのリンク用query paramを組み立てる。period==='custom'の
+ * 場合はfrom/toを含めないと、遷移先のresolveCommunityPeriodRangeがcustom rangeを復元できず
+ * 既定periodへfail closedしてしまう(選択していた期間と違う範囲が表示される)。
+ */
+export function communityPeriodQueryParams(range: {
+  period: string;
+  start: Date;
+  end: Date;
+}): Record<string, string> {
+  if (range.period !== 'custom') return { period: range.period };
+  return {
+    period: 'custom',
+    from: communityDateKey(range.start),
+    to: communityDateKey(range.end),
+  };
+}
+
 export function communityPeriodLabel(range: { period: string; start: Date; end: Date }): string {
   if (range.period === 'custom') {
     return `${communityDateKey(range.start)} 〜 ${communityDateKey(range.end)}`;

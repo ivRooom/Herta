@@ -46,6 +46,7 @@ import {
   COMMUNITY_PERIOD_PRESETS as PERIOD_PRESETS,
   communityJstToday as jstToday,
   communityPeriodLabel as periodLabel,
+  communityPeriodQueryParams as periodQueryParams,
   resolveCommunityPeriodRange as resolvePeriodRange,
 } from '@/lib/community-period';
 import { getGuildPlugin } from '@/lib/guild-plugins';
@@ -275,14 +276,17 @@ export default async function CommunityDashboardPage({
     const query = new URLSearchParams({
       guild: guild.id,
       metric,
-      period,
+      ...periodQueryParams({ period, start, end }),
       ...overrides,
     });
     return `/dashboard/community?${query.toString()}`;
   };
 
   const memberDetailHref = (userId: string) => {
-    const query = new URLSearchParams({ guild: guild.id, period });
+    const query = new URLSearchParams({
+      guild: guild.id,
+      ...periodQueryParams({ period, start, end }),
+    });
     return `/dashboard/community/members/${userId}?${query.toString()}`;
   };
 
