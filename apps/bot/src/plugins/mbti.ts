@@ -113,6 +113,14 @@ interface MbtiSession {
   questionIndex: number;
   scores: MbtiScores;
   answers: MbtiQuizAnswerInput[];
+  /**
+   * questionsと同じ並びで、セッション開始時に全問分まとめて起動しておくSVG→PNG生成Promise。
+   * 1問ずつボタン操作のたびに同期的にrenderしていると、回答から次の質問表示までの体感遅延の
+   * 主因になる(sharpでのPNG生成+添付ファイル構築がinteraction.update()をブロックする)ため、
+   * ユーザーが前の質問を読んで回答している間にバックグラウンドで次の画像を用意しておく。
+   * 最初の1問目だけはこの配列の完成を待つ(以前と同じ体感速度)。
+   */
+  cardRenders: Promise<Buffer>[];
 }
 
 const sessions = new Map<string, MbtiSession>();
@@ -154,14 +162,23 @@ async function startMbtiQuiz(
     return;
   }
 
+  const questions = selectMbtiQuestions();
   const session: MbtiSession = {
     id: randomUUID().replaceAll('-', ''),
     guildId: interaction.guildId,
     userId: interaction.user.id,
-    questions: selectMbtiQuestions(),
+    questions,
     questionIndex: 0,
     scores: createEmptyMbtiScores(),
     answers: [],
+    cardRenders: questions.map((question, index) =>
+      renderMbtiQuestionCard({
+        questionIndex: index,
+        totalQuestions: questions.length,
+        prompt: question.prompt,
+        axis: question.axis,
+      }),
+    ),
   };
   sessions.set(session.id, session);
 
@@ -387,12 +404,7 @@ async function buildQuestionPayload(
   session: MbtiSession,
 ): Promise<{ content: string; files: AttachmentBuilder[]; attachments: []; embeds: [] }> {
   const question = session.questions[session.questionIndex]!;
-  const png = await renderMbtiQuestionCard({
-    questionIndex: session.questionIndex,
-    totalQuestions: session.questions.length,
-    prompt: question.prompt,
-    axis: question.axis,
-  });
+  const png = await session.cardRenders[session.questionIndex]!;
   const attachment = new AttachmentBuilder(png, {
     name: `mbti-${session.id}-${session.questionIndex}.png`,
   }).setDescription(question.prompt);
