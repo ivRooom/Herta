@@ -5,6 +5,7 @@ export type CommandExecutionStatus = 'success' | 'failure';
 
 export interface CommandExecutionInput {
   guildId: string | null;
+  userId: string | null;
   commandName: string;
   status: CommandExecutionStatus;
   durationMs: number;
@@ -83,6 +84,7 @@ export interface CommandExecutionSearchFilters {
 export interface CommandExecutionHistoryItem {
   id: string;
   guildId: string | null;
+  userId: string | null;
   commandName: string;
   status: string;
   durationMs: number;
@@ -140,6 +142,7 @@ const DEFAULT_ANALYTICS_DAYS = 7;
 const MAX_ANALYTICS_DAYS = 90;
 const MAX_COMMAND_NAME_LENGTH = 100;
 const MAX_GUILD_ID_LENGTH = 64;
+const MAX_USER_ID_LENGTH = 64;
 const MAX_ERROR_NAME_LENGTH = 120;
 const MAX_DURATION_MS = 5 * 60 * 1000;
 const DEFAULT_RETENTION_DAYS = 90;
@@ -177,6 +180,7 @@ export function normalizeCommandExecutionInput(
 ): CommandExecutionInput {
   return {
     guildId: normalizeOptionalText(input.guildId, MAX_GUILD_ID_LENGTH),
+    userId: normalizeOptionalText(input.userId, MAX_USER_ID_LENGTH),
     commandName:
       normalizeOptionalText(input.commandName, MAX_COMMAND_NAME_LENGTH) ?? 'unknown-command',
     status: input.status,
@@ -233,6 +237,7 @@ export async function recordCommandExecution(
     data: {
       id: randomUUID(),
       guildId: normalized.guildId,
+      userId: normalized.userId,
       commandName: normalized.commandName,
       status: normalized.status,
       durationMs: normalized.durationMs,
@@ -453,6 +458,7 @@ export async function searchCommandExecutionEvents(
           OR: [
             { commandName: { contains: query, mode: 'insensitive' } },
             { guildId: { contains: query, mode: 'insensitive' } },
+            { userId: { contains: query, mode: 'insensitive' } },
             { errorName: { contains: query, mode: 'insensitive' } },
           ],
         }
@@ -469,6 +475,7 @@ export async function searchCommandExecutionEvents(
       select: {
         id: true,
         guildId: true,
+        userId: true,
         commandName: true,
         status: true,
         durationMs: true,

@@ -183,6 +183,7 @@ model AuditLog {
 model CommandExecutionEvent {
   id          String   @id
   guildId     String?  @map("guild_id")
+  userId      String?  @map("user_id")
   commandName String   @map("command_name")
   status      String
   durationMs  Int      @map("duration_ms")
@@ -192,6 +193,7 @@ model CommandExecutionEvent {
   @@index([executedAt(sort: Desc)])
   @@index([commandName, executedAt(sort: Desc)])
   @@index([guildId, executedAt(sort: Desc)])
+  @@index([userId, executedAt(sort: Desc)])
   @@map("command_execution_events")
 }
 
