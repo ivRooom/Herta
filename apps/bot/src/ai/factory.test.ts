@@ -4,9 +4,11 @@ import { describe, expect, it } from 'vitest';
 import {
   createAiFoundationRuntime,
   resolveAiAnthropicCredential,
+  resolveAiDeepseekCredential,
   resolveAiGoogleCredential,
   resolveAiMoonshotCredential,
   resolveAiOpenAiCredential,
+  resolveAiXaiCredential,
 } from './factory.js';
 
 const prisma = {} as Parameters<typeof readRuntimeSecret>[0];
@@ -218,6 +220,94 @@ describe('AI Foundation Bot credential bootstrap', () => {
   });
 
   it('Moonshot credentialが無くてもOpenAIがあればbootstrapはreadyになる', async () => {
+    const result = await createAiFoundationRuntime({
+      prisma,
+      redis,
+      env: { HERTA_AI_ENABLED: 'true' },
+      readSecret: async (_prisma, name) => (name === 'openai.api_key' ? 'stored-key' : null),
+    });
+    expect(result.status).toBe('ready');
+    expect(result.service).not.toBeNull();
+  });
+
+  it('xAI runtime secretをXAI_API_KEY fallbackより優先する', async () => {
+    const result = await resolveAiXaiCredential({
+      prisma,
+      env: { XAI_API_KEY: 'env-key' },
+      readSecret: async () => 'stored-xai-key',
+    });
+    expect(result).toEqual({
+      apiKey: 'stored-xai-key',
+      source: 'runtime_secret',
+      failure: null,
+    });
+  });
+
+  it('xAI runtime secret未登録時だけXAI_API_KEY fallbackを使う', async () => {
+    const result = await resolveAiXaiCredential({
+      prisma,
+      env: { XAI_API_KEY: 'env-key' },
+      readSecret: async () => null,
+    });
+    expect(result).toEqual({ apiKey: 'env-key', source: 'environment', failure: null });
+  });
+
+  it('xAI credentialのstore失敗はenv fallbackへ逃がさずfail closedする', async () => {
+    const result = await resolveAiXaiCredential({
+      prisma,
+      env: { XAI_API_KEY: 'env-key' },
+      readSecret: async () => {
+        throw new RuntimeSecretError('decrypt_failed');
+      },
+    });
+    expect(result).toEqual({ apiKey: null, source: null, failure: 'decrypt_failed' });
+  });
+
+  it('xAI credentialが無くてもOpenAIがあればbootstrapはreadyになる', async () => {
+    const result = await createAiFoundationRuntime({
+      prisma,
+      redis,
+      env: { HERTA_AI_ENABLED: 'true' },
+      readSecret: async (_prisma, name) => (name === 'openai.api_key' ? 'stored-key' : null),
+    });
+    expect(result.status).toBe('ready');
+    expect(result.service).not.toBeNull();
+  });
+
+  it('DeepSeek runtime secretをDEEPSEEK_API_KEY fallbackより優先する', async () => {
+    const result = await resolveAiDeepseekCredential({
+      prisma,
+      env: { DEEPSEEK_API_KEY: 'env-key' },
+      readSecret: async () => 'stored-deepseek-key',
+    });
+    expect(result).toEqual({
+      apiKey: 'stored-deepseek-key',
+      source: 'runtime_secret',
+      failure: null,
+    });
+  });
+
+  it('DeepSeek runtime secret未登録時だけDEEPSEEK_API_KEY fallbackを使う', async () => {
+    const result = await resolveAiDeepseekCredential({
+      prisma,
+      env: { DEEPSEEK_API_KEY: 'env-key' },
+      readSecret: async () => null,
+    });
+    expect(result).toEqual({ apiKey: 'env-key', source: 'environment', failure: null });
+  });
+
+  it('DeepSeek credentialのstore失敗はenv fallbackへ逃がさずfail closedする', async () => {
+    const result = await resolveAiDeepseekCredential({
+      prisma,
+      env: { DEEPSEEK_API_KEY: 'env-key' },
+      readSecret: async () => {
+        throw new RuntimeSecretError('decrypt_failed');
+      },
+    });
+    expect(result).toEqual({ apiKey: null, source: null, failure: 'decrypt_failed' });
+  });
+
+  it('DeepSeek credentialが無くてもOpenAIがあればbootstrapはreadyになる', async () => {
     const result = await createAiFoundationRuntime({
       prisma,
       redis,

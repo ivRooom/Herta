@@ -1,9 +1,11 @@
 import {
   ANTHROPIC_API_KEY_RUNTIME_SECRET,
+  DEEPSEEK_API_KEY_RUNTIME_SECRET,
   GOOGLE_GEMINI_API_KEY_RUNTIME_SECRET,
   MOONSHOT_API_KEY_RUNTIME_SECRET,
   OPENAI_API_KEY_RUNTIME_SECRET,
   RuntimeSecretError,
+  XAI_API_KEY_RUNTIME_SECRET,
   getRuntimeConfiguration,
   readRuntimeSecret,
 } from '@herta/db';
@@ -28,10 +30,12 @@ import {
 } from './image-generation-service.js';
 import {
   AnthropicRuntimeGenerationService,
+  DeepseekRuntimeGenerationService,
   GoogleRuntimeGenerationService,
   MoonshotRuntimeGenerationService,
   MultiProviderAiRuntimeGenerationService,
   OpenAiRuntimeGenerationService,
+  XaiRuntimeGenerationService,
   type AiRuntimeGenerationService,
 } from './runtime-service.js';
 
@@ -166,6 +170,54 @@ export async function resolveAiMoonshotCredential(
 }
 
 /**
+ * xAI (Grok) counterpart to the other resolveAi*Credential functions. Same fail-closed
+ * contract: a Runtime Secret Store read/decrypt failure never falls through to the
+ * XAI_API_KEY env fallback.
+ */
+export async function resolveAiXaiCredential(
+  options: Pick<AiFoundationRuntimeOptions, 'prisma' | 'env' | 'readSecret'>,
+): Promise<AiCredentialResolution> {
+  const env = options.env ?? process.env;
+  const readSecret = options.readSecret ?? readRuntimeSecret;
+  try {
+    const stored = await readSecret(options.prisma, XAI_API_KEY_RUNTIME_SECRET, env);
+    if (stored) return { apiKey: stored, source: 'runtime_secret', failure: null };
+  } catch (error) {
+    const failure = error instanceof RuntimeSecretError ? error.code : 'runtime_secret_unavailable';
+    return { apiKey: null, source: null, failure };
+  }
+
+  const fallback = env['XAI_API_KEY']?.trim();
+  return fallback
+    ? { apiKey: fallback, source: 'environment', failure: null }
+    : { apiKey: null, source: null, failure: 'missing_credential' };
+}
+
+/**
+ * DeepSeek counterpart to the other resolveAi*Credential functions. Same fail-closed
+ * contract: a Runtime Secret Store read/decrypt failure never falls through to the
+ * DEEPSEEK_API_KEY env fallback.
+ */
+export async function resolveAiDeepseekCredential(
+  options: Pick<AiFoundationRuntimeOptions, 'prisma' | 'env' | 'readSecret'>,
+): Promise<AiCredentialResolution> {
+  const env = options.env ?? process.env;
+  const readSecret = options.readSecret ?? readRuntimeSecret;
+  try {
+    const stored = await readSecret(options.prisma, DEEPSEEK_API_KEY_RUNTIME_SECRET, env);
+    if (stored) return { apiKey: stored, source: 'runtime_secret', failure: null };
+  } catch (error) {
+    const failure = error instanceof RuntimeSecretError ? error.code : 'runtime_secret_unavailable';
+    return { apiKey: null, source: null, failure };
+  }
+
+  const fallback = env['DEEPSEEK_API_KEY']?.trim();
+  return fallback
+    ? { apiKey: fallback, source: 'environment', failure: null }
+    : { apiKey: null, source: null, failure: 'missing_credential' };
+}
+
+/**
  * Bot-side bootstrap。AIがOFF/kill-switch中、またはcredential不成立でもBot本体は起動可能にする。
  * Global enable / kill-switchはconsole runtime settingに移さずenv gateのまま維持する。
  * Model/reasoningはrequest-time resolverが最大5秒程度のbounded staleで追随する。
@@ -258,6 +310,32 @@ export async function createAiFoundationRuntime(
     services.moonshot = new MoonshotRuntimeGenerationService({
       baseConfig,
       apiKey: moonshotCredential.apiKey,
+      guardStore,
+      runtimeResolver,
+      telemetry: options.telemetry,
+      fetchImpl: options.fetchImpl,
+    });
+  }
+  // xAI credential is resolved best-effort, same fail-closed-per-request contract as
+  // Anthropic/Google/Moonshot above.
+  const xaiCredential = await resolveAiXaiCredential(options);
+  if (xaiCredential.apiKey) {
+    services.xai = new XaiRuntimeGenerationService({
+      baseConfig,
+      apiKey: xaiCredential.apiKey,
+      guardStore,
+      runtimeResolver,
+      telemetry: options.telemetry,
+      fetchImpl: options.fetchImpl,
+    });
+  }
+  // DeepSeek credential is resolved best-effort, same fail-closed-per-request contract as
+  // Anthropic/Google/Moonshot/xAI above.
+  const deepseekCredential = await resolveAiDeepseekCredential(options);
+  if (deepseekCredential.apiKey) {
+    services.deepseek = new DeepseekRuntimeGenerationService({
+      baseConfig,
+      apiKey: deepseekCredential.apiKey,
       guardStore,
       runtimeResolver,
       telemetry: options.telemetry,

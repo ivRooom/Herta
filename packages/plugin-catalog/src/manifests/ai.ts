@@ -142,6 +142,8 @@ export const aiManifest: PluginManifest = {
                 { name: 'Anthropic (Claude)', value: 'anthropic' },
                 { name: 'Google (Gemini)', value: 'google' },
                 { name: 'Moonshot (Kimi)', value: 'moonshot' },
+                { name: 'xAI (Grok)', value: 'xai' },
+                { name: 'DeepSeek', value: 'deepseek' },
               ],
             },
             {

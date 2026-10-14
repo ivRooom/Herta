@@ -9,9 +9,11 @@ import {
   AiFoundationError,
   AiFoundationService,
   AnthropicMessagesProvider,
+  DeepseekChatCompletionsProvider,
   GeminiGenerateContentProvider,
   MoonshotChatCompletionsProvider,
   OpenAiResponsesProvider,
+  XaiChatCompletionsProvider,
   type AiFoundationConfig,
   type AiGenerationRequest,
   type AiGenerationResponse,
@@ -633,6 +635,282 @@ export class MoonshotRuntimeGenerationService implements AiRuntimeGenerationServ
   }
 }
 
+export interface XaiRuntimeGenerationServiceOptions {
+  baseConfig: AiFoundationConfig;
+  apiKey: string;
+  guardStore: AiGuardStore;
+  runtimeResolver: AiRuntimeConfigurationResolver;
+  telemetry?: AiTelemetrySink;
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * xAI (Grok) counterpart to MoonshotRuntimeGenerationService. Structurally identical; only the
+ * wire-format adapter (XaiChatCompletionsProvider) and the fetchImpl-rewriting policy wrapper
+ * (withXaiRuntimePolicy) differ.
+ */
+export class XaiRuntimeGenerationService implements AiRuntimeGenerationService {
+  private readonly baseConfig: AiFoundationConfig;
+  private readonly apiKey: string;
+  private readonly guardStore: AiGuardStore;
+  private readonly runtimeResolver: AiRuntimeConfigurationResolver;
+  private readonly telemetry: AiTelemetrySink | undefined;
+  private readonly fetchImpl: typeof fetch;
+
+  constructor(options: XaiRuntimeGenerationServiceOptions) {
+    this.baseConfig = options.baseConfig;
+    this.apiKey = options.apiKey;
+    this.guardStore = options.guardStore;
+    this.runtimeResolver = options.runtimeResolver;
+    this.telemetry = options.telemetry;
+    this.fetchImpl = options.fetchImpl ?? fetch;
+  }
+
+  async consumeRateLimit(request: AiRuntimeRateLimitRequest): Promise<void> {
+    if (!this.baseConfig.enabled || this.baseConfig.killSwitch) {
+      throw new AiFoundationError('disabled');
+    }
+    if (!request.authorized || request.scopeGuildId !== request.guildId) {
+      throw new AiFoundationError('unauthorized');
+    }
+    if (!request.pluginEnabled || !request.guildOptIn) {
+      throw new AiFoundationError('disabled');
+    }
+
+    validateAndNormalizeUserInput(request.input, this.baseConfig);
+    const userRate = await this.guardStore.consumeRateLimit(
+      privacyRateKey('user', request.guildId, request.userId),
+      this.baseConfig.userRateLimit,
+      this.baseConfig.rateWindowMs,
+    );
+    if (!userRate.allowed) {
+      throw new AiFoundationError('rate_limited', { retryAfterMs: userRate.retryAfterMs });
+    }
+
+    const guildRate = await this.guardStore.consumeRateLimit(
+      privacyRateKey('guild', request.guildId),
+      this.baseConfig.guildRateLimit,
+      this.baseConfig.rateWindowMs,
+    );
+    if (!guildRate.allowed) {
+      throw new AiFoundationError('rate_limited', { retryAfterMs: guildRate.retryAfterMs });
+    }
+  }
+
+  async generate(request: AiRuntimeGenerationRequest): Promise<AiGenerationResponse> {
+    let runtime;
+    try {
+      runtime = await this.runtimeResolver.resolve();
+    } catch {
+      throw new AiFoundationError('internal_error');
+    }
+    const selection = applyAiRuntimeSelectionOverride(runtime.selection, request.runtimeOverride);
+
+    if (selection.provider !== 'xai') {
+      // Mirrors the other single-provider runtime services' explicit allowlist dispatch: only
+      // implemented providers reach a provider adapter.
+      throw new AiFoundationError('disabled');
+    }
+
+    let conversationPolicy: AiConversationPolicy;
+    try {
+      conversationPolicy = resolveAiConversationPolicy({
+        responseMode: request.responseMode,
+        groundingState: request.groundingState,
+        timezone: selection.timezone,
+      });
+      const trustedInstructions = normalizeTrustedInstructions(request.trustedInstructions);
+      if (trustedInstructions.length > 0) {
+        conversationPolicy = {
+          ...conversationPolicy,
+          instructions: [conversationPolicy.instructions, ...trustedInstructions].join(' '),
+        };
+      }
+    } catch {
+      throw new AiFoundationError('internal_error');
+    }
+
+    const userInput = validateAndNormalizeUserInput(request.input, this.baseConfig);
+    const guardedInput = buildGuardedInput(conversationPolicy.instructions, userInput);
+    const guardOverhead = guardedInput.slice(0, guardedInput.length - userInput.length);
+
+    const config: AiFoundationConfig = {
+      ...this.baseConfig,
+      provider: selection.provider,
+      modelProfile: selection.modelProfile,
+      model: selection.model,
+      maxOutputTokens: resolveAiRuntimeOutputTokenBudget(
+        this.baseConfig.maxOutputTokens,
+        conversationPolicy.responseMode,
+      ),
+      maxInputChars: this.baseConfig.maxInputChars + characterLength(guardOverhead),
+      maxInputBytes: this.baseConfig.maxInputBytes + utf8ByteLength(guardOverhead),
+    };
+    const provider = new XaiChatCompletionsProvider({
+      apiKey: this.apiKey,
+      fetchImpl: withXaiRuntimePolicy(this.fetchImpl, {
+        conversationPolicy,
+        userInput,
+      }),
+    });
+    const service = new AiFoundationService({
+      config,
+      provider,
+      guardStore: this.guardStore,
+      telemetry: this.telemetry,
+    });
+
+    return service.generate({
+      feature: request.feature,
+      input: guardedInput,
+      guildId: request.guildId,
+      scopeGuildId: request.scopeGuildId,
+      userId: request.userId,
+      authorized: request.authorized,
+      pluginEnabled: request.pluginEnabled,
+      guildOptIn: request.guildOptIn,
+    });
+  }
+}
+
+export interface DeepseekRuntimeGenerationServiceOptions {
+  baseConfig: AiFoundationConfig;
+  apiKey: string;
+  guardStore: AiGuardStore;
+  runtimeResolver: AiRuntimeConfigurationResolver;
+  telemetry?: AiTelemetrySink;
+  fetchImpl?: typeof fetch;
+}
+
+/**
+ * DeepSeek counterpart to MoonshotRuntimeGenerationService/XaiRuntimeGenerationService.
+ * Structurally identical; only the wire-format adapter (DeepseekChatCompletionsProvider) and the
+ * fetchImpl-rewriting policy wrapper (withDeepseekRuntimePolicy) differ.
+ */
+export class DeepseekRuntimeGenerationService implements AiRuntimeGenerationService {
+  private readonly baseConfig: AiFoundationConfig;
+  private readonly apiKey: string;
+  private readonly guardStore: AiGuardStore;
+  private readonly runtimeResolver: AiRuntimeConfigurationResolver;
+  private readonly telemetry: AiTelemetrySink | undefined;
+  private readonly fetchImpl: typeof fetch;
+
+  constructor(options: DeepseekRuntimeGenerationServiceOptions) {
+    this.baseConfig = options.baseConfig;
+    this.apiKey = options.apiKey;
+    this.guardStore = options.guardStore;
+    this.runtimeResolver = options.runtimeResolver;
+    this.telemetry = options.telemetry;
+    this.fetchImpl = options.fetchImpl ?? fetch;
+  }
+
+  async consumeRateLimit(request: AiRuntimeRateLimitRequest): Promise<void> {
+    if (!this.baseConfig.enabled || this.baseConfig.killSwitch) {
+      throw new AiFoundationError('disabled');
+    }
+    if (!request.authorized || request.scopeGuildId !== request.guildId) {
+      throw new AiFoundationError('unauthorized');
+    }
+    if (!request.pluginEnabled || !request.guildOptIn) {
+      throw new AiFoundationError('disabled');
+    }
+
+    validateAndNormalizeUserInput(request.input, this.baseConfig);
+    const userRate = await this.guardStore.consumeRateLimit(
+      privacyRateKey('user', request.guildId, request.userId),
+      this.baseConfig.userRateLimit,
+      this.baseConfig.rateWindowMs,
+    );
+    if (!userRate.allowed) {
+      throw new AiFoundationError('rate_limited', { retryAfterMs: userRate.retryAfterMs });
+    }
+
+    const guildRate = await this.guardStore.consumeRateLimit(
+      privacyRateKey('guild', request.guildId),
+      this.baseConfig.guildRateLimit,
+      this.baseConfig.rateWindowMs,
+    );
+    if (!guildRate.allowed) {
+      throw new AiFoundationError('rate_limited', { retryAfterMs: guildRate.retryAfterMs });
+    }
+  }
+
+  async generate(request: AiRuntimeGenerationRequest): Promise<AiGenerationResponse> {
+    let runtime;
+    try {
+      runtime = await this.runtimeResolver.resolve();
+    } catch {
+      throw new AiFoundationError('internal_error');
+    }
+    const selection = applyAiRuntimeSelectionOverride(runtime.selection, request.runtimeOverride);
+
+    if (selection.provider !== 'deepseek') {
+      // Mirrors the other single-provider runtime services' explicit allowlist dispatch: only
+      // implemented providers reach a provider adapter.
+      throw new AiFoundationError('disabled');
+    }
+
+    let conversationPolicy: AiConversationPolicy;
+    try {
+      conversationPolicy = resolveAiConversationPolicy({
+        responseMode: request.responseMode,
+        groundingState: request.groundingState,
+        timezone: selection.timezone,
+      });
+      const trustedInstructions = normalizeTrustedInstructions(request.trustedInstructions);
+      if (trustedInstructions.length > 0) {
+        conversationPolicy = {
+          ...conversationPolicy,
+          instructions: [conversationPolicy.instructions, ...trustedInstructions].join(' '),
+        };
+      }
+    } catch {
+      throw new AiFoundationError('internal_error');
+    }
+
+    const userInput = validateAndNormalizeUserInput(request.input, this.baseConfig);
+    const guardedInput = buildGuardedInput(conversationPolicy.instructions, userInput);
+    const guardOverhead = guardedInput.slice(0, guardedInput.length - userInput.length);
+
+    const config: AiFoundationConfig = {
+      ...this.baseConfig,
+      provider: selection.provider,
+      modelProfile: selection.modelProfile,
+      model: selection.model,
+      maxOutputTokens: resolveAiRuntimeOutputTokenBudget(
+        this.baseConfig.maxOutputTokens,
+        conversationPolicy.responseMode,
+      ),
+      maxInputChars: this.baseConfig.maxInputChars + characterLength(guardOverhead),
+      maxInputBytes: this.baseConfig.maxInputBytes + utf8ByteLength(guardOverhead),
+    };
+    const provider = new DeepseekChatCompletionsProvider({
+      apiKey: this.apiKey,
+      fetchImpl: withDeepseekRuntimePolicy(this.fetchImpl, {
+        conversationPolicy,
+        userInput,
+      }),
+    });
+    const service = new AiFoundationService({
+      config,
+      provider,
+      guardStore: this.guardStore,
+      telemetry: this.telemetry,
+    });
+
+    return service.generate({
+      feature: request.feature,
+      input: guardedInput,
+      guildId: request.guildId,
+      scopeGuildId: request.scopeGuildId,
+      userId: request.userId,
+      authorized: request.authorized,
+      pluginEnabled: request.pluginEnabled,
+      guildOptIn: request.guildOptIn,
+    });
+  }
+}
+
 export interface MultiProviderAiRuntimeGenerationServiceOptions {
   runtimeResolver: AiRuntimeConfigurationResolver;
   services: Partial<Record<AiProviderName, AiRuntimeGenerationService>>;
@@ -893,6 +1171,83 @@ function withMoonshotRuntimePolicy(
       // regardless of the value, not a translation of it.
       next['thinking'] = { type: 'enabled' };
     }
+
+    return fetchImpl(input, { ...init, body: JSON.stringify(next) });
+  };
+}
+
+interface XaiRuntimePolicyOptions {
+  conversationPolicy: AiConversationPolicy;
+  userInput: string;
+}
+
+function withXaiRuntimePolicy(
+  fetchImpl: typeof fetch,
+  options: XaiRuntimePolicyOptions,
+): typeof fetch {
+  return async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    if (typeof init?.body !== 'string') throw new AiFoundationError('internal_error');
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(init.body) as unknown;
+    } catch {
+      throw new AiFoundationError('internal_error');
+    }
+    if (!isRecord(parsed)) throw new AiFoundationError('internal_error');
+
+    // Unlike Moonshot/Anthropic/Gemini above, xAI's Chat Completions format accepts a proper
+    // system-role message, so verbosity/instructions are sent as a dedicated system turn instead
+    // of being folded into the user turn. XaiChatCompletionsProvider (ai-service.ts) sends no
+    // reasoning/thinking parameter at all, so there is no effort-translation branch here (the
+    // single shared AiReasoningEffort 'none' value for this provider just means "no such field on
+    // this wire format" — see XAI_REASONING_EFFORTS in ai-runtime-policy.ts).
+    const instructions = `${options.conversationPolicy.instructions} Aim for ${options.conversationPolicy.textVerbosity} verbosity in your response length.`;
+
+    const next: Record<string, unknown> = {
+      ...parsed,
+      messages: [
+        { role: 'system', content: instructions },
+        { role: 'user', content: options.userInput },
+      ],
+    };
+
+    return fetchImpl(input, { ...init, body: JSON.stringify(next) });
+  };
+}
+
+interface DeepseekRuntimePolicyOptions {
+  conversationPolicy: AiConversationPolicy;
+  userInput: string;
+}
+
+function withDeepseekRuntimePolicy(
+  fetchImpl: typeof fetch,
+  options: DeepseekRuntimePolicyOptions,
+): typeof fetch {
+  return async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    if (typeof init?.body !== 'string') throw new AiFoundationError('internal_error');
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(init.body) as unknown;
+    } catch {
+      throw new AiFoundationError('internal_error');
+    }
+    if (!isRecord(parsed)) throw new AiFoundationError('internal_error');
+
+    // Same rationale as withXaiRuntimePolicy above: DeepSeek's Chat Completions format accepts a
+    // proper system-role message, and DeepseekChatCompletionsProvider sends no reasoning/thinking
+    // parameter at all.
+    const instructions = `${options.conversationPolicy.instructions} Aim for ${options.conversationPolicy.textVerbosity} verbosity in your response length.`;
+
+    const next: Record<string, unknown> = {
+      ...parsed,
+      messages: [
+        { role: 'system', content: instructions },
+        { role: 'user', content: options.userInput },
+      ],
+    };
 
     return fetchImpl(input, { ...init, body: JSON.stringify(next) });
   };
