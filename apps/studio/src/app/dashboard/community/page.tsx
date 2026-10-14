@@ -30,6 +30,24 @@ import {
 } from '@herta/shared/activity-rules';
 import { resolveGuildMemberDisplays } from '@/lib/bot-guild-members';
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import {
+  COMMUNITY_METRICS as metrics,
+  COMMUNITY_METRIC_LABELS as metricLabels,
+  communityDateKey as dateKey,
+  displayCommunityDate as displayDate,
+  formatCommunityMetric as formatMetric,
+  formatSeconds,
+  resolveCommunityBucketDays as resolveBucketDays,
+  type CommunityMetric as Metric,
+} from '@/lib/community-metrics';
+import {
+  COMMUNITY_CUSTOM_RANGE_MAX_DAYS as CUSTOM_RANGE_MAX_DAYS,
+  COMMUNITY_DEFAULT_PERIOD as DEFAULT_PERIOD,
+  COMMUNITY_PERIOD_PRESETS as PERIOD_PRESETS,
+  communityJstToday as jstToday,
+  communityPeriodLabel as periodLabel,
+  resolveCommunityPeriodRange as resolvePeriodRange,
+} from '@/lib/community-period';
 import { getGuildPlugin } from '@/lib/guild-plugins';
 import { DiscordMemberIdentity } from '@/components/discord-member-identity';
 import { PeriodRangePicker } from '@/components/period-range-picker';
@@ -40,131 +58,13 @@ import { getDiscordAccessToken } from '@/lib/session';
 export const dynamic = 'force-dynamic';
 
 type SearchParams = Record<string, string | string[] | undefined>;
-const metrics = [
-  'messages',
-  'voice_seconds',
-  'reactions_given',
-  'reactions_received',
-  'minecraft_seconds',
-  'online_seconds',
-  'messages_edited',
-  'messages_deleted',
-  'emoji_actions',
-  'message_char_units',
-] as const;
-type Metric = (typeof metrics)[number];
 
-const metricLabels: Record<Metric, string> = {
-  messages: '発言数',
-  voice_seconds: 'VC滞在時間',
-  reactions_given: 'リアクション',
-  reactions_received: 'もらったリアクション',
-  minecraft_seconds: 'Minecraft',
-  online_seconds: 'オンライン時間',
-  messages_edited: 'メッセージ編集',
-  messages_deleted: 'メッセージ削除',
-  emoji_actions: '絵文字登録/変更/削除',
-  message_char_units: '文字ポイント',
-};
+// getCommunityChannelBreakdown自体にも同じ上限(25)があるため、ここで渡す値と表示文言の
+// 両方をこの定数に揃える。
+const CHANNEL_BREAKDOWN_LIMIT = 25;
 
 function single(value: string | string[] | undefined): string {
   return Array.isArray(value) ? (value[0] ?? '') : (value ?? '');
-}
-
-function formatSeconds(value: number): string {
-  const hours = Math.floor(value / 3600);
-  const minutes = Math.floor((value % 3600) / 60);
-  return `${hours}時間 ${minutes}分`;
-}
-
-function formatMetric(metric: string, value: number): string {
-  if (metric.endsWith('_seconds')) return formatSeconds(value);
-  if (metric === 'message_char_units') {
-    // 半角=1unit(0.5pt)・全角等=2unit(1pt)で記録しているため、表示はunit/2のptへ変換する
-    // (Botの apps/bot/src/activity/char-score.ts と同じ変換。整数BigInt保存のための単位)。
-    const points = Math.round((value / 2) * 10) / 10;
-    return `${points.toLocaleString('ja-JP', { maximumFractionDigits: 1 })}pt`;
-  }
-  return value.toLocaleString('ja-JP');
-}
-
-const PERIOD_PRESETS = [
-  { value: '1d', label: '今日', days: 1 },
-  { value: '7d', label: '直近7日', days: 7 },
-  { value: '14d', label: '直近2週間', days: 14 },
-  { value: '30d', label: '直近30日', days: 30 },
-  { value: '90d', label: '直近3ヶ月', days: 90 },
-  { value: '180d', label: '直近6ヶ月', days: 180 },
-  { value: '365d', label: '直近1年', days: 365 },
-  { value: '3y', label: '直近3年', days: 1_095 },
-  { value: '5y', label: '直近5年', days: 1_825 },
-  { value: '10y', label: '直近10年', days: 3_650 },
-] as const;
-const CUSTOM_RANGE_MAX_DAYS = 3_653;
-const DEFAULT_PERIOD = '7d';
-
-function jstToday(now = new Date()): Date {
-  const key = new Date(now.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  return new Date(`${key}T00:00:00.000Z`);
-}
-
-function parseDateOnly(value: string | undefined): Date | null {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/u.test(value)) return null;
-  const date = new Date(`${value}T00:00:00.000Z`);
-  return Number.isNaN(date.getTime()) ? null : date;
-}
-
-/** period/from/toから{period,start,end}を解決する。不正なcustom rangeは既定periodへfail closedする。 */
-function resolvePeriodRange(
-  period: string,
-  from: string | undefined,
-  to: string | undefined,
-): { period: string; start: Date; end: Date } {
-  const today = jstToday();
-  if (period === 'custom') {
-    const start = parseDateOnly(from);
-    const end = parseDateOnly(to);
-    if (start && end && end.getTime() >= start.getTime()) {
-      const days = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
-      if (days >= 1 && days <= CUSTOM_RANGE_MAX_DAYS && end.getTime() <= today.getTime()) {
-        return { period: 'custom', start, end };
-      }
-    }
-    return resolvePeriodRange(DEFAULT_PERIOD, undefined, undefined);
-  }
-  const preset = PERIOD_PRESETS.find((candidate) => candidate.value === period);
-  const days =
-    preset?.days ?? PERIOD_PRESETS.find((candidate) => candidate.value === DEFAULT_PERIOD)!.days;
-  return {
-    period: preset?.value ?? DEFAULT_PERIOD,
-    start: new Date(today.getTime() - (days - 1) * 86_400_000),
-    end: today,
-  };
-}
-
-function periodLabel(range: { period: string; start: Date; end: Date }): string {
-  if (range.period === 'custom') {
-    return `${dateKey(range.start)} 〜 ${dateKey(range.end)}`;
-  }
-  return (
-    PERIOD_PRESETS.find((candidate) => candidate.value === range.period)?.label ?? range.period
-  );
-}
-
-/** チャートの棒が多くなりすぎないよう、期間の長さに応じて日次/週次/月次で束ねる。 */
-function resolveBucketDays(rangeDays: number): number {
-  if (rangeDays <= 60) return 1;
-  if (rangeDays <= 400) return 7;
-  return 30;
-}
-
-function dateKey(value: Date): string {
-  return value.toISOString().slice(0, 10);
-}
-
-function displayDate(value: Date): string {
-  const [, month, day] = dateKey(value).split('-');
-  return `${Number(month)}/${Number(day)}`;
 }
 
 function comparisonLabel(
@@ -282,7 +182,13 @@ export default async function CommunityDashboardPage({
     }),
     getCommunityActiveUserCounts(prisma, { guildId: guild.id, asOf: end }),
     getCommunityNewVsReturningUsers(prisma, { guildId: guild.id, start, end }),
-    getCommunityChannelBreakdown(prisma, { guildId: guild.id, metric, start, end, limit: 10 }),
+    getCommunityChannelBreakdown(prisma, {
+      guildId: guild.id,
+      metric,
+      start,
+      end,
+      limit: CHANNEL_BREAKDOWN_LIMIT,
+    }),
     getGuildConfigurationOptions(guild.id),
     getCommunityGameBreakdown(prisma, { guildId: guild.id, start, end, limit: 10 }),
     getCommunityPointsLeaderboard(prisma, {
@@ -375,6 +281,11 @@ export default async function CommunityDashboardPage({
     return `/dashboard/community?${query.toString()}`;
   };
 
+  const memberDetailHref = (userId: string) => {
+    const query = new URLSearchParams({ guild: guild.id, period });
+    return `/dashboard/community/members/${userId}?${query.toString()}`;
+  };
+
   const ComparisonIcon =
     comparison.tone === 'up'
       ? ArrowUpRight
@@ -459,21 +370,23 @@ export default async function CommunityDashboardPage({
         ) : (
           <ol className="mt-4 space-y-2">
             {pointsLeaderboard.map((item, index) => (
-              <li
-                key={item.userId}
-                className="flex items-center gap-3 rounded-xl border border-border bg-background p-3"
-              >
-                <span className="w-6 shrink-0 text-center text-sm font-semibold text-muted">
-                  #{index + 1}
-                </span>
-                <DiscordMemberIdentity
-                  member={memberMap.get(item.userId)}
-                  userId={item.userId}
-                  subtitle=""
-                />
-                <span className="ml-auto shrink-0 text-sm font-semibold text-primary">
-                  {item.points.toLocaleString('ja-JP')} pt
-                </span>
+              <li key={item.userId}>
+                <Link
+                  href={memberDetailHref(item.userId)}
+                  className="flex items-center gap-3 rounded-xl border border-border bg-background p-3 transition-colors hover:border-primary/40"
+                >
+                  <span className="w-6 shrink-0 text-center text-sm font-semibold text-muted">
+                    #{index + 1}
+                  </span>
+                  <DiscordMemberIdentity
+                    member={memberMap.get(item.userId)}
+                    userId={item.userId}
+                    subtitle=""
+                  />
+                  <span className="ml-auto shrink-0 text-sm font-semibold text-primary">
+                    {item.points.toLocaleString('ja-JP')} pt
+                  </span>
+                </Link>
               </li>
             ))}
           </ol>
@@ -571,6 +484,9 @@ export default async function CommunityDashboardPage({
         </div>
         <p className="mt-1 text-sm text-muted">
           {metricLabels[metric]}が多いチャンネル上位{channelBreakdown.length}件。
+          {channelBreakdown.length >= CHANNEL_BREAKDOWN_LIMIT
+            ? '表示件数の上限に達しているため、他にもチャンネルがある可能性があります。'
+            : ''}
         </p>
         {channelBreakdown.length === 0 ? (
           <p className="mt-6 text-sm text-muted">この期間の活動データはまだありません。</p>
@@ -662,7 +578,11 @@ export default async function CommunityDashboardPage({
         ) : (
           <div className="mt-6 space-y-3">
             {top.map((item, index) => (
-              <div key={item.userId} className="rounded-xl border border-border bg-background p-4">
+              <Link
+                key={item.userId}
+                href={memberDetailHref(item.userId)}
+                className="block rounded-xl border border-border bg-background p-4 transition-colors hover:border-primary/40"
+              >
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex min-w-0 items-center gap-2">
                     <span className="shrink-0 text-sm text-muted">#{index + 1}</span>
@@ -681,7 +601,7 @@ export default async function CommunityDashboardPage({
                     style={{ width: `${Math.max(3, (item.total / max) * 100)}%` }}
                   />
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         )}

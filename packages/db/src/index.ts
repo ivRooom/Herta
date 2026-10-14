@@ -12,6 +12,8 @@ export * from './community-activity-channel-breakdown.js';
 export * from './community-game-breakdown.js';
 export * from './community-points-leaderboard.js';
 export * from './community-season-snapshot.js';
+export * from './community-user-activity-summary.js';
+export * from './community-user-game-breakdown.js';
 export * from './health-snapshots.js';
 export * from './mbti-stats-analytics.js';
 export * from './discord-role-operations.js';

@@ -47,6 +47,97 @@ export async function getCommunityPointsLeaderboard(
   return rows.slice(0, limit).map((row) => ({ userId: row.userId, points: Number(row.total) }));
 }
 
+export interface CommunityUserPointsBreakdownEntry {
+  source: string;
+  points: number;
+}
+
+/**
+ * 指定userの期間内ポイントを、ソース別(発言・リアクション・VC・オンライン・コマンド・
+ * LFG参加・Team Split参加・投票・ゲームプレイ・Achievement解除)に内訳表示する。
+ * getCommunityPointsLeaderboardが使うCTEと同じ計算式をuser_id絞り込み・source別
+ * groupingへ変形したもの(単価・日次上限の定義は一か所(呼び出し元のrates)のみ)。
+ */
+export async function getCommunityUserPointsBreakdown(
+  prisma: PrismaClient,
+  input: {
+    guildId: string;
+    userId: string;
+    start: Date;
+    end: Date;
+    rates: CommunityPointsRatesInput;
+  },
+): Promise<CommunityUserPointsBreakdownEntry[]> {
+  const r = input.rates;
+  const rows = await prisma.$queryRaw<Array<{ source: string; total: bigint }>>`
+    WITH simple_points AS (
+      SELECT
+        "metric" AS "source",
+        CASE "metric"
+          WHEN 'messages' THEN "value" * ${r.messagePointsPerMessage}::bigint
+          WHEN 'reactions_given' THEN "value" * ${r.reactionPointsPerReaction}::bigint
+          WHEN 'reactions_received' THEN "value" * ${r.reactionPointsPerReaction}::bigint
+          WHEN 'voice_seconds' THEN ("value" / 600) * ${r.voicePointsPer10Minutes}::bigint
+          WHEN 'online_seconds' THEN
+            LEAST(("value" / 3600) * ${r.onlinePointsPerHour}::bigint, ${r.onlinePointsDailyCap}::bigint)
+          WHEN 'commands' THEN
+            LEAST("value" * ${r.commandPointsPerUse}::bigint, ${r.commandPointsDailyCap}::bigint)
+          WHEN 'lfg_joins' THEN
+            LEAST("value" * ${r.lfgPointsPerJoin}::bigint, ${r.lfgPointsDailyCap}::bigint)
+          WHEN 'team_split_joins' THEN
+            LEAST("value" * ${r.teamSplitPointsPerJoin}::bigint, ${r.teamSplitPointsDailyCap}::bigint)
+          WHEN 'poll_votes' THEN
+            LEAST("value" * ${r.pollPointsPerVote}::bigint, ${r.pollPointsDailyCap}::bigint)
+          ELSE 0::bigint
+        END AS "points"
+      FROM "community_activity_daily"
+      WHERE "guild_id" = ${input.guildId}
+        AND "user_id" = ${input.userId}
+        AND "activity_date" >= ${input.start}
+        AND "activity_date" <= ${input.end}
+        AND "metric" IN (
+          'messages', 'reactions_given', 'reactions_received', 'voice_seconds', 'online_seconds',
+          'commands', 'lfg_joins', 'team_split_joins', 'poll_votes'
+        )
+    ),
+    game_points AS (
+      SELECT
+        'game' AS "source",
+        LEAST((SUM("value") / 3600) * ${r.gamePointsPerHour}::bigint, ${r.gamePointsDailyCap}::bigint) AS "points"
+      FROM "community_game_activity_daily"
+      WHERE "guild_id" = ${input.guildId}
+        AND "user_id" = ${input.userId}
+        AND "activity_date" >= ${input.start}
+        AND "activity_date" <= ${input.end}
+      GROUP BY "activity_date"
+    ),
+    achievement_points AS (
+      SELECT
+        'achievement' AS "source",
+        COUNT(*)::bigint * ${r.achievementPoints}::bigint AS "points"
+      FROM "achievement_unlocks"
+      WHERE "guild_id" = ${input.guildId}
+        AND "user_id" = ${input.userId}
+        AND "unlocked_at" >= ${input.start}
+        AND "unlocked_at" <= ${input.end}
+        AND "achievement_id" NOT LIKE 'blocked:%'
+    ),
+    combined AS (
+      SELECT "source", "points" FROM simple_points
+      UNION ALL
+      SELECT "source", "points" FROM game_points
+      UNION ALL
+      SELECT "source", "points" FROM achievement_points
+    )
+    SELECT "source", SUM("points")::bigint AS "total"
+    FROM combined
+    GROUP BY "source"
+    HAVING SUM("points") > 0
+    ORDER BY "total" DESC, "source" ASC
+  `;
+  return rows.map((row) => ({ source: row.source, points: Number(row.total) }));
+}
+
 interface PointsRow {
   userId: string;
   total: bigint;
