@@ -21,7 +21,7 @@ export const AI_GOOGLE_MODELS = [
   'gemini-3.5-flash-lite',
 ] as const;
 export const AI_MOONSHOT_MODELS = ['kimi-k3', 'kimi-k2.6', 'kimi-k2.7-code'] as const;
-export const AI_XAI_MODELS = ['grok-4.7', 'grok-4.5', 'grok-4.1-fast'] as const;
+export const AI_XAI_MODELS = ['grok-4.7', 'grok-4.5', 'grok-4.3'] as const;
 export const AI_DEEPSEEK_MODELS = ['deepseek-v4-pro', 'deepseek-v4-flash'] as const;
 
 export type AiProviderName = (typeof AI_SUPPORTED_PROVIDERS)[number];
@@ -90,9 +90,10 @@ const MODEL_BY_PROFILE: Record<AiProviderName, Record<AiModelProfile, AiModel>> 
   xai: {
     quality: 'grok-4.7',
     balanced: 'grok-4.5',
-    // grok-4.1-fast is xAI's documented low-cost general-purpose model; no cheaper
+    // grok-4.1-fast (grok-4-1-fast-reasoning/non-reasoning) was retired by xAI on 2026-05-15
+    // and redirects to grok-4.3; use grok-4.3 directly rather than a retired slug. No cheaper
     // general-purpose Grok tier was confirmed at implementation time.
-    economy: 'grok-4.1-fast',
+    economy: 'grok-4.3',
   },
   deepseek: {
     quality: 'deepseek-v4-pro',
@@ -175,7 +176,7 @@ const XAI_STANDARD_PRICING: Record<
 > = {
   'grok-4.7': { inputUsdPerMillion: 2, outputUsdPerMillion: 6 },
   'grok-4.5': { inputUsdPerMillion: 2, outputUsdPerMillion: 6 },
-  'grok-4.1-fast': { inputUsdPerMillion: 0.2, outputUsdPerMillion: 0.5 },
+  'grok-4.3': { inputUsdPerMillion: 1.25, outputUsdPerMillion: 2.5 },
 };
 
 /**
@@ -1763,6 +1764,8 @@ function isAiModelForProvider(provider: AiProviderName, value: string): value is
   if (provider === 'openai') return isAiOpenAiModel(value);
   if (provider === 'google') return isAiGoogleModel(value);
   if (provider === 'moonshot') return isAiMoonshotModel(value);
+  if (provider === 'xai') return isAiXaiModel(value);
+  if (provider === 'deepseek') return isAiDeepseekModel(value);
   return isAiAnthropicModel(value);
 }
 

@@ -322,9 +322,9 @@ const AI_RUNTIME_POLICY: Record<AiProviderName, Record<AiModelProfile, AiRuntime
     economy: {
       provider: 'xai',
       modelProfile: 'economy',
-      model: 'grok-4.1-fast',
+      model: 'grok-4.3',
       supportedReasoningEfforts: XAI_REASONING_EFFORTS,
-      pricing: xaiTokenPricing('grok-4.1-fast', null),
+      pricing: xaiTokenPricing('grok-4.3', null),
     },
   },
   deepseek: {
