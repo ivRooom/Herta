@@ -5,7 +5,24 @@ import {
   type PluginRuntimeConsumer,
 } from '@herta/shared';
 
-export type AuditLogCategory = 'all' | 'plugin' | 'quote' | 'other';
+export type AuditLogCategory =
+  | 'all'
+  | 'plugin'
+  | 'quote'
+  | 'auto_response'
+  | 'moderation'
+  | 'rule'
+  | 'access_group'
+  | 'access_policy'
+  | 'role'
+  | 'bot_profile'
+  | 'birthday'
+  | 'achievement'
+  | 'xp'
+  | 'anniversary'
+  | 'suggestion'
+  | 'message_studio'
+  | 'other';
 export type AuditLogSeverity = 'all' | 'info' | 'warning' | 'error' | 'critical';
 
 export interface AuditLogQuery {
@@ -66,7 +83,50 @@ const MAX_PAGE_SIZE = 50;
 const MAX_SEARCH_LENGTH = 100;
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
-const ALLOWED_CATEGORIES = new Set<AuditLogCategory>(['all', 'plugin', 'quote', 'other']);
+const ALLOWED_CATEGORIES = new Set<AuditLogCategory>([
+  'all',
+  'plugin',
+  'quote',
+  'auto_response',
+  'moderation',
+  'rule',
+  'access_group',
+  'access_policy',
+  'role',
+  'bot_profile',
+  'birthday',
+  'achievement',
+  'xp',
+  'anniversary',
+  'suggestion',
+  'message_studio',
+  'other',
+]);
+
+/**
+ * イベント名の接頭辞からカテゴリを解決するための対応表。resolveCategory/buildAuditLogWhereの
+ * 両方がこの単一の定義を参照することで、「カテゴリを追加したのにfilterへ反映し忘れる」を防ぐ。
+ */
+const CATEGORY_PREFIXES: ReadonlyArray<{
+  category: Exclude<AuditLogCategory, 'all' | 'other'>;
+  prefixes: readonly string[];
+}> = [
+  { category: 'plugin', prefixes: ['plugin.'] },
+  { category: 'quote', prefixes: ['quote.'] },
+  { category: 'auto_response', prefixes: ['auto_response.'] },
+  { category: 'moderation', prefixes: ['moderation.'] },
+  { category: 'rule', prefixes: ['rule.'] },
+  { category: 'access_group', prefixes: ['studio_access_group.'] },
+  { category: 'access_policy', prefixes: ['studio_access_policy.'] },
+  { category: 'role', prefixes: ['discord_role.'] },
+  { category: 'bot_profile', prefixes: ['bot_profile.'] },
+  { category: 'birthday', prefixes: ['birthday.', 'birthday_card.'] },
+  { category: 'achievement', prefixes: ['achievement.'] },
+  { category: 'xp', prefixes: ['leaderboard.xp_'] },
+  { category: 'anniversary', prefixes: ['guild.anniversary_'] },
+  { category: 'suggestion', prefixes: ['suggestion.'] },
+  { category: 'message_studio', prefixes: ['message_studio.'] },
+];
 const ALLOWED_SEVERITIES = new Set<AuditLogSeverity>([
   'all',
   'info',
@@ -165,6 +225,162 @@ const EVENT_LABELS: Record<string, { label: string; summary: string }> = {
   'moderation.automatic.failed': {
     label: '自動Moderation失敗',
     summary: '自動Moderationの対応に失敗しました。',
+  },
+  'rule.created': {
+    label: '自動ルールを作成',
+    summary: 'Auto Ruleを新しく作成しました。',
+  },
+  'rule.updated': {
+    label: '自動ルールを更新',
+    summary: 'Auto Ruleの設定を更新しました。',
+  },
+  'rule.deleted': {
+    label: '自動ルールを削除',
+    summary: 'Auto Ruleを削除しました。',
+  },
+  'rule.member_role_added': {
+    label: '自動ルールでRoleを付与',
+    summary: 'Auto Ruleの条件達成によりMemberへRoleを付与しました。',
+  },
+  'studio_access_group.created': {
+    label: 'アクセスグループを作成',
+    summary: 'Studio Access Groupを新しく作成しました。',
+  },
+  'studio_access_group.updated': {
+    label: 'アクセスグループを更新',
+    summary: 'Studio Access Groupの設定を更新しました。',
+  },
+  'studio_access_group.deleted': {
+    label: 'アクセスグループを削除',
+    summary: 'Studio Access Groupを削除しました。',
+  },
+  'studio_access_group.member_added': {
+    label: 'アクセスグループにMemberを追加',
+    summary: 'Studio Access GroupへMemberを追加しました。',
+  },
+  'studio_access_group.member_removed': {
+    label: 'アクセスグループからMemberを削除',
+    summary: 'Studio Access GroupからMemberを削除しました。',
+  },
+  'studio_access_policy.created': {
+    label: 'アクセスポリシーを作成',
+    summary: 'Studio Access Policyを新しく作成しました。',
+  },
+  'studio_access_policy.updated': {
+    label: 'アクセスポリシーを更新',
+    summary: 'Studio Access Policyの設定を更新しました。',
+  },
+  'studio_access_policy.deleted': {
+    label: 'アクセスポリシーを削除',
+    summary: 'Studio Access Policyを削除しました。',
+  },
+  'studio_access_policy.attached': {
+    label: 'アクセスポリシーを割り当て',
+    summary: 'Access GroupへAccess Policyを割り当てました。',
+  },
+  'studio_access_policy.detached': {
+    label: 'アクセスポリシーの割り当てを解除',
+    summary: 'Access GroupからAccess Policyの割り当てを解除しました。',
+  },
+  'discord_role.create_requested': {
+    label: 'Discord Roleの作成を要求',
+    summary: 'StudioからDiscord Roleの新規作成をBotへ要求しました。',
+  },
+  'discord_role.delete_requested': {
+    label: 'Discord Roleの削除を要求',
+    summary: 'StudioからDiscord Roleの削除をBotへ要求しました。',
+  },
+  'bot_profile.updated': {
+    label: 'Botプロフィールを更新',
+    summary: 'Herta Botの表示名・アイコンなどのプロフィールを更新しました。',
+  },
+  'birthday.registration_set': {
+    label: '誕生日を登録',
+    summary: 'Memberの誕生日情報を登録・更新しました。',
+  },
+  'birthday.registration_remove': {
+    label: '誕生日登録を削除',
+    summary: 'Memberの誕生日情報を削除しました。',
+  },
+  'birthday_card.asset.renamed': {
+    label: 'Birthday Card画像の名前を変更',
+    summary: 'Birthday Cardで使う画像素材の名前を変更しました。',
+  },
+  'birthday_card.asset.deleted': {
+    label: 'Birthday Card画像を削除',
+    summary: 'Birthday Cardで使う画像素材を削除しました。',
+  },
+  'birthday_card.asset.preset_added': {
+    label: 'Birthday Card画像をPresetに追加',
+    summary: '画像素材をPreset(共通素材)として登録しました。',
+  },
+  'birthday_card.asset.preset_removed': {
+    label: 'Birthday Card画像をPresetから削除',
+    summary: '画像素材のPreset(共通素材)登録を解除しました。',
+  },
+  'birthday_card.background.updated': {
+    label: 'Birthday Card背景を更新',
+    summary: 'Birthday Cardの背景画像を更新しました。',
+  },
+  'birthday_card.background.deleted': {
+    label: 'Birthday Card背景を削除',
+    summary: 'Birthday Cardの背景画像を削除しました。',
+  },
+  'birthday_card.test_send': {
+    label: 'Birthday Cardのテスト送信',
+    summary: 'Birthday Cardのテスト送信を実行しました。',
+  },
+  'birthday_card.test_send_attempt': {
+    label: 'Birthday Cardのテスト送信を試行',
+    summary: 'Birthday Cardのテスト送信を試行しました（結果は別イベントで記録されます）。',
+  },
+  'achievement.manual_grant': {
+    label: '実績を手動付与',
+    summary: 'Memberへ実績(Achievement)を手動で付与しました。',
+  },
+  'achievement.manual_revoke': {
+    label: '実績の手動付与を取消',
+    summary: 'Memberの実績(Achievement)付与を手動で取り消しました。',
+  },
+  'leaderboard.xp_reset_guild': {
+    label: 'XPをリセット',
+    summary: 'Guild全体またはMember個人のXPをリセットしました。',
+  },
+  'leaderboard.xp_role_sweep_requested': {
+    label: 'XP Role再計算を要求',
+    summary: 'XPに応じたRole付与の再計算をBotへ要求しました。',
+  },
+  'leaderboard.xp_role_sweep_failed': {
+    label: 'XP Role再計算が失敗',
+    summary: 'XPに応じたRole付与の再計算に失敗しました。',
+  },
+  'leaderboard.xp_role_sweep_completed': {
+    label: 'XP Role再計算が完了',
+    summary: 'XPに応じたRole付与の再計算が完了しました。',
+  },
+  'guild.anniversary_set': {
+    label: '周年記念日を登録',
+    summary: 'Guildの周年記念日を登録・更新しました。',
+  },
+  'guild.anniversary_remove': {
+    label: '周年記念日を削除',
+    summary: 'Guildの周年記念日の登録を削除しました。',
+  },
+  'suggestion.edit': {
+    label: '提案を編集',
+    summary: 'Member提案(Suggestion)の内容を編集しました。',
+  },
+  'suggestion.withdraw': {
+    label: '提案を取り下げ',
+    summary: 'Member提案(Suggestion)を取り下げました。',
+  },
+  'suggestion.status': {
+    label: '提案のステータスを変更',
+    summary: 'Member提案(Suggestion)の対応状況を変更しました。',
+  },
+  'message_studio.send': {
+    label: 'Message Studioから送信',
+    summary: 'Message StudioからGuildへメッセージを送信しました。',
   },
 };
 
@@ -414,12 +630,19 @@ function automaticSeverityLabel(value: string): string | null {
 function buildAuditLogWhere(guildId: string, query: AuditLogQuery): Prisma.AuditLogWhereInput {
   const filters: Prisma.AuditLogWhereInput[] = [{ guildId }];
 
-  if (query.category === 'plugin') filters.push({ event: { startsWith: 'plugin.' } });
-  if (query.category === 'quote') filters.push({ event: { startsWith: 'quote.' } });
   if (query.category === 'other') {
     filters.push({
-      NOT: [{ event: { startsWith: 'plugin.' } }, { event: { startsWith: 'quote.' } }],
+      NOT: CATEGORY_PREFIXES.flatMap((entry) =>
+        entry.prefixes.map((prefix) => ({ event: { startsWith: prefix } })),
+      ),
     });
+  } else if (query.category !== 'all') {
+    const entry = CATEGORY_PREFIXES.find((candidate) => candidate.category === query.category);
+    if (entry) {
+      filters.push({
+        OR: entry.prefixes.map((prefix) => ({ event: { startsWith: prefix } })),
+      });
+    }
   }
   if (query.severity !== 'all') filters.push({ severity: query.severity });
   if (query.from || query.toExclusive) {
@@ -445,8 +668,9 @@ function buildAuditLogWhere(guildId: string, query: AuditLogQuery): Prisma.Audit
 }
 
 function resolveCategory(event: string): Exclude<AuditLogCategory, 'all'> {
-  if (event.startsWith('plugin.')) return 'plugin';
-  if (event.startsWith('quote.')) return 'quote';
+  for (const entry of CATEGORY_PREFIXES) {
+    if (entry.prefixes.some((prefix) => event.startsWith(prefix))) return entry.category;
+  }
   return 'other';
 }
 

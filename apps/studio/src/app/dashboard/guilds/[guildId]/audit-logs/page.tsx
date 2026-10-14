@@ -25,6 +25,19 @@ type SearchParams = Record<string, string | string[] | undefined>;
 const CATEGORY_LABELS = {
   plugin: 'Plugin',
   quote: 'Quote',
+  auto_response: '自動応答',
+  moderation: 'Moderation',
+  rule: '自動ルール',
+  access_group: 'アクセスグループ',
+  access_policy: 'アクセスポリシー',
+  role: 'Discord Role',
+  bot_profile: 'Botプロフィール',
+  birthday: '誕生日',
+  achievement: '実績',
+  xp: 'XP・ランキング',
+  anniversary: '周年記念',
+  suggestion: '提案',
+  message_studio: 'Message Studio',
   other: 'その他',
 } as const;
 
@@ -186,6 +199,19 @@ function FilterForm({
               <option value="all">すべて</option>
               <option value="plugin">Plugin</option>
               <option value="quote">Quote</option>
+              <option value="auto_response">自動応答</option>
+              <option value="moderation">Moderation</option>
+              <option value="rule">自動ルール</option>
+              <option value="access_group">アクセスグループ</option>
+              <option value="access_policy">アクセスポリシー</option>
+              <option value="role">Discord Role</option>
+              <option value="bot_profile">Botプロフィール</option>
+              <option value="birthday">誕生日</option>
+              <option value="achievement">実績</option>
+              <option value="xp">XP・ランキング</option>
+              <option value="anniversary">周年記念</option>
+              <option value="suggestion">提案</option>
+              <option value="message_studio">Message Studio</option>
               <option value="other">その他</option>
             </select>
           </label>

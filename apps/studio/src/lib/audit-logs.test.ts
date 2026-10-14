@@ -228,6 +228,70 @@ test('未知のModeration metadataやsecret-like値を監査要約へ露出し�
   }
 });
 
+test('自動ルール関連イベントは専用カテゴリと日本語ラベルで表示する', () => {
+  const presentation = describeAuditEvent('rule.created', 'rule', 'rule-1', {
+    operationSource: 'dashboard',
+  });
+
+  assert.equal(presentation.eventLabel, '自動ルールを作成');
+  assert.equal(presentation.category, 'rule');
+});
+
+test('Studio Access Group関連イベントは専用カテゴリで表示する', () => {
+  const created = describeAuditEvent('studio_access_group.created', 'studio_access_group', 'g-1', {
+    operationSource: 'studio',
+  });
+  const memberAdded = describeAuditEvent(
+    'studio_access_group.member_added',
+    'studio_access_group',
+    'g-1',
+    { operationSource: 'ivrm-admin' },
+  );
+
+  assert.equal(created.eventLabel, 'アクセスグループを作成');
+  assert.equal(created.category, 'access_group');
+  assert.equal(memberAdded.eventLabel, 'アクセスグループにMemberを追加');
+  assert.equal(memberAdded.category, 'access_group');
+});
+
+test('Birthday Card関連イベントはbirthday.*とbirthday_card.*を同一カテゴリへ統合する', () => {
+  const registration = describeAuditEvent(
+    'birthday.registration_set',
+    'birthday_registration',
+    'u-1',
+    null,
+  );
+  const background = describeAuditEvent(
+    'birthday_card.background.updated',
+    'birthday_card_background',
+    'u-1',
+    null,
+  );
+
+  assert.equal(registration.category, 'birthday');
+  assert.equal(background.category, 'birthday');
+  assert.equal(background.eventLabel, 'Birthday Card背景を更新');
+});
+
+test('実績の手動付与・取消は専用カテゴリで表示する', () => {
+  const grant = describeAuditEvent('achievement.manual_grant', 'achievement', 'ach-1', null);
+  const revoke = describeAuditEvent('achievement.manual_revoke', 'achievement', 'ach-1', null);
+
+  assert.equal(grant.eventLabel, '実績を手動付与');
+  assert.equal(grant.category, 'achievement');
+  assert.equal(revoke.eventLabel, '実績の手動付与を取消');
+  assert.equal(revoke.category, 'achievement');
+});
+
+test('XP関連イベントはxpカテゴリへ分類する', () => {
+  const reset = describeAuditEvent('leaderboard.xp_reset_guild', 'guild', 'guild-1', null);
+  const sweep = describeAuditEvent('leaderboard.xp_role_sweep_completed', 'guild', 'guild-1', null);
+
+  assert.equal(reset.category, 'xp');
+  assert.equal(sweep.category, 'xp');
+  assert.equal(sweep.eventLabel, 'XP Role再計算が完了');
+});
+
 test('未知イベントも生データを展開せず表示できる', () => {
   const presentation = describeAuditEvent('custom.operation', 'custom', 'target-1', {
     password: 'do-not-render',

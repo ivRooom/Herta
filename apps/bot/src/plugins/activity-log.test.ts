@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeActivityLogConfig } from './activity-log.js';
+import { MEMBER_ACTIVITY_EVENT_TYPES } from './activity-log-repository.js';
+import { MEMBER_ACTIVITY_EVENT_LABELS, normalizeActivityLogConfig } from './activity-log.js';
 
 describe('normalizeActivityLogConfig', () => {
   it('既定値はenabled:falseで記録対象は全てtrue', () => {
@@ -79,5 +80,15 @@ describe('normalizeActivityLogConfig', () => {
     expect(
       normalizeActivityLogConfig({ deleteBurstWindowSeconds: 1 }).deleteBurstWindowSeconds,
     ).toBe(5);
+  });
+});
+
+describe('MEMBER_ACTIVITY_EVENT_LABELS', () => {
+  it('全event typeに日本語ラベルを持ち、英語の生event値を表示に残さない', () => {
+    for (const eventType of MEMBER_ACTIVITY_EVENT_TYPES) {
+      const label = MEMBER_ACTIVITY_EVENT_LABELS[eventType];
+      expect(label).toBeTruthy();
+      expect(label).not.toBe(eventType);
+    }
   });
 });

@@ -446,6 +446,25 @@ async function handleGuildUpdate(
   }
 }
 
+// /activity-logのeventオプションのchoices（packages/plugin-catalog/src/manifests/activity-log.ts）
+// と同じ日本語ラベルを使い、埋め込み表示でも生のevent値（例: voice_leave）を出さないようにする。
+export const MEMBER_ACTIVITY_EVENT_LABELS: Record<MemberActivityEventType, string> = {
+  voice_join: 'VC入室',
+  voice_leave: 'VC退室',
+  message_create: 'メッセージ作成',
+  message_update: 'メッセージ編集',
+  message_delete: 'メッセージ削除',
+  emoji_create: '絵文字登録',
+  emoji_update: '絵文字変更',
+  emoji_delete: '絵文字削除',
+  avatar_update: 'アバター変更',
+  nickname_update: 'ニックネーム変更',
+  role_add: 'ロール付与',
+  role_remove: 'ロール剥奪',
+  guild_icon_update: 'サーバーアイコン変更',
+  guild_banner_update: 'サーバーバナー変更',
+};
+
 function describeEventMetadata(row: {
   event: MemberActivityEventType;
   metadata: Record<string, unknown> | null;
@@ -518,7 +537,7 @@ async function executeActivityLogCommand(
       : row.contentScrubbedAt
         ? ' (本文は保持期間終了のため削除済み)'
         : describeEventMetadata(row);
-    return `${timestamp} **${row.event}** ${who} ${where}${snippet}`;
+    return `${timestamp} **${MEMBER_ACTIVITY_EVENT_LABELS[row.event]}** ${who} ${where}${snippet}`;
   });
 
   const embed = new EmbedBuilder()
