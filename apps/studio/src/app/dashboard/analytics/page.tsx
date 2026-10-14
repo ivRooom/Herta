@@ -396,7 +396,8 @@ function CommandHistory({
             <h2 className="font-medium">コマンド履歴</h2>
           </div>
           <p className="mt-1 text-sm text-muted">
-            管理権限のあるGuildのみ、コマンド名・Guild ID・エラー名で検索できます。{history.total}
+            管理権限のあるGuildのみ、コマンド名・Guild ID・実行者ID・エラー名で検索できます。
+            {history.total}
             件一致。
           </p>
         </div>
@@ -453,13 +454,14 @@ function CommandHistory({
         </div>
       ) : (
         <div className="mt-5 overflow-x-auto rounded-xl border border-border">
-          <table className="min-w-[820px] w-full text-left text-sm">
+          <table className="min-w-[960px] w-full text-left text-sm">
             <thead className="border-b border-border bg-background/70 text-xs text-muted">
               <tr>
                 <th className="px-4 py-3 font-medium">実行日時</th>
                 <th className="px-4 py-3 font-medium">コマンド</th>
                 <th className="px-4 py-3 font-medium">状態</th>
                 <th className="px-4 py-3 font-medium">Guild</th>
+                <th className="px-4 py-3 font-medium">実行者</th>
                 <th className="px-4 py-3 font-medium">処理時間</th>
                 <th className="px-4 py-3 font-medium">エラー</th>
               </tr>
@@ -484,6 +486,9 @@ function CommandHistory({
                   </td>
                   <td className="max-w-48 truncate px-4 py-3 font-mono text-xs text-muted">
                     {item.guildId ?? 'DM / 不明'}
+                  </td>
+                  <td className="max-w-40 truncate px-4 py-3 font-mono text-xs text-muted">
+                    {item.userId ?? '不明'}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 tabular-nums text-muted">
                     {formatDuration(item.durationMs)}

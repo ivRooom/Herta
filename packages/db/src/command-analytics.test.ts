@@ -12,6 +12,7 @@ import {
 test('コマンド実行情報から不要な空白を除去し処理時間を制限する', () => {
   const normalized = normalizeCommandExecutionInput({
     guildId: ' 1234567890 ',
+    userId: ' 999888777 ',
     commandName: ' ping ',
     status: 'failure',
     durationMs: 999_999,
@@ -20,6 +21,7 @@ test('コマンド実行情報から不要な空白を除去し処理時間を�
 
   assert.deepEqual(normalized, {
     guildId: '1234567890',
+    userId: '999888777',
     commandName: 'ping',
     status: 'failure',
     durationMs: 300_000,
@@ -30,6 +32,7 @@ test('コマンド実行情報から不要な空白を除去し処理時間を�
 test('空のコマンド名を安全な代替値へ変換する', () => {
   const normalized = normalizeCommandExecutionInput({
     guildId: null,
+    userId: null,
     commandName: '   ',
     status: 'success',
     durationMs: -10,
@@ -38,6 +41,7 @@ test('空のコマンド名を安全な代替値へ変換する', () => {
   assert.equal(normalized.commandName, 'unknown-command');
   assert.equal(normalized.durationMs, 0);
   assert.equal(normalized.errorName, null);
+  assert.equal(normalized.userId, null);
 });
 
 test('JSTの日付境界をUTC時刻へ変換する', () => {

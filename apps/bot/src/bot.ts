@@ -804,6 +804,7 @@ export class HertaBot {
       } finally {
         await this.recordCommandExecution({
           guildId: interaction.guildId,
+          userId: interaction.user.id,
           commandName: interaction.commandName,
           status,
           durationMs: Date.now() - startedAt,
