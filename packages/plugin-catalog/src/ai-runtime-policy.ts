@@ -49,7 +49,12 @@ export type {
 } from './ai-service.js';
 
 export const AI_REASONING_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
-export const AI_PROVIDER_CAPABILITIES = ['text', 'code_interpreter', 'image_generation'] as const;
+export const AI_PROVIDER_CAPABILITIES = [
+  'text',
+  'code_interpreter',
+  'image_generation',
+  'mcp_tools',
+] as const;
 
 export type AiReasoningEffort = (typeof AI_REASONING_EFFORTS)[number];
 export type AiProviderCapability = (typeof AI_PROVIDER_CAPABILITIES)[number];
@@ -176,7 +181,7 @@ const DEEPSEEK_REASONING_EFFORTS: readonly AiReasoningEffort[] = ['none'];
  * present in this provider allowlist and the matching server adapter is bootstrapped.
  */
 const AI_PROVIDER_CAPABILITY_POLICY: Record<AiProviderName, readonly AiProviderCapability[]> = {
-  openai: ['text', 'code_interpreter', 'image_generation'],
+  openai: ['text', 'code_interpreter', 'image_generation', 'mcp_tools'],
   // Anthropic integration is plain-text generation only for issue #340; no code-interpreter or
   // image-generation tool adapter exists for this provider yet.
   anthropic: ['text'],

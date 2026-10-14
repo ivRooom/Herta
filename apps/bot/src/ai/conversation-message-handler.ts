@@ -150,6 +150,7 @@ export async function handleAiConversationMessage(
   if (!options.generationService) return { status: 'ignored' };
 
   const responseMode: AiResponseMode = intent === 'detailed_answer' ? 'detailed' : 'chat';
+  const mcpToolsEnabled = pluginConfig['mcpEnabled'] === true;
 
   let content: string;
   try {
@@ -165,6 +166,7 @@ export async function handleAiConversationMessage(
       responseMode,
       groundingState,
       trustedInstructions: [DISCORD_CONVERSATION_INSTRUCTION],
+      mcpToolsEnabled,
     });
     content = validateDiscordConversationReply(response.text);
   } catch (error) {

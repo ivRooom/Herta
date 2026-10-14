@@ -109,15 +109,18 @@ describe('AI runtime policy', () => {
       'text',
       'code_interpreter',
       'image_generation',
+      'mcp_tools',
     ]);
     expect(isAiProviderCapabilityEnabled('openai', 'text')).toBe(true);
     expect(isAiProviderCapabilityEnabled('openai', 'code_interpreter')).toBe(true);
     expect(isAiProviderCapabilityEnabled('openai', 'image_generation')).toBe(true);
+    expect(isAiProviderCapabilityEnabled('openai', 'mcp_tools')).toBe(true);
 
     expect(getAiProviderCapabilities('anthropic')).toEqual(['text']);
     expect(isAiProviderCapabilityEnabled('anthropic', 'text')).toBe(true);
     expect(isAiProviderCapabilityEnabled('anthropic', 'code_interpreter')).toBe(false);
     expect(isAiProviderCapabilityEnabled('anthropic', 'image_generation')).toBe(false);
+    expect(isAiProviderCapabilityEnabled('anthropic', 'mcp_tools')).toBe(false);
 
     expect(getAiProviderCapabilities('google')).toEqual(['text']);
     expect(isAiProviderCapabilityEnabled('google', 'text')).toBe(true);
@@ -129,7 +132,7 @@ describe('AI runtime policy', () => {
     expect(getAiRuntimePolicyMetadata()).toEqual([
       {
         provider: 'openai',
-        capabilities: ['text', 'code_interpreter', 'image_generation'],
+        capabilities: ['text', 'code_interpreter', 'image_generation', 'mcp_tools'],
         profiles: [
           expect.objectContaining({
             modelProfile: 'quality',

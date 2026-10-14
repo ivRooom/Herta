@@ -61,6 +61,7 @@ export interface AiPluginConfig {
   codeExecutionEnabled?: boolean;
   weatherGroundingEnabled?: boolean;
   premiumModelRoleId?: string | null;
+  mcpEnabled?: boolean;
 }
 
 export interface NormalizedAiPluginConfig {
@@ -70,9 +71,11 @@ export interface NormalizedAiPluginConfig {
   codeExecutionEnabled: boolean;
   weatherGroundingEnabled: boolean;
   premiumModelRoleId: string | null;
+  mcpEnabled: boolean;
 }
 
-/** 既定は従来どおり全機能有効(`!== false`)。古いGuild configに新フィールドが無くても壊れない。 */
+/** 既定は従来どおり全機能有効(`!== false`)。古いGuild configに新フィールドが無くても壊れない。
+ * `mcpEnabled`は新しい外部ツール連携機能のため例外的に既定OFF(`=== true`の明示opt-inのみ)。 */
 export function normalizeAiPluginConfig(value: AiPluginConfig): NormalizedAiPluginConfig {
   return {
     enabled: value.enabled === true,
@@ -81,6 +84,7 @@ export function normalizeAiPluginConfig(value: AiPluginConfig): NormalizedAiPlug
     codeExecutionEnabled: value.codeExecutionEnabled !== false,
     weatherGroundingEnabled: value.weatherGroundingEnabled !== false,
     premiumModelRoleId: normalizeAiTriggerRoleId(value.premiumModelRoleId ?? null),
+    mcpEnabled: value.mcpEnabled === true,
   };
 }
 
@@ -223,7 +227,7 @@ async function handleAiMessage(
       botUserId,
       getAiPluginConfig: async (guildId) =>
         guildId === context.guildId
-          ? ({ enabled: config.enabled } as Record<string, unknown>)
+          ? ({ enabled: config.enabled, mcpEnabled: config.mcpEnabled } as Record<string, unknown>)
           : null,
     });
 
@@ -602,7 +606,7 @@ async function executeAiAskCommand(
       botUserId,
       getAiPluginConfig: async (lookupGuildId) =>
         lookupGuildId === context.guildId
-          ? ({ enabled: config.enabled } as Record<string, unknown>)
+          ? ({ enabled: config.enabled, mcpEnabled: config.mcpEnabled } as Record<string, unknown>)
           : null,
     });
 

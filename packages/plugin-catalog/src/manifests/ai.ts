@@ -86,6 +86,15 @@ export const aiManifest: PluginManifest = {
           help: '`/ai model`で品質重視(quality)プロファイルを選べるのは、このRoleを持つメンバーだけです。未設定の場合、qualityは誰も選択できません（balanced/economyのみ）。',
         },
       },
+      mcpEnabled: {
+        type: 'boolean',
+        title: 'Hertaデータ参照ツール(MCP)を許可する',
+        default: false,
+        'x-herta-ui': {
+          section: '外部ツール連携 (MCP)',
+          help: 'ONにすると会話中にHerta自身のデータ(現在はGuild XPランキングのみ)をAIが参照できるようになります。他Guildのデータは参照できません。新しい機能のため既定はOFFです（server側でOpenAI以外が選択されている場合は常にOFF相当です）。',
+        },
+      },
     },
     required: [
       'enabled',
@@ -93,6 +102,7 @@ export const aiManifest: PluginManifest = {
       'codeExecutionEnabled',
       'weatherGroundingEnabled',
       'premiumModelRoleId',
+      'mcpEnabled',
     ],
   },
   events: ['messageCreate'],
