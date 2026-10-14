@@ -260,6 +260,11 @@ export async function createAiFoundationRuntime(
     runtimeResolver,
     telemetry: options.telemetry,
     fetchImpl: options.fetchImpl,
+    // MCP tool-calling (Herta自身のデータを読む自作MCPツール) is gated server-side by the
+    // 'mcp_tools' capability policy, independent of the per-guild mcpEnabled toggle. When the
+    // capability is off, prisma stays undefined and the service always falls back to the plain
+    // no-tool generation path regardless of guild config.
+    prisma: isAiProviderCapabilityEnabled('openai', 'mcp_tools') ? options.prisma : undefined,
   });
 
   // Anthropic credential is resolved best-effort. Unlike the OpenAI credential above, it never

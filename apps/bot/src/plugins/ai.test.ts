@@ -317,7 +317,7 @@ describe('aiPlugin typing indicator lifecycle', () => {
 });
 
 describe('normalizeAiPluginConfig', () => {
-  it('既定値は全機能trueで、triggerRoleIdは未設定ならnull', () => {
+  it('既定値は全機能trueで、triggerRoleIdは未設定ならnull。mcpEnabledのみ既定false', () => {
     expect(normalizeAiPluginConfig({ enabled: true })).toEqual({
       enabled: true,
       triggerRoleId: null,
@@ -325,6 +325,7 @@ describe('normalizeAiPluginConfig', () => {
       codeExecutionEnabled: true,
       weatherGroundingEnabled: true,
       premiumModelRoleId: null,
+      mcpEnabled: false,
     });
   });
 
@@ -338,6 +339,12 @@ describe('normalizeAiPluginConfig', () => {
     expect(config.imageGenerationEnabled).toBe(false);
     expect(config.codeExecutionEnabled).toBe(false);
     expect(config.weatherGroundingEnabled).toBe(false);
+  });
+
+  it('mcpEnabledはtrueを明示しない限りfalseになる(新機能のため例外的にオプトイン)', () => {
+    expect(normalizeAiPluginConfig({ enabled: true }).mcpEnabled).toBe(false);
+    expect(normalizeAiPluginConfig({ enabled: true, mcpEnabled: true }).mcpEnabled).toBe(true);
+    expect(normalizeAiPluginConfig({ enabled: true, mcpEnabled: false }).mcpEnabled).toBe(false);
   });
 
   it('enabledはtrueを明示しない限りfalseになる(オプトイン)', () => {
