@@ -22,6 +22,7 @@ export type AuditLogCategory =
   | 'anniversary'
   | 'suggestion'
   | 'message_studio'
+  | 'mcp'
   | 'other';
 export type AuditLogSeverity = 'all' | 'info' | 'warning' | 'error' | 'critical';
 
@@ -100,6 +101,7 @@ const ALLOWED_CATEGORIES = new Set<AuditLogCategory>([
   'anniversary',
   'suggestion',
   'message_studio',
+  'mcp',
   'other',
 ]);
 
@@ -126,6 +128,7 @@ const CATEGORY_PREFIXES: ReadonlyArray<{
   { category: 'anniversary', prefixes: ['guild.anniversary_'] },
   { category: 'suggestion', prefixes: ['suggestion.'] },
   { category: 'message_studio', prefixes: ['message_studio.'] },
+  { category: 'mcp', prefixes: ['mcp.'] },
 ];
 const ALLOWED_SEVERITIES = new Set<AuditLogSeverity>([
   'all',
@@ -382,6 +385,10 @@ const EVENT_LABELS: Record<string, { label: string; summary: string }> = {
     label: 'Message Studioから送信',
     summary: 'Message StudioからGuildへメッセージを送信しました。',
   },
+  'mcp.tool_called': {
+    label: 'MCPツールを呼び出し',
+    summary: 'MCPツールの呼び出しを記録しました。',
+  },
 };
 
 export function parseAuditLogQuery(searchParams: URLSearchParams): AuditLogQuery {
@@ -552,7 +559,21 @@ function resolveAuditSummary(
       resolveAutomaticExecutionSummary(metadata) ?? fallback ?? '自動Moderation結果を記録しました。'
     );
   }
+  if (event === 'mcp.tool_called') {
+    return resolveMcpToolCallSummary(metadata) ?? fallback ?? 'MCPツールの呼び出しを記録しました。';
+  }
   return fallback ?? '管理対象に対する操作が記録されました。';
+}
+
+function resolveMcpToolCallSummary(
+  metadata: Record<string, Prisma.JsonValue> | null,
+): string | null {
+  const outcome = stringValue(metadata?.['outcome']);
+  if (outcome === 'succeeded') return 'MCPツールを呼び出し、結果をAIへ返しました。';
+  if (outcome === 'failed') return 'MCPツールの呼び出しに失敗しました。';
+  if (outcome === 'rate_limited')
+    return 'MCPツールの利用上限に達したため、呼び出しをスキップしました。';
+  return null;
 }
 
 function resolveAutomaticDecisionSummary(

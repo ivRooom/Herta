@@ -213,7 +213,9 @@ export class OpenAiRuntimeGenerationService implements AiRuntimeGenerationServic
             conversationPolicy,
             userInput,
             prisma: this.prisma,
+            guardStore: this.guardStore,
             guildId: request.guildId,
+            userId: request.userId,
             providerResponseMaxBytes: this.baseConfig.providerResponseMaxBytes,
           })
         : withOpenAiRuntimePolicy(this.fetchImpl, {
@@ -1043,9 +1045,18 @@ interface OpenAiMcpToolCallingPolicyOptions {
   conversationPolicy: AiConversationPolicy;
   userInput: string;
   prisma: PrismaClient;
+  guardStore: AiGuardStore;
   guildId: string;
+  userId: string;
   providerResponseMaxBytes: number;
 }
+
+/** Guild/userごとのMCP tool呼び出し回数上限。1 turn内の往復上限(最大2回)とは別に、
+ * 複数turnに渡って同じユーザーがツールを連打して外部ツールのコストやDB負荷を
+ * 膨らませることを防ぐための、独立したrate limitバケット(既存のchat全体のrate limitとは
+ * 別のkey namespaceを使うため、互いの残量を消費しない)。 */
+const MCP_TOOL_CALL_RATE_LIMIT = 10;
+const MCP_TOOL_CALL_RATE_WINDOW_MS = 10 * 60 * 1000;
 
 /** Tool output is reference data, never an instruction — same spirit as the trusted/untrusted
  * input separation elsewhere (buildGuardedInput/trustedInstructions), applied to MCP results.
@@ -1118,13 +1129,34 @@ function withOpenAiMcpToolCallingPolicy(
       const functionCall = extractMcpFunctionCallItem(firstPayload);
       if (!functionCall) return rebuildMcpJsonResponse(firstResponse, firstPayload);
 
-      const toolResult = await connection.callTool(
-        functionCall.name,
-        parseMcpToolArguments(functionCall.arguments),
+      const rateLimit = await options.guardStore.consumeRateLimit(
+        privacyRateKey('user', 'mcp-tool', options.guildId, options.userId),
+        MCP_TOOL_CALL_RATE_LIMIT,
+        MCP_TOOL_CALL_RATE_WINDOW_MS,
       );
-      const toolResultBody = toolResult.isError
-        ? '(ツール実行に失敗しました)'
-        : toolResult.text || '(空の結果)';
+
+      let toolResultBody: string;
+      let auditOutcome: 'succeeded' | 'failed' | 'rate_limited';
+      if (!rateLimit.allowed) {
+        toolResultBody =
+          '(現在このツールの利用上限に達しています。しばらくしてから再度お試しください)';
+        auditOutcome = 'rate_limited';
+      } else {
+        const toolResult = await connection.callTool(
+          functionCall.name,
+          parseMcpToolArguments(functionCall.arguments),
+        );
+        toolResultBody = toolResult.isError
+          ? '(ツール実行に失敗しました)'
+          : toolResult.text || '(空の結果)';
+        auditOutcome = toolResult.isError ? 'failed' : 'succeeded';
+      }
+      recordMcpToolCallAuditSafely(options.prisma, {
+        guildId: options.guildId,
+        userId: options.userId,
+        toolName: functionCall.name,
+        outcome: auditOutcome,
+      });
       const wrappedOutput = `${MCP_TOOL_UNTRUSTED_DATA_PREFIX}${toolResultBody}`;
 
       const secondResponse = await fetchImpl(input, {
@@ -1152,6 +1184,39 @@ function withOpenAiMcpToolCallingPolicy(
       await connection?.close().catch(() => undefined);
     }
   };
+}
+
+/**
+ * MCP tool呼び出しを監査ログへ記録する(Studio監査ログ`mcp.tool_called`、packages/studio側の
+ * audit-logs.tsでカテゴリ/日本語ラベルを解決する)。telemetryと同様、記録の失敗がユーザー向け
+ * 生成結果に影響してはならないため、fire-and-forgetでエラーは握りつぶす
+ * (emitTelemetrySafelyと同じ方針)。
+ */
+function recordMcpToolCallAuditSafely(
+  prisma: PrismaClient,
+  entry: {
+    guildId: string;
+    userId: string;
+    toolName: string;
+    outcome: 'succeeded' | 'failed' | 'rate_limited';
+  },
+): void {
+  setTimeout(() => {
+    prisma.auditLog
+      .create({
+        data: {
+          guildId: entry.guildId,
+          actorId: entry.userId,
+          actorType: 'user',
+          event: 'mcp.tool_called',
+          targetType: 'mcp_tool',
+          targetId: entry.toolName,
+          severity: entry.outcome === 'succeeded' ? 'info' : 'warning',
+          metadata: { outcome: entry.outcome, operationSource: 'bot-runtime' },
+        },
+      })
+      .catch(() => undefined);
+  }, 0);
 }
 
 function extractMcpFunctionCallItem(payload: unknown): {

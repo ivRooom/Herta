@@ -38,6 +38,7 @@ const CATEGORY_LABELS = {
   anniversary: '周年記念',
   suggestion: '提案',
   message_studio: 'Message Studio',
+  mcp: 'MCP連携',
   other: 'その他',
 } as const;
 
@@ -212,6 +213,7 @@ function FilterForm({
               <option value="anniversary">周年記念</option>
               <option value="suggestion">提案</option>
               <option value="message_studio">Message Studio</option>
+              <option value="mcp">MCP連携</option>
               <option value="other">その他</option>
             </select>
           </label>
