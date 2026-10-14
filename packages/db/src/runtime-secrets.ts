@@ -5,6 +5,8 @@ export const OPENAI_API_KEY_RUNTIME_SECRET = 'openai.api_key';
 export const ANTHROPIC_API_KEY_RUNTIME_SECRET = 'anthropic.api_key';
 export const GOOGLE_GEMINI_API_KEY_RUNTIME_SECRET = 'google.gemini_api_key';
 export const MOONSHOT_API_KEY_RUNTIME_SECRET = 'moonshot.api_key';
+export const XAI_API_KEY_RUNTIME_SECRET = 'xai.api_key';
+export const DEEPSEEK_API_KEY_RUNTIME_SECRET = 'deepseek.api_key';
 export const RUNTIME_SECRET_KEY_VERSION = 1;
 
 const RUNTIME_SECRET_MASTER_KEY_ENV = 'HERTA_RUNTIME_SECRET_KEY';

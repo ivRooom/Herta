@@ -3,14 +3,14 @@ export type AiProviderCredentialStatus =
   'ready' | 'missing_credential' | 'credential_store_unavailable';
 
 export interface AiProviderCredentialAvailability {
-  provider: 'openai' | 'anthropic' | 'google' | 'moonshot';
+  provider: 'openai' | 'anthropic' | 'google' | 'moonshot' | 'xai' | 'deepseek';
   available: boolean;
   source: AiProviderCredentialSource | null;
   status: AiProviderCredentialStatus;
 }
 
 async function resolveAiProviderCredentialAvailability(
-  provider: 'openai' | 'anthropic' | 'google' | 'moonshot',
+  provider: 'openai' | 'anthropic' | 'google' | 'moonshot' | 'xai' | 'deepseek',
   options: {
     readRuntimeCredential: () => Promise<string | null>;
     environmentCredential?: string;
@@ -79,4 +79,18 @@ export async function resolveMoonshotProviderCredentialAvailability(options: {
   environmentCredential?: string;
 }): Promise<AiProviderCredentialAvailability> {
   return resolveAiProviderCredentialAvailability('moonshot', options);
+}
+
+export async function resolveXaiProviderCredentialAvailability(options: {
+  readRuntimeCredential: () => Promise<string | null>;
+  environmentCredential?: string;
+}): Promise<AiProviderCredentialAvailability> {
+  return resolveAiProviderCredentialAvailability('xai', options);
+}
+
+export async function resolveDeepseekProviderCredentialAvailability(options: {
+  readRuntimeCredential: () => Promise<string | null>;
+  environmentCredential?: string;
+}): Promise<AiProviderCredentialAvailability> {
+  return resolveAiProviderCredentialAvailability('deepseek', options);
 }

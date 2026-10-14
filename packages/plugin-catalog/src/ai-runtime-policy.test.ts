@@ -203,6 +203,48 @@ describe('AI runtime policy', () => {
           }),
         ],
       },
+      {
+        provider: 'xai',
+        capabilities: ['text'],
+        profiles: [
+          expect.objectContaining({
+            modelProfile: 'quality',
+            model: 'grok-4.7',
+            supportedReasoningEfforts: ['none'],
+          }),
+          expect.objectContaining({
+            modelProfile: 'balanced',
+            model: 'grok-4.5',
+            supportedReasoningEfforts: ['none'],
+          }),
+          expect.objectContaining({
+            modelProfile: 'economy',
+            model: 'grok-4.1-fast',
+            supportedReasoningEfforts: ['none'],
+          }),
+        ],
+      },
+      {
+        provider: 'deepseek',
+        capabilities: ['text'],
+        profiles: [
+          expect.objectContaining({
+            modelProfile: 'quality',
+            model: 'deepseek-v4-pro',
+            supportedReasoningEfforts: ['none'],
+          }),
+          expect.objectContaining({
+            modelProfile: 'balanced',
+            model: 'deepseek-v4-flash',
+            supportedReasoningEfforts: ['none'],
+          }),
+          expect.objectContaining({
+            modelProfile: 'economy',
+            model: 'deepseek-v4-flash',
+            supportedReasoningEfforts: ['none'],
+          }),
+        ],
+      },
     ]);
   });
 

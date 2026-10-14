@@ -1,41 +1,51 @@
 import {
   AI_ANTHROPIC_MODELS,
+  AI_DEEPSEEK_MODELS,
   AI_DEFAULTS,
   AI_GOOGLE_MODELS,
   AI_MODEL_PROFILES,
   AI_MOONSHOT_MODELS,
   AI_OPENAI_MODELS,
   AI_SUPPORTED_PROVIDERS,
+  AI_XAI_MODELS,
   estimateAnthropicCostMicroUsd,
+  estimateDeepseekCostMicroUsd,
   estimateGoogleCostMicroUsd,
   estimateMoonshotCostMicroUsd,
   estimateOpenAiCostMicroUsd,
+  estimateXaiCostMicroUsd,
   isValidIanaTimezone,
   type AiAnthropicModel,
+  type AiDeepseekModel,
   type AiGoogleModel,
   type AiModel,
   type AiModelProfile,
   type AiMoonshotModel,
   type AiOpenAiModel,
   type AiProviderName,
+  type AiXaiModel,
 } from './ai-service.js';
 
 export {
   AI_ANTHROPIC_MODELS,
+  AI_DEEPSEEK_MODELS,
   AI_GOOGLE_MODELS,
   AI_MODEL_PROFILES,
   AI_MOONSHOT_MODELS,
   AI_OPENAI_MODELS,
   AI_SUPPORTED_PROVIDERS,
+  AI_XAI_MODELS,
 } from './ai-service.js';
 export type {
   AiAnthropicModel,
+  AiDeepseekModel,
   AiGoogleModel,
   AiModel,
   AiModelProfile,
   AiMoonshotModel,
   AiOpenAiModel,
   AiProviderName,
+  AiXaiModel,
 } from './ai-service.js';
 
 export const AI_REASONING_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
@@ -150,6 +160,17 @@ const MOONSHOT_BALANCED_REASONING_EFFORTS: readonly AiReasoningEffort[] = ['none
 const MOONSHOT_ECONOMY_REASONING_EFFORTS: readonly AiReasoningEffort[] = ['none'];
 
 /**
+ * xAI (Grok) and DeepSeek adapters (XaiChatCompletionsProvider/DeepseekChatCompletionsProvider in
+ * ai-service.ts) send no caller-supplied reasoning/thinking parameter at all — every profile is
+ * restricted to the single shared 'none' value, which here means "no such field exists on this
+ * provider's wire format", a FIFTH distinct per-provider meaning of 'none' alongside OpenAI's
+ * literal value, Anthropic's omit-output_config, Gemini's "minimal" translation, and Moonshot
+ * economy's send-fixed-enabled.
+ */
+const XAI_REASONING_EFFORTS: readonly AiReasoningEffort[] = ['none'];
+const DEEPSEEK_REASONING_EFFORTS: readonly AiReasoningEffort[] = ['none'];
+
+/**
  * Tool/provider capability routing is code-reviewed server policy. Client input may select neither
  * arbitrary provider IDs nor arbitrary tool names. A capability is available only when it is
  * present in this provider allowlist and the matching server adapter is bootstrapped.
@@ -165,6 +186,12 @@ const AI_PROVIDER_CAPABILITY_POLICY: Record<AiProviderName, readonly AiProviderC
   // Moonshot/Kimi integration is plain-text generation only for issue #342; no code-interpreter
   // or image-generation tool adapter exists for this provider yet.
   moonshot: ['text'],
+  // xAI/Grok integration is plain-text generation only; no code-interpreter or
+  // image-generation tool adapter exists for this provider.
+  xai: ['text'],
+  // DeepSeek integration is plain-text generation only; no code-interpreter or
+  // image-generation tool adapter exists for this provider.
+  deepseek: ['text'],
 };
 
 /**
@@ -275,6 +302,57 @@ const AI_RUNTIME_POLICY: Record<AiProviderName, Record<AiModelProfile, AiRuntime
       model: 'kimi-k2.7-code',
       supportedReasoningEfforts: MOONSHOT_ECONOMY_REASONING_EFFORTS,
       pricing: moonshotTokenPricing('kimi-k2.7-code', null),
+    },
+  },
+  xai: {
+    quality: {
+      provider: 'xai',
+      modelProfile: 'quality',
+      model: 'grok-4.7',
+      supportedReasoningEfforts: XAI_REASONING_EFFORTS,
+      pricing: xaiTokenPricing('grok-4.7', null),
+    },
+    balanced: {
+      provider: 'xai',
+      modelProfile: 'balanced',
+      model: 'grok-4.5',
+      supportedReasoningEfforts: XAI_REASONING_EFFORTS,
+      pricing: xaiTokenPricing('grok-4.5', null),
+    },
+    economy: {
+      provider: 'xai',
+      modelProfile: 'economy',
+      model: 'grok-4.1-fast',
+      supportedReasoningEfforts: XAI_REASONING_EFFORTS,
+      pricing: xaiTokenPricing('grok-4.1-fast', null),
+    },
+  },
+  deepseek: {
+    quality: {
+      provider: 'deepseek',
+      modelProfile: 'quality',
+      model: 'deepseek-v4-pro',
+      supportedReasoningEfforts: DEEPSEEK_REASONING_EFFORTS,
+      // deepseek-v4-pro pricing is unconfirmed (see DEEPSEEK_STANDARD_PRICING in ai-service.ts);
+      // review date flags this for re-verification against api-docs.deepseek.com.
+      pricing: deepseekTokenPricing('deepseek-v4-pro', '2026-11-01T00:00:00.000Z'),
+    },
+    balanced: {
+      provider: 'deepseek',
+      modelProfile: 'balanced',
+      model: 'deepseek-v4-flash',
+      supportedReasoningEfforts: DEEPSEEK_REASONING_EFFORTS,
+      pricing: deepseekTokenPricing('deepseek-v4-flash', null),
+    },
+    economy: {
+      provider: 'deepseek',
+      modelProfile: 'economy',
+      // No general-purpose cheap DeepSeek model distinct from v4-flash was confirmed at
+      // implementation time; economy reuses the same model as balanced (same documented
+      // compromise as Google/Moonshot's quality/balanced and economy notes above).
+      model: 'deepseek-v4-flash',
+      supportedReasoningEfforts: DEEPSEEK_REASONING_EFFORTS,
+      pricing: deepseekTokenPricing('deepseek-v4-flash', null),
     },
   },
 };
@@ -467,6 +545,14 @@ export function isAiMoonshotModel(value: string): value is AiMoonshotModel {
   return (AI_MOONSHOT_MODELS as readonly string[]).includes(value);
 }
 
+export function isAiXaiModel(value: string): value is AiXaiModel {
+  return (AI_XAI_MODELS as readonly string[]).includes(value);
+}
+
+export function isAiDeepseekModel(value: string): value is AiDeepseekModel {
+  return (AI_DEEPSEEK_MODELS as readonly string[]).includes(value);
+}
+
 export function isAiReasoningEffort(value: string): value is AiReasoningEffort {
   return (AI_REASONING_EFFORTS as readonly string[]).includes(value);
 }
@@ -505,6 +591,25 @@ function moonshotTokenPricing(
   return {
     inputUsdPerMillion: estimateMoonshotCostMicroUsd(model, 1_000_000, 0) / 1_000_000,
     outputUsdPerMillion: estimateMoonshotCostMicroUsd(model, 0, 1_000_000) / 1_000_000,
+    reviewAfterIso,
+  };
+}
+
+function xaiTokenPricing(model: AiXaiModel, reviewAfterIso: string | null): AiTokenPricing {
+  return {
+    inputUsdPerMillion: estimateXaiCostMicroUsd(model, 1_000_000, 0) / 1_000_000,
+    outputUsdPerMillion: estimateXaiCostMicroUsd(model, 0, 1_000_000) / 1_000_000,
+    reviewAfterIso,
+  };
+}
+
+function deepseekTokenPricing(
+  model: AiDeepseekModel,
+  reviewAfterIso: string | null,
+): AiTokenPricing {
+  return {
+    inputUsdPerMillion: estimateDeepseekCostMicroUsd(model, 1_000_000, 0) / 1_000_000,
+    outputUsdPerMillion: estimateDeepseekCostMicroUsd(model, 0, 1_000_000) / 1_000_000,
     reviewAfterIso,
   };
 }

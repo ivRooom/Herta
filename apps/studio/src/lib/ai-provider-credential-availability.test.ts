@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   resolveAnthropicProviderCredentialAvailability,
+  resolveDeepseekProviderCredentialAvailability,
   resolveGoogleProviderCredentialAvailability,
   resolveMoonshotProviderCredentialAvailability,
   resolveOpenAiProviderCredentialAvailability,
+  resolveXaiProviderCredentialAvailability,
 } from './ai-provider-credential-availability.ts';
 
 test('readable Runtime Secret makes OpenAI available without using env fallback', async () => {
@@ -253,6 +255,132 @@ test('Moonshot is unavailable when neither credential source is usable', async (
 
   assert.deepEqual(result, {
     provider: 'moonshot',
+    available: false,
+    source: null,
+    status: 'missing_credential',
+  });
+});
+
+test('readable Runtime Secret makes xAI available without using env fallback', async () => {
+  let reads = 0;
+  const result = await resolveXaiProviderCredentialAvailability({
+    readRuntimeCredential: async () => {
+      reads += 1;
+      return 'runtime-secret-value';
+    },
+    environmentCredential: 'environment-secret-value',
+  });
+
+  assert.equal(reads, 1);
+  assert.deepEqual(result, {
+    provider: 'xai',
+    available: true,
+    source: 'runtime_secret',
+    status: 'ready',
+  });
+});
+
+test('missing xAI Runtime Secret can use the legacy environment fallback', async () => {
+  const result = await resolveXaiProviderCredentialAvailability({
+    readRuntimeCredential: async () => null,
+    environmentCredential: ' environment-secret-value ',
+  });
+
+  assert.deepEqual(result, {
+    provider: 'xai',
+    available: true,
+    source: 'environment',
+    status: 'ready',
+  });
+});
+
+test('xAI Runtime Secret Store failure stays fail closed even when env fallback exists', async () => {
+  const result = await resolveXaiProviderCredentialAvailability({
+    readRuntimeCredential: async () => {
+      throw new Error('store unavailable');
+    },
+    environmentCredential: 'environment-secret-value',
+  });
+
+  assert.deepEqual(result, {
+    provider: 'xai',
+    available: false,
+    source: null,
+    status: 'credential_store_unavailable',
+  });
+});
+
+test('xAI is unavailable when neither credential source is usable', async () => {
+  const result = await resolveXaiProviderCredentialAvailability({
+    readRuntimeCredential: async () => null,
+    environmentCredential: '   ',
+  });
+
+  assert.deepEqual(result, {
+    provider: 'xai',
+    available: false,
+    source: null,
+    status: 'missing_credential',
+  });
+});
+
+test('readable Runtime Secret makes DeepSeek available without using env fallback', async () => {
+  let reads = 0;
+  const result = await resolveDeepseekProviderCredentialAvailability({
+    readRuntimeCredential: async () => {
+      reads += 1;
+      return 'runtime-secret-value';
+    },
+    environmentCredential: 'environment-secret-value',
+  });
+
+  assert.equal(reads, 1);
+  assert.deepEqual(result, {
+    provider: 'deepseek',
+    available: true,
+    source: 'runtime_secret',
+    status: 'ready',
+  });
+});
+
+test('missing DeepSeek Runtime Secret can use the legacy environment fallback', async () => {
+  const result = await resolveDeepseekProviderCredentialAvailability({
+    readRuntimeCredential: async () => null,
+    environmentCredential: ' environment-secret-value ',
+  });
+
+  assert.deepEqual(result, {
+    provider: 'deepseek',
+    available: true,
+    source: 'environment',
+    status: 'ready',
+  });
+});
+
+test('DeepSeek Runtime Secret Store failure stays fail closed even when env fallback exists', async () => {
+  const result = await resolveDeepseekProviderCredentialAvailability({
+    readRuntimeCredential: async () => {
+      throw new Error('store unavailable');
+    },
+    environmentCredential: 'environment-secret-value',
+  });
+
+  assert.deepEqual(result, {
+    provider: 'deepseek',
+    available: false,
+    source: null,
+    status: 'credential_store_unavailable',
+  });
+});
+
+test('DeepSeek is unavailable when neither credential source is usable', async () => {
+  const result = await resolveDeepseekProviderCredentialAvailability({
+    readRuntimeCredential: async () => null,
+    environmentCredential: '   ',
+  });
+
+  assert.deepEqual(result, {
+    provider: 'deepseek',
     available: false,
     source: null,
     status: 'missing_credential',

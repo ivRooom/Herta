@@ -286,6 +286,8 @@ const AI_PROVIDER_LABELS: Record<AiProviderName, string> = {
   anthropic: 'Anthropic (Claude)',
   google: 'Google (Gemini)',
   moonshot: 'Moonshot (Kimi)',
+  xai: 'xAI (Grok)',
+  deepseek: 'DeepSeek',
 };
 
 const AI_MODEL_PROFILE_LABELS: Record<AiModelProfile, string> = {

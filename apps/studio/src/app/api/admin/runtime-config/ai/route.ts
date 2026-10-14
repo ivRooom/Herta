@@ -2,10 +2,12 @@ import { NextResponse } from 'next/server';
 import {
   AI_RUNTIME_CONFIGURATION,
   ANTHROPIC_API_KEY_RUNTIME_SECRET,
+  DEEPSEEK_API_KEY_RUNTIME_SECRET,
   GOOGLE_GEMINI_API_KEY_RUNTIME_SECRET,
   MOONSHOT_API_KEY_RUNTIME_SECRET,
   OPENAI_API_KEY_RUNTIME_SECRET,
   RuntimeConfigurationError,
+  XAI_API_KEY_RUNTIME_SECRET,
   readRuntimeSecret,
   setRuntimeConfiguration,
 } from '@herta/db';
@@ -19,9 +21,11 @@ import {
 import { auth } from '@/auth';
 import {
   resolveAnthropicProviderCredentialAvailability,
+  resolveDeepseekProviderCredentialAvailability,
   resolveGoogleProviderCredentialAvailability,
   resolveMoonshotProviderCredentialAvailability,
   resolveOpenAiProviderCredentialAvailability,
+  resolveXaiProviderCredentialAvailability,
   type AiProviderCredentialAvailability,
 } from '@/lib/ai-provider-credential-availability';
 import { RequestBodyTooLargeError, readRequestBodyBytes } from '@/lib/bounded-request-body';
@@ -122,34 +126,52 @@ export async function PUT(request: Request) {
 }
 
 async function resolveProviderPolicyView(): Promise<ProviderPolicyView> {
-  const [openAiAvailability, anthropicAvailability, googleAvailability, moonshotAvailability] =
-    await Promise.all([
-      resolveOpenAiProviderCredentialAvailability({
-        readRuntimeCredential: () =>
-          readRuntimeSecret(prisma, OPENAI_API_KEY_RUNTIME_SECRET, process.env),
-        environmentCredential: process.env.OPENAI_API_KEY,
-      }),
-      resolveAnthropicProviderCredentialAvailability({
-        readRuntimeCredential: () =>
-          readRuntimeSecret(prisma, ANTHROPIC_API_KEY_RUNTIME_SECRET, process.env),
-        environmentCredential: process.env.ANTHROPIC_API_KEY,
-      }),
-      resolveGoogleProviderCredentialAvailability({
-        readRuntimeCredential: () =>
-          readRuntimeSecret(prisma, GOOGLE_GEMINI_API_KEY_RUNTIME_SECRET, process.env),
-        environmentCredential: process.env.GEMINI_API_KEY,
-      }),
-      resolveMoonshotProviderCredentialAvailability({
-        readRuntimeCredential: () =>
-          readRuntimeSecret(prisma, MOONSHOT_API_KEY_RUNTIME_SECRET, process.env),
-        environmentCredential: process.env.MOONSHOT_API_KEY,
-      }),
-    ]);
+  const [
+    openAiAvailability,
+    anthropicAvailability,
+    googleAvailability,
+    moonshotAvailability,
+    xaiAvailability,
+    deepseekAvailability,
+  ] = await Promise.all([
+    resolveOpenAiProviderCredentialAvailability({
+      readRuntimeCredential: () =>
+        readRuntimeSecret(prisma, OPENAI_API_KEY_RUNTIME_SECRET, process.env),
+      environmentCredential: process.env.OPENAI_API_KEY,
+    }),
+    resolveAnthropicProviderCredentialAvailability({
+      readRuntimeCredential: () =>
+        readRuntimeSecret(prisma, ANTHROPIC_API_KEY_RUNTIME_SECRET, process.env),
+      environmentCredential: process.env.ANTHROPIC_API_KEY,
+    }),
+    resolveGoogleProviderCredentialAvailability({
+      readRuntimeCredential: () =>
+        readRuntimeSecret(prisma, GOOGLE_GEMINI_API_KEY_RUNTIME_SECRET, process.env),
+      environmentCredential: process.env.GEMINI_API_KEY,
+    }),
+    resolveMoonshotProviderCredentialAvailability({
+      readRuntimeCredential: () =>
+        readRuntimeSecret(prisma, MOONSHOT_API_KEY_RUNTIME_SECRET, process.env),
+      environmentCredential: process.env.MOONSHOT_API_KEY,
+    }),
+    resolveXaiProviderCredentialAvailability({
+      readRuntimeCredential: () =>
+        readRuntimeSecret(prisma, XAI_API_KEY_RUNTIME_SECRET, process.env),
+      environmentCredential: process.env.XAI_API_KEY,
+    }),
+    resolveDeepseekProviderCredentialAvailability({
+      readRuntimeCredential: () =>
+        readRuntimeSecret(prisma, DEEPSEEK_API_KEY_RUNTIME_SECRET, process.env),
+      environmentCredential: process.env.DEEPSEEK_API_KEY,
+    }),
+  ]);
   const providerAvailability = [
     openAiAvailability,
     anthropicAvailability,
     googleAvailability,
     moonshotAvailability,
+    xaiAvailability,
+    deepseekAvailability,
   ];
   const availableProviders = new Set(
     providerAvailability.filter((entry) => entry.available).map((entry) => entry.provider),
