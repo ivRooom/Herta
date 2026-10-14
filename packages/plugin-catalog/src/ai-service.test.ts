@@ -195,6 +195,36 @@ describe('resolveAiFoundationConfig', () => {
       expect.objectContaining<Partial<AiConfigurationError>>({ code: 'invalid_model' }),
     );
   });
+
+  it('xai providerはbalanced profileをgrok-4.5へ解決する', () => {
+    const config = resolveAiFoundationConfig({ HERTA_AI_PROVIDER: 'xai' });
+    expect(config.provider).toBe('xai');
+    expect(config.modelProfile).toBe('balanced');
+    expect(config.model).toBe('grok-4.5');
+  });
+
+  it('xai providerで他providerのmodel IDを指定すると拒否する(Anthropic誤判定の回帰防止)', () => {
+    expect(() =>
+      resolveAiFoundationConfig({ HERTA_AI_PROVIDER: 'xai', HERTA_AI_MODEL: 'claude-opus-5' }),
+    ).toThrowError(
+      expect.objectContaining<Partial<AiConfigurationError>>({ code: 'invalid_model' }),
+    );
+  });
+
+  it('deepseek providerはbalanced profileをdeepseek-v4-flashへ解決する', () => {
+    const config = resolveAiFoundationConfig({ HERTA_AI_PROVIDER: 'deepseek' });
+    expect(config.provider).toBe('deepseek');
+    expect(config.modelProfile).toBe('balanced');
+    expect(config.model).toBe('deepseek-v4-flash');
+  });
+
+  it('deepseek providerで他providerのmodel IDを指定すると拒否する(Anthropic誤判定の回帰防止)', () => {
+    expect(() =>
+      resolveAiFoundationConfig({ HERTA_AI_PROVIDER: 'deepseek', HERTA_AI_MODEL: 'claude-opus-5' }),
+    ).toThrowError(
+      expect.objectContaining<Partial<AiConfigurationError>>({ code: 'invalid_model' }),
+    );
+  });
 });
 
 describe('AiFoundationService', () => {
@@ -1447,8 +1477,8 @@ describe('cost estimation', () => {
     expect(estimateXaiCostMicroUsd('grok-4.7', 0, 1_000_000)).toBe(6_000_000);
     expect(estimateXaiCostMicroUsd('grok-4.5', 1_000_000, 0)).toBe(2_000_000);
     expect(estimateXaiCostMicroUsd('grok-4.5', 0, 1_000_000)).toBe(6_000_000);
-    expect(estimateXaiCostMicroUsd('grok-4.1-fast', 1_000_000, 0)).toBe(200_000);
-    expect(estimateXaiCostMicroUsd('grok-4.1-fast', 0, 1_000_000)).toBe(500_000);
+    expect(estimateXaiCostMicroUsd('grok-4.3', 1_000_000, 0)).toBe(1_250_000);
+    expect(estimateXaiCostMicroUsd('grok-4.3', 0, 1_000_000)).toBe(2_500_000);
   });
 
   it('全DeepSeek profileのpricingを算出する', () => {

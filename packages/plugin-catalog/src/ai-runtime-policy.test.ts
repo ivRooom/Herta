@@ -219,7 +219,7 @@ describe('AI runtime policy', () => {
           }),
           expect.objectContaining({
             modelProfile: 'economy',
-            model: 'grok-4.1-fast',
+            model: 'grok-4.3',
             supportedReasoningEfforts: ['none'],
           }),
         ],

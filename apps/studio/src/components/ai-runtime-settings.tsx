@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BrainCircuit, Save, ShieldCheck } from 'lucide-react';
 
-type Provider = 'openai' | 'anthropic' | 'google' | 'moonshot';
+type Provider = 'openai' | 'anthropic' | 'google' | 'moonshot' | 'xai' | 'deepseek';
 type ModelProfile = 'quality' | 'balanced' | 'economy';
 type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
@@ -331,7 +331,9 @@ function isRuntimeResponse(value: unknown): value is RuntimeResponse {
     (value.current.provider === 'openai' ||
       value.current.provider === 'anthropic' ||
       value.current.provider === 'google' ||
-      value.current.provider === 'moonshot') &&
+      value.current.provider === 'moonshot' ||
+      value.current.provider === 'xai' ||
+      value.current.provider === 'deepseek') &&
     typeof value.current.modelProfile === 'string' &&
     typeof value.current.reasoningEffort === 'string' &&
     typeof value.current.timezone === 'string' &&
@@ -364,6 +366,8 @@ function providerLabel(provider: Provider): string {
   if (provider === 'anthropic') return 'Anthropic';
   if (provider === 'google') return 'Google Gemini';
   if (provider === 'moonshot') return 'Moonshot (Kimi)';
+  if (provider === 'xai') return 'xAI (Grok)';
+  if (provider === 'deepseek') return 'DeepSeek';
   return provider;
 }
 
