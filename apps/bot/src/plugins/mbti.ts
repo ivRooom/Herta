@@ -31,7 +31,7 @@ import {
   type MbtiQuestion,
   type MbtiScores,
 } from './mbti-core.js';
-import { renderMbtiQuestionCard } from './mbti-card.js';
+import { renderMbtiQuestionCard, type MbtiQuestionCardInput } from './mbti-card.js';
 import { reconcileMbtiRole } from './mbti-roles.js';
 import { pushMbtiResultToIvrmWeb, resolveMbtiIvrmSyncConfig } from './mbti-ivrm-sync.js';
 
@@ -172,7 +172,7 @@ async function startMbtiQuiz(
     scores: createEmptyMbtiScores(),
     answers: [],
     cardRenders: questions.map((question, index) =>
-      renderMbtiQuestionCard({
+      startMbtiCardRender({
         questionIndex: index,
         totalQuestions: questions.length,
         prompt: question.prompt,
@@ -398,6 +398,19 @@ function isGuildMember(member: unknown): member is GuildMember {
   const roles = (member as { roles?: unknown }).roles;
   if (!roles || typeof roles !== 'object' || Array.isArray(roles)) return false;
   return 'cache' in roles;
+}
+
+/**
+ * renderMbtiQuestionCard()を起動するが、まだ出番が来ていない先読み分のrejectionが
+ * Node.jsのunhandledRejectionとして扱われる(最悪プロセスがクラッシュしうる)のを防ぐため、
+ * 返すpromise本体とは別に即座にno-opのcatchを登録しておく。`.catch()`は新しいpromiseを
+ * 生成するだけで元のpromiseには影響しないため、呼び出し側(buildQuestionPayload)は返り値を
+ * 通常通りawaitでき、実際に失敗していればそこで同じエラーを観測できる。
+ */
+function startMbtiCardRender(input: MbtiQuestionCardInput): Promise<Buffer> {
+  const render = renderMbtiQuestionCard(input);
+  render.catch(() => undefined);
+  return render;
 }
 
 async function buildQuestionPayload(
