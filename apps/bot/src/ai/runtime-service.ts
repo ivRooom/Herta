@@ -1122,7 +1122,10 @@ function withOpenAiMcpToolCallingPolicy(
         functionCall.name,
         parseMcpToolArguments(functionCall.arguments),
       );
-      const wrappedOutput = `${MCP_TOOL_UNTRUSTED_DATA_PREFIX}${toolResult.text || '(空の結果)'}`;
+      const toolResultBody = toolResult.isError
+        ? '(ツール実行に失敗しました)'
+        : toolResult.text || '(空の結果)';
+      const wrappedOutput = `${MCP_TOOL_UNTRUSTED_DATA_PREFIX}${toolResultBody}`;
 
       const secondResponse = await fetchImpl(input, {
         ...init,

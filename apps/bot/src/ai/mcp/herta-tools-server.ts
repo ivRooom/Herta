@@ -23,6 +23,7 @@ export function createHertaToolsMcpServer(prisma: PrismaClient, guildId: string)
       title: 'Guild XPランキング取得',
       description:
         'このDiscordサーバー(Guild)のXPランキング上位を取得します。他のサーバーのデータは取得できません。',
+      annotations: { readOnlyHint: true, destructiveHint: false },
       inputSchema: {
         limit: z
           .number()

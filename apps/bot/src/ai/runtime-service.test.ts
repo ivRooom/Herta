@@ -426,7 +426,7 @@ function completedTextResponse(text: string) {
   });
 }
 
-function completedFunctionCallResponse(callId: string) {
+function completedFunctionCallResponse(callId: string, args = '{}') {
   return Response.json({
     status: 'completed',
     output: [
@@ -434,7 +434,7 @@ function completedFunctionCallResponse(callId: string) {
         type: 'function_call',
         call_id: callId,
         name: 'get_guild_xp_leaderboard',
-        arguments: '{}',
+        arguments: args,
       },
     ],
     usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
@@ -520,6 +520,33 @@ describe('OpenAiRuntimeGenerationService (MCP tool calling)', () => {
     expect(String(toolOutputItem?.['output'])).toContain('42');
 
     expect(result.text).toBe('user-1が1位です');
+  });
+
+  it('MCPツール実行がisError:trueを返した場合、生の失敗内容を参照データとして送らない', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const service = new OpenAiRuntimeGenerationService({
+      baseConfig: resolveAiFoundationConfig({ HERTA_AI_ENABLED: 'true' }),
+      apiKey: 'server-secret',
+      guardStore: guardStore(),
+      runtimeResolver: resolverFor(),
+      prisma: fakeXpLeaderboardPrisma([{ guildId: 'guild-1', userId: 'user-1', xp: 42 }]),
+      fetchImpl: async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        bodies.push(body);
+        // limit:999はget_guild_xp_leaderboardのzod schema(max 25)で拒否され、
+        // callToolはisError:trueを返す(実際のMCPサーバーを通したバリデーション)。
+        return bodies.length === 1
+          ? completedFunctionCallResponse('call-1', JSON.stringify({ limit: 999 }))
+          : completedTextResponse('わかりません');
+      },
+    });
+
+    await service.generate({ ...request, mcpToolsEnabled: true });
+
+    const secondInput = bodies[1]?.['input'] as Array<Record<string, unknown>>;
+    const toolOutputItem = secondInput[2];
+    expect(String(toolOutputItem?.['output'])).toContain('ツール実行に失敗しました');
+    expect(String(toolOutputItem?.['output'])).not.toContain('user-1');
   });
 
   it('2回目もtool呼び出しのままでも3回目は送信せず、最大2往復で打ち切る', async () => {

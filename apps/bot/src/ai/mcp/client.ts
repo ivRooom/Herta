@@ -33,10 +33,16 @@ export async function connectHertaToolsMcpClient(server: McpServer): Promise<Her
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   const client = new Client({ name: 'herta-bot', version: '1.0.0' });
 
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
-
-  const { tools } = await client.listTools();
+  let tools: Awaited<ReturnType<typeof client.listTools>>['tools'];
+  try {
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    ({ tools } = await client.listTools());
+  } catch (error) {
+    await client.close().catch(() => undefined);
+    await server.close().catch(() => undefined);
+    throw error;
+  }
   const openAiTools: McpOpenAiFunctionTool[] = tools.map((tool) => ({
     type: 'function',
     name: tool.name,
