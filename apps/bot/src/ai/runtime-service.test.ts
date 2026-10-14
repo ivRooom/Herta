@@ -411,11 +411,29 @@ describe('OpenAiRuntimeGenerationService', () => {
 
 function fakeXpLeaderboardPrisma(
   rows: Array<{ guildId: string; userId: string; xp: number }>,
+  auditLogCreate?: ReturnType<typeof vi.fn>,
 ): PrismaClient {
   return {
     $queryRaw: async () =>
       rows.map((row) => ({ ...row, xp: BigInt(row.xp), lastXpAt: null as Date | null })),
+    auditLog: { create: auditLogCreate ?? (async () => undefined) },
   } as unknown as PrismaClient;
+}
+
+function guardStoreDenyingAfter(allowedCalls: number): AiGuardStore {
+  let calls = 0;
+  return {
+    consumeRateLimit: async () => {
+      calls += 1;
+      return calls <= allowedCalls
+        ? { allowed: true, retryAfterMs: 0 }
+        : { allowed: false, retryAfterMs: 60_000 };
+    },
+    reserveGuildQuota: async () => ({ allowed: true, retryAfterMs: 0 }),
+    settleGuildQuota: async (_guildKey, _requestId, actualMicroUsd) => actualMicroUsd,
+    acquireConcurrency: async () => true,
+    releaseConcurrency: async () => undefined,
+  };
 }
 
 function completedTextResponse(text: string) {
@@ -547,6 +565,76 @@ describe('OpenAiRuntimeGenerationService (MCP tool calling)', () => {
     const toolOutputItem = secondInput[2];
     expect(String(toolOutputItem?.['output'])).toContain('ツール実行に失敗しました');
     expect(String(toolOutputItem?.['output'])).not.toContain('user-1');
+  });
+
+  it('MCPツールのrate limitに達している場合はツールを実行せず利用上限メッセージを返す', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const queryRawSpy = vi.fn(async () => [
+      { guildId: 'guild-1', userId: 'user-1', xp: BigInt(42), lastXpAt: null as Date | null },
+    ]);
+    const service = new OpenAiRuntimeGenerationService({
+      baseConfig: resolveAiFoundationConfig({ HERTA_AI_ENABLED: 'true' }),
+      apiKey: 'server-secret',
+      // 2回まで許可(AiFoundationService自体のuser/guild rate limitチェック分)、
+      // 3回目(=MCP tool専用rate limit)からは拒否する。
+      guardStore: guardStoreDenyingAfter(2),
+      runtimeResolver: resolverFor(),
+      prisma: {
+        $queryRaw: queryRawSpy,
+        auditLog: { create: async () => undefined },
+      } as unknown as PrismaClient,
+      fetchImpl: async (_input, init) => {
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        bodies.push(body);
+        return bodies.length === 1
+          ? completedFunctionCallResponse('call-1')
+          : completedTextResponse('わかりません');
+      },
+    });
+
+    await service.generate({ ...request, mcpToolsEnabled: true });
+
+    expect(queryRawSpy).not.toHaveBeenCalled();
+    const secondInput = bodies[1]?.['input'] as Array<Record<string, unknown>>;
+    const toolOutputItem = secondInput[2];
+    expect(String(toolOutputItem?.['output'])).toContain('利用上限に達しています');
+  });
+
+  it('MCPツール呼び出しの結果を監査ログへ非同期で記録する', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const auditLogCreate = vi.fn(async (_args: unknown) => undefined);
+    const service = new OpenAiRuntimeGenerationService({
+      baseConfig: resolveAiFoundationConfig({ HERTA_AI_ENABLED: 'true' }),
+      apiKey: 'server-secret',
+      guardStore: guardStore(),
+      runtimeResolver: resolverFor(),
+      prisma: fakeXpLeaderboardPrisma(
+        [{ guildId: 'guild-1', userId: 'user-1', xp: 42 }],
+        auditLogCreate,
+      ),
+      fetchImpl: async (_input, init) => {
+        bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+        return bodies.length === 1
+          ? completedFunctionCallResponse('call-1')
+          : completedTextResponse('user-1が1位です');
+      },
+    });
+
+    await service.generate({ ...request, mcpToolsEnabled: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(auditLogCreate).toHaveBeenCalledTimes(1);
+    expect(auditLogCreate.mock.calls[0]?.[0]).toMatchObject({
+      data: {
+        guildId: 'guild-1',
+        actorId: 'user-1',
+        event: 'mcp.tool_called',
+        targetType: 'mcp_tool',
+        targetId: 'get_guild_xp_leaderboard',
+        severity: 'info',
+        metadata: { outcome: 'succeeded' },
+      },
+    });
   });
 
   it('2回目もtool呼び出しのままでも3回目は送信せず、最大2往復で打ち切る', async () => {

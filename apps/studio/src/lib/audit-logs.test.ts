@@ -292,6 +292,26 @@ test('XP関連イベントはxpカテゴリへ分類する', () => {
   assert.equal(sweep.eventLabel, 'XP Role再計算が完了');
 });
 
+test('MCPツール呼び出しはmcpカテゴリへ分類され、outcomeに応じた要約になる', () => {
+  const succeeded = describeAuditEvent('mcp.tool_called', 'mcp_tool', 'get_guild_xp_leaderboard', {
+    outcome: 'succeeded',
+    operationSource: 'bot-runtime',
+  });
+  const rateLimited = describeAuditEvent(
+    'mcp.tool_called',
+    'mcp_tool',
+    'get_guild_xp_leaderboard',
+    { outcome: 'rate_limited', operationSource: 'bot-runtime' },
+  );
+
+  assert.equal(succeeded.category, 'mcp');
+  assert.equal(succeeded.eventLabel, 'MCPツールを呼び出し');
+  assert.match(succeeded.summary, /結果をAIへ返しました/u);
+  assert.equal(succeeded.sourceLabel, 'Bot Runtime');
+
+  assert.match(rateLimited.summary, /利用上限に達した/u);
+});
+
 test('未知イベントも生データを展開せず表示できる', () => {
   const presentation = describeAuditEvent('custom.operation', 'custom', 'target-1', {
     password: 'do-not-render',
