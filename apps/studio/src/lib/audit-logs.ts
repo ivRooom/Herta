@@ -689,12 +689,33 @@ async function listDiscordActivityFeed(
     return typeof value === 'string' ? value : null;
   };
 
+  // role_add/role_remove/nickname_update/message_deleteはこのPR以前からあるevent種別で、
+  // 旧実装ではuserIdカラムへ「操作対象のメンバー」を保持し、metadata.targetUserIdは
+  // 持たなかった(実行者という概念自体が無かった)。このPRより前に書き込まれた行には
+  // metadata.targetUserIdが無いため、targetUserIdの有無だけで判定すると旧行のuserId
+  // (実際は対象)を実行者として誤表示してしまう。これらのevent種別に限り、
+  // targetUserIdが無ければuserIdを対象として扱う旧実装の挙動をそのまま維持する。
+  const LEGACY_TARGET_ONLY_EVENTS = new Set([
+    'role_add',
+    'role_remove',
+    'nickname_update',
+    'message_delete',
+  ]);
+  const resolveRowTarget = (row: (typeof rows)[number]): string | null => {
+    const metadataTargetUserId = rowTargetUserId(row);
+    if (metadataTargetUserId) return metadataTargetUserId;
+    if (LEGACY_TARGET_ONLY_EVENTS.has(row.event)) return row.userId;
+    return null;
+  };
+  const isLegacyTargetOnlyRow = (row: (typeof rows)[number]): boolean =>
+    rowTargetUserId(row) === null && LEGACY_TARGET_ONLY_EVENTS.has(row.event);
+
   const userIds = [
     ...new Set(
       rows.flatMap((row) => {
         const ids: string[] = [];
-        if (row.userId) ids.push(row.userId);
-        const targetUserId = rowTargetUserId(row);
+        if (row.userId && !isLegacyTargetOnlyRow(row)) ids.push(row.userId);
+        const targetUserId = resolveRowTarget(row);
         if (targetUserId) ids.push(targetUserId);
         return ids;
       }),
@@ -705,12 +726,14 @@ async function listDiscordActivityFeed(
   return {
     items: rows.map((row) => {
       // role_add/role_remove/nickname_update/member_timeout_*/member_ban/member_unban/
-      // message_deleteはmetadata.targetUserIdへ「操作対象のメンバー」を保持している
-      // (activity-log.tsがAudit Logから実行者を解決できた場合はuserId=実行者、
+      // member_leave/message_deleteはmetadata.targetUserIdへ「操作対象のメンバー」を
+      // 保持している(activity-log.tsがAudit Logから実行者を解決できた場合はuserId=実行者、
       // できなかった場合はnullまたはイベント種別ごとのフォールバックになる)。
       // targetUserIdが無いイベント(emoji/channel系等)は従来通りuserIdを実行者として扱う。
-      const targetUserId = rowTargetUserId(row);
+      const legacy = isLegacyTargetOnlyRow(row);
+      const targetUserId = resolveRowTarget(row);
       const hasMemberTarget = targetUserId !== null;
+      const actorId = legacy ? null : row.userId;
 
       return {
         id: row.id,
@@ -720,9 +743,9 @@ async function listDiscordActivityFeed(
         category: 'other',
         severity: 'info',
         activitySource: 'discord_activity',
-        actorId: row.userId ?? '',
+        actorId: actorId ?? '',
         actorType: 'user',
-        actorLabel: row.userId ? (actorLabelById.get(row.userId) ?? 'Discordユーザー') : '不明',
+        actorLabel: actorId ? (actorLabelById.get(actorId) ?? 'Discordユーザー') : '不明',
         targetType: hasMemberTarget ? 'member' : row.channelId ? 'channel' : null,
         targetId: hasMemberTarget ? targetUserId : row.channelId,
         targetLabel: hasMemberTarget

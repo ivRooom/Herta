@@ -87,7 +87,15 @@ export interface CountRecentUserEventsInput {
   since: Date;
 }
 
-/** 直近since以降の、guild+user+event種別の件数。連投・連続削除の検知に使う。 */
+/**
+ * 直近since以降の、guild+user+event種別の件数。連投・連続削除の検知に使う。
+ *
+ * message_deleteはAudit Log経由で実行者(モデレーター等)を特定できた場合、userIdカラムには
+ * 対象者ではなく実行者が入る(metadata.targetUserIdへ対象者を保持する設計、PR #488参照)。
+ * 連続削除検知は「投稿が大量に削除されている対象者」を見る機能のため、userId一致に加えて
+ * metadata.targetUserId一致でもカウントする(message_create等、metadataにtargetUserIdを
+ * 持たないeventではこの条件は単に一致せず、挙動に影響しない)。
+ */
 export async function countRecentUserEvents(
   prisma: PrismaClient,
   input: CountRecentUserEventsInput,
@@ -95,9 +103,12 @@ export async function countRecentUserEvents(
   return prisma.memberActivityEvent.count({
     where: {
       guildId: input.guildId,
-      userId: input.userId,
       event: input.event,
       occurredAt: { gte: input.since },
+      OR: [
+        { userId: input.userId },
+        { metadata: { path: ['targetUserId'], equals: input.userId } },
+      ],
     },
   });
 }

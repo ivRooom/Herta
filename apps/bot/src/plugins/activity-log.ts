@@ -184,6 +184,15 @@ async function maybeSendBurstAlert(
   }
 }
 
+/**
+ * targetIdに一致する直近のAudit Logエントリを、十分に新しい(この関数の呼び出し直前に
+ * 作られた)ものだけに限定して実行者を特定する。時刻を見ずに「直近5件からtargetId一致」
+ * だけで判定すると、同じ対象への過去の別操作(例: 以前モデレーターが変更した際のentry)を
+ * 誤って今回の操作の実行者として採用してしまう(例: 本人が後日ニックネームを自分で変更した
+ * 際に、過去のモデレーター操作entryが古いまま一致してしまう)。
+ */
+const AUDIT_LOG_ACTOR_RESOLUTION_WINDOW_MS = 10_000;
+
 /** Audit Logから操作の実行者を割引きで特定する(View Audit Log権限が無い・未確定の場合はnull)。 */
 async function resolveAuditLogActorId(
   guild: Guild,
@@ -192,7 +201,12 @@ async function resolveAuditLogActorId(
 ): Promise<string | null> {
   try {
     const logs = await guild.fetchAuditLogs({ type: auditLogEvent, limit: 5 });
-    const entry = logs.entries.find((candidate) => candidate.targetId === targetId);
+    const now = Date.now();
+    const entry = logs.entries.find(
+      (candidate) =>
+        candidate.targetId === targetId &&
+        now - candidate.createdTimestamp <= AUDIT_LOG_ACTOR_RESOLUTION_WINDOW_MS,
+    );
     return entry?.executorId ?? null;
   } catch {
     return null;
@@ -493,7 +507,16 @@ async function handleMemberLeave(
   const config = normalizeActivityLogConfig(context.config);
   if (!config.enabled || !config.trackMembership || member.user.bot) return;
 
-  await record(context, { guildId: context.guildId, userId: member.id, event: 'member_leave' });
+  // guildMemberRemoveだけでは自主退出とKickを区別できないため、Audit LogのMemberKickから
+  // 実行者を特定できた場合のみactorとして記録する(自主退出時はAudit Logに記録が無い)。
+  // 退出したメンバー自身を実行者と誤表示しないよう、対象は常にmetadata.targetUserIdへ置く。
+  const actorId = await resolveAuditLogActorId(member.guild, AuditLogEvent.MemberKick, member.id);
+  await record(context, {
+    guildId: context.guildId,
+    userId: actorId,
+    event: 'member_leave',
+    metadata: { targetUserId: member.id, actorResolved: actorId !== null },
+  });
 }
 
 async function handleBanEvent(
@@ -578,8 +601,14 @@ async function handleGuildMemberUpdate(
   if (config.trackTimeout) {
     const oldTimeout = oldMember.communicationDisabledUntilTimestamp ?? null;
     const newTimeout = newMember.communicationDisabledUntilTimestamp ?? null;
-    const wasTimedOut = oldTimeout !== null && oldTimeout > Date.now();
-    const isTimedOut = newTimeout !== null && newTimeout > Date.now();
+    // Date.now()との比較で「現在有効か」を見るのではなく、値自体の有無(null⇔非null)で
+    // 遷移を判定する。自然失効の場合Discordは単独のguildMemberUpdateを送らないため、
+    // 別件の変更(ニックネーム変更等)で久々にguildMemberUpdateが来た時点では
+    // oldTimeoutが既に過去の時刻になっている場合がある。Date.now()と比較すると
+    // そのケースでtrue→trueやfalse→falseに潰れてしまい、既に失効していたタイムアウトの
+    // 解除が記録されない。
+    const wasTimedOut = oldTimeout !== null;
+    const isTimedOut = newTimeout !== null;
     // 本人による自己タイムアウトは不可能なため、実行者が解決できない場合はnullのままとする。
     if (!wasTimedOut && isTimedOut) {
       const actorId = await resolveAuditLogActorId(
