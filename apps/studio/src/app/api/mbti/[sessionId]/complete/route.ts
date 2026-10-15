@@ -106,40 +106,48 @@ export async function POST(
     });
   }
 
+  // ivrm-web同期とRole付与はどちらもベストエフォートな外部呼び出し(外部API・Bot内部API)
+  // のため、直列に待つとそれぞれのタイムアウトが積算してクライアント側のabort(15秒)を
+  // 超えてしまう可能性がある。並行実行し、合計の待ち時間を各呼び出し単体のタイムアウト
+  // 程度に抑える。
   const ivrmConfig = resolveMbtiIvrmSyncConfig(process.env);
-  if (ivrmConfig) {
-    try {
-      await pushMbtiResultToIvrmWeb(
-        ivrmConfig,
-        {
-          eventId: randomUUID(),
-          discordUserId: session.discordUserId,
-          mbtiType: resultType,
-          mbtiIdentity: resultIdentity,
-          occurredAt: new Date().toISOString(),
-        },
-        { warn: (obj, msg) => console.warn(msg, obj) },
-      );
-    } catch (error) {
-      console.error('ivrm-webへのMBTI Web診断結果同期に失敗しました', {
-        guildId: session.guildId,
-        errorName: error instanceof Error ? error.name : 'UnknownError',
-      });
-    }
+  const [ivrmSyncResult, roleReconciliationResult] = await Promise.allSettled([
+    ivrmConfig
+      ? pushMbtiResultToIvrmWeb(
+          ivrmConfig,
+          {
+            eventId: randomUUID(),
+            discordUserId: session.discordUserId,
+            mbtiType: resultType,
+            mbtiIdentity: resultIdentity,
+            occurredAt: new Date().toISOString(),
+          },
+          { warn: (obj, msg) => console.warn(msg, obj) },
+        )
+      : Promise.resolve(),
+    reconcileMbtiRoleForWebQuiz(session.guildId, session.discordUserId, resultType),
+  ]);
+
+  if (ivrmConfig && ivrmSyncResult.status === 'rejected') {
+    console.error('ivrm-webへのMBTI Web診断結果同期に失敗しました', {
+      guildId: session.guildId,
+      errorName:
+        ivrmSyncResult.reason instanceof Error ? ivrmSyncResult.reason.name : 'UnknownError',
+    });
   }
 
   let roleNote: string | null = null;
-  try {
-    const result = await reconcileMbtiRoleForWebQuiz(
-      session.guildId,
-      session.discordUserId,
-      resultType,
-    );
-    if (result.addedRoleName) roleNote = `@${result.addedRoleName} を付与しました`;
-  } catch (error) {
+  if (roleReconciliationResult.status === 'fulfilled') {
+    if (roleReconciliationResult.value.addedRoleName) {
+      roleNote = `@${roleReconciliationResult.value.addedRoleName} を付与しました`;
+    }
+  } else {
     console.error('MBTI Web診断のRole付与に失敗しました', {
       guildId: session.guildId,
-      errorName: error instanceof Error ? error.name : 'UnknownError',
+      errorName:
+        roleReconciliationResult.reason instanceof Error
+          ? roleReconciliationResult.reason.name
+          : 'UnknownError',
     });
   }
 

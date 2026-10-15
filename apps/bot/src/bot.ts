@@ -1278,6 +1278,13 @@ export class HertaBot {
     }
 
     const config = normalizeMbtiConfig(rawConfig);
+    if (!config.enabled) {
+      this.logger.debug(
+        { guildId, discordUserId },
+        'MBTI Pluginが無効化されているためWeb診断のRole付与をスキップします',
+      );
+      return null;
+    }
     return reconcileMbtiRoleForMember({
       member,
       roleMap: config.mbtiRoles,

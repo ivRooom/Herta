@@ -18,6 +18,7 @@ export interface MbtiWebQuizSessionRecord {
   guildId: string;
   discordUserId: string;
   status: string;
+  version: number;
   questionOrder: MbtiWebQuizQuestion[];
   answers: MbtiWebQuizAnswer[];
   scores: Record<string, number>;
@@ -96,20 +97,30 @@ export async function resolveMbtiWebQuizSessionForAnswer(
 }
 
 /**
- * `WHERE status = 'pending'`ガード付きで回答を追記する。マッチしなければ(期限切れ・
- * 完了済み・不整合な二重送信)nullを返し、呼び出し元に再検証を促す。
+ * `WHERE status = 'pending' AND version = expectedVersion AND expiresAt > now`
+ * ガード付きで回答を追記する。マッチしなければ(期限切れ・完了済み・同一セッションへの
+ * 同時送信による競合)nullを返し、呼び出し元に再検証を促す。`version`は呼び出し元が
+ * 直前に読み取ったセッションの値を渡す(楽観的ロック。2件の同時リクエストが同じ
+ * questionIndexを読んで両方書き込もうとした場合、片方だけが成功しもう片方はnullになる)。
  */
 export async function appendMbtiWebQuizAnswer(
   prisma: PrismaClient,
   sessionId: string,
   answers: readonly MbtiWebQuizAnswer[],
   scores: Record<string, number>,
+  expectedVersion: number,
 ): Promise<MbtiWebQuizSessionRecord | null> {
   const result = await prisma.mbtiWebQuizSession.updateMany({
-    where: { id: sessionId, status: 'pending' },
+    where: {
+      id: sessionId,
+      status: 'pending',
+      version: expectedVersion,
+      expiresAt: { gt: new Date() },
+    },
     data: {
       answers: answers as unknown as object,
       scores: scores as unknown as object,
+      version: { increment: 1 },
     },
   });
   if (result.count === 0) return null;
@@ -124,7 +135,7 @@ export async function completeMbtiWebQuizSession(
   input: { resultType: string; resultIdentity: string },
 ): Promise<MbtiWebQuizSessionRecord | null> {
   const result = await prisma.mbtiWebQuizSession.updateMany({
-    where: { id: sessionId, status: 'pending' },
+    where: { id: sessionId, status: 'pending', expiresAt: { gt: new Date() } },
     data: {
       status: 'completed',
       completedAt: new Date(),
@@ -155,6 +166,7 @@ function toRecord(session: {
   guildId: string;
   discordUserId: string;
   status: string;
+  version: number;
   questionOrder: unknown;
   answers: unknown;
   scores: unknown;
@@ -169,6 +181,7 @@ function toRecord(session: {
     guildId: session.guildId,
     discordUserId: session.discordUserId,
     status: session.status,
+    version: session.version,
     questionOrder: session.questionOrder as MbtiWebQuizQuestion[],
     answers: session.answers as MbtiWebQuizAnswer[],
     scores: session.scores as Record<string, number>,

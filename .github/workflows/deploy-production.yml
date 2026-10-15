@@ -303,8 +303,16 @@ jobs:
             # STUDIO_PUBLIC_BASE_URLはNEXTAUTH_URLと同じ値が必要(Bot/Studioは別コンテナのため
             # 個別に設定が必要)。既存デプロイには新規追加した変数のため、CIの新しいsecretを
             # 用意せず.env.production内の既存NEXTAUTH_URLから自動的に補完する。
-            existing_nextauth_url="$(grep -E '^NEXTAUTH_URL=' "${ENV_FILE}" | tail -n 1 | tr -d '\r' || true)"
-            existing_nextauth_url="${existing_nextauth_url#NEXTAUTH_URL=}"
+            existing_nextauth_url="$(
+              awk '
+                /^[[:space:]]*NEXTAUTH_URL[[:space:]]*[:=]/ {
+                  value = $0
+                  sub(/^[[:space:]]*NEXTAUTH_URL[[:space:]]*[:=][[:space:]]*/, "", value)
+                  sub(/[[:space:]]+$/, "", value)
+                  print value
+                }
+              ' "${ENV_FILE}" | tail -n 1 | tr -d '\r' || true
+            )"
             existing_nextauth_url="$(strip_surrounding_quotes "${existing_nextauth_url}")"
             if [ -n "${existing_nextauth_url}" ]; then
               upsert_env STUDIO_PUBLIC_BASE_URL "${existing_nextauth_url}"

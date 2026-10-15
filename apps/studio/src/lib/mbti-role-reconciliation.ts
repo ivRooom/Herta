@@ -52,8 +52,9 @@ export async function reconcileMbtiRoleForWebQuiz(
       cache: 'no-store',
       // Bot側のDiscord mutation完了を待つが、無期限には待たない(/completeがこれを
       // ベストエフォートでawaitするため、無期限だとBotが応答を返さない限りリクエストが
-      // ハングし続ける)。十分な猶予を見つつ上限を設ける。
-      signal: AbortSignal.timeout(resolveBotHealthRequestTimeoutMs() + 10_000),
+      // ハングし続ける)。/complete側のクライアントタイムアウト(15秒)を超えないよう、
+      // ivrm-web同期(5秒)と合わせても収まる範囲に短く抑える。
+      signal: AbortSignal.timeout(resolveBotHealthRequestTimeoutMs() + 3_000),
     });
   } catch {
     throw new MbtiRoleReconciliationError(502);

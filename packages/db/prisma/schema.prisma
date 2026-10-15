@@ -280,6 +280,9 @@ model MbtiWebQuizSession {
   guildId        String    @map("guild_id")
   discordUserId  String    @map("discord_user_id")
   status         String    @default("pending") // 'pending' | 'completed' | 'expired'
+  // 回答追記のための楽観的ロック。同一セッションへの同時リクエスト(二重送信等)が
+  // 両方pendingを通過してもどちらか一方だけが更新に成功するようにする。
+  version        Int       @default(0)
   questionOrder  Json      @map("question_order") // selectMbtiQuestions()の結果を凍結保存
   answers        Json      @default("[]")
   scores         Json      @default("{}")

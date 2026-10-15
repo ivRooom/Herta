@@ -4,6 +4,7 @@ CREATE TABLE "mbti_web_quiz_sessions" (
     "guild_id" TEXT NOT NULL,
     "discord_user_id" TEXT NOT NULL,
     "status" TEXT NOT NULL DEFAULT 'pending',
+    "version" INTEGER NOT NULL DEFAULT 0,
     "question_order" JSONB NOT NULL,
     "answers" JSONB NOT NULL DEFAULT '[]',
     "scores" JSONB NOT NULL DEFAULT '{}',

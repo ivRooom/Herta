@@ -79,7 +79,13 @@ export async function POST(
     { questionIndex: question.id, axis: question.axis, answer: input.answer },
   ];
 
-  const updated = await appendMbtiWebQuizAnswer(prisma, sessionId, updatedAnswers, scores);
+  const updated = await appendMbtiWebQuizAnswer(
+    prisma,
+    sessionId,
+    updatedAnswers,
+    scores,
+    session.version,
+  );
   if (!updated) {
     return json({ error: 'リンクの有効期限が切れたか、既に回答済みです' }, 409);
   }
