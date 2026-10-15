@@ -31,7 +31,11 @@ import {
   type MbtiQuestion,
   type MbtiScores,
 } from './mbti-core.js';
-import { renderMbtiQuestionCard, type MbtiQuestionCardInput } from './mbti-card.js';
+import {
+  renderMbtiQuestionCard,
+  renderMbtiResultCard,
+  type MbtiQuestionCardInput,
+} from './mbti-card.js';
 import { reconcileMbtiRole } from './mbti-roles.js';
 import { pushMbtiResultToIvrmWeb, resolveMbtiIvrmSyncConfig } from './mbti-ivrm-sync.js';
 
@@ -271,13 +275,31 @@ async function handleMbtiButton(
       );
     });
     const roleNote = await tryAssignMbtiRole(interaction, type, options);
-    await interaction.update({
-      content: null,
-      embeds: [buildResultEmbed(type, session.scores, roleNote)],
-      components: [],
-      files: [],
-      attachments: [],
-    });
+    try {
+      const png = await renderMbtiResultCard({ type, scores: session.scores, roleNote });
+      const attachment = new AttachmentBuilder(png, {
+        name: `mbti-result-${session.id}.png`,
+      }).setDescription(`MBTI診断結果: ${type}`);
+      await interaction.update({
+        content: null,
+        embeds: [],
+        components: [],
+        files: [attachment],
+        attachments: [],
+      });
+    } catch (error) {
+      options.logger.warn(
+        { err: error, guildId: session.guildId, userId: session.userId, type },
+        'MBTI結果カードの生成に失敗したため、テキスト表示へフォールバックしました',
+      );
+      await interaction.update({
+        content: null,
+        embeds: [buildResultEmbed(type, session.scores, roleNote)],
+        components: [],
+        files: [],
+        attachments: [],
+      });
+    }
     return true;
   }
 

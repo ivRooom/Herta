@@ -1,5 +1,11 @@
 import sharp from 'sharp';
-import type { MbtiAxis } from './mbti-core.js';
+import {
+  MBTI_AXES,
+  MBTI_TYPES,
+  computeMbtiAxisPercent,
+  type MbtiAxis,
+  type MbtiScores,
+} from './mbti-core.js';
 
 const CARD_WIDTH = 1200;
 const CARD_HEIGHT = 630;
@@ -199,6 +205,92 @@ export function buildMbtiQuestionCardSvg(input: MbtiQuestionCardInput): string {
 
 export async function renderMbtiQuestionCard(input: MbtiQuestionCardInput): Promise<Buffer> {
   const svg = buildMbtiQuestionCardSvg(input);
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+/** 各軸の正方向/負方向を表す1文字(mbti.tsのbuildResultEmbedと同じ対応)。 */
+const AXIS_LETTER_PAIRS: Record<MbtiAxis, [positive: string, negative: string]> = {
+  EI: ['E', 'I'],
+  SN: ['S', 'N'],
+  TF: ['T', 'F'],
+  JP: ['J', 'P'],
+};
+
+export interface MbtiResultCardInput {
+  /** computeMbtiType()が返す4文字のタイプ(例: 'INTJ')。 */
+  type: string;
+  scores: MbtiScores;
+  /** Role付与が行われた場合のみ、表示用メッセージ(例: '@Role を付与しました')。 */
+  roleNote: string | null;
+}
+
+const RESULT_AXIS_ROW_HEIGHT = 44;
+const RESULT_AXIS_BAR_X = 140;
+const RESULT_AXIS_BAR_WIDTH = CARD_WIDTH - RESULT_AXIS_BAR_X * 2;
+
+export function buildMbtiResultCardSvg(input: MbtiResultCardInput): string {
+  const info = MBTI_TYPES[input.type];
+  const descriptionLines = wrapJapaneseText(
+    info?.description ?? '診断結果を計算できませんでした。',
+    22,
+  );
+
+  const axisRowsStartY = 420;
+  const axisRows = MBTI_AXES.map((axis, index) => {
+    const [positive, negative] = AXIS_LETTER_PAIRS[axis];
+    const percent = computeMbtiAxisPercent(input.scores, axis);
+    const color = AXIS_COLORS[axis] ?? '#7c6df2';
+    const y = axisRowsStartY + index * RESULT_AXIS_ROW_HEIGHT;
+    const fillWidth = Math.max(10, Math.round((RESULT_AXIS_BAR_WIDTH * percent) / 100));
+    return `
+      <text x="${RESULT_AXIS_BAR_X}" y="${y - 10}" font-family="Noto Sans CJK JP, Noto Sans CJK, sans-serif" font-size="18" font-weight="700" fill="${color}">${positive} ${percent}%</text>
+      <text x="${RESULT_AXIS_BAR_X + RESULT_AXIS_BAR_WIDTH}" y="${y - 10}" text-anchor="end" font-family="Noto Sans CJK JP, Noto Sans CJK, sans-serif" font-size="18" fill="#9a97ad">${100 - percent}% ${negative}</text>
+      <rect x="${RESULT_AXIS_BAR_X}" y="${y}" width="${RESULT_AXIS_BAR_WIDTH}" height="10" rx="5" fill="#ffffff" opacity="0.12"/>
+      <rect x="${RESULT_AXIS_BAR_X}" y="${y}" width="${fillWidth}" height="10" rx="5" fill="${color}"/>
+    `;
+  }).join('');
+
+  const descriptionStartY = 300;
+  const descriptionTextLines = descriptionLines
+    .map(
+      (line, index) =>
+        `<text x="${CARD_WIDTH / 2}" y="${descriptionStartY + index * 32}" text-anchor="middle" font-family="Noto Sans CJK JP, Noto Sans CJK, sans-serif" font-size="24" fill="#c9c7d6">${escapeXml(line)}</text>`,
+    )
+    .join('');
+
+  const roleNoteText = input.roleNote
+    ? `<text x="${CARD_WIDTH / 2}" y="${CARD_HEIGHT - 56}" text-anchor="middle" font-family="Noto Sans CJK JP, Noto Sans CJK, sans-serif" font-size="18" fill="#9a97ad">${escapeXml(input.roleNote)}</text>`
+    : '';
+
+  return `<svg width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
+  <rect width="${CARD_WIDTH}" height="${CARD_HEIGHT}" fill="${BACKGROUND_COLOR}"/>
+
+  <!-- カードパネルの枠 -->
+  <rect x="24" y="24" width="${CARD_WIDTH - 48}" height="${CARD_HEIGHT - 48}" rx="24" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="1.5"/>
+
+  <!-- ヘッダー -->
+  <text x="${CARD_WIDTH / 2}" y="92" text-anchor="middle" font-family="Noto Sans CJK JP, Noto Sans CJK, sans-serif" font-size="22" font-weight="700" fill="#9a97ad" letter-spacing="2">🎉 診断結果</text>
+
+  <!-- タイプ(大) + 日本語タイトル -->
+  <text x="${CARD_WIDTH / 2}" y="210" text-anchor="middle" font-family="Noto Sans CJK JP, Noto Sans CJK, sans-serif" font-size="104" font-weight="800" fill="#f5f5f7" letter-spacing="4">${escapeXml(input.type)}</text>
+  <text x="${CARD_WIDTH / 2}" y="258" text-anchor="middle" font-family="Noto Sans CJK JP, Noto Sans CJK, sans-serif" font-size="34" font-weight="700" fill="#7c6df2">${escapeXml(info?.title ?? '')}</text>
+
+  ${descriptionTextLines}
+
+  ${axisRows}
+
+  ${roleNoteText}
+
+  <!-- ブランド表記 -->
+  <text x="${RESULT_AXIS_BAR_X}" y="${CARD_HEIGHT - 24}" font-family="Noto Sans CJK JP, Noto Sans CJK, sans-serif" font-size="16" fill="#6b6880" letter-spacing="1">ivRoom</text>
+
+  <!-- 注記 -->
+  <text x="${CARD_WIDTH - RESULT_AXIS_BAR_X}" y="${CARD_HEIGHT - 24}" text-anchor="end" font-family="Noto Sans CJK JP, Noto Sans CJK, sans-serif" font-size="16" fill="#6b6880">簡易診断のため参考程度にご覧ください</text>
+</svg>`;
+}
+
+export async function renderMbtiResultCard(input: MbtiResultCardInput): Promise<Buffer> {
+  const svg = buildMbtiResultCardSvg(input);
   return sharp(Buffer.from(svg)).png().toBuffer();
 }
 

@@ -1,6 +1,13 @@
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
-import { buildMbtiQuestionCardSvg, renderMbtiQuestionCard, wrapJapaneseText } from './mbti-card.js';
+import { createEmptyMbtiScores } from './mbti-core.js';
+import {
+  buildMbtiQuestionCardSvg,
+  buildMbtiResultCardSvg,
+  renderMbtiQuestionCard,
+  renderMbtiResultCard,
+  wrapJapaneseText,
+} from './mbti-card.js';
 
 describe('wrapJapaneseText', () => {
   it('指定文字数ごとに折り返す', () => {
@@ -148,6 +155,134 @@ describe('renderMbtiQuestionCard', () => {
         totalQuestions: 50,
         prompt: 'テスト',
         axis,
+      });
+      const metadata = await sharp(buffer).metadata();
+      expect(metadata.format).toBe('png');
+    }
+  });
+});
+
+describe('buildMbtiResultCardSvg', () => {
+  it('タイプ・タイトル・説明文・各軸の割合を含むSVGを生成する', () => {
+    const svg = buildMbtiResultCardSvg({
+      type: 'INTJ',
+      scores: { EI: -10, SN: -10, TF: 10, JP: 10 },
+      roleNote: null,
+    });
+    expect(svg).toContain('<svg');
+    expect(svg).toContain('>INTJ<');
+    expect(svg).toContain('建築家');
+    expect(svg).toContain('独創的な戦略で物事を計画し');
+  });
+
+  it('未知のタイプでもクラッシュせずフォールバック文言を表示する', () => {
+    const svg = buildMbtiResultCardSvg({
+      type: 'XXXX',
+      scores: createEmptyMbtiScores(),
+      roleNote: null,
+    });
+    expect(svg).toContain('>XXXX<');
+    expect(svg).toContain('診断結果を計算できませんでした。');
+  });
+
+  it('roleNoteがある場合のみRole付与メッセージを表示する', () => {
+    const withRole = buildMbtiResultCardSvg({
+      type: 'INTJ',
+      scores: createEmptyMbtiScores(),
+      roleNote: '<@&123456789012345678> を付与しました',
+    });
+    const withoutRole = buildMbtiResultCardSvg({
+      type: 'INTJ',
+      scores: createEmptyMbtiScores(),
+      roleNote: null,
+    });
+    expect(withRole).toContain('を付与しました');
+    expect(withoutRole).not.toContain('を付与しました');
+  });
+
+  it('軸の傾きに応じてバー幅・百分率表示が変わる', () => {
+    const strongE = buildMbtiResultCardSvg({
+      type: 'ENTJ',
+      scores: { EI: 26, SN: 0, TF: 0, JP: 0 },
+      roleNote: null,
+    });
+    const neutral = buildMbtiResultCardSvg({
+      type: 'ENTJ',
+      scores: createEmptyMbtiScores(),
+      roleNote: null,
+    });
+    expect(strongE).toContain('E 100%');
+    expect(neutral).toContain('E 50%');
+  });
+
+  it('HTML特殊文字(roleNote)をエスケープする', () => {
+    const svg = buildMbtiResultCardSvg({
+      type: 'INTJ',
+      scores: createEmptyMbtiScores(),
+      roleNote: '<script>alert(1)</script>',
+    });
+    expect(svg).not.toContain('<script>');
+    expect(svg).toContain('&lt;script&gt;');
+  });
+
+  it('背景はグラデーションを使わず単色でカード間の統一感を保つ', () => {
+    const svg = buildMbtiResultCardSvg({
+      type: 'INTJ',
+      scores: createEmptyMbtiScores(),
+      roleNote: null,
+    });
+    expect(svg).not.toContain('linearGradient');
+    expect(svg).not.toContain('radialGradient');
+    expect(svg).toContain('fill="#17162a"');
+  });
+
+  it('小さくivRoomのブランド表記を含む', () => {
+    const svg = buildMbtiResultCardSvg({
+      type: 'INTJ',
+      scores: createEmptyMbtiScores(),
+      roleNote: null,
+    });
+    expect(svg).toContain('>ivRoom<');
+  });
+});
+
+describe('renderMbtiResultCard', () => {
+  it('有効なPNGバッファを生成する', async () => {
+    const buffer = await renderMbtiResultCard({
+      type: 'ENFP',
+      scores: { EI: 10, SN: -5, TF: -8, JP: 3 },
+      roleNote: '<@&123456789012345678> を付与しました',
+    });
+    const metadata = await sharp(buffer).metadata();
+    expect(metadata.format).toBe('png');
+    expect(metadata.width).toBe(1200);
+    expect(metadata.height).toBe(630);
+  });
+
+  it('全16タイプでSVGが有効なPNGとしてレンダリングできる', async () => {
+    const types = [
+      'INTJ',
+      'INTP',
+      'ENTJ',
+      'ENTP',
+      'INFJ',
+      'INFP',
+      'ENFJ',
+      'ENFP',
+      'ISTJ',
+      'ISFJ',
+      'ESTJ',
+      'ESFJ',
+      'ISTP',
+      'ISFP',
+      'ESTP',
+      'ESFP',
+    ] as const;
+    for (const type of types) {
+      const buffer = await renderMbtiResultCard({
+        type,
+        scores: createEmptyMbtiScores(),
+        roleNote: null,
       });
       const metadata = await sharp(buffer).metadata();
       expect(metadata.format).toBe('png');
