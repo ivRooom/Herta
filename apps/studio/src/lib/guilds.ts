@@ -1,13 +1,25 @@
 import { cache } from 'react';
+import { unstable_cache } from 'next/cache';
 import { prisma } from '@/lib/db';
 import { fetchManageableGuilds, type ManageableGuild } from '@/lib/discord';
 import { buildGuildPersistenceData } from '@/lib/guild-metadata';
 
 /**
- * 同一Server Componentsレンダー内ではDiscord Guild一覧取得を共有する。
- * `fetchManageableGuilds` 自体は `cache: 'no-store'` のため、別リクエストへは持ち越さない。
+ * ダッシュボードはサイドバー遷移・タブ切り替え(searchParams変更)のたびに
+ * layout.tsx + page.tsxの両方からこの一覧取得を呼び出すため、Discord側の
+ * `/users/@me/guilds` への実アクセスを12秒だけ短期キャッシュする。
+ * accessTokenをキー引数に含めるためユーザーをまたいだキャッシュ汚染は起きない。
+ * 権限剥奪(Kick・Role変更等)の反映が最大12秒遅れるが、ユーザー判断により
+ * 画面遷移の速度を優先してこの遅延を許容する設計とした。
  */
-const getManageableGuildsForRequest = cache(fetchManageableGuilds);
+const getManageableGuildsCached = unstable_cache(
+  (accessToken: string) => fetchManageableGuilds(accessToken),
+  ['studio-manageable-guilds'],
+  { revalidate: 12 },
+);
+
+/** 同一Server Componentsレンダー内(layout.tsx + page.tsx)でも呼び出しを共有する。 */
+const getManageableGuildsForRequest = cache(getManageableGuildsCached);
 
 /** ログインユーザーが管理可能な Guild 一覧を取得する */
 export async function getManageableGuilds(accessToken: string): Promise<ManageableGuild[]> {
