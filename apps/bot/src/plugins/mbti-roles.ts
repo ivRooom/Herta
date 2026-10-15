@@ -4,6 +4,9 @@ import type { Logger } from '@herta/logger';
 export interface MbtiRoleReconciliationResult {
   type: string;
   addedRoleId: string | null;
+  /** addedRoleIdに対応するRole表示名。PNG添付ファイル内ではDiscordの<＠&id>メンション構文が
+   * 解決されないため、画像カード側ではこちらを使う(mbti.tsのtryAssignMbtiRole参照)。 */
+  addedRoleName: string | null;
   removedRoleIds: string[];
   skippedRoleIds: string[];
   failedRoleIds: string[];
@@ -22,6 +25,7 @@ export async function reconcileMbtiRole(input: {
   const result: MbtiRoleReconciliationResult = {
     type: input.resultType,
     addedRoleId: null,
+    addedRoleName: null,
     removedRoleIds: [],
     skippedRoleIds: [],
     failedRoleIds: [],
@@ -69,6 +73,7 @@ export async function reconcileMbtiRole(input: {
       } else {
         await input.member.roles.add(targetRoleId);
         result.addedRoleId = targetRoleId;
+        result.addedRoleName = role.name;
       }
     } catch (error) {
       result.failedRoleIds.push(targetRoleId);
