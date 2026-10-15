@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from '@herta/db';
+import { searchCommandExecutionEvents, searchMemberActivityEvents } from '@herta/db';
 import {
   DEFAULT_PLUGIN_RUNTIME_CONSUMER,
   isPluginRuntimeConsumer,
@@ -27,12 +28,22 @@ export type AuditLogCategory =
   | 'other';
 export type AuditLogSeverity = 'all' | 'info' | 'warning' | 'error' | 'critical';
 
+/**
+ * admin_action: 既存のAuditLog(Plugin設定変更・モデレーション等、管理者が明示的に行った操作)。
+ * discord_activity: MemberActivityEvent(メッセージ編集/削除・チャンネル作成/削除等、Discordの
+ * gatewayイベントを検知して記録したもの)。
+ * command_usage: CommandExecutionEvent(全スラッシュコマンドの実行、性能テレメトリ)。
+ * all: 3つを読み取り時にマージして表示する(最新pageSize件のみ、ページ送りは未対応)。
+ */
+export type AuditActivitySource = 'all' | 'admin_action' | 'discord_activity' | 'command_usage';
+
 export interface AuditLogQuery {
   page: number;
   pageSize: number;
   search: string;
   category: AuditLogCategory;
   severity: AuditLogSeverity;
+  source: AuditActivitySource;
   from: Date | null;
   toExclusive: Date | null;
   fromInput: string;
@@ -46,6 +57,7 @@ export interface AuditLogItem {
   summary: string;
   category: Exclude<AuditLogCategory, 'all'>;
   severity: string;
+  activitySource: Exclude<AuditActivitySource, 'all'>;
   actorId: string;
   actorType: string;
   actorLabel: string;
@@ -62,6 +74,8 @@ export interface AuditLogResult {
   page: number;
   pageSize: number;
   totalPages: number;
+  /** source='all'の場合、最新pageSize件のみを返しページ送りに対応しない旨を示す。 */
+  isUnifiedPreview: boolean;
 }
 
 export interface AuditEventPresentation {
@@ -140,6 +154,14 @@ const ALLOWED_SEVERITIES = new Set<AuditLogSeverity>([
   'error',
   'critical',
 ]);
+const ALLOWED_ACTIVITY_SOURCES = new Set<AuditActivitySource>([
+  'all',
+  'admin_action',
+  'discord_activity',
+  'command_usage',
+]);
+/** source='all'でマージ表示する際の最大件数(ページ送り未対応のため、最新分のみを示す)。 */
+const UNIFIED_PREVIEW_LIMIT = 25;
 
 const AUTOMATIC_ACTION_LABELS: Record<string, string> = {
   observe: '監視のみ',
@@ -397,6 +419,7 @@ const EVENT_LABELS: Record<string, { label: string; summary: string }> = {
 export function parseAuditLogQuery(searchParams: URLSearchParams): AuditLogQuery {
   const categoryValue = searchParams.get('category') ?? 'all';
   const severityValue = searchParams.get('severity') ?? 'all';
+  const sourceValue = searchParams.get('source') ?? 'admin_action';
   const fromInput = normalizeDateInput(searchParams.get('from'));
   const toInput = normalizeDateInput(searchParams.get('to'));
 
@@ -413,6 +436,9 @@ export function parseAuditLogQuery(searchParams: URLSearchParams): AuditLogQuery
     severity: ALLOWED_SEVERITIES.has(severityValue as AuditLogSeverity)
       ? (severityValue as AuditLogSeverity)
       : 'all',
+    source: ALLOWED_ACTIVITY_SOURCES.has(sourceValue as AuditActivitySource)
+      ? (sourceValue as AuditActivitySource)
+      : 'admin_action',
     from: parseJstDate(fromInput, false),
     toExclusive: parseJstDate(toInput, true),
     fromInput,
@@ -484,6 +510,7 @@ export async function listGuildAuditLogs(
         summary: presentation.summary,
         category: presentation.category,
         severity: row.severity,
+        activitySource: 'admin_action' as const,
         actorId: row.actorId,
         actorType: row.actorType,
         actorLabel: resolveActorLabel(row.actorType, user),
@@ -498,7 +525,205 @@ export async function listGuildAuditLogs(
     page,
     pageSize: query.pageSize,
     totalPages,
+    isUnifiedPreview: false,
   };
+}
+
+/** apps/bot/src/plugins/activity-log.tsのMEMBER_ACTIVITY_EVENT_LABELSと同じ文言。 */
+const DISCORD_ACTIVITY_EVENT_LABELS: Record<string, string> = {
+  voice_join: 'VC入室',
+  voice_leave: 'VC退室',
+  message_create: 'メッセージ作成',
+  message_update: 'メッセージ編集',
+  message_delete: 'メッセージ削除',
+  emoji_create: '絵文字登録',
+  emoji_update: '絵文字変更',
+  emoji_delete: '絵文字削除',
+  avatar_update: 'アバター変更',
+  nickname_update: 'ニックネーム変更',
+  role_add: 'ロール付与',
+  role_remove: 'ロール剥奪',
+  guild_icon_update: 'サーバーアイコン変更',
+  guild_banner_update: 'サーバーバナー変更',
+  channel_create: 'チャンネル作成',
+  channel_delete: 'チャンネル削除',
+};
+
+function discordActivityEventLabel(event: string): string {
+  return DISCORD_ACTIVITY_EVENT_LABELS[event] ?? event;
+}
+
+function discordActivitySummary(event: string, metadata: Record<string, unknown> | null): string {
+  if ((event === 'channel_create' || event === 'channel_delete') && metadata) {
+    const channelName = typeof metadata.channelName === 'string' ? metadata.channelName : null;
+    if (channelName) {
+      return event === 'channel_create' ? `#${channelName} を作成` : `#${channelName} を削除`;
+    }
+  }
+  return `${discordActivityEventLabel(event)}が記録されました。`;
+}
+
+/**
+ * Studioの監査ログ画面で、既存のAuditLog(管理操作)に加えてMemberActivityEvent
+ * (Discordのgatewayイベント)・CommandExecutionEvent(コマンド実行)も同じ画面で
+ * 閲覧できるようにする。書き込みは3つのテーブルへ分かれたまま(保持期間・書き込み
+ * 頻度が大きく異なるため統合しない)、表示だけ読み取り時にマージする。
+ *
+ * source='all'の場合は各ソースの最新pageSize件だけをマージし、ページ送りには対応
+ * しない(3ソースの合計件数に対して正確なページングを行うと、ソースごとに保持期間・
+ * 書き込み頻度が大きく異なるため複雑になりすぎるための設計判断)。
+ */
+export async function listGuildActivityFeed(
+  prisma: PrismaClient,
+  guildId: string,
+  query: AuditLogQuery,
+): Promise<AuditLogResult> {
+  if (query.source === 'admin_action') {
+    return listGuildAuditLogs(prisma, guildId, query);
+  }
+  if (query.source === 'discord_activity') {
+    return listDiscordActivityFeed(prisma, guildId, query);
+  }
+  if (query.source === 'command_usage') {
+    return listCommandUsageFeed(prisma, guildId, query);
+  }
+
+  const [adminResult, discordResult, commandResult] = await Promise.all([
+    listGuildAuditLogs(prisma, guildId, { ...query, page: 1, pageSize: UNIFIED_PREVIEW_LIMIT }),
+    listDiscordActivityFeed(prisma, guildId, {
+      ...query,
+      page: 1,
+      pageSize: UNIFIED_PREVIEW_LIMIT,
+    }),
+    listCommandUsageFeed(prisma, guildId, { ...query, page: 1, pageSize: UNIFIED_PREVIEW_LIMIT }),
+  ]);
+
+  const merged = [...adminResult.items, ...discordResult.items, ...commandResult.items]
+    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
+    .slice(0, UNIFIED_PREVIEW_LIMIT);
+
+  return {
+    items: merged,
+    total: adminResult.total + discordResult.total + commandResult.total,
+    page: 1,
+    pageSize: UNIFIED_PREVIEW_LIMIT,
+    totalPages: 1,
+    isUnifiedPreview: true,
+  };
+}
+
+async function listDiscordActivityFeed(
+  prisma: PrismaClient,
+  guildId: string,
+  query: AuditLogQuery,
+): Promise<AuditLogResult> {
+  const { items: rows, total } = await searchMemberActivityEvents(prisma, {
+    guildId,
+    from: query.from,
+    toExclusive: query.toExclusive,
+    page: query.page,
+    pageSize: query.pageSize,
+  });
+
+  const userIds = [...new Set(rows.flatMap((row) => (row.userId ? [row.userId] : [])))];
+  const actorLabelById = await resolveUserLabels(prisma, userIds);
+  const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
+
+  return {
+    items: rows.map((row) => ({
+      id: row.id,
+      event: row.event,
+      eventLabel: discordActivityEventLabel(row.event),
+      summary: discordActivitySummary(row.event, row.metadata),
+      category: 'other',
+      severity: 'info',
+      activitySource: 'discord_activity',
+      actorId: row.userId ?? '',
+      actorType: 'user',
+      actorLabel: row.userId ? (actorLabelById.get(row.userId) ?? 'Discordユーザー') : '不明',
+      targetType: row.channelId ? 'channel' : null,
+      targetId: row.channelId,
+      targetLabel: row.channelId ? `#${row.channelId}` : '対象情報なし',
+      sourceLabel: null,
+      createdAt: row.occurredAt,
+    })),
+    total,
+    page: query.page,
+    pageSize: query.pageSize,
+    totalPages,
+    isUnifiedPreview: false,
+  };
+}
+
+async function listCommandUsageFeed(
+  prisma: PrismaClient,
+  guildId: string,
+  query: AuditLogQuery,
+): Promise<AuditLogResult> {
+  const result = await searchCommandExecutionEvents(prisma, {
+    guildId,
+    rangeDays: resolveCommandUsageRangeDays(query),
+    page: query.page,
+    pageSize: query.pageSize,
+  });
+
+  const userIds = [...new Set(result.items.flatMap((row) => (row.userId ? [row.userId] : [])))];
+  const actorLabelById = await resolveUserLabels(prisma, userIds);
+  const statusLabel = (status: string): string => (status === 'success' ? '成功' : '失敗');
+
+  return {
+    items: result.items.map((row) => ({
+      id: row.id,
+      event: row.commandName,
+      eventLabel: `/${row.commandName}`,
+      summary: `/${row.commandName} を実行(${statusLabel(row.status)}${row.errorName ? ` — ${row.errorName}` : ''})`,
+      category: 'other',
+      severity: row.status === 'success' ? 'info' : 'warning',
+      activitySource: 'command_usage',
+      actorId: row.userId ?? '',
+      actorType: 'user',
+      actorLabel: row.userId ? (actorLabelById.get(row.userId) ?? 'Discordユーザー') : '不明',
+      targetType: null,
+      targetId: null,
+      targetLabel: '対象情報なし',
+      sourceLabel: null,
+      createdAt: row.executedAt,
+    })),
+    total: result.total,
+    page: result.page,
+    pageSize: result.pageSize,
+    totalPages: result.totalPages,
+    isUnifiedPreview: false,
+  };
+}
+
+/**
+ * CommandExecutionEventのrangeDays(日数ベース)と、AuditLog等が使うfrom/toExclusiveの
+ * 日付範囲フィルタの橋渡し。fromが指定されていれば現在日時との差分日数へ変換する。
+ */
+function resolveCommandUsageRangeDays(query: AuditLogQuery): number | undefined {
+  if (!query.from) return undefined;
+  const diffMs = Date.now() - query.from.getTime();
+  return Math.max(1, Math.ceil(diffMs / (24 * 60 * 60 * 1000)));
+}
+
+async function resolveUserLabels(
+  prisma: PrismaClient,
+  userIds: readonly string[],
+): Promise<Map<string, string>> {
+  if (userIds.length === 0) return new Map();
+  const users = await prisma.user.findMany({
+    where: { id: { in: [...userIds] } },
+    select: { id: true, username: true, discriminator: true },
+  });
+  return new Map(
+    users.map((user) => [
+      user.id,
+      user.discriminator && user.discriminator !== '0'
+        ? `${user.username}#${user.discriminator}`
+        : user.username,
+    ]),
+  );
 }
 
 export function describeAuditEvent(

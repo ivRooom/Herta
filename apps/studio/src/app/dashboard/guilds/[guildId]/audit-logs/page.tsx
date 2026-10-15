@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { auth } from '@/auth';
 import { ReconnectNotice } from '@/components/reconnect-notice';
-import { listGuildAuditLogs, parseAuditLogQuery, type AuditLogItem } from '@/lib/audit-logs';
+import { listGuildActivityFeed, parseAuditLogQuery, type AuditLogItem } from '@/lib/audit-logs';
 import { prisma } from '@/lib/db';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
@@ -41,6 +41,12 @@ const CATEGORY_LABELS = {
   mcp: 'MCP連携',
   login: 'ログイン',
   other: 'その他',
+} as const;
+
+const ACTIVITY_SOURCE_LABELS = {
+  admin_action: '管理操作',
+  discord_activity: 'Discordアクティビティ',
+  command_usage: 'コマンド実行',
 } as const;
 
 const SEVERITY_META: Record<string, { label: string; className: string }> = {
@@ -90,9 +96,9 @@ export default async function GuildAuditLogsPage({
 
   const rawSearchParams = await searchParams;
   const query = parseAuditLogQuery(toUrlSearchParams(rawSearchParams));
-  let result: Awaited<ReturnType<typeof listGuildAuditLogs>> | null = null;
+  let result: Awaited<ReturnType<typeof listGuildActivityFeed>> | null = null;
   try {
-    result = await listGuildAuditLogs(prisma, guildId, query);
+    result = await listGuildActivityFeed(prisma, guildId, query);
   } catch (error) {
     console.error('Audit log dashboard request failed', error);
   }
@@ -122,6 +128,13 @@ export default async function GuildAuditLogsPage({
       </div>
 
       <FilterForm guildId={guildId} query={query} />
+
+      {result?.isUnifiedPreview ? (
+        <p className="mt-4 rounded-xl border border-border bg-background px-4 py-2.5 text-xs text-muted">
+          「すべて」表示は各ソースの最新{result.pageSize}件をまとめた速報表示です。ページ送りは
+          対応していません。全件をページ送りで確認するには、特定のソースを選んでください。
+        </p>
+      ) : null}
 
       {!result ? (
         <section className="mt-6 rounded-2xl border border-red-500/30 bg-red-500/10 p-6">
@@ -215,6 +228,7 @@ function FilterForm({
               <option value="suggestion">提案</option>
               <option value="message_studio">Message Studio</option>
               <option value="mcp">MCP連携</option>
+              <option value="login">ログイン</option>
               <option value="other">その他</option>
             </select>
           </label>
@@ -233,6 +247,21 @@ function FilterForm({
             </select>
           </label>
         </div>
+        <label className="block text-sm">
+          <span className="text-muted">ソース</span>
+          <select
+            name="source"
+            defaultValue={query.source}
+            className="mt-1.5 w-full rounded-xl border border-border bg-background px-3 py-2.5 text-sm outline-none focus:border-primary"
+          >
+            <option value="admin_action">管理操作(Plugin設定変更等)</option>
+            <option value="discord_activity">
+              Discordアクティビティ(メッセージ編集/削除・チャンネル作成/削除等)
+            </option>
+            <option value="command_usage">コマンド実行</option>
+            <option value="all">すべて(速報表示・ページ送り非対応)</option>
+          </select>
+        </label>
       </div>
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <label className="block text-sm">
@@ -284,6 +313,9 @@ function AuditLogCard({ item }: { item: AuditLogItem }) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-md border border-border bg-background px-2 py-0.5 text-xs font-medium text-muted">
+              {ACTIVITY_SOURCE_LABELS[item.activitySource]}
+            </span>
             <span className="rounded-md border border-primary/25 bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
               {CATEGORY_LABELS[item.category]}
             </span>
