@@ -57,8 +57,12 @@ async function getManageableGuildsWithHardTtlCache(
   try {
     return await promise;
   } catch (error) {
-    // 失敗したfetchをキャッシュし続けない(次回呼び出しで再取得させる)。
-    guildCacheByTokenHash.delete(key);
+    // 失敗したfetchをキャッシュし続けない(次回呼び出しで再取得させる)。ただし、
+    // このPromiseが保留中の間にTTL失効→別リクエストが新しい世代のPromiseで
+    // 上書きしている場合は、その新しい世代を誤って消さないようにする。
+    if (guildCacheByTokenHash.get(key)?.promise === promise) {
+      guildCacheByTokenHash.delete(key);
+    }
     throw error;
   }
 }
