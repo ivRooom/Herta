@@ -137,7 +137,7 @@ test('不正なaxis/answerを含む回答は除外される', () => {
   assert.deepEqual(normalized.answers, [{ questionIndex: 0, axis: 'EI', answer: 'agree' }]);
 });
 
-test('questionIndexは0〜99にクランプされる', () => {
+test('questionIndexは負数を補正し、新設問の固定IDを保持する', () => {
   const normalized = normalizeMbtiQuizCompletionInput(
     {
       guildId: 'guild-1',
@@ -152,4 +152,27 @@ test('questionIndexは0〜99にクランプされる', () => {
   );
 
   assert.equal(normalized.answers[0]?.questionIndex, 0);
+});
+
+test('拡張した設問IDを99へ丸めず記録する', () => {
+  const input = normalizeMbtiQuizCompletionInput(
+    {
+      guildId: 'guild',
+      resultType: 'INTJ',
+      eiScore: 0,
+      snScore: 0,
+      tfScore: 0,
+      jpScore: 0,
+      answers: [124, 220, 363].map((questionIndex) => ({
+        questionIndex,
+        axis: 'EI',
+        answer: 'agree',
+      })),
+    },
+    'completion',
+  );
+  assert.deepEqual(
+    input.answers.map((answer) => answer.questionIndex),
+    [124, 220, 363],
+  );
 });

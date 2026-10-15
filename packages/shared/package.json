@@ -28,6 +28,10 @@
     "./mbti-ivrm-sync": {
       "types": "./src/mbti-ivrm-sync.ts",
       "default": "./dist/mbti-ivrm-sync.js"
+    },
+    "./mbti-report": {
+      "types": "./src/mbti-report.ts",
+      "default": "./dist/mbti-report.js"
     }
   },
   "scripts": {

@@ -3,7 +3,7 @@ import { appendMbtiWebQuizAnswer, resolveMbtiWebQuizSessionForAnswer } from '@he
 import {
   createEmptyMbtiScores,
   isMbtiLikertAnswer,
-  mbtiLikertWeight,
+  scoreMbtiAnswer,
   type MbtiLikertAnswer,
   type MbtiScores,
 } from '@herta/shared/mbti-core';
@@ -59,6 +59,20 @@ export async function POST(
     return json({ error: toErrorMessage(resolution.reason) }, toStatus(resolution.reason));
 
   const { session } = resolution;
+  // 保存済み回答の再送は成功として扱う。通信切断後のリトライでも二重加点しない。
+  const existing = session.answers[input.questionIndex];
+  const original = session.questionOrder[input.questionIndex];
+  if (
+    existing &&
+    original &&
+    existing.questionIndex === original.id &&
+    existing.answer === input.answer
+  ) {
+    return json({
+      nextQuestionIndex: session.answers.length,
+      isLastQuestion: session.answers.length === session.questionOrder.length,
+    });
+  }
   if (input.questionIndex !== session.answers.length) {
     return json({ error: '想定と異なる設問への回答です。ページを再読み込みしてください' }, 409);
   }
@@ -69,7 +83,7 @@ export async function POST(
     ...createEmptyMbtiScores(),
     ...(session.scores as Partial<MbtiScores>),
   };
-  scores[question.axis as keyof MbtiScores] += mbtiLikertWeight(input.answer);
+  scores[question.axis as keyof MbtiScores] += scoreMbtiAnswer(question, input.answer);
 
   const updatedAnswers = [
     ...session.answers,
@@ -79,7 +93,13 @@ export async function POST(
     { questionIndex: question.id, axis: question.axis, answer: input.answer },
   ];
 
-  const updated = await appendMbtiWebQuizAnswer(prisma, sessionId, updatedAnswers, scores);
+  const updated = await appendMbtiWebQuizAnswer(
+    prisma,
+    sessionId,
+    updatedAnswers,
+    scores,
+    session.answers,
+  );
   if (!updated) {
     return json({ error: 'リンクの有効期限が切れたか、既に回答済みです' }, 409);
   }

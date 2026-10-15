@@ -27,7 +27,7 @@ import {
   createEmptyMbtiScores,
   isMbtiLikertAnswer,
   mbtiLikertLabel,
-  mbtiLikertWeight,
+  scoreMbtiAnswer,
   selectMbtiQuestions,
   toLegacyMbtiAnswers,
   type MbtiQuestion,
@@ -299,7 +299,7 @@ async function handleMbtiButton(
   const question = session.questions[session.questionIndex];
   if (!question) return false;
 
-  session.scores[question.axis] += mbtiLikertWeight(parsed.answer);
+  session.scores[question.axis] += scoreMbtiAnswer(question, parsed.answer);
   session.answers.push({
     // question.idは出題プール内の固定IDで、人によって選ばれる設問・順序が変わっても
     // 集計側(question_index列)で同一設問だと判別できるようにする。

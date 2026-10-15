@@ -35,7 +35,8 @@ const MBTI_LIKERT_ANSWERS: readonly MbtiLikertAnswer[] = [
 
 const MAX_GUILD_ID_LENGTH = 64;
 const MAX_SCORE = 30;
-const MAX_QUESTION_INDEX = 99;
+// 固定IDを丸めて別の設問へ混同しない。DBのINTEGER範囲に合わせる。
+const MAX_QUESTION_INDEX = 2_147_483_647;
 const DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * MBTI統計イベントの既定保持日数。main.tsのpruneMbtiStatsEvents呼び出しと

@@ -1,10 +1,12 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 
 /** @herta/shared/mbti-coreのMbtiQuestion/MbtiScores/MbtiSessionAnswerと同じ形。 */
 export interface MbtiWebQuizQuestion {
   id: number;
   axis: string;
   prompt: string;
+  direction?: 1 | -1;
+  facet?: string;
 }
 
 export interface MbtiWebQuizAnswer {
@@ -28,7 +30,8 @@ export interface MbtiWebQuizSessionRecord {
   createdAt: Date;
 }
 
-const DEFAULT_EXPIRES_IN_MS = 60 * 60 * 1000;
+// 回答は毎回DBへ保存。新規リンクは24時間以内ならブラウザを閉じても再開できる。
+const DEFAULT_EXPIRES_IN_MS = 24 * 60 * 60 * 1000;
 
 export async function createMbtiWebQuizSession(
   prisma: PrismaClient,
@@ -86,7 +89,7 @@ export async function resolveMbtiWebQuizSessionForAnswer(
 
   if (session.status === 'expired') return { ok: false, reason: 'expired' };
   if (session.status === 'completed') {
-    // 完了済みでも結果の再表示は元のexpiresAt(有効期限60分)まで。単発リンクが
+    // 完了済みでも結果の再表示は元のexpiresAtまで。単発リンクが
     // 結果への無期限アクセス手段になってしまわないようにする。
     if (session.expiresAt.getTime() <= Date.now()) return { ok: false, reason: 'expired' };
     return { ok: false, reason: 'already_completed' };
@@ -104,9 +107,15 @@ export async function appendMbtiWebQuizAnswer(
   sessionId: string,
   answers: readonly MbtiWebQuizAnswer[],
   scores: Record<string, number>,
+  previousAnswers: readonly MbtiWebQuizAnswer[],
 ): Promise<MbtiWebQuizSessionRecord | null> {
   const result = await prisma.mbtiWebQuizSession.updateMany({
-    where: { id: sessionId, status: 'pending' },
+    where: {
+      id: sessionId,
+      status: 'pending',
+      expiresAt: { gt: new Date() },
+      answers: { equals: previousAnswers as unknown as Prisma.InputJsonValue },
+    },
     data: {
       answers: answers as unknown as object,
       scores: scores as unknown as object,
