@@ -47,9 +47,9 @@ Appending an answer uses an atomic previous-answer snapshot and expiry guard, pr
 
 ## Personality artwork
 
-The report hero and exported PNG use the same reference-inspired chibi Herta illustration atlas at `apps/studio/public/mbti/herta-personalities-v2.webp`. It contains 16 chibi Herta poses with distinct expressions and personality props in a stable 4×4 order defined in `apps/studio/src/lib/mbti-artwork.ts`. Each type has its own descriptive alternative text and one of four accent palettes. The purple/lavender anime sticker treatment follows the supplied Herta reference. The imagery is decorative interpretation, not additional assessment data. A/T variants share their four-letter type artwork.
+The report hero and exported PNG use the same reference-inspired chibi Herta illustration doodle atlas at `apps/studio/public/mbti/herta-doodles-v3.webp`. It contains 16 chibi Herta poses with distinct expressions and personality props in a stable 4×4 order defined in `apps/studio/src/lib/mbti-artwork.ts`. Each type has its own descriptive alternative text and one of four accent palettes. The purple/lavender hand-drawn treatment follows the supplied Herta reference. The imagery is decorative interpretation, not additional assessment data. A/T variants share their four-letter type artwork.
 
-The single WebP is approximately 350KB, served from the existing app with no image-generation API at runtime or new infrastructure. The exported PNG loads it from the same origin with a bounded timeout; if unavailable, the complete text report can still be saved. Gentle motion respects reduced-motion preferences. Illustration pixels, all 16 tile mappings, export fallback and responsive behavior are covered by browser checks.
+The single WebP is approximately 399KB, served from the existing app with no image-generation API at runtime or new infrastructure. The exported PNG loads it from the same origin with a bounded timeout; if unavailable, the complete text report can still be saved. Gentle motion respects reduced-motion preferences. Illustration pixels, all 16 tile mappings, export fallback and responsive behavior are covered by browser checks.
 
 ## 落書き風画像とアニメーション（v3）
 
