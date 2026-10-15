@@ -48,6 +48,9 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
+      - name: Build shared MBTI modules
+        run: pnpm --filter @herta/shared build
+
       - name: Install Playwright Chromium
         run: pnpm --filter @herta/studio exec playwright install --with-deps chromium
 

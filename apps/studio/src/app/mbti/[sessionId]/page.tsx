@@ -1,17 +1,19 @@
+import '../mbti.css';
+import type { Metadata } from 'next';
 import { Brain } from 'lucide-react';
 import { getMbtiWebQuizSessionRecord, resolveMbtiWebQuizSessionForAnswer } from '@herta/db';
-import {
-  computeMbtiAxisPercent,
-  MBTI_AXES,
-  MBTI_IDENTITY_INFO,
-  MBTI_TYPES,
-  createEmptyMbtiScores,
-  type MbtiScores,
-} from '@herta/shared/mbti-core';
+import { createEmptyMbtiScores } from '@herta/shared/mbti-core';
 import { MbtiWebQuizClient } from '@/components/mbti-web-quiz-client';
+import { MbtiResultReport } from '@/components/mbti-result-report';
+import { MbtiQuizLayout } from '@/components/mbti-quiz-layout';
 import { prisma } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
+export const metadata: Metadata = {
+  title: '性格診断 | Herta',
+  robots: { index: false, follow: false },
+  referrer: 'no-referrer',
+};
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
@@ -50,13 +52,9 @@ export default async function MbtiWebQuizPage({
     const completed = await getMbtiWebQuizSessionRecord(prisma, sessionId);
     if (completed?.resultType && completed.resultIdentity) {
       return (
-        <QuizLayout>
-          <CompletedResultView
-            resultType={completed.resultType}
-            resultIdentity={completed.resultIdentity as 'A' | 'T'}
-            scores={{ ...createEmptyMbtiScores(), ...completed.scores }}
-          />
-        </QuizLayout>
+        <MbtiQuizLayout>
+          <MbtiResultReport scores={{ ...createEmptyMbtiScores(), ...completed.scores }} />
+        </MbtiQuizLayout>
       );
     }
     return (
@@ -66,72 +64,14 @@ export default async function MbtiWebQuizPage({
 
   const { session } = resolution;
   return (
-    <QuizLayout>
+    <MbtiQuizLayout>
       <MbtiWebQuizClient
         sessionId={sessionId}
         questions={session.questionOrder}
         initialAnsweredCount={session.answers.length}
+        expiresAt={session.expiresAt.toISOString()}
       />
-    </QuizLayout>
-  );
-}
-
-function QuizLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <main className="min-h-screen bg-background px-4 py-10 sm:px-6">
-      <div className="mx-auto w-full max-w-xl space-y-5">
-        <section className="rounded-3xl border border-border bg-surface p-5 shadow-card sm:p-7">
-          <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-              <Brain className="h-5 w-5" aria-hidden="true" />
-            </span>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-                Herta MBTI
-              </p>
-              <h1 className="mt-1 text-lg font-semibold">MBTI風性格診断</h1>
-            </div>
-          </div>
-          <div className="mt-5">{children}</div>
-        </section>
-      </div>
-    </main>
-  );
-}
-
-function CompletedResultView({
-  resultType,
-  resultIdentity,
-  scores,
-}: {
-  resultType: string;
-  resultIdentity: 'A' | 'T';
-  scores: MbtiScores;
-}) {
-  const info = MBTI_TYPES[resultType];
-  const identityInfo = MBTI_IDENTITY_INFO[resultIdentity];
-
-  return (
-    <div className="space-y-5 text-center">
-      <p className="text-5xl font-extrabold tracking-wide">
-        {resultType}-{resultIdentity}
-      </p>
-      <p className="text-lg font-semibold text-primary">
-        {info?.title ?? ''}({identityInfo.label})
-      </p>
-      <p className="text-sm leading-6 text-muted">{info?.description ?? ''}</p>
-      <p className="text-sm leading-6 text-muted">{identityInfo.description}</p>
-      <div className="space-y-2 text-left">
-        {MBTI_AXES.map((axis) => (
-          <div key={axis} className="h-2 w-full overflow-hidden rounded-full bg-background">
-            <div
-              className="h-full rounded-full bg-primary"
-              style={{ width: `${computeMbtiAxisPercent(scores, axis)}%` }}
-            />
-          </div>
-        ))}
-      </div>
-    </div>
+    </MbtiQuizLayout>
   );
 }
 

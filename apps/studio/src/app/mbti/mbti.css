@@ -1,0 +1,515 @@
+.mbti-page {
+  --mbti-mint: #9af3d5;
+  --mbti-lilac: #c9a6f5;
+  min-height: 100svh;
+  background: #0c1018;
+  color: #f5f6fa;
+  padding: clamp(32px, 9vh, 90px) 24px;
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  align-content: center;
+}
+.mbti-panel {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 960px;
+  margin: auto;
+  padding: 38px 48px 30px;
+  border: 1px solid #354052;
+  border-radius: 24px;
+  background: #101620f5;
+  box-shadow: 0 24px 100px #0003;
+  animation: mbti-enter 0.6s ease both;
+}
+.mbti-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 32px;
+}
+.mbti-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 14px;
+  letter-spacing: 0.26em;
+}
+.mbti-brand svg {
+  width: 28px;
+  height: 28px;
+  color: var(--mbti-mint);
+}
+.mbti-brand b {
+  color: var(--mbti-mint);
+  font-weight: 600;
+}
+.mbti-header h1 {
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  color: #bbc4d4;
+}
+.mbti-progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 20px;
+  background: #252e3d;
+}
+.mbti-progress > div {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--mbti-mint);
+  transition: width 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.mbti-progress-label {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 10px;
+  color: #b9c4d6;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.mbti-question-step {
+  animation: mbti-enter 0.4s ease both;
+}
+.mbti-question {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 170px;
+  padding: 36px 0;
+  text-align: center;
+  font-size: clamp(21px, 2.5vw, 29px);
+  font-weight: 700;
+  line-height: 1.8;
+  text-wrap: balance;
+}
+.mbti-answers {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 16px;
+}
+.mbti-answer {
+  --answer-color: var(--mbti-mint);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 8px 0 12px;
+  border-radius: 16px;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.mbti-answer-2 {
+  --answer-color: #aeb8ca;
+}
+.mbti-answer-3,
+.mbti-answer-4 {
+  --answer-color: var(--mbti-lilac);
+}
+.mbti-answer-circle {
+  display: grid;
+  place-items: center;
+  width: 98px;
+  height: 98px;
+  margin-block: 0;
+  border: 3px solid var(--answer-color);
+  border-radius: 50%;
+  color: var(--answer-color);
+  background: color-mix(in srgb, var(--answer-color) 5%, transparent);
+  transition:
+    transform 0.22s ease,
+    background 0.22s ease,
+    box-shadow 0.22s ease;
+}
+.mbti-answer-1 .mbti-answer-circle,
+.mbti-answer-3 .mbti-answer-circle {
+  width: 76px;
+  height: 76px;
+  margin-block: 11px;
+}
+.mbti-answer-2 .mbti-answer-circle {
+  width: 58px;
+  height: 58px;
+  margin-block: 20px;
+}
+.mbti-answer-circle svg {
+  width: 32px;
+  height: 32px;
+  opacity: 0;
+  transform: scale(0.5);
+  transition:
+    opacity 0.16s,
+    transform 0.22s;
+}
+.mbti-answer-label {
+  color: #d3dae7;
+  font-size: 13px;
+  line-height: 1.7;
+  text-align: center;
+  text-wrap: balance;
+}
+.mbti-answer:focus-visible {
+  outline: 2px solid var(--answer-color);
+  outline-offset: 6px;
+}
+.mbti-answer.is-selected .mbti-answer-circle {
+  background: color-mix(in srgb, var(--answer-color) 22%, transparent);
+  box-shadow: 0 0 0 7px color-mix(in srgb, var(--answer-color) 8%, transparent);
+  transform: scale(1.08);
+}
+.mbti-answer.is-selected svg {
+  opacity: 1;
+  transform: scale(1);
+}
+.mbti-answer:disabled {
+  cursor: wait;
+}
+.mbti-quiz-footer {
+  border-top: 1px solid #303b4c;
+  margin-top: 44px;
+  padding-top: 25px;
+  text-align: center;
+  color: #aeb9cc;
+  font-size: 13px;
+  letter-spacing: 0.1em;
+}
+.mbti-milestones {
+  display: flex;
+  justify-content: center;
+  gap: 11px;
+  margin-top: 17px;
+}
+.mbti-milestones span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #465269;
+  transition: background 0.4s;
+}
+.mbti-milestones .is-filled {
+  background: var(--mbti-mint);
+}
+.mbti-decoration {
+  position: absolute;
+  width: 250px;
+  height: 250px;
+  border: 1px solid;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0.5;
+  animation: mbti-float 12s ease-in-out infinite alternate;
+}
+.mbti-decoration::after {
+  content: '';
+  position: absolute;
+  inset: 65px;
+  background-image: radial-gradient(currentColor 2px, transparent 2px);
+  background-size: 21px 21px;
+}
+.mbti-decoration-mint {
+  color: var(--mbti-mint);
+  top: -140px;
+  left: -80px;
+}
+.mbti-decoration-lilac {
+  color: var(--mbti-lilac);
+  bottom: -130px;
+  right: -70px;
+  animation-delay: -6s;
+}
+.mbti-result {
+  padding: 28px 0;
+  animation: mbti-enter 0.6s ease both;
+}
+@media (hover: hover) {
+  .mbti-answer:not(:disabled):hover .mbti-answer-circle {
+    transform: translateY(-5px) scale(1.06);
+    background: color-mix(in srgb, var(--answer-color) 18%, transparent);
+  }
+}
+@keyframes mbti-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes mbti-float {
+  to {
+    transform: translate(20px, 15px) rotate(15deg);
+  }
+}
+@media (max-width: 640px) {
+  .mbti-page {
+    padding: 24px 16px;
+  }
+  .mbti-panel {
+    padding: 26px 20px;
+    border-radius: 22px;
+  }
+  .mbti-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 26px;
+  }
+  .mbti-header h1 {
+    font-size: 12px;
+  }
+  .mbti-question {
+    min-height: 170px;
+    font-size: 21px;
+    padding: 30px 0;
+  }
+  .mbti-answers {
+    gap: 5px;
+  }
+  .mbti-answer {
+    gap: 13px;
+  }
+  .mbti-answer-circle {
+    width: 48px;
+    height: 48px;
+    border-width: 2px;
+  }
+  .mbti-answer-1 .mbti-answer-circle,
+  .mbti-answer-3 .mbti-answer-circle {
+    width: 40px;
+    height: 40px;
+    margin-block: 4px;
+  }
+  .mbti-answer-2 .mbti-answer-circle {
+    width: 32px;
+    height: 32px;
+    margin-block: 8px;
+  }
+  .mbti-answer-label {
+    font-size: 11px;
+    line-height: 1.8;
+    overflow-wrap: anywhere;
+  }
+  .mbti-answer-circle svg {
+    width: 22px;
+    height: 22px;
+  }
+  .mbti-quiz-footer {
+    margin-top: 30px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mbti-page *,
+  .mbti-page *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.mbti-report {
+  color: #cbd5e3;
+  line-height: 1.9;
+}
+.mbti-report-intro {
+  text-align: center;
+  padding: 18px 0 26px;
+  max-width: 680px;
+  margin: auto;
+}
+.mbti-report-intro h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #d9e2f1;
+}
+.mbti-report-type {
+  font-size: clamp(52px, 8vw, 80px);
+  line-height: 1.3;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--mbti-mint);
+  margin: 16px 0;
+}
+.mbti-report-type span {
+  color: var(--mbti-lilac);
+}
+.mbti-report-title {
+  font-size: 21px;
+  font-weight: 600;
+  color: #f5f6fa;
+  margin-bottom: 14px;
+}
+.mbti-boundary-note {
+  color: #d1b4f4;
+  font-size: 13px;
+  margin-top: 16px;
+}
+.mbti-report-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.mbti-report-actions button,
+.mbti-retry {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 12px 18px;
+  border: 1px solid #648e87;
+  border-radius: 12px;
+  color: #b1f4df;
+  font-size: 14px;
+  font-weight: 600;
+  background: #9af3d50a;
+  transition: background 0.2s;
+}
+.mbti-report-actions button:hover,
+.mbti-retry:hover {
+  background: #9af3d51a;
+}
+.mbti-report-actions button:focus-visible,
+.mbti-share-field input:focus-visible,
+.mbti-retry:focus-visible {
+  outline: 2px solid var(--mbti-mint);
+  outline-offset: 4px;
+}
+.mbti-report-actions button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.mbti-report-actions svg {
+  height: 18px;
+  width: 18px;
+}
+.mbti-report-message {
+  text-align: center;
+  font-size: 13px;
+  color: var(--mbti-mint);
+  min-height: 28px;
+  margin-top: 10px;
+}
+.mbti-share-field {
+  display: block;
+  font-size: 13px;
+  color: #bccadd;
+  margin: 0 auto 16px;
+  max-width: 640px;
+}
+.mbti-share-field input {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  background: #0c1018;
+  border: 1px solid #354052;
+  border-radius: 8px;
+  color: #d9e2f1;
+  margin-top: 4px;
+}
+.mbti-report-note {
+  color: #aab8cd;
+  font-size: 12px;
+}
+.mbti-report-section {
+  margin-top: 36px;
+  padding-top: 30px;
+  border-top: 1px solid #303b4c;
+}
+.mbti-report-section h3 {
+  color: #f5f6fa;
+  font-size: 22px;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+.mbti-report-axis {
+  padding: 22px 0;
+}
+.mbti-axis-heading,
+.mbti-axis-labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+}
+.mbti-axis-heading h4 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #eef2f9;
+}
+.mbti-axis-heading > span {
+  font-size: 12px;
+  color: var(--mbti-lilac);
+}
+.mbti-axis-labels {
+  font-size: 12px;
+  margin-top: 12px;
+  color: #c7d5e5;
+  font-variant-numeric: tabular-nums;
+}
+.mbti-axis-track {
+  height: 9px;
+  border-radius: 20px;
+  overflow: hidden;
+  background: var(--mbti-lilac);
+  margin: 7px 0 14px;
+}
+.mbti-axis-track > span {
+  display: block;
+  height: 100%;
+  background: var(--mbti-mint);
+  border-radius: 20px 0 0 20px;
+}
+.mbti-report-axis > p {
+  font-size: 14px;
+}
+.mbti-report-section ul {
+  list-style: disc;
+  padding-left: 22px;
+}
+.mbti-report-section li {
+  padding: 5px 0 10px 4px;
+  font-size: 14px;
+}
+.mbti-report-section li::marker {
+  color: var(--mbti-mint);
+}
+.mbti-report-disclaimer {
+  font-size: 12px;
+  margin-top: 32px;
+  color: #9ba9bd;
+}
+.mbti-save-status,
+.mbti-save-expiry {
+  color: #aab8cd;
+  font-size: 12px;
+  text-align: center;
+  margin-top: 14px;
+}
+.mbti-save-expiry {
+  margin-top: 3px;
+  font-size: 11px;
+}
+.mbti-retry {
+  margin: 20px auto;
+}
+@media (max-width: 640px) {
+  .mbti-axis-heading {
+    flex-wrap: wrap;
+    gap: 3px 12px;
+  }
+  .mbti-report-section h3 {
+    font-size: 19px;
+  }
+  .mbti-report-intro > p:not(.mbti-report-type) {
+    font-size: 14px;
+  }
+  .mbti-report-actions {
+    flex-direction: column;
+  }
+}

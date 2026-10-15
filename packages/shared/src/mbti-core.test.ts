@@ -14,16 +14,19 @@ import {
   mbtiLikertLabel,
   mbtiLikertWeight,
   selectMbtiQuestions,
+  scoreMbtiAnswer,
 } from './mbti-core.js';
 
 describe('Mini Games MBTI core', () => {
-  it('出題プールは計124問を5軸(EI/SN/TF/JP/AT)へ26/26/24/24/24で分配して定義する', () => {
-    expect(MBTI_QUESTION_POOL).toHaveLength(124);
-    expect(MBTI_QUESTION_POOL.filter((question) => question.axis === 'EI')).toHaveLength(26);
-    expect(MBTI_QUESTION_POOL.filter((question) => question.axis === 'SN')).toHaveLength(26);
-    expect(MBTI_QUESTION_POOL.filter((question) => question.axis === 'TF')).toHaveLength(24);
-    expect(MBTI_QUESTION_POOL.filter((question) => question.axis === 'JP')).toHaveLength(24);
-    expect(MBTI_QUESTION_POOL.filter((question) => question.axis === 'AT')).toHaveLength(24);
+  it('旧124問のIDを保ち、新しい520問を追加する', () => {
+    expect(MBTI_QUESTION_POOL).toHaveLength(644);
+    const current = MBTI_QUESTION_POOL.filter((q) => q.facet);
+    expect(current).toHaveLength(520);
+    for (const axis of MBTI_AXES) {
+      expect(current.filter((q) => q.axis === axis)).toHaveLength(104);
+    }
+    expect(MBTI_QUESTION_POOL[0]?.prompt).toBe('大人数で集まるとエネルギーが湧いてくる方だ');
+    expect(MBTI_QUESTION_POOL[123]?.axis).toBe('AT');
   });
 
   it('プール内のidは0始まりの連番でユニークである', () => {
@@ -66,6 +69,74 @@ describe('Mini Games MBTI core', () => {
     const idsA = selectedA.map((question) => question.id).join(',');
     const idsB = selectedB.map((question) => question.id).join(',');
     expect(idsA).not.toBe(idsB);
+  });
+
+  it('200通りの診断で観点・採点方向・固定問数のバランスを保つ', () => {
+    const original = JSON.stringify(MBTI_QUESTION_POOL);
+    const sets = new Set<string>();
+    for (let seed = 1; seed <= 200; seed++) {
+      let state = seed;
+      const random = () => (state = (Math.imul(state, 1664525) + 1013904223) >>> 0) / 2 ** 32;
+      const questions = selectMbtiQuestions(random);
+      expect(new Set(questions.map((q) => q.id)).size).toBe(62);
+      sets.add(
+        questions
+          .map((q) => q.id)
+          .sort((a, b) => a - b)
+          .join(','),
+      );
+      for (const axis of MBTI_AXES) {
+        const items = questions.filter((q) => q.axis === axis);
+        expect(items).toHaveLength(MBTI_AXIS_QUESTION_COUNTS[axis]);
+        const facets = new Set(items.map((q) => q.facet));
+        expect(facets.size).toBe(4);
+        expect(facets.has(undefined)).toBe(false);
+        for (const facet of facets) {
+          const subset = items.filter((q) => q.facet === facet);
+          expect(subset.length).toBeGreaterThanOrEqual(3);
+          expect(subset.length).toBeLessThanOrEqual(4);
+          expect(new Set(subset.map((q) => q.direction)).size).toBe(2);
+        }
+        for (const direction of [1, -1]) {
+          expect(items.filter((q) => q.direction === direction).length).toBeGreaterThanOrEqual(6);
+        }
+      }
+      // 同じ性向の回答は設問の正逆・抽出の違いで変わらない。
+      const positive = createEmptyMbtiScores();
+      const negative = createEmptyMbtiScores();
+      for (const q of questions) {
+        positive[q.axis] += scoreMbtiAnswer(q, q.direction === 1 ? 'agree' : 'disagree');
+        negative[q.axis] += scoreMbtiAnswer(q, q.direction === 1 ? 'disagree' : 'agree');
+      }
+      for (const axis of MBTI_AXES) {
+        expect(computeMbtiAxisPercent(positive, axis)).toBe(100);
+        expect(computeMbtiAxisPercent(negative, axis)).toBe(0);
+      }
+    }
+    expect(sets.size).toBe(200);
+    expect(JSON.stringify(MBTI_QUESTION_POOL)).toBe(original);
+  });
+
+  it('逆方向の採点と旧セッションの互換をすべての回答で維持する', () => {
+    for (const answer of MBTI_LIKERT_ANSWERS) {
+      expect(scoreMbtiAnswer({ direction: -1 }, answer)).toBe(-mbtiLikertWeight(answer));
+      expect(scoreMbtiAnswer({ direction: 1 }, answer)).toBe(mbtiLikertWeight(answer));
+      expect(scoreMbtiAnswer({}, answer)).toBe(mbtiLikertWeight(answer));
+    }
+  });
+
+  it('設問文の重複がなく、各観点に正逆13問ずつある', () => {
+    expect(new Set(MBTI_QUESTION_POOL.map((q) => q.prompt)).size).toBe(MBTI_QUESTION_POOL.length);
+    for (const axis of MBTI_AXES) {
+      const current = MBTI_QUESTION_POOL.filter((q) => q.axis === axis && q.facet);
+      for (const facet of new Set(current.map((q) => q.facet))) {
+        for (const direction of [1, -1]) {
+          expect(
+            current.filter((q) => q.facet === facet && q.direction === direction),
+          ).toHaveLength(13);
+        }
+      }
+    }
   });
 
   it('5段階のLikert回答値だけを受け付ける', () => {

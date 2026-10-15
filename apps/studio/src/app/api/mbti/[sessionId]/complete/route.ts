@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import {
   completeMbtiWebQuizSession,
+  getMbtiWebQuizSessionRecord,
   recordMbtiQuizCompletion,
   resolveMbtiWebQuizSessionForAnswer,
   syncAchievementUnlocks,
@@ -45,6 +46,17 @@ export async function POST(
   }
 
   const resolution = await resolveMbtiWebQuizSessionForAnswer(prisma, sessionId);
+  if (!resolution.ok && resolution.reason === 'already_completed') {
+    const completed = await getMbtiWebQuizSessionRecord(prisma, sessionId);
+    if (completed?.resultType && completed.resultIdentity) {
+      return json({
+        resultType: completed.resultType,
+        resultIdentity: completed.resultIdentity,
+        scores: { ...createEmptyMbtiScores(), ...completed.scores },
+        roleNote: null,
+      });
+    }
+  }
   if (!resolution.ok) {
     return json(
       { error: toErrorMessage(resolution.reason) },

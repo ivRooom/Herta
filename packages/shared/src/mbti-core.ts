@@ -1,3 +1,5 @@
+import { MBTI_BALANCED_QUESTIONS } from './mbti-question-bank.js';
+
 /**
  * AT(Assertive/Turbulent)は16personalities.com由来の「Identity」軸で、古典的な4軸
  * (EI/SN/TF/JP、Role付与の判定にも使うcomputeMbtiTypeの4文字タイプ)とは別の、5つ目の
@@ -49,7 +51,11 @@ export interface MbtiQuestion {
   /** 出題プール内での固定ID。人によって選ばれる設問が変わっても集計で同一設問だと分かるようにする。 */
   id: number;
   axis: MbtiAxis;
-  /** 「当てはまる」と答えるとaxisの正方向(EI:E / SN:S / TF:T / JP:J)へ加点される設問文。 */
+  /** 省略時は旧設問と同じ正方向。セッションに保存し、途中で採点方向を変えない。 */
+  direction?: 1 | -1;
+  /** 同一軸内の観点。新規出題は観点ごとに層化抽出する。 */
+  facet?: string;
+  /** 独自に作成した設問文。 */
   prompt: string;
 }
 
@@ -65,10 +71,8 @@ export const MBTI_AXIS_QUESTION_COUNTS: Record<MbtiAxis, number> = {
   AT: 12,
 };
 
-// 各軸26/26/24/24問、計100問のプール。5段階Likertのため、以前の2択(奇数問)時のような
-// 「合計が0にならない」保証はなく、タイブレーク処理が必要(computeMbtiTypeで正方向優先)。
-// selectMbtiQuestions()が人ごとにMBTI_AXIS_QUESTION_COUNTS分をランダム抽出し、順序も
-// シャッフルするため、diagnosisごとに出題される設問・順序が変わる。
+// v1の124問はIDと文面を維持する。進行中のセッション・過去の統計との互換用。
+// 新しい診断ではv2の520問を、観点・採点方向のバランスを保って抽出する。
 const MBTI_QUESTION_PROMPTS: readonly MbtiQuestion[] = [
   // EI (26問)
   { id: 0, axis: 'EI', prompt: '大人数で集まるとエネルギーが湧いてくる方だ' },
@@ -201,7 +205,18 @@ const MBTI_QUESTION_PROMPTS: readonly MbtiQuestion[] = [
   { id: 123, axis: 'AT', prompt: '物事を深刻に捉えすぎない方だ' },
 ];
 
-export const MBTI_QUESTION_POOL: readonly MbtiQuestion[] = MBTI_QUESTION_PROMPTS;
+export const MBTI_QUESTION_POOL: readonly MbtiQuestion[] = [
+  ...MBTI_QUESTION_PROMPTS,
+  ...MBTI_BALANCED_QUESTIONS,
+];
+
+/** 保存済みの設問の採点方向を使う。旧セッションはdirectionがないため従来どおり。 */
+export function scoreMbtiAnswer(
+  question: { direction?: 1 | -1 },
+  answer: MbtiLikertAnswer,
+): number {
+  return mbtiLikertWeight(answer) * (question.direction ?? 1);
+}
 
 function shuffleInPlace<T>(items: T[], random: () => number): T[] {
   for (let i = items.length - 1; i > 0; i--) {
@@ -214,16 +229,36 @@ function shuffleInPlace<T>(items: T[], random: () => number): T[] {
 }
 
 /**
- * 出題プールから各軸MBTI_AXIS_QUESTION_COUNTS分をランダムに抽出し、全体の出題順序も
- * シャッフルして返す。人によって選ばれる設問・順序が変わるが、各軸の設問数自体は
- * 固定のためスコア計算(computeMbtiAxisPercent)に影響しない。
+ * 5軸×4観点から各3問を抽出する。各観点は両方向を含み、各軸で正逆6問ずつ。
+ * EI/SNの13問目は未選択の設問から追加する。全体の順序もシャッフルする。
+ * 乱数はテスト時のみ注入し、実際の質問・順序はセッション作成時に一度だけ確定する。
  */
 export function selectMbtiQuestions(random: () => number = Math.random): MbtiQuestion[] {
   const selected: MbtiQuestion[] = [];
   for (const axis of MBTI_AXES) {
-    const axisPool = MBTI_QUESTION_POOL.filter((question) => question.axis === axis);
-    const shuffledPool = shuffleInPlace([...axisPool], random);
-    selected.push(...shuffledPool.slice(0, MBTI_AXIS_QUESTION_COUNTS[axis]));
+    const axisPool = MBTI_BALANCED_QUESTIONS.filter((question) => question.axis === axis);
+    const facets = shuffleInPlace([...new Set(axisPool.map((question) => question.facet))], random);
+    const axisSelected: MbtiQuestion[] = [];
+    // 軸ごとに最初の方向もランダム化し、特定の観点へ常に同じ方向が多く出ないようにする。
+    const firstDirection = random() < 0.5 ? 1 : -1;
+    facets.forEach((facet, index) => {
+      const majority = index % 2 === 0 ? firstDirection : -firstDirection;
+      for (const direction of [1, -1] as const) {
+        const candidates = shuffleInPlace(
+          axisPool.filter(
+            (question) => question.facet === facet && question.direction === direction,
+          ),
+          random,
+        );
+        axisSelected.push(...candidates.slice(0, direction === majority ? 2 : 1));
+      }
+    });
+    const remaining = shuffleInPlace(
+      axisPool.filter((question) => !axisSelected.some((item) => item.id === question.id)),
+      random,
+    );
+    axisSelected.push(...remaining.slice(0, MBTI_AXIS_QUESTION_COUNTS[axis] - axisSelected.length));
+    selected.push(...axisSelected);
   }
   return shuffleInPlace(selected, random);
 }
