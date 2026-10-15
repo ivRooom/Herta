@@ -534,6 +534,9 @@ function resolveAuditEventLabel(
   if (event === 'plugin.runtime_apply_failed') {
     return `Runtime設定の${runtimeConsumerDisplayLabel(runtimeConsumer)}反映に失敗`;
   }
+  if (event === 'studio_auth.sign_in') {
+    return 'Studioログイン';
+  }
   return fallback ?? event;
 }
 
@@ -564,6 +567,11 @@ function resolveAuditSummary(
   }
   if (event === 'mcp.tool_called') {
     return resolveMcpToolCallSummary(metadata) ?? fallback ?? 'MCPツールの呼び出しを記録しました。';
+  }
+  if (event === 'studio_auth.sign_in') {
+    return booleanValue(metadata?.['isNewUser']) === true
+      ? '初めてStudioへログインしました。'
+      : 'Studioへログインしました。';
   }
   return fallback ?? '管理対象に対する操作が記録されました。';
 }

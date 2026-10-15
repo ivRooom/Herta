@@ -39,6 +39,7 @@ const CATEGORY_LABELS = {
   suggestion: '提案',
   message_studio: 'Message Studio',
   mcp: 'MCP連携',
+  login: 'ログイン',
   other: 'その他',
 } as const;
 
