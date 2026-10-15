@@ -127,7 +127,9 @@ export async function fetchManageableGuilds(accessToken: string): Promise<Manage
 async function requestUserGuilds(accessToken: string, fetchImpl: typeof fetch): Promise<Response> {
   return fetchImpl(`${DISCORD_API_BASE}/users/@me/guilds`, {
     headers: { Authorization: `Bearer ${accessToken}` },
-    // Guild権限は認可判断に使うため、権限剥奪を即時反映できるよう共有cacheへ保存しない。
+    // Next.jsのfetchキャッシュ(ISR/Data Cache)には乗せない。呼び出し元の
+    // `@/lib/guilds`側でunstable_cacheにより12秒だけ短期キャッシュしている
+    // (画面遷移速度を優先する設計判断。権限剥奪の反映は最大12秒遅れる)。
     cache: 'no-store',
   });
 }
