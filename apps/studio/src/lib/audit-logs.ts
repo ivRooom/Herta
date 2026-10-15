@@ -23,6 +23,7 @@ export type AuditLogCategory =
   | 'suggestion'
   | 'message_studio'
   | 'mcp'
+  | 'login'
   | 'other';
 export type AuditLogSeverity = 'all' | 'info' | 'warning' | 'error' | 'critical';
 
@@ -102,6 +103,7 @@ const ALLOWED_CATEGORIES = new Set<AuditLogCategory>([
   'suggestion',
   'message_studio',
   'mcp',
+  'login',
   'other',
 ]);
 
@@ -129,6 +131,7 @@ const CATEGORY_PREFIXES: ReadonlyArray<{
   { category: 'suggestion', prefixes: ['suggestion.'] },
   { category: 'message_studio', prefixes: ['message_studio.'] },
   { category: 'mcp', prefixes: ['mcp.'] },
+  { category: 'login', prefixes: ['studio_auth.'] },
 ];
 const ALLOWED_SEVERITIES = new Set<AuditLogSeverity>([
   'all',

@@ -1,7 +1,9 @@
 import NextAuth from 'next-auth';
 import type { JWT } from 'next-auth/jwt';
 import { authConfig, SESSION_MAX_AGE_SECONDS } from '@/auth.config';
+import { prisma } from '@/lib/db';
 import { DISCORD_API_BASE } from '@/lib/discord';
+import { getManageableGuilds } from '@/lib/guilds';
 import { upsertUserFromDiscord } from '@/lib/users';
 
 const SESSION_MAX_AGE_MS = SESSION_MAX_AGE_SECONDS * 1000;
@@ -105,6 +107,43 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       session.error = token.error;
       return session;
+    },
+  },
+  events: {
+    /**
+     * Studioへのログインを、管理しているGuildそれぞれの監査ログへ記録する。
+     * ログイン自体はGuildに紐付かない操作だが、AuditLog.guildIdは必須かつ
+     * 監査ログ画面もGuild単位の表示のため、「このGuildの管理者がいつログインしたか」
+     * という形でそのGuildの監査ログへ残す(管理者は通常1〜数Guildのみ管理するため
+     * 書き込み件数は少ない)。失敗してもログイン自体はブロックしない。
+     */
+    async signIn({ account, profile, isNewUser }) {
+      const discordId = (profile as unknown as { id?: string } | undefined)?.id;
+      const accessToken = account?.access_token;
+      if (!discordId || !accessToken) return;
+
+      try {
+        const guilds = await getManageableGuilds(accessToken);
+        await Promise.all(
+          guilds.map((guild) =>
+            prisma.auditLog.create({
+              data: {
+                guildId: guild.id,
+                actorId: discordId,
+                actorType: 'user',
+                event: 'studio_auth.sign_in',
+                severity: 'info',
+                metadata: { isNewUser: Boolean(isNewUser) },
+              },
+            }),
+          ),
+        );
+      } catch (error) {
+        console.error('Studioログインの監査ログ記録に失敗しました', {
+          discordId,
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+        });
+      }
     },
   },
 });
