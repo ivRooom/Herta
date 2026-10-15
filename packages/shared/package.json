@@ -20,6 +20,14 @@
     "./plugin-runtime-events": {
       "types": "./src/plugin-runtime-events.ts",
       "default": "./dist/plugin-runtime-events.js"
+    },
+    "./mbti-core": {
+      "types": "./src/mbti-core.ts",
+      "default": "./dist/mbti-core.js"
+    },
+    "./mbti-ivrm-sync": {
+      "types": "./src/mbti-ivrm-sync.ts",
+      "default": "./dist/mbti-ivrm-sync.js"
     }
   },
   "scripts": {
