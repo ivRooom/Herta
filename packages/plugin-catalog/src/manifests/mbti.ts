@@ -46,7 +46,7 @@ export const mbtiManifest: PluginManifest = {
   name: 'MBTI',
   version: '1.0.0',
   description:
-    '50問の5段階評価に答えてMBTI風の性格診断を行い、結果に応じてDiscord Roleを自動付与できるPluginです',
+    '62問の5段階評価に答えてMBTI風の性格診断を行い、結果に応じてDiscord Roleを自動付与できるPluginです',
   author: { name: 'Herta' },
   category: 'fun',
   permissions: [
@@ -75,7 +75,7 @@ export const mbtiManifest: PluginManifest = {
   commands: [
     {
       name: 'mbti',
-      description: '50問の5段階評価に答えてMBTI風の性格診断を行います',
+      description: '62問の5段階評価に答えてMBTI風の性格診断を行います',
     },
   ],
 };

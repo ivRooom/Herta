@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 import {
   MBTI_AXES,
+  MBTI_IDENTITY_INFO,
   MBTI_TYPES,
   computeMbtiAxisPercent,
   type MbtiAxis,
@@ -19,6 +20,7 @@ const AXIS_LABELS: Record<MbtiAxis, string> = {
   SN: '感覚 (S) / 直観 (N)',
   TF: '思考 (T) / 感情 (F)',
   JP: '判断 (J) / 知覚 (P)',
+  AT: 'アサーティブ (A) / タービュレント (T)',
 };
 
 const AXIS_COLORS: Record<MbtiAxis, string> = {
@@ -26,6 +28,7 @@ const AXIS_COLORS: Record<MbtiAxis, string> = {
   SN: '#22c55e',
   TF: '#38bdf8',
   JP: '#a855f7',
+  AT: '#ec4899',
 };
 
 /**
@@ -51,6 +54,10 @@ const AXIS_ICONS: Record<MbtiAxis, (color: string) => string> = {
     <rect x="-21" y="-23" width="42" height="46" rx="8" fill="none" stroke="${color}" stroke-width="5"/>
     <line x1="-11" y1="-7" x2="11" y2="-7" stroke="${color}" stroke-width="5" stroke-linecap="round"/>
     <path d="M -11 6 L -3 14 L 11 -5" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  `,
+  AT: (color) => `
+    <path d="M 0 -24 L 20 -16 L 20 2 C 20 16 10 24 0 26 C -10 24 -20 16 -20 2 L -20 -16 Z" fill="none" stroke="${color}" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M -10 2 L -3 10 L 11 -8" fill="none" stroke="${color}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
   `,
 };
 
@@ -214,17 +221,20 @@ const AXIS_LETTER_PAIRS: Record<MbtiAxis, [positive: string, negative: string]> 
   SN: ['S', 'N'],
   TF: ['T', 'F'],
   JP: ['J', 'P'],
+  AT: ['A', 'T'],
 };
 
 export interface MbtiResultCardInput {
   /** computeMbtiType()が返す4文字のタイプ(例: 'INTJ')。 */
   type: string;
+  /** computeMbtiIdentity()が返す5つ目の軸(16personalities由来のIdentity)。 */
+  identity: 'A' | 'T';
   scores: MbtiScores;
   /** Role付与が行われた場合のみ、表示用メッセージ(例: '@Role を付与しました')。 */
   roleNote: string | null;
 }
 
-const RESULT_AXIS_ROW_HEIGHT = 44;
+const RESULT_AXIS_ROW_HEIGHT = 36;
 const RESULT_AXIS_BAR_X = 140;
 const RESULT_AXIS_BAR_WIDTH = CARD_WIDTH - RESULT_AXIS_BAR_X * 2;
 
@@ -235,7 +245,7 @@ export function buildMbtiResultCardSvg(input: MbtiResultCardInput): string {
     22,
   );
 
-  const axisRowsStartY = 420;
+  const axisRowsStartY = 400;
   const axisRows = MBTI_AXES.map((axis, index) => {
     const [positive, negative] = AXIS_LETTER_PAIRS[axis];
     const percent = computeMbtiAxisPercent(input.scores, axis);
@@ -259,7 +269,7 @@ export function buildMbtiResultCardSvg(input: MbtiResultCardInput): string {
     .join('');
 
   const roleNoteText = input.roleNote
-    ? `<text x="${CARD_WIDTH / 2}" y="${CARD_HEIGHT - 56}" text-anchor="middle" font-family="Noto Sans CJK JP, Noto Sans CJK, sans-serif" font-size="18" fill="#9a97ad">${escapeXml(input.roleNote)}</text>`
+    ? `<text x="${CARD_WIDTH / 2}" y="${CARD_HEIGHT - 48}" text-anchor="middle" font-family="Noto Sans CJK JP, Noto Sans CJK, sans-serif" font-size="18" fill="#9a97ad">${escapeXml(input.roleNote)}</text>`
     : '';
 
   return `<svg width="${CARD_WIDTH}" height="${CARD_HEIGHT}" viewBox="0 0 ${CARD_WIDTH} ${CARD_HEIGHT}" xmlns="http://www.w3.org/2000/svg">
@@ -272,8 +282,8 @@ export function buildMbtiResultCardSvg(input: MbtiResultCardInput): string {
   <text x="${CARD_WIDTH / 2}" y="92" text-anchor="middle" font-family="Noto Sans CJK JP, Noto Sans CJK, sans-serif" font-size="22" font-weight="700" fill="#9a97ad" letter-spacing="2">🎉 診断結果</text>
 
   <!-- タイプ(大) + 日本語タイトル -->
-  <text x="${CARD_WIDTH / 2}" y="210" text-anchor="middle" font-family="Noto Sans CJK JP, Noto Sans CJK, sans-serif" font-size="104" font-weight="800" fill="#f5f5f7" letter-spacing="4">${escapeXml(input.type)}</text>
-  <text x="${CARD_WIDTH / 2}" y="258" text-anchor="middle" font-family="Noto Sans CJK JP, Noto Sans CJK, sans-serif" font-size="34" font-weight="700" fill="#7c6df2">${escapeXml(info?.title ?? '')}</text>
+  <text x="${CARD_WIDTH / 2}" y="210" text-anchor="middle" font-family="Noto Sans CJK JP, Noto Sans CJK, sans-serif" font-size="104" font-weight="800" fill="#f5f5f7" letter-spacing="4">${escapeXml(input.type)}-${escapeXml(input.identity)}</text>
+  <text x="${CARD_WIDTH / 2}" y="258" text-anchor="middle" font-family="Noto Sans CJK JP, Noto Sans CJK, sans-serif" font-size="34" font-weight="700" fill="#7c6df2">${escapeXml(info?.title ?? '')}（${escapeXml(MBTI_IDENTITY_INFO[input.identity].label)}）</text>
 
   ${descriptionTextLines}
 

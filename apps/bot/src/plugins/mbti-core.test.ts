@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   MBTI_AXES,
   MBTI_AXIS_QUESTION_COUNTS,
+  MBTI_IDENTITY_INFO,
   MBTI_LIKERT_ANSWERS,
   MBTI_QUESTION_POOL,
   MBTI_TYPES,
   computeMbtiAxisPercent,
+  computeMbtiIdentity,
   computeMbtiType,
   createEmptyMbtiScores,
   isMbtiLikertAnswer,
@@ -15,12 +17,13 @@ import {
 } from './mbti-core.js';
 
 describe('Mini Games MBTI core', () => {
-  it('出題プールは計100問を4軸(EI/SN/TF/JP)へ26/26/24/24で分配して定義する', () => {
-    expect(MBTI_QUESTION_POOL).toHaveLength(100);
+  it('出題プールは計124問を5軸(EI/SN/TF/JP/AT)へ26/26/24/24/24で分配して定義する', () => {
+    expect(MBTI_QUESTION_POOL).toHaveLength(124);
     expect(MBTI_QUESTION_POOL.filter((question) => question.axis === 'EI')).toHaveLength(26);
     expect(MBTI_QUESTION_POOL.filter((question) => question.axis === 'SN')).toHaveLength(26);
     expect(MBTI_QUESTION_POOL.filter((question) => question.axis === 'TF')).toHaveLength(24);
     expect(MBTI_QUESTION_POOL.filter((question) => question.axis === 'JP')).toHaveLength(24);
+    expect(MBTI_QUESTION_POOL.filter((question) => question.axis === 'AT')).toHaveLength(24);
   });
 
   it('プール内のidは0始まりの連番でユニークである', () => {
@@ -31,14 +34,14 @@ describe('Mini Games MBTI core', () => {
     expect(ids.at(-1)).toBe(MBTI_QUESTION_POOL.length - 1);
   });
 
-  it('MBTI_AXIS_QUESTION_COUNTSの合計は50問(1回の診断の出題数)になる', () => {
+  it('MBTI_AXIS_QUESTION_COUNTSの合計は62問(1回の診断の出題数)になる', () => {
     const total = MBTI_AXES.reduce((sum, axis) => sum + MBTI_AXIS_QUESTION_COUNTS[axis], 0);
-    expect(total).toBe(50);
+    expect(total).toBe(62);
   });
 
-  it('selectMbtiQuestionsは各軸MBTI_AXIS_QUESTION_COUNTS分・計50問を重複なく抽出する', () => {
+  it('selectMbtiQuestionsは各軸MBTI_AXIS_QUESTION_COUNTS分・計62問を重複なく抽出する', () => {
     const selected = selectMbtiQuestions(() => 0.5);
-    expect(selected).toHaveLength(50);
+    expect(selected).toHaveLength(62);
     const ids = selected.map((question) => question.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const axis of MBTI_AXES) {
@@ -139,5 +142,28 @@ describe('Mini Games MBTI core', () => {
       expect(MBTI_TYPES[type]?.title).toBeTruthy();
       expect(MBTI_TYPES[type]?.description).toBeTruthy();
     }
+  });
+
+  it('computeMbtiIdentityはAT軸のscoreからA/Tを判定し、タイプ(computeMbtiType)とは独立している', () => {
+    const scores = createEmptyMbtiScores();
+    scores.AT = MBTI_AXIS_QUESTION_COUNTS.AT * 2;
+    expect(computeMbtiIdentity(scores)).toBe('A');
+    // 4文字タイプの計算にATが影響しないことも確認する(Role付与は4文字タイプのみを使うため)。
+    expect(computeMbtiType(scores)).toBe('ESTJ');
+
+    scores.AT = -MBTI_AXIS_QUESTION_COUNTS.AT * 2;
+    expect(computeMbtiIdentity(scores)).toBe('T');
+    expect(computeMbtiType(scores)).toBe('ESTJ');
+  });
+
+  it('AT score 0(タイ)は正方向側(A)として扱う', () => {
+    expect(computeMbtiIdentity(createEmptyMbtiScores())).toBe('A');
+  });
+
+  it('A/Tそれぞれにlabelとdescriptionが定義されている', () => {
+    expect(MBTI_IDENTITY_INFO.A.label).toBeTruthy();
+    expect(MBTI_IDENTITY_INFO.A.description).toBeTruthy();
+    expect(MBTI_IDENTITY_INFO.T.label).toBeTruthy();
+    expect(MBTI_IDENTITY_INFO.T.description).toBeTruthy();
   });
 });

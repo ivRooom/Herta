@@ -1,4 +1,10 @@
-export const MBTI_AXES = ['EI', 'SN', 'TF', 'JP'] as const;
+/**
+ * AT(Assertive/Turbulent)は16personalities.com由来の「Identity」軸で、古典的な4軸
+ * (EI/SN/TF/JP、Role付与の判定にも使うcomputeMbtiTypeの4文字タイプ)とは別の、5つ目の
+ * 独立した軸として扱う。Role設定(mbtiManifest/MbtiPluginConfig)は4文字タイプのままで
+ * 32通りへは拡張しない(スコープを広げすぎないための判断)。
+ */
+export const MBTI_AXES = ['EI', 'SN', 'TF', 'JP', 'AT'] as const;
 export type MbtiAxis = (typeof MBTI_AXES)[number];
 export type MbtiScores = Record<MbtiAxis, number>;
 
@@ -56,6 +62,7 @@ export const MBTI_AXIS_QUESTION_COUNTS: Record<MbtiAxis, number> = {
   SN: 13,
   TF: 12,
   JP: 12,
+  AT: 12,
 };
 
 // 各軸26/26/24/24問、計100問のプール。5段階Likertのため、以前の2択(奇数問)時のような
@@ -167,6 +174,31 @@ const MBTI_QUESTION_PROMPTS: readonly MbtiQuestion[] = [
   { id: 97, axis: 'JP', prompt: '決まった手順に沿って進めると安心する方だ' },
   { id: 98, axis: 'JP', prompt: '先の予定を把握しておきたい方だ' },
   { id: 99, axis: 'JP', prompt: 'やり残しがあると気になってしまう方だ' },
+  // AT (24問) — 16personalities由来の「Identity」軸。当てはまるほどAssertive(-A)寄り。
+  { id: 100, axis: 'AT', prompt: '多少のミスをしても気に病まない方だ' },
+  { id: 101, axis: 'AT', prompt: '将来のことをあれこれ心配しすぎない方だ' },
+  { id: 102, axis: 'AT', prompt: '人からどう思われるかはあまり気にしない方だ' },
+  { id: 103, axis: 'AT', prompt: '大きなプレッシャーの中でも落ち着いていられる方だ' },
+  { id: 104, axis: 'AT', prompt: '自分の判断に自信を持てる方だ' },
+  { id: 105, axis: 'AT', prompt: '失敗してもすぐに切り替えられる方だ' },
+  { id: 106, axis: 'AT', prompt: '批判されても必要以上に引きずらない方だ' },
+  { id: 107, axis: 'AT', prompt: '締め切り前でも冷静でいられる方だ' },
+  { id: 108, axis: 'AT', prompt: '自分の実力に満足している方だ' },
+  { id: 109, axis: 'AT', prompt: '物事がうまくいかなくても焦らない方だ' },
+  { id: 110, axis: 'AT', prompt: '他人と比べて落ち込むことは少ない方だ' },
+  { id: 111, axis: 'AT', prompt: '完璧を求めすぎず自分を許せる方だ' },
+  { id: 112, axis: 'AT', prompt: '緊張する場面でも普段通りでいられる方だ' },
+  { id: 113, axis: 'AT', prompt: '過去の選択を後悔することは少ない方だ' },
+  { id: 114, axis: 'AT', prompt: '結果が出るまで不安になりすぎない方だ' },
+  { id: 115, axis: 'AT', prompt: '周囲の評価に振り回されない方だ' },
+  { id: 116, axis: 'AT', prompt: '自分のペースを崩されにくい方だ' },
+  { id: 117, axis: 'AT', prompt: 'トラブルが起きても冷静に対処できる方だ' },
+  { id: 118, axis: 'AT', prompt: '今の自分に概ね満足している方だ' },
+  { id: 119, axis: 'AT', prompt: '失敗を引きずらずすぐ次に進める方だ' },
+  { id: 120, axis: 'AT', prompt: 'ストレスを感じても引きずらない方だ' },
+  { id: 121, axis: 'AT', prompt: '新しい挑戦にも不安より期待を感じる方だ' },
+  { id: 122, axis: 'AT', prompt: '自分を責めすぎることは少ない方だ' },
+  { id: 123, axis: 'AT', prompt: '物事を深刻に捉えすぎない方だ' },
 ];
 
 export const MBTI_QUESTION_POOL: readonly MbtiQuestion[] = MBTI_QUESTION_PROMPTS;
@@ -233,7 +265,7 @@ export const MBTI_TYPES: Record<string, MbtiTypeInfo> = {
 };
 
 export function createEmptyMbtiScores(): MbtiScores {
-  return { EI: 0, SN: 0, TF: 0, JP: 0 };
+  return { EI: 0, SN: 0, TF: 0, JP: 0, AT: 0 };
 }
 
 export function computeMbtiType(scores: MbtiScores): string {
@@ -243,6 +275,30 @@ export function computeMbtiType(scores: MbtiScores): string {
     (scores.TF >= 0 ? 'T' : 'F') +
     (scores.JP >= 0 ? 'J' : 'P')
   );
+}
+
+export interface MbtiIdentityInfo {
+  label: string;
+  description: string;
+}
+
+export const MBTI_IDENTITY_INFO: Record<'A' | 'T', MbtiIdentityInfo> = {
+  A: {
+    label: 'アサーティブ',
+    description: '自信があり、プレッシャーやストレスに動じにくく、物事に動じず安定しているタイプ。',
+  },
+  T: {
+    label: 'タービュレント',
+    description: '向上心が強く、完璧を目指すあまり自分に厳しく、ストレスを感じやすいタイプ。',
+  },
+};
+
+/**
+ * 16personalities由来の「Identity」軸(-A/-T)。computeMbtiTypeとは独立した5つ目の軸で、
+ * Role付与の判定には使わない(Role設定は4文字タイプのまま)。
+ */
+export function computeMbtiIdentity(scores: MbtiScores): 'A' | 'T' {
+  return scores.AT >= 0 ? 'A' : 'T';
 }
 
 /** axisの正方向側の文字(E/S/T/J)の強さを0〜100の百分率で返す。0と50はタイブレークで正方向寄りに丸める。 */
