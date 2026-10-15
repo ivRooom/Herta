@@ -19,15 +19,19 @@ import { definePlugin, type CommandHandler } from '@herta/plugin-sdk';
 import { syncAchievementUnlocks } from './achievements-repository.js';
 import {
   MBTI_AXES,
+  MBTI_IDENTITY_INFO,
   MBTI_LIKERT_ANSWERS,
   MBTI_TYPES,
   computeMbtiAxisPercent,
+  computeMbtiIdentity,
   computeMbtiType,
   createEmptyMbtiScores,
   isMbtiLikertAnswer,
   mbtiLikertLabel,
   mbtiLikertWeight,
   selectMbtiQuestions,
+  type MbtiAxis,
+  type MbtiLikertAnswer,
   type MbtiQuestion,
   type MbtiScores,
 } from './mbti-core.js';
@@ -108,6 +112,17 @@ export interface MbtiCommandOptions {
   unlockCompletionAchievement: (userId: string) => Promise<string[]>;
 }
 
+/**
+ * questionsのaxisは5軸(AT含む)だが、@herta/db側のMbtiQuizAnswerInputは従来の4軸のみを
+ * 受け付ける(統計DBスキーマは今回拡張しない設計判断のため)。セッション中は5軸のまま保持し、
+ * recordMbtiStatsへ渡す直前にtoLegacyMbtiAnswers()で4軸分のみへ絞り込む。
+ */
+interface MbtiSessionAnswer {
+  questionIndex: number;
+  axis: MbtiAxis;
+  answer: MbtiLikertAnswer;
+}
+
 interface MbtiSession {
   id: string;
   guildId: string;
@@ -116,7 +131,7 @@ interface MbtiSession {
   questions: MbtiQuestion[];
   questionIndex: number;
   scores: MbtiScores;
-  answers: MbtiQuizAnswerInput[];
+  answers: MbtiSessionAnswer[];
   /**
    * questionsと同じ並びで、セッション開始時に全問分まとめて起動しておくSVG→PNG生成Promise。
    * 1問ずつボタン操作のたびに同期的にrenderしていると、回答から次の質問表示までの体感遅延の
@@ -264,6 +279,7 @@ async function handleMbtiButton(
 
   if (session.questionIndex >= session.questions.length) {
     const type = computeMbtiType(session.scores);
+    const identity = computeMbtiIdentity(session.scores);
     sessions.delete(session.id);
 
     void recordMbtiStats(options.prisma, options.logger, session, type);
@@ -278,12 +294,13 @@ async function handleMbtiButton(
     try {
       const png = await renderMbtiResultCard({
         type,
+        identity,
         scores: session.scores,
         roleNote: roleNote?.roleName ?? null,
       });
       const attachment = new AttachmentBuilder(png, {
         name: `mbti-result-${session.id}.png`,
-      }).setDescription(buildMbtiResultSummaryText(type, session.scores, roleNote));
+      }).setDescription(buildMbtiResultSummaryText(type, identity, session.scores, roleNote));
       await interaction.update({
         content: null,
         embeds: [],
@@ -298,7 +315,7 @@ async function handleMbtiButton(
       );
       await interaction.update({
         content: null,
-        embeds: [buildResultEmbed(type, session.scores, roleNote)],
+        embeds: [buildResultEmbed(type, identity, session.scores, roleNote)],
         components: [],
         files: [],
         attachments: [],
@@ -350,11 +367,26 @@ async function recordMbtiStats(
       snScore: session.scores.SN,
       tfScore: session.scores.TF,
       jpScore: session.scores.JP,
-      answers: session.answers,
+      answers: toLegacyMbtiAnswers(session.answers),
     });
   } catch (error) {
     logger.warn({ err: error, guildId: session.guildId, type }, 'MBTI統計の記録に失敗しました');
   }
+}
+
+const LEGACY_PERSISTABLE_AXES = new Set<MbtiAxis>(['EI', 'SN', 'TF', 'JP']);
+
+/** @herta/dbのMbtiQuizAnswerInputが受け付ける従来の4軸分の回答だけに絞り込む(AT軸は対象外)。 */
+function toLegacyMbtiAnswers(answers: readonly MbtiSessionAnswer[]): MbtiQuizAnswerInput[] {
+  return answers
+    .filter((entry): entry is MbtiSessionAnswer & { axis: 'EI' | 'SN' | 'TF' | 'JP' } =>
+      LEGACY_PERSISTABLE_AXES.has(entry.axis),
+    )
+    .map((entry) => ({
+      questionIndex: entry.questionIndex,
+      axis: entry.axis,
+      answer: entry.answer,
+    }));
 }
 
 /**
@@ -491,6 +523,7 @@ const MBTI_AXIS_LETTER_PAIRS: Record<(typeof MBTI_AXES)[number], [string, string
   SN: ['S', 'N'],
   TF: ['T', 'F'],
   JP: ['J', 'P'],
+  AT: ['A', 'T'],
 };
 
 function buildMbtiAxisBreakdownText(scores: MbtiScores, separator = '\n'): string {
@@ -508,13 +541,16 @@ function buildMbtiAxisBreakdownText(scores: MbtiScores, separator = '\n'): strin
  */
 function buildMbtiResultSummaryText(
   type: string,
+  identity: 'A' | 'T',
   scores: MbtiScores,
   roleNote: MbtiRoleAssignmentNote | null,
 ): string {
   const info = MBTI_TYPES[type];
+  const identityInfo = MBTI_IDENTITY_INFO[identity];
   const parts = [
-    `診断結果: ${type}${info ? ` — ${info.title}` : ''}`,
+    `診断結果: ${type}-${identity}${info ? ` — ${info.title}（${identityInfo.label}）` : ''}`,
     info?.description ?? '診断結果を計算できませんでした。',
+    identityInfo.description,
     buildMbtiAxisBreakdownText(scores, ' / '),
   ];
   if (roleNote) parts.push(roleNote.roleName);
@@ -523,15 +559,21 @@ function buildMbtiResultSummaryText(
 
 function buildResultEmbed(
   type: string,
+  identity: 'A' | 'T',
   scores: MbtiScores,
   roleNote: MbtiRoleAssignmentNote | null,
 ): EmbedBuilder {
   const info = MBTI_TYPES[type];
+  const identityInfo = MBTI_IDENTITY_INFO[identity];
   const breakdown = buildMbtiAxisBreakdownText(scores);
 
   const embed = new EmbedBuilder()
-    .setTitle(`🎉 診断結果: ${type}${info ? ` — ${info.title}` : ''}`)
-    .setDescription(info?.description ?? '診断結果を計算できませんでした。')
+    .setTitle(
+      `🎉 診断結果: ${type}-${identity}${info ? ` — ${info.title}（${identityInfo.label}）` : ''}`,
+    )
+    .setDescription(
+      `${info?.description ?? '診断結果を計算できませんでした。'}\n\n${identityInfo.description}`,
+    )
     .addFields({ name: '各軸の傾向', value: breakdown })
     .setColor(0x2ecc71)
     .setFooter({ text: '簡易診断のため参考程度にご覧ください' });
