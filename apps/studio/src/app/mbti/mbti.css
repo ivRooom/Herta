@@ -582,3 +582,154 @@
     animation: none;
   }
 }
+
+/* One-shot reading cues keep content visible even without observers or JavaScript. */
+.mbti-report-intro {
+  animation: mbti-intro-enter 650ms ease-out both;
+}
+.mbti-art-stage {
+  position: relative;
+  min-width: 0;
+  animation: mbti-art-enter 850ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+.mbti-art-stage:hover .mbti-type-artwork {
+  animation: mbti-doodle-wiggle 650ms ease-in-out;
+}
+.mbti-art-spark {
+  position: absolute;
+  z-index: 1;
+  color: var(--mbti-art-accent);
+  pointer-events: none;
+  animation: mbti-spark-drift 4s ease-in-out infinite;
+  font-size: 28px;
+}
+.mbti-art-spark-one {
+  top: 5%;
+  left: 8%;
+}
+.mbti-art-spark-two {
+  top: 18%;
+  right: 3%;
+  animation-delay: -1.4s;
+  font-size: 22px;
+}
+.mbti-art-spark-three {
+  bottom: 12%;
+  left: 3%;
+  animation-delay: -2.8s;
+  font-size: 18px;
+}
+.mbti-report-section.mbti-in-view {
+  animation: mbti-section-enter 650ms ease-out both;
+}
+.mbti-in-view .mbti-axis-track > span {
+  transform-origin: left;
+  animation: mbti-axis-fill 900ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+.mbti-in-view .mbti-report-axis:nth-of-type(2) .mbti-axis-track > span {
+  animation-delay: 70ms;
+}
+.mbti-in-view .mbti-report-axis:nth-of-type(3) .mbti-axis-track > span {
+  animation-delay: 140ms;
+}
+.mbti-in-view .mbti-report-axis:nth-of-type(4) .mbti-axis-track > span {
+  animation-delay: 210ms;
+}
+.mbti-in-view .mbti-report-axis:nth-of-type(5) .mbti-axis-track > span {
+  animation-delay: 280ms;
+}
+.mbti-report-actions button {
+  transition:
+    transform 180ms ease,
+    background-color 180ms ease;
+}
+.mbti-report-actions button:hover:not(:disabled) {
+  transform: translateY(-3px);
+}
+.mbti-report-actions button:active:not(:disabled) {
+  transform: translateY(0) scale(0.97);
+}
+.mbti-report-actions button:disabled svg {
+  animation: mbti-saving 1s ease-in-out infinite;
+}
+@keyframes mbti-intro-enter {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes mbti-art-enter {
+  from {
+    opacity: 0;
+    transform: translateY(18px) rotate(-5deg) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(0) scale(1);
+  }
+}
+@keyframes mbti-section-enter {
+  from {
+    transform: translateY(16px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes mbti-axis-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes mbti-doodle-wiggle {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  25% {
+    transform: rotate(-4deg) translateY(-4px);
+  }
+  65% {
+    transform: rotate(3deg) translateY(-6px);
+  }
+}
+@keyframes mbti-spark-drift {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-8deg) scale(0.9);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translateY(-7px) rotate(8deg) scale(1.1);
+    opacity: 1;
+  }
+}
+@keyframes mbti-saving {
+  50% {
+    transform: translateY(3px);
+  }
+}
+@media (max-width: 700px) {
+  .mbti-art-stage {
+    width: min(100%, 280px);
+    margin: 0 auto;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mbti-report *,
+  .mbti-report *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+  .mbti-report-actions button:hover:not(:disabled),
+  .mbti-report-actions button:active:not(:disabled) {
+    transform: none;
+  }
+}

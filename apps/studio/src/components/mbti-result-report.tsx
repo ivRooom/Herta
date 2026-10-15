@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
   Download,
   Link as LinkIcon,
@@ -25,6 +25,23 @@ export function MbtiResultReport({
   roleNote?: string | null;
   shared?: boolean;
 }) {
+  const reportRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const root = reportRef.current;
+    if (!root || !('IntersectionObserver' in window)) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          entry.target.classList.add('mbti-in-view');
+          observer.unobserve(entry.target);
+        }
+      },
+      { threshold: 0.08 },
+    );
+    root.querySelectorAll('.mbti-report-section').forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+  }, []);
   const report = createMbtiReport(scores);
   const artwork = getMbtiArtwork(report.resultType);
   const [saving, setSaving] = useState(false);
@@ -68,6 +85,7 @@ export function MbtiResultReport({
 
   return (
     <article
+      ref={reportRef}
       className="mbti-report"
       style={artwork ? ({ '--mbti-art-accent': artwork.accent } as CSSProperties) : undefined}
     >
@@ -85,16 +103,27 @@ export function MbtiResultReport({
           {report.boundaryNote ? <p className="mbti-boundary-note">{report.boundaryNote}</p> : null}
         </div>
         {artwork ? (
-          <div
-            className="mbti-type-artwork"
-            role="img"
-            aria-label={`${report.title}のイメージ：${artwork.description}`}
-            data-type={report.resultType}
-            style={{
-              backgroundImage: `url("${MBTI_ARTWORK_URL}")`,
-              backgroundPosition: artwork.position,
-            }}
-          />
+          <div className="mbti-art-stage">
+            <span className="mbti-art-spark mbti-art-spark-one" aria-hidden="true">
+              ✧
+            </span>
+            <span className="mbti-art-spark mbti-art-spark-two" aria-hidden="true">
+              ♡
+            </span>
+            <span className="mbti-art-spark mbti-art-spark-three" aria-hidden="true">
+              ✦
+            </span>
+            <div
+              className="mbti-type-artwork"
+              role="img"
+              aria-label={`${report.title}のイメージ：${artwork.description}`}
+              data-type={report.resultType}
+              style={{
+                backgroundImage: `url("${MBTI_ARTWORK_URL}")`,
+                backgroundPosition: artwork.position,
+              }}
+            />
+          </div>
         ) : null}
       </div>
       <div className="mbti-report-actions">
