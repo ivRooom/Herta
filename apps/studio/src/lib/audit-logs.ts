@@ -731,16 +731,6 @@ async function listCommandUsageFeed(
   };
 }
 
-/**
- * CommandExecutionEventのrangeDays(日数ベース)と、AuditLog等が使うfrom/toExclusiveの
- * 日付範囲フィルタの橋渡し。fromが指定されていれば現在日時との差分日数へ変換する。
- */
-/**
- * CommandExecutionEventのrangeDays(現在時刻からの日数)と、AuditLog等が使うfrom/toExclusive
- * (絶対日付)の橋渡し。fromが指定されていれば現在日時との差分日数へ変換する。fromが無い場合は
- * searchCommandExecutionEvents自身の既定値(直近7日、Analytics集計向けの値)ではなく、
- * 保持期間いっぱい(MAX_ANALYTICS_DAYS)を指定し、古い記録を黙って隠さないようにする。
- */
 function emptyActivityResult(query: AuditLogQuery): AuditLogResult {
   return {
     items: [],
