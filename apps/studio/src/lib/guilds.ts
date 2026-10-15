@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { cache } from 'react';
 import { prisma } from '@/lib/db';
 import { fetchManageableGuilds, type ManageableGuild } from '@/lib/discord';
@@ -7,40 +8,59 @@ import { buildGuildPersistenceData } from '@/lib/guild-metadata';
  * ダッシュボードはサイドバー遷移・タブ切り替え(searchParams変更)のたびに
  * layout.tsx + page.tsxの両方からこの一覧取得を呼び出すため、Discord側の
  * `/users/@me/guilds` への実アクセスを12秒だけ短期キャッシュする。
- * accessTokenをキー引数に含めるためユーザーをまたいだキャッシュ汚染は起きない。
  *
  * `next/cache`の`unstable_cache`はstale-while-revalidateのため、TTLを過ぎても
  * 再検証が完了するまで古い値を返し続けてしまい、権限剥奪の反映が12秒を超えて
  * 遅れる可能性がある(認可判断に使うには不適切)。ここではTTLを過ぎたら必ず
  * 同期的に再取得してブロックする、素朴なハードTTLキャッシュを自前で持つ。
+ *
+ * - キーには生のaccessTokenではなくSHA-256ハッシュを使う(TTL経過後もMapのキーとして
+ *   再利用可能なBearerトークンがヒープ上に残り続けるのを避ける)。
+ * - 進行中のfetchのPromiseをawait前にキャッシュへ入れることで、TTL失効直後に同一トークンへ
+ *   同時到達した複数リクエストが1回のDiscordリクエストへ合流する(cache stampede対策)。
  */
 const GUILD_CACHE_TTL_MS = 12_000;
 const GUILD_CACHE_MAX_ENTRIES = 500;
 
 interface GuildCacheEntry {
-  guilds: ManageableGuild[];
+  promise: Promise<ManageableGuild[]>;
   expiresAt: number;
 }
 
-const guildCacheByAccessToken = new Map<string, GuildCacheEntry>();
+const guildCacheByTokenHash = new Map<string, GuildCacheEntry>();
+
+function hashAccessToken(accessToken: string): string {
+  return createHash('sha256').update(accessToken).digest('hex');
+}
 
 async function getManageableGuildsWithHardTtlCache(
   accessToken: string,
 ): Promise<ManageableGuild[]> {
+  const key = hashAccessToken(accessToken);
   const now = Date.now();
-  const cached = guildCacheByAccessToken.get(accessToken);
-  if (cached && cached.expiresAt > now) {
-    return cached.guilds;
+
+  const cached = guildCacheByTokenHash.get(key);
+  if (cached) {
+    if (cached.expiresAt > now) return cached.promise;
+    guildCacheByTokenHash.delete(key);
   }
 
-  const guilds = await fetchManageableGuilds(accessToken);
+  const promise = fetchManageableGuilds(accessToken);
 
-  if (guildCacheByAccessToken.size >= GUILD_CACHE_MAX_ENTRIES) {
-    const oldestKey = guildCacheByAccessToken.keys().next().value;
-    if (oldestKey !== undefined) guildCacheByAccessToken.delete(oldestKey);
+  // 既存キーを上書きするだけの更新では他のトークンを追い出さない(キーが新規の場合のみ)。
+  if (!guildCacheByTokenHash.has(key) && guildCacheByTokenHash.size >= GUILD_CACHE_MAX_ENTRIES) {
+    const oldestKey = guildCacheByTokenHash.keys().next().value;
+    if (oldestKey !== undefined) guildCacheByTokenHash.delete(oldestKey);
   }
-  guildCacheByAccessToken.set(accessToken, { guilds, expiresAt: now + GUILD_CACHE_TTL_MS });
-  return guilds;
+  guildCacheByTokenHash.set(key, { promise, expiresAt: now + GUILD_CACHE_TTL_MS });
+
+  try {
+    return await promise;
+  } catch (error) {
+    // 失敗したfetchをキャッシュし続けない(次回呼び出しで再取得させる)。
+    guildCacheByTokenHash.delete(key);
+    throw error;
+  }
 }
 
 /** 同一Server Componentsレンダー内(layout.tsx + page.tsx)でも呼び出しを共有する。 */
