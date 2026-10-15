@@ -30,6 +30,9 @@ const MAX_QUERY_LENGTH = 100;
 export interface MemberActivityFeedResult {
   items: MemberActivityFeedItem[];
   total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }
 
 const DEFAULT_PAGE_SIZE = 25;
@@ -71,24 +74,28 @@ export async function searchMemberActivityEvents(
       : {}),
   };
 
-  const [total, rows] = await Promise.all([
-    prisma.memberActivityEvent.count({ where }),
-    prisma.memberActivityEvent.findMany({
-      where,
-      orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      select: {
-        id: true,
-        userId: true,
-        event: true,
-        channelId: true,
-        messageId: true,
-        metadata: true,
-        occurredAt: true,
-      },
-    }),
-  ]);
+  const total = await prisma.memberActivityEvent.count({ where });
+  // 保持期間のpruneやイベント発生タイミングの関係で件数が変わった後に古いpage番号で
+  // リクエストされた場合、clampせずにそのままskipへ使うと「以前のページにはデータが
+  // あるのに空結果」になってしまう。searchCommandExecutionEventsと同じ考え方でここでも
+  // 必ずclampする。
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const clampedPage = Math.min(page, totalPages);
+  const rows = await prisma.memberActivityEvent.findMany({
+    where,
+    orderBy: [{ occurredAt: 'desc' }, { id: 'desc' }],
+    skip: (clampedPage - 1) * pageSize,
+    take: pageSize,
+    select: {
+      id: true,
+      userId: true,
+      event: true,
+      channelId: true,
+      messageId: true,
+      metadata: true,
+      occurredAt: true,
+    },
+  });
 
   return {
     items: rows.map((row) => ({
@@ -101,5 +108,8 @@ export async function searchMemberActivityEvents(
       occurredAt: row.occurredAt.toISOString(),
     })),
     total,
+    page: clampedPage,
+    pageSize,
+    totalPages,
   };
 }

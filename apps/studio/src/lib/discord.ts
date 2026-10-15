@@ -6,6 +6,8 @@
 
 export const DISCORD_API_BASE = 'https://discord.com/api/v10';
 export const MAX_DISCORD_RATE_LIMIT_RETRY_MS = 2_000;
+/** Discord APIが無応答の場合に無期限で待ち続けないための上限(ログインフロー等をブロックしない)。 */
+export const DISCORD_API_REQUEST_TIMEOUT_MS = 8_000;
 
 /** Discord API のHTTPエラー。アクセストークンなどの機密情報は保持しない。 */
 export class DiscordApiError extends Error {
@@ -131,6 +133,7 @@ async function requestUserGuilds(accessToken: string, fetchImpl: typeof fetch): 
     // `@/lib/guilds`側でunstable_cacheにより12秒だけ短期キャッシュしている
     // (画面遷移速度を優先する設計判断。権限剥奪の反映は最大12秒遅れる)。
     cache: 'no-store',
+    signal: AbortSignal.timeout(DISCORD_API_REQUEST_TIMEOUT_MS),
   });
 }
 

@@ -631,7 +631,12 @@ async function listDiscordActivityFeed(
     return emptyActivityResult(query);
   }
 
-  const { items: rows, total } = await searchMemberActivityEvents(prisma, {
+  const {
+    items: rows,
+    total,
+    page,
+    totalPages,
+  } = await searchMemberActivityEvents(prisma, {
     guildId,
     from: query.from,
     toExclusive: query.toExclusive,
@@ -642,15 +647,15 @@ async function listDiscordActivityFeed(
 
   const userIds = [...new Set(rows.flatMap((row) => (row.userId ? [row.userId] : [])))];
   const actorLabelById = await resolveUserLabels(prisma, userIds);
-  const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
 
   return {
     items: rows.map((row) => {
-      // role_add/role_removeのuserIdは「Roleを変更された対象メンバー」であり、実行者
-      // ではない(activity-log.tsのhandleGuildMemberUpdateは実行者をAudit Logから
+      // role_add/role_remove/nickname_updateのuserIdは「操作対象のメンバー」であり、
+      // 実行者ではない(activity-log.tsのhandleGuildMemberUpdateは実行者をAudit Logから
       // 特定していないため、実行者情報自体を保持していない)。対象として表示し、
       // 実行者は不明として扱う(実際より実行者として誤表示しない方を優先する)。
-      const isMemberTargetEvent = row.event === 'role_add' || row.event === 'role_remove';
+      const isMemberTargetEvent =
+        row.event === 'role_add' || row.event === 'role_remove' || row.event === 'nickname_update';
 
       return {
         id: row.id,
@@ -681,7 +686,7 @@ async function listDiscordActivityFeed(
       };
     }),
     total,
-    page: query.page,
+    page,
     pageSize: query.pageSize,
     totalPages,
     isUnifiedPreview: false,
