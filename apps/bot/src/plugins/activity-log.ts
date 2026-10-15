@@ -193,12 +193,23 @@ async function maybeSendBurstAlert(
  */
 const AUDIT_LOG_ACTOR_RESOLUTION_WINDOW_MS = 10_000;
 
+interface AuditLogActorResolution {
+  actorId: string | null;
+  /**
+   * fetchAuditLogs自体が成功したか。View Audit Log権限不足・一時的なAPIエラー等で
+   * 取得に失敗した場合はfalseになる。「entryが見つからない」ことと「取得自体に失敗した」
+   * ことを呼び出し元が区別できるようにする(前者のみ「本人による操作でAudit Logに
+   * 残らなかった」と推測してよい。後者は単に判定できないだけなので推測してはならない)。
+   */
+  lookupSucceeded: boolean;
+}
+
 /** Audit Logから操作の実行者を割引きで特定する(View Audit Log権限が無い・未確定の場合はnull)。 */
-async function resolveAuditLogActorId(
+async function resolveAuditLogActor(
   guild: Guild,
   auditLogEvent: AuditLogEvent,
   targetId: string,
-): Promise<string | null> {
+): Promise<AuditLogActorResolution> {
   try {
     const logs = await guild.fetchAuditLogs({ type: auditLogEvent, limit: 5 });
     const now = Date.now();
@@ -207,10 +218,24 @@ async function resolveAuditLogActorId(
         candidate.targetId === targetId &&
         now - candidate.createdTimestamp <= AUDIT_LOG_ACTOR_RESOLUTION_WINDOW_MS,
     );
-    return entry?.executorId ?? null;
+    return { actorId: entry?.executorId ?? null, lookupSucceeded: true };
   } catch {
-    return null;
+    return { actorId: null, lookupSucceeded: false };
   }
+}
+
+/**
+ * lookupの成否を区別しない呼び出し元向けの簡易ラッパー。
+ * 自己操作フォールバックを行わないevent(role_add/role_remove/timeout/ban/unban/kick等)は
+ * 「解決できなければnullのまま」という扱いがlookup失敗時・未一致時のどちらでも同じため、
+ * こちらを使えばよい。
+ */
+async function resolveAuditLogActorId(
+  guild: Guild,
+  auditLogEvent: AuditLogEvent,
+  targetId: string,
+): Promise<string | null> {
+  return (await resolveAuditLogActor(guild, auditLogEvent, targetId)).actorId;
 }
 
 function handleVoiceStateUpdate(
@@ -337,19 +362,21 @@ async function handleMessageDelete(
   if (isExcludedChannel(config, message.channelId)) return;
 
   const authorId = message.author?.id ?? null;
-  // Discordは本人による自己削除をAudit Logへ残さないため、実行者が解決できない場合は
-  // 自己削除とみなし投稿者本人をactorとして扱う(他人の投稿を削除した場合は必ずAudit
-  // Logに記録されるため、この前提は安全)。
+  // Discordは本人による自己削除をAudit Logへ残さないため、「Audit Logの取得自体には
+  // 成功したが一致entryが無い」場合に限り自己削除とみなし投稿者本人をactorとして扱う。
+  // 取得自体が失敗した場合(View Audit Log権限不足・一時的なAPIエラー等)は自己削除と
+  // 断定せず、実行者不明のままにする(権限未付与の既存Guildでモデレーター削除を
+  // 自己削除と誤記録しないため)。
   let actorId: string | null = null;
   let actorResolved = false;
   if (authorId && message.guild) {
-    const resolved = await resolveAuditLogActorId(
+    const resolution = await resolveAuditLogActor(
       message.guild,
       AuditLogEvent.MessageDelete,
       authorId,
     );
-    actorResolved = resolved !== null;
-    actorId = resolved ?? authorId;
+    actorResolved = resolution.actorId !== null;
+    actorId = resolution.actorId ?? (resolution.lookupSucceeded ? authorId : null);
   }
 
   await record(context, {
@@ -549,6 +576,7 @@ async function handleInviteCreate(
   const config = normalizeActivityLogConfig(context.config);
   if (!config.enabled || !config.trackInvites) return;
   if (invite.inviter?.bot) return;
+  if (isExcludedChannel(config, invite.channelId)) return;
 
   await record(context, {
     guildId: context.guildId,
@@ -570,22 +598,25 @@ async function handleGuildMemberUpdate(
   if (hasExcludedRole(config, roleIds)) return;
 
   if (config.trackNicknameAvatar && oldMember.nickname !== newMember.nickname) {
-    // Discordは本人によるニックネーム変更をAudit Logへ残さないため、実行者が解決
-    // できない場合は自己変更とみなし対象メンバー本人をactorとして扱う。
-    const actorId = await resolveAuditLogActorId(
+    // Discordは本人によるニックネーム変更をAudit Logへ残さないため、「Audit Logの
+    // 取得自体には成功したが一致entryが無い」場合に限り自己変更とみなし対象メンバー
+    // 本人をactorとして扱う。取得自体が失敗した場合(権限不足等)は自己変更と断定せず
+    // 実行者不明のままにする。
+    const resolution = await resolveAuditLogActor(
       newMember.guild,
       AuditLogEvent.MemberUpdate,
       newMember.id,
     );
+    const actorId = resolution.actorId ?? (resolution.lookupSucceeded ? newMember.id : null);
     await record(context, {
       guildId: context.guildId,
-      userId: actorId ?? newMember.id,
+      userId: actorId,
       event: 'nickname_update',
       metadata: {
         before: oldMember.nickname,
         after: newMember.nickname,
         targetUserId: newMember.id,
-        actorResolved: actorId !== null,
+        actorResolved: resolution.actorId !== null,
       },
     });
   }
