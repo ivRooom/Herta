@@ -76,6 +76,12 @@ export interface CommandExecutionSearchFilters {
   guildId?: string | null;
   allowedGuildIds?: readonly string[];
   rangeDays?: number;
+  /**
+   * 指定時はrangeDaysによる近似(JST日単位への丸め)ではなく、この厳密な時刻を
+   * `executedAt >= from`として使う(fromが未来の場合に今日の記録まで含めてしまう
+   * 近似誤差を避ける)。
+   */
+  from?: Date | null;
   /** 指定時は`executedAt < toExclusive`も条件へ加える(省略時は上限なし)。 */
   toExclusive?: Date | null;
   page?: number;
@@ -442,7 +448,8 @@ export async function searchCommandExecutionEvents(
 ): Promise<CommandExecutionSearchResult> {
   const now = filters.now ?? new Date();
   const rangeDays = normalizeAnalyticsDays(filters.rangeDays);
-  const rangeStart = new Date(startOfJstDay(now).getTime() - (rangeDays - 1) * DAY_MS);
+  const rangeStart =
+    filters.from ?? new Date(startOfJstDay(now).getTime() - (rangeDays - 1) * DAY_MS);
   const query = normalizeOptionalText(filters.query, MAX_HISTORY_QUERY_LENGTH);
   const guildId = normalizeOptionalText(filters.guildId, MAX_GUILD_ID_LENGTH);
   const allowedGuildIds = normalizeGuildIds(filters.allowedGuildIds);

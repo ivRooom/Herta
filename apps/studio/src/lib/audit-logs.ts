@@ -691,7 +691,11 @@ async function listCommandUsageFeed(
     guildId,
     query: query.search || null,
     status,
-    rangeDays: resolveCommandUsageRangeDays(query),
+    // fromが指定されていれば厳密な時刻をそのまま使う(rangeDaysへの近似だとfromが未来の
+    // 場合に今日の記録まで含めてしまう誤差が出るため)。fromが無い場合のみ、Analytics
+    // 集計向けの既定値(直近7日)ではなく保持期間いっぱい(90日)をrangeDaysとして使う。
+    from: query.from,
+    rangeDays: query.from ? undefined : MAX_ANALYTICS_DAYS,
     toExclusive: query.toExclusive,
     page: query.page,
     pageSize: query.pageSize,
@@ -746,12 +750,6 @@ function emptyActivityResult(query: AuditLogQuery): AuditLogResult {
     totalPages: 1,
     isUnifiedPreview: false,
   };
-}
-
-function resolveCommandUsageRangeDays(query: AuditLogQuery): number {
-  if (!query.from) return MAX_ANALYTICS_DAYS;
-  const diffMs = Date.now() - query.from.getTime();
-  return Math.min(MAX_ANALYTICS_DAYS, Math.max(1, Math.ceil(diffMs / (24 * 60 * 60 * 1000))));
 }
 
 async function resolveUserLabels(

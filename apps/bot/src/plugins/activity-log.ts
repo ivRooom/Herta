@@ -369,6 +369,7 @@ async function handleChannelEvent(
   if (!('guild' in channel) || !channel.guild) return;
   const config = normalizeActivityLogConfig(context.config);
   if (!config.enabled || !config.trackProfile) return;
+  if (isExcludedChannel(config, channel.id)) return;
 
   const actorId = await resolveAuditLogActorId(channel.guild, auditLogEvent, channel.id);
   await record(context, {
