@@ -31,7 +31,7 @@ import {
   type MbtiQuestion,
   type MbtiScores,
 } from './mbti-core.js';
-import { renderMbtiQuestionCard } from './mbti-card.js';
+import { renderMbtiQuestionCard, type MbtiQuestionCardInput } from './mbti-card.js';
 import { reconcileMbtiRole } from './mbti-roles.js';
 import { pushMbtiResultToIvrmWeb, resolveMbtiIvrmSyncConfig } from './mbti-ivrm-sync.js';
 
@@ -113,6 +113,14 @@ interface MbtiSession {
   questionIndex: number;
   scores: MbtiScores;
   answers: MbtiQuizAnswerInput[];
+  /**
+   * questionsと同じ並びで、セッション開始時に全問分まとめて起動しておくSVG→PNG生成Promise。
+   * 1問ずつボタン操作のたびに同期的にrenderしていると、回答から次の質問表示までの体感遅延の
+   * 主因になる(sharpでのPNG生成+添付ファイル構築がinteraction.update()をブロックする)ため、
+   * ユーザーが前の質問を読んで回答している間にバックグラウンドで次の画像を用意しておく。
+   * 最初の1問目だけはこの配列の完成を待つ(以前と同じ体感速度)。
+   */
+  cardRenders: Promise<Buffer>[];
 }
 
 const sessions = new Map<string, MbtiSession>();
@@ -154,14 +162,23 @@ async function startMbtiQuiz(
     return;
   }
 
+  const questions = selectMbtiQuestions();
   const session: MbtiSession = {
     id: randomUUID().replaceAll('-', ''),
     guildId: interaction.guildId,
     userId: interaction.user.id,
-    questions: selectMbtiQuestions(),
+    questions,
     questionIndex: 0,
     scores: createEmptyMbtiScores(),
     answers: [],
+    cardRenders: questions.map((question, index) =>
+      startMbtiCardRender({
+        questionIndex: index,
+        totalQuestions: questions.length,
+        prompt: question.prompt,
+        axis: question.axis,
+      }),
+    ),
   };
   sessions.set(session.id, session);
 
@@ -383,16 +400,24 @@ function isGuildMember(member: unknown): member is GuildMember {
   return 'cache' in roles;
 }
 
+/**
+ * renderMbtiQuestionCard()を起動するが、まだ出番が来ていない先読み分のrejectionが
+ * Node.jsのunhandledRejectionとして扱われる(最悪プロセスがクラッシュしうる)のを防ぐため、
+ * 返すpromise本体とは別に即座にno-opのcatchを登録しておく。`.catch()`は新しいpromiseを
+ * 生成するだけで元のpromiseには影響しないため、呼び出し側(buildQuestionPayload)は返り値を
+ * 通常通りawaitでき、実際に失敗していればそこで同じエラーを観測できる。
+ */
+function startMbtiCardRender(input: MbtiQuestionCardInput): Promise<Buffer> {
+  const render = renderMbtiQuestionCard(input);
+  render.catch(() => undefined);
+  return render;
+}
+
 async function buildQuestionPayload(
   session: MbtiSession,
 ): Promise<{ content: string; files: AttachmentBuilder[]; attachments: []; embeds: [] }> {
   const question = session.questions[session.questionIndex]!;
-  const png = await renderMbtiQuestionCard({
-    questionIndex: session.questionIndex,
-    totalQuestions: session.questions.length,
-    prompt: question.prompt,
-    axis: question.axis,
-  });
+  const png = await session.cardRenders[session.questionIndex]!;
   const attachment = new AttachmentBuilder(png, {
     name: `mbti-${session.id}-${session.questionIndex}.png`,
   }).setDescription(question.prompt);
