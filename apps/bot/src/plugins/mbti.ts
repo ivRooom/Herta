@@ -276,10 +276,14 @@ async function handleMbtiButton(
     });
     const roleNote = await tryAssignMbtiRole(interaction, type, options);
     try {
-      const png = await renderMbtiResultCard({ type, scores: session.scores, roleNote });
+      const png = await renderMbtiResultCard({
+        type,
+        scores: session.scores,
+        roleNote: roleNote?.roleName ?? null,
+      });
       const attachment = new AttachmentBuilder(png, {
         name: `mbti-result-${session.id}.png`,
-      }).setDescription(`MBTI診断結果: ${type}`);
+      }).setDescription(buildMbtiResultSummaryText(type, session.scores, roleNote));
       await interaction.update({
         content: null,
         embeds: [],
@@ -380,11 +384,19 @@ async function syncMbtiResultToIvrmWeb(
   );
 }
 
+interface MbtiRoleAssignmentNote {
+  /** Discordのメッセージ/Embed本文用。Discordクライアントがこの構文を自動でRole名へ解決する。 */
+  mentionText: string;
+  /** PNG画像カード用。<＠&id>構文はPNG内では解決されずそのまま文字として描画されてしまうため、
+   * 画像カードには代わりにこちらのRole表示名を渡す(CodeRabbit指摘)。 */
+  roleName: string;
+}
+
 async function tryAssignMbtiRole(
   interaction: ButtonInteraction,
   type: string,
   options: MbtiCommandOptions,
-): Promise<string | null> {
+): Promise<MbtiRoleAssignmentNote | null> {
   const member = interaction.member;
   if (!member || !isGuildMember(member)) return null;
 
@@ -398,7 +410,12 @@ async function tryAssignMbtiRole(
       resultType: type,
       logger: options.logger,
     });
-    if (result.addedRoleId) return `<@&${result.addedRoleId}> を付与しました`;
+    if (result.addedRoleId && result.addedRoleName) {
+      return {
+        mentionText: `<@&${result.addedRoleId}> を付与しました`,
+        roleName: `${result.addedRoleName} を付与しました`,
+      };
+    }
     return null;
   } catch (error) {
     options.logger.warn(
@@ -469,19 +486,48 @@ function buildAnswerRow(session: MbtiSession): ActionRowBuilder<ButtonBuilder> {
   );
 }
 
-function buildResultEmbed(type: string, scores: MbtiScores, roleNote: string | null): EmbedBuilder {
-  const info = MBTI_TYPES[type];
-  const axisLabels: Record<(typeof MBTI_AXES)[number], [string, string]> = {
-    EI: ['E', 'I'],
-    SN: ['S', 'N'],
-    TF: ['T', 'F'],
-    JP: ['J', 'P'],
-  };
-  const breakdown = MBTI_AXES.map((axis) => {
-    const [positive, negative] = axisLabels[axis];
+const MBTI_AXIS_LETTER_PAIRS: Record<(typeof MBTI_AXES)[number], [string, string]> = {
+  EI: ['E', 'I'],
+  SN: ['S', 'N'],
+  TF: ['T', 'F'],
+  JP: ['J', 'P'],
+};
+
+function buildMbtiAxisBreakdownText(scores: MbtiScores, separator = '\n'): string {
+  return MBTI_AXES.map((axis) => {
+    const [positive, negative] = MBTI_AXIS_LETTER_PAIRS[axis];
     const percent = computeMbtiAxisPercent(scores, axis);
     return `${positive} ${percent}% / ${negative} ${100 - percent}%`;
-  }).join('\n');
+  }).join(separator);
+}
+
+/**
+ * 結果カードPNGのalt text(添付ファイルのdescription)用に、Embed表示と同じ情報を
+ * プレーンテキストへまとめる。画像の内容を読み上げソフト等でも把握できるようにする
+ * (CodeRabbit指摘)。
+ */
+function buildMbtiResultSummaryText(
+  type: string,
+  scores: MbtiScores,
+  roleNote: MbtiRoleAssignmentNote | null,
+): string {
+  const info = MBTI_TYPES[type];
+  const parts = [
+    `診断結果: ${type}${info ? ` — ${info.title}` : ''}`,
+    info?.description ?? '診断結果を計算できませんでした。',
+    buildMbtiAxisBreakdownText(scores, ' / '),
+  ];
+  if (roleNote) parts.push(roleNote.roleName);
+  return parts.join(' / ');
+}
+
+function buildResultEmbed(
+  type: string,
+  scores: MbtiScores,
+  roleNote: MbtiRoleAssignmentNote | null,
+): EmbedBuilder {
+  const info = MBTI_TYPES[type];
+  const breakdown = buildMbtiAxisBreakdownText(scores);
 
   const embed = new EmbedBuilder()
     .setTitle(`🎉 診断結果: ${type}${info ? ` — ${info.title}` : ''}`)
@@ -490,7 +536,7 @@ function buildResultEmbed(type: string, scores: MbtiScores, roleNote: string | n
     .setColor(0x2ecc71)
     .setFooter({ text: '簡易診断のため参考程度にご覧ください' });
 
-  if (roleNote) embed.addFields({ name: 'Role', value: roleNote });
+  if (roleNote) embed.addFields({ name: 'Role', value: roleNote.mentionText });
   return embed;
 }
 
