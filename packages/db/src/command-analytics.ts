@@ -475,25 +475,29 @@ export async function searchCommandExecutionEvents(
       : {}),
   };
 
-  const [total, rows] = await Promise.all([
-    prisma.commandExecutionEvent.count({ where }),
-    prisma.commandExecutionEvent.findMany({
-      where,
-      orderBy: [{ executedAt: 'desc' }, { id: 'desc' }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      select: {
-        id: true,
-        guildId: true,
-        userId: true,
-        commandName: true,
-        status: true,
-        durationMs: true,
-        errorName: true,
-        executedAt: true,
-      },
-    }),
-  ]);
+  const total = await prisma.commandExecutionEvent.count({ where });
+  // 保持期間のpruneやgetMoreEvents等で件数が変わった後に古いpage番号(ブックマーク・
+  // 並行タブ等)でリクエストされた場合、clampせずにそのままskipへ使うと「以前のページには
+  // データがあるのに空結果」になってしまう。listGuildAuditLogsのresolveAuditLogPageと
+  // 同じ考え方でここでも必ずclampする。
+  const normalizedTotalPages = Math.max(1, Math.ceil(total / pageSize));
+  const clampedPage = Math.min(page, normalizedTotalPages);
+  const rows = await prisma.commandExecutionEvent.findMany({
+    where,
+    orderBy: [{ executedAt: 'desc' }, { id: 'desc' }],
+    skip: (clampedPage - 1) * pageSize,
+    take: pageSize,
+    select: {
+      id: true,
+      guildId: true,
+      userId: true,
+      commandName: true,
+      status: true,
+      durationMs: true,
+      errorName: true,
+      executedAt: true,
+    },
+  });
 
   return {
     items: rows.map((row) => ({
@@ -501,9 +505,9 @@ export async function searchCommandExecutionEvents(
       executedAt: row.executedAt.toISOString(),
     })),
     total,
-    page,
+    page: clampedPage,
     pageSize,
-    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    totalPages: normalizedTotalPages,
     rangeDays,
   };
 }
