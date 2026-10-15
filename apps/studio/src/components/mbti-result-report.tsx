@@ -1,9 +1,20 @@
 'use client';
 
-import { useState } from 'react';
-import { Download, Link as LinkIcon } from 'lucide-react';
+import { useState, type CSSProperties } from 'react';
+import {
+  Download,
+  Link as LinkIcon,
+  Sprout,
+  Compass,
+  MessagesSquare,
+  Sparkles,
+} from 'lucide-react';
+import { getMbtiArtwork, MBTI_ARTWORK_URL } from '@/lib/mbti-artwork';
+
 import type { MbtiScores } from '@herta/shared/mbti-core';
 import { createMbtiReport, mbtiShareSearch } from '@herta/shared/mbti-report';
+
+const SECTION_ICONS = [Sprout, Compass, MessagesSquare, Sparkles];
 
 export function MbtiResultReport({
   scores,
@@ -15,6 +26,7 @@ export function MbtiResultReport({
   shared?: boolean;
 }) {
   const report = createMbtiReport(scores);
+  const artwork = getMbtiArtwork(report.resultType);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [shareUrl, setShareUrl] = useState('');
@@ -55,18 +67,35 @@ export function MbtiResultReport({
   }
 
   return (
-    <article className="mbti-report">
-      <div className="mbti-report-intro">
-        <h2>{shared ? '共有された診断レポート' : 'あなたの診断レポート'}</h2>
-        <p className="mbti-report-type">
-          {report.resultType}
-          <span>-{report.identity}</span>
-        </p>
-        <p className="mbti-report-title">
-          {report.title} · {report.identityLabel}
-        </p>
-        <p>{report.summary}</p>
-        {report.boundaryNote ? <p className="mbti-boundary-note">{report.boundaryNote}</p> : null}
+    <article
+      className="mbti-report"
+      style={artwork ? ({ '--mbti-art-accent': artwork.accent } as CSSProperties) : undefined}
+    >
+      <div className="mbti-report-hero">
+        <div className="mbti-report-intro">
+          <h2>{shared ? '共有された診断レポート' : 'あなたの診断レポート'}</h2>
+          <p className="mbti-report-type">
+            {report.resultType}
+            <span>-{report.identity}</span>
+          </p>
+          <p className="mbti-report-title">
+            {report.title} · {report.identityLabel}
+          </p>
+          <p>{report.summary}</p>
+          {report.boundaryNote ? <p className="mbti-boundary-note">{report.boundaryNote}</p> : null}
+        </div>
+        {artwork ? (
+          <div
+            className="mbti-type-artwork"
+            role="img"
+            aria-label={`${report.title}のイメージ：${artwork.description}`}
+            data-type={report.resultType}
+            style={{
+              backgroundImage: `url("${MBTI_ARTWORK_URL}")`,
+              backgroundPosition: artwork.position,
+            }}
+          />
+        ) : null}
       </div>
       <div className="mbti-report-actions">
         <button type="button" onClick={() => void saveImage()} disabled={saving}>
@@ -119,16 +148,22 @@ export function MbtiResultReport({
           </div>
         ))}
       </section>
-      {report.sections.map((section) => (
-        <section className="mbti-report-section" key={section.title}>
-          <h3>{section.title}</h3>
-          <ul>
-            {section.items.map((item) => (
-              <li key={item.axis}>{item.text}</li>
-            ))}
-          </ul>
-        </section>
-      ))}
+      {report.sections.map((section, index) => {
+        const Icon = SECTION_ICONS[index] ?? Sparkles;
+        return (
+          <section className="mbti-report-section" key={section.title}>
+            <h3>
+              <Icon aria-hidden="true" />
+              {section.title}
+            </h3>
+            <ul>
+              {section.items.map((item) => (
+                <li key={item.axis}>{item.text}</li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
       {roleNote ? <p className="mbti-report-note">{roleNote}</p> : null}
       <p className="mbti-report-disclaimer">{report.disclaimer}</p>
     </article>
