@@ -272,6 +272,29 @@ model MbtiQuestionAnswerEvent {
   @@map("mbti_question_answer_events")
 }
 
+// Discordのボタン操作ではなく、専用URL(idそのものをURLトークンとして使う)で
+// ブラウザからMBTI診断に回答するためのセッション。期限切れ・単発使用はstatus/expiresAtで
+// 読み取り時に判定する(専用cronは設けない)。
+model MbtiWebQuizSession {
+  id             String    @id @default(uuid())
+  guildId        String    @map("guild_id")
+  discordUserId  String    @map("discord_user_id")
+  status         String    @default("pending") // 'pending' | 'completed' | 'expired'
+  questionOrder  Json      @map("question_order") // selectMbtiQuestions()の結果を凍結保存
+  answers        Json      @default("[]")
+  scores         Json      @default("{}")
+  resultType     String?   @map("result_type")
+  resultIdentity String?   @map("result_identity") // 'A' | 'T'
+  completedAt    DateTime? @map("completed_at") @db.Timestamptz(3)
+  expiresAt      DateTime  @map("expires_at") @db.Timestamptz(3)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([guildId, discordUserId, status])
+  @@index([status, expiresAt])
+  @@map("mbti_web_quiz_sessions")
+}
+
 // ============================================================
 // Plugin System
 // ============================================================

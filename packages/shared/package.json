@@ -20,16 +20,27 @@
     "./plugin-runtime-events": {
       "types": "./src/plugin-runtime-events.ts",
       "default": "./dist/plugin-runtime-events.js"
+    },
+    "./mbti-core": {
+      "types": "./src/mbti-core.ts",
+      "default": "./dist/mbti-core.js"
+    },
+    "./mbti-ivrm-sync": {
+      "types": "./src/mbti-ivrm-sync.ts",
+      "default": "./dist/mbti-ivrm-sync.js"
     }
   },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "lint": "echo 'no lint configured'",
+    "test": "vitest run --passWithNoTests",
+    "test:unit": "vitest run",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.7"
   }
 }

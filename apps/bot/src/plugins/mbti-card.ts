@@ -6,7 +6,7 @@ import {
   computeMbtiAxisPercent,
   type MbtiAxis,
   type MbtiScores,
-} from './mbti-core.js';
+} from '@herta/shared/mbti-core';
 
 const CARD_WIDTH = 1200;
 const CARD_HEIGHT = 630;

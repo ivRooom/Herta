@@ -42,6 +42,11 @@ import {
   reconcileXpRewardRoles as reconcileXpRewardRolesForMember,
   type XpRewardRoleReconciliationResult,
 } from './plugins/xp-reward-roles.js';
+import { normalizeMbtiConfig } from './plugins/mbti.js';
+import {
+  reconcileMbtiRole as reconcileMbtiRoleForMember,
+  type MbtiRoleReconciliationResult,
+} from './plugins/mbti-roles.js';
 import { syncGuildCommands } from './plugins/sync.js';
 import type { SlashCommand } from './commands/registry.js';
 import { DiscordHealthTracker } from './health/discord-state.js';
@@ -1230,6 +1235,55 @@ export class HertaBot {
       'XP報酬Roleの再同期を完了しました',
     );
     return result;
+  }
+
+  /**
+   * ブラウザ(apps/studio)でMBTI診断を完了した場合のRole付与。StudioはBotトークンを
+   * 持たないため、内部API(health/server.tsの/internal/guilds/:guildId/mbti/role-reconciliation)
+   * 経由でこのメソッドが呼ばれる。Discordボタンでの回答(mbti.ts内のtryAssignMbtiRole)と
+   * 同じreconcileMbtiRole()を使い、Role付与の判定ロジック自体は重複させない。
+   */
+  async reconcileMbtiRoleForWebQuiz(
+    guildId: string,
+    discordUserId: string,
+    resultType: string,
+  ): Promise<MbtiRoleReconciliationResult | null> {
+    const rawConfig = await this.pluginLoader.getGuildPluginConfig(guildId, 'mbti');
+    if (!rawConfig) {
+      this.logger.debug(
+        { guildId, discordUserId },
+        'MBTI Pluginが無効なためWeb診断のRole付与をスキップします',
+      );
+      return null;
+    }
+
+    const guild = this.client.guilds.cache.get(guildId);
+    if (!guild) {
+      this.logger.warn(
+        { guildId, discordUserId },
+        'GuildがBot cacheにないためMBTI Web診断のRole付与をスキップします',
+      );
+      return null;
+    }
+
+    let member;
+    try {
+      member = await guild.members.fetch(discordUserId);
+    } catch (error) {
+      this.logger.warn(
+        { err: error, guildId, discordUserId },
+        '対象メンバーを取得できないためMBTI Web診断のRole付与をスキップします',
+      );
+      return null;
+    }
+
+    const config = normalizeMbtiConfig(rawConfig);
+    return reconcileMbtiRoleForMember({
+      member,
+      roleMap: config.mbtiRoles,
+      resultType,
+      logger: this.logger,
+    });
   }
 
   async reconcileGuildXpRewardRoles(event: XpRoleSweepEvent): Promise<void> {

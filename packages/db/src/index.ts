@@ -1,5 +1,6 @@
 export { PrismaClient } from '@prisma/client';
 export type * from '@prisma/client';
+export * from './achievement-unlocks.js';
 export * from './ai-generation-analytics.js';
 export * from './ai-user-model-preferences.js';
 export * from './birthday-card-assets.js';
@@ -16,6 +17,7 @@ export * from './community-user-activity-summary.js';
 export * from './community-user-game-breakdown.js';
 export * from './health-snapshots.js';
 export * from './mbti-stats-analytics.js';
+export * from './mbti-web-quiz-session.js';
 export * from './discord-role-operations.js';
 export * from './discord-role-references.js';
 export * from './studio-access-control.js';

@@ -1,6 +1,6 @@
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
-import { createEmptyMbtiScores } from './mbti-core.js';
+import { createEmptyMbtiScores } from '@herta/shared/mbti-core';
 import {
   buildMbtiQuestionCardSvg,
   buildMbtiResultCardSvg,

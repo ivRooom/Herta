@@ -308,3 +308,36 @@ export function computeMbtiAxisPercent(scores: MbtiScores, axis: MbtiAxis): numb
   const percent = 50 + (scores[axis] / maxScore) * 50;
   return Math.round(Math.min(100, Math.max(0, percent)));
 }
+
+export type MbtiLegacyAxis = 'EI' | 'SN' | 'TF' | 'JP';
+
+export interface MbtiSessionAnswer {
+  questionIndex: number;
+  axis: MbtiAxis;
+  answer: MbtiLikertAnswer;
+}
+
+export interface MbtiLegacyAnswer {
+  questionIndex: number;
+  axis: MbtiLegacyAxis;
+  answer: MbtiLikertAnswer;
+}
+
+const LEGACY_PERSISTABLE_AXES = new Set<MbtiAxis>(['EI', 'SN', 'TF', 'JP']);
+
+/**
+ * @herta/dbのMbtiQuizAnswerInputが受け付ける従来の4軸分の回答だけに絞り込む(AT軸は対象外)。
+ * @herta/dbの統計テーブルは5軸化せず4軸のまま維持する設計のため、Discord/Web両方の回答フローが
+ * ここを経由してから統計記録用の`recordMbtiQuizCompletion`へ渡す。
+ */
+export function toLegacyMbtiAnswers(answers: readonly MbtiSessionAnswer[]): MbtiLegacyAnswer[] {
+  return answers
+    .filter((entry): entry is MbtiSessionAnswer & { axis: MbtiLegacyAxis } =>
+      LEGACY_PERSISTABLE_AXES.has(entry.axis),
+    )
+    .map((entry) => ({
+      questionIndex: entry.questionIndex,
+      axis: entry.axis,
+      answer: entry.answer,
+    }));
+}

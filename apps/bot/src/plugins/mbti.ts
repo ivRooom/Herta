@@ -12,11 +12,10 @@ import {
   type GuildMember,
 } from 'discord.js';
 import type { PrismaClient } from '@herta/db';
-import { recordMbtiQuizCompletion, type MbtiQuizAnswerInput } from '@herta/db';
+import { createMbtiWebQuizSession, recordMbtiQuizCompletion } from '@herta/db';
 import type { Logger } from '@herta/logger';
 import { MBTI_TYPE_KEYS, mbtiManifest, mbtiRoleConfigKey } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler } from '@herta/plugin-sdk';
-import { syncAchievementUnlocks } from './achievements-repository.js';
 import {
   MBTI_AXES,
   MBTI_IDENTITY_INFO,
@@ -30,18 +29,19 @@ import {
   mbtiLikertLabel,
   mbtiLikertWeight,
   selectMbtiQuestions,
-  type MbtiAxis,
-  type MbtiLikertAnswer,
+  toLegacyMbtiAnswers,
   type MbtiQuestion,
   type MbtiScores,
-} from './mbti-core.js';
+  type MbtiSessionAnswer,
+} from '@herta/shared/mbti-core';
+import { pushMbtiResultToIvrmWeb, resolveMbtiIvrmSyncConfig } from '@herta/shared/mbti-ivrm-sync';
+import { syncAchievementUnlocks } from './achievements-repository.js';
 import {
   renderMbtiQuestionCard,
   renderMbtiResultCard,
   type MbtiQuestionCardInput,
 } from './mbti-card.js';
 import { reconcileMbtiRole } from './mbti-roles.js';
-import { pushMbtiResultToIvrmWeb, resolveMbtiIvrmSyncConfig } from './mbti-ivrm-sync.js';
 
 const PREFIX = 'herta:mbti:v1:';
 // 62問を5段階で回答するため、以前の12問2択より長時間を要する。1問あたりidleで
@@ -112,17 +112,6 @@ export interface MbtiCommandOptions {
   unlockCompletionAchievement: (userId: string) => Promise<string[]>;
 }
 
-/**
- * questionsのaxisは5軸(AT含む)だが、@herta/db側のMbtiQuizAnswerInputは従来の4軸のみを
- * 受け付ける(統計DBスキーマは今回拡張しない設計判断のため)。セッション中は5軸のまま保持し、
- * recordMbtiStatsへ渡す直前にtoLegacyMbtiAnswers()で4軸分のみへ絞り込む。
- */
-interface MbtiSessionAnswer {
-  questionIndex: number;
-  axis: MbtiAxis;
-  answer: MbtiLikertAnswer;
-}
-
 interface MbtiSession {
   id: string;
   guildId: string;
@@ -181,6 +170,11 @@ async function startMbtiQuiz(
     return;
   }
 
+  if (interaction.options.getString('method') === 'web') {
+    await startMbtiWebQuiz(interaction, options);
+    return;
+  }
+
   const questions = selectMbtiQuestions();
   const session: MbtiSession = {
     id: randomUUID().replaceAll('-', ''),
@@ -232,6 +226,44 @@ async function startMbtiQuiz(
         attachments: [],
       })
       .catch(() => undefined);
+  });
+}
+
+/**
+ * Discordのボタン操作の代わりに、ブラウザで回答できる専用URLを発行する。
+ * インメモリのMbtiSession・Collectorは作らず、DB上のMbtiWebQuizSessionへ委ねる
+ * (回答・結果計算・Role付与はapps/studio側のAPI routeとBotの内部APIが担う)。
+ */
+async function startMbtiWebQuiz(
+  interaction: ChatInputCommandInteraction,
+  options: MbtiCommandOptions,
+): Promise<void> {
+  const baseUrl = process.env['STUDIO_PUBLIC_BASE_URL']?.trim();
+  if (!baseUrl) {
+    await interaction.reply({
+      content:
+        'Webブラウザでの回答機能は現在利用できません。`/mbti` をオプション無しで実行し、Discord上で回答してください。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const questions = selectMbtiQuestions();
+  const { id, expiresAt } = await createMbtiWebQuizSession(options.prisma, {
+    guildId: interaction.guildId!,
+    discordUserId: interaction.user.id,
+    questions,
+  });
+
+  const url = `${baseUrl.replace(/\/+$/, '')}/mbti/${id}`;
+  const expiresInMinutes = Math.max(1, Math.round((expiresAt.getTime() - Date.now()) / 60_000));
+  await interaction.reply({
+    content: [
+      'こちらのリンクからブラウザでMBTI診断に回答できます。',
+      url,
+      `(有効期限: 約${expiresInMinutes}分、1回のみ使用できます)`,
+    ].join('\n'),
+    flags: MessageFlags.Ephemeral,
   });
 }
 
@@ -372,21 +404,6 @@ async function recordMbtiStats(
   } catch (error) {
     logger.warn({ err: error, guildId: session.guildId, type }, 'MBTI統計の記録に失敗しました');
   }
-}
-
-const LEGACY_PERSISTABLE_AXES = new Set<MbtiAxis>(['EI', 'SN', 'TF', 'JP']);
-
-/** @herta/dbのMbtiQuizAnswerInputが受け付ける従来の4軸分の回答だけに絞り込む(AT軸は対象外)。 */
-function toLegacyMbtiAnswers(answers: readonly MbtiSessionAnswer[]): MbtiQuizAnswerInput[] {
-  return answers
-    .filter((entry): entry is MbtiSessionAnswer & { axis: 'EI' | 'SN' | 'TF' | 'JP' } =>
-      LEGACY_PERSISTABLE_AXES.has(entry.axis),
-    )
-    .map((entry) => ({
-      questionIndex: entry.questionIndex,
-      axis: entry.axis,
-      answer: entry.answer,
-    }));
 }
 
 /**
