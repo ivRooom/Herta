@@ -813,7 +813,7 @@ function describeEventMetadata(row: {
   if (row.event === 'nickname_update') {
     const before = typeof metadata.before === 'string' ? metadata.before : '(なし)';
     const after = typeof metadata.after === 'string' ? metadata.after : '(なし)';
-    return ` — \`${before}\` → \`${after}\``;
+    return ` — \`${before}\` → \`${after}\`${targetSuffix}`;
   }
   if (row.event === 'role_add' || row.event === 'role_remove') {
     const roleId = typeof metadata.roleId === 'string' ? metadata.roleId : null;
@@ -844,6 +844,7 @@ function describeEventMetadata(row: {
     row.event === 'member_unban' ||
     row.event === 'member_timeout_add' ||
     row.event === 'member_timeout_remove' ||
+    row.event === 'member_leave' ||
     row.event === 'message_delete'
   ) {
     return targetSuffix;
