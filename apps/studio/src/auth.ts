@@ -124,20 +124,41 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       try {
         const guilds = await getManageableGuilds(accessToken);
-        await Promise.all(
-          guilds.map((guild) =>
-            prisma.auditLog.create({
-              data: {
-                guildId: guild.id,
-                actorId: discordId,
-                actorType: 'user',
-                event: 'studio_auth.sign_in',
-                severity: 'info',
-                metadata: { isNewUser: Boolean(isNewUser) },
-              },
-            }),
-          ),
+        if (guilds.length === 0) return;
+
+        // AuditLog.guildIdはGuildテーブルへの外部キーのため、Studioでまだ一度も
+        // 開かれていない(= Guild行がまだ無い)管理Guildについては書き込みをスキップする
+        // (このsignInフックでGuild行を新規作成する副作用は持たせない)。
+        const existingGuilds = await prisma.guild.findMany({
+          where: { id: { in: guilds.map((guild) => guild.id) } },
+          select: { id: true },
+        });
+        const existingGuildIds = new Set(existingGuilds.map((guild) => guild.id));
+
+        const results = await Promise.allSettled(
+          guilds
+            .filter((guild) => existingGuildIds.has(guild.id))
+            .map((guild) =>
+              prisma.auditLog.create({
+                data: {
+                  guildId: guild.id,
+                  actorId: discordId,
+                  actorType: 'user',
+                  event: 'studio_auth.sign_in',
+                  severity: 'info',
+                  metadata: { isNewUser: Boolean(isNewUser) },
+                },
+              }),
+            ),
         );
+        for (const result of results) {
+          if (result.status === 'rejected') {
+            console.error('Studioログインの監査ログ記録に失敗しました', {
+              discordId,
+              errorName: result.reason instanceof Error ? result.reason.name : 'UnknownError',
+            });
+          }
+        }
       } catch (error) {
         console.error('Studioログインの監査ログ記録に失敗しました', {
           discordId,

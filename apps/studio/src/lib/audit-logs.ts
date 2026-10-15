@@ -1,5 +1,9 @@
 import type { Prisma, PrismaClient } from '@herta/db';
-import { searchCommandExecutionEvents, searchMemberActivityEvents } from '@herta/db';
+import {
+  MAX_ANALYTICS_DAYS,
+  searchCommandExecutionEvents,
+  searchMemberActivityEvents,
+} from '@herta/db';
 import {
   DEFAULT_PLUGIN_RUNTIME_CONSUMER,
   isPluginRuntimeConsumer,
@@ -617,10 +621,21 @@ async function listDiscordActivityFeed(
   guildId: string,
   query: AuditLogQuery,
 ): Promise<AuditLogResult> {
+  // discord_activityの各行はcategory='other'・severity='info'固定のため、他の値が
+  // 指定されていれば問い合わせずに空結果を返す(選択していないカテゴリ/重要度の行が
+  // 一覧に混ざって表示されるのを防ぐ)。
+  if (
+    (query.category !== 'all' && query.category !== 'other') ||
+    (query.severity !== 'all' && query.severity !== 'info')
+  ) {
+    return emptyActivityResult(query);
+  }
+
   const { items: rows, total } = await searchMemberActivityEvents(prisma, {
     guildId,
     from: query.from,
     toExclusive: query.toExclusive,
+    query: query.search || null,
     page: query.page,
     pageSize: query.pageSize,
   });
@@ -660,9 +675,24 @@ async function listCommandUsageFeed(
   guildId: string,
   query: AuditLogQuery,
 ): Promise<AuditLogResult> {
+  // command_usageの各行はcategory='other'固定。severityはstatusから'info'(success)/
+  // 'warning'(failure)にしか決まらないため、severity='all'以外ならstatusへ変換して渡し、
+  // error/critical(該当し得ない値)が指定された場合は問い合わせずに空結果を返す。
+  if (query.category !== 'all' && query.category !== 'other') {
+    return emptyActivityResult(query);
+  }
+  const status =
+    query.severity === 'info' ? 'success' : query.severity === 'warning' ? 'failure' : undefined;
+  if (query.severity !== 'all' && status === undefined) {
+    return emptyActivityResult(query);
+  }
+
   const result = await searchCommandExecutionEvents(prisma, {
     guildId,
+    query: query.search || null,
+    status,
     rangeDays: resolveCommandUsageRangeDays(query),
+    toExclusive: query.toExclusive,
     page: query.page,
     pageSize: query.pageSize,
   });
@@ -701,10 +731,27 @@ async function listCommandUsageFeed(
  * CommandExecutionEventのrangeDays(日数ベース)と、AuditLog等が使うfrom/toExclusiveの
  * 日付範囲フィルタの橋渡し。fromが指定されていれば現在日時との差分日数へ変換する。
  */
-function resolveCommandUsageRangeDays(query: AuditLogQuery): number | undefined {
-  if (!query.from) return undefined;
+/**
+ * CommandExecutionEventのrangeDays(現在時刻からの日数)と、AuditLog等が使うfrom/toExclusive
+ * (絶対日付)の橋渡し。fromが指定されていれば現在日時との差分日数へ変換する。fromが無い場合は
+ * searchCommandExecutionEvents自身の既定値(直近7日、Analytics集計向けの値)ではなく、
+ * 保持期間いっぱい(MAX_ANALYTICS_DAYS)を指定し、古い記録を黙って隠さないようにする。
+ */
+function emptyActivityResult(query: AuditLogQuery): AuditLogResult {
+  return {
+    items: [],
+    total: 0,
+    page: query.page,
+    pageSize: query.pageSize,
+    totalPages: 1,
+    isUnifiedPreview: false,
+  };
+}
+
+function resolveCommandUsageRangeDays(query: AuditLogQuery): number {
+  if (!query.from) return MAX_ANALYTICS_DAYS;
   const diffMs = Date.now() - query.from.getTime();
-  return Math.max(1, Math.ceil(diffMs / (24 * 60 * 60 * 1000)));
+  return Math.min(MAX_ANALYTICS_DAYS, Math.max(1, Math.ceil(diffMs / (24 * 60 * 60 * 1000))));
 }
 
 async function resolveUserLabels(

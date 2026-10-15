@@ -76,6 +76,8 @@ export interface CommandExecutionSearchFilters {
   guildId?: string | null;
   allowedGuildIds?: readonly string[];
   rangeDays?: number;
+  /** 指定時は`executedAt < toExclusive`も条件へ加える(省略時は上限なし)。 */
+  toExclusive?: Date | null;
   page?: number;
   pageSize?: number;
   now?: Date;
@@ -139,7 +141,8 @@ interface FailureRow {
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_ANALYTICS_DAYS = 7;
-const MAX_ANALYTICS_DAYS = 90;
+/** searchCommandExecutionEvents等のrangeDaysに指定できる最大日数(保持期間と同じ)。 */
+export const MAX_ANALYTICS_DAYS = 90;
 const MAX_COMMAND_NAME_LENGTH = 100;
 const MAX_GUILD_ID_LENGTH = 64;
 const MAX_USER_ID_LENGTH = 64;
@@ -449,7 +452,7 @@ export async function searchCommandExecutionEvents(
   const pageSize = normalizeSearchPageSize(filters.pageSize);
 
   const where: Prisma.CommandExecutionEventWhereInput = {
-    executedAt: { gte: rangeStart },
+    executedAt: { gte: rangeStart, ...(filters.toExclusive ? { lt: filters.toExclusive } : {}) },
     ...(status ? { status } : {}),
     ...(guildId ? { guildId } : {}),
     ...(allowedGuildIds ? { AND: [{ guildId: { in: allowedGuildIds } }] } : {}),

@@ -19,9 +19,13 @@ export interface MemberActivityFeedFilters {
   guildId: string;
   from?: Date | null;
   toExclusive?: Date | null;
+  /** event種別・userId・channelId・messageIdに対する部分一致検索(大小無視)。 */
+  query?: string | null;
   page?: number;
   pageSize?: number;
 }
+
+const MAX_QUERY_LENGTH = 100;
 
 export interface MemberActivityFeedResult {
   items: MemberActivityFeedItem[];
@@ -50,9 +54,21 @@ export async function searchMemberActivityEvents(
   if (filters.from) occurredAt.gte = filters.from;
   if (filters.toExclusive) occurredAt.lt = filters.toExclusive;
 
+  const query = filters.query?.trim().slice(0, MAX_QUERY_LENGTH) || null;
+
   const where: Prisma.MemberActivityEventWhereInput = {
     guildId: filters.guildId,
     ...(filters.from || filters.toExclusive ? { occurredAt } : {}),
+    ...(query
+      ? {
+          OR: [
+            { event: { contains: query, mode: 'insensitive' } },
+            { userId: { contains: query, mode: 'insensitive' } },
+            { channelId: { contains: query, mode: 'insensitive' } },
+            { messageId: { contains: query, mode: 'insensitive' } },
+          ],
+        }
+      : {}),
   };
 
   const [total, rows] = await Promise.all([
