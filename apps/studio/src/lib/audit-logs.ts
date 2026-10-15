@@ -645,23 +645,41 @@ async function listDiscordActivityFeed(
   const totalPages = Math.max(1, Math.ceil(total / query.pageSize));
 
   return {
-    items: rows.map((row) => ({
-      id: row.id,
-      event: row.event,
-      eventLabel: discordActivityEventLabel(row.event),
-      summary: discordActivitySummary(row.event, row.metadata),
-      category: 'other',
-      severity: 'info',
-      activitySource: 'discord_activity',
-      actorId: row.userId ?? '',
-      actorType: 'user',
-      actorLabel: row.userId ? (actorLabelById.get(row.userId) ?? 'Discordユーザー') : '不明',
-      targetType: row.channelId ? 'channel' : null,
-      targetId: row.channelId,
-      targetLabel: row.channelId ? `#${row.channelId}` : '対象情報なし',
-      sourceLabel: null,
-      createdAt: row.occurredAt,
-    })),
+    items: rows.map((row) => {
+      // role_add/role_removeのuserIdは「Roleを変更された対象メンバー」であり、実行者
+      // ではない(activity-log.tsのhandleGuildMemberUpdateは実行者をAudit Logから
+      // 特定していないため、実行者情報自体を保持していない)。対象として表示し、
+      // 実行者は不明として扱う(実際より実行者として誤表示しない方を優先する)。
+      const isMemberTargetEvent = row.event === 'role_add' || row.event === 'role_remove';
+
+      return {
+        id: row.id,
+        event: row.event,
+        eventLabel: discordActivityEventLabel(row.event),
+        summary: discordActivitySummary(row.event, row.metadata),
+        category: 'other',
+        severity: 'info',
+        activitySource: 'discord_activity',
+        actorId: isMemberTargetEvent ? '' : (row.userId ?? ''),
+        actorType: 'user',
+        actorLabel: isMemberTargetEvent
+          ? '不明'
+          : row.userId
+            ? (actorLabelById.get(row.userId) ?? 'Discordユーザー')
+            : '不明',
+        targetType: isMemberTargetEvent ? 'member' : row.channelId ? 'channel' : null,
+        targetId: isMemberTargetEvent ? row.userId : row.channelId,
+        targetLabel: isMemberTargetEvent
+          ? row.userId
+            ? (actorLabelById.get(row.userId) ?? 'Discordユーザー')
+            : '対象情報なし'
+          : row.channelId
+            ? `#${row.channelId}`
+            : '対象情報なし',
+        sourceLabel: null,
+        createdAt: row.occurredAt,
+      };
+    }),
     total,
     page: query.page,
     pageSize: query.pageSize,
@@ -687,15 +705,16 @@ async function listCommandUsageFeed(
     return emptyActivityResult(query);
   }
 
+  // fromが指定されていればそのまま使う。無指定時はAnalytics集計向けの既定値(直近7日)
+  // ではなく、pruneCommandExecutionEventsと同じ厳密なローリング90日カットオフを使う
+  // (rangeDaysはJST日の0時境界で丸めるため、pruneの「now - 90日」とは最大1日ずれる)。
+  const from = query.from ?? new Date(Date.now() - MAX_ANALYTICS_DAYS * DAY_MS);
+
   const result = await searchCommandExecutionEvents(prisma, {
     guildId,
     query: query.search || null,
     status,
-    // fromが指定されていれば厳密な時刻をそのまま使う(rangeDaysへの近似だとfromが未来の
-    // 場合に今日の記録まで含めてしまう誤差が出るため)。fromが無い場合のみ、Analytics
-    // 集計向けの既定値(直近7日)ではなく保持期間いっぱい(90日)をrangeDaysとして使う。
-    from: query.from,
-    rangeDays: query.from ? undefined : MAX_ANALYTICS_DAYS,
+    from,
     toExclusive: query.toExclusive,
     page: query.page,
     pageSize: query.pageSize,
