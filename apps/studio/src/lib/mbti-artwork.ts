@@ -1,5 +1,5 @@
-/** Reference-inspired 4×4 chibi Herta atlas. Keep tile order stable for both screen and PNG export. */
-export const MBTI_ARTWORK_URL = '/mbti/herta-personalities-v2.webp';
+/** Hand-drawn 4×4 chibi Herta atlas; polished v2 remains available as a candidate. Keep tile order stable for both screen and PNG export. */
+export const MBTI_ARTWORK_URL = '/mbti/herta-doodles-v3.webp';
 const TYPES = [
   'INTJ',
   'INTP',

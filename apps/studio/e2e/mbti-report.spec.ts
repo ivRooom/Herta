@@ -104,7 +104,7 @@ test('all 16 types use distinct artwork and reduced motion is respected', async 
 });
 
 test('PNG export still succeeds when illustration is unavailable', async ({ page }) => {
-  await page.route('**/mbti/herta-personalities-v2.webp', (route) => route.abort());
+  await page.route('**/mbti/herta-doodles-v3.webp', (route) => route.abort());
   await page.goto(reportUrl);
   const downloaded = page.waitForEvent('download');
   await page.getByRole('button', { name: '画像で保存', exact: true }).click();
@@ -112,4 +112,24 @@ test('PNG export still succeeds when illustration is unavailable', async ({ page
   expect(await file.failure()).toBeNull();
   const bytes = await readFile((await file.path())!);
   expect(bytes.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
+});
+
+test('report motion runs once on entry and remains readable with reduced motion', async ({
+  page,
+}) => {
+  await page.goto(reportUrl);
+  const section = page.locator('.mbti-report-section').last();
+  await section.scrollIntoViewIfNeeded();
+  await expect(section).toHaveClass(/mbti-in-view/);
+  await expect(section).toHaveCSS('animation-name', 'mbti-section-enter');
+  const axes = page.locator('.mbti-report-section').first();
+  await axes.scrollIntoViewIfNeeded();
+  await expect(axes.locator('.mbti-axis-track > span').first()).toHaveCSS(
+    'animation-name',
+    'mbti-axis-fill',
+  );
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect(section).toHaveCSS('animation-name', 'none');
+  await expect(axes.locator('.mbti-axis-track > span').first()).toHaveCSS('transform', 'none');
+  await expect(page.locator('.mbti-art-spark').first()).toHaveCSS('animation-name', 'none');
 });

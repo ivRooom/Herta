@@ -47,6 +47,16 @@ Appending an answer uses an atomic previous-answer snapshot and expiry guard, pr
 
 ## Personality artwork
 
-The report hero and exported PNG use the same reference-inspired chibi Herta illustration atlas at `apps/studio/public/mbti/herta-personalities-v2.webp`. It contains 16 chibi Herta poses with distinct expressions and personality props in a stable 4×4 order defined in `apps/studio/src/lib/mbti-artwork.ts`. Each type has its own descriptive alternative text and one of four accent palettes. The purple/lavender anime sticker treatment follows the supplied Herta reference. The imagery is decorative interpretation, not additional assessment data. A/T variants share their four-letter type artwork.
+The report hero and exported PNG use the same reference-inspired chibi Herta illustration doodle atlas at `apps/studio/public/mbti/herta-doodles-v3.webp`. It contains 16 chibi Herta poses with distinct expressions and personality props in a stable 4×4 order defined in `apps/studio/src/lib/mbti-artwork.ts`. Each type has its own descriptive alternative text and one of four accent palettes. The purple/lavender hand-drawn treatment follows the supplied Herta reference. The imagery is decorative interpretation, not additional assessment data. A/T variants share their four-letter type artwork.
 
-The single WebP is approximately 350KB, served from the existing app with no image-generation API at runtime or new infrastructure. The exported PNG loads it from the same origin with a bounded timeout; if unavailable, the complete text report can still be saved. Gentle motion respects reduced-motion preferences. Illustration pixels, all 16 tile mappings, export fallback and responsive behavior are covered by browser checks.
+The single WebP is approximately 399KB, served from the existing app with no image-generation API at runtime or new infrastructure. The exported PNG loads it from the same origin with a bounded timeout; if unavailable, the complete text report can still be saved. Gentle motion respects reduced-motion preferences. Illustration pixels, all 16 tile mappings, export fallback and responsive behavior are covered by browser checks.
+
+## 落書き風画像とアニメーション（v3）
+
+既定画像は `apps/studio/public/mbti/herta-doodles-v3.webp`。16タイプの順序・小道具を維持し、ラフな線と色鉛筆風の質感を加えた。画面とPNGは同じアトラスを使う。
+
+前の候補画像 `apps/studio/public/mbti/herta-personalities-v2.webp` は上書きせず保存している（SHA256: `BA04A2147B8C6FE144B1223436A29BC537F5775A4BFF1BC21FF0DEC792F36CC2`）。戻す場合は `mbti-artwork.ts` の `MBTI_ARTWORK_URL` をv2へ戻し、E2Eの画像失敗テストの対象URLも合わせる。
+
+Image Gen組み込みツールによる編集。プロンプト要旨: 4×4配置と16ポーズ、Hertaの髪・帽子・衣装を維持し、ゆるい鉛筆線、淡い紫とピンクのマーカー、星やハートの落書きへ変換。文字なし、背景#101620、タイル間の余白を維持。
+
+結果の登場、キャラクターのホバー、装飾、スクロール時のセクションとバーにCSSアニメーションを使う。IntersectionObserverは一度だけ発火し、解除する。JSやObserverがなくても本文は常に読める。`prefers-reduced-motion: reduce` では全て停止し、バーは最終値を表示する。
