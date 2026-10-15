@@ -30,8 +30,6 @@ import {
   mbtiLikertWeight,
   selectMbtiQuestions,
   toLegacyMbtiAnswers,
-  type MbtiAxis,
-  type MbtiLikertAnswer,
   type MbtiQuestion,
   type MbtiScores,
   type MbtiSessionAnswer,

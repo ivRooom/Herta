@@ -330,9 +330,7 @@ const LEGACY_PERSISTABLE_AXES = new Set<MbtiAxis>(['EI', 'SN', 'TF', 'JP']);
  * @herta/dbの統計テーブルは5軸化せず4軸のまま維持する設計のため、Discord/Web両方の回答フローが
  * ここを経由してから統計記録用の`recordMbtiQuizCompletion`へ渡す。
  */
-export function toLegacyMbtiAnswers(
-  answers: readonly MbtiSessionAnswer[],
-): MbtiLegacyAnswer[] {
+export function toLegacyMbtiAnswers(answers: readonly MbtiSessionAnswer[]): MbtiLegacyAnswer[] {
   return answers
     .filter((entry): entry is MbtiSessionAnswer & { axis: MbtiLegacyAxis } =>
       LEGACY_PERSISTABLE_AXES.has(entry.axis),
