@@ -12,7 +12,7 @@ import {
   type GuildMember,
 } from 'discord.js';
 import type { PrismaClient } from '@herta/db';
-import { recordMbtiQuizCompletion } from '@herta/db';
+import { createMbtiWebQuizSession, recordMbtiQuizCompletion } from '@herta/db';
 import type { Logger } from '@herta/logger';
 import { MBTI_TYPE_KEYS, mbtiManifest, mbtiRoleConfigKey } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler } from '@herta/plugin-sdk';
@@ -170,6 +170,11 @@ async function startMbtiQuiz(
     return;
   }
 
+  if (interaction.options.getString('method') === 'web') {
+    await startMbtiWebQuiz(interaction, options);
+    return;
+  }
+
   const questions = selectMbtiQuestions();
   const session: MbtiSession = {
     id: randomUUID().replaceAll('-', ''),
@@ -221,6 +226,44 @@ async function startMbtiQuiz(
         attachments: [],
       })
       .catch(() => undefined);
+  });
+}
+
+/**
+ * Discordのボタン操作の代わりに、ブラウザで回答できる専用URLを発行する。
+ * インメモリのMbtiSession・Collectorは作らず、DB上のMbtiWebQuizSessionへ委ねる
+ * (回答・結果計算・Role付与はapps/studio側のAPI routeとBotの内部APIが担う)。
+ */
+async function startMbtiWebQuiz(
+  interaction: ChatInputCommandInteraction,
+  options: MbtiCommandOptions,
+): Promise<void> {
+  const baseUrl = process.env['STUDIO_PUBLIC_BASE_URL']?.trim();
+  if (!baseUrl) {
+    await interaction.reply({
+      content:
+        'Webブラウザでの回答機能は現在利用できません。`/mbti` をオプション無しで実行し、Discord上で回答してください。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+
+  const questions = selectMbtiQuestions();
+  const { id, expiresAt } = await createMbtiWebQuizSession(options.prisma, {
+    guildId: interaction.guildId!,
+    discordUserId: interaction.user.id,
+    questions,
+  });
+
+  const url = `${baseUrl.replace(/\/+$/, '')}/mbti/${id}`;
+  const expiresInMinutes = Math.max(1, Math.round((expiresAt.getTime() - Date.now()) / 60_000));
+  await interaction.reply({
+    content: [
+      'こちらのリンクからブラウザでMBTI診断に回答できます。',
+      url,
+      `(有効期限: 約${expiresInMinutes}分、1回のみ使用できます)`,
+    ].join('\n'),
+    flags: MessageFlags.Ephemeral,
   });
 }
 

@@ -88,6 +88,8 @@ const healthServer = healthConfig.enabled
       searchGuildMembers: (guildId, query, limit) => bot.searchGuildMembers(guildId, query, limit),
       getGuildBotProfile: (guildId) => bot.getGuildBotProfile(guildId),
       updateGuildBotProfile: (guildId, input) => bot.updateGuildBotProfile(guildId, input),
+      reconcileMbtiRole: (guildId, input) =>
+        bot.reconcileMbtiRoleForWebQuiz(guildId, input.discordUserId, input.resultType),
       internalApiSecret: process.env['BOT_INTERNAL_API_SECRET']?.trim(),
     })
   : undefined;

@@ -76,6 +76,17 @@ export const mbtiManifest: PluginManifest = {
     {
       name: 'mbti',
       description: '62問の5段階評価に答えてMBTI風の性格診断を行います',
+      options: [
+        {
+          name: 'method',
+          description: '回答方法を選択します(既定: Discord上で回答)',
+          type: 'string',
+          choices: [
+            { name: 'Discord上で回答', value: 'discord' },
+            { name: 'Webブラウザで回答', value: 'web' },
+          ],
+        },
+      ],
     },
   ],
 };

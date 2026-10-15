@@ -21,6 +21,8 @@ import {
   parseGuildRoleCreateInput,
 } from './guild-role-mutations.js';
 import { isAuthorizedInternalApiRequest, isConfiguredInternalApiSecret } from './internal-auth.js';
+import { parseMbtiRoleReconciliationInput } from './mbti-role-reconciliation-input.js';
+import type { MbtiRoleReconciliationResult } from '../plugins/mbti-roles.js';
 import {
   GuildMessageStudioSendError,
   parseGuildMessageStudioSendInput,
@@ -45,6 +47,10 @@ export interface HealthHttpServerOptions {
     guildId: string,
     input: GuildBotProfileUpdate,
   ) => Promise<GuildBotProfile | null>;
+  reconcileMbtiRole?: (
+    guildId: string,
+    input: { discordUserId: string; resultType: string },
+  ) => Promise<MbtiRoleReconciliationResult | null>;
   internalApiSecret?: string;
   now?: () => Date;
   uptimeSeconds?: () => number;
@@ -227,6 +233,18 @@ export class HealthHttpServer {
     const guildBotProfileMatch = /^\/internal\/guilds\/(\d+)\/bot-profile$/u.exec(pathname);
     if (guildBotProfileMatch) {
       await this.handleGuildBotProfileRequest(request, response, method, guildBotProfileMatch[1]!);
+      return;
+    }
+
+    const mbtiRoleReconciliationMatch =
+      /^\/internal\/guilds\/(\d+)\/mbti\/role-reconciliation$/u.exec(pathname);
+    if (mbtiRoleReconciliationMatch) {
+      await this.handleMbtiRoleReconciliationRequest(
+        request,
+        response,
+        method,
+        mbtiRoleReconciliationMatch[1]!,
+      );
       return;
     }
 
@@ -671,6 +689,65 @@ export class HealthHttpServer {
 
     response.setHeader('Allow', 'GET, PATCH');
     this.sendJson(response, 405, { status: 'method_not_allowed' });
+  }
+
+  private async handleMbtiRoleReconciliationRequest(
+    request: IncomingMessage,
+    response: import('node:http').ServerResponse,
+    method: string,
+    guildId: string,
+  ): Promise<void> {
+    const internalApiSecret = this.options.internalApiSecret;
+    if (!isConfiguredInternalApiSecret(internalApiSecret)) {
+      this.sendJson(response, 503, { status: 'internal_api_not_configured' });
+      return;
+    }
+    if (!isAuthorizedInternalApiRequest(request.headers.authorization, internalApiSecret)) {
+      this.sendJson(response, 401, { status: 'unauthorized' });
+      return;
+    }
+    if (method !== 'PATCH') {
+      response.setHeader('Allow', 'PATCH');
+      this.sendJson(response, 405, { status: 'method_not_allowed' });
+      return;
+    }
+    if (!this.options.reconcileMbtiRole) {
+      this.sendJson(response, 404, { status: 'not_found' });
+      return;
+    }
+
+    let rawBody: unknown;
+    try {
+      rawBody = await readJsonBody(request, MAX_INTERNAL_JSON_BODY_BYTES);
+    } catch (error) {
+      if (error instanceof RequestBodyTooLargeError) {
+        this.sendJson(response, 413, { status: 'payload_too_large' });
+        return;
+      }
+      this.sendJson(response, 400, { status: 'invalid_json' });
+      return;
+    }
+
+    const input = parseMbtiRoleReconciliationInput(rawBody);
+    if (!input) {
+      this.sendJson(response, 400, { status: 'invalid_reconciliation_input' });
+      return;
+    }
+
+    try {
+      const result = await this.options.reconcileMbtiRole(guildId, input);
+      if (!result) {
+        this.sendJson(response, 404, { status: 'guild_or_member_not_found' });
+        return;
+      }
+      this.sendJson(response, 200, { result });
+    } catch (error) {
+      this.options.logger.warn(
+        { err: error, guildId },
+        'MBTI Web診断のRole付与(内部API)に失敗しました',
+      );
+      this.sendJson(response, 503, { status: 'unavailable' });
+    }
   }
 
   private sendJson(
