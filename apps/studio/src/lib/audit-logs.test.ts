@@ -312,6 +312,17 @@ test('MCPツール呼び出しはmcpカテゴリへ分類され、outcomeに応�
   assert.match(rateLimited.summary, /利用上限に達した/u);
 });
 
+test('Studioログインはloginカテゴリへ分類され、初回ログインかどうかで要約が変わる', () => {
+  const firstLogin = describeAuditEvent('studio_auth.sign_in', null, null, { isNewUser: true });
+  const repeatLogin = describeAuditEvent('studio_auth.sign_in', null, null, { isNewUser: false });
+
+  assert.equal(firstLogin.category, 'login');
+  assert.equal(firstLogin.eventLabel, 'Studioログイン');
+  assert.match(firstLogin.summary, /初めて/u);
+  assert.equal(repeatLogin.category, 'login');
+  assert.doesNotMatch(repeatLogin.summary, /初めて/u);
+});
+
 test('未知イベントも生データを展開せず表示できる', () => {
   const presentation = describeAuditEvent('custom.operation', 'custom', 'target-1', {
     password: 'do-not-render',

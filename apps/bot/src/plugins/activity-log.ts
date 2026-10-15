@@ -4,10 +4,12 @@ import {
   MessageFlags,
   PermissionFlagsBits,
   type ChatInputCommandInteraction,
+  type DMChannel,
   type Guild,
   type GuildEmoji,
   type GuildMember,
   type Message,
+  type NonThreadGuildBasedChannel,
   type PartialGuildMember,
   type PartialMessage,
   type User,
@@ -154,8 +156,8 @@ async function maybeSendBurstAlert(
   }
 }
 
-/** Audit Logからemoji操作の実行者を割引きで特定する(View Audit Log権限が無い・未確定の場合はnull)。 */
-async function resolveEmojiActorId(
+/** Audit Logから操作の実行者を割引きで特定する(View Audit Log権限が無い・未確定の場合はnull)。 */
+async function resolveAuditLogActorId(
   guild: Guild,
   auditLogEvent: AuditLogEvent,
   targetId: string,
@@ -345,7 +347,7 @@ async function handleEmojiEvent(
   const config = normalizeActivityLogConfig(context.config);
   if (!config.enabled || !config.trackEmoji || !emoji.guild) return;
 
-  const actorId = await resolveEmojiActorId(emoji.guild, auditLogEvent, emoji.id);
+  const actorId = await resolveAuditLogActorId(emoji.guild, auditLogEvent, emoji.id);
   await record(context, {
     guildId: context.guildId,
     userId: actorId,
@@ -356,6 +358,27 @@ async function handleEmojiEvent(
   if (actorId) {
     await incrementCommunityActivity(context.prisma, context.guildId, actorId, 'emoji_actions', 1);
   }
+}
+
+async function handleChannelEvent(
+  context: ActivityLogRuntimeContext,
+  event: 'channel_create' | 'channel_delete',
+  auditLogEvent: AuditLogEvent,
+  channel: DMChannel | NonThreadGuildBasedChannel,
+): Promise<void> {
+  if (!('guild' in channel) || !channel.guild) return;
+  const config = normalizeActivityLogConfig(context.config);
+  if (!config.enabled || !config.trackProfile) return;
+  if (isExcludedChannel(config, channel.id)) return;
+
+  const actorId = await resolveAuditLogActorId(channel.guild, auditLogEvent, channel.id);
+  await record(context, {
+    guildId: context.guildId,
+    userId: actorId,
+    event,
+    channelId: channel.id,
+    metadata: { channelName: channel.name, channelType: channel.type },
+  });
 }
 
 async function handleGuildMemberUpdate(
@@ -463,6 +486,8 @@ export const MEMBER_ACTIVITY_EVENT_LABELS: Record<MemberActivityEventType, strin
   role_remove: 'ロール剥奪',
   guild_icon_update: 'サーバーアイコン変更',
   guild_banner_update: 'サーバーバナー変更',
+  channel_create: 'チャンネル作成',
+  channel_delete: 'チャンネル削除',
 };
 
 function describeEventMetadata(row: {
@@ -484,6 +509,9 @@ function describeEventMetadata(row: {
     return typeof metadata.scope === 'string'
       ? ` — (${metadata.scope === 'global' ? 'グローバル' : 'サーバー個別'})`
       : '';
+  }
+  if (row.event === 'channel_create' || row.event === 'channel_delete') {
+    return typeof metadata.channelName === 'string' ? ` — \`#${metadata.channelName}\`` : '';
   }
   return '';
 }
@@ -648,6 +676,28 @@ export const activityLogPlugin = definePlugin<ActivityLogConfig, unknown, Prisma
         event: 'guildUpdate',
         async handler(_ctx, ...args) {
           await handleGuildUpdate(context, args[0] as Guild, args[1] as Guild);
+        },
+      },
+      {
+        event: 'channelCreate',
+        async handler(_ctx, ...args) {
+          await handleChannelEvent(
+            context,
+            'channel_create',
+            AuditLogEvent.ChannelCreate,
+            args[0] as NonThreadGuildBasedChannel,
+          );
+        },
+      },
+      {
+        event: 'channelDelete',
+        async handler(_ctx, ...args) {
+          await handleChannelEvent(
+            context,
+            'channel_delete',
+            AuditLogEvent.ChannelDelete,
+            args[0] as DMChannel | NonThreadGuildBasedChannel,
+          );
         },
       },
     ];

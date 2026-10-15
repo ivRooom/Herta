@@ -180,6 +180,8 @@ export const activityLogManifest: PluginManifest = {
             { name: 'ロール剥奪', value: 'role_remove' },
             { name: 'サーバーアイコン変更', value: 'guild_icon_update' },
             { name: 'サーバーバナー変更', value: 'guild_banner_update' },
+            { name: 'チャンネル作成', value: 'channel_create' },
+            { name: 'チャンネル削除', value: 'channel_delete' },
           ],
         },
         {

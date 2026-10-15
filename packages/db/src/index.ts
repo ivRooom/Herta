@@ -16,6 +16,7 @@ export * from './community-season-snapshot.js';
 export * from './community-user-activity-summary.js';
 export * from './community-user-game-breakdown.js';
 export * from './health-snapshots.js';
+export * from './member-activity-feed.js';
 export * from './mbti-stats-analytics.js';
 export * from './mbti-web-quiz-session.js';
 export * from './discord-role-operations.js';

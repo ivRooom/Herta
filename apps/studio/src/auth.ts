@@ -1,7 +1,9 @@
 import NextAuth from 'next-auth';
 import type { JWT } from 'next-auth/jwt';
 import { authConfig, SESSION_MAX_AGE_SECONDS } from '@/auth.config';
+import { prisma } from '@/lib/db';
 import { DISCORD_API_BASE } from '@/lib/discord';
+import { getManageableGuilds } from '@/lib/guilds';
 import { upsertUserFromDiscord } from '@/lib/users';
 
 const SESSION_MAX_AGE_MS = SESSION_MAX_AGE_SECONDS * 1000;
@@ -73,7 +75,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // Cookieのmax-ageを延長するため、このフィールドだけが絶対期限の基準になる。
         token.loginAt = Date.now();
 
-        await upsertUserFromDiscord({
+        const { wasNewUser } = await upsertUserFromDiscord({
           id: p.id,
           username: p.global_name ?? p.username ?? 'unknown',
           discriminator: p.discriminator ?? null,
@@ -81,6 +83,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           email: p.email ?? null,
           locale: p.locale ?? null,
         });
+
+        if (account.access_token) {
+          await recordStudioSignInAuditLogs(p.id, account.access_token, wasNewUser);
+        }
 
         return token;
       }
@@ -108,3 +114,64 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     },
   },
 });
+
+/**
+ * Studioへのログインを、管理しているGuildそれぞれの監査ログへ記録する。
+ * ログイン自体はGuildに紐付かない操作だが、AuditLog.guildIdは必須かつ
+ * 監査ログ画面もGuild単位の表示のため、「このGuildの管理者がいつログインしたか」
+ * という形でそのGuildの監査ログへ残す(管理者は通常1〜数Guildのみ管理するため
+ * 書き込み件数は少ない)。失敗してもログイン自体はブロックしない。
+ *
+ * NextAuthのevents.signInが渡す`isNewUser`はadapterを使わない構成では常にfalseになる
+ * ため使えない。jwtコールバックでの`upsertUserFromDiscord`実行結果(wasNewUser、
+ * upsert前にDBへ存在したかどうか)をそのまま受け取る。
+ */
+async function recordStudioSignInAuditLogs(
+  discordId: string,
+  accessToken: string,
+  wasNewUser: boolean,
+): Promise<void> {
+  try {
+    const guilds = await getManageableGuilds(accessToken);
+    if (guilds.length === 0) return;
+
+    // AuditLog.guildIdはGuildテーブルへの外部キーのため、Studioでまだ一度も
+    // 開かれていない(= Guild行がまだ無い)管理Guildについては書き込みをスキップする
+    // (このフックでGuild行を新規作成する副作用は持たせない)。
+    const existingGuilds = await prisma.guild.findMany({
+      where: { id: { in: guilds.map((guild) => guild.id) } },
+      select: { id: true },
+    });
+    const existingGuildIds = new Set(existingGuilds.map((guild) => guild.id));
+
+    const results = await Promise.allSettled(
+      guilds
+        .filter((guild) => existingGuildIds.has(guild.id))
+        .map((guild) =>
+          prisma.auditLog.create({
+            data: {
+              guildId: guild.id,
+              actorId: discordId,
+              actorType: 'user',
+              event: 'studio_auth.sign_in',
+              severity: 'info',
+              metadata: { isNewUser: wasNewUser },
+            },
+          }),
+        ),
+    );
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        console.error('Studioログインの監査ログ記録に失敗しました', {
+          discordId,
+          errorName: result.reason instanceof Error ? result.reason.name : 'UnknownError',
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Studioログインの監査ログ記録に失敗しました', {
+      discordId,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
+  }
+}

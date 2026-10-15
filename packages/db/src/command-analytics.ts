@@ -76,6 +76,14 @@ export interface CommandExecutionSearchFilters {
   guildId?: string | null;
   allowedGuildIds?: readonly string[];
   rangeDays?: number;
+  /**
+   * 指定時はrangeDaysによる近似(JST日単位への丸め)ではなく、この厳密な時刻を
+   * `executedAt >= from`として使う(fromが未来の場合に今日の記録まで含めてしまう
+   * 近似誤差を避ける)。
+   */
+  from?: Date | null;
+  /** 指定時は`executedAt < toExclusive`も条件へ加える(省略時は上限なし)。 */
+  toExclusive?: Date | null;
   page?: number;
   pageSize?: number;
   now?: Date;
@@ -139,7 +147,8 @@ interface FailureRow {
 const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_ANALYTICS_DAYS = 7;
-const MAX_ANALYTICS_DAYS = 90;
+/** searchCommandExecutionEvents等のrangeDaysに指定できる最大日数(保持期間と同じ)。 */
+export const MAX_ANALYTICS_DAYS = 90;
 const MAX_COMMAND_NAME_LENGTH = 100;
 const MAX_GUILD_ID_LENGTH = 64;
 const MAX_USER_ID_LENGTH = 64;
@@ -439,7 +448,8 @@ export async function searchCommandExecutionEvents(
 ): Promise<CommandExecutionSearchResult> {
   const now = filters.now ?? new Date();
   const rangeDays = normalizeAnalyticsDays(filters.rangeDays);
-  const rangeStart = new Date(startOfJstDay(now).getTime() - (rangeDays - 1) * DAY_MS);
+  const rangeStart =
+    filters.from ?? new Date(startOfJstDay(now).getTime() - (rangeDays - 1) * DAY_MS);
   const query = normalizeOptionalText(filters.query, MAX_HISTORY_QUERY_LENGTH);
   const guildId = normalizeOptionalText(filters.guildId, MAX_GUILD_ID_LENGTH);
   const allowedGuildIds = normalizeGuildIds(filters.allowedGuildIds);
@@ -449,7 +459,7 @@ export async function searchCommandExecutionEvents(
   const pageSize = normalizeSearchPageSize(filters.pageSize);
 
   const where: Prisma.CommandExecutionEventWhereInput = {
-    executedAt: { gte: rangeStart },
+    executedAt: { gte: rangeStart, ...(filters.toExclusive ? { lt: filters.toExclusive } : {}) },
     ...(status ? { status } : {}),
     ...(guildId ? { guildId } : {}),
     ...(allowedGuildIds ? { AND: [{ guildId: { in: allowedGuildIds } }] } : {}),
@@ -465,25 +475,29 @@ export async function searchCommandExecutionEvents(
       : {}),
   };
 
-  const [total, rows] = await Promise.all([
-    prisma.commandExecutionEvent.count({ where }),
-    prisma.commandExecutionEvent.findMany({
-      where,
-      orderBy: [{ executedAt: 'desc' }, { id: 'desc' }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-      select: {
-        id: true,
-        guildId: true,
-        userId: true,
-        commandName: true,
-        status: true,
-        durationMs: true,
-        errorName: true,
-        executedAt: true,
-      },
-    }),
-  ]);
+  const total = await prisma.commandExecutionEvent.count({ where });
+  // 保持期間のpruneやgetMoreEvents等で件数が変わった後に古いpage番号(ブックマーク・
+  // 並行タブ等)でリクエストされた場合、clampせずにそのままskipへ使うと「以前のページには
+  // データがあるのに空結果」になってしまう。listGuildAuditLogsのresolveAuditLogPageと
+  // 同じ考え方でここでも必ずclampする。
+  const normalizedTotalPages = Math.max(1, Math.ceil(total / pageSize));
+  const clampedPage = Math.min(page, normalizedTotalPages);
+  const rows = await prisma.commandExecutionEvent.findMany({
+    where,
+    orderBy: [{ executedAt: 'desc' }, { id: 'desc' }],
+    skip: (clampedPage - 1) * pageSize,
+    take: pageSize,
+    select: {
+      id: true,
+      guildId: true,
+      userId: true,
+      commandName: true,
+      status: true,
+      durationMs: true,
+      errorName: true,
+      executedAt: true,
+    },
+  });
 
   return {
     items: rows.map((row) => ({
@@ -491,9 +505,9 @@ export async function searchCommandExecutionEvents(
       executedAt: row.executedAt.toISOString(),
     })),
     total,
-    page,
+    page: clampedPage,
     pageSize,
-    totalPages: Math.max(1, Math.ceil(total / pageSize)),
+    totalPages: normalizedTotalPages,
     rangeDays,
   };
 }
