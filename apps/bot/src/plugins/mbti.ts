@@ -44,7 +44,7 @@ import { reconcileMbtiRole } from './mbti-roles.js';
 import { pushMbtiResultToIvrmWeb, resolveMbtiIvrmSyncConfig } from './mbti-ivrm-sync.js';
 
 const PREFIX = 'herta:mbti:v1:';
-// 50問を5段階で回答するため、以前の12問2択より長時間を要する。1問あたりidleで
+// 62問を5段階で回答するため、以前の12問2択より長時間を要する。1問あたりidleで
 // タイムアウトをリセットしつつ、全体には上限(absolute time)を設ける。
 const QUESTION_IDLE_MS = 3 * 60 * 1000;
 const SESSION_ABSOLUTE_TIMEOUT_MS = 30 * 60 * 1000;
@@ -283,7 +283,7 @@ async function handleMbtiButton(
     sessions.delete(session.id);
 
     void recordMbtiStats(options.prisma, options.logger, session, type);
-    void syncMbtiResultToIvrmWeb(session, type, options.logger);
+    void syncMbtiResultToIvrmWeb(session, type, identity, options.logger);
     options.unlockCompletionAchievement(session.userId).catch((error: unknown) => {
       options.logger.warn(
         { err: error, guildId: session.guildId, userId: session.userId },
@@ -399,6 +399,7 @@ function toLegacyMbtiAnswers(answers: readonly MbtiSessionAnswer[]): MbtiQuizAns
 async function syncMbtiResultToIvrmWeb(
   session: MbtiSession,
   type: string,
+  identity: 'A' | 'T',
   logger: Logger,
 ): Promise<void> {
   const config = resolveMbtiIvrmSyncConfig(process.env);
@@ -410,6 +411,7 @@ async function syncMbtiResultToIvrmWeb(
       eventId: randomUUID(),
       discordUserId: session.userId,
       mbtiType: type,
+      mbtiIdentity: identity,
       occurredAt: new Date().toISOString(),
     },
     logger,

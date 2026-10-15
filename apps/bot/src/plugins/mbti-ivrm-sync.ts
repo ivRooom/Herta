@@ -15,6 +15,8 @@ export interface MbtiIvrmSyncEvent {
   eventId: string;
   discordUserId: string;
   mbtiType: string;
+  /** computeMbtiIdentity()が返す5つ目の軸(16personalities由来のIdentity)。 */
+  mbtiIdentity: 'A' | 'T';
   occurredAt: string;
 }
 
@@ -57,6 +59,7 @@ export function buildMbtiIvrmSyncRequest(
     eventId: event.eventId,
     discordUserId: event.discordUserId,
     mbtiType: event.mbtiType,
+    mbtiIdentity: event.mbtiIdentity,
     occurredAt: event.occurredAt,
   });
   const canonical = ['POST', REQUEST_PATH, timestamp, event.eventId, body].join('\n');

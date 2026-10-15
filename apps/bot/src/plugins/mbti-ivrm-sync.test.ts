@@ -12,6 +12,7 @@ const event = {
   eventId: '018f4b20-8a6f-7a2a-8f4b-1234567890ab',
   discordUserId: '123456789012345678',
   mbtiType: 'INFP',
+  mbtiIdentity: 'T' as const,
   occurredAt: '2026-08-30T00:00:00.000Z',
 };
 
@@ -87,6 +88,7 @@ describe('buildMbtiIvrmSyncRequest', () => {
       eventId: event.eventId,
       discordUserId: event.discordUserId,
       mbtiType: event.mbtiType,
+      mbtiIdentity: event.mbtiIdentity,
       occurredAt: event.occurredAt,
     });
   });
