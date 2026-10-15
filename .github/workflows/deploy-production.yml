@@ -300,6 +300,19 @@ jobs:
               chmod 600 "${tmp}"
               mv "${tmp}" "${ENV_FILE}"
             }
+            # STUDIO_PUBLIC_BASE_URLはNEXTAUTH_URLと同じ値が必要(Bot/Studioは別コンテナのため
+            # 個別に設定が必要)。既存デプロイには新規追加した変数のため、CIの新しいsecretを
+            # 用意せず.env.production内の既存NEXTAUTH_URLから自動的に補完する。
+            existing_nextauth_url="$(grep -E '^NEXTAUTH_URL=' "${ENV_FILE}" | tail -n 1 | tr -d '\r' || true)"
+            existing_nextauth_url="${existing_nextauth_url#NEXTAUTH_URL=}"
+            existing_nextauth_url="$(strip_surrounding_quotes "${existing_nextauth_url}")"
+            if [ -n "${existing_nextauth_url}" ]; then
+              upsert_env STUDIO_PUBLIC_BASE_URL "${existing_nextauth_url}"
+            else
+              echo "WARNING: .env.production にNEXTAUTH_URLが見つからないため、STUDIO_PUBLIC_BASE_URLを設定できませんでした。" >&2
+            fi
+            unset existing_nextauth_url
+
             upsert_env SPOTIFY_CLIENT_ID "${SPOTIFY_CLIENT_ID}"
             upsert_env SPOTIFY_CLIENT_SECRET "${SPOTIFY_CLIENT_SECRET}"
             upsert_env HERTA_RUNTIME_SECRET_KEY "${HERTA_RUNTIME_SECRET_KEY}"

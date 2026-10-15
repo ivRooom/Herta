@@ -2,6 +2,7 @@ import {
   getPrismaClient,
   pruneAiGenerationEvents,
   pruneCommandExecutionEvents,
+  pruneExpiredMbtiWebQuizSessions,
   pruneMbtiStatsEvents,
   pruneServiceHealthSnapshots,
   recordServiceHealthSnapshot,
@@ -103,6 +104,8 @@ const MBTI_STATS_RETENTION_DAYS = MBTI_STATS_DEFAULT_RETENTION_DAYS;
 // Activity Logのevent自体(誰が・いつ・何を)は保持期間を設けない。本文(編集前/削除時の
 // スナップショット)だけをこの期間でscrubし、個人情報の蓄積を抑える。
 const ACTIVITY_LOG_CONTENT_RETENTION_DAYS = 180;
+// セッション自体は60分で失効するが、行(discordUserId・全回答を含む)は作成からこの日数で削除する。
+const MBTI_WEB_QUIZ_SESSION_RETENTION_DAYS = 7;
 const HEALTH_SNAPSHOT_INTERVAL_MS = 5 * 60 * 1_000;
 const HEALTH_SNAPSHOT_BUFFER_LIMIT = Math.ceil(
   (HEALTH_SNAPSHOT_RETENTION_DAYS * 24 * 60 * 60 * 1_000) / HEALTH_SNAPSHOT_INTERVAL_MS,
@@ -129,6 +132,7 @@ async function pruneRetainedData(): Promise<void> {
       aiGenerationDeleted,
       mbtiStatsDeleted,
       activityLogContentScrubbed,
+      mbtiWebQuizSessionDeleted,
     ] = await Promise.all([
       pruneCommandExecutionEvents(prisma, EXECUTION_ANALYTICS_RETENTION_DAYS),
       pruneAutoResponseExecutionEvents(
@@ -139,6 +143,9 @@ async function pruneRetainedData(): Promise<void> {
       pruneAiGenerationEvents(prisma, EXECUTION_ANALYTICS_RETENTION_DAYS),
       pruneMbtiStatsEvents(prisma, MBTI_STATS_RETENTION_DAYS),
       scrubExpiredMemberActivityContent(prisma, ACTIVITY_LOG_CONTENT_RETENTION_DAYS),
+      pruneExpiredMbtiWebQuizSessions(prisma, {
+        olderThanDays: MBTI_WEB_QUIZ_SESSION_RETENTION_DAYS,
+      }),
     ]);
     if (commandDeleted > 0) {
       logger.info(
@@ -177,6 +184,15 @@ async function pruneRetainedData(): Promise<void> {
           retentionDays: ACTIVITY_LOG_CONTENT_RETENTION_DAYS,
         },
         '古いActivity Logの本文をscrubしました',
+      );
+    }
+    if (mbtiWebQuizSessionDeleted > 0) {
+      logger.info(
+        {
+          deleted: mbtiWebQuizSessionDeleted,
+          retentionDays: MBTI_WEB_QUIZ_SESSION_RETENTION_DAYS,
+        },
+        '古いMBTI Web診断セッションを削除しました',
       );
     }
   } catch (error) {

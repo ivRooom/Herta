@@ -86,6 +86,9 @@ export async function resolveMbtiWebQuizSessionForAnswer(
 
   if (session.status === 'expired') return { ok: false, reason: 'expired' };
   if (session.status === 'completed') {
+    // 完了済みでも結果の再表示は元のexpiresAt(有効期限60分)まで。単発リンクが
+    // 結果への無期限アクセス手段になってしまわないようにする。
+    if (session.expiresAt.getTime() <= Date.now()) return { ok: false, reason: 'expired' };
     return { ok: false, reason: 'already_completed' };
   }
 
