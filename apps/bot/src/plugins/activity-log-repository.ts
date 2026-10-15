@@ -15,6 +15,8 @@ export const MEMBER_ACTIVITY_EVENT_TYPES = [
   'role_remove',
   'guild_icon_update',
   'guild_banner_update',
+  'channel_create',
+  'channel_delete',
 ] as const;
 
 export type MemberActivityEventType = (typeof MEMBER_ACTIVITY_EVENT_TYPES)[number];
