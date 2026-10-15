@@ -106,7 +106,7 @@ describe('countRecentUserEvents', () => {
 });
 
 describe('listMemberActivityEvents', () => {
-  it('limitを1〜25へ丸め、guildId/userId/eventで絞り込む', async () => {
+  it('limitを1〜25へ丸め、guildId/eventに加えuserId一致またはmetadata.targetUserId一致で絞り込む', async () => {
     const findMany = vi.fn().mockResolvedValue([]);
     const prisma = mockPrisma({ findMany });
 
@@ -118,7 +118,11 @@ describe('listMemberActivityEvents', () => {
     });
 
     expect(findMany).toHaveBeenCalledWith({
-      where: { guildId: 'guild-1', userId: 'user-1', event: 'voice_join' },
+      where: {
+        guildId: 'guild-1',
+        OR: [{ userId: 'user-1' }, { metadata: { path: ['targetUserId'], equals: 'user-1' } }],
+        event: 'voice_join',
+      },
       orderBy: { occurredAt: 'desc' },
       take: 25,
     });
