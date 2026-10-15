@@ -1,8 +1,16 @@
 import { createHmac } from 'node:crypto';
-import type { Logger } from '@herta/logger';
 
 const REQUEST_PATH = '/v1/herta/mbti-events';
 const REQUEST_TIMEOUT_MS = 5_000;
+
+/**
+ * pushMbtiResultToIvrmWeb()はwarnログしか出さないため、@herta/logger(pino)への依存を
+ * 強制しない最小インターフェースにする。apps/bot(pino Logger)・apps/studio
+ * (console.warnベースの簡易実装)の両方から同じ関数を呼べるようにするための設計判断。
+ */
+export interface MbtiIvrmSyncLogger {
+  warn: (obj: Record<string, unknown>, msg: string) => void;
+}
 
 export interface MbtiIvrmSyncConfig {
   /** ivrm-web apps/api のベースURL (末尾スラッシュなし)。例: https://api.ivrm.jp */
@@ -88,7 +96,7 @@ export function buildMbtiIvrmSyncRequest(
 export async function pushMbtiResultToIvrmWeb(
   config: MbtiIvrmSyncConfig,
   event: MbtiIvrmSyncEvent,
-  logger: Logger,
+  logger: MbtiIvrmSyncLogger,
 ): Promise<void> {
   const request = buildMbtiIvrmSyncRequest(config, event, new Date().toISOString());
 

@@ -1,10 +1,10 @@
 import { createHmac } from 'node:crypto';
 import { describe, expect, it, vi } from 'vitest';
-import type { Logger } from '@herta/logger';
 import {
   buildMbtiIvrmSyncRequest,
   pushMbtiResultToIvrmWeb,
   resolveMbtiIvrmSyncConfig,
+  type MbtiIvrmSyncLogger,
 } from './mbti-ivrm-sync.js';
 
 const config = { apiBaseUrl: 'https://api.ivrm.jp', secret: 'test-secret' };
@@ -16,8 +16,8 @@ const event = {
   occurredAt: '2026-08-30T00:00:00.000Z',
 };
 
-function silentLogger(): Logger {
-  return { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() } as unknown as Logger;
+function silentLogger(): MbtiIvrmSyncLogger {
+  return { warn: vi.fn() };
 }
 
 describe('resolveMbtiIvrmSyncConfig', () => {

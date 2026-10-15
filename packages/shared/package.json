@@ -38,9 +38,6 @@
     "test:unit": "vitest run",
     "clean": "rm -rf dist"
   },
-  "dependencies": {
-    "@herta/logger": "workspace:*"
-  },
   "devDependencies": {
     "@types/node": "^26.1.1",
     "typescript": "^5.7.2",

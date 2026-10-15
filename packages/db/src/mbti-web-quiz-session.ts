@@ -52,6 +52,15 @@ export async function createMbtiWebQuizSession(
   return session;
 }
 
+/** idそのままの取得。既に完了済みのリンクへ再アクセスした際の結果再表示用。 */
+export async function getMbtiWebQuizSessionRecord(
+  prisma: PrismaClient,
+  sessionId: string,
+): Promise<MbtiWebQuizSessionRecord | null> {
+  const session = await prisma.mbtiWebQuizSession.findUnique({ where: { id: sessionId } });
+  return session ? toRecord(session) : null;
+}
+
 export type MbtiWebQuizSessionResolution =
   | { ok: true; session: MbtiWebQuizSessionRecord }
   | { ok: false; reason: 'not_found' | 'expired' | 'already_completed' };
