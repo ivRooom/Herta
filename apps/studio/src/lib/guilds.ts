@@ -1,5 +1,4 @@
 import { cache } from 'react';
-import { unstable_cache } from 'next/cache';
 import { prisma } from '@/lib/db';
 import { fetchManageableGuilds, type ManageableGuild } from '@/lib/discord';
 import { buildGuildPersistenceData } from '@/lib/guild-metadata';
@@ -9,17 +8,43 @@ import { buildGuildPersistenceData } from '@/lib/guild-metadata';
  * layout.tsx + page.tsxの両方からこの一覧取得を呼び出すため、Discord側の
  * `/users/@me/guilds` への実アクセスを12秒だけ短期キャッシュする。
  * accessTokenをキー引数に含めるためユーザーをまたいだキャッシュ汚染は起きない。
- * 権限剥奪(Kick・Role変更等)の反映が最大12秒遅れるが、ユーザー判断により
- * 画面遷移の速度を優先してこの遅延を許容する設計とした。
+ *
+ * `next/cache`の`unstable_cache`はstale-while-revalidateのため、TTLを過ぎても
+ * 再検証が完了するまで古い値を返し続けてしまい、権限剥奪の反映が12秒を超えて
+ * 遅れる可能性がある(認可判断に使うには不適切)。ここではTTLを過ぎたら必ず
+ * 同期的に再取得してブロックする、素朴なハードTTLキャッシュを自前で持つ。
  */
-const getManageableGuildsCached = unstable_cache(
-  (accessToken: string) => fetchManageableGuilds(accessToken),
-  ['studio-manageable-guilds'],
-  { revalidate: 12 },
-);
+const GUILD_CACHE_TTL_MS = 12_000;
+const GUILD_CACHE_MAX_ENTRIES = 500;
+
+interface GuildCacheEntry {
+  guilds: ManageableGuild[];
+  expiresAt: number;
+}
+
+const guildCacheByAccessToken = new Map<string, GuildCacheEntry>();
+
+async function getManageableGuildsWithHardTtlCache(
+  accessToken: string,
+): Promise<ManageableGuild[]> {
+  const now = Date.now();
+  const cached = guildCacheByAccessToken.get(accessToken);
+  if (cached && cached.expiresAt > now) {
+    return cached.guilds;
+  }
+
+  const guilds = await fetchManageableGuilds(accessToken);
+
+  if (guildCacheByAccessToken.size >= GUILD_CACHE_MAX_ENTRIES) {
+    const oldestKey = guildCacheByAccessToken.keys().next().value;
+    if (oldestKey !== undefined) guildCacheByAccessToken.delete(oldestKey);
+  }
+  guildCacheByAccessToken.set(accessToken, { guilds, expiresAt: now + GUILD_CACHE_TTL_MS });
+  return guilds;
+}
 
 /** 同一Server Componentsレンダー内(layout.tsx + page.tsx)でも呼び出しを共有する。 */
-const getManageableGuildsForRequest = cache(getManageableGuildsCached);
+const getManageableGuildsForRequest = cache(getManageableGuildsWithHardTtlCache);
 
 /** ログインユーザーが管理可能な Guild 一覧を取得する */
 export async function getManageableGuilds(accessToken: string): Promise<ManageableGuild[]> {
