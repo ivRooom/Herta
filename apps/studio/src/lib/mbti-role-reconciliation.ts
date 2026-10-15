@@ -50,8 +50,10 @@ export async function reconcileMbtiRoleForWebQuiz(
       },
       body: JSON.stringify({ discordUserId, resultType }),
       cache: 'no-store',
-      // Role付与完了を待つ(失敗応答の後で実変更だけ完了する監査不能な状態を作らない)。
-      signal: undefined,
+      // Bot側のDiscord mutation完了を待つが、無期限には待たない(/completeがこれを
+      // ベストエフォートでawaitするため、無期限だとBotが応答を返さない限りリクエストが
+      // ハングし続ける)。十分な猶予を見つつ上限を設ける。
+      signal: AbortSignal.timeout(resolveBotHealthRequestTimeoutMs() + 10_000),
     });
   } catch {
     throw new MbtiRoleReconciliationError(502);

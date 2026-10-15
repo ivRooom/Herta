@@ -4,6 +4,7 @@ import {
   completeMbtiWebQuizSession,
   recordMbtiQuizCompletion,
   resolveMbtiWebQuizSessionForAnswer,
+  syncAchievementUnlocks,
 } from '@herta/db';
 import {
   computeMbtiIdentity,
@@ -22,6 +23,9 @@ import { isSameOriginMutationRequest } from '@/lib/request-origin';
 export const dynamic = 'force-dynamic';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+/** packages/shared/src/achievement-catalog.ts記載のID。apps/bot/src/plugins/mbti.tsの
+ * MBTI_COMPLETION_ACHIEVEMENT_IDと同じ文字列(Discordフローと同じAchievementを解除する)。 */
+const MBTI_COMPLETION_ACHIEVEMENT_ID = 'personality-explorer';
 const RESPONSE_HEADERS = {
   'Cache-Control': 'private, no-store, max-age=0',
   'X-Content-Type-Options': 'nosniff',
@@ -86,6 +90,17 @@ export async function POST(
     });
   } catch (error) {
     console.error('MBTI Web診断の統計記録に失敗しました', {
+      guildId: session.guildId,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
+  }
+
+  try {
+    await syncAchievementUnlocks(prisma, session.guildId, session.discordUserId, [
+      MBTI_COMPLETION_ACHIEVEMENT_ID,
+    ]);
+  } catch (error) {
+    console.error('MBTI Web診断完了Achievementの解除に失敗しました', {
       guildId: session.guildId,
       errorName: error instanceof Error ? error.name : 'UnknownError',
     });

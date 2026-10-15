@@ -73,7 +73,10 @@ export async function POST(
 
   const updatedAnswers = [
     ...session.answers,
-    { questionIndex: input.questionIndex, axis: question.axis, answer: input.answer },
+    // questionIndexは出題プール内の固定ID(question.id)を保存する。Discordフロー
+    // (apps/bot/src/plugins/mbti.ts)と同じ規約で、集計時に設問を同一視できるようにする
+    // ため、セッション内の出題順序(input.questionIndex)とは別物。
+    { questionIndex: question.id, axis: question.axis, answer: input.answer },
   ];
 
   const updated = await appendMbtiWebQuizAnswer(prisma, sessionId, updatedAnswers, scores);

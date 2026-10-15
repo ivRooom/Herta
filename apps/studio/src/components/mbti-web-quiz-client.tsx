@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   computeMbtiAxisPercent,
   MBTI_AXES,
@@ -41,12 +41,24 @@ export function MbtiWebQuizClient({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CompleteResult | null>(null);
 
+  const question = questions[currentIndex];
+  // 最後の回答(/answer)は成功したがブラウザが閉じるなどで/completeが未送信のまま
+  // 再度リンクを開いたケース。pendingのまま全問回答済みになっているため、エラーに
+  // せず自動的に完了処理を呼ぶ(ユーザーは結果を見れずに有効期限切れになってしまう)。
+  useEffect(() => {
+    if (!question && !result && !error) {
+      void complete();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [question, result, error]);
+
   if (result) return <ResultScreen result={result} />;
 
-  const question = questions[currentIndex];
   if (!question) {
-    return (
-      <StatusCard title="診断を読み込めませんでした" detail="もう一度リンクを開いてください。" />
+    return error ? (
+      <StatusCard title="診断結果を計算できませんでした" detail={error} />
+    ) : (
+      <StatusCard title="結果を計算しています…" detail="少々お待ちください。" />
     );
   }
 
