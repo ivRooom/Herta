@@ -17,6 +17,19 @@ export const MEMBER_ACTIVITY_EVENT_TYPES = [
   'guild_banner_update',
   'channel_create',
   'channel_delete',
+  'channel_update',
+  'guild_role_create',
+  'guild_role_update',
+  'guild_role_delete',
+  'member_join',
+  'member_leave',
+  'member_ban',
+  'member_unban',
+  'member_timeout_add',
+  'member_timeout_remove',
+  'guild_name_update',
+  'username_update',
+  'invite_create',
 ] as const;
 
 export type MemberActivityEventType = (typeof MEMBER_ACTIVITY_EVENT_TYPES)[number];

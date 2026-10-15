@@ -192,6 +192,10 @@ function resolveGatewayIntents(logger: Logger): GatewayIntentBits[] {
     GatewayIntentBits.GuildVoiceStates,
     // 絵文字登録等のGuild Expressionsイベント。特権Intentではないため常時有効化する。
     GatewayIntentBits.GuildExpressions,
+    // BAN/BAN解除のイベント用。特権Intentではないため常時有効化する。
+    GatewayIntentBits.GuildModeration,
+    // 招待作成イベント用。特権Intentではないため常時有効化する。
+    GatewayIntentBits.GuildInvites,
   ];
   if (messageContentIntentEnabled()) {
     intents.push(GatewayIntentBits.MessageContent);
@@ -451,13 +455,69 @@ export class HertaBot {
     // 個別にdispatchする(memberキャッシュに存在するguildのみ・ベストエフォート)。
     this.client.on(Events.UserUpdate, async (oldUser, newUser) => {
       if (newUser.bot) return;
-      if (oldUser.avatar === newUser.avatar) return;
+      if (
+        oldUser.avatar === newUser.avatar &&
+        oldUser.username === newUser.username &&
+        oldUser.globalName === newUser.globalName
+      ) {
+        return;
+      }
       const guildIds = this.client.guilds.cache
         .filter((guild) => guild.members.cache.has(newUser.id))
         .map((guild) => guild.id);
       for (const guildId of guildIds) {
-        await this.dispatchGuildPluginEvent(guildId, 'userAvatarUpdate', oldUser, newUser);
+        await this.dispatchGuildPluginEvent(guildId, 'userProfileUpdate', oldUser, newUser);
       }
+    });
+
+    this.client.on(Events.ChannelCreate, async (channel) => {
+      if (!('guild' in channel) || !channel.guild) return;
+      await this.dispatchGuildPluginEvent(channel.guild.id, Events.ChannelCreate, channel);
+    });
+
+    this.client.on(Events.ChannelDelete, async (channel) => {
+      if (!('guild' in channel) || !channel.guild) return;
+      await this.dispatchGuildPluginEvent(channel.guild.id, Events.ChannelDelete, channel);
+    });
+
+    this.client.on(Events.ChannelUpdate, async (oldChannel, newChannel) => {
+      if (!('guild' in newChannel) || !newChannel.guild) return;
+      await this.dispatchGuildPluginEvent(
+        newChannel.guild.id,
+        Events.ChannelUpdate,
+        oldChannel,
+        newChannel,
+      );
+    });
+
+    this.client.on(Events.GuildRoleCreate, async (role) => {
+      await this.dispatchGuildPluginEvent(role.guild.id, Events.GuildRoleCreate, role);
+    });
+
+    this.client.on(Events.GuildRoleUpdate, async (oldRole, newRole) => {
+      await this.dispatchGuildPluginEvent(
+        newRole.guild.id,
+        Events.GuildRoleUpdate,
+        oldRole,
+        newRole,
+      );
+    });
+
+    this.client.on(Events.GuildRoleDelete, async (role) => {
+      await this.dispatchGuildPluginEvent(role.guild.id, Events.GuildRoleDelete, role);
+    });
+
+    this.client.on(Events.GuildBanAdd, async (ban) => {
+      await this.dispatchGuildPluginEvent(ban.guild.id, Events.GuildBanAdd, ban);
+    });
+
+    this.client.on(Events.GuildBanRemove, async (ban) => {
+      await this.dispatchGuildPluginEvent(ban.guild.id, Events.GuildBanRemove, ban);
+    });
+
+    this.client.on(Events.InviteCreate, async (invite) => {
+      if (!invite.guild) return;
+      await this.dispatchGuildPluginEvent(invite.guild.id, Events.InviteCreate, invite);
     });
 
     this.client.on(Events.MessageCreate, async (message) => {

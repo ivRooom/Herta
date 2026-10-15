@@ -9,7 +9,16 @@ describe('normalizeActivityLogConfig', () => {
       trackVoice: true,
       trackMessages: true,
       trackEmoji: true,
-      trackProfile: true,
+      trackInvites: true,
+      trackNicknameAvatar: true,
+      trackMembership: true,
+      trackUsernameChange: true,
+      trackMemberRoles: true,
+      trackRoleManagement: true,
+      trackServerSettings: true,
+      trackChannelManagement: true,
+      trackModerationBans: true,
+      trackTimeout: true,
       excludedChannelIds: [],
       excludedRoleIds: [],
       moderationAlertsEnabled: false,
@@ -38,17 +47,35 @@ describe('normalizeActivityLogConfig', () => {
     expect(config.excludedRoleIds).toEqual(['456']);
   });
 
-  it('trackVoice/trackMessages/trackEmoji/trackProfileを個別にfalseへできる', () => {
+  it('記録対象トグルを個別にfalseへできる', () => {
     const config = normalizeActivityLogConfig({
       trackVoice: false,
       trackMessages: false,
       trackEmoji: false,
-      trackProfile: false,
+      trackInvites: false,
+      trackNicknameAvatar: false,
+      trackMembership: false,
+      trackUsernameChange: false,
+      trackMemberRoles: false,
+      trackRoleManagement: false,
+      trackServerSettings: false,
+      trackChannelManagement: false,
+      trackModerationBans: false,
+      trackTimeout: false,
     });
     expect(config.trackVoice).toBe(false);
     expect(config.trackMessages).toBe(false);
     expect(config.trackEmoji).toBe(false);
-    expect(config.trackProfile).toBe(false);
+    expect(config.trackInvites).toBe(false);
+    expect(config.trackNicknameAvatar).toBe(false);
+    expect(config.trackMembership).toBe(false);
+    expect(config.trackUsernameChange).toBe(false);
+    expect(config.trackMemberRoles).toBe(false);
+    expect(config.trackRoleManagement).toBe(false);
+    expect(config.trackServerSettings).toBe(false);
+    expect(config.trackChannelManagement).toBe(false);
+    expect(config.trackModerationBans).toBe(false);
+    expect(config.trackTimeout).toBe(false);
   });
 
   it('moderationAlertsEnabledはtrueを明示しない限りfalseになる(オプトイン)', () => {
