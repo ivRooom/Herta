@@ -8,7 +8,7 @@ test('full report, score-only sharing and PNG export work together', async ({ pa
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto(reportUrl);
   await expect(
-    page.getByRole('img', { name: '仲介者のイメージ：開いた本と花のアーチがある空想の庭' }),
+    page.getByRole('img', { name: '仲介者のイメージ：本を抱えて花に囲まれた夢見るちびHerta' }),
   ).toBeVisible();
   await expect(page.getByRole('heading', { name: '共有された診断レポート' })).toBeVisible();
   for (const name of [
@@ -104,7 +104,7 @@ test('all 16 types use distinct artwork and reduced motion is respected', async 
 });
 
 test('PNG export still succeeds when illustration is unavailable', async ({ page }) => {
-  await page.route('**/mbti/personality-worlds-v1.webp', (route) => route.abort());
+  await page.route('**/mbti/herta-personalities-v2.webp', (route) => route.abort());
   await page.goto(reportUrl);
   const downloaded = page.waitForEvent('download');
   await page.getByRole('button', { name: '画像で保存', exact: true }).click();
