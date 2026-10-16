@@ -49,9 +49,9 @@ export const fortunePlugin = definePlugin<{ enabled: boolean }, unknown, PrismaC
             return;
           }
           // Validation and profile errors always stay private, even for a public result request.
-          await interaction.deferReply({ flags: MessageFlags.Ephemeral });
           inFlight.add(key);
           try {
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
             const guild = await context.prisma.guild.findUnique({
               where: { id: guildId },
               select: { timezone: true },

@@ -54,6 +54,9 @@ describe('fortune command privacy and persistence', () => {
     const f = fixture('today', { public: true });
     await f.execute();
     expect(f.interaction.followUp).toHaveBeenCalledOnce();
+    expect(f.interaction.editReply.mock.invocationCallOrder[0]!).toBeLessThan(
+      f.interaction.followUp.mock.invocationCallOrder[0]!,
+    );
     expect(f.interaction.followUp).toHaveBeenCalledWith(
       expect.objectContaining({ flags: [], allowedMentions: { parse: [] } }),
     );
@@ -82,5 +85,24 @@ describe('fortune command privacy and persistence', () => {
     await f.execute();
     expect(JSON.stringify(f.logger.error.mock.calls)).not.toContain('2000-10-16');
     expect(f.interaction.editReply).toHaveBeenCalledWith(expect.stringContaining('作成できません'));
+  });
+  it('serializes profile and render operations even while acknowledging the first request', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const first = fixture('today');
+    first.interaction.deferReply.mockImplementationOnce(() => gate);
+    const pending = first.execute();
+    // Let command handler resolution finish and reach its deferred acknowledgment.
+    await vi.waitFor(() => expect(first.interaction.deferReply).toHaveBeenCalledOnce());
+    const second = fixture('forget');
+    await second.execute();
+    expect(second.interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ flags: MessageFlags.Ephemeral }),
+    );
+    expect(second.prisma.$executeRaw).not.toHaveBeenCalled();
+    release();
+    await pending;
   });
 });
