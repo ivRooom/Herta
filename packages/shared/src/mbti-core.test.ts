@@ -238,3 +238,17 @@ describe('Mini Games MBTI core', () => {
     expect(MBTI_IDENTITY_INFO.T.description).toBeTruthy();
   });
 });
+
+describe('question ordering', () => {
+  it('avoids adjacent questions on the same axis across deterministic seeds', () => {
+    for (let seed = 1; seed <= 100; seed++) {
+      let state = seed;
+      const questions = selectMbtiQuestions(() => {
+        state = (state * 1664525 + 1013904223) >>> 0;
+        return state / 4294967296;
+      });
+      expect(questions).toHaveLength(62);
+      expect(questions.slice(1).every((q, i) => q.axis !== questions[i]!.axis)).toBe(true);
+    }
+  });
+});

@@ -34,6 +34,7 @@ import {
   type MbtiScores,
   type MbtiSessionAnswer,
 } from '@herta/shared/mbti-core';
+import { createMbtiReport } from '@herta/shared/mbti-report';
 import { pushMbtiResultToIvrmWeb, resolveMbtiIvrmSyncConfig } from '@herta/shared/mbti-ivrm-sync';
 import { syncAchievementUnlocks } from './achievements-repository.js';
 import {
@@ -512,7 +513,8 @@ async function buildQuestionPayload(
     name: `mbti-${session.id}-${session.questionIndex}.png`,
   }).setDescription(question.prompt);
   return {
-    content: '当てはまる度合いに近いボタンを選んでください（簡易診断です）',
+    content:
+      '最近数か月の普段の自分を思い浮かべ、近いボタンを選んでください。理想や今日だけの気分ではなく、迷うときは中間でも大丈夫です（簡易診断）',
     files: [attachment],
     attachments: [],
     embeds: [],
@@ -597,6 +599,11 @@ function buildResultEmbed(
     .setColor(0x2ecc71)
     .setFooter({ text: '簡易診断のため参考程度にご覧ください' });
 
+  const report = createMbtiReport(scores);
+  embed.addFields({
+    name: '結果の境界と振り返り',
+    value: `${report.nearbyTypes.length ? `近いタイプ：${report.nearbyTypes.map((item) => `${item.type}（${item.title}）`).join('・')}` : '1問分の最大変化で4文字のタイプが変わる軸はありません。'}\n${report.sensitivityNote}`,
+  });
   if (roleNote) embed.addFields({ name: 'Role', value: roleNote.mentionText });
   return embed;
 }
