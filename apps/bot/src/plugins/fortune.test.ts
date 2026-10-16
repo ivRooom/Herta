@@ -86,6 +86,19 @@ describe('fortune command privacy and persistence', () => {
     expect(JSON.stringify(f.logger.error.mock.calls)).not.toContain('2000-10-16');
     expect(f.interaction.editReply).toHaveBeenCalledWith(expect.stringContaining('作成できません'));
   });
+  it('does not persist derived age groups that would become stale next decade', async () => {
+    const f = fixture('profile', {
+      birthday: '2000-10-16',
+      'age-group': '20代',
+      eto: '辰',
+      zodiac: '天秤座',
+    });
+    await f.execute();
+    expect(f.prisma.$executeRaw.mock.calls[0]!.slice(-3)).toEqual([null, null, null]);
+    const blank = fixture('profile', { mbti: '   ' });
+    await blank.execute();
+    expect(blank.prisma.$executeRaw).not.toHaveBeenCalled();
+  });
   it('serializes profile and render operations even while acknowledging the first request', async () => {
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {

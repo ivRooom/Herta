@@ -86,6 +86,12 @@ export const fortunePlugin = definePlugin<{ enabled: boolean }, unknown, PrismaC
               for (const [field, option] of Object.entries(fields)) {
                 const value = interaction.options.getString(option)?.trim();
                 if (value !== undefined) {
+                  if (!value) {
+                    await interaction.editReply(
+                      '空欄は登録できません。項目を外す場合は /fortune forget 後、必要な項目だけ再登録してください。',
+                    );
+                    return;
+                  }
                   profile[field as keyof FortuneProfile] =
                     field === 'mbti' ? value.toUpperCase() : value;
                   changed = true;
@@ -103,6 +109,12 @@ export const fortunePlugin = definePlugin<{ enabled: boolean }, unknown, PrismaC
                   error instanceof Error ? error.message : '入力を確認してください。',
                 );
                 return;
+              }
+              // Derived values must not become stale (for example on entering a new decade).
+              if (profile.birthday) profile.zodiac = null;
+              if (profile.birthday?.length === 10) {
+                profile.ageGroup = null;
+                profile.eto = null;
               }
               if (changed) await saveFortuneProfile(context.prisma, guildId, userId, profile);
               const details = describeFortuneProfile(profile, date);
