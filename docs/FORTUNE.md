@@ -1,30 +1,30 @@
 # 今日の運勢 /fortune
 
-## 使い方
+## 会員プロフィールを自動利用
 
 管理者がStudioで「今日の運勢」Pluginを有効にすると利用できます。
 
-- `/fortune today`：本人だけに画像と運勢を表示。プロフィールなしでも利用可能。
-- `/fortune today public:true`：チャンネルへカードと一般の運勢だけを公開。個人向け補足と誕生日・血液型・年齢などの値は除外。
-- `/fortune profile`：本人だけに登録情報を確認。オプションを指定した項目のみ保存。
-- `/fortune profile birthday:2000-10-16 blood-type:AB mbti:INFP-T`：任意登録。生年を渡したくない場合は `birthday:10-16`。未登録項目を推測しない。
-- 星座・年代・干支は誕生日が分からない場合に直接指定可能。生年月日があれば星座・年齢・年代・干支を算出し、矛盾は保存前に拒否。
-- `/fortune forget`：このサーバーの本人の占いプロフィールを削除。項目を外すときは削除後、必要な項目のみ再登録。公開済みメッセージ・画像やバックアップの削除とは別。
+- `/fortune today`：member.ivrm.jp（ivrm-web）のDiscordに紐づく本人の承認済みプロフィールを取得し、本人だけに画像と運勢を表示。
+- `/fortune today public:true`：個人情報と本人向け補足を除き、チャンネルへカードと一般の運勢を公開。キャラクターは固定しMBTIも推測しにくくする。
+- `/fortune profile`：今回ivrm-webから取得した本人の情報を確認。登録・修正は https://member.ivrm.jp で行う。Hertaへの二重登録は不要。
+- `/fortune forget`：以前Hertaへ手入力した情報だけを削除。ivrm-webの登録は変更せず、以降の占いでも最新の会員プロフィールを都度取得する。公開済みメッセージや保存画像の削除とは別。
 
-誕生日Pluginの情報や過去のMBTI結果は無断で取り込みません。MBTIはこのコマンドでの自己申告です。星座は一般的な日付区分、干支は日本の暦年（旧正月基準ではない）。出生時刻・場所による精密な出生図を計算する機能ではありません。
+現在のivrm-webが提供する誕生日とMBTIを利用。誕生日から星座・年齢・年代・日本の暦年の干支を計算。血液型はivrm-webの保存項目が存在しないため未登録として扱い、A/Tも補完しない。承認済みの最新値だけを使い、Hertaに複製保存しない。未連携・未承認・inactiveは登録案内、API障害・未設定は一時的に取得できない案内を本人だけへ出す。いずれも登録情報なしで占い、過去のHerta手入力値を混ぜない。
 
-## 結果と運用
+## 接続と認証
 
-総合・対人・恋愛・仕事／学び・金・リフレッシュの星、各カテゴリの一言、ラッキーカラー・アイテム・数字・時間帯・今日のアクション。任意プロフィールは本人向けのモチーフ・振り返りを補足します。血液型や年代で性格・能力を断定しません。
+Producerはivrm-web、ConsumerはHerta。契約は `contracts/ivrm/herta-fortune-profile.v1.bundle.json`（Source of Truth: ivRooom/ivrm-contracts）。`IVRM_WEB_API_BASE_URL`（HTTPS origin）と既存 `HERTA_MBTI_SYNC_SECRET` を使用。root secretから用途文字列 `herta-fortune-profile-v1` のHMACで専用キーを導出するため、既存MBTI同期の署名とは互換でない。新規credential/SSM parameterは不要。
 
-日付はGuild.timezone（不正ならAsia/Tokyo）。SHA256のバージョン・guild・本人・ローカル日付から決める再現可能な演出です。プロフィール変更で星を引き直せません。星は未来の的中率ではなく、実際の予測精度を保証しません。相場・病気・ギャンブル・人生上の重大な判断を誘導する助言は作りません。
+`POST /v1/herta/fortune-profile` へinteractionのguildと本人のDiscord IDだけを署名送信。ProducerのDISCORD_GUILD_IDに限定する。ConsumerにIVRM_INTEGRATION_GUILD_IDがあれば送信前にも制限。APIにはユーザーが他人のIDを指定する操作を設けない。timeout 5秒、redirect禁止、no-store、4096bytes上限、requestIdと本人IDと応答型を検証。本文・誕生日・credentialをログに出さない。
 
-Botが既存Sharpで1200×1420のPNGをローカル描画します。既存のHertaアトラスを同梱し、欠落時も本文カードを描画。画像API、新規AWSリソース、外部プロフィール送信はありません。結果履歴・画像はDBへ保存しません。Discordへ送った添付画像はDiscord側に保持され得ます。
+## 結果
 
-プロフィールはguild_id/user_idの複合主キーで分離し、guild削除でcascade。本人のコマンドだけが読み書き・削除。SQL値はパラメータ化し、ログに入力値やDBエラー本文を出しません。利用監査には既存のコマンド名等が記録されますが、オプション値は記録しません。
+総合・対人・恋愛・仕事／学び・金・リフレッシュの星と一言、ラッキーカラー・アイテム・数字・時間帯・今日のアクション。プロフィールは本人向けのモチーフと振り返りに使用。日付はGuild.timezone（不正ならAsia/Tokyo）。SHA256のversion・guild・本人・日付で決まる演出のため、プロフィール変更で星を引き直せない。未来の予測精度を保証せず、血液型・年齢で性格や能力を断定しない。
+
+既存Sharpで1200×1420 PNGをサーバー内で生成。画像APIや新しいAWSリソースは不要。結果履歴や画像はDBへ保存しない。Discordへ送信した画像はDiscord側に保持され得る。
 
 ## Deploy / rollback
 
-通常のIssue→PR→CI→review→merge→既存Lightsail deployを使用。`20261016010000_add_fortune_profiles` は新規テーブル追加のみ。既存データを書き換えません。適用前にDBダンプと隔離環境への復元を検証し、migration履歴とBot登録・ヘルスを確認します。
+契約→ivrm-web API→Hertaの順にレビュー・CI・merge・deploy。新規DB migration・RLS・IAM・公開ビュー変更なし。ivrm-web未反映時は404により情報なしへ退避するが、通常はProducerからdeployする。
 
-ロールバックはPluginを無効にし、アプリを前コミットへ戻します。新テーブルは保持してプロフィールを失わないようにします。テーブル削除やDB全体の巻き戻しを通常のロールバックとして実行しません。復旧が必要な場合は `docs/DATABASE_MIGRATIONS.md` に従います。
+旧 `fortune_profiles` テーブルはロールバックと本人の削除コマンドのため残すが、占いやprofile表示では読まない。通常のrollbackでテーブルや既存データを削除しない。

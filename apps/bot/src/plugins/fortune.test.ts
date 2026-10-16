@@ -1,26 +1,28 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
 import { fortunePlugin } from './fortune.js';
 import { EMPTY_FORTUNE_PROFILE } from './fortune-core.js';
-
+import { fetchIvrmFortuneProfile } from './fortune-ivrm-profile.js';
+import { fortuneManifest } from '@herta/plugin-catalog';
 vi.mock('./fortune-card.js', () => ({ renderFortuneCard: vi.fn(async () => Buffer.from('png')) }));
-
-function fixture(command: string, options: Record<string, string | boolean> = {}) {
+vi.mock('./fortune-ivrm-profile.js', () => ({ fetchIvrmFortuneProfile: vi.fn() }));
+const linked = {
+  status: 'linked' as const,
+  profile: { ...EMPTY_FORTUNE_PROFILE, birthday: '2000-10-16', mbti: 'INFP', bloodType: 'AB' },
+};
+beforeEach(() => {
+  vi.mocked(fetchIvrmFortuneProfile).mockReset().mockResolvedValue(linked);
+});
+function fixture(command: string, isPublic = false) {
   const prisma = {
     guild: { findUnique: vi.fn(async () => ({ timezone: 'Asia/Tokyo' })) },
-    $queryRaw: vi.fn(async () => [
-      { ...EMPTY_FORTUNE_PROFILE, birthday: '2000-10-16', bloodType: 'AB', mbti: 'INFP-T' },
-    ]),
+    $queryRaw: vi.fn(),
     $executeRaw: vi.fn(async () => 1),
   };
   const interaction = {
-    guildId: 'g',
-    user: { id: 'u', displayName: '<@everyone>' },
-    options: {
-      getSubcommand: () => command,
-      getString: (key: string) => options[key] ?? null,
-      getBoolean: (key: string) => options[key] ?? null,
-    },
+    guildId: '123456789012345678',
+    user: { id: '223456789012345678', displayName: '<@everyone>' },
+    options: { getSubcommand: () => command, getBoolean: () => isPublic },
     deferReply: vi.fn(),
     reply: vi.fn(),
     editReply: vi.fn(),
@@ -40,82 +42,66 @@ function fixture(command: string, options: Record<string, string | boolean> = {}
     },
   };
 }
-
-describe('fortune command privacy and persistence', () => {
-  it('defaults to private with optional profile hints', async () => {
+describe('ivrm-web-backed fortune command', () => {
+  it('loads the invoking Discord member, privately, without copying profile data to Herta', async () => {
     const f = fixture('today');
     await f.execute();
+    expect(fetchIvrmFortuneProfile).toHaveBeenCalledWith(
+      f.interaction.guildId,
+      f.interaction.user.id,
+      expect.any(String),
+    );
     expect(f.interaction.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
     expect(f.interaction.followUp).not.toHaveBeenCalled();
-    expect(JSON.stringify(f.interaction.editReply.mock.calls)).toContain('本人のみ');
+    expect(JSON.stringify(f.interaction.editReply.mock.calls)).toContain('ivrm-web');
+    expect(f.prisma.$queryRaw).not.toHaveBeenCalled();
     expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
   });
-  it('requires explicit public and never exposes birthday, age or blood type', async () => {
-    const f = fixture('today', { public: true });
+  it('publishes only on explicit request and excludes source data and private hints', async () => {
+    const f = fixture('today', true);
     await f.execute();
     expect(f.interaction.followUp).toHaveBeenCalledOnce();
     expect(f.interaction.editReply.mock.invocationCallOrder[0]!).toBeLessThan(
       f.interaction.followUp.mock.invocationCallOrder[0]!,
     );
+    const body = JSON.stringify(f.interaction.followUp.mock.calls);
+    for (const privateValue of ['2000-10-16', 'AB', 'INFP', 'あなたへのヒント'])
+      expect(body).not.toContain(privateValue);
     expect(f.interaction.followUp).toHaveBeenCalledWith(
       expect.objectContaining({ flags: [], allowedMentions: { parse: [] } }),
     );
-    const body = JSON.stringify(f.interaction.followUp.mock.calls);
-    expect(body).not.toContain('2000-10-16');
-    expect(body).not.toContain('AB');
-    expect(body).not.toContain('あなたへのヒント');
   });
-  it('validates privately before saving and scopes deletion to the invoker', async () => {
-    const invalid = fixture('profile', { birthday: '2023-02-29' });
-    await invalid.execute();
-    expect(invalid.prisma.$executeRaw).not.toHaveBeenCalled();
-    expect(invalid.interaction.followUp).not.toHaveBeenCalled();
-    const valid = fixture('profile', { mbti: 'enfp-a' });
-    await valid.execute();
-    expect(valid.prisma.$executeRaw).toHaveBeenCalledOnce();
-    expect(JSON.stringify(valid.interaction.editReply.mock.calls)).toContain('ENFP-A');
-    const forgotten = fixture('forget');
-    await forgotten.execute();
-    expect(forgotten.prisma.$queryRaw).not.toHaveBeenCalled();
-    expect(forgotten.prisma.$executeRaw.mock.calls[0]!.slice(1)).toEqual(['g', 'u']);
-  });
-  it('does not log sensitive database errors', async () => {
-    const f = fixture('today');
-    f.prisma.$queryRaw.mockRejectedValueOnce(new Error('secret birthday 2000-10-16'));
+  it('shows the current source with an edit link, never accepting duplicate registration', async () => {
+    const f = fixture('profile');
     await f.execute();
-    expect(JSON.stringify(f.logger.error.mock.calls)).not.toContain('2000-10-16');
-    expect(f.interaction.editReply).toHaveBeenCalledWith(expect.stringContaining('作成できません'));
+    expect(JSON.stringify(f.interaction.editReply.mock.calls)).toContain('2000-10-16');
+    expect(JSON.stringify(f.interaction.editReply.mock.calls)).toContain('member.ivrm.jp');
+    expect(
+      fortuneManifest.commands[0]!.subcommands!.find((x) => x.name === 'profile')!.options,
+    ).toBeUndefined();
+    expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
   });
-  it('does not persist derived age groups that would become stale next decade', async () => {
-    const f = fixture('profile', {
-      birthday: '2000-10-16',
-      'age-group': '20代',
-      eto: '辰',
-      zodiac: '天秤座',
-    });
+  it('distinguishes absent linkage and transient failure without using local fallback data', async () => {
+    for (const status of ['not-linked', 'unavailable', 'unconfigured'] as const) {
+      vi.mocked(fetchIvrmFortuneProfile).mockResolvedValueOnce({ status });
+      const f = fixture('today');
+      await f.execute();
+      const body = JSON.stringify(f.interaction.editReply.mock.calls);
+      expect(body).toContain(status === 'not-linked' ? '見つかりません' : '現在取得できません');
+      expect(body).not.toContain('INFP');
+      expect(f.prisma.$queryRaw).not.toHaveBeenCalled();
+    }
+  });
+  it('removes only legacy Herta data, with no remote modification', async () => {
+    const f = fixture('forget');
     await f.execute();
-    expect(f.prisma.$executeRaw.mock.calls[0]!.slice(-3)).toEqual([null, null, null]);
-    const blank = fixture('profile', { mbti: '   ' });
-    await blank.execute();
-    expect(blank.prisma.$executeRaw).not.toHaveBeenCalled();
-  });
-  it('serializes profile and render operations even while acknowledging the first request', async () => {
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const first = fixture('today');
-    first.interaction.deferReply.mockImplementationOnce(() => gate);
-    const pending = first.execute();
-    // Let command handler resolution finish and reach its deferred acknowledgment.
-    await vi.waitFor(() => expect(first.interaction.deferReply).toHaveBeenCalledOnce());
-    const second = fixture('forget');
-    await second.execute();
-    expect(second.interaction.reply).toHaveBeenCalledWith(
-      expect.objectContaining({ flags: MessageFlags.Ephemeral }),
+    expect(fetchIvrmFortuneProfile).not.toHaveBeenCalled();
+    expect(f.prisma.$executeRaw.mock.calls[0]!.slice(1)).toEqual([
+      f.interaction.guildId,
+      f.interaction.user.id,
+    ]);
+    expect(JSON.stringify(f.interaction.editReply.mock.calls)).toContain(
+      'ivrm-webの登録情報は変更しません',
     );
-    expect(second.prisma.$executeRaw).not.toHaveBeenCalled();
-    release();
-    await pending;
   });
 });
