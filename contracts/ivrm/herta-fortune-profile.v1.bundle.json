@@ -121,12 +121,15 @@
       },
       "requestId": {
         "type": "string",
-        "format": "uuid"
+        "format": "uuid",
+        "description": "MUST exactly echo the originating request.requestId (also X-IVRM-Event-Id). Consumer MUST discard another or stale request ID before using any profile data.",
+        "x-ivrm-equals": "request.requestId"
       },
       "discordUserId": {
         "type": "string",
         "pattern": "^[0-9]{17,20}$",
-        "description": "Echo of the authenticated request subject; Consumer MUST compare to interaction.user.id before use."
+        "description": "Echo of the authenticated request subject; Consumer MUST compare to interaction.user.id before use.",
+        "x-ivrm-equals": "request.discordUserId"
       },
       "profile": {
         "type": "object",
