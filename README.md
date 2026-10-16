@@ -130,7 +130,7 @@ pnpm dev
 
 ## Docker Compose
 
-`docker-compose.yml` で PostgreSQL 16 と Redis 7 を起動します。
+`docker-compose.yml` で PostgreSQL 16・Redis 7・Prisma Studio を起動します。
 
 ```bash
 # 起動
@@ -143,10 +143,11 @@ docker compose down
 docker compose down -v
 ```
 
-| サービス | ポート | 用途                |
-| -------- | ------ | ------------------- |
-| postgres | 5432   | データベース        |
-| redis    | 6379   | キャッシュ / キュー |
+| サービス      | ポート | 用途                                                                                                        |
+| ------------- | ------ | ----------------------------------------------------------------------------------------------------------- |
+| postgres      | 5432   | データベース                                                                                                |
+| redis         | 6379   | キャッシュ / キュー                                                                                         |
+| prisma-studio | 5555   | DBブラウザ (`http://localhost:5555`)。`docker-compose.prod.yml` の `studio` (apps/studio 管理画面) とは別物 |
 
 ## データベース (Prisma)
 
@@ -167,6 +168,8 @@ pnpm db:studio
 ```
 
 > `db:*` コマンドはルートの `.env` ファイルを `dotenv-cli` 経由で読み込みます。
+
+`pnpm db:studio` はその都度自分で実行する必要がありますが、`docker compose up -d` すると Prisma Studio が `prisma-studio` サービスとして常時起動し、コマンドを実行しなくても `http://localhost:5555` からいつでもDBを閲覧できます。
 
 ## 各アプリの起動
 

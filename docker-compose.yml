@@ -17,6 +17,19 @@ services:
     volumes:
       - redis_data:/data
 
+  # 開発用DBブラウザ。http://localhost:5555 で常時アクセスできる。
+  # 本番用docker-compose.prod.ymlの"studio"(apps/studio管理画面)とは別物なので注意。
+  prisma-studio:
+    build:
+      context: .
+      dockerfile: deploy/docker/prisma-studio/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/herta
+    ports:
+      - '5555:5555'
+    depends_on:
+      - postgres
+
 volumes:
   postgres_data:
   redis_data:
