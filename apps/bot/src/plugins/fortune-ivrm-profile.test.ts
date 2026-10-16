@@ -61,7 +61,7 @@ describe('private ivrm-web profile client', () => {
     const fetch = vi.fn();
     vi.stubGlobal('fetch', fetch);
     expect(await fetchIvrmFortuneProfile('323456789012345678', user, '2026-10-16', config)).toEqual(
-      { status: 'not-linked' },
+      { status: 'ineligible-guild' },
     );
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -125,7 +125,7 @@ describe('private ivrm-web profile client', () => {
         vi.fn(async () => new Response('', { status })),
       );
       expect(await fetchIvrmFortuneProfile(guild, user, '2026-10-16', config)).toEqual({
-        status: status === 404 || status === 403 ? 'not-linked' : 'unavailable',
+        status: status === 404 ? 'not-linked' : status === 403 ? 'ineligible-guild' : 'unavailable',
       });
     }
     expect(await fetchIvrmFortuneProfile(guild, user, '2026-10-16', null)).toEqual({

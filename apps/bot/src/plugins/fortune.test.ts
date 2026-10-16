@@ -82,12 +82,25 @@ describe('ivrm-web-backed fortune command', () => {
     expect(f.prisma.$executeRaw).not.toHaveBeenCalled();
   });
   it('distinguishes absent linkage and transient failure without using local fallback data', async () => {
-    for (const status of ['not-linked', 'unavailable', 'unconfigured'] as const) {
+    for (const status of [
+      'not-linked',
+      'unavailable',
+      'unconfigured',
+      'ineligible-guild',
+    ] as const) {
       vi.mocked(fetchIvrmFortuneProfile).mockResolvedValueOnce({ status });
       const f = fixture('today');
       await f.execute();
       const body = JSON.stringify(f.interaction.editReply.mock.calls);
-      expect(body).toContain(status === 'not-linked' ? '見つかりません' : '現在取得できません');
+      expect(body).toContain(
+        status === 'not-linked'
+          ? '見つかりません'
+          : status === 'unconfigured'
+            ? '未設定'
+            : status === 'ineligible-guild'
+              ? '対象外'
+              : '現在取得できません',
+      );
       expect(body).not.toContain('INFP');
       expect(f.prisma.$queryRaw).not.toHaveBeenCalled();
     }

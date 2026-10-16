@@ -14,7 +14,7 @@ export interface FortuneProfileConfig {
 }
 export type IvrmFortuneProfile =
   | { status: 'linked'; profile: FortuneProfile }
-  | { status: 'not-linked' | 'unavailable' | 'unconfigured' };
+  | { status: 'not-linked' | 'ineligible-guild' | 'unavailable' | 'unconfigured' };
 
 export function resolveFortuneProfileConfig(
   env: Partial<Record<string, string | undefined>>,
@@ -78,7 +78,7 @@ export async function fetchIvrmFortuneProfile(
   config = resolveFortuneProfileConfig(process.env),
 ): Promise<IvrmFortuneProfile> {
   if (!config) return { status: 'unconfigured' };
-  if (config.guildId !== guildId) return { status: 'not-linked' };
+  if (config.guildId !== guildId) return { status: 'ineligible-guild' };
   if (!/^\d{17,20}$/.test(guildId) || !/^\d{17,20}$/.test(userId)) return { status: 'unavailable' };
   const requestId = randomUUID();
   const request = buildFortuneProfileRequest(
@@ -98,7 +98,12 @@ export async function fetchIvrmFortuneProfile(
     if (!response.ok) {
       await response.body?.cancel();
       return {
-        status: response.status === 404 || response.status === 403 ? 'not-linked' : 'unavailable',
+        status:
+          response.status === 404
+            ? 'not-linked'
+            : response.status === 403
+              ? 'ineligible-guild'
+              : 'unavailable',
       };
     }
     if (!response.headers.get('content-type')?.includes('application/json') || !response.body) {

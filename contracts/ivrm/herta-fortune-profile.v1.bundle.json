@@ -12,6 +12,7 @@
   "maxTimestampSkewMs": 300000,
   "hmacPurpose": "herta-fortune-profile-v1",
   "canonical": "METHOD\nPATH\nTIMESTAMP\nREQUEST_ID\nBODY",
+  "responseStatusCodes": ["200", "400", "401", "403", "404", "413", "502", "503"],
   "headers": [
     {
       "name": "X-IVRM-Timestamp",
