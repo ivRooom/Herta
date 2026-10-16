@@ -99,12 +99,19 @@ export async function completeVcRecapSession(
   ]);
 }
 
-/** 要約生成に失敗した場合。segmentsは残したまま(リトライ可能にするため)statusだけ更新する。 */
+/**
+ * 要約生成に失敗した場合。リトライ機構が存在しないため、segmentsを残したままにすると
+ * 文字起こし本文が無期限に残り「本文はセッション中のみ保持する」というプライバシー方針
+ * (docs/PRIVACY_POLICY.md)に反する。completeVcRecapSessionと同様にsegmentsも削除する。
+ */
 export async function failVcRecapSession(prisma: PrismaClient, sessionId: string): Promise<void> {
-  await prisma.vcRecapSession.update({
-    where: { id: sessionId },
-    data: { status: 'failed', endedAt: new Date() },
-  });
+  await prisma.$transaction([
+    prisma.vcRecapSession.update({
+      where: { id: sessionId },
+      data: { status: 'failed', endedAt: new Date() },
+    }),
+    prisma.vcRecapTranscriptSegment.deleteMany({ where: { sessionId } }),
+  ]);
 }
 
 export interface VcRecapSessionSummary {

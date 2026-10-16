@@ -11,6 +11,7 @@ import type { HertaPlugin } from '@herta/plugin-sdk';
 import type { SlashCommand } from '../commands/registry.js';
 import { achievementsPlugin } from './achievements.js';
 import { activityLogPlugin } from './activity-log.js';
+import { vcRecapPlugin } from './vc-recap.js';
 import { afkPlugin } from './afk.js';
 import { aiPlugin } from './ai.js';
 import { birthdayRolePlugin } from './birthday-role.js';
@@ -263,6 +264,7 @@ const officialPluginIds = [
   'server-stats',
   'team-split',
   'valorant',
+  'vc-recap',
   'xp-level',
 ] as const;
 
@@ -726,6 +728,23 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
           }) as Parameters<NonNullable<typeof valorantPlugin.onEnable>>[0],
       )
     : undefined;
+  const vcRecapEntry = deps
+    ? toRuntimePluginEntry(
+        vcRecapPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
+          }) as Parameters<NonNullable<typeof vcRecapPlugin.onEnable>>[0],
+      )
+    : undefined;
 
   return officialPluginIds.flatMap((pluginId) => {
     if (pluginId === 'achievements' && achievementsEntry) return [achievementsEntry];
@@ -756,6 +775,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (pluginId === 'server-stats' && serverStatsEntry) return [serverStatsEntry];
     if (pluginId === 'team-split' && teamSplitEntry) return [teamSplitEntry];
     if (pluginId === 'valorant' && valorantEntry) return [valorantEntry];
+    if (pluginId === 'vc-recap' && vcRecapEntry) return [vcRecapEntry];
     if (pluginId === 'xp-level' && xpLevelEntry) return [xpLevelEntry];
     return [{ pluginId }];
   });
