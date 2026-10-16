@@ -18,7 +18,7 @@
 
 ## データ主体の権利
 
-以下のコマンドを使用できます(DM・サーバー内どちらでも実行可能):
+以下のコマンドを使用できます(Hertaを導入しているサーバー内で実行してください。Slash Commandはサーバーごとに登録されるため、現時点ではDMからは実行できません):
 
 - `/herta-privacy voice-consent <true|false>`: VC文字起こしへの同意を切り替えます。
 - `/herta-privacy delete-voice-data`: 自分が参加したVC要約・文字起こしデータの削除を依頼します。

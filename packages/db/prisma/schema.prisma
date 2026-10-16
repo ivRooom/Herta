@@ -1231,7 +1231,8 @@ model VcRecapSession {
   id                 String                @id @default(uuid())
   guildId            String                @map("guild_id")
   channelId          String                @map("channel_id")
-  startedBy          String                @map("started_by")
+  /** 削除依頼(deleteUserVoiceData)で本人が除去された場合nullになる(発言者のいないセッションに実行者の痕跡だけ残さないため)。 */
+  startedBy          String?               @map("started_by")
   status             VcRecapSessionStatus  @default(active)
   /** セッション開始時点でvoiceTranscriptionConsent=trueだった参加者(文字起こし対象者)。 */
   consentingUserIds  String[]              @map("consenting_user_ids")

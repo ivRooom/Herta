@@ -19,7 +19,7 @@ CREATE TABLE "vc_recap_sessions" (
     "id" TEXT NOT NULL,
     "guild_id" TEXT NOT NULL,
     "channel_id" TEXT NOT NULL,
-    "started_by" TEXT NOT NULL,
+    "started_by" TEXT,
     "status" "vc_recap_session_status" NOT NULL DEFAULT 'active',
     "consenting_user_ids" TEXT[],
     "non_consenting_user_ids" TEXT[],

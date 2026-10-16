@@ -111,7 +111,7 @@ export interface VcRecapSessionSummary {
   id: string;
   guildId: string;
   channelId: string;
-  startedBy: string;
+  startedBy: string | null;
   status: VcRecapSessionStatus;
   consentingUserIds: string[];
   nonConsentingUserIds: string[];
@@ -125,7 +125,7 @@ function toVcRecapSessionSummary(row: {
   id: string;
   guildId: string;
   channelId: string;
-  startedBy: string;
+  startedBy: string | null;
   status: VcRecapSessionStatus;
   consentingUserIds: string[];
   nonConsentingUserIds: string[];
@@ -234,33 +234,50 @@ export interface UserVcRecapSessionSummary {
   wasConsenting: boolean;
 }
 
+const USER_EXPORT_PAGE_SIZE = 200;
+/** 無限ループ防止の安全弁。本人のVC要約セッション数がこれを超えることは現実的に無い想定。 */
+const USER_EXPORT_MAX_SESSIONS = 20_000;
+
 /**
  * /herta-privacy exportのためのguildを跨いだ本人データ取得(エクスポート対象は本人の
- * データ全体であり、特定guildに限定しない)。
+ * データ全体であり、特定guildに限定しない)。プライバシーポリシーが「保持している
+ * データ全体をエクスポートする」と約束しているため、件数を打ち切らず全件を取得する
+ * (カーソルページングで内部的に分割取得し、呼び出し元には結合済みの配列を返す)。
  */
 export async function listVcRecapSessionsForUser(
   prisma: PrismaClient,
   userId: string,
-  limit = 50,
 ): Promise<UserVcRecapSessionSummary[]> {
-  const rows = await prisma.vcRecapSession.findMany({
-    where: {
-      OR: [{ consentingUserIds: { has: userId } }, { nonConsentingUserIds: { has: userId } }],
-    },
-    orderBy: { startedAt: 'desc' },
-    take: Math.max(1, Math.min(200, Math.trunc(limit))),
-  });
-  return rows.map((row) => ({
-    id: row.id,
-    guildId: row.guildId,
-    channelId: row.channelId,
-    status: row.status,
-    summary: row.summary,
-    topics: row.topics,
-    startedAt: row.startedAt,
-    endedAt: row.endedAt,
-    wasConsenting: row.consentingUserIds.includes(userId),
-  }));
+  const where: Prisma.VcRecapSessionWhereInput = {
+    OR: [{ consentingUserIds: { has: userId } }, { nonConsentingUserIds: { has: userId } }],
+  };
+
+  const results: UserVcRecapSessionSummary[] = [];
+  let cursor: { id: string } | undefined;
+  for (;;) {
+    const rows = await prisma.vcRecapSession.findMany({
+      where,
+      orderBy: [{ startedAt: 'desc' }, { id: 'desc' }],
+      take: USER_EXPORT_PAGE_SIZE,
+      ...(cursor ? { skip: 1, cursor } : {}),
+    });
+    for (const row of rows) {
+      results.push({
+        id: row.id,
+        guildId: row.guildId,
+        channelId: row.channelId,
+        status: row.status,
+        summary: row.summary,
+        topics: row.topics,
+        startedAt: row.startedAt,
+        endedAt: row.endedAt,
+        wasConsenting: row.consentingUserIds.includes(userId),
+      });
+    }
+    if (rows.length < USER_EXPORT_PAGE_SIZE || results.length >= USER_EXPORT_MAX_SESSIONS) break;
+    cursor = { id: rows[rows.length - 1]!.id };
+  }
+  return results;
 }
 
 export interface DeleteUserVoiceDataResult {
@@ -272,7 +289,12 @@ export interface DeleteUserVoiceDataResult {
  * 本人からの削除依頼(/herta-privacy delete-voice-data)に対応する。このユーザーが
  * 参加したVcRecapSessionのうち、他の参加者がいない(本人1人だけの)ものは行ごと削除し、
  * 他の参加者もいるものは本人のIDだけをconsenting/non-consentingの配列から除去する
- * (他の参加者のセッション記録自体は残す。本人のtranscript segmentsも合わせて削除する)。
+ * (他の参加者のセッション記録自体は残す。本人のtranscript segmentsも合わせて削除し、
+ * startedByが本人を指していた場合はnullにする)。
+ *
+ * 配列からの除去はPostgresのarray_remove()でDB側に原子的に行わせる(アプリ側で読んだ
+ * 配列をそのまま書き戻す実装だと、同時に別ユーザーの削除依頼が同じsessionに対して走った
+ * 場合にlost updateが起き、先に処理された側の削除が後から上書きされ消えてしまう)。
  */
 export async function deleteUserVoiceData(
   prisma: PrismaClient,
@@ -282,32 +304,40 @@ export async function deleteUserVoiceData(
     where: {
       OR: [{ consentingUserIds: { has: userId } }, { nonConsentingUserIds: { has: userId } }],
     },
-    select: { id: true, consentingUserIds: true, nonConsentingUserIds: true },
+    select: { id: true },
   });
 
   let deletedSessions = 0;
   let redactedSessions = 0;
-  for (const session of sessions) {
-    const remainingConsenting = session.consentingUserIds.filter((id) => id !== userId);
-    const remainingNonConsenting = session.nonConsentingUserIds.filter((id) => id !== userId);
-    const soleParticipant = remainingConsenting.length === 0 && remainingNonConsenting.length === 0;
 
-    if (soleParticipant) {
-      await prisma.vcRecapSession.delete({ where: { id: session.id } });
-      deletedSessions += 1;
-    } else {
-      await prisma.vcRecapSession.update({
-        where: { id: session.id },
-        data: {
-          consentingUserIds: remainingConsenting,
-          nonConsentingUserIds: remainingNonConsenting,
-        },
-      });
-      await prisma.vcRecapTranscriptSegment.deleteMany({
+  for (const session of sessions) {
+    await prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<
+        { consenting_user_ids: string[]; non_consenting_user_ids: string[] }[]
+      >`
+        UPDATE vc_recap_sessions
+        SET consenting_user_ids = array_remove(consenting_user_ids, ${userId}),
+            non_consenting_user_ids = array_remove(non_consenting_user_ids, ${userId}),
+            started_by = CASE WHEN started_by = ${userId} THEN NULL ELSE started_by END
+        WHERE id = ${session.id}
+        RETURNING consenting_user_ids, non_consenting_user_ids
+      `;
+      const updated = rows[0];
+      if (!updated) return;
+
+      await tx.vcRecapTranscriptSegment.deleteMany({
         where: { sessionId: session.id, userId },
       });
-      redactedSessions += 1;
-    }
+
+      const isEmpty =
+        updated.consenting_user_ids.length === 0 && updated.non_consenting_user_ids.length === 0;
+      if (isEmpty) {
+        await tx.vcRecapSession.delete({ where: { id: session.id } });
+        deletedSessions += 1;
+      } else {
+        redactedSessions += 1;
+      }
+    });
   }
 
   return { deletedSessions, redactedSessions };
