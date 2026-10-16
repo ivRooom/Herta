@@ -56,6 +56,10 @@ LightsailインスタンスはEC2と異なりIAM instance profileを直接attach
   - 実行はCloudTrailで監査可能（`ssm:SendCommand`のAPI呼び出しとして記録される）。
   - 現行のインラインスクリプトは非常に長いため、SSM RunCommandへ直接貼り付けるのではなく、**リポジトリにcommit済みの`deploy/scripts/deploy.sh`をhost上でgit checkout済みの状態から`bash deploy/scripts/deploy.sh`として起動する2段階呼び出し**にする（`git fetch && git checkout` → `bash deploy/scripts/deploy.sh`）。これによりSSM RunCommandのコマンドサイズ制約を回避しつつ、既存スクリプトの大部分を流用できる。
   - `ivrm-web-github-deploy-role`に`ssm:SendCommand` / `ssm:GetCommandInvocation` / `ssm:DescribeInstanceInformation`を対象managed instance ARNへスコープしたIAM権限追加が必要（別途IAM変更として確認を取る）。
+  - **⚠️ 重要な設計制約: シークレットをSendCommandのコマンド文字列に含めない。** `ssm:SendCommand`の`Parameters`（実行するコマンド本文を含む）はCloudTrail management eventに記録される。現行workflowは`HERTA_RUNTIME_SECRET_KEY` / `GHCR_TOKEN` / `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`をGitHub Actions側で解決し`appleboy/ssh-action`の`envs:`でSSH session経由（暗号化transport、CloudTrailには残らない）でhostへ渡しているが、これをそのままSendCommandのコマンド文字列へ埋め込むと、これらのsecretがCloudTrailログに平文で残ってしまう新しい漏洩経路になる。
+    - **対策**: GitHub Actions側でsecretを解決してhostへ「渡す」のをやめ、**host側の`deploy/scripts/deploy.sh`自身が、自分のIAM role (`ivrm-herta-ssm-hybrid-role`) を使って`aws ssm get-parameter --with-decryption`でSSM Parameter Storeから直接secretを取得する**方式に変える。これは現行workflowが既に「Spotify runtime secretsをSSMから取得」ステップでGitHub Actions runner側から行っているのと同じパターンを、host側で行うだけの変更。
+    - この方式にする場合、`ivrm-herta-ssm-hybrid-role`（現状SSM Core権限のみ）へ、対象secretのSSM Parameter ARNへスコープした`ssm:GetParameter`（`--with-decryption`のため`kms:Decrypt`も、SecureStringの暗号化に使うKMS keyへスコープして追加）権限が新たに必要になる。これは「host側のroleに新しい読み取り権限を追加する」IAM変更であり、既存の「SSM Core only」という最小権限方針から一歩踏み出す判断のため、実施前に個別に確認を取る。
+    - `HERTA_RUNTIME_SECRET_KEY`のようなrotationに制約のあるsecretは、この方式でも`.env.production`への書き込みロジック（既存の「既存の有効なmaster keyを不正値で上書きしない」検証）をそのまま`deploy.sh`側へ移植する。
 - **(B) SSM port-forwardingでSSHトンネルする方式（非推奨）**
   - `aws ssm start-session --document-name AWS-StartPortForwardingSession`でlocalhost:PORT → instance:22のトンネルを張り、既存の`appleboy/ssh-action`をlocalhost向けに向ける。
   - 既存スクリプトを変更せずに済む利点はあるが、runner側で`session-manager-plugin`の導入とトンネルのbackground管理が必要になり複雑化する。CloudTrail監査もport-forward確立の記録のみで、tunnel内のコマンド内容はSSH側のログにしか残らない。
