@@ -17,6 +17,19 @@ export const MEMBER_ACTIVITY_EVENT_TYPES = [
   'guild_banner_update',
   'channel_create',
   'channel_delete',
+  'channel_update',
+  'guild_role_create',
+  'guild_role_update',
+  'guild_role_delete',
+  'member_join',
+  'member_leave',
+  'member_ban',
+  'member_unban',
+  'member_timeout_add',
+  'member_timeout_remove',
+  'guild_name_update',
+  'username_update',
+  'invite_create',
 ] as const;
 
 export type MemberActivityEventType = (typeof MEMBER_ACTIVITY_EVENT_TYPES)[number];
@@ -74,7 +87,15 @@ export interface CountRecentUserEventsInput {
   since: Date;
 }
 
-/** 直近since以降の、guild+user+event種別の件数。連投・連続削除の検知に使う。 */
+/**
+ * 直近since以降の、guild+user+event種別の件数。連投・連続削除の検知に使う。
+ *
+ * message_deleteはAudit Log経由で実行者(モデレーター等)を特定できた場合、userIdカラムには
+ * 対象者ではなく実行者が入る(metadata.targetUserIdへ対象者を保持する設計、PR #488参照)。
+ * 連続削除検知は「投稿が大量に削除されている対象者」を見る機能のため、userId一致に加えて
+ * metadata.targetUserId一致でもカウントする(message_create等、metadataにtargetUserIdを
+ * 持たないeventではこの条件は単に一致せず、挙動に影響しない)。
+ */
 export async function countRecentUserEvents(
   prisma: PrismaClient,
   input: CountRecentUserEventsInput,
@@ -82,9 +103,12 @@ export async function countRecentUserEvents(
   return prisma.memberActivityEvent.count({
     where: {
       guildId: input.guildId,
-      userId: input.userId,
       event: input.event,
       occurredAt: { gte: input.since },
+      OR: [
+        { userId: input.userId },
+        { metadata: { path: ['targetUserId'], equals: input.userId } },
+      ],
     },
   });
 }
@@ -116,7 +140,19 @@ export async function listMemberActivityEvents(
   const rows = await prisma.memberActivityEvent.findMany({
     where: {
       guildId: input.guildId,
-      ...(input.userId ? { userId: input.userId } : {}),
+      // userIdには実行者を特定できたevent種別(role_add/role_remove/nickname_update/
+      // member_timeout_*/member_ban/member_unban/member_leave/message_delete)の場合は
+      // 実行者が入り、対象者はmetadata.targetUserIdへ入る(countRecentUserEventsと同じ
+      // 考え方)。特定のメンバーで絞り込む際、実行者としてもtargetUserIdとしてもヒット
+      // するようにする。
+      ...(input.userId
+        ? {
+            OR: [
+              { userId: input.userId },
+              { metadata: { path: ['targetUserId'], equals: input.userId } },
+            ],
+          }
+        : {}),
       ...(input.event ? { event: input.event } : {}),
     },
     orderBy: { occurredAt: 'desc' },

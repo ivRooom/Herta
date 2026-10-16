@@ -551,6 +551,19 @@ const DISCORD_ACTIVITY_EVENT_LABELS: Record<string, string> = {
   guild_banner_update: 'サーバーバナー変更',
   channel_create: 'チャンネル作成',
   channel_delete: 'チャンネル削除',
+  channel_update: 'チャンネル変更',
+  guild_role_create: 'ロール作成',
+  guild_role_update: 'ロール変更',
+  guild_role_delete: 'ロール削除',
+  member_join: 'サーバー参加',
+  member_leave: 'サーバー退出',
+  member_ban: 'BAN',
+  member_unban: 'BAN解除',
+  member_timeout_add: 'タイムアウト付与',
+  member_timeout_remove: 'タイムアウト解除',
+  guild_name_update: 'サーバー名変更',
+  username_update: 'ユーザー名変更',
+  invite_create: '招待リンク作成',
 };
 
 function discordActivityEventLabel(event: string): string {
@@ -558,11 +571,37 @@ function discordActivityEventLabel(event: string): string {
 }
 
 function discordActivitySummary(event: string, metadata: Record<string, unknown> | null): string {
-  if ((event === 'channel_create' || event === 'channel_delete') && metadata) {
+  if (
+    (event === 'channel_create' || event === 'channel_delete' || event === 'channel_update') &&
+    metadata
+  ) {
     const channelName = typeof metadata.channelName === 'string' ? metadata.channelName : null;
     if (channelName) {
-      return event === 'channel_create' ? `#${channelName} を作成` : `#${channelName} を削除`;
+      if (event === 'channel_create') return `#${channelName} を作成`;
+      if (event === 'channel_delete') return `#${channelName} を削除`;
+      return `#${channelName} を変更`;
     }
+  }
+  if (
+    (event === 'guild_role_create' ||
+      event === 'guild_role_update' ||
+      event === 'guild_role_delete') &&
+    metadata
+  ) {
+    const roleName = typeof metadata.roleName === 'string' ? metadata.roleName : null;
+    if (roleName) {
+      if (event === 'guild_role_create') return `ロール「${roleName}」を作成`;
+      if (event === 'guild_role_delete') return `ロール「${roleName}」を削除`;
+      return `ロール「${roleName}」を変更`;
+    }
+  }
+  if (event === 'guild_name_update' && metadata) {
+    const after = typeof metadata.after === 'string' ? metadata.after : null;
+    if (after) return `サーバー名を「${after}」に変更`;
+  }
+  if (event === 'invite_create' && metadata) {
+    const code = typeof metadata.code === 'string' ? metadata.code : null;
+    if (code) return `招待リンク \`${code}\` を作成`;
   }
   return `${discordActivityEventLabel(event)}が記録されました。`;
 }
@@ -645,22 +684,56 @@ async function listDiscordActivityFeed(
     pageSize: query.pageSize,
   });
 
-  const userIds = [...new Set(rows.flatMap((row) => (row.userId ? [row.userId] : [])))];
+  const rowTargetUserId = (row: (typeof rows)[number]): string | null => {
+    const value = row.metadata?.targetUserId;
+    return typeof value === 'string' ? value : null;
+  };
+
+  // role_add/role_remove/nickname_update/message_deleteはこのPR以前からあるevent種別で、
+  // 旧実装ではuserIdカラムへ「操作対象のメンバー」を保持し、metadata.targetUserIdは
+  // 持たなかった(実行者という概念自体が無かった)。このPRより前に書き込まれた行には
+  // metadata.targetUserIdが無いため、targetUserIdの有無だけで判定すると旧行のuserId
+  // (実際は対象)を実行者として誤表示してしまう。これらのevent種別に限り、
+  // targetUserIdが無ければuserIdを対象として扱う旧実装の挙動をそのまま維持する。
+  const LEGACY_TARGET_ONLY_EVENTS = new Set([
+    'role_add',
+    'role_remove',
+    'nickname_update',
+    'message_delete',
+  ]);
+  const resolveRowTarget = (row: (typeof rows)[number]): string | null => {
+    const metadataTargetUserId = rowTargetUserId(row);
+    if (metadataTargetUserId) return metadataTargetUserId;
+    if (LEGACY_TARGET_ONLY_EVENTS.has(row.event)) return row.userId;
+    return null;
+  };
+  const isLegacyTargetOnlyRow = (row: (typeof rows)[number]): boolean =>
+    rowTargetUserId(row) === null && LEGACY_TARGET_ONLY_EVENTS.has(row.event);
+
+  const userIds = [
+    ...new Set(
+      rows.flatMap((row) => {
+        const ids: string[] = [];
+        if (row.userId && !isLegacyTargetOnlyRow(row)) ids.push(row.userId);
+        const targetUserId = resolveRowTarget(row);
+        if (targetUserId) ids.push(targetUserId);
+        return ids;
+      }),
+    ),
+  ];
   const actorLabelById = await resolveUserLabels(prisma, userIds);
 
   return {
     items: rows.map((row) => {
-      // role_add/role_remove/nickname_update/message_deleteのuserIdは「操作対象の
-      // メンバー」であり、実行者ではない(activity-log.tsのhandleGuildMemberUpdate/
-      // handleMessageDeleteは実行者をAudit Logから特定していないため、実行者情報自体
-      // を保持していない。message_deleteのuserIdは削除されたメッセージの投稿者であり、
-      // 削除操作自体を行った人物とは限らない)。対象として表示し、実行者は不明として
-      // 扱う(実際より実行者として誤表示しない方を優先する)。
-      const isMemberTargetEvent =
-        row.event === 'role_add' ||
-        row.event === 'role_remove' ||
-        row.event === 'nickname_update' ||
-        row.event === 'message_delete';
+      // role_add/role_remove/nickname_update/member_timeout_*/member_ban/member_unban/
+      // member_leave/message_deleteはmetadata.targetUserIdへ「操作対象のメンバー」を
+      // 保持している(activity-log.tsがAudit Logから実行者を解決できた場合はuserId=実行者、
+      // できなかった場合はnullまたはイベント種別ごとのフォールバックになる)。
+      // targetUserIdが無いイベント(emoji/channel系等)は従来通りuserIdを実行者として扱う。
+      const legacy = isLegacyTargetOnlyRow(row);
+      const targetUserId = resolveRowTarget(row);
+      const hasMemberTarget = targetUserId !== null;
+      const actorId = legacy ? null : row.userId;
 
       return {
         id: row.id,
@@ -670,19 +743,13 @@ async function listDiscordActivityFeed(
         category: 'other',
         severity: 'info',
         activitySource: 'discord_activity',
-        actorId: isMemberTargetEvent ? '' : (row.userId ?? ''),
+        actorId: actorId ?? '',
         actorType: 'user',
-        actorLabel: isMemberTargetEvent
-          ? '不明'
-          : row.userId
-            ? (actorLabelById.get(row.userId) ?? 'Discordユーザー')
-            : '不明',
-        targetType: isMemberTargetEvent ? 'member' : row.channelId ? 'channel' : null,
-        targetId: isMemberTargetEvent ? row.userId : row.channelId,
-        targetLabel: isMemberTargetEvent
-          ? row.userId
-            ? (actorLabelById.get(row.userId) ?? 'Discordユーザー')
-            : '対象情報なし'
+        actorLabel: actorId ? (actorLabelById.get(actorId) ?? 'Discordユーザー') : '不明',
+        targetType: hasMemberTarget ? 'member' : row.channelId ? 'channel' : null,
+        targetId: hasMemberTarget ? targetUserId : row.channelId,
+        targetLabel: hasMemberTarget
+          ? (actorLabelById.get(targetUserId) ?? 'Discordユーザー')
           : row.channelId
             ? `#${row.channelId}`
             : '対象情報なし',

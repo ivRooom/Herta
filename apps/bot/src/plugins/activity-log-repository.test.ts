@@ -81,7 +81,7 @@ describe('scrubExpiredMemberActivityContent', () => {
 });
 
 describe('countRecentUserEvents', () => {
-  it('guildId/userId/event/occurredAt(since以降)で絞り込んでcountする', async () => {
+  it('guildId/event/occurredAt(since以降)に加え、userId一致またはmetadata.targetUserId一致で絞り込んでcountする', async () => {
     const count = vi.fn().mockResolvedValue(4);
     const prisma = mockPrisma({ count });
     const since = new Date('2026-01-01T00:00:00Z');
@@ -97,16 +97,16 @@ describe('countRecentUserEvents', () => {
     expect(count).toHaveBeenCalledWith({
       where: {
         guildId: 'guild-1',
-        userId: 'user-1',
         event: 'message_create',
         occurredAt: { gte: since },
+        OR: [{ userId: 'user-1' }, { metadata: { path: ['targetUserId'], equals: 'user-1' } }],
       },
     });
   });
 });
 
 describe('listMemberActivityEvents', () => {
-  it('limitを1〜25へ丸め、guildId/userId/eventで絞り込む', async () => {
+  it('limitを1〜25へ丸め、guildId/eventに加えuserId一致またはmetadata.targetUserId一致で絞り込む', async () => {
     const findMany = vi.fn().mockResolvedValue([]);
     const prisma = mockPrisma({ findMany });
 
@@ -118,7 +118,11 @@ describe('listMemberActivityEvents', () => {
     });
 
     expect(findMany).toHaveBeenCalledWith({
-      where: { guildId: 'guild-1', userId: 'user-1', event: 'voice_join' },
+      where: {
+        guildId: 'guild-1',
+        OR: [{ userId: 'user-1' }, { metadata: { path: ['targetUserId'], equals: 'user-1' } }],
+        event: 'voice_join',
+      },
       orderBy: { occurredAt: 'desc' },
       take: 25,
     });

@@ -6,12 +6,15 @@ import {
   type ChatInputCommandInteraction,
   type DMChannel,
   type Guild,
+  type GuildBan,
   type GuildEmoji,
   type GuildMember,
+  type Invite,
   type Message,
   type NonThreadGuildBasedChannel,
   type PartialGuildMember,
   type PartialMessage,
+  type Role,
   type User,
   type VoiceState,
 } from 'discord.js';
@@ -31,7 +34,16 @@ export interface ActivityLogConfig {
   trackVoice: boolean;
   trackMessages: boolean;
   trackEmoji: boolean;
-  trackProfile: boolean;
+  trackInvites: boolean;
+  trackNicknameAvatar: boolean;
+  trackMembership: boolean;
+  trackUsernameChange: boolean;
+  trackMemberRoles: boolean;
+  trackRoleManagement: boolean;
+  trackServerSettings: boolean;
+  trackChannelManagement: boolean;
+  trackModerationBans: boolean;
+  trackTimeout: boolean;
   excludedChannelIds: string[];
   excludedRoleIds: string[];
   moderationAlertsEnabled: boolean;
@@ -73,7 +85,23 @@ export function normalizeActivityLogConfig(value: unknown): ActivityLogConfig {
     trackVoice: source.trackVoice === undefined ? true : source.trackVoice === true,
     trackMessages: source.trackMessages === undefined ? true : source.trackMessages === true,
     trackEmoji: source.trackEmoji === undefined ? true : source.trackEmoji === true,
-    trackProfile: source.trackProfile === undefined ? true : source.trackProfile === true,
+    trackInvites: source.trackInvites === undefined ? true : source.trackInvites === true,
+    trackNicknameAvatar:
+      source.trackNicknameAvatar === undefined ? true : source.trackNicknameAvatar === true,
+    trackMembership: source.trackMembership === undefined ? true : source.trackMembership === true,
+    trackUsernameChange:
+      source.trackUsernameChange === undefined ? true : source.trackUsernameChange === true,
+    trackMemberRoles:
+      source.trackMemberRoles === undefined ? true : source.trackMemberRoles === true,
+    trackRoleManagement:
+      source.trackRoleManagement === undefined ? true : source.trackRoleManagement === true,
+    trackServerSettings:
+      source.trackServerSettings === undefined ? true : source.trackServerSettings === true,
+    trackChannelManagement:
+      source.trackChannelManagement === undefined ? true : source.trackChannelManagement === true,
+    trackModerationBans:
+      source.trackModerationBans === undefined ? true : source.trackModerationBans === true,
+    trackTimeout: source.trackTimeout === undefined ? true : source.trackTimeout === true,
     excludedChannelIds: normalizedIds(source.excludedChannelIds, 50),
     excludedRoleIds: normalizedIds(source.excludedRoleIds, 50),
     moderationAlertsEnabled: source.moderationAlertsEnabled === true,
@@ -156,19 +184,58 @@ async function maybeSendBurstAlert(
   }
 }
 
+/**
+ * targetIdに一致する直近のAudit Logエントリを、十分に新しい(この関数の呼び出し直前に
+ * 作られた)ものだけに限定して実行者を特定する。時刻を見ずに「直近5件からtargetId一致」
+ * だけで判定すると、同じ対象への過去の別操作(例: 以前モデレーターが変更した際のentry)を
+ * 誤って今回の操作の実行者として採用してしまう(例: 本人が後日ニックネームを自分で変更した
+ * 際に、過去のモデレーター操作entryが古いまま一致してしまう)。
+ */
+const AUDIT_LOG_ACTOR_RESOLUTION_WINDOW_MS = 10_000;
+
+interface AuditLogActorResolution {
+  actorId: string | null;
+  /**
+   * fetchAuditLogs自体が成功したか。View Audit Log権限不足・一時的なAPIエラー等で
+   * 取得に失敗した場合はfalseになる。「entryが見つからない」ことと「取得自体に失敗した」
+   * ことを呼び出し元が区別できるようにする(前者のみ「本人による操作でAudit Logに
+   * 残らなかった」と推測してよい。後者は単に判定できないだけなので推測してはならない)。
+   */
+  lookupSucceeded: boolean;
+}
+
 /** Audit Logから操作の実行者を割引きで特定する(View Audit Log権限が無い・未確定の場合はnull)。 */
+async function resolveAuditLogActor(
+  guild: Guild,
+  auditLogEvent: AuditLogEvent,
+  targetId: string,
+): Promise<AuditLogActorResolution> {
+  try {
+    const logs = await guild.fetchAuditLogs({ type: auditLogEvent, limit: 5 });
+    const now = Date.now();
+    const entry = logs.entries.find(
+      (candidate) =>
+        candidate.targetId === targetId &&
+        now - candidate.createdTimestamp <= AUDIT_LOG_ACTOR_RESOLUTION_WINDOW_MS,
+    );
+    return { actorId: entry?.executorId ?? null, lookupSucceeded: true };
+  } catch {
+    return { actorId: null, lookupSucceeded: false };
+  }
+}
+
+/**
+ * lookupの成否を区別しない呼び出し元向けの簡易ラッパー。
+ * 自己操作フォールバックを行わないevent(role_add/role_remove/timeout/ban/unban/kick等)は
+ * 「解決できなければnullのまま」という扱いがlookup失敗時・未一致時のどちらでも同じため、
+ * こちらを使えばよい。
+ */
 async function resolveAuditLogActorId(
   guild: Guild,
   auditLogEvent: AuditLogEvent,
   targetId: string,
 ): Promise<string | null> {
-  try {
-    const logs = await guild.fetchAuditLogs({ type: auditLogEvent, limit: 5 });
-    const entry = logs.entries.find((candidate) => candidate.targetId === targetId);
-    return entry?.executorId ?? null;
-  } catch {
-    return null;
-  }
+  return (await resolveAuditLogActor(guild, auditLogEvent, targetId)).actorId;
 }
 
 function handleVoiceStateUpdate(
@@ -294,16 +361,35 @@ async function handleMessageDelete(
   if (message.author?.bot) return;
   if (isExcludedChannel(config, message.channelId)) return;
 
+  const authorId = message.author?.id ?? null;
+  // Discordは本人による自己削除をAudit Logへ残さないため、「Audit Logの取得自体には
+  // 成功したが一致entryが無い」場合に限り自己削除とみなし投稿者本人をactorとして扱う。
+  // 取得自体が失敗した場合(View Audit Log権限不足・一時的なAPIエラー等)は自己削除と
+  // 断定せず、実行者不明のままにする(権限未付与の既存Guildでモデレーター削除を
+  // 自己削除と誤記録しないため)。
+  let actorId: string | null = null;
+  let actorResolved = false;
+  if (authorId && message.guild) {
+    const resolution = await resolveAuditLogActor(
+      message.guild,
+      AuditLogEvent.MessageDelete,
+      authorId,
+    );
+    actorResolved = resolution.actorId !== null;
+    actorId = resolution.actorId ?? (resolution.lookupSucceeded ? authorId : null);
+  }
+
   await record(context, {
     guildId: context.guildId,
-    userId: message.author?.id ?? null,
+    userId: actorId,
     event: 'message_delete',
     channelId: message.channelId,
     messageId: message.id,
     content: message.content ?? null,
+    metadata: authorId ? { targetUserId: authorId, actorResolved } : null,
   });
 
-  const userId = message.author?.id;
+  const userId = authorId;
   if (!userId) return;
 
   await incrementCommunityActivity(
@@ -368,7 +454,7 @@ async function handleChannelEvent(
 ): Promise<void> {
   if (!('guild' in channel) || !channel.guild) return;
   const config = normalizeActivityLogConfig(context.config);
-  if (!config.enabled || !config.trackProfile) return;
+  if (!config.enabled || !config.trackChannelManagement) return;
   if (isExcludedChannel(config, channel.id)) return;
 
   const actorId = await resolveAuditLogActorId(channel.guild, auditLogEvent, channel.id);
@@ -381,25 +467,160 @@ async function handleChannelEvent(
   });
 }
 
+/**
+ * channelUpdateはトピック・権限上書き・スローモード等、名前以外の変更でも頻繁に発火する
+ * (特にper-userの権限上書き)。ノイズを避けるため、guild_icon/banner_updateと同じ方針で
+ * 名前の変更のみを記録対象とする。
+ */
+async function handleChannelUpdate(
+  context: ActivityLogRuntimeContext,
+  oldChannel: DMChannel | NonThreadGuildBasedChannel,
+  newChannel: NonThreadGuildBasedChannel,
+): Promise<void> {
+  if (!('guild' in newChannel) || !newChannel.guild) return;
+  const config = normalizeActivityLogConfig(context.config);
+  if (!config.enabled || !config.trackChannelManagement) return;
+  if (isExcludedChannel(config, newChannel.id)) return;
+
+  const oldName = 'name' in oldChannel ? oldChannel.name : null;
+  if (oldName === newChannel.name) return;
+
+  const actorId = await resolveAuditLogActorId(
+    newChannel.guild,
+    AuditLogEvent.ChannelUpdate,
+    newChannel.id,
+  );
+  await record(context, {
+    guildId: context.guildId,
+    userId: actorId,
+    event: 'channel_update',
+    channelId: newChannel.id,
+    metadata: { channelName: newChannel.name, before: oldName, after: newChannel.name },
+  });
+}
+
+async function handleRoleEvent(
+  context: ActivityLogRuntimeContext,
+  event: 'guild_role_create' | 'guild_role_update' | 'guild_role_delete',
+  auditLogEvent: AuditLogEvent,
+  role: Role,
+): Promise<void> {
+  const config = normalizeActivityLogConfig(context.config);
+  if (!config.enabled || !config.trackRoleManagement) return;
+
+  const actorId = await resolveAuditLogActorId(role.guild, auditLogEvent, role.id);
+  await record(context, {
+    guildId: context.guildId,
+    userId: actorId,
+    event,
+    metadata: { roleId: role.id, roleName: role.name },
+  });
+}
+
+async function handleMemberJoin(
+  context: ActivityLogRuntimeContext,
+  member: GuildMember,
+): Promise<void> {
+  const config = normalizeActivityLogConfig(context.config);
+  if (!config.enabled || !config.trackMembership || member.user.bot) return;
+
+  await record(context, { guildId: context.guildId, userId: member.id, event: 'member_join' });
+}
+
+async function handleMemberLeave(
+  context: ActivityLogRuntimeContext,
+  member: GuildMember | PartialGuildMember,
+): Promise<void> {
+  const config = normalizeActivityLogConfig(context.config);
+  if (!config.enabled || !config.trackMembership || member.user.bot) return;
+
+  // guildMemberRemoveだけでは自主退出とKickを区別できないため、Audit LogのMemberKickから
+  // 実行者を特定できた場合のみactorとして記録する(自主退出時はAudit Logに記録が無い)。
+  // 退出したメンバー自身を実行者と誤表示しないよう、対象は常にmetadata.targetUserIdへ置く。
+  const actorId = await resolveAuditLogActorId(member.guild, AuditLogEvent.MemberKick, member.id);
+  await record(context, {
+    guildId: context.guildId,
+    userId: actorId,
+    event: 'member_leave',
+    metadata: { targetUserId: member.id, actorResolved: actorId !== null },
+  });
+}
+
+async function handleBanEvent(
+  context: ActivityLogRuntimeContext,
+  event: 'member_ban' | 'member_unban',
+  auditLogEvent: AuditLogEvent,
+  ban: GuildBan,
+): Promise<void> {
+  const config = normalizeActivityLogConfig(context.config);
+  if (!config.enabled || !config.trackModerationBans) return;
+
+  const actorId = await resolveAuditLogActorId(ban.guild, auditLogEvent, ban.user.id);
+  await record(context, {
+    guildId: context.guildId,
+    userId: actorId,
+    event,
+    metadata: {
+      targetUserId: ban.user.id,
+      actorResolved: actorId !== null,
+      reason: ban.reason ?? null,
+    },
+  });
+}
+
+async function handleInviteCreate(
+  context: ActivityLogRuntimeContext,
+  invite: Invite,
+): Promise<void> {
+  if (!invite.guild) return;
+  const config = normalizeActivityLogConfig(context.config);
+  if (!config.enabled || !config.trackInvites) return;
+  if (invite.inviter?.bot) return;
+  if (isExcludedChannel(config, invite.channelId)) return;
+
+  await record(context, {
+    guildId: context.guildId,
+    userId: invite.inviter?.id ?? null,
+    event: 'invite_create',
+    channelId: invite.channelId ?? null,
+    metadata: { code: invite.code, maxUses: invite.maxUses ?? null, maxAge: invite.maxAge ?? null },
+  });
+}
+
 async function handleGuildMemberUpdate(
   context: ActivityLogRuntimeContext,
   oldMember: GuildMember | PartialGuildMember,
   newMember: GuildMember,
 ): Promise<void> {
   const config = normalizeActivityLogConfig(context.config);
-  if (!config.enabled || !config.trackProfile || newMember.user.bot) return;
+  if (!config.enabled || newMember.user.bot) return;
   const roleIds = [...newMember.roles.cache.keys()];
   if (hasExcludedRole(config, roleIds)) return;
 
-  if (oldMember.nickname !== newMember.nickname) {
+  if (config.trackNicknameAvatar && oldMember.nickname !== newMember.nickname) {
+    // Discordは本人によるニックネーム変更をAudit Logへ残さないため、「Audit Logの
+    // 取得自体には成功したが一致entryが無い」場合に限り自己変更とみなし対象メンバー
+    // 本人をactorとして扱う。取得自体が失敗した場合(権限不足等)は自己変更と断定せず
+    // 実行者不明のままにする。
+    const resolution = await resolveAuditLogActor(
+      newMember.guild,
+      AuditLogEvent.MemberUpdate,
+      newMember.id,
+    );
+    const actorId = resolution.actorId ?? (resolution.lookupSucceeded ? newMember.id : null);
     await record(context, {
       guildId: context.guildId,
-      userId: newMember.id,
+      userId: actorId,
       event: 'nickname_update',
-      metadata: { before: oldMember.nickname, after: newMember.nickname },
+      metadata: {
+        before: oldMember.nickname,
+        after: newMember.nickname,
+        targetUserId: newMember.id,
+        actorResolved: resolution.actorId !== null,
+      },
     });
   }
-  if (oldMember.avatar !== newMember.avatar) {
+  if (config.trackNicknameAvatar && oldMember.avatar !== newMember.avatar) {
     await record(context, {
       guildId: context.guildId,
       userId: newMember.id,
@@ -408,45 +629,114 @@ async function handleGuildMemberUpdate(
     });
   }
 
-  const oldRoleIds = new Set(oldMember.roles?.cache.keys() ?? []);
-  const newRoleIds = new Set(roleIds);
-  for (const roleId of newRoleIds) {
-    if (!oldRoleIds.has(roleId)) {
+  if (config.trackTimeout) {
+    const oldTimeout = oldMember.communicationDisabledUntilTimestamp ?? null;
+    const newTimeout = newMember.communicationDisabledUntilTimestamp ?? null;
+    // Date.now()との比較で「現在有効か」を見るのではなく、値自体の有無(null⇔非null)で
+    // 遷移を判定する。自然失効の場合Discordは単独のguildMemberUpdateを送らないため、
+    // 別件の変更(ニックネーム変更等)で久々にguildMemberUpdateが来た時点では
+    // oldTimeoutが既に過去の時刻になっている場合がある。Date.now()と比較すると
+    // そのケースでtrue→trueやfalse→falseに潰れてしまい、既に失効していたタイムアウトの
+    // 解除が記録されない。
+    const wasTimedOut = oldTimeout !== null;
+    const isTimedOut = newTimeout !== null;
+    // 本人による自己タイムアウトは不可能なため、実行者が解決できない場合はnullのままとする。
+    if (!wasTimedOut && isTimedOut) {
+      const actorId = await resolveAuditLogActorId(
+        newMember.guild,
+        AuditLogEvent.MemberUpdate,
+        newMember.id,
+      );
       await record(context, {
         guildId: context.guildId,
-        userId: newMember.id,
-        event: 'role_add',
-        metadata: { roleId },
+        userId: actorId,
+        event: 'member_timeout_add',
+        metadata: {
+          targetUserId: newMember.id,
+          actorResolved: actorId !== null,
+          until: newTimeout,
+        },
+      });
+    } else if (wasTimedOut && !isTimedOut) {
+      const actorId = await resolveAuditLogActorId(
+        newMember.guild,
+        AuditLogEvent.MemberUpdate,
+        newMember.id,
+      );
+      await record(context, {
+        guildId: context.guildId,
+        userId: actorId,
+        event: 'member_timeout_remove',
+        metadata: { targetUserId: newMember.id, actorResolved: actorId !== null },
       });
     }
   }
-  for (const roleId of oldRoleIds) {
-    if (!newRoleIds.has(roleId)) {
-      await record(context, {
-        guildId: context.guildId,
-        userId: newMember.id,
-        event: 'role_remove',
-        metadata: { roleId },
-      });
+
+  if (config.trackMemberRoles) {
+    const oldRoleIds = new Set(oldMember.roles?.cache.keys() ?? []);
+    const newRoleIds = new Set(roleIds);
+    const addedRoleIds = [...newRoleIds].filter((roleId) => !oldRoleIds.has(roleId));
+    const removedRoleIds = [...oldRoleIds].filter((roleId) => !newRoleIds.has(roleId));
+    if (addedRoleIds.length > 0 || removedRoleIds.length > 0) {
+      // セルフサービスロール・Bot付与等、本人以外が起点のケースが多いため「自己」固定の
+      // フォールバックはせず、解決できなければ不明のままとする。
+      const actorId = await resolveAuditLogActorId(
+        newMember.guild,
+        AuditLogEvent.MemberRoleUpdate,
+        newMember.id,
+      );
+      for (const roleId of addedRoleIds) {
+        await record(context, {
+          guildId: context.guildId,
+          userId: actorId,
+          event: 'role_add',
+          metadata: { roleId, targetUserId: newMember.id, actorResolved: actorId !== null },
+        });
+      }
+      for (const roleId of removedRoleIds) {
+        await record(context, {
+          guildId: context.guildId,
+          userId: actorId,
+          event: 'role_remove',
+          metadata: { roleId, targetUserId: newMember.id, actorResolved: actorId !== null },
+        });
+      }
     }
   }
 }
 
-async function handleUserAvatarUpdate(
+async function handleUserProfileUpdate(
   context: ActivityLogRuntimeContext,
   oldUser: User,
   newUser: User,
 ): Promise<void> {
   const config = normalizeActivityLogConfig(context.config);
-  if (!config.enabled || !config.trackProfile || newUser.bot) return;
-  if (oldUser.avatar === newUser.avatar) return;
+  if (!config.enabled || newUser.bot) return;
 
-  await record(context, {
-    guildId: context.guildId,
-    userId: newUser.id,
-    event: 'avatar_update',
-    metadata: { scope: 'global' },
-  });
+  if (config.trackNicknameAvatar && oldUser.avatar !== newUser.avatar) {
+    await record(context, {
+      guildId: context.guildId,
+      userId: newUser.id,
+      event: 'avatar_update',
+      metadata: { scope: 'global' },
+    });
+  }
+  if (
+    config.trackUsernameChange &&
+    (oldUser.username !== newUser.username || oldUser.globalName !== newUser.globalName)
+  ) {
+    await record(context, {
+      guildId: context.guildId,
+      userId: newUser.id,
+      event: 'username_update',
+      metadata: {
+        beforeUsername: oldUser.username,
+        afterUsername: newUser.username,
+        beforeGlobalName: oldUser.globalName,
+        afterGlobalName: newUser.globalName,
+      },
+    });
+  }
 }
 
 async function handleGuildUpdate(
@@ -455,8 +745,16 @@ async function handleGuildUpdate(
   newGuild: Guild,
 ): Promise<void> {
   const config = normalizeActivityLogConfig(context.config);
-  if (!config.enabled || !config.trackProfile) return;
+  if (!config.enabled || !config.trackServerSettings) return;
 
+  if (oldGuild.name !== newGuild.name) {
+    await record(context, {
+      guildId: context.guildId,
+      userId: null,
+      event: 'guild_name_update',
+      metadata: { before: oldGuild.name, after: newGuild.name },
+    });
+  }
   if (oldGuild.icon !== newGuild.icon) {
     await record(context, { guildId: context.guildId, userId: null, event: 'guild_icon_update' });
   }
@@ -488,6 +786,19 @@ export const MEMBER_ACTIVITY_EVENT_LABELS: Record<MemberActivityEventType, strin
   guild_banner_update: 'サーバーバナー変更',
   channel_create: 'チャンネル作成',
   channel_delete: 'チャンネル削除',
+  channel_update: 'チャンネル変更',
+  guild_role_create: 'ロール作成',
+  guild_role_update: 'ロール変更',
+  guild_role_delete: 'ロール削除',
+  member_join: 'サーバー参加',
+  member_leave: 'サーバー退出',
+  member_ban: 'BAN',
+  member_unban: 'BAN解除',
+  member_timeout_add: 'タイムアウト付与',
+  member_timeout_remove: 'タイムアウト解除',
+  guild_name_update: 'サーバー名変更',
+  username_update: 'ユーザー名変更',
+  invite_create: '招待リンク作成',
 };
 
 function describeEventMetadata(row: {
@@ -496,22 +807,64 @@ function describeEventMetadata(row: {
 }): string {
   const metadata = row.metadata;
   if (!metadata) return '';
+  const targetUserId = typeof metadata.targetUserId === 'string' ? metadata.targetUserId : null;
+  const targetSuffix = targetUserId ? ` (対象: <@${targetUserId}>)` : '';
+
   if (row.event === 'nickname_update') {
     const before = typeof metadata.before === 'string' ? metadata.before : '(なし)';
     const after = typeof metadata.after === 'string' ? metadata.after : '(なし)';
-    return ` — \`${before}\` → \`${after}\``;
+    return ` — \`${before}\` → \`${after}\`${targetSuffix}`;
   }
   if (row.event === 'role_add' || row.event === 'role_remove') {
     const roleId = typeof metadata.roleId === 'string' ? metadata.roleId : null;
-    return roleId ? ` — <@&${roleId}>` : '';
+    return `${roleId ? ` — <@&${roleId}>` : ''}${targetSuffix}`;
   }
   if (row.event === 'avatar_update') {
     return typeof metadata.scope === 'string'
       ? ` — (${metadata.scope === 'global' ? 'グローバル' : 'サーバー個別'})`
       : '';
   }
-  if (row.event === 'channel_create' || row.event === 'channel_delete') {
+  if (
+    row.event === 'channel_create' ||
+    row.event === 'channel_delete' ||
+    row.event === 'channel_update'
+  ) {
     return typeof metadata.channelName === 'string' ? ` — \`#${metadata.channelName}\`` : '';
+  }
+  if (
+    row.event === 'guild_role_create' ||
+    row.event === 'guild_role_update' ||
+    row.event === 'guild_role_delete'
+  ) {
+    const roleId = typeof metadata.roleId === 'string' ? metadata.roleId : null;
+    return roleId ? ` — <@&${roleId}>` : '';
+  }
+  if (
+    row.event === 'member_ban' ||
+    row.event === 'member_unban' ||
+    row.event === 'member_timeout_add' ||
+    row.event === 'member_timeout_remove' ||
+    row.event === 'member_leave' ||
+    row.event === 'message_delete'
+  ) {
+    return targetSuffix;
+  }
+  if (row.event === 'guild_name_update') {
+    const before = typeof metadata.before === 'string' ? metadata.before : '(なし)';
+    const after = typeof metadata.after === 'string' ? metadata.after : '(なし)';
+    return ` — \`${before}\` → \`${after}\``;
+  }
+  if (row.event === 'username_update') {
+    const beforeUsername =
+      typeof metadata.beforeUsername === 'string' ? metadata.beforeUsername : null;
+    const afterUsername =
+      typeof metadata.afterUsername === 'string' ? metadata.afterUsername : null;
+    return beforeUsername && afterUsername && beforeUsername !== afterUsername
+      ? ` — \`${beforeUsername}\` → \`${afterUsername}\``
+      : '';
+  }
+  if (row.event === 'invite_create') {
+    return typeof metadata.code === 'string' ? ` — \`${metadata.code}\`` : '';
   }
   return '';
 }
@@ -667,9 +1020,9 @@ export const activityLogPlugin = definePlugin<ActivityLogConfig, unknown, Prisma
         },
       },
       {
-        event: 'userAvatarUpdate',
+        event: 'userProfileUpdate',
         async handler(_ctx, ...args) {
-          await handleUserAvatarUpdate(context, args[0] as User, args[1] as User);
+          await handleUserProfileUpdate(context, args[0] as User, args[1] as User);
         },
       },
       {
@@ -698,6 +1051,89 @@ export const activityLogPlugin = definePlugin<ActivityLogConfig, unknown, Prisma
             AuditLogEvent.ChannelDelete,
             args[0] as DMChannel | NonThreadGuildBasedChannel,
           );
+        },
+      },
+      {
+        event: 'channelUpdate',
+        async handler(_ctx, ...args) {
+          await handleChannelUpdate(
+            context,
+            args[0] as DMChannel | NonThreadGuildBasedChannel,
+            args[1] as NonThreadGuildBasedChannel,
+          );
+        },
+      },
+      {
+        event: 'guildRoleCreate',
+        async handler(_ctx, ...args) {
+          await handleRoleEvent(
+            context,
+            'guild_role_create',
+            AuditLogEvent.RoleCreate,
+            args[0] as Role,
+          );
+        },
+      },
+      {
+        event: 'guildRoleUpdate',
+        async handler(_ctx, ...args) {
+          await handleRoleEvent(
+            context,
+            'guild_role_update',
+            AuditLogEvent.RoleUpdate,
+            args[1] as Role,
+          );
+        },
+      },
+      {
+        event: 'guildRoleDelete',
+        async handler(_ctx, ...args) {
+          await handleRoleEvent(
+            context,
+            'guild_role_delete',
+            AuditLogEvent.RoleDelete,
+            args[0] as Role,
+          );
+        },
+      },
+      {
+        event: 'guildMemberAdd',
+        async handler(_ctx, ...args) {
+          await handleMemberJoin(context, args[0] as GuildMember);
+        },
+      },
+      {
+        event: 'guildMemberRemove',
+        async handler(_ctx, ...args) {
+          await handleMemberLeave(context, args[0] as GuildMember | PartialGuildMember);
+        },
+      },
+      {
+        event: 'guildBanAdd',
+        async handler(_ctx, ...args) {
+          await handleBanEvent(
+            context,
+            'member_ban',
+            AuditLogEvent.MemberBanAdd,
+            args[0] as GuildBan,
+          );
+        },
+      },
+      {
+        event: 'guildBanRemove',
+        async handler(_ctx, ...args) {
+          await handleBanEvent(
+            context,
+            'member_unban',
+            AuditLogEvent.MemberBanRemove,
+            args[0] as GuildBan,
+          );
+        },
+      },
+      {
+        event: 'inviteCreate',
+        async handler(_ctx, ...args) {
+          await handleInviteCreate(context, args[0] as Invite);
         },
       },
     ];

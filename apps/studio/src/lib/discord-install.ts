@@ -1,6 +1,8 @@
 const DISCORD_OAUTH_AUTHORIZE_URL = 'https://discord.com/oauth2/authorize';
 
 const VIEW_CHANNEL_PERMISSION = 1024n;
+const MANAGE_CHANNELS_PERMISSION = 16n;
+const VIEW_AUDIT_LOG_PERMISSION = 128n;
 const SEND_MESSAGES_PERMISSION = 2048n;
 const MANAGE_MESSAGES_PERMISSION = 8192n;
 const EMBED_LINKS_PERMISSION = 16384n;
@@ -11,10 +13,16 @@ const SEND_MESSAGES_IN_THREADS_PERMISSION = 274877906944n;
 /**
  * 公式Pluginの参照・通常投稿・Message管理・Role管理・Embed・Thread応答と、
  * Botプロフィール画面からのGuild内Nickname変更に必要な最小権限を要求する。
+ * View Audit Logはactivity-logプラグインの実行者解決(fetchAuditLogs)に必要
+ * (無いと絵文字/チャンネル/Role/BAN/タイムアウト等の実行者が常にnullになる)。
+ * Manage ChannelsはDiscordの仕様上、招待作成イベント(InviteCreate)を受信するために
+ * チャンネル単位で必要(無いとtrackInvitesが常に何も記録しない)。
  * 追加権限が必要な環境ではDISCORD_BOT_PERMISSIONSで明示的に上書きできる。
  */
 export const DEFAULT_DISCORD_BOT_PERMISSIONS = (
   VIEW_CHANNEL_PERMISSION |
+  MANAGE_CHANNELS_PERMISSION |
+  VIEW_AUDIT_LOG_PERMISSION |
   SEND_MESSAGES_PERMISSION |
   MANAGE_MESSAGES_PERMISSION |
   EMBED_LINKS_PERMISSION |

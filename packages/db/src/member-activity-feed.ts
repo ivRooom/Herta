@@ -69,6 +69,12 @@ export async function searchMemberActivityEvents(
             { userId: { contains: query, mode: 'insensitive' } },
             { channelId: { contains: query, mode: 'insensitive' } },
             { messageId: { contains: query, mode: 'insensitive' } },
+            // role_add/role_remove/nickname_update/member_timeout_*/member_ban/
+            // member_unban/member_leave/message_deleteはuserIdに実行者(解決できた場合)
+            // が入り、対象者はmetadata.targetUserIdへ入る(PR #488参照)。対象者のIDで
+            // 検索した際にもこれらの行がヒットするようにする。JSON path比較のため
+            // userId等と異なり完全一致のみ(部分一致は未対応)。
+            { metadata: { path: ['targetUserId'], equals: query } },
           ],
         }
       : {}),

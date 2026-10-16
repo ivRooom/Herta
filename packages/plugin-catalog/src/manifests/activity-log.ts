@@ -5,7 +5,7 @@ export const activityLogManifest: PluginManifest = {
   name: 'Activity Log',
   version: '1.0.0',
   description:
-    'VC入退室・メッセージ作成/編集/削除・絵文字登録・アバター/ニックネーム/ロール/サーバーアイコン変更等のメンバー行動を記録します。モデレーション調査・統計分析の両方に使え、短時間の大量投稿/削除も検知できます',
+    'VC入退室・メッセージ作成/編集/削除・絵文字登録・アバター/ニックネーム/ロール変更・チャンネル/Role管理・サーバー参加退出・BAN/タイムアウト・招待リンク作成等のメンバー行動を記録します。モデレーション調査・統計分析の両方に使え、短時間の大量投稿/削除も検知できます',
   author: { name: 'Herta' },
   category: 'moderation',
   permissions: [
@@ -50,11 +50,68 @@ export const activityLogManifest: PluginManifest = {
         default: true,
         'x-herta-ui': { section: '記録対象' },
       },
-      trackProfile: {
+      trackInvites: {
         type: 'boolean',
-        title: 'アバター・ニックネーム・ロール・サーバーアイコン等の変更を記録する',
+        title: '招待リンクの作成を記録する',
         default: true,
         'x-herta-ui': { section: '記録対象' },
+      },
+      trackNicknameAvatar: {
+        type: 'boolean',
+        title: 'ニックネーム・アバター変更を記録する',
+        default: true,
+        'x-herta-ui': { section: 'メンバー情報' },
+      },
+      trackMembership: {
+        type: 'boolean',
+        title: 'サーバー参加・退出を記録する',
+        default: true,
+        'x-herta-ui': { section: 'メンバー情報' },
+      },
+      trackUsernameChange: {
+        type: 'boolean',
+        title: 'ユーザー名・表示名の変更を記録する',
+        default: true,
+        'x-herta-ui': {
+          section: 'メンバー情報',
+          help: 'Discordアカウント全体のユーザー名/表示名の変更です(サーバー固有のニックネームとは別)。',
+        },
+      },
+      trackMemberRoles: {
+        type: 'boolean',
+        title: 'メンバーへのRole付与・剥奪を記録する',
+        default: true,
+        'x-herta-ui': { section: 'Role' },
+      },
+      trackRoleManagement: {
+        type: 'boolean',
+        title: 'Role自体の作成・変更・削除を記録する',
+        default: true,
+        'x-herta-ui': { section: 'Role' },
+      },
+      trackServerSettings: {
+        type: 'boolean',
+        title: 'サーバー名・アイコン・バナーの変更を記録する',
+        default: true,
+        'x-herta-ui': { section: 'サーバー設定' },
+      },
+      trackChannelManagement: {
+        type: 'boolean',
+        title: 'チャンネルの作成・変更・削除を記録する',
+        default: true,
+        'x-herta-ui': { section: 'チャンネル' },
+      },
+      trackModerationBans: {
+        type: 'boolean',
+        title: 'BAN・BAN解除を記録する',
+        default: true,
+        'x-herta-ui': { section: 'モデレーション' },
+      },
+      trackTimeout: {
+        type: 'boolean',
+        title: 'タイムアウトの付与・解除を記録する',
+        default: true,
+        'x-herta-ui': { section: 'モデレーション' },
       },
       excludedChannelIds: {
         type: 'array',
@@ -143,7 +200,16 @@ export const activityLogManifest: PluginManifest = {
       'trackVoice',
       'trackMessages',
       'trackEmoji',
-      'trackProfile',
+      'trackInvites',
+      'trackNicknameAvatar',
+      'trackMembership',
+      'trackUsernameChange',
+      'trackMemberRoles',
+      'trackRoleManagement',
+      'trackServerSettings',
+      'trackChannelManagement',
+      'trackModerationBans',
+      'trackTimeout',
       'excludedChannelIds',
       'excludedRoleIds',
       'moderationAlertsEnabled',
@@ -162,27 +228,13 @@ export const activityLogManifest: PluginManifest = {
       options: [
         { name: 'user', description: '確認するユーザー', type: 'user' },
         {
+          // Discordのchoicesは1オプションあたり最大25件のため、対象イベントが
+          // それを超えた現在は選択式をやめ、値を直接入力する形にしている。
+          // 一覧性が必要な場合はStudioの統合監査ログ画面(ソース「Discordアクティビティ」)
+          // を使う。
           name: 'event',
-          description: '絞り込むイベント種別',
+          description: '絞り込むイベント種別(例: role_add, message_delete, channel_update 等)',
           type: 'string',
-          choices: [
-            { name: 'VC入室', value: 'voice_join' },
-            { name: 'VC退室', value: 'voice_leave' },
-            { name: 'メッセージ作成', value: 'message_create' },
-            { name: 'メッセージ編集', value: 'message_update' },
-            { name: 'メッセージ削除', value: 'message_delete' },
-            { name: '絵文字登録', value: 'emoji_create' },
-            { name: '絵文字変更', value: 'emoji_update' },
-            { name: '絵文字削除', value: 'emoji_delete' },
-            { name: 'アバター変更', value: 'avatar_update' },
-            { name: 'ニックネーム変更', value: 'nickname_update' },
-            { name: 'ロール付与', value: 'role_add' },
-            { name: 'ロール剥奪', value: 'role_remove' },
-            { name: 'サーバーアイコン変更', value: 'guild_icon_update' },
-            { name: 'サーバーバナー変更', value: 'guild_banner_update' },
-            { name: 'チャンネル作成', value: 'channel_create' },
-            { name: 'チャンネル削除', value: 'channel_delete' },
-          ],
         },
         {
           name: 'limit',
