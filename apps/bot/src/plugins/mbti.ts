@@ -205,7 +205,7 @@ export function createMbtiResultCommandHandler(
         content: [
           `最新の結果: **${latest.resultType}-${latest.resultIdentity}**`,
           '詳細レポート・履歴・過去の結果との比較はこちらから確認できます。',
-          url.toString(),
+          `<${url.toString()}>`,
           'このURLは30分有効です。URLを知っている人は履歴を閲覧できるため、共有しないでください。再発行すると以前のURLは無効になります。',
         ].join('\n'),
         allowedMentions: { parse: [] },

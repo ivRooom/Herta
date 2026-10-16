@@ -66,6 +66,7 @@ describe('/mbti-result', () => {
     const token = body.match(/history\/([A-Za-z0-9_-]{43})/)![1];
     expect(JSON.stringify(upsert.mock.calls)).not.toContain(token);
     expect(body).not.toContain(interaction.user.id);
+    expect(body).toContain('<https://herta.example/mbti/history/');
   });
   it('allows loopback HTTP only in development and rejects remote HTTP', async () => {
     const findFirst = vi.fn().mockResolvedValue(null);
