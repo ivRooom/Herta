@@ -27,7 +27,7 @@ async function executeDeleteVoiceData(interaction: ChatInputCommandInteraction) 
     content:
       `🗑️ VC要約データの削除を実行しました。` +
       `\n- あなた単独のセッション: ${result.deletedSessions}件 削除` +
-      `\n- 他の参加者もいたセッション: ${result.redactedSessions}件からあなたの情報を除去`,
+      `\n- 他の参加者もいたセッション: ${result.redactedSessions}件からあなたの参加記録を除去(要約は複数人の発言から生成されているため、他の参加者の分も含めて併せて削除しました)`,
     flags: MessageFlags.Ephemeral,
   });
 }

@@ -292,6 +292,15 @@ export interface DeleteUserVoiceDataResult {
  * (他の参加者のセッション記録自体は残す。本人のtranscript segmentsも合わせて削除し、
  * startedByが本人を指していた場合はnullにする)。
  *
+ * 要約(summary/topics)は複数参加者の発言から生成された1つの文章であり、本人由来の
+ * 内容だけを事後的に取り除くことはできない。そのため、本人を含むセッションを削除・
+ * 再生成せず残す場合でも、要約は一律nullへ戻す(他の参加者には要約の消失という形で
+ * 影響するが、不完全な匿名化で本人由来の内容を残すよりプライバシー保護を優先する)。
+ *
+ * 検索条件はconsenting/non-consentingの配列だけでなく、startedByと
+ * VcRecapTranscriptSegment.userIdも含める(配列に本人が含まれないセッションの
+ * startedByやsegmentsだけに本人の痕跡が残るケースを取りこぼさないため)。
+ *
  * 配列からの除去はPostgresのarray_remove()でDB側に原子的に行わせる(アプリ側で読んだ
  * 配列をそのまま書き戻す実装だと、同時に別ユーザーの削除依頼が同じsessionに対して走った
  * 場合にlost updateが起き、先に処理された側の削除が後から上書きされ消えてしまう)。
@@ -302,7 +311,12 @@ export async function deleteUserVoiceData(
 ): Promise<DeleteUserVoiceDataResult> {
   const sessions = await prisma.vcRecapSession.findMany({
     where: {
-      OR: [{ consentingUserIds: { has: userId } }, { nonConsentingUserIds: { has: userId } }],
+      OR: [
+        { consentingUserIds: { has: userId } },
+        { nonConsentingUserIds: { has: userId } },
+        { startedBy: userId },
+        { segments: { some: { userId } } },
+      ],
     },
     select: { id: true },
   });
@@ -318,7 +332,9 @@ export async function deleteUserVoiceData(
         UPDATE vc_recap_sessions
         SET consenting_user_ids = array_remove(consenting_user_ids, ${userId}),
             non_consenting_user_ids = array_remove(non_consenting_user_ids, ${userId}),
-            started_by = CASE WHEN started_by = ${userId} THEN NULL ELSE started_by END
+            started_by = CASE WHEN started_by = ${userId} THEN NULL ELSE started_by END,
+            summary = NULL,
+            topics = ARRAY[]::TEXT[]
         WHERE id = ${session.id}
         RETURNING consenting_user_ids, non_consenting_user_ids
       `;
