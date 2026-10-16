@@ -46,11 +46,20 @@ describe('daily fortune', () => {
     for (const extra of [
       { mbti: 'INFP-X' },
       { bloodType: 'C' },
-      { birthday: '2000-10-17', zodiac: '牡羊座' },
-      { birthday: '2000-10-17', eto: '子' },
+      { birthday: '2000-10-17', zodiac: '不明座' },
+      { birthday: '2000-10-17', eto: '猫' },
       { birthday: '2000-10-17', ageGroup: '40代' },
     ])
       expect(() => validateFortuneProfile({ ...empty, ...extra }, '2026-10-16')).toThrow();
+  });
+  it('respects explicit zodiac and eto overrides', () => {
+    const profile = { ...empty, birthday: '2000-10-17', zodiac: '牡羊座', eto: '子' };
+    expect(() => validateFortuneProfile(profile, '2026-10-17')).not.toThrow();
+    expect(describeFortuneProfile(profile, '2026-10-17')).toMatchObject({
+      zodiac: '牡羊座',
+      eto: '子',
+      age: 26,
+    });
   });
   it('does not reroll for profile edits, separates users/days and provides complete bounded results', () => {
     const a = createDailyFortune('guild', 'user', '2026-10-16', empty);

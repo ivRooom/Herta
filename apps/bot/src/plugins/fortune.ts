@@ -69,13 +69,13 @@ export const fortunePlugin = definePlugin<{ enabled: boolean }, unknown, PrismaC
               source.status === 'linked' ? source.profile : { ...EMPTY_FORTUNE_PROFILE };
             const sourceMessage =
               source.status === 'linked'
-                ? 'ivrm-webの承認済みプロフィールを使っています。未登録の項目は使いません。変更は https://member.ivrm.jp から行えます。'
+                ? 'ivrm-webに登録した本人のプロフィールを使っています。未登録の項目は使いません。変更は https://member.ivrm.jp/profile/onboarding から行えます。'
                 : source.status === 'ineligible-guild'
                   ? 'このサーバーはivrm-webの会員情報連携の対象外です。今回は登録情報を使わず占います。'
                   : source.status === 'unconfigured'
                     ? 'ivrm-webの会員情報連携は未設定です。管理者に連携設定を確認してください。今回は登録情報を使わず占います。'
                     : source.status === 'not-linked'
-                      ? '連携済み・承認済みのプロフィールが見つかりません。https://member.ivrm.jp でDiscord連携とプロフィールの登録・承認状況を確認してください。今回は登録情報を使わず占います。'
+                      ? '本人のプロフィールが見つかりません。https://member.ivrm.jp/profile/onboarding で占い用プロフィールを保存してください。公開審査前から使えます。今回は登録情報を使わず占います。'
                       : 'ivrm-webのプロフィールを現在取得できません。今回は登録情報を使わず占います。少し待ってからお試しください。';
             if (command === 'profile') {
               const details = describeFortuneProfile(saved, date);

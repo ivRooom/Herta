@@ -8,7 +8,7 @@ import {
 } from './fortune-ivrm-profile.js';
 const contract = JSON.parse(
   readFileSync(
-    new URL('../../../../contracts/ivrm/herta-fortune-profile.v1.bundle.json', import.meta.url),
+    new URL('../../../../contracts/ivrm/herta-fortune-profile.v2.bundle.json', import.meta.url),
     'utf8',
   ),
 );
@@ -24,7 +24,7 @@ function mockResponse(profile: unknown, edit: Record<string, unknown> = {}) {
   return vi.fn(async (_url: unknown, init: RequestInit) => {
     const request = JSON.parse(init.body as string);
     return Response.json({
-      schemaVersion: 1,
+      schemaVersion: 2,
       requestId: request.requestId,
       discordUserId: user,
       profile,
@@ -96,6 +96,29 @@ describe('private ivrm-web profile client', () => {
       ),
     );
     expect(await fetchIvrmFortuneProfile(guild, user, '2026-10-16', config)).toEqual({
+      status: 'unavailable',
+    });
+  });
+  it('accepts valid manual overrides and rejects invalid ones', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockResponse({
+        birthday: '2000-10-16',
+        mbtiType: null,
+        bloodType: 'A',
+        zodiacOverride: '牡羊座',
+        etoOverride: '子',
+      }),
+    );
+    expect(await fetchIvrmFortuneProfile(guild, user, '2026-10-17', config)).toMatchObject({
+      status: 'linked',
+      profile: { zodiac: '牡羊座', eto: '子' },
+    });
+    vi.stubGlobal(
+      'fetch',
+      mockResponse({ birthday: null, mbtiType: null, bloodType: null, zodiacOverride: '不明座' }),
+    );
+    expect(await fetchIvrmFortuneProfile(guild, user, '2026-10-17', config)).toEqual({
       status: 'unavailable',
     });
   });

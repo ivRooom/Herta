@@ -2,11 +2,13 @@ import { createHmac, randomUUID } from 'node:crypto';
 import {
   EMPTY_FORTUNE_PROFILE,
   validateFortuneProfile,
+  SIGNS,
+  ETO,
   type FortuneProfile,
 } from './fortune-core.js';
 
-export const FORTUNE_PROFILE_PATH = '/v1/herta/fortune-profile';
-export const FORTUNE_PROFILE_PURPOSE = 'herta-fortune-profile-v1';
+export const FORTUNE_PROFILE_PATH = '/v2/herta/fortune-profile';
+export const FORTUNE_PROFILE_PURPOSE = 'herta-fortune-profile-v2';
 export interface FortuneProfileConfig {
   apiBaseUrl: string;
   secret: string;
@@ -48,7 +50,7 @@ export function buildFortuneProfileRequest(
   requestId: string,
   timestamp: string,
 ) {
-  const body = JSON.stringify({ schemaVersion: 1, requestId, guildId, discordUserId: userId });
+  const body = JSON.stringify({ schemaVersion: 2, requestId, guildId, discordUserId: userId });
   const key = createHmac('sha256', config.secret).update(FORTUNE_PROFILE_PURPOSE).digest();
   const signature = createHmac('sha256', key)
     .update(['POST', FORTUNE_PROFILE_PATH, timestamp, requestId, body].join('\n'))
@@ -130,13 +132,18 @@ export async function fetchIvrmFortuneProfile(
     const value: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     if (
       !isRecord(value) ||
-      value.schemaVersion !== 1 ||
+      value.schemaVersion !== 2 ||
       value.requestId !== requestId ||
       value.discordUserId !== userId ||
       !isRecord(value.profile)
     )
       return { status: 'unavailable' };
     const p = value.profile;
+    if (
+      (p.zodiacOverride != null && !(SIGNS as readonly unknown[]).includes(p.zodiacOverride)) ||
+      (p.etoOverride != null && !(ETO as readonly unknown[]).includes(p.etoOverride))
+    )
+      return { status: 'unavailable' };
     if (
       !(
         p.birthday === null ||
@@ -157,6 +164,8 @@ export async function fetchIvrmFortuneProfile(
       birthday: p.birthday as string | null,
       mbti: p.mbtiType as string | null,
       bloodType: p.bloodType as string | null,
+      zodiac: (p.zodiacOverride as string | null | undefined) ?? null,
+      eto: (p.etoOverride as string | null | undefined) ?? null,
     };
     validateFortuneProfile(profile, date);
     return { status: 'linked', profile };
