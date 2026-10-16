@@ -3,7 +3,7 @@ import { createMbtiReport } from '@herta/shared/mbti-report';
 import type { MbtiScores } from '@herta/shared/mbti-core';
 
 /** Render the same report as the page, using native canvas and local system fonts. */
-export async function createMbtiReportImage(scores: MbtiScores): Promise<Blob> {
+export async function createMbtiReportImage(scores: MbtiScores, estimated = false): Promise<Blob> {
   await document.fonts.ready;
   const report = createMbtiReport(scores);
   const artwork = getMbtiArtwork(report.resultType);
@@ -64,7 +64,18 @@ export async function createMbtiReportImage(scores: MbtiScores): Promise<Blob> {
     }
     y += 12;
   }
-  text('HERTA MBTI  /  あなたの診断レポート', 24, '#9af3d5', true);
+  text(
+    estimated ? 'HERTA MBTI  /  推定スコアの詳細レポート' : 'HERTA MBTI  /  あなたの診断レポート',
+    24,
+    '#9af3d5',
+    true,
+  );
+  if (estimated)
+    text(
+      '過去結果からの推定です。今回の回答から測定した値ではありません。以下の説明は参考値に基づきます。',
+      22,
+      '#c9a6f5',
+    );
   text(`${report.resultType}-${report.identity}`, 68, artwork?.accent ?? '#9af3d5', true);
   text(report.title, 42, '#f5f6fa', true);
   text(report.identityLabel, 27, '#c9a6f5');

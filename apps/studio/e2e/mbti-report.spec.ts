@@ -3,6 +3,34 @@ import { expect, test } from '@playwright/test';
 
 const reportUrl = '/mbti/result?v=1&ei=-12&sn=-14&tf=-10&jp=-8&at=-6';
 
+test('estimated reports retain their label when shared and downloaded', async ({ page }) => {
+  await page.goto('/mbti/result?v=1&basis=estimate&ei=1&sn=-1&tf=-3&jp=1&at=-1');
+  await expect(page.getByRole('heading', { name: '推定スコアの詳細レポート' })).toBeVisible();
+  await expect(page.locator('.mbti-report-type')).toHaveText('ENFJ-T');
+  await expect(page.getByRole('img', { name: /主人公のイメージ/ })).toBeVisible();
+  for (const name of [
+    '活かしやすい強み',
+    '気をつけたい場面',
+    '人との関わり方',
+    '日常で試せること',
+  ]) {
+    await expect(page.getByRole('heading', { name })).toBeVisible();
+  }
+  await page.getByRole('button', { name: '共有リンクをコピー' }).click();
+  const link = await page.getByRole('textbox', { name: '共有リンク' }).inputValue();
+  expect(new URL(link).searchParams.get('basis')).toBe('estimate');
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('button', { name: '画像で保存', exact: true }).click();
+  const download = await downloaded;
+  expect(download.suggestedFilename()).toBe('herta-ENFJ-T-estimated.png');
+  const png = await readFile((await download.path())!);
+  expect(png.readUInt32BE(16)).toBe(1080);
+  expect(png.readUInt32BE(20)).toBeGreaterThan(2500);
+  await page.goto(link);
+  await expect(page.getByRole('heading', { name: '推定スコアの詳細レポート' })).toBeVisible();
+  await expect(page.getByText(/今回の回答から測定した値ではありません/)).toBeVisible();
+});
+
 test('full report, score-only sharing and PNG export work together', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));

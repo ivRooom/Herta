@@ -20,10 +20,12 @@ export function MbtiResultReport({
   scores,
   roleNote,
   shared = false,
+  estimated = false,
 }: {
   scores: MbtiScores;
   roleNote?: string | null;
   shared?: boolean;
+  estimated?: boolean;
 }) {
   const reportRef = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -54,11 +56,11 @@ export function MbtiResultReport({
     setMessage('レポート画像を作成しています…');
     try {
       const { createMbtiReportImage } = await import('@/lib/mbti-report-image');
-      const blob = await createMbtiReportImage(scores);
+      const blob = await createMbtiReportImage(scores, estimated);
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
       anchor.href = url;
-      anchor.download = `herta-${report.resultType}-${report.identity}.png`;
+      anchor.download = `herta-${report.resultType}-${report.identity}${estimated ? '-estimated' : ''}.png`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -73,7 +75,7 @@ export function MbtiResultReport({
 
   async function copyLink() {
     const url = new URL('/mbti/result', window.location.origin);
-    url.search = mbtiShareSearch(scores);
+    url.search = mbtiShareSearch(scores, estimated);
     setShareUrl(url.toString());
     try {
       await navigator.clipboard.writeText(url.toString());
@@ -91,7 +93,18 @@ export function MbtiResultReport({
     >
       <div className="mbti-report-hero">
         <div className="mbti-report-intro">
-          <h2>{shared ? '共有された診断レポート' : 'あなたの診断レポート'}</h2>
+          <h2>
+            {estimated
+              ? '推定スコアの詳細レポート'
+              : shared
+                ? '共有された診断レポート'
+                : 'あなたの診断レポート'}
+          </h2>
+          {estimated ? (
+            <p className="mbti-boundary-note">
+              過去結果からの推定です。今回の回答から測定した値ではありません。以下の説明は参考としてご覧ください。
+            </p>
+          ) : null}
           <p className="mbti-report-type">
             {report.resultType}
             <span>-{report.identity}</span>

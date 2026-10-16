@@ -3,6 +3,18 @@ import { MBTI_AXES, MBTI_AXIS_QUESTION_COUNTS, createEmptyMbtiScores } from './m
 import { createMbtiReport, mbtiShareSearch, parseMbtiShareScores } from './mbti-report.js';
 
 describe('MBTI report and public snapshots', () => {
+  it('preserves the estimate label in shared URLs and rejects ambiguous basis flags', () => {
+    const scores = { EI: 1, SN: -1, TF: -3, JP: 1, AT: -1 };
+    const params = new URLSearchParams(mbtiShareSearch(scores, true));
+    expect(params.get('basis')).toBe('estimate');
+    expect(parseMbtiShareScores(params)).toEqual(scores);
+    expect(createMbtiReport(scores).resultType).toBe('ENFJ');
+    params.append('basis', 'estimate');
+    expect(parseMbtiShareScores(params)).toBeNull();
+    params.delete('basis');
+    params.set('basis', 'measured');
+    expect(parseMbtiShareScores(params)).toBeNull();
+  });
   it('all 16 types and both identities have a full report', () => {
     for (let bits = 0; bits < 32; bits++) {
       const scores = createEmptyMbtiScores();

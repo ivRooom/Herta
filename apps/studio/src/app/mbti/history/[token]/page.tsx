@@ -247,8 +247,11 @@ export default async function MbtiHistoryPage({
             <p>推定スコアを読み込めません。</p>
           )}
           <p className="mbti-report-note">
-            元が50%の指標は、指定タイプ側へ現行採点の最小単位を仮置きしています。A/Tは過去の診断値を保持しています。元の診断・統計は変更せず、この推定値は診断間の数値比較や実測レポートの対象に含めません。
+            元が50%の指標は、指定タイプ側へ現行採点の最小単位を仮置きしています。A/Tは過去の診断値を保持しています。元の診断・統計は変更せず、この推定値は実測間の数値比較には含めません。
           </p>
+          {estimated && scores ? (
+            <MbtiResultReport key={selected.id} scores={scores} estimated />
+          ) : null}
         </section>
       ) : selected.source === 'correction' ? (
         <section className="mbti-history-card">
