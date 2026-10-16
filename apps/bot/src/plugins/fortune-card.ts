@@ -15,6 +15,12 @@ function wrap(value: string, size: number): string[] {
   );
 }
 
+export function fortuneCardHeading(displayName: string): string {
+  const name = Array.from(displayName);
+  // Reserve x=790 onward for the illustration, including the fixed heading suffix.
+  return `${name.slice(0, 12).join('')}${name.length > 12 ? '…' : ''} さんの今日の運勢`;
+}
+
 /** Shared cards deliberately omit date of birth, age, blood type and profile notes. */
 export async function renderFortuneCard(
   fortune: DailyFortune,
@@ -65,7 +71,7 @@ export async function renderFortuneCard(
     <g font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">
     ${text('HERTA  /  DAILY FORTUNE', 76, 105, 28, fortune.hex)}
     ${text(fortune.date, 76, 162, 26)}
-    ${text(`${Array.from(displayName).slice(0, 18).join('')} さんの今日の運勢`, 76, 225, 32)}
+    ${text(fortuneCardHeading(displayName), 76, 225, 32)}
     ${text('総合運', 76, 302, 28)}
     ${text('★'.repeat(fortune.stars) + '☆'.repeat(5 - fortune.stars), 76, 374, 57, fortune.hex)}
     ${text(fortune.title, 76, 455, 36, fortune.hex)}
