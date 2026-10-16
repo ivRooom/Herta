@@ -260,7 +260,24 @@ export function selectMbtiQuestions(random: () => number = Math.random): MbtiQue
     axisSelected.push(...remaining.slice(0, MBTI_AXIS_QUESTION_COUNTS[axis] - axisSelected.length));
     selected.push(...axisSelected);
   }
-  return shuffleInPlace(selected, random);
+  // Interleave axes without changing frozen IDs, facet balance or scoring.
+  const queues = MBTI_AXES.map((axis) =>
+    shuffleInPlace(
+      selected.filter((q) => q.axis === axis),
+      random,
+    ),
+  );
+  const ordered: MbtiQuestion[] = [];
+  while (queues.some((queue) => queue.length)) {
+    const round = shuffleInPlace(
+      queues.filter((queue) => queue.length),
+      random,
+    );
+    if (round.length > 1 && round[0]![0]!.axis === ordered.at(-1)?.axis)
+      [round[0], round[1]] = [round[1]!, round[0]!];
+    for (const queue of round) ordered.push(queue.shift()!);
+  }
+  return ordered;
 }
 
 export interface MbtiTypeInfo {

@@ -83,8 +83,22 @@ export async function createMbtiReportImage(scores: MbtiScores): Promise<Blob> {
     bars.push({ y, percent: axis.percent });
     y += 30;
     text(axis.description);
+    text(
+      axis.sensitive
+        ? '1問分の最大変化で境界をまたぐ可能性がある軸です。'
+        : '1問分の最大変化だけでは境界をまたがない軸です。',
+      20,
+      '#aab8cd',
+    );
     y += 15;
   }
+  text('近いタイプも探してみよう', 34, '#f5f6fa', true);
+  text(
+    report.nearbyTypes.length
+      ? report.nearbyTypes.map((type) => `${type.type}（${type.title}）`).join('・')
+      : '1問分の最大変化で4文字のタイプが変わる軸はありませんでした。',
+  );
+  text(report.sensitivityNote, 20, '#aab8cd');
   for (const section of report.sections) {
     y += 25;
     text(section.title, 34, '#f5f6fa', true);

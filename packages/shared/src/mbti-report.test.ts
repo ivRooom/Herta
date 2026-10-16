@@ -45,3 +45,17 @@ describe('MBTI report and public snapshots', () => {
     expect([...new URLSearchParams(valid).keys()]).toEqual(['v', 'ei', 'sn', 'tf', 'jp', 'at']);
   });
 });
+
+describe('one-response sensitivity', () => {
+  it('respects the zero-score positive tie rule and separates identity', () => {
+    for (const score of [-5, -4, -1, 0, 3, 4, 5]) {
+      const report = createMbtiReport({ EI: score, SN: 10, TF: 10, JP: 10, AT: score });
+      const expected = score >= -4 && score < 4;
+      expect(report.axes.find((axis) => axis.axis === 'EI')!.sensitive).toBe(expected);
+      expect(report.axes.find((axis) => axis.axis === 'AT')!.sensitive).toBe(expected);
+      expect(report.nearbyTypes.map((type) => type.type)).toEqual(
+        expected ? [score < 0 ? 'ESTJ' : 'ISTJ'] : [],
+      );
+    }
+  });
+});

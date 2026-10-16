@@ -159,6 +159,13 @@ export function createMbtiReport(scores: MbtiScores) {
       labels: copy.labels,
       percent,
       balanced,
+      // Sensitivity to a maximum one-response change; never a confidence probability.
+      sensitive:
+        axis === 'AT'
+          ? computeMbtiIdentity({ ...scores, AT: scores.AT - 4 }) !==
+            computeMbtiIdentity({ ...scores, AT: scores.AT + 4 })
+          : computeMbtiType({ ...scores, [axis]: scores[axis] - 4 }) !==
+            computeMbtiType({ ...scores, [axis]: scores[axis] + 4 }),
       tendency: balanced ? '両方の傾向が近い' : `${copy.labels[side]}寄り`,
       ...copy.poles[side],
       description: balanced
@@ -193,6 +200,17 @@ export function createMbtiReport(scores: MbtiScores) {
     identityLabel: MBTI_IDENTITY_INFO[identity].label,
     axes,
     sections,
+    sensitivityNote:
+      '1問の回答を最大幅で変えた場合の境界チェックです。実際の回答変更や再診断の結果を予測する確率ではありません。',
+    nearbyTypes: axes
+      .filter((axis) => axis.sensitive && axis.axis !== 'AT')
+      .map((axis) => {
+        const alternate = computeMbtiType({
+          ...scores,
+          [axis.axis]: scores[axis.axis] >= 0 ? -1 : 1,
+        });
+        return { axis: axis.axis, type: alternate, title: MBTI_TYPES[alternate]!.title };
+      }),
     boundaryNote: axes.some((axis) => axis.balanced)
       ? '境界に近い軸があります。タイプの文字は便宜的な分類で、強い傾向を示すとは限りません。'
       : null,

@@ -19,6 +19,7 @@ declare module 'sharp' {
   }
 
   export interface Sharp {
+    extract(region: { left: number; top: number; width: number; height: number }): Sharp;
     resize(
       width: number,
       height: number,

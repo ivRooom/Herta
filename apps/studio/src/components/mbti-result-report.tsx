@@ -174,8 +174,28 @@ export function MbtiResultReport({
               <span style={{ width: `${axis.percent}%` }} />
             </div>
             <p>{axis.description}</p>
+            <p className="mbti-report-note">
+              {axis.sensitive
+                ? '1問の答え方が大きく変わると、タイプの境界をまたぐ可能性がある軸です。'
+                : '1問分の最大変化だけでは、タイプの境界をまたがない軸です。'}
+            </p>
           </div>
         ))}
+      </section>
+      <section className="mbti-report-section">
+        <h3>
+          <Compass aria-hidden="true" />
+          近いタイプも探してみよう
+        </h3>
+        <p>
+          {report.nearbyTypes.length
+            ? report.nearbyTypes.map((type) => `${type.type}（${type.title}）`).join('・')
+            : '今回は、1問分の最大変化で4文字のタイプが変わる軸はありませんでした。'}
+        </p>
+        <p className="mbti-report-note">{report.sensitivityNote}</p>
+        <p>
+          最近の「友人との時間」「仕事・学び」「一人の時間」を一つずつ思い出し、違う面が出る場面を比べてみましょう。
+        </p>
       </section>
       {report.sections.map((section, index) => {
         const Icon = SECTION_ICONS[index] ?? Sparkles;

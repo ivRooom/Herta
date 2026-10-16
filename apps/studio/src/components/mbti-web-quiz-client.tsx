@@ -177,6 +177,9 @@ export function MbtiWebQuizClient({
         <h2 className="mbti-question" aria-live="polite">
           {question.prompt}
         </h2>
+        <p className="mbti-report-note">
+          最近数か月の普段の自分を思い浮かべてください。理想や今日だけの気分ではなく、迷うときは中間の回答でも大丈夫です。
+        </p>
         <div className="mbti-answers" role="group" aria-label="当てはまり方を選んでください">
           {MBTI_LIKERT_ANSWERS.map((value, index) => (
             <button

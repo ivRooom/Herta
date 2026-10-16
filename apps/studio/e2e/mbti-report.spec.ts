@@ -133,3 +133,15 @@ test('report motion runs once on entry and remains readable with reduced motion'
   await expect(axes.locator('.mbti-axis-track > span').first()).toHaveCSS('transform', 'none');
   await expect(page.locator('.mbti-art-spark').first()).toHaveCSS('animation-name', 'none');
 });
+
+test('boundary report explains nearby types without claiming confidence', async ({ page }) => {
+  await page.goto('/mbti/result?v=1&ei=3&sn=10&tf=10&jp=10&at=-4');
+  await expect(page.getByRole('heading', { name: '近いタイプも探してみよう' })).toBeVisible();
+  await expect(page.getByText('ISTJ（管理者）', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText('1問の答え方が大きく変わると、タイプの境界をまたぐ可能性がある軸です。', {
+      exact: true,
+    }),
+  ).toHaveCount(2);
+  await expect(page.getByText(/再診断の結果を予測する確率ではありません/)).toBeVisible();
+});
