@@ -403,7 +403,13 @@ async function handleMbtiButton(
         },
       );
     } catch (error) {
-      options.logger.warn({ err: error, guildId: session.guildId }, 'MBTI履歴の保存に失敗しました');
+      options.logger.warn(
+        {
+          errorName: error instanceof Error ? error.name : 'UnknownError',
+          guildId: session.guildId,
+        },
+        'MBTI履歴の保存に失敗しました',
+      );
       saveNote = '履歴の保存に失敗しました。この結果は画像で保存してください。';
     }
     void syncMbtiResultToIvrmWeb(session, type, identity, options.logger);
