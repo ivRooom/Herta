@@ -1,12 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { PrismaClient, issueMbtiResultAccess, saveMbtiPersonalResult } from '@herta/db';
-import {
-  computeMbtiIdentity,
-  computeMbtiType,
-  createMbtiScoreSnapshot,
-} from '@herta/shared/mbti-core';
 const enabled = process.env.HERTA_MBTI_HISTORY_E2E === '1';
-const prisma = new PrismaClient();
+let prisma: import('@herta/db').PrismaClient;
 const subject = { guildId: 'mbti-e2e-test', discordUserId: 'mbti-e2e-user' };
 let path = '';
 let otherId = '';
@@ -14,6 +8,11 @@ let oldestId = '';
 test.describe('private MBTI history', () => {
   test.skip(!enabled, 'Requires isolated local PostgreSQL fixture');
   test.beforeAll(async () => {
+    const { PrismaClient, issueMbtiResultAccess, saveMbtiPersonalResult } =
+      await import('@herta/db');
+    const { computeMbtiIdentity, computeMbtiType, createMbtiScoreSnapshot } =
+      await import('@herta/shared/mbti-core');
+    prisma = new PrismaClient();
     const url = new URL(process.env.DATABASE_URL!);
     expect(['localhost', '127.0.0.1']).toContain(url.hostname);
     expect(url.pathname).toBe('/mbti_personal_test');

@@ -175,7 +175,11 @@ export function createMbtiResultCommandHandler(
       let base: URL;
       try {
         base = new URL(raw ?? '');
-        if (base.protocol !== 'https:' || base.username || base.password)
+        const localHttp =
+          process.env.NODE_ENV !== 'production' &&
+          base.protocol === 'http:' &&
+          ['localhost', '127.0.0.1', '[::1]'].includes(base.hostname);
+        if ((base.protocol !== 'https:' && !localHttp) || base.username || base.password)
           throw new Error('invalid');
       } catch {
         await interaction.editReply(

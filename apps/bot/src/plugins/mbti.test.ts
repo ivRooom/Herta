@@ -67,6 +67,33 @@ describe('/mbti-result', () => {
     expect(JSON.stringify(upsert.mock.calls)).not.toContain(token);
     expect(body).not.toContain(interaction.user.id);
   });
+  it('allows loopback HTTP only in development and rejects remote HTTP', async () => {
+    const findFirst = vi.fn().mockResolvedValue(null);
+    const prisma = { mbtiPersonalResult: { findFirst } } as unknown as PrismaClient;
+    const interaction = {
+      guildId: 'guild',
+      user: { id: 'user' },
+      deferReply: vi.fn(),
+      editReply: vi.fn(),
+    };
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('STUDIO_PUBLIC_BASE_URL', 'http://localhost:3000');
+    await createMbtiResultCommandHandler(mbtiManifest.commands[1]!, prisma).execute(
+      interaction as unknown as ChatInputCommandInteraction,
+    );
+    expect(findFirst).toHaveBeenCalledTimes(1);
+    vi.stubEnv('STUDIO_PUBLIC_BASE_URL', 'http://herta.example');
+    await createMbtiResultCommandHandler(mbtiManifest.commands[1]!, prisma).execute(
+      interaction as unknown as ChatInputCommandInteraction,
+    );
+    expect(findFirst).toHaveBeenCalledTimes(1);
+    vi.stubEnv('STUDIO_PUBLIC_BASE_URL', 'http://localhost:3000');
+    vi.stubEnv('NODE_ENV', 'production');
+    await createMbtiResultCommandHandler(mbtiManifest.commands[1]!, prisma).execute(
+      interaction as unknown as ChatInputCommandInteraction,
+    );
+    expect(findFirst).toHaveBeenCalledTimes(1);
+  });
   it('does not issue an access token when no history exists', async () => {
     vi.stubEnv('STUDIO_PUBLIC_BASE_URL', 'https://herta.example');
     const upsert = vi.fn();
