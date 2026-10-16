@@ -87,3 +87,5 @@ Rollback: 直前のアプリイメージへ戻し、追加テーブルは残す�
 - Playwright: 同じ専用DBを `DATABASE_URL` に指定してStudioを起動し、`HERTA_MBTI_HISTORY_E2E=1 pnpm --filter @herta/studio exec playwright test e2e/mbti-history.spec.ts`。Browser plugin not availableのためregular Playwrightを使用。PC/スマホ、比較変更、過去レポート、共有URL、他人のID、リンク失効を確認。
 
 手動訂正は `source=correction` / `scoringVersion=manual-correction-v1` / `questionCount=0` として診断とは別に記録する。スコア・割合は空オブジェクトとし、回答や統計を捏造・再計上しない。過去の回答結果を上書きせず、新しい訂正記録が最新値になる。A/Tの訂正指定がない場合は既存の診断値を保持する。画面では手動訂正と明記し、数値比較・採点レポートの対象から外す。
+
+本人が過去結果からの推定登録を明示的に依頼した場合は、`source=estimate` / `scoringVersion=historical-estimate-v1` / `questionCount=0` の別記録にする。直近の実測62問の各軸の絶対スコアを、指定されたタイプの符号へ合わせる。中立の0は指定側へ最小単位の1を仮置きし、A/Tは保持する。`scores.provenance` に基にした履歴IDと算出方法を保存する。推定値は実測ではなく、診断間の数値比較・実測レポート・匿名診断統計に含めない。元の履歴は更新しない。登録前に対象履歴をバックアップし、rollbackは追加した推定記録だけを対象として元の履歴を残す。
