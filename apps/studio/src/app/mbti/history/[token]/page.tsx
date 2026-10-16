@@ -4,12 +4,14 @@ import type { CSSProperties } from 'react';
 import { getMbtiPersonalHistory, getMbtiPersonalResult, resolveMbtiResultAccess } from '@herta/db';
 import {
   MBTI_SCORING_VERSION,
+  MBTI_TYPES,
   createEmptyMbtiScores,
   type MbtiScores,
 } from '@herta/shared/mbti-core';
 import { MbtiQuizLayout } from '@/components/mbti-quiz-layout';
 import { MbtiResultReport } from '@/components/mbti-result-report';
 import { prisma } from '@/lib/db';
+import { mbtiHistorySourceLabel } from '@/lib/mbti-history';
 import { compareMbtiHistory, HISTORY_AXES, HISTORY_AXIS_LABELS } from '@/lib/mbti-history';
 
 export const dynamic = 'force-dynamic';
@@ -120,7 +122,7 @@ export default async function MbtiHistoryPage({
                 </strong>
                 <span>
                   {row.id === latest.id ? '最新 · ' : ''}
-                  {row.questionCount}問 · {row.source === 'web' ? 'Web' : 'Discord'}
+                  {mbtiHistorySourceLabel(row.source, row.questionCount)}
                 </span>
               </a>
             </li>
@@ -213,7 +215,19 @@ export default async function MbtiHistoryPage({
       <h2 id="report" className="mbti-history-report-heading">
         {date(selected.completedAt)} の詳細レポート
       </h2>
-      {scores && selected.scoringVersion === MBTI_SCORING_VERSION ? (
+      {selected.source === 'correction' ? (
+        <section className="mbti-history-card">
+          <h2>
+            {selected.resultType} · {MBTI_TYPES[selected.resultType]?.title ?? '訂正されたタイプ'}
+          </h2>
+          <p>
+            本人の指定により現在のタイプを訂正した記録です。以前の診断の回答・スコア・統計は変更していません。
+          </p>
+          <p className="mbti-report-note">
+            この記録に診断スコアはなく、数値比較やスコアに基づく詳細レポートの対象にはしません。A/Tは以前の診断値を保持しています。過去の診断を選ぶと、そのときのレポートを確認できます。
+          </p>
+        </section>
+      ) : scores && selected.scoringVersion === MBTI_SCORING_VERSION ? (
         <MbtiResultReport key={selected.id} scores={scores} />
       ) : (
         <p>

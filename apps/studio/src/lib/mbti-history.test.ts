@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { compareMbtiHistory, readMbtiHistoryPercentages } from './mbti-history.ts';
+import {
+  compareMbtiHistory,
+  readMbtiHistoryPercentages,
+  mbtiHistorySourceLabel,
+} from './mbti-history.ts';
 const sample = { EI: 60, SN: 30, TF: 50, JP: 100, AT: 0 };
 test('history measures percentage point movement and boundary crossing without rescaling old scores', () => {
   const current = { percentages: sample, scoringVersion: 'v1' };
@@ -28,4 +32,16 @@ test('malformed or missing saved percentages cannot become a comparison', () => 
     assert.equal(readMbtiHistoryPercentages(bad), null);
   }
   assert.deepEqual(readMbtiHistoryPercentages(sample), sample);
+});
+
+test('manual corrections never masquerade as a new diagnosis or a score comparison', () => {
+  assert.equal(mbtiHistorySourceLabel('correction', 0), '手動訂正（診断スコアなし）');
+  assert.equal(mbtiHistorySourceLabel('discord', 62), '62問 · Discord');
+  assert.equal(
+    compareMbtiHistory(
+      { percentages: null, scoringVersion: 'manual-correction-v1' },
+      { percentages: sample, scoringVersion: 'likert-62-v1' },
+    ),
+    null,
+  );
 });

@@ -85,3 +85,5 @@ Rollback: 直前のアプリイメージへ戻し、追加テーブルは残す�
 
 - 実PostgreSQL: `HERTA_MBTI_HISTORY_TEST_DATABASE_URL` をlocalhostの専用 `mbti_personal_test` DBに指定し、`pnpm --filter @herta/db exec tsx --test src/mbti-personal-results.integration.test.ts`。このテストは専用DBの新規履歴テーブルを作り直すため、共有DB・本番へ向けない。事前スキーマは変更前のschemaを `prisma db push --skip-generate` で専用DBへ用意する。既存の全migrationを空DBへ順に適用する方法は、古いCONCURRENTLY migrationで失敗する。
 - Playwright: 同じ専用DBを `DATABASE_URL` に指定してStudioを起動し、`HERTA_MBTI_HISTORY_E2E=1 pnpm --filter @herta/studio exec playwright test e2e/mbti-history.spec.ts`。Browser plugin not availableのためregular Playwrightを使用。PC/スマホ、比較変更、過去レポート、共有URL、他人のID、リンク失効を確認。
+
+手動訂正は `source=correction` / `scoringVersion=manual-correction-v1` / `questionCount=0` として診断とは別に記録する。スコア・割合は空オブジェクトとし、回答や統計を捏造・再計上しない。過去の回答結果を上書きせず、新しい訂正記録が最新値になる。A/Tの訂正指定がない場合は既存の診断値を保持する。画面では手動訂正と明記し、数値比較・採点レポートの対象から外す。
