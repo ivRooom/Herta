@@ -148,6 +148,11 @@ export function MbtiResultReport({
       <p className="mbti-report-note">
         共有されるのは5軸の結果だけです。名前・Discord情報・個別の回答は含みません。
       </p>
+      {!shared ? (
+        <p className="mbti-report-note">
+          Discordの /mbti-result から保存済みの最新結果・履歴・比較ページを開けます。
+        </p>
+      ) : null}
       {shared ? (
         <p className="mbti-report-note">
           共有用の結果スナップショットです。診断の完了を証明するものではありません。

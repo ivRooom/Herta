@@ -68,3 +68,20 @@ Image Gen組み込みツールによる編集。プロンプト要旨: 4×4配�
 Web・Discord・PNGのレポートに、1問の回答が最大4点変化した場合の分類境界チェックと近い別タイプを追加。0点を正の極とする既存ルールを尊重するため、単なる絶対値ではなく±4点の両端を比較する。これは集計スコアに対する感度分析で、実際に変更できる特定の回答の特定や、再検査信頼性・信頼区間・確率を意味しない。
 
 測定精度を検証する次段階は、任意参加と用途説明の上でのパイロット、専門家による文面レビュー、項目識別力・重複・正逆表現効果・内的一貫性・数週間後の再検査・別フォーム間の比較。過去の回答を無断で再利用して校正済みと扱わない。参考: [MBTIの妥当性・信頼性](https://myersbriggs.org/research-and-library/validity-reliability/)、[16Personalitiesのモデル](https://www.16personalities.com/articles/our-theory)。現時点で本家同等の精度が実証されたものではない。
+
+## 個人の最新結果・履歴と比較 (2026-10-16)
+
+- `/mbti-result` はサーバー内の本人の最新結果を表示し、詳細・履歴ページの30分有効URLを本人だけに発行する。`view:history` は履歴、既定は最新の詳細へ移動する。URLは所持者が閲覧できるため共有しない。再発行で以前のURLを無効化し、DBはSHA256ハッシュだけを保存する。ページはno-store / no-referrer / noindex。
+- `MbtiPersonalResult` に診断完了ごとのタイプ・Identity・5軸スコア・保存時の割合・採点方式・設問数・日時を記録する。ユーザー名や個別回答を複製しない。本人の最新値はguildId/discordUserId内のcompletedAt/id降順で決め、遅い保存で過去の値へ戻さない。再診断でも履歴は消さず、ivrm-webへの既存プロフィール上書き同期とRole更新を維持する。
+- Discord/Web双方で履歴と匿名統計を同一トランザクションで保存する。completionKeyの一意制約で再送を二重計上しない。統計は人ごとの最新値へ置換せず、完了した診断ごとに蓄積する。匿名イベントの既存保持期間365日は変更しない。個人履歴は回答セッションの期限・pruneから独立して保持する。
+- 比較は任意の保存結果を選択でき、既定は選択した診断のひとつ前。5軸の百分率の差・境界をまたいだ変化・最も大きな変化を示す。優劣や臨床的な変化とは断定しない。採点方式が異なる結果の数値差は表示しない。履歴は20件単位のkeyset pagination。結果・比較対象・cursorすべて本人とサーバーの範囲で照合する。
+- 履歴ページからもPNG保存と共有URL発行が可能。共有URLは従来どおり5軸スコアだけで、履歴トークンや本人IDを含めない。
+
+Migration: `20261016110000_add_mbti_personal_history`。テーブル・indexの追加と、DBに残っている完了済み62問Webセッションのコピーのみ。統計を再計上せず、既存行を更新・削除しない。採点軸の数・値を検証できない旧形式は復元しない。過去のDiscord診断は匿名統計しかなく、本人へ紐付けて復元できない。
+
+Rollback: 直前のアプリイメージへ戻し、追加テーブルは残す。履歴を削除するdown migrationは通常のrollbackで行わない。新規のcloud resource、secret、画像APIは不要。
+
+検証:
+
+- 実PostgreSQL: `HERTA_MBTI_HISTORY_TEST_DATABASE_URL` をlocalhostの専用 `mbti_personal_test` DBに指定し、`pnpm --filter @herta/db exec tsx --test src/mbti-personal-results.integration.test.ts`。このテストは専用DBの新規履歴テーブルを作り直すため、共有DB・本番へ向けない。事前スキーマは変更前のschemaを `prisma db push --skip-generate` で専用DBへ用意する。既存の全migrationを空DBへ順に適用する方法は、古いCONCURRENTLY migrationで失敗する。
+- Playwright: 同じ専用DBを `DATABASE_URL` に指定してStudioを起動し、`HERTA_MBTI_HISTORY_E2E=1 pnpm --filter @herta/studio exec playwright test e2e/mbti-history.spec.ts`。Browser plugin not availableのためregular Playwrightを使用。PC/スマホ、比較変更、過去レポート、共有URL、他人のID、リンク失効を確認。

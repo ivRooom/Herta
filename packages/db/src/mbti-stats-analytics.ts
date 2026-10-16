@@ -169,6 +169,36 @@ export async function recordMbtiQuizCompletion(
   ]);
 }
 
+/** Caller owns the transaction, so personal history and anonymous counts commit together. */
+export async function recordMbtiQuizCompletionInTransaction(
+  tx: Prisma.TransactionClient,
+  input: MbtiQuizCompletionInput,
+): Promise<void> {
+  const normalized = normalizeMbtiQuizCompletionInput(input, randomUUID().replaceAll('-', ''));
+  await tx.mbtiQuizResultEvent.create({
+    data: {
+      id: randomUUID(),
+      completionId: normalized.completionId,
+      guildId: normalized.guildId,
+      resultType: normalized.resultType,
+      eiScore: normalized.eiScore,
+      snScore: normalized.snScore,
+      tfScore: normalized.tfScore,
+      jpScore: normalized.jpScore,
+    },
+  });
+  await tx.mbtiQuestionAnswerEvent.createMany({
+    data: normalized.answers.map((entry) => ({
+      id: randomUUID(),
+      completionId: normalized.completionId,
+      guildId: normalized.guildId,
+      questionIndex: entry.questionIndex,
+      axis: entry.axis,
+      answer: entry.answer,
+    })),
+  });
+}
+
 export interface MbtiUsageAnalyticsOptions {
   now?: Date;
   /** 未指定なら全期間を対象にする（MBTI診断は低頻度のため、既定は無期限集計）。 */

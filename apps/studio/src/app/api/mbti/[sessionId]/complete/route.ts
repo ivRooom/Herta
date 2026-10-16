@@ -3,11 +3,11 @@ import { NextResponse } from 'next/server';
 import {
   completeMbtiWebQuizSession,
   getMbtiWebQuizSessionRecord,
-  recordMbtiQuizCompletion,
   resolveMbtiWebQuizSessionForAnswer,
   syncAchievementUnlocks,
 } from '@herta/db';
 import {
+  createMbtiScoreSnapshot,
   computeMbtiIdentity,
   computeMbtiType,
   createEmptyMbtiScores,
@@ -76,16 +76,21 @@ export async function POST(
   const resultType = computeMbtiType(scores);
   const resultIdentity = computeMbtiIdentity(scores);
 
+  const completedAt = new Date();
   const completed = await completeMbtiWebQuizSession(prisma, sessionId, {
     resultType,
     resultIdentity,
-  });
-  if (!completed) {
-    return json({ error: 'この診断は既に完了しています' }, 409);
-  }
-
-  try {
-    await recordMbtiQuizCompletion(prisma, {
+    history: {
+      completionKey: `web:${sessionId}`,
+      guildId: session.guildId,
+      discordUserId: session.discordUserId,
+      resultType,
+      resultIdentity,
+      ...createMbtiScoreSnapshot(scores),
+      source: 'web',
+      completedAt,
+    },
+    stats: {
       guildId: session.guildId,
       resultType,
       eiScore: scores.EI,
@@ -99,13 +104,10 @@ export async function POST(
           answer: entry.answer as MbtiSessionAnswer['answer'],
         })),
       ),
-    });
-  } catch (error) {
-    console.error('MBTI Web診断の統計記録に失敗しました', {
-      guildId: session.guildId,
-      errorName: error instanceof Error ? error.name : 'UnknownError',
-    });
-  }
+    },
+  });
+  if (!completed)
+    return json({ error: 'この診断は既に完了しているか、有効期限が切れています' }, 409);
 
   try {
     await syncAchievementUnlocks(prisma, session.guildId, session.discordUserId, [
@@ -128,7 +130,7 @@ export async function POST(
           discordUserId: session.discordUserId,
           mbtiType: resultType,
           mbtiIdentity: resultIdentity,
-          occurredAt: new Date().toISOString(),
+          occurredAt: completedAt.toISOString(),
         },
         { warn: (obj, msg) => console.warn(msg, obj) },
       );

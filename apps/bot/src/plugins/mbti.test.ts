@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ChatInputCommandInteraction } from 'discord.js';
+import type { PrismaClient } from '@herta/db';
 import { MBTI_TYPE_KEYS, mbtiManifest, mbtiRoleConfigKey } from '@herta/plugin-catalog';
-import { normalizeMbtiConfig } from './mbti.js';
+import { createMbtiResultCommandHandler, normalizeMbtiConfig } from './mbti.js';
 
 function emptyMbtiRoles(): Record<string, string | null> {
   return Object.fromEntries(MBTI_TYPE_KEYS.map((type) => [type, null]));
@@ -29,7 +31,59 @@ describe('MBTI Plugin', () => {
     expect(Object.keys(normalized.mbtiRoles).sort()).toEqual([...MBTI_TYPE_KEYS].sort());
   });
 
-  it('Manifestに/mbtiコマンドを単独で登録する', () => {
-    expect(mbtiManifest.commands.map((command) => command.name)).toEqual(['mbti']);
+  it('Manifestに診断と本人向け結果コマンドを登録する', () => {
+    expect(mbtiManifest.commands.map((command) => command.name)).toEqual(['mbti', 'mbti-result']);
+  });
+});
+
+describe('/mbti-result', () => {
+  afterEach(() => vi.unstubAllEnvs());
+  it('issues only a private URL for the invoking guild and user', async () => {
+    vi.stubEnv('STUDIO_PUBLIC_BASE_URL', 'https://herta.example');
+    const findFirst = vi.fn().mockResolvedValue({ resultType: 'INFP', resultIdentity: 'T' });
+    const upsert = vi.fn().mockResolvedValue({});
+    const prisma = {
+      mbtiPersonalResult: { findFirst },
+      mbtiResultAccess: { upsert },
+    } as unknown as PrismaClient;
+    const interaction = {
+      guildId: '123456789012345678',
+      user: { id: '223456789012345678' },
+      options: { getString: () => 'history' },
+      deferReply: vi.fn(),
+      editReply: vi.fn(),
+    };
+    await createMbtiResultCommandHandler(mbtiManifest.commands[1]!, prisma).execute(
+      interaction as unknown as ChatInputCommandInteraction,
+    );
+    expect(interaction.deferReply).toHaveBeenCalledWith({ flags: 64 });
+    expect(findFirst.mock.calls[0]![0].where).toEqual({
+      guildId: interaction.guildId,
+      discordUserId: interaction.user.id,
+    });
+    const body = interaction.editReply.mock.calls[0]![0].content as string;
+    expect(body).toMatch(/https:\/\/herta.example\/mbti\/history\/[A-Za-z0-9_-]{43}#history/);
+    const token = body.match(/history\/([A-Za-z0-9_-]{43})/)![1];
+    expect(JSON.stringify(upsert.mock.calls)).not.toContain(token);
+    expect(body).not.toContain(interaction.user.id);
+  });
+  it('does not issue an access token when no history exists', async () => {
+    vi.stubEnv('STUDIO_PUBLIC_BASE_URL', 'https://herta.example');
+    const upsert = vi.fn();
+    const prisma = {
+      mbtiPersonalResult: { findFirst: vi.fn().mockResolvedValue(null) },
+      mbtiResultAccess: { upsert },
+    } as unknown as PrismaClient;
+    const interaction = {
+      guildId: 'guild',
+      user: { id: 'user' },
+      deferReply: vi.fn(),
+      editReply: vi.fn(),
+    };
+    await createMbtiResultCommandHandler(mbtiManifest.commands[1]!, prisma).execute(
+      interaction as unknown as ChatInputCommandInteraction,
+    );
+    expect(upsert).not.toHaveBeenCalled();
+    expect(interaction.editReply.mock.calls[0]![0]).toContain('保存された診断結果はまだありません');
   });
 });

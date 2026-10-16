@@ -1,4 +1,9 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
+import { saveMbtiPersonalResult, type MbtiPersonalResultInput } from './mbti-personal-results.js';
+import {
+  recordMbtiQuizCompletionInTransaction,
+  type MbtiQuizCompletionInput,
+} from './mbti-stats-analytics.js';
 
 /** @herta/shared/mbti-coreのMbtiQuestion/MbtiScores/MbtiSessionAnswerと同じ形。 */
 export interface MbtiWebQuizQuestion {
@@ -130,21 +135,29 @@ export async function appendMbtiWebQuizAnswer(
 export async function completeMbtiWebQuizSession(
   prisma: PrismaClient,
   sessionId: string,
-  input: { resultType: string; resultIdentity: string },
+  input: {
+    resultType: string;
+    resultIdentity: string;
+    history: MbtiPersonalResultInput;
+    stats: MbtiQuizCompletionInput;
+  },
 ): Promise<MbtiWebQuizSessionRecord | null> {
-  const result = await prisma.mbtiWebQuizSession.updateMany({
-    where: { id: sessionId, status: 'pending' },
-    data: {
-      status: 'completed',
-      completedAt: new Date(),
-      resultType: input.resultType,
-      resultIdentity: input.resultIdentity,
-    },
+  return prisma.$transaction(async (tx) => {
+    const result = await tx.mbtiWebQuizSession.updateMany({
+      where: { id: sessionId, status: 'pending', expiresAt: { gt: new Date() } },
+      data: {
+        status: 'completed',
+        completedAt: input.history.completedAt,
+        resultType: input.resultType,
+        resultIdentity: input.resultIdentity,
+      },
+    });
+    if (result.count === 0) return null;
+    const saved = await saveMbtiPersonalResult(tx, input.history);
+    if (saved.count) await recordMbtiQuizCompletionInTransaction(tx, input.stats);
+    const session = await tx.mbtiWebQuizSession.findUnique({ where: { id: sessionId } });
+    return session ? toRecord(session) : null;
   });
-  if (result.count === 0) return null;
-
-  const session = await prisma.mbtiWebQuizSession.findUnique({ where: { id: sessionId } });
-  return session ? toRecord(session) : null;
 }
 
 /** 回答内容を含むテーブルのため、保持期間を超えた行を削除する運用フック。専用cronは本PRでは設けない。 */

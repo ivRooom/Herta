@@ -19,6 +19,7 @@ export * from './health-snapshots.js';
 export * from './member-activity-feed.js';
 export * from './mbti-stats-analytics.js';
 export * from './mbti-web-quiz-session.js';
+export * from './mbti-personal-results.js';
 export * from './discord-role-operations.js';
 export * from './discord-role-references.js';
 export * from './studio-access-control.js';

@@ -3,6 +3,7 @@ import {
   pruneAiGenerationEvents,
   pruneCommandExecutionEvents,
   pruneExpiredMbtiWebQuizSessions,
+  pruneMbtiResultAccess,
   pruneMbtiStatsEvents,
   pruneServiceHealthSnapshots,
   recordServiceHealthSnapshot,
@@ -147,6 +148,7 @@ async function pruneRetainedData(): Promise<void> {
         olderThanDays: MBTI_WEB_QUIZ_SESSION_RETENTION_DAYS,
       }),
     ]);
+    await pruneMbtiResultAccess(prisma);
     if (commandDeleted > 0) {
       logger.info(
         { deleted: commandDeleted, retentionDays: EXECUTION_ANALYTICS_RETENTION_DAYS },

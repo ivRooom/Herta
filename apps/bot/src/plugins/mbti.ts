@@ -12,7 +12,12 @@ import {
   type GuildMember,
 } from 'discord.js';
 import type { PrismaClient } from '@herta/db';
-import { createMbtiWebQuizSession, recordMbtiQuizCompletion } from '@herta/db';
+import {
+  createMbtiWebQuizSession,
+  saveMbtiCompletedResult,
+  issueMbtiResultAccess,
+  getMbtiPersonalResult,
+} from '@herta/db';
 import type { Logger } from '@herta/logger';
 import { MBTI_TYPE_KEYS, mbtiManifest, mbtiRoleConfigKey } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler } from '@herta/plugin-sdk';
@@ -21,6 +26,7 @@ import {
   MBTI_IDENTITY_INFO,
   MBTI_LIKERT_ANSWERS,
   MBTI_TYPES,
+  createMbtiScoreSnapshot,
   computeMbtiAxisPercent,
   computeMbtiIdentity,
   computeMbtiType,
@@ -97,6 +103,7 @@ export const mbtiPlugin = definePlugin<MbtiPluginConfig, unknown, PrismaClient>(
             MBTI_COMPLETION_ACHIEVEMENT_ID,
           ]),
       }),
+      createMbtiResultCommandHandler(mbtiManifest.commands[1]!, context.prisma),
     ];
   },
 });
@@ -148,6 +155,57 @@ export function createMbtiCommandHandler(
     definition,
     async execute(interaction) {
       await startMbtiQuiz(interaction, options);
+    },
+  };
+}
+
+export function createMbtiResultCommandHandler(
+  definition: CommandHandler<ChatInputCommandInteraction>['definition'],
+  prisma: PrismaClient,
+): CommandHandler<ChatInputCommandInteraction> {
+  return {
+    definition,
+    async execute(interaction) {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      if (!interaction.guildId) {
+        await interaction.editReply('サーバー内でのみ利用できます。');
+        return;
+      }
+      const raw = process.env.STUDIO_PUBLIC_BASE_URL?.trim();
+      let base: URL;
+      try {
+        base = new URL(raw ?? '');
+        if (base.protocol !== 'https:' || base.username || base.password)
+          throw new Error('invalid');
+      } catch {
+        await interaction.editReply(
+          '結果ページは現在利用できません。管理者に設定を確認してください。',
+        );
+        return;
+      }
+      const latest = await getMbtiPersonalResult(prisma, {
+        guildId: interaction.guildId,
+        discordUserId: interaction.user.id,
+      });
+      if (!latest) {
+        await interaction.editReply(
+          '保存された診断結果はまだありません。`/mbti` で診断してください。過去の匿名統計からは本人の結果を復元できません。',
+        );
+        return;
+      }
+      const access = await issueMbtiResultAccess(prisma, interaction.guildId, interaction.user.id);
+      const url = new URL(`/mbti/history/${access.token}`, base);
+      if (interaction.options.getString('view') === 'history') url.hash = 'history';
+      else url.hash = 'report';
+      await interaction.editReply({
+        content: [
+          `最新の結果: **${latest.resultType}-${latest.resultIdentity}**`,
+          '詳細レポート・履歴・過去の結果との比較はこちらから確認できます。',
+          url.toString(),
+          'このURLは30分有効です。URLを知っている人は履歴を閲覧できるため、共有しないでください。再発行すると以前のURLは無効になります。',
+        ].join('\n'),
+        allowedMentions: { parse: [] },
+      });
     },
   };
 }
@@ -315,7 +373,35 @@ async function handleMbtiButton(
     const identity = computeMbtiIdentity(session.scores);
     sessions.delete(session.id);
 
-    void recordMbtiStats(options.prisma, options.logger, session, type);
+    await interaction.deferUpdate();
+    let saveNote: string | null = null;
+    try {
+      await saveMbtiCompletedResult(
+        options.prisma,
+        {
+          completionKey: `discord:${session.id}`,
+          guildId: session.guildId,
+          discordUserId: session.userId,
+          resultType: type,
+          resultIdentity: identity,
+          ...createMbtiScoreSnapshot(session.scores),
+          source: 'discord',
+          completedAt: new Date(),
+        },
+        {
+          guildId: session.guildId,
+          resultType: type,
+          eiScore: session.scores.EI,
+          snScore: session.scores.SN,
+          tfScore: session.scores.TF,
+          jpScore: session.scores.JP,
+          answers: toLegacyMbtiAnswers(session.answers),
+        },
+      );
+    } catch (error) {
+      options.logger.warn({ err: error, guildId: session.guildId }, 'MBTI履歴の保存に失敗しました');
+      saveNote = '履歴の保存に失敗しました。この結果は画像で保存してください。';
+    }
     void syncMbtiResultToIvrmWeb(session, type, identity, options.logger);
     options.unlockCompletionAchievement(session.userId).catch((error: unknown) => {
       options.logger.warn(
@@ -334,8 +420,8 @@ async function handleMbtiButton(
       const attachment = new AttachmentBuilder(png, {
         name: `mbti-result-${session.id}.png`,
       }).setDescription(buildMbtiResultSummaryText(type, identity, session.scores, roleNote));
-      await interaction.update({
-        content: null,
+      await interaction.editReply({
+        content: saveNote ?? '結果を保存しました。`/mbti-result` で最新結果・履歴を確認できます。',
         embeds: [],
         components: [],
         files: [attachment],
@@ -346,8 +432,8 @@ async function handleMbtiButton(
         { err: error, guildId: session.guildId, userId: session.userId, type },
         'MBTI結果カードの生成に失敗したため、テキスト表示へフォールバックしました',
       );
-      await interaction.update({
-        content: null,
+      await interaction.editReply({
+        content: saveNote ?? '結果を保存しました。`/mbti-result` で最新結果・履歴を確認できます。',
         embeds: [buildResultEmbed(type, identity, session.scores, roleNote)],
         components: [],
         files: [],
@@ -383,35 +469,9 @@ async function handleMbtiButton(
 }
 
 /**
- * 診断結果と全回答を匿名集計テーブルへ記録する（LLMの学習・分析用途）。
- * Discordユーザーへの応答をブロックしないよう、失敗はwarnログのみで握りつぶす。
- */
-async function recordMbtiStats(
-  prisma: PrismaClient,
-  logger: Logger,
-  session: MbtiSession,
-  type: string,
-): Promise<void> {
-  try {
-    await recordMbtiQuizCompletion(prisma, {
-      guildId: session.guildId,
-      resultType: type,
-      eiScore: session.scores.EI,
-      snScore: session.scores.SN,
-      tfScore: session.scores.TF,
-      jpScore: session.scores.JP,
-      answers: toLegacyMbtiAnswers(session.answers),
-    });
-  } catch (error) {
-    logger.warn({ err: error, guildId: session.guildId, type }, 'MBTI統計の記録に失敗しました');
-  }
-}
-
-/**
  * member.ivrm.jp側でDiscordアカウントを連携しているmemberの公開プロフィールへ
  * MBTI診断結果を反映するため、ivrm-webへfire-and-forgetでpushする。
- * Hertaは自身でDiscordユーザーID⇔診断結果のペアを永続化しない設計方針のため、
- * ここで送信した後はこのプロセス内のメモリ(session)からも破棄される。
+ * 本人向けのHerta履歴とは別に、会員プロフィールの最新値を同期する。
  * `IVRM_WEB_API_BASE_URL` / `HERTA_MBTI_SYNC_SECRET` が未設定の場合は何もしない。
  */
 async function syncMbtiResultToIvrmWeb(
