@@ -1,0 +1,156 @@
+{
+  "contract": {
+    "name": "herta-fortune-profile",
+    "version": "1.0.0",
+    "sourceRepository": "ivRooom/ivrm-contracts",
+    "producer": "ivRooom/ivrm-web",
+    "consumer": "ivRooom/Herta"
+  },
+  "method": "POST",
+  "path": "/v1/herta/fortune-profile",
+  "operationId": "getHertaFortuneProfile",
+  "description": "Private read-only signed request. Purpose-derived HMAC key from existing HERTA_MBTI_SYNC_SECRET. Only configured DISCORD_GUILD_ID and active members with approved profiles. No browser CORS, no-store on every response. No public birthday view changes.",
+  "requestMediaTypes": ["application/json"],
+  "responseMediaTypes": {
+    "200": ["application/json"],
+    "400": [],
+    "401": [],
+    "403": [],
+    "404": [],
+    "413": [],
+    "502": [],
+    "503": []
+  },
+  "security": [
+    {
+      "hertaFortuneHmac": []
+    }
+  ],
+  "securitySchemes": {
+    "hertaFortuneHmac": {
+      "type": "apiKey",
+      "in": "header",
+      "name": "X-IVRM-Signature",
+      "description": "See operation x-ivrm-hmac for key derivation, canonical text and other signed headers."
+    }
+  },
+  "maxBodyBytes": 1024,
+  "maxTimestampSkewMs": 300000,
+  "hmacPurpose": "herta-fortune-profile-v1",
+  "canonical": "METHOD\nPATH\nTIMESTAMP\nREQUEST_ID\nBODY",
+  "responseStatusCodes": ["200", "400", "401", "403", "404", "413", "502", "503"],
+  "headers": [
+    {
+      "name": "X-IVRM-Timestamp",
+      "in": "header",
+      "required": true,
+      "schema": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+      },
+      "description": "Exact UTC ISO toISOString timestamp with milliseconds; max skew given by x-ivrm-hmac.maxTimestampSkewMs."
+    },
+    {
+      "name": "X-IVRM-Event-Id",
+      "in": "header",
+      "required": true,
+      "schema": {
+        "type": "string",
+        "format": "uuid",
+        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+      },
+      "description": "UUID exactly equal to body.requestId; bound into canonical signed text."
+    },
+    {
+      "name": "X-IVRM-Signature",
+      "in": "header",
+      "required": true,
+      "schema": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{64}$"
+      },
+      "description": "Purpose-derived HMAC-SHA256 over x-ivrm-hmac.canonical. Derive raw key first per x-ivrm-hmac. Lowercase hex only."
+    }
+  ],
+  "hmac": {
+    "purpose": "herta-fortune-profile-v1",
+    "rootSecret": "HERTA_MBTI_SYNC_SECRET",
+    "derivedKey": "HMAC-SHA256(UTF8(rootSecret), UTF8(purpose)) raw 32 bytes",
+    "canonical": "METHOD\nPATH\nTIMESTAMP\nREQUEST_ID\nBODY",
+    "maxTimestampSkewMs": 300000,
+    "pathExcludesQuery": true,
+    "requestIdMatchesHeader": "X-IVRM-Event-Id",
+    "signatureEncoding": "lowercase hex",
+    "replay": "read-only; no side effects within timestamp window"
+  },
+  "request": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["schemaVersion", "requestId", "guildId", "discordUserId"],
+    "properties": {
+      "schemaVersion": {
+        "const": 1
+      },
+      "requestId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "MUST exactly equal X-IVRM-Event-Id and be bound into the canonical signature."
+      },
+      "guildId": {
+        "type": "string",
+        "pattern": "^[0-9]{17,20}$",
+        "description": "MUST equal Discord interaction.guildId and the explicitly configured allowed guild. Consumer MUST reject other guilds before sending any user ID; Producer MUST check DISCORD_GUILD_ID.",
+        "x-ivrm-source": "discord.interaction.guildId"
+      },
+      "discordUserId": {
+        "type": "string",
+        "pattern": "^[0-9]{17,20}$",
+        "description": "MUST equal Discord interaction.user.id, the executor of this invocation. Never accept a user-supplied target ID or arbitrary member lookup. HMAC authenticates the service, so Consumer MUST enforce this subject binding.",
+        "x-ivrm-source": "discord.interaction.user.id"
+      }
+    }
+  },
+  "response": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["schemaVersion", "requestId", "discordUserId", "profile"],
+    "properties": {
+      "schemaVersion": {
+        "const": 1
+      },
+      "requestId": {
+        "type": "string",
+        "format": "uuid",
+        "description": "MUST exactly echo the originating request.requestId (also X-IVRM-Event-Id). Consumer MUST discard another or stale request ID before using any profile data.",
+        "x-ivrm-equals": "request.requestId"
+      },
+      "discordUserId": {
+        "type": "string",
+        "pattern": "^[0-9]{17,20}$",
+        "description": "Echo of the authenticated request subject; Consumer MUST compare to interaction.user.id before use.",
+        "x-ivrm-equals": "request.discordUserId"
+      },
+      "profile": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["birthday", "mbtiType", "bloodType"],
+        "properties": {
+          "birthday": {
+            "type": ["string", "null"],
+            "format": "date",
+            "description": "Approved full date of birth, 1900 or later, not future; server-only, never publish."
+          },
+          "mbtiType": {
+            "type": ["string", "null"],
+            "pattern": "^[EI][SN][TF][JP]$"
+          },
+          "bloodType": {
+            "enum": ["A", "B", "O", "AB", null],
+            "description": "Currently null: ivrm-web has no persisted blood-type field. Never infer."
+          }
+        }
+      }
+    }
+  }
+}

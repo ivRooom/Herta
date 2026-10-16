@@ -12,15 +12,10 @@ import {
   describeFortuneProfile,
   EMPTY_FORTUNE_PROFILE,
   localFortuneDate,
-  validateFortuneProfile,
-  type FortuneProfile,
 } from './fortune-core.js';
 import { renderFortuneCard } from './fortune-card.js';
-import {
-  deleteFortuneProfile,
-  getFortuneProfile,
-  saveFortuneProfile,
-} from './fortune-repository.js';
+import { deleteFortuneProfile } from './fortune-repository.js';
+import { fetchIvrmFortuneProfile } from './fortune-ivrm-profile.js';
 
 const inFlight = new Set<string>();
 export const fortunePlugin = definePlugin<{ enabled: boolean }, unknown, PrismaClient>({
@@ -65,61 +60,27 @@ export const fortunePlugin = definePlugin<{ enabled: boolean }, unknown, PrismaC
             if (command === 'forget') {
               await deleteFortuneProfile(context.prisma, guildId, userId);
               await interaction.editReply(
-                'このサーバーの占いプロフィールを削除しました。公開済みのメッセージや保存した画像は別途削除してください。',
+                'Hertaに以前登録した占い情報を削除しました。ivrm-webの登録情報は変更しません。占い時はivrm-webの最新情報を取得します。',
               );
               return;
             }
-            const saved = (await getFortuneProfile(context.prisma, guildId, userId)) ?? {
-              ...EMPTY_FORTUNE_PROFILE,
-            };
+            const source = await fetchIvrmFortuneProfile(guildId, userId, date);
+            const saved =
+              source.status === 'linked' ? source.profile : { ...EMPTY_FORTUNE_PROFILE };
+            const sourceMessage =
+              source.status === 'linked'
+                ? 'ivrm-webの承認済みプロフィールを使っています。未登録の項目は使いません。変更は https://member.ivrm.jp から行えます。'
+                : source.status === 'ineligible-guild'
+                  ? 'このサーバーはivrm-webの会員情報連携の対象外です。今回は登録情報を使わず占います。'
+                  : source.status === 'unconfigured'
+                    ? 'ivrm-webの会員情報連携は未設定です。管理者に連携設定を確認してください。今回は登録情報を使わず占います。'
+                    : source.status === 'not-linked'
+                      ? '連携済み・承認済みのプロフィールが見つかりません。https://member.ivrm.jp でDiscord連携とプロフィールの登録・承認状況を確認してください。今回は登録情報を使わず占います。'
+                      : 'ivrm-webのプロフィールを現在取得できません。今回は登録情報を使わず占います。少し待ってからお試しください。';
             if (command === 'profile') {
-              const fields = {
-                birthday: 'birthday',
-                bloodType: 'blood-type',
-                mbti: 'mbti',
-                zodiac: 'zodiac',
-                ageGroup: 'age-group',
-                eto: 'eto',
-              } as const;
-              const profile = { ...saved };
-              let changed = false;
-              for (const [field, option] of Object.entries(fields)) {
-                const value = interaction.options.getString(option)?.trim();
-                if (value !== undefined) {
-                  if (!value) {
-                    await interaction.editReply(
-                      '空欄は登録できません。項目を外す場合は /fortune forget 後、必要な項目だけ再登録してください。',
-                    );
-                    return;
-                  }
-                  profile[field as keyof FortuneProfile] =
-                    field === 'mbti' ? value.toUpperCase() : value;
-                  changed = true;
-                }
-              }
-              // Date-derived fields replace stale derived overrides when birthday is updated.
-              if (interaction.options.getString('birthday') !== null) {
-                for (const field of ['zodiac', 'ageGroup', 'eto'] as const)
-                  if (interaction.options.getString(fields[field]) === null) profile[field] = null;
-              }
-              try {
-                validateFortuneProfile(profile, date);
-              } catch (error) {
-                await interaction.editReply(
-                  error instanceof Error ? error.message : '入力を確認してください。',
-                );
-                return;
-              }
-              // Derived values must not become stale (for example on entering a new decade).
-              if (profile.birthday) profile.zodiac = null;
-              if (profile.birthday?.length === 10) {
-                profile.ageGroup = null;
-                profile.eto = null;
-              }
-              if (changed) await saveFortuneProfile(context.prisma, guildId, userId, profile);
-              const details = describeFortuneProfile(profile, date);
+              const details = describeFortuneProfile(saved, date);
               await interaction.editReply({
-                content: `${changed ? '占いプロフィールを保存しました。' : '現在の占いプロフィール'}\n誕生日：${profile.birthday ?? '未登録'}\n星座：${details.zodiac ?? '未登録'} / 血液型：${profile.bloodType ?? '未登録'}\nMBTI：${profile.mbti ?? '未登録'}\n年齢：${details.age === null ? '未登録' : `${details.age}歳`} / 年代：${details.ageGroup ?? '未登録'} / 干支：${details.eto ?? '未登録'}\n\nすべて任意・このサーバー内で本人のみ確認できます。/fortune forget で削除できます。\n星座は一般的な日付区分、干支は日本の暦年で算出します。`,
+                content: `${sourceMessage}\n\n誕生日：${saved.birthday ?? '未取得・未登録'}\n星座：${details.zodiac ?? '未取得・未登録'} / 血液型：${saved.bloodType ?? '未取得・未登録'}\nMBTI：${saved.mbti ?? '未取得・未登録'}\n年齢：${details.age === null ? '未取得・未登録' : `${details.age}歳`} / 年代：${details.ageGroup ?? '未取得・未登録'} / 干支：${details.eto ?? '未取得・未登録'}\n\n本人のみ表示しています。Hertaには取得した情報を保存しません。`,
                 allowedMentions: { parse: [] },
               });
               return;
@@ -161,12 +122,14 @@ export const fortunePlugin = definePlugin<{ enabled: boolean }, unknown, PrismaC
             };
             if (isPublic) {
               // Complete the private deferred response before creating a public follow-up.
-              await interaction.editReply('個人情報を除いた運勢カードを公開しています…');
+              await interaction.editReply(
+                `${sourceMessage}\n\n個人情報を除いた運勢カードを公開しています…`,
+              );
               await interaction.followUp({ ...payload, flags: [] });
               await interaction.editReply(
-                '今日の運勢カードを公開しました。誕生日・年齢・血液型などのプロフィール項目や個人向けの補足は公開していません。',
+                `${sourceMessage}\n\n今日の運勢カードを公開しました。誕生日・年齢・血液型などのプロフィール項目や個人向けの補足は公開していません。`,
               );
-            } else await interaction.editReply(payload);
+            } else await interaction.editReply({ ...payload, content: sourceMessage });
           } catch (error) {
             // Never include profile values in logs or error replies.
             context.logger.error(
