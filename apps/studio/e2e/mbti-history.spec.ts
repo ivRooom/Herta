@@ -12,10 +12,10 @@ test.describe('private MBTI history', () => {
       await import('@herta/db');
     const { computeMbtiIdentity, computeMbtiType, createMbtiScoreSnapshot } =
       await import('@herta/shared/mbti-core');
-    prisma = new PrismaClient();
     const url = new URL(process.env.DATABASE_URL!);
     expect(['localhost', '127.0.0.1']).toContain(url.hostname);
     expect(url.pathname).toBe('/mbti_personal_test');
+    prisma = new PrismaClient();
     await prisma.mbtiPersonalResult.deleteMany({ where: { guildId: subject.guildId } });
     const fixtures = [
       { scores: { EI: -10, SN: -10, TF: 10, JP: 10, AT: -10 }, at: '2026-08-01' },
@@ -52,7 +52,7 @@ test.describe('private MBTI history', () => {
     path = `/mbti/history/${token}`;
   });
   test.afterAll(async () => {
-    if (!enabled) return;
+    if (!enabled || !prisma) return;
     await prisma.mbtiPersonalResult.deleteMany({ where: { guildId: subject.guildId } });
     await prisma.mbtiResultAccess.deleteMany({ where: { guildId: subject.guildId } });
     await prisma.$disconnect();
