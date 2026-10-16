@@ -1,4 +1,5 @@
 import type { PrismaClient, VcRecapTranscriptSegmentRecord } from '@herta/db';
+import { resolveAiFoundationConfig } from '@herta/plugin-catalog/ai-service';
 import { resolveAiOpenAiCredential } from '../ai/factory.js';
 
 /**
@@ -84,6 +85,18 @@ export async function summarizeVcRecapSession(
   fetchImpl: typeof fetch = fetch,
 ): Promise<VcRecapSummaryResult | null> {
   if (segments.length === 0) return null;
+
+  // .env.exampleが約束する「HERTA_AI_KILL_SWITCHが有効ならguild設定に関係なくproviderを
+  // 呼ばない」という緊急停止契約は、VC要約の独立したOpenAI呼び出しにも適用する
+  // (resolveAiOpenAiCredentialはcredential解決のみでkill switchを見ないため、別途確認する)。
+  let aiEnabled: boolean;
+  try {
+    const baseConfig = resolveAiFoundationConfig(env);
+    aiEnabled = baseConfig.enabled && !baseConfig.killSwitch;
+  } catch {
+    aiEnabled = false;
+  }
+  if (!aiEnabled) return null;
 
   const credential = await resolveAiOpenAiCredential({ prisma, env });
   if (!credential.apiKey) return null;

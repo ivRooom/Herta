@@ -17,6 +17,7 @@ import {
 } from '@herta/db';
 import type { VoiceBasedChannel } from 'discord.js';
 import prism from 'prism-media';
+import type { Readable } from 'node:stream';
 import { resolveAwsTranscribeCredential } from './aws-transcribe-credential.js';
 import { splitVcRecapParticipants } from './vc-recap-participants.js';
 import { summarizeVcRecapSession } from './vc-recap-summarizer.js';
@@ -30,8 +31,9 @@ interface ActiveVcRecapSession {
   guildId: string;
   channelId: string;
   connection: VoiceConnection;
-  consentingUserIds: Set<string>;
   activeTranscriptions: Map<string, Promise<void>>;
+  /** stopVcRecap側で明示的にdestroyできるよう、購読中のOpusストリームを保持する。 */
+  activeStreams: Map<string, Readable>;
 }
 
 /**
@@ -88,8 +90,8 @@ export async function startVcRecap(
     guildId: channel.guild.id,
     channelId: channel.id,
     connection,
-    consentingUserIds: new Set(consentingUserIds),
     activeTranscriptions: new Map(),
+    activeStreams: new Map(),
   };
 
   try {
@@ -118,10 +120,15 @@ function wireSpeakingHandler(
   session: ActiveVcRecapSession,
 ): void {
   session.connection.receiver.speaking.on('start', (userId) => {
-    if (!session.consentingUserIds.has(userId)) return;
     if (session.activeTranscriptions.has(userId)) return;
 
-    const task = transcribeSpeaker(prisma, logger, session, userId).finally(() => {
+    const task = (async () => {
+      // 同意状態はセッション開始時点で固定せず、発言開始のたびに都度再確認する。
+      // `/herta-privacy voice-consent false`で同意を取り消した後の発言は対象外にするため。
+      const consentMap = await getVoiceTranscriptionConsentMap(prisma, [userId]);
+      if (consentMap.get(userId) !== true) return;
+      await transcribeSpeaker(prisma, logger, session, userId);
+    })().finally(() => {
       session.activeTranscriptions.delete(userId);
     });
     session.activeTranscriptions.set(userId, task);
@@ -146,6 +153,7 @@ async function transcribeSpeaker(
   const opusStream = session.connection.receiver.subscribe(userId, {
     end: { behavior: EndBehaviorType.AfterSilence, duration: SPEECH_END_SILENCE_MS },
   });
+  session.activeStreams.set(userId, opusStream);
   const pcmStream = opusStream.pipe(
     new prism.opus.Decoder({ rate: 48000, channels: 2, frameSize: 960 }),
   );
@@ -163,6 +171,8 @@ async function transcribeSpeaker(
   } catch (error) {
     // 1人の文字起こし失敗でセッション全体を失敗させない(他の参加者の文字起こしは継続する)。
     logger.warn({ err: error, guildId: session.guildId, userId }, 'VC文字起こしに失敗しました');
+  } finally {
+    session.activeStreams.delete(userId);
   }
 }
 
@@ -198,7 +208,13 @@ export async function stopVcRecap(
   if (!session) return { status: 'not_active' };
   activeSessions.delete(guildId);
 
-  // 進行中の文字起こしが確定結果を書き込み終えるのをベストエフォートで待つ。
+  // 参加者が話し続けている場合、OpusストリームはAfterSilence条件に到達せず
+  // activeTranscriptionsのPromiseが解決しないままになる。先にストリームを
+  // 明示的にdestroyしてから待つことで、connection.destroy()が永遠に実行されない
+  // (=録音が止まらない)状態を防ぐ。
+  for (const stream of session.activeStreams.values()) {
+    stream.destroy();
+  }
   await Promise.allSettled([...session.activeTranscriptions.values()]);
   session.connection.destroy();
 

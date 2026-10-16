@@ -22,6 +22,12 @@ export interface VcRecapConfig {
   excludedChannelIds: string[];
 }
 
+// Discordの埋め込みdescription上限は4096文字。summaryは最大2000文字・limitは最大10件の
+// ため、1件あたりの表示を切り詰めずに結合すると上限を超えうる。1件ごとに切り詰めた上、
+// 念のため結合後も上限内に収める。
+const EMBED_DESCRIPTION_LIMIT = 4_096;
+const SUMMARY_PREVIEW_CHARS = 300;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
@@ -161,12 +167,21 @@ async function executeList(
     if (session.status !== 'completed' || !session.summary) {
       return `${timestamp} <#${session.channelId}> — (要約なし、ステータス: ${session.status})`;
     }
-    return `${timestamp} <#${session.channelId}>\n> ${session.summary}`;
+    const preview =
+      session.summary.length > SUMMARY_PREVIEW_CHARS
+        ? `${session.summary.slice(0, SUMMARY_PREVIEW_CHARS)}…`
+        : session.summary;
+    return `${timestamp} <#${session.channelId}>\n> ${preview}`;
   });
+
+  let description = lines.join('\n\n');
+  if (description.length > EMBED_DESCRIPTION_LIMIT) {
+    description = `${description.slice(0, EMBED_DESCRIPTION_LIMIT - 1)}…`;
+  }
 
   const embed = new EmbedBuilder()
     .setTitle('📜 VC Recap 直近の記録')
-    .setDescription(lines.join('\n\n'))
+    .setDescription(description)
     .setColor(0x5865f2);
   await interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
 }
@@ -195,6 +210,13 @@ async function handleVoiceStateUpdate(
 
 export const vcRecapPlugin = definePlugin<VcRecapConfig, Client, PrismaClient>({
   manifest: vcRecapManifest,
+  async onDisable(context) {
+    // guild管理者がPluginを無効化・再設定した場合でも、独立して保持しているVC接続と
+    // activeSessionsのエントリは自動では消えない。無効化時に明示的に記録を終了する
+    // (無効化後は`/vc-recap stop`自体も呼べなくなるため、ここで止めないと録音が残り続ける)。
+    if (!isVcRecapActive(context.guildId)) return;
+    await stopVcRecap(context.prisma, context.logger, context.guildId);
+  },
   provideCommands(context) {
     return [
       {

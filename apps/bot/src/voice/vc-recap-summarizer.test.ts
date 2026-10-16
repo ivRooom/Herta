@@ -10,6 +10,9 @@ vi.mock('../ai/factory.js', () => ({
 
 const prisma = {} as Parameters<typeof summarizeVcRecapSession>[0];
 
+/** HERTA_AI_ENABLEDは既定falseのため、呼び出しを許可するテストでは明示的にtrueを渡す。 */
+const ENABLED_ENV = { HERTA_AI_ENABLED: 'true' };
+
 function segment(userId: string, text: string): VcRecapTranscriptSegmentRecord {
   return { userId, text, startedAt: new Date(), endedAt: new Date() };
 }
@@ -25,14 +28,29 @@ function openAiResponse(outputText: string): Response {
 
 describe('summarizeVcRecapSession', () => {
   it('segmentsが空ならcredentialを読まずnullを返す', async () => {
-    const result = await summarizeVcRecapSession(prisma, [], {});
+    const result = await summarizeVcRecapSession(prisma, [], ENABLED_ENV);
+    expect(result).toBeNull();
+    expect(resolveAiOpenAiCredentialMock).not.toHaveBeenCalled();
+  });
+
+  it('HERTA_AI_ENABLEDが既定(未設定=false)ならcredentialを読まずnullを返す', async () => {
+    const result = await summarizeVcRecapSession(prisma, [segment('u1', 'hello')], {});
+    expect(result).toBeNull();
+    expect(resolveAiOpenAiCredentialMock).not.toHaveBeenCalled();
+  });
+
+  it('HERTA_AI_KILL_SWITCHが有効ならguild設定に関係なくcredentialを読まずnullを返す', async () => {
+    const result = await summarizeVcRecapSession(prisma, [segment('u1', 'hello')], {
+      ...ENABLED_ENV,
+      HERTA_AI_KILL_SWITCH: 'true',
+    });
     expect(result).toBeNull();
     expect(resolveAiOpenAiCredentialMock).not.toHaveBeenCalled();
   });
 
   it('OpenAI credentialが無ければnullを返す', async () => {
     resolveAiOpenAiCredentialMock.mockResolvedValueOnce({ apiKey: null });
-    const result = await summarizeVcRecapSession(prisma, [segment('u1', 'hello')], {});
+    const result = await summarizeVcRecapSession(prisma, [segment('u1', 'hello')], ENABLED_ENV);
     expect(result).toBeNull();
   });
 
@@ -47,7 +65,7 @@ describe('summarizeVcRecapSession', () => {
     const result = await summarizeVcRecapSession(
       prisma,
       [segment('u1', 'hello'), segment('u2', 'world')],
-      {},
+      ENABLED_ENV,
       fetchImpl,
     );
     expect(result).toEqual({ summary: 'みんなでゲームの話をしました', topics: ['ゲーム', '雑談'] });
@@ -59,7 +77,12 @@ describe('summarizeVcRecapSession', () => {
       .fn()
       .mockResolvedValue(openAiResponse('```json\n{"summary": "要約です", "topics": []}\n```'));
 
-    const result = await summarizeVcRecapSession(prisma, [segment('u1', 'hello')], {}, fetchImpl);
+    const result = await summarizeVcRecapSession(
+      prisma,
+      [segment('u1', 'hello')],
+      ENABLED_ENV,
+      fetchImpl,
+    );
     expect(result).toEqual({ summary: '要約です', topics: [] });
   });
 
@@ -67,7 +90,12 @@ describe('summarizeVcRecapSession', () => {
     resolveAiOpenAiCredentialMock.mockResolvedValueOnce({ apiKey: 'test-key' });
     const fetchImpl = vi.fn().mockResolvedValue(new Response('{}', { status: 500 }));
 
-    const result = await summarizeVcRecapSession(prisma, [segment('u1', 'hello')], {}, fetchImpl);
+    const result = await summarizeVcRecapSession(
+      prisma,
+      [segment('u1', 'hello')],
+      ENABLED_ENV,
+      fetchImpl,
+    );
     expect(result).toBeNull();
   });
 
@@ -75,7 +103,12 @@ describe('summarizeVcRecapSession', () => {
     resolveAiOpenAiCredentialMock.mockResolvedValueOnce({ apiKey: 'test-key' });
     const fetchImpl = vi.fn().mockResolvedValue(openAiResponse('not valid json'));
 
-    const result = await summarizeVcRecapSession(prisma, [segment('u1', 'hello')], {}, fetchImpl);
+    const result = await summarizeVcRecapSession(
+      prisma,
+      [segment('u1', 'hello')],
+      ENABLED_ENV,
+      fetchImpl,
+    );
     expect(result).toBeNull();
   });
 
@@ -83,7 +116,12 @@ describe('summarizeVcRecapSession', () => {
     resolveAiOpenAiCredentialMock.mockResolvedValueOnce({ apiKey: 'test-key' });
     const fetchImpl = vi.fn().mockResolvedValue(openAiResponse('{"topics": ["a"]}'));
 
-    const result = await summarizeVcRecapSession(prisma, [segment('u1', 'hello')], {}, fetchImpl);
+    const result = await summarizeVcRecapSession(
+      prisma,
+      [segment('u1', 'hello')],
+      ENABLED_ENV,
+      fetchImpl,
+    );
     expect(result).toBeNull();
   });
 
@@ -91,7 +129,12 @@ describe('summarizeVcRecapSession', () => {
     resolveAiOpenAiCredentialMock.mockResolvedValueOnce({ apiKey: 'test-key' });
     const fetchImpl = vi.fn().mockRejectedValue(new Error('network error'));
 
-    const result = await summarizeVcRecapSession(prisma, [segment('u1', 'hello')], {}, fetchImpl);
+    const result = await summarizeVcRecapSession(
+      prisma,
+      [segment('u1', 'hello')],
+      ENABLED_ENV,
+      fetchImpl,
+    );
     expect(result).toBeNull();
   });
 });
