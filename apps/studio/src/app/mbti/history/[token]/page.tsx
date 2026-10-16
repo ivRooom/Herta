@@ -12,6 +12,7 @@ import { MbtiQuizLayout } from '@/components/mbti-quiz-layout';
 import { MbtiResultReport } from '@/components/mbti-result-report';
 import { prisma } from '@/lib/db';
 import { mbtiHistorySourceLabel } from '@/lib/mbti-history';
+import { readMbtiHistoryPercentages } from '@/lib/mbti-history';
 import { compareMbtiHistory, HISTORY_AXES, HISTORY_AXIS_LABELS } from '@/lib/mbti-history';
 
 export const dynamic = 'force-dynamic';
@@ -84,6 +85,10 @@ export default async function MbtiHistoryPage({
     return `/mbti/history/${token}?${search}`;
   };
   const scores = readScores(selected.scores);
+  const estimated =
+    selected.source === 'estimate' && selected.scoringVersion === 'historical-estimate-v1'
+      ? readMbtiHistoryPercentages(selected.percentages)
+      : null;
   return (
     <MbtiQuizLayout>
       <section className="mbti-history-intro">
@@ -217,7 +222,35 @@ export default async function MbtiHistoryPage({
       <h2 id="report" className="mbti-history-report-heading">
         {date(selected.completedAt)} の詳細レポート
       </h2>
-      {selected.source === 'correction' ? (
+      {selected.source === 'estimate' ? (
+        <section className="mbti-history-card">
+          <h2>
+            {selected.resultType} · {MBTI_TYPES[selected.resultType]?.title}（推定スコア）
+          </h2>
+          <p>
+            本人の依頼により、過去の診断の各指標の強さを保ち、指定されたタイプの方向へ合わせた参考値です。回答から測定した値ではなく、診断精度を保証する推定ではありません。
+          </p>
+          {estimated ? (
+            <dl>
+              {HISTORY_AXES.map((axis) => (
+                <div key={axis}>
+                  <dt>
+                    {HISTORY_AXIS_LABELS[axis][0]} ／ {HISTORY_AXIS_LABELS[axis][1]}
+                  </dt>
+                  <dd>
+                    {estimated[axis]}% ／ {100 - estimated[axis]!}%
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p>推定スコアを読み込めません。</p>
+          )}
+          <p className="mbti-report-note">
+            元が50%の指標は、指定タイプ側へ現行採点の最小単位を仮置きしています。A/Tは過去の診断値を保持しています。元の診断・統計は変更せず、この推定値は診断間の数値比較や実測レポートの対象に含めません。
+          </p>
+        </section>
+      ) : selected.source === 'correction' ? (
         <section className="mbti-history-card">
           <h2>
             {selected.resultType} · {MBTI_TYPES[selected.resultType]?.title ?? '訂正されたタイプ'}
