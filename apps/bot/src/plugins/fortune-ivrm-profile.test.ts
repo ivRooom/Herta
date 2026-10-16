@@ -12,7 +12,11 @@ const contract = JSON.parse(
     'utf8',
   ),
 );
-const config = { apiBaseUrl: 'https://api.ivrm.jp', secret: 'test-secret', guildId: null };
+const config = {
+  apiBaseUrl: 'https://api.ivrm.jp',
+  secret: 'test-secret',
+  guildId: '123456789012345678',
+};
 const guild = '123456789012345678',
   user = '223456789012345678';
 afterEach(() => vi.unstubAllGlobals());
@@ -43,8 +47,23 @@ describe('private ivrm-web profile client', () => {
       resolveFortuneProfileConfig({
         IVRM_WEB_API_BASE_URL: config.apiBaseUrl,
         HERTA_MBTI_SYNC_SECRET: 'test-secret',
+        IVRM_INTEGRATION_GUILD_ID: guild,
       }),
     ).toEqual(config);
+  });
+  it('requires an explicit guild and never sends other guild member IDs', async () => {
+    expect(
+      resolveFortuneProfileConfig({
+        IVRM_WEB_API_BASE_URL: config.apiBaseUrl,
+        HERTA_MBTI_SYNC_SECRET: 'test-secret',
+      }),
+    ).toBeNull();
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    expect(await fetchIvrmFortuneProfile('323456789012345678', user, '2026-10-16', config)).toEqual(
+      { status: 'not-linked' },
+    );
+    expect(fetch).not.toHaveBeenCalled();
   });
   it('matches the contract HMAC purpose, path and body keys', () => {
     const id = '44444444-4444-4444-8444-444444444444',

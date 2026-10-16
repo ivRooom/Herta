@@ -15,7 +15,7 @@
 
 Producerはivrm-web、ConsumerはHerta。契約は `contracts/ivrm/herta-fortune-profile.v1.bundle.json`（Source of Truth: ivRooom/ivrm-contracts）。`IVRM_WEB_API_BASE_URL`（HTTPS origin）と既存 `HERTA_MBTI_SYNC_SECRET` を使用。root secretから用途文字列 `herta-fortune-profile-v1` のHMACで専用キーを導出するため、既存MBTI同期の署名とは互換でない。新規credential/SSM parameterは不要。
 
-`POST /v1/herta/fortune-profile` へinteractionのguildと本人のDiscord IDだけを署名送信。ProducerのDISCORD_GUILD_IDに限定する。ConsumerにIVRM_INTEGRATION_GUILD_IDがあれば送信前にも制限。APIにはユーザーが他人のIDを指定する操作を設けない。timeout 5秒、redirect禁止、no-store、4096bytes上限、requestIdと本人IDと応答型を検証。本文・誕生日・credentialをログに出さない。
+`POST /v1/herta/fortune-profile` へinteractionのguildと本人のDiscord IDだけを署名送信。ProducerのDISCORD_GUILD_IDに限定する。ConsumerもIVRM_INTEGRATION_GUILD_IDを必須とし、送信前に制限。未設定なら送信しない。Botコンテナにも既存の同じ設定を渡す。APIにはユーザーが他人のIDを指定する操作を設けない。timeout 5秒、redirect禁止、no-store、4096bytes上限、requestIdと本人IDと応答型を検証。本文・誕生日・credentialをログに出さない。
 
 ## 結果
 

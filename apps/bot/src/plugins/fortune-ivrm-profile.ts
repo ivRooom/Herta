@@ -10,7 +10,7 @@ export const FORTUNE_PROFILE_PURPOSE = 'herta-fortune-profile-v1';
 export interface FortuneProfileConfig {
   apiBaseUrl: string;
   secret: string;
-  guildId: string | null;
+  guildId: string;
 }
 export type IvrmFortuneProfile =
   | { status: 'linked'; profile: FortuneProfile }
@@ -33,8 +33,8 @@ export function resolveFortuneProfileConfig(
       !['', '/'].includes(url.pathname)
     )
       return null;
-    const guildId = env.IVRM_INTEGRATION_GUILD_ID?.trim() || null;
-    if (guildId && !/^\d{17,20}$/.test(guildId)) return null;
+    const guildId = env.IVRM_INTEGRATION_GUILD_ID?.trim();
+    if (!guildId || !/^\d{17,20}$/.test(guildId)) return null;
     return { apiBaseUrl: url.origin, secret, guildId };
   } catch {
     return null;
@@ -78,7 +78,7 @@ export async function fetchIvrmFortuneProfile(
   config = resolveFortuneProfileConfig(process.env),
 ): Promise<IvrmFortuneProfile> {
   if (!config) return { status: 'unconfigured' };
-  if (config.guildId && config.guildId !== guildId) return { status: 'not-linked' };
+  if (config.guildId !== guildId) return { status: 'not-linked' };
   if (!/^\d{17,20}$/.test(guildId) || !/^\d{17,20}$/.test(userId)) return { status: 'unavailable' };
   const requestId = randomUUID();
   const request = buildFortuneProfileRequest(
