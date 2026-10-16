@@ -27,6 +27,8 @@ export * from './studio-access-management.js';
 export * from './rule-runtime.js';
 export * from './runtime-secrets.js';
 export * from './runtime-configurations.js';
+export * from './user-data-consent.js';
+export * from './vc-recap.js';
 
 import { PrismaClient } from '@prisma/client';
 

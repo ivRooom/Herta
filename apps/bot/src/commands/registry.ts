@@ -12,6 +12,7 @@ import { communityActivityExportCommands } from './community-activity-export.js'
 import { communityStatsCommands } from './community-stats.js';
 import { configureHelpCommandProvider, helpV2Command } from './help-v2.js';
 import { leaderboardCommands } from './leaderboard.js';
+import { privacyCommands } from './privacy.js';
 import { coreUtilityCommands } from './utility.js';
 
 export type SlashCommand = CommandHandler<ChatInputCommandInteraction>;
@@ -117,6 +118,7 @@ export class CommandRegistry {
       ...communityActivityExportCommands,
       ...communityStatsCommands,
       ...leaderboardCommands,
+      ...privacyCommands,
     ]) {
       if (PLUGIN_OWNED_COMMAND_NAMES.has(command.definition.name)) continue;
       this.register(command);
