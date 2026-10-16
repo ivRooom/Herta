@@ -361,6 +361,19 @@ export function computeMbtiAxisPercent(scores: MbtiScores, axis: MbtiAxis): numb
   return Math.round(Math.min(100, Math.max(0, percent)));
 }
 
+/** Freeze the scoring convention with each result; future questionnaires can be compared safely. */
+export const MBTI_SCORING_VERSION = 'likert-62-v1';
+export function createMbtiScoreSnapshot(scores: MbtiScores) {
+  return {
+    scores: { ...scores },
+    percentages: Object.fromEntries(
+      MBTI_AXES.map((axis) => [axis, computeMbtiAxisPercent(scores, axis)]),
+    ),
+    questionCount: Object.values(MBTI_AXIS_QUESTION_COUNTS).reduce((sum, count) => sum + count, 0),
+    scoringVersion: MBTI_SCORING_VERSION,
+  };
+}
+
 export type MbtiLegacyAxis = 'EI' | 'SN' | 'TF' | 'JP';
 
 export interface MbtiSessionAnswer {

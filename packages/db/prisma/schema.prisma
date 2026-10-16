@@ -297,6 +297,37 @@ model MbtiWebQuizSession {
   @@map("mbti_web_quiz_sessions")
 }
 
+// 本人向け履歴。最新値はcompletedAt/idの降順で取得する(履歴を上書きしない)。
+// 生の回答・ユーザー名は複製しない。匿名統計とは別のデータ。
+model MbtiPersonalResult {
+  id             String   @id @default(uuid())
+  completionKey  String   @unique @map("completion_key")
+  guildId        String   @map("guild_id")
+  discordUserId  String   @map("discord_user_id")
+  resultType     String   @map("result_type")
+  resultIdentity String   @map("result_identity")
+  scores         Json
+  percentages    Json
+  questionCount  Int      @map("question_count")
+  scoringVersion String   @map("scoring_version")
+  source         String
+  completedAt    DateTime @map("completed_at") @db.Timestamptz(3)
+
+  @@index([guildId, discordUserId, completedAt(sort: Desc), id(sort: Desc)])
+  @@map("mbti_personal_results")
+}
+
+// /mbti-resultで本人にのみ発行。URLは30分有効、再発行で以前のURLを無効化。
+model MbtiResultAccess {
+  guildId       String   @map("guild_id")
+  discordUserId String   @map("discord_user_id")
+  tokenHash     String   @unique @map("token_hash")
+  expiresAt     DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@id([guildId, discordUserId])
+  @@map("mbti_result_access")
+}
+
 // ============================================================
 // Plugin System
 // ============================================================

@@ -35,12 +35,31 @@ async function executeDeleteVoiceData(interaction: ChatInputCommandInteraction) 
 async function executeExport(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const consent = await getUserDataConsent(prisma, interaction.user.id);
-  const sessions = await listVcRecapSessionsForUser(prisma, interaction.user.id);
+  const [consent, sessions, mbtiResults] = await Promise.all([
+    getUserDataConsent(prisma, interaction.user.id),
+    listVcRecapSessionsForUser(prisma, interaction.user.id),
+    prisma.mbtiPersonalResult.findMany({
+      where: { discordUserId: interaction.user.id },
+      orderBy: [{ completedAt: 'desc' }, { id: 'desc' }],
+      select: {
+        id: true,
+        guildId: true,
+        resultType: true,
+        resultIdentity: true,
+        scores: true,
+        percentages: true,
+        questionCount: true,
+        scoringVersion: true,
+        source: true,
+        completedAt: true,
+      },
+    }),
+  ]);
 
   const exportPayload = {
     userId: interaction.user.id,
     exportedAt: new Date().toISOString(),
+    mbtiResults,
     consent: {
       voiceTranscriptionConsent: consent.voiceTranscriptionConsent,
       updatedAt: consent.updatedAt.toISOString(),

@@ -44,7 +44,7 @@ const MBTI_ROLE_CONFIG_PROPERTIES: Record<string, unknown> = Object.fromEntries(
 export const mbtiManifest: PluginManifest = {
   id: 'mbti',
   name: 'MBTI',
-  version: '1.0.0',
+  version: '1.1.0',
   description:
     '62問の5段階評価に答えてMBTI風の性格診断を行い、結果に応じてDiscord Roleを自動付与できるPluginです',
   author: { name: 'Herta' },
@@ -84,6 +84,21 @@ export const mbtiManifest: PluginManifest = {
           choices: [
             { name: 'Discord上で回答', value: 'discord' },
             { name: 'Webブラウザで回答', value: 'web' },
+          ],
+        },
+      ],
+    },
+    {
+      name: 'mbti-result',
+      description: '自分の最新MBTI・診断履歴・比較ページの非公開URLを発行します',
+      options: [
+        {
+          name: 'view',
+          type: 'string',
+          description: '最初に開く表示',
+          choices: [
+            { name: '最新の結果', value: 'latest' },
+            { name: '診断履歴と比較', value: 'history' },
           ],
         },
       ],
