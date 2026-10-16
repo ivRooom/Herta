@@ -5,3 +5,6 @@ dist
 coverage
 pnpm-lock.yaml
 packages/db/src/generated
+
+# Generated contract snapshot: preserve canonical ivrm-contracts bytes
+contracts/ivrm/herta-fortune-profile.v1.bundle.json

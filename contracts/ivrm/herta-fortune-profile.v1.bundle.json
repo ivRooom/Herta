@@ -8,6 +8,32 @@
   },
   "method": "POST",
   "path": "/v1/herta/fortune-profile",
+  "operationId": "getHertaFortuneProfile",
+  "description": "Private read-only signed request. Purpose-derived HMAC key from existing HERTA_MBTI_SYNC_SECRET. Only configured DISCORD_GUILD_ID and active members with approved profiles. No browser CORS, no-store on every response. No public birthday view changes.",
+  "requestMediaTypes": ["application/json"],
+  "responseMediaTypes": {
+    "200": ["application/json"],
+    "400": [],
+    "401": [],
+    "403": [],
+    "404": [],
+    "413": [],
+    "502": [],
+    "503": []
+  },
+  "security": [
+    {
+      "hertaFortuneHmac": []
+    }
+  ],
+  "securitySchemes": {
+    "hertaFortuneHmac": {
+      "type": "apiKey",
+      "in": "header",
+      "name": "X-IVRM-Signature",
+      "description": "See operation x-ivrm-hmac for key derivation, canonical text and other signed headers."
+    }
+  },
   "maxBodyBytes": 1024,
   "maxTimestampSkewMs": 300000,
   "hmacPurpose": "herta-fortune-profile-v1",
@@ -68,15 +94,20 @@
       },
       "requestId": {
         "type": "string",
-        "format": "uuid"
+        "format": "uuid",
+        "description": "MUST exactly equal X-IVRM-Event-Id and be bound into the canonical signature."
       },
       "guildId": {
         "type": "string",
-        "pattern": "^[0-9]{17,20}$"
+        "pattern": "^[0-9]{17,20}$",
+        "description": "MUST equal Discord interaction.guildId and the explicitly configured allowed guild. Consumer MUST reject other guilds before sending any user ID; Producer MUST check DISCORD_GUILD_ID.",
+        "x-ivrm-source": "discord.interaction.guildId"
       },
       "discordUserId": {
         "type": "string",
-        "pattern": "^[0-9]{17,20}$"
+        "pattern": "^[0-9]{17,20}$",
+        "description": "MUST equal Discord interaction.user.id, the executor of this invocation. Never accept a user-supplied target ID or arbitrary member lookup. HMAC authenticates the service, so Consumer MUST enforce this subject binding.",
+        "x-ivrm-source": "discord.interaction.user.id"
       }
     }
   },
@@ -94,7 +125,8 @@
       },
       "discordUserId": {
         "type": "string",
-        "pattern": "^[0-9]{17,20}$"
+        "pattern": "^[0-9]{17,20}$",
+        "description": "Echo of the authenticated request subject; Consumer MUST compare to interaction.user.id before use."
       },
       "profile": {
         "type": "object",
