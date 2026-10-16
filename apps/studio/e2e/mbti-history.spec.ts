@@ -5,6 +5,7 @@ const subject = { guildId: 'mbti-e2e-test', discordUserId: 'mbti-e2e-user' };
 let path = '';
 let otherId = '';
 let oldestId = '';
+let correctionId = '';
 test.describe('private MBTI history', () => {
   test.skip(!enabled, 'Requires isolated local PostgreSQL fixture');
   test.beforeAll(async () => {
@@ -34,6 +35,22 @@ test.describe('private MBTI history', () => {
       });
     oldestId = (
       await prisma.mbtiPersonalResult.findUniqueOrThrow({ where: { completionKey: 'mbti-e2e-0' } })
+    ).id;
+    correctionId = (
+      await prisma.mbtiPersonalResult.create({
+        data: {
+          ...subject,
+          completionKey: 'mbti-e2e-correction',
+          resultType: 'ENFJ',
+          resultIdentity: 'T',
+          scores: {},
+          percentages: {},
+          questionCount: 0,
+          scoringVersion: 'manual-correction-v1',
+          source: 'correction',
+          completedAt: new Date('2026-09-15'),
+        },
+      })
     ).id;
     const other = await prisma.mbtiPersonalResult.create({
       data: {
@@ -107,6 +124,13 @@ test.describe('private MBTI history', () => {
     );
     await expect(page.locator('[data-nextjs-dialog]')).toHaveCount(0);
     await page.screenshot({ path: `${process.env.TEMP}/mbti-history-mobile.png`, fullPage: false });
+  });
+  test('manual type correction is clearly separated from scored diagnosis', async ({ page }) => {
+    await page.goto(`${path}?result=${correctionId}`);
+    await expect(page.getByRole('heading', { name: 'ENFJ · 主人公' })).toBeVisible();
+    await expect(page.getByText('手動訂正（診断スコアなし）', { exact: false })).toBeVisible();
+    await expect(page.locator('.mbti-report-type')).toHaveCount(0);
+    await expect(page.locator('.mbti-history-track')).toHaveCount(0);
   });
   test('another user result cannot be selected and expired links expose no history', async ({
     page,
