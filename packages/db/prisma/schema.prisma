@@ -33,6 +33,7 @@ model Guild {
   guildPlugins           GuildPlugin[]
   rules                  Rule[]
   moderationDetections   ModerationDetectionEvent[]
+  vcRecapSessions        VcRecapSession[]
 
   @@map("guilds")
 }
@@ -1193,4 +1194,78 @@ model FortuneProfile {
 
   @@id([guildId, userId])
   @@map("fortune_profiles")
+}
+
+// ============================================================
+// VC Recap (Phase 0-2: 同意基盤・VC文字起こし・要約振り返り)
+// ============================================================
+
+/**
+ * guildを跨がないDiscordアカウント単位の同意設定。VC発言の文字起こしは本人一人ひとりの
+ * 同意が無ければ対象に含められないため、guild管理者によるopt-in(GuildPlugin)とは別に
+ * 本人自身が切り替えるテーブルとして独立させる。
+ */
+model UserDataConsent {
+  userId                   String   @id @map("user_id")
+  voiceTranscriptionConsent Boolean @default(false) @map("voice_transcription_consent")
+  updatedAt                DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("user_data_consents")
+}
+
+enum VcRecapSessionStatus {
+  active
+  summarizing
+  completed
+  failed
+
+  @@map("vc_recap_session_status")
+}
+
+/**
+ * 1回の`/vc-recap start`〜`stop`(または全員退出)が1行に対応する。
+ * 生の文字起こし本文はVcRecapTranscriptSegmentに一時的に保存し、要約生成が完了したら
+ * 削除する(本文を長期保持しないプライバシー設計、summaryのみ残す)。
+ */
+model VcRecapSession {
+  id                 String                @id @default(uuid())
+  guildId            String                @map("guild_id")
+  channelId          String                @map("channel_id")
+  startedBy          String                @map("started_by")
+  status             VcRecapSessionStatus  @default(active)
+  /** セッション開始時点でvoiceTranscriptionConsent=trueだった参加者(文字起こし対象者)。 */
+  consentingUserIds  String[]              @map("consenting_user_ids")
+  /** 文字起こし対象外(不同意)だった参加者。要約の「参加者」表示には含めるが発言内容は無い。 */
+  nonConsentingUserIds String[]            @map("non_consenting_user_ids")
+  summary            String?
+  topics             String[]              @default([])
+  startedAt          DateTime              @default(now()) @map("started_at") @db.Timestamptz(3)
+  endedAt            DateTime?             @map("ended_at") @db.Timestamptz(3)
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  guild    Guild                      @relation(fields: [guildId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  segments VcRecapTranscriptSegment[]
+
+  @@index([guildId, startedAt(sort: Desc)])
+  @@index([guildId, channelId, startedAt(sort: Desc)])
+  @@map("vc_recap_sessions")
+}
+
+/**
+ * セッション進行中に逐次書き込む生の文字起こしセグメント(クラッシュ時のロス防止用)。
+ * 要約生成が完了し次第、このテーブルの該当行は削除する(本文を長期保持しない)。
+ */
+model VcRecapTranscriptSegment {
+  id          String   @id @default(uuid())
+  sessionId   String   @map("session_id")
+  userId      String   @map("user_id")
+  text        String
+  startedAt   DateTime @map("started_at") @db.Timestamptz(3)
+  endedAt     DateTime @map("ended_at") @db.Timestamptz(3)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  session VcRecapSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, startedAt])
+  @@map("vc_recap_transcript_segments")
 }
