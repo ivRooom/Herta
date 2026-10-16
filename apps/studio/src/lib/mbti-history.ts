@@ -1,5 +1,6 @@
 export const HISTORY_AXES = ['EI', 'SN', 'TF', 'JP', 'AT'] as const;
 export function mbtiHistorySourceLabel(source: string, questionCount: number) {
+  if (source === 'estimate') return '過去結果からの推定（実測ではありません）';
   if (source === 'correction') return '手動訂正（診断スコアなし）';
   if (source === 'web' || source === 'discord') {
     return `${questionCount}問 · ${source === 'web' ? 'Web' : 'Discord'}`;
@@ -30,6 +31,8 @@ export function compareMbtiHistory(
   current: { percentages: unknown; scoringVersion: string },
   previous: { percentages: unknown; scoringVersion: string },
 ) {
+  if ([current.scoringVersion, previous.scoringVersion].includes('historical-estimate-v1'))
+    return null;
   const a = readMbtiHistoryPercentages(current.percentages);
   const b = readMbtiHistoryPercentages(previous.percentages);
   if (!a || !b || current.scoringVersion !== previous.scoringVersion) return null;

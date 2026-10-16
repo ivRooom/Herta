@@ -6,6 +6,15 @@ import {
   mbtiHistorySourceLabel,
 } from './mbti-history.ts';
 const sample = { EI: 60, SN: 30, TF: 50, JP: 100, AT: 0 };
+test('estimated scores are labelled and never treated as measured movement', () => {
+  assert.match(mbtiHistorySourceLabel('estimate', 0), /推定/);
+  const estimate = { percentages: sample, scoringVersion: 'historical-estimate-v1' };
+  assert.equal(compareMbtiHistory(estimate, estimate), null);
+  assert.equal(
+    compareMbtiHistory(estimate, { percentages: sample, scoringVersion: 'likert-62-v1' }),
+    null,
+  );
+});
 test('history measures percentage point movement and boundary crossing without rescaling old scores', () => {
   const current = { percentages: sample, scoringVersion: 'v1' };
   const before = { percentages: { ...sample, EI: 40, SN: 70, TF: 49 }, scoringVersion: 'v1' };
