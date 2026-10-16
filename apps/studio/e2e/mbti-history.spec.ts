@@ -48,7 +48,7 @@ test.describe('private MBTI history', () => {
           questionCount: 0,
           scoringVersion: 'manual-correction-v1',
           source: 'correction',
-          completedAt: new Date('2026-06-01'),
+          completedAt: new Date('2026-09-15'),
         },
       })
     ).id;

@@ -64,6 +64,8 @@ export default async function MbtiHistoryPage({
     : await prisma.mbtiPersonalResult.findFirst({
         where: {
           ...subject,
+          source: { not: 'correction' },
+          scoringVersion: selected.scoringVersion,
           OR: [
             { completedAt: { lt: selected.completedAt } },
             { completedAt: selected.completedAt, id: { lt: selected.id } },
@@ -147,7 +149,7 @@ export default async function MbtiHistoryPage({
           {query.before ? <input type="hidden" name="before" value={query.before} /> : null}
           <label htmlFor="compare">比較する診断</label>
           <select id="compare" name="compare" defaultValue={query.compare ?? ''}>
-            <option value="">選択した診断のひとつ前</option>
+            <option value="">前回の診断（同じ採点方式）</option>
             {visible
               .filter((r) => r.id !== selected.id)
               .map((r) => (
