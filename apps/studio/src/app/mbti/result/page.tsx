@@ -25,7 +25,7 @@ export default async function SharedMbtiResultPage({
   return (
     <MbtiQuizLayout>
       {scores ? (
-        <MbtiResultReport scores={scores} shared />
+        <MbtiResultReport scores={scores} shared estimated={params.get('basis') === 'estimate'} />
       ) : (
         <div className="mbti-report-intro">
           <h2>共有リンクが正しくありません</h2>

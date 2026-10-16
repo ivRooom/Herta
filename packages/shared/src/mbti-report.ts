@@ -220,13 +220,19 @@ export function createMbtiReport(scores: MbtiScores) {
 }
 
 /** Public snapshots contain aggregate scores only; they are not authenticated completion proofs. */
-export function mbtiShareSearch(scores: MbtiScores): string {
+export function mbtiShareSearch(scores: MbtiScores, estimated = false): string {
   const params = new URLSearchParams({ v: '1' });
+  if (estimated) params.set('basis', 'estimate');
   for (const axis of MBTI_AXES) params.set(axis.toLowerCase(), String(scores[axis]));
   return params.toString();
 }
 
 export function parseMbtiShareScores(params: URLSearchParams): MbtiScores | null {
+  if (
+    params.has('basis') &&
+    (params.getAll('basis').length !== 1 || params.get('basis') !== 'estimate')
+  )
+    return null;
   if (params.getAll('v').length !== 1 || params.get('v') !== '1') return null;
   const scores = {} as MbtiScores;
   for (const axis of MBTI_AXES) {
@@ -238,7 +244,7 @@ export function parseMbtiShareScores(params: URLSearchParams): MbtiScores | null
   }
   if (
     [...params.keys()].some(
-      (key) => !['v', ...MBTI_AXES.map((axis) => axis.toLowerCase())].includes(key),
+      (key) => !['v', 'basis', ...MBTI_AXES.map((axis) => axis.toLowerCase())].includes(key),
     )
   )
     return null;
