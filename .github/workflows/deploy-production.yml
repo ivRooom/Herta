@@ -25,7 +25,6 @@ on:
       - 'pnpm-workspace.yaml'
       - 'turbo.json'
       - 'tsconfig.json'
-      - '.github/workflows/deploy-production.yml'
   workflow_dispatch:
     inputs:
       ref:

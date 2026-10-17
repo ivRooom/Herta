@@ -7,7 +7,7 @@ This document describes **proposed** behavior until the PR is merged. Verify the
 - Automatic production deployment is triggered by changes to runtime/deployment inputs on `main`, not by docs-only / `.agents/skills/**` / `AGENTS.md` changes.
 - `workflow_dispatch` remains available. Starting a dispatch is an explicit production action and still requires operator approval.
 - The GitHub Actions `deploy` job uses the `production` Environment. Whether its protection rules require approval is an **external GitHub Environment setting**; do not assume approval is configured based on its name alone.
-- Workflow configuration changes are allowlisted, so **merging the trigger-gate PR itself can initiate a production deployment**. Review the expected impact and authorize that merge separately.
+- Workflow-only changes are **not** part of the automatic deploy allowlist. In particular, merging the trigger-gate PR itself should not start production deployment **via this workflow**. A change to deployment workflow behavior must receive explicit review and a separately authorized `workflow_dispatch` before it affects production. Verify other external integrations independently.
 - Build context uses `COPY . .`; `.dockerignore` excludes `*.md`, `docs`, and `.github`. The path allowlist deliberately includes `apps/**`, `packages/**`, `plugins/**`, `contracts/**`, `deploy/**`, certificates and build/configuration files; update the list whenever the Docker build or runtime gains a new input.
 - GitHub's event `paths` filter is **not** a permission boundary. Other workflows, Git integrations, or manual server changes may still deploy. Confirm all production release paths before interpreting a docs-only merge as entirely free of production changes.
 
@@ -18,13 +18,14 @@ This document describes **proposed** behavior until the PR is merged. Verify the
 3. Reason through these events using the GitHub Actions paths filter:
    - `.agents/skills/herta-plugin-lifecycle/SKILL.md` or `docs/PLUGIN_RUNTIME.md` only => no automatic deploy.
    - `apps/bot/src/**` / `packages/db/**` / `plugins/**` => deploy.
-   - `Dockerfile`, `docker-compose.prod.yml`, `deploy/scripts/**`, `.github/workflows/deploy-production.yml` => deploy.
+   - `Dockerfile`, `docker-compose.prod.yml`, `deploy/scripts/**` => deploy.
+   - `.github/workflows/deploy-production.yml` alone => no automatic deploy; manually dispatch an approved release if the changed workflow behavior needs activation.
    - A mixed docs+runtime commit => deploy.
-4. Before authorizing merge, confirm deployment health, backup/restore access, release rollback, and required reviewers/branch protection in GitHub's actual Environment settings.
+4. Before authorizing an actual production deployment (including `workflow_dispatch`), confirm deployment health, backup/restore access, release rollback, and required reviewers/branch protection in GitHub's actual Environment settings.
 5. After merge, validate by observing the Actions run and application health. Do not perform an artificial production restart solely for the test.
 
 ## Rollback
 
-Restore the previous workflow through a reviewed PR. Reverting this file to the previous broad `push main` trigger may itself initiate a production deployment; treat rollback as a Production change, not a harmless documentation revert.
+Restore the previous workflow through a reviewed PR. **Do not** revert directly to the previous unconditional `push main` trigger: that may immediately redeploy production. Prefer retaining the safe path filter, correcting it in a follow-up PR, and using an approved manual dispatch if a real runtime release is required.
 
 Tracking: [ivRooom/ivrm-platform#40](https://github.com/ivRooom/ivrm-platform/issues/40) / [Herta #507](https://github.com/ivRooom/Herta/pull/507).
