@@ -57,7 +57,7 @@
                   "properties": {
                     "path": {
                       "type": "string",
-                      "pattern": "^/mbti/(?:[0-9a-f-]{36}|history/[A-Za-z0-9_-]{43})$"
+                      "pattern": "^/mbti/(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|history/[A-Za-z0-9_-]{43})$"
                     },
                     "expiresAt": {
                       "type": "string",
