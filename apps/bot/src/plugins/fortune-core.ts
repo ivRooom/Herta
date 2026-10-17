@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { dailyFortunePattern } from './fortune-patterns.js';
 
 export const SIGNS = [
   '牡羊座',
@@ -78,10 +79,6 @@ export function validateFortuneProfile(profile: FortuneProfile, date: string): v
       (match[1] && (year < 1900 || profile.birthday > date))
     )
       throw new Error('存在する日付・未来ではない誕生日を入力してください（1900年以降）。');
-    if (profile.zodiac && profile.zodiac !== zodiacForBirthday(month, day))
-      throw new Error('誕生日と星座が一致しません。星座は自動計算できます。');
-    if (match[1] && profile.eto && profile.eto !== ETO[(year - 4) % 12])
-      throw new Error('生年と干支が一致しません。干支は生年から自動計算できます。');
   }
   if (profile.mbti && !/^[EI][SN][TF][JP](?:-[AT])?$/.test(profile.mbti))
     throw new Error('MBTIは INFP または INFP-T の形式で入力してください。');
@@ -112,8 +109,9 @@ export function describeFortuneProfile(profile: FortuneProfile, date: string) {
       ? null
       : Number(date.slice(0, 4)) - year - (date.slice(5) < profile.birthday!.slice(5) ? 1 : 0);
   return {
-    zodiac: match ? zodiacForBirthday(Number(match[2]), Number(match[3])) : profile.zodiac,
-    eto: year === null ? profile.eto : ETO[(year - 4) % 12]!,
+    zodiac:
+      profile.zodiac ?? (match ? zodiacForBirthday(Number(match[2]), Number(match[3])) : null),
+    eto: profile.eto ?? (year === null ? null : ETO[(year - 4) % 12]!),
     age,
     ageGroup:
       age === null
@@ -126,62 +124,6 @@ export function describeFortuneProfile(profile: FortuneProfile, date: string) {
   };
 }
 
-const THEMES = [
-  {
-    title: '小さな一歩が、流れを変える日',
-    message:
-      '大きな完成より、まず一つ試すことを楽しんで。小さな発見をメモすると次のヒントになります。',
-    item: '小さなノート',
-    action: '気になっていたことを5分だけ試す',
-    color: 'ラベンダー',
-    hex: '#c9a6f5',
-  },
-  {
-    title: 'やさしい言葉が、幸運の入口',
-    message:
-      '短いお礼や挨拶が、心地よい会話につながりそう。無理に盛り上げず、自分のペースも大切に。',
-    item: 'お気に入りのマグ',
-    action: '最近助けてもらった人へ一言お礼を伝える',
-    color: 'ミント',
-    hex: '#9af3d5',
-  },
-  {
-    title: '整えるほど、気持ちが軽くなる日',
-    message:
-      '予定と持ち物を少し整理してみて。余白が生まれると、やりたいことが見つけやすくなります。',
-    item: 'ペンケース',
-    action: '机の上を一か所だけ片付ける',
-    color: 'スカイブルー',
-    hex: '#a7d8fa',
-  },
-  {
-    title: 'いつもと違う景色を、ひとつ',
-    message:
-      '慣れたことにも別の楽しみ方がありそう。好きな音や色を手がかりに、小さな変化を取り入れて。',
-    item: 'しおり',
-    action: '普段選ばない曲を一曲聴く',
-    color: 'ピーチ',
-    hex: '#ffc1b6',
-  },
-  {
-    title: 'ひと休みから、ひらめきが育つ日',
-    message:
-      '急いで答えを出さなくても大丈夫。短い休憩を挟み、今できることからゆっくり再開してみて。',
-    item: 'ハンカチ',
-    action: '画面から離れて、窓の外を眺める',
-    color: 'クリーム',
-    hex: '#ffe9aa',
-  },
-  {
-    title: '好きなことを、誰かと分け合う日',
-    message:
-      'おすすめや小さな発見を共有すると、思いがけない共通点が見つかるかも。相手の話にも耳を傾けて。',
-    item: 'お気に入りのキーホルダー',
-    action: '好きな作品の魅力を一つ言葉にする',
-    color: 'ローズ',
-    hex: '#f5afd3',
-  },
-] as const;
 const SIGN_NOTES = [
   '始めたいことを一つ選ぶ',
   '心地よい環境を整える',
@@ -208,7 +150,7 @@ export function createDailyFortune(
   const seed = createHash('sha256')
     .update(JSON.stringify(['herta-fortune-v1', guildId, userId, date]))
     .digest();
-  const theme = THEMES[seed[0]! % THEMES.length]!;
+  const theme = dailyFortunePattern(guildId, userId, date);
   const details = describeFortuneProfile(profile, date);
   const notes: string[] = [];
   if (details.zodiac)

@@ -39,7 +39,7 @@ export interface MbtiWebQuizSessionRecord {
 const DEFAULT_EXPIRES_IN_MS = 24 * 60 * 60 * 1000;
 
 export async function createMbtiWebQuizSession(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, 'mbtiWebQuizSession'>,
   input: {
     guildId: string;
     discordUserId: string;
@@ -58,6 +58,33 @@ export async function createMbtiWebQuizSession(
     select: { id: true, expiresAt: true },
   });
   return session;
+}
+
+/** Serialize member-link retries so every concurrent request resumes one pending quiz. */
+export async function getOrCreateMbtiWebQuizSession(
+  prisma: PrismaClient,
+  input: {
+    guildId: string;
+    discordUserId: string;
+    questions: readonly MbtiWebQuizQuestion[];
+  },
+): Promise<{ id: string; expiresAt: Date; resumed: boolean }> {
+  return prisma.$transaction(async (tx) => {
+    const lockKey = `mbti-member-link:${input.guildId}:${input.discordUserId}`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+    const pending = await tx.mbtiWebQuizSession.findFirst({
+      where: {
+        guildId: input.guildId,
+        discordUserId: input.discordUserId,
+        status: 'pending',
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, expiresAt: true },
+    });
+    if (pending) return { ...pending, resumed: true };
+    return { ...(await createMbtiWebQuizSession(tx, input)), resumed: false };
+  });
 }
 
 /** idそのままの取得。既に完了済みのリンクへ再アクセスした際の結果再表示用。 */

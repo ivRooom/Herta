@@ -1,0 +1,104 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Herta member MBTI links",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/integrations/ivrm/guilds/{guildId}/mbti": {
+      "post": {
+        "operationId": "createMemberMbtiLink",
+        "description": "Authenticated ivrm-web service only. Consumer MUST derive discordUserId from authenticated member session, never browser request input. Guild must match configured IVRM_INTEGRATION_GUILD_ID. Quiz resumes valid pending session or creates 24h session if plugin enabled; result returns own latest/history 30min capability URL, invalidating previous result URL. No public CORS, private no-store, no-referrer. Never log returned paths/tokens.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "guildId",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9]{17,20}$"
+            }
+          }
+        ],
+        "security": [
+          {
+            "integrationBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["discordUserId", "action"],
+                "properties": {
+                  "discordUserId": {
+                    "type": "string",
+                    "pattern": "^[0-9]{17,20}$"
+                  },
+                  "action": {
+                    "enum": ["quiz", "result"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Private relative path on Herta origin and expiry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["path", "expiresAt"],
+                  "properties": {
+                    "path": {
+                      "type": "string",
+                      "pattern": "^/mbti/(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|history/[A-Za-z0-9_-]{43})$"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request or unsupported fields"
+          },
+          "401": {
+            "description": "Missing or invalid existing integration bearer token"
+          },
+          "403": {
+            "description": "Quiz plugin disabled"
+          },
+          "404": {
+            "description": "Wrong guild or no saved result"
+          },
+          "413": {
+            "description": "Body exceeds 1024 bytes"
+          },
+          "503": {
+            "description": "Unconfigured or unavailable"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "integrationBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Existing IVRM_INTEGRATION_TOKEN; never sent to browser."
+      }
+    }
+  },
+  "x-ivrm-producer": "ivRooom/Herta",
+  "x-ivrm-consumer": "ivRooom/ivrm-web"
+}
