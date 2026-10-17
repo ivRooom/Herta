@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
-import { createMbtiWebQuizSession, getMbtiPersonalResult, issueMbtiResultAccess } from '@herta/db';
+import {
+  getOrCreateMbtiWebQuizSession,
+  getMbtiPersonalResult,
+  issueMbtiResultAccess,
+} from '@herta/db';
 import { selectMbtiQuestions } from '@herta/shared/mbti-core';
 import { authorizeIvrmIntegrationRequest } from '@/lib/ivrm-integration-auth';
 import { readJsonBodyWithLimit, RequestBodyTooLargeError } from '@/lib/bounded-request-body';
@@ -50,18 +54,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
     });
     if (!plugin?.enabled || (plugin.config as Record<string, unknown> | null)?.enabled === false)
       return json({ error: 'mbti_disabled' }, 403);
-    const pending = await prisma.mbtiWebQuizSession.findFirst({
-      where: { ...subject, status: 'pending', expiresAt: { gt: new Date() } },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true, expiresAt: true },
+    const session = await getOrCreateMbtiWebQuizSession(prisma, {
+      ...subject,
+      questions: selectMbtiQuestions(),
     });
-    const session =
-      pending ??
-      (await createMbtiWebQuizSession(prisma, { ...subject, questions: selectMbtiQuestions() }));
     return json({
       path: `/mbti/${session.id}`,
       expiresAt: session.expiresAt.toISOString(),
-      resumed: Boolean(pending),
+      resumed: session.resumed,
     });
   } catch {
     return json({ error: 'mbti_service_unavailable' }, 503);

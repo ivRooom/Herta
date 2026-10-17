@@ -3,9 +3,47 @@ import test from 'node:test';
 import type { PrismaClient } from '@prisma/client';
 import {
   createMbtiWebQuizSession,
+  getOrCreateMbtiWebQuizSession,
   appendMbtiWebQuizAnswer,
   resolveMbtiWebQuizSessionForAnswer,
 } from './mbti-web-quiz-session.js';
+
+test(
+  'concurrent member links share one pending session without crossing subjects',
+  {
+    skip: !process.env.MBTI_MEMBER_LINK_TEST_DATABASE_URL,
+  },
+  async () => {
+    const url = new URL(process.env.MBTI_MEMBER_LINK_TEST_DATABASE_URL!);
+    assert(['localhost', '127.0.0.1'].includes(url.hostname));
+    assert.equal(url.pathname, '/mbti_member_link_test');
+    const { PrismaClient } = await import('@prisma/client');
+    const prisma = new PrismaClient({ datasourceUrl: url.toString() });
+    const guildId = `member-link-test-${crypto.randomUUID()}`;
+    try {
+      const input = {
+        guildId,
+        discordUserId: 'fixture-one',
+        questions: [{ id: 1, axis: 'EI', prompt: 'fixture' }],
+      };
+      const sessions = await Promise.all(
+        Array.from({ length: 8 }, () => getOrCreateMbtiWebQuizSession(prisma, input)),
+      );
+      assert.equal(new Set(sessions.map((s) => s.id)).size, 1);
+      assert.equal(sessions.filter((s) => !s.resumed).length, 1);
+      assert.equal(await prisma.mbtiWebQuizSession.count({ where: { guildId } }), 1);
+      const other = await getOrCreateMbtiWebQuizSession(prisma, {
+        ...input,
+        discordUserId: 'fixture-two',
+      });
+      assert.notEqual(other.id, sessions[0]!.id);
+      assert.equal(other.resumed, false);
+    } finally {
+      await prisma.mbtiWebQuizSession.deleteMany({ where: { guildId } });
+      await prisma.$disconnect();
+    }
+  },
+);
 
 test('new sessions retain original question snapshots and have a 24 hour resume window', async () => {
   let data: { questionOrder: unknown; expiresAt: Date } | undefined;
