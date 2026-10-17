@@ -363,3 +363,7 @@ docker compose up -d postgres
 - 本番環境では全ての `dev-*-change-in-production` デフォルト値を変更してください
 - `Full (strict)`だけではOrigin直アクセスを禁止できないため、Authenticated Origin PullsまたはCloudflare IP allowlistを追加してください
 - Secretローテーション、Origin保護、OAuth、Dockerの詳細は [docs/SECURITY.md](docs/SECURITY.md) を参照してください
+
+## Agent Skills / 運用作業
+
+GitHub/Cloud/Discordに対する作業を始める際は、[Repository固有のAgent Skills](.agents/skills/README.md) から適切なSkillを選択し、共通の [ivrm-platform Agent Skills](https://github.com/ivRooom/ivrm-platform/tree/main/.agents/skills) と組み合わせてください。MCP/Pluginの接続権限・利用可能な操作は毎回確認し、本番移行・Secret/IAM変更・Deployは個別承認を必須とします。
