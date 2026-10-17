@@ -139,7 +139,7 @@
           "birthday": {
             "type": ["string", "null"],
             "format": "date",
-            "description": "Private self-registered date of birth, or approved-profile fallback when no private record exists. 1900 or later, not future. Never publish."
+            "description": "Private self-registered date of birth, or approved-profile fallback when the private birthday is absent. 1900 or later, not future. Never publish."
           },
           "mbtiType": {
             "type": ["string", "null"],

@@ -7,7 +7,7 @@ export function parseMemberMbtiLinkInput(
     Object.keys(v).some((k) => !['discordUserId', 'action'].includes(k)) ||
     typeof v.discordUserId !== 'string' ||
     !/^\d{17,20}$/.test(v.discordUserId) ||
-    !['quiz', 'result'].includes(String(v.action))
+    (v.action !== 'quiz' && v.action !== 'result')
   )
     return null;
   return { discordUserId: v.discordUserId, action: v.action as 'quiz' | 'result' };
