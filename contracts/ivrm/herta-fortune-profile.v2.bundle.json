@@ -9,7 +9,7 @@
   "method": "POST",
   "path": "/v2/herta/fortune-profile",
   "operationId": "getHertaFortuneProfile",
-  "description": "Read-only signed private profile lookup for the invoking Discord guild member, bound to the configured guild and request subject. Prefer self-registered private profile (public approval not required), otherwise fall back to active approved public profile. No browser CORS; no-store on every response. V1 remains unchanged.",
+  "description": "Read-only signed private profile lookup for the invoking Discord guild member, bound to the configured guild and request subject. Prefer self-registered private fields (public approval not required). Missing birthday and MBTI independently fall back to the active approved public profile. Blood type and manual overrides only come from private self-registration. No browser CORS; no-store on every response. V1 remains unchanged.",
   "requestMediaTypes": ["application/json"],
   "responseMediaTypes": {
     "200": ["application/json"],
