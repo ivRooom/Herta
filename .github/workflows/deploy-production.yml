@@ -9,23 +9,23 @@ on:
     # Documentation / Agent Skills-only merges must not rebuild or redeploy production.
     # Keep this an allowlist of all inputs that can alter the runtime image or deployment.
     paths:
-      - "apps/**"
-      - "packages/**"
-      - "plugins/**"
-      - "contracts/**"
-      - "deploy/**"
-      - "certs/**"
-      - "Dockerfile"
-      - ".dockerignore"
-      - "docker-compose.prod.yml"
-      - ".env.example"
-      - ".env.production.example"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "turbo.json"
-      - "tsconfig.json"
-      - ".github/workflows/deploy-production.yml"
+      - 'apps/**'
+      - 'packages/**'
+      - 'plugins/**'
+      - 'contracts/**'
+      - 'deploy/**'
+      - 'certs/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'docker-compose.prod.yml'
+      - '.env.example'
+      - '.env.production.example'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'turbo.json'
+      - 'tsconfig.json'
+      - '.github/workflows/deploy-production.yml'
   workflow_dispatch:
     inputs:
       ref:
