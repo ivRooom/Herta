@@ -1,0 +1,70 @@
+{
+  "bundleVersion": 1,
+  "contract": {
+    "id": "herta-guild-roles",
+    "version": "1.0.0",
+    "sourceRepository": "ivRooom/ivrm-contracts"
+  },
+  "method": "GET",
+  "pathTemplate": "/api/integrations/ivrm/guilds/{guildId}/roles",
+  "authentication": {
+    "type": "http",
+    "scheme": "bearer",
+    "guildScoped": true
+  },
+  "cacheControl": "private, no-store",
+  "errorStatusCodes": [401, 404, 503],
+  "responseSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://ivrm.jp/contracts/herta/guild-roles/v1/directory.schema.json",
+    "title": "Herta guild role directory v1",
+    "description": "Complete configured-guild role directory, excluding @everyone because member role IDs exclude it. Role IDs must be unique. No token, permission bitset, channel or member information is returned.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["status", "guildId", "roles", "fetchedAt"],
+    "properties": {
+      "status": {
+        "const": "ok"
+      },
+      "guildId": {
+        "type": "string",
+        "pattern": "^[0-9]{17,20}$"
+      },
+      "fetchedAt": {
+        "type": "string",
+        "format": "date-time"
+      },
+      "roles": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "name", "color", "position", "managed"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9]{17,20}$"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "color": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 16777215
+            },
+            "position": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "managed": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  }
+}
