@@ -28,7 +28,9 @@
       },
       "guildId": {
         "type": "string",
-        "pattern": "^[0-9]{17,20}$"
+        "pattern": "^[0-9]{17,20}$",
+        "description": "Must exactly equal the guildId path parameter of the authenticated request; consumers must reject a mismatch before caching or displaying roles.",
+        "x-ivrm-equals-path-parameter": "guildId"
       },
       "fetchedAt": {
         "type": "string",
