@@ -117,6 +117,12 @@ test('mismatched guild, duplicate IDs and malformed role lists fail as a whole',
   );
   const empty = options();
   empty.roles = [];
+  const olderRole = options();
+  olderRole.roles[0]!.id = '1234567890123456';
+  assert.equal(
+    (await handleIvrmGuildRoles(request(), guildId, async () => olderRole, environment)).status,
+    200,
+  );
   assert.equal(
     (await handleIvrmGuildRoles(request(), guildId, async () => empty, environment)).status,
     200,

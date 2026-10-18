@@ -4,13 +4,14 @@ import { authorizeIvrmIntegrationRequest } from './ivrm-integration-auth.ts';
 type Environment = Record<string, string | undefined>;
 type LoadOptions = (guildId: string) => Promise<GuildConfigurationOptions | null>;
 
+/** Project a complete Bot role directory without forwarding internal option fields. */
 export function serializeIvrmGuildRoles(options: GuildConfigurationOptions, guildId: string) {
   if (options.guildId !== guildId || !Number.isFinite(Date.parse(options.fetchedAt))) return null;
   const ids = new Set<string>();
   const roles = [];
   for (const role of options.roles) {
     if (
-      !/^\d{17,20}$/u.test(role.id) ||
+      !/^\d{1,20}$/u.test(role.id) ||
       ids.has(role.id) ||
       Array.from(role.name).length < 1 ||
       Array.from(role.name).length > 100 ||
@@ -32,6 +33,7 @@ export function serializeIvrmGuildRoles(options: GuildConfigurationOptions, guil
   return { status: 'ok' as const, guildId, roles, fetchedAt: options.fetchedAt };
 }
 
+/** Authorize the configured guild before loading options; expose only bounded public errors. */
 export async function handleIvrmGuildRoles(
   request: Request,
   guildId: string,

@@ -45,7 +45,8 @@
           "properties": {
             "id": {
               "type": "string",
-              "pattern": "^[0-9]{17,20}$"
+              "pattern": "^[0-9]{1,20}$",
+              "description": "Decimal Discord snowflake string; older role IDs can have fewer than 17 digits."
             },
             "name": {
               "type": "string",
