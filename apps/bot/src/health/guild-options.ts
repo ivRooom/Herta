@@ -75,7 +75,8 @@ export async function loadGuildConfigurationOptions(
         channel.type === ChannelType.GuildText ||
         channel.type === ChannelType.GuildAnnouncement ||
         channel.type === ChannelType.GuildForum ||
-        channel.type === ChannelType.GuildVoice,
+        channel.type === ChannelType.GuildVoice ||
+        channel.type === ChannelType.GuildStageVoice,
     )
     .filter(
       (channel) =>
@@ -89,7 +90,8 @@ export async function loadGuildConfigurationOptions(
           ? 'announcement'
           : channel.type === ChannelType.GuildForum
             ? 'forum'
-            : channel.type === ChannelType.GuildVoice
+            : channel.type === ChannelType.GuildVoice ||
+                channel.type === ChannelType.GuildStageVoice
               ? 'voice'
               : 'text';
       return {
