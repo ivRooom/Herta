@@ -8,6 +8,7 @@ const MANAGE_MESSAGES_PERMISSION = 8192n;
 const EMBED_LINKS_PERMISSION = 16384n;
 const CHANGE_NICKNAME_PERMISSION = 67108864n;
 const MANAGE_ROLES_PERMISSION = 268435456n;
+const CONNECT_PERMISSION = 1048576n;
 const SEND_MESSAGES_IN_THREADS_PERMISSION = 274877906944n;
 
 /**
@@ -17,6 +18,8 @@ const SEND_MESSAGES_IN_THREADS_PERMISSION = 274877906944n;
  * (無いと絵文字/チャンネル/Role/BAN/タイムアウト等の実行者が常にnullになる)。
  * Manage ChannelsはDiscordの仕様上、招待作成イベント(InviteCreate)を受信するために
  * チャンネル単位で必要(無いとtrackInvitesが常に何も記録しない)。
+ * ConnectはVC Recapプラグイン(/vc-recap start)がVCへ接続するために必要
+ * (`＠everyone`や個別チャンネルでConnectが無いVCではjoinVoiceChannelが失敗する)。
  * 追加権限が必要な環境ではDISCORD_BOT_PERMISSIONSで明示的に上書きできる。
  */
 export const DEFAULT_DISCORD_BOT_PERMISSIONS = (
@@ -28,6 +31,7 @@ export const DEFAULT_DISCORD_BOT_PERMISSIONS = (
   EMBED_LINKS_PERMISSION |
   CHANGE_NICKNAME_PERMISSION |
   MANAGE_ROLES_PERMISSION |
+  CONNECT_PERMISSION |
   SEND_MESSAGES_IN_THREADS_PERMISSION
 ).toString();
 

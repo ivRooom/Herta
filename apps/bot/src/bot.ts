@@ -13,6 +13,7 @@ import { randomUUID } from 'node:crypto';
 import {
   getCommunityPointsLeaderboard,
   getPrismaClient,
+  reconcileStaleVcRecapSessions,
   recordCommandExecution as persistCommandExecution,
   type CommandExecutionInput,
 } from '@herta/db';
@@ -1035,6 +1036,18 @@ export class HertaBot {
     this.gatewayObservationTimer.unref();
 
     this.startActivityIvrmSync();
+
+    try {
+      const purged = await reconcileStaleVcRecapSessions(this.prisma);
+      if (purged > 0) {
+        this.logger.warn(
+          { purged },
+          '再起動前に進行中だったVC Recapセッションをfailed扱いにして本文を削除しました',
+        );
+      }
+    } catch (error) {
+      this.logger.error({ err: error }, 'VC Recapの再起動時後始末に失敗しました');
+    }
 
     const redisUrl = process.env['REDIS_URL'];
     if (!redisUrl) {

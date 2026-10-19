@@ -1,6 +1,7 @@
 import {
   EmbedBuilder,
   MessageFlags,
+  PermissionFlagsBits,
   type ChatInputCommandInteraction,
   type Client,
   type VoiceBasedChannel,
@@ -147,6 +148,15 @@ async function executeList(
   interaction: ChatInputCommandInteraction,
 ): Promise<void> {
   if (!interaction.guildId) return;
+  // 要約には参加者の発言内容が含まれるため、activity-logと同様にManageGuildを要求する
+  // (manifestが宣言する`vc-recap.view`権限のこのコードベースでの対応付け)。
+  if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
+    await interaction.reply({
+      content: 'このコマンドの実行にはサーバー管理権限が必要です。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
   const limit = interaction.options.getInteger('limit') ?? 5;
 
   const result = await listVcRecapSessions(context.prisma, {

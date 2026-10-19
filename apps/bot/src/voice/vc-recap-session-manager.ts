@@ -7,6 +7,7 @@ import {
 } from '@discordjs/voice';
 import type { Logger } from '@herta/logger';
 import {
+  addVcRecapSessionParticipant,
   appendVcRecapTranscriptSegment,
   completeVcRecapSession,
   failVcRecapSession,
@@ -31,6 +32,7 @@ interface ActiveVcRecapSession {
   guildId: string;
   channelId: string;
   connection: VoiceConnection;
+  consentingUserIds: Set<string>;
   activeTranscriptions: Map<string, Promise<void>>;
   /** stopVcRecap側で明示的にdestroyできるよう、購読中のOpusストリームを保持する。 */
   activeStreams: Map<string, Readable>;
@@ -41,6 +43,13 @@ interface ActiveVcRecapSession {
  * VoiceConnection自体は永続化できないため、bot再起動を跨いだセッション復元は行わない)。
  */
 const activeSessions = new Map<string, ActiveVcRecapSession>();
+
+/**
+ * startVcRecapSession作成〜activeSessions登録までの間(DB書き込み・VC接続待ち等、
+ * 複数回awaitする区間)に同じguildで2回目の/vc-recap startが割り込むのを防ぐための
+ * 同期的な予約セット。
+ */
+const pendingGuildIds = new Set<string>();
 
 export type StartVcRecapResult =
   | { status: 'started'; sessionId: string; consentingCount: number; nonConsentingCount: number }
@@ -54,64 +63,70 @@ export async function startVcRecap(
   channel: VoiceBasedChannel,
   startedBy: string,
 ): Promise<StartVcRecapResult> {
-  if (activeSessions.has(channel.guild.id)) {
+  if (activeSessions.has(channel.guild.id) || pendingGuildIds.has(channel.guild.id)) {
     return { status: 'already_active' };
   }
-
-  const memberUserIds = [...channel.members.filter((member) => !member.user.bot).keys()];
-  const consentByUserId = await getVoiceTranscriptionConsentMap(prisma, memberUserIds);
-  const { consentingUserIds, nonConsentingUserIds } = splitVcRecapParticipants(
-    memberUserIds,
-    consentByUserId,
-  );
-
-  if (consentingUserIds.length === 0) {
-    return { status: 'no_consenting_members' };
-  }
-
-  const { id: sessionId } = await startVcRecapSession(prisma, {
-    guildId: channel.guild.id,
-    channelId: channel.id,
-    startedBy,
-    consentingUserIds,
-    nonConsentingUserIds,
-  });
-
-  const connection = joinVoiceChannel({
-    channelId: channel.id,
-    guildId: channel.guild.id,
-    adapterCreator: channel.guild.voiceAdapterCreator,
-    selfDeaf: false,
-    selfMute: true,
-  });
-
-  const session: ActiveVcRecapSession = {
-    sessionId,
-    guildId: channel.guild.id,
-    channelId: channel.id,
-    connection,
-    activeTranscriptions: new Map(),
-    activeStreams: new Map(),
-  };
+  pendingGuildIds.add(channel.guild.id);
 
   try {
-    await entersState(connection, VoiceConnectionStatus.Ready, CONNECTION_READY_TIMEOUT_MS);
-  } catch (error) {
-    logger.warn({ err: error, guildId: channel.guild.id }, 'VC接続の確立に失敗しました');
-    connection.destroy();
-    await failVcRecapSession(prisma, sessionId);
-    return { status: 'connection_failed' };
+    const memberUserIds = [...channel.members.filter((member) => !member.user.bot).keys()];
+    const consentByUserId = await getVoiceTranscriptionConsentMap(prisma, memberUserIds);
+    const { consentingUserIds, nonConsentingUserIds } = splitVcRecapParticipants(
+      memberUserIds,
+      consentByUserId,
+    );
+
+    if (consentingUserIds.length === 0) {
+      return { status: 'no_consenting_members' };
+    }
+
+    const { id: sessionId } = await startVcRecapSession(prisma, {
+      guildId: channel.guild.id,
+      channelId: channel.id,
+      startedBy,
+      consentingUserIds,
+      nonConsentingUserIds,
+    });
+
+    const connection = joinVoiceChannel({
+      channelId: channel.id,
+      guildId: channel.guild.id,
+      adapterCreator: channel.guild.voiceAdapterCreator,
+      selfDeaf: false,
+      selfMute: true,
+    });
+
+    const session: ActiveVcRecapSession = {
+      sessionId,
+      guildId: channel.guild.id,
+      channelId: channel.id,
+      connection,
+      consentingUserIds: new Set(consentingUserIds),
+      activeTranscriptions: new Map(),
+      activeStreams: new Map(),
+    };
+
+    try {
+      await entersState(connection, VoiceConnectionStatus.Ready, CONNECTION_READY_TIMEOUT_MS);
+    } catch (error) {
+      logger.warn({ err: error, guildId: channel.guild.id }, 'VC接続の確立に失敗しました');
+      connection.destroy();
+      await failVcRecapSession(prisma, sessionId);
+      return { status: 'connection_failed' };
+    }
+
+    activeSessions.set(channel.guild.id, session);
+    wireSpeakingHandler(prisma, logger, session);
+
+    return {
+      status: 'started',
+      sessionId,
+      consentingCount: consentingUserIds.length,
+      nonConsentingCount: nonConsentingUserIds.length,
+    };
+  } finally {
+    pendingGuildIds.delete(channel.guild.id);
   }
-
-  activeSessions.set(channel.guild.id, session);
-  wireSpeakingHandler(prisma, logger, session);
-
-  return {
-    status: 'started',
-    sessionId,
-    consentingCount: consentingUserIds.length,
-    nonConsentingCount: nonConsentingUserIds.length,
-  };
 }
 
 function wireSpeakingHandler(
@@ -127,6 +142,22 @@ function wireSpeakingHandler(
       // `/herta-privacy voice-consent false`で同意を取り消した後の発言は対象外にするため。
       const consentMap = await getVoiceTranscriptionConsentMap(prisma, [userId]);
       if (consentMap.get(userId) !== true) return;
+
+      // 開始時点でVCにいなかった同意済みユーザーが後から参加・発言した場合、
+      // 永続化された参加者配列にも追加する(listVcRecapSessionsForUser/
+      // deleteUserVoiceDataが参加者配列経由でセッションを検索するため)。
+      if (!session.consentingUserIds.has(userId)) {
+        session.consentingUserIds.add(userId);
+        try {
+          await addVcRecapSessionParticipant(prisma, session.sessionId, userId);
+        } catch (error) {
+          logger.warn(
+            { err: error, guildId: session.guildId, userId },
+            'VC Recap参加者の永続化に失敗しました',
+          );
+        }
+      }
+
       await transcribeSpeaker(prisma, logger, session, userId);
     })().finally(() => {
       session.activeTranscriptions.delete(userId);
@@ -149,6 +180,7 @@ async function transcribeSpeaker(
     );
     return;
   }
+  if (!session.consentingUserIds.has(userId)) return;
 
   const opusStream = session.connection.receiver.subscribe(userId, {
     end: { behavior: EndBehaviorType.AfterSilence, duration: SPEECH_END_SILENCE_MS },
@@ -160,6 +192,8 @@ async function transcribeSpeaker(
 
   try {
     await transcribePcmStream(credential, toMonoChunks(pcmStream), async (segment) => {
+      // 文字起こし中に同意が取り消された場合、確定済みセグメントであっても保存しない。
+      if (!session.consentingUserIds.has(userId)) return;
       await appendVcRecapTranscriptSegment(prisma, {
         sessionId: session.sessionId,
         userId,
@@ -228,6 +262,18 @@ export async function stopVcRecap(
 
   await completeVcRecapSession(prisma, session.sessionId, result);
   return { status: 'completed', sessionId: session.sessionId };
+}
+
+/**
+ * `/herta-privacy voice-consent false`実行時に呼ぶ。進行中のVC Recapセッションがあれば
+ * 即座にそのユーザーを対象外にし、購読中のストリームを破棄する(次の発言開始イベントでの
+ * 同意再確認だけでは、取り消し時点で発言中だった分の文字起こし・segment保存を止められないため)。
+ */
+export function revokeVcRecapConsent(userId: string): void {
+  for (const session of activeSessions.values()) {
+    if (!session.consentingUserIds.delete(userId)) continue;
+    session.activeStreams.get(userId)?.destroy();
+  }
 }
 
 export function isVcRecapActive(guildId: string): boolean {
