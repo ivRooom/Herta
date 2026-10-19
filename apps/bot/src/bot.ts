@@ -45,6 +45,10 @@ import {
 } from './plugins/xp-reward-roles.js';
 import { normalizeMbtiConfig } from './plugins/mbti.js';
 import {
+  CONSENT_CUSTOM_ID_PREFIX,
+  handleConsentButton,
+} from './voice/vc-recap-consent-interaction.js';
+import {
   reconcileMbtiRole as reconcileMbtiRoleForMember,
   type MbtiRoleReconciliationResult,
 } from './plugins/mbti-roles.js';
@@ -782,6 +786,13 @@ export class HertaBot {
     });
 
     this.client.on(Events.InteractionCreate, async (interaction) => {
+      // 無関係なPlugin側のinteractionCreateハンドラの失敗・遅延に同意ボタンの処理が
+      // 影響されないよう、guild plugin dispatchより前に処理する。
+      if (interaction.isButton() && interaction.customId.startsWith(CONSENT_CUSTOM_ID_PREFIX)) {
+        await handleConsentButton(interaction, this.prisma, this.logger);
+        return;
+      }
+
       if (interaction.guildId) {
         const dispatch = await this.dispatchGuildPluginEvent(
           interaction.guildId,
@@ -802,6 +813,7 @@ export class HertaBot {
           return;
         }
       }
+
       if (!interaction.isChatInputCommand()) return;
 
       let command = this.registry.get(interaction.commandName);
