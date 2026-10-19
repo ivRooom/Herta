@@ -25,6 +25,7 @@ import {
 export interface VcRecapConfig {
   enabled: boolean;
   excludedChannelIds: string[];
+  autoConsentRoleIds: string[];
 }
 
 // Discordの埋め込みdescription上限は4096文字。summaryは最大2000文字・limitは最大10件の
@@ -52,6 +53,7 @@ export function normalizeVcRecapConfig(value: unknown): VcRecapConfig {
   return {
     enabled: source.enabled === true,
     excludedChannelIds: normalizedIds(source.excludedChannelIds, 50),
+    autoConsentRoleIds: normalizedIds(source.autoConsentRoleIds, 50),
   };
 }
 
@@ -110,7 +112,13 @@ async function executeStart(
   }
 
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-  const result = await startVcRecap(context.prisma, context.logger, channel, interaction.user.id);
+  const result = await startVcRecap(
+    context.prisma,
+    context.logger,
+    channel,
+    interaction.user.id,
+    config.autoConsentRoleIds,
+  );
 
   if (result.status === 'already_active') {
     await interaction.editReply('既にこのサーバーで記録中です。`/vc-recap stop`で終了できます。');
