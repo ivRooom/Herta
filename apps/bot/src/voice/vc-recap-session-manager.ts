@@ -58,7 +58,12 @@ const activeSessions = new Map<string, ActiveVcRecapSession>();
 const pendingGuildIds = new Set<string>();
 
 export type StartVcRecapResult =
-  | { status: 'started'; sessionId: string; consentingCount: number; nonConsentingCount: number }
+  | {
+      status: 'started';
+      sessionId: string;
+      consentingCount: number;
+      nonConsentingUserIds: string[];
+    }
   | { status: 'already_active' }
   | { status: 'no_consenting_members' }
   | { status: 'connection_failed' };
@@ -129,7 +134,7 @@ export async function startVcRecap(
       status: 'started',
       sessionId,
       consentingCount: consentingUserIds.length,
-      nonConsentingCount: nonConsentingUserIds.length,
+      nonConsentingUserIds,
     };
   } finally {
     pendingGuildIds.delete(channel.guild.id);

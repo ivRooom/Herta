@@ -12,6 +12,10 @@ import { listVcRecapSessions } from '@herta/db';
 import { vcRecapManifest } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
 import {
+  buildConsentActionRow,
+  buildConsentPromptContent,
+} from '../voice/vc-recap-consent-interaction.js';
+import {
   activeVcRecapChannelId,
   isVcRecapActive,
   startVcRecap,
@@ -113,10 +117,21 @@ async function executeStart(
     .setTitle('🎙️ VC Recapを開始しました')
     .setDescription(
       'この通話の要約を記録します。同意していない方の発言は記録されません。' +
-        `\n記録対象: ${result.consentingCount}名 / 未同意: ${result.nonConsentingCount}名`,
+        `\n記録対象: ${result.consentingCount}名 / 未同意: ${result.nonConsentingUserIds.length}名`,
     )
     .setColor(0x5865f2);
   await channel.send({ embeds: [announcement] }).catch(() => undefined);
+
+  for (const userId of result.nonConsentingUserIds) {
+    await channel
+      .send({
+        content: buildConsentPromptContent(userId),
+        components: [buildConsentActionRow(userId)],
+        allowedMentions: { users: [userId] },
+      })
+      .catch(() => undefined);
+  }
+
   await interaction.editReply(
     '記録を開始しました。終了するには`/vc-recap stop`を実行してください。',
   );
