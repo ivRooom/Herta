@@ -111,10 +111,12 @@ export async function listVcRecapSessionsForStudio(
       page: query.page,
       pageSize: query.pageSize,
     }),
-    prisma.vcRecapSession.findMany({
+    // Prisma v6のfindMany({ distinct })はSQLのDISTINCT ONではなく、一致行を全件取得して
+    // メモリ上で重複排除する。セッション数が増えるほど無駄な全件フェッチになるため、
+    // SQLのGROUP BYへ変換されるgroupByを使う。
+    prisma.vcRecapSession.groupBy({
+      by: ['channelId'],
       where: { guildId },
-      distinct: ['channelId'],
-      select: { channelId: true },
       orderBy: { channelId: 'asc' },
     }),
     getGuildConfigurationOptions(guildId),
