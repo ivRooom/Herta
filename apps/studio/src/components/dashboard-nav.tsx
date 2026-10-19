@@ -135,6 +135,14 @@ function buildControlCenterItems(guildId: string | null): StudioNavigationItem[]
         keywords: ['iam', 'access', 'role', 'policy', '権限', 'ロール'],
         icon: 'account',
       },
+      {
+        id: 'selected-server-vc-recap',
+        href: `/dashboard/guilds/${guildId}/vc-recap`,
+        label: 'VC Recap',
+        description: '選択中サーバーのVC Recap要約履歴を確認する',
+        keywords: ['vc recap', 'voice', 'history', 'VC', '要約', '履歴'],
+        icon: 'history',
+      },
     );
   }
 

@@ -33,6 +33,8 @@ export type JsonSchema = {
     multiple?: boolean;
     editableOnly?: boolean;
     mentionableOnly?: boolean;
+    /** widget: 'discord-channel'の候補をVCのみに絞る(例: VC Recapの記録除外VC選択)。 */
+    channelKind?: 'voice';
   };
 };
 
