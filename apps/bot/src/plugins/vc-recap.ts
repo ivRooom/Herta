@@ -65,6 +65,21 @@ async function resolveVoiceChannel(
   return member?.voice.channel ?? null;
 }
 
+async function sendConsentPrompts(
+  channel: VoiceBasedChannel,
+  nonConsentingUserIds: string[],
+): Promise<void> {
+  for (const userId of nonConsentingUserIds) {
+    await channel
+      .send({
+        content: buildConsentPromptContent(userId),
+        components: [buildConsentActionRow(userId)],
+        allowedMentions: { users: [userId] },
+      })
+      .catch(() => undefined);
+  }
+}
+
 async function executeStart(
   context: VcRecapRuntimeContext,
   interaction: ChatInputCommandInteraction,
@@ -102,9 +117,10 @@ async function executeStart(
     return;
   }
   if (result.status === 'no_consenting_members') {
+    await sendConsentPrompts(channel, result.nonConsentingUserIds);
     await interaction.editReply(
       '現在このVCに同意済みのメンバーがいないため、記録を開始できません。' +
-        '`/herta-privacy voice-consent true`で同意できます。',
+        '上記のボタンから同意するか、`/herta-privacy voice-consent true`で同意できます。',
     );
     return;
   }
@@ -121,16 +137,7 @@ async function executeStart(
     )
     .setColor(0x5865f2);
   await channel.send({ embeds: [announcement] }).catch(() => undefined);
-
-  for (const userId of result.nonConsentingUserIds) {
-    await channel
-      .send({
-        content: buildConsentPromptContent(userId),
-        components: [buildConsentActionRow(userId)],
-        allowedMentions: { users: [userId] },
-      })
-      .catch(() => undefined);
-  }
+  await sendConsentPrompts(channel, result.nonConsentingUserIds);
 
   await interaction.editReply(
     '記録を開始しました。終了するには`/vc-recap stop`を実行してください。',

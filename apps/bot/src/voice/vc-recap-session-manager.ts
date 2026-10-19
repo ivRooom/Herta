@@ -65,7 +65,7 @@ export type StartVcRecapResult =
       nonConsentingUserIds: string[];
     }
   | { status: 'already_active' }
-  | { status: 'no_consenting_members' }
+  | { status: 'no_consenting_members'; nonConsentingUserIds: string[] }
   | { status: 'connection_failed' };
 
 export async function startVcRecap(
@@ -88,7 +88,7 @@ export async function startVcRecap(
     );
 
     if (consentingUserIds.length === 0) {
-      return { status: 'no_consenting_members' };
+      return { status: 'no_consenting_members', nonConsentingUserIds };
     }
 
     const { id: sessionId } = await startVcRecapSession(prisma, {

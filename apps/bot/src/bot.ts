@@ -786,6 +786,13 @@ export class HertaBot {
     });
 
     this.client.on(Events.InteractionCreate, async (interaction) => {
+      // 無関係なPlugin側のinteractionCreateハンドラの失敗・遅延に同意ボタンの処理が
+      // 影響されないよう、guild plugin dispatchより前に処理する。
+      if (interaction.isButton() && interaction.customId.startsWith(CONSENT_CUSTOM_ID_PREFIX)) {
+        await handleConsentButton(interaction, this.prisma, this.logger);
+        return;
+      }
+
       if (interaction.guildId) {
         const dispatch = await this.dispatchGuildPluginEvent(
           interaction.guildId,
@@ -805,10 +812,6 @@ export class HertaBot {
           });
           return;
         }
-      }
-      if (interaction.isButton() && interaction.customId.startsWith(CONSENT_CUSTOM_ID_PREFIX)) {
-        await handleConsentButton(interaction, this.prisma, this.logger);
-        return;
       }
 
       if (!interaction.isChatInputCommand()) return;
