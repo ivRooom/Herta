@@ -6,10 +6,18 @@ import {
   listVcRecapSessionsForUser,
   setVoiceTranscriptionConsent,
 } from '@herta/db';
+import { createLogger, type Logger } from '@herta/logger';
+import { buildConsentWebLinkMessage } from '../voice/vc-recap-consent-interaction.js';
 import { revokeVcRecapConsent } from '../voice/vc-recap-session-manager.js';
 import type { SlashCommand } from './registry.js';
 
 const prisma = getPrismaClient();
+
+let sharedLogger: Logger | undefined;
+function getSharedLogger(): Logger {
+  sharedLogger ??= createLogger({ name: 'herta-bot-privacy', level: process.env['BOT_LOG_LEVEL'] });
+  return sharedLogger;
+}
 
 async function executeVoiceConsent(interaction: ChatInputCommandInteraction) {
   const consent = interaction.options.getBoolean('consent', true);
@@ -32,6 +40,12 @@ async function executeDeleteVoiceData(interaction: ChatInputCommandInteraction) 
       `\n- 他の参加者もいたセッション: ${result.redactedSessions}件からあなたの参加記録を除去(要約は複数人の発言から生成されているため、他の参加者の分も含めて併せて削除しました)`,
     flags: MessageFlags.Ephemeral,
   });
+}
+
+async function executeWebLink(interaction: ChatInputCommandInteraction) {
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const content = await buildConsentWebLinkMessage(prisma, interaction.user.id, getSharedLogger());
+  await interaction.editReply(content);
 }
 
 async function executeExport(interaction: ChatInputCommandInteraction) {
@@ -108,6 +122,10 @@ export const privacyCommand: SlashCommand = {
         ],
       },
       {
+        name: 'web-link',
+        description: 'VC発言の文字起こし同意状態を変更できる専用URLを発行します(30分有効)',
+      },
+      {
         name: 'delete-voice-data',
         description: 'あなたが参加したVC要約データの削除を依頼します',
       },
@@ -121,6 +139,10 @@ export const privacyCommand: SlashCommand = {
     const subcommand = interaction.options.getSubcommand();
     if (subcommand === 'voice-consent') {
       await executeVoiceConsent(interaction);
+      return;
+    }
+    if (subcommand === 'web-link') {
+      await executeWebLink(interaction);
       return;
     }
     if (subcommand === 'delete-voice-data') {

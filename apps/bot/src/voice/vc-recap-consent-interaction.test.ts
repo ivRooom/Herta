@@ -11,6 +11,10 @@ describe('parseConsentCustomId', () => {
       action: 'no',
       userId: '123456789012345678',
     });
+    expect(parseConsentCustomId(`${CONSENT_CUSTOM_ID_PREFIX}web:123456789012345678`)).toEqual({
+      action: 'web',
+      userId: '123456789012345678',
+    });
   });
 
   it('プレフィックスが一致しない場合はnullを返す', () => {

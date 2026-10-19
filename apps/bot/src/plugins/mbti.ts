@@ -49,6 +49,7 @@ import {
   type MbtiQuestionCardInput,
 } from './mbti-card.js';
 import { reconcileMbtiRole } from './mbti-roles.js';
+import { resolveStudioPublicBaseUrl } from '../studio-base-url.js';
 
 const PREFIX = 'herta:mbti:v1:';
 // 62問を5段階で回答するため、以前の12問2択より長時間を要する。1問あたりidleで
@@ -171,17 +172,8 @@ export function createMbtiResultCommandHandler(
         await interaction.editReply('サーバー内でのみ利用できます。');
         return;
       }
-      const raw = process.env.STUDIO_PUBLIC_BASE_URL?.trim();
-      let base: URL;
-      try {
-        base = new URL(raw ?? '');
-        const localHttp =
-          process.env.NODE_ENV !== 'production' &&
-          base.protocol === 'http:' &&
-          ['localhost', '127.0.0.1', '[::1]'].includes(base.hostname);
-        if ((base.protocol !== 'https:' && !localHttp) || base.username || base.password)
-          throw new Error('invalid');
-      } catch {
+      const base = resolveStudioPublicBaseUrl();
+      if (!base) {
         await interaction.editReply(
           '結果ページは現在利用できません。管理者に設定を確認してください。',
         );
