@@ -213,13 +213,13 @@ function VcRecapCard({ item }: { item: VcRecapSessionDisplay }) {
               <Mic className="h-3 w-3" aria-hidden="true" />
               {item.channelName}
             </span>
-            <span className={`rounded-md border px-2 py-0.5 text-xs font-medium ${status.className}`}>
+            <span
+              className={`rounded-md border px-2 py-0.5 text-xs font-medium ${status.className}`}
+            >
               {status.label}
             </span>
           </div>
-          <p className="mt-3 text-sm leading-relaxed">
-            {item.summary ?? '要約はまだありません。'}
-          </p>
+          <p className="mt-3 text-sm leading-relaxed">{item.summary ?? '要約はまだありません。'}</p>
           {item.topics.length > 0 ? (
             <div className="mt-3 flex flex-wrap gap-1.5">
               {item.topics.map((topic) => (

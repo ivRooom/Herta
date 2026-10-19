@@ -741,7 +741,7 @@ function SchemaField({
     const channelOptions =
       ui.channelKind === 'voice'
         ? (discordOptions?.messageTargets ?? []).filter((option) => option.kind === 'voice')
-        : discordOptions?.channels ?? [];
+        : (discordOptions?.channels ?? []);
     return (
       <FieldShell
         title={title}

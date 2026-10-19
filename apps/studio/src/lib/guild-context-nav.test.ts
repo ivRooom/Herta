@@ -107,10 +107,7 @@ test('Guildコンソールの主要hrefを一元生成する', () => {
     getGuildConsoleHref(GUILD_ID, 'audit-logs'),
     `/dashboard/guilds/${GUILD_ID}/audit-logs`,
   );
-  assert.equal(
-    getGuildConsoleHref(GUILD_ID, 'vc-recap'),
-    `/dashboard/guilds/${GUILD_ID}/vc-recap`,
-  );
+  assert.equal(getGuildConsoleHref(GUILD_ID, 'vc-recap'), `/dashboard/guilds/${GUILD_ID}/vc-recap`);
   assert.equal(getGuildConsoleHref(GUILD_ID, 'access'), `/dashboard/guilds/${GUILD_ID}/access`);
   assert.equal(
     getGuildConsoleHref(GUILD_ID, 'bot-profile'),
