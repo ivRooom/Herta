@@ -6,6 +6,7 @@ import {
   listVcRecapSessionsForUser,
   setVoiceTranscriptionConsent,
 } from '@herta/db';
+import { revokeVcRecapConsent } from '../voice/vc-recap-session-manager.js';
 import type { SlashCommand } from './registry.js';
 
 const prisma = getPrismaClient();
@@ -13,6 +14,7 @@ const prisma = getPrismaClient();
 async function executeVoiceConsent(interaction: ChatInputCommandInteraction) {
   const consent = interaction.options.getBoolean('consent', true);
   await setVoiceTranscriptionConsent(prisma, interaction.user.id, consent);
+  if (!consent) revokeVcRecapConsent(interaction.user.id);
   await interaction.reply({
     content: consent
       ? '✅ VC発言の文字起こしに同意しました。`/vc-recap start`実行時、あなたの発言が要約生成の対象になります。'

@@ -99,12 +99,61 @@ export async function completeVcRecapSession(
   ]);
 }
 
-/** 要約生成に失敗した場合。segmentsは残したまま(リトライ可能にするため)statusだけ更新する。 */
+/**
+ * 要約生成に失敗した場合。リトライ機構が存在しないため、segmentsを残したままにすると
+ * 文字起こし本文が無期限に残り「本文はセッション中のみ保持する」というプライバシー方針
+ * (docs/PRIVACY_POLICY.md)に反する。completeVcRecapSessionと同様にsegmentsも削除する。
+ */
 export async function failVcRecapSession(prisma: PrismaClient, sessionId: string): Promise<void> {
+  await prisma.$transaction([
+    prisma.vcRecapSession.update({
+      where: { id: sessionId },
+      data: { status: 'failed', endedAt: new Date() },
+    }),
+    prisma.vcRecapTranscriptSegment.deleteMany({ where: { sessionId } }),
+  ]);
+}
+
+/**
+ * セッション開始後に新たにVCへ参加し、発言した同意済みユーザーを永続化された参加者配列へ
+ * 追加する。これを行わないと、listVcRecapSessionsForUser/deleteUserVoiceDataが参加者配列
+ * でセッションを検索する際にこのユーザーのセッションを見つけられず、本人が自分の発言から
+ * 生成された要約をエクスポート・削除できなくなる。
+ */
+export async function addVcRecapSessionParticipant(
+  prisma: PrismaClient,
+  sessionId: string,
+  userId: string,
+): Promise<void> {
   await prisma.vcRecapSession.update({
     where: { id: sessionId },
-    data: { status: 'failed', endedAt: new Date() },
+    data: { consentingUserIds: { push: userId } },
   });
+}
+
+/**
+ * bot起動時に呼ぶ。`active`/`summarizing`のまま残っているセッションはプロセス再起動で
+ * 進行中だった録音・要約処理が失われており、再開する仕組みも無い。本文を長期保持しない
+ * プライバシー方針(docs/PRIVACY_POLICY.md)に反するまま残り続けないよう、failed扱いにして
+ * segmentsを削除する。戻り値は後始末したセッション数(ログ用)。
+ */
+export async function reconcileStaleVcRecapSessions(prisma: PrismaClient): Promise<number> {
+  const stale = await prisma.vcRecapSession.findMany({
+    where: { status: { in: ['active', 'summarizing'] } },
+    select: { id: true },
+  });
+  if (stale.length === 0) return 0;
+
+  await prisma.$transaction([
+    prisma.vcRecapSession.updateMany({
+      where: { id: { in: stale.map((row) => row.id) } },
+      data: { status: 'failed', endedAt: new Date() },
+    }),
+    prisma.vcRecapTranscriptSegment.deleteMany({
+      where: { sessionId: { in: stale.map((row) => row.id) } },
+    }),
+  ]);
+  return stale.length;
 }
 
 export interface VcRecapSessionSummary {
