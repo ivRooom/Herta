@@ -207,6 +207,16 @@ const GUILD_COMMAND_DEFINITIONS: readonly GuildCommandDefinition[] = [
     group: 'current-server',
   },
   {
+    id: 'guild-vc-recap',
+    path: 'vc-recap',
+    label: 'VC Recap',
+    description: '現在のサーバーのVC Recap要約履歴を確認する',
+    keywords: ['vc recap', 'voice', 'transcript', 'summary', 'VC', '要約', '履歴'],
+    intents: ['VC Recapの過去の要約を確認したい', 'ボイスチャットの要約履歴を見たい'],
+    icon: 'history',
+    group: 'current-server',
+  },
+  {
     id: 'guild-activity-rules-diagnostics',
     path: 'activity-rules/diagnostics',
     label: 'Activity Rules Diagnostics',

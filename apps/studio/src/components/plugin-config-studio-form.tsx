@@ -738,6 +738,10 @@ function SchemaField({
     schemaPrimaryType(messageTargetProperties.messageId ?? {}) === 'string';
 
   if (ui?.widget === 'discord-channel' && supportsDiscordPicker) {
+    const channelOptions =
+      ui.channelKind === 'voice'
+        ? (discordOptions?.messageTargets ?? []).filter((option) => option.kind === 'voice')
+        : discordOptions?.channels ?? [];
     return (
       <FieldShell
         title={title}
@@ -747,7 +751,7 @@ function SchemaField({
         issues={issues}
       >
         <DiscordChannelPicker
-          options={discordOptions?.channels ?? []}
+          options={channelOptions}
           value={normalizeDiscordEntityValue(value, discordMultiple)}
           multiple={discordMultiple}
           placeholder={ui.placeholder}

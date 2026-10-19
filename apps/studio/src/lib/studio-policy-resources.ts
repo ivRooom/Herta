@@ -53,6 +53,7 @@ export const STUDIO_PAGE_DEFINITIONS = [
     description: 'Moderation Blacklistを閲覧',
   },
   { id: 'audit-logs', label: '監査ログ', description: 'Guildの監査ログを閲覧' },
+  { id: 'vc-recap', label: 'VC Recap', description: 'VC Recapの要約履歴を閲覧' },
   {
     id: 'bot-profile',
     label: 'Botプロフィール',

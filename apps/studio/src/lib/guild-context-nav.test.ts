@@ -42,6 +42,10 @@ test('Guildコンソールの主要画面を判定する', () => {
     guildId: GUILD_ID,
     section: 'audit-logs',
   });
+  assert.deepEqual(getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/vc-recap`), {
+    guildId: GUILD_ID,
+    section: 'vc-recap',
+  });
   assert.deepEqual(getGuildConsoleContext(`/dashboard/guilds/${GUILD_ID}/access/policies`), {
     guildId: GUILD_ID,
     section: 'access',
@@ -103,6 +107,10 @@ test('Guildコンソールの主要hrefを一元生成する', () => {
     getGuildConsoleHref(GUILD_ID, 'audit-logs'),
     `/dashboard/guilds/${GUILD_ID}/audit-logs`,
   );
+  assert.equal(
+    getGuildConsoleHref(GUILD_ID, 'vc-recap'),
+    `/dashboard/guilds/${GUILD_ID}/vc-recap`,
+  );
   assert.equal(getGuildConsoleHref(GUILD_ID, 'access'), `/dashboard/guilds/${GUILD_ID}/access`);
   assert.equal(
     getGuildConsoleHref(GUILD_ID, 'bot-profile'),
@@ -117,6 +125,7 @@ test('Guild切替では主要セクションを安全に維持する', () => {
     'leaderboard',
     'moderation',
     'audit-logs',
+    'vc-recap',
     'access',
     'bot-profile',
   ] as const) {

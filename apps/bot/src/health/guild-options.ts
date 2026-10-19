@@ -3,7 +3,7 @@ import { ChannelType, PermissionFlagsBits, type Client } from 'discord.js';
 export interface GuildChannelOption {
   id: string;
   name: string;
-  kind: 'text' | 'announcement' | 'forum' | 'thread';
+  kind: 'text' | 'announcement' | 'forum' | 'thread' | 'voice';
   position: number;
   parentId: string | null;
   viewable: boolean;
@@ -74,7 +74,8 @@ export async function loadGuildConfigurationOptions(
       (channel) =>
         channel.type === ChannelType.GuildText ||
         channel.type === ChannelType.GuildAnnouncement ||
-        channel.type === ChannelType.GuildForum,
+        channel.type === ChannelType.GuildForum ||
+        channel.type === ChannelType.GuildVoice,
     )
     .filter(
       (channel) =>
@@ -88,7 +89,9 @@ export async function loadGuildConfigurationOptions(
           ? 'announcement'
           : channel.type === ChannelType.GuildForum
             ? 'forum'
-            : 'text';
+            : channel.type === ChannelType.GuildVoice
+              ? 'voice'
+              : 'text';
       return {
         id: channel.id,
         name: channel.name,
