@@ -36,6 +36,12 @@ interface ActiveVcRecapSession {
   activeTranscriptions: Map<string, Promise<void>>;
   /** stopVcRecap側で明示的にdestroyできるよう、購読中のOpusストリームを保持する。 */
   activeStreams: Map<string, Readable>;
+  /**
+   * stopVcRecap開始時にtrueへ。speaking 'start'イベントはconnection.destroy()後も
+   * 発火し得るため、このフラグで新規タスクの発生・segment保存を止める。
+   */
+  stopping: boolean;
+  speakingHandler?: (userId: string) => void;
 }
 
 /**
@@ -104,6 +110,7 @@ export async function startVcRecap(
       consentingUserIds: new Set(consentingUserIds),
       activeTranscriptions: new Map(),
       activeStreams: new Map(),
+      stopping: false,
     };
 
     try {
@@ -134,8 +141,8 @@ function wireSpeakingHandler(
   logger: Logger,
   session: ActiveVcRecapSession,
 ): void {
-  session.connection.receiver.speaking.on('start', (userId) => {
-    if (session.activeTranscriptions.has(userId)) return;
+  const speakingHandler = (userId: string): void => {
+    if (session.stopping || session.activeTranscriptions.has(userId)) return;
 
     const task = (async () => {
       // 同意状態はセッション開始時点で固定せず、発言開始のたびに都度再確認する。
@@ -163,7 +170,9 @@ function wireSpeakingHandler(
       session.activeTranscriptions.delete(userId);
     });
     session.activeTranscriptions.set(userId, task);
-  });
+  };
+  session.speakingHandler = speakingHandler;
+  session.connection.receiver.speaking.on('start', speakingHandler);
 }
 
 async function transcribeSpeaker(
@@ -180,7 +189,7 @@ async function transcribeSpeaker(
     );
     return;
   }
-  if (!session.consentingUserIds.has(userId)) return;
+  if (session.stopping || !session.consentingUserIds.has(userId)) return;
 
   const opusStream = session.connection.receiver.subscribe(userId, {
     end: { behavior: EndBehaviorType.AfterSilence, duration: SPEECH_END_SILENCE_MS },
@@ -192,8 +201,9 @@ async function transcribeSpeaker(
 
   try {
     await transcribePcmStream(credential, toMonoChunks(pcmStream), async (segment) => {
-      // 文字起こし中に同意が取り消された場合、確定済みセグメントであっても保存しない。
-      if (!session.consentingUserIds.has(userId)) return;
+      // 文字起こし中に同意が取り消された、またはstopVcRecapが開始された場合、
+      // 確定済みセグメントであっても保存しない。
+      if (session.stopping || !session.consentingUserIds.has(userId)) return;
       await appendVcRecapTranscriptSegment(prisma, {
         sessionId: session.sessionId,
         userId,
@@ -241,6 +251,13 @@ export async function stopVcRecap(
   const session = activeSessions.get(guildId);
   if (!session) return { status: 'not_active' };
   activeSessions.delete(guildId);
+
+  // stoppingをtrueにし、wireSpeakingHandlerが登録したリスナーだけ外すことで、
+  // 後続の'start'イベントによる新規購読・segment保存(cleanup後の書き込み)を防ぐ。
+  session.stopping = true;
+  if (session.speakingHandler) {
+    session.connection.receiver.speaking.off('start', session.speakingHandler);
+  }
 
   // 参加者が話し続けている場合、OpusストリームはAfterSilence条件に到達せず
   // activeTranscriptionsのPromiseが解決しないままになる。先にストリームを

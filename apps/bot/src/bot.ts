@@ -1021,6 +1021,22 @@ export class HertaBot {
     if (!token) {
       throw new Error('DISCORD_BOT_TOKEN が設定されていません');
     }
+
+    // client.login完了後はinteractionを受信できるため、/vc-recap startで新しいactive
+    // セッションが作られる可能性がある。後始末は必ずlogin前に行い、起動直後に作られた
+    // セッションを誤ってfailed扱いにしないようにする。
+    try {
+      const purged = await reconcileStaleVcRecapSessions(this.prisma);
+      if (purged > 0) {
+        this.logger.warn(
+          { purged },
+          '再起動前に進行中だったVC Recapセッションをfailed扱いにして本文を削除しました',
+        );
+      }
+    } catch (error) {
+      this.logger.error({ err: error }, 'VC Recapの再起動時後始末に失敗しました');
+    }
+
     await this.client.login(token);
     this.applyBotPresence(DEFAULT_BOT_PRESENCE_CONFIG);
     try {
@@ -1036,18 +1052,6 @@ export class HertaBot {
     this.gatewayObservationTimer.unref();
 
     this.startActivityIvrmSync();
-
-    try {
-      const purged = await reconcileStaleVcRecapSessions(this.prisma);
-      if (purged > 0) {
-        this.logger.warn(
-          { purged },
-          '再起動前に進行中だったVC Recapセッションをfailed扱いにして本文を削除しました',
-        );
-      }
-    } catch (error) {
-      this.logger.error({ err: error }, 'VC Recapの再起動時後始末に失敗しました');
-    }
 
     const redisUrl = process.env['REDIS_URL'];
     if (!redisUrl) {
