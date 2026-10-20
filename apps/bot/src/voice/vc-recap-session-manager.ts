@@ -172,7 +172,12 @@ function wireSpeakingHandler(
       // ロールによる自動同意はDBへ永続化しないランタイムオーバーレイのため、ロール剥奪時は
       // 次の発言開始イベントで即座に明示的な同意状態へ戻る。
       const baseConsentMap = await getVoiceTranscriptionConsentMap(prisma, [userId]);
-      const roleIds = [...(session.guild.members.cache.get(userId)?.roles.cache.keys() ?? [])];
+      // GuildMembers intentは任意設定のため、speaking.cacheだけではロール剥奪が
+      // 反映されない場合がある(Intent無しだとGuildMemberUpdateイベントを受信できず
+      // キャッシュが更新されない)。単一メンバーのfetchはIntent不要でREST経由で
+      // 常に最新を取得できるため、都度fetchする。
+      const member = await session.guild.members.fetch(userId).catch(() => null);
+      const roleIds = [...(member?.roles.cache.keys() ?? [])];
       const consentMap = applyAutoConsentRoles(
         baseConsentMap,
         [userId],
