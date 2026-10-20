@@ -1244,6 +1244,20 @@ model UserDataConsent {
   @@map("user_data_consents")
 }
 
+/**
+ * VC発言の文字起こし同意を専用URL(マジックリンク)経由で行うためのアクセストークン。
+ * MbtiResultAccessと同じセキュリティパターン(sha256ハッシュのみ保存、token自体は
+ * DB非保存、同一userIdへのupsertで前回linkを無効化)だが、同意はguild非依存の
+ * グローバル設定(UserDataConsent参照)なのでguildId列を持たない。
+ */
+model VoiceConsentAccess {
+  userId    String   @id @map("user_id")
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@map("voice_consent_access")
+}
+
 enum VcRecapSessionStatus {
   active
   summarizing

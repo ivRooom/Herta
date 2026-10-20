@@ -6,6 +6,7 @@ import {
   pruneMbtiResultAccess,
   pruneMbtiStatsEvents,
   pruneServiceHealthSnapshots,
+  pruneVoiceConsentAccess,
   recordServiceHealthSnapshot,
   MBTI_STATS_DEFAULT_RETENTION_DAYS,
   type ServiceHealthSnapshotInput,
@@ -149,6 +150,7 @@ async function pruneRetainedData(): Promise<void> {
       }),
     ]);
     await pruneMbtiResultAccess(prisma);
+    await pruneVoiceConsentAccess(prisma);
     if (commandDeleted > 0) {
       logger.info(
         { deleted: commandDeleted, retentionDays: EXECUTION_ANALYTICS_RETENTION_DAYS },
