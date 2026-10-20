@@ -69,8 +69,9 @@ export async function getVoiceTranscriptionConsentMap(
 /**
  * ロールによる自動同意を重ねた実効的な同意状態を計算する純粋関数(DB書き込みを行わない
  * ランタイムオーバーレイ)。ロール剥奪時に即座に明示的な同意状態へ戻るよう、自動同意は
- * UserDataConsentへ永続化しない。同意テーブル自体がguild非依存のグローバル設計のため、
- * 自動同意ロールもguildを跨いで(Hertaが参加している全guildで)有効になる。
+ * UserDataConsentへ永続化しない。Discordのロールはguildごとに別物のID空間を持つため、
+ * この判定自体はguildを跨がない(呼び出し元が渡すroleIdsByUser・autoConsentRoleIdsは
+ * いずれもそのguildのものである必要がある)。
  */
 export function applyAutoConsentRoles(
   baseConsent: ReadonlyMap<string, boolean>,

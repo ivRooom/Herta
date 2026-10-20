@@ -5,7 +5,7 @@ export const vcRecapManifest: PluginManifest = {
   name: 'VC Recap',
   version: '1.0.0',
   description:
-    'VC(ボイスチャンネル)での会話を文字起こしし、通話終了時に簡単な要約を生成します。発言の文字起こし対象は`/herta-privacy voice-consent`で本人が同意したメンバーのみです',
+    'VC(ボイスチャンネル)での会話を文字起こしし、通話終了時に簡単な要約を生成します。発言の文字起こし対象は`/herta-privacy voice-consent`で本人が同意したメンバー、または自動同意ロールを付与されたメンバーのみです',
   author: { name: 'Herta' },
   category: 'moderation',
   permissions: [
@@ -26,7 +26,7 @@ export const vcRecapManifest: PluginManifest = {
         default: false,
         'x-herta-ui': {
           section: '基本設定',
-          help: '本人が同意したメンバーの発言のみをAWS Transcribeで文字起こしし、通話終了時に要約を生成します。有効化前にdocs/PRIVACY_POLICY.mdの内容を確認してください。',
+          help: '本人が同意したメンバー、または自動同意ロールを付与されたメンバーの発言のみをAWS Transcribeで文字起こしし、通話終了時に要約を生成します。有効化前にdocs/PRIVACY_POLICY.mdの内容を確認してください。',
         },
       },
       excludedChannelIds: {
@@ -56,7 +56,7 @@ export const vcRecapManifest: PluginManifest = {
           widget: 'discord-role',
           multiple: true,
           placeholder: '個別の同意操作なしで同意済みとみなすロールを選択',
-          help: 'このロールを付与されたメンバーはVC文字起こしへ同意済みとみなされます。同意テーブルはguild非依存のグローバル設計のため、Hertaが参加している全Guildで同意扱いになります(このGuildに限定されません)。',
+          help: 'このロールを付与されたメンバーは、このGuildでのVC Recapに限り、個別の同意操作なしで文字起こしへ同意済みとみなされます。Discordのロールはguildごとに別物のため、この自動同意判定自体は他のGuildには影響しません(同意状態を保存するテーブル自体はguild非依存のグローバル設計ですが、ロールによる自動同意はDBへ書き込まないランタイム判定のみで、このGuildでのVC Recapセッション中にのみ適用されます)。',
         },
       },
     },
@@ -70,7 +70,8 @@ export const vcRecapManifest: PluginManifest = {
       subcommands: [
         {
           name: 'start',
-          description: '参加中のVCで記録を開始します(本人が同意したメンバーの発言のみ対象)',
+          description:
+            '参加中のVCで記録を開始します(同意済みまたは自動同意ロールを持つメンバーの発言のみ対象)',
         },
         {
           name: 'stop',
