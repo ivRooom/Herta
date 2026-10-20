@@ -149,7 +149,17 @@ export async function startVcRecap(
 
     connection.on('stateChange', (oldState, newState) => {
       logger.info(
-        { guildId: channel.guild.id, from: oldState.status, to: newState.status },
+        {
+          guildId: channel.guild.id,
+          from: oldState.status,
+          to: newState.status,
+          ...(newState.status === VoiceConnectionStatus.Disconnected
+            ? {
+                reason: newState.reason,
+                closeCode: 'closeCode' in newState ? newState.closeCode : undefined,
+              }
+            : {}),
+        },
         'VC接続状態が変化しました',
       );
     });
