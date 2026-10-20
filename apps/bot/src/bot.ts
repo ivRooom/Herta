@@ -796,7 +796,11 @@ export class HertaBot {
             { err: error },
             'VC Recap同意ボタンの処理で未捕捉のエラーが発生しました',
           );
-          if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+          if (interaction.isRepliable() && interaction.deferred && !interaction.replied) {
+            await interaction
+              .editReply({ content: '処理中にエラーが発生しました' })
+              .catch(() => undefined);
+          } else if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
             await interaction
               .reply({ content: '処理中にエラーが発生しました', flags: MessageFlags.Ephemeral })
               .catch(() => undefined);
