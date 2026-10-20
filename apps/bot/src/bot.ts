@@ -11,7 +11,7 @@ import {
 import { Redis } from 'ioredis';
 import { randomUUID } from 'node:crypto';
 import {
-  getCommunityPointsLeaderboard,
+  getAllCommunityPointsEntries,
   getPrismaClient,
   reconcileStaleVcRecapSessions,
   recordCommandExecution as persistCommandExecution,
@@ -131,7 +131,6 @@ function presenceIntentEnabled(): boolean {
 }
 
 const ACTIVITY_IVRM_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
-const ACTIVITY_IVRM_SYNC_USER_LIMIT = 25;
 const ACTIVITY_IVRM_SYNC_EPOCH = new Date('1970-01-01T00:00:00.000Z');
 
 /** Plugin由来の`onCommunityAction`metric名 -> Activity Rules判定関数。 */
@@ -1509,9 +1508,11 @@ export class HertaBot {
   }
 
   /**
-   * Community Points上位（現状のクエリ実装の上限である最大25人）を対象にmember.ivrm.jpへ
-   * 活動統計スナップショットを同期する。全ユーザーを対象にするにはより大きな候補集合を返す
-   * 専用クエリが必要なため、v1では上位ユーザーへの同期に限定する。
+   * ポイントが1以上あるguild全メンバーを対象にmember.ivrm.jpへ活動統計スナップショットを
+   * 同期する。以前はCommunity Points上位25人(表示用leaderboardクエリの上限)に限定して
+   * いたが、それ以外のメンバーがivrm-web側で永久に未同期のままになる(本人のPoint表示が
+   * 古いまま更新されない)問題があったため、表示用の上限を適用しないgetAllCommunityPointsEntries
+   * を使う。
    */
   private async syncGuildActivityToIvrmWeb(
     guildId: string,
@@ -1519,12 +1520,11 @@ export class HertaBot {
   ): Promise<void> {
     const activityRules = await this.getActivityRules(guildId);
     const rates = communityPointsRatesFromConfig(activityRules);
-    const leaderboard = await getCommunityPointsLeaderboard(this.prisma, {
+    const leaderboard = await getAllCommunityPointsEntries(this.prisma, {
       guildId,
       start: ACTIVITY_IVRM_SYNC_EPOCH,
       end: new Date(),
       rates,
-      limit: ACTIVITY_IVRM_SYNC_USER_LIMIT,
     });
     if (leaderboard.length === 0) return;
 

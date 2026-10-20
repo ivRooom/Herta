@@ -47,6 +47,20 @@ export async function getCommunityPointsLeaderboard(
   return rows.slice(0, limit).map((row) => ({ userId: row.userId, points: Number(row.total) }));
 }
 
+/**
+ * getCommunityPointsLeaderboardと同じ計算式だが、表示用の25人上限を適用しない。
+ * ポイントが1以上あるguild全メンバーを対象にする必要がある用途(ivrm-webへの
+ * 活動統計同期等)向け。queryPointsRows自体は元々全ユーザー分を計算しているため、
+ * 上限を適用しないだけで追加のクエリコストは無い。
+ */
+export async function getAllCommunityPointsEntries(
+  prisma: PrismaClient,
+  input: { guildId: string; start: Date; end: Date; rates: CommunityPointsRatesInput },
+): Promise<CommunityPointsEntry[]> {
+  const rows = await queryPointsRows(prisma, input);
+  return rows.map((row) => ({ userId: row.userId, points: Number(row.total) }));
+}
+
 export interface CommunityUserPointsBreakdownEntry {
   source: string;
   points: number;
