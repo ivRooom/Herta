@@ -34,7 +34,7 @@ export function VoiceConsentForm({
       }
       setConsent(next);
       setToast({
-        message: next ? '✅ 同意に更新しました' : '🔒 未同意に更新しました',
+        message: next ? '同意する に更新しました' : '同意しない に更新しました',
         tone: 'success',
       });
     } catch {
@@ -46,22 +46,21 @@ export function VoiceConsentForm({
 
   return (
     <>
-      <div className="rounded-2xl border border-border bg-surface p-5 shadow-card">
-        <p className="text-sm text-muted">現在の状態</p>
-        <p className="mt-1 text-xl font-semibold">
-          {consent ? (
-            <span className="text-emerald-600 dark:text-emerald-400">同意済み</span>
-          ) : (
-            <span className="text-muted">未同意</span>
-          )}
-        </p>
+      <section className="border border-border bg-surface">
+        <div className="border-b border-border px-5 py-4 sm:px-6">
+          <p className="text-xs font-medium text-muted">現在の設定</p>
+          <p className="mt-1.5 text-2xl font-semibold tracking-tight">
+            {consent ? '同意する' : '同意しない'}
+          </p>
+        </div>
 
-        <div className="mt-5 flex flex-wrap gap-3">
+        <div className="flex flex-col gap-3 px-5 py-5 sm:flex-row sm:px-6">
           <button
             type="button"
             disabled={busy || consent}
             onClick={() => submit(true)}
-            className="rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity disabled:opacity-40"
+            aria-pressed={consent}
+            className="flex-1 border border-primary bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground transition-opacity focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-40"
           >
             同意する
           </button>
@@ -69,20 +68,24 @@ export function VoiceConsentForm({
             type="button"
             disabled={busy || !consent}
             onClick={() => submit(false)}
-            className="rounded-xl border border-border px-5 py-2.5 text-sm font-medium transition-colors hover:bg-background disabled:opacity-40"
+            aria-pressed={!consent}
+            className="flex-1 border border-border bg-background px-5 py-3 text-sm font-semibold text-foreground transition-colors hover:bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-default disabled:opacity-40"
           >
             同意しない
           </button>
         </div>
-      </div>
+      </section>
 
+      <div aria-live="polite" className="sr-only">
+        {toast?.message}
+      </div>
       {toast ? (
         <div
           role="status"
-          className={`fixed inset-x-0 bottom-6 z-50 mx-auto w-fit max-w-[90vw] rounded-xl border px-4 py-2.5 text-sm font-medium shadow-lg transition-opacity ${
+          className={`fixed inset-x-4 bottom-6 z-50 mx-auto w-fit max-w-[calc(100vw-2rem)] border px-4 py-3 text-sm font-medium shadow-lg ${
             toast.tone === 'success'
-              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200'
-              : 'border-red-500/30 bg-red-500/10 text-red-800 dark:text-red-200'
+              ? 'border-foreground bg-foreground text-background'
+              : 'border-destructive bg-destructive text-white'
           }`}
         >
           {toast.message}

@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { ArrowLeft, ShieldCheck } from 'lucide-react';
 
 export const metadata: Metadata = {
   title: 'プライバシーポリシー | Herta',
@@ -31,70 +30,54 @@ const DATA_ROWS: Array<{ type: string; condition: string; content: string; reten
 
 export default function PrivacyPolicyPage() {
   return (
-    <main className="min-h-screen bg-background px-4 py-10 sm:px-6">
-      <div className="mx-auto w-full max-w-3xl space-y-6">
+    <main className="min-h-screen bg-background">
+      <div className="border-b border-border px-4 py-4 sm:px-6">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Herta</p>
+      </div>
+
+      <div className="mx-auto w-full max-w-2xl px-4 py-10 sm:px-6 sm:py-14">
         <Link
           href="/"
-          className="inline-flex items-center gap-1.5 text-sm text-muted transition-colors hover:text-foreground"
+          className="text-sm text-muted underline underline-offset-2 hover:text-foreground"
         >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          戻る
+          トップへ戻る
         </Link>
 
-        <section className="rounded-3xl border border-border bg-surface p-5 shadow-card sm:p-7">
-          <div className="flex items-start gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-              <ShieldCheck className="h-5 w-5" aria-hidden="true" />
-            </span>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary">
-                Herta
-              </p>
-              <h1 className="mt-1 text-xl font-semibold">プライバシーポリシー</h1>
-              <p className="mt-2 text-sm leading-6 text-muted">
-                Discord bot
-                Hertaが収集・保持するメンバーの個人データについて、何を・なぜ・どれだけ保持するかを記載します。
-              </p>
-            </div>
-          </div>
-        </section>
+        <h1 className="mt-6 text-xl font-semibold tracking-tight sm:text-2xl">
+          プライバシーポリシー
+        </h1>
+        <p className="mt-3 max-w-prose text-sm leading-7 text-muted">
+          Discord bot
+          Hertaが収集・保持するメンバーの個人データについて、何を・なぜ・どれだけ保持するかを記載します。
+        </p>
 
-        <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
-          <h2 className="text-base font-semibold">収集するデータと保持期間</h2>
-          <div className="mt-4 space-y-3">
+        <Section title="収集するデータと保持期間">
+          <div className="divide-y divide-border border-y border-border">
             {DATA_ROWS.map((row) => (
-              <div key={row.type} className="rounded-xl border border-border bg-background p-4">
+              <div key={row.type} className="py-4 first:pt-0 last:pb-0">
                 <p className="font-medium">{row.type}</p>
-                <dl className="mt-2 space-y-1.5 text-sm text-muted">
-                  <div>
-                    <dt className="inline font-medium text-foreground">収集条件: </dt>
-                    <dd className="inline">{row.condition}</dd>
-                  </div>
-                  <div>
-                    <dt className="inline font-medium text-foreground">保持内容: </dt>
-                    <dd className="inline">{row.content}</dd>
-                  </div>
-                  <div>
-                    <dt className="inline font-medium text-foreground">保持期間: </dt>
-                    <dd className="inline">{row.retention}</dd>
-                  </div>
+                <dl className="mt-2 space-y-1 text-sm leading-6 text-muted">
+                  <Row label="収集条件" value={row.condition} />
+                  <Row label="保持内容" value={row.content} />
+                  <Row label="保持期間" value={row.retention} />
                 </dl>
               </div>
             ))}
           </div>
-        </section>
+        </Section>
 
-        <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
-          <h2 className="text-base font-semibold">同意の仕組み</h2>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-muted">
+        <Section title="同意の仕組み">
+          <ul className="list-disc space-y-3 pl-5 text-sm leading-7 text-muted">
             <li>
               VC発言の文字起こしは、
-              <strong className="text-foreground">本人が明示的に同意したメンバーの発言のみ</strong>
+              <strong className="font-semibold text-foreground">
+                本人が明示的に同意したメンバーの発言のみ
+              </strong>
               を対象とします。同意していないメンバーの音声は録音・文字起こしの対象になりません。
             </li>
             <li>
-              同意は以下いずれの方法でも行えます:
-              <ul className="mt-1.5 list-disc space-y-1 pl-5">
+              同意は次のいずれの方法でも行えます。
+              <ul className="mt-2 list-disc space-y-1.5 pl-5">
                 <li>
                   <code className="text-foreground">/herta-privacy voice-consent true</code>
                   コマンド
@@ -111,7 +94,7 @@ export default function PrivacyPolicyPage() {
               </ul>
             </li>
             <li>
-              いずれの方法で同意した場合も、発言開始のたびに最新の同意状態を都度確認します。Discordコマンド・ボタンでの取り消しは進行中の発言も即座に打ち切って対象外にしますが、専用URL(Web)での取り消しはBotプロセスへ即時通知できないため、取り消し後に新たに話し始めた時点から対象外になります(取り消し操作の瞬間に発言中だった分は、その発言が終わるまで記録される場合があります)。
+              発言開始のたびに最新の同意状態を都度確認します。Discordコマンド・ボタンでの取り消しは進行中の発言も即座に打ち切って対象外にしますが、専用URL(Web)での取り消しはBotプロセスへ即時通知できないため、取り消し後に新たに話し始めた時点から対象外になります(取り消し操作の瞬間に発言中だった分は、その発言が終わるまで記録される場合があります)。
             </li>
             <li>
               <code className="text-foreground">/vc-recap start</code>
@@ -121,15 +104,14 @@ export default function PrivacyPolicyPage() {
               生の音声データ(録音ファイル)はディスク・データベースのいずれにも保存しません。文字起こし処理中のメモリ上バッファのみで、テキスト化され次第破棄します。
             </li>
           </ul>
-        </section>
+        </Section>
 
-        <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
-          <h2 className="text-base font-semibold">データ主体の権利</h2>
-          <p className="mt-2 text-sm leading-6 text-muted">
+        <Section title="データ主体の権利">
+          <p className="text-sm leading-7 text-muted">
             以下のコマンドをHertaを導入しているサーバー内で実行できます(Slash
-            Commandはサーバーごとに登録されるため、現時点ではDMからは実行できません):
+            Commandはサーバーごとに登録されるため、現時点ではDMからは実行できません)。
           </p>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-muted">
+          <ul className="mt-3 list-disc space-y-2.5 pl-5 text-sm leading-7 text-muted">
             <li>
               <code className="text-foreground">
                 /herta-privacy voice-consent &lt;true|false&gt;
@@ -145,14 +127,31 @@ export default function PrivacyPolicyPage() {
               Hertaが保持しているあなたのデータをJSONでエクスポートします。
             </li>
           </ul>
-        </section>
+        </Section>
 
-        <p className="text-xs text-muted">
-          本ページは
-          <code className="text-foreground">docs/PRIVACY_POLICY.md</code>
+        <p className="mt-10 border-t border-border pt-6 text-xs leading-6 text-muted">
+          本ページは<code className="text-foreground">docs/PRIVACY_POLICY.md</code>
           の内容を要約したものです。chat発言本文等を広く収集するRAG機能は本ページ作成時点では未実装です。
         </p>
       </div>
     </main>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mt-10">
+      <h2 className="text-base font-semibold">{title}</h2>
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="inline font-medium text-foreground">{label}: </dt>
+      <dd className="inline">{value}</dd>
+    </div>
   );
 }
