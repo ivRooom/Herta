@@ -88,8 +88,20 @@ export async function startVcRecap(
     const members = channel.members.filter((member) => !member.user.bot);
     const memberUserIds = [...members.keys()];
     const baseConsentByUserId = await getVoiceTranscriptionConsentMap(prisma, memberUserIds);
+    // 自動同意ロールが設定されている場合のみ、キャッシュに残った剥奪済みロールで
+    // 誤って同意扱いにしないようforce fetchする(未設定なら従来通りcacheで十分)。
     const roleIdsByUser = new Map(
-      members.map((member) => [member.id, [...member.roles.cache.keys()]] as const),
+      await Promise.all(
+        members.map(async (member) => {
+          if (autoConsentRoleIds.length === 0) {
+            return [member.id, [...member.roles.cache.keys()]] as const;
+          }
+          const fresh = await channel.guild.members
+            .fetch({ user: member.id, force: true })
+            .catch(() => null);
+          return [member.id, [...(fresh ?? member).roles.cache.keys()]] as const;
+        }),
+      ),
     );
     const consentByUserId = applyAutoConsentRoles(
       baseConsentByUserId,
@@ -176,7 +188,9 @@ function wireSpeakingHandler(
       // 反映されない場合がある(Intent無しだとGuildMemberUpdateイベントを受信できず
       // キャッシュが更新されない)。単一メンバーのfetchはIntent不要でREST経由で
       // 常に最新を取得できるため、都度fetchする。
-      const member = await session.guild.members.fetch(userId).catch(() => null);
+      const member = await session.guild.members
+        .fetch({ user: userId, force: true })
+        .catch(() => null);
       const roleIds = [...(member?.roles.cache.keys() ?? [])];
       const consentMap = applyAutoConsentRoles(
         baseConsentMap,
