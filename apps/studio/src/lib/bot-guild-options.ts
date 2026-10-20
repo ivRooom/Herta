@@ -5,7 +5,7 @@ import { getBotInternalApiAuthorizationHeader } from './bot-internal-api-auth.ts
 export const guildChannelOptionSchema = z.object({
   id: z.string().regex(/^\d+$/u),
   name: z.string().min(1),
-  kind: z.enum(['text', 'announcement', 'forum', 'thread']),
+  kind: z.enum(['text', 'announcement', 'forum', 'thread', 'voice']),
   position: z.number().int(),
   parentId: z.string().regex(/^\d+$/u).nullable(),
   viewable: z.boolean().default(false),

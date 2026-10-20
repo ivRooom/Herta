@@ -44,6 +44,7 @@ function channelKindLabel(kind: GuildChannelOption['kind']): string {
   if (kind === 'announcement') return 'アナウンス';
   if (kind === 'forum') return 'フォーラム';
   if (kind === 'thread') return 'スレッド';
+  if (kind === 'voice') return 'VC';
   return 'テキスト';
 }
 

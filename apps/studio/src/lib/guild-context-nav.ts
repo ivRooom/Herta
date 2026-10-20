@@ -8,6 +8,7 @@ export type GuildConsoleSection =
   | 'leaderboard'
   | 'moderation'
   | 'audit-logs'
+  | 'vc-recap'
   | 'access'
   | 'bot-profile'
   | 'other';
@@ -44,6 +45,9 @@ export function getGuildConsoleContext(pathname: string): GuildConsoleContext | 
   }
   if (isRouteOrChild(pathname, `${basePath}/audit-logs`)) {
     return { guildId, section: 'audit-logs' };
+  }
+  if (isRouteOrChild(pathname, `${basePath}/vc-recap`)) {
+    return { guildId, section: 'vc-recap' };
   }
   if (isRouteOrChild(pathname, `${basePath}/access`)) {
     return { guildId, section: 'access' };
