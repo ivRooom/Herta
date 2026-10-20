@@ -11,7 +11,7 @@ import {
 import { Redis } from 'ioredis';
 import { randomUUID } from 'node:crypto';
 import {
-  getCommunityPointsLeaderboard,
+  getAllCommunityPointsEntries,
   getPrismaClient,
   reconcileStaleVcRecapSessions,
   recordCommandExecution as persistCommandExecution,
@@ -131,7 +131,6 @@ function presenceIntentEnabled(): boolean {
 }
 
 const ACTIVITY_IVRM_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000;
-const ACTIVITY_IVRM_SYNC_USER_LIMIT = 25;
 const ACTIVITY_IVRM_SYNC_EPOCH = new Date('1970-01-01T00:00:00.000Z');
 
 /** Plugin由来の`onCommunityAction`metric名 -> Activity Rules判定関数。 */
@@ -245,6 +244,7 @@ export class HertaBot {
   private readonly gatewayObservationIntervalMs: number;
   private gatewayObservationTimer?: NodeJS.Timeout;
   private activityIvrmSyncTimer?: NodeJS.Timeout;
+  private activityIvrmSyncInFlight = false;
   private healthRedis?: Redis;
   private readonly activityMessageLastCountedAt = new Map<string, number>();
   private ruleRuntimeEvents?: RuleRuntimeEventSink;
@@ -1499,19 +1499,33 @@ export class HertaBot {
   }
 
   private async runActivityIvrmSync(config: ActivityIvrmSyncConfig): Promise<void> {
-    for (const guildId of this.getGuildIds()) {
-      try {
-        await this.syncGuildActivityToIvrmWeb(guildId, config);
-      } catch (error) {
-        this.logger.warn({ err: error, guildId }, 'ivrm-webへの活動統計同期に失敗しました');
+    // 同期対象を25人上限からguild全ユーザーへ拡大したことで、1回あたりの所要時間が
+    // guildの規模次第で同期間隔(6時間)に近づく・超える可能性がある。setIntervalは
+    // 前回の完了を待たないため、single-flightガードで多重実行を防ぐ。
+    if (this.activityIvrmSyncInFlight) {
+      this.logger.warn('前回のivrm-web活動統計同期がまだ完了していないためスキップします');
+      return;
+    }
+    this.activityIvrmSyncInFlight = true;
+    try {
+      for (const guildId of this.getGuildIds()) {
+        try {
+          await this.syncGuildActivityToIvrmWeb(guildId, config);
+        } catch (error) {
+          this.logger.warn({ err: error, guildId }, 'ivrm-webへの活動統計同期に失敗しました');
+        }
       }
+    } finally {
+      this.activityIvrmSyncInFlight = false;
     }
   }
 
   /**
-   * Community Points上位（現状のクエリ実装の上限である最大25人）を対象にmember.ivrm.jpへ
-   * 活動統計スナップショットを同期する。全ユーザーを対象にするにはより大きな候補集合を返す
-   * 専用クエリが必要なため、v1では上位ユーザーへの同期に限定する。
+   * ポイントが1以上あるguild全メンバーを対象にmember.ivrm.jpへ活動統計スナップショットを
+   * 同期する。以前はCommunity Points上位25人(表示用leaderboardクエリの上限)に限定して
+   * いたが、それ以外のメンバーがivrm-web側で永久に未同期のままになる(本人のPoint表示が
+   * 古いまま更新されない)問題があったため、表示用の上限を適用しないgetAllCommunityPointsEntries
+   * を使う。
    */
   private async syncGuildActivityToIvrmWeb(
     guildId: string,
@@ -1519,12 +1533,11 @@ export class HertaBot {
   ): Promise<void> {
     const activityRules = await this.getActivityRules(guildId);
     const rates = communityPointsRatesFromConfig(activityRules);
-    const leaderboard = await getCommunityPointsLeaderboard(this.prisma, {
+    const leaderboard = await getAllCommunityPointsEntries(this.prisma, {
       guildId,
       start: ACTIVITY_IVRM_SYNC_EPOCH,
       end: new Date(),
       rates,
-      limit: ACTIVITY_IVRM_SYNC_USER_LIMIT,
     });
     if (leaderboard.length === 0) return;
 

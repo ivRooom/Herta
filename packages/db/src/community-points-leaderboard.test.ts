@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { PrismaClient } from '@prisma/client';
-import { getCommunityUserPointsBreakdown } from './community-points-leaderboard.js';
+import {
+  getAllCommunityPointsEntries,
+  getCommunityPointsLeaderboard,
+  getCommunityUserPointsBreakdown,
+} from './community-points-leaderboard.js';
 
 const rates = {
   messagePointsPerMessage: 1,
@@ -50,4 +54,50 @@ test('ソース別のポイント内訳(bigint→number)を降順で返す', asy
   ]);
   assert.match(capturedSql, /GROUP BY "source"/);
   assert.match(capturedSql, /"user_id" = /);
+});
+
+function fakePrismaWithRows(rows: Array<{ userId: string; total: bigint }>): PrismaClient {
+  return {
+    $queryRaw: async () => rows,
+  } as unknown as PrismaClient;
+}
+
+test('getCommunityPointsLeaderboardは25人を超える候補を切り捨てる', async () => {
+  const rows = Array.from({ length: 30 }, (_, i) => ({
+    userId: `user-${i}`,
+    total: BigInt(30 - i),
+  }));
+  const prisma = fakePrismaWithRows(rows);
+
+  const result = await getCommunityPointsLeaderboard(prisma, {
+    guildId: 'guild-1',
+    start: new Date('2026-01-01T00:00:00Z'),
+    end: new Date('2026-01-31T00:00:00Z'),
+    rates,
+    limit: 100,
+  });
+
+  assert.equal(result.length, 25);
+  assert.equal(result[0]?.userId, 'user-0');
+});
+
+test('getAllCommunityPointsEntriesは25人の上限を適用せず全件返す', async () => {
+  const rows = Array.from({ length: 30 }, (_, i) => ({
+    userId: `user-${i}`,
+    total: BigInt(30 - i),
+  }));
+  const prisma = fakePrismaWithRows(rows);
+
+  const result = await getAllCommunityPointsEntries(prisma, {
+    guildId: 'guild-1',
+    start: new Date('2026-01-01T00:00:00Z'),
+    end: new Date('2026-01-31T00:00:00Z'),
+    rates,
+  });
+
+  assert.equal(result.length, 30);
+  assert.deepEqual(
+    result.map((r) => r.userId),
+    rows.map((r) => r.userId),
+  );
 });
