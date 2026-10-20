@@ -39,6 +39,7 @@ export const vcRecapManifest: PluginManifest = {
         'x-herta-ui': {
           section: '除外設定',
           widget: 'discord-channel',
+          channelKind: 'voice',
           multiple: true,
           placeholder: '記録しないVCを選択',
         },

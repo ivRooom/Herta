@@ -75,8 +75,11 @@ export async function handleConsentButton(
   }
 
   if (parsed.action === 'web') {
+    // DB呼び出し(issueVoiceConsentAccess)がDiscordの初回応答期限(3秒)を超えると
+    // interaction tokenが失効するため、先にdeferしてから発行・編集する。
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     const content = await buildConsentWebLinkMessage(prisma, parsed.userId, logger);
-    await interaction.reply({ content, flags: MessageFlags.Ephemeral });
+    await interaction.editReply({ content });
     return;
   }
 
