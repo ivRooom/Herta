@@ -8,6 +8,7 @@ import {
 import type { Logger } from '@herta/logger';
 import {
   addVcRecapSessionParticipant,
+  applyAutoConsentRoles,
   appendVcRecapTranscriptSegment,
   completeVcRecapSession,
   failVcRecapSession,
@@ -16,7 +17,7 @@ import {
   startVcRecapSession,
   type PrismaClient,
 } from '@herta/db';
-import type { VoiceBasedChannel } from 'discord.js';
+import type { Guild, VoiceBasedChannel } from 'discord.js';
 import prism from 'prism-media';
 import type { Readable } from 'node:stream';
 import { resolveAwsTranscribeCredential } from './aws-transcribe-credential.js';
@@ -31,7 +32,10 @@ interface ActiveVcRecapSession {
   sessionId: string;
   guildId: string;
   channelId: string;
+  guild: Guild;
   connection: VoiceConnection;
+  /** `discord-role`で設定された、保持しているだけで同意済みとみなすロールID一覧。 */
+  autoConsentRoleIds: string[];
   consentingUserIds: Set<string>;
   activeTranscriptions: Map<string, Promise<void>>;
   /** stopVcRecap側で明示的にdestroyできるよう、購読中のOpusストリームを保持する。 */
@@ -73,6 +77,7 @@ export async function startVcRecap(
   logger: Logger,
   channel: VoiceBasedChannel,
   startedBy: string,
+  autoConsentRoleIds: string[] = [],
 ): Promise<StartVcRecapResult> {
   if (activeSessions.has(channel.guild.id) || pendingGuildIds.has(channel.guild.id)) {
     return { status: 'already_active' };
@@ -80,8 +85,18 @@ export async function startVcRecap(
   pendingGuildIds.add(channel.guild.id);
 
   try {
-    const memberUserIds = [...channel.members.filter((member) => !member.user.bot).keys()];
-    const consentByUserId = await getVoiceTranscriptionConsentMap(prisma, memberUserIds);
+    const members = channel.members.filter((member) => !member.user.bot);
+    const memberUserIds = [...members.keys()];
+    const baseConsentByUserId = await getVoiceTranscriptionConsentMap(prisma, memberUserIds);
+    const roleIdsByUser = new Map(
+      members.map((member) => [member.id, [...member.roles.cache.keys()]] as const),
+    );
+    const consentByUserId = applyAutoConsentRoles(
+      baseConsentByUserId,
+      memberUserIds,
+      autoConsentRoleIds,
+      roleIdsByUser,
+    );
     const { consentingUserIds, nonConsentingUserIds } = splitVcRecapParticipants(
       memberUserIds,
       consentByUserId,
@@ -111,7 +126,9 @@ export async function startVcRecap(
       sessionId,
       guildId: channel.guild.id,
       channelId: channel.id,
+      guild: channel.guild,
       connection,
+      autoConsentRoleIds,
       consentingUserIds: new Set(consentingUserIds),
       activeTranscriptions: new Map(),
       activeStreams: new Map(),
@@ -152,7 +169,21 @@ function wireSpeakingHandler(
     const task = (async () => {
       // 同意状態はセッション開始時点で固定せず、発言開始のたびに都度再確認する。
       // `/herta-privacy voice-consent false`で同意を取り消した後の発言は対象外にするため。
-      const consentMap = await getVoiceTranscriptionConsentMap(prisma, [userId]);
+      // ロールによる自動同意はDBへ永続化しないランタイムオーバーレイのため、ロール剥奪時は
+      // 次の発言開始イベントで即座に明示的な同意状態へ戻る。
+      const baseConsentMap = await getVoiceTranscriptionConsentMap(prisma, [userId]);
+      // GuildMembers intentは任意設定のため、speaking.cacheだけではロール剥奪が
+      // 反映されない場合がある(Intent無しだとGuildMemberUpdateイベントを受信できず
+      // キャッシュが更新されない)。単一メンバーのfetchはIntent不要でREST経由で
+      // 常に最新を取得できるため、都度fetchする。
+      const member = await session.guild.members.fetch(userId).catch(() => null);
+      const roleIds = [...(member?.roles.cache.keys() ?? [])];
+      const consentMap = applyAutoConsentRoles(
+        baseConsentMap,
+        [userId],
+        session.autoConsentRoleIds,
+        new Map([[userId, roleIds]]),
+      );
       if (consentMap.get(userId) !== true) return;
 
       // 開始時点でVCにいなかった同意済みユーザーが後から参加・発言した場合、

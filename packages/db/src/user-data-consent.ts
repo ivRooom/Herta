@@ -65,3 +65,27 @@ export async function getVoiceTranscriptionConsentMap(
   const consentById = new Map(rows.map((row) => [row.userId, row.voiceTranscriptionConsent]));
   return new Map(uniqueIds.map((id) => [id, consentById.get(id) ?? false]));
 }
+
+/**
+ * ロールによる自動同意を重ねた実効的な同意状態を計算する純粋関数(DB書き込みを行わない
+ * ランタイムオーバーレイ)。ロール剥奪時に即座に明示的な同意状態へ戻るよう、自動同意は
+ * UserDataConsentへ永続化しない。Discordのロールはguildごとに別物のID空間を持つため、
+ * この判定自体はguildを跨がない(呼び出し元が渡すroleIdsByUser・autoConsentRoleIdsは
+ * いずれもそのguildのものである必要がある)。
+ */
+export function applyAutoConsentRoles(
+  baseConsent: ReadonlyMap<string, boolean>,
+  userIds: readonly string[],
+  autoConsentRoleIds: readonly string[],
+  roleIdsByUser: ReadonlyMap<string, readonly string[]>,
+): Map<string, boolean> {
+  if (autoConsentRoleIds.length === 0) return new Map(baseConsent);
+  return new Map(
+    userIds.map((id) => {
+      const hasAutoConsentRole = (roleIdsByUser.get(id) ?? []).some((roleId) =>
+        autoConsentRoleIds.includes(roleId),
+      );
+      return [id, hasAutoConsentRole || (baseConsent.get(id) ?? false)];
+    }),
+  );
+}

@@ -14,7 +14,7 @@ function fakeContext() {
     client: {} as never,
     prisma: {} as never,
     guildId: 'guild-1',
-    config: { enabled: true, excludedChannelIds: [] },
+    config: { enabled: true, excludedChannelIds: [], autoConsentRoleIds: [] },
     logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } as never,
   };
 }
@@ -56,10 +56,11 @@ describe('/vc-recap list 権限チェック', () => {
 });
 
 describe('normalizeVcRecapConfig', () => {
-  it('既定値はenabled:false・excludedChannelIds:[]', () => {
+  it('既定値はenabled:false・excludedChannelIds:[]・autoConsentRoleIds:[]', () => {
     expect(normalizeVcRecapConfig(undefined)).toEqual({
       enabled: false,
       excludedChannelIds: [],
+      autoConsentRoleIds: [],
     });
   });
 
@@ -75,5 +76,14 @@ describe('normalizeVcRecapConfig', () => {
     expect(config.excludedChannelIds).toHaveLength(50);
     expect(config.excludedChannelIds).toContain('123');
     expect(config.excludedChannelIds).not.toContain('bad');
+  });
+
+  it('不正なロールIDは除外し、上限50件・重複排除する', () => {
+    const config = normalizeVcRecapConfig({
+      autoConsentRoleIds: ['456', '456', 'bad', ...Array.from({ length: 60 }, (_, i) => `${i}`)],
+    });
+    expect(config.autoConsentRoleIds).toHaveLength(50);
+    expect(config.autoConsentRoleIds).toContain('456');
+    expect(config.autoConsentRoleIds).not.toContain('bad');
   });
 });
