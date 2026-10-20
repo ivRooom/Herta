@@ -76,9 +76,6 @@ export function VoiceConsentForm({
         </div>
       </section>
 
-      <div aria-live="polite" className="sr-only">
-        {toast?.message}
-      </div>
       {toast ? (
         <div
           role="status"
