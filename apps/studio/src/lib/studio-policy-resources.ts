@@ -124,6 +124,14 @@ export function studioBotProfileSettingResource(guildId: string, setting: 'anniv
   return `guild:${guildId}:bot-profile:setting:${encodeSegment(setting)}`;
 }
 
+/**
+ * VC発言の文字起こし同意はguild非依存のグローバル設定だが、Studio側のアクセス制御は
+ * 「どのguild管理画面から操作したか」で評価する(操作対象自体はguildに紐づかない)。
+ */
+export function studioVoiceConsentResource(guildId: string): string {
+  return `guild:${guildId}:vc-recap:voice-consent`;
+}
+
 export function hasConfiguredStudioPagePolicy(access: ApplicableStudioPolicyContext): boolean {
   const activeRoleIds = new Set(access.roleIds);
   const policies = [
