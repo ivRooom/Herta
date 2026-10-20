@@ -21,17 +21,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     return json({ error: 'リンクの有効期限が切れたか、無効になっています' }, 410);
   }
 
-  const form = await request.formData().catch(() => null);
-  const consentValue = form?.get('consent');
-  if (consentValue !== 'true' && consentValue !== 'false') {
+  const body = await request.json().catch(() => null);
+  const consent =
+    body && typeof body === 'object' ? (body as Record<string, unknown>).consent : undefined;
+  if (typeof consent !== 'boolean') {
     return json({ error: 'リクエストが正しくありません' }, 400);
   }
 
-  await setVoiceTranscriptionConsent(prisma, access.userId, consentValue === 'true');
-
-  const redirectUrl = new URL(`/consent/${token}`, request.url);
-  redirectUrl.searchParams.set('updated', '1');
-  return NextResponse.redirect(redirectUrl, { status: 303, headers: RESPONSE_HEADERS });
+  await setVoiceTranscriptionConsent(prisma, access.userId, consent);
+  return json({ ok: true, consent });
 }
 
 function json(body: unknown, status = 200) {
