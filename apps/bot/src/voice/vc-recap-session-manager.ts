@@ -147,6 +147,16 @@ export async function startVcRecap(
       stopping: false,
     };
 
+    connection.on('stateChange', (oldState, newState) => {
+      logger.info(
+        { guildId: channel.guild.id, from: oldState.status, to: newState.status },
+        'VC接続状態が変化しました',
+      );
+    });
+    connection.on('error', (err) => {
+      logger.warn({ err, guildId: channel.guild.id }, 'VC接続でエラーが発生しました');
+    });
+
     try {
       await entersState(connection, VoiceConnectionStatus.Ready, CONNECTION_READY_TIMEOUT_MS);
     } catch (error) {
