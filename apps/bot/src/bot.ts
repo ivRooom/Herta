@@ -789,7 +789,19 @@ export class HertaBot {
       // 無関係なPlugin側のinteractionCreateハンドラの失敗・遅延に同意ボタンの処理が
       // 影響されないよう、guild plugin dispatchより前に処理する。
       if (interaction.isButton() && interaction.customId.startsWith(CONSENT_CUSTOM_ID_PREFIX)) {
-        await handleConsentButton(interaction, this.prisma, this.logger);
+        try {
+          await handleConsentButton(interaction, this.prisma, this.logger);
+        } catch (error) {
+          this.logger.error(
+            { err: error },
+            'VC Recap同意ボタンの処理で未捕捉のエラーが発生しました',
+          );
+          if (interaction.isRepliable() && !interaction.replied && !interaction.deferred) {
+            await interaction
+              .reply({ content: '処理中にエラーが発生しました', flags: MessageFlags.Ephemeral })
+              .catch(() => undefined);
+          }
+        }
         return;
       }
 
