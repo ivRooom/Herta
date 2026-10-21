@@ -223,6 +223,18 @@ model AiGenerationEvent {
   @@map("ai_generation_events")
 }
 
+// Guild単位の月次AI予算(Issue #519)のatomic reserve/settleカウンター。ai_generation_events
+// (append-onlyの監査ログ)とは別物で、こちらは並行リクエストでも予算超過を防ぐための
+// enforcement専用カウンター。periodStartはAsia/Tokyo基準の暦月初めをUTC表現したもの。
+model AiGuildMonthlyBudgetUsage {
+  guildId          String   @map("guild_id")
+  periodStart      DateTime @map("period_start") @db.Timestamptz(3)
+  reservedMicroUsd BigInt   @default(0) @map("reserved_micro_usd")
+
+  @@id([guildId, periodStart])
+  @@map("ai_guild_monthly_budget_usage")
+}
+
 // `/ai model set`によるユーザー個人のprovider/modelProfile上書き設定。未登録ならGuildの
 // console/env既定(ai.runtime)をそのまま使う。reasoningEffort・timezoneは個人設定の対象外
 // (常にGuild既定を使い、対象modelが非対応なら自動fallbackする。applyAiRuntimeSelectionOverride参照)。

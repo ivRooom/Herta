@@ -12,9 +12,11 @@ import {
 import {
   RedisAiGuardStore,
   resolveAiFoundationConfig,
+  resolveAiGuildMonthlyBudgetUsd,
   type AiTelemetrySink,
   type RedisEvalClient,
 } from '@herta/plugin-catalog/ai-service';
+import { wrapWithGuildMonthlyBudgetGuard } from './ai-budget-guard.js';
 import { AiRuntimeConfigurationResolver } from '@herta/plugin-catalog/ai-runtime-config';
 import {
   AI_RUNTIME_SAFE_DEFAULT,
@@ -347,7 +349,15 @@ export async function createAiFoundationRuntime(
       fetchImpl: options.fetchImpl,
     });
   }
-  const service = new MultiProviderAiRuntimeGenerationService({ runtimeResolver, services });
+  const multiProviderService = new MultiProviderAiRuntimeGenerationService({
+    runtimeResolver,
+    services,
+  });
+  const service = wrapWithGuildMonthlyBudgetGuard(multiProviderService, {
+    prisma: options.prisma,
+    budgetUsd: resolveAiGuildMonthlyBudgetUsd(env),
+    worstCaseRequestMicroUsd: baseConfig.perRequestCostLimitMicroUsd,
+  });
   const executionService = isAiProviderCapabilityEnabled(baseConfig.provider, 'code_interpreter')
     ? new OpenAiCodeExecutionService({
         baseConfig,

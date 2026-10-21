@@ -148,6 +148,32 @@ function startOfJstDay(value: Date): Date {
   return new Date(Math.floor(shifted / DAY_MS) * DAY_MS - JST_OFFSET_MS);
 }
 
+export function startOfJstMonth(value: Date): Date {
+  const jst = new Date(value.getTime() + JST_OFFSET_MS);
+  const monthStartJst = Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth(), 1);
+  return new Date(monthStartJst - JST_OFFSET_MS);
+}
+
+/**
+ * Guild単位の当月(Asia/Tokyoの暦月)累積AI利用コストを返す。chat/image/vc-recap要約など、
+ * `recordAiGenerationEvent`でai_generation_eventsへ記録している全feature分を合算する
+ * (月次予算上限のチェックに使う。Issue #519)。
+ */
+export async function getGuildMonthlyAiSpendUsd(
+  prisma: Pick<PrismaClient, '$queryRaw'>,
+  guildId: string,
+  now: Date = new Date(),
+): Promise<number> {
+  const monthStart = startOfJstMonth(now);
+  const rows = await prisma.$queryRaw<Array<{ spentUsd: number }>>`
+    SELECT COALESCE(SUM("estimated_cost_usd"), 0)::float AS "spentUsd"
+    FROM "ai_generation_events"
+    WHERE "guild_id" = ${guildId}
+      AND "occurred_at" >= ${monthStart}
+  `;
+  return rows[0]?.spentUsd ?? 0;
+}
+
 function formatJstDate(value: Date): string {
   return new Date(value.getTime() + JST_OFFSET_MS).toISOString().slice(0, 10);
 }

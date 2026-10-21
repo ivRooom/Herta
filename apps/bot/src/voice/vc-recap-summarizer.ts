@@ -1,5 +1,16 @@
 import type { PrismaClient, VcRecapTranscriptSegmentRecord } from '@herta/db';
-import { resolveAiFoundationConfig } from '@herta/plugin-catalog/ai-service';
+import {
+  recordAiGenerationEvent,
+  reserveGuildMonthlyBudget,
+  settleGuildMonthlyBudgetDelta,
+} from '@herta/db';
+import {
+  estimateInputTokens,
+  estimateOpenAiCostMicroUsd,
+  resolveAiFoundationConfig,
+  resolveAiGuildMonthlyBudgetUsd,
+  type AiOpenAiModel,
+} from '@herta/plugin-catalog/ai-service';
 import { resolveAiOpenAiCredential } from '../ai/factory.js';
 
 /**
@@ -7,7 +18,7 @@ import { resolveAiOpenAiCredential } from '../ai/factory.js';
  * レート制限・テレメトリと密結合)には相乗りせず、credential解決だけを再利用した
  * 軽量な直接OpenAI呼び出しで行う(docs/RAG_ROADMAP.md Phase 2参照)。
  */
-const SUMMARY_MODEL = 'gpt-5.6-luna';
+const SUMMARY_MODEL: AiOpenAiModel = 'gpt-5.6-luna';
 const SUMMARY_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_TOKENS = 600;
 const MAX_TRANSCRIPT_CHARS = 12_000;
@@ -51,6 +62,16 @@ function parseSummaryJson(text: string): VcRecapSummaryResult | null {
   }
 }
 
+function extractUsage(payload: unknown): { inputTokens: number; outputTokens: number } | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const usage = (payload as Record<string, unknown>)['usage'];
+  if (typeof usage !== 'object' || usage === null) return null;
+  const inputTokens = (usage as Record<string, unknown>)['input_tokens'];
+  const outputTokens = (usage as Record<string, unknown>)['output_tokens'];
+  if (typeof inputTokens !== 'number' || typeof outputTokens !== 'number') return null;
+  return { inputTokens: Math.max(0, inputTokens), outputTokens: Math.max(0, outputTokens) };
+}
+
 function extractOutputText(payload: unknown): string | null {
   if (typeof payload !== 'object' || payload === null) return null;
   const output = (payload as Record<string, unknown>)['output'];
@@ -75,11 +96,13 @@ function extractOutputText(payload: unknown): string | null {
 }
 
 /**
- * segmentsが空、OpenAI credentialが未設定、API呼び出しが失敗(タイムアウト含む)、
- * 応答の解析に失敗した場合はnullを返す(呼び出し元はfailVcRecapSessionで記録する)。
+ * segmentsが空、OpenAI credentialが未設定、Guild月次AI予算上限超過、API呼び出しが失敗
+ * (タイムアウト含む)、応答の解析に失敗した場合はnullを返す(呼び出し元はfailVcRecapSessionで
+ * 記録する)。
  */
 export async function summarizeVcRecapSession(
   prisma: PrismaClient,
+  guildId: string,
   segments: readonly VcRecapTranscriptSegmentRecord[],
   env: Record<string, string | undefined> = process.env,
   fetchImpl: typeof fetch = fetch,
@@ -90,19 +113,83 @@ export async function summarizeVcRecapSession(
   // 呼ばない」という緊急停止契約は、VC要約の独立したOpenAI呼び出しにも適用する
   // (resolveAiOpenAiCredentialはcredential解決のみでkill switchを見ないため、別途確認する)。
   let aiEnabled: boolean;
+  let guildMonthlyBudgetUsd = 0;
   try {
     const baseConfig = resolveAiFoundationConfig(env);
     aiEnabled = baseConfig.enabled && !baseConfig.killSwitch;
+    guildMonthlyBudgetUsd = resolveAiGuildMonthlyBudgetUsd(env);
   } catch {
     aiEnabled = false;
   }
   if (!aiEnabled) return null;
 
+  const prompt = buildPrompt(segments);
+
+  // Issue #519: チャットAI側(AiFoundationService経路)と同じGuild月次予算カウンターを
+  // atomicにreserveする(単純な「現在の消費量を読んで比較する」実装だと、並行リクエストが
+  // 同じ値を読んで同時に通過するレースがあるため)。worstCaseMicroUsdは実際の出力トークン数が
+  // わかる前の保守的な見積り(最大出力トークン数ベース)で、応答取得後に実コストとの差分で
+  // 調整する。reserve自体が失敗した場合はfail-open(要約を続行)する。credential解決より先に
+  // 行い、予算超過時は不要なcredential読み取りをしない。
+  let reservation: { allowed: boolean; reserved: boolean; periodStart: Date } | null = null;
+  let worstCaseMicroUsd = 0;
+  if (guildMonthlyBudgetUsd > 0) {
+    const limitMicroUsd = Math.round(guildMonthlyBudgetUsd * 1_000_000);
+    // 予算自体が1回の見積りコストより小さい場合、そのまま拒否されるのが正しい(Codexレビュー
+    // 指摘: reserve量を予算で頭打ちして無理に通すと、実際にはそれ以上かかりうる要約を
+    // 「通る」ことにしてしまい、settle後に予算を実際に超過してしまう)。
+    worstCaseMicroUsd = estimateOpenAiCostMicroUsd(
+      SUMMARY_MODEL,
+      estimateInputTokens(prompt),
+      MAX_OUTPUT_TOKENS,
+    );
+    reservation = await reserveGuildMonthlyBudget(prisma, {
+      guildId,
+      amountMicroUsd: worstCaseMicroUsd,
+      limitMicroUsd,
+    }).catch(() => ({
+      allowed: true,
+      reserved: false,
+      reservedTotalMicroUsd: 0,
+      periodStart: new Date(),
+    }));
+    if (!reservation.allowed) return null;
+  }
+
   const credential = await resolveAiOpenAiCredential({ prisma, env });
-  if (!credential.apiKey) return null;
+  if (!credential.apiKey) {
+    // reserved:falseの場合は何も書き込まれていない(DB障害によるfail-open)ため、settleすると
+    // 別の並行リクエストが作った行や既存の消費分を誤って減算してしまう(Codexレビュー指摘)。
+    if (reservation?.reserved) {
+      await settleGuildMonthlyBudgetDelta(
+        prisma,
+        guildId,
+        reservation.periodStart,
+        -worstCaseMicroUsd,
+      ).catch(() => undefined);
+    }
+    return null;
+  }
+
+  // reserve済みなら、呼び出しの結末に応じて必ずsettleする。fetch発行後は課金有無が
+  // 不明な失敗(タイムアウト・ネットワーク断・非OKレスポンス・JSON解析失敗等)がありうる
+  // ため、既定では解放しない(delta=0のまま=reserve全額を保守的に保持する。Codexレビュー
+  // 指摘: 失敗を繰り返すことで月次予算を実質無制限に超過できてしまうのを防ぐ)。実usageが
+  // 取得できた場合のみ、実コストとの差分へ明示的に書き換える。
+  let settleDeltaMicroUsd = 0;
+  const settleReservation = async (): Promise<void> => {
+    if (!reservation?.reserved) return;
+    await settleGuildMonthlyBudgetDelta(
+      prisma,
+      guildId,
+      reservation.periodStart,
+      settleDeltaMicroUsd,
+    ).catch(() => undefined);
+  };
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), SUMMARY_TIMEOUT_MS);
+  const startedAt = Date.now();
   try {
     const response = await fetchImpl('https://api.openai.com/v1/responses', {
       method: 'POST',
@@ -112,7 +199,7 @@ export async function summarizeVcRecapSession(
       },
       body: JSON.stringify({
         model: SUMMARY_MODEL,
-        input: buildPrompt(segments),
+        input: prompt,
         max_output_tokens: MAX_OUTPUT_TOKENS,
         store: false,
       }),
@@ -124,12 +211,63 @@ export async function summarizeVcRecapSession(
       return null;
     }
     const payload = await response.json();
+    const usage = extractUsage(payload);
     const text = extractOutputText(payload);
-    if (!text) return null;
-    return parseSummaryJson(text);
+    const parsed = text ? parseSummaryJson(text) : null;
+    // usageが取れた場合のみ実コストが判明するので、その場合に限りsettleDeltaMicroUsdを
+    // 書き換える(既定の0=reserve全額保持のままにしない)。summary自体の解析に失敗しても
+    // provider呼び出し自体は成功しトークンを消費しているため、コスト記録・予算の扱いは
+    // summary解析結果と独立に行う(ただしresultCategoryには解析結果を反映し、AI分析上の
+    // 成功件数を実態どおりにする。Codexレビュー指摘)。
+    if (usage) {
+      const actualMicroUsd = estimateOpenAiCostMicroUsd(
+        SUMMARY_MODEL,
+        usage.inputTokens,
+        usage.outputTokens,
+      );
+      settleDeltaMicroUsd = actualMicroUsd - worstCaseMicroUsd;
+      await recordVcRecapSummaryCost(
+        prisma,
+        guildId,
+        usage,
+        actualMicroUsd,
+        parsed !== null,
+        Date.now() - startedAt,
+      );
+    }
+    return parsed;
   } catch {
     return null;
   } finally {
     clearTimeout(timeout);
+    await settleReservation();
   }
+}
+
+/**
+ * VC要約の呼び出しもai_generation_eventsへ記録し、チャットAIと同じGuild月次予算の
+ * 対象に含める(Issue #519)。記録失敗は要約結果に影響させない(fire-and-forget)。
+ */
+async function recordVcRecapSummaryCost(
+  prisma: PrismaClient,
+  guildId: string,
+  usage: { inputTokens: number; outputTokens: number },
+  actualMicroUsd: number,
+  succeeded: boolean,
+  durationMs: number,
+): Promise<void> {
+  const estimatedCostUsd = actualMicroUsd / 1_000_000;
+  await recordAiGenerationEvent(prisma, {
+    guildId,
+    provider: 'openai',
+    model: SUMMARY_MODEL,
+    modelProfile: 'vc_recap_summary',
+    feature: 'vc_recap_summary',
+    resultCategory: succeeded ? 'success' : 'failed',
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.inputTokens + usage.outputTokens,
+    estimatedCostUsd,
+    durationMs,
+  }).catch(() => undefined);
 }

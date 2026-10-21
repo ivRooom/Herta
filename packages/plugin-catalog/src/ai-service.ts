@@ -360,18 +360,52 @@ export class AiFoundationError extends Error {
   readonly category: AiFailureCategory;
   readonly userMessage: string;
   readonly retryAfterMs: number | undefined;
+  /**
+   * providerへのリクエストが送信された可能性があるエラーか(=実コストが発生した可能性がある)。
+   * 既定はtrue(安全側): provider実装(6プロバイダ共通)内で発生するエラー(timeout・
+   * provider_unavailable・provider_rejected・malformed_response等)は、dispatchedを明示的に
+   * falseへ設定していないため、既定のtrueのまま扱われる。一部のカテゴリ(特に'quota_exceeded')
+   * はAiFoundationService.generate()内でprovider呼び出しの前後どちらでも発生しうるため、
+   * カテゴリ名だけでは判別できない。provider呼び出しに到達する前に確実に失敗すると断定できる
+   * 箇所(kill-switch・認可・rate limit・事前quotaチェック)でのみ、呼び出し元
+   * (AiFoundationService.generate())が明示的にdispatched:falseを設定する。
+   */
+  readonly dispatched: boolean;
 
-  constructor(category: AiFailureCategory, options: { retryAfterMs?: number } = {}) {
+  constructor(
+    category: AiFailureCategory,
+    options: { retryAfterMs?: number; dispatched?: boolean } = {},
+  ) {
     super(`AI request failed: ${category}`);
     this.name = 'AiFoundationError';
     this.category = category;
     this.userMessage = USER_MESSAGES[category];
     this.retryAfterMs = options.retryAfterMs;
+    this.dispatched = options.dispatched ?? true;
   }
 }
 
 export function toSafeAiFoundationError(error: unknown): AiFoundationError {
   return error instanceof AiFoundationError ? error : new AiFoundationError('internal_error');
+}
+
+/**
+ * Guild単位の月次累積AI予算上限(USD)。既存のguildQuotaMicroUsd(短期バーストガード、
+ * デフォルト24時間窓)とは別軸の、より長期(暦月)の累積コスト上限(Issue #519)。
+ * 0(未設定)は上限なしを意味し、既存デプロイのデフォルト挙動を変えない。実際のenforcement
+ * は呼び出し側(apps/bot)が`@herta/db`のgetGuildMonthlyAiSpendUsdと組み合わせて行う
+ * (AiFoundationServiceはDBアクセスを持たないため、ここでは値の解決のみ提供する)。
+ */
+export function resolveAiGuildMonthlyBudgetUsd(
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const raw = env['HERTA_AI_GUILD_MONTHLY_BUDGET_USD']?.trim();
+  if (!raw) return 0;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value > 1_000_000) {
+    throw new AiConfigurationError('invalid_value', 'HERTA_AI_GUILD_MONTHLY_BUDGET_USD');
+  }
+  return value;
 }
 
 export function resolveAiFoundationConfig(
@@ -532,11 +566,15 @@ export class AiFoundationService {
     const feature = normalizeFeature(request.feature);
 
     try {
-      if (!this.config.enabled || this.config.killSwitch) throw new AiFoundationError('disabled');
-      if (!request.authorized || request.scopeGuildId !== request.guildId) {
-        throw new AiFoundationError('unauthorized');
+      if (!this.config.enabled || this.config.killSwitch) {
+        throw new AiFoundationError('disabled', { dispatched: false });
       }
-      if (!request.pluginEnabled || !request.guildOptIn) throw new AiFoundationError('disabled');
+      if (!request.authorized || request.scopeGuildId !== request.guildId) {
+        throw new AiFoundationError('unauthorized', { dispatched: false });
+      }
+      if (!request.pluginEnabled || !request.guildOptIn) {
+        throw new AiFoundationError('disabled', { dispatched: false });
+      }
       assertProviderPricingGuardCurrent(this.config.provider, this.config.model, startedAt);
 
       const input = validateAndNormalizeInput(request.input, this.config);
@@ -549,7 +587,10 @@ export class AiFoundationService {
         this.config.rateWindowMs,
       );
       if (!userRate.allowed) {
-        throw new AiFoundationError('rate_limited', { retryAfterMs: userRate.retryAfterMs });
+        throw new AiFoundationError('rate_limited', {
+          retryAfterMs: userRate.retryAfterMs,
+          dispatched: false,
+        });
       }
 
       const guildRate = await this.guardStore.consumeRateLimit(
@@ -558,7 +599,10 @@ export class AiFoundationService {
         this.config.rateWindowMs,
       );
       if (!guildRate.allowed) {
-        throw new AiFoundationError('rate_limited', { retryAfterMs: guildRate.retryAfterMs });
+        throw new AiFoundationError('rate_limited', {
+          retryAfterMs: guildRate.retryAfterMs,
+          dispatched: false,
+        });
       }
 
       const estimatedInputTokens = estimateInputTokens(input);
@@ -569,7 +613,7 @@ export class AiFoundationService {
         this.config.maxOutputTokens,
       );
       if (reservationMicroUsd > this.config.perRequestCostLimitMicroUsd) {
-        throw new AiFoundationError('quota_exceeded');
+        throw new AiFoundationError('quota_exceeded', { dispatched: false });
       }
 
       const quota = await this.guardStore.reserveGuildQuota(
@@ -580,7 +624,10 @@ export class AiFoundationService {
         this.config.quotaWindowMs,
       );
       if (!quota.allowed) {
-        throw new AiFoundationError('quota_exceeded', { retryAfterMs: quota.retryAfterMs });
+        throw new AiFoundationError('quota_exceeded', {
+          retryAfterMs: quota.retryAfterMs,
+          dispatched: false,
+        });
       }
       quotaReserved = true;
 
@@ -592,7 +639,7 @@ export class AiFoundationService {
       if (!concurrencyAcquired) {
         await this.guardStore.settleGuildQuota(guildKey, requestId, 0);
         quotaReserved = false;
-        throw new AiFoundationError('rate_limited', { retryAfterMs: 1_000 });
+        throw new AiFoundationError('rate_limited', { retryAfterMs: 1_000, dispatched: false });
       }
 
       const providerResult = await this.provider.generate({
@@ -619,6 +666,7 @@ export class AiFoundationService {
       quotaReserved = false;
 
       if (estimatedCostMicroUsd > this.config.perRequestCostLimitMicroUsd) {
+        // dispatched指定なし=既定のtrue(provider呼び出し後なので課金有無が不明)。
         throw new AiFoundationError('quota_exceeded');
       }
       if (settledTotal > this.config.guildQuotaMicroUsd) {
@@ -1663,12 +1711,16 @@ async function readBoundedJson(response: Response, maxBytes: number): Promise<un
 }
 
 function validateAndNormalizeInput(input: string, config: AiFoundationConfig): string {
-  if (typeof input !== 'string') throw new AiFoundationError('invalid_input');
+  if (typeof input !== 'string')
+    throw new AiFoundationError('invalid_input', { dispatched: false });
   const normalized = input.trim();
   const chars = characterLength(normalized);
-  if (chars < 1 || chars > config.maxInputChars) throw new AiFoundationError('invalid_input');
+  if (chars < 1 || chars > config.maxInputChars) {
+    throw new AiFoundationError('invalid_input', { dispatched: false });
+  }
   const bytes = new TextEncoder().encode(normalized).byteLength;
-  if (bytes > config.maxInputBytes) throw new AiFoundationError('invalid_input');
+  if (bytes > config.maxInputBytes)
+    throw new AiFoundationError('invalid_input', { dispatched: false });
   return normalized;
 }
 
@@ -1706,13 +1758,13 @@ function assertProviderPricingGuardCurrent(
   model: AiModel,
   nowMs: number,
 ): void {
-  if (!Number.isFinite(nowMs)) throw new AiFoundationError('internal_error');
+  if (!Number.isFinite(nowMs)) throw new AiFoundationError('internal_error', { dispatched: false });
   if (
     provider === 'openai' &&
     model === 'gpt-5.6-sol' &&
     nowMs >= OPENAI_SOL_PROMOTIONAL_PRICING_REVIEW_AFTER_MS
   ) {
-    throw new AiFoundationError('disabled');
+    throw new AiFoundationError('disabled', { dispatched: false });
   }
 }
 
