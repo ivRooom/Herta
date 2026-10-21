@@ -6,21 +6,28 @@ import type { AiRuntimeGenerationRequest, AiRuntimeGenerationService } from './r
 /**
  * provider呼び出し(実コスト発生の可能性がある区間)へ到達する前に確実に失敗するカテゴリ。
  * AiFoundationService.generate()はkill-switch/authorized/pluginEnabled/guildOptIn/入力検証/
- * 自前のrate limit・quota判定を全てprovider呼び出しより前に行うため、これらのエラーは
+ * 自前のuser・guild rate limitの判定を全てprovider呼び出しより前に行うため、これらのエラーは
  * providerへ到達していないと断定できる(=実コストは発生していない=reserve分を全額
  * 安全に解放できる)。
  *
+ * 'quota_exceeded'は意図的にこの集合へ含めない。AiFoundationService.generate()は
+ * reservationMicroUsdの事前チェック(provider呼び出し前)に加えて、provider呼び出し・Redisの
+ * 短期guildQuota settle後にも同じ'quota_exceeded'カテゴリを投げる(estimatedCostMicroUsdが
+ * perRequestCostLimitMicroUsdを超えた場合・settledTotalがguildQuotaMicroUsdを超えた場合。
+ * 特にMCPツール呼び出しで2回目のprovider呼び出し分のトークンが上乗せされるとこちらに
+ * 到達しやすい)。カテゴリ名だけではどちらが原因か判別できないため、Codexレビュー指摘の
+ * 通り常に保守的にreserveを保持する側(=このSetに含めない)とする。
+ *
  * それ以外(timeout・provider_unavailable・provider_rejected・malformed_response・
- * output_too_large・internal_error、およびAiFoundationError以外の例外)は、provider呼び出しが
- * 既に発生済みで課金の有無が不明なケースを含むため、Codexレビュー指摘の通りreserve分を
- * 解放せず保守的に保持する(解放すると、失敗を繰り返すことで月次予算を実質無制限に
- * 超過できてしまう)。
+ * output_too_large・internal_error、およびAiFoundationError以外の例外)も同様に、provider
+ * 呼び出しが既に発生済みで課金の有無が不明なケースを含むため、reserve分を解放せず
+ * 保守的に保持する(解放すると、失敗を繰り返すことで月次予算を実質無制限に超過できて
+ * しまう)。
  */
 const PRE_DISPATCH_FAILURE_CATEGORIES = new Set([
   'disabled',
   'unauthorized',
   'rate_limited',
-  'quota_exceeded',
   'invalid_input',
 ]);
 

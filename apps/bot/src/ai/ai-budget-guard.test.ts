@@ -154,6 +154,32 @@ describe('wrapWithGuildMonthlyBudgetGuard', () => {
     expect(settleGuildMonthlyBudgetDeltaMock).not.toHaveBeenCalled();
   });
 
+  it('inner.generateからのquota_exceeded(provider呼び出し後の可能性がある)もreserveを保持し解放しない', async () => {
+    settleGuildMonthlyBudgetDeltaMock.mockClear();
+    reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
+      allowed: true,
+      reserved: true,
+      reservedTotalMicroUsd: 120_000,
+      periodStart: PERIOD_START,
+    });
+    const inner = {
+      // AiFoundationService.generate()はprovider呼び出し・Redis settle後にも同じ
+      // 'quota_exceeded'カテゴリを投げうる(perRequestCostLimitMicroUsd超過・guildQuotaMicroUsd
+      // 超過)ため、カテゴリ名だけでは判別できない。常に保守的に保持する(Codexレビュー指摘)。
+      generate: vi.fn().mockRejectedValue(new AiFoundationError('quota_exceeded')),
+    } as unknown as AiRuntimeGenerationService;
+    const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, {
+      prisma: {} as never,
+      budgetUsd: 10,
+      worstCaseRequestMicroUsd: 120_000,
+    });
+
+    await expect(wrapped.generate(baseRequest)).rejects.toThrowError(
+      expect.objectContaining({ category: 'quota_exceeded' }),
+    );
+    expect(settleGuildMonthlyBudgetDeltaMock).not.toHaveBeenCalled();
+  });
+
   it('AiFoundationError以外の例外(ネットワーク断等)もreserveを保持し解放しない', async () => {
     settleGuildMonthlyBudgetDeltaMock.mockClear();
     reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
