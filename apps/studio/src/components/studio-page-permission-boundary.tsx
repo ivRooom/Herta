@@ -1,25 +1,26 @@
 import Link from 'next/link';
 import { LockKeyhole } from 'lucide-react';
 import { notFound } from 'next/navigation';
-import type { ReactNode } from 'react';
+import { cache, type ReactNode } from 'react';
 import { auth } from '@/auth';
 import { authorizeStudioPageView } from '@/lib/studio-page-access';
 import type { StudioPageId } from '@/lib/studio-policy-resources';
 
-export async function StudioPagePermissionBoundary({
-  guildId,
-  pageId,
-  children,
-}: {
-  guildId: string;
-  pageId: StudioPageId;
-  children: ReactNode;
-}) {
+// layoutとpageの両方で同じ判定を行うため、同一リクエスト内では1回だけ評価する。
+const authorizeStudioPageViewForRequest = cache(authorizeStudioPageView);
+
+/**
+ * page.viewの判定を行い、拒否時に表示するUIを返す。許可時はnullを返す。
+ */
+async function resolveStudioPageDenial(
+  guildId: string,
+  pageId: StudioPageId,
+): Promise<ReactNode | null> {
   const session = await auth();
   if (!session?.user) notFound();
 
-  const authorization = await authorizeStudioPageView(guildId, session.user.id, pageId);
-  if (authorization.ok) return children;
+  const authorization = await authorizeStudioPageViewForRequest(guildId, session.user.id, pageId);
+  if (authorization.ok) return null;
 
   const permissionDenied = authorization.response.status === 403;
   return (
@@ -50,4 +51,37 @@ export async function StudioPagePermissionBoundary({
       </section>
     </div>
   );
+}
+
+export async function StudioPagePermissionBoundary({
+  guildId,
+  pageId,
+  children,
+}: {
+  guildId: string;
+  pageId: StudioPageId;
+  children: ReactNode;
+}) {
+  const denial = await resolveStudioPageDenial(guildId, pageId);
+  return denial ?? children;
+}
+
+/**
+ * page.tsxのdefault exportを包み、page自身のレンダリング時にもpage.viewを判定する。
+ *
+ * layoutはクライアント側のソフトナビゲーション(searchParamsのみの変更や同一layout配下の
+ * 兄弟ページ間の遷移)では再レンダリングされないため、layoutの
+ * StudioPagePermissionBoundaryだけでは権限取り消し後もpageのデータが返り続けうる。
+ * pageセグメントは遷移のたびにサーバーで描画されるため、ここで毎回判定する。
+ */
+export function withStudioPagePermission<Props extends { params: Promise<{ guildId: string }> }>(
+  Page: (props: Props) => Promise<ReactNode>,
+  pageId: StudioPageId,
+) {
+  return async function StudioPermissionGuardedPage(props: Props) {
+    const { guildId } = await props.params;
+    const denial = await resolveStudioPageDenial(guildId, pageId);
+    if (denial) return denial;
+    return Page(props);
+  };
 }

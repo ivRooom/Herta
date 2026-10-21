@@ -22,6 +22,7 @@ import {
   type VcRecapParticipantDisplay,
   type VcRecapSessionDisplay,
 } from '@/lib/vc-recap-studio';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,7 +47,7 @@ const STATUS_META: Record<string, { label: string; className: string }> = {
   },
 };
 
-export default async function GuildVcRecapPage({
+async function GuildVcRecapPage({
   params,
   searchParams,
 }: {
@@ -373,3 +374,5 @@ function formatDateTime(value: Date): string {
     timeZone: 'Asia/Tokyo',
   }).format(value);
 }
+
+export default withStudioPagePermission(GuildVcRecapPage, 'vc-recap');

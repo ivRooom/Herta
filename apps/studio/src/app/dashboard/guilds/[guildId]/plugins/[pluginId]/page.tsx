@@ -15,12 +15,13 @@ import {
   filterReadablePluginConfig,
   resolvePluginConfigStudioAccess,
 } from '@/lib/studio-plugin-permissions';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
-export default async function PluginDetailPage({
+async function PluginDetailPage({
   params,
   searchParams,
 }: {
@@ -232,3 +233,5 @@ function ManagementLink({
     </Link>
   );
 }
+
+export default withStudioPagePermission(PluginDetailPage, 'plugins');

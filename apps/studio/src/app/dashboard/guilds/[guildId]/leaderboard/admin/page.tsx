@@ -6,14 +6,11 @@ import { LeaderboardXpAdmin } from '@/components/leaderboard-xp-admin';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
 import { getXpAdminGuildSummary } from '@/lib/xp-admin';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
-export default async function LeaderboardAdminPage({
-  params,
-}: {
-  params: Promise<{ guildId: string }>;
-}) {
+async function LeaderboardAdminPage({ params }: { params: Promise<{ guildId: string }> }) {
   const { guildId } = await params;
   const session = await auth();
   const accessToken = await getDiscordAccessToken();
@@ -57,3 +54,5 @@ export default async function LeaderboardAdminPage({
     </div>
   );
 }
+
+export default withStudioPagePermission(LeaderboardAdminPage, 'leaderboard');

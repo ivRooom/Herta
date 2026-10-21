@@ -31,6 +31,7 @@ import {
   shiftMessageStudioCalendarMonth,
   type MessageStudioCalendarOccurrence,
 } from '@/lib/message-studio-calendar';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,7 +39,7 @@ const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'] as const;
 const MAX_OCCURRENCES_PER_SCHEDULE = 100;
 const CONFLICT_KEY_SEPARATOR = '|';
 
-export default async function MessageStudioCalendarPage({
+async function MessageStudioCalendarPage({
   params,
   searchParams,
 }: {
@@ -384,3 +385,5 @@ function Metric({
     </div>
   );
 }
+
+export default withStudioPagePermission(MessageStudioCalendarPage, 'message-studio');

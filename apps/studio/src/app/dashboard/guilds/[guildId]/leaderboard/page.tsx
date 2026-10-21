@@ -38,12 +38,13 @@ import {
 import { getCommunityLeaderboardSnapshot } from '@/lib/community-leaderboard';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
-export default async function CommunityLeaderboardPage({
+async function CommunityLeaderboardPage({
   params,
   searchParams,
 }: {
@@ -583,3 +584,5 @@ function minCustomDate(now: Date): string {
   const tenYearsAgo = new Date(now.getTime() - 3_653 * 86_400_000);
   return new Date(tenYearsAgo.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
+
+export default withStudioPagePermission(CommunityLeaderboardPage, 'leaderboard');

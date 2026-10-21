@@ -17,14 +17,11 @@ import { prisma } from '@/lib/db';
 import { authorizeStudioPermission } from '@/lib/studio-access';
 import { STUDIO_ROOT_DISCORD_ROLE_ID } from '@/lib/studio-access-policy';
 import { listStudioRolePolicies } from '@/lib/studio-role-policy-store';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
-export default async function GuildRoleManagerPage({
-  params,
-}: {
-  params: Promise<{ guildId: string }>;
-}) {
+async function GuildRoleManagerPage({ params }: { params: Promise<{ guildId: string }> }) {
   const session = await auth();
   if (!session?.user) notFound();
   const { guildId } = await params;
@@ -225,3 +222,5 @@ function AccessUnavailable({ guildId, status }: { guildId: string; status: numbe
     </div>
   );
 }
+
+export default withStudioPagePermission(GuildRoleManagerPage, 'roles');

@@ -11,14 +11,11 @@ import {
 import { getManageableGuild } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
 import { auth } from '@/auth';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
-export default async function GuildCommandsPage({
-  params,
-}: {
-  params: Promise<{ guildId: string }>;
-}) {
+async function GuildCommandsPage({ params }: { params: Promise<{ guildId: string }> }) {
   const session = await auth();
   const accessToken = await getDiscordAccessToken();
   const { guildId } = await params;
@@ -119,3 +116,5 @@ function CatalogUnavailable({ guildId, status }: { guildId: string; status: numb
     </section>
   );
 }
+
+export default withStudioPagePermission(GuildCommandsPage, 'commands');

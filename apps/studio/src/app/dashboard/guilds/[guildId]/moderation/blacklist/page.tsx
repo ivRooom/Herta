@@ -11,10 +11,11 @@ import { prisma } from '@/lib/db';
 import { getDiscordAccessToken } from '@/lib/session';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
-export default async function ModerationBlacklistPage({
+async function ModerationBlacklistPage({
   params,
   searchParams,
 }: {
@@ -166,3 +167,5 @@ function formatDate(value: Date): string {
     timeZone: 'Asia/Tokyo',
   }).format(value);
 }
+
+export default withStudioPagePermission(ModerationBlacklistPage, 'moderation-blacklist');

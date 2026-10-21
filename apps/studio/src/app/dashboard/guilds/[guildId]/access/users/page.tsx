@@ -6,12 +6,13 @@ import { AccessResourceNavigation } from '@/components/access-resource-navigatio
 import { authorizeStudioPermission } from '@/lib/studio-access';
 import { loadStudioAccessInventory } from '@/lib/studio-access-inventory';
 import { studioAccessPageResource } from '@/lib/studio-policy-resources';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
-export default async function AccessUsersPage({
+async function AccessUsersPage({
   params,
   searchParams,
 }: {
@@ -203,3 +204,5 @@ function AccessDenied({ guildId }: { guildId: string }) {
     </div>
   );
 }
+
+export default withStudioPagePermission(AccessUsersPage, 'access');
