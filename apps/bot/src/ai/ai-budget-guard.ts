@@ -30,11 +30,11 @@ function isPreDispatchFailure(error: unknown): boolean {
  * 通過してしまうレースコンディションがある)。
  *
  * worstCaseRequestMicroUsd(通常はグローバルなperRequestCostLimitMicroUsd)が月次予算自体より
- * 大きいと、reserveが常に上限超過で拒否され続けてしまう(例: 既定の1リクエスト上限$0.12に
- * 対し月次予算$0.10を設定した場合、どんなリクエストも通らなくなる。Codexレビュー指摘)。
- * 実際のprovider/model/入力長に応じた正確な見積りはwrapper層からは計算できないため、
- * reserve量を月次予算そのもの(limitMicroUsd)で頭打ちすることで、少なくとも
- * 「予算全体より1requestの保守的見積りの方が大きい」ケースを回避する。
+ * 大きいと、reserveが常に上限超過で拒否される(例: 既定の1リクエスト上限$0.12に対し月次予算
+ * $0.10を設定した場合、どんなリクエストも通らない)。これは正しい挙動として維持する
+ * (Codexレビュー指摘: reserve量を予算で頭打ちして無理に通すと、実際には最大$0.12かかりうる
+ * リクエストを「通る」ことにしてしまい、settle後に予算を実際に超過してしまう。見積りが
+ * 予算に収まらないなら、素直に拒否するのが正しい)。
  *
  * 予算のreserve/settle(DB書き込み)が失敗した場合はfail-open(呼び出しを許可)する。月次予算は
  * 暴走防止の多層防御の一つであり、DB一時障害でAI機能全体を止めない方を優先する。
@@ -45,14 +45,13 @@ export function wrapWithGuildMonthlyBudgetGuard(
 ): AiRuntimeGenerationService {
   if (options.budgetUsd <= 0) return inner;
   const limitMicroUsd = Math.round(options.budgetUsd * 1_000_000);
-  const reserveAmountMicroUsd = Math.min(options.worstCaseRequestMicroUsd, limitMicroUsd);
 
   return {
     consumeRateLimit: inner.consumeRateLimit?.bind(inner),
     async generate(request: AiRuntimeGenerationRequest) {
       const reservation = await reserveGuildMonthlyBudget(options.prisma, {
         guildId: request.guildId,
-        amountMicroUsd: reserveAmountMicroUsd,
+        amountMicroUsd: options.worstCaseRequestMicroUsd,
         limitMicroUsd,
       }).catch(() => ({
         allowed: true,
@@ -76,7 +75,7 @@ export function wrapWithGuildMonthlyBudgetGuard(
             options.prisma,
             request.guildId,
             reservation.periodStart,
-            actualMicroUsd - reserveAmountMicroUsd,
+            actualMicroUsd - options.worstCaseRequestMicroUsd,
           ).catch(() => undefined);
         }
         return response;
@@ -88,7 +87,7 @@ export function wrapWithGuildMonthlyBudgetGuard(
             options.prisma,
             request.guildId,
             reservation.periodStart,
-            -reserveAmountMicroUsd,
+            -options.worstCaseRequestMicroUsd,
           ).catch(() => undefined);
         }
         throw error;

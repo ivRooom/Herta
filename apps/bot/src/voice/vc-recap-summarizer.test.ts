@@ -327,7 +327,7 @@ describe('summarizeVcRecapSession', () => {
     expect(settleGuildMonthlyBudgetDeltaMock).not.toHaveBeenCalled();
   });
 
-  it('予算が見積りコストより小さい場合、予約額は予算額で頭打ちする', async () => {
+  it('予算が見積りコストより小さい場合、予約額を頭打ちせず素直に拒否する', async () => {
     reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
       allowed: false,
       reserved: false,
@@ -340,9 +340,11 @@ describe('summarizeVcRecapSession', () => {
       HERTA_AI_GUILD_MONTHLY_BUDGET_USD: '0.000001',
     });
     expect(result).toBeNull();
-    expect(reserveGuildMonthlyBudgetMock).toHaveBeenCalledWith(
-      prisma,
-      expect.objectContaining({ amountMicroUsd: 1, limitMicroUsd: 1 }),
-    );
+    // 予約額は頭打ちされず、本来の見積り(1より大きい)のまま渡す。収まらなければ拒否するのが
+    // 正しい(Codexレビュー指摘)。
+    const call = reserveGuildMonthlyBudgetMock.mock.calls.at(-1)?.[1] as
+      { amountMicroUsd: number; limitMicroUsd: number } | undefined;
+    expect(call?.limitMicroUsd).toBe(1);
+    expect(call?.amountMicroUsd).toBeGreaterThan(1);
   });
 });

@@ -154,14 +154,14 @@ export class OpenAiRuntimeGenerationService implements AiRuntimeGenerationServic
       runtime = await this.runtimeResolver.resolve();
     } catch {
       // Persisted invalid/unsupported runtime configuration must never silently downgrade.
-      throw new AiFoundationError('internal_error');
+      throw new AiFoundationError('internal_error', { dispatched: false });
     }
     const selection = applyAiRuntimeSelectionOverride(runtime.selection, request.runtimeOverride);
 
     if (selection.provider !== 'openai') {
       // Only implemented providers can reach a provider adapter. Future provider PRs extend
       // this dispatch explicitly rather than accepting arbitrary provider strings.
-      throw new AiFoundationError('disabled');
+      throw new AiFoundationError('disabled', { dispatched: false });
     }
 
     let conversationPolicy: AiConversationPolicy;
@@ -182,7 +182,7 @@ export class OpenAiRuntimeGenerationService implements AiRuntimeGenerationServic
       }
     } catch {
       // Response mode / grounding / capability instructions are trusted server policy inputs.
-      throw new AiFoundationError('internal_error');
+      throw new AiFoundationError('internal_error', { dispatched: false });
     }
 
     const userInput = validateAndNormalizeUserInput(request.input, this.baseConfig);
@@ -314,14 +314,14 @@ export class AnthropicRuntimeGenerationService implements AiRuntimeGenerationSer
     try {
       runtime = await this.runtimeResolver.resolve();
     } catch {
-      throw new AiFoundationError('internal_error');
+      throw new AiFoundationError('internal_error', { dispatched: false });
     }
     const selection = applyAiRuntimeSelectionOverride(runtime.selection, request.runtimeOverride);
 
     if (selection.provider !== 'anthropic') {
       // Mirrors OpenAiRuntimeGenerationService's explicit allowlist dispatch: only implemented
       // providers reach a provider adapter.
-      throw new AiFoundationError('disabled');
+      throw new AiFoundationError('disabled', { dispatched: false });
     }
 
     let conversationPolicy: AiConversationPolicy;
@@ -339,7 +339,7 @@ export class AnthropicRuntimeGenerationService implements AiRuntimeGenerationSer
         };
       }
     } catch {
-      throw new AiFoundationError('internal_error');
+      throw new AiFoundationError('internal_error', { dispatched: false });
     }
 
     const userInput = validateAndNormalizeUserInput(request.input, this.baseConfig);
@@ -454,14 +454,14 @@ export class GoogleRuntimeGenerationService implements AiRuntimeGenerationServic
     try {
       runtime = await this.runtimeResolver.resolve();
     } catch {
-      throw new AiFoundationError('internal_error');
+      throw new AiFoundationError('internal_error', { dispatched: false });
     }
     const selection = applyAiRuntimeSelectionOverride(runtime.selection, request.runtimeOverride);
 
     if (selection.provider !== 'google') {
       // Mirrors OpenAiRuntimeGenerationService/AnthropicRuntimeGenerationService's explicit
       // allowlist dispatch: only implemented providers reach a provider adapter.
-      throw new AiFoundationError('disabled');
+      throw new AiFoundationError('disabled', { dispatched: false });
     }
 
     let conversationPolicy: AiConversationPolicy;
@@ -479,7 +479,7 @@ export class GoogleRuntimeGenerationService implements AiRuntimeGenerationServic
         };
       }
     } catch {
-      throw new AiFoundationError('internal_error');
+      throw new AiFoundationError('internal_error', { dispatched: false });
     }
 
     const userInput = validateAndNormalizeUserInput(request.input, this.baseConfig);
@@ -594,14 +594,14 @@ export class MoonshotRuntimeGenerationService implements AiRuntimeGenerationServ
     try {
       runtime = await this.runtimeResolver.resolve();
     } catch {
-      throw new AiFoundationError('internal_error');
+      throw new AiFoundationError('internal_error', { dispatched: false });
     }
     const selection = applyAiRuntimeSelectionOverride(runtime.selection, request.runtimeOverride);
 
     if (selection.provider !== 'moonshot') {
       // Mirrors the other single-provider runtime services' explicit allowlist dispatch: only
       // implemented providers reach a provider adapter.
-      throw new AiFoundationError('disabled');
+      throw new AiFoundationError('disabled', { dispatched: false });
     }
 
     let conversationPolicy: AiConversationPolicy;
@@ -619,7 +619,7 @@ export class MoonshotRuntimeGenerationService implements AiRuntimeGenerationServ
         };
       }
     } catch {
-      throw new AiFoundationError('internal_error');
+      throw new AiFoundationError('internal_error', { dispatched: false });
     }
 
     const userInput = validateAndNormalizeUserInput(request.input, this.baseConfig);
@@ -734,14 +734,14 @@ export class XaiRuntimeGenerationService implements AiRuntimeGenerationService {
     try {
       runtime = await this.runtimeResolver.resolve();
     } catch {
-      throw new AiFoundationError('internal_error');
+      throw new AiFoundationError('internal_error', { dispatched: false });
     }
     const selection = applyAiRuntimeSelectionOverride(runtime.selection, request.runtimeOverride);
 
     if (selection.provider !== 'xai') {
       // Mirrors the other single-provider runtime services' explicit allowlist dispatch: only
       // implemented providers reach a provider adapter.
-      throw new AiFoundationError('disabled');
+      throw new AiFoundationError('disabled', { dispatched: false });
     }
 
     let conversationPolicy: AiConversationPolicy;
@@ -759,7 +759,7 @@ export class XaiRuntimeGenerationService implements AiRuntimeGenerationService {
         };
       }
     } catch {
-      throw new AiFoundationError('internal_error');
+      throw new AiFoundationError('internal_error', { dispatched: false });
     }
 
     const userInput = validateAndNormalizeUserInput(request.input, this.baseConfig);
@@ -872,14 +872,14 @@ export class DeepseekRuntimeGenerationService implements AiRuntimeGenerationServ
     try {
       runtime = await this.runtimeResolver.resolve();
     } catch {
-      throw new AiFoundationError('internal_error');
+      throw new AiFoundationError('internal_error', { dispatched: false });
     }
     const selection = applyAiRuntimeSelectionOverride(runtime.selection, request.runtimeOverride);
 
     if (selection.provider !== 'deepseek') {
       // Mirrors the other single-provider runtime services' explicit allowlist dispatch: only
       // implemented providers reach a provider adapter.
-      throw new AiFoundationError('disabled');
+      throw new AiFoundationError('disabled', { dispatched: false });
     }
 
     let conversationPolicy: AiConversationPolicy;
@@ -897,7 +897,7 @@ export class DeepseekRuntimeGenerationService implements AiRuntimeGenerationServ
         };
       }
     } catch {
-      throw new AiFoundationError('internal_error');
+      throw new AiFoundationError('internal_error', { dispatched: false });
     }
 
     const userInput = validateAndNormalizeUserInput(request.input, this.baseConfig);
@@ -980,14 +980,14 @@ export class MultiProviderAiRuntimeGenerationService implements AiRuntimeGenerat
         provider = runtime.selection.provider;
       }
     } catch {
-      throw new AiFoundationError('internal_error');
+      throw new AiFoundationError('internal_error', { dispatched: false });
     }
 
     const service = this.services[provider];
     if (!service) {
       // The selected provider has no bootstrapped credential/adapter. Fail closed rather than
       // silently using a different provider's service.
-      throw new AiFoundationError('disabled');
+      throw new AiFoundationError('disabled', { dispatched: false });
     }
     return service.generate(request);
   }
@@ -1542,12 +1542,16 @@ function withDeepseekRuntimePolicy(
 }
 
 function validateAndNormalizeUserInput(input: string, config: AiFoundationConfig): string {
-  if (typeof input !== 'string') throw new AiFoundationError('invalid_input');
+  if (typeof input !== 'string') {
+    throw new AiFoundationError('invalid_input', { dispatched: false });
+  }
   const normalized = input.trim();
   const chars = characterLength(normalized);
-  if (chars < 1 || chars > config.maxInputChars) throw new AiFoundationError('invalid_input');
+  if (chars < 1 || chars > config.maxInputChars) {
+    throw new AiFoundationError('invalid_input', { dispatched: false });
+  }
   if (utf8ByteLength(normalized) > config.maxInputBytes) {
-    throw new AiFoundationError('invalid_input');
+    throw new AiFoundationError('invalid_input', { dispatched: false });
   }
   return normalized;
 }

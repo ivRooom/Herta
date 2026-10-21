@@ -36,16 +36,14 @@ describe('wrapWithGuildMonthlyBudgetGuard', () => {
     expect(wrapped).toBe(inner);
   });
 
-  it('予算が1リクエスト上限より小さい場合、予約額は予算額で頭打ちする', async () => {
+  it('予算が1リクエスト上限より小さい場合、予約額を頭打ちせず素直に拒否する', async () => {
     reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
-      allowed: true,
-      reserved: true,
-      reservedTotalMicroUsd: 100_000,
+      allowed: false,
+      reserved: false,
+      reservedTotalMicroUsd: 0,
       periodStart: PERIOD_START,
     });
-    const inner = {
-      generate: vi.fn().mockResolvedValue({ requestId: 'r0', estimatedCost: 0.00005 }),
-    } as unknown as AiRuntimeGenerationService;
+    const inner = { generate: vi.fn() } as unknown as AiRuntimeGenerationService;
     // 月次予算$0.10(=100,000 micro USD) < worstCaseRequestMicroUsd(既定の$0.12=120,000)。
     const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, {
       prisma: {} as never,
@@ -53,11 +51,17 @@ describe('wrapWithGuildMonthlyBudgetGuard', () => {
       worstCaseRequestMicroUsd: 120_000,
     });
 
-    await wrapped.generate(baseRequest);
+    await expect(wrapped.generate(baseRequest)).rejects.toThrowError(
+      expect.objectContaining({ category: 'quota_exceeded' }),
+    );
+    // 予約額は頭打ちされず、本来の見積り(120,000)のまま渡す。収まらなければ拒否するのが
+    // 正しい(Codexレビュー指摘: 予算で頭打ちすると、実際には最大$0.12かかりうるリクエストを
+    // 「通る」ことにしてしまい、settle後に予算を実際に超過してしまう)。
     expect(reserveGuildMonthlyBudgetMock).toHaveBeenCalledWith(
       {},
-      expect.objectContaining({ amountMicroUsd: 100_000, limitMicroUsd: 100_000 }),
+      expect.objectContaining({ amountMicroUsd: 120_000, limitMicroUsd: 100_000 }),
     );
+    expect(inner.generate).not.toHaveBeenCalled();
   });
 
   it('consumeRateLimitはinnerへそのまま委譲する', async () => {

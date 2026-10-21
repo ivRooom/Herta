@@ -135,11 +135,13 @@ export async function summarizeVcRecapSession(
   let worstCaseMicroUsd = 0;
   if (guildMonthlyBudgetUsd > 0) {
     const limitMicroUsd = Math.round(guildMonthlyBudgetUsd * 1_000_000);
-    // 予算自体が1回の見積りコストより小さいと、reserveが常に上限超過で拒否され続けてしまう
-    // (Codexレビュー指摘、ai-budget-guard.tsと同じ対応)。予算そのもので頭打ちする。
-    worstCaseMicroUsd = Math.min(
-      estimateOpenAiCostMicroUsd(SUMMARY_MODEL, estimateInputTokens(prompt), MAX_OUTPUT_TOKENS),
-      limitMicroUsd,
+    // 予算自体が1回の見積りコストより小さい場合、そのまま拒否されるのが正しい(Codexレビュー
+    // 指摘: reserve量を予算で頭打ちして無理に通すと、実際にはそれ以上かかりうる要約を
+    // 「通る」ことにしてしまい、settle後に予算を実際に超過してしまう)。
+    worstCaseMicroUsd = estimateOpenAiCostMicroUsd(
+      SUMMARY_MODEL,
+      estimateInputTokens(prompt),
+      MAX_OUTPUT_TOKENS,
     );
     reservation = await reserveGuildMonthlyBudget(prisma, {
       guildId,
