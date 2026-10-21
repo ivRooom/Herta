@@ -326,4 +326,23 @@ describe('summarizeVcRecapSession', () => {
     // reserved:false(何も書き込まれていない)なので、settleは呼ばれない(Codexレビュー指摘)。
     expect(settleGuildMonthlyBudgetDeltaMock).not.toHaveBeenCalled();
   });
+
+  it('予算が見積りコストより小さい場合、予約額は予算額で頭打ちする', async () => {
+    reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
+      allowed: false,
+      reserved: false,
+      reservedTotalMicroUsd: 1,
+      periodStart: new Date(0),
+    });
+    const result = await summarizeVcRecapSession(prisma, 'guild-1', [segment('u1', 'hello')], {
+      ...ENABLED_ENV,
+      // 1 micro USD(=0.000001 USD)という極端に小さい予算。見積りコストは必ずこれより大きい。
+      HERTA_AI_GUILD_MONTHLY_BUDGET_USD: '0.000001',
+    });
+    expect(result).toBeNull();
+    expect(reserveGuildMonthlyBudgetMock).toHaveBeenCalledWith(
+      prisma,
+      expect.objectContaining({ amountMicroUsd: 1, limitMicroUsd: 1 }),
+    );
+  });
 });

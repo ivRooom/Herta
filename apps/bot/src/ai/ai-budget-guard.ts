@@ -4,35 +4,16 @@ import { AiFoundationError } from '@herta/plugin-catalog/ai-service';
 import type { AiRuntimeGenerationRequest, AiRuntimeGenerationService } from './runtime-service.js';
 
 /**
- * provider呼び出し(実コスト発生の可能性がある区間)へ到達する前に確実に失敗するカテゴリ。
- * AiFoundationService.generate()はkill-switch/authorized/pluginEnabled/guildOptIn/入力検証/
- * 自前のuser・guild rate limitの判定を全てprovider呼び出しより前に行うため、これらのエラーは
- * providerへ到達していないと断定できる(=実コストは発生していない=reserve分を全額
- * 安全に解放できる)。
- *
- * 'quota_exceeded'は意図的にこの集合へ含めない。AiFoundationService.generate()は
- * reservationMicroUsdの事前チェック(provider呼び出し前)に加えて、provider呼び出し・Redisの
- * 短期guildQuota settle後にも同じ'quota_exceeded'カテゴリを投げる(estimatedCostMicroUsdが
- * perRequestCostLimitMicroUsdを超えた場合・settledTotalがguildQuotaMicroUsdを超えた場合。
- * 特にMCPツール呼び出しで2回目のprovider呼び出し分のトークンが上乗せされるとこちらに
- * 到達しやすい)。カテゴリ名だけではどちらが原因か判別できないため、Codexレビュー指摘の
- * 通り常に保守的にreserveを保持する側(=このSetに含めない)とする。
- *
- * それ以外(timeout・provider_unavailable・provider_rejected・malformed_response・
- * output_too_large・internal_error、およびAiFoundationError以外の例外)も同様に、provider
- * 呼び出しが既に発生済みで課金の有無が不明なケースを含むため、reserve分を解放せず
- * 保守的に保持する(解放すると、失敗を繰り返すことで月次予算を実質無制限に超過できて
- * しまう)。
+ * provider呼び出しに到達する前に確実に失敗したか(=実コストは発生していない=reserve分を
+ * 全額安全に解放できる)。'quota_exceeded'のように、AiFoundationService.generate()内で
+ * provider呼び出しの前後どちらでも発生しうるカテゴリがあり、カテゴリ名だけでは判別できない
+ * ため(Codexレビュー指摘)、AiFoundationErrorが持つ`dispatched`フラグ(provider呼び出しが
+ * 実際に発生した可能性があるかをAiFoundationService自身が判断して設定する)を使う。
+ * AiFoundationError以外の例外は、provider呼び出し中に投げられた可能性を否定できないため
+ * 保守的に「解放しない」側として扱う。
  */
-const PRE_DISPATCH_FAILURE_CATEGORIES = new Set([
-  'disabled',
-  'unauthorized',
-  'rate_limited',
-  'invalid_input',
-]);
-
 function isPreDispatchFailure(error: unknown): boolean {
-  return error instanceof AiFoundationError && PRE_DISPATCH_FAILURE_CATEGORIES.has(error.category);
+  return error instanceof AiFoundationError && !error.dispatched;
 }
 
 /**
@@ -48,6 +29,13 @@ function isPreDispatchFailure(error: unknown): boolean {
  * (単純な「現在の消費量を読んで比較する」実装だと、並行リクエストが同じ値を読んで同時に
  * 通過してしまうレースコンディションがある)。
  *
+ * worstCaseRequestMicroUsd(通常はグローバルなperRequestCostLimitMicroUsd)が月次予算自体より
+ * 大きいと、reserveが常に上限超過で拒否され続けてしまう(例: 既定の1リクエスト上限$0.12に
+ * 対し月次予算$0.10を設定した場合、どんなリクエストも通らなくなる。Codexレビュー指摘)。
+ * 実際のprovider/model/入力長に応じた正確な見積りはwrapper層からは計算できないため、
+ * reserve量を月次予算そのもの(limitMicroUsd)で頭打ちすることで、少なくとも
+ * 「予算全体より1requestの保守的見積りの方が大きい」ケースを回避する。
+ *
  * 予算のreserve/settle(DB書き込み)が失敗した場合はfail-open(呼び出しを許可)する。月次予算は
  * 暴走防止の多層防御の一つであり、DB一時障害でAI機能全体を止めない方を優先する。
  */
@@ -57,13 +45,14 @@ export function wrapWithGuildMonthlyBudgetGuard(
 ): AiRuntimeGenerationService {
   if (options.budgetUsd <= 0) return inner;
   const limitMicroUsd = Math.round(options.budgetUsd * 1_000_000);
+  const reserveAmountMicroUsd = Math.min(options.worstCaseRequestMicroUsd, limitMicroUsd);
 
   return {
     consumeRateLimit: inner.consumeRateLimit?.bind(inner),
     async generate(request: AiRuntimeGenerationRequest) {
       const reservation = await reserveGuildMonthlyBudget(options.prisma, {
         guildId: request.guildId,
-        amountMicroUsd: options.worstCaseRequestMicroUsd,
+        amountMicroUsd: reserveAmountMicroUsd,
         limitMicroUsd,
       }).catch(() => ({
         allowed: true,
@@ -73,7 +62,7 @@ export function wrapWithGuildMonthlyBudgetGuard(
       }));
 
       if (!reservation.allowed) {
-        throw new AiFoundationError('quota_exceeded');
+        throw new AiFoundationError('quota_exceeded', { dispatched: false });
       }
 
       try {
@@ -87,7 +76,7 @@ export function wrapWithGuildMonthlyBudgetGuard(
             options.prisma,
             request.guildId,
             reservation.periodStart,
-            actualMicroUsd - options.worstCaseRequestMicroUsd,
+            actualMicroUsd - reserveAmountMicroUsd,
           ).catch(() => undefined);
         }
         return response;
@@ -99,7 +88,7 @@ export function wrapWithGuildMonthlyBudgetGuard(
             options.prisma,
             request.guildId,
             reservation.periodStart,
-            -options.worstCaseRequestMicroUsd,
+            -reserveAmountMicroUsd,
           ).catch(() => undefined);
         }
         throw error;

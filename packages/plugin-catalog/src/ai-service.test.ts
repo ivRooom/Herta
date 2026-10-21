@@ -483,8 +483,41 @@ describe('AiFoundationService', () => {
       provider,
       guardStore: new MemoryGuardStore(),
     });
-    await expectCategory(service.generate(makeRequest({ input: 'a' })), 'quota_exceeded');
+    const error = (await service.generate(makeRequest({ input: 'a' })).catch((e: unknown) => e)) as
+      AiFoundationError | undefined;
+    expect(error?.category).toBe('quota_exceeded');
+    // provider呼び出し前の失敗なのでdispatched:false(Guild月次AI予算のreserve/settleが
+    // この値を使って安全に解放判断できる。Issue #519のPR #543参照)。
+    expect(error?.dispatched).toBe(false);
     expect(provider.generate).not.toHaveBeenCalled();
+  });
+
+  it('provider呼び出し後に実測コストがper-request上限を超えた場合はquota_exceeded(dispatched:true)で拒否する', async () => {
+    // maxOutputTokens:1によりprovider呼び出し前の見積り(=preflightのreservationMicroUsd)は
+    // 小さく抑えられ、guildQuotaMicroUsd・perRequestCostLimitMicroUsdの事前チェックは通過する。
+    // provider自体が返す実際のusage(outputTokens: 100,000、見積りを大きく上回る)によって
+    // 初めてperRequestCostLimitMicroUsdを超過させ、provider呼び出し後の分岐を狙い撃ちする。
+    const provider = staticProvider({
+      text: '回答です',
+      usage: { inputTokens: 5, outputTokens: 100_000, totalTokens: 100_005 },
+    });
+    const service = new AiFoundationService({
+      config: makeConfig({
+        guildQuotaMicroUsd: 10_000_000,
+        maxOutputTokens: 1,
+        perRequestCostLimitMicroUsd: 100,
+      }),
+      provider,
+      guardStore: new MemoryGuardStore(),
+    });
+    const error = (await service.generate(makeRequest()).catch((e: unknown) => e)) as
+      AiFoundationError | undefined;
+    expect(provider.generate).toHaveBeenCalled();
+    expect(error?.category).toBe('quota_exceeded');
+    // provider呼び出し後(実usage判明後)の失敗なので、dispatched:falseにしてはいけない
+    // (Codexレビュー指摘: カテゴリ名だけでは判別できないため、AiFoundationService自身が
+    // provider呼び出し後は既定のtrueのまま設定する)。
+    expect(error?.dispatched).toBe(true);
   });
 
   it('per-request cost guardをquota予約前に強制する', async () => {

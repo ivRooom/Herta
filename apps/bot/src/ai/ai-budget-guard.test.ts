@@ -36,6 +36,30 @@ describe('wrapWithGuildMonthlyBudgetGuard', () => {
     expect(wrapped).toBe(inner);
   });
 
+  it('予算が1リクエスト上限より小さい場合、予約額は予算額で頭打ちする', async () => {
+    reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
+      allowed: true,
+      reserved: true,
+      reservedTotalMicroUsd: 100_000,
+      periodStart: PERIOD_START,
+    });
+    const inner = {
+      generate: vi.fn().mockResolvedValue({ requestId: 'r0', estimatedCost: 0.00005 }),
+    } as unknown as AiRuntimeGenerationService;
+    // 月次予算$0.10(=100,000 micro USD) < worstCaseRequestMicroUsd(既定の$0.12=120,000)。
+    const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, {
+      prisma: {} as never,
+      budgetUsd: 0.1,
+      worstCaseRequestMicroUsd: 120_000,
+    });
+
+    await wrapped.generate(baseRequest);
+    expect(reserveGuildMonthlyBudgetMock).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({ amountMicroUsd: 100_000, limitMicroUsd: 100_000 }),
+    );
+  });
+
   it('consumeRateLimitはinnerへそのまま委譲する', async () => {
     const consumeRateLimit = vi.fn().mockResolvedValue(undefined);
     const inner = { generate: vi.fn(), consumeRateLimit } as unknown as AiRuntimeGenerationService;
@@ -112,7 +136,11 @@ describe('wrapWithGuildMonthlyBudgetGuard', () => {
       periodStart: PERIOD_START,
     });
     const inner = {
-      generate: vi.fn().mockRejectedValue(new AiFoundationError('rate_limited')),
+      // AiFoundationService.generate()は、provider呼び出し前のrate_limited判定では
+      // dispatched:falseを明示的に設定する。
+      generate: vi
+        .fn()
+        .mockRejectedValue(new AiFoundationError('rate_limited', { dispatched: false })),
     } as unknown as AiRuntimeGenerationService;
     const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, {
       prisma: {} as never,
@@ -122,6 +150,37 @@ describe('wrapWithGuildMonthlyBudgetGuard', () => {
 
     await expect(wrapped.generate(baseRequest)).rejects.toThrowError(
       expect.objectContaining({ category: 'rate_limited' }),
+    );
+    expect(settleGuildMonthlyBudgetDeltaMock).toHaveBeenCalledWith(
+      {},
+      'guild-1',
+      PERIOD_START,
+      -120_000,
+    );
+  });
+
+  it('provider呼び出し前のquota_exceeded(dispatched:false)はreserve分を全額解放する', async () => {
+    settleGuildMonthlyBudgetDeltaMock.mockClear();
+    reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
+      allowed: true,
+      reserved: true,
+      reservedTotalMicroUsd: 120_000,
+      periodStart: PERIOD_START,
+    });
+    const inner = {
+      // 短期Redis guildQuota超過など、provider呼び出し前のquota_exceeded。
+      generate: vi
+        .fn()
+        .mockRejectedValue(new AiFoundationError('quota_exceeded', { dispatched: false })),
+    } as unknown as AiRuntimeGenerationService;
+    const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, {
+      prisma: {} as never,
+      budgetUsd: 10,
+      worstCaseRequestMicroUsd: 120_000,
+    });
+
+    await expect(wrapped.generate(baseRequest)).rejects.toThrowError(
+      expect.objectContaining({ category: 'quota_exceeded' }),
     );
     expect(settleGuildMonthlyBudgetDeltaMock).toHaveBeenCalledWith(
       {},
