@@ -21,7 +21,7 @@
     "@herta/rule-engine": "workspace:*",
     "@herta/db": "workspace:*",
     "@aws-sdk/client-transcribe-streaming": "^3.908.0",
-    "@discordjs/voice": "^0.18.0",
+    "@discordjs/voice": "^0.19.2",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "discord.js": "^14.27.0",
     "ioredis": "^5.4.2",
