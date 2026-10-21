@@ -3,14 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { summarizeVcRecapSession } from './vc-recap-summarizer.js';
 
 const resolveAiOpenAiCredentialMock = vi.fn();
-const reserveGuildMonthlyBudgetMock = vi
-  .fn()
-  .mockResolvedValue({
-    allowed: true,
-    reserved: true,
-    reservedTotalMicroUsd: 0,
-    periodStart: new Date(0),
-  });
+const reserveGuildMonthlyBudgetMock = vi.fn().mockResolvedValue({
+  allowed: true,
+  reserved: true,
+  reservedTotalMicroUsd: 0,
+  periodStart: new Date(0),
+});
 const settleGuildMonthlyBudgetDeltaMock = vi.fn().mockResolvedValue(undefined);
 const recordAiGenerationEventMock = vi.fn().mockResolvedValue(undefined);
 
