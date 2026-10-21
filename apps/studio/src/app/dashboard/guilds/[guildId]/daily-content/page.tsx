@@ -28,14 +28,11 @@ import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
 import { getDiscordAccessToken } from '@/lib/session';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
-export default async function DailyContentPage({
-  params,
-}: {
-  params: Promise<{ guildId: string }>;
-}) {
+async function DailyContentPage({ params }: { params: Promise<{ guildId: string }> }) {
   const { guildId } = await params;
   const session = await auth();
   const accessToken = await getDiscordAccessToken();
@@ -227,3 +224,5 @@ function Metric({
     </div>
   );
 }
+
+export default withStudioPagePermission(DailyContentPage, 'message-studio');

@@ -11,14 +11,11 @@ import {
   buildStudioGranularPermissionOptions,
   studioAccessPageResource,
 } from '@/lib/studio-policy-resources';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AccessPoliciesPage({
-  params,
-}: {
-  params: Promise<{ guildId: string }>;
-}) {
+async function AccessPoliciesPage({ params }: { params: Promise<{ guildId: string }> }) {
   const session = await auth();
   if (!session?.user) notFound();
   const { guildId } = await params;
@@ -152,3 +149,5 @@ function AccessDenied({ guildId }: { guildId: string }) {
     </div>
   );
 }
+
+export default withStudioPagePermission(AccessPoliciesPage, 'access');

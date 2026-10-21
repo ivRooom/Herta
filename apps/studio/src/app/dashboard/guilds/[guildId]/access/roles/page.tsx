@@ -6,14 +6,11 @@ import { AccessResourceNavigation } from '@/components/access-resource-navigatio
 import { authorizeStudioPermission } from '@/lib/studio-access';
 import { loadStudioAccessInventory } from '@/lib/studio-access-inventory';
 import { studioAccessPageResource } from '@/lib/studio-policy-resources';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
-export default async function AccessRolesPage({
-  params,
-}: {
-  params: Promise<{ guildId: string }>;
-}) {
+async function AccessRolesPage({ params }: { params: Promise<{ guildId: string }> }) {
   const session = await auth();
   if (!session?.user) notFound();
   const { guildId } = await params;
@@ -151,3 +148,5 @@ function AccessDenied({ guildId }: { guildId: string }) {
     </div>
   );
 }
+
+export default withStudioPagePermission(AccessRolesPage, 'access');

@@ -21,14 +21,11 @@ import {
   resolvePluginConfigStudioAccess,
 } from '@/lib/studio-plugin-permissions';
 import { studioBirthdayResource } from '@/lib/studio-policy-resources';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
-export default async function BirthdayAdminPage({
-  params,
-}: {
-  params: Promise<{ guildId: string }>;
-}) {
+async function BirthdayAdminPage({ params }: { params: Promise<{ guildId: string }> }) {
   const { guildId } = await params;
   const session = await auth();
   const accessToken = await getDiscordAccessToken();
@@ -252,3 +249,5 @@ function PermissionNotice({ children }: { children: ReactNode }) {
     </section>
   );
 }
+
+export default withStudioPagePermission(BirthdayAdminPage, 'birthday');

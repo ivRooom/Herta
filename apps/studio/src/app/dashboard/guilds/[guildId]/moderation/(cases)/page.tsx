@@ -13,12 +13,13 @@ import { prisma } from '@/lib/db';
 import { getDiscordAccessToken } from '@/lib/session';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
-export default async function ModerationCasesPage({
+async function ModerationCasesPage({
   params,
   searchParams,
 }: {
@@ -351,3 +352,5 @@ function sourceLabel(source: ModerationCaseRecord['source']): string {
 function truncate(value: string, maxLength: number): string {
   return value.length <= maxLength ? value : `${value.slice(0, maxLength - 1)}…`;
 }
+
+export default withStudioPagePermission(ModerationCasesPage, 'moderation-cases');

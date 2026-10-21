@@ -12,10 +12,11 @@ import {
   filterReadablePluginConfig,
   resolvePluginConfigStudioAccess,
 } from '@/lib/studio-plugin-permissions';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
-export default async function ModerationDetectionSettingsPage({
+async function ModerationDetectionSettingsPage({
   params,
 }: {
   params: Promise<{ guildId: string }>;
@@ -139,3 +140,8 @@ function Hint({
     </div>
   );
 }
+
+export default withStudioPagePermission(
+  ModerationDetectionSettingsPage,
+  'moderation-detection-settings',
+);

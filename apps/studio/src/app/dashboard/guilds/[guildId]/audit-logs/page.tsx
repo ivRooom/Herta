@@ -17,6 +17,7 @@ import { listGuildActivityFeed, parseAuditLogQuery, type AuditLogItem } from '@/
 import { prisma } from '@/lib/db';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,7 +69,7 @@ const SEVERITY_META: Record<string, { label: string; className: string }> = {
   },
 };
 
-export default async function GuildAuditLogsPage({
+async function GuildAuditLogsPage({
   params,
   searchParams,
 }: {
@@ -459,3 +460,5 @@ function formatDateTime(value: string): string {
     timeZone: 'Asia/Tokyo',
   }).format(new Date(value));
 }
+
+export default withStudioPagePermission(GuildAuditLogsPage, 'audit-logs');

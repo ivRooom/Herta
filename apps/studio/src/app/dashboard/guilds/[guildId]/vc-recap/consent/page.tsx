@@ -9,14 +9,11 @@ import { ReconnectNotice } from '@/components/reconnect-notice';
 import { resolveStudioAccess } from '@/lib/studio-access';
 import { hasEffectivePluginPermission } from '@/lib/studio-plugin-permissions';
 import { studioVoiceConsentResource } from '@/lib/studio-policy-resources';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
-export default async function VcRecapConsentAdminPage({
-  params,
-}: {
-  params: Promise<{ guildId: string }>;
-}) {
+async function VcRecapConsentAdminPage({ params }: { params: Promise<{ guildId: string }> }) {
   const { guildId } = await params;
   const session = await auth();
   const accessToken = await getDiscordAccessToken();
@@ -83,3 +80,5 @@ function BackLink({ guildId }: { guildId: string }) {
     </Link>
   );
 }
+
+export default withStudioPagePermission(VcRecapConsentAdminPage, 'vc-recap');

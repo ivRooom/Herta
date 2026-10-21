@@ -8,12 +8,13 @@ import { prisma } from '@/lib/db';
 import { getDiscordAccessToken } from '@/lib/session';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
+import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
 export const dynamic = 'force-dynamic';
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
-export default async function QuoteManagementPage({
+async function QuoteManagementPage({
   params,
   searchParams,
 }: {
@@ -194,3 +195,5 @@ function parseOptionalBoolean(value: string | undefined): boolean | undefined {
   if (value === 'false') return false;
   return undefined;
 }
+
+export default withStudioPagePermission(QuoteManagementPage, 'plugins');
