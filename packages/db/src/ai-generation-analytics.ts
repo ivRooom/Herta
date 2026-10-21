@@ -160,7 +160,7 @@ export function startOfJstMonth(value: Date): Date {
  * (月次予算上限のチェックに使う。Issue #519)。
  */
 export async function getGuildMonthlyAiSpendUsd(
-  prisma: PrismaClient,
+  prisma: Pick<PrismaClient, '$queryRaw'>,
   guildId: string,
   now: Date = new Date(),
 ): Promise<number> {

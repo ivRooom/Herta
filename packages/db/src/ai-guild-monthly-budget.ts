@@ -3,6 +3,13 @@ import { getGuildMonthlyAiSpendUsd, startOfJstMonth } from './ai-generation-anal
 
 export interface GuildMonthlyBudgetReservation {
   allowed: boolean;
+  /**
+   * amountMicroUsd分が実際にカウンターへ書き込まれたか。falseの場合(DB障害によるfail-open)、
+   * 呼び出し元はsettleGuildMonthlyBudgetDeltaを呼んではいけない(書き込まれていない予約を
+   * 差し引くと、別の並行リクエストが作った行や既存の消費分を誤って減算してしまう。
+   * Codexレビュー指摘)。
+   */
+  reserved: boolean;
   reservedTotalMicroUsd: number;
   periodStart: Date;
 }
@@ -53,10 +60,15 @@ export async function reserveGuildMonthlyBudget(
       // 値を正として両トランザクションが一致した現在値を見るようにする。
       let priorSpendUsd: number;
       try {
-        priorSpendUsd = await getGuildMonthlyAiSpendUsd(prisma, input.guildId, periodStart);
+        // txを使う(prismaではなく)。トランザクション中に別コネクションでSUMクエリを
+        // 発行すると、プールの空き接続を占有し続け、同時に複数guildの初回reserveが
+        // 走るとプール枯渇でタイムアウトする恐れがある(Codexレビュー指摘)。
+        priorSpendUsd = await getGuildMonthlyAiSpendUsd(tx, input.guildId, periodStart);
       } catch {
         // fail-open: 行を作らずこのリクエストだけ許可する。次回のreserveで再度シードを試みる。
-        return { allowed: true, reservedTotalMicroUsd: 0, periodStart };
+        // reserved:falseにすることで、呼び出し元はこの後settleGuildMonthlyBudgetDeltaを
+        // 呼ばない(= 何も書き込んでいない予約を誤って差し引かない。Codexレビュー指摘)。
+        return { allowed: true, reserved: false, reservedTotalMicroUsd: 0, periodStart };
       }
       const seedMicroUsd = BigInt(Math.max(0, Math.round(priorSpendUsd * 1_000_000)));
       await tx.$executeRaw`
@@ -85,6 +97,7 @@ export async function reserveGuildMonthlyBudget(
 
     return {
       allowed,
+      reserved: allowed,
       reservedTotalMicroUsd: Number(allowed ? current + amount : current),
       periodStart,
     };

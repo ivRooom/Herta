@@ -58,7 +58,12 @@ export function wrapWithGuildMonthlyBudgetGuard(
         guildId: request.guildId,
         amountMicroUsd: options.worstCaseRequestMicroUsd,
         limitMicroUsd,
-      }).catch(() => ({ allowed: true, reservedTotalMicroUsd: 0, periodStart: new Date() }));
+      }).catch(() => ({
+        allowed: true,
+        reserved: false,
+        reservedTotalMicroUsd: 0,
+        periodStart: new Date(),
+      }));
 
       if (!reservation.allowed) {
         throw new AiFoundationError('quota_exceeded');
@@ -67,17 +72,22 @@ export function wrapWithGuildMonthlyBudgetGuard(
       try {
         const response = await inner.generate(request);
         const actualMicroUsd = Math.round(response.estimatedCost * 1_000_000);
-        await settleGuildMonthlyBudgetDelta(
-          options.prisma,
-          request.guildId,
-          reservation.periodStart,
-          actualMicroUsd - options.worstCaseRequestMicroUsd,
-        ).catch(() => undefined);
+        // reserved:falseの場合は何も書き込まれていない(DB障害によるfail-open)ため、
+        // settleすると別の並行リクエストが作った行や既存の消費分を誤って減算してしまう
+        // (Codexレビュー指摘)。
+        if (reservation.reserved) {
+          await settleGuildMonthlyBudgetDelta(
+            options.prisma,
+            request.guildId,
+            reservation.periodStart,
+            actualMicroUsd - options.worstCaseRequestMicroUsd,
+          ).catch(() => undefined);
+        }
         return response;
       } catch (error) {
         // provider呼び出しに到達する前の失敗だけ、reserve分を全額解放する(実コストが
         // 発生しようがないと断定できるケースのみ)。それ以外は保守的にreserveを保持する。
-        if (isPreDispatchFailure(error)) {
+        if (reservation.reserved && isPreDispatchFailure(error)) {
           await settleGuildMonthlyBudgetDelta(
             options.prisma,
             request.guildId,

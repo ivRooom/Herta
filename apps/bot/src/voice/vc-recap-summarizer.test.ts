@@ -5,7 +5,12 @@ import { summarizeVcRecapSession } from './vc-recap-summarizer.js';
 const resolveAiOpenAiCredentialMock = vi.fn();
 const reserveGuildMonthlyBudgetMock = vi
   .fn()
-  .mockResolvedValue({ allowed: true, reservedTotalMicroUsd: 0, periodStart: new Date(0) });
+  .mockResolvedValue({
+    allowed: true,
+    reserved: true,
+    reservedTotalMicroUsd: 0,
+    periodStart: new Date(0),
+  });
 const settleGuildMonthlyBudgetDeltaMock = vi.fn().mockResolvedValue(undefined);
 const recordAiGenerationEventMock = vi.fn().mockResolvedValue(undefined);
 
@@ -164,6 +169,7 @@ describe('summarizeVcRecapSession', () => {
     resolveAiOpenAiCredentialMock.mockClear();
     reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
       allowed: false,
+      reserved: false,
       reservedTotalMicroUsd: 5_000_000,
       periodStart: new Date(0),
     });
@@ -178,6 +184,7 @@ describe('summarizeVcRecapSession', () => {
   it('予算のreserveが許可されれば通常通り呼び出し、成功時にコストをai_generation_eventsへ記録しsettleする', async () => {
     reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
       allowed: true,
+      reserved: true,
       reservedTotalMicroUsd: 100_000,
       periodStart: new Date(0),
     });
@@ -227,6 +234,7 @@ describe('summarizeVcRecapSession', () => {
     settleGuildMonthlyBudgetDeltaMock.mockClear();
     reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
       allowed: true,
+      reserved: true,
       reservedTotalMicroUsd: 100_000,
       periodStart: new Date(0),
     });
@@ -256,6 +264,7 @@ describe('summarizeVcRecapSession', () => {
   it('応答は成功でもsummary解析に失敗した場合はfailedとして記録する', async () => {
     reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
       allowed: true,
+      reserved: true,
       reservedTotalMicroUsd: 100_000,
       periodStart: new Date(0),
     });
@@ -282,5 +291,41 @@ describe('summarizeVcRecapSession', () => {
       prisma,
       expect.objectContaining({ resultCategory: 'failed' }),
     );
+  });
+
+  it('reservedがfalse(DB障害によるfail-open)なら成功してもsettleしない', async () => {
+    settleGuildMonthlyBudgetDeltaMock.mockClear();
+    reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
+      allowed: true,
+      reserved: false,
+      reservedTotalMicroUsd: 0,
+      periodStart: new Date(0),
+    });
+    resolveAiOpenAiCredentialMock.mockResolvedValueOnce({ apiKey: 'test-key' });
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          output: [
+            {
+              type: 'message',
+              content: [{ type: 'output_text', text: '{"summary": "要約", "topics": []}' }],
+            },
+          ],
+          usage: { input_tokens: 100, output_tokens: 50 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    const result = await summarizeVcRecapSession(
+      prisma,
+      'guild-1',
+      [segment('u1', 'hello')],
+      { ...ENABLED_ENV, HERTA_AI_GUILD_MONTHLY_BUDGET_USD: '5' },
+      fetchImpl,
+    );
+    expect(result).toEqual({ summary: '要約', topics: [] });
+    // reserved:false(何も書き込まれていない)なので、settleは呼ばれない(Codexレビュー指摘)。
+    expect(settleGuildMonthlyBudgetDeltaMock).not.toHaveBeenCalled();
   });
 });

@@ -131,7 +131,7 @@ export async function summarizeVcRecapSession(
   // わかる前の保守的な見積り(最大出力トークン数ベース)で、応答取得後に実コストとの差分で
   // 調整する。reserve自体が失敗した場合はfail-open(要約を続行)する。credential解決より先に
   // 行い、予算超過時は不要なcredential読み取りをしない。
-  let reservation: { allowed: boolean; periodStart: Date } | null = null;
+  let reservation: { allowed: boolean; reserved: boolean; periodStart: Date } | null = null;
   let worstCaseMicroUsd = 0;
   if (guildMonthlyBudgetUsd > 0) {
     worstCaseMicroUsd = estimateOpenAiCostMicroUsd(
@@ -143,13 +143,20 @@ export async function summarizeVcRecapSession(
       guildId,
       amountMicroUsd: worstCaseMicroUsd,
       limitMicroUsd: Math.round(guildMonthlyBudgetUsd * 1_000_000),
-    }).catch(() => ({ allowed: true, reservedTotalMicroUsd: 0, periodStart: new Date() }));
+    }).catch(() => ({
+      allowed: true,
+      reserved: false,
+      reservedTotalMicroUsd: 0,
+      periodStart: new Date(),
+    }));
     if (!reservation.allowed) return null;
   }
 
   const credential = await resolveAiOpenAiCredential({ prisma, env });
   if (!credential.apiKey) {
-    if (reservation) {
+    // reserved:falseの場合は何も書き込まれていない(DB障害によるfail-open)ため、settleすると
+    // 別の並行リクエストが作った行や既存の消費分を誤って減算してしまう(Codexレビュー指摘)。
+    if (reservation?.reserved) {
       await settleGuildMonthlyBudgetDelta(
         prisma,
         guildId,
@@ -167,7 +174,7 @@ export async function summarizeVcRecapSession(
   // 取得できた場合のみ、実コストとの差分へ明示的に書き換える。
   let settleDeltaMicroUsd = 0;
   const settleReservation = async (): Promise<void> => {
-    if (!reservation) return;
+    if (!reservation?.reserved) return;
     await settleGuildMonthlyBudgetDelta(
       prisma,
       guildId,

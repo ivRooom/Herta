@@ -52,6 +52,7 @@ describe('wrapWithGuildMonthlyBudgetGuard', () => {
   it('reserveが許可されれば呼び出し、実コストとの差分でsettleする', async () => {
     reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
       allowed: true,
+      reserved: true,
       reservedTotalMicroUsd: 120_000,
       periodStart: PERIOD_START,
     });
@@ -86,6 +87,7 @@ describe('wrapWithGuildMonthlyBudgetGuard', () => {
   it('reserveが拒否されればquota_exceededでブロックしinnerを呼ばない', async () => {
     reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
       allowed: false,
+      reserved: false,
       reservedTotalMicroUsd: 10_200_000,
       periodStart: PERIOD_START,
     });
@@ -105,6 +107,7 @@ describe('wrapWithGuildMonthlyBudgetGuard', () => {
   it('provider呼び出しに到達する前の失敗(rate_limited等)はreserve分を全額解放する', async () => {
     reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
       allowed: true,
+      reserved: true,
       reservedTotalMicroUsd: 120_000,
       periodStart: PERIOD_START,
     });
@@ -132,6 +135,7 @@ describe('wrapWithGuildMonthlyBudgetGuard', () => {
     settleGuildMonthlyBudgetDeltaMock.mockClear();
     reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
       allowed: true,
+      reserved: true,
       reservedTotalMicroUsd: 120_000,
       periodStart: PERIOD_START,
     });
@@ -154,6 +158,7 @@ describe('wrapWithGuildMonthlyBudgetGuard', () => {
     settleGuildMonthlyBudgetDeltaMock.mockClear();
     reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
       allowed: true,
+      reserved: true,
       reservedTotalMicroUsd: 120_000,
       periodStart: PERIOD_START,
     });
@@ -170,7 +175,8 @@ describe('wrapWithGuildMonthlyBudgetGuard', () => {
     expect(settleGuildMonthlyBudgetDeltaMock).not.toHaveBeenCalled();
   });
 
-  it('reserve自体がDB障害で失敗してもfail-openでinner.generateを呼ぶ', async () => {
+  it('reserve自体がDB障害で失敗してもfail-openでinner.generateを呼ぶ(settleもしない)', async () => {
+    settleGuildMonthlyBudgetDeltaMock.mockClear();
     reserveGuildMonthlyBudgetMock.mockRejectedValueOnce(new Error('db down'));
     const inner = {
       generate: vi.fn().mockResolvedValue({ requestId: 'r2', estimatedCost: 0 }),
@@ -183,5 +189,30 @@ describe('wrapWithGuildMonthlyBudgetGuard', () => {
 
     const result = await wrapped.generate(baseRequest);
     expect(result).toEqual({ requestId: 'r2', estimatedCost: 0 });
+    // reserved:false(何も書き込まれていない)ため、settleは呼ばれない(Codexレビュー指摘:
+    // 書き込まれていない予約を差し引くと、別の並行リクエストの予約を誤って減算してしまう)。
+    expect(settleGuildMonthlyBudgetDeltaMock).not.toHaveBeenCalled();
+  });
+
+  it('reservedがfalse(DB障害によるfail-open)ならprovider成功後もsettleしない', async () => {
+    settleGuildMonthlyBudgetDeltaMock.mockClear();
+    reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
+      allowed: true,
+      reserved: false,
+      reservedTotalMicroUsd: 0,
+      periodStart: PERIOD_START,
+    });
+    const inner = {
+      generate: vi.fn().mockResolvedValue({ requestId: 'r3', estimatedCost: 0.0001 }),
+    } as unknown as AiRuntimeGenerationService;
+    const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, {
+      prisma: {} as never,
+      budgetUsd: 10,
+      worstCaseRequestMicroUsd: 120_000,
+    });
+
+    const result = await wrapped.generate(baseRequest);
+    expect(result).toEqual({ requestId: 'r3', estimatedCost: 0.0001 });
+    expect(settleGuildMonthlyBudgetDeltaMock).not.toHaveBeenCalled();
   });
 });
