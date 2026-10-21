@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { summarizeVcRecapSession } from './vc-recap-summarizer.js';
 
 const resolveAiOpenAiCredentialMock = vi.fn();
-const getGuildMonthlyAiSpendUsdMock = vi.fn().mockResolvedValue(0);
+const reserveGuildMonthlyBudgetMock = vi
+  .fn()
+  .mockResolvedValue({ allowed: true, reservedTotalMicroUsd: 0, periodStart: new Date(0) });
+const settleGuildMonthlyBudgetDeltaMock = vi.fn().mockResolvedValue(undefined);
 const recordAiGenerationEventMock = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('../ai/factory.js', () => ({
@@ -11,7 +14,8 @@ vi.mock('../ai/factory.js', () => ({
 }));
 
 vi.mock('@herta/db', () => ({
-  getGuildMonthlyAiSpendUsd: (...args: unknown[]) => getGuildMonthlyAiSpendUsdMock(...args),
+  reserveGuildMonthlyBudget: (...args: unknown[]) => reserveGuildMonthlyBudgetMock(...args),
+  settleGuildMonthlyBudgetDelta: (...args: unknown[]) => settleGuildMonthlyBudgetDeltaMock(...args),
   recordAiGenerationEvent: (...args: unknown[]) => recordAiGenerationEventMock(...args),
 }));
 
@@ -156,9 +160,13 @@ describe('summarizeVcRecapSession', () => {
     expect(result).toBeNull();
   });
 
-  it('Guild月次AI予算上限に達している場合はcredentialを読まずnullを返す', async () => {
+  it('Guild月次予算のreserveが拒否された場合はcredentialを読まずnullを返す', async () => {
     resolveAiOpenAiCredentialMock.mockClear();
-    getGuildMonthlyAiSpendUsdMock.mockResolvedValueOnce(5);
+    reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
+      allowed: false,
+      reservedTotalMicroUsd: 5_000_000,
+      periodStart: new Date(0),
+    });
     const result = await summarizeVcRecapSession(prisma, 'guild-1', [segment('u1', 'hello')], {
       ...ENABLED_ENV,
       HERTA_AI_GUILD_MONTHLY_BUDGET_USD: '5',
@@ -167,8 +175,12 @@ describe('summarizeVcRecapSession', () => {
     expect(resolveAiOpenAiCredentialMock).not.toHaveBeenCalled();
   });
 
-  it('予算上限未満なら通常通り呼び出し、成功時にコストをai_generation_eventsへ記録する', async () => {
-    getGuildMonthlyAiSpendUsdMock.mockResolvedValueOnce(1);
+  it('予算のreserveが許可されれば通常通り呼び出し、成功時にコストをai_generation_eventsへ記録しsettleする', async () => {
+    reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
+      allowed: true,
+      reservedTotalMicroUsd: 100_000,
+      periodStart: new Date(0),
+    });
     resolveAiOpenAiCredentialMock.mockResolvedValueOnce({ apiKey: 'test-key' });
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(
@@ -201,6 +213,12 @@ describe('summarizeVcRecapSession', () => {
         inputTokens: 100,
         outputTokens: 50,
       }),
+    );
+    expect(settleGuildMonthlyBudgetDeltaMock).toHaveBeenCalledWith(
+      prisma,
+      'guild-1',
+      new Date(0),
+      expect.any(Number),
     );
   });
 });

@@ -1,6 +1,11 @@
 import type { PrismaClient, VcRecapTranscriptSegmentRecord } from '@herta/db';
-import { getGuildMonthlyAiSpendUsd, recordAiGenerationEvent } from '@herta/db';
 import {
+  recordAiGenerationEvent,
+  reserveGuildMonthlyBudget,
+  settleGuildMonthlyBudgetDelta,
+} from '@herta/db';
+import {
+  estimateInputTokens,
   estimateOpenAiCostMicroUsd,
   resolveAiFoundationConfig,
   resolveAiGuildMonthlyBudgetUsd,
@@ -118,16 +123,55 @@ export async function summarizeVcRecapSession(
   }
   if (!aiEnabled) return null;
 
-  // Issue #519: チャットAI側(AiFoundationService経路)と同じGuild月次予算を共有する。
-  // DB照会が失敗した場合はfail-open(要約自体は続行)し、一時的なDB障害でVC Recapが
-  // 止まらないようにする。
+  const prompt = buildPrompt(segments);
+
+  // Issue #519: チャットAI側(AiFoundationService経路)と同じGuild月次予算カウンターを
+  // atomicにreserveする(単純な「現在の消費量を読んで比較する」実装だと、並行リクエストが
+  // 同じ値を読んで同時に通過するレースがあるため)。worstCaseMicroUsdは実際の出力トークン数が
+  // わかる前の保守的な見積り(最大出力トークン数ベース)で、応答取得後に実コストとの差分で
+  // 調整する。reserve自体が失敗した場合はfail-open(要約を続行)する。credential解決より先に
+  // 行い、予算超過時は不要なcredential読み取りをしない。
+  let reservation: { allowed: boolean; periodStart: Date } | null = null;
+  let worstCaseMicroUsd = 0;
   if (guildMonthlyBudgetUsd > 0) {
-    const spentUsd = await getGuildMonthlyAiSpendUsd(prisma, guildId).catch(() => 0);
-    if (spentUsd >= guildMonthlyBudgetUsd) return null;
+    worstCaseMicroUsd = estimateOpenAiCostMicroUsd(
+      SUMMARY_MODEL,
+      estimateInputTokens(prompt),
+      MAX_OUTPUT_TOKENS,
+    );
+    reservation = await reserveGuildMonthlyBudget(prisma, {
+      guildId,
+      amountMicroUsd: worstCaseMicroUsd,
+      limitMicroUsd: Math.round(guildMonthlyBudgetUsd * 1_000_000),
+    }).catch(() => ({ allowed: true, reservedTotalMicroUsd: 0, periodStart: new Date() }));
+    if (!reservation.allowed) return null;
   }
 
   const credential = await resolveAiOpenAiCredential({ prisma, env });
-  if (!credential.apiKey) return null;
+  if (!credential.apiKey) {
+    if (reservation) {
+      await settleGuildMonthlyBudgetDelta(
+        prisma,
+        guildId,
+        reservation.periodStart,
+        -worstCaseMicroUsd,
+      ).catch(() => undefined);
+    }
+    return null;
+  }
+
+  // reserve済みなら、呼び出しの結末に応じて必ずsettleする(実コストが出ればその差分、
+  // 出なければ全額解放)。
+  let settleDeltaMicroUsd = -worstCaseMicroUsd;
+  const settleReservation = async (): Promise<void> => {
+    if (!reservation) return;
+    await settleGuildMonthlyBudgetDelta(
+      prisma,
+      guildId,
+      reservation.periodStart,
+      settleDeltaMicroUsd,
+    ).catch(() => undefined);
+  };
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), SUMMARY_TIMEOUT_MS);
@@ -141,7 +185,7 @@ export async function summarizeVcRecapSession(
       },
       body: JSON.stringify({
         model: SUMMARY_MODEL,
-        input: buildPrompt(segments),
+        input: prompt,
         max_output_tokens: MAX_OUTPUT_TOKENS,
         store: false,
       }),
@@ -153,7 +197,13 @@ export async function summarizeVcRecapSession(
       return null;
     }
     const payload = await response.json();
-    await recordVcRecapSummaryCost(prisma, guildId, payload, Date.now() - startedAt);
+    const actualMicroUsd = await recordVcRecapSummaryCost(
+      prisma,
+      guildId,
+      payload,
+      Date.now() - startedAt,
+    );
+    settleDeltaMicroUsd = actualMicroUsd - worstCaseMicroUsd;
     const text = extractOutputText(payload);
     if (!text) return null;
     return parseSummaryJson(text);
@@ -161,23 +211,29 @@ export async function summarizeVcRecapSession(
     return null;
   } finally {
     clearTimeout(timeout);
+    await settleReservation();
   }
 }
 
 /**
  * VC要約の呼び出しもai_generation_eventsへ記録し、チャットAIと同じGuild月次予算の
  * 対象に含める(Issue #519)。記録失敗は要約結果に影響させない(fire-and-forget)。
+ * 戻り値は実コスト(micro USD)。usageが取れない場合は0(=reserve分を全額解放)。
  */
 async function recordVcRecapSummaryCost(
   prisma: PrismaClient,
   guildId: string,
   payload: unknown,
   durationMs: number,
-): Promise<void> {
+): Promise<number> {
   const usage = extractUsage(payload);
-  if (!usage) return;
-  const estimatedCostUsd =
-    estimateOpenAiCostMicroUsd(SUMMARY_MODEL, usage.inputTokens, usage.outputTokens) / 1_000_000;
+  if (!usage) return 0;
+  const actualMicroUsd = estimateOpenAiCostMicroUsd(
+    SUMMARY_MODEL,
+    usage.inputTokens,
+    usage.outputTokens,
+  );
+  const estimatedCostUsd = actualMicroUsd / 1_000_000;
   await recordAiGenerationEvent(prisma, {
     guildId,
     provider: 'openai',
@@ -191,4 +247,5 @@ async function recordVcRecapSummaryCost(
     estimatedCostUsd,
     durationMs,
   }).catch(() => undefined);
+  return actualMicroUsd;
 }

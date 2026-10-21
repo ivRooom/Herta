@@ -2,6 +2,7 @@ export { PrismaClient } from '@prisma/client';
 export type * from '@prisma/client';
 export * from './achievement-unlocks.js';
 export * from './ai-generation-analytics.js';
+export * from './ai-guild-monthly-budget.js';
 export * from './ai-user-model-preferences.js';
 export * from './birthday-card-assets.js';
 export * from './birthday-card-background.js';

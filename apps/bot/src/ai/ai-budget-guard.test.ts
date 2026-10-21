@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AiRuntimeGenerationService } from './runtime-service.js';
 
-const getGuildMonthlyAiSpendUsdMock = vi.fn();
+const reserveGuildMonthlyBudgetMock = vi.fn();
+const settleGuildMonthlyBudgetDeltaMock = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('@herta/db', () => ({
-  getGuildMonthlyAiSpendUsd: (...args: unknown[]) => getGuildMonthlyAiSpendUsdMock(...args),
+  reserveGuildMonthlyBudget: (...args: unknown[]) => reserveGuildMonthlyBudgetMock(...args),
+  settleGuildMonthlyBudgetDelta: (...args: unknown[]) => settleGuildMonthlyBudgetDeltaMock(...args),
 }));
 
 const { wrapWithGuildMonthlyBudgetGuard } = await import('./ai-budget-guard.js');
@@ -20,12 +22,15 @@ const baseRequest = {
   guildOptIn: true,
 };
 
+const PERIOD_START = new Date('2026-07-01T00:00:00.000Z');
+
 describe('wrapWithGuildMonthlyBudgetGuard', () => {
   it('予算が0(上限なし)ならそのままinnerを返す', () => {
     const inner = { generate: vi.fn() } as unknown as AiRuntimeGenerationService;
     const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, {
       prisma: {} as never,
       budgetUsd: 0,
+      worstCaseRequestMicroUsd: 120_000,
     });
     expect(wrapped).toBe(inner);
   });
@@ -36,28 +41,59 @@ describe('wrapWithGuildMonthlyBudgetGuard', () => {
     const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, {
       prisma: {} as never,
       budgetUsd: 10,
+      worstCaseRequestMicroUsd: 120_000,
     });
 
     await wrapped.consumeRateLimit?.(baseRequest);
     expect(consumeRateLimit).toHaveBeenCalledWith(baseRequest);
   });
 
-  it('月次支出が予算未満ならinner.generateへ委譲する', async () => {
-    getGuildMonthlyAiSpendUsdMock.mockResolvedValueOnce(5);
+  it('reserveが許可されれば呼び出し、実コストとの差分でsettleする', async () => {
+    reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
+      allowed: true,
+      reservedTotalMicroUsd: 120_000,
+      periodStart: PERIOD_START,
+    });
     const inner = {
-      generate: vi.fn().mockResolvedValue({ requestId: 'r1' }),
+      generate: vi.fn().mockResolvedValue({ requestId: 'r1', estimatedCost: 0.00005 }),
     } as unknown as AiRuntimeGenerationService;
-    const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, { prisma: {} as never, budgetUsd: 10 });
+    const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, {
+      prisma: {} as never,
+      budgetUsd: 10,
+      worstCaseRequestMicroUsd: 120_000,
+    });
 
     const result = await wrapped.generate(baseRequest);
-    expect(result).toEqual({ requestId: 'r1' });
-    expect(inner.generate).toHaveBeenCalledWith(baseRequest);
+    expect(result).toEqual({ requestId: 'r1', estimatedCost: 0.00005 });
+    expect(reserveGuildMonthlyBudgetMock).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({
+        guildId: 'guild-1',
+        amountMicroUsd: 120_000,
+        limitMicroUsd: 10_000_000,
+      }),
+    );
+    // 実コスト(0.00005 USD = 50 micro USD) - worstCase(120,000) = -119,950
+    expect(settleGuildMonthlyBudgetDeltaMock).toHaveBeenCalledWith(
+      {},
+      'guild-1',
+      PERIOD_START,
+      50 - 120_000,
+    );
   });
 
-  it('月次支出が予算以上ならquota_exceededでブロックしinnerを呼ばない', async () => {
-    getGuildMonthlyAiSpendUsdMock.mockResolvedValueOnce(10);
+  it('reserveが拒否されればquota_exceededでブロックしinnerを呼ばない', async () => {
+    reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
+      allowed: false,
+      reservedTotalMicroUsd: 10_200_000,
+      periodStart: PERIOD_START,
+    });
     const inner = { generate: vi.fn() } as unknown as AiRuntimeGenerationService;
-    const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, { prisma: {} as never, budgetUsd: 10 });
+    const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, {
+      prisma: {} as never,
+      budgetUsd: 10,
+      worstCaseRequestMicroUsd: 120_000,
+    });
 
     await expect(wrapped.generate(baseRequest)).rejects.toThrowError(
       expect.objectContaining({ category: 'quota_exceeded' }),
@@ -65,14 +101,42 @@ describe('wrapWithGuildMonthlyBudgetGuard', () => {
     expect(inner.generate).not.toHaveBeenCalled();
   });
 
-  it('DB照会が失敗してもinner.generateを呼ぶ(fail-open)', async () => {
-    getGuildMonthlyAiSpendUsdMock.mockRejectedValueOnce(new Error('db down'));
+  it('inner.generateが失敗したらreserve分を全額解放する', async () => {
+    reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
+      allowed: true,
+      reservedTotalMicroUsd: 120_000,
+      periodStart: PERIOD_START,
+    });
     const inner = {
-      generate: vi.fn().mockResolvedValue({ requestId: 'r2' }),
+      generate: vi.fn().mockRejectedValue(new Error('provider down')),
     } as unknown as AiRuntimeGenerationService;
-    const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, { prisma: {} as never, budgetUsd: 10 });
+    const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, {
+      prisma: {} as never,
+      budgetUsd: 10,
+      worstCaseRequestMicroUsd: 120_000,
+    });
+
+    await expect(wrapped.generate(baseRequest)).rejects.toThrowError('provider down');
+    expect(settleGuildMonthlyBudgetDeltaMock).toHaveBeenCalledWith(
+      {},
+      'guild-1',
+      PERIOD_START,
+      -120_000,
+    );
+  });
+
+  it('reserve自体がDB障害で失敗してもfail-openでinner.generateを呼ぶ', async () => {
+    reserveGuildMonthlyBudgetMock.mockRejectedValueOnce(new Error('db down'));
+    const inner = {
+      generate: vi.fn().mockResolvedValue({ requestId: 'r2', estimatedCost: 0 }),
+    } as unknown as AiRuntimeGenerationService;
+    const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, {
+      prisma: {} as never,
+      budgetUsd: 10,
+      worstCaseRequestMicroUsd: 120_000,
+    });
 
     const result = await wrapped.generate(baseRequest);
-    expect(result).toEqual({ requestId: 'r2' });
+    expect(result).toEqual({ requestId: 'r2', estimatedCost: 0 });
   });
 });

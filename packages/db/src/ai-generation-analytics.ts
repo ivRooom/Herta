@@ -148,7 +148,7 @@ function startOfJstDay(value: Date): Date {
   return new Date(Math.floor(shifted / DAY_MS) * DAY_MS - JST_OFFSET_MS);
 }
 
-function startOfJstMonth(value: Date): Date {
+export function startOfJstMonth(value: Date): Date {
   const jst = new Date(value.getTime() + JST_OFFSET_MS);
   const monthStartJst = Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth(), 1);
   return new Date(monthStartJst - JST_OFFSET_MS);

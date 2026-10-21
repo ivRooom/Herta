@@ -356,6 +356,7 @@ export async function createAiFoundationRuntime(
   const service = wrapWithGuildMonthlyBudgetGuard(multiProviderService, {
     prisma: options.prisma,
     budgetUsd: resolveAiGuildMonthlyBudgetUsd(env),
+    worstCaseRequestMicroUsd: baseConfig.perRequestCostLimitMicroUsd,
   });
   const executionService = isAiProviderCapabilityEnabled(baseConfig.provider, 'code_interpreter')
     ? new OpenAiCodeExecutionService({
