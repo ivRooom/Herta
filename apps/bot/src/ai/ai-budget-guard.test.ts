@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { AiFoundationError } from '@herta/plugin-catalog/ai-service';
 import type { AiRuntimeGenerationService } from './runtime-service.js';
 
 const reserveGuildMonthlyBudgetMock = vi.fn();
@@ -101,14 +102,14 @@ describe('wrapWithGuildMonthlyBudgetGuard', () => {
     expect(inner.generate).not.toHaveBeenCalled();
   });
 
-  it('inner.generateが失敗したらreserve分を全額解放する', async () => {
+  it('provider呼び出しに到達する前の失敗(rate_limited等)はreserve分を全額解放する', async () => {
     reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
       allowed: true,
       reservedTotalMicroUsd: 120_000,
       periodStart: PERIOD_START,
     });
     const inner = {
-      generate: vi.fn().mockRejectedValue(new Error('provider down')),
+      generate: vi.fn().mockRejectedValue(new AiFoundationError('rate_limited')),
     } as unknown as AiRuntimeGenerationService;
     const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, {
       prisma: {} as never,
@@ -116,13 +117,57 @@ describe('wrapWithGuildMonthlyBudgetGuard', () => {
       worstCaseRequestMicroUsd: 120_000,
     });
 
-    await expect(wrapped.generate(baseRequest)).rejects.toThrowError('provider down');
+    await expect(wrapped.generate(baseRequest)).rejects.toThrowError(
+      expect.objectContaining({ category: 'rate_limited' }),
+    );
     expect(settleGuildMonthlyBudgetDeltaMock).toHaveBeenCalledWith(
       {},
       'guild-1',
       PERIOD_START,
       -120_000,
     );
+  });
+
+  it('provider呼び出し後(課金有無不明)の失敗はreserveを保持し解放しない(タイムアウト等)', async () => {
+    settleGuildMonthlyBudgetDeltaMock.mockClear();
+    reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
+      allowed: true,
+      reservedTotalMicroUsd: 120_000,
+      periodStart: PERIOD_START,
+    });
+    const inner = {
+      generate: vi.fn().mockRejectedValue(new AiFoundationError('timeout')),
+    } as unknown as AiRuntimeGenerationService;
+    const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, {
+      prisma: {} as never,
+      budgetUsd: 10,
+      worstCaseRequestMicroUsd: 120_000,
+    });
+
+    await expect(wrapped.generate(baseRequest)).rejects.toThrowError(
+      expect.objectContaining({ category: 'timeout' }),
+    );
+    expect(settleGuildMonthlyBudgetDeltaMock).not.toHaveBeenCalled();
+  });
+
+  it('AiFoundationError以外の例外(ネットワーク断等)もreserveを保持し解放しない', async () => {
+    settleGuildMonthlyBudgetDeltaMock.mockClear();
+    reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
+      allowed: true,
+      reservedTotalMicroUsd: 120_000,
+      periodStart: PERIOD_START,
+    });
+    const inner = {
+      generate: vi.fn().mockRejectedValue(new Error('network down')),
+    } as unknown as AiRuntimeGenerationService;
+    const wrapped = wrapWithGuildMonthlyBudgetGuard(inner, {
+      prisma: {} as never,
+      budgetUsd: 10,
+      worstCaseRequestMicroUsd: 120_000,
+    });
+
+    await expect(wrapped.generate(baseRequest)).rejects.toThrowError('network down');
+    expect(settleGuildMonthlyBudgetDeltaMock).not.toHaveBeenCalled();
   });
 
   it('reserve自体がDB障害で失敗してもfail-openでinner.generateを呼ぶ', async () => {

@@ -160,9 +160,12 @@ export async function summarizeVcRecapSession(
     return null;
   }
 
-  // reserve済みなら、呼び出しの結末に応じて必ずsettleする(実コストが出ればその差分、
-  // 出なければ全額解放)。
-  let settleDeltaMicroUsd = -worstCaseMicroUsd;
+  // reserve済みなら、呼び出しの結末に応じて必ずsettleする。fetch発行後は課金有無が
+  // 不明な失敗(タイムアウト・ネットワーク断・非OKレスポンス・JSON解析失敗等)がありうる
+  // ため、既定では解放しない(delta=0のまま=reserve全額を保守的に保持する。Codexレビュー
+  // 指摘: 失敗を繰り返すことで月次予算を実質無制限に超過できてしまうのを防ぐ)。実usageが
+  // 取得できた場合のみ、実コストとの差分へ明示的に書き換える。
+  let settleDeltaMicroUsd = 0;
   const settleReservation = async (): Promise<void> => {
     if (!reservation) return;
     await settleGuildMonthlyBudgetDelta(

@@ -4,6 +4,31 @@ import { AiFoundationError } from '@herta/plugin-catalog/ai-service';
 import type { AiRuntimeGenerationRequest, AiRuntimeGenerationService } from './runtime-service.js';
 
 /**
+ * provider呼び出し(実コスト発生の可能性がある区間)へ到達する前に確実に失敗するカテゴリ。
+ * AiFoundationService.generate()はkill-switch/authorized/pluginEnabled/guildOptIn/入力検証/
+ * 自前のrate limit・quota判定を全てprovider呼び出しより前に行うため、これらのエラーは
+ * providerへ到達していないと断定できる(=実コストは発生していない=reserve分を全額
+ * 安全に解放できる)。
+ *
+ * それ以外(timeout・provider_unavailable・provider_rejected・malformed_response・
+ * output_too_large・internal_error、およびAiFoundationError以外の例外)は、provider呼び出しが
+ * 既に発生済みで課金の有無が不明なケースを含むため、Codexレビュー指摘の通りreserve分を
+ * 解放せず保守的に保持する(解放すると、失敗を繰り返すことで月次予算を実質無制限に
+ * 超過できてしまう)。
+ */
+const PRE_DISPATCH_FAILURE_CATEGORIES = new Set([
+  'disabled',
+  'unauthorized',
+  'rate_limited',
+  'quota_exceeded',
+  'invalid_input',
+]);
+
+function isPreDispatchFailure(error: unknown): boolean {
+  return error instanceof AiFoundationError && PRE_DISPATCH_FAILURE_CATEGORIES.has(error.category);
+}
+
+/**
  * 既存のRuntimeGenerationService(チャットAI本体、6プロバイダ共通のMultiProviderAiRuntimeGenerationService
  * 経由)をGuild単位の月次累積予算でラップする(Issue #519)。AiFoundationService自体はDBアクセスを
  * 持たないため、factory.ts側のこの単一ラップ箇所でのみ予算チェックを行い、6つのprovider別
@@ -50,13 +75,16 @@ export function wrapWithGuildMonthlyBudgetGuard(
         ).catch(() => undefined);
         return response;
       } catch (error) {
-        // 呼び出し自体が失敗した(実コスト発生なし)ので、reserve分を全額解放する。
-        await settleGuildMonthlyBudgetDelta(
-          options.prisma,
-          request.guildId,
-          reservation.periodStart,
-          -options.worstCaseRequestMicroUsd,
-        ).catch(() => undefined);
+        // provider呼び出しに到達する前の失敗だけ、reserve分を全額解放する(実コストが
+        // 発生しようがないと断定できるケースのみ)。それ以外は保守的にreserveを保持する。
+        if (isPreDispatchFailure(error)) {
+          await settleGuildMonthlyBudgetDelta(
+            options.prisma,
+            request.guildId,
+            reservation.periodStart,
+            -options.worstCaseRequestMicroUsd,
+          ).catch(() => undefined);
+        }
         throw error;
       }
     },
