@@ -6,77 +6,87 @@ import {
   settleGuildMonthlyBudgetDelta,
 } from './ai-guild-monthly-budget.js';
 
-function fakePrisma(options: {
-  reservedMicroUsd: bigint;
-  accepted: boolean;
-  priorSpendUsd?: number;
-}): { prisma: PrismaClient; queryRawCalls: unknown[][] } {
-  const queryRawCalls: unknown[][] = [];
+function fakePrisma(options: { existingReservedMicroUsd: bigint | null; priorSpendUsd?: number }): {
+  prisma: PrismaClient;
+  executeRawCalls: unknown[][];
+} {
+  const executeRawCalls: unknown[][] = [];
+  let reserved = options.existingReservedMicroUsd;
+
+  interface FakeTx {
+    $executeRaw: (strings: TemplateStringsArray, ...values: unknown[]) => Promise<number>;
+    $queryRaw: () => Promise<Array<{ reservedMicroUsd: bigint }>>;
+  }
+
+  const tx: FakeTx = {
+    $executeRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const sql = strings.join('?');
+      executeRawCalls.push([sql, ...values]);
+      if (sql.includes('INSERT INTO') && reserved === null) {
+        // 新規行作成(DO NOTHINGなので既存行があれば何もしない)。
+        reserved = values[2] as bigint;
+      } else if (sql.includes('UPDATE') && sql.includes('reserved_micro_usd" + ')) {
+        reserved = (reserved ?? 0n) + (values[1] as bigint);
+      }
+      return 1;
+    },
+    $queryRaw: async () => [{ reservedMicroUsd: reserved ?? 0n }],
+  };
+
   const prisma = {
     $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
-      const sql = strings.join('?');
-      queryRawCalls.push([sql, ...values]);
-      // getGuildMonthlyAiSpendUsd(ai-generation-analytics.ts)が呼ぶクエリはSELECT文、
-      // reserveGuildMonthlyBudget自身のクエリはWITH句で始まる。SQLの先頭で判別する。
-      if (sql.trim().startsWith('SELECT')) {
-        return [{ spentUsd: options.priorSpendUsd ?? 0 }];
-      }
-      return [{ reservedMicroUsd: options.reservedMicroUsd, accepted: options.accepted }];
+      // getGuildMonthlyAiSpendUsd(ai-generation-analytics.ts)からの呼び出し。
+      void strings;
+      void values;
+      return [{ spentUsd: options.priorSpendUsd ?? 0 }];
     },
-    $executeRaw: async () => 1,
+    $transaction: async (fn: (tx: FakeTx) => Promise<unknown>) => fn(tx),
   } as unknown as PrismaClient;
-  return { prisma, queryRawCalls };
+
+  return { prisma, executeRawCalls };
 }
 
-test('reserveが許可されればallowed:trueと加算後の合計を返す', async () => {
-  const { prisma } = fakePrisma({ reservedMicroUsd: 200_000n, accepted: true });
+test('既存行が無ければai_generation_eventsの当月消費分をシードした上でreserveする', async () => {
+  const { prisma } = fakePrisma({ existingReservedMicroUsd: null, priorSpendUsd: 5 });
 
   const result = await reserveGuildMonthlyBudget(prisma, {
-    guildId: 'guild-1',
-    amountMicroUsd: 100_000,
-    limitMicroUsd: 1_000_000,
-    now: new Date('2026-07-15T03:00:00.000Z'),
-  });
-
-  assert.equal(result.allowed, true);
-  assert.equal(result.reservedTotalMicroUsd, 200_000);
-});
-
-test('reserveが拒否されればallowed:falseを返す(テーブルへの書き込みは1文のみ)', async () => {
-  const { prisma, queryRawCalls } = fakePrisma({ reservedMicroUsd: 900_000n, accepted: false });
-
-  const result = await reserveGuildMonthlyBudget(prisma, {
-    guildId: 'guild-1',
-    amountMicroUsd: 200_000,
-    limitMicroUsd: 1_000_000,
-    now: new Date('2026-07-15T03:00:00.000Z'),
-  });
-
-  assert.equal(result.allowed, false);
-  assert.equal(result.reservedTotalMicroUsd, 900_000);
-  // getGuildMonthlyAiSpendUsd(SELECT)とreserve本体(WITH句)の2クエリのみで、
-  // 判定と書き込みが別文に分かれる差し戻しクエリは発生しない(atomicな1文で完結する)。
-  assert.equal(queryRawCalls.length, 2);
-});
-
-test('reserveはai_generation_eventsの当月既存消費分を初回行作成時のシード値として使う', async () => {
-  const { prisma, queryRawCalls } = fakePrisma({
-    reservedMicroUsd: 5_100_000n,
-    accepted: true,
-    priorSpendUsd: 5,
-  });
-
-  await reserveGuildMonthlyBudget(prisma, {
     guildId: 'guild-1',
     amountMicroUsd: 100_000,
     limitMicroUsd: 10_000_000,
     now: new Date('2026-07-15T03:00:00.000Z'),
   });
 
-  const reserveCall = queryRawCalls.find(([sql]) => String(sql).trim().startsWith('WITH'));
-  assert.ok(reserveCall);
-  // priorSpendUsd(5 USD) * 1_000_000 = 5,000,000 micro USDがシード値として渡っている。
-  assert.ok(reserveCall?.includes(5_000_000n));
+  assert.equal(result.allowed, true);
+  // シード5,000,000 + amount 100,000 = 5,100,000
+  assert.equal(result.reservedTotalMicroUsd, 5_100_000);
+});
+
+test('既存行があれば上限内なら加算してallowed:trueを返す', async () => {
+  const { prisma } = fakePrisma({ existingReservedMicroUsd: 200_000n });
+
+  const result = await reserveGuildMonthlyBudget(prisma, {
+    guildId: 'guild-1',
+    amountMicroUsd: 100_000,
+    limitMicroUsd: 1_000_000,
+  });
+
+  assert.equal(result.allowed, true);
+  assert.equal(result.reservedTotalMicroUsd, 300_000);
+});
+
+test('上限を超える場合はallowed:falseを返し、テーブルへは加算しない', async () => {
+  const { prisma, executeRawCalls } = fakePrisma({ existingReservedMicroUsd: 900_000n });
+
+  const result = await reserveGuildMonthlyBudget(prisma, {
+    guildId: 'guild-1',
+    amountMicroUsd: 200_000,
+    limitMicroUsd: 1_000_000,
+  });
+
+  assert.equal(result.allowed, false);
+  assert.equal(result.reservedTotalMicroUsd, 900_000);
+  // DO NOTHING(INSERT)のみ実行され、加算のUPDATEは発行されない。
+  assert.equal(executeRawCalls.filter(([sql]) => String(sql).includes('UPDATE')).length, 0);
 });
 
 test('settleGuildMonthlyBudgetDeltaはdelta=0なら何もしない', async () => {

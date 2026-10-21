@@ -200,16 +200,31 @@ export async function summarizeVcRecapSession(
       return null;
     }
     const payload = await response.json();
-    const actualMicroUsd = await recordVcRecapSummaryCost(
-      prisma,
-      guildId,
-      payload,
-      Date.now() - startedAt,
-    );
-    settleDeltaMicroUsd = actualMicroUsd - worstCaseMicroUsd;
+    const usage = extractUsage(payload);
     const text = extractOutputText(payload);
-    if (!text) return null;
-    return parseSummaryJson(text);
+    const parsed = text ? parseSummaryJson(text) : null;
+    // usageが取れた場合のみ実コストが判明するので、その場合に限りsettleDeltaMicroUsdを
+    // 書き換える(既定の0=reserve全額保持のままにしない)。summary自体の解析に失敗しても
+    // provider呼び出し自体は成功しトークンを消費しているため、コスト記録・予算の扱いは
+    // summary解析結果と独立に行う(ただしresultCategoryには解析結果を反映し、AI分析上の
+    // 成功件数を実態どおりにする。Codexレビュー指摘)。
+    if (usage) {
+      const actualMicroUsd = estimateOpenAiCostMicroUsd(
+        SUMMARY_MODEL,
+        usage.inputTokens,
+        usage.outputTokens,
+      );
+      settleDeltaMicroUsd = actualMicroUsd - worstCaseMicroUsd;
+      await recordVcRecapSummaryCost(
+        prisma,
+        guildId,
+        usage,
+        actualMicroUsd,
+        parsed !== null,
+        Date.now() - startedAt,
+      );
+    }
+    return parsed;
   } catch {
     return null;
   } finally {
@@ -221,21 +236,15 @@ export async function summarizeVcRecapSession(
 /**
  * VC要約の呼び出しもai_generation_eventsへ記録し、チャットAIと同じGuild月次予算の
  * 対象に含める(Issue #519)。記録失敗は要約結果に影響させない(fire-and-forget)。
- * 戻り値は実コスト(micro USD)。usageが取れない場合は0(=reserve分を全額解放)。
  */
 async function recordVcRecapSummaryCost(
   prisma: PrismaClient,
   guildId: string,
-  payload: unknown,
+  usage: { inputTokens: number; outputTokens: number },
+  actualMicroUsd: number,
+  succeeded: boolean,
   durationMs: number,
-): Promise<number> {
-  const usage = extractUsage(payload);
-  if (!usage) return 0;
-  const actualMicroUsd = estimateOpenAiCostMicroUsd(
-    SUMMARY_MODEL,
-    usage.inputTokens,
-    usage.outputTokens,
-  );
+): Promise<void> {
   const estimatedCostUsd = actualMicroUsd / 1_000_000;
   await recordAiGenerationEvent(prisma, {
     guildId,
@@ -243,12 +252,11 @@ async function recordVcRecapSummaryCost(
     model: SUMMARY_MODEL,
     modelProfile: 'vc_recap_summary',
     feature: 'vc_recap_summary',
-    resultCategory: 'success',
+    resultCategory: succeeded ? 'success' : 'failed',
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
     totalTokens: usage.inputTokens + usage.outputTokens,
     estimatedCostUsd,
     durationMs,
   }).catch(() => undefined);
-  return actualMicroUsd;
 }

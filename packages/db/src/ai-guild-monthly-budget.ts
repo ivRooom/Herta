@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { getGuildMonthlyAiSpendUsd, startOfJstMonth } from './ai-generation-analytics.js';
 
 export interface GuildMonthlyBudgetReservation {
@@ -7,21 +7,23 @@ export interface GuildMonthlyBudgetReservation {
   periodStart: Date;
 }
 
+type TxClient = Prisma.TransactionClient;
+
 /**
- * Guild単位の月次AI予算(Issue #519)をatomicにreserveする。読み取り→判定→書き込みを
- * 複数のSQL文に分けると、(a)判定と差し戻しの間に他リクエストが割り込む、(b)差し戻し自体が
- * 失敗すると超過分がテーブルに残り続ける、という2つのレースが生じる(Codexレビュー指摘)。
- * これを避けるため、1本のSQL文(CTEで現在値をロック付きで取得→同じ文の中で条件付き加算)で
- * reserveを完結させる。
+ * Guild単位の月次AI予算(Issue #519)をatomicにreserveする。
  *
- * - 1つ目のCTE(current_row)はINSERT ... ON CONFLICT DO UPDATE(no-op)で対象行をロックしつつ
- *   現在値を取得する。行が無ければai_generation_events(監査ログ)から当月の既存消費分を
- *   シードする(Codexレビュー指摘: この機能を月の途中でデプロイしても、既に発生済みの
- *   コストを無視して上限まで再度使われてしまわないようにする)。
- * - 2つ目のCTE(applied)は、current_rowで取得した値に対してamountMicroUsdを足しても
- *   limitMicroUsd以下に収まる場合のみ加算する(収まらなければ0を足す=実質no-op)。
- *   現在値の取得と加算判定・書き込みが同一SQL文内で行われるため、同一guildへの並行
- *   リクエストでも予算超過や二重カウントが起きない。
+ * 当初はCTEを1本のSQL文にまとめる形で実装したが、PostgreSQLのデータ変更CTEは文の開始時点の
+ * 単一スナップショットを共有するため、「行を新規作成するCTE」と「その行を更新する別のCTE」を
+ * 同じ文に書いても後者から前者の変更が見えず、新規guildの初回リクエストが誤って拒否される
+ * バグがあった(Codexレビュー指摘)。
+ *
+ * 正しい実装として、`prisma.$transaction`+`SELECT ... FOR UPDATE`による明示的な行ロックを使う。
+ * 1) 対象行が無ければai_generation_events(監査ログ)の当月既存消費分をシードしてINSERT
+ *    (Codexレビュー指摘: この機能を月の途中でデプロイしても、既存コストを無視して上限まで
+ *    再度使われてしまわないようにする)。
+ * 2) `FOR UPDATE`で行ロックを取得しながら現在値を読む(同一guild・同一月への並行リクエストは
+ *    ここで直列化される)。
+ * 3) ロック済みの現在値に対して判定し、収まる場合のみUPDATEで加算してからコミットする。
  */
 export async function reserveGuildMonthlyBudget(
   prisma: PrismaClient,
@@ -36,31 +38,36 @@ export async function reserveGuildMonthlyBudget(
   );
   const seedMicroUsd = BigInt(Math.max(0, Math.round(priorSpendUsd * 1_000_000)));
 
-  const rows = await prisma.$queryRaw<Array<{ reservedMicroUsd: bigint; accepted: boolean }>>`
-    WITH current_row AS (
+  return prisma.$transaction(async (tx: TxClient) => {
+    await tx.$executeRaw`
       INSERT INTO "ai_guild_monthly_budget_usage" ("guild_id", "period_start", "reserved_micro_usd")
       VALUES (${input.guildId}, ${periodStart}, ${seedMicroUsd})
-      ON CONFLICT ("guild_id", "period_start")
-      DO UPDATE SET "reserved_micro_usd" = "ai_guild_monthly_budget_usage"."reserved_micro_usd"
-      RETURNING "reserved_micro_usd"
-    ),
-    applied AS (
-      UPDATE "ai_guild_monthly_budget_usage"
-      SET "reserved_micro_usd" = "ai_guild_monthly_budget_usage"."reserved_micro_usd" +
-        (CASE WHEN (SELECT "reserved_micro_usd" FROM current_row) + ${amount} <= ${limit}
-          THEN ${amount} ELSE 0 END)
-      WHERE "guild_id" = ${input.guildId} AND "period_start" = ${periodStart}
-      RETURNING "reserved_micro_usd"
-    )
-    SELECT
-      applied."reserved_micro_usd" AS "reservedMicroUsd",
-      ((SELECT "reserved_micro_usd" FROM current_row) + ${amount} <= ${limit}) AS "accepted"
-    FROM applied
-  `;
+      ON CONFLICT ("guild_id", "period_start") DO NOTHING
+    `;
 
-  const row = rows[0];
-  const reservedTotalMicroUsd = Number(row?.reservedMicroUsd ?? 0n);
-  return { allowed: row?.accepted ?? false, reservedTotalMicroUsd, periodStart };
+    const rows = await tx.$queryRaw<Array<{ reservedMicroUsd: bigint }>>`
+      SELECT "reserved_micro_usd" AS "reservedMicroUsd"
+      FROM "ai_guild_monthly_budget_usage"
+      WHERE "guild_id" = ${input.guildId} AND "period_start" = ${periodStart}
+      FOR UPDATE
+    `;
+    const current = rows[0]?.reservedMicroUsd ?? 0n;
+    const allowed = current + amount <= limit;
+
+    if (allowed) {
+      await tx.$executeRaw`
+        UPDATE "ai_guild_monthly_budget_usage"
+        SET "reserved_micro_usd" = "reserved_micro_usd" + ${amount}
+        WHERE "guild_id" = ${input.guildId} AND "period_start" = ${periodStart}
+      `;
+    }
+
+    return {
+      allowed,
+      reservedTotalMicroUsd: Number(allowed ? current + amount : current),
+      periodStart,
+    };
+  });
 }
 
 /**

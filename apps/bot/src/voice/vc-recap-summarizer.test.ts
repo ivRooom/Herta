@@ -221,4 +221,66 @@ describe('summarizeVcRecapSession', () => {
       expect.any(Number),
     );
   });
+
+  it('成功応答でもusageが取れない場合はreserveを全額保持する(解放しない)', async () => {
+    recordAiGenerationEventMock.mockClear();
+    settleGuildMonthlyBudgetDeltaMock.mockClear();
+    reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
+      allowed: true,
+      reservedTotalMicroUsd: 100_000,
+      periodStart: new Date(0),
+    });
+    resolveAiOpenAiCredentialMock.mockResolvedValueOnce({ apiKey: 'test-key' });
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(openAiResponse('{"summary": "要約", "topics": []}'));
+
+    const result = await summarizeVcRecapSession(
+      prisma,
+      'guild-1',
+      [segment('u1', 'hello')],
+      { ...ENABLED_ENV, HERTA_AI_GUILD_MONTHLY_BUDGET_USD: '5' },
+      fetchImpl,
+    );
+    expect(result).toEqual({ summary: '要約', topics: [] });
+    expect(recordAiGenerationEventMock).not.toHaveBeenCalled();
+    // delta=0で呼ばれる(=実装上は何も変更しない。保守的にreserve全額を保持する)。
+    expect(settleGuildMonthlyBudgetDeltaMock).toHaveBeenCalledWith(
+      prisma,
+      'guild-1',
+      new Date(0),
+      0,
+    );
+  });
+
+  it('応答は成功でもsummary解析に失敗した場合はfailedとして記録する', async () => {
+    reserveGuildMonthlyBudgetMock.mockResolvedValueOnce({
+      allowed: true,
+      reservedTotalMicroUsd: 100_000,
+      periodStart: new Date(0),
+    });
+    resolveAiOpenAiCredentialMock.mockResolvedValueOnce({ apiKey: 'test-key' });
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          output: [{ type: 'message', content: [{ type: 'output_text', text: 'not valid json' }] }],
+          usage: { input_tokens: 10, output_tokens: 5 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    const result = await summarizeVcRecapSession(
+      prisma,
+      'guild-1',
+      [segment('u1', 'hello')],
+      { ...ENABLED_ENV, HERTA_AI_GUILD_MONTHLY_BUDGET_USD: '5' },
+      fetchImpl,
+    );
+    expect(result).toBeNull();
+    expect(recordAiGenerationEventMock).toHaveBeenCalledWith(
+      prisma,
+      expect.objectContaining({ resultCategory: 'failed' }),
+    );
+  });
 });
