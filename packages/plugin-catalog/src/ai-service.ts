@@ -374,6 +374,25 @@ export function toSafeAiFoundationError(error: unknown): AiFoundationError {
   return error instanceof AiFoundationError ? error : new AiFoundationError('internal_error');
 }
 
+/**
+ * Guild単位の月次累積AI予算上限(USD)。既存のguildQuotaMicroUsd(短期バーストガード、
+ * デフォルト24時間窓)とは別軸の、より長期(暦月)の累積コスト上限(Issue #519)。
+ * 0(未設定)は上限なしを意味し、既存デプロイのデフォルト挙動を変えない。実際のenforcement
+ * は呼び出し側(apps/bot)が`@herta/db`のgetGuildMonthlyAiSpendUsdと組み合わせて行う
+ * (AiFoundationServiceはDBアクセスを持たないため、ここでは値の解決のみ提供する)。
+ */
+export function resolveAiGuildMonthlyBudgetUsd(
+  env: Record<string, string | undefined> = process.env,
+): number {
+  const raw = env['HERTA_AI_GUILD_MONTHLY_BUDGET_USD']?.trim();
+  if (!raw) return 0;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value > 1_000_000) {
+    throw new AiConfigurationError('invalid_value', 'HERTA_AI_GUILD_MONTHLY_BUDGET_USD');
+  }
+  return value;
+}
+
 export function resolveAiFoundationConfig(
   env: Record<string, string | undefined> = process.env,
 ): AiFoundationConfig {

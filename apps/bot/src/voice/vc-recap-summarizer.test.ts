@@ -3,9 +3,16 @@ import { describe, expect, it, vi } from 'vitest';
 import { summarizeVcRecapSession } from './vc-recap-summarizer.js';
 
 const resolveAiOpenAiCredentialMock = vi.fn();
+const getGuildMonthlyAiSpendUsdMock = vi.fn().mockResolvedValue(0);
+const recordAiGenerationEventMock = vi.fn().mockResolvedValue(undefined);
 
 vi.mock('../ai/factory.js', () => ({
   resolveAiOpenAiCredential: (...args: unknown[]) => resolveAiOpenAiCredentialMock(...args),
+}));
+
+vi.mock('@herta/db', () => ({
+  getGuildMonthlyAiSpendUsd: (...args: unknown[]) => getGuildMonthlyAiSpendUsdMock(...args),
+  recordAiGenerationEvent: (...args: unknown[]) => recordAiGenerationEventMock(...args),
 }));
 
 const prisma = {} as Parameters<typeof summarizeVcRecapSession>[0];
@@ -28,19 +35,19 @@ function openAiResponse(outputText: string): Response {
 
 describe('summarizeVcRecapSession', () => {
   it('segmentsが空ならcredentialを読まずnullを返す', async () => {
-    const result = await summarizeVcRecapSession(prisma, [], ENABLED_ENV);
+    const result = await summarizeVcRecapSession(prisma, 'guild-1', [], ENABLED_ENV);
     expect(result).toBeNull();
     expect(resolveAiOpenAiCredentialMock).not.toHaveBeenCalled();
   });
 
   it('HERTA_AI_ENABLEDが既定(未設定=false)ならcredentialを読まずnullを返す', async () => {
-    const result = await summarizeVcRecapSession(prisma, [segment('u1', 'hello')], {});
+    const result = await summarizeVcRecapSession(prisma, 'guild-1', [segment('u1', 'hello')], {});
     expect(result).toBeNull();
     expect(resolveAiOpenAiCredentialMock).not.toHaveBeenCalled();
   });
 
   it('HERTA_AI_KILL_SWITCHが有効ならguild設定に関係なくcredentialを読まずnullを返す', async () => {
-    const result = await summarizeVcRecapSession(prisma, [segment('u1', 'hello')], {
+    const result = await summarizeVcRecapSession(prisma, 'guild-1', [segment('u1', 'hello')], {
       ...ENABLED_ENV,
       HERTA_AI_KILL_SWITCH: 'true',
     });
@@ -50,7 +57,12 @@ describe('summarizeVcRecapSession', () => {
 
   it('OpenAI credentialが無ければnullを返す', async () => {
     resolveAiOpenAiCredentialMock.mockResolvedValueOnce({ apiKey: null });
-    const result = await summarizeVcRecapSession(prisma, [segment('u1', 'hello')], ENABLED_ENV);
+    const result = await summarizeVcRecapSession(
+      prisma,
+      'guild-1',
+      [segment('u1', 'hello')],
+      ENABLED_ENV,
+    );
     expect(result).toBeNull();
   });
 
@@ -64,6 +76,7 @@ describe('summarizeVcRecapSession', () => {
 
     const result = await summarizeVcRecapSession(
       prisma,
+      'guild-1',
       [segment('u1', 'hello'), segment('u2', 'world')],
       ENABLED_ENV,
       fetchImpl,
@@ -79,6 +92,7 @@ describe('summarizeVcRecapSession', () => {
 
     const result = await summarizeVcRecapSession(
       prisma,
+      'guild-1',
       [segment('u1', 'hello')],
       ENABLED_ENV,
       fetchImpl,
@@ -92,6 +106,7 @@ describe('summarizeVcRecapSession', () => {
 
     const result = await summarizeVcRecapSession(
       prisma,
+      'guild-1',
       [segment('u1', 'hello')],
       ENABLED_ENV,
       fetchImpl,
@@ -105,6 +120,7 @@ describe('summarizeVcRecapSession', () => {
 
     const result = await summarizeVcRecapSession(
       prisma,
+      'guild-1',
       [segment('u1', 'hello')],
       ENABLED_ENV,
       fetchImpl,
@@ -118,6 +134,7 @@ describe('summarizeVcRecapSession', () => {
 
     const result = await summarizeVcRecapSession(
       prisma,
+      'guild-1',
       [segment('u1', 'hello')],
       ENABLED_ENV,
       fetchImpl,
@@ -131,10 +148,59 @@ describe('summarizeVcRecapSession', () => {
 
     const result = await summarizeVcRecapSession(
       prisma,
+      'guild-1',
       [segment('u1', 'hello')],
       ENABLED_ENV,
       fetchImpl,
     );
     expect(result).toBeNull();
+  });
+
+  it('Guild月次AI予算上限に達している場合はcredentialを読まずnullを返す', async () => {
+    resolveAiOpenAiCredentialMock.mockClear();
+    getGuildMonthlyAiSpendUsdMock.mockResolvedValueOnce(5);
+    const result = await summarizeVcRecapSession(prisma, 'guild-1', [segment('u1', 'hello')], {
+      ...ENABLED_ENV,
+      HERTA_AI_GUILD_MONTHLY_BUDGET_USD: '5',
+    });
+    expect(result).toBeNull();
+    expect(resolveAiOpenAiCredentialMock).not.toHaveBeenCalled();
+  });
+
+  it('予算上限未満なら通常通り呼び出し、成功時にコストをai_generation_eventsへ記録する', async () => {
+    getGuildMonthlyAiSpendUsdMock.mockResolvedValueOnce(1);
+    resolveAiOpenAiCredentialMock.mockResolvedValueOnce({ apiKey: 'test-key' });
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          output: [
+            {
+              type: 'message',
+              content: [{ type: 'output_text', text: '{"summary": "要約", "topics": []}' }],
+            },
+          ],
+          usage: { input_tokens: 100, output_tokens: 50 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    const result = await summarizeVcRecapSession(
+      prisma,
+      'guild-1',
+      [segment('u1', 'hello')],
+      { ...ENABLED_ENV, HERTA_AI_GUILD_MONTHLY_BUDGET_USD: '5' },
+      fetchImpl,
+    );
+    expect(result).toEqual({ summary: '要約', topics: [] });
+    expect(recordAiGenerationEventMock).toHaveBeenCalledWith(
+      prisma,
+      expect.objectContaining({
+        guildId: 'guild-1',
+        feature: 'vc_recap_summary',
+        inputTokens: 100,
+        outputTokens: 50,
+      }),
+    );
   });
 });

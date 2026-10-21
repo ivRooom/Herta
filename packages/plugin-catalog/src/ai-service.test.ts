@@ -18,6 +18,7 @@ import {
   estimateOpenAiCostMicroUsd,
   estimateXaiCostMicroUsd,
   resolveAiFoundationConfig,
+  resolveAiGuildMonthlyBudgetUsd,
   toSafeAiFoundationError,
   type AiFoundationConfig,
   type AiGenerationProvider,
@@ -223,6 +224,31 @@ describe('resolveAiFoundationConfig', () => {
       resolveAiFoundationConfig({ HERTA_AI_PROVIDER: 'deepseek', HERTA_AI_MODEL: 'claude-opus-5' }),
     ).toThrowError(
       expect.objectContaining<Partial<AiConfigurationError>>({ code: 'invalid_model' }),
+    );
+  });
+});
+
+describe('resolveAiGuildMonthlyBudgetUsd', () => {
+  it('未設定なら0(上限なし)を返す', () => {
+    expect(resolveAiGuildMonthlyBudgetUsd({})).toBe(0);
+  });
+
+  it('設定値をそのまま返す', () => {
+    expect(resolveAiGuildMonthlyBudgetUsd({ HERTA_AI_GUILD_MONTHLY_BUDGET_USD: '50.5' })).toBe(
+      50.5,
+    );
+  });
+
+  it('負の値や非数は拒否する', () => {
+    expect(() =>
+      resolveAiGuildMonthlyBudgetUsd({ HERTA_AI_GUILD_MONTHLY_BUDGET_USD: '-1' }),
+    ).toThrowError(
+      expect.objectContaining<Partial<AiConfigurationError>>({ code: 'invalid_value' }),
+    );
+    expect(() =>
+      resolveAiGuildMonthlyBudgetUsd({ HERTA_AI_GUILD_MONTHLY_BUDGET_USD: 'abc' }),
+    ).toThrowError(
+      expect.objectContaining<Partial<AiConfigurationError>>({ code: 'invalid_value' }),
     );
   });
 });

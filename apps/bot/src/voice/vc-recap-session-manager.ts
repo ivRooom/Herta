@@ -340,7 +340,7 @@ export async function stopVcRecap(
   session.connection.destroy();
 
   const segments = await listVcRecapTranscriptSegments(prisma, session.sessionId);
-  const result = await summarizeVcRecapSession(prisma, segments);
+  const result = await summarizeVcRecapSession(prisma, guildId, segments);
   if (!result) {
     await failVcRecapSession(prisma, session.sessionId);
     logger.warn({ guildId, sessionId: session.sessionId }, 'VC要約の生成に失敗しました');

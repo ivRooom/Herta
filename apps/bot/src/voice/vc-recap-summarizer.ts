@@ -1,5 +1,11 @@
 import type { PrismaClient, VcRecapTranscriptSegmentRecord } from '@herta/db';
-import { resolveAiFoundationConfig } from '@herta/plugin-catalog/ai-service';
+import { getGuildMonthlyAiSpendUsd, recordAiGenerationEvent } from '@herta/db';
+import {
+  estimateOpenAiCostMicroUsd,
+  resolveAiFoundationConfig,
+  resolveAiGuildMonthlyBudgetUsd,
+  type AiOpenAiModel,
+} from '@herta/plugin-catalog/ai-service';
 import { resolveAiOpenAiCredential } from '../ai/factory.js';
 
 /**
@@ -7,7 +13,7 @@ import { resolveAiOpenAiCredential } from '../ai/factory.js';
  * レート制限・テレメトリと密結合)には相乗りせず、credential解決だけを再利用した
  * 軽量な直接OpenAI呼び出しで行う(docs/RAG_ROADMAP.md Phase 2参照)。
  */
-const SUMMARY_MODEL = 'gpt-5.6-luna';
+const SUMMARY_MODEL: AiOpenAiModel = 'gpt-5.6-luna';
 const SUMMARY_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_TOKENS = 600;
 const MAX_TRANSCRIPT_CHARS = 12_000;
@@ -51,6 +57,16 @@ function parseSummaryJson(text: string): VcRecapSummaryResult | null {
   }
 }
 
+function extractUsage(payload: unknown): { inputTokens: number; outputTokens: number } | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const usage = (payload as Record<string, unknown>)['usage'];
+  if (typeof usage !== 'object' || usage === null) return null;
+  const inputTokens = (usage as Record<string, unknown>)['input_tokens'];
+  const outputTokens = (usage as Record<string, unknown>)['output_tokens'];
+  if (typeof inputTokens !== 'number' || typeof outputTokens !== 'number') return null;
+  return { inputTokens: Math.max(0, inputTokens), outputTokens: Math.max(0, outputTokens) };
+}
+
 function extractOutputText(payload: unknown): string | null {
   if (typeof payload !== 'object' || payload === null) return null;
   const output = (payload as Record<string, unknown>)['output'];
@@ -75,11 +91,13 @@ function extractOutputText(payload: unknown): string | null {
 }
 
 /**
- * segmentsが空、OpenAI credentialが未設定、API呼び出しが失敗(タイムアウト含む)、
- * 応答の解析に失敗した場合はnullを返す(呼び出し元はfailVcRecapSessionで記録する)。
+ * segmentsが空、OpenAI credentialが未設定、Guild月次AI予算上限超過、API呼び出しが失敗
+ * (タイムアウト含む)、応答の解析に失敗した場合はnullを返す(呼び出し元はfailVcRecapSessionで
+ * 記録する)。
  */
 export async function summarizeVcRecapSession(
   prisma: PrismaClient,
+  guildId: string,
   segments: readonly VcRecapTranscriptSegmentRecord[],
   env: Record<string, string | undefined> = process.env,
   fetchImpl: typeof fetch = fetch,
@@ -90,19 +108,30 @@ export async function summarizeVcRecapSession(
   // 呼ばない」という緊急停止契約は、VC要約の独立したOpenAI呼び出しにも適用する
   // (resolveAiOpenAiCredentialはcredential解決のみでkill switchを見ないため、別途確認する)。
   let aiEnabled: boolean;
+  let guildMonthlyBudgetUsd = 0;
   try {
     const baseConfig = resolveAiFoundationConfig(env);
     aiEnabled = baseConfig.enabled && !baseConfig.killSwitch;
+    guildMonthlyBudgetUsd = resolveAiGuildMonthlyBudgetUsd(env);
   } catch {
     aiEnabled = false;
   }
   if (!aiEnabled) return null;
+
+  // Issue #519: チャットAI側(AiFoundationService経路)と同じGuild月次予算を共有する。
+  // DB照会が失敗した場合はfail-open(要約自体は続行)し、一時的なDB障害でVC Recapが
+  // 止まらないようにする。
+  if (guildMonthlyBudgetUsd > 0) {
+    const spentUsd = await getGuildMonthlyAiSpendUsd(prisma, guildId).catch(() => 0);
+    if (spentUsd >= guildMonthlyBudgetUsd) return null;
+  }
 
   const credential = await resolveAiOpenAiCredential({ prisma, env });
   if (!credential.apiKey) return null;
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), SUMMARY_TIMEOUT_MS);
+  const startedAt = Date.now();
   try {
     const response = await fetchImpl('https://api.openai.com/v1/responses', {
       method: 'POST',
@@ -124,6 +153,7 @@ export async function summarizeVcRecapSession(
       return null;
     }
     const payload = await response.json();
+    await recordVcRecapSummaryCost(prisma, guildId, payload, Date.now() - startedAt);
     const text = extractOutputText(payload);
     if (!text) return null;
     return parseSummaryJson(text);
@@ -132,4 +162,33 @@ export async function summarizeVcRecapSession(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+/**
+ * VC要約の呼び出しもai_generation_eventsへ記録し、チャットAIと同じGuild月次予算の
+ * 対象に含める(Issue #519)。記録失敗は要約結果に影響させない(fire-and-forget)。
+ */
+async function recordVcRecapSummaryCost(
+  prisma: PrismaClient,
+  guildId: string,
+  payload: unknown,
+  durationMs: number,
+): Promise<void> {
+  const usage = extractUsage(payload);
+  if (!usage) return;
+  const estimatedCostUsd =
+    estimateOpenAiCostMicroUsd(SUMMARY_MODEL, usage.inputTokens, usage.outputTokens) / 1_000_000;
+  await recordAiGenerationEvent(prisma, {
+    guildId,
+    provider: 'openai',
+    model: SUMMARY_MODEL,
+    modelProfile: 'vc_recap_summary',
+    feature: 'vc_recap_summary',
+    resultCategory: 'success',
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.inputTokens + usage.outputTokens,
+    estimatedCostUsd,
+    durationMs,
+  }).catch(() => undefined);
 }

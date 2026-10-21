@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { PrismaClient } from '@prisma/client';
 import {
   calculateAiSuccessRate,
   fillAiUsageDays,
+  getGuildMonthlyAiSpendUsd,
   normalizeAiAnalyticsDays,
   normalizeAiGenerationEventInput,
 } from './ai-generation-analytics.js';
@@ -119,4 +121,39 @@ test('成功率を1桁小数のパーセンテージへ丸める', () => {
   assert.equal(calculateAiSuccessRate({ total: 0, succeeded: 0, failed: 0 }), null);
   assert.equal(calculateAiSuccessRate({ total: 3, succeeded: 2, failed: 1 }), 66.7);
   assert.equal(calculateAiSuccessRate({ total: 10, succeeded: 10, failed: 0 }), 100);
+});
+
+test('Guild月次AI利用コストはJST暦月の開始日時でフィルタする', async () => {
+  let capturedSql = '';
+  let capturedGuildId = '';
+  let capturedMonthStart: Date | undefined;
+  const prisma = {
+    $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) => {
+      capturedSql = strings.join('?');
+      capturedGuildId = values[0] as string;
+      capturedMonthStart = values[1] as Date;
+      return [{ spentUsd: 12.5 }];
+    },
+  } as unknown as PrismaClient;
+
+  const spent = await getGuildMonthlyAiSpendUsd(
+    prisma,
+    'guild-1',
+    new Date('2026-07-15T03:00:00.000Z'),
+  );
+
+  assert.equal(spent, 12.5);
+  assert.equal(capturedGuildId, 'guild-1');
+  assert.match(capturedSql, /ai_generation_events/);
+  // 2026-07-15T03:00Z + 9h = 2026-07-15T12:00 JST -> 月初は2026-07-01T00:00 JST = 2026-06-30T15:00Z
+  assert.equal(capturedMonthStart?.toISOString(), '2026-06-30T15:00:00.000Z');
+});
+
+test('Guild月次AI利用コストはデータが無ければ0を返す', async () => {
+  const prisma = {
+    $queryRaw: async () => [],
+  } as unknown as PrismaClient;
+
+  const spent = await getGuildMonthlyAiSpendUsd(prisma, 'guild-1', new Date());
+  assert.equal(spent, 0);
 });
