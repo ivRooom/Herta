@@ -1104,9 +1104,25 @@ function withOpenAiMcpToolCallingPolicy(
 
     let connection: HertaMcpConnection | null = null;
     try {
-      connection = await connectHertaToolsMcpClient(
-        createHertaToolsMcpServer(options.prisma, options.guildId),
-      );
+      try {
+        // MCPサーバーへの接続自体は、provider(OpenAI)への最初のfetchImpl呼び出しより前に
+        // 発生する。ここで失敗した場合は実際のprovider呼び出しが一切発生していないと
+        // 断定できるため、AiFoundationErrorへ変換する際に明示的にdispatched:falseを
+        // 付与する(付与しないと、呼び出し元(OpenAiResponsesProvider.generate()のcatch)が
+        // 汎用的なprovider_unavailableへ変換し、既定のdispatched:trueのままGuild月次AI予算の
+        // reserveが解放されずに残ってしまう。Codexレビュー指摘)。
+        connection = await connectHertaToolsMcpClient(
+          createHertaToolsMcpServer(options.prisma, options.guildId),
+        );
+      } catch (error) {
+        if (error instanceof AiFoundationError) {
+          throw new AiFoundationError(error.category, {
+            retryAfterMs: error.retryAfterMs,
+            dispatched: false,
+          });
+        }
+        throw new AiFoundationError('provider_unavailable', { dispatched: false });
+      }
 
       const firstResponse = await fetchImpl(input, {
         ...init,
