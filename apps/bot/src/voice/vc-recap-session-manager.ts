@@ -162,6 +162,15 @@ export async function startVcRecap(
         },
         'VC接続状態が変化しました',
       );
+      // 4014以外のclose codeではDisconnectedを経由せずSignallingへ戻るため、
+      // stateChangeだけでは切断理由(例: 4017 DAVE必須)がログに残らない。
+      const networking = 'networking' in newState ? newState.networking : undefined;
+      const previousNetworking = 'networking' in oldState ? oldState.networking : undefined;
+      if (networking && networking !== previousNetworking) {
+        networking.on('close', (closeCode) => {
+          logger.warn({ guildId: channel.guild.id, closeCode }, 'VC音声WebSocketが切断されました');
+        });
+      }
     });
     connection.on('error', (err) => {
       logger.warn({ err, guildId: channel.guild.id }, 'VC接続でエラーが発生しました');
