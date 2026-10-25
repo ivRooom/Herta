@@ -16,6 +16,11 @@ Parameters:
   BackupPrefix:
     Type: String
     Default: postgres
+  DedicatedBackupBucketName:
+    Type: String
+    Default: ''
+    AllowedPattern: '^$|^ivrm-postgresql-backup-[a-z0-9]{8,32}$'
+    Description: Optional existing dedicated PostgreSQL complete-manifest bucket; empty preserves Herta-only monitoring
   MaximumBackupAgeHours:
     Type: Number
     Default: 25
@@ -35,6 +40,9 @@ Parameters:
     Default: herta-backup-monitoring
     AllowedPattern: '[A-Za-z0-9-_]+'
     Description: CloudWatch dashboard name
+
+Conditions:
+  HasDedicatedBackup: !Not [!Equals [!Ref DedicatedBackupBucketName, '']]
 
 Resources:
   BackupFreshnessDeadLetterQueue:
@@ -87,6 +95,24 @@ Resources:
                 Condition:
                   StringEquals:
                     cloudwatch:namespace: Herta/BackupMonitoring
+        - !If
+          - HasDedicatedBackup
+          - PolicyName: DedicatedPostgresqlCompleteManifestRead
+            PolicyDocument:
+              Version: '2012-10-17'
+              Statement:
+                - Sid: ListDedicatedCapturePrefix
+                  Effect: Allow
+                  Action: s3:ListBucket
+                  Resource: !Sub arn:${AWS::Partition}:s3:::${DedicatedBackupBucketName}
+                  Condition:
+                    StringEquals:
+                      s3:prefix: postgresql/
+                - Sid: ReadDedicatedCompletionManifests
+                  Effect: Allow
+                  Action: s3:GetObject
+                  Resource: !Sub arn:${AWS::Partition}:s3:::${DedicatedBackupBucketName}/postgresql/*/manifest.json
+          - !Ref AWS::NoValue
       Tags:
         - Key: Application
           Value: Herta
@@ -117,22 +143,119 @@ Resources:
           SNS_TOPIC_ARN: !Ref AlertTopicArn
           MAX_BACKUP_AGE_HOURS: !Ref MaximumBackupAgeHours
           MONITORING_NAMESPACE: Herta/BackupMonitoring
+          DEDICATED_BACKUP_BUCKET: !Ref DedicatedBackupBucketName
+          DEDICATED_BACKUP_EXPECTED_OWNER: !Ref AWS::AccountId
       Code:
         ZipFile: |
+          import base64
+          import hashlib
           import json
           import os
+          import re
           from datetime import datetime, timezone
 
           import boto3
+          from botocore.config import Config
 
           s3 = boto3.client("s3")
           sns = boto3.client("sns")
           cloudwatch = boto3.client("cloudwatch")
+          dedicated_s3 = boto3.client("s3", config=Config(connect_timeout=2, read_timeout=2, retries={"mode": "standard", "total_max_attempts": 1}))
           S3_BUCKET = os.environ["S3_BUCKET"]
           S3_PREFIX = os.environ.get("S3_PREFIX", "postgres").strip("/")
           SNS_TOPIC_ARN = os.environ["SNS_TOPIC_ARN"]
           MAX_BACKUP_AGE_HOURS = float(os.environ.get("MAX_BACKUP_AGE_HOURS", "25"))
           MONITORING_NAMESPACE = os.environ.get("MONITORING_NAMESPACE", "Herta/BackupMonitoring")
+          DEDICATED_BACKUP_BUCKET = os.environ.get("DEDICATED_BACKUP_BUCKET", "")
+          DEDICATED_BACKUP_EXPECTED_OWNER = os.environ.get("DEDICATED_BACKUP_EXPECTED_OWNER", "")
+          DEDICATED_DATABASES = ["herta", "ivrm_web", "ivrm_dashboard", "ivrm_ai"]
+          DEDICATED_FILES = [f"{database}.dump" for database in DEDICATED_DATABASES] + ["roles.sql"]
+          MANIFEST_KEY = re.compile(r"^postgresql/([0-9]{8}T[0-9]{6}Z-[0-9a-f-]{36})/manifest\.json$")
+
+          def require_fresh(value, now):
+              if not isinstance(value, datetime) or value.tzinfo is None:
+                  raise ValueError("invalid capture time")
+              if not -300 <= (now - value).total_seconds() <= 25 * 3600:
+                  raise ValueError("capture stale or future dated")
+
+          def validate_dedicated_manifest(value, capture_id, now):
+              if (not isinstance(value, dict) or type(value.get("format_version")) is not int or
+                      value["format_version"] != 1 or value.get("capture_id") != capture_id or
+                      value.get("databases") != DEDICATED_DATABASES or
+                      type(value.get("server_version_num")) is not int or
+                      not 170000 <= value["server_version_num"] < 180000):
+                  raise ValueError("invalid capture header")
+              files = value.get("files")
+              if (not isinstance(files, list) or not all(isinstance(item, dict) for item in files) or
+                      [item.get("name") for item in files] != DEDICATED_FILES):
+                  raise ValueError("incomplete capture")
+              for item in files:
+                  limit = 1024 * 1024 if item["name"] == "roles.sql" else 128 * 1024 * 1024
+                  if (type(item.get("bytes")) is not int or not 0 < item["bytes"] <= limit or
+                          not isinstance(item.get("sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"]) or
+                          not isinstance(item.get("version_id"), str) or item["version_id"] in ("", "null")):
+                      raise ValueError("invalid capture entry")
+              require_fresh(datetime.fromisoformat(value["completed_at"]), now)
+
+          def verify_dedicated_capture(now):
+              if not re.fullmatch(r"[0-9]{12}", DEDICATED_BACKUP_EXPECTED_OWNER):
+                  raise ValueError("expected bucket owner missing")
+              listing = dedicated_s3.list_objects_v2(Bucket=DEDICATED_BACKUP_BUCKET, ExpectedBucketOwner=DEDICATED_BACKUP_EXPECTED_OWNER, Prefix="postgresql/", MaxKeys=1000)
+              if listing.get("IsTruncated") or listing.get("NextContinuationToken"):
+                  raise ValueError("capture listing exceeds bound")
+              contents = listing.get("Contents", [])
+              if not isinstance(contents, list) or len(contents) > 1000:
+                  raise ValueError("invalid capture listing")
+              candidates = []
+              for item in contents:
+                  if not isinstance(item, dict) or not isinstance(item.get("Key"), str):
+                      raise ValueError("invalid capture object")
+                  match = MANIFEST_KEY.fullmatch(item["Key"])
+                  if not match:
+                      continue
+                  if type(item.get("Size")) is not int or not 0 < item["Size"] <= 65536:
+                      raise ValueError("invalid manifest size")
+                  modified = item.get("LastModified")
+                  if not isinstance(modified, datetime) or modified.tzinfo is None:
+                      raise ValueError("invalid manifest timestamp")
+                  candidates.append((modified, item["Key"], item["Size"], match.group(1)))
+              if not candidates:
+                  raise ValueError("complete capture missing")
+              modified, key, size, capture_id = max(candidates)
+              require_fresh(modified, now)
+              response = dedicated_s3.get_object(Bucket=DEDICATED_BACKUP_BUCKET, ExpectedBucketOwner=DEDICATED_BACKUP_EXPECTED_OWNER, Key=key, ChecksumMode="ENABLED")
+              body = response["Body"]
+              try:
+                  payload = body.read(65537)
+              finally:
+                  body.close()
+              if (len(payload) != size or len(payload) > 65536 or
+                      response.get("ContentLength") != size or
+                      not isinstance(response.get("VersionId"), str) or response["VersionId"] in ("", "null") or
+                      response.get("ChecksumSHA256") != base64.b64encode(hashlib.sha256(payload).digest()).decode()):
+                  raise ValueError("manifest receipt mismatch")
+              validate_dedicated_manifest(json.loads(payload), capture_id, now)
+
+          def check_dedicated(now):
+              if not DEDICATED_BACKUP_BUCKET:
+                  return None
+              try:
+                  verify_dedicated_capture(now)
+              except Exception:
+                  # Fixed aggregate notice only. Never copy source identifiers or SDK errors.
+                  notify("[ALERT] Dedicated PostgreSQL backup unhealthy", json.dumps({
+                      "status": "alert", "component": "dedicated_postgresql_backup", "reason": "capture_check_failed", "version": 1
+                  }))
+                  return {"status": "alert", "reason": "capture_check_failed"}
+              return {"status": "ok"}
+
+          def with_dedicated(result, dedicated):
+              if dedicated is None:
+                  return result
+              result = {**result, "dedicated_backup": dedicated}
+              if dedicated["status"] != "ok" and result["status"] in ("ok", "test_alert"):
+                  result.update(status="alert", reason="dedicated_backup_unhealthy")
+              return result
 
           def notify(subject, message):
               response = sns.publish(TopicArn=SNS_TOPIC_ARN, Subject=subject, Message=message)
@@ -191,6 +314,7 @@ Resources:
 
           def lambda_handler(event, context):
               now = datetime.now(timezone.utc)
+              dedicated = check_dedicated(now)
               latest = latest_dump()
               force_alert = isinstance(event, dict) and event.get("force_alert") is True
               function_name = context.function_name
@@ -201,7 +325,7 @@ Resources:
                       "[ALERT] Herta backup was not found",
                       f"Time (UTC): {now.isoformat()}\nS3 bucket: {S3_BUCKET}\nPrefix: {S3_PREFIX}/",
                   )
-                  return {"status": "alert", "reason": "no_backup", "message_id": message_id}
+                  return with_dedicated({"status": "alert", "reason": "no_backup", "message_id": message_id}, dedicated)
 
               latest_time = latest["LastModified"]
               age_hours = (now - latest_time).total_seconds() / 3600
@@ -223,16 +347,17 @@ Resources:
                       "[TEST] Herta backup freshness monitor",
                       f"Latest backup: {latest['Key']}\nAge: {age_hours:.2f} hours",
                   )
-                  return {"status": "test_alert", "message_id": message_id, **result}
+                  return with_dedicated({"status": "test_alert", "message_id": message_id, **result}, dedicated)
               if not freshness_ok:
                   message_id = notify(
                       "[ALERT] Herta PostgreSQL backup is stale",
                       f"Latest backup: {latest['Key']}\nLast modified: {latest_time.isoformat()}\nAge: {age_hours:.2f} hours\nMaximum: {MAX_BACKUP_AGE_HOURS:.2f} hours",
                   )
-                  return {"status": "alert", "reason": "stale_backup", "message_id": message_id, **result}
+                  return with_dedicated({"status": "alert", "reason": "stale_backup", "message_id": message_id, **result}, dedicated)
 
-              print(json.dumps({"status": "ok", **result}))
-              return {"status": "ok", **result}
+              result = with_dedicated({"status": "ok", **result}, dedicated)
+              print(json.dumps(result))
+              return result
       Tags:
         - Key: Application
           Value: Herta

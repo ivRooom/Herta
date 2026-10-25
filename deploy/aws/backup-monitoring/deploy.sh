@@ -21,6 +21,21 @@ aws cloudformation validate-template \
   --region "${REGION}" \
   --template-body "file://${TEMPLATE_FILE}" >/dev/null
 
+PARAMETER_OVERRIDES=(
+  "BackupBucketName=${BACKUP_BUCKET_NAME}"
+  "AlertTopicArn=${ALERT_TOPIC_ARN}"
+  "ResourceNameSuffix=${RESOURCE_NAME_SUFFIX}"
+  "BackupPrefix=${BACKUP_PREFIX:-postgres}"
+  "MaximumBackupAgeHours=${MAXIMUM_BACKUP_AGE_HOURS:-25}"
+  "ScheduleExpression=${SCHEDULE_EXPRESSION:-cron(0 5 * * ? *)}"
+  "ScheduleTimezone=${SCHEDULE_TIMEZONE:-Asia/Tokyo}"
+  "LogRetentionDays=${LOG_RETENTION_DAYS:-30}"
+)
+# Omission preserves an existing stack value; explicit empty disables the option.
+if [[ ${DEDICATED_BACKUP_BUCKET_NAME+x} ]]; then
+  PARAMETER_OVERRIDES+=("DedicatedBackupBucketName=${DEDICATED_BACKUP_BUCKET_NAME}")
+fi
+
 aws cloudformation deploy \
   --region "${REGION}" \
   --stack-name "${STACK_NAME}" \
@@ -28,15 +43,7 @@ aws cloudformation deploy \
   --capabilities CAPABILITY_NAMED_IAM \
   --no-fail-on-empty-changeset \
   --tags Application=Herta Purpose=BackupFreshnessCheck ManagedBy=CloudFormation \
-  --parameter-overrides \
-    BackupBucketName="${BACKUP_BUCKET_NAME}" \
-    AlertTopicArn="${ALERT_TOPIC_ARN}" \
-    ResourceNameSuffix="${RESOURCE_NAME_SUFFIX}" \
-    BackupPrefix="${BACKUP_PREFIX:-postgres}" \
-    MaximumBackupAgeHours="${MAXIMUM_BACKUP_AGE_HOURS:-25}" \
-    ScheduleExpression="${SCHEDULE_EXPRESSION:-cron(0 5 * * ? *)}" \
-    ScheduleTimezone="${SCHEDULE_TIMEZONE:-Asia/Tokyo}" \
-    LogRetentionDays="${LOG_RETENTION_DAYS:-30}"
+  --parameter-overrides "${PARAMETER_OVERRIDES[@]}"
 
 FUNCTION_NAME="$(
   aws cloudformation describe-stacks \

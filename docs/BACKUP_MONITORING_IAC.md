@@ -16,6 +16,33 @@ CloudShellで手作業作成したLambda、IAM Role、EventBridge SchedulerをCl
 - Lambda CloudWatch Logs保持期間
 - CloudWatch Dashboard
 
+## 専用PostgreSQLの完了マニフェスト監視（追加実装・未適用）
+
+2026-10-26: `DedicatedBackupBucketName` を空文字列（既定値）から、承認済みの専用DB backup bucketへ設定すると、同じLambda/Scheduler/通知経路で追加監視する。既存Hertaのbucket/prefixを置換せず、既存監視を残す。新しいLambda、Schedule、Dashboard、metric seriesやサーバーは作成しない。実行時間・S3 request・通知利用量は増え得るため、費用と実行変更を別途確認する。
+
+完了判定は `postgresql/<UTC timestamp>-<UUID>/manifest.json` だけを対象とする。
+最大1000件の一覧、最大64KiBのマニフェストに制限し、一覧がtruncatedなら失敗にする。新しい任意の`.dump`では旧い完了マニフェストを隠せない。S3応答のSHA256/version ID、keyとcapture ID、PG17、4DB（herta/web/dashboard/ai）とrolesの正確なfile set、size/hash/version、S3更新時刻と本文completion時刻の25時間以内・未来5分以内を確認する。
+
+監視が確認するのは「完了captureが新しい」ことであり、各payloadの存在/復号/復元やRPO/RTOの実証ではない。rolesにはpassword hashを含めず、Secret・鍵・mediaは別の復旧経路で保全する。独立した実復元検証も必要。
+
+追加S3 clientだけconnect/read timeoutを各2秒・total_max_attempts=1へ制限し、一覧とGetの接続/読取予算を合計約8秒に抑える。既存30秒Lambdaの全体を新規S3 retryで使い切らないための境界で、実行全体やSDK/networkの実測保証ではない。既存Herta client設定・Lambda timeout/memoryは変更しない。
+
+追加監視は既存Hertaのmissing/staleの早期returnより前に実行し、追加監視が不健全なら全体を`ok`にしない。追加通知は固定のcomponent/reason/status/versionだけで、bucket/key/host/provider errorを含めない。SDK失敗も不健全とし、通知失敗は例外としてLambda failureにする。SNS受付は受信者到達の保証ではない。既存Herta用の3つのcustom metricは従来どおりHertaだけを表し、専用DBの健康指標と読み替えない。既存metric seriesや通知経路を増殖させない。
+
+既存Lambda roleへ条件付きinline policyだけを追加する。新bucketの`postgresql/`一覧と`postgresql/*/manifest.json`のGetObjectだけを許可し、dump/rolesの読取、GetObjectVersion、書込/削除、KMS、ACL/tag/Object LockやObject Lambda権限は追加しない。SNS/CloudWatchは既存のscopeを維持する。実際のSSE-S3/通知先暗号化とprincipal境界を再照合する。
+
+権限inventoryは、抽出したinline Pythonに対して`iam-policy-autopilot 0.3.0`をregion/accountとInfrastructure backup Terraform root付きで実行して確認した（実識別子/結果ファイルは私有管理）。生成された広いbaselineから、未使用のACL/tag/retention/legalhold/version/Object Lambda/accesspoint/KMSを採用せず、実際のListObjectsV2/GetObjectに必要な追加権限だけを条件付きCFN参照へ絞った。生成policyをそのまま本番へ適用していない。
+
+デプロイスクリプトは `DEDICATED_BACKUP_BUCKET_NAME` が**明示設定された場合だけ**このparameterを渡す。未設定なら既存stack値を保持し、新規stackではtemplate既定の空文字になる。意図した無効化は明示的な空文字指定。既存scriptのdeploy後Lambda invokeや旧Scheduler停止を、この追加実装の確認だけで実行しない。
+
+有効化前に、既存stack parameters/role/SNS subscriptions/scheduleとsaved ChangeSetをread-onlyで照合し、承認対象を既存Lambda code/envとroleの追加読取policyだけに限定する。Herta app/DB/deployとは分離し、他のparameterはUsePreviousValueで保持する。test alertを送る場合は通知先を特定した承認を取得する。この実装ではcloud/IAM変更、deploy、実データ/Secret取得、実通知は実施していない。
+
+Production workflowの`deploy/**`直後に`!deploy/aws/backup-monitoring/**`を置き、monitoringだけのpushではBot image rebuild/再deployを起動しない。その他のapp/runtime/deploy inputとworkflow_dispatchは維持する。DockerfileのCOPYでbuilderへ入るが、deployはruntime前に除去され、monitoring template/scriptをアプリから参照する変更はない。negated pathsは順序が意味を持つため、このtrigger境界も独立review対象とする。[GitHub workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushpull_requestpull_request_targetpathspaths-ignore)。監視CIがgreenでも本番CFN deployの承認にはしない。
+
+rollbackは承認済みの前template/code/env/policyへ戻すか、追加parameterを明示的に空へ戻す。既存Herta監視を保持し、専用DBの保護が未稼働になることを記録する。backup uploaderを止めても既存S3/source DB/volumeを削除しない。
+
+検証: exact inline sourceのmocked SDK14テスト、deploy shell構文、CloudFormation lint。実Lambda/IAM強制、実SNS配送、128MiB/30秒での実行余裕、payloadの復元は別の受入。ProducerはInfrastructureの完了manifest v1、Consumerはこの任意monitor。mergeは独立可能、有効化順はuploader/保存先のsynthetic確認→追加monitor有効化/通知確認→日次運用受入。DB cutoverの承認にはしない。
+
 ## 監視メトリクス
 
 Lambdaは実行ごとに`Herta/BackupMonitoring`名前空間へ以下を送信します。
