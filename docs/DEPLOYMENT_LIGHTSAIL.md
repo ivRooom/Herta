@@ -1,12 +1,16 @@
 # 本番デプロイガイド (AWS Lightsail)
 
+> **2026-10-26 現行デプロイ方式の訂正** — 本ページの初期構築用のSSH経由`git pull → docker compose build`記述と構成図は履歴です。現行の [deploy-production.yml](../.github/workflows/deploy-production.yml) は GitHub-hosted runnerでProduction imageをビルド/検証し、`ghcr.io/ivrooom/herta:<commit SHA>` にpushしたうえで、AWS認証/SSM SecureStringによるランタイムSecret受け渡しとLightsail SSHでprebuilt imageを配布します。**最終的な実行コマンド・Deploy開始条件・更新時の保護条件はWorkflowが正本です。** ドキュメントだけのmainへのpushはpaths allowlistにより本番自動Deploy対象ではありません。
+>
+> **DB移行注意:** 現在の `docker-compose.prod.yml` は `postgres:16-alpine` local dependencyとmigratorを必須とします。専用PG17 Lightsailに4空DBが作られましたが、Hertaの本番DB移行は未実施。既存のローカルDB依存を解消せずに`DATABASE_URL`だけ変更しないでください。[準備Issue #512](https://github.com/ivRooom/Herta/issues/512) / [Infrastructure Runbook](https://github.com/ivRooom/ivrm-infrastructure/blob/main/docs/runbooks/postgresql-lightsail.md)。
+
 Herta. を AWS Lightsail 上で **Docker Compose** により本番稼働させ、
 **GitHub Actions** で CI/CD を回すための手順書です。
 
 - 本番ドメイン: `herta.ivrm.jp`
 - デプロイ先: AWS Lightsail (単一インスタンス)
 - ランタイム: Docker Compose (`docker-compose.prod.yml`)
-- デプロイ方式: GitHub Actions から SSH 接続して `git pull` → `docker compose build` → `up -d`
+- デプロイ方式（現在）: GitHub Actionsで事前Build・GHCRへpush → SSHで画像を取得・Compose適用。実コマンドはWorkflowが正本。
 
 ---
 
