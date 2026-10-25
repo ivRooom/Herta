@@ -2,7 +2,7 @@
 
 > **2026-10-26 現行デプロイ方式の訂正** — 本ページの初期構築用のSSH経由`git pull → docker compose build`記述と構成図は履歴です。現行の [deploy-production.yml](../.github/workflows/deploy-production.yml) は GitHub-hosted runnerでProduction imageをビルド/検証し、`ghcr.io/ivrooom/herta:<commit SHA>` にpushしたうえで、AWS認証/SSM SecureStringによるランタイムSecret受け渡しとLightsail SSHでprebuilt imageを配布します。**最終的な実行コマンド・Deploy開始条件・更新時の保護条件はWorkflowが正本です。** ドキュメントだけのmainへのpushはpaths allowlistにより本番自動Deploy対象ではありません。
 >
-> **DB移行注意:** 現在の `docker-compose.prod.yml` は `postgres:16-alpine` local dependencyとmigratorを必須とします。専用PG17 Lightsailに4空DBが作られましたが、Hertaの本番DB移行は未実施。既存のローカルDB依存を解消せずに`DATABASE_URL`だけ変更しないでください。[準備Issue #512](https://github.com/ivRooom/Herta/issues/512) / [Infrastructure Runbook](https://github.com/ivRooom/ivrm-infrastructure/blob/main/docs/runbooks/postgresql-lightsail.md)。
+> **DB移行注意:** 現在の `docker-compose.prod.yml` は `postgres:16-alpine` local dependencyとmigratorを必須とします。専用PG17 Lightsailに4空DBが作られましたが、Hertaの本番DB移行は未実施。既存のローカルDB依存を解消せずに`DATABASE_URL`だけ変更しないでください。[準備Issue #512](https://github.com/ivRooom/Herta/issues/512) / [Infrastructure Runbook (Private Repo、認証権限必要)](https://github.com/ivRooom/ivrm-infrastructure/blob/main/docs/runbooks/postgresql-lightsail.md)。
 
 Herta. を AWS Lightsail 上で **Docker Compose** により本番稼働させ、
 **GitHub Actions** で CI/CD を回すための手順書です。
@@ -107,8 +107,12 @@ sudo usermod -aG docker "$USER"   # 再ログインで反映
 > もしくは `ssh-keygen` で作成し公開鍵を `~/.ssh/authorized_keys` に登録した鍵の
 > **秘密鍵全文** を貼り付けます。
 
-アプリ自身の本番シークレット (Discord トークン等) は GitHub Secrets ではなく、
-Lightsail 上の `/app/herta/.env.production` に配置します (下記 5-2)。
+`HERTA_RUNTIME_SECRET_KEY` は GitHub `production` Environment secret に設定します。
+`SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` / `HERTA_MBTI_SYNC_SECRET` /
+`HERTA_ACTIVITY_SYNC_SECRET` / `IVRM_INTEGRATION_TOKEN` / `HENRIKDEV_API_KEY` は
+AWS SSM SecureString から Workflow が取得して `.env.production` に同期します。
+Discord Token、`NEXTAUTH_SECRET`、JWT Secret 等の同期対象外の値は、
+Lightsail の `.env.production` に承認された方法で設定します (下記 5-2)。
 
 ---
 
@@ -168,36 +172,33 @@ cd /app/herta
 
 ## 6. デプロイ
 
-### 6-1. 自動デプロイ (推奨)
+### 6-1. 自動デプロイ (現行方式)
 
-`main` ブランチへ push すると `deploy-production.yml` が起動し、
-Lightsail 上で以下を実行します。
+`main` へのpushのうち、Workflowの `paths` allowlistに一致する
+Runtime関連変更のみ、[`deploy-production.yml`](../.github/workflows/deploy-production.yml)
+を起動します。ドキュメントだけの更新は自動本番デプロイしません。
 
-```bash
-cd /app/herta
-git fetch origin
-git checkout main
-git pull origin main
-docker compose -f docker-compose.prod.yml pull || true
-docker compose -f docker-compose.prod.yml build
-docker compose -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.prod.yml ps
-# up -d で api 等が recreate されると nginx upstream が古い IP を掴んだままになり
-# Caddy → nginx → api の経路で 502 になることがあるため、プロキシを再起動する
-docker compose -f docker-compose.prod.yml restart nginx caddy
-```
+1. GitHub-hosted runnerが本番イメージをBuild/検証し、Commit SHA付きでGHCRへpush。
+2. Deploy JobがAWS OIDC/SSMとGitHub EnvironmentのSecretを検証し、SSHでLightsailへ接続。
+3. 対象SHAのソースとPrebuilt Imageを取得し、`docker compose --env-file .env.production`
+   を用いて `up -d --no-build` を実行。
+4. nginx/CaddyのUpstream再解決、migrator・API・Studio・Botの内部Healthと
+   Cloudflare経由の外部Healthを確認。
 
-その後 API の health check (`/api/v1/health`) が成功すれば完了です
-(最大 120 秒待機し、失敗時は api / nginx / caddy のログを出力します)。
+詳細な保護チェック、Secretの同期/回転禁止、失敗時の停止条件、既定のDeployment条件は
+Workflow/[`deploy/scripts/_common.sh`](../deploy/scripts/_common.sh) を正本とします。
+以前の `git pull` → Lightsailでの `docker compose build` は現在の推奨デプロイ方法ではありません。
 
 ### 6-2. 手動デプロイ (workflow_dispatch)
 
 GitHub の `Actions > Deploy Production > Run workflow` から手動実行できます。
 `ref` にブランチ / タグを指定するとその内容をデプロイします (既定 `main`)。
 
-### 6-3. サーバー上での手動デプロイ
+### 6-3. サーバー上での手動デプロイ（過去の保守手順）
 
-SSH で入り、スクリプトを直接実行することも可能です。
+以下は旧来のホスト作業スクリプトの参照例です。現行のGHCR署名/検証済みイメージを使う
+Workflowと同じ安全性・互換性を保証しないため、通常のリリースには使用しません。
+緊急操作時のみ、対象Revision/Secret/DB/バックアップ/ロールバックを独立に確認し、運用者の承認を得ます。
 
 ```bash
 cd /app/herta
@@ -237,8 +238,12 @@ docker compose -f docker-compose.prod.yml logs -f studio bot worker
 
 ## 8. ロールバック方針
 
-デプロイは Git リビジョン単位で行うため、**直前の正常なコミット / タグへ
-切り戻す** ことでロールバックします。
+現行はCommit SHA付きGHCRイメージを採用します。アプリケーション切戻しでは、
+レビュー済みの旧Revisionに対するWorkflow実行や承認済み回復Runbookを利用し、
+イメージとCompose/DB migrationの互換性を事前確認します。新たなDBへの書込み後は
+旧URLへ単純復帰せず、データ整合・差分回収と承認を優先します。
+
+以下は**旧式の手動Build/復旧スクリプトの履歴**であり、現行方式の無検証な代替ではありません。
 
 ```bash
 cd /app/herta
@@ -246,8 +251,8 @@ cd /app/herta
 ./deploy/scripts/rollback.sh <commit>   # 指定コミット / タグへ
 ```
 
-`rollback.sh` は対象リビジョンを checkout し、再ビルド → `up -d` →
-health check を実行します。復帰後に `main` へ戻す場合:
+旧 `rollback.sh` のcheckout/再Build方式は、現行WorkflowのGHCR配布とは手順が異なります。
+本番ではこのコマンドを無条件に実行しないでください。履歴上の復帰例:
 
 ```bash
 git checkout main && ./deploy/scripts/deploy.sh
