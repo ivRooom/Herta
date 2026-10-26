@@ -28,6 +28,7 @@ describe('createHertaToolsMcpServer / connectHertaToolsMcpClient', () => {
       const properties = tool.parameters['properties'] as Record<string, unknown> | undefined;
       expect(properties).not.toHaveProperty('guildId');
       expect(properties).toHaveProperty('limit');
+      expect(properties?.['limit']).toMatchObject({ type: 'integer', minimum: 1, maximum: 25 });
     } finally {
       await connection.close();
     }
@@ -79,6 +80,10 @@ describe('createHertaToolsMcpServer / connectHertaToolsMcpClient', () => {
         limit: 999,
       });
       expect(overLimitResult.isError).toBe(true);
+      for (const limit of [0, 1.5, '10']) {
+        const invalid = await connection.callTool('get_guild_xp_leaderboard', { limit });
+        expect(invalid.isError).toBe(true);
+      }
     } finally {
       await connection.close();
     }

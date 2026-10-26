@@ -6,7 +6,7 @@ const guildMemberOptionSchema = z.object({
   id: z.string().regex(/^\d+$/u),
   username: z.string().min(1),
   displayName: z.string().min(1),
-  avatarUrl: z.string().url().nullable(),
+  avatarUrl: z.url().nullable(),
   bot: z.boolean(),
   roleIds: z
     .array(z.string().regex(/^\d{17,20}$/u))

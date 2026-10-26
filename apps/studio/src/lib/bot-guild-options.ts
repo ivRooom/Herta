@@ -47,7 +47,7 @@ const guildConfigurationOptionsSchema = z.object({
     mentionEveryone: z.boolean(),
     highestRolePosition: z.number().int(),
   }),
-  fetchedAt: z.string().datetime(),
+  fetchedAt: z.iso.datetime(),
 });
 
 export type GuildConfigurationOptions = z.infer<typeof guildConfigurationOptionsSchema>;
