@@ -25,6 +25,9 @@ jobs:
       - name: デプロイスクリプトの構文を検証
         run: bash -n deploy/aws/backup-monitoring/deploy.sh
 
+      - name: Lambdaの既存監視と専用DB完了判定を検証
+        run: python3 -B -m unittest discover -s deploy/aws/backup-monitoring -p 'test_monitor.py'
+
       - name: cfn-lintをインストール
         run: pipx install cfn-lint
 

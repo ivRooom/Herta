@@ -14,6 +14,8 @@ on:
       - 'plugins/**'
       - 'contracts/**'
       - 'deploy/**'
+      # CloudFormation monitoring has its own reviewed deployment; do not restart the Bot.
+      - '!deploy/aws/backup-monitoring/**'
       - 'certs/**'
       - 'Dockerfile'
       - '.dockerignore'
