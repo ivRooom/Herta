@@ -5,7 +5,7 @@ import { buildSelectedServerNavigationItems } from './studio-selected-server-nav
 
 const GUILD_ID = '123456789012345678';
 
-test('選択中サーバーは主要6タブへ整理する', () => {
+test('選択中サーバーは主要8タブへ整理する', () => {
   const items = buildSelectedServerNavigationItems(GUILD_ID);
 
   assert.deepEqual(
@@ -14,6 +14,8 @@ test('選択中サーバーは主要6タブへ整理する', () => {
       ['selected-server-overview', `/dashboard/guilds/${GUILD_ID}`],
       ['selected-server-plugins', `/dashboard/guilds/${GUILD_ID}/plugins`],
       ['selected-server-commands', `/dashboard/guilds/${GUILD_ID}/commands`],
+      ['selected-server-message-studio', `/dashboard/guilds/${GUILD_ID}/daily-content`],
+      ['selected-server-vc-recap', `/dashboard/guilds/${GUILD_ID}/vc-recap`],
       ['selected-server-community', `/dashboard/community?guild=${GUILD_ID}`],
       ['selected-server-moderation', `/dashboard/guilds/${GUILD_ID}/moderation`],
       ['selected-server-analytics', `/dashboard/analytics?guild=${GUILD_ID}`],
@@ -21,13 +23,13 @@ test('選択中サーバーは主要6タブへ整理する', () => {
   );
 });
 
-test('設定した個別Pluginタブだけを主要6タブの後ろへ追加する', () => {
-  const items = buildSelectedServerNavigationItems(GUILD_ID, ['message-studio', 'birthday']);
+test('設定した個別Pluginタブだけを主要8タブの後ろへ追加する', () => {
+  const items = buildSelectedServerNavigationItems(GUILD_ID, ['role-manager', 'birthday']);
 
   assert.deepEqual(
-    items.slice(6).map((item) => [item.id, item.href]),
+    items.slice(8).map((item) => [item.id, item.href]),
     [
-      ['selected-server-plugin-message-studio', `/dashboard/guilds/${GUILD_ID}/daily-content`],
+      ['selected-server-plugin-role-manager', `/dashboard/guilds/${GUILD_ID}/roles`],
       ['selected-server-plugin-birthday', `/dashboard/guilds/${GUILD_ID}/birthday`],
     ],
   );
