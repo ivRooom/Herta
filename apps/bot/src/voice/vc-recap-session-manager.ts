@@ -54,6 +54,8 @@ interface ActiveVcRecapSession {
    * flushを打ち切った時点でfalseにして要約開始後の書き込みを防ぐ。
    */
   acceptingSegments: boolean;
+  /** 保存中のsegment書き込み。要約前に必ず待ち、要約・削除後に本文が残らないようにする。 */
+  pendingSegmentWrites: Set<Promise<unknown>>;
   speakingHandler?: (userId: string) => void;
 }
 
@@ -62,6 +64,12 @@ interface ActiveVcRecapSession {
  * VoiceConnection自体は永続化できないため、bot再起動を跨いだセッション復元は行わない)。
  */
 const activeSessions = new Map<string, ActiveVcRecapSession>();
+
+/**
+ * stopVcRecapでactiveSessionsから外した後、最終セグメントのflush中のセッション。
+ * flush中も同意取り消し(revokeVcRecapConsent)を即座に反映するため保持する。
+ */
+const flushingSessions = new Set<ActiveVcRecapSession>();
 
 /**
  * startVcRecapSession作成〜activeSessions登録までの間(DB書き込み・VC接続待ち等、
@@ -155,6 +163,7 @@ export async function startVcRecap(
       activeStreams: new Map(),
       stopping: false,
       acceptingSegments: true,
+      pendingSegmentWrites: new Set(),
     };
 
     connection.on('stateChange', (oldState, newState) => {
@@ -294,13 +303,19 @@ async function transcribeSpeaker(
       // 文字起こし中に同意が取り消された、またはstopVcRecapのflushが打ち切られた場合、
       // 確定済みセグメントであっても保存しない。
       if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return;
-      await appendVcRecapTranscriptSegment(prisma, {
+      const write = appendVcRecapTranscriptSegment(prisma, {
         sessionId: session.sessionId,
         userId,
         text: segment.text,
         startedAt: segment.startedAt,
         endedAt: segment.endedAt,
       });
+      session.pendingSegmentWrites.add(write);
+      try {
+        await write;
+      } finally {
+        session.pendingSegmentWrites.delete(write);
+      }
     });
   } catch (error) {
     // 1人の文字起こし失敗でセッション全体を失敗させない(他の参加者の文字起こしは継続する)。
@@ -341,6 +356,7 @@ export async function stopVcRecap(
   const session = activeSessions.get(guildId);
   if (!session) return { status: 'not_active' };
   activeSessions.delete(guildId);
+  flushingSessions.add(session);
 
   // stoppingをtrueにし、wireSpeakingHandlerが登録したリスナーだけ外すことで、
   // 後続の'start'イベントによる新規購読(cleanup後の書き込み)を防ぐ。
@@ -365,6 +381,9 @@ export async function stopVcRecap(
     }
     await settleWithin(session.activeTranscriptions.values(), STOP_ABORT_TIMEOUT_MS);
   }
+  flushingSessions.delete(session);
+  // acceptingSegments=false以降に新しい書き込みは始まらないため、既に始まった分だけ待てばよい。
+  await Promise.allSettled([...session.pendingSegmentWrites]);
   session.connection.destroy();
 
   const segments = await listVcRecapTranscriptSegments(prisma, session.sessionId);
@@ -385,7 +404,7 @@ export async function stopVcRecap(
  * 同意再確認だけでは、取り消し時点で発言中だった分の文字起こし・segment保存を止められないため)。
  */
 export function revokeVcRecapConsent(userId: string): void {
-  for (const session of activeSessions.values()) {
+  for (const session of [...activeSessions.values(), ...flushingSessions]) {
     if (!session.consentingUserIds.delete(userId)) continue;
     session.activeStreams.get(userId)?.abort();
   }
