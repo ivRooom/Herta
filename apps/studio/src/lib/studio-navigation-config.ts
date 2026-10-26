@@ -2,13 +2,6 @@ import type { StudioNavigationIcon } from './studio-navigation.ts';
 
 export const STUDIO_PINNABLE_SERVER_TABS = [
   {
-    id: 'message-studio',
-    label: 'Message Studio',
-    description: 'Bot発言・予約投稿・定期投稿を管理する',
-    path: 'daily-content',
-    icon: 'message',
-  },
-  {
     id: 'role-manager',
     label: 'Role Manager',
     description: 'Discord RoleとSelf Roleを管理する',

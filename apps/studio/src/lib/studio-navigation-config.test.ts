@@ -27,11 +27,11 @@ test('保存済みPluginタブはcatalog順へ正規化し未知IDを無視す�
   const config = parseStoredStudioNavigationConfig({
     untouched: true,
     studioNavigation: {
-      visiblePluginTabIds: ['birthday', 'unknown', 'message-studio', 'birthday'],
+      visiblePluginTabIds: ['birthday', 'unknown', 'role-manager', 'birthday'],
     },
   });
 
-  assert.deepEqual(config.visiblePluginTabIds, ['message-studio', 'birthday']);
+  assert.deepEqual(config.visiblePluginTabIds, ['role-manager', 'birthday']);
 });
 
 test('更新payloadはallowlist内の一意なPluginタブだけ受理する', () => {
@@ -60,7 +60,7 @@ test('Pluginタブ件数はcatalog上限を超えられない', () => {
 test('将来のロール表示制御はGuild設定とのintersectionとして適用できる', () => {
   assert.deepEqual(
     resolveEffectiveStudioPluginTabIds(
-      ['message-studio', 'birthday', 'lfg'],
+      ['role-manager', 'birthday', 'lfg'],
       ['birthday', 'team-split'],
     ),
     ['birthday'],
