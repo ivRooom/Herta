@@ -5,6 +5,7 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Filter,
   Mic,
   ShieldCheck,
@@ -17,6 +18,8 @@ import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
 import { prisma } from '@/lib/db';
 import {
+  formatVcRecapDuration,
+  groupVcRecapSessionsByDay,
   listVcRecapSessionsForStudio,
   parseVcRecapQuery,
   type VcRecapParticipantDisplay,
@@ -127,9 +130,29 @@ async function GuildVcRecapPage({
         </section>
       ) : (
         <>
-          <div className="mt-6 space-y-3">
-            {result.items.map((item) => (
-              <VcRecapCard key={item.id} item={item} />
+          <div className="mt-6 space-y-8">
+            {groupVcRecapSessionsByDay(result.items).map((day) => (
+              <section key={day.dateKey} aria-labelledby={`vc-recap-day-${day.dateKey}`}>
+                <h2
+                  id={`vc-recap-day-${day.dateKey}`}
+                  className="flex items-center gap-2 text-sm font-semibold"
+                >
+                  <CalendarDays className="h-4 w-4 text-primary" aria-hidden="true" />
+                  {formatDay(day.items[0]!.startedAt)}
+                  <span className="font-normal text-muted">{day.items.length}件</span>
+                </h2>
+                <ol className="mt-3 space-y-3 border-l border-border pl-5">
+                  {day.items.map((item) => (
+                    <li key={item.id} className="relative">
+                      <span
+                        className="absolute -left-[26px] top-6 h-2.5 w-2.5 rounded-full border-2 border-surface bg-primary"
+                        aria-hidden="true"
+                      />
+                      <VcRecapCard item={item} />
+                    </li>
+                  ))}
+                </ol>
+              </section>
             ))}
           </div>
           <Pagination
@@ -204,6 +227,7 @@ function VcRecapCard({ item }: { item: VcRecapSessionDisplay }) {
     label: item.status,
     className: 'border-border bg-background text-muted',
   };
+  const duration = formatVcRecapDuration(item.startedAt, item.endedAt);
 
   return (
     <article className="rounded-2xl border border-border bg-surface p-5 shadow-card">
@@ -236,11 +260,12 @@ function VcRecapCard({ item }: { item: VcRecapSessionDisplay }) {
           ) : null}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1 text-xs text-muted">
-          <span className="inline-flex items-center gap-1">
-            <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" />
-            {formatDateTime(item.startedAt)}
+          <span className="inline-flex items-center gap-1 font-medium tabular-nums text-foreground">
+            <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+            {formatTime(item.startedAt)}
+            {item.endedAt ? ` 〜 ${formatTime(item.endedAt)}` : ' 〜'}
           </span>
-          {item.endedAt ? <span>〜 {formatDateTime(item.endedAt)}</span> : null}
+          {duration ? <span>{duration}</span> : null}
         </div>
       </div>
 
@@ -367,10 +392,20 @@ function toUrlSearchParams(values: SearchParams): URLSearchParams {
   return params;
 }
 
-function formatDateTime(value: Date): string {
+function formatDay(value: Date): string {
   return new Intl.DateTimeFormat('ja-JP', {
-    dateStyle: 'medium',
-    timeStyle: 'medium',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+    timeZone: 'Asia/Tokyo',
+  }).format(value);
+}
+
+function formatTime(value: Date): string {
+  return new Intl.DateTimeFormat('ja-JP', {
+    hour: '2-digit',
+    minute: '2-digit',
     timeZone: 'Asia/Tokyo',
   }).format(value);
 }
