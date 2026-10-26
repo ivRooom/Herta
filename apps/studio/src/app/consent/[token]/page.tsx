@@ -34,9 +34,11 @@ export default async function VoiceConsentPage({ params }: { params: Promise<{ t
       <p className="mt-3 max-w-prose text-sm leading-7 text-muted">
         「同意する」にすると、今後のVC Recap(
         <code className="text-foreground">/vc-recap start</code>
-        )で、あなたの発言が要約の作成対象になります。設定はいつでもこのページ、または Discordの
+        )で、あなたの発言が文字起こし・要約の作成対象になります。文字起こし本文はセッション終了から
+        30日間保存され、そのサーバーのダッシュボードでVC Recapの閲覧権限を持つ管理者が閲覧できます
+        (30日後に自動削除)。設定はいつでもこのページ、または Discordの
         <code className="text-foreground">/herta-privacy voice-consent</code>
-        コマンドから変更できます。
+        コマンドから変更でき、取り消すと保存済みの本文も削除されます。
       </p>
 
       <div className="mt-6 border-l-2 border-primary bg-surface px-4 py-3 text-sm leading-6 text-muted">

@@ -10,6 +10,10 @@ import {
 } from './discord-role-operations.js';
 import { startLfgRuntime, type LfgRuntime } from './lfg.js';
 import { startTeamSplitRuntime, type TeamSplitWorkerRuntime } from './team-split.js';
+import {
+  startVcRecapRetentionRuntime,
+  type VcRecapRetentionRuntime,
+} from './vc-recap-retention.js';
 
 const logger = createLogger({
   name: 'herta-worker',
@@ -19,6 +23,7 @@ const logger = createLogger({
 let redis: Redis | undefined;
 let heartbeatTimer: NodeJS.Timeout | undefined;
 let communitySeasonRuntime: CommunitySeasonRuntime | undefined;
+let vcRecapRetentionRuntime: VcRecapRetentionRuntime | undefined;
 let dailyContentRuntime: DailyContentRuntime | undefined;
 let discordRoleOperationRuntime: DiscordRoleOperationRuntime | undefined;
 let lfgRuntime: LfgRuntime | undefined;
@@ -89,6 +94,12 @@ async function main() {
       );
       process.exit(1);
     }
+
+    vcRecapRetentionRuntime = await startVcRecapRetentionRuntime({
+      prisma: getPrismaClient(),
+      logger,
+    });
+    logger.info('VC Recap文字起こし本文の保持期間Workerを開始しました');
 
     const botHealthUrl = process.env['BOT_HEALTH_URL']?.trim();
     const botInternalApiSecret = process.env['BOT_INTERNAL_API_SECRET']?.trim();
@@ -226,6 +237,16 @@ async function shutdown(signal: string): Promise<void> {
     logger.error(
       { errorName: resolveErrorName(error) },
       'Discord Role Operation Workerの終了処理に失敗しました',
+    );
+  }
+
+  try {
+    await vcRecapRetentionRuntime?.close();
+    vcRecapRetentionRuntime = undefined;
+  } catch (error) {
+    logger.error(
+      { errorName: resolveErrorName(error) },
+      'VC Recap文字起こし本文の保持期間Workerの終了処理に失敗しました',
     );
   }
 

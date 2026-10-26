@@ -28,7 +28,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     return json({ error: 'リクエストが正しくありません' }, 400);
   }
 
-  await setVoiceTranscriptionConsent(prisma, access.userId, consent);
+  // 同意ページで本文の30日保存を説明しているため、同意は本文保存への同意も兼ねる。
+  await setVoiceTranscriptionConsent(prisma, access.userId, consent, { transcriptRetention: true });
   return json({ ok: true, consent });
 }
 

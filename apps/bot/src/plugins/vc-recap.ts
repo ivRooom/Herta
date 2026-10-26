@@ -141,6 +141,8 @@ async function executeStart(
     .setTitle('🎙️ VC Recapを開始しました')
     .setDescription(
       'この通話の要約を記録します。同意していない方の発言は記録されません。' +
+        '\n文字起こし本文は、本文の保存に同意した方の分だけダッシュボードで30日間閲覧できます。' +
+        '以前に同意した方で本文の保存にも同意する場合は、`/herta-privacy voice-consent true`を実行してください。' +
         `\n記録対象: ${result.consentingCount}名 / 未同意: ${result.nonConsentingUserIds.length}名`,
     )
     .setColor(0x5865f2);

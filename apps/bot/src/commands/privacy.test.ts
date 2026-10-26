@@ -4,11 +4,21 @@ const mocks = vi.hoisted(() => ({
   findMany: vi.fn(),
   consent: vi.fn().mockResolvedValue({ voiceTranscriptionConsent: false, updatedAt: new Date(0) }),
   voice: vi.fn().mockResolvedValue([]),
+  transcript: vi.fn().mockResolvedValue([
+    {
+      sessionId: 'session-1',
+      userId: 'owner-user',
+      text: 'こんにちは',
+      startedAt: new Date('2026-10-26T00:00:00.000Z'),
+      endedAt: new Date('2026-10-26T00:00:02.000Z'),
+    },
+  ]),
 }));
 vi.mock('@herta/db', () => ({
   getPrismaClient: () => ({ mbtiPersonalResult: { findMany: mocks.findMany } }),
   getUserDataConsent: mocks.consent,
   listVcRecapSessionsForUser: mocks.voice,
+  listVcRecapTranscriptSegmentsForUser: mocks.transcript,
   deleteUserVoiceData: vi.fn(),
   setVoiceTranscriptionConsent: vi.fn(),
 }));
@@ -33,6 +43,15 @@ describe('privacy export', () => {
     const exported = JSON.parse(payload.files[0].attachment.toString('utf8'));
     expect(exported.mbtiResults).toEqual(rows);
     expect(exported.voiceRecapSessions).toEqual([]);
+    expect(mocks.transcript).toHaveBeenCalledWith(expect.anything(), 'owner-user');
+    expect(exported.voiceTranscriptSegments).toEqual([
+      {
+        sessionId: 'session-1',
+        text: 'こんにちは',
+        startedAt: '2026-10-26T00:00:00.000Z',
+        endedAt: '2026-10-26T00:00:02.000Z',
+      },
+    ]);
     expect(exported.userId).toBe('owner-user');
     expect(interaction.deferReply).toHaveBeenCalledWith({ flags: 64 });
   });

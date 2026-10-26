@@ -1251,6 +1251,11 @@ model FortuneProfile {
 model UserDataConsent {
   userId                   String   @id @map("user_id")
   voiceTranscriptionConsent Boolean @default(false) @map("voice_transcription_consent")
+  /**
+   * 文字起こし本文を30日間保存することへの同意日時。本文保存の説明に同意した時点で設定し、
+   * nullは要約のみ残す旧同意(本文は要約後に削除)。同意取り消し時はnullへ戻す。
+   */
+  voiceTranscriptRetentionConsentedAt DateTime? @map("voice_transcript_retention_consented_at") @db.Timestamptz(3)
   updatedAt                DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("user_data_consents")
@@ -1306,6 +1311,7 @@ model VcRecapSession {
 
   @@index([guildId, startedAt(sort: Desc)])
   @@index([guildId, channelId, startedAt(sort: Desc)])
+  @@index([endedAt])
   @@map("vc_recap_sessions")
 }
 

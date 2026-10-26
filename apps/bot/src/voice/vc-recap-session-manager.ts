@@ -12,6 +12,7 @@ import {
   appendVcRecapTranscriptSegment,
   completeVcRecapSession,
   failVcRecapSession,
+  getVoiceTranscriptRetentionUserIds,
   getVoiceTranscriptionConsentMap,
   listVcRecapTranscriptSegments,
   startVcRecapSession,
@@ -349,14 +350,18 @@ export async function stopVcRecap(
   session.connection.destroy();
 
   const segments = await listVcRecapTranscriptSegments(prisma, session.sessionId);
+  // 本文保存に同意した参加者の本文だけを保持期間まで残す(stop時点の同意状態で判定する)。
+  const retainedUserIds = [
+    ...(await getVoiceTranscriptRetentionUserIds(prisma, [...session.consentingUserIds])),
+  ];
   const result = await summarizeVcRecapSession(prisma, guildId, segments);
   if (!result) {
-    await failVcRecapSession(prisma, session.sessionId);
+    await failVcRecapSession(prisma, session.sessionId, retainedUserIds);
     logger.warn({ guildId, sessionId: session.sessionId }, 'VC要約の生成に失敗しました');
     return { status: 'summarize_failed', sessionId: session.sessionId };
   }
 
-  await completeVcRecapSession(prisma, session.sessionId, result);
+  await completeVcRecapSession(prisma, session.sessionId, { ...result, retainedUserIds });
   return { status: 'completed', sessionId: session.sessionId };
 }
 

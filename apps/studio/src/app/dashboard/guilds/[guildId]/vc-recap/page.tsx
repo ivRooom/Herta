@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Clock,
   Filter,
+  MessageSquareText,
   Mic,
   ShieldCheck,
   Tag,
@@ -97,8 +98,9 @@ async function GuildVcRecapPage({
           </div>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight">VC Recap</h1>
           <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted">
-            VC通話終了時に生成された要約・トピックのみを表示します。発言の文字起こし本文は要約生成後に
-            削除され、残りません。未同意メンバーの発言は録音・文字起こしの対象外です。
+            VC通話終了時に生成された要約・トピックを日付ごとに表示します。文字起こし本文は、本文の保存に
+            同意したメンバーの分だけセッション終了から30日間、各セッションの詳細で確認できます。
+            未同意メンバーの発言は録音・文字起こしの対象外です。
           </p>
         </div>
         {result ? (
@@ -148,7 +150,7 @@ async function GuildVcRecapPage({
                         className="absolute -left-[26px] top-6 h-2.5 w-2.5 rounded-full border-2 border-surface bg-primary"
                         aria-hidden="true"
                       />
-                      <VcRecapCard item={item} />
+                      <VcRecapCard guildId={guildId} item={item} />
                     </li>
                   ))}
                 </ol>
@@ -222,7 +224,7 @@ function FilterForm({
   );
 }
 
-function VcRecapCard({ item }: { item: VcRecapSessionDisplay }) {
+function VcRecapCard({ guildId, item }: { guildId: string; item: VcRecapSessionDisplay }) {
   const status = STATUS_META[item.status] ?? {
     label: item.status,
     className: 'border-border bg-background text-muted',
@@ -279,6 +281,21 @@ function VcRecapCard({ item }: { item: VcRecapSessionDisplay }) {
           participants={item.nonConsentingParticipants}
           muted
         />
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
+        <span className="inline-flex items-center gap-1">
+          <MessageSquareText className="h-3.5 w-3.5" aria-hidden="true" />
+          {item.transcriptSegmentCount > 0
+            ? `文字起こし ${item.transcriptSegmentCount}件`
+            : '保存されている文字起こしはありません'}
+        </span>
+        <Link
+          href={`/dashboard/guilds/${guildId}/vc-recap/${item.id}`}
+          className="rounded-lg border border-border px-3 py-1.5 font-medium text-foreground transition-colors hover:border-primary/40"
+        >
+          詳細を見る
+        </Link>
       </div>
     </article>
   );
