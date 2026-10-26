@@ -6,6 +6,8 @@ import {
   groupVcRecapSessionsByDay,
   parseVcRecapQuery,
   toVcRecapSessionDisplay,
+  toVcRecapTranscriptEntries,
+  vcRecapTranscriptExpiresAt,
 } from './vc-recap-studio.ts';
 import type { GuildMemberOption } from './bot-guild-members.ts';
 
@@ -145,4 +147,40 @@ test('経過時間を時間・分で表し、未終了ならnullを返す', () =
   assert.equal(formatVcRecapDuration(start, after(5 * 60_000)), '5分');
   assert.equal(formatVcRecapDuration(start, after(60 * 60_000)), '1時間');
   assert.equal(formatVcRecapDuration(start, after(65 * 60_000)), '1時間5分');
+});
+
+test('文字起こしを発言順のまま発言者名つきの行へ変換し、未解決の発言者は生IDで表す', () => {
+  const entries = toVcRecapTranscriptEntries(
+    [
+      {
+        userId: 'user-1',
+        text: 'こんにちは',
+        startedAt: new Date('2026-07-01T00:00:01.000Z'),
+        endedAt: new Date('2026-07-01T00:00:02.000Z'),
+      },
+      {
+        userId: 'user-9',
+        text: 'よろしく',
+        startedAt: new Date('2026-07-01T00:00:03.000Z'),
+        endedAt: new Date('2026-07-01T00:00:04.000Z'),
+      },
+    ],
+    new Map([['user-1', member()]]),
+  );
+
+  assert.deepEqual(
+    entries.map((entry) => [entry.speaker.displayName, entry.text]),
+    [
+      ['Alice', 'こんにちは'],
+      ['Unknown User (user-9)', 'よろしく'],
+    ],
+  );
+});
+
+test('文字起こしの削除予定日時はセッション終了の30日後で、未終了ならnull', () => {
+  assert.equal(
+    vcRecapTranscriptExpiresAt(new Date('2026-07-01T01:00:00.000Z'))?.toISOString(),
+    '2026-07-31T01:00:00.000Z',
+  );
+  assert.equal(vcRecapTranscriptExpiresAt(null), null);
 });

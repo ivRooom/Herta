@@ -1,5 +1,9 @@
 import type { Prisma, PrismaClient, VcRecapSessionStatus } from '@prisma/client';
 
+/** 本文保存に同意した参加者の文字起こし本文を、セッション終了から保持する日数。 */
+export const VC_RECAP_TRANSCRIPT_RETENTION_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 export interface StartVcRecapSessionInput {
   guildId: string;
   channelId: string;
@@ -32,7 +36,10 @@ export interface AppendVcRecapTranscriptSegmentInput {
   endedAt: Date;
 }
 
-/** セッション進行中に逐次書き込む(クラッシュ時のロス防止)。本文は要約完了後に削除される。 */
+/**
+ * セッション進行中に逐次書き込む(クラッシュ時のロス防止)。要約完了後、本文保存に同意した
+ * 参加者の分だけVC_RECAP_TRANSCRIPT_RETENTION_DAYS日残し、それ以外は削除する。
+ */
 export async function appendVcRecapTranscriptSegment(
   prisma: PrismaClient,
   input: AppendVcRecapTranscriptSegmentInput,
@@ -77,13 +84,14 @@ export async function markVcRecapSessionSummarizing(
 }
 
 /**
- * 要約生成が完了したら呼ぶ。summary/topics/statusを保存し、本文(segments)を削除する
- * (本文を長期保持しないプライバシー設計、PR計画のPhase 0参照)。
+ * 要約生成が完了したら呼ぶ。summary/topics/statusを保存し、本文保存に同意した参加者
+ * (retainedUserIds)以外の本文(segments)を削除する。残した本文は
+ * purgeExpiredVcRecapTranscriptsが保持期間の経過後に削除する(docs/PRIVACY_POLICY.md)。
  */
 export async function completeVcRecapSession(
   prisma: PrismaClient,
   sessionId: string,
-  input: { summary: string; topics: string[] },
+  input: { summary: string; topics: string[]; retainedUserIds?: readonly string[] },
 ): Promise<void> {
   await prisma.$transaction([
     prisma.vcRecapSession.update({
@@ -95,23 +103,123 @@ export async function completeVcRecapSession(
         endedAt: new Date(),
       },
     }),
-    prisma.vcRecapTranscriptSegment.deleteMany({ where: { sessionId } }),
+    deleteUnretainedSegments(prisma, sessionId, input.retainedUserIds ?? []),
   ]);
 }
 
 /**
- * 要約生成に失敗した場合。リトライ機構が存在しないため、segmentsを残したままにすると
- * 文字起こし本文が無期限に残り「本文はセッション中のみ保持する」というプライバシー方針
- * (docs/PRIVACY_POLICY.md)に反する。completeVcRecapSessionと同様にsegmentsも削除する。
+ * 要約生成に失敗した場合。リトライ機構が存在しないため、本文保存に同意していない参加者の
+ * segmentsを残したままにするとプライバシー方針(docs/PRIVACY_POLICY.md)に反する。
+ * completeVcRecapSessionと同様に、本文保存に同意した参加者の分だけ保持期間まで残す。
  */
-export async function failVcRecapSession(prisma: PrismaClient, sessionId: string): Promise<void> {
+export async function failVcRecapSession(
+  prisma: PrismaClient,
+  sessionId: string,
+  retainedUserIds: readonly string[] = [],
+): Promise<void> {
   await prisma.$transaction([
     prisma.vcRecapSession.update({
       where: { id: sessionId },
       data: { status: 'failed', endedAt: new Date() },
     }),
-    prisma.vcRecapTranscriptSegment.deleteMany({ where: { sessionId } }),
+    deleteUnretainedSegments(prisma, sessionId, retainedUserIds),
   ]);
+}
+
+function deleteUnretainedSegments(
+  prisma: PrismaClient,
+  sessionId: string,
+  retainedUserIds: readonly string[],
+) {
+  return prisma.vcRecapTranscriptSegment.deleteMany({
+    where: {
+      sessionId,
+      ...(retainedUserIds.length > 0 ? { userId: { notIn: [...retainedUserIds] } } : {}),
+    },
+  });
+}
+
+/**
+ * 保持期間(セッション終了からVC_RECAP_TRANSCRIPT_RETENTION_DAYS日)を過ぎた本文を削除する。
+ * 進行中(endedAt=null)のセッションは対象外。戻り値は削除したsegment数(ログ用)。
+ */
+export async function purgeExpiredVcRecapTranscripts(
+  prisma: PrismaClient,
+  now: Date = new Date(),
+): Promise<number> {
+  const result = await prisma.vcRecapTranscriptSegment.deleteMany({
+    where: { session: { endedAt: { lt: transcriptRetentionCutoff(now) } } },
+  });
+  return result.count;
+}
+
+/** セッションごとの保存済み文字起こしsegment数。一覧で本文の有無を示すために使う。 */
+export async function countVcRecapTranscriptSegments(
+  prisma: PrismaClient,
+  sessionIds: readonly string[],
+  now: Date = new Date(),
+): Promise<Map<string, number>> {
+  if (sessionIds.length === 0) return new Map();
+  const rows = await prisma.vcRecapTranscriptSegment.groupBy({
+    by: ['sessionId'],
+    // 本文保存に同意していない参加者の本文は、終了処理(endedAtを立てるのと同じtransaction)で
+    // 消える。進行中・要約中のセッションはまだ残っているため数えない。保持期間を過ぎた分も
+    // 削除ジョブの実行を待たずに数えない。
+    where: {
+      sessionId: { in: [...sessionIds] },
+      session: { endedAt: { not: null, gt: transcriptRetentionCutoff(now) } },
+    },
+    _count: { _all: true },
+  });
+  return new Map(rows.map((row) => [row.sessionId, row._count._all]));
+}
+
+export interface VcRecapSessionTranscript {
+  session: VcRecapSessionSummary;
+  segments: VcRecapTranscriptSegmentRecord[];
+}
+
+/**
+ * Studioのセッション詳細用。guildIdが一致しないセッションは存在しないものとして扱う
+ * (URLのsessionIdだけで他guildの本文を読めないようにする)。
+ */
+export async function getVcRecapSessionTranscriptForGuild(
+  prisma: PrismaClient,
+  guildId: string,
+  sessionId: string,
+  now: Date = new Date(),
+): Promise<VcRecapSessionTranscript | null> {
+  const row = await prisma.vcRecapSession.findFirst({
+    where: { id: sessionId, guildId },
+    include: {
+      segments: {
+        orderBy: { startedAt: 'asc' },
+        select: { userId: true, text: true, startedAt: true, endedAt: true },
+      },
+    },
+  });
+  if (!row) return null;
+  // endedAtは本文保存に同意していない参加者の本文を消すのと同じtransactionで立つ。
+  // 未終了のセッションには未同意者の本文が残っているため返さない。保持期間を過ぎた本文も
+  // 削除ジョブの実行を待たずに返さない。
+  const visible = row.endedAt !== null && row.endedAt > transcriptRetentionCutoff(now);
+  return { session: toVcRecapSessionSummary(row), segments: visible ? row.segments : [] };
+}
+
+function transcriptRetentionCutoff(now: Date): Date {
+  return new Date(now.getTime() - VC_RECAP_TRANSCRIPT_RETENTION_DAYS * DAY_MS);
+}
+
+/** 本人の文字起こし本文(/herta-privacy exportで保持データ全体を返すため)。 */
+export async function listVcRecapTranscriptSegmentsForUser(
+  prisma: PrismaClient,
+  userId: string,
+): Promise<(VcRecapTranscriptSegmentRecord & { sessionId: string })[]> {
+  return prisma.vcRecapTranscriptSegment.findMany({
+    where: { userId },
+    orderBy: [{ sessionId: 'asc' }, { startedAt: 'asc' }],
+    select: { sessionId: true, userId: true, text: true, startedAt: true, endedAt: true },
+  });
 }
 
 /**

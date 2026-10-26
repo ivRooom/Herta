@@ -4,6 +4,7 @@ import {
   getPrismaClient,
   getUserDataConsent,
   listVcRecapSessionsForUser,
+  listVcRecapTranscriptSegmentsForUser,
   setVoiceTranscriptionConsent,
 } from '@herta/db';
 import { createLogger, type Logger } from '@herta/logger';
@@ -21,12 +22,17 @@ function getSharedLogger(): Logger {
 
 async function executeVoiceConsent(interaction: ChatInputCommandInteraction) {
   const consent = interaction.options.getBoolean('consent', true);
-  await setVoiceTranscriptionConsent(prisma, interaction.user.id, consent);
+  // コマンドの説明文で本文の30日保存を案内しているため、同意は本文保存への同意も兼ねる。
+  await setVoiceTranscriptionConsent(prisma, interaction.user.id, consent, {
+    transcriptRetention: true,
+  });
   if (!consent) revokeVcRecapConsent(interaction.user.id);
   await interaction.reply({
     content: consent
-      ? '✅ VC発言の文字起こしに同意しました。`/vc-recap start`実行時、あなたの発言が要約生成の対象になります。'
-      : '🔒 VC発言の文字起こしへの同意を取り消しました。以後、あなたの発言は録音・文字起こしの対象外になります。',
+      ? '✅ VC発言の文字起こしに同意しました。`/vc-recap start`実行時、あなたの発言が要約生成の対象になり、' +
+        '文字起こし本文はサーバーのダッシュボードでセッション終了から30日間閲覧できます(30日後に自動削除)。'
+      : '🔒 VC発言の文字起こしへの同意を取り消しました。以後、あなたの発言は録音・文字起こしの対象外になり、' +
+        '保存済みの文字起こし本文も削除しました。',
     flags: MessageFlags.Ephemeral,
   });
 }
@@ -51,9 +57,10 @@ async function executeWebLink(interaction: ChatInputCommandInteraction) {
 async function executeExport(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const [consent, sessions, mbtiResults] = await Promise.all([
+  const [consent, sessions, transcriptSegments, mbtiResults] = await Promise.all([
     getUserDataConsent(prisma, interaction.user.id),
     listVcRecapSessionsForUser(prisma, interaction.user.id),
+    listVcRecapTranscriptSegmentsForUser(prisma, interaction.user.id),
     prisma.mbtiPersonalResult.findMany({
       where: { discordUserId: interaction.user.id },
       orderBy: [{ completedAt: 'desc' }, { id: 'desc' }],
@@ -78,6 +85,8 @@ async function executeExport(interaction: ChatInputCommandInteraction) {
     mbtiResults,
     consent: {
       voiceTranscriptionConsent: consent.voiceTranscriptionConsent,
+      voiceTranscriptRetentionConsentedAt:
+        consent.voiceTranscriptRetentionConsentedAt?.toISOString() ?? null,
       updatedAt: consent.updatedAt.toISOString(),
     },
     voiceRecapSessions: sessions.map((session) => ({
@@ -90,6 +99,12 @@ async function executeExport(interaction: ChatInputCommandInteraction) {
       summary: session.summary,
       topics: session.topics,
       wasConsenting: session.wasConsenting,
+    })),
+    voiceTranscriptSegments: transcriptSegments.map((segment) => ({
+      sessionId: segment.sessionId,
+      text: segment.text,
+      startedAt: segment.startedAt.toISOString(),
+      endedAt: segment.endedAt.toISOString(),
     })),
   };
 
@@ -111,7 +126,7 @@ export const privacyCommand: SlashCommand = {
     subcommands: [
       {
         name: 'voice-consent',
-        description: 'VC発言の文字起こし(/vc-recap)への同意を切り替えます',
+        description: 'VC発言の文字起こし(/vc-recap)と本文の30日保存への同意を切り替えます',
         options: [
           {
             name: 'consent',

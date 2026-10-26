@@ -11,8 +11,9 @@ const DATA_ROWS: Array<{ type: string; condition: string; content: string; reten
     type: 'VC発言の文字起こし本文',
     condition:
       '/vc-recap start実行時(または進行中)、本人が同意済みの場合のみ(コマンド・ボタン・専用URLのいずれか)',
-    content: 'セッション進行中のみ',
-    retention: '要約生成完了時に削除(本文は残さない)',
+    content: '発言者・発言時刻・本文',
+    retention:
+      '本文の保存に同意した本人の分はセッション終了から30日(経過後に自動削除)。それ以外は要約生成完了時に削除',
   },
   {
     type: 'VC通話の要約',
@@ -95,6 +96,19 @@ export default function PrivacyPolicyPage() {
             </li>
             <li>
               発言開始のたびに最新の同意状態を都度確認します。Discordコマンド・ボタンでの取り消しは進行中の発言も即座に打ち切って対象外にしますが、専用URL(Web)での取り消しはBotプロセスへ即時通知できないため、取り消し後に新たに話し始めた時点から対象外になります(取り消し操作の瞬間に発言中だった分は、その発言が終わるまで記録される場合があります)。
+            </li>
+            <li>
+              文字起こし本文は、
+              <strong className="font-semibold text-foreground">
+                本文の保存(30日)を説明した上で本人が同意した場合のみ
+              </strong>
+              、セッション終了から30日間保存し、そのサーバーのStudioダッシュボード(VC
+              Recapの閲覧権限を持つ管理者)で閲覧できるようにします。30日を過ぎた本文は自動で削除します。本文の保存を説明する前に同意したメンバーや、管理者がロールで自動同意を設定したメンバーの本文は、従来どおり要約生成完了時に削除します。以前に同意したメンバーが本文の保存にも同意する場合は、改めて
+              <code className="text-foreground">/herta-privacy voice-consent true</code>
+              を実行してください。
+            </li>
+            <li>
+              同意を取り消すと本文の保存への同意も取り消され、保存済みのあなたの文字起こし本文は即座に削除します。
             </li>
             <li>
               <code className="text-foreground">/vc-recap start</code>

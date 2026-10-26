@@ -14,38 +14,48 @@ import {
 import { resolveStudioPublicBaseUrl } from '../studio-base-url.js';
 import { revokeVcRecapConsent } from './vc-recap-session-manager.js';
 
-export const CONSENT_CUSTOM_ID_PREFIX = 'herta:consent:v1:';
+/** 同意ボタンのinteractionを振り分けるためのプレフィックス(全バージョン共通)。 */
+export const CONSENT_CUSTOM_ID_PREFIX = 'herta:consent:';
+/**
+ * v1: 本文は要約後に削除する説明だった頃のボタン。v2: 本文の30日保存を説明したボタン。
+ * 古いメッセージのv1ボタンで同意しても、本人が見ていない本文保存には同意したことにしない。
+ */
+const CONSENT_CUSTOM_ID_VERSIONS = { v1: false, v2: true } as const;
+const CURRENT_CONSENT_CUSTOM_ID_PREFIX = `${CONSENT_CUSTOM_ID_PREFIX}v2:`;
 
 export interface ConsentCustomId {
   action: 'yes' | 'no' | 'web';
   userId: string;
+  /** ボタンのメッセージが文字起こし本文の30日保存を説明していたか。 */
+  transcriptRetention: boolean;
 }
 
 /**
- * customIdは`herta:consent:v1:<yes|no|web>:<userId>`。永続的なボタン(メッセージが長期間
+ * customIdは`herta:consent:<v1|v2>:<yes|no|web>:<userId>`。永続的なボタン(メッセージが長期間
  * 放置される前提)のため、session/collectorに依存せずcustomIdだけで状態を復元できる形にする。
  */
 export function parseConsentCustomId(customId: string): ConsentCustomId | null {
   if (!customId.startsWith(CONSENT_CUSTOM_ID_PREFIX)) return null;
   const rest = customId.slice(CONSENT_CUSTOM_ID_PREFIX.length);
-  const [action, userId] = rest.split(':');
+  const [version, action, userId] = rest.split(':');
+  if (version !== 'v1' && version !== 'v2') return null;
   if (action !== 'yes' && action !== 'no' && action !== 'web') return null;
   if (!userId || !/^\d{17,20}$/.test(userId)) return null;
-  return { action, userId };
+  return { action, userId, transcriptRetention: CONSENT_CUSTOM_ID_VERSIONS[version] };
 }
 
 export function buildConsentActionRow(userId: string): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
-      .setCustomId(`${CONSENT_CUSTOM_ID_PREFIX}yes:${userId}`)
+      .setCustomId(`${CURRENT_CONSENT_CUSTOM_ID_PREFIX}yes:${userId}`)
       .setLabel('同意する')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
-      .setCustomId(`${CONSENT_CUSTOM_ID_PREFIX}no:${userId}`)
+      .setCustomId(`${CURRENT_CONSENT_CUSTOM_ID_PREFIX}no:${userId}`)
       .setLabel('同意しない')
       .setStyle(ButtonStyle.Danger),
     new ButtonBuilder()
-      .setCustomId(`${CONSENT_CUSTOM_ID_PREFIX}web:${userId}`)
+      .setCustomId(`${CURRENT_CONSENT_CUSTOM_ID_PREFIX}web:${userId}`)
       .setLabel('🔗 Webで同意する')
       .setStyle(ButtonStyle.Secondary),
   );
@@ -54,7 +64,9 @@ export function buildConsentActionRow(userId: string): ActionRowBuilder<ButtonBu
 export function buildConsentPromptContent(userId: string): string {
   return (
     `<@${userId}> さんはまだVC発言の文字起こしに同意していません。\n` +
-    '同意すると、今後のVC Recapで発言が要約の対象になります(いつでも`/herta-privacy voice-consent`で取り消せます)。'
+    '同意すると、今後のVC Recapで発言が文字起こし・要約の対象になり、文字起こし本文はサーバーのダッシュボードで' +
+    'セッション終了から30日間閲覧できる状態で保存されます(30日後に自動削除)。' +
+    'いつでも`/herta-privacy voice-consent false`で取り消せ、取り消すと保存済みの本文も削除されます。'
   );
 }
 
@@ -85,7 +97,9 @@ export async function handleConsentButton(
 
   const consent = parsed.action === 'yes';
   try {
-    await setVoiceTranscriptionConsent(prisma, parsed.userId, consent);
+    await setVoiceTranscriptionConsent(prisma, parsed.userId, consent, {
+      transcriptRetention: parsed.transcriptRetention,
+    });
     if (!consent) revokeVcRecapConsent(parsed.userId);
   } catch (error) {
     logger.warn({ err: error, userId: parsed.userId }, 'VC Recap同意ボタンの処理に失敗しました');
@@ -99,7 +113,7 @@ export async function handleConsentButton(
   await interaction.update({
     content: consent
       ? '✅ 同意しました。ありがとうございます。'
-      : '🔒 同意しませんでした。今後も発言は録音・文字起こしされません。',
+      : '🔒 同意しませんでした。今後も発言は録音・文字起こしされず、保存済みの本文があれば削除しました。',
     components: [],
   });
 }

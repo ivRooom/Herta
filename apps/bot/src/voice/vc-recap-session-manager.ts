@@ -12,6 +12,7 @@ import {
   appendVcRecapTranscriptSegment,
   completeVcRecapSession,
   failVcRecapSession,
+  getVoiceTranscriptRetentionUserIds,
   getVoiceTranscriptionConsentMap,
   listVcRecapTranscriptSegments,
   startVcRecapSession,
@@ -387,14 +388,29 @@ export async function stopVcRecap(
   session.connection.destroy();
 
   const segments = await listVcRecapTranscriptSegments(prisma, session.sessionId);
+  // 本文保存に同意した参加者の本文だけを保持期間まで残す(stop時点の同意状態で判定する)。
+  // 取得に失敗した場合は誰の本文も残さない側に倒し、要約とセッションの終了は続ける
+  // (失敗で止めるとセッションがactiveのまま未同意者の本文が残る)。
+  const retainedUserIds = await getVoiceTranscriptRetentionUserIds(prisma, [
+    ...session.consentingUserIds,
+  ]).then(
+    (userIds) => [...userIds],
+    (error: unknown) => {
+      logger.warn(
+        { err: error, guildId, sessionId: session.sessionId },
+        'VC本文保存同意の取得に失敗したため、本文を保存せずに終了します',
+      );
+      return [];
+    },
+  );
   const result = await summarizeVcRecapSession(prisma, guildId, segments);
   if (!result) {
-    await failVcRecapSession(prisma, session.sessionId);
+    await failVcRecapSession(prisma, session.sessionId, retainedUserIds);
     logger.warn({ guildId, sessionId: session.sessionId }, 'VC要約の生成に失敗しました');
     return { status: 'summarize_failed', sessionId: session.sessionId };
   }
 
-  await completeVcRecapSession(prisma, session.sessionId, result);
+  await completeVcRecapSession(prisma, session.sessionId, { ...result, retainedUserIds });
   return { status: 'completed', sessionId: session.sessionId };
 }
 

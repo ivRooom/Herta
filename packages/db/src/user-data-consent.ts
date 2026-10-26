@@ -8,11 +8,14 @@ import type { PrismaClient } from '@prisma/client';
 export interface UserDataConsentState {
   userId: string;
   voiceTranscriptionConsent: boolean;
+  /** 文字起こし本文の30日保存に本人が同意した日時。nullなら本文は要約後に削除する。 */
+  voiceTranscriptRetentionConsentedAt: Date | null;
   updatedAt: Date;
 }
 
 const DEFAULT_CONSENT: Omit<UserDataConsentState, 'userId' | 'updatedAt'> = {
   voiceTranscriptionConsent: false,
+  voiceTranscriptRetentionConsentedAt: null,
 };
 
 export async function getUserDataConsent(
@@ -23,26 +26,77 @@ export async function getUserDataConsent(
   if (!row) {
     return { userId, updatedAt: new Date(0), ...DEFAULT_CONSENT };
   }
-  return {
-    userId: row.userId,
-    voiceTranscriptionConsent: row.voiceTranscriptionConsent,
-    updatedAt: row.updatedAt,
-  };
+  return toUserDataConsentState(row);
+}
+
+export interface SetVoiceTranscriptionConsentOptions {
+  /**
+   * 本人が文字起こし本文の30日保存を含む説明を見て同意した場合にtrue。
+   * 管理者による付与など、本人が保存の説明を見ていない経路では指定しない
+   * (既存の保存同意は変更せず、新たに保存同意を付けることもしない)。
+   */
+  transcriptRetention?: boolean;
 }
 
 export async function setVoiceTranscriptionConsent(
   prisma: PrismaClient,
   userId: string,
   consent: boolean,
+  options: SetVoiceTranscriptionConsentOptions = {},
 ): Promise<UserDataConsentState> {
-  const row = await prisma.userDataConsent.upsert({
+  // 同意を取り消した場合は本文保存の同意も必ず外し、保存済みの本人の本文も削除する。
+  // 再同意時は改めて保存の同意を取る。
+  const retention = !consent
+    ? { voiceTranscriptRetentionConsentedAt: null }
+    : options.transcriptRetention
+      ? { voiceTranscriptRetentionConsentedAt: new Date() }
+      : {};
+  const upsert = prisma.userDataConsent.upsert({
     where: { userId },
-    create: { userId, voiceTranscriptionConsent: consent },
-    update: { voiceTranscriptionConsent: consent },
+    create: { userId, voiceTranscriptionConsent: consent, ...retention },
+    update: { voiceTranscriptionConsent: consent, ...retention },
   });
+  if (consent) return toUserDataConsentState(await upsert);
+
+  const [row] = await prisma.$transaction([
+    upsert,
+    prisma.vcRecapTranscriptSegment.deleteMany({ where: { userId } }),
+  ]);
+  return toUserDataConsentState(row);
+}
+
+/**
+ * 文字起こし本文の30日保存に同意しているユーザーだけを返す。ロールによる自動同意は
+ * 本人が保存の説明を見ていないため含めない(明示的な同意かつ保存同意のあるユーザーのみ)。
+ */
+export async function getVoiceTranscriptRetentionUserIds(
+  prisma: PrismaClient,
+  userIds: readonly string[],
+): Promise<Set<string>> {
+  const uniqueIds = [...new Set(userIds)];
+  if (uniqueIds.length === 0) return new Set();
+
+  const rows = await prisma.userDataConsent.findMany({
+    where: {
+      userId: { in: uniqueIds },
+      voiceTranscriptionConsent: true,
+      voiceTranscriptRetentionConsentedAt: { not: null },
+    },
+    select: { userId: true },
+  });
+  return new Set(rows.map((row) => row.userId));
+}
+
+function toUserDataConsentState(row: {
+  userId: string;
+  voiceTranscriptionConsent: boolean;
+  voiceTranscriptRetentionConsentedAt: Date | null;
+  updatedAt: Date;
+}): UserDataConsentState {
   return {
     userId: row.userId,
     voiceTranscriptionConsent: row.voiceTranscriptionConsent,
+    voiceTranscriptRetentionConsentedAt: row.voiceTranscriptRetentionConsentedAt,
     updatedAt: row.updatedAt,
   };
 }
