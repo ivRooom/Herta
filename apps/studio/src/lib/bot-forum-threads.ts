@@ -5,7 +5,7 @@ import { getBotInternalApiAuthorizationHeader } from './bot-internal-api-auth.ts
 
 const archivedForumThreadPageSchema = z.object({
   threads: z.array(guildChannelOptionSchema).max(50),
-  nextBefore: z.string().datetime().nullable(),
+  nextBefore: z.iso.datetime().nullable(),
 });
 
 export interface ArchivedForumThreadPage {

@@ -10,12 +10,10 @@ const publicServiceStatusSchema = z.enum([
 
 const internalCheckStatusSchema = z.enum(['ok', 'warning', 'error', 'not_configured', 'unknown']);
 
-const baseCheckSchema = z
-  .object({
-    status: internalCheckStatusSchema,
-    message: z.string().optional(),
-  })
-  .passthrough();
+const baseCheckSchema = z.looseObject({
+  status: internalCheckStatusSchema,
+  message: z.string().optional(),
+});
 
 const dependencyCheckSchema = baseCheckSchema.extend({
   latency_ms: z.number().nonnegative().optional(),
@@ -28,7 +26,7 @@ export const botHealthResponseSchema = z.object({
     type: z.string(),
   }),
   status: publicServiceStatusSchema,
-  checked_at: z.string().datetime(),
+  checked_at: z.iso.datetime(),
   uptime_seconds: z.number().nonnegative(),
   version: z.string(),
   guild_count: z.number().int().nonnegative(),
@@ -39,15 +37,15 @@ export const botHealthResponseSchema = z.object({
       ready: z.boolean(),
       gateway_status: z.enum(['ready', 'connecting', 'reconnecting', 'disconnected', 'unknown']),
       reconnecting: z.boolean(),
-      last_ready_at: z.string().datetime().nullable(),
-      last_heartbeat_at: z.string().datetime().nullable(),
-      last_disconnect_at: z.string().datetime().nullable(),
+      last_ready_at: z.iso.datetime().nullable(),
+      last_heartbeat_at: z.iso.datetime().nullable(),
+      last_disconnect_at: z.iso.datetime().nullable(),
       heartbeat_source: z.enum(['gateway_status_observation', 'unknown']),
     }),
     database: dependencyCheckSchema,
     redis: dependencyCheckSchema,
     worker: dependencyCheckSchema.extend({
-      last_heartbeat_at: z.string().datetime().nullable().optional(),
+      last_heartbeat_at: z.iso.datetime().nullable().optional(),
     }),
   }),
 });
