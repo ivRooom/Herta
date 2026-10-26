@@ -142,3 +142,13 @@ test('接続失敗を到達不能として分類する', async (t) => {
   if (result.available) assert.fail('接続失敗が利用可能として扱われました');
   assert.equal(result.reason, 'unreachable');
 });
+
+test('health schema preserves extension fields and rejects malformed time or numeric values', () => {
+  const health = {
+    ...validHealth,
+    checks: { ...validHealth.checks, process: { status: 'ok', futureDiagnostic: 'preserved' } },
+  };
+  assert.equal(parseBotHealthResponse(health)?.checks.process['futureDiagnostic'], 'preserved');
+  assert.equal(parseBotHealthResponse({ ...validHealth, checked_at: 'invalid' }), null);
+  assert.equal(parseBotHealthResponse({ ...validHealth, uptime_seconds: Infinity }), null);
+});
