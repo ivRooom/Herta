@@ -1,0 +1,22 @@
+name: PostgreSQL Prisma readiness
+on:
+  pull_request:
+    paths:
+      - 'packages/db/prisma/**'
+      - 'packages/db/package.json'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tests/postgresql-readiness/**'
+      - 'scripts/test-postgresql-prisma-readiness.sh'
+      - '.github/workflows/postgresql-prisma-readiness.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-prisma-tls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - run: bash scripts/test-postgresql-prisma-readiness.sh
