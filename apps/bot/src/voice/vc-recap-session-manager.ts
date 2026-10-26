@@ -19,14 +19,18 @@ import {
 } from '@herta/db';
 import type { Guild, VoiceBasedChannel } from 'discord.js';
 import prism from 'prism-media';
-import type { Readable } from 'node:stream';
 import { resolveAwsTranscribeCredential } from './aws-transcribe-credential.js';
 import { splitVcRecapParticipants } from './vc-recap-participants.js';
+import { linkSpeakerAudioStream, type SpeakerAudioStream } from './vc-recap-speaker-stream.js';
 import { summarizeVcRecapSession } from './vc-recap-summarizer.js';
 import { transcribePcmStream } from './vc-recap-transcriber.js';
 
 const CONNECTION_READY_TIMEOUT_MS = 10_000;
 const SPEECH_END_SILENCE_MS = 1_000;
+/** stop時、発話中だった参加者の最終セグメントをTranscribeから受け取るまで待つ上限。 */
+const STOP_FLUSH_TIMEOUT_MS = 5_000;
+/** flushの上限を超えて強制中断した後、文字起こしタスクの終了を待つ上限。 */
+const STOP_ABORT_TIMEOUT_MS = 2_000;
 
 interface ActiveVcRecapSession {
   sessionId: string;
@@ -38,13 +42,20 @@ interface ActiveVcRecapSession {
   autoConsentRoleIds: string[];
   consentingUserIds: Set<string>;
   activeTranscriptions: Map<string, Promise<void>>;
-  /** stopVcRecap側で明示的にdestroyできるよう、購読中のOpusストリームを保持する。 */
-  activeStreams: Map<string, Readable>;
+  /** stopVcRecap・同意取り消し時に終了/中断できるよう、購読中の音声ストリームを保持する。 */
+  activeStreams: Map<string, SpeakerAudioStream>;
   /**
    * stopVcRecap開始時にtrueへ。speaking 'start'イベントはconnection.destroy()後も
-   * 発火し得るため、このフラグで新規タスクの発生・segment保存を止める。
+   * 発火し得るため、このフラグで新規タスクの発生を止める。
    */
   stopping: boolean;
+  /**
+   * segment保存を受け付けるか。stop開始後も発話中だった分の最終セグメントは保存し、
+   * flushを打ち切った時点でfalseにして要約開始後の書き込みを防ぐ。
+   */
+  acceptingSegments: boolean;
+  /** 保存中のsegment書き込み。要約前に必ず待ち、要約・削除後に本文が残らないようにする。 */
+  pendingSegmentWrites: Set<Promise<unknown>>;
   speakingHandler?: (userId: string) => void;
 }
 
@@ -53,6 +64,12 @@ interface ActiveVcRecapSession {
  * VoiceConnection自体は永続化できないため、bot再起動を跨いだセッション復元は行わない)。
  */
 const activeSessions = new Map<string, ActiveVcRecapSession>();
+
+/**
+ * stopVcRecapでactiveSessionsから外した後、最終セグメントのflush中のセッション。
+ * flush中も同意取り消し(revokeVcRecapConsent)を即座に反映するため保持する。
+ */
+const flushingSessions = new Set<ActiveVcRecapSession>();
 
 /**
  * startVcRecapSession作成〜activeSessions登録までの間(DB書き込み・VC接続待ち等、
@@ -145,6 +162,8 @@ export async function startVcRecap(
       activeTranscriptions: new Map(),
       activeStreams: new Map(),
       stopping: false,
+      acceptingSegments: true,
+      pendingSegmentWrites: new Set(),
     };
 
     connection.on('stateChange', (oldState, newState) => {
@@ -273,23 +292,30 @@ async function transcribeSpeaker(
   const opusStream = session.connection.receiver.subscribe(userId, {
     end: { behavior: EndBehaviorType.AfterSilence, duration: SPEECH_END_SILENCE_MS },
   });
-  session.activeStreams.set(userId, opusStream);
-  const pcmStream = opusStream.pipe(
+  const speakerStream = linkSpeakerAudioStream(
+    opusStream,
     new prism.opus.Decoder({ rate: 48000, channels: 2, frameSize: 960 }),
   );
+  session.activeStreams.set(userId, speakerStream);
 
   try {
-    await transcribePcmStream(credential, toMonoChunks(pcmStream), async (segment) => {
-      // 文字起こし中に同意が取り消された、またはstopVcRecapが開始された場合、
+    await transcribePcmStream(credential, toMonoChunks(speakerStream.pcm), async (segment) => {
+      // 文字起こし中に同意が取り消された、またはstopVcRecapのflushが打ち切られた場合、
       // 確定済みセグメントであっても保存しない。
-      if (session.stopping || !session.consentingUserIds.has(userId)) return;
-      await appendVcRecapTranscriptSegment(prisma, {
+      if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return;
+      const write = appendVcRecapTranscriptSegment(prisma, {
         sessionId: session.sessionId,
         userId,
         text: segment.text,
         startedAt: segment.startedAt,
         endedAt: segment.endedAt,
       });
+      session.pendingSegmentWrites.add(write);
+      try {
+        await write;
+      } finally {
+        session.pendingSegmentWrites.delete(write);
+      }
     });
   } catch (error) {
     // 1人の文字起こし失敗でセッション全体を失敗させない(他の参加者の文字起こしは継続する)。
@@ -330,22 +356,34 @@ export async function stopVcRecap(
   const session = activeSessions.get(guildId);
   if (!session) return { status: 'not_active' };
   activeSessions.delete(guildId);
+  flushingSessions.add(session);
 
   // stoppingをtrueにし、wireSpeakingHandlerが登録したリスナーだけ外すことで、
-  // 後続の'start'イベントによる新規購読・segment保存(cleanup後の書き込み)を防ぐ。
+  // 後続の'start'イベントによる新規購読(cleanup後の書き込み)を防ぐ。
   session.stopping = true;
   if (session.speakingHandler) {
     session.connection.receiver.speaking.off('start', session.speakingHandler);
   }
 
   // 参加者が話し続けている場合、OpusストリームはAfterSilence条件に到達せず
-  // activeTranscriptionsのPromiseが解決しないままになる。先にストリームを
-  // 明示的にdestroyしてから待つことで、connection.destroy()が永遠に実行されない
-  // (=録音が止まらない)状態を防ぐ。
+  // activeTranscriptionsのPromiseが解決しないままになる。受信を止めてPCMを流し切り、
+  // 発話中だった分の最終セグメントを受け取ってから要約する。Transcribeが応答しない
+  // 場合でもstopが止まらないよう、上限を超えたら強制中断する。
   for (const stream of session.activeStreams.values()) {
-    stream.destroy();
+    stream.end();
   }
-  await Promise.allSettled([...session.activeTranscriptions.values()]);
+  const flushed = await settleWithin(session.activeTranscriptions.values(), STOP_FLUSH_TIMEOUT_MS);
+  session.acceptingSegments = false;
+  if (!flushed) {
+    logger.warn({ guildId, sessionId: session.sessionId }, 'VC文字起こしのflushを打ち切りました');
+    for (const stream of session.activeStreams.values()) {
+      stream.abort();
+    }
+    await settleWithin(session.activeTranscriptions.values(), STOP_ABORT_TIMEOUT_MS);
+  }
+  flushingSessions.delete(session);
+  // acceptingSegments=false以降に新しい書き込みは始まらないため、既に始まった分だけ待てばよい。
+  await Promise.allSettled([...session.pendingSegmentWrites]);
   session.connection.destroy();
 
   const segments = await listVcRecapTranscriptSegments(prisma, session.sessionId);
@@ -366,9 +404,22 @@ export async function stopVcRecap(
  * 同意再確認だけでは、取り消し時点で発言中だった分の文字起こし・segment保存を止められないため)。
  */
 export function revokeVcRecapConsent(userId: string): void {
-  for (const session of activeSessions.values()) {
+  for (const session of [...activeSessions.values(), ...flushingSessions]) {
     if (!session.consentingUserIds.delete(userId)) continue;
-    session.activeStreams.get(userId)?.destroy();
+    session.activeStreams.get(userId)?.abort();
+  }
+}
+
+/** 全Promiseがms以内に決着すればtrue、上限に達した場合はfalseを返す。 */
+async function settleWithin(promises: Iterable<Promise<unknown>>, ms: number): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), ms);
+  });
+  try {
+    return await Promise.race([Promise.allSettled([...promises]).then(() => true), timeout]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
