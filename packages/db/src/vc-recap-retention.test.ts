@@ -115,7 +115,8 @@ test('本文保存の同意者は明示的な同意と保存同意の両方を�
   });
 });
 
-test('未終了のセッションは本文保存に同意していない参加者の本文が残っているためStudioへ出さない', async () => {
+test('Studioへは終了済みかつ保持期間内のセッションの本文だけを出す', async () => {
+  const now = new Date('2026-08-01T00:00:00.000Z');
   const segment = {
     userId: 'user-1',
     text: 'こんにちは',
@@ -147,22 +148,25 @@ test('未終了のセッションは本文保存に同意していない参加�
       },
     },
   } as unknown as PrismaClient;
+  const read = async () =>
+    (await getVcRecapSessionTranscriptForGuild(prisma, 'guild-1', 'session-1', now))?.segments;
 
-  assert.deepEqual(
-    (await getVcRecapSessionTranscriptForGuild(prisma, 'guild-1', 'session-1'))?.segments,
-    [],
-  );
+  // 未終了: 本文保存に同意していない参加者の本文がまだ残っている
+  assert.deepEqual(await read(), []);
+  // 終了から30日以内
+  row = sessionRow(new Date('2026-07-15T00:00:00.000Z'));
+  assert.deepEqual(await read(), [segment]);
+  // 30日を過ぎたが削除ジョブがまだ動いていない
+  row = sessionRow(new Date('2026-07-01T00:00:00.000Z'));
+  assert.deepEqual(await read(), []);
 
-  row = sessionRow(new Date(2000));
-  assert.deepEqual(
-    (await getVcRecapSessionTranscriptForGuild(prisma, 'guild-1', 'session-1'))?.segments,
-    [segment],
-  );
-
-  await countVcRecapTranscriptSegments(prisma, ['session-1']);
+  await countVcRecapTranscriptSegments(prisma, ['session-1'], now);
   assert.deepEqual(groupByArgs, {
     by: ['sessionId'],
-    where: { sessionId: { in: ['session-1'] }, session: { endedAt: { not: null } } },
+    where: {
+      sessionId: { in: ['session-1'] },
+      session: { endedAt: { not: null, gt: new Date('2026-07-02T00:00:00.000Z') } },
+    },
     _count: { _all: true },
   });
 });

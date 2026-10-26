@@ -147,9 +147,8 @@ export async function purgeExpiredVcRecapTranscripts(
   prisma: PrismaClient,
   now: Date = new Date(),
 ): Promise<number> {
-  const cutoff = new Date(now.getTime() - VC_RECAP_TRANSCRIPT_RETENTION_DAYS * DAY_MS);
   const result = await prisma.vcRecapTranscriptSegment.deleteMany({
-    where: { session: { endedAt: { lt: cutoff } } },
+    where: { session: { endedAt: { lt: transcriptRetentionCutoff(now) } } },
   });
   return result.count;
 }
@@ -158,13 +157,18 @@ export async function purgeExpiredVcRecapTranscripts(
 export async function countVcRecapTranscriptSegments(
   prisma: PrismaClient,
   sessionIds: readonly string[],
+  now: Date = new Date(),
 ): Promise<Map<string, number>> {
   if (sessionIds.length === 0) return new Map();
   const rows = await prisma.vcRecapTranscriptSegment.groupBy({
     by: ['sessionId'],
     // 本文保存に同意していない参加者の本文は、終了処理(endedAtを立てるのと同じtransaction)で
-    // 消える。進行中・要約中のセッションはまだ残っているため数えない。
-    where: { sessionId: { in: [...sessionIds] }, session: { endedAt: { not: null } } },
+    // 消える。進行中・要約中のセッションはまだ残っているため数えない。保持期間を過ぎた分も
+    // 削除ジョブの実行を待たずに数えない。
+    where: {
+      sessionId: { in: [...sessionIds] },
+      session: { endedAt: { not: null, gt: transcriptRetentionCutoff(now) } },
+    },
     _count: { _all: true },
   });
   return new Map(rows.map((row) => [row.sessionId, row._count._all]));
@@ -183,6 +187,7 @@ export async function getVcRecapSessionTranscriptForGuild(
   prisma: PrismaClient,
   guildId: string,
   sessionId: string,
+  now: Date = new Date(),
 ): Promise<VcRecapSessionTranscript | null> {
   const row = await prisma.vcRecapSession.findFirst({
     where: { id: sessionId, guildId },
@@ -195,8 +200,14 @@ export async function getVcRecapSessionTranscriptForGuild(
   });
   if (!row) return null;
   // endedAtは本文保存に同意していない参加者の本文を消すのと同じtransactionで立つ。
-  // 未終了のセッションには未同意者の本文が残っているため返さない。
-  return { session: toVcRecapSessionSummary(row), segments: row.endedAt ? row.segments : [] };
+  // 未終了のセッションには未同意者の本文が残っているため返さない。保持期間を過ぎた本文も
+  // 削除ジョブの実行を待たずに返さない。
+  const visible = row.endedAt !== null && row.endedAt > transcriptRetentionCutoff(now);
+  return { session: toVcRecapSessionSummary(row), segments: visible ? row.segments : [] };
+}
+
+function transcriptRetentionCutoff(now: Date): Date {
+  return new Date(now.getTime() - VC_RECAP_TRANSCRIPT_RETENTION_DAYS * DAY_MS);
 }
 
 /** 本人の文字起こし本文(/herta-privacy exportで保持データ全体を返すため)。 */
