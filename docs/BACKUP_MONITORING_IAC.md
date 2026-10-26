@@ -16,7 +16,7 @@ CloudShellで手作業作成したLambda、IAM Role、EventBridge SchedulerをCl
 - Lambda CloudWatch Logs保持期間
 - CloudWatch Dashboard
 
-## 専用PostgreSQLの完了マニフェスト監視（追加実装・未適用）
+## 専用PostgreSQLの完了マニフェスト監視
 
 2026-10-26: `DedicatedBackupBucketName` を空文字列（既定値）から、承認済みの専用DB backup bucketへ設定すると、同じLambda/Scheduler/通知経路で追加監視する。既存Hertaのbucket/prefixを置換せず、既存監視を残す。新しいLambda、Schedule、Dashboard、metric seriesやサーバーは作成しない。実行時間・S3 request・通知利用量は増え得るため、費用と実行変更を別途確認する。
 
@@ -41,7 +41,7 @@ CloudShellで手作業作成したLambda、IAM Role、EventBridge SchedulerをCl
 
 有効化前に、既存stack parameters/role/SNS subscriptions/scheduleとsaved ChangeSetをread-onlyで照合し、承認対象を既存Lambda code/envとroleの追加読取policyだけに限定する。Herta app/DB/deployとは分離し、他のparameterはUsePreviousValueで保持する。test alertを送る場合は通知先を特定した承認を取得する。この実装ではcloud/IAM変更、deploy、実データ/Secret取得、実通知は実施していない。
 
-2026-10-26のChangeSet previewは4件のmodifyを表示した。直接変更はLambda functionとLambda role、動的ARN参照に伴う評価対象がScheduler roleとScheduleで、新規作成/置換/削除はない。previewと実適用を区別し、ChangeSetは未実行。本PRは既存のapp CI Grype失敗（Issue #551）により未mergeで、監視用lint/tests成功だけをmerge/deploy許可と扱わない。
+実際のChangeSetで変更件数・直接変更と動的参照・置換/削除/新規作成の有無を確認する。previewを実適用と扱わず、最新PRのCI・review・merge状態と実行承認をGitHubで確認してから実行する。日付付きのpreviewと実行結果はdeployment recordへ残す。
 
 Production workflowの`deploy/**`直後に`!deploy/aws/backup-monitoring/**`を置き、monitoringだけのpushではBot image rebuild/再deployを起動しない。その他のapp/runtime/deploy inputとworkflow_dispatchは維持する。DockerfileのCOPYでbuilderへ入るが、deployはruntime前に除去され、monitoring template/scriptをアプリから参照する変更はない。negated pathsは順序が意味を持つため、このtrigger境界も独立review対象とする。[GitHub workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onpushpull_requestpull_request_targetpathspaths-ignore)。監視CIがgreenでも本番CFN deployの承認にはしない。
 
