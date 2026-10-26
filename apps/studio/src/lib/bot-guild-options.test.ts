@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getGuildConfigurationOptions } from './bot-guild-options.ts';
+import { getGuildConfigurationOptions, guildChannelOptionSchema } from './bot-guild-options.ts';
 
 const GUILD_ID = '964326043420872704';
 const INTERNAL_SECRET = '0123456789abcdef0123456789abcdef';
@@ -84,4 +84,16 @@ test('不正なGuild IDは内部APIへ送らない', async () => {
 
   assert.equal(result, null);
   assert.equal(called, false);
+});
+
+test('channel schema preserves omitted permission defaults and rejects unsafe positions', () => {
+  const channel = { id: '123', name: 'general', kind: 'text', position: 0, parentId: null };
+  assert.deepEqual(guildChannelOptionSchema.parse(channel), {
+    ...channel,
+    viewable: false,
+    readMessageHistory: false,
+  });
+  for (const position of [Infinity, Number.MAX_SAFE_INTEGER + 1, 0.5]) {
+    assert.equal(guildChannelOptionSchema.safeParse({ ...channel, position }).success, false);
+  }
 });
