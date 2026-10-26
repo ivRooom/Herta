@@ -149,3 +149,42 @@ export async function listVcRecapSessionsForStudio(
     channelOptions,
   };
 }
+
+export interface VcRecapTimelineDay {
+  /** JSTの日付キー(YYYY-MM-DD)。 */
+  dateKey: string;
+  items: VcRecapSessionDisplay[];
+}
+
+const JST_DATE_KEY_FORMAT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Tokyo',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+/** 開始日時の降順に並んだセッションを、並び順を保ったままJSTの日付ごとにまとめる。 */
+export function groupVcRecapSessionsByDay(items: VcRecapSessionDisplay[]): VcRecapTimelineDay[] {
+  const days: VcRecapTimelineDay[] = [];
+  for (const item of items) {
+    const dateKey = JST_DATE_KEY_FORMAT.format(item.startedAt);
+    const last = days[days.length - 1];
+    if (last?.dateKey === dateKey) {
+      last.items.push(item);
+    } else {
+      days.push({ dateKey, items: [item] });
+    }
+  }
+  return days;
+}
+
+/** 開始〜終了の経過時間を「1時間5分」のように表す。終了していない場合はnull。 */
+export function formatVcRecapDuration(startedAt: Date, endedAt: Date | null): string | null {
+  if (!endedAt) return null;
+  const totalMinutes = Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 60_000));
+  if (totalMinutes < 1) return '1分未満';
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${minutes}分`;
+  return minutes === 0 ? `${hours}時間` : `${hours}時間${minutes}分`;
+}

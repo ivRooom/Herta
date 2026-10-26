@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { VcRecapSessionSummary } from '@herta/db';
-import { parseVcRecapQuery, toVcRecapSessionDisplay } from './vc-recap-studio.ts';
+import {
+  formatVcRecapDuration,
+  groupVcRecapSessionsByDay,
+  parseVcRecapQuery,
+  toVcRecapSessionDisplay,
+} from './vc-recap-studio.ts';
 import type { GuildMemberOption } from './bot-guild-members.ts';
 
 function session(overrides: Partial<VcRecapSessionSummary> = {}): VcRecapSessionSummary {
@@ -110,4 +115,34 @@ test('参加者が空のセッションは空配列を返す', () => {
 
   assert.deepEqual(display.consentingParticipants, []);
   assert.deepEqual(display.nonConsentingParticipants, []);
+});
+
+test('セッションを並び順を保ったままJSTの日付ごとにまとめる', () => {
+  const toDisplay = (id: string, startedAt: string) =>
+    toVcRecapSessionDisplay(session({ id, startedAt: new Date(startedAt) }), new Map(), new Map());
+  // 2026-07-02 00:30 JST / 2026-07-01 23:30 JST / 2026-07-01 09:00 JST
+  const days = groupVcRecapSessionsByDay([
+    toDisplay('a', '2026-07-01T15:30:00.000Z'),
+    toDisplay('b', '2026-07-01T14:30:00.000Z'),
+    toDisplay('c', '2026-07-01T00:00:00.000Z'),
+  ]);
+
+  assert.deepEqual(
+    days.map((day) => [day.dateKey, day.items.map((item) => item.id)]),
+    [
+      ['2026-07-02', ['a']],
+      ['2026-07-01', ['b', 'c']],
+    ],
+  );
+});
+
+test('経過時間を時間・分で表し、未終了ならnullを返す', () => {
+  const start = new Date('2026-07-01T00:00:00.000Z');
+  const after = (ms: number) => new Date(start.getTime() + ms);
+
+  assert.equal(formatVcRecapDuration(start, null), null);
+  assert.equal(formatVcRecapDuration(start, after(20_000)), '1分未満');
+  assert.equal(formatVcRecapDuration(start, after(5 * 60_000)), '5分');
+  assert.equal(formatVcRecapDuration(start, after(60 * 60_000)), '1時間');
+  assert.equal(formatVcRecapDuration(start, after(65 * 60_000)), '1時間5分');
 });
