@@ -63,10 +63,21 @@ function readCmapCodePoints(path: string): Set<number> {
       const segments = view.getUint16(offset + 6) / 2;
       const ends = offset + 14;
       const starts = ends + segments * 2 + 2;
+      const deltas = starts + segments * 2;
+      const rangeOffsets = deltas + segments * 2;
       for (let s = 0; s < segments; s++) {
+        const start = view.getUint16(starts + s * 2);
         const end = view.getUint16(ends + s * 2);
-        for (let c = view.getUint16(starts + s * 2); c <= end && c !== 0xffff; c++) {
-          codePoints.add(c);
+        const delta = view.getUint16(deltas + s * 2);
+        const rangeOffset = view.getUint16(rangeOffsets + s * 2);
+        for (let c = start; c <= end && c !== 0xffff; c++) {
+          // glyph ID 0 (.notdef) は未収録を意味する
+          let glyphId = (c + delta) & 0xffff;
+          if (rangeOffset !== 0) {
+            const glyph = view.getUint16(rangeOffsets + s * 2 + rangeOffset + (c - start) * 2);
+            glyphId = glyph === 0 ? 0 : (glyph + delta) & 0xffff;
+          }
+          if (glyphId !== 0) codePoints.add(c);
         }
       }
     } else if (format === 12) {
