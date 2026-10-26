@@ -162,7 +162,9 @@ export async function countVcRecapTranscriptSegments(
   if (sessionIds.length === 0) return new Map();
   const rows = await prisma.vcRecapTranscriptSegment.groupBy({
     by: ['sessionId'],
-    where: { sessionId: { in: [...sessionIds] } },
+    // 本文保存に同意していない参加者の本文は、終了処理(endedAtを立てるのと同じtransaction)で
+    // 消える。進行中・要約中のセッションはまだ残っているため数えない。
+    where: { sessionId: { in: [...sessionIds] }, session: { endedAt: { not: null } } },
     _count: { _all: true },
   });
   return new Map(rows.map((row) => [row.sessionId, row._count._all]));
@@ -192,7 +194,9 @@ export async function getVcRecapSessionTranscriptForGuild(
     },
   });
   if (!row) return null;
-  return { session: toVcRecapSessionSummary(row), segments: row.segments };
+  // endedAtは本文保存に同意していない参加者の本文を消すのと同じtransactionで立つ。
+  // 未終了のセッションには未同意者の本文が残っているため返さない。
+  return { session: toVcRecapSessionSummary(row), segments: row.endedAt ? row.segments : [] };
 }
 
 /** 本人の文字起こし本文(/herta-privacy exportで保持データ全体を返すため)。 */

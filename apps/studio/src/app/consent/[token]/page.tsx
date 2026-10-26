@@ -50,7 +50,11 @@ export default async function VoiceConsentPage({ params }: { params: Promise<{ t
       </div>
 
       <div className="mt-8">
-        <VoiceConsentForm token={token} initialConsent={consent.voiceTranscriptionConsent} />
+        <VoiceConsentForm
+          token={token}
+          initialConsent={consent.voiceTranscriptionConsent}
+          initialRetentionConsent={consent.voiceTranscriptRetentionConsentedAt !== null}
+        />
       </div>
     </PageShell>
   );

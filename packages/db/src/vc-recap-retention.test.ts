@@ -8,7 +8,9 @@ import {
 import {
   VC_RECAP_TRANSCRIPT_RETENTION_DAYS,
   completeVcRecapSession,
+  countVcRecapTranscriptSegments,
   failVcRecapSession,
+  getVcRecapSessionTranscriptForGuild,
   purgeExpiredVcRecapTranscripts,
 } from './vc-recap.js';
 
@@ -110,5 +112,57 @@ test('本文保存の同意者は明示的な同意と保存同意の両方を�
       voiceTranscriptRetentionConsentedAt: { not: null },
     },
     select: { userId: true },
+  });
+});
+
+test('未終了のセッションは本文保存に同意していない参加者の本文が残っているためStudioへ出さない', async () => {
+  const segment = {
+    userId: 'user-1',
+    text: 'こんにちは',
+    startedAt: new Date(0),
+    endedAt: new Date(1000),
+  };
+  const sessionRow = (endedAt: Date | null) => ({
+    id: 'session-1',
+    guildId: 'guild-1',
+    channelId: 'channel-1',
+    startedBy: 'user-1',
+    status: endedAt ? 'completed' : 'active',
+    consentingUserIds: ['user-1'],
+    nonConsentingUserIds: [],
+    summary: null,
+    topics: [],
+    startedAt: new Date(0),
+    endedAt,
+    segments: [segment],
+  });
+  let row = sessionRow(null);
+  let groupByArgs: unknown;
+  const prisma = {
+    vcRecapSession: { findFirst: async () => row },
+    vcRecapTranscriptSegment: {
+      groupBy: async (args: unknown) => {
+        groupByArgs = args;
+        return [];
+      },
+    },
+  } as unknown as PrismaClient;
+
+  assert.deepEqual(
+    (await getVcRecapSessionTranscriptForGuild(prisma, 'guild-1', 'session-1'))?.segments,
+    [],
+  );
+
+  row = sessionRow(new Date(2000));
+  assert.deepEqual(
+    (await getVcRecapSessionTranscriptForGuild(prisma, 'guild-1', 'session-1'))?.segments,
+    [segment],
+  );
+
+  await countVcRecapTranscriptSegments(prisma, ['session-1']);
+  assert.deepEqual(groupByArgs, {
+    by: ['sessionId'],
+    where: { sessionId: { in: ['session-1'] }, session: { endedAt: { not: null } } },
+    _count: { _all: true },
   });
 });
