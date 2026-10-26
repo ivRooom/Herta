@@ -198,6 +198,11 @@ services:
       HERTA_ACTIVITY_SYNC_SECRET: ${HERTA_ACTIVITY_SYNC_SECRET:-}
       HENRIKDEV_API_KEY: ${HENRIKDEV_API_KEY:-}
       STUDIO_PUBLIC_BASE_URL: ${STUDIO_PUBLIC_BASE_URL:-}
+      # VC要約のAWS Transcribe Streaming。認証情報はRuntime Secret Store優先、未設定時のみenvを使う。
+      # regionが無いと認証情報があっても文字起こしがスキップされるため、既定でTokyoを渡す。
+      AWS_TRANSCRIBE_REGION: ${AWS_TRANSCRIBE_REGION:-ap-northeast-1}
+      AWS_TRANSCRIBE_ACCESS_KEY_ID: ${AWS_TRANSCRIBE_ACCESS_KEY_ID:-}
+      AWS_TRANSCRIBE_SECRET_ACCESS_KEY: ${AWS_TRANSCRIBE_SECRET_ACCESS_KEY:-}
     healthcheck:
       test:
         [
