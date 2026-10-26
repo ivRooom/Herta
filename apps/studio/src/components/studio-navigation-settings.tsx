@@ -91,7 +91,7 @@ export function StudioNavigationSettings() {
             </div>
             <h2 className="mt-2 text-lg font-semibold">{selectedGuild.name}</h2>
             <p className="mt-1 text-sm leading-6 text-muted">
-              主要6タブは常に表示し、必要な個別PluginだけCurrent Serverへ追加できます。
+              主要8タブは常に表示し、必要な個別PluginだけCurrent Serverへ追加できます。
             </p>
           </div>
           <span className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs text-muted">

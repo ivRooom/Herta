@@ -42,6 +42,20 @@ const CORE_SERVER_NAVIGATION_DEFINITIONS: readonly CoreServerNavigationDefinitio
     icon: 'rules',
   },
   {
+    id: 'selected-server-message-studio',
+    href: (guildId) => `/dashboard/guilds/${guildId}/daily-content`,
+    label: 'Message Studio',
+    description: 'Botとして発言・お知らせ・予約投稿・定期投稿を作成する',
+    icon: 'message',
+  },
+  {
+    id: 'selected-server-vc-recap',
+    href: (guildId) => `/dashboard/guilds/${guildId}/vc-recap`,
+    label: 'VC Recap',
+    description: 'ボイスチャットの要約履歴を確認する',
+    icon: 'history',
+  },
+  {
     id: 'selected-server-community',
     href: (guildId) => `/dashboard/community?guild=${guildId}`,
     label: 'Community',
