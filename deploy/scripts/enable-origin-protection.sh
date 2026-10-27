@@ -6,7 +6,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CERT_DIR="${REPO_ROOT}/certs"
 CADDY_DIR="${REPO_ROOT}/deploy/docker/caddy"
 AOP_CA_URL="${AOP_CA_URL:-https://developers.cloudflare.com/ssl/static/authenticated_origin_pull_ca.pem}"
-COMPOSE="docker compose --env-file ${REPO_ROOT}/.env.production -f ${REPO_ROOT}/docker-compose.prod.yml"
+source "${SCRIPT_DIR}/_common.sh"
 
 usage() {
   cat <<'EOF'
@@ -57,7 +57,7 @@ prepare() {
 }
 
 activate() {
-  require_file "${REPO_ROOT}/.env.production"
+  require_env_file
   require_file "${CERT_DIR}/cloudflare-origin-pull-ca.pem"
   require_file "${CADDY_DIR}/Caddyfile.aop"
 
@@ -67,19 +67,19 @@ activate() {
   # migrator/api/studioまで不要に起動・pullし、本番切替を巻き込む可能性がある。
   # Caddyfileはbind mountなので、内容変更を確実に読み込むためforce-recreateする。
   ${COMPOSE} up -d --no-build --no-deps --force-recreate caddy
-  ${COMPOSE} logs --tail=50 caddy
+  if [[ "$HERTA_SELECTED_DATABASE_MODE" = local ]]; then ${COMPOSE} logs --tail=50 caddy; fi
 
   echo "AOP対応Caddy設定を有効化しました。Cloudflare経由の外部health checkを確認してください。"
 }
 
 rollback() {
-  require_file "${REPO_ROOT}/.env.production"
+  require_env_file
   require_file "${CADDY_DIR}/Caddyfile.rollback"
 
   cp "${CADDY_DIR}/Caddyfile.rollback" "${CADDY_DIR}/Caddyfile"
   # activateと同様、ロールバックもCaddy以外の本番サービスへ伝播させない。
   ${COMPOSE} up -d --no-build --no-deps --force-recreate caddy
-  ${COMPOSE} logs --tail=50 caddy
+  if [[ "$HERTA_SELECTED_DATABASE_MODE" = local ]]; then ${COMPOSE} logs --tail=50 caddy; fi
   echo "通常のCaddy設定へロールバックしました。"
 }
 

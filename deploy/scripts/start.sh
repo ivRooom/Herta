@@ -18,7 +18,7 @@ ${COMPOSE} config --quiet
 pull_production_images
 verify_app_image
 
-${COMPOSE} up -d --no-build --remove-orphans
+start_production_services
 restart_proxies
 sleep 5
 ${COMPOSE} ps -a

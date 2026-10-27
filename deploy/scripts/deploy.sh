@@ -26,8 +26,16 @@ require_env_file
 echo "=== Herta. 本番デプロイ開始 (ref: ${DEPLOY_REF}) ==="
 
 git fetch --prune --tags origin
-git checkout "${DEPLOY_REF}"
-git pull --ff-only origin "${DEPLOY_REF}"
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "ERROR: Tracked working tree changes block checkout." >&2; exit 2
+fi
+if git show-ref --verify --quiet "refs/remotes/origin/${DEPLOY_REF}"; then
+  TARGET_SHA=$(git rev-parse "refs/remotes/origin/${DEPLOY_REF}^{commit}")
+else
+  TARGET_SHA=$(git rev-parse "${DEPLOY_REF}^{commit}")
+fi
+assert_database_target "$TARGET_SHA"
+git checkout "$TARGET_SHA"
 
 # checkout/pull後はdeployment target revisionのhelperを使う。future revisionで
 # readiness仕様が更新された場合は、そのtargetの実装を尊重する。
@@ -53,7 +61,11 @@ ${COMPOSE} config --quiet
 pull_production_images
 verify_app_image
 
-${COMPOSE} up -d --no-build --remove-orphans
+if declare -F start_production_services >/dev/null; then
+  start_production_services
+else
+  ${COMPOSE} up -d --no-build --remove-orphans
+fi
 restart_proxies
 sleep 5
 ${COMPOSE} ps -a

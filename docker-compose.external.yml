@@ -1,0 +1,81 @@
+# External PostgreSQL topology. Enable only through reviewed service cutover.
+x-ca: &ca
+  type: bind
+  source: ${HERTA_DATABASE_CA_FILE:?HERTA_DATABASE_CA_FILE is required}
+  target: /run/ivrm/postgresql-ca.crt
+  read_only: true
+  bind:
+    create_host_path: false
+x-external: &external
+  volumes:
+    - *ca
+  extra_hosts:
+    - 'ivrm-db-postgres.internal:${HERTA_DATABASE_PRIVATE_IP:?HERTA_DATABASE_PRIVATE_IP is required}'
+services:
+  redis:
+    extends:
+      file: docker-compose.common.yml
+      service: redis
+  migrator:
+    <<: *external
+    extends:
+      file: docker-compose.common.yml
+      service: migrator
+    # Readiness only. Running migration DDL remains a separate approved action.
+    command:
+      - sh
+      - -ec
+      - |
+        node /run/ivrm/validate-external-database.mjs
+        exec timeout 30 /app/packages/db/node_modules/.bin/prisma migrate status --schema /app/packages/db/prisma/schema.prisma
+    environment:
+      DATABASE_URL: ${MIGRATION_DATABASE_URL:?MIGRATION_DATABASE_URL is required}
+      HERTA_RUNTIME_DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      HERTA_DATABASE_MODE: ${HERTA_DATABASE_MODE:?HERTA_DATABASE_MODE is required}
+      HERTA_DATABASE_PRIVATE_IP: ${HERTA_DATABASE_PRIVATE_IP:?HERTA_DATABASE_PRIVATE_IP is required}
+    volumes:
+      - *ca
+      - type: bind
+        source: ./deploy/scripts/validate-external-database.mjs
+        target: /run/ivrm/validate-external-database.mjs
+        read_only: true
+        bind:
+          create_host_path: false
+  api:
+    <<: *external
+    extends:
+      file: docker-compose.common.yml
+      service: api
+  studio:
+    <<: *external
+    extends:
+      file: docker-compose.common.yml
+      service: studio
+  bot:
+    <<: *external
+    extends:
+      file: docker-compose.common.yml
+      service: bot
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+  worker:
+    <<: *external
+    extends:
+      file: docker-compose.common.yml
+      service: worker
+  caddy:
+    extends:
+      file: docker-compose.common.yml
+      service: caddy
+  nginx:
+    extends:
+      file: docker-compose.common.yml
+      service: nginx
+
+volumes:
+  redis_data:
+  caddy_data:
+  caddy_config:

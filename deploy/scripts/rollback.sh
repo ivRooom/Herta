@@ -19,8 +19,12 @@ require_env_file
 assert_runtime_secret_key
 
 git fetch --prune --tags origin
+if [[ "$HERTA_SELECTED_DATABASE_MODE" = external && -z "${1:-}" ]]; then
+  echo "ERROR: External rollback requires an explicit compatible revision." >&2; exit 2
+fi
 TARGET="${1:-HEAD~1}"
 TARGET_SHA="$(git rev-parse "${TARGET}")"
+assert_database_target "$TARGET_SHA"
 export HERTA_IMAGE="${IMAGE_REPOSITORY}:${TARGET_SHA}"
 
 echo "=== Herta. ロールバック ==="
@@ -37,7 +41,7 @@ ${COMPOSE} config --quiet
 pull_production_images
 verify_app_image
 
-${COMPOSE} up -d --no-build --remove-orphans
+start_production_services
 restart_proxies
 sleep 5
 ${COMPOSE} ps -a
