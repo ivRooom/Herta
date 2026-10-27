@@ -45,4 +45,9 @@ start_production_services
 grep -Fx 'up -d --no-build' "$fixture/calls" >/dev/null
 printf '\nHERTA_DATABASE_MODE=unknown\n' >> "$ENV_FILE"
 if database_mode >/dev/null 2>&1; then echo 'Unknown mode accepted'; exit 1; fi
+# Local mode must preserve stderr/stdout order rather than defer diagnostics.
+printf 'HERTA_DATABASE_MODE=local\nCOMPOSE_PROJECT_NAME=herta\n' > "$ENV_FILE"
+select_database_topology
+printf '#!/usr/bin/env bash\nprintf "stderr-first\\n" >&2\nprintf "stdout-second\\n"\n' > "$fixture/bin/docker"
+[[ $(herta_compose config --quiet 2>&1) = $'stderr-first\nstdout-second' ]]
 echo 'database mode tests passed'

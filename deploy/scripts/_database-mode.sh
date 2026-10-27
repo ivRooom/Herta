@@ -72,16 +72,20 @@ herta_compose() (
       case "$arg" in --remove-orphans|-v|--volumes) echo 'ERROR: External mode preserves the old source container and volumes.' >&2; exit 2 ;; esac
     done
   fi
+  # Database settings come only from the protected file; local stderr stays live.
+  local -a command=(env -u DATABASE_URL -u MIGRATION_DATABASE_URL -u HERTA_DATABASE_CA_FILE -u HERTA_DATABASE_PRIVATE_IP -u COMPOSE_PROJECT_NAME
+    COMPOSE_REMOVE_ORPHANS=false HERTA_DATABASE_MODE="$mode" docker compose --project-directory "$REPO_ROOT"
+    --project-name "$HERTA_SELECTED_PROJECT" --env-file "$ENV_FILE" -f "$REPO_ROOT/$file")
+  if [[ "$mode" = local ]]; then
+    exec "${command[@]}" "$@"
+  fi
   umask 077
-  errors=$(mktemp)
+  errors=$(mktemp) || exit 1
   trap 'rm -f -- "$errors"' EXIT
-  # Database settings come only from the protected env file, not ambient shell overrides.
   status=0
-  env -u DATABASE_URL -u MIGRATION_DATABASE_URL -u HERTA_DATABASE_CA_FILE -u HERTA_DATABASE_PRIVATE_IP -u COMPOSE_PROJECT_NAME \
-    COMPOSE_REMOVE_ORPHANS=false HERTA_DATABASE_MODE="$mode" docker compose --project-directory "$REPO_ROOT" \
-    --project-name "$HERTA_SELECTED_PROJECT" --env-file "$ENV_FILE" -f "$REPO_ROOT/$file" "$@" 2>"$errors" || status=$?
-  if [[ "$mode" = local ]]; then cat "$errors" >&2
-  elif (( status != 0 )); then echo 'ERROR: External Compose operation failed; raw provider/configuration errors withheld.' >&2
+  "${command[@]}" "$@" 2>"$errors" || status=$?
+  if (( status != 0 )); then
+    echo 'ERROR: External Compose operation failed; raw provider/configuration errors withheld.' >&2
   fi
   exit "$status"
 )

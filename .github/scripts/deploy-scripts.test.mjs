@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 const shellScripts = [
@@ -11,6 +13,35 @@ const shellScripts = [
   'deploy/scripts/health-check.sh',
   'deploy/scripts/deploy-common.test.sh',
 ];
+
+test('workflow pre-checkout guard does not leak topology helpers into legacy deployment', () => {
+  const workflow = readFileSync('.github/workflows/deploy-production.yml', 'utf8');
+  const start = workflow.indexOf('if [[ -f deploy/scripts/_database-mode.sh ]]; then');
+  const end = workflow.indexOf('git checkout --detach "$TARGET_SHA"', start);
+  assert.ok(start >= 0 && end > start);
+  const guard = workflow.slice(start, end);
+  const fixture = mkdtempSync(join(tmpdir(), 'herta-legacy-guard-'));
+  try {
+    const file = join(fixture, 'env');
+    writeFileSync(file, 'COMPOSE_PROJECT_NAME=herta\n');
+    const env = {
+      ...process.env,
+      ENV_FILE: file,
+      TARGET_SHA: '1941b7e7862eb405ed44e0cc627b010a4eb1e48b',
+    };
+    execFileSync(
+      'bash',
+      ['-ec', `${guard}\nif declare -F start_production_services >/dev/null; then exit 1; fi`],
+      { env },
+    );
+    writeFileSync(file, 'HERTA_DATABASE_MODE=external\n');
+    assert.throws(() => execFileSync('bash', ['-ec', guard], { env, stdio: 'pipe' }), {
+      status: 2,
+    });
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
 
 test('production deploy shell scripts have valid bash syntax', () => {
   execFileSync('bash', ['-n', ...shellScripts], { stdio: 'pipe' });

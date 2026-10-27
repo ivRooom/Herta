@@ -228,8 +228,10 @@ jobs:
             fi
             # Inspect protected mode before checkout or secret writes. Legacy refs are local-only.
             if [[ -f deploy/scripts/_database-mode.sh ]]; then
-              source deploy/scripts/_database-mode.sh
-              assert_database_target "$TARGET_SHA"
+              (
+                source deploy/scripts/_database-mode.sh
+                assert_database_target "$TARGET_SHA"
+              )
             else
               if grep -Eq '^[[:space:]]*(export[[:space:]]+)?HERTA_DATABASE_MODE[[:space:]]*=' "$ENV_FILE"; then
                 echo "ERROR: Explicit database mode requires a topology-aware current checkout." >&2
