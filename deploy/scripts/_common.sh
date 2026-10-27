@@ -10,7 +10,8 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${REPO_ROOT}"
 
 ENV_FILE="${REPO_ROOT}/.env.production"
-COMPOSE="docker compose --env-file ${ENV_FILE} -f docker-compose.prod.yml"
+source "${SCRIPT_DIR}/_database-mode.sh"
+COMPOSE=herta_compose
 HEALTH_DOMAIN="${HEALTH_DOMAIN:-herta.ivrm.jp}"
 IMAGE_REPOSITORY="${IMAGE_REPOSITORY:-ghcr.io/ivrooom/herta}"
 PRISMA_BIN="/app/packages/db/node_modules/.bin/prisma"
@@ -27,6 +28,7 @@ require_env_file() {
     echo "ERROR: .env.production を読み取れません。権限を確認してください。" >&2
     exit 1
   fi
+  select_database_topology
 }
 
 # Runtime Secret Encryption master key (HERTA_RUNTIME_SECRET_KEY) が
@@ -108,7 +110,11 @@ reclaim_production_docker_space() {
 pull_production_images() {
   reclaim_production_docker_space
   echo "=== 本番imageを取得 (${HERTA_IMAGE}) ==="
-  ${COMPOSE} pull postgres redis nginx caddy api
+  if [[ "${HERTA_SELECTED_DATABASE_MODE:-local}" = local ]]; then
+    ${COMPOSE} pull postgres redis nginx caddy api
+  else
+    ${COMPOSE} pull redis nginx caddy api
+  fi
 }
 
 verify_app_image() {
@@ -133,7 +139,9 @@ restart_proxies() {
 verify_running_services() {
   echo "=== コンテナ稼働確認 ==="
   local service container_id
-  for service in postgres redis api studio bot worker nginx caddy; do
+  local services="redis api studio bot worker nginx caddy"
+  [[ "${HERTA_SELECTED_DATABASE_MODE:-local}" != local ]] || services="postgres $services"
+  for service in $services; do
     container_id="$(${COMPOSE} ps -q "${service}")"
     if [ -z "${container_id}" ]; then
       echo "ERROR: ${service}コンテナが存在しません。" >&2
@@ -173,6 +181,7 @@ service_runtime_state() {
 }
 
 print_migration_history() {
+  [[ "${HERTA_SELECTED_DATABASE_MODE:-local}" = local ]] || return 0
   local postgres_id
   postgres_id="$(${COMPOSE} ps -q postgres 2>/dev/null || true)"
   if [ -z "${postgres_id}" ] || \
@@ -210,6 +219,10 @@ print_deploy_diagnostics() (
     printf '%s: %s\n' "${service}" "$(service_runtime_state "${service}")"
   done
 
+  if [[ "${HERTA_SELECTED_DATABASE_MODE:-local}" = external ]]; then
+    echo "External diagnostics omit database history and raw application logs."
+    return 0
+  fi
   print_migration_history
 
   for service in migrator api studio bot worker nginx caddy; do

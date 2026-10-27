@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 const shellScripts = [
@@ -11,6 +13,35 @@ const shellScripts = [
   'deploy/scripts/health-check.sh',
   'deploy/scripts/deploy-common.test.sh',
 ];
+
+test('workflow pre-checkout guard does not leak topology helpers into legacy deployment', () => {
+  const workflow = readFileSync('.github/workflows/deploy-production.yml', 'utf8');
+  const start = workflow.indexOf('if [[ -f deploy/scripts/_database-mode.sh ]]; then');
+  const end = workflow.indexOf('git checkout --detach "$TARGET_SHA"', start);
+  assert.ok(start >= 0 && end > start);
+  const guard = workflow.slice(start, end);
+  const fixture = mkdtempSync(join(tmpdir(), 'herta-legacy-guard-'));
+  try {
+    const file = join(fixture, 'env');
+    writeFileSync(file, 'COMPOSE_PROJECT_NAME=herta\n');
+    const env = {
+      ...process.env,
+      ENV_FILE: file,
+      TARGET_SHA: '1941b7e7862eb405ed44e0cc627b010a4eb1e48b',
+    };
+    execFileSync(
+      'bash',
+      ['-ec', `${guard}\nif declare -F start_production_services >/dev/null; then exit 1; fi`],
+      { env },
+    );
+    writeFileSync(file, 'HERTA_DATABASE_MODE=external\n');
+    assert.throws(() => execFileSync('bash', ['-ec', guard], { env, stdio: 'pipe' }), {
+      status: 2,
+    });
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
 
 test('production deploy shell scripts have valid bash syntax', () => {
   execFileSync('bash', ['-n', ...shellScripts], { stdio: 'pipe' });
@@ -89,7 +120,7 @@ test('runtime image excludes the Next.js webpack build cache', () => {
 
 test('production app healthchecks do not require curl in the runtime image', () => {
   const dockerfile = readFileSync('Dockerfile', 'utf8');
-  const compose = readFileSync('docker-compose.prod.yml', 'utf8');
+  const compose = readFileSync('docker-compose.common.yml', 'utf8');
   const runtimeIndex = dockerfile.indexOf('FROM alpine:3.21 AS runtime');
 
   assert.ok(runtimeIndex >= 0, 'production runtime stage must exist');
@@ -168,8 +199,9 @@ test('manual deploy uses an absolute helper path and only falls back for legacy 
   const preserveHealthIndex = deploy.indexOf(
     'AOP_WAIT_FOR_HEALTH_DEF="$(declare -f wait_for_health)"',
   );
-  const checkoutIndex = deploy.indexOf('git checkout "${DEPLOY_REF}"');
-  const pullIndex = deploy.indexOf('git pull --ff-only origin "${DEPLOY_REF}"');
+  const checkoutIndex = deploy.indexOf('git checkout "$TARGET_SHA"');
+  const fetchIndex = deploy.indexOf('git fetch --prune --tags origin');
+  const targetGuardIndex = deploy.indexOf('assert_database_target "$TARGET_SHA"');
   const unsetIndex = deploy.indexOf('unset -f wait_for_health wait_for_auth wait_for_edge');
   const reloadIndex = deploy.indexOf(
     'source "${SCRIPT_DIR}/_common.sh"',
@@ -193,9 +225,14 @@ test('manual deploy uses an absolute helper path and only falls back for legacy 
     'deploy must preserve current AOP-aware helpers before changing refs',
   );
   assert.ok(checkoutIndex > preserveHealthIndex, 'deploy must preserve helpers before checkout');
-  assert.ok(pullIndex > checkoutIndex, 'deploy must fast-forward the selected ref after checkout');
+  assert.ok(fetchIndex > preserveHealthIndex, 'deploy must fetch before resolving target');
   assert.ok(
-    unsetIndex > pullIndex,
+    targetGuardIndex > fetchIndex && targetGuardIndex < checkoutIndex,
+    'target compatibility must be checked before checkout',
+  );
+  assert.doesNotMatch(deploy, /git pull/u, 'a later pull must not move past the validated target');
+  assert.ok(
+    unsetIndex > checkoutIndex,
     'target health functions must be cleared before target helper reload',
   );
   assert.ok(

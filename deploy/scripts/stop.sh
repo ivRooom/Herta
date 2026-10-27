@@ -8,6 +8,8 @@
 # ============================================================
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
+require_env_file
+
 if [ "${1:-}" = "--volumes" ]; then
   echo "=== Herta. 本番スタックを停止します (ボリュームも削除) ==="
   ${COMPOSE} down -v

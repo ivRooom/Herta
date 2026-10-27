@@ -20,6 +20,8 @@ on:
       - 'Dockerfile'
       - '.dockerignore'
       - 'docker-compose.prod.yml'
+      - 'docker-compose.common.yml'
+      - 'docker-compose.external.yml'
       - '.env.example'
       - '.env.production.example'
       - 'package.json'
@@ -220,10 +222,23 @@ jobs:
 
             git fetch --prune --tags origin
             if git show-ref --verify --quiet "refs/remotes/origin/${DEPLOY_REF}"; then
-              git checkout -B "${DEPLOY_REF}" "origin/${DEPLOY_REF}"
+              TARGET_SHA=$(git rev-parse "refs/remotes/origin/${DEPLOY_REF}^{commit}")
             else
-              git checkout --detach "${DEPLOY_REF}"
+              TARGET_SHA=$(git rev-parse "${DEPLOY_REF}^{commit}")
             fi
+            # Inspect protected mode before checkout or secret writes. Legacy refs are local-only.
+            if [[ -f deploy/scripts/_database-mode.sh ]]; then
+              (
+                source deploy/scripts/_database-mode.sh
+                assert_database_target "$TARGET_SHA"
+              )
+            else
+              if grep -Eq '^[[:space:]]*(export[[:space:]]+)?HERTA_DATABASE_MODE[[:space:]]*=' "$ENV_FILE"; then
+                echo "ERROR: Explicit database mode requires a topology-aware current checkout." >&2
+                exit 2
+              fi
+            fi
+            git checkout --detach "$TARGET_SHA"
 
             echo "=== Runtime secretsをGitHub Actionsから同期 ==="
             if [ -z "${SPOTIFY_CLIENT_ID:-}" ] || [ -z "${SPOTIFY_CLIENT_SECRET:-}" ]; then
@@ -351,6 +366,7 @@ jobs:
             # workflow_dispatchでAOP-aware helper導入前のrefを選んでも
             # certificateなしlocalhost -> Caddy checkへ退行させない。
             source deploy/scripts/_common.sh
+            require_env_file
             wait_for_health() {
               echo "=== Internal API health check (api:3001) ==="
               for i in $(seq 1 24); do
@@ -403,7 +419,11 @@ jobs:
                 -maxdepth 1 -type f -name "libquery_engine-*.so.node" -print -quit)"
             '
 
-            ${COMPOSE} up -d --no-build --remove-orphans
+            if declare -F start_production_services >/dev/null; then
+              start_production_services
+            else
+              ${COMPOSE} up -d --no-build --remove-orphans
+            fi
 
             echo "=== nginx / caddy再起動 (upstream再解決) ==="
             ${COMPOSE} restart nginx caddy
