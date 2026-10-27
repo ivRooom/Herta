@@ -104,6 +104,9 @@ jobs:
             test -f apps/bot/dist/main.js
             test -f apps/worker/dist/main.js
             test -f apps/studio/.next/standalone/apps/studio/server.js
+            # External readiness uses the production image shell and bounded Prisma invocation.
+            command -v timeout > /dev/null
+            timeout 2 node -e "process.exit(0)"
             test -x packages/db/node_modules/.bin/prisma
             packages/db/node_modules/.bin/prisma --version > /dev/null
 
