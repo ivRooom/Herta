@@ -89,7 +89,7 @@ test('runtime image excludes the Next.js webpack build cache', () => {
 
 test('production app healthchecks do not require curl in the runtime image', () => {
   const dockerfile = readFileSync('Dockerfile', 'utf8');
-  const compose = readFileSync('docker-compose.prod.yml', 'utf8');
+  const compose = readFileSync('docker-compose.common.yml', 'utf8');
   const runtimeIndex = dockerfile.indexOf('FROM alpine:3.21 AS runtime');
 
   assert.ok(runtimeIndex >= 0, 'production runtime stage must exist');
@@ -168,8 +168,9 @@ test('manual deploy uses an absolute helper path and only falls back for legacy 
   const preserveHealthIndex = deploy.indexOf(
     'AOP_WAIT_FOR_HEALTH_DEF="$(declare -f wait_for_health)"',
   );
-  const checkoutIndex = deploy.indexOf('git checkout "${DEPLOY_REF}"');
-  const pullIndex = deploy.indexOf('git pull --ff-only origin "${DEPLOY_REF}"');
+  const checkoutIndex = deploy.indexOf('git checkout "$TARGET_SHA"');
+  const fetchIndex = deploy.indexOf('git fetch --prune --tags origin');
+  const targetGuardIndex = deploy.indexOf('assert_database_target "$TARGET_SHA"');
   const unsetIndex = deploy.indexOf('unset -f wait_for_health wait_for_auth wait_for_edge');
   const reloadIndex = deploy.indexOf(
     'source "${SCRIPT_DIR}/_common.sh"',
@@ -193,9 +194,14 @@ test('manual deploy uses an absolute helper path and only falls back for legacy 
     'deploy must preserve current AOP-aware helpers before changing refs',
   );
   assert.ok(checkoutIndex > preserveHealthIndex, 'deploy must preserve helpers before checkout');
-  assert.ok(pullIndex > checkoutIndex, 'deploy must fast-forward the selected ref after checkout');
+  assert.ok(fetchIndex > preserveHealthIndex, 'deploy must fetch before resolving target');
   assert.ok(
-    unsetIndex > pullIndex,
+    targetGuardIndex > fetchIndex && targetGuardIndex < checkoutIndex,
+    'target compatibility must be checked before checkout',
+  );
+  assert.doesNotMatch(deploy, /git pull/u, 'a later pull must not move past the validated target');
+  assert.ok(
+    unsetIndex > checkoutIndex,
     'target health functions must be cleared before target helper reload',
   );
   assert.ok(
