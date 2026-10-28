@@ -1,5 +1,7 @@
 # Database Migration Policy / Incident Runbook
 
+> **2026-10-26 DB host移行Gate:** [ivrm-infrastructure](https://github.com/ivRooom/ivrm-infrastructure/blob/main/docs/current-state.md)にPG17専用Lightsail空DB・S3保存先の準備記録があります。しかしHerta本番PG16→17 migration/切替は未実施です。production composeのlocal postgres・migrator依存、Prisma互換・SSL/TLS hostname/CA・pool/Role/Backup/独立Restoreは [Issue #512](https://github.com/ivRooom/Herta/issues/512)で別個に検証・承認します。dump/restoreの合成試験を本番完了と扱いません。
+
 Herta の Prisma / PostgreSQL migration を安全に運用するための規約です。
 
 ## Production migration immutability
