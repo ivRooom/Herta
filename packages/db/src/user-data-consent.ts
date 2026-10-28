@@ -66,6 +66,23 @@ export async function setVoiceTranscriptionConsent(
 }
 
 /**
+ * 管理者による同意の付与。本人の拒否を上書きしないため、レコードが無いときだけ同意済みで
+ * 作成する(INSERT ... ON CONFLICT DO NOTHING)。読み取りと書き込みの間に本人が拒否しても
+ * 拒否は上書きされない。既に同意済みならその状態を、拒否が記録されていればnullを返す。
+ */
+export async function grantVoiceTranscriptionConsentUnlessRefused(
+  prisma: PrismaClient,
+  userId: string,
+): Promise<UserDataConsentState | null> {
+  await prisma.userDataConsent.createMany({
+    data: [{ userId, voiceTranscriptionConsent: true }],
+    skipDuplicates: true,
+  });
+  const row = await prisma.userDataConsent.findUnique({ where: { userId } });
+  return row?.voiceTranscriptionConsent ? toUserDataConsentState(row) : null;
+}
+
+/**
  * 文字起こし本文の30日保存に同意しているユーザーだけを返す。ロールによる自動同意は
  * 本人が保存の説明を見ていないため含めない(明示的な同意かつ保存同意のあるユーザーのみ)。
  */

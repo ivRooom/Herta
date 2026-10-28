@@ -1,5 +1,9 @@
 import type { PrismaClient } from '@herta/db';
-import { getUserDataConsent, setVoiceTranscriptionConsent } from '@herta/db';
+import {
+  getUserDataConsent,
+  grantVoiceTranscriptionConsentUnlessRefused,
+  setVoiceTranscriptionConsent,
+} from '@herta/db';
 
 export class VoiceConsentRefusedError extends Error {
   constructor() {
@@ -22,10 +26,15 @@ export async function setVoiceConsentAsAdmin(
   input: { guildId: string; actorId: string; userId: string; consent: boolean },
 ): Promise<void> {
   const previous = await getUserDataConsent(prisma, input.userId);
-  if (input.consent && hasExplicitRefusal(previous)) {
-    throw new VoiceConsentRefusedError();
+  if (input.consent) {
+    // 付与は拒否を上書きしない条件付きの書き込みで行う。事前の読み取りの後に本人が
+    // 拒否した場合も、ここでnullが返り409になる。
+    if (hasExplicitRefusal(previous)) throw new VoiceConsentRefusedError();
+    const granted = await grantVoiceTranscriptionConsentUnlessRefused(prisma, input.userId);
+    if (!granted) throw new VoiceConsentRefusedError();
+  } else {
+    await setVoiceTranscriptionConsent(prisma, input.userId, false);
   }
-  await setVoiceTranscriptionConsent(prisma, input.userId, input.consent);
   await prisma.auditLog.create({
     data: {
       guildId: input.guildId,
