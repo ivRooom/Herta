@@ -231,7 +231,8 @@ function wireSpeakingHandler(
       // 同意状態はセッション開始時点で固定せず、発言開始のたびに都度再確認する。
       // `/herta-privacy voice-consent false`で同意を取り消した後の発言は対象外にするため。
       // ロールによる自動同意はDBへ永続化しないランタイムオーバーレイのため、ロール剥奪時は
-      // 次の発言開始イベントで即座に明示的な同意状態へ戻る。
+      // 次の発言開始イベントで即座に明示的な同意状態へ戻る。本人が拒否・取り消しを選んで
+      // いる場合はロールがあっても対象外(applyAutoConsentRoles)。
       const baseConsentMap = await getVoiceTranscriptionConsentMap(prisma, [userId]);
       // GuildMembers intentは任意設定のため、speaking.cacheだけではロール剥奪が
       // 反映されない場合がある(Intent無しだとGuildMemberUpdateイベントを受信できず
