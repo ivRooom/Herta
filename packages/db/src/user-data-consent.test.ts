@@ -12,9 +12,9 @@ test('自動同意ロール未設定時はベースの同意状態をそのま�
   assert.equal(result.get('user-1'), false);
 });
 
-test('自動同意ロールを持つユーザーは未同意でもtrueになる', () => {
+test('同意・拒否を一度も選んでいないユーザーは自動同意ロールでtrueになる', () => {
   const result = applyAutoConsentRoles(
-    new Map([['user-1', false]]),
+    new Map([['user-1', null]]),
     ['user-1'],
     ['role-auto'],
     new Map([['user-1', ['role-a', 'role-auto']]]),
@@ -42,4 +42,24 @@ test('自動同意ロールを持たないユーザーはベースの同意状�
 test('roleIdsByUserに未登録のユーザーは空配列扱いになる', () => {
   const result = applyAutoConsentRoles(new Map(), ['user-1'], ['role-auto'], new Map());
   assert.equal(result.get('user-1'), false);
+});
+
+test('本人が拒否・取り消しを選んだユーザーは自動同意ロールを持っていてもfalseのまま', () => {
+  const result = applyAutoConsentRoles(
+    new Map([['user-1', false]]),
+    ['user-1'],
+    ['role-auto'],
+    new Map([['user-1', ['role-auto']]]),
+  );
+  assert.equal(result.get('user-1'), false);
+});
+
+test('baseConsentに未登録のユーザーは未選択として自動同意ロールが効く', () => {
+  const result = applyAutoConsentRoles(
+    new Map(),
+    ['user-1'],
+    ['role-auto'],
+    new Map([['user-1', ['role-auto']]]),
+  );
+  assert.equal(result.get('user-1'), true);
 });

@@ -103,12 +103,14 @@ function toUserDataConsentState(row: {
 
 /**
  * 複数ユーザーの同意状態をまとめて取得する(VC参加者一覧に対する絞り込み用)。
- * レコードが無いユーザーはvoiceTranscriptionConsent: falseとして扱う(既定は不同意)。
+ * 本人(または本人の依頼を受けた管理者)が同意・拒否を選んだユーザーはその値、レコードが
+ * 無い(一度も選んでいない)ユーザーはnullを返す。nullは不同意として扱うが、自動同意ロールで
+ * 上書きできるのはnullのユーザーだけにするため、明示的なfalseと区別する。
  */
 export async function getVoiceTranscriptionConsentMap(
   prisma: PrismaClient,
   userIds: readonly string[],
-): Promise<Map<string, boolean>> {
+): Promise<Map<string, boolean | null>> {
   const uniqueIds = [...new Set(userIds)];
   if (uniqueIds.length === 0) return new Map();
 
@@ -117,7 +119,7 @@ export async function getVoiceTranscriptionConsentMap(
     select: { userId: true, voiceTranscriptionConsent: true },
   });
   const consentById = new Map(rows.map((row) => [row.userId, row.voiceTranscriptionConsent]));
-  return new Map(uniqueIds.map((id) => [id, consentById.get(id) ?? false]));
+  return new Map(uniqueIds.map((id) => [id, consentById.get(id) ?? null]));
 }
 
 /**
@@ -126,20 +128,25 @@ export async function getVoiceTranscriptionConsentMap(
  * UserDataConsentへ永続化しない。Discordのロールはguildごとに別物のID空間を持つため、
  * この判定自体はguildを跨がない(呼び出し元が渡すroleIdsByUser・autoConsentRoleIdsは
  * いずれもそのguildのものである必要がある)。
+ *
+ * 本人が拒否・取り消しを選んだ(明示的なfalse)ユーザーは、自動同意ロールを持っていても
+ * 対象外にする(本人の拒否を優先する。docs/PRIVACY_POLICY.md)。自動同意ロールが効くのは
+ * 一度も選んでいない(null・未登録)ユーザーだけ。
  */
 export function applyAutoConsentRoles(
-  baseConsent: ReadonlyMap<string, boolean>,
+  baseConsent: ReadonlyMap<string, boolean | null>,
   userIds: readonly string[],
   autoConsentRoleIds: readonly string[],
   roleIdsByUser: ReadonlyMap<string, readonly string[]>,
 ): Map<string, boolean> {
-  if (autoConsentRoleIds.length === 0) return new Map(baseConsent);
   return new Map(
     userIds.map((id) => {
+      const choice = baseConsent.get(id) ?? null;
+      if (choice !== null) return [id, choice];
       const hasAutoConsentRole = (roleIdsByUser.get(id) ?? []).some((roleId) =>
         autoConsentRoleIds.includes(roleId),
       );
-      return [id, hasAutoConsentRole || (baseConsent.get(id) ?? false)];
+      return [id, hasAutoConsentRole];
     }),
   );
 }

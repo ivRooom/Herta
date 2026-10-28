@@ -7,7 +7,7 @@ import { isSameOriginMutationRequest } from '@/lib/request-origin';
 import { resolveStudioAccess } from '@/lib/studio-access';
 import { hasEffectivePluginPermission } from '@/lib/studio-plugin-permissions';
 import { studioVoiceConsentResource } from '@/lib/studio-policy-resources';
-import { setVoiceConsentAsAdmin } from '@/lib/vc-recap-consent-admin';
+import { setVoiceConsentAsAdmin, VoiceConsentRefusedError } from '@/lib/vc-recap-consent-admin';
 
 export const dynamic = 'force-dynamic';
 
@@ -122,6 +122,16 @@ export async function POST(request: Request, { params }: GuildRouteContext) {
     );
   }
 
-  await setVoiceConsentAsAdmin(prisma, { guildId, actorId: session.user.id, userId, consent });
+  try {
+    await setVoiceConsentAsAdmin(prisma, { guildId, actorId: session.user.id, userId, consent });
+  } catch (error) {
+    if (error instanceof VoiceConsentRefusedError) {
+      return NextResponse.json(
+        { error: error.message },
+        { status: 409, headers: PRIVATE_NO_STORE_HEADERS },
+      );
+    }
+    throw error;
+  }
   return NextResponse.json({ ok: true }, { headers: PRIVATE_NO_STORE_HEADERS });
 }

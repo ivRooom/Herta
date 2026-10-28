@@ -56,7 +56,7 @@ export const vcRecapManifest: PluginManifest = {
           widget: 'discord-role',
           multiple: true,
           placeholder: '個別の同意操作なしで同意済みとみなすロールを選択',
-          help: 'このロールを付与されたメンバーは、このGuildでのVC Recapに限り、個別の同意操作なしで文字起こしへ同意済みとみなされます。Discordのロールはguildごとに別物のため、この自動同意判定自体は他のGuildには影響しません(同意状態を保存するテーブル自体はguild非依存のグローバル設計ですが、ロールによる自動同意はDBへ書き込まないランタイム判定のみで、このGuildでのVC Recapセッション中にのみ適用されます)。',
+          help: 'このロールを付与されたメンバーは、このGuildでのVC Recapに限り、個別の同意操作なしで文字起こしへ同意済みとみなされます。ただし本人が`/herta-privacy voice-consent false`などで拒否・取り消しを選んでいる場合は、ロールがあっても対象外になります(本人の拒否を優先)。Discordのロールはguildごとに別物のため、この自動同意判定自体は他のGuildには影響しません(同意状態を保存するテーブル自体はguild非依存のグローバル設計ですが、ロールによる自動同意はDBへ書き込まないランタイム判定のみで、このGuildでのVC Recapセッション中にのみ適用されます)。',
         },
       },
     },

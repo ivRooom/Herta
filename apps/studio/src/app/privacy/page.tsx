@@ -10,7 +10,7 @@ const DATA_ROWS: Array<{ type: string; condition: string; content: string; reten
   {
     type: 'VC発言の文字起こし本文',
     condition:
-      '/vc-recap start実行時(または進行中)、本人が同意済みの場合のみ(コマンド・ボタン・専用URLのいずれか)',
+      '/vc-recap start実行中、同意済みのメンバー(本人の同意、または本人が拒否していない場合の自動同意ロール・管理者設定)',
     content: '発言者・発言時刻・本文',
     retention:
       '本文の保存に同意した本人の分はセッション終了から30日(経過後に自動削除)。それ以外は要約生成完了時に削除',
@@ -18,14 +18,32 @@ const DATA_ROWS: Array<{ type: string; condition: string; content: string; reten
   {
     type: 'VC通話の要約',
     condition: '上記に基づき/vc-recapセッションが完了した場合',
-    content: '要約文・トピック一覧・参加者一覧',
+    content: '要約文・トピック一覧・参加者一覧(同意していない参加者のDiscordユーザーIDを含む)',
     retention: '無期限(本人からの削除依頼まで)',
   },
   {
     type: 'メッセージ本文(編集前・削除時)',
     condition: 'guild管理者がactivity-logプラグインを有効化している場合',
     content: '編集前・削除時のスナップショットのみ',
-    retention: '180日',
+    retention: '本文は180日で消去',
+  },
+  {
+    type: 'AI機能の利用記録',
+    condition: 'AI機能が有効なサーバーでHertaへメンション・返信した場合',
+    content: 'モデル・トークン数・推定費用などのメタデータのみ(本文・利用者IDは保存しない)',
+    retention: '90日',
+  },
+  {
+    type: 'MBTIの個人履歴',
+    condition: '本人が診断を完了した場合',
+    content: '診断日時・タイプ・各軸の結果(個別回答・ユーザー名は保存しない)',
+    retention: '本人からの削除依頼まで',
+  },
+  {
+    type: '活動統計・XP・実績・順位',
+    condition: '各プラグインが有効なサーバー',
+    content: 'メッセージ数・VC時間・オンライン時間・プレイ中のゲーム名・レベル・実績・順位など',
+    retention: '期間を定めていない',
   },
 ];
 
@@ -70,11 +88,10 @@ export default function PrivacyPolicyPage() {
         <Section title="同意の仕組み">
           <ul className="list-disc space-y-3 pl-5 text-sm leading-7 text-muted">
             <li>
-              VC発言の文字起こしは、
+              VC発言の文字起こしの対象は、本人が同意したメンバー、またはまだ同意・拒否を選んでいないメンバーのうち管理者が設定した自動同意ロールを持つ人・管理画面で同意済みにされた人です。サーバーへの参加や利用規約への同意だけでは対象になりません。
               <strong className="font-semibold text-foreground">
-                本人が明示的に同意したメンバーの発言のみ
+                本人が拒否・取り消しを選んだ場合は、ロールや管理者の設定に関係なく対象外になります。
               </strong>
-              を対象とします。同意していないメンバーの音声は録音・文字起こしの対象になりません。
             </li>
             <li>
               同意は次のいずれの方法でも行えます。
@@ -95,7 +112,7 @@ export default function PrivacyPolicyPage() {
               </ul>
             </li>
             <li>
-              発言開始のたびに最新の同意状態を都度確認します。Discordコマンド・ボタンでの取り消しは進行中の発言も即座に打ち切って対象外にしますが、専用URL(Web)での取り消しはBotプロセスへ即時通知できないため、取り消し後に新たに話し始めた時点から対象外になります(取り消し操作の瞬間に発言中だった分は、その発言が終わるまで記録される場合があります)。
+              発言開始のたびに最新の同意状態を都度確認します。Discordコマンド・ボタンでの取り消しは進行中の発言も即座に打ち切って対象外にしますが、専用URL(Web)や管理画面での取り消しはBotプロセスへ即時通知できないため、取り消し後に新たに話し始めた時点から対象外になります(取り消し操作の瞬間に発言中だった分は、その発言が終わるまで記録される場合があります)。
             </li>
             <li>
               文字起こし本文は、
@@ -103,7 +120,7 @@ export default function PrivacyPolicyPage() {
                 本文の保存(30日)を説明した上で本人が同意した場合のみ
               </strong>
               、セッション終了から30日間保存し、そのサーバーのStudioダッシュボード(VC
-              Recapの閲覧権限を持つ管理者)で閲覧できるようにします。30日を過ぎた本文は自動で削除します。本文の保存を説明する前に同意したメンバーや、管理者がロールで自動同意を設定したメンバーの本文は、従来どおり要約生成完了時に削除します。以前に同意したメンバーが本文の保存にも同意する場合は、改めて
+              Recapの閲覧権限を持つ管理者)で閲覧できるようにします。30日を過ぎた本文は自動で削除します。本文の保存を説明する前に同意したメンバーや、自動同意ロール・管理者の設定で対象になったメンバーの本文は、要約生成完了時に削除します。以前に同意したメンバーが本文の保存にも同意する場合は、改めて
               <code className="text-foreground">/herta-privacy voice-consent true</code>
               を実行してください。
             </li>
@@ -115,7 +132,11 @@ export default function PrivacyPolicyPage() {
               実行時、Hertaは必ずそのVCへ「この通話の要約を記録します。同意していない方の発言は記録されません」という趣旨のアナウンスを投稿します。無言での録音は行いません。
             </li>
             <li>
-              生の音声データ(録音ファイル)はディスク・データベースのいずれにも保存しません。文字起こし処理中のメモリ上バッファのみで、テキスト化され次第破棄します。
+              生の音声データ(録音ファイル)はディスク・データベースのいずれにも保存しません。音声はメモリ上でAWS
+              Transcribeへ送り、テキスト化され次第破棄します。
+            </li>
+            <li>
+              文字起こし・要約は自動処理のため、聞き取りや要約の誤りが含まれることがあります。
             </li>
           </ul>
         </Section>
@@ -138,14 +159,38 @@ export default function PrivacyPolicyPage() {
             </li>
             <li>
               <code className="text-foreground">/herta-privacy export</code>:
-              Hertaが保持しているあなたのデータをJSONでエクスポートします。
+              VC関連のデータ(同意状態・要約・保存中の文字起こし本文)とMBTIの個人履歴をJSONでエクスポートします。活動統計などその他のデータは含まれません。
             </li>
           </ul>
         </Section>
 
+        <Section title="外部サービスへの送信">
+          <ul className="list-disc space-y-2.5 pl-5 text-sm leading-7 text-muted">
+            <li>
+              AI機能:メンション・返信の本文と会話の文脈をOpenAIへ送り、回答や生成物を作ります。
+            </li>
+            <li>VC文字起こし:同意した本人の発言音声をAWS Transcribeへ送ります。</li>
+            <li>
+              VC要約:文字起こし本文と発言者のDiscordユーザーIDをOpenAIへ送り、要約を作ります。
+            </li>
+            <li>
+              送信先での保存や学習への利用の有無は、各事業者の規約と運営の契約・設定によります。個人情報・認証情報・秘密の情報はAIへ入力しないでください。
+            </li>
+          </ul>
+          <p className="mt-3 text-sm leading-7 text-muted">
+            上記以外のデータの開示・削除は、公式サイトのお問い合わせフォームまたはDiscordのチケットで依頼してください。
+          </p>
+        </Section>
+
         <p className="mt-10 border-t border-border pt-6 text-xs leading-6 text-muted">
-          本ページは<code className="text-foreground">docs/PRIVACY_POLICY.md</code>
-          の内容を要約したものです。chat発言本文等を広く収集するRAG機能は本ページ作成時点では未実装です。
+          本ページはHertaに関する取り扱いの要約です。いゔる。ーむ全体の取り扱いは
+          <a
+            href="https://ivrm.jp/privacy"
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            公式サイトのプライバシーポリシー
+          </a>
+          を正本とします。chat発言本文等を広く収集するRAG機能は本ページ作成時点では提供していません。
         </p>
       </div>
     </main>
