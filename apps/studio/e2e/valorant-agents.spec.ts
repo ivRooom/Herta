@@ -46,6 +46,6 @@ for (const width of [390, 1280]) {
     await page.screenshot({ path: testInfo.outputPath(`valorant-${width}.png`), fullPage: true });
     failure = true;
     await page.getByRole('checkbox', { name: 'ジェットを有効にする' }).click();
-    await expect(page.getByRole('alert')).toContainText('接続エラー');
+    await expect(page.getByRole('alert').filter({ hasText: '接続エラー' })).toBeVisible();
   });
 }
