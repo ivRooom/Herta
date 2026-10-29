@@ -133,7 +133,14 @@ async function handleRandom(
     return;
   }
 
-  const participants = [...channel.members.values()].filter((member) => !member.user.bot);
+  const voiceMembers = await Promise.all(
+    [...channel.guild.voiceStates.cache.values()]
+      .filter((state) => state.channelId === channel.id)
+      .map((state) => state.member ?? channel.guild.members.fetch(state.id).catch(() => null)),
+  );
+  const participants = voiceMembers.flatMap((member) =>
+    member && !member.user.bot ? [member] : [],
+  );
   if (!participants.some((member) => member.id === interaction.user.id)) {
     await replyEphemeral(interaction, 'VCの参加者を確認できません。再接続してお試しください。');
     return;

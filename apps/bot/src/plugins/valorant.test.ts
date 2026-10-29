@@ -7,26 +7,45 @@ function fixture({
   inVoice = true,
   participants = ['u1', 'u2'],
   bots = [] as string[],
+  uncached = [] as string[],
+  missing = [] as string[],
   enabled = true,
   enabledAgents,
 }: {
   inVoice?: boolean;
   participants?: string[];
   bots?: string[];
+  uncached?: string[];
+  missing?: string[];
   enabled?: boolean;
   enabledAgents?: string[];
 } = {}) {
   const members = new Map(
     [...participants, ...bots].map((id) => [id, { id, user: { bot: bots.includes(id) } }]),
   );
-  const channel = { name: 'ゲームVC', members };
-  const fetch = vi.fn().mockResolvedValue({
-    voice: { channel: inVoice ? channel : null },
+  const channel: { id: string; name: string; guild?: unknown } = {
+    id: 'vc1',
+    name: 'ゲームVC',
+  };
+  const fetch = vi.fn(async (id: string) => {
+    if (id === 'u1') return { id, user: { bot: false }, voice: { channel: inVoice ? channel : null } };
+    if (missing.includes(id)) throw new Error('Member fetch failed');
+    const member = members.get(id);
+    if (!member) throw new Error('Member not found');
+    return member;
   });
+  const voiceStates = new Map(
+    [...members.entries()].map(([id, member]) => [
+      id,
+      { id, channelId: 'vc1', member: uncached.includes(id) ? null : member },
+    ]),
+  );
+  const guild = { members: { fetch }, voiceStates: { cache: voiceStates } };
+  channel.guild = guild;
   const reply = vi.fn();
   const interaction = {
     guildId: 'guild',
-    guild: { members: { fetch } },
+    guild,
     user: { id: 'u1' },
     options: { getSubcommand: () => 'random' },
     reply,
@@ -81,6 +100,23 @@ describe('Valorant random', () => {
     expect(description).not.toContain('bot1');
     expect(description).toMatch(/Astra/);
     expect(description).toMatch(/Jett/);
+  });
+
+  it('VCに参加しているがGuildMember cacheにないユーザーも取得して抽選する', async () => {
+    const f = fixture({ uncached: ['u2'], enabledAgents: ['Jett', 'Astra'] });
+    await f.execute();
+    expect(f.fetch).toHaveBeenCalledWith('u2');
+    const embed = f.reply.mock.calls[0]![0].embeds[0].data;
+    expect(embed.description).toContain('<@u2>');
+  });
+
+  it('個別GuildMember取得失敗時にはそのユーザーだけを除外する', async () => {
+    const f = fixture({ uncached: ['u2'], missing: ['u2'], enabledAgents: ['Jett', 'Astra'] });
+    await f.execute();
+    expect(f.fetch).toHaveBeenCalledWith('u2');
+    const embed = f.reply.mock.calls[0]![0].embeds[0].data;
+    expect(embed.description).toContain('<@u1>');
+    expect(embed.description).not.toContain('<@u2>');
   });
 
   it('VC未参加ならプライベートエラー', async () => {

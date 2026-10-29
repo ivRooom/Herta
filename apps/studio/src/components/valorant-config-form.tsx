@@ -123,6 +123,7 @@ export function ValorantConfigForm({
             <input
               type="checkbox"
               checked={pluginEnabled}
+              disabled={saving}
               onChange={(event) => setPluginEnabled(event.target.checked)}
               className="h-5 w-5 accent-primary"
             />
@@ -137,6 +138,7 @@ export function ValorantConfigForm({
             <input
               type="checkbox"
               checked={commandsEnabled}
+              disabled={saving}
               onChange={(event) => setCommandsEnabled(event.target.checked)}
               className="h-5 w-5 accent-primary"
             />
@@ -158,6 +160,7 @@ export function ValorantConfigForm({
           <div className="flex gap-2">
             <button
               type="button"
+              disabled={saving}
               onClick={() => {
                 setRegisteredAgents([...VALORANT_AGENTS]);
                 setMessage('');
@@ -168,6 +171,7 @@ export function ValorantConfigForm({
             </button>
             <button
               type="button"
+              disabled={saving}
               onClick={() => {
                 setRegisteredAgents([]);
                 setMessage('');
@@ -189,6 +193,7 @@ export function ValorantConfigForm({
                 <input
                   type="checkbox"
                   checked={checked}
+                  disabled={saving}
                   onChange={() => toggleAgent(agent)}
                   className="h-4 w-4 shrink-0 accent-primary"
                 />
