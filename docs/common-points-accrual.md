@@ -44,6 +44,15 @@ and receipt insertion rolls everything back. Lock wait/statement/transaction
 timeouts bound the operation. Never independently retry an uncertain commit
 with a new source ID: repeat the exact stable source ID, units and timestamp.
 
+For source owners that already have a transaction (session chunks, participation,
+polls, achievements), use `commitCommonPointAccrualInTransaction` with its actual
+transaction client and a callback capturing that same client. Its narrow raw-SQL
+capability type avoids forcing plugin owners to cast a limited delegate to the
+entire Prisma client. It never opens/commits a nested transaction or changes the
+owner's timeouts. TypeScript's structural typing cannot prove a client is inside
+a transaction: never pass a root Prisma client; review the owner boundary and
+test failure after helper completion. The owner must set bounded timeouts.
+
 Receipt uniqueness is guild/Discord user/metric/native source ID; changed input
 with the same identity fails. Replay skips the callback. Missing/disabled policy,
 incomplete baseline and pre-cutoff input reject **before** callback execution:
@@ -93,11 +102,12 @@ HERTA_RUN_PG_POINTS_TESTS=1 pnpm --filter @herta/db exec tsx --test \
   src/common-points-accrual.test.ts src/common-points-outbox.integration.test.ts
 ```
 
-Five pure tests plus the real PostgreSQL17/Prisma integration passed. Measured31
-source mutations =31 immutable receipts; pending outbox total = receipt total
-**1,000,065 synthetic points**. Covers20 concurrent writes, eight same-event
+Five pure tests plus the real PostgreSQL17/Prisma integration passed. Measured32
+source mutations =32 immutable receipts; pending outbox total = receipt total
+**1,000,067 synthetic points**. Covers20 concurrent writes, eight same-event
 retries, changed-input rejection, property-order-independent input hash,
-source and late outbox failure rollback/retry, zero credits, daily caps, seeded
+source, late outbox and post-helper outer-transaction failure rollback/retry,
+zero credits, daily caps, seeded
 partial time/caps and chunk splitting. Fixture container was owner-label checked
 and removed. This is source-side synthetic evidence, not production money or
 actual Bot/Studio event processing. The PG fixture is opt-in, not ordinary CI.

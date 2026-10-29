@@ -5,7 +5,10 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { PrismaClient } from '@prisma/client';
 import { commonPointsJstDay, freezeCommonPointsTariff } from './common-points-accrual.js';
-import { commitCommonPointAccrual } from './common-points-outbox.js';
+import {
+  commitCommonPointAccrual,
+  commitCommonPointAccrualInTransaction,
+} from './common-points-outbox.js';
 import type { CommonPointSourceIncrement } from './common-points-outbox.js';
 
 test(
@@ -195,6 +198,21 @@ test(
       assert.equal(absent[0]?.count, 0n);
       await db.$executeRaw`DROP TRIGGER synthetic_outbox_failure ON common_points_outbox`;
       assert.equal((await apply(failedOutboxInput)).creditedPoints, 2n);
+      // An outer service transaction owns commit; the helper cannot commit early.
+      await assert.rejects(
+        db.$transaction(async (tx) => {
+          await commitCommonPointAccrualInTransaction(tx, input('outer-rollback'), async () => {
+            await tx.$executeRaw`INSERT INTO synthetic_source_events VALUES ('outer-rollback',1)`;
+          });
+          throw new Error('synthetic_outer_rollback');
+        }),
+        /synthetic_outer_rollback/,
+      );
+      const outerAbsent = await db.$queryRaw<
+        Array<{ count: bigint }>
+      >`SELECT count(*)::bigint AS count FROM synthetic_source_events WHERE id='outer-rollback'`;
+      assert.equal(outerAbsent[0]?.count, 0n);
+      assert.equal((await apply(input('outer-rollback'))).creditedPoints, 2n);
       await assert.rejects(apply(input('too-large', { units: 64_000_000n })), /event_bound/);
       await assert.rejects(apply(input('before-cutoff', { occurredAt: cutoff })), /before_cutoff/);
       await assert.rejects(apply(input('counter-overflow', { units: 9_223_372_036_854_775_807n })));
@@ -223,10 +241,10 @@ test(
         assert.equal(event.status, 'pending');
         total += BigInt(body.amount);
       }
-      assert.equal(total, 1_000_065n);
+      assert.equal(total, 1_000_067n);
       assert.equal(receipts[0]?.total, total);
       assert.equal(sourceCount[0]?.count, receipts[0]?.count);
-      assert.equal(sourceCount[0]?.count, 31n);
+      assert.equal(sourceCount[0]?.count, 32n);
     } finally {
       await prisma?.$disconnect();
       if (created) {
