@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { auth } from '@/auth';
 import { ModerationConfigForm } from '@/components/moderation-config-form';
 import { PluginConfigForm } from '@/components/plugin-config-form';
+import { ValorantConfigForm } from '@/components/valorant-config-form';
 import { PluginSetupOverview } from '@/components/plugin-setup-overview';
 import { RestrictedPluginConfigForm } from '@/components/restricted-plugin-config-form';
 import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
@@ -53,6 +54,11 @@ async function PluginDetailPage({
   );
   const allFieldsReadable = configAccess.allConfigPathsReadable;
   const allFieldsEditable = configAccess.allConfigPathsEditable;
+  const canUseValorantGuidedEditor =
+    pluginId === 'valorant' &&
+    allFieldsReadable &&
+    allFieldsEditable &&
+    configAccess.canToggleEnabled;
   const canUseModerationGuidedEditor =
     pluginId === 'moderation' &&
     allFieldsReadable &&
@@ -89,6 +95,12 @@ async function PluginDetailPage({
             initialConfig={visibleConfig}
             initialSection={resolveModerationConfigSection(query.section)}
             discordOptions={discordOptions}
+          />
+        ) : canUseValorantGuidedEditor ? (
+          <ValorantConfigForm
+            guildId={guildId}
+            initialEnabled={plugin.enabled}
+            initialConfig={visibleConfig}
           />
         ) : allFieldsReadable && allFieldsEditable ? (
           <div className="rounded-2xl border border-border bg-surface p-6 shadow-card">
