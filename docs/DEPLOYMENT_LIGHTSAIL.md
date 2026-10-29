@@ -11,15 +11,24 @@ Human-readable architecture and current service responsibilities:
 
 ## Canonical source files
 
-| Purpose | GitHub source |
-| --- | --- |
-| Production build, GHCR push, deploy trigger and smoke | [`.github/workflows/deploy-production.yml`](../.github/workflows/deploy-production.yml) |
-| Runtime and topology | [`docker-compose.prod.yml`](../docker-compose.prod.yml), [`docker-compose.common.yml`](../docker-compose.common.yml) |
-| Explicitly approved external DB mode | [`docker-compose.external.yml`](../docker-compose.external.yml), [external database adapter](EXTERNAL_POSTGRESQL_ADAPTER.md) |
-| Manual deploy | [`deploy/scripts/deploy.sh`](../deploy/scripts/deploy.sh) |
-| Start, rollback, common safety checks | [`start.sh`](../deploy/scripts/start.sh), [`rollback.sh`](../deploy/scripts/rollback.sh), [`_common.sh`](../deploy/scripts/_common.sh) |
-| Database schema policy | [`DATABASE_MIGRATIONS.md`](DATABASE_MIGRATIONS.md) |
-| Backup/restore safety | [`BACKUP_RESTORE_VERIFICATION.md`](BACKUP_RESTORE_VERIFICATION.md) |
+- Production workflow and smoke:
+  [`.github/workflows/deploy-production.yml`](../.github/workflows/deploy-production.yml)
+- Runtime Compose:
+  [`docker-compose.prod.yml`](../docker-compose.prod.yml),
+  [`docker-compose.common.yml`](../docker-compose.common.yml)
+- Reviewed external database topology:
+  [`docker-compose.external.yml`](../docker-compose.external.yml),
+  [external database adapter](EXTERNAL_POSTGRESQL_ADAPTER.md)
+- Manual deploy:
+  [`deploy/scripts/deploy.sh`](../deploy/scripts/deploy.sh)
+- Start, rollback and safety checks:
+  [`start.sh`](../deploy/scripts/start.sh),
+  [`rollback.sh`](../deploy/scripts/rollback.sh),
+  [`_common.sh`](../deploy/scripts/_common.sh)
+- Database schema policy:
+  [`DATABASE_MIGRATIONS.md`](DATABASE_MIGRATIONS.md)
+- Backup and restore safety:
+  [`BACKUP_RESTORE_VERIFICATION.md`](BACKUP_RESTORE_VERIFICATION.md)
 
 ## Build and deployment boundaries
 
