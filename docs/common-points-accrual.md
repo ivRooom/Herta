@@ -1,5 +1,8 @@
 # Common points: frozen accrual and source outbox primitives
 
+Human design/acceptance canonical document: [Notion](https://app.notion.com/p/4087322f39fa81f6b819e45352926837).
+This code-backed document retains transaction constraints, commands and operator safety gates.
+
 Tracking: Herta#569 / #538, Web#598, Platform#103. Depends on Herta PR570
 client/Contracts v1 and Web PR599 receiver. This staged patch wires Bot/shared
 and Studio achievement sources behind a separately disabled accrual flag. It
