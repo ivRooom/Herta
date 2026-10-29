@@ -13,6 +13,7 @@ import {
   dailyFortuneSnapshot,
   recordDailyClaim,
   cleanDailyBonusHistory,
+  saveDailyAnniversary,
 } from './daily-bonus.js';
 
 test(
@@ -107,6 +108,29 @@ test(
         ),
       );
       assert.ok(fortunes.every((result) => result.stars === fortunes[0]!.stars));
+      const event = {
+        id: 'shared-id',
+        title: 'test',
+        summary: 'test',
+        category: 'game',
+        month: 1,
+        day: 1,
+        base_year: null,
+        work_name: '',
+        character_name: '',
+        source_url: 'https://example.test/source',
+        source_checked_at: new Date(),
+        approved: false,
+        public: false,
+        priority: 0,
+        pinned_date: null,
+        anniversary_mode: 'annual' as const,
+      };
+      const concurrent = await Promise.allSettled(
+        ['guild', 'other'].map((guild) => saveDailyAnniversary(db!, guild, event)),
+      );
+      assert.equal(concurrent.filter((result) => result.status === 'fulfilled').length, 1);
+      assert.equal(concurrent.filter((result) => result.status === 'rejected').length, 1);
       await recordDailyClaim(db, 'guild', 'user', '2026-10-29', 'confirmed', { rewardPoints: 15 });
       await recordDailyClaim(db, 'guild', 'user', '2026-10-29', 'unavailable');
       const claims = await db.$queryRaw<
@@ -117,6 +141,7 @@ test(
       await db.$executeRaw`UPDATE daily_fortune_results SET created_at=NOW()-INTERVAL '181 days'`;
       await db.$executeRaw`UPDATE daily_bonus_claims SET updated_at=NOW()-INTERVAL '181 days'`;
       await db.$executeRaw`UPDATE daily_bonus_quiz_sessions SET created_at=NOW()-INTERVAL '2 days'`;
+      process.env.DAILY_BONUS_ENABLED = 'false';
       await cleanDailyBonusHistory(db);
       const counts = await db.$queryRaw<
         Array<{ n: number }>

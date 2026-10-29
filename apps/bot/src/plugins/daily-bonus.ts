@@ -97,8 +97,9 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
   const generation = generations.get(ctx.guildId) ?? 0;
   try {
     const prior = await getDailyAnnouncement(ctx.prisma, ctx.guildId, date);
-    if(prior?.status==='sending'&&new Date(prior.updated_at).getTime()<Date.now()-120000){
-      await ctx.prisma.$executeRaw`UPDATE daily_bonus_announcements SET status='uncertain',error_code='InterruptedSendRequiresReview',updated_at=NOW() WHERE guild_id=${ctx.guildId} AND target_date=${date} AND status='sending' AND updated_at<NOW()-INTERVAL '2 minutes'`;
+    if (prior?.status === 'sending' && new Date(prior.updated_at).getTime() < Date.now() - 120000) {
+      await ctx.prisma
+        .$executeRaw`UPDATE daily_bonus_announcements SET status='uncertain',error_code='InterruptedSendRequiresReview',updated_at=NOW() WHERE guild_id=${ctx.guildId} AND target_date=${date} AND status='sending' AND updated_at<NOW()-INTERVAL '2 minutes'`;
       return;
     }
     if (prior?.status === 'uncertain' && prior.error_code === 'ReconcileRequested') {
@@ -191,7 +192,11 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
           name: `🎮 ${event.title}${event.anniversary === null ? '' : `（${event.anniversary}周年）`}`,
           value: `${event.summary || '記念日をお祝いしましょう'}\n[出典](${event.sourceUrl})`,
         });
-      if (generation !== (generations.get(ctx.guildId) ?? 0) || process.env.DAILY_BONUS_ENABLED!=='true' || dailyBonusDate(new Date())!==date) {
+      if (
+        generation !== (generations.get(ctx.guildId) ?? 0) ||
+        process.env.DAILY_BONUS_ENABLED !== 'true' ||
+        dailyBonusDate(new Date()) !== date
+      ) {
         await setDailyAnnouncement(
           ctx.prisma,
           ctx.guildId,

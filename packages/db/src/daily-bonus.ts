@@ -29,6 +29,15 @@ export interface AnniversaryEvent {
   pinned_date: string | null;
   anniversary_mode: 'annual' | 'elapsed';
 }
+export async function saveDailyAnniversary(
+  db: Pick<PrismaClient, '$executeRaw'>,
+  guild: string,
+  event: AnniversaryEvent,
+) {
+  const count =
+    await db.$executeRaw`INSERT INTO anniversary_events(id,guild_id,title,summary,category,month,day,base_year,work_name,character_name,source_url,source_checked_at,approved,public,priority,pinned_date,anniversary_mode) VALUES(${event.id},${guild},${event.title},${event.summary},${event.category},${event.month},${event.day},${event.base_year},${event.work_name},${event.character_name},${event.source_url},${event.source_checked_at},${event.approved},${event.public},${event.priority},${event.pinned_date},${event.anniversary_mode}) ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,summary=EXCLUDED.summary,category=EXCLUDED.category,month=EXCLUDED.month,day=EXCLUDED.day,base_year=EXCLUDED.base_year,work_name=EXCLUDED.work_name,character_name=EXCLUDED.character_name,source_url=EXCLUDED.source_url,source_checked_at=EXCLUDED.source_checked_at,approved=EXCLUDED.approved,public=EXCLUDED.public,priority=EXCLUDED.priority,pinned_date=EXCLUDED.pinned_date,anniversary_mode=EXCLUDED.anniversary_mode,updated_at=NOW() WHERE anniversary_events.guild_id=EXCLUDED.guild_id`;
+  if (count !== 1) throw new Error('AnniversaryGuildConflict');
+}
 export async function getDailyAnnouncement(db: PrismaClient, guild: string, date: string) {
   const rows = await db.$queryRaw<
     DailyAnnouncement[]
@@ -125,7 +134,14 @@ export async function dailyFortuneSnapshot<T>(
   >`SELECT result_json FROM daily_fortune_results WHERE guild_id=${guild} AND discord_user_id=${user} AND target_date=${date}`;
   return saved[0]!.result_json;
 }
+export async function hasDailyBonusSchema(db: PrismaClient) {
+  const rows = await db.$queryRaw<
+    Array<{ ready: boolean }>
+  >`SELECT to_regclass('daily_fortune_results') IS NOT NULL AND to_regclass('daily_bonus_claims') IS NOT NULL AND to_regclass('daily_bonus_quiz_sessions') IS NOT NULL AS ready`;
+  return rows[0]?.ready === true;
+}
 export async function cleanDailyBonusHistory(db: PrismaClient) {
+  if (!(await hasDailyBonusSchema(db))) return;
   await db.$executeRaw`DELETE FROM daily_bonus_quiz_sessions WHERE created_at<NOW()-INTERVAL '1 day'`;
   await db.$executeRaw`DELETE FROM daily_fortune_results WHERE created_at<NOW()-INTERVAL '180 days'`;
   await db.$executeRaw`DELETE FROM daily_bonus_claims WHERE status='confirmed' AND updated_at<NOW()-INTERVAL '180 days'`;

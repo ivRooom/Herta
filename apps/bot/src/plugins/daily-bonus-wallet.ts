@@ -67,7 +67,10 @@ async function request(
   return value;
 }
 
-function confirmed(value: Record<string, unknown> | null,expectedDate?:string): DailyWalletResult {
+function confirmed(
+  value: Record<string, unknown> | null,
+  expectedDate?: string,
+): DailyWalletResult {
   if (value?.unlinked) return { status: 'unlinked' };
   const receipt = value?.claim as DailyWalletReceipt | undefined,
     account = value?.account as { balance?: number } | undefined;
@@ -76,8 +79,13 @@ function confirmed(value: Record<string, unknown> | null,expectedDate?:string): 
     !Number.isSafeInteger(receipt.rewardPoints) ||
     receipt.rewardPoints < 0 ||
     !/^\d{4}-\d\d-\d\d$/.test(receipt.claimDateJst) ||
-    (expectedDate!==undefined&&receipt.claimDateJst!==expectedDate) ||
-    !Number.isSafeInteger(receipt.rollPoints)||receipt.rollPoints<0||!Number.isSafeInteger(receipt.quizBonusPoints)||receipt.quizBonusPoints<0||receipt.rollPoints+receipt.quizBonusPoints!==receipt.rewardPoints||!['web','discord'].includes(receipt.channel)||
+    (expectedDate !== undefined && receipt.claimDateJst !== expectedDate) ||
+    !Number.isSafeInteger(receipt.rollPoints) ||
+    receipt.rollPoints < 0 ||
+    !Number.isSafeInteger(receipt.quizBonusPoints) ||
+    receipt.quizBonusPoints < 0 ||
+    receipt.rollPoints + receipt.quizBonusPoints !== receipt.rewardPoints ||
+    !['web', 'discord'].includes(receipt.channel) ||
     !Number.isSafeInteger(receipt.streakDay) ||
     receipt.streakDay < 1 ||
     !Number.isSafeInteger(account?.balance) ||
@@ -86,7 +94,14 @@ function confirmed(value: Record<string, unknown> | null,expectedDate?:string): 
     return { status: 'unavailable' };
   return {
     status: 'confirmed',
-    receipt:{claimDateJst:receipt.claimDateJst,rewardPoints:receipt.rewardPoints,streakDay:receipt.streakDay,rollPoints:receipt.rollPoints,quizBonusPoints:receipt.quizBonusPoints,channel:receipt.channel},
+    receipt: {
+      claimDateJst: receipt.claimDateJst,
+      rewardPoints: receipt.rewardPoints,
+      streakDay: receipt.streakDay,
+      rollPoints: receipt.rollPoints,
+      quizBonusPoints: receipt.quizBonusPoints,
+      channel: receipt.channel,
+    },
     balance: account!.balance!,
     message: `${value?.mode === 'already_claimed' || value?.claimedToday === true ? '本日は受取済みです。' : '🎉 ログインボーナスを受け取りました！'}\n獲得：${receipt.rewardPoints}pt / 保有：${account!.balance}pt / 連続：${receipt.streakDay}日`,
   };
@@ -95,7 +110,10 @@ export async function dailyBonusStatus(guild: string, user: string): Promise<Dai
   try {
     const value = await request(guild, user, '/v1/points/herta/login-bonus/status');
     if (value?.unlinked) return { status: 'unlinked' };
-    if (value?.claimedToday) return typeof value.todayJst==='string'?confirmed(value,value.todayJst):{status:'unavailable'};
+    if (value?.claimedToday)
+      return typeof value.todayJst === 'string'
+        ? confirmed(value, value.todayJst)
+        : { status: 'unavailable' };
     const quiz = value?.quiz as DailyQuiz | undefined;
     if (
       quiz &&

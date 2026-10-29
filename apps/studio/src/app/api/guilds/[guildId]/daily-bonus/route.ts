@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { saveDailyAnniversary } from '@herta/db';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { resolveStudioAccess } from '@/lib/studio-access';
@@ -105,7 +106,8 @@ export async function POST(request: Request, context: Context) {
         ) ||
         !Number.isInteger(e.month) ||
         !Number.isInteger(e.day) ||
-        typeof e.sourceUrl !== 'string'
+        typeof e.sourceUrl !== 'string' ||
+        e.sourceUrl.length > 400
       )
         throw new Error('InvalidEvent');
       const month = Number(e.month),
@@ -140,7 +142,24 @@ export async function POST(request: Request, context: Context) {
         >`SELECT guild_id FROM anniversary_events WHERE id=${e.id as string}`;
         if (existing[0] && existing[0].guild_id !== allowed.guildId)
           throw new Error('InvalidEvent');
-        await tx.$executeRaw`INSERT INTO anniversary_events(id,guild_id,title,summary,category,month,day,base_year,work_name,character_name,source_url,source_checked_at,approved,public,priority,pinned_date,anniversary_mode) VALUES(${e.id as string},${allowed.guildId},${e.title as string},${e.summary as string},${String(e.category)},${month},${day},${year},${work},${character},${url.href},${checked},${e.approved as boolean},${e.public as boolean},${Number(e.priority)},${pinned},${String(e.anniversaryMode)}) ON CONFLICT(id) DO UPDATE SET title=EXCLUDED.title,summary=EXCLUDED.summary,category=EXCLUDED.category,month=EXCLUDED.month,day=EXCLUDED.day,base_year=EXCLUDED.base_year,work_name=EXCLUDED.work_name,character_name=EXCLUDED.character_name,source_url=EXCLUDED.source_url,source_checked_at=EXCLUDED.source_checked_at,approved=EXCLUDED.approved,public=EXCLUDED.public,priority=EXCLUDED.priority,pinned_date=EXCLUDED.pinned_date,anniversary_mode=EXCLUDED.anniversary_mode,updated_at=NOW()`;
+        await saveDailyAnniversary(tx, allowed.guildId, {
+          id: e.id as string,
+          title: e.title as string,
+          summary: e.summary as string,
+          category: String(e.category),
+          month,
+          day,
+          base_year: year,
+          work_name: work,
+          character_name: character,
+          source_url: url.href,
+          source_checked_at: checked,
+          approved: e.approved as boolean,
+          public: e.public as boolean,
+          priority: Number(e.priority),
+          pinned_date: pinned,
+          anniversary_mode: String(e.anniversaryMode) as 'annual' | 'elapsed',
+        });
         await tx.auditLog.create({
           data: {
             guildId: allowed.guildId,

@@ -72,10 +72,29 @@ test('rejects expired signature and wrong key, fails closed while disabled', asy
   assert.equal(response.status, 503);
 });
 
-test('response projection never forwards raw or derived profile fields',()=>{
- const stored={date:'2026-10-30',title:'運勢',hex:'#ffffff',message:'今日のヒント',action:'一歩',color:'白',item:'ノート',luckyTime:'朝',disclaimer:'娯楽',stars:3,luckyNumber:7,categories:[{name:'対人運',stars:3,advice:'挨拶'}],birthday:'2000-01-01',mbti:'INTJ',bloodType:'AB',notes:['private'],details:{age:26,zodiac:'山羊座',eto:'辰'}};
- const projected=publicFortuneHistoryResult(stored);
- for(const forbidden of ['birthday','mbti','bloodType','notes','details'])assert.equal(forbidden in projected,false);
- assert.deepEqual(projected.categories,[{name:'対人運',stars:3,advice:'挨拶'}]);
- assert.throws(()=>publicFortuneHistoryResult({...stored,stars:6}));
+test('response projection never forwards raw or derived profile fields', () => {
+  const stored = {
+    date: '2026-10-30',
+    title: '運勢',
+    hex: '#ffffff',
+    message: '今日のヒント',
+    action: '一歩',
+    color: '白',
+    item: 'ノート',
+    luckyTime: '朝',
+    disclaimer: '娯楽',
+    stars: 3,
+    luckyNumber: 7,
+    categories: [{ name: '対人運', stars: 3, advice: '挨拶' }],
+    birthday: '2000-01-01',
+    mbti: 'INTJ',
+    bloodType: 'AB',
+    notes: ['private'],
+    details: { age: 26, zodiac: '山羊座', eto: '辰' },
+  };
+  const projected = publicFortuneHistoryResult(stored);
+  for (const forbidden of ['birthday', 'mbti', 'bloodType', 'notes', 'details'])
+    assert.equal(forbidden in projected, false);
+  assert.deepEqual(projected.categories, [{ name: '対人運', stars: 3, advice: '挨拶' }]);
+  assert.throws(() => publicFortuneHistoryResult({ ...stored, stars: 6 }));
 });

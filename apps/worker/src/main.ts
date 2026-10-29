@@ -82,7 +82,7 @@ async function main() {
   if (!databaseConfigured) {
     logger.warn('DATABASE_URLが未設定のためPlugin WorkerとSeason Snapshot Workerを開始しません');
   } else {
-    if (process.env.DAILY_BONUS_ENABLED === 'true') {
+    {
       const cleanup = () => {
         void cleanDailyBonusHistory(getPrismaClient()).catch(() =>
           logger.warn('Daily bonus retention cleanup failed'),
