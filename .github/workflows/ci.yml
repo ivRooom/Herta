@@ -90,6 +90,15 @@ jobs:
       - name: Production Docker Build
         run: docker build --tag herta-app:ci .
 
+      - name: Verify patched Node.js binary in final production image
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(docker run --rm --entrypoint node herta-app:ci --version)"
+          test "$actual" = 'v22.23.4'
+          echo "Verified final-image Node.js version: $actual"
+          docker image inspect --format 'Built image ID: {{.Id}}' herta-app:ci
+
       - name: Verify production runtime
         run: |
           docker run --rm --entrypoint sh herta-app:ci -lc '
