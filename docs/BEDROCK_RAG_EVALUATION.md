@@ -4,21 +4,21 @@
 
 Herta AI Foundationを AWS Bedrock 経由へ移行すべきか、将来のRAG機能をどう作るべきかの調査メモです。実装のscope決めではなく、意思決定材料としての整理を目的とします。
 
-## 結論（要約）
+## 当時の結論（Historical・採用未確定）
 
-- **現状（4プロバイダ直接API・利用量ほぼゼロ）でのBedrock全面移行は推奨しない**。トークン単価はほぼ変わらず、OpenAI/Google/Moonshotは移行できないため恩恵が薄い
+- **当時の4プロバイダ直接API・低利用を前提とした試算ではBedrock全面移行を推奨しないという結論だった（現在の推奨ではない）**。トークン単価はほぼ変わらず、OpenAI/Google/Moonshotは移行できないため恩恵が薄い
 - **RAGを本格的に作るタイミングでは、Bedrock Knowledge Basesの部分採用を検討する価値がある**。埋め込み生成・ベクトル検索・引用付き応答をマネージドで組める
 - Knowledge Basesを使う場合、**ベクトルストアの選択がコストを大きく左右する**（後述）。既定のOpenSearch Serverlessは小規模利用では固定費が重い
 
-## 1. 現状のAI Foundation構成（前提の整理）
+## 1. 当時のAI Foundation構成（4プロバイダ検討時）
 
-`docs/AI_FOUNDATION.md` の通り、Hertaは以下の構成です。
+この検討メモ作成時に確認したHertaの構成は以下です。現在のコードでは6 providerに拡張されています。
 
 - provider抽象化: `AiRuntimeGenerationService`インターフェースに対し、OpenAI/Anthropic/Google/Moonshotそれぞれの`*RuntimeGenerationService`実装がある（`apps/bot/src/ai/runtime-service.ts`）
 - credential: Studio Runtime Secret Store優先、env fallback。provider追加時もこの二重構成に合わせる必要がある
 - pricing: `packages/plugin-catalog/src/ai-service.ts`の`*_STANDARD_PRICING`定数がcost guard・quota計算のsource of truth
 - RAG / web retrievalは`AI_FOUNDATION.md`に明記の通り「後続scope」で、現状は未実装
-- 本番のAI利用実績は現時点で0件（`ai_generation_events`確認済み）
+- 本番のAI利用実績は検討当時0件（当時の`ai_generation_events`確認）。2026-10-29現在の利用件数は未確認
 
 この抽象化のおかげで、Bedrockを追加するとしても「新しい`BedrockRuntimeGenerationService`を1つ実装し、`services`マップに登録する」だけで既存コードへの侵襲は小さい設計になっている。
 
@@ -83,7 +83,7 @@ Bedrock Knowledge Basesは裏側のベクトルストアを選べる。
 
 **重要**: 以下はAWS公開価格の一般的な水準に基づく概算であり、このセッションではAWS Pricing API連携が一時的に切断されていたため最新価格の直接照会はできていません。実施判断の直前に AWS Pricing Calculator で再確認してください。
 
-### ケースA: 現状維持（直接API、4プロバイダ）
+### ケースA: 当時の現状維持案（直接API、4プロバイダ）
 
 - Herta既存の`AI_DEFAULTS`のGuild quota（$1 = 1,000,000 micro USD）が示す通り、1 Guildあたり月$1相当を上限にする設計。低〜中利用なら**月数ドル〜数十ドル**で収まる想定（実利用ゼロの現状はこれ未満）
 - 固定費なし（従量課金のみ）
@@ -102,9 +102,9 @@ Bedrock Knowledge Basesは裏側のベクトルストアを選べる。
 
 → **RAGをやるなら、ベクトルストアにAurora Serverless v2を選ぶ前提で月$50〜$100程度からのスモールスタートが現実的**。OpenSearch Serverlessを既定のまま使うと固定費だけで一桁跳ね上がる点に要注意。
 
-## 5. 推奨ロードマップ
+## 5. 当時の提案ロードマップ（現行承認を意味しない）
 
 1. （今回はここまで）調査・設計方針の共有のみ。コード変更なし
 2. RAGで扱いたい具体的なユースケース（例: サーバー独自のFAQ・ルール文書を参照して回答する、等）が固まったら、Bedrock Knowledge Bases + Aurora Serverless v2(pgvector) を前提に小規模PoCを設計する
-3. PoCが機能要件を満たせば、`BedrockRuntimeGenerationService`を`AiRuntimeGenerationService`実装として追加し、既存のマルチプロバイダ構成に統合する（OpenAI/Google/Moonshotは維持したまま、Claude呼び出し経路だけBedrock経由に切り替え可能にする設計が無理なく可能）
-4. 全面移行は行わず、既存4プロバイダ構成 + Bedrock(RAG用途) のハイブリッドを基本方針とする
+3. 【当時の案・再承認要】PoC後にBedrock Adapterを追加する案。現在の6 providerモデル・各Provider資格情報・Provider互換性・コストを再検証した設計が必要
+4. 【旧方針・現行未承認】4プロバイダ+Bedrockを基本とする想定があった。現在の6 Providerを前提に再設計・予算/権限審査を受けること
