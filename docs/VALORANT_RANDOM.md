@@ -15,7 +15,7 @@
 - Commandは `GuildVoiceStates` Intentを使用します。Botや別VCのユーザーは抽選対象外です。
 - HenrikDev APIやVALORANTのアカウント連携はランダム抽選に不要です。
 - 候補がVC参加人数より少ない場合は、重複割り当てをせずエラーを返します。
-- 次の公式新Agent追加時は `packages/plugin-catalog/src/manifests/valorant.ts` の `VALORANT_AGENTS` を更新します。
+- 公式一覧: https://playvalorant.com/en-us/agents/ 。次の公式新Agent追加時は `packages/plugin-catalog/src/manifests/valorant.ts` の `VALORANT_AGENTS` を更新します。
 
 ## リリース・確認
 
