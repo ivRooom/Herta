@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ivrm.jp/contracts/herta-daily-fortunes-read/v1",
+  "description": "Producer Herta Studio; consumer server-only ivrm-web. POST /api/ivrm/daily-fortunes/read. Key=HMAC-SHA256(IVRM_INTEGRATION_TOKEN,herta-daily-fortunes-read-v1); signature=HMAC-SHA256(key,timestamp.eventId.POST.path.rawBody). Headers X-IVRM-Timestamp ISO, X-IVRM-Event-Id UUID, X-IVRM-Signature hex. Five-minute freshness, no query, max8192bytes. Web resolves subject from authenticated session/admin permission, never browser-provided identity. All responses private,no-store.",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["guildId", "discordUserId", "from", "to", "limit", "offset"],
+      "properties": {
+        "guildId": { "type": "string", "pattern": "^[0-9]{17,20}$" },
+        "discordUserId": { "type": "string", "pattern": "^[0-9]{17,20}$" },
+        "from": { "type": "string", "format": "date" },
+        "to": { "type": "string", "format": "date" },
+        "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+        "offset": { "type": "integer", "minimum": 0, "maximum": 100000 }
+      }
+    },
+    "response": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "guildId", "discordUserId", "items", "pagination"],
+      "properties": {
+        "status": { "const": "ok" },
+        "guildId": { "type": "string", "pattern": "^[0-9]{17,20}$" },
+        "discordUserId": { "type": "string", "pattern": "^[0-9]{17,20}$" },
+        "items": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["date", "algorithmVersion", "result", "createdAt"],
+            "properties": {
+              "date": { "type": "string", "format": "date" },
+              "algorithmVersion": { "type": "string", "maxLength": 100 },
+              "createdAt": { "type": "string", "format": "date-time" },
+              "result": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "date",
+                  "title",
+                  "hex",
+                  "message",
+                  "action",
+                  "color",
+                  "item",
+                  "luckyTime",
+                  "disclaimer",
+                  "stars",
+                  "luckyNumber",
+                  "categories"
+                ],
+                "properties": {
+                  "date": { "type": "string", "format": "date" },
+                  "title": { "type": "string", "maxLength": 4000 },
+                  "hex": { "type": "string", "maxLength": 4000 },
+                  "message": { "type": "string", "maxLength": 4000 },
+                  "action": { "type": "string", "maxLength": 4000 },
+                  "color": { "type": "string", "maxLength": 4000 },
+                  "item": { "type": "string", "maxLength": 4000 },
+                  "luckyTime": { "type": "string", "maxLength": 4000 },
+                  "disclaimer": { "type": "string", "maxLength": 4000 },
+                  "stars": { "type": "integer", "minimum": 1, "maximum": 5 },
+                  "luckyNumber": { "type": "integer", "minimum": 1, "maximum": 9 },
+                  "categories": {
+                    "type": "array",
+                    "maxItems": 10,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["name", "stars", "advice"],
+                      "properties": {
+                        "name": { "type": "string", "maxLength": 100 },
+                        "stars": { "type": "integer", "minimum": 1, "maximum": 5 },
+                        "advice": { "type": "string", "maxLength": 2000 }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "pagination": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["limit", "offset", "total", "hasNext"],
+          "properties": {
+            "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "offset": { "type": "integer", "minimum": 0, "maximum": 100000 },
+            "total": { "type": "integer", "minimum": 0 },
+            "hasNext": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  }
+}

@@ -7,15 +7,11 @@ import {
 import type { PrismaClient } from '@herta/db';
 import { fortuneManifest } from '@herta/plugin-catalog';
 import { definePlugin } from '@herta/plugin-sdk';
-import {
-  createDailyFortune,
-  describeFortuneProfile,
-  EMPTY_FORTUNE_PROFILE,
-  localFortuneDate,
-} from './fortune-core.js';
+import { describeFortuneProfile, EMPTY_FORTUNE_PROFILE, localFortuneDate } from './fortune-core.js';
 import { renderFortuneCard } from './fortune-card.js';
 import { deleteFortuneProfile } from './fortune-repository.js';
 import { fetchIvrmFortuneProfile } from './fortune-ivrm-profile.js';
+import { savedDailyFortune } from './daily-fortune.js';
 
 const inFlight = new Set<string>();
 export const fortunePlugin = definePlugin<{ enabled: boolean }, unknown, PrismaClient>({
@@ -85,7 +81,7 @@ export const fortunePlugin = definePlugin<{ enabled: boolean }, unknown, PrismaC
               });
               return;
             }
-            const fortune = createDailyFortune(guildId, userId, date, saved);
+            const fortune = await savedDailyFortune(context.prisma, guildId, userId, date, saved);
             const embed = new EmbedBuilder()
               .setTitle(fortune.title)
               .setColor(fortune.hex as `#${string}`)

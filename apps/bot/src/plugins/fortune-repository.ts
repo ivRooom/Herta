@@ -25,4 +25,6 @@ export async function deleteFortuneProfile(
   userId: string,
 ): Promise<void> {
   await prisma.$executeRaw`DELETE FROM fortune_profiles WHERE guild_id = ${guildId} AND user_id = ${userId}`;
+  if (process.env.DAILY_BONUS_ENABLED === 'true')
+    await prisma.$executeRaw`DELETE FROM daily_fortune_results WHERE guild_id=${guildId} AND discord_user_id=${userId}`;
 }

@@ -83,6 +83,14 @@ async function executeExport(interaction: ChatInputCommandInteraction) {
     userId: interaction.user.id,
     exportedAt: new Date().toISOString(),
     mbtiResults,
+    dailyFortunes:
+      process.env.DAILY_BONUS_ENABLED === 'true'
+        ? await prisma.$queryRaw`SELECT guild_id,target_date,algorithm_version,result_json,created_at FROM daily_fortune_results WHERE discord_user_id=${interaction.user.id} ORDER BY target_date DESC`
+        : [],
+    dailyBonusReceipts:
+      process.env.DAILY_BONUS_ENABLED === 'true'
+        ? await prisma.$queryRaw`SELECT guild_id,target_date,status,receipt_json,created_at FROM daily_bonus_claims WHERE discord_user_id=${interaction.user.id} ORDER BY target_date DESC`
+        : [],
     consent: {
       voiceTranscriptionConsent: consent.voiceTranscriptionConsent,
       voiceTranscriptRetentionConsentedAt:

@@ -1,0 +1,137 @@
+import { createHmac, randomUUID } from 'node:crypto';
+
+export interface DailyQuiz {
+  quizId: string;
+  question: string;
+  choices: string[];
+  kind: 'quiz' | 'riddle';
+}
+export interface DailyWalletReceipt {
+  claimDateJst: string;
+  rewardPoints: number;
+  streakDay: number;
+  rollPoints: number;
+  quizBonusPoints: number;
+  channel: string;
+}
+export type DailyWalletResult =
+  | { status: 'confirmed'; receipt: DailyWalletReceipt; balance: number; message: string }
+  | { status: 'quiz'; quiz: DailyQuiz }
+  | { status: 'ready' }
+  | { status: 'unlinked' | 'unavailable' };
+
+async function request(
+  guildId: string,
+  userId: string,
+  path: string,
+  extra: Record<string, unknown> = {},
+) {
+  const base = process.env.IVRM_WEB_API_BASE_URL,
+    secret = process.env.HERTA_POINTS_SECRET;
+  if (!base || !secret || process.env.IVRM_INTEGRATION_GUILD_ID !== guildId) return null;
+  const url = new URL(base);
+  if (
+    url.protocol !== 'https:' ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash ||
+    !['', '/'].includes(url.pathname)
+  )
+    return null;
+  const body = JSON.stringify({ guildId, discordUserId: userId, ...extra }),
+    timestamp = new Date().toISOString(),
+    event = randomUUID();
+  const response = await fetch(new URL(path, url), {
+    method: 'POST',
+    redirect: 'error',
+    signal: AbortSignal.timeout(8000),
+    headers: {
+      'Content-Type': 'application/json',
+      'X-IVRM-Timestamp': timestamp,
+      'X-IVRM-Event-Id': event,
+      'X-IVRM-Signature': createHmac('sha256', secret)
+        .update(`${timestamp}.${event}.POST.${path}.${body}`)
+        .digest('hex'),
+    },
+    body,
+  });
+  if (response.status === 409) {
+    const error = (await response.json()) as { error?: string };
+    return error.error === 'identity_or_baseline_unresolved' ? { unlinked: true } : null;
+  }
+  if (!response.ok) return null;
+  const value = (await response.json()) as Record<string, unknown>;
+  if (value.status !== 'ok' || value.guildId !== guildId || value.discordUserId !== userId)
+    return null;
+  return value;
+}
+
+function confirmed(value: Record<string, unknown> | null,expectedDate?:string): DailyWalletResult {
+  if (value?.unlinked) return { status: 'unlinked' };
+  const receipt = value?.claim as DailyWalletReceipt | undefined,
+    account = value?.account as { balance?: number } | undefined;
+  if (
+    !receipt ||
+    !Number.isSafeInteger(receipt.rewardPoints) ||
+    receipt.rewardPoints < 0 ||
+    !/^\d{4}-\d\d-\d\d$/.test(receipt.claimDateJst) ||
+    (expectedDate!==undefined&&receipt.claimDateJst!==expectedDate) ||
+    !Number.isSafeInteger(receipt.rollPoints)||receipt.rollPoints<0||!Number.isSafeInteger(receipt.quizBonusPoints)||receipt.quizBonusPoints<0||receipt.rollPoints+receipt.quizBonusPoints!==receipt.rewardPoints||!['web','discord'].includes(receipt.channel)||
+    !Number.isSafeInteger(receipt.streakDay) ||
+    receipt.streakDay < 1 ||
+    !Number.isSafeInteger(account?.balance) ||
+    account!.balance! < 0
+  )
+    return { status: 'unavailable' };
+  return {
+    status: 'confirmed',
+    receipt:{claimDateJst:receipt.claimDateJst,rewardPoints:receipt.rewardPoints,streakDay:receipt.streakDay,rollPoints:receipt.rollPoints,quizBonusPoints:receipt.quizBonusPoints,channel:receipt.channel},
+    balance: account!.balance!,
+    message: `${value?.mode === 'already_claimed' || value?.claimedToday === true ? '本日は受取済みです。' : '🎉 ログインボーナスを受け取りました！'}\n獲得：${receipt.rewardPoints}pt / 保有：${account!.balance}pt / 連続：${receipt.streakDay}日`,
+  };
+}
+export async function dailyBonusStatus(guild: string, user: string): Promise<DailyWalletResult> {
+  try {
+    const value = await request(guild, user, '/v1/points/herta/login-bonus/status');
+    if (value?.unlinked) return { status: 'unlinked' };
+    if (value?.claimedToday) return typeof value.todayJst==='string'?confirmed(value,value.todayJst):{status:'unavailable'};
+    const quiz = value?.quiz as DailyQuiz | undefined;
+    if (
+      quiz &&
+      /^[A-Za-z0-9_-]{1,64}$/.test(quiz.quizId) &&
+      typeof quiz.question === 'string' &&
+      quiz.question.length <= 300 &&
+      Array.isArray(quiz.choices) &&
+      quiz.choices.length === 4 &&
+      quiz.choices.every((choice) => typeof choice === 'string' && choice.length <= 80)
+    )
+      return { status: 'quiz', quiz };
+    return value?.quiz === null ? { status: 'ready' } : { status: 'unavailable' };
+  } catch {
+    return { status: 'unavailable' };
+  }
+}
+export async function claimDailyBonus(
+  guild: string,
+  user: string,
+  date: string,
+  message: string,
+  quizId: string | null = null,
+  choiceIndex: number | null = null,
+): Promise<DailyWalletResult> {
+  try {
+    return confirmed(
+      await request(guild, user, '/v1/points/herta/login-bonus/claim', {
+        claimDateJst: date,
+        announcementMessageId: message,
+        idempotencyKey: `daily-login:${guild}:${user}:${date}`,
+        quizId,
+        choiceIndex,
+      }),
+      date,
+    );
+  } catch {
+    return { status: 'unavailable' };
+  }
+}

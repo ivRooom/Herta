@@ -7,6 +7,7 @@ import {
 } from './studio-plugin-permissions.ts';
 
 export const STUDIO_PAGE_DEFINITIONS = [
+  { id: 'daily-bonus', label: 'デイリーボーナス', description: '配信・受取状況・記念日を閲覧' },
   {
     id: 'message-studio',
     label: 'Botで発言',
