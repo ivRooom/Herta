@@ -7,7 +7,7 @@
 - [ivRooom Docs / Notion](https://app.notion.com/p/4087322f39fa8162a9b3f06015ac0a80): 横断要件・設計・運用判断・受入資料の入口。
 - [Herta サービス仕様 / Notion](https://app.notion.com/p/4087322f39fa81659838db12884251a8): Bot、Studio、Plugin、VCプライバシー、DB移行の役割と確認済み事項。
 - 実装、Prisma schema/migrations、Plugin契約、開発セットアップ、CI/デプロイ・復旧に必要な手順はこのRepositoryを正本とします。
-- 利用者向け規約・プライバシーポリシーの正本は[ivrm.jp](https://ivrm.jp/privacy)です。Notionは公開中の規約の代替ではありません。
+- 利用者向けの[利用規約](https://ivrm.jp/terms)と[プライバシーポリシー](https://ivrm.jp/privacy)は公式サイトが正本です。Notionは公開文書の代替ではありません。
 - 日時付き検証と将来の切替計画を、現在の本番デプロイ・DB接続状態と混同しないでください。
 
 ## 構成
