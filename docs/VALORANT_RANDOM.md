@@ -12,7 +12,7 @@
 - `enabledAgents: string[]` はGuild Pluginのconfigに格納します（1〜30名、公式Agent名、重複不可）。
 - 未設定の既存Guildは公式30名をデフォルト候補として扱い、既存のRiot ID連携に影響を与えません。
 - Studioの編集は既存のGuildアクセス権、Plugin configのIAM、同一Origin判定、Ajv、監査履歴、Runtime設定同期を利用します。
-- Commandは `GuildVoiceStates` Intentを使用します。Botや別VCのユーザーは抽選対象外です。
+- Commandは `GuildVoiceStates` Intentを使用します。同じVCのVoiceStateから参加者を抽出し、GuildMemberキャッシュ欠落時には個別fetchします。取得不能なメンバーのみ除外します。Botや別VCのユーザーは抽選対象外です。
 - HenrikDev APIやVALORANTのアカウント連携はランダム抽選に不要です。
 - 候補がVC参加人数より少ない場合は、重複割り当てをせずエラーを返します。
 - 公式一覧: https://playvalorant.com/en-us/agents/ 。次の公式新Agent追加時は `packages/plugin-catalog/src/manifests/valorant.ts` の `VALORANT_AGENTS` を更新します。
