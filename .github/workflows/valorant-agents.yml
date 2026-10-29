@@ -33,7 +33,26 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
-      - run: pnpm db:migrate:deploy
+      - name: Apply history with the documented immutable fresh-database exception
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Dedicated throwaway CI DB only. Production already has this historical recovery.
+          test "${DATABASE_URL##*/}" = 'valorant_test'
+          if ! pnpm db:migrate:deploy > "$RUNNER_TEMP/valorant-migrate.log" 2>&1; then
+            cat "$RUNNER_TEMP/valorant-migrate.log"
+            historical=20260825022000_suggestion_staff_queue_index
+            sql="packages/db/prisma/migrations/$historical/migration.sql"
+            echo "cde65acc824d2895dc83f58465192de4ef002d0268fd2a2f93adc0388d90ed5c  $sql" | sha256sum --check
+            test "$(psql "$DATABASE_URL" -Atc 'SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NULL AND rolled_back_at IS NULL')" = "$historical"
+            # psql executes each statement separately, including historical concurrent indexes.
+            psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$sql"
+            pnpm --filter @herta/db exec prisma migrate resolve --rolled-back "$historical"
+            pnpm --filter @herta/db exec prisma migrate resolve --applied "$historical"
+            pnpm db:migrate:deploy
+          else
+            cat "$RUNNER_TEMP/valorant-migrate.log"
+          fi
       - run: pnpm --filter @herta/db exec tsx --test src/valorant-agents.integration.test.ts
       - name: Migration matches Prisma schema
         run: pnpm --filter @herta/db exec prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
