@@ -1,12 +1,11 @@
 name: VALORANT one-time formatter
 on:
-  pull_request:
-    branches: [main]
+  push:
+    branches: [feat/valorant-vc-random-20261029]
 permissions:
   contents: write
 jobs:
   format:
-    if: github.head_ref == 'feat/valorant-vc-random-20261029'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
