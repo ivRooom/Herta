@@ -10,7 +10,7 @@ import { defaultValorantAgents } from '@herta/plugin-catalog';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { resolveStudioAccess } from '@/lib/studio-access';
-import { hasEffectivePluginConfigPermission } from '@/lib/studio-plugin-permissions';
+import { resolvePluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
 import { readJsonBodyWithLimit, RequestBodyTooLargeError } from '@/lib/bounded-request-body';
 
@@ -30,20 +30,11 @@ export async function valorantAgentRequest(request: Request, guildId: string, ag
     const access = await resolveStudioAccess(guildId, session.user.id);
     if (!access.ok) return access.response;
     // Use the existing enabledAgents policy path: no new implicit IAM grant.
-    const canRead = hasEffectivePluginConfigPermission(
-      access.access,
-      'studio.settings.read',
-      guildId,
-      'valorant',
+    const permission = resolvePluginConfigStudioAccess(access.access, guildId, 'valorant', [
       'enabledAgents',
-    );
-    const canWrite = hasEffectivePluginConfigPermission(
-      access.access,
-      'studio.settings.write',
-      guildId,
-      'valorant',
-      'enabledAgents',
-    );
+    ]);
+    const canRead = permission.readableConfigPaths.includes('enabledAgents');
+    const canWrite = permission.editableConfigPaths.includes('enabledAgents');
     if (!canRead || (mutation && !canWrite))
       return NextResponse.json({ error: 'エージェント設定の権限がありません。' }, { status: 403 });
     const plugin = await prisma.guildPlugin.findUnique({

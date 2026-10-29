@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { valorantAgentRequest } from '../src/lib/valorant-agent-api';
 import { auth } from '@/auth';
 import { resolveStudioAccess } from '@/lib/studio-access';
-import { hasEffectivePluginConfigPermission } from '@/lib/studio-plugin-permissions';
+import {
+  setExplicitPermissionMode,
+  pluginConfigFieldResource,
+} from '@/lib/studio-plugin-permissions';
+import { createStudioRolePolicyFromActions } from '@/lib/studio-access-policy';
 import { listValorantAgents, mutateValorantAgent, ValorantAgentError } from '@herta/db';
 
 vi.mock('@/auth', () => ({ auth: vi.fn() }));
@@ -12,7 +16,6 @@ vi.mock('@/lib/db', () => ({
   },
 }));
 vi.mock('@/lib/studio-access', () => ({ resolveStudioAccess: vi.fn() }));
-vi.mock('@/lib/studio-plugin-permissions', () => ({ hasEffectivePluginConfigPermission: vi.fn() }));
 vi.mock('@herta/db', async (original) => ({
   ...(await original<object>()),
   listValorantAgents: vi.fn(),
@@ -32,8 +35,10 @@ function request(method = 'GET', body?: unknown, origin = 'https://studio.exampl
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(auth).mockResolvedValue({ user: { id: 'manager' } } as never);
-  vi.mocked(resolveStudioAccess).mockResolvedValue({ ok: true, access: {} } as never);
-  vi.mocked(hasEffectivePluginConfigPermission).mockReturnValue(true);
+  vi.mocked(resolveStudioAccess).mockResolvedValue({
+    ok: true,
+    access: { isRoot: true, roleIds: [], policies: [], managedPolicies: [] },
+  } as never);
   vi.mocked(listValorantAgents).mockResolvedValue([]);
   vi.mocked(mutateValorantAgent).mockResolvedValue([]);
 });
@@ -65,12 +70,35 @@ describe('guild Valorant CRUD authorization and validation', () => {
     },
   );
   it('rejects IAM deny and cross-origin mutations', async () => {
-    vi.mocked(hasEffectivePluginConfigPermission).mockReturnValue(false);
+    const policy = createStudioRolePolicyFromActions(guild, ['studio.settings.read']);
+    vi.mocked(resolveStudioAccess).mockResolvedValue({
+      ok: true,
+      access: { isRoot: false, roleIds: [], policies: [], managedPolicies: [policy] },
+    } as never);
     expect((await valorantAgentRequest(request('POST', agent), guild)).status).toBe(403);
     expect(
       (await valorantAgentRequest(request('POST', agent, 'https://evil.example'), guild)).status,
     ).toBe(403);
     expect(mutateValorantAgent).not.toHaveBeenCalled();
+  });
+  it('preserves legacy write-only policies and still enforces explicit read denials', async () => {
+    const policy = createStudioRolePolicyFromActions(guild, ['studio.settings.write']);
+    const access = { isRoot: false, roleIds: [], policies: [], managedPolicies: [policy] };
+    vi.mocked(resolveStudioAccess).mockResolvedValue({ ok: true, access } as never);
+    expect((await valorantAgentRequest(request(), guild)).status).toBe(200);
+    expect((await valorantAgentRequest(request('POST', agent), guild)).status).toBe(201);
+    const denied = setExplicitPermissionMode(
+      policy,
+      'studio.settings.read',
+      pluginConfigFieldResource(guild, 'valorant', 'enabledAgents'),
+      'deny',
+    );
+    vi.mocked(resolveStudioAccess).mockResolvedValue({
+      ok: true,
+      access: { ...access, managedPolicies: [denied] },
+    } as never);
+    expect((await valorantAgentRequest(request(), guild)).status).toBe(403);
+    expect((await valorantAgentRequest(request('POST', agent), guild)).status).toBe(403);
   });
   it('validates IDs and bounded bodies before mutation', async () => {
     expect((await valorantAgentRequest(request(), 'bad')).status).toBe(400);
