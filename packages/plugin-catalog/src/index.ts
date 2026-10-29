@@ -49,7 +49,7 @@ export { pollManifest } from './manifests/poll.js';
 export { reminderManifest } from './manifests/reminder.js';
 export { roleManagerManifest } from './manifests/role-manager.js';
 export { suggestionManifest } from './manifests/suggestion.js';
-export { valorantManifest, VALORANT_REGIONS, type ValorantRegion } from './manifests/valorant.js';
+export { valorantManifest, VALORANT_REGIONS, VALORANT_AGENTS, type ValorantRegion, type ValorantAgent } from './manifests/valorant.js';
 export { serverStatsManifest } from './manifests/server-stats.js';
 export { vcRecapManifest } from './manifests/vc-recap.js';
 export { xpLevelManifest } from './manifests/xp-level.js';
