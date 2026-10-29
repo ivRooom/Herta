@@ -19,6 +19,11 @@ import {
   achievementCommonPointSourceId,
 } from './common-points-achievement.js';
 import { createMbtiWebQuizSession, completeMbtiWebQuizSession } from './mbti-web-quiz-session.js';
+import {
+  leaseCommonPointsEvents,
+  settleCommonPointsEvent,
+  getCommonPointsDeliveryHealth,
+} from './common-points-delivery.js';
 
 test(
   'real isolated PG17: source mutation, daily floors/caps, receipt and outbox commit exactly once',
@@ -427,6 +432,141 @@ test(
       assert.equal(finalReceipt[0]?.count, 36n);
       assert.equal(finalReceipt[0]?.total, 1_000_097n);
       assert.equal(finalOutbox[0]?.total, finalReceipt[0]?.total);
+      // Two workers cannot own the same event; stale/expired ACK is fenced.
+      const initialHealth = await getCommonPointsDeliveryHealth(db, guildId);
+      const claims = await Promise.all([
+        leaseCommonPointsEvents(db, guildId, 2),
+        leaseCommonPointsEvents(db, guildId, 2),
+      ]);
+      const leased = claims.flat();
+      assert.equal(leased.length, 4);
+      assert.equal(new Set(leased.map((row) => row.id)).size, 4);
+      const [first, second, third, fourth] = leased;
+      assert.ok(first && second && third && fourth);
+      assert.equal(
+        await settleCommonPointsEvent(db, first, {
+          state: 'acked',
+          transactionId: 'remote-fixture-1',
+          userId: 'canonical-fixture',
+        }),
+        true,
+      );
+      assert.equal(
+        await settleCommonPointsEvent(db, first, {
+          state: 'acked',
+          transactionId: 'remote-fixture-1',
+          userId: 'canonical-fixture',
+        }),
+        false,
+      );
+      await assert.rejects(
+        db.$executeRaw`UPDATE common_points_outbox SET status='pending' WHERE id=${first.id}::uuid`,
+      );
+      assert.equal(
+        await settleCommonPointsEvent(db, second, {
+          state: 'pending',
+          code: 'unlinked_identity',
+          delaySeconds: 60,
+        }),
+        true,
+      );
+      assert.equal(
+        await settleCommonPointsEvent(db, third, {
+          state: 'quarantined',
+          code: 'event_payload_conflict',
+          delaySeconds: 3600,
+        }),
+        true,
+      );
+      await db.$executeRaw`UPDATE common_points_outbox SET next_attempt_at=CURRENT_TIMESTAMP+INTERVAL '1 day' WHERE status='pending'`;
+      await db.$executeRaw`UPDATE common_points_outbox SET lease_expires_at=CURRENT_TIMESTAMP-INTERVAL '1 second' WHERE id=${fourth.id}::uuid`;
+      assert.equal(
+        await settleCommonPointsEvent(db, fourth, {
+          state: 'acked',
+          transactionId: 'stale',
+          userId: 'canonical-fixture',
+        }),
+        false,
+      );
+      const resumed = (await leaseCommonPointsEvents(db, guildId, 1))[0];
+      assert.ok(resumed);
+      assert.equal(resumed.id, fourth.id);
+      assert.equal(resumed.body, fourth.body);
+      assert.notEqual(resumed.leaseToken, fourth.leaseToken);
+      assert.equal(resumed.attempts, fourth.attempts + 1);
+      assert.equal(
+        await settleCommonPointsEvent(db, fourth, {
+          state: 'acked',
+          transactionId: 'stale',
+          userId: 'canonical-fixture',
+        }),
+        false,
+      );
+      assert.equal(
+        await settleCommonPointsEvent(db, resumed, {
+          state: 'acked',
+          transactionId: 'remote-fixture-2',
+          userId: 'canonical-fixture',
+        }),
+        true,
+      );
+      const health = await getCommonPointsDeliveryHealth(db, guildId);
+      assert.equal(health.pending, initialHealth.pending - 3);
+      assert.equal(health.quarantined, 1);
+      assert.ok(health.oldestPendingSeconds >= 0);
+      // Start a settlement BEFORE expiry, hold its row lock across expiry
+      // without reclaim/version update, then reject the now-expired settlement.
+      await db.$executeRaw`UPDATE common_points_outbox SET next_attempt_at=clock_timestamp() WHERE status='pending'`;
+      const boundary = (await leaseCommonPointsEvents(db, guildId, 1))[0];
+      assert.ok(boundary);
+      await db.$executeRaw`UPDATE common_points_outbox SET lease_expires_at=clock_timestamp()+INTERVAL '1 second' WHERE id=${boundary.id}::uuid`;
+      let release!: () => void, locked!: () => void;
+      const releaseSignal = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const lockedSignal = new Promise<void>((resolve) => {
+        locked = resolve;
+      });
+      const holder = db.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`SELECT id FROM common_points_outbox WHERE id=${boundary.id}::uuid FOR UPDATE`;
+          locked();
+          await releaseSignal;
+        },
+        { timeout: 5000 },
+      );
+      await lockedSignal;
+      const settling = settleCommonPointsEvent(db, boundary, {
+        state: 'acked',
+        transactionId: 'expired-while-waiting',
+        userId: 'canonical-fixture',
+      }).then(
+        (settled) => ({ settled }),
+        (error) => ({ error }),
+      );
+      try {
+        let waiting = false;
+        for (let i = 0; i < 50; i++) {
+          const waits = await db.$queryRaw<
+            Array<{ count: number }>
+          >`SELECT count(*)::int AS count FROM pg_stat_activity WHERE wait_event_type='Lock' AND query LIKE '%common_points_outbox%'`;
+          if ((waits[0]?.count ?? 0) > 0) {
+            waiting = true;
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        assert.equal(waiting, true);
+        const beforeExpiry = await db.$queryRaw<
+          Array<{ valid: boolean }>
+        >`SELECT clock_timestamp()<lease_expires_at AS valid FROM common_points_outbox WHERE id=${boundary.id}::uuid`;
+        assert.equal(beforeExpiry[0]?.valid, true);
+        await new Promise((resolve) => setTimeout(resolve, 1100));
+      } finally {
+        release();
+        await holder;
+      }
+      assert.deepEqual(await settling, { settled: false }, 'expired_while_waiting_must_not_ack');
     } finally {
       if (originalAccrualFlag === undefined) delete process.env.HERTA_COMMON_POINTS_ACCRUAL_ENABLED;
       else process.env.HERTA_COMMON_POINTS_ACCRUAL_ENABLED = originalAccrualFlag;

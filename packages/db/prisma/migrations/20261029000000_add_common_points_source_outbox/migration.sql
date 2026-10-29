@@ -43,8 +43,14 @@ CREATE TABLE common_points_outbox (
   lease_token UUID,
   lease_expires_at TIMESTAMPTZ(3),
   acknowledged_at TIMESTAMPTZ(3),
+  remote_transaction_id TEXT,
+  remote_user_id TEXT,
   last_error_code TEXT,
   created_at TIMESTAMPTZ(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CHECK ((status='leased' AND lease_token IS NOT NULL AND lease_expires_at IS NOT NULL)
+    OR (status<>'leased' AND lease_token IS NULL AND lease_expires_at IS NULL)),
+  CHECK ((status='acked' AND acknowledged_at IS NOT NULL AND remote_transaction_id IS NOT NULL AND remote_user_id IS NOT NULL)
+    OR (status<>'acked' AND acknowledged_at IS NULL AND remote_transaction_id IS NULL AND remote_user_id IS NULL)),
   CONSTRAINT common_points_outbox_source_receipt_id_fkey FOREIGN KEY (source_receipt_id)
     REFERENCES common_points_source_receipts(id) ON DELETE RESTRICT ON UPDATE CASCADE
 );
@@ -86,6 +92,9 @@ CREATE TRIGGER common_points_receipts_no_truncate BEFORE TRUNCATE ON common_poin
   FOR EACH STATEMENT EXECUTE FUNCTION guard_common_points_history();
 CREATE FUNCTION guard_common_points_outbox_payload() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
+  IF OLD.status='acked' AND NEW IS DISTINCT FROM OLD
+    OR NEW.attempts<OLD.attempts
+  THEN RAISE EXCEPTION 'common_points_delivery_cannot_reset'; END IF;
   IF (NEW.id,NEW.source_receipt_id,NEW.earning_id,NEW.body,NEW.body_sha256,NEW.created_at)
     IS DISTINCT FROM (OLD.id,OLD.source_receipt_id,OLD.earning_id,OLD.body,OLD.body_sha256,OLD.created_at)
   THEN RAISE EXCEPTION 'common_points_outbox_payload_is_immutable'; END IF;

@@ -15,6 +15,7 @@ export * from './community-game-breakdown.js';
 export * from './community-points-leaderboard.js';
 export * from './common-points-accrual.js';
 export * from './common-points-achievement.js';
+export * from './common-points-delivery.js';
 export * from './common-points-outbox.js';
 export * from './community-season-snapshot.js';
 export * from './community-user-activity-summary.js';

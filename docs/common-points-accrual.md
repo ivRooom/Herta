@@ -3,8 +3,8 @@
 Tracking: Herta#569 / #538, Web#598, Platform#103. Depends on Herta PR570
 client/Contracts v1 and Web PR599 receiver. This staged patch wires Bot/shared
 and Studio achievement sources behind a separately disabled accrual flag. It
-does not yet wire ordinary message/session/participation/poll activity, run a
-sender, switch UI reads, seed/enable policy, or apply a production migration.
+does not yet wire ordinary message/session/participation/poll activity, enable
+the sender, switch UI reads, seed/enable policy, or apply a production migration.
 The MBTI completion/achievement transaction and source dedupe fixes also apply
 while accrual is disabled; no common credit is then recorded.
 
@@ -92,11 +92,38 @@ accepted by a source hook are not covered by outbox delivery guarantees.
 
 Positive credit is split into at most64 events of at most1,000,000 points. Event
 UUID, stable earning ID, exact JSON body/hash, epoch and tariff hash are stored
-once. A future sender must refresh only the signature timestamp, lease bounded
-batches, acknowledge only verified successful receipts, retry uncertain delivery,
-hold unlinked identities, quarantine conflicts and expose pending age/lag.
-Worker/ACK implementation is still a release blocker, not supplied by this patch.
+once. The opt-in Bot sender refreshes only the signature timestamp, leases
+bounded batches, acknowledges verified successful receipts, retries uncertain
+delivery, holds unlinked identities, quarantines conflicts and exposes age/lag.
+Actual production enablement and full-source acceptance remain release blockers.
 These tables are transport/accrual state; spendable balance belongs to Web.
+
+### Delivery and recovery
+
+The Bot starts/stops the outbox worker only when existing common-points client
+configuration resolves (`COMMON_POINTS_ENABLED=true`, dedicated points key and
+guild); no flag/key is set by this PR. Disabled startup performs no points DB or
+HTTP operation. Claim also requires enabled/baseline-complete source policy.
+Each cycle claims at most5 events with SKIP LOCKED/30s leases, sends at most5
+concurrently outside SQL transactions, then schedules the next cycle5s after
+completion. Shutdown stops scheduling and awaits the active cycle.
+
+Claim/settlement/health use bounded short DB transactions; transport timeout5s,
+request/response8192-byte bounds and fixed api.ivrm.jp with redirects rejected.
+Full v1 wire/body SHA256 validation precedes sending. Failed delivery retries
+the exact stored event/body with5s–1h backoff; auth failure waits at least5min,
+unlinked409 at least1min. HTTP404 is retained. No attempt-count drop. Known
+payload/epoch/receipt conflicts quarantine immutable data for reviewed recovery.
+Malformed success is not an ACK. Verified ACK stores remote transaction/user
+references; ACK state and payload cannot be edited/reset/deleted.
+
+Settlement explicitly locks its row before checking `clock_timestamp()` expiry
+and lease token. Transaction-start CURRENT_TIMESTAMP can incorrectly accept an
+ACK that waited across expiry; the native regression reproduces that old fence
+as a negative control and rejects it after the fix. Source bodies/receipt totals
+are retained across lease crash/reclaim. Health logs only aggregate pending /
+quarantined count/oldest age; warnings throttle to once per minute and never log
+IDs, payloads, secret, SQL errors or auth headers. No external email is sent.
 
 ## Migration and rollback
 
@@ -147,6 +174,15 @@ loopback URL, then the real new migration is applied. Production URL environment
 is never selected. Owner-labelled container and temporary schema are removed.
 This is synthetic source evidence, not production money or actual Discord/browser
 delivery. The PG fixture is opt-in, not ordinary CI.
+
+Sender14 unit tests pass, including the shared nine negative contract fixtures,
+lost transport/retry,404/auth/unlinked retention, conflict quarantine, malformed
+ACK bounds and disabled no-op. Native PG also verifies disjoint concurrent
+leases, token/expiry fencing, crash reclaim with unchanged bytes, terminal ACK,
+retry/quarantine and health. Separate Web real-PG test with the actual compiled
+Herta sender simulated receiver COMMIT followed by lost response, then retry:
+one receipt, Herta/member/admin each160, ledger160. This does not exercise the
+real network or live browser screens; no production state was changed.
 
 Prisma schema validation passed with a synthetic unreachable URL (no DB access).
 The first real PG run caught Prisma's inability to deserialize advisory-lock
