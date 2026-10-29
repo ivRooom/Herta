@@ -32,7 +32,10 @@ test(
       await mutate({ action: 'initialize' });
       assert.equal((await listValorantAgents(prisma, guildId))![0]!.displayName, '変更');
       assert.equal((await listValorantAgents(prisma, guildId))![0]!.enabled, true);
-      await assert.rejects(mutate({ action: 'delete', agentId: 'jett' }, other), /見つかりません/);
+      await assert.rejects(
+        mutate({ action: 'delete', agentId: 'not-in-defaults' }, other),
+        /見つかりません/,
+      );
       assert.equal(await listValorantAgents(prisma, other), null); // failed mutation rolled back first initialization and audit.
       const custom = {
         ...base,
@@ -46,6 +49,8 @@ test(
         mutate({ action: 'create', agent: custom }),
       ]);
       assert.equal(outcomes.filter((result) => result.status === 'fulfilled').length, 1);
+      await assert.rejects(mutate({ action: 'update', agent: custom }, other), /見つかりません/);
+      assert.equal(await listValorantAgents(prisma, other), null);
       assert.equal(
         (await listValorantAgents(prisma, guildId))!.filter((agent) => agent.agentId === 'custom')
           .length,

@@ -22,7 +22,7 @@ for (const width of [390, 1280]) {
     });
     await page.goto('/e2e-test/valorant');
     await expect(page.getByText('登録 1件 · 有効 1件')).toBeVisible();
-    await page.getByRole('checkbox', { name: 'ジェットを有効にする' }).uncheck();
+    await page.getByRole('checkbox', { name: 'ジェットを有効にする' }).click();
     await expect(page.getByText('登録 1件 · 有効 0件')).toBeVisible();
     await page.getByRole('textbox', { name: 'Agent ID' }).fill('custom');
     await page.getByRole('textbox', { name: 'Agent Name' }).fill('Custom');
@@ -45,7 +45,7 @@ for (const width of [390, 1280]) {
     ).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`valorant-${width}.png`), fullPage: true });
     failure = true;
-    await page.getByRole('checkbox', { name: 'ジェットを有効にする' }).check();
+    await page.getByRole('checkbox', { name: 'ジェットを有効にする' }).click();
     await expect(page.getByRole('alert')).toContainText('接続エラー');
   });
 }

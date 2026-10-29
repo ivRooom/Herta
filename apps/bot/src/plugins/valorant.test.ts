@@ -68,7 +68,7 @@ function fixture({
   const context = {
     config: { enabled, enabledAgents },
     prisma: { guildPlugin: { findUnique } },
-    logger: {},
+    logger: { error: vi.fn() },
   } as unknown as Parameters<NonNullable<typeof valorantPlugin.provideCommands>>[0];
   return {
     reply,

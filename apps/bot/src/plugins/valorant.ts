@@ -6,6 +6,7 @@ import {
   type ChatInputCommandInteraction,
 } from 'discord.js';
 import { listValorantAgents, type PrismaClient } from '@herta/db';
+import type { Logger } from 'pino';
 import {
   VALORANT_REGIONS,
   legacyValorantAgents,
@@ -116,6 +117,7 @@ async function handleMyId(
 async function handleRandom(
   interaction: ChatInputCommandInteraction,
   prisma: PrismaClient,
+  logger: Logger,
 ): Promise<void> {
   if (!interaction.guild) {
     await replyEphemeral(interaction, 'サーバー内でのみ利用できます。');
@@ -229,7 +231,14 @@ async function handleRandom(
 
       await interaction.followUp({ embeds: [embed], flags: [], allowedMentions: { parse: [] } });
     }
-  } catch {
+  } catch (error) {
+    logger.error(
+      {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+        guildId: interaction.guildId,
+      },
+      'Valorant randomの実行に失敗しました',
+    );
     await interaction.editReply(
       'Discordまたはデータベースから情報を取得・表示できませんでした。Botの接続と権限を確認して再試行してください。',
     );
@@ -375,7 +384,7 @@ export const valorantPlugin = definePlugin<ValorantPluginConfig, unknown, Prisma
           } else if (subcommand === 'stats') {
             await handleStats(interaction, context.prisma);
           } else if (subcommand === 'random') {
-            await handleRandom(interaction, context.prisma);
+            await handleRandom(interaction, context.prisma, context.logger);
           } else {
             await replyEphemeral(interaction, '未対応のサブコマンドです。');
           }
