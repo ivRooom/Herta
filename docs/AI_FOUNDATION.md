@@ -8,8 +8,8 @@ Hertaの生成AI機能をDiscord/RAG機能から分離し、provider呼び出し
 
 - production既定: `HERTA_AI_ENABLED=false`
 - supported code-level provider identifiers: `openai`, `anthropic`, `google`, `moonshot`, `xai`, `deepseek` (runtime enablement and credentials require separate verification)
-- provider credential: Studio Runtime Secret Store `openai.api_key` をprimary source
-- `OPENAI_API_KEY`: migration fallback only (secret未登録時のみ)
+- OpenAI専用のcredential: Studio Runtime Secret Store `openai.api_key` をprimary source
+- OpenAI専用のmigration fallback: `OPENAI_API_KEY` (secret未登録時のみ) 他providerはそれぞれの資格情報解決を実コードで確認
 - model profile / reasoning: Studio global admin向けnon-secret Runtime Settings。未登録時のみallowlisted env defaultを使用
 - conversation / grounding policy: server-side common policy。clientから上書き不可
 - Discord Guild mention/Q&A surface: Issue #350で実装。global gate + AI Plugin + Guild config opt-inが必要
