@@ -98,6 +98,7 @@ async function PluginDetailPage({
           />
         ) : canUseValorantGuidedEditor ? (
           <ValorantConfigForm
+            key={guildId}
             guildId={guildId}
             initialEnabled={plugin.enabled}
             initialConfig={visibleConfig}

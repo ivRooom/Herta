@@ -42,6 +42,64 @@ export const VALORANT_AGENTS = [
 ] as const;
 export type ValorantAgent = (typeof VALORANT_AGENTS)[number];
 
+// Names only, verified against Riot's Japanese agents page. No remote API or artwork dependency.
+const JAPANESE_AGENT_NAMES = [
+  'アストラ',
+  'ブリーチ',
+  'ブリムストーン',
+  'チェンバー',
+  'クローヴ',
+  'サイファー',
+  'デッドロック',
+  'フェイド',
+  'ゲッコー',
+  'ハーバー',
+  'ハッシュ',
+  'アイソ',
+  'ジェット',
+  'KAY/O',
+  'キルジョイ',
+  'ミクス',
+  'ネオン',
+  'オーメン',
+  'フェニックス',
+  'レイズ',
+  'レイナ',
+  'セージ',
+  'スカイ',
+  'ソーヴァ',
+  'テホ',
+  'ヴィトー',
+  'ヴァイパー',
+  'ヴァイス',
+  'ウェイレイ',
+  'ヨル',
+];
+
+/** Missing legacy selection means default-all; explicit empty/invalid lists fail closed. */
+export function legacyValorantAgents(value: unknown): string[] {
+  if (value === undefined) return [...VALORANT_AGENTS];
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value.filter(
+        (agent): agent is ValorantAgent =>
+          typeof agent === 'string' && (VALORANT_AGENTS as readonly string[]).includes(agent),
+      ),
+    ),
+  ];
+}
+
+export function defaultValorantAgents(legacySelection?: unknown) {
+  const selected = new Set(legacyValorantAgents(legacySelection));
+  return VALORANT_AGENTS.map((agentName, index) => ({
+    agentId: agentName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    agentName,
+    displayName: JAPANESE_AGENT_NAMES[index]!,
+    enabled: selected.has(agentName),
+  }));
+}
+
 const VALORANT_REGION_CHOICES = [
   { name: 'Europe (eu)', value: 'eu' },
   { name: 'North America (na)', value: 'na' },
@@ -54,7 +112,7 @@ const VALORANT_REGION_CHOICES = [
 export const valorantManifest: PluginManifest = {
   id: 'valorant',
   name: 'Valorant',
-  version: '1.1.0',
+  version: '1.2.0',
   description:
     'Riot ID連携・戦績確認と、VC参加者へのエージェント重複なしランダム割り当てができるPluginです',
   author: { name: 'Herta' },
@@ -77,15 +135,16 @@ export const valorantManifest: PluginManifest = {
       enabledAgents: {
         type: 'array',
         title: 'ランダム抽選対象エージェント',
-        description: 'サーバーで利用するAgentを選択します。最低1人を登録してください。',
+        description:
+          '初期登録前の抽選候補。エージェント管理画面で初期登録後はGuild別データを使用します。',
         uniqueItems: true,
-        minItems: 1,
+        minItems: 0,
         maxItems: VALORANT_AGENTS.length,
         items: { type: 'string', enum: [...VALORANT_AGENTS] },
         default: [...VALORANT_AGENTS],
         'x-herta-ui': {
           section: 'エージェント',
-          help: '全30人から選択。専用のエージェント管理画面でも登録・確認できます。',
+          help: '初期登録前のみ使用する互換設定です。初期登録後の追加・編集・無効化・削除はエージェント管理画面で行います。',
         },
       },
     },

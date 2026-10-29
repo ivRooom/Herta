@@ -1,7 +1,13 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
+import { listValorantAgents } from '@herta/db';
 import { VALORANT_AGENTS } from '@herta/plugin-catalog';
 import { normalizeValorantConfig, valorantPlugin } from './valorant.js';
+
+vi.mock('@herta/db', () => ({ listValorantAgents: vi.fn() }));
+beforeEach(() => {
+  vi.mocked(listValorantAgents).mockResolvedValue(null);
+});
 
 function fixture({
   inVoice = true,
@@ -10,55 +16,67 @@ function fixture({
   uncached = [] as string[],
   missing = [] as string[],
   enabled = true,
-  enabledAgents,
-}: {
-  inVoice?: boolean;
-  participants?: string[];
-  bots?: string[];
-  uncached?: string[];
-  missing?: string[];
-  enabled?: boolean;
-  enabledAgents?: string[];
+  dbEnabled = true,
+  dbError = false,
+  enabledAgents = ['Jett', 'Astra'],
+  otherVoice = [] as string[],
 } = {}) {
   const members = new Map(
-    [...participants, ...bots].map((id) => [id, { id, user: { bot: bots.includes(id) } }]),
+    [...participants, ...bots, ...otherVoice].map((id) => [
+      id,
+      { id, user: { bot: bots.includes(id) } },
+    ]),
   );
-  const channel: { id: string; name: string; guild?: unknown } = {
-    id: 'vc1',
-    name: 'ゲームVC',
-  };
-  const fetch = vi.fn(async (id: string) => {
+  const channel: { id: string; name: string; guild?: unknown } = { id: 'vc1', name: 'ゲームVC' };
+  const fetch = vi.fn(async (input: string | { user: string }) => {
+    const id = typeof input === 'string' ? input : input.user;
+    if (missing.includes(id)) throw new Error('Discord unavailable');
     if (id === 'u1')
       return { id, user: { bot: false }, voice: { channel: inVoice ? channel : null } };
-    if (missing.includes(id)) throw new Error('Member fetch failed');
-    const member = members.get(id);
-    if (!member) throw new Error('Member not found');
-    return member;
+    return members.get(id)!;
   });
   const voiceStates = new Map(
     [...members.entries()].map(([id, member]) => [
       id,
-      { id, channelId: 'vc1', member: uncached.includes(id) ? null : member },
+      {
+        id,
+        channelId: otherVoice.includes(id) ? 'vc2' : 'vc1',
+        member: uncached.includes(id) ? null : member,
+      },
     ]),
   );
   const guild = { members: { fetch }, voiceStates: { cache: voiceStates } };
   channel.guild = guild;
   const reply = vi.fn();
+  const editReply = vi.fn();
+  const followUp = vi.fn();
+  const deferReply = vi.fn();
   const interaction = {
     guildId: 'guild',
     guild,
     user: { id: 'u1' },
     options: { getSubcommand: () => 'random' },
     reply,
+    editReply,
+    followUp,
+    deferReply,
   };
+  const findUnique = vi.fn(async () => {
+    if (dbError) throw new Error('DB unavailable');
+    return { enabled: dbEnabled, config: { enabled, enabledAgents } };
+  });
   const context = {
     config: { enabled, enabledAgents },
-    prisma: {},
+    prisma: { guildPlugin: { findUnique } },
     logger: {},
   } as unknown as Parameters<NonNullable<typeof valorantPlugin.provideCommands>>[0];
   return {
     reply,
+    editReply,
+    followUp,
+    deferReply,
     fetch,
+    findUnique,
     execute: async () => {
       const handlers = await valorantPlugin.provideCommands!(context);
       await handlers[0]!.execute(interaction as unknown as ChatInputCommandInteraction);
@@ -67,93 +85,98 @@ function fixture({
 }
 
 describe('Valorant random', () => {
-  it('抽選候補は未設定時30名、設定時は選択したAgentだけ', () => {
+  it('defaults only for absent selection; explicit empty and malformed lists fail closed', () => {
     expect(normalizeValorantConfig({}).enabledAgents).toEqual([...VALORANT_AGENTS]);
-    expect(normalizeValorantConfig({ enabledAgents: ['Jett', 'Astra'] }).enabledAgents).toEqual([
-      'Jett',
-      'Astra',
-    ]);
-  });
-
-  it('不正なAgentを含む永続設定には公式一覧を使う', () => {
-    expect(normalizeValorantConfig({ enabledAgents: ['not-an-agent'] }).enabledAgents).toEqual([
-      ...VALORANT_AGENTS,
-    ]);
+    expect(normalizeValorantConfig({ enabledAgents: [] }).enabledAgents).toEqual([]);
+    expect(normalizeValorantConfig({ enabledAgents: ['bad'] }).enabledAgents).toEqual([]);
     expect(normalizeValorantConfig({ enabledAgents: ['Jett', 'Jett'] }).enabledAgents).toEqual([
-      ...VALORANT_AGENTS,
-    ]);
-    expect(normalizeValorantConfig({ enabledAgents: [] }).enabledAgents).toEqual([
-      ...VALORANT_AGENTS,
+      'Jett',
     ]);
   });
-
-  it('VCの人間だけを割り当て、botを除外して公開する', async () => {
-    const f = fixture({ bots: ['bot1'], enabledAgents: ['Jett', 'Astra'] });
+  it('acknowledges privately before IO then publishes all humans, excluding bots and other VC', async () => {
+    const f = fixture({ bots: ['bot'], otherVoice: ['elsewhere'] });
     await f.execute();
-    expect(f.fetch).toHaveBeenCalledWith('u1');
-    expect(f.reply).toHaveBeenCalledOnce();
-    const options = f.reply.mock.calls[0]![0];
-    expect(options.allowedMentions).toEqual({ parse: [] });
-    expect(options.embeds).toHaveLength(1);
-    const description = options.embeds[0].data.description as string;
-    expect(description).toContain('<@u1>');
-    expect(description).toContain('<@u2>');
-    expect(description).not.toContain('bot1');
-    expect(description).toMatch(/Astra/);
-    expect(description).toMatch(/Jett/);
-  });
-
-  it('VCに参加しているがGuildMember cacheにないユーザーも取得して抽選する', async () => {
-    const f = fixture({ uncached: ['u2'], enabledAgents: ['Jett', 'Astra'] });
-    await f.execute();
-    expect(f.fetch).toHaveBeenCalledWith('u2');
-    const embed = f.reply.mock.calls[0]![0].embeds[0].data;
-    expect(embed.description).toContain('<@u2>');
-  });
-
-  it('個別GuildMember取得失敗時にはそのユーザーだけを除外する', async () => {
-    const f = fixture({ uncached: ['u2'], missing: ['u2'], enabledAgents: ['Jett', 'Astra'] });
-    await f.execute();
-    expect(f.fetch).toHaveBeenCalledWith('u2');
-    const embed = f.reply.mock.calls[0]![0].embeds[0].data;
-    expect(embed.description).toContain('<@u1>');
-    expect(embed.description).not.toContain('<@u2>');
-  });
-
-  it('VC未参加ならプライベートエラー', async () => {
-    const f = fixture({ inVoice: false });
-    await f.execute();
-    expect(f.reply).toHaveBeenCalledWith(
-      expect.objectContaining({ flags: MessageFlags.Ephemeral }),
+    expect(f.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(f.deferReply.mock.invocationCallOrder[0]).toBeLessThan(
+      f.findUnique.mock.invocationCallOrder[0]!,
     );
+    expect(f.editReply.mock.invocationCallOrder[0]).toBeLessThan(
+      f.followUp.mock.invocationCallOrder[0]!,
+    );
+    const options = f.followUp.mock.calls[0]![0];
+    expect(options.flags).toEqual([]);
+    expect(options.allowedMentions).toEqual({ parse: [] });
+    const text = options.embeds[0].data.description;
+    expect(text).toContain('<@u1>');
+    expect(text).toContain('<@u2>');
+    expect(text).not.toContain('bot');
+    expect(text).not.toContain('elsewhere');
+    expect(text).toContain('Astra');
+    expect(text).toContain('Jett');
   });
-
-  it('Agent候補が足りない場合は割り当てずエラー', async () => {
-    const f = fixture({ enabledAgents: ['Astra'] });
+  it('fetches uncached members', async () => {
+    const f = fixture({ uncached: ['u2'] });
     await f.execute();
-    const options = f.reply.mock.calls[0]![0];
-    expect(options.flags).toBe(MessageFlags.Ephemeral);
-    expect(options.content).toContain('不足');
+    expect(f.fetch).toHaveBeenCalledWith('u2');
+    expect(f.followUp).toHaveBeenCalledOnce();
   });
-
-  it('invokerが対象VCにない場合は誤抽選しない', async () => {
-    const f = fixture({ participants: ['u2'] });
+  it.each([
+    { inVoice: false },
+    { enabledAgents: ['Astra'] },
+    { enabledAgents: [] },
+    { uncached: ['u2'], missing: ['u2'] },
+    { missing: ['u1'] },
+    { participants: ['u2'] },
+    { dbEnabled: false },
+    { dbError: true },
+  ])('fails privately without partial assignment: %j', async (options) => {
+    const f = fixture(options);
     await f.execute();
-    expect(f.reply.mock.calls[0]![0].flags).toBe(MessageFlags.Ephemeral);
+    expect(f.followUp).not.toHaveBeenCalled();
+    expect(f.editReply).toHaveBeenCalled();
   });
-
-  it('Plugin configが無効な場合はVCを取得しない', async () => {
+  it('does not fetch members when config is disabled', async () => {
     const f = fixture({ enabled: false });
     await f.execute();
     expect(f.fetch).not.toHaveBeenCalled();
     expect(f.reply.mock.calls[0]![0].flags).toBe(MessageFlags.Ephemeral);
   });
-
-  it('Manifestにrandomサブコマンドが公開されている', () => {
+  it('reads current DB candidates on every invocation and excludes disabled entries', async () => {
+    const agent = (agentId: string, enabled: boolean) => ({
+      agentId,
+      enabled,
+      displayName: agentId,
+      agentName: agentId,
+      guildId: 'guild',
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    vi.mocked(listValorantAgents)
+      .mockResolvedValueOnce([
+        agent('custom-a', true),
+        agent('custom-b', true),
+        agent('disabled', false),
+      ])
+      .mockResolvedValueOnce([]);
+    const f = fixture();
+    await f.execute();
+    expect(f.followUp.mock.calls[0]![0].embeds[0].data.description).toContain('custom-a');
+    f.followUp.mockClear();
+    await f.execute();
+    expect(f.followUp).not.toHaveBeenCalled();
+    expect(f.editReply).toHaveBeenLastCalledWith(expect.stringContaining('ありません'));
+  });
+  it('returns private DB read errors', async () => {
+    vi.mocked(listValorantAgents).mockRejectedValue(new Error('unavailable'));
+    const f = fixture();
+    await f.execute();
+    expect(f.followUp).not.toHaveBeenCalled();
+    expect(f.editReply).toHaveBeenLastCalledWith(expect.stringContaining('データベース'));
+  });
+  it('publishes the random slash subcommand', () =>
     expect(
       valorantPlugin.manifest.commands[0]?.subcommands?.some(
         (command) => command.name === 'random',
       ),
-    ).toBe(true);
-  });
+    ).toBe(true));
 });

@@ -786,6 +786,14 @@ export class HertaBot {
     });
 
     this.client.on(Events.InteractionCreate, async (interaction) => {
+      // Acknowledge before ANY Plugin dispatch can perform a cold Runtime/DB lookup.
+      if (
+        interaction.isChatInputCommand() &&
+        interaction.commandName === 'valorant' &&
+        interaction.options.getSubcommand(false) === 'random'
+      ) {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      }
       // 無関係なPlugin側のinteractionCreateハンドラの失敗・遅延に同意ボタンの処理が
       // 影響されないよう、guild plugin dispatchより前に処理する。
       if (interaction.isButton() && interaction.customId.startsWith(CONSENT_CUSTOM_ID_PREFIX)) {
@@ -837,7 +845,18 @@ export class HertaBot {
       // Plugin CommandはGuild単位設定を参照する。キャッシュTTL経過後の無効化・設定変更を
       // 実行時にも反映できるよう、GuildごとのRuntimeから再取得する。
       if (!command && interaction.guildId) {
-        const commands = await this.pluginLoader.getGuildCommands(interaction.guildId);
+        const commands = await this.pluginLoader
+          .getGuildCommands(interaction.guildId)
+          .catch((error: unknown) => {
+            this.logger.error(
+              {
+                errorName: error instanceof Error ? error.name : 'UnknownError',
+                guildId: interaction.guildId,
+              },
+              'Guild Plugin Commandの取得に失敗しました',
+            );
+            return [];
+          });
         this.pluginCommands.set(interaction.guildId, commands);
         command = commands.find(
           (candidate) => candidate.definition.name === interaction.commandName,

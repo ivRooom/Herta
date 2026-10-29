@@ -1,0 +1,39 @@
+name: VALORANT PostgreSQL integration
+on:
+  pull_request:
+    paths:
+      ['packages/db/**', 'apps/bot/**', 'apps/studio/**', '.github/workflows/valorant-agents.yml']
+  push:
+    branches: [main]
+    paths:
+      ['packages/db/**', 'apps/bot/**', 'apps/studio/**', '.github/workflows/valorant-agents.yml']
+permissions:
+  contents: read
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: synthetic-test-only
+          POSTGRES_DB: valorant_test
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_URL: postgresql://postgres:synthetic-test-only@127.0.0.1:5432/valorant_test
+      HERTA_VALORANT_TEST_DATABASE_URL: postgresql://postgres:synthetic-test-only@127.0.0.1:5432/valorant_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: pnpm db:migrate:deploy
+      - run: pnpm --filter @herta/db exec tsx --test src/valorant-agents.integration.test.ts
+      - name: Migration matches Prisma schema
+        run: pnpm --filter @herta/db exec prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code

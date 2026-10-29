@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "echo 'lint: skipped (ESLint config pending)'",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test \"src/lib/*.test.ts\"",
+    "test": "node --experimental-strip-types --test \"src/lib/*.test.ts\" && vitest run",
     "test:e2e": "playwright test",
     "clean": "rm -rf .next"
   },
@@ -33,6 +33,7 @@
     "autoprefixer": "^10.5.4",
     "postcss": "8.5.22",
     "tailwindcss": "^3.4.17",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.7"
   }
 }
