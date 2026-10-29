@@ -28,7 +28,8 @@ function fixture({
     name: 'ゲームVC',
   };
   const fetch = vi.fn(async (id: string) => {
-    if (id === 'u1') return { id, user: { bot: false }, voice: { channel: inVoice ? channel : null } };
+    if (id === 'u1')
+      return { id, user: { bot: false }, voice: { channel: inVoice ? channel : null } };
     if (missing.includes(id)) throw new Error('Member fetch failed');
     const member = members.get(id);
     if (!member) throw new Error('Member not found');
