@@ -1,11 +1,13 @@
 # AI Foundation v1
 
+> **2026-10-29 current-code note:** The original v1 text below was written for OpenAI. The current main branch has six provider identifiers in `packages/plugin-catalog/src/ai-service.ts`: `openai`, `anthropic`, `google`, `moonshot`, `xai`, and `deepseek`. The actual production provider availability still depends on runtime gates, credentials, and deployment evidence. The OpenAI-only pricing table below is a dated 2026-08-28 baseline, not a complete current provider/model catalogue. Human-readable product decisions: [Herta Notion service docs](https://app.notion.com/p/4087322f39fa81659838db12884251a8).
+
 Hertaの生成AI機能をDiscord/RAG機能から分離し、provider呼び出し前に共通の安全境界を提供するserver-side foundationです。
 
 ## Rollout state
 
 - production既定: `HERTA_AI_ENABLED=false`
-- implemented provider: `openai` only
+- supported code-level provider identifiers: `openai`, `anthropic`, `google`, `moonshot`, `xai`, `deepseek` (runtime enablement and credentials require separate verification)
 - provider credential: Studio Runtime Secret Store `openai.api_key` をprimary source
 - `OPENAI_API_KEY`: migration fallback only (secret未登録時のみ)
 - model profile / reasoning: Studio global admin向けnon-secret Runtime Settings。未登録時のみallowlisted env defaultを使用
