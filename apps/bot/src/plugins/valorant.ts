@@ -1,6 +1,11 @@
 import { EmbedBuilder, MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
 import type { PrismaClient } from '@herta/db';
-import { VALORANT_REGIONS, VALORANT_AGENTS, valorantManifest, type ValorantRegion } from '@herta/plugin-catalog';
+import {
+  VALORANT_REGIONS,
+  VALORANT_AGENTS,
+  valorantManifest,
+  type ValorantRegion,
+} from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler } from '@herta/plugin-sdk';
 import {
   deleteValorantLink,
@@ -25,7 +30,8 @@ export function normalizeValorantConfig(value: unknown): ValorantPluginConfig {
       source.enabledAgents.length > 0 &&
       new Set(source.enabledAgents).size === source.enabledAgents.length &&
       source.enabledAgents.every(
-        (agent) => typeof agent === 'string' && (VALORANT_AGENTS as readonly string[]).includes(agent),
+        (agent) =>
+          typeof agent === 'string' && (VALORANT_AGENTS as readonly string[]).includes(agent),
       )
         ? [...source.enabledAgents]
         : [...VALORANT_AGENTS],
@@ -156,7 +162,9 @@ async function handleRandom(
     .setColor(0xff4655)
     .setTitle('🎲 VALORANT Agent Random')
     .setDescription(lines.join('\n'))
-    .setFooter({ text: `${channel.name} • ${result.assignments.length}人 / Agent候補${config.enabledAgents.length}名` });
+    .setFooter({
+      text: `${channel.name} • ${result.assignments.length}人 / Agent候補${config.enabledAgents.length}名`,
+    });
 
   await interaction.reply({ embeds: [embed], allowedMentions: { parse: [] } });
 }

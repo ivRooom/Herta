@@ -9,7 +9,9 @@ describe('pickRandomValorantAgents', () => {
     if (result.status !== 'ok') return;
     expect(result.assignments.map((item) => item.userId)).toEqual(['u1', 'u2', 'u3']);
     expect(new Set(result.assignments.map((item) => item.agent)).size).toBe(3);
-    expect(result.assignments.every((item) => VALORANT_AGENTS.some((agent) => agent === item.agent))).toBe(true);
+    expect(
+      result.assignments.every((item) => VALORANT_AGENTS.some((agent) => agent === item.agent)),
+    ).toBe(true);
   });
 
   it('同じユーザーIDの二重登録を1件として扱う', () => {
@@ -23,7 +25,9 @@ describe('pickRandomValorantAgents', () => {
 
   it('登録エージェントが参加者より少ない場合は失敗する', () => {
     expect(pickRandomValorantAgents(['u1', 'u2'], ['Astra'])).toEqual({
-      status: 'not_enough_agents', required: 2, available: 1,
+      status: 'not_enough_agents',
+      required: 2,
+      available: 1,
     });
   });
 

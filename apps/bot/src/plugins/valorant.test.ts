@@ -31,9 +31,11 @@ function fixture({
     options: { getSubcommand: () => 'random' },
     reply,
   };
-  const context = { config: { enabled, enabledAgents }, prisma: {}, logger: {} } as unknown as Parameters<
-    NonNullable<typeof valorantPlugin.provideCommands>
-  >[0];
+  const context = {
+    config: { enabled, enabledAgents },
+    prisma: {},
+    logger: {},
+  } as unknown as Parameters<NonNullable<typeof valorantPlugin.provideCommands>>[0];
   return {
     reply,
     fetch,
@@ -47,13 +49,22 @@ function fixture({
 describe('Valorant random', () => {
   it('抽選候補は未設定時30名、設定時は選択したAgentだけ', () => {
     expect(normalizeValorantConfig({}).enabledAgents).toEqual([...VALORANT_AGENTS]);
-    expect(normalizeValorantConfig({ enabledAgents: ['Jett', 'Astra'] }).enabledAgents).toEqual(['Jett', 'Astra']);
+    expect(normalizeValorantConfig({ enabledAgents: ['Jett', 'Astra'] }).enabledAgents).toEqual([
+      'Jett',
+      'Astra',
+    ]);
   });
 
   it('不正なAgentを含む永続設定には公式一覧を使う', () => {
-    expect(normalizeValorantConfig({ enabledAgents: ['not-an-agent'] }).enabledAgents).toEqual([...VALORANT_AGENTS]);
-    expect(normalizeValorantConfig({ enabledAgents: ['Jett', 'Jett'] }).enabledAgents).toEqual([...VALORANT_AGENTS]);
-    expect(normalizeValorantConfig({ enabledAgents: [] }).enabledAgents).toEqual([...VALORANT_AGENTS]);
+    expect(normalizeValorantConfig({ enabledAgents: ['not-an-agent'] }).enabledAgents).toEqual([
+      ...VALORANT_AGENTS,
+    ]);
+    expect(normalizeValorantConfig({ enabledAgents: ['Jett', 'Jett'] }).enabledAgents).toEqual([
+      ...VALORANT_AGENTS,
+    ]);
+    expect(normalizeValorantConfig({ enabledAgents: [] }).enabledAgents).toEqual([
+      ...VALORANT_AGENTS,
+    ]);
   });
 
   it('VCの人間だけを割り当て、botを除外して公開する', async () => {
@@ -75,7 +86,9 @@ describe('Valorant random', () => {
   it('VC未参加ならプライベートエラー', async () => {
     const f = fixture({ inVoice: false });
     await f.execute();
-    expect(f.reply).toHaveBeenCalledWith(expect.objectContaining({ flags: MessageFlags.Ephemeral }));
+    expect(f.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ flags: MessageFlags.Ephemeral }),
+    );
   });
 
   it('Agent候補が足りない場合は割り当てずエラー', async () => {
@@ -100,6 +113,10 @@ describe('Valorant random', () => {
   });
 
   it('Manifestにrandomサブコマンドが公開されている', () => {
-    expect(valorantPlugin.manifest.commands[0]?.subcommands?.some((command) => command.name === 'random')).toBe(true);
+    expect(
+      valorantPlugin.manifest.commands[0]?.subcommands?.some(
+        (command) => command.name === 'random',
+      ),
+    ).toBe(true);
   });
 });

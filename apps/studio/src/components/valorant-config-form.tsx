@@ -38,7 +38,9 @@ export function ValorantConfigForm({
 }) {
   const [pluginEnabled, setPluginEnabled] = useState(initialEnabled);
   const [commandsEnabled, setCommandsEnabled] = useState(initialConfig.enabled !== false);
-  const [registeredAgents, setRegisteredAgents] = useState<string[]>(() => readRegisteredAgents(initialConfig));
+  const [registeredAgents, setRegisteredAgents] = useState<string[]>(() =>
+    readRegisteredAgents(initialConfig),
+  );
   const [saved, setSaved] = useState(() => ({
     pluginEnabled: initialEnabled,
     commandsEnabled: initialConfig.enabled !== false,
@@ -87,7 +89,9 @@ export function ValorantConfigForm({
       const next = {
         pluginEnabled: result.enabled ?? pluginEnabled,
         commandsEnabled: result.config?.enabled !== false,
-        registeredAgents: readRegisteredAgents(result.config ?? { enabledAgents: registeredAgents }),
+        registeredAgents: readRegisteredAgents(
+          result.config ?? { enabledAgents: registeredAgents },
+        ),
       };
       setSaved(next);
       setPluginEnabled(next.pluginEnabled);
@@ -105,12 +109,16 @@ export function ValorantConfigForm({
     <div className="space-y-6">
       <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
         <h2 className="text-lg font-semibold">VALORANT Plugin設定</h2>
-        <p className="mt-1 text-sm text-muted">Riot ID連携・戦績確認とVCランダム抽選をサーバー単位で管理します。</p>
+        <p className="mt-1 text-sm text-muted">
+          Riot ID連携・戦績確認とVCランダム抽選をサーバー単位で管理します。
+        </p>
         <div className="mt-5 space-y-4">
           <label className="flex items-center justify-between gap-4 rounded-xl border border-border bg-background p-4">
             <span>
               <span className="block font-medium">Pluginを有効にする</span>
-              <span className="mt-1 block text-xs text-muted">DiscordへのSlash Command登録を制御します。</span>
+              <span className="mt-1 block text-xs text-muted">
+                DiscordへのSlash Command登録を制御します。
+              </span>
             </span>
             <input
               type="checkbox"
@@ -122,7 +130,9 @@ export function ValorantConfigForm({
           <label className="flex items-center justify-between gap-4 rounded-xl border border-border bg-background p-4">
             <span>
               <span className="block font-medium">VALORANTコマンドを有効にする</span>
-              <span className="mt-1 block text-xs text-muted">Plugin内の全サブコマンドを有効化します。</span>
+              <span className="mt-1 block text-xs text-muted">
+                Plugin内の全サブコマンドを有効化します。
+              </span>
             </span>
             <input
               type="checkbox"
@@ -148,14 +158,20 @@ export function ValorantConfigForm({
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => { setRegisteredAgents([...VALORANT_AGENTS]); setMessage(''); }}
+              onClick={() => {
+                setRegisteredAgents([...VALORANT_AGENTS]);
+                setMessage('');
+              }}
               className="rounded-lg border border-border px-3 py-2 text-sm hover:bg-background"
             >
               全員登録
             </button>
             <button
               type="button"
-              onClick={() => { setRegisteredAgents([]); setMessage(''); }}
+              onClick={() => {
+                setRegisteredAgents([]);
+                setMessage('');
+              }}
               className="rounded-lg border border-border px-3 py-2 text-sm hover:bg-background"
             >
               選択解除
@@ -182,12 +198,17 @@ export function ValorantConfigForm({
           })}
         </div>
         <p className="mt-4 text-xs text-muted">
-          Agentは重複せず割り当てます。VC参加人数以上のAgentを登録してください。Riot ID連携や外部API Keyは抽選に不要です。
+          Agentは重複せず割り当てます。VC参加人数以上のAgentを登録してください。Riot ID連携や外部API
+          Keyは抽選に不要です。
         </p>
       </section>
 
       <div className="sticky bottom-4 z-20 flex flex-col gap-3 rounded-2xl border border-border bg-surface/95 p-4 shadow-xl backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-        <p className={`text-sm ${registeredAgents.length === 0 ? 'text-red-300' : 'text-muted'}`} role="status" aria-live="polite">
+        <p
+          className={`text-sm ${registeredAgents.length === 0 ? 'text-red-300' : 'text-muted'}`}
+          role="status"
+          aria-live="polite"
+        >
           {registeredAgents.length === 0
             ? 'エージェントを最低1名登録してください。'
             : message || (dirty ? '未保存の変更があります。' : '設定は保存済みです。')}
