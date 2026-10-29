@@ -1,5 +1,7 @@
 # AWS Bedrock移行 / RAG導入 検討メモ
 
+> **Historical research snapshot / 2026-10-29 audit:** This memo assumes four provider adapters, whereas Herta main now defines six in `packages/plugin-catalog/src/ai-service.ts` (`openai`, `anthropic`, `google`, `moonshot`, `xai`, `deepseek`). Its service availability, model support, Bedrock compatibility and cost estimates have not been freshly verified. Do not use the old prices or provider support table to approve production spending or an AWS migration. See [Notion Herta overview](https://app.notion.com/p/4087322f39fa81659838db12884251a8) and the current code. No infrastructure change is implied.
+
 Herta AI Foundationを AWS Bedrock 経由へ移行すべきか、将来のRAG機能をどう作るべきかの調査メモです。実装のscope決めではなく、意思決定材料としての整理を目的とします。
 
 ## 結論（要約）
