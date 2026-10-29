@@ -20,8 +20,9 @@ No production data, deploy, Secret or DB migration was used.
 
 - Atomically persist stable earning + outbox alongside each owner activity write,
   including messages/reactions/commands/polls and session VC/online/game paths,
-  plus Studio/Bot achievement unlock. LFG/TeamSplit emitters were not found and
-  must be fixed or explicitly excluded rather than counted as working.
+  plus Studio/Bot achievement unlock. LFG/TeamSplit emitters are in top-level
+  `plugins/lfg` and `plugins/team-split`; move accrual into their owner transactions
+  instead of relying on the current post-commit metric callbacks.
 - Freeze rate/version and preserve per-JST-day floor/cap semantics. Compute
   nonnegative incremental entitlement against a locked watermark; tariff edits
   cannot revalue already granted history. Session contributions across migration
