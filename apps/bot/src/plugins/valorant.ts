@@ -1,6 +1,11 @@
 import { EmbedBuilder, MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
 import type { PrismaClient } from '@herta/db';
-import { VALORANT_REGIONS, valorantManifest, type ValorantRegion } from '@herta/plugin-catalog';
+import {
+  VALORANT_REGIONS,
+  VALORANT_AGENTS,
+  valorantManifest,
+  type ValorantRegion,
+} from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler } from '@herta/plugin-sdk';
 import {
   deleteValorantLink,
@@ -9,15 +14,27 @@ import {
   type ValorantLinkRecord,
 } from './valorant-repository.js';
 import { fetchValorantMmr, parseRiotId, type RiotIdInput } from './valorant-client.js';
+import { pickRandomValorantAgents } from './valorant-random.js';
 
 export interface ValorantPluginConfig {
   enabled: boolean;
+  enabledAgents: string[];
 }
 
 export function normalizeValorantConfig(value: unknown): ValorantPluginConfig {
   const source = isRecord(value) ? value : {};
   return {
     enabled: source.enabled === undefined ? true : source.enabled === true,
+    enabledAgents:
+      Array.isArray(source.enabledAgents) &&
+      source.enabledAgents.length > 0 &&
+      new Set(source.enabledAgents).size === source.enabledAgents.length &&
+      source.enabledAgents.every(
+        (agent) =>
+          typeof agent === 'string' && (VALORANT_AGENTS as readonly string[]).includes(agent),
+      )
+        ? [...source.enabledAgents]
+        : [...VALORANT_AGENTS],
   };
 }
 
@@ -97,6 +114,66 @@ async function handleMyId(
       ? `連携中のRiot ID: \`${link.riotName}#${link.riotTag}\`（${link.region}）`
       : '連携済みのRiot IDがありません。`/valorant link` で連携してください。',
   );
+}
+
+async function handleRandom(
+  interaction: ChatInputCommandInteraction,
+  config: ValorantPluginConfig,
+): Promise<void> {
+  if (!interaction.guild) {
+    await replyEphemeral(interaction, 'サーバー内でのみ利用できます。');
+    return;
+  }
+
+  // 実行者の現在のVCを起点にする。Botや別VCの参加者は抽選しない。
+  const invoker = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
+  const channel = invoker?.voice.channel;
+  if (!channel) {
+    await replyEphemeral(interaction, '先にボイスチャンネルへ参加してください。');
+    return;
+  }
+
+  const voiceMembers = await Promise.all(
+    [...channel.guild.voiceStates.cache.values()]
+      .filter((state) => state.channelId === channel.id)
+      .map((state) => state.member ?? channel.guild.members.fetch(state.id).catch(() => null)),
+  );
+  const participants = voiceMembers.flatMap((member) =>
+    member && !member.user.bot ? [member] : [],
+  );
+  if (!participants.some((member) => member.id === interaction.user.id)) {
+    await replyEphemeral(interaction, 'VCの参加者を確認できません。再接続してお試しください。');
+    return;
+  }
+
+  const result = pickRandomValorantAgents(
+    participants.map((member) => member.id),
+    config.enabledAgents,
+  );
+  if (result.status === 'no_participants') {
+    await replyEphemeral(interaction, 'VCに抽選対象のメンバーがいません。');
+    return;
+  }
+  if (result.status === 'not_enough_agents') {
+    await replyEphemeral(
+      interaction,
+      `登録済みAgentが不足しています（${result.available}名 / VC参加者${result.required}名）。Herta Studioで抽選対象Agentを追加してください。`,
+    );
+    return;
+  }
+
+  const lines = result.assignments.map(
+    ({ userId, agent }, index) => `${index + 1}. <@${userId}> — **${agent}**`,
+  );
+  const embed = new EmbedBuilder()
+    .setColor(0xff4655)
+    .setTitle('🎲 VALORANT Agent Random')
+    .setDescription(lines.join('\n'))
+    .setFooter({
+      text: `${channel.name} • ${result.assignments.length}人 / Agent候補${config.enabledAgents.length}名`,
+    });
+
+  await interaction.reply({ embeds: [embed], allowedMentions: { parse: [] } });
 }
 
 function tierEmoji(tierName: string): string {
@@ -237,6 +314,8 @@ export const valorantPlugin = definePlugin<ValorantPluginConfig, unknown, Prisma
             await handleMyId(interaction, context.prisma);
           } else if (subcommand === 'stats') {
             await handleStats(interaction, context.prisma);
+          } else if (subcommand === 'random') {
+            await handleRandom(interaction, normalizeValorantConfig(context.config));
           } else {
             await replyEphemeral(interaction, '未対応のサブコマンドです。');
           }

@@ -4,6 +4,44 @@ import type { PluginManifest } from '@herta/shared';
 export const VALORANT_REGIONS = ['eu', 'na', 'ap', 'kr', 'latam', 'br'] as const;
 export type ValorantRegion = (typeof VALORANT_REGIONS)[number];
 
+/**
+ * Riot Games公式Agent一覧（2026-10-29 / Patch 13.09、Hushまで）。
+ * 選択候補の正本。新Agent追加時はこのリストを更新する。
+ */
+export const VALORANT_AGENTS = [
+  'Astra',
+  'Breach',
+  'Brimstone',
+  'Chamber',
+  'Clove',
+  'Cypher',
+  'Deadlock',
+  'Fade',
+  'Gekko',
+  'Harbor',
+  'Hush',
+  'Iso',
+  'Jett',
+  'KAY/O',
+  'Killjoy',
+  'Miks',
+  'Neon',
+  'Omen',
+  'Phoenix',
+  'Raze',
+  'Reyna',
+  'Sage',
+  'Skye',
+  'Sova',
+  'Tejo',
+  'Veto',
+  'Viper',
+  'Vyse',
+  'Waylay',
+  'Yoru',
+] as const;
+export type ValorantAgent = (typeof VALORANT_AGENTS)[number];
+
 const VALORANT_REGION_CHOICES = [
   { name: 'Europe (eu)', value: 'eu' },
   { name: 'North America (na)', value: 'na' },
@@ -16,9 +54,9 @@ const VALORANT_REGION_CHOICES = [
 export const valorantManifest: PluginManifest = {
   id: 'valorant',
   name: 'Valorant',
-  version: '1.0.0',
+  version: '1.1.0',
   description:
-    'Riot ID(Name#Tag)をDiscordアカウントへ連携し、現在のランク・RRなどVALORANTの戦績を確認できるPluginです（HenrikDev APIを利用）',
+    'Riot ID連携・戦績確認と、VC参加者へのエージェント重複なしランダム割り当てができるPluginです',
   author: { name: 'Herta' },
   category: 'fun',
   permissions: [],
@@ -36,6 +74,20 @@ export const valorantManifest: PluginManifest = {
           help: 'HenrikDev APIのAPI Key(環境変数)が未設定の場合、有効化していても戦績確認は利用できません。',
         },
       },
+      enabledAgents: {
+        type: 'array',
+        title: 'ランダム抽選対象エージェント',
+        description: 'サーバーで利用するAgentを選択します。最低1人を登録してください。',
+        uniqueItems: true,
+        minItems: 1,
+        maxItems: VALORANT_AGENTS.length,
+        items: { type: 'string', enum: [...VALORANT_AGENTS] },
+        default: [...VALORANT_AGENTS],
+        'x-herta-ui': {
+          section: 'エージェント',
+          help: '全30人から選択。専用のエージェント管理画面でも登録・確認できます。',
+        },
+      },
     },
     required: ['enabled'],
   },
@@ -43,8 +95,12 @@ export const valorantManifest: PluginManifest = {
   commands: [
     {
       name: 'valorant',
-      description: 'VALORANTの戦績確認・Riot ID連携を行います',
+      description: 'VALORANTの戦績確認・Riot ID連携・VCエージェント抽選',
       subcommands: [
+        {
+          name: 'random',
+          description: '参加中のVCメンバーへエージェントを重複なしでランダム割り当て',
+        },
         {
           name: 'link',
           description: 'あなたのDiscordアカウントへRiot IDを連携します',
