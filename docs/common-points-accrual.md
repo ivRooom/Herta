@@ -7,7 +7,8 @@ Tracking: Herta#569 / #538, Web#598, Platform#103. Depends on Herta PR570
 client/Contracts v1 and Web PR599 receiver. This staged patch wires Bot/shared
 and Studio achievement sources behind a separately disabled accrual flag. It
 does not yet wire ordinary message/session/participation/poll activity, enable
-the sender, switch UI reads, seed/enable policy, or apply a production migration.
+the sender, seed/enable policy, or apply a production migration. A self-only Bot
+wallet command is prepared below; Studio wallet adoption remains outstanding.
 The MBTI completion/achievement transaction and source dedupe fixes also apply
 while accrual is disabled; no common credit is then recorded.
 
@@ -127,6 +128,26 @@ as a negative control and rejects it after the fix. Source bodies/receipt totals
 are retained across lease crash/reclaim. Health logs only aggregate pending /
 quarantined count/oldest age; warnings throttle to once per minute and never log
 IDs, payloads, secret, SQL errors or auth headers. No external email is sent.
+
+## Private Bot wallet read
+
+`/common-points` has no target-user option. Only the authenticated Discord caller
+in the configured guild can query the canonical Web balance. The command defers
+ephemerally before HTTP, uses the server-only signed client on every invocation
+(no local cache), disables mentions, and never publishes balances to a channel.
+Disabled/missing configuration or wrong guild performs no API IO. Unlinked,
+unavailable and malformed results remain explicitly unavailable, never zero or
+an activity-score fallback. The reply labels confirmed balance and explains that
+pending earnings appear after processing; it links to member's existing /points.
+Existing public activity/season rankings stay separate. The command registry,
+help provider and command health catalog include this core command. Production
+registration/deploy still require the reviewed release approval; none was run.
+
+Seven command tests plus six registry and five catalog tests pass. Independent
+read-only privacy/scope/registration review found no blocker. The Web opt-in PG
+fixture can load this actual compiled command via HERTA_COMMON_POINTS_COMMAND
+and assert private defer and rendered balance alongside member/admin/ledger.
+This is a synthetic command-adapter test, not live Discord/browser acceptance.
 
 ## Migration and rollback
 

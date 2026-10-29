@@ -1,4 +1,5 @@
 import { communityActivityCommands } from '../commands/community-activity.js';
+import { commonPointsCommands } from '../commands/common-points.js';
 import { communityActivityExportCommands } from '../commands/community-activity-export.js';
 import { coreInformationCommands } from '../commands/core-info.js';
 import { leaderboardCommands } from '../commands/leaderboard.js';
@@ -66,6 +67,7 @@ const CORE_COMMAND_NAMES = new Set(
     ...coreInformationCommands,
     ...coreUtilityCommands,
     ...communityActivityCommands,
+    ...commonPointsCommands,
     ...communityActivityExportCommands,
     ...leaderboardCommands,
     pingCommand,
