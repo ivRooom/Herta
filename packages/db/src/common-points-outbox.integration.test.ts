@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { createRequire } from 'node:module';
 import test from 'node:test';
 import { PrismaClient } from '@prisma/client';
 import { commonPointsJstDay, freezeCommonPointsTariff } from './common-points-accrual.js';
@@ -10,6 +13,12 @@ import {
   commitCommonPointAccrualInTransaction,
 } from './common-points-outbox.js';
 import type { CommonPointSourceIncrement } from './common-points-outbox.js';
+import { syncAchievementUnlocks } from './achievement-unlocks.js';
+import {
+  creditAchievementUnlockIfEnabled,
+  achievementCommonPointSourceId,
+} from './common-points-achievement.js';
+import { createMbtiWebQuizSession, completeMbtiWebQuizSession } from './mbti-web-quiz-session.js';
 
 test(
   'real isolated PG17: source mutation, daily floors/caps, receipt and outbox commit exactly once',
@@ -19,6 +28,9 @@ test(
   },
   async () => {
     const name = `herta-points-source-test-${randomUUID()}`;
+    const fixtureDirectory = mkdtempSync(join(tmpdir(), 'herta-points-fixture-'));
+    const originalAccrualFlag = process.env.HERTA_COMMON_POINTS_ACCRUAL_ENABLED;
+    const originalGuild = process.env.HERTA_POINTS_GUILD_ID;
     const docker = (...args: string[]) =>
       execFileSync('docker', args, {
         encoding: 'utf8',
@@ -55,10 +67,11 @@ test(
       const metadata = JSON.parse(docker('inspect', name))[0];
       const port = Number(metadata.NetworkSettings.Ports['5432/tcp'][0].HostPort);
       assert.ok(Number.isInteger(port) && port > 0);
+      const fixtureUrl = `postgresql://postgres:synthetic-test-only@127.0.0.1:${port}/postgres?connection_limit=12&pool_timeout=5`;
       prisma = new PrismaClient({
         datasources: {
           db: {
-            url: `postgresql://postgres:synthetic-test-only@127.0.0.1:${port}/postgres?connection_limit=12&pool_timeout=5`,
+            url: fixtureUrl,
           },
         },
       });
@@ -74,6 +87,40 @@ test(
         }
       }
       assert.ok(ready);
+      // Build the existing source tables from the current Prisma schema, excluding
+      // only the four new models. Apply the actual new migration below, including
+      // its non-Prisma constraints/triggers. This never runs against an env URL.
+      const currentSchema = readFileSync(
+        new URL('../prisma/schema.prisma', import.meta.url),
+        'utf8',
+      );
+      const oldSchema = currentSchema.replace(
+        /\nmodel CommonPoints(?:Policy|DailyCounter|SourceReceipt|Outbox) \{[\s\S]*?\n\}/g,
+        '',
+      );
+      assert.equal((currentSchema.match(/\nmodel CommonPoints/g) ?? []).length, 4);
+      assert.equal(oldSchema.includes('\nmodel CommonPoints'), false);
+      const schemaPath = join(fixtureDirectory, 'source.prisma');
+      writeFileSync(schemaPath, oldSchema, { mode: 0o600 });
+      execFileSync(
+        process.execPath,
+        [
+          join(
+            dirname(createRequire(import.meta.url).resolve('prisma/package.json')),
+            'build/index.js',
+          ),
+          'db',
+          'push',
+          '--schema',
+          schemaPath,
+          '--skip-generate',
+        ],
+        {
+          env: { ...process.env, DATABASE_URL: fixtureUrl },
+          timeout: 30_000,
+          stdio: ['pipe', 'pipe', 'pipe'],
+        },
+      );
       execFileSync(
         'docker',
         ['exec', '-i', name, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'],
@@ -245,7 +292,146 @@ test(
       assert.equal(receipts[0]?.total, total);
       assert.equal(sourceCount[0]?.count, receipts[0]?.count);
       assert.equal(sourceCount[0]?.count, 32n);
+      // Actual shared Bot/Studio achievement source code, default-off compatibility.
+      process.env.HERTA_COMMON_POINTS_ACCRUAL_ENABLED = 'false';
+      process.env.HERTA_POINTS_GUILD_ID = guildId;
+      assert.deepEqual(
+        await syncAchievementUnlocks(db, guildId, discordUserId, ['legacy-one', 'legacy-one']),
+        ['legacy-one'],
+      );
+      process.env.HERTA_COMMON_POINTS_ACCRUAL_ENABLED = 'true';
+      const unlocked = await Promise.all(
+        Array.from({ length: 8 }, () =>
+          syncAchievementUnlocks(db, guildId, discordUserId, ['auto-one', 'auto-one']),
+        ),
+      );
+      assert.equal(unlocked.flat().length, 1);
+      await db.$executeRaw`INSERT INTO achievement_unlocks(guild_id,user_id,achievement_id) VALUES (${guildId},${discordUserId},'blocked:blocked-one')`;
+      assert.deepEqual(
+        await syncAchievementUnlocks(db, guildId, discordUserId, ['blocked-one']),
+        [],
+      );
+      // Regrant uses a permanent receipt, so native achievement state can change
+      // without changing the common wallet a second time.
+      await db.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${`achievement:${guildId}:${discordUserId}`},0))`;
+        await tx.$executeRaw`DELETE FROM achievement_unlocks WHERE guild_id=${guildId} AND user_id=${discordUserId} AND achievement_id='auto-one'`;
+        await tx.$executeRaw`INSERT INTO achievement_unlocks(guild_id,user_id,achievement_id) VALUES (${guildId},${discordUserId},'auto-one')`;
+        await creditAchievementUnlockIfEnabled(tx, guildId, discordUserId, 'auto-one', new Date());
+      });
+      // Operator baseline tombstones prevent awarding an imported pre-T unlock again.
+      const tombstoneId = randomUUID(),
+        legacySource = achievementCommonPointSourceId('legacy-one');
+      await db.$executeRaw`INSERT INTO common_points_source_receipts(id,guild_id,discord_user_id,metric,source_id,input_sha256,credited_points) VALUES (${tombstoneId}::uuid,${guildId},${discordUserId},'achievement_unlocks',${legacySource},${'a'.repeat(64)},0)`;
+      await db.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT 1 FROM pg_advisory_xact_lock(hashtextextended(${`achievement:${guildId}:${discordUserId}`},0))`;
+        await tx.$executeRaw`DELETE FROM achievement_unlocks WHERE guild_id=${guildId} AND user_id=${discordUserId} AND achievement_id='legacy-one'`;
+        await tx.$executeRaw`INSERT INTO achievement_unlocks(guild_id,user_id,achievement_id) VALUES (${guildId},${discordUserId},'legacy-one')`;
+        await creditAchievementUnlockIfEnabled(
+          tx,
+          guildId,
+          discordUserId,
+          'legacy-one',
+          new Date(),
+        );
+      });
+      await db.$executeRaw`CREATE TRIGGER synthetic_outbox_failure BEFORE INSERT ON common_points_outbox FOR EACH ROW EXECUTE FUNCTION synthetic_outbox_failure()`;
+      const failureUser = '400000000000000000';
+      await assert.rejects(syncAchievementUnlocks(db, guildId, failureUser, ['auto-failure']));
+      assert.equal(
+        await db.achievementUnlock.count({ where: { guildId, userId: failureUser } }),
+        0,
+      );
+      await db.$executeRaw`DROP TRIGGER synthetic_outbox_failure ON common_points_outbox`;
+      assert.deepEqual(await syncAchievementUnlocks(db, guildId, failureUser, ['auto-failure']), [
+        'auto-failure',
+      ]);
+      // Web MBTI completion, personal history, stats, achievement and outbox share
+      // one owner transaction: a late delivery-state failure keeps session pending.
+      const quiz = await createMbtiWebQuizSession(db, {
+        guildId,
+        discordUserId: failureUser,
+        questions: [],
+      });
+      const completion = {
+        resultType: 'INTJ',
+        resultIdentity: 'A',
+        achievementIds: ['mbti-fixture'],
+        history: {
+          completionKey: `web:${quiz.id}`,
+          guildId,
+          discordUserId: failureUser,
+          resultType: 'INTJ',
+          resultIdentity: 'A',
+          scores: {},
+          percentages: {},
+          questionCount: 0,
+          scoringVersion: 'synthetic-v1',
+          source: 'web' as const,
+          completedAt: new Date(),
+        },
+        stats: {
+          guildId,
+          resultType: 'INTJ',
+          eiScore: 0,
+          snScore: 0,
+          tfScore: 0,
+          jpScore: 0,
+          answers: [],
+        },
+      };
+      assert.equal(
+        await completeMbtiWebQuizSession(db, quiz.id, {
+          ...completion,
+          history: { ...completion.history, discordUserId },
+        }),
+        null,
+      );
+      await assert.rejects(
+        completeMbtiWebQuizSession(db, quiz.id, {
+          ...completion,
+          stats: { ...completion.stats, guildId: '999999999999999999' },
+        }),
+        /completion_scope/,
+      );
+      await db.$executeRaw`CREATE TRIGGER synthetic_outbox_failure BEFORE INSERT ON common_points_outbox FOR EACH ROW EXECUTE FUNCTION synthetic_outbox_failure()`;
+      await assert.rejects(completeMbtiWebQuizSession(db, quiz.id, completion));
+      assert.equal(
+        (await db.mbtiWebQuizSession.findUnique({ where: { id: quiz.id } }))?.status,
+        'pending',
+      );
+      assert.equal(
+        await db.mbtiPersonalResult.count({
+          where: { completionKey: completion.history.completionKey },
+        }),
+        0,
+      );
+      await db.$executeRaw`DROP TRIGGER synthetic_outbox_failure ON common_points_outbox`;
+      assert.equal(
+        (await completeMbtiWebQuizSession(db, quiz.id, completion))?.status,
+        'completed',
+      );
+      assert.equal(await completeMbtiWebQuizSession(db, quiz.id, completion), null);
+      assert.equal(
+        await db.mbtiPersonalResult.count({
+          where: { completionKey: completion.history.completionKey },
+        }),
+        1,
+      );
+      const finalReceipt = await db.$queryRaw<
+        Array<{ count: bigint; total: bigint }>
+      >`SELECT count(*)::bigint AS count,sum(credited_points)::bigint AS total FROM common_points_source_receipts`;
+      const finalOutbox = await db.$queryRaw<
+        Array<{ total: bigint }>
+      >`SELECT sum((body::jsonb->>'amount')::bigint)::bigint AS total FROM common_points_outbox`;
+      assert.equal(finalReceipt[0]?.count, 36n);
+      assert.equal(finalReceipt[0]?.total, 1_000_097n);
+      assert.equal(finalOutbox[0]?.total, finalReceipt[0]?.total);
     } finally {
+      if (originalAccrualFlag === undefined) delete process.env.HERTA_COMMON_POINTS_ACCRUAL_ENABLED;
+      else process.env.HERTA_COMMON_POINTS_ACCRUAL_ENABLED = originalAccrualFlag;
+      if (originalGuild === undefined) delete process.env.HERTA_POINTS_GUILD_ID;
+      else process.env.HERTA_POINTS_GUILD_ID = originalGuild;
       await prisma?.$disconnect();
       if (created) {
         const owner = docker(
@@ -257,6 +443,7 @@ test(
         assert.equal(owner, name);
         docker('rm', '-f', name);
       }
+      rmSync(fixtureDirectory, { recursive: true, force: true });
     }
   },
 );

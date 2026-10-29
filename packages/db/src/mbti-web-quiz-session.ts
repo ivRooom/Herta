@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
+import { syncAchievementUnlocksInTransaction } from './achievement-unlocks.js';
 import { saveMbtiPersonalResult, type MbtiPersonalResultInput } from './mbti-personal-results.js';
 import {
   recordMbtiQuizCompletionInTransaction,
@@ -167,11 +168,25 @@ export async function completeMbtiWebQuizSession(
     resultIdentity: string;
     history: MbtiPersonalResultInput;
     stats: MbtiQuizCompletionInput;
+    achievementIds?: readonly string[];
   },
 ): Promise<MbtiWebQuizSessionRecord | null> {
+  if (
+    input.history.resultType !== input.resultType ||
+    input.history.resultIdentity !== input.resultIdentity ||
+    input.stats.guildId !== input.history.guildId ||
+    input.stats.resultType !== input.resultType
+  )
+    throw new Error('invalid_mbti_completion_scope');
   return prisma.$transaction(async (tx) => {
     const result = await tx.mbtiWebQuizSession.updateMany({
-      where: { id: sessionId, status: 'pending', expiresAt: { gt: new Date() } },
+      where: {
+        id: sessionId,
+        guildId: input.history.guildId,
+        discordUserId: input.history.discordUserId,
+        status: 'pending',
+        expiresAt: { gt: new Date() },
+      },
       data: {
         status: 'completed',
         completedAt: input.history.completedAt,
@@ -182,6 +197,15 @@ export async function completeMbtiWebQuizSession(
     if (result.count === 0) return null;
     const saved = await saveMbtiPersonalResult(tx, input.history);
     if (saved.count) await recordMbtiQuizCompletionInTransaction(tx, input.stats);
+    if (input.achievementIds?.length) {
+      await syncAchievementUnlocksInTransaction(
+        tx,
+        input.history.guildId,
+        input.history.discordUserId,
+        input.achievementIds,
+        input.history.completedAt,
+      );
+    }
     const session = await tx.mbtiWebQuizSession.findUnique({ where: { id: sessionId } });
     return session ? toRecord(session) : null;
   });

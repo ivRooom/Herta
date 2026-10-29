@@ -1,10 +1,12 @@
 # Common points: frozen accrual and source outbox primitives
 
 Tracking: Herta#569 / #538, Web#598, Platform#103. Depends on Herta PR570
-client/Contracts v1 and Web PR599 receiver. This staged patch does not wire Bot
-or Studio source hooks, run a sender, switch UI reads, seed or enable policy, or
-apply a production migration. Existing runtime behavior is unchanged until those
-call sites and reviewed rollout gates are implemented.
+client/Contracts v1 and Web PR599 receiver. This staged patch wires Bot/shared
+and Studio achievement sources behind a separately disabled accrual flag. It
+does not yet wire ordinary message/session/participation/poll activity, run a
+sender, switch UI reads, seed/enable policy, or apply a production migration.
+The MBTI completion/achievement transaction and source dedupe fixes also apply
+while accrual is disabled; no common credit is then recorded.
 
 ## Fixed calculation
 
@@ -25,6 +27,32 @@ identity decisions at their actual source hooks. XP, Minecraft duration,
 character units, season/challenge scores and badges cannot mint through this API.
 Use BigInt; do not round increments independently or turn profile snapshots into
 credits. A zero-point increment still persists its source receipt and counter.
+
+### Connected achievement sources
+
+Bot automatic unlocks delegate to shared DB logic; Studio's existing shared MBTI
+unlock and manual grant use that same accrual hook. It requires
+`HERTA_COMMON_POINTS_ACCRUAL_ENABLED=true` **and** matching `HERTA_POINTS_GUILD_ID`.
+Without that flag/match it never queries the new points tables. No production
+flag/Secret was set by this patch. Candidate IDs are deduped and only actual
+INSERT success can earn. A permanent guild/user/achievement claim prevents
+regrant credit; revoke changes the achievement state without rewriting/debiting
+the common wallet. Corrections to common balances use the audited Web admin API.
+
+Studio Web MBTI now includes the server-fixed achievement ID in its existing
+completion transaction: session/history/stats/achievement/outbox all commit or
+all roll back. The history/stats and persisted session subject/guild/result must
+match. It no longer swallows a separate post-commit achievement failure. Already
+completed historical sessions are not automatically repaired/credited; inventory
+and approved owner backfill remain migration tasks.
+
+Before enabling, seed zero-credit source tombstones for pre-cutoff awards
+included in the opening/import or already awarded by the common system, using
+`achievementCommonPointSourceId`. Inspect revocation audit history as well as
+visible unlocks: deleted/revoked rows do not prove whether a prior award exists.
+If adopting once-ever eligibility across legacy history, unknown prior awards
+must remain unresolved for adjudication. A guild baseline flag alone cannot
+certify claim completeness or absence of overlap.
 
 At the cutoff seed all relevant current-day counters from reviewed source data,
 including partial hours and already consumed caps, before marking
@@ -99,18 +127,26 @@ pnpm --filter @herta/db build
 pnpm --filter @herta/db exec tsx --test src/common-points-accrual.test.ts
 # Local Docker; cached image only, loopback, tmpfs, memory384MiB, no cloud access.
 HERTA_RUN_PG_POINTS_TESTS=1 pnpm --filter @herta/db exec tsx --test \
-  src/common-points-accrual.test.ts src/common-points-outbox.integration.test.ts
+  src/common-points-accrual.test.ts src/common-points-achievement.test.ts \
+  src/common-points-outbox.integration.test.ts
 ```
 
-Five pure tests plus the real PostgreSQL17/Prisma integration passed. Measured32
-source mutations =32 immutable receipts; pending outbox total = receipt total
-**1,000,067 synthetic points**. Covers20 concurrent writes, eight same-event
+Eight pure tests plus the real PostgreSQL17/Prisma integration passed. The first
+cohort measures32 source mutations =32 receipts, total1,000,067; after actual
+achievement/MBTI cases and a synthetic imported-claim tombstone, final
+**36 receipts / outbox total1,000,097 synthetic points** agree. Covers20 concurrent writes, eight same-event
 retries, changed-input rejection, property-order-independent input hash,
 source, late outbox and post-helper outer-transaction failure rollback/retry,
 zero credits, daily caps, seeded
-partial time/caps and chunk splitting. Fixture container was owner-label checked
-and removed. This is source-side synthetic evidence, not production money or
-actual Bot/Studio event processing. The PG fixture is opt-in, not ordinary CI.
+partial time/caps and chunk splitting. Actual shared source functions test eight
+concurrent unlocks, duplicate/blocked IDs, regrant/imported claim suppression,
+achievement and MBTI late-outbox rollback/retry, wrong-subject rejection and one
+completion history. Native source tables are initialized from the current schema
+excluding only the four new models, using db push to an explicit synthetic
+loopback URL, then the real new migration is applied. Production URL environment
+is never selected. Owner-labelled container and temporary schema are removed.
+This is synthetic source evidence, not production money or actual Discord/browser
+delivery. The PG fixture is opt-in, not ordinary CI.
 
 Prisma schema validation passed with a synthetic unreachable URL (no DB access).
 The first real PG run caught Prisma's inability to deserialize advisory-lock
