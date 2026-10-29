@@ -2,6 +2,67 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// Common wallet is owned by ivrm-web. These are SOURCE accrual/transport state,
+// never a local spendable balance. Operator-reviewed baseline required to enable.
+model CommonPointsPolicy {
+  guildId          String   @id @map("guild_id")
+  epoch            String   @db.Uuid
+  ruleVersion      String   @map("rule_version")
+  tariffJson       String   @map("tariff_json")
+  cutoffAt         DateTime @map("cutoff_at") @db.Timestamptz(3)
+  enabled          Boolean  @default(false)
+  baselineComplete Boolean  @default(false) @map("baseline_complete")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("common_points_policies")
+}
+
+model CommonPointsDailyCounter {
+  guildId       String   @map("guild_id")
+  discordUserId String   @map("discord_user_id")
+  activityDay   DateTime @map("activity_day") @db.Date
+  metric        String
+  units         BigInt
+
+  @@id([guildId, discordUserId, activityDay, metric])
+  @@map("common_points_daily_counters")
+}
+
+model CommonPointsSourceReceipt {
+  id             String               @id @default(uuid()) @db.Uuid
+  guildId        String               @map("guild_id")
+  discordUserId  String               @map("discord_user_id")
+  metric         String
+  sourceId       String               @map("source_id")
+  inputSha256    String               @map("input_sha256")
+  creditedPoints BigInt               @map("credited_points")
+  createdAt      DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  outbox         CommonPointsOutbox[]
+
+  @@unique([guildId, discordUserId, metric, sourceId], map: "common_points_source_identity_key")
+  @@map("common_points_source_receipts")
+}
+
+model CommonPointsOutbox {
+  id              String                    @id @default(uuid()) @db.Uuid
+  sourceReceiptId String                    @map("source_receipt_id") @db.Uuid
+  earningId       String                    @unique @map("earning_id")
+  body            String
+  bodySha256      String                    @map("body_sha256")
+  status          String                    @default("pending")
+  attempts        Int                       @default(0)
+  nextAttemptAt   DateTime                  @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  leaseToken      String?                   @map("lease_token") @db.Uuid
+  leaseExpiresAt  DateTime?                 @map("lease_expires_at") @db.Timestamptz(3)
+  acknowledgedAt  DateTime?                 @map("acknowledged_at") @db.Timestamptz(3)
+  lastErrorCode   String?                   @map("last_error_code")
+  createdAt       DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  sourceReceipt   CommonPointsSourceReceipt @relation(fields: [sourceReceiptId], references: [id], onDelete: Restrict)
+
+  @@index([status, nextAttemptAt])
+  @@map("common_points_outbox")
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")

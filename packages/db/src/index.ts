@@ -13,6 +13,8 @@ export * from './community-activity-insights.js';
 export * from './community-activity-channel-breakdown.js';
 export * from './community-game-breakdown.js';
 export * from './community-points-leaderboard.js';
+export * from './common-points-accrual.js';
+export * from './common-points-outbox.js';
 export * from './community-season-snapshot.js';
 export * from './community-user-activity-summary.js';
 export * from './community-user-game-breakdown.js';
