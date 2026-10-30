@@ -132,10 +132,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
     data.matchId === undefined || data.matchId === null ? null : (data.matchId as string);
   try {
     const session = await prisma.valorantPickSession.findFirst({
-      where: { id: data.sessionId, guildId, status: 'COMPLETED' },
+      where: { id: data.sessionId, guildId, status: 'COMPLETED', creatorId: { not: 'redacted' } },
       select: { id: true, participants: { select: { userId: true } } },
     });
-    if (!session)
+    if (!session || session.participants.length === 0)
       return NextResponse.json({ error: '抽選セッションが見つかりません。' }, { status: 404 });
     const roster = await prisma.valorantAgent.findMany({
       where: { guildId },

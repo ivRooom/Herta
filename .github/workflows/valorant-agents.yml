@@ -65,16 +65,17 @@ jobs:
           # Compare that existing drift with the post-change drift; any new drift fails.
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE DATABASE valorant_baseline_test TEMPLATE valorant_test'
           baseline_url="${DATABASE_URL%/*}/valorant_baseline_test"
-          psql "$baseline_url" -v ON_ERROR_STOP=1 -c 'DROP TABLE valorant_agents; DROP TABLE valorant_rosters;'
+          psql "$baseline_url" -v ON_ERROR_STOP=1 -c 'DROP TABLE valorant_match_results; DROP TABLE valorant_pick_participants; DROP TABLE valorant_pick_sessions; DROP TABLE valorant_agents; DROP TABLE valorant_rosters;'
           node --input-type=module -e '
             import fs from "node:fs";
             let schema = fs.readFileSync("packages/db/prisma/schema.prisma", "utf8");
-            for (const name of ["ValorantAgent", "ValorantRoster"]) {
+            for (const name of ["ValorantAgent", "ValorantRoster", "ValorantPickSession", "ValorantPickParticipant", "ValorantMatchResult"]) {
               const pattern = new RegExp("model " + name + " \\{[\\s\\S]*?\\n\\}", "g");
               if ([...schema.matchAll(pattern)].length !== 1) throw new Error("Expected model " + name);
               schema = schema.replace(pattern, "");
             }
             schema = schema.replace(/^.*valorantRoster\s+ValorantRoster\?.*$/m, "");
+            schema = schema.replace(/^.*valorantPickSessions\s+ValorantPickSession\[\].*$/m, "");
             fs.writeFileSync(process.env.RUNNER_TEMP + "/valorant-baseline.prisma", schema);
           '
           pnpm --filter @herta/db exec prisma migrate diff --from-url "$baseline_url" --to-schema-datamodel "$RUNNER_TEMP/valorant-baseline.prisma" --script > "$RUNNER_TEMP/baseline-drift.sql"

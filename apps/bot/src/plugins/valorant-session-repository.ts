@@ -168,6 +168,7 @@ export async function mutateValorantSession(
       });
       return { status: 'ok', session, changed: true };
     },
-    { isolationLevel: 'Serializable' },
+    // The session row is locked with FOR UPDATE. ReadCommitted sees prior joins after waiting.
+    { isolationLevel: 'ReadCommitted' },
   );
 }

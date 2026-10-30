@@ -100,6 +100,7 @@ async function PluginDetailPage({
             guildId={guildId}
             initialEnabled={plugin.enabled}
             initialConfig={visibleConfig}
+            canManagePlugin={canManageValorantPlugin}
           />
         ) : allFieldsReadable && allFieldsEditable ? (
           <div className="rounded-2xl border border-border bg-surface p-6 shadow-card">

@@ -87,7 +87,13 @@ async function main() {
         void cleanDailyBonusHistory(getPrismaClient()).catch(() =>
           logger.warn('Daily bonus retention cleanup failed'),
         );
-        void anonymizeOldValorantSessions(getPrismaClient()).catch(() =>
+        const drain = async () => {
+          let processed: number;
+          do {
+            processed = await anonymizeOldValorantSessions(getPrismaClient());
+          } while (processed === 50);
+        };
+        void drain().catch(() =>
           logger.warn('VALORANT participant-ID retention cleanup failed'),
         );
       };
