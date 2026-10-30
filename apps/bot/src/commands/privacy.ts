@@ -94,46 +94,47 @@ async function executeWebLink(interaction: ChatInputCommandInteraction) {
 async function executeExport(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const [consent, sessions, transcriptSegments, explicitConsents, erasureRequest, mbtiResults] = await Promise.all([
-    getUserDataConsent(prisma, interaction.user.id),
-    listVcRecapSessionsForUser(prisma, interaction.user.id),
-    listVcRecapTranscriptSegmentsForUser(prisma, interaction.user.id),
-    prisma.vcRecapExplicitConsent.findMany({
-      where: { userId: interaction.user.id },
-      select: {
-        purpose: true,
-        policyVersion: true,
-        consentedAt: true,
-        revokedAt: true,
-        updatedAt: true,
-      },
-      orderBy: { purpose: 'asc' },
-    }),
-    prisma.vcRecapErasureRequest.findUnique({
-      where: { userId: interaction.user.id },
-      select: {
-        requestedAt: true,
-        storageDeletionVerifiedAt: true,
-        updatedAt: true,
-      },
-    }),
-    prisma.mbtiPersonalResult.findMany({
-      where: { discordUserId: interaction.user.id },
-      orderBy: [{ completedAt: 'desc' }, { id: 'desc' }],
-      select: {
-        id: true,
-        guildId: true,
-        resultType: true,
-        resultIdentity: true,
-        scores: true,
-        percentages: true,
-        questionCount: true,
-        scoringVersion: true,
-        source: true,
-        completedAt: true,
-      },
-    }),
-  ]);
+  const [consent, sessions, transcriptSegments, explicitConsents, erasureRequest, mbtiResults] =
+    await Promise.all([
+      getUserDataConsent(prisma, interaction.user.id),
+      listVcRecapSessionsForUser(prisma, interaction.user.id),
+      listVcRecapTranscriptSegmentsForUser(prisma, interaction.user.id),
+      prisma.vcRecapExplicitConsent.findMany({
+        where: { userId: interaction.user.id },
+        select: {
+          purpose: true,
+          policyVersion: true,
+          consentedAt: true,
+          revokedAt: true,
+          updatedAt: true,
+        },
+        orderBy: { purpose: 'asc' },
+      }),
+      prisma.vcRecapErasureRequest.findUnique({
+        where: { userId: interaction.user.id },
+        select: {
+          requestedAt: true,
+          storageDeletionVerifiedAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.mbtiPersonalResult.findMany({
+        where: { discordUserId: interaction.user.id },
+        orderBy: [{ completedAt: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true,
+          guildId: true,
+          resultType: true,
+          resultIdentity: true,
+          scores: true,
+          percentages: true,
+          questionCount: true,
+          scoringVersion: true,
+          source: true,
+          completedAt: true,
+        },
+      }),
+    ]);
 
   const exportPayload = {
     userId: interaction.user.id,

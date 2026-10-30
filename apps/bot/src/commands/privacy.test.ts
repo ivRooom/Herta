@@ -43,13 +43,15 @@ describe('privacy export', () => {
       { id: 'second', guildId: 'guild-b', resultType: 'ENFP' },
     ];
     mocks.findMany.mockResolvedValue(rows);
-    mocks.newConsentFind.mockResolvedValueOnce([{
-      purpose: 'openai_audio_processing',
-      policyVersion: 'vc-recap-openai-audio-2026-10-31-v1',
-      consentedAt: new Date('2026-10-31T01:00:00Z'),
-      revokedAt: null,
-      updatedAt: new Date('2026-10-31T01:00:00Z'),
-    }]);
+    mocks.newConsentFind.mockResolvedValueOnce([
+      {
+        purpose: 'openai_audio_processing',
+        policyVersion: 'vc-recap-openai-audio-2026-10-31-v1',
+        consentedAt: new Date('2026-10-31T01:00:00Z'),
+        revokedAt: null,
+        updatedAt: new Date('2026-10-31T01:00:00Z'),
+      },
+    ]);
     mocks.erasureFind.mockResolvedValueOnce(null);
     const interaction = {
       user: { id: 'owner-user' },
@@ -67,13 +69,15 @@ describe('privacy export', () => {
     expect(mocks.newConsentFind).toHaveBeenCalledWith(
       expect.objectContaining({ where: { userId: 'owner-user' } }),
     );
-    expect(exported.explicitVoiceConsents).toEqual([{
-      purpose: 'openai_audio_processing',
-      policyVersion: 'vc-recap-openai-audio-2026-10-31-v1',
-      consentedAt: '2026-10-31T01:00:00.000Z',
-      revokedAt: null,
-      updatedAt: '2026-10-31T01:00:00.000Z',
-    }]);
+    expect(exported.explicitVoiceConsents).toEqual([
+      {
+        purpose: 'openai_audio_processing',
+        policyVersion: 'vc-recap-openai-audio-2026-10-31-v1',
+        consentedAt: '2026-10-31T01:00:00.000Z',
+        revokedAt: null,
+        updatedAt: '2026-10-31T01:00:00.000Z',
+      },
+    ]);
     expect(exported.voiceErasureRequest).toBeNull();
     expect(mocks.transcript).toHaveBeenCalledWith(expect.anything(), 'owner-user');
     expect(exported.voiceTranscriptSegments).toEqual([
