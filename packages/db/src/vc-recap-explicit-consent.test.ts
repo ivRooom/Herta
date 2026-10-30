@@ -3,6 +3,8 @@ import type { PrismaClient } from '@prisma/client';
 import test from 'node:test';
 import {
   evaluateVcRecapExplicitConsent,
+  setVcRecapOpenAiAudioConsent,
+  VC_RECAP_OPENAI_AUDIO_POLICY_VERSION,
   requestVcRecapErasure,
   VC_RECAP_LONG_TERM_CONSENT_VERSION,
   type VcRecapExplicitConsentRecord,
@@ -103,4 +105,40 @@ test('削除要求は障壁作成と新同意の取り消しを同一transaction
   );
   assert.equal((calls[0]?.data as { where: { userId: string } }).where.userId, 'user-1');
   assert.equal((calls[1]?.data as { data: { consentedAt: null } }).data.consentedAt, null);
+});
+
+test('OpenAI音声送信は旧文字起こし同意と新しい個別同意を両方要求', async () => {
+  const writes: Array<unknown> = [];
+  let legacy = true;
+  let erasure = false;
+  const tx = {
+    userDataConsent: { findUnique: async () => ({ voiceTranscriptionConsent: legacy }) },
+    vcRecapErasureRequest: { findUnique: async () => (erasure ? { userId: 'user-1' } : null) },
+    vcRecapExplicitConsent: {
+      upsert: async (data: unknown) => {
+        writes.push(data);
+      },
+    },
+  };
+  const fake = {
+    $transaction: async (callback: (tx: typeof tx) => Promise<boolean>) => callback(tx),
+  } as unknown as PrismaClient;
+  legacy = false;
+  assert.equal(await setVcRecapOpenAiAudioConsent(fake, 'user-1', true), false);
+  assert.equal(writes.length, 0);
+  legacy = true;
+  erasure = true;
+  assert.equal(await setVcRecapOpenAiAudioConsent(fake, 'user-1', true), false);
+  assert.equal(writes.length, 0);
+  erasure = false;
+  assert.equal(await setVcRecapOpenAiAudioConsent(fake, 'user-1', true), true);
+  assert.equal(writes.length, 1);
+  const grant = writes[0] as { create: { purpose: string; policyVersion: string; consentedAt: Date } };
+  assert.equal(grant.create.purpose, 'openai_audio_processing');
+  assert.equal(grant.create.policyVersion, VC_RECAP_OPENAI_AUDIO_POLICY_VERSION);
+  assert.ok(grant.create.consentedAt instanceof Date);
+  assert.equal(await setVcRecapOpenAiAudioConsent(fake, 'user-1', false), true);
+  const revoke = writes[1] as { update: { consentedAt: null; revokedAt: Date } };
+  assert.equal(revoke.update.consentedAt, null);
+  assert.ok(revoke.update.revokedAt instanceof Date);
 });
