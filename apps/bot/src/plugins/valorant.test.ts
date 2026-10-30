@@ -23,6 +23,7 @@ function fixture(map: string | null = null, enabled = true) {
   const followUp = vi.fn().mockResolvedValue({ id: 'posted-message' });
   const editReply = vi.fn();
   const deferReply = vi.fn();
+  const reply = vi.fn();
   const interaction = {
     guildId: 'guild',
     channelId: 'channel',
@@ -32,6 +33,7 @@ function fixture(map: string | null = null, enabled = true) {
     deferred: false,
     replied: false,
     deferReply,
+    reply,
     editReply,
     followUp,
   };
@@ -50,6 +52,7 @@ function fixture(map: string | null = null, enabled = true) {
     followUp,
     editReply,
     deferReply,
+    reply,
     run: async () => {
       const commands = await valorantPlugin.provideCommands!(context);
       await commands[0]!.execute(interaction as unknown as ChatInputCommandInteraction);
@@ -94,6 +97,8 @@ describe('VALORANT button recruitment slash command', () => {
     await f.run();
     expect(f.create).not.toHaveBeenCalled();
     expect(f.followUp).not.toHaveBeenCalled();
-    expect(f.editReply).toHaveBeenCalledWith(expect.stringContaining('無効'));
+    expect(f.reply).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.stringContaining('無効'), flags: MessageFlags.Ephemeral,
+    }));
   });
 });
