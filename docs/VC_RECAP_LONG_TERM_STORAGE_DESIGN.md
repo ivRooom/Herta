@@ -27,7 +27,8 @@ S3長期保存領域は、既存のPostgreSQLバックアップ用S3とは**別�
 
 ### DBモデル（新しい同意・削除フェンスの基盤はmainに導入済み）
 
-- **実装済みの基盤（PR #601）**: `VcRecapExplicitConsent` は `userId + purpose` の複合主キー、`policyVersion`, `consentedAt`, `revokedAt`, `updatedAt` を保持する。目的値は `transcription`, `transcript_long_term`, `audio_long_term`, `openai_audio_processing`。`VcRecapErasureRequest` は `userId`, `requestedAt`, `storageDeletionVerifiedAt`, `updatedAt` を保持する。旧同意からの自動移行はしない。\n- **今後必要**: UIで提示した文書版・本人操作・拒否・撤回の監査証跡と、削除ジョブの詳細状態は現在の同意基盤だけでは足りない。履歴テーブルまたは追記専用監査記録の設計・Migrationを別途実装し、旧ロール付与を本人の新同意と誤認しない。
+- **実装済みの基盤（PR #601）**: `VcRecapExplicitConsent` は `userId + purpose` の複合主キー、`policyVersion`, `consentedAt`, `revokedAt`, `updatedAt` を保持する。目的値は `transcription`, `transcript_long_term`, `audio_long_term`, `openai_audio_processing`。`VcRecapErasureRequest` は `userId`, `requestedAt`, `storageDeletionVerifiedAt`, `updatedAt` を保持する。旧同意からの自動移行はしない。
+- **今後必要**: UIで提示した文書版・本人操作・拒否・撤回の監査証跡と、削除ジョブの詳細状態は現在の同意基盤だけでは足りない。履歴テーブルまたは追記専用監査記録の設計・Migrationを別途実装し、旧ロール付与を本人の新同意と誤認しない。
 - `VcRecapAudioAsset`: `id`, `sessionId`, `guildId`, `userId`, `objectKey`, `versionId`, `checksum`, `byteLength`, `codec`, `startOffsetMs`, `endOffsetMs`, `storageClass`, `status`。同一話者の連続小発話はチャンク結合し、発言セグメントは `audioAssetId + offsetMs` で参照。
 - `VcRecapArchiveIndex`: `sessionId`, `guildId`, `userId`, `archiveVersion`, `manifestKey`, `objectVersionId`, `segmentCount`, `checksum`, `status`, `archivedAt`。本文オブジェクトはユーザー単位で分け、個人の削除で無関係な人の内容を保持できるようにする。
 - **今後必要**: 冪等な削除ワーカーに `requestId`, `userId`, `scope`, `status`, `attempts`, `errorCode` と対象オブジェクト全バージョンの処理記録を追加する。既存 `VcRecapErasureRequest` のフェンスはあるが、S3消去実行・検証とバックアップ復元時の再適用は未実装。Private作業キューと拒否・削除tombstoneは復元対象のバックアップより**独立した耐久領域**に保持する。
@@ -79,13 +80,11 @@ JSON/CSV出力はセッション/複数・期間/VC/発言者スコープ、S3�
 
 ## 現時点の実装差分（2026-10-31 GitHub main確認）
 
-| 項目 | 確認済み | 残作業 |
-| --- | --- | --- |
-| チャット型表示 | #602 mainにマージ | 本番表示・モバイルE2E |
-| JSON/CSV | #603 mainにマージ、専用IAMの許可確認 #606 | 大量出力・アーカイブ対応・本番検証 |
-| 新同意基盤 | #601 mainにマージ（`VcRecapExplicitConsent`, `VcRecapErasureRequest`） | 正式ポリシー版、本人同意UI・監査証跡、バックアップ復元安全性 |
-| 音声認識切替 | #607 mainにマージ（AWS既定、OpenAI API送信は別同意） | **faster-whisperセルフホストは未導入・未実測** |
-| 現行本文 | `VC_RECAP_TRANSCRIPT_RETENTION_DAYS = 30`、Workerが定期削除 | 旧同意データの期限を延長せず、新同意データだけ長期保存可能な別管理 |
-| 音声S3・アーカイブ | 未確認・長期保存の完成実装なし | 非公開専用バケット、話者別チャンク、Lifecycle、365日移行、消去・検証 |
+- **チャット型表示:** PR #602 はmainにマージ済み。本番表示とモバイルE2Eは未確認。
+- **JSON/CSV:** PR #603 はmainにマージ済み。専用IAM強化はPR #606。大量出力、アーカイブ対応、本番検証は残る。
+- **新同意基盤:** PR #601で `VcRecapExplicitConsent` と `VcRecapErasureRequest` がmainに入った。正式ポリシー版、本人同意UI、監査証跡、バックアップ復元安全性は未完成。
+- **音声認識切替:** PR #607はAWS既定のままOpenAI音声APIへの明示同意付き切替を追加した。`faster-whisper` セルフホストは未導入・未実測。
+- **現行本文:** `VC_RECAP_TRANSCRIPT_RETENTION_DAYS = 30` でWorkerが定期削除する。旧同意データの保存期限を延長しないため、新同意データだけを分離管理する必要がある。
+- **音声S3・アーカイブ:** 非公開専用バケット、話者別チャンク、Lifecycle、365日移行、完全消去検証の完成実装は未確認。
 
 **本番禁止ゲート:** 現行Workerの30日削除を365日へ単純変更しない。旧同意データの保持延長につながる。新保存モデル・同意・削除・バックアップ復元の検証完了まで新長期保存はOFF。#601 のDBスキーマ追加はデータ移行・S3バックアップ消去の完成を意味しない。Studioの計画表示と公式利用者向け文書は現在提供している機能と将来計画を明確に区別する。
