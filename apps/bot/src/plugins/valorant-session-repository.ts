@@ -155,11 +155,11 @@ export async function mutateValorantSession(
               agentName: agent.agentName,
             })),
             result: assignments.map(({ userId, agentId, agentName, displayName }) => ({
-            userId,
-            agentId,
-            agentName,
-            displayName,
-          })),
+              userId,
+              agentId,
+              agentName,
+              displayName,
+            })),
           },
         });
       }
