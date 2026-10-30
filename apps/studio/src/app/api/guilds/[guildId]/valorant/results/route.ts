@@ -171,7 +171,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
         data: {
           sessionId: session.id,
           guildId,
-          mapId: data.mapId,
+          mapId: data.mapId as string,
           outcome: data.outcome as string,
           roundsWon: data.roundsWon as number,
           roundsLost: data.roundsLost as number,
