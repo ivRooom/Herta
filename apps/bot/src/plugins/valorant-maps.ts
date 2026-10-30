@@ -158,7 +158,7 @@ export type TacticalPick =
   | { status: 'unavailable' };
 
 const keyOf = (agents: readonly string[]) => [...agents].sort().join('|');
-const datePattern = /^\\d{4}-\\d{2}-\\d{2}$/;
+const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
 function validEvidence(
   item: TacticalCompositionEvidence,

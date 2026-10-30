@@ -39,6 +39,7 @@ import {
 } from './valorant-session-repository.js';
 import {
   japaneseValorantMap,
+  tacticalMapPlan,
   pickTacticalAgents,
   VALORANT_COMPOSITION_VERSION,
   VALORANT_MAPS,
@@ -173,9 +174,14 @@ function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
     lines.length ? lines.join('\n') : '参加者はいません',
   ];
   if (session.mode === 'TACTICAL' && session.status === 'COMPLETED') {
+    const map = VALORANT_MAPS.find(([id]) => id === session.mapId)?.[0];
+    const plan = map ? tacticalMapPlan(map) : null;
     description.push(
       '',
-      '構成の特徴：エントリー・スモーク・索敵・防衛と連携を考慮。勝率保証なし。',
+      plan
+        ? '構成の特徴：' + plan.label + ' — ' + plan.focus
+        : '構成の特徴：エントリー・スモーク・索敵・防衛と連携を考慮。',
+      '※構成は戦術的な候補例です。プロ大会の採用率・勝率を保証するものではありません。',
     );
     if (members.length < 5) description.push('※5人編成としては未完成です。');
   }
