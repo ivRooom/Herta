@@ -1,10 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { PrismaClient } from '@prisma/client';
-import {
-  anonymizeOldValorantSessions,
-  redactValorantIdentifiers,
-} from './valorant-retention.js';
+import { anonymizeOldValorantSessions, redactValorantIdentifiers } from './valorant-retention.js';
 
 test('VALORANT retention scrubs nested IDs but preserves agent and KDA data', () => {
   assert.deepEqual(
@@ -42,21 +39,28 @@ test('90-day retention updates terminal session and match but does not delete hi
   };
   const prisma = {
     valorantPickSession: {
-      findMany: async () => [{
-        id: 'synthetic-session', guildId: 'synthetic-guild',
-        result: [{ userId: '12345', agentId: 'jett' }],
-      }],
+      findMany: async () => [
+        {
+          id: 'synthetic-session',
+          guildId: 'synthetic-guild',
+          result: [{ userId: '12345', agentId: 'jett' }],
+        },
+      ],
     },
     $transaction: async (cb: (arg: typeof tx) => Promise<boolean>) => cb(tx),
   } as unknown as PrismaClient;
   assert.equal(await anonymizeOldValorantSessions(prisma, new Date('2027-03-01'), 1), 1);
-  assert.deepEqual(actions.map((item) => item.name), ['session', 'participants', 'match']);
+  assert.deepEqual(
+    actions.map((item) => item.name),
+    ['session', 'participants', 'match'],
+  );
   assert.deepEqual(actions[0]?.data, {
     creatorId: 'redacted',
     result: [{ agentId: 'jett' }],
   });
   assert.deepEqual(actions[2]?.data, {
-    enteredBy: 'redacted', matchId: null,
+    enteredBy: 'redacted',
+    matchId: null,
     playerResults: [{ agentId: 'omen', kills: 10 }],
   });
 });

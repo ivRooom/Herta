@@ -80,7 +80,9 @@ export function aggregateValorantStats(draws: readonly DrawSample[]) {
       if (typeof item.userId === 'string') {
         const userId = item.userId;
         const player = players.get(userId) ?? {
-          userId, draws: 0, agents: new Map<string, number>(),
+          userId,
+          draws: 0,
+          agents: new Map<string, number>(),
         };
         player.draws++;
         player.agents.set(id, (player.agents.get(id) ?? 0) + 1);

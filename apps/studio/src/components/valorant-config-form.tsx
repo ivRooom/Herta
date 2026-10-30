@@ -119,68 +119,68 @@ export function ValorantConfigForm({
     <div className="space-y-6">
       {canManagePlugin ? (
         <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
-        <h2 className="text-lg font-semibold">VALORANT Plugin設定</h2>
-        <div className="mt-4 flex flex-wrap items-center gap-4">
-          <label className="flex min-h-11 items-center gap-2">
-            <input
-              type="checkbox"
-              checked={enabled}
-              disabled={busy}
-              onChange={(event) => setEnabled(event.target.checked)}
-            />
-            Pluginを有効にする
-          </label>
-          <label className="flex min-h-11 items-center gap-2">
-            <input
-              type="checkbox"
-              checked={commandsEnabled}
-              disabled={busy}
-              onChange={(event) => setCommandsEnabled(event.target.checked)}
-            />
-            コマンドを有効にする
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            最大参加人数（1〜5人）
-            <input
-              className="input w-28"
-              type="number"
-              min={1}
-              max={5}
-              step={1}
-              value={maxParticipants}
-              disabled={busy}
-              onChange={(event) => setMaxParticipants(Number(event.target.value))}
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-sm">
-            募集期限（5〜180分）
-            <input
-              className="input w-28"
-              type="number"
-              min={5}
-              max={180}
-              step={1}
-              value={sessionDurationMinutes}
-              disabled={busy}
-              onChange={(event) => setSessionDurationMinutes(Number(event.target.value))}
-            />
-          </label>
-          <button
-            className={button}
-            disabled={
-              busy ||
-              !Number.isInteger(maxParticipants) ||
-              maxParticipants < 1 ||
-              maxParticipants > 5 ||
-              !Number.isInteger(sessionDurationMinutes) ||
-              sessionDurationMinutes < 5 ||
-              sessionDurationMinutes > 180
-            }
-            onClick={() => void savePlugin()}
-          >
-            Plugin設定を保存
-          </button>
-        </div>
+          <h2 className="text-lg font-semibold">VALORANT Plugin設定</h2>
+          <div className="mt-4 flex flex-wrap items-center gap-4">
+            <label className="flex min-h-11 items-center gap-2">
+              <input
+                type="checkbox"
+                checked={enabled}
+                disabled={busy}
+                onChange={(event) => setEnabled(event.target.checked)}
+              />
+              Pluginを有効にする
+            </label>
+            <label className="flex min-h-11 items-center gap-2">
+              <input
+                type="checkbox"
+                checked={commandsEnabled}
+                disabled={busy}
+                onChange={(event) => setCommandsEnabled(event.target.checked)}
+              />
+              コマンドを有効にする
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              最大参加人数（1〜5人）
+              <input
+                className="input w-28"
+                type="number"
+                min={1}
+                max={5}
+                step={1}
+                value={maxParticipants}
+                disabled={busy}
+                onChange={(event) => setMaxParticipants(Number(event.target.value))}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              募集期限（5〜180分）
+              <input
+                className="input w-28"
+                type="number"
+                min={5}
+                max={180}
+                step={1}
+                value={sessionDurationMinutes}
+                disabled={busy}
+                onChange={(event) => setSessionDurationMinutes(Number(event.target.value))}
+              />
+            </label>
+            <button
+              className={button}
+              disabled={
+                busy ||
+                !Number.isInteger(maxParticipants) ||
+                maxParticipants < 1 ||
+                maxParticipants > 5 ||
+                !Number.isInteger(sessionDurationMinutes) ||
+                sessionDurationMinutes < 5 ||
+                sessionDurationMinutes > 180
+              }
+              onClick={() => void savePlugin()}
+            >
+              Plugin設定を保存
+            </button>
+          </div>
         </section>
       ) : null}
       <section
