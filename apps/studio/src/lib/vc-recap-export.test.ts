@@ -32,8 +32,14 @@ test('セッションまたはJST期間が必須・formatはJSON/CSVのみ', () 
   assert.equal(parseVcRecapExportFilters(new URLSearchParams()), null);
   assert.equal(parseVcRecapExportFilters(new URLSearchParams('format=x&sessionIds=' + sid)), null);
   assert.equal(parseVcRecapExportFilters(new URLSearchParams('from=2026-10-29')), null);
-  assert.equal(parseVcRecapExportFilters(new URLSearchParams('from=2026-02-30&to=2026-03-01')), null);
-  assert.equal(parseVcRecapExportFilters(new URLSearchParams('from=2026-10-31&to=2026-10-30')), null);
+  assert.equal(
+    parseVcRecapExportFilters(new URLSearchParams('from=2026-02-30&to=2026-03-01')),
+    null,
+  );
+  assert.equal(
+    parseVcRecapExportFilters(new URLSearchParams('from=2026-10-31&to=2026-10-30')),
+    null,
+  );
   assert.equal(
     parseVcRecapExportFilters(new URLSearchParams('sessionIds=' + sid + '&speakerId=' + speaker))
       ?.speakerId,

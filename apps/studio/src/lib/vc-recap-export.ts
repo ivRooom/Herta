@@ -28,9 +28,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const SNOWFLAKE = /^\d{17,20}$/u;
 const DAY_MS = 86_400_000;
 
-export function parseVcRecapExportFilters(
-  input: URLSearchParams,
-): VcRecapExportFilters | null {
+export function parseVcRecapExportFilters(input: URLSearchParams): VcRecapExportFilters | null {
   const format = input.get('format') ?? 'json';
   if (format !== 'json' && format !== 'csv') return null;
 
@@ -48,7 +46,11 @@ export function parseVcRecapExportFilters(
   const to = parseDay(input.get('to'));
   if (from === undefined || to === undefined) return null;
   const toExclusive = to ? new Date(to.getTime() + DAY_MS) : null;
-  if (from && toExclusive && (toExclusive <= from || toExclusive.getTime() - from.getTime() > 366 * DAY_MS)) {
+  if (
+    from &&
+    toExclusive &&
+    (toExclusive <= from || toExclusive.getTime() - from.getTime() > 366 * DAY_MS)
+  ) {
     return null;
   }
   // Large historical requests must be scoped to 50 named sessions or <=366 days.

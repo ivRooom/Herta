@@ -37,14 +37,25 @@ export async function GET(request: Request, { params }: Context): Promise<Respon
 
   const access = await resolveStudioAccess(guildId, session.user.id);
   if (!access.ok) return access.response;
-  if (!hasStudioPermission(access.access, 'studio.operation.execute', studioVcRecapExportResource(guildId))) {
-    return NextResponse.json({ error: '文字起こしの出力権限がありません' }, { status: 403, headers: NO_STORE });
+  if (
+    !hasStudioPermission(
+      access.access,
+      'studio.operation.execute',
+      studioVcRecapExportResource(guildId),
+    )
+  ) {
+    return NextResponse.json(
+      { error: '文字起こしの出力権限がありません' },
+      { status: 403, headers: NO_STORE },
+    );
   }
 
   const filters = parseVcRecapExportFilters(new URL(request.url).searchParams);
   if (!filters) {
     return NextResponse.json(
-      { error: 'format=json|csv、sessionIds（最大50件）またはfrom/to（日付範囲）を指定してください' },
+      {
+        error: 'format=json|csv、sessionIds（最大50件）またはfrom/to（日付範囲）を指定してください',
+      },
       { status: 400, headers: NO_STORE },
     );
   }
@@ -102,7 +113,11 @@ export async function GET(request: Request, { params }: Context): Promise<Respon
   const userIds = [...new Set(rows.map((row) => row.userId))];
   const consents = userIds.length
     ? await prisma.userDataConsent.findMany({
-        where: { userId: { in: userIds }, voiceTranscriptionConsent: true, voiceTranscriptRetentionConsentedAt: { not: null } },
+        where: {
+          userId: { in: userIds },
+          voiceTranscriptionConsent: true,
+          voiceTranscriptRetentionConsentedAt: { not: null },
+        },
         select: { userId: true },
       })
     : [];
