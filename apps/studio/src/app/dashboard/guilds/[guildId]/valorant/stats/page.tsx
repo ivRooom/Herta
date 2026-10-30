@@ -4,7 +4,9 @@ import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { resolveStudioAccess } from '@/lib/studio-access';
 import { resolvePluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';
-import { aggregateValorantStats } from '@/lib/valorant-stats';
+import { aggregateValorantStats, aggregateValorantMatchStats } from '@/lib/valorant-stats';
+import { ValorantResultsManager } from '@/components/valorant-results-manager';
+import { defaultValorantAgents } from '@herta/plugin-catalog';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +25,13 @@ export default async function ValorantStatsPage({
     select: { id: true, mode: true, mapId: true, completedAt: true, candidates: true, result: true },
   });
   const data = aggregateValorantStats(rows.slice(0, 5000));
+  const matchRows = await prisma.valorantMatchResult.findMany({
+    where: { guildId }, orderBy: { createdAt: 'desc' }, take: 5001,
+    select: { outcome: true, roundsWon: true, roundsLost: true, playerResults: true,
+      session: { select: { result: true } } },
+  });
+  const matchData = aggregateValorantMatchStats(matchRows.slice(0, 5000));
+  const displayNames = new Map(defaultValorantAgents().map((a) => [a.agentId, a.displayName]));
   return (
     <main className="space-y-7">
       <Link className="text-sm text-muted hover:underline" href={'/dashboard/guilds/' + guildId + '/plugins/valorant'}>
@@ -40,7 +49,7 @@ export default async function ValorantStatsPage({
         <div className="overflow-x-auto"><table className="w-full text-sm">
           <thead><tr className="text-left"><th className="p-2">Agent</th><th className="p-2">選出</th><th className="p-2">候補入り</th><th className="p-2">選出率</th></tr></thead>
           <tbody>{data.agents.map((agent) => <tr key={agent.agentId} className="border-t border-border">
-            <td className="p-2">{agent.agentName}</td><td className="p-2">{agent.selected}</td>
+            <td className="p-2">{displayNames.get(agent.agentId) ?? agent.agentName}</td><td className="p-2">{agent.selected}</td>
             <td className="p-2">{agent.eligibleSessions}</td><td className="p-2">{agent.selectedPerEligibleSession === null ? '算出不可' : (agent.selectedPerEligibleSession * 100).toFixed(1) + '%'}</td>
           </tr>)}</tbody></table></div>
       </section>
@@ -56,6 +65,16 @@ export default async function ValorantStatsPage({
         </section>)}
       </div>
       <section className="rounded-xl border border-border p-4">
+        <h2 className="mb-3 font-semibold">試合結果分析（手動登録）</h2>
+        <p className="text-sm">登録 {matchData.total}試合 / 勝利 {matchData.win} / 敗北 {matchData.loss} / 引分 {matchData.draw}</p>
+        <p className="mt-2 text-sm">勝率（引分除外）:
+          {matchData.win + matchData.loss ? ((matchData.win / (matchData.win + matchData.loss)) * 100).toFixed(1) + '%' : '算出不可'}
+        </p>
+        <p className="mt-2 text-xs text-muted">少数サンプルは傾向と解釈しません。抽選エージェントと実使用エージェントは別管理です。</p>
+        <ul className="mt-3 space-y-1 text-sm">{matchData.compositions.slice(0, 20).map((t) =>
+          <li key={t.name}>{t.name}: {t.win}勝 / {t.loss}敗 / {t.draw}分（{t.count}件）</li>)}</ul>
+      </section>
+      <section className="rounded-xl border border-border p-4">
         <h2 className="mb-3 font-semibold">プレイヤー別の選出傾向</h2>
         <p className="mb-2 text-xs text-muted">サーバー管理権限で表示。識別子は収集期間内のDiscordユーザーIDです。</p>
         <ul className="space-y-3 text-sm">{data.players.slice(0, 100).map((player) =>
@@ -64,6 +83,7 @@ export default async function ValorantStatsPage({
             <p className="mt-1 text-muted">{player.agentCounts.map((a) => a.agentId + ': ' + a.count + '回').join(' / ')}</p>
           </li>)}</ul>
       </section>
+      <ValorantResultsManager guildId={guildId} />
     </main>
   );
 }

@@ -93,3 +93,26 @@ export function aggregateValorantStats(draws: readonly DrawSample[]) {
     monthly: pairs(monthly).sort((a,b)=>a.name.localeCompare(b.name)),
   };
 }
+
+export interface ValorantMatchSample {
+  outcome: string; roundsWon: number; roundsLost: number;
+  playerResults: unknown; session: { result: unknown };
+}
+export function aggregateValorantMatchStats(reports: readonly ValorantMatchSample[]) {
+  const summary = { total: reports.length, win: 0, loss: 0, draw: 0 };
+  const teams = new Map<string, { name: string; count: number; win: number; loss: number; draw: number }>();
+  for (const report of reports) {
+    const outcome = report.outcome === 'WIN' ? 'win' : report.outcome === 'LOSS' ? 'loss' : 'draw';
+    summary[outcome]++;
+    const result = Array.isArray(report.session.result) ? report.session.result : [];
+    const ids = result.flatMap((entry): string[] =>
+      typeof entry === 'object' && entry !== null && !Array.isArray(entry) &&
+      typeof entry.agentId === 'string' ? [entry.agentId] : []);
+    const name = ids.sort().join(', ');
+    if (!name) continue;
+    const team = teams.get(name) ?? { name, count: 0, win: 0, loss: 0, draw: 0 };
+    team.count++; team[outcome]++;
+    teams.set(name, team);
+  }
+  return { ...summary, compositions: [...teams.values()].sort((a,b) => b.count - a.count) };
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { aggregateValorantStats } from './valorant-stats.js';
+import { aggregateValorantStats, aggregateValorantMatchStats } from '../src/lib/valorant-stats';
 
 const sample = (id: string, mode: string, agentId: string) => ({
   id, mode, mapId: mode === 'TACTICAL' ? 'Ascent' : null,
@@ -26,5 +26,13 @@ describe('VALORANT stats aggregation', () => {
     expect(stats.agents[0]).toMatchObject({
       selected: 1, eligibleSessions: 0, selectedPerEligibleSession: null,
     });
+  });
+  it('groups manual outcomes by original pick composition', () => {
+    const output = aggregateValorantMatchStats([{
+      outcome: 'WIN', roundsWon: 13, roundsLost: 7, playerResults: [],
+      session: { result: [{ userId: 'sample', agentId: 'jett' }] },
+    }]);
+    expect(output.win).toBe(1);
+    expect(output.compositions[0]).toMatchObject({ name: 'jett', count: 1, win: 1 });
   });
 });

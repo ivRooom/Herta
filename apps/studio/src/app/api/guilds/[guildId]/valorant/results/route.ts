@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { Prisma } from '@herta/db';
 import { defaultValorantAgents } from '@herta/plugin-catalog';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
@@ -77,8 +76,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
       status: error instanceof RequestBodyTooLargeError ? 413 : 400,
     });
   }
+  const knownMaps = new Set(['Ascent','Bind','Haven','Split','Icebox','Breeze',
+    'Fracture','Pearl','Lotus','Sunset','Abyss','Corrode','Summit']);
   if (!isObject(data) || !isSessionId(data.sessionId) ||
-    typeof data.mapId !== 'string' || data.mapId.length > 32 ||
+    typeof data.mapId !== 'string' || !knownMaps.has(data.mapId) ||
     !['WIN', 'LOSS', 'DRAW'].includes(String(data.outcome)) ||
     !isScore(data.roundsWon) || !isScore(data.roundsLost) ||
     (data.matchId !== null && data.matchId !== undefined &&
@@ -111,14 +112,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
       data: {
         sessionId: session.id, guildId, mapId: data.mapId, outcome: data.outcome as string,
         roundsWon: data.roundsWon as number, roundsLost: data.roundsLost as number,
-        matchId, playerResults: data.playerResults as Prisma.InputJsonArray,
+        matchId, playerResults: JSON.parse(JSON.stringify(data.playerResults)),
         source: 'MANUAL', enteredBy: access.userId!,
       },
       select: { id: true, sessionId: true },
     });
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
       return NextResponse.json({ error: 'このセッションまたはMatch IDは登録済みです。' }, { status: 409 });
     }
     console.error('VALORANT manual result registration failed', {
