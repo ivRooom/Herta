@@ -81,7 +81,7 @@ describe('privacy delete-voice-data', () => {
       reply: vi.fn(),
     };
     await privacyCommand.execute(interaction as unknown as ChatInputCommandInteraction);
-    expect(order).toEqual(['erase-barrier', 'revoke-voice', 'delete-postgres']);
+    expect(order).toEqual(['erase-barrier', 'delete-postgres', 'revoke-voice']);
     expect(mocks.revokeVoice).toHaveBeenCalledWith(expect.anything(), 'owner-user', false);
     expect(mocks.erasure).toHaveBeenCalledWith(expect.anything(), 'owner-user');
     expect(interaction.reply).toHaveBeenCalledWith(
