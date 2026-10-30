@@ -97,3 +97,54 @@ export async function requestVcRecapErasure(prisma: PrismaClient, userId: string
     });
   });
 }
+
+/** Raw-audio disclosure consent is independent from the legacy AWS-only setting. */
+export const VC_RECAP_OPENAI_AUDIO_POLICY_VERSION = 'vc-recap-openai-audio-2026-10-31-v1';
+
+/**
+ * Record a participant's affirmative, versioned consent for sending raw voice
+ * to OpenAI. A previous erasure request cannot be silently overridden.
+ *
+ * This is the write primitive; callers must show the complete current
+ * processor disclosure BEFORE requesting the user's affirmative action.
+ */
+export async function setVcRecapOpenAiAudioConsent(
+  prisma: PrismaClient,
+  userId: string,
+  accepted: boolean,
+): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    const [legacy, erasure] = await Promise.all([
+      tx.userDataConsent.findUnique({
+        where: { userId },
+        select: { voiceTranscriptionConsent: true },
+      }),
+      tx.vcRecapErasureRequest.findUnique({
+        where: { userId },
+        select: { userId: true },
+      }),
+    ]);
+    // Refuse granting new processing rights without an active personal
+    // transcription consent or while deletion of prior records is pending.
+    if (accepted && (!legacy?.voiceTranscriptionConsent || erasure !== null)) {
+      return false;
+    }
+    const now = new Date();
+    await tx.vcRecapExplicitConsent.upsert({
+      where: { userId_purpose: { userId, purpose: 'openai_audio_processing' } },
+      create: {
+        userId,
+        purpose: 'openai_audio_processing',
+        policyVersion: VC_RECAP_OPENAI_AUDIO_POLICY_VERSION,
+        consentedAt: accepted ? now : null,
+        revokedAt: accepted ? null : now,
+      },
+      update: {
+        policyVersion: VC_RECAP_OPENAI_AUDIO_POLICY_VERSION,
+        consentedAt: accepted ? now : null,
+        revokedAt: accepted ? null : now,
+      },
+    });
+    return true;
+  });
+}
