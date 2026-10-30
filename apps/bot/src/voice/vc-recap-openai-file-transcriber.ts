@@ -50,8 +50,10 @@ async function postAudioChunk(
   pcm: Buffer,
   options: OpenAiFileTranscriptionOptions,
 ): Promise<string> {
-  if (!(await options.mayUpload()))
-    throw new Error('OpenAI audio consent is unavailable or revoked');
+  const durationSeconds = pcm.length / (PCM_SAMPLE_RATE * PCM_BYTES_PER_SAMPLE);
+  if (!(await options.mayUpload(durationSeconds))) {
+    throw new Error('OpenAI audio consent unavailable, revoked, or session budget exceeded');
+  }
   const body = new FormData();
   const wav = monoPcmToWav(pcm);
   body.set('file', new Blob([new Uint8Array(wav)], { type: 'audio/wav' }), 'vc-recap.wav');
