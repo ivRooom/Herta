@@ -1,4 +1,4 @@
-import { getPrismaClient, cleanDailyBonusHistory } from '@herta/db';
+import { getPrismaClient, cleanDailyBonusHistory, anonymizeOldValorantSessions } from '@herta/db';
 import { createLogger } from '@herta/logger';
 import { HERTA_WORKER_HEARTBEAT_INTERVAL_MS, HERTA_WORKER_HEARTBEAT_KEY } from '@herta/shared';
 import { Redis } from 'ioredis';
@@ -87,6 +87,13 @@ async function main() {
         void cleanDailyBonusHistory(getPrismaClient()).catch(() =>
           logger.warn('Daily bonus retention cleanup failed'),
         );
+        const drain = async () => {
+          let processed: number;
+          do {
+            processed = await anonymizeOldValorantSessions(getPrismaClient());
+          } while (processed === 50);
+        };
+        void drain().catch(() => logger.warn('VALORANT participant-ID retention cleanup failed'));
       };
       cleanup();
       dailyRetentionTimer = setInterval(cleanup, 60 * 60 * 1000);

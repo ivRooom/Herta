@@ -55,6 +55,8 @@ export {
   valorantManifest,
   VALORANT_REGIONS,
   VALORANT_AGENTS,
+  defaultValorantAgents,
+  legacyValorantAgents,
   type ValorantRegion,
   type ValorantAgent,
 } from './manifests/valorant.js';

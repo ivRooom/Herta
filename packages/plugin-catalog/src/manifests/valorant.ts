@@ -42,6 +42,64 @@ export const VALORANT_AGENTS = [
 ] as const;
 export type ValorantAgent = (typeof VALORANT_AGENTS)[number];
 
+// Names only, verified against Riot's Japanese agents page. No remote API or artwork dependency.
+const JAPANESE_AGENT_NAMES = [
+  'アストラ',
+  'ブリーチ',
+  'ブリムストーン',
+  'チェンバー',
+  'クローヴ',
+  'サイファー',
+  'デッドロック',
+  'フェイド',
+  'ゲッコー',
+  'ハーバー',
+  'ハッシュ',
+  'アイソ',
+  'ジェット',
+  'KAY/O',
+  'キルジョイ',
+  'ミクス',
+  'ネオン',
+  'オーメン',
+  'フェニックス',
+  'レイズ',
+  'レイナ',
+  'セージ',
+  'スカイ',
+  'ソーヴァ',
+  'テホ',
+  'ヴィトー',
+  'ヴァイパー',
+  'ヴァイス',
+  'ウェイレイ',
+  'ヨル',
+];
+
+/** Missing legacy selection means default-all; explicit empty/invalid lists fail closed. */
+export function legacyValorantAgents(value: unknown): string[] {
+  if (value === undefined) return [...VALORANT_AGENTS];
+  if (!Array.isArray(value)) return [];
+  return [
+    ...new Set(
+      value.filter(
+        (agent): agent is ValorantAgent =>
+          typeof agent === 'string' && (VALORANT_AGENTS as readonly string[]).includes(agent),
+      ),
+    ),
+  ];
+}
+
+export function defaultValorantAgents(legacySelection?: unknown) {
+  const selected = new Set(legacyValorantAgents(legacySelection));
+  return VALORANT_AGENTS.map((agentName, index) => ({
+    agentId: agentName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    agentName,
+    displayName: JAPANESE_AGENT_NAMES[index]!,
+    enabled: selected.has(agentName),
+  }));
+}
+
 const VALORANT_REGION_CHOICES = [
   { name: 'Europe (eu)', value: 'eu' },
   { name: 'North America (na)', value: 'na' },
@@ -54,9 +112,8 @@ const VALORANT_REGION_CHOICES = [
 export const valorantManifest: PluginManifest = {
   id: 'valorant',
   name: 'Valorant',
-  version: '1.1.0',
-  description:
-    'Riot ID連携・戦績確認と、VC参加者へのエージェント重複なしランダム割り当てができるPluginです',
+  version: '1.3.0',
+  description: 'Riot ID連携・戦績確認と、参加ボタン方式のエージェント抽選ができるPluginです',
   author: { name: 'Herta' },
   category: 'fun',
   permissions: [],
@@ -74,18 +131,33 @@ export const valorantManifest: PluginManifest = {
           help: 'HenrikDev APIのAPI Key(環境変数)が未設定の場合、有効化していても戦績確認は利用できません。',
         },
       },
+      maxParticipants: {
+        type: 'integer',
+        title: '抽選の最大参加人数',
+        minimum: 1,
+        maximum: 5,
+        default: 5,
+      },
+      sessionDurationMinutes: {
+        type: 'integer',
+        title: '参加募集の期限（分）',
+        minimum: 5,
+        maximum: 180,
+        default: 30,
+      },
       enabledAgents: {
         type: 'array',
         title: 'ランダム抽選対象エージェント',
-        description: 'サーバーで利用するAgentを選択します。最低1人を登録してください。',
+        description:
+          '初期登録前の抽選候補。エージェント管理画面で初期登録後はGuild別データを使用します。',
         uniqueItems: true,
-        minItems: 1,
+        minItems: 0,
         maxItems: VALORANT_AGENTS.length,
         items: { type: 'string', enum: [...VALORANT_AGENTS] },
         default: [...VALORANT_AGENTS],
         'x-herta-ui': {
           section: 'エージェント',
-          help: '全30人から選択。専用のエージェント管理画面でも登録・確認できます。',
+          help: '初期登録前のみ使用する互換設定です。初期登録後の追加・編集・無効化・削除はエージェント管理画面で行います。',
         },
       },
     },
@@ -95,11 +167,33 @@ export const valorantManifest: PluginManifest = {
   commands: [
     {
       name: 'valorant',
-      description: 'VALORANTの戦績確認・Riot ID連携・VCエージェント抽選',
+      description: 'VALORANTの戦績確認・Riot ID連携・エージェント抽選',
       subcommands: [
         {
           name: 'random',
-          description: '参加中のVCメンバーへエージェントを重複なしでランダム割り当て',
+          description: '参加ボタンで募集してエージェントを抽選',
+          options: [
+            {
+              name: 'map',
+              description: '指定するとマップ別の実戦向け構成候補から抽選',
+              type: 'string',
+              choices: [
+                { name: 'アセント', value: 'Ascent' },
+                { name: 'バインド', value: 'Bind' },
+                { name: 'ヘイヴン', value: 'Haven' },
+                { name: 'スプリット', value: 'Split' },
+                { name: 'アイスボックス', value: 'Icebox' },
+                { name: 'ブリーズ', value: 'Breeze' },
+                { name: 'フラクチャー', value: 'Fracture' },
+                { name: 'パール', value: 'Pearl' },
+                { name: 'ロータス', value: 'Lotus' },
+                { name: 'サンセット', value: 'Sunset' },
+                { name: 'アビス', value: 'Abyss' },
+                { name: 'カロード', value: 'Corrode' },
+                { name: 'SUMMIT', value: 'Summit' },
+              ],
+            },
+          ],
         },
         {
           name: 'link',

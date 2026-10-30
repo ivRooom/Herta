@@ -39,8 +39,35 @@ model Guild {
   rules                   Rule[]
   moderationDetections    ModerationDetectionEvent[]
   vcRecapSessions         VcRecapSession[]
+  valorantRoster          ValorantRoster?
+  valorantPickSessions    ValorantPickSession[]
 
   @@map("guilds")
+}
+
+model ValorantRoster {
+  guildId   String          @id @map("guild_id")
+  createdAt DateTime        @default(now()) @map("created_at")
+  guild     Guild           @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  agents    ValorantAgent[]
+
+  @@map("valorant_rosters")
+}
+
+model ValorantAgent {
+  guildId     String         @map("guild_id")
+  agentId     String         @map("agent_id")
+  agentName   String         @map("agent_name")
+  displayName String         @map("display_name")
+  enabled     Boolean        @default(true)
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  roster      ValorantRoster @relation(fields: [guildId], references: [guildId], onDelete: Cascade)
+
+  @@id([guildId, agentId])
+  @@unique([guildId, agentName])
+  @@index([guildId, enabled])
+  @@map("valorant_agents")
 }
 
 model GuildSettings {
@@ -1433,4 +1460,68 @@ model DailyFortuneResult {
   @@id([guildId, discordUserId, targetDate])
   @@index([createdAt], map: "daily_fortune_results_created_at_idx")
   @@map("daily_fortune_results")
+}
+
+/**
+ * VALORANT recruitment; completed sessions are immutable history.
+ * Participant Discord IDs are scoped to this guild and retained for 90 days.
+ */
+model ValorantPickSession {
+  id              String                      @id @default(uuid())
+  guildId         String                      @map("guild_id")
+  channelId       String                      @map("channel_id")
+  messageId       String?                     @unique @map("message_id")
+  creatorId       String                      @map("creator_id")
+  status          String                      @default("OPEN") @db.VarChar(16)
+  mode            String                      @db.VarChar(16)
+  mapId           String?                     @map("map_id") @db.VarChar(32)
+  maxParticipants Int                         @default(5) @map("max_participants")
+  expiresAt       DateTime                    @map("expires_at") @db.Timestamptz(3)
+  completedAt     DateTime?                   @map("completed_at") @db.Timestamptz(3)
+  rulesVersion    String                      @map("rules_version") @db.VarChar(32)
+  candidates      Json                        @default("[]")
+  result          Json?
+  createdAt       DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  guild           Guild                       @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  participants    ValorantPickParticipant[]
+  matchResult     ValorantMatchResult?
+
+  @@unique([id, guildId])
+  @@index([guildId, status, expiresAt])
+  @@index([guildId, completedAt])
+  @@map("valorant_pick_sessions")
+}
+
+model ValorantPickParticipant {
+  sessionId String             @map("session_id")
+  userId    String             @map("user_id")
+  joinedAt  DateTime           @default(now()) @map("joined_at") @db.Timestamptz(3)
+  session   ValorantPickSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@id([sessionId, userId])
+  @@map("valorant_pick_participants")
+}
+
+/** Manual game outcome; API-derived results may reuse the same verified session link. */
+model ValorantMatchResult {
+  id            String              @id @default(uuid())
+  sessionId     String              @unique @map("session_id")
+  guildId       String              @map("guild_id")
+  mapId         String              @map("map_id") @db.VarChar(32)
+  matchId       String?             @map("match_id") @db.VarChar(128)
+  source        String              @default("MANUAL") @db.VarChar(12)
+  outcome       String              @db.VarChar(8)
+  roundsWon     Int                 @map("rounds_won")
+  roundsLost    Int                 @map("rounds_lost")
+  playerResults Json                @default("[]") @map("player_results")
+  enteredBy     String              @map("entered_by")
+  createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  session       ValorantPickSession @relation(fields: [sessionId, guildId], references: [id, guildId], onDelete: Cascade, map: "valorant_match_results_session_fkey")
+
+  @@unique([sessionId, guildId])
+  @@unique([guildId, matchId])
+  @@index([guildId, createdAt])
+  @@map("valorant_match_results")
 }

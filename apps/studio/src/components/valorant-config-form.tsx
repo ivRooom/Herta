@@ -1,232 +1,423 @@
 'use client';
 
-import { useState } from 'react';
-import { VALORANT_AGENTS } from '@herta/plugin-catalog';
+import { useEffect, useRef, useState } from 'react';
 
-type SaveResult = {
-  enabled?: boolean;
-  config?: Record<string, unknown>;
-  error?: string;
-};
+type Agent = { agentId: string; agentName: string; displayName: string; enabled: boolean };
+const EMPTY: Agent = { agentId: '', agentName: '', displayName: '', enabled: true };
+const button =
+  'min-h-11 rounded-xl border border-border px-4 py-2 text-sm font-medium disabled:opacity-50 hover:bg-primary/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring';
 
-function readRegisteredAgents(config: Record<string, unknown>): string[] {
-  const stored = config.enabledAgents;
-  if (
-    !Array.isArray(stored) ||
-    stored.length === 0 ||
-    stored.some((agent) => !VALORANT_AGENTS.includes(agent as (typeof VALORANT_AGENTS)[number]))
-  ) {
-    return [...VALORANT_AGENTS];
-  }
-  const saved = new Set(stored as string[]);
-  return VALORANT_AGENTS.filter((agent) => saved.has(agent));
-}
-
-function sameAgents(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((agent, index) => agent === b[index]);
-}
-
-/** 全項目のread/writeとPlugin ON/OFF権限を持つユーザーだけが利用する。 */
 export function ValorantConfigForm({
   guildId,
   initialEnabled,
   initialConfig,
+  canManagePlugin = true,
 }: {
   guildId: string;
   initialEnabled: boolean;
+  canManagePlugin?: boolean;
   initialConfig: Record<string, unknown>;
 }) {
-  const [pluginEnabled, setPluginEnabled] = useState(initialEnabled);
+  const [enabled, setEnabled] = useState(initialEnabled);
   const [commandsEnabled, setCommandsEnabled] = useState(initialConfig.enabled !== false);
-  const [registeredAgents, setRegisteredAgents] = useState<string[]>(() =>
-    readRegisteredAgents(initialConfig),
+  const [maxParticipants, setMaxParticipants] = useState(
+    typeof initialConfig.maxParticipants === 'number' ? initialConfig.maxParticipants : 5,
   );
-  const [saved, setSaved] = useState(() => ({
-    pluginEnabled: initialEnabled,
-    commandsEnabled: initialConfig.enabled !== false,
-    registeredAgents: readRegisteredAgents(initialConfig),
-  }));
-  const [saving, setSaving] = useState(false);
+  const [sessionDurationMinutes, setSessionDurationMinutes] = useState(
+    typeof initialConfig.sessionDurationMinutes === 'number'
+      ? initialConfig.sessionDurationMinutes
+      : 30,
+  );
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [initialized, setInitialized] = useState(false);
+  const [canWrite, setCanWrite] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [draft, setDraft] = useState<Agent>({ ...EMPTY });
+  const [editing, setEditing] = useState(false);
+  const [deleting, setDeleting] = useState<Agent | null>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
+  const endpoint = `/api/guilds/${guildId}/valorant/agents`;
 
-  const dirty =
-    pluginEnabled !== saved.pluginEnabled ||
-    commandsEnabled !== saved.commandsEnabled ||
-    !sameAgents(registeredAgents, saved.registeredAgents);
-
-  function toggleAgent(agent: string) {
-    setRegisteredAgents((current) => {
-      const next = new Set(current);
-      if (next.has(agent)) next.delete(agent);
-      else next.add(agent);
-      return VALORANT_AGENTS.filter((value) => next.has(value));
-    });
-    setMessage('');
+  async function load() {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch(endpoint, { cache: 'no-store' });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? '一覧を取得できません。');
+      setAgents(result.agents);
+      setInitialized(result.initialized);
+      setCanWrite(result.canWrite);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '通信に失敗しました。');
+    } finally {
+      setLoading(false);
+    }
   }
+  useEffect(() => {
+    void load();
+  }, [endpoint]);
+  useEffect(() => {
+    if (deleting) dialog.current?.showModal();
+    else dialog.current?.close();
+  }, [deleting]);
 
-  async function save() {
-    if (saving || !dirty || registeredAgents.length === 0) return;
-    setSaving(true);
+  async function mutate(method: string, body?: unknown, agentId?: string) {
+    if (busy) return;
+    setBusy(true);
+    setError('');
     setMessage('');
     try {
-      // configPatchは他の設定を維持し、既存のStudio側権限・schema検証・監査を通す。
+      const response = await fetch(
+        agentId ? `${endpoint}/${encodeURIComponent(agentId)}` : endpoint,
+        {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        },
+      );
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? '保存できませんでした。');
+      setAgents(result.agents);
+      setInitialized(result.initialized);
+      setDraft({ ...EMPTY });
+      setEditing(false);
+      setDeleting(null);
+      setMessage('保存しました。Botの次回抽選から反映されます。');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '通信に失敗しました。');
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function savePlugin() {
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
       const response = await fetch(`/api/guilds/${guildId}/plugins/valorant`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          enabled: pluginEnabled,
-          configPatch: {
-            enabled: commandsEnabled,
-            enabledAgents: registeredAgents,
-          },
+          enabled,
+          configPatch: { enabled: commandsEnabled, maxParticipants, sessionDurationMinutes },
         }),
       });
-      const result = (await response.json()) as SaveResult;
-      if (!response.ok) {
-        setMessage(typeof result.error === 'string' ? result.error : '保存に失敗しました。');
-        return;
-      }
-      const next = {
-        pluginEnabled: result.enabled ?? pluginEnabled,
-        commandsEnabled: result.config?.enabled !== false,
-        registeredAgents: readRegisteredAgents(
-          result.config ?? { enabledAgents: registeredAgents },
-        ),
-      };
-      setSaved(next);
-      setPluginEnabled(next.pluginEnabled);
-      setCommandsEnabled(next.commandsEnabled);
-      setRegisteredAgents(next.registeredAgents);
-      setMessage('保存しました。Botへの設定反映はRuntime同期によって行われます。');
-    } catch {
-      setMessage('通信に失敗しました。接続を確認して再試行してください。');
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? 'Plugin設定を保存できません。');
+      setMessage('Plugin設定を保存しました。Slash Commandの登録はRuntime同期で反映されます。');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '通信に失敗しました。');
     } finally {
-      setSaving(false);
+      setBusy(false);
     }
   }
-
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
-        <h2 className="text-lg font-semibold">VALORANT Plugin設定</h2>
-        <p className="mt-1 text-sm text-muted">
-          Riot ID連携・戦績確認とVCランダム抽選をサーバー単位で管理します。
+      {canManagePlugin ? (
+        <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
+          <h2 className="text-lg font-semibold">VALORANT Plugin設定</h2>
+          <div className="mt-4 flex flex-wrap items-center gap-4">
+            <label className="flex min-h-11 items-center gap-2">
+              <input
+                type="checkbox"
+                checked={enabled}
+                disabled={busy}
+                onChange={(event) => setEnabled(event.target.checked)}
+              />
+              Pluginを有効にする
+            </label>
+            <label className="flex min-h-11 items-center gap-2">
+              <input
+                type="checkbox"
+                checked={commandsEnabled}
+                disabled={busy}
+                onChange={(event) => setCommandsEnabled(event.target.checked)}
+              />
+              コマンドを有効にする
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              最大参加人数（1〜5人）
+              <input
+                className="input w-28"
+                type="number"
+                min={1}
+                max={5}
+                step={1}
+                value={maxParticipants}
+                disabled={busy}
+                onChange={(event) => setMaxParticipants(Number(event.target.value))}
+              />
+            </label>
+            <label className="flex flex-col gap-1 text-sm">
+              募集期限（5〜180分）
+              <input
+                className="input w-28"
+                type="number"
+                min={5}
+                max={180}
+                step={1}
+                value={sessionDurationMinutes}
+                disabled={busy}
+                onChange={(event) => setSessionDurationMinutes(Number(event.target.value))}
+              />
+            </label>
+            <button
+              className={button}
+              disabled={
+                busy ||
+                !Number.isInteger(maxParticipants) ||
+                maxParticipants < 1 ||
+                maxParticipants > 5 ||
+                !Number.isInteger(sessionDurationMinutes) ||
+                sessionDurationMinutes < 5 ||
+                sessionDurationMinutes > 180
+              }
+              onClick={() => void savePlugin()}
+            >
+              Plugin設定を保存
+            </button>
+          </div>
+        </section>
+      ) : null}
+      <section
+        className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6"
+        aria-busy={loading || busy}
+      >
+        <h2 className="text-lg font-semibold">エージェント管理</h2>
+        <p className="mt-2 text-sm text-muted">
+          このサーバーの候補を管理します。無効なエージェントは抽選されません。
         </p>
-        <div className="mt-5 space-y-4">
-          <label className="flex items-center justify-between gap-4 rounded-xl border border-border bg-background p-4">
-            <span>
-              <span className="block font-medium">Pluginを有効にする</span>
-              <span className="mt-1 block text-xs text-muted">
-                DiscordへのSlash Command登録を制御します。
-              </span>
-            </span>
-            <input
-              type="checkbox"
-              checked={pluginEnabled}
-              disabled={saving}
-              onChange={(event) => setPluginEnabled(event.target.checked)}
-              className="h-5 w-5 accent-primary"
-            />
-          </label>
-          <label className="flex items-center justify-between gap-4 rounded-xl border border-border bg-background p-4">
-            <span>
-              <span className="block font-medium">VALORANTコマンドを有効にする</span>
-              <span className="mt-1 block text-xs text-muted">
-                Plugin内の全サブコマンドを有効化します。
-              </span>
-            </span>
-            <input
-              type="checkbox"
-              checked={commandsEnabled}
-              disabled={saving}
-              onChange={(event) => setCommandsEnabled(event.target.checked)}
-              className="h-5 w-5 accent-primary"
-            />
-          </label>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h2 className="text-lg font-semibold">エージェント登録・管理</h2>
-            <p className="mt-1 text-sm text-muted">
-              /valorant random の候補に含めるエージェントを選択してください。
+        {loading ? (
+          <p role="status" className="mt-4">
+            読み込み中…
+          </p>
+        ) : (
+          <>
+            <p className="mt-4 font-medium">
+              登録 {agents.length}件 · 有効 {agents.filter((agent) => agent.enabled).length}件
             </p>
-            <p className="mt-2 text-sm font-medium">
-              登録済み: {registeredAgents.length} / {VALORANT_AGENTS.length} 名
+            {!initialized && (
+              <p className="mt-2 text-sm text-muted">
+                初期登録前の互換設定を表示しています。最初の保存時に現在の有効候補を引き継ぎます。
+              </p>
+            )}
+            <button
+              className={`${button} mt-4`}
+              disabled={busy || !canWrite}
+              onClick={() => void mutate('POST', { action: 'initialize' })}
+            >
+              公式候補を初期登録・不足分を追加
+            </button>
+            <p className="mt-2 text-xs text-muted">
+              既存の名前・有効状態は上書きしません。削除した公式候補は再追加されます。
             </p>
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => {
-                setRegisteredAgents([...VALORANT_AGENTS]);
-                setMessage('');
+            {agents.length === 0 ? (
+              <p className="mt-4 rounded-xl border border-border p-4">
+                エージェントがありません。初期登録または新規登録してください。
+              </p>
+            ) : (
+              <ul className="mt-4 space-y-3">
+                {agents.map((agent) => (
+                  <li
+                    key={agent.agentId}
+                    className="flex flex-col gap-3 rounded-xl border border-border bg-background p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0 break-words">
+                      <p className="font-semibold">{agent.displayName}</p>
+                      <p className="text-sm text-muted">
+                        {agent.agentName} · {agent.agentId}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                      <label className="flex min-h-11 items-center gap-2">
+                        <input
+                          type="checkbox"
+                          aria-label={`${agent.displayName}を有効にする`}
+                          checked={agent.enabled}
+                          disabled={busy || !canWrite}
+                          onChange={(event) =>
+                            void mutate(
+                              'PATCH',
+                              {
+                                agentId: agent.agentId,
+                                agentName: agent.agentName,
+                                displayName: agent.displayName,
+                                enabled: event.target.checked,
+                              },
+                              agent.agentId,
+                            )
+                          }
+                        />
+                        有効
+                      </label>
+                      <button
+                        className={button}
+                        disabled={busy || !canWrite}
+                        onClick={() => {
+                          setDraft(agent);
+                          setEditing(true);
+                          setError('');
+                        }}
+                      >
+                        編集<span className="sr-only"> {agent.displayName}</span>
+                      </button>
+                      <button
+                        className={`${button} text-destructive`}
+                        disabled={busy || !canWrite}
+                        onClick={() => setDeleting(agent)}
+                      >
+                        削除<span className="sr-only"> {agent.displayName}</span>
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <form
+              className="mt-6 space-y-4 border-t border-border pt-5"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void mutate(
+                  editing ? 'PATCH' : 'POST',
+                  {
+                    agentId: draft.agentId,
+                    agentName: draft.agentName,
+                    displayName: draft.displayName,
+                    enabled: draft.enabled,
+                  },
+                  editing ? draft.agentId : undefined,
+                );
               }}
-              className="rounded-lg border border-border px-3 py-2 text-sm hover:bg-background"
             >
-              全員登録
-            </button>
-            <button
-              type="button"
-              disabled={saving}
-              onClick={() => {
-                setRegisteredAgents([]);
-                setMessage('');
-              }}
-              className="rounded-lg border border-border px-3 py-2 text-sm hover:bg-background"
-            >
-              選択解除
-            </button>
-          </div>
-        </div>
-        <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          {VALORANT_AGENTS.map((agent) => {
-            const checked = registeredAgents.includes(agent);
-            return (
-              <label
-                key={agent}
-                className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-3 text-sm transition-colors ${checked ? 'border-primary/50 bg-primary/10' : 'border-border bg-background hover:border-primary/30'}`}
-              >
+              <h3 className="font-semibold">
+                {editing ? 'エージェントを編集' : 'エージェントを新規登録'}
+              </h3>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <label className="text-sm">
+                  Agent ID
+                  <input
+                    className="input mt-1"
+                    required
+                    pattern="[a-z0-9][a-z0-9-]{0,63}"
+                    maxLength={64}
+                    disabled={busy || editing || !canWrite}
+                    value={draft.agentId}
+                    onChange={(event) => setDraft({ ...draft, agentId: event.target.value })}
+                  />
+                </label>
+                <label className="text-sm">
+                  Agent Name
+                  <input
+                    className="input mt-1"
+                    required
+                    maxLength={50}
+                    disabled={busy || !canWrite}
+                    value={draft.agentName}
+                    onChange={(event) => setDraft({ ...draft, agentName: event.target.value })}
+                  />
+                </label>
+                <label className="text-sm">
+                  表示名
+                  <input
+                    className="input mt-1"
+                    required
+                    maxLength={50}
+                    disabled={busy || !canWrite}
+                    value={draft.displayName}
+                    onChange={(event) => setDraft({ ...draft, displayName: event.target.value })}
+                  />
+                </label>
+              </div>
+              <label className="flex min-h-11 items-center gap-2">
                 <input
                   type="checkbox"
-                  checked={checked}
-                  disabled={saving}
-                  onChange={() => toggleAgent(agent)}
-                  className="h-4 w-4 shrink-0 accent-primary"
+                  checked={draft.enabled}
+                  disabled={busy || !canWrite}
+                  onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })}
                 />
-                <span className="break-words">{agent}</span>
+                抽選対象として有効にする
               </label>
-            );
-          })}
-        </div>
-        <p className="mt-4 text-xs text-muted">
-          Agentは重複せず割り当てます。VC参加人数以上のAgentを登録してください。Riot ID連携や外部API
-          Keyは抽選に不要です。
-        </p>
+              <div className="flex gap-2">
+                <button className={button} disabled={busy || !canWrite} type="submit">
+                  {editing ? '変更を保存' : '新規登録'}
+                </button>
+                {editing && (
+                  <button
+                    className={button}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setDraft({ ...EMPTY });
+                      setEditing(false);
+                    }}
+                  >
+                    編集をキャンセル
+                  </button>
+                )}
+              </div>
+            </form>
+          </>
+        )}
+        {error && (
+          <div role="alert" className="mt-4 rounded-xl border border-destructive p-4 text-sm">
+            <p>{error}</p>
+            <button
+              className={`${button} mt-2`}
+              disabled={busy || loading}
+              onClick={() => void load()}
+            >
+              一覧を再取得
+            </button>
+          </div>
+        )}
+        {message && (
+          <p role="status" className="mt-4 text-sm">
+            {message}
+          </p>
+        )}
+        {busy && (
+          <p role="status" className="mt-2 text-sm text-muted">
+            保存中…
+          </p>
+        )}
       </section>
-
-      <div className="sticky bottom-4 z-20 flex flex-col gap-3 rounded-2xl border border-border bg-surface/95 p-4 shadow-xl backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-        <p
-          className={`text-sm ${registeredAgents.length === 0 ? 'text-red-300' : 'text-muted'}`}
-          role="status"
-          aria-live="polite"
-        >
-          {registeredAgents.length === 0
-            ? 'エージェントを最低1名登録してください。'
-            : message || (dirty ? '未保存の変更があります。' : '設定は保存済みです。')}
+      <dialog
+        ref={dialog}
+        aria-labelledby="valorant-delete-title"
+        className="max-h-[90vh] w-[calc(100%-2rem)] max-w-md overflow-auto rounded-2xl border border-border bg-surface p-6 text-foreground shadow-xl backdrop:bg-black/50"
+        onCancel={(event) => {
+          if (busy) event.preventDefault();
+          else setDeleting(null);
+        }}
+      >
+        <h2 id="valorant-delete-title" className="font-semibold">
+          エージェントを削除しますか？
+        </h2>
+        <p className="mt-3 break-words text-sm">
+          {deleting?.displayName} をこのサーバーの候補から削除します。
         </p>
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={!dirty || saving || registeredAgents.length === 0}
-          className="rounded-xl bg-primary px-6 py-3 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {saving ? '保存中…' : '設定を保存'}
-        </button>
-      </div>
+        <div className="mt-5 flex gap-3">
+          <button autoFocus className={button} disabled={busy} onClick={() => setDeleting(null)}>
+            キャンセル
+          </button>
+          <button
+            className={`${button} text-destructive`}
+            disabled={busy}
+            onClick={() => void mutate('DELETE', undefined, deleting!.agentId)}
+          >
+            削除を確定
+          </button>
+        </div>
+        {error && (
+          <p role="alert" className="mt-4 text-sm text-destructive">
+            {error}
+          </p>
+        )}
+      </dialog>
     </div>
   );
 }

@@ -55,10 +55,9 @@ async function PluginDetailPage({
   const allFieldsReadable = configAccess.allConfigPathsReadable;
   const allFieldsEditable = configAccess.allConfigPathsEditable;
   const canUseValorantGuidedEditor =
-    pluginId === 'valorant' &&
-    allFieldsReadable &&
-    allFieldsEditable &&
-    configAccess.canToggleEnabled;
+    pluginId === 'valorant' && configAccess.readableConfigPaths.includes('enabledAgents');
+  const canManageValorantPlugin =
+    allFieldsReadable && allFieldsEditable && configAccess.canToggleEnabled;
   const canUseModerationGuidedEditor =
     pluginId === 'moderation' &&
     allFieldsReadable &&
@@ -101,6 +100,7 @@ async function PluginDetailPage({
             guildId={guildId}
             initialEnabled={plugin.enabled}
             initialConfig={visibleConfig}
+            canManagePlugin={canManageValorantPlugin}
           />
         ) : allFieldsReadable && allFieldsEditable ? (
           <div className="rounded-2xl border border-border bg-surface p-6 shadow-card">
@@ -209,6 +209,14 @@ async function PluginDetailPage({
           href={`/dashboard/guilds/${guildId}/birthday`}
           title="Birthday管理"
           description="Discordメンバーの誕生日を月日だけで登録・更新・解除します。"
+        />
+      ) : null}
+
+      {pluginId === 'valorant' ? (
+        <ManagementLink
+          href={`/dashboard/guilds/${guildId}/valorant/stats`}
+          title="VALORANT抽選統計"
+          description="抽選履歴を集計し、候補入りを分母とした選出率・マップ・プレイヤー傾向を確認します。"
         />
       ) : null}
 

@@ -1,159 +1,107 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
-import { VALORANT_AGENTS } from '@herta/plugin-catalog';
 import { normalizeValorantConfig, valorantPlugin } from './valorant.js';
 
-function fixture({
-  inVoice = true,
-  participants = ['u1', 'u2'],
-  bots = [] as string[],
-  uncached = [] as string[],
-  missing = [] as string[],
-  enabled = true,
-  enabledAgents,
-}: {
-  inVoice?: boolean;
-  participants?: string[];
-  bots?: string[];
-  uncached?: string[];
-  missing?: string[];
-  enabled?: boolean;
-  enabledAgents?: string[];
-} = {}) {
-  const members = new Map(
-    [...participants, ...bots].map((id) => [id, { id, user: { bot: bots.includes(id) } }]),
-  );
-  const channel: { id: string; name: string; guild?: unknown } = {
-    id: 'vc1',
-    name: 'ゲームVC',
-  };
-  const fetch = vi.fn(async (id: string) => {
-    if (id === 'u1')
-      return { id, user: { bot: false }, voice: { channel: inVoice ? channel : null } };
-    if (missing.includes(id)) throw new Error('Member fetch failed');
-    const member = members.get(id);
-    if (!member) throw new Error('Member not found');
-    return member;
+function fixture(map: string | null = null, enabled = true) {
+  const create = vi.fn().mockResolvedValue({
+    id: 'cfc92874-f6ab-4a68-9acf-c5ecc5010a05',
+    mode: map ? 'TACTICAL' : 'RANDOM',
+    mapId: map,
+    guildId: 'guild',
+    channelId: 'channel',
+    creatorId: 'owner',
+    status: 'OPEN',
+    maxParticipants: 5,
+    participants: [],
+    expiresAt: new Date(Date.now() + 10000),
+    createdAt: new Date(),
+    completedAt: null,
+    result: null,
   });
-  const voiceStates = new Map(
-    [...members.entries()].map(([id, member]) => [
-      id,
-      { id, channelId: 'vc1', member: uncached.includes(id) ? null : member },
-    ]),
-  );
-  const guild = { members: { fetch }, voiceStates: { cache: voiceStates } };
-  channel.guild = guild;
+  const update = vi.fn().mockResolvedValue({});
+  const findUnique = vi.fn().mockResolvedValue({ enabled, config: { enabled } });
+  const followUp = vi.fn().mockResolvedValue({ id: 'posted-message' });
+  const editReply = vi.fn();
+  const deferReply = vi.fn();
   const reply = vi.fn();
   const interaction = {
     guildId: 'guild',
-    guild,
-    user: { id: 'u1' },
-    options: { getSubcommand: () => 'random' },
+    channelId: 'channel',
+    user: { id: 'owner' },
+    appPermissions: null,
+    options: { getSubcommand: () => 'random', getString: () => map },
+    deferred: false,
+    replied: false,
+    deferReply,
     reply,
+    editReply,
+    followUp,
   };
   const context = {
-    config: { enabled, enabledAgents },
-    prisma: {},
-    logger: {},
+    config: { enabled },
+    prisma: {
+      guildPlugin: { findUnique },
+      valorantPickSession: { create, update },
+    },
+    logger: { error: vi.fn(), warn: vi.fn() },
   } as unknown as Parameters<NonNullable<typeof valorantPlugin.provideCommands>>[0];
   return {
+    create,
+    update,
+    findUnique,
+    followUp,
+    editReply,
+    deferReply,
     reply,
-    fetch,
-    execute: async () => {
-      const handlers = await valorantPlugin.provideCommands!(context);
-      await handlers[0]!.execute(interaction as unknown as ChatInputCommandInteraction);
+    run: async () => {
+      const commands = await valorantPlugin.provideCommands!(context);
+      await commands[0]!.execute(interaction as unknown as ChatInputCommandInteraction);
     },
   };
 }
-
-describe('Valorant random', () => {
-  it('抽選候補は未設定時30名、設定時は選択したAgentだけ', () => {
-    expect(normalizeValorantConfig({}).enabledAgents).toEqual([...VALORANT_AGENTS]);
-    expect(normalizeValorantConfig({ enabledAgents: ['Jett', 'Astra'] }).enabledAgents).toEqual([
-      'Jett',
-      'Astra',
-    ]);
+describe('VALORANT button recruitment slash command', () => {
+  it('preserves default legacy candidates and clamps session settings', () => {
+    expect(normalizeValorantConfig({}).maxParticipants).toBe(5);
+    expect(normalizeValorantConfig({ maxParticipants: 8 }).maxParticipants).toBe(5);
+    expect(normalizeValorantConfig({ sessionDurationMinutes: 2 }).sessionDurationMinutes).toBe(5);
+    expect(normalizeValorantConfig({ enabledAgents: [] }).enabledAgents).toEqual([]);
   });
-
-  it('不正なAgentを含む永続設定には公式一覧を使う', () => {
-    expect(normalizeValorantConfig({ enabledAgents: ['not-an-agent'] }).enabledAgents).toEqual([
-      ...VALORANT_AGENTS,
-    ]);
-    expect(normalizeValorantConfig({ enabledAgents: ['Jett', 'Jett'] }).enabledAgents).toEqual([
-      ...VALORANT_AGENTS,
-    ]);
-    expect(normalizeValorantConfig({ enabledAgents: [] }).enabledAgents).toEqual([
-      ...VALORANT_AGENTS,
-    ]);
-  });
-
-  it('VCの人間だけを割り当て、botを除外して公開する', async () => {
-    const f = fixture({ bots: ['bot1'], enabledAgents: ['Jett', 'Astra'] });
-    await f.execute();
-    expect(f.fetch).toHaveBeenCalledWith('u1');
-    expect(f.reply).toHaveBeenCalledOnce();
-    const options = f.reply.mock.calls[0]![0];
-    expect(options.allowedMentions).toEqual({ parse: [] });
-    expect(options.embeds).toHaveLength(1);
-    const description = options.embeds[0].data.description as string;
-    expect(description).toContain('<@u1>');
-    expect(description).toContain('<@u2>');
-    expect(description).not.toContain('bot1');
-    expect(description).toMatch(/Astra/);
-    expect(description).toMatch(/Jett/);
-  });
-
-  it('VCに参加しているがGuildMember cacheにないユーザーも取得して抽選する', async () => {
-    const f = fixture({ uncached: ['u2'], enabledAgents: ['Jett', 'Astra'] });
-    await f.execute();
-    expect(f.fetch).toHaveBeenCalledWith('u2');
-    const embed = f.reply.mock.calls[0]![0].embeds[0].data;
-    expect(embed.description).toContain('<@u2>');
-  });
-
-  it('個別GuildMember取得失敗時にはそのユーザーだけを除外する', async () => {
-    const f = fixture({ uncached: ['u2'], missing: ['u2'], enabledAgents: ['Jett', 'Astra'] });
-    await f.execute();
-    expect(f.fetch).toHaveBeenCalledWith('u2');
-    const embed = f.reply.mock.calls[0]![0].embeds[0].data;
-    expect(embed.description).toContain('<@u1>');
-    expect(embed.description).not.toContain('<@u2>');
-  });
-
-  it('VC未参加ならプライベートエラー', async () => {
-    const f = fixture({ inVoice: false });
-    await f.execute();
-    expect(f.reply).toHaveBeenCalledWith(
-      expect.objectContaining({ flags: MessageFlags.Ephemeral }),
+  it('creates a DB-backed OPEN session without requiring a VC connection', async () => {
+    const f = fixture();
+    await f.run();
+    expect(f.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(f.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ guildId: 'guild', mode: 'RANDOM', mapId: null }),
+      }),
+    );
+    expect(f.followUp).toHaveBeenCalledOnce();
+    expect(f.followUp.mock.calls[0]![0].components[0].components).toHaveLength(4);
+    expect(f.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { messageId: 'posted-message' },
+      }),
     );
   });
-
-  it('Agent候補が足りない場合は割り当てずエラー', async () => {
-    const f = fixture({ enabledAgents: ['Astra'] });
-    await f.execute();
-    const options = f.reply.mock.calls[0]![0];
-    expect(options.flags).toBe(MessageFlags.Ephemeral);
-    expect(options.content).toContain('不足');
+  it('uses tactical mode when a map is selected', async () => {
+    const f = fixture('Ascent');
+    await f.run();
+    expect(f.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ mode: 'TACTICAL', mapId: 'Ascent' }),
+      }),
+    );
   });
-
-  it('invokerが対象VCにない場合は誤抽選しない', async () => {
-    const f = fixture({ participants: ['u2'] });
-    await f.execute();
-    expect(f.reply.mock.calls[0]![0].flags).toBe(MessageFlags.Ephemeral);
-  });
-
-  it('Plugin configが無効な場合はVCを取得しない', async () => {
-    const f = fixture({ enabled: false });
-    await f.execute();
-    expect(f.fetch).not.toHaveBeenCalled();
-    expect(f.reply.mock.calls[0]![0].flags).toBe(MessageFlags.Ephemeral);
-  });
-
-  it('Manifestにrandomサブコマンドが公開されている', () => {
-    expect(
-      valorantPlugin.manifest.commands[0]?.subcommands?.some(
-        (command) => command.name === 'random',
-      ),
-    ).toBe(true);
+  it('fails privately when the plugin is disabled', async () => {
+    const f = fixture(null, false);
+    await f.run();
+    expect(f.create).not.toHaveBeenCalled();
+    expect(f.followUp).not.toHaveBeenCalled();
+    expect(f.reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining('無効'),
+        flags: MessageFlags.Ephemeral,
+      }),
+    );
   });
 });

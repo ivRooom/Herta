@@ -35,3 +35,5 @@ certs/*.key
 
 # Logs
 *.log
+# Local Playwright screenshots/traces contain fixture and possibly authenticated state.
+apps/studio/test-results/

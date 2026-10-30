@@ -1,12 +1,24 @@
-import { EmbedBuilder, MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
-import type { PrismaClient } from '@herta/db';
+import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  EmbedBuilder,
+  MessageFlags,
+  PermissionFlagsBits,
+  escapeMarkdown,
+  type ChatInputCommandInteraction,
+  type ButtonInteraction,
+} from 'discord.js';
+import { listValorantAgents, type PrismaClient } from '@herta/db';
+import type { Logger } from 'pino';
 import {
   VALORANT_REGIONS,
-  VALORANT_AGENTS,
+  defaultValorantAgents,
+  legacyValorantAgents,
   valorantManifest,
   type ValorantRegion,
 } from '@herta/plugin-catalog';
-import { definePlugin, type CommandHandler } from '@herta/plugin-sdk';
+import { definePlugin, type CommandHandler, type PluginEventHandler } from '@herta/plugin-sdk';
 import {
   deleteValorantLink,
   getValorantLink,
@@ -15,26 +27,44 @@ import {
 } from './valorant-repository.js';
 import { fetchValorantMmr, parseRiotId, type RiotIdInput } from './valorant-client.js';
 import { pickRandomValorantAgents } from './valorant-random.js';
+import {
+  createValorantSession,
+  getValorantSession,
+  mutateValorantSession,
+  parseValorantSessionAction,
+  setValorantSessionMessageId,
+  VALORANT_SESSION_PREFIX,
+  type ValorantCandidate,
+  type ValorantSessionSnapshot,
+} from './valorant-session-repository.js';
+import {
+  japaneseValorantMap,
+  pickTacticalAgents,
+  VALORANT_COMPOSITION_VERSION,
+  VALORANT_MAPS,
+} from './valorant-maps.js';
 
 export interface ValorantPluginConfig {
   enabled: boolean;
   enabledAgents: string[];
+  maxParticipants: number;
+  sessionDurationMinutes: number;
 }
 
 export function normalizeValorantConfig(value: unknown): ValorantPluginConfig {
   const source = isRecord(value) ? value : {};
   return {
     enabled: source.enabled === undefined ? true : source.enabled === true,
-    enabledAgents:
-      Array.isArray(source.enabledAgents) &&
-      source.enabledAgents.length > 0 &&
-      new Set(source.enabledAgents).size === source.enabledAgents.length &&
-      source.enabledAgents.every(
-        (agent) =>
-          typeof agent === 'string' && (VALORANT_AGENTS as readonly string[]).includes(agent),
-      )
-        ? [...source.enabledAgents]
-        : [...VALORANT_AGENTS],
+    enabledAgents: legacyValorantAgents(source.enabledAgents),
+    maxParticipants:
+      typeof source.maxParticipants === 'number' && Number.isInteger(source.maxParticipants)
+        ? Math.max(1, Math.min(5, source.maxParticipants))
+        : 5,
+    sessionDurationMinutes:
+      typeof source.sessionDurationMinutes === 'number' &&
+      Number.isInteger(source.sessionDurationMinutes)
+        ? Math.max(5, Math.min(180, source.sessionDurationMinutes))
+        : 30,
   };
 }
 
@@ -116,64 +146,276 @@ async function handleMyId(
   );
 }
 
-async function handleRandom(
-  interaction: ChatInputCommandInteraction,
-  config: ValorantPluginConfig,
-): Promise<void> {
-  if (!interaction.guild) {
-    await replyEphemeral(interaction, 'サーバー内でのみ利用できます。');
-    return;
-  }
-
-  // 実行者の現在のVCを起点にする。Botや別VCの参加者は抽選しない。
-  const invoker = await interaction.guild.members.fetch(interaction.user.id).catch(() => null);
-  const channel = invoker?.voice.channel;
-  if (!channel) {
-    await replyEphemeral(interaction, '先にボイスチャンネルへ参加してください。');
-    return;
-  }
-
-  const voiceMembers = await Promise.all(
-    [...channel.guild.voiceStates.cache.values()]
-      .filter((state) => state.channelId === channel.id)
-      .map((state) => state.member ?? channel.guild.members.fetch(state.id).catch(() => null)),
+function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
+  const closed = session.status !== 'OPEN' || session.expiresAt <= new Date();
+  const members = session.participants.map((item) => item.userId);
+  const result = Array.isArray(session.result) ? session.result : [];
+  const assignments = result.filter(
+    (item): item is { userId: string; agentId: string; displayName: string } =>
+      typeof item === 'object' &&
+      item !== null &&
+      !Array.isArray(item) &&
+      typeof item.userId === 'string' &&
+      typeof item.agentId === 'string' &&
+      typeof item.displayName === 'string',
   );
-  const participants = voiceMembers.flatMap((member) =>
-    member && !member.user.bot ? [member] : [],
-  );
-  if (!participants.some((member) => member.id === interaction.user.id)) {
-    await replyEphemeral(interaction, 'VCの参加者を確認できません。再接続してお試しください。');
-    return;
-  }
-
-  const result = pickRandomValorantAgents(
-    participants.map((member) => member.id),
-    config.enabledAgents,
-  );
-  if (result.status === 'no_participants') {
-    await replyEphemeral(interaction, 'VCに抽選対象のメンバーがいません。');
-    return;
-  }
-  if (result.status === 'not_enough_agents') {
-    await replyEphemeral(
-      interaction,
-      `登録済みAgentが不足しています（${result.available}名 / VC参加者${result.required}名）。Herta Studioで抽選対象Agentを追加してください。`,
+  const lines =
+    session.status === 'COMPLETED' && assignments.length > 0
+      ? assignments.map(
+          (item) => '<@' + item.userId + '> — **' + escapeMarkdown(item.displayName) + '**',
+        )
+      : members.map((id) => '👤 <@' + id + '>');
+  const description = [
+    'モード：' + (session.mode === 'TACTICAL' ? '実戦向け構成' : '完全ランダム'),
+    'マップ：' + japaneseValorantMap(session.mapId),
+    '参加者：' + members.length + ' / ' + session.maxParticipants,
+    '',
+    lines.length ? lines.join('\n') : '参加者はいません',
+  ];
+  if (session.mode === 'TACTICAL' && session.status === 'COMPLETED') {
+    description.push(
+      '',
+      '構成の特徴：エントリー・スモーク・索敵・防衛と連携を考慮。勝率保証なし。',
     );
-    return;
+    if (members.length < 5) description.push('※5人編成としては未完成です。');
   }
-
-  const lines = result.assignments.map(
-    ({ userId, agent }, index) => `${index + 1}. <@${userId}> — **${agent}**`,
+  description.push(
+    '',
+    '状態：' + (session.status === 'OPEN' && closed ? 'EXPIRED' : session.status),
   );
   const embed = new EmbedBuilder()
     .setColor(0xff4655)
-    .setTitle('🎲 VALORANT Agent Random')
-    .setDescription(lines.join('\n'))
-    .setFooter({
-      text: `${channel.name} • ${result.assignments.length}人 / Agent候補${config.enabledAgents.length}名`,
-    });
+    .setTitle('🎮 VALORANT エージェント抽選')
+    .setDescription(description.join('\n'))
+    .setTimestamp(session.completedAt ?? session.createdAt);
+  const button = (action: string, label: string, style: ButtonStyle, disabled: boolean) =>
+    new ButtonBuilder()
+      .setCustomId(VALORANT_SESSION_PREFIX + session.id + ':' + action)
+      .setLabel(label)
+      .setStyle(style)
+      .setDisabled(disabled);
+  return {
+    embeds: [embed],
+    components: [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        button(
+          'join',
+          '参加',
+          ButtonStyle.Success,
+          closed || members.length >= session.maxParticipants,
+        ),
+        button('leave', '参加取消', ButtonStyle.Secondary, closed),
+        button('draw', '抽選', ButtonStyle.Primary, closed || members.length === 0),
+        button('cancel', '募集取消', ButtonStyle.Danger, closed),
+      ),
+    ],
+    allowedMentions: { parse: [] as [] },
+  };
+}
 
-  await interaction.reply({ embeds: [embed], allowedMentions: { parse: [] } });
+async function handleRandom(
+  interaction: ChatInputCommandInteraction,
+  prisma: PrismaClient,
+  logger: Logger,
+): Promise<void> {
+  if (!interaction.guildId || !interaction.channelId) {
+    await replyEphemeral(interaction, 'サーバー内のテキストチャンネルで実行してください。');
+    return;
+  }
+  if (!interaction.deferred && !interaction.replied) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  }
+  try {
+    const plugin = await prisma.guildPlugin.findUnique({
+      where: { guildId_pluginId: { guildId: interaction.guildId!, pluginId: 'valorant' } },
+    });
+    const config = normalizeValorantConfig(plugin?.config);
+    if (!plugin?.enabled || !config.enabled) {
+      await interaction.editReply('VALORANT Pluginは現在無効です。');
+      return;
+    }
+    if (
+      interaction.appPermissions &&
+      !interaction.appPermissions.has([
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.EmbedLinks,
+      ])
+    ) {
+      await interaction.editReply('Botに閲覧・送信・埋め込みリンク権限を付与してください。');
+      return;
+    }
+    const map = interaction.options.getString('map');
+    if (map !== null && !VALORANT_MAPS.some(([id]) => id === map)) {
+      await interaction.editReply('未対応のマップです。');
+      return;
+    }
+    const mode = map ? 'TACTICAL' : 'RANDOM';
+    const session = await createValorantSession(prisma, {
+      guildId: interaction.guildId,
+      channelId: interaction.channelId,
+      creatorId: interaction.user.id,
+      mode,
+      mapId: map,
+      maxParticipants: config.maxParticipants,
+      expiresAt: new Date(Date.now() + config.sessionDurationMinutes * 60_000),
+      rulesVersion: mode === 'TACTICAL' ? VALORANT_COMPOSITION_VERSION : 'fisher-yates-v1',
+    });
+    await interaction.editReply('参加募集を作成しました。参加ボタンを押した人だけが抽選対象です。');
+    const message = await interaction.followUp({
+      ...buildValorantSessionMessage(session),
+      flags: [],
+    });
+    await setValorantSessionMessageId(prisma, interaction.guildId, session.id, message.id);
+  } catch (error) {
+    logger.error(
+      {
+        guildId: interaction.guildId,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      },
+      'VALORANT募集作成に失敗',
+    );
+    await interaction
+      .editReply('募集の作成に失敗しました。DiscordまたはDBを確認してください。')
+      .catch(() => undefined);
+  }
+}
+
+async function handleValorantButton(
+  interaction: ButtonInteraction,
+  prisma: PrismaClient,
+  logger: Logger,
+): Promise<void> {
+  const parsed = parseValorantSessionAction(interaction.customId);
+  if (!parsed) return;
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const guildId = interaction.guildId;
+  if (!guildId) {
+    await interaction.editReply('サーバー内でのみ操作できます。');
+    return;
+  }
+  try {
+    const session = await getValorantSession(prisma, guildId, parsed.id);
+    if (
+      !session ||
+      (session.messageId && session.messageId !== interaction.message.id) ||
+      session.channelId !== interaction.channelId
+    ) {
+      await interaction.editReply('対象の募集が見つかりません。');
+      return;
+    }
+    let candidates: ValorantCandidate[] = [];
+    if (parsed.action === 'draw') {
+      const plugin = await prisma.guildPlugin.findUnique({
+        where: { guildId_pluginId: { guildId, pluginId: 'valorant' } },
+      });
+      if (!plugin?.enabled || !normalizeValorantConfig(plugin.config).enabled) {
+        await interaction.editReply('VALORANT Pluginは現在無効です。');
+        return;
+      }
+      const stored = await listValorantAgents(prisma, guildId);
+      candidates =
+        stored === null
+          ? defaultValorantAgents(normalizeValorantConfig(plugin.config).enabledAgents)
+              .filter((a) => a.enabled)
+              .map(({ agentId, agentName, displayName }) => ({ agentId, agentName, displayName }))
+          : stored
+              .filter((a) => a.enabled)
+              .map(({ agentId, agentName, displayName }) => ({ agentId, agentName, displayName }));
+    }
+    const mutation = await mutateValorantSession(prisma, {
+      guildId,
+      id: parsed.id,
+      userId: interaction.user.id,
+      action: parsed.action,
+      isAdmin: Boolean(
+        interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
+        interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild),
+      ),
+      candidates,
+      pick(participants, available, mode, mapId) {
+        let pool = available;
+        if (mode === 'TACTICAL') {
+          const selected = VALORANT_MAPS.find(([id]) => id === mapId)?.[0];
+          if (!selected) return null;
+          const tactical = pickTacticalAgents(
+            selected,
+            participants.length,
+            available.map((a) => a.agentName),
+          );
+          if (tactical.status !== 'ok') return null;
+          pool = tactical.agents.map((name) => available.find((a) => a.agentName === name)!);
+        }
+        const result = pickRandomValorantAgents(
+          participants,
+          pool.map((a) => a.agentId),
+        );
+        if (result.status !== 'ok') return null;
+        return result.assignments.map(({ userId, agent }) => {
+          const found = pool.find((candidate) => candidate.agentId === agent)!;
+          return {
+            userId,
+            agentId: found.agentId,
+            agentName: found.agentName,
+            displayName: found.displayName,
+          };
+        });
+      },
+    });
+    if (mutation.status !== 'ok') {
+      const messages: Record<string, string> = {
+        missing: '募集が見つかりません。',
+        closed: '募集は終了済み、または期限切れです。',
+        full: 'この募集は定員です。',
+        not_joined: 'まだ参加していません。',
+        empty: '参加者がいないため抽選できません。',
+        forbidden: '抽選・募集取消は作成者または管理者のみ実行できます。',
+        insufficient: '有効なエージェントが不足しています。Studioで候補を確認してください。',
+      };
+      // Expiration can close the DB session even if the Discord UI is stale.
+      if (mutation.status === 'closed') {
+        const latest = await getValorantSession(prisma, guildId, parsed.id);
+        if (latest)
+          await interaction.message
+            .edit(buildValorantSessionMessage(latest))
+            .catch(() => undefined);
+      }
+      await interaction.editReply(messages[mutation.status] ?? '操作できませんでした。');
+      return;
+    }
+    if (mutation.changed) {
+      try {
+        const latest = await getValorantSession(prisma, guildId, parsed.id);
+        if (latest) await interaction.message.edit(buildValorantSessionMessage(latest));
+      } catch (error) {
+        logger.warn(
+          { guildId, errorName: error instanceof Error ? error.name : 'UnknownError' },
+          'VALORANT募集表示の更新に失敗',
+        );
+        await interaction.editReply('操作はDBへ保存済みですが、Discordの表示更新に失敗しました。');
+        return;
+      }
+    }
+    await interaction.editReply(
+      parsed.action === 'draw'
+        ? '抽選を確定しました。'
+        : parsed.action === 'join'
+          ? mutation.changed
+            ? '参加しました。'
+            : 'すでに参加済みです。'
+          : parsed.action === 'leave'
+            ? '参加を取り消しました。'
+            : '募集を取り消しました。',
+    );
+  } catch (error) {
+    logger.error(
+      { guildId, errorName: error instanceof Error ? error.name : 'UnknownError' },
+      'VALORANT募集操作に失敗',
+    );
+    await interaction
+      .editReply('処理できませんでした。しばらくしてから再試行してください。')
+      .catch(() => undefined);
+  }
 }
 
 function tierEmoji(tierName: string): string {
@@ -315,12 +557,25 @@ export const valorantPlugin = definePlugin<ValorantPluginConfig, unknown, Prisma
           } else if (subcommand === 'stats') {
             await handleStats(interaction, context.prisma);
           } else if (subcommand === 'random') {
-            await handleRandom(interaction, normalizeValorantConfig(context.config));
+            await handleRandom(interaction, context.prisma, context.logger);
           } else {
             await replyEphemeral(interaction, '未対応のサブコマンドです。');
           }
         },
       } as CommandHandler<ChatInputCommandInteraction>,
     ];
+  },
+  provideEvents(context) {
+    return [
+      {
+        event: 'interactionCreate',
+        async handler(_context, ...args) {
+          const candidate = args[0] as ButtonInteraction | undefined;
+          if (!candidate?.isButton?.() || !candidate.customId.startsWith(VALORANT_SESSION_PREFIX))
+            return;
+          await handleValorantButton(candidate, context.prisma, context.logger);
+        },
+      },
+    ] as PluginEventHandler<ValorantPluginConfig>[];
   },
 });
