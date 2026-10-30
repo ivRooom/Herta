@@ -57,7 +57,7 @@ export async function getVcRecapExplicitConsentCapabilities(
   prisma: PrismaClient,
   userId: string,
 ): Promise<VcRecapConsentCapabilities> {
-  const [records, legacy] = await Promise.all([
+  const [records, legacy, erasure] = await Promise.all([
     prisma.vcRecapExplicitConsent.findMany({
       where: { userId },
       select: { purpose: true, policyVersion: true, consentedAt: true, revokedAt: true },
@@ -66,8 +66,36 @@ export async function getVcRecapExplicitConsentCapabilities(
       where: { userId },
       select: { voiceTranscriptionConsent: true, updatedAt: true },
     }),
+    prisma.vcRecapErasureRequest.findUnique({
+      where: { userId },
+      select: { userId: true },
+    }),
   ]);
   const legacyRefusal =
     legacy !== null && !legacy.voiceTranscriptionConsent && legacy.updatedAt.getTime() > 0;
-  return evaluateVcRecapExplicitConsent(records, legacyRefusal);
+  return evaluateVcRecapExplicitConsent(records, legacyRefusal || erasure !== null);
+}
+
+/**
+ * Persist a deletion barrier and revoke every future-purpose consent atomically.
+ * This does NOT claim to have deleted S3 objects. The erasure request stays
+ * active until a future archive worker verifies all object versions and backup
+ * restore replay. Callers must still delete legacy PostgreSQL VC data.
+ */
+export async function requestVcRecapErasure(
+  prisma: PrismaClient,
+  userId: string,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const now = new Date();
+    await tx.vcRecapErasureRequest.upsert({
+      where: { userId },
+      create: { userId, requestedAt: now },
+      update: { requestedAt: now, storageDeletionVerifiedAt: null },
+    });
+    await tx.vcRecapExplicitConsent.updateMany({
+      where: { userId },
+      data: { consentedAt: null, revokedAt: now },
+    });
+  });
 }
