@@ -169,7 +169,10 @@ test('文字起こしを発言順のまま発言者名つきの行へ変換し�
     new Map([['user-1', member()]]),
   );
 
-  assert.deepEqual(entries.map((entry) => entry.segmentId), ['segment-1', null]);
+  assert.deepEqual(
+    entries.map((entry) => entry.segmentId),
+    ['segment-1', null],
+  );
   assert.deepEqual(
     entries.map((entry) => [entry.speaker.displayName, entry.text]),
     [
