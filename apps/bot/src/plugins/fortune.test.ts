@@ -16,7 +16,7 @@ beforeEach(() => {
 function fixture(command: string, isPublic = false) {
   const prisma = {
     guild: { findUnique: vi.fn(async () => ({ timezone: 'Asia/Tokyo' })) },
-    $queryRaw: vi.fn(),
+    $queryRaw: vi.fn(async () => [{ ready: false }]),
     $executeRaw: vi.fn(async () => 1),
   };
   const interaction = {

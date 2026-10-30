@@ -1,6 +1,6 @@
 # Daily Bonus β
 
-Daily Bonus is a dedicated default-disabled Bot Plugin. It does not weaken Daily Content's mention prohibition. Enable only after the canonical wallet, verified identity enrollment and privacy publication have been accepted.
+Daily Bonus is a dedicated default-disabled Bot Plugin. It does not weaken Daily Content's mention prohibition. Enable only after the canonical wallet, verified existing identity/account and account/journal agreement and privacy publication have been accepted.
 
 ## Ownership and configuration
 
@@ -24,10 +24,12 @@ Signed read contract: `contracts/ivrm/herta-daily-fortunes-read.v1.json`; produc
 
 ## Release and rollback
 
-Merge: contract freeze→compatible Web shared claim/quiz API→Herta→Member/Admin consumers. Deploy schema expand first, disabled API/consumer next, validated Guild configuration and approved enrollment, then enable. Herta runtime merges automatically deploy/migrate: review exact HEAD, backup/restore and target-specific production approval before merge. Do not use Platform to deploy production.
+Merge: contract freeze→compatible Web shared claim/quiz API→Herta→Member/Admin consumers. Deploy schema expand first, disabled API/consumer next, validated Guild configuration and canonical account/journal reconciliation, then enable. Herta runtime merges automatically deploy/migrate: review exact HEAD, backup/restore and target-specific production approval before merge. Do not use Platform to deploy production.
 
 Rehearse new migration and restores on isolated synthetic PostgreSQL. Keep old immutable image and additive schema. Disable the Plugin/global flag to stop new deliveries/claims. After canonical credit, retain ledger/receipt and reconcile or roll forward; never delete receipt or switch to an old wallet. A timeout is not proof a credit/send failed. Production acceptance must verify one09:00 announcement, correct role, private quiz/fortune, same wallet balances/history and unauthorized denial.
 
 ## Remaining acceptance gates
 
-This document is a runbook candidate, not evidence production rollout occurred. Full CI/build/negative tests, actual limited-Guild Discord acceptance, live backup/enrollment/secret validation and signed Member/Admin history acceptance remain release gates until recorded in the owning PR.
+This document is a runbook candidate, not evidence production rollout occurred. Full CI/build/negative tests, actual limited-Guild Discord acceptance, live backup/canonical-account/secret validation and signed Member/Admin history acceptance remain release gates until recorded in the owning PR.
+
+Operator-selected target: Guild964326043420872704, channel1042774690227306517 (┣⚙｜system通知), role1565130164386398403 (herta.notice),09:00Asia/Tokyo. Apply only after the reviewed release gate; no live configuration has been changed by this document. Daily-only release does not enable or import legacy activity accrual (COMMON_POINTS_ENABLED staysfalse).

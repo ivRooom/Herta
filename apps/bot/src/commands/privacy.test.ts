@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   ]),
 }));
 vi.mock('@herta/db', () => ({
+  hasDailyBonusSchema: vi.fn(async () => false),
   getPrismaClient: () => ({ mbtiPersonalResult: { findMany: mocks.findMany } }),
   getUserDataConsent: mocks.consent,
   listVcRecapSessionsForUser: mocks.voice,
