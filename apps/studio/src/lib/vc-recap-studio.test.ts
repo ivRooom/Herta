@@ -153,6 +153,7 @@ test('文字起こしを発言順のまま発言者名つきの行へ変換し�
   const entries = toVcRecapTranscriptEntries(
     [
       {
+        id: 'segment-1',
         userId: 'user-1',
         text: 'こんにちは',
         startedAt: new Date('2026-07-01T00:00:01.000Z'),
@@ -168,6 +169,7 @@ test('文字起こしを発言順のまま発言者名つきの行へ変換し�
     new Map([['user-1', member()]]),
   );
 
+  assert.deepEqual(entries.map((entry) => entry.segmentId), ['segment-1', null]);
   assert.deepEqual(
     entries.map((entry) => [entry.speaker.displayName, entry.text]),
     [
