@@ -1,7 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
 import { fortunePlugin } from './fortune.js';
-import { EMPTY_FORTUNE_PROFILE } from './fortune-core.js';
+import { EMPTY_FORTUNE_PROFILE, createDailyFortune, localFortuneDate } from './fortune-core.js';
+import { renderFortuneCard } from './fortune-card.js';
 import { fetchIvrmFortuneProfile } from './fortune-ivrm-profile.js';
 import { fortuneManifest } from '@herta/plugin-catalog';
 vi.mock('./fortune-card.js', () => ({ renderFortuneCard: vi.fn(async () => Buffer.from('png')) }));
@@ -13,10 +14,13 @@ const linked = {
 beforeEach(() => {
   vi.mocked(fetchIvrmFortuneProfile).mockReset().mockResolvedValue(linked);
 });
+afterEach(() => vi.unstubAllEnvs());
 function fixture(command: string, isPublic = false) {
   const prisma = {
     guild: { findUnique: vi.fn(async () => ({ timezone: 'Asia/Tokyo' })) },
-    $queryRaw: vi.fn(async () => [{ ready: false }]),
+    $queryRaw: vi.fn(async (..._args: unknown[]): Promise<Array<Record<string, unknown>>> => [
+      { ready: false },
+    ]),
     $executeRaw: vi.fn(async () => 1),
   };
   const interaction = {
@@ -43,6 +47,38 @@ function fixture(command: string, isPublic = false) {
   };
 }
 describe('ivrm-web-backed fortune command', () => {
+  it('keeps saved profile guidance private in both the public embed and PNG', async () => {
+    vi.stubEnv('DAILY_BONUS_ENABLED', 'true');
+    const base = createDailyFortune(
+      '123456789012345678',
+      '223456789012345678',
+      localFortuneDate(new Date(), 'Asia/Tokyo'),
+      EMPTY_FORTUNE_PROFILE,
+    );
+    const privateHint = '一人で考えを整理してから、小さな予定を一つ決めてみましょう。';
+    const snapshot = {
+      ...base,
+      publicAction: base.action,
+      action: `${base.action}。${privateHint}`,
+      notes: [],
+    };
+    const publicFixture = fixture('today', true);
+    publicFixture.prisma.$queryRaw.mockResolvedValue([{ result_json: snapshot }]);
+    vi.mocked(renderFortuneCard).mockClear();
+    await publicFixture.execute();
+    expect(publicFixture.logger.error).not.toHaveBeenCalled();
+    expect(JSON.stringify(publicFixture.interaction.followUp.mock.calls)).not.toContain(
+      privateHint,
+    );
+    expect(vi.mocked(renderFortuneCard).mock.calls[0]![0].action).toBe(base.action);
+    expect(vi.mocked(renderFortuneCard).mock.calls[0]![2]).toBeNull();
+    const privateFixture = fixture('today');
+    privateFixture.prisma.$queryRaw.mockResolvedValue([{ result_json: snapshot }]);
+    await privateFixture.execute();
+    expect(JSON.stringify(privateFixture.interaction.editReply.mock.calls)).toContain(privateHint);
+    expect(privateFixture.interaction.followUp).not.toHaveBeenCalled();
+    expect(vi.mocked(renderFortuneCard).mock.calls.at(-1)![2]).toBeNull();
+  });
   it('loads the invoking Discord member, privately, without copying profile data to Herta', async () => {
     const f = fixture('today');
     await f.execute();

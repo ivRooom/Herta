@@ -116,7 +116,7 @@ export const fortunePlugin = definePlugin<{ enabled: boolean }, unknown, PrismaC
             const card = await renderFortuneCard(
               fortune,
               interaction.user.displayName,
-              isPublic ? null : saved.mbti,
+              isPublic || process.env.DAILY_BONUS_ENABLED === 'true' ? null : saved.mbti,
             );
             const payload = {
               embeds: [embed],
