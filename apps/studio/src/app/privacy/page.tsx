@@ -173,7 +173,7 @@ export default function PrivacyPolicyPage() {
             <li>
               将来OpenAI音声認識を有効化する場合は、従来の文字起こし同意とは別に
               <code className="text-foreground">/herta-privacy openai-audio-consent</code>
-              で本人が明示同意した発言音声だけをOpenAI APIへ送信します。自動同意ロールや管理者設定でこの同意は代替できません。現在はAWSを既定とし、OpenAI音声送信は無効です。
+              で本人が明示同意した発言音声だけをOpenAI APIへ送信します。自動同意ロールや管理者設定でこの同意は代替できません。AWSを既定とし、OpenAI音声送信は運営による有効化と本人の個別同意が揃った場合のみ行われます。
             </li>
             <li>
               VC要約:文字起こし本文と発言者のDiscordユーザーIDをOpenAIへ送り、要約を作ります。
