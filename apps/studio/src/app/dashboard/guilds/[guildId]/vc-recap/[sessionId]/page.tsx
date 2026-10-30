@@ -53,7 +53,6 @@ async function VcRecapSessionPage({
       studioVcRecapExportResource(guildId),
     );
 
-
   return (
     <div>
       <BackLink guildId={guildId} />
