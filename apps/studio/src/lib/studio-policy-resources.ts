@@ -1,4 +1,8 @@
-import type { StudioAccessPolicy, StudioPolicyAction } from './studio-access-policy.ts';
+import {
+  evaluateStudioPolicyDocuments,
+  type StudioAccessPolicy,
+  type StudioPolicyAction,
+} from './studio-access-policy.ts';
 import { studioNavigationSettingsResource } from './studio-navigation-config.ts';
 import { pluginConfigPermissionFields } from './plugin-config-paths.ts';
 import {
@@ -142,6 +146,36 @@ export function studioVoiceConsentResource(guildId: string): string {
 /** Permission resource for sensitive VC transcript downloads. */
 export function studioVcRecapExportResource(guildId: string): string {
   return `guild:${guildId}:vc-recap:export`;
+}
+
+/**
+ * Exporting the transcript requires a deliberate, exact-resource Allow.
+ * Wildcard grants intended for other Studio operations MUST NOT silently
+ * enable downloading voice transcripts. Matching explicit Deny still wins.
+ */
+export function hasExplicitVcRecapExportPermission(
+  access: ApplicableStudioPolicyContext & { isRoot: boolean },
+  guildId: string,
+): boolean {
+  if (access.isRoot) return true;
+  const activeRoles = new Set(access.roleIds);
+  const policies = [
+    ...access.managedPolicies,
+    ...access.policies
+      .filter((record) => activeRoles.has(record.discordRoleId))
+      .map((record) => record.policy),
+  ];
+  const action = 'studio.operation.execute';
+  const resource = studioVcRecapExportResource(guildId);
+  const hasExactGrant = policies.some((policy) =>
+    policy.Statement.some(
+      (statement) =>
+        statement.Effect === 'Allow' &&
+        statement.Action.includes(action) &&
+        statement.Resource.includes(resource),
+    ),
+  );
+  return hasExactGrant && evaluateStudioPolicyDocuments(policies, action, resource);
 }
 
 export function hasConfiguredStudioPagePolicy(access: ApplicableStudioPolicyContext): boolean {
