@@ -8,6 +8,7 @@ import {
   listVcRecapTranscriptSegmentsForUser,
   requestVcRecapErasure,
   setVoiceTranscriptionConsent,
+  setVcRecapOpenAiAudioConsent,
 } from '@herta/db';
 import { createLogger, type Logger } from '@herta/logger';
 import { buildConsentWebLinkMessage } from '../voice/vc-recap-consent-interaction.js';
@@ -35,6 +36,30 @@ async function executeVoiceConsent(interaction: ChatInputCommandInteraction) {
         '文字起こし本文はサーバーのダッシュボードでセッション終了から30日間閲覧できます(30日後に自動削除)。'
       : '🔒 VC発言の文字起こしへの同意を取り消しました。以後、あなたの発言は録音・文字起こしの対象外になり、' +
         '保存済みの文字起こし本文も削除しました。',
+    flags: MessageFlags.Ephemeral,
+  });
+}
+
+/**
+ * The Discord option description is presented before submission and points
+ * to the full privacy policy. No older AWS voice consent is automatically
+ * treated as permission to send raw voice to OpenAI.
+ */
+async function executeOpenAiAudioConsent(interaction: ChatInputCommandInteraction) {
+  const accept = interaction.options.getBoolean('consent', true);
+  const updated = await setVcRecapOpenAiAudioConsent(prisma, interaction.user.id, accept);
+  if (!updated) {
+    await interaction.reply({
+      content: '新しい音声送信同意を登録できません。文字起こし同意または削除依頼の状態を確認してください。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  if (!accept) revokeVcRecapConsent(interaction.user.id);
+  await interaction.reply({
+    content: accept
+      ? '✅ OpenAIへの音声送信に個別に同意しました。Herta側でOpenAI文字起こしを有効化した場合のみ、あなたの音声がOpenAI APIへ送信されます。生の音声ファイルはHertaで永続保存しません。旧AWS同意や長期録音同意とは別です。https://ivrm.jp/privacy'
+      : '🔒 OpenAIへの音声送信の同意を取り消しました。以後のOpenAIへの音声送信は行いません。既存の文字起こし本文を削除する場合は /herta-privacy delete-voice-data を実行してください。',
     flags: MessageFlags.Ephemeral,
   });
 }
@@ -154,6 +179,18 @@ export const privacyCommand: SlashCommand = {
         ],
       },
       {
+        name: 'openai-audio-consent',
+        description: 'OpenAIへVCの生音声を送信する場合の本人同意を変更します',
+        options: [
+          {
+            name: 'consent',
+            description: 'OpenAIに発言音声を送信することへ同意。詳細: https://ivrm.jp/privacy',
+            type: 'boolean',
+            required: true,
+          },
+        ],
+      },
+      {
         name: 'web-link',
         description: 'VC発言の文字起こし同意状態を変更できる専用URLを発行します(30分有効)',
       },
@@ -171,6 +208,10 @@ export const privacyCommand: SlashCommand = {
     const subcommand = interaction.options.getSubcommand();
     if (subcommand === 'voice-consent') {
       await executeVoiceConsent(interaction);
+      return;
+    }
+    if (subcommand === 'openai-audio-consent') {
+      await executeOpenAiAudioConsent(interaction);
       return;
     }
     if (subcommand === 'web-link') {
