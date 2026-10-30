@@ -301,7 +301,8 @@ jobs:
             test -f apps/studio/.next/standalone/apps/studio/server.js
             test -x packages/db/node_modules/.bin/prisma
             packages/db/node_modules/.bin/prisma --version > /dev/null
-            node -e "import(\"@herta/shared\").then(() => process.exit(0))"
+            cd apps/bot
+            node --input-type=module -e "await import(\"@herta/shared\")"
           '
 
       - name: Install checksum-verified ARM64 Syft and Grype
