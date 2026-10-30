@@ -176,6 +176,10 @@ services:
       STUDIO_PUBLIC_BASE_URL: ${STUDIO_PUBLIC_BASE_URL:-}
       # VC要約のAWS Transcribe Streaming。認証情報はRuntime Secret Store優先、未設定時のみenvを使う。
       # regionが無いと認証情報があっても文字起こしがスキップされるため、既定でTokyoを渡す。
+      # OpenAI raw voice is fail-closed until policy disclosure, opt-in, and
+      # deletion safeguards have been released and verified.
+      VC_RECAP_TRANSCRIPTION_PROVIDER: ${VC_RECAP_TRANSCRIPTION_PROVIDER:-aws}
+      VC_RECAP_OPENAI_AUDIO_CONSENT_READY: ${VC_RECAP_OPENAI_AUDIO_CONSENT_READY:-false}
       AWS_TRANSCRIBE_REGION: ${AWS_TRANSCRIBE_REGION:-ap-northeast-1}
       AWS_TRANSCRIBE_ACCESS_KEY_ID: ${AWS_TRANSCRIBE_ACCESS_KEY_ID:-}
       AWS_TRANSCRIBE_SECRET_ACCESS_KEY: ${AWS_TRANSCRIBE_SECRET_ACCESS_KEY:-}
