@@ -7,10 +7,7 @@ import { withStudioPagePermission } from '@/components/studio-page-permission-bo
 import { prisma } from '@/lib/db';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
-import {
-  formatVcRecapDuration,
-  getVcRecapSessionDetailForStudio,
-} from '@/lib/vc-recap-studio';
+import { formatVcRecapDuration, getVcRecapSessionDetailForStudio } from '@/lib/vc-recap-studio';
 import { VcRecapTranscriptChat } from './vc-recap-transcript-chat';
 
 export const dynamic = 'force-dynamic';
