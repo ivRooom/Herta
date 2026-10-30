@@ -31,3 +31,5 @@ jobs:
             git commit -m "style(vc-recap): apply Prettier [vc-format-skip]"
             git push origin HEAD:docs/vc-recap-lifecycle-design-20261030
           fi
+
+# One-shot branch-only formatter; remove after successful CI.
