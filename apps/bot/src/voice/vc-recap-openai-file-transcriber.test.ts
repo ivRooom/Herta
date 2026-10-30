@@ -141,6 +141,45 @@ describe('OpenAI bounded PCM file transcription', () => {
     expect(mayUpload).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps consuming PCM while the previous 20-second upload is unresolved', async () => {
+    let releaseResponse: (() => void) | undefined;
+    const blocked = new Promise<void>((resolve) => {
+      releaseResponse = resolve;
+    });
+    let notifyStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      notifyStarted = resolve;
+    });
+    let captured = 0;
+    async function* audio(): AsyncGenerator<Buffer> {
+      for (let i = 0; i < 2; i += 1) {
+        captured += 1;
+        yield Buffer.alloc(20 * 48_000 * 2);
+      }
+    }
+    const fetchImpl = vi.fn(async () => {
+      notifyStarted?.();
+      await blocked;
+      return new Response(JSON.stringify({ text: '音声認識' }), { status: 200 });
+    });
+    const segments = vi.fn();
+    const transcription = transcribePcmWithOpenAi(audio(), segments, {
+      apiKey: 'test',
+      model: 'gpt-transcribe',
+      mayUpload: async () => true,
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    await started;
+    try {
+      expect(captured).toBe(2);
+    } finally {
+      releaseResponse?.();
+    }
+    await transcription;
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(segments).toHaveBeenCalledTimes(2);
+  });
+
   it('never logs provider body or credential in HTTP failures', async () => {
     const fetchMock = vi
       .fn()
