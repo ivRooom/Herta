@@ -115,8 +115,20 @@ export async function transcribePcmWithOpenAi(
   let totalBytes = 0;
   const maxTotalBytes = MAX_SPEAKER_AUDIO_SECONDS * PCM_SAMPLE_RATE * PCM_BYTES_PER_SAMPLE;
 
-  const send = async (): Promise<void> => {
+  // PCM capture must never wait for an HTTP response. Otherwise a user
+  // resuming speech during the preceding upload can be silently dropped.
+  // Bound the queued uncompressed PCM to 60 seconds per speaker.
+  const MAX_QUEUED_CHUNKS = 3;
+  let queued = 0;
+  let uploadFailure: unknown = null;
+  let cancelled = false;
+  let uploadChain: Promise<void> = Promise.resolve();
+
+  const enqueue = (): void => {
     if (pendingBytes === 0) return;
+    if (queued >= MAX_QUEUED_CHUNKS) {
+      throw new Error('OpenAI audio upload backlog exceeded');
+    }
     const size = pendingBytes;
     const chunk = Buffer.concat(pending, size);
     pending = [];
@@ -126,32 +138,54 @@ export async function transcribePcmWithOpenAi(
     processedBytes += size;
     const endMs =
       recordingStart + (processedBytes / (PCM_SAMPLE_RATE * PCM_BYTES_PER_SAMPLE)) * 1000;
-    const text = await postAudioChunk(chunk, options);
-    if (text) {
-      await onSegment({
-        text,
-        startedAt: new Date(startMs),
-        endedAt: new Date(endMs),
+    queued += 1;
+    uploadChain = uploadChain
+      .then(async () => {
+        if (cancelled || uploadFailure) return;
+        const text = await postAudioChunk(chunk, options);
+        if (text && !cancelled) {
+          await onSegment({
+            text,
+            startedAt: new Date(startMs),
+            endedAt: new Date(endMs),
+          });
+        }
+      })
+      .catch((error: unknown) => {
+        uploadFailure ??= error;
+      })
+      .finally(() => {
+        queued -= 1;
       });
-    }
   };
 
-  for await (const input of pcmChunks) {
-    if (input.length % PCM_BYTES_PER_SAMPLE !== 0) {
-      throw new Error('Invalid PCM frame alignment');
+  try {
+    for await (const input of pcmChunks) {
+      if (uploadFailure) throw uploadFailure;
+      if (input.length % PCM_BYTES_PER_SAMPLE !== 0) {
+        throw new Error('Invalid PCM frame alignment');
+      }
+      totalBytes += input.length;
+      if (totalBytes > maxTotalBytes) {
+        throw new Error('VC voice burst exceeded the 10-minute safety limit');
+      }
+      let offset = 0;
+      while (offset < input.length) {
+        const take = Math.min(MAX_PCM_BYTES - pendingBytes, input.length - offset);
+        pending.push(input.subarray(offset, offset + take));
+        pendingBytes += take;
+        offset += take;
+        if (pendingBytes === MAX_PCM_BYTES) enqueue();
+      }
     }
-    totalBytes += input.length;
-    if (totalBytes > maxTotalBytes) {
-      throw new Error('VC voice burst exceeded the 10-minute safety limit');
-    }
-    let offset = 0;
-    while (offset < input.length) {
-      const take = Math.min(MAX_PCM_BYTES - pendingBytes, input.length - offset);
-      pending.push(input.subarray(offset, offset + take));
-      pendingBytes += take;
-      offset += take;
-      if (pendingBytes === MAX_PCM_BYTES) await send();
-    }
+    enqueue();
+    await uploadChain;
+    if (uploadFailure) throw uploadFailure;
+  } catch (error) {
+    cancelled = true;
+    // Do not send queued audio after capture fails or the safety limit is hit.
+    // The active HTTP call is bounded by REQUEST_TIMEOUT_MS.
+    await uploadChain;
+    throw error;
   }
-  await send();
 }
