@@ -11,9 +11,11 @@ export function ValorantConfigForm({
   guildId,
   initialEnabled,
   initialConfig,
+  canManagePlugin = true,
 }: {
   guildId: string;
   initialEnabled: boolean;
+  canManagePlugin?: boolean;
   initialConfig: Record<string, unknown>;
 }) {
   const [enabled, setEnabled] = useState(initialEnabled);
@@ -115,7 +117,8 @@ export function ValorantConfigForm({
   }
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
+      {canManagePlugin ? (
+        <section className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6">
         <h2 className="text-lg font-semibold">VALORANT Plugin設定</h2>
         <div className="mt-4 flex flex-wrap items-center gap-4">
           <label className="flex min-h-11 items-center gap-2">
@@ -178,7 +181,8 @@ export function ValorantConfigForm({
             Plugin設定を保存
           </button>
         </div>
-      </section>
+        </section>
+      ) : null}
       <section
         className="rounded-2xl border border-border bg-surface p-5 shadow-card sm:p-6"
         aria-busy={loading || busy}

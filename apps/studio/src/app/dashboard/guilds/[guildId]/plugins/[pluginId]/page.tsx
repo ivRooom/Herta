@@ -55,10 +55,9 @@ async function PluginDetailPage({
   const allFieldsReadable = configAccess.allConfigPathsReadable;
   const allFieldsEditable = configAccess.allConfigPathsEditable;
   const canUseValorantGuidedEditor =
-    pluginId === 'valorant' &&
-    allFieldsReadable &&
-    allFieldsEditable &&
-    configAccess.canToggleEnabled;
+    pluginId === 'valorant' && configAccess.readableConfigPaths.includes('enabledAgents');
+  const canManageValorantPlugin =
+    allFieldsReadable && allFieldsEditable && configAccess.canToggleEnabled;
   const canUseModerationGuidedEditor =
     pluginId === 'moderation' &&
     allFieldsReadable &&
