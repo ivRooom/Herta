@@ -180,6 +180,14 @@ async function PluginDetailPage({
         />
       ) : null}
 
+      {pluginId === 'daily-bonus' ? (
+        <ManagementLink
+          href={`/dashboard/guilds/${guildId}/daily-bonus`}
+          title="デイリーボーナス配信・記念日管理"
+          description="配信履歴、受取状況、失敗時の再試行、記念日の登録・出典確認を管理します。"
+        />
+      ) : null}
+
       {pluginId === 'daily-content' ? (
         <ManagementLink
           href={`/dashboard/guilds/${guildId}/daily-content`}
