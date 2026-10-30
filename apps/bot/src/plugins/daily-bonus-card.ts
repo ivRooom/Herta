@@ -8,7 +8,10 @@ export async function renderDailyBonusCard(result: ConfirmedDailyBonus): Promise
   activeRenders++;
   try {
     const { receipt, balance, alreadyClaimed } = result;
-    const total = receipt.rewardPoints + (receipt.streakReward?.points ?? 0);
+    const total =
+      receipt.rewardPoints +
+      (receipt.streakReward?.points ?? 0) +
+      (receipt.firstClaimReward?.points ?? 0);
     const escape = (value: string) =>
       value.replace(
         /[&<>"']/g,
@@ -32,7 +35,7 @@ export async function renderDailyBonusCard(result: ConfirmedDailyBonus): Promise
       ${text(`${balance.toLocaleString('ja-JP')} pt`, 538, 300, Math.min(44, Math.floor(560 / `${balance.toLocaleString('ja-JP')} pt`.length)))}
       ${text(`連続ログイン  ${receipt.streakDay.toLocaleString('ja-JP')} 日`, 58, 398, 32)}
       ${text(`連続ボーナス：${receipt.streakReward ? `+${receipt.streakReward.points} pt 獲得済み` : '本日の追加報酬なし'}`, 58, 451)}
-      ${text('一番乗りボーナス：現在未提供', 58, 498)}
+      ${text(receipt.firstClaimReward ? `本日の受取順位：${receipt.firstClaimReward.rank}位 / 一番乗り：${receipt.firstClaimReward.points > 0 ? `+${receipt.firstClaimReward.points} pt 獲得` : '対象外'}` : '一番乗りボーナス：本日の追加報酬なし', 58, 498)}
       <path d="M58 535 H942" stroke="#b9a2ff" stroke-opacity="0.4"/>
       ${text('次回の受取', 58, 582, 24, '#b9a2ff')}
       ${text(`${nextDailyBonusDate(receipt.claimDateJst)} 00:00 JST（Member）`, 58, 623, 26)}

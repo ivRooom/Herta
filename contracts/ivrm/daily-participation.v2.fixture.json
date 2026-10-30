@@ -1,0 +1,162 @@
+{
+  "publicQuestion": {
+    "id": "q_20261031",
+    "dateJst": "2026-10-31",
+    "slot": "daily",
+    "categoryId": "quiz",
+    "themeId": "game",
+    "format": "choice2",
+    "scoring": "instant",
+    "prompt": "Synthetic question",
+    "options": [
+      {
+        "id": "a",
+        "label": "A",
+        "mediaId": null
+      },
+      {
+        "id": "b",
+        "label": "B",
+        "mediaId": null
+      }
+    ],
+    "media": [],
+    "closesAt": "2026-10-31T15:00:00.000Z",
+    "requiresClaim": true,
+    "maxTextLength": 500
+  },
+  "status": {
+    "status": "ok",
+    "guildId": "123456789012345678",
+    "discordUserId": "223456789012345678",
+    "todayJst": "2026-10-31",
+    "bonusClaimed": true,
+    "bonusReceipt": {
+      "claimDateJst": "2026-10-31",
+      "rewardPoints": 25,
+      "rollPoints": 25,
+      "quizBonusPoints": 0,
+      "streakDay": 7,
+      "channel": "discord",
+      "streakReward": {
+        "points": 10,
+        "streakDay": 7
+      },
+      "firstClaimReward": {
+        "points": 5,
+        "rank": 1,
+        "scope": "global"
+      }
+    },
+    "questions": [
+      {
+        "id": "q_20261031",
+        "dateJst": "2026-10-31",
+        "slot": "daily",
+        "categoryId": "quiz",
+        "themeId": "game",
+        "format": "choice2",
+        "scoring": "instant",
+        "prompt": "Synthetic question",
+        "options": [
+          {
+            "id": "a",
+            "label": "A",
+            "mediaId": null
+          },
+          {
+            "id": "b",
+            "label": "B",
+            "mediaId": null
+          }
+        ],
+        "media": [],
+        "closesAt": "2026-10-31T15:00:00.000Z",
+        "requiresClaim": true,
+        "maxTextLength": 500
+      }
+    ],
+    "responses": []
+  },
+  "answerRequest": {
+    "guildId": "123456789012345678",
+    "discordUserId": "223456789012345678",
+    "questionId": "q_20261031",
+    "optionId": "a",
+    "text": null,
+    "idempotencyKey": "question-answer:223456789012345678:q_20261031"
+  },
+  "answerResponse": {
+    "status": "ok",
+    "guildId": "123456789012345678",
+    "discordUserId": "223456789012345678",
+    "mode": "created",
+    "response": {
+      "questionId": "q_20261031",
+      "optionId": "a",
+      "text": null,
+      "state": "graded",
+      "isCorrect": true,
+      "rewardPoints": 10,
+      "submittedAt": "2026-10-31T00:01:00.000Z",
+      "origin": "discord"
+    },
+    "balance": 50
+  },
+  "claimRequest": {
+    "guildId": "123456789012345678",
+    "discordUserId": "223456789012345678",
+    "claimDateJst": "2026-10-31",
+    "announcementMessageId": "323456789012345678",
+    "idempotencyKey": "daily-login:123456789012345678:223456789012345678:2026-10-31"
+  },
+  "claimResponse": {
+    "status": "ok",
+    "guildId": "123456789012345678",
+    "discordUserId": "223456789012345678",
+    "mode": "created",
+    "receipt": {
+      "claimDateJst": "2026-10-31",
+      "rewardPoints": 25,
+      "rollPoints": 25,
+      "quizBonusPoints": 0,
+      "streakDay": 7,
+      "channel": "discord",
+      "streakReward": {
+        "points": 10,
+        "streakDay": 7
+      },
+      "firstClaimReward": {
+        "points": 5,
+        "rank": 1,
+        "scope": "global"
+      }
+    },
+    "balance": 40
+  },
+  "anonymousResult": {
+    "questionId": "q_20261031",
+    "dateJst": "2026-10-31",
+    "prompt": "Synthetic poll",
+    "scoring": "minority",
+    "state": "finalized",
+    "participantCount": 10,
+    "options": [
+      {
+        "optionId": "a",
+        "label": "A",
+        "votes": 3,
+        "percentage": 30,
+        "winner": true
+      },
+      {
+        "optionId": "b",
+        "label": "B",
+        "votes": 7,
+        "percentage": 70,
+        "winner": false
+      }
+    ],
+    "finalizedAt": "2026-10-31T15:00:01.000Z"
+  }
+}

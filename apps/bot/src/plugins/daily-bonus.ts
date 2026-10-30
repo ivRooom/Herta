@@ -9,6 +9,7 @@ import {
   PermissionFlagsBits,
   type Client,
   type ButtonInteraction,
+  type ModalSubmitInteraction,
 } from 'discord.js';
 import {
   getDailyAnnouncement,
@@ -35,6 +36,8 @@ import { fetchIvrmFortuneProfile } from './fortune-ivrm-profile.js';
 import { claimDailyBonus, dailyBonusStatus } from './daily-bonus-wallet.js';
 import { savedDailyFortune } from './daily-fortune.js';
 import { renderFortuneCard } from './fortune-card.js';
+import { handleDailyParticipation, isParticipationInteraction } from './daily-participation.js';
+import {scanParticipationResults} from './daily-participation-results.js';
 import { replyDailyBonusResult } from './daily-bonus-reply.js';
 import { dailyAnniversaryHeading, dailyBonusFailureMessage } from './daily-bonus-presentation.js';
 
@@ -72,7 +75,22 @@ export const dailyBonusPlugin = definePlugin<Config, Client, PrismaClient>({
       {
         event: 'interactionCreate',
         async handler(ctx, ...args) {
-          const interaction = args[0] as ButtonInteraction | undefined;
+          const interaction = args[0] as ButtonInteraction | ModalSubmitInteraction | undefined;
+          if (
+            interaction &&
+            (interaction.isButton() || interaction.isModalSubmit()) &&
+            (interaction.customId.startsWith('daily-participation:') ||
+              (process.env.DAILY_PARTICIPATION_ENABLED === 'true' &&
+                isParticipationInteraction(interaction)))
+          ) {
+            const activeGeneration = generations.get(ctx.guildId) ?? 0;
+            await handleDailyParticipation(
+              ctx,
+              interaction,
+              () => activeGeneration === (generations.get(ctx.guildId) ?? 0),
+            );
+            return;
+          }
           if (!interaction?.isButton() || !interaction.customId.startsWith('daily-bonus:')) return;
           await handleDailyBonus(ctx, interaction);
         },
@@ -95,6 +113,8 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
   )
     return;
   const date = dailyBonusDate(now);
+  const resultGeneration=generations.get(ctx.guildId)??0;
+  await scanParticipationResults(ctx,()=>resultGeneration===(generations.get(ctx.guildId)??0));
   if (now.getTime() < Date.parse(`${date}T09:00:00+09:00`)) return;
   // A late restart may deliver today's message; never creates a past-day occurrence.
   running.add(ctx.guildId);
@@ -228,6 +248,14 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
                 .setCustomId(`daily-bonus:${date}`)
                 .setLabel('🎁 ボーナスを受け取る')
                 .setStyle(ButtonStyle.Primary),
+              ...(process.env.DAILY_PARTICIPATION_ENABLED === 'true'
+                ? [
+                    new ButtonBuilder()
+                      .setCustomId(`daily-participation:questions:${date}`)
+                      .setLabel('🧠 今日の問題に挑戦')
+                      .setStyle(ButtonStyle.Secondary),
+                  ]
+                : []),
             ),
           ],
           allowedMentions: dailyBonusAllowedMentions(role.id),

@@ -20,7 +20,8 @@ export function nextDailyBonusDate(date: string): string {
 }
 
 export function dailyBonusResultText(result: ConfirmedDailyBonus): string {
-  return `${result.message}\n一番乗りボーナス：現在未提供\n次回受取：${nextDailyBonusDate(result.receipt.claimDateJst)} 00:00 JST（Member）／09:00 JSTの通知後（Discord）\nhttps://member.ivrm.jp/login-bonus`;
+  const first = result.receipt.firstClaimReward;
+  return `${result.message}\n一番乗りボーナス：${first ? `${first.points}pt / ${first.rank}位` : '本日の追加報酬なし'}\n次回受取：${nextDailyBonusDate(result.receipt.claimDateJst)} 00:00 JST（Member）／09:00 JSTの通知後（Discord）\nhttps://member.ivrm.jp/login-bonus`;
 }
 
 /** Empty days do not fabricate anniversaries. Source URLs and annual calculations stay in selection. */
