@@ -1,0 +1,68 @@
+import type { PluginManifest } from '@herta/shared';
+export const dailyBonusManifest: PluginManifest = {
+  id: 'daily-bonus',
+  name: 'デイリーボーナス',
+  version: '1.0.0',
+  description: '毎朝の通知から共通ログインボーナスを受け取り、本人専用の運勢を確認します',
+  author: { name: 'Herta' },
+  category: 'utility',
+  permissions: [],
+  dependencies: [],
+  commands: [],
+  events: ['interactionCreate'],
+  configSchema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      enabled: { type: 'boolean', default: false, title: 'デイリーボーナスを有効にする' },
+      channelId: {
+        type: 'string',
+        pattern: '^$|^[0-9]{17,20}$',
+        default: '',
+        title: '配信チャンネル',
+      },
+      notificationRoleId: {
+        type: 'string',
+        pattern: '^[0-9]{17,20}$',
+        default: '1565130164386398403',
+        title: '通知・受取対象ロール',
+      },
+      scheduleTime: { type: 'string', enum: ['09:00'], default: '09:00', title: '配信時刻（JST）' },
+      timezone: { type: 'string', enum: ['Asia/Tokyo'], default: 'Asia/Tokyo' },
+      fortuneEnabled: { type: 'boolean', default: true, title: '受取後に運勢を表示' },
+      anniversaryLimit: {
+        type: 'integer',
+        minimum: 0,
+        maximum: 3,
+        default: 3,
+        title: '記念日の最大掲載数',
+      },
+      anniversaryCategories: {
+        type: 'array',
+        uniqueItems: true,
+        items: {
+          type: 'string',
+          enum: ['character', 'game', 'anime', 'manga', 'general', 'community'],
+        },
+        default: ['character', 'game', 'anime', 'manga', 'general', 'community'],
+      },
+      messageTemplate: {
+        type: 'string',
+        maxLength: 1000,
+        default: '🌅 おはようございます！\nHertaから本日のログインボーナスのお知らせ',
+        title: '通知メッセージ',
+      },
+    },
+    required: [
+      'enabled',
+      'channelId',
+      'notificationRoleId',
+      'scheduleTime',
+      'timezone',
+      'fortuneEnabled',
+      'anniversaryLimit',
+      'anniversaryCategories',
+      'messageTemplate',
+    ],
+  },
+};

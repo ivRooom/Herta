@@ -2,6 +2,7 @@ import { AttachmentBuilder, MessageFlags, type ChatInputCommandInteraction } fro
 import {
   deleteUserVoiceData,
   getPrismaClient,
+  hasDailyBonusSchema,
   getUserDataConsent,
   listVcRecapSessionsForUser,
   listVcRecapTranscriptSegmentsForUser,
@@ -83,6 +84,12 @@ async function executeExport(interaction: ChatInputCommandInteraction) {
     userId: interaction.user.id,
     exportedAt: new Date().toISOString(),
     mbtiResults,
+    dailyFortunes: (await hasDailyBonusSchema(prisma))
+      ? await prisma.$queryRaw`SELECT guild_id,target_date,algorithm_version,result_json,created_at FROM daily_fortune_results WHERE discord_user_id=${interaction.user.id} ORDER BY target_date DESC`
+      : [],
+    dailyBonusReceipts: (await hasDailyBonusSchema(prisma))
+      ? await prisma.$queryRaw`SELECT guild_id,target_date,status,receipt_json,created_at FROM daily_bonus_claims WHERE discord_user_id=${interaction.user.id} ORDER BY target_date DESC`
+      : [],
     consent: {
       voiceTranscriptionConsent: consent.voiceTranscriptionConsent,
       voiceTranscriptRetentionConsentedAt:
@@ -146,7 +153,7 @@ export const privacyCommand: SlashCommand = {
       },
       {
         name: 'export',
-        description: 'Hertaが保持しているあなたのデータをJSONでエクスポートします',
+        description: '本人のVC・MBTI履歴・デイリーボーナス・占い結果をJSONで取得します',
       },
     ],
   },

@@ -1,4 +1,4 @@
-import { getPrismaClient } from '@herta/db';
+import { getPrismaClient, cleanDailyBonusHistory } from '@herta/db';
 import { createLogger } from '@herta/logger';
 import { HERTA_WORKER_HEARTBEAT_INTERVAL_MS, HERTA_WORKER_HEARTBEAT_KEY } from '@herta/shared';
 import { Redis } from 'ioredis';
@@ -22,6 +22,7 @@ const logger = createLogger({
 
 let redis: Redis | undefined;
 let heartbeatTimer: NodeJS.Timeout | undefined;
+let dailyRetentionTimer: NodeJS.Timeout | undefined;
 let communitySeasonRuntime: CommunitySeasonRuntime | undefined;
 let vcRecapRetentionRuntime: VcRecapRetentionRuntime | undefined;
 let dailyContentRuntime: DailyContentRuntime | undefined;
@@ -81,6 +82,16 @@ async function main() {
   if (!databaseConfigured) {
     logger.warn('DATABASE_URLが未設定のためPlugin WorkerとSeason Snapshot Workerを開始しません');
   } else {
+    {
+      const cleanup = () => {
+        void cleanDailyBonusHistory(getPrismaClient()).catch(() =>
+          logger.warn('Daily bonus retention cleanup failed'),
+        );
+      };
+      cleanup();
+      dailyRetentionTimer = setInterval(cleanup, 60 * 60 * 1000);
+      dailyRetentionTimer.unref();
+    }
     try {
       communitySeasonRuntime = await startCommunitySeasonRuntime({
         prisma: getPrismaClient(),
@@ -196,6 +207,7 @@ async function main() {
 async function shutdown(signal: string): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
+  if (dailyRetentionTimer) clearInterval(dailyRetentionTimer);
   logger.info({ signal }, 'Worker をシャットダウン中...');
 
   if (heartbeatTimer) {

@@ -307,6 +307,16 @@ const GUILD_COMMAND_DEFINITIONS: readonly GuildCommandDefinition[] = [
     group: 'current-server',
   },
   {
+    id: 'guild-daily-bonus',
+    path: 'daily-bonus',
+    label: 'デイリーボーナス',
+    description: '配信・受取・記念日と出典を管理する',
+    keywords: ['daily bonus', 'login', 'ログイン', '記念日'],
+    intents: ['ログインボーナスを設定したい'],
+    icon: 'message',
+    group: 'current-server',
+  },
+  {
     id: 'guild-leaderboard',
     path: 'leaderboard',
     label: 'Guild Leaderboard',

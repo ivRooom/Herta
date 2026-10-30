@@ -8,8 +8,10 @@ import {
   studioBirthdayResource,
   studioPageResource,
   studioParentPageId,
+  studioDailyBonusResource,
   topLevelConfigFields,
 } from './studio-policy-resources.ts';
+import { hasEffectivePluginPermission } from './studio-plugin-permissions.ts';
 
 const GUILD_ID = '123456789012345678';
 
@@ -250,5 +252,37 @@ test('Policy catalogはpage・Studio設定・Birthday・Plugin nested fieldを�
           `guild:${GUILD_ID}:plugin:moderation:config:autoEnforcementPolicies%5B%5D.action` &&
         option.label === '自動対応ポリシー / Action · 編集',
     ),
+  );
+});
+
+test('Daily Bonus granular permissions are grantable and match API authorization resources', () => {
+  const options = buildStudioGranularPermissionOptions(GUILD_ID, []).filter(
+    (option) => option.category === 'Daily Bonus',
+  );
+  assert.equal(options.length, 4);
+  const policy = createEmptyStudioAccessPolicy();
+  policy.Statement = options.map((option) => ({
+    Effect: 'Allow' as const,
+    Action: [option.action],
+    Resource: [option.resource],
+  }));
+  const access = { isRoot: false, roleIds: [], policies: [], managedPolicies: [policy] };
+  for (const option of options)
+    assert.equal(hasEffectivePluginPermission(access, option.action, option.resource), true);
+  assert.equal(
+    hasEffectivePluginPermission(
+      access,
+      'studio.settings.write',
+      studioDailyBonusResource(GUILD_ID, 'delivery'),
+    ),
+    false,
+  );
+  assert.equal(
+    hasEffectivePluginPermission(
+      access,
+      'studio.operation.execute',
+      studioDailyBonusResource('999999999999999999', 'delivery'),
+    ),
+    false,
   );
 });
