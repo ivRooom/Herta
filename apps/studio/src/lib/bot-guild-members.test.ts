@@ -45,6 +45,7 @@ test('Discord User IDの完全一致検索でもBot判定と内部API認証を�
           displayName: 'Herta Helper',
           avatarUrl: null,
           bot: true,
+          roleIds: ['1234567890123456'],
         },
       ],
     });
@@ -59,6 +60,7 @@ test('Discord User IDの完全一致検索でもBot判定と内部API認証を�
   assert.equal(result[0]?.displayName, 'Herta Helper');
   assert.equal(result[0]?.avatarUrl, null);
   assert.equal(result[0]?.bot, true);
+  assert.deepEqual(result[0]?.roleIds, ['1234567890123456']);
 });
 
 test('短すぎる検索語はBot内部APIへ送信しない', async (t) => {
