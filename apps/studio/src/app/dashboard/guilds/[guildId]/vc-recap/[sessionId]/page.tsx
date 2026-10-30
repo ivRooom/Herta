@@ -3,8 +3,8 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, CalendarDays, Clock, MessageSquareText, Mic, Tag } from 'lucide-react';
 import { auth } from '@/auth';
 import { ReconnectNotice } from '@/components/reconnect-notice';
-import { hasStudioPermission, resolveStudioAccess } from '@/lib/studio-access';
-import { studioVcRecapExportResource } from '@/lib/studio-policy-resources';
+import { resolveStudioAccess } from '@/lib/studio-access';
+import { hasExplicitVcRecapExportPermission } from '@/lib/studio-policy-resources';
 import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 import { prisma } from '@/lib/db';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
@@ -46,12 +46,7 @@ async function VcRecapSessionPage({
   const duration = formatVcRecapDuration(recap.startedAt, recap.endedAt);
   const exportAccess = await resolveStudioAccess(guildId, session.user.id);
   const canExport =
-    exportAccess.ok &&
-    hasStudioPermission(
-      exportAccess.access,
-      'studio.operation.execute',
-      studioVcRecapExportResource(guildId),
-    );
+    exportAccess.ok && hasExplicitVcRecapExportPermission(exportAccess.access, guildId);
 
   return (
     <div>

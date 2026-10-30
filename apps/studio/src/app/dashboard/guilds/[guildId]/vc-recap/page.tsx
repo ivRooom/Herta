@@ -17,8 +17,8 @@ import { auth } from '@/auth';
 import { ReconnectNotice } from '@/components/reconnect-notice';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
-import { hasStudioPermission, resolveStudioAccess } from '@/lib/studio-access';
-import { studioVcRecapExportResource } from '@/lib/studio-policy-resources';
+import { resolveStudioAccess } from '@/lib/studio-access';
+import { hasExplicitVcRecapExportPermission } from '@/lib/studio-policy-resources';
 import { prisma } from '@/lib/db';
 import {
   formatVcRecapDuration,
@@ -83,12 +83,7 @@ async function GuildVcRecapPage({
   const query = parseVcRecapQuery(toUrlSearchParams(rawSearchParams));
   const exportAccess = await resolveStudioAccess(guildId, session.user.id);
   const canExport =
-    exportAccess.ok &&
-    hasStudioPermission(
-      exportAccess.access,
-      'studio.operation.execute',
-      studioVcRecapExportResource(guildId),
-    );
+    exportAccess.ok && hasExplicitVcRecapExportPermission(exportAccess.access, guildId);
   let result: Awaited<ReturnType<typeof listVcRecapSessionsForStudio>> | null = null;
   try {
     result = await listVcRecapSessionsForStudio(prisma, guildId, query);
