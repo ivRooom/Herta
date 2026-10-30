@@ -3,6 +3,8 @@ CREATE TABLE daily_bonus_announcements (
  target_date TEXT NOT NULL CHECK (target_date ~ '^\d{4}-\d{2}-\d{2}$'),
  channel_id TEXT NOT NULL,
  role_id TEXT NOT NULL,
+ eligible_count INTEGER CHECK (eligible_count >= 0),
+ eligible_captured_at TIMESTAMPTZ,
  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sending','sent','failed','uncertain','disabled')),
  message_id TEXT,
  error_code TEXT,

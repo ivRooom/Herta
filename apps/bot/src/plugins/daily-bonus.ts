@@ -13,6 +13,7 @@ import {
 import {
   getDailyAnnouncement,
   reserveDailyAnnouncement,
+  captureDailyAnnouncementPopulation,
   setDailyAnnouncement,
   listAnniversaries,
   recordDailyClaim,
@@ -27,6 +28,7 @@ import {
   dailyBonusAllowedMentions,
   rejectDailyBonus,
 } from './daily-bonus-policy.js';
+import { captureDailyBonusPopulation } from './daily-bonus-population.js';
 import { selectAnniversaries } from './daily-bonus-content.js';
 import { EMPTY_FORTUNE_PROFILE } from './fortune-core.js';
 import { fetchIvrmFortuneProfile } from './fortune-ivrm-profile.js';
@@ -174,6 +176,8 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
         (!role.mentionable && !permissions.has(PermissionFlagsBits.MentionEveryone))
       )
         throw new Error('DailyBonusPermissions');
+      const population = await captureDailyBonusPopulation(guild, role.id);
+      await captureDailyAnnouncementPopulation(ctx.prisma, ctx.guildId, date, role.id, population);
       const events = selectAnniversaries(
         await listAnniversaries(ctx.prisma, ctx.guildId),
         date,

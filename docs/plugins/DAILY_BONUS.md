@@ -33,3 +33,7 @@ Rehearse new migration and restores on isolated synthetic PostgreSQL. Keep old i
 This document is a runbook candidate, not evidence production rollout occurred. Full CI/build/negative tests, actual limited-Guild Discord acceptance, live backup/canonical-account/secret validation and signed Member/Admin history acceptance remain release gates until recorded in the owning PR.
 
 Operator-selected target: Guild964326043420872704, channel1042774690227306517 (┣⚙｜system通知), role1565130164386398403 (herta.notice),09:00Asia/Tokyo. Apply only after the reviewed release gate; no live configuration has been changed by this document. Daily-only release does not enable or import legacy activity accrual (COMMON_POINTS_ENABLED staysfalse).
+
+### β運用指標の制限
+
+配信直前に既存GuildMembers Intentで全メンバーを取得し、通知ロールを持つBot以外の人数と取得日時のみを保存します。個人一覧は保存しません。全件取得は10秒で打ち切り、失敗時の人数・率は取得不可とします（キャッシュで補完せず、配信は継続）。安全な再試行時は新しい対象ロールで再取得します。参考受取率はHertaがDiscord操作で確認した確定件数÷配信時対象人数です。ポータルのみの受取や配信後のロール変更により正確な同一集団のCanonical受取率ではなく、100%を超える場合も補正しません。0人時は率を算出しません。

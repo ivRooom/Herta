@@ -15,3 +15,15 @@ export function canOperateDailyAnnouncement(date: string, now = new Date()): boo
 export function newDailyAnniversaryIdentity() {
   return { id: `anniversary_${globalThis.crypto.randomUUID()}`, sourceCheckedAt: '' };
 }
+
+export function dailyBonusReferenceRate(confirmed: number, eligible: number | null): string {
+  if (
+    eligible === null ||
+    eligible <= 0 ||
+    !Number.isSafeInteger(eligible) ||
+    !Number.isSafeInteger(confirmed) ||
+    confirmed < 0
+  )
+    return '—';
+  return ((confirmed / eligible) * 100).toFixed(1) + '%';
+}

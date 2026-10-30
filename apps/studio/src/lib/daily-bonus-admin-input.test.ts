@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   validDailyBonusDate,
+  dailyBonusReferenceRate,
   canOperateDailyAnnouncement,
   newDailyAnniversaryIdentity,
 } from './daily-bonus-admin-input.ts';
@@ -28,4 +29,12 @@ test('new anniversaries have unique IDs and require explicit source verification
   assert.equal(a.sourceCheckedAt, '');
   assert.equal(b.sourceCheckedAt, '');
   assert.ok(a.id.length <= 64);
+});
+
+test('reference rate preserves unknown and zero denominators and does not clamp membership changes', () => {
+  assert.equal(dailyBonusReferenceRate(1, null), '—');
+  assert.equal(dailyBonusReferenceRate(0, 0), '—');
+  assert.equal(dailyBonusReferenceRate(0, 10), '0.0%');
+  assert.equal(dailyBonusReferenceRate(1, 3), '33.3%');
+  assert.equal(dailyBonusReferenceRate(12, 10), '120.0%');
 });

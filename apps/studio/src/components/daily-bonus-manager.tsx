@@ -1,7 +1,11 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { currentDailyBonusDate, newDailyAnniversaryIdentity } from '@/lib/daily-bonus-admin-input';
+import {
+  currentDailyBonusDate,
+  newDailyAnniversaryIdentity,
+  dailyBonusReferenceRate,
+} from '@/lib/daily-bonus-admin-input';
 
 interface Announcement {
   target_date: string;
@@ -9,6 +13,8 @@ interface Announcement {
   message_id: string | null;
   error_code: string | null;
   claims: number;
+  eligible_count: number | null;
+  eligible_captured_at: string | null;
   confirmed: number;
 }
 interface Event {
@@ -130,6 +136,9 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
       {error && <p role="alert">{error}</p>}
       <section className="space-y-3">
         <h2 className="text-xl">配信履歴</h2>
+        <p>
+          参考受取率は配信直前の対象ロール保有者（Bot以外）に対する、Discordで確認できた確定受取件数です。ポータルのみの受取は未反映の場合があります。ロール変更等により100%を超える場合があります。対象人数が取得不可・0人の場合は率を表示しません。
+        </p>
         {!data ? (
           <p>読み込み中…</p>
         ) : data.announcements.length === 0 ? (
@@ -141,7 +150,9 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
                 <tr>
                   <th>日付</th>
                   <th>状態</th>
-                  <th>受取確認 / 処理件数</th>
+                  <th>配信時対象人数</th>
+                  <th>Discordで確認できた受取件数 / 処理件数</th>
+                  <th>参考受取率</th>
                   <th>エラー・操作</th>
                 </tr>
               </thead>
@@ -150,9 +161,13 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
                   <tr key={a.target_date}>
                     <td>{a.target_date}</td>
                     <td>{a.status}</td>
+                    <td title={a.eligible_captured_at ?? undefined}>
+                      {a.eligible_count ?? '取得不可'}
+                    </td>
                     <td>
                       {a.confirmed} / {a.claims}
                     </td>
+                    <td>{dailyBonusReferenceRate(a.confirmed, a.eligible_count)}</td>
                     <td>
                       {a.error_code}
                       {a.status === 'failed' && !a.message_id && (

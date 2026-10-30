@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import {
   reserveDailyAnnouncement,
+  captureDailyAnnouncementPopulation,
   setDailyAnnouncement,
   getDailyAnnouncement,
   createDailyQuizSession,
@@ -87,6 +88,17 @@ test(
         ),
       );
       assert.equal(results.filter(Boolean).length, 1);
+      const capturedAt = new Date();
+      await captureDailyAnnouncementPopulation(db, 'guild', '2026-10-29', 'role', {
+        count: 42,
+        capturedAt,
+      });
+      assert.equal((await getDailyAnnouncement(db, 'guild', '2026-10-29'))!.eligible_count, 42);
+      await captureDailyAnnouncementPopulation(db, 'guild', '2026-10-29', 'wrong-role', {
+        count: 9,
+        capturedAt,
+      });
+      assert.equal((await getDailyAnnouncement(db, 'guild', '2026-10-29'))!.eligible_count, 42);
       await setDailyAnnouncement(
         db,
         'guild',
@@ -105,6 +117,8 @@ test(
       );
       assert.equal(retried!.channel_id, 'corrected-channel');
       assert.equal(retried!.role_id, 'corrected-role');
+      assert.equal(retried!.eligible_count, null);
+      assert.equal(retried!.eligible_captured_at, null);
       await setDailyAnnouncement(db, 'guild', '2026-10-29', 'sent', 'message', null);
       assert.equal((await getDailyAnnouncement(db, 'guild', '2026-10-29'))!.message_id, 'message');
       const session = await createDailyQuizSession(

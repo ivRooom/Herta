@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 
 export interface DailyAnnouncement {
   updated_at: Date;
+  eligible_count: number | null;
+  eligible_captured_at: Date | null;
   guild_id: string;
   target_date: string;
   channel_id: string;
@@ -54,8 +56,17 @@ export async function reserveDailyAnnouncement(
   await db.$executeRaw`INSERT INTO daily_bonus_announcements(guild_id,target_date,channel_id,role_id) VALUES(${guild},${date},${channel},${role}) ON CONFLICT DO NOTHING`;
   const rows = await db.$queryRaw<
     DailyAnnouncement[]
-  >`UPDATE daily_bonus_announcements SET status='sending',channel_id=${channel},role_id=${role},updated_at=NOW() WHERE guild_id=${guild} AND target_date=${date} AND status='pending' AND message_id IS NULL RETURNING *`;
+  >`UPDATE daily_bonus_announcements SET status='sending',channel_id=${channel},role_id=${role},eligible_count=NULL,eligible_captured_at=NULL,updated_at=NOW() WHERE guild_id=${guild} AND target_date=${date} AND status='pending' AND message_id IS NULL RETURNING *`;
   return rows[0] ?? null;
+}
+export async function captureDailyAnnouncementPopulation(
+  db: PrismaClient,
+  guild: string,
+  date: string,
+  role: string,
+  snapshot: { count: number; capturedAt: Date } | null,
+) {
+  await db.$executeRaw`UPDATE daily_bonus_announcements SET eligible_count=${snapshot?.count ?? null},eligible_captured_at=${snapshot?.capturedAt ?? null} WHERE guild_id=${guild} AND target_date=${date} AND role_id=${role} AND status='sending' AND message_id IS NULL`;
 }
 export async function setDailyAnnouncement(
   db: PrismaClient,
