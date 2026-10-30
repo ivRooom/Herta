@@ -33,6 +33,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm db:generate
+      - run: pnpm --filter @herta/db build
       - name: Apply history with the documented immutable fresh-database exception
         shell: bash
         run: |
