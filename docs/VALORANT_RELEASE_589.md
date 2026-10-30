@@ -9,7 +9,7 @@
 - P1: map選択時は13マップ別の2構成例。1–4人は役割優先の不完全編成と明示。マップ省略時はFisher–Yatesの完全ランダムを継続。公式13.09をルールバージョンとして保存。構成の統計的優位性は未検証。
 - P2: 抽選完了時に候補・結果・人数・日時・モード・rulesVersionを保存。StudioにGuild IAMの統計画面とAPI。選出回数/候補入り回数を区別し、標本数30件未満では注意を表示。
 - P3: Guild権限付きStudioで手動試合結果の登録・閲覧。勝敗、マップ、ラウンドスコア、Match ID、実使用Agent、K/D/Aを保存。Match ID/セッションの重複登録はユニーク制約で防止。
-- 既存Riot IDリンク/HenrikDev MMR機能の契約を変えない。Riot Production Keyと本人のRSO opt-inが未確認のため試合履歴自動収集はしない。
+- 終了済みセッションの参加者IDは90日でWorkerにより匿名化し、抽選・構成・勝敗の集計を保存する。Riot Match IDも匿名化時に削除する。既存Riot IDリンク/HenrikDev MMR機能の契約を変えない。Riot Production Keyと本人のRSO opt-inが未確認のため試合履歴自動収集はしない。
 
 ## 本番DBに未適用のmigration
 
@@ -31,7 +31,7 @@
 
 ## 未完了（既知）
 
-- 期限経過時点での自動Discordボタン無効化と、終了済みセッション90日保持期限のスケジュール実行。
+- 期限経過時点でのDiscordメッセージの自動ボタン無効化（期限後のクリックは拒否しDB上はEXPIREDに遷移）。
 - マップ別構成重みのStudio編集、メタデータの継続更新と十分な勝率根拠。
 - Riot公式Production Key/RSO導入とユーザー同意済みmatch自動照合。
 - 公式Content Catalogアイコン採用とフォールバック検証。

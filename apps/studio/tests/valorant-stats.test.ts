@@ -51,4 +51,10 @@ describe('VALORANT stats aggregation', () => {
     expect(output.win).toBe(1);
     expect(output.compositions[0]).toMatchObject({ name: 'jett', count: 1, win: 1 });
   });
+  it('preserves aggregate agent frequency after identifiers are anonymized', () => {
+    const draw = sample('retained', 'RANDOM', 'jett');
+    const output = aggregateValorantStats([{ ...draw, result: [{ agentId: 'jett' }] }]);
+    expect(output.agents.find((a) => a.agentId === 'jett')?.selected).toBe(1);
+    expect(output.players).toHaveLength(0);
+  });
 });
