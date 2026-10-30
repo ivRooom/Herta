@@ -6,7 +6,10 @@ import {
   type VcRecapExplicitConsentRecord,
 } from './vc-recap-explicit-consent.js';
 
-function consent(purpose: string, overrides: Partial<VcRecapExplicitConsentRecord> = {}): VcRecapExplicitConsentRecord {
+function consent(
+  purpose: string,
+  overrides: Partial<VcRecapExplicitConsentRecord> = {},
+): VcRecapExplicitConsentRecord {
   return {
     purpose,
     policyVersion: VC_RECAP_LONG_TERM_CONSENT_VERSION,
@@ -36,8 +39,14 @@ test('旧保存同意を渡さず、新しい処理同意と本文長期保存�
 });
 
 test('音声録音は文字起こし同意の有無と独立し、旧拒否は優先される', () => {
-  assert.equal(evaluateVcRecapExplicitConsent([consent('audio_long_term')], false).canRecordAudioLongTerm, true);
-  assert.equal(evaluateVcRecapExplicitConsent([consent('audio_long_term')], true).canRecordAudioLongTerm, false);
+  assert.equal(
+    evaluateVcRecapExplicitConsent([consent('audio_long_term')], false).canRecordAudioLongTerm,
+    true,
+  );
+  assert.equal(
+    evaluateVcRecapExplicitConsent([consent('audio_long_term')], true).canRecordAudioLongTerm,
+    false,
+  );
 });
 
 test('ポリシー版不一致・撤回状態は必ず拒否', () => {
@@ -49,10 +58,8 @@ test('ポリシー版不一致・撤回状態は必ず拒否', () => {
     false,
   );
   assert.equal(
-    evaluateVcRecapExplicitConsent(
-      [consent('audio_long_term', { revokedAt: new Date() })],
-      false,
-    ).canRecordAudioLongTerm,
+    evaluateVcRecapExplicitConsent([consent('audio_long_term', { revokedAt: new Date() })], false)
+      .canRecordAudioLongTerm,
     false,
   );
 });

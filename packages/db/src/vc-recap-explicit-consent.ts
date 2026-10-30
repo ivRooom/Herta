@@ -68,8 +68,6 @@ export async function getVcRecapExplicitConsentCapabilities(
     }),
   ]);
   const legacyRefusal =
-    legacy !== null &&
-    !legacy.voiceTranscriptionConsent &&
-    legacy.updatedAt.getTime() > 0;
+    legacy !== null && !legacy.voiceTranscriptionConsent && legacy.updatedAt.getTime() > 0;
   return evaluateVcRecapExplicitConsent(records, legacyRefusal);
 }
