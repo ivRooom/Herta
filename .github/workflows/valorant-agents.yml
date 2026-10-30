@@ -54,6 +54,7 @@ jobs:
             cat "$RUNNER_TEMP/valorant-migrate.log"
           fi
       - run: pnpm --filter @herta/db exec tsx --test src/valorant-agents.integration.test.ts
+      - run: pnpm --filter @herta/bot exec tsx --test src/plugins/valorant-session-repository.integration.test.ts
       - name: Migration introduces no schema drift relative to existing history
         shell: bash
         run: |
