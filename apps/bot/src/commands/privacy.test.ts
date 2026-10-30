@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   findMany: vi.fn(),
   erasure: vi.fn().mockResolvedValue(undefined),
   openAiConsent: vi.fn().mockResolvedValue(true),
+  revokeActive: vi.fn(),
   newConsentFind: vi.fn().mockResolvedValue([]),
   erasureFind: vi.fn().mockResolvedValue(null),
   deleteVoice: vi.fn().mockResolvedValue({ deletedSessions: 1, redactedSessions: 2 }),
@@ -34,6 +35,9 @@ vi.mock('@herta/db', () => ({
   requestVcRecapErasure: mocks.erasure,
   setVcRecapOpenAiAudioConsent: mocks.openAiConsent,
   setVoiceTranscriptionConsent: mocks.revokeVoice,
+}));
+vi.mock('../voice/vc-recap-session-manager.js', () => ({
+  revokeVcRecapConsent: mocks.revokeActive,
 }));
 import { privacyCommand } from './privacy.js';
 describe('privacy export', () => {
@@ -122,6 +126,21 @@ describe('privacy delete-voice-data', () => {
 });
 
 describe('openai-audio-consent', () => {
+  it('withdraws only OpenAI consent, not legacy AWS capture or voice retention', async () => {
+    mocks.revokeActive.mockClear();
+    mocks.revokeVoice.mockClear();
+    const interaction = {
+      user: { id: 'owner-user' },
+      options: { getSubcommand: () => 'openai-audio-consent', getBoolean: () => false },
+      reply: vi.fn(),
+    };
+    await privacyCommand.execute(interaction as unknown as ChatInputCommandInteraction);
+    expect(mocks.openAiConsent).toHaveBeenCalledWith(expect.anything(), 'owner-user', false);
+    expect(mocks.revokeActive).not.toHaveBeenCalled();
+    expect(mocks.revokeVoice).not.toHaveBeenCalled();
+  });
+
+
   it('requires an explicit user action and does not reuse legacy consent', async () => {
     const interaction = {
       user: { id: 'owner-user' },
