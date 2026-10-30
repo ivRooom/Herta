@@ -7,11 +7,8 @@ import { withStudioPagePermission } from '@/components/studio-page-permission-bo
 import { prisma } from '@/lib/db';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
-import {
-  formatVcRecapDuration,
-  getVcRecapSessionDetailForStudio,
-  type VcRecapTranscriptEntry,
-} from '@/lib/vc-recap-studio';
+import { formatVcRecapDuration, getVcRecapSessionDetailForStudio } from '@/lib/vc-recap-studio';
+import { VcRecapTranscriptChat } from './vc-recap-transcript-chat';
 
 export const dynamic = 'force-dynamic';
 
@@ -109,32 +106,20 @@ async function VcRecapSessionPage({
             保存されている文字起こしはありません。
           </p>
         ) : (
-          <ol className="mt-5 space-y-4 border-l border-border pl-5">
-            {transcript.map((entry, index) => (
-              <TranscriptRow key={`${entry.startedAt.toISOString()}-${index}`} entry={entry} />
-            ))}
-          </ol>
+          <div className="mt-5">
+            <VcRecapTranscriptChat
+              messages={transcript.map((entry) => ({
+                segmentId: entry.segmentId,
+                speaker: entry.speaker,
+                text: entry.text,
+                startedAt: entry.startedAt.toISOString(),
+                endedAt: entry.endedAt.toISOString(),
+              }))}
+            />
+          </div>
         )}
       </section>
     </div>
-  );
-}
-
-function TranscriptRow({ entry }: { entry: VcRecapTranscriptEntry }) {
-  return (
-    <li className="relative">
-      <span
-        className="absolute -left-[25px] top-1.5 h-2 w-2 rounded-full bg-primary"
-        aria-hidden="true"
-      />
-      <div className="flex flex-wrap items-baseline gap-x-2 text-xs text-muted">
-        <span className="font-medium text-foreground">{entry.speaker.displayName}</span>
-        <time dateTime={entry.startedAt.toISOString()} className="tabular-nums">
-          {formatTime(entry.startedAt, true)}
-        </time>
-      </div>
-      <p className="mt-1 text-sm leading-relaxed">{entry.text}</p>
-    </li>
   );
 }
 
