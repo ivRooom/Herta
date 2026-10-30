@@ -11,19 +11,14 @@
       "path": "/v1/points/herta/login-bonus/status",
       "request": "statusRequest",
       "response": "statusResponse",
-      "successStatusCodes": [
-        200
-      ]
+      "successStatusCodes": [200]
     },
     "claim": {
       "method": "POST",
       "path": "/v1/points/herta/login-bonus/claim",
       "request": "claimRequest",
       "response": "claimResponse",
-      "successStatusCodes": [
-        200,
-        201
-      ]
+      "successStatusCodes": [200, 201]
     }
   },
   "signing": {
@@ -49,10 +44,7 @@
       "statusRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "guildId",
-          "discordUserId"
-        ],
+        "required": ["guildId", "discordUserId"],
         "properties": {
           "guildId": {
             "$ref": "#/$defs/snowflake"
@@ -91,18 +83,12 @@
             "description": "daily-login:{guildId}:{discordUserId}:{claimDateJst}; must match the body fields."
           },
           "quizId": {
-            "type": [
-              "string",
-              "null"
-            ],
+            "type": ["string", "null"],
             "pattern": "^[A-Za-z0-9_-]{1,64}$",
             "description": "Quiz served by status for this date. null only when status returned quiz=null."
           },
           "choiceIndex": {
-            "type": [
-              "integer",
-              "null"
-            ],
+            "type": ["integer", "null"],
             "minimum": 0,
             "maximum": 3,
             "description": "0-3 when quizId is set, otherwise null."
@@ -116,11 +102,7 @@
       "account": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "balance",
-          "lifetimeEarned",
-          "lifetimeSpent"
-        ],
+        "required": ["balance", "lifetimeEarned", "lifetimeSpent"],
         "properties": {
           "balance": {
             "type": "integer",
@@ -142,22 +124,14 @@
       "quiz": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "quizId",
-          "kind",
-          "question",
-          "choices"
-        ],
+        "required": ["quizId", "kind", "question", "choices"],
         "properties": {
           "quizId": {
             "type": "string",
             "pattern": "^[A-Za-z0-9_-]{1,64}$"
           },
           "kind": {
-            "enum": [
-              "quiz",
-              "riddle"
-            ]
+            "enum": ["quiz", "riddle"]
           },
           "question": {
             "type": "string",
@@ -213,23 +187,12 @@
             "maximum": 9007199254740991
           },
           "channel": {
-            "enum": [
-              "web",
-              "discord"
-            ]
+            "enum": ["web", "discord"]
           },
           "quiz": {
-            "type": [
-              "object",
-              "null"
-            ],
+            "type": ["object", "null"],
             "additionalProperties": false,
-            "required": [
-              "quizId",
-              "choiceIndex",
-              "correct",
-              "correctIndex"
-            ],
+            "required": ["quizId", "choiceIndex", "correct", "correctIndex"],
             "properties": {
               "quizId": {
                 "type": "string",
@@ -257,15 +220,9 @@
         }
       },
       "streakReward": {
-        "type": [
-          "object",
-          "null"
-        ],
+        "type": ["object", "null"],
         "additionalProperties": false,
-        "required": [
-          "points",
-          "streakDay"
-        ],
+        "required": ["points", "streakDay"],
         "description": "Optional separate immutable milestone award from the canonical journal. Missing/null means no extra award. Never included in claim.rewardPoints (roll plus quiz only). If present, streakDay must match claim.streakDay; never expose before a confirmed claim.",
         "properties": {
           "points": {
@@ -349,14 +306,7 @@
       "claimResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "status",
-          "mode",
-          "claim",
-          "account",
-          "guildId",
-          "discordUserId"
-        ],
+        "required": ["status", "mode", "claim", "account", "guildId", "discordUserId"],
         "properties": {
           "status": {
             "const": "ok"
@@ -365,10 +315,7 @@
             "$ref": "#/$defs/streakReward"
           },
           "mode": {
-            "enum": [
-              "created",
-              "already_claimed"
-            ]
+            "enum": ["created", "already_claimed"]
           },
           "claim": {
             "$ref": "#/$defs/claim"
