@@ -10,6 +10,7 @@ import {
 } from 'discord.js';
 import { Redis } from 'ioredis';
 import { randomUUID } from 'node:crypto';
+import { startCommonPointsOutboxWorker } from './activity/common-points-worker.js';
 import {
   getAllCommunityPointsEntries,
   getPrismaClient,
@@ -244,6 +245,7 @@ export class HertaBot {
   private readonly gatewayObservationIntervalMs: number;
   private gatewayObservationTimer?: NodeJS.Timeout;
   private activityIvrmSyncTimer?: NodeJS.Timeout;
+  private stopCommonPointsOutbox?: () => Promise<void>;
   private activityIvrmSyncInFlight = false;
   private healthRedis?: Redis;
   private readonly activityMessageLastCountedAt = new Map<string, number>();
@@ -1078,6 +1080,7 @@ export class HertaBot {
       this.discordHealth.observe(this.client);
     }, this.gatewayObservationIntervalMs);
     this.gatewayObservationTimer.unref();
+    this.stopCommonPointsOutbox = startCommonPointsOutboxWorker(this.prisma, this.logger);
 
     this.startActivityIvrmSync();
 
@@ -1575,6 +1578,8 @@ export class HertaBot {
 
   /** Bot を停止する */
   async stop(): Promise<void> {
+    await this.stopCommonPointsOutbox?.();
+    this.stopCommonPointsOutbox = undefined;
     if (this.gatewayObservationTimer) {
       clearInterval(this.gatewayObservationTimer);
       this.gatewayObservationTimer = undefined;

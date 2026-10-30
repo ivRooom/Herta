@@ -4,7 +4,6 @@ import {
   completeMbtiWebQuizSession,
   getMbtiWebQuizSessionRecord,
   resolveMbtiWebQuizSessionForAnswer,
-  syncAchievementUnlocks,
 } from '@herta/db';
 import {
   createMbtiScoreSnapshot,
@@ -80,6 +79,7 @@ export async function POST(
   const completed = await completeMbtiWebQuizSession(prisma, sessionId, {
     resultType,
     resultIdentity,
+    achievementIds: [MBTI_COMPLETION_ACHIEVEMENT_ID],
     history: {
       completionKey: `web:${sessionId}`,
       guildId: session.guildId,
@@ -108,17 +108,6 @@ export async function POST(
   });
   if (!completed)
     return json({ error: 'この診断は既に完了しているか、有効期限が切れています' }, 409);
-
-  try {
-    await syncAchievementUnlocks(prisma, session.guildId, session.discordUserId, [
-      MBTI_COMPLETION_ACHIEVEMENT_ID,
-    ]);
-  } catch (error) {
-    console.error('MBTI Web診断完了Achievementの解除に失敗しました', {
-      guildId: session.guildId,
-      errorName: error instanceof Error ? error.name : 'UnknownError',
-    });
-  }
 
   const ivrmConfig = resolveMbtiIvrmSyncConfig(process.env);
   if (ivrmConfig) {
