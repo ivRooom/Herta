@@ -27,7 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch origin main
-          mapfile -d '' paths < <(git diff --name-only -z origin/main...HEAD -- '*.ts' '*.tsx' '*.js' '*.json' '*.md' '*.yml' '*.yaml')
+          mapfile -d '' paths < <(git diff --name-only -z origin/main HEAD -- '*.ts' '*.tsx' '*.js' '*.json' '*.md' '*.yml' '*.yaml')
           if (( ${#paths[@]} )); then
             pnpm exec prettier --write "${paths[@]}"
           fi
