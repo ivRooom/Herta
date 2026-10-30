@@ -3,6 +3,7 @@ import type { ChatInputCommandInteraction } from 'discord.js';
 const mocks = vi.hoisted(() => ({
   findMany: vi.fn(),
   erasure: vi.fn().mockResolvedValue(undefined),
+  openAiConsent: vi.fn().mockResolvedValue(true),
   deleteVoice: vi.fn().mockResolvedValue({ deletedSessions: 1, redactedSessions: 2 }),
   revokeVoice: vi.fn().mockResolvedValue(undefined),
   consent: vi.fn().mockResolvedValue({ voiceTranscriptionConsent: false, updatedAt: new Date(0) }),
@@ -25,6 +26,7 @@ vi.mock('@herta/db', () => ({
   listVcRecapTranscriptSegmentsForUser: mocks.transcript,
   deleteUserVoiceData: mocks.deleteVoice,
   requestVcRecapErasure: mocks.erasure,
+  setVcRecapOpenAiAudioConsent: mocks.openAiConsent,
   setVoiceTranscriptionConsent: mocks.revokeVoice,
 }));
 import { privacyCommand } from './privacy.js';
@@ -86,6 +88,40 @@ describe('privacy delete-voice-data', () => {
     expect(mocks.erasure).toHaveBeenCalledWith(expect.anything(), 'owner-user');
     expect(interaction.reply).toHaveBeenCalledWith(
       expect.objectContaining({ content: expect.stringContaining('VC要約データの削除') }),
+    );
+  });
+});
+
+describe('openai-audio-consent', () => {
+  it('requires an explicit user action and does not reuse legacy consent', async () => {
+    const interaction = {
+      user: { id: 'owner-user' },
+      options: {
+        getSubcommand: () => 'openai-audio-consent',
+        getBoolean: () => true,
+      },
+      reply: vi.fn(),
+    };
+    await privacyCommand.execute(interaction as unknown as ChatInputCommandInteraction);
+    expect(mocks.openAiConsent).toHaveBeenCalledWith(expect.anything(), 'owner-user', true);
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('OpenAI') }),
+    );
+  });
+
+  it('refuses explicit opt-in while a prior erasure is pending', async () => {
+    mocks.openAiConsent.mockResolvedValueOnce(false);
+    const interaction = {
+      user: { id: 'owner-user' },
+      options: {
+        getSubcommand: () => 'openai-audio-consent',
+        getBoolean: () => true,
+      },
+      reply: vi.fn(),
+    };
+    await privacyCommand.execute(interaction as unknown as ChatInputCommandInteraction);
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('登録できません') }),
     );
   });
 });
