@@ -83,8 +83,7 @@ async function GuildVcRecapPage({
   const query = parseVcRecapQuery(toUrlSearchParams(rawSearchParams));
   const exportAccess = await resolveStudioAccess(guildId, session.user.id);
   const canExport =
-    exportAccess.ok &&
-    hasExplicitVcRecapExportPermission(exportAccess.access, guildId);
+    exportAccess.ok && hasExplicitVcRecapExportPermission(exportAccess.access, guildId);
   let result: Awaited<ReturnType<typeof listVcRecapSessionsForStudio>> | null = null;
   try {
     result = await listVcRecapSessionsForStudio(prisma, guildId, query);
