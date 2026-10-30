@@ -310,7 +310,10 @@ test('VC transcript export requires exact action and resource grant (wildcard al
     false,
   );
   assert.equal(
-    hasExplicitVcRecapExportPermission(context([makePolicy('Allow', 'studio.*', target)]), GUILD_ID),
+    hasExplicitVcRecapExportPermission(
+      context([makePolicy('Allow', 'studio.*', target)]),
+      GUILD_ID,
+    ),
     false,
   );
   const allow = makePolicy('Allow', 'studio.operation.execute', target);
@@ -323,5 +326,8 @@ test('VC transcript export requires exact action and resource grant (wildcard al
     ),
     false,
   );
-  assert.equal(hasExplicitVcRecapExportPermission({ ...context([]), isRoot: true }, GUILD_ID), true);
+  assert.equal(
+    hasExplicitVcRecapExportPermission({ ...context([]), isRoot: true }, GUILD_ID),
+    true,
+  );
 });
