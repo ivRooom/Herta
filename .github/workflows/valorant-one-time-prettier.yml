@@ -1,0 +1,38 @@
+name: VALORANT one-time Prettier
+on:
+  push:
+    branches: [codex/valorant-random-589]
+permissions:
+  contents: write
+jobs:
+  format:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/valorant-random-589
+          persist-credentials: true
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format modified sources, remove temporary formatter
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          mapfile -d '' paths < <(git diff --name-only -z origin/main HEAD -- '*.ts' '*.tsx' '*.js' '*.md' '*.json' '*.yml' '*.yaml')
+          if (( ${#paths[@]} )); then
+            pnpm exec prettier --write "${paths[@]}"
+          fi
+          git rm .github/workflows/valorant-one-time-prettier.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -u
+          git commit -m 'style(valorant): normalize source formatting'
+          git push origin HEAD:codex/valorant-random-589
