@@ -380,7 +380,7 @@ async function handleValorantButton(
             .edit(buildValorantSessionMessage(latest))
             .catch(() => undefined);
       }
-      await interaction.editReply(messages[mutation.status]);
+      await interaction.editReply(messages[mutation.status] ?? '操作できませんでした。');
       return;
     }
     if (mutation.changed) {
