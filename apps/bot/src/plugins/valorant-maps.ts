@@ -109,17 +109,29 @@ interface MapTacticalPlan {
 }
 const MAP_PLANS: Record<ValorantMapId, MapTacticalPlan> = {
   Ascent: { label: 'ミッド制圧', focus: '索敵と射線分断からミッドを確保し、設置後を守る' },
-  Bind: { label: '入口突破とリテイク', focus: 'フラッシュ／エリア制圧を合わせて狭い入口を突破する' },
+  Bind: {
+    label: '入口突破とリテイク',
+    focus: 'フラッシュ／エリア制圧を合わせて狭い入口を突破する',
+  },
   Haven: { label: '3サイトの情報管理', focus: '索敵から防衛配置を読んでローテーションを支える' },
   Split: { label: '高低差・チョーク管理', focus: 'エントリー補助とスモークで狭い通路を制圧する' },
   Icebox: { label: '縦方向の制圧', focus: '射線を遮りながら高所と設置地点の確保を優先する' },
   Breeze: { label: '長距離射線と索敵', focus: '広い射線を制御し、情報を得て前進する' },
   Fracture: { label: '挟み込みと連携', focus: '多方向からの侵攻をフラッシュ／範囲妨害で支援する' },
   Pearl: { label: 'ミッドと長距離制圧', focus: '重要な射線を管理し、索敵からサイトへ進入する' },
-  Lotus: { label: '3サイトの制圧', focus: 'スモークと情報収集を組み合わせて複数の進入経路に備える' },
-  Sunset: { label: 'ミッド情報・エリア保持', focus: '索敵とセンチネルの警戒を軸にエリアを確保する' },
+  Lotus: {
+    label: '3サイトの制圧',
+    focus: 'スモークと情報収集を組み合わせて複数の進入経路に備える',
+  },
+  Sunset: {
+    label: 'ミッド情報・エリア保持',
+    focus: '索敵とセンチネルの警戒を軸にエリアを確保する',
+  },
   Abyss: { label: '長い射線と進入補助', focus: 'スモーク・索敵・防衛の連携で広いエリアを扱う' },
-  Corrode: { label: 'ミッド争奪とリテイク', focus: 'ミッドの戦闘と13.08で調整された防衛側回転路を意識する' },
+  Corrode: {
+    label: 'ミッド争奪とリテイク',
+    focus: 'ミッドの戦闘と13.08で調整された防衛側回転路を意識する',
+  },
   Summit: { label: 'エリア確保と情報共有', focus: '進入時の索敵と防衛側の監視を両立する' },
 };
 
@@ -166,14 +178,21 @@ function validEvidence(
   agents: readonly string[],
   today: Date,
 ): boolean {
-  if (item.provenance !== 'manually-verified-authorized' ||
-    item.map !== map || item.patch !== VALORANT_COMPOSITION_PATCH ||
-    keyOf(item.agents) !== keyOf(agents) || !datePattern.test(item.observedAt) ||
-    !Number.isInteger(item.matchesPlayed) || item.matchesPlayed < 30 ||
-    !Number.isInteger(item.matchesWon) || item.matchesWon < 0 ||
+  if (
+    item.provenance !== 'manually-verified-authorized' ||
+    item.map !== map ||
+    item.patch !== VALORANT_COMPOSITION_PATCH ||
+    keyOf(item.agents) !== keyOf(agents) ||
+    !datePattern.test(item.observedAt) ||
+    !Number.isInteger(item.matchesPlayed) ||
+    item.matchesPlayed < 30 ||
+    !Number.isInteger(item.matchesWon) ||
+    item.matchesWon < 0 ||
     item.matchesWon > item.matchesPlayed ||
     !Number.isInteger(item.mapMatchesPlayed) ||
-    item.mapMatchesPlayed < item.matchesPlayed) return false;
+    item.mapMatchesPlayed < item.matchesPlayed
+  )
+    return false;
   const timestamp = Date.parse(item.observedAt + 'T00:00:00.000Z');
   const age = today.getTime() - timestamp;
   return Number.isFinite(age) && age >= 0 && age <= 60 * 86_400_000;
@@ -191,10 +210,10 @@ export function evidenceWeights(
 ): number[] | null {
   if (!compositions.length) return null;
   const rows = compositions.map((agents) => {
-    const matches = evidence.filter((item) => item.map === map &&
-      keyOf(item.agents) === keyOf(agents));
-    if (matches.length !== 1 || !validEvidence(matches[0]!, map, agents, today))
-      return null;
+    const matches = evidence.filter(
+      (item) => item.map === map && keyOf(item.agents) === keyOf(agents),
+    );
+    if (matches.length !== 1 || !validEvidence(matches[0]!, map, agents, today)) return null;
     return matches[0]!;
   });
   if (rows.some((row) => row === null)) return null;
@@ -205,8 +224,10 @@ export function evidenceWeights(
     const smoothedWinShare = (stats.matchesWon + 15) / (stats.matchesPlayed + 30);
     const pickShare = stats.matchesPlayed / stats.mapMatchesPlayed;
     // Constrain weighting to prevent overfitting to exceptionally small sample counts.
-    return Math.max(1, Math.min(100, Math.round(10 * (0.75 * smoothedWinShare +
-      0.25 * Math.min(1, pickShare * 4)))));
+    return Math.max(
+      1,
+      Math.min(100, Math.round(10 * (0.75 * smoothedWinShare + 0.25 * Math.min(1, pickShare * 4)))),
+    );
   });
 }
 
@@ -260,9 +281,10 @@ export function pickTacticalAgents(
   return {
     status: 'ok',
     agents: [...viable[selection]!],
-    description: participantCount < 5
-      ? `未完成の5人編成（${participantCount}/5名）。エントリー→スモーク→索敵→防衛を優先。`
-      : `${plan.label}：${plan.focus}。勝率の保証はありません。`,
+    description:
+      participantCount < 5
+        ? `未完成の5人編成（${participantCount}/5名）。エントリー→スモーク→索敵→防衛を優先。`
+        : `${plan.label}：${plan.focus}。勝率の保証はありません。`,
     version: VALORANT_COMPOSITION_VERSION,
     basis: weights ? 'verified-statistics' : 'curated',
   };

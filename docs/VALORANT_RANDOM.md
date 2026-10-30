@@ -59,7 +59,6 @@ PR #590をmainへマージし、Deploy Production run 41033603465 attempt 2で�
 DB Migration 3件、Discord Guild登録済み`/valorant random`と`map`、Bot/APIヘルスを確認しました。
 Discord実ボタン操作と認証済みStudioの受入は未検証です。詳細は`VALORANT_RELEASE_589.md`を参照してください。
 
-
 ## マップ別戦術候補の改善（Patch 13.09 / v2）
 
 参照した比較の考え方: [THESPIKE.GG「エージェント構成のスタッツ」](https://www.thespike.gg/jp/valorant-stats/agents-compositions)。
@@ -83,4 +82,3 @@ Discord実ボタン操作と認証済みStudioの受入は未検証です。詳�
 2. ソースのデータ利用許諾・出典を確認。未承認のスクレイピングは禁止。
 3. 30試合未満・60日超・パッチ不一致・一部だけのサンプルは採用せず、均等抽選にフォールバック。
 4. 規約やマップ仕様更新時は新versionとして変更し、単体テストと本番検証を行う。
-
