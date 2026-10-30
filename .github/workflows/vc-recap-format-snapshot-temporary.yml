@@ -1,6 +1,9 @@
 name: Temporary VC Recap prettier snapshot
 
 on:
+  pull_request:
+    types: [synchronize]
+    branches: [main]
   push:
     branches:
       - feat/vc-recap-chat-ui-20261030
