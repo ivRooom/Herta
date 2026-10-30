@@ -93,9 +93,7 @@ async function main() {
             processed = await anonymizeOldValorantSessions(getPrismaClient());
           } while (processed === 50);
         };
-        void drain().catch(() =>
-          logger.warn('VALORANT participant-ID retention cleanup failed'),
-        );
+        void drain().catch(() => logger.warn('VALORANT participant-ID retention cleanup failed'));
       };
       cleanup();
       dailyRetentionTimer = setInterval(cleanup, 60 * 60 * 1000);
