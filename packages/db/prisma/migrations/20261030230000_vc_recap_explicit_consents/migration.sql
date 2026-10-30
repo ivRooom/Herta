@@ -9,7 +9,7 @@ CREATE TABLE "vc_recap_explicit_consents" (
   "updated_at" TIMESTAMPTZ(3) NOT NULL,
   CONSTRAINT "vc_recap_explicit_consents_pkey" PRIMARY KEY ("user_id", "purpose"),
   CONSTRAINT "vc_recap_explicit_consents_purpose_check"
-    CHECK ("purpose" IN ('transcription', 'transcript_long_term', 'audio_long_term')),
+    CHECK ("purpose" IN ('transcription', 'transcript_long_term', 'audio_long_term', 'openai_audio_processing')),
   CONSTRAINT "vc_recap_explicit_consents_state_check"
     CHECK ("consented_at" IS NULL OR "revoked_at" IS NULL)
 );
