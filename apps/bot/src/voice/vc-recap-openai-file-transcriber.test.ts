@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import {
-  monoPcmToWav,
-  transcribePcmWithOpenAi,
-} from './vc-recap-openai-file-transcriber.js';
+import { monoPcmToWav, transcribePcmWithOpenAi } from './vc-recap-openai-file-transcriber.js';
 import {
   canUseOpenAiVcAudio,
   resolveVcRecapTranscriberConfig,
@@ -18,8 +15,9 @@ describe('VC transcription provider rollback', () => {
       provider: 'aws',
       openAiAudioEnabled: false,
     });
-    expect(resolveVcRecapTranscriberConfig({ VC_RECAP_TRANSCRIPTION_PROVIDER: 'unknown' }).provider)
-      .toBe('aws');
+    expect(
+      resolveVcRecapTranscriberConfig({ VC_RECAP_TRANSCRIPTION_PROVIDER: 'unknown' }).provider,
+    ).toBe('aws');
   });
 
   it('Whisper needs operator opt-in and new participant consent, and kill switch overrides', () => {
@@ -68,9 +66,9 @@ describe('OpenAI bounded PCM file transcription', () => {
   });
 
   it('uploads multipart whisper-1 with Japanese hint and emits a speaker segment', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ text: 'こんにちは！' }), { status: 200 }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ text: 'こんにちは！' }), { status: 200 }));
     const onSegment = vi.fn();
     await transcribePcmWithOpenAi(pcm(Buffer.alloc(48_000 * 2)), onSegment, {
       apiKey: 'test-key',
@@ -93,9 +91,9 @@ describe('OpenAI bounded PCM file transcription', () => {
   });
 
   it('gpt-transcribe does not send deprecated Whisper-only language hint', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ text: 'Hello' }), { status: 200 }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ text: 'Hello' }), { status: 200 }));
     await transcribePcmWithOpenAi(pcm(Buffer.alloc(200)), vi.fn(), {
       apiKey: 'test',
       model: 'gpt-transcribe',
@@ -108,9 +106,9 @@ describe('OpenAI bounded PCM file transcription', () => {
   });
 
   it('checks consent on every 20-second upload and never sends after withdrawal', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ text: '前半' }), { status: 200 }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ text: '前半' }), { status: 200 }));
     let grant = true;
     const mayUpload = vi.fn(async () => {
       const current = grant;
@@ -119,11 +117,12 @@ describe('OpenAI bounded PCM file transcription', () => {
     });
     const onSegment = vi.fn();
     await expect(
-      transcribePcmWithOpenAi(
-        pcm(Buffer.alloc(20 * 48_000 * 2), Buffer.alloc(100)),
-        onSegment,
-        { apiKey: 'test', model: 'whisper-1', mayUpload, fetchImpl: fetchMock },
-      ),
+      transcribePcmWithOpenAi(pcm(Buffer.alloc(20 * 48_000 * 2), Buffer.alloc(100)), onSegment, {
+        apiKey: 'test',
+        model: 'whisper-1',
+        mayUpload,
+        fetchImpl: fetchMock,
+      }),
     ).rejects.toThrow(/consent/);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(onSegment).toHaveBeenCalledTimes(1);
@@ -131,9 +130,9 @@ describe('OpenAI bounded PCM file transcription', () => {
   });
 
   it('never logs provider body or credential in HTTP failures', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response('private provider error content', { status: 503 }),
-    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response('private provider error content', { status: 503 }));
     await expect(
       transcribePcmWithOpenAi(pcm(Buffer.alloc(200)), vi.fn(), {
         apiKey: 'SECRET_DO_NOT_LEAK',

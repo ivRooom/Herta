@@ -50,7 +50,8 @@ async function postAudioChunk(
   pcm: Buffer,
   options: OpenAiFileTranscriptionOptions,
 ): Promise<string> {
-  if (!(await options.mayUpload())) throw new Error('OpenAI audio consent is unavailable or revoked');
+  if (!(await options.mayUpload()))
+    throw new Error('OpenAI audio consent is unavailable or revoked');
   const body = new FormData();
   const wav = monoPcmToWav(pcm);
   body.set('file', new Blob([new Uint8Array(wav)], { type: 'audio/wav' }), 'vc-recap.wav');
@@ -118,9 +119,11 @@ export async function transcribePcmWithOpenAi(
     const chunk = Buffer.concat(pending, size);
     pending = [];
     pendingBytes = 0;
-    const startMs = recordingStart + (processedBytes / (PCM_SAMPLE_RATE * PCM_BYTES_PER_SAMPLE)) * 1000;
+    const startMs =
+      recordingStart + (processedBytes / (PCM_SAMPLE_RATE * PCM_BYTES_PER_SAMPLE)) * 1000;
     processedBytes += size;
-    const endMs = recordingStart + (processedBytes / (PCM_SAMPLE_RATE * PCM_BYTES_PER_SAMPLE)) * 1000;
+    const endMs =
+      recordingStart + (processedBytes / (PCM_SAMPLE_RATE * PCM_BYTES_PER_SAMPLE)) * 1000;
     const text = await postAudioChunk(chunk, options);
     if (text) {
       await onSegment({

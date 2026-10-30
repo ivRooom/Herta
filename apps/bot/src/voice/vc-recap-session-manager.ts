@@ -288,10 +288,7 @@ async function transcribeSpeaker(
   const config = resolveVcRecapTranscriberConfig();
   if (config.provider !== 'aws') {
     // Raw audio must never leave the host under old AWS-only consent.
-    if (
-      !config.openAiAudioEnabled ||
-      !(await hasVcRecapOpenAiAudioConsent(prisma, userId))
-    ) {
+    if (!config.openAiAudioEnabled || !(await hasVcRecapOpenAiAudioConsent(prisma, userId))) {
       logger.warn(
         { guildId: session.guildId, userId, provider: config.provider },
         'OpenAI音声処理への新しい明示同意が未確認のため文字起こしをスキップします',
@@ -352,7 +349,7 @@ async function transcribeSpeaker(
         mayUpload: async () =>
           session.acceptingSegments &&
           session.consentingUserIds.has(userId) &&
-          await hasVcRecapOpenAiAudioConsent(prisma, userId),
+          (await hasVcRecapOpenAiAudioConsent(prisma, userId)),
       });
     }
   } catch (error) {
@@ -412,9 +409,8 @@ export async function stopVcRecap(
   }
   // File transcription is not streaming; allow a bounded post-speech upload.
   // AWS streaming keeps its existing 5s flush budget.
-  const flushMs = resolveVcRecapTranscriberConfig().provider === 'aws'
-    ? STOP_FLUSH_TIMEOUT_MS
-    : 20_000;
+  const flushMs =
+    resolveVcRecapTranscriberConfig().provider === 'aws' ? STOP_FLUSH_TIMEOUT_MS : 20_000;
   const flushed = await settleWithin(session.activeTranscriptions.values(), flushMs);
   session.acceptingSegments = false;
   if (!flushed) {

@@ -19,8 +19,7 @@ export function resolveVcRecapTranscriberConfig(
   // The operator flag only prepares the runtime for the new provider.
   // It does not replace individual consent and the publicly disclosed processor.
   const openAiAudioEnabled =
-    env['VC_RECAP_OPENAI_AUDIO_CONSENT_READY'] === 'true' &&
-    env['HERTA_AI_KILL_SWITCH'] !== 'true';
+    env['VC_RECAP_OPENAI_AUDIO_CONSENT_READY'] === 'true' && env['HERTA_AI_KILL_SWITCH'] !== 'true';
   return { provider, openAiAudioEnabled };
 }
 
@@ -28,9 +27,5 @@ export function canUseOpenAiVcAudio(
   config: VcRecapTranscriberConfig,
   explicitParticipantAudioConsent: boolean,
 ): boolean {
-  return (
-    config.provider !== 'aws' &&
-    config.openAiAudioEnabled &&
-    explicitParticipantAudioConsent
-  );
+  return config.provider !== 'aws' && config.openAiAudioEnabled && explicitParticipantAudioConsent;
 }
