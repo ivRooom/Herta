@@ -29,8 +29,7 @@ export function aggregateValorantStats(draws: readonly DrawSample[]) {
             entry !== null &&
             typeof entry === 'object' &&
             !Array.isArray(entry) &&
-            typeof entry.agentId === 'string' &&
-            typeof entry.userId === 'string',
+            typeof entry.agentId === 'string',
         )
       : [];
     const candidateList = Array.isArray(draw.candidates) ? draw.candidates : [];
@@ -69,7 +68,6 @@ export function aggregateValorantStats(draws: readonly DrawSample[]) {
     }
     for (const item of assigned) {
       const id = item.agentId as string;
-      const userId = item.userId as string;
       const row = agents.get(id) ?? {
         agentId: id,
         agentName: names.get(id) ?? id,
@@ -79,10 +77,15 @@ export function aggregateValorantStats(draws: readonly DrawSample[]) {
       };
       row.selected++;
       agents.set(id, row);
-      const player = players.get(userId) ?? { userId, draws: 0, agents: new Map<string, number>() };
-      player.draws++;
-      player.agents.set(id, (player.agents.get(id) ?? 0) + 1);
-      players.set(userId, player);
+      if (typeof item.userId === 'string') {
+        const userId = item.userId;
+        const player = players.get(userId) ?? {
+          userId, draws: 0, agents: new Map<string, number>(),
+        };
+        player.draws++;
+        player.agents.set(id, (player.agents.get(id) ?? 0) + 1);
+        players.set(userId, player);
+      }
     }
     maps.set(draw.mapId ?? '指定なし', (maps.get(draw.mapId ?? '指定なし') ?? 0) + 1);
     modes.set(draw.mode, (modes.get(draw.mode) ?? 0) + 1);

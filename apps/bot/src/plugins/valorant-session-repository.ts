@@ -1,7 +1,6 @@
 import type { PrismaClient } from '@herta/db';
 
 export const VALORANT_SESSION_PREFIX = 'herta:valorant:pick:v1:';
-export const VALORANT_SESSION_RETENTION_DAYS = 90;
 export type ValorantSessionAction = 'join' | 'leave' | 'draw' | 'cancel';
 export interface ValorantCandidate {
   agentId: string;
@@ -173,11 +172,3 @@ export async function mutateValorantSession(
   );
 }
 
-export function deleteOldValorantHistory(prisma: PrismaClient, now = new Date()) {
-  return prisma.valorantPickSession.deleteMany({
-    where: {
-      status: { in: ['COMPLETED', 'CANCELLED', 'EXPIRED'] },
-      createdAt: { lt: new Date(now.getTime() - VALORANT_SESSION_RETENTION_DAYS * 86_400_000) },
-    },
-  });
-}
