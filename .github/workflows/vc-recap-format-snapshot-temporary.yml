@@ -1,0 +1,37 @@
+name: Temporary VC Recap prettier snapshot
+
+on:
+  push:
+    branches:
+      - feat/vc-recap-chat-ui-20261030
+
+permissions:
+  contents: read
+
+jobs:
+  format-snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - run: pnpm install --frozen-lockfile
+      - name: Generate a read-only formatting snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          f1="apps/studio/src/app/dashboard/guilds/[guildId]/vc-recap/[sessionId]/page.tsx"
+          f2="apps/studio/src/app/dashboard/guilds/[guildId]/vc-recap/[sessionId]/vc-recap-transcript-chat.tsx"
+          f3="apps/studio/src/lib/vc-recap-studio.test.ts"
+          pnpm exec prettier --write "$f1" "$f2" "$f3"
+          echo "__HERTA_FMT_START_1__"
+          cat "$f1"
+          echo "__HERTA_FMT_END_1__"
+          echo "__HERTA_FMT_START_2__"
+          cat "$f2"
+          echo "__HERTA_FMT_END_2__"
+          echo "__HERTA_FMT_START_3__"
+          cat "$f3"
+          echo "__HERTA_FMT_END_3__"
