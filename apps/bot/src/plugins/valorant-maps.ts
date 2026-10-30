@@ -218,7 +218,8 @@ export function evidenceWeights(
   });
   if (rows.some((row) => row === null)) return null;
   const denominator = rows[0]!.mapMatchesPlayed;
-  if (rows.some((row) => row!.mapMatchesPlayed !== denominator)) return null;
+  const observedAt = rows[0]!.observedAt;
+  if (rows.some((row) => row!.mapMatchesPlayed !== denominator || row!.observedAt !== observedAt)) return null;
   return rows.map((row) => {
     const stats = row!;
     const smoothedWinShare = (stats.matchesWon + 15) / (stats.matchesPlayed + 30);

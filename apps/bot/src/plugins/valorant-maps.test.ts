@@ -154,6 +154,11 @@ describe('VALORANT licensed statistics handling', () => {
       mapMatchesPlayed: i === 1 ? 900 : 1000,
     }));
     expect(evidenceWeights('Ascent', compositions, inconsistent, today)).toBeNull();
+    const mixedPeriods = original.map((item, i) => ({
+      ...item,
+      observedAt: i === 1 ? '2026-10-01' : '2026-10-29',
+    }));
+    expect(evidenceWeights('Ascent', compositions, mixedPeriods, today)).toBeNull();
     expect(
       evidenceWeights(
         'Ascent',
