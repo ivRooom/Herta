@@ -81,18 +81,18 @@ async function VcRecapSessionPage({
         <h1 className="mt-3 text-2xl font-semibold tracking-tight">VC Recapの詳細</h1>
         {canExport && transcript.length > 0 ? (
           <nav aria-label="セッション本文の出力" className="mt-3 flex flex-wrap gap-2">
-            <Link
+            <a
               href={`/api/guilds/${guildId}/vc-recap/export?format=json&sessionIds=${sessionId}`}
               className="rounded-lg border border-border px-3 py-2 text-xs font-medium hover:border-primary"
             >
               JSONを出力
-            </Link>
-            <Link
+            </a>
+            <a
               href={`/api/guilds/${guildId}/vc-recap/export?format=csv&sessionIds=${sessionId}`}
               className="rounded-lg border border-border px-3 py-2 text-xs font-medium hover:border-primary"
             >
               CSVを出力
-            </Link>
+            </a>
           </nav>
         ) : null}
       </header>
