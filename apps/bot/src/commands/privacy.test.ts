@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
   findMany: vi.fn(),
   erasure: vi.fn().mockResolvedValue(undefined),
   openAiConsent: vi.fn().mockResolvedValue(true),
+  newConsentFind: vi.fn().mockResolvedValue([]),
+  erasureFind: vi.fn().mockResolvedValue(null),
   deleteVoice: vi.fn().mockResolvedValue({ deletedSessions: 1, redactedSessions: 2 }),
   revokeVoice: vi.fn().mockResolvedValue(undefined),
   consent: vi.fn().mockResolvedValue({ voiceTranscriptionConsent: false, updatedAt: new Date(0) }),
@@ -20,7 +22,11 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('@herta/db', () => ({
   hasDailyBonusSchema: vi.fn(async () => false),
-  getPrismaClient: () => ({ mbtiPersonalResult: { findMany: mocks.findMany } }),
+  getPrismaClient: () => ({
+    mbtiPersonalResult: { findMany: mocks.findMany },
+    vcRecapExplicitConsent: { findMany: mocks.newConsentFind },
+    vcRecapErasureRequest: { findUnique: mocks.erasureFind },
+  }),
   getUserDataConsent: mocks.consent,
   listVcRecapSessionsForUser: mocks.voice,
   listVcRecapTranscriptSegmentsForUser: mocks.transcript,
@@ -37,6 +43,14 @@ describe('privacy export', () => {
       { id: 'second', guildId: 'guild-b', resultType: 'ENFP' },
     ];
     mocks.findMany.mockResolvedValue(rows);
+    mocks.newConsentFind.mockResolvedValueOnce([{
+      purpose: 'openai_audio_processing',
+      policyVersion: 'vc-recap-openai-audio-2026-10-31-v1',
+      consentedAt: new Date('2026-10-31T01:00:00Z'),
+      revokedAt: null,
+      updatedAt: new Date('2026-10-31T01:00:00Z'),
+    }]);
+    mocks.erasureFind.mockResolvedValueOnce(null);
     const interaction = {
       user: { id: 'owner-user' },
       options: { getSubcommand: () => 'export' },
@@ -50,6 +64,17 @@ describe('privacy export', () => {
     const exported = JSON.parse(payload.files[0].attachment.toString('utf8'));
     expect(exported.mbtiResults).toEqual(rows);
     expect(exported.voiceRecapSessions).toEqual([]);
+    expect(mocks.newConsentFind).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 'owner-user' } }),
+    );
+    expect(exported.explicitVoiceConsents).toEqual([{
+      purpose: 'openai_audio_processing',
+      policyVersion: 'vc-recap-openai-audio-2026-10-31-v1',
+      consentedAt: '2026-10-31T01:00:00.000Z',
+      revokedAt: null,
+      updatedAt: '2026-10-31T01:00:00.000Z',
+    }]);
+    expect(exported.voiceErasureRequest).toBeNull();
     expect(mocks.transcript).toHaveBeenCalledWith(expect.anything(), 'owner-user');
     expect(exported.voiceTranscriptSegments).toEqual([
       {
