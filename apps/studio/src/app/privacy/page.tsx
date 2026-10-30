@@ -144,8 +144,8 @@ export default function PrivacyPolicyPage() {
         <Section title="VC Recap長期保存（現在は未提供）">
           <p className="text-sm leading-7 text-muted">
             過去のVCを振り返るため、将来は文字起こし本文・話者別音声の長期保存、音声再生、
-            JSON/CSV出力を提供する計画です。本文は365日後にS3へ移行する案、
-            音声は録音開始時からS3 Standardへ保存し30日後に低頻度アクセスクラスへ
+            JSON/CSV出力を提供する計画です。本文は365日後にS3へ移行する案、 音声は録音開始時からS3
+            Standardへ保存し30日後に低頻度アクセスクラスへ
             移す案です。これらは完全削除期限ではありません。
           </p>
           <p className="mt-3 text-sm leading-7 text-muted">
