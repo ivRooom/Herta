@@ -1518,7 +1518,7 @@ model ValorantMatchResult {
   enteredBy     String              @map("entered_by")
   createdAt     DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
-  session       ValorantPickSession @relation(fields: [sessionId, guildId], references: [id, guildId], onDelete: Cascade)
+  session       ValorantPickSession @relation(fields: [sessionId, guildId], references: [id, guildId], onDelete: Cascade, map: "valorant_match_results_session_fkey")
 
   @@unique([sessionId, guildId])
   @@unique([guildId, matchId])
