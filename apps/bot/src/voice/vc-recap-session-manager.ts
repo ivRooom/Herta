@@ -21,6 +21,10 @@ import {
 import type { Guild, VoiceBasedChannel } from 'discord.js';
 import prism from 'prism-media';
 import { resolveAwsTranscribeCredential } from './aws-transcribe-credential.js';
+import { resolveAiOpenAiCredential } from '../ai/factory.js';
+import { transcribePcmWithOpenAi } from './vc-recap-openai-file-transcriber.js';
+import { hasVcRecapOpenAiAudioConsent } from './vc-recap-openai-audio-consent.js';
+import { resolveVcRecapTranscriberConfig } from './vc-recap-transcriber-config.js';
 import { splitVcRecapParticipants } from './vc-recap-participants.js';
 import { linkSpeakerAudioStream, type SpeakerAudioStream } from './vc-recap-speaker-stream.js';
 import { summarizeVcRecapSession } from './vc-recap-summarizer.js';
@@ -43,6 +47,8 @@ interface ActiveVcRecapSession {
   autoConsentRoleIds: string[];
   consentingUserIds: Set<string>;
   activeTranscriptions: Map<string, Promise<void>>;
+  /** All uploads / transcriptions still pending, including after a speaker pauses. */
+  pendingTranscriptions: Set<Promise<void>>;
   /** stopVcRecap・同意取り消し時に終了/中断できるよう、購読中の音声ストリームを保持する。 */
   activeStreams: Map<string, SpeakerAudioStream>;
   /**
@@ -57,6 +63,8 @@ interface ActiveVcRecapSession {
   acceptingSegments: boolean;
   /** 保存中のsegment書き込み。要約前に必ず待ち、要約・削除後に本文が残らないようにする。 */
   pendingSegmentWrites: Set<Promise<unknown>>;
+  /** Total audio seconds already budgeted for OpenAI requests in this session. */
+  openAiAudioSeconds: number;
   speakingHandler?: (userId: string) => void;
 }
 
@@ -161,10 +169,12 @@ export async function startVcRecap(
       autoConsentRoleIds,
       consentingUserIds: new Set(consentingUserIds),
       activeTranscriptions: new Map(),
+      pendingTranscriptions: new Set(),
       activeStreams: new Map(),
       stopping: false,
       acceptingSegments: true,
       pendingSegmentWrites: new Set(),
+      openAiAudioSeconds: 0,
     };
 
     connection.on('stateChange', (oldState, newState) => {
@@ -227,7 +237,13 @@ function wireSpeakingHandler(
   const speakingHandler = (userId: string): void => {
     if (session.stopping || session.activeTranscriptions.has(userId)) return;
 
-    const task = (async () => {
+    let task: Promise<void>;
+    const clearCapture = () => {
+      if (session.activeTranscriptions.get(userId) === task) {
+        session.activeTranscriptions.delete(userId);
+      }
+    };
+    task = (async () => {
       // 同意状態はセッション開始時点で固定せず、発言開始のたびに都度再確認する。
       // `/herta-privacy voice-consent false`で同意を取り消した後の発言は対象外にするため。
       // ロールによる自動同意はDBへ永続化しないランタイムオーバーレイのため、ロール剥奪時は
@@ -265,11 +281,17 @@ function wireSpeakingHandler(
         }
       }
 
-      await transcribeSpeaker(prisma, logger, session, userId);
-    })().finally(() => {
-      session.activeTranscriptions.delete(userId);
-    });
+      await transcribeSpeaker(prisma, logger, session, userId, clearCapture);
+    })()
+      .catch((error: unknown) => {
+        logger.warn({ err: error, guildId: session.guildId, userId }, 'VC文字起こし開始に失敗');
+      })
+      .finally(() => {
+        clearCapture();
+        session.pendingTranscriptions.delete(task);
+      });
     session.activeTranscriptions.set(userId, task);
+    session.pendingTranscriptions.add(task);
   };
   session.speakingHandler = speakingHandler;
   session.connection.receiver.speaking.on('start', speakingHandler);
@@ -280,13 +302,24 @@ async function transcribeSpeaker(
   logger: Logger,
   session: ActiveVcRecapSession,
   userId: string,
+  onCaptureEnd: () => void,
 ): Promise<void> {
-  const credential = await resolveAwsTranscribeCredential(prisma);
-  if (!credential) {
-    logger.warn(
-      { guildId: session.guildId, userId },
-      'AWS Transcribe認証情報が未設定のため文字起こしをスキップします',
-    );
+  const config = resolveVcRecapTranscriberConfig();
+  // Preserve the established AWS-only consent path for people who have not
+  // separately approved sending raw speech to OpenAI. Never auto-upgrade them.
+  const useOpenAi =
+    config.provider !== 'aws' &&
+    config.openAiAudioEnabled &&
+    (await hasVcRecapOpenAiAudioConsent(prisma, userId));
+  const provider = useOpenAi ? config.provider : 'aws';
+  const credential = provider === 'aws' ? await resolveAwsTranscribeCredential(prisma) : null;
+  const openAiCredential = provider === 'aws' ? null : await resolveAiOpenAiCredential({ prisma });
+  if (provider === 'aws' && !credential) {
+    logger.warn({ guildId: session.guildId, userId }, 'AWS Transcribe認証情報が未設定です');
+    return;
+  }
+  if (provider !== 'aws' && !openAiCredential?.apiKey) {
+    logger.warn({ guildId: session.guildId, userId }, 'OpenAI音声処理の認証情報が未設定です');
     return;
   }
   if (session.stopping || !session.consentingUserIds.has(userId)) return;
@@ -299,9 +332,15 @@ async function transcribeSpeaker(
     new prism.opus.Decoder({ rate: 48000, channels: 2, frameSize: 960 }),
   );
   session.activeStreams.set(userId, speakerStream);
+  // Preserve the existing AWS streaming lifetime. Only OpenAI file uploads
+  // release capture ownership on PCM end so a new speech burst is not lost.
+  if (provider !== 'aws') {
+    speakerStream.pcm.once('end', onCaptureEnd);
+    speakerStream.pcm.once('close', onCaptureEnd);
+  }
 
   try {
-    await transcribePcmStream(credential, toMonoChunks(speakerStream.pcm), async (segment) => {
+    const onSegment = async (segment: { text: string; startedAt: Date; endedAt: Date }) => {
       // 文字起こし中に同意が取り消された、またはstopVcRecapのflushが打ち切られた場合、
       // 確定済みセグメントであっても保存しない。
       if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return;
@@ -318,12 +357,39 @@ async function transcribeSpeaker(
       } finally {
         session.pendingSegmentWrites.delete(write);
       }
-    });
+    };
+    if (provider === 'aws') {
+      if (!credential) return;
+      await transcribePcmStream(credential, toMonoChunks(speakerStream.pcm), onSegment);
+    } else {
+      if (!openAiCredential?.apiKey) return;
+      await transcribePcmWithOpenAi(toMonoChunks(speakerStream.pcm), onSegment, {
+        apiKey: openAiCredential.apiKey,
+        model: provider,
+        mayUpload: async (audioSeconds) => {
+          if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return false;
+          if (!(await hasVcRecapOpenAiAudioConsent(prisma, userId))) return false;
+          // The user may revoke consent or stop the session while the DB
+          // query is in flight. Re-check the in-memory state BEFORE upload.
+          if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return false;
+          if (session.openAiAudioSeconds + audioSeconds > config.maxSessionAudioSeconds) {
+            logger.warn({ guildId: session.guildId }, 'VC OpenAI音声処理のセッション予算上限');
+            return false;
+          }
+          // Event-loop execution is synchronous after await: concurrent
+          // speakers cannot increment this counter between check and reserve.
+          session.openAiAudioSeconds += audioSeconds;
+          return true;
+        },
+      });
+    }
   } catch (error) {
     // 1人の文字起こし失敗でセッション全体を失敗させない(他の参加者の文字起こしは継続する)。
     logger.warn({ err: error, guildId: session.guildId, userId }, 'VC文字起こしに失敗しました');
   } finally {
-    session.activeStreams.delete(userId);
+    if (session.activeStreams.get(userId) === speakerStream) {
+      session.activeStreams.delete(userId);
+    }
   }
 }
 
@@ -374,14 +440,18 @@ export async function stopVcRecap(
   for (const stream of session.activeStreams.values()) {
     stream.end();
   }
-  const flushed = await settleWithin(session.activeTranscriptions.values(), STOP_FLUSH_TIMEOUT_MS);
+  // File transcription is not streaming; allow a bounded post-speech upload.
+  // AWS streaming keeps its existing 5s flush budget.
+  const flushMs =
+    resolveVcRecapTranscriberConfig().provider === 'aws' ? STOP_FLUSH_TIMEOUT_MS : 20_000;
+  const flushed = await settleWithin(session.pendingTranscriptions.values(), flushMs);
   session.acceptingSegments = false;
   if (!flushed) {
     logger.warn({ guildId, sessionId: session.sessionId }, 'VC文字起こしのflushを打ち切りました');
     for (const stream of session.activeStreams.values()) {
       stream.abort();
     }
-    await settleWithin(session.activeTranscriptions.values(), STOP_ABORT_TIMEOUT_MS);
+    await settleWithin(session.pendingTranscriptions.values(), STOP_ABORT_TIMEOUT_MS);
   }
   flushingSessions.delete(session);
   // acceptingSegments=false以降に新しい書き込みは始まらないため、既に始まった分だけ待てばよい。
