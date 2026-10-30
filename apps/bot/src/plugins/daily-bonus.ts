@@ -35,6 +35,8 @@ import { fetchIvrmFortuneProfile } from './fortune-ivrm-profile.js';
 import { claimDailyBonus, dailyBonusStatus } from './daily-bonus-wallet.js';
 import { savedDailyFortune } from './daily-fortune.js';
 import { renderFortuneCard } from './fortune-card.js';
+import { replyDailyBonusResult } from './daily-bonus-reply.js';
+import { dailyAnniversaryHeading, dailyBonusFailureMessage } from './daily-bonus-presentation.js';
 
 interface Config {
   enabled: boolean;
@@ -191,6 +193,11 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
           `${ctx.config.messageTemplate}\n\n下のボタンで共通ログインボーナスを受け取れます。\n付与額・連続日数はメンバーポータルと共通です。\n受取期限：本日23:59 JST`,
         )
         .setFooter({ text: '受取と今日の運勢は本人にだけ表示します' });
+      if (events.length)
+        embed.addFields({
+          name: dailyAnniversaryHeading(events.length),
+          value: '公式情報を確認した本日の記念日です。',
+        });
       for (const event of events)
         embed.addFields({
           name: `🎮 ${event.title}${event.anniversary === null ? '' : `（${event.anniversary}周年）`}`,
@@ -335,9 +342,7 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
         return;
       }
       if (status.status !== 'ready' && status.status !== 'confirmed') {
-        await interaction.editReply(
-          'ポイント連携・状態を確認できませんでした。時間をおいて再確認してください。',
-        );
+        await interaction.editReply(dailyBonusFailureMessage(status.status));
         return;
       }
     }
@@ -366,13 +371,11 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
         ctx.guildId,
         interaction.user.id,
         date,
-        result.status === 'unlinked' ? 'unlinked' : 'unavailable',
+        ['unlinked', 'profile_required', 'account_initialization_required'].includes(result.status)
+          ? 'unlinked'
+          : 'unavailable',
       );
-      await interaction.editReply(
-        result.status === 'unlinked'
-          ? 'ポイント連携の準備が必要です。https://member.ivrm.jp/login-bonus を確認してください。'
-          : '付与結果を確認できませんでした。時間をおいて同じボタンから確認してください。',
-      );
+      await interaction.editReply(dailyBonusFailureMessage(result.status));
       return;
     }
     await recordDailyClaim(
@@ -383,11 +386,7 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
       'confirmed',
       result.receipt,
     );
-    await interaction.editReply({
-      content: `${result.message}\nhttps://member.ivrm.jp/login-bonus`,
-      components: [],
-      allowedMentions: { parse: [] },
-    });
+    await replyDailyBonusResult(interaction, result);
     if (ctx.config.fortuneEnabled) {
       try {
         const source = await fetchIvrmFortuneProfile(ctx.guildId, interaction.user.id, date);

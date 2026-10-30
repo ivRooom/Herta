@@ -126,6 +126,26 @@ describe('daily bonus canonical wallet client', () => {
 });
 
 describe('canonical streak reward extension', () => {
+  it('distinguishes explicit setup requirements from legacy unresolved identity and auth failures', async () => {
+    configure();
+    for (const [error, status] of [
+      ['profile_required', 'profile_required'],
+      ['account_initialization_required', 'account_initialization_required'],
+      ['identity_or_baseline_unresolved', 'unlinked'],
+      ['invalid_service_auth', 'unavailable'],
+    ]) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          Response.json({ error }, { status: error === 'invalid_service_auth' ? 401 : 409 }),
+        ),
+      );
+      expect((await dailyBonusStatus(guild, user)).status).toBe(status);
+      expect((await claimDailyBonus(guild, user, '2026-10-30', '323456789012345678')).status).toBe(
+        status,
+      );
+    }
+  });
   it('displays the separately confirmed extra once and rejects malformed rewards', async () => {
     configure();
     const response = (streakReward: unknown) =>
