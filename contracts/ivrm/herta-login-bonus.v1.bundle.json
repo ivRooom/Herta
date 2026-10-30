@@ -1,0 +1,391 @@
+{
+  "bundleVersion": 1,
+  "contract": {
+    "id": "herta-login-bonus",
+    "version": "1.1.0",
+    "sourceRepository": "ivRooom/ivrm-contracts"
+  },
+  "operations": {
+    "status": {
+      "method": "POST",
+      "path": "/v1/points/herta/login-bonus/status",
+      "request": "statusRequest",
+      "response": "statusResponse",
+      "successStatusCodes": [
+        200
+      ]
+    },
+    "claim": {
+      "method": "POST",
+      "path": "/v1/points/herta/login-bonus/claim",
+      "request": "claimRequest",
+      "response": "claimResponse",
+      "successStatusCodes": [
+        200,
+        201
+      ]
+    }
+  },
+  "signing": {
+    "algorithm": "HMAC-SHA256",
+    "canonical": "{timestamp}.{eventId}.POST.{path}.{exact JSON body bytes}",
+    "maxBodyBytes": 8192,
+    "maxClockSkewSeconds": 300
+  },
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://ivrm.jp/contracts/points/v1/login-bonus.schema.json",
+    "description": "Herta Discord button for the shared JST daily login bonus (daily quiz). Producer ivrm-web, consumer Herta. Same HMAC headers as points/v1/herta.schema.json. See docs/LOGIN-BONUS-V1.md. Not enabled in production by this schema.",
+    "$defs": {
+      "snowflake": {
+        "type": "string",
+        "pattern": "^[0-9]{17,20}$"
+      },
+      "jstDate": {
+        "type": "string",
+        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+        "format": "date"
+      },
+      "statusRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "guildId",
+          "discordUserId"
+        ],
+        "properties": {
+          "guildId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "discordUserId": {
+            "$ref": "#/$defs/snowflake"
+          }
+        }
+      },
+      "claimRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "guildId",
+          "discordUserId",
+          "claimDateJst",
+          "idempotencyKey",
+          "quizId",
+          "choiceIndex",
+          "announcementMessageId"
+        ],
+        "properties": {
+          "guildId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "discordUserId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "claimDateJst": {
+            "$ref": "#/$defs/jstDate",
+            "description": "Must equal the receiver's current JST date; otherwise 409 date_mismatch."
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "pattern": "^daily-login:[0-9]{17,20}:[0-9]{17,20}:[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+            "description": "daily-login:{guildId}:{discordUserId}:{claimDateJst}; must match the body fields."
+          },
+          "quizId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "description": "Quiz served by status for this date. null only when status returned quiz=null."
+          },
+          "choiceIndex": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 3,
+            "description": "0-3 when quizId is set, otherwise null."
+          },
+          "announcementMessageId": {
+            "$ref": "#/$defs/snowflake",
+            "description": "Discord message ID verified by Herta against its sent announcement; never accept a browser-supplied target."
+          }
+        }
+      },
+      "account": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "balance",
+          "lifetimeEarned",
+          "lifetimeSpent"
+        ],
+        "properties": {
+          "balance": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "lifetimeEarned": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "lifetimeSpent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "quiz": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "quizId",
+          "kind",
+          "question",
+          "choices"
+        ],
+        "properties": {
+          "quizId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          },
+          "kind": {
+            "enum": [
+              "quiz",
+              "riddle"
+            ]
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "choices": {
+            "type": "array",
+            "minItems": 4,
+            "maxItems": 4,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          }
+        }
+      },
+      "claim": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claimDateJst",
+          "streakDay",
+          "rollPoints",
+          "quizBonusPoints",
+          "rewardPoints",
+          "channel",
+          "quiz"
+        ],
+        "properties": {
+          "claimDateJst": {
+            "$ref": "#/$defs/jstDate"
+          },
+          "streakDay": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "rollPoints": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "quizBonusPoints": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "rewardPoints": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "channel": {
+            "enum": [
+              "web",
+              "discord"
+            ]
+          },
+          "quiz": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "required": [
+              "quizId",
+              "choiceIndex",
+              "correct",
+              "correctIndex"
+            ],
+            "properties": {
+              "quizId": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{1,64}$"
+              },
+              "choiceIndex": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3
+              },
+              "correct": {
+                "type": "boolean"
+              },
+              "correctIndex": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3
+              },
+              "explanation": {
+                "type": "string",
+                "maxLength": 300
+              }
+            }
+          }
+        }
+      },
+      "streakReward": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "additionalProperties": false,
+        "required": [
+          "points",
+          "streakDay"
+        ],
+        "description": "Optional separate immutable milestone award from the canonical journal. Missing/null means no extra award. Never included in claim.rewardPoints (roll plus quiz only). If present, streakDay must match claim.streakDay; never expose before a confirmed claim.",
+        "properties": {
+          "points": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "streakDay": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "statusResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "todayJst",
+          "claimedToday",
+          "currentStreak",
+          "quiz",
+          "claim",
+          "account",
+          "guildId",
+          "discordUserId"
+        ],
+        "properties": {
+          "status": {
+            "const": "ok"
+          },
+          "streakReward": {
+            "$ref": "#/$defs/streakReward"
+          },
+          "todayJst": {
+            "$ref": "#/$defs/jstDate"
+          },
+          "claimedToday": {
+            "type": "boolean"
+          },
+          "currentStreak": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "quiz": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/quiz"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Never includes the correct answer. null after claim or when no approved quiz exists."
+          },
+          "claim": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/claim"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "account": {
+            "$ref": "#/$defs/account"
+          },
+          "guildId": {
+            "$ref": "#/$defs/snowflake",
+            "description": "Must exactly echo the authenticated request subject; consumer rejects mismatches."
+          },
+          "discordUserId": {
+            "$ref": "#/$defs/snowflake",
+            "description": "Must exactly echo the authenticated request subject; consumer rejects mismatches."
+          }
+        }
+      },
+      "claimResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "mode",
+          "claim",
+          "account",
+          "guildId",
+          "discordUserId"
+        ],
+        "properties": {
+          "status": {
+            "const": "ok"
+          },
+          "streakReward": {
+            "$ref": "#/$defs/streakReward"
+          },
+          "mode": {
+            "enum": [
+              "created",
+              "already_claimed"
+            ]
+          },
+          "claim": {
+            "$ref": "#/$defs/claim"
+          },
+          "account": {
+            "$ref": "#/$defs/account"
+          },
+          "guildId": {
+            "$ref": "#/$defs/snowflake",
+            "description": "Must exactly echo the authenticated request subject; consumer rejects mismatches."
+          },
+          "discordUserId": {
+            "$ref": "#/$defs/snowflake",
+            "description": "Must exactly echo the authenticated request subject; consumer rejects mismatches."
+          }
+        }
+      }
+    }
+  }
+}
