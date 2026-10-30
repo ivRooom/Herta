@@ -291,12 +291,10 @@ async function transcribeSpeaker(
   const useOpenAi =
     config.provider !== 'aws' &&
     config.openAiAudioEnabled &&
-    await hasVcRecapOpenAiAudioConsent(prisma, userId);
+    (await hasVcRecapOpenAiAudioConsent(prisma, userId));
   const provider = useOpenAi ? config.provider : 'aws';
-  const credential =
-    provider === 'aws' ? await resolveAwsTranscribeCredential(prisma) : null;
-  const openAiCredential =
-    provider === 'aws' ? null : await resolveAiOpenAiCredential({ prisma });
+  const credential = provider === 'aws' ? await resolveAwsTranscribeCredential(prisma) : null;
+  const openAiCredential = provider === 'aws' ? null : await resolveAiOpenAiCredential({ prisma });
   if (provider === 'aws' && !credential) {
     logger.warn({ guildId: session.guildId, userId }, 'AWS Transcribe認証情報が未設定です');
     return;
