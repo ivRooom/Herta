@@ -61,6 +61,8 @@ interface ActiveVcRecapSession {
   acceptingSegments: boolean;
   /** 保存中のsegment書き込み。要約前に必ず待ち、要約・削除後に本文が残らないようにする。 */
   pendingSegmentWrites: Set<Promise<unknown>>;
+  /** Total audio seconds already budgeted for OpenAI requests in this session. */
+  openAiAudioSeconds: number;
   speakingHandler?: (userId: string) => void;
 }
 
@@ -169,6 +171,7 @@ export async function startVcRecap(
       stopping: false,
       acceptingSegments: true,
       pendingSegmentWrites: new Set(),
+      openAiAudioSeconds: 0,
     };
 
     connection.on('stateChange', (oldState, newState) => {
@@ -341,10 +344,18 @@ async function transcribeSpeaker(
       await transcribePcmWithOpenAi(toMonoChunks(speakerStream.pcm), onSegment, {
         apiKey: openAiCredential.apiKey,
         model: provider,
-        mayUpload: async () =>
-          session.acceptingSegments &&
-          session.consentingUserIds.has(userId) &&
-          (await hasVcRecapOpenAiAudioConsent(prisma, userId)),
+        mayUpload: async (audioSeconds) => {
+          if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return false;
+          if (!(await hasVcRecapOpenAiAudioConsent(prisma, userId))) return false;
+          if (session.openAiAudioSeconds + audioSeconds > config.maxSessionAudioSeconds) {
+            logger.warn({ guildId: session.guildId }, 'VC OpenAI音声処理のセッション予算上限');
+            return false;
+          }
+          // Event-loop execution is synchronous after await: concurrent
+          // speakers cannot increment this counter between check and reserve.
+          session.openAiAudioSeconds += audioSeconds;
+          return true;
+        },
       });
     }
   } catch (error) {
