@@ -286,25 +286,22 @@ async function transcribeSpeaker(
   userId: string,
 ): Promise<void> {
   const config = resolveVcRecapTranscriberConfig();
-  if (config.provider !== 'aws') {
-    // Raw audio must never leave the host under old AWS-only consent.
-    if (!config.openAiAudioEnabled || !(await hasVcRecapOpenAiAudioConsent(prisma, userId))) {
-      logger.warn(
-        { guildId: session.guildId, userId, provider: config.provider },
-        'OpenAI音声処理への新しい明示同意が未確認のため文字起こしをスキップします',
-      );
-      return;
-    }
-  }
+  // Preserve the established AWS-only consent path for people who have not
+  // separately approved sending raw speech to OpenAI. Never auto-upgrade them.
+  const useOpenAi =
+    config.provider !== 'aws' &&
+    config.openAiAudioEnabled &&
+    await hasVcRecapOpenAiAudioConsent(prisma, userId);
+  const provider = useOpenAi ? config.provider : 'aws';
   const credential =
-    config.provider === 'aws' ? await resolveAwsTranscribeCredential(prisma) : null;
+    provider === 'aws' ? await resolveAwsTranscribeCredential(prisma) : null;
   const openAiCredential =
-    config.provider === 'aws' ? null : await resolveAiOpenAiCredential({ prisma });
-  if (config.provider === 'aws' && !credential) {
+    provider === 'aws' ? null : await resolveAiOpenAiCredential({ prisma });
+  if (provider === 'aws' && !credential) {
     logger.warn({ guildId: session.guildId, userId }, 'AWS Transcribe認証情報が未設定です');
     return;
   }
-  if (config.provider !== 'aws' && !openAiCredential?.apiKey) {
+  if (provider !== 'aws' && !openAiCredential?.apiKey) {
     logger.warn({ guildId: session.guildId, userId }, 'OpenAI音声処理の認証情報が未設定です');
     return;
   }
@@ -338,14 +335,14 @@ async function transcribeSpeaker(
         session.pendingSegmentWrites.delete(write);
       }
     };
-    if (config.provider === 'aws') {
+    if (provider === 'aws') {
       if (!credential) return;
       await transcribePcmStream(credential, toMonoChunks(speakerStream.pcm), onSegment);
     } else {
       if (!openAiCredential?.apiKey) return;
       await transcribePcmWithOpenAi(toMonoChunks(speakerStream.pcm), onSegment, {
         apiKey: openAiCredential.apiKey,
-        model: config.provider,
+        model: provider,
         mayUpload: async () =>
           session.acceptingSegments &&
           session.consentingUserIds.has(userId) &&
