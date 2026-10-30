@@ -45,9 +45,11 @@ async function executeDeleteVoiceData(interaction: ChatInputCommandInteraction) 
   await requestVcRecapErasure(prisma, interaction.user.id);
   // Stop existing voice capture as well: otherwise an active stream could
   // recreate the transcript after deletion while consent stays enabled.
-  await setVoiceTranscriptionConsent(prisma, interaction.user.id, false);
   revokeVcRecapConsent(interaction.user.id);
+  // deleteUserVoiceData must inspect segments BEFORE consent revocation clears them:
+  // segments-only sessions would otherwise be missed by summary redaction.
   const result = await deleteUserVoiceData(prisma, interaction.user.id);
+  await setVoiceTranscriptionConsent(prisma, interaction.user.id, false);
   await interaction.reply({
     content:
       `🗑️ VC要約データの削除を実行しました。文字起こしへの同意も取り消しました。` +
