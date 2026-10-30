@@ -4,12 +4,12 @@
 
 ## 対象・挙動
 
-| 設定 | 有効値 | 既定 |
-| --- | --- | --- |
-| `VC_RECAP_TRANSCRIPTION_PROVIDER` | `aws`, `whisper-1`, `gpt-transcribe` | `aws` |
-| `VC_RECAP_OPENAI_AUDIO_CONSENT_READY` | `true`, `false` | `false` |
-| `VC_RECAP_OPENAI_SESSION_MAX_AUDIO_MINUTES` | 1–240 | `120` |
-| `HERTA_AI_KILL_SWITCH` | `true`, `false` | 既存設定 |
+| 設定                                        | 有効値                               | 既定     |
+| ------------------------------------------- | ------------------------------------ | -------- |
+| `VC_RECAP_TRANSCRIPTION_PROVIDER`           | `aws`, `whisper-1`, `gpt-transcribe` | `aws`    |
+| `VC_RECAP_OPENAI_AUDIO_CONSENT_READY`       | `true`, `false`                      | `false`  |
+| `VC_RECAP_OPENAI_SESSION_MAX_AUDIO_MINUTES` | 1–240                                | `120`    |
+| `HERTA_AI_KILL_SWITCH`                      | `true`, `false`                      | 既存設定 |
 
 - AWSは今まで通りリアルタイムStreamingでセグメントを確定します。
 - OpenAIは発言者別48kHz mono PCMを最大20秒のWAVへ変換し、APIへ送信。リアルタイムの部分文字起こしではありません。停止時のflush上限は20秒です。
@@ -30,14 +30,15 @@
 
 ## 価格の試算（2026-10-31時点・音声送信時間、100時間=6,000分）
 
-| 方式 | 公開単価（USD/分） | 100時間概算 |
-| --- | ---: | ---: |
-| AWS Transcribe Streaming (Tokyo) | 約0.010 | 約$60 |
-| OpenAI `whisper-1` | 0.006 | $36 |
-| OpenAI `gpt-transcribe` | 0.0045 | $27 |
+| 方式                             | 公開単価（USD/分） | 100時間概算 |
+| -------------------------------- | -----------------: | ----------: |
+| AWS Transcribe Streaming (Tokyo) |            約0.010 |       約$60 |
+| OpenAI `whisper-1`               |              0.006 |         $36 |
+| OpenAI `gpt-transcribe`          |             0.0045 |         $27 |
 
 **音声時間ベースの概算**であり、本人が複数人同時に発言した場合の各話者処理時間、APIの課金最小単位、リクエスト再送、要約コスト、為替、ディスク費用等は含めない。実際の請求と品質は未検証。
 公式参照:
+
 - https://developers.openai.com/api/docs/guides/speech-to-text
 - https://developers.openai.com/api/docs/models/whisper-1
 - https://platform.openai.com/pricing
