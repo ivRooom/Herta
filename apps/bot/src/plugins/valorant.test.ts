@@ -97,8 +97,11 @@ describe('VALORANT button recruitment slash command', () => {
     await f.run();
     expect(f.create).not.toHaveBeenCalled();
     expect(f.followUp).not.toHaveBeenCalled();
-    expect(f.reply).toHaveBeenCalledWith(expect.objectContaining({
-      content: expect.stringContaining('無効'), flags: MessageFlags.Ephemeral,
-    }));
+    expect(f.reply).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.stringContaining('無効'),
+        flags: MessageFlags.Ephemeral,
+      }),
+    );
   });
 });
