@@ -31,6 +31,12 @@ function fakePrisma() {
   const prisma = {
     vcRecapSession: { update: record('vcRecapSession', 'update') },
     vcRecapTranscriptSegment: { deleteMany: record('vcRecapTranscriptSegment', 'deleteMany') },
+    vcRecapExplicitConsent: {
+      updateMany: record('vcRecapExplicitConsent', 'updateMany'),
+    },
+    vcRecapErasureRequest: {
+      upsert: record('vcRecapErasureRequest', 'upsert'),
+    },
     userDataConsent: {
       upsert: record('userDataConsent', 'upsert', consentRow),
       findMany: record('userDataConsent', 'findMany', [{ userId: 'user-1' }]),
@@ -98,6 +104,17 @@ test('同意の取り消しは本文保存の同意を外し、保存済みの�
   assert.deepEqual(calls.find((call) => call.method === 'deleteMany')?.args, {
     where: { userId: 'user-1' },
   });
+  const futureRevoke = calls.find((call) => call.model === 'vcRecapExplicitConsent');
+  assert.deepEqual(
+    (futureRevoke?.args as { where: unknown; data: { consentedAt: null; revokedAt: Date } }).where,
+    { userId: 'user-1' },
+  );
+  assert.equal((futureRevoke?.args as { data: { consentedAt: null } }).data.consentedAt, null);
+  assert.deepEqual(
+    (calls.find((call) => call.model === 'vcRecapErasureRequest')?.args as { where: unknown })
+      .where,
+    { userId: 'user-1' },
+  );
 });
 
 test('本文保存の同意者は明示的な同意と保存同意の両方を持つユーザーに限る', async () => {

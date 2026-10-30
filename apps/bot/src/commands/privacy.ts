@@ -6,7 +6,9 @@ import {
   getUserDataConsent,
   listVcRecapSessionsForUser,
   listVcRecapTranscriptSegmentsForUser,
+  requestVcRecapErasure,
   setVoiceTranscriptionConsent,
+  setVcRecapOpenAiAudioConsent,
 } from '@herta/db';
 import { createLogger, type Logger } from '@herta/logger';
 import { buildConsentWebLinkMessage } from '../voice/vc-recap-consent-interaction.js';
@@ -38,11 +40,46 @@ async function executeVoiceConsent(interaction: ChatInputCommandInteraction) {
   });
 }
 
+/**
+ * The Discord option description is presented before submission and points
+ * to the full privacy policy. No older AWS voice consent is automatically
+ * treated as permission to send raw voice to OpenAI.
+ */
+async function executeOpenAiAudioConsent(interaction: ChatInputCommandInteraction) {
+  const accept = interaction.options.getBoolean('consent', true);
+  const updated = await setVcRecapOpenAiAudioConsent(prisma, interaction.user.id, accept);
+  if (!updated) {
+    await interaction.reply({
+      content:
+        '新しい音声送信同意を登録できません。文字起こし同意または削除依頼の状態を確認してください。',
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
+  }
+  // Processor-specific withdrawal must not revoke the separate AWS consent.
+  // Future OpenAI uploads re-check the database opt-in before each request.
+  await interaction.reply({
+    content: accept
+      ? '✅ OpenAIへの音声送信に個別に同意しました。Herta側でOpenAI文字起こしを有効化した場合のみ、あなたの音声がOpenAI APIへ送信されます。生の音声ファイルはHertaで永続保存しません。旧AWS同意や長期録音同意とは別です。https://ivrm.jp/privacy'
+      : '🔒 OpenAIへの音声送信の同意を取り消しました。以後のOpenAIへの音声送信は行いません。既存の文字起こし本文を削除する場合は /herta-privacy delete-voice-data を実行してください。',
+    flags: MessageFlags.Ephemeral,
+  });
+}
+
 async function executeDeleteVoiceData(interaction: ChatInputCommandInteraction) {
+  // Deny future archive/recording writes before removing current PostgreSQL data.
+  // S3 deletion is NOT reported complete until object versions and restores are verified.
+  await requestVcRecapErasure(prisma, interaction.user.id);
+  // Stop existing voice capture as well: otherwise an active stream could
+  // recreate the transcript after deletion while consent stays enabled.
+  revokeVcRecapConsent(interaction.user.id);
+  // deleteUserVoiceData must inspect segments BEFORE consent revocation clears them:
+  // segments-only sessions would otherwise be missed by summary redaction.
   const result = await deleteUserVoiceData(prisma, interaction.user.id);
+  await setVoiceTranscriptionConsent(prisma, interaction.user.id, false);
   await interaction.reply({
     content:
-      `🗑️ VC要約データの削除を実行しました。` +
+      `🗑️ VC要約データの削除を実行しました。文字起こしへの同意も取り消しました。` +
       `\n- あなた単独のセッション: ${result.deletedSessions}件 削除` +
       `\n- 他の参加者もいたセッション: ${result.redactedSessions}件からあなたの参加記録を除去(要約は複数人の発言から生成されているため、他の参加者の分も含めて併せて削除しました)`,
     flags: MessageFlags.Ephemeral,
@@ -58,27 +95,47 @@ async function executeWebLink(interaction: ChatInputCommandInteraction) {
 async function executeExport(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const [consent, sessions, transcriptSegments, mbtiResults] = await Promise.all([
-    getUserDataConsent(prisma, interaction.user.id),
-    listVcRecapSessionsForUser(prisma, interaction.user.id),
-    listVcRecapTranscriptSegmentsForUser(prisma, interaction.user.id),
-    prisma.mbtiPersonalResult.findMany({
-      where: { discordUserId: interaction.user.id },
-      orderBy: [{ completedAt: 'desc' }, { id: 'desc' }],
-      select: {
-        id: true,
-        guildId: true,
-        resultType: true,
-        resultIdentity: true,
-        scores: true,
-        percentages: true,
-        questionCount: true,
-        scoringVersion: true,
-        source: true,
-        completedAt: true,
-      },
-    }),
-  ]);
+  const [consent, sessions, transcriptSegments, explicitConsents, erasureRequest, mbtiResults] =
+    await Promise.all([
+      getUserDataConsent(prisma, interaction.user.id),
+      listVcRecapSessionsForUser(prisma, interaction.user.id),
+      listVcRecapTranscriptSegmentsForUser(prisma, interaction.user.id),
+      prisma.vcRecapExplicitConsent.findMany({
+        where: { userId: interaction.user.id },
+        select: {
+          purpose: true,
+          policyVersion: true,
+          consentedAt: true,
+          revokedAt: true,
+          updatedAt: true,
+        },
+        orderBy: { purpose: 'asc' },
+      }),
+      prisma.vcRecapErasureRequest.findUnique({
+        where: { userId: interaction.user.id },
+        select: {
+          requestedAt: true,
+          storageDeletionVerifiedAt: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.mbtiPersonalResult.findMany({
+        where: { discordUserId: interaction.user.id },
+        orderBy: [{ completedAt: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true,
+          guildId: true,
+          resultType: true,
+          resultIdentity: true,
+          scores: true,
+          percentages: true,
+          questionCount: true,
+          scoringVersion: true,
+          source: true,
+          completedAt: true,
+        },
+      }),
+    ]);
 
   const exportPayload = {
     userId: interaction.user.id,
@@ -96,6 +153,21 @@ async function executeExport(interaction: ChatInputCommandInteraction) {
         consent.voiceTranscriptRetentionConsentedAt?.toISOString() ?? null,
       updatedAt: consent.updatedAt.toISOString(),
     },
+    explicitVoiceConsents: explicitConsents.map((record) => ({
+      purpose: record.purpose,
+      policyVersion: record.policyVersion,
+      consentedAt: record.consentedAt?.toISOString() ?? null,
+      revokedAt: record.revokedAt?.toISOString() ?? null,
+      updatedAt: record.updatedAt.toISOString(),
+    })),
+    voiceErasureRequest: erasureRequest
+      ? {
+          requestedAt: erasureRequest.requestedAt.toISOString(),
+          storageDeletionVerifiedAt:
+            erasureRequest.storageDeletionVerifiedAt?.toISOString() ?? null,
+          updatedAt: erasureRequest.updatedAt.toISOString(),
+        }
+      : null,
     voiceRecapSessions: sessions.map((session) => ({
       id: session.id,
       guildId: session.guildId,
@@ -144,6 +216,18 @@ export const privacyCommand: SlashCommand = {
         ],
       },
       {
+        name: 'openai-audio-consent',
+        description: 'OpenAIへVCの生音声を送信する場合の本人同意を変更します',
+        options: [
+          {
+            name: 'consent',
+            description: 'OpenAIに発言音声を送信することへ同意。詳細: https://ivrm.jp/privacy',
+            type: 'boolean',
+            required: true,
+          },
+        ],
+      },
+      {
         name: 'web-link',
         description: 'VC発言の文字起こし同意状態を変更できる専用URLを発行します(30分有効)',
       },
@@ -161,6 +245,10 @@ export const privacyCommand: SlashCommand = {
     const subcommand = interaction.options.getSubcommand();
     if (subcommand === 'voice-consent') {
       await executeVoiceConsent(interaction);
+      return;
+    }
+    if (subcommand === 'openai-audio-consent') {
+      await executeOpenAiAudioConsent(interaction);
       return;
     }
     if (subcommand === 'web-link') {
