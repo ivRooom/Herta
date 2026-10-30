@@ -122,6 +122,11 @@ describe('privacy delete-voice-data', () => {
     expect(interaction.reply).toHaveBeenCalledWith(
       expect.objectContaining({ content: expect.stringContaining('VC要約データの削除') }),
     );
+    const notice = interaction.reply.mock.calls[0]![0].content as string;
+    expect(notice).toContain('PostgreSQL');
+    expect(notice).toContain('完全削除完了通知ではありません');
+    expect(notice).toContain('バックアップ');
+    expect(notice).toContain('削除障壁');
   });
 });
 
