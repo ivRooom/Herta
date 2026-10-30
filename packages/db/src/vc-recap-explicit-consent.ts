@@ -82,10 +82,7 @@ export async function getVcRecapExplicitConsentCapabilities(
  * active until a future archive worker verifies all object versions and backup
  * restore replay. Callers must still delete legacy PostgreSQL VC data.
  */
-export async function requestVcRecapErasure(
-  prisma: PrismaClient,
-  userId: string,
-): Promise<void> {
+export async function requestVcRecapErasure(prisma: PrismaClient, userId: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
     const now = new Date();
     await tx.vcRecapErasureRequest.upsert({

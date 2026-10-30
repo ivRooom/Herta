@@ -102,8 +102,5 @@ test('削除要求は障壁作成と新同意の取り消しを同一transaction
     ['erasure', 'revoke'],
   );
   assert.equal((calls[0]?.data as { where: { userId: string } }).where.userId, 'user-1');
-  assert.equal(
-    (calls[1]?.data as { data: { consentedAt: null } }).data.consentedAt,
-    null,
-  );
+  assert.equal((calls[1]?.data as { data: { consentedAt: null } }).data.consentedAt, null);
 });
