@@ -347,6 +347,9 @@ async function transcribeSpeaker(
         mayUpload: async (audioSeconds) => {
           if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return false;
           if (!(await hasVcRecapOpenAiAudioConsent(prisma, userId))) return false;
+          // The user may revoke consent or stop the session while the DB
+          // query is in flight. Re-check the in-memory state BEFORE upload.
+          if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return false;
           if (session.openAiAudioSeconds + audioSeconds > config.maxSessionAudioSeconds) {
             logger.warn({ guildId: session.guildId }, 'VC OpenAI音声処理のセッション予算上限');
             return false;
