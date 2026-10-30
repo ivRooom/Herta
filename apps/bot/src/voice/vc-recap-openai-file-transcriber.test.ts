@@ -170,6 +170,8 @@ describe('OpenAI bounded PCM file transcription', () => {
       fetchImpl: fetchImpl as typeof fetch,
     });
     await started;
+    // Allow the async PCM iterator to finish independently of the blocked HTTP call.
+    await new Promise<void>((resolve) => setImmediate(resolve));
     try {
       expect(captured).toBe(2);
     } finally {
