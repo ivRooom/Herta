@@ -21,6 +21,7 @@ CREATE TABLE "valorant_match_results" (
   CONSTRAINT "valorant_match_results_scores_check" CHECK ("rounds_won" BETWEEN 0 AND 100 AND "rounds_lost" BETWEEN 0 AND 100)
 );
 CREATE UNIQUE INDEX "valorant_match_results_session_id_key" ON "valorant_match_results"("session_id");
+CREATE UNIQUE INDEX "valorant_match_results_session_id_guild_id_key" ON "valorant_match_results"("session_id", "guild_id");
 CREATE UNIQUE INDEX "valorant_match_results_guild_id_match_id_key" ON "valorant_match_results"("guild_id", "match_id");
 CREATE INDEX "valorant_match_results_guild_id_created_at_idx" ON "valorant_match_results"("guild_id", "created_at");
 COMMIT;

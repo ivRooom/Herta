@@ -1520,6 +1520,7 @@ model ValorantMatchResult {
   updatedAt     DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
   session       ValorantPickSession @relation(fields: [sessionId, guildId], references: [id, guildId], onDelete: Cascade)
 
+  @@unique([sessionId, guildId])
   @@unique([guildId, matchId])
   @@index([guildId, createdAt])
   @@map("valorant_match_results")
