@@ -34,6 +34,7 @@ export * from './user-data-consent.js';
 export * from './vc-recap.js';
 export * from './voice-consent-access.js';
 export * from './valorant-agents.js';
+export * from './valorant-retention.js';
 
 import { PrismaClient } from '@prisma/client';
 
