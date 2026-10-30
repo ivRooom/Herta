@@ -94,10 +94,29 @@ async function executeWebLink(interaction: ChatInputCommandInteraction) {
 async function executeExport(interaction: ChatInputCommandInteraction) {
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const [consent, sessions, transcriptSegments, mbtiResults] = await Promise.all([
+  const [consent, sessions, transcriptSegments, explicitConsents, erasureRequest, mbtiResults] = await Promise.all([
     getUserDataConsent(prisma, interaction.user.id),
     listVcRecapSessionsForUser(prisma, interaction.user.id),
     listVcRecapTranscriptSegmentsForUser(prisma, interaction.user.id),
+    prisma.vcRecapExplicitConsent.findMany({
+      where: { userId: interaction.user.id },
+      select: {
+        purpose: true,
+        policyVersion: true,
+        consentedAt: true,
+        revokedAt: true,
+        updatedAt: true,
+      },
+      orderBy: { purpose: 'asc' },
+    }),
+    prisma.vcRecapErasureRequest.findUnique({
+      where: { userId: interaction.user.id },
+      select: {
+        requestedAt: true,
+        storageDeletionVerifiedAt: true,
+        updatedAt: true,
+      },
+    }),
     prisma.mbtiPersonalResult.findMany({
       where: { discordUserId: interaction.user.id },
       orderBy: [{ completedAt: 'desc' }, { id: 'desc' }],
@@ -132,6 +151,21 @@ async function executeExport(interaction: ChatInputCommandInteraction) {
         consent.voiceTranscriptRetentionConsentedAt?.toISOString() ?? null,
       updatedAt: consent.updatedAt.toISOString(),
     },
+    explicitVoiceConsents: explicitConsents.map((record) => ({
+      purpose: record.purpose,
+      policyVersion: record.policyVersion,
+      consentedAt: record.consentedAt?.toISOString() ?? null,
+      revokedAt: record.revokedAt?.toISOString() ?? null,
+      updatedAt: record.updatedAt.toISOString(),
+    })),
+    voiceErasureRequest: erasureRequest
+      ? {
+          requestedAt: erasureRequest.requestedAt.toISOString(),
+          storageDeletionVerifiedAt:
+            erasureRequest.storageDeletionVerifiedAt?.toISOString() ?? null,
+          updatedAt: erasureRequest.updatedAt.toISOString(),
+        }
+      : null,
     voiceRecapSessions: sessions.map((session) => ({
       id: session.id,
       guildId: session.guildId,
