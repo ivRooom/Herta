@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   findMany: vi.fn(),
   erasure: vi.fn().mockResolvedValue(undefined),
   deleteVoice: vi.fn().mockResolvedValue({ deletedSessions: 1, redactedSessions: 2 }),
+  revokeVoice: vi.fn().mockResolvedValue(undefined),
   consent: vi.fn().mockResolvedValue({ voiceTranscriptionConsent: false, updatedAt: new Date(0) }),
   voice: vi.fn().mockResolvedValue([]),
   transcript: vi.fn().mockResolvedValue([
@@ -24,7 +25,7 @@ vi.mock('@herta/db', () => ({
   listVcRecapTranscriptSegmentsForUser: mocks.transcript,
   deleteUserVoiceData: mocks.deleteVoice,
   requestVcRecapErasure: mocks.erasure,
-  setVoiceTranscriptionConsent: vi.fn(),
+  setVoiceTranscriptionConsent: mocks.revokeVoice,
 }));
 import { privacyCommand } from './privacy.js';
 describe('privacy export', () => {
@@ -67,6 +68,9 @@ describe('privacy delete-voice-data', () => {
     mocks.erasure.mockImplementationOnce(async () => {
       order.push('erase-barrier');
     });
+    mocks.revokeVoice.mockImplementationOnce(async () => {
+      order.push('revoke-voice');
+    });
     mocks.deleteVoice.mockImplementationOnce(async () => {
       order.push('delete-postgres');
       return { deletedSessions: 1, redactedSessions: 2 };
@@ -77,7 +81,8 @@ describe('privacy delete-voice-data', () => {
       reply: vi.fn(),
     };
     await privacyCommand.execute(interaction as unknown as ChatInputCommandInteraction);
-    expect(order).toEqual(['erase-barrier', 'delete-postgres']);
+    expect(order).toEqual(['erase-barrier', 'revoke-voice', 'delete-postgres']);
+    expect(mocks.revokeVoice).toHaveBeenCalledWith(expect.anything(), 'owner-user', false);
     expect(mocks.erasure).toHaveBeenCalledWith(expect.anything(), 'owner-user');
     expect(interaction.reply).toHaveBeenCalledWith(
       expect.objectContaining({ content: expect.stringContaining('VC要約データの削除') }),
