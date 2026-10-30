@@ -259,7 +259,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-# Native GitHub-hosted ARM64 is available for this public repository.
+  # Native GitHub-hosted ARM64 is available for this public repository.
   # Avoid QEMU on the Minecraft/production hosts and keep existing amd64 job intact.
   arm64-runtime:
     name: ARM64 Production Image / Node / Grype
