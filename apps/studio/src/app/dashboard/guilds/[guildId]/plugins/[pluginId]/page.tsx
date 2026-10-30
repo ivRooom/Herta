@@ -205,6 +205,14 @@ async function PluginDetailPage({
         />
       ) : null}
 
+      {pluginId === 'valorant' ? (
+        <ManagementLink
+          href={`/dashboard/guilds/${guildId}/valorant/stats`}
+          title="VALORANT抽選統計"
+          description="抽選履歴を集計し、候補入りを分母とした選出率・マップ・プレイヤー傾向を確認します。"
+        />
+      ) : null}
+
       {pluginId === 'lfg' ? (
         <ManagementLink
           href={`/dashboard/guilds/${guildId}/lfg`}
