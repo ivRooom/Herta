@@ -7,8 +7,8 @@ import { withStudioPagePermission } from '@/components/studio-page-permission-bo
 import { prisma } from '@/lib/db';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
-import { hasStudioPermission, resolveStudioAccess } from '@/lib/studio-access';
-import { studioVcRecapExportResource } from '@/lib/studio-policy-resources';
+import { resolveStudioAccess } from '@/lib/studio-access';
+import { hasExplicitVcRecapExportPermission } from '@/lib/studio-policy-resources';
 import { formatVcRecapDuration, getVcRecapSessionDetailForStudio } from '@/lib/vc-recap-studio';
 import { VcRecapTranscriptChat } from './vc-recap-transcript-chat';
 
@@ -47,11 +47,7 @@ async function VcRecapSessionPage({
   const exportAccess = await resolveStudioAccess(guildId, session.user.id);
   const canExport =
     exportAccess.ok &&
-    hasStudioPermission(
-      exportAccess.access,
-      'studio.operation.execute',
-      studioVcRecapExportResource(guildId),
-    );
+    hasExplicitVcRecapExportPermission(exportAccess.access, guildId);
 
   return (
     <div>
