@@ -43,10 +43,14 @@ async function executeDeleteVoiceData(interaction: ChatInputCommandInteraction) 
   // Deny future archive/recording writes before removing current PostgreSQL data.
   // S3 deletion is NOT reported complete until object versions and restores are verified.
   await requestVcRecapErasure(prisma, interaction.user.id);
+  // Stop existing voice capture as well: otherwise an active stream could
+  // recreate the transcript after deletion while consent stays enabled.
+  await setVoiceTranscriptionConsent(prisma, interaction.user.id, false);
+  revokeVcRecapConsent(interaction.user.id);
   const result = await deleteUserVoiceData(prisma, interaction.user.id);
   await interaction.reply({
     content:
-      `🗑️ VC要約データの削除を実行しました。` +
+      `🗑️ VC要約データの削除を実行しました。文字起こしへの同意も取り消しました。` +
       `\n- あなた単独のセッション: ${result.deletedSessions}件 削除` +
       `\n- 他の参加者もいたセッション: ${result.redactedSessions}件からあなたの参加記録を除去(要約は複数人の発言から生成されているため、他の参加者の分も含めて併せて削除しました)`,
     flags: MessageFlags.Ephemeral,
