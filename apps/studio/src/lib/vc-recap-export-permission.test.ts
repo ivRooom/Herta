@@ -4,19 +4,12 @@ import {
   hasExplicitVcRecapExportPermission,
   studioVcRecapExportResource,
 } from './studio-policy-resources.ts';
-import {
-  STUDIO_ACCESS_POLICY_VERSION,
-  type StudioAccessPolicy,
-} from './studio-access-policy.ts';
+import { STUDIO_ACCESS_POLICY_VERSION, type StudioAccessPolicy } from './studio-access-policy.ts';
 
 const guildId = '123456789012345678';
 const activeRole = '111111111111111111';
 
-function policy(
-  effect: 'Allow' | 'Deny',
-  action: string,
-  resource: string,
-): StudioAccessPolicy {
+function policy(effect: 'Allow' | 'Deny', action: string, resource: string): StudioAccessPolicy {
   return {
     Version: STUDIO_ACCESS_POLICY_VERSION,
     Statement: [{ Effect: effect, Action: [action], Resource: [resource] }],
@@ -51,16 +44,9 @@ test('未設定と広い既存operation.execute許可では本文を出力でき
 });
 
 test('現在Guildへの明示的な出力許可でのみダウンロードできる', () => {
-  const exact = policy(
-    'Allow',
-    'studio.operation.execute',
-    studioVcRecapExportResource(guildId),
-  );
+  const exact = policy('Allow', 'studio.operation.execute', studioVcRecapExportResource(guildId));
   assert.equal(hasExplicitVcRecapExportPermission(access([exact]), guildId), true);
-  assert.equal(
-    hasExplicitVcRecapExportPermission(access([exact]), '999999999999999999'),
-    false,
-  );
+  assert.equal(hasExplicitVcRecapExportPermission(access([exact]), '999999999999999999'), false);
 });
 
 test('明示的な許可があってもワイルドカードDenyが優先される', () => {

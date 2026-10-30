@@ -37,9 +37,7 @@ export async function GET(request: Request, { params }: Context): Promise<Respon
 
   const access = await resolveStudioAccess(guildId, session.user.id);
   if (!access.ok) return access.response;
-  if (
-    !hasExplicitVcRecapExportPermission(access.access, guildId)
-  ) {
+  if (!hasExplicitVcRecapExportPermission(access.access, guildId)) {
     return NextResponse.json(
       { error: '文字起こしの出力権限がありません' },
       { status: 403, headers: NO_STORE },
