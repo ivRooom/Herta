@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import { ArrowLeft, CalendarDays, Clock, MessageSquareText, Mic, Tag } from 'lucide-react';
 import { auth } from '@/auth';
 import { ReconnectNotice } from '@/components/reconnect-notice';
+import { hasStudioPermission, resolveStudioAccess } from '@/lib/studio-access';
+import { studioVcRecapExportResource } from '@/lib/studio-policy-resources';
 import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 import { prisma } from '@/lib/db';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
@@ -42,6 +44,14 @@ async function VcRecapSessionPage({
   if (!detail) notFound();
   const { session: recap, transcript, transcriptExpiresAt } = detail;
   const duration = formatVcRecapDuration(recap.startedAt, recap.endedAt);
+  const exportAccess = await resolveStudioAccess(guildId, session.user.id);
+  const canExport =
+    exportAccess.ok &&
+    hasStudioPermission(
+      exportAccess.access,
+      'studio.operation.execute',
+      studioVcRecapExportResource(guildId),
+    );
 
   return (
     <div>
@@ -66,6 +76,22 @@ async function VcRecapSessionPage({
           ) : null}
         </div>
         <h1 className="mt-3 text-2xl font-semibold tracking-tight">VC Recapの詳細</h1>
+        {canExport && transcript.length > 0 ? (
+          <nav aria-label="セッション本文の出力" className="mt-3 flex flex-wrap gap-2">
+            <a
+              href={`/api/guilds/${guildId}/vc-recap/export?format=json&sessionIds=${sessionId}`}
+              className="rounded-lg border border-border px-3 py-2 text-xs font-medium hover:border-primary"
+            >
+              JSONを出力
+            </a>
+            <a
+              href={`/api/guilds/${guildId}/vc-recap/export?format=csv&sessionIds=${sessionId}`}
+              className="rounded-lg border border-border px-3 py-2 text-xs font-medium hover:border-primary"
+            >
+              CSVを出力
+            </a>
+          </nav>
+        ) : null}
       </header>
 
       <section className="mt-6 rounded-2xl border border-border bg-surface p-5 shadow-card">
