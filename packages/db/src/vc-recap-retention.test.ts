@@ -109,12 +109,10 @@ test('同意の取り消しは本文保存の同意を外し、保存済みの�
     (futureRevoke?.args as { where: unknown; data: { consentedAt: null; revokedAt: Date } }).where,
     { userId: 'user-1' },
   );
-  assert.equal(
-    (futureRevoke?.args as { data: { consentedAt: null } }).data.consentedAt,
-    null,
-  );
+  assert.equal((futureRevoke?.args as { data: { consentedAt: null } }).data.consentedAt, null);
   assert.deepEqual(
-    (calls.find((call) => call.model === 'vcRecapErasureRequest')?.args as { where: unknown }).where,
+    (calls.find((call) => call.model === 'vcRecapErasureRequest')?.args as { where: unknown })
+      .where,
     { userId: 'user-1' },
   );
 });
