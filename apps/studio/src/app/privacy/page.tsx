@@ -141,6 +141,22 @@ export default function PrivacyPolicyPage() {
           </ul>
         </Section>
 
+        <Section title="VC Recap長期保存（現在は未提供）">
+          <p className="text-sm leading-7 text-muted">
+            過去のVCを振り返るため、将来は文字起こし本文・話者別音声の長期保存、音声再生、
+            JSON/CSV出力を提供する計画です。本文は365日後にS3へ移行する案、
+            音声は録音開始時からS3 Standardへ保存し30日後に低頻度アクセスクラスへ
+            移す案です。これらは完全削除期限ではありません。
+          </p>
+          <p className="mt-3 text-sm leading-7 text-muted">
+            2026年10月30日現在、これらの長期保存・音声録音機能は有効化されていません。
+            現行の本文30日削除・生音声ファイル未保存の仕様が適用されます。
+            新機能の開始前には、文字起こし処理・本文長期保存・音声録音と長期保存を
+            区別した本人の明示同意を取得します。旧同意・自動同意ロールを流用せず、
+            本人の拒否を優先し、削除・撤回・バックアップ再消去を検証してから開始します。
+          </p>
+        </Section>
+
         <Section title="データ主体の権利">
           <p className="text-sm leading-7 text-muted">
             以下のコマンドをHertaを導入しているサーバー内で実行できます(Slash
