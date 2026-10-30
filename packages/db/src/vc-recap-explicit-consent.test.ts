@@ -121,7 +121,7 @@ test('OpenAI音声送信は旧文字起こし同意と新しい個別同意を�
     },
   };
   const fake = {
-    $transaction: async (callback: (tx: typeof tx) => Promise<boolean>) => callback(tx),
+    $transaction: async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx),
   } as unknown as PrismaClient;
   legacy = false;
   assert.equal(await setVcRecapOpenAiAudioConsent(fake, 'user-1', true), false);
