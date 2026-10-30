@@ -139,6 +139,11 @@ export function studioVoiceConsentResource(guildId: string): string {
   return `guild:${guildId}:vc-recap:voice-consent`;
 }
 
+/** Permission resource for sensitive VC transcript downloads. */
+export function studioVcRecapExportResource(guildId: string): string {
+  return `guild:${guildId}:vc-recap:export`;
+}
+
 export function hasConfiguredStudioPagePolicy(access: ApplicableStudioPolicyContext): boolean {
   const activeRoleIds = new Set(access.roleIds);
   const policies = [
@@ -283,6 +288,15 @@ export function buildStudioGranularPermissionOptions(
       resource: birthdayCardTestSend,
     },
   );
+
+  options.push({
+    id: permissionOptionId('studio.operation.execute', studioVcRecapExportResource(guildId)),
+    category: 'VC Recap',
+    label: '文字起こしのJSON/CSV出力',
+    description: 'VC発言本文と要約のダウンロード（監査ログに記録）',
+    action: 'studio.operation.execute',
+    resource: studioVcRecapExportResource(guildId),
+  });
 
   const anniversaryResource = studioBotProfileSettingResource(guildId, 'anniversary');
   options.push(
