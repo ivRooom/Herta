@@ -1,4 +1,5 @@
 export { PrismaClient } from '@prisma/client';
+export * from './daily-bonus.js';
 export type * from '@prisma/client';
 export * from './achievement-unlocks.js';
 export * from './ai-generation-analytics.js';

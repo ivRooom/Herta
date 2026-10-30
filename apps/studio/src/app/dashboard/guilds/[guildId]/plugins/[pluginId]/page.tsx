@@ -98,7 +98,6 @@ async function PluginDetailPage({
           />
         ) : canUseValorantGuidedEditor ? (
           <ValorantConfigForm
-            key={guildId}
             guildId={guildId}
             initialEnabled={plugin.enabled}
             initialConfig={visibleConfig}
@@ -178,6 +177,14 @@ async function PluginDetailPage({
           href={`/dashboard/guilds/${guildId}/auto-response`}
           title="Auto Responseルール管理"
           description="トリガー、応答、Cooldown、対象範囲を管理します。"
+        />
+      ) : null}
+
+      {pluginId === 'daily-bonus' ? (
+        <ManagementLink
+          href={`/dashboard/guilds/${guildId}/daily-bonus`}
+          title="デイリーボーナス配信・記念日管理"
+          description="配信履歴、受取状況、失敗時の再試行、記念日の登録・出典確認を管理します。"
         />
       ) : null}
 

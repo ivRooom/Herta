@@ -80,6 +80,54 @@ or currently running containers have been checked during this edit.
   [database migration runbook](DATABASE_MIGRATIONS.md) and
   a separately approved restore or forward-repair plan when needed.
 
+## Host access, SSH and recovery preflight
+
+The [production workflow](../.github/workflows/deploy-production.yml)
+currently deploys through `appleboy/ssh-action` using the protected
+Lightsail host and SSH key. **Restricting inbound SSH before verifying
+a replacement deployment and emergency-access path can block releases
+and rollback.** A Systems Manager managed-instance status of
+`Online` is not sufficient evidence that a controlled Session Manager
+session or GitHub Actions deployment through SSM is authorized and
+works end to end.
+
+Before changing any production firewall, SSH access or deploy route:
+
+1. Record the current Lightsail IPv4 **and IPv6** ingress rules, the
+   expected operator and CI source networks, and existing security
+   layers. Do not assume GitHub-hosted runner egress is a single
+   stable address.
+2. Test the proposed alternative management/deploy path and an
+   independent break-glass method, including host access, image
+   verification, service health, rollback and denied-access behavior.
+3. Verify current instance snapshots **and** PostgreSQL S3 backup
+   freshness, retention and isolated restore. An instance snapshot
+   does not replace application-consistent DB recovery, and a
+   backup object alone is not proof of restoreability.
+4. Specify who can approve the change, a fixed maintenance window,
+   success criteria, the exact previous rule set, and the recovery
+   procedure. Review deployment secrets and host firewall behavior
+   without copying their values into documentation.
+5. Only after those gates, apply the smallest approved IPv4 and IPv6
+   access change in a separate infrastructure change. Verify normal
+   deployment, manual recovery and health immediately afterward.
+
+The dedicated PostgreSQL server has an independent public Lightsail
+firewall. A single-source `/32` ingress rule is **not** the same as a
+private-only service. Reconcile that rule with the actual
+private-route/HBA/TLS access design before any database cutover.
+Do not infer a production PG17 cutover from successful migration
+rehearsals or a running database server.
+
+Current evidence and decisions belong in the private
+[ivRooom audit register](https://app.notion.com/p/4087322f39fa81868648dba3dbf99d1d).
+Track remaining approval and implementation in
+[Herta SSH hardening #381](https://github.com/ivRooom/Herta/issues/381)
+and [dedicated PostgreSQL migration #512](https://github.com/ivRooom/Herta/issues/512).
+This section documents safety requirements; it does **not**
+authorize a firewall update, SSM Session Manager rollout,
+snapshot purchase, or production deployment.
+
 ## Release and rollback checklist
 
 1. Compare the intended commit and changed paths with `main`,

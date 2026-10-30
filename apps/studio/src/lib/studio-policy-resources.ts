@@ -7,6 +7,7 @@ import {
 } from './studio-plugin-permissions.ts';
 
 export const STUDIO_PAGE_DEFINITIONS = [
+  { id: 'daily-bonus', label: 'デイリーボーナス', description: '配信・受取状況・記念日を閲覧' },
   {
     id: 'message-studio',
     label: 'Botで発言',
@@ -123,6 +124,12 @@ export function studioBirthdayResource(guildId: string, resource: StudioBirthday
 export function studioBotProfileSettingResource(guildId: string, setting: 'anniversary'): string {
   return `guild:${guildId}:bot-profile:setting:${encodeSegment(setting)}`;
 }
+export function studioDailyBonusResource(
+  guildId: string,
+  resource: 'history' | 'anniversaries' | 'delivery',
+): string {
+  return `guild:${guildId}:daily-bonus:${resource}`;
+}
 
 /**
  * VC発言の文字起こし同意はguild非依存のグローバル設定だが、Studio側のアクセス制御は
@@ -157,6 +164,22 @@ export function buildStudioGranularPermissionOptions(
     action: 'studio.page.view',
     resource: studioPageResource(guildId, page.id),
   }));
+  for (const [resource, action, label] of [
+    ['history', 'studio.settings.read', '配信・受取履歴の閲覧'],
+    ['anniversaries', 'studio.settings.read', '記念日と出典の閲覧'],
+    ['anniversaries', 'studio.settings.write', '記念日・承認・公開設定の編集'],
+    ['delivery', 'studio.operation.execute', '当日配信の再試行・照合'],
+  ] as const) {
+    const target = studioDailyBonusResource(guildId, resource);
+    options.push({
+      id: permissionOptionId(action, target),
+      category: 'Daily Bonus',
+      label,
+      description: label,
+      action,
+      resource: target,
+    });
+  }
 
   for (const page of ['overview', 'users', 'groups', 'roles', 'policies'] as const) {
     const resource = studioAccessPageResource(guildId, page);

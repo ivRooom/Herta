@@ -21,6 +21,7 @@ import { communityChallengePlugin } from './community-challenge.js';
 import { eventRsvpPlugin } from './event-rsvp.js';
 import { giveawayPlugin } from './giveaway.js';
 import { fortunePlugin } from './fortune.js';
+import { dailyBonusPlugin } from './daily-bonus.js';
 import { mbtiPlugin } from './mbti.js';
 import { miniGamesPlugin } from './mini-games.js';
 import { onboardingPlugin } from './onboarding.js';
@@ -248,6 +249,7 @@ const officialPluginIds = [
   'community-profile',
   'community-challenge',
   'daily-content',
+  'daily-bonus',
   'event-rsvp',
   'giveaway',
   'lfg',
@@ -524,6 +526,20 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
           }) as Parameters<NonNullable<typeof fortunePlugin.onEnable>>[0],
       )
     : undefined;
+  const dailyBonusEntry = deps
+    ? toRuntimePluginEntry(
+        dailyBonusPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+          }) as Parameters<NonNullable<typeof dailyBonusPlugin.onEnable>>[0],
+      )
+    : undefined;
   const miniGamesEntry = deps
     ? toRuntimePluginEntry(
         miniGamesPlugin,
@@ -763,6 +779,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (pluginId === 'giveaway' && giveawayEntry) return [giveawayEntry];
     if (pluginId === 'lfg' && lfgEntry) return [lfgEntry];
     if (pluginId === 'fortune' && fortuneEntry) return [fortuneEntry];
+    if (pluginId === 'daily-bonus' && dailyBonusEntry) return [dailyBonusEntry];
     if (pluginId === 'mbti' && mbtiEntry) return [mbtiEntry];
     if (pluginId === 'mini-games' && miniGamesEntry) return [miniGamesEntry];
     if (pluginId === 'moderation' && moderationEntry) return [moderationEntry];

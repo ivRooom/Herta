@@ -35,7 +35,16 @@ with tempfile.TemporaryDirectory(prefix='herta-compose-') as temp:
     baseline['services']['migrator'].pop('entrypoint', None)
     baseline = {k: v for k, v in baseline.items() if not k.startswith('x-')}
     local = {k: v for k, v in local.items() if not k.startswith('x-')}
+    # New feature settings do not alter the database topology. Verify their
+    # explicit default before excluding just these additions from old baseline.
+    for name in ['studio', 'bot', 'worker']:
+        assert local['services'][name]['environment'].pop('DAILY_BONUS_ENABLED') == 'false'
+    assert local['services']['bot']['environment'].pop('HERTA_POINTS_SECRET') == values.get('HERTA_POINTS_SECRET', '')
     assert local == baseline, 'Default-local topology changed beyond the mode guard'
+    enabled = render(ROOT / 'docker-compose.prod.yml', {'DAILY_BONUS_ENABLED': 'true', 'HERTA_POINTS_SECRET': 'fixture-points'})
+    assert enabled['services']['bot']['environment']['HERTA_POINTS_SECRET'] == 'fixture-points'
+    assert 'HERTA_POINTS_SECRET' not in enabled['services']['studio']['environment']
+    assert 'HERTA_POINTS_SECRET' not in enabled['services']['worker']['environment']
     external = render(ROOT / 'docker-compose.external.yml', {
         'HERTA_DATABASE_MODE': 'external', 'HERTA_DATABASE_PRIVATE_IP': '10.0.0.2',
         'HERTA_DATABASE_CA_FILE': str(fixture / 'ca.crt'), 'MIGRATION_DATABASE_URL': 'postgresql://migrator-fixture',

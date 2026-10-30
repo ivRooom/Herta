@@ -7,15 +7,11 @@ import {
 import type { PrismaClient } from '@herta/db';
 import { fortuneManifest } from '@herta/plugin-catalog';
 import { definePlugin } from '@herta/plugin-sdk';
-import {
-  createDailyFortune,
-  describeFortuneProfile,
-  EMPTY_FORTUNE_PROFILE,
-  localFortuneDate,
-} from './fortune-core.js';
+import { describeFortuneProfile, EMPTY_FORTUNE_PROFILE, localFortuneDate } from './fortune-core.js';
 import { renderFortuneCard } from './fortune-card.js';
 import { deleteFortuneProfile } from './fortune-repository.js';
 import { fetchIvrmFortuneProfile } from './fortune-ivrm-profile.js';
+import { savedDailyFortune, publicDailyFortune } from './daily-fortune.js';
 
 const inFlight = new Set<string>();
 export const fortunePlugin = definePlugin<{ enabled: boolean }, unknown, PrismaClient>({
@@ -85,7 +81,15 @@ export const fortunePlugin = definePlugin<{ enabled: boolean }, unknown, PrismaC
               });
               return;
             }
-            const fortune = createDailyFortune(guildId, userId, date, saved);
+            const isPublic = interaction.options.getBoolean('public') === true;
+            const savedFortune = await savedDailyFortune(
+              context.prisma,
+              guildId,
+              userId,
+              date,
+              saved,
+            );
+            const fortune = isPublic ? publicDailyFortune(savedFortune) : savedFortune;
             const embed = new EmbedBuilder()
               .setTitle(fortune.title)
               .setColor(fortune.hex as `#${string}`)
@@ -104,7 +108,6 @@ export const fortunePlugin = definePlugin<{ enabled: boolean }, unknown, PrismaC
               })
               .setImage('attachment://herta-fortune.png')
               .setFooter({ text: `${date} · ${fortune.disclaimer}` });
-            const isPublic = interaction.options.getBoolean('public') === true;
             if (!isPublic && fortune.notes.length)
               embed.addFields({
                 name: 'あなたへのヒント（本人のみ）',
@@ -113,7 +116,7 @@ export const fortunePlugin = definePlugin<{ enabled: boolean }, unknown, PrismaC
             const card = await renderFortuneCard(
               fortune,
               interaction.user.displayName,
-              isPublic ? null : saved.mbti,
+              isPublic || process.env.DAILY_BONUS_ENABLED === 'true' ? null : saved.mbti,
             );
             const payload = {
               embeds: [embed],

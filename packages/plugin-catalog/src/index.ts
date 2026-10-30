@@ -18,6 +18,8 @@ import { communityChallengeManifest } from './manifests/community-challenge.js';
 import { eventRsvpManifest } from './manifests/event-rsvp.js';
 import { giveawayManifest } from './manifests/giveaway.js';
 import { fortuneManifest } from './manifests/fortune.js';
+import { dailyBonusManifest } from './manifests/daily-bonus.js';
+export { dailyBonusManifest } from './manifests/daily-bonus.js';
 import { mbtiManifest } from './manifests/mbti.js';
 import { miniGamesManifest } from './manifests/mini-games.js';
 import { onboardingManifest } from './manifests/onboarding.js';
@@ -152,6 +154,7 @@ const rawPluginManifests: PluginManifest[] = [
   lfgManifest,
   mbtiManifest,
   fortuneManifest,
+  dailyBonusManifest,
   miniGamesManifest,
   moderationManifest,
   onboardingManifest,

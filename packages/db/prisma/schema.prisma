@@ -23,19 +23,24 @@ model Guild {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  settings               GuildSettings?
-  birthdayCardBackground BirthdayCardBackground?
-  birthdayCardAssets     BirthdayCardAsset[]
-  fortuneProfiles        FortuneProfile[]
-  members                GuildMember[]
-  roles                  Role[]
-  auditLogs              AuditLog[]
-  guildPlugins           GuildPlugin[]
-  rules                  Rule[]
-  moderationDetections   ModerationDetectionEvent[]
-  vcRecapSessions        VcRecapSession[]
-  valorantRoster         ValorantRoster?
-  valorantPickSessions   ValorantPickSession[]
+  settings                GuildSettings?
+  birthdayCardBackground  BirthdayCardBackground?
+  birthdayCardAssets      BirthdayCardAsset[]
+  fortuneProfiles         FortuneProfile[]
+  dailyBonusAnnouncements DailyBonusAnnouncement[]
+  dailyBonusClaims        DailyBonusClaim[]
+  anniversaryEvents       DailyAnniversaryEvent[]
+  dailyBonusQuizSessions  DailyBonusQuizSession[]
+  dailyFortuneResults     DailyFortuneResult[]
+  members                 GuildMember[]
+  roles                   Role[]
+  auditLogs               AuditLog[]
+  guildPlugins            GuildPlugin[]
+  rules                   Rule[]
+  moderationDetections    ModerationDetectionEvent[]
+  vcRecapSessions         VcRecapSession[]
+  valorantRoster          ValorantRoster?
+  valorantPickSessions    ValorantPickSession[]
 
   @@map("guilds")
 }
@@ -1231,18 +1236,22 @@ model ValorantAccountLink {
 // ============================================================
 
 model MemberActivityEvent {
-  id        String    @id @default(uuid())
-  guildId   String    @map("guild_id")
-  userId    String?   @map("user_id")
-  event     String    @db.VarChar(32)
-  channelId String?   @map("channel_id")
-  messageId String?   @map("message_id")
-  /** message_update(編集前)・message_delete(削除時)の本文スナップショット。6ヶ月経過後にscrubされnullになる。 */
-  content   String?
-  /** content が実際にscrubされた日時。scrub未実施・元々contentを持たないeventはnull。 */
+  id                String    @id @default(uuid())
+  guildId           String    @map("guild_id")
+  userId            String?   @map("user_id")
+  event             String    @db.VarChar(32)
+  channelId         String?   @map("channel_id")
+  messageId         String?   @map("message_id")
+  /**
+   * message_update(編集前)・message_delete(削除時)の本文スナップショット。6ヶ月経過後にscrubされnullになる。
+   */
+  content           String?
+  /**
+   * content が実際にscrubされた日時。scrub未実施・元々contentを持たないeventはnull。
+   */
   contentScrubbedAt DateTime? @map("content_scrubbed_at") @db.Timestamptz(3)
-  metadata  Json?
-  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  metadata          Json?
+  occurredAt        DateTime  @default(now()) @map("occurred_at") @db.Timestamptz(3)
 
   @@index([guildId, occurredAt(sort: Desc)])
   @@index([guildId, userId, occurredAt(sort: Desc)])
@@ -1276,14 +1285,14 @@ model FortuneProfile {
  * 本人自身が切り替えるテーブルとして独立させる。
  */
 model UserDataConsent {
-  userId                   String   @id @map("user_id")
-  voiceTranscriptionConsent Boolean @default(false) @map("voice_transcription_consent")
+  userId                              String    @id @map("user_id")
+  voiceTranscriptionConsent           Boolean   @default(false) @map("voice_transcription_consent")
   /**
    * 文字起こし本文を30日間保存することへの同意日時。本文保存の説明に同意した時点で設定し、
    * nullは要約のみ残す旧同意(本文は要約後に削除)。同意取り消し時はnullへ戻す。
    */
   voiceTranscriptRetentionConsentedAt DateTime? @map("voice_transcript_retention_consented_at") @db.Timestamptz(3)
-  updatedAt                DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedAt                           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("user_data_consents")
 }
@@ -1317,21 +1326,27 @@ enum VcRecapSessionStatus {
  * 削除する(本文を長期保持しないプライバシー設計、summaryのみ残す)。
  */
 model VcRecapSession {
-  id                 String                @id @default(uuid())
-  guildId            String                @map("guild_id")
-  channelId          String                @map("channel_id")
-  /** 削除依頼(deleteUserVoiceData)で本人が除去された場合nullになる(発言者のいないセッションに実行者の痕跡だけ残さないため)。 */
-  startedBy          String?               @map("started_by")
-  status             VcRecapSessionStatus  @default(active)
-  /** セッション開始時点でvoiceTranscriptionConsent=trueだった参加者(文字起こし対象者)。 */
-  consentingUserIds  String[]              @map("consenting_user_ids")
-  /** 文字起こし対象外(不同意)だった参加者。要約の「参加者」表示には含めるが発言内容は無い。 */
-  nonConsentingUserIds String[]            @map("non_consenting_user_ids")
-  summary            String?
-  topics             String[]              @default([])
-  startedAt          DateTime              @default(now()) @map("started_at") @db.Timestamptz(3)
-  endedAt            DateTime?             @map("ended_at") @db.Timestamptz(3)
-  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  id                   String               @id @default(uuid())
+  guildId              String               @map("guild_id")
+  channelId            String               @map("channel_id")
+  /**
+   * 削除依頼(deleteUserVoiceData)で本人が除去された場合nullになる(発言者のいないセッションに実行者の痕跡だけ残さないため)。
+   */
+  startedBy            String?              @map("started_by")
+  status               VcRecapSessionStatus @default(active)
+  /**
+   * セッション開始時点でvoiceTranscriptionConsent=trueだった参加者(文字起こし対象者)。
+   */
+  consentingUserIds    String[]             @map("consenting_user_ids")
+  /**
+   * 文字起こし対象外(不同意)だった参加者。要約の「参加者」表示には含めるが発言内容は無い。
+   */
+  nonConsentingUserIds String[]             @map("non_consenting_user_ids")
+  summary              String?
+  topics               String[]             @default([])
+  startedAt            DateTime             @default(now()) @map("started_at") @db.Timestamptz(3)
+  endedAt              DateTime?            @map("ended_at") @db.Timestamptz(3)
+  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
 
   guild    Guild                      @relation(fields: [guildId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   segments VcRecapTranscriptSegment[]
@@ -1347,18 +1362,104 @@ model VcRecapSession {
  * 要約生成が完了し次第、このテーブルの該当行は削除する(本文を長期保持しない)。
  */
 model VcRecapTranscriptSegment {
-  id          String   @id @default(uuid())
-  sessionId   String   @map("session_id")
-  userId      String   @map("user_id")
-  text        String
-  startedAt   DateTime @map("started_at") @db.Timestamptz(3)
-  endedAt     DateTime @map("ended_at") @db.Timestamptz(3)
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  id        String   @id @default(uuid())
+  sessionId String   @map("session_id")
+  userId    String   @map("user_id")
+  text      String
+  startedAt DateTime @map("started_at") @db.Timestamptz(3)
+  endedAt   DateTime @map("ended_at") @db.Timestamptz(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   session VcRecapSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, startedAt])
   @@map("vc_recap_transcript_segments")
+}
+
+model DailyBonusAnnouncement {
+  eligibleCount      Int?      @map("eligible_count")
+  eligibleCapturedAt DateTime? @map("eligible_captured_at") @db.Timestamptz(6)
+  guildId            String    @map("guild_id")
+  targetDate         String    @map("target_date")
+  channelId          String    @map("channel_id")
+  roleId             String    @map("role_id")
+  status             String    @default("pending")
+  messageId          String?   @map("message_id")
+  errorCode          String?   @map("error_code")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @default(now()) @map("updated_at") @db.Timestamptz(6)
+  guild              Guild     @relation(fields: [guildId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([guildId, targetDate])
+  @@map("daily_bonus_announcements")
+}
+
+model DailyBonusClaim {
+  guildId       String   @map("guild_id")
+  discordUserId String   @map("discord_user_id")
+  targetDate    String   @map("target_date")
+  status        String
+  receiptJson   Json?    @map("receipt_json")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  guild         Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([guildId, discordUserId, targetDate])
+  @@index([status, updatedAt], map: "daily_bonus_claims_status_updated_at_idx")
+  @@map("daily_bonus_claims")
+}
+
+model DailyAnniversaryEvent {
+  id              String   @id
+  guildId         String   @map("guild_id")
+  title           String
+  summary         String   @default("")
+  category        String
+  month           Int
+  day             Int
+  baseYear        Int?     @map("base_year")
+  workName        String   @default("") @map("work_name")
+  characterName   String   @default("") @map("character_name")
+  sourceUrl       String   @map("source_url")
+  sourceCheckedAt DateTime @map("source_checked_at") @db.Timestamptz(6)
+  approved        Boolean  @default(false)
+  public          Boolean  @default(false)
+  priority        Int      @default(0)
+  pinnedDate      String?  @map("pinned_date")
+  anniversaryMode String   @default("annual") @map("anniversary_mode")
+  updatedAt       DateTime @default(now()) @map("updated_at") @db.Timestamptz(6)
+  guild           Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([guildId, month, day], map: "anniversary_events_guild_date")
+  @@map("anniversary_events")
+}
+
+model DailyBonusQuizSession {
+  id                    String   @id
+  guildId               String   @map("guild_id")
+  discordUserId         String   @map("discord_user_id")
+  targetDate            String   @map("target_date")
+  announcementMessageId String   @map("announcement_message_id")
+  quizId                String   @map("quiz_id")
+  createdAt             DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  guild                 Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([createdAt], map: "daily_bonus_quiz_sessions_created_at_idx")
+  @@map("daily_bonus_quiz_sessions")
+}
+
+model DailyFortuneResult {
+  guildId          String   @map("guild_id")
+  discordUserId    String   @map("discord_user_id")
+  targetDate       String   @map("target_date")
+  algorithmVersion String   @map("algorithm_version")
+  resultJson       Json     @map("result_json")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  guild            Guild    @relation(fields: [guildId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([guildId, discordUserId, targetDate])
+  @@index([createdAt], map: "daily_fortune_results_created_at_idx")
+  @@map("daily_fortune_results")
 }
 
 /**
