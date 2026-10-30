@@ -1321,6 +1321,16 @@ model VcRecapExplicitConsent {
   @@map("vc_recap_explicit_consents")
 }
 
+/** DB-side erasure fence for future VC archive/recording pipelines. */
+model VcRecapErasureRequest {
+  userId                    String    @id @map("user_id")
+  requestedAt               DateTime  @default(now()) @map("requested_at") @db.Timestamptz(3)
+  storageDeletionVerifiedAt DateTime? @map("storage_deletion_verified_at") @db.Timestamptz(3)
+  updatedAt                 DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("vc_recap_erasure_requests")
+}
+
 model VoiceConsentAccess {
   userId    String   @id @map("user_id")
   tokenHash String   @unique @map("token_hash")
