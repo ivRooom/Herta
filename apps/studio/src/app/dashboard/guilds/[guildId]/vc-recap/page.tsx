@@ -17,6 +17,8 @@ import { auth } from '@/auth';
 import { ReconnectNotice } from '@/components/reconnect-notice';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
+import { hasStudioPermission, resolveStudioAccess } from '@/lib/studio-access';
+import { studioVcRecapExportResource } from '@/lib/studio-policy-resources';
 import { prisma } from '@/lib/db';
 import {
   formatVcRecapDuration,
@@ -79,6 +81,8 @@ async function GuildVcRecapPage({
 
   const rawSearchParams = await searchParams;
   const query = parseVcRecapQuery(toUrlSearchParams(rawSearchParams));
+  const exportAccess = await resolveStudioAccess(guildId, session.user.id);
+  const canExport = exportAccess.ok && hasStudioPermission(exportAccess.access, 'studio.operation.execute', studioVcRecapExportResource(guildId));
   let result: Awaited<ReturnType<typeof listVcRecapSessionsForStudio>> | null = null;
   try {
     result = await listVcRecapSessionsForStudio(prisma, guildId, query);
@@ -112,6 +116,34 @@ async function GuildVcRecapPage({
       </div>
 
       <FilterForm guildId={guildId} query={query} channelOptions={result?.channelOptions ?? []} />
+      {canExport ? (
+        <form
+          method="get"
+          action={`/api/guilds/${guildId}/vc-recap/export`}
+          className="mt-4 flex flex-wrap items-end gap-3 rounded-2xl border border-border bg-surface p-4 text-sm"
+        >
+          <label className="flex flex-col gap-1">
+            <span className="text-muted">開始日（JST）</span>
+            <input type="date" name="from" required className="rounded-lg border border-border bg-background p-2" />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-muted">終了日（JST）</span>
+            <input type="date" name="to" required className="rounded-lg border border-border bg-background p-2" />
+          </label>
+          {query.channelId ? <input type="hidden" name="channelId" value={query.channelId} /> : null}
+          <label className="flex flex-col gap-1">
+            <span className="text-muted">形式</span>
+            <select name="format" className="rounded-lg border border-border bg-background p-2">
+              <option value="json">JSON</option>
+              <option value="csv">CSV</option>
+            </select>
+          </label>
+          <button type="submit" className="rounded-lg border border-border px-4 py-2 font-medium hover:border-primary">
+            期間指定で出力
+          </button>
+          <p className="basis-full text-xs text-muted">現行30日保存データのみ。最大5,000発言です。</p>
+        </form>
+      ) : null}
 
       {!result ? (
         <section className="mt-6 rounded-2xl border border-red-500/30 bg-red-500/10 p-6">
