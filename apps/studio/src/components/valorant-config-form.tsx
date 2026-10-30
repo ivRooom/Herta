@@ -22,7 +22,9 @@ export function ValorantConfigForm({
     typeof initialConfig.maxParticipants === 'number' ? initialConfig.maxParticipants : 5,
   );
   const [sessionDurationMinutes, setSessionDurationMinutes] = useState(
-    typeof initialConfig.sessionDurationMinutes === 'number' ? initialConfig.sessionDurationMinutes : 30,
+    typeof initialConfig.sessionDurationMinutes === 'number'
+      ? initialConfig.sessionDurationMinutes
+      : 30,
   );
   const [agents, setAgents] = useState<Agent[]>([]);
   const [initialized, setInitialized] = useState(false);
@@ -136,20 +138,43 @@ export function ValorantConfigForm({
           </label>
           <label className="flex flex-col gap-1 text-sm">
             最大参加人数（1〜5人）
-            <input className="input w-28" type="number" min={1} max={5} step={1}
-              value={maxParticipants} disabled={busy}
-              onChange={(event) => setMaxParticipants(Number(event.target.value))} />
+            <input
+              className="input w-28"
+              type="number"
+              min={1}
+              max={5}
+              step={1}
+              value={maxParticipants}
+              disabled={busy}
+              onChange={(event) => setMaxParticipants(Number(event.target.value))}
+            />
           </label>
           <label className="flex flex-col gap-1 text-sm">
             募集期限（5〜180分）
-            <input className="input w-28" type="number" min={5} max={180} step={1}
-              value={sessionDurationMinutes} disabled={busy}
-              onChange={(event) => setSessionDurationMinutes(Number(event.target.value))} />
+            <input
+              className="input w-28"
+              type="number"
+              min={5}
+              max={180}
+              step={1}
+              value={sessionDurationMinutes}
+              disabled={busy}
+              onChange={(event) => setSessionDurationMinutes(Number(event.target.value))}
+            />
           </label>
-          <button className={button}
-            disabled={busy || !Number.isInteger(maxParticipants) || maxParticipants < 1 || maxParticipants > 5 ||
-              !Number.isInteger(sessionDurationMinutes) || sessionDurationMinutes < 5 || sessionDurationMinutes > 180}
-            onClick={() => void savePlugin()}>
+          <button
+            className={button}
+            disabled={
+              busy ||
+              !Number.isInteger(maxParticipants) ||
+              maxParticipants < 1 ||
+              maxParticipants > 5 ||
+              !Number.isInteger(sessionDurationMinutes) ||
+              sessionDurationMinutes < 5 ||
+              sessionDurationMinutes > 180
+            }
+            onClick={() => void savePlugin()}
+          >
             Plugin設定を保存
           </button>
         </div>

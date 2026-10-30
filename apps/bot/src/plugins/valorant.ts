@@ -28,11 +28,21 @@ import {
 import { fetchValorantMmr, parseRiotId, type RiotIdInput } from './valorant-client.js';
 import { pickRandomValorantAgents } from './valorant-random.js';
 import {
-  createValorantSession, getValorantSession, mutateValorantSession,
-  parseValorantSessionAction, setValorantSessionMessageId, VALORANT_SESSION_PREFIX,
-  type ValorantCandidate, type ValorantSessionSnapshot,
+  createValorantSession,
+  getValorantSession,
+  mutateValorantSession,
+  parseValorantSessionAction,
+  setValorantSessionMessageId,
+  VALORANT_SESSION_PREFIX,
+  type ValorantCandidate,
+  type ValorantSessionSnapshot,
 } from './valorant-session-repository.js';
-import { japaneseValorantMap, pickTacticalAgents, VALORANT_COMPOSITION_VERSION, VALORANT_MAPS } from './valorant-maps.js';
+import {
+  japaneseValorantMap,
+  pickTacticalAgents,
+  VALORANT_COMPOSITION_VERSION,
+  VALORANT_MAPS,
+} from './valorant-maps.js';
 
 export interface ValorantPluginConfig {
   enabled: boolean;
@@ -46,8 +56,15 @@ export function normalizeValorantConfig(value: unknown): ValorantPluginConfig {
   return {
     enabled: source.enabled === undefined ? true : source.enabled === true,
     enabledAgents: legacyValorantAgents(source.enabledAgents),
-    maxParticipants: typeof source.maxParticipants === 'number' && Number.isInteger(source.maxParticipants) ? Math.max(1, Math.min(5, source.maxParticipants)) : 5,
-    sessionDurationMinutes: typeof source.sessionDurationMinutes === 'number' && Number.isInteger(source.sessionDurationMinutes) ? Math.max(5, Math.min(180, source.sessionDurationMinutes)) : 30,
+    maxParticipants:
+      typeof source.maxParticipants === 'number' && Number.isInteger(source.maxParticipants)
+        ? Math.max(1, Math.min(5, source.maxParticipants))
+        : 5,
+    sessionDurationMinutes:
+      typeof source.sessionDurationMinutes === 'number' &&
+      Number.isInteger(source.sessionDurationMinutes)
+        ? Math.max(5, Math.min(180, source.sessionDurationMinutes))
+        : 30,
   };
 }
 
@@ -129,50 +146,77 @@ async function handleMyId(
   );
 }
 
-
 function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
   const closed = session.status !== 'OPEN' || session.expiresAt <= new Date();
   const members = session.participants.map((item) => item.userId);
   const result = Array.isArray(session.result) ? session.result : [];
   const assignments = result.filter(
     (item): item is { userId: string; agentId: string; displayName: string } =>
-      typeof item === 'object' && item !== null && !Array.isArray(item) &&
-      typeof item.userId === 'string' && typeof item.agentId === 'string' &&
+      typeof item === 'object' &&
+      item !== null &&
+      !Array.isArray(item) &&
+      typeof item.userId === 'string' &&
+      typeof item.agentId === 'string' &&
       typeof item.displayName === 'string',
   );
-  const lines = session.status === 'COMPLETED' && assignments.length > 0
-    ? assignments.map((item) => '<@' + item.userId + '> — **' + escapeMarkdown(item.displayName) + '**')
-    : members.map((id) => '👤 <@' + id + '>');
+  const lines =
+    session.status === 'COMPLETED' && assignments.length > 0
+      ? assignments.map(
+          (item) => '<@' + item.userId + '> — **' + escapeMarkdown(item.displayName) + '**',
+        )
+      : members.map((id) => '👤 <@' + id + '>');
   const description = [
     'モード：' + (session.mode === 'TACTICAL' ? '実戦向け構成' : '完全ランダム'),
     'マップ：' + japaneseValorantMap(session.mapId),
     '参加者：' + members.length + ' / ' + session.maxParticipants,
-    '', lines.length ? lines.join('\n') : '参加者はいません',
+    '',
+    lines.length ? lines.join('\n') : '参加者はいません',
   ];
   if (session.mode === 'TACTICAL' && session.status === 'COMPLETED') {
-    description.push('', '構成の特徴：エントリー・スモーク・索敵・防衛と連携を考慮。勝率保証なし。');
+    description.push(
+      '',
+      '構成の特徴：エントリー・スモーク・索敵・防衛と連携を考慮。勝率保証なし。',
+    );
     if (members.length < 5) description.push('※5人編成としては未完成です。');
   }
-  description.push('', '状態：' + (session.status === 'OPEN' && closed ? 'EXPIRED' : session.status));
-  const embed = new EmbedBuilder().setColor(0xff4655).setTitle('🎮 VALORANT エージェント抽選')
-    .setDescription(description.join('\n')).setTimestamp(session.completedAt ?? session.createdAt);
+  description.push(
+    '',
+    '状態：' + (session.status === 'OPEN' && closed ? 'EXPIRED' : session.status),
+  );
+  const embed = new EmbedBuilder()
+    .setColor(0xff4655)
+    .setTitle('🎮 VALORANT エージェント抽選')
+    .setDescription(description.join('\n'))
+    .setTimestamp(session.completedAt ?? session.createdAt);
   const button = (action: string, label: string, style: ButtonStyle, disabled: boolean) =>
-    new ButtonBuilder().setCustomId(VALORANT_SESSION_PREFIX + session.id + ':' + action)
-      .setLabel(label).setStyle(style).setDisabled(disabled);
+    new ButtonBuilder()
+      .setCustomId(VALORANT_SESSION_PREFIX + session.id + ':' + action)
+      .setLabel(label)
+      .setStyle(style)
+      .setDisabled(disabled);
   return {
     embeds: [embed],
-    components: [new ActionRowBuilder<ButtonBuilder>().addComponents(
-      button('join', '参加', ButtonStyle.Success, closed || members.length >= session.maxParticipants),
-      button('leave', '参加取消', ButtonStyle.Secondary, closed),
-      button('draw', '抽選', ButtonStyle.Primary, closed || members.length === 0),
-      button('cancel', '募集取消', ButtonStyle.Danger, closed),
-    )],
+    components: [
+      new ActionRowBuilder<ButtonBuilder>().addComponents(
+        button(
+          'join',
+          '参加',
+          ButtonStyle.Success,
+          closed || members.length >= session.maxParticipants,
+        ),
+        button('leave', '参加取消', ButtonStyle.Secondary, closed),
+        button('draw', '抽選', ButtonStyle.Primary, closed || members.length === 0),
+        button('cancel', '募集取消', ButtonStyle.Danger, closed),
+      ),
+    ],
     allowedMentions: { parse: [] as [] },
   };
 }
 
 async function handleRandom(
-  interaction: ChatInputCommandInteraction, prisma: PrismaClient, logger: Logger,
+  interaction: ChatInputCommandInteraction,
+  prisma: PrismaClient,
+  logger: Logger,
 ): Promise<void> {
   if (!interaction.guildId || !interaction.channelId) {
     await replyEphemeral(interaction, 'サーバー内のテキストチャンネルで実行してください。');
@@ -190,9 +234,14 @@ async function handleRandom(
       await interaction.editReply('VALORANT Pluginは現在無効です。');
       return;
     }
-    if (interaction.appPermissions && !interaction.appPermissions.has([
-      PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.EmbedLinks,
-    ])) {
+    if (
+      interaction.appPermissions &&
+      !interaction.appPermissions.has([
+        PermissionFlagsBits.ViewChannel,
+        PermissionFlagsBits.SendMessages,
+        PermissionFlagsBits.EmbedLinks,
+      ])
+    ) {
       await interaction.editReply('Botに閲覧・送信・埋め込みリンク権限を付与してください。');
       return;
     }
@@ -203,21 +252,40 @@ async function handleRandom(
     }
     const mode = map ? 'TACTICAL' : 'RANDOM';
     const session = await createValorantSession(prisma, {
-      guildId: interaction.guildId, channelId: interaction.channelId, creatorId: interaction.user.id,
-      mode, mapId: map, maxParticipants: config.maxParticipants,
+      guildId: interaction.guildId,
+      channelId: interaction.channelId,
+      creatorId: interaction.user.id,
+      mode,
+      mapId: map,
+      maxParticipants: config.maxParticipants,
       expiresAt: new Date(Date.now() + config.sessionDurationMinutes * 60_000),
       rulesVersion: mode === 'TACTICAL' ? VALORANT_COMPOSITION_VERSION : 'fisher-yates-v1',
     });
     await interaction.editReply('参加募集を作成しました。参加ボタンを押した人だけが抽選対象です。');
-    const message = await interaction.followUp({ ...buildValorantSessionMessage(session), flags: [] });
+    const message = await interaction.followUp({
+      ...buildValorantSessionMessage(session),
+      flags: [],
+    });
     await setValorantSessionMessageId(prisma, interaction.guildId, session.id, message.id);
   } catch (error) {
-    logger.error({ guildId: interaction.guildId, errorName: error instanceof Error ? error.name : 'UnknownError' }, 'VALORANT募集作成に失敗');
-    await interaction.editReply('募集の作成に失敗しました。DiscordまたはDBを確認してください。').catch(() => undefined);
+    logger.error(
+      {
+        guildId: interaction.guildId,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      },
+      'VALORANT募集作成に失敗',
+    );
+    await interaction
+      .editReply('募集の作成に失敗しました。DiscordまたはDBを確認してください。')
+      .catch(() => undefined);
   }
 }
 
-async function handleValorantButton(interaction: ButtonInteraction, prisma: PrismaClient, logger: Logger): Promise<void> {
+async function handleValorantButton(
+  interaction: ButtonInteraction,
+  prisma: PrismaClient,
+  logger: Logger,
+): Promise<void> {
   const parsed = parseValorantSessionAction(interaction.customId);
   if (!parsed) return;
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -228,8 +296,11 @@ async function handleValorantButton(interaction: ButtonInteraction, prisma: Pris
   }
   try {
     const session = await getValorantSession(prisma, guildId, parsed.id);
-    if (!session || (session.messageId && session.messageId !== interaction.message.id) ||
-      session.channelId !== interaction.channelId) {
+    if (
+      !session ||
+      (session.messageId && session.messageId !== interaction.message.id) ||
+      session.channelId !== interaction.channelId
+    ) {
       await interaction.editReply('対象の募集が見つかりません。');
       return;
     }
@@ -243,38 +314,60 @@ async function handleValorantButton(interaction: ButtonInteraction, prisma: Pris
         return;
       }
       const stored = await listValorantAgents(prisma, guildId);
-      candidates = stored === null
-        ? defaultValorantAgents(normalizeValorantConfig(plugin.config).enabledAgents).filter((a) => a.enabled)
-          .map(({ agentId, agentName, displayName }) => ({ agentId, agentName, displayName }))
-        : stored.filter((a) => a.enabled)
-          .map(({ agentId, agentName, displayName }) => ({ agentId, agentName, displayName }));
+      candidates =
+        stored === null
+          ? defaultValorantAgents(normalizeValorantConfig(plugin.config).enabledAgents)
+              .filter((a) => a.enabled)
+              .map(({ agentId, agentName, displayName }) => ({ agentId, agentName, displayName }))
+          : stored
+              .filter((a) => a.enabled)
+              .map(({ agentId, agentName, displayName }) => ({ agentId, agentName, displayName }));
     }
     const mutation = await mutateValorantSession(prisma, {
-      guildId, id: parsed.id, userId: interaction.user.id, action: parsed.action,
-      isAdmin: Boolean(interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
-        interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)),
+      guildId,
+      id: parsed.id,
+      userId: interaction.user.id,
+      action: parsed.action,
+      isAdmin: Boolean(
+        interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
+        interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild),
+      ),
       candidates,
       pick(participants, available, mode, mapId) {
         let pool = available;
         if (mode === 'TACTICAL') {
           const selected = VALORANT_MAPS.find(([id]) => id === mapId)?.[0];
           if (!selected) return null;
-          const tactical = pickTacticalAgents(selected, participants.length, available.map((a) => a.agentName));
+          const tactical = pickTacticalAgents(
+            selected,
+            participants.length,
+            available.map((a) => a.agentName),
+          );
           if (tactical.status !== 'ok') return null;
           pool = tactical.agents.map((name) => available.find((a) => a.agentName === name)!);
         }
-        const result = pickRandomValorantAgents(participants, pool.map((a) => a.agentId));
+        const result = pickRandomValorantAgents(
+          participants,
+          pool.map((a) => a.agentId),
+        );
         if (result.status !== 'ok') return null;
         return result.assignments.map(({ userId, agent }) => {
           const found = pool.find((candidate) => candidate.agentId === agent)!;
-          return { userId, agentId: found.agentId, agentName: found.agentName, displayName: found.displayName };
+          return {
+            userId,
+            agentId: found.agentId,
+            agentName: found.agentName,
+            displayName: found.displayName,
+          };
         });
       },
     });
     if (mutation.status !== 'ok') {
       const messages: Record<string, string> = {
-        missing: '募集が見つかりません。', closed: '募集は終了済み、または期限切れです。',
-        full: 'この募集は定員です。', not_joined: 'まだ参加していません。',
+        missing: '募集が見つかりません。',
+        closed: '募集は終了済み、または期限切れです。',
+        full: 'この募集は定員です。',
+        not_joined: 'まだ参加していません。',
         empty: '参加者がいないため抽選できません。',
         forbidden: '抽選・募集取消は作成者または管理者のみ実行できます。',
         insufficient: '有効なエージェントが不足しています。Studioで候補を確認してください。',
@@ -282,7 +375,10 @@ async function handleValorantButton(interaction: ButtonInteraction, prisma: Pris
       // Expiration can close the DB session even if the Discord UI is stale.
       if (mutation.status === 'closed') {
         const latest = await getValorantSession(prisma, guildId, parsed.id);
-        if (latest) await interaction.message.edit(buildValorantSessionMessage(latest)).catch(() => undefined);
+        if (latest)
+          await interaction.message
+            .edit(buildValorantSessionMessage(latest))
+            .catch(() => undefined);
       }
       await interaction.editReply(messages[mutation.status]);
       return;
@@ -292,17 +388,33 @@ async function handleValorantButton(interaction: ButtonInteraction, prisma: Pris
         const latest = await getValorantSession(prisma, guildId, parsed.id);
         if (latest) await interaction.message.edit(buildValorantSessionMessage(latest));
       } catch (error) {
-        logger.warn({ guildId, errorName: error instanceof Error ? error.name : 'UnknownError' }, 'VALORANT募集表示の更新に失敗');
+        logger.warn(
+          { guildId, errorName: error instanceof Error ? error.name : 'UnknownError' },
+          'VALORANT募集表示の更新に失敗',
+        );
         await interaction.editReply('操作はDBへ保存済みですが、Discordの表示更新に失敗しました。');
         return;
       }
     }
-    await interaction.editReply(parsed.action === 'draw' ? '抽選を確定しました。'
-      : parsed.action === 'join' ? (mutation.changed ? '参加しました。' : 'すでに参加済みです。')
-      : parsed.action === 'leave' ? '参加を取り消しました。' : '募集を取り消しました。');
+    await interaction.editReply(
+      parsed.action === 'draw'
+        ? '抽選を確定しました。'
+        : parsed.action === 'join'
+          ? mutation.changed
+            ? '参加しました。'
+            : 'すでに参加済みです。'
+          : parsed.action === 'leave'
+            ? '参加を取り消しました。'
+            : '募集を取り消しました。',
+    );
   } catch (error) {
-    logger.error({ guildId, errorName: error instanceof Error ? error.name : 'UnknownError' }, 'VALORANT募集操作に失敗');
-    await interaction.editReply('処理できませんでした。しばらくしてから再試行してください。').catch(() => undefined);
+    logger.error(
+      { guildId, errorName: error instanceof Error ? error.name : 'UnknownError' },
+      'VALORANT募集操作に失敗',
+    );
+    await interaction
+      .editReply('処理できませんでした。しばらくしてから再試行してください。')
+      .catch(() => undefined);
   }
 }
 
@@ -454,13 +566,16 @@ export const valorantPlugin = definePlugin<ValorantPluginConfig, unknown, Prisma
     ];
   },
   provideEvents(context) {
-    return [{
-      event: 'interactionCreate',
-      async handler(_context, ...args) {
-        const candidate = args[0] as ButtonInteraction | undefined;
-        if (!candidate?.isButton?.() || !candidate.customId.startsWith(VALORANT_SESSION_PREFIX)) return;
-        await handleValorantButton(candidate, context.prisma, context.logger);
+    return [
+      {
+        event: 'interactionCreate',
+        async handler(_context, ...args) {
+          const candidate = args[0] as ButtonInteraction | undefined;
+          if (!candidate?.isButton?.() || !candidate.customId.startsWith(VALORANT_SESSION_PREFIX))
+            return;
+          await handleValorantButton(candidate, context.prisma, context.logger);
+        },
       },
-    }] as PluginEventHandler<ValorantPluginConfig>[];
+    ] as PluginEventHandler<ValorantPluginConfig>[];
   },
 });

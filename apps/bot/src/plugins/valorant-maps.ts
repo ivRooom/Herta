@@ -99,17 +99,20 @@ export function pickTacticalAgents(
     return { status: 'unavailable' };
   }
   const available = new Set(availableAgentNames);
-  const viable = PRESETS[map].map((preset) => preset.slice(0, participantCount))
+  const viable = PRESETS[map]
+    .map((preset) => preset.slice(0, participantCount))
     .filter((agents) => agents.every((name) => available.has(name)));
   if (viable.length === 0) return { status: 'unavailable' };
   const index = randomIndex(viable.length);
-  if (!Number.isInteger(index) || index < 0 || index >= viable.length) throw new RangeError('randomIndex out of range');
+  if (!Number.isInteger(index) || index < 0 || index >= viable.length)
+    throw new RangeError('randomIndex out of range');
   return {
     status: 'ok',
     agents: [...viable[index]!],
-    description: participantCount < 5
-      ? '未完成の5人編成です。参加人数に合わせエントリー→スモーク→索敵→防衛を優先しています。'
-      : 'エントリー・射線管理・情報収集・防衛と連携を意識した候補構成です。勝率保証はありません。',
+    description:
+      participantCount < 5
+        ? '未完成の5人編成です。参加人数に合わせエントリー→スモーク→索敵→防衛を優先しています。'
+        : 'エントリー・射線管理・情報収集・防衛と連携を意識した候補構成です。勝率保証はありません。',
     version: VALORANT_COMPOSITION_VERSION,
   };
 }

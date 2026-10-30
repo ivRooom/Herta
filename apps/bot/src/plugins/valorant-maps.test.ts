@@ -5,8 +5,24 @@ describe('VALORANT tactical templates', () => {
   it('supports all maps with two complete distinct examples', () => {
     for (const [map] of VALORANT_MAPS) {
       const available = [
-        'Jett', 'Raze', 'Yoru', 'Neon', 'Omen', 'Astra', 'Brimstone', 'Viper', 'Harbor',
-        'Sova', 'Fade', 'Gekko', 'Skye', 'KAY/O', 'Breach', 'Killjoy', 'Cypher', 'Sage',
+        'Jett',
+        'Raze',
+        'Yoru',
+        'Neon',
+        'Omen',
+        'Astra',
+        'Brimstone',
+        'Viper',
+        'Harbor',
+        'Sova',
+        'Fade',
+        'Gekko',
+        'Skye',
+        'KAY/O',
+        'Breach',
+        'Killjoy',
+        'Cypher',
+        'Sage',
       ];
       const first = pickTacticalAgents(map, 5, available, () => 0);
       const second = pickTacticalAgents(map, 5, available, (max) => max - 1);
