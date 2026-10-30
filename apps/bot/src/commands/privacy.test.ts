@@ -127,7 +127,6 @@ describe('privacy delete-voice-data', () => {
     expect(notice).toContain('完全削除完了通知ではありません');
     expect(notice).toContain('バックアップ');
     expect(notice).toContain('削除障壁');
-
   });
 });
 
