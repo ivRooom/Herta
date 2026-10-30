@@ -15,6 +15,7 @@
 - メモリに一時保持したPCM/WAVはアップロード後に破棄し、音声ファイルをDB・ディスク・S3に永続保存しません。
 - OpenAI APIキーは既存のRuntime Secret Store `openai.api_key` 優先。Runtime Secret Storeが読めない場合はenvへ無条件fallbackしません。
 - 音声送信ごとに `vc_recap_explicit_consents` の `purpose=openai_audio_processing`、`policy_version=vc-recap-openai-audio-2026-10-31-v1`、日時・撤回と `vc_recap_erasure_requests` を照会。未適用Migration、DB障害、同意無し、撤回時は**送信しません**。旧AWS-only同意を移行しません。
+- OpenAIへの個別同意が無い参加者は、既存のAWS Streaming経路のままです。本人が同意しないことで従来の文字起こしを失わない段階的移行です。
 - エラー時に同じ音声を別providerへ転送する自動fallbackはしません。
 
 ## 必須リリースゲート
