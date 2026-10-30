@@ -86,13 +86,3 @@
 3. 認証済Studio CRUD・実Discord VCコマンドを可能な接続経路で確認し、未検証ならIssueをopenのまま残す。
 
 本記録の開始時点で今回branchからのproduction変更なし。最終適用証跡を追補する。
-
-## 2026-10-30 本番移行前の実機確認（後続Gateは引き続き必須）
-
-- SSM読み取り専用診断により、稼働image `d983cdaad909d0a05ef40a516be001ccac60ef3d`、local PostgreSQL 16.15、稼働コンテナ、既存migration63件/失敗0件、空きディスク約15GBを確認。
-- 本番PostgreSQLのcustom-format `pg_dump` を保護されたroot専用領域へ作成。バックアップ容量、SHA-256と復元カタログを検証。外部送信なし。
-- network-none/256MiB制限のPostgreSQL 16へ同dumpを復元し、3つの未適用VALORANT migrationをexact SQLで適用。VALORANT tables 6件、invalid index 0件を確認。一時コンテナは終了・削除済み。
-- 最初の復元スクリプトは最後の表示処理のシェル構文不備で非0終了。復元・3 migrationのSQL実行自体はすべて正常であり、本番DBには適用していない。復元成功と全スクリプト成功は区別して記録する。
-- 既知の限定権限ユーザー向けStudioエージェント管理・90日後のDiscord ID匿名化・手動試合登録監査ログを追補。匿名化後もエージェント選出/構成/勝敗統計は保持。
-- 保持期限経過後のDiscordメッセージ自動無効化、Studioのマップ構成重み設定、Riot/RSO自動試合照合、公式アイコンは未完了。受入未検証項目は未検証として記録し、完了と扱わない。
-
