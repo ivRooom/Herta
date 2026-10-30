@@ -8,6 +8,7 @@
 | --- | --- | --- |
 | `VC_RECAP_TRANSCRIPTION_PROVIDER` | `aws`, `whisper-1`, `gpt-transcribe` | `aws` |
 | `VC_RECAP_OPENAI_AUDIO_CONSENT_READY` | `true`, `false` | `false` |
+| `VC_RECAP_OPENAI_SESSION_MAX_AUDIO_MINUTES` | 1–240 | `120` |
 | `HERTA_AI_KILL_SWITCH` | `true`, `false` | 既存設定 |
 
 - AWSは今まで通りリアルタイムStreamingでセグメントを確定します。
