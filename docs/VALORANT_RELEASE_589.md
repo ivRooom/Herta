@@ -1,9 +1,9 @@
 # VALORANT 機能改修リリース記録
 
 対象: [Issue #589](https://github.com/ivRooom/Herta/issues/589) / [PR #590](https://github.com/ivRooom/Herta/pull/590)
-更新: 2026-10-30 JST。状態: **本番リリース未完了、IssueはOpenを維持**。
+更新: 2026-10-30 JST。状態: **本番適用済み。Discord実機受入が未完了のためIssueはOpenを維持**。
 
-## 新仕様の実装状態（PRブランチ、未マージ）
+## 新仕様の実装状態（mainマージ・本番適用済み）
 
 - P0: VCの自動参加を廃止し、Discordボタンで参加/取消/抽選/取消。Bot再起動後もDB正本。Guild単位の参加上限1–5、募集期限5–180分、作成者/ManageGuild権限、同一セッションのDB行ロックによる重複抽選防止。
 - P1: map選択時は13マップ別の2構成例。1–4人は役割優先の不完全編成と明示。マップ省略時はFisher–Yatesの完全ランダムを継続。公式13.09をルールバージョンとして保存。構成の統計的優位性は未検証。
@@ -11,23 +11,28 @@
 - P3: Guild権限付きStudioで手動試合結果の登録・閲覧。勝敗、マップ、ラウンドスコア、Match ID、実使用Agent、K/D/Aを保存。Match ID/セッションの重複登録はユニーク制約で防止。
 - 終了済みセッションの参加者IDは90日でWorkerにより匿名化し、抽選・構成・勝敗の集計を保存する。Riot Match IDも匿名化時に削除する。既存Riot IDリンク/HenrikDev MMR機能の契約を変えない。Riot Production Keyと本人のRSO opt-inが未確認のため試合履歴自動収集はしない。
 
-## 本番DBに未適用のmigration
+## 本番DBに適用済みのmigration
 
 - `20261029140000_valorant_agents`（既存PR #590）
 - `20261030100000_valorant_pick_sessions`
 - `20261030103000_valorant_match_results`
 
 すべて新規テーブル/index追加。既存データの破壊的移行は含めない。
-ただしCI用PostgreSQLでの適用成功は本番での安全なmigrationを保証しない。
+本番DBへの適用結果を実機で確認し、失敗したmigrationは0件。
 
-## リリースの残りGate
+## 2026-10-30 本番リリース結果
 
-1. 最新 `main` とPRヘッドの再照合。CI format/lint/typecheck/unit/integration/build/Studio E2Eを全成功させる。
-2. 同時操作・認可・データ分離の統合テストをレビューし、未解決Review/threadと保護ルールを確認する。
-3. 現在稼働する本番imageと適用済みmigrationを読み直す。本番DBの新規pg_dump/ハッシュを保護して取得し、隔離PG16へ復元して**同じ3つのmigration**を試行する。
-4. 旧imageと新imageの後方互換性、実際のrollback image、DBのダウングレードを伴わない手順を確定する。
-5. **バックアップ証跡・必要な承認・CI/Reviewが揃うまではmerge/Deploy Productionしない。**
-6. merge後にGitHub Actionsの本番デプロイ、Discord Slash Command同期、Bot health、Studio Guild IAM、Discord実機、ログ監視を行う。実施していない項目は未検証に残す。
+- 実装PR: [#590](https://github.com/ivRooom/Herta/pull/590)（squash merge済み）。
+- main/本番image SHA: `d7baf905d3d347f0f61a956ee269f9f5ff1e68f3`。
+- PRヘッドCI: format/lint/typecheck/test/build・PostgreSQL integration・Prisma readiness・Studio E2E・DB topologyすべて成功。
+- 新規Migrationの直前に本番PostgreSQL custom-format dumpをroot専用領域へ保護保存し、SHA-256・隔離PG16復元・3件のexact SQL適用を検証。
+- [Deploy Production](https://github.com/ivRooom/Herta/actions/runs/41033603465) attempt 2 成功。初回はLightsailの古いremote-tracking refに起因するfetch失敗。ローカルrefのみを修復し、GitHub Actionsの失敗ジョブを再実行した。
+- 本番ホストのBot/API/Studio/Worker image SHAとGit HEADの一致、Migration 3件適用、VALORANT table 6件、不正index 0件、失敗migration 0件を確認。
+- API/Botコンテナのhealthはhealthy、Studio/Workerはrunning。Cloudflare経由の外部healthはGitHub Actions上で成功。
+- Discord REST APIは対象GuildコマンドをHTTP 200で取得し、`valorant` / `random` / `map`を確認。Studio Auth.js providersは200、未ログインの統計APIは401。
+- 直近5分のBot/API/Studio/WorkerログでFatal・panic・未処理例外は0件。
+- Rollback候補は直前の正常image `d983cdaad909d0a05ef40a516be001ccac60ef3d`。追加テーブル・migration履歴は保持し、DROP/restoreは通常のrollbackに含めない。
+- 認証済みStudio CRUD、Discord参加/取消/抽選の実ボタン操作は未検証として残す。
 
 ## 未完了（既知）
 
@@ -35,7 +40,7 @@
 - マップ別構成重みのStudio編集、メタデータの継続更新と十分な勝率根拠。
 - Riot公式Production Key/RSO導入とユーザー同意済みmatch自動照合。
 - 公式Content Catalogアイコン採用とフォールバック検証。
-- 実機のDiscord/Studio受入、本番反映。
+- Discordでの実ボタン操作と認証済みStudio画面の受入。
 
 `VALORANT_RANDOM.md` が機能説明の正本。本ファイルの以下の内容は2026-10-29時点の旧仕様の履歴であり、今回の仕様と矛盾する場合は上記を優先する。
 
