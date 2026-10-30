@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PrismaClient } from '@herta/db';
-import { savedDailyFortune } from './daily-fortune.js';
+import { savedDailyFortune, publicDailyFortune } from './daily-fortune.js';
 import { EMPTY_FORTUNE_PROFILE } from './fortune-core.js';
 afterEach(() => vi.unstubAllEnvs());
 describe('daily fortune result snapshot', () => {
@@ -27,6 +27,9 @@ describe('daily fortune result snapshot', () => {
     expect(first.notes).toEqual([]);
     expect(first.details).toEqual({ zodiac: null, eto: null, age: null, ageGroup: null });
     expect(first.action).toContain('一人で考えを整理してから');
+    const publicResult = publicDailyFortune(first);
+    expect(publicResult.action).not.toContain('一人で考えを整理してから');
+    expect(publicResult.action).not.toContain('小さな予定を一つ決めて');
     const second = await savedDailyFortune(db, 'guild', 'user', '2026-10-29', {
       ...EMPTY_FORTUNE_PROFILE,
       mbti: 'ENFP',
@@ -39,5 +42,7 @@ describe('daily fortune result snapshot', () => {
     });
     expect(fresh.action).toContain('誰かと短く話してから');
     expect(fresh.action).toContain('試せる選択肢を一つ残して');
+    expect(publicDailyFortune(fresh).action).not.toContain('誰かと短く話してから');
+    expect(publicDailyFortune(fresh).action).not.toContain('試せる選択肢を一つ残して');
   });
 });

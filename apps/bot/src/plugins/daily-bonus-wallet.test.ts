@@ -124,3 +124,53 @@ describe('daily bonus canonical wallet client', () => {
     expect((await dailyBonusStatus(guild, user)).status).toBe('unlinked');
   });
 });
+
+describe('canonical streak reward extension', () => {
+  it('displays the separately confirmed extra once and rejects malformed rewards', async () => {
+    configure();
+    const response = (streakReward: unknown) =>
+      Response.json({
+        status: 'ok',
+        guildId: guild,
+        discordUserId: user,
+        mode: 'created',
+        claim: {
+          claimDateJst: '2026-10-30',
+          rewardPoints: 15,
+          rollPoints: 5,
+          quizBonusPoints: 10,
+          streakDay: 7,
+          channel: 'discord',
+        },
+        account: { balance: 135 },
+        streakReward,
+      });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => response({ points: 20, streakDay: 7 })),
+    );
+    const result = await claimDailyBonus(guild, user, '2026-10-30', '323456789012345678');
+    expect(result.status).toBe('confirmed');
+    if (result.status === 'confirmed') {
+      expect(result.message).toContain('獲得：35pt');
+      expect(result.message).toContain('連続ログイン追加報酬：+20pt');
+      expect(result.receipt.streakReward).toEqual({ points: 20, streakDay: 7 });
+    }
+    for (const extra of [
+      { points: -1, streakDay: 7 },
+      { points: 20, streakDay: 8 },
+      { points: 1.1, streakDay: 7 },
+      { points: Number.MAX_SAFE_INTEGER, streakDay: 7 },
+      { points: 20, streakDay: 7, untrusted: 'extra' },
+      'wrong',
+    ]) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => response(extra)),
+      );
+      expect((await claimDailyBonus(guild, user, '2026-10-30', '323456789012345678')).status).toBe(
+        'unavailable',
+      );
+    }
+  });
+});

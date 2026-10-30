@@ -153,7 +153,7 @@ export const privacyCommand: SlashCommand = {
       },
       {
         name: 'export',
-        description: 'Hertaが保持しているあなたのデータをJSONでエクスポートします',
+        description: '本人のVC・MBTI履歴・デイリーボーナス・占い結果をJSONで取得します',
       },
     ],
   },

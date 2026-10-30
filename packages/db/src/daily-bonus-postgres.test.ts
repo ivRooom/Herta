@@ -87,6 +87,24 @@ test(
         ),
       );
       assert.equal(results.filter(Boolean).length, 1);
+      await setDailyAnnouncement(
+        db,
+        'guild',
+        '2026-10-29',
+        'failed',
+        null,
+        'TargetOrPermissionInvalid',
+      );
+      await db.$executeRaw`UPDATE daily_bonus_announcements SET status='pending' WHERE guild_id='guild' AND target_date='2026-10-29'`;
+      const retried = await reserveDailyAnnouncement(
+        db,
+        'guild',
+        '2026-10-29',
+        'corrected-channel',
+        'corrected-role',
+      );
+      assert.equal(retried!.channel_id, 'corrected-channel');
+      assert.equal(retried!.role_id, 'corrected-role');
       await setDailyAnnouncement(db, 'guild', '2026-10-29', 'sent', 'message', null);
       assert.equal((await getDailyAnnouncement(db, 'guild', '2026-10-29'))!.message_id, 'message');
       const session = await createDailyQuizSession(
@@ -139,7 +157,10 @@ test(
       assert.equal(claims[0]!.status, 'confirmed');
       assert.equal(claims[0]!.receipt_json.rewardPoints, 15);
       await db.$executeRaw`UPDATE daily_fortune_results SET created_at=NOW()-INTERVAL '181 days'`;
+      for (const status of ['pending', 'unavailable', 'unlinked'])
+        await recordDailyClaim(db, 'guild', `stale-${status}`, '2026-10-29', status);
       await db.$executeRaw`UPDATE daily_bonus_claims SET updated_at=NOW()-INTERVAL '181 days'`;
+      await recordDailyClaim(db, 'guild', 'fresh-pending', '2026-10-30', 'pending');
       await db.$executeRaw`UPDATE daily_bonus_quiz_sessions SET created_at=NOW()-INTERVAL '2 days'`;
       process.env.DAILY_BONUS_ENABLED = 'false';
       await cleanDailyBonusHistory(db);
@@ -148,6 +169,13 @@ test(
       >`SELECT COUNT(*)::int AS n FROM daily_fortune_results`;
       assert.equal(counts[0]!.n, 0);
       assert.equal(await getDailyQuizSession(db, session, 'guild', 'user'), null);
+      const remaining = await db.$queryRaw<
+        Array<{ discord_user_id: string }>
+      >`SELECT discord_user_id FROM daily_bonus_claims`;
+      assert.deepEqual(
+        remaining.map((row) => row.discord_user_id),
+        ['fresh-pending'],
+      );
     } finally {
       await db?.$disconnect();
       if (created) {

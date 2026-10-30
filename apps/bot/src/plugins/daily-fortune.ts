@@ -4,6 +4,7 @@ import {
   describeFortuneProfile,
   EMPTY_FORTUNE_PROFILE,
   type FortuneProfile,
+  type DailyFortune,
 } from './fortune-core.js';
 
 export const DAILY_FORTUNE_VERSION = 'fortune-v1';
@@ -24,9 +25,26 @@ export function savedDailyFortune(
       : '';
     return {
       ...result,
+      publicAction: result.action,
       action: advice ? `${result.action}。${advice}` : result.action,
       notes: [] as string[],
       details: describeFortuneProfile(EMPTY_FORTUNE_PROFILE, date),
     };
   });
+}
+
+/** Public embeds and PNGs must not expose the private profile-derived guidance. */
+export function publicDailyFortune(
+  fortune: DailyFortune & { publicAction?: string },
+): DailyFortune {
+  return {
+    ...fortune,
+    action:
+      fortune.publicAction ??
+      (process.env.DAILY_BONUS_ENABLED === 'true'
+        ? '自分のペースで一日を楽しみましょう。'
+        : fortune.action),
+    notes: [],
+    details: describeFortuneProfile(EMPTY_FORTUNE_PROFILE, fortune.date),
+  };
 }

@@ -3,10 +3,9 @@ import { saveDailyAnniversary } from '@herta/db';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { resolveStudioAccess } from '@/lib/studio-access';
-import {
-  hasEffectivePluginPermission,
-  pluginEnabledControlResource,
-} from '@/lib/studio-plugin-permissions';
+import { hasEffectivePluginPermission } from '@/lib/studio-plugin-permissions';
+import { studioDailyBonusResource } from '@/lib/studio-policy-resources';
+import { validDailyBonusDate } from '@/lib/daily-bonus-admin-input';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
 import { readRequestBodyBytes } from '@/lib/bounded-request-body';
 
@@ -21,14 +20,17 @@ async function access(request: Request, context: Context) {
   const resolved = await resolveStudioAccess(guildId, session.user.id);
   if (!resolved.ok) return { response: resolved.response };
   if (
-    !hasEffectivePluginPermission(
-      resolved.access,
-      request.method === 'GET' ? 'studio.settings.read' : 'studio.settings.write',
-      pluginEnabledControlResource(guildId, 'daily-bonus'),
+    request.method === 'GET' &&
+    !(['history', 'anniversaries'] as const).every((resource) =>
+      hasEffectivePluginPermission(
+        resolved.access,
+        'studio.settings.read',
+        studioDailyBonusResource(guildId, resource),
+      ),
     )
   )
     return { response: reply({ error: 'forbidden' }, 403) };
-  return { guildId, actor: session.user.id };
+  return { guildId, actor: session.user.id, policyAccess: resolved.access };
 }
 export async function GET(request: Request, context: Context) {
   const allowed = await access(request, context);
@@ -50,6 +52,15 @@ export async function POST(request: Request, context: Context) {
   try {
     const bytes = await readRequestBodyBytes(request, 64000);
     const body = JSON.parse(new TextDecoder().decode(bytes)) as Record<string, unknown>;
+    const delivery = body.action === 'retry' || body.action === 'reconcile';
+    if (
+      !hasEffectivePluginPermission(
+        allowed.policyAccess,
+        delivery ? 'studio.operation.execute' : 'studio.settings.write',
+        studioDailyBonusResource(allowed.guildId, delivery ? 'delivery' : 'anniversaries'),
+      )
+    )
+      return reply({ error: 'forbidden' }, 403);
     if (body.action === 'reconcile' && typeof body.date === 'string') {
       const date = new Date(Date.now() + 32400000).toISOString().slice(0, 10);
       if (body.date !== date) return reply({ error: 'date_mismatch' }, 409);
@@ -133,7 +144,7 @@ export async function POST(request: Request, context: Context) {
       if (!Number.isFinite(checked.getTime()) || checked.getTime() > Date.now())
         throw new Error('InvalidEvent');
       const pinned = e.pinnedDate === null ? null : String(e.pinnedDate);
-      if (pinned && !/^\d{4}-\d\d-\d\d$/.test(pinned)) throw new Error('InvalidEvent');
+      if (pinned && !validDailyBonusDate(pinned)) throw new Error('InvalidEvent');
       const work = typeof e.workName === 'string' ? e.workName.slice(0, 200) : '',
         character = typeof e.characterName === 'string' ? e.characterName.slice(0, 200) : '';
       await prisma.$transaction(async (tx) => {

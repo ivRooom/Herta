@@ -11,7 +11,7 @@ import { describeFortuneProfile, EMPTY_FORTUNE_PROFILE, localFortuneDate } from 
 import { renderFortuneCard } from './fortune-card.js';
 import { deleteFortuneProfile } from './fortune-repository.js';
 import { fetchIvrmFortuneProfile } from './fortune-ivrm-profile.js';
-import { savedDailyFortune } from './daily-fortune.js';
+import { savedDailyFortune, publicDailyFortune } from './daily-fortune.js';
 
 const inFlight = new Set<string>();
 export const fortunePlugin = definePlugin<{ enabled: boolean }, unknown, PrismaClient>({
@@ -81,7 +81,15 @@ export const fortunePlugin = definePlugin<{ enabled: boolean }, unknown, PrismaC
               });
               return;
             }
-            const fortune = await savedDailyFortune(context.prisma, guildId, userId, date, saved);
+            const isPublic = interaction.options.getBoolean('public') === true;
+            const savedFortune = await savedDailyFortune(
+              context.prisma,
+              guildId,
+              userId,
+              date,
+              saved,
+            );
+            const fortune = isPublic ? publicDailyFortune(savedFortune) : savedFortune;
             const embed = new EmbedBuilder()
               .setTitle(fortune.title)
               .setColor(fortune.hex as `#${string}`)
@@ -100,7 +108,6 @@ export const fortunePlugin = definePlugin<{ enabled: boolean }, unknown, PrismaC
               })
               .setImage('attachment://herta-fortune.png')
               .setFooter({ text: `${date} · ${fortune.disclaimer}` });
-            const isPublic = interaction.options.getBoolean('public') === true;
             if (!isPublic && fortune.notes.length)
               embed.addFields({
                 name: 'あなたへのヒント（本人のみ）',

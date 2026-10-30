@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import { currentDailyBonusDate, newDailyAnniversaryIdentity } from '@/lib/daily-bonus-admin-input';
 
 interface Announcement {
   target_date: string;
@@ -47,7 +48,7 @@ interface EventInput {
   anniversaryMode: string;
 }
 const sample: EventInput = {
-  id: 'new_event',
+  id: '',
   title: '',
   summary: '',
   category: 'game',
@@ -57,7 +58,7 @@ const sample: EventInput = {
   workName: '',
   characterName: '',
   sourceUrl: 'https://',
-  sourceCheckedAt: new Date().toISOString(),
+  sourceCheckedAt: '',
   approved: false,
   public: false,
   priority: 0,
@@ -65,6 +66,7 @@ const sample: EventInput = {
   anniversaryMode: 'annual',
 };
 export function DailyBonusManager({ guildId }: { guildId: string }) {
+  const [today, setToday] = useState('');
   const [data, setData] = useState<{
       announcements: Announcement[];
       anniversaries: Event[];
@@ -81,6 +83,9 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
   }
   useEffect(() => {
     let active = true;
+    setEvent({ ...sample, ...newDailyAnniversaryIdentity() });
+    setToday(currentDailyBonusDate());
+    const timer = window.setInterval(() => setToday(currentDailyBonusDate()), 30000);
     void fetch(endpoint, { cache: 'no-store' })
       .then(async (response) => {
         if (!response.ok) throw new Error('履歴を取得できません。');
@@ -92,6 +97,7 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
       });
     return () => {
       active = false;
+      window.clearInterval(timer);
     };
   }, [endpoint]);
   async function mutate(body: unknown) {
@@ -151,7 +157,7 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
                       {a.error_code}
                       {a.status === 'failed' && !a.message_id && (
                         <button
-                          disabled={busy}
+                          disabled={busy || a.target_date !== today}
                           onClick={() => void mutate({ action: 'retry', date: a.target_date })}
                         >
                           安全に再試行
@@ -159,7 +165,7 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
                       )}
                       {a.status === 'uncertain' && (
                         <button
-                          disabled={busy}
+                          disabled={busy || a.target_date !== today}
                           onClick={() => void mutate({ action: 'reconcile', date: a.target_date })}
                         >
                           Discordメッセージと照合
@@ -322,7 +328,11 @@ export function DailyBonusManager({ guildId }: { guildId: string }) {
           <button disabled={busy} className={field}>
             保存
           </button>
-          <button type="button" className={field} onClick={() => setEvent(sample)}>
+          <button
+            type="button"
+            className={field}
+            onClick={() => setEvent({ ...sample, ...newDailyAnniversaryIdentity() })}
+          >
             新規登録
           </button>
         </form>

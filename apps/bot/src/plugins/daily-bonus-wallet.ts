@@ -13,6 +13,7 @@ export interface DailyWalletReceipt {
   rollPoints: number;
   quizBonusPoints: number;
   channel: string;
+  streakReward?: { points: number; streakDay: number };
 }
 export type DailyWalletResult =
   | { status: 'confirmed'; receipt: DailyWalletReceipt; balance: number; message: string }
@@ -92,6 +93,25 @@ function confirmed(
     account!.balance! < 0
   )
     return { status: 'unavailable' };
+  let streakReward: { points: number; streakDay: number } | undefined;
+  if (value?.streakReward !== undefined && value.streakReward !== null) {
+    const extra = value.streakReward;
+    if (
+      typeof extra !== 'object' ||
+      Array.isArray(extra) ||
+      Object.keys(extra).sort().join() !== ['points', 'streakDay'].sort().join()
+    )
+      return { status: 'unavailable' };
+    const item = extra as Record<string, unknown>;
+    if (
+      !Number.isSafeInteger(item.points) ||
+      Number(item.points) < 0 ||
+      item.streakDay !== receipt.streakDay ||
+      !Number.isSafeInteger(receipt.rewardPoints + Number(item.points))
+    )
+      return { status: 'unavailable' };
+    streakReward = { points: Number(item.points), streakDay: receipt.streakDay };
+  }
   return {
     status: 'confirmed',
     receipt: {
@@ -101,9 +121,10 @@ function confirmed(
       rollPoints: receipt.rollPoints,
       quizBonusPoints: receipt.quizBonusPoints,
       channel: receipt.channel,
+      ...(streakReward ? { streakReward } : {}),
     },
     balance: account!.balance!,
-    message: `${value?.mode === 'already_claimed' || value?.claimedToday === true ? '本日は受取済みです。' : '🎉 ログインボーナスを受け取りました！'}\n獲得：${receipt.rewardPoints}pt / 保有：${account!.balance}pt / 連続：${receipt.streakDay}日`,
+    message: `${value?.mode === 'already_claimed' || value?.claimedToday === true ? '本日は受取済みです。' : '🎉 ログインボーナスを受け取りました！'}\n獲得：${receipt.rewardPoints + (streakReward?.points ?? 0)}pt / 保有：${account!.balance}pt / 連続：${receipt.streakDay}日${streakReward ? `\n連続ログイン追加報酬：+${streakReward.points}pt` : ''}`,
   };
 }
 export async function dailyBonusStatus(guild: string, user: string): Promise<DailyWalletResult> {

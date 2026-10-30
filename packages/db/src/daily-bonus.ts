@@ -54,7 +54,7 @@ export async function reserveDailyAnnouncement(
   await db.$executeRaw`INSERT INTO daily_bonus_announcements(guild_id,target_date,channel_id,role_id) VALUES(${guild},${date},${channel},${role}) ON CONFLICT DO NOTHING`;
   const rows = await db.$queryRaw<
     DailyAnnouncement[]
-  >`UPDATE daily_bonus_announcements SET status='sending',updated_at=NOW() WHERE guild_id=${guild} AND target_date=${date} AND status='pending' RETURNING *`;
+  >`UPDATE daily_bonus_announcements SET status='sending',channel_id=${channel},role_id=${role},updated_at=NOW() WHERE guild_id=${guild} AND target_date=${date} AND status='pending' AND message_id IS NULL RETURNING *`;
   return rows[0] ?? null;
 }
 export async function setDailyAnnouncement(
@@ -144,5 +144,5 @@ export async function cleanDailyBonusHistory(db: PrismaClient) {
   if (!(await hasDailyBonusSchema(db))) return;
   await db.$executeRaw`DELETE FROM daily_bonus_quiz_sessions WHERE created_at<NOW()-INTERVAL '1 day'`;
   await db.$executeRaw`DELETE FROM daily_fortune_results WHERE created_at<NOW()-INTERVAL '180 days'`;
-  await db.$executeRaw`DELETE FROM daily_bonus_claims WHERE status='confirmed' AND updated_at<NOW()-INTERVAL '180 days'`;
+  await db.$executeRaw`DELETE FROM daily_bonus_claims WHERE updated_at<NOW()-INTERVAL '180 days'`;
 }
