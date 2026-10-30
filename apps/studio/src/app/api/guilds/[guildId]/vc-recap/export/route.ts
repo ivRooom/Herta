@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
-import { resolveStudioAccess, hasStudioPermission } from '@/lib/studio-access';
-import { studioVcRecapExportResource } from '@/lib/studio-policy-resources';
+import { resolveStudioAccess } from '@/lib/studio-access';
+import { hasExplicitVcRecapExportPermission } from '@/lib/studio-policy-resources';
 import {
   parseVcRecapExportFilters,
   serializeVcRecapCsv,
@@ -38,11 +38,7 @@ export async function GET(request: Request, { params }: Context): Promise<Respon
   const access = await resolveStudioAccess(guildId, session.user.id);
   if (!access.ok) return access.response;
   if (
-    !hasStudioPermission(
-      access.access,
-      'studio.operation.execute',
-      studioVcRecapExportResource(guildId),
-    )
+    !hasExplicitVcRecapExportPermission(access.access, guildId)
   ) {
     return NextResponse.json(
       { error: '文字起こしの出力権限がありません' },
