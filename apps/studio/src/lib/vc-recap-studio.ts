@@ -104,6 +104,7 @@ function resolveParticipantDisplay(
 }
 
 export interface VcRecapTranscriptEntry {
+  segmentId: string | null;
   speaker: VcRecapParticipantDisplay;
   text: string;
   startedAt: Date;
@@ -116,6 +117,7 @@ export function toVcRecapTranscriptEntries(
   memberDisplays: ReadonlyMap<string, GuildMemberOption>,
 ): VcRecapTranscriptEntry[] {
   return segments.map((segment) => ({
+    segmentId: segment.id ?? null,
     speaker: resolveParticipantDisplay(memberDisplays, segment.userId),
     text: segment.text,
     startedAt: segment.startedAt,
