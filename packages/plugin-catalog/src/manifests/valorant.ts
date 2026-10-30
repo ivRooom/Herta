@@ -112,9 +112,9 @@ const VALORANT_REGION_CHOICES = [
 export const valorantManifest: PluginManifest = {
   id: 'valorant',
   name: 'Valorant',
-  version: '1.2.0',
+  version: '1.3.0',
   description:
-    'Riot ID連携・戦績確認と、VC参加者へのエージェント重複なしランダム割り当てができるPluginです',
+    'Riot ID連携・戦績確認と、参加ボタン方式のエージェント抽選ができるPluginです',
   author: { name: 'Herta' },
   category: 'fun',
   permissions: [],
@@ -131,6 +131,12 @@ export const valorantManifest: PluginManifest = {
           section: '基本設定',
           help: 'HenrikDev APIのAPI Key(環境変数)が未設定の場合、有効化していても戦績確認は利用できません。',
         },
+      },
+      maxParticipants: {
+        type: 'integer', title: '抽選の最大参加人数', minimum: 1, maximum: 5, default: 5,
+      },
+      sessionDurationMinutes: {
+        type: 'integer', title: '参加募集の期限（分）', minimum: 5, maximum: 180, default: 30,
       },
       enabledAgents: {
         type: 'array',
@@ -154,11 +160,31 @@ export const valorantManifest: PluginManifest = {
   commands: [
     {
       name: 'valorant',
-      description: 'VALORANTの戦績確認・Riot ID連携・VCエージェント抽選',
+      description: 'VALORANTの戦績確認・Riot ID連携・エージェント抽選',
       subcommands: [
         {
           name: 'random',
-          description: '参加中のVCメンバーへエージェントを重複なしでランダム割り当て',
+          description: '参加ボタンで募集してエージェントを抽選',
+          options: [{
+            name: 'map',
+            description: '指定するとマップ別の実戦向け構成候補から抽選',
+            type: 'string',
+            choices: [
+              { name: 'アセント', value: 'Ascent' },
+              { name: 'バインド', value: 'Bind' },
+              { name: 'ヘイヴン', value: 'Haven' },
+              { name: 'スプリット', value: 'Split' },
+              { name: 'アイスボックス', value: 'Icebox' },
+              { name: 'ブリーズ', value: 'Breeze' },
+              { name: 'フラクチャー', value: 'Fracture' },
+              { name: 'パール', value: 'Pearl' },
+              { name: 'ロータス', value: 'Lotus' },
+              { name: 'サンセット', value: 'Sunset' },
+              { name: 'アビス', value: 'Abyss' },
+              { name: 'カロード', value: 'Corrode' },
+              { name: 'SUMMIT', value: 'Summit' },
+            ],
+          }],
         },
         {
           name: 'link',
