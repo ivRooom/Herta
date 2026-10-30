@@ -1,0 +1,13 @@
+# Daily bonus presentation — Phase 1 slice
+
+The existing canonical Web wallet remains the sole award authority. Result cards render the confirmed receipt and current balance, including the separately confirmed streak award. They never draw, calculate or grant a reward. A replay is visibly marked received; the first-claim bonus is explicitly unavailable until its domain is implemented.
+
+`DAILY_BONUS_RESULT_CARD_ENABLED=false` is the default. The production Compose Bot environment carries this flag; Studio and Worker do not need it. With the flag true, Sharp renders a fixed 1000×730 PNG using the existing fortune dark/lavender palette, local fonts and no remote assets or user names. At most two raster operations run concurrently; excess requests return text without a queue. The small fixed canvas bounds per-operation memory. There is no disk cache containing private balances. Render or attachment failure falls back to the existing private text reply, without replaying a claim. Text remains alongside the image for accessibility.
+
+Next receive time distinguishes Member midnight from Discord after the 09:00 announcement. This is a normal schedule, not a guarantee of service availability. All result replies remain Ephemeral and disable mentions. Verified anniversaries retain their existing source/date selection and now have a “今日は何の日？” heading only on nonempty days.
+
+The API setup errors are documented in ivrm-contracts `docs/LOGIN-BONUS-SETUP-ERRORS.md`. Only explicit `profile_required` gets the initial registration message. Missing wallet initialization, ambiguous identity, ledger disagreement, auth and availability are not presented as missing profiles. Member root dashboard loads daily status and initializes a zero wallet after Discord OAuth; the Bot never creates one.
+
+Release: contract clarification → Herta → Web. Success contract1.1.0 unchanged; old/new mixed versions fail safely. This is preparation only: no deploy, production flag change, DB migration or extra cloud resource. After approved owner deployment, enable the card flag separately on the pinned image. Rollback: set the flag false or restore the previous compatible image; retain all claims/journal entries. Before production enablement, verify CPU/RAM under real Discord traffic and font rendering in the Linux image. The next-day scheduled delivery/fresh claim observation from Herta#573 remains independent.
+
+Remaining Phase 1: configurable milestone table/cap/reset and transactional first claimant/rank. Phase 2–4 independent responses, settlement, oogiri and licensed media remain unimplemented by this change.

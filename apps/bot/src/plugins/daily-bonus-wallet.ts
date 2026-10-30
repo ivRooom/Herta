@@ -16,10 +16,16 @@ export interface DailyWalletReceipt {
   streakReward?: { points: number; streakDay: number };
 }
 export type DailyWalletResult =
-  | { status: 'confirmed'; receipt: DailyWalletReceipt; balance: number; message: string }
+  | {
+      status: 'confirmed';
+      receipt: DailyWalletReceipt;
+      balance: number;
+      message: string;
+      alreadyClaimed: boolean;
+    }
   | { status: 'quiz'; quiz: DailyQuiz }
   | { status: 'ready' }
-  | { status: 'unlinked' | 'unavailable' };
+  | { status: 'profile_required' | 'account_initialization_required' | 'unlinked' | 'unavailable' };
 
 async function request(
   guildId: string,
@@ -59,6 +65,8 @@ async function request(
   });
   if (response.status === 409) {
     const error = (await response.json()) as { error?: string };
+    if (error.error === 'profile_required' || error.error === 'account_initialization_required')
+      return { setupRequired: error.error };
     return error.error === 'identity_or_baseline_unresolved' ? { unlinked: true } : null;
   }
   if (!response.ok) return null;
@@ -72,6 +80,11 @@ function confirmed(
   value: Record<string, unknown> | null,
   expectedDate?: string,
 ): DailyWalletResult {
+  if (
+    value?.setupRequired === 'profile_required' ||
+    value?.setupRequired === 'account_initialization_required'
+  )
+    return { status: value.setupRequired };
   if (value?.unlinked) return { status: 'unlinked' };
   const receipt = value?.claim as DailyWalletReceipt | undefined,
     account = value?.account as { balance?: number } | undefined;
@@ -124,12 +137,18 @@ function confirmed(
       ...(streakReward ? { streakReward } : {}),
     },
     balance: account!.balance!,
+    alreadyClaimed: value?.mode === 'already_claimed' || value?.claimedToday === true,
     message: `${value?.mode === 'already_claimed' || value?.claimedToday === true ? '本日は受取済みです。' : '🎉 ログインボーナスを受け取りました！'}\n獲得：${receipt.rewardPoints + (streakReward?.points ?? 0)}pt / 保有：${account!.balance}pt / 連続：${receipt.streakDay}日${streakReward ? `\n連続ログイン追加報酬：+${streakReward.points}pt` : ''}`,
   };
 }
 export async function dailyBonusStatus(guild: string, user: string): Promise<DailyWalletResult> {
   try {
     const value = await request(guild, user, '/v1/points/herta/login-bonus/status');
+    if (
+      value?.setupRequired === 'profile_required' ||
+      value?.setupRequired === 'account_initialization_required'
+    )
+      return { status: value.setupRequired };
     if (value?.unlinked) return { status: 'unlinked' };
     if (value?.claimedToday)
       return typeof value.todayJst === 'string'
