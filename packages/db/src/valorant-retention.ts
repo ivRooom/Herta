@@ -25,6 +25,10 @@ export async function anonymizeOldValorantSessions(
   batchSize = 50,
 ): Promise<number> {
   const cutoff = new Date(now.getTime() - VALORANT_USER_ID_RETENTION_DAYS * 86_400_000);
+  await prisma.valorantPickSession.updateMany({
+    where: { status: 'OPEN', expiresAt: { lte: now } },
+    data: { status: 'EXPIRED' },
+  });
   const sessions = await prisma.valorantPickSession.findMany({
     where: {
       status: { in: TERMINAL },

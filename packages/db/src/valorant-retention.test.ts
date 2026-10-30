@@ -39,6 +39,7 @@ test('90-day retention updates terminal session and match but does not delete hi
   };
   const prisma = {
     valorantPickSession: {
+      updateMany: async () => ({ count: 0 }),
       findMany: async () => [
         {
           id: 'synthetic-session',

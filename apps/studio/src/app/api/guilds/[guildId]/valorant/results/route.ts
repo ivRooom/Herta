@@ -166,20 +166,33 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
         { status: 400 },
       );
     }
-    const created = await prisma.valorantMatchResult.create({
-      data: {
-        sessionId: session.id,
-        guildId,
-        mapId: data.mapId,
-        outcome: data.outcome as string,
-        roundsWon: data.roundsWon as number,
-        roundsLost: data.roundsLost as number,
-        matchId,
-        playerResults: JSON.parse(JSON.stringify(data.playerResults)),
-        source: 'MANUAL',
-        enteredBy: access.userId!,
-      },
-      select: { id: true, sessionId: true },
+    const created = await prisma.$transaction(async (tx) => {
+      const record = await tx.valorantMatchResult.create({
+        data: {
+          sessionId: session.id,
+          guildId,
+          mapId: data.mapId,
+          outcome: data.outcome as string,
+          roundsWon: data.roundsWon as number,
+          roundsLost: data.roundsLost as number,
+          matchId,
+          playerResults: JSON.parse(JSON.stringify(data.playerResults)),
+          source: 'MANUAL',
+          enteredBy: access.userId!,
+        },
+        select: { id: true, sessionId: true },
+      });
+      await tx.auditLog.create({
+        data: {
+          guildId,
+          actorId: access.userId!,
+          event: 'valorant.match.created',
+          targetType: 'valorant_match_result',
+          targetId: record.id,
+          metadata: { sessionId: session.id, source: 'MANUAL' },
+        },
+      });
+      return record;
     });
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
