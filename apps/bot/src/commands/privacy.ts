@@ -56,7 +56,8 @@ async function executeOpenAiAudioConsent(interaction: ChatInputCommandInteractio
     });
     return;
   }
-  if (!accept) revokeVcRecapConsent(interaction.user.id);
+  // Processor-specific withdrawal must not revoke the separate AWS consent.
+  // Future OpenAI uploads re-check the database opt-in before each request.
   await interaction.reply({
     content: accept
       ? '✅ OpenAIへの音声送信に個別に同意しました。Herta側でOpenAI文字起こしを有効化した場合のみ、あなたの音声がOpenAI APIへ送信されます。生の音声ファイルはHertaで永続保存しません。旧AWS同意や長期録音同意とは別です。https://ivrm.jp/privacy'
