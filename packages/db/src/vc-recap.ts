@@ -56,6 +56,8 @@ export async function appendVcRecapTranscriptSegment(
 }
 
 export interface VcRecapTranscriptSegmentRecord {
+  /** 既存セグメントの永続ID。アーカイブ・音声同期でも維持する。 */
+  id?: string;
   userId: string;
   text: string;
   startedAt: Date;
@@ -69,7 +71,7 @@ export async function listVcRecapTranscriptSegments(
   return prisma.vcRecapTranscriptSegment.findMany({
     where: { sessionId },
     orderBy: { startedAt: 'asc' },
-    select: { userId: true, text: true, startedAt: true, endedAt: true },
+    select: { id: true, userId: true, text: true, startedAt: true, endedAt: true },
   });
 }
 
@@ -194,7 +196,7 @@ export async function getVcRecapSessionTranscriptForGuild(
     include: {
       segments: {
         orderBy: { startedAt: 'asc' },
-        select: { userId: true, text: true, startedAt: true, endedAt: true },
+        select: { id: true, userId: true, text: true, startedAt: true, endedAt: true },
       },
     },
   });
