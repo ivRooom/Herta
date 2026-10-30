@@ -18,6 +18,12 @@ export function ValorantConfigForm({
 }) {
   const [enabled, setEnabled] = useState(initialEnabled);
   const [commandsEnabled, setCommandsEnabled] = useState(initialConfig.enabled !== false);
+  const [maxParticipants, setMaxParticipants] = useState(
+    typeof initialConfig.maxParticipants === 'number' ? initialConfig.maxParticipants : 5,
+  );
+  const [sessionDurationMinutes, setSessionDurationMinutes] = useState(
+    typeof initialConfig.sessionDurationMinutes === 'number' ? initialConfig.sessionDurationMinutes : 30,
+  );
   const [agents, setAgents] = useState<Agent[]>([]);
   const [initialized, setInitialized] = useState(false);
   const [canWrite, setCanWrite] = useState(false);
@@ -91,7 +97,10 @@ export function ValorantConfigForm({
       const response = await fetch(`/api/guilds/${guildId}/plugins/valorant`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enabled, configPatch: { enabled: commandsEnabled } }),
+        body: JSON.stringify({
+          enabled,
+          configPatch: { enabled: commandsEnabled, maxParticipants, sessionDurationMinutes },
+        }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? 'Plugin設定を保存できません。');
@@ -125,7 +134,22 @@ export function ValorantConfigForm({
             />
             コマンドを有効にする
           </label>
-          <button className={button} disabled={busy} onClick={() => void savePlugin()}>
+          <label className="flex flex-col gap-1 text-sm">
+            最大参加人数（1〜5人）
+            <input className="input w-28" type="number" min={1} max={5} step={1}
+              value={maxParticipants} disabled={busy}
+              onChange={(event) => setMaxParticipants(Number(event.target.value))} />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            募集期限（5〜180分）
+            <input className="input w-28" type="number" min={5} max={180} step={1}
+              value={sessionDurationMinutes} disabled={busy}
+              onChange={(event) => setSessionDurationMinutes(Number(event.target.value))} />
+          </label>
+          <button className={button}
+            disabled={busy || !Number.isInteger(maxParticipants) || maxParticipants < 1 || maxParticipants > 5 ||
+              !Number.isInteger(sessionDurationMinutes) || sessionDurationMinutes < 5 || sessionDurationMinutes > 180}
+            onClick={() => void savePlugin()}>
             Plugin設定を保存
           </button>
         </div>
