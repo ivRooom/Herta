@@ -332,10 +332,12 @@ async function transcribeSpeaker(
     new prism.opus.Decoder({ rate: 48000, channels: 2, frameSize: 960 }),
   );
   session.activeStreams.set(userId, speakerStream);
-  // A new speech burst may begin while an earlier OpenAI HTTP upload is still
-  // pending. Release capture ownership on PCM end, but keep the upload tracked.
-  speakerStream.pcm.once('end', onCaptureEnd);
-  speakerStream.pcm.once('close', onCaptureEnd);
+  // Preserve the existing AWS streaming lifetime. Only OpenAI file uploads
+  // release capture ownership on PCM end so a new speech burst is not lost.
+  if (provider !== 'aws') {
+    speakerStream.pcm.once('end', onCaptureEnd);
+    speakerStream.pcm.once('close', onCaptureEnd);
+  }
 
   try {
     const onSegment = async (segment: { text: string; startedAt: Date; endedAt: Date }) => {
