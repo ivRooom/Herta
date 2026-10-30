@@ -4,6 +4,8 @@ import { createEmptyStudioAccessPolicy, setStudioGuiActions } from './studio-acc
 import {
   buildStudioGranularPermissionOptions,
   hasConfiguredStudioPagePolicy,
+  hasExplicitVcRecapExportPermission,
+  studioVcRecapExportResource,
   studioAccessPageResource,
   studioBirthdayResource,
   studioPageResource,
@@ -285,4 +287,41 @@ test('Daily Bonus granular permissions are grantable and match API authorization
     ),
     false,
   );
+});
+
+test('VC transcript export requires exact action and resource grant (wildcard alone is insufficient)', () => {
+  const target = studioVcRecapExportResource(GUILD_ID);
+  const makePolicy = (effect: 'Allow' | 'Deny', action: string, resource: string) => ({
+    Version: '2026-08-17' as const,
+    Statement: [{ Effect: effect, Action: [action], Resource: [resource] }],
+  });
+  const context = (managedPolicies: ReturnType<typeof makePolicy>[]) => ({
+    isRoot: false,
+    roleIds: ['role-a'],
+    policies: [],
+    managedPolicies,
+  });
+  assert.equal(hasExplicitVcRecapExportPermission(context([]), GUILD_ID), false);
+  assert.equal(
+    hasExplicitVcRecapExportPermission(
+      context([makePolicy('Allow', 'studio.operation.execute', `guild:${GUILD_ID}:*`)]),
+      GUILD_ID,
+    ),
+    false,
+  );
+  assert.equal(
+    hasExplicitVcRecapExportPermission(context([makePolicy('Allow', 'studio.*', target)]), GUILD_ID),
+    false,
+  );
+  const allow = makePolicy('Allow', 'studio.operation.execute', target);
+  assert.equal(hasExplicitVcRecapExportPermission(context([allow]), GUILD_ID), true);
+  assert.equal(hasExplicitVcRecapExportPermission(context([allow]), '999999999999999999'), false);
+  assert.equal(
+    hasExplicitVcRecapExportPermission(
+      context([allow, makePolicy('Deny', 'studio.*', `guild:${GUILD_ID}:*`)]),
+      GUILD_ID,
+    ),
+    false,
+  );
+  assert.equal(hasExplicitVcRecapExportPermission({ ...context([]), isRoot: true }, GUILD_ID), true);
 });
