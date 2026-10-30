@@ -140,7 +140,6 @@ describe('openai-audio-consent', () => {
     expect(mocks.revokeVoice).not.toHaveBeenCalled();
   });
 
-
   it('requires an explicit user action and does not reuse legacy consent', async () => {
     const interaction = {
       user: { id: 'owner-user' },
