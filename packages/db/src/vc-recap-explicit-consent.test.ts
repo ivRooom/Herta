@@ -133,7 +133,9 @@ test('OpenAI音声送信は旧文字起こし同意と新しい個別同意を�
   erasure = false;
   assert.equal(await setVcRecapOpenAiAudioConsent(fake, 'user-1', true), true);
   assert.equal(writes.length, 1);
-  const grant = writes[0] as { create: { purpose: string; policyVersion: string; consentedAt: Date } };
+  const grant = writes[0] as {
+    create: { purpose: string; policyVersion: string; consentedAt: Date };
+  };
   assert.equal(grant.create.purpose, 'openai_audio_processing');
   assert.equal(grant.create.policyVersion, VC_RECAP_OPENAI_AUDIO_POLICY_VERSION);
   assert.ok(grant.create.consentedAt instanceof Date);
