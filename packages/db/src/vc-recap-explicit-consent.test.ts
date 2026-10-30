@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import type { PrismaClient } from '@prisma/client';
 import test from 'node:test';
 import {
   evaluateVcRecapExplicitConsent,
+  requestVcRecapErasure,
   VC_RECAP_LONG_TERM_CONSENT_VERSION,
   type VcRecapExplicitConsentRecord,
 } from './vc-recap-explicit-consent.js';
@@ -61,5 +63,47 @@ test('ポリシー版不一致・撤回状態は必ず拒否', () => {
     evaluateVcRecapExplicitConsent([consent('audio_long_term', { revokedAt: new Date() })], false)
       .canRecordAudioLongTerm,
     false,
+  );
+});
+
+test('削除要求の存在は新同意が全てtrueでも拒否判定になる', () => {
+  const records = [
+    consent('transcription'),
+    consent('transcript_long_term'),
+    consent('audio_long_term'),
+  ];
+  assert.deepEqual(evaluateVcRecapExplicitConsent(records, true), {
+    canTranscribe: false,
+    canRetainTranscriptLongTerm: false,
+    canRecordAudioLongTerm: false,
+  });
+});
+
+test('削除要求は障壁作成と新同意の取り消しを同一transactionで実行する', async () => {
+  const calls: Array<{ operation: string; data: unknown }> = [];
+  const client = {
+    $transaction: async (run: (tx: unknown) => Promise<void>) =>
+      run({
+        vcRecapErasureRequest: {
+          upsert: async (data: unknown) => {
+            calls.push({ operation: 'erasure', data });
+          },
+        },
+        vcRecapExplicitConsent: {
+          updateMany: async (data: unknown) => {
+            calls.push({ operation: 'revoke', data });
+          },
+        },
+      }),
+  } as unknown as PrismaClient;
+  await requestVcRecapErasure(client, 'user-1');
+  assert.deepEqual(
+    calls.map((call) => call.operation),
+    ['erasure', 'revoke'],
+  );
+  assert.equal((calls[0]?.data as { where: { userId: string } }).where.userId, 'user-1');
+  assert.equal(
+    (calls[1]?.data as { data: { consentedAt: null } }).data.consentedAt,
+    null,
   );
 });
