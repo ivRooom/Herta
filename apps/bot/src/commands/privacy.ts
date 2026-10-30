@@ -6,6 +6,7 @@ import {
   getUserDataConsent,
   listVcRecapSessionsForUser,
   listVcRecapTranscriptSegmentsForUser,
+  requestVcRecapErasure,
   setVoiceTranscriptionConsent,
 } from '@herta/db';
 import { createLogger, type Logger } from '@herta/logger';
@@ -39,6 +40,9 @@ async function executeVoiceConsent(interaction: ChatInputCommandInteraction) {
 }
 
 async function executeDeleteVoiceData(interaction: ChatInputCommandInteraction) {
+  // Deny future archive/recording writes before removing current PostgreSQL data.
+  // S3 deletion is NOT reported complete until object versions and restores are verified.
+  await requestVcRecapErasure(prisma, interaction.user.id);
   const result = await deleteUserVoiceData(prisma, interaction.user.id);
   await interaction.reply({
     content:
