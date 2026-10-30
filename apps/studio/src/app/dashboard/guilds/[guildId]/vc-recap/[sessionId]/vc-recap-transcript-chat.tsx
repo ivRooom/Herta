@@ -128,7 +128,10 @@ export function VcRecapTranscriptChat({ messages }: { messages: VcRecapChatMessa
       ) : (
         <ol className="mt-5 space-y-5" aria-label="発言の文字起こし">
           {groups.map((group, groupIndex) => (
-            <li key={group.messages[0]?.segmentId ?? `group-${groupIndex}`} className="flex min-w-0 items-start gap-3">
+            <li
+              key={group.messages[0]?.segmentId ?? `group-${groupIndex}`}
+              className="flex min-w-0 items-start gap-3"
+            >
               <div className="shrink-0">
                 {group.speaker.avatarUrl ? (
                   <Image
@@ -149,7 +152,9 @@ export function VcRecapTranscriptChat({ messages }: { messages: VcRecapChatMessa
                 )}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="mb-2 text-sm font-semibold text-foreground">{group.speaker.displayName}</p>
+                <p className="mb-2 text-sm font-semibold text-foreground">
+                  {group.speaker.displayName}
+                </p>
                 <ol className="space-y-1.5">
                   {group.messages.map((message, index) => (
                     <li
@@ -158,7 +163,9 @@ export function VcRecapTranscriptChat({ messages }: { messages: VcRecapChatMessa
                       className="flex min-w-0 flex-col items-start"
                     >
                       <div className="max-w-full rounded-2xl rounded-tl-sm border border-border bg-background px-4 py-2.5">
-                        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.text}</p>
+                        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+                          {message.text}
+                        </p>
                       </div>
                       <time
                         dateTime={message.startedAt}
