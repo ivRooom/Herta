@@ -50,7 +50,8 @@ async function executeOpenAiAudioConsent(interaction: ChatInputCommandInteractio
   const updated = await setVcRecapOpenAiAudioConsent(prisma, interaction.user.id, accept);
   if (!updated) {
     await interaction.reply({
-      content: '新しい音声送信同意を登録できません。文字起こし同意または削除依頼の状態を確認してください。',
+      content:
+        '新しい音声送信同意を登録できません。文字起こし同意または削除依頼の状態を確認してください。',
       flags: MessageFlags.Ephemeral,
     });
     return;
