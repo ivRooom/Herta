@@ -14,10 +14,22 @@ describe('VC transcription provider rollback', () => {
     expect(resolveVcRecapTranscriberConfig({})).toEqual({
       provider: 'aws',
       openAiAudioEnabled: false,
+      maxSessionAudioSeconds: 120 * 60,
     });
     expect(
       resolveVcRecapTranscriberConfig({ VC_RECAP_TRANSCRIPTION_PROVIDER: 'unknown' }).provider,
     ).toBe('aws');
+  });
+
+  it('bounds the per-session OpenAI minute quota', () => {
+    expect(
+      resolveVcRecapTranscriberConfig({ VC_RECAP_OPENAI_SESSION_MAX_AUDIO_MINUTES: '1' })
+        .maxSessionAudioSeconds,
+    ).toBe(60);
+    expect(
+      resolveVcRecapTranscriberConfig({ VC_RECAP_OPENAI_SESSION_MAX_AUDIO_MINUTES: '99999' })
+        .maxSessionAudioSeconds,
+    ).toBe(120 * 60);
   });
 
   it('Whisper needs operator opt-in and new participant consent, and kill switch overrides', () => {
