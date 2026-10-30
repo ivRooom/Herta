@@ -18,7 +18,7 @@ export interface OpenAiFileTranscriptionOptions {
    * Check the person's CURRENT explicit provider consent before every upload.
    * A revocation immediately prevents sending further audio.
    */
-  mayUpload: () => Promise<boolean>;
+  mayUpload: (audioSeconds: number) => Promise<boolean>;
 }
 
 export function monoPcmToWav(pcm: Buffer): Buffer {
