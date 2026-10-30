@@ -45,7 +45,13 @@ async function VcRecapSessionPage({
   const { session: recap, transcript, transcriptExpiresAt } = detail;
   const duration = formatVcRecapDuration(recap.startedAt, recap.endedAt);
   const exportAccess = await resolveStudioAccess(guildId, session.user.id);
-  const canExport = exportAccess.ok && hasStudioPermission(exportAccess.access, 'studio.operation.execute', studioVcRecapExportResource(guildId));
+  const canExport =
+    exportAccess.ok &&
+    hasStudioPermission(
+      exportAccess.access,
+      'studio.operation.execute',
+      studioVcRecapExportResource(guildId),
+    );
 
   return (
     <div>
