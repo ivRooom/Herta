@@ -10,6 +10,7 @@ export const VC_RECAP_CONSENT_PURPOSES = [
   'transcription',
   'transcript_long_term',
   'audio_long_term',
+  'openai_audio_processing',
 ] as const;
 export type VcRecapConsentPurpose = (typeof VC_RECAP_CONSENT_PURPOSES)[number];
 
