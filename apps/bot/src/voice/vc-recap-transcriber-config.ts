@@ -24,9 +24,7 @@ export function resolveVcRecapTranscriberConfig(
   // Never let a new provider run without a bounded per-session audio quota.
   const rawMinutes = Number(env['VC_RECAP_OPENAI_SESSION_MAX_AUDIO_MINUTES'] ?? '120');
   const minutes =
-    Number.isFinite(rawMinutes) && rawMinutes >= 1 && rawMinutes <= 240
-      ? rawMinutes
-      : 120;
+    Number.isFinite(rawMinutes) && rawMinutes >= 1 && rawMinutes <= 240 ? rawMinutes : 120;
   return { provider, openAiAudioEnabled, maxSessionAudioSeconds: minutes * 60 };
 }
 
