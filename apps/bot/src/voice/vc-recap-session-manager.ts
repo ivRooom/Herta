@@ -21,6 +21,10 @@ import {
 import type { Guild, VoiceBasedChannel } from 'discord.js';
 import prism from 'prism-media';
 import { resolveAwsTranscribeCredential } from './aws-transcribe-credential.js';
+import { resolveAiOpenAiCredential } from '../ai/factory.js';
+import { transcribePcmWithOpenAi } from './vc-recap-openai-file-transcriber.js';
+import { hasVcRecapOpenAiAudioConsent } from './vc-recap-openai-audio-consent.js';
+import { resolveVcRecapTranscriberConfig } from './vc-recap-transcriber-config.js';
 import { splitVcRecapParticipants } from './vc-recap-participants.js';
 import { linkSpeakerAudioStream, type SpeakerAudioStream } from './vc-recap-speaker-stream.js';
 import { summarizeVcRecapSession } from './vc-recap-summarizer.js';
@@ -281,12 +285,30 @@ async function transcribeSpeaker(
   session: ActiveVcRecapSession,
   userId: string,
 ): Promise<void> {
-  const credential = await resolveAwsTranscribeCredential(prisma);
-  if (!credential) {
-    logger.warn(
-      { guildId: session.guildId, userId },
-      'AWS Transcribe認証情報が未設定のため文字起こしをスキップします',
-    );
+  const config = resolveVcRecapTranscriberConfig();
+  if (config.provider !== 'aws') {
+    // Raw audio must never leave the host under old AWS-only consent.
+    if (
+      !config.openAiAudioEnabled ||
+      !(await hasVcRecapOpenAiAudioConsent(prisma, userId))
+    ) {
+      logger.warn(
+        { guildId: session.guildId, userId, provider: config.provider },
+        'OpenAI音声処理への新しい明示同意が未確認のため文字起こしをスキップします',
+      );
+      return;
+    }
+  }
+  const credential =
+    config.provider === 'aws' ? await resolveAwsTranscribeCredential(prisma) : null;
+  const openAiCredential =
+    config.provider === 'aws' ? null : await resolveAiOpenAiCredential({ prisma });
+  if (config.provider === 'aws' && !credential) {
+    logger.warn({ guildId: session.guildId, userId }, 'AWS Transcribe認証情報が未設定です');
+    return;
+  }
+  if (config.provider !== 'aws' && !openAiCredential?.apiKey) {
+    logger.warn({ guildId: session.guildId, userId }, 'OpenAI音声処理の認証情報が未設定です');
     return;
   }
   if (session.stopping || !session.consentingUserIds.has(userId)) return;
@@ -301,7 +323,7 @@ async function transcribeSpeaker(
   session.activeStreams.set(userId, speakerStream);
 
   try {
-    await transcribePcmStream(credential, toMonoChunks(speakerStream.pcm), async (segment) => {
+    const onSegment = async (segment: { text: string; startedAt: Date; endedAt: Date }) => {
       // 文字起こし中に同意が取り消された、またはstopVcRecapのflushが打ち切られた場合、
       // 確定済みセグメントであっても保存しない。
       if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return;
@@ -318,7 +340,21 @@ async function transcribeSpeaker(
       } finally {
         session.pendingSegmentWrites.delete(write);
       }
-    });
+    };
+    if (config.provider === 'aws') {
+      if (!credential) return;
+      await transcribePcmStream(credential, toMonoChunks(speakerStream.pcm), onSegment);
+    } else {
+      if (!openAiCredential?.apiKey) return;
+      await transcribePcmWithOpenAi(toMonoChunks(speakerStream.pcm), onSegment, {
+        apiKey: openAiCredential.apiKey,
+        model: config.provider,
+        mayUpload: async () =>
+          session.acceptingSegments &&
+          session.consentingUserIds.has(userId) &&
+          await hasVcRecapOpenAiAudioConsent(prisma, userId),
+      });
+    }
   } catch (error) {
     // 1人の文字起こし失敗でセッション全体を失敗させない(他の参加者の文字起こしは継続する)。
     logger.warn({ err: error, guildId: session.guildId, userId }, 'VC文字起こしに失敗しました');
@@ -374,7 +410,12 @@ export async function stopVcRecap(
   for (const stream of session.activeStreams.values()) {
     stream.end();
   }
-  const flushed = await settleWithin(session.activeTranscriptions.values(), STOP_FLUSH_TIMEOUT_MS);
+  // File transcription is not streaming; allow a bounded post-speech upload.
+  // AWS streaming keeps its existing 5s flush budget.
+  const flushMs = resolveVcRecapTranscriberConfig().provider === 'aws'
+    ? STOP_FLUSH_TIMEOUT_MS
+    : 20_000;
+  const flushed = await settleWithin(session.activeTranscriptions.values(), flushMs);
   session.acceptingSegments = false;
   if (!flushed) {
     logger.warn({ guildId, sessionId: session.sessionId }, 'VC文字起こしのflushを打ち切りました');
