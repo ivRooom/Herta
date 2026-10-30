@@ -35,6 +35,7 @@ model Guild {
   moderationDetections   ModerationDetectionEvent[]
   vcRecapSessions        VcRecapSession[]
   valorantRoster         ValorantRoster?
+  valorantPickSessions   ValorantPickSession[]
 
   @@map("guilds")
 }
@@ -1358,4 +1359,43 @@ model VcRecapTranscriptSegment {
 
   @@index([sessionId, startedAt])
   @@map("vc_recap_transcript_segments")
+}
+
+/**
+ * VALORANT recruitment; completed sessions are immutable history.
+ * Participant Discord IDs are scoped to this guild and retained for 90 days.
+ */
+model ValorantPickSession {
+  id              String                      @id @default(uuid())
+  guildId         String                      @map("guild_id")
+  channelId       String                      @map("channel_id")
+  messageId       String?                     @unique @map("message_id")
+  creatorId       String                      @map("creator_id")
+  status          String                      @default("OPEN") @db.VarChar(16)
+  mode            String                      @db.VarChar(16)
+  mapId           String?                     @map("map_id") @db.VarChar(32)
+  maxParticipants Int                         @default(5) @map("max_participants")
+  expiresAt       DateTime                    @map("expires_at") @db.Timestamptz(3)
+  completedAt     DateTime?                   @map("completed_at") @db.Timestamptz(3)
+  rulesVersion    String                      @map("rules_version") @db.VarChar(32)
+  candidates      Json                        @default("[]")
+  result          Json?
+  createdAt       DateTime                    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime                    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  guild           Guild                       @relation(fields: [guildId], references: [id], onDelete: Cascade)
+  participants    ValorantPickParticipant[]
+
+  @@index([guildId, status, expiresAt])
+  @@index([guildId, completedAt])
+  @@map("valorant_pick_sessions")
+}
+
+model ValorantPickParticipant {
+  sessionId String             @map("session_id")
+  userId    String             @map("user_id")
+  joinedAt  DateTime           @default(now()) @map("joined_at") @db.Timestamptz(3)
+  session   ValorantPickSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@id([sessionId, userId])
+  @@map("valorant_pick_participants")
 }
