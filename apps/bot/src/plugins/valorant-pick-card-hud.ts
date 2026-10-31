@@ -25,16 +25,41 @@ function text(
   max = 26,
 ): string {
   return (
-    '<text x="' + x + '" y="' + y + '" font-size="' + size + '" font-weight="' +
-    weight + '" fill="' + fill + '">' + safe(value, max) + '</text>'
+    '<text x="' +
+    x +
+    '" y="' +
+    y +
+    '" font-size="' +
+    size +
+    '" font-weight="' +
+    weight +
+    '" fill="' +
+    fill +
+    '">' +
+    safe(value, max) +
+    '</text>'
   );
 }
 
-function portrait(image: Buffer | null | undefined, x: number, y: number, w: number, h: number): string {
+function portrait(
+  image: Buffer | null | undefined,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): string {
   if (!image) return '';
   return (
-    '<image href="data:image/png;base64,' + image.toString('base64') +
-    '" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h +
+    '<image href="data:image/png;base64,' +
+    image.toString('base64') +
+    '" x="' +
+    x +
+    '" y="' +
+    y +
+    '" width="' +
+    w +
+    '" height="' +
+    h +
     '" preserveAspectRatio="xMidYMid meet"/>'
   );
 }
@@ -102,10 +127,36 @@ function squad(
     const playerLimit = count === 5 ? 11 : count === 4 ? 15 : 23;
     parts.push(
       '<g>',
-      '<rect x="' + x + '" y="184" width="' + width + '" height="380" fill="#1b2028" stroke="#66616a" stroke-width="1.5"/>',
-      '<path d="M' + x + ' 184 H' + (x + width) + ' L' + (x + width - 42) + ' 439 H' + x + 'Z" fill="#26242d"/>',
-      '<path d="M' + (x + width * 0.48) + ' 189 L' + (x + width - 8) + ' 189 L' + (x + width * 0.60) + ' 439 L' + (x + 6) + ' 439Z" fill="#fc485b" opacity=".13"/>',
-      '<clipPath id="lineup-art-' + i + '"><rect x="' + (x + 2) + '" y="188" width="' + (width - 4) + '" height="265"/></clipPath>',
+      '<rect x="' +
+        x +
+        '" y="184" width="' +
+        width +
+        '" height="380" fill="#1b2028" stroke="#66616a" stroke-width="1.5"/>',
+      '<path d="M' +
+        x +
+        ' 184 H' +
+        (x + width) +
+        ' L' +
+        (x + width - 42) +
+        ' 439 H' +
+        x +
+        'Z" fill="#26242d"/>',
+      '<path d="M' +
+        (x + width * 0.48) +
+        ' 189 L' +
+        (x + width - 8) +
+        ' 189 L' +
+        (x + width * 0.6) +
+        ' 439 L' +
+        (x + 6) +
+        ' 439Z" fill="#fc485b" opacity=".13"/>',
+      '<clipPath id="lineup-art-' +
+        i +
+        '"><rect x="' +
+        (x + 2) +
+        '" y="188" width="' +
+        (width - 4) +
+        '" height="265"/></clipPath>',
     );
     if (art) {
       parts.push('<g clip-path="url(#lineup-art-' + i + ')">');
@@ -113,20 +164,42 @@ function squad(
       parts.push('</g>');
     } else {
       parts.push(
-        '<path d="M' + (x + width / 2) + ' 240 l82 88 -82 88 -82 -88Z" fill="#21262f" stroke="#ed4c5c" stroke-width="2"/>',
-        text(entry.agentName.toUpperCase(), x + 20, 344, count >= 4 ? 21 : 28, '#e7a3a4', 800, count >= 4 ? 10 : 18),
+        '<path d="M' +
+          (x + width / 2) +
+          ' 240 l82 88 -82 88 -82 -88Z" fill="#21262f" stroke="#ed4c5c" stroke-width="2"/>',
+        text(
+          entry.agentName.toUpperCase(),
+          x + 20,
+          344,
+          count >= 4 ? 21 : 28,
+          '#e7a3a4',
+          800,
+          count >= 4 ? 10 : 18,
+        ),
       );
     }
     parts.push(
       '<path d="M' + (x + 13) + ' 200 H' + (x + 77) + '" stroke="#ff4655" stroke-width="4"/>',
       '<rect x="' + (x + 11) + '" y="212" width="40" height="32" fill="#0c1016" opacity=".92"/>',
       text(String(i + 1).padStart(2, '0'), x + 17, 236, 19, '#f2e8df', 800, 2),
-      '<rect x="' + (x + 2) + '" y="448" width="' + (width - 4) + '" height="114" fill="#10151c" opacity=".98"/>',
+      '<rect x="' +
+        (x + 2) +
+        '" y="448" width="' +
+        (width - 4) +
+        '" height="114" fill="#10151c" opacity=".98"/>',
       '<path d="M' + (x + 2) + ' 448 H' + (x + width - 2) + '" stroke="#ff4655" stroke-width="3"/>',
       text(entry.displayName, x + 13, 491, nameFont, '#f7f1e7', 850, nameLimit),
       text(roles[i] ?? 'エージェント', x + 13, 518, 15, '#fb7780', 650, 12),
       '<path d="M' + (x + 13) + ' 530 H' + (x + width - 12) + '" stroke="#353a43"/>',
-      text(entry.playerLabel ?? 'PLAYER ' + (i + 1), x + 13, 551, playerFont, '#dcd6cf', 650, playerLimit),
+      text(
+        entry.playerLabel ?? 'PLAYER ' + (i + 1),
+        x + 13,
+        551,
+        playerFont,
+        '#dcd6cf',
+        650,
+        playerLimit,
+      ),
       '</g>',
     );
   }
@@ -164,7 +237,15 @@ export function renderValorantHudSvg(
     '<rect x="32" y="30" width="1136" height="125" fill="#0b0d13" opacity=".93"/>',
     text('HERTA  /  VALORANT', 52, 58, 18, '#ff6c75', 800),
     text('AGENT REVEAL', 52, 116, 53, '#f6f0e7', 850),
-    text(count === 1 ? 'SOLO  //  HERO PICK' : 'SQUAD  //  LINEUP', 885, 82, 18, '#a6a3a2', 700, 24),
+    text(
+      count === 1 ? 'SOLO  //  HERO PICK' : 'SQUAD  //  LINEUP',
+      885,
+      82,
+      18,
+      '#a6a3a2',
+      700,
+      24,
+    ),
     text('抽選完了', 1022, 125, 23, '#ff6d79', 750),
     '<path d="M52 151 H1148" stroke="#ff4655" stroke-width="2"/>',
     '<rect x="32" y="577" width="1136" height="77" fill="#0e1218" opacity=".99"/>',
