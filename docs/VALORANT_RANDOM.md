@@ -104,6 +104,21 @@ Discord告知用にユーザーから提供された参考画像の**紫×ピン
 
 **Rollback**: 直前に確認した正常なGHCRイメージへ変更を戻す。新規DB migration/Slash schema/Secret変更なし。
 
+## Neon Poster Reveal v5（2026-10-31 / Issue #666）
+
+ユーザー提供の抽選結果イメージを参考に、Discord `/valorant random` の実際の抽選結果PNGを **1200×680の左右分割ポスター構図** へ変更。公開用の静的AI画像そのものを出すわけではなく、実際のPlayer/Agent/Role/Map/Mode/人数で毎回SVGを生成しSharpでPNGへ変換する。
+
+- **1人**: 左のAgent/Player/Roleの読み取り領域と右の大型肖像（Neon Hero）。
+- **2〜5人**: 左に番号付きPlayer→Agent/Roleの割当リストを実際の人数分だけ描画。右側には既存の安全なAgent fullportrait PNGを角度付きのスライスへ描画し、紫/ピンク/シアンの光と幾何学アクセントで立体感を出す。
+- **表示**: 上部はHerta/VALORANT Agent Reveal、Mode/Map/Participants。下部は『抽選完了』ステータスと構成ラベル。画像内にクリックできないDiscordボタンや架空のユーザーアバターを描かない。
+- **アートなし**: 各スライスには静的な抽象パターンと担当Agentのリスト表示を残し、取得不可でもPNGを生成。PNG合成自体が失敗した場合、従来どおりDiscordテキストEmbedにフォールバックする。
+- **セキュリティ**: 出力に使う文字列は制御/書式文字除去・Unicode文字数上限・XMLエスケープ。SVGに外部URL/script/foreignObjectなし。既存metadata/UUID allowlist・HTTP timeout・bytes/pixel/concurrent rendering・8MiB PNG制限を変更しない。
+- **非変更**: 募集方式、member1〜member5指定、再抽選、Discordメッセージ差替、Guild IAM、DB履歴/統計、Slashコマンド、Secret、Migration。
+
+追跡: #666 親、#667 設計、#668 実装、#669 回帰、#670 リリース。既存の本番renderer read-only smokeは #640/PR #642、Discord有人確認は #641。Riot公式アセット/商標の権利はHertaには帰属しない。参照デザイン画像や架空のユーザー情報を固定でリポジトリに組み込まない。
+
+Rollback: 本番直前の正常GHCR imageへ戻しBot/API health確認。DB復元は不要。
+
 ## DB・互換性・プライバシー
 
 新規 migration 20261030100000_valorant_pick_sessions でセッション・参加者テーブルを追加。
