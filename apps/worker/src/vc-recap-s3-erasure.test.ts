@@ -12,6 +12,7 @@ const USER = '123456789012345678';
 const PREFIX = vcRecapUserS3Prefix(USER);
 const BUCKET = 'private-vc-recap-test';
 
+// prettier-ignore
 function fakePort(options: {
   versions?: S3ErasureObject[];
   markers?: S3ErasureObject[];
