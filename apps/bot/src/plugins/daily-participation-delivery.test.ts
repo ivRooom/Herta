@@ -17,6 +17,7 @@ afterEach(() => {
 function context(guild: string) {
   vi.stubEnv('DAILY_PARTICIPATION_ENABLED', 'true');
   vi.stubEnv('DAILY_BONUS_ENABLED', 'true');
+  vi.stubEnv('IVRM_INTEGRATION_GUILD_ID', guild);
   const sent = { id: '323456789012345678' },
     send = vi.fn(async (_options: unknown) => sent),
     history = new Collection([
@@ -83,4 +84,15 @@ it('lost ACK resumes from durable uncertain state and never resends the result',
     allowedMentions: { parse: [] },
     enforceNonce: true,
   });
+});
+
+it('does not poll or warn for intentionally unsupported guilds', async () => {
+  const { ctx, channel } = context('unsupported-guild');
+  vi.stubEnv('IVRM_INTEGRATION_GUILD_ID', 'configured-guild');
+  for (let i = 0; i < 4; i++)
+    await scanParticipationResults(
+      ctx as unknown as Parameters<typeof scanParticipationResults>[0],
+    );
+  expect(mock.request).not.toHaveBeenCalled();
+  expect(channel.send).not.toHaveBeenCalled();
 });

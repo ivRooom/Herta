@@ -61,6 +61,7 @@ export async function scanParticipationResults(
   if (
     process.env.DAILY_PARTICIPATION_ENABLED !== 'true' ||
     process.env.DAILY_BONUS_ENABLED !== 'true' ||
+    process.env.IVRM_INTEGRATION_GUILD_ID !== ctx.guildId ||
     !ctx.config.enabled ||
     !ctx.client.user ||
     running.has(ctx.guildId)
