@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cerrno>
 #include <cmath>
 #include <csignal>
@@ -22,6 +23,7 @@
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
@@ -33,6 +35,7 @@ constexpr int kMaxHeadersBytes = 4096;
 constexpr int kMaxPcmBytes = 48000 * 2 * 10;
 constexpr int kMaxTranscriptChars = 4000;
 constexpr int kReadTimeoutSeconds = 10;
+using Clock = std::chrono::steady_clock;
 constexpr double kPi = 3.14159265358979323846;
 
 struct Request {
@@ -131,26 +134,42 @@ void respond(int fd, int status, const std::string & body) {
         "\r\n\r\n" + body;
     (void)send_all(fd, response);
 }
-bool read_headers(int fd, std::string & raw) {
+// A single absolute deadline prevents slow-header/body drip traffic from
+// resetting SO_RCVTIMEO repeatedly. No audio is persisted while waiting.
+bool receive_exact(int fd, void * output, size_t length, Clock::time_point deadline) {
+    size_t total = 0;
+    auto * bytes = static_cast<uint8_t *>(output);
+    while (total < length) {
+        const auto now = Clock::now();
+        if (now >= deadline) return false;
+        const auto left = std::chrono::duration_cast<std::chrono::milliseconds>(deadline-now);
+        const int timeout_ms = static_cast<int>(std::min<int64_t>(left.count(), 10000));
+        pollfd descriptor{fd, POLLIN, 0};
+        const int ready = poll(&descriptor, 1, std::max(timeout_ms,1));
+        if (ready < 0 && errno == EINTR) continue;
+        if (ready <= 0 || (descriptor.revents & (POLLERR | POLLNVAL))) return false;
+        const ssize_t n = recv(fd, bytes + total, length - total, MSG_DONTWAIT);
+        if (n < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) continue;
+        if (n <= 0) return false;
+        total += static_cast<size_t>(n);
+    }
+    return true;
+}
+bool read_headers(int fd, std::string & raw, Clock::time_point deadline) {
     raw.reserve(512);
     char c;
     while (raw.size() < kMaxHeadersBytes) {
-        if (recv(fd, &c, 1, 0) != 1) return false;
+        if (!receive_exact(fd, &c, 1, deadline)) return false;
         raw.push_back(c);
         if (raw.size() >= 4 && raw.compare(raw.size() - 4, 4, "\r\n\r\n") == 0)
             return true;
     }
     return false;
 }
-bool read_body(int fd, std::vector<uint8_t> & bytes, size_t length) {
+bool read_body(int fd, std::vector<uint8_t> & bytes, size_t length,
+               Clock::time_point deadline) {
     bytes.resize(length);
-    size_t total = 0;
-    while (total < length) {
-        const ssize_t n = recv(fd, bytes.data() + total, length - total, 0);
-        if (n <= 0) return false;
-        total += static_cast<size_t>(n);
-    }
-    return true;
+    return receive_exact(fd, bytes.data(), length, deadline);
 }
 std::string json_escape(const std::string & text) {
     const char * hex = "0123456789abcdef";
@@ -221,7 +240,8 @@ void process_connection(int fd, Runtime & runtime) {
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
     std::string raw;
     Request req;
-    if (!read_headers(fd, raw) || !parse_headers(raw, req)) {
+    const auto request_deadline = Clock::now() + std::chrono::seconds(kReadTimeoutSeconds);
+    if (!read_headers(fd, raw, request_deadline) || !parse_headers(raw, req)) {
         respond(fd, 400, "{\"error\":\"invalid_request\"}");
         return;
     }
@@ -252,7 +272,7 @@ void process_connection(int fd, Runtime & runtime) {
     }
     // Never store PCM to a file. Limit each request to 10s / 960kB.
     std::vector<uint8_t> pcm;
-    if (!read_body(fd, pcm, size)) {
+    if (!read_body(fd, pcm, size, request_deadline)) {
         respond(fd, 400, "{\"error\":\"truncated_audio\"}");
         return;
     }
@@ -310,6 +330,8 @@ int self_test() {
     const auto downsampled = downsample_to_16k(silence);
     if (downsampled.size() != 16000U || downsampled[0] != 0.0f) return 7;
     if (json_escape("a\n\"b") != "{\"text\":\"a\\u000a\\\"b\"}") return 8;
+    char one = 0;
+    if (receive_exact(-1, &one, 1, Clock::now()-std::chrono::seconds(1))) return 11;
     return 0;
 }
 } // namespace
