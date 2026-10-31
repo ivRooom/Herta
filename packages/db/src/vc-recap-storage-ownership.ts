@@ -7,6 +7,7 @@ import {
 
 export type VcRecapStoredObjectKind = 'audio' | 'transcript';
 
+// prettier-ignore
 export interface VcRecapStorageIntent {
   userId: string;
   sessionId: string;
@@ -20,12 +21,14 @@ export type VcRecapStorageReservation =
   | { status: 'denied' };
 
 /** Valid user-specific S3 prefix: shared session folders are not accepted. */
+// prettier-ignore
 export function vcRecapOwnedPrefix(userId: string): string {
   if (!/^\d{15,22}$/.test(userId)) throw new Error('Invalid VC Recap owner ID');
   return 'vc-recap/users/' + userId + '/';
 }
 
 /** Strictly match the dedicated VC bucket, never a general-purpose backup bucket. */
+// prettier-ignore
 export function validateVcRecapStorageTarget(
   userId: string,
   bucket: string,
@@ -50,6 +53,7 @@ export function validateVcRecapStorageTarget(
  * recheck consent/fence while holding the same lock before a PUT and finish
  * or abort its pending intent before deletion is called complete.
  */
+// prettier-ignore
 export async function reserveVcRecapStorageObject(
   prisma: PrismaClient,
   input: VcRecapStorageIntent,
@@ -122,6 +126,7 @@ export async function reserveVcRecapStorageObject(
  * retain the reservation for the sweeper and return false. The caller must
  * stop serving this object and arrange deletion, not retry upload blindly.
  */
+// prettier-ignore
 export async function commitVcRecapStorageObject(
   prisma: PrismaClient,
   input: { userId: string; id: string; versionId: string },
@@ -147,6 +152,7 @@ export async function commitVcRecapStorageObject(
 }
 
 /** Read-only immutable ownership inventory for the eventual erasure worker. */
+// prettier-ignore
 export async function listVcRecapUserStorageObjects(
   prisma: PrismaClient,
   userId: string,
@@ -170,6 +176,7 @@ export async function listVcRecapUserStorageObjects(
 }
 
 /** An empty result is not proof of absence of previously unindexed objects. */
+// prettier-ignore
 export async function listPendingVcRecapErasureUsers(
   prisma: PrismaClient,
   limit = 20,
