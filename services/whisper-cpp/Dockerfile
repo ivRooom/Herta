@@ -11,7 +11,9 @@ RUN cmake -S /work -B /build -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_EXE_LINKER_FLAGS="-static" \
     && cmake --build /build --parallel 2 \
     && /build/herta-whisper-cpp --self-test \
-    && (readelf -l /build/herta-whisper-cpp | grep -q INTERP && exit 1 || true)
+    && if readelf -l /build/herta-whisper-cpp | grep -q INTERP; then \
+         echo 'ERROR: final runtime must be statically linked' >&2; exit 1; \
+       fi
 
 FROM scratch
 COPY --from=builder /build/herta-whisper-cpp /app/herta-whisper-cpp
