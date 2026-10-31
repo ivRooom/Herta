@@ -125,8 +125,10 @@ function squad(
     const art = portraits[i];
     const nameFont = count === 5 ? 25 : count === 4 ? 30 : 38;
     const playerFont = count === 5 ? 17 : count === 4 ? 19 : 21;
-    const nameLimit = count === 5 ? 7 : count === 4 ? 9 : count === 3 ? 12 : 17;
-    const playerLimit = count === 5 ? 11 : count === 4 ? 15 : 23;
+    const nameLimit = Math.max(1, Math.floor((width - 26) / nameFont));
+    const playerLimit = Math.max(1, Math.floor((width - 26) / playerFont));
+    const fallbackFont = count >= 4 ? 21 : 28;
+    const fallbackLimit = Math.max(1, Math.floor((width - 40) / fallbackFont));
     parts.push(
       '<g>',
       '<rect x="' +
@@ -173,10 +175,10 @@ function squad(
           entry.agentName.toUpperCase(),
           x + 20,
           344,
-          count >= 4 ? 21 : 28,
+          fallbackFont,
           '#e7a3a4',
           800,
-          count >= 4 ? 10 : 18,
+          fallbackLimit,
         ),
       );
     }
