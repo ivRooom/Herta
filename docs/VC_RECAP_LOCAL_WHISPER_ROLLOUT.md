@@ -69,7 +69,6 @@ docker compose --env-file .env.production -f docker-compose.prod.yml --profile w
 
 運営者が #518 のチェックリストを実施する。最初は検証用Guild 1つ・少人数・明示同意を持つ参加者で開始し、日本語短文→長めの発話→複数話者→本人の同意撤回→停止時未確定処理→Studio要約の順に確認。撤回後の新規音声やDB本文、Workerログへの個人内容の残存を確認する。**音声本体やシークレットをIssueへ掲載しない。**
 
-
 ## オフラインCIとステージング起動
 
 ```bash
