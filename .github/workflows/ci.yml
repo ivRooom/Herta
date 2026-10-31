@@ -62,6 +62,19 @@ jobs:
       - name: VC Recap S3 safety audit contract tests
         run: python3 deploy/scripts/verify-vc-recap-s3-safety.test.py
 
+      - name: Local Whisper privacy and PCM contract tests (no model/network)
+        run: python3 -m unittest discover -s services/whisper -p 'test_*.py'
+
+      - name: Local Whisper opt-in Compose structure
+        env:
+          DISCORD_CLIENT_ID: ci-client-id
+          DISCORD_CLIENT_SECRET: ci-client-secret
+          DISCORD_BOT_TOKEN: ci-bot-token
+          TEAM_SPLIT_SECRET: ci-team-split-secret-for-compose-validation
+        run: |
+          docker compose --profile whisper --env-file .env.production.example -f docker-compose.prod.yml config --quiet
+          docker compose --profile whisper --env-file .env.production.example -f docker-compose.external.yml config --quiet
+
       - name: Supply chain policy tests
         run: node --test .github/scripts/*.test.mjs
 
