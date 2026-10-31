@@ -12,7 +12,22 @@ Issue: [Herta #675](https://github.com/ivRooom/Herta/issues/675)
 - AWS CoreによるHerta→専用DB**private IPv4 TCP5432到達成功**。Hertaホストの`openssl s_client -starttls postgres`で公開サーバー証明書のCN/SAN=`ivrm-db-postgres.internal`、署名者=`ivRooom PostgreSQL CA`、7日以上有効と確認。ただし**信頼CA/実アプリ用ユーザー認証の成功ではない**。
 - Herta sourceローカルPG **16.15**、約23.1MB、`public`に101テーブル、`_prisma_migrations`に**完了69/未完了0/rolled-back 1**。2026-10-27の別の隔離PG17復元成功（88テーブル/完了61）では現行sourceを保証できない。
 - 現行のHertaデプロイはlocal PG16。`docker-compose.external.yml`と`deploy/scripts/validate-external-database.mjs`が用意されているが、切替していない。
-- Hertaホストの既知の候補パスには新DB用の公開CAが見つからず、ネイティブ`psql`もない。既存ローカルPGコンテナは停止せず、Dockerの既存名前付きボリュームも保持する。
+- Hertaホストの `/etc/ivrm/herta-postgresql-prestage/` に**既存の**実証済み公開CA（root所有0644）と事前配置済み `external.env`（root所有0600）が存在する。CA SHA-256は `255c4cafd41e0798f69174a4d7c18f4bfa73b92f4212c4bebc97df75da5ae272`。異なる旧コピーにも同一の公開CAがあり、いずれもHerta private TCP5432で`openssl -verify_return_error -verify_hostname ivrm-db-postgres.internal` PASS。ネイティブ`psql`はないが、既存 `postgres:16-alpine` クライアントイメージは利用可能。既存ローカルPGコンテナ・ボリュームは維持。
+
+## 2026-10-31 Herta実ロールの認証付きTLS確認（追記）
+
+- DBサーバー内の読み取り専用SQLで `herta_owner` は `NOLOGIN`、`herta_runtime` と `herta_migrator` は `LOGIN`、3ロールとも `NOSUPERUSER` / `NOCREATEDB` / `NOCREATEROLE`。HBAの構成済みルール集計は `hostssl+scram-sha-256=4`、`host+reject=2`、`local+peer=2`。
+- Hertaホストの保護された事前配置 `external.env` は `HERTA_DATABASE_MODE=external`、`DATABASE_URL=herta_runtime`、`MIGRATION_DATABASE_URL=herta_migrator` に対応。URLの実値をGitHubに保存せず、想定ホスト/DB/ポート/ロールと秘密値の存在のみ照合。**本番 `.env.production` は依然ローカルモード**で、設定は切り替えていない。
+- Hertaホスト上で、既存の公開CAを読み取り専用マウントした一時 `postgres:16-alpine` クライアントから実DB `herta` へ `PGSSLMODE=verify-full` 接続。実行時だけの0600一時環境ファイルを利用し終了時削除、資格情報やDSNの出力なし。結果：
+
+  | 実ロール | TLS | CONNECT | DB CREATE | public USAGE | public CREATE | TEMPORARY |
+  | --- | --- | --- | --- | --- | --- | --- |
+  | `herta_runtime` | true | true | false | true | false | false |
+  | `herta_migrator` | true | true | true | true | true | true |
+
+- `herta_runtime` の一時テーブル作成失敗は `TEMPORARY=false` と整合し、TLS/認証失敗とは区別できた。**権限を緩めない**。`herta_migrator` は実プライベートTLS接続で `BEGIN`→`CREATE TEMP TABLE`→`INSERT`→`SELECT count(*)=1`→`ROLLBACK`を成功。永続テーブルを作らず、一時状態も破棄した。
+- 永続合成Canary（Migrationロールが専用一時検証用永続テーブルを作り、そのテーブルへのDML権限だけをruntimeに委譲、独立接続で書込/読取→全削除）をIssueに事前記録したが、ツール安全性チェックが**実行前にブロック**。そのため**永続・複数接続間のread/write合格とはまだ主張しない**。別途独立レビュー済みの運用実行が必要。
+- この結果はネイティブlibpqでの実ユーザー認証・CA/ホスト名検証・権限確認であり、**実アプリPrisma/エンドツーエンドの認証・DB再接続・復元履歴は未受入**。
 
 ## 優先する移行方式
 
@@ -63,4 +78,4 @@ ORDER BY type,auth_method;"
 
 ## まだ実施していないこと
 
-ロール作成・パスワード設定、DB本番復元、Herta外部接続認証、Prisma DDL、DNS/HBA/IAM変更、Dockerの本番再作成、Daily v2 flags有効化、既存source削除。これらの実行有無は必ず実AWS/DB/GitHub証拠で区別する。
+ロールの新規作成・パスワード変更、DB本番復元、**HertaアプリPrismaの外部接続**、永続Canary・実アプリDML、Prisma DDL、DNS/HBA/IAM変更、Dockerの本番再作成、Daily v2 flags有効化、既存source削除。なお、Hertaホストの既存PG16クライアントを使った**実ロールのTLS/認証はPASS**済み。これらの実行有無は必ず実AWS/DB/GitHub証拠で区別する。
