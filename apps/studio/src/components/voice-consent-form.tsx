@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 export function VoiceConsentForm({
   token,
@@ -12,6 +13,7 @@ export function VoiceConsentForm({
   /** 本文の30日保存を説明する前に同意した人は、ここから同意し直せるようにする。 */
   initialRetentionConsent: boolean;
 }) {
+  const router = useRouter();
   const [consent, setConsent] = useState(initialConsent);
   const [retentionConsent, setRetentionConsent] = useState(initialRetentionConsent);
   const fullyConsented = consent && retentionConsent;
@@ -39,6 +41,7 @@ export function VoiceConsentForm({
       }
       setConsent(next);
       setRetentionConsent(next);
+      router.refresh();
       setToast({
         message: next ? '同意する に更新しました' : '同意しない に更新しました',
         tone: 'success',
