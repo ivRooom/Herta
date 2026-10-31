@@ -6,7 +6,7 @@ import { renderValorantHudSvg } from './valorant-pick-card-hud.js';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('VALORANT pick card', () => {
-  it('keeps the v3 art-first editorial hierarchy for solo and every lineup size', () => {
+  it('keeps the v4 neon Herta hierarchy for solo and every lineup size', () => {
     for (const count of [1, 2, 3, 4, 5]) {
       const input = {
         mode: 'RANDOM' as const,
@@ -23,6 +23,11 @@ describe('VALORANT pick card', () => {
         Array(count).fill('デュエリスト'),
       );
       expect(svg).toContain('AGENT REVEAL');
+      expect(svg).toContain('Herta.');
+      expect(svg).toContain('DISCORD BOT FOR GAMERS');
+      expect(svg).toContain('url(#neon)');
+      expect(svg).toContain('#ff659f');
+      expect(svg).toContain('#b568ff');
       expect(svg).toContain('PICK COMPLETE');
       expect(svg).toContain('PARTICIPANTS');
       expect(svg).toContain('ジェット');
@@ -51,8 +56,8 @@ describe('VALORANT pick card', () => {
       [null],
       ['デュエリスト'],
     );
-    expect(svg).toMatch(/<text x="133" y="480"[^>]*>デュエリスト<\/text>/);
-    expect(svg).toMatch(/<text x="54" y="565"[^>]*>界{17}<\/text>/);
+    expect(svg).toMatch(/<text x="145" y="559"[^>]*>デュエリスト<\/text>/);
+    expect(svg).toMatch(/<text x="88" y="517"[^>]*>界{17}<\/text>/);
     expect(svg).not.toContain('界'.repeat(18));
   });
 
@@ -165,9 +170,9 @@ describe('VALORANT pick card', () => {
       const gap = count === 2 ? 18 : 12;
       const width = (1096 - gap * (count - 1)) / count;
       const playerFont = count === 5 ? 17 : count === 4 ? 19 : 21;
-      const nameFont = count === 5 ? 25 : count === 4 ? 30 : 38;
-      const playerLimit = Math.floor((width - 26) / playerFont);
-      const nameLimit = Math.floor((width - 26) / nameFont);
+      const nameFont = count === 5 ? 25 : count === 4 ? 29 : 37;
+      const playerLimit = Math.floor((width - 28) / playerFont);
+      const nameLimit = Math.floor((width - 28) / nameFont);
       const svg = renderValorantHudSvg(
         {
           mode: 'RANDOM',
@@ -285,6 +290,27 @@ describe('VALORANT pick card', () => {
     expect(markup).toContain('&lt;img src=x&gt;');
     expect(markup).toContain('&lt;svg/onload=');
     expect(markup.length).toBeLessThan(13_000);
+  });
+
+  it('uses fixed neon decorations rather than external SVG resources or fake buttons', () => {
+    const svg = renderValorantHudSvg(
+      {
+        mode: 'TACTICAL',
+        mapName: '<script>アセント</script>',
+        planLabel: 'ミッド＆ラッシュ',
+        entries: [{ agentName: 'Jett', displayName: 'ジェット', playerLabel: '参加者<01>' }],
+      },
+      [null],
+      ['デュエリスト'],
+    );
+    for (const marker of ['id="halo"', 'id="edge-glow"', 'url(#glass)', 'DISCORD BOT FOR GAMERS']) {
+      expect(svg).toContain(marker);
+    }
+    expect(svg).toContain('&lt;script&gt;');
+    expect(svg).toContain('参加者&lt;01&gt;');
+    expect(svg).not.toMatch(/<foreignObject|<script|<button/i);
+    expect(svg).not.toMatch(/(?:href|src)="https?:/i);
+    expect(svg).not.toContain('再抽選する');
   });
 
   it('rejects empty and too-large teams', async () => {
