@@ -84,11 +84,7 @@ function solo(
     '<path d="M1173 128 V570 M1150 570 H1173" stroke="#f6ebe3" stroke-width="2" opacity=".42"/>',
   ];
   if (portraits[0]) {
-    parts.push(
-      '<g clip-path="url(#solo-art)">',
-      portrait(portraits[0], 555, 94, 702, 548),
-      '</g>',
-    );
+    parts.push('<g clip-path="url(#solo-art)">', portrait(portraits[0], 555, 94, 702, 548), '</g>');
   } else {
     parts.push(
       '<circle cx="932" cy="349" r="193" fill="#111922" stroke="#843742" stroke-width="2"/>',
@@ -144,9 +140,25 @@ function squad(
     parts.push(
       '<g>',
       '<rect x="' + x + '" y="108" width="' + width + '" height="475" fill="#1b2029"/>',
-      '<path d="M' + (x + width * 0.54) + ' 108 H' + (x + width) + ' V458 H' + x + ' Z" fill="#a8374b" opacity=".21"/>',
-      '<path d="M' + x + ' 108 H' + (x + Math.min(96, width * 0.42)) + '" stroke="#ff4655" stroke-width="5"/>',
-      '<clipPath id="lineup-art-' + i + '"><rect x="' + (x + 2) + '" y="108" width="' + (width - 4) + '" height="358"/></clipPath>',
+      '<path d="M' +
+        (x + width * 0.54) +
+        ' 108 H' +
+        (x + width) +
+        ' V458 H' +
+        x +
+        ' Z" fill="#a8374b" opacity=".21"/>',
+      '<path d="M' +
+        x +
+        ' 108 H' +
+        (x + Math.min(96, width * 0.42)) +
+        '" stroke="#ff4655" stroke-width="5"/>',
+      '<clipPath id="lineup-art-' +
+        i +
+        '"><rect x="' +
+        (x + 2) +
+        '" y="108" width="' +
+        (width - 4) +
+        '" height="358"/></clipPath>',
     );
     if (art) {
       parts.push(
@@ -156,19 +168,55 @@ function squad(
       );
     } else {
       parts.push(
-        '<path d="M' + (x + width / 2) + ' 194 l' + (width * 0.33) + ' 134 -' + (width * 0.33) + ' 134 -' + (width * 0.33) + ' -134 Z" fill="#242a34" stroke="#b93f50" stroke-width="2"/>',
-        '<path d="M' + (x + 20) + ' 361 L' + (x + width - 20) + ' 204" stroke="#ff4655" stroke-opacity=".22" stroke-width="3"/>',
-        text(entry.agentName.toUpperCase(), x + 20, 337, fallbackFont, '#e9b3b3', 850, fallbackLimit),
+        '<path d="M' +
+          (x + width / 2) +
+          ' 194 l' +
+          width * 0.33 +
+          ' 134 -' +
+          width * 0.33 +
+          ' 134 -' +
+          width * 0.33 +
+          ' -134 Z" fill="#242a34" stroke="#b93f50" stroke-width="2"/>',
+        '<path d="M' +
+          (x + 20) +
+          ' 361 L' +
+          (x + width - 20) +
+          ' 204" stroke="#ff4655" stroke-opacity=".22" stroke-width="3"/>',
+        text(
+          entry.agentName.toUpperCase(),
+          x + 20,
+          337,
+          fallbackFont,
+          '#e9b3b3',
+          850,
+          fallbackLimit,
+        ),
       );
     }
     parts.push(
       '<rect x="' + x + '" y="393" width="' + width + '" height="190" fill="url(#card-foot)"/>',
-      '<path d="M' + (x + 12) + ' 438 H' + (x + width - 12) + '" stroke="#9b3847" stroke-width="1.5"/>',
+      '<path d="M' +
+        (x + 12) +
+        ' 438 H' +
+        (x + width - 12) +
+        '" stroke="#9b3847" stroke-width="1.5"/>',
       text(String(i + 1).padStart(2, '0'), x + 14, 148, 26, '#fff5e9', 900, 2),
       text(entry.displayName, x + 13, 485, nameFont, '#fff5e9', 850, nameLimit),
       text(roles[i] ?? 'エージェント', x + 13, 520, 15, '#ff8894', 750, 12),
-      '<path d="M' + (x + 13) + ' 532 H' + (x + width - 13) + '" stroke="#4c444c" stroke-width="1"/>',
-      text(entry.playerLabel ?? 'PLAYER ' + (i + 1), x + 13, 558, playerFont, '#f1e3dc', 700, playerLimit),
+      '<path d="M' +
+        (x + 13) +
+        ' 532 H' +
+        (x + width - 13) +
+        '" stroke="#4c444c" stroke-width="1"/>',
+      text(
+        entry.playerLabel ?? 'PLAYER ' + (i + 1),
+        x + 13,
+        558,
+        playerFont,
+        '#f1e3dc',
+        700,
+        playerLimit,
+      ),
       '</g>',
     );
   }
