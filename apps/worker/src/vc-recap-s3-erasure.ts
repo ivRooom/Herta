@@ -2,7 +2,7 @@
  * S3 object-version erasure primitive for future VC Recap user-owned storage.
  *
  * Not scheduled or connected to production: there is no dedicated VC audio
- * bucket, writer, or owner-to-object index yet. This cannot prove deletion
+ * bucket or live writer yet; the new DB owner index is not connected. This cannot prove deletion
  * from DB snapshots, independently keyed archives, caches, or backup restores.
  * Never set VcRecapErasureRequest.storageDeletionVerifiedAt from this result.
  */

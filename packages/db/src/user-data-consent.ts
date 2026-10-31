@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
+import { lockVcRecapStorageOwner } from './vc-recap-storage-lock.js';
 
 /**
  * guildを跨がないDiscordアカウント単位の同意設定。VC文字起こしはguild管理者の
@@ -51,30 +52,37 @@ export async function setVoiceTranscriptionConsent(
     : options.transcriptRetention
       ? { voiceTranscriptRetentionConsentedAt: new Date() }
       : {};
-  const upsert = prisma.userDataConsent.upsert({
-    where: { userId },
-    create: { userId, voiceTranscriptionConsent: consent, ...retention },
-    update: { voiceTranscriptionConsent: consent, ...retention },
-  });
-  if (consent) return toUserDataConsentState(await upsert);
+  if (consent) {
+    const row = await prisma.userDataConsent.upsert({
+      where: { userId },
+      create: { userId, voiceTranscriptionConsent: consent, ...retention },
+      update: { voiceTranscriptionConsent: consent, ...retention },
+    });
+    return toUserDataConsentState(row);
+  }
 
-  // Legacy revocation must also cancel every future recording/archive opt-in.
-  // Persist a durable erasure barrier so an archive worker can replay deletion
-  // after restoring backups; the barrier is NOT proof of completed S3 deletion.
+  // Coordinate legacy revocation with every future long-term upload intent
+  // under the same user lock. Never clear an erasure fence on re-consent.
   const revokedAt = new Date();
-  const [row] = await prisma.$transaction([
-    upsert,
-    prisma.vcRecapTranscriptSegment.deleteMany({ where: { userId } }),
-    prisma.vcRecapExplicitConsent.updateMany({
+  const row = await prisma.$transaction(async (tx) => {
+    await lockVcRecapStorageOwner(tx, userId);
+    const updated = await tx.userDataConsent.upsert({
+      where: { userId },
+      create: { userId, voiceTranscriptionConsent: false, ...retention },
+      update: { voiceTranscriptionConsent: false, ...retention },
+    });
+    await tx.vcRecapTranscriptSegment.deleteMany({ where: { userId } });
+    await tx.vcRecapExplicitConsent.updateMany({
       where: { userId },
       data: { consentedAt: null, revokedAt },
-    }),
-    prisma.vcRecapErasureRequest.upsert({
+    });
+    await tx.vcRecapErasureRequest.upsert({
       where: { userId },
       create: { userId, requestedAt: revokedAt },
       update: { requestedAt: revokedAt, storageDeletionVerifiedAt: null },
-    }),
-  ]);
+    });
+    return updated;
+  });
   return toUserDataConsentState(row);
 }
 

@@ -32,6 +32,7 @@ function fakePrisma(
     updatedAt: state.updatedAt,
   });
   const prisma = {
+    $queryRawUnsafe: async () => [],
     userDataConsent: {
       findUnique: async () => {
         reads += 1;
@@ -72,7 +73,12 @@ function fakePrisma(
         return { userId: INPUT.userId };
       },
     },
-    $transaction: async (ops: Promise<unknown>[]) => Promise.all(ops),
+    $transaction: async (ops: unknown): Promise<unknown> => {
+      if (typeof ops === 'function') {
+        return (ops as (client: unknown) => Promise<unknown>)(prisma);
+      }
+      return Promise.all(ops as Promise<unknown>[]);
+    },
     auditLog: {
       create: async () => {
         writes.push('audit');

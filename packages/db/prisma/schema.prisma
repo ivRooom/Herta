@@ -1331,6 +1331,29 @@ model VcRecapErasureRequest {
   @@map("vc_recap_erasure_requests")
 }
 
+/**
+ * Ownership ledger for prospective VC Recap S3 objects. Each immutable S3
+ * key belongs to exactly one Discord user. A reserved row MUST exist before
+ * any upload. Rows are retained during erasure for restore/replay audits.
+ */
+model VcRecapStorageObject {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  sessionId   String?   @map("session_id")
+  kind        String
+  bucket      String
+  objectKey   String    @map("object_key")
+  versionId   String?   @map("version_id")
+  state       String    @default("reserved")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  committedAt DateTime? @map("committed_at") @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([bucket, objectKey])
+  @@index([userId, state])
+  @@map("vc_recap_storage_objects")
+}
+
 model VoiceConsentAccess {
   userId    String   @id @map("user_id")
   tokenHash String   @unique @map("token_hash")
