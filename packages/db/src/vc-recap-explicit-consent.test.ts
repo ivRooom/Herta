@@ -89,6 +89,7 @@ test('削除要求は障壁作成と新同意の取り消しを同一transaction
   const client = {
     $transaction: async (run: (tx: unknown) => Promise<void>) =>
       run({
+        $queryRawUnsafe: async () => [],
         vcRecapErasureRequest: {
           upsert: async (data: unknown) => {
             calls.push({ operation: 'erasure', data });
@@ -115,6 +116,7 @@ test('OpenAI音声送信は旧文字起こし同意と新しい個別同意を�
   let legacy = true;
   let erasure = false;
   const tx = {
+    $queryRawUnsafe: async () => [],
     userDataConsent: { findUnique: async () => ({ voiceTranscriptionConsent: legacy }) },
     vcRecapErasureRequest: { findUnique: async () => (erasure ? { userId: 'user-1' } : null) },
     vcRecapExplicitConsent: {
@@ -194,6 +196,7 @@ test('不正な長期保存組み合わせを拒否し、デフォルトOFFで�
     delete process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'];
     const writes: unknown[] = [];
     const tx = {
+    $queryRawUnsafe: async () => [],
       vcRecapErasureRequest: {
         findUnique: async () => null,
         upsert: async (data: unknown) => {
@@ -237,6 +240,7 @@ test('不正な長期保存組み合わせを拒否し、デフォルトOFFで�
 test('目的別同意撤回は受付OFFでも削除障壁を作り、他の長期同意も消す', async () => {
   const calls: string[] = [];
   const tx = {
+    $queryRawUnsafe: async () => [],
     vcRecapErasureRequest: {
       findUnique: async () => null,
       upsert: async () => {
@@ -270,6 +274,7 @@ test('目的別同意撤回は受付OFFでも削除障壁を作り、他の長�
 
 test('本人削除障壁があれば新同意の再取得を拒否', async () => {
   const tx = {
+    $queryRawUnsafe: async () => [],
     vcRecapErasureRequest: { findUnique: async () => ({ userId: 'u1' }) },
     userDataConsent: { findUnique: async () => ({ voiceTranscriptionConsent: true }) },
     vcRecapExplicitConsent: { findMany: async () => [] },
