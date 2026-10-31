@@ -467,7 +467,10 @@ async function transcribeSpeaker(
   } catch (error) {
     if (
       provider === 'local-whisper' &&
-      shouldMarkLocalWhisperSessionFailed(localConsentDenied, localController?.signal.aborted ?? false)
+      shouldMarkLocalWhisperSessionFailed(
+        localConsentDenied,
+        localController?.signal.aborted ?? false,
+      )
     ) {
       session.localWhisperFailure = true;
     }
