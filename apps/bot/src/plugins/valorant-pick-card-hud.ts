@@ -87,7 +87,11 @@ function solo(
     '<path d="M679 185 L1117 185 M1147 193 L1026 559" stroke="#ae83fc" stroke-width="2" opacity=".46"/>',
   ];
   if (portraits[0]) {
-    parts.push('<g clip-path="url(#solo-art)">', portrait(portraits[0], 575, 158, 655, 447), '</g>');
+    parts.push(
+      '<g clip-path="url(#solo-art)">',
+      portrait(portraits[0], 575, 158, 655, 447),
+      '</g>',
+    );
   } else {
     parts.push(
       '<circle cx="936" cy="368" r="174" fill="#2b2058" stroke="#a36cfa" stroke-width="2"/>',
@@ -145,23 +149,73 @@ function squad(
     const top = 183 + (i % 2) * 17;
     const bottom = 570 - ((i + 1) % 2) * 14;
     const borderPath =
-      'M' + (x + 18) + ' ' + top + ' L' + (x + width - 2) + ' ' +
-      (top - 10) + ' L' + (x + width - 18) + ' ' + bottom +
-      ' L' + x + ' ' + (bottom + 9) + 'Z';
+      'M' +
+      (x + 18) +
+      ' ' +
+      top +
+      ' L' +
+      (x + width - 2) +
+      ' ' +
+      (top - 10) +
+      ' L' +
+      (x + width - 18) +
+      ' ' +
+      bottom +
+      ' L' +
+      x +
+      ' ' +
+      (bottom + 9) +
+      'Z';
     parts.push(
       '<g>',
-      '<rect x="39" y="' + y + '" width="515" height="' + rowHeight + '" rx="12" fill="url(#row)" stroke="' + color + '" stroke-width="1.5"/>',
-      '<path d="M42 ' + (y + 11) + ' V' + (y + rowHeight - 11) + '" stroke="' + color + '" stroke-width="3.5"/>',
+      '<rect x="39" y="' +
+        y +
+        '" width="515" height="' +
+        rowHeight +
+        '" rx="12" fill="url(#row)" stroke="' +
+        color +
+        '" stroke-width="1.5"/>',
+      '<path d="M42 ' +
+        (y + 11) +
+        ' V' +
+        (y + rowHeight - 11) +
+        '" stroke="' +
+        color +
+        '" stroke-width="3.5"/>',
       text(String(i + 1).padStart(2, '0'), 56, mid + 7, 21, '#d6a1ff', 850, 2),
       text('PLAYER', 110, mid - 13, 10, '#a9a9d2', 750),
       text(entry.playerLabel ?? 'PLAYER ' + (i + 1), 109, mid + 11, 16, '#faf3ff', 750, 12),
-      '<path d="M286 ' + (mid - 3) + ' h28 m-9 -9 l9 9 -9 9" fill="none" stroke="' + color + '" stroke-width="2.2"/>',
-      '<path d="M332 ' + (y + 12) + ' V' + (y + rowHeight - 12) + '" stroke="#67518d" stroke-width="1"/>',
+      '<path d="M286 ' +
+        (mid - 3) +
+        ' h28 m-9 -9 l9 9 -9 9" fill="none" stroke="' +
+        color +
+        '" stroke-width="2.2"/>',
+      '<path d="M332 ' +
+        (y + 12) +
+        ' V' +
+        (y + rowHeight - 12) +
+        '" stroke="#67518d" stroke-width="1"/>',
       text(entry.displayName, 350, mid + 2, 20, '#fff8ff', 850, 9),
       text(roles[i] ?? 'エージェント', 350, mid + 22, 12, color, 700, 13),
       '<clipPath id="poster-art-' + i + '"><path d="' + borderPath + '"/></clipPath>',
-      '<path d="' + borderPath + '" fill="#26204d" stroke="' + color + '" stroke-width="3" stroke-opacity=".9"/>',
-      '<path d="M' + (x + 9) + ' ' + (top + 75) + ' L' + (x + width - 8) + ' ' + (top + 20) + ' V' + (bottom - 70) + 'Z" fill="' + color + '" opacity=".19"/>',
+      '<path d="' +
+        borderPath +
+        '" fill="#26204d" stroke="' +
+        color +
+        '" stroke-width="3" stroke-opacity=".9"/>',
+      '<path d="M' +
+        (x + 9) +
+        ' ' +
+        (top + 75) +
+        ' L' +
+        (x + width - 8) +
+        ' ' +
+        (top + 20) +
+        ' V' +
+        (bottom - 70) +
+        'Z" fill="' +
+        color +
+        '" opacity=".19"/>',
     );
     if (portraits[i]) {
       const portraitWidth = Math.max(342, width * 1.55);
@@ -174,15 +228,45 @@ function squad(
     } else {
       parts.push(
         '<g clip-path="url(#poster-art-' + i + ')">',
-        '<circle cx="' + (x + width / 2) + '" cy="359" r="' + Math.max(64, width * 0.4) + '" fill="url(#halo)" opacity=".8"/>',
-        '<path d="M' + (x + width / 2) + ' 241 l' + Math.min(95, width * 0.32) + ' 110 -' + Math.min(95, width * 0.32) + ' 110 -' + Math.min(95, width * 0.32) + ' -110Z" fill="#0d1129" stroke="' + color + '" stroke-width="2"/>',
+        '<circle cx="' +
+          (x + width / 2) +
+          '" cy="359" r="' +
+          Math.max(64, width * 0.4) +
+          '" fill="url(#halo)" opacity=".8"/>',
+        '<path d="M' +
+          (x + width / 2) +
+          ' 241 l' +
+          Math.min(95, width * 0.32) +
+          ' 110 -' +
+          Math.min(95, width * 0.32) +
+          ' 110 -' +
+          Math.min(95, width * 0.32) +
+          ' -110Z" fill="#0d1129" stroke="' +
+          color +
+          '" stroke-width="2"/>',
         '</g>',
       );
     }
     parts.push(
-      '<path d="' + borderPath + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-opacity=".7"/>',
-      '<rect x="' + (x + 5) + '" y="506" width="' + Math.max(65, width - 21) + '" height="42" rx="8" fill="#090d25" opacity=".9"/>',
-      text(entry.agentName.toUpperCase(), x + 12, 534, count === 5 ? 14 : 17, '#fff4ff', 850, count === 5 ? 9 : 16),
+      '<path d="' +
+        borderPath +
+        '" fill="none" stroke="' +
+        color +
+        '" stroke-width="2" stroke-opacity=".7"/>',
+      '<rect x="' +
+        (x + 5) +
+        '" y="506" width="' +
+        Math.max(65, width - 21) +
+        '" height="42" rx="8" fill="#090d25" opacity=".9"/>',
+      text(
+        entry.agentName.toUpperCase(),
+        x + 12,
+        534,
+        count === 5 ? 14 : 17,
+        '#fff4ff',
+        850,
+        count === 5 ? 9 : 16,
+      ),
       '</g>',
     );
   }
@@ -226,7 +310,15 @@ export function renderValorantHudSvg(
     text('Herta. / AGENT REVEAL', 45, 32, 17, '#c8b5ef', 800),
     text('VALORANT', 42, 90, 56, '#fcf4ff', 900, 12),
     text('エージェント抽選', 385, 85, 34, '#ff93cc', 850, 12),
-    text(count === 1 ? 'SOLO  //  HERO PICK' : 'SQUAD  //  LINEUP', 948, 39, 14, '#d6c8fb', 750, 24),
+    text(
+      count === 1 ? 'SOLO  //  HERO PICK' : 'SQUAD  //  LINEUP',
+      948,
+      39,
+      14,
+      '#d6c8fb',
+      750,
+      24,
+    ),
     '<rect x="43" y="111" width="202" height="43" rx="10" fill="#171330" stroke="#8c65db" stroke-width="1.3"/>',
     '<rect x="254" y="111" width="205" height="43" rx="10" fill="#171330" stroke="#8c65db" stroke-width="1.3"/>',
     '<rect x="469" y="111" width="155" height="43" rx="10" fill="#171330" stroke="#8c65db" stroke-width="1.3"/>',
