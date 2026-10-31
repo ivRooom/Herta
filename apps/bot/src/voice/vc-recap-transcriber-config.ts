@@ -47,7 +47,6 @@ export function canUseOpenAiVcAudio(
   );
 }
 
-
 /**
  * One explicitly configured Discord guild is eligible for local CPU inference.
  * `VC_RECAP_TRANSCRIPTION_PROVIDER=aws` remains the global default; an opted-in
