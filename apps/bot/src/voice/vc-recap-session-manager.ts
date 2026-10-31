@@ -25,6 +25,7 @@ import { resolveAwsTranscribeCredential } from './aws-transcribe-credential.js';
 import { resolveAiOpenAiCredential } from '../ai/factory.js';
 import { transcribePcmWithOpenAi } from './vc-recap-openai-file-transcriber.js';
 import { transcribePcmWithLocalWhisper } from './vc-recap-local-whisper-transcriber.js';
+import { rejectIncompleteLocalVcRecap } from './vc-recap-local-finish-policy.js';
 import { hasVcRecapOpenAiAudioConsent } from './vc-recap-openai-audio-consent.js';
 import {
   canUseLocalWhisperCanary,
@@ -535,7 +536,7 @@ export async function stopVcRecap(
 
   // Local inference may outlast the bounded flush interval or fail mid-queue.
   // Never silently summarize only the recognized prefix of the conversation.
-  if (isLocalCanary && (!flushed || session.localWhisperFailure)) {
+  if (rejectIncompleteLocalVcRecap(isLocalCanary, flushed, session.localWhisperFailure)) {
     await failVcRecapSession(prisma, session.sessionId, []);
     logger.warn({ guildId, sessionId: session.sessionId }, 'Local Whisperが未確定のため要約を中止しました');
     return { status: 'summarize_failed', sessionId: session.sessionId };
