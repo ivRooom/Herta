@@ -49,11 +49,14 @@ describe('VC transcription provider rollback', () => {
     expect(canUseLocalWhisperCanary(config, '964326043420872704', canary)).toBe(true);
     expect(canUseLocalWhisperCanary(config, '964326043420872705', canary)).toBe(false);
     expect(canUseLocalWhisperCanary(config, '964326043420872704', {})).toBe(false);
-    expect(canUseLocalWhisperCanary(config, '964326043420872704', {
-      VC_RECAP_LOCAL_WHISPER_CANARY_GUILD_ID: '964326043420872704,964326043420872705',
-    })).toBe(false);
-    expect(canUseLocalWhisperCanary(resolveVcRecapTranscriberConfig({}),
-      '964326043420872704', canary)).toBe(false);
+    expect(
+      canUseLocalWhisperCanary(config, '964326043420872704', {
+        VC_RECAP_LOCAL_WHISPER_CANARY_GUILD_ID: '964326043420872704,964326043420872705',
+      }),
+    ).toBe(false);
+    expect(
+      canUseLocalWhisperCanary(resolveVcRecapTranscriberConfig({}), '964326043420872704', canary),
+    ).toBe(false);
   });
 
   it('bounds the per-session OpenAI minute quota', () => {
