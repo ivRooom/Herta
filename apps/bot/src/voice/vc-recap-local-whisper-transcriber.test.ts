@@ -59,6 +59,49 @@ describe('Private local Whisper PCM transport', () => {
     });
   });
 
+  it('blocks native backend before separate release acceptance with no PCM sent', async () => {
+    const fetchImpl = vi.fn();
+    await expect(
+      transcribePcmWithLocalWhisper(audio(Buffer.alloc(480)), vi.fn(), {
+        token: TOKEN,
+        mayProcess: async () => true,
+        backend: 'native',
+        fetchImpl,
+      }),
+    ).rejects.toThrow(/not approved/);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('only routes an explicitly accepted native backend to fixed private DNS', async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(new Response(JSON.stringify({ text: 'ok' }), { status: 200 }));
+    await transcribePcmWithLocalWhisper(audio(Buffer.alloc(960)), vi.fn(), {
+      token: TOKEN,
+      mayProcess: async () => true,
+      backend: 'native',
+      nativeAccepted: true,
+      fetchImpl,
+    });
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe('http://whisper-native:8765/v1/transcribe');
+  });
+
+  it('rejects unknown backend names and arbitrary URLs rather than SSRF', async () => {
+    const fetchImpl = vi.fn();
+    for (const backend of ['other', 'http://example.com', 'http://127.0.0.1:8765']) {
+      await expect(
+        transcribePcmWithLocalWhisper(audio(Buffer.alloc(480)), vi.fn(), {
+          token: TOKEN,
+          mayProcess: async () => true,
+          backend,
+          nativeAccepted: true,
+          fetchImpl,
+        }),
+      ).rejects.toThrow(/not approved/);
+    }
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
   it('drops a worker response when consent is withdrawn before writing', async () => {
     const fetchImpl = vi
       .fn()
