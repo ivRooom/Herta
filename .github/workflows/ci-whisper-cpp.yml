@@ -153,6 +153,57 @@ jobs:
           elapsed = time.monotonic()-started
           print('Synthetic 8s silence inference elapsed_seconds=',round(elapsed,2))
           assert elapsed < 20, '8s local chunk exceeds the current 20s stop flush budget'
+
+          # A client-side consent withdrawal closes the HTTP socket. Assert
+          # the actual native decode subprocess disappears promptly, not just
+          # the HTTP request, and the worker stays available afterwards.
+          import socket
+          import subprocess
+          request_headers = (
+              'POST /v1/transcribe HTTP/1.1\\r\\n'
+              'Host: 127.0.0.1\\r\\n'
+              'Authorization: Bearer synthetic-ci-token-32-characters-verified-only\\r\\n'
+              'Content-Type: application/octet-stream\\r\\n'
+              'X-Audio-Sample-Rate: 48000\\r\\n'
+              f'Content-Length: {len(pcm8)}\\r\\n'
+              'Connection: close\\r\\n\\r\\n'
+          ).encode()
+          conn = socket.create_connection(('127.0.0.1', 8765), timeout=5)
+          try:
+              conn.sendall(request_headers + pcm8)
+              for attempt in range(45):
+                  processes = subprocess.check_output(
+                      ['docker', 'top', 'herta-whispercpp-smoke', '-eo', 'args'],
+                      text=True,
+                  )
+                  if '--infer-child' in processes:
+                      break
+                  time.sleep(.1)
+              else:
+                  raise AssertionError('native decode child never started')
+          finally:
+              # Equivalent to aborting the in-flight fetch on withdrawal.
+              conn.close()
+          for attempt in range(45):
+              processes = subprocess.check_output(
+                  ['docker', 'top', 'herta-whispercpp-smoke', '-eo', 'args'],
+                  text=True,
+              )
+              if '--infer-child' not in processes:
+                  break
+              time.sleep(.1)
+          else:
+              raise AssertionError('native decode subprocess survived HTTP abort')
+          print('Synthetic HTTP withdrawal killed and reaped native decode child')
+          with urllib.request.urlopen(
+              urllib.request.Request(
+                  base+'/v1/transcribe',
+                  data=pcm,
+                  headers=headers,
+              ), timeout=45
+          ) as resp:
+              assert resp.status == 200
+              assert isinstance(json.loads(resp.read()).get('text'), str)
           PY
           docker stats herta-whispercpp-smoke --no-stream \
             --format 'CI sample: name={{.Name}} cpu={{.CPUPerc}} memory={{.MemUsage}}'
