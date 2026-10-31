@@ -57,6 +57,9 @@ jobs:
       - name: Test
         run: pnpm test
 
+      - name: VC Recap S3 safety audit contract tests
+        run: python3 deploy/scripts/verify-vc-recap-s3-safety.test.py
+
       - name: Supply chain policy tests
         run: node --test .github/scripts/*.test.mjs
 
