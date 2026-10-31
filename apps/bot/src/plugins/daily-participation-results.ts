@@ -103,6 +103,7 @@ export async function scanParticipationResults(
       })
       .strict()
       .parse(raw);
+    let incomplete = false;
     for (const delivery of response.deliveries) {
       if (
         delivery.questionId !== delivery.result.questionId ||
@@ -120,6 +121,7 @@ export async function scanParticipationResults(
         );
         if (matches.size !== 1) {
           ctx.logger.warn('Daily result notification requires reconciliation');
+          incomplete = true;
           continue;
         }
         messageId = matches.first()!.id;
@@ -145,9 +147,12 @@ export async function scanParticipationResults(
           messageId,
         },
       );
-      if (ack?.questionId !== delivery.questionId || ack?.messageId !== messageId)
+      if (ack?.questionId !== delivery.questionId || ack?.messageId !== messageId) {
         ctx.logger.warn('Daily result acknowledgement unconfirmed');
+        incomplete = true;
+      }
     }
+    if (incomplete) throw Error('Daily result reconciliation pending');
     failures.delete(ctx.guildId);
   } catch {
     ctx.logger.warn('Daily result delivery deferred; durable state retained');

@@ -37,7 +37,7 @@ import { claimDailyBonus, dailyBonusStatus } from './daily-bonus-wallet.js';
 import { savedDailyFortune } from './daily-fortune.js';
 import { renderFortuneCard } from './fortune-card.js';
 import { handleDailyParticipation, isParticipationInteraction } from './daily-participation.js';
-import {scanParticipationResults} from './daily-participation-results.js';
+import { scanParticipationResults } from './daily-participation-results.js';
 import { replyDailyBonusResult } from './daily-bonus-reply.js';
 import { dailyAnniversaryHeading, dailyBonusFailureMessage } from './daily-bonus-presentation.js';
 
@@ -113,8 +113,11 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
   )
     return;
   const date = dailyBonusDate(now);
-  const resultGeneration=generations.get(ctx.guildId)??0;
-  await scanParticipationResults(ctx,()=>resultGeneration===(generations.get(ctx.guildId)??0));
+  const resultGeneration = generations.get(ctx.guildId) ?? 0;
+  await scanParticipationResults(
+    ctx,
+    () => resultGeneration === (generations.get(ctx.guildId) ?? 0),
+  );
   if (now.getTime() < Date.parse(`${date}T09:00:00+09:00`)) return;
   // A late restart may deliver today's message; never creates a past-day occurrence.
   running.add(ctx.guildId);

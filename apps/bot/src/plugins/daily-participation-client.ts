@@ -100,7 +100,14 @@ const receiptSchema = z
       .nullable(),
   })
   .strict()
-  .refine((r) => r.rollPoints + r.quizBonusPoints === r.rewardPoints);
+  .refine(
+    (r) =>
+      r.rollPoints + r.quizBonusPoints === r.rewardPoints &&
+      (!r.streakReward || r.streakReward.streakDay === r.streakDay) &&
+      Number.isSafeInteger(
+        r.rewardPoints + (r.streakReward?.points ?? 0) + (r.firstClaimReward?.points ?? 0),
+      ),
+  );
 export const participationStatusSchema = z
   .object({
     status: z.literal('ok'),

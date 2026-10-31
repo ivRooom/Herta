@@ -95,6 +95,18 @@ it('already-received subject opens unanswered question without claiming again', 
     expect.objectContaining({ flags: 64, components: expect.any(Array) }),
   );
 });
+it('keeps a maximum Unicode prompt in an embed within Discord content limits', async () => {
+  const prompt = '🎮'.repeat(1000);
+  mocks.status.mockResolvedValue({ ...f.status, questions: [{ ...f.publicQuestion, prompt }] });
+  const i = interaction('daily-participation:questions:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  const sent = vi.mocked(i.followUp).mock.calls[0]![0] as {
+    content: string;
+    embeds: { toJSON: () => { description: string } }[];
+  };
+  expect(sent.content.length).toBeLessThanOrEqual(2000);
+  expect(sent.embeds[0]!.toJSON().description).toBe(prompt);
+});
 it('roll-only claim completes before question controls and uses canonical receipt', async () => {
   const i = interaction('daily-bonus:2026-10-31');
   await handleDailyParticipation(context(), i);

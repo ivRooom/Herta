@@ -7,6 +7,7 @@ import {
   TextInputBuilder,
   TextInputStyle,
   AttachmentBuilder,
+  EmbedBuilder,
   type ButtonInteraction,
   type ModalSubmitInteraction,
   type Client,
@@ -98,7 +99,11 @@ export async function showParticipationQuestions(
       await interaction.followUp({
         flags: MessageFlags.Ephemeral,
         allowedMentions: { parse: [] },
-        content: `${question.prompt}\n${response.state === 'pending' ? '回答済みです。結果確定をお待ちください。' : `回答済み / 獲得 ${response.rewardPoints}pt`}`,
+        content:
+          response.state === 'pending'
+            ? '回答済みです。結果確定をお待ちください。'
+            : `回答済み / 獲得 ${response.rewardPoints}pt`,
+        embeds: [new EmbedBuilder().setColor(0xb9a2ff).setDescription(question.prompt)],
       });
       continue;
     }
@@ -126,7 +131,6 @@ export async function showParticipationQuestions(
               .setStyle(ButtonStyle.Primary),
           );
     if (!buttons.length) continue;
-    const files: AttachmentBuilder[] = [];
     for (const media of question.media) {
       try {
         const response = await dailyServiceFetch(
@@ -139,6 +143,10 @@ export async function showParticipationQuestions(
           !response?.ok ||
           response.headers.get('X-IVRM-Media-Id') !== media.id ||
           response.headers.get('Content-Type') !== media.mimeType ||
+          !['image/webp', 'audio/wav'].includes(media.mimeType) ||
+          Number(response.headers.get('Content-Length')) !== media.byteSize ||
+          !response.headers.get('Cache-Control')?.includes('private') ||
+          !response.headers.get('Cache-Control')?.includes('no-store') ||
           !response.body
         )
           throw Error('Invalid media response');
@@ -156,11 +164,20 @@ export async function showParticipationQuestions(
           chunks.push(part.value);
         }
         if (total !== media.byteSize) throw Error('Media size mismatch');
-        files.push(
-          new AttachmentBuilder(Buffer.concat(chunks), {
-            name: `${media.id}.${media.kind === 'audio' ? 'wav' : 'webp'}`,
-          }),
-        );
+        await interaction.followUp({
+          flags: MessageFlags.Ephemeral,
+          allowedMentions: { parse: [] },
+          content:
+            question.options
+              .filter((o) => o.mediaId === media.id)
+              .map((o) => o.label)
+              .join(' / ') || '問題の素材',
+          files: [
+            new AttachmentBuilder(Buffer.concat(chunks), {
+              name: `${media.id}.${media.kind === 'audio' ? 'wav' : 'webp'}`,
+            }),
+          ],
+        });
       } catch {
         await interaction.followUp({
           flags: MessageFlags.Ephemeral,
@@ -173,9 +190,14 @@ export async function showParticipationQuestions(
     await interaction.followUp({
       flags: MessageFlags.Ephemeral,
       allowedMentions: { parse: [] },
-      content: `${question.slot === 'bonus' ? '🎭 ボーナス問題' : '🧠 今日の問題'}\n${question.prompt}\n締切：<t:${Math.floor(Date.parse(question.closesAt) / 1000)}:f>\n最初の回答で確定します。${question.scoring === 'instant' ? '即時採点します。' : '確定後に結果を確認できます。'}`,
+      content: `${question.slot === 'bonus' ? '🎭 ボーナス問題' : '🧠 今日の問題'}\n締切：<t:${Math.floor(Date.parse(question.closesAt) / 1000)}:f>\n最初の回答で確定します。${question.format === 'free_text' ? `最大${question.maxTextLength}文字。` : ''}${question.scoring === 'instant' ? '即時採点します。' : '確定後に結果を確認できます。'}`,
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xb9a2ff)
+          .setDescription(question.prompt)
+          .addFields(question.options.map((o, i) => ({ name: `選択肢 ${i + 1}`, value: o.label }))),
+      ],
       components: [new ActionRowBuilder<ButtonBuilder>().addComponents(buttons)],
-      files,
     });
   }
   if (!state.questions.length)
@@ -234,7 +256,7 @@ export async function handleDailyParticipation(
           new ActionRowBuilder<TextInputBuilder>().addComponents(
             new TextInputBuilder()
               .setCustomId('answer')
-              .setLabel('回答（最大1000文字・最初の投稿で確定）')
+              .setLabel('回答（問題の文字数制限内で入力）')
               .setStyle(TextInputStyle.Paragraph)
               .setMaxLength(1000)
               .setRequired(true),
