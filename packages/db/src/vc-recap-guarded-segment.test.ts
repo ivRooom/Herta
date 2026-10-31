@@ -3,7 +3,7 @@ import test from 'node:test';
 import type { PrismaClient } from '@prisma/client';
 import { appendLocalVcRecapSegmentIfConsented } from './vc-recap-guarded-segment.js';
 
-function harness(granted: boolean, hasErasure = false, lockFailure = false) {
+function harness(granted: boolean, hasErasure = false, lockFailure = false, personal = true) {
   const calls: string[] = [];
   const tx = {
     $queryRawUnsafe: async (sql: string, owner: string) => {
@@ -17,7 +17,10 @@ function harness(granted: boolean, hasErasure = false, lockFailure = false) {
       findUnique: async () => {
         assert.deepEqual(calls, ['lock']);
         calls.push('consent');
-        return { voiceTranscriptionConsent: granted };
+        return {
+          voiceTranscriptionConsent: granted,
+          voiceTranscriptRetentionConsentedAt: personal ? new Date(0) : null,
+        };
       },
     },
     vcRecapErasureRequest: {
@@ -66,6 +69,12 @@ test('erasure fence blocks local transcript insert even when old consent is true
 
 test('refused or withdrawn personal consent blocks transcript insert', async () => {
   const { prisma, calls } = harness(false);
+  assert.equal(await appendLocalVcRecapSegmentIfConsented(prisma, item), false);
+  assert.equal(calls.includes('write'), false);
+});
+
+test('admin-granted legacy transcription without personal retention opt-in cannot write locally', async () => {
+  const { prisma, calls } = harness(true, false, false, false);
   assert.equal(await appendLocalVcRecapSegmentIfConsented(prisma, item), false);
   assert.equal(calls.includes('write'), false);
 });
