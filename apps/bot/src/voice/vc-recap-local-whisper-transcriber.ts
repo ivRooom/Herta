@@ -18,7 +18,8 @@ export interface LocalWhisperOptions {
 }
 
 async function recognize(pcm: Buffer, options: LocalWhisperOptions): Promise<string> {
-  if (!(await options.mayProcess())) throw new Error('Local Whisper consent revoked or unavailable');
+  if (!(await options.mayProcess()))
+    throw new Error('Local Whisper consent revoked or unavailable');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
@@ -112,7 +113,8 @@ export async function transcribePcmWithLocalWhisper(
         throw new Error('Invalid Local Whisper PCM frame alignment');
       }
       totalBytes += chunk.length;
-      if (totalBytes > MAX_TOTAL_BYTES) throw new Error('Local Whisper audio safety limit exceeded');
+      if (totalBytes > MAX_TOTAL_BYTES)
+        throw new Error('Local Whisper audio safety limit exceeded');
       let offset = 0;
       while (offset < chunk.length) {
         const take = Math.min(SEGMENT_BYTES - pendingBytes, chunk.length - offset);
