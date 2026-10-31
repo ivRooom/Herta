@@ -1,7 +1,4 @@
-import type {
-  S3ErasureObject,
-  S3VersionErasurePort,
-} from './vc-recap-s3-erasure.js';
+import type { S3ErasureObject, S3VersionErasurePort } from './vc-recap-s3-erasure.js';
 
 /**
  * AWS SDK v3-compatible S3 adapter. The actual client/command constructors
@@ -12,10 +9,12 @@ import type {
  * S3Client with the default AWS credential provider chain (IAM role), never
  * access-key environment variables committed to the repository.
  */
+// prettier-ignore
 export interface S3V3CommandClient {
   send(command: unknown): Promise<unknown>;
 }
 
+// prettier-ignore
 export interface S3V3CommandConstructors {
   ListObjectVersionsCommand: new (input: Record<string, unknown>) => unknown;
   DeleteObjectsCommand: new (input: Record<string, unknown>) => unknown;
@@ -23,27 +22,32 @@ export interface S3V3CommandConstructors {
   AbortMultipartUploadCommand: new (input: Record<string, unknown>) => unknown;
 }
 
+// prettier-ignore
 interface S3ListVersionItem {
   Key?: string;
   VersionId?: string;
 }
 
+// prettier-ignore
 interface S3VersionListingResponse {
   Versions?: S3ListVersionItem[];
   DeleteMarkers?: S3ListVersionItem[];
   IsTruncated?: boolean;
 }
 
+// prettier-ignore
 interface S3DeleteObjectsResponse {
   Deleted?: S3ListVersionItem[];
   Errors?: Array<{ Key?: string; VersionId?: string; Code?: string }>;
 }
 
+// prettier-ignore
 interface S3MultipartListingResponse {
   Uploads?: Array<{ Key?: string; UploadId?: string }>;
   IsTruncated?: boolean;
 }
 
+// prettier-ignore
 function requireDedicatedBucket(bucket: string): void {
   const configured = process.env['VC_RECAP_STORAGE_BUCKET'];
   if (!configured || configured !== bucket || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(bucket)) {
@@ -51,18 +55,21 @@ function requireDedicatedBucket(bucket: string): void {
   }
 }
 
+// prettier-ignore
 function requireOwnedPrefix(prefix: string): void {
   if (!/^vc-recap\/users\/\d{15,22}\/$/.test(prefix)) {
     throw new Error('S3 operation requires an explicit VC Recap user prefix');
   }
 }
 
+// prettier-ignore
 function requireOwnedKey(key: string): void {
   if (!/^vc-recap\/users\/\d{15,22}\/.+/.test(key)) {
     throw new Error('S3 operation requires a VC Recap user-owned key');
   }
 }
 
+// prettier-ignore
 function versions(items: S3ListVersionItem[] | undefined): S3ErasureObject[] {
   return (items ?? []).map((item) => {
     if (!item.Key || !item.VersionId || item.VersionId === 'null') {
@@ -72,12 +79,14 @@ function versions(items: S3ListVersionItem[] | undefined): S3ErasureObject[] {
   });
 }
 
+// prettier-ignore
 function requirePageSize(maximum: number): void {
   if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 1000) {
     throw new Error('S3 page size must be between 1 and 1000');
   }
 }
 
+// prettier-ignore
 function checkedResponse<T>(raw: unknown): T {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error('S3 SDK returned an invalid response');
@@ -85,6 +94,7 @@ function checkedResponse<T>(raw: unknown): T {
   return raw as T;
 }
 
+// prettier-ignore
 function sameVersion(a: S3ErasureObject, b: S3ErasureObject): boolean {
   return a.key === b.key && a.versionId === b.versionId;
 }
@@ -94,6 +104,7 @@ function sameVersion(a: S3ErasureObject, b: S3ErasureObject): boolean {
  * Does NOT run the sweeper or update completion flags. Enforces the configured
  * dedicated bucket and the user key boundary for every operation.
  */
+// prettier-ignore
 export function createS3V3ErasurePort(
   client: S3V3CommandClient,
   commands: S3V3CommandConstructors,
