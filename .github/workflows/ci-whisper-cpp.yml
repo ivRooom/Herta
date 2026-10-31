@@ -143,7 +143,7 @@ jobs:
           # Verify a full 8s PCM chunk completes within the bot's 20s stop
           # flush budget on an isolated 1-vCPU CI worker. This is a synthetic
           # smoke, not a Japanese CER or 2GB Lightsail acceptance benchmark.
-          pcm8 = b'\\x00\\x00' * (48000 * 8)
+          pcm8 = bytes(48000 * 8 * 2)
           request8 = urllib.request.Request(base+'/v1/transcribe',data=pcm8,headers=headers)
           started = time.monotonic()
           with urllib.request.urlopen(request8,timeout=45) as resp:
