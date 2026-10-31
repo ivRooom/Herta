@@ -12,6 +12,7 @@ AWSリージョン `ap-northeast-1` の**VC Recap専用バケットだけ**で�
 
 S3 API（PutObject×2、DeleteObjectによるdelete-marker生成、CreateMultipartUpload、ListObjectVersions、ListMultipartUploads、AbortMultipartUpload、DeleteObjectsのVersionId指定、最終一覧照合）を使った。**本番WorkerのJavaScriptアダプターとAWS SDKを接続する実機テストではない**。AWS APIの実際のversioning/multipart/削除挙動を確認したテストである。
 
+<!-- prettier-ignore -->
 | 項目 | 削除前 | 削除後 |
 |---|---:|---:|
 | オブジェクト版（現行・旧版） | 2 | 0 |
