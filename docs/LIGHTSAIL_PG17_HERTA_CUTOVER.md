@@ -50,7 +50,12 @@ ORDER BY rolname;"
 # 現時点のherta DBユーザーテーブル数・migration履歴の有無
 sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d herta -c "
 SELECT current_database() AS database_name,
-       count(*) FILTER (WHERE c.relkind IN ('r','p')) AS tables
+       count(*) FILTER (WHERE c.relkind IN ('r','p','v','m','S','f')) AS relations,
+       count(*) FILTER (WHERE c.relkind IN ('r','p')) AS tables,
+       count(*) FILTER (
+         WHERE n.nspname='public' AND c.relname='_prisma_migrations'
+           AND c.relkind IN ('r','p')
+       ) AS prisma_history_tables
 FROM pg_catalog.pg_class c
 JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
 WHERE n.nspname NOT LIKE 'pg_%'
@@ -65,16 +70,18 @@ GROUP BY type,auth_method
 ORDER BY type,auth_method;"
 ```
 
+**この集計はHBAの適用許可を確定しない。** 本番受入前に認可済み管理者がDBホスト内で `pg_hba_file_rules` の`line_number`順に、対象DB/ロール/接続元CIDR/認証方式と`error`をすべて確認し、先行する広域`trust`/例外ルールがないことを検査する。生のHBA一覧（内部IP・CIDR等）はIssue/CIに貼らず、集計やPASS/FAILだけ記録する。権限ロールの継承/`pg_has_role`、database/schema/table ACLも別途確認する。
+
 ロールが0件/NOLOGINなら**現状はアプリ接続不可**。あらかじめロールを作成済みだと決めつけない。別承認のtarget-only最小権限DDL、異なるランダムパスワードの秘密配送、適切なHBA/CA検証が必要。Hertaの外部アダプターは固定ホスト名と別`herta_runtime`/`herta_migrator`を要求する。
 
-## P1: ターゲットの復元/アプリ接続ゲート
+## P1: ターゲットの復元/アプリ接続ゲート（順序厳守）
 
-1. 新しい**実source**のバックアップのS3 VersionId・暗号化・SHA-256と`pg_restore --list`を検証。前日のバックアップを最新カットオーバーコピーと呼ばない。**独立・使い捨てPG17**に復元して現在の101テーブル/69完了migrationに照合し、全データを晒さずFK・index・owner/ACL・Prisma checksum・シークレット復号依存を検証。
-2. 実DBサーバーで対象の`herta`のみ空であることを直前確認。既存`ivrm_ai`/他DB/クラスタ全体に対するrestoreや`DROP`は行わない。確認済みdumpのDB単位復元は復元済みデータ/metadataとアプリロール権限を共に検証してから行う。適用後にmigration SQLは再実行しない。
-3. Herta runtimeホストに**公開**ivRooom PostgreSQL CAを、信頼済み経路から供給し、読み取り専用mountで使用。実行コンテナのPrismaで厳格なCA/hostname検証・別LOGINロール・3秒timeout/合算プール予算を確認。DBの`ssl=on`またはTCP疎通だけでは合格不可。
-4. `HERTA_DATABASE_MODE=external`を利用する場合は現在のCompose project/RedisボリュームとローカルPG16を保持。先に`prisma migrate status`、実体のAPI/Bot/Studio/Worker health、限定テスト用レコードで**永続書込→別接続読取→消去/cleanup**、runtime DDL禁止、資格情報不正時の拒否を検査。
-5. ソースの書込み停止地点と回復方針を記録し、HertaのGitHub release所有者の配備workflowで段階切替。**新DBへ業務書込開始後に旧DBへ単純URLロールバックすると更新が消える**ため、停止・差分照合・roll-forwardを優先する。Discordの実Guild操作は別の[Herta #644](https://github.com/ivRooom/Herta/issues/644)で受入。
-6. 1GB RAMの共有PG17: `max_connections=30`で管理者予約3。Web/Herta/AI/バックアップ/migratorの**実測合算poolとピーク接続・メモリ**を確認。 `archive_mode=off`のためWAL archive/PITR可能とは扱わない。
+1. **予行演習**: 現行sourceの復元候補バックアップについてS3 VersionId・暗号化・SHA-256と`pg_restore --list`を照合し、独立・使い捨てPG17で101テーブル/69件の完了済みPrisma migration（およびrolled-back履歴）・FK・index・owner/ACL・checksum・暗号化キー依存を検証する。過去の88テーブル/61件の実証は現行snapshotの代用にならない。
+2. **接続と権限・負荷の受入**: Herta実ホストにある公開CAを読み取り専用mountし、実Prismaクライアントでホスト名・CA検証、別LOGINロール、runtime DDL禁止、3秒timeoutと合算connection poolを確認する。ネイティブlibpqによる認証/strict TLSの成功だけでPrisma合格にしない。共有1GB PG17の`max_connections=30`（うち3管理者予約）でWeb/Herta/AI/backup/migratorの実際のピーク接続/メモリを計測する。
+3. **本番カットオーバー直前にすべての書き込みを止める**: Bot/API/Worker/Studioと関連ジョブのsource writerを確認して停止、書込み停止時刻を記録した**後で**、現行PG16からfresh consistent backupを採取・SHA/世代保管し、必須対象の最新Guild/設定/監査/secret参照を検証する。βのみの特定データ消失を容認する場合は対象表と失われる時間範囲を明示し、他の業務データを暗黙に消失許容としない。凍結中のソースと復元証拠はロールバック用に保持する。
+4. **DB単位の復元**: 専用DBホストの対象`herta`だけが空であることを直前確認したうえで、停止後に採った**最終backup**のschema/data/`_prisma_migrations`履歴を`herta`のみに復元。既存`ivrm_ai`/Web/クラスタ全体に`DROP`やrestoreを行わない。owner/ACL/全migration checksum/件数/FK/index、ログインロールの権限を再受入し、歴史的migration SQLを再実行しない。復元失敗時はwriter停止を維持し、元のsourceをそのまま復旧に使用する。
+5. **アプリ切替と検収**: 現行Compose project/Redis/認証鍵/ローカルPG16のvolumeを保持したまま`HERTA_DATABASE_MODE=external`のレビュー済みリリースを反映。最初に`prisma migrate status`、API/Bot/Studio/Workerのhealth、合成データによる**永続書込→別接続読取→削除/cleanup**、runtime DDL禁止と資格情報不正時の拒否を確認する。Discord実Guildと日次参加v2は[Herta #644](https://github.com/ivRooom/Herta/issues/644)で別受入。**本番の新DBへ書き込み開始後は旧DBへ単純URLロールバックしない**。両側writer停止・差分照合・roll-forwardを優先する。
+6. **バックアップ・障害復旧**: 定常バックアップの復元試験・監視・更新手順・RPO/RTO・1GB DBリソース上限を確認。専用PostgreSQLの`archive_mode=off`はWALアーカイブPITRが有効という意味ではない。切替の成功と旧sourceの廃止判断を別のゲートとして扱う。
 
 ## まだ実施していないこと
 
