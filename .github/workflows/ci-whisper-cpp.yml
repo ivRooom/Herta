@@ -173,7 +173,7 @@ jobs:
               conn.sendall(request_headers + pcm8)
               for attempt in range(45):
                   processes = subprocess.check_output(
-                      ['docker', 'top', 'herta-whispercpp-smoke', '-eo', 'args'],
+                      ['docker', 'top', 'herta-whispercpp-smoke', '-eo', 'pid,args'],
                       text=True,
                   )
                   if '--infer-child' in processes:
@@ -186,7 +186,7 @@ jobs:
               conn.close()
           for attempt in range(45):
               processes = subprocess.check_output(
-                  ['docker', 'top', 'herta-whispercpp-smoke', '-eo', 'args'],
+                  ['docker', 'top', 'herta-whispercpp-smoke', '-eo', 'pid,args'],
                   text=True,
               )
               if '--infer-child' not in processes:
