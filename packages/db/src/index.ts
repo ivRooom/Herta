@@ -32,6 +32,7 @@ export * from './runtime-secrets.js';
 export * from './runtime-configurations.js';
 export * from './user-data-consent.js';
 export * from './vc-recap-explicit-consent.js';
+export * from './vc-recap-storage-ownership.js';
 export * from './vc-recap.js';
 export * from './voice-consent-access.js';
 export * from './valorant-agents.js';
