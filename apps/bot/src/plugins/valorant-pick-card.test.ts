@@ -6,7 +6,7 @@ import { renderValorantHudSvg } from './valorant-pick-card-hud.js';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('VALORANT pick card', () => {
-  it('keeps the v4 neon Herta hierarchy for solo and every lineup size', () => {
+  it('keeps the v5 poster hierarchy for solo and every lineup size', () => {
     for (const count of [1, 2, 3, 4, 5]) {
       const input = {
         mode: 'RANDOM' as const,
@@ -24,6 +24,8 @@ describe('VALORANT pick card', () => {
       );
       expect(svg).toContain('AGENT REVEAL');
       expect(svg).toContain('Herta.');
+      expect(svg).toContain('VALORANT');
+      expect(svg).toContain('エージェント抽選');
       expect(svg).toContain('DISCORD BOT FOR GAMERS');
       expect(svg).toContain('url(#neon)');
       expect(svg).toContain('#ff659f');
@@ -39,8 +41,8 @@ describe('VALORANT pick card', () => {
         expect(svg).toContain('url(#reading)');
         expect(svg).toContain('SELECTED AGENT');
       } else {
-        expect(svg).toContain('SQUAD // LINEUP');
-        expect(svg.match(/clipPath id="lineup-art-/g)).toHaveLength(count);
+        expect(svg).toContain('SQUAD  //  LINEUP');
+        expect(svg.match(/clipPath id="poster-art-/g)).toHaveLength(count);
         expect(svg.match(/参加者[1-5]/g)).toHaveLength(count);
       }
     }
@@ -56,8 +58,8 @@ describe('VALORANT pick card', () => {
       [null],
       ['デュエリスト'],
     );
-    expect(svg).toMatch(/<text x="145" y="559"[^>]*>デュエリスト<\/text>/);
-    expect(svg).toMatch(/<text x="88" y="517"[^>]*>界{17}<\/text>/);
+    expect(svg).toMatch(/<text x="134" y="544"[^>]*>デュエリスト<\/text>/);
+    expect(svg).toMatch(/<text x="71" y="496"[^>]*>界{17}<\/text>/);
     expect(svg).not.toContain('界'.repeat(18));
   });
 
@@ -125,7 +127,7 @@ describe('VALORANT pick card', () => {
     const imageIndex = svg.indexOf('data:image/png;base64,');
     expect(imageIndex).toBeGreaterThan(0);
     expect(imageIndex).toBeLessThan(svg.indexOf('PARTICIPANTS'));
-    expect(imageIndex).toBeLessThan(svg.indexOf('STATUS'));
+    expect(imageIndex).toBeLessThan(svg.indexOf('PICK COMPLETE'));
     const png = await sharp(Buffer.from(svg)).png().toBuffer();
     const info = await sharp(png).metadata();
     expect(info.format).toBe('png');
@@ -161,36 +163,82 @@ describe('VALORANT pick card', () => {
     expect(hero).toContain('SELECTED AGENT');
     expect(hero).toContain('HERO PICK');
     expect(lineup).toContain('LINEUP');
-    expect(lineup.match(/clipPath id="lineup-art-/g)).toHaveLength(5);
+    expect(lineup.match(/clipPath id="poster-art-/g)).toHaveLength(5);
     expect(lineup.match(/参加者[1-5]/g)).toHaveLength(5);
   });
 
-  it('keeps full-width Japanese labels within every squad card', () => {
+  it('renders the real player-to-agent assignments and clipped art for squads', () => {
     for (const count of [2, 3, 4, 5]) {
-      const gap = count === 2 ? 18 : 12;
-      const width = (1096 - gap * (count - 1)) / count;
-      const playerFont = count === 5 ? 17 : count === 4 ? 19 : 21;
-      const nameFont = count === 5 ? 25 : count === 4 ? 29 : 37;
-      const playerLimit = Math.floor((width - 28) / playerFont);
-      const nameLimit = Math.floor((width - 28) / nameFont);
+      const input = {
+        mode: 'RANDOM' as const,
+        mapName: 'アセント',
+        entries: Array.from({ length: count }, (_, index) => ({
+          agentName: 'Jett',
+          displayName: 'ジェット' + (index + 1),
+          playerLabel: '参加者' + (index + 1),
+        })),
+      };
       const svg = renderValorantHudSvg(
-        {
-          mode: 'RANDOM',
-          mapName: '指定なし',
-          entries: Array.from({ length: count }, () => ({
-            agentName: 'LongAgentNameForFallback',
-            displayName: '漢'.repeat(30),
-            playerLabel: '界'.repeat(30),
-          })),
-        },
+        input,
         Array(count).fill(null),
         Array(count).fill('デュエリスト'),
       );
-      expect(svg).toContain('界'.repeat(playerLimit) + '</text>');
-      expect(svg).not.toContain('界'.repeat(playerLimit + 1));
-      expect(svg).toContain('漢'.repeat(nameLimit) + '</text>');
-      expect(svg).not.toContain('漢'.repeat(nameLimit + 1));
+      expect(svg.match(/clipPath id="poster-art-/g)).toHaveLength(count);
+      expect(svg.match(/PLAYER<\/text>/g)).toHaveLength(count);
+      expect(svg).toContain('エージェント抽選');
+      for (let i = 1; i <= count; i++) {
+        expect(svg).toContain('参加者' + i);
+        expect(svg).toContain('ジェット' + i);
+      }
+      expect(svg).not.toContain('ユーザー5');
     }
+  });
+
+  it('bounds very long Japanese player and agent names in the five-person assignment list', () => {
+    const svg = renderValorantHudSvg(
+      {
+        mode: 'RANDOM',
+        mapName: '長いマップ名を表示確認',
+        entries: Array.from({ length: 5 }, () => ({
+          agentName: 'LongAgentNameForFallback',
+          displayName: '漢'.repeat(30),
+          playerLabel: '界'.repeat(30),
+        })),
+      },
+      Array(5).fill(null),
+      Array(5).fill('デュエリスト'),
+    );
+    expect(svg).toContain('界'.repeat(12) + '</text>');
+    expect(svg).not.toContain('界'.repeat(13));
+    expect(svg).toContain('漢'.repeat(9) + '</text>');
+    expect(svg).not.toContain('漢'.repeat(10));
+    expect(svg).not.toContain('<script');
+  });
+
+  it('embeds separate art assets in the angled shard layer without drawing user names as attributes', async () => {
+    const art = await sharp({
+      create: { width: 12, height: 12, channels: 4, background: { r: 170, g: 45, b: 200, alpha: 1 } },
+    }).png().toBuffer();
+    const svg = renderValorantHudSvg(
+      {
+        mode: 'TACTICAL',
+        mapName: 'アセント',
+        entries: Array.from({ length: 5 }, (_, index) => ({
+          agentName: 'Jett',
+          displayName: 'ジェット',
+          playerLabel: '<参加者>' + index,
+        })),
+      },
+      Array(5).fill(art),
+      Array(5).fill('デュエリスト'),
+    );
+    expect(svg.match(/data:image\/png;base64,/g)).toHaveLength(5);
+    expect(svg.match(/clipPath id="poster-art-/g)).toHaveLength(5);
+    expect(svg).toContain('&lt;参加者&gt;');
+    expect(svg).not.toContain('<参加者>');
+    const image = await sharp(Buffer.from(svg)).png().toBuffer();
+    expect(image.length).toBeLessThan(8 * 1024 * 1024);
+    expect((await sharp(image).metadata()).width).toBe(1200);
   });
 
   it('renders an image fetched from allowlisted agent metadata without upstream network', async () => {
@@ -303,7 +351,7 @@ describe('VALORANT pick card', () => {
       [null],
       ['デュエリスト'],
     );
-    for (const marker of ['id="halo"', 'id="edge-glow"', 'url(#glass)', 'DISCORD BOT FOR GAMERS']) {
+    for (const marker of ['id="halo"', 'id="glow"', 'url(#row)', 'DISCORD BOT FOR GAMERS']) {
       expect(svg).toContain(marker);
     }
     expect(svg).toContain('&lt;script&gt;');
