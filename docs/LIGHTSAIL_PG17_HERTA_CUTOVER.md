@@ -17,7 +17,7 @@ Issue: [Herta #675](https://github.com/ivRooom/Herta/issues/675)
 ## 2026-10-31 Herta実ロールの認証付きTLS確認（追記）
 
 - DBサーバー内の読み取り専用SQLで `herta_owner` は `NOLOGIN`、`herta_runtime` と `herta_migrator` は `LOGIN`、3ロールとも `NOSUPERUSER` / `NOCREATEDB` / `NOCREATEROLE`。HBAの構成済みルール集計は `hostssl+scram-sha-256=4`、`host+reject=2`、`local+peer=2`。
-- Hertaホストの保護された事前配置 `external.env` は `HERTA_DATABASE_MODE=external`、`DATABASE_URL=herta_runtime`、`MIGRATION_DATABASE_URL=herta_migrator` に対応。URLの実値をGitHubに保存せず、想定ホスト/DB/ポート/ロールと秘密値の存在のみ照合。**本番 `.env.production` は依然ローカルモード**で、設定は切り替えていない。
+- Hertaホストの保護された事前配置 `external.env` は `HERTA_DATABASE_MODE=external`、`DATABASE_URL=herta_runtime`、`MIGRATION_DATABASE_URL=herta_migrator` に対応。URLの実値をGitHubに保存せず、想定ホスト/DB/ポート/ロールと秘密値の存在のみ照合。**本番 `.env.production` は依然ローカルモード**で、設定は切り替えていない。 既存ホスト上で `docker compose --env-file .env.production --env-file /etc/ivrm/herta-postgresql-prestage/external.env -f docker-compose.external.yml config --quiet` は **PASS**（設定構文/依存関係のオフライン評価のみ）。実コンテナは再起動・変更していない。ホストの `/app/herta` からの `git rev-parse HEAD` は利用できず、配置ソースのSHAと実行イメージとの一致は未確認。
 - Hertaホスト上で、既存の公開CAを読み取り専用マウントした一時 `postgres:16-alpine` クライアントから実DB `herta` へ `PGSSLMODE=verify-full` 接続。実行時だけの0600一時環境ファイルを利用し終了時削除、資格情報やDSNの出力なし。結果：
 
   | 実ロール | TLS | CONNECT | DB CREATE | public USAGE | public CREATE | TEMPORARY |
