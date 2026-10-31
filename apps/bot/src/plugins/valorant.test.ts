@@ -3,6 +3,10 @@ import { MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
 import { normalizeValorantConfig, valorantPlugin } from './valorant.js';
 import { valorantManifest } from '@herta/plugin-catalog';
 
+vi.mock('./valorant-pick-card.js', () => ({
+  renderValorantPickCard: vi.fn(async () => Buffer.from('mock-image')),
+}));
+
 function fixture(
   map: string | null = null,
   enabled = true,
@@ -144,6 +148,8 @@ describe('VALORANT button recruitment slash command', () => {
     const components = f.followUp.mock.calls[0]![0].components[0].components;
     expect(components).toHaveLength(1);
     expect(components[0].data.label).toBe('再抽選');
+    expect(f.followUp.mock.calls[0]![0].embeds[0].data.image?.url).toBe('attachment://valorant-pick.png');
+    expect(f.followUp.mock.calls[0]![0].files).toHaveLength(1);
     expect(f.editReply).toHaveBeenCalledWith(expect.stringContaining('抽選が完了'));
   });
   it('rejects duplicate @mentions without creating a session', async () => {

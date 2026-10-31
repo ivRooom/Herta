@@ -1,5 +1,6 @@
 import {
   ActionRowBuilder,
+  AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
@@ -27,6 +28,7 @@ import {
 } from './valorant-repository.js';
 import { fetchValorantMmr, parseRiotId, type RiotIdInput } from './valorant-client.js';
 import { pickRandomValorantAgents } from './valorant-random.js';
+import { renderValorantPickCard } from './valorant-pick-card.js';
 import {
   createValorantSession,
   createDirectValorantSession,
@@ -190,7 +192,7 @@ function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
   }
   description.push(
     '',
-    '状態：' + (session.status === 'OPEN' && closed ? 'EXPIRED' : session.status),
+    '状態：' + (session.status === 'OPEN' && closed ? '期限切れ' : ({ OPEN: '参加募集中', COMPLETED: '抽選完了', CANCELLED: '募集取消', EXPIRED: '期限切れ' }[session.status] ?? session.status)),
   );
   const embed = new EmbedBuilder()
     .setColor(0xff4655)
@@ -230,6 +232,49 @@ function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
     components,
     allowedMentions: { parse: [] as [] },
   };
+}
+
+async function buildValorantRichMessage(
+  session: ValorantSessionSnapshot,
+  logger: Logger,
+  displayName?: (userId: string) => string | undefined,
+) {
+  const basic = buildValorantSessionMessage(session);
+  if (session.status !== 'COMPLETED' || !Array.isArray(session.result)) return basic;
+  const assignments = session.result.filter(
+    (item): item is { userId: string; agentName: string; displayName: string } =>
+      typeof item === 'object' &&
+      item !== null &&
+      !Array.isArray(item) &&
+      typeof item.userId === 'string' &&
+      typeof item.agentName === 'string' &&
+      typeof item.displayName === 'string',
+  );
+  if (assignments.length === 0 || assignments.length > 5) return basic;
+  const map = VALORANT_MAPS.find(([id]) => id === session.mapId)?.[0];
+  try {
+    const image = await renderValorantPickCard({
+      mode: session.mode === 'TACTICAL' ? 'TACTICAL' : 'RANDOM',
+      mapName: japaneseValorantMap(session.mapId),
+      planLabel: session.mode === 'TACTICAL' && map ? tacticalMapPlan(map).label : null,
+      entries: assignments.map((entry, index) => ({
+        agentName: entry.agentName,
+        displayName: entry.displayName,
+        playerLabel: displayName?.(entry.userId) ?? `PLAYER ${index + 1}`,
+      })),
+    });
+    basic.embeds[0]!.setImage('attachment://valorant-pick.png');
+    return {
+      ...basic,
+      files: [new AttachmentBuilder(image, { name: 'valorant-pick.png' })],
+    };
+  } catch (error) {
+    logger.warn(
+      { errorName: error instanceof Error ? error.name : 'UnknownError' },
+      'VALORANTピック画像生成に失敗、テキストにフォールバック',
+    );
+    return basic;
+  }
 }
 
 function pickValorantAssignments(
@@ -367,7 +412,7 @@ async function handleRandom(
         '指定メンバーの抽選が完了しました。結果の「再抽選」ボタンで引き直せます。',
       );
       const message = await interaction.followUp({
-        ...buildValorantSessionMessage(session),
+        ...(await buildValorantRichMessage(session, logger, (id) => interaction.guild?.members.cache.get(id)?.displayName)),
         flags: [],
       });
       await setValorantSessionMessageId(prisma, interaction.guildId, session.id, message.id);
@@ -487,7 +532,7 @@ async function handleValorantButton(
             : await getValorantSession(prisma, guildId, parsed.id);
         if (latest?.guildId === guildId)
           await interaction.message
-            .edit(buildValorantSessionMessage(latest))
+            .edit({ ...(await buildValorantRichMessage(latest, logger)), attachments: [] })
             .catch(() => undefined);
       }
       await interaction.editReply(messages[mutation.status] ?? '操作できませんでした。');
@@ -495,7 +540,14 @@ async function handleValorantButton(
     }
     if (mutation.changed) {
       try {
-        await interaction.message.edit(buildValorantSessionMessage(mutation.session));
+        await interaction.message.edit({
+          ...(await buildValorantRichMessage(
+            mutation.session,
+            logger,
+            (id) => interaction.guild?.members.cache.get(id)?.displayName,
+          )),
+          attachments: [],
+        });
       } catch (error) {
         logger.warn(
           { guildId, errorName: error instanceof Error ? error.name : 'UnknownError' },
