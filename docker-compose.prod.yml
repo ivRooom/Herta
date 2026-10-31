@@ -61,6 +61,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+  whisper:
+    extends:
+      file: docker-compose.common.yml
+      service: whisper
   worker:
     extends:
       file: docker-compose.common.yml
