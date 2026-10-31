@@ -16,6 +16,7 @@ export interface VcRecapStorageIntent {
   objectKey: string;
 }
 
+// prettier-ignore
 export type VcRecapStorageReservation =
   | { status: 'reserved'; id: string }
   | { status: 'denied' };
