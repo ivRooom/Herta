@@ -47,7 +47,7 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      - name: Temporary: inspect exact Prettier corrections for security PR
+      - name: "Temporary: inspect exact Prettier corrections for security PR"
         run: |
           pnpm exec prettier --write apps/bot/src/voice/vc-recap-openai-file-transcriber.test.ts apps/bot/src/voice/vc-recap-session-manager.ts apps/bot/src/voice/vc-recap-transcriber-config.ts docs/VC_RECAP_LOCAL_WHISPER_ROLLOUT.md
           git --no-pager diff --unified=2 -- apps/bot/src/voice/vc-recap-openai-file-transcriber.test.ts apps/bot/src/voice/vc-recap-session-manager.ts apps/bot/src/voice/vc-recap-transcriber-config.ts docs/VC_RECAP_LOCAL_WHISPER_ROLLOUT.md
