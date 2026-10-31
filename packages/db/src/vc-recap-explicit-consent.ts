@@ -154,9 +154,7 @@ export async function setVcRecapOpenAiAudioConsent(
  * Enrollment stays fail-closed until operators verify and publish the exact
  * policy version and enable enrollment as a separate deployment gate.
  */
-export function isVcRecapLongTermEnrollmentEnabled(
-  env: NodeJS.ProcessEnv = process.env,
-): boolean {
+export function isVcRecapLongTermEnrollmentEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return (
     env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'] === 'true' &&
     env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'] === VC_RECAP_LONG_TERM_CONSENT_VERSION
@@ -169,11 +167,7 @@ export interface VcRecapLongTermChoices {
   audioLongTerm: boolean;
 }
 
-const LONG_TERM_PURPOSES = [
-  'transcription',
-  'transcript_long_term',
-  'audio_long_term',
-] as const;
+const LONG_TERM_PURPOSES = ['transcription', 'transcript_long_term', 'audio_long_term'] as const;
 
 export interface VcRecapLongTermConsentView {
   choices: VcRecapLongTermChoices;
@@ -265,7 +259,9 @@ export async function updateVcRecapLongTermConsentChoices(
       existing.some(
         (row) => row.purpose === purpose && row.consentedAt !== null && row.revokedAt === null,
       );
-    const withdrawing = LONG_TERM_PURPOSES.some((purpose) => active(purpose) && !requested[purpose]);
+    const withdrawing = LONG_TERM_PURPOSES.some(
+      (purpose) => active(purpose) && !requested[purpose],
+    );
     if (withdrawing) {
       const now = new Date();
       await tx.vcRecapErasureRequest.upsert({
