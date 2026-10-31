@@ -181,7 +181,7 @@ test('所有者索引の別bucket・別prefixは読み出し時にも拒否', as
         ],
       },
     } as unknown as PrismaClient;
-    await assert.rejects(listVcRecapUserStorageObjects(prisma, USER_ID), /dedicated/);
+    await assert.rejects(listVcRecapUserStorageObjects(prisma, USER_ID), /Dedicated/);
   });
 });
 
