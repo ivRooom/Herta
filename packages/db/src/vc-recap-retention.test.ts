@@ -28,7 +28,8 @@ function fakePrisma() {
     voiceTranscriptRetentionConsentedAt: null,
     updatedAt: new Date(0),
   };
-  const prisma = {
+  const prisma: PrismaClient = {
+    $queryRawUnsafe: async () => [],
     vcRecapSession: { update: record('vcRecapSession', 'update') },
     vcRecapTranscriptSegment: { deleteMany: record('vcRecapTranscriptSegment', 'deleteMany') },
     vcRecapExplicitConsent: {
@@ -41,7 +42,9 @@ function fakePrisma() {
       upsert: record('userDataConsent', 'upsert', consentRow),
       findMany: record('userDataConsent', 'findMany', [{ userId: 'user-1' }]),
     },
-    $transaction: async (operations: Promise<unknown>[]) => Promise.all(operations),
+    $transaction: async (
+      operations: Promise<unknown>[] | ((client: PrismaClient) => Promise<unknown>),
+    ) => (typeof operations === 'function' ? operations(prisma) : Promise.all(operations)),
   } as unknown as PrismaClient;
   return { prisma, calls };
 }
