@@ -160,22 +160,27 @@ test('進捗しないページと上限超過を成功扱いせず、削除障�
 
 test('完了確認前に再出現したバージョンも二度目の確認で削除する', async () => {
   const mock = fakePort();
+  const late = { key: `${PREFIX}late.ogg`, versionId: 'v-late' };
+  const deleted: S3ErasureObject[] = [];
   let reads = 0;
+  let lateActive = false;
   const port: S3VersionErasurePort = {
     ...mock.port,
     async listObjectVersions(input) {
       reads++;
-      if (reads === 2) {
-        return {
-          versions: [{ key: `${PREFIX}late.ogg`, versionId: 'v-late' }],
-          deleteMarkers: [],
-          isTruncated: false,
-        };
+      if (reads === 2) lateActive = true;
+      if (lateActive) {
+        return { versions: [late], deleteMarkers: [], isTruncated: false };
       }
       return mock.port.listObjectVersions(input);
+    },
+    async deleteObjectVersions({ objects }) {
+      deleted.push(...objects);
+      lateActive = false;
+      return { errors: [] };
     },
   };
   const report = await eraseVcRecapUserS3Prefix(port, { bucket: BUCKET, userId: USER });
   assert.equal(report.versionsDeleted, 1);
-  assert.equal(mock.deleted.length, 1);
+  assert.deepEqual(deleted, [late]);
 });
