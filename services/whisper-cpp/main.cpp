@@ -275,7 +275,7 @@ void process_connection(int fd, Runtime & runtime) {
     params.print_realtime = false;
     params.print_timestamps = false;
     params.print_special = false;
-    params.condition_on_previous_text = false;
+    params.no_context = true;
     params.greedy.best_of = 1;
 
     if (whisper_full(runtime.ctx, params, f32.data(), static_cast<int>(f32.size())) != 0) {
