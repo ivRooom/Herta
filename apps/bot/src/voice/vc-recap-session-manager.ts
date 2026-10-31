@@ -308,18 +308,14 @@ async function transcribeSpeaker(
   const config = resolveVcRecapTranscriberConfig();
   // Preserve the established AWS-only consent path for people who have not
   // separately approved sending raw speech to OpenAI. Never auto-upgrade them.
-  const cloudProvider =
-    config.provider === 'whisper-1' || config.provider === 'gpt-transcribe';
+  const cloudProvider = config.provider === 'whisper-1' || config.provider === 'gpt-transcribe';
   const useOpenAi =
     cloudProvider &&
     config.openAiAudioEnabled &&
     (await hasVcRecapOpenAiAudioConsent(prisma, userId));
   // A deliberately selected local provider NEVER falls back to AWS or OpenAI.
-  const provider = config.provider === 'local-whisper'
-    ? 'local-whisper'
-    : useOpenAi
-      ? config.provider
-      : 'aws';
+  const provider =
+    config.provider === 'local-whisper' ? 'local-whisper' : useOpenAi ? config.provider : 'aws';
   if (provider === 'local-whisper' && !config.localWhisperEnabled) {
     logger.warn({ guildId: session.guildId }, 'Local Whisperは有効化されていません');
     return;
@@ -383,9 +379,19 @@ async function transcribeSpeaker(
           if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return false;
           // An explicit existing transcription consent is required for new
           // local processing; role-based inferred consent is insufficient.
-          const consent = await getVoiceTranscriptionConsentMap(prisma, [userId]);
-          return consent.get(userId) === true &&
-            session.acceptingSegments && session.consentingUserIds.has(userId);
+          const [consent, erasure] = await Promise.all([
+            getVoiceTranscriptionConsentMap(prisma, [userId]),
+            prisma.vcRecapErasureRequest.findUnique({
+              where: { userId },
+              select: { userId: true },
+            }),
+          ]);
+          return (
+            erasure === null &&
+            consent.get(userId) === true &&
+            session.acceptingSegments &&
+            session.consentingUserIds.has(userId)
+          );
         },
       });
     } else {
