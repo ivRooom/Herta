@@ -14,6 +14,7 @@ const USER_ID = '123456789012345678';
 const BUCKET = 'vc-recap-storage-example';
 const KEY = 'vc-recap/users/' + USER_ID + '/audio/clip-1.opus';
 
+// prettier-ignore
 function withStorageEnvironment<T>(run: () => Promise<T>): Promise<T> {
   const before = {
     bucket: process.env['VC_RECAP_STORAGE_BUCKET'],
@@ -35,6 +36,7 @@ function withStorageEnvironment<T>(run: () => Promise<T>): Promise<T> {
   });
 }
 
+// prettier-ignore
 function setupFake(options: { fenced?: boolean; legacy?: boolean; consent?: boolean } = {}) {
   const operations: string[] = [];
   const tx = {
@@ -79,6 +81,7 @@ function setupFake(options: { fenced?: boolean; legacy?: boolean; consent?: bool
   return { prisma, operations };
 }
 
+// prettier-ignore
 test('別ユーザー・prefix外・誤ったbucketを登録しない', async () => {
   await withStorageEnvironment(async () => {
     validateVcRecapStorageTarget(USER_ID, BUCKET, KEY);
@@ -90,6 +93,7 @@ test('別ユーザー・prefix外・誤ったbucketを登録しない', async ()
   });
 });
 
+// prettier-ignore
 test('公開ポリシーゲートOFFではDB予約が行われない', async () => {
   await withStorageEnvironment(async () => {
     const mock = setupFake();
@@ -106,6 +110,7 @@ test('公開ポリシーゲートOFFではDB予約が行われない', async () 
   });
 });
 
+// prettier-ignore
 test('本人同意・従来同意・削除障壁を確認してから予約する', async () => {
   await withStorageEnvironment(async () => {
     for (const input of [
@@ -141,6 +146,7 @@ test('本人同意・従来同意・削除障壁を確認してから予約す�
   });
 });
 
+// prettier-ignore
 test('本人が削除要求済みなら保存完了を拒否し、未完了登録を保持する', async () => {
   const blocked = setupFake({ fenced: true });
   assert.equal(
@@ -165,6 +171,7 @@ test('本人が削除要求済みなら保存完了を拒否し、未完了登�
   assert.deepEqual(allowed.operations, ['owner-lock', 'commit']);
 });
 
+// prettier-ignore
 test('所有者索引の別bucket・別prefixは読み出し時にも拒否', async () => {
   await withStorageEnvironment(async () => {
     const prisma = {
@@ -178,6 +185,7 @@ test('所有者索引の別bucket・別prefixは読み出し時にも拒否', as
   });
 });
 
+// prettier-ignore
 test('未検証の削除依頼だけを上限付きで取得し、条件不正は拒否する', async () => {
   const prisma = {
     vcRecapErasureRequest: {
