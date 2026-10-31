@@ -3,6 +3,7 @@
 状態: **実装候補・本番OFF**。#647 (実装)、#577 (性能/品質)、#578 (親)、#518 (Discord E2E)、#646 (本番リリース承認)。PRマージだけではWhisperへ切り替わらない。現行の既定はAWS Transcribe Streaming。
 
 ## 守ること
+
 - `VC_RECAP_TRANSCRIPTION_PROVIDER=aws` が既定。既存の本人同意、30日本文保持、音声の非永続保存を維持する。
 - `VC_RECAP_TRANSCRIPTION_PROVIDER=local-whisper` の場合、`VC_RECAP_LOCAL_WHISPER_ENABLED=true`・既存の**本人自身による文字起こし明示同意**・トークンが必須。失敗時は**AWS / OpenAIへフォールバックしない**。ロールによる推定同意ではローカル推論を許可しない。
 - 音声データは最大8秒の48kHz mono 16-bit PCMとしてメモリでのみ処理する。1話者10分上限、キュー最大3セグメント（約24秒）、worker側1リクエスト10秒以下・並列推論1・Bearer token・レスポンス4,000文字以下。Worker上では一時音声ファイルを生成しない。
@@ -50,6 +51,7 @@ docker compose -f docker-compose.prod.yml --profile whisper ps whisper
 - 本番承認後の記録はPR/issueへCI SHA、モデルID/sha、代表RTF/RSS/CER、CPU他サービスへの影響、デプロイ済みimage SHA、Discord E2E、rollback証拠を残す。音声/本文/トークンそのものは貼らない。
 
 ## 未完了事項
+
 - 本番で実際にWhisperが稼働し、VCで文字起こししたという実測 **なし**。
 - WorkerイメージのCPU/ARM64両アーキテクチャビルド・脆弱性監査、モデル実体の配布・保証、実Guild・負荷・同意撤回と処理中キャンセル・部分flush・監視は #577/#578/#580/#518/#646 の受入が必要。
 - `Studio`のGuild別エンジン設定・AWS使用量ダッシュボードは #581 の別実装。本PRの環境変数だけでStudioから切替できるわけではない。
