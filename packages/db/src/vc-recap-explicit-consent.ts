@@ -173,6 +173,7 @@ export interface VcRecapLongTermConsentView {
   choices: VcRecapLongTermChoices;
   legacyConsent: boolean;
   erasurePending: boolean;
+  hasUnrevokedLongTermGrant: boolean;
   enrollmentEnabled: boolean;
 }
 
@@ -208,6 +209,10 @@ export async function getVcRecapLongTermConsentView(
     },
     legacyConsent: legacy?.voiceTranscriptionConsent ?? false,
     erasurePending: erasure !== null,
+    // Version migration must not hide a prior unrevoked grant from withdrawal.
+    hasUnrevokedLongTermGrant: records.some(
+      (record) => record.consentedAt !== null && record.revokedAt === null,
+    ),
     enrollmentEnabled: isVcRecapLongTermEnrollmentEnabled(),
   };
 }
