@@ -160,13 +160,13 @@ jobs:
           import socket
           import subprocess
           request_headers = (
-              'POST /v1/transcribe HTTP/1.1\\r\\n'
-              'Host: 127.0.0.1\\r\\n'
-              'Authorization: Bearer synthetic-ci-token-32-characters-verified-only\\r\\n'
-              'Content-Type: application/octet-stream\\r\\n'
-              'X-Audio-Sample-Rate: 48000\\r\\n'
-              f'Content-Length: {len(pcm8)}\\r\\n'
-              'Connection: close\\r\\n\\r\\n'
+              'POST /v1/transcribe HTTP/1.1\r\n'
+              'Host: 127.0.0.1\r\n'
+              'Authorization: Bearer synthetic-ci-token-32-characters-verified-only\r\n'
+              'Content-Type: application/octet-stream\r\n'
+              'X-Audio-Sample-Rate: 48000\r\n'
+              f'Content-Length: {len(pcm8)}\r\n'
+              'Connection: close\r\n\r\n'
           ).encode()
           conn = socket.create_connection(('127.0.0.1', 8765), timeout=5)
           try:
