@@ -41,6 +41,21 @@ describe('VALORANT pick card', () => {
     }
   });
 
+  it('keeps long solo player labels on a separate row from the role', () => {
+    const svg = renderValorantHudSvg(
+      {
+        mode: 'RANDOM',
+        mapName: '指定なし',
+        entries: [{ agentName: 'Jett', displayName: 'ジェット', playerLabel: '界'.repeat(50) }],
+      },
+      [null],
+      ['デュエリスト'],
+    );
+    expect(svg).toMatch(/<text x="133" y="480"[^>]*>デュエリスト<\/text>/);
+    expect(svg).toMatch(/<text x="54" y="565"[^>]*>界{17}<\/text>/);
+    expect(svg).not.toContain('界'.repeat(18));
+  });
+
   it('rejects control/format characters in all visible dynamic labels', () => {
     const svg = renderValorantHudSvg(
       {
