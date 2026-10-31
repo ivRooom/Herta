@@ -6,3 +6,13 @@ export function rejectIncompleteLocalVcRecap(
 ): boolean {
   return localCanary && (!allTranscriptionsFlushed || anyTranscriptionFailed);
 }
+
+/** A deliberate personal refusal/withdrawal is not an ASR infrastructure error.
+ * A timeout or unexpected inference failure must still invalidate partial results.
+ */
+export function shouldMarkLocalWhisperSessionFailed(
+  consentDenied: boolean,
+  explicitlyAborted: boolean,
+): boolean {
+  return !consentDenied && !explicitlyAborted;
+}
