@@ -45,6 +45,17 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
+      # Temporary formatter diagnostics for Issue #633; remove before merge.
+      - name: Preview formatting for cinematic renderer
+        run: |
+          pnpm exec prettier --write apps/bot/src/plugins/valorant-pick-card-hud.ts apps/bot/src/plugins/valorant-pick-card.test.ts
+          echo 'IVRM_FORMATTED_HUD_START'
+          cat apps/bot/src/plugins/valorant-pick-card-hud.ts
+          echo 'IVRM_FORMATTED_HUD_END'
+          echo 'IVRM_FORMATTED_TEST_START'
+          cat apps/bot/src/plugins/valorant-pick-card.test.ts
+          echo 'IVRM_FORMATTED_TEST_END'
+
       - name: Format Check
         run: pnpm format:check
 
