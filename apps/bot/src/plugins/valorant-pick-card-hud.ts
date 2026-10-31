@@ -234,6 +234,8 @@ export function renderValorantHudSvg(
   parts.push(text('VALORANT', 53, 135, 50, '#fc586f', 850));
   parts.push(text('エージェント抽選', 360, 132, 40, '#ffffff', 800));
   parts.push('<path d="M55 155 H1148" stroke="#6c536a" stroke-opacity=".75"/>');
+  // Solo portrait stays behind the metric panels, keeping status and participant counts readable.
+  if (count === 1) parts.push(singleHero(input, portraits, roles));
   parts.push(metric(53, 264, 'MODE / モード', mode, 12));
   parts.push(metric(330, 304, 'MAP / マップ', input.mapName, 15));
   parts.push(metric(647, 235, 'PARTICIPANTS', count + ' / 5', 8));
@@ -253,7 +255,7 @@ export function renderValorantHudSvg(
       700,
     ),
   );
-  parts.push(count === 1 ? singleHero(input, portraits, roles) : squad(input, portraits, roles));
+  if (count > 1) parts.push(squad(input, portraits, roles));
   parts.push('<path d="M53 613 H1146" stroke="#7a536d" stroke-opacity=".65"/>');
   parts.push(text(footer, 55, 644, 21, '#c8bdde', 500, 40));
   parts.push(text('PICK COMPLETE', 969, 645, 18, '#ff8c9c', 700));
