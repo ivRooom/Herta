@@ -25,7 +25,10 @@ import { resolveAwsTranscribeCredential } from './aws-transcribe-credential.js';
 import { resolveAiOpenAiCredential } from '../ai/factory.js';
 import { transcribePcmWithOpenAi } from './vc-recap-openai-file-transcriber.js';
 import { transcribePcmWithLocalWhisper } from './vc-recap-local-whisper-transcriber.js';
-import { rejectIncompleteLocalVcRecap } from './vc-recap-local-finish-policy.js';
+import {
+  rejectIncompleteLocalVcRecap,
+  shouldMarkLocalWhisperSessionFailed,
+} from './vc-recap-local-finish-policy.js';
 import { hasVcRecapOpenAiAudioConsent } from './vc-recap-openai-audio-consent.js';
 import {
   canUseLocalWhisperCanary,
@@ -378,6 +381,7 @@ async function transcribeSpeaker(
     speakerStream.pcm.once('close', onCaptureEnd);
   }
 
+  let localConsentDenied = false;
   try {
     const onSegment = async (segment: { text: string; startedAt: Date; endedAt: Date }) => {
       // 文字起こし中に同意が取り消された、またはstopVcRecapのflushが打ち切られた場合、
@@ -409,7 +413,10 @@ async function transcribeSpeaker(
         token: process.env['VC_RECAP_LOCAL_WHISPER_TOKEN'] ?? '',
         signal: localController?.signal,
         mayProcess: async () => {
-          if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return false;
+          if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) {
+            localConsentDenied = true;
+            return false;
+          }
           // An explicit existing transcription consent is required for new
           // local processing; role-based inferred consent is insufficient.
           const [consent, erasure] = await Promise.all([
@@ -425,13 +432,14 @@ async function transcribeSpeaker(
               select: { userId: true },
             }),
           ]);
-          return (
+          const allowed =
             erasure === null &&
             consent?.voiceTranscriptionConsent === true &&
             !!consent.voiceTranscriptRetentionConsentedAt &&
             session.acceptingSegments &&
-            session.consentingUserIds.has(userId)
-          );
+            session.consentingUserIds.has(userId);
+          if (!allowed) localConsentDenied = true;
+          return allowed;
         },
       });
     } else {
@@ -457,7 +465,12 @@ async function transcribeSpeaker(
       });
     }
   } catch (error) {
-    if (provider === 'local-whisper') session.localWhisperFailure = true;
+    if (
+      provider === 'local-whisper' &&
+      shouldMarkLocalWhisperSessionFailed(localConsentDenied, localController?.signal.aborted ?? false)
+    ) {
+      session.localWhisperFailure = true;
+    }
     // 1人の文字起こし失敗でセッション全体を失敗させない(他の参加者の文字起こしは継続する)。
     logger.warn({ err: error, guildId: session.guildId, userId }, 'VC文字起こしに失敗しました');
   } finally {
