@@ -49,6 +49,8 @@ Resources:
 
   VcRecapBucketPolicy:
     Type: AWS::S3::BucketPolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       Bucket: !Ref VcRecapBucket
       PolicyDocument:
@@ -77,16 +79,23 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          - Sid: ListOnlyVcUserObjects
+          - Sid: ListOnlyVcUserObjectVersions
             Effect: Allow
             Action:
               - s3:ListBucketVersions
-              - s3:ListBucketMultipartUploads
             Resource: !GetAtt VcRecapBucket.Arn
             Condition:
               StringLike:
                 s3:prefix:
                   - vc-recap/users/*
+          # Unlike ListBucketVersions, ListBucketMultipartUploads does not
+          # support s3:prefix. This grant is scoped to the dedicated bucket
+          # only; the adapter still passes an explicit user prefix.
+          - Sid: ListMultipartUploadsInDedicatedBucket
+            Effect: Allow
+            Action:
+              - s3:ListBucketMultipartUploads
+            Resource: !GetAtt VcRecapBucket.Arn
           - Sid: RemoveOnlyVcUserObjectVersionsAndUploads
             Effect: Allow
             Action:
