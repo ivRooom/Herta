@@ -1,0 +1,30 @@
+name: Format VALORANT PR 611 once
+on:
+  push:
+    branches:
+      - codex/valorant-reroll-direct-members-20261031
+    paths:
+      - .github/workflows/format-valorant-pr611-once.yml
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Format changed source files and self-remove workflow
+        run: |
+          pnpm exec prettier --write apps/bot/src/plugins/valorant.ts apps/bot/src/plugins/valorant.test.ts apps/bot/src/plugins/valorant-session-repository.integration.test.ts
+          rm .github/workflows/format-valorant-pr611-once.yml
+          git add -- apps/bot/src/plugins/valorant.ts apps/bot/src/plugins/valorant.test.ts apps/bot/src/plugins/valorant-session-repository.integration.test.ts .github/workflows/format-valorant-pr611-once.yml
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'style(valorant): format reroll and direct selection changes'
+          git push origin HEAD:codex/valorant-reroll-direct-members-20261031

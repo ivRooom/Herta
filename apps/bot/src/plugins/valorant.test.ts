@@ -112,7 +112,7 @@ describe('VALORANT button recruitment slash command', () => {
   it('commits @mentioned users directly and shows only the reroll button', async () => {
     const f = fixture(null, true, [{ id: 'alice' }, { id: 'bob' }]);
     // The mock should model the completed row returned by Prisma.
-    f.create.mockImplementationOnce(async ({ data }: { data: Record<string, any> }) => ({
+    f.create.mockImplementationOnce(async ({ data }: { data: { participants: { create: { userId: string }[] }; result: unknown; [key: string]: unknown } }) => ({
       ...data,
       id: 'cfc92874-f6ab-4a68-9acf-c5ecc5010a05',
       participants: data.participants.create.map(({ userId }: { userId: string }) => ({ userId })),
