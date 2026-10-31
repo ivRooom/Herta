@@ -1,7 +1,13 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { getUserDataConsent, resolveVoiceConsentAccess } from '@herta/db';
+import {
+  getUserDataConsent,
+  getVcRecapLongTermConsentView,
+  resolveVoiceConsentAccess,
+  VC_RECAP_LONG_TERM_CONSENT_VERSION,
+} from '@herta/db';
 import { VoiceConsentForm } from '@/components/voice-consent-form';
+import { LongTermConsentForm } from '@/components/long-term-consent-form';
 import { prisma } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
@@ -24,7 +30,10 @@ export default async function VoiceConsentPage({ params }: { params: Promise<{ t
     );
   }
 
-  const consent = await getUserDataConsent(prisma, access.userId);
+  const [consent, longTerm] = await Promise.all([
+    getUserDataConsent(prisma, access.userId),
+    getVcRecapLongTermConsentView(prisma, access.userId),
+  ]);
 
   return (
     <PageShell>
@@ -56,6 +65,14 @@ export default async function VoiceConsentPage({ params }: { params: Promise<{ t
           initialRetentionConsent={consent.voiceTranscriptRetentionConsentedAt !== null}
         />
       </div>
+      <LongTermConsentForm
+        token={token}
+        policyVersion={VC_RECAP_LONG_TERM_CONSENT_VERSION}
+        initialChoices={longTerm.choices}
+        enrollmentEnabled={longTerm.enrollmentEnabled}
+        legacyConsent={longTerm.legacyConsent}
+        erasurePending={longTerm.erasurePending}
+      />
     </PageShell>
   );
 }
