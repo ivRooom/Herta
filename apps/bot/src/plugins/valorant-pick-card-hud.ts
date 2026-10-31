@@ -83,19 +83,31 @@ function singleHero(
   const entry = input.entries[0]!;
   const art = portraits[0];
   const parts: string[] = [];
-  parts.push('<rect x="655" y="319" width="509" height="278" rx="14" fill="#1a172c" opacity=".55"/>');
+  parts.push(
+    '<rect x="655" y="319" width="509" height="278" rx="14" fill="#1a172c" opacity=".55"/>',
+  );
   parts.push('<path d="M730 335 L1185 205 L1185 596 L845 596Z" fill="#ff415e" opacity=".11"/>');
-  parts.push('<path d="M760 346 L1150 252 M820 580 L1185 480" stroke="#e94464" opacity=".22" stroke-width="2"/>');
+  parts.push(
+    '<path d="M760 346 L1150 252 M820 580 L1185 480" stroke="#e94464" opacity=".22" stroke-width="2"/>',
+  );
   if (art) {
     parts.push(imageTag(art, 650, 105, 520, 526));
   } else {
     // No portrait/network: deliberate visual treatment rather than broken-image UI.
-    parts.push('<path d="M905 318 l164 137 -164 133 -163 -133Z" fill="#2f283f" stroke="#fd566b" stroke-width="3" stroke-opacity=".65"/>');
-    parts.push('<path d="M905 361 l116 95 -116 96 -114 -96Z" fill="#121828" stroke="#7f668e" stroke-width="2"/>');
+    parts.push(
+      '<path d="M905 318 l164 137 -164 133 -163 -133Z" fill="#2f283f" stroke="#fd566b" stroke-width="3" stroke-opacity=".65"/>',
+    );
+    parts.push(
+      '<path d="M905 361 l116 95 -116 96 -114 -96Z" fill="#121828" stroke="#7f668e" stroke-width="2"/>',
+    );
     parts.push(text(entry.agentName.toUpperCase(), 768, 477, 46, '#ed7b96', 800, 13));
   }
-  parts.push('<rect x="51" y="356" width="590" height="232" rx="6" fill="#111724" stroke="#484254"/>');
-  parts.push('<path d="M51 356 h184 M51 356 v28 M641 588 h-140" stroke="#ff526c" stroke-width="4" fill="none"/>');
+  parts.push(
+    '<rect x="51" y="356" width="590" height="232" rx="6" fill="#111724" stroke="#484254"/>',
+  );
+  parts.push(
+    '<path d="M51 356 h184 M51 356 v28 M641 588 h-140" stroke="#ff526c" stroke-width="4" fill="none"/>',
+  );
   parts.push(text('PLAYER', 75, 398, 18, '#a9afc0', 600));
   parts.push(text(entry.playerLabel ?? 'PLAYER 01', 75, 443, 32, '#d9ccff', 700, 24));
   parts.push('<path d="M75 466 H613" stroke="#505069" stroke-width="1"/>');
@@ -169,9 +181,7 @@ function squad(
         (width - 4) +
         '" height="91" fill="#101724" opacity=".96"/>',
     );
-    output.push(
-      '<rect x="' + (x + 2) + '" y="502" width="4" height="91" fill="#ff526c"/>',
-    );
+    output.push('<rect x="' + (x + 2) + '" y="502" width="4" height="91" fill="#ff526c"/>');
     output.push(text('0' + (index + 1), x + 15, 365, 18, '#ff798c', 800));
     output.push(text(entry.displayName, x + 15, 539, font, '#fff7fd', 800, count >= 5 ? 6 : 12));
     output.push(text(role, x + 16, 563, 14, '#ff90a1', 500, count >= 5 ? 9 : 16));
@@ -233,7 +243,16 @@ export function renderValorantHudSvg(
       text('抽選完了', 921, 256, 26, '#ffffff', 800),
   );
   parts.push('<path d="M53 297 H1147" stroke="#f54b68" stroke-opacity=".68"/>');
-  parts.push(text(count === 1 ? 'DRAW RESULT  /  SOLO' : 'DRAW RESULT  /  SQUAD', 55, 322, 17, '#ff7187', 700));
+  parts.push(
+    text(
+      count === 1 ? 'DRAW RESULT  /  SOLO' : 'DRAW RESULT  /  SQUAD',
+      55,
+      322,
+      17,
+      '#ff7187',
+      700,
+    ),
+  );
   parts.push(count === 1 ? singleHero(input, portraits, roles) : squad(input, portraits, roles));
   parts.push('<path d="M53 613 H1146" stroke="#7a536d" stroke-opacity=".65"/>');
   parts.push(text(footer, 55, 644, 21, '#c8bdde', 500, 40));

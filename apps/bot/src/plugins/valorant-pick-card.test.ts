@@ -53,7 +53,11 @@ describe('VALORANT pick card', () => {
     expect(hero).toContain('data:image/png;base64,');
     expect(hero).toContain('SELECTED AGENT');
     expect(hero).toContain('抽選完了');
-    const squad = renderValorantHudSvg(input(5), Array(5).fill(null), Array(5).fill('デュエリスト'));
+    const squad = renderValorantHudSvg(
+      input(5),
+      Array(5).fill(null),
+      Array(5).fill('デュエリスト'),
+    );
     expect(squad).toContain('SQUAD');
     expect(squad.match(/PICK COMPLETE/g)).toHaveLength(1);
     expect(squad.match(/PLAYER [1-5]/g)).toHaveLength(5);
@@ -67,9 +71,7 @@ describe('VALORANT pick card', () => {
         mode: 'RANDOM',
         mapName: '<script>',
         planLabel: malicious,
-        entries: [
-          { agentName: 'Fade', displayName: '<img src=x>', playerLabel: malicious },
-        ],
+        entries: [{ agentName: 'Fade', displayName: '<img src=x>', playerLabel: malicious }],
       },
       [null],
       ['<script>'],
