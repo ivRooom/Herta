@@ -87,6 +87,16 @@ inline Result run(
         close_if_open(input[0]); close_if_open(input[1]);
         return result;
     }
+    // The same static binary lives at /build in the CI builder and at /app
+    // in scratch. Resolve the current ELF before fork (no allocation in child).
+    char executable[4096]{};
+    const ssize_t executable_len = readlink("/proc/self/exe", executable, sizeof(executable)-1);
+    if (executable_len <= 0 || executable_len >= static_cast<ssize_t>(sizeof(executable)-1)) {
+        close_if_open(input[0]); close_if_open(input[1]);
+        close_if_open(output[0]); close_if_open(output[1]);
+        return result;
+    }
+    executable[executable_len] = '\0';
     const pid_t supervisor = getpid();
     pid_t pid = fork();
     if (pid < 0) {
@@ -105,7 +115,7 @@ inline Result run(
         close(null_fd);
         close(input[0]); close(input[1]);
         close(output[0]); close(output[1]);
-        const char * args[] = {"/app/herta-whisper-cpp", mode, model_path.c_str(), nullptr};
+        const char * args[] = {executable, mode, model_path.c_str(), nullptr};
         const char * env[] = {nullptr};
         execve(args[0], const_cast<char * const *>(args), const_cast<char * const *>(env));
         _exit(127);
