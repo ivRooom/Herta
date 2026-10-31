@@ -47,6 +47,9 @@ with tempfile.TemporaryDirectory(prefix='herta-compose-') as temp:
     assert local['services']['bot']['environment'].pop('VC_RECAP_TRANSCRIPTION_PROVIDER') == 'aws'
     assert local['services']['bot']['environment'].pop('VC_RECAP_OPENAI_AUDIO_CONSENT_READY') == 'false'
     assert local['services']['bot']['environment'].pop('VC_RECAP_OPENAI_SESSION_MAX_AUDIO_MINUTES') == '120'
+    assert local['services']['bot']['environment'].pop('VC_RECAP_LOCAL_WHISPER_ENABLED') == 'false'
+    assert local['services']['bot']['environment'].pop('VC_RECAP_LOCAL_WHISPER_TOKEN') == values['VC_RECAP_LOCAL_WHISPER_TOKEN']
+    assert 'whisper' not in local['services'], 'Opt-in Whisper profile must remain OFF by default'
     assert local == baseline, 'Default-local topology changed beyond the mode guard'
     enabled = render(ROOT / 'docker-compose.prod.yml', {'DAILY_BONUS_ENABLED': 'true', 'HERTA_POINTS_SECRET': 'fixture-points'})
     assert enabled['services']['bot']['environment']['HERTA_POINTS_SECRET'] == 'fixture-points'

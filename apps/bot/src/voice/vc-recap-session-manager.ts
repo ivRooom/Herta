@@ -23,6 +23,7 @@ import prism from 'prism-media';
 import { resolveAwsTranscribeCredential } from './aws-transcribe-credential.js';
 import { resolveAiOpenAiCredential } from '../ai/factory.js';
 import { transcribePcmWithOpenAi } from './vc-recap-openai-file-transcriber.js';
+import { transcribePcmWithLocalWhisper } from './vc-recap-local-whisper-transcriber.js';
 import { hasVcRecapOpenAiAudioConsent } from './vc-recap-openai-audio-consent.js';
 import { resolveVcRecapTranscriberConfig } from './vc-recap-transcriber-config.js';
 import { splitVcRecapParticipants } from './vc-recap-participants.js';
@@ -307,18 +308,28 @@ async function transcribeSpeaker(
   const config = resolveVcRecapTranscriberConfig();
   // Preserve the established AWS-only consent path for people who have not
   // separately approved sending raw speech to OpenAI. Never auto-upgrade them.
+  const cloudProvider = config.provider === 'whisper-1' || config.provider === 'gpt-transcribe';
   const useOpenAi =
-    config.provider !== 'aws' &&
+    cloudProvider &&
     config.openAiAudioEnabled &&
     (await hasVcRecapOpenAiAudioConsent(prisma, userId));
-  const provider = useOpenAi ? config.provider : 'aws';
+  // A deliberately selected local provider NEVER falls back to AWS or OpenAI.
+  const provider =
+    config.provider === 'local-whisper' ? 'local-whisper' : useOpenAi ? config.provider : 'aws';
+  if (provider === 'local-whisper' && !config.localWhisperEnabled) {
+    logger.warn({ guildId: session.guildId }, 'Local Whisperは有効化されていません');
+    return;
+  }
   const credential = provider === 'aws' ? await resolveAwsTranscribeCredential(prisma) : null;
-  const openAiCredential = provider === 'aws' ? null : await resolveAiOpenAiCredential({ prisma });
+  const openAiCredential =
+    provider === 'whisper-1' || provider === 'gpt-transcribe'
+      ? await resolveAiOpenAiCredential({ prisma })
+      : null;
   if (provider === 'aws' && !credential) {
     logger.warn({ guildId: session.guildId, userId }, 'AWS Transcribe認証情報が未設定です');
     return;
   }
-  if (provider !== 'aws' && !openAiCredential?.apiKey) {
+  if ((provider === 'whisper-1' || provider === 'gpt-transcribe') && !openAiCredential?.apiKey) {
     logger.warn({ guildId: session.guildId, userId }, 'OpenAI音声処理の認証情報が未設定です');
     return;
   }
@@ -361,6 +372,28 @@ async function transcribeSpeaker(
     if (provider === 'aws') {
       if (!credential) return;
       await transcribePcmStream(credential, toMonoChunks(speakerStream.pcm), onSegment);
+    } else if (provider === 'local-whisper') {
+      await transcribePcmWithLocalWhisper(toMonoChunks(speakerStream.pcm), onSegment, {
+        token: process.env['VC_RECAP_LOCAL_WHISPER_TOKEN'] ?? '',
+        mayProcess: async () => {
+          if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return false;
+          // An explicit existing transcription consent is required for new
+          // local processing; role-based inferred consent is insufficient.
+          const [consent, erasure] = await Promise.all([
+            getVoiceTranscriptionConsentMap(prisma, [userId]),
+            prisma.vcRecapErasureRequest.findUnique({
+              where: { userId },
+              select: { userId: true },
+            }),
+          ]);
+          return (
+            erasure === null &&
+            consent.get(userId) === true &&
+            session.acceptingSegments &&
+            session.consentingUserIds.has(userId)
+          );
+        },
+      });
     } else {
       if (!openAiCredential?.apiKey) return;
       await transcribePcmWithOpenAi(toMonoChunks(speakerStream.pcm), onSegment, {

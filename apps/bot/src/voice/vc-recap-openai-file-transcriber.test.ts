@@ -14,11 +14,29 @@ describe('VC transcription provider rollback', () => {
     expect(resolveVcRecapTranscriberConfig({})).toEqual({
       provider: 'aws',
       openAiAudioEnabled: false,
+      localWhisperEnabled: false,
       maxSessionAudioSeconds: 120 * 60,
     });
     expect(
       resolveVcRecapTranscriberConfig({ VC_RECAP_TRANSCRIPTION_PROVIDER: 'unknown' }).provider,
     ).toBe('aws');
+  });
+
+  it('local Whisper is fail-closed and never turns on cloud/OpenAI consent', () => {
+    const disabled = resolveVcRecapTranscriberConfig({
+      VC_RECAP_TRANSCRIPTION_PROVIDER: 'local-whisper',
+    });
+    expect(disabled.provider).toBe('local-whisper');
+    expect(disabled.localWhisperEnabled).toBe(false);
+    expect(canUseOpenAiVcAudio(disabled, true)).toBe(false);
+
+    const enabled = resolveVcRecapTranscriberConfig({
+      VC_RECAP_TRANSCRIPTION_PROVIDER: 'local-whisper',
+      VC_RECAP_LOCAL_WHISPER_ENABLED: 'true',
+    });
+    expect(enabled.localWhisperEnabled).toBe(true);
+    expect(enabled.openAiAudioEnabled).toBe(false);
+    expect(canUseOpenAiVcAudio(enabled, true)).toBe(false);
   });
 
   it('bounds the per-session OpenAI minute quota', () => {

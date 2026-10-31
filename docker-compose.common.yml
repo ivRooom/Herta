@@ -182,6 +182,8 @@ services:
       # deletion safeguards have been released and verified.
       VC_RECAP_TRANSCRIPTION_PROVIDER: ${VC_RECAP_TRANSCRIPTION_PROVIDER:-aws}
       VC_RECAP_OPENAI_AUDIO_CONSENT_READY: ${VC_RECAP_OPENAI_AUDIO_CONSENT_READY:-false}
+      VC_RECAP_LOCAL_WHISPER_ENABLED: ${VC_RECAP_LOCAL_WHISPER_ENABLED:-false}
+      VC_RECAP_LOCAL_WHISPER_TOKEN: ${VC_RECAP_LOCAL_WHISPER_TOKEN:-}
       VC_RECAP_OPENAI_SESSION_MAX_AUDIO_MINUTES: ${VC_RECAP_OPENAI_SESSION_MAX_AUDIO_MINUTES:-120}
       AWS_TRANSCRIBE_REGION: ${AWS_TRANSCRIBE_REGION:-ap-northeast-1}
       AWS_TRANSCRIBE_ACCESS_KEY_ID: ${AWS_TRANSCRIBE_ACCESS_KEY_ID:-}
@@ -252,6 +254,35 @@ services:
       studio:
         condition: service_started
     restart: unless-stopped
+
+  # Only created by docker compose --profile whisper; never exposed on host.
+  whisper:
+    profiles: ['whisper']
+    build:
+      context: ./services/whisper
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    read_only: true
+    init: true
+    cap_drop: ['ALL']
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 1024m
+    cpus: '1.0'
+    pids_limit: 96
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid
+    volumes:
+      - type: bind
+        source: ${VC_RECAP_WHISPER_MODEL_DIR:-./var/whisper-model}
+        target: /models/model
+        read_only: true
+        bind:
+          create_host_path: false
+    environment:
+      WHISPER_MODEL_PATH: /models/model
+      VC_RECAP_LOCAL_WHISPER_TOKEN: ${VC_RECAP_LOCAL_WHISPER_TOKEN:-}
+    # No ports: other Compose services only, not public or host network.
+    expose: ['8765']
 
 volumes:
   redis_data:
