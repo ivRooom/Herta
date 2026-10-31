@@ -29,7 +29,9 @@ describe('VALORANT pick card', () => {
     const image = await renderValorantPickCard({
       mode: 'RANDOM',
       mapName: '指定なし',
-      entries: [{ agentName: 'Unknown', displayName: '<script>&\"', playerLabel: '<svg/onload=alert(1)>' }],
+      entries: [
+        { agentName: 'Unknown', displayName: '<script>&\"', playerLabel: '<svg/onload=alert(1)>' },
+      ],
     });
     expect((await sharp(image).metadata()).format).toBe('png');
   });

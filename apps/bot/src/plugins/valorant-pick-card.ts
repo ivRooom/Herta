@@ -34,8 +34,9 @@ const artCache = new Map<string, { image: Buffer; expiresAt: number }>();
 let activeRenders = 0;
 
 function escapeXml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]!,
+  return value.replace(
+    /[&<>"']/g,
+    (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]!,
   );
 }
 
@@ -89,7 +90,8 @@ async function loadMetadata(): Promise<Map<string, Metadata>> {
           !AGENT_ALLOWLIST.has(row.displayName) ||
           typeof row.uuid !== 'string' ||
           !UUID.test(row.uuid)
-        ) continue;
+        )
+          continue;
         const role = row.role;
         const roleName =
           role && typeof role === 'object' && 'displayName' in role
@@ -97,9 +99,10 @@ async function loadMetadata(): Promise<Map<string, Metadata>> {
             : undefined;
         items.set(row.displayName, {
           uuid: row.uuid,
-          role: typeof roleName === 'string' && roleNames[roleName]
-            ? roleNames[roleName]
-            : 'エージェント',
+          role:
+            typeof roleName === 'string' && roleNames[roleName]
+              ? roleNames[roleName]
+              : 'エージェント',
         });
       }
       return items;
@@ -146,15 +149,34 @@ export async function renderValorantPickCard(input: ValorantPickCardInput): Prom
     const width = 1200;
     const height = 680;
     const gap = count < 3 ? 22 : 12;
-    const cardWidth = count === 1 ? 460 : count === 2 ? 430 : Math.floor((1104 - gap * (count - 1)) / count);
+    const cardWidth =
+      count === 1 ? 460 : count === 2 ? 430 : Math.floor((1104 - gap * (count - 1)) / count);
     const left = (width - (count * cardWidth + (count - 1) * gap)) / 2;
     const metadata = await loadMetadata();
     const portraitResults = await Promise.all(
       entries.map((entry) => agentPortrait(entry.agentName, metadata.get(entry.agentName))),
     );
-    const label = (value: string, x: number, y: number, size: number, fill = '#f7f4ff', weight = 700) =>
-      '<text x="' + x + '" y="' + y + '" fill="' + fill +
-      '" font-size="' + size + '" font-weight="' + weight + '">' + safeLabel(value, 32) + '</text>';
+    const label = (
+      value: string,
+      x: number,
+      y: number,
+      size: number,
+      fill = '#f7f4ff',
+      weight = 700,
+    ) =>
+      '<text x="' +
+      x +
+      '" y="' +
+      y +
+      '" fill="' +
+      fill +
+      '" font-size="' +
+      size +
+      '" font-weight="' +
+      weight +
+      '">' +
+      safeLabel(value, 32) +
+      '</text>';
     const elements: string[] = [];
     for (let i = 0; i < count; i++) {
       const entry = entries[i]!;
@@ -165,30 +187,91 @@ export async function renderValorantPickCard(input: ValorantPickCardInput): Prom
       const role = metadata.get(entry.agentName)?.role ?? 'エージェント';
       const imageAreaTop = 190;
       elements.push('<g>');
-      elements.push('<rect x="' + x + '" y="168" width="' + cardWidth + '" height="432" rx="18" fill="#22263a" stroke="#6d607f" stroke-opacity="0.9" stroke-width="2"/>');
-      elements.push('<rect x="' + (x + 4) + '" y="172" width="' + (cardWidth - 8) + '" height="421" rx="15" fill="url(#tile)"/>');
-      elements.push('<path d="M' + (x + cardWidth * .35) + ' 180 L' + (x + cardWidth - 16) + ' 180 L' + (x + cardWidth * .70) + ' 580" fill="#ff536b" opacity=".12"/>');
-      elements.push('<text x="' + (x + 22) + '" y="212" fill="#ff6579" font-size="20" font-weight="800">0' + (i + 1) + '</text>');
+      elements.push(
+        '<rect x="' +
+          x +
+          '" y="168" width="' +
+          cardWidth +
+          '" height="432" rx="18" fill="#22263a" stroke="#6d607f" stroke-opacity="0.9" stroke-width="2"/>',
+      );
+      elements.push(
+        '<rect x="' +
+          (x + 4) +
+          '" y="172" width="' +
+          (cardWidth - 8) +
+          '" height="421" rx="15" fill="url(#tile)"/>',
+      );
+      elements.push(
+        '<path d="M' +
+          (x + cardWidth * 0.35) +
+          ' 180 L' +
+          (x + cardWidth - 16) +
+          ' 180 L' +
+          (x + cardWidth * 0.7) +
+          ' 580" fill="#ff536b" opacity=".12"/>',
+      );
+      elements.push(
+        '<text x="' +
+          (x + 22) +
+          '" y="212" fill="#ff6579" font-size="20" font-weight="800">0' +
+          (i + 1) +
+          '</text>',
+      );
       if (portrait) {
         const dataUrl = 'data:image/png;base64,' + portrait.toString('base64');
         const artW = Math.min(cardWidth - 16, 400);
         const artX = x + (cardWidth - artW) / 2;
-        elements.push('<image href="' + dataUrl + '" x="' + artX + '" y="' + imageAreaTop + '" width="' + artW + '" height="326" preserveAspectRatio="xMidYMid meet"/>');
+        elements.push(
+          '<image href="' +
+            dataUrl +
+            '" x="' +
+            artX +
+            '" y="' +
+            imageAreaTop +
+            '" width="' +
+            artW +
+            '" height="326" preserveAspectRatio="xMidYMid meet"/>',
+        );
       } else {
-        elements.push('<path d="M' + (x + cardWidth / 2) + ' 256 l70 90 -70 90 -70 -90z" fill="none" stroke="#ff6179" stroke-width="3" opacity=".25"/>');
-        elements.push(label(entry.agentName.slice(0, 2).toUpperCase(), x + 33, 380, count >= 4 ? 41 : 60, '#7b718f'));
+        elements.push(
+          '<path d="M' +
+            (x + cardWidth / 2) +
+            ' 256 l70 90 -70 90 -70 -90z" fill="none" stroke="#ff6179" stroke-width="3" opacity=".25"/>',
+        );
+        elements.push(
+          label(
+            entry.agentName.slice(0, 2).toUpperCase(),
+            x + 33,
+            380,
+            count >= 4 ? 41 : 60,
+            '#7b718f',
+          ),
+        );
       }
-      elements.push('<rect x="' + (x + 4) + '" y="473" width="' + (cardWidth - 8) + '" height="120" fill="#121826" opacity=".95"/>');
+      elements.push(
+        '<rect x="' +
+          (x + 4) +
+          '" y="473" width="' +
+          (cardWidth - 8) +
+          '" height="120" fill="#121826" opacity=".95"/>',
+      );
       elements.push('<rect x="' + (x + 4) + '" y="473" width="4" height="120" fill="#ff4d69"/>');
       elements.push(label(entry.displayName, x + 17, 518, fontSize));
       elements.push(label(role, x + 17, 547, 15, '#ff95a5', 500));
-      elements.push(label(entry.playerLabel ?? ('PLAYER 0' + (i + 1)), x + 17, 579, nameSize, '#c6b9ff', 600));
+      elements.push(
+        label(entry.playerLabel ?? 'PLAYER 0' + (i + 1), x + 17, 579, nameSize, '#c6b9ff', 600),
+      );
       elements.push('</g>');
     }
     const title = input.mode === 'TACTICAL' ? 'TACTICAL AGENT COMPOSITION' : 'RANDOM AGENT PICK';
     const subtitle = input.mode === 'TACTICAL' ? '実戦向け構成' : '完全ランダム';
     const footer = input.planLabel ? '構成の特徴: ' + input.planLabel : 'HERTA / VALORANT PICK';
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + width + '" height="' + height + '">' +
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="' +
+      width +
+      '" height="' +
+      height +
+      '">' +
       '<defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#111522"/><stop offset=".5" stop-color="#1f2035"/><stop offset="1" stop-color="#10121f"/></linearGradient>' +
       '<linearGradient id="tile" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#332940"/><stop offset="1" stop-color="#171b2b"/></linearGradient></defs>' +
       '<rect width="1200" height="680" rx="22" fill="url(#bg)"/>' +
@@ -197,7 +280,14 @@ export async function renderValorantPickCard(input: ValorantPickCardInput): Prom
       '<g font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">' +
       label('HERTA • VALORANT', 50, 54, 25, '#ff7187') +
       label(title, 50, 105, 42) +
-      label(subtitle + '  /  ' + input.mapName + '  /  ' + count + '人', 52, 144, 24, '#c9c3db', 500) +
+      label(
+        subtitle + '  /  ' + input.mapName + '  /  ' + count + '人',
+        52,
+        144,
+        24,
+        '#c9c3db',
+        500,
+      ) +
       elements.join('') +
       '<path d="M50 620 H1150" stroke="#6b667d" stroke-opacity=".5"/>' +
       label(footer, 52, 657, 21, '#d2c3e5', 500) +

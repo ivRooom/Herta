@@ -192,7 +192,15 @@ function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
   }
   description.push(
     '',
-    '状態：' + (session.status === 'OPEN' && closed ? '期限切れ' : ({ OPEN: '参加募集中', COMPLETED: '抽選完了', CANCELLED: '募集取消', EXPIRED: '期限切れ' }[session.status] ?? session.status)),
+    '状態：' +
+      (session.status === 'OPEN' && closed
+        ? '期限切れ'
+        : ({
+            OPEN: '参加募集中',
+            COMPLETED: '抽選完了',
+            CANCELLED: '募集取消',
+            EXPIRED: '期限切れ',
+          }[session.status] ?? session.status)),
   );
   const embed = new EmbedBuilder()
     .setColor(0xff4655)
@@ -412,7 +420,11 @@ async function handleRandom(
         '指定メンバーの抽選が完了しました。結果の「再抽選」ボタンで引き直せます。',
       );
       const message = await interaction.followUp({
-        ...(await buildValorantRichMessage(session, logger, (id) => interaction.guild?.members.cache.get(id)?.displayName)),
+        ...(await buildValorantRichMessage(
+          session,
+          logger,
+          (id) => interaction.guild?.members.cache.get(id)?.displayName,
+        )),
         flags: [],
       });
       await setValorantSessionMessageId(prisma, interaction.guildId, session.id, message.id);

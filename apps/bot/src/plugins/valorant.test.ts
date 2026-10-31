@@ -148,7 +148,9 @@ describe('VALORANT button recruitment slash command', () => {
     const components = f.followUp.mock.calls[0]![0].components[0].components;
     expect(components).toHaveLength(1);
     expect(components[0].data.label).toBe('再抽選');
-    expect(f.followUp.mock.calls[0]![0].embeds[0].data.image?.url).toBe('attachment://valorant-pick.png');
+    expect(f.followUp.mock.calls[0]![0].embeds[0].data.image?.url).toBe(
+      'attachment://valorant-pick.png',
+    );
     expect(f.followUp.mock.calls[0]![0].files).toHaveLength(1);
     expect(f.editReply).toHaveBeenCalledWith(expect.stringContaining('抽選が完了'));
   });
