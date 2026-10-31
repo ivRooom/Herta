@@ -413,7 +413,13 @@ async function transcribeSpeaker(
           // An explicit existing transcription consent is required for new
           // local processing; role-based inferred consent is insufficient.
           const [consent, erasure] = await Promise.all([
-            getVoiceTranscriptionConsentMap(prisma, [userId]),
+            prisma.userDataConsent.findUnique({
+              where: { userId },
+              select: {
+                voiceTranscriptionConsent: true,
+                voiceTranscriptRetentionConsentedAt: true,
+              },
+            }),
             prisma.vcRecapErasureRequest.findUnique({
               where: { userId },
               select: { userId: true },
@@ -421,7 +427,8 @@ async function transcribeSpeaker(
           ]);
           return (
             erasure === null &&
-            consent.get(userId) === true &&
+            consent?.voiceTranscriptionConsent === true &&
+            !!consent.voiceTranscriptRetentionConsentedAt &&
             session.acceptingSegments &&
             session.consentingUserIds.has(userId)
           );
