@@ -16,3 +16,14 @@ export function shouldMarkLocalWhisperSessionFailed(
 ): boolean {
   return !consentDenied && !explicitlyAborted;
 }
+
+/** An unexpected start-time prerequisite error invalidates a local recap.
+ * Ordinary refusal returns before this function and is not treated as an error.
+ * The existing AWS streaming behavior must not change.
+ */
+export function markLocalVcRecapPrerequisiteFailure(
+  localCanary: boolean,
+  state: { localWhisperFailure: boolean },
+): void {
+  if (localCanary) state.localWhisperFailure = true;
+}
