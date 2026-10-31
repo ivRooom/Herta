@@ -153,7 +153,8 @@ export async function scanParticipationResults(
       }
     }
     if (incomplete) throw Error('Daily result reconciliation pending');
-    failures.delete(ctx.guildId);
+    const priorFailure = failures.get(ctx.guildId);
+    if (priorFailure) failures.set(ctx.guildId, { count: 0, lastAlert: priorFailure.lastAlert });
   } catch {
     ctx.logger.warn('Daily result delivery deferred; durable state retained');
     const state = failures.get(ctx.guildId) ?? { count: 0, lastAlert: 0 };

@@ -118,6 +118,7 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
     ctx,
     () => resultGeneration === (generations.get(ctx.guildId) ?? 0),
   );
+  if (resultGeneration !== (generations.get(ctx.guildId) ?? 0)) return;
   if (now.getTime() < Date.parse(`${date}T09:00:00+09:00`)) return;
   // A late restart may deliver today's message; never creates a past-day occurrence.
   running.add(ctx.guildId);

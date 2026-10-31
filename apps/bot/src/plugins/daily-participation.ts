@@ -308,6 +308,7 @@ export async function handleDailyParticipation(
       return;
     }
     let state = await participationStatus(ctx.guildId, interaction.user.id);
+    let claimConfirmed = false;
     ensureCurrent();
     const wantsClaim = interaction.customId.startsWith('daily-bonus:');
     if (wantsClaim) {
@@ -329,7 +330,18 @@ export async function handleDailyParticipation(
         balance: claimed.balance,
         message: `${claimed.mode === 'already_claimed' ? '本日は受取済みです。' : 'ボーナスを受け取りました！'}\n獲得：${receipt.rewardPoints + (receipt.streakReward?.points ?? 0) + (receipt.firstClaimReward?.points ?? 0)}pt / 保有：${claimed.balance}pt / 連続：${receipt.streakDay}日`,
       });
-      state = await participationStatus(ctx.guildId, interaction.user.id);
+      claimConfirmed = true;
+      try {
+        state = await participationStatus(ctx.guildId, interaction.user.id);
+      } catch {
+        await interaction.followUp({
+          flags: MessageFlags.Ephemeral,
+          allowedMentions: { parse: [] },
+          content:
+            'ボーナスの受取は確定しています。今日の問題を取得できませんでした。時間をおいて「今日の問題に挑戦」から再試行してください。',
+        });
+        return;
+      }
     } else {
       await interaction.editReply({
         content: state.bonusClaimed
@@ -338,8 +350,19 @@ export async function handleDailyParticipation(
         allowedMentions: { parse: [] },
       });
     }
-    await showParticipationQuestions(ctx, interaction, state, messageId);
-    if (wantsClaim && ctx.config.fortuneEnabled) await participationFortune(ctx, interaction, date);
+    try {
+      await showParticipationQuestions(ctx, interaction, state, messageId);
+      if (wantsClaim && ctx.config.fortuneEnabled)
+        await participationFortune(ctx, interaction, date);
+    } catch (error) {
+      if (!claimConfirmed) throw error;
+      await interaction.followUp({
+        flags: MessageFlags.Ephemeral,
+        allowedMentions: { parse: [] },
+        content:
+          'ボーナスの受取は確定しています。問題・運勢の表示を完了できませんでした。時間をおいて再試行してください。',
+      });
+    }
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     await interaction.editReply({

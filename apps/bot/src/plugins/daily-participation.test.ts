@@ -145,3 +145,16 @@ it('rechecks role/deadline and routes exactly one server-side answer', async () 
   await handleDailyParticipation(context(), interaction(id));
   expect(mocks.answer).not.toHaveBeenCalled();
 });
+it('preserves the confirmed receipt when the independent question refresh fails', async () => {
+  mocks.status
+    .mockResolvedValueOnce(f.status)
+    .mockRejectedValueOnce(new Error('synthetic timeout'));
+  const i = interaction('daily-bonus:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  expect(mocks.reply).toHaveBeenCalledOnce();
+  expect(mocks.record).toHaveBeenCalledOnce();
+  expect(i.editReply).not.toHaveBeenCalled();
+  expect(i.followUp).toHaveBeenCalledWith(
+    expect.objectContaining({ flags: 64, content: expect.stringContaining('受取は確定') }),
+  );
+});
