@@ -44,16 +44,20 @@ AWS公式: [Deleting object versions](https://docs.aws.amazon.com/AmazonS3/lates
 
 ## 2026-10-31: S3 SDK v3アダプターと専用bucketテンプレート（#616、#617）
 
-- `apps/worker/src/vc-recap-s3-v3-adapter.ts` はAWS SDK v3の `S3Client.send` と `ListObjectVersionsCommand`、`DeleteObjectsCommand`、`ListMultipartUploadsCommand`、`AbortMultipartUploadCommand` を**依存注入**するPort。SDKや認証資格情報をworkerに自動投入しない。削除対象のS3 Key/VersionId/Owner prefixをチェックし、`DeleteObjects` のHTTP 200で `Deleted` 応答が欠ける場合も失敗扱い。静的型付きのmock commandでAPI mappingを検証。AWSによる実削除テストは未実施。
+- `apps/worker/src/vc-recap-s3-v3-adapter.ts` はAWS SDK v3の `S3Client.send` と `ListObjectVersionsCommand`、`DeleteObjectsCommand`、`ListMultipartUploadsCommand`、`AbortMultipartUploadCommand` を**依存注入**するPort。SDKや認証資格情報をworkerに自動投入しない。削除対象のS3 Key/VersionId/Owner prefixをチェックし、`DeleteObjects` のHTTP 200で `Deleted` 応答が欠ける場合も失敗扱い。静的型付きのmock commandでAPI mappingを検証。AWS S3 APIによる合成データだけの全版削除・Multipart中断テストはIssue #625で成功（`docs/VC_RECAP_S3_LIVE_VERIFICATION.md`）。JavaScriptアダプター/実Workerの連結テストは未実施。
 - `deploy/aws/vc-recap-storage/template.yml` は **専用の新規** bucket用CloudFormation定義。S3 Versioning=Enabled、BlockPublicAccessすべてtrue、bucket owner enforced、SSE-S3 AES256、TLS必須、CloudFormation削除時Retain。既存backup bucketは変更せず、バケット名の流用を認めない。
 - `ErasureWorkerRoleName` の既定値は空であり、削除IAMポリシーは作成しない。指定時のみ `ListBucketVersions` は `s3:prefix=vc-recap/users/*`、`DeleteObjectVersion/AbortMultipartUpload` は `bucket/vc-recap/users/*` に制限する。**`ListBucketMultipartUploads` はAWS IAMで `s3:prefix` を条件にできないため、専用bucket全体への一覧権限として分離する。** 既存のバックアップbucketには権限を付けず、アプリ側では本人prefix以外を扱わない。**PutObjectは付与しない。** HTTPS必須BucketPolicyもCloudFormationから削除されても保持する。
-- 専用Bucket用のCloudFormation適用とIAM Role接続は**別の本番インフラ変更**。本PRでは行わない。現在のAWSのバケット一覧にVC Recap専用Bucketはなく、バックアップ用Bucketは存在した（2026-10-31、read-only確認）。
+- 専用Bucket用のCloudFormation適用とIAM Role接続は**別の本番インフラ変更**。本PRでは行わない。VC Recap専用Bucketは2026-10-31にCloudFormationで構築済み。既存バックアップ用Bucketと分離し、公開遮断/Versioning/SSE/TLSポリシーを検証済み。
 - IAMの適用前にはroleの実際の信頼ポリシー、S3 Versioning/Blocked encryption/Object Lock、AWSの請求予算、CloudFormation drift、復元時の外部tombstone再適用を確認する。適用を行う場合は `aws cloudformation deploy --template-file deploy/aws/vc-recap-storage/template.yml --stack-name <reviewed-name> --parameter-overrides BucketName=<globally-unique-name> --capabilities CAPABILITY_IAM` を**review済みの認証済み作業環境でのみ**行う。未適用状態で本番での削除や録音を利用可能と説明しない。
 - 実運用で将来 `@aws-sdk/client-s3` を追加して `createS3V3ErasurePort(new S3Client(...), { ListObjectVersionsCommand, ... })` に接続する必要がある。現在はpackage依存を追加しておらず、削除用AWSクライアントをプロセスで起動しない。
-- **未解決**: 本番専用バケットの作成、最小IAM Role付与、実S3テスト、reserved upload排他、孤立/権限失敗の再試行と監視、共有要約・他prefixの削除、バックアップ復元コピーのtombstone再適用。これら完了前に自動削除・長期録音を有効化しない。
+- **未解決**: 最小IAM Role付与、実Worker連結テスト、reserved upload排他、孤立/権限失敗の再試行と監視、共有要約・他prefixの削除、バックアップ復元コピーのtombstone再適用。これら完了前に自動削除・長期録音を有効化しない。
 
 ### 差し戻しと費用
 
 新規bucketは `Retain` によりCloudFormation stackの削除でも残る。空でもリクエストや監視などで料金が発生しうるため、運用費を確認する。誤った権限を適用した場合はまずRole attachmentを外し、同意・録音・削除ジョブをOFFにする。既存のHerta PostgreSQLバックアップは変更しない。
 
 S3 Standard→Standard-IAへの音声30日移行は、所有者別prefix中で`audio/`が共通先頭にないため、オブジェクトタグで種別を選別する設計・小オブジェクト料金の実測が完了するまで導入しない。
+
+## 2026-10-31: 専用S3合成データE2E・ドリフト検証 (#625/#626)
+
+専用S3で現行/旧版2、delete marker 1、multipart upload 1を生成して削除し、最終残数すべて0を確認（実ユーザーデータには触れない）。`deploy/scripts/verify-vc-recap-s3-safety.py` でバケット安全設定をread-only検査、モックでCIテストする。具体的な前後の観測値・対象・未保証範囲は [VC_RECAP_S3_LIVE_VERIFICATION.md](./VC_RECAP_S3_LIVE_VERIFICATION.md) を参照。**録音/長期保存/自動削除はOFF**。復元tombstone・実AWS SDK接続・最小IAM・全コピー検証は引き続き未実装。
