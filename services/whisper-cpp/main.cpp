@@ -2,6 +2,7 @@
 // IMPORTANT: isolated research spike. Production activation is forbidden until
 // model hash verification, CI CVE scans, RSS/RTF and per-person consent pass #672.
 #include "whisper.h"
+#include "sha256.h"
 
 #include <algorithm>
 #include <atomic>
@@ -291,6 +292,9 @@ void process_connection(int fd, Runtime & runtime) {
     respond(fd, 200, json_escape(trim(transcript)));
 }
 int self_test() {
+    // FIPS SHA-256 known-answer tests; do not weaken the production model pin.
+    if (sha256_string("") != "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855") return 9;
+    if (sha256_string("abc") != "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad") return 10;
     Request r;
     if (!parse_headers("POST /v1/transcribe HTTP/1.1\r\nContent-Length: 960\r\n\r\n", r)) return 1;
     size_t size = 0;
@@ -315,9 +319,10 @@ int main(int argc, char ** argv) {
     std::signal(SIGPIPE, SIG_IGN);
     const char * secret = std::getenv("VC_RECAP_LOCAL_WHISPER_TOKEN");
     const char * model = std::getenv("WHISPER_MODEL_PATH");
-    // An independent GGML model SHA attestation is still an open security gate
-    // (#672); this binary must NEVER be wired into production before that step.
-    if (!secret || std::strlen(secret) < 32 || !model || model[0] != '/') return 1;
+    // Only an offline, fixed-revision multilingual GGML tiny model is accepted.
+    // Any missing, changed, symlinked or unapproved model fails closed.
+    if (!secret || std::strlen(secret) < 32 || !model || model[0] != '/' ||
+        !verify_pinned_model_sha256(model)) return 1;
     whisper_context_params cparams = whisper_context_default_params();
     cparams.use_gpu = false;
     whisper_context * ctx = whisper_init_from_file_with_params(model, cparams);
