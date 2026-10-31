@@ -1,14 +1,10 @@
 import hashlib
-import importlib.util
 import json
 from pathlib import Path
 import tempfile
 import unittest
 
-MODULE = Path(__file__).with_name("model-manifest.py")
-spec = importlib.util.spec_from_file_location("model_manifest", MODULE)
-module = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(module)
+import model_manifest as module
 
 
 class ManifestTests(unittest.TestCase):
