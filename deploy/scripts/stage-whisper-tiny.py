@@ -56,6 +56,7 @@ def main() -> None:
         for file in staging.iterdir():
             file.chmod(0o644)
         shutil.copytree(staging, target, symlinks=False)
+        target.chmod(0o755)
     print(f"Verified public MIT model: {REPO}@{REVISION}")
     print(f"Staged to: {target}")
     print("Do not enable Whisper until host memory/CPU preflight and security review pass.")
