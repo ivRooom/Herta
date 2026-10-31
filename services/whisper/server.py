@@ -6,12 +6,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import BoundedSemaphore
 
 from contract import authorized, transcript_response, valid_pcm_length
+from model_manifest import verify_model_manifest
 
 # Loaded only after the model has been explicitly staged on the operator's disk.
 def load_model():
     model_path = Path(os.environ.get("WHISPER_MODEL_PATH", "/models/model"))
     if not model_path.is_dir() or not (model_path / "config.json").is_file():
         raise RuntimeError("Whisper model must be staged locally before enabling the service")
+    verify_model_manifest(model_path)
     from faster_whisper import WhisperModel
 
     return WhisperModel(
