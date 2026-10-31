@@ -248,8 +248,6 @@ export async function updateVcRecapLongTermConsentChoices(
   } as const;
   const wantsGrant = Object.values(requested).some(Boolean);
   // Revocation must remain possible even when enrollment is disabled.
-  if (wantsGrant && !isVcRecapLongTermEnrollmentEnabled()) return 'enrollment_disabled';
-
   return prisma.$transaction(async (tx) => {
     const [erasure, legacy, existing] = await Promise.all([
       tx.vcRecapErasureRequest.findUnique({ where: { userId }, select: { userId: true } }),
@@ -281,6 +279,7 @@ export async function updateVcRecapLongTermConsentChoices(
       });
       return 'erasure_requested';
     }
+    if (wantsGrant && !isVcRecapLongTermEnrollmentEnabled()) return 'enrollment_disabled';
     if (wantsGrant && !legacy?.voiceTranscriptionConsent) return 'legacy_consent_required';
     for (const purpose of LONG_TERM_PURPOSES) {
       if (!requested[purpose]) continue;
