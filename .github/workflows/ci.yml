@@ -272,6 +272,20 @@ jobs:
             --output json \
             > reports/security/grype-high-critical.json
 
+      - name: Build private Whisper CPU sidecar (AMD64, model not downloaded)
+        run: |
+          docker build --platform linux/amd64 --tag herta-whisper:ci ./services/whisper
+          test "$(docker image inspect --format '{{.Architecture}}' herta-whisper:ci)" = amd64
+          docker run --rm --entrypoint python herta-whisper:ci -c 'import faster_whisper; import numpy; import model_manifest'
+
+      - name: Audit private Whisper sidecar SBOM and High/Critical vulnerabilities
+        run: |
+          syft herta-whisper:ci --output cyclonedx-json=reports/security/herta-whisper-amd64.cdx.json
+          grype herta-whisper:ci \
+            --config .ci/grype.yaml \
+            --fail-on high \
+            --output json > reports/security/grype-whisper-amd64-high-critical.json
+
       - name: Upload SBOM and vulnerability report
         if: always()
         uses: actions/upload-artifact@v7.0.1
@@ -360,6 +374,20 @@ jobs:
             --fail-on high \
             --output json \
             > reports/security/grype-arm64-high-critical.json
+
+      - name: Build private Whisper sidecar natively on ARM64
+        run: |
+          docker build --platform linux/arm64 --tag herta-whisper:ci-arm64 ./services/whisper
+          test "$(docker image inspect --format '{{.Architecture}}' herta-whisper:ci-arm64)" = arm64
+          docker run --rm --entrypoint python herta-whisper:ci-arm64 -c 'import faster_whisper; import numpy; import model_manifest'
+
+      - name: Audit Whisper ARM64 image SBOM and High/Critical vulnerabilities
+        run: |
+          syft herta-whisper:ci-arm64 --output cyclonedx-json=reports/security/herta-whisper-arm64.cdx.json
+          grype herta-whisper:ci-arm64 \
+            --config .ci/grype.yaml \
+            --fail-on high \
+            --output json > reports/security/grype-whisper-arm64-high-critical.json
 
       - name: Upload ARM64 security evidence
         if: always()
