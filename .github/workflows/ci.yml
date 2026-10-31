@@ -47,6 +47,12 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
+      # Temporary diagnostic to capture exact repository Prettier output on PR #653.
+      - name: Show local Whisper Prettier patch (temporary)
+        run: |
+          pnpm exec prettier --write apps/bot/src/voice/vc-recap-local-whisper-transcriber.ts apps/bot/src/voice/vc-recap-session-manager.ts docs/VC_RECAP_LOCAL_WHISPER_ROLLOUT.md
+          git --no-pager diff --unified=2 -- apps/bot/src/voice/vc-recap-local-whisper-transcriber.ts apps/bot/src/voice/vc-recap-session-manager.ts docs/VC_RECAP_LOCAL_WHISPER_ROLLOUT.md
+
       - name: Format Check
         run: pnpm format:check
 
