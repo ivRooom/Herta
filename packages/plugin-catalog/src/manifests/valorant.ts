@@ -171,7 +171,7 @@ export const valorantManifest: PluginManifest = {
       subcommands: [
         {
           name: 'random',
-          description: '参加ボタンで募集してエージェントを抽選',
+          description: '参加募集または@指定メンバーで抽選（結果から再抽選可能）',
           options: [
             {
               name: 'map',
@@ -193,6 +193,14 @@ export const valorantManifest: PluginManifest = {
                 { name: 'SUMMIT', value: 'Summit' },
               ],
             },
+            ...Array.from({ length: 5 }, (_, index) => ({
+              name: `member${index + 1}`,
+              description:
+                index === 0
+                  ? '指定すると募集を省略して即時抽選（@メンバー・最大5人）'
+                  : `抽選に追加する@メンバー（${index + 1}人目）`,
+              type: 'user' as const,
+            })),
           ],
         },
         {

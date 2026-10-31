@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MessageFlags, type ChatInputCommandInteraction } from 'discord.js';
 import { normalizeValorantConfig, valorantPlugin } from './valorant.js';
+import { valorantManifest } from '@herta/plugin-catalog';
 
-function fixture(map: string | null = null, enabled = true) {
+function fixture(
+  map: string | null = null,
+  enabled = true,
+  members: Array<{ id: string; bot?: boolean }> = [],
+  maxParticipants = 5,
+) {
   const create = vi.fn().mockResolvedValue({
     id: 'cfc92874-f6ab-4a68-9acf-c5ecc5010a05',
     mode: map ? 'TACTICAL' : 'RANDOM',
@@ -18,8 +24,9 @@ function fixture(map: string | null = null, enabled = true) {
     completedAt: null,
     result: null,
   });
+  const memberSlots = Object.fromEntries(members.map((user, i) => [`member${i + 1}`, user]));
   const update = vi.fn().mockResolvedValue({});
-  const findUnique = vi.fn().mockResolvedValue({ enabled, config: { enabled } });
+  const findUnique = vi.fn().mockResolvedValue({ enabled, config: { enabled, maxParticipants } });
   const followUp = vi.fn().mockResolvedValue({ id: 'posted-message' });
   const editReply = vi.fn();
   const deferReply = vi.fn();
@@ -29,7 +36,12 @@ function fixture(map: string | null = null, enabled = true) {
     channelId: 'channel',
     user: { id: 'owner' },
     appPermissions: null,
-    options: { getSubcommand: () => 'random', getString: () => map },
+    options: {
+      getSubcommand: () => 'random',
+      getString: () => map,
+      getUser: (name: string) => memberSlots[name] ?? null,
+      getMember: (name: string) => memberSlots[name] ? { user: memberSlots[name] } : null,
+    },
     deferred: false,
     replied: false,
     deferReply,
@@ -42,6 +54,7 @@ function fixture(map: string | null = null, enabled = true) {
     prisma: {
       guildPlugin: { findUnique },
       valorantPickSession: { create, update },
+      valorantRoster: { findUnique: vi.fn().mockResolvedValue(null) },
     },
     logger: { error: vi.fn(), warn: vi.fn() },
   } as unknown as Parameters<NonNullable<typeof valorantPlugin.provideCommands>>[0];
@@ -91,6 +104,53 @@ describe('VALORANT button recruitment slash command', () => {
         data: expect.objectContaining({ mode: 'TACTICAL', mapId: 'Ascent' }),
       }),
     );
+  });
+  it('registers 5 optional Discord user mention options', () => {
+    const random = valorantManifest.commands[0]!.subcommands!.find(({ name }) => name === 'random');
+    expect(random?.options?.filter(({ type }) => type === 'user')).toHaveLength(5);
+  });
+  it('commits @mentioned users directly and shows only the reroll button', async () => {
+    const f = fixture(null, true, [{ id: 'alice' }, { id: 'bob' }]);
+    // The mock should model the completed row returned by Prisma.
+    f.create.mockImplementationOnce(async ({ data }: { data: Record<string, any> }) => ({
+      ...data,
+      id: 'cfc92874-f6ab-4a68-9acf-c5ecc5010a05',
+      participants: data.participants.create.map(({ userId }: { userId: string }) => ({ userId })),
+      createdAt: new Date(),
+      result: data.result,
+    }));
+    await f.run();
+    expect(f.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'COMPLETED',
+          maxParticipants: 2,
+          participants: { create: [{ userId: 'alice' }, { userId: 'bob' }] },
+        }),
+      }),
+    );
+    const components = f.followUp.mock.calls[0]![0].components[0].components;
+    expect(components).toHaveLength(1);
+    expect(components[0].data.label).toBe('再抽選');
+    expect(f.editReply).toHaveBeenCalledWith(expect.stringContaining('抽選が完了'));
+  });
+  it('rejects duplicate @mentions without creating a session', async () => {
+    const f = fixture(null, true, [{ id: 'alice' }, { id: 'alice' }]);
+    await f.run();
+    expect(f.create).not.toHaveBeenCalled();
+    expect(f.editReply).toHaveBeenCalledWith(expect.stringContaining('重複'));
+  });
+  it('honors the Guild participant limit for direct draws', async () => {
+    const f = fixture(null, true, [{ id: 'alice' }, { id: 'bob' }], 1);
+    await f.run();
+    expect(f.create).not.toHaveBeenCalled();
+    expect(f.editReply).toHaveBeenCalledWith(expect.stringContaining('上限'));
+  });
+  it('rejects @mention of bot accounts', async () => {
+    const f = fixture(null, true, [{ id: 'bot', bot: true }]);
+    await f.run();
+    expect(f.create).not.toHaveBeenCalled();
+    expect(f.editReply).toHaveBeenCalledWith(expect.stringContaining('Bot'));
   });
   it('fails privately when the plugin is disabled', async () => {
     const f = fixture(null, false);
