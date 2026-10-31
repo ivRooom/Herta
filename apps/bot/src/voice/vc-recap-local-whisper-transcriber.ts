@@ -1,6 +1,7 @@
 import type { TranscribedSegment } from './vc-recap-transcriber.js';
 
-const ENDPOINT = 'http://whisper:8765/v1/transcribe';
+const PYTHON_ENDPOINT = 'http://whisper:8765/v1/transcribe';
+const NATIVE_ENDPOINT = 'http://whisper-native:8765/v1/transcribe';
 const RATE = 48_000;
 const BYTES_PER_SAMPLE = 2;
 const SEGMENT_SECONDS = 8;
@@ -15,15 +16,29 @@ export interface LocalWhisperOptions {
   /** Live personal consent and active-session check, not an old snapshot. */
   mayProcess: () => Promise<boolean>;
   fetchImpl?: typeof fetch;
+  /** Only these internal Compose DNS names may ever receive participant PCM. */
+  backend?: string;
+  /** Separate operator gate; the native worker is not an approved processor yet. */
+  nativeAccepted?: boolean;
 }
 
-async function recognize(pcm: Buffer, options: LocalWhisperOptions): Promise<string> {
+function resolveEndpoint(options: LocalWhisperOptions): string {
+  if (!options.backend || options.backend === 'python') return PYTHON_ENDPOINT;
+  if (options.backend === 'native' && options.nativeAccepted === true) return NATIVE_ENDPOINT;
+  throw new Error('Local Whisper backend is not approved or unsupported');
+}
+
+async function recognize(
+  pcm: Buffer,
+  options: LocalWhisperOptions,
+  endpoint: string,
+): Promise<string> {
   if (!(await options.mayProcess()))
     throw new Error('Local Whisper consent revoked or unavailable');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const response = await (options.fetchImpl ?? fetch)(ENDPOINT, {
+    const response = await (options.fetchImpl ?? fetch)(endpoint, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${options.token}`,
@@ -69,6 +84,7 @@ export async function transcribePcmWithLocalWhisper(
   options: LocalWhisperOptions,
 ): Promise<void> {
   if (options.token.trim().length < 32) throw new Error('Local Whisper token is not configured');
+  const endpoint = resolveEndpoint(options);
 
   const startedAt = Date.now();
   let totalBytes = 0;
@@ -93,7 +109,7 @@ export async function transcribePcmWithLocalWhisper(
     inferenceChain = inferenceChain
       .then(async () => {
         if (cancelled || failure) return;
-        const text = await recognize(pcm, options);
+        const text = await recognize(pcm, options, endpoint);
         if (!cancelled && text && (await options.mayProcess())) {
           await onSegment({ text, startedAt: new Date(from), endedAt: new Date(to) });
         }
