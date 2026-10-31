@@ -1,0 +1,25 @@
+name: VALORANT poster temporary formatter preview
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/bot/src/plugins/valorant-pick-card-hud.ts'
+      - '.github/workflows/valorant-poster-format-preview.yml'
+permissions:
+  contents: read
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.4
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Print Prettier patch for v5 poster renderer
+        run: |
+          pnpm exec prettier --write apps/bot/src/plugins/valorant-pick-card-hud.ts apps/bot/src/plugins/valorant-pick-card.test.ts
+          git diff -- apps/bot/src/plugins/valorant-pick-card-hud.ts apps/bot/src/plugins/valorant-pick-card.test.ts
