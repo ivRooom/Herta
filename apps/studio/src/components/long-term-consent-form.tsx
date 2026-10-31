@@ -12,7 +12,7 @@ type Props = {
   erasurePending: boolean;
 };
 
-// prettier-ignore -- avoid changing whitespace in user-facing consent disclosures.
+// prettier-ignore
 export function LongTermConsentForm(props: Props) {
   const [choices, setChoices] = useState(props.initialChoices);
   const [pending, setPending] = useState(props.erasurePending);
