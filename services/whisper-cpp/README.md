@@ -1,6 +1,6 @@
 # Native Whisper CPU experiment — NOT production-ready
 
-Tracked by [Herta #672](https://github.com/ivRooom/Herta/issues/672). This directory is deliberately **not referenced by production Compose, Bot configuration or deploy workflows**. Existing AWS Transcribe remains production default.
+Tracked by [Herta #672](https://github.com/ivRooom/Herta/issues/672). The standalone binary is present in the repository and can be built through a **separate, default-OFF** Compose profile; Bot has a gated private native route but remains configured for AWS Transcribe by default. **No production worker is started, no model/token is staged and no human audio may be processed until release gates pass.**
 
 ## Upstream and image
 
@@ -35,3 +35,11 @@ docker run --rm herta-whispercpp:spike --self-test
 6. Publish and verify privacy notice; actual Guild ID, individual Discord participant opt-ins, user-performed VC E2E (#518/#657) and preflight/rollback approval must be recorded before activation.
 
 **Do not run this adapter with real voice data on production.** No cost-bearing resources have been provisioned.
+
+## 2026-11-01 staging: private native Compose profile (still OFF)
+
+- `docker-compose.common.yml` defines a **separate** `whisper-native` service behind `profiles: ['whisper-native']`, extended in both production and external-DB topology. This keeps the previous Python `whisper` service intact and ensures they have different Docker DNS names. The new service has no published host port, no cloud tunnel route, a read-only file-only GGML model mount, no privileges, and fixed CPU / memory / pids limits.
+- `VC_RECAP_TRANSCRIPTION_PROVIDER=aws`, `VC_RECAP_LOCAL_WHISPER_ENABLED=false`, `VC_RECAP_LOCAL_WHISPER_BACKEND=python`, and `VC_RECAP_NATIVE_WHISPER_ACCEPTED=false` remain the **defaults**. The Bot transport only accepts exactly `python` and `native` as backend names; an unknown URL/name or native selection without its explicit acceptance bit rejects PCM before any network request. No automatic AWS/OpenAI fallback is introduced.
+- CI validates the native Compose profile in both database topologies **without** running it. This release does not stage a model or token, call `docker compose --profile whisper-native up`, or collect/retain private audio. Releasing this inactive configuration is **not** production Whisper activation.
+- **Production enablement remains prohibited:** first complete participant opt-in and owner-locked revocation/deletion guards (#655/#646), independent source security review, permitted Japanese speech CER/RTF, real host peak RSS/CPU and stop/backpressure testing (#577/#656), secure model/token staging, operator Guild Canary and real Discord E2E (#518/#657), plus published accurate privacy policy. The CI-only 145.2MiB sampled container figure is not a host safety threshold; the latest available host MemAvailable was below the existing conservative 1100MiB gate.
+- **Rollback after inactive staging deploy:** keep the previous immutable `ghcr.io/ivrooom/herta:<sha>` image and pinned Git revision, use the existing audited production deploy/rollback path, and verify Bot/API/Studio health. If later explicitly activated, first set `VC_RECAP_LOCAL_WHISPER_ENABLED=false` and `VC_RECAP_NATIVE_WHISPER_ACCEPTED=false` before stopping the sidecar; never switch to AWS as an unintended paid fallback. Do not delete S3/DB data as a rollback.

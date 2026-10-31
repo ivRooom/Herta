@@ -78,6 +78,29 @@ jobs:
         run: |
           docker compose --profile whisper --env-file .env.production.example -f docker-compose.prod.yml config --quiet
           docker compose --profile whisper --env-file .env.production.example -f docker-compose.external.yml config --quiet
+          # Native worker is a separately opted-in private Compose profile.
+          # Parsing config does not launch a worker or download a model.
+          for compose in docker-compose.prod.yml docker-compose.external.yml; do
+            docker compose --profile whisper-native --env-file .env.production.example -f "$compose" config --quiet
+            docker compose --profile whisper-native --env-file .env.production.example -f "$compose" config --format json |
+              python3 -c '
+          import json, sys
+          cfg = json.load(sys.stdin)
+          services = cfg["services"]
+          native = services["whisper-native"]
+          assert native["profiles"] == ["whisper-native"]
+          assert not native.get("ports"), "Native worker must never publish host ports"
+          assert native.get("read_only") is True
+          assert native.get("cap_drop") == ["ALL"]
+          assert native.get("pids_limit") == 96
+          assert native.get("environment", {}).get("WHISPER_MODEL_PATH") == "/models/ggml-tiny.bin"
+          assert native["volumes"][0]["read_only"] is True
+          assert native["volumes"][0]["bind"]["create_host_path"] is False
+          assert "whisper-native" not in services["bot"].get("depends_on", {})
+          assert services["bot"]["environment"]["VC_RECAP_LOCAL_WHISPER_BACKEND"] == "python"
+          assert services["bot"]["environment"]["VC_RECAP_NATIVE_WHISPER_ACCEPTED"] == "false"
+          '
+          done
 
       - name: Supply chain policy tests
         run: node --test .github/scripts/*.test.mjs

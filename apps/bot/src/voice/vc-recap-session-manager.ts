@@ -375,6 +375,8 @@ async function transcribeSpeaker(
     } else if (provider === 'local-whisper') {
       await transcribePcmWithLocalWhisper(toMonoChunks(speakerStream.pcm), onSegment, {
         token: process.env['VC_RECAP_LOCAL_WHISPER_TOKEN'] ?? '',
+        backend: process.env['VC_RECAP_LOCAL_WHISPER_BACKEND'] ?? 'python',
+        nativeAccepted: process.env['VC_RECAP_NATIVE_WHISPER_ACCEPTED'] === 'true',
         mayProcess: async () => {
           if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return false;
           // An explicit existing transcription consent is required for new
