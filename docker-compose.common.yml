@@ -184,6 +184,8 @@ services:
       VC_RECAP_OPENAI_AUDIO_CONSENT_READY: ${VC_RECAP_OPENAI_AUDIO_CONSENT_READY:-false}
       VC_RECAP_LOCAL_WHISPER_ENABLED: ${VC_RECAP_LOCAL_WHISPER_ENABLED:-false}
       VC_RECAP_LOCAL_WHISPER_TOKEN: ${VC_RECAP_LOCAL_WHISPER_TOKEN:-}
+      VC_RECAP_LOCAL_WHISPER_BACKEND: ${VC_RECAP_LOCAL_WHISPER_BACKEND:-python}
+      VC_RECAP_NATIVE_WHISPER_ACCEPTED: ${VC_RECAP_NATIVE_WHISPER_ACCEPTED:-false}
       VC_RECAP_OPENAI_SESSION_MAX_AUDIO_MINUTES: ${VC_RECAP_OPENAI_SESSION_MAX_AUDIO_MINUTES:-120}
       AWS_TRANSCRIBE_REGION: ${AWS_TRANSCRIBE_REGION:-ap-northeast-1}
       AWS_TRANSCRIBE_ACCESS_KEY_ID: ${AWS_TRANSCRIBE_ACCESS_KEY_ID:-}
@@ -282,6 +284,37 @@ services:
       WHISPER_MODEL_PATH: /models/model
       VC_RECAP_LOCAL_WHISPER_TOKEN: ${VC_RECAP_LOCAL_WHISPER_TOKEN:-}
     # No ports: other Compose services only, not public or host network.
+    expose: ['8765']
+
+  # Dedicated native security candidate. OFF by default; no network alias
+  # colliding with the legacy Python "whisper" profile, no public host ports.
+  # Actual inference requires separate approval/consent and operator acceptance.
+  whisper-native:
+    profiles: ['whisper-native']
+    build:
+      context: ./services/whisper-cpp
+      dockerfile: Dockerfile
+    restart: 'no'
+    read_only: true
+    init: true
+    cap_drop: ['ALL']
+    security_opt: ['no-new-privileges:true']
+    mem_limit: 768m
+    cpus: '1.0'
+    pids_limit: 96
+    tmpfs:
+      - /tmp:size=16m,noexec,nosuid
+    volumes:
+      - type: bind
+        source: ${VC_RECAP_NATIVE_WHISPER_MODEL_FILE:-./var/whisper-ggml/ggml-tiny.bin}
+        target: /models/ggml-tiny.bin
+        read_only: true
+        bind:
+          create_host_path: false
+    environment:
+      WHISPER_MODEL_PATH: /models/ggml-tiny.bin
+      VC_RECAP_LOCAL_WHISPER_TOKEN: ${VC_RECAP_LOCAL_WHISPER_TOKEN:-}
+    # Docker-private port; never publish to the host or Cloudflare.
     expose: ['8765']
 
 volumes:
