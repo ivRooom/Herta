@@ -29,7 +29,9 @@ export async function appendLocalVcRecapSegmentIfConsented(
       erasure ||
       consent?.voiceTranscriptionConsent !== true ||
       !consent.voiceTranscriptRetentionConsentedAt
-    ) return false;
+    ) {
+      return false;
+    }
 
     await tx.vcRecapTranscriptSegment.create({
       data: {
