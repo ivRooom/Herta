@@ -1,0 +1,95 @@
+name: VC Recap C++ Whisper security spike
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'services/whisper-cpp/**'
+      - '.github/workflows/ci-whisper-cpp.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: whispercpp-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-native:
+    name: Static CPU / ${{ matrix.arch }} / Grype
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    env:
+      SYFT_VERSION: 1.44.0
+      GRYPE_VERSION: 0.112.0
+      GRYPE_DB_AUTO_UPDATE: 'false'
+      GRYPE_CHECK_FOR_APP_UPDATE: 'false'
+      SYFT_CHECK_FOR_APP_UPDATE: 'false'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build scratch final image on native CPU architecture
+        run: |
+          set -euo pipefail
+          docker build --platform "linux/${{ matrix.arch }}" -t herta-whispercpp:ci ./services/whisper-cpp
+          test "$(docker image inspect --format '{{.Architecture}}' herta-whispercpp:ci)" = "${{ matrix.arch }}"
+
+      - name: Synthetic contract self-test (no model or participant audio)
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint /app/herta-whisper-cpp herta-whispercpp:ci --self-test
+          # A service must not start without pinned local model + private token.
+          if docker run --rm herta-whispercpp:ci; then
+            echo 'ERROR: model/token missing, but native worker started' >&2
+            exit 1
+          fi
+          # Scratch image must have only the static executable, with no package manager.
+          docker image inspect herta-whispercpp:ci --format 'CPU image size bytes: {{.Size}}'
+
+      - name: Install pinned Syft and Grype
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/whisper-security"
+          mkdir -p "$dir"
+          for item in "syft:${SYFT_VERSION}" "grype:${GRYPE_VERSION}"; do
+            tool="${item%%:*}"
+            ver="${item#*:}"
+            asset="${tool}_${ver}_linux_${{ matrix.arch }}.tar.gz"
+            checksums="${tool}_${ver}_checksums.txt"
+            url="https://github.com/anchore/${tool}/releases/download/v${ver}"
+            curl --fail --location --retry 3 --output "$dir/$asset" "$url/$asset"
+            curl --fail --location --retry 3 --output "$dir/$checksums" "$url/$checksums"
+            ( cd "$dir" && grep "  $asset$" "$checksums" | sha256sum --check --strict - )
+            tar -xzf "$dir/$asset" -C "$dir" "$tool"
+          done
+          echo "$dir" >> "$GITHUB_PATH"
+
+      - name: Update Grype vulnerability database
+        run: grype db update
+
+      - name: Generate SBOM and reject any High/Critical vulnerability
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p reports/security
+          syft herta-whispercpp:ci -o cyclonedx-json=reports/security/whispercpp-${{ matrix.arch }}.cdx.json
+          grype herta-whispercpp:ci --fail-on high             --output json > reports/security/whispercpp-${{ matrix.arch }}.grype.json
+
+      - name: Upload security evidence, even on failure
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: whispercpp-security-${{ matrix.arch }}-${{ github.run_id }}
+          path: reports/security
+          if-no-files-found: warn
+          retention-days: 14
