@@ -42,10 +42,18 @@ Herta Lightsailは2 vCPU / 2 GiB RAMの `small_3_0`。DB等の既存サービス
 git rev-parse --short HEAD
 docker compose --env-file .env.production -f docker-compose.prod.yml ps
 
-# モデルを取得・固定SHA manifestを生成する（既存ディレクトリへの上書き禁止）
-python3 deploy/scripts/stage-whisper-tiny.py --destination ./var/whisper-model
+# モデルのダウンロード・ハッシュmanifest生成は本番ホストでは実行しない。
+# 別の管理端末/検証環境で、公式の固定リビジョンと信頼できる
+# 独立ハッシュの照合後に実行する（未承認の場合は中断）。
+# python3 deploy/scripts/stage-whisper-tiny.py --destination ./var/whisper-model
+# 実行後、manifest+4ファイルを非公開転送経路で本番ホストへ転送する。
+# 本番ホストでは配置前に全ファイルのSHA検証を行う。
+# SSH_USER / HOST / APP_DIR は実在の値に読み替えること。
+# rsync -a --checksum ./var/whisper-model/ SSH_USER@HOST:APP_DIR/var/.whisper-model-incoming/
+# 転送先でmodel_manifest.verify_model_manifest(...)が合格した後に
+# var/.whisper-model-incoming -> var/whisper-model を同一FS内でrenameする。
 
-# モデルの存在・ホストメモリ・ディスクの安全チェック。失敗したら中断。
+# 配置後にモデルSHA・ホストメモリ・ディスクの安全チェック。失敗したら中断。
 bash deploy/scripts/preflight-whisper-tiny.sh
 
 # 秘密情報を表示せずに発行（発行後は運用Secret管理に保管。Issueへ転記禁止）
