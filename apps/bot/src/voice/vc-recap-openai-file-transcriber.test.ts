@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { monoPcmToWav, transcribePcmWithOpenAi } from './vc-recap-openai-file-transcriber.js';
 import {
+  canUseLocalWhisperCanary,
   canUseOpenAiVcAudio,
   resolveVcRecapTranscriberConfig,
 } from './vc-recap-transcriber-config.js';
@@ -37,6 +38,22 @@ describe('VC transcription provider rollback', () => {
     expect(enabled.localWhisperEnabled).toBe(true);
     expect(enabled.openAiAudioEnabled).toBe(false);
     expect(canUseOpenAiVcAudio(enabled, true)).toBe(false);
+  });
+
+  it('only the exact opted-in Canary Guild may use local Whisper', () => {
+    const config = resolveVcRecapTranscriberConfig({
+      VC_RECAP_TRANSCRIPTION_PROVIDER: 'aws',
+      VC_RECAP_LOCAL_WHISPER_ENABLED: 'true',
+    });
+    const canary = { VC_RECAP_LOCAL_WHISPER_CANARY_GUILD_ID: '964326043420872704' };
+    expect(canUseLocalWhisperCanary(config, '964326043420872704', canary)).toBe(true);
+    expect(canUseLocalWhisperCanary(config, '964326043420872705', canary)).toBe(false);
+    expect(canUseLocalWhisperCanary(config, '964326043420872704', {})).toBe(false);
+    expect(canUseLocalWhisperCanary(config, '964326043420872704', {
+      VC_RECAP_LOCAL_WHISPER_CANARY_GUILD_ID: '964326043420872704,964326043420872705',
+    })).toBe(false);
+    expect(canUseLocalWhisperCanary(resolveVcRecapTranscriberConfig({}),
+      '964326043420872704', canary)).toBe(false);
   });
 
   it('bounds the per-session OpenAI minute quota', () => {
