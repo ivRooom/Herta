@@ -27,6 +27,7 @@ export interface S3ErasureUploadListing {
   isTruncated: boolean;
 }
 
+// prettier-ignore
 export interface S3VersionErasurePort {
   listObjectVersions(input: {
     bucket: string;
