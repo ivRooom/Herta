@@ -184,8 +184,8 @@ export async function startVcRecap(
       stopping: false,
       acceptingSegments: true,
       pendingSegmentWrites: new Set(),
-    localWhisperControllers: new Map(),
-    localWhisperFailure: false,
+      localWhisperControllers: new Map(),
+      localWhisperFailure: false,
       openAiAudioSeconds: 0,
     };
 
@@ -383,9 +383,10 @@ async function transcribeSpeaker(
       // 文字起こし中に同意が取り消された、またはstopVcRecapのflushが打ち切られた場合、
       // 確定済みセグメントであっても保存しない。
       if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return;
-      const append = provider === 'local-whisper'
-        ? appendLocalVcRecapSegmentIfConsented
-        : appendVcRecapTranscriptSegment;
+      const append =
+        provider === 'local-whisper'
+          ? appendLocalVcRecapSegmentIfConsented
+          : appendVcRecapTranscriptSegment;
       const write = append(prisma, {
         sessionId: session.sessionId,
         userId,
@@ -515,8 +516,7 @@ export async function stopVcRecap(
   // AWS streaming keeps its existing 5s flush budget.
   const config = resolveVcRecapTranscriberConfig();
   const isLocalCanary = canUseLocalWhisperCanary(config, guildId);
-  const flushMs =
-    config.provider === 'aws' && !isLocalCanary ? STOP_FLUSH_TIMEOUT_MS : 20_000;
+  const flushMs = config.provider === 'aws' && !isLocalCanary ? STOP_FLUSH_TIMEOUT_MS : 20_000;
   const flushed = await settleWithin(session.pendingTranscriptions.values(), flushMs);
   session.acceptingSegments = false;
   if (!flushed) {
@@ -538,7 +538,10 @@ export async function stopVcRecap(
   // Never silently summarize only the recognized prefix of the conversation.
   if (rejectIncompleteLocalVcRecap(isLocalCanary, flushed, session.localWhisperFailure)) {
     await failVcRecapSession(prisma, session.sessionId, []);
-    logger.warn({ guildId, sessionId: session.sessionId }, 'Local Whisperが未確定のため要約を中止しました');
+    logger.warn(
+      { guildId, sessionId: session.sessionId },
+      'Local Whisperが未確定のため要約を中止しました',
+    );
     return { status: 'summarize_failed', sessionId: session.sessionId };
   }
 
