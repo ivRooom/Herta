@@ -173,7 +173,7 @@ function confirmed(
     },
     balance: account!.balance!,
     alreadyClaimed: value?.mode === 'already_claimed' || value?.claimedToday === true,
-    message: `${value?.mode === 'already_claimed' || value?.claimedToday === true ? '本日は受取済みです。' : '🎉 ログインボーナスを受け取りました！'}\n獲得：${receipt.rewardPoints + (streakReward?.points ?? 0) + (firstClaimReward?.points ?? 0)}pt / 保有：${account!.balance}pt / 連続：${receipt.streakDay}日${streakReward ? `\n連続ログイン追加報酬：+${streakReward.points}pt` : ''}${firstClaimReward ? `\n一番乗り追加報酬：+${firstClaimReward.points}pt / ${firstClaimReward.rank}位` : ''}`,
+    message: `${value?.mode === 'already_claimed' || value?.claimedToday === true ? '本日は受取済みです。' : '🎉 ログインボーナスを受け取りました！'}\n獲得：${receipt.rewardPoints + (streakReward?.points ?? 0) + (firstClaimReward?.points ?? 0)}pt / 保有：${account!.balance}pt / 連続：${receipt.streakDay}日${streakReward ? `\n連続ログイン追加報酬：+${streakReward.points}pt` : ''}`,
   };
 }
 export async function dailyBonusStatus(guild: string, user: string): Promise<DailyWalletResult> {

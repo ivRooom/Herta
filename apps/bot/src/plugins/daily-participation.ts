@@ -307,11 +307,11 @@ export async function handleDailyParticipation(
       });
       return;
     }
-    let state = await participationStatus(ctx.guildId, interaction.user.id);
+    let state: ParticipationStatus;
     let claimConfirmed = false;
-    ensureCurrent();
     const wantsClaim = interaction.customId.startsWith('daily-bonus:');
     if (wantsClaim) {
+      ensureCurrent();
       const claimed = await participationClaim(ctx.guildId, interaction.user.id, date, messageId);
       if (claimed.receipt.claimDateJst !== date) throw new Error('expired');
       const receipt = claimed.receipt;
@@ -343,6 +343,8 @@ export async function handleDailyParticipation(
         return;
       }
     } else {
+      state = await participationStatus(ctx.guildId, interaction.user.id);
+      ensureCurrent();
       await interaction.editReply({
         content: state.bonusClaimed
           ? '今日の回答状態を確認しました。'

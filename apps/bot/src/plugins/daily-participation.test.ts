@@ -146,9 +146,7 @@ it('rechecks role/deadline and routes exactly one server-side answer', async () 
   expect(mocks.answer).not.toHaveBeenCalled();
 });
 it('preserves the confirmed receipt when the independent question refresh fails', async () => {
-  mocks.status
-    .mockResolvedValueOnce(f.status)
-    .mockRejectedValueOnce(new Error('synthetic timeout'));
+  mocks.status.mockRejectedValueOnce(new Error('synthetic timeout'));
   const i = interaction('daily-bonus:2026-10-31');
   await handleDailyParticipation(context(), i);
   expect(mocks.reply).toHaveBeenCalledOnce();
