@@ -1,9 +1,9 @@
 import type { ValorantPickCardInput } from './valorant-pick-card.js';
 
 /**
- * Decorative, text-first esports HUD. Portraits are optional and are supplied only
- * after allowlisted metadata, bounded download, and Sharp decoding in the caller.
- * Keep every dynamic string XML-escaped; the renderer must never use foreignObject.
+ * Cinematic, text-first agent reveal. All remote portraits are bounded PNG
+ * buffers from the caller. Keep user-controlled content escaped, never add
+ * foreignObject, scripts or user-derived URLs to this SVG.
  */
 function safe(value: string, max = 28): string {
   const normalized = Array.from(value.replace(/[\p{Cc}\p{Cf}]/gu, '').trim())
@@ -20,102 +20,65 @@ function text(
   x: number,
   y: number,
   size: number,
-  fill = '#f5f5f9',
+  fill = '#f5f0e8',
   weight = 700,
   max = 26,
 ): string {
   return (
-    '<text x="' +
-    x +
-    '" y="' +
-    y +
-    '" font-size="' +
-    size +
-    '" font-weight="' +
-    weight +
-    '" fill="' +
-    fill +
-    '">' +
-    safe(value, max) +
-    '</text>'
+    '<text x="' + x + '" y="' + y + '" font-size="' + size + '" font-weight="' +
+    weight + '" fill="' + fill + '">' + safe(value, max) + '</text>'
   );
 }
 
-function metric(x: number, width: number, heading: string, value: string, max: number): string {
-  return (
-    '<g>' +
-    '<rect x="' +
-    x +
-    '" y="193" width="' +
-    width +
-    '" height="86" rx="5" fill="#191f30" stroke="#4f4055" stroke-opacity=".8"/>' +
-    '<path d="M' +
-    (x + 14) +
-    ' 207 v-7 h26" stroke="#ff546c" stroke-width="2" fill="none"/>' +
-    text(heading, x + 22, 222, 17, '#a7afc0', 500) +
-    text(value, x + 22, 257, 25, '#fffaff', 700, max) +
-    '</g>'
-  );
-}
-
-function imageTag(image: Buffer | null | undefined, x: number, y: number, w: number, h: number) {
+function portrait(image: Buffer | null | undefined, x: number, y: number, w: number, h: number): string {
   if (!image) return '';
   return (
-    '<image href="data:image/png;base64,' +
-    image.toString('base64') +
-    '" x="' +
-    x +
-    '" y="' +
-    y +
-    '" width="' +
-    w +
-    '" height="' +
-    h +
+    '<image href="data:image/png;base64,' + image.toString('base64') +
+    '" x="' + x + '" y="' + y + '" width="' + w + '" height="' + h +
     '" preserveAspectRatio="xMidYMid meet"/>'
   );
 }
 
-function singleHero(
+function solo(
   input: ValorantPickCardInput,
   portraits: readonly (Buffer | null)[],
   roles: readonly string[],
 ): string {
   const entry = input.entries[0]!;
   const art = portraits[0];
-  const parts: string[] = [];
-  parts.push(
-    '<rect x="655" y="319" width="509" height="278" rx="14" fill="#1a172c" opacity=".55"/>',
-  );
-  parts.push('<path d="M730 335 L1185 205 L1185 596 L845 596Z" fill="#ff415e" opacity=".11"/>');
-  parts.push(
-    '<path d="M760 346 L1150 252 M820 580 L1185 480" stroke="#e94464" opacity=".22" stroke-width="2"/>',
-  );
+  const parts: string[] = [
+    '<path d="M660 170 L1190 170 L1190 568 L520 568 Z" fill="#181b23"/>',
+    '<path d="M815 165 H1190 V525 L1060 568 H590 Z" fill="#d72f43" opacity=".14"/>',
+    '<path d="M1010 165 H1190 V565 H860 Z" fill="#ff4655" opacity=".19"/>',
+    '<path d="M875 179 L1150 179 L1000 565 L720 565Z" fill="none" stroke="#fa4655" stroke-width="2" opacity=".35"/>',
+    '<path d="M616 177 V562" stroke="#ff4655" stroke-width="2" opacity=".8"/>',
+  ];
+  // The portrait is deliberately behind the left reading surface and bottom HUD.
   if (art) {
-    parts.push(imageTag(art, 650, 105, 520, 526));
+    parts.push('<g clip-path="url(#solo-art)">');
+    parts.push(portrait(art, 618, 159, 568, 430));
+    parts.push('</g>');
   } else {
-    // No portrait/network: deliberate visual treatment rather than broken-image UI.
     parts.push(
-      '<path d="M905 318 l164 137 -164 133 -163 -133Z" fill="#2f283f" stroke="#fd566b" stroke-width="3" stroke-opacity=".65"/>',
+      '<path d="M903 227 L1062 382 L903 537 L744 382Z" fill="#222831" stroke="#fb4e5a" stroke-width="3"/>',
+      '<path d="M903 271 L1016 382 L903 493 L790 382Z" fill="#10141c" stroke="#888189" stroke-width="1.5"/>',
+      text(entry.agentName.toUpperCase(), 770, 402, 40, '#fa6570', 800, 12),
     );
-    parts.push(
-      '<path d="M905 361 l116 95 -116 96 -114 -96Z" fill="#121828" stroke="#7f668e" stroke-width="2"/>',
-    );
-    parts.push(text(entry.agentName.toUpperCase(), 768, 477, 46, '#ed7b96', 800, 13));
   }
   parts.push(
-    '<rect x="51" y="356" width="590" height="232" rx="6" fill="#111724" stroke="#484254"/>',
+    '<path d="M38 166 H690 L595 570 H38Z" fill="url(#left-shade)"/>',
+    '<rect x="52" y="189" width="4" height="60" fill="#ff4655"/>',
+    text('01  /  HERO PICK', 72, 211, 18, '#fd6773', 750),
+    text('SELECTED AGENT', 69, 277, 19, '#beb8b0', 650),
+    text(entry.displayName, 65, 359, 71, '#f8f3e9', 850, 9),
+    '<path d="M69 385 H555" stroke="#f04b59" stroke-width="2"/>',
+    text(entry.agentName.toUpperCase(), 70, 417, 26, '#ff6270', 800, 17),
+    text('PLAYER', 70, 473, 16, '#96979a', 700),
+    text(entry.playerLabel ?? 'PLAYER 01', 70, 508, 28, '#f8f3e9', 700, 19),
+    text('ROLE', 70, 542, 14, '#96979a', 700),
+    text(roles[0] ?? 'エージェント', 130, 544, 20, '#ffb2ad', 700, 13),
+    '<path d="M1172 189 v52 M1120 552 h52" stroke="#f6e8df" stroke-width="2" opacity=".75"/>',
   );
-  parts.push(
-    '<path d="M51 356 h184 M51 356 v28 M641 588 h-140" stroke="#ff526c" stroke-width="4" fill="none"/>',
-  );
-  parts.push(text('PLAYER', 75, 398, 18, '#a9afc0', 600));
-  parts.push(text(entry.playerLabel ?? 'PLAYER 01', 75, 443, 32, '#d9ccff', 700, 24));
-  parts.push('<path d="M75 466 H613" stroke="#505069" stroke-width="1"/>');
-  parts.push(text('SELECTED AGENT', 75, 499, 17, '#ff6b83', 700));
-  parts.push(text(entry.displayName, 73, 555, 53, '#ffffff', 800, 13));
-  parts.push(text(roles[0] ?? 'エージェント', 412, 552, 20, '#c7b9df', 500, 12));
-  parts.push(text(entry.agentName.toUpperCase(), 688, 599, 30, '#ffc0cc', 800, 15));
-  parts.push(text('01 / HERO PICK', 68, 327, 16, '#a9abc2', 600));
   return parts.join('');
 }
 
@@ -125,80 +88,49 @@ function squad(
   roles: readonly string[],
 ): string {
   const count = input.entries.length;
-  const gap = count === 2 ? 22 : 13;
-  const width = (1094 - gap * (count - 1)) / count;
-  const left = 53;
-  const output: string[] = [];
-  for (let index = 0; index < count; index++) {
-    const entry = input.entries[index]!;
-    const x = left + index * (width + gap);
-    const role = roles[index] ?? 'エージェント';
-    const font = count >= 5 ? 25 : count === 4 ? 28 : 34;
-    const playerFont = count >= 5 ? 15 : count === 4 ? 17 : 20;
-    const art = portraits[index];
-    output.push('<g>');
-    output.push(
-      '<rect x="' +
-        x +
-        '" y="331" width="' +
-        width +
-        '" height="265" rx="7" fill="url(#panel)" stroke="#5b455e" stroke-width="2"/>',
-    );
-    output.push(
-      '<path d="M' +
-        (x + 9) +
-        ' 340 H' +
-        (x + Math.min(width - 12, 96)) +
-        ' M' +
-        (x + 9) +
-        ' 340 V363" stroke="#ff5069" stroke-width="3" fill="none"/>',
-    );
-    output.push(
-      '<path d="M' +
-        (x + width - 16) +
-        ' 343 L' +
-        (x + width * 0.35) +
-        ' 519 L' +
-        (x + width - 13) +
-        ' 519" fill="#f84b66" opacity=".12"/>',
+  const gap = count === 2 ? 18 : 12;
+  const width = (1096 - gap * (count - 1)) / count;
+  const start = 52;
+  const parts: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const x = start + i * (width + gap);
+    const entry = input.entries[i]!;
+    const art = portraits[i];
+    const nameFont = count === 5 ? 25 : count === 4 ? 30 : 38;
+    const playerFont = count === 5 ? 17 : count === 4 ? 19 : 21;
+    const nameLimit = count === 5 ? 7 : count === 4 ? 9 : count === 3 ? 12 : 17;
+    const playerLimit = count === 5 ? 11 : count === 4 ? 15 : 23;
+    parts.push(
+      '<g>',
+      '<rect x="' + x + '" y="184" width="' + width + '" height="380" fill="#1b2028" stroke="#66616a" stroke-width="1.5"/>',
+      '<path d="M' + x + ' 184 H' + (x + width) + ' L' + (x + width - 42) + ' 439 H' + x + 'Z" fill="#26242d"/>',
+      '<path d="M' + (x + width * 0.48) + ' 189 L' + (x + width - 8) + ' 189 L' + (x + width * 0.60) + ' 439 L' + (x + 6) + ' 439Z" fill="#fc485b" opacity=".13"/>',
+      '<clipPath id="lineup-art-' + i + '"><rect x="' + (x + 2) + '" y="188" width="' + (width - 4) + '" height="265"/></clipPath>',
     );
     if (art) {
-      output.push(imageTag(art, x + 8, 338, width - 16, 188));
+      parts.push('<g clip-path="url(#lineup-art-' + i + ')">');
+      parts.push(portrait(art, x - 16, 181, width + 32, 289));
+      parts.push('</g>');
     } else {
-      output.push(
-        '<path d="M' +
-          (x + width / 2) +
-          ' 365 l54 66 -54 66 -54 -66z" fill="#1e2335" stroke="#ff637b" stroke-opacity=".45" stroke-width="2"/>',
-      );
-      output.push(
-        text(entry.agentName.toUpperCase(), x + 18, 448, count >= 4 ? 21 : 29, '#af829c', 700, 13),
+      parts.push(
+        '<path d="M' + (x + width / 2) + ' 240 l82 88 -82 88 -82 -88Z" fill="#21262f" stroke="#ed4c5c" stroke-width="2"/>',
+        text(entry.agentName.toUpperCase(), x + 20, 344, count >= 4 ? 21 : 28, '#e7a3a4', 800, count >= 4 ? 10 : 18),
       );
     }
-    output.push(
-      '<rect x="' +
-        (x + 2) +
-        '" y="502" width="' +
-        (width - 4) +
-        '" height="91" fill="#101724" opacity=".96"/>',
+    parts.push(
+      '<path d="M' + (x + 13) + ' 200 H' + (x + 77) + '" stroke="#ff4655" stroke-width="4"/>',
+      '<rect x="' + (x + 11) + '" y="212" width="40" height="32" fill="#0c1016" opacity=".92"/>',
+      text(String(i + 1).padStart(2, '0'), x + 17, 236, 19, '#f2e8df', 800, 2),
+      '<rect x="' + (x + 2) + '" y="448" width="' + (width - 4) + '" height="114" fill="#10151c" opacity=".98"/>',
+      '<path d="M' + (x + 2) + ' 448 H' + (x + width - 2) + '" stroke="#ff4655" stroke-width="3"/>',
+      text(entry.displayName, x + 13, 491, nameFont, '#f7f1e7', 850, nameLimit),
+      text(roles[i] ?? 'エージェント', x + 13, 518, 15, '#fb7780', 650, 12),
+      '<path d="M' + (x + 13) + ' 530 H' + (x + width - 12) + '" stroke="#353a43"/>',
+      text(entry.playerLabel ?? 'PLAYER ' + (i + 1), x + 13, 551, playerFont, '#dcd6cf', 650, playerLimit),
+      '</g>',
     );
-    output.push('<rect x="' + (x + 2) + '" y="502" width="4" height="91" fill="#ff526c"/>');
-    output.push(text('0' + (index + 1), x + 15, 365, 18, '#ff798c', 800));
-    output.push(text(entry.displayName, x + 15, 539, font, '#fff7fd', 800, count >= 5 ? 6 : 12));
-    output.push(text(role, x + 16, 563, 14, '#ff90a1', 500, count >= 5 ? 9 : 16));
-    output.push(
-      text(
-        entry.playerLabel ?? 'PLAYER 0' + (index + 1),
-        x + 16,
-        584,
-        playerFont,
-        '#c9c4ff',
-        600,
-        count >= 5 ? 10 : count === 4 ? 13 : 22,
-      ),
-    );
-    output.push('</g>');
   }
-  return output.join('');
+  return parts.join('');
 }
 
 export function renderValorantHudSvg(
@@ -208,57 +140,45 @@ export function renderValorantHudSvg(
 ): string {
   const count = input.entries.length;
   const mode = input.mode === 'TACTICAL' ? '実戦向け構成' : '完全ランダム';
-  const title = input.mode === 'TACTICAL' ? 'TACTICAL COMPOSITION' : 'AGENT DRAW';
-  const footer = input.planLabel ? '構成の特徴：' + input.planLabel : 'HERTA  /  AGENT SELECTION';
-  const parts: string[] = [];
+  const footer = input.planLabel ? '構成：' + input.planLabel : 'HERTA / AGENT SELECTION';
+  const parts: string[] = [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680">',
+    '<defs>',
+    '<linearGradient id="scene" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#090c12"/><stop offset=".58" stop-color="#16191f"/><stop offset="1" stop-color="#0b0d13"/></linearGradient>',
+    '<linearGradient id="left-shade" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#0d1118"/><stop offset=".82" stop-color="#0d1118" stop-opacity=".98"/><stop offset="1" stop-color="#0d1118" stop-opacity="0"/></linearGradient>',
+    '<pattern id="grid" width="52" height="52" patternUnits="userSpaceOnUse"><path d="M52 0 H0 V52" stroke="#a6a1a0" stroke-width=".7" stroke-opacity=".06" fill="none"/></pattern>',
+    '<clipPath id="frame"><rect x="0" y="0" width="1200" height="680" rx="13"/></clipPath>',
+    '<clipPath id="solo-art"><rect x="618" y="166" width="562" height="402"/></clipPath>',
+    '</defs>',
+    '<g clip-path="url(#frame)" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, Arial, sans-serif">',
+    '<rect width="1200" height="680" fill="url(#scene)"/>',
+    '<rect width="1200" height="680" fill="url(#grid)"/>',
+    '<path d="M770 0 H1200 V162 L1150 162 Z" fill="#e34251" opacity=".10"/>',
+    '<path d="M0 0 H9 V680 H0Z" fill="#ff4655"/>',
+    '<path d="M30 26 H1170 M30 656 H1170" stroke="#514a4a" stroke-width="1"/>',
+    '<path d="M30 26 H160 M1040 656 H1170" stroke="#ff4655" stroke-width="3"/>',
+  ];
+  // Art is rendered first, then headers and metadata above it, regardless of portrait size.
+  parts.push(count === 1 ? solo(input, portraits, roles) : squad(input, portraits, roles));
   parts.push(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680">' +
-      '<defs>' +
-      '<linearGradient id="background" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0b101d"/><stop offset=".58" stop-color="#1c1c2d"/><stop offset="1" stop-color="#0d1324"/></linearGradient>' +
-      '<linearGradient id="panel" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#2f253c"/><stop offset=".55" stop-color="#1c2134"/><stop offset="1" stop-color="#141927"/></linearGradient>' +
-      '<pattern id="grid" width="60" height="60" patternUnits="userSpaceOnUse"><path d="M60 0 H0 V60" fill="none" stroke="#8990a8" stroke-opacity=".07"/></pattern>' +
-      '<clipPath id="bounds"><rect width="1200" height="680" rx="18"/></clipPath>' +
-      '</defs>' +
-      '<g clip-path="url(#bounds)">' +
-      '<rect width="1200" height="680" fill="url(#background)"/>' +
-      '<rect width="1200" height="680" fill="url(#grid)"/>' +
-      '<path d="M980 0 L1200 0 V360 L1060 305Z" fill="#fb5067" opacity=".13"/>' +
-      '<path d="M1120 0 L1200 0 L1200 265Z" fill="#e34f74" opacity=".20"/>' +
-      '<path d="M0 0 H8 V680 H0Z" fill="#ff4965"/>' +
-      '<path d="M26 19 H1178 M26 661 H1178" stroke="#55435b" stroke-width="2"/>' +
-      '<path d="M45 25 H145 M1040 25 H1155" stroke="#ff4965" stroke-width="3"/>' +
-      '<g font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, sans-serif">',
+    '<rect x="32" y="30" width="1136" height="125" fill="#0b0d13" opacity=".93"/>',
+    text('HERTA  /  VALORANT', 52, 58, 18, '#ff6c75', 800),
+    text('AGENT REVEAL', 52, 116, 53, '#f6f0e7', 850),
+    text(count === 1 ? 'SOLO  //  HERO PICK' : 'SQUAD  //  LINEUP', 885, 82, 18, '#a6a3a2', 700, 24),
+    text('抽選完了', 1022, 125, 23, '#ff6d79', 750),
+    '<path d="M52 151 H1148" stroke="#ff4655" stroke-width="2"/>',
+    '<rect x="32" y="577" width="1136" height="77" fill="#0e1218" opacity=".99"/>',
+    '<path d="M52 577 H1148" stroke="#ff4655" stroke-width="2"/>',
+    text('MODE', 53, 600, 13, '#a8a3a1', 650),
+    text(mode, 53, 632, 22, '#f1e9e0', 750, 11),
+    text('MAP', 295, 600, 13, '#a8a3a1', 650),
+    text(input.mapName, 295, 632, 22, '#f1e9e0', 750, 15),
+    text('PARTICIPANTS', 598, 600, 13, '#a8a3a1', 650),
+    text(count + ' / 5', 598, 632, 24, '#f1e9e0', 800),
+    text('STATUS', 785, 600, 13, '#a8a3a1', 650),
+    text('PICK COMPLETE', 785, 632, 17, '#ff7d83', 750),
+    text(footer, 55, 675, 14, '#b4aaa7', 500, 37),
+    '</g></svg>',
   );
-  parts.push(text('HERTA  /  VALORANT', 53, 62, 20, '#fd7186', 700));
-  parts.push(text(title, 940, 62, 17, '#99a5bd', 700));
-  parts.push(text('VALORANT', 53, 135, 50, '#fc586f', 850));
-  parts.push(text('エージェント抽選', 360, 132, 40, '#ffffff', 800));
-  parts.push('<path d="M55 155 H1148" stroke="#6c536a" stroke-opacity=".75"/>');
-  // Solo portrait stays behind the metric panels, keeping status and participant counts readable.
-  if (count === 1) parts.push(singleHero(input, portraits, roles));
-  parts.push(metric(53, 264, 'MODE / モード', mode, 12));
-  parts.push(metric(330, 304, 'MAP / マップ', input.mapName, 15));
-  parts.push(metric(647, 235, 'PARTICIPANTS', count + ' / 5', 8));
-  parts.push(
-    '<rect x="900" y="193" width="246" height="86" rx="5" fill="#2e1a2b" stroke="#aa3a52"/>' +
-      text('STATUS', 921, 221, 17, '#ff8da2', 600) +
-      text('抽選完了', 921, 256, 26, '#ffffff', 800),
-  );
-  parts.push('<path d="M53 297 H1147" stroke="#f54b68" stroke-opacity=".68"/>');
-  parts.push(
-    text(
-      count === 1 ? 'DRAW RESULT  /  SOLO' : 'DRAW RESULT  /  SQUAD',
-      55,
-      322,
-      17,
-      '#ff7187',
-      700,
-    ),
-  );
-  if (count > 1) parts.push(squad(input, portraits, roles));
-  parts.push('<path d="M53 613 H1146" stroke="#7a536d" stroke-opacity=".65"/>');
-  parts.push(text(footer, 55, 644, 21, '#c8bdde', 500, 40));
-  parts.push(text('PICK COMPLETE', 969, 645, 18, '#ff8c9c', 700));
-  parts.push('</g></g></svg>');
   return parts.join('');
 }
