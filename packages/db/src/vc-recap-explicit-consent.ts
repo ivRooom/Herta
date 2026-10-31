@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
+import { lockVcRecapStorageOwner } from './vc-recap-storage-lock.js';
 
 /**
  * A proposed version. It MUST be updated to the actually published policy
@@ -85,6 +86,7 @@ export async function getVcRecapExplicitConsentCapabilities(
  */
 export async function requestVcRecapErasure(prisma: PrismaClient, userId: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
+    await lockVcRecapStorageOwner(tx, userId);
     const now = new Date();
     await tx.vcRecapErasureRequest.upsert({
       where: { userId },
@@ -248,6 +250,7 @@ export async function updateVcRecapLongTermConsentChoices(
   const wantsGrant = Object.values(requested).some(Boolean);
   // Revocation must remain possible even when enrollment is disabled.
   return prisma.$transaction(async (tx) => {
+    await lockVcRecapStorageOwner(tx, userId);
     const [erasure, legacy, existing] = await Promise.all([
       tx.vcRecapErasureRequest.findUnique({ where: { userId }, select: { userId: true } }),
       tx.userDataConsent.findUnique({
