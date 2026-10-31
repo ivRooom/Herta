@@ -8,6 +8,18 @@ if [[ ! -f "${MODEL_DIR}/model-manifest.json" ]] || [[ ! -s "${MODEL_DIR}/model.
   exit 1
 fi
 
+# Verify all immutable model artifacts, not just the presence of model.bin.
+# The sidecar repeats this integrity check at startup; refuse bad staging
+# before any build/start command is attempted on production.
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PYTHONPATH="${repo_root}/services/whisper" python3 - "${MODEL_DIR}" <<'PY'
+import sys
+from pathlib import Path
+from model_manifest import verify_model_manifest
+
+verify_model_manifest(Path(sys.argv[1]))
+PY
+
 if [[ ! -f /proc/meminfo ]]; then
   echo "BLOCKED: only Linux hosts supported" >&2
   exit 1
