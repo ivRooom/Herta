@@ -85,6 +85,64 @@ jobs:
           syft herta-whispercpp:ci -o cyclonedx-json=reports/security/whispercpp-${{ matrix.arch }}.cdx.json
           grype herta-whispercpp:ci --fail-on high             --output json > reports/security/whispercpp-${{ matrix.arch }}.grype.json
 
+      - name: Synthetic GGML model load and private HTTP smoke (amd64 only)
+        if: matrix.arch == 'amd64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # CI runner only. Never download GGML weights on production.
+          bash services/whisper-cpp/stage_model_offhost.sh "$RUNNER_TEMP/herta-ggml-test"
+          test -s "$RUNNER_TEMP/herta-ggml-test/ggml-tiny.bin"
+          test_token='synthetic-ci-token-32-characters-verified-only'
+          docker run -d --name herta-whispercpp-smoke \
+            --memory=768m --cpus=1 --pids-limit=96 --read-only \
+            --cap-drop=ALL --security-opt=no-new-privileges \
+            --tmpfs=/tmp:rw,noexec,nosuid,size=16m \
+            -p 127.0.0.1:8765:8765 \
+            -v "$RUNNER_TEMP/herta-ggml-test/ggml-tiny.bin:/models/ggml-tiny.bin:ro" \
+            -e WHISPER_MODEL_PATH=/models/ggml-tiny.bin \
+            -e VC_RECAP_LOCAL_WHISPER_TOKEN="$test_token" \
+            herta-whispercpp:ci
+          trap 'docker rm -f herta-whispercpp-smoke >/dev/null 2>&1 || true' EXIT
+          timeout 150 python3 - <<'PY'
+          import json
+          import time
+          import urllib.request
+          import urllib.error
+
+          base = 'http://127.0.0.1:8765'
+          for attempt in range(60):
+              try:
+                  with urllib.request.urlopen(base + '/healthz', timeout=2) as resp:
+                      assert resp.status == 200
+                      assert json.loads(resp.read())['status'] == 'ready'
+                  break
+              except (OSError, urllib.error.URLError):
+                  time.sleep(1)
+          else:
+              raise RuntimeError('Whisper C++ model did not become healthy')
+
+          pcm = b'\x00\x00' * 48000  # generated 1s silence only; no participant audio
+          headers = {'Content-Type':'application/octet-stream','X-Audio-Sample-Rate':'48000'}
+          request = urllib.request.Request(base+'/v1/transcribe', data=pcm, headers=headers)
+          try:
+              urllib.request.urlopen(request,timeout=5)
+              raise AssertionError('Unauthenticated audio was accepted')
+          except urllib.error.HTTPError as error:
+              assert error.code == 403, error.code
+          headers['Authorization'] = 'Bearer synthetic-ci-token-32-characters-verified-only'
+          started = time.monotonic()
+          request = urllib.request.Request(base+'/v1/transcribe',data=pcm,headers=headers)
+          with urllib.request.urlopen(request,timeout=90) as resp:
+              assert resp.status == 200, resp.status
+              body=json.loads(resp.read())
+              assert isinstance(body.get('text'),str)
+              assert len(body['text']) <= 4000
+          print('Synthetic 1s silence inference completed; elapsed_seconds=',round(time.monotonic()-started,2))
+          PY
+          docker stats herta-whispercpp-smoke --no-stream \
+            --format 'CI sample: name={{.Name}} cpu={{.CPUPerc}} memory={{.MemUsage}}'
+
       - name: Upload security evidence, even on failure
         if: always()
         uses: actions/upload-artifact@v7
