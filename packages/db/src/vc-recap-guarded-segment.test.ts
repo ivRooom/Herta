@@ -38,7 +38,7 @@ function harness(granted: boolean, hasErasure = false, lockFailure = false) {
   return {
     calls,
     prisma: {
-      $transaction: async (cb: (tx: typeof tx) => Promise<boolean>) => cb(tx),
+      $transaction: async (cb: (client: typeof tx) => Promise<boolean>) => cb(tx),
     } as unknown as PrismaClient,
   };
 }
