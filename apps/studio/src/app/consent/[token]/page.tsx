@@ -72,6 +72,7 @@ export default async function VoiceConsentPage({ params }: { params: Promise<{ t
         enrollmentEnabled={longTerm.enrollmentEnabled}
         legacyConsent={longTerm.legacyConsent}
         erasurePending={longTerm.erasurePending}
+        hasUnrevokedLongTermGrant={longTerm.hasUnrevokedLongTermGrant}
       />
     </PageShell>
   );
