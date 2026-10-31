@@ -8,6 +8,7 @@ import {
 import type { Logger } from '@herta/logger';
 import {
   addVcRecapSessionParticipant,
+  appendLocalVcRecapSegmentIfConsented,
   applyAutoConsentRoles,
   appendVcRecapTranscriptSegment,
   completeVcRecapSession,
@@ -25,7 +26,10 @@ import { resolveAiOpenAiCredential } from '../ai/factory.js';
 import { transcribePcmWithOpenAi } from './vc-recap-openai-file-transcriber.js';
 import { transcribePcmWithLocalWhisper } from './vc-recap-local-whisper-transcriber.js';
 import { hasVcRecapOpenAiAudioConsent } from './vc-recap-openai-audio-consent.js';
-import { resolveVcRecapTranscriberConfig } from './vc-recap-transcriber-config.js';
+import {
+  canUseLocalWhisperCanary,
+  resolveVcRecapTranscriberConfig,
+} from './vc-recap-transcriber-config.js';
 import { splitVcRecapParticipants } from './vc-recap-participants.js';
 import { linkSpeakerAudioStream, type SpeakerAudioStream } from './vc-recap-speaker-stream.js';
 import { summarizeVcRecapSession } from './vc-recap-summarizer.js';
@@ -64,6 +68,10 @@ interface ActiveVcRecapSession {
   acceptingSegments: boolean;
   /** 保存中のsegment書き込み。要約前に必ず待ち、要約・削除後に本文が残らないようにする。 */
   pendingSegmentWrites: Set<Promise<unknown>>;
+  /** Force-close in-flight local inference HTTP when the person withdraws. */
+  localWhisperControllers: Map<string, Set<AbortController>>;
+  /** Never publish a partially recognized session as a finished summary. */
+  localWhisperFailure: boolean;
   /** Total audio seconds already budgeted for OpenAI requests in this session. */
   openAiAudioSeconds: number;
   speakingHandler?: (userId: string) => void;
@@ -175,6 +183,8 @@ export async function startVcRecap(
       stopping: false,
       acceptingSegments: true,
       pendingSegmentWrites: new Set(),
+    localWhisperControllers: new Map(),
+    localWhisperFailure: false,
       openAiAudioSeconds: 0,
     };
 
@@ -314,10 +324,18 @@ async function transcribeSpeaker(
     config.openAiAudioEnabled &&
     (await hasVcRecapOpenAiAudioConsent(prisma, userId));
   // A deliberately selected local provider NEVER falls back to AWS or OpenAI.
-  const provider =
-    config.provider === 'local-whisper' ? 'local-whisper' : useOpenAi ? config.provider : 'aws';
-  if (provider === 'local-whisper' && !config.localWhisperEnabled) {
-    logger.warn({ guildId: session.guildId }, 'Local Whisperは有効化されていません');
+  // Only one explicitly allowlisted canary Guild can override AWS default.
+  // Global local-whisper mode without an explicit allowlist is disabled, NOT
+  // silently routed to a cloud/paid provider.
+  const provider = canUseLocalWhisperCanary(config, session.guildId)
+    ? 'local-whisper'
+    : config.provider === 'local-whisper'
+      ? 'disabled'
+      : useOpenAi
+        ? config.provider
+        : 'aws';
+  if (provider === 'disabled') {
+    logger.warn({ guildId: session.guildId }, 'Local WhisperのCanary設定が未完了です');
     return;
   }
   const credential = provider === 'aws' ? await resolveAwsTranscribeCredential(prisma) : null;
@@ -343,6 +361,15 @@ async function transcribeSpeaker(
     new prism.opus.Decoder({ rate: 48000, channels: 2, frameSize: 960 }),
   );
   session.activeStreams.set(userId, speakerStream);
+  const localController = provider === 'local-whisper' ? new AbortController() : null;
+  if (localController) {
+    let set = session.localWhisperControllers.get(userId);
+    if (!set) {
+      set = new Set();
+      session.localWhisperControllers.set(userId, set);
+    }
+    set.add(localController);
+  }
   // Preserve the existing AWS streaming lifetime. Only OpenAI file uploads
   // release capture ownership on PCM end so a new speech burst is not lost.
   if (provider !== 'aws') {
@@ -355,7 +382,10 @@ async function transcribeSpeaker(
       // 文字起こし中に同意が取り消された、またはstopVcRecapのflushが打ち切られた場合、
       // 確定済みセグメントであっても保存しない。
       if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return;
-      const write = appendVcRecapTranscriptSegment(prisma, {
+      const append = provider === 'local-whisper'
+        ? appendLocalVcRecapSegmentIfConsented
+        : appendVcRecapTranscriptSegment;
+      const write = append(prisma, {
         sessionId: session.sessionId,
         userId,
         text: segment.text,
@@ -375,6 +405,7 @@ async function transcribeSpeaker(
     } else if (provider === 'local-whisper') {
       await transcribePcmWithLocalWhisper(toMonoChunks(speakerStream.pcm), onSegment, {
         token: process.env['VC_RECAP_LOCAL_WHISPER_TOKEN'] ?? '',
+        signal: localController?.signal,
         mayProcess: async () => {
           if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return false;
           // An explicit existing transcription consent is required for new
@@ -417,9 +448,15 @@ async function transcribeSpeaker(
       });
     }
   } catch (error) {
+    if (provider === 'local-whisper') session.localWhisperFailure = true;
     // 1人の文字起こし失敗でセッション全体を失敗させない(他の参加者の文字起こしは継続する)。
     logger.warn({ err: error, guildId: session.guildId, userId }, 'VC文字起こしに失敗しました');
   } finally {
+    if (localController) {
+      const set = session.localWhisperControllers.get(userId);
+      set?.delete(localController);
+      if (set?.size === 0) session.localWhisperControllers.delete(userId);
+    }
     if (session.activeStreams.get(userId) === speakerStream) {
       session.activeStreams.delete(userId);
     }
@@ -475,8 +512,10 @@ export async function stopVcRecap(
   }
   // File transcription is not streaming; allow a bounded post-speech upload.
   // AWS streaming keeps its existing 5s flush budget.
+  const config = resolveVcRecapTranscriberConfig();
+  const isLocalCanary = canUseLocalWhisperCanary(config, guildId);
   const flushMs =
-    resolveVcRecapTranscriberConfig().provider === 'aws' ? STOP_FLUSH_TIMEOUT_MS : 20_000;
+    config.provider === 'aws' && !isLocalCanary ? STOP_FLUSH_TIMEOUT_MS : 20_000;
   const flushed = await settleWithin(session.pendingTranscriptions.values(), flushMs);
   session.acceptingSegments = false;
   if (!flushed) {
@@ -484,12 +523,23 @@ export async function stopVcRecap(
     for (const stream of session.activeStreams.values()) {
       stream.abort();
     }
+    for (const controllers of session.localWhisperControllers.values()) {
+      for (const controller of controllers) controller.abort();
+    }
     await settleWithin(session.pendingTranscriptions.values(), STOP_ABORT_TIMEOUT_MS);
   }
   flushingSessions.delete(session);
   // acceptingSegments=false以降に新しい書き込みは始まらないため、既に始まった分だけ待てばよい。
   await Promise.allSettled([...session.pendingSegmentWrites]);
   session.connection.destroy();
+
+  // Local inference may outlast the bounded flush interval or fail mid-queue.
+  // Never silently summarize only the recognized prefix of the conversation.
+  if (isLocalCanary && (!flushed || session.localWhisperFailure)) {
+    await failVcRecapSession(prisma, session.sessionId, []);
+    logger.warn({ guildId, sessionId: session.sessionId }, 'Local Whisperが未確定のため要約を中止しました');
+    return { status: 'summarize_failed', sessionId: session.sessionId };
+  }
 
   const segments = await listVcRecapTranscriptSegments(prisma, session.sessionId);
   // 本文保存に同意した参加者の本文だけを保持期間まで残す(stop時点の同意状態で判定する)。
@@ -525,8 +575,11 @@ export async function stopVcRecap(
  */
 export function revokeVcRecapConsent(userId: string): void {
   for (const session of [...activeSessions.values(), ...flushingSessions]) {
-    if (!session.consentingUserIds.delete(userId)) continue;
+    session.consentingUserIds.delete(userId);
     session.activeStreams.get(userId)?.abort();
+    for (const controller of session.localWhisperControllers.get(userId) ?? []) {
+      controller.abort();
+    }
   }
 }
 
