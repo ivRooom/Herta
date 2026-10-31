@@ -15,14 +15,17 @@ export interface LocalWhisperOptions {
   /** Live personal consent and active-session check, not an old snapshot. */
   mayProcess: () => Promise<boolean>;
   fetchImpl?: typeof fetch;
+  /** Abort the currently pending local HTTP upload on personal withdrawal/stop. */
+  signal?: AbortSignal;
 }
 
 async function recognize(pcm: Buffer, options: LocalWhisperOptions): Promise<string> {
-  if (!(await options.mayProcess()))
+  if (options.signal?.aborted || !(await options.mayProcess()) || options.signal?.aborted) {
     throw new Error('Local Whisper consent revoked or unavailable');
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
+  }
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  const signal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
+  {
     const response = await (options.fetchImpl ?? fetch)(ENDPOINT, {
       method: 'POST',
       headers: {
@@ -32,7 +35,7 @@ async function recognize(pcm: Buffer, options: LocalWhisperOptions): Promise<str
       },
       // Uint8Array is accepted as a BodyInit even with Node Buffer backing.
       body: new Uint8Array(pcm),
-      signal: controller.signal,
+      signal,
     });
     if (!response.ok) throw new Error(`Local Whisper HTTP ${response.status}`);
     const raw = await response.text();
@@ -53,8 +56,6 @@ async function recognize(pcm: Buffer, options: LocalWhisperOptions): Promise<str
       throw new Error('Local Whisper transcript missing');
     }
     return (decoded as { text: string }).text.trim().slice(0, 4_000);
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -77,10 +78,17 @@ export async function transcribePcmWithLocalWhisper(
   let pendingBytes = 0;
   let queued = 0;
   let failure: unknown = null;
-  let cancelled = false;
+  let cancelled = options.signal?.aborted ?? false;
+  const onAbort = () => {
+    cancelled = true;
+  };
+  options.signal?.addEventListener('abort', onAbort, { once: true });
   let inferenceChain: Promise<void> = Promise.resolve();
 
   const enqueue = (): void => {
+    if (cancelled || options.signal?.aborted) {
+      throw new Error('Local Whisper consent revoked or unavailable');
+    }
     if (pendingBytes === 0) return;
     if (queued >= MAX_QUEUED) throw new Error('Local Whisper inference backlog exceeded');
     const pcm = Buffer.concat(pending, pendingBytes);
@@ -108,6 +116,9 @@ export async function transcribePcmWithLocalWhisper(
 
   try {
     for await (const chunk of pcmChunks) {
+      if (cancelled || options.signal?.aborted) {
+        throw new Error('Local Whisper consent revoked or unavailable');
+      }
       if (failure) throw failure;
       if (chunk.length % BYTES_PER_SAMPLE !== 0) {
         throw new Error('Invalid Local Whisper PCM frame alignment');
@@ -132,5 +143,7 @@ export async function transcribePcmWithLocalWhisper(
     // In-flight HTTP is bounded by timeout; no queued request may start now.
     await inferenceChain;
     throw error;
+  } finally {
+    options.signal?.removeEventListener('abort', onAbort);
   }
 }
