@@ -113,10 +113,7 @@ test(
           },
         });
       assert.equal((await reroll(session.id, 'guest')).status, 'forbidden');
-      const rerolls = await Promise.all([
-        reroll(session.id, 'owner'),
-        reroll(session.id, 'owner'),
-      ]);
+      const rerolls = await Promise.all([reroll(session.id, 'owner'), reroll(session.id, 'owner')]);
       const successful = rerolls.filter((r) => r.status === 'ok');
       assert.equal(successful.length, 1);
       const successor = successful[0]!;
@@ -126,7 +123,10 @@ test(
       assert.equal(successor.session.participants.length, 2);
       assert.notEqual(successor.session.id, session.id);
       assert.equal((await getValorantSession(prisma, guildId, session.id))?.messageId, null);
-      assert.deepEqual((await getValorantSession(prisma, guildId, session.id))?.result, final?.result);
+      assert.deepEqual(
+        (await getValorantSession(prisma, guildId, session.id))?.result,
+        final?.result,
+      );
       assert.equal((await reroll(session.id, 'owner')).status, 'closed');
       assert.equal((await reroll(successor.session.id, 'owner')).status, 'ok');
       assert.equal(await getValorantSession(prisma, otherGuild, successor.session.id), null);

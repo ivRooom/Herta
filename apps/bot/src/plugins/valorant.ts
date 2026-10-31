@@ -213,15 +213,15 @@ function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
       : session.status === 'OPEN'
         ? [
             new ActionRowBuilder<ButtonBuilder>().addComponents(
-        button(
-          'join',
-          '参加',
-          ButtonStyle.Success,
-          closed || members.length >= session.maxParticipants,
-        ),
-        button('leave', '参加取消', ButtonStyle.Secondary, closed),
-        button('draw', '抽選', ButtonStyle.Primary, closed || members.length === 0),
-        button('cancel', '募集取消', ButtonStyle.Danger, closed),
+              button(
+                'join',
+                '参加',
+                ButtonStyle.Success,
+                closed || members.length >= session.maxParticipants,
+              ),
+              button('leave', '参加取消', ButtonStyle.Secondary, closed),
+              button('draw', '抽選', ButtonStyle.Primary, closed || members.length === 0),
+              button('cancel', '募集取消', ButtonStyle.Danger, closed),
             ),
           ]
         : [];
@@ -250,7 +250,10 @@ function pickValorantAssignments(
     if (tactical.status !== 'ok') return null;
     pool = tactical.agents.map((name) => available.find((a) => a.agentName === name)!);
   }
-  const result = pickRandomValorantAgents(participants, pool.map(({ agentId }) => agentId));
+  const result = pickRandomValorantAgents(
+    participants,
+    pool.map(({ agentId }) => agentId),
+  );
   if (result.status !== 'ok') return null;
   return result.assignments.map(({ userId, agent }) => {
     const found = pool.find(({ agentId }) => agentId === agent)!;
@@ -313,7 +316,10 @@ async function handleRandom(
     const mode = map ? 'TACTICAL' : 'RANDOM';
     const mentioned = Array.from({ length: 5 }, (_, index) => {
       const name = `member${index + 1}`;
-      return { user: interaction.options.getUser(name), member: interaction.options.getMember(name) };
+      return {
+        user: interaction.options.getUser(name),
+        member: interaction.options.getMember(name),
+      };
     }).filter((entry) => entry.user !== null);
     if (mentioned.some(({ member }) => !member)) {
       await interaction.editReply('指定できるのは、このサーバーに参加しているメンバーだけです。');
@@ -329,7 +335,9 @@ async function handleRandom(
       return;
     }
     if (members.length > config.maxParticipants) {
-      await interaction.editReply(`指定人数がサーバーの抽選上限（${config.maxParticipants}人）を超えています。`);
+      await interaction.editReply(
+        `指定人数がサーバーの抽選上限（${config.maxParticipants}人）を超えています。`,
+      );
       return;
     }
     const expiresAt = new Date(Date.now() + config.sessionDurationMinutes * 60_000);
@@ -338,7 +346,9 @@ async function handleRandom(
       const candidates = await getActiveValorantCandidates(prisma, interaction.guildId, config);
       const assignments = pickValorantAssignments(members, candidates, mode, map);
       if (!assignments) {
-        await interaction.editReply('指定人数に対応する有効なエージェント構成が不足しています。Studioで候補を確認してください。');
+        await interaction.editReply(
+          '指定人数に対応する有効なエージェント構成が不足しています。Studioで候補を確認してください。',
+        );
         return;
       }
       const session = await createDirectValorantSession(prisma, {
@@ -353,7 +363,9 @@ async function handleRandom(
         candidates,
         assignments,
       });
-      await interaction.editReply('指定メンバーの抽選が完了しました。結果の「再抽選」ボタンで引き直せます。');
+      await interaction.editReply(
+        '指定メンバーの抽選が完了しました。結果の「再抽選」ボタンで引き直せます。',
+      );
       const message = await interaction.followUp({
         ...buildValorantSessionMessage(session),
         flags: [],
@@ -466,14 +478,17 @@ async function handleValorantButton(
       };
       // Expiration can close the DB session even if the Discord UI is stale.
       if (mutation.status === 'closed') {
-        const latest = parsed.action === 'reroll'
-          ? await prisma.valorantPickSession.findUnique({
-              where: { messageId: interaction.message.id },
-              include: { participants: { orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }] } },
-            })
-          : await getValorantSession(prisma, guildId, parsed.id);
+        const latest =
+          parsed.action === 'reroll'
+            ? await prisma.valorantPickSession.findUnique({
+                where: { messageId: interaction.message.id },
+                include: { participants: { orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }] } },
+              })
+            : await getValorantSession(prisma, guildId, parsed.id);
         if (latest?.guildId === guildId)
-          await interaction.message.edit(buildValorantSessionMessage(latest)).catch(() => undefined);
+          await interaction.message
+            .edit(buildValorantSessionMessage(latest))
+            .catch(() => undefined);
       }
       await interaction.editReply(messages[mutation.status] ?? '操作できませんでした。');
       return;
@@ -495,13 +510,13 @@ async function handleValorantButton(
         ? '同じメンバー・マップで再抽選しました。以前の結果は履歴に保存されています。'
         : parsed.action === 'draw'
           ? '抽選を確定しました。'
-        : parsed.action === 'join'
-          ? mutation.changed
-            ? '参加しました。'
-            : 'すでに参加済みです。'
-          : parsed.action === 'leave'
-            ? '参加を取り消しました。'
-            : '募集を取り消しました。',
+          : parsed.action === 'join'
+            ? mutation.changed
+              ? '参加しました。'
+              : 'すでに参加済みです。'
+            : parsed.action === 'leave'
+              ? '参加を取り消しました。'
+              : '募集を取り消しました。',
     );
   } catch (error) {
     logger.error(
