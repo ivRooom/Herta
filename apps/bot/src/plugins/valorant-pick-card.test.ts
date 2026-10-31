@@ -85,6 +85,34 @@ describe('VALORANT pick card', () => {
     expect(lineup.match(/参加者[1-5]/g)).toHaveLength(5);
   });
 
+  it('keeps full-width Japanese labels within every squad card', () => {
+    for (const count of [2, 3, 4, 5]) {
+      const gap = count === 2 ? 18 : 12;
+      const width = (1096 - gap * (count - 1)) / count;
+      const playerFont = count === 5 ? 17 : count === 4 ? 19 : 21;
+      const nameFont = count === 5 ? 25 : count === 4 ? 30 : 38;
+      const playerLimit = Math.floor((width - 26) / playerFont);
+      const nameLimit = Math.floor((width - 26) / nameFont);
+      const svg = renderValorantHudSvg(
+        {
+          mode: 'RANDOM',
+          mapName: '指定なし',
+          entries: Array.from({ length: count }, () => ({
+            agentName: 'LongAgentNameForFallback',
+            displayName: '漢'.repeat(30),
+            playerLabel: '界'.repeat(30),
+          })),
+        },
+        Array(count).fill(null),
+        Array(count).fill('デュエリスト'),
+      );
+      expect(svg).toContain('界'.repeat(playerLimit) + '</text>');
+      expect(svg).not.toContain('界'.repeat(playerLimit + 1));
+      expect(svg).toContain('漢'.repeat(nameLimit) + '</text>');
+      expect(svg).not.toContain('漢'.repeat(nameLimit + 1));
+    }
+  });
+
   it('renders an image fetched from allowlisted agent metadata without upstream network', async () => {
     vi.resetModules();
     const art = await sharp({
