@@ -12,6 +12,7 @@
 #include <signal.h>
 #include <string>
 #include <sys/socket.h>
+#include <sys/prctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #include <vector>
@@ -86,6 +87,7 @@ inline Result run(
         close_if_open(input[0]); close_if_open(input[1]);
         return result;
     }
+    const pid_t supervisor = getpid();
     pid_t pid = fork();
     if (pid < 0) {
         close_if_open(input[0]); close_if_open(input[1]);
@@ -93,9 +95,14 @@ inline Result run(
         return result;
     }
     if (pid == 0) {
-        // After fork in a multithreaded process: async-signal-safe calls only.
+        // After fork in a multithreaded process: syscalls only until exec.
+        // A crashed/killed HTTP supervisor must not leave CPU inference alive.
+        if (prctl(PR_SET_PDEATHSIG, SIGKILL) != 0 || getppid() != supervisor) _exit(127);
         if (dup2(input[0], STDIN_FILENO) < 0 ||
             dup2(output[1], STDOUT_FILENO) < 0) _exit(127);
+        const int null_fd = open("/dev/null", O_WRONLY | O_CLOEXEC);
+        if (null_fd < 0 || dup2(null_fd, STDERR_FILENO) < 0) _exit(127);
+        close(null_fd);
         close(input[0]); close(input[1]);
         close(output[0]); close(output[1]);
         const char * args[] = {"/app/herta-whisper-cpp", mode, model_path.c_str(), nullptr};
