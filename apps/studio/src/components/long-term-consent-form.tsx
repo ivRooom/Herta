@@ -10,6 +10,7 @@ type Props = {
   enrollmentEnabled: boolean;
   legacyConsent: boolean;
   erasurePending: boolean;
+  hasUnrevokedLongTermGrant: boolean;
 };
 
 // prettier-ignore
@@ -18,7 +19,7 @@ export function LongTermConsentForm(props: Props) {
   const [pending, setPending] = useState(props.erasurePending);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
-  const active = Object.values(choices).some(Boolean);
+  const active = Object.values(choices).some(Boolean) || props.hasUnrevokedLongTermGrant;
   const canEnroll = props.enrollmentEnabled && props.legacyConsent && !pending;
 
   async function save(next: VcRecapLongTermChoices) {
