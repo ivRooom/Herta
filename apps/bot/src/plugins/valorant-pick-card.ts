@@ -122,7 +122,7 @@ async function agentPortrait(name: string, metadata: Metadata | undefined): Prom
   if (!raw) return null;
   try {
     const image = await sharp(raw, { limitInputPixels: 20_000_000 })
-      .resize(460, 440, { fit: 'contain', withoutEnlargement: true })
+      .resize(460, 440, { fit: 'contain' })
       .png()
       .toBuffer();
     if (artCache.size >= ART_CACHE_MAX) artCache.delete(artCache.keys().next().value!);
