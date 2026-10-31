@@ -101,10 +101,19 @@ test('production deploy reclaims safe Docker space before pulling the next image
 test('runtime image excludes the Next.js webpack build cache', () => {
   const dockerfile = readFileSync('Dockerfile', 'utf8');
   const cacheRemovalIndex = dockerfile.indexOf('apps/studio/.next/cache');
-  const currentNodeIndex = dockerfile.indexOf('FROM node:22-alpine3.24 AS node-current');
+  const sourceImage = dockerfile.match(
+    /^FROM node:22\.(\d+)\.(\d+)-alpine3\.24@sha256:[a-f0-9]{64} AS node-current$/mu,
+  );
+  const currentNodeIndex = sourceImage?.index ?? -1;
+  assert.ok(
+    sourceImage &&
+      (Number(sourceImage[1]) > 23 ||
+        (Number(sourceImage[1]) === 23 && Number(sourceImage[2]) >= 4)),
+    'Node source image must be at least patched 22.23.4 and pinned by digest',
+  );
   const runtimeIndex = dockerfile.indexOf('FROM alpine:3.21 AS runtime');
 
-  assert.ok(currentNodeIndex >= 0, 'current Node 22 image must remain the Node binary source');
+  assert.ok(currentNodeIndex >= 0, 'reviewed Node 22 image must remain the binary source');
   assert.ok(cacheRemovalIndex >= 0, 'Next.js build cache must be removed in the builder stage');
   assert.ok(
     runtimeIndex > cacheRemovalIndex,

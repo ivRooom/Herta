@@ -4,12 +4,16 @@
 # Node本体は現行の公式Node 22 Alpine imageから取得する。
 # builder/runtimeは同じAlpine 3.21基盤に揃え、Prisma / Sharpなどのnative artifactのABIを一致させる。
 # Alpine 3.21はOpenSSL 3.3系を提供するため、OpenSSL 3.5以降のQUIC実装由来CVEをruntimeへ持ち込まない。
-FROM node:22-alpine3.24 AS node-current
+# Pin to the Oct 21 Node 22 security patch and a reviewed multi-arch manifest digest.
+# Bump the tag AND digest together after retesting linux/amd64 + linux/arm64.
+FROM node:22.23.4-alpine3.24@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS node-current
 
 FROM alpine:3.21 AS builder
 
 RUN apk add --no-cache libc6-compat openssl bash libstdc++
 COPY --from=node-current /usr/local /usr/local
+# Fail closed if an unexpected binary was copied from the pinned image.
+RUN test "$(node -p 'process.version')" = 'v22.23.4'
 # node-currentのYarn shimは/usr/local外の/opt配下を参照するため、stage間copy後は壊れる。
 # HertaはpackageManagerでpnpmを固定しているので、不要なshimを除去してpnpmだけを有効化する。
 RUN rm -f /usr/local/bin/pnpm /usr/local/bin/pnpx /usr/local/bin/yarn /usr/local/bin/yarnpkg \
@@ -109,6 +113,8 @@ RUN apk add --no-cache libc6-compat openssl font-noto-cjk libstdc++ \
   && addgroup -g 1000 -S node \
   && adduser -u 1000 -S -G node node
 COPY --from=node-current /usr/local /usr/local
+# Fail closed if an unexpected binary was copied from the pinned image.
+RUN test "$(node -p 'process.version')" = 'v22.23.4'
 RUN rm -rf \
     /usr/local/lib/node_modules/npm \
     /usr/local/lib/node_modules/corepack \
