@@ -8,6 +8,14 @@ Parameters:
     Type: String
     Description: A globally unique dedicated VC Recap bucket name (never a backup bucket).
     AllowedPattern: '[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]'
+  EnableAudioStandardIALifecycle:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['false', 'true']
+    Description: >-
+      Explicitly opt in to the 30-day audio-only Standard-IA transition.
+      Keep false until new consent, audio tagging, cost and erasure/restore
+      gates have been proven. Never use this setting to enable recording.
   ErasureWorkerRoleName:
     Type: String
     Default: ''
@@ -17,6 +25,7 @@ Parameters:
 
 Conditions:
   AttachErasurePolicy: !Not [!Equals [!Ref ErasureWorkerRoleName, '']]
+  EnableAudioIALifecycle: !Equals [!Ref EnableAudioStandardIALifecycle, 'true']
 
 Resources:
   VcRecapBucket:
@@ -39,6 +48,24 @@ Resources:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
               SSEAlgorithm: AES256
+      # Safe by default: this property is absent until explicitly enabled.
+      # TagFilters and size threshold prevent transcript/manifest objects and
+      # tiny audio chunks from incurring inappropriate IA transition charges.
+      # No Expiration/NoncurrentVersionExpiration is configured.
+      LifecycleConfiguration: !If
+        - EnableAudioIALifecycle
+        - TransitionDefaultMinimumObjectSize: all_storage_classes_128K
+          Rules:
+            - Id: HertaVcRecapAudioStandardIAAfter30Days
+              Status: Enabled
+              TagFilters:
+                - Key: vc-recap-kind
+                  Value: audio
+              ObjectSizeGreaterThan: '131071'
+              Transitions:
+                - TransitionInDays: 30
+                  StorageClass: STANDARD_IA
+        - !Ref 'AWS::NoValue'
       Tags:
         - Key: application
           Value: herta
