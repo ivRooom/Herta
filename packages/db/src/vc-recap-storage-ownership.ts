@@ -1,4 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
+import { lockVcRecapStorageOwner } from './vc-recap-storage-lock.js';
 import {
   VC_RECAP_LONG_TERM_CONSENT_VERSION,
   isVcRecapLongTermEnrollmentEnabled,
@@ -60,10 +61,7 @@ export async function reserveVcRecapStorageObject(
   if (!isVcRecapLongTermEnrollmentEnabled()) return { status: 'denied' };
 
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRawUnsafe(
-      'SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))',
-      'vc-recap-storage:' + input.userId,
-    );
+    await lockVcRecapStorageOwner(tx, input.userId);
     const [fence, legacy, consents] = await Promise.all([
       tx.vcRecapErasureRequest.findUnique({
         where: { userId: input.userId },
@@ -133,10 +131,7 @@ export async function commitVcRecapStorageObject(
     throw new Error('S3 version ID is required for committed storage');
   }
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRawUnsafe(
-      'SELECT pg_advisory_xact_lock(hashtextextended($1::text, 0))',
-      'vc-recap-storage:' + input.userId,
-    );
+    await lockVcRecapStorageOwner(tx, input.userId);
     const fence = await tx.vcRecapErasureRequest.findUnique({
       where: { userId: input.userId },
       select: { userId: true },
