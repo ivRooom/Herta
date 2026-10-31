@@ -74,6 +74,32 @@ describe('Private local Whisper PCM transport', () => {
     expect(onSegment).not.toHaveBeenCalled();
   });
 
+  it('aborts the in-flight private request immediately after local consent withdrawal', async () => {
+    const controller = new AbortController();
+    let started!: () => void;
+    const inFlight = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const fetchImpl = vi.fn((_url: string, init: RequestInit) => {
+      started();
+      return new Promise<Response>((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+      });
+    });
+    const onSegment = vi.fn();
+    const task = transcribePcmWithLocalWhisper(audio(Buffer.alloc(960)), onSegment, {
+      token: TOKEN,
+      mayProcess: async () => true,
+      signal: controller.signal,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+    await inFlight;
+    controller.abort();
+    await expect(task).rejects.toThrow(/aborted/);
+    expect(onSegment).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it('fails closed on worker outage, with no AWS or OpenAI fallback', async () => {
     const fetchImpl = vi.fn().mockRejectedValue(new Error('unreachable'));
     await expect(
