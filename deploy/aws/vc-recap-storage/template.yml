@@ -1,0 +1,102 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Dedicated, private, versioned S3 bucket for future Herta VC Recap audio and
+  transcript archives. Deployment does not enable any recorder/erasure jobs.
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: A globally unique dedicated VC Recap bucket name (never a backup bucket).
+    AllowedPattern: '[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]'
+  ErasureWorkerRoleName:
+    Type: String
+    Default: ''
+    Description: >-
+      OPTIONAL existing IAM role name for future supervised S3 erasure.
+      Leave empty in first rollout to avoid granting deletion permissions.
+
+Conditions:
+  AttachErasurePolicy: !Not [!Equals [!Ref ErasureWorkerRoleName, '']]
+
+Resources:
+  VcRecapBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Ref BucketName
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - Key: application
+          Value: herta
+        - Key: data-purpose
+          Value: vc-recap-private
+        - Key: backup-bucket
+          Value: 'false'
+
+  VcRecapBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref VcRecapBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !GetAtt VcRecapBucket.Arn
+              - !Sub '${VcRecapBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+  # No writer policy. Future audio/archiver roles require consent, retention,
+  # tagging and restore review before they may receive PutObject.
+  VcRecapErasureManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Condition: AttachErasurePolicy
+    Properties:
+      Description: Least-privilege only for supervised VC Recap user-prefix erasure.
+      Roles:
+        - !Ref ErasureWorkerRoleName
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ListOnlyVcUserObjects
+            Effect: Allow
+            Action:
+              - s3:ListBucketVersions
+              - s3:ListBucketMultipartUploads
+            Resource: !GetAtt VcRecapBucket.Arn
+            Condition:
+              StringLike:
+                s3:prefix:
+                  - vc-recap/users/*
+          - Sid: RemoveOnlyVcUserObjectVersionsAndUploads
+            Effect: Allow
+            Action:
+              - s3:DeleteObjectVersion
+              - s3:AbortMultipartUpload
+            Resource: !Sub '${VcRecapBucket.Arn}/vc-recap/users/*'
+
+Outputs:
+  BucketName:
+    Description: Dedicated VC Recap S3 bucket (storage feature remains OFF).
+    Value: !Ref VcRecapBucket
+  BucketArn:
+    Value: !GetAtt VcRecapBucket.Arn
