@@ -208,8 +208,8 @@ describe('VALORANT pick card', () => {
       Array(5).fill(null),
       Array(5).fill('デュエリスト'),
     );
-    expect(svg).toContain('界'.repeat(12) + '</text>');
-    expect(svg).not.toContain('界'.repeat(13));
+    expect(svg).toContain('界'.repeat(10) + '</text>');
+    expect(svg).not.toContain('界'.repeat(11));
     expect(svg).toContain('漢'.repeat(9) + '</text>');
     expect(svg).not.toContain('漢'.repeat(10));
     expect(svg).not.toContain('<script');
