@@ -6,7 +6,7 @@ ARG WHISPER_CPP_COMMIT=d1be6fde11ac6e0407606b4e42fe72d34add8037
 RUN git clone --no-checkout https://github.com/ggml-org/whisper.cpp.git /opt/whisper.cpp \
     && git -C /opt/whisper.cpp checkout --detach "${WHISPER_CPP_COMMIT}" \
     && test "$(git -C /opt/whisper.cpp rev-parse HEAD)" = "${WHISPER_CPP_COMMIT}"
-COPY CMakeLists.txt main.cpp sha256.h /work/
+COPY CMakeLists.txt main.cpp sha256.h isolation.h /work/
 RUN cmake -S /work -B /build -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_EXE_LINKER_FLAGS="-static" \
     && cmake --build /build --parallel 2 \
