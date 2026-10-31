@@ -1,6 +1,6 @@
 # Native Whisper CPU experiment — NOT production-ready
 
-Tracked by [Herta #672](https://github.com/ivRooom/Herta/issues/672). This directory is deliberately **not referenced by production Compose, Bot configuration or deploy workflows**. Existing AWS Transcribe remains production default.
+Tracked by [Herta #672](https://github.com/ivRooom/Herta/issues/672). The standalone binary is present in the repository and can be built through a **separate, default-OFF** Compose profile; Bot has a gated private native route but remains configured for AWS Transcribe by default. **No production worker is started, no model/token is staged and no human audio may be processed until release gates pass.**
 
 ## Upstream and image
 
