@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { rejectIncompleteLocalVcRecap } from './vc-recap-local-finish-policy.js';
+import {
+  rejectIncompleteLocalVcRecap,
+  shouldMarkLocalWhisperSessionFailed,
+} from './vc-recap-local-finish-policy.js';
 
 describe('Local Whisper stop safety', () => {
   it('rejects a partial or failed local result before sending a summary', () => {
@@ -7,6 +10,13 @@ describe('Local Whisper stop safety', () => {
     expect(rejectIncompleteLocalVcRecap(true, true, true)).toBe(true);
     expect(rejectIncompleteLocalVcRecap(true, false, true)).toBe(true);
     expect(rejectIncompleteLocalVcRecap(true, true, false)).toBe(false);
+  });
+
+  it('continues other participants after an explicit refusal or cancellation', () => {
+    expect(shouldMarkLocalWhisperSessionFailed(true, false)).toBe(false);
+    expect(shouldMarkLocalWhisperSessionFailed(false, true)).toBe(false);
+    expect(shouldMarkLocalWhisperSessionFailed(true, true)).toBe(false);
+    expect(shouldMarkLocalWhisperSessionFailed(false, false)).toBe(true);
   });
 
   it('preserves AWS legacy finish policy', () => {
