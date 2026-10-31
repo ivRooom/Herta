@@ -6,6 +6,10 @@ on:
     branches: [main]
     paths: ['.github/workflows/valorant-production-smoke.yml']
   workflow_dispatch:
+  workflow_run:
+    workflows: ['Deploy Production']
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
@@ -17,20 +21,34 @@ concurrency:
 jobs:
   smoke:
     name: Read-only running Bot PNG renderer
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment: production
     steps:
+      - name: Require a verified production SSH host fingerprint
+        env:
+          HOST_FINGERPRINT: ${{ secrets.LIGHTSAIL_HOST_FINGERPRINT }}
+        shell: bash
+        run: |
+          if [[ -z "$HOST_FINGERPRINT" || "$HOST_FINGERPRINT" != SHA256:* ]]; then
+            echo 'ERROR: Set the verified production environment secret LIGHTSAIL_HOST_FINGERPRINT (SHA256:...) before SSH.' >&2
+            exit 1
+          fi
       - name: Image SHA, cinematic PNGs, and critical log count
-        uses: appleboy/ssh-action@v1.2.5
+        uses: appleboy/ssh-action@0ff4204d59e8e51228ff73bce53f80d53301dee2 # v1.2.5
+        env:
+          LIGHTSAIL_APP_DIR: ${{ secrets.LIGHTSAIL_APP_DIR }}
         with:
           host: ${{ secrets.LIGHTSAIL_HOST }}
           username: ${{ secrets.LIGHTSAIL_USER }}
           key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          fingerprint: ${{ secrets.LIGHTSAIL_HOST_FINGERPRINT }}
+          envs: LIGHTSAIL_APP_DIR
           command_timeout: 8m
           script: |
             set -euo pipefail
-            APP_DIR="${{ secrets.LIGHTSAIL_APP_DIR }}"
+            APP_DIR="$LIGHTSAIL_APP_DIR"
             cd "$APP_DIR"
             test -r "$APP_DIR/.env.production"
             SHA="$(git rev-parse HEAD)"
