@@ -106,7 +106,10 @@ describe('Private local Whisper PCM transport', () => {
   });
 
   it('limits concurrent queued 8s segments so inference cannot consume unlimited RAM', async () => {
-    const fetchImpl = vi.fn(async () => new Promise<Response>(() => undefined));
+    const fetchImpl = vi.fn(async () => {
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      return new Response(JSON.stringify({ text: 'ok' }), { status: 200 });
+    });
     await expect(
       transcribePcmWithLocalWhisper(
         audio(
