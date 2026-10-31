@@ -71,6 +71,10 @@ jobs:
           DISCORD_CLIENT_SECRET: ci-client-secret
           DISCORD_BOT_TOKEN: ci-bot-token
           TEAM_SPLIT_SECRET: ci-team-split-secret-for-compose-validation
+          HERTA_DATABASE_CA_FILE: /tmp/ci-postgresql-ca.crt
+          HERTA_DATABASE_PRIVATE_IP: 10.10.10.10
+          MIGRATION_DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+          HERTA_DATABASE_MODE: external
         run: |
           docker compose --profile whisper --env-file .env.production.example -f docker-compose.prod.yml config --quiet
           docker compose --profile whisper --env-file .env.production.example -f docker-compose.external.yml config --quiet
