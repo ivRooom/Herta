@@ -53,6 +53,66 @@ describe('VALORANT pick card', () => {
     expect(info.height).toBe(680);
   });
 
+  it('uses the cinematic reveal hierarchy across solo and five-person lineups', () => {
+    const input = (count: number) => ({
+      mode: 'RANDOM' as const,
+      mapName: 'バインド',
+      entries: Array.from({ length: count }, (_, index) => ({
+        agentName: 'Jett',
+        displayName: 'ジェット',
+        playerLabel: '参加者' + (index + 1),
+      })),
+    });
+    const hero = renderValorantHudSvg(input(1), [null], ['デュエリスト']);
+    const lineup = renderValorantHudSvg(input(5), Array(5).fill(null), Array(5).fill('デュエリスト'));
+    for (const svg of [hero, lineup]) {
+      expect(svg).toContain('AGENT REVEAL');
+      expect(svg).toContain('PARTICIPANTS');
+      expect(svg).toContain('PICK COMPLETE');
+      expect(svg).toContain('抽選完了');
+      expect(svg).toContain('1200');
+      expect(svg).toContain('680');
+      expect(svg).not.toContain('<foreignObject');
+    }
+    expect(hero).toContain('SELECTED AGENT');
+    expect(hero).toContain('HERO PICK');
+    expect(lineup).toContain('LINEUP');
+    expect(lineup.match(/clipPath id="lineup-art-/g)).toHaveLength(5);
+    expect(lineup.match(/参加者[1-5]/g)).toHaveLength(5);
+  });
+
+  it('renders an image fetched from allowlisted agent metadata without upstream network', async () => {
+    vi.resetModules();
+    const art = await sharp({
+      create: { width: 12, height: 12, channels: 4, background: { r: 255, g: 70, b: 85, alpha: 1 } },
+    }).png().toBuffer();
+    const uuid = '00000000-0000-0000-0000-000000000001';
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === 'https://valorant-api.com/v1/agents?isPlayableCharacter=true') {
+        return new Response(JSON.stringify({
+          data: [{ displayName: 'Jett', uuid, role: { displayName: 'Duelist' } }],
+        }));
+      }
+      if (url === 'https://media.valorant-api.com/agents/' + uuid + '/fullportrait.png') {
+        return new Response(new Uint8Array(art));
+      }
+      throw new Error('unexpected destination');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { renderValorantPickCard: renderFresh } = await import('./valorant-pick-card.js');
+    const png = await renderFresh({
+      mode: 'RANDOM',
+      mapName: '指定なし',
+      entries: [{ agentName: 'Jett', displayName: 'ジェット', playerLabel: '参加者1' }],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const meta = await sharp(png).metadata();
+    expect(meta.format).toBe('png');
+    expect(meta.width).toBe(1200);
+    expect(meta.height).toBe(680);
+    expect(png.byteLength).toBeLessThan(8 * 1024 * 1024);
+  });
+
   it('escapes potentially unsafe player and agent display text before rendering', async () => {
     const image = await renderValorantPickCard({
       mode: 'RANDOM',
