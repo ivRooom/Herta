@@ -139,6 +139,20 @@ jobs:
               assert isinstance(body.get('text'),str)
               assert len(body['text']) <= 4000
           print('Synthetic 1s silence inference completed; elapsed_seconds=',round(time.monotonic()-started,2))
+
+          # Verify a full 8s PCM chunk completes within the bot's 20s stop
+          # flush budget on an isolated 1-vCPU CI worker. This is a synthetic
+          # smoke, not a Japanese CER or 2GB Lightsail acceptance benchmark.
+          pcm8 = b'\\x00\\x00' * (48000 * 8)
+          request8 = urllib.request.Request(base+'/v1/transcribe',data=pcm8,headers=headers)
+          started = time.monotonic()
+          with urllib.request.urlopen(request8,timeout=45) as resp:
+              assert resp.status == 200, resp.status
+              result8=json.loads(resp.read())
+              assert isinstance(result8.get('text'),str)
+          elapsed = time.monotonic()-started
+          print('Synthetic 8s silence inference elapsed_seconds=',round(elapsed,2))
+          assert elapsed < 20, '8s local chunk exceeds the current 20s stop flush budget'
           PY
           docker stats herta-whispercpp-smoke --no-stream \
             --format 'CI sample: name={{.Name}} cpu={{.CPUPerc}} memory={{.MemUsage}}'
