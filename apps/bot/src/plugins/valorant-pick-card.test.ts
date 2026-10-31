@@ -217,8 +217,15 @@ describe('VALORANT pick card', () => {
 
   it('embeds separate art assets in the angled shard layer without drawing user names as attributes', async () => {
     const art = await sharp({
-      create: { width: 12, height: 12, channels: 4, background: { r: 170, g: 45, b: 200, alpha: 1 } },
-    }).png().toBuffer();
+      create: {
+        width: 12,
+        height: 12,
+        channels: 4,
+        background: { r: 170, g: 45, b: 200, alpha: 1 },
+      },
+    })
+      .png()
+      .toBuffer();
     const svg = renderValorantHudSvg(
       {
         mode: 'TACTICAL',
