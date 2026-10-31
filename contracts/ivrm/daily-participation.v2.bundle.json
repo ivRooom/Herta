@@ -1,0 +1,1090 @@
+{
+  "bundleVersion": 1,
+  "contract": {
+    "id": "daily-participation",
+    "version": "2.1.0",
+    "sourceRepository": "ivRooom/ivrm-contracts"
+  },
+  "operations": {
+    "media": {
+      "method": "POST",
+      "path": "/v2/participation/herta/media",
+      "request": "mediaRequest",
+      "responseFormat": "binary",
+      "successStatusCodes": [200],
+      "maxResponseBytes": 10485760,
+      "requiredResponseHeaders": [
+        "Content-Type",
+        "Content-Length",
+        "X-IVRM-Media-Id",
+        "Cache-Control"
+      ],
+      "contentTypes": ["image/webp", "audio/wav"]
+    },
+    "status": {
+      "method": "POST",
+      "path": "/v2/participation/herta/status",
+      "request": "statusRequest",
+      "response": "statusResponse",
+      "successStatusCodes": [200]
+    },
+    "claim": {
+      "method": "POST",
+      "path": "/v2/participation/herta/claim",
+      "request": "claimRequest",
+      "response": "claimResponse",
+      "successStatusCodes": [200, 201]
+    },
+    "answer": {
+      "method": "POST",
+      "path": "/v2/participation/herta/answer",
+      "request": "answerRequest",
+      "response": "answerResponse",
+      "successStatusCodes": [200, 201]
+    },
+    "results": {
+      "method": "POST",
+      "path": "/v2/participation/herta/results",
+      "request": "resultsRequest",
+      "response": "resultsResponse",
+      "successStatusCodes": [200]
+    },
+    "resultsAck": {
+      "method": "POST",
+      "path": "/v2/participation/herta/results/ack",
+      "request": "resultsAckRequest",
+      "response": "resultsAckResponse",
+      "successStatusCodes": [200]
+    }
+  },
+  "signing": {
+    "algorithm": "HMAC-SHA256",
+    "canonical": "{timestamp}.{eventId}.POST.{path}.{exact JSON body bytes}",
+    "maxBodyBytes": 8192,
+    "maxClockSkewSeconds": 300
+  },
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://ivrm.jp/contracts/participation/v2/daily.schema.json",
+    "description": "Independent canonical daily/bonus question participation. Web producer, Herta server-only consumer. Private subject-bound status/claims/answers; anonymous finalized results. Not a deployment approval. See docs/DAILY-PARTICIPATION-V2.md.",
+    "$defs": {
+      "id": {
+        "type": "string",
+        "pattern": "^[A-Za-z0-9_-]{1,64}$"
+      },
+      "snowflake": {
+        "type": "string",
+        "pattern": "^[0-9]{17,20}$"
+      },
+      "date": {
+        "type": "string",
+        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+        "format": "date"
+      },
+      "instant": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "Z$"
+      },
+      "points": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 100000
+      },
+      "subject": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["guildId", "discordUserId"],
+        "properties": {
+          "guildId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "discordUserId": {
+            "$ref": "#/$defs/snowflake"
+          }
+        }
+      },
+      "taxonomy": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "enabled"],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "media": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "mimeType", "url", "byteSize", "durationMs", "rights"],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "kind": {
+            "enum": ["image", "audio"]
+          },
+          "mimeType": {
+            "enum": [
+              "image/png",
+              "image/jpeg",
+              "image/webp",
+              "audio/mpeg",
+              "audio/ogg",
+              "audio/wav"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://",
+            "maxLength": 2048
+          },
+          "byteSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10485760
+          },
+          "durationMs": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 30000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rights": {
+            "enum": ["original", "licensed", "public_domain"]
+          }
+        }
+      },
+      "option": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "label", "mediaId"],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "mediaId": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "publicQuestion": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "dateJst",
+          "slot",
+          "categoryId",
+          "themeId",
+          "format",
+          "scoring",
+          "prompt",
+          "options",
+          "media",
+          "closesAt",
+          "requiresClaim",
+          "maxTextLength"
+        ],
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id"
+          },
+          "dateJst": {
+            "$ref": "#/$defs/date"
+          },
+          "slot": {
+            "enum": ["daily", "bonus"]
+          },
+          "categoryId": {
+            "$ref": "#/$defs/id"
+          },
+          "themeId": {
+            "$ref": "#/$defs/id"
+          },
+          "format": {
+            "enum": ["choice2", "choice3", "choice4", "image_choice", "audio_choice", "free_text"]
+          },
+          "scoring": {
+            "enum": ["instant", "poll", "majority", "minority", "human_review"]
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/option"
+            },
+            "minItems": 0,
+            "maxItems": 4
+          },
+          "media": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/media"
+            },
+            "minItems": 0,
+            "maxItems": 5
+          },
+          "closesAt": {
+            "$ref": "#/$defs/instant"
+          },
+          "requiresClaim": {
+            "type": "boolean"
+          },
+          "maxTextLength": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "description": "Published immutable snapshot. Never includes correct answer, accepted texts, individual identities, unreleased vote counts or review notes. Semantic constraints in DAILY-PARTICIPATION-V2.md are mandatory.",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "format": {
+                  "const": "choice2"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "options": {
+                  "minItems": 2,
+                  "maxItems": 2
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "format": {
+                  "const": "choice3"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "options": {
+                  "minItems": 3,
+                  "maxItems": 3
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "format": {
+                  "const": "choice4"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "options": {
+                  "minItems": 4,
+                  "maxItems": 4
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "format": {
+                  "const": "image_choice"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "options": {
+                  "minItems": 2,
+                  "maxItems": 4
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "format": {
+                  "const": "audio_choice"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "options": {
+                  "minItems": 2,
+                  "maxItems": 4
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "format": {
+                  "const": "free_text"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "options": {
+                  "minItems": 0,
+                  "maxItems": 0
+                },
+                "scoring": {
+                  "enum": ["instant", "human_review"]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "firstClaimReward": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["points", "rank", "scope"],
+        "properties": {
+          "points": {
+            "$ref": "#/$defs/points"
+          },
+          "rank": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "scope": {
+            "const": "global"
+          }
+        }
+      },
+      "bonusReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "claimDateJst",
+          "rewardPoints",
+          "rollPoints",
+          "quizBonusPoints",
+          "streakDay",
+          "channel",
+          "streakReward",
+          "firstClaimReward"
+        ],
+        "properties": {
+          "claimDateJst": {
+            "$ref": "#/$defs/date"
+          },
+          "rewardPoints": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "rollPoints": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "quizBonusPoints": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "streakDay": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 9007199254740991
+          },
+          "channel": {
+            "enum": ["web", "discord"]
+          },
+          "streakReward": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["points", "streakDay"],
+                "properties": {
+                  "points": {
+                    "$ref": "#/$defs/points"
+                  },
+                  "streakDay": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "firstClaimReward": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/firstClaimReward"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "answer": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "questionId",
+          "optionId",
+          "text",
+          "state",
+          "isCorrect",
+          "rewardPoints",
+          "submittedAt",
+          "origin"
+        ],
+        "properties": {
+          "questionId": {
+            "$ref": "#/$defs/id"
+          },
+          "optionId": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "state": {
+            "enum": ["pending", "graded", "void"]
+          },
+          "isCorrect": {
+            "oneOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rewardPoints": {
+            "$ref": "#/$defs/points"
+          },
+          "submittedAt": {
+            "$ref": "#/$defs/instant"
+          },
+          "origin": {
+            "enum": ["web", "discord", "legacy_v1"]
+          }
+        }
+      },
+      "statusRequest": {
+        "$ref": "#/$defs/subject"
+      },
+      "statusResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "guildId",
+          "discordUserId",
+          "todayJst",
+          "bonusClaimed",
+          "bonusReceipt",
+          "questions",
+          "responses"
+        ],
+        "properties": {
+          "status": {
+            "const": "ok"
+          },
+          "guildId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "discordUserId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "todayJst": {
+            "$ref": "#/$defs/date"
+          },
+          "bonusClaimed": {
+            "type": "boolean"
+          },
+          "bonusReceipt": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/bonusReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/publicQuestion"
+            },
+            "minItems": 0,
+            "maxItems": 2
+          },
+          "responses": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/answer"
+            },
+            "minItems": 0,
+            "maxItems": 2
+          }
+        }
+      },
+      "claimRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "guildId",
+          "discordUserId",
+          "claimDateJst",
+          "announcementMessageId",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "guildId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "discordUserId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "claimDateJst": {
+            "$ref": "#/$defs/date"
+          },
+          "announcementMessageId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "pattern": "^daily-login:[0-9]{17,20}:[0-9]{17,20}:[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          }
+        }
+      },
+      "claimResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "guildId", "discordUserId", "mode", "receipt", "balance"],
+        "properties": {
+          "status": {
+            "const": "ok"
+          },
+          "guildId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "discordUserId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "mode": {
+            "enum": ["created", "already_claimed"]
+          },
+          "receipt": {
+            "$ref": "#/$defs/bonusReceipt"
+          },
+          "balance": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "answerRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "guildId",
+          "discordUserId",
+          "questionId",
+          "optionId",
+          "text",
+          "idempotencyKey"
+        ],
+        "properties": {
+          "guildId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "discordUserId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "questionId": {
+            "$ref": "#/$defs/id"
+          },
+          "optionId": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "pattern": "^question-answer:[0-9]{17,20}:[A-Za-z0-9_-]{1,64}$"
+          }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "optionId": {
+                "$ref": "#/$defs/id"
+              },
+              "text": {
+                "type": "null"
+              }
+            }
+          },
+          {
+            "properties": {
+              "optionId": {
+                "type": "null"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1000
+              }
+            }
+          }
+        ]
+      },
+      "answerResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "guildId", "discordUserId", "mode", "response", "balance"],
+        "properties": {
+          "status": {
+            "const": "ok"
+          },
+          "guildId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "discordUserId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "mode": {
+            "enum": ["created", "already_answered"]
+          },
+          "response": {
+            "$ref": "#/$defs/answer"
+          },
+          "balance": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "settlementRule": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "minimumVotes",
+          "tiePolicy",
+          "zeroVotePolicy",
+          "invalidVotePolicy",
+          "rewardPoints"
+        ],
+        "properties": {
+          "minimumVotes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000
+          },
+          "tiePolicy": {
+            "enum": ["all_tied", "no_reward"]
+          },
+          "zeroVotePolicy": {
+            "const": "exclude"
+          },
+          "invalidVotePolicy": {
+            "const": "exclude"
+          },
+          "rewardPoints": {
+            "$ref": "#/$defs/points"
+          }
+        }
+      },
+      "aggregateOption": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["optionId", "label", "votes", "percentage", "winner"],
+        "properties": {
+          "optionId": {
+            "$ref": "#/$defs/id"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "votes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          },
+          "percentage": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "winner": {
+            "type": "boolean"
+          }
+        }
+      },
+      "anonymousResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "questionId",
+          "dateJst",
+          "prompt",
+          "scoring",
+          "state",
+          "participantCount",
+          "options",
+          "finalizedAt"
+        ],
+        "properties": {
+          "questionId": {
+            "$ref": "#/$defs/id"
+          },
+          "dateJst": {
+            "$ref": "#/$defs/date"
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "scoring": {
+            "enum": ["poll", "majority", "minority"]
+          },
+          "state": {
+            "enum": ["finalized", "void"]
+          },
+          "participantCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/aggregateOption"
+            },
+            "minItems": 2,
+            "maxItems": 4
+          },
+          "finalizedAt": {
+            "$ref": "#/$defs/instant"
+          }
+        }
+      },
+      "adminQuestion": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "question",
+          "status",
+          "correctOptionId",
+          "acceptedTexts",
+          "rewardPoints",
+          "settlementRule",
+          "oogiriRule"
+        ],
+        "properties": {
+          "question": {
+            "$ref": "#/$defs/publicQuestion"
+          },
+          "status": {
+            "enum": ["draft", "approved", "published", "archived"]
+          },
+          "correctOptionId": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/id"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "acceptedTexts": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "minItems": 0,
+            "maxItems": 20
+          },
+          "rewardPoints": {
+            "$ref": "#/$defs/points"
+          },
+          "settlementRule": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/settlementRule"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "oogiriRule": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "maxSubmissions",
+                  "participationPoints",
+                  "prizePoints",
+                  "specialPoints"
+                ],
+                "properties": {
+                  "maxSubmissions": {
+                    "const": 1
+                  },
+                  "participationPoints": {
+                    "$ref": "#/$defs/points"
+                  },
+                  "prizePoints": {
+                    "$ref": "#/$defs/points"
+                  },
+                  "specialPoints": {
+                    "$ref": "#/$defs/points"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "mediaUploadPolicy": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "maxBytes",
+          "maxAudioDurationMs",
+          "requireRightsProof",
+          "privateStorage",
+          "sniffSignature",
+          "scanRequired"
+        ],
+        "properties": {
+          "maxBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10485760
+          },
+          "maxAudioDurationMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30000
+          },
+          "requireRightsProof": {
+            "const": true
+          },
+          "privateStorage": {
+            "const": true
+          },
+          "sniffSignature": {
+            "const": true
+          },
+          "scanRequired": {
+            "const": true
+          }
+        }
+      },
+      "resultDelivery": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["questionId", "result", "deliveryToken", "status"],
+        "properties": {
+          "questionId": {
+            "$ref": "#/$defs/id"
+          },
+          "result": {
+            "$ref": "#/$defs/anonymousResult"
+          },
+          "deliveryToken": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{16,128}$"
+          },
+          "status": {
+            "enum": ["sending", "uncertain"]
+          }
+        }
+      },
+      "resultsRequest": {
+        "$ref": "#/$defs/subject"
+      },
+      "resultsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "guildId", "discordUserId", "deliveries"],
+        "properties": {
+          "status": {
+            "const": "ok"
+          },
+          "guildId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "discordUserId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "deliveries": {
+            "type": "array",
+            "minItems": 0,
+            "maxItems": 20,
+            "items": {
+              "$ref": "#/$defs/resultDelivery"
+            }
+          }
+        }
+      },
+      "resultsAckRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["guildId", "discordUserId", "questionId", "deliveryToken", "messageId"],
+        "properties": {
+          "guildId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "discordUserId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "questionId": {
+            "$ref": "#/$defs/id"
+          },
+          "deliveryToken": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{16,128}$"
+          },
+          "messageId": {
+            "$ref": "#/$defs/snowflake"
+          }
+        }
+      },
+      "resultsAckResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "guildId", "discordUserId", "questionId", "messageId"],
+        "properties": {
+          "status": {
+            "const": "ok"
+          },
+          "guildId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "discordUserId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "questionId": {
+            "$ref": "#/$defs/id"
+          },
+          "messageId": {
+            "$ref": "#/$defs/snowflake"
+          }
+        }
+      },
+      "mediaRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["guildId", "discordUserId", "mediaId"],
+        "properties": {
+          "guildId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "discordUserId": {
+            "$ref": "#/$defs/snowflake"
+          },
+          "mediaId": {
+            "$ref": "#/$defs/id"
+          }
+        }
+      }
+    }
+  }
+}

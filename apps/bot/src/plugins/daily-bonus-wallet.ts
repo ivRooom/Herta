@@ -14,6 +14,7 @@ export interface DailyWalletReceipt {
   quizBonusPoints: number;
   channel: string;
   streakReward?: { points: number; streakDay: number };
+  firstClaimReward?: { points: number; rank: number; scope: 'global' } | null;
 }
 export type DailyWalletResult =
   | {
@@ -27,7 +28,7 @@ export type DailyWalletResult =
   | { status: 'ready' }
   | { status: 'profile_required' | 'account_initialization_required' | 'unlinked' | 'unavailable' };
 
-async function request(
+export async function dailyServiceFetch(
   guildId: string,
   userId: string,
   path: string,
@@ -49,7 +50,7 @@ async function request(
   const body = JSON.stringify({ guildId, discordUserId: userId, ...extra }),
     timestamp = new Date().toISOString(),
     event = randomUUID();
-  const response = await fetch(new URL(path, url), {
+  return fetch(new URL(path, url), {
     method: 'POST',
     redirect: 'error',
     signal: AbortSignal.timeout(8000),
@@ -63,6 +64,15 @@ async function request(
     },
     body,
   });
+}
+export async function request(
+  guildId: string,
+  userId: string,
+  path: string,
+  extra: Record<string, unknown> = {},
+) {
+  const response = await dailyServiceFetch(guildId, userId, path, extra);
+  if (!response) return null;
   if (response.status === 409) {
     const error = (await response.json()) as { error?: string };
     if (error.error === 'profile_required' || error.error === 'account_initialization_required')
@@ -125,6 +135,30 @@ function confirmed(
       return { status: 'unavailable' };
     streakReward = { points: Number(item.points), streakDay: receipt.streakDay };
   }
+  let firstClaimReward: DailyWalletReceipt['firstClaimReward'];
+  if (value?.firstClaimReward !== undefined && value.firstClaimReward !== null) {
+    const raw = value.firstClaimReward;
+    if (
+      typeof raw !== 'object' ||
+      Array.isArray(raw) ||
+      Object.keys(raw).sort().join() !== 'points,rank,scope'
+    )
+      return { status: 'unavailable' };
+    const extra = raw as Record<string, unknown>;
+    if (
+      !Number.isSafeInteger(extra.points) ||
+      Number(extra.points) < 0 ||
+      Number(extra.points) > 100000 ||
+      !Number.isSafeInteger(extra.rank) ||
+      Number(extra.rank) < 1 ||
+      extra.scope !== 'global' ||
+      !Number.isSafeInteger(
+        receipt.rewardPoints + (streakReward?.points ?? 0) + Number(extra.points),
+      )
+    )
+      return { status: 'unavailable' };
+    firstClaimReward = { points: Number(extra.points), rank: Number(extra.rank), scope: 'global' };
+  }
   return {
     status: 'confirmed',
     receipt: {
@@ -135,10 +169,11 @@ function confirmed(
       quizBonusPoints: receipt.quizBonusPoints,
       channel: receipt.channel,
       ...(streakReward ? { streakReward } : {}),
+      ...(firstClaimReward ? { firstClaimReward } : {}),
     },
     balance: account!.balance!,
     alreadyClaimed: value?.mode === 'already_claimed' || value?.claimedToday === true,
-    message: `${value?.mode === 'already_claimed' || value?.claimedToday === true ? '本日は受取済みです。' : '🎉 ログインボーナスを受け取りました！'}\n獲得：${receipt.rewardPoints + (streakReward?.points ?? 0)}pt / 保有：${account!.balance}pt / 連続：${receipt.streakDay}日${streakReward ? `\n連続ログイン追加報酬：+${streakReward.points}pt` : ''}`,
+    message: `${value?.mode === 'already_claimed' || value?.claimedToday === true ? '本日は受取済みです。' : '🎉 ログインボーナスを受け取りました！'}\n獲得：${receipt.rewardPoints + (streakReward?.points ?? 0) + (firstClaimReward?.points ?? 0)}pt / 保有：${account!.balance}pt / 連続：${receipt.streakDay}日${streakReward ? `\n連続ログイン追加報酬：+${streakReward.points}pt` : ''}`,
   };
 }
 export async function dailyBonusStatus(guild: string, user: string): Promise<DailyWalletResult> {

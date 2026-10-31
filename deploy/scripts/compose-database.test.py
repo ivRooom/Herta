@@ -40,6 +40,7 @@ with tempfile.TemporaryDirectory(prefix='herta-compose-') as temp:
     for name in ['studio', 'bot', 'worker']:
         assert local['services'][name]['environment'].pop('DAILY_BONUS_ENABLED') == 'false'
     assert local['services']['bot']['environment'].pop('DAILY_BONUS_RESULT_CARD_ENABLED') == 'false'
+    assert local['services']['bot']['environment'].pop('DAILY_PARTICIPATION_ENABLED') == 'false'
     assert local['services']['bot']['environment'].pop('HERTA_POINTS_SECRET') == values.get('HERTA_POINTS_SECRET', '')
     # Voice provider configuration is not a database topology change.
     # It must remain fail-closed in every default/local deployment.
