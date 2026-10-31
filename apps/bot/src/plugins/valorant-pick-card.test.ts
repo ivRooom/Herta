@@ -19,6 +19,7 @@ describe('VALORANT pick card', () => {
         })),
       });
       const info = await sharp(png).metadata();
+      expect(png.subarray(0, 8).toString('hex')).toBe('89504e470d0a1a0a');
       expect(info.format).toBe('png');
       expect(info.width).toBe(1200);
       expect(info.height).toBe(680);
