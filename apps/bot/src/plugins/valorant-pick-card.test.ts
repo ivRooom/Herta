@@ -64,7 +64,11 @@ describe('VALORANT pick card', () => {
       })),
     });
     const hero = renderValorantHudSvg(input(1), [null], ['デュエリスト']);
-    const lineup = renderValorantHudSvg(input(5), Array(5).fill(null), Array(5).fill('デュエリスト'));
+    const lineup = renderValorantHudSvg(
+      input(5),
+      Array(5).fill(null),
+      Array(5).fill('デュエリスト'),
+    );
     for (const svg of [hero, lineup]) {
       expect(svg).toContain('AGENT REVEAL');
       expect(svg).toContain('PARTICIPANTS');
@@ -84,14 +88,23 @@ describe('VALORANT pick card', () => {
   it('renders an image fetched from allowlisted agent metadata without upstream network', async () => {
     vi.resetModules();
     const art = await sharp({
-      create: { width: 12, height: 12, channels: 4, background: { r: 255, g: 70, b: 85, alpha: 1 } },
-    }).png().toBuffer();
+      create: {
+        width: 12,
+        height: 12,
+        channels: 4,
+        background: { r: 255, g: 70, b: 85, alpha: 1 },
+      },
+    })
+      .png()
+      .toBuffer();
     const uuid = '00000000-0000-0000-0000-000000000001';
     const fetchMock = vi.fn(async (url: string) => {
       if (url === 'https://valorant-api.com/v1/agents?isPlayableCharacter=true') {
-        return new Response(JSON.stringify({
-          data: [{ displayName: 'Jett', uuid, role: { displayName: 'Duelist' } }],
-        }));
+        return new Response(
+          JSON.stringify({
+            data: [{ displayName: 'Jett', uuid, role: { displayName: 'Duelist' } }],
+          }),
+        );
       }
       if (url === 'https://media.valorant-api.com/agents/' + uuid + '/fullportrait.png') {
         return new Response(new Uint8Array(art));
