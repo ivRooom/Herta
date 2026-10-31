@@ -35,7 +35,18 @@ class StagingTests(unittest.TestCase):
                 with patch.object(sys, "argv", ["stage-whisper-tiny.py", "--destination", str(target)]):
                     stager.main()
             self.assertEqual(tuple(visited), stager.FILES)
-            verify_model_manifest(target)
+            # Synthetic assets deliberately differ from the production-approved
+            # SHA256 set. Exercise the verifier with ONLY these fixture digests;
+            # production startup must continue to require APPROVED_SHA256.
+            fixture_sha256 = {
+                name: hashlib.sha256(
+                    b"x" * (11 * 1024 * 1024) if name == "model.bin" else b"model"
+                ).hexdigest()
+                for name in stager.FILES
+            }
+            verify_model_manifest(target, expected_sha256=fixture_sha256)
+            with self.assertRaisesRegex(RuntimeError, "Whisper model hash mismatch"):
+                verify_model_manifest(target)
             self.assertEqual(list(Path(tmp).glob(".whisper-stage-*")), [])
 
     def test_download_failure_never_publishes_partial_model(self):
