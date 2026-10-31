@@ -1,0 +1,109 @@
+# Run against the existing production Bot without restarting services or writing to DB/Discord.
+name: VALORANT Production Read-only Smoke
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/valorant-production-smoke.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: valorant-production-readonly-smoke
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    name: Read-only running Bot PNG renderer
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - name: Image SHA, cinematic PNGs, and critical log count
+        uses: appleboy/ssh-action@v1.2.5
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          command_timeout: 8m
+          script: |
+            set -euo pipefail
+            APP_DIR="${{ secrets.LIGHTSAIL_APP_DIR }}"
+            cd "$APP_DIR"
+            test -r "$APP_DIR/.env.production"
+            SHA="$(git rev-parse HEAD)"
+            CID="$(docker compose --env-file "$APP_DIR/.env.production" -f docker-compose.prod.yml ps -q bot)"
+            test -n "$CID"
+            IMAGE="$(docker inspect --format '{{.Config.Image}}' "$CID")"
+            test "$IMAGE" = "ghcr.io/ivrooom/herta:$SHA"
+            echo "Running Bot image matches checked-out deployment: $IMAGE"
+
+            # New process and mocked fetch; no external requests or application writes.
+            docker compose --env-file "$APP_DIR/.env.production" -f docker-compose.prod.yml exec -T bot node --input-type=module <<'NODE'
+            globalThis.fetch = async () => { throw new Error('mock-offline'); };
+            const { renderValorantPickCard } = await import('/app/apps/bot/dist/plugins/valorant-pick-card.js');
+            const { renderValorantHudSvg } = await import('/app/apps/bot/dist/plugins/valorant-pick-card-hud.js');
+            const check = (png, count) => {
+              if (png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a'
+                  || png.readUInt32BE(16) !== 1200 || png.readUInt32BE(20) !== 680
+                  || png.length >= 8 * 1024 * 1024) throw Error('Invalid PNG: ' + count);
+              console.log('PASS no-art PNG count=' + count + ' size=' + png.length);
+            };
+            for (const count of [1, 5]) {
+              const entries = Array.from({ length: count }, (_, n) => ({
+                agentName: 'Jett', displayName: 'ジェット', playerLabel: 'SMOKE ' + (n + 1)
+              }));
+              const input = { mode: 'RANDOM', mapName: '指定なし', entries };
+              const svg = renderValorantHudSvg(input, Array(count).fill(null), Array(count).fill('デュエリスト'));
+              if (!svg.includes('AGENT REVEAL')) throw Error('Unexpected renderer version');
+              check(await renderValorantPickCard(input), count);
+            }
+            NODE
+
+            # Fresh module cache + tiny generated portrait. External allowlisted URLs are mocked.
+            docker compose --env-file "$APP_DIR/.env.production" -f docker-compose.prod.yml exec -T bot node --input-type=module <<'NODE'
+            import { createRequire } from 'node:module';
+            const sharp = createRequire('/app/apps/bot/package.json')('sharp');
+            const portrait = await sharp({ create: {
+              width: 12, height: 12, channels: 4, background: { r: 255, g: 75, b: 96, alpha: 1 },
+            } }).png().toBuffer();
+            const uuid = '00000000-0000-0000-0000-000000000001';
+            let metadataCalls = 0, portraitCalls = 0;
+            globalThis.fetch = async (url) => {
+              if (url === 'https://valorant-api.com/v1/agents?isPlayableCharacter=true') {
+                metadataCalls++;
+                return new Response(JSON.stringify({ data: [
+                  { displayName: 'Jett', uuid, role: { displayName: 'Duelist' } }
+                ] }));
+              }
+              if (url === 'https://media.valorant-api.com/agents/' + uuid + '/fullportrait.png') {
+                portraitCalls++;
+                return new Response(new Uint8Array(portrait));
+              }
+              throw Error('Unexpected URL');
+            };
+            const { renderValorantPickCard } = await import('/app/apps/bot/dist/plugins/valorant-pick-card.js');
+            for (const count of [1, 5]) {
+              const entries = Array.from({ length: count }, (_, n) => ({
+                agentName: 'Jett', displayName: 'ジェット', playerLabel: 'SMOKE ' + (n + 1)
+              }));
+              const png = await renderValorantPickCard({ mode: 'RANDOM', mapName: '指定なし', entries });
+              if (png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a'
+                  || png.readUInt32BE(16) !== 1200 || png.readUInt32BE(20) !== 680
+                  || png.length >= 8 * 1024 * 1024) throw Error('Invalid portrait PNG: ' + count);
+              console.log('PASS mock-portrait PNG count=' + count + ' size=' + png.length);
+            }
+            if (metadataCalls !== 1 || portraitCalls !== 1) throw Error('Art fetch path not exercised');
+            console.log('PASS allowlisted metadata and art path');
+            NODE
+
+            # Do not expose log lines, Discord identifiers, or secrets.
+            LOGS="$(docker logs --since 30m "$CID" 2>&1)"
+            COUNT="$(printf '%s' "$LOGS" | grep -Eic 'fatal|uncaughtException|unhandledRejection|panic' || true)"
+            unset LOGS
+            echo "Critical Bot log matches in past 30m: $COUNT"
+            test "$COUNT" -eq 0
+            docker stats --no-stream --format '{{.Name}} CPU={{.CPUPerc}} MEM={{.MemUsage}}' "$CID"
+            echo "PASS: production read-only render smoke"
