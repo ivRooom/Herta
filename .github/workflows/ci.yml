@@ -55,6 +55,7 @@ jobs:
           echo 'IVRM_FORMATTED_TEST_START'
           cat apps/bot/src/plugins/valorant-pick-card.test.ts
           echo 'IVRM_FORMATTED_TEST_END'
+          exit 17 # Diagnostic ends after exporting formatting; remove before merge.
 
       - name: Format Check
         run: pnpm format:check
