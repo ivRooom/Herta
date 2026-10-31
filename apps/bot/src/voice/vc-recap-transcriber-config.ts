@@ -46,3 +46,24 @@ export function canUseOpenAiVcAudio(
     explicitParticipantAudioConsent
   );
 }
+
+/**
+ * One explicitly configured Discord guild is eligible for local CPU inference.
+ * `VC_RECAP_TRANSCRIPTION_PROVIDER=aws` remains the global default; an opted-in
+ * canary is selected before AWS credentials are requested, not as a fallback.
+ * The deprecated global `local-whisper` selection MUST NOT bypass this gate.
+ */
+export function canUseLocalWhisperCanary(
+  config: VcRecapTranscriberConfig,
+  guildId: string,
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  const target = env['VC_RECAP_LOCAL_WHISPER_CANARY_GUILD_ID']?.trim();
+  return (
+    config.localWhisperEnabled &&
+    (config.provider === 'aws' || config.provider === 'local-whisper') &&
+    !!target &&
+    /^\d{15,22}$/.test(target) &&
+    guildId === target
+  );
+}

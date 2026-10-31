@@ -34,6 +34,7 @@ export * from './user-data-consent.js';
 export * from './vc-recap-explicit-consent.js';
 export * from './vc-recap-storage-ownership.js';
 export * from './vc-recap.js';
+export * from './vc-recap-guarded-segment.js';
 export * from './voice-consent-access.js';
 export * from './valorant-agents.js';
 export * from './valorant-retention.js';

@@ -24,6 +24,59 @@ Herta Lightsailは2 vCPU / 2 GiB RAMの `small_3_0`。DB等の既存サービス
 4. 本番のPrivate Secret Storeに32文字以上のランダムトークンを登録し、Bot/worker双方へ **同じ値**を `VC_RECAP_LOCAL_WHISPER_TOKEN` として注入。GitHub、Issue、CI、ログ、コミットへ貼らない。
 5. 既存PostgreSQL/S3バックアップと復元、CPU/RAM/ディスク監視、インスタンス復元・Rollbackを確認。追加EC2/Lightsailなど有料リソースの作成は別途承認。
 
+## 無料の固定モデル・Canary運用（#655 / #656 / #657）
+
+- **選定**: 日本語を含む多言語 `Systran/faster-whisper-tiny`、MIT、固定commit `d90ca5fe260221311c53c58e660288d3deb8d356`。約78MB。MITライセンスの原著作権表示を維持し、モデル重みはGitHubへコミットしない。
+- 実行環境は**既存Herta Lightsailのみ**（2 vCPU/2GiB）。追加課金リソースを作らず、リソース測定に失敗したら本番有効化を止める。
+- GitHub Actionsによる通常デプロイはWhisperモデルをインストール/起動しない。モデル取得はオペレーターが明示的に実行する別操作。モデルはリビジョン固定でダウンロードし、ファイルSHA-256を記録。モデル読込時にも実体ファイルのハッシュとMIT表記を検証する。
+- **Canary切り替え**: `VC_RECAP_TRANSCRIPTION_PROVIDER=aws`（他GuildはAWSのまま）、`VC_RECAP_LOCAL_WHISPER_ENABLED=true`、`VC_RECAP_LOCAL_WHISPER_CANARY_GUILD_ID=<検証Guild ID>`。単一IDかつ15〜22桁の10進数で一致するときだけローカル推論に分岐。選択したCanaryの推論が失敗してもAWS/OpenAIへ自動切り替えしない。
+- 途中同意撤回ではBot→WhisperへのHTTPをAbortSignalで停止し、DBへのセグメント書き込みは削除フェンス/同意のownerトランザクションロックで拒否する。Worker内のネイティブ推論そのものは進行中の1リクエストが完了する可能性がある。モデルのCPU処理を即時killできると誤認しない。
+- ローカル認識の失敗・Stop時のflushタイムアウトは**不完全な要約として完成させず、セッションを失敗扱い**にする。AWS既存経路の動作は変えない。
+
+### 本番Lightsailでオペレーターが実行する作業（承認・レビュー完了後）
+
+以下はHertaがデプロイされている作業ディレクトリ内で実行する。現在のpathやSSHユーザーを推測せず、GitHubのproduction Environment `LIGHTSAIL_APP_DIR` に対応する実ディレクトリを確認すること。**これらのコマンドは自動実行されない**。
+
+```bash
+# SSH接続してHertaの配置ディレクトリに移動済みの状態
+git rev-parse --short HEAD
+docker compose --env-file .env.production -f docker-compose.prod.yml ps
+
+# モデルのダウンロード・ハッシュmanifest生成は本番ホストでは実行しない。
+# 別の管理端末/検証環境で、公式の固定リビジョンと信頼できる
+# 独立ハッシュの照合後に実行する（未承認の場合は中断）。
+# python3 deploy/scripts/stage-whisper-tiny.py --destination ./var/whisper-model
+# 実行後、manifest+4ファイルを非公開転送経路で本番ホストへ転送する。
+# 本番ホストでは配置前に全ファイルのSHA検証を行う。
+# SSH_USER / HOST / APP_DIR は実在の値に読み替えること。
+# rsync -a --checksum ./var/whisper-model/ SSH_USER@HOST:APP_DIR/var/.whisper-model-incoming/
+# 転送先でmodel_manifest.verify_model_manifest(...)が合格した後に
+# var/.whisper-model-incoming -> var/whisper-model を同一FS内でrenameする。
+
+# 配置後にモデルSHA・ホストメモリ・ディスクの安全チェック。失敗したら中断。
+bash deploy/scripts/preflight-whisper-tiny.sh
+
+# 秘密情報を表示せずに発行（発行後は運用Secret管理に保管。Issueへ転記禁止）
+# openssl rand -hex 32
+# .env.production: VC_RECAP_LOCAL_WHISPER_TOKEN、Canary_GUILD_ID、ENABLEDの3項目を設定
+# 既定のglobal providerは aws を維持する。
+
+# プロファイルを明示し、private workerだけを起動。外部ポートは公開しない。
+docker compose --env-file .env.production -f docker-compose.prod.yml --profile whisper build whisper
+docker compose --env-file .env.production -f docker-compose.prod.yml --profile whisper up -d whisper
+docker compose --env-file .env.production -f docker-compose.prod.yml --profile whisper ps whisper
+```
+
+アプリが外部DB構成へ移行している場合は、`-f docker-compose.external.yml`を使用。Botの環境変数を更新するには、**既存デプロイの手順に沿った**Bot再起動が別途必要。勝手にCompose全サービスを作り直さない。新機能をテストする際は、本番SecretがBot/Workerに渡ることを安全に確認し、値をログへ出さない。
+
+### セキュリティレビューを先に完了する
+
+受入開始には、(1) #655のコード・統合CI成功、(2)モデル/sidecarのAMD64/ARM64 SBOM・Grype結果、(3) #656のRAM/CPU測定とモデルハッシュ検証、(4)本人同意撤回/削除フェンス/Stop不完全処理の安全性確認、(5)公式プライバシー告知の適用を必要とする。Discord利用者の実際の声は、これらを満たすまでCanaryへ送信しない。
+
+### 本人によるDiscord受入検証
+
+運営者が #518 のチェックリストを実施する。最初は検証用Guild 1つ・少人数・明示同意を持つ参加者で開始し、日本語短文→長めの発話→複数話者→本人の同意撤回→停止時未確定処理→Studio要約の順に確認。撤回後の新規音声やDB本文、Workerログへの個人内容の残存を確認する。**音声本体やシークレットをIssueへ掲載しない。**
+
 ## オフラインCIとステージング起動
 
 ```bash
