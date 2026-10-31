@@ -37,25 +37,15 @@ jobs:
 
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version: 22.23.4
           cache: pnpm
 
+      - name: Verify the CI Node.js security patch level
+        run: test "$(node --version)" = v22.23.4
       - run: pnpm install --frozen-lockfile
 
       - name: Prisma Generate
         run: pnpm db:generate
-
-      # Temporary formatter diagnostics for Issue #633; remove before merge.
-      - name: Preview formatting for cinematic renderer
-        run: |
-          pnpm exec prettier --write apps/bot/src/plugins/valorant-pick-card-hud.ts apps/bot/src/plugins/valorant-pick-card.test.ts
-          echo 'IVRM_FORMATTED_HUD_START'
-          cat apps/bot/src/plugins/valorant-pick-card-hud.ts
-          echo 'IVRM_FORMATTED_HUD_END'
-          echo 'IVRM_FORMATTED_TEST_START'
-          cat apps/bot/src/plugins/valorant-pick-card.test.ts
-          echo 'IVRM_FORMATTED_TEST_END'
-          exit 17 # Diagnostic ends after exporting formatting; remove before merge.
 
       - name: Format Check
         run: pnpm format:check
@@ -104,6 +94,15 @@ jobs:
 
       - name: Production Docker Build
         run: docker build --tag herta-app:ci .
+
+      - name: Verify patched Node.js binary in final production image
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(docker run --rm --entrypoint node herta-app:ci --version)"
+          test "$actual" = 'v22.23.4'
+          echo "Verified final-image Node.js version: $actual"
+          docker image inspect --format 'Built image ID: {{.Id}}' herta-app:ci
 
       - name: Verify production runtime
         run: |
@@ -261,6 +260,95 @@ jobs:
         uses: actions/upload-artifact@v7.0.1
         with:
           name: security-reports-${{ github.run_id }}
+          path: reports/security
+          if-no-files-found: warn
+          retention-days: 14
+
+  # Native GitHub-hosted ARM64 is available for this public repository.
+  # Avoid QEMU on the Minecraft/production hosts and keep existing amd64 job intact.
+  arm64-runtime:
+    name: ARM64 Production Image / Node / Grype
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.23.4
+
+      - name: Verify native runner architecture
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          test "$(node --version)" = v22.23.4
+
+      - name: Generate reviewed vulnerability exception config
+        run: |
+          node .github/scripts/prepare-grype-config.mjs \
+            .github/security/grype-allowlist.json \
+            .ci/grype.yaml
+
+      - name: Build native ARM64 production image
+        run: docker build --platform linux/arm64 --tag herta-app:ci-arm64 .
+
+      - name: Verify ARM64 final image and native runtime dependencies
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect --format '{{.Architecture}}' herta-app:ci-arm64)" = arm64
+          test "$(docker run --rm --entrypoint node herta-app:ci-arm64 --version)" = v22.23.4
+          docker run --rm --entrypoint sh herta-app:ci-arm64 -lc '
+            set -eu
+            test "$(id -u)" != 0
+            test -f apps/api/dist/main.js
+            test -f apps/bot/dist/main.js
+            test -f apps/worker/dist/main.js
+            test -f apps/studio/.next/standalone/apps/studio/server.js
+            test -x packages/db/node_modules/.bin/prisma
+            packages/db/node_modules/.bin/prisma --version > /dev/null
+            cd apps/bot
+            node --input-type=module -e "await import(\"@herta/shared\")"
+          '
+
+      - name: Install checksum-verified ARM64 Syft and Grype
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/security-bin" "$RUNNER_TEMP/security-downloads"
+          for tool in syft grype; do
+            if [ "$tool" = syft ]; then version="$SYFT_VERSION"; else version="$GRYPE_VERSION"; fi
+            asset="${tool}_${version}_linux_arm64.tar.gz"
+            checksums="${tool}_${version}_checksums.txt"
+            url="https://github.com/anchore/${tool}/releases/download/v${version}"
+            curl --fail --location --retry 3 --output "$RUNNER_TEMP/security-downloads/$asset" "$url/$asset"
+            curl --fail --location --retry 3 --output "$RUNNER_TEMP/security-downloads/$checksums" "$url/$checksums"
+            (cd "$RUNNER_TEMP/security-downloads" && grep "  $asset$" "$checksums" | sha256sum --check --strict -)
+            tar -xzf "$RUNNER_TEMP/security-downloads/$asset" -C "$RUNNER_TEMP/security-bin" "$tool"
+            "$RUNNER_TEMP/security-bin/$tool" version
+          done
+          echo "$RUNNER_TEMP/security-bin" >> "$GITHUB_PATH"
+
+      - name: Refresh Grype vulnerability database (ARM64)
+        env:
+          GRYPE_DB_AUTO_UPDATE: 'true'
+        run: grype db update
+
+      - name: Generate ARM64 image SBOM and enforce High/Critical gate
+        run: |
+          set -euo pipefail
+          mkdir -p reports/security
+          syft herta-app:ci-arm64 --output cyclonedx-json=reports/security/herta-app-arm64.cdx.json
+          grype herta-app:ci-arm64 \
+            --config .ci/grype.yaml \
+            --fail-on high \
+            --output json \
+            > reports/security/grype-arm64-high-critical.json
+
+      - name: Upload ARM64 security evidence
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: security-arm64-${{ github.run_id }}
           path: reports/security
           if-no-files-found: warn
           retention-days: 14
