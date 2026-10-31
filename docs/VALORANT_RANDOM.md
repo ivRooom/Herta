@@ -89,6 +89,21 @@ Cinematic v2では大きなHUDヘッダー、フッター、四角い装飾枠�
 
 **ロールバック**: 本番直前にデプロイログで正常と確認したGHCR commitイメージへ戻し、Bot/API healthを確認。DB変更なし。
 
+## Neon Herta Reveal v4（2026-10-31 / Issue #659）
+
+Discord告知用にユーザーから提供された参考画像の**紫×ピンクのサイバーネオン表現**を、実際にBotが添付する1200×680 PNGへ適用する。静的な告知画像そのものを素材として複製したり、飾りだけの操作ボタンを描画したりしない。
+
+- **テーマ**: 深いネイビー(`#080a20`)、バイオレット(`#b568ff`)、ホットピンク(`#ff659f`)、淡いラベンダーによる文字と縁取り。radial gradient/glow、淡い斜線、半透明のカードと発光ボーダーで、Herta.ブランドのネオンゲーミングUIを表現。
+- **ソロ**: 右にAgentフルポートレート、左に大きなAgent英語/日本語名と名前・Roleを入れるガラス調の読み取りエリア。PlayerとRoleは上下に分離して重なりを防ぐ。
+- **2〜5人**: 画像上部に大きなAgent立ち絵、下部にAgent名/Role/Player。人数に応じた幅、文字の制限値と個別パネルの発光フレームを使用。
+- **アート未取得**: SVG内部の幾何学シルエットとAgent名で代替。外部アセット・追加Secret・透過PNG素材を新規追加せず、既存のallowlist/UUID検証/timeout/resize/pixel limit/CPU同時実行制限/8MiB超拒否を維持。
+- **操作・安全性**: 「再抽選」はDiscordの既存ボタンで引き続き操作する。PNGは抽選結果の表示だけに使う。ユーザー入力はUnicode制御/書式文字除去、長さ制限、XMLエスケープ。SVGにscript/foreignObject/外部リンクを持たせない。
+- **受入**: 1〜5人、画像有無、長い日本語、マップ/構成、XSS耐性、PNGサイズ、PR CI/セキュリティ、本番image SHA/healthを検証。Discordの実画面目視/再抽選は #641 のまま別途受入。
+
+変更追跡: #659（親）、#660（Design）、#661（Implementation）、#662（Tests）、#663（Release）。Production PNG read-only smokeの管理は #640/PR #642 を再利用。
+
+**Rollback**: 直前に確認した正常なGHCRイメージへ変更を戻す。新規DB migration/Slash schema/Secret変更なし。
+
 ## DB・互換性・プライバシー
 
 新規 migration 20261030100000_valorant_pick_sessions でセッション・参加者テーブルを追加。
