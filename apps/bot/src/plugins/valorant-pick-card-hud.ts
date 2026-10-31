@@ -335,6 +335,7 @@ export function renderValorantHudSvg(
     text('抽選完了', 103, 626, 28, '#fff5ff', 900),
     text('PICK COMPLETE', 317, 622, 13, '#e9c3ff', 850),
     text(footer, 542, 638, 16, '#d9bdf8', 600, 34),
+    text('DISCORD BOT FOR GAMERS', 911, 667, 10, '#ae9bd9', 650, 26),
     '<path d="M546 648 H1127" stroke="url(#neon)" stroke-width="2"/>',
     '</g></svg>',
   );
