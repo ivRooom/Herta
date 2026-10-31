@@ -196,7 +196,7 @@ test('不正な長期保存組み合わせを拒否し、デフォルトOFFで�
     delete process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'];
     const writes: unknown[] = [];
     const tx = {
-    $queryRawUnsafe: async () => [],
+      $queryRawUnsafe: async () => [],
       vcRecapErasureRequest: {
         findUnique: async () => null,
         upsert: async (data: unknown) => {
