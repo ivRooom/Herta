@@ -75,7 +75,10 @@ function solo(
   roles: readonly string[],
 ): string {
   const entry = input.entries[0]!;
-  const agentFont = Math.min(86, Math.floor(510 / Math.max(1, Array.from(entry.agentName).length * 0.66)));
+  const agentFont = Math.min(
+    86,
+    Math.floor(510 / Math.max(1, Array.from(entry.agentName).length * 0.66)),
+  );
   const parts: string[] = [
     '<path d="M620 158 H1189 V591 H557Z" fill="#1c123b" opacity=".72"/>',
     '<path d="M905 157 H1190 V590 H714Z" fill="#a82375" opacity=".25"/>',
@@ -202,7 +205,15 @@ function squad(
           ' -100 Z" fill="#111329" stroke="' +
           highlights[i] +
           '" stroke-width="2"/>',
-        text(entry.agentName.toUpperCase(), x + 16, 338, fallbackFont, '#ead0ff', 850, fallbackLimit),
+        text(
+          entry.agentName.toUpperCase(),
+          x + 16,
+          338,
+          fallbackFont,
+          '#ead0ff',
+          850,
+          fallbackLimit,
+        ),
       );
     }
     parts.push(
