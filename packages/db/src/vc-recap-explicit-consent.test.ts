@@ -4,6 +4,9 @@ import test from 'node:test';
 import {
   evaluateVcRecapExplicitConsent,
   setVcRecapOpenAiAudioConsent,
+  isVcRecapLongTermEnrollmentEnabled,
+  getVcRecapLongTermConsentView,
+  updateVcRecapLongTermConsentChoices,
   VC_RECAP_OPENAI_AUDIO_POLICY_VERSION,
   requestVcRecapErasure,
   VC_RECAP_LONG_TERM_CONSENT_VERSION,
@@ -143,4 +146,165 @@ test('OpenAI音声送信は旧文字起こし同意と新しい個別同意を�
   const revoke = writes[1] as { update: { consentedAt: null; revokedAt: Date } };
   assert.equal(revoke.update.consentedAt, null);
   assert.ok(revoke.update.revokedAt instanceof Date);
+});
+
+test('新しい長期同意は公開ポリシー版と運用スイッチの両方が一致する場合だけ受付', () => {
+  assert.equal(isVcRecapLongTermEnrollmentEnabled({}), false);
+  assert.equal(
+    isVcRecapLongTermEnrollmentEnabled({
+      VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED: 'true',
+      VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION: 'different-version',
+    }),
+    false,
+  );
+  assert.equal(
+    isVcRecapLongTermEnrollmentEnabled({
+      VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED: 'false',
+      VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION: VC_RECAP_LONG_TERM_CONSENT_VERSION,
+    }),
+    false,
+  );
+  assert.equal(
+    isVcRecapLongTermEnrollmentEnabled({
+      VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED: 'true',
+      VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION: VC_RECAP_LONG_TERM_CONSENT_VERSION,
+    }),
+    true,
+  );
+});
+
+test('不正な長期保存組み合わせを拒否し、デフォルトOFFでは同意を付与しない', async () => {
+  const fake = {
+    $transaction: () => {
+      throw new Error('must not write');
+    },
+  } as unknown as PrismaClient;
+  assert.equal(
+    await updateVcRecapLongTermConsentChoices(fake, 'u1', {
+      transcription: false,
+      transcriptLongTerm: true,
+      audioLongTerm: false,
+    }),
+    'invalid',
+  );
+  const prevEnabled = process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
+  const prevVersion = process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'];
+  try {
+    delete process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
+    delete process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'];
+    const writes: unknown[] = [];
+    const tx = {
+      vcRecapErasureRequest: {
+        findUnique: async () => null,
+        upsert: async (data: unknown) => {
+          writes.push(data);
+        },
+      },
+      userDataConsent: { findUnique: async () => ({ voiceTranscriptionConsent: true }) },
+      vcRecapExplicitConsent: {
+        findMany: async () => [],
+        upsert: async (data: unknown) => {
+          writes.push(data);
+        },
+        updateMany: async (data: unknown) => {
+          writes.push(data);
+        },
+      },
+    };
+    const client = {
+      $transaction: async (fn: (t: typeof tx) => Promise<string>) => fn(tx),
+    } as unknown as PrismaClient;
+    assert.equal(
+      await updateVcRecapLongTermConsentChoices(client, 'u1', {
+        transcription: true,
+        transcriptLongTerm: true,
+        audioLongTerm: true,
+      }),
+      'enrollment_disabled',
+    );
+    assert.equal(writes.length, 0);
+  } finally {
+    if (prevEnabled === undefined) delete process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
+    else process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'] = prevEnabled;
+    if (prevVersion === undefined) {
+      delete process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'];
+    } else {
+      process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'] = prevVersion;
+    }
+  }
+});
+
+test('目的別同意撤回は受付OFFでも削除障壁を作り、他の長期同意も消す', async () => {
+  const calls: string[] = [];
+  const tx = {
+    vcRecapErasureRequest: {
+      findUnique: async () => null,
+      upsert: async () => {
+        calls.push('fence');
+      },
+    },
+    userDataConsent: { findUnique: async () => ({ voiceTranscriptionConsent: true }) },
+    vcRecapExplicitConsent: {
+      findMany: async () => [consent('audio_long_term'), consent('transcription')],
+      updateMany: async () => {
+        calls.push('revoke-all');
+      },
+      upsert: async () => {
+        calls.push('grant');
+      },
+    },
+  };
+  const client = {
+    $transaction: async (fn: (t: typeof tx) => Promise<string>) => fn(tx),
+  } as unknown as PrismaClient;
+  assert.equal(
+    await updateVcRecapLongTermConsentChoices(client, 'u1', {
+      transcription: false,
+      transcriptLongTerm: false,
+      audioLongTerm: false,
+    }),
+    'erasure_requested',
+  );
+  assert.deepEqual(calls, ['fence', 'revoke-all']);
+});
+
+test('本人削除障壁があれば新同意の再取得を拒否', async () => {
+  const tx = {
+    vcRecapErasureRequest: { findUnique: async () => ({ userId: 'u1' }) },
+    userDataConsent: { findUnique: async () => ({ voiceTranscriptionConsent: true }) },
+    vcRecapExplicitConsent: { findMany: async () => [] },
+  };
+  const client = {
+    $transaction: async (fn: (t: typeof tx) => Promise<string>) => fn(tx),
+  } as unknown as PrismaClient;
+  assert.equal(
+    await updateVcRecapLongTermConsentChoices(client, 'u1', {
+      transcription: false,
+      transcriptLongTerm: false,
+      audioLongTerm: false,
+    }),
+    'erasure_pending',
+  );
+});
+
+test('以前のポリシー版で未撤回の同意は、現在版の同意とは別に撤回可能と表示する', async () => {
+  const client = {
+    vcRecapExplicitConsent: {
+      findMany: async () => [consent('audio_long_term', { policyVersion: 'previous-v1' })],
+    },
+    userDataConsent: {
+      findUnique: async () => ({ voiceTranscriptionConsent: true }),
+    },
+    vcRecapErasureRequest: {
+      findUnique: async () => null,
+    },
+  } as unknown as PrismaClient;
+  const view = await getVcRecapLongTermConsentView(client, 'user-1');
+  assert.deepEqual(view.choices, {
+    transcription: false,
+    transcriptLongTerm: false,
+    audioLongTerm: false,
+  });
+  assert.equal(view.hasUnrevokedLongTermGrant, true);
+  assert.equal(view.erasurePending, false);
 });
