@@ -10,7 +10,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 import tempfile
 from urllib.request import Request, urlopen
 
@@ -44,7 +43,8 @@ def main() -> None:
         raise SystemExit("Refusing to overwrite an existing Whisper model directory")
     target.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".whisper-stage-", dir=target.parent) as tmp:
-        staging = Path(tmp)
+        staging = Path(tmp) / "ready"
+        staging.mkdir(mode=0o755)
         sha = {name: download(name, staging / name) for name in FILES}
         if (staging / "model.bin").stat().st_size < 10 * 1024 * 1024:
             raise RuntimeError("Model weights look truncated")
@@ -55,8 +55,10 @@ def main() -> None:
         # Group/world can only read the public MIT model; no secret is staged.
         for file in staging.iterdir():
             file.chmod(0o644)
-        shutil.copytree(staging, target, symlinks=False)
-        target.chmod(0o755)
+        staging.chmod(0o755)
+        # Same-filesystem rename publishes the fully staged directory atomically.
+        # Interrupted downloads/copies cannot expose a partial model as target.
+        os.rename(staging, target)
     print(f"Verified public MIT model: {REPO}@{REVISION}")
     print(f"Staged to: {target}")
     print("Do not enable Whisper until host memory/CPU preflight and security review pass.")
