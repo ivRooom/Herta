@@ -71,6 +71,8 @@ function solo(
 ): string {
   const entry = input.entries[0]!;
   const art = portraits[0];
+  const nameLength = Array.from(entry.displayName).length;
+  const headlineSize = nameLength > 14 ? 28 : nameLength > 9 ? 38 : 71;
   const parts: string[] = [
     '<path d="M660 170 L1190 170 L1190 568 L520 568 Z" fill="#181b23"/>',
     '<path d="M815 165 H1190 V525 L1060 568 H590 Z" fill="#d72f43" opacity=".14"/>',
@@ -95,7 +97,7 @@ function solo(
     '<rect x="52" y="189" width="4" height="60" fill="#ff4655"/>',
     text('01  /  HERO PICK', 72, 211, 18, '#fd6773', 750),
     text('SELECTED AGENT', 69, 277, 19, '#beb8b0', 650),
-    text(entry.displayName, 65, 359, 71, '#f8f3e9', 850, 9),
+    text(entry.displayName, 65, 359, headlineSize, '#f8f3e9', 850, 17),
     '<path d="M69 385 H555" stroke="#f04b59" stroke-width="2"/>',
     text(entry.agentName.toUpperCase(), 70, 417, 26, '#ff6270', 800, 17),
     text('PLAYER', 70, 473, 16, '#96979a', 700),
