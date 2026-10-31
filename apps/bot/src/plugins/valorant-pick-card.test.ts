@@ -27,6 +27,32 @@ describe('VALORANT pick card', () => {
       expect(png.byteLength).toBeLessThan(8 * 1024 * 1024);
     }
   });
+  it('renders a real solo portrait behind the participant and status HUD panels', async () => {
+    const portrait = await sharp({
+      create: { width: 8, height: 8, channels: 4, background: '#ff526c' },
+    })
+      .png()
+      .toBuffer();
+    const svg = renderValorantHudSvg(
+      {
+        mode: 'RANDOM',
+        mapName: '指定なし',
+        entries: [{ agentName: 'Jett', displayName: 'ジェット', playerLabel: 'PLAYER 01' }],
+      },
+      [portrait],
+      ['デュエリスト'],
+    );
+    const imageIndex = svg.indexOf('data:image/png;base64,');
+    expect(imageIndex).toBeGreaterThan(0);
+    expect(imageIndex).toBeLessThan(svg.indexOf('PARTICIPANTS'));
+    expect(imageIndex).toBeLessThan(svg.indexOf('STATUS'));
+    const png = await sharp(Buffer.from(svg)).png().toBuffer();
+    const info = await sharp(png).metadata();
+    expect(info.format).toBe('png');
+    expect(info.width).toBe(1200);
+    expect(info.height).toBe(680);
+  });
+
   it('escapes potentially unsafe player and agent display text before rendering', async () => {
     const image = await renderValorantPickCard({
       mode: 'RANDOM',
