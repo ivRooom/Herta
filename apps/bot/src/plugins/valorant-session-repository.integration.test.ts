@@ -3,6 +3,9 @@ import test from 'node:test';
 import { PrismaClient } from '@herta/db';
 import {
   createValorantSession,
+  createDirectValorantSession,
+  rerollValorantSession,
+  setValorantSessionMessageId,
   getValorantSession,
   mutateValorantSession,
 } from './valorant-session-repository.js';
@@ -93,6 +96,60 @@ test(
       assert.equal(Array.isArray(final?.result), true);
       assert.equal((final?.result as unknown[]).length, 2);
       assert.equal((await operate(session.id, 'alice', 'leave')).status, 'closed');
+
+      await setValorantSessionMessageId(prisma, guildId, session.id, 'reroll-message');
+      const reroll = (id: string, userId: string, isAdmin = false) =>
+        rerollValorantSession(prisma, {
+          guildId,
+          id,
+          messageId: 'reroll-message',
+          userId,
+          isAdmin,
+          candidates,
+          sessionDurationMinutes: 30,
+          rulesVersion: 'integration-v2',
+          pick(participants, pool) {
+            return participants.map((uid, index) => ({ userId: uid, ...pool[index]! }));
+          },
+        });
+      assert.equal((await reroll(session.id, 'guest')).status, 'forbidden');
+      const rerolls = await Promise.all([reroll(session.id, 'owner'), reroll(session.id, 'owner')]);
+      const successful = rerolls.filter((r) => r.status === 'ok');
+      assert.equal(successful.length, 1);
+      const successor = successful[0]!;
+      if (successor.status !== 'ok') throw new Error('reroll missing');
+      assert.equal(successor.session.status, 'COMPLETED');
+      assert.equal(successor.session.messageId, 'reroll-message');
+      assert.equal(successor.session.participants.length, 2);
+      assert.notEqual(successor.session.id, session.id);
+      assert.equal((await getValorantSession(prisma, guildId, session.id))?.messageId, null);
+      assert.deepEqual(
+        (await getValorantSession(prisma, guildId, session.id))?.result,
+        final?.result,
+      );
+      assert.equal((await reroll(session.id, 'owner')).status, 'closed');
+      assert.equal((await reroll(successor.session.id, 'owner')).status, 'ok');
+      assert.equal(await getValorantSession(prisma, otherGuild, successor.session.id), null);
+
+      const direct = await createDirectValorantSession(prisma, {
+        guildId,
+        channelId: 'channel',
+        creatorId: 'owner',
+        mode: 'RANDOM',
+        mapId: null,
+        expiresAt: future(),
+        rulesVersion: 'direct-v1',
+        participants: ['alice', 'bob'],
+        candidates,
+        assignments: [
+          { userId: 'alice', ...candidates[0]! },
+          { userId: 'bob', ...candidates[1]! },
+        ],
+      });
+      assert.equal(direct.status, 'COMPLETED');
+      assert.equal(direct.participants.length, 2);
+      assert.equal((direct.result as unknown[]).length, 2);
+      await setValorantSessionMessageId(prisma, guildId, direct.id, 'direct-message');
 
       const expired = await create(5, new Date(Date.now() - 10_000));
       assert.equal((await operate(expired.id, 'alice', 'join')).status, 'closed');
