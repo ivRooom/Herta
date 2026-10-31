@@ -3,6 +3,7 @@
 // model hash verification, CI CVE scans, RSS/RTF and per-person consent pass #672.
 #include "whisper.h"
 #include "sha256.h"
+#include "isolation.h"
 
 #include <algorithm>
 #include <atomic>
@@ -228,10 +229,62 @@ std::vector<float> downsample_to_16k(const std::vector<uint8_t> & pcm) {
 }
 
 struct Runtime {
-    whisper_context * ctx = nullptr;
     std::mutex inference;
+    std::string model_path;
     std::string secret;
 };
+
+// Runs in an exec'd separate OS process. No HTTP port or bearer credentials
+// are inherited, and only one bounded PCM chunk is received on stdin.
+int run_infer_child(const char * model_path) {
+    if (!model_path || !verify_pinned_model_sha256(model_path)) return 1;
+    std::vector<uint8_t> data;
+    data.reserve(64000);
+    uint8_t buffer[4096];
+    for (;;) {
+        const ssize_t n = read(STDIN_FILENO, buffer, sizeof(buffer));
+        if (n == 0) break;
+        if (n < 0 && errno == EINTR) continue;
+        if (n < 0) return 1;
+        if (data.size() + static_cast<size_t>(n) > isolation::kMaxFloatBytes) return 1;
+        data.insert(data.end(), buffer, buffer + n);
+    }
+    if (data.empty() || data.size() % sizeof(float) != 0) return 1;
+    std::vector<float> samples(data.size() / sizeof(float));
+    std::memcpy(samples.data(), data.data(), data.size());
+    data.clear();
+
+    whisper_context_params cparams = whisper_context_default_params();
+    cparams.use_gpu = false;
+    whisper_context * ctx = whisper_init_from_file_with_params(model_path, cparams);
+    if (!ctx) return 1;
+    whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
+    params.n_threads = 1;
+    params.language = "ja";
+    params.translate = false;
+    params.no_timestamps = true;
+    params.single_segment = true;
+    params.print_progress = false;
+    params.print_realtime = false;
+    params.print_timestamps = false;
+    params.print_special = false;
+    params.no_context = true;
+    params.greedy.best_of = 1;
+    const bool ok = whisper_full(ctx, params, samples.data(), static_cast<int>(samples.size())) == 0;
+    std::string transcript;
+    if (ok) {
+        const int n = whisper_full_n_segments(ctx);
+        for (int i = 0; i < n; ++i) {
+            const char * segment = whisper_full_get_segment_text(ctx, i);
+            if (segment) transcript += segment;
+            if (transcript.size() >= 16000U) break;
+        }
+    }
+    whisper_free(ctx);
+    if (!ok) return 1;
+    const auto response = json_escape(trim(transcript));
+    return isolation::send_to_stdout(response) ? 0 : 1;
+}
 
 void process_connection(int fd, Runtime & runtime) {
     timeval timeout{};
@@ -285,31 +338,15 @@ void process_connection(int fd, Runtime & runtime) {
     pcm.clear();
     pcm.shrink_to_fit();
 
-    whisper_full_params params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY);
-    params.n_threads = 1;
-    params.language = "ja";
-    params.translate = false;
-    params.no_timestamps = true;
-    params.single_segment = true;
-    params.print_progress = false;
-    params.print_realtime = false;
-    params.print_timestamps = false;
-    params.print_special = false;
-    params.no_context = true;
-    params.greedy.best_of = 1;
-
-    if (whisper_full(runtime.ctx, params, f32.data(), static_cast<int>(f32.size())) != 0) {
+    // An HTTP abort or deadline kills the actual decode OS process. Do not
+    // rely on whisper.cpp's cooperative abort_callback or a detached thread.
+    const auto result = isolation::run(
+        runtime.model_path, f32, fd, std::chrono::seconds(18));
+    if (!result.ok) {
         respond(fd, 503, "{\"error\":\"transcription_unavailable\"}");
         return;
     }
-    std::string transcript;
-    const int n = whisper_full_n_segments(runtime.ctx);
-    for (int i = 0; i < n; ++i) {
-        const char * segment = whisper_full_get_segment_text(runtime.ctx, i);
-        if (segment) transcript += segment;
-        if (transcript.size() >= 16000U) break;
-    }
-    respond(fd, 200, json_escape(trim(transcript)));
+    respond(fd, 200, result.body);
 }
 int self_test() {
     // FIPS SHA-256 known-answer tests; do not weaken the production model pin.
@@ -332,12 +369,25 @@ int self_test() {
     if (json_escape("a\n\"b") != "{\"text\":\"a\\u000a\\\"b\"}") return 8;
     char one = 0;
     if (receive_exact(-1, &one, 1, Clock::now()-std::chrono::seconds(1))) return 11;
+    // No-model synthetic isolation test: the actual sleeping child must die
+    // under our hard deadline, not merely detach from the request thread.
+    const auto t0 = Clock::now();
+    auto killed = isolation::run("", std::vector<float>(2, 0.0f), -1,
+                                 std::chrono::milliseconds(180), "--sleep-child-test");
+    if (killed.ok || !killed.terminated ||
+        Clock::now() - t0 > std::chrono::seconds(3)) return 12;
     return 0;
 }
 } // namespace
 
 int main(int argc, char ** argv) {
     if (argc == 2 && std::strcmp(argv[1], "--self-test") == 0) return self_test();
+    if (argc == 3 && std::strcmp(argv[1], "--infer-child") == 0)
+        return run_infer_child(argv[2]);
+    if (argc == 3 && std::strcmp(argv[1], "--sleep-child-test") == 0) {
+        sleep(60);
+        return 0;
+    }
     std::signal(SIGPIPE, SIG_IGN);
     const char * secret = std::getenv("VC_RECAP_LOCAL_WHISPER_TOKEN");
     const char * model = std::getenv("WHISPER_MODEL_PATH");
@@ -349,8 +399,12 @@ int main(int argc, char ** argv) {
     cparams.use_gpu = false;
     whisper_context * ctx = whisper_init_from_file_with_params(model, cparams);
     if (!ctx) return 1;
+    // Load model once to prove the health endpoint will be meaningful, then
+    // release its parent-process RSS. Every individual decoding process
+    // re-verifies the model, loads it, and is reaped before the next request.
+    whisper_free(ctx);
     Runtime runtime;
-    runtime.ctx = ctx;
+    runtime.model_path = model;
     runtime.secret = secret;
     int listener = socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (listener < 0) return 1;
@@ -386,6 +440,5 @@ int main(int argc, char ** argv) {
         }).detach();
     }
     close(listener);
-    whisper_free(ctx);
     return 1;
 }
