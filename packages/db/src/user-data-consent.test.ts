@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { applyAutoConsentRoles } from './user-data-consent.js';
+import type { PrismaClient } from '@prisma/client';
+import { applyAutoConsentRoles, setVoiceTranscriptionConsent } from './user-data-consent.js';
 
 test('自動同意ロール未設定時はベースの同意状態をそのまま返す', () => {
   const result = applyAutoConsentRoles(
@@ -62,4 +63,53 @@ test('baseConsentに未登録のユーザーは未選択として自動同意ロ
     new Map([['user-1', ['role-auto']]]),
   );
   assert.equal(result.get('user-1'), true);
+});
+
+test('従来の同意撤回もユーザー単位のロック下で消去障壁を記録する', async () => {
+  const steps: string[] = [];
+  const tx = {
+    $queryRawUnsafe: async (_sql: string, owner: string) => {
+      assert.equal(owner, 'vc-recap-storage:123456789012345678');
+      steps.push('lock');
+      return [];
+    },
+    userDataConsent: {
+      upsert: async () => {
+        steps.push('legacy-revoke');
+        return {
+          userId: '123456789012345678',
+          voiceTranscriptionConsent: false,
+          voiceTranscriptRetentionConsentedAt: null,
+          updatedAt: new Date(),
+        };
+      },
+    },
+    vcRecapTranscriptSegment: {
+      deleteMany: async () => {
+        steps.push('clear-transcripts');
+      },
+    },
+    vcRecapExplicitConsent: {
+      updateMany: async () => {
+        steps.push('revoke-new-consent');
+      },
+    },
+    vcRecapErasureRequest: {
+      upsert: async () => {
+        steps.push('erasure-fence');
+      },
+    },
+  };
+  const prisma = {
+    $transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+  } as unknown as PrismaClient;
+  const state = await setVoiceTranscriptionConsent(prisma, '123456789012345678', false);
+  assert.equal(state.voiceTranscriptionConsent, false);
+  assert.deepEqual(steps, [
+    'lock',
+    'legacy-revoke',
+    'clear-transcripts',
+    'revoke-new-consent',
+    'erasure-fence',
+  ]);
 });
