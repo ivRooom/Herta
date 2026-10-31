@@ -11,6 +11,7 @@ const BUCKET = 'herta-vc-recap-private-test';
 const USER = '123456789012345678';
 const PREFIX = 'vc-recap/users/' + USER + '/';
 
+// prettier-ignore
 function command(operation: string) {
   return class {
     readonly operation = operation;
@@ -18,6 +19,7 @@ function command(operation: string) {
   };
 }
 
+// prettier-ignore
 const commands = {
   ListObjectVersionsCommand: command('versions'),
   DeleteObjectsCommand: command('delete'),
@@ -25,11 +27,13 @@ const commands = {
   AbortMultipartUploadCommand: command('abort'),
 } satisfies S3V3CommandConstructors;
 
+// prettier-ignore
 interface Call {
   operation: string;
   input: Record<string, unknown>;
 }
 
+// prettier-ignore
 function mockClient(
   onCall: (call: Call) => unknown | Promise<unknown>,
 ): { client: S3V3CommandClient; calls: Call[] } {
@@ -47,6 +51,7 @@ function mockClient(
   };
 }
 
+// prettier-ignore
 async function withBucket(run: () => Promise<void>): Promise<void> {
   const previous = process.env['VC_RECAP_STORAGE_BUCKET'];
   process.env['VC_RECAP_STORAGE_BUCKET'] = BUCKET;
@@ -58,6 +63,7 @@ async function withBucket(run: () => Promise<void>): Promise<void> {
   }
 }
 
+// prettier-ignore
 test('SDK v3 ListObjectVersions maps old versions and delete markers without changing the prefix', async () => {
   await withBucket(async () => {
     const mock = mockClient(() => ({
@@ -83,6 +89,7 @@ test('SDK v3 ListObjectVersions maps old versions and delete markers without cha
   });
 });
 
+// prettier-ignore
 test('DeleteObjects requires explicit VersionId and verbose acknowledgement for every version', async () => {
   await withBucket(async () => {
     const mock = mockClient(() => ({
@@ -116,6 +123,7 @@ test('DeleteObjects requires explicit VersionId and verbose acknowledgement for 
   });
 });
 
+// prettier-ignore
 test('An HTTP-success response without deletion acknowledgements is a failed erasure', async () => {
   await withBucket(async () => {
     const mock = mockClient(() => ({}));
@@ -128,6 +136,7 @@ test('An HTTP-success response without deletion acknowledgements is a failed era
   });
 });
 
+// prettier-ignore
 test('Rejects missing version IDs, shared prefixes, mixed owners and wrong buckets', async () => {
   await withBucket(async () => {
     const mock = mockClient(() => ({
@@ -167,6 +176,7 @@ test('Rejects missing version IDs, shared prefixes, mixed owners and wrong bucke
   });
 });
 
+// prettier-ignore
 test('SDK v3 ListMultipartUploads/AbortMultipartUpload pass only owner-scoped keys', async () => {
   await withBucket(async () => {
     const mock = mockClient(({ operation }) =>
@@ -192,6 +202,7 @@ test('SDK v3 ListMultipartUploads/AbortMultipartUpload pass only owner-scoped ke
   });
 });
 
+// prettier-ignore
 test('SDK responses with malformed multipart pages fail closed', async () => {
   await withBucket(async () => {
     const mock = mockClient(() => ({ Uploads: [{ Key: PREFIX + 'upload.opus' }] }));
@@ -203,6 +214,7 @@ test('SDK responses with malformed multipart pages fail closed', async () => {
   });
 });
 
+// prettier-ignore
 test('The adapter drives the full version-delete / delete-marker / verification sweep', async () => {
   await withBucket(async () => {
     const objects = [
