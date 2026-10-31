@@ -2,6 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import type { ChatInputCommandInteraction } from 'discord.js';
 const mocks = vi.hoisted(() => ({
   findMany: vi.fn(),
+  erasure: vi.fn().mockResolvedValue(undefined),
+  openAiConsent: vi.fn().mockResolvedValue(true),
+  revokeActive: vi.fn(),
+  newConsentFind: vi.fn().mockResolvedValue([]),
+  erasureFind: vi.fn().mockResolvedValue(null),
+  deleteVoice: vi.fn().mockResolvedValue({ deletedSessions: 1, redactedSessions: 2 }),
+  revokeVoice: vi.fn().mockResolvedValue(undefined),
   consent: vi.fn().mockResolvedValue({ voiceTranscriptionConsent: false, updatedAt: new Date(0) }),
   voice: vi.fn().mockResolvedValue([]),
   transcript: vi.fn().mockResolvedValue([
@@ -16,12 +23,21 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('@herta/db', () => ({
   hasDailyBonusSchema: vi.fn(async () => false),
-  getPrismaClient: () => ({ mbtiPersonalResult: { findMany: mocks.findMany } }),
+  getPrismaClient: () => ({
+    mbtiPersonalResult: { findMany: mocks.findMany },
+    vcRecapExplicitConsent: { findMany: mocks.newConsentFind },
+    vcRecapErasureRequest: { findUnique: mocks.erasureFind },
+  }),
   getUserDataConsent: mocks.consent,
   listVcRecapSessionsForUser: mocks.voice,
   listVcRecapTranscriptSegmentsForUser: mocks.transcript,
-  deleteUserVoiceData: vi.fn(),
-  setVoiceTranscriptionConsent: vi.fn(),
+  deleteUserVoiceData: mocks.deleteVoice,
+  requestVcRecapErasure: mocks.erasure,
+  setVcRecapOpenAiAudioConsent: mocks.openAiConsent,
+  setVoiceTranscriptionConsent: mocks.revokeVoice,
+}));
+vi.mock('../voice/vc-recap-session-manager.js', () => ({
+  revokeVcRecapConsent: mocks.revokeActive,
 }));
 import { privacyCommand } from './privacy.js';
 describe('privacy export', () => {
@@ -31,6 +47,16 @@ describe('privacy export', () => {
       { id: 'second', guildId: 'guild-b', resultType: 'ENFP' },
     ];
     mocks.findMany.mockResolvedValue(rows);
+    mocks.newConsentFind.mockResolvedValueOnce([
+      {
+        purpose: 'openai_audio_processing',
+        policyVersion: 'vc-recap-openai-audio-2026-10-31-v1',
+        consentedAt: new Date('2026-10-31T01:00:00Z'),
+        revokedAt: null,
+        updatedAt: new Date('2026-10-31T01:00:00Z'),
+      },
+    ]);
+    mocks.erasureFind.mockResolvedValueOnce(null);
     const interaction = {
       user: { id: 'owner-user' },
       options: { getSubcommand: () => 'export' },
@@ -44,6 +70,19 @@ describe('privacy export', () => {
     const exported = JSON.parse(payload.files[0].attachment.toString('utf8'));
     expect(exported.mbtiResults).toEqual(rows);
     expect(exported.voiceRecapSessions).toEqual([]);
+    expect(mocks.newConsentFind).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 'owner-user' } }),
+    );
+    expect(exported.explicitVoiceConsents).toEqual([
+      {
+        purpose: 'openai_audio_processing',
+        policyVersion: 'vc-recap-openai-audio-2026-10-31-v1',
+        consentedAt: '2026-10-31T01:00:00.000Z',
+        revokedAt: null,
+        updatedAt: '2026-10-31T01:00:00.000Z',
+      },
+    ]);
+    expect(exported.voiceErasureRequest).toBeNull();
     expect(mocks.transcript).toHaveBeenCalledWith(expect.anything(), 'owner-user');
     expect(exported.voiceTranscriptSegments).toEqual([
       {
@@ -55,5 +94,86 @@ describe('privacy export', () => {
     ]);
     expect(exported.userId).toBe('owner-user');
     expect(interaction.deferReply).toHaveBeenCalledWith({ flags: 64 });
+  });
+});
+
+describe('privacy delete-voice-data', () => {
+  it('blocks new storage before deleting current VC sessions', async () => {
+    const order: string[] = [];
+    mocks.erasure.mockImplementationOnce(async () => {
+      order.push('erase-barrier');
+    });
+    mocks.revokeVoice.mockImplementationOnce(async () => {
+      order.push('revoke-voice');
+    });
+    mocks.deleteVoice.mockImplementationOnce(async () => {
+      order.push('delete-postgres');
+      return { deletedSessions: 1, redactedSessions: 2 };
+    });
+    const interaction = {
+      user: { id: 'owner-user' },
+      options: { getSubcommand: () => 'delete-voice-data' },
+      reply: vi.fn(),
+    };
+    await privacyCommand.execute(interaction as unknown as ChatInputCommandInteraction);
+    expect(order).toEqual(['erase-barrier', 'delete-postgres', 'revoke-voice']);
+    expect(mocks.revokeVoice).toHaveBeenCalledWith(expect.anything(), 'owner-user', false);
+    expect(mocks.erasure).toHaveBeenCalledWith(expect.anything(), 'owner-user');
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('VC要約データの削除') }),
+    );
+    const notice = interaction.reply.mock.calls[0]![0].content as string;
+    expect(notice).toContain('PostgreSQL');
+    expect(notice).toContain('完全削除完了通知ではありません');
+    expect(notice).toContain('バックアップ');
+    expect(notice).toContain('削除障壁');
+  });
+});
+
+describe('openai-audio-consent', () => {
+  it('withdraws only OpenAI consent, not legacy AWS capture or voice retention', async () => {
+    mocks.revokeActive.mockClear();
+    mocks.revokeVoice.mockClear();
+    const interaction = {
+      user: { id: 'owner-user' },
+      options: { getSubcommand: () => 'openai-audio-consent', getBoolean: () => false },
+      reply: vi.fn(),
+    };
+    await privacyCommand.execute(interaction as unknown as ChatInputCommandInteraction);
+    expect(mocks.openAiConsent).toHaveBeenCalledWith(expect.anything(), 'owner-user', false);
+    expect(mocks.revokeActive).not.toHaveBeenCalled();
+    expect(mocks.revokeVoice).not.toHaveBeenCalled();
+  });
+
+  it('requires an explicit user action and does not reuse legacy consent', async () => {
+    const interaction = {
+      user: { id: 'owner-user' },
+      options: {
+        getSubcommand: () => 'openai-audio-consent',
+        getBoolean: () => true,
+      },
+      reply: vi.fn(),
+    };
+    await privacyCommand.execute(interaction as unknown as ChatInputCommandInteraction);
+    expect(mocks.openAiConsent).toHaveBeenCalledWith(expect.anything(), 'owner-user', true);
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('OpenAI') }),
+    );
+  });
+
+  it('refuses explicit opt-in while a prior erasure is pending', async () => {
+    mocks.openAiConsent.mockResolvedValueOnce(false);
+    const interaction = {
+      user: { id: 'owner-user' },
+      options: {
+        getSubcommand: () => 'openai-audio-consent',
+        getBoolean: () => true,
+      },
+      reply: vi.fn(),
+    };
+    await privacyCommand.execute(interaction as unknown as ChatInputCommandInteraction);
+    expect(interaction.reply).toHaveBeenCalledWith(
+      expect.objectContaining({ content: expect.stringContaining('登録できません') }),
+    );
   });
 });

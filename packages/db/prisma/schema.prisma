@@ -1303,6 +1303,34 @@ model UserDataConsent {
  * DB非保存、同一userIdへのupsertで前回linkを無効化)だが、同意はguild非依存の
  * グローバル設定(UserDataConsent参照)なのでguildId列を持たない。
  */
+/**
+ * New, purpose-specific VC Recap consent. Legacy UserDataConsent is NOT imported.
+ * No collection or retention path reads this table until the new consent UI,
+ * deletion workflow and published policy version are verified.
+ */
+model VcRecapExplicitConsent {
+  userId        String    @map("user_id")
+  purpose       String
+  policyVersion String    @map("policy_version")
+  consentedAt   DateTime? @map("consented_at") @db.Timestamptz(3)
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@id([userId, purpose])
+  @@index([userId, updatedAt])
+  @@map("vc_recap_explicit_consents")
+}
+
+/** DB-side erasure fence for future VC archive/recording pipelines. */
+model VcRecapErasureRequest {
+  userId                    String    @id @map("user_id")
+  requestedAt               DateTime  @default(now()) @map("requested_at") @db.Timestamptz(3)
+  storageDeletionVerifiedAt DateTime? @map("storage_deletion_verified_at") @db.Timestamptz(3)
+  updatedAt                 DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("vc_recap_erasure_requests")
+}
+
 model VoiceConsentAccess {
   userId    String   @id @map("user_id")
   tokenHash String   @unique @map("token_hash")

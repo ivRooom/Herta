@@ -58,9 +58,22 @@ export async function setVoiceTranscriptionConsent(
   });
   if (consent) return toUserDataConsentState(await upsert);
 
+  // Legacy revocation must also cancel every future recording/archive opt-in.
+  // Persist a durable erasure barrier so an archive worker can replay deletion
+  // after restoring backups; the barrier is NOT proof of completed S3 deletion.
+  const revokedAt = new Date();
   const [row] = await prisma.$transaction([
     upsert,
     prisma.vcRecapTranscriptSegment.deleteMany({ where: { userId } }),
+    prisma.vcRecapExplicitConsent.updateMany({
+      where: { userId },
+      data: { consentedAt: null, revokedAt },
+    }),
+    prisma.vcRecapErasureRequest.upsert({
+      where: { userId },
+      create: { userId, requestedAt: revokedAt },
+      update: { requestedAt: revokedAt, storageDeletionVerifiedAt: null },
+    }),
   ]);
   return toUserDataConsentState(row);
 }

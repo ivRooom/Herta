@@ -60,6 +60,18 @@ function fakePrisma(
       },
     },
     vcRecapTranscriptSegment: { deleteMany: async () => ({ count: 0 }) },
+    vcRecapExplicitConsent: {
+      updateMany: async () => {
+        writes.push('long-term:revoke');
+        return { count: 0 };
+      },
+    },
+    vcRecapErasureRequest: {
+      upsert: async () => {
+        writes.push('erasure');
+        return { userId: INPUT.userId };
+      },
+    },
     $transaction: async (ops: Promise<unknown>[]) => Promise.all(ops),
     auditLog: {
       create: async () => {
@@ -89,7 +101,7 @@ test('一度も選んでいないメンバーは管理者が同意済みにで�
 test('管理者は同意を取り消せる', async () => {
   const { prisma, writes } = fakePrisma({ voiceTranscriptionConsent: true });
   await setVoiceConsentAsAdmin(prisma, { ...INPUT, consent: false });
-  assert.deepEqual(writes, ['consent:false', 'audit']);
+  assert.deepEqual(writes, ['consent:false', 'long-term:revoke', 'erasure', 'audit']);
 });
 
 test('読み取りの直後に本人が拒否した場合も、管理者の付与で拒否を上書きしない', async () => {
