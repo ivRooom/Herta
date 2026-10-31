@@ -6,6 +6,66 @@ import { renderValorantHudSvg } from './valorant-pick-card-hud.js';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('VALORANT pick card', () => {
+  it('keeps the v3 art-first editorial hierarchy for solo and every lineup size', () => {
+    for (const count of [1, 2, 3, 4, 5]) {
+      const input = {
+        mode: 'RANDOM' as const,
+        mapName: 'アセント',
+        entries: Array.from({ length: count }, (_, index) => ({
+          agentName: 'Jett',
+          displayName: 'ジェット',
+          playerLabel: '参加者' + (index + 1),
+        })),
+      };
+      const svg = renderValorantHudSvg(
+        input,
+        Array(count).fill(null),
+        Array(count).fill('デュエリスト'),
+      );
+      expect(svg).toContain('AGENT REVEAL');
+      expect(svg).toContain('PICK COMPLETE');
+      expect(svg).toContain('PARTICIPANTS');
+      expect(svg).toContain('ジェット');
+      expect(svg).not.toContain('<foreignObject');
+      expect(svg).not.toContain('<script');
+      expect(svg).not.toContain('<rect x="32" y="30" width="1136" height="125"');
+      if (count === 1) {
+        expect(svg).toContain('HERO PICK');
+        expect(svg).toContain('url(#reading)');
+        expect(svg).toContain('SELECTED AGENT');
+      } else {
+        expect(svg).toContain('SQUAD // LINEUP');
+        expect(svg.match(/clipPath id="lineup-art-/g)).toHaveLength(count);
+        expect(svg.match(/参加者[1-5]/g)).toHaveLength(count);
+      }
+    }
+  });
+
+  it('rejects control/format characters in all visible dynamic labels', () => {
+    const svg = renderValorantHudSvg(
+      {
+        mode: 'TACTICAL',
+        mapName: 'アセント\u0000\u202e',
+        planLabel: '構成\u0001\u200b',
+        entries: [
+          {
+            agentName: 'Jett',
+            displayName: 'ジェット\u0007',
+            playerLabel: 'テスト\u0008\u202e',
+          },
+        ],
+      },
+      [null],
+      ['デュエ\u0000リスト'],
+    );
+    for (const value of ['\u0000', '\u0001', '\u0007', '\u0008', '\u202e', '\u200b']) {
+      expect(svg).not.toContain(value);
+    }
+    for (const value of ['アセント', '構成', 'テスト', 'ジェット', 'デュエリスト']) {
+      expect(svg).toContain(value);
+    }
+  });
+
   it('renders 1 to 5 players as bounded PNG without upstream images', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('assets unavailable')));
     for (const count of [1, 2, 3, 4, 5]) {
