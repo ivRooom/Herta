@@ -29,7 +29,7 @@ describe('VALORANT pick card', () => {
   });
   it('renders a real solo portrait behind the participant and status HUD panels', async () => {
     const portrait = await sharp({
-      create: { width: 8, height: 8, channels: 4, background: '#ff526c' },
+      create: { width: 8, height: 8, channels: 4, background: { r: 255, g: 82, b: 108, alpha: 1 } },
     })
       .png()
       .toBuffer();
