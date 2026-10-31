@@ -12,7 +12,7 @@ const MAX_SPEAKER_AUDIO_SECONDS = 10 * 60;
 
 export interface OpenAiFileTranscriptionOptions {
   apiKey: string;
-  model: Exclude<VcRecapTranscriptionProvider, 'aws'>;
+  model: Extract<VcRecapTranscriptionProvider, 'whisper-1' | 'gpt-transcribe'>;
   fetchImpl?: typeof fetch;
   /**
    * Check the person's CURRENT explicit provider consent before every upload.
