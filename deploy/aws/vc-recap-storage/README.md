@@ -10,10 +10,9 @@ The Tokyo dedicated VC Recap bucket exists separately from the Herta backup buck
 
 The bucket template has the CloudFormation parameter `EnableAudioStandardIALifecycle`:
 
-| Value | Effect |
-| --- | --- |
-| `false` (default) | Does not install an audio lifecycle rule. Existing legacy VC retention stays unchanged. |
-| `true` | Installs a **transition only**, on tagged audio objects at least 128 KiB, from S3 Standard to **STANDARD_IA after 30 days**. |
+`false` (default): Does not install an audio lifecycle rule. Existing legacy VC retention stays unchanged.
+
+`true` (explicit opt-in): Installs a **transition only**, on tagged audio objects at least 128 KiB, from S3 Standard to **STANDARD_IA after 30 days**.
 
 Only objects with the **S3 object tag** `vc-recap-kind=audio` and size **> 131071 bytes** qualify. The rule does not match arbitrary `vc-recap/users/*` contents and does **not** expire objects, versions, delete markers, or transcript archives. Smaller audio chunks remain in Standard rather than incur disproportionate transition costs.
 
