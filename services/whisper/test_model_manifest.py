@@ -23,10 +23,10 @@ class ManifestTests(unittest.TestCase):
                 "sha256": files,
             }
             (root / "model-manifest.json").write_text(json.dumps(record), encoding="utf-8")
-            module.verify_model_manifest(root)
+            module.verify_model_manifest(root, expected_sha256=files)
             (root / "model.bin").write_bytes(b"tampered")
             with self.assertRaisesRegex(RuntimeError, "hash mismatch"):
-                module.verify_model_manifest(root)
+                module.verify_model_manifest(root, expected_sha256=files)
 
     def test_rejects_wrong_revision(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -36,7 +36,7 @@ class ManifestTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(RuntimeError, "revision"):
-                module.verify_model_manifest(root)
+                module.verify_model_manifest(root, expected_sha256={})
 
 
 if __name__ == "__main__":
