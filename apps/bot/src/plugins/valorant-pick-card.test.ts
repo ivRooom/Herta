@@ -358,7 +358,7 @@ describe('VALORANT pick card', () => {
       [null],
       ['デュエリスト'],
     );
-    for (const marker of ['id="halo"', 'id="glow"', 'url(#row)', 'DISCORD BOT FOR GAMERS']) {
+    for (const marker of ['id="halo"', 'id="glow"', 'url(#reading)', 'DISCORD BOT FOR GAMERS']) {
       expect(svg).toContain(marker);
     }
     expect(svg).toContain('&lt;script&gt;');
