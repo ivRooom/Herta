@@ -1,7 +1,7 @@
 import type { ValorantPickCardInput } from './valorant-pick-card.js';
 
 /**
- * Neon Herta agent reveal (v4). All remote portraits are bounded PNG
+ * Neon Poster Reveal (v5). All remote portraits are bounded PNG
  * buffers from the caller. Keep user-controlled content escaped, never add
  * foreignObject, scripts or user-derived URLs to this SVG.
  */
@@ -64,68 +64,58 @@ function portrait(
   );
 }
 
-/**
- * Neon Herta hero: the agent art remains the focal point, while fixed-position
- * labels stay on an independent glass surface. User strings never enter SVG
- * attributes or URLs.
- */
+const PINK = '#ff659f';
+const VIOLET = '#b568ff';
+const CYAN = '#69d9ff';
+const ACCENTS = [CYAN, PINK, '#8caeff', VIOLET, '#ffd377'] as const;
+
 function solo(
   input: ValorantPickCardInput,
   portraits: readonly (Buffer | null)[],
   roles: readonly string[],
 ): string {
   const entry = input.entries[0]!;
-  const agentFont = Math.min(
-    86,
-    Math.floor(510 / Math.max(1, Array.from(entry.agentName).length * 0.66)),
+  const fontSize = Math.min(
+    80,
+    Math.floor(460 / Math.max(1, Array.from(entry.agentName).length * 0.66)),
   );
   const parts: string[] = [
-    '<path d="M620 158 H1189 V591 H557Z" fill="#1c123b" opacity=".72"/>',
-    '<path d="M905 157 H1190 V590 H714Z" fill="#a82375" opacity=".25"/>',
-    '<circle cx="923" cy="350" r="256" fill="url(#halo)" opacity=".88"/>',
-    '<path d="M1048 154 L1187 154 V358 L1139 358Z" fill="#ff478d" opacity=".15"/>',
-    '<path d="M1170 169 L1023 578" stroke="#fa5da5" stroke-width="2" opacity=".58"/>',
-    '<path d="M700 173 L1171 173" stroke="#b05cff" stroke-width="2" opacity=".6"/>',
+    '<path d="M562 176 H1194 V576 H615Z" fill="#17143a" stroke="#a767ff" stroke-width="1.5"/>',
+    '<path d="M859 178 H1194 V575 H700Z" fill="#b53296" opacity=".19"/>',
+    '<circle cx="963" cy="377" r="288" fill="url(#halo)" opacity=".9"/>',
+    '<path d="M1132 181 L1194 181 V331 L1096 331Z" fill="#ff488c" opacity=".35"/>',
+    '<path d="M679 185 L1117 185 M1147 193 L1026 559" stroke="#ae83fc" stroke-width="2" opacity=".46"/>',
   ];
   if (portraits[0]) {
-    parts.push(
-      '<g clip-path="url(#solo-art)">',
-      portrait(portraits[0], 591, 135, 650, 474),
-      '</g>',
-    );
+    parts.push('<g clip-path="url(#solo-art)">', portrait(portraits[0], 575, 158, 655, 447), '</g>');
   } else {
     parts.push(
-      '<circle cx="946" cy="369" r="178" fill="#251b48" stroke="#a16bff" stroke-width="2"/>',
-      '<circle cx="946" cy="369" r="147" fill="none" stroke="#ff5b9c" stroke-width="2" opacity=".6"/>',
-      '<path d="M946 223 L1091 365 L946 512 L802 365 Z" fill="#19162f" stroke="#d25bef" stroke-width="3"/>',
-      '<path d="M946 268 L1045 365 L946 467 L847 365 Z" fill="#0b0c1d"/>',
-      text(entry.agentName.toUpperCase(), 804, 384, 32, '#efb3ff', 850, 15),
+      '<circle cx="936" cy="368" r="174" fill="#2b2058" stroke="#a36cfa" stroke-width="2"/>',
+      '<path d="M936 217 L1087 367 L936 515 L784 367Z" fill="#0f1028" stroke="#ff5aaf" stroke-width="2"/>',
+      text(entry.agentName.toUpperCase(), 794, 381, 32, '#fce1ff', 900, 13),
     );
   }
   parts.push(
-    '<rect x="36" y="162" width="680" height="427" rx="23" fill="url(#reading)"/>',
-    '<rect x="47" y="173" width="642" height="399" rx="20" fill="url(#glass)" stroke="url(#neon)" stroke-width="1.6"/>',
-    '<path d="M70 201 H160" stroke="#ff5b9b" stroke-width="4" filter="url(#edge-glow)"/>',
-    '<path d="M70 201 H160" stroke="#ff6aab" stroke-width="2.5"/>',
-    text('01 / HERO PICK', 72, 238, 16, '#e3adff', 800),
-    text('SELECTED AGENT', 72, 288, 14, '#ada9cc', 750),
-    text(entry.agentName.toUpperCase(), 67, 381, agentFont, '#fff7ff', 900, 19),
-    text(entry.displayName, 73, 420, 25, '#f6bbff', 750, 18),
-    '<path d="M72 446 H574" stroke="#a266df" stroke-width="1.5" opacity=".8"/>',
-    '<rect x="71" y="461" width="516" height="68" rx="12" fill="#15152e" opacity=".88"/>',
-    '<path d="M71 462 V529" stroke="#ff4c9a" stroke-width="4"/>',
-    text('PLAYER', 89, 483, 13, '#bcb6da', 750),
-    text(entry.playerLabel ?? 'PLAYER 01', 88, 517, 27, '#f9f5ff', 750, 17),
-    text('ROLE', 73, 559, 13, '#bcb6da', 750),
-    text(roles[0] ?? 'エージェント', 145, 559, 19, '#ff8dca', 750, 13),
-    '<path d="M650 191 V236 M627 214 H673" stroke="#ffa6da" stroke-width="1.5" opacity=".55"/>',
+    '<rect x="38" y="192" width="540" height="370" rx="16" fill="url(#reading)" stroke="#9c70dc" stroke-width="1.5"/>',
+    '<path d="M56 210 H151" stroke="url(#neon)" stroke-width="4"/>',
+    text('01 // HERO PICK', 57, 243, 17, '#dcb5ff', 800),
+    text('SELECTED AGENT', 57, 286, 13, '#c5b9e6', 750),
+    text(entry.agentName.toUpperCase(), 52, 375, fontSize, '#fff5ff', 900, 18),
+    text(entry.displayName, 57, 414, 25, '#ffabd9', 750, 18),
+    '<path d="M57 437 H535" stroke="#b96bec" opacity=".8"/>',
+    '<rect x="56" y="447" width="476" height="65" rx="11" fill="#10132e" stroke="#755ac2" stroke-width="1"/>',
+    text('PLAYER', 71, 467, 11, '#bfb5de', 700),
+    text(entry.playerLabel ?? 'PLAYER 01', 71, 496, 24, '#f9f2ff', 750, 17),
+    text('ROLE', 59, 544, 12, '#bfb5de', 700),
+    text(roles[0] ?? 'エージェント', 134, 544, 18, '#ff8ac9', 750, 13),
   );
   return parts.join('');
 }
 
 /**
- * Framed neon lineup: portrait surfaces are large, and the translucent
- * typographic footers prevent agent/player/role labels from colliding with art.
+ * Left: actual player-to-agent assignments, no invented avatars.
+ * Right: angled portrait shards. Draw the full image inside each fixed
+ * polygon clip so even extreme portrait aspect ratios cannot cover text.
  */
 function squad(
   input: ValorantPickCardInput,
@@ -133,124 +123,66 @@ function squad(
   roles: readonly string[],
 ): string {
   const count = input.entries.length;
-  const gap = count === 2 ? 18 : 12;
-  const width = (1096 - gap * (count - 1)) / count;
   const parts: string[] = [];
-  const highlights = ['#ff589c', '#ad71ff', '#e56aff', '#ff6aa7', '#8c85ff'];
+  const rowHeight = count === 5 ? 65 : count === 4 ? 78 : count === 3 ? 97 : 126;
+  const rowGap = count === 5 ? 8 : 10;
+  const stageX = 588;
+  const stageWidth = 580;
+  const width = stageWidth / count;
+
+  parts.push(
+    '<path d="M580 176 H1171 L1126 577 H601Z" fill="#13142f" stroke="#7956c9" stroke-width="1.5"/>',
+    '<path d="M793 177 H1168 V574 H1009Z" fill="#ff428c" opacity=".07"/>',
+    '<path d="M1135 177 L1014 576 M647 176 L783 576" stroke="#b96dff" stroke-width="2" opacity=".26"/>',
+  );
+
   for (let i = 0; i < count; i++) {
-    const x = 52 + i * (width + gap);
     const entry = input.entries[i]!;
-    const nameFont = count === 5 ? 25 : count === 4 ? 29 : 37;
-    const playerFont = count === 5 ? 17 : count === 4 ? 19 : 21;
-    const nameLimit = Math.max(1, Math.floor((width - 28) / nameFont));
-    const playerLimit = Math.max(1, Math.floor((width - 28) / playerFont));
-    const fallbackFont = count >= 4 ? 20 : 28;
-    const fallbackLimit = Math.max(1, Math.floor((width - 38) / fallbackFont));
-    const artWidth = Math.max(width + 36, Math.min(560, width * 1.5));
-    const artX = x + (width - artWidth) / 2;
+    const color = ACCENTS[i]!;
+    const y = 191 + i * (rowHeight + rowGap);
+    const mid = y + rowHeight / 2;
+    const x = stageX + i * width;
+    const top = 183 + (i % 2) * 17;
+    const bottom = 570 - ((i + 1) % 2) * 14;
+    const borderPath =
+      'M' + (x + 18) + ' ' + top + ' L' + (x + width - 2) + ' ' +
+      (top - 10) + ' L' + (x + width - 18) + ' ' + bottom +
+      ' L' + x + ' ' + (bottom + 9) + 'Z';
     parts.push(
       '<g>',
-      '<rect x="' +
-        x +
-        '" y="165" width="' +
-        width +
-        '" height="424" rx="17" fill="#181832" stroke="' +
-        highlights[i] +
-        '" stroke-width="5" opacity=".25" filter="url(#edge-glow)"/>',
-      '<rect x="' +
-        x +
-        '" y="165" width="' +
-        width +
-        '" height="424" rx="17" fill="url(#panel)" stroke="' +
-        highlights[i] +
-        '" stroke-width="1.6"/>',
-      '<path d="M' +
-        (x + width * 0.5) +
-        ' 166 H' +
-        (x + width - 2) +
-        ' V412 H' +
-        x +
-        'Z" fill="#b842a0" opacity=".16"/>',
-      '<clipPath id="lineup-art-' +
-        i +
-        '"><rect x="' +
-        (x + 2) +
-        '" y="170" width="' +
-        (width - 4) +
-        '" height="319" rx="11"/></clipPath>',
+      '<rect x="39" y="' + y + '" width="515" height="' + rowHeight + '" rx="12" fill="url(#row)" stroke="' + color + '" stroke-width="1.5"/>',
+      '<path d="M42 ' + (y + 11) + ' V' + (y + rowHeight - 11) + '" stroke="' + color + '" stroke-width="3.5"/>',
+      text(String(i + 1).padStart(2, '0'), 56, mid + 7, 21, '#d6a1ff', 850, 2),
+      text('PLAYER', 110, mid - 13, 10, '#a9a9d2', 750),
+      text(entry.playerLabel ?? 'PLAYER ' + (i + 1), 109, mid + 11, 16, '#faf3ff', 750, 12),
+      '<path d="M286 ' + (mid - 3) + ' h28 m-9 -9 l9 9 -9 9" fill="none" stroke="' + color + '" stroke-width="2.2"/>',
+      '<path d="M332 ' + (y + 12) + ' V' + (y + rowHeight - 12) + '" stroke="#67518d" stroke-width="1"/>',
+      text(entry.displayName, 350, mid + 2, 20, '#fff8ff', 850, 9),
+      text(roles[i] ?? 'エージェント', 350, mid + 22, 12, color, 700, 13),
+      '<clipPath id="poster-art-' + i + '"><path d="' + borderPath + '"/></clipPath>',
+      '<path d="' + borderPath + '" fill="#26204d" stroke="' + color + '" stroke-width="3" stroke-opacity=".9"/>',
+      '<path d="M' + (x + 9) + ' ' + (top + 75) + ' L' + (x + width - 8) + ' ' + (top + 20) + ' V' + (bottom - 70) + 'Z" fill="' + color + '" opacity=".19"/>',
     );
     if (portraits[i]) {
+      const portraitWidth = Math.max(342, width * 1.55);
+      const portraitX = x + (width - portraitWidth) / 2;
       parts.push(
-        '<g clip-path="url(#lineup-art-' + i + ')">',
-        portrait(portraits[i], artX, 169, artWidth, 336),
+        '<g clip-path="url(#poster-art-' + i + ')">',
+        portrait(portraits[i], portraitX, 178, portraitWidth, 399),
         '</g>',
       );
     } else {
       parts.push(
-        '<circle cx="' +
-          (x + width / 2) +
-          '" cy="327" r="' +
-          Math.min(100, width * 0.38) +
-          '" fill="#29204f" stroke="' +
-          highlights[i] +
-          '" stroke-width="2" opacity=".85"/>',
-        '<path d="M' +
-          (x + width / 2) +
-          ' 227 l' +
-          width * 0.32 +
-          ' 99 -' +
-          width * 0.32 +
-          ' 100 -' +
-          width * 0.32 +
-          ' -100 Z" fill="#111329" stroke="' +
-          highlights[i] +
-          '" stroke-width="2"/>',
-        text(
-          entry.agentName.toUpperCase(),
-          x + 16,
-          338,
-          fallbackFont,
-          '#ead0ff',
-          850,
-          fallbackLimit,
-        ),
+        '<g clip-path="url(#poster-art-' + i + ')">',
+        '<circle cx="' + (x + width / 2) + '" cy="359" r="' + Math.max(64, width * 0.4) + '" fill="url(#halo)" opacity=".8"/>',
+        '<path d="M' + (x + width / 2) + ' 241 l' + Math.min(95, width * 0.32) + ' 110 -' + Math.min(95, width * 0.32) + ' 110 -' + Math.min(95, width * 0.32) + ' -110Z" fill="#0d1129" stroke="' + color + '" stroke-width="2"/>',
+        '</g>',
       );
     }
     parts.push(
-      '<rect x="' +
-        (x + 2) +
-        '" y="403" width="' +
-        (width - 4) +
-        '" height="184" rx="15" fill="url(#card-foot)"/>',
-      '<rect x="' +
-        (x + 12) +
-        '" y="177" width="45" height="34" rx="9" fill="#101129" stroke="' +
-        highlights[i] +
-        '" stroke-opacity=".8"/>',
-      text(String(i + 1).padStart(2, '0'), x + 19, 202, 19, '#fff3ff', 900, 2),
-      '<path d="M' +
-        (x + 15) +
-        ' 440 H' +
-        (x + width - 16) +
-        '" stroke="' +
-        highlights[i] +
-        '" stroke-width="2"/>',
-      text(entry.displayName, x + 15, 490, nameFont, '#fff7ff', 850, nameLimit),
-      text(roles[i] ?? 'エージェント', x + 15, 522, 15, '#efacff', 750, 12),
-      '<path d="M' +
-        (x + 15) +
-        ' 534 H' +
-        (x + width - 16) +
-        '" stroke="#8e71b2" stroke-opacity=".45"/>',
-      text(
-        entry.playerLabel ?? 'PLAYER ' + (i + 1),
-        x + 15,
-        560,
-        playerFont,
-        '#f3eaff',
-        700,
-        playerLimit,
-      ),
+      '<path d="' + borderPath + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-opacity=".7"/>',
+      '<rect x="' + (x + 5) + '" y="506" width="' + Math.max(65, width - 21) + '" height="42" rx="8" fill="#090d25" opacity=".9"/>',
+      text(entry.agentName.toUpperCase(), x + 12, 534, count === 5 ? 14 : 17, '#fff4ff', 850, count === 5 ? 9 : 16),
       '</g>',
     );
   }
@@ -264,57 +196,54 @@ export function renderValorantHudSvg(
 ): string {
   const count = input.entries.length;
   const mode = input.mode === 'TACTICAL' ? '実戦向け構成' : '完全ランダム';
-  const footer = input.planLabel ? '構成：' + input.planLabel : 'HERTA.  /  PLAY TOGETHER';
+  const footer = input.planLabel ? '構成：' + input.planLabel : 'HERTA. / DISCORD BOT FOR GAMERS';
   const parts: string[] = [
     '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680">',
     '<defs>',
-    '<linearGradient id="scene" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#080a20"/><stop offset=".55" stop-color="#15102c"/><stop offset="1" stop-color="#0a102c"/></linearGradient>',
-    '<radialGradient id="halo"><stop stop-color="#db3fa7" stop-opacity=".6"/><stop offset=".48" stop-color="#8841d5" stop-opacity=".28"/><stop offset="1" stop-color="#4b2dbb" stop-opacity="0"/></radialGradient>',
-    '<linearGradient id="reading" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#0b0e25" stop-opacity=".96"/><stop offset=".82" stop-color="#15122f" stop-opacity=".9"/><stop offset="1" stop-color="#1b1940" stop-opacity=".22"/></linearGradient>',
-    '<linearGradient id="glass" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#1e204b" stop-opacity=".78"/><stop offset="1" stop-color="#0a0a20" stop-opacity=".44"/></linearGradient>',
-    '<linearGradient id="panel" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#24204f"/><stop offset=".68" stop-color="#14162e"/><stop offset="1" stop-color="#111028"/></linearGradient>',
-    '<linearGradient id="card-foot" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#101126" stop-opacity="0"/><stop offset=".19" stop-color="#141127" stop-opacity=".96"/><stop offset="1" stop-color="#0a0b1c"/></linearGradient>',
-    '<linearGradient id="neon" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ff659f"/><stop offset=".42" stop-color="#b568ff"/><stop offset="1" stop-color="#765aff"/></linearGradient>',
-    '<filter id="edge-glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="7"/></filter>',
-    '<clipPath id="frame"><rect width="1200" height="680" rx="12"/></clipPath>',
-    '<clipPath id="solo-art"><rect x="609" y="157" width="591" height="428"/></clipPath>',
+    '<linearGradient id="scene" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#06091b"/><stop offset=".48" stop-color="#131035"/><stop offset="1" stop-color="#090d22"/></linearGradient>',
+    '<linearGradient id="row" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#191436"/><stop offset=".72" stop-color="#11142f"/><stop offset="1" stop-color="#21163a"/></linearGradient>',
+    '<linearGradient id="reading" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#080d24" stop-opacity=".98"/><stop offset=".87" stop-color="#15102b" stop-opacity=".93"/><stop offset="1" stop-color="#1e1739" stop-opacity=".65"/></linearGradient>',
+    '<linearGradient id="neon" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#ff659f"/><stop offset=".5" stop-color="#b568ff"/><stop offset="1" stop-color="#69d9ff"/></linearGradient>',
+    '<radialGradient id="halo"><stop stop-color="#ac56ff" stop-opacity=".75"/><stop offset=".5" stop-color="#df2c9d" stop-opacity=".25"/><stop offset="1" stop-color="#5c2ca0" stop-opacity="0"/></radialGradient>',
+    '<filter id="glow" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="6"/></filter>',
+    '<clipPath id="frame"><rect x="0" y="0" width="1200" height="680" rx="9"/></clipPath>',
+    '<clipPath id="solo-art"><path d="M618 183 H1188 V573 H573Z"/></clipPath>',
     '</defs>',
     '<g clip-path="url(#frame)" font-family="Noto Sans CJK JP, Noto Sans JP, Yu Gothic, Arial, sans-serif">',
     '<rect width="1200" height="680" fill="url(#scene)"/>',
-    '<circle cx="1053" cy="153" r="325" fill="url(#halo)" opacity=".65"/>',
-    '<circle cx="70" cy="605" r="252" fill="url(#halo)" opacity=".32"/>',
-    '<path d="M825 0 H1030 L858 218 H670Z" fill="#7a4ee1" opacity=".09"/>',
-    '<path d="M1075 0 H1200 V240 L1000 115Z" fill="#ff4f9b" opacity=".15"/>',
-    '<path d="M0 476 L168 680 H0Z" fill="#d938b2" opacity=".11"/>',
-    '<path d="M0 8 H186 M972 9 H1200 M0 671 H110 M970 671 H1200" stroke="url(#neon)" stroke-width="2" opacity=".7"/>',
-    '<path d="M790 0 L660 139 M836 0 L703 139 M1000 540 L1117 680" stroke="#b04dcb" stroke-opacity=".22" stroke-width="2"/>',
+    '<circle cx="990" cy="307" r="350" fill="url(#halo)" opacity=".65"/>',
+    '<circle cx="139" cy="637" r="330" fill="url(#halo)" opacity=".34"/>',
+    '<path d="M918 0 H1090 L923 196 H745Z" fill="#8f50dc" opacity=".1"/>',
+    '<path d="M1058 0 H1200 V204 L1105 150Z" fill="#ff4288" opacity=".27"/>',
+    '<path d="M0 491 L150 680 H0Z" fill="#db3fb9" opacity=".17"/>',
+    '<path d="M7 0 L235 228 M270 0 L483 209 M784 0 L624 161 M1112 494 L1200 610" stroke="#ac67f9" stroke-width="2" stroke-opacity=".19"/>',
+    '<path d="M0 10 H207 M1000 10 H1200 M0 670 H160 M998 670 H1200" stroke="url(#neon)" stroke-width="2" opacity=".75"/>',
     '<path d="M0 0 H7 V680 H0Z" fill="url(#neon)"/>',
+    '<path d="M26 158 H1177" stroke="url(#neon)" stroke-width="2" opacity=".8"/>',
   ];
   parts.push(count === 1 ? solo(input, portraits, roles) : squad(input, portraits, roles));
   parts.push(
-    '<rect x="22" y="17" width="1156" height="125" rx="18" fill="#090b21" opacity=".91"/>',
-    '<circle cx="64" cy="50" r="23" fill="#34215c" stroke="url(#neon)" stroke-width="2.5"/>',
-    text('H', 55, 61, 29, '#f9d7ff', 900, 2),
-    text('Herta.', 101, 60, 32, '#f3dcff', 900, 8),
-    '<rect x="208" y="29" width="64" height="27" rx="9" fill="#4735c4"/>',
-    text('BOT', 223, 48, 14, '#fff', 850, 3),
-    text('DISCORD BOT FOR GAMERS', 102, 83, 11, '#bcb2e4', 650, 26),
-    text('AGENT REVEAL', 52, 132, 38, '#fff7ff', 900),
-    text(count === 1 ? 'SOLO // HERO PICK' : 'SQUAD // LINEUP', 787, 73, 18, '#d5c6f7', 750, 24),
-    '<rect x="1022" y="91" width="124" height="33" rx="10" fill="#b33880" opacity=".9"/>',
-    text('抽選完了', 1040, 115, 18, '#fff3fa', 800, 8),
-    '<path d="M47 148 H1153" stroke="url(#neon)" stroke-width="2"/>',
-    '<rect x="22" y="597" width="1156" height="75" rx="16" fill="#0b0e26" stroke="#8262cb" stroke-width="1.4"/>',
-    '<path d="M47 597 H1153" stroke="url(#neon)" stroke-width="2"/>',
-    text('MODE', 53, 619, 12, '#aba7d1', 700),
-    text(mode, 53, 646, 19, '#f8f1ff', 750, 12),
-    text('MAP', 300, 619, 12, '#aba7d1', 700),
-    text(input.mapName, 300, 646, 19, '#f8f1ff', 750, 16),
-    text('PARTICIPANTS', 575, 619, 12, '#aba7d1', 700),
-    text(count + ' / 5', 575, 646, 19, '#f8f1ff', 850),
-    text('STATUS', 804, 619, 12, '#aba7d1', 700),
-    text('PICK COMPLETE', 804, 646, 17, '#ff91cc', 800),
-    text(footer, 54, 665, 12, '#bdabe0', 550, 38),
+    text('Herta. / AGENT REVEAL', 45, 32, 17, '#c8b5ef', 800),
+    text('VALORANT', 42, 90, 56, '#fcf4ff', 900, 12),
+    text('エージェント抽選', 385, 85, 34, '#ff93cc', 850, 12),
+    text(count === 1 ? 'SOLO  //  HERO PICK' : 'SQUAD  //  LINEUP', 948, 39, 14, '#d6c8fb', 750, 24),
+    '<rect x="43" y="111" width="202" height="43" rx="10" fill="#171330" stroke="#8c65db" stroke-width="1.3"/>',
+    '<rect x="254" y="111" width="205" height="43" rx="10" fill="#171330" stroke="#8c65db" stroke-width="1.3"/>',
+    '<rect x="469" y="111" width="155" height="43" rx="10" fill="#171330" stroke="#8c65db" stroke-width="1.3"/>',
+    text('MODE', 54, 127, 10, '#a8a2cf', 650),
+    text(mode, 55, 146, 17, '#fff6ff', 750, 11),
+    text('MAP', 266, 127, 10, '#a8a2cf', 650),
+    text(input.mapName, 266, 146, 17, '#fff6ff', 750, 11),
+    text('PARTICIPANTS', 481, 127, 10, '#a8a2cf', 650),
+    text(count + ' / 5', 483, 148, 19, '#fcf2ff', 850),
+    '<rect x="40" y="584" width="482" height="62" rx="14" fill="#36113d" stroke="#ff5aab" stroke-width="2"/>',
+    '<rect x="40" y="584" width="482" height="62" rx="14" fill="none" stroke="#ff65b6" stroke-width="5" opacity=".26" filter="url(#glow)"/>',
+    '<circle cx="73" cy="615" r="18" fill="#ff70bb"/>',
+    '<path d="M64 614 l6 7 14 -16" stroke="#301439" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>',
+    text('抽選完了', 103, 626, 28, '#fff5ff', 900),
+    text('PICK COMPLETE', 317, 622, 13, '#e9c3ff', 850),
+    text(footer, 542, 638, 16, '#d9bdf8', 600, 34),
+    '<path d="M546 648 H1127" stroke="url(#neon)" stroke-width="2"/>',
     '</g></svg>',
   );
   return parts.join('');
