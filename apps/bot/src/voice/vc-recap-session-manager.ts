@@ -26,6 +26,7 @@ import { resolveAiOpenAiCredential } from '../ai/factory.js';
 import { transcribePcmWithOpenAi } from './vc-recap-openai-file-transcriber.js';
 import { transcribePcmWithLocalWhisper } from './vc-recap-local-whisper-transcriber.js';
 import {
+  markLocalVcRecapPrerequisiteFailure,
   rejectIncompleteLocalVcRecap,
   shouldMarkLocalWhisperSessionFailed,
 } from './vc-recap-local-finish-policy.js';
@@ -292,11 +293,9 @@ function wireSpeakingHandler(
         try {
           await addVcRecapSessionParticipant(prisma, session.sessionId, userId);
         } catch (error) {
-          if (localCanary) {
-            // Without a durable participant owner, any transcript could evade
-            // user erasure lookup; do not start local inference in this case.
-            session.localWhisperFailure = true;
-          }
+          // Without a durable participant owner, any transcript could evade
+          // user erasure lookup; do not start local inference in this case.
+          markLocalVcRecapPrerequisiteFailure(localCanary, session);
           logger.warn(
             { err: error, guildId: session.guildId, userId },
             'VC Recap参加者の永続化に失敗しました',
@@ -311,7 +310,7 @@ function wireSpeakingHandler(
         // An unexpected live consent lookup/Discord fetch/other prerequisite
         // failure must never produce a successful but incomplete local recap.
         // Normal consent refusal returns above without throwing.
-        if (localCanary) session.localWhisperFailure = true;
+        markLocalVcRecapPrerequisiteFailure(localCanary, session);
         logger.warn({ err: error, guildId: session.guildId, userId }, 'VC文字起こし開始に失敗');
       })
       .finally(() => {
