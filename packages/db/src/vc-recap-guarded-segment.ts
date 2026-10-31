@@ -18,14 +18,18 @@ export async function appendLocalVcRecapSegmentIfConsented(
     const [consent, erasure] = await Promise.all([
       tx.userDataConsent.findUnique({
         where: { userId: input.userId },
-        select: { voiceTranscriptionConsent: true },
+        select: { voiceTranscriptionConsent: true, voiceTranscriptRetentionConsentedAt: true },
       }),
       tx.vcRecapErasureRequest.findUnique({
         where: { userId: input.userId },
         select: { userId: true },
       }),
     ]);
-    if (erasure || consent?.voiceTranscriptionConsent !== true) return false;
+    if (
+      erasure ||
+      consent?.voiceTranscriptionConsent !== true ||
+      consent.voiceTranscriptRetentionConsentedAt === null
+    ) return false;
 
     await tx.vcRecapTranscriptSegment.create({
       data: {
