@@ -184,7 +184,7 @@ function squad(
         '" stroke-width="3.5"/>',
       text(String(i + 1).padStart(2, '0'), 56, mid + 7, 21, '#d6a1ff', 850, 2),
       text('PLAYER', 110, mid - 13, 10, '#a9a9d2', 750),
-      text(entry.playerLabel ?? 'PLAYER ' + (i + 1), 109, mid + 11, 16, '#faf3ff', 750, 12),
+      text(entry.playerLabel ?? 'PLAYER ' + (i + 1), 109, mid + 11, 16, '#faf3ff', 750, 10),
       '<path d="M286 ' +
         (mid - 3) +
         ' h28 m-9 -9 l9 9 -9 9" fill="none" stroke="' +
