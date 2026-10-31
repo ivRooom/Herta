@@ -15,7 +15,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir --no-compile -r requirements.txt
-COPY contract.py server.py ./
+COPY contract.py model_manifest.py server.py ./
 
 USER 10001:10001
 EXPOSE 8765
