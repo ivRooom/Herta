@@ -63,6 +63,7 @@ export function LongTermConsentForm(props: Props) {
       detail: '本人の発言音声をS3に保存する計画。30日後は低頻度アクセス層を検討します。',
     },
   ];
+  // prettier-ignore -- preserve the consent disclosures as reviewed, without implicit JSX whitespace changes.
   return (
     <section className="mt-10 border border-border bg-surface px-5 py-6">
       <h2 className="text-lg font-semibold">長期保存・録音への個別同意（準備中）</h2>
