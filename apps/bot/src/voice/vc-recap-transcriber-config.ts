@@ -28,12 +28,21 @@ export function resolveVcRecapTranscriberConfig(
   const rawMinutes = Number(env['VC_RECAP_OPENAI_SESSION_MAX_AUDIO_MINUTES'] ?? '120');
   const minutes =
     Number.isFinite(rawMinutes) && rawMinutes >= 1 && rawMinutes <= 240 ? rawMinutes : 120;
-  return { provider, openAiAudioEnabled, localWhisperEnabled, maxSessionAudioSeconds: minutes * 60 };
+  return {
+    provider,
+    openAiAudioEnabled,
+    localWhisperEnabled,
+    maxSessionAudioSeconds: minutes * 60,
+  };
 }
 
 export function canUseOpenAiVcAudio(
   config: VcRecapTranscriberConfig,
   explicitParticipantAudioConsent: boolean,
 ): boolean {
-  return (config.provider === 'whisper-1' || config.provider === 'gpt-transcribe') && config.openAiAudioEnabled && explicitParticipantAudioConsent;
+  return (
+    (config.provider === 'whisper-1' || config.provider === 'gpt-transcribe') &&
+    config.openAiAudioEnabled &&
+    explicitParticipantAudioConsent
+  );
 }
