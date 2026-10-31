@@ -116,6 +116,10 @@ export async function setVcRecapOpenAiAudioConsent(
   accepted: boolean,
 ): Promise<boolean> {
   return prisma.$transaction(async (tx) => {
+    // Serialize OpenAI processing consent with erasure requests and future
+    // storage reservations for the same owner. A concurrent delete must not
+    // race between the fence read and an affirmative consent upsert.
+    await lockVcRecapStorageOwner(tx, userId);
     const [legacy, erasure] = await Promise.all([
       tx.userDataConsent.findUnique({
         where: { userId },

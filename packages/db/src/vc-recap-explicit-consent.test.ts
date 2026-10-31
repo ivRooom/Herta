@@ -150,6 +150,73 @@ test('OpenAI音声送信は旧文字起こし同意と新しい個別同意を�
   assert.ok(revoke.update.revokedAt instanceof Date);
 });
 
+test('OpenAI音声同意は削除要求と共有するownerロック取得後にフェンスを判定する', async () => {
+  const ownerId = '123456789012345678';
+  const order: string[] = [];
+  const tx = {
+    $queryRawUnsafe: async (sql: string, owner: string) => {
+      assert.match(sql, /pg_advisory_xact_lock/);
+      assert.equal(owner, 'vc-recap-storage:' + ownerId);
+      order.push('owner-lock');
+      return [];
+    },
+    userDataConsent: {
+      findUnique: async () => {
+        assert.deepEqual(order, ['owner-lock']);
+        return { voiceTranscriptionConsent: true };
+      },
+    },
+    vcRecapErasureRequest: {
+      findUnique: async () => {
+        assert.deepEqual(order, ['owner-lock']);
+        order.push('fence-checked');
+        return { userId: ownerId };
+      },
+    },
+    vcRecapExplicitConsent: {
+      upsert: async () => {
+        order.push('forbidden-grant');
+        throw new Error('Cannot grant consent with an active erasure fence');
+      },
+    },
+  };
+  const client = {
+    $transaction: async (callback: (client: typeof tx) => Promise<boolean>) => callback(tx),
+  } as unknown as PrismaClient;
+  assert.equal(await setVcRecapOpenAiAudioConsent(client, ownerId, true), false);
+  assert.deepEqual(order, ['owner-lock', 'fence-checked']);
+});
+
+test('OpenAI同意のownerロックが取得できなければ同意状態を変更しない', async () => {
+  const client = {
+    $transaction: async (callback: (tx: unknown) => Promise<boolean>) =>
+      callback({
+        $queryRawUnsafe: async () => {
+          throw new Error('database lock unavailable');
+        },
+        userDataConsent: {
+          findUnique: async () => {
+            throw new Error('must not read consent without lock');
+          },
+        },
+        vcRecapErasureRequest: {
+          findUnique: async () => {
+            throw new Error('must not read fence without lock');
+          },
+        },
+        vcRecapExplicitConsent: {
+          upsert: async () => {
+            throw new Error('must not write without lock');
+          },
+        },
+      }),
+  } as unknown as PrismaClient;
+  await assert.rejects(
+    setVcRecapOpenAiAudioConsent(client, '123456789012345678', true),
+    /database lock unavailable/,
+  );
+});
+
 test('新しい長期同意は公開ポリシー版と運用スイッチの両方が一致する場合だけ受付', () => {
   assert.equal(isVcRecapLongTermEnrollmentEnabled({}), false);
   assert.equal(
