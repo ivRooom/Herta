@@ -28,7 +28,7 @@ export async function appendLocalVcRecapSegmentIfConsented(
     if (
       erasure ||
       consent?.voiceTranscriptionConsent !== true ||
-      consent.voiceTranscriptRetentionConsentedAt === null
+      !consent.voiceTranscriptRetentionConsentedAt
     ) return false;
 
     await tx.vcRecapTranscriptSegment.create({
