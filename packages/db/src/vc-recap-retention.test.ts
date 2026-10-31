@@ -44,7 +44,10 @@ function fakePrisma() {
     },
     $transaction: async (
       operations: Promise<unknown>[] | ((client: PrismaClient) => Promise<unknown>),
-    ) => (typeof operations === 'function' ? operations(prisma) : Promise.all(operations)),
+    ) => {
+      if (typeof operations === 'function') return operations(prisma);
+      return Promise.all(operations);
+    },
   } as unknown as PrismaClient;
   return { prisma, calls };
 }
