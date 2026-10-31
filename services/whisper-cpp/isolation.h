@@ -50,6 +50,18 @@ inline bool peer_gone(int fd) {
     return false;
 }
 
+// Child process stdout is a private pipe, never an application log.
+inline bool send_to_stdout(const std::string & message) {
+    size_t at = 0;
+    while (at < message.size()) {
+        const ssize_t n = write(STDOUT_FILENO, message.data() + at, message.size() - at);
+        if (n < 0 && errno == EINTR) continue;
+        if (n <= 0) return false;
+        at += static_cast<size_t>(n);
+    }
+    return true;
+}
+
 struct Result {
     bool ok = false;
     bool terminated = false;
