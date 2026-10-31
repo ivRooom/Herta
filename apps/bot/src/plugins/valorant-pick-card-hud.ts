@@ -102,10 +102,10 @@ function solo(
     text(entry.agentName.toUpperCase(), 48, 351, agentFont, '#fcf4eb', 900, 20),
     text(entry.displayName, 54, 401, 27, '#e1d8d2', 700, 17),
     '<path d="M54 439 H525" stroke="#a73c49" stroke-width="2"/>',
-    text('PLAYER', 54, 477, 14, '#aeaaa9', 800),
-    text(entry.playerLabel ?? 'PLAYER 01', 54, 531, 31, '#faf0e8', 750, 19),
-    text('ROLE', 390, 477, 14, '#aeaaa9', 800),
-    text(roles[0] ?? 'エージェント', 390, 527, 20, '#ff8590', 750, 13),
+    text('ROLE', 54, 480, 14, '#aeaaa9', 800),
+    text(roles[0] ?? 'エージェント', 133, 480, 20, '#ff8590', 750, 13),
+    text('PLAYER', 54, 515, 14, '#aeaaa9', 800),
+    text(entry.playerLabel ?? 'PLAYER 01', 54, 565, 30, '#faf0e8', 750, 17),
     '<path d="M54 558 H122" stroke="#ff4655" stroke-width="4"/>',
   );
   return parts.join('');
