@@ -18,7 +18,7 @@ Intended endpoint `http://whisper:8765/v1/transcribe` is compatible with the **w
 
 ## Security tests (no participant audio)
 
-CI: [`ci-whisper-cpp.yml`](../../.github/workflows/ci-whisper-cpp.yml) builds native AMD64 + ARM64 scratch images, executes `--self-test` without a model, rejects missing token/model, collects CycloneDX SBOMs and requires unchanged Grype `--fail-on high`.
+CI: [`ci-whisper-cpp.yml`](../../.github/workflows/ci-whisper-cpp.yml) builds native AMD64 + ARM64 scratch images, executes `--self-test` without a model, rejects missing token/model, collects CycloneDX SBOMs and requires unchanged Grype `--fail-on high`. **After both image scans pass**, the AMD64 job downloads the pinned public GGML model into the ephemeral CI runner, verifies SHA-256, boots the image with a synthetic token and localhost-only binding, then exercises `/healthz`, rejection of unauthenticated input and 1s of generated silence (no participant voice). CI measurements are not an on-host performance guarantee.
 
 ```bash
 docker build -t herta-whispercpp:spike ./services/whisper-cpp
@@ -27,7 +27,7 @@ docker run --rm herta-whispercpp:spike --self-test
 
 ## Release gates still open — no deployment or canary permission
 
-1. Acquire a pinned, independently approved multilingual **GGML** Tiny model. **The currently staged CTranslate2 `model.bin` cannot be reused.** Implement a trustworthy model SHA-256 check at **each startup**, including authentic publisher hash evidence and licensing; fail closed if missing/altered. Only then may a model mount be proposed.
+1. **Model pin implemented but not production accepted:** fixed GGML multilingual `ggml-tiny.bin` from [official Hugging Face repository](https://huggingface.co/ggerganov/whisper.cpp), revision `5359861c739e955e79d9a303bcbc70fb988958b1`, SHA-256 `be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21`. The static worker verifies that exact digest at **each startup**, rejecting altered/symlinked files. FIPS SHA256 known-answer tests run in CI; `stage_model_offhost.sh` downloads and verifies **outside production only**. The old CTranslate2 `model.bin` cannot be reused. **Real model load and external provenance audit remain release gates**, and no production model has been staged.
 2. Run **real** audio→recognition synthetic tests and independent native code/security review. Validate request smuggling, UTF-8, HTTP concurrency, token handling, ASR errors, cancellation on participant withdrawal, CPU time budget, pids, memory, and 10s inference watchdog with no audio retention. Prove Python implementation parity. This spike only has no-model/contract self-tests.
 3. Prove both AMD64/ARM64 Grype High/Critical zero **without exclusions**; review any static-binary vulnerability blind spots.
 4. Prove existing 2vCPU/2GB Lightsail has enough baseline headroom **under peak load**, and actual RSS/RTF/CER/concurrency from authorized Japanese audio, with no existing services impacted (#577/#656). Last observed host MemAvailable ~900MiB below old sidecar gate.
