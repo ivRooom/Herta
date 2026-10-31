@@ -5,6 +5,7 @@ import {
   evaluateVcRecapExplicitConsent,
   setVcRecapOpenAiAudioConsent,
   isVcRecapLongTermEnrollmentEnabled,
+  getVcRecapLongTermConsentView,
   updateVcRecapLongTermConsentChoices,
   VC_RECAP_OPENAI_AUDIO_POLICY_VERSION,
   requestVcRecapErasure,
@@ -284,4 +285,26 @@ test('本人削除障壁があれば新同意の再取得を拒否', async () =>
     }),
     'erasure_pending',
   );
+});
+
+test('以前のポリシー版で未撤回の同意は、現在版の同意とは別に撤回可能と表示する', async () => {
+  const client = {
+    vcRecapExplicitConsent: {
+      findMany: async () => [consent('audio_long_term', { policyVersion: 'previous-v1' })],
+    },
+    userDataConsent: {
+      findUnique: async () => ({ voiceTranscriptionConsent: true }),
+    },
+    vcRecapErasureRequest: {
+      findUnique: async () => null,
+    },
+  } as unknown as PrismaClient;
+  const view = await getVcRecapLongTermConsentView(client, 'user-1');
+  assert.deepEqual(view.choices, {
+    transcription: false,
+    transcriptLongTerm: false,
+    audioLongTerm: false,
+  });
+  assert.equal(view.hasUnrevokedLongTermGrant, true);
+  assert.equal(view.erasurePending, false);
 });
