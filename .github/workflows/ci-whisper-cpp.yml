@@ -106,6 +106,8 @@ jobs:
           trap 'docker rm -f herta-whispercpp-smoke >/dev/null 2>&1 || true' EXIT
           timeout 150 python3 - <<'PY'
           import json
+          import subprocess
+          import threading
           import time
           import urllib.request
           import urllib.error
@@ -131,27 +133,64 @@ jobs:
           except urllib.error.HTTPError as error:
               assert error.code == 403, error.code
           headers['Authorization'] = 'Bearer synthetic-ci-token-32-characters-verified-only'
-          started = time.monotonic()
+          # Sample the combined parent+child cgroup *during* native inference.
+          # Post-inference docker stats omits the short-lived child and is misleading.
+          # CI samples are not production peak RSS measurements.
+          def sampled_request(request, label, timeout):
+              samples = []
+              stop = threading.Event()
+              def sample_memory():
+                  while not stop.is_set():
+                      try:
+                          raw = subprocess.check_output(
+                              ['docker', 'stats', '--no-stream', '--format', '{{.MemUsage}}',
+                               'herta-whispercpp-smoke'],
+                              text=True, timeout=4,
+                          ).strip().splitlines()[0]
+                          used = raw.split('/', 1)[0].strip()
+                          for unit, factor in (
+                              ('GiB', 1024**3), ('MiB', 1024**2),
+                              ('KiB', 1024), ('B', 1),
+                          ):
+                              if used.endswith(unit):
+                                  samples.append(int(float(used[:-len(unit)]) * factor))
+                                  break
+                      except (OSError, ValueError, IndexError, subprocess.SubprocessError):
+                          pass  # The sample count assertion below fails closed.
+                      stop.wait(0.15)
+              sampler = threading.Thread(target=sample_memory, daemon=True)
+              sampler.start()
+              started = time.monotonic()
+              try:
+                  with urllib.request.urlopen(request, timeout=timeout) as resp:
+                      assert resp.status == 200, resp.status
+                      body = json.loads(resp.read())
+              finally:
+                  stop.set()
+                  sampler.join(timeout=6)
+              assert not sampler.is_alive(), 'memory sampler did not terminate'
+              assert samples, 'no in-flight container memory samples were captured'
+              elapsed = time.monotonic() - started
+              print(
+                  'Synthetic', label, 'inference elapsed_seconds=', round(elapsed, 2),
+                  'sampled_peak_container_mib=', round(max(samples) / 1048576, 2),
+                  'sample_count=', len(samples),
+                  '(sampling can miss instantaneous peak; NOT production RSS)',
+              )
+              return body, elapsed
+
           request = urllib.request.Request(base+'/v1/transcribe',data=pcm,headers=headers)
-          with urllib.request.urlopen(request,timeout=90) as resp:
-              assert resp.status == 200, resp.status
-              body=json.loads(resp.read())
-              assert isinstance(body.get('text'),str)
-              assert len(body['text']) <= 4000
-          print('Synthetic 1s silence inference completed; elapsed_seconds=',round(time.monotonic()-started,2))
+          body, _ = sampled_request(request, '1s silence', 90)
+          assert isinstance(body.get('text'),str)
+          assert len(body['text']) <= 4000
 
           # Verify a full 8s PCM chunk completes within the bot's 20s stop
           # flush budget on an isolated 1-vCPU CI worker. This is a synthetic
           # smoke, not a Japanese CER or 2GB Lightsail acceptance benchmark.
           pcm8 = bytes(48000 * 8 * 2)
           request8 = urllib.request.Request(base+'/v1/transcribe',data=pcm8,headers=headers)
-          started = time.monotonic()
-          with urllib.request.urlopen(request8,timeout=45) as resp:
-              assert resp.status == 200, resp.status
-              result8=json.loads(resp.read())
-              assert isinstance(result8.get('text'),str)
-          elapsed = time.monotonic()-started
-          print('Synthetic 8s silence inference elapsed_seconds=',round(elapsed,2))
+          result8, elapsed = sampled_request(request8, '8s silence', 45)
+          assert isinstance(result8.get('text'),str)
           assert elapsed < 20, '8s local chunk exceeds the current 20s stop flush budget'
 
           # A client-side consent withdrawal closes the HTTP socket. Assert
