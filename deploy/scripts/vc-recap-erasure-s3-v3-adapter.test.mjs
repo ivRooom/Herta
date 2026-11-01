@@ -105,7 +105,10 @@ test('conditioned PutObject + exact GetObject byte readback produces an auditabl
     const mock = mockS3();
     const port = createS3ErasureLedgerReceiptPort(mock.client, commands);
     assert.deepEqual(await port.appendImmutableReceipt(request), { status: 'durable', sha256 });
-    assert.deepEqual(mock.calls.map((call) => call.operation), ['put', 'get']);
+    assert.deepEqual(
+      mock.calls.map((call) => call.operation),
+      ['put', 'get'],
+    );
     assert.equal(mock.calls[0].input.Bucket, BUCKET);
     assert.equal(mock.calls[0].input.Key, key);
     assert.equal(mock.calls[0].input.IfNoneMatch, '*');
@@ -123,7 +126,10 @@ test('repeated request requires stored body equality; no new version may be writ
       status: 'verified-existing',
       sha256,
     });
-    assert.deepEqual(mock.calls.map((call) => call.operation), ['put', 'get', 'put', 'get']);
+    assert.deepEqual(
+      mock.calls.map((call) => call.operation),
+      ['put', 'get', 'put', 'get'],
+    );
     assert.equal(mock.objects.size, 1);
   });
 });
