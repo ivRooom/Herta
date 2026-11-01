@@ -46,8 +46,15 @@ SELECT (has_table_privilege('herta_runtime', 'public._prisma_migrations', 'INSER
   AND has_table_privilege('herta_runtime', 'public._prisma_migrations', 'DELETE'))::integer")"
 test "$before" = "1" || { echo 'Expected pre-remediation history DML risk was not reproduced'; exit 1; }
 
-docker exec -i "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
-  < scripts/check-herta-restored-acl.sql > "$scratch/before.txt"
+if docker exec -i "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
+  < scripts/check-herta-restored-acl.sql > "$scratch/before.txt" 2>&1; then
+  echo 'Dangerous ACL was not rejected by the SQL process gate' >&2
+  exit 1
+fi
+grep -q 'division by zero' "$scratch/before.txt" || {
+  echo 'ACL gate failed for an unexpected reason, not the forbidden write grants' >&2
+  exit 1
+}
 # Tested candidate, applied only to this throwaway fixture.
 docker exec "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
   -c 'REVOKE INSERT, UPDATE, DELETE ON TABLE public._prisma_migrations FROM herta_runtime;' >/dev/null
