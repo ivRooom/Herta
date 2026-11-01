@@ -387,8 +387,7 @@ test('長期保存がOFFならDBを読まず全capabilityを拒否', async () =>
   const previousVersion = process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'];
   try {
     process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'] = 'false';
-    process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'] =
-      VC_RECAP_LONG_TERM_CONSENT_VERSION;
+    process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'] = VC_RECAP_LONG_TERM_CONSENT_VERSION;
     const client = {
       vcRecapExplicitConsent: {
         findMany: async () => {
@@ -420,8 +419,7 @@ test('3用途別同意は音声を暗黙に付与しない', async () => {
   const previousVersion = process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'];
   try {
     process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'] = 'true';
-    process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'] =
-      VC_RECAP_LONG_TERM_CONSENT_VERSION;
+    process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'] = VC_RECAP_LONG_TERM_CONSENT_VERSION;
     const client = {
       vcRecapExplicitConsent: {
         findMany: async () => [consent('transcription'), consent('transcript_long_term')],
