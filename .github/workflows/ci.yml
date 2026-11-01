@@ -47,18 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      - name: TEMP signed manifest canonical Prettier diagnostic (#694)
-        run: |
-          pnpm exec prettier --write deploy/scripts/vc-recap-erasure-signed-audit.mjs deploy/scripts/vc-recap-erasure-signed-audit.test.mjs
-          echo 'SIGNED_AUDIT_MODULE_BEGIN'
-          base64 -w0 deploy/scripts/vc-recap-erasure-signed-audit.mjs
-          echo
-          echo 'SIGNED_AUDIT_MODULE_END'
-          echo 'SIGNED_AUDIT_TEST_BEGIN'
-          base64 -w0 deploy/scripts/vc-recap-erasure-signed-audit.test.mjs
-          echo
-          echo 'SIGNED_AUDIT_TEST_END'
-          exit 1
       - name: Format Check
         run: pnpm format:check
 
