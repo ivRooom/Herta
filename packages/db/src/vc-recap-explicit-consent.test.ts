@@ -7,6 +7,8 @@ import {
   isVcRecapLongTermEnrollmentEnabled,
   getVcRecapLongTermConsentView,
   updateVcRecapLongTermConsentChoices,
+  updateVcRecapComprehensiveConsent,
+  hasVcRecapComprehensiveConsent,
   VC_RECAP_OPENAI_AUDIO_POLICY_VERSION,
   requestVcRecapErasure,
   VC_RECAP_LONG_TERM_CONSENT_VERSION,
@@ -34,24 +36,35 @@ test('新しい明示同意が無い場合は文字起こし・本文長期保�
   });
 });
 
-test('旧保存同意を渡さず、新しい処理同意と本文長期保存同意を別々に要求する', () => {
-  const textOnly = evaluateVcRecapExplicitConsent([consent('transcript_long_term')], false);
-  assert.equal(textOnly.canRetainTranscriptLongTerm, false);
-  const both = evaluateVcRecapExplicitConsent(
-    [consent('transcription'), consent('transcript_long_term')],
-    false,
-  );
-  assert.equal(both.canRetainTranscriptLongTerm, true);
-  assert.equal(both.canRecordAudioLongTerm, false);
+test('新ポリシーの3用途がすべて揃わない限り全機能を拒否', () => {
+  const partial = [consent('transcription'), consent('transcript_long_term')];
+  assert.equal(hasVcRecapComprehensiveConsent(partial), false);
+  assert.deepEqual(evaluateVcRecapExplicitConsent(partial, false), {
+    canTranscribe: false,
+    canRetainTranscriptLongTerm: false,
+    canRecordAudioLongTerm: false,
+  });
+  const all = [...partial, consent('audio_long_term')];
+  assert.equal(hasVcRecapComprehensiveConsent(all), true);
+  assert.deepEqual(evaluateVcRecapExplicitConsent(all, false), {
+    canTranscribe: true,
+    canRetainTranscriptLongTerm: true,
+    canRecordAudioLongTerm: true,
+  });
 });
 
-test('音声録音は文字起こし同意の有無と独立し、旧拒否は優先される', () => {
+test('音声録音の単独付与と旧拒否・異なる同意時刻は拒否', () => {
   assert.equal(
     evaluateVcRecapExplicitConsent([consent('audio_long_term')], false).canRecordAudioLongTerm,
-    true,
+    false,
   );
+  const all = [consent('transcription'), consent('transcript_long_term'), consent('audio_long_term')];
+  assert.equal(evaluateVcRecapExplicitConsent(all, true).canRecordAudioLongTerm, false);
   assert.equal(
-    evaluateVcRecapExplicitConsent([consent('audio_long_term')], true).canRecordAudioLongTerm,
+    hasVcRecapComprehensiveConsent([
+      ...all.slice(0, 2),
+      consent('audio_long_term', { consentedAt: new Date('2026-11-01T00:00:00Z') }),
+    ]),
     false,
   );
 });
@@ -314,7 +327,17 @@ test('目的別同意撤回は受付OFFでも削除障壁を作り、他の長�
         calls.push('fence');
       },
     },
-    userDataConsent: { findUnique: async () => ({ voiceTranscriptionConsent: true }) },
+    userDataConsent: {
+      findUnique: async () => ({ voiceTranscriptionConsent: true }),
+      upsert: async () => {
+        calls.push('legacy-revoke');
+      },
+    },
+    vcRecapTranscriptSegment: {
+      deleteMany: async () => {
+        calls.push('legacy-text-delete');
+      },
+    },
     vcRecapExplicitConsent: {
       findMany: async () => [consent('audio_long_term'), consent('transcription')],
       updateMany: async () => {
@@ -336,7 +359,7 @@ test('目的別同意撤回は受付OFFでも削除障壁を作り、他の長�
     }),
     'erasure_requested',
   );
-  assert.deepEqual(calls, ['fence', 'revoke-all']);
+  assert.deepEqual(calls, ['fence', 'revoke-all', 'legacy-revoke', 'legacy-text-delete']);
 });
 
 test('本人削除障壁があれば新同意の再取得を拒否', async () => {
@@ -379,4 +402,82 @@ test('以前のポリシー版で未撤回の同意は、現在版の同意と�
   });
   assert.equal(view.hasUnrevokedLongTermGrant, true);
   assert.equal(view.erasurePending, false);
+});
+
+test('包括同意の一操作で旧30日同意と新3用途を同一owner lock / transactionに記録する', async () => {
+  const oldEnabled = process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
+  const oldVersion = process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'];
+  process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'] = 'true';
+  process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'] = VC_RECAP_LONG_TERM_CONSENT_VERSION;
+  const calls: Array<{ kind: string; data?: unknown }> = [];
+  const tx = {
+    $queryRawUnsafe: async () => {
+      calls.push({ kind: 'owner-lock' });
+      return [];
+    },
+    vcRecapErasureRequest: { findUnique: async () => null },
+    userDataConsent: {
+      findUnique: async () => ({ voiceTranscriptionConsent: false }),
+      upsert: async (data: unknown) => {
+        calls.push({ kind: 'legacy-consent', data });
+      },
+    },
+    vcRecapExplicitConsent: {
+      findMany: async () => [],
+      upsert: async (data: unknown) => {
+        calls.push({ kind: 'new-consent', data });
+      },
+    },
+  };
+  const client = {
+    $transaction: async (run: (tx: typeof tx) => Promise<string>) => run(tx),
+  } as unknown as PrismaClient;
+  try {
+    assert.equal(await updateVcRecapComprehensiveConsent(client, '123456789012345678', true), 'updated');
+    assert.deepEqual(calls.map((item) => item.kind), [
+      'owner-lock', 'legacy-consent', 'new-consent', 'new-consent', 'new-consent',
+    ]);
+    const oldWrite = calls[1]?.data as { create: { voiceTranscriptionConsent: boolean; voiceTranscriptRetentionConsentedAt: Date } };
+    assert.equal(oldWrite.create.voiceTranscriptionConsent, true);
+    const at = oldWrite.create.voiceTranscriptRetentionConsentedAt.getTime();
+    const writes = calls.slice(2).map((item) => (item.data as {
+      create: { purpose: string; policyVersion: string; consentedAt: Date }
+    }).create);
+    assert.deepEqual(writes.map((write) => write.purpose), [
+      'transcription', 'transcript_long_term', 'audio_long_term',
+    ]);
+    assert.ok(writes.every((write) =>
+      write.policyVersion === VC_RECAP_LONG_TERM_CONSENT_VERSION &&
+      write.consentedAt.getTime() === at
+    ));
+  } finally {
+    if (oldEnabled === undefined) delete process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
+    else process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'] = oldEnabled;
+    if (oldVersion === undefined) delete process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'];
+    else process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'] = oldVersion;
+  }
+});
+
+test('包括同意でない混合同意はDB書込前に拒否する', async () => {
+  const fail = { $transaction: () => { throw new Error('no transaction allowed'); } } as unknown as PrismaClient;
+  assert.equal(await updateVcRecapLongTermConsentChoices(fail, 'u1', {
+    transcription: true, transcriptLongTerm: true, audioLongTerm: false,
+  }), 'invalid');
+});
+
+test('有効な包括同意の表示は3用途一括・削除要求があると全用途OFF', async () => {
+  const records = [consent('transcription'), consent('transcript_long_term'), consent('audio_long_term')];
+  let erased = false;
+  const mock = {
+    vcRecapExplicitConsent: { findMany: async () => records },
+    userDataConsent: { findUnique: async () => ({ voiceTranscriptionConsent: true }) },
+    vcRecapErasureRequest: { findUnique: async () => erased ? { userId: 'u1' } : null },
+  } as unknown as PrismaClient;
+  assert.deepEqual((await getVcRecapLongTermConsentView(mock, 'u1')).choices, {
+    transcription: true, transcriptLongTerm: true, audioLongTerm: true,
+  });
+  erased = true;
+  assert.deepEqual((await getVcRecapLongTermConsentView(mock, 'u1')).choices, {
+    transcription: false, transcriptLongTerm: false, audioLongTerm: false,
+  });
 });
