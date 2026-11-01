@@ -45,9 +45,9 @@ acl_checks AS (
   SELECT
     has_table_privilege('herta_runtime', 'public._prisma_migrations', 'SELECT')
       AS prisma_history_runtime_select,
-    has_table_privilege('herta_runtime', 'public._prisma_migrations', 'INSERT')
+    has_any_column_privilege('herta_runtime', 'public._prisma_migrations', 'INSERT')
       AS prisma_history_runtime_insert,
-    has_table_privilege('herta_runtime', 'public._prisma_migrations', 'UPDATE')
+    has_any_column_privilege('herta_runtime', 'public._prisma_migrations', 'UPDATE')
       AS prisma_history_runtime_update,
     has_table_privilege('herta_runtime', 'public._prisma_migrations', 'DELETE')
       AS prisma_history_runtime_delete,
@@ -63,6 +63,15 @@ acl_checks AS (
     ) AS runtime_any_application_schema_create,
     has_database_privilege('herta_runtime', current_database(), 'CREATE')
       AS runtime_database_create,
+    -- ADMIN OPTION permits self-regrant with SET TRUE even when the current
+    -- membership has SET FALSE. Reject any such edge from runtime or a role
+    -- runtime can SET to; do not mutate memberships to discover escalation.
+    EXISTS (
+      SELECT 1 FROM pg_catalog.pg_auth_members m
+      WHERE m.admin_option
+        AND (m.member = 'herta_runtime'::regrole
+          OR m.member IN (SELECT oid FROM settable_roles))
+    ) AS runtime_role_admin_option,
     EXISTS (
       SELECT 1 FROM settable_roles r
       WHERE r.rolname IN ('herta_owner', 'herta_migrator')
@@ -70,6 +79,9 @@ acl_checks AS (
          OR has_table_privilege(
            r.oid, 'public._prisma_migrations'::regclass,
            'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER'
+         )
+         OR has_any_column_privilege(
+           r.oid, 'public._prisma_migrations'::regclass, 'INSERT,UPDATE'
          )
          OR has_database_privilege(r.oid, current_database(), 'CREATE')
          OR EXISTS (
@@ -88,6 +100,7 @@ SELECT
     AND NOT prisma_history_runtime_trigger
     AND NOT runtime_any_application_schema_create
     AND NOT runtime_database_create
+    AND NOT runtime_role_admin_option
     AND NOT runtime_set_role_privilege_escalation
   ) AS prisma_history_acl_gate_pass,
   -- ON_ERROR_STOP=1 exits nonzero for any unsafe privilege.
@@ -99,6 +112,7 @@ SELECT
     AND NOT prisma_history_runtime_trigger
     AND NOT runtime_any_application_schema_create
     AND NOT runtime_database_create
+    AND NOT runtime_role_admin_option
     AND NOT runtime_set_role_privilege_escalation
     THEN 1 ELSE 0 END AS acl_gate_exit_assertion
 FROM acl_checks;

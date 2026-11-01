@@ -112,8 +112,55 @@ expect_acl_rejection set_only_migrator
 docker exec "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
   -c 'REVOKE herta_migrator FROM herta_runtime;' >/dev/null
 
-# The same fixture returns PASS after removing every risky synthetic grant.
+# Regression: column-only grants are not visible as table-level privileges.
+for privilege in INSERT UPDATE; do
+  docker exec "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
+    -c "GRANT $privilege (id) ON public._prisma_migrations TO herta_runtime;" >/dev/null
+  column_only="$(docker exec "$name" psql -X -At -U postgres -d herta_acl_rehearsal -c "
+SELECT (NOT has_table_privilege('herta_runtime', 'public._prisma_migrations', '$privilege')
+  AND has_any_column_privilege('herta_runtime', 'public._prisma_migrations', '$privilege'))::integer")"
+  test "$column_only" = "1" || { echo 'Column-only fixture invalid' >&2; exit 1; }
+  expect_acl_rejection "column_only_$privilege"
+  docker exec "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
+    -c "REVOKE $privilege (id) ON public._prisma_migrations FROM herta_runtime;" >/dev/null
+done
+
+# A SET-only intermediate role may expose column privileges invisible to the
+# direct runtime check. The intermediate role has no other unsafe privilege.
+docker exec -i "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal <<'SQL'
+CREATE ROLE herta_column_writer NOLOGIN;
+GRANT UPDATE (id) ON public._prisma_migrations TO herta_column_writer;
+GRANT herta_column_writer TO herta_runtime WITH INHERIT FALSE, SET TRUE;
+SQL
+expect_acl_rejection set_role_column_update
+docker exec "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
+  -c 'REVOKE herta_column_writer FROM herta_runtime;' >/dev/null
+
+# ADMIN OPTION can self-enable SET even though no SET path currently exists.
+docker exec "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
+  -c 'GRANT herta_migrator TO herta_runtime WITH ADMIN TRUE, INHERIT FALSE, SET FALSE;' >/dev/null
+admin_only="$(docker exec "$name" psql -X -At -U postgres -d herta_acl_rehearsal -c "
+SELECT (NOT pg_has_role('herta_runtime', 'herta_migrator', 'SET')
+  AND NOT has_table_privilege('herta_runtime', 'public._prisma_migrations', 'INSERT')
+  AND EXISTS (SELECT 1 FROM pg_auth_members WHERE member='herta_runtime'::regrole
+    AND roleid='herta_migrator'::regrole AND admin_option))::integer")"
+test "$admin_only" = "1" || { echo 'ADMIN-only fixture invalid' >&2; exit 1; }
+expect_acl_rejection admin_only_migrator
+docker exec "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
+  -c 'REVOKE herta_migrator FROM herta_runtime;' >/dev/null
+
+# The same capability is unsafe through a SET-reachable intermediary.
+docker exec -i "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal <<'SQL'
+CREATE ROLE herta_role_admin NOLOGIN;
+GRANT herta_migrator TO herta_role_admin WITH ADMIN TRUE, INHERIT FALSE, SET FALSE;
+GRANT herta_role_admin TO herta_runtime WITH INHERIT FALSE, SET TRUE;
+SQL
+expect_acl_rejection set_role_admin_option
+docker exec "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
+  -c 'REVOKE herta_role_admin FROM herta_runtime;' >/dev/null
+
+# The fixture returns PASS after removing every runtime-reachable risky grant.
 docker exec -i "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
   < scripts/check-herta-restored-acl.sql > "$scratch/final.txt"
 # ON_ERROR_STOP=1 and the integer assertion guarantee exit 0 means gate PASS.
-echo 'Synthetic PG17 ACL DML/TRUNCATE/SET ROLE/other-schema CREATE negative cases and safe case: PASS'
+echo 'Synthetic PG17 ACL DML/column/ADMIN OPTION/TRUNCATE/SET ROLE/schema negative cases and safe case: PASS'

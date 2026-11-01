@@ -14,6 +14,18 @@ An isolated restore that checks only table counts and Prisma checksums **does no
 
 ## Required nonproduction rehearsal
 
+**2026-11-02 review correction (#675):** INSERT/UPDATE inspection includes
+column grants, both directly and after SET ROLE. Any ADMIN OPTION held by
+runtime or a SET-reachable role is rejected, including memberships with SET
+FALSE: an administrator of that membership can regrant itself SET TRUE.
+`runtime_role_admin_option` must be false. This conservative gate forbids runtime
+role administration rather than simulating changes on the inspected server.
+Synthetic regressions cover direct column INSERT/UPDATE, a SET-only column
+writer, direct ADMIN/SET FALSE, and a SET-reachable membership administrator.
+Table-level REVOKE alone does not remove independent column grants; identify and
+review their provenance before target-only column REVOKE in a disposable test.
+No production grant or immutable Prisma migration is changed by this correction.
+
 1. Use **a separate resource already authorized for this test**, not either production Herta or the 1 GiB shared Lightsail DB. Use a fresh disposable PostgreSQL 17 image pinned by digest, no published port/network, bounded CPU/RAM, and secure temporary storage. Never attach the real production database directly.
 2. Privately obtain the existing verified **SOURCE** Herta dump, verify the expected exact S3 object version/byte length/SHA256 on the operator's isolated machine, and check it is the PG16 source capture, **not** the tiny empty `herta.dump` from the target PG17 backup bucket. The 2026-11-01 03:00 JST copy was 3,024,343 bytes, SHA256 `a63113a549518929299c90787eba7f65a0f9dfbc5a9a3a337100f2d75dcfcd00`; it is **not** the final writer-frozen backup.
 3. In disposable PG17 create `herta_acl_rehearsal` with `herta_owner`, `herta_migrator`, `herta_runtime` permissions and default ACL matching the **latest read-only target inspection**, including role memberships and grants. Restore the verified capture as the actual intended **migrator current role** using `pg_restore --exit-on-error --no-owner --no-acl`. A superuser restore is not equivalent.
