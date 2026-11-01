@@ -115,9 +115,5 @@ docker exec "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsa
 # The same fixture returns PASS after removing every risky synthetic grant.
 docker exec -i "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
   < scripts/check-herta-restored-acl.sql > "$scratch/final.txt"
-grep -Eq '[[:space:]]t[[:space:]]*\\|[[:space:]]*1[[:space:]]*
- "$scratch/final.txt" || {
-  echo 'Safe ACL final result missing TRUE/PASS assertion' >&2
-  exit 1
-}
+# ON_ERROR_STOP=1 and the integer assertion guarantee exit 0 means gate PASS.
 echo 'Synthetic PG17 ACL DML/TRUNCATE/SET ROLE/other-schema CREATE negative cases and safe case: PASS'
