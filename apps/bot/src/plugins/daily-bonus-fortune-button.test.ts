@@ -103,7 +103,8 @@ it('opens a private fortune without calling any claim or mutating the wallet', a
   expect(i.editReply).toHaveBeenCalledWith(
     expect.objectContaining({ allowedMentions: { parse: [] } }),
   );
-  expect(mocks.fortune).toHaveBeenCalledExactlyOnceWith(ctx, i, date);
+  expect(mocks.fortune).toHaveBeenCalledTimes(1);
+  expect(mocks.fortune).toHaveBeenCalledWith(ctx, i, date);
 });
 
 it('rejects a disabled fortune feature without reading an announcement', async () => {
