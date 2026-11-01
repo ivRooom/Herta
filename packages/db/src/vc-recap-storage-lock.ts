@@ -3,7 +3,8 @@ import type { Prisma } from '@prisma/client';
 /**
  * Per-Discord-user transaction lock shared by a future VC storage writer and
  * all VC consent revocation/erasure entry points. Parameterized PostgreSQL
- * advisory lock; no user ID is interpolated into SQL. Return an integer\n * result instead of PostgreSQL void, which Prisma cannot deserialize.
+ * advisory lock; no user ID is interpolated into SQL. Return an integer
+ * result instead of PostgreSQL void, which Prisma cannot deserialize.
  */
 export async function lockVcRecapStorageOwner(
   tx: Prisma.TransactionClient,
