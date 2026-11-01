@@ -2,9 +2,9 @@ name: Herta PG17 restore ACL synthetic gate
 on:
   pull_request:
     paths:
-      - ".github/workflows/herta-pg17-restore-acl.yml"
-      - "scripts/check-herta-restored-acl.sql"
-      - "scripts/test-herta-restore-acl-gate.sh"
+      - '.github/workflows/herta-pg17-restore-acl.yml'
+      - 'scripts/check-herta-restored-acl.sql'
+      - 'scripts/test-herta-restore-acl-gate.sh'
 jobs:
   isolated-acl:
     name: Offline PG17 default grant regression
