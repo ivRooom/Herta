@@ -226,11 +226,7 @@ export async function getVcRecapLongTermConsentView(
 }
 
 export type VcRecapLongTermConsentUpdateResult =
-  | 'updated'
-  | 'erasure_requested'
-  | 'erasure_pending'
-  | 'enrollment_disabled'
-  | 'invalid';
+  'updated' | 'erasure_requested' | 'erasure_pending' | 'enrollment_disabled' | 'invalid';
 
 /**
  * A single affirmative privacy-policy action covers all three future purposes.
