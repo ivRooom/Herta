@@ -42,7 +42,9 @@ def parse_time(value: Any) -> datetime:
 
 def load_json(path: Path) -> tuple[dict[str, Any], bytes]:
     try:
-        data = path.read_bytes()
+        # Read only one byte beyond the allowed size; never allocate an oversized export.
+        with path.open("rb") as source:
+            data = source.read(64 * 1024 * 1024 + 1)
         if not data or len(data) > 64 * 1024 * 1024:
             raise GateFailure("Snapshot size is invalid")
         value = json.loads(data)
@@ -105,6 +107,8 @@ def verify(
         raise GateFailure("External ledger timestamps are inconsistent")
 
     # Never print keys, owner IDs, or timestamps from either input.
+    if any(requested > checked_at for requested in restored.values()):
+        raise GateFailure("Restored database has an erasure fence dated after the check")
     if any(owner not in restored or restored[owner] < requested for owner, requested in external.items()):
         raise GateFailure("Restored database is missing an external erasure fence")
     return len(external), len(restored)
