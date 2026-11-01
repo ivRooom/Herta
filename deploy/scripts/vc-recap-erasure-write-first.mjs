@@ -20,7 +20,12 @@ export async function acceptVcRecapErasureWriteFirst(receipt, operations) {
     throw new Error('Independent erasure backend is not fully configured');
   }
 
-  const message = JSON.stringify(valid);
+  const message = JSON.stringify({
+    kind: valid.kind,
+    requestId: valid.requestId,
+    userId: valid.userId,
+    requestedAt: valid.requestedAt,
+  });
   const sha256 = createHash('sha256').update(message).digest('hex');
   const key = 'erasure-ledger/v1/' + valid.requestId + '.json';
 
