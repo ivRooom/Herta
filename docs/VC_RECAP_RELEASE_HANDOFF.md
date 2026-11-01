@@ -29,13 +29,11 @@
 
 ## 実装Issue・依存関係
 
-| 順序 | Issue | 完了・受入条件 |
-| --- | --- | --- |
-| P0 | [#696](https://github.com/ivRooom/Herta/issues/696), [#684](https://github.com/ivRooom/Herta/issues/684), [#693](https://github.com/ivRooom/Herta/issues/693), [Web #668](https://github.com/ivRooom/ivrm-web/issues/668) | 3用途同意をUI/API/DB/Discord/JA/EN/KO/ZHで一致、版・拒否・撤回・実PGレーステスト。旧同意移行なし |
-| P0 | [#694](https://github.com/ivRooom/Herta/issues/694) → [#695](https://github.com/ivRooom/Herta/issues/695) → [#617](https://github.com/ivRooom/Herta/issues/617) | DBと独立した削除要求ledger、write-first、復元前後の遮断と再適用、DB・S3全Version/Multipart/コピー・共有要約・キャッシュ・バックアップ再消去。冪等・監査・リトライ |
-| P1 | [#583](https://github.com/ivRooom/Herta/issues/583), [#584](https://github.com/ivRooom/Herta/issues/584), [#585](https://github.com/ivRooom/Herta/issues/585) | 話者別Ogg/OpusとsegmentId/offset同期、checksum/件数/manifest検証後のみDB本文削除、S3アーカイブ閲覧・音声再生・シーク・大量JSON/CSV |
-| P1 | [#577](https://github.com/ivRooom/Herta/issues/577), [#578](https://github.com/ivRooom/Herta/issues/578), [#638](https://github.com/ivRooom/Herta/issues/638) | 同一許諾済み音声でAWSとWhisperの日本語CER・RTF・CPU/RSS/待機・費用実測。小オブジェクト/IA最小保存・取得料金を比較 |
-| Release | [#580](https://github.com/ivRooom/Herta/issues/580), [#518](https://github.com/ivRooom/Herta/issues/518), [#646](https://github.com/ivRooom/Herta/issues/646) | CI・Code/セキュリティレビュー・Discord E2E・DR削除再適用・コスト/IAM・人間承認後に限定Guild Canary。必ずrollback手順と実稼働SHAを記録 |
+- **P0｜目的別同意：** [#696](https://github.com/ivRooom/Herta/issues/696)・[#684](https://github.com/ivRooom/Herta/issues/684)・[#693](https://github.com/ivRooom/Herta/issues/693)・[Web #668](https://github.com/ivRooom/ivrm-web/issues/668)。UI/API/DB/DiscordとJA/EN/KO/ZHの3目的個別同意、版・拒否・撤回・実PG競合テストを一致させる。旧同意の流用なし。
+- **P0｜独立消去・復元：** [#694](https://github.com/ivRooom/Herta/issues/694) → [#695](https://github.com/ivRooom/Herta/issues/695) → [#617](https://github.com/ivRooom/Herta/issues/617)。独立削除台帳とwrite-first、復元前配信遮断、DB/S3全Version/Multipart/コピー・共有要約・キャッシュ/バックアップ再消去。冪等・監査・リトライ。
+- **P1｜保存とStudio：** [#583](https://github.com/ivRooom/Herta/issues/583)・[#584](https://github.com/ivRooom/Herta/issues/584)・[#585](https://github.com/ivRooom/Herta/issues/585)。話者別音声、offsetとsegment同期、検証付きArchive、認可付きアーカイブ閲覧・再生・シーク・大量エクスポート。
+- **P1｜Whisper/料金：** [#577](https://github.com/ivRooom/Herta/issues/577)・[#578](https://github.com/ivRooom/Herta/issues/578)・[#638](https://github.com/ivRooom/Herta/issues/638)。許諾済み音声でのCER/RTF/RSS/CPU/RAM比較とIA小オブジェクト・取得費用比較。
+- **Release｜本番承認：** [#580](https://github.com/ivRooom/Herta/issues/580)・[#518](https://github.com/ivRooom/Herta/issues/518)・[#646](https://github.com/ivRooom/Herta/issues/646)。CI・レビュー・Discord E2E・DR消去再適用・IAM/コスト・人間承認後に限定Guild Canary。
 
 ### アーカイブ/削除の最小安全条件
 
