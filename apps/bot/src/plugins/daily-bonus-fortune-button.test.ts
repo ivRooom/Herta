@@ -85,10 +85,7 @@ it('shows the three requested buttons only when their independent handlers are e
     `daily-participation:questions:${date}`,
     `daily-bonus:fortune:${date}`,
   ]);
-  expect(ids(false, true)).toEqual([
-    `daily-bonus:${date}`,
-    `daily-bonus:fortune:${date}`,
-  ]);
+  expect(ids(false, true)).toEqual([`daily-bonus:${date}`, `daily-bonus:fortune:${date}`]);
   expect(ids(false, false)).toEqual([`daily-bonus:${date}`]);
 });
 
