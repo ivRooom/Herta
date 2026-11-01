@@ -218,3 +218,20 @@ test('録音も本文も3用途の包括同意が欠けている場合はS3予�
     assert.deepEqual(mock.operations, ['owner-lock']);
   });
 });
+
+test('緊急停止フラグOFFで予約済みS3オブジェクトのcommitも拒否する', async () => {
+  const prev = process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
+  delete process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
+  const fake = {
+    $transaction: () => { throw new Error('DB must not be used'); },
+  } as unknown as PrismaClient;
+  try {
+    assert.equal(await commitVcRecapStorageObject(fake, {
+      userId: USER_ID,
+      id: 'existing-reservation',
+      versionId: 'existing-s3-version',
+    }), false);
+  } finally {
+    if (prev !== undefined) process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'] = prev;
+  }
+});
