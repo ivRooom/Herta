@@ -40,6 +40,15 @@ test('quarantine precedes immutable write, then DB fence, without claiming delet
   assert.equal(sha256, createHash('sha256').update(body).digest('hex'));
 });
 
+test('retry keeps identical immutable bytes regardless of input object property order', async () => {
+  const { calls, operations } = makeOperations();
+  await acceptVcRecapErasureWriteFirst(
+    { requestedAt, userId, requestId, kind: ERASURE_EVENT_KIND },
+    operations,
+  );
+  assert.equal(calls[1][2], JSON.stringify(receipt));
+});
+
 test('missing backend and malformed receipt cannot bypass quarantine', async () => {
   const { calls, operations } = makeOperations();
   await assert.rejects(
