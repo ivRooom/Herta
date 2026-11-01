@@ -39,7 +39,10 @@ import { renderFortuneCard } from './fortune-card.js';
 import { handleDailyParticipation, isParticipationInteraction } from './daily-participation.js';
 import { scanParticipationResults } from './daily-participation-results.js';
 import { dailyBonusButtonRow } from './daily-bonus-buttons.js';
-import { handleDailyBonusFortune, isDailyBonusFortuneButton } from './daily-bonus-fortune-button.js';
+import {
+  handleDailyBonusFortune,
+  isDailyBonusFortuneButton,
+} from './daily-bonus-fortune-button.js';
 import { replyDailyBonusResult } from './daily-bonus-reply.js';
 import { dailyAnniversaryHeading, dailyBonusFailureMessage } from './daily-bonus-presentation.js';
 
