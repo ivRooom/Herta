@@ -382,7 +382,7 @@ test('以前のポリシー版で未撤回の同意は、現在版の同意と�
   assert.equal(view.erasurePending, false);
 });
 
-test('将来のVC機能がOFFなら同意レコードが残ってもDBを読まず全capabilityを拒否する', async () => {
+test('長期保存がOFFならDBを読まず全capabilityを拒否', async () => {
   const previousEnabled = process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
   const previousVersion = process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'];
   try {
@@ -415,7 +415,7 @@ test('将来のVC機能がOFFなら同意レコードが残ってもDBを読ま�
   }
 });
 
-test('将来のVC機能ONでも本人の3用途別同意を独立評価し、音声を暗黙に付与しない', async () => {
+test('3用途別同意は音声を暗黙に付与しない', async () => {
   const previousEnabled = process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
   const previousVersion = process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'];
   try {
