@@ -13,7 +13,10 @@ const t1 = '2026-11-01T09:01:00Z';
 const t2 = '2026-11-01T09:02:00Z';
 const issued = '2026-11-01T09:03:00Z';
 const event = (userId, requestId, requestedAt = t1) => ({
-  kind: ERASURE_EVENT_KIND, requestId, userId, requestedAt,
+  kind: ERASURE_EVENT_KIND,
+  requestId,
+  userId,
+  requestedAt,
 });
 const id1 = '00000000-0000-4000-8000-000000000001';
 const id2 = '00000000-0000-4000-8000-000000000002';
@@ -35,7 +38,8 @@ test('isolated immutable receipts produce deterministic latest-per-owner restore
   });
   assert.deepEqual(
     assembleErasureSnapshot([...inputs].reverse(), {
-      generatedAt: issued, independentlyAuditedCount: 3,
+      generatedAt: issued,
+      independentlyAuditedCount: 3,
     }),
     snapshot,
   );
@@ -51,12 +55,22 @@ test('reject missing or unaudited inventory, duplicates and future receipts', ()
   ]) {
     assert.throws(() => assembleErasureSnapshot(inputs, options), /inventory/);
   }
-  assert.throws(() => assembleErasureSnapshot([
-    event(a, id1), event(a, id1),
-  ], { generatedAt: issued, independentlyAuditedCount: 2 }), /Duplicate/);
-  assert.throws(() => assembleErasureSnapshot([
-    event(a, id1, '2026-11-01T09:04:00Z'),
-  ], { generatedAt: issued, independentlyAuditedCount: 1 }), /follows/);
+  assert.throws(
+    () =>
+      assembleErasureSnapshot([event(a, id1), event(a, id1)], {
+        generatedAt: issued,
+        independentlyAuditedCount: 2,
+      }),
+    /Duplicate/,
+  );
+  assert.throws(
+    () =>
+      assembleErasureSnapshot([event(a, id1, '2026-11-01T09:04:00Z')], {
+        generatedAt: issued,
+        independentlyAuditedCount: 1,
+      }),
+    /follows/,
+  );
 });
 
 test('reject malformed schema, identifiers, calendar times, and unexpected personal-data fields', () => {
@@ -81,8 +95,12 @@ test('failure errors never leak owner ID or object key', () => {
 });
 
 test('empty ledger requires explicit independent zero-count, not implicit approval', () => {
-  assert.deepEqual(assembleErasureSnapshot([], {
-    generatedAt: issued, independentlyAuditedCount: 0,
-  }), { kind: EXTERNAL_SNAPSHOT_KIND, generatedAt: issued, entries: [] });
+  assert.deepEqual(
+    assembleErasureSnapshot([], {
+      generatedAt: issued,
+      independentlyAuditedCount: 0,
+    }),
+    { kind: EXTERNAL_SNAPSHOT_KIND, generatedAt: issued, entries: [] },
+  );
   // Downstream restore checker additionally requires explicit --allow-empty-ledger.
 });
