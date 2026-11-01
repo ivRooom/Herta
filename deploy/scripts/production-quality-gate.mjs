@@ -6,7 +6,12 @@ const REQUIRED_WORKFLOWS = [
   { file: 'database-topology.yml', name: 'Database topology contracts' },
 ];
 const PG_WORKFLOW = { file: 'valorant-agents.yml', name: 'VALORANT PostgreSQL integration' };
-const PG_PATHS = [/^packages\/db\//, /^apps\/bot\//, /^apps\/studio\//, /^\.github\/workflows\/valorant-agents\.yml$/];
+const PG_PATHS = [
+  /^packages\/db\//,
+  /^apps\/bot\//,
+  /^apps\/studio\//,
+  /^\.github\/workflows\/valorant-agents\.yml$/,
+];
 
 export function needsPostgresIntegration(files) {
   return files.some((file) => PG_PATHS.some((pattern) => pattern.test(file)));
@@ -15,8 +20,11 @@ export function needsPostgresIntegration(files) {
 export function determineGateOutcome(runs, sha) {
   const candidates = runs
     .filter((run) => run.head_sha === sha && run.head_branch === 'main' && run.event === 'push')
-    .sort((a, b) => (b.run_attempt ?? 1) - (a.run_attempt ?? 1) ||
-      String(b.created_at).localeCompare(String(a.created_at)));
+    .sort(
+      (a, b) =>
+        (b.run_attempt ?? 1) - (a.run_attempt ?? 1) ||
+        String(b.created_at).localeCompare(String(a.created_at)),
+    );
   const run = candidates[0];
   if (!run) return 'pending';
   if (run.status !== 'completed') return 'pending';
@@ -24,9 +32,15 @@ export function determineGateOutcome(runs, sha) {
 }
 
 export function assertSafeCompare(compare) {
-  if (!compare || compare.status !== 'ahead' || !Array.isArray(compare.files) ||
-      compare.files.length >= 300 || compare.ahead_by > 250 ||
-      !Number.isSafeInteger(compare.ahead_by) || compare.ahead_by < 1) {
+  if (
+    !compare ||
+    compare.status !== 'ahead' ||
+    !Array.isArray(compare.files) ||
+    compare.files.length >= 300 ||
+    compare.ahead_by > 250 ||
+    !Number.isSafeInteger(compare.ahead_by) ||
+    compare.ahead_by < 1
+  ) {
     throw new Error('Commit comparison cannot establish a complete safe change set');
   }
   return compare.files.map((file) => file.filename);
@@ -45,8 +59,12 @@ async function main() {
   const token = process.env.GITHUB_TOKEN;
   const event = process.env.GITHUB_EVENT_NAME;
   const requestedRef = process.env.DEPLOY_REQUESTED_REF || 'main';
-  if (!repository || !/^[\w.-]+\/[\w.-]+$/.test(repository) || !token ||
-      !['push', 'workflow_dispatch'].includes(event)) {
+  if (
+    !repository ||
+    !/^[\w.-]+\/[\w.-]+$/.test(repository) ||
+    !token ||
+    !['push', 'workflow_dispatch'].includes(event)
+  ) {
     throw new Error('Invalid GitHub Actions environment for the production quality gate');
   }
   validateDeployRef(requestedRef);
@@ -59,15 +77,14 @@ async function main() {
         'X-GitHub-Api-Version': '2022-11-28',
       },
     });
-    if (!response.ok) throw new Error('GitHub Actions metadata request failed: HTTP ' + response.status);
+    if (!response.ok)
+      throw new Error('GitHub Actions metadata request failed: HTTP ' + response.status);
     return response.json();
   };
   const currentMain = async () => (await api('branches/main')).commit.sha;
   const triggeredSha = process.env.GITHUB_SHA;
   const mainSha = await currentMain();
-  const sha = requestedRef === 'main'
-    ? (event === 'push' ? triggeredSha : mainSha)
-    : requestedRef;
+  const sha = requestedRef === 'main' ? (event === 'push' ? triggeredSha : mainSha) : requestedRef;
   if (!SHA_RE.test(sha)) throw new Error('Expected immutable commit SHA');
   if (event === 'push' && requestedRef !== 'main') {
     throw new Error('Automatic production deployments must be from main');
@@ -97,28 +114,41 @@ async function main() {
   const files = assertSafeCompare(await api('compare/' + before + '...' + sha));
   const required = [...REQUIRED_WORKFLOWS];
   if (needsPostgresIntegration(files)) required.push(PG_WORKFLOW);
-  console.log('Production gate for pinned SHA ' + sha.slice(0, 12) +
-    ': requiring ' + required.map((workflow) => workflow.name).join(', '));
+  console.log(
+    'Production gate for pinned SHA ' +
+      sha.slice(0, 12) +
+      ': requiring ' +
+      required.map((workflow) => workflow.name).join(', '),
+  );
 
   // In-progress CI may take longer than the Docker deployment build. Always wait
   // for successful main push runs on this exact SHA, never trust PR or older runs.
   const deadline = Date.now() + 45 * 60 * 1000;
   while (true) {
-    const states = await Promise.all(required.map(async ({ file, name }) => {
-      const result = await api('actions/workflows/' + encodeURIComponent(file) +
-        '/runs?event=push&head_sha=' + sha + '&per_page=100');
-      return { name, state: determineGateOutcome(result.workflow_runs ?? [], sha) };
-    }));
+    const states = await Promise.all(
+      required.map(async ({ file, name }) => {
+        const result = await api(
+          'actions/workflows/' +
+            encodeURIComponent(file) +
+            '/runs?event=push&head_sha=' +
+            sha +
+            '&per_page=100',
+        );
+        return { name, state: determineGateOutcome(result.workflow_runs ?? [], sha) };
+      }),
+    );
     const failed = states.find((state) => state.state === 'failed');
     if (failed) throw new Error('Required check failed or was cancelled: ' + failed.name);
     if (states.every((state) => state.state === 'success')) break;
     if (Date.now() > deadline) throw new Error('Timed out waiting for required CI checks');
-    console.log('Waiting for production CI: ' +
-      states.map((state) => state.name + '=' + state.state).join(', '));
+    console.log(
+      'Waiting for production CI: ' +
+        states.map((state) => state.name + '=' + state.state).join(', '),
+    );
     await sleep(25000);
   }
 
-  if (requestedRef === 'main' && await currentMain() !== sha) {
+  if (requestedRef === 'main' && (await currentMain()) !== sha) {
     throw new Error('main moved while checking CI; stale revision must not deploy');
   }
   if (!process.env.GITHUB_OUTPUT) throw new Error('Missing GitHub Actions output file');
