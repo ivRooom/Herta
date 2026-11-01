@@ -63,6 +63,7 @@ export function evaluateVcRecapExplicitConsent(
  * Read-only gate for future recorder/archiver. Nothing calls this to enable
  * new storage in the current release. Missing/mismatched consent is DENY.
  */
+// prettier-ignore
 export async function getVcRecapExplicitConsentCapabilities(
   prisma: PrismaClient,
   userId: string,
