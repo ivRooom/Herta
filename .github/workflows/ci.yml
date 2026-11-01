@@ -47,6 +47,18 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
+      - name: TEMP restore quarantine canonical formatter
+        run: |
+          pnpm exec prettier --write deploy/scripts/vc-recap-restore-quarantine.mjs deploy/scripts/vc-recap-restore-quarantine.test.mjs
+          echo 'RESTORE_MODULE_START'
+          base64 -w0 deploy/scripts/vc-recap-restore-quarantine.mjs
+          echo
+          echo 'RESTORE_MODULE_END'
+          echo 'RESTORE_TEST_START'
+          base64 -w0 deploy/scripts/vc-recap-restore-quarantine.test.mjs
+          echo
+          echo 'RESTORE_TEST_END'
+          exit 1
       - name: Format Check
         run: pnpm format:check
 
