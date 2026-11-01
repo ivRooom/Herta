@@ -51,6 +51,7 @@ env:
 jobs:
   quality-gate:
     name: Verified main CI gate
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 55
     permissions:
@@ -75,6 +76,9 @@ jobs:
     name: Build and push production image
     needs: quality-gate
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     timeout-minutes: 60
     outputs:
       image_ref: ${{ steps.image.outputs.image_ref }}
@@ -130,6 +134,19 @@ jobs:
             test "$(id -u)" != "0"
           '
 
+      - name: 古いmainイメージをGHCRへpublishしない（明示rollback除外）
+        if: ${{ github.event.inputs.ref == '' || github.event.inputs.ref == 'main' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ needs.quality-gate.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+          current_sha="$(gh api "repos/${GITHUB_REPOSITORY}/branches/main" --jq '.commit.sha')"
+          if [ "${current_sha}" != "${EXPECTED_SHA}" ]; then
+            echo 'ERROR: main moved before GHCR push. Refusing stale image.' >&2
+            exit 1
+          fi
+
       - name: GHCRへpush
         shell: bash
         run: |
@@ -145,6 +162,10 @@ jobs:
     name: SSH Deploy to Lightsail
     needs: [quality-gate, build-image]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
     timeout-minutes: 20
     environment: production
     env:
