@@ -6,7 +6,7 @@ Owner: [Herta #675](https://github.com/ivRooom/Herta/issues/675) / [Platform #14
 
 ## Risk and why this gate exists
 
-The dedicated PG17 host has `herta_owner`/`herta_migrator` default table ACL rules granting `herta_runtime` SELECT/INSERT/UPDATE/DELETE for *new tables created by those roles*. Restoring the PG16 source using `pg_restore --no-owner --no-acl` as `herta_migrator` may therefore grant write access to `public._prisma_migrations`. The role should not rewrite Prisma's immutable migration history.
+The dedicated PG17 host has `herta_owner`/`herta_migrator` default table ACL rules granting `herta_runtime` SELECT/INSERT/UPDATE/DELETE for _new tables created by those roles_. Restoring the PG16 source using `pg_restore --no-owner --no-acl` as `herta_migrator` may therefore grant write access to `public._prisma_migrations`. The role should not rewrite Prisma's immutable migration history.
 
 An isolated restore that checks only table counts and Prisma checksums **does not** establish the effective runtime grants on restored objects. An ACL inspection of the empty target DB also does not prove post-restore grants.
 
@@ -25,14 +25,14 @@ An isolated restore that checks only table counts and Prisma checksums **does no
 
 ### ACL acceptance
 
-| Inspect output | Required for ACL gate |
-| --- | --- |
-| `prisma_history_runtime_insert/update/delete` | **false** each |
-| `runtime_schema_create`, `runtime_database_create` | **false** each |
-| `prisma_history_acl_gate_pass` | **true** |
-| `public_tables` and source schema | match the exact source snapshot, historically 101 (not a hardcoded constant) |
+| Inspect output                                                      | Required for ACL gate                                                                |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `prisma_history_runtime_insert/update/delete`                       | **false** each                                                                       |
+| `runtime_schema_create`, `runtime_database_create`                  | **false** each                                                                       |
+| `prisma_history_acl_gate_pass`                                      | **true**                                                                             |
+| `public_tables` and source schema                                   | match the exact source snapshot, historically 101 (not a hardcoded constant)         |
 | `runtime_sequences_missing_usage` / `runtime_tables_missing_select` | analyze against application access requirements; do not claim all accesses need CRUD |
-| Any missing relation/role or SQL error | **NO-GO**, never interpret as success |
+| Any missing relation/role or SQL error                              | **NO-GO**, never interpret as success                                                |
 
 **Expected risk:** With the currently observed blanket default table ACL, the first rehearsal may report `prisma_history_runtime_insert/update/delete=true`; this is a hypothesis to test, **not** a completed PASS or FAIL.
 
