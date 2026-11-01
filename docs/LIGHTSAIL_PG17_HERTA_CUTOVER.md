@@ -29,6 +29,15 @@ Issue: [Herta #675](https://github.com/ivRooom/Herta/issues/675)
 - 永続合成Canary（Migrationロールが専用一時検証用永続テーブルを作り、そのテーブルへのDML権限だけをruntimeに委譲、独立接続で書込/読取→全削除）をIssueに事前記録したが、ツール安全性チェックが**実行前にブロック**。そのため**永続・複数接続間のread/write合格とはまだ主張しない**。別途独立レビュー済みの運用実行が必要。
 - この結果はネイティブlibpqでの実ユーザー認証・CA/ホスト名検証・権限確認であり、**実アプリPrisma/エンドツーエンドの認証・DB再接続・復元履歴は未受入**。
 
+## 2026-11-01 本番再開前の追加実測（Issue #675）
+
+- GitHub latest Issue/PRを再取得。Herta #677 Runbook PRはOpen、CI+DB topology成功でmergeableだがApproveレビュー未取得。Docs変更だけでは本番Deployしていない。横断の状態台帳は[Platform #143](https://github.com/ivRooom/ivrm-platform/issues/143)と[Notionの実施記録](https://app.notion.com/p/40b7322f39fa8171a186fd48e9fc786e)を参照。
+- AWS実測: 専用Lightsail DB running、Herta API healthy、旧ローカルPG16コンテナ稼働、`external.env`事前配置済み。本番向け外部DB接続切替は**未実施**。
+- **現行実sourceを読み取り専用で再取得**: PG16コンテナ内で既存の`POSTGRES_USER`/`POSTGRES_DB`を利用し、`public`通常テーブル**101**、Prisma完了**69**、未完了**0**、rolled-back**1**。資格情報や実DB行をログ/Issueへ表示していない。
+- 2026-11-01 03:00 JST時点の既存S3 source backup `.dump` **3,024,343 bytes**と`.sha256`サイドカーをread-only検査。S3バージョンIDが各取得範囲で一致する4分割`GetObject`から**全バイトを再結合しSHA-256を独立再計算**、事前の標準テストベクトルによるアルゴリズム確認後、サイドカーと完全一致（`a63113a549518929299c90787eba7f65a0f9dfbc5a9a3a337100f2d75dcfcd00`）。SSE-S3 AES256確認。生バックアップはチャット/Issue/Notionに出力していない。Herta実ホストの通常AWS CLIからS3読取は不可/認証未設定のため、権限を拡大していない。
+- **これはS3の完全性PASSであり復元可能性の合格ではない。** このexact snapshotの`pg_restore --list`、PG17隔離実復元、Prisma履歴/ACL/index/FK/暗号鍵検証は未実施。実sourceは稼働中であるため、03:00のsnapshotをfinal cutover backupと扱わず、writer停止後に新規採取する。
+- Hertaホストには`postgres:17-alpine`イメージがなく、残メモリ約800 MiB。専用DB Lightsailは1GBで`ivrm_ai`と同居。**両稼働ホスト上へ未制限の隔離PG17を追加しない**。別の認可済み隔離リソース（例: 運用者の暗号化ディスク付き作業端末）でPG17 restore rehearsalを実行してから、対象の`herta` DBだけに限定した本番操作を検討する。
+
 ## 優先する移行方式
 
 **β利用データの完全一致は必須としないが、既存sourceのスキーマ・Prisma migration履歴・Bot/Guild状態を守るため、まず直近の実バックアップを隔離PG17へ復元し、証拠を採る。**
