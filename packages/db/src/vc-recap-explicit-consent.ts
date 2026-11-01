@@ -67,6 +67,9 @@ export async function getVcRecapExplicitConsentCapabilities(
   prisma: PrismaClient,
   userId: string,
 ): Promise<VcRecapConsentCapabilities> {
+  if (!isVcRecapLongTermEnrollmentEnabled()) {
+    return { canTranscribe: false, canRetainTranscriptLongTerm: false, canRecordAudioLongTerm: false };
+  }
   const [records, legacy, erasure] = await Promise.all([
     prisma.vcRecapExplicitConsent.findMany({
       where: { userId },
