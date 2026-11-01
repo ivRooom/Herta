@@ -47,17 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      - name: TEMP canonical formatting diagnostic for PR #701
-        run: |
-          pnpm exec prettier --write deploy/scripts/production-quality-gate.mjs deploy/scripts/production-quality-gate.test.mjs
-          echo 'FORMAT_GATE_BEGIN'
-          base64 -w0 deploy/scripts/production-quality-gate.mjs
-          echo
-          echo 'FORMAT_GATE_END'
-          echo 'FORMAT_TEST_BEGIN'
-          base64 -w0 deploy/scripts/production-quality-gate.test.mjs
-          echo
-          echo 'FORMAT_TEST_END'
       - name: Format Check
         run: pnpm format:check
 
