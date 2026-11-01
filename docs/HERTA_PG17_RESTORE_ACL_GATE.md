@@ -10,6 +10,8 @@ The dedicated PG17 host has `herta_owner`/`herta_migrator` default table ACL rul
 
 An isolated restore that checks only table counts and Prisma checksums **does not** establish the effective runtime grants on restored objects. An ACL inspection of the empty target DB also does not prove post-restore grants.
 
+**2026-11-01 reviewer-blocker correction:** PostgreSQL 17 permits `SET ROLE` through non-INHERIT memberships, allowing privileges inaccessible to `has_table_privilege(runtime, ...)` to become active after role switch. TRUNCATE is a distinct table privilege. CREATE must be denied across every restored non-system application schema, not only public. The gate rejects any SET-reachable herta owner/migrator or role with mutation/CREATE/elevated permissions. Its synthetic CI exercises all three negative shapes; source code success alone is not an executed real restore.
+
 ## Required nonproduction rehearsal
 
 1. Use **a separate resource already authorized for this test**, not either production Herta or the 1 GiB shared Lightsail DB. Use a fresh disposable PostgreSQL 17 image pinned by digest, no published port/network, bounded CPU/RAM, and secure temporary storage. Never attach the real production database directly.
@@ -27,8 +29,9 @@ An isolated restore that checks only table counts and Prisma checksums **does no
 
 | Inspect output                                                      | Required for ACL gate                                                                |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `prisma_history_runtime_insert/update/delete`                       | **false** each                                                                       |
-| `runtime_schema_create`, `runtime_database_create`                  | **false** each                                                                       |
+| `prisma_history_runtime_insert/update/delete/truncate/trigger`      | **false** each; TRUNCATE alone can erase Prisma history                               |
+| `runtime_schema_create`, `runtime_any_application_schema_create`, `runtime_database_create` | **false** each; include every non-system application schema, not just public |
+| `runtime_set_role_privilege_escalation`                               | **false**; PostgreSQL 17 SET ROLE paths count even when INHERIT is disabled           |
 | `prisma_history_acl_gate_pass`                                      | **true**                                                                             |
 | `public_tables` and source schema                                   | match the exact source snapshot, historically 101 (not a hardcoded constant)         |
 | `runtime_sequences_missing_usage` / `runtime_tables_missing_select` | analyze against application access requirements; do not claim all accesses need CRUD |
@@ -41,12 +44,12 @@ An isolated restore that checks only table counts and Prisma checksums **does no
 **Do not cut over production.** Add a reviewed, target-`herta`-only post-restore permission step to the operator change plan. Candidate SQL, **for review and disposable rehearsal only** (not an instruction to run against production now):
 
 ```sql
-REVOKE INSERT, UPDATE, DELETE
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, TRIGGER
   ON TABLE public._prisma_migrations
   FROM herta_runtime;
 ```
 
-Because access can also come from role membership, PUBLIC or another grant, this candidate is not an automatic solution: rerun the effective-privilege inspection and confirm all three history DML privileges are false. If not, inspect grant provenance and redesign least privilege. The remediation must not modify the Prisma migration rows, checksum, owner of unrelated databases, or global role/default ACL for `ivrm_ai`/`ivrm_web`. Treat audit/secret-bearing tables separately; do not blanket-grant or blanket-revoke application permissions without an application test.
+Because access can also come from role membership, PUBLIC or another grant, this candidate is not an automatic solution: rerun the effective-privilege inspection and confirm all five protected history mutation privileges (INSERT/UPDATE/DELETE/TRUNCATE/TRIGGER) are false. If not, inspect grant provenance and redesign least privilege. The remediation must not modify the Prisma migration rows, checksum, owner of unrelated databases, or global role/default ACL for `ivrm_ai`/`ivrm_web`. Treat audit/secret-bearing tables separately; do not blanket-grant or blanket-revoke application permissions without an application test.
 
 After approving the exact method, rehearse **restore → target-only ACL adjustment → post-check → application CRUD/RBAC/Prisma** in isolation. Include the specific post-restore SQL and its source revision in a separate scoped production operator approval, before any final restore.
 
