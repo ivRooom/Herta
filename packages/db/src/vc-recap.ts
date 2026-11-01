@@ -1,4 +1,5 @@
 import type { Prisma, PrismaClient, VcRecapSessionStatus } from '@prisma/client';
+import { lockVcRecapStorageOwner } from './vc-recap-storage-lock.js';
 
 /** 本文保存に同意した参加者の文字起こし本文を、セッション終了から保持する日数。 */
 export const VC_RECAP_TRANSCRIPT_RETENTION_DAYS = 30;
@@ -52,6 +53,50 @@ export async function appendVcRecapTranscriptSegment(
       startedAt: input.startedAt,
       endedAt: input.endedAt,
     },
+  });
+}
+
+/**
+ * Local Whisper-only final persistence fence. This must be checked at COMMIT
+ * time, not only before sending PCM: a revocation/erasure can race the HTTP
+ * decode and in-memory session Set. The same per-user PostgreSQL advisory lock
+ * is held by both this write and legacy revocation/erasure.
+ *
+ * The existing AWS path intentionally retains its current consent semantics.
+ * No partial or implicit role/admin grants authorize local CPU processing.
+ */
+export async function appendVcRecapLocalWhisperSegmentIfConsented(
+  prisma: PrismaClient,
+  input: AppendVcRecapTranscriptSegmentInput,
+): Promise<boolean> {
+  return prisma.$transaction(async (tx) => {
+    await lockVcRecapStorageOwner(tx, input.userId);
+    const consent = await tx.userDataConsent.findUnique({
+      where: { userId: input.userId },
+      select: {
+        voiceTranscriptionConsent: true,
+        voiceTranscriptRetentionConsentedAt: true,
+      },
+    });
+    if (!consent?.voiceTranscriptionConsent || !consent.voiceTranscriptRetentionConsentedAt) {
+      return false;
+    }
+    const erased = await tx.vcRecapErasureRequest.findUnique({
+      where: { userId: input.userId },
+      select: { userId: true },
+    });
+    if (erased !== null) return false;
+
+    await tx.vcRecapTranscriptSegment.create({
+      data: {
+        sessionId: input.sessionId,
+        userId: input.userId,
+        text: input.text,
+        startedAt: input.startedAt,
+        endedAt: input.endedAt,
+      },
+    });
+    return true;
   });
 }
 
