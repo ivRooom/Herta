@@ -9,6 +9,7 @@ import type { Logger } from '@herta/logger';
 import {
   addVcRecapSessionParticipant,
   applyAutoConsentRoles,
+  appendVcRecapLocalWhisperSegmentIfConsented,
   appendVcRecapTranscriptSegment,
   completeVcRecapSession,
   failVcRecapSession,
@@ -320,6 +321,20 @@ async function transcribeSpeaker(
     logger.warn({ guildId: session.guildId }, 'Local Whisperは有効化されていません');
     return;
   }
+  if (provider === 'local-whisper') {
+    // The old role/admin consent flag does not authorize a NEW local decoder.
+    // Refuse even the Discord Opus subscription until personal approval and
+    // an absent erasure fence have been verified. mayProcess and the locked
+    // INSERT repeat this check to close later withdrawal races.
+    const [consentingOwners, erasure] = await Promise.all([
+      getVoiceTranscriptRetentionUserIds(prisma, [userId]),
+      prisma.vcRecapErasureRequest.findUnique({
+        where: { userId },
+        select: { userId: true },
+      }),
+    ]);
+    if (!consentingOwners.has(userId) || erasure !== null) return;
+  }
   const credential = provider === 'aws' ? await resolveAwsTranscribeCredential(prisma) : null;
   const openAiCredential =
     provider === 'whisper-1' || provider === 'gpt-transcribe'
@@ -355,13 +370,20 @@ async function transcribeSpeaker(
       // 文字起こし中に同意が取り消された、またはstopVcRecapのflushが打ち切られた場合、
       // 確定済みセグメントであっても保存しない。
       if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return;
-      const write = appendVcRecapTranscriptSegment(prisma, {
+      const segmentInput = {
         sessionId: session.sessionId,
         userId,
         text: segment.text,
         startedAt: segment.startedAt,
         endedAt: segment.endedAt,
-      });
+      };
+      // Revalidate under the per-owner DB lock at commit time, closing the
+      // withdrawal/erasure race for the opt-in local worker only. AWS and
+      // OpenAI keep their current 30-day handling.
+      const write =
+        provider === 'local-whisper'
+          ? appendVcRecapLocalWhisperSegmentIfConsented(prisma, segmentInput)
+          : appendVcRecapTranscriptSegment(prisma, segmentInput);
       session.pendingSegmentWrites.add(write);
       try {
         await write;
@@ -379,10 +401,11 @@ async function transcribeSpeaker(
         nativeAccepted: process.env['VC_RECAP_NATIVE_WHISPER_ACCEPTED'] === 'true',
         mayProcess: async () => {
           if (!session.acceptingSegments || !session.consentingUserIds.has(userId)) return false;
-          // An explicit existing transcription consent is required for new
-          // local processing; role-based inferred consent is insufficient.
-          const [consent, erasure] = await Promise.all([
-            getVoiceTranscriptionConsentMap(prisma, [userId]),
+          // A personal action acknowledging 30-day transcript retention is
+          // mandatory for local inference. An admin grant/auto role alone
+          // must not authorize disclosure to a newly selected CPU worker.
+          const [consentingOwners, erasure] = await Promise.all([
+            getVoiceTranscriptRetentionUserIds(prisma, [userId]),
             prisma.vcRecapErasureRequest.findUnique({
               where: { userId },
               select: { userId: true },
@@ -390,7 +413,7 @@ async function transcribeSpeaker(
           ]);
           return (
             erasure === null &&
-            consent.get(userId) === true &&
+            consentingOwners.has(userId) &&
             session.acceptingSegments &&
             session.consentingUserIds.has(userId)
           );
