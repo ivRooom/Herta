@@ -47,13 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      # Temporary only for #689 formatter diagnostics; remove before final review.
-      - name: Temporary recovery runbook formatter diff
-        run: |
-          pnpm exec prettier --write docs/VC_RECAP_RESTORE_FENCE_VERIFICATION.md
-          git diff -- docs/VC_RECAP_RESTORE_FENCE_VERIFICATION.md
-          git checkout -- docs/VC_RECAP_RESTORE_FENCE_VERIFICATION.md
-
       - name: Format Check
         run: pnpm format:check
 
