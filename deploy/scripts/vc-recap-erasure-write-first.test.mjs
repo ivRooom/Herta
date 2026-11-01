@@ -30,7 +30,10 @@ test('quarantine precedes immutable write, then DB fence, without claiming delet
   const { calls, operations } = makeOperations();
   const output = await acceptVcRecapErasureWriteFirst(receipt, operations);
   assert.deepEqual(output, { status: 'accepted', deletionComplete: false });
-  assert.deepEqual(calls.map(([action]) => action), ['quarantine', 'ledger', 'fence']);
+  assert.deepEqual(
+    calls.map(([action]) => action),
+    ['quarantine', 'ledger', 'fence'],
+  );
   const [, key, body, sha256] = calls[1];
   assert.equal(key, 'erasure-ledger/v1/' + requestId + '.json');
   assert.equal(body, JSON.stringify(receipt));
@@ -56,7 +59,10 @@ test('quarantine failure never writes externally or acknowledges a request', asy
     acceptVcRecapErasureWriteFirst(receipt, operations),
     (error) => !error.message.includes('confidential-user-id') && !error.message.includes(userId),
   );
-  assert.deepEqual(calls.map(([action]) => action), ['quarantine-failed']);
+  assert.deepEqual(
+    calls.map(([action]) => action),
+    ['quarantine-failed'],
+  );
 });
 
 test('external append failure must not create a DB fence or acknowledge', async () => {
@@ -69,7 +75,10 @@ test('external append failure must not create a DB fence or acknowledge', async 
     acceptVcRecapErasureWriteFirst(receipt, operations),
     (error) => !error.message.includes('s3-private-bucket-name'),
   );
-  assert.deepEqual(calls.map(([action]) => action), ['quarantine', 'ledger-failed']);
+  assert.deepEqual(
+    calls.map(([action]) => action),
+    ['quarantine', 'ledger-failed'],
+  );
 });
 
 test('unverified conflict or hash mismatch is never accepted', async () => {
@@ -80,7 +89,10 @@ test('unverified conflict or hash mismatch is never accepted', async () => {
       return { status, sha256: '0'.repeat(64) };
     };
     await assert.rejects(acceptVcRecapErasureWriteFirst(receipt, operations));
-    assert.deepEqual(calls.map(([action]) => action), ['quarantine', 'ledger']);
+    assert.deepEqual(
+      calls.map(([action]) => action),
+      ['quarantine', 'ledger'],
+    );
   }
 });
 
@@ -98,11 +110,10 @@ test('durably verified retry is idempotent; DB failure leaves ledger receipt for
     acceptVcRecapErasureWriteFirst(receipt, operations),
     (error) => !error.message.includes('private-db-error'),
   );
-  assert.deepEqual(calls.map(([action]) => action), [
-    'quarantine',
-    'verified-existing',
-    'fence-failed',
-  ]);
+  assert.deepEqual(
+    calls.map(([action]) => action),
+    ['quarantine', 'verified-existing', 'fence-failed'],
+  );
 
   operations.applyDatabaseFence = async () => {
     calls.push(['fence-ok']);
