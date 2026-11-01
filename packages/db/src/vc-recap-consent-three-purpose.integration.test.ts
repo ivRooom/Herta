@@ -69,14 +69,14 @@ test('real PostgreSQL: three-purpose consent, per-owner withdrawal fence, and up
         sessionId: 'synthetic-session',
         kind: 'audio',
         bucket: 'synthetic-vc-test-bucket',
-        objectKey: 'vc-recap/synthetic/owner-denied.opus',
+        objectKey: 'vc-recap/users/' + owner + '/synthetic/owner-denied.opus',
       })).status, 'denied');
       assert.equal((await reserveVcRecapStorageObject(prisma, {
         userId: other,
         sessionId: 'synthetic-session',
         kind: 'audio',
         bucket: 'synthetic-vc-test-bucket',
-        objectKey: 'vc-recap/synthetic/other-accepted.opus',
+        objectKey: 'vc-recap/users/' + other + '/synthetic/other-accepted.opus',
       })).status, 'reserved');
 
       // Withdrawal waits for the owner's advisory lock; it must never bypass it.
@@ -113,7 +113,7 @@ test('real PostgreSQL: three-purpose consent, per-owner withdrawal fence, and up
         sessionId: 'synthetic-session',
         kind: 'audio',
         bucket: 'synthetic-vc-test-bucket',
-        objectKey: 'vc-recap/synthetic/owner-after-revoke.opus',
+        objectKey: 'vc-recap/users/' + owner + '/synthetic/owner-after-revoke.opus',
       })).status, 'denied');
       assert.equal((await getVcRecapLongTermConsentView(prisma, other)).choices.audioLongTerm, true);
       assert.equal(await prisma.vcRecapErasureRequest.count({ where: { userId: other } }), 0);
