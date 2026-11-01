@@ -168,7 +168,6 @@ test('本人が削除要求済みなら保存完了を拒否し、未完了登�
       true,
     );
     assert.deepEqual(allowed.operations, ['owner-lock', 'commit']);
-
   });
 });
 
