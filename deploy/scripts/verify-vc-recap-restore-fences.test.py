@@ -103,6 +103,19 @@ class RestoreGateTests(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "inconsistent"):
             self.check()
 
+    def test_future_restored_fence_is_denied_even_when_external_request_is_older(self):
+        self.restored["entries"][0]["requestedAt"] = stamp(self.now + timedelta(minutes=1))
+        with self.assertRaisesRegex(Exception, "after the check"):
+            self.check()
+
+    def test_oversized_snapshot_is_rejected_before_unsafe_full_read(self):
+        ledger, db, _ = self.write()
+        with ledger.open("wb") as out:
+            out.seek(64 * 1024 * 1024)
+            out.write(b"x")
+        with self.assertRaisesRegex(Exception, "size is invalid"):
+            verify(ledger, db, "0" * 64, 1, now=self.now)
+
     def test_malformed_restored_records_fail_closed(self):
         self.restored["entries"] = [{"userId": OTHER, "requestedAt": "wrong"}]
         with self.assertRaisesRegex(Exception, "timestamp"):
