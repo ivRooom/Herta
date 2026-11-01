@@ -182,15 +182,11 @@ export async function inspectVcRecapErasureLedgerVersions(client, commands, opti
       if (
         typeof page.NextKeyMarker !== 'string' ||
         page.NextKeyMarker.length === 0 ||
-        (page.NextVersionIdMarker !== undefined &&
-          typeof page.NextVersionIdMarker !== 'string')
+        (page.NextVersionIdMarker !== undefined && typeof page.NextVersionIdMarker !== 'string')
       ) {
         throw new Error('Independent erasure ledger page cursor is absent');
       }
-      const marker = JSON.stringify([
-        page.NextKeyMarker,
-        page.NextVersionIdMarker ?? null,
-      ]);
+      const marker = JSON.stringify([page.NextKeyMarker, page.NextVersionIdMarker ?? null]);
       if (seenMarkers.has(marker)) {
         throw new Error('Independent erasure ledger pagination cursor repeated');
       }
@@ -205,19 +201,12 @@ export async function inspectVcRecapErasureLedgerVersions(client, commands, opti
     const manifest = [];
     const receipts = [];
     for (const item of versions) {
-      const { receipt, receiptSha256 } = await readReceiptVersion(
-        client,
-        commands,
-        bucket,
-        item,
-      );
+      const { receipt, receiptSha256 } = await readReceiptVersion(client, commands, bucket, item);
       receipts.push(receipt);
       manifest.push({ key: item.Key, versionId: item.VersionId, receiptSha256 });
     }
     manifest.sort((a, b) => a.key.localeCompare(b.key, 'en'));
-    const actualSha256 = createHash('sha256')
-      .update(JSON.stringify(manifest))
-      .digest('hex');
+    const actualSha256 = createHash('sha256').update(JSON.stringify(manifest)).digest('hex');
     if (actualSha256 !== options.expectedManifestSha256) {
       throw new Error('Independent erasure ledger inventory checksum mismatch');
     }
