@@ -68,9 +68,12 @@ export default async function VoiceConsentPage({ params }: { params: Promise<{ t
       <LongTermConsentForm
         token={token}
         policyVersion={VC_RECAP_LONG_TERM_CONSENT_VERSION}
-        initialChoices={longTerm.choices}
+        initialAccepted={
+          longTerm.choices.transcription &&
+          longTerm.choices.transcriptLongTerm &&
+          longTerm.choices.audioLongTerm
+        }
         enrollmentEnabled={longTerm.enrollmentEnabled}
-        legacyConsent={longTerm.legacyConsent}
         erasurePending={longTerm.erasurePending}
         hasUnrevokedLongTermGrant={longTerm.hasUnrevokedLongTermGrant}
       />
