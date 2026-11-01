@@ -59,6 +59,16 @@ export async function getVcRecapExplicitConsentCapabilities(
   prisma: PrismaClient,
   userId: string,
 ): Promise<VcRecapConsentCapabilities> {
+  // A persisted consent record alone cannot enable an unpublished capability.
+  // Future audio/archival consumers must remain fail-closed while enrollment is OFF.
+  if (!isVcRecapLongTermEnrollmentEnabled()) {
+    return {
+      canTranscribe: false,
+      canRetainTranscriptLongTerm: false,
+      canRecordAudioLongTerm: false,
+    };
+  }
+
   const [records, legacy, erasure] = await Promise.all([
     prisma.vcRecapExplicitConsent.findMany({
       where: { userId },
