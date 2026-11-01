@@ -63,6 +63,18 @@ DBが復元されると、そのバックアップ取得後に本人が行った
 - 合成テストは遮断→台帳→DBの順序、遮断失敗、台帳失敗、破損/競合、DB失敗と同一要求リトライを検証する。
 - **未実装**: Quarantineの本物の分散永続化、AWS S3等の`appendImmutableReceipt`の実装/完全性監査、DBの実際のロック付きアップサート、利用者の全削除API/Discord操作との接続、復元時自動再適用。いずれも現在は本番に入れない。
 
+## S3 SDK v3形式の台帳書込Port（合成テストのみ、実サービス未接続）
+
+- `deploy/scripts/vc-recap-erasure-s3-v3-adapter.mjs` は、`createS3ErasureLedgerReceiptPort(client, commands)` でAWS SDK v3互換 `PutObjectCommand` / `GetObjectCommand` を受け取り、既存の `appendImmutableReceipt` Portに接続できる。SDK・実資格情報・実本番APIの初期化は行わない。
+- 環境変数 `VC_RECAP_ERASURE_LEDGER_BUCKET` が**明示設定**され、`VC_RECAP_STORAGE_BUCKET` と `VC_RECAP_POSTGRES_BACKUP_BUCKET` に一致しない場合だけ進む。ただし環境変数の比較のみで、**実際に別の復元・管理境界を持つ独立Bucketであることは証明できない**。IaC・CloudTrail・IAM・実Bucketの監査が必要。
+- `erasure-ledger/v1/<UUIDv4>.json` の正規化した要求Bodyだけを受け付け、SHA256（`ChecksumSHA256`）付き `IfNoneMatch:'*'` で条件付きPut。その後、**GetObjectでBodyのバイト列を再読取**し、要求との完全一致を確認する。単なるETag/HTTP200は成功の証拠にしない。
+- `412 PreconditionFailed` は、既存オブジェクトを実読取して同一バイト列の場合のみ `verified-existing`。内容が違う場合はfail-closed。`409 ConditionalRequestConflict` / AccessDenied / 欠損 / 長さ不一致 / 再読取失敗は受付失敗とし、呼出元のQuarantineを解除しない。Put成功時もreadbackが失敗したら不受理扱いで同じrequestIdを再試行する。
+- **AWS公式の制約**: Versioningが有効でも、最新Versionが削除マーカーの場合、`If-None-Match:*` は新たなPutを許す。従って**これだけで耐改ざん・append-onlyは保証できない**。専用Bucketの削除禁止IAM/バケットポリシー、Object Lockの適用・保持期限（本人削除権との整合）、Version監査、独立保全/監査件数、復元時Quarantineが別途必要。通常のVC音声BucketやPGバックアップBucketを流用しない。
+- 4KiBを超えるLedgerレコードは拒否し、GetObjectの`ContentLength`と実読み取りBytesを突合。本人ID・S3 Key・SDKエラーを例外文に出さない。**Clientに対して実AWS呼出しが可能なのは将来実Credentialを注入した場合のみ**で、現時点では合成Clientを注入するテストしか存在しない。
+- ソース: [S3公式条件付き書込仕様](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html)、[PutObject API](https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutObject.html)。
+
+**未実装・No-Go**: 独立Bucket/IAMの承認と実配備、Audit/list全ページ完全性、リクエスト/版IDの耐久保持、復元後の全経路読書遮断、DB連携・S3全版削除・人間による最終Release承認。本Portの合成テスト成功を公開のGo根拠にしない。
+
 ## 次のIssue依存
 
 - #694: 認可済み外部Bucket/Role/IAM設計と見積りレビュー → write-first永続化 → 障害・同時操作テスト。**外部作成は別承認**。
