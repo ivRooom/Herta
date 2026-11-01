@@ -75,6 +75,17 @@ DBが復元されると、そのバックアップ取得後に本人が行った
 
 **未実装・No-Go**: 独立Bucket/IAMの承認と実配備、Audit/list全ページ完全性、リクエスト/版IDの耐久保持、復元後の全経路読書遮断、DB連携・S3全版削除・人間による最終Release承認。本Portの合成テスト成功を公開のGo根拠にしない。
 
+## S3 Version履歴を含む独立Ledger Inventoryのローカル照合（#694）
+
+`deploy/scripts/vc-recap-erasure-s3-inventory.mjs` はAWS SDK v3互換コマンドを注入する**本番未配線・読取のみ**の検査Port。
+
+- `ListObjectVersions` を `KeyMarker`/`VersionIdMarker` 付きで全ページ走査。空のtruncated page、marker循環、想定外Prefix、複数Version、null VersionId、`IsLatest=false`、削除マーカー、件数超過を**全て失敗扱い**とする。ページ/レコード数の上限は、無限列挙や予期しない課金を避ける安全弁。
+- 各Objectを明示した`VersionId`で`GetObject`し、`ContentLength`・4KiB上限・正規JSON・Request IDとObject Keyの一致を照合する。VersionごとのHashとKeyの整列リストから決定的fingerprintを計算。
+- **外部の認証済み監査から別途受け取る**件数・fingerprintが必須。値そのものを引数で渡せる仕組みは外部監査の真正性・署名を検証しない。テストでは合成値で動作のみを確認し、無条件の復旧再開を認可しない。結果は常に `canResumeTraffic:false`。
+- 正常時のみ既存`assembleErasureSnapshot`でRestore照合形式へ集約。Ledgerが空の場合は明示された`allowEmpty`と外部の独立0件証明が必須。キャッシュ・並行Put・失われたオブジェクト・越境コピー・監査の主体はこのチェックだけでは証明できない。
+- SDK実Credential、AWS実Bucket、完全性を保証する署名済み外部manifest/独立監査サービス、Versioning/Object Lock/IAM、分散Quarantine、本当のPG Replay/全版消去は**いずれも未実装**。実Storage/IAMの適用は#646の個別承認後のみ。
+- AWS公式仕様: [ListObjectVersions](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectVersions.html) / [GetObject VersionId](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html)。
+
 ## 次のIssue依存
 
 - #694: 認可済み外部Bucket/Role/IAM設計と見積りレビュー → write-first永続化 → 障害・同時操作テスト。**外部作成は別承認**。
