@@ -430,7 +430,7 @@ test('包括同意の一操作で旧30日同意と新3用途を同一owner lock 
     },
   };
   const client = {
-    $transaction: async (run: (tx: typeof tx) => Promise<string>) => run(tx),
+    $transaction: async (run: (client: typeof tx) => Promise<string>) => run(tx),
   } as unknown as PrismaClient;
   try {
     assert.equal(await updateVcRecapComprehensiveConsent(client, '123456789012345678', true), 'updated');
