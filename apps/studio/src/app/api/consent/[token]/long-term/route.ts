@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
   resolveVoiceConsentAccess,
-  updateVcRecapLongTermConsentChoices,
+  updateVcRecapComprehensiveConsent,
   VC_RECAP_LONG_TERM_CONSENT_VERSION,
 } from '@herta/db';
 import { prisma } from '@/lib/db';
@@ -33,17 +33,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   const payload = body as Record<string, unknown>;
   if (
     payload['policyVersion'] !== VC_RECAP_LONG_TERM_CONSENT_VERSION ||
-    typeof payload['transcription'] !== 'boolean' ||
-    typeof payload['transcriptLongTerm'] !== 'boolean' ||
-    typeof payload['audioLongTerm'] !== 'boolean'
+    typeof payload['accepted'] !== 'boolean' ||
+    Object.keys(payload).some((key) => !['policyVersion', 'accepted'].includes(key))
   ) {
-    return json({ error: 'ポリシー版または同意選択が正しくありません' }, 400);
+    return json({ error: 'ポリシー版または包括同意が正しくありません' }, 400);
   }
-  const result = await updateVcRecapLongTermConsentChoices(prisma, access.userId, {
-    transcription: payload['transcription'],
-    transcriptLongTerm: payload['transcriptLongTerm'],
-    audioLongTerm: payload['audioLongTerm'],
-  });
+  const result = await updateVcRecapComprehensiveConsent(
+    prisma,
+    access.userId,
+    payload['accepted'],
+  );
 
   switch (result) {
     case 'updated':
@@ -51,11 +50,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     case 'erasure_requested':
       return json({ ok: true, result });
     case 'invalid':
-      return json({ error: '本文の長期保存には文字起こし処理への同意が必要です' }, 400);
+      return json({ error: '包括同意の指定が正しくありません' }, 400);
     case 'enrollment_disabled':
       return json({ error: '長期保存の同意受付はまだ開始していません' }, 409);
-    case 'legacy_consent_required':
-      return json({ error: '現在の30日版文字起こし同意を先に設定してください' }, 409);
     case 'erasure_pending':
       return json({ error: '削除依頼が登録されているため同意を変更できません' }, 409);
   }
