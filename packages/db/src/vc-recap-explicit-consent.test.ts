@@ -36,6 +36,7 @@ test('新しい明示同意が無い場合は文字起こし・本文長期保�
   });
 });
 
+// prettier-ignore
 test('新ポリシーの3用途がすべて揃わない限り全機能を拒否', () => {
   const partial = [consent('transcription'), consent('transcript_long_term')];
   assert.equal(hasVcRecapComprehensiveConsent(partial), false);
@@ -53,6 +54,7 @@ test('新ポリシーの3用途がすべて揃わない限り全機能を拒否'
   });
 });
 
+// prettier-ignore
 test('音声録音の単独付与と旧拒否・異なる同意時刻は拒否', () => {
   assert.equal(
     evaluateVcRecapExplicitConsent([consent('audio_long_term')], false).canRecordAudioLongTerm,
@@ -317,6 +319,7 @@ test('不正な長期保存組み合わせを拒否し、デフォルトOFFで�
   }
 });
 
+// prettier-ignore
 test('目的別同意撤回は受付OFFでも削除障壁を作り、他の長期同意も消す', async () => {
   const calls: string[] = [];
   const tx = {
@@ -404,6 +407,7 @@ test('以前のポリシー版で未撤回の同意は、現在版の同意と�
   assert.equal(view.erasurePending, false);
 });
 
+// prettier-ignore
 test('包括同意の一操作で旧30日同意と新3用途を同一owner lock / transactionに記録する', async () => {
   const oldEnabled = process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
   const oldVersion = process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'];
@@ -458,6 +462,7 @@ test('包括同意の一操作で旧30日同意と新3用途を同一owner lock 
   }
 });
 
+// prettier-ignore
 test('包括同意でない混合同意はDB書込前に拒否する', async () => {
   const fail = { $transaction: () => { throw new Error('no transaction allowed'); } } as unknown as PrismaClient;
   assert.equal(await updateVcRecapLongTermConsentChoices(fail, 'u1', {
@@ -465,6 +470,7 @@ test('包括同意でない混合同意はDB書込前に拒否する', async () 
   }), 'invalid');
 });
 
+// prettier-ignore
 test('有効な包括同意の表示は3用途一括・削除要求があると全用途OFF', async () => {
   const records = [consent('transcription'), consent('transcript_long_term'), consent('audio_long_term')];
   let erased = false;
