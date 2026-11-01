@@ -47,4 +47,17 @@ SELECT
     AND NOT has_database_privilege('herta_runtime', current_database(), 'CREATE')
   ) AS prisma_history_acl_gate_pass;
 
+-- Fail closed at the psql process level, not only with a printed 'false'.
+-- ON_ERROR_STOP=1 must return non-zero whenever any forbidden grant exists.
+SELECT 1 / CASE
+  WHEN
+    NOT has_table_privilege('herta_runtime', 'public._prisma_migrations', 'INSERT')
+    AND NOT has_table_privilege('herta_runtime', 'public._prisma_migrations', 'UPDATE')
+    AND NOT has_table_privilege('herta_runtime', 'public._prisma_migrations', 'DELETE')
+    AND NOT has_schema_privilege('herta_runtime', 'public', 'CREATE')
+    AND NOT has_database_privilege('herta_runtime', current_database(), 'CREATE')
+    THEN 1
+  ELSE 0
+END AS acl_gate_exit_assertion;
+
 COMMIT;
