@@ -145,7 +145,10 @@ test('wrong public key, fingerprint, and corrupted signature all fail closed', a
   await withBucket(() => {
     const other = generateKeyPairSync('ed25519');
     const invalid = [
-      [envelope(), trust({ trustedPublicKeyPem: other.publicKey.export({ type: 'spki', format: 'pem' }) })],
+      [
+        envelope(),
+        trust({ trustedPublicKeyPem: other.publicKey.export({ type: 'spki', format: 'pem' }) }),
+      ],
       [envelope(), trust({ trustedPublicKeySha256: '0'.repeat(64) })],
       [envelope(payload(), other.privateKey), trust()],
       [{ ...envelope(), signatureBase64: 'a'.repeat(86) + '==' }, trust()],
@@ -206,11 +209,21 @@ test('signed counts or digests that do not match inventory do not pass local ver
 test('missing trust prevents any S3 listing and hides confidential audit details in errors', async () => {
   await withBucket(async () => {
     let calls = 0;
-    const client = { async send() { calls++; return {}; } };
+    const client = {
+      async send() {
+        calls++;
+        return {};
+      },
+    };
     await assert.rejects(
-      inspectVcRecapLedgerWithSignedAudit(client, commands, envelope(), trust({
-        trustedPublicKeyPem: 'private-sentinel-name',
-      })),
+      inspectVcRecapLedgerWithSignedAudit(
+        client,
+        commands,
+        envelope(),
+        trust({
+          trustedPublicKeyPem: 'private-sentinel-name',
+        }),
+      ),
       (error) => !error.message.includes('private-sentinel-name'),
     );
     assert.equal(calls, 0);
