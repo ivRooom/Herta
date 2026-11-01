@@ -47,23 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      - name: TEMP format diagnostic for #694 (synthetic sources only)
-        run: |
-          pnpm exec prettier --write deploy/scripts/vc-recap-erasure-ledger-contract.mjs deploy/scripts/vc-recap-erasure-ledger-contract.test.mjs docs/VC_RECAP_ERASURE_LEDGER_DESIGN.md
-          echo 'LEDGER_MODULE_START'
-          base64 -w0 deploy/scripts/vc-recap-erasure-ledger-contract.mjs
-          echo
-          echo 'LEDGER_MODULE_END'
-          echo 'LEDGER_TEST_START'
-          base64 -w0 deploy/scripts/vc-recap-erasure-ledger-contract.test.mjs
-          echo
-          echo 'LEDGER_TEST_END'
-          echo 'LEDGER_DOC_START'
-          base64 -w0 docs/VC_RECAP_ERASURE_LEDGER_DESIGN.md
-          echo
-          echo 'LEDGER_DOC_END'
-          # Diagnostic stops early after emitting canonical source; removed before PR review.
-          exit 1
       - name: Format Check
         run: pnpm format:check
 
