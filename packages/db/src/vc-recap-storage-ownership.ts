@@ -3,6 +3,7 @@ import { lockVcRecapStorageOwner } from './vc-recap-storage-lock.js';
 import {
   VC_RECAP_LONG_TERM_CONSENT_VERSION,
   isVcRecapLongTermEnrollmentEnabled,
+  hasVcRecapComprehensiveConsent,
 } from './vc-recap-explicit-consent.js';
 
 export type VcRecapStoredObjectKind = 'audio' | 'transcript';
@@ -79,30 +80,17 @@ export async function reserveVcRecapStorageObject(
       tx.vcRecapExplicitConsent.findMany({
         where: {
           userId: input.userId,
-          purpose: {
-            in:
-              input.kind === 'audio'
-                ? ['audio_long_term']
-                : ['transcription', 'transcript_long_term'],
-          },
+          purpose: { in: ['transcription', 'transcript_long_term', 'audio_long_term'] },
         },
         select: { purpose: true, policyVersion: true, consentedAt: true, revokedAt: true },
       }),
     ]);
-    const granted = (purpose: string) =>
-      consents.some(
-        (record) =>
-          record.purpose === purpose &&
-          record.policyVersion === VC_RECAP_LONG_TERM_CONSENT_VERSION &&
-          record.consentedAt !== null &&
-          record.revokedAt === null,
-      );
+    // A single policy acceptance must cover all three purposes together.
+    // Legacy/partial-purpose grants cannot reserve either audio or text.
     if (
       fence !== null ||
       !legacy?.voiceTranscriptionConsent ||
-      (input.kind === 'audio'
-        ? !granted('audio_long_term')
-        : !granted('transcription') || !granted('transcript_long_term'))
+      !hasVcRecapComprehensiveConsent(consents)
     ) {
       return { status: 'denied' } as const;
     }
