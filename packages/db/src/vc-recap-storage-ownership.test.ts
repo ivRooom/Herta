@@ -202,6 +202,7 @@ test('未検証の削除依頼だけを上限付きで取得し、条件不正�
   await assert.rejects(listPendingVcRecapErasureUsers(prisma, 101), /Invalid/);
 });
 
+// prettier-ignore
 test('録音も本文も3用途の包括同意が欠けている場合はS3予約できない', async () => {
   await withStorageEnvironment(async () => {
     const mock = setupFake({ consent: false });
@@ -219,6 +220,7 @@ test('録音も本文も3用途の包括同意が欠けている場合はS3予�
   });
 });
 
+// prettier-ignore
 test('緊急停止フラグOFFで予約済みS3オブジェクトのcommitも拒否する', async () => {
   const prev = process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
   delete process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
