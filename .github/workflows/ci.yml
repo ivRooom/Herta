@@ -47,13 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      # Temporary diagnostic for Issue #684; remove before final review.
-      - name: Temporary prettier diagnostics for comprehensive consent
-        run: |
-          pnpm exec prettier --write packages/db/src/vc-recap-explicit-consent.ts
-          git diff -- packages/db/src/vc-recap-explicit-consent.ts
-          git checkout -- packages/db/src/vc-recap-explicit-consent.ts
-
       - name: Format Check
         run: pnpm format:check
 
