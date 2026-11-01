@@ -1,4 +1,4 @@
-/** 
+/**
  * Synthetic-only, side-effect-free contract for a future independent erasure ledger.
  * This does NOT write to AWS, authenticate S3 inventories, persist receipts,
  * retry failures, or authorize restarting VC Recap.
@@ -25,11 +25,16 @@ function utcTimestamp(value) {
 }
 
 export function validateErasureReceipt(receipt) {
-  if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt) ||
-      Object.keys(receipt).sort().join(',') !== 'kind,requestId,requestedAt,userId' ||
-      receipt.kind !== ERASURE_EVENT_KIND ||
-      !UUID_V4.test(receipt.requestId) ||
-      typeof receipt.userId !== 'string' || !OWNER_ID.test(receipt.userId)) {
+  if (
+    !receipt ||
+    typeof receipt !== 'object' ||
+    Array.isArray(receipt) ||
+    Object.keys(receipt).sort().join(',') !== 'kind,requestId,requestedAt,userId' ||
+    receipt.kind !== ERASURE_EVENT_KIND ||
+    !UUID_V4.test(receipt.requestId) ||
+    typeof receipt.userId !== 'string' ||
+    !OWNER_ID.test(receipt.userId)
+  ) {
     throw new Error('Invalid erasure ledger receipt');
   }
   utcTimestamp(receipt.requestedAt);
@@ -44,9 +49,13 @@ export function validateErasureReceipt(receipt) {
  * Never pass this function's own length back as the "independent" audit.
  */
 export function assembleErasureSnapshot(receipts, { generatedAt, independentlyAuditedCount } = {}) {
-  if (!Array.isArray(receipts) || receipts.length > 100000 ||
-      !Number.isSafeInteger(independentlyAuditedCount) ||
-      independentlyAuditedCount < 0 || independentlyAuditedCount !== receipts.length) {
+  if (
+    !Array.isArray(receipts) ||
+    receipts.length > 100000 ||
+    !Number.isSafeInteger(independentlyAuditedCount) ||
+    independentlyAuditedCount < 0 ||
+    independentlyAuditedCount !== receipts.length
+  ) {
     throw new Error('Erasure ledger inventory is incomplete or unverified');
   }
   const generatedMillis = utcTimestamp(generatedAt);
@@ -71,9 +80,11 @@ export function assembleErasureSnapshot(receipts, { generatedAt, independentlyAu
   return {
     kind: EXTERNAL_SNAPSHOT_KIND,
     generatedAt,
-    entries: [...latest].sort(([a], [b]) => a.localeCompare(b, 'en')).map(([userId, item]) => ({
-      userId,
-      requestedAt: item.requestedAt,
-    })),
+    entries: [...latest]
+      .sort(([a], [b]) => a.localeCompare(b, 'en'))
+      .map(([userId, item]) => ({
+        userId,
+        requestedAt: item.requestedAt,
+      })),
   };
 }
