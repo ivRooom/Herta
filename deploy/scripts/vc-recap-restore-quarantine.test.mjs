@@ -40,14 +40,7 @@ function createOperations() {
 test('restore sequence always starts with durable quarantine and never unlocks traffic', async () => {
   const { calls, operations } = createOperations();
   const result = await reconcileVcRecapRestoreUnderQuarantine(runId, operations);
-  assert.deepEqual(calls, [
-    'quarantine',
-    'load',
-    'authenticate',
-    'replay',
-    'db',
-    'copies',
-  ]);
+  assert.deepEqual(calls, ['quarantine', 'load', 'authenticate', 'replay', 'db', 'copies']);
   assert.deepEqual(result, {
     status: 'review-required',
     canResumeTraffic: false,
