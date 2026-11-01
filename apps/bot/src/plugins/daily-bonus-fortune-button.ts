@@ -66,11 +66,7 @@ export async function handleDailyBonusFortune(
     const original = await channel.messages.fetch(interaction.message.id);
     if (original.author.id !== ctx.client.user?.id) throw new Error('Foreign daily announcement');
 
-    if (
-      !isCurrent() ||
-      !ctx.config.fortuneEnabled ||
-      process.env.DAILY_BONUS_ENABLED !== 'true'
-    ) {
+    if (!isCurrent() || !ctx.config.fortuneEnabled || process.env.DAILY_BONUS_ENABLED !== 'true') {
       await interaction.editReply('今日の運勢は現在利用できません。');
       return;
     }
