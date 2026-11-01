@@ -15,6 +15,7 @@ on:
       - 'deploy/systemd/herta-backup-restore-verification.timer'
       - 'deploy/systemd/backup-restore-verification.env.example'
       - 'docs/BACKUP_RESTORE_VERIFICATION.md'
+      - 'docs/VC_RECAP_RESTORE_FENCE_VERIFICATION.md'
       - '.github/workflows/backup-restore-verification-ci.yml'
   pull_request:
     branches: [main, develop]
@@ -27,6 +28,7 @@ on:
       - 'deploy/systemd/herta-backup-restore-verification.timer'
       - 'deploy/systemd/backup-restore-verification.env.example'
       - 'docs/BACKUP_RESTORE_VERIFICATION.md'
+      - 'docs/VC_RECAP_RESTORE_FENCE_VERIFICATION.md'
       - '.github/workflows/backup-restore-verification-ci.yml'
 
 permissions:
@@ -60,7 +62,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m unittest discover -s deploy/scripts -p 'verify-vc-recap-restore-fences.test.py' -v
+          python3 deploy/scripts/verify-vc-recap-restore-fences.test.py -v
 
       - name: systemd unitを検証
         shell: bash
