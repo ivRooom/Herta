@@ -54,6 +54,8 @@ jobs:
           else
             cat "$RUNNER_TEMP/valorant-migrate.log"
           fi
+      - name: VC Recap owner lock real PostgreSQL integration
+        run: pnpm --filter @herta/db exec tsx --test src/vc-recap-storage-lock.integration.test.ts
       - name: VC Recap real PostgreSQL comprehensive-consent and erasure race
         run: pnpm --filter @herta/db exec tsx --test src/vc-recap-consent-postgres.integration.test.ts
       - run: pnpm --filter @herta/db exec tsx --test src/valorant-agents.integration.test.ts
