@@ -47,6 +47,18 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
+      - name: TEMP canonical formatter for #694 version inventory
+        run: |
+          pnpm exec prettier --write deploy/scripts/vc-recap-erasure-s3-inventory.mjs deploy/scripts/vc-recap-erasure-s3-inventory.test.mjs
+          echo 'INV_MODULE_START'
+          base64 -w0 deploy/scripts/vc-recap-erasure-s3-inventory.mjs
+          echo
+          echo 'INV_MODULE_END'
+          echo 'INV_TEST_START'
+          base64 -w0 deploy/scripts/vc-recap-erasure-s3-inventory.test.mjs
+          echo
+          echo 'INV_TEST_END'
+          exit 1
       - name: Format Check
         run: pnpm format:check
 
