@@ -15,6 +15,8 @@ on:
       - 'deploy/scripts/vc-recap-erasure-ledger-contract.test.mjs'
       - 'deploy/scripts/vc-recap-erasure-write-first.mjs'
       - 'deploy/scripts/vc-recap-erasure-write-first.test.mjs'
+      - 'deploy/scripts/vc-recap-erasure-s3-v3-adapter.mjs'
+      - 'deploy/scripts/vc-recap-erasure-s3-v3-adapter.test.mjs'
       - 'deploy/scripts/vc-recap-restore-quarantine.mjs'
       - 'deploy/scripts/vc-recap-restore-quarantine.test.mjs'
       - 'docs/VC_RECAP_ERASURE_LEDGER_DESIGN.md'
@@ -35,6 +37,8 @@ on:
       - 'deploy/scripts/vc-recap-erasure-ledger-contract.test.mjs'
       - 'deploy/scripts/vc-recap-erasure-write-first.mjs'
       - 'deploy/scripts/vc-recap-erasure-write-first.test.mjs'
+      - 'deploy/scripts/vc-recap-erasure-s3-v3-adapter.mjs'
+      - 'deploy/scripts/vc-recap-erasure-s3-v3-adapter.test.mjs'
       - 'deploy/scripts/vc-recap-restore-quarantine.mjs'
       - 'deploy/scripts/vc-recap-restore-quarantine.test.mjs'
       - 'docs/VC_RECAP_ERASURE_LEDGER_DESIGN.md'
@@ -83,6 +87,9 @@ jobs:
 
       - name: VC Recap write-first fail-closed sequence (synthetic only)
         run: node --test deploy/scripts/vc-recap-erasure-write-first.test.mjs
+
+      - name: Independent S3 ledger v3 conditional write contract (synthetic only)
+        run: node --test deploy/scripts/vc-recap-erasure-s3-v3-adapter.test.mjs
 
       - name: VC Recap restore quarantine proof sequence (synthetic only)
         run: node --test deploy/scripts/vc-recap-restore-quarantine.test.mjs
