@@ -67,4 +67,57 @@ SELECT (NOT has_table_privilege('herta_runtime', 'public._prisma_migrations', 'I
   AND NOT has_schema_privilege('herta_runtime','public','CREATE')
   AND NOT has_database_privilege('herta_runtime',current_database(),'CREATE'))::integer")"
 test "$after" = "1" || { echo 'Expected post-remediation history DML denial was not observed'; exit 1; }
-echo 'Synthetic PG17 ACL pre-risk reproduced and post-REVOKE denied: PASS'
+# Regression: TRUNCATE is independent of INSERT/UPDATE/DELETE and can erase
+# every Prisma migration-history row. The clean after-REVOKE case must be denied.
+expect_acl_rejection() {
+  local case_name="$1"
+  if docker exec -i "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
+    < scripts/check-herta-restored-acl.sql > "$scratch/$case_name.txt" 2>&1; then
+    echo "Unsafe ACL gate unexpectedly passed: $case_name" >&2
+    exit 1
+  fi
+  grep -q 'division by zero' "$scratch/$case_name.txt" || {
+    echo "ACL gate failed for an unrelated SQL error: $case_name" >&2
+    exit 1
+  }
+}
+
+docker exec "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
+  -c 'GRANT TRUNCATE ON public._prisma_migrations TO herta_runtime;' >/dev/null
+expect_acl_rejection truncate_only
+docker exec "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
+  -c 'REVOKE TRUNCATE ON public._prisma_migrations FROM herta_runtime;' >/dev/null
+
+# Regression: non-public application schema CREATE must block cutover.
+docker exec -i "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal <<'SQL'
+CREATE SCHEMA herta_auxiliary;
+CREATE TABLE herta_auxiliary.application_table (id integer);
+GRANT CREATE ON SCHEMA herta_auxiliary TO herta_runtime;
+SQL
+expect_acl_rejection other_schema_create
+docker exec "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
+  -c 'REVOKE CREATE ON SCHEMA herta_auxiliary FROM herta_runtime;' >/dev/null
+
+# Regression: non-INHERIT membership WITH SET TRUE lets runtime become migrator.
+# Direct has_table_privilege(runtime) remains false, but SET ROLE bypasses it.
+docker exec "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
+  -c 'GRANT herta_migrator TO herta_runtime WITH INHERIT FALSE, SET TRUE;' >/dev/null
+set_only="$(docker exec "$name" psql -X -At -U postgres -d herta_acl_rehearsal -c "
+SELECT (pg_has_role('herta_runtime', 'herta_migrator', 'SET')
+  AND NOT pg_has_role('herta_runtime', 'herta_migrator', 'USAGE')
+  AND NOT has_table_privilege('herta_runtime', 'public._prisma_migrations', 'INSERT')
+)::integer")"
+test "$set_only" = "1" || { echo 'Non-INHERIT SET-only privilege fixture invalid' >&2; exit 1; }
+expect_acl_rejection set_only_migrator
+docker exec "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
+  -c 'REVOKE herta_migrator FROM herta_runtime;' >/dev/null
+
+# The same fixture returns PASS after removing every risky synthetic grant.
+docker exec -i "$name" psql -X -v ON_ERROR_STOP=1 -U postgres -d herta_acl_rehearsal \
+  < scripts/check-herta-restored-acl.sql > "$scratch/final.txt"
+grep -Eq '[[:space:]]t[[:space:]]*\\|[[:space:]]*1[[:space:]]*
+ "$scratch/final.txt" || {
+  echo 'Safe ACL final result missing TRUE/PASS assertion' >&2
+  exit 1
+}
+echo 'Synthetic PG17 ACL DML/TRUNCATE/SET ROLE/other-schema CREATE negative cases and safe case: PASS'
