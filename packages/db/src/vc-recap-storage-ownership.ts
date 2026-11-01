@@ -1,7 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import { lockVcRecapStorageOwner } from './vc-recap-storage-lock.js';
 import {
-  VC_RECAP_LONG_TERM_CONSENT_VERSION,
   isVcRecapLongTermEnrollmentEnabled,
   hasVcRecapComprehensiveConsent,
 } from './vc-recap-explicit-consent.js';
