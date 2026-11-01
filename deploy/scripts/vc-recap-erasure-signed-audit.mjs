@@ -130,12 +130,7 @@ export function verifySignedVcRecapAudit(envelope, trust) {
  * This still does NOT prove independent manifest completeness, durability,
  * currentness after the last signed timestamp, or permission to resume VC.
  */
-export async function inspectVcRecapLedgerWithSignedAudit(
-  client,
-  commands,
-  envelope,
-  trust,
-) {
+export async function inspectVcRecapLedgerWithSignedAudit(client, commands, envelope, trust) {
   const audit = verifySignedVcRecapAudit(envelope, trust);
   const local = await inspectVcRecapErasureLedgerVersions(client, commands, {
     expectedCount: audit.expectedCount,
