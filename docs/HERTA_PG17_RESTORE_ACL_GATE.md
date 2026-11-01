@@ -27,15 +27,13 @@ An isolated restore that checks only table counts and Prisma checksums **does no
 
 ### ACL acceptance
 
-| Inspect output                                                      | Required for ACL gate                                                                |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `prisma_history_runtime_insert/update/delete/truncate/trigger`      | **false** each; TRUNCATE alone can erase Prisma history                               |
-| `runtime_schema_create`, `runtime_any_application_schema_create`, `runtime_database_create` | **false** each; include every non-system application schema, not just public |
-| `runtime_set_role_privilege_escalation`                               | **false**; PostgreSQL 17 SET ROLE paths count even when INHERIT is disabled           |
-| `prisma_history_acl_gate_pass`                                      | **true**                                                                             |
-| `public_tables` and source schema                                   | match the exact source snapshot, historically 101 (not a hardcoded constant)         |
-| `runtime_sequences_missing_usage` / `runtime_tables_missing_select` | analyze against application access requirements; do not claim all accesses need CRUD |
-| Any missing relation/role or SQL error                              | **NO-GO**, never interpret as success                                                |
+- `prisma_history_runtime_insert/update/delete/truncate/trigger`: **false** each. TRUNCATE alone can erase Prisma history.
+- `runtime_schema_create`, `runtime_any_application_schema_create`, `runtime_database_create`: **false** each. Include every non-system application schema, not just `public`.
+- `runtime_set_role_privilege_escalation`: **false**. PostgreSQL 17 SET ROLE paths count even when INHERIT is disabled.
+- `prisma_history_acl_gate_pass`: **true**.
+- `public_tables` and source schema: match the exact source snapshot, historically 101 (not a hardcoded constant).
+- `runtime_sequences_missing_usage` / `runtime_tables_missing_select`: analyze against application requirements; never blanket-grant CRUD.
+- Missing relation, role or SQL error: **NO-GO**.
 
 **Expected risk:** With the currently observed blanket default table ACL, the first rehearsal may report `prisma_history_runtime_insert/update/delete=true`; this is a hypothesis to test, **not** a completed PASS or FAIL.
 
