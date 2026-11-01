@@ -519,6 +519,7 @@ test('新ポリシーへの初回拒否を永続化し、既存データがな�
   assert.deepEqual(operations, ['owner-lock', 'explicit-refusal']);
 });
 
+// prettier-ignore
 test('包括同意レコードが存在しても新機能受付OFFなら実効権限はすべて拒否', async () => {
   const previous = process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
   delete process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
