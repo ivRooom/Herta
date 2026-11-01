@@ -38,6 +38,11 @@ import { savedDailyFortune } from './daily-fortune.js';
 import { renderFortuneCard } from './fortune-card.js';
 import { handleDailyParticipation, isParticipationInteraction } from './daily-participation.js';
 import { scanParticipationResults } from './daily-participation-results.js';
+import { dailyBonusButtonRow } from './daily-bonus-buttons.js';
+import {
+  handleDailyBonusFortune,
+  isDailyBonusFortuneButton,
+} from './daily-bonus-fortune-button.js';
 import { replyDailyBonusResult } from './daily-bonus-reply.js';
 import { dailyAnniversaryHeading, dailyBonusFailureMessage } from './daily-bonus-presentation.js';
 
@@ -85,6 +90,15 @@ export const dailyBonusPlugin = definePlugin<Config, Client, PrismaClient>({
           ) {
             const activeGeneration = generations.get(ctx.guildId) ?? 0;
             await handleDailyParticipation(
+              ctx,
+              interaction,
+              () => activeGeneration === (generations.get(ctx.guildId) ?? 0),
+            );
+            return;
+          }
+          if (interaction?.isButton() && isDailyBonusFortuneButton(interaction.customId)) {
+            const activeGeneration = generations.get(ctx.guildId) ?? 0;
+            await handleDailyBonusFortune(
               ctx,
               interaction,
               () => activeGeneration === (generations.get(ctx.guildId) ?? 0),
@@ -247,20 +261,10 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
           content: `<@&${role.id}>`,
           embeds: [embed],
           components: [
-            new ActionRowBuilder<ButtonBuilder>().addComponents(
-              new ButtonBuilder()
-                .setCustomId(`daily-bonus:${date}`)
-                .setLabel('🎁 ボーナスを受け取る')
-                .setStyle(ButtonStyle.Primary),
-              ...(process.env.DAILY_PARTICIPATION_ENABLED === 'true'
-                ? [
-                    new ButtonBuilder()
-                      .setCustomId(`daily-participation:questions:${date}`)
-                      .setLabel('🧠 今日の問題に挑戦')
-                      .setStyle(ButtonStyle.Secondary),
-                  ]
-                : []),
-            ),
+            dailyBonusButtonRow(date, {
+              participationEnabled: process.env.DAILY_PARTICIPATION_ENABLED === 'true',
+              fortuneEnabled: ctx.config.fortuneEnabled,
+            }),
           ],
           allowedMentions: dailyBonusAllowedMentions(role.id),
           nonce: createHash('sha256').update(`${ctx.guildId}:${date}`).digest('hex').slice(0, 25),
