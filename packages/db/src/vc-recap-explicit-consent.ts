@@ -25,6 +25,7 @@ export interface VcRecapExplicitConsentRecord {
 const LONG_TERM_PURPOSES = ['transcription', 'transcript_long_term', 'audio_long_term'] as const;
 
 /** All three purposes come from the same affirmative policy action; partial legacy rows deny. */
+// prettier-ignore
 export function hasVcRecapComprehensiveConsent(
   records: readonly VcRecapExplicitConsentRecord[],
   policyVersion = VC_RECAP_LONG_TERM_CONSENT_VERSION,
@@ -44,6 +45,7 @@ export interface VcRecapConsentCapabilities {
 }
 
 /** Pure evaluation with no implicit inherited consent. Explicit legacy refusal wins. */
+// prettier-ignore
 export function evaluateVcRecapExplicitConsent(
   records: readonly VcRecapExplicitConsentRecord[],
   hasLegacyExplicitRefusal: boolean,
@@ -187,6 +189,7 @@ export interface VcRecapLongTermConsentView {
   enrollmentEnabled: boolean;
 }
 
+// prettier-ignore
 export async function getVcRecapLongTermConsentView(
   prisma: PrismaClient,
   userId: string,
@@ -239,6 +242,7 @@ export type VcRecapLongTermConsentUpdateResult =
  * in one owner-locked transaction. The fence remains until independently
  * verified deletion: a new click cannot silently erase it.
  */
+// prettier-ignore
 export async function updateVcRecapLongTermConsentChoices(
   prisma: PrismaClient,
   userId: string,
@@ -322,6 +326,7 @@ export async function updateVcRecapLongTermConsentChoices(
 }
 
 /** The UI/API exposes only one accepted boolean, not three independent choices. */
+// prettier-ignore
 export async function updateVcRecapComprehensiveConsent(
   prisma: PrismaClient,
   userId: string,
