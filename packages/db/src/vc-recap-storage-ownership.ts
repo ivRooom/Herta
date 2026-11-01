@@ -123,6 +123,8 @@ export async function commitVcRecapStorageObject(
   if (!input.id || !input.versionId || input.versionId === 'null') {
     throw new Error('S3 version ID is required for committed storage');
   }
+  // Emergency OFF must also stop committing an already-reserved upload.
+  if (!isVcRecapLongTermEnrollmentEnabled()) return false;
   return prisma.$transaction(async (tx) => {
     await lockVcRecapStorageOwner(tx, input.userId);
     const fence = await tx.vcRecapErasureRequest.findUnique({
