@@ -7,6 +7,7 @@
 `deploy/scripts/verify-vc-recap-restore-fences.py` は、復元後DBの削除要求一覧と、**復元DB・同じbackupから独立して保持した削除要求台帳**の内容をオフラインで照合します。外部台帳の真正性・鮮度と照合すべき件数は別の認可された監査経路で確定し、スクリプトに渡します。
 
 - **このスクリプトは読み取り専用です。** PostgreSQL/AWS/Discordへの接続・復元DBへのINSERT/UPDATE・S3 DELETEは実行しません。
+- スナップショットは64 MiBの上限を超える前に読み込みを打ち切り、復元DBに検証時刻より未来の削除要求日時が含まれる場合は時計ずれ/不整合として **No-Go** にします。
 - 「MATCH ONLY」は、入力の間で削除要求が失われていないことを確認しただけです。全バックアップ・S3 version・共有要約・キャッシュの削除、アクセス再開、法務承認を意味しません。
 - 独立台帳の生成・更新・暗号化/不変性確保・復元DBへのtombstone再適用、およびデータ配信遮断は**未実装**です。台帳が存在しない現状では必ず **No-Go** とします。
 - この照合を `verify-backup-restore.sh` に無条件で組み込んで通常の週次バックアップ検証を壊したり、テスト用の仮台帳で自動的にGo判定したりしません。
@@ -84,8 +85,7 @@ python3 deploy/scripts/verify-vc-recap-restore-fences.py \
 ## テスト
 
 ```bash
-python3 -m unittest discover -s deploy/scripts \
-  -p 'verify-vc-recap-restore-fences.test.py' -v
+python3 deploy/scripts/verify-vc-recap-restore-fences.test.py -v
 ```
 
 GitHub Actions `Backup Restore Verification CI` で合成データのみ実行。ユーザーIDは固定の架空ID、S3・DBの接続/書込みなし。
