@@ -487,3 +487,33 @@ test('有効な包括同意の表示は3用途一括・削除要求があると�
     transcription: false, transcriptLongTerm: false, audioLongTerm: false,
   });
 });
+
+// prettier-ignore
+test('新ポリシーへの初回拒否を永続化し、既存データがなければ消去完了を偽装しない', async () => {
+  const operations: string[] = [];
+  const tx = {
+    $queryRawUnsafe: async () => { operations.push('owner-lock'); return []; },
+    vcRecapErasureRequest: {
+      findUnique: async () => null,
+      upsert: async () => { throw new Error('no data needs deletion'); },
+    },
+    userDataConsent: {
+      findUnique: async () => ({ voiceTranscriptionConsent: false }),
+      upsert: async (input: unknown) => {
+        const payload = input as { create: { voiceTranscriptionConsent: boolean; voiceTranscriptRetentionConsentedAt: null } };
+        assert.equal(payload.create.voiceTranscriptionConsent, false);
+        assert.equal(payload.create.voiceTranscriptRetentionConsentedAt, null);
+        operations.push('explicit-refusal');
+      },
+    },
+    vcRecapExplicitConsent: {
+      findMany: async () => [],
+      updateMany: async () => { throw new Error('must not revoke absent grants'); },
+    },
+  };
+  const client = {
+    $transaction: async (run: (client: typeof tx) => Promise<string>) => run(tx),
+  } as unknown as PrismaClient;
+  assert.equal(await updateVcRecapComprehensiveConsent(client, '123456789012345678', false), 'updated');
+  assert.deepEqual(operations, ['owner-lock', 'explicit-refusal']);
+});
