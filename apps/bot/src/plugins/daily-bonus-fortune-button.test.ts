@@ -73,10 +73,13 @@ afterEach(() => {
 });
 
 it('shows the three requested buttons only when their independent handlers are enabled', () => {
-  const ids = (participationEnabled: boolean, fortuneEnabled: boolean) =>
-    dailyBonusButtonRow(date, { participationEnabled, fortuneEnabled })
-      .components.map((button) => button.toJSON())
-      .map((button) => ('custom_id' in button ? button.custom_id : undefined));
+  const ids = (participationEnabled: boolean, fortuneEnabled: boolean) => {
+    const row = dailyBonusButtonRow(date, { participationEnabled, fortuneEnabled });
+    return row.components.map((component) => {
+      const button = component.toJSON();
+      return 'custom_id' in button ? button.custom_id : undefined;
+    });
+  };
   expect(ids(true, true)).toEqual([
     `daily-bonus:${date}`,
     `daily-participation:questions:${date}`,
