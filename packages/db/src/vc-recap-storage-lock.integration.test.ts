@@ -16,24 +16,26 @@ test('real PostgreSQL: advisory lock returns a Prisma-supported value and serial
     const owner = '123456789012345680';
     const other = '123456789012345681';
     try {
-      let acquiredSecond = false;
-      let pending: Promise<void> | undefined;
       await prisma.$transaction(async (tx) => {
         await lockVcRecapStorageOwner(tx, owner);
-        // Different owner must not block on the first owner's lock.
+        // A different owner must acquire its lock while the first is held.
         await prisma.$transaction(async (otherTx) => {
           await lockVcRecapStorageOwner(otherTx, other);
         }, { timeout: 5000, maxWait: 5000 });
-        pending = prisma.$transaction(async (secondTx) => {
-          await lockVcRecapStorageOwner(secondTx, owner);
-          acquiredSecond = true;
-        }, { timeout: 10000, maxWait: 10000 });
-        await new Promise((resolve) => setTimeout(resolve, 150));
-        assert.equal(acquiredSecond, false);
+        // The second same-owner request must reach PostgreSQL and time out
+        // *before* the first transaction releases the advisory lock.
+        await assert.rejects(
+          prisma.$transaction(async (secondTx) => {
+            await secondTx.$executeRawUnsafe("SET LOCAL lock_timeout = '150ms'");
+            await lockVcRecapStorageOwner(secondTx, owner);
+          }, { timeout: 5000, maxWait: 5000 }),
+          /lock timeout|55P03|P2010/i,
+        );
       }, { timeout: 10000, maxWait: 10000 });
-      assert(pending);
-      await pending;
-      assert.equal(acquiredSecond, true);
+      // Once the first owner lock is released, the same owner can acquire it.
+      await prisma.$transaction(async (tx) => {
+        await lockVcRecapStorageOwner(tx, owner);
+      }, { timeout: 5000, maxWait: 5000 });
     } finally {
       await prisma.$disconnect();
     }
