@@ -43,7 +43,7 @@ export async function participationFortune(
   } catch {
     await interaction.followUp({
       flags: MessageFlags.Ephemeral,
-      content: 'ボーナスは受取済みです。運勢は /fortune today で再確認できます。',
+      content: '運勢を表示できませんでした。/fortune today でもう一度確認できます。',
     });
   }
 }
