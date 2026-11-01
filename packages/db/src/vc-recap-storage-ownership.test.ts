@@ -55,14 +55,12 @@ function setupFake(options: { fenced?: boolean; legacy?: boolean; consent?: bool
       findMany: async () =>
         options.consent === false
           ? []
-          : [
-              {
-                purpose: 'audio_long_term',
-                policyVersion: VC_RECAP_LONG_TERM_CONSENT_VERSION,
-                consentedAt: new Date(),
-                revokedAt: null,
-              },
-            ],
+          : ['transcription', 'transcript_long_term', 'audio_long_term'].map((purpose) => ({
+              purpose,
+              policyVersion: VC_RECAP_LONG_TERM_CONSENT_VERSION,
+              consentedAt: new Date('2026-11-01T00:00:00Z'),
+              revokedAt: null,
+            })),
     },
     vcRecapStorageObject: {
       create: async () => {
@@ -202,4 +200,21 @@ test('未検証の削除依頼だけを上限付きで取得し、条件不正�
   } as unknown as PrismaClient;
   assert.deepEqual(await listPendingVcRecapErasureUsers(prisma), [USER_ID]);
   await assert.rejects(listPendingVcRecapErasureUsers(prisma, 101), /Invalid/);
+});
+
+test('録音も本文も3用途の包括同意が欠けている場合はS3予約できない', async () => {
+  await withStorageEnvironment(async () => {
+    const mock = setupFake({ consent: false });
+    assert.deepEqual(
+      await reserveVcRecapStorageObject(mock.prisma, {
+        userId: USER_ID,
+        sessionId: 'session-1',
+        kind: 'transcript',
+        bucket: BUCKET,
+        objectKey: 'vc-recap/users/' + USER_ID + '/transcripts/session-1.json',
+      }),
+      { status: 'denied' },
+    );
+    assert.deepEqual(mock.operations, ['owner-lock']);
+  });
 });
