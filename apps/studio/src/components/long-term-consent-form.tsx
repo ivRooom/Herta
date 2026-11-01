@@ -47,7 +47,7 @@ export function LongTermConsentForm(props: Props) {
         router.refresh();
       } else if (data.result === 'updated') {
         setAccepted(next);
-        setMessage(next ? '新しいプライバシーポリシーへの包括同意を記録しました。' : '現在の同意はありません。');
+        setMessage(next ? '新しいプライバシーポリシーへの包括同意を記録しました。' : '新ポリシーに同意しないという本人の意思を記録しました。');
         router.refresh();
       } else {
         setMessage('同意の更新結果を確認できませんでした。');
@@ -67,11 +67,14 @@ export function LongTermConsentForm(props: Props) {
         新機能が公開されたら、一回の同意で次のすべてを許可します。
       </p>
       <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-6 text-muted">
-        <li>発言音声の文字起こしと要約の処理</li>
+        <li>発言音声の文字起こし（現在はAWS Transcribe、将来の非公開Whisperも検討）と要約処理</li>
         <li>本文の長期保存：365日まではPostgreSQL、検証後に非公開S3へ移行</li>
         <li>話者別音声の録音と長期保存：収録時点から非公開S3、30日後に低頻度アクセス層へ移行する計画</li>
       </ul>
       <p className="mt-3 text-sm leading-7 text-muted">
+        文字起こしの発言音声をAWSの音声認識サービスへ送信する場合があります。
+        要約の作成では、文字起こし本文と発言者のDiscordユーザーIDをOpenAIへ送信します。
+        外部AIへの生音声直接送信は別の確認・同意が必要です。
         長期保存する本文と音声には通常の自動完全削除期限を設けない計画です。
         閲覧権限はGuildごとに制限され、本人は後から同意を撤回し、保存データの削除を依頼できます。
         一回の撤回で3用途すべての利用を停止します。削除完了は検証後に通知します。
@@ -103,16 +106,14 @@ export function LongTermConsentForm(props: Props) {
         >
           新ポリシーの3用途すべてに同意する
         </button>
-        {active ? (
-          <button
-            type="button"
-            disabled={busy || pending}
-            onClick={() => save(false)}
-            className="border border-border px-4 py-2 text-sm disabled:opacity-40"
-          >
-            包括同意を撤回して削除を依頼
-          </button>
-        ) : null}
+        <button
+          type="button"
+          disabled={busy || pending || (!props.enrollmentEnabled && !active)}
+          onClick={() => save(false)}
+          className="border border-border px-4 py-2 text-sm disabled:opacity-40"
+        >
+          {active ? '包括同意を撤回して削除を依頼' : '新ポリシーには同意しない'}
+        </button>
       </div>
       {message ? <p role="status" className="mt-4 text-sm">{message}</p> : null}
     </section>
