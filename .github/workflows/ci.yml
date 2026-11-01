@@ -47,6 +47,22 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
+      - name: TEMP write-first canonical formatting diagnostic
+        run: |
+          pnpm exec prettier --write deploy/scripts/vc-recap-erasure-write-first.mjs deploy/scripts/vc-recap-erasure-write-first.test.mjs docs/VC_RECAP_ERASURE_LEDGER_DESIGN.md
+          echo 'WF_MODULE_START'
+          base64 -w0 deploy/scripts/vc-recap-erasure-write-first.mjs
+          echo
+          echo 'WF_MODULE_END'
+          echo 'WF_TEST_START'
+          base64 -w0 deploy/scripts/vc-recap-erasure-write-first.test.mjs
+          echo
+          echo 'WF_TEST_END'
+          echo 'WF_DOC_START'
+          base64 -w0 docs/VC_RECAP_ERASURE_LEDGER_DESIGN.md
+          echo
+          echo 'WF_DOC_END'
+          exit 1
       - name: Format Check
         run: pnpm format:check
 
