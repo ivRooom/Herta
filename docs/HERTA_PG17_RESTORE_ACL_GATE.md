@@ -20,7 +20,7 @@ An isolated restore that checks only table counts and Prisma checksums **does no
    psql -X -v ON_ERROR_STOP=1 -d herta_acl_rehearsal \
      -f scripts/check-herta-restored-acl.sql
    ```
-   **The command must exit 0 and print `prisma_history_acl_gate_pass=true`;** an unsafe permission makes the final SQL assertion fail (division by zero) and psql return nonzero. Never classify a printed result alone or an unchecked shell pipeline as PASS. The operator must explicitly target the disposable database. Stop immediately if the expected database, roles, schema or `_prisma_migrations` is absent. Do not echo a production DSN, usernames' passwords, a source row or raw HBA CIDR.
+   **The command must exit 0 and show `prisma_history_acl_gate_pass` as `t` (TRUE);** an unsafe permission makes the final SQL assertion fail (division by zero) and psql return nonzero. Never classify a printed result alone or an unchecked shell pipeline as PASS. The operator must explicitly target the disposable database. Stop immediately if the expected database, roles, schema or `_prisma_migrations` is absent. Do not echo a production DSN, usernames' passwords, a source row or raw HBA CIDR.
 5. Review counts and effective grants. For every ordinary table, assess actual runtime DML requirements separately; **do not grant broad CRUD** solely to satisfy this check. Confirm sequence usage, Prisma migration checksum and count, FK/index, actual Prisma application behavior and encryption compatibility using the linked #675 gates.
 
 ### ACL acceptance
