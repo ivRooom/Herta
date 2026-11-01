@@ -321,6 +321,20 @@ async function transcribeSpeaker(
     logger.warn({ guildId: session.guildId }, 'Local Whisperは有効化されていません');
     return;
   }
+  if (provider === 'local-whisper') {
+    // The old role/admin consent flag does not authorize a NEW local decoder.
+    // Refuse even the Discord Opus subscription until personal approval and
+    // an absent erasure fence have been verified. mayProcess and the locked
+    // INSERT repeat this check to close later withdrawal races.
+    const [consentingOwners, erasure] = await Promise.all([
+      getVoiceTranscriptRetentionUserIds(prisma, [userId]),
+      prisma.vcRecapErasureRequest.findUnique({
+        where: { userId },
+        select: { userId: true },
+      }),
+    ]);
+    if (!consentingOwners.has(userId) || erasure !== null) return;
+  }
   const credential = provider === 'aws' ? await resolveAwsTranscribeCredential(prisma) : null;
   const openAiCredential =
     provider === 'whisper-1' || provider === 'gpt-transcribe'
