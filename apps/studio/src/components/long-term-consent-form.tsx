@@ -18,6 +18,7 @@ type Props = {
  * The current 30-day transcription form is intentionally a separate legacy flow
  * until operators publish and approve the new comprehensive privacy policy.
  */
+// prettier-ignore
 export function LongTermConsentForm(props: Props) {
   const router = useRouter();
   const [accepted, setAccepted] = useState(props.initialAccepted);
