@@ -267,7 +267,16 @@ export async function updateVcRecapLongTermConsentChoices(
       const hadConsent =
         legacy?.voiceTranscriptionConsent === true ||
         existing.some((row) => row.consentedAt !== null && row.revokedAt === null);
-      if (!hadConsent) return 'updated';
+      if (!hadConsent) {
+        // A first-time refusal must be durable: auto-consent roles only apply to absent choices.
+        // There are no previously retained objects to erase, so no deletion tombstone is needed.
+        await tx.userDataConsent.upsert({
+          where: { userId },
+          create: { userId, voiceTranscriptionConsent: false, voiceTranscriptRetentionConsentedAt: null },
+          update: { voiceTranscriptionConsent: false, voiceTranscriptRetentionConsentedAt: null },
+        });
+        return 'updated';
+      }
       const now = new Date();
       await tx.vcRecapErasureRequest.upsert({
         where: { userId },
