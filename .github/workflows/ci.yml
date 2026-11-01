@@ -47,14 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      - name: TEMP canonical Prettier probe for #694
-        run: |
-          pnpm exec prettier --write deploy/scripts/vc-recap-erasure-s3-v3-adapter.test.mjs
-          echo 'LEDGER_S3_TEST_BEGIN'
-          base64 -w0 deploy/scripts/vc-recap-erasure-s3-v3-adapter.test.mjs
-          echo
-          echo 'LEDGER_S3_TEST_END'
-          exit 1
       - name: Format Check
         run: pnpm format:check
 
