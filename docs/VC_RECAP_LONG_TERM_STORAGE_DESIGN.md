@@ -5,6 +5,7 @@
 ## 確定方針とリリース禁止条件
 
 - **長期保存はデフォルトOFF。** 本人の新しい明示同意、本人削除の実行・検証、公式ポリシーの適用、Guild IAM/監査、Backup/Restore/削除再適用の検証が完成するまで有効化してはならない。
+- **2026-11-01新決定：同意操作は1回。** 文字起こし処理・本文長期保存・話者別音声録音/長期保存の3用途を説明した単一のポリシー版に本人が一度同意する。旧同意や自動ロールを新同意に転用せず、撤回は3用途すべてに反映する。
 - **文字起こし本文:** 新たに長期保存同意された個人分のみ、0〜365日はPostgreSQLを第一候補とし、それ以降は検証後S3へアーカイブ。365日は**移行基準であり削除期限ではない**。自動完全削除期限を設けない。本文単体の寿命をセッション要約の寿命と混同しない。
 - **音声:** 新しい録音・長期保存同意のある話者のみ、受信時点からS3 Standardに暗号化保存。30日後に低頻度アクセス向けクラスへ移行し、180/365日を理由に削除しない。話者別Ogg/Opus等で一括削除可能な粒度を維持する。
 - 既存「文字起こし本文30日保存」同意・文字起こし処理同意・自動同意ロール・管理者付与を、**新しい文字起こし本文長期保存同意や音声録音同意として流用しない**。拒否を最優先にする。
@@ -16,7 +17,7 @@
 [Discord VC] → [Bot / Guild・本人同意チェック]
                    ├─ [文字起こし処理 / AWS Transcribe 又は private Whisper Worker]
                    │          └─ [本文 / PostgreSQL（365日以下）] → [検証付きArchive Worker] → [専用非公開S3（365日超）]
-                   └─ [録音長期同意チェック] → [話者別Opusチャンク] → [専用非公開S3 Standard]
+                   └─ [包括同意版・削除フェンス確認] → [話者別Opusチャンク] → [専用非公開S3 Standard]
                                                                    └─ S3 Lifecycle（30日経過後、低頻度クラス）
 [Studio] → [認証・Guild IAM・アクセス毎に本人削除状態を確認するAPI] → [PG / S3]
 [本人削除受付] → [停止・閲覧禁止] → [冪等削除ジョブ] → [PG / S3全Version / 復元コピー / 共有要約]
@@ -28,7 +29,7 @@ S3長期保存領域は、既存のPostgreSQLバックアップ用S3とは**別�
 ### DBモデル（新しい同意・削除フェンスの基盤はmainに導入済み）
 
 - **実装済みの基盤（PR #601）**: `VcRecapExplicitConsent` は `userId + purpose` の複合主キー、`policyVersion`, `consentedAt`, `revokedAt`, `updatedAt` を保持する。目的値は `transcription`, `transcript_long_term`, `audio_long_term`, `openai_audio_processing`。`VcRecapErasureRequest` は `userId`, `requestedAt`, `storageDeletionVerifiedAt`, `updatedAt` を保持する。旧同意からの自動移行はしない。
-- **今後必要**: UIで提示した文書版・本人操作・拒否・撤回の監査証跡と、削除ジョブの詳細状態は現在の同意基盤だけでは足りない。履歴テーブルまたは追記専用監査記録の設計・Migrationを別途実装し、旧ロール付与を本人の新同意と誤認しない。
+- **今後必要**: UIで提示した文書版・本人操作・拒否・撤回の監査証跡と、削除ジョブの詳細状態は現在の同意基盤だけでは足りない。内部の3-purpose行は同一policyVersionで原子的に一括付与/一括撤回し、部分同意や版不一致は拒否する。履歴テーブルまたは追記専用監査記録の設計・Migrationを別途実装し、旧ロール付与を本人の新同意と誤認しない。
 - `VcRecapAudioAsset`: `id`, `sessionId`, `guildId`, `userId`, `objectKey`, `versionId`, `checksum`, `byteLength`, `codec`, `startOffsetMs`, `endOffsetMs`, `storageClass`, `status`。同一話者の連続小発話はチャンク結合し、発言セグメントは `audioAssetId + offsetMs` で参照。
 - `VcRecapArchiveIndex`: `sessionId`, `guildId`, `userId`, `archiveVersion`, `manifestKey`, `objectVersionId`, `segmentCount`, `checksum`, `status`, `archivedAt`。本文オブジェクトはユーザー単位で分け、個人の削除で無関係な人の内容を保持できるようにする。
 - **今後必要**: 冪等な削除ワーカーに `requestId`, `userId`, `scope`, `status`, `attempts`, `errorCode` と対象オブジェクト全バージョンの処理記録を追加する。既存 `VcRecapErasureRequest` のフェンスはあるが、S3消去実行・検証とバックアップ復元時の再適用は未実装。Private作業キューと拒否・削除tombstoneは復元対象のバックアップより**独立した耐久領域**に保持する。
@@ -78,7 +79,7 @@ S3長期保存領域は、既存のPostgreSQLバックアップ用S3とは**別�
 
 ## プライバシーポリシー原稿に必要な項目
 
-文字起こし処理と長期本文保存と音声録音・長期保存を別個の明示同意とし、保存目的（過去のVC閲覧・検索・要約）、保存期間（通常の自動削除期限を設けない）、DB 365日→S3移行、録音初日S3 Standard→30日低頻度階層化、Guild権限・要約/本文/ダウンロード別IAM、CSV/JSON出力、外部AWS/OpenAI送信、本人撤回・削除依頼の受付/確認/完了条件、バックアップ消去・復元時再適用、サービス終了時の処理、第三者と法的例外、法令/Discord/API利用条件との照合を明記。**機能が実装されるまで、本書を「現行で収集/保存中」と説明する文書に流用しない。**
+文字起こし処理・本文長期保存・話者別音声録音と長期保存は、**新しい一つのプライバシーポリシーへの本人の一回の明示同意**でまとめて許可する。個別の3チェックボックスは設けない。保存目的（過去のVC閲覧・検索・要約）、保存期間（通常の自動削除期限を設けない）、DB 365日→S3移行、録音初日S3 Standard→30日低頻度階層化、Guild権限・要約/本文/ダウンロード別IAM、CSV/JSON出力、外部AWS/OpenAI送信、本人撤回・削除依頼の受付/確認/完了条件、バックアップ消去・復元時再適用、サービス終了時の処理、第三者と法的例外、法令/Discord/API利用条件との照合を明記。**機能が実装されるまで、本書を「現行で収集/保存中」と説明する文書に流用しない。**
 
 ## 現時点の実装差分（2026-10-31 GitHub main確認）
 
