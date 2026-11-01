@@ -118,15 +118,18 @@ const options = (entries, changes = {}) => ({
 
 test('two pages and version-bound GETs reconstruct deterministic restore fences', async () => {
   await withBucket(async () => {
-    const mock = mockClient([FIRST, SECOND], [
-      {
-        Versions: [FIRST.item],
-        IsTruncated: true,
-        NextKeyMarker: FIRST.item.Key,
-        NextVersionIdMarker: FIRST.item.VersionId,
-      },
-      { Versions: [SECOND.item], IsTruncated: false },
-    ]);
+    const mock = mockClient(
+      [FIRST, SECOND],
+      [
+        {
+          Versions: [FIRST.item],
+          IsTruncated: true,
+          NextKeyMarker: FIRST.item.Key,
+          NextVersionIdMarker: FIRST.item.VersionId,
+        },
+        { Versions: [SECOND.item], IsTruncated: false },
+      ],
+    );
     const result = await inspectVcRecapErasureLedgerVersions(
       mock.client,
       commands,
@@ -146,12 +149,10 @@ test('two pages and version-bound GETs reconstruct deterministic restore fences'
         ],
       },
     });
-    assert.deepEqual(mock.calls.map((call) => call.operation), [
-      'list',
-      'list',
-      'get',
-      'get',
-    ]);
+    assert.deepEqual(
+      mock.calls.map((call) => call.operation),
+      ['list', 'list', 'get', 'get'],
+    );
     assert.deepEqual(mock.calls[1].input, {
       Bucket: BUCKET,
       Prefix: PREFIX,
@@ -278,8 +279,7 @@ test('empty ledger requires explicit operator acknowledgment of zero independent
 test('matching audio bucket configuration blocks inventory before network operations', async () => {
   await withBucket(async () => {
     const mock = mockClient([FIRST]);
-    process.env['VC_RECAP_ERASURE_LEDGER_BUCKET'] =
-      process.env['VC_RECAP_STORAGE_BUCKET'];
+    process.env['VC_RECAP_ERASURE_LEDGER_BUCKET'] = process.env['VC_RECAP_STORAGE_BUCKET'];
     await assert.rejects(
       inspectVcRecapErasureLedgerVersions(mock.client, commands, options([FIRST])),
     );
