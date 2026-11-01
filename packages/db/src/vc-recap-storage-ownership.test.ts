@@ -146,27 +146,30 @@ test('本人同意・従来同意・削除障壁を確認してから予約す�
 
 // prettier-ignore
 test('本人が削除要求済みなら保存完了を拒否し、未完了登録を保持する', async () => {
-  const blocked = setupFake({ fenced: true });
-  assert.equal(
-    await commitVcRecapStorageObject(blocked.prisma, {
-      userId: USER_ID,
-      id: 'owner-row-1',
-      versionId: 's3-version-1',
-    }),
-    false,
-  );
-  assert.deepEqual(blocked.operations, ['owner-lock']);
+  await withStorageEnvironment(async () => {
+    const blocked = setupFake({ fenced: true });
+    assert.equal(
+      await commitVcRecapStorageObject(blocked.prisma, {
+        userId: USER_ID,
+        id: 'owner-row-1',
+        versionId: 's3-version-1',
+      }),
+      false,
+    );
+    assert.deepEqual(blocked.operations, ['owner-lock']);
 
-  const allowed = setupFake();
-  assert.equal(
-    await commitVcRecapStorageObject(allowed.prisma, {
-      userId: USER_ID,
-      id: 'owner-row-1',
-      versionId: 's3-version-1',
-    }),
-    true,
-  );
-  assert.deepEqual(allowed.operations, ['owner-lock', 'commit']);
+    const allowed = setupFake();
+    assert.equal(
+      await commitVcRecapStorageObject(allowed.prisma, {
+        userId: USER_ID,
+        id: 'owner-row-1',
+        versionId: 's3-version-1',
+      }),
+      true,
+    );
+    assert.deepEqual(allowed.operations, ['owner-lock', 'commit']);
+
+  });
 });
 
 // prettier-ignore
