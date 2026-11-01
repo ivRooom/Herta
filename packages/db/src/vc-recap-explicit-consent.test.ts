@@ -6,6 +6,7 @@ import {
   setVcRecapOpenAiAudioConsent,
   isVcRecapLongTermEnrollmentEnabled,
   getVcRecapLongTermConsentView,
+  getVcRecapExplicitConsentCapabilities,
   updateVcRecapLongTermConsentChoices,
   VC_RECAP_OPENAI_AUDIO_POLICY_VERSION,
   requestVcRecapErasure,
@@ -379,4 +380,70 @@ test('以前のポリシー版で未撤回の同意は、現在版の同意と�
   });
   assert.equal(view.hasUnrevokedLongTermGrant, true);
   assert.equal(view.erasurePending, false);
+});
+
+test('長期保存がOFFならDBを読まず全capabilityを拒否', async () => {
+  const previousEnabled = process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
+  const previousVersion = process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'];
+  try {
+    process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'] = 'false';
+    process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'] = VC_RECAP_LONG_TERM_CONSENT_VERSION;
+    const client = {
+      vcRecapExplicitConsent: {
+        findMany: async () => {
+          throw new Error('disabled capability must not query consent');
+        },
+      },
+    } as unknown as PrismaClient;
+    assert.deepEqual(await getVcRecapExplicitConsentCapabilities(client, 'synthetic-user'), {
+      canTranscribe: false,
+      canRetainTranscriptLongTerm: false,
+      canRecordAudioLongTerm: false,
+    });
+  } finally {
+    if (previousEnabled === undefined) {
+      delete process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
+    } else {
+      process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'] = previousEnabled;
+    }
+    if (previousVersion === undefined) {
+      delete process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'];
+    } else {
+      process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'] = previousVersion;
+    }
+  }
+});
+
+test('3用途別同意は音声を暗黙に付与しない', async () => {
+  const previousEnabled = process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
+  const previousVersion = process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'];
+  try {
+    process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'] = 'true';
+    process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'] = VC_RECAP_LONG_TERM_CONSENT_VERSION;
+    const client = {
+      vcRecapExplicitConsent: {
+        findMany: async () => [consent('transcription'), consent('transcript_long_term')],
+      },
+      userDataConsent: {
+        findUnique: async () => ({ voiceTranscriptionConsent: true, updatedAt: new Date() }),
+      },
+      vcRecapErasureRequest: { findUnique: async () => null },
+    } as unknown as PrismaClient;
+    assert.deepEqual(await getVcRecapExplicitConsentCapabilities(client, 'synthetic-user'), {
+      canTranscribe: true,
+      canRetainTranscriptLongTerm: true,
+      canRecordAudioLongTerm: false,
+    });
+  } finally {
+    if (previousEnabled === undefined) {
+      delete process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
+    } else {
+      process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'] = previousEnabled;
+    }
+    if (previousVersion === undefined) {
+      delete process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'];
+    } else {
+      process.env['VC_RECAP_LONG_TERM_PUBLISHED_POLICY_VERSION'] = previousVersion;
+    }
+  }
 });
