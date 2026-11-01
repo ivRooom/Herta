@@ -64,8 +64,7 @@ export async function handleDailyBonusFortune(
     if (!channel?.isTextBased() || !('messages' in channel))
       throw new Error('Missing daily announcement channel');
     const original = await channel.messages.fetch(interaction.message.id);
-    if (original.author.id !== ctx.client.user?.id)
-      throw new Error('Foreign daily announcement');
+    if (original.author.id !== ctx.client.user?.id) throw new Error('Foreign daily announcement');
 
     if (
       !isCurrent() ||
@@ -82,6 +81,8 @@ export async function handleDailyBonusFortune(
     // Read-only fortune flow: never invoke the daily claim/wallet mutation.
     await participationFortune(ctx, interaction, date);
   } catch {
-    await interaction.editReply('今日の運勢を確認できませんでした。/fortune today から再試行してください。');
+    await interaction.editReply(
+      '今日の運勢を確認できませんでした。/fortune today から再試行してください。',
+    );
   }
 }
