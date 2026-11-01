@@ -5,7 +5,7 @@ import { lockVcRecapStorageOwner } from './vc-recap-storage-lock.js';
  * A proposed version. It MUST be updated to the actually published policy
  * before enabling ingestion. The consent table is initially empty (fail closed).
  */
-export const VC_RECAP_LONG_TERM_CONSENT_VERSION = 'vc-recap-long-term-2026-10-30-v1';
+export const VC_RECAP_LONG_TERM_CONSENT_VERSION = 'vc-recap-comprehensive-2026-11-01-v1';
 
 export const VC_RECAP_CONSENT_PURPOSES = [
   'transcription',
@@ -22,6 +22,21 @@ export interface VcRecapExplicitConsentRecord {
   revokedAt: Date | null;
 }
 
+const LONG_TERM_PURPOSES = ['transcription', 'transcript_long_term', 'audio_long_term'] as const;
+
+/** All three purposes come from the same affirmative policy action; partial legacy rows deny. */
+export function hasVcRecapComprehensiveConsent(
+  records: readonly VcRecapExplicitConsentRecord[],
+  policyVersion = VC_RECAP_LONG_TERM_CONSENT_VERSION,
+): boolean {
+  const grants = LONG_TERM_PURPOSES.map((purpose) =>
+    records.find((row) => row.purpose === purpose && row.policyVersion === policyVersion && row.consentedAt !== null && row.revokedAt === null),
+  );
+  if (grants.some((grant) => !grant)) return false;
+  const issuedAt = grants[0]?.consentedAt?.getTime();
+  return issuedAt !== undefined && grants.every((grant) => grant?.consentedAt?.getTime() === issuedAt);
+}
+
 export interface VcRecapConsentCapabilities {
   canTranscribe: boolean;
   canRetainTranscriptLongTerm: boolean;
@@ -34,20 +49,11 @@ export function evaluateVcRecapExplicitConsent(
   hasLegacyExplicitRefusal: boolean,
   policyVersion = VC_RECAP_LONG_TERM_CONSENT_VERSION,
 ): VcRecapConsentCapabilities {
-  const allowed = (purpose: VcRecapConsentPurpose) =>
-    !hasLegacyExplicitRefusal &&
-    records.some(
-      (record) =>
-        record.purpose === purpose &&
-        record.policyVersion === policyVersion &&
-        record.consentedAt !== null &&
-        record.revokedAt === null,
-    );
-  const canTranscribe = allowed('transcription');
+  const granted = !hasLegacyExplicitRefusal && hasVcRecapComprehensiveConsent(records, policyVersion);
   return {
-    canTranscribe,
-    canRetainTranscriptLongTerm: canTranscribe && allowed('transcript_long_term'),
-    canRecordAudioLongTerm: allowed('audio_long_term'),
+    canTranscribe: granted,
+    canRetainTranscriptLongTerm: granted,
+    canRecordAudioLongTerm: granted,
   };
 }
 
@@ -173,8 +179,6 @@ export interface VcRecapLongTermChoices {
   audioLongTerm: boolean;
 }
 
-const LONG_TERM_PURPOSES = ['transcription', 'transcript_long_term', 'audio_long_term'] as const;
-
 export interface VcRecapLongTermConsentView {
   choices: VcRecapLongTermChoices;
   legacyConsent: boolean;
@@ -198,20 +202,15 @@ export async function getVcRecapLongTermConsentView(
     }),
     prisma.vcRecapErasureRequest.findUnique({ where: { userId }, select: { userId: true } }),
   ]);
-  const allowed = (purpose: (typeof LONG_TERM_PURPOSES)[number]) =>
+  const granted =
     erasure === null &&
-    records.some(
-      (record) =>
-        record.purpose === purpose &&
-        record.policyVersion === VC_RECAP_LONG_TERM_CONSENT_VERSION &&
-        record.consentedAt !== null &&
-        record.revokedAt === null,
-    );
+    legacy?.voiceTranscriptionConsent === true &&
+    hasVcRecapComprehensiveConsent(records);
   return {
     choices: {
-      transcription: allowed('transcription'),
-      transcriptLongTerm: allowed('transcript_long_term'),
-      audioLongTerm: allowed('audio_long_term'),
+      transcription: granted,
+      transcriptLongTerm: granted,
+      audioLongTerm: granted,
     },
     legacyConsent: legacy?.voiceTranscriptionConsent ?? false,
     erasurePending: erasure !== null,
@@ -227,32 +226,29 @@ export type VcRecapLongTermConsentUpdateResult =
   | 'updated'
   | 'erasure_requested'
   | 'erasure_pending'
-  | 'legacy_consent_required'
   | 'enrollment_disabled'
   | 'invalid';
 
 /**
- * Separate, affirmative choices for the three new processing purposes.
- * Legacy consent is never migrated or copied here.
+ * A single affirmative privacy-policy action covers all three future purposes.
+ * The legacy three-boolean primitive is kept for type-compatibility only:
+ * mixed/partial grants fail closed and must never reach persistence.
  *
- * Withdrawal of any previously granted long-term purpose creates a durable
- * erasure barrier and revokes ALL future-purpose grants. Re-enrollment is
- * blocked while that barrier exists; it is not cleared by a new click.
- * No storage deletion is claimed until a dedicated worker verifies it.
+ * Withdrawals revoke both the future purposes and the current 30-day voice
+ * transcript consent, insert a durable erasure fence and delete legacy text
+ * in one owner-locked transaction. The fence remains until independently
+ * verified deletion: a new click cannot silently erase it.
  */
 export async function updateVcRecapLongTermConsentChoices(
   prisma: PrismaClient,
   userId: string,
   choices: VcRecapLongTermChoices,
 ): Promise<VcRecapLongTermConsentUpdateResult> {
-  if (choices.transcriptLongTerm && !choices.transcription) return 'invalid';
-  const requested = {
-    transcription: choices.transcription,
-    transcript_long_term: choices.transcriptLongTerm,
-    audio_long_term: choices.audioLongTerm,
-  } as const;
-  const wantsGrant = Object.values(requested).some(Boolean);
-  // Revocation must remain possible even when enrollment is disabled.
+  if (
+    choices.transcription !== choices.transcriptLongTerm ||
+    choices.transcription !== choices.audioLongTerm
+  ) return 'invalid';
+  const wantsGrant = choices.transcription;
   return prisma.$transaction(async (tx) => {
     await lockVcRecapStorageOwner(tx, userId);
     const [erasure, legacy, existing] = await Promise.all([
@@ -267,14 +263,11 @@ export async function updateVcRecapLongTermConsentChoices(
       }),
     ]);
     if (erasure !== null) return 'erasure_pending';
-    const active = (purpose: string) =>
-      existing.some(
-        (row) => row.purpose === purpose && row.consentedAt !== null && row.revokedAt === null,
-      );
-    const withdrawing = LONG_TERM_PURPOSES.some(
-      (purpose) => active(purpose) && !requested[purpose],
-    );
-    if (withdrawing) {
+    if (!wantsGrant) {
+      const hadConsent =
+        legacy?.voiceTranscriptionConsent === true ||
+        existing.some((row) => row.consentedAt !== null && row.revokedAt === null);
+      if (!hadConsent) return 'updated';
       const now = new Date();
       await tx.vcRecapErasureRequest.upsert({
         where: { userId },
@@ -285,28 +278,58 @@ export async function updateVcRecapLongTermConsentChoices(
         where: { userId },
         data: { consentedAt: null, revokedAt: now },
       });
+      await tx.userDataConsent.upsert({
+        where: { userId },
+        create: { userId, voiceTranscriptionConsent: false, voiceTranscriptRetentionConsentedAt: null },
+        update: { voiceTranscriptionConsent: false, voiceTranscriptRetentionConsentedAt: null },
+      });
+      await tx.vcRecapTranscriptSegment.deleteMany({ where: { userId } });
       return 'erasure_requested';
     }
-    if (wantsGrant && !isVcRecapLongTermEnrollmentEnabled()) return 'enrollment_disabled';
-    if (wantsGrant && !legacy?.voiceTranscriptionConsent) return 'legacy_consent_required';
+    if (!isVcRecapLongTermEnrollmentEnabled()) return 'enrollment_disabled';
+    const now = new Date();
+    await tx.userDataConsent.upsert({
+      where: { userId },
+      create: {
+        userId,
+        voiceTranscriptionConsent: true,
+        voiceTranscriptRetentionConsentedAt: now,
+      },
+      update: {
+        voiceTranscriptionConsent: true,
+        voiceTranscriptRetentionConsentedAt: now,
+      },
+    });
     for (const purpose of LONG_TERM_PURPOSES) {
-      if (!requested[purpose]) continue;
       await tx.vcRecapExplicitConsent.upsert({
         where: { userId_purpose: { userId, purpose } },
         create: {
           userId,
           purpose,
           policyVersion: VC_RECAP_LONG_TERM_CONSENT_VERSION,
-          consentedAt: new Date(),
+          consentedAt: now,
           revokedAt: null,
         },
         update: {
           policyVersion: VC_RECAP_LONG_TERM_CONSENT_VERSION,
-          consentedAt: new Date(),
+          consentedAt: now,
           revokedAt: null,
         },
       });
     }
     return 'updated';
+  });
+}
+
+/** The UI/API exposes only one accepted boolean, not three independent choices. */
+export async function updateVcRecapComprehensiveConsent(
+  prisma: PrismaClient,
+  userId: string,
+  accepted: boolean,
+): Promise<VcRecapLongTermConsentUpdateResult> {
+  return updateVcRecapLongTermConsentChoices(prisma, userId, {
+    transcription: accepted,
+    transcriptLongTerm: accepted,
+    audioLongTerm: accepted,
   });
 }
