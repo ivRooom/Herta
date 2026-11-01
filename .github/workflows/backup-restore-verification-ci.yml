@@ -9,6 +9,8 @@ on:
     paths:
       - 'deploy/scripts/verify-backup-restore.sh'
       - 'deploy/scripts/verify-backup-restore.test.sh'
+      - 'deploy/scripts/verify-vc-recap-restore-fences.py'
+      - 'deploy/scripts/verify-vc-recap-restore-fences.test.py'
       - 'deploy/systemd/herta-backup-restore-verification.service'
       - 'deploy/systemd/herta-backup-restore-verification.timer'
       - 'deploy/systemd/backup-restore-verification.env.example'
@@ -19,6 +21,8 @@ on:
     paths:
       - 'deploy/scripts/verify-backup-restore.sh'
       - 'deploy/scripts/verify-backup-restore.test.sh'
+      - 'deploy/scripts/verify-vc-recap-restore-fences.py'
+      - 'deploy/scripts/verify-vc-recap-restore-fences.test.py'
       - 'deploy/systemd/herta-backup-restore-verification.service'
       - 'deploy/systemd/herta-backup-restore-verification.timer'
       - 'deploy/systemd/backup-restore-verification.env.example'
@@ -51,6 +55,12 @@ jobs:
       - name: 外部依存をモックして動作を検証
         shell: bash
         run: bash deploy/scripts/verify-backup-restore.test.sh
+
+      - name: VC Recap restore fence reconciliation (synthetic only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s deploy/scripts -p 'verify-vc-recap-restore-fences.test.py' -v
 
       - name: systemd unitを検証
         shell: bash
