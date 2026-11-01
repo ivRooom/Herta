@@ -97,15 +97,10 @@ test('local Whisper refuses a persistent erasure fence even after an old consent
 
 test('local Whisper rejects consent revoked while waiting for the owner lock', async () => {
   const state = { affirmative: true, personalRetention: true, erasure: false };
-  const fake = fakePrisma({
-    onLock: () => {
-      state.affirmative = false;
-      state.personalRetention = false;
-    },
-  });
   // Capture the DB value after lock acquisition, rather than the stale
   // pre-transcription consent: use a dedicated mock with mutable state.
   const calls: string[] = [];
+  let inserts = 0;
   const tx = {
     $queryRawUnsafe: async () => {
       calls.push('lock');
@@ -125,6 +120,7 @@ test('local Whisper rejects consent revoked while waiting for the owner lock', a
     vcRecapErasureRequest: { findUnique: async () => null },
     vcRecapTranscriptSegment: {
       create: async () => {
+        inserts += 1;
         throw new Error('must not insert after withdrawal');
       },
     },
@@ -134,7 +130,7 @@ test('local Whisper rejects consent revoked while waiting for the owner lock', a
   } as unknown as PrismaClient;
   assert.equal(await appendVcRecapLocalWhisperSegmentIfConsented(prisma, SEGMENT), false);
   assert.deepEqual(calls, ['lock', 'consent-after-lock']);
-  assert.equal(fake.getInserts(), 0);
+  assert.equal(inserts, 0);
 });
 
 test('local Whisper fails closed on consent DB outage, without writing a segment', async () => {
