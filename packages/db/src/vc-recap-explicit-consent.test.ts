@@ -3,6 +3,7 @@ import type { PrismaClient } from '@prisma/client';
 import test from 'node:test';
 import {
   evaluateVcRecapExplicitConsent,
+  getVcRecapExplicitConsentCapabilities,
   setVcRecapOpenAiAudioConsent,
   isVcRecapLongTermEnrollmentEnabled,
   getVcRecapLongTermConsentView,
@@ -516,4 +517,21 @@ test('新ポリシーへの初回拒否を永続化し、既存データがな�
   } as unknown as PrismaClient;
   assert.equal(await updateVcRecapComprehensiveConsent(client, '123456789012345678', false), 'updated');
   assert.deepEqual(operations, ['owner-lock', 'explicit-refusal']);
+});
+
+test('包括同意レコードが存在しても新機能受付OFFなら実効権限はすべて拒否', async () => {
+  const previous = process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
+  delete process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'];
+  const fake = {
+    vcRecapExplicitConsent: { findMany: async () => { throw new Error('Must fail closed before DB'); } },
+  } as unknown as PrismaClient;
+  try {
+    assert.deepEqual(await getVcRecapExplicitConsentCapabilities(fake, '123456789012345678'), {
+      canTranscribe: false,
+      canRetainTranscriptLongTerm: false,
+      canRecordAudioLongTerm: false,
+    });
+  } finally {
+    if (previous !== undefined) process.env['VC_RECAP_LONG_TERM_ENROLLMENT_ENABLED'] = previous;
+  }
 });
