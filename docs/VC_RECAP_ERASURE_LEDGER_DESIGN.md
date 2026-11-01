@@ -86,6 +86,15 @@ DBが復元されると、そのバックアップ取得後に本人が行った
 - SDK実Credential、AWS実Bucket、完全性を保証する署名済み外部manifest/独立監査サービス、Versioning/Object Lock/IAM、分散Quarantine、本当のPG Replay/全版消去は**いずれも未実装**。実Storage/IAMの適用は#646の個別承認後のみ。
 - AWS公式仕様: [ListObjectVersions](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectVersions.html) / [GetObject VersionId](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html)。
 
+## 独立監査の署名・公開鍵Pin照合（#694、合成専用）
+
+- `deploy/scripts/vc-recap-erasure-signed-audit.mjs` は、台帳とPostgreSQLとは**別の信頼経路で配布した** Ed25519公開鍵（PEM）と、別経路でピンしたSPKI SHA256 fingerprintを照合して監査manifestの署名を確認する。署名用秘密鍵をWorker/Bot/Studio/CIに配らない。
+- manifest payloadは `kind`, `auditId`, `restoreRunId`, `ledgerBucket`, `generatedAt`, `objectCount`, `manifestSha256` の厳密な7フィールドのみを受け付ける。UTC時刻の正当性、別復元Runとの混入、未来/古い署名、Bucket差替、署名改変/鍵差替/件数/指紋改変を拒否する。Ed25519は正規化JSONバイトの署名。
+- 署名検証後の `expectedCount`, `expectedManifestSha256`, `generatedAt` のみを既存 `inspectVcRecapErasureLedgerVersions` に渡し、S3 Version完全列挙・各実VersionのGet・SHA256が一致することを合成Portで検証する。成功しても常に `canResumeTraffic:false`。
+- `restoreRunId` と公開鍵Pinは「復元されたPostgreSQL/同じS3 bucketのmanifest」から取得してはならない。台帳そのものに格納された鍵や署名を一緒に信用する構成は不適。CIは使い捨てテスト鍵を生成して署名を検証するが、本番の監査鍵/署名Service/署名済manifestの独立保存先は**未作成**。
+- **重要な残存脅威**: 署名は「誰がどのmanifestに署名したか」の真正性確認に過ぎず、署名者による全レコードの独立数え上げ・永続完全性・最後のmanifest以降のPut・既知の最新manifestへのanti-rollback保護を保証しない。正しい署名済古いmanifestの再利用、署名鍵漏洩、S3 Versioningのdelete marker、削除されたobjectの見落とし等を防ぐには **独立監査の生成・配布・単調増加チェックポイント・IAM/Object Lock/別管理境界** が必須。
+- 結果が成功しても新録音/長期保持の本番ON、実個人削除受理、隔離解除のGo判断に使わない。新AWSリソース/IAM/課金の変更は#646で別途承認を得る。
+
 ## 次のIssue依存
 
 - #694: 認可済み外部Bucket/Role/IAM設計と見積りレビュー → write-first永続化 → 障害・同時操作テスト。**外部作成は別承認**。
