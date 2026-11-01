@@ -25,9 +25,7 @@
 {
   "kind": "vc-recap-independent-erasure-ledger-v1",
   "generatedAt": "2026-11-01T09:30:00Z",
-  "entries": [
-    { "userId": "123456789012345678", "requestedAt": "2026-11-01T08:30:00Z" }
-  ]
+  "entries": [{ "userId": "123456789012345678", "requestedAt": "2026-11-01T08:30:00Z" }]
 }
 ```
 
