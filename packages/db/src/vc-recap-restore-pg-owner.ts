@@ -127,16 +127,14 @@ export async function withVcRecapRestorePgOwnerTransaction(
               where: { userId },
               data: { consentedAt: null, revokedAt },
             });
-            // Blocks commitVcRecapStorageObject's state='reserved' transition.
-            // A remote PUT already in flight still needs a separate S3 purge.
-            syntheticStage = 'fence reservations';
-            await tx.vcRecapStorageObject.updateMany({
-              where: { userId, state: 'reserved' },
-              data: { state: 'erasure_pending' },
-            });
+            // Do not invent an invalid state: the live DB CHECK permits only
+            // 'reserved'/'committed'. The newly persisted erasure fence blocks
+            // future reserve/commit under the shared owner lock. Existing
+            // reserved rows remain visible, requiring a later verified
+            // sweeper. verifyFenceAndRevocations() then reports FALSE.
           },
           async verifyFenceAndRevocations() {
-            syntheticStage = 'verify proof';
+            syntheticStage = 'verify outstanding reservations';
             const [fence, legacy, explicit, pending] = await Promise.all([
               tx.vcRecapErasureRequest.findUnique({
                 where: { userId },
