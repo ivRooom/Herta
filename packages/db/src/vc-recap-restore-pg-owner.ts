@@ -70,6 +70,7 @@ export async function withVcRecapRestorePgOwnerTransaction(
     await prisma.$transaction(
       async (tx) => {
         await lockVcRecapStorageOwner(tx, userId);
+        const replay = { expectedRequestedAt: null as string | null };
         const port: VcRecapRestorePgOwnerPort = {
           async readFence() {
             const fence = await tx.vcRecapErasureRequest.findUnique({
@@ -121,6 +122,7 @@ export async function withVcRecapRestorePgOwnerTransaction(
             // future reserve/commit under the shared owner lock. Existing
             // reserved rows remain visible, requiring a later verified
             // sweeper. verifyFenceAndRevocations() then reports FALSE.
+            replay.expectedRequestedAt = latest.toISOString();
           },
           async verifyFenceAndRevocations() {
             const [fence, legacy, explicit, pending] = await Promise.all([
@@ -159,6 +161,20 @@ export async function withVcRecapRestorePgOwnerTransaction(
           },
         };
         await callback(port);
+        // Defense in depth: even a caller that forgets to inspect the proof
+        // must not commit an incomplete replay or an unresolved upload.
+        const proof = await port.verifyFenceAndRevocations();
+        if (
+          replay.expectedRequestedAt === null ||
+          proof.userId !== userId ||
+          proof.requestedAt !== replay.expectedRequestedAt ||
+          proof.storageDeletionVerifiedAt !== null ||
+          !proof.legacyConsentRevoked ||
+          !proof.purposeConsentsRevoked ||
+          !proof.pendingWritesCancelled
+        ) {
+          throw new Error('Incomplete restore owner fence');
+        }
       },
       { maxWait: 5000, timeout: 10000 },
     );
