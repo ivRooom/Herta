@@ -47,11 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      - name: Temporary markdown-format diff (remove before merge)
-        run: |
-          pnpm exec prettier docs/VC_RECAP_RESTORE_TRAFFIC_GATE.md > /tmp/expected-traffic-gate.md
-          diff -u docs/VC_RECAP_RESTORE_TRAFFIC_GATE.md /tmp/expected-traffic-gate.md || true
-
       - name: Format Check
         run: pnpm format:check
 
