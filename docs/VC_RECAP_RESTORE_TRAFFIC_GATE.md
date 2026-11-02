@@ -9,6 +9,7 @@
 - `bot.privacy-voice-consent` / `bot.privacy-openai-consent` — 許可と撤回が同一handler内の複合操作。実装: `apps/bot/src/commands/privacy.ts`。承認と保護撤回を別々にfenceする必要がある。
 - `bot.privacy-delete` — 本人削除要求は保護操作だが、独立Ledgerへのwrite-first・全コピー消去の検証は未完成。実装: `executeDeleteVoiceData`。
 - `bot.privacy-export` / `bot.privacy-web-link` — 本人JSONセッション/発話/要約と同意変更URLは別の情報出力経路。復元epoch・権限を応答直前まで検査する必要がある。
+- `bot.lifecycle-stop` — 自動音声状態変化 `handleVoiceStateUpdate` とPlugin `onDisable` は `/vc-recap stop` とは別の入口。停止後は同じ `stopVcRecap` でセグメント読み出し・要約まで実行されるため、緊急停止を維持しながらデータ出力/外部AIを独立遮断する必要がある。今回のCIは静的確認のみ。
 - `bot.transcript-write` / `bot.summary-write` — 現行30日。実装: `apps/bot/src/voice/vc-recap-transcriber.ts`、`vc-recap-speaker-stream.ts`、`vc-recap-summarizer.ts`、`packages/db/src/vc-recap.ts`。未接続: 発話/書込前・要約前の跨サービス障壁。
 - `studio.list` / `studio.detail` — 現行30日。実装: `apps/studio/src/lib/vc-recap-studio.ts` と `apps/studio/src/app/dashboard/guilds/[guildId]/vc-recap/`。未接続: 表示前・DB参照直前の遮断。
 - `studio.consent-read` / `studio.consent-write` — 同意GETと管理者の許可/撤回POSTを別経路として記録。実装: `apps/studio/src/app/api/guilds/[guildId]/vc-recap/consent/route.ts`。未接続: 認可後・DB参照前・変更前の独立epoch検証。
@@ -20,7 +21,7 @@
 - `storage.signed-url` — **本番未完成**。予定: #585のS3音声再生/署名URL。未接続: 署名URL再利用・TTL・Cache-Control・復元中のアクセス。
 - `cache.read-write` — 現行/要棚卸し。予定: 将来索引/Redis/CDNと既存Studio/HTTPキャッシュ。未接続: DB外・CDN/Browser cacheの再公開。
 
-一覧は **設計上の経路識別子** であり、実在する22種類の独立HTTP Endpointを意味しない。詳細のソース根拠と安全区分は `docs/VC_RECAP_ROUTE_INVENTORY.md`。この22 IDでも完全なcall graphや経路遮断は立証できず、親 #728 / #734 で実配線とE2Eが必要。
+一覧は **設計上の経路識別子** であり、実在する23種類の独立HTTP Endpointを意味しない。詳細のソース根拠と安全区分は `docs/VC_RECAP_ROUTE_INVENTORY.md`。この23 IDでも完全なcall graphや経路遮断は立証できず、親 #728 / #734 で実配線とE2Eが必要。
 
 ## offline-only Portと安全区分
 
@@ -30,7 +31,7 @@
 
 `deploy/scripts/vc-recap-restore-traffic-gate.mjs`:
 
-- 22種類の既知のRouteのみ認識。unknown、nil/unavailable、壊れたSchema、別Restore runId、単調epoch不一致、破損日時、期限切れ、future、5分超の証拠を **deny**。
+- 23種類の既知のRouteのみ認識。unknown、nil/unavailable、壊れたSchema、別Restore runId、単調epoch不一致、破損日時、期限切れ、future、5分超の証拠を **deny**。
 - 受信する独立AuthorityのStateは `kind/scope/restoreRunId/epoch/status/issuedAt/expiresAt/clearance` に限定。**本当に独立したストレージであることの確認と署名検証は、未実装のbackend adapterの責務**。復元DB・単一backup・地元の古いcacheは信頼元にしない。
 - 2段階の注入Port `authenticateIndependentControl` と `authenticatePinnedEpoch` は監査真正性・最新アンチロールバックcheckpointを要求。今回のmockが真値を返しても本番権限は付与しない。
 - `quarantined` / `restore-pending` は常に deny。すべての独立証拠が揃った `review-pending` でさえ `operator-review-required`（**canResumeTraffic=false**）まで。これ自体は配信のGo/Allowではない。

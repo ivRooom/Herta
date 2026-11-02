@@ -36,6 +36,26 @@
       "action": "mixed"
     },
     {
+      "route": "bot.lifecycle-stop",
+      "state": "live",
+      "action": "mixed",
+      "evidence": [
+        {
+          "path": "apps/bot/src/plugins/vc-recap.ts",
+          "symbol": "async function handleVoiceStateUpdate("
+        },
+        {
+          "path": "apps/bot/src/plugins/vc-recap.ts",
+          "symbol": "async onDisable(context) {"
+        },
+        {
+          "path": "apps/bot/src/voice/vc-recap-session-manager.ts",
+          "symbol": "export async function stopVcRecap("
+        }
+      ],
+      "gap": "Voice state auto-stop and plugin onDisable bypass the slash-command executeStop; keep immediate capture stop available while independently guarding segment reads, summary generation, external AI and output."
+    },
+    {
       "route": "bot.privacy-voice-consent",
       "state": "live",
       "action": "mixed",
