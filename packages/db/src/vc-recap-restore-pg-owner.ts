@@ -42,10 +42,7 @@ export function parseVcRecapPgFenceTimestamp(value: string): Date {
     throw new Error('Unsupported restore timestamp precision');
   }
   const parsed = new Date(value);
-  if (
-    !Number.isFinite(parsed.getTime()) ||
-    parsed.toISOString().slice(0, 19) !== match[1]
-  ) {
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 19) !== match[1]) {
     throw new Error('Invalid restore timestamp');
   }
   return parsed;
@@ -158,8 +155,7 @@ export async function withVcRecapRestorePgOwnerTransaction(
             return {
               userId,
               requestedAt: fence?.requestedAt.toISOString() ?? '',
-              storageDeletionVerifiedAt:
-                fence?.storageDeletionVerifiedAt?.toISOString() ?? null,
+              storageDeletionVerifiedAt: fence?.storageDeletionVerifiedAt?.toISOString() ?? null,
               legacyConsentRevoked:
                 legacy === null ||
                 (!legacy.voiceTranscriptionConsent &&
@@ -184,7 +180,9 @@ export async function withVcRecapRestorePgOwnerTransaction(
         error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
           ? error.code
           : 'none';
-      console.error('Synthetic restore PG failure category: ' + kind + '/' + code + ', stage=' + syntheticStage);
+      console.error(
+        'Synthetic restore PG failure category: ' + kind + '/' + code + ', stage=' + syntheticStage,
+      );
     }
     throw new Error('VC Recap restore PostgreSQL owner transaction unverified');
   }
