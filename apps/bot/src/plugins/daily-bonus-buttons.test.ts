@@ -8,7 +8,7 @@ describe('09:00 Discord daily bonus action row', () => {
   ])('shows all three buttons with V2 enabled=%s', (enabled, questionId) => {
     const row = dailyBonusActionRow('2026-11-02', enabled).toJSON();
     expect(row.components).toHaveLength(3);
-    expect(row.components.map((component) => component.custom_id)).toEqual([
+    expect(row.components.map((component) => ('custom_id' in component ? component.custom_id : null))).toEqual([
       'daily-bonus:2026-11-02',
       questionId,
       'daily-bonus:fortune:2026-11-02',
