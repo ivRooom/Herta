@@ -44,7 +44,7 @@ passing は「既知の設計routeとソース内文字列が一致し、不正�
 - **mixed**: stopには音声キャプチャ停止と要約/外部AI連携が混在し、同意のPOST/Discordにも許可と撤回が混在する。**操作単位/分岐単位で runtime 実装を分離**する。全体に「常時通す」または「常時拒否」を適用しない。
 - **unresolved**: `api.transcript-read` と `cache.read-write`。現時点で実装入口・消去対象が未確定で、bypass=0 と断定しない。
 
-現時点: live 17 / dormant 1 / planned 3 / unresolved 2 = **22**。上記操作分類は**試験用メタデータ**で、稼働中の Bot / API / Studio / Worker には一切適用されない。
+現時点: live 17 / dormant 1 / planned 3 / unresolved 2 = **23**。上記操作分類は**試験用メタデータ**で、稼働中の Bot / API / Studio / Worker には一切適用されない。
 
 ## 実運用まで残るもの（Issue正本）
 
