@@ -167,8 +167,17 @@ export async function withVcRecapRestorePgOwnerTransaction(
       },
       { maxWait: 5000, timeout: 10000 },
     );
-  } catch {
-    // No owner identifiers, database exceptions or private state in error text.
+  } catch (error) {
+    // A synthetic-CI-only class/code diagnostic; never reveal error messages,
+    // query text, private user identifiers or connection strings.
+    if (process.env['CI'] === 'true' && process.env['HERTA_VALORANT_TEST_DATABASE_URL']) {
+      const kind = error instanceof Error ? error.name : 'UnknownError';
+      const code =
+        error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
+          ? error.code
+          : 'none';
+      console.error('Synthetic restore PG failure category: ' + kind + '/' + code);
+    }
     throw new Error('VC Recap restore PostgreSQL owner transaction unverified');
   }
 }
