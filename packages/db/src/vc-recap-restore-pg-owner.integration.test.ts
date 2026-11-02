@@ -147,16 +147,24 @@ test('real isolated PostgreSQL: owner-locked replay is atomic, monotonic, retrya
       assert.equal((await prisma.userDataConsent.findUniqueOrThrow({ where: { userId: other } })).voiceTranscriptionConsent, true);
       assert.equal((await prisma.vcRecapStorageObject.findFirstOrThrow({ where: { userId: other } })).state, 'reserved');
 
-      // The actual adapter uses the same advisory lock as consent and storage writers.
+      // The restore adapter and consent/storage writers use one owner lock.
+      // Start the competing replay while the lock is held, but DO NOT await
+      // it inside the holder transaction: that creates a test deadlock.
+      let replayStarted = false;
+      let competingReplay: Promise<void> | undefined;
       await prisma.$transaction(async (held) => {
         await lockVcRecapStorageOwner(held, other);
-        await assert.rejects(
-          withVcRecapRestorePgOwnerTransaction(prisma, runId, other, async (tx) => {
-            await tx.upsertFenceAndRevoke(instruction(other));
-          }),
-          /transaction unverified/,
-        );
-      }, { timeout: 12000, maxWait: 5000 });
+        competingReplay = withVcRecapRestorePgOwnerTransaction(prisma, runId, other, async (tx) => {
+          replayStarted = true;
+          await tx.upsertFenceAndRevoke(instruction(other));
+          throw new Error('synthetic rollback after lock acquisition');
+        });
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        assert.equal(replayStarted, false);
+      }, { timeout: 10000, maxWait: 5000 });
+      assert(competingReplay);
+      await assert.rejects(competingReplay, /transaction unverified/);
+      assert.equal(replayStarted, true);
       assert.equal(await prisma.vcRecapErasureRequest.count({ where: { userId: other } }), 0);
       // Simulate a separately verified sweeper of the synthetic pending key.
       await prisma.vcRecapStorageObject.deleteMany({
