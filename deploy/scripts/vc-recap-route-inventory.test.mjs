@@ -228,7 +228,12 @@ test('unknown, misclassified and falsely protected actions fail source inventory
 });
 
 test('all token and persistent-button ingress stay mapped and cannot become protective', () => {
-  for (const route of ['bot.consent-button', 'studio.token-consent-page', 'studio.token-consent-write', 'studio.token-long-term-write']) {
+  for (const route of [
+    'bot.consent-button',
+    'studio.token-consent-page',
+    'studio.token-consent-write',
+    'studio.token-long-term-write',
+  ]) {
     const missing = structuredClone(inventory);
     missing.routes = missing.routes.filter((entry) => entry.route !== route);
     assert.match(validateRouteInventory(missing).join('\n'), /unmapped route/);
