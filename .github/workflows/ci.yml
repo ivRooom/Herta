@@ -50,6 +50,13 @@ jobs:
       - name: Format Check
         run: pnpm format:check
 
+      # Temporary diagnostics for #734; remove before PR merge.
+      - name: Debug Prettier correction for VC call graph
+        if: failure()
+        run: |
+          pnpm exec prettier --write deploy/scripts/vc-recap-boundary-callgraph.test.mjs
+          git diff -- deploy/scripts/vc-recap-boundary-callgraph.test.mjs
+
       - name: Lint
         run: pnpm lint
 
