@@ -1,43 +1,56 @@
-# VC Recap ソース実装経路インベントリ — offline-only (#733 / #728)
+# VC Recap ソース経路・Privacy 操作区分 — offline-only (#733 / #734 / #728)
 
-> **重要: これはソース参照の静的棚卸しであり、Quarantineの本番配線・独立した署名検証・旧DB復元後のアクセス遮断の達成ではありません。** `#731` の判断Portも `canResumeTraffic=false` で、稼働中のBot/API/Studio/Workerは未接続です。現行30日AWS Transcribeを変更せず、新しい録音・本文長期保存・Whisper・自動S3消去はOFFを維持します。
+> **重要**: これはソース参照と操作分類の静的棚卸しで、Quarantine の本番配線・独立署名検証・旧DB復元後のデータ遮断ではない。分類 `protection` も **アクセスを許可する設定ではない**。現行30日 AWS Transcribe を変更せず、録音・長期本文保存・Whisper・自動S3消去はOFFを維持する。
 
-## 正本と機械チェック
+## 実装の証拠とチェック
 
-- `deploy/scripts/vc-recap-restore-traffic-gate.mjs`: 16個の設計上のroute ID（実HTTP Endpoint数ではない）。
-- `deploy/scripts/vc-recap-route-inventory.json`: IDごとの実ソースアンカー、状態、未閉鎖のリスク。
-- `deploy/scripts/vc-recap-route-inventory.test.mjs`: 全route ID一致、アンカーのファイル/文字列存在、重複・欠落・未知状態・見せかけのguarded判定を検出するオフラインテスト。
-- `.github/workflows/backup-restore-verification-ci.yml`: 今回のJSON/test、関連Bot/Studio/API/Worker/DBソース変更時にも静的検証を実行する。
+- `deploy/scripts/vc-recap-restore-traffic-gate.mjs`: 22 の**設計上の**経路ID（HTTP endpoint の完全列挙ではない）。評価器は `canResumeTraffic=false` のみを返し、本番 Runtime に未接続。
+- `deploy/scripts/vc-recap-route-inventory.json`: ソース位置・稼働区分・操作区分・未対処のギャップ。
+- `deploy/scripts/vc-recap-route-inventory.test.mjs`: 22 ID の一意性、旧 `studio.consent` ID 残存、Privacy 経路欠落、アンカーの存在、未分類・不正分類を拒否。
+- `deploy/scripts/vc-recap-restore-traffic-gate.test.mjs`: 追加した操作でも隔離中は deny、合成レビュー状態も交通許可しない。
+- `.github/workflows/backup-restore-verification-ci.yml`: 該当契約・各ソースファイル変更で検証を実行。
 
-再現コマンド（リポジトリルート・Node.js 22以降）:
+リポジトリルート（Node.js 22以降）:
 
 ```bash
-node --test deploy/scripts/vc-recap-route-inventory.test.mjs
 node --test deploy/scripts/vc-recap-restore-traffic-gate.test.mjs
+node --test deploy/scripts/vc-recap-route-inventory.test.mjs
 ```
 
-**検証の意味**: passing = 既知16設計routeの静的な記録と現時点のソース記号が一致した、のみ。dynamic dispatch、別名import、新規エンドポイント、間接DBアクセス、ブラウザ/CDN/Redis cache、並行処理や証拠の真正性を保証しない。これを `bypass=0` または復元時の安全性として報告しない。
+passing は「既知の設計routeとソース内文字列が一致し、不正な操作区分が検出できる」まで。動的呼び出し・並行処理・独立台帳の真正性・新規入口・Cache / CDN / Redis・DB restore 後の実際の遮断を証明しない。
 
-## 現時点のルートと要対応区分
+## 新たに独立把握した入口（#734）
 
-- **live（10経路）**: Bot start/stop/list、発話・要約書込、Studio一覧・詳細・同意・Export、Worker30日retention。独立のepochチェックが未接続で、停止・削除など本人保護操作の扱いは要設計。
-- **dormant（1経路）**: Worker本人S3削除sweep。関数は存在するが、本番実行登録・全コピー消去・独立監査は未確認。
-- **planned（3経路）**: 長期本文Archive、話者録音、署名付き音声URL。#583/#584/#585 が前提で、機能OFFを維持。
-- **unresolved（2経路）**: 独立API read、Cache/Index/CDN。呼び出し元・保存先・再公開経路の調査が必要で、漏えい経路ゼロの主張は禁止。
+| Route | 分類 | 実装入口 / 留意点 |
+| --- | --- | --- |
+| `bot.privacy-voice-consent` | mixed | `executeVoiceConsent`。trueの許可とfalseの撤回を別処理として実ガードする |
+| `bot.privacy-openai-consent` | mixed | `executeOpenAiAudioConsent`。OpenAI新規許諾と撤回は同一処理内で分岐する |
+| `bot.privacy-delete` | protection | `executeDeleteVoiceData`。削除要求受付・DB消去。全コピー消去完了の証拠ではない |
+| `bot.privacy-export` | exposure | `executeExport`。本人向けJSONにVCセッション/発話本文/要約が入る |
+| `bot.privacy-web-link` | exposure | `executeWebLink`。本人管理URL発行時も独立に安全性を検査する |
+| `studio.consent-read` | exposure | `GET /api/guilds/[guildId]/vc-recap/consent`。同意状態・メンバー情報の閲覧 |
+| `studio.consent-write` | mixed | `POST /api/guilds/[guildId]/vc-recap/consent`。管理者による許可/撤回の両分岐 |
 
-個別のファイルと未完了はJSONに記載。実処理経路は `apps/bot/src/plugins/vc-recap.ts`、`apps/bot/src/voice/vc-recap-session-manager.ts`、`packages/db/src/vc-recap.ts`、`apps/studio/src/app/dashboard/guilds/[guildId]/vc-recap/`、`apps/studio/src/app/api/guilds/[guildId]/vc-recap/`、`apps/worker/src/vc-recap-retention.ts` などから確認した。
+従来の `studio.consent` は GET/POST を混同するため削除した。Studio CSV/JSON `studio.export` は別入口のままであり、Export内の Prisma 本文検索・認可・応答直前再検証を要する。
 
-## 親 #728 に残す必須作業
+## 操作区分と最終統合の契約
 
-1. Botの `/herta-privacy` 系 (`executeVoiceConsent`、`executeDeleteVoiceData`、`executeExport`)、Studio/Web/内部API・非HTTP Consumerの入口までcall graphを確定する。現在の16 IDでは実アクセス全数を保証しない。
-2. **#694** 本番DBと同じ復元元に依存しない署名・IAM・単調epochを持つ耐久Authority/独立Ledgerを設計。新AWS/IAM/Object Lock/費用のchange setは #646 承認まで適用しない。
-3. **#728** 全プロセスでrestore直前のpreboot、認可前、DB/S3/外部AI/Export/署名URL発行直前に独立判定を配線。失効、stale cache、過去run、署名不正、不達はfail-closed。現行処理を止めずに本番切り替える前の段階導入・rollbackを設計。
-4. **#729** 隔離PGにowner lock/atomic replayを接続し、同意とwriter予約をfence。**#730/#617** 全Version/Multipart/派生物/キャッシュ/バックアップコピーの所有者別消去・再公開防止。
-5. **#695/#518/#646** 合成→隔離restore E2E、本人同意付きDiscord実機受入、法務/費用/公開の運営Go。解除条件をmockだけで満たしてはいけない。
+- **exposure**: 本文/要約/同意状態の読み取り、発話の生成/保存、外部AIへの転送、Export、トークン発行。独立Quarantineの再検証とオーナー権限が無い限り配信/書き込みは禁止。
+- **protection**: 期限による消去、本人削除要求・撤回など本人を保護する操作。Quarantine中も安全に処理すべきだが、独立Ledgerの write-first、owner lock、再試行、監査が未配線なら実装上の許可は出せない。
+- **mixed**: stopには音声キャプチャ停止と要約/外部AI連携が混在し、同意のPOST/Discordにも許可と撤回が混在する。**操作単位/分岐単位で runtime 実装を分離**する。全体に「常時通す」または「常時拒否」を適用しない。
+- **unresolved**: `api.transcript-read` と `cache.read-write`。現時点で実装入口・消去対象が未確定で、bypass=0 と断定しない。
 
-### 運用判断
+現時点: live 16 / dormant 1 / planned 3 / unresolved 2 = **22**。上記操作分類は**試験用メタデータ**で、稼働中の Bot / API / Studio / Worker には一切適用されない。
 
-- 新規の課金やAWS権限は今回変更不要。CIで静的チェックを導入するだけ。
-- 他のCIが通ることと `Deploy Production` 成功は **本番経路遮断の証拠ではない**。
-- 人間側には、外部台帳・IAM/費用の個別承認、公式4言語Policy承認、本人同意Guildの提供、最終Go/No-Goが残る。
-- 本番データの削除・復元・同意強制変更・新機能有効化は**行わない**。
+## 実運用まで残るもの（Issue正本）
+
+1. **#734 → #728**: 動的call graphを全経路追跡し、どの分岐を守りどの保護操作を生かすかを決定。Botの独立プライバシーコマンド、StudioのGET/POST/Export、Worker、外部AI出力、SDK、署名URL、未確認API/cache/indexを含む全処理に **preboot・認可前・DB/S3/外部送信直前** の独立フェンスを配線。
+2. **#694**: DB/同一Backupから解除不能な独立Ledger・署名・epoch・IAM・Object Lockを検証。新AWS/IAM/料金は#646の個別承認前に本番適用しない。
+3. **#729 / #730 / #617**: 隔離実PostgreSQLの所有者lock/replay、全S3版・Multipart・派生要約・キャッシュ・バックアップ・全コピーの消去/restore replay。
+4. **#695 / #518 / #646**: 旧DB復元E2E、本人同意済みDiscord Guild受入、法務・費用承認、限定Canary、最終Go/No-Go。
+
+## 本番配布の線引きとRollback
+
+今回のPRで本番へ配れるのは **契約のroute ID、静的棚卸し、CI、ドキュメントのみ**。現行30日VCを維持し、AWS/IAM、個人データ、PG16→PG17、録音/長期保存の環境変数、権限・解除スイッチは変更しない。
+
+CI不合格または利用中のVCに変化があればこのPRのコミットを revert し、旧デプロイSHAへ戻す。runtime gate の実配線後は、**旧リリースへのRollbackが誤解除とならない**独立Authorityの世代チェック・復元Runbookを別途必須とする。
