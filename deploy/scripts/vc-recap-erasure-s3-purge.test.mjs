@@ -191,6 +191,40 @@ test('unexpected prefix, missing pagination marker, repeated marker are rejected
   }
 });
 
+test('repeated pagination cursor fails in two reads without mutating objects', async () => {
+  for (const [name, page] of [
+    [
+      'ListObjectVersions',
+      {
+        IsTruncated: true,
+        NextKeyMarker: KEY,
+        NextVersionIdMarker: 'v1',
+        Versions: [],
+      },
+    ],
+    [
+      'ListMultipartUploads',
+      {
+        IsTruncated: true,
+        NextKeyMarker: KEY,
+        NextUploadIdMarker: 'u1',
+        Uploads: [],
+      },
+    ],
+  ]) {
+    const fixture = mock({
+      versions: [{ Key: KEY, VersionId: 'v1' }],
+      badPage: (pageName) => pageName === name && page,
+    });
+    await assert.rejects(run(fixture.client), /keep erasure pending/);
+    assert.equal(fixture.calls.filter((x) => x.name === name).length, 2);
+    assert.equal(
+      fixture.calls.some((x) => x.name === 'DeleteObject' || x.name === 'AbortMultipartUpload'),
+      false,
+    );
+  }
+});
+
 test('unverified or duplicate multipart pagination blocks all mutations', async () => {
   for (const options of [
     { badPage: (name) => name === 'ListMultipartUploads' && { IsTruncated: true } },
