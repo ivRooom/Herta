@@ -11,6 +11,25 @@ const inventory = JSON.parse(
 );
 const SOURCE_PATH = /^(apps|packages)\/[a-zA-Z0-9_./\[\]-]+\.(?:ts|tsx)$/;
 const STATES = new Set(['live', 'dormant', 'planned', 'unresolved']);
+const ACTIONS = new Set(['exposure', 'protection', 'mixed', 'unresolved']);
+// Only these offline-inventoried routes may carry a protection label.
+// This never grants permission to execute them at runtime.
+const PROTECTION_ROUTES = new Set(['bot.privacy-delete', 'worker.retention', 'worker.erasure']);
+// Independent test constraints: a route labelled "protection" never grants access.
+// Grant/revoke handlers are mixed until branch-specific runtime checks exist.
+const CRITICAL_ACTIONS = Object.freeze({
+  'bot.stop': 'mixed',
+  'bot.privacy-voice-consent': 'mixed',
+  'bot.privacy-openai-consent': 'mixed',
+  'bot.privacy-delete': 'protection',
+  'bot.privacy-export': 'exposure',
+  'bot.privacy-web-link': 'exposure',
+  'studio.consent-read': 'exposure',
+  'studio.consent-write': 'mixed',
+  'studio.export': 'exposure',
+  'worker.retention': 'protection',
+  'worker.erasure': 'protection',
+});
 
 function sameKeys(value, expected) {
   return (
@@ -32,7 +51,7 @@ function validateRouteInventory(doc, readSource = readRepoFile) {
   const errors = [];
   if (
     !sameKeys(doc, ['schemaVersion', 'safetyNotice', 'parentIssue', 'routes']) ||
-    doc.schemaVersion !== 1 ||
+    doc.schemaVersion !== 2 ||
     doc.parentIssue !== 728 ||
     typeof doc.safetyNotice !== 'string' ||
     !doc.safetyNotice.includes('No runtime quarantine') ||
@@ -43,7 +62,7 @@ function validateRouteInventory(doc, readSource = readRepoFile) {
 
   const seen = new Set();
   for (const [index, item] of doc.routes.entries()) {
-    if (!sameKeys(item, ['route', 'state', 'evidence', 'gap'])) {
+    if (!sameKeys(item, ['route', 'state', 'action', 'evidence', 'gap'])) {
       errors.push(`route[${index}] has an invalid shape`);
       continue;
     }
@@ -54,6 +73,19 @@ function validateRouteInventory(doc, readSource = readRepoFile) {
     if (seen.has(item.route)) errors.push(`duplicate route: ${item.route}`);
     seen.add(item.route);
     if (!STATES.has(item.state)) errors.push(`invalid state: ${item.route}`);
+    if (!ACTIONS.has(item.action)) errors.push(`invalid action: ${item.route}`);
+    if (
+      Object.hasOwn(CRITICAL_ACTIONS, item.route) &&
+      item.action !== CRITICAL_ACTIONS[item.route]
+    ) {
+      errors.push(`unsafe action classification: ${item.route}`);
+    }
+    if (item.action === 'protection' && ['planned', 'unresolved'].includes(item.state)) {
+      errors.push(`unverified protection route: ${item.route}`);
+    }
+    if (item.action === 'protection' && !PROTECTION_ROUTES.has(item.route)) {
+      errors.push(`unauthorized protection route: ${item.route}`);
+    }
     if (typeof item.gap !== 'string' || item.gap.trim().length < 25) {
       errors.push(`missing unguarded/unknown gap description: ${item.route}`);
     }
@@ -98,10 +130,10 @@ function validateRouteInventory(doc, readSource = readRepoFile) {
   return errors;
 }
 
-test('all 16 traffic gate IDs have audited source or explicit unresolved state', () => {
-  assert.equal(VC_RECAP_TRAFFIC_ROUTES.length, 16);
+test('all 22 offline route IDs include privacy and consent ingress boundaries', () => {
+  assert.equal(VC_RECAP_TRAFFIC_ROUTES.length, 22);
   assert.deepEqual(validateRouteInventory(inventory), []);
-  assert.equal(inventory.routes.filter((item) => item.state === 'live').length, 10);
+  assert.equal(inventory.routes.filter((item) => item.state === 'live').length, 16);
   // A passing test does not demonstrate runtime prevention or bypass-zero.
   assert.equal(
     inventory.routes.some((item) => item.state === 'unresolved'),
@@ -146,4 +178,46 @@ test('no inventory status can claim guard coverage or traffic authorization', ()
   const shapeChange = structuredClone(inventory);
   shapeChange.routes[0].isProtected = true;
   assert.match(validateRouteInventory(shapeChange).join('\n'), /invalid shape/);
+});
+
+test('privacy, consent GET/POST and bot export stay independently inventoried', () => {
+  const names = new Set(inventory.routes.map((item) => item.route));
+  assert.equal(names.has('studio.consent'), false);
+  for (const route of Object.keys(CRITICAL_ACTIONS)) {
+    assert.equal(names.has(route), true, `missing critical VC boundary: ${route}`);
+  }
+  assert.equal(inventory.routes.find((item) => item.route === 'bot.stop')?.action, 'mixed');
+  assert.equal(
+    inventory.routes.find((item) => item.route === 'bot.privacy-delete')?.action,
+    'protection',
+  );
+});
+
+test('unknown, misclassified and falsely protected actions fail source inventory checks', () => {
+  const unclassified = structuredClone(inventory);
+  unclassified.routes.find((item) => item.route === 'studio.export').action = 'allowed';
+  assert.match(validateRouteInventory(unclassified).join('\n'), /invalid action/);
+
+  const leakedExport = structuredClone(inventory);
+  leakedExport.routes.find((item) => item.route === 'bot.privacy-export').action = 'protection';
+  assert.match(validateRouteInventory(leakedExport).join('\n'), /unsafe action classification/);
+
+  const blockedRevocation = structuredClone(inventory);
+  blockedRevocation.routes.find((item) => item.route === 'studio.consent-write').action =
+    'exposure';
+  assert.match(
+    validateRouteInventory(blockedRevocation).join('\n'),
+    /unsafe action classification/,
+  );
+
+  for (const route of ['bot.start', 'studio.detail']) {
+    const misclassified = structuredClone(inventory);
+    misclassified.routes.find((item) => item.route === route).action = 'protection';
+    assert.match(validateRouteInventory(misclassified).join('\n'), /unauthorized protection/);
+  }
+
+  const fictitiousProtector = structuredClone(inventory);
+  fictitiousProtector.routes.find((item) => item.route === 'api.transcript-read').action =
+    'protection';
+  assert.match(validateRouteInventory(fictitiousProtector).join('\n'), /unverified protection/);
 });

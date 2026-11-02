@@ -1,5 +1,5 @@
 /**
- * #731 / #728: Offline-only cross-service VC Recap restore traffic gate contract.
+ * #731 / #734 / #728: Offline-only cross-service VC Recap restore traffic gate contract.
  *
  * This module NEVER authorizes traffic. It does not read a real independent
  * control plane, establish durable quarantine, or wire Bot/Studio/API/Worker.
@@ -8,12 +8,18 @@
 export const VC_RECAP_TRAFFIC_ROUTES = Object.freeze([
   'bot.start',
   'bot.stop',
+  'bot.privacy-voice-consent',
+  'bot.privacy-openai-consent',
+  'bot.privacy-delete',
+  'bot.privacy-export',
+  'bot.privacy-web-link',
   'bot.list',
   'bot.transcript-write',
   'bot.summary-write',
   'studio.list',
   'studio.detail',
-  'studio.consent',
+  'studio.consent-read',
+  'studio.consent-write',
   'studio.export',
   'api.transcript-read',
   'worker.retention',

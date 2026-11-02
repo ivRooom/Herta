@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 1,
-  "safetyNotice": "Source anchors are inventory evidence only. No runtime quarantine, restore independence, complete call-graph coverage, or traffic authorization is established here.",
+  "schemaVersion": 2,
+  "safetyNotice": "Source anchors and action classes are offline inventory evidence only. No runtime quarantine, automatic permission for protection actions, restore independence, complete call-graph coverage, or traffic authorization is established here.",
   "parentIssue": 728,
   "routes": [
     {
@@ -16,7 +16,8 @@
           "symbol": "export async function startVcRecap("
         }
       ],
-      "gap": "No independent pre-command or ongoing session traffic gate; Discord/privacy consent ingress remains to audit."
+      "gap": "No independent pre-command or ongoing session traffic gate; Discord/privacy consent ingress remains to audit.",
+      "action": "exposure"
     },
     {
       "route": "bot.stop",
@@ -31,7 +32,96 @@
           "symbol": "export async function stopVcRecap("
         }
       ],
-      "gap": "Stop must remain safely callable during quarantine; distinguish control actions from transcript reads."
+      "gap": "Stopping live capture is protective, but current stop path also reads segments and can summarize; gate those downstream reads and external AI calls separately without blocking emergency stop.",
+      "action": "mixed"
+    },
+    {
+      "route": "bot.privacy-voice-consent",
+      "state": "live",
+      "action": "mixed",
+      "evidence": [
+        {
+          "path": "apps/bot/src/commands/privacy.ts",
+          "symbol": "async function executeVoiceConsent("
+        },
+        {
+          "path": "apps/bot/src/commands/privacy.ts",
+          "symbol": "setVoiceTranscriptionConsent(prisma, interaction.user.id, consent"
+        }
+      ],
+      "gap": "One handler grants existing 30-day consent OR revokes it: separate live branch validation, revoke must remain safe under quarantine and grant must never bypass it."
+    },
+    {
+      "route": "bot.privacy-openai-consent",
+      "state": "live",
+      "action": "mixed",
+      "evidence": [
+        {
+          "path": "apps/bot/src/commands/privacy.ts",
+          "symbol": "async function executeOpenAiAudioConsent("
+        },
+        {
+          "path": "apps/bot/src/commands/privacy.ts",
+          "symbol": "setVcRecapOpenAiAudioConsent(prisma, interaction.user.id, accept)"
+        }
+      ],
+      "gap": "OpenAI consent grant and withdrawal share a handler; conditional runtime controls must prohibit grants on restore without blocking withdrawal."
+    },
+    {
+      "route": "bot.privacy-delete",
+      "state": "live",
+      "action": "protection",
+      "evidence": [
+        {
+          "path": "apps/bot/src/commands/privacy.ts",
+          "symbol": "async function executeDeleteVoiceData("
+        },
+        {
+          "path": "apps/bot/src/commands/privacy.ts",
+          "symbol": "await requestVcRecapErasure(prisma, interaction.user.id);"
+        },
+        {
+          "path": "apps/bot/src/commands/privacy.ts",
+          "symbol": "await deleteUserVoiceData(prisma, interaction.user.id);"
+        }
+      ],
+      "gap": "Owner erasure is a protective operation, never proof of full-copy deletion; independent write-first ledger and restored-DB replay still missing."
+    },
+    {
+      "route": "bot.privacy-export",
+      "state": "live",
+      "action": "exposure",
+      "evidence": [
+        {
+          "path": "apps/bot/src/commands/privacy.ts",
+          "symbol": "async function executeExport("
+        },
+        {
+          "path": "apps/bot/src/commands/privacy.ts",
+          "symbol": "listVcRecapSessionsForUser(prisma, interaction.user.id)"
+        },
+        {
+          "path": "apps/bot/src/commands/privacy.ts",
+          "symbol": "listVcRecapTranscriptSegmentsForUser(prisma, interaction.user.id)"
+        }
+      ],
+      "gap": "Personal JSON export contains sessions/segment text and derived summaries and must be fenced independently from Studio CSV/JSON export."
+    },
+    {
+      "route": "bot.privacy-web-link",
+      "state": "live",
+      "action": "exposure",
+      "evidence": [
+        {
+          "path": "apps/bot/src/commands/privacy.ts",
+          "symbol": "async function executeWebLink("
+        },
+        {
+          "path": "apps/bot/src/commands/privacy.ts",
+          "symbol": "buildConsentWebLinkMessage(prisma, interaction.user.id, getSharedLogger())"
+        }
+      ],
+      "gap": "Consent-management URL creation is an independent token-disclosure path: audit generation, TTL, and restore/rollback fencing before enabling."
     },
     {
       "route": "bot.list",
@@ -42,7 +132,8 @@
           "symbol": "async function executeList("
         }
       ],
-      "gap": "Session list/summary may expose restored content; no independent guard."
+      "gap": "Session list/summary may expose restored content; no independent guard.",
+      "action": "exposure"
     },
     {
       "route": "bot.transcript-write",
@@ -61,7 +152,8 @@
           "symbol": "export async function appendVcRecapTranscriptSegment("
         }
       ],
-      "gap": "No verified pre-write fence for every provider, race window, or local Whisper path."
+      "gap": "No verified pre-write fence for every provider, race window, or local Whisper path.",
+      "action": "exposure"
     },
     {
       "route": "bot.summary-write",
@@ -76,7 +168,8 @@
           "symbol": "await completeVcRecapSession("
         }
       ],
-      "gap": "Prompt/content and summary persistence need separate guards; do not leak restored text to external AI."
+      "gap": "Prompt/content and summary persistence need separate guards; do not leak restored text to external AI.",
+      "action": "exposure"
     },
     {
       "route": "studio.list",
@@ -91,7 +184,8 @@
           "symbol": "export async function listVcRecapSessionsForStudio("
         }
       ],
-      "gap": "Server-rendered list and member displays not connected to independent authority."
+      "gap": "Server-rendered list and member displays not connected to independent authority.",
+      "action": "exposure"
     },
     {
       "route": "studio.detail",
@@ -106,11 +200,29 @@
           "symbol": "export async function getVcRecapSessionDetailForStudio("
         }
       ],
-      "gap": "Server-rendered transcript/detail and stream/cache need pre-read epoch check."
+      "gap": "Server-rendered transcript/detail and stream/cache need pre-read epoch check.",
+      "action": "exposure"
     },
     {
-      "route": "studio.consent",
+      "route": "studio.consent-read",
       "state": "live",
+      "action": "exposure",
+      "evidence": [
+        {
+          "path": "apps/studio/src/app/api/guilds/[guildId]/vc-recap/consent/route.ts",
+          "symbol": "export async function GET("
+        },
+        {
+          "path": "apps/studio/src/app/api/guilds/[guildId]/vc-recap/consent/route.ts",
+          "symbol": "const consent = await getUserDataConsent(prisma, userId);"
+        }
+      ],
+      "gap": "Admin GET exposes member consent state; independently recheck authorization and restore epoch before owner state is read."
+    },
+    {
+      "route": "studio.consent-write",
+      "state": "live",
+      "action": "mixed",
       "evidence": [
         {
           "path": "apps/studio/src/app/api/guilds/[guildId]/vc-recap/consent/route.ts",
@@ -118,14 +230,10 @@
         },
         {
           "path": "apps/studio/src/app/api/guilds/[guildId]/vc-recap/consent/route.ts",
-          "symbol": "export async function GET("
-        },
-        {
-          "path": "apps/bot/src/commands/privacy.ts",
-          "symbol": "async function executeVoiceConsent("
+          "symbol": "await setVoiceConsentAsAdmin(prisma, { guildId, actorId: session.user.id, userId, consent });"
         }
       ],
-      "gap": "GET/POST and Discord/web consent changes are distinct ingress; reconcile revocation under owner lock."
+      "gap": "Admin POST grants or revokes by boolean; grants must remain fenced, while safety withdrawals require separately verified protection semantics."
     },
     {
       "route": "studio.export",
@@ -140,13 +248,15 @@
           "symbol": "prisma.vcRecapTranscriptSegment.findMany("
         }
       ],
-      "gap": "Live export query/serialization has no independently pinned restore epoch check; include bot privacy exports in audit."
+      "gap": "Live CSV/JSON export queries Prisma transcript segments and derives session summaries. Require independent pre-query and pre-response restore epoch checks; Bot privacy export is a separate ingress.",
+      "action": "exposure"
     },
     {
       "route": "api.transcript-read",
       "state": "unresolved",
       "evidence": [],
-      "gap": "Dedicated apps/api transcript endpoint not proven; search for internal/API consumers and indirect DB exports before wiring."
+      "gap": "Dedicated apps/api transcript endpoint not proven; search for internal/API consumers and indirect DB exports before wiring.",
+      "action": "unresolved"
     },
     {
       "route": "worker.retention",
@@ -161,7 +271,8 @@
           "symbol": "export async function startVcRecapRetentionRuntime("
         }
       ],
-      "gap": "Retention purge is live: do not accidentally pause mandatory privacy deletion while blocking reads/republication."
+      "gap": "Retention purge is live: do not accidentally pause mandatory privacy deletion while blocking reads/republication.",
+      "action": "protection"
     },
     {
       "route": "worker.erasure",
@@ -172,31 +283,36 @@
           "symbol": "export async function sweepPendingVcRecapErasureRequests("
         }
       ],
-      "gap": "Source implementation exists but live worker registration and independently verified inventory are not established; keep disabled."
+      "gap": "Source implementation exists but live worker registration and independently verified inventory are not established; keep disabled.",
+      "action": "protection"
     },
     {
       "route": "storage.archive",
       "state": "planned",
       "evidence": [],
-      "gap": "Long-term transcript archive is OFF; future S3 writer/reader must be inventoried under #584/#730."
+      "gap": "Long-term transcript archive is OFF; future S3 writer/reader must be inventoried under #584/#730.",
+      "action": "exposure"
     },
     {
       "route": "storage.audio",
       "state": "planned",
       "evidence": [],
-      "gap": "Speaker recording/retention are OFF; future storage calls under #583/#730 need owner-scoped evidence."
+      "gap": "Speaker recording/retention are OFF; future storage calls under #583/#730 need owner-scoped evidence.",
+      "action": "exposure"
     },
     {
       "route": "storage.signed-url",
       "state": "planned",
       "evidence": [],
-      "gap": "Voice playback signed URLs are not active; #585 must define revoke/TTL and cache invalidation."
+      "gap": "Voice playback signed URLs are not active; #585 must define revoke/TTL and cache invalidation.",
+      "action": "exposure"
     },
     {
       "route": "cache.read-write",
       "state": "unresolved",
       "evidence": [],
-      "gap": "Identify all VC HTTP/CDN/browser/Redis/search caches and derived summaries; cannot assert zero bypasses."
+      "gap": "Identify all VC HTTP/CDN/browser/Redis/search caches and derived summaries; cannot assert zero bypasses.",
+      "action": "unresolved"
     }
   ]
 }
