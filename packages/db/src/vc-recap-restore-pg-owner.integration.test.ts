@@ -27,7 +27,10 @@ function instruction(userId: string, requestedAt = incoming) {
 
 test('PG(3) restore timestamp accepts only exactly representable milliseconds', () => {
   assert.equal(parseVcRecapPgFenceTimestamp('2026-11-02T07:00:00.123000Z').toISOString(), incoming);
-  assert.equal(parseVcRecapPgFenceTimestamp('2026-11-02T07:00:00Z').toISOString(), '2026-11-02T07:00:00.000Z');
+  assert.equal(
+    parseVcRecapPgFenceTimestamp('2026-11-02T07:00:00Z').toISOString(),
+    '2026-11-02T07:00:00.000Z',
+  );
   for (const input of [
     '2026-11-02T07:00:00.123001Z',
     '2026-11-02T07:00:00.999999Z',
