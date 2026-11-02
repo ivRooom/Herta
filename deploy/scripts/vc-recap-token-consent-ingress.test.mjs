@@ -93,6 +93,7 @@ test('all persistent button and bearer-token consent call edges remain inventori
   assert.deepEqual(audit(sources), []);
 });
 
+// prettier-ignore -- preserve the mutation fixture layout for source-drift tests.
 test('owner dispatch, origin, policy version and revocation path drift is rejected', () => {
   for (const [file, from, to, error] of [
     [
