@@ -26,7 +26,9 @@ function sameKeys(value, expected) {
  * route-map drift and missing symbols; dynamic dispatch/indirect imports and
  * bypass paths still require independent manual and integration review.
  */
-function validateRouteInventory(doc, readSource = (path) => readFileSync(resolve(root, path), 'utf8')) {
+const readRepoFile = (path) => readFileSync(resolve(root, path), 'utf8');
+
+function validateRouteInventory(doc, readSource = readRepoFile) {
   const errors = [];
   if (
     !sameKeys(doc, ['schemaVersion', 'safetyNotice', 'parentIssue', 'routes']) ||
@@ -104,7 +106,7 @@ test('all 16 traffic gate IDs have audited source or explicit unresolved state',
   assert.equal(inventory.routes.some((item) => item.state === 'unresolved'), true);
 });
 
-test('missing/duplicate/unknown routes are rejected rather than silently considered covered', () => {
+test('missing, duplicate and unknown routes are rejected', () => {
   const missing = structuredClone(inventory);
   missing.routes.pop();
   assert.match(validateRouteInventory(missing).join('\n'), /unmapped route/);
