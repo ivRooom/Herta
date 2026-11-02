@@ -47,16 +47,23 @@ function ordered(text, parts) {
 }
 
 function sameSet(found, expected) {
-  return found.length === expected.length &&
+  return (
+    found.length === expected.length &&
     new Set(found).size === found.length &&
-    [...found].sort().join('|') === [...expected].sort().join('|');
+    [...found].sort().join('|') === [...expected].sort().join('|')
+  );
 }
 
 function checkDispatch(declared, source, expected, pattern, error, errors) {
   const pairs = [...source.matchAll(pattern)].map((match) => [match[1], match[2]]);
-  if (!sameSet(declared, Object.keys(expected)) ||
-    !sameSet(pairs.map((item) => item[0]), Object.keys(expected)) ||
-    pairs.some(([name, handler]) => expected[name] !== handler)) {
+  if (
+    !sameSet(declared, Object.keys(expected)) ||
+    !sameSet(
+      pairs.map((item) => item[0]),
+      Object.keys(expected),
+    ) ||
+    pairs.some(([name, handler]) => expected[name] !== handler)
+  ) {
     errors.push(error);
   }
 }
@@ -65,7 +72,9 @@ function audit(input) {
   const errors = [];
   const privacyDefs = between(input.privacy, 'subcommands: [', '  async execute(interaction) {');
   const definedPrivacy = [...privacyDefs.matchAll(/^ {8}name: '([^']+)'/gm)].map((m) => m[1]);
-  const privacyDispatch = input.privacy.slice(input.privacy.indexOf('  async execute(interaction) {'));
+  const privacyDispatch = input.privacy.slice(
+    input.privacy.indexOf('  async execute(interaction) {'),
+  );
   checkDispatch(
     definedPrivacy,
     privacyDispatch,
@@ -79,32 +88,48 @@ function audit(input) {
     'async function executeDeleteVoiceData(',
     'async function executeWebLink(',
   );
-  if (!ordered(erased, [
+  if (
+    !ordered(erased, [
     'await requestVcRecapErasure(prisma, interaction.user.id);',
     'revokeVcRecapConsent(interaction.user.id);',
     'await deleteUserVoiceData(prisma, interaction.user.id);',
     'await setVoiceTranscriptionConsent(prisma, interaction.user.id, false);',
-  ])) errors.push('privacy erasure ordering drift');
+    ])
+  ) {
+    errors.push('privacy erasure ordering drift');
+  }
 
   const grant = between(
     input.privacy,
     'async function executeVoiceConsent(',
     'async function executeOpenAiAudioConsent(',
   );
-  if (!ordered(grant, [
+  if (
+    !ordered(grant, [
     "interaction.options.getBoolean('consent', true)",
     'await setVoiceTranscriptionConsent(',
     'if (!consent) revokeVcRecapConsent(interaction.user.id);',
-  ])) errors.push('privacy consent grant/withdrawal branch drift');
+    ])
+  ) {
+    errors.push('privacy consent grant/withdrawal branch drift');
+  }
 
-  const personalExport = between(input.privacy, 'async function executeExport(', 'export const privacyCommand:');
-  if (!ordered(personalExport, [
+  const personalExport = between(
+    input.privacy,
+    'async function executeExport(',
+    'export const privacyCommand:',
+  );
+  if (
+    !ordered(personalExport, [
     'await interaction.deferReply(',
     'listVcRecapSessionsForUser(prisma, interaction.user.id)',
     'listVcRecapTranscriptSegmentsForUser(prisma, interaction.user.id)',
     'Buffer.from(JSON.stringify(exportPayload, null, 2)',
     'files: [attachment]',
-  ])) errors.push('privacy personal export call edge drift');
+    ])
+  ) {
+    errors.push('privacy personal export call edge drift');
+  }
 
   const names = [...input.manifest.matchAll(/^ {10}name: '([^']+)'/gm)].map((m) => m[1]);
   checkDispatch(
@@ -120,19 +145,35 @@ function audit(input) {
     'async function handleVoiceStateUpdate(',
     'export const vcRecapPlugin =',
   );
-  const disabled = between(input.plugin, 'async onDisable(context) {', '  provideCommands(context) {');
+  const disabled = between(
+    input.plugin,
+    'async onDisable(context) {',
+    '  provideCommands(context) {',
+  );
   const stopCall = 'await stopVcRecap(context.prisma, context.logger, context.guildId)';
-  if (!lifecycle.includes(stopCall) ||
+  if (
+    !lifecycle.includes(stopCall) ||
     !disabled.includes(stopCall) ||
     !input.plugin.includes("event: 'voiceStateUpdate'") ||
-    !input.plugin.includes('await handleVoiceStateUpdate(context, args[0] as VoiceState, args[1] as VoiceState)')) {
+    !input.plugin.includes(
+      'await handleVoiceStateUpdate(context, args[0] as VoiceState, args[1] as VoiceState)',
+    )
+  ) {
     errors.push('voice non-slash lifecycle stop edge drift');
   }
-  const stop = between(input.session, 'export async function stopVcRecap(', 'async function settleWithin(');
-  if (!ordered(stop, [
+  const stop = between(
+    input.session,
+    'export async function stopVcRecap(',
+    'async function settleWithin(',
+  );
+  if (
+    !ordered(stop, [
     'listVcRecapTranscriptSegments(prisma, session.sessionId)',
     'summarizeVcRecapSession(prisma, guildId, segments)',
-  ])) errors.push('voice stop downstream transcript/summary edge drift');
+    ])
+  ) {
+    errors.push('voice stop downstream transcript/summary edge drift');
+  }
 
   const transcriber = between(
     input.session, 'async function transcribeSpeaker(', 'function downmixStereoToMono(',
@@ -144,34 +185,48 @@ function audit(input) {
   })) {
     if (!transcriber.includes(call)) errors.push('voice missing ' + name + ' provider');
   }
-  if (!transcriber.includes('appendVcRecapTranscriptSegment(prisma, segmentInput)') ||
+  if (
+    !transcriber.includes('appendVcRecapTranscriptSegment(prisma, segmentInput)') ||
     !transcriber.includes('appendVcRecapLocalWhisperSegmentIfConsented(prisma, segmentInput)') ||
-    !transcriber.includes('hasVcRecapOpenAiAudioConsent(prisma, userId)')) {
+    !transcriber.includes('hasVcRecapOpenAiAudioConsent(prisma, userId)')
+  ) {
     errors.push('voice consent/write call edge drift');
   }
 
-  const consentRead = between(input.consent, 'export async function GET(', 'export async function POST(');
+  const consentRead = between(
+    input.consent,
+    'export async function GET(',
+    'export async function POST(',
+  );
   const consentWrite = input.consent.slice(input.consent.indexOf('export async function POST('));
-  if (!ordered(consentRead, [
+  if (
+    !ordered(consentRead, [
     'await auth()',
     'resolveStudioAccess(guildId, session.user.id)',
     'hasEffectivePluginPermission(',
     'getGuildMemberById(guildId, userId)',
     'getUserDataConsent(prisma, userId)',
-  ]) || consentRead.includes('setVoiceConsentAsAdmin(')) {
+    ]) ||
+    consentRead.includes('setVoiceConsentAsAdmin(')
+  ) {
     errors.push('studio consent GET read/access edge drift');
   }
-  if (!ordered(consentWrite, [
+  if (
+    !ordered(consentWrite, [
     'await auth()',
     'isSameOriginMutationRequest(request)',
     'resolveStudioAccess(guildId, session.user.id)',
     'hasEffectivePluginPermission(',
     'getGuildMemberById(guildId, userId)',
     'setVoiceConsentAsAdmin(prisma, { guildId, actorId: session.user.id, userId, consent })',
-  ])) errors.push('studio consent POST write/access edge drift');
+    ])
+  ) {
+    errors.push('studio consent POST write/access edge drift');
+  }
 
   const exported = input.export.slice(input.export.indexOf('export async function GET('));
-  if (!ordered(exported, [
+  if (
+    !ordered(exported, [
     'await auth()',
     'resolveStudioAccess(guildId, session.user.id)',
     'hasExplicitVcRecapExportPermission(access.access, guildId)',
@@ -183,7 +238,10 @@ function audit(input) {
     'await prisma.auditLog.create({',
     'serializeVcRecapCsv(records, now)',
     'toVcRecapExportObject(records, now)',
-  ])) errors.push('studio export authorization/consent/audit/output drift');
+    ])
+  ) {
+    errors.push('studio export authorization/consent/audit/output drift');
+  }
   return errors;
 }
 
@@ -197,17 +255,35 @@ test('new or redirected privacy command is blocked by audit', () => {
     "        name: 'unreviewed-vc',\n      },\n      {\n        name: 'export',",
   );
   assert.match(audit({ ...sources, privacy: introduced }).join('\n'), /privacy dispatch/);
-  const changed = sources.privacy.replace('await executeExport(interaction);', 'await executeWebLink(interaction);');
+  const changed = sources.privacy.replace(
+    'await executeExport(interaction);',
+    'await executeWebLink(interaction);',
+  );
   assert.match(audit({ ...sources, privacy: changed }).join('\n'), /privacy dispatch/);
 });
 
 test('erasure order, owner consent and privacy export drift fail audit', () => {
   for (const [find, replacement, expected] of [
-    ['await requestVcRecapErasure(prisma, interaction.user.id);', 'await skipErasure();', /erasure ordering/],
-    ['if (!consent) revokeVcRecapConsent(interaction.user.id);', 'if (consent) revokeVcRecapConsent(interaction.user.id);', /grant\/withdrawal/],
-    ['listVcRecapTranscriptSegmentsForUser(prisma, interaction.user.id)', 'skipTranscriptExport()', /personal export/],
+    [
+      'await requestVcRecapErasure(prisma, interaction.user.id);',
+      'await skipErasure();',
+      /erasure ordering/,
+    ],
+    [
+      'if (!consent) revokeVcRecapConsent(interaction.user.id);',
+      'if (consent) revokeVcRecapConsent(interaction.user.id);',
+      /grant\/withdrawal/,
+    ],
+    [
+      'listVcRecapTranscriptSegmentsForUser(prisma, interaction.user.id)',
+      'skipTranscriptExport()',
+      /personal export/,
+    ],
   ]) {
-    assert.match(audit({ ...sources, privacy: sources.privacy.replace(find, replacement) }).join('\n'), expected);
+    assert.match(
+      audit({ ...sources, privacy: sources.privacy.replace(find, replacement) }).join('\n'),
+      expected,
+    );
   }
 });
 
@@ -217,7 +293,10 @@ test('voice state auto stop and all transcriber providers remain inventoried', (
     'void 0',
   );
   assert.match(audit({ ...sources, plugin: changed }).join('\n'), /lifecycle stop/);
-  const provider = sources.session.replace('await transcribePcmWithOpenAi(', 'await unreviewedProvider(');
+  const provider = sources.session.replace(
+    'await transcribePcmWithOpenAi(',
+    'await unreviewedProvider(',
+  );
   assert.match(audit({ ...sources, session: provider }).join('\n'), /missing openai provider/);
 });
 
