@@ -136,3 +136,12 @@ DBが復元されると、そのバックアップ取得後に本人が行った
 - `IsTruncated:true` で空のページ、指定Prefix外の次カーソル、欠落した次カーソル、繰り返される次カーソルを拒否する。列挙の異常が削除前に見つかった場合、Abort/Deleteを**一切開始しない**。削除後の再列挙が異常でも局所0件確認を宣言しない。
 - これは破損・不完全なSDKレスポンスに対する合成テストの強化であり、**S3実Bucketを列挙した証拠ではない**。SDKが整合するように見えても、並行PUT、独立監査、他のコピー、復元済みDBの再配信を防ぐ根拠にはならない。
 - `node --test deploy/scripts/vc-recap-erasure-s3-purge.test.mjs` を既存 Backup Restore Verification CI で実行する。本Portは本番未接続、`canDeclareErased:false` / `canResumeTraffic:false`、#617 / #694 / #695 と Release #646 は引き続きNo-Go。PG16→PG17・本番AWS/IAM・録音/保持設定には触れない。
+
+## 復元済みDBへの削除要求再適用契約（#724 / #695、合成のみ）
+
+- `deploy/scripts/vc-recap-restore-fence-replay.mjs` は、**独立監査済みの外部Ledger Snapshotを受け取った後**に限って使用する想定の注入可能な契約Port。自身では署名・監査証明・信頼できるcheckpointを検証しない。既存 `reconcileVcRecapRestoreWithPinnedAudit` の署名/checkpoint/Inventory検証を必須の先行工程とする。
+- Snapshot全件の厳密な形式・owner ID・UTC日時・最新時刻・ソート/一意性/件数上限を、**一切のDB処理に先立ち**検査。空Snapshotは独立した0件証明が未実装のためfail-closedで拒否。削除要求の未来時刻や不正なカレンダー日付も拒否。
+- 注入先 `requireDurableQuarantine(runId)` が復元runに紐付く隔離証明を返してからのみ処理。各ownerの `withOwnerTransaction(runId,userId,callback)` は **owner advisory lockを取得し、callback中のDB操作を単一transactionで実行し、COMMIT後にのみ成功を返すこと**が契約。既存削除要求時刻を後退させず、同じtransactionで旧30日同意・新目的別同意・未処理writer予約を無効化する。古いバックアップ内の `storageDeletionVerifiedAt` は必ずnullに戻し、全コピー消去証明と誤認しない。
+- 合成テストは順序、繰り返し、owner間部分障害、rollback、無効snapshot、誤run、同意/予約停止漏れ、古い削除証明の無効化、機微情報非露出を確認。返却値は `status:'replayed-under-lock'` だが **`canResumeTraffic:false` / `canDeclareErased:false`**。
+- **未実装・No-Go**: 本Portは本番未接続でDB clientも持たず、実際のPostgreSQL advisory lock/トランザクション、Bot/API/Studio/Worker/Exportの永続Quarantine、外部台帳の独立性、削除済み全コピーを証明しない。署名済snapshotでも最後の監査以降の追加要求がない証明と長期anti-rollback監視は別途必要。#694/#695/#617/#646 は継続Open/No-Go。
+- テスト: `node --test deploy/scripts/vc-recap-restore-fence-replay.test.mjs`。CIで合成実行。本番PG16→PG17移行、AWS/IAM/S3実削除、録音・長期保持・Whisperの設定には一切触れない。
