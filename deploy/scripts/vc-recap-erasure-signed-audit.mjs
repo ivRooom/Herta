@@ -174,7 +174,11 @@ export function verifyPinnedVcRecapAudit(envelope, trust, checkpoint) {
     throw new Error('Independently pinned audit checkpoint mismatch');
   }
 
-  return { ...authenticated, status: 'signed-audit-checkpoint-matched-only', canResumeTraffic: false };
+  return {
+    ...authenticated,
+    status: 'signed-audit-checkpoint-matched-only',
+    canResumeTraffic: false,
+  };
 }
 
 /**
