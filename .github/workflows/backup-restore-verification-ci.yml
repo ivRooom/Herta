@@ -29,6 +29,19 @@ on:
       - 'deploy/scripts/vc-recap-restore-fence-replay.test.mjs'
       - 'deploy/scripts/vc-recap-restore-traffic-gate.mjs'
       - 'deploy/scripts/vc-recap-restore-traffic-gate.test.mjs'
+      - 'deploy/scripts/vc-recap-route-inventory.json'
+      - 'deploy/scripts/vc-recap-route-inventory.test.mjs'
+      - 'docs/VC_RECAP_ROUTE_INVENTORY.md'
+      - 'apps/bot/src/plugins/vc-recap.ts'
+      - 'apps/bot/src/voice/vc-recap*.ts'
+      - 'apps/bot/src/commands/privacy.ts'
+      - 'apps/studio/src/app/dashboard/guilds/**/vc-recap/**'
+      - 'apps/studio/src/app/api/guilds/**/vc-recap/**'
+      - 'apps/studio/src/lib/vc-recap*.ts'
+      - 'apps/worker/src/vc-recap*.ts'
+      - 'apps/worker/src/main.ts'
+      - 'apps/api/src/**'
+      - 'packages/db/src/vc-recap*.ts'
       - 'deploy/scripts/vc-recap-erasure-s3-purge.mjs'
       - 'deploy/scripts/vc-recap-erasure-s3-purge.test.mjs'
       - 'docs/VC_RECAP_ERASURE_LEDGER_DESIGN.md'
@@ -63,6 +76,19 @@ on:
       - 'deploy/scripts/vc-recap-restore-fence-replay.test.mjs'
       - 'deploy/scripts/vc-recap-restore-traffic-gate.mjs'
       - 'deploy/scripts/vc-recap-restore-traffic-gate.test.mjs'
+      - 'deploy/scripts/vc-recap-route-inventory.json'
+      - 'deploy/scripts/vc-recap-route-inventory.test.mjs'
+      - 'docs/VC_RECAP_ROUTE_INVENTORY.md'
+      - 'apps/bot/src/plugins/vc-recap.ts'
+      - 'apps/bot/src/voice/vc-recap*.ts'
+      - 'apps/bot/src/commands/privacy.ts'
+      - 'apps/studio/src/app/dashboard/guilds/**/vc-recap/**'
+      - 'apps/studio/src/app/api/guilds/**/vc-recap/**'
+      - 'apps/studio/src/lib/vc-recap*.ts'
+      - 'apps/worker/src/vc-recap*.ts'
+      - 'apps/worker/src/main.ts'
+      - 'apps/api/src/**'
+      - 'packages/db/src/vc-recap*.ts'
       - 'deploy/scripts/vc-recap-erasure-s3-purge.mjs'
       - 'deploy/scripts/vc-recap-erasure-s3-purge.test.mjs'
       - 'docs/VC_RECAP_ERASURE_LEDGER_DESIGN.md'
@@ -132,6 +158,9 @@ jobs:
 
       - name: Restore-independent VC traffic gate contract (synthetic only)
         run: node --test deploy/scripts/vc-recap-restore-traffic-gate.test.mjs
+
+      - name: Source-grounded VC route inventory drift test (non-operational)
+        run: node --test deploy/scripts/vc-recap-route-inventory.test.mjs
 
       - name: Single-key S3 full-version and multipart purge (synthetic only)
         run: node --test deploy/scripts/vc-recap-erasure-s3-purge.test.mjs
