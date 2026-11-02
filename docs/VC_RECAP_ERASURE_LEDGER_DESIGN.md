@@ -120,3 +120,12 @@ DBが復元されると、そのバックアップ取得後に本人が行った
 - 認証済みS3 Inventoryから組み立てた本人削除要求snapshotだけを、注入された `replayErasureFences` → `verifyDatabaseFences` → `verifyAllCopiesPurged` に渡す。runIdと各結果を照合し、不一致・期限超過・不完全列挙・SDKエラー・DB再適用失敗・全コピー未消去は常にfail-closed。返り値は `{status:'review-required',canResumeTraffic:false}` のみ。
 - **独立性は未実証**: 注入されるcheckpointや公開鍵が本当にDB・S3と異なる保護境界で保全されていること、単調更新されること、台帳の全件を監査したこと、Quarantineが全サービスを実際に遮断することは、この合成テストでは証明できない。実AWS IAM・S3/Object Lock、Bot/API/Studio/Export/Workerへの起動前ガード、復元したPGへの実replay、S3/Backup/Cacheの全コピー消去は #694/#695/#617の未完了P0。
 - 本実装の追加テスト: `node --test deploy/scripts/vc-recap-restore-pinned-audit.test.mjs`。Backup Restore Verification CIへ登録。**AWS credentials / 本人データ / 本番PG16→PG17 / IaC / 新録音・長期保持のフラグには触れない**。現行30日・AWS Transcribe維持、新録音/長期保持/WhisperはOFF。公開は #646 で No-Go のまま。
+
+## 単一S3 Keyの全Version / Multipart消去Port（#716、合成のみ）
+
+- `deploy/scripts/vc-recap-erasure-s3-purge.mjs` はSDK v3互換のClient/Commandを注入する**本番未接続の合成検証専用**。実Credentialを作成・取得せず、本番の削除APIやWorker/Restoreには配線していない。
+- 対象は`vc-recap/`配下の**厳密に指定した1つのKey**に限る。Prefixが一致する隣接Keyは列挙され得るが削除しない。ListObjectVersionsでVersion/DeleteMarkerを全ページ列挙、ListMultipartUploadsで未完了Uploadを列挙し、すべての列挙が成立してからAbortMultipartUploadとVersionId指定DeleteObjectを実行する。
+- 欠損/重複VersionId・`null` VersionId・重複Upload、ページングの欠損/循環、Unexpected Prefix、SDK失敗、部分成功、再列挙で残存があればfail-closed。対象本人のID/Key/SDKエラーはエラーメッセージに含めない。削除後には各一覧を再列挙し、ローカルで0件かを確認する。
+- 成功結果も`{ status: 'single-key-local-list-empty-only', canDeclareErased: false, canResumeTraffic: false }`。**単一Keyの一時点での局所確認**であり、別Key・DB・共有要約・索引・キャッシュ・別Backup/レプリカ・将来の同時Putを含む「本人完全消去」の証明ではない。別運用主体による独立監査、書込禁止の持続、全コピー確認、Quarantine解除承認は依然未完成。
+- `null` VersionId（非Versioned状態の可能性）は、無条件Deleteにより削除マーカーを新設しないよう拒否。安全な特例処理は設計・実Bucket調査と承認が必要。実S3や本人データでは実行しない。
+- 合成テスト: `node --test deploy/scripts/vc-recap-erasure-s3-purge.test.mjs`。Backup Restore Verification CIに登録。PG16→PG17移行・AWS/IAM/Object Lock・課金・本番データ削除・録音/長期保持/Whisper ONには触れない。新機能公開は #646 No-Go、#617/#694/#695 はOpen継続。
