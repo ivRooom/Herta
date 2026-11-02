@@ -466,7 +466,7 @@ async function displayDailyFortune(
   );
   const card = await renderFortuneCard(fortune, interaction.user.displayName, null);
   const payload = {
-    allowedMentions: { parse: [] as string[] },
+    allowedMentions: { parse: [] as [] },
     files: [new AttachmentBuilder(card, { name: 'herta-fortune.png' })],
     embeds: [
       new EmbedBuilder()
