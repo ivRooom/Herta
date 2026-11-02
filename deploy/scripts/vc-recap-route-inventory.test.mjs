@@ -190,18 +190,22 @@ test('privacy, consent GET/POST and bot export stay independently inventoried', 
 test('unknown, misclassified and falsely protected actions fail source inventory checks', () => {
   const unclassified = structuredClone(inventory);
   unclassified.routes.find((item) => item.route === 'studio.export').action = 'allowed';
-  assert.match(validateRouteInventory(unclassified).join('\\n'), /invalid action/);
+  assert.match(validateRouteInventory(unclassified).join('\n'), /invalid action/);
 
   const leakedExport = structuredClone(inventory);
   leakedExport.routes.find((item) => item.route === 'bot.privacy-export').action = 'protection';
-  assert.match(validateRouteInventory(leakedExport).join('\\n'), /unsafe action classification/);
+  assert.match(validateRouteInventory(leakedExport).join('\n'), /unsafe action classification/);
 
   const blockedRevocation = structuredClone(inventory);
-  blockedRevocation.routes.find((item) => item.route === 'studio.consent-write').action = 'exposure';
-  assert.match(validateRouteInventory(blockedRevocation).join('\\n'), /unsafe action classification/);
+  blockedRevocation.routes.find((item) => item.route === 'studio.consent-write').action =
+    'exposure';
+  assert.match(
+    validateRouteInventory(blockedRevocation).join('\n'),
+    /unsafe action classification/,
+  );
 
   const fictitiousProtector = structuredClone(inventory);
   fictitiousProtector.routes.find((item) => item.route === 'api.transcript-read').action =
     'protection';
-  assert.match(validateRouteInventory(fictitiousProtector).join('\\n'), /unverified protection/);
+  assert.match(validateRouteInventory(fictitiousProtector).join('\n'), /unverified protection/);
 });
