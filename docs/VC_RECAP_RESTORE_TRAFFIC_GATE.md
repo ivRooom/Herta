@@ -22,6 +22,7 @@
 ## 今回追加したPort
 
 `deploy/scripts/vc-recap-restore-traffic-gate.mjs`:
+
 - 16種類の既知のRouteのみ認識。unknown、nil/unavailable、壊れたSchema、別Restore runId、単調epoch不一致、破損日時、期限切れ、future、5分超の証拠を **deny**。
 - 受信する独立AuthorityのStateは `kind/scope/restoreRunId/epoch/status/issuedAt/expiresAt/clearance` に限定。**本当に独立したストレージであることの確認と署名検証は、未実装のbackend adapterの責務**。復元DB・単一backup・地元の古いcacheは信頼元にしない。
 - 2段階の注入Port `authenticateIndependentControl` と `authenticatePinnedEpoch` は監査真正性・最新アンチロールバックcheckpointを要求。今回のmockが真値を返しても本番権限は付与しない。

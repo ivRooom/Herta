@@ -47,10 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      - name: Temporary capture exact Prettier document (remove before merge)
-        run: |
-          pnpm exec prettier docs/VC_RECAP_RESTORE_TRAFFIC_GATE.md | base64 -w0 | sed 's/^/PRETTIER_DOCUMENT_BASE64:/'
-
       - name: Format Check
         run: pnpm format:check
 
