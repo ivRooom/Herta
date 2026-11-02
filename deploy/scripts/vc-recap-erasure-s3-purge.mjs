@@ -45,12 +45,7 @@ function more(page, keyCursor, idCursor, seen, prefix, itemCount) {
   if (itemCount === 0) throw new Error(ERROR);
   const key = page[keyCursor];
   const id = page[idCursor];
-  if (
-    typeof key !== 'string' ||
-    !key.startsWith(prefix) ||
-    typeof id !== 'string' ||
-    !id
-  ) {
+  if (typeof key !== 'string' || !key.startsWith(prefix) || typeof id !== 'string' || !id) {
     throw new Error(ERROR);
   }
   const token = JSON.stringify([key, id]);
