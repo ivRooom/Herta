@@ -113,3 +113,11 @@ DBが復元されると、そのバックアップ取得後に本人が行った
 - #646: 1 Guild・7日Canary、違反0件、月追加変動費3,000円を上限案とする運営受入。
 
 **No-Go**：本DraftはAWS/DB/Discordへのネットワーク接続を持たず、実ユーザーデータ/実Ledger/S3への操作はない。長期本文保持・録音・Whisperを有効化しない。
+
+
+## Restore Quarantineと独立署名・Checkpoint/Inventory監査の合成連動（#714 / #695）
+
+- `deploy/scripts/vc-recap-restore-pinned-audit.mjs` は **本番未接続の合成検証専用**。既存の `reconcileVcRecapRestoreUnderQuarantine`（#695）を使い、耐久隔離の受理後に限定して独立監査を読み込む。Ed25519署名・別経路で固定したcheckpoint・S3全Version/全Byte照合にすべて合格するまで、復元DBの削除障壁の再適用も試みない。
+- 認証済みS3 Inventoryから組み立てた本人削除要求snapshotだけを、注入された `replayErasureFences` → `verifyDatabaseFences` → `verifyAllCopiesPurged` に渡す。runIdと各結果を照合し、不一致・期限超過・不完全列挙・SDKエラー・DB再適用失敗・全コピー未消去は常にfail-closed。返り値は `{status:'review-required',canResumeTraffic:false}` のみ。
+- **独立性は未実証**: 注入されるcheckpointや公開鍵が本当にDB・S3と異なる保護境界で保全されていること、単調更新されること、台帳の全件を監査したこと、Quarantineが全サービスを実際に遮断することは、この合成テストでは証明できない。実AWS IAM・S3/Object Lock、Bot/API/Studio/Export/Workerへの起動前ガード、復元したPGへの実replay、S3/Backup/Cacheの全コピー消去は #694/#695/#617の未完了P0。
+- 本実装の追加テスト: `node --test deploy/scripts/vc-recap-restore-pinned-audit.test.mjs`。Backup Restore Verification CIへ登録。**AWS credentials / 本人データ / 本番PG16→PG17 / IaC / 新録音・長期保持のフラグには触れない**。現行30日・AWS Transcribe維持、新録音/長期保持/WhisperはOFF。公開は #646 で No-Go のまま。
