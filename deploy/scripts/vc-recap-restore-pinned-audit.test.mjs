@@ -50,7 +50,9 @@ function fixture() {
   };
   const envelope = {
     payload,
-    signatureBase64: sign(null, Buffer.from(JSON.stringify(payload)), privateKey).toString('base64'),
+    signatureBase64: sign(null, Buffer.from(JSON.stringify(payload)), privateKey).toString(
+      'base64',
+    ),
   };
   const trust = {
     trustedPublicKeyPem: publicKey.export({ type: 'spki', format: 'pem' }),
@@ -158,8 +160,15 @@ test('quarantine precedes independent trust, inventory, offline replay and revie
     const { calls, deps } = fixture();
     const result = await reconcileVcRecapRestoreWithPinnedAudit(RUN_ID, deps);
     assert.deepEqual(calls, [
-      'quarantine', 'load', 'trust', 'checkpoint', 'list', 'get',
-      'replay', 'database', 'copies',
+      'quarantine',
+      'load',
+      'trust',
+      'checkpoint',
+      'list',
+      'get',
+      'replay',
+      'database',
+      'copies',
     ]);
     assert.deepEqual(result, { status: 'review-required', canResumeTraffic: false });
   });
