@@ -281,7 +281,12 @@ test('previously valid signed audit cannot be replayed against a newly pinned ch
     let calls = 0;
     await assert.rejects(
       inspectVcRecapLedgerWithPinnedCheckpoint(
-        { async send() { calls++; return {}; } },
+        {
+          async send() {
+            calls++;
+            return {};
+          },
+        },
         commands,
         prior,
         trust(),
@@ -309,7 +314,12 @@ test('missing, malformed, and independently mismatched checkpoint pins fail clos
       checkpoint({ manifestSha256: '0'.repeat(64) }),
     ];
     let calls = 0;
-    const client = { async send() { calls++; return {}; } };
+    const client = {
+      async send() {
+        calls++;
+        return {};
+      },
+    };
     for (const pin of invalid) {
       await assert.rejects(
         inspectVcRecapLedgerWithPinnedCheckpoint(client, commands, envelope(), trust(), pin),
