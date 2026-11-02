@@ -16,10 +16,12 @@
   **every** new purpose (including OpenAI processing), while leaving reserved
   storage objects visible and blocking future reservation commit through the
   erasure row. The database CHECK allows only `reserved` or `committed`.
-- The adapter verifies the database state **before commit**. When any
-  `reserved` row remains, `pendingWritesCancelled=false`; the caller MUST
-  reject the incomplete proof and roll back, retaining external quarantine.
-  An exception aborts the transaction, and the public error excludes owner IDs.
+- The adapter **itself** calls `verifyFenceAndRevocations()` after the
+  callback and rejects any incomplete proof **before commit**, even if the
+  caller forgot to inspect it. A `reserved` row sets
+  `pendingWritesCancelled=false`, so the transaction rolls back and the
+  independent quarantine must remain active. Missing write operations also
+  fail. An exception aborts the transaction without exposing owner IDs.
 - `vc-recap-restore-pg-owner.integration.test.ts` runs exclusively with
   `HERTA_VALORANT_TEST_DATABASE_URL` targeting localhost `/valorant_test`
   and is executed by `VALORANT PostgreSQL integration`. It uses synthetic IDs
