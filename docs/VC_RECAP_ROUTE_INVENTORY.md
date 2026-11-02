@@ -20,12 +20,10 @@ node --test deploy/scripts/vc-recap-restore-traffic-gate.test.mjs
 
 ## 現時点のルートと要対応区分
 
-| 状態 | 件数 | 代表経路 | 未完了 |
-| --- | ---: | --- | --- |
-| `live` | 10 | Bot start/stop/list、発話/要約書込、Studio一覧/詳細/同意/Export、Worker30日retention | 読み書きの直前に独立のepochを確認する共通ガードなし。停止・削除など本人の保護操作が誤ってブロックされない設計が必要 |
-| `dormant` | 1 | Worker本人S3削除sweep | 関数は存在するが、本番実行登録・全コピー消去・独立監査は未確認 |
-| `planned` | 3 | 長期本文Archive、話者録音、署名付き音声URL | #583/#584/#585 が前提。機能OFFを維持 |
-| `unresolved` | 2 | 独立API read、Cache/Index/CDN | 本当の呼び出し元/記憶・検索・表示先が未確定。漏えい経路ゼロの主張は禁止 |
+- **live（10経路）**: Bot start/stop/list、発話・要約書込、Studio一覧・詳細・同意・Export、Worker30日retention。独立のepochチェックが未接続で、停止・削除など本人保護操作の扱いは要設計。
+- **dormant（1経路）**: Worker本人S3削除sweep。関数は存在するが、本番実行登録・全コピー消去・独立監査は未確認。
+- **planned（3経路）**: 長期本文Archive、話者録音、署名付き音声URL。#583/#584/#585 が前提で、機能OFFを維持。
+- **unresolved（2経路）**: 独立API read、Cache/Index/CDN。呼び出し元・保存先・再公開経路の調査が必要で、漏えい経路ゼロの主張は禁止。
 
 個別のファイルと未完了はJSONに記載。実処理経路は `apps/bot/src/plugins/vc-recap.ts`、`apps/bot/src/voice/vc-recap-session-manager.ts`、`packages/db/src/vc-recap.ts`、`apps/studio/src/app/dashboard/guilds/[guildId]/vc-recap/`、`apps/studio/src/app/api/guilds/[guildId]/vc-recap/`、`apps/worker/src/vc-recap-retention.ts` などから確認した。
 
