@@ -63,6 +63,8 @@ jobs:
             echo
             echo "FORMATTED_END:${file}"
           done
+          echo "Temporary formatting capture complete; intentionally stop this diagnostic run"
+          exit 1
 
       - name: Format Check
         run: pnpm format:check
