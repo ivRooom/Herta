@@ -27,6 +27,8 @@ on:
       - 'deploy/scripts/vc-recap-restore-pinned-audit.test.mjs'
       - 'deploy/scripts/vc-recap-restore-fence-replay.mjs'
       - 'deploy/scripts/vc-recap-restore-fence-replay.test.mjs'
+      - 'deploy/scripts/vc-recap-restore-traffic-gate.mjs'
+      - 'deploy/scripts/vc-recap-restore-traffic-gate.test.mjs'
       - 'deploy/scripts/vc-recap-erasure-s3-purge.mjs'
       - 'deploy/scripts/vc-recap-erasure-s3-purge.test.mjs'
       - 'docs/VC_RECAP_ERASURE_LEDGER_DESIGN.md'
@@ -59,6 +61,8 @@ on:
       - 'deploy/scripts/vc-recap-restore-pinned-audit.test.mjs'
       - 'deploy/scripts/vc-recap-restore-fence-replay.mjs'
       - 'deploy/scripts/vc-recap-restore-fence-replay.test.mjs'
+      - 'deploy/scripts/vc-recap-restore-traffic-gate.mjs'
+      - 'deploy/scripts/vc-recap-restore-traffic-gate.test.mjs'
       - 'deploy/scripts/vc-recap-erasure-s3-purge.mjs'
       - 'deploy/scripts/vc-recap-erasure-s3-purge.test.mjs'
       - 'docs/VC_RECAP_ERASURE_LEDGER_DESIGN.md'
@@ -125,6 +129,9 @@ jobs:
 
       - name: Offline owner-locked restore fence replay (synthetic only)
         run: node --test deploy/scripts/vc-recap-restore-fence-replay.test.mjs
+
+      - name: Restore-independent VC traffic gate contract (synthetic only)
+        run: node --test deploy/scripts/vc-recap-restore-traffic-gate.test.mjs
 
       - name: Single-key S3 full-version and multipart purge (synthetic only)
         run: node --test deploy/scripts/vc-recap-erasure-s3-purge.test.mjs
