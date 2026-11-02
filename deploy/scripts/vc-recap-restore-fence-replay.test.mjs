@@ -205,3 +205,23 @@ test('database exceptions must not expose sensitive identifiers', async () => {
     return true;
   });
 });
+
+test('microsecond precision never rolls an existing fence backwards', async () => {
+  const { rows, ops } = fixture();
+  rows.set(A, {
+    requestedAt: '2026-11-02T07:00:00.999999Z',
+    storageDeletionVerifiedAt: null,
+    legacyConsentRevoked: false,
+    purposeConsentsRevoked: false,
+    pendingWritesCancelled: false,
+  });
+  await replay(ledger([{ userId: A, requestedAt: '2026-11-02T07:00:00.999001Z' }]), ops);
+  assert.equal(rows.get(A).requestedAt, '2026-11-02T07:00:00.999999Z');
+});
+
+test('microsecond ordering rejects erasure requests after generatedAt', async () => {
+  const { calls, ops } = fixture();
+  const snapshot = ledger([{ userId: A, requestedAt: '2026-11-02T07:30:00.000002Z' }]);
+  await assert.rejects(replay(snapshot, ops));
+  assert.deepEqual(calls, []);
+});
