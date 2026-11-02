@@ -145,3 +145,23 @@ DBが復元されると、そのバックアップ取得後に本人が行った
 - 合成テストは順序、繰り返し、owner間部分障害、rollback、無効snapshot、誤run、同意/予約停止漏れ、古い削除証明の無効化、機微情報非露出を確認。返却値は `status:'replayed-under-lock'` だが **`canResumeTraffic:false` / `canDeclareErased:false`**。
 - **未実装・No-Go**: 本Portは本番未接続でDB clientも持たず、実際のPostgreSQL advisory lock/トランザクション、Bot/API/Studio/Worker/Exportの永続Quarantine、外部台帳の独立性、削除済み全コピーを証明しない。署名済snapshotでも最後の監査以降の追加要求がない証明と長期anti-rollback監視は別途必要。#694/#695/#617/#646 は継続Open/No-Go。
 - テスト: `node --test deploy/scripts/vc-recap-restore-fence-replay.test.mjs`。CIで合成実行。本番PG16→PG17移行、AWS/IAM/S3実削除、録音・長期保持・Whisperの設定には一切触れない。
+
+## #730｜本人別Multi-key manifestの安全な事前検査（2026-11-03 / offline-only）
+
+`deploy/scripts/vc-recap-erasure-owner-manifest.mjs` に `inspectVcRecapOwnerManifestSynthetic(manifest, expectedBucket)` を追加する。既存の単一Key完全Version/Multipart合成消去 #716/#718 を実行する**前段の入力形状・本人境界チェック**であり、**本番実S3に接続しない**。
+
+- `schemaVersion: 1`、`ownerId`、専用 `bucket`、non-empty `objects` を厳密検査。行には `id` / `userId` / `bucket` / `objectKey` / `kind` / `state` / `versionId` を要求し、unknown field・不正値・重複ID/Keyを拒否する。
+- `vc-recap/users/{ownerId}/` を**境界のある正確なprefix**として判定。他本人IDのprefix模倣、../や./、制御文字、空ディレクトリ片、別Bucket、ID不一致、10,000件超、未検証VersionIdを拒否する。
+- `reserved` は `versionId:null` のみ（multipartなど保留）、`committed` は非emptyかつ `null` 文字列以外のVersionIdを要求。削除対象の補足列挙/Abort/Deleteは今回**一切実行しない**。
+- 返却結果は `status:'owner-key-scope-validated-local-only'`、`objectCount`、`reservedCount`、`canDeclareErased:false`、`canResumeTraffic:false` だけ。元のowner ID・Key名をログ/戻り値に露出しない。入力が不正なら例外文言を固定しfail-closed。
+- `expectedBucket` は将来**独立署名済みallowlist/運用承認**から導出し、復元DBから導いてはならない。現状は外部完全性の証拠がなく、owner ledgerの行自体は欠損/改ざん可能。したがってこの検査が成功しても**列挙漏れがないことは証明されない**。
+- **対象外（#730/#617/#694/#695/#646 OPEN）**: 実際のpostgresからの全行列挙/owner lock、署名・外部inventory完全性、派生共有要約/索引/Redis/Browser/CDN cache、全バックアップ・レプリカ・旧DB復元、実S3 version/multipart操作、独立監査、Quarantine解除、個人データ削除、実AWS IAM/S3作成、録音/365日保存の公開。
+
+再現コマンド（リポジトリルート、Node.js 22以降）:
+
+```bash
+node --test deploy/scripts/vc-recap-erasure-owner-manifest.test.mjs
+node --test deploy/scripts/vc-recap-erasure-s3-purge.test.mjs
+```
+
+Backup Restore Verification CIに同検査を登録し、関係ファイル変更時も実行する。本番で増やすのは**未接続の純粋検査コード/CI/Runbookのみ**。PostgreSQL 16と現行30日AWS Transcribeを変更せず、録音/長期保存/Whisper/自動S3消去はOFF。Rollbackは本PRのコードをrevertするだけ（実データ変更なし）。
