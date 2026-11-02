@@ -176,7 +176,9 @@ function audit(input) {
   }
 
   const transcriber = between(
-    input.session, 'async function transcribeSpeaker(', 'function downmixStereoToMono(',
+    input.session,
+    'async function transcribeSpeaker(',
+    'function downmixStereoToMono(',
   );
   for (const [name, call] of Object.entries({
     aws: 'await transcribePcmStream(',
