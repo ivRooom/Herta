@@ -40,6 +40,7 @@ import { handleDailyParticipation, isParticipationInteraction } from './daily-pa
 import { scanParticipationResults } from './daily-participation-results.js';
 import { replyDailyBonusResult } from './daily-bonus-reply.js';
 import { dailyAnniversaryHeading, dailyBonusFailureMessage } from './daily-bonus-presentation.js';
+import { dailyBonusActionRow } from './daily-bonus-buttons.js';
 
 interface Config {
   enabled: boolean;
@@ -247,20 +248,7 @@ export async function scanDailyBonus(ctx: Context, now = new Date()) {
           content: `<@&${role.id}>`,
           embeds: [embed],
           components: [
-            new ActionRowBuilder<ButtonBuilder>().addComponents(
-              new ButtonBuilder()
-                .setCustomId(`daily-bonus:${date}`)
-                .setLabel('🎁 ボーナスを受け取る')
-                .setStyle(ButtonStyle.Primary),
-              ...(process.env.DAILY_PARTICIPATION_ENABLED === 'true'
-                ? [
-                    new ButtonBuilder()
-                      .setCustomId(`daily-participation:questions:${date}`)
-                      .setLabel('🧠 今日の問題に挑戦')
-                      .setStyle(ButtonStyle.Secondary),
-                  ]
-                : []),
-            ),
+            dailyBonusActionRow(date, process.env.DAILY_PARTICIPATION_ENABLED === 'true'),
           ],
           allowedMentions: dailyBonusAllowedMentions(role.id),
           nonce: createHash('sha256').update(`${ctx.guildId}:${date}`).digest('hex').slice(0, 25),
@@ -307,7 +295,13 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
       await interaction.editReply('この回答ボタンは期限切れ、または本人のものではありません。');
       return;
     }
-    const date = quizSession?.target_date ?? interaction.customId.slice('daily-bonus:'.length);
+    const auxiliary = /^daily-bonus:(questions|fortune):(\d{4}-\d{2}-\d{2})$/.exec(
+      interaction.customId,
+    );
+    const date =
+      quizSession?.target_date ??
+      auxiliary?.[2] ??
+      interaction.customId.slice('daily-bonus:'.length);
     const originalMessage = quizSession?.announcement_message_id ?? interaction.message.id;
     const announcement = await getDailyAnnouncement(ctx.prisma, ctx.guildId, date);
     const member =
@@ -346,6 +340,18 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
       await interaction.editReply('元の通知を確認できません。');
       return;
     }
+    if (auxiliary?.[1] === 'fortune') {
+      if (!ctx.config.fortuneEnabled) {
+        await interaction.editReply('今日の運勢は現在無効です。');
+        return;
+      }
+      try {
+        await displayDailyFortune(ctx, interaction, date, 'edit');
+      } catch {
+        await interaction.editReply('運勢を表示できませんでした。/fortune today から再確認できます。');
+      }
+      return;
+    }
     if (!answer) {
       const status = await dailyBonusStatus(ctx.guildId, interaction.user.id);
       if (status.status === 'quiz') {
@@ -371,6 +377,14 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
             ),
           ],
         });
+        return;
+      }
+      if (auxiliary?.[1] === 'questions') {
+        await interaction.editReply(
+          status.status === 'ready' || status.status === 'confirmed'
+            ? '本日は出題できる問題がありません。または回答済みです。受取状況はボーナスボタンで確認してください。'
+            : dailyBonusFailureMessage(status.status),
+        );
         return;
       }
       if (status.status !== 'ready' && status.status !== 'confirmed') {
@@ -421,31 +435,7 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
     await replyDailyBonusResult(interaction, result);
     if (ctx.config.fortuneEnabled) {
       try {
-        const source = await fetchIvrmFortuneProfile(ctx.guildId, interaction.user.id, date);
-        const fortune = await savedDailyFortune(
-          ctx.prisma,
-          ctx.guildId,
-          interaction.user.id,
-          date,
-          source.status === 'linked' ? source.profile : EMPTY_FORTUNE_PROFILE,
-        );
-        const card = await renderFortuneCard(fortune, interaction.user.displayName, null);
-        await interaction.followUp({
-          flags: MessageFlags.Ephemeral,
-          allowedMentions: { parse: [] },
-          files: [new AttachmentBuilder(card, { name: 'herta-fortune.png' })],
-          embeds: [
-            new EmbedBuilder()
-              .setImage('attachment://herta-fortune.png')
-              .setTitle(`🔮 ${fortune.title}`)
-              .setColor(fortune.hex as `#${string}`)
-              .setDescription(
-                `${fortune.message}\n総合運 ${'★'.repeat(fortune.stars)}\n${fortune.action}`,
-              )
-              .addFields({ name: '今日のラッキー', value: `${fortune.color} / ${fortune.item}` })
-              .setFooter({ text: fortune.disclaimer }),
-          ],
-        });
+        await displayDailyFortune(ctx, interaction, date, 'followUp');
       } catch {
         await interaction.followUp({
           flags: MessageFlags.Ephemeral,
@@ -457,5 +447,42 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
     await interaction.editReply(
       '処理結果を確認できませんでした。同じボタンから再確認してください。重複付与はされません。',
     );
+  }
+}
+
+async function displayDailyFortune(
+  ctx: Context,
+  interaction: ButtonInteraction,
+  date: string,
+  mode: 'edit' | 'followUp',
+) {
+  const source = await fetchIvrmFortuneProfile(ctx.guildId, interaction.user.id, date);
+  const fortune = await savedDailyFortune(
+    ctx.prisma,
+    ctx.guildId,
+    interaction.user.id,
+    date,
+    source.status === 'linked' ? source.profile : EMPTY_FORTUNE_PROFILE,
+  );
+  const card = await renderFortuneCard(fortune, interaction.user.displayName, null);
+  const payload = {
+    allowedMentions: { parse: [] as string[] },
+    files: [new AttachmentBuilder(card, { name: 'herta-fortune.png' })],
+    embeds: [
+      new EmbedBuilder()
+        .setImage('attachment://herta-fortune.png')
+        .setTitle(`🔮 ${fortune.title}`)
+        .setColor(fortune.hex as `#${string}`)
+        .setDescription(
+          `${fortune.message}\n総合運 ${'★'.repeat(fortune.stars)}\n${fortune.action}`,
+        )
+        .addFields({ name: '今日のラッキー', value: `${fortune.color} / ${fortune.item}` })
+        .setFooter({ text: fortune.disclaimer }),
+    ],
+  };
+  if (mode === 'followUp') {
+    await interaction.followUp({ ...payload, flags: MessageFlags.Ephemeral });
+  } else {
+    await interaction.editReply(payload);
   }
 }
