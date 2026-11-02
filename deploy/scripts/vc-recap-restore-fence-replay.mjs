@@ -8,10 +8,7 @@ const MAX_OWNERS = 100000;
 function timestamp(value) {
   if (typeof value !== 'string' || !UTC.test(value)) throw new Error('Invalid timestamp');
   const ms = Date.parse(value);
-  if (
-    !Number.isFinite(ms) ||
-    new Date(ms).toISOString().slice(0, 19) !== value.slice(0, 19)
-  ) {
+  if (!Number.isFinite(ms) || new Date(ms).toISOString().slice(0, 19) !== value.slice(0, 19)) {
     throw new Error('Invalid calendar date');
   }
   return ms;
@@ -65,7 +62,8 @@ function verifySnapshot(snapshot, nowMillis) {
       throw new Error('Invalid or unsorted owner entries');
     }
     const requestedAt = timestamp(entry.requestedAt);
-    if (requestedAt > generatedAt || utcOrder(entry.requestedAt) > generatedOrder) throw new Error('Future erasure request');
+    if (requestedAt > generatedAt || utcOrder(entry.requestedAt) > generatedOrder)
+      throw new Error('Future erasure request');
     previous = entry.userId;
   }
 }
@@ -117,19 +115,15 @@ export async function replayVcRecapRestoreFencesSynthetic(
           throw new Error('Owner transaction is incomplete');
         }
         const existing = await tx.readFence();
-        if (
-          existing !== null &&
-          !exactKeys(existing, ['requestedAt'])
-        ) {
+        if (existing !== null && !exactKeys(existing, ['requestedAt'])) {
           throw new Error('Existing fence is invalid');
         }
         const oldOrder = existing === null ? '' : utcOrder(existing.requestedAt);
         if (existing !== null && timestamp(existing.requestedAt) > nowMillis) {
           throw new Error('Existing fence is from the future');
         }
-        const latest = oldOrder > utcOrder(entry.requestedAt)
-          ? existing.requestedAt
-          : entry.requestedAt;
+        const latest =
+          oldOrder > utcOrder(entry.requestedAt) ? existing.requestedAt : entry.requestedAt;
 
         await tx.upsertFenceAndRevoke({
           userId: entry.userId,
