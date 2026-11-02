@@ -17,6 +17,14 @@ function timestamp(value) {
   return ms;
 }
 
+// Date.parse truncates microseconds; compare canonical UTC at 6-digit precision
+// so a replay cannot silently move a fence backwards within one millisecond.
+function utcOrder(value) {
+  timestamp(value);
+  const [seconds, fraction = ''] = value.slice(0, -1).split('.');
+  return seconds + '.' + fraction.padEnd(6, '0') + 'Z';
+}
+
 function exactKeys(value, names) {
   return (
     value &&
@@ -44,6 +52,7 @@ function verifySnapshot(snapshot, nowMillis) {
     throw new Error('Restore snapshot unavailable');
   }
   const generatedAt = timestamp(snapshot.generatedAt);
+  const generatedOrder = utcOrder(snapshot.generatedAt);
   if (generatedAt > nowMillis) throw new Error('Snapshot from the future');
   let previous = '';
   for (const entry of snapshot.entries) {
@@ -56,7 +65,7 @@ function verifySnapshot(snapshot, nowMillis) {
       throw new Error('Invalid or unsorted owner entries');
     }
     const requestedAt = timestamp(entry.requestedAt);
-    if (requestedAt > generatedAt) throw new Error('Future erasure request');
+    if (requestedAt > generatedAt || utcOrder(entry.requestedAt) > generatedOrder) throw new Error('Future erasure request');
     previous = entry.userId;
   }
 }
@@ -114,8 +123,11 @@ export async function replayVcRecapRestoreFencesSynthetic(
         ) {
           throw new Error('Existing fence is invalid');
         }
-        const oldMillis = existing === null ? -Infinity : timestamp(existing.requestedAt);
-        const latest = oldMillis > timestamp(entry.requestedAt)
+        const oldOrder = existing === null ? '' : utcOrder(existing.requestedAt);
+        if (existing !== null && timestamp(existing.requestedAt) > nowMillis) {
+          throw new Error('Existing fence is from the future');
+        }
+        const latest = oldOrder > utcOrder(entry.requestedAt)
           ? existing.requestedAt
           : entry.requestedAt;
 
@@ -140,7 +152,7 @@ export async function replayVcRecapRestoreFencesSynthetic(
             'pendingWritesCancelled',
           ]) ||
           proof.userId !== entry.userId ||
-          timestamp(proof.requestedAt) < timestamp(latest) ||
+          utcOrder(proof.requestedAt) < utcOrder(latest) ||
           proof.storageDeletionVerifiedAt !== null ||
           proof.legacyConsentRevoked !== true ||
           proof.purposeConsentsRevoked !== true ||
