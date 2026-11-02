@@ -13,10 +13,13 @@
   revocations and future S3 storage reservations.
 - A replay never lowers `requestedAt`, always clears the untrusted
   `storageDeletionVerifiedAt`, revokes legacy voice and retention consent and
-  **every** new purpose (including OpenAI processing), and moves reserved
-  storage objects to `erasure_pending`.
-- The adapter verifies the database state **before commit**. An exception
-  aborts the transaction, and the public error does not include owner IDs.
+  **every** new purpose (including OpenAI processing), while leaving reserved
+  storage objects visible and blocking future reservation commit through the
+  erasure row. The database CHECK allows only `reserved` or `committed`.
+- The adapter verifies the database state **before commit**. When any
+  `reserved` row remains, `pendingWritesCancelled=false`; the caller MUST
+  reject the incomplete proof and roll back, retaining external quarantine.
+  An exception aborts the transaction, and the public error excludes owner IDs.
 - `vc-recap-restore-pg-owner.integration.test.ts` runs exclusively with
   `HERTA_VALORANT_TEST_DATABASE_URL` targeting localhost `/valorant_test`
   and is executed by `VALORANT PostgreSQL integration`. It uses synthetic IDs
@@ -43,7 +46,9 @@ with actual microsecond ordering. No schema migration is part of this PR.
   no other process is prevented from reading/writing VC data by this adapter.
 - Does not cancel an S3 PUT already in flight, enumerate all owner copies,
   purge all versions/multipart/cache/summary/backups or prove deletion
-  (#730/#617). `erasure_pending` is a **blocking intent**, not proof of purge.
+  (#730/#617). The DB erasure row blocks a future reserve/commit but
+  **cannot** cancel a remote PUT already started. A remaining `reserved`
+  row therefore denies a successful replay proof; no purge is inferred.
 - Does not enable long-term enrollment, recording, Whisper, or restore traffic.
   It is intentionally **not** imported from Bot, API, Studio or Worker.
 - Does not run a production backup restore or alter production PostgreSQL,
