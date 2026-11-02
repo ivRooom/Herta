@@ -50,6 +50,17 @@ jobs:
       - name: Format Check
         run: pnpm format:check
 
+      # PR-only temporary diagnostic: formatted source bytes, never secrets.
+      # This step will be removed before merging.
+      - name: Temporary prettier output for isolated security test review
+        if: failure() && github.event_name == 'pull_request'
+        shell: bash
+        run: |
+          for path in docs/VC_RECAP_RESTORE_PG_OWNER.md packages/db/src/vc-recap-restore-pg-owner.ts packages/db/src/vc-recap-restore-pg-owner.integration.test.ts; do
+            pnpm exec prettier --write "$path" >/dev/null
+            printf 'FORMATTED_PAYLOAD %s %s\\n' "$path" "$(base64 -w0 "$path")"
+          done
+
       - name: Lint
         run: pnpm lint
 
