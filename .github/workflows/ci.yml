@@ -52,6 +52,7 @@ jobs:
         run: |
           pnpm exec prettier --write deploy/scripts/vc-recap-erasure-s3-purge.test.mjs
           git --no-pager diff -- deploy/scripts/vc-recap-erasure-s3-purge.test.mjs
+          exit 1 # diagnostic only: complete log before expensive Docker build
 
       - name: Format Check
         run: pnpm format:check
