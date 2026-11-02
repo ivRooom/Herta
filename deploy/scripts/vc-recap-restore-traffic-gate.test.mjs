@@ -52,7 +52,7 @@ function makeAdapters(overrides = {}) {
 }
 
 test('route inventory includes every currently known read/write/consumer boundary', () => {
-  assert.equal(VC_RECAP_TRAFFIC_ROUTES.length, 22);
+  assert.equal(VC_RECAP_TRAFFIC_ROUTES.length, 23);
   assert.equal(new Set(VC_RECAP_TRAFFIC_ROUTES).size, VC_RECAP_TRAFFIC_ROUTES.length);
   for (const route of VC_RECAP_TRAFFIC_ROUTES) {
     assert.equal(typeof route, 'string');
