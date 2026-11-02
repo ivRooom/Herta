@@ -114,7 +114,6 @@ DBが復元されると、そのバックアップ取得後に本人が行った
 
 **No-Go**：本DraftはAWS/DB/Discordへのネットワーク接続を持たず、実ユーザーデータ/実Ledger/S3への操作はない。長期本文保持・録音・Whisperを有効化しない。
 
-
 ## Restore Quarantineと独立署名・Checkpoint/Inventory監査の合成連動（#714 / #695）
 
 - `deploy/scripts/vc-recap-restore-pinned-audit.mjs` は **本番未接続の合成検証専用**。既存の `reconcileVcRecapRestoreUnderQuarantine`（#695）を使い、耐久隔離の受理後に限定して独立監査を読み込む。Ed25519署名・別経路で固定したcheckpoint・S3全Version/全Byte照合にすべて合格するまで、復元DBの削除障壁の再適用も試みない。
