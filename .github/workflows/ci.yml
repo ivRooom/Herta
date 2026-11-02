@@ -47,6 +47,10 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
+      - name: Temporary Prettier diff diagnosis for #720
+        run: |
+          pnpm exec prettier apps/bot/src/plugins/daily-bonus.ts | diff -u apps/bot/src/plugins/daily-bonus.ts - || true
+
       - name: Format Check
         run: pnpm format:check
 
