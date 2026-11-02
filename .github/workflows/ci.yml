@@ -44,6 +44,12 @@ jobs:
         run: test "$(node --version)" = v22.23.4
       - run: pnpm install --frozen-lockfile
 
+      # Temporary #714 formatting probe; MUST be removed before merge.
+      - name: Temporary formatting probe for #714
+        run: |
+          pnpm exec prettier --write deploy/scripts/vc-recap-restore-pinned-audit.mjs deploy/scripts/vc-recap-restore-pinned-audit.test.mjs docs/VC_RECAP_ERASURE_LEDGER_DESIGN.md
+          node --input-type=module -e "import {readFileSync} from 'node:fs'; for(const path of ['deploy/scripts/vc-recap-restore-pinned-audit.mjs','deploy/scripts/vc-recap-restore-pinned-audit.test.mjs','docs/VC_RECAP_ERASURE_LEDGER_DESIGN.md']) console.log('FORMATTED_FILE:' + Buffer.from(JSON.stringify({path,content:readFileSync(path,'utf8')})).toString('base64'))"
+
       - name: Prisma Generate
         run: pnpm db:generate
 
