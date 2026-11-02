@@ -47,25 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      # TEMP #718: print canonical formatter output to logs; REMOVE before merge.
-      - name: Temporary formatter diagnostic for VC Recap #718
-        run: |
-          set -euo pipefail
-          files=(
-            deploy/scripts/vc-recap-erasure-s3-purge.mjs
-            deploy/scripts/vc-recap-erasure-s3-purge.test.mjs
-            docs/VC_RECAP_ERASURE_LEDGER_DESIGN.md
-          )
-          pnpm exec prettier --write "${files[@]}"
-          for file in "${files[@]}"; do
-            echo "FORMATTED_BEGIN:${file}"
-            base64 -w0 "${file}"
-            echo
-            echo "FORMATTED_END:${file}"
-          done
-          echo "Temporary formatting capture complete; intentionally stop this diagnostic run"
-          exit 1
-
       - name: Format Check
         run: pnpm format:check
 
