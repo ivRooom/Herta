@@ -348,7 +348,9 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
       try {
         await displayDailyFortune(ctx, interaction, date, 'edit');
       } catch {
-        await interaction.editReply('運勢を表示できませんでした。/fortune today から再確認できます。');
+        await interaction.editReply(
+          '運勢を表示できませんでした。/fortune today から再確認できます。',
+        );
       }
       return;
     }
