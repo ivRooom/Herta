@@ -4,8 +4,11 @@ import { Readable } from 'node:stream';
 import test from 'node:test';
 import { ERASURE_EVENT_KIND } from './vc-recap-erasure-ledger-contract.mjs';
 import {
+  PINNED_AUDIT_CHECKPOINT_KIND,
   SIGNED_AUDIT_KIND,
+  inspectVcRecapLedgerWithPinnedCheckpoint,
   inspectVcRecapLedgerWithSignedAudit,
+  verifyPinnedVcRecapAudit,
   verifySignedVcRecapAudit,
 } from './vc-recap-erasure-signed-audit.mjs';
 
@@ -225,6 +228,111 @@ test('missing trust prevents any S3 listing and hides confidential audit details
         }),
       ),
       (error) => !error.message.includes('private-sentinel-name'),
+    );
+    assert.equal(calls, 0);
+  });
+});
+
+const checkpoint = (changes = {}) => ({
+  ...payload(),
+  kind: PINNED_AUDIT_CHECKPOINT_KIND,
+  ...changes,
+});
+
+test('out-of-band checkpoint pin matches exact signed inventory without resuming traffic', async () => {
+  await withBucket(async () => {
+    const verified = verifyPinnedVcRecapAudit(envelope(), trust(), checkpoint());
+    assert.equal(verified.status, 'signed-audit-checkpoint-matched-only');
+    assert.equal(verified.canResumeTraffic, false);
+    const calls = [];
+    const client = {
+      async send(cmd) {
+        calls.push(cmd.kind);
+        if (cmd.kind === 'list') return { Versions: [version], IsTruncated: false };
+        return {
+          $metadata: { httpStatusCode: 200 },
+          ContentLength: bytes.length,
+          VersionId: version.VersionId,
+          Body: Readable.from([bytes]),
+        };
+      },
+    };
+    const checked = await inspectVcRecapLedgerWithPinnedCheckpoint(
+      client,
+      commands,
+      envelope(),
+      trust(),
+      checkpoint(),
+    );
+    assert.equal(checked.status, 'pinned-checkpoint-local-match-only');
+    assert.equal(checked.canResumeTraffic, false);
+    assert.deepEqual(calls, ['list', 'get']);
+  });
+});
+
+test('previously valid signed audit cannot be replayed against a newly pinned checkpoint', async () => {
+  await withBucket(async () => {
+    const prior = envelope();
+    const newer = checkpoint({
+      auditId: '00000000-0000-4000-8000-000000000004',
+      generatedAt: '2026-11-02T00:01:00Z',
+    });
+    assert.throws(() => verifyPinnedVcRecapAudit(prior, trust(), newer), /checkpoint/);
+    let calls = 0;
+    await assert.rejects(
+      inspectVcRecapLedgerWithPinnedCheckpoint(
+        { async send() { calls++; return {}; } },
+        commands,
+        prior,
+        trust(),
+        newer,
+      ),
+      /checkpoint/,
+    );
+    assert.equal(calls, 0);
+  });
+});
+
+test('missing, malformed, and independently mismatched checkpoint pins fail closed', async () => {
+  await withBucket(async () => {
+    const invalid = [
+      undefined,
+      null,
+      {},
+      { ...checkpoint(), extra: 'untrusted' },
+      checkpoint({ kind: 'untrusted' }),
+      checkpoint({ auditId: '00000000-0000-4000-8000-000000000004' }),
+      checkpoint({ restoreRunId: AUDIT_ID }),
+      checkpoint({ ledgerBucket: 'another-audit-bucket' }),
+      checkpoint({ generatedAt: '2026-11-01T23:59:59Z' }),
+      checkpoint({ objectCount: 2 }),
+      checkpoint({ manifestSha256: '0'.repeat(64) }),
+    ];
+    let calls = 0;
+    const client = { async send() { calls++; return {}; } };
+    for (const pin of invalid) {
+      await assert.rejects(
+        inspectVcRecapLedgerWithPinnedCheckpoint(client, commands, envelope(), trust(), pin),
+      );
+    }
+    assert.equal(calls, 0);
+  });
+});
+
+test('pin does not bypass signature authentication and never includes private details in errors', async () => {
+  await withBucket(async () => {
+    let calls = 0;
+    const client = { async send() { calls++; return {}; } };
+    const falsified = { ...envelope(), signatureBase64: 'a'.repeat(86) + '==' };
+    await assert.rejects(
+      inspectVcRecapLedgerWithPinnedCheckpoint(
+        client,
+        commands,
+        falsified,
+        trust(),
+        checkpoint(),
+      ),
+      (error) => !error.message.includes(BUCKET) && !error.message.includes(entry.userId),
     );
     assert.equal(calls, 0);
   });
