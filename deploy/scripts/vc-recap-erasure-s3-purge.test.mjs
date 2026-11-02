@@ -284,3 +284,68 @@ test('post-deletion verification failure is never treated as erasure success', a
   });
   await assert.rejects(run(fixture.client), /keep erasure pending/);
 });
+
+test('missing, null or non-boolean pagination completion never authorizes deletion', async () => {
+  for (const name of ['ListObjectVersions', 'ListMultipartUploads']) {
+    for (const flag of [undefined, null, 'false', 0]) {
+      const page = name === 'ListObjectVersions'
+        ? { Versions: [{ Key: KEY, VersionId: 'v1' }] }
+        : { Uploads: [{ Key: KEY, UploadId: 'u1' }] };
+      if (flag !== undefined) page.IsTruncated = flag;
+      const fixture = mock({
+        versions: [{ Key: KEY, VersionId: 'v1' }],
+        badPage: (pageName) => pageName === name && page,
+      });
+      await assert.rejects(run(fixture.client), /keep erasure pending/);
+      assert.equal(
+        fixture.calls.some((x) => ['DeleteObject', 'AbortMultipartUpload'].includes(x.name)),
+        false,
+      );
+    }
+  }
+});
+
+test('truncated empty pages and out-of-prefix cursors cannot skip inventory', async () => {
+  for (const [name, listField, idField] of [
+    ['ListObjectVersions', 'Versions', 'NextVersionIdMarker'],
+    ['ListMultipartUploads', 'Uploads', 'NextUploadIdMarker'],
+  ]) {
+    for (const [items, cursorKey] of [
+      [[], KEY],
+      [[name === 'ListObjectVersions'
+        ? { Key: KEY, VersionId: 'v1' }
+        : { Key: KEY, UploadId: 'u1' }], 'vc-recap/outside-owner/other'],
+    ]) {
+      const page = {
+        IsTruncated: true,
+        NextKeyMarker: cursorKey,
+        [idField]: 'cursor-id',
+        [listField]: items,
+      };
+      const fixture = mock({
+        versions: [{ Key: KEY, VersionId: 'v1' }],
+        badPage: (pageName) => pageName === name && page,
+      });
+      await assert.rejects(run(fixture.client), /keep erasure pending/);
+      assert.equal(
+        fixture.calls.some((x) => ['DeleteObject', 'AbortMultipartUpload'].includes(x.name)),
+        false,
+      );
+    }
+  }
+});
+
+test('malformed post-deletion listing blocks success even if initial listing is valid', async () => {
+  for (const name of ['ListObjectVersions', 'ListMultipartUploads']) {
+    let reads = 0;
+    const fixture = mock({
+      versions: [{ Key: KEY, VersionId: 'v1' }],
+      badPage: (pageName) => {
+        if (pageName !== name || ++reads !== 2) return null;
+        return name === 'ListObjectVersions' ? { Versions: [] } : { Uploads: [] };
+      },
+    });
+    await assert.rejects(run(fixture.client), /keep erasure pending/);
+    assert.equal(fixture.items.length, 0);
+  }
+});
