@@ -47,6 +47,12 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
+      # Diagnostic only for #716; remove after applying formatter diff.
+      - name: Show formatting delta for synthetic S3 test
+        run: |
+          pnpm exec prettier --write deploy/scripts/vc-recap-erasure-s3-purge.test.mjs
+          git --no-pager diff -- deploy/scripts/vc-recap-erasure-s3-purge.test.mjs
+
       - name: Format Check
         run: pnpm format:check
 
