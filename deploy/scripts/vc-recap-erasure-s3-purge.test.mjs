@@ -199,7 +199,6 @@ test('repeated pagination cursor fails in two reads without mutating objects', a
         IsTruncated: true,
         NextKeyMarker: KEY,
         NextVersionIdMarker: 'v1',
-        Versions: [],
       },
     ],
     [
@@ -208,13 +207,18 @@ test('repeated pagination cursor fails in two reads without mutating objects', a
         IsTruncated: true,
         NextKeyMarker: KEY,
         NextUploadIdMarker: 'u1',
-        Uploads: [],
       },
     ],
   ]) {
+    let pageNumber = 0;
     const fixture = mock({
       versions: [{ Key: KEY, VersionId: 'v1' }],
-      badPage: (pageName) => pageName === name && page,
+      badPage: (pageName) => {
+        if (pageName !== name) return null;
+        const listField = name === 'ListObjectVersions' ? 'Versions' : 'Uploads';
+        const idField = name === 'ListObjectVersions' ? 'VersionId' : 'UploadId';
+        return { ...page, [listField]: [{ Key: KEY, [idField]: String(++pageNumber) }] };
+      },
     });
     await assert.rejects(run(fixture.client), /keep erasure pending/);
     assert.equal(fixture.calls.filter((x) => x.name === name).length, 2);
