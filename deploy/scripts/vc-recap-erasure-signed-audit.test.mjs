@@ -332,16 +332,15 @@ test('missing, malformed, and independently mismatched checkpoint pins fail clos
 test('pin does not bypass signature authentication and never includes private details in errors', async () => {
   await withBucket(async () => {
     let calls = 0;
-    const client = { async send() { calls++; return {}; } };
+    const client = {
+      async send() {
+        calls++;
+        return {};
+      },
+    };
     const falsified = { ...envelope(), signatureBase64: 'a'.repeat(86) + '==' };
     await assert.rejects(
-      inspectVcRecapLedgerWithPinnedCheckpoint(
-        client,
-        commands,
-        falsified,
-        trust(),
-        checkpoint(),
-      ),
+      inspectVcRecapLedgerWithPinnedCheckpoint(client, commands, falsified, trust(), checkpoint()),
       (error) => !error.message.includes(BUCKET) && !error.message.includes(entry.userId),
     );
     assert.equal(calls, 0);
