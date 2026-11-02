@@ -119,17 +119,22 @@ test('real isolated PostgreSQL: owner-locked replay is atomic, monotonic, retrya
       assert.equal(await prisma.vcRecapErasureRequest.count({ where: { userId: other } }), 0);
 
       // A pending S3 upload cannot be certified cancelled by this PG-only adapter.
-      // The CHECK constraint forbids inventing a new reservation state; a
-      // verified restore executor must reject the incomplete proof and roll back.
+      // The CHECK constraint forbids inventing a new reservation state.
+      // Even if the caller omits its proof check, the adapter MUST refuse
+      // the commit and roll back under the existing advisory lock.
       await assert.rejects(
         withVcRecapRestorePgOwnerTransaction(prisma, runId, other, async (tx) => {
           await tx.upsertFenceAndRevoke(instruction(other));
-          const proof = await tx.verifyFenceAndRevocations();
-          assert.equal(proof.pendingWritesCancelled, true, 'pending upload is unresolved');
         }),
         /transaction unverified/,
       );
       assert.equal(await prisma.vcRecapErasureRequest.count({ where: { userId: other } }), 0);
+
+      // A callback that does not install a restore fence must not commit.
+      await assert.rejects(
+        withVcRecapRestorePgOwnerTransaction(prisma, runId, other, async () => {}),
+        /transaction unverified/,
+      );
 
       // Throw after writes: no partial fence, consent or upload state may commit.
       await assert.rejects(
