@@ -116,5 +116,5 @@ test('future completeness or actual cleanup may never be implied by manifest suc
   assert.equal('complete' in result, false);
   assert.equal('keys' in result, false);
   // This module deliberately accepts no SDK, credentials or mutation adapter.
-  assert.equal(inspect.length, 2);
+  assert.equal(inspectVcRecapOwnerManifestSynthetic.length, 2);
 });
