@@ -213,7 +213,7 @@ test('unknown, misclassified and falsely protected actions fail source inventory
   for (const route of ['bot.start', 'studio.detail']) {
     const misclassified = structuredClone(inventory);
     misclassified.routes.find((item) => item.route === route).action = 'protection';
-    assert.match(validateRouteInventory(misclassified).join('\\n'), /unauthorized protection/);
+    assert.match(validateRouteInventory(misclassified).join('\n'), /unauthorized protection/);
   }
 
   const fictitiousProtector = structuredClone(inventory);
