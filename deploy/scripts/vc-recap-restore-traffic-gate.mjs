@@ -8,6 +8,7 @@
 export const VC_RECAP_TRAFFIC_ROUTES = Object.freeze([
   'bot.start',
   'bot.stop',
+  'bot.lifecycle-stop',
   'bot.privacy-voice-consent',
   'bot.privacy-openai-consent',
   'bot.privacy-delete',
