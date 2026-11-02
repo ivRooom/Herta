@@ -141,3 +141,58 @@ export async function inspectVcRecapLedgerWithSignedAudit(client, commands, enve
   });
   return { ...local, status: 'signed-audit-local-match-only', canResumeTraffic: false };
 }
+
+/**
+ * Check a signed audit against a separately distributed, *pinned* checkpoint.
+ *
+ * The checkpoint must come from an independently protected, monotonic source,
+ * NOT the audited S3 bucket, a restored PostgreSQL row, or the signed envelope.
+ * This function cannot establish that provenance or update the checkpoint.
+ * An attacker who can roll back BOTH inputs defeats this comparison.
+ */
+export const PINNED_AUDIT_CHECKPOINT_KIND = 'vc-recap-out-of-band-audit-checkpoint-v1';
+
+export function verifyPinnedVcRecapAudit(envelope, trust, checkpoint) {
+  const authenticated = verifySignedVcRecapAudit(envelope, trust);
+  const payload = envelope.payload;
+  const required = 'auditId,generatedAt,kind,ledgerBucket,manifestSha256,objectCount,restoreRunId';
+
+  if (
+    !checkpoint ||
+    typeof checkpoint !== 'object' ||
+    Array.isArray(checkpoint) ||
+    Object.keys(checkpoint).sort().join(',') !== required ||
+    checkpoint.kind !== PINNED_AUDIT_CHECKPOINT_KIND ||
+    checkpoint.auditId !== payload.auditId ||
+    checkpoint.generatedAt !== payload.generatedAt ||
+    checkpoint.restoreRunId !== payload.restoreRunId ||
+    checkpoint.ledgerBucket !== payload.ledgerBucket ||
+    checkpoint.manifestSha256 !== payload.manifestSha256 ||
+    checkpoint.objectCount !== payload.objectCount
+  ) {
+    // Do not reveal the ledger identity, bucket, or manifest in failures.
+    throw new Error('Independently pinned audit checkpoint mismatch');
+  }
+
+  return {
+    ...authenticated,
+    status: 'signed-audit-checkpoint-matched-only',
+    canResumeTraffic: false,
+  };
+}
+
+/**
+ * No inventory call is made until BOTH the signature and the out-of-band pin
+ * match. This still cannot authorize unquarantining a live VC service.
+ */
+export async function inspectVcRecapLedgerWithPinnedCheckpoint(
+  client,
+  commands,
+  envelope,
+  trust,
+  checkpoint,
+) {
+  verifyPinnedVcRecapAudit(envelope, trust, checkpoint);
+  const result = await inspectVcRecapLedgerWithSignedAudit(client, commands, envelope, trust);
+  return { ...result, status: 'pinned-checkpoint-local-match-only', canResumeTraffic: false };
+}

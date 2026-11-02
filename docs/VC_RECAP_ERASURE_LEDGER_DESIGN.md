@@ -95,6 +95,15 @@ DBが復元されると、そのバックアップ取得後に本人が行った
 - **重要な残存脅威**: 署名は「誰がどのmanifestに署名したか」の真正性確認に過ぎず、署名者による全レコードの独立数え上げ・永続完全性・最後のmanifest以降のPut・既知の最新manifestへのanti-rollback保護を保証しない。正しい署名済古いmanifestの再利用、署名鍵漏洩、S3 Versioningのdelete marker、削除されたobjectの見落とし等を防ぐには **独立監査の生成・配布・単調増加チェックポイント・IAM/Object Lock/別管理境界** が必須。
 - 結果が成功しても新録音/長期保持の本番ON、実個人削除受理、隔離解除のGo判断に使わない。新AWSリソース/IAM/課金の変更は#646で別途承認を得る。
 
+## 監査manifestのanti-rollback checkpoint Pin（#708、合成専用）
+
+署名が有効でも、攻撃者が**過去の真正な署名済manifest**を提示できるため、監査の最新性は保証されない。独立に保全された「現在採用すべき監査」のチェックポイントが必要になる。
+
+- `verifyPinnedVcRecapAudit(envelope, trust, checkpoint)` は Ed25519署名・公開鍵Pin/有効期限を検証してから、**別の信頼経路で取得したcheckpoint** の7項目（`kind`・`auditId`・`restoreRunId`・`ledgerBucket`・`generatedAt`・`objectCount`・`manifestSha256`）の完全一致を要求する。部分一致、欠損、追加フィールド、古い正しい署名も拒否する。
+- `inspectVcRecapLedgerWithPinnedCheckpoint` は署名とcheckpoint双方の照合に成功した場合に限り、既存S3 Version Inventoryの合成照合へ進む。照合に失敗した場合は**S3 List/Getを開始しない**。返却値は常に `canResumeTraffic:false`。
+- **checkpointの正本は未実装**。その保存場所、署名/管理主体、単調増加した最新checkpointであることの保証、更新の原子性、署名鍵ローテーション、複数復元Runとの紐付け、最後のmanifest以降のPutの検出は別途設計・承認が必要。**checkpointを監査対象S3、復元済みPostgreSQL、監査envelope自体から作って渡す設計は安全ではない**。checkpointと署名済manifestを一緒に巻き戻された場合も検出できない。
+- **本番有効化禁止**: 合成検証の成功は、台帳監査の独立性/完全性、本人の全データ消去、実VC Quarantineや配信再開の承認ではない。外部checkpoint正本設置・IAM/費用・運用は #694 / #646 の個別承認に従う。PG16→PG17移行は対象外。
+
 ## 次のIssue依存
 
 - #694: 認可済み外部Bucket/Role/IAM設計と見積りレビュー → write-first永続化 → 障害・同時操作テスト。**外部作成は別承認**。
