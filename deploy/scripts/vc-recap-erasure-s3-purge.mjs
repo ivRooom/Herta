@@ -37,12 +37,15 @@ function entries(page, name) {
   return page[name];
 }
 
-function more(page, keyCursor, idCursor, seen) {
-  if (page?.IsTruncated === undefined || page.IsTruncated === false) return null;
-  if (page.IsTruncated !== true) throw new Error(ERROR);
+function more(page, keyCursor, idCursor, seen, prefix, itemCount) {
+  // A missing or non-boolean completion flag is NOT evidence that listing ended.
+  if (typeof page?.IsTruncated !== 'boolean') throw new Error(ERROR);
+  if (page.IsTruncated === false) return null;
+  // Empty truncated pages give no evidence of progress or completeness.
+  if (itemCount === 0) throw new Error(ERROR);
   const key = page[keyCursor];
   const id = page[idCursor];
-  if (typeof key !== 'string' || !key || typeof id !== 'string' || !id) {
+  if (typeof key !== 'string' || !key.startsWith(prefix) || typeof id !== 'string' || !id) {
     throw new Error(ERROR);
   }
   const token = JSON.stringify([key, id]);
@@ -63,7 +66,8 @@ async function inventoryVersions(client, commands, bucket, key) {
     }
     const page = await client.send(new commands.ListObjectVersionsCommand(request));
     if (!page || typeof page !== 'object') throw new Error(ERROR);
-    for (const item of [...entries(page, 'Versions'), ...entries(page, 'DeleteMarkers')]) {
+    const listed = [...entries(page, 'Versions'), ...entries(page, 'DeleteMarkers')];
+    for (const item of listed) {
       if (
         !item ||
         typeof item.Key !== 'string' ||
@@ -78,7 +82,7 @@ async function inventoryVersions(client, commands, bucket, key) {
       if (found.has(item.VersionId) || found.size >= MAX_ITEMS) throw new Error(ERROR);
       found.add(item.VersionId);
     }
-    marker = more(page, 'NextKeyMarker', 'NextVersionIdMarker', seenCursors);
+    marker = more(page, 'NextKeyMarker', 'NextVersionIdMarker', seenCursors, key, listed.length);
     if (!marker) return [...found];
   }
   throw new Error(ERROR);
@@ -96,7 +100,8 @@ async function inventoryUploads(client, commands, bucket, key) {
     }
     const page = await client.send(new commands.ListMultipartUploadsCommand(request));
     if (!page || typeof page !== 'object') throw new Error(ERROR);
-    for (const item of entries(page, 'Uploads')) {
+    const listed = entries(page, 'Uploads');
+    for (const item of listed) {
       if (
         !item ||
         typeof item.Key !== 'string' ||
@@ -110,7 +115,7 @@ async function inventoryUploads(client, commands, bucket, key) {
       if (found.has(item.UploadId) || found.size >= MAX_ITEMS) throw new Error(ERROR);
       found.add(item.UploadId);
     }
-    marker = more(page, 'NextKeyMarker', 'NextUploadIdMarker', seenCursors);
+    marker = more(page, 'NextKeyMarker', 'NextUploadIdMarker', seenCursors, key, listed.length);
     if (!marker) return [...found];
   }
   throw new Error(ERROR);
