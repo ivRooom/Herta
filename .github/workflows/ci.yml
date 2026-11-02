@@ -47,14 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      - name: Show temporary Prettier corrections for PR 725
-        shell: bash
-        run: |
-          pnpm exec prettier --write \
-            deploy/scripts/vc-recap-restore-fence-replay.mjs \
-            deploy/scripts/vc-recap-restore-fence-replay.test.mjs
-          git diff -- deploy/scripts/vc-recap-restore-fence-replay.mjs deploy/scripts/vc-recap-restore-fence-replay.test.mjs
-
       - name: Format Check
         run: pnpm format:check
 
