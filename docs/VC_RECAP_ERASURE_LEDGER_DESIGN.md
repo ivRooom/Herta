@@ -129,3 +129,11 @@ DBが復元されると、そのバックアップ取得後に本人が行った
 - 成功結果も`{ status: 'single-key-local-list-empty-only', canDeclareErased: false, canResumeTraffic: false }`。**単一Keyの一時点での局所確認**であり、別Key・DB・共有要約・索引・キャッシュ・別Backup/レプリカ・将来の同時Putを含む「本人完全消去」の証明ではない。別運用主体による独立監査、書込禁止の持続、全コピー確認、Quarantine解除承認は依然未完成。
 - `null` VersionId（非Versioned状態の可能性）は、無条件Deleteにより削除マーカーを新設しないよう拒否。安全な特例処理は設計・実Bucket調査と承認が必要。実S3や本人データでは実行しない。
 - 合成テスト: `node --test deploy/scripts/vc-recap-erasure-s3-purge.test.mjs`。Backup Restore Verification CIに登録。PG16→PG17移行・AWS/IAM/Object Lock・課金・本番データ削除・録音/長期保持/Whisper ONには触れない。新機能公開は #646 No-Go、#617/#694/#695 はOpen継続。
+
+### S3消去のページング完全性とfail-closed回帰（#718）
+
+- `ListObjectVersions` / `ListMultipartUploads` の**すべてのページ（削除前・削除後の再列挙を含む）**は `IsTruncated` が厳密に `true` または `false` である必要がある。欠損・`null`・文字列・数値を終了の証拠として扱わない。
+- `IsTruncated:true` で空のページ、指定Prefix外の次カーソル、欠落した次カーソル、繰り返される次カーソルを拒否する。列挙の異常が削除前に見つかった場合、Abort/Deleteを**一切開始しない**。削除後の再列挙が異常でも局所0件確認を宣言しない。
+- これは破損・不完全なSDKレスポンスに対する合成テストの強化であり、**S3実Bucketを列挙した証拠ではない**。SDKが整合するように見えても、並行PUT、独立監査、他のコピー、復元済みDBの再配信を防ぐ根拠にはならない。
+- `node --test deploy/scripts/vc-recap-erasure-s3-purge.test.mjs` を既存 Backup Restore Verification CI で実行する。本Portは本番未接続、`canDeclareErased:false` / `canResumeTraffic:false`、#617 / #694 / #695 と Release #646 は引き続きNo-Go。PG16→PG17・本番AWS/IAM・録音/保持設定には触れない。
+
