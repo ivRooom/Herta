@@ -76,10 +76,13 @@ function replay(snapshot, ops) {
 
 test('quarantine precedes per-owner locked atomic replay; no traffic resume', async () => {
   const { rows, calls, ops } = fixture();
-  const result = await replay(ledger([
-    { userId: A, requestedAt: OLD },
-    { userId: B, requestedAt: NEW },
-  ]), ops);
+  const result = await replay(
+    ledger([
+      { userId: A, requestedAt: OLD },
+      { userId: B, requestedAt: NEW },
+    ]),
+    ops,
+  );
   assert.deepEqual(result, {
     runId: RUN_ID,
     status: 'replayed-under-lock',
@@ -89,8 +92,16 @@ test('quarantine precedes per-owner locked atomic replay; no traffic resume', as
   });
   assert.deepEqual(calls, [
     'quarantine',
-    'lock:' + A, 'read:' + A, 'write:' + A, 'verify:' + A, 'commit:' + A,
-    'lock:' + B, 'read:' + B, 'write:' + B, 'verify:' + B, 'commit:' + B,
+    'lock:' + A,
+    'read:' + A,
+    'write:' + A,
+    'verify:' + A,
+    'commit:' + A,
+    'lock:' + B,
+    'read:' + B,
+    'write:' + B,
+    'verify:' + B,
+    'commit:' + B,
   ]);
   assert.equal(rows.get(A).storageDeletionVerifiedAt, null);
   assert.equal(rows.get(A).legacyConsentRevoked, true);
@@ -117,8 +128,17 @@ test('invalid snapshot is rejected before quarantine or any database operation',
     null,
     {},
     ledger([]),
-    { ...ledger(), entries: [{ userId: B, requestedAt: OLD }, { userId: A, requestedAt: NEW }] },
-    ledger([{ userId: A, requestedAt: OLD }, { userId: A, requestedAt: NEW }]),
+    {
+      ...ledger(),
+      entries: [
+        { userId: B, requestedAt: OLD },
+        { userId: A, requestedAt: NEW },
+      ],
+    },
+    ledger([
+      { userId: A, requestedAt: OLD },
+      { userId: A, requestedAt: NEW },
+    ]),
     ledger([{ userId: A, requestedAt: '2026-11-03T00:00:00Z' }]),
     ledger([{ userId: A, requestedAt: '2026-11-01T99:00:00Z' }]),
     ledger([{ userId: A, requestedAt: '2026-02-30T07:00:00Z' }]),
