@@ -136,4 +136,3 @@ DBが復元されると、そのバックアップ取得後に本人が行った
 - `IsTruncated:true` で空のページ、指定Prefix外の次カーソル、欠落した次カーソル、繰り返される次カーソルを拒否する。列挙の異常が削除前に見つかった場合、Abort/Deleteを**一切開始しない**。削除後の再列挙が異常でも局所0件確認を宣言しない。
 - これは破損・不完全なSDKレスポンスに対する合成テストの強化であり、**S3実Bucketを列挙した証拠ではない**。SDKが整合するように見えても、並行PUT、独立監査、他のコピー、復元済みDBの再配信を防ぐ根拠にはならない。
 - `node --test deploy/scripts/vc-recap-erasure-s3-purge.test.mjs` を既存 Backup Restore Verification CI で実行する。本Portは本番未接続、`canDeclareErased:false` / `canResumeTraffic:false`、#617 / #694 / #695 と Release #646 は引き続きNo-Go。PG16→PG17・本番AWS/IAM・録音/保持設定には触れない。
-
