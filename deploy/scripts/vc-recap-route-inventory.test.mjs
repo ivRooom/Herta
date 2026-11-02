@@ -103,7 +103,10 @@ test('all 16 traffic gate IDs have audited source or explicit unresolved state',
   assert.deepEqual(validateRouteInventory(inventory), []);
   assert.equal(inventory.routes.filter((item) => item.state === 'live').length, 10);
   // A passing test does not demonstrate runtime prevention or bypass-zero.
-  assert.equal(inventory.routes.some((item) => item.state === 'unresolved'), true);
+  assert.equal(
+    inventory.routes.some((item) => item.state === 'unresolved'),
+    true,
+  );
 });
 
 test('missing, duplicate and unknown routes are rejected', () => {
