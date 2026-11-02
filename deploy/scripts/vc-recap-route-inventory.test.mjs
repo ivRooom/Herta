@@ -12,6 +12,9 @@ const inventory = JSON.parse(
 const SOURCE_PATH = /^(apps|packages)\/[a-zA-Z0-9_./\[\]-]+\.(?:ts|tsx)$/;
 const STATES = new Set(['live', 'dormant', 'planned', 'unresolved']);
 const ACTIONS = new Set(['exposure', 'protection', 'mixed', 'unresolved']);
+// Only these offline-inventoried routes may carry a protection label.
+// This never grants permission to execute them at runtime.
+const PROTECTION_ROUTES = new Set(['bot.privacy-delete', 'worker.retention', 'worker.erasure']);
 // Independent test constraints: a route labelled "protection" never grants access.
 // Grant/revoke handlers are mixed until branch-specific runtime checks exist.
 const CRITICAL_ACTIONS = Object.freeze({
@@ -79,6 +82,9 @@ function validateRouteInventory(doc, readSource = readRepoFile) {
     }
     if (item.action === 'protection' && ['planned', 'unresolved'].includes(item.state)) {
       errors.push(`unverified protection route: ${item.route}`);
+    }
+    if (item.action === 'protection' && !PROTECTION_ROUTES.has(item.route)) {
+      errors.push(`unauthorized protection route: ${item.route}`);
     }
     if (typeof item.gap !== 'string' || item.gap.trim().length < 25) {
       errors.push(`missing unguarded/unknown gap description: ${item.route}`);
@@ -203,6 +209,12 @@ test('unknown, misclassified and falsely protected actions fail source inventory
     validateRouteInventory(blockedRevocation).join('\n'),
     /unsafe action classification/,
   );
+
+  for (const route of ['bot.start', 'studio.detail']) {
+    const misclassified = structuredClone(inventory);
+    misclassified.routes.find((item) => item.route === route).action = 'protection';
+    assert.match(validateRouteInventory(misclassified).join('\\n'), /unauthorized protection/);
+  }
 
   const fictitiousProtector = structuredClone(inventory);
   fictitiousProtector.routes.find((item) => item.route === 'api.transcript-read').action =
