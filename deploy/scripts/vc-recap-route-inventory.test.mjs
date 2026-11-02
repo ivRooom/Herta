@@ -19,6 +19,7 @@ const PROTECTION_ROUTES = new Set(['bot.privacy-delete', 'worker.retention', 'wo
 // Grant/revoke handlers are mixed until branch-specific runtime checks exist.
 const CRITICAL_ACTIONS = Object.freeze({
   'bot.stop': 'mixed',
+  'bot.lifecycle-stop': 'mixed',
   'bot.privacy-voice-consent': 'mixed',
   'bot.privacy-openai-consent': 'mixed',
   'bot.privacy-delete': 'protection',
@@ -130,10 +131,10 @@ function validateRouteInventory(doc, readSource = readRepoFile) {
   return errors;
 }
 
-test('all 22 offline route IDs include privacy and consent ingress boundaries', () => {
-  assert.equal(VC_RECAP_TRAFFIC_ROUTES.length, 22);
+test('all 23 offline route IDs include privacy and consent ingress boundaries', () => {
+  assert.equal(VC_RECAP_TRAFFIC_ROUTES.length, 23);
   assert.deepEqual(validateRouteInventory(inventory), []);
-  assert.equal(inventory.routes.filter((item) => item.state === 'live').length, 16);
+  assert.equal(inventory.routes.filter((item) => item.state === 'live').length, 17);
   // A passing test does not demonstrate runtime prevention or bypass-zero.
   assert.equal(
     inventory.routes.some((item) => item.state === 'unresolved'),
