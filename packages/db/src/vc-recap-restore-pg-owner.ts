@@ -69,12 +69,15 @@ export async function withVcRecapRestorePgOwnerTransaction(
   if (!RUN_ID.test(runId) || !OWNER_ID.test(userId) || typeof callback !== 'function') {
     throw new Error('Invalid restore transaction context');
   }
+  let syntheticStage = 'before transaction';
   try {
     await prisma.$transaction(
       async (tx) => {
+        syntheticStage = 'acquire lock';
         await lockVcRecapStorageOwner(tx, userId);
         const port: VcRecapRestorePgOwnerPort = {
           async readFence() {
+            syntheticStage = 'read fence';
             const fence = await tx.vcRecapErasureRequest.findUnique({
               where: { userId },
               select: { requestedAt: true },
@@ -91,7 +94,9 @@ export async function withVcRecapRestorePgOwnerTransaction(
             ) {
               throw new Error('Invalid owner fence operation');
             }
+            syntheticStage = 'validate timestamp';
             const incoming = parseVcRecapPgFenceTimestamp(payload.requestedAt);
+            syntheticStage = 'find existing fence';
             const existing = await tx.vcRecapErasureRequest.findUnique({
               where: { userId },
               select: { requestedAt: true },
@@ -102,11 +107,13 @@ export async function withVcRecapRestorePgOwnerTransaction(
                 ? existing.requestedAt
                 : incoming;
             const revokedAt = new Date();
+            syntheticStage = 'upsert fence';
             await tx.vcRecapErasureRequest.upsert({
               where: { userId },
               create: { userId, requestedAt: latest, storageDeletionVerifiedAt: null },
               update: { requestedAt: latest, storageDeletionVerifiedAt: null },
             });
+            syntheticStage = 'revoke legacy';
             await tx.userDataConsent.updateMany({
               where: { userId },
               data: {
@@ -115,18 +122,21 @@ export async function withVcRecapRestorePgOwnerTransaction(
               },
             });
             // Includes all three future purposes and OpenAI processing consent.
+            syntheticStage = 'revoke purposes';
             await tx.vcRecapExplicitConsent.updateMany({
               where: { userId },
               data: { consentedAt: null, revokedAt },
             });
             // Blocks commitVcRecapStorageObject's state='reserved' transition.
             // A remote PUT already in flight still needs a separate S3 purge.
+            syntheticStage = 'fence reservations';
             await tx.vcRecapStorageObject.updateMany({
               where: { userId, state: 'reserved' },
               data: { state: 'erasure_pending' },
             });
           },
           async verifyFenceAndRevocations() {
+            syntheticStage = 'verify proof';
             const [fence, legacy, explicit, pending] = await Promise.all([
               tx.vcRecapErasureRequest.findUnique({
                 where: { userId },
@@ -176,7 +186,7 @@ export async function withVcRecapRestorePgOwnerTransaction(
         error && typeof error === 'object' && 'code' in error && typeof error.code === 'string'
           ? error.code
           : 'none';
-      console.error('Synthetic restore PG failure category: ' + kind + '/' + code);
+      console.error('Synthetic restore PG failure category: ' + kind + '/' + code + ', stage=' + syntheticStage);
     }
     throw new Error('VC Recap restore PostgreSQL owner transaction unverified');
   }
