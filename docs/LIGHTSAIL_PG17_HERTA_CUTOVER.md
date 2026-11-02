@@ -95,3 +95,7 @@ ORDER BY type,auth_method;"
 ## まだ実施していないこと
 
 ロールの新規作成・パスワード変更、DB本番復元、**HertaアプリPrismaの外部接続**、永続Canary・実アプリDML、Prisma DDL、DNS/HBA/IAM変更、Dockerの本番再作成、Daily v2 flags有効化、既存source削除。なお、Hertaホストの既存PG16クライアントを使った**実ロールのTLS/認証はPASS**済み。これらの実行有無は必ず実AWS/DB/GitHub証拠で区別する。
+
+## 2026-11-01: 復元時のACLを独立判定する追加ゲート
+
+既存ロールのdefault privilegesから、`pg_restore --no-owner --no-acl`後に`herta_runtime`が`_prisma_migrations`を書き換え可能になるリスクを確認。**本番修復・切替未実施**。検証手順と読み取り専用SQLを [`HERTA_PG17_RESTORE_ACL_GATE.md`](HERTA_PG17_RESTORE_ACL_GATE.md) / [`scripts/check-herta-restored-acl.sql`](../scripts/check-herta-restored-acl.sql) に分離した。隔離PG17で`herta_migrator`として復元後にeffective privilegesを確認し、履歴INSERT/UPDATE/DELETEまたはruntime CREATEが許可されればNO-GO。解決には対象`herta`限定のレビュー済み権限修正と再検査が必要で、移行履歴を書き換えない。
