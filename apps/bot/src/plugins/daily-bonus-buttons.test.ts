@@ -13,7 +13,7 @@ describe('09:00 Discord daily bonus action row', () => {
       questionId,
       'daily-bonus:fortune:2026-11-02',
     ]);
-    expect(row.components.map((component) => component.label)).toEqual([
+    expect(row.components.map((component) => ('label' in component ? component.label : null))).toEqual([
       '🎁 ボーナスを受け取る',
       '🧠 今日の問題に挑戦',
       '🔮 今日の運勢',
