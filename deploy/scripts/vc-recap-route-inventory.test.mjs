@@ -25,8 +25,12 @@ const CRITICAL_ACTIONS = Object.freeze({
   'bot.privacy-delete': 'protection',
   'bot.privacy-export': 'exposure',
   'bot.privacy-web-link': 'exposure',
+  'bot.consent-button': 'mixed',
   'studio.consent-read': 'exposure',
   'studio.consent-write': 'mixed',
+  'studio.token-consent-page': 'exposure',
+  'studio.token-consent-write': 'mixed',
+  'studio.token-long-term-write': 'mixed',
   'studio.export': 'exposure',
   'worker.retention': 'protection',
   'worker.erasure': 'protection',
@@ -131,10 +135,10 @@ function validateRouteInventory(doc, readSource = readRepoFile) {
   return errors;
 }
 
-test('all 23 offline route IDs include privacy and consent ingress boundaries', () => {
-  assert.equal(VC_RECAP_TRAFFIC_ROUTES.length, 23);
+test('all 27 offline route IDs include privacy and consent ingress boundaries', () => {
+  assert.equal(VC_RECAP_TRAFFIC_ROUTES.length, 27);
   assert.deepEqual(validateRouteInventory(inventory), []);
-  assert.equal(inventory.routes.filter((item) => item.state === 'live').length, 17);
+  assert.equal(inventory.routes.filter((item) => item.state === 'live').length, 21);
   // A passing test does not demonstrate runtime prevention or bypass-zero.
   assert.equal(
     inventory.routes.some((item) => item.state === 'unresolved'),
@@ -221,4 +225,15 @@ test('unknown, misclassified and falsely protected actions fail source inventory
   fictitiousProtector.routes.find((item) => item.route === 'api.transcript-read').action =
     'protection';
   assert.match(validateRouteInventory(fictitiousProtector).join('\n'), /unverified protection/);
+});
+
+test('all token and persistent-button ingress stay mapped and cannot become protective', () => {
+  for (const route of ['bot.consent-button', 'studio.token-consent-page', 'studio.token-consent-write', 'studio.token-long-term-write']) {
+    const missing = structuredClone(inventory);
+    missing.routes = missing.routes.filter((entry) => entry.route !== route);
+    assert.match(validateRouteInventory(missing).join('\n'), /unmapped route/);
+    const unsafe = structuredClone(inventory);
+    unsafe.routes.find((entry) => entry.route === route).action = 'protection';
+    assert.match(validateRouteInventory(unsafe).join('\n'), /unsafe action classification/);
+  }
 });
