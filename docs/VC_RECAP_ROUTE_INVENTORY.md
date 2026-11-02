@@ -32,6 +32,7 @@ passing は「既知の設計routeとソース内文字列が一致し、不正�
 - `studio.token-consent-write`（mixed）：`POST /api/consent/[token]` で既存30日同意を付与・撤回。Guild管理者のPOSTとは別経路。
 - `studio.token-long-term-write`（mixed）：`POST /api/consent/[token]/long-term` の3目的選択・撤回・削除要求。長期保存受付はOFFのまま。
 - 新経路も静的ソースアンカー・CI triggerで追跡するだけであり、本番遮断もgrant許可も実装しない。
+- `node --test deploy/scripts/vc-recap-token-consent-ingress.test.mjs` は Discord Button dispatch/本人照合/撤回、Tokenページの本人データ読み取り、旧30日POSTのOrigin、3用途POSTのPolicy版/削除要求を文字列順序で検査。各条件を破壊する変異テストを含むが、AST全経路監査や実行時の署名・隔離検証の代替ではない。
 
 ## 新たに独立把握した入口（#734）
 
