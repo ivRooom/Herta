@@ -48,7 +48,9 @@ jobs:
         run: pnpm db:generate
 
       - name: Format Check
-        run: pnpm format:check
+        run: |
+          pnpm exec prettier deploy/scripts/vc-recap-erasure-signed-audit.test.mjs | diff -u deploy/scripts/vc-recap-erasure-signed-audit.test.mjs - || true
+          pnpm format:check
 
       - name: Lint
         run: pnpm lint
