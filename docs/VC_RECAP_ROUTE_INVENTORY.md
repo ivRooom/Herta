@@ -21,15 +21,13 @@ passing は「既知の設計routeとソース内文字列が一致し、不正�
 
 ## 新たに独立把握した入口（#734）
 
-| Route | 分類 | 実装入口 / 留意点 |
-| --- | --- | --- |
-| `bot.privacy-voice-consent` | mixed | `executeVoiceConsent`。trueの許可とfalseの撤回を別処理として実ガードする |
-| `bot.privacy-openai-consent` | mixed | `executeOpenAiAudioConsent`。OpenAI新規許諾と撤回は同一処理内で分岐する |
-| `bot.privacy-delete` | protection | `executeDeleteVoiceData`。削除要求受付・DB消去。全コピー消去完了の証拠ではない |
-| `bot.privacy-export` | exposure | `executeExport`。本人向けJSONにVCセッション/発話本文/要約が入る |
-| `bot.privacy-web-link` | exposure | `executeWebLink`。本人管理URL発行時も独立に安全性を検査する |
-| `studio.consent-read` | exposure | `GET /api/guilds/[guildId]/vc-recap/consent`。同意状態・メンバー情報の閲覧 |
-| `studio.consent-write` | mixed | `POST /api/guilds/[guildId]/vc-recap/consent`。管理者による許可/撤回の両分岐 |
+- `bot.privacy-voice-consent`（mixed）：`executeVoiceConsent`。true許可とfalse撤回を別処理として実ガードする。
+- `bot.privacy-openai-consent`（mixed）：`executeOpenAiAudioConsent`。OpenAI新規許諾と撤回は同一処理内で分岐する。
+- `bot.privacy-delete`（protection）：`executeDeleteVoiceData`。削除要求受付・DB消去。全コピー消去完了の証拠ではない。
+- `bot.privacy-export`（exposure）：`executeExport`。本人向けJSONにVCセッション/発話本文/要約が入る。
+- `bot.privacy-web-link`（exposure）：`executeWebLink`。本人管理URL発行時も独立に安全性を検査する。
+- `studio.consent-read`（exposure）：`GET /api/guilds/[guildId]/vc-recap/consent`。同意状態・メンバー情報を閲覧する。
+- `studio.consent-write`（mixed）：`POST /api/guilds/[guildId]/vc-recap/consent`。管理者による許可/撤回の両分岐を保護する。
 
 従来の `studio.consent` は GET/POST を混同するため削除した。Studio CSV/JSON `studio.export` は別入口のままであり、Export内の Prisma 本文検索・認可・応答直前再検証を要する。
 
