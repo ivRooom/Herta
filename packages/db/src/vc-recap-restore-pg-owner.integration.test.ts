@@ -64,7 +64,7 @@ test('real isolated PostgreSQL: owner-locked replay is atomic, monotonic, retrya
       });
       await prisma.vcRecapStorageObject.createMany({
         data: [
-          { userId: owner, kind: 'audio', bucket: 'synthetic-not-s3', objectKey: 'vc-recap/users/' + owner + '/test.opus', state: 'reserved' },
+          { userId: owner, kind: 'audio', bucket: 'synthetic-not-s3', objectKey: 'vc-recap/users/' + owner + '/test.opus', state: 'committed', versionId: 'synthetic-v1', committedAt: new Date() },
           { userId: other, kind: 'audio', bucket: 'synthetic-not-s3', objectKey: 'vc-recap/users/' + other + '/test.opus', state: 'reserved' },
         ],
       });
@@ -85,7 +85,8 @@ test('real isolated PostgreSQL: owner-locked replay is atomic, monotonic, retrya
       let fence = await prisma.vcRecapErasureRequest.findUniqueOrThrow({ where: { userId: owner } });
       assert.equal(fence.requestedAt.toISOString(), incoming);
       assert.equal(fence.storageDeletionVerifiedAt, null);
-      assert.equal((await prisma.vcRecapStorageObject.findFirstOrThrow({ where: { userId: owner } })).state, 'erasure_pending');
+      // A previously committed object still requires separate full-version deletion.
+      assert.equal((await prisma.vcRecapStorageObject.findFirstOrThrow({ where: { userId: owner } })).state, 'committed');
       assert.equal((await prisma.vcRecapStorageObject.findFirstOrThrow({ where: { userId: other } })).state, 'reserved');
       assert.equal((await prisma.userDataConsent.findUniqueOrThrow({ where: { userId: other } })).voiceTranscriptionConsent, true);
       assert.equal((await prisma.vcRecapExplicitConsent.findFirstOrThrow({ where: { userId: other } })).consentedAt !== null, true);
@@ -112,6 +113,19 @@ test('real isolated PostgreSQL: owner-locked replay is atomic, monotonic, retrya
           /transaction unverified/,
         );
       }
+      assert.equal(await prisma.vcRecapErasureRequest.count({ where: { userId: other } }), 0);
+
+      // A pending S3 upload cannot be certified cancelled by this PG-only adapter.
+      // The CHECK constraint forbids inventing a new reservation state; a
+      // verified restore executor must reject the incomplete proof and roll back.
+      await assert.rejects(
+        withVcRecapRestorePgOwnerTransaction(prisma, runId, other, async (tx) => {
+          await tx.upsertFenceAndRevoke(instruction(other));
+          const proof = await tx.verifyFenceAndRevocations();
+          assert.equal(proof.pendingWritesCancelled, true, 'pending upload is unresolved');
+        }),
+        /transaction unverified/,
+      );
       assert.equal(await prisma.vcRecapErasureRequest.count({ where: { userId: other } }), 0);
 
       // Throw after writes: no partial fence, consent or upload state may commit.
@@ -141,6 +155,10 @@ test('real isolated PostgreSQL: owner-locked replay is atomic, monotonic, retrya
         );
       }, { timeout: 12000, maxWait: 5000 });
       assert.equal(await prisma.vcRecapErasureRequest.count({ where: { userId: other } }), 0);
+      // Simulate a separately verified sweeper of the synthetic pending key.
+      await prisma.vcRecapStorageObject.deleteMany({
+        where: { userId: other, state: 'reserved' },
+      });
       await withVcRecapRestorePgOwnerTransaction(prisma, runId, other, async (tx) => {
         await tx.upsertFenceAndRevoke(instruction(other));
         assert.equal((await tx.verifyFenceAndRevocations()).pendingWritesCancelled, true);
