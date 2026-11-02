@@ -25,6 +25,8 @@ on:
       - 'deploy/scripts/vc-recap-restore-quarantine.test.mjs'
       - 'deploy/scripts/vc-recap-restore-pinned-audit.mjs'
       - 'deploy/scripts/vc-recap-restore-pinned-audit.test.mjs'
+      - 'deploy/scripts/vc-recap-restore-fence-replay.mjs'
+      - 'deploy/scripts/vc-recap-restore-fence-replay.test.mjs'
       - 'deploy/scripts/vc-recap-erasure-s3-purge.mjs'
       - 'deploy/scripts/vc-recap-erasure-s3-purge.test.mjs'
       - 'docs/VC_RECAP_ERASURE_LEDGER_DESIGN.md'
@@ -55,6 +57,8 @@ on:
       - 'deploy/scripts/vc-recap-restore-quarantine.test.mjs'
       - 'deploy/scripts/vc-recap-restore-pinned-audit.mjs'
       - 'deploy/scripts/vc-recap-restore-pinned-audit.test.mjs'
+      - 'deploy/scripts/vc-recap-restore-fence-replay.mjs'
+      - 'deploy/scripts/vc-recap-restore-fence-replay.test.mjs'
       - 'deploy/scripts/vc-recap-erasure-s3-purge.mjs'
       - 'deploy/scripts/vc-recap-erasure-s3-purge.test.mjs'
       - 'docs/VC_RECAP_ERASURE_LEDGER_DESIGN.md'
@@ -118,6 +122,9 @@ jobs:
 
       - name: Pinned ledger audit + restore quarantine integration (synthetic only)
         run: node --test deploy/scripts/vc-recap-restore-pinned-audit.test.mjs
+
+      - name: Offline owner-locked restore fence replay (synthetic only)
+        run: node --test deploy/scripts/vc-recap-restore-fence-replay.test.mjs
 
       - name: Single-key S3 full-version and multipart purge (synthetic only)
         run: node --test deploy/scripts/vc-recap-erasure-s3-purge.test.mjs
