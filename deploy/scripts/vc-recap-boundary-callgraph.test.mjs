@@ -90,10 +90,10 @@ function audit(input) {
   );
   if (
     !ordered(erased, [
-    'await requestVcRecapErasure(prisma, interaction.user.id);',
-    'revokeVcRecapConsent(interaction.user.id);',
-    'await deleteUserVoiceData(prisma, interaction.user.id);',
-    'await setVoiceTranscriptionConsent(prisma, interaction.user.id, false);',
+      'await requestVcRecapErasure(prisma, interaction.user.id);',
+      'revokeVcRecapConsent(interaction.user.id);',
+      'await deleteUserVoiceData(prisma, interaction.user.id);',
+      'await setVoiceTranscriptionConsent(prisma, interaction.user.id, false);',
     ])
   ) {
     errors.push('privacy erasure ordering drift');
@@ -106,9 +106,9 @@ function audit(input) {
   );
   if (
     !ordered(grant, [
-    "interaction.options.getBoolean('consent', true)",
-    'await setVoiceTranscriptionConsent(',
-    'if (!consent) revokeVcRecapConsent(interaction.user.id);',
+      "interaction.options.getBoolean('consent', true)",
+      'await setVoiceTranscriptionConsent(',
+      'if (!consent) revokeVcRecapConsent(interaction.user.id);',
     ])
   ) {
     errors.push('privacy consent grant/withdrawal branch drift');
@@ -121,11 +121,11 @@ function audit(input) {
   );
   if (
     !ordered(personalExport, [
-    'await interaction.deferReply(',
-    'listVcRecapSessionsForUser(prisma, interaction.user.id)',
-    'listVcRecapTranscriptSegmentsForUser(prisma, interaction.user.id)',
-    'Buffer.from(JSON.stringify(exportPayload, null, 2)',
-    'files: [attachment]',
+      'await interaction.deferReply(',
+      'listVcRecapSessionsForUser(prisma, interaction.user.id)',
+      'listVcRecapTranscriptSegmentsForUser(prisma, interaction.user.id)',
+      'Buffer.from(JSON.stringify(exportPayload, null, 2)',
+      'files: [attachment]',
     ])
   ) {
     errors.push('privacy personal export call edge drift');
@@ -168,8 +168,8 @@ function audit(input) {
   );
   if (
     !ordered(stop, [
-    'listVcRecapTranscriptSegments(prisma, session.sessionId)',
-    'summarizeVcRecapSession(prisma, guildId, segments)',
+      'listVcRecapTranscriptSegments(prisma, session.sessionId)',
+      'summarizeVcRecapSession(prisma, guildId, segments)',
     ])
   ) {
     errors.push('voice stop downstream transcript/summary edge drift');
@@ -201,11 +201,11 @@ function audit(input) {
   const consentWrite = input.consent.slice(input.consent.indexOf('export async function POST('));
   if (
     !ordered(consentRead, [
-    'await auth()',
-    'resolveStudioAccess(guildId, session.user.id)',
-    'hasEffectivePluginPermission(',
-    'getGuildMemberById(guildId, userId)',
-    'getUserDataConsent(prisma, userId)',
+      'await auth()',
+      'resolveStudioAccess(guildId, session.user.id)',
+      'hasEffectivePluginPermission(',
+      'getGuildMemberById(guildId, userId)',
+      'getUserDataConsent(prisma, userId)',
     ]) ||
     consentRead.includes('setVoiceConsentAsAdmin(')
   ) {
@@ -213,12 +213,12 @@ function audit(input) {
   }
   if (
     !ordered(consentWrite, [
-    'await auth()',
-    'isSameOriginMutationRequest(request)',
-    'resolveStudioAccess(guildId, session.user.id)',
-    'hasEffectivePluginPermission(',
-    'getGuildMemberById(guildId, userId)',
-    'setVoiceConsentAsAdmin(prisma, { guildId, actorId: session.user.id, userId, consent })',
+      'await auth()',
+      'isSameOriginMutationRequest(request)',
+      'resolveStudioAccess(guildId, session.user.id)',
+      'hasEffectivePluginPermission(',
+      'getGuildMemberById(guildId, userId)',
+      'setVoiceConsentAsAdmin(prisma, { guildId, actorId: session.user.id, userId, consent })',
     ])
   ) {
     errors.push('studio consent POST write/access edge drift');
@@ -227,17 +227,17 @@ function audit(input) {
   const exported = input.export.slice(input.export.indexOf('export async function GET('));
   if (
     !ordered(exported, [
-    'await auth()',
-    'resolveStudioAccess(guildId, session.user.id)',
-    'hasExplicitVcRecapExportPermission(access.access, guildId)',
-    'parseVcRecapExportFilters(',
-    'prisma.vcRecapTranscriptSegment.findMany({',
-    'prisma.userDataConsent.findMany({',
-    'const permitted = new Set(',
-    'filter((row) => permitted.has(row.userId))',
-    'await prisma.auditLog.create({',
-    'serializeVcRecapCsv(records, now)',
-    'toVcRecapExportObject(records, now)',
+      'await auth()',
+      'resolveStudioAccess(guildId, session.user.id)',
+      'hasExplicitVcRecapExportPermission(access.access, guildId)',
+      'parseVcRecapExportFilters(',
+      'prisma.vcRecapTranscriptSegment.findMany({',
+      'prisma.userDataConsent.findMany({',
+      'const permitted = new Set(',
+      'filter((row) => permitted.has(row.userId))',
+      'await prisma.auditLog.create({',
+      'serializeVcRecapCsv(records, now)',
+      'toVcRecapExportObject(records, now)',
     ])
   ) {
     errors.push('studio export authorization/consent/audit/output drift');
