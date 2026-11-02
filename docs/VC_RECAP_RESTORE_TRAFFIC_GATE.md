@@ -19,7 +19,6 @@
 | `storage.signed-url`                        | #585 のS3音声再生/署名URL                                                                                                           | **本番未完成**        | 署名URL再利用・TTL/Cache-Control/復元中のアクセス     |
 | `cache.read-write`                          | 将来索引/Redis/CDN + 既存Studio/HTTPキャッシュ                                                                                      | 現行/要棚卸し         | DB外と外部CDN/Browser cacheの再公開リスク             |
 
-
 一覧は **設計上の経路識別子** であり、実在する16種類の独立HTTP Endpointを意味しない。具体的なすべてのコード経路と呼び出し点の紐付け・再チェックは親 #728 の次のPRで受け入れる。
 
 ## 今回追加したPort
