@@ -62,6 +62,7 @@ restores the previous code; it must **never** be used to claim that the
 independent erasure ledger or persistent quarantine is operational.
 
 Execution of the real restore flow requires:
+
 1. Signed, complete, independently pinned ledger and run ID (#694).
 2. Cross-service independent quarantine and ingress/egress gates (#728/#734).
 3. DB replay under owner lock with full timestamp fidelity (#729).
