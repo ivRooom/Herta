@@ -109,8 +109,14 @@ test('all versions, delete markers and multipart across pages; neighbor untouche
     ],
   });
   assert.deepEqual(await run(fixture.client), SAFE_RESULT);
-  assert.deepEqual(fixture.items.map((x) => x.Key), [NEIGHBOR]);
-  assert.deepEqual(fixture.activeUploads.map((x) => x.Key), [NEIGHBOR]);
+  assert.deepEqual(
+    fixture.items.map((x) => x.Key),
+    [NEIGHBOR],
+  );
+  assert.deepEqual(
+    fixture.activeUploads.map((x) => x.Key),
+    [NEIGHBOR],
+  );
   assert.equal(
     fixture.calls.filter((x) => ['DeleteObject', 'AbortMultipartUpload'].includes(x.name)).length,
     4,
@@ -122,7 +128,10 @@ test('retry after a successful purge does not perform further deletions', async 
   assert.deepEqual(await run(fixture.client), SAFE_RESULT);
   const initial = fixture.calls.length;
   assert.deepEqual(await run(fixture.client), SAFE_RESULT);
-  assert.equal(fixture.calls.slice(initial).some((x) => x.name === 'DeleteObject'), false);
+  assert.equal(
+    fixture.calls.slice(initial).some((x) => x.name === 'DeleteObject'),
+    false,
+  );
 });
 
 test('invalid scope and adapters fail before S3 access', async () => {
@@ -152,7 +161,10 @@ test('invalid, duplicate or null VersionIds fail before deletion', async () => {
   ]) {
     const fixture = mock({ versions });
     await assert.rejects(run(fixture.client), /keep erasure pending/);
-    assert.equal(fixture.calls.some((x) => x.name === 'DeleteObject'), false);
+    assert.equal(
+      fixture.calls.some((x) => x.name === 'DeleteObject'),
+      false,
+    );
   }
 });
 
@@ -172,7 +184,10 @@ test('unexpected prefix, missing pagination marker, repeated marker are rejected
       badPage: (name) => name === 'ListObjectVersions' && page,
     });
     await assert.rejects(run(fixture.client), /keep erasure pending/);
-    assert.equal(fixture.calls.some((x) => x.name === 'DeleteObject'), false);
+    assert.equal(
+      fixture.calls.some((x) => x.name === 'DeleteObject'),
+      false,
+    );
   }
 });
 
@@ -188,7 +203,10 @@ test('unverified or duplicate multipart pagination blocks all mutations', async 
   ]) {
     const fixture = mock({ versions: [{ Key: KEY, VersionId: 'v1' }], ...options });
     await assert.rejects(run(fixture.client), /keep erasure pending/);
-    assert.equal(fixture.calls.some((x) => x.name === 'DeleteObject'), false);
+    assert.equal(
+      fixture.calls.some((x) => x.name === 'DeleteObject'),
+      false,
+    );
   }
 });
 
@@ -218,7 +236,10 @@ test('SDK partial failure redacts private values and can be retried', async () =
 test('concurrent write during deletion fails closed even after old versions vanish', async () => {
   const fixture = mock({ versions: [{ Key: KEY, VersionId: 'v1' }], race: true });
   await assert.rejects(run(fixture.client), /keep erasure pending/);
-  assert.deepEqual(fixture.items.map((x) => x.VersionId), ['concurrent-write']);
+  assert.deepEqual(
+    fixture.items.map((x) => x.VersionId),
+    ['concurrent-write'],
+  );
 });
 
 test('post-deletion verification failure is never treated as erasure success', async () => {
