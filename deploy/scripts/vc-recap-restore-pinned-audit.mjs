@@ -66,11 +66,8 @@ export async function reconcileVcRecapRestoreWithPinnedAudit(runId, dependencies
       authenticatedSnapshot = checked.snapshot;
       return { runId: id, status: 'independently-authenticated' };
     },
-    replayErasureFences: (id) =>
-      dependencies.replayErasureFences(id, authenticatedSnapshot),
-    verifyDatabaseFences: (id) =>
-      dependencies.verifyDatabaseFences(id, authenticatedSnapshot),
-    verifyAllCopiesPurged: (id) =>
-      dependencies.verifyAllCopiesPurged(id, authenticatedSnapshot),
+    replayErasureFences: (id) => dependencies.replayErasureFences(id, authenticatedSnapshot),
+    verifyDatabaseFences: (id) => dependencies.verifyDatabaseFences(id, authenticatedSnapshot),
+    verifyAllCopiesPurged: (id) => dependencies.verifyAllCopiesPurged(id, authenticatedSnapshot),
   });
 }
