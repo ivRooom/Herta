@@ -292,9 +292,10 @@ test('post-deletion verification failure is never treated as erasure success', a
 test('missing, null or non-boolean pagination completion never authorizes deletion', async () => {
   for (const name of ['ListObjectVersions', 'ListMultipartUploads']) {
     for (const flag of [undefined, null, 'false', 0]) {
-      const page = name === 'ListObjectVersions'
-        ? { Versions: [{ Key: KEY, VersionId: 'v1' }] }
-        : { Uploads: [{ Key: KEY, UploadId: 'u1' }] };
+      const page =
+        name === 'ListObjectVersions'
+          ? { Versions: [{ Key: KEY, VersionId: 'v1' }] }
+          : { Uploads: [{ Key: KEY, UploadId: 'u1' }] };
       if (flag !== undefined) page.IsTruncated = flag;
       const fixture = mock({
         versions: [{ Key: KEY, VersionId: 'v1' }],
@@ -316,9 +317,14 @@ test('truncated empty pages and out-of-prefix cursors cannot skip inventory', as
   ]) {
     for (const [items, cursorKey] of [
       [[], KEY],
-      [[name === 'ListObjectVersions'
-        ? { Key: KEY, VersionId: 'v1' }
-        : { Key: KEY, UploadId: 'u1' }], 'vc-recap/outside-owner/other'],
+      [
+        [
+          name === 'ListObjectVersions'
+            ? { Key: KEY, VersionId: 'v1' }
+            : { Key: KEY, UploadId: 'u1' },
+        ],
+        'vc-recap/outside-owner/other',
+      ],
     ]) {
       const page = {
         IsTruncated: true,
