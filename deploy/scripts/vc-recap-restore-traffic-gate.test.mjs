@@ -52,7 +52,7 @@ function makeAdapters(overrides = {}) {
 }
 
 test('route inventory includes every currently known read/write/consumer boundary', () => {
-  assert.equal(VC_RECAP_TRAFFIC_ROUTES.length, 16);
+  assert.equal(VC_RECAP_TRAFFIC_ROUTES.length, 22);
   assert.equal(new Set(VC_RECAP_TRAFFIC_ROUTES).size, VC_RECAP_TRAFFIC_ROUTES.length);
   for (const route of VC_RECAP_TRAFFIC_ROUTES) {
     assert.equal(typeof route, 'string');
@@ -193,5 +193,28 @@ test('failure is sanitized without exposing secrets or setting an allow flag', a
     const result = await evaluateVcRecapRestoreTrafficGate(request, authority);
     assert.deepEqual(result, DENIED);
     assert.equal(JSON.stringify(result).includes('private-user-id'), false);
+  }
+});
+
+test('protective and mixed privacy routes are NOT implicitly authorized by offline evaluator', async () => {
+  for (const route of [
+    'bot.stop',
+    'bot.privacy-voice-consent',
+    'bot.privacy-openai-consent',
+    'bot.privacy-delete',
+    'studio.consent-write',
+    'worker.retention',
+    'worker.erasure',
+  ]) {
+    const { authority } = makeAdapters();
+    const reviewed = await evaluateVcRecapRestoreTrafficGate({ ...request, route }, authority);
+    assert.deepEqual(reviewed, REVIEW);
+    assert.equal(reviewed.canResumeTraffic, false);
+    const { control, authority: blocked } = makeAdapters();
+    control.status = 'quarantined';
+    assert.deepEqual(
+      await evaluateVcRecapRestoreTrafficGate({ ...request, route }, blocked),
+      DENIED,
+    );
   }
 });
