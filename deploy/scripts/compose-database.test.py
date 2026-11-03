@@ -42,6 +42,10 @@ with tempfile.TemporaryDirectory(prefix='herta-compose-') as temp:
     assert local['services']['bot']['environment'].pop('DAILY_BONUS_RESULT_CARD_ENABLED') == 'false'
     assert local['services']['bot']['environment'].pop('DAILY_PARTICIPATION_ENABLED') == 'false'
     assert local['services']['bot']['environment'].pop('HERTA_POINTS_SECRET') == values.get('HERTA_POINTS_SECRET', '')
+    # A newly deployed Bot must not edit public VALORANT messages without
+    # explicit opt-in and a real Guild allowlist. These are not DB topology changes.
+    assert local['services']['bot']['environment'].pop('HERTA_VALORANT_EXPIRY_RECONCILE_ENABLED') == 'false'
+    assert local['services']['bot']['environment'].pop('HERTA_VALORANT_EXPIRY_RECONCILE_GUILD_IDS') == ''
     # Voice provider configuration is not a database topology change.
     # It must remain fail-closed in every default/local deployment.
     assert local['services']['bot']['environment'].pop('VC_RECAP_TRANSCRIPTION_PROVIDER') == 'aws'
@@ -58,6 +62,12 @@ with tempfile.TemporaryDirectory(prefix='herta-compose-') as temp:
     assert enabled['services']['bot']['environment']['HERTA_POINTS_SECRET'] == 'fixture-points'
     assert 'HERTA_POINTS_SECRET' not in enabled['services']['studio']['environment']
     assert 'HERTA_POINTS_SECRET' not in enabled['services']['worker']['environment']
+    canary = render(ROOT / 'docker-compose.prod.yml', {
+        'HERTA_VALORANT_EXPIRY_RECONCILE_ENABLED': 'true',
+        'HERTA_VALORANT_EXPIRY_RECONCILE_GUILD_IDS': '123456789012345678',
+    })
+    assert canary['services']['bot']['environment']['HERTA_VALORANT_EXPIRY_RECONCILE_ENABLED'] == 'true'
+    assert canary['services']['bot']['environment']['HERTA_VALORANT_EXPIRY_RECONCILE_GUILD_IDS'] == '123456789012345678'
     external = render(ROOT / 'docker-compose.external.yml', {
         'HERTA_DATABASE_MODE': 'external', 'HERTA_DATABASE_PRIVATE_IP': '10.0.0.2',
         'HERTA_DATABASE_CA_FILE': str(fixture / 'ca.crt'), 'MIGRATION_DATABASE_URL': 'postgresql://migrator-fixture',
