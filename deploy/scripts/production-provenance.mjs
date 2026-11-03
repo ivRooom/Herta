@@ -29,7 +29,7 @@ export function buildProductionDeploymentPayload({ runId, runAttempt, sha, image
     !SHA_RE.test(sha) ||
     !IMAGE_ID_RE.test(imageId) ||
     typeof actor !== 'string' ||
-    !/^[A-Za-z0-9-]{1,39}$/.test(actor)
+    !/^[A-Za-z0-9-]{1,39}(?:\[bot\])?$/.test(actor)
   ) {
     throw new Error('Unverifiable production provenance input');
   }
