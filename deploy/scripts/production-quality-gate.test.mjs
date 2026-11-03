@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
+  assertAutomaticProductionBaseline,
   assertHistoricalRollbackEvidence,
   assertSafeCompare,
   determineGateOutcome,
@@ -156,6 +157,23 @@ test('runtime-only deployment skips docs, skills and monitoring-only changes', (
     needsRuntimeDeployment(['docs/VC_RECAP.md', 'apps/bot/src/voice/vc-recap.ts']),
     true,
   );
+});
+
+test('automatic production baseline refuses manual rollback and unverifiable SSH history', () => {
+  const automatic = { head_sha: sha, head_branch: 'main', event: 'workflow_run' };
+  assert.equal(assertAutomaticProductionBaseline(automatic), sha);
+  assert.equal(assertAutomaticProductionBaseline({ ...automatic, event: 'push' }), sha);
+
+  for (const candidate of [
+    undefined,
+    { ...automatic, event: 'workflow_dispatch' },
+    { ...automatic, event: 'pull_request' },
+    { ...automatic, event: 'unknown' },
+    { ...automatic, head_branch: 'feature' },
+    { ...automatic, head_sha: 'not-a-sha' },
+  ]) {
+    assert.throws(() => assertAutomaticProductionBaseline(candidate), /attested automatic main SHA/);
+  }
 });
 
 test('workflow_run trusts only successful same-SHA main push CI in this repo', () => {
