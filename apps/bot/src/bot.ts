@@ -41,6 +41,7 @@ import {
   editExpiredValorantDiscordMessage,
   reconcileExpiredValorantMessages,
 } from './plugins/valorant-expiry-reconcile.js';
+import { enabledValorantExpiryGuildIds } from './plugins/valorant-expiry-rollout.js';
 import { getXpProfile } from './plugins/xp-level-repository.js';
 import { levelForXp, normalizeXpLevelConfig } from './plugins/xp-level.js';
 import {
@@ -1601,13 +1602,19 @@ export class HertaBot {
 
   /** Run a small bounded expiry UI sweep without blocking Gateway handling. */
   private startValorantExpiryReconcile(): void {
-    if (this.valorantExpiryTimer) return;
+    const allowedGuilds = enabledValorantExpiryGuildIds(
+      process.env['HERTA_VALORANT_EXPIRY_RECONCILE_ENABLED'],
+      process.env['HERTA_VALORANT_EXPIRY_RECONCILE_GUILD_IDS'],
+    );
+    if (allowedGuilds.size === 0 || this.valorantExpiryTimer) return;
     const tick = () => {
       if (this.valorantExpiryTask || !this.client.isReady()) return;
+      const guildIds = [...this.client.guilds.cache.keys()].filter((id) => allowedGuilds.has(id));
+      if (guildIds.length === 0) return;
       this.valorantExpiryTask = (async () => {
         try {
           const result = await reconcileExpiredValorantMessages(this.prisma, {
-            guildIds: [...this.client.guilds.cache.keys()],
+            guildIds,
             batchSize: 10,
             edit: (session) => editExpiredValorantDiscordMessage(this.client, session),
             onRetry: (reason, count) =>

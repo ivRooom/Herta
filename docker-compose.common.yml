@@ -175,6 +175,9 @@ services:
       DAILY_PARTICIPATION_ENABLED: ${DAILY_PARTICIPATION_ENABLED:-false}
       HERTA_POINTS_SECRET: ${HERTA_POINTS_SECRET:-}
       HENRIKDEV_API_KEY: ${HENRIKDEV_API_KEY:-}
+      # Public Discord expiry UI writes require a separate operator-approved Guild canary.
+      HERTA_VALORANT_EXPIRY_RECONCILE_ENABLED: ${HERTA_VALORANT_EXPIRY_RECONCILE_ENABLED:-false}
+      HERTA_VALORANT_EXPIRY_RECONCILE_GUILD_IDS: ${HERTA_VALORANT_EXPIRY_RECONCILE_GUILD_IDS:-}
       STUDIO_PUBLIC_BASE_URL: ${STUDIO_PUBLIC_BASE_URL:-}
       # VC要約のAWS Transcribe Streaming。認証情報はRuntime Secret Store優先、未設定時のみenvを使う。
       # regionが無いと認証情報があっても文字起こしがスキップされるため、既定でTokyoを渡す。

@@ -1,5 +1,16 @@
 # VALORANT 募集期限の公開Discord UI整合（#779 / #789）
 
+## 安全な段階公開（必須・default-OFF）
+
+**コードとAdditive DB migrationの本番反映だけでは、既存Guildの公開Discordメッセージ更新を始めません。** Botの定期同期は次の2条件を両方満たすときだけ起動します。
+
+- `HERTA_VALORANT_EXPIRY_RECONCILE_ENABLED=true`（文字列`true`の完全一致のみ有効）。
+- `HERTA_VALORANT_EXPIRY_RECONCILE_GUILD_IDS`に明示承認したDiscord Guild Snowflake ID（17〜20桁）のみをカンマ区切りで指定。**空・無効なIDの混在は全体をOFF**。実IDはGitHub Issue/CI/ログへ記載しない。
+
+`docker-compose.common.yml`のBotに両環境変数を透過。未設定は`false`/空で、安全にOFFのまま起動します。許可GuildだけDBの期限データを検索して公開UIを編集し、他Guildへは触れません。定期同期は2分ごと／最大10件／Retry上限60分のままです。
+
+**人間のGo/No-Go**：まず本人許諾済みの開発専用Guildの管理者が期限切れ公開Embedと再抽選ボタン/画像のE2E、Bot停止/Discord削除権限とDB障害の否定検証を行い、結果を[#779](https://github.com/ivRooom/Herta/issues/779)/[#757](https://github.com/ivRooom/Herta/issues/757)に記録。運営者が既存`.env.production`等の正規Runtime環境の上記2変数をGitHub Actionsの保護された本番配備手順で設定し、明示した1 GuildのみCanaryでONにする。**GitHub Environmentの変数はBotコンテナに自動で反映されるとは限らない**ので、対象Composeが読み込むRuntime環境を実確認する。未承認Guildを追加しない。停止時は`ENABLED=false`（またはUnset）にして保護された手順でBotを再起動し、Discord自動更新が停止したことを確認。停止で既存DBの期限検証は無効になりません。
+
 ## 動作
 
 - DBのexpiresAtを期限の正本とし、期限切れ操作は従来どおりDBで拒否。
