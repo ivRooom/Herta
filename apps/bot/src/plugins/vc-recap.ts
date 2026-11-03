@@ -17,7 +17,6 @@ import {
 } from '../voice/vc-recap-consent-interaction.js';
 import {
   activeVcRecapChannelId,
-  isVcRecapActive,
   startVcRecap,
   stopVcRecap,
 } from '../voice/vc-recap-session-manager.js';
@@ -154,6 +153,12 @@ async function executeStart(
     );
     return;
   }
+  if (result.status === 'start_cancelled') {
+    await interaction.editReply(
+      '記録の準備中に停止・無効化・同意変更があったため、開始しませんでした。',
+    );
+    return;
+  }
 
   await sendConsentPrompts(channel, result.nonConsentingUserIds);
 
@@ -172,6 +177,10 @@ async function executeStop(
   const result = await stopVcRecap(context.prisma, context.logger, interaction.guildId);
   if (result.status === 'not_active') {
     await interaction.editReply('現在記録中のVC Recapはありません。');
+    return;
+  }
+  if (result.status === 'start_cancelled') {
+    await interaction.editReply('準備中のVC Recapを中止しました。音声取得は開始されません。');
     return;
   }
   if (result.status === 'summarize_failed') {
@@ -243,8 +252,8 @@ async function handleVoiceStateUpdate(
 ): Promise<void> {
   const config = normalizeVcRecapConfig(context.config);
   if (!config.enabled) return;
-  if (!isVcRecapActive(context.guildId)) return;
 
+  // A pending announcement is also a cancellable start, even without an active session.
   const activeChannelId = activeVcRecapChannelId(context.guildId);
   if (!activeChannelId) return;
   // 記録中チャンネルに関係の無い状態変化は無視する。
@@ -261,10 +270,8 @@ async function handleVoiceStateUpdate(
 export const vcRecapPlugin = definePlugin<VcRecapConfig, Client, PrismaClient>({
   manifest: vcRecapManifest,
   async onDisable(context) {
-    // guild管理者がPluginを無効化・再設定した場合でも、独立して保持しているVC接続と
-    // activeSessionsのエントリは自動では消えない。無効化時に明示的に記録を終了する
-    // (無効化後は`/vc-recap stop`自体も呼べなくなるため、ここで止めないと録音が残り続ける)。
-    if (!isVcRecapActive(context.guildId)) return;
+    // Even an announced-but-not-yet-subscribed start must be cancelled.
+    // Stopping only isVcRecapActive would miss the pending announcement window.
     await stopVcRecap(context.prisma, context.logger, context.guildId);
   },
   provideCommands(context) {

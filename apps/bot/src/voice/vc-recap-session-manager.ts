@@ -87,7 +87,24 @@ const flushingSessions = new Set<ActiveVcRecapSession>();
  * 複数回awaitする区間)に同じguildで2回目の/vc-recap startが割り込むのを防ぐための
  * 同期的な予約セット。
  */
-const pendingGuildIds = new Set<string>();
+interface PendingVcRecapStart {
+  channelId: string;
+  cancelled: boolean;
+  /** Snapshot taken before the first asynchronous consent read. */
+  participantUserIds: Set<string>;
+  /** null until consent has been resolved for this attempt. */
+  consentingUserIds: Set<string> | null;
+}
+
+const pendingGuildStarts = new Map<string, PendingVcRecapStart>();
+
+/** Cancel a start that has not installed any voice subscription yet. */
+export function cancelPendingVcRecapStart(guildId: string): boolean {
+  const pending = pendingGuildStarts.get(guildId);
+  if (!pending) return false;
+  pending.cancelled = true;
+  return true;
+}
 
 export type StartVcRecapResult =
   | {
@@ -99,7 +116,8 @@ export type StartVcRecapResult =
   | { status: 'already_active' }
   | { status: 'no_consenting_members'; nonConsentingUserIds: string[] }
   | { status: 'connection_failed' }
-  | { status: 'announcement_failed' };
+  | { status: 'announcement_failed' }
+  | { status: 'start_cancelled' };
 
 export interface VcRecapStartAnnouncement {
   sessionId: string;
@@ -116,14 +134,21 @@ export async function startVcRecap(
   /** Must succeed before the first voice packet is subscribed or transcribed. */
   announceStart: (details: VcRecapStartAnnouncement) => Promise<void>,
 ): Promise<StartVcRecapResult> {
-  if (activeSessions.has(channel.guild.id) || pendingGuildIds.has(channel.guild.id)) {
+  if (activeSessions.has(channel.guild.id) || pendingGuildStarts.has(channel.guild.id)) {
     return { status: 'already_active' };
   }
-  pendingGuildIds.add(channel.guild.id);
+  const pending: PendingVcRecapStart = {
+    channelId: channel.id,
+    cancelled: false,
+    participantUserIds: new Set(),
+    consentingUserIds: null,
+  };
+  pendingGuildStarts.set(channel.guild.id, pending);
 
   try {
     const members = channel.members.filter((member) => !member.user.bot);
     const memberUserIds = [...members.keys()];
+    pending.participantUserIds = new Set(memberUserIds);
     const baseConsentByUserId = await getVoiceTranscriptionConsentMap(prisma, memberUserIds);
     // 自動同意ロールが設定されている場合のみ、キャッシュに残った剥奪済みロールで
     // 誤って同意扱いにしないようforce fetchする(未設定なら従来通りcacheで十分)。
@@ -150,6 +175,8 @@ export async function startVcRecap(
       memberUserIds,
       consentByUserId,
     );
+    pending.consentingUserIds = new Set(consentingUserIds);
+    if (pending.cancelled) return { status: 'start_cancelled' };
 
     if (consentingUserIds.length === 0) {
       return { status: 'no_consenting_members', nonConsentingUserIds };
@@ -162,6 +189,10 @@ export async function startVcRecap(
       consentingUserIds,
       nonConsentingUserIds,
     });
+    if (pending.cancelled) {
+      await failVcRecapSession(prisma, sessionId);
+      return { status: 'start_cancelled' };
+    }
 
     const connection = joinVoiceChannel({
       channelId: channel.id,
@@ -226,6 +257,14 @@ export async function startVcRecap(
       return { status: 'connection_failed' };
     }
 
+    // A stop/disable may occur while waiting for the voice connection to be ready.
+    // Never send a misleading announcement for a cancelled start.
+    if (pending.cancelled) {
+      connection.destroy();
+      await failVcRecapSession(prisma, sessionId);
+      return { status: 'start_cancelled' };
+    }
+
     // The voice connection is ready, but no speaking subscription exists yet.
     // A failed public notice MUST NOT leave an unannounced capture running.
     try {
@@ -244,6 +283,13 @@ export async function startVcRecap(
       return { status: 'announcement_failed' };
     }
 
+    // Stop/disable/last-member-leave/revoke may have happened during announceStart.
+    // This is the final synchronous fence before installing a speaking subscription.
+    if (pending.cancelled || channel.members.filter((member) => !member.user.bot).size === 0) {
+      connection.destroy();
+      await failVcRecapSession(prisma, sessionId);
+      return { status: 'start_cancelled' };
+    }
     activeSessions.set(channel.guild.id, session);
     wireSpeakingHandler(prisma, logger, session);
 
@@ -254,7 +300,9 @@ export async function startVcRecap(
       nonConsentingUserIds,
     };
   } finally {
-    pendingGuildIds.delete(channel.guild.id);
+    if (pendingGuildStarts.get(channel.guild.id) === pending) {
+      pendingGuildStarts.delete(channel.guild.id);
+    }
   }
 }
 
@@ -499,15 +547,17 @@ function downmixStereoToMono(stereoBuffer: Buffer): Buffer {
 export type StopVcRecapResult =
   | { status: 'completed'; sessionId: string }
   | { status: 'summarize_failed'; sessionId: string }
-  | { status: 'not_active' };
+  | { status: 'not_active' }
+  | { status: 'start_cancelled' };
 
 export async function stopVcRecap(
   prisma: PrismaClient,
   logger: Logger,
   guildId: string,
 ): Promise<StopVcRecapResult> {
+  const pendingCancelled = cancelPendingVcRecapStart(guildId);
   const session = activeSessions.get(guildId);
-  if (!session) return { status: 'not_active' };
+  if (!session) return { status: pendingCancelled ? 'start_cancelled' : 'not_active' };
   activeSessions.delete(guildId);
   flushingSessions.add(session);
 
@@ -576,6 +626,14 @@ export async function stopVcRecap(
  * 同意再確認だけでは、取り消し時点で発言中だった分の文字起こし・segment保存を止められないため)。
  */
 export function revokeVcRecapConsent(userId: string): void {
+  for (const pending of pendingGuildStarts.values()) {
+    if (
+      pending.participantUserIds.has(userId) &&
+      (!pending.consentingUserIds || pending.consentingUserIds.has(userId))
+    ) {
+      pending.cancelled = true;
+    }
+  }
   for (const session of [...activeSessions.values(), ...flushingSessions]) {
     if (!session.consentingUserIds.delete(userId)) continue;
     session.activeStreams.get(userId)?.abort();
@@ -600,5 +658,7 @@ export function isVcRecapActive(guildId: string): boolean {
 }
 
 export function activeVcRecapChannelId(guildId: string): string | null {
-  return activeSessions.get(guildId)?.channelId ?? null;
+  return (
+    activeSessions.get(guildId)?.channelId ?? pendingGuildStarts.get(guildId)?.channelId ?? null
+  );
 }
