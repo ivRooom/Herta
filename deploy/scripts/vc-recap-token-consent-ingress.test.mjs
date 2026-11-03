@@ -27,6 +27,19 @@ function ordered(source, fragments) {
   return true;
 }
 
+
+/** Source-shape drift checks only: these patterns do not execute consent handlers. */
+const OWNER_REFUSAL =
+  /if\s*\(\s*interaction\.user\.id\s*!==\s*parsed\.userId\s*\)\s*\{\s*await interaction\.reply\(\{\s*content:[^\n]+,\s*flags:\s*MessageFlags\.Ephemeral,\s*\}\);\s*return;\s*\}/;
+const ORIGIN_REFUSAL =
+  /if\s*\(\s*!isSameOriginMutationRequest\(request\)\s*\)\s*\{\s*return json\(\{\s*error:\s*'[^']+'\s*\},\s*403\);\s*\}/;
+
+function deniesBefore(source, denialBranch, protectedCall) {
+  const match = denialBranch.exec(source);
+  const actionAt = source.indexOf(protectedCall);
+  return match?.index !== undefined && actionAt >= 0 && match.index < actionAt;
+}
+
 function audit(input) {
   const errors = [];
   if (
@@ -47,7 +60,8 @@ function audit(input) {
       "const consent = parsed.action === 'yes';",
       'await setVoiceTranscriptionConsent(',
       'if (!consent) revokeVcRecapConsent(parsed.userId);',
-    ])
+    ]) ||
+    !deniesBefore(input.button, OWNER_REFUSAL, "if (parsed.action === 'web')")
   ) {
     errors.push('Discord button owner and grant/revoke branches');
   }
@@ -70,7 +84,8 @@ function audit(input) {
       'resolveVoiceConsentAccess(prisma, token)',
       "typeof consent !== 'boolean'",
       'setVoiceTranscriptionConsent(prisma, access.userId, consent',
-    ])
+    ]) ||
+    !deniesBefore(input.legacyPost, ORIGIN_REFUSAL, 'const { token } = await params;')
   ) {
     errors.push('token 30-day POST origin, owner, grant/revoke');
   }
@@ -82,7 +97,8 @@ function audit(input) {
       "payload['policyVersion'] !== VC_RECAP_LONG_TERM_CONSENT_VERSION",
       'updateVcRecapLongTermConsentChoices(prisma, access.userId',
       "case 'erasure_requested':",
-    ])
+    ]) ||
+    !deniesBefore(input.longTermPost, ORIGIN_REFUSAL, 'const { token } = await params;')
   ) {
     errors.push('token three-purpose POST policy, owner, erasure');
   }
@@ -106,6 +122,18 @@ test('owner dispatch, origin, policy version and revocation path drift is reject
     ['button', 'interaction.user.id !== parsed.userId', 'false', /Discord button owner/],
     [
       'button',
+      'if (interaction.user.id !== parsed.userId) {',
+      'if (false && interaction.user.id !== parsed.userId) {',
+      /Discord button owner/,
+    ],
+    [
+      'button',
+      '    return;\n  }\n\n  if (parsed.action === \'web\')',
+      '    void 0;\n  }\n\n  if (parsed.action === \'web\')',
+      /Discord button owner/,
+    ],
+    [
+      'button',
       'if (!consent) revokeVcRecapConsent(parsed.userId);',
       'void 0;',
       /Discord button owner/,
@@ -118,9 +146,21 @@ test('owner dispatch, origin, policy version and revocation path drift is reject
     ],
     ['legacyPost', 'isSameOriginMutationRequest(request)', 'true', /token 30-day POST/],
     [
+      'legacyPost',
+      'if (!isSameOriginMutationRequest(request)) {',
+      'if (isSameOriginMutationRequest(request)) {',
+      /token 30-day POST/,
+    ],
+    [
       'longTermPost',
       "payload['policyVersion'] !== VC_RECAP_LONG_TERM_CONSENT_VERSION",
       'false',
+      /token three-purpose POST/,
+    ],
+    [
+      'longTermPost',
+      'if (!isSameOriginMutationRequest(request)) {',
+      'if (isSameOriginMutationRequest(request)) {',
       /token three-purpose POST/,
     ],
   ]) {
