@@ -98,14 +98,23 @@ export type StartVcRecapResult =
     }
   | { status: 'already_active' }
   | { status: 'no_consenting_members'; nonConsentingUserIds: string[] }
-  | { status: 'connection_failed' };
+  | { status: 'connection_failed' }
+  | { status: 'announcement_failed' };
+
+export interface VcRecapStartAnnouncement {
+  sessionId: string;
+  consentingCount: number;
+  nonConsentingUserIds: readonly string[];
+}
 
 export async function startVcRecap(
   prisma: PrismaClient,
   logger: Logger,
   channel: VoiceBasedChannel,
   startedBy: string,
-  autoConsentRoleIds: string[] = [],
+  autoConsentRoleIds: string[],
+  /** Must succeed before the first voice packet is subscribed or transcribed. */
+  announceStart: (details: VcRecapStartAnnouncement) => Promise<void>,
 ): Promise<StartVcRecapResult> {
   if (activeSessions.has(channel.guild.id) || pendingGuildIds.has(channel.guild.id)) {
     return { status: 'already_active' };
@@ -215,6 +224,24 @@ export async function startVcRecap(
       connection.destroy();
       await failVcRecapSession(prisma, sessionId);
       return { status: 'connection_failed' };
+    }
+
+    // The voice connection is ready, but no speaking subscription exists yet.
+    // A failed public notice MUST NOT leave an unannounced capture running.
+    try {
+      await announceStart({
+        sessionId,
+        consentingCount: consentingUserIds.length,
+        nonConsentingUserIds,
+      });
+    } catch (error) {
+      logger.warn(
+        { err: error, guildId: channel.guild.id, sessionId },
+        'VC Recapの開始通知に失敗したため、音声取得を開始しません',
+      );
+      connection.destroy();
+      await failVcRecapSession(prisma, sessionId);
+      return { status: 'announcement_failed' };
     }
 
     activeSessions.set(channel.guild.id, session);
