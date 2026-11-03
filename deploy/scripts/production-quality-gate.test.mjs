@@ -51,11 +51,11 @@ test('VALORANT migration and deploy guard changes require same-SHA isolated rest
   }
   assert.equal(needsValorantPredeployRehearsal(['docs/README.md']), false);
   assert.equal(needsValorantPredeployRehearsal(['apps/bot/src/main.ts']), false);
-  const gate = readFileSync(
-    new URL('./production-quality-gate.mjs', import.meta.url),
-    'utf8',
+  const gate = readFileSync(new URL('./production-quality-gate.mjs', import.meta.url), 'utf8');
+  assert.match(
+    gate,
+    /needsValorantPredeployRehearsal\(files\).*required.push\(VALORANT_REHEARSAL_WORKFLOW\)/,
   );
-  assert.match(gate, /needsValorantPredeployRehearsal\(files\).*required.push\(VALORANT_REHEARSAL_WORKFLOW\)/);
 });
 
 test('checks accept only exact commit, main push, and successful completion', () => {
