@@ -12,6 +12,7 @@ function fixture(
   enabled = true,
   members: Array<{ id: string; bot?: boolean }> = [],
   maxParticipants = 5,
+  expiryOverride?: Date,
 ) {
   const create = vi.fn().mockResolvedValue({
     id: 'cfc92874-f6ab-4a68-9acf-c5ecc5010a05',
@@ -23,7 +24,7 @@ function fixture(
     status: 'OPEN',
     maxParticipants: 5,
     participants: [],
-    expiresAt: new Date(Date.now() + 10000),
+    expiresAt: expiryOverride ?? new Date(Date.now() + 10000),
     createdAt: new Date(),
     completedAt: null,
     result: null,
@@ -98,12 +99,29 @@ describe('VALORANT button recruitment slash command', () => {
     expect(f.followUp.mock.calls[0]![0].components[1].components[0].data.label).toBe(
       '🔊 VC全員参加',
     );
+    const createdSession = await f.create.mock.results[0]!.value;
+    const expiryUnix = Math.floor(createdSession.expiresAt.getTime() / 1000);
+    expect(f.followUp.mock.calls[0]![0].embeds[0].data.description).toContain(
+      `募集期限：<t:${expiryUnix}:R>`,
+    );
+    expect(f.followUp.mock.calls[0]![0].embeds[0].data.description).not.toContain('再抽選期限：');
     expect(f.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: { messageId: 'posted-message' },
       }),
     );
   });
+  it('fails closed without malformed Discord time tags for an invalid DB expiry', async () => {
+    const f = fixture(null, true, [], 5, new Date(Number.NaN));
+    await f.run();
+    const message = f.followUp.mock.calls[0]![0];
+    expect(message.embeds[0].data.description).toContain('状態：期限切れ');
+    expect(message.embeds[0].data.description).not.toContain('募集期限：');
+    expect(message.embeds[0].data.description).not.toContain('<t:NaN:R>');
+    const buttons = message.components[0].components as Array<{ data: { disabled?: boolean } }>;
+    expect(buttons.every((button) => button.data.disabled)).toBe(true);
+  });
+
   it('uses tactical mode when a map is selected', async () => {
     const f = fixture('Ascent');
     await f.run();
@@ -152,6 +170,11 @@ describe('VALORANT button recruitment slash command', () => {
     const components = f.followUp.mock.calls[0]![0].components[0].components;
     expect(components).toHaveLength(1);
     expect(components[0].data.label).toBe('再抽選');
+    const expiresAt = f.create.mock.calls[0]![0].data.expiresAt as Date;
+    expect(f.followUp.mock.calls[0]![0].embeds[0].data.description).toContain(
+      `再抽選期限：<t:${Math.floor(expiresAt.getTime() / 1000)}:R>`,
+    );
+    expect(f.followUp.mock.calls[0]![0].embeds[0].data.description).not.toContain('募集期限：');
     expect(f.followUp.mock.calls[0]![0].embeds[0].data.image?.url).toBe(
       'attachment://valorant-pick.png',
     );
