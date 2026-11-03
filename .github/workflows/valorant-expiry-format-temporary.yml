@@ -1,0 +1,43 @@
+# One-shot formatter for PR #791. Remove before merge.
+name: VALORANT PR 791 formatting (temporary)
+on:
+  push:
+    branches: [feat/valorant-expired-embed-reconcile-779]
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: true
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: |
+          pnpm exec prettier --write \
+            .github/workflows/valorant-predeploy-rehearsal.yml \
+            apps/bot/src/bot.ts \
+            apps/bot/src/plugins/valorant-expiry-reconcile.test.ts \
+            apps/bot/src/plugins/valorant-expiry-reconcile.ts \
+            deploy/scripts/production-quality-gate.test.mjs \
+            docs/VALORANT_EXPIRY_RECONCILIATION.md
+      - name: Commit reformatted sources
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- .github/workflows/valorant-predeploy-rehearsal.yml \
+            apps/bot/src/bot.ts \
+            apps/bot/src/plugins/valorant-expiry-reconcile.test.ts \
+            apps/bot/src/plugins/valorant-expiry-reconcile.ts \
+            deploy/scripts/production-quality-gate.test.mjs \
+            docs/VALORANT_EXPIRY_RECONCILIATION.md
+          if ! git diff --cached --quiet; then
+            git commit -m "style(valorant): format expiry reconciliation and release tests (#779)"
+            git push origin HEAD:refs/heads/feat/valorant-expired-embed-reconcile-779
+          fi
