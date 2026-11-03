@@ -11,7 +11,8 @@ test('Birthday Card upload endpoints alone receive the larger nginx body limit',
 
   assert.ok(birthdayLocation?.groups?.body, 'Birthday Card upload location must exist');
   assert.match(birthdayLocation.groups.body, /client_max_body_size 9m;/u);
-  assert.match(birthdayLocation.groups.body, /proxy_pass http:\/\/studio;/u);
+  assert.match(nginx, /^\s+set \$studio_backend studio:3000;$/mu);
+  assert.match(birthdayLocation.groups.body, /proxy_pass http:\/\/\$studio_backend;/u);
 
   const genericApiLocation = nginx.match(/location \/api\/ \{(?<body>[\s\S]*?)\n    \}/u);
   assert.ok(genericApiLocation?.groups?.body, 'generic Studio API location must exist');
