@@ -44,12 +44,13 @@ describe('VALORANT stats aggregation', () => {
         outcome: 'WIN',
         roundsWon: 13,
         roundsLost: 7,
-        playerResults: [],
+        playerResults: [{ userId: 'sample', agentId: 'omen' }],
         session: { result: [{ userId: 'sample', agentId: 'jett' }] },
       },
     ]);
     expect(output.win).toBe(1);
-    expect(output.compositions[0]).toMatchObject({ name: 'jett', count: 1, win: 1 });
+    expect(output.compositions[0]).toMatchObject({ name: 'omen', count: 1, win: 1 });
+    expect(output.pickedCompositions[0]).toMatchObject({ name: 'jett', count: 1, win: 1 });
   });
   it('preserves aggregate agent frequency after identifiers are anonymized', () => {
     const draw = sample('retained', 'RANDOM', 'jett');
