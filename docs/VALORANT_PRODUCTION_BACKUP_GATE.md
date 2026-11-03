@@ -13,11 +13,11 @@ Issue [#767](https://github.com/ivRooom/Herta/issues/767) / Release [#757](https
 ## 操作と事故防止
 
 1. 稼働中の本番Composeで、サーバーバージョン16とmigration状態をread-onlyで確認。異常や不足があれば停止。
-2. 展開先のdeployユーザー専用権限（0700）ディレクトリに `pg_dump -Fc` の新規ダンプ（0600）とSHA-256 sidecar（0600）を取得。サイズ・空き容量・SHA-256を検証。
+2. 展開先のdeployユーザー専用権限（0700）ディレクトリに `pg_dump -Fc` の新規ダンプ（0600）とSHA-256 sidecar（0600）を取得。サイズ・**バックアップ先およびDockerデータルートの両方**の空き容量・SHA-256を検証。不明・不足の場合は隔離復元を開始しない。
 3. `docker run --network none --memory 256m --pids-limit 128 postgres:16-alpine` の一時コンテナを**新規**起動。稼働中のPG volume、host port、秘密情報を渡さない。
 4. 同じダンプを隔離PGへ `pg_restore --no-owner --no-acl --exit-on-error` で復元。適用前履歴に新migrationが存在しないことを確認。
 5. 新しいmigration.sqlの**そのままのSQL**を隔離DBだけに適用。 `voice_channel_id TEXT NULL` / `opted_out_user_ids TEXT[] NOT NULL DEFAULT empty` の型・defaultを検証。
-6. 一時DBのみでTEMP table・INSERT・SELECT・ROLLBACKを検証。成功後に新規一時コンテナIDだけを削除。取得済みバックアップとSHA sidecarは保持。
+6. 一時DBのみでTEMP table・INSERT・SELECT・ROLLBACKを検証。成功・失敗時とも**その実行で作成した一時コンテナと匿名ボリュームのみ**を削除し、本番の名前付きボリュームは触らない。取得済みバックアップとSHA sidecarは保持。
 
 **禁止**：本番への手動ALTER/RESET/resolve、旧migrationの書き換え、既存のDB・volumeの削除、S3 uploader（削除/retention副作用）での代替、root IAM経由の操作、個人情報やdumpのIssue/ログへの投稿。
 
@@ -30,7 +30,7 @@ Issue [#767](https://github.com/ivRooom/Herta/issues/767) / Release [#757](https
 
 ## Rollback
 
-DDLは追加2列であり、通常のアプリimage rollbackではDROPしない。変更前の確実なimage SHAへ承認済みDeploy Productionの明示rollbackを使用。アプリ再起動後のAPI/Auth/Bot/Studio/Workerを検査し、**バックアップを上書きしない**。データ消失を伴う復元は通常rollback手順に含めず、障害時の個別承認を要求する。
+DDLは追加2列であり、通常のアプリimage rollbackではDROPしない。**移行前の承認済みSHAに戻す場合、そのSHAに追加migrationも事前復元ゲートも存在しなければゲートをスキップできる。ただしmigrationだけ存在しゲートが欠ける不完全なSHAでは停止する。**変更前の確実なimage SHAへ承認済みDeploy Productionの明示rollbackを使用。アプリ再起動後のAPI/Auth/Bot/Studio/Workerを検査し、**バックアップを上書きしない**。データ消失を伴う復元は通常rollback手順に含めず、障害時の個別承認を要求する。
 
 ## 実機検証の状態
 
