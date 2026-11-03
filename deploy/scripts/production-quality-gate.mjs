@@ -182,10 +182,7 @@ export function selectManualDeploymentBoundary({
   }
   if (
     emergencyRollbackApproved &&
-    (requestedRef === 'main' ||
-      !SHA_RE.test(mainSha) ||
-      sha === mainSha ||
-      attestedSha !== null)
+    (requestedRef === 'main' || !SHA_RE.test(mainSha) || sha === mainSha || attestedSha !== null)
   ) {
     throw new Error('Emergency rollback requires a historical SHA and missing trustworthy proof');
   }
