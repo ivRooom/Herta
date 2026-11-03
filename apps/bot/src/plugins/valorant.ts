@@ -165,7 +165,13 @@ async function handleMyId(
 }
 
 function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
-  const closed = session.status !== 'OPEN' || session.expiresAt <= new Date();
+  const expiryMs = session.expiresAt.getTime();
+  // A corrupt or missing timestamp must not create a malformed Discord tag
+  // or leave participant/reroll buttons enabled.
+  const validExpiry = Number.isFinite(expiryMs) && expiryMs > 0;
+  const expired = !validExpiry || expiryMs <= Date.now();
+  const expiryUnix = validExpiry ? Math.floor(expiryMs / 1000) : null;
+  const closed = session.status !== 'OPEN' || expired;
   const members = session.participants.map((item) => item.userId);
   const result = Array.isArray(session.result) ? session.result : [];
   const assignments = result.filter(
@@ -194,10 +200,10 @@ function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
       ' / ' +
       session.maxParticipants +
       (members.length === session.maxParticipants ? '（満員）' : ''),
-    ...(session.status === 'OPEN'
-      ? ['募集期限：<t:' + Math.floor(session.expiresAt.getTime() / 1000) + ':R>']
-      : session.status === 'COMPLETED' && session.expiresAt > new Date()
-        ? ['再抽選期限：<t:' + Math.floor(session.expiresAt.getTime() / 1000) + ':R>']
+    ...(expiryUnix !== null && session.status === 'OPEN'
+      ? ['募集期限：<t:' + expiryUnix + ':R>']
+      : expiryUnix !== null && session.status === 'COMPLETED' && !expired
+        ? ['再抽選期限：<t:' + expiryUnix + ':R>']
         : []),
     '',
     lines.length ? lines.join('\n') : '参加者はいません',
@@ -245,7 +251,7 @@ function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
     session.status === 'COMPLETED'
       ? [
           new ActionRowBuilder<ButtonBuilder>().addComponents(
-            button('reroll', '再抽選', ButtonStyle.Primary, session.expiresAt <= new Date()),
+            button('reroll', '再抽選', ButtonStyle.Primary, expired),
           ),
         ]
       : session.status === 'OPEN'
