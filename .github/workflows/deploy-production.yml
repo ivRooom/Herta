@@ -490,6 +490,13 @@ jobs:
               echo 'ERROR: VALORANT migration exists without its predeploy safety gate.' >&2
               exit 2
             fi
+            if [[ -f packages/db/prisma/migrations/20261104093000_valorant_expiry_ui_reconcile/migration.sql ]]; then
+              if [[ ! -f deploy/scripts/valorant-expiry-predeploy-rehearsal.sh ]]; then
+                echo 'ERROR: VALORANT expiry UI migration exists without its protected backup/restore gate.' >&2
+                exit 2
+              fi
+              bash deploy/scripts/valorant-expiry-predeploy-rehearsal.sh
+            fi
 
             printf '%s' "${GHCR_TOKEN}" | \
               docker login ghcr.io --username "${GHCR_USERNAME}" --password-stdin
