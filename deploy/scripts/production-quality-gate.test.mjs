@@ -10,6 +10,7 @@ import {
   needsPostgresIntegration,
   needsValorantPredeployRehearsal,
   needsRuntimeDeployment,
+  selectManualDeploymentBoundary,
   validateCompletedMainCi,
   validateDeployRef,
 } from './production-quality-gate.mjs';
@@ -52,10 +53,8 @@ test('VALORANT migration and deploy guard changes require same-SHA isolated rest
   assert.equal(needsValorantPredeployRehearsal(['docs/README.md']), false);
   assert.equal(needsValorantPredeployRehearsal(['apps/bot/src/main.ts']), false);
   const gate = readFileSync(new URL('./production-quality-gate.mjs', import.meta.url), 'utf8');
-  assert.match(
-    gate,
-    /needsValorantPredeployRehearsal\(files\).*required.push\(VALORANT_REHEARSAL_WORKFLOW\)/,
-  );
+  assert.match(gate, /manualMain \|\| needsValorantPredeployRehearsal\(files\)/);
+  assert.match(gate, /required.push\(VALORANT_REHEARSAL_WORKFLOW\)/);
 });
 
 test('checks accept only exact commit, main push, and successful completion', () => {
@@ -100,6 +99,96 @@ test('checks accept only exact commit, main push, and successful completion', ()
     ),
     'failed',
   );
+});
+
+test('manual main uses attested cumulative production delta, not target first parent', () => {
+  const current = 'c'.repeat(40);
+  const previous = 'a'.repeat(40);
+  const firstParent = 'b'.repeat(40);
+  assert.deepEqual(
+    selectManualDeploymentBoundary({
+      requestedRef: 'main',
+      sha: current,
+      firstParentSha: firstParent,
+      attestedSha: previous,
+    }),
+    { before: previous, mode: 'attested-cumulative' },
+  );
+});
+
+test('manual re-deploy of attested same-SHA main still executes required checks', () => {
+  const firstParent = 'b'.repeat(40);
+  assert.deepEqual(
+    selectManualDeploymentBoundary({
+      requestedRef: 'main',
+      sha,
+      firstParentSha: firstParent,
+      attestedSha: sha,
+    }),
+    { before: firstParent, mode: 'same-sha-redeploy' },
+  );
+  const gate = readFileSync(new URL('./production-quality-gate.mjs', import.meta.url), 'utf8');
+  assert.match(gate, /const manualMain = event === 'workflow_dispatch' && requestedRef === 'main'/);
+  assert.match(gate, /manualMain \|\| needsPostgresIntegration\(files\)/);
+  assert.match(gate, /manualMain \|\| needsValorantPredeployRehearsal\(files\)/);
+});
+
+test('manual bootstrap is explicit and permitted only before first attested SSH baseline', () => {
+  const current = 'c'.repeat(40);
+  const firstParent = 'b'.repeat(40);
+  const bootstrap = {
+    requestedRef: 'main',
+    sha: current,
+    firstParentSha: firstParent,
+    attestedSha: null,
+  };
+  assert.throws(() => selectManualDeploymentBoundary(bootstrap), /Missing attested production SHA/);
+  assert.deepEqual(selectManualDeploymentBoundary({ ...bootstrap, bootstrapApproved: true }), {
+    before: firstParent,
+    mode: 'first-bootstrap',
+  });
+  for (const candidate of [
+    { ...bootstrap, attestedSha: sha, bootstrapApproved: true },
+    { ...bootstrap, attestedSha: 'invalid', bootstrapApproved: true },
+    { ...bootstrap, requestedRef: current, bootstrapApproved: true },
+    { ...bootstrap, firstParentSha: 'invalid', bootstrapApproved: true },
+  ]) {
+    assert.throws(() => selectManualDeploymentBoundary(candidate));
+  }
+  const gate = readFileSync(new URL('./production-quality-gate.mjs', import.meta.url), 'utf8');
+  assert.match(gate, /error.message !== 'No successful production SSH deployment baseline'/);
+  assert.match(gate, /loadLatestProductionAttestation\(api\)/);
+  const workflow = readFileSync(
+    new URL('../../.github/workflows/deploy-production.yml', import.meta.url),
+    'utf8',
+  );
+  assert.match(workflow, /bootstrap_without_proof:\n\s+description:/);
+  assert.match(workflow, /type: boolean\n\s+required: true\n\s+default: false/);
+  assert.match(workflow, /DEPLOY_BOOTSTRAP_APPROVED: \$\{\{ github.event.inputs.bootstrap_without_proof \|\| 'false' \}\}/);
+});
+
+test('manual historical rollback still uses target first parent and requires trusted SSH proof', () => {
+  const historical = 'b'.repeat(40);
+  const current = 'c'.repeat(40);
+  assert.deepEqual(
+    selectManualDeploymentBoundary({
+      requestedRef: historical,
+      sha: historical,
+      firstParentSha: 'a'.repeat(40),
+      attestedSha: current,
+    }),
+    { before: 'a'.repeat(40), mode: 'explicit-historical-rollback' },
+  );
+  for (const candidate of [null, undefined, 'not-a-sha']) {
+    assert.throws(() =>
+      selectManualDeploymentBoundary({
+        requestedRef: historical,
+        sha: historical,
+        firstParentSha: 'a'.repeat(40),
+        attestedSha: candidate,
+      }),
+    );
+  }
 });
 
 test('historical rollback refuses missing or pending main CI immediately', () => {
