@@ -53,6 +53,26 @@ const status = {
   created_at: '2026-11-03T10:02:30Z',
 };
 
+test('trusted GitHub bot actors are accepted without widening arbitrary login values', () => {
+  const bot = buildProductionDeploymentPayload({
+    runId: 241,
+    runAttempt: 1,
+    sha,
+    imageId,
+    actor: 'github-merge-queue[bot]',
+  });
+  assert.equal(bot.actor, 'github-merge-queue[bot]');
+  assert.throws(() =>
+    buildProductionDeploymentPayload({
+      runId: 241,
+      runAttempt: 1,
+      sha,
+      imageId,
+      actor: 'github-merge-queue[bot]extra',
+    }),
+  );
+});
+
 test('only a unique exact remote image SHA and config digest becomes provenance', () => {
   assert.deepEqual(
     parseProductionRuntimeProof('out: HERTA_RELEASE_PROOF ' + sha + ' ' + imageId + '\n', sha),
