@@ -24,6 +24,10 @@ describe('VALORANT session custom IDs', () => {
     expect(parseValorantSessionAction(prefix + 'add-123456789012345678')?.action).toBe(
       'add-123456789012345678',
     );
+    expect(parseValorantSessionAction(prefix + 'vc-stage-123456abcdef-0.1.2')?.action)
+      .toBe('vc-stage-123456abcdef-0.1.2');
+    expect(parseValorantSessionAction(prefix + 'vc-stage-bad-0.1')).toBeNull();
+    expect(parseValorantSessionAction(prefix + 'vc-stage-123456abcdef-0.'.repeat(12))).toBeNull();
     expect(parseValorantSessionAction(prefix + 'add-INVALID')).toBeNull();
     expect(parseValorantSessionAction(prefix + 'vc-choose-bad')).toBeNull();
   });
