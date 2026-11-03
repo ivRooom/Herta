@@ -14,6 +14,8 @@
 - `studio.list` / `studio.detail` — 現行30日。実装: `apps/studio/src/lib/vc-recap-studio.ts` と `apps/studio/src/app/dashboard/guilds/[guildId]/vc-recap/`。未接続: 表示前・DB参照直前の遮断。
 - `studio.consent-read` / `studio.consent-write` — 同意GETと管理者の許可/撤回POSTを別経路として記録。実装: `apps/studio/src/app/api/guilds/[guildId]/vc-recap/consent/route.ts`。未接続: 認可後・DB参照前・変更前の独立epoch検証。
 - `studio.export` — 現行30日。実装: `apps/studio/src/app/api/guilds/[guildId]/vc-recap/export/route.ts`。未接続: 権限取得後・出力前の独立再チェック。
+- `bot.consent-button` — 永続Discordボタンのyes/no/webはSlash commandとは別入口。保護的撤回と付与/トークン発行を区別する。
+- `studio.token-consent-page` / `studio.token-consent-write` / `studio.token-long-term-write` — 本人向けトークンURLの読取、30日同意POST、長期3目的POST。既存Guild管理者同意APIとも独立。静的台帳追加のみで本番接続なし。
 - `api.transcript-read` — 要経路確認。BotのGuild限定内部API・将来公開API境界。未接続: 具体的な内部routeの全数棚卸し。
 - `worker.retention` — 現行30日。実装: `apps/worker/src/vc-recap-retention.ts`、`main.ts`。未接続: タイマー起動と一括削除競合の遮断。
 - `worker.erasure` — **実運用未登録・OFF**。実装: `apps/worker/src/vc-recap-erasure-sweep.ts`。未接続: 新Worker有効化前の停止ゲート。
@@ -21,7 +23,7 @@
 - `storage.signed-url` — **本番未完成**。予定: #585のS3音声再生/署名URL。未接続: 署名URL再利用・TTL・Cache-Control・復元中のアクセス。
 - `cache.read-write` — 現行/要棚卸し。予定: 将来索引/Redis/CDNと既存Studio/HTTPキャッシュ。未接続: DB外・CDN/Browser cacheの再公開。
 
-一覧は **設計上の経路識別子** であり、実在する23種類の独立HTTP Endpointを意味しない。詳細のソース根拠と安全区分は `docs/VC_RECAP_ROUTE_INVENTORY.md`。この23 IDでも完全なcall graphや経路遮断は立証できず、親 #728 / #734 で実配線とE2Eが必要。
+一覧は **設計上の経路識別子** であり、実在する27種類の独立HTTP Endpointを意味しない。詳細のソース根拠と安全区分は `docs/VC_RECAP_ROUTE_INVENTORY.md`。この27 IDでも完全なcall graphや経路遮断は立証できず、親 #728 / #734 で実配線とE2Eが必要。
 
 ## offline-only Portと安全区分
 
@@ -31,7 +33,7 @@
 
 `deploy/scripts/vc-recap-restore-traffic-gate.mjs`:
 
-- 23種類の既知のRouteのみ認識。unknown、nil/unavailable、壊れたSchema、別Restore runId、単調epoch不一致、破損日時、期限切れ、future、5分超の証拠を **deny**。
+- 27種類の既知のRouteのみ認識。unknown、nil/unavailable、壊れたSchema、別Restore runId、単調epoch不一致、破損日時、期限切れ、future、5分超の証拠を **deny**。
 - 受信する独立AuthorityのStateは `kind/scope/restoreRunId/epoch/status/issuedAt/expiresAt/clearance` に限定。**本当に独立したストレージであることの確認と署名検証は、未実装のbackend adapterの責務**。復元DB・単一backup・地元の古いcacheは信頼元にしない。
 - 2段階の注入Port `authenticateIndependentControl` と `authenticatePinnedEpoch` は監査真正性・最新アンチロールバックcheckpointを要求。今回のmockが真値を返しても本番権限は付与しない。
 - `quarantined` / `restore-pending` は常に deny。すべての独立証拠が揃った `review-pending` でさえ `operator-review-required`（**canResumeTraffic=false**）まで。これ自体は配信のGo/Allowではない。

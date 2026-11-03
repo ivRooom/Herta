@@ -32,6 +32,7 @@ on:
       - 'deploy/scripts/vc-recap-route-inventory.json'
       - 'deploy/scripts/vc-recap-route-inventory.test.mjs'
       - 'deploy/scripts/vc-recap-boundary-callgraph.test.mjs'
+      - 'deploy/scripts/vc-recap-token-consent-ingress.test.mjs'
       - 'packages/plugin-catalog/src/manifests/vc-recap.ts'
       - 'docs/VC_RECAP_ROUTE_INVENTORY.md'
       - 'apps/bot/src/plugins/vc-recap.ts'
@@ -39,6 +40,9 @@ on:
       - 'apps/bot/src/commands/privacy.ts'
       - 'apps/studio/src/app/dashboard/guilds/**/vc-recap/**'
       - 'apps/studio/src/app/api/guilds/**/vc-recap/**'
+      - 'apps/studio/src/app/consent/**'
+      - 'apps/studio/src/app/api/consent/**'
+      - 'apps/bot/src/bot.ts'
       - 'apps/studio/src/lib/vc-recap*.ts'
       - 'apps/worker/src/vc-recap*.ts'
       - 'apps/worker/src/main.ts'
@@ -83,6 +87,7 @@ on:
       - 'deploy/scripts/vc-recap-route-inventory.json'
       - 'deploy/scripts/vc-recap-route-inventory.test.mjs'
       - 'deploy/scripts/vc-recap-boundary-callgraph.test.mjs'
+      - 'deploy/scripts/vc-recap-token-consent-ingress.test.mjs'
       - 'packages/plugin-catalog/src/manifests/vc-recap.ts'
       - 'docs/VC_RECAP_ROUTE_INVENTORY.md'
       - 'apps/bot/src/plugins/vc-recap.ts'
@@ -90,6 +95,9 @@ on:
       - 'apps/bot/src/commands/privacy.ts'
       - 'apps/studio/src/app/dashboard/guilds/**/vc-recap/**'
       - 'apps/studio/src/app/api/guilds/**/vc-recap/**'
+      - 'apps/studio/src/app/consent/**'
+      - 'apps/studio/src/app/api/consent/**'
+      - 'apps/bot/src/bot.ts'
       - 'apps/studio/src/lib/vc-recap*.ts'
       - 'apps/worker/src/vc-recap*.ts'
       - 'apps/worker/src/main.ts'
@@ -172,6 +180,9 @@ jobs:
 
       - name: Privacy and VC call-edge drift tests (source-only, non-operational)
         run: node --test deploy/scripts/vc-recap-boundary-callgraph.test.mjs
+
+      - name: Token consent and persistent button call-edge drift (offline only)
+        run: node --test deploy/scripts/vc-recap-token-consent-ingress.test.mjs
 
       - name: Owner-scoped S3 multi-key manifest preflight (offline only)
         run: node --test deploy/scripts/vc-recap-erasure-owner-manifest.test.mjs

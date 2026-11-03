@@ -144,6 +144,26 @@
       "gap": "Consent-management URL creation is an independent token-disclosure path: audit generation, TTL, and restore/rollback fencing before enabling."
     },
     {
+      "route": "bot.consent-button",
+      "state": "live",
+      "action": "mixed",
+      "evidence": [
+        {
+          "path": "apps/bot/src/voice/vc-recap-consent-interaction.ts",
+          "symbol": "export async function handleConsentButton("
+        },
+        {
+          "path": "apps/bot/src/voice/vc-recap-consent-interaction.ts",
+          "symbol": "const consent = parsed.action === 'yes';"
+        },
+        {
+          "path": "apps/bot/src/bot.ts",
+          "symbol": "handleConsentButton,"
+        }
+      ],
+      "gap": "Persistent Discord button handles yes/no and web-link issuance outside slash commands. Grant, revocation and token disclosure need independent fail-closed controls."
+    },
+    {
       "route": "bot.list",
       "state": "live",
       "evidence": [
@@ -254,6 +274,66 @@
         }
       ],
       "gap": "Admin POST grants or revokes by boolean; grants must remain fenced, while safety withdrawals require separately verified protection semantics."
+    },
+    {
+      "route": "studio.token-long-term-write",
+      "state": "live",
+      "action": "mixed",
+      "evidence": [
+        {
+          "path": "apps/studio/src/app/api/consent/[token]/long-term/route.ts",
+          "symbol": "export async function POST("
+        },
+        {
+          "path": "apps/studio/src/app/api/consent/[token]/long-term/route.ts",
+          "symbol": "isSameOriginMutationRequest(request)"
+        },
+        {
+          "path": "apps/studio/src/app/api/consent/[token]/long-term/route.ts",
+          "symbol": "updateVcRecapLongTermConsentChoices(prisma, access.userId"
+        }
+      ],
+      "gap": "Three-purpose POST may grant, revoke, or request erasure. Each action requires separate authorization semantics. Long-term enrollment remains disabled."
+    },
+    {
+      "route": "studio.token-consent-write",
+      "state": "live",
+      "action": "mixed",
+      "evidence": [
+        {
+          "path": "apps/studio/src/app/api/consent/[token]/route.ts",
+          "symbol": "export async function POST("
+        },
+        {
+          "path": "apps/studio/src/app/api/consent/[token]/route.ts",
+          "symbol": "isSameOriginMutationRequest(request)"
+        },
+        {
+          "path": "apps/studio/src/app/api/consent/[token]/route.ts",
+          "symbol": "setVoiceTranscriptionConsent(prisma, access.userId, consent"
+        }
+      ],
+      "gap": "Token POST grants or revokes existing 30-day consent independently of admin POST. Grant must not bypass quarantine and withdrawal must remain safely achievable."
+    },
+    {
+      "route": "studio.token-consent-page",
+      "state": "live",
+      "action": "exposure",
+      "evidence": [
+        {
+          "path": "apps/studio/src/app/consent/[token]/page.tsx",
+          "symbol": "export default async function VoiceConsentPage("
+        },
+        {
+          "path": "apps/studio/src/app/consent/[token]/page.tsx",
+          "symbol": "getUserDataConsent(prisma, access.userId)"
+        },
+        {
+          "path": "apps/studio/src/app/consent/[token]/page.tsx",
+          "symbol": "getVcRecapLongTermConsentView(prisma, access.userId)"
+        }
+      ],
+      "gap": "Bearer-token page reads legacy and long-term consent status. Verify restore epoch independently before reads and response; token authentication is not quarantine authority."
     },
     {
       "route": "studio.export",

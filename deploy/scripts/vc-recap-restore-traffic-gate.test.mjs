@@ -51,8 +51,8 @@ function makeAdapters(overrides = {}) {
   return { control, authority, calls };
 }
 
-test('route inventory includes every currently known read/write/consumer boundary', () => {
-  assert.equal(VC_RECAP_TRAFFIC_ROUTES.length, 23);
+test('27-route inventory includes every currently known read/write/consumer boundary', () => {
+  assert.equal(VC_RECAP_TRAFFIC_ROUTES.length, 27);
   assert.equal(new Set(VC_RECAP_TRAFFIC_ROUTES).size, VC_RECAP_TRAFFIC_ROUTES.length);
   for (const route of VC_RECAP_TRAFFIC_ROUTES) {
     assert.equal(typeof route, 'string');
@@ -202,6 +202,10 @@ test('protective and mixed privacy routes are NOT implicitly authorized by offli
     'bot.privacy-voice-consent',
     'bot.privacy-openai-consent',
     'bot.privacy-delete',
+    'bot.consent-button',
+    'studio.token-consent-page',
+    'studio.token-consent-write',
+    'studio.token-long-term-write',
     'studio.consent-write',
     'worker.retention',
     'worker.erasure',
