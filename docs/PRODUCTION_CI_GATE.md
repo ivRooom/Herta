@@ -24,6 +24,43 @@ See #646 for new feature approval and #694, #695, #728, #729, #730 for deletion 
 
 Main may move after the final pre-SSH check. Treat this residual race as requiring monitoring rather than an atomic deployment guarantee. If the trigger is disabled or approval is pending, the operator must use the approved Actions UI/Environment process; automatic equivalence is not assumed.
 
+### SSH host identity trust anchor (Issue #770)
+
+The post-SSH image-ID readback is **not a trustworthy release attestation**
+without authenticating the server. Both `appleboy/ssh-action@v1.2.5` calls
+(the mutating deploy and the subsequent read-only readback) therefore pin
+**the same independently verified Lightsail host public-key SHA256 fingerprint**.
+A missing or malformed pin causes the protected `deploy` job to fail before
+SSM secret access or any SSH operation. The workflow does not fall back to
+an unverified connection.
+
+Operator setup (requires human verification and GitHub Environment approval):
+
+1. Open the **actual Lightsail instance** using an independently authenticated
+   AWS/Lightsail browser-console session, not the existing unpinned SSH
+   action and not `ssh-keyscan` alone. Check the instance identity in AWS.
+2. On that instance, inspect the SSH server's **public** host key with
+   `sudo ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256`.
+   Confirm the host offers this key for SSH negotiation; if a different
+   algorithm is used, independently verify the corresponding host public key.
+   Copy only the `SHA256:...` token (no key material, IP, or usernames).
+3. In the repository's **Settings → Environments → production → Environment
+   variables**, create `LIGHTSAIL_SSH_FINGERPRINT` with that exact token.
+   Keep the protected Environment's reviewer/approval policy. A host
+   fingerprint is public-key metadata; do not store any SSH private key there.
+4. Before an explicitly approved manual bootstrap (`Deploy Production`,
+   `ref=main`), verify the main SHA, its CI, backup/rollback reference,
+   and that this key matches the expected Lightsail host. If unknown, stop:
+   do not temporarily remove the pin or deploy by SSH without verification.
+5. For planned host-key rotation, first verify the new key from the independent
+   console, change the protected Environment variable under approval, and
+   record the maintenance window and recovery decision in #770/#759.
+   An unexpected mismatch means **stop deployment**, investigate host identity,
+   and leave healthy containers untouched; never accept the scanned key.
+
+Neither an unapproved Privacy release nor new VC recording is authorized by
+setting this variable.
+
 ## Verified runtime SHA provenance (Issue #765)
 
 The GitHub Actions run's `head_sha` is **not** proof of the actually
