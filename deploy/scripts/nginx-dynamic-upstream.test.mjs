@@ -2,10 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const nginxConfig = readFileSync(
-  new URL('../docker/nginx/default.conf', import.meta.url),
-  'utf8',
-);
+const nginxConfig = readFileSync(new URL('../docker/nginx/default.conf', import.meta.url), 'utf8');
 
 function proxyFor(location) {
   const afterLocation = nginxConfig.split(location)[1];
@@ -24,18 +21,10 @@ test('all proxy targets use re-resolvable internal Docker DNS names', () => {
 
   // No trailing slash (or explicit URI) on proxy_pass: Next.js Auth.js and
   // NestJS retain the exact route path and query sent by the client.
-  const targets = [...nginxConfig.matchAll(/proxy_pass\s+([^;]+);/g)].map(
-    (match) => match[1],
-  );
+  const targets = [...nginxConfig.matchAll(/proxy_pass\s+([^;]+);/g)].map((match) => match[1]);
   assert.equal(targets.length, 8);
-  assert.equal(
-    targets.filter((target) => target === 'http://$api_backend').length,
-    5,
-  );
-  assert.equal(
-    targets.filter((target) => target === 'http://$studio_backend').length,
-    3,
-  );
+  assert.equal(targets.filter((target) => target === 'http://$api_backend').length, 5);
+  assert.equal(targets.filter((target) => target === 'http://$studio_backend').length, 3);
 });
 
 test('existing NestJS and Studio/Auth.js path ownership is preserved', () => {
