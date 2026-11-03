@@ -117,7 +117,13 @@ test('accepts GitHub bot actor logins without admitting arbitrary suffixes', () 
   for (const actorLogin of ['mizzz-ivr', 'dependabot[bot]', 'github-merge-queue[bot]']) {
     assert.equal(makePayload(actorLogin).actor, actorLogin);
   }
-  for (const actorLogin of ['', 'dependabot[admin]', 'github/actions[bot]', 'bot[Bot]', 'a'.repeat(40)]) {
+  for (const actorLogin of [
+    '',
+    'dependabot[admin]',
+    'github/actions[bot]',
+    'bot[Bot]',
+    'a'.repeat(40),
+  ]) {
     assert.throws(() => makePayload(actorLogin), /Unverifiable production provenance input/);
   }
 });
