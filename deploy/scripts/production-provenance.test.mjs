@@ -275,7 +275,7 @@ test('manual bootstrap cannot miss an SSH baseline hidden beyond 100 no-op runs'
   const api = async (path) => {
     if (path.startsWith('actions/workflows/')) {
       return {
-        workflow_runs: path.includes('page=1') ? noOpRuns : [manualRun],
+        workflow_runs: path.endsWith('page=1') ? noOpRuns : [manualRun],
         total_count: 101,
       };
     }
