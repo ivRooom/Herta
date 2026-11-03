@@ -147,13 +147,20 @@ export function selectManualDeploymentBoundary({
   firstParentSha,
   attestedSha,
   bootstrapApproved = false,
+  emergencyRollbackApproved = false,
 }) {
   validateDeployRef(requestedRef);
   if (!SHA_RE.test(sha) || !SHA_RE.test(firstParentSha)) {
     throw new Error('Cannot establish the manual production commit boundary');
   }
+  if (bootstrapApproved && emergencyRollbackApproved) {
+    throw new Error('Bootstrap and emergency rollback approvals are mutually exclusive');
+  }
   if (bootstrapApproved && (requestedRef !== 'main' || attestedSha !== null)) {
     throw new Error('Explicit bootstrap is only valid before the first production SSH baseline');
+  }
+  if (emergencyRollbackApproved && (requestedRef === 'main' || attestedSha !== null)) {
+    throw new Error('Emergency rollback is only for a historical SHA without trustworthy proof');
   }
   if (requestedRef === 'main') {
     if (attestedSha === null) {
@@ -166,6 +173,12 @@ export function selectManualDeploymentBoundary({
       return { before: firstParentSha, mode: 'same-sha-redeploy' };
     }
     return { before: attestedSha, mode: 'attested-cumulative' };
+  }
+  if (attestedSha === null && emergencyRollbackApproved) {
+    // Recoverability after a partially failed SSH deployment. The operator
+    // selects a pinned, main-ancestry SHA; historical CI and protected
+    // production Environment approval remain mandatory.
+    return { before: firstParentSha, mode: 'operator-emergency-rollback' };
   }
   if (!SHA_RE.test(attestedSha)) {
     throw new Error('Manual rollback requires a verified current production baseline');
@@ -202,8 +215,22 @@ async function main() {
     throw new Error('Invalid explicit bootstrap approval value');
   }
   const bootstrapApproved = rawBootstrap === 'true';
-  if (bootstrapApproved && (event !== 'workflow_dispatch' || requestedRef !== 'main')) {
+  const rawEmergencyRollback = process.env.DEPLOY_EMERGENCY_ROLLBACK_APPROVED ?? 'false';
+  if (!['true', 'false'].includes(rawEmergencyRollback)) {
+    throw new Error('Invalid emergency rollback approval value');
+  }
+  const emergencyRollbackApproved = rawEmergencyRollback === 'true';
+  if (
+    (bootstrapApproved || emergencyRollbackApproved) &&
+    event !== 'workflow_dispatch'
+  ) {
+    throw new Error('Recovery approvals require a manual dispatch');
+  }
+  if (bootstrapApproved && (requestedRef !== 'main' || emergencyRollbackApproved)) {
     throw new Error('Bootstrap approval requires a manual main deployment');
+  }
+  if (emergencyRollbackApproved && requestedRef === 'main') {
+    throw new Error('Emergency rollback cannot target current main');
   }
 
   const api = async (path) => {
@@ -295,13 +322,21 @@ async function main() {
     try {
       attestedSha = (await loadLatestProductionAttestation(api)).sha;
     } catch (error) {
-      if (
-        !bootstrapApproved ||
-        !(error instanceof Error) ||
-        error.message !== 'No successful production SSH deployment baseline'
-      ) {
-        throw error;
-      }
+      if (!(error instanceof Error)) throw error;
+      const firstBootstrap =
+        bootstrapApproved &&
+        error.message === 'No successful production SSH deployment baseline';
+      const emergencyRollback =
+        emergencyRollbackApproved &&
+        [
+          'Latest production SSH attempt failed or lacks completed health/proof',
+          'Missing, duplicate or incomplete production provenance record',
+          'Untrusted, missing or malformed successful deployment attestation',
+          'No successful production SSH deployment baseline',
+        ].includes(error.message);
+      // Do not treat GitHub API failure, pagination truncation, a running SSH
+      // job or an unknown error as permission for a recovery bypass.
+      if (!firstBootstrap && !emergencyRollback) throw error;
       attestedSha = null;
     }
     const commit = await api('commits/' + sha);
@@ -311,6 +346,7 @@ async function main() {
       firstParentSha: commit.parents?.[0]?.sha,
       attestedSha,
       bootstrapApproved,
+      emergencyRollbackApproved,
     });
     before = boundary.before;
     console.log('Manual deployment proof boundary: ' + boundary.mode);
