@@ -21,6 +21,16 @@ Issue [#767](https://github.com/ivRooom/Herta/issues/767) / Release [#757](https
 
 **禁止**：本番への手動ALTER/RESET/resolve、旧migrationの書き換え、既存のDB・volumeの削除、S3 uploader（削除/retention副作用）での代替、root IAM経由の操作、個人情報やdumpのIssue/ログへの投稿。
 
+## 最新mainの同一SHA検証（#767）
+
+GitHub `VALORANT predeploy restore rehearsal` は **すべてのmain push SHA** で合成PG16の復元・exact SQL rehearsalを行う。Pull Requestは従来通り対象ファイルだけの実行とし、一般的なPRの負荷を抑える。
+
+**自動デプロイ（`workflow_run`）**では、品質ゲートが **直近の証跡付き実配備SHA → 今回のSHA** の累積差分を検査する。例えばmigrationを含むmainがまだ本番配備されず、その次にNginxだけ変更しても、最新main SHAに同じRehearsal成功結果が必要。Workflowがcommit-onlyの`push.paths`指定で起動しないとNo-Run状態になるため、main pushのpath filterは意図的に除去する。
+
+**人間承認による手動デプロイ（`workflow_dispatch`）**では、現在の`production-quality-gate.mjs`がターゲットcommitの**第一親**を変更比較の基点に使用するため、過去から未配備のmigrationを累積差分として検出・同一SHA Rehearsal結果を必須化できるとは限らない。この差異を曖昧に「すべてのDeployで累積比較する」と説明しない。運営者は手動実行前に、最新main **同一SHA**の`VALORANT predeploy restore rehearsal`成功を独立確認する。加えて、実本番SSHでは既存のfresh PG16 backup＋offline isolated restore＋exact SQL rehearsalがimage pull/migrator前に必須であり、失敗時はfail-closed。手動の真正な実配備SHAとの比較統合は#765/#767で別途設計し、古いSHA rollbackを破壊しない。
+
+このGitHub Actions実行は**使い捨ての合成データのみ**で、本番PG16のバックアップ/Restore成功を意味しない。本番デプロイでは後述のfresh dump→独立隔離Restore→SQL rehearsalのfail-closedゲートを別途通す。外部host鍵不一致 #770 の解消と運営者の承認がなければ配備は止める。
+
 ## 運用確認
 
 - 必要なチェック：GitHub PR CI全成功、独立レビュー、稼働main/戻し先SHA確定、production environment承認、freshバックアップと隔離復元の本番実行ログ、migrator exit=0、Bot/API/Studio/Worker/Cloudflareのhealth、Discord有人E2E。

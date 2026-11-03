@@ -8,14 +8,11 @@ on:
       - '.github/workflows/deploy-production.yml'
       - '.github/workflows/valorant-predeploy-rehearsal.yml'
       - 'packages/db/prisma/migrations/20261103160000_valorant_voice_participants/**'
+  # Every main SHA needs a rehearsal result: cumulative production-delta checks
+  # can require an earlier unshipped migration after a docs/nginx-only push.
+  # PR runs remain path-scoped for cost control.
   push:
     branches: [main]
-    paths:
-      - 'deploy/scripts/valorant-predeploy-rehearsal.sh'
-      - 'deploy/scripts/production-quality-gate.mjs'
-      - '.github/workflows/deploy-production.yml'
-      - '.github/workflows/valorant-predeploy-rehearsal.yml'
-      - 'packages/db/prisma/migrations/20261103160000_valorant_voice_participants/**'
 permissions:
   contents: read
 jobs:
