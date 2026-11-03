@@ -1605,7 +1605,13 @@ export class HertaBot {
     if (this.valorantExpiryTimer) return;
     const allowedGuildIds = approvedValorantExpiryGuildIds(process.env);
     if (allowedGuildIds.length === 0) {
-      this.logger.info('VALORANT期限切れ公開UIの自動更新は無効です（許可Guild未設定）。');
+      if (process.env['HERTA_VALORANT_EXPIRY_RECONCILE_ENABLED'] === 'true') {
+        this.logger.warn(
+          'VALORANT期限切れ公開UIは有効化指定ですが、許可Guild一覧が空または不正なため停止しています。',
+        );
+      } else {
+        this.logger.info('VALORANT期限切れ公開UIの自動更新は無効です（許可Guild未設定）。');
+      }
       return;
     }
     const allowedGuilds = new Set(allowedGuildIds);
