@@ -728,7 +728,14 @@ async function handleValorantManagement(
 ): Promise<void> {
   const parsed = parseValorantSessionAction(interaction.customId);
   if (!parsed || !interaction.guildId || !interaction.channelId) return;
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  // Keep all subsequent management steps in a single ephemeral UI, so an
+  // old selection menu does not remain actionable beside a newer confirmation.
+  // The original public recruitment button still receives an ephemeral reply.
+  if (interaction.message.flags.has(MessageFlags.Ephemeral)) {
+    await interaction.deferUpdate();
+  } else {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  }
   const guildId = interaction.guildId;
   try {
     const session = await getValorantSession(prisma, guildId, parsed.id);
