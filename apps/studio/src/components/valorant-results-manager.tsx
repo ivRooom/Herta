@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { defaultValorantAgents } from '@herta/plugin-catalog';
+import { uniqueActualValorantAgents, validValorantOutcomeScore } from '@/lib/valorant-match-validation';
 
 type Player = { userId: string; agentId: string; displayName: string };
 type Session = {
@@ -220,6 +221,17 @@ export function ValorantResultsManager({ guildId }: { guildId: string }) {
                   />
                 </label>
               </div>
+              {!validValorantOutcomeScore(outcome, roundsWon, roundsLost) && (
+                <p role="alert" className="text-sm text-destructive">
+                  勝利は取得ラウンドが多く、敗北は少なく、引分は同点である必要があります。
+                  0-0は登録できません。
+                </p>
+              )}
+              {!uniqueActualValorantAgents(players) && players.length > 0 && (
+                <p role="alert" className="text-sm text-destructive">
+                  同じ試合でエージェントの重複は登録できません。
+                </p>
+              )}
               <label className="block text-sm">
                 Match ID（任意）
                 <input
@@ -281,6 +293,8 @@ export function ValorantResultsManager({ guildId }: { guildId: string }) {
                 disabled={
                   busy ||
                   players.length === 0 ||
+                  !validValorantOutcomeScore(outcome, roundsWon, roundsLost) ||
+                  !uniqueActualValorantAgents(players) ||
                   !players.every((item) =>
                     [item.kills, item.deaths, item.assists].every(
                       (n) => Number.isInteger(n) && n >= 0 && n <= 200,
