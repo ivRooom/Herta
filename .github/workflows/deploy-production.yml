@@ -166,9 +166,12 @@ jobs:
       HERTA_RUNTIME_SECRET_KEY: ${{ secrets.HERTA_RUNTIME_SECRET_KEY }}
 
     steps:
+      # Checkout the immutable workflow trigger SHA for provenance tooling.
+      # A manual rollback's target may predate this script: never checkout the
+      # historical rollback SHA for the runner-side record publisher.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.quality-gate.outputs.deploy_sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: 最新mainへの上書きを防止（明示rollback SHAを除く）
