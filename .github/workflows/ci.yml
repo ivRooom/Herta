@@ -47,9 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      - name: Diagnostic nginx test Prettier diff (temporary)
-        run: pnpm exec prettier deploy/scripts/nginx-dynamic-upstream.test.mjs | diff -u deploy/scripts/nginx-dynamic-upstream.test.mjs - || true
-
       - name: Format Check
         run: pnpm format:check
 
