@@ -59,23 +59,43 @@ test('only a unique exact remote image SHA and config digest becomes provenance'
     { sha, imageId },
   );
   for (const raw of [
-    '', 'out: HERTA_RELEASE_PROOF ' + oldSha + ' ' + imageId,
+    '',
+    'out: HERTA_RELEASE_PROOF ' + oldSha + ' ' + imageId,
     'out: HERTA_RELEASE_PROOF ' + sha + ' sha256:broken',
-    'out: HERTA_RELEASE_PROOF ' + sha + ' ' + imageId + '\n' +
-      'out: HERTA_RELEASE_PROOF ' + sha + ' ' + imageId,
+    'out: HERTA_RELEASE_PROOF ' +
+      sha +
+      ' ' +
+      imageId +
+      '\n' +
+      'out: HERTA_RELEASE_PROOF ' +
+      sha +
+      ' ' +
+      imageId,
   ]) {
     assert.throws(() => parseProductionRuntimeProof(raw, sha), /proof/);
   }
-  assert.throws(() => buildProductionDeploymentPayload({
-    runId: 3, runAttempt: 1, sha, imageId: 'not-a-digest', actor,
-  }));
+  assert.throws(() =>
+    buildProductionDeploymentPayload({
+      runId: 3,
+      runAttempt: 1,
+      sha,
+      imageId: 'not-a-digest',
+      actor,
+    }),
+  );
 });
 
 test('manual rollback attestation uses verified runtime SHA, not dispatch head SHA', () => {
   assert.equal(manualRun.head_sha, oldSha);
-  assert.equal(validateProductionDeploymentAttestation({
-    run: manualRun, job: sshJob, deployment: record, statuses: [status],
-  }), sha);
+  assert.equal(
+    validateProductionDeploymentAttestation({
+      run: manualRun,
+      job: sshJob,
+      deployment: record,
+      statuses: [status],
+    }),
+    sha,
+  );
 });
 
 test('rejects forged source, actor, image, stale SHA, missing status, tampered dates and services', () => {
@@ -91,18 +111,30 @@ test('rejects forged source, actor, image, stale SHA, missing status, tampered d
     { ...record, created_at: '2026-11-03T09:59:59Z' },
     { ...record, created_at: '2026-11-03T10:03:01Z' },
   ]) {
-    assert.throws(() => validateProductionDeploymentAttestation({
-      run: manualRun, job: sshJob, deployment, statuses: [status],
-    }));
+    assert.throws(() =>
+      validateProductionDeploymentAttestation({
+        run: manualRun,
+        job: sshJob,
+        deployment,
+        statuses: [status],
+      }),
+    );
   }
   for (const statuses of [
-    [], [{ ...status, state: 'failure' }], [{ ...status, state: 'inactive' }],
+    [],
+    [{ ...status, state: 'failure' }],
+    [{ ...status, state: 'inactive' }],
     [{ ...status, created_at: '2026-11-03T09:59:59Z' }],
     [{ ...status, created_at: '2026-11-03T10:03:01Z' }],
   ]) {
-    assert.throws(() => validateProductionDeploymentAttestation({
-      run: manualRun, job: sshJob, deployment: record, statuses,
-    }));
+    assert.throws(() =>
+      validateProductionDeploymentAttestation({
+        run: manualRun,
+        job: sshJob,
+        deployment: record,
+        statuses,
+      }),
+    );
   }
 });
 
@@ -113,51 +145,68 @@ test('last SSH attempt wins; a failed post-SSH health check blocks older proof',
   };
   const failedAfterSsh = {
     run: { ...manualRun, id: 300, conclusion: 'failure' },
-    jobs: [{
-      ...sshJob,
-      conclusion: 'failure',
-      completed_at: '2026-11-03T10:05:00Z',
-    }],
+    jobs: [
+      {
+        ...sshJob,
+        conclusion: 'failure',
+        completed_at: '2026-11-03T10:05:00Z',
+      },
+    ],
   };
   const noop = {
     run: { ...manualRun, id: 320 },
     jobs: [{ name: 'Verified main CI gate', conclusion: 'success' }],
   };
   assert.equal(
-    selectLatestSuccessfulSshDeployment([
-      old, { run: manualRun, jobs: [sshJob] }, noop,
-    ]).run.id,
+    selectLatestSuccessfulSshDeployment([old, { run: manualRun, jobs: [sshJob] }, noop]).run.id,
     manualRun.id,
   );
   assert.throws(
-    () => selectLatestSuccessfulSshDeployment([
-      old, { run: manualRun, jobs: [sshJob] }, failedAfterSsh,
-    ]),
+    () =>
+      selectLatestSuccessfulSshDeployment([
+        old,
+        { run: manualRun, jobs: [sshJob] },
+        failedAfterSsh,
+      ]),
     /Latest production SSH attempt failed/,
   );
   const failedWithinSsh = {
     run: { ...manualRun, id: 330, conclusion: 'failure' },
-    jobs: [{
-      ...sshJob, conclusion: 'failure', completed_at: '2026-11-03T10:09:00Z',
-      steps: [{ name: 'LightsailへSSHデプロイ', status: 'completed', conclusion: 'failure' }],
-    }],
+    jobs: [
+      {
+        ...sshJob,
+        conclusion: 'failure',
+        completed_at: '2026-11-03T10:09:00Z',
+        steps: [{ name: 'LightsailへSSHデプロイ', status: 'completed', conclusion: 'failure' }],
+      },
+    ],
   };
   assert.throws(
     () => selectLatestSuccessfulSshDeployment([old, failedWithinSsh]),
     /Latest production SSH attempt failed/,
   );
   assert.equal(selectLatestSuccessfulSshDeployment([noop]), null);
-  assert.throws(() => selectLatestSuccessfulSshDeployment([
-    { run: manualRun, jobs: [sshJob, sshJob] },
-  ]));
-  assert.throws(() => selectLatestSuccessfulSshDeployment([
-    { run: manualRun, jobs: [sshJob] },
-    { run: { ...manualRun, id: 300 }, jobs: [sshJob] },
-  ]), /uniquely order/);
+  assert.throws(() =>
+    selectLatestSuccessfulSshDeployment([{ run: manualRun, jobs: [sshJob, sshJob] }]),
+  );
+  assert.throws(
+    () =>
+      selectLatestSuccessfulSshDeployment([
+        { run: manualRun, jobs: [sshJob] },
+        { run: { ...manualRun, id: 300 }, jobs: [sshJob] },
+      ]),
+    /uniquely order/,
+  );
 });
 
-function apiFixture({ deployments = [record], statuses = [status], jobs = [sshJob],
-  runs = [manualRun], otherPage = [], totalCount = jobs.length } = {}) {
+function apiFixture({
+  deployments = [record],
+  statuses = [status],
+  jobs = [sshJob],
+  runs = [manualRun],
+  otherPage = [],
+  totalCount = jobs.length,
+} = {}) {
   return async (path) => {
     if (path.startsWith('actions/workflows/')) return { workflow_runs: runs };
     if (path.includes('/jobs?')) return { jobs, total_count: totalCount };
