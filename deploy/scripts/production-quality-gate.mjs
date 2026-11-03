@@ -166,6 +166,7 @@ export function selectManualDeploymentBoundary({
   sha,
   firstParentSha,
   attestedSha,
+  mainSha,
   bootstrapApproved = false,
   emergencyRollbackApproved = false,
 }) {
@@ -179,8 +180,14 @@ export function selectManualDeploymentBoundary({
   if (bootstrapApproved && (requestedRef !== 'main' || attestedSha !== null)) {
     throw new Error('Explicit bootstrap is only valid before the first production SSH baseline');
   }
-  if (emergencyRollbackApproved && (requestedRef === 'main' || attestedSha !== null)) {
-    throw new Error('Emergency rollback is only for a historical SHA without trustworthy proof');
+  if (
+    emergencyRollbackApproved &&
+    (requestedRef === 'main' ||
+      !SHA_RE.test(mainSha) ||
+      sha === mainSha ||
+      attestedSha !== null)
+  ) {
+    throw new Error('Emergency rollback requires a historical SHA and missing trustworthy proof');
   }
   if (requestedRef === 'main') {
     if (attestedSha === null) {
@@ -358,6 +365,7 @@ async function main() {
       sha,
       firstParentSha: commit.parents?.[0]?.sha,
       attestedSha,
+      mainSha,
       bootstrapApproved,
       emergencyRollbackApproved,
     });
