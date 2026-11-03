@@ -135,7 +135,7 @@ jobs:
           '
 
       - name: 古いmainイメージをGHCRへpublishしない（明示rollback除外）
-        if: ${{ github.event.inputs.ref == '' || github.event.inputs.ref == 'main' }}
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.ref == '' || inputs.ref == 'main')) }}
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_SHA: ${{ needs.quality-gate.outputs.deploy_sha }}
@@ -179,7 +179,7 @@ jobs:
 
     steps:
       - name: 最新mainへの上書きを防止（明示rollback SHAを除く）
-        if: ${{ github.event.inputs.ref == '' || github.event.inputs.ref == 'main' }}
+        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.ref == '' || inputs.ref == 'main')) }}
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_SHA: ${{ needs.quality-gate.outputs.deploy_sha }}
