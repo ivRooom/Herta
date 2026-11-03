@@ -99,7 +99,9 @@ function harness() {
     findFirst,
     mockInteraction,
     digest,
-    setVoiceIds: (ids: string[]) => { voiceIds = ids; },
+    setVoiceIds: (ids: string[]) => {
+      voiceIds = ids;
+    },
     dispatch: (interaction: ButtonInteraction) => dispatch(context, interaction),
   };
 }
@@ -127,9 +129,14 @@ describe('VALORANT VC member overflow confirmation', () => {
     const confirm = h.mockInteraction(button.custom_id.split(':').at(-1)!, false);
     await h.dispatch(confirm.interaction);
     expect(manageValorantParticipants).toHaveBeenCalledOnce();
-    expect(manageValorantParticipants).toHaveBeenCalledWith(expect.objectContaining({
-      action: 'bulk', targetIds: [a], guildId, expectedVoiceChannelId: voiceChannelId,
-    }));
+    expect(manageValorantParticipants).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'bulk',
+        targetIds: [a],
+        guildId,
+        expectedVoiceChannelId: voiceChannelId,
+      }),
+    );
   });
 
   it('rejects stale VC candidate selection when voice membership changes', async () => {

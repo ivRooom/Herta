@@ -922,8 +922,10 @@ async function handleValorantManagement(
         const encoded = action.slice('vc-stage-'.length + 13).split('.');
         const indices = encoded.map((value) => Number.parseInt(value, 36));
         if (
-          encoded.some((value, index) => !/^[0-9a-z]{1,2}$/.test(value) ||
-            indices[index]?.toString(36) !== value) ||
+          encoded.some(
+            (value, index) =>
+              !/^[0-9a-z]{1,2}$/.test(value) || indices[index]?.toString(36) !== value,
+          ) ||
           new Set(indices).size !== indices.length
         ) {
           await interaction.editReply('選択したメンバーの確認情報が正しくありません。');
@@ -961,9 +963,12 @@ async function handleValorantManagement(
           components: [
             new ActionRowBuilder<ButtonBuilder>().addComponents(
               new ButtonBuilder()
-                .setCustomId(sessionCustomId(
-                  session.id, 'vc-stage-' + snapshot.digest + '-' + positions.join('.'),
-                ))
+                .setCustomId(
+                  sessionCustomId(
+                    session.id,
+                    'vc-stage-' + snapshot.digest + '-' + positions.join('.'),
+                  ),
+                )
                 .setLabel('選択メンバーを追加確定')
                 .setStyle(ButtonStyle.Success),
               new ButtonBuilder()
