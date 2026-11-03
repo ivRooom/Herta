@@ -16,10 +16,7 @@ export const VALORANT_META = {
   sourceType: 'official-patch-notes',
   compositionSourceType: 'herta-editorial-no-gameplay-stats',
   competitivePool: ['Abyss', 'Bind', 'Corrode', 'Haven', 'Lotus', 'Summit', 'Sunset'],
-  agentChanges: [
-    'Hush added in 13.09',
-    'Clove Pick-Me-Up speed bonus reduced 15% to 10% in 13.09',
-  ],
+  agentChanges: ['Hush added in 13.09', 'Clove Pick-Me-Up speed bonus reduced 15% to 10% in 13.09'],
   statistics: {
     sampleSize: null,
     pickRate: null,

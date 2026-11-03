@@ -31,10 +31,10 @@
 
 `20261103160000_valorant_voice_participants` を**追加migration**として適用:
 
-| 列 | 型 | 旧行の値 | 用途 |
-|---|---|---|---|
-| `valorant_pick_sessions.voice_channel_id` | TEXT NULL | NULL | 固定された対象VC |
-| `valorant_pick_sessions.opted_out_user_ids` | TEXT[] NOT NULL | 空配列 | 本人が取消したユーザーID |
+| 列                                          | 型              | 旧行の値 | 用途                     |
+| ------------------------------------------- | --------------- | -------- | ------------------------ |
+| `valorant_pick_sessions.voice_channel_id`   | TEXT NULL       | NULL     | 固定された対象VC         |
+| `valorant_pick_sessions.opted_out_user_ids` | TEXT[] NOT NULL | 空配列   | 本人が取消したユーザーID |
 
 - 90日匿名化では参加者ID削除に加えopt-out配列とVC IDもクリア。履歴、構成、抽選結果・統計は保持。
 - 旧イメージへロールバックしても追加列をDROPしない。切替前の正常imageに戻してBot/API/Studio healthを確認。本番migration前のPG custom-format backup・SHA-256・隔離restore/リハーサルが必須。

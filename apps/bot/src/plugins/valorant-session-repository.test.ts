@@ -18,8 +18,12 @@ describe('VALORANT session custom IDs', () => {
     const prefix = VALORANT_SESSION_PREFIX + 'cfc92874-f6ab-4a68-9acf-c5ecc5010a05:';
     expect(parseValorantSessionAction(prefix + 'manage')?.action).toBe('manage');
     expect(parseValorantSessionAction(prefix + 'vc')?.action).toBe('vc');
-    expect(parseValorantSessionAction(prefix + 'vc-commit-123456abcdef')?.action).toBe('vc-commit-123456abcdef');
-    expect(parseValorantSessionAction(prefix + 'add-123456789012345678')?.action).toBe('add-123456789012345678');
+    expect(parseValorantSessionAction(prefix + 'vc-commit-123456abcdef')?.action).toBe(
+      'vc-commit-123456abcdef',
+    );
+    expect(parseValorantSessionAction(prefix + 'add-123456789012345678')?.action).toBe(
+      'add-123456789012345678',
+    );
     expect(parseValorantSessionAction(prefix + 'add-INVALID')).toBeNull();
     expect(parseValorantSessionAction(prefix + 'vc-choose-bad')).toBeNull();
   });

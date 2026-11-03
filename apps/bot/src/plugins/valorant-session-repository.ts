@@ -28,8 +28,15 @@ export type ValorantMutation =
   | { status: 'ok'; session: ValorantSessionSnapshot; changed: boolean }
   | {
       status:
-        | 'missing' | 'closed' | 'full' | 'not_joined' | 'empty' | 'forbidden'
-        | 'insufficient' | 'voice_changed' | 'invalid';
+        | 'missing'
+        | 'closed'
+        | 'full'
+        | 'not_joined'
+        | 'empty'
+        | 'forbidden'
+        | 'insufficient'
+        | 'voice_changed'
+        | 'invalid';
     };
 
 export function parseValorantSessionAction(
@@ -40,11 +47,23 @@ export function parseValorantSessionAction(
   if (segments.length !== 2 || !/^[0-9a-f-]{36}$/i.test(segments[0] ?? '')) return null;
   const action = segments[1];
   if (
-    !['join', 'leave', 'draw', 'cancel', 'reroll', 'vc', 'manage',
-      'add-select', 'remove-select', 'select-vc', 'close'].includes(action ?? '') &&
+    ![
+      'join',
+      'leave',
+      'draw',
+      'cancel',
+      'reroll',
+      'vc',
+      'manage',
+      'add-select',
+      'remove-select',
+      'select-vc',
+      'close',
+    ].includes(action ?? '') &&
     !/^(vc-commit|vc-choose)-[a-f0-9]{12}$/.test(action ?? '') &&
     !/^(vc-bind|add|remove)-[0-9]{17,20}$/.test(action ?? '')
-  ) return null;
+  )
+    return null;
   return { id: segments[0]!, action: action as ValorantComponentAction };
 }
 
@@ -253,28 +272,34 @@ export async function bindValorantVoiceChannel(
   input: { guildId: string; id: string; userId: string; isAdmin: boolean; channelId: string },
 ): Promise<ValorantMutation> {
   if (!/^[0-9]{17,20}$/.test(input.channelId)) return { status: 'invalid' };
-  return prisma.$transaction(async (tx) => {
-    const locks = await tx.$queryRawUnsafe<Array<{ id: string }>>(
-      'SELECT "id" FROM "valorant_pick_sessions" WHERE "id" = $1 AND "guild_id" = $2 FOR UPDATE',
-      input.id, input.guildId,
-    );
-    if (!locks.length) return { status: 'missing' };
-    const row = await tx.valorantPickSession.findFirst({
-      where: { id: input.id, guildId: input.guildId },
-      include: { participants: { orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }] } },
-    });
-    if (!row) return { status: 'missing' };
-    if (row.status !== 'OPEN' || row.expiresAt <= new Date()) return { status: 'closed' };
-    if (row.creatorId !== input.userId && !input.isAdmin) return { status: 'forbidden' };
-    if (row.voiceChannelId && row.voiceChannelId !== input.channelId) return { status: 'voice_changed' };
-    if (row.voiceChannelId === input.channelId) return { status: 'ok', session: row, changed: false };
-    const session = await tx.valorantPickSession.update({
-      where: { id: row.id },
-      data: { voiceChannelId: input.channelId },
-      include: { participants: { orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }] } },
-    });
-    return { status: 'ok', session, changed: true };
-  }, { isolationLevel: 'ReadCommitted' });
+  return prisma.$transaction(
+    async (tx) => {
+      const locks = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        'SELECT "id" FROM "valorant_pick_sessions" WHERE "id" = $1 AND "guild_id" = $2 FOR UPDATE',
+        input.id,
+        input.guildId,
+      );
+      if (!locks.length) return { status: 'missing' };
+      const row = await tx.valorantPickSession.findFirst({
+        where: { id: input.id, guildId: input.guildId },
+        include: { participants: { orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }] } },
+      });
+      if (!row) return { status: 'missing' };
+      if (row.status !== 'OPEN' || row.expiresAt <= new Date()) return { status: 'closed' };
+      if (row.creatorId !== input.userId && !input.isAdmin) return { status: 'forbidden' };
+      if (row.voiceChannelId && row.voiceChannelId !== input.channelId)
+        return { status: 'voice_changed' };
+      if (row.voiceChannelId === input.channelId)
+        return { status: 'ok', session: row, changed: false };
+      const session = await tx.valorantPickSession.update({
+        where: { id: row.id },
+        data: { voiceChannelId: input.channelId },
+        include: { participants: { orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }] } },
+      });
+      return { status: 'ok', session, changed: true };
+    },
+    { isolationLevel: 'ReadCommitted' },
+  );
 }
 
 /**
@@ -294,55 +319,69 @@ export async function manageValorantParticipants(
   },
 ): Promise<ValorantMutation> {
   const targets = [...new Set(input.targetIds)];
-  if (targets.length === 0 || targets.length > 100 ||
-      targets.some((id) => !/^[0-9]{17,20}$/.test(id))) return { status: 'invalid' };
-  return prisma.$transaction(async (tx) => {
-    const locks = await tx.$queryRawUnsafe<Array<{ id: string }>>(
-      'SELECT "id" FROM "valorant_pick_sessions" WHERE "id" = $1 AND "guild_id" = $2 FOR UPDATE',
-      input.id, input.guildId,
-    );
-    if (!locks.length) return { status: 'missing' };
-    const row = await tx.valorantPickSession.findFirst({
-      where: { id: input.id, guildId: input.guildId },
-      include: { participants: { orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }] } },
-    });
-    if (!row) return { status: 'missing' };
-    if (row.status !== 'OPEN' || row.expiresAt <= new Date()) return { status: 'closed' };
-    if (row.creatorId !== input.userId && !input.isAdmin) return { status: 'forbidden' };
-    if (input.action !== 'bulk' && targets.length !== 1) return { status: 'invalid' };
-    if (input.action === 'bulk' &&
-        (!row.voiceChannelId || row.voiceChannelId !== input.expectedVoiceChannelId))
-      return { status: 'voice_changed' };
-
-    const existing = new Set(row.participants.map(({ userId }) => userId));
-    if (input.action === 'remove' && !existing.has(targets[0]!)) return { status: 'not_joined' };
-    const additions = input.action === 'remove' ? [] : targets.filter(
-      (id) => !existing.has(id) && (input.action === 'add' || !row.optedOutUserIds.includes(id)),
-    );
-    if (existing.size + additions.length > row.maxParticipants) return { status: 'full' };
-    if (input.action === 'remove') {
-      await tx.valorantPickParticipant.delete({
-        where: { sessionId_userId: { sessionId: row.id, userId: targets[0]! } },
+  if (
+    targets.length === 0 ||
+    targets.length > 100 ||
+    targets.some((id) => !/^[0-9]{17,20}$/.test(id))
+  )
+    return { status: 'invalid' };
+  return prisma.$transaction(
+    async (tx) => {
+      const locks = await tx.$queryRawUnsafe<Array<{ id: string }>>(
+        'SELECT "id" FROM "valorant_pick_sessions" WHERE "id" = $1 AND "guild_id" = $2 FOR UPDATE',
+        input.id,
+        input.guildId,
+      );
+      if (!locks.length) return { status: 'missing' };
+      const row = await tx.valorantPickSession.findFirst({
+        where: { id: input.id, guildId: input.guildId },
+        include: { participants: { orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }] } },
       });
-    } else {
-      for (const userId of additions) {
-        await tx.valorantPickParticipant.create({ data: { sessionId: row.id, userId } });
-      }
-      if (input.action === 'add' && row.optedOutUserIds.includes(targets[0]!)) {
-        await tx.valorantPickSession.update({
-          where: { id: row.id },
-          data: { optedOutUserIds: row.optedOutUserIds.filter((id) => id !== targets[0]) },
+      if (!row) return { status: 'missing' };
+      if (row.status !== 'OPEN' || row.expiresAt <= new Date()) return { status: 'closed' };
+      if (row.creatorId !== input.userId && !input.isAdmin) return { status: 'forbidden' };
+      if (input.action !== 'bulk' && targets.length !== 1) return { status: 'invalid' };
+      if (
+        input.action === 'bulk' &&
+        (!row.voiceChannelId || row.voiceChannelId !== input.expectedVoiceChannelId)
+      )
+        return { status: 'voice_changed' };
+
+      const existing = new Set(row.participants.map(({ userId }) => userId));
+      if (input.action === 'remove' && !existing.has(targets[0]!)) return { status: 'not_joined' };
+      const additions =
+        input.action === 'remove'
+          ? []
+          : targets.filter(
+              (id) =>
+                !existing.has(id) && (input.action === 'add' || !row.optedOutUserIds.includes(id)),
+            );
+      if (existing.size + additions.length > row.maxParticipants) return { status: 'full' };
+      if (input.action === 'remove') {
+        await tx.valorantPickParticipant.delete({
+          where: { sessionId_userId: { sessionId: row.id, userId: targets[0]! } },
         });
+      } else {
+        for (const userId of additions) {
+          await tx.valorantPickParticipant.create({ data: { sessionId: row.id, userId } });
+        }
+        if (input.action === 'add' && row.optedOutUserIds.includes(targets[0]!)) {
+          await tx.valorantPickSession.update({
+            where: { id: row.id },
+            data: { optedOutUserIds: row.optedOutUserIds.filter((id) => id !== targets[0]) },
+          });
+        }
       }
-    }
-    const changed = input.action === 'remove' || additions.length > 0;
-    if (!changed) return { status: 'ok', session: row, changed: false };
-    const session = await tx.valorantPickSession.findUniqueOrThrow({
-      where: { id: row.id },
-      include: { participants: { orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }] } },
-    });
-    return { status: 'ok', session, changed: true };
-  }, { isolationLevel: 'ReadCommitted' });
+      const changed = input.action === 'remove' || additions.length > 0;
+      if (!changed) return { status: 'ok', session: row, changed: false };
+      const session = await tx.valorantPickSession.findUniqueOrThrow({
+        where: { id: row.id },
+        include: { participants: { orderBy: [{ joinedAt: 'asc' }, { userId: 'asc' }] } },
+      });
+      return { status: 'ok', session, changed: true };
+    },
+    { isolationLevel: 'ReadCommitted' },
+  );
 }
 
 /**
