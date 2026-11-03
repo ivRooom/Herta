@@ -445,6 +445,11 @@ jobs:
 
             ${COMPOSE} config --quiet
 
+            # New VALORANT migration must have a protected fresh PG16 backup,
+            # an offline restore and exact SQL rehearsal before any image pull
+            # or Compose up (which can start the Prisma migrator).
+            bash deploy/scripts/valorant-predeploy-rehearsal.sh
+
             printf '%s' "${GHCR_TOKEN}" | \
               docker login ghcr.io --username "${GHCR_USERNAME}" --password-stdin
 
