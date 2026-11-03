@@ -23,6 +23,11 @@ const a = '111111111111111111';
 const b = '222222222222222222';
 const c = '333333333333333333';
 
+type ReplyPayload = {
+  content: string;
+  components: Array<{ toJSON(): { components: Array<{ custom_id: string }> } }>;
+};
+
 function harness() {
   const participants: { userId: string }[] = [];
   const session = {
@@ -74,7 +79,7 @@ function harness() {
     userId = 'creator',
     ephemeral = true,
   ) => {
-    const editReply = vi.fn(async () => undefined);
+    const editReply = vi.fn(async (_reply: unknown) => undefined);
     const deferReply = vi.fn();
     const deferUpdate = vi.fn();
     const value = {
@@ -135,10 +140,10 @@ describe('VALORANT VC member overflow confirmation', () => {
     expect(deferUpdate).toHaveBeenCalledOnce();
     expect(deferReply).not.toHaveBeenCalled();
     expect(manageValorantParticipants).not.toHaveBeenCalled();
-    const message = editReply.mock.calls[0]![0];
+    const message = editReply.mock.calls[0]![0] as ReplyPayload;
     expect(message.content).toContain('最終確認');
     expect(message.content).toContain('<@' + a + '>');
-    const button = message.components[0].toJSON().components[0] as { custom_id: string };
+    const button = message.components[0]!.toJSON().components[0] as { custom_id: string };
     expect(button.custom_id).toContain(':vc-stage-');
     expect(button.custom_id.length).toBeLessThanOrEqual(100);
 
@@ -186,7 +191,7 @@ describe('VALORANT VC member overflow confirmation', () => {
     h.setVoiceIds([a, b, c]);
     const preview = h.mockInteraction('vc', false, 'creator', false);
     await h.dispatch(preview.interaction);
-    const reply = preview.editReply.mock.calls.at(-1)![0];
+    const reply = preview.editReply.mock.calls.at(-1)![0] as ReplyPayload;
     expect(reply.content).toContain('<@' + a + '>');
     expect(reply.content).not.toContain('<@' + b + '>');
     expect(reply.content).not.toContain('<@' + c + '>');
@@ -208,8 +213,10 @@ describe('VALORANT VC member overflow confirmation', () => {
     const h = harness();
     const select = h.mockInteraction('vc-choose-' + h.digest(), true);
     await h.dispatch(select.interaction);
-    const selectedButton = select.editReply.mock.calls[0]![0].components[0].toJSON()
-      .components[0] as { custom_id: string };
+    const selectedReply = select.editReply.mock.calls[0]![0] as ReplyPayload;
+    const selectedButton = selectedReply.components[0]!.toJSON().components[0] as {
+      custom_id: string;
+    };
     const staged = selectedButton.custom_id.split(':').at(-1)!;
     h.setVoiceIds([b, c]);
     const confirm = h.mockInteraction(staged, false);
