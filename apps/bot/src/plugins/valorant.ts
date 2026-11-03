@@ -37,6 +37,7 @@ import {
 import { fetchValorantMmr, parseRiotId, type RiotIdInput } from './valorant-client.js';
 import { pickRandomValorantAgents } from './valorant-random.js';
 import { renderValorantPickCard } from './valorant-pick-card.js';
+import { VALORANT_META } from './valorant-meta.js';
 import {
   createValorantSession,
   createDirectValorantSession,
@@ -199,8 +200,9 @@ function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
       plan
         ? '構成の特徴：' + plan.label + ' — ' + plan.focus
         : '構成の特徴：エントリー・スモーク・索敵・防衛と連携を考慮。',
-      '対象パッチ：13.09',
-    '参考：Riot Games公式パッチノート／Herta独自編集の戦術構成',
+      '対象パッチ：' + VALORANT_META.patchVersion,
+    'メタ確認日：' + VALORANT_META.verifiedAt.replaceAll('-', '/'),
+    '出典：Riot Games公式パッチノート／Herta独自編集の戦術構成',
     '統計更新日：未取得（採用率・勝率データ未使用）',
     '※構成は戦術的な候補例です。プロ大会の採用率・勝率を保証するものではありません。',
     );
