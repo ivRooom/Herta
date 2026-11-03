@@ -97,7 +97,12 @@ function harness() {
       deferUpdate,
       editReply,
     };
-    return { interaction: value as unknown as ButtonInteraction, editReply, deferReply, deferUpdate };
+    return {
+      interaction: value as unknown as ButtonInteraction,
+      editReply,
+      deferReply,
+      deferUpdate,
+    };
   };
   const digest = () =>
     createHash('sha256')
@@ -156,7 +161,7 @@ describe('VALORANT VC member overflow confirmation', () => {
     );
   });
 
-  it('opens an ephemeral reply from the public VC button, but updates an existing ephemeral menu', async () => {
+  it('replies privately from public buttons and updates existing private menus', async () => {
     const h = harness();
     const publicButton = h.mockInteraction('vc', false, 'creator', false);
     await h.dispatch(publicButton.interaction);
