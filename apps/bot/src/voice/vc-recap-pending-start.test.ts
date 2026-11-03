@@ -154,7 +154,7 @@ describe('pending VC Recap start fail-closed after Discord announcement', () => 
     expect(speaking.on).not.toHaveBeenCalled();
   });
 
-  it('does not cancel another guild when an unrelated user revokes during consent lookup', async () => {
+  it('unrelated revoke cannot cancel another guild pending start', async () => {
     const { channel, speaking } = makeChannel('guild-unrelated');
     let finishConsent!: (consents: Map<string, boolean>) => void;
     mocks.getVoiceTranscriptionConsentMap.mockImplementationOnce(
