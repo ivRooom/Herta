@@ -277,6 +277,21 @@ export const valorantManifest: PluginManifest = {
           description: '連携済みのRiot IDを確認します',
         },
         {
+          name: 'picks',
+          description: 'Hertaの抽選Agent・Role集計（本人／管理者のみGuild全体）',
+          options: [
+            {
+              name: 'scope',
+              description: '集計対象（Guild全体はサーバー管理権限が必要）',
+              type: 'string',
+              choices: [
+                { name: '自分の抽選履歴', value: 'self' },
+                { name: 'このサーバー全体（管理者）', value: 'guild' },
+              ],
+            },
+          ],
+        },
+        {
           name: 'stats',
           description: 'VALORANTの現在のランク・RRを表示します',
           options: [
