@@ -108,6 +108,50 @@ A failed GitHub API, unavailable runner, rejected CI or missing approval is a st
 Do not add a quality-gate bypass or disable environment protection to clear an alert.
 Use the human-approved incident and recovery procedure instead.
 
+## Lightsail SSH host key trust anchor (P0, #770)
+
+**Status:** Code changes in #770 do **not** constitute operator verification of host
+identity or production readiness. Do not merge and attempt a production bootstrap
+until the steps below have been independently checked and the protected variable
+is available.
+
+1. Through an AWS Console-authorized Lightsail browser SSH session (not the
+   same unverified GitHub Actions SSH connection), identify the actual server
+   host public key. On the instance, inspect (never copy the **private** key):
+
+   ```sh
+   ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub -E sha256
+   ```
+
+   Confirm the expected host by AWS account, Lightsail instance identity and
+   existing independent administrator inventory. A different host key or unknown
+   instance is a **STOP**, not a value to accept automatically.
+
+2. Review that the server offers the verified algorithm/key. Record only the
+   resulting **public** `SHA256:<43-character-unpadded-base64>` fingerprint in
+   GitHub repository **Settings → Environments → production → Environment
+   variables** under `LIGHTSAIL_SSH_HOST_FINGERPRINT`. Do not put it in the
+   repository, commit, action inputs, Issue body, or copy a private host key.
+   Changes to this trust anchor require the production owner's approval.
+3. The protected `Deploy Production` job validates this variable before
+   AWS/SSH use and passes it as the `fingerprint` input to **both**
+   `appleboy/ssh-action@v1.2.5` connections (deployment and post-health
+   runtime proof). A missing, malformed or mismatched fingerprint must stop
+   the release, never fall back to the action's default unchecked SSH mode.
+4. For a legitimate host-key rotation, verify the replacement identity by the
+   same independent AWS-console route, record the change and rollback decision
+   in #770, update the protected variable with review, then run the approved
+   release and confirm the Docker image ID, protected GitHub Deployment proof,
+   migrator exit, internal and Cloudflare health. **Never** disable host key
+   checking to resolve an incident.
+5. Existing containers stay in place when the preflight fails. Do not skip
+   the Environment protection, adjust AWS Root/IAM credentials or bypass
+   quality gates. Release can proceed only after human acceptance of #770.
+
+Test command: `node --test deploy/scripts/verify-lightsail-ssh-host-key.test.mjs`.
+The static test does not establish the actual fingerprint; it verifies that
+both SSH pathways are configured to use the one reviewed value.
+
 ## Verification
 
 - `node --test deploy/scripts/production-quality-gate.test.mjs`
