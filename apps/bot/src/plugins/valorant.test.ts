@@ -12,6 +12,7 @@ function fixture(
   enabled = true,
   members: Array<{ id: string; bot?: boolean }> = [],
   maxParticipants = 5,
+  expiryOverride?: Date,
 ) {
   const create = vi.fn().mockResolvedValue({
     id: 'cfc92874-f6ab-4a68-9acf-c5ecc5010a05',
@@ -23,7 +24,7 @@ function fixture(
     status: 'OPEN',
     maxParticipants: 5,
     participants: [],
-    expiresAt: new Date(Date.now() + 10000),
+    expiresAt: expiryOverride ?? new Date(Date.now() + 10000),
     createdAt: new Date(),
     completedAt: null,
     result: null,
@@ -110,6 +111,16 @@ describe('VALORANT button recruitment slash command', () => {
       }),
     );
   });
+  it('fails closed without malformed Discord time tags for an invalid DB expiry', async () => {
+    const f = fixture(null, true, [], 5, new Date(Number.NaN));
+    await f.run();
+    const message = f.followUp.mock.calls[0]![0];
+    expect(message.embeds[0].data.description).toContain('状態：期限切れ');
+    expect(message.embeds[0].data.description).not.toContain('募集期限：');
+    expect(message.embeds[0].data.description).not.toContain('<t:NaN:R>');
+    expect(message.components[0].components.every((button: { data: { disabled?: boolean } }) => button.data.disabled)).toBe(true);
+  });
+
   it('uses tactical mode when a map is selected', async () => {
     const f = fixture('Ascent');
     await f.run();
