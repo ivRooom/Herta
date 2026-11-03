@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { defaultValorantAgents } from '@herta/plugin-catalog';
-import { uniqueActualValorantAgents, validValorantOutcomeScore } from '@/lib/valorant-match-validation';
+import {
+  uniqueActualValorantAgents,
+  validValorantOutcomeScore,
+} from '@/lib/valorant-match-validation';
 
 type Player = { userId: string; agentId: string; displayName: string };
 type Session = {
@@ -343,18 +346,32 @@ export function ValorantResultsManager({ guildId }: { guildId: string }) {
         <table className="w-full min-w-[750px] text-left text-sm">
           <thead>
             <tr>
-              <th scope="col" className="p-2">登録日時（UTC）</th>
-              <th scope="col" className="p-2">マップ</th>
-              <th scope="col" className="p-2">実使用構成</th>
-              <th scope="col" className="p-2">勝敗</th>
-              <th scope="col" className="p-2">ラウンド</th>
-              <th scope="col" className="p-2">Match ID</th>
+              <th scope="col" className="p-2">
+                登録日時（UTC）
+              </th>
+              <th scope="col" className="p-2">
+                マップ
+              </th>
+              <th scope="col" className="p-2">
+                実使用構成
+              </th>
+              <th scope="col" className="p-2">
+                勝敗
+              </th>
+              <th scope="col" className="p-2">
+                ラウンド
+              </th>
+              <th scope="col" className="p-2">
+                Match ID
+              </th>
             </tr>
           </thead>
           <tbody>
             {reports.map((item) => (
               <tr key={item.id} className="border-t border-border">
-                <td className="whitespace-nowrap p-2">{item.createdAt?.slice(0, 16).replace('T', ' ') ?? '不明'}</td>
+                <td className="whitespace-nowrap p-2">
+                  {item.createdAt?.slice(0, 16).replace('T', ' ') ?? '不明'}
+                </td>
                 <td className="p-2">{item.mapId}</td>
                 <td className="p-2">
                   {playedAgents(item.playerResults)
@@ -364,12 +381,18 @@ export function ValorantResultsManager({ guildId }: { guildId: string }) {
                 <td className="p-2">
                   {item.outcome === 'WIN' ? '勝利' : item.outcome === 'LOSS' ? '敗北' : '引分'}
                 </td>
-                <td className="p-2 tabular-nums">{item.roundsWon}-{item.roundsLost}</td>
+                <td className="p-2 tabular-nums">
+                  {item.roundsWon}-{item.roundsLost}
+                </td>
                 <td className="break-all p-2">{item.matchId ?? '—'}</td>
               </tr>
             ))}
             {reports.length === 0 && (
-              <tr><td colSpan={6} className="p-3 text-muted">登録済みの試合はありません。</td></tr>
+              <tr>
+                <td colSpan={6} className="p-3 text-muted">
+                  登録済みの試合はありません。
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
