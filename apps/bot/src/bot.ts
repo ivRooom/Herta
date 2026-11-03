@@ -1614,9 +1614,7 @@ export class HertaBot {
       this.valorantExpiryTask = (async () => {
         try {
           const result = await reconcileExpiredValorantMessages(this.prisma, {
-            guildIds: [...this.client.guilds.cache.keys()].filter((id) =>
-              allowedGuilds.has(id),
-            ),
+            guildIds: [...this.client.guilds.cache.keys()].filter((id) => allowedGuilds.has(id)),
             batchSize: 10,
             edit: (session) => editExpiredValorantDiscordMessage(this.client, session),
             onRetry: (reason, count) =>
