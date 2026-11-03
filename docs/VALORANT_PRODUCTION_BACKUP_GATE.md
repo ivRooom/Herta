@@ -27,7 +27,16 @@ GitHub `VALORANT predeploy restore rehearsal` は **すべてのmain push SHA** 
 
 **自動デプロイ（`workflow_run`）**では、品質ゲートが **直近の証跡付き実配備SHA → 今回のSHA** の累積差分を検査する。例えばmigrationを含むmainがまだ本番配備されず、その次にNginxだけ変更しても、最新main SHAに同じRehearsal成功結果が必要。Workflowがcommit-onlyの`push.paths`指定で起動しないとNo-Run状態になるため、main pushのpath filterは意図的に除去する。
 
-**人間承認による手動デプロイ（`workflow_dispatch`）**では、現在の`production-quality-gate.mjs`がターゲットcommitの**第一親**を変更比較の基点に使用するため、過去から未配備のmigrationを累積差分として検出・同一SHA Rehearsal結果を必須化できるとは限らない。この差異を曖昧に「すべてのDeployで累積比較する」と説明しない。運営者は手動実行前に、最新main **同一SHA**の`VALORANT predeploy restore rehearsal`成功を独立確認する。加えて、実本番SSHでは既存のfresh PG16 backup＋offline isolated restore＋exact SQL rehearsalがimage pull/migrator前に必須であり、失敗時はfail-closed。手動の真正な実配備SHAとの比較統合は#765/#767で別途設計し、古いSHA rollbackを破壊しない。
+**通常の手動mainデプロイ（`workflow_dispatch`, `ref=main`）**でも、#765の安全修正後は自動デプロイと同じ**直近の本番SSH配備証跡SHA→今回のmain SHA**の累積差分を使用する。直前コミットがdocs-onlyでも、最後に本番配備されたSHA以降にDB/API/Bot変更が含まれればその分も検出する。加えて、手動mainでは累積差分の有無を問わず同一SHAの`CI`・`Database topology contracts`・`VALORANT PostgreSQL integration`・`VALORANT predeploy restore rehearsal`を全て要求する。同じSHAを意図的に再デプロイする場合も品質ゲートを通す。GitHub Deploymentの証跡欠損・破損・前回SSH失敗・読取エラーは自動的に第一親へフォールバックせず、build/OIDC/SSH前にfail-closed。
+
+### 運営者用：初回bootstrapと手動rollbackの境界（#765）
+
+- **通常の本番反映・同SHA再デプロイ**：GitHub → Herta → Actions → Deploy Production → Run workflow → branch=`main`、`ref=main`、`bootstrap_without_proof=false`（**初期値のまま**）。最新mainに対する同SHAチェック成功と本番証跡を照合する。トラブルで手動実行してもCI/Environment approvalを無効化しない。
+- **本番への初回bootstrapのみ**：独立のLightsail運営確認で**過去の成功した本番SSHデプロイが無い**と確認した場合だけ、production reviewerの承認を得て`ref=main`、`bootstrap_without_proof=true`を明示する。quality gateは「過去の成功SSHが存在しない」という検証済みエラーのとき**だけ**第一親で最初の境界を定め、同SHA全4品質Workflowを確認する。過去のDeployが失敗した場合、GitHub APIが読めない場合、証跡だけ失われた場合、現在の本番に成功SSHがある場合はこの例外で救済**不可**。理由不明のとき値を`true`にしてはいけない。
+- **明示過去SHA rollback**：`ref`へmain履歴中の承認済み**40桁SHA**を入力、`bootstrap_without_proof=false`のまま。直近の本番SSH証跡を必ず照合。rollback先はmain祖先かつ当該SHAのmain-push CI/Topology等を要求するが、比較差分は**rollback先コミットの第一親→rollback先**を使う。旧版に存在しない新しいMigration/Workflowを必須化しないため、正常な旧版rollbackを妨げない。rollbackでDB列や利用者データを自動削除しない。
+- **失敗時の判断**：unknown/missing proof、直近SSHの部分失敗、GitHub API障害、比較ファイル数の上限超過、旧SHAのCI記録欠損等はfail-closed。operatorは権限/証跡/実稼働4image/バックアップを調査し、#765に**機密を含まない**原因を記録。原因を不明のままfirst-parentやSSH host-key pinを迂回しない。明示rollbackには事前に最新保護証跡と復旧責任者を確認する。
+
+実本番SSHのfresh PG16 backup＋offline isolated restore＋exact SQL rehearsalはimage pull/migrator前に必須であり、失敗時はfail-closed。旧コミットにMigrationが無ければ従来通り前処理は無変更。
 
 このGitHub Actions実行は**使い捨ての合成データのみ**で、本番PG16のバックアップ/Restore成功を意味しない。本番デプロイでは後述のfresh dump→独立隔離Restore→SQL rehearsalのfail-closedゲートを別途通す。外部host鍵不一致 #770 の解消と運営者の承認がなければ配備は止める。
 
@@ -42,7 +51,8 @@ GitHub `VALORANT predeploy restore rehearsal` は **すべてのmain push SHA** 
 
 DDLは追加2列であり、通常のアプリimage rollbackではDROPしない。**移行前の承認済みSHAに戻す場合、そのSHAに追加migrationも事前復元ゲートも存在しなければゲートをスキップできる。ただしmigrationだけ存在しゲートが欠ける不完全なSHAでは停止する。**変更前の確実なimage SHAへ承認済みDeploy Productionの明示rollbackを使用。アプリ再起動後のAPI/Auth/Bot/Studio/Workerを検査し、**バックアップを上書きしない**。データ消失を伴う復元は通常rollback手順に含めず、障害時の個別承認を要求する。
 
-## 実機検証の状態
+## 実機検証の状態（2026-11-04時点）
 
-- 新規ゲートのCI静的検証と合成PostgreSQL検証は実施対象。
-- **本番のfresh dump/isolated restore/新migration適用の成功は、実機ログが得られるまで未確認**。
+- [PR #768](https://github.com/ivRooom/Herta/pull/768)の本番PG16保護ゲートと[PR #775](https://github.com/ivRooom/Herta/pull/775)のmain毎SHA合成Restoreは導入済み。最新main `5f491f239579ee632a1a260ccbcc7ddd72c47815` の [CI #41674889839](https://github.com/ivRooom/Herta/actions/runs/41674889839)・[合成Restore #41674889694](https://github.com/ivRooom/Herta/actions/runs/41674889694)成功。
+- **本番データのfresh dump/sha256/network-none隔離Restore/exact SQL rehearsal**は先行[Deploy #41648606171](https://github.com/ivRooom/Herta/actions/runs/41648606171)で実証済み。最新 [自動Deploy #41676773820](https://github.com/ivRooom/Herta/actions/runs/41676773820) は対象migration適用済み・schema read-only・新規DDLなし・migrator exit0、4サービス同SHA/image ID readback＋外部Health成功、証跡ID`7524993936`。バックアップ保持期限・コスト/容量・復元責任者は #767 の運営レビューで確認する。
+- **本手動ゲート改善PR**は#765のレビュー/CI/本番配備成功をもって運用有効と扱う。それまでは従来のfirst-parent問題が残る。実本番の意図的rollbackは未実施であり、ユーザーの明示承認なく試さない。
