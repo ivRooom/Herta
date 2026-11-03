@@ -288,6 +288,18 @@ test('VALORANT production migration is fenced by protected backup and isolated r
   const [ssh, health] = workflow.split('      - name: Cloudflare経由の外部Health check');
   assert.ok(ssh && health, 'expected the production SSH deploy job');
   const gate = ssh.indexOf('bash deploy/scripts/valorant-predeploy-rehearsal.sh');
+  assert.ok(
+    ssh.includes('if [[ -f deploy/scripts/valorant-predeploy-rehearsal.sh ]]; then'),
+    'existing predeploy script must be run on the selected revision',
+  );
+  assert.ok(
+    ssh.includes('elif [[ -f packages/db/prisma/migrations/20261103160000_valorant_voice_participants/migration.sql ]]; then'),
+    'rollback without script is allowed only when migration is absent',
+  );
+  assert.ok(
+    ssh.includes('VALORANT migration exists without its predeploy safety gate.'),
+    'migration without safety script must stop before image pull',
+  );
   assert.ok(gate > ssh.indexOf('config --quiet'), 'must validate Compose before backup');
   assert.ok(gate < ssh.indexOf('pull_production_images'), 'must backup before image pull');
   assert.ok(
@@ -301,7 +313,10 @@ test('VALORANT production migration is fenced by protected backup and isolated r
   assert.match(script, /--network none --memory 256m/);
   assert.match(script, /pg_restore --no-owner --no-acl --exit-on-error/);
   assert.match(script, /psql -X -v ON_ERROR_STOP=1/);
-  assert.match(script, /docker rm -f "\$restore_id"/);
+  assert.match(script, /docker info --format/);
+  assert.match(script, /docker_free_kib/);
+  assert.match(script, /docker_required_kib/);
+  assert.match(script, /docker rm -f -v "\$restore_id"/);
   assert.doesNotMatch(
     script,
     /docker volume rm|docker system prune|pg_restore.*\$COMPOSE|DROP DATABASE/,
