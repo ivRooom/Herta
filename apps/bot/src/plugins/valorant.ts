@@ -24,6 +24,7 @@ import {
   VALORANT_REGIONS,
   defaultValorantAgents,
   legacyValorantAgents,
+  valorantRoleForAgentId,
   valorantManifest,
   type ValorantRegion,
 } from '@herta/plugin-catalog';
@@ -1218,6 +1219,89 @@ function tierEmoji(tierName: string): string {
   return '🎯';
 }
 
+/** Guild-scoped Herta pick statistics, intentionally separate from HenrikDev rank. */
+async function handlePickStatistics(
+  interaction: ChatInputCommandInteraction,
+  prisma: PrismaClient,
+): Promise<void> {
+  const scope = interaction.options.getString('scope') ?? 'self';
+  if (scope !== 'self' && scope !== 'guild') {
+    await replyEphemeral(interaction, '集計対象が不正です。');
+    return;
+  }
+  const authorized =
+    interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) === true ||
+    interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) === true;
+  if (scope === 'guild' && !authorized) {
+    await replyEphemeral(interaction, 'サーバー全体の集計は管理権限が必要です。');
+    return;
+  }
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  try {
+    const rows = await prisma.valorantPickSession.findMany({
+      where: { guildId: interaction.guildId!, status: 'COMPLETED' },
+      orderBy: { completedAt: 'desc' },
+      take: 5001,
+      select: { result: true },
+    });
+    const agents = new Map<string, number>();
+    const roles = new Map<string, number>();
+    let draws = 0;
+    for (const row of rows.slice(0, 5000)) {
+      const results = Array.isArray(row.result) ? row.result : [];
+      let included = false;
+      for (const item of results) {
+        if (
+          typeof item !== 'object' ||
+          item === null ||
+          Array.isArray(item) ||
+          typeof item.agentId !== 'string' ||
+          (scope === 'self' && item.userId !== interaction.user.id)
+        ) {
+          continue;
+        }
+        included = true;
+        const agentId = item.agentId;
+        const role = valorantRoleForAgentId(agentId);
+        agents.set(agentId, (agents.get(agentId) ?? 0) + 1);
+        roles.set(role, (roles.get(role) ?? 0) + 1);
+      }
+      if (included) draws++;
+    }
+    const labels = new Map(
+      defaultValorantAgents().map((agent) => [agent.agentId, agent.displayName]),
+    );
+    const show = (items: Map<string, number>, names?: ReadonlyMap<string, string>) =>
+      [...items.entries()]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, 10)
+        .map(([name, count]) => `${names?.get(name) ?? name}: ${count}回`)
+        .join(' / ') || '記録なし';
+    const roleNames = new Map([
+      ['DUELIST', 'デュエリスト'],
+      ['CONTROLLER', 'コントローラー'],
+      ['INITIATOR', 'イニシエーター'],
+      ['SENTINEL', 'センチネル'],
+      ['UNKNOWN', '未分類'],
+    ]);
+    const title = scope === 'guild' ? 'Guild全体' : 'あなた本人';
+    await interaction.editReply({
+      content:
+        `🎮 Hertaの抽選統計（${title}）\n` +
+        `対象抽選: ${draws}件（最新5,000件内）\n` +
+        `Agent別: ${show(agents, labels)}\n` +
+        `Role別: ${show(roles, roleNames)}\n` +
+        (rows.length > 5000 ? '※履歴を最新5,000件に制限しています。\n' : '') +
+        '※勝率ではなく選出回数です。個人IDは90日で匿名化されます。結果は非公開です。',
+      allowedMentions: { parse: [] },
+    });
+  } catch {
+    await interaction.editReply({
+      content: '抽選統計を取得できません。しばらくしてから再度お試しください。',
+    });
+  }
+}
+
 async function handleStats(
   interaction: ChatInputCommandInteraction,
   prisma: PrismaClient,
@@ -1342,6 +1426,8 @@ export const valorantPlugin = definePlugin<ValorantPluginConfig, unknown, Prisma
             await handleMyId(interaction, context.prisma);
           } else if (subcommand === 'stats') {
             await handleStats(interaction, context.prisma);
+          } else if (subcommand === 'picks') {
+            await handlePickStatistics(interaction, context.prisma);
           } else if (subcommand === 'random') {
             await handleRandom(interaction, context.prisma, context.logger);
           } else {
