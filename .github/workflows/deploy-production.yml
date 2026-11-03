@@ -528,7 +528,7 @@ jobs:
             expected_id="$(docker image inspect --format '{{.Id}}' "${HERTA_IMAGE}")"
             [[ "${expected_id}" =~ ^sha256:[a-f0-9]{64}$ ]]
             for service in api bot studio worker; do
-              cid="$("${COMPOSE}" ps -q "${service}")"
+              cid="$(${COMPOSE} ps -q "${service}")"
               test -n "${cid}"
               test "$(docker inspect --format '{{.State.Running}}' "${cid}")" = true
               test "$(docker inspect --format '{{.Config.Image}}' "${cid}")" = "${HERTA_IMAGE}"
