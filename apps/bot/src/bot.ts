@@ -40,6 +40,7 @@ import { sweepGuildXpRewardRoles } from './plugins/xp-role-sweep.js';
 import {
   editExpiredValorantDiscordMessage,
   reconcileExpiredValorantMessages,
+  approvedValorantExpiryGuildIds,
 } from './plugins/valorant-expiry-reconcile.js';
 import { getXpProfile } from './plugins/xp-level-repository.js';
 import { levelForXp, normalizeXpLevelConfig } from './plugins/xp-level.js';
@@ -1602,12 +1603,20 @@ export class HertaBot {
   /** Run a small bounded expiry UI sweep without blocking Gateway handling. */
   private startValorantExpiryReconcile(): void {
     if (this.valorantExpiryTimer) return;
+    const allowedGuildIds = approvedValorantExpiryGuildIds(process.env);
+    if (allowedGuildIds.length === 0) {
+      this.logger.info('VALORANT期限切れ公開UIの自動更新は無効です（許可Guild未設定）。');
+      return;
+    }
+    const allowedGuilds = new Set(allowedGuildIds);
     const tick = () => {
       if (this.valorantExpiryTask || !this.client.isReady()) return;
       this.valorantExpiryTask = (async () => {
         try {
           const result = await reconcileExpiredValorantMessages(this.prisma, {
-            guildIds: [...this.client.guilds.cache.keys()],
+            guildIds: [...this.client.guilds.cache.keys()].filter((id) =>
+              allowedGuilds.has(id),
+            ),
             batchSize: 10,
             edit: (session) => editExpiredValorantDiscordMessage(this.client, session),
             onRetry: (reason, count) =>
