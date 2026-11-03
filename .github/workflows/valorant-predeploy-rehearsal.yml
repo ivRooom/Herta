@@ -159,4 +159,3 @@ jobs:
           fi
           test "$(find "$HOME/.local/share/herta/release-backups" -maxdepth 1 -type f -name '*.dump' | wc -l)" -eq 2
           echo 'CI PG16: both migration rehearsals and partial/checksum negative tests passed'
-
