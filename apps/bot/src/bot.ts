@@ -37,6 +37,10 @@ import { loadStoredBotPresence } from './presence/store.js';
 import { XpRoleReconciliationSubscriber } from './plugins/xp-role-reconciliation-events.js';
 import { XpRoleSweepSubscriber } from './plugins/xp-role-sweep-events.js';
 import { sweepGuildXpRewardRoles } from './plugins/xp-role-sweep.js';
+import {
+  editExpiredValorantDiscordMessage,
+  reconcileExpiredValorantMessages,
+} from './plugins/valorant-expiry-reconcile.js';
 import { getXpProfile } from './plugins/xp-level-repository.js';
 import { levelForXp, normalizeXpLevelConfig } from './plugins/xp-level.js';
 import {
@@ -244,6 +248,8 @@ export class HertaBot {
   private readonly gatewayObservationIntervalMs: number;
   private gatewayObservationTimer?: NodeJS.Timeout;
   private activityIvrmSyncTimer?: NodeJS.Timeout;
+  private valorantExpiryTimer?: NodeJS.Timeout;
+  private valorantExpiryTask?: Promise<void>;
   private activityIvrmSyncInFlight = false;
   private healthRedis?: Redis;
   private readonly activityMessageLastCountedAt = new Map<string, number>();
@@ -1099,6 +1105,7 @@ export class HertaBot {
     this.gatewayObservationTimer.unref();
 
     this.startActivityIvrmSync();
+    this.startValorantExpiryReconcile();
 
     const redisUrl = process.env['REDIS_URL'];
     if (!redisUrl) {
@@ -1592,6 +1599,36 @@ export class HertaBot {
     return this.healthRedis.get(HERTA_WORKER_HEARTBEAT_KEY);
   }
 
+  /** Run a small bounded expiry UI sweep without blocking Gateway handling. */
+  private startValorantExpiryReconcile(): void {
+    if (this.valorantExpiryTimer) return;
+    const tick = () => {
+      if (this.valorantExpiryTask || !this.client.isReady()) return;
+      this.valorantExpiryTask = (async () => {
+        try {
+          const result = await reconcileExpiredValorantMessages(this.prisma, {
+            guildIds: [...this.client.guilds.cache.keys()],
+            batchSize: 10,
+            edit: (session) => editExpiredValorantDiscordMessage(this.client, session),
+            onRetry: (reason, count) =>
+              this.logger.warn({ reason, retryCount: count }, 'VALORANT募集終了UI更新を再試行します'),
+          });
+          if (result.attempted > 0) {
+            this.logger.info(result, 'VALORANT期限切れ募集の公開UIを同期しました');
+          }
+        } catch (error) {
+          this.logger.warn(
+            { errorName: resolveErrorName(error) },
+            'VALORANT期限切れ募集のDB同期が失敗しました',
+          );
+        }
+      })().finally(() => { this.valorantExpiryTask = undefined; });
+    };
+    this.valorantExpiryTimer = setInterval(tick, 2 * 60 * 1000);
+    this.valorantExpiryTimer.unref();
+    tick();
+  }
+
   /** Bot を停止する */
   async stop(): Promise<void> {
     if (this.gatewayObservationTimer) {
@@ -1602,6 +1639,11 @@ export class HertaBot {
       clearInterval(this.activityIvrmSyncTimer);
       this.activityIvrmSyncTimer = undefined;
     }
+    if (this.valorantExpiryTimer) {
+      clearInterval(this.valorantExpiryTimer);
+      this.valorantExpiryTimer = undefined;
+    }
+    if (this.valorantExpiryTask) await this.valorantExpiryTask;
 
     await Promise.allSettled([
       this.runtimeEvents.stop(),
