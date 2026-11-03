@@ -34,13 +34,8 @@ vi.mock('./vc-recap-participants.js', () => ({
   splitVcRecapParticipants: mocks.splitVcRecapParticipants,
 }));
 
-const {
-  activeVcRecapChannelId,
-  isVcRecapActive,
-  revokeVcRecapConsent,
-  startVcRecap,
-  stopVcRecap,
-} = await import('./vc-recap-session-manager.js');
+const { activeVcRecapChannelId, isVcRecapActive, revokeVcRecapConsent, startVcRecap, stopVcRecap } =
+  await import('./vc-recap-session-manager.js');
 
 function makeChannel() {
   const member = { id: 'user-1', user: { bot: false }, roles: { cache: new Map() } };
