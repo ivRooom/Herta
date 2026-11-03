@@ -37,11 +37,7 @@ test('existing NestJS and Studio/Auth.js path ownership is preserved', () => {
   ]) {
     assert.equal(proxyFor(path), 'http://$api_backend', path);
   }
-  for (const path of [
-    'location ~ "^/api/guilds/',
-    'location /api/ {',
-    'location / {',
-  ]) {
+  for (const path of ['location ~ "^/api/guilds/', 'location /api/ {', 'location / {']) {
     assert.equal(proxyFor(path), 'http://$studio_backend', path);
   }
 });
