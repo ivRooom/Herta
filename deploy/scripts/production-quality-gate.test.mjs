@@ -206,6 +206,7 @@ test('explicit operator emergency rollback preserves recovery after failed produ
     sha: historic,
     firstParentSha: 'a'.repeat(40),
     attestedSha: null,
+    mainSha: 'c'.repeat(40),
   };
   assert.throws(
     () => selectManualDeploymentBoundary(target),
@@ -217,6 +218,8 @@ test('explicit operator emergency rollback preserves recovery after failed produ
   );
   for (const invalid of [
     { ...target, requestedRef: 'main', emergencyRollbackApproved: true },
+    { ...target, mainSha: historic, emergencyRollbackApproved: true },
+    { ...target, mainSha: undefined, emergencyRollbackApproved: true },
     { ...target, attestedSha: 'c'.repeat(40), emergencyRollbackApproved: true },
     { ...target, bootstrapApproved: true, emergencyRollbackApproved: true },
   ]) {
