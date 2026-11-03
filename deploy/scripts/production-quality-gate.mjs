@@ -88,10 +88,12 @@ export function needsPostgresIntegration(files) {
 }
 const VALORANT_REHEARSAL_PATHS = [
   /^deploy\/scripts\/valorant-predeploy-rehearsal\.sh$/,
+  /^deploy\/scripts\/valorant-expiry-predeploy-rehearsal\.sh$/,
   /^deploy\/scripts\/production-quality-gate\.mjs$/,
   /^\.github\/workflows\/deploy-production\.yml$/,
   /^\.github\/workflows\/valorant-predeploy-rehearsal\.yml$/,
   /^packages\/db\/prisma\/migrations\/20261103160000_valorant_voice_participants\//,
+  /^packages\/db\/prisma\/migrations\/20261104093000_valorant_expiry_ui_reconcile\//,
 ];
 export function needsValorantPredeployRehearsal(files) {
   return files.some((file) => VALORANT_REHEARSAL_PATHS.some((pattern) => pattern.test(file)));
