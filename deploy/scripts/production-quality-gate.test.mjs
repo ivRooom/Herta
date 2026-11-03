@@ -212,6 +212,18 @@ test('workflow_run trusts only successful same-SHA main push CI in this repo', (
   }
 });
 
+test('isolated PostgreSQL integration runs for every main SHA, including carryover Bot changes', () => {
+  const source = readFileSync(
+    new URL('../../.github/workflows/valorant-agents.yml', import.meta.url),
+    'utf8',
+  );
+  const sections = source.split('\n  push:\n');
+  assert.equal(sections.length, 2, 'Only one push trigger may exist');
+  const mainPush = sections[1].split('\npermissions:\n')[0];
+  assert.ok(mainPush.includes('    branches: [main]'));
+  assert.ok(!mainPush.includes('paths:'), 'main push must not skip a required PG result');
+});
+
 test('production workflow has an unprivileged CI-completion gate before build and SSH', () => {
   const source = readFileSync(
     new URL('../../.github/workflows/deploy-production.yml', import.meta.url),
