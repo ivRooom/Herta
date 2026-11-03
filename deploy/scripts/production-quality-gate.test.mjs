@@ -269,7 +269,10 @@ test('VALORANT production migration is fenced by protected backup and isolated r
   const gate = ssh.indexOf('bash deploy/scripts/valorant-predeploy-rehearsal.sh');
   assert.ok(gate > ssh.indexOf('config --quiet'), 'must validate Compose before backup');
   assert.ok(gate < ssh.indexOf('pull_production_images'), 'must backup before image pull');
-  assert.ok(gate < ssh.indexOf('start_production_services'), 'must rehearse before migrator startup');
+  assert.ok(
+    gate < ssh.indexOf('start_production_services'),
+    'must rehearse before migrator startup',
+  );
   assert.match(script, /HERTA_SELECTED_DATABASE_MODE.*!= local/);
   assert.match(script, /DEPLOY_REF:-/);
   assert.match(script, /pg_dump -Fc/);
@@ -278,5 +281,8 @@ test('VALORANT production migration is fenced by protected backup and isolated r
   assert.match(script, /pg_restore --no-owner --no-acl --exit-on-error/);
   assert.match(script, /psql -X -v ON_ERROR_STOP=1/);
   assert.match(script, /docker rm -f "\$restore_id"/);
-  assert.doesNotMatch(script, /docker volume rm|docker system prune|pg_restore.*\$COMPOSE|DROP DATABASE/);
+  assert.doesNotMatch(
+    script,
+    /docker volume rm|docker system prune|pg_restore.*\$COMPOSE|DROP DATABASE/,
+  );
 });
