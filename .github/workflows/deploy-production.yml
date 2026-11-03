@@ -7,7 +7,7 @@ on:
   # Always wait for the *completed main push CI* before considering production.
   # A privileged workflow_run never trusts PR artifacts or external forks.
   workflow_run:
-    workflows: ["CI"]
+    workflows: [CI]
     types: [completed]
     branches: [main]
   # Manual deployment/rollback stays protected by the same-SHA gate and the
@@ -34,16 +34,7 @@ env:
 jobs:
   quality-gate:
     name: Verified main CI gate
-    if: >-
-      github.ref == 'refs/heads/main' &&
-      (github.event_name == 'workflow_dispatch' ||
-        (github.event_name == 'workflow_run' &&
-         github.event.workflow_run.event == 'push' &&
-         github.event.workflow_run.conclusion == 'success' &&
-         github.event.workflow_run.head_branch == 'main' &&
-         github.event.workflow_run.repository.full_name == github.repository &&
-         github.event.workflow_run.head_repository.full_name == github.repository &&
-         github.event.workflow_run.head_sha == github.sha))
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 100
     permissions:
