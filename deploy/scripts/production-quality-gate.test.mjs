@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
@@ -253,4 +254,29 @@ test('production workflow has an unprivileged CI-completion gate before build an
   assert.ok(deploy.includes('needs: [quality-gate, build-image]'));
   assert.ok(deploy.includes('environment: production'));
   assert.ok(deploy.includes("github.event_name != 'workflow_dispatch'"));
+});
+
+test('VALORANT production migration is fenced by protected backup and isolated restore before Compose up', () => {
+  const scriptPath = new URL('./valorant-predeploy-rehearsal.sh', import.meta.url);
+  execFileSync('bash', ['-n', scriptPath.pathname], { stdio: 'pipe' });
+  const script = readFileSync(scriptPath, 'utf8');
+  const workflow = readFileSync(
+    new URL('../../.github/workflows/deploy-production.yml', import.meta.url),
+    'utf8',
+  );
+  const [ssh, health] = workflow.split('      - name: Cloudflare経由の外部Health check');
+  assert.ok(ssh && health, 'expected the production SSH deploy job');
+  const gate = ssh.indexOf('bash deploy/scripts/valorant-predeploy-rehearsal.sh');
+  assert.ok(gate > ssh.indexOf('config --quiet'), 'must validate Compose before backup');
+  assert.ok(gate < ssh.indexOf('pull_production_images'), 'must backup before image pull');
+  assert.ok(gate < ssh.indexOf('start_production_services'), 'must rehearse before migrator startup');
+  assert.match(script, /HERTA_SELECTED_DATABASE_MODE.*!= local/);
+  assert.match(script, /DEPLOY_REF:-/);
+  assert.match(script, /pg_dump -Fc/);
+  assert.match(script, /sha256sum --check --status/);
+  assert.match(script, /--network none --memory 256m/);
+  assert.match(script, /pg_restore --no-owner --no-acl --exit-on-error/);
+  assert.match(script, /psql -X -v ON_ERROR_STOP=1/);
+  assert.match(script, /docker rm -f "\$restore_id"/);
+  assert.doesNotMatch(script, /docker volume rm|docker system prune|pg_restore.*\$COMPOSE|DROP DATABASE/);
 });
