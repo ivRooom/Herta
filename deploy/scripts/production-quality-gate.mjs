@@ -132,6 +132,47 @@ export function validateDeployRef(ref) {
   }
 }
 
+/**
+ * A manual main release must compare with the most recent *attested runtime*,
+ * just like workflow_run. First-parent comparison is only safe when the exact
+ * target SHA is already deployed or an explicit first-ever bootstrap is approved.
+ *
+ * An explicit historical SHA is a separate rollback: verify the current proof
+ * before proceeding, but keep the target's first-parent CI boundary so old main
+ * revisions without newer workflow files remain recoverable.
+ */
+export function selectManualDeploymentBoundary({
+  requestedRef,
+  sha,
+  firstParentSha,
+  attestedSha,
+  bootstrapApproved = false,
+}) {
+  validateDeployRef(requestedRef);
+  if (!SHA_RE.test(sha) || !SHA_RE.test(firstParentSha)) {
+    throw new Error('Cannot establish the manual production commit boundary');
+  }
+  if (bootstrapApproved && (requestedRef !== 'main' || attestedSha !== null)) {
+    throw new Error('Explicit bootstrap is only valid before the first production SSH baseline');
+  }
+  if (requestedRef === 'main') {
+    if (attestedSha === null) {
+      if (!bootstrapApproved) throw new Error('Missing attested production SHA for manual main');
+      return { before: firstParentSha, mode: 'first-bootstrap' };
+    }
+    if (!SHA_RE.test(attestedSha)) throw new Error('Invalid attested production SHA');
+    if (attestedSha === sha) {
+      // Intentional re-deploy: keep the main-push checks instead of a no-op.
+      return { before: firstParentSha, mode: 'same-sha-redeploy' };
+    }
+    return { before: attestedSha, mode: 'attested-cumulative' };
+  }
+  if (!SHA_RE.test(attestedSha)) {
+    throw new Error('Manual rollback requires a verified current production baseline');
+  }
+  return { before: firstParentSha, mode: 'explicit-historical-rollback' };
+}
+
 export function assertHistoricalRollbackEvidence(states, requestedRef, sha, mainSha) {
   if (requestedRef === 'main' || sha === mainSha) return;
   const missing = states.filter((state) => state.state !== 'success').map((state) => state.name);
@@ -156,6 +197,14 @@ async function main() {
     throw new Error('Invalid GitHub Actions environment for the production quality gate');
   }
   validateDeployRef(requestedRef);
+  const rawBootstrap = process.env.DEPLOY_BOOTSTRAP_APPROVED ?? 'false';
+  if (!['true', 'false'].includes(rawBootstrap)) {
+    throw new Error('Invalid explicit bootstrap approval value');
+  }
+  const bootstrapApproved = rawBootstrap === 'true';
+  if (bootstrapApproved && (event !== 'workflow_dispatch' || requestedRef !== 'main')) {
+    throw new Error('Bootstrap approval requires a manual main deployment');
+  }
 
   const api = async (path) => {
     let failure = 'network error';
@@ -238,8 +287,33 @@ async function main() {
     previousProductionConfirmed = true;
   }
   if (event === 'workflow_dispatch') {
+    // Manual main must inspect the same protected provenance as automatic
+    // releases. Do not interpret a dispatch run's head_sha as rollback SHA.
+    // A first-ever bootstrap may use first-parent only with an explicit
+    // operator approval and proof that NO prior SSH deployment exists.
+    let attestedSha;
+    try {
+      attestedSha = (await loadLatestProductionAttestation(api)).sha;
+    } catch (error) {
+      if (
+        !bootstrapApproved ||
+        !(error instanceof Error) ||
+        error.message !== 'No successful production SSH deployment baseline'
+      ) {
+        throw error;
+      }
+      attestedSha = null;
+    }
     const commit = await api('commits/' + sha);
-    before = commit.parents?.[0]?.sha;
+    const boundary = selectManualDeploymentBoundary({
+      requestedRef,
+      sha,
+      firstParentSha: commit.parents?.[0]?.sha,
+      attestedSha,
+      bootstrapApproved,
+    });
+    before = boundary.before;
+    console.log('Manual deployment proof boundary: ' + boundary.mode);
   }
   if (event === 'workflow_run' && previousProductionConfirmed && before === sha) {
     if (!process.env.GITHUB_OUTPUT) throw new Error('Missing GitHub Actions output file');
@@ -261,8 +335,14 @@ async function main() {
     return;
   }
   const required = [...REQUIRED_WORKFLOWS];
-  if (needsPostgresIntegration(files)) required.push(PG_WORKFLOW);
-  if (needsValorantPredeployRehearsal(files)) required.push(VALORANT_REHEARSAL_WORKFLOW);
+  // All current-main pushes run these synthetic DB gates. A manual release
+  // must not skip them when an older unshipped migration is hidden by the
+  // target commit's first-parent diff, including first boot and same-SHA retry.
+  const manualMain = event === 'workflow_dispatch' && requestedRef === 'main';
+  if (manualMain || needsPostgresIntegration(files)) required.push(PG_WORKFLOW);
+  if (manualMain || needsValorantPredeployRehearsal(files)) {
+    required.push(VALORANT_REHEARSAL_WORKFLOW);
+  }
   console.log(
     'Production gate for pinned SHA ' +
       sha.slice(0, 12) +
