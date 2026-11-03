@@ -52,6 +52,14 @@ export function validateDeployRef(ref) {
   }
 }
 
+export function assertHistoricalRollbackEvidence(states, requestedRef, sha, mainSha) {
+  if (requestedRef === 'main' || sha === mainSha) return;
+  const missing = states.filter((state) => state.state !== 'success').map((state) => state.name);
+  if (missing.length) {
+    throw new Error('Rollback SHA lacks completed successful main-push CI: ' + missing.join(', '));
+  }
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function main() {
@@ -70,16 +78,28 @@ async function main() {
   validateDeployRef(requestedRef);
 
   const api = async (path) => {
-    const response = await fetch('https://api.github.com/repos/' + repository + '/' + path, {
-      headers: {
-        Authorization: 'Bearer ' + token,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      },
-    });
-    if (!response.ok)
-      throw new Error('GitHub Actions metadata request failed: HTTP ' + response.status);
-    return response.json();
+    let failure = 'network error';
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      let retry = true;
+      try {
+        const response = await fetch('https://api.github.com/repos/' + repository + '/' + path, {
+          headers: {
+            Authorization: 'Bearer ' + token,
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+          signal: AbortSignal.timeout(15000),
+        });
+        if (response.ok) return response.json();
+        failure = 'HTTP ' + response.status;
+        retry = response.status === 429 || response.status >= 500;
+      } catch {
+        failure = 'network error';
+      }
+      if (!retry || attempt === 3) break;
+      await sleep(1000 * attempt);
+    }
+    throw new Error('GitHub Actions metadata request failed: ' + failure);
   };
   const currentMain = async () => (await api('branches/main')).commit.sha;
   const triggeredSha = process.env.GITHUB_SHA;
@@ -143,6 +163,7 @@ async function main() {
     const failed = states.find((state) => state.state === 'failed');
     if (failed) throw new Error('Required check failed or was cancelled: ' + failed.name);
     if (states.every((state) => state.state === 'success')) break;
+    assertHistoricalRollbackEvidence(states, requestedRef, sha, mainSha);
     if (Date.now() > deadline) throw new Error('Timed out waiting for required CI checks');
     console.log(
       'Waiting for production CI: ' +
