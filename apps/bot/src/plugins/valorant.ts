@@ -705,7 +705,7 @@ async function showValorantVoicePreview(
           new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
             new UserSelectMenuBuilder()
               .setCustomId(sessionCustomId(session.id, action))
-              .setPlaceholder('定員を超えます。追加する人だけ選んで確定')
+              .setPlaceholder('追加候補を選択（次の画面で確認・確定）')
               .setMinValues(1)
               .setMaxValues(Math.min(snapshot.remaining, 5)),
           ),
@@ -881,12 +881,17 @@ async function handleValorantManagement(
     }
 
     let mutation;
-    if (action.startsWith('vc-commit-') || action.startsWith('vc-choose-')) {
+    if (
+      action.startsWith('vc-commit-') ||
+      action.startsWith('vc-choose-') ||
+      action.startsWith('vc-stage-')
+    ) {
       if (!session.voiceChannelId) {
         await interaction.editReply('対象VCが設定されていません。');
         return;
       }
       const isChoosing = action.startsWith('vc-choose-');
+      const isStaged = action.startsWith('vc-stage-');
       if (
         (isChoosing && !interaction.isUserSelectMenu()) ||
         (!isChoosing && !interaction.isButton())
@@ -896,18 +901,43 @@ async function handleValorantManagement(
       }
       const voiceIds = await currentValorantVoiceMembers(interaction, session.voiceChannelId);
       const snapshot = voiceCandidateSnapshot(session, voiceIds);
-      const expectedDigest = action.slice(isChoosing ? 'vc-choose-'.length : 'vc-commit-'.length);
+      const expectedDigest = isChoosing
+        ? action.slice('vc-choose-'.length)
+        : isStaged
+          ? action.slice('vc-stage-'.length, 'vc-stage-'.length + 12)
+          : action.slice('vc-commit-'.length);
       if (snapshot.digest !== expectedDigest) {
         await interaction.editReply(
           'VCまたは参加者が変更されました。VC全員参加から候補を再取得してください。',
         );
         return;
       }
-      const selected =
-        isChoosing && interaction.isUserSelectMenu() ? interaction.values : snapshot.eligible;
+
+      let selected: string[];
+      if (isChoosing && interaction.isUserSelectMenu()) {
+        selected = interaction.values;
+      } else if (isStaged) {
+        // The selected positions are stateless and tied to the hashed VC snapshot,
+        // so no process-local state survives a Bot restart or permits stale commits.
+        const encoded = action.slice('vc-stage-'.length + 13).split('.');
+        const indices = encoded.map((value) => Number.parseInt(value, 36));
+        if (
+          encoded.some((value, index) => !/^[0-9a-z]{1,2}$/.test(value) ||
+            indices[index]?.toString(36) !== value) ||
+          new Set(indices).size !== indices.length
+        ) {
+          await interaction.editReply('選択したメンバーの確認情報が正しくありません。');
+          return;
+        }
+        selected = indices.map((index) => snapshot.eligible[index] ?? '');
+      } else {
+        selected = snapshot.eligible;
+      }
+
       if (
         !selected.length ||
         selected.length > snapshot.remaining ||
+        new Set(selected).size !== selected.length ||
         (isChoosing && snapshot.eligible.length <= snapshot.remaining) ||
         selected.some((id) => !snapshot.eligible.includes(id))
       ) {
@@ -916,6 +946,37 @@ async function handleValorantManagement(
         );
         return;
       }
+
+      if (isChoosing) {
+        // A Select Menu alone must NEVER write participants to the database.
+        // At most 5 indices in a <=100 member VC fit in a <=100-char Discord customId.
+        const positions = selected.map((id) => snapshot.eligible.indexOf(id).toString(36));
+        await interaction.editReply({
+          content: [
+            '🔊 **VC一括参加の最終確認**',
+            '追加対象：' + selected.map((id) => '<@' + id + '>').join('、'),
+            `追加後：${session.participants.length + selected.length} / ${session.maxParticipants}名`,
+            '「選択メンバーを追加確定」を押すまで参加者は変更されません。',
+          ].join('\n'),
+          components: [
+            new ActionRowBuilder<ButtonBuilder>().addComponents(
+              new ButtonBuilder()
+                .setCustomId(sessionCustomId(
+                  session.id, 'vc-stage-' + snapshot.digest + '-' + positions.join('.'),
+                ))
+                .setLabel('選択メンバーを追加確定')
+                .setStyle(ButtonStyle.Success),
+              new ButtonBuilder()
+                .setCustomId(sessionCustomId(session.id, 'close'))
+                .setLabel('キャンセル')
+                .setStyle(ButtonStyle.Secondary),
+            ),
+          ],
+          allowedMentions: { parse: [] },
+        });
+        return;
+      }
+
       mutation = await manageValorantParticipants(prisma, {
         guildId,
         id: session.id,
