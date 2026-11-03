@@ -4,6 +4,7 @@ import type { ValorantSessionSnapshot } from './valorant-session-repository.js';
 import {
   editExpiredValorantDiscordMessage,
   reconcileExpiredValorantMessages,
+  approvedValorantExpiryGuildIds,
 } from './valorant-expiry-reconcile.js';
 
 const now = new Date('2026-11-04T02:00:00.000Z');
@@ -51,6 +52,39 @@ function testPrisma(session: ValorantSessionSnapshot) {
   } as unknown as PrismaClient;
   return { prisma, findMany, findFirst, updateMany };
 }
+
+describe('VALORANT public expiry Guild Canary opt-in', () => {
+  const enabled = { HERTA_VALORANT_EXPIRY_RECONCILE_ENABLED: 'true' };
+  const ids = '123456789012345678,234567890123456789';
+
+  it('stays disabled unless the flag exactly equals true and an allowlist is present', () => {
+    expect(approvedValorantExpiryGuildIds({})).toEqual([]);
+    expect(approvedValorantExpiryGuildIds({
+      HERTA_VALORANT_EXPIRY_RECONCILE_ENABLED: 'false',
+      HERTA_VALORANT_EXPIRY_RECONCILE_GUILD_IDS: ids,
+    })).toEqual([]);
+    expect(approvedValorantExpiryGuildIds({
+      HERTA_VALORANT_EXPIRY_RECONCILE_ENABLED: 'TRUE',
+      HERTA_VALORANT_EXPIRY_RECONCILE_GUILD_IDS: ids,
+    })).toEqual([]);
+    expect(approvedValorantExpiryGuildIds(enabled)).toEqual([]);
+    expect(approvedValorantExpiryGuildIds({
+      ...enabled,
+      HERTA_VALORANT_EXPIRY_RECONCILE_GUILD_IDS: '123456789012345678,invalid',
+    })).toEqual([]);
+    expect(approvedValorantExpiryGuildIds({
+      ...enabled,
+      HERTA_VALORANT_EXPIRY_RECONCILE_GUILD_IDS: ',123456789012345678',
+    })).toEqual([]);
+  });
+
+  it('accepts only explicit valid Guild IDs, normalizing whitespace and duplicates', () => {
+    expect(approvedValorantExpiryGuildIds({
+      ...enabled,
+      HERTA_VALORANT_EXPIRY_RECONCILE_GUILD_IDS: ' 123456789012345678 ,234567890123456789, 123456789012345678 ',
+    })).toEqual(['123456789012345678', '234567890123456789']);
+  });
+});
 
 describe('VALORANT expired recruitment reconciliation', () => {
   it('expires the DB row before editing the public Embed and persists success', async () => {
