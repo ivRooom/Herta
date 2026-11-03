@@ -5,13 +5,14 @@ const mocks = vi.hoisted(() => ({
   startVcRecap: vi.fn(),
   stopVcRecap: vi.fn(),
   isVcRecapActive: vi.fn(() => false),
+  activeVcRecapChannelId: vi.fn(() => null),
 }));
 
 vi.mock('@herta/db', () => ({
   listVcRecapSessions: vi.fn(),
 }));
 vi.mock('../voice/vc-recap-session-manager.js', () => ({
-  activeVcRecapChannelId: vi.fn(() => null),
+  activeVcRecapChannelId: mocks.activeVcRecapChannelId,
   isVcRecapActive: mocks.isVcRecapActive,
   startVcRecap: mocks.startVcRecap,
   stopVcRecap: mocks.stopVcRecap,
@@ -58,6 +59,7 @@ function makeStartInteraction() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.activeVcRecapChannelId.mockReturnValue(null);
 });
 
 describe('/vc-recap start 録音開始通知ゲート', () => {
@@ -122,6 +124,43 @@ describe('/vc-recap start 録音開始通知ゲート', () => {
     );
     expect(interaction.editReply).not.toHaveBeenCalledWith(
       expect.stringContaining('記録を開始しました'),
+    );
+  });
+});
+
+describe('pending VC Recap cancellation through plugin lifecycle', () => {
+  it('onDisable stops a pending start even when no session is active', async () => {
+    mocks.isVcRecapActive.mockReturnValue(false);
+    mocks.stopVcRecap.mockResolvedValueOnce({ status: 'start_cancelled' });
+    await vcRecapPlugin.onDisable!(fakeContext());
+    expect(mocks.stopVcRecap).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'guild-1',
+    );
+  });
+
+  it('last person leaving during announcement cancels the pending session', async () => {
+    mocks.activeVcRecapChannelId.mockReturnValue('voice-1');
+    mocks.stopVcRecap.mockResolvedValueOnce({ status: 'start_cancelled' });
+    const channel = {
+      isVoiceBased: () => true,
+      members: { filter: () => ({ size: 0 }) },
+    };
+    const guild = { channels: { cache: { get: () => channel } } };
+    const oldState = { channelId: 'voice-1', guild };
+    const newState = { channelId: null, guild };
+    const [event] = vcRecapPlugin.provideEvents!(fakeContext());
+
+    await event!.handler(
+      fakeContext() as never,
+      oldState as never,
+      newState as never,
+    );
+    expect(mocks.stopVcRecap).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      'guild-1',
     );
   });
 });
