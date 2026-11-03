@@ -152,24 +152,41 @@ export function aggregateValorantMatchStats(reports: readonly ValorantMatchSampl
     string,
     { name: string; count: number; win: number; loss: number; draw: number }
   >();
+  const pickedTeams = new Map<
+    string,
+    { name: string; count: number; win: number; loss: number; draw: number }
+  >();
   for (const report of reports) {
     const outcome = report.outcome === 'WIN' ? 'win' : report.outcome === 'LOSS' ? 'loss' : 'draw';
     summary[outcome]++;
-    const result = Array.isArray(report.session.result) ? report.session.result : [];
-    const ids = result.flatMap((entry): string[] =>
-      typeof entry === 'object' &&
-      entry !== null &&
-      !Array.isArray(entry) &&
-      typeof entry.agentId === 'string'
-        ? [entry.agentId]
-        : [],
-    );
-    const name = ids.sort().join(', ');
-    if (!name) continue;
-    const team = teams.get(name) ?? { name, count: 0, win: 0, loss: 0, draw: 0 };
-    team.count++;
-    team[outcome]++;
-    teams.set(name, team);
+    // Match statistics must describe the agents actually played. The original
+    // pick is kept as a separately labelled dimension for comparison.
+    for (const [source, target] of [
+      [report.playerResults, teams],
+      [report.session.result, pickedTeams],
+    ] as const) {
+      const items = Array.isArray(source) ? source : [];
+      const ids = items.flatMap((entry): string[] =>
+        typeof entry === 'object' &&
+        entry !== null &&
+        !Array.isArray(entry) &&
+        typeof entry.agentId === 'string'
+          ? [entry.agentId]
+          : [],
+      );
+      const name = ids.sort().join(', ');
+      if (!name) continue;
+      const team = target.get(name) ?? { name, count: 0, win: 0, loss: 0, draw: 0 };
+      team.count++;
+      team[outcome]++;
+      target.set(name, team);
+    }
   }
-  return { ...summary, compositions: [...teams.values()].sort((a, b) => b.count - a.count) };
+  const sorted = (teams: Map<string, { name: string; count: number; win: number; loss: number; draw: number }>) =>
+    [...teams.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  return {
+    ...summary,
+    compositions: sorted(teams),
+    pickedCompositions: sorted(pickedTeams),
+  };
 }
