@@ -73,7 +73,25 @@ SELECT CASE WHEN
  THEN 'ok' ELSE 'invalid' END;
 SQL
 }
+# Prisma validates the immutable migration checksum; ensure the DB history is
+# exactly this checked-out migration before accepting an already applied state.
+# A partial/failed attempt with columns but no applied history must fail early.
+migration_checksum="$(sha256sum "$migration" | awk '{ print $1 }')"
+if [[ ! "$migration_checksum" =~ ^[0-9a-f]{64}$ ]]; then
+  echo 'ERROR: migrationファイルのSHA-256を検証できません。' >&2
+  exit 2
+fi
 if [[ "$migration_status" == applied ]]; then
+  recorded_checksum="$("$COMPOSE" exec -T postgres sh -ec 'exec psql -X -At -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+SELECT checksum FROM "_prisma_migrations"
+WHERE migration_name = '20261103160000_valorant_voice_participants'
+  AND finished_at IS NOT NULL AND rolled_back_at IS NULL;
+SQL
+)"
+  if [[ "$recorded_checksum" != "$migration_checksum" ]]; then
+    echo 'ERROR: 適用済みmigrationのチェックサムが現在のSQLと異なります。デプロイを停止します。' >&2
+    exit 2
+  fi
   check="$(expected_schema_sql | "$COMPOSE" exec -T postgres sh -ec 'exec psql -X -At -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"')"
   if [[ "$check" != ok ]]; then
     echo 'ERROR: 本番migrationは適用済みですが列定義が一致しません。' >&2
@@ -84,6 +102,20 @@ if [[ "$migration_status" == applied ]]; then
 fi
 if [[ "$migration_status" != pending ]]; then
   echo 'ERROR: migration状態を確認できません。' >&2
+  exit 2
+fi
+
+# Pending migration must start from the exact unmodified pre-migration shape.
+# Do not create backups or start a migrator on a partially applied schema.
+partial_columns="$("$COMPOSE" exec -T postgres sh -ec 'exec psql -X -At -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+SELECT count(*) FROM pg_attribute
+WHERE attrelid = 'public.valorant_pick_sessions'::regclass
+  AND attname IN ('voice_channel_id', 'opted_out_user_ids')
+  AND NOT attisdropped;
+SQL
+)"
+if [[ "$partial_columns" != 0 ]]; then
+  echo 'ERROR: migration未適用なのに追加列が存在します。部分適用を調査してください。' >&2
   exit 2
 fi
 
