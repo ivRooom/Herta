@@ -118,7 +118,8 @@ describe('VALORANT button recruitment slash command', () => {
     expect(message.embeds[0].data.description).toContain('状態：期限切れ');
     expect(message.embeds[0].data.description).not.toContain('募集期限：');
     expect(message.embeds[0].data.description).not.toContain('<t:NaN:R>');
-    expect(message.components[0].components.every((button: { data: { disabled?: boolean } }) => button.data.disabled)).toBe(true);
+    const buttons = message.components[0].components as Array<{ data: { disabled?: boolean } }>;
+    expect(buttons.every((button) => button.data.disabled)).toBe(true);
   });
 
   it('uses tactical mode when a map is selected', async () => {
