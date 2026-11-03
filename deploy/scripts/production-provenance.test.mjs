@@ -243,6 +243,7 @@ test('release workflow protects proof publisher behind SSH and Cloudflare health
   const deploy = source.split('\n  deploy:\n')[1];
   assert.ok(deploy.includes('environment: production'));
   assert.ok(deploy.includes('deployments: write'));
+  assert.ok(deploy.includes('ref: ${{ github.sha }}'));
   assert.ok(source.includes('deployments: read'));
   const first = deploy.indexOf('      - name: LightsailへSSHデプロイ');
   const external = deploy.indexOf('      - name: Cloudflare経由の外部Health check');
