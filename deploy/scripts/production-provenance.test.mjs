@@ -303,11 +303,7 @@ test('release workflow protects proof publisher behind SSH and Cloudflare health
   );
   const credentials = deploy.indexOf('      - name: AWS credentialsを設定');
   assert.ok(hostKeyGuard >= 0 && hostKeyGuard < credentials && credentials < first);
-  assert.ok(deploy.includes('^SHA256:[A-Za-z0-9+/]{43}  assert.ok(deploy.includes("docker inspect --format '{{.Config.Image}}'"));
-  assert.ok(deploy.includes("docker inspect --format '{{.Image}}'"));
-  assert.ok(deploy.includes('node deploy/scripts/production-provenance-publish.mjs'));
-});
-));
+  assert.ok(deploy.includes('^SHA256:[A-Za-z0-9+/]{43}$'));
   assert.ok(deploy.includes("docker inspect --format '{{.Config.Image}}'"));
   assert.ok(deploy.includes("docker inspect --format '{{.Image}}'"));
   assert.ok(deploy.includes('node deploy/scripts/production-provenance-publish.mjs'));
