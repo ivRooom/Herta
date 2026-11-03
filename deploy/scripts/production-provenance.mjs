@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs';
-
 export const RUNTIME_ATTESTATION_ENVIRONMENT = 'herta-runtime-attested';
 export const RUNTIME_ATTESTATION_TASK = 'deploy:runtime-proof';
 export const RUNTIME_SERVICES = ['api', 'bot', 'studio', 'worker'];
@@ -47,38 +45,55 @@ export function buildProductionDeploymentPayload({
 
 export function selectLatestSuccessfulSshDeployment(runsWithJobs) {
   if (!Array.isArray(runsWithJobs)) throw new Error('Missing complete run history');
-  const deployments = [];
+  const attempts = [];
   for (const { run, jobs } of runsWithJobs) {
-    if (
-      !run || run.status !== 'completed' || run.conclusion !== 'success' ||
-      !['push', 'workflow_run', 'workflow_dispatch'].includes(run.event) ||
-      !Number.isSafeInteger(run.id) || !Number.isSafeInteger(run.run_attempt) ||
-      !Array.isArray(jobs)
-    ) {
-      continue;
+    if (!run || !Array.isArray(jobs) || !Number.isSafeInteger(run.id)) {
+      throw new Error('Unverifiable production run history');
     }
-    const successful = jobs.filter(
-      (job) => job.name === 'SSH Deploy to Lightsail' && job.conclusion === 'success',
+    // A failing workflow may have already updated the host. Do NOT fall back
+    // to a prior successful run after SSH+Cloudflare/provenance failure.
+    const attempted = jobs.filter((job) =>
+      job.steps?.some(
+        (step) =>
+          step.name === 'LightsailへSSHデプロイ' &&
+          step.status !== 'pending' &&
+          step.conclusion !== 'skipped',
+      ),
     );
-    if (successful.length > 1) {
-      throw new Error('Multiple successful SSH deployment jobs in one workflow run');
+    if (attempted.length > 1) {
+      throw new Error('Multiple SSH attempts in one production workflow run');
     }
-    if (successful.length === 1) {
-      const job = successful[0];
+    if (attempted.length === 1) {
+      const job = attempted[0];
       const completedMs = Date.parse(job.completed_at ?? '');
-      if (!Number.isFinite(completedMs) || job.status !== 'completed') {
-        throw new Error('Successful SSH job completion is not verifiable');
+      if (!Number.isFinite(completedMs)) {
+        throw new Error('Production SSH attempt is still running or unverified');
       }
-      deployments.push({ run, job, completedMs });
+      attempts.push({ run, job, completedMs });
     }
   }
-  deployments.sort(
+  attempts.sort(
     (a, b) => b.completedMs - a.completedMs || b.run.id - a.run.id,
   );
-  if (deployments.length > 1 && deployments[0].completedMs === deployments[1].completedMs) {
-    throw new Error('Cannot uniquely order concurrent successful production SSH jobs');
+  if (attempts.length > 1 && attempts[0].completedMs === attempts[1].completedMs) {
+    throw new Error('Cannot uniquely order concurrent production SSH attempts');
   }
-  return deployments[0] ?? null;
+  const latest = attempts[0];
+  if (!latest) return null;
+  if (
+    latest.run.status !== 'completed' ||
+    latest.run.conclusion !== 'success' ||
+    !['push', 'workflow_run', 'workflow_dispatch'].includes(latest.run.event) ||
+    !Number.isSafeInteger(latest.run.run_attempt) ||
+    latest.job.status !== 'completed' ||
+    latest.job.conclusion !== 'success' ||
+    !latest.job.steps.some(
+      (step) => step.name === 'LightsailへSSHデプロイ' && step.conclusion === 'success',
+    )
+  ) {
+    throw new Error('Latest production SSH attempt failed or lacks completed health/proof');
+  }
+  return latest;
 }
 
 export function validateProductionDeploymentAttestation({ run, job, deployment, statuses }) {
@@ -119,7 +134,7 @@ export function validateProductionDeploymentAttestation({ run, job, deployment, 
 
 export async function loadLatestProductionAttestation(api) {
   const result = await api(
-    'actions/workflows/deploy-production.yml/runs?branch=main&status=success&per_page=100',
+    'actions/workflows/deploy-production.yml/runs?branch=main&per_page=100',
   );
   if (!Array.isArray(result.workflow_runs)) throw new Error('Missing production workflow runs');
   const runsWithJobs = [];
