@@ -6,7 +6,10 @@ import { resolveStudioAccess } from '@/lib/studio-access';
 import { resolvePluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';
 import { isSameOriginMutationRequest } from '@/lib/request-origin';
 import { readJsonBodyWithLimit, RequestBodyTooLargeError } from '@/lib/bounded-request-body';
-import { uniqueActualValorantAgents, validValorantOutcomeScore } from '@/lib/valorant-match-validation';
+import {
+  uniqueActualValorantAgents,
+  validValorantOutcomeScore,
+} from '@/lib/valorant-match-validation';
 
 export const dynamic = 'force-dynamic';
 const isObject = (value: unknown): value is Record<string, unknown> =>
@@ -130,10 +133,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ gui
     return NextResponse.json({ error: '試合結果の形式が不正です。' }, { status: 400 });
   }
   if (!validValorantOutcomeScore(data.outcome, data.roundsWon, data.roundsLost)) {
-    return NextResponse.json(
-      { error: '勝敗とラウンドスコアが一致しません。' },
-      { status: 400 },
-    );
+    return NextResponse.json({ error: '勝敗とラウンドスコアが一致しません。' }, { status: 400 });
   }
   const matchId =
     data.matchId === undefined || data.matchId === null ? null : (data.matchId as string);
