@@ -37,7 +37,7 @@ vi.mock('./vc-recap-participants.js', () => ({
 const { activeVcRecapChannelId, isVcRecapActive, revokeVcRecapConsent, startVcRecap, stopVcRecap } =
   await import('./vc-recap-session-manager.js');
 
-function makeChannel() {
+function makeChannel(guildId = 'guild-1') {
   const member = { id: 'user-1', user: { bot: false }, roles: { cache: new Map() } };
   const members = new Map([[member.id, member]]);
   const humans = {
@@ -50,7 +50,7 @@ function makeChannel() {
   const channel = {
     id: 'voice-1',
     guild: {
-      id: 'guild-1',
+      id: guildId,
       voiceAdapterCreator: vi.fn(),
       members: { fetch: vi.fn() },
     },
@@ -107,6 +107,29 @@ describe('pending VC Recap start fail-closed after Discord announcement', () => 
     expect(activeVcRecapChannelId('guild-1')).toBe(null);
   });
 
+  it('does not send a start notice when stopped during voice connection readiness', async () => {
+    const { channel, connection, speaking } = makeChannel();
+    let markReady!: () => void;
+    mocks.entersState.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          markReady = resolve;
+        }),
+    );
+    const announce = vi.fn().mockResolvedValue(undefined);
+    const starting = startVcRecap(prisma, logger, channel, 'user-1', [], announce);
+    await vi.waitFor(() => expect(mocks.entersState).toHaveBeenCalledTimes(1));
+
+    expect(await stopVcRecap(prisma, logger, 'guild-1')).toEqual({
+      status: 'start_cancelled',
+    });
+    markReady();
+    expect(await starting).toEqual({ status: 'start_cancelled' });
+    expect(announce).not.toHaveBeenCalled();
+    expect(speaking.on).not.toHaveBeenCalled();
+    expect(connection.destroy).toHaveBeenCalledTimes(1);
+  });
+
   it('revoking a pending participant prevents starting transcription', async () => {
     const { channel, speaking } = makeChannel();
     const notice = deferredNotice();
@@ -129,5 +152,25 @@ describe('pending VC Recap start fail-closed after Discord announcement', () => 
 
     expect(await starting).toEqual({ status: 'start_cancelled' });
     expect(speaking.on).not.toHaveBeenCalled();
+  });
+
+  it('does not cancel another guild when an unrelated user revokes during consent lookup', async () => {
+    const { channel, speaking } = makeChannel('guild-unrelated');
+    let finishConsent!: (consents: Map<string, boolean>) => void;
+    mocks.getVoiceTranscriptionConsentMap.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishConsent = resolve;
+        }),
+    );
+    const announce = vi.fn().mockResolvedValue(undefined);
+    const starting = startVcRecap(prisma, logger, channel, 'user-1', [], announce);
+    await vi.waitFor(() => expect(mocks.getVoiceTranscriptionConsentMap).toHaveBeenCalledTimes(1));
+    revokeVcRecapConsent('different-user');
+    finishConsent(new Map([['user-1', true]]));
+
+    expect(await starting).toMatchObject({ status: 'started' });
+    expect(announce).toHaveBeenCalledTimes(1);
+    expect(speaking.on).toHaveBeenCalledWith('start', expect.any(Function));
   });
 });
