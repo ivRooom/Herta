@@ -165,13 +165,13 @@ test('manual bootstrap is explicit and permitted only before first attested SSH 
   );
   assert.match(workflow, /bootstrap_without_proof:\n\s+description:/);
   assert.match(workflow, /type: boolean\n\s+required: true\n\s+default: false/);
-  assert.match(
-    workflow,
-    /DEPLOY_BOOTSTRAP_APPROVED: \$\{\{ github.event.inputs.bootstrap_without_proof \|\| 'false' \}\}/,
-  );
-  assert.match(
-    workflow,
-    /DEPLOY_EMERGENCY_ROLLBACK_APPROVED: \$\{\{ github.event.inputs.emergency_rollback_without_proof \|\| 'false' \}\}/,
+  assert.match(workflow, /emergency_rollback_without_proof:\n\s+description:/);
+  const bootstrapEnv = workflow.split('DEPLOY_BOOTSTRAP_APPROVED: ')[1]?.split('\n')[0];
+  const emergencyEnv = workflow.split('DEPLOY_EMERGENCY_ROLLBACK_APPROVED: ')[1]?.split('\n')[0];
+  assert.equal(bootstrapEnv, "${{ github.event.inputs.bootstrap_without_proof || 'false' }}");
+  assert.equal(
+    emergencyEnv,
+    "${{ github.event.inputs.emergency_rollback_without_proof || 'false' }}",
   );
 });
 
@@ -231,10 +231,13 @@ test('emergency approval bypasses only recognized failed-SSH or missing-proof st
   assert.equal(allowExplicitProductionProofRecovery(firstEver, bootstrap), true);
   assert.equal(allowExplicitProductionProofRecovery(firstEver, emergency), true);
   assert.equal(allowExplicitProductionProofRecovery(firstEver, {}), false);
-  assert.equal(allowExplicitProductionProofRecovery(firstEver, {
-    bootstrapApproved: true,
-    emergencyRollbackApproved: true,
-  }), false);
+  assert.equal(
+    allowExplicitProductionProofRecovery(firstEver, {
+      bootstrapApproved: true,
+      emergencyRollbackApproved: true,
+    }),
+    false,
+  );
 
   for (const reason of [
     'Latest production SSH attempt failed or lacks completed health/proof',
