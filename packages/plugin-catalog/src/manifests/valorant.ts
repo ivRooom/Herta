@@ -76,8 +76,8 @@ export const VALORANT_AGENT_ROLES: Record<ValorantAgent, ValorantAgentRole> = {
   Waylay: 'DUELIST',
   Yoru: 'DUELIST',
 };
-const roleById = new Map(
-  VALORANT_AGENTS.map((agent) => [
+const roleById = new Map<string, ValorantAgentRole>(
+  VALORANT_AGENTS.map((agent): [string, ValorantAgentRole] => [
     agent.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
     VALORANT_AGENT_ROLES[agent],
   ]),
