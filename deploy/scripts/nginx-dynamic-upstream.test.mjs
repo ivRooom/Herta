@@ -21,7 +21,9 @@ test('all proxy targets use re-resolvable internal Docker DNS names', () => {
 
   // No trailing slash (or explicit URI) on proxy_pass: Next.js Auth.js and
   // NestJS retain the exact route path and query sent by the client.
-  const targets = [...nginxConfig.matchAll(/proxy_pass\s+([^;]+);/g)].map((match) => match[1]);
+  const targets = [...nginxConfig.matchAll(/^\s*proxy_pass\s+([^;\r\n]+);/gm)].map(
+    (match) => match[1],
+  );
   assert.equal(targets.length, 8);
   assert.equal(targets.filter((target) => target === 'http://$api_backend').length, 5);
   assert.equal(targets.filter((target) => target === 'http://$studio_backend').length, 3);
