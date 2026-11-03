@@ -27,9 +27,7 @@ function signed(
 ) {
   const body = JSON.stringify(value);
   const event = randomUUID();
-  const key = createHmac('sha256', environment.IVRM_INTEGRATION_TOKEN)
-    .update(purpose)
-    .digest();
+  const key = createHmac('sha256', environment.IVRM_INTEGRATION_TOKEN).update(purpose).digest();
   const signature = createHmac('sha256', key)
     .update(timestamp + '.' + event + '.POST.' + FORTUNE_ADMIN_LIST_PATH + '.' + body)
     .digest('hex');
