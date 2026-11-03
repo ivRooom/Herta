@@ -67,9 +67,14 @@ export async function reconcileExpiredValorantMessages(
     // Guild-scoped re-read immediately before touching Discord. A reroll may
     // transfer messageId to a new history row; that old row must not edit it.
     const current = await getValorantSession(prisma, row.guildId, row.id);
-    if (!current || !current.messageId || current.messageId !== row.messageId ||
-        !['EXPIRED', 'COMPLETED'].includes(current.status) || current.expiresAt > now ||
-        current.expiryUiSyncedAt !== null) {
+    if (
+      !current ||
+      !current.messageId ||
+      current.messageId !== row.messageId ||
+      !['EXPIRED', 'COMPLETED'].includes(current.status) ||
+      current.expiresAt > now ||
+      current.expiryUiSyncedAt !== null
+    ) {
       continue;
     }
 
@@ -139,7 +144,9 @@ export async function editExpiredValorantDiscordMessage(
     return 'updated';
   } catch (error) {
     if (
-      error && typeof error === 'object' && 'code' in error &&
+      error &&
+      typeof error === 'object' &&
+      'code' in error &&
       (error.code === RESTJSONErrorCodes.UnknownMessage ||
         error.code === RESTJSONErrorCodes.UnknownChannel)
     ) {

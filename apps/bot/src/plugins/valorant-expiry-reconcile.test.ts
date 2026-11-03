@@ -41,7 +41,12 @@ function makeSession(status = 'OPEN'): ValorantSessionSnapshot {
 
 function testPrisma(session: ValorantSessionSnapshot) {
   const findMany = vi.fn().mockResolvedValue([session]);
-  const findFirst = vi.fn().mockResolvedValue({ ...session, status: session.status === 'OPEN' ? 'EXPIRED' : session.status });
+  const findFirst = vi
+    .fn()
+    .mockResolvedValue({
+      ...session,
+      status: session.status === 'OPEN' ? 'EXPIRED' : session.status,
+    });
   const updateMany = vi.fn().mockResolvedValue({ count: 1 });
   const prisma = {
     valorantPickSession: { findMany, findFirst, updateMany },
@@ -54,17 +59,23 @@ describe('VALORANT expired recruitment reconciliation', () => {
     const { prisma, findMany, updateMany } = testPrisma(makeSession());
     const edit = vi.fn().mockResolvedValue('updated');
     const result = await reconcileExpiredValorantMessages(prisma, {
-      guildIds: [guildId], now, edit,
+      guildIds: [guildId],
+      now,
+      edit,
     });
     expect(result).toEqual({ attempted: 1, updated: 1, gone: 0, retried: 0 });
-    expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ status: 'OPEN', guildId }),
-      data: { status: 'EXPIRED' },
-    }));
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ status: 'OPEN', guildId }),
+        data: { status: 'EXPIRED' },
+      }),
+    );
     expect(edit.mock.calls[0]![0].status).toBe('EXPIRED');
-    expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ expiryUiSyncedAt: now, expiryUiRetryCount: 0 }),
-    }));
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ expiryUiSyncedAt: now, expiryUiRetryCount: 0 }),
+      }),
+    );
     expect(findMany.mock.calls[0]![0].take).toBe(10);
   });
 
@@ -84,12 +95,17 @@ describe('VALORANT expired recruitment reconciliation', () => {
     const onRetry = vi.fn();
     const edit = vi.fn().mockRejectedValue(new Error('Discord unavailable'));
     const outcome = await reconcileExpiredValorantMessages(prisma, {
-      guildIds: [guildId], now, edit, onRetry,
+      guildIds: [guildId],
+      now,
+      edit,
+      onRetry,
     });
     expect(outcome.retried).toBe(1);
-    expect(updateMany).toHaveBeenCalledWith(expect.objectContaining({
-      data: { expiryUiRetryCount: 3, expiryUiRetryAt: new Date(now.getTime() + 240_000) },
-    }));
+    expect(updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { expiryUiRetryCount: 3, expiryUiRetryAt: new Date(now.getTime() + 240_000) },
+      }),
+    );
     expect(onRetry).toHaveBeenCalledWith('Error', 3);
   });
 
@@ -97,7 +113,11 @@ describe('VALORANT expired recruitment reconciliation', () => {
     const { prisma, findFirst, updateMany } = testPrisma(makeSession('COMPLETED'));
     findFirst.mockResolvedValue({ ...makeSession('COMPLETED'), messageId: null });
     const edit = vi.fn().mockResolvedValue('updated');
-    const result = await reconcileExpiredValorantMessages(prisma, { guildIds: [guildId], now, edit });
+    const result = await reconcileExpiredValorantMessages(prisma, {
+      guildIds: [guildId],
+      now,
+      edit,
+    });
     expect(result.attempted).toBe(0);
     expect(updateMany).not.toHaveBeenCalled();
     expect(edit).not.toHaveBeenCalled();
@@ -108,7 +128,9 @@ describe('VALORANT expired recruitment reconciliation', () => {
     await reconcileExpiredValorantMessages(prisma, { guildIds: [], now, edit: vi.fn() });
     expect(findMany).not.toHaveBeenCalled();
     await reconcileExpiredValorantMessages(prisma, {
-      guildIds: [guildId, guildId], now, batchSize: 10_000,
+      guildIds: [guildId, guildId],
+      now,
+      batchSize: 10_000,
       edit: vi.fn().mockResolvedValue('updated'),
     });
     const where = findMany.mock.calls[0]![0].where;
@@ -125,7 +147,9 @@ describe('VALORANT expired recruitment reconciliation', () => {
       messages: { fetch: vi.fn().mockResolvedValue({ edit }) },
     };
     const client = {
-      guilds: { cache: new Map([[guildId, { channels: { fetch: vi.fn().mockResolvedValue(channel) } }]]) },
+      guilds: {
+        cache: new Map([[guildId, { channels: { fetch: vi.fn().mockResolvedValue(channel) } }]]),
+      },
     } as unknown as Parameters<typeof editExpiredValorantDiscordMessage>[0];
     const session = makeSession('COMPLETED');
     const outcome = await editExpiredValorantDiscordMessage(client, session);

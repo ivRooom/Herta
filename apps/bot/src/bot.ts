@@ -1611,7 +1611,10 @@ export class HertaBot {
             batchSize: 10,
             edit: (session) => editExpiredValorantDiscordMessage(this.client, session),
             onRetry: (reason, count) =>
-              this.logger.warn({ reason, retryCount: count }, 'VALORANT募集終了UI更新を再試行します'),
+              this.logger.warn(
+                { reason, retryCount: count },
+                'VALORANT募集終了UI更新を再試行します',
+              ),
           });
           if (result.attempted > 0) {
             this.logger.info(result, 'VALORANT期限切れ募集の公開UIを同期しました');
@@ -1622,7 +1625,9 @@ export class HertaBot {
             'VALORANT期限切れ募集のDB同期が失敗しました',
           );
         }
-      })().finally(() => { this.valorantExpiryTask = undefined; });
+      })().finally(() => {
+        this.valorantExpiryTask = undefined;
+      });
     };
     this.valorantExpiryTimer = setInterval(tick, 2 * 60 * 1000);
     this.valorantExpiryTimer.unref();
