@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
@@ -7,6 +8,7 @@ import {
   assertSafeCompare,
   determineGateOutcome,
   needsPostgresIntegration,
+  needsValorantPredeployRehearsal,
   needsRuntimeDeployment,
   validateCompletedMainCi,
   validateDeployRef,
@@ -34,6 +36,26 @@ test('production gate needs real PostgreSQL integration for DB, Bot and Studio c
   }
   assert.equal(needsPostgresIntegration(['docs/VC_RECAP_RELEASE_HANDOFF.md']), false);
   assert.equal(needsPostgresIntegration(['deploy/scripts/x.sh']), false);
+});
+
+test('VALORANT migration and deploy guard changes require same-SHA isolated restore CI', () => {
+  const guarded = [
+    'packages/db/prisma/migrations/20261103160000_valorant_voice_participants/migration.sql',
+    'deploy/scripts/valorant-predeploy-rehearsal.sh',
+    'deploy/scripts/production-quality-gate.mjs',
+    '.github/workflows/deploy-production.yml',
+    '.github/workflows/valorant-predeploy-rehearsal.yml',
+  ];
+  for (const path of guarded) {
+    assert.equal(needsValorantPredeployRehearsal([path]), true, path);
+  }
+  assert.equal(needsValorantPredeployRehearsal(['docs/README.md']), false);
+  assert.equal(needsValorantPredeployRehearsal(['apps/bot/src/main.ts']), false);
+  const gate = readFileSync(new URL('./production-quality-gate.mjs', import.meta.url), 'utf8');
+  assert.match(
+    gate,
+    /needsValorantPredeployRehearsal\(files\).*required.push\(VALORANT_REHEARSAL_WORKFLOW\)/,
+  );
 });
 
 test('checks accept only exact commit, main push, and successful completion', () => {
@@ -253,4 +275,52 @@ test('production workflow has an unprivileged CI-completion gate before build an
   assert.ok(deploy.includes('needs: [quality-gate, build-image]'));
   assert.ok(deploy.includes('environment: production'));
   assert.ok(deploy.includes("github.event_name != 'workflow_dispatch'"));
+});
+
+test('VALORANT production migration is fenced by protected backup and isolated restore before Compose up', () => {
+  const scriptPath = new URL('./valorant-predeploy-rehearsal.sh', import.meta.url);
+  execFileSync('bash', ['-n', scriptPath.pathname], { stdio: 'pipe' });
+  const script = readFileSync(scriptPath, 'utf8');
+  const workflow = readFileSync(
+    new URL('../../.github/workflows/deploy-production.yml', import.meta.url),
+    'utf8',
+  );
+  const [ssh, health] = workflow.split('      - name: Cloudflare経由の外部Health check');
+  assert.ok(ssh && health, 'expected the production SSH deploy job');
+  const gate = ssh.indexOf('bash deploy/scripts/valorant-predeploy-rehearsal.sh');
+  assert.ok(
+    ssh.includes('if [[ -f deploy/scripts/valorant-predeploy-rehearsal.sh ]]; then'),
+    'existing predeploy script must be run on the selected revision',
+  );
+  assert.ok(
+    ssh.includes(
+      'elif [[ -f packages/db/prisma/migrations/20261103160000_valorant_voice_participants/migration.sql ]]; then',
+    ),
+    'rollback without script is allowed only when migration is absent',
+  );
+  assert.ok(
+    ssh.includes('VALORANT migration exists without its predeploy safety gate.'),
+    'migration without safety script must stop before image pull',
+  );
+  assert.ok(gate > ssh.indexOf('config --quiet'), 'must validate Compose before backup');
+  assert.ok(gate < ssh.indexOf('pull_production_images'), 'must backup before image pull');
+  assert.ok(
+    gate < ssh.indexOf('start_production_services'),
+    'must rehearse before migrator startup',
+  );
+  assert.match(script, /HERTA_SELECTED_DATABASE_MODE.*!= local/);
+  assert.match(script, /DEPLOY_REF:-/);
+  assert.match(script, /pg_dump -Fc/);
+  assert.match(script, /sha256sum --check --status/);
+  assert.match(script, /--network none --memory 256m/);
+  assert.match(script, /pg_restore --no-owner --no-acl --exit-on-error/);
+  assert.match(script, /psql -X -v ON_ERROR_STOP=1/);
+  assert.match(script, /docker info --format/);
+  assert.match(script, /docker_free_kib/);
+  assert.match(script, /docker_required_kib/);
+  assert.match(script, /docker rm -f -v "\$restore_id"/);
+  assert.doesNotMatch(
+    script,
+    /docker volume rm|docker system prune|pg_restore.*\$COMPOSE|DROP DATABASE/,
+  );
 });

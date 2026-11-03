@@ -1,0 +1,122 @@
+name: VALORANT predeploy restore rehearsal
+on:
+  pull_request:
+    paths:
+      - 'deploy/scripts/valorant-predeploy-rehearsal.sh'
+      - 'deploy/scripts/production-quality-gate.mjs'
+      - 'deploy/scripts/production-quality-gate.test.mjs'
+      - '.github/workflows/deploy-production.yml'
+      - '.github/workflows/valorant-predeploy-rehearsal.yml'
+      - 'packages/db/prisma/migrations/20261103160000_valorant_voice_participants/**'
+  push:
+    branches: [main]
+    paths:
+      - 'deploy/scripts/valorant-predeploy-rehearsal.sh'
+      - 'deploy/scripts/production-quality-gate.mjs'
+      - '.github/workflows/deploy-production.yml'
+      - '.github/workflows/valorant-predeploy-rehearsal.yml'
+      - 'packages/db/prisma/migrations/20261103160000_valorant_voice_participants/**'
+permissions:
+  contents: read
+jobs:
+  isolated-pg16:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+      - name: Real PG16 backup/restore and exact migration rehearsal (throwaway CI only)
+        shell: bash
+        env:
+          DEPLOY_REF: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "${GITHUB_RUN_ID}" != ''
+          test ! -e .env.production
+          cp .env.production.example .env.production
+          chmod 600 .env.production
+          cat >> .env.production <<EOF
+          COMPOSE_PROJECT_NAME=herta_val_ci_${GITHUB_RUN_ID}
+          JWT_SECRET=synthetic-ci-only
+          JWT_REFRESH_SECRET=synthetic-ci-only
+          INTERNAL_JWT_SECRET=synthetic-ci-only
+          DISCORD_CLIENT_ID=synthetic-ci-only
+          DISCORD_CLIENT_SECRET=synthetic-ci-only
+          DISCORD_BOT_TOKEN=synthetic-ci-only
+          TEAM_SPLIT_SECRET=synthetic-ci-only
+          BOT_INTERNAL_API_SECRET=synthetic-ci-only
+          EOF
+          trap 'docker compose --project-name "herta_val_ci_${GITHUB_RUN_ID}" --env-file .env.production -f docker-compose.prod.yml down --volumes --remove-orphans >/dev/null 2>&1 || true; rm -f .env.production' EXIT
+          docker compose --project-name "herta_val_ci_${GITHUB_RUN_ID}" --env-file .env.production -f docker-compose.prod.yml up -d --wait postgres
+
+          # Dedicated synthetic fixture. NEVER restore real records or start app services.
+          docker compose --project-name "herta_val_ci_${GITHUB_RUN_ID}" --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+            psql -X -v ON_ERROR_STOP=1 -U postgres -d herta <<'SQL'
+          CREATE TABLE "_prisma_migrations" (
+            migration_name text NOT NULL,
+            finished_at timestamptz,
+            rolled_back_at timestamptz
+          );
+          CREATE TABLE "valorant_pick_sessions" (id text PRIMARY KEY);
+          SQL
+          migration=packages/db/prisma/migrations/20261103160000_valorant_voice_participants/migration.sql
+          if [ ! -e "$migration" ]; then
+            mkdir -p "$(dirname "$migration")"
+            cat > "$migration" <<'SQL'
+          ALTER TABLE "valorant_pick_sessions"
+            ADD COLUMN "voice_channel_id" TEXT,
+            ADD COLUMN "opted_out_user_ids" TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
+          SQL
+          fi
+          bash deploy/scripts/valorant-predeploy-rehearsal.sh
+
+          # Live synthetic source stays untouched; DDL ran only on offline restored copy.
+          column_count="$(docker compose --project-name "herta_val_ci_${GITHUB_RUN_ID}" --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+            psql -X -At -v ON_ERROR_STOP=1 -U postgres -d herta -c "SELECT count(*) FROM information_schema.columns WHERE table_name='valorant_pick_sessions' AND column_name IN ('voice_channel_id','opted_out_user_ids')")"
+          test "$column_count" = '0'
+          test "$(find "$HOME/.local/share/herta/release-backups" -maxdepth 1 -type f -name '*.dump' | wc -l)" -eq 1
+          test "$(find "$HOME/.local/share/herta/release-backups" -maxdepth 1 -type f -name '*.sha256' | wc -l)" -eq 1
+
+          # Broken migration history must be rejected before even a second backup.
+          docker compose --project-name "herta_val_ci_${GITHUB_RUN_ID}" --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+            psql -X -v ON_ERROR_STOP=1 -U postgres -d herta -c \
+            "INSERT INTO \"_prisma_migrations\"(migration_name) VALUES ('20261103160000_valorant_voice_participants')"
+          if bash deploy/scripts/valorant-predeploy-rehearsal.sh; then
+            echo 'ERROR: invalid migration history was not rejected' >&2
+            exit 1
+          fi
+          # Pending history with partially created columns must fail before backup.
+          docker compose --project-name "herta_val_ci_${GITHUB_RUN_ID}" --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+            psql -X -v ON_ERROR_STOP=1 -U postgres -d herta <<'SQL'
+          DELETE FROM "_prisma_migrations"
+            WHERE migration_name = '20261103160000_valorant_voice_participants';
+          ALTER TABLE "valorant_pick_sessions" ADD COLUMN voice_channel_id TEXT;
+          SQL
+          if bash deploy/scripts/valorant-predeploy-rehearsal.sh; then
+            echo 'ERROR: pending migration with a partial column was not rejected' >&2
+            exit 1
+          fi
+
+          # Applied migration requires an exact immutable Prisma checksum.
+          docker compose --project-name "herta_val_ci_${GITHUB_RUN_ID}" --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+            psql -X -v ON_ERROR_STOP=1 -U postgres -d herta <<'SQL'
+          ALTER TABLE "valorant_pick_sessions" DROP COLUMN voice_channel_id;
+          SQL
+          docker compose --project-name "herta_val_ci_${GITHUB_RUN_ID}" --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+            psql -X -v ON_ERROR_STOP=1 -U postgres -d herta < "$migration"
+          checksum="$(sha256sum "$migration" | awk '{print $1}')"
+          docker compose --project-name "herta_val_ci_${GITHUB_RUN_ID}" --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+            psql -X -v ON_ERROR_STOP=1 -U postgres -d herta -v checksum="$checksum" <<'SQL'
+          ALTER TABLE "_prisma_migrations" ADD COLUMN checksum text;
+          INSERT INTO "_prisma_migrations"(migration_name, checksum, finished_at)
+            VALUES ('20261103160000_valorant_voice_participants', :'checksum', now());
+          SQL
+          bash deploy/scripts/valorant-predeploy-rehearsal.sh
+          docker compose --project-name "herta_val_ci_${GITHUB_RUN_ID}" --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+            psql -X -v ON_ERROR_STOP=1 -U postgres -d herta -c \
+            "UPDATE \"_prisma_migrations\" SET checksum='tampered' WHERE migration_name='20261103160000_valorant_voice_participants'"
+          if bash deploy/scripts/valorant-predeploy-rehearsal.sh; then
+            echo 'ERROR: mismatched applied migration checksum was not rejected' >&2
+            exit 1
+          fi
+          test "$(find "$HOME/.local/share/herta/release-backups" -maxdepth 1 -type f -name '*.dump' | wc -l)" -eq 1
+          echo 'CI PG16: backup/restore/rehearsal/partial migration/checksum negative tests passed'

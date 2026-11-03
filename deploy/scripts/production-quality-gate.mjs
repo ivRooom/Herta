@@ -7,6 +7,10 @@ const REQUIRED_WORKFLOWS = [
   { file: 'database-topology.yml', name: 'Database topology contracts' },
 ];
 const PG_WORKFLOW = { file: 'valorant-agents.yml', name: 'VALORANT PostgreSQL integration' };
+const VALORANT_REHEARSAL_WORKFLOW = {
+  file: 'valorant-predeploy-rehearsal.yml',
+  name: 'VALORANT predeploy restore rehearsal',
+};
 
 // The retired push.paths allowlist is enforced here for workflow_run so
 // docs-only and Agent Skills-only commits never restart production.
@@ -81,6 +85,16 @@ const PG_PATHS = [
 
 export function needsPostgresIntegration(files) {
   return files.some((file) => PG_PATHS.some((pattern) => pattern.test(file)));
+}
+const VALORANT_REHEARSAL_PATHS = [
+  /^deploy\/scripts\/valorant-predeploy-rehearsal\.sh$/,
+  /^deploy\/scripts\/production-quality-gate\.mjs$/,
+  /^\.github\/workflows\/deploy-production\.yml$/,
+  /^\.github\/workflows\/valorant-predeploy-rehearsal\.yml$/,
+  /^packages\/db\/prisma\/migrations\/20261103160000_valorant_voice_participants\//,
+];
+export function needsValorantPredeployRehearsal(files) {
+  return files.some((file) => VALORANT_REHEARSAL_PATHS.some((pattern) => pattern.test(file)));
 }
 
 export function determineGateOutcome(runs, sha) {
@@ -248,6 +262,7 @@ async function main() {
   }
   const required = [...REQUIRED_WORKFLOWS];
   if (needsPostgresIntegration(files)) required.push(PG_WORKFLOW);
+  if (needsValorantPredeployRehearsal(files)) required.push(VALORANT_REHEARSAL_WORKFLOW);
   console.log(
     'Production gate for pinned SHA ' +
       sha.slice(0, 12) +

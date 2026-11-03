@@ -469,6 +469,16 @@ jobs:
 
             ${COMPOSE} config --quiet
 
+            # New VALORANT migration must have a protected fresh PG16 backup,
+            # an offline restore and exact SQL rehearsal before any image pull
+            # or Compose up (which can start the Prisma migrator).
+            if [[ -f deploy/scripts/valorant-predeploy-rehearsal.sh ]]; then
+              bash deploy/scripts/valorant-predeploy-rehearsal.sh
+            elif [[ -f packages/db/prisma/migrations/20261103160000_valorant_voice_participants/migration.sql ]]; then
+              echo 'ERROR: VALORANT migration exists without its predeploy safety gate.' >&2
+              exit 2
+            fi
+
             printf '%s' "${GHCR_TOKEN}" | \
               docker login ghcr.io --username "${GHCR_USERNAME}" --password-stdin
 
