@@ -90,6 +90,8 @@ const flushingSessions = new Set<ActiveVcRecapSession>();
 interface PendingVcRecapStart {
   channelId: string;
   cancelled: boolean;
+  /** Snapshot taken before the first asynchronous consent read. */
+  participantUserIds: Set<string>;
   /** null until consent has been resolved for this attempt. */
   consentingUserIds: Set<string> | null;
 }
@@ -138,6 +140,7 @@ export async function startVcRecap(
   const pending: PendingVcRecapStart = {
     channelId: channel.id,
     cancelled: false,
+    participantUserIds: new Set(),
     consentingUserIds: null,
   };
   pendingGuildStarts.set(channel.guild.id, pending);
@@ -145,6 +148,7 @@ export async function startVcRecap(
   try {
     const members = channel.members.filter((member) => !member.user.bot);
     const memberUserIds = [...members.keys()];
+    pending.participantUserIds = new Set(memberUserIds);
     const baseConsentByUserId = await getVoiceTranscriptionConsentMap(prisma, memberUserIds);
     // 自動同意ロールが設定されている場合のみ、キャッシュに残った剥奪済みロールで
     // 誤って同意扱いにしないようforce fetchする(未設定なら従来通りcacheで十分)。
@@ -251,6 +255,14 @@ export async function startVcRecap(
       connection.destroy();
       await failVcRecapSession(prisma, sessionId);
       return { status: 'connection_failed' };
+    }
+
+    // A stop/disable may occur while waiting for the voice connection to be ready.
+    // Never send a misleading announcement for a cancelled start.
+    if (pending.cancelled) {
+      connection.destroy();
+      await failVcRecapSession(prisma, sessionId);
+      return { status: 'start_cancelled' };
     }
 
     // The voice connection is ready, but no speaking subscription exists yet.
@@ -615,7 +627,10 @@ export async function stopVcRecap(
  */
 export function revokeVcRecapConsent(userId: string): void {
   for (const pending of pendingGuildStarts.values()) {
-    if (!pending.consentingUserIds || pending.consentingUserIds.has(userId)) {
+    if (
+      pending.participantUserIds.has(userId) &&
+      (!pending.consentingUserIds || pending.consentingUserIds.has(userId))
+    ) {
       pending.cancelled = true;
     }
   }
