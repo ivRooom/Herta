@@ -144,6 +144,19 @@ if [[ ! "$free_kib" =~ ^[0-9]+$ ]] || (( free_kib < required_kib )); then
   echo 'ERROR: 安全なバックアップ・隔離復元のためのディスク空き容量が不足しています。' >&2
   exit 2
 fi
+# pg_restore consumes Docker-managed storage, which may be a different filesystem
+# from the protected home directory. Never let a rehearsal exhaust production PG.
+docker_root="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+if [[ -z "$docker_root" ]] || [[ ! -d "$docker_root" ]]; then
+  echo 'ERROR: Docker data rootの位置を確認できません。' >&2
+  exit 2
+fi
+docker_free_kib="$(df -Pk "$docker_root" | awk 'NR == 2 { print $4 }')"
+docker_required_kib="$(( (database_bytes / 1024) * 2 + 262144 ))"
+if [[ ! "$docker_free_kib" =~ ^[0-9]+$ ]] || (( docker_free_kib < docker_required_kib )); then
+  echo 'ERROR: Docker data rootの空き容量が隔離復元に不足しています。' >&2
+  exit 2
+fi
 
 backup="$(mktemp "$backup_dir/valorant-$(date -u +%Y%m%dT%H%M%SZ)-XXXXXXXX.dump")"
 chmod 600 -- "$backup"
@@ -171,7 +184,7 @@ echo 'Protected dumpのSHA-256検証に成功しました。バックアップ�
 restore_id=''
 cleanup() {
   if [[ -n "$restore_id" ]]; then
-    docker rm -f "$restore_id" >/dev/null 2>&1 || true
+    docker rm -f -v "$restore_id" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
