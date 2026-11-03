@@ -175,6 +175,35 @@ describe('VALORANT VC member overflow confirmation', () => {
     expect(manageValorantParticipants).not.toHaveBeenCalled();
   });
 
+  it('does not offer bots or members moved out of the pinned VC', async () => {
+    const h = harness();
+    h.session.maxParticipants = 5;
+    h.memberFetch.mockImplementation(async (userId: string) => ({
+      id: userId,
+      user: { id: userId, bot: userId === b },
+      voice: { channelId: userId === c ? channelId : voiceChannelId },
+    }));
+    h.setVoiceIds([a, b, c]);
+    const preview = h.mockInteraction('vc', false, 'creator', false);
+    await h.dispatch(preview.interaction);
+    const reply = preview.editReply.mock.calls.at(-1)![0];
+    expect(reply.content).toContain('<@' + a + '>');
+    expect(reply.content).not.toContain('<@' + b + '>');
+    expect(reply.content).not.toContain('<@' + c + '>');
+    expect(manageValorantParticipants).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when Discord GuildMember lookup fails during VC refresh', async () => {
+    const h = harness();
+    h.memberFetch.mockRejectedValueOnce(new Error('Discord REST unavailable'));
+    const preview = h.mockInteraction('vc', false, 'creator', false);
+    await h.dispatch(preview.interaction);
+    expect(preview.editReply).toHaveBeenCalledWith(
+      expect.stringContaining('VCの取得または参加者管理に失敗しました'),
+    );
+    expect(manageValorantParticipants).not.toHaveBeenCalled();
+  });
+
   it('rejects stale VC candidate selection when voice membership changes', async () => {
     const h = harness();
     const select = h.mockInteraction('vc-choose-' + h.digest(), true);
