@@ -55,12 +55,13 @@ describe('VALORANT stats aggregation', () => {
         outcome: 'WIN',
         roundsWon: 13,
         roundsLost: 7,
-        playerResults: [],
+        playerResults: [{ userId: 'sample', agentId: 'omen' }],
         session: { result: [{ userId: 'sample', agentId: 'jett' }] },
       },
     ]);
     expect(output.win).toBe(1);
-    expect(output.compositions[0]).toMatchObject({ name: 'jett', count: 1, win: 1 });
+    expect(output.compositions[0]).toMatchObject({ name: 'omen', count: 1, win: 1 });
+    expect(output.pickedCompositions[0]).toMatchObject({ name: 'jett', count: 1, win: 1 });
   });
   it('classifies unknown or custom agent IDs without inventing a canonical role', () => {
     const stats = aggregateValorantStats([

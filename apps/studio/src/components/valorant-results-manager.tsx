@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { defaultValorantAgents } from '@herta/plugin-catalog';
+import {
+  uniqueActualValorantAgents,
+  validValorantOutcomeScore,
+} from '@/lib/valorant-match-validation';
 
 type Player = { userId: string; agentId: string; displayName: string };
 type Session = {
@@ -15,9 +19,12 @@ type Report = {
   id: string;
   sessionId: string;
   matchId: string | null;
+  mapId: string;
   outcome: string;
   roundsWon: number;
   roundsLost: number;
+  playerResults: unknown;
+  createdAt: string;
   source: string;
 };
 type PlayerInput = {
@@ -48,6 +55,18 @@ const maps = [
   'Corrode',
   'Summit',
 ];
+
+function playedAgents(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry): string[] =>
+    typeof entry === 'object' &&
+    entry !== null &&
+    !Array.isArray(entry) &&
+    typeof entry.agentId === 'string'
+      ? [entry.agentId]
+      : [],
+  );
+}
 
 function assignments(value: unknown): Player[] {
   if (!Array.isArray(value)) return [];
@@ -220,6 +239,17 @@ export function ValorantResultsManager({ guildId }: { guildId: string }) {
                   />
                 </label>
               </div>
+              {!validValorantOutcomeScore(outcome, roundsWon, roundsLost) && (
+                <p role="alert" className="text-sm text-destructive">
+                  勝利は取得ラウンドが多く、敗北は少なく、引分は同点である必要があります。
+                  0-0は登録できません。
+                </p>
+              )}
+              {!uniqueActualValorantAgents(players) && players.length > 0 && (
+                <p role="alert" className="text-sm text-destructive">
+                  同じ試合でエージェントの重複は登録できません。
+                </p>
+              )}
               <label className="block text-sm">
                 Match ID（任意）
                 <input
@@ -281,6 +311,8 @@ export function ValorantResultsManager({ guildId }: { guildId: string }) {
                 disabled={
                   busy ||
                   players.length === 0 ||
+                  !validValorantOutcomeScore(outcome, roundsWon, roundsLost) ||
+                  !uniqueActualValorantAgents(players) ||
                   !players.every((item) =>
                     [item.kills, item.deaths, item.assists].every(
                       (n) => Number.isInteger(n) && n >= 0 && n <= 200,
@@ -305,16 +337,66 @@ export function ValorantResultsManager({ guildId }: { guildId: string }) {
           {error}
         </p>
       )}
-      <h3 className="mt-5 font-semibold">登録済み試合結果</h3>
-      <ul className="mt-2 space-y-2 text-sm">
-        {reports.map((item) => (
-          <li key={item.id} className="border-t border-border pt-2">
-            {item.outcome === 'WIN' ? '勝利' : item.outcome === 'LOSS' ? '敗北' : '引分'}{' '}
-            {item.roundsWon}-{item.roundsLost} / セッション {item.sessionId.slice(0, 8)}
-            {item.matchId ? ' / Match ' + item.matchId : ''}
-          </li>
-        ))}
-      </ul>
+      <h3 className="mt-5 font-semibold">登録済み試合結果（実使用構成・履歴）</h3>
+      <p className="mt-1 text-xs text-muted">
+        登録済みの直近100件。本人の実使用Agentと抽選Agentは異なる場合があります。
+        勝率は未登録セッションを分母に含めません。
+      </p>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full min-w-[750px] text-left text-sm">
+          <thead>
+            <tr>
+              <th scope="col" className="p-2">
+                登録日時（UTC）
+              </th>
+              <th scope="col" className="p-2">
+                マップ
+              </th>
+              <th scope="col" className="p-2">
+                実使用構成
+              </th>
+              <th scope="col" className="p-2">
+                勝敗
+              </th>
+              <th scope="col" className="p-2">
+                ラウンド
+              </th>
+              <th scope="col" className="p-2">
+                Match ID
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {reports.map((item) => (
+              <tr key={item.id} className="border-t border-border">
+                <td className="whitespace-nowrap p-2">
+                  {item.createdAt?.slice(0, 16).replace('T', ' ') ?? '不明'}
+                </td>
+                <td className="p-2">{item.mapId}</td>
+                <td className="p-2">
+                  {playedAgents(item.playerResults)
+                    .map((id) => available.find((agent) => agent.id === id)?.title ?? id)
+                    .join(' / ') || '記録なし'}
+                </td>
+                <td className="p-2">
+                  {item.outcome === 'WIN' ? '勝利' : item.outcome === 'LOSS' ? '敗北' : '引分'}
+                </td>
+                <td className="p-2 tabular-nums">
+                  {item.roundsWon}-{item.roundsLost}
+                </td>
+                <td className="break-all p-2">{item.matchId ?? '—'}</td>
+              </tr>
+            ))}
+            {reports.length === 0 && (
+              <tr>
+                <td colSpan={6} className="p-3 text-muted">
+                  登録済みの試合はありません。
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </section>
   );
 }
