@@ -1,14 +1,22 @@
+import { createHash } from 'node:crypto';
 import {
   ActionRowBuilder,
+  ChannelSelectMenuBuilder,
+  ChannelType,
   AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
   EmbedBuilder,
   MessageFlags,
   PermissionFlagsBits,
+  StringSelectMenuBuilder,
+  UserSelectMenuBuilder,
   escapeMarkdown,
   type ChatInputCommandInteraction,
   type ButtonInteraction,
+  type ChannelSelectMenuInteraction,
+  type StringSelectMenuInteraction,
+  type UserSelectMenuInteraction,
 } from 'discord.js';
 import { listValorantAgents, type PrismaClient } from '@herta/db';
 import type { Logger } from 'pino';
@@ -32,6 +40,8 @@ import { renderValorantPickCard } from './valorant-pick-card.js';
 import {
   createValorantSession,
   createDirectValorantSession,
+  bindValorantVoiceChannel,
+  manageValorantParticipants,
   rerollValorantSession,
   getValorantSession,
   mutateValorantSession,
@@ -41,6 +51,7 @@ import {
   type ValorantCandidate,
   type ValorantAssignment,
   type ValorantSessionSnapshot,
+  type ValorantSessionAction,
 } from './valorant-session-repository.js';
 import {
   japaneseValorantMap,
@@ -174,7 +185,9 @@ function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
   const description = [
     'モード：' + (session.mode === 'TACTICAL' ? '実戦向け構成' : '完全ランダム'),
     'マップ：' + japaneseValorantMap(session.mapId),
-    '参加者：' + members.length + ' / ' + session.maxParticipants,
+    '募集作成者：<@' + session.creatorId + '>',
+    '対象VC：' + (session.voiceChannelId ? '<#' + session.voiceChannelId + '>' : '未設定（手動参加のみ）'),
+    '参加者：' + members.length + ' / ' + session.maxParticipants + (members.length === session.maxParticipants ? '（満員）' : ''),
     '',
     lines.length ? lines.join('\n') : '参加者はいません',
   ];
@@ -186,7 +199,10 @@ function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
       plan
         ? '構成の特徴：' + plan.label + ' — ' + plan.focus
         : '構成の特徴：エントリー・スモーク・索敵・防衛と連携を考慮。',
-      '※構成は戦術的な候補例です。プロ大会の採用率・勝率を保証するものではありません。',
+      '対象パッチ：13.09',
+    '参考：Riot Games公式パッチノート／Herta独自編集の戦術構成',
+    '統計更新日：未取得（採用率・勝率データ未使用）',
+    '※構成は戦術的な候補例です。プロ大会の採用率・勝率を保証するものではありません。',
     );
     if (members.length < 5) description.push('※5人編成としては未完成です。');
   }
@@ -232,6 +248,10 @@ function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
               button('leave', '参加取消', ButtonStyle.Secondary, closed),
               button('draw', '抽選', ButtonStyle.Primary, closed || members.length === 0),
               button('cancel', '募集取消', ButtonStyle.Danger, closed),
+            ),
+            new ActionRowBuilder<ButtonBuilder>().addComponents(
+              button('vc', '🔊 VC全員参加', ButtonStyle.Secondary, closed),
+              button('manage', '👥 参加者管理', ButtonStyle.Secondary, closed),
             ),
           ]
         : [];
@@ -436,6 +456,7 @@ async function handleRandom(
       creatorId: interaction.user.id,
       mode,
       mapId: map,
+      voiceChannelId: (await interaction.guild?.members.fetch(interaction.user.id).catch(() => null))?.voice.channelId ?? null,
       maxParticipants: config.maxParticipants,
       expiresAt,
       rulesVersion,
@@ -518,7 +539,7 @@ async function handleValorantButton(
             guildId,
             id: parsed.id,
             userId: interaction.user.id,
-            action: parsed.action,
+            action: parsed.action as ValorantSessionAction,
             isAdmin,
             candidates,
             pick: pickValorantAssignments,
