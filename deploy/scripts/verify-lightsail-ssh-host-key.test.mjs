@@ -6,7 +6,8 @@ import { validateLightsailHostFingerprint } from './verify-lightsail-ssh-host-ke
 const fingerprint = 'SHA256:' + 'A'.repeat(43);
 test('a fully formed OpenSSH SHA256 host fingerprint is accepted', () => {
   assert.equal(validateLightsailHostFingerprint(fingerprint), fingerprint);
-  assert.equal(validateLightsailHostFingerprint('SHA256:abcd+/'.padEnd(50, 'z')), 'SHA256:abcd+/'.padEnd(50, 'z'));
+  const alternate = 'SHA256:abcd+/'.padEnd(50, 'z');
+  assert.equal(validateLightsailHostFingerprint(alternate), alternate);
 });
 
 test('missing, unverified and malformed fingerprints fail closed', () => {
@@ -31,8 +32,11 @@ test('missing, unverified and malformed fingerprints fail closed', () => {
   }
 });
 
-test('production deploy and runtime readback both pin the same protected Environment host fingerprint', () => {
-  const source = readFileSync(new URL('../../.github/workflows/deploy-production.yml', import.meta.url), 'utf8');
+test('both production SSH actions pin the same protected Environment host fingerprint', () => {
+  const source = readFileSync(
+    new URL('../../.github/workflows/deploy-production.yml', import.meta.url),
+    'utf8',
+  );
   const deploy = source.split('\n  deploy:\n')[1];
   assert.ok(deploy, 'production job must exist');
   assert.ok(deploy.includes('environment: production'));
@@ -40,11 +44,15 @@ test('production deploy and runtime readback both pin the same protected Environ
   const lines = deploy.split('\n');
   const pins = lines.filter((line) => line.trim() === 'fingerprint: ' + variable);
   assert.equal(pins.length, 2, 'both SSH steps must pin the same host fingerprint');
-  const preflight = deploy.indexOf('Validate Lightsail SSH host fingerprint before any remote access');
+  const preflightLabel = 'Validate Lightsail SSH host fingerprint before any remote access';
+  const preflight = deploy.indexOf(preflightLabel);
   const sshDeploy = deploy.indexOf('LightsailへSSHデプロイ');
   const readback = deploy.indexOf('Read back running API/Bot/Studio/Worker image SHA');
   const publisher = deploy.indexOf('Publish verified production runtime attestation');
-  assert.ok(preflight >= 0 && preflight < sshDeploy && sshDeploy < readback && readback < publisher);
+  assert.ok(preflight >= 0);
+  assert.ok(preflight < sshDeploy);
+  assert.ok(sshDeploy < readback);
+  assert.ok(readback < publisher);
   assert.ok(
     deploy.includes('run: node deploy/scripts/verify-lightsail-ssh-host-key.mjs'),
     'the production preflight must run before SSH',
