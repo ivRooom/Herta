@@ -130,6 +130,7 @@ describe('VALORANT VC member overflow confirmation', () => {
     await h.dispatch(confirm.interaction);
     expect(manageValorantParticipants).toHaveBeenCalledOnce();
     expect(manageValorantParticipants).toHaveBeenCalledWith(
+      expect.anything(),
       expect.objectContaining({
         action: 'bulk',
         targetIds: [a],
