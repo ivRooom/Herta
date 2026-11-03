@@ -195,21 +195,55 @@ async function main() {
     }
   }
 
+  // Compare against the last *actually deployed* SHA, not just the current
+  // commit's first parent: an earlier missed deployment may contain Bot changes
+  // even when the current CI trigger is docs-only.
   let before = process.env.DEPLOY_PUSH_BEFORE;
-  if (event === 'workflow_dispatch' || event === 'workflow_run') {
+  let previousProductionConfirmed = false;
+  if (event === 'workflow_run') {
+    const priorRuns = await api(
+      'actions/workflows/deploy-production.yml/runs?branch=main&status=success&per_page=100',
+    );
+    if (!Array.isArray(priorRuns.workflow_runs)) {
+      throw new Error('Cannot inspect production deployment history');
+    }
+    for (const candidate of priorRuns.workflow_runs) {
+      if (!SHA_RE.test(candidate.head_sha) || !Number.isSafeInteger(candidate.id)) continue;
+      const jobs = await api('actions/runs/' + candidate.id + '/jobs?per_page=100');
+      if (!Array.isArray(jobs.jobs)) throw new Error('Cannot inspect deployment jobs');
+      if (jobs.total_count > jobs.jobs.length) {
+        throw new Error('Cannot establish complete deployment job history');
+      }
+      if (
+        jobs.jobs.some((job) => job.name === 'SSH Deploy to Lightsail' && job.conclusion === 'success')
+      ) {
+        before = candidate.head_sha;
+        previousProductionConfirmed = true;
+        break;
+      }
+    }
+  }
+  if (event === 'workflow_dispatch' || (event === 'workflow_run' && !previousProductionConfirmed)) {
     const commit = await api('commits/' + sha);
     before = commit.parents?.[0]?.sha;
+  }
+  if (event === 'workflow_run' && previousProductionConfirmed && before === sha) {
+    if (!process.env.GITHUB_OUTPUT) throw new Error('Missing GitHub Actions output file');
+    appendFileSync(process.env.GITHUB_OUTPUT, 'should_deploy=false\n');
+    console.log('Exact current SHA was already deployed; duplicate release skipped');
+    return;
   }
   if (!SHA_RE.test(before) || before === sha) {
     throw new Error('Cannot establish production change boundary');
   }
   const files = assertSafeCompare(await api('compare/' + before + '...' + sha));
-  // Automatic CI-completion events include docs-only commits, unlike the old
-  // push path filter. Keep their release explicitly skipped and secretless.
-  if (event === 'workflow_run' && !needsRuntimeDeployment(files)) {
+  // A docs-only update after a missed Bot deploy MUST still ship the pending
+  // Bot changes. Only skip when an authenticated successful production baseline
+  // establishes that the *whole* delta is docs/skills/monitoring-only.
+  if (event === 'workflow_run' && previousProductionConfirmed && !needsRuntimeDeployment(files)) {
     if (!process.env.GITHUB_OUTPUT) throw new Error('Missing GitHub Actions output file');
     appendFileSync(process.env.GITHUB_OUTPUT, 'should_deploy=false\n');
-    console.log('No runtime changes in verified main CI; production deploy skipped');
+    console.log('No runtime change since successful production SHA; deployment skipped');
     return;
   }
   const required = [...REQUIRED_WORKFLOWS];
