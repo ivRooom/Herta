@@ -20,10 +20,7 @@ const validDate = (value: unknown): value is string =>
   new Date(value + 'T00:00:00Z').toISOString().slice(0, 10) === value;
 
 function fail(status: number, error: string): Response {
-  return Response.json(
-    { error },
-    { status, headers: { 'Cache-Control': 'private, no-store' } },
-  );
+  return Response.json({ error }, { status, headers: { 'Cache-Control': 'private, no-store' } });
 }
 
 /**
@@ -48,11 +45,7 @@ export async function authorizeFortuneAdminList(
     return fail(503, 'unconfigured');
 
   const url = new URL(request.url);
-  if (
-    request.method !== 'POST' ||
-    url.pathname !== FORTUNE_ADMIN_LIST_PATH ||
-    url.search
-  )
+  if (request.method !== 'POST' || url.pathname !== FORTUNE_ADMIN_LIST_PATH || url.search)
     return fail(422, 'invalid_request');
 
   const timestamp = request.headers.get('X-IVRM-Timestamp') ?? '';
@@ -75,13 +68,9 @@ export async function authorizeFortuneAdminList(
     return fail(413, 'body_too_large');
   }
 
-  const key = createHmac('sha256', secret)
-    .update(FORTUNE_ADMIN_LIST_PURPOSE)
-    .digest();
+  const key = createHmac('sha256', secret).update(FORTUNE_ADMIN_LIST_PURPOSE).digest();
   const expected = createHmac('sha256', key)
-    .update(
-      timestamp + '.' + event + '.POST.' + FORTUNE_ADMIN_LIST_PATH + '.' + body,
-    )
+    .update(timestamp + '.' + event + '.POST.' + FORTUNE_ADMIN_LIST_PATH + '.' + body)
     .digest();
   if (!timingSafeEqual(expected, Buffer.from(signature, 'hex')))
     return fail(401, 'invalid_service_auth');
@@ -104,8 +93,7 @@ export async function authorizeFortuneAdminList(
     !validDate(value.from) ||
     !validDate(value.to) ||
     value.from > value.to ||
-    Date.parse(value.to + 'T00:00:00Z') -
-      Date.parse(value.from + 'T00:00:00Z') > 180 * 86400000 ||
+    Date.parse(value.to + 'T00:00:00Z') - Date.parse(value.from + 'T00:00:00Z') > 180 * 86400000 ||
     !Number.isSafeInteger(value.limit) ||
     Number(value.limit) < 1 ||
     Number(value.limit) > 100 ||
