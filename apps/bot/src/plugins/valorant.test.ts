@@ -103,9 +103,7 @@ describe('VALORANT button recruitment slash command', () => {
     expect(f.followUp.mock.calls[0]![0].embeds[0].data.description).toContain(
       `募集期限：<t:${expiryUnix}:R>`,
     );
-    expect(f.followUp.mock.calls[0]![0].embeds[0].data.description).not.toContain(
-      '再抽選期限：',
-    );
+    expect(f.followUp.mock.calls[0]![0].embeds[0].data.description).not.toContain('再抽選期限：');
     expect(f.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: { messageId: 'posted-message' },
@@ -164,9 +162,7 @@ describe('VALORANT button recruitment slash command', () => {
     expect(f.followUp.mock.calls[0]![0].embeds[0].data.description).toContain(
       `再抽選期限：<t:${Math.floor(expiresAt.getTime() / 1000)}:R>`,
     );
-    expect(f.followUp.mock.calls[0]![0].embeds[0].data.description).not.toContain(
-      '募集期限：',
-    );
+    expect(f.followUp.mock.calls[0]![0].embeds[0].data.description).not.toContain('募集期限：');
     expect(f.followUp.mock.calls[0]![0].embeds[0].data.image?.url).toBe(
       'attachment://valorant-pick.png',
     );
