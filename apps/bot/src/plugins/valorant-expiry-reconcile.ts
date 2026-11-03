@@ -11,6 +11,21 @@ const MAX_BATCH = 20;
 const MAX_RETRY_MS = 60 * 60 * 1000;
 const START_RETRY_MS = 60 * 1000;
 
+/**
+ * Public Discord edits are opt-in per approved Guild. Never interpret
+ * truthy values or malformed/empty allowlists as authorization.
+ */
+export function approvedValorantExpiryGuildIds(
+  env: Readonly<Record<string, string | undefined>>,
+): string[] {
+  if (env['HERTA_VALORANT_EXPIRY_RECONCILE_ENABLED'] !== 'true') return [];
+  const entries = (env['HERTA_VALORANT_EXPIRY_RECONCILE_GUILD_IDS'] ?? '')
+    .split(',')
+    .map((id) => id.trim());
+  if (!entries.length || entries.some((id) => !/^[0-9]{17,20}$/.test(id))) return [];
+  return [...new Set(entries)];
+}
+
 export type ValorantExpirySyncResult = 'updated' | 'gone';
 export interface ValorantExpirySyncStats {
   attempted: number;
