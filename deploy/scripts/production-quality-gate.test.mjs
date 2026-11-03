@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
+  allowExplicitProductionProofRecovery,
   assertAutomaticProductionBaseline,
   assertHistoricalRollbackEvidence,
   assertSafeCompare,
@@ -10,6 +11,7 @@ import {
   needsPostgresIntegration,
   needsValorantPredeployRehearsal,
   needsRuntimeDeployment,
+  selectManualDeploymentBoundary,
   validateCompletedMainCi,
   validateDeployRef,
 } from './production-quality-gate.mjs';
@@ -52,10 +54,8 @@ test('VALORANT migration and deploy guard changes require same-SHA isolated rest
   assert.equal(needsValorantPredeployRehearsal(['docs/README.md']), false);
   assert.equal(needsValorantPredeployRehearsal(['apps/bot/src/main.ts']), false);
   const gate = readFileSync(new URL('./production-quality-gate.mjs', import.meta.url), 'utf8');
-  assert.match(
-    gate,
-    /needsValorantPredeployRehearsal\(files\).*required.push\(VALORANT_REHEARSAL_WORKFLOW\)/,
-  );
+  assert.match(gate, /manualMain \|\| needsValorantPredeployRehearsal\(files\)/);
+  assert.match(gate, /required.push\(VALORANT_REHEARSAL_WORKFLOW\)/);
 });
 
 test('checks accept only exact commit, main push, and successful completion', () => {
@@ -100,6 +100,168 @@ test('checks accept only exact commit, main push, and successful completion', ()
     ),
     'failed',
   );
+});
+
+test('manual main uses attested cumulative production delta, not target first parent', () => {
+  const current = 'c'.repeat(40);
+  const previous = 'a'.repeat(40);
+  const firstParent = 'b'.repeat(40);
+  assert.deepEqual(
+    selectManualDeploymentBoundary({
+      requestedRef: 'main',
+      sha: current,
+      firstParentSha: firstParent,
+      attestedSha: previous,
+    }),
+    { before: previous, mode: 'attested-cumulative' },
+  );
+});
+
+test('manual re-deploy of attested same-SHA main still executes required checks', () => {
+  const firstParent = 'b'.repeat(40);
+  assert.deepEqual(
+    selectManualDeploymentBoundary({
+      requestedRef: 'main',
+      sha,
+      firstParentSha: firstParent,
+      attestedSha: sha,
+    }),
+    { before: firstParent, mode: 'same-sha-redeploy' },
+  );
+  const gate = readFileSync(new URL('./production-quality-gate.mjs', import.meta.url), 'utf8');
+  assert.match(gate, /const manualMain = event === 'workflow_dispatch' && requestedRef === 'main'/);
+  assert.match(gate, /manualMain \|\| needsPostgresIntegration\(files\)/);
+  assert.match(gate, /manualMain \|\| needsValorantPredeployRehearsal\(files\)/);
+});
+
+test('manual bootstrap is explicit and permitted only before first attested SSH baseline', () => {
+  const current = 'c'.repeat(40);
+  const firstParent = 'b'.repeat(40);
+  const bootstrap = {
+    requestedRef: 'main',
+    sha: current,
+    firstParentSha: firstParent,
+    attestedSha: null,
+  };
+  assert.throws(() => selectManualDeploymentBoundary(bootstrap), /Missing attested production SHA/);
+  assert.deepEqual(selectManualDeploymentBoundary({ ...bootstrap, bootstrapApproved: true }), {
+    before: firstParent,
+    mode: 'first-bootstrap',
+  });
+  for (const candidate of [
+    { ...bootstrap, attestedSha: sha, bootstrapApproved: true },
+    { ...bootstrap, attestedSha: 'invalid', bootstrapApproved: true },
+    { ...bootstrap, requestedRef: current, bootstrapApproved: true },
+    { ...bootstrap, firstParentSha: 'invalid', bootstrapApproved: true },
+  ]) {
+    assert.throws(() => selectManualDeploymentBoundary(candidate));
+  }
+  const gate = readFileSync(new URL('./production-quality-gate.mjs', import.meta.url), 'utf8');
+  assert.match(gate, /error.message === 'No successful production SSH deployment baseline'/);
+  assert.match(gate, /loadLatestProductionAttestation\(api\)/);
+  const workflow = readFileSync(
+    new URL('../../.github/workflows/deploy-production.yml', import.meta.url),
+    'utf8',
+  );
+  assert.match(workflow, /bootstrap_without_proof:\n\s+description:/);
+  assert.match(workflow, /type: boolean\n\s+required: true\n\s+default: false/);
+  assert.match(workflow, /emergency_rollback_without_proof:\n\s+description:/);
+  const bootstrapEnv = workflow.split('DEPLOY_BOOTSTRAP_APPROVED: ')[1]?.split('\n')[0];
+  const emergencyEnv = workflow.split('DEPLOY_EMERGENCY_ROLLBACK_APPROVED: ')[1]?.split('\n')[0];
+  assert.equal(bootstrapEnv, "${{ github.event.inputs.bootstrap_without_proof || 'false' }}");
+  assert.equal(
+    emergencyEnv,
+    "${{ github.event.inputs.emergency_rollback_without_proof || 'false' }}",
+  );
+});
+
+test('manual historical rollback uses target first parent and requires trusted proof', () => {
+  const historical = 'b'.repeat(40);
+  const current = 'c'.repeat(40);
+  assert.deepEqual(
+    selectManualDeploymentBoundary({
+      requestedRef: historical,
+      sha: historical,
+      firstParentSha: 'a'.repeat(40),
+      attestedSha: current,
+    }),
+    { before: 'a'.repeat(40), mode: 'explicit-historical-rollback' },
+  );
+  for (const candidate of [null, undefined, 'not-a-sha']) {
+    assert.throws(() =>
+      selectManualDeploymentBoundary({
+        requestedRef: historical,
+        sha: historical,
+        firstParentSha: 'a'.repeat(40),
+        attestedSha: candidate,
+      }),
+    );
+  }
+});
+
+test('explicit operator emergency rollback preserves recovery after failed production SSH', () => {
+  const historic = 'b'.repeat(40);
+  const target = {
+    requestedRef: historic,
+    sha: historic,
+    firstParentSha: 'a'.repeat(40),
+    attestedSha: null,
+    mainSha: 'c'.repeat(40),
+  };
+  assert.throws(
+    () => selectManualDeploymentBoundary(target),
+    /requires a verified current production baseline/,
+  );
+  assert.deepEqual(selectManualDeploymentBoundary({ ...target, emergencyRollbackApproved: true }), {
+    before: 'a'.repeat(40),
+    mode: 'operator-emergency-rollback',
+  });
+  for (const invalid of [
+    { ...target, requestedRef: 'main', emergencyRollbackApproved: true },
+    { ...target, mainSha: historic, emergencyRollbackApproved: true },
+    { ...target, mainSha: undefined, emergencyRollbackApproved: true },
+    { ...target, attestedSha: 'c'.repeat(40), emergencyRollbackApproved: true },
+    { ...target, bootstrapApproved: true, emergencyRollbackApproved: true },
+  ]) {
+    assert.throws(() => selectManualDeploymentBoundary(invalid));
+  }
+});
+
+test('emergency approval bypasses only recognized failed-SSH or missing-proof states', () => {
+  const emergency = { emergencyRollbackApproved: true };
+  const bootstrap = { bootstrapApproved: true };
+  const firstEver = new Error('No successful production SSH deployment baseline');
+  assert.equal(allowExplicitProductionProofRecovery(firstEver, bootstrap), true);
+  assert.equal(allowExplicitProductionProofRecovery(firstEver, emergency), true);
+  assert.equal(allowExplicitProductionProofRecovery(firstEver, {}), false);
+  assert.equal(
+    allowExplicitProductionProofRecovery(firstEver, {
+      bootstrapApproved: true,
+      emergencyRollbackApproved: true,
+    }),
+    false,
+  );
+
+  for (const reason of [
+    'Latest production SSH attempt failed or lacks completed health/proof',
+    'Missing, duplicate or incomplete production provenance record',
+    'Untrusted, missing or malformed successful deployment attestation',
+  ]) {
+    assert.equal(allowExplicitProductionProofRecovery(new Error(reason), emergency), true);
+    assert.equal(allowExplicitProductionProofRecovery(new Error(reason), bootstrap), false);
+  }
+  for (const reason of [
+    'GitHub Actions metadata request failed: HTTP 403',
+    'GitHub Actions metadata request failed: network error',
+    'Production SSH attempt is still running or unverified',
+    'Incomplete production job history',
+    'Cannot uniquely order concurrent production SSH attempts',
+    'Unknown error',
+  ]) {
+    assert.equal(allowExplicitProductionProofRecovery(new Error(reason), emergency), false);
+    assert.equal(allowExplicitProductionProofRecovery(new Error(reason), bootstrap), false);
+  }
+  assert.equal(allowExplicitProductionProofRecovery('Invalid error', emergency), false);
 });
 
 test('historical rollback refuses missing or pending main CI immediately', () => {

@@ -18,6 +18,16 @@ on:
         description: 'デプロイする main または40文字SHA。古いSHAは検証済みmainのrollback専用'
         required: false
         default: main
+      bootstrap_without_proof:
+        description: '初回のみ: 過去の本番SSH配備実績が無いことを確認したうえで明示許可。通常/rollbackはOFF'
+        type: boolean
+        required: true
+        default: false
+      emergency_rollback_without_proof:
+        description: '緊急旧SHA rollbackのみ: 失敗SSH/証跡欠損を人間が独立確認した場合に明示許可'
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   contents: read
@@ -55,6 +65,8 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           DEPLOY_REQUESTED_REF: ${{ github.event.inputs.ref || 'main' }}
           DEPLOY_PUSH_BEFORE: ${{ github.event.before }}
+          DEPLOY_BOOTSTRAP_APPROVED: ${{ github.event.inputs.bootstrap_without_proof || 'false' }}
+          DEPLOY_EMERGENCY_ROLLBACK_APPROVED: ${{ github.event.inputs.emergency_rollback_without_proof || 'false' }}
         run: node deploy/scripts/production-quality-gate.mjs
 
   build-image:
