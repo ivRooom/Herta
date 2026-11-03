@@ -138,11 +138,79 @@ describe('VALORANT expired recruitment reconciliation', () => {
     expect(findMany.mock.calls[0]![0].take).toBe(20);
   });
 
+  it('never edits a newer rerolled message while closing the old session', async () => {
+    const edit = vi.fn().mockResolvedValue(undefined);
+    const client = {
+      guilds: {
+        cache: new Map([
+          [
+            guildId,
+            {
+              channels: {
+                fetch: vi.fn().mockResolvedValue({
+                  isTextBased: () => true,
+                  messages: {
+                    fetch: vi.fn().mockResolvedValue({
+                      components: [
+                        {
+                          components: [
+                            {
+                              customId:
+                                'herta:valorant:pick:v1:773fa90e-f77c-477c-9009-ef7adf6d50c9:reroll',
+                            },
+                          ],
+                        },
+                      ],
+                      edit,
+                    }),
+                  },
+                }),
+              },
+            },
+          ],
+        ]),
+      },
+    } as unknown as Parameters<typeof editExpiredValorantDiscordMessage>[0];
+    const outcome = await editExpiredValorantDiscordMessage(client, makeSession('COMPLETED'));
+    expect(outcome).toBe('gone');
+    expect(edit).not.toHaveBeenCalled();
+  });
+
+  it('does not overwrite a message that has already lost its action buttons', async () => {
+    const edit = vi.fn();
+    const client = {
+      guilds: {
+        cache: new Map([
+          [
+            guildId,
+            {
+              channels: {
+                fetch: vi.fn().mockResolvedValue({
+                  isTextBased: () => true,
+                  messages: {
+                    fetch: vi.fn().mockResolvedValue({ components: [], edit }),
+                  },
+                }),
+              },
+            },
+          ],
+        ]),
+      },
+    } as unknown as Parameters<typeof editExpiredValorantDiscordMessage>[0];
+    expect(await editExpiredValorantDiscordMessage(client, makeSession())).toBe('gone');
+    expect(edit).not.toHaveBeenCalled();
+  });
+
   it('preserves completed image attachments and edits only reroll components', async () => {
     const edit = vi.fn().mockResolvedValue(undefined);
     const channel = {
       isTextBased: () => true,
-      messages: { fetch: vi.fn().mockResolvedValue({ edit }) },
+      messages: {
+        fetch: vi.fn().mockResolvedValue({
+          edit,
+          components: [{ components: [{ customId: `herta:valorant:pick:v1:${id}:reroll` }] }],
+        }),
+      },
     };
     const client = {
       guilds: {
