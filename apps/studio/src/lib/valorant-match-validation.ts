@@ -24,8 +24,8 @@ export function validValorantOutcomeScore(
 }
 
 /** A team cannot have the same agent twice in a single recorded match. */
-export function uniqueActualValorantAgents(
-  players: readonly { agentId: string }[],
-): boolean {
-  return players.length > 0 && new Set(players.map((person) => person.agentId)).size === players.length;
+export function uniqueActualValorantAgents(players: readonly { agentId: string }[]): boolean {
+  return (
+    players.length > 0 && new Set(players.map((person) => person.agentId)).size === players.length
+  );
 }
