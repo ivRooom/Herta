@@ -133,11 +133,7 @@ describe('pending VC Recap cancellation through plugin lifecycle', () => {
     mocks.isVcRecapActive.mockReturnValue(false);
     mocks.stopVcRecap.mockResolvedValueOnce({ status: 'start_cancelled' });
     await vcRecapPlugin.onDisable!(fakeContext());
-    expect(mocks.stopVcRecap).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.anything(),
-      'guild-1',
-    );
+    expect(mocks.stopVcRecap).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'guild-1');
   });
 
   it('last person leaving during announcement cancels the pending session', async () => {
@@ -152,15 +148,7 @@ describe('pending VC Recap cancellation through plugin lifecycle', () => {
     const newState = { channelId: null, guild };
     const [event] = vcRecapPlugin.provideEvents!(fakeContext());
 
-    await event!.handler(
-      fakeContext() as never,
-      oldState as never,
-      newState as never,
-    );
-    expect(mocks.stopVcRecap).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.anything(),
-      'guild-1',
-    );
+    await event!.handler(fakeContext() as never, oldState as never, newState as never);
+    expect(mocks.stopVcRecap).toHaveBeenCalledWith(expect.anything(), expect.anything(), 'guild-1');
   });
 });
