@@ -58,6 +58,19 @@ export function validateCompletedMainCi(payload, repository, mainSha) {
   }
   return run.head_sha;
 }
+
+/** A successful SSH job alone cannot prove the deployed SHA after a manual rollback. */
+export function assertAutomaticProductionBaseline(run) {
+  if (
+    !run ||
+    !SHA_RE.test(run.head_sha) ||
+    run.head_branch !== 'main' ||
+    (run.event !== 'push' && run.event !== 'workflow_run')
+  ) {
+    throw new Error('Last successful production SSH has no attested automatic main SHA');
+  }
+  return run.head_sha;
+}
 const PG_PATHS = [
   /^packages\/db\//,
   /^apps\/bot\//,
@@ -208,7 +221,9 @@ async function main() {
       throw new Error('Cannot inspect production deployment history');
     }
     for (const candidate of priorRuns.workflow_runs) {
-      if (!SHA_RE.test(candidate.head_sha) || !Number.isSafeInteger(candidate.id)) continue;
+      if (!Number.isSafeInteger(candidate.id)) {
+        throw new Error('Production run history has an invalid run identifier');
+      }
       const jobs = await api('actions/runs/' + candidate.id + '/jobs?per_page=100');
       if (!Array.isArray(jobs.jobs)) throw new Error('Cannot inspect deployment jobs');
       if (jobs.total_count > jobs.jobs.length) {
@@ -219,13 +234,16 @@ async function main() {
           (job) => job.name === 'SSH Deploy to Lightsail' && job.conclusion === 'success',
         )
       ) {
-        before = candidate.head_sha;
+        before = assertAutomaticProductionBaseline(candidate);
         previousProductionConfirmed = true;
         break;
       }
     }
   }
-  if (event === 'workflow_dispatch' || (event === 'workflow_run' && !previousProductionConfirmed)) {
+  if (event === 'workflow_run' && !previousProductionConfirmed) {
+    throw new Error('No attested successful production SSH baseline; automatic deployment blocked');
+  }
+  if (event === 'workflow_dispatch') {
     const commit = await api('commits/' + sha);
     before = commit.parents?.[0]?.sha;
   }
