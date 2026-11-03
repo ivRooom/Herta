@@ -55,10 +55,13 @@ export {
   valorantManifest,
   VALORANT_REGIONS,
   VALORANT_AGENTS,
+  VALORANT_AGENT_ROLES,
+  valorantRoleForAgentId,
   defaultValorantAgents,
   legacyValorantAgents,
   type ValorantRegion,
   type ValorantAgent,
+  type ValorantAgentRole,
 } from './manifests/valorant.js';
 export { serverStatsManifest } from './manifests/server-stats.js';
 export { vcRecapManifest } from './manifests/vc-recap.js';

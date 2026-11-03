@@ -6,14 +6,17 @@ import { resolveStudioAccess } from '@/lib/studio-access';
 import { resolvePluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';
 import { aggregateValorantStats, aggregateValorantMatchStats } from '@/lib/valorant-stats';
 import { ValorantResultsManager } from '@/components/valorant-results-manager';
+import { ValorantFrequencyBars, ValorantPickHistory } from '@/components/valorant-stats-visuals';
 import { defaultValorantAgents } from '@herta/plugin-catalog';
 
 export const dynamic = 'force-dynamic';
 
 export default async function ValorantStatsPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ guildId: string }>;
+  searchParams: Promise<{ page?: string }>;
 }) {
   const { guildId } = await params;
   const session = await auth();
@@ -52,6 +55,8 @@ export default async function ValorantStatsPage({
   });
   const matchData = aggregateValorantMatchStats(matchRows.slice(0, 5000));
   const displayNames = new Map(defaultValorantAgents().map((a) => [a.agentId, a.displayName]));
+  const pageParam = (await searchParams)?.page ?? '1';
+  const pageNumber = /^\\d{1,3}$/.test(pageParam) ? Number(pageParam) : 1;
   return (
     <main className="space-y-7">
       <Link
@@ -107,33 +112,34 @@ export default async function ValorantStatsPage({
         </div>
       </section>
       <div className="grid gap-4 lg:grid-cols-2">
-        {(
-          [
-            ['抽選モード', data.modes],
-            ['マップ別', data.maps],
-            ['よく生成された構成', data.compositions],
-            ['日別推移（UTC）', data.daily],
-            ['週別推移（UTC月曜開始）', data.weekly],
-            ['月別推移（UTC）', data.monthly],
-          ] as const
-        ).map(([title, items]) => (
-          <section key={title} className="rounded-xl border border-border p-4">
-            <h2 className="mb-3 font-semibold">{title}</h2>
-            <ul className="space-y-1 text-sm">
-              {items.length ? (
-                items.slice(0, 50).map(({ name, count }) => (
-                  <li key={name} className="flex justify-between gap-4 break-all">
-                    <span>{name}</span>
-                    <span>{count}件</span>
-                  </li>
-                ))
-              ) : (
-                <li className="text-muted">記録なし</li>
-              )}
-            </ul>
-          </section>
-        ))}
+        <ValorantFrequencyBars title="ロール別の選出回数" items={data.roles} />
+        <ValorantFrequencyBars
+          title="エージェント別の選出回数"
+          items={data.agents.map(({ agentId, selected }) => ({
+            name: displayNames.get(agentId) ?? agentId,
+            count: selected,
+          }))}
+        />
+        <ValorantFrequencyBars title="よく生成された構成（抽選結果）" items={data.compositions} />
+        <ValorantFrequencyBars title="抽選モード" items={data.modes} />
+        <ValorantFrequencyBars title="マップ別" items={data.maps} />
+        <ValorantFrequencyBars title="日別推移（UTC）" items={data.daily} />
+        <ValorantFrequencyBars title="週別推移（UTC月曜開始）" items={data.weekly} />
+        <ValorantFrequencyBars title="月別推移（UTC）" items={data.monthly} />
+        <ValorantFrequencyBars
+          title="手動登録済み試合の勝敗（未登録は除外）"
+          items={[
+            { name: '勝利', count: matchData.win },
+            { name: '敗北', count: matchData.loss },
+            { name: '引分', count: matchData.draw },
+          ]}
+        />
       </div>
+      <ValorantPickHistory
+        rows={rows.slice(0, 5000)}
+        page={pageNumber}
+        displayNames={displayNames}
+      />
       <section className="rounded-xl border border-border p-4">
         <h2 className="mb-3 font-semibold">試合結果分析（手動登録）</h2>
         <p className="text-sm">
@@ -170,6 +176,9 @@ export default async function ValorantStatsPage({
               </span>
               <p className="mt-1 text-muted">
                 {player.agentCounts.map((a) => a.agentId + ': ' + a.count + '回').join(' / ')}
+              </p>
+              <p className="mt-1 text-muted">
+                ロール：{player.roleCounts.map((r) => r.name + ': ' + r.count + '回').join(' / ')}
               </p>
             </li>
           ))}

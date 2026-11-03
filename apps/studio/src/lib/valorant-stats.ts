@@ -1,3 +1,5 @@
+import { valorantRoleForAgentId } from '@herta/plugin-catalog';
+
 export interface DrawSample {
   id: string;
   mode: string;
@@ -15,7 +17,11 @@ export interface AgentStats {
 }
 export function aggregateValorantStats(draws: readonly DrawSample[]) {
   const agents = new Map<string, AgentStats>();
-  const players = new Map<string, { userId: string; draws: number; agents: Map<string, number> }>();
+  const players = new Map<
+    string,
+    { userId: string; draws: number; agents: Map<string, number>; roles: Map<string, number> }
+  >();
+  const roles = new Map<string, number>();
   const maps = new Map<string, number>();
   const modes = new Map<string, number>();
   const teams = new Map<string, number>();
@@ -77,15 +83,19 @@ export function aggregateValorantStats(draws: readonly DrawSample[]) {
       };
       row.selected++;
       agents.set(id, row);
+      const role = valorantRoleForAgentId(id);
+      roles.set(role, (roles.get(role) ?? 0) + 1);
       if (typeof item.userId === 'string') {
         const userId = item.userId;
         const player = players.get(userId) ?? {
           userId,
           draws: 0,
           agents: new Map<string, number>(),
+          roles: new Map<string, number>(),
         };
         player.draws++;
         player.agents.set(id, (player.agents.get(id) ?? 0) + 1);
+        player.roles.set(role, (player.roles.get(role) ?? 0) + 1);
         players.set(userId, player);
       }
     }
@@ -121,6 +131,7 @@ export function aggregateValorantStats(draws: readonly DrawSample[]) {
         selectedPerEligibleSession: a.eligibleSessions ? a.selected / a.eligibleSessions : null,
       }))
       .sort((a, b) => b.selected - a.selected || a.agentId.localeCompare(b.agentId)),
+    roles: pairs(roles),
     players: [...players.values()]
       .map((p) => ({
         userId: p.userId,
@@ -128,6 +139,9 @@ export function aggregateValorantStats(draws: readonly DrawSample[]) {
         agentCounts: [...p.agents]
           .map(([agentId, count]) => ({ agentId, count }))
           .sort((a, b) => b.count - a.count || a.agentId.localeCompare(b.agentId)),
+        roleCounts: [...p.roles]
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
       }))
       .sort((a, b) => b.draws - a.draws),
     maps: pairs(maps),

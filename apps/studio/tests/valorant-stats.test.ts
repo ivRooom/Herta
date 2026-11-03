@@ -24,7 +24,18 @@ describe('VALORANT stats aggregation', () => {
       eligibleSessions: 2,
       selectedPerEligibleSession: 0.5,
     });
-    expect(stats.players[0]).toMatchObject({ userId: 'user-1', draws: 2 });
+    expect(stats.players[0]).toMatchObject({
+      userId: 'user-1',
+      draws: 2,
+      roleCounts: [
+        { name: 'CONTROLLER', count: 1 },
+        { name: 'DUELIST', count: 1 },
+      ],
+    });
+    expect(stats.roles).toEqual([
+      { name: 'CONTROLLER', count: 1 },
+      { name: 'DUELIST', count: 1 },
+    ]);
     expect(stats.daily).toEqual([{ name: '2026-10-30', count: 2 }]);
     expect(stats.smallSample).toBe(true);
   });
@@ -50,6 +61,16 @@ describe('VALORANT stats aggregation', () => {
     ]);
     expect(output.win).toBe(1);
     expect(output.compositions[0]).toMatchObject({ name: 'jett', count: 1, win: 1 });
+  });
+  it('classifies unknown or custom agent IDs without inventing a canonical role', () => {
+    const stats = aggregateValorantStats([
+      {
+        ...sample('custom', 'RANDOM', 'custom-agent'),
+        result: [{ userId: 'user-2', agentId: 'custom-agent' }],
+      },
+    ]);
+    expect(stats.roles).toEqual([{ name: 'UNKNOWN', count: 1 }]);
+    expect(stats.players[0]?.roleCounts).toEqual([{ name: 'UNKNOWN', count: 1 }]);
   });
   it('preserves aggregate agent frequency after identifiers are anonymized', () => {
     const draw = sample('retained', 'RANDOM', 'jett');
