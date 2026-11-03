@@ -118,6 +118,18 @@ async function executeStart(
     channel,
     interaction.user.id,
     config.autoConsentRoleIds,
+    async ({ consentingCount, nonConsentingUserIds }) => {
+      const announcement = new EmbedBuilder()
+        .setTitle('🎙️ VC Recapを開始しました')
+        .setDescription(
+          'この通話の要約を記録します。同意していない方の発言は記録されません。' +
+            '\n文字起こし本文は、本文の保存に同意した方の分だけダッシュボードで30日間閲覧できます。' +
+            '以前に同意した方で本文の保存にも同意する場合は、`/herta-privacy voice-consent true`を実行してください。' +
+            `\n記録対象: ${consentingCount}名 / 未同意: ${nonConsentingUserIds.length}名`,
+        )
+        .setColor(0x5865f2);
+      await channel.send({ embeds: [announcement] });
+    },
   );
 
   if (result.status === 'already_active') {
@@ -136,17 +148,13 @@ async function executeStart(
     await interaction.editReply('VCへの接続に失敗しました。時間をおいて再度お試しください。');
     return;
   }
+  if (result.status === 'announcement_failed') {
+    await interaction.editReply(
+      '録音開始のお知らせを送信できなかったため、記録を開始しませんでした。Botのメッセージ送信権限を確認してください。',
+    );
+    return;
+  }
 
-  const announcement = new EmbedBuilder()
-    .setTitle('🎙️ VC Recapを開始しました')
-    .setDescription(
-      'この通話の要約を記録します。同意していない方の発言は記録されません。' +
-        '\n文字起こし本文は、本文の保存に同意した方の分だけダッシュボードで30日間閲覧できます。' +
-        '以前に同意した方で本文の保存にも同意する場合は、`/herta-privacy voice-consent true`を実行してください。' +
-        `\n記録対象: ${result.consentingCount}名 / 未同意: ${result.nonConsentingUserIds.length}名`,
-    )
-    .setColor(0x5865f2);
-  await channel.send({ embeds: [announcement] }).catch(() => undefined);
   await sendConsentPrompts(channel, result.nonConsentingUserIds);
 
   await interaction.editReply(
