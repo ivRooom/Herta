@@ -293,7 +293,9 @@ test('VALORANT production migration is fenced by protected backup and isolated r
     'existing predeploy script must be run on the selected revision',
   );
   assert.ok(
-    ssh.includes('elif [[ -f packages/db/prisma/migrations/20261103160000_valorant_voice_participants/migration.sql ]]; then'),
+    ssh.includes(
+      'elif [[ -f packages/db/prisma/migrations/20261103160000_valorant_voice_participants/migration.sql ]]; then',
+    ),
     'rollback without script is allowed only when migration is absent',
   );
   assert.ok(
