@@ -40,6 +40,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+      deployments: read
     outputs:
       deploy_sha: ${{ steps.verify.outputs.deploy_sha }}
       should_deploy: ${{ steps.verify.outputs.should_deploy }}
@@ -151,6 +152,7 @@ jobs:
     permissions:
       contents: read
       packages: read
+      deployments: write
       id-token: write
     timeout-minutes: 20
     environment: production
@@ -493,3 +495,44 @@ jobs:
           curl --fail --show-error --silent \
             --retry 12 --retry-delay 5 --retry-all-errors \
             https://herta.ivrm.jp/api/auth/providers > /dev/null
+
+      # This is a separate *read-only* SSH connection after deployment and
+      # external health. It never receives GHCR token or production app secrets.
+      - name: Read back running API/Bot/Studio/Worker image SHA and config digest
+        id: runtime-proof
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          DEPLOY_REF: ${{ needs.quality-gate.outputs.deploy_sha }}
+          HERTA_IMAGE: ${{ needs.build-image.outputs.image_ref }}
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          envs: DEPLOY_REF,HERTA_IMAGE
+          capture_stdout: true
+          command_timeout: 2m
+          script: |
+            set -euo pipefail
+            cd "${{ secrets.LIGHTSAIL_APP_DIR }}"
+            source deploy/scripts/_common.sh
+            require_env_file
+            test "$(git rev-parse HEAD)" = "${DEPLOY_REF}"
+            expected_id="$(docker image inspect --format '{{.Id}}' "${HERTA_IMAGE}")"
+            [[ "${expected_id}" =~ ^sha256:[a-f0-9]{64}$ ]]
+            for service in api bot studio worker; do
+              cid="$("${COMPOSE}" ps -q "${service}")"
+              test -n "${cid}"
+              test "$(docker inspect --format '{{.State.Running}}' "${cid}")" = true
+              test "$(docker inspect --format '{{.Config.Image}}' "${cid}")" = "${HERTA_IMAGE}"
+              test "$(docker inspect --format '{{.Image}}' "${cid}")" = "${expected_id}"
+            done
+            printf 'HERTA_RELEASE_PROOF %s %s\n' "${DEPLOY_REF}" "${expected_id}"
+
+      # GitHub deployment metadata is a *proof*, not a second production
+      # deployment trigger. Only the environment-protected job can publish it.
+      - name: Publish verified production runtime attestation
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          HERTA_RUNTIME_READBACK: ${{ steps.runtime-proof.outputs.stdout }}
+        run: node deploy/scripts/production-provenance-publish.mjs
