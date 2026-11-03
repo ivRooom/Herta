@@ -4,31 +4,14 @@
 name: Deploy Production
 
 on:
-  push:
+  # Always wait for the *completed main push CI* before considering production.
+  # A privileged workflow_run never trusts PR artifacts or external forks.
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
-    # Documentation / Agent Skills-only merges must not rebuild or redeploy production.
-    # Keep this an allowlist of all inputs that can alter the runtime image or deployment.
-    paths:
-      - 'apps/**'
-      - 'packages/**'
-      - 'plugins/**'
-      - 'contracts/**'
-      - 'deploy/**'
-      # CloudFormation monitoring has its own reviewed deployment; do not restart the Bot.
-      - '!deploy/aws/backup-monitoring/**'
-      - 'certs/**'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - 'docker-compose.prod.yml'
-      - 'docker-compose.common.yml'
-      - 'docker-compose.external.yml'
-      - '.env.example'
-      - '.env.production.example'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
-      - 'turbo.json'
-      - 'tsconfig.json'
+  # Manual deployment/rollback stays protected by the same-SHA gate and the
+  # production Environment approval policy.
   workflow_dispatch:
     inputs:
       ref:
@@ -51,7 +34,16 @@ env:
 jobs:
   quality-gate:
     name: Verified main CI gate
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event_name == 'workflow_run' &&
+         github.event.workflow_run.event == 'push' &&
+         github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.head_branch == 'main' &&
+         github.event.workflow_run.repository.full_name == github.repository &&
+         github.event.workflow_run.head_repository.full_name == github.repository &&
+         github.event.workflow_run.head_sha == github.sha))
     runs-on: ubuntu-latest
     timeout-minutes: 100
     permissions:
@@ -59,6 +51,7 @@ jobs:
       actions: read
     outputs:
       deploy_sha: ${{ steps.verify.outputs.deploy_sha }}
+      should_deploy: ${{ steps.verify.outputs.should_deploy }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -75,6 +68,7 @@ jobs:
   build-image:
     name: Build and push production image
     needs: quality-gate
+    if: needs.quality-gate.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -136,7 +130,7 @@ jobs:
           '
 
       - name: 古いmainイメージをGHCRへpublishしない（明示rollback除外）
-        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.ref == '' || inputs.ref == 'main')) }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.ref == '' || inputs.ref == 'main' }}
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_SHA: ${{ needs.quality-gate.outputs.deploy_sha }}
@@ -180,7 +174,7 @@ jobs:
 
     steps:
       - name: 最新mainへの上書きを防止（明示rollback SHAを除く）
-        if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && (inputs.ref == '' || inputs.ref == 'main')) }}
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.ref == '' || inputs.ref == 'main' }}
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_SHA: ${{ needs.quality-gate.outputs.deploy_sha }}
