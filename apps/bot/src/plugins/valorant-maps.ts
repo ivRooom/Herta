@@ -1,4 +1,5 @@
 import { randomInt } from 'node:crypto';
+import { VALORANT_META } from './valorant-meta.js';
 
 /**
  * TheSpike inspired the evaluation dimensions (played, pick rate, wins, win rate).
@@ -7,8 +8,8 @@ import { randomInt } from 'node:crypto';
  */
 export const VALORANT_COMPOSITION_REFERENCE =
   'https://www.thespike.gg/jp/valorant-stats/agents-compositions';
-export const VALORANT_COMPOSITION_VERSION = '13.09-v2-evidence';
-export const VALORANT_COMPOSITION_PATCH = '13.09';
+export const VALORANT_COMPOSITION_VERSION = VALORANT_META.rulesVersion;
+export const VALORANT_COMPOSITION_PATCH = VALORANT_META.patchVersion;
 
 export const VALORANT_MAPS = [
   ['Ascent', 'アセント'],

@@ -8,6 +8,8 @@ import {
   setValorantSessionMessageId,
   getValorantSession,
   mutateValorantSession,
+  bindValorantVoiceChannel,
+  manageValorantParticipants,
 } from './valorant-session-repository.js';
 
 const url = process.env.HERTA_VALORANT_TEST_DATABASE_URL;
@@ -150,6 +152,199 @@ test(
       assert.equal(direct.participants.length, 2);
       assert.equal((direct.result as unknown[]).length, 2);
       await setValorantSessionMessageId(prisma, guildId, direct.id, 'direct-message');
+
+      // VC membership and explicit opt-out are serialized with join/draw on the same DB row.
+      const voiceChannelId = '123456789012345678';
+      const alice = '111111111111111111';
+      const bob = '222222222222222222';
+      const charlie = '333333333333333333';
+      const diana = '444444444444444444';
+      const vc = await create(2);
+      assert.equal(
+        (
+          await bindValorantVoiceChannel(prisma, {
+            guildId,
+            id: vc.id,
+            userId: 'guest',
+            isAdmin: false,
+            channelId: voiceChannelId,
+          })
+        ).status,
+        'forbidden',
+      );
+      assert.equal(
+        (
+          await bindValorantVoiceChannel(prisma, {
+            guildId,
+            id: vc.id,
+            userId: 'owner',
+            isAdmin: false,
+            channelId: voiceChannelId,
+          })
+        ).status,
+        'ok',
+      );
+      assert.equal(
+        (
+          await bindValorantVoiceChannel(prisma, {
+            guildId,
+            id: vc.id,
+            userId: 'owner',
+            isAdmin: false,
+            channelId: '555555555555555555',
+          })
+        ).status,
+        'voice_changed',
+      );
+      assert.equal(
+        (
+          await manageValorantParticipants(prisma, {
+            guildId: otherGuild,
+            id: vc.id,
+            userId: 'owner',
+            isAdmin: true,
+            action: 'bulk',
+            targetIds: [bob],
+            expectedVoiceChannelId: voiceChannelId,
+          })
+        ).status,
+        'missing',
+      );
+      assert.equal((await operate(vc.id, alice, 'join')).status, 'ok');
+      assert.equal((await operate(vc.id, alice, 'leave')).status, 'ok');
+      const auto = await manageValorantParticipants(prisma, {
+        guildId,
+        id: vc.id,
+        userId: 'owner',
+        isAdmin: false,
+        action: 'bulk',
+        targetIds: [alice, bob],
+        expectedVoiceChannelId: voiceChannelId,
+      });
+      assert.equal(auto.status, 'ok');
+      if (auto.status === 'ok') {
+        assert.deepEqual(
+          auto.session.participants.map(({ userId }) => userId),
+          [bob],
+        );
+        assert.deepEqual(auto.session.optedOutUserIds, [alice]);
+      }
+      const autoRepeat = await manageValorantParticipants(prisma, {
+        guildId,
+        id: vc.id,
+        userId: 'owner',
+        isAdmin: false,
+        action: 'bulk',
+        targetIds: [alice, bob],
+        expectedVoiceChannelId: voiceChannelId,
+      });
+      assert.equal(autoRepeat.status, 'ok');
+      if (autoRepeat.status === 'ok') assert.equal(autoRepeat.changed, false);
+      assert.equal(
+        (
+          await manageValorantParticipants(prisma, {
+            guildId,
+            id: vc.id,
+            userId: 'guest',
+            isAdmin: false,
+            action: 'add',
+            targetIds: [alice],
+          })
+        ).status,
+        'forbidden',
+      );
+      assert.equal(
+        (
+          await manageValorantParticipants(prisma, {
+            guildId,
+            id: vc.id,
+            userId: 'owner',
+            isAdmin: false,
+            action: 'add',
+            targetIds: [alice],
+          })
+        ).status,
+        'ok',
+      );
+      assert.deepEqual((await getValorantSession(prisma, guildId, vc.id))?.optedOutUserIds, []);
+      assert.equal(
+        (
+          await manageValorantParticipants(prisma, {
+            guildId,
+            id: vc.id,
+            userId: 'owner',
+            isAdmin: true,
+            action: 'bulk',
+            targetIds: [charlie],
+            expectedVoiceChannelId: voiceChannelId,
+          })
+        ).status,
+        'full',
+      );
+      assert.equal(
+        (
+          await manageValorantParticipants(prisma, {
+            guildId,
+            id: vc.id,
+            userId: 'owner',
+            isAdmin: false,
+            action: 'remove',
+            targetIds: [alice],
+          })
+        ).status,
+        'ok',
+      );
+      assert.equal(
+        (
+          await manageValorantParticipants(prisma, {
+            guildId,
+            id: vc.id,
+            userId: 'owner',
+            isAdmin: false,
+            action: 'bulk',
+            targetIds: [alice],
+            expectedVoiceChannelId: voiceChannelId,
+          })
+        ).status,
+        'ok',
+      );
+      assert.equal((await operate(vc.id, 'owner', 'draw')).status, 'ok');
+      assert.equal(
+        (
+          await manageValorantParticipants(prisma, {
+            guildId,
+            id: vc.id,
+            userId: 'owner',
+            isAdmin: true,
+            action: 'remove',
+            targetIds: [bob],
+          })
+        ).status,
+        'closed',
+      );
+
+      // Concurrent manual adds must not exceed the configured Guild cap.
+      const race = await create(1);
+      const raceResults = await Promise.all([
+        manageValorantParticipants(prisma, {
+          guildId,
+          id: race.id,
+          userId: 'owner',
+          isAdmin: true,
+          action: 'add',
+          targetIds: [charlie],
+        }),
+        manageValorantParticipants(prisma, {
+          guildId,
+          id: race.id,
+          userId: 'owner',
+          isAdmin: true,
+          action: 'add',
+          targetIds: [diana],
+        }),
+      ]);
+      assert.deepEqual(raceResults.map((r) => r.status).sort(), ['full', 'ok']);
+      assert.equal((await getValorantSession(prisma, guildId, race.id))?.participants.length, 1);
 
       const expired = await create(5, new Date(Date.now() - 10_000));
       assert.equal((await operate(expired.id, 'alice', 'join')).status, 'closed');
