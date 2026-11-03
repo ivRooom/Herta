@@ -1,7 +1,5 @@
 import { prisma } from '@/lib/db';
-import {
-  authorizeFortuneAdminList,
-} from '@/lib/daily-fortune-admin-list';
+import { authorizeFortuneAdminList } from '@/lib/daily-fortune-admin-list';
 import { publicFortuneHistoryResult } from '@/lib/daily-fortune-read';
 
 export const dynamic = 'force-dynamic';
@@ -23,15 +21,9 @@ export async function POST(request: Request): Promise<Response> {
         guildId: input.guildId,
         targetDate: { gte: input.from, lte: input.to },
         createdAt: { gte: new Date(Date.now() - 180 * 86400000) },
-        ...(input.discordUserIds
-          ? { discordUserId: { in: input.discordUserIds } }
-          : {}),
+        ...(input.discordUserIds ? { discordUserId: { in: input.discordUserIds } } : {}),
       },
-      orderBy: [
-        { targetDate: 'desc' },
-        { createdAt: 'desc' },
-        { discordUserId: 'asc' },
-      ],
+      orderBy: [{ targetDate: 'desc' }, { createdAt: 'desc' }, { discordUserId: 'asc' }],
       take: input.limit + 1,
       skip: input.offset,
       select: {
