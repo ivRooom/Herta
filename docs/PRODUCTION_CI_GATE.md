@@ -22,6 +22,8 @@ See #646 for new feature approval and #694, #695, #728, #729, #730 for deletion 
 
 Main may change after the final pre-SSH check.
 Treat this as a residual race requiring production monitoring, not an atomicity guarantee.
+If a later docs-only push moves main without triggering a new deploy, manually dispatch
+Deploy Production with `ref: main` (not a rerun of the stale failed workflow).
 
 ## Human-run rollback
 
@@ -29,6 +31,7 @@ Treat this as a residual race requiring production monitoring, not an atomicity 
 - Choose **Run workflow** with the workflow branch set to main.
 - Enter `main` to deploy current main, or a full 40-character lowercase SHA for rollback.
 - An old SHA must belong to main history and have passing main-push CI evidence.
+- Missing or incomplete historical CI fails immediately; retry after checks finish.
 - PR refs, tags, feature branches and missing CI evidence must be rejected.
 - Record the target SHA, previous healthy image and expected impact in the incident Issue.
 - Confirm the rollback decision and production Environment approval before execution.
