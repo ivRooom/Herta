@@ -500,3 +500,30 @@ test('VALORANT production migration is fenced by protected backup and isolated r
     /docker volume rm|docker system prune|pg_restore.*\$COMPOSE|DROP DATABASE/,
   );
 });
+
+test('new VALORANT expiry migration must be protected by fresh backup and offline PG16 restore', () => {
+  const gate = readFileSync(new URL('./production-quality-gate.mjs', import.meta.url), 'utf8');
+  const deploy = readFileSync(
+    new URL('../../.github/workflows/deploy-production.yml', import.meta.url), 'utf8',
+  );
+  const rehearsal = readFileSync(
+    new URL('../../.github/workflows/valorant-predeploy-rehearsal.yml', import.meta.url),
+    'utf8',
+  );
+  const script = readFileSync(
+    new URL('./valorant-expiry-predeploy-rehearsal.sh', import.meta.url), 'utf8',
+  );
+  const newMigration = '20261104093000_valorant_expiry_ui_reconcile';
+  assert.match(gate, /valorant-expiry-predeploy-rehearsal/);
+  assert.ok(gate.includes(newMigration));
+  assert.ok(deploy.includes('bash deploy/scripts/valorant-expiry-predeploy-rehearsal.sh'));
+  assert.ok(deploy.includes('expiry UI migration exists without its protected backup/restore gate'));
+  assert.ok(rehearsal.includes('bash deploy/scripts/valorant-expiry-predeploy-rehearsal.sh'));
+  assert.ok(rehearsal.includes('partially applied expiry UI migration'));
+  assert.ok(rehearsal.includes('tampered applied expiry UI migration checksum'));
+  assert.ok(script.includes(newMigration));
+  assert.ok(script.includes('pg_dump -Fc'));
+  assert.ok(script.includes('pg_restore --no-owner --no-acl --exit-on-error'));
+  assert.ok(script.includes('--network none'));
+  assert.ok(script.includes('docker rm -f -v "$restore_id"'));
+});
