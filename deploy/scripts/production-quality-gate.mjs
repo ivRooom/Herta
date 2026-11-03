@@ -247,10 +247,7 @@ async function main() {
     throw new Error('Invalid emergency rollback approval value');
   }
   const emergencyRollbackApproved = rawEmergencyRollback === 'true';
-  if (
-    (bootstrapApproved || emergencyRollbackApproved) &&
-    event !== 'workflow_dispatch'
-  ) {
+  if ((bootstrapApproved || emergencyRollbackApproved) && event !== 'workflow_dispatch') {
     throw new Error('Recovery approvals require a manual dispatch');
   }
   if (bootstrapApproved && (requestedRef !== 'main' || emergencyRollbackApproved)) {
