@@ -94,6 +94,8 @@ describe('VALORANT button recruitment slash command', () => {
     );
     expect(f.followUp).toHaveBeenCalledOnce();
     expect(f.followUp.mock.calls[0]![0].components[0].components).toHaveLength(4);
+    expect(f.followUp.mock.calls[0]![0].components[1].components).toHaveLength(2);
+    expect(f.followUp.mock.calls[0]![0].components[1].components[0].data.label).toBe('🔊 VC全員参加');
     expect(f.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: { messageId: 'posted-message' },
