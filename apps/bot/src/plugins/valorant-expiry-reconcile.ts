@@ -146,10 +146,10 @@ export async function editExpiredValorantDiscordMessage(
       (row) =>
         'components' in row &&
         row.components.some(
-        (component) =>
-          'customId' in component &&
-          typeof component.customId === 'string' &&
-          component.customId.startsWith(VALORANT_SESSION_PREFIX + session.id + ':'),
+          (component) =>
+            'customId' in component &&
+            typeof component.customId === 'string' &&
+            component.customId.startsWith(VALORANT_SESSION_PREFIX + session.id + ':'),
         ),
     );
     if (!hasOwnControls) return 'gone';
