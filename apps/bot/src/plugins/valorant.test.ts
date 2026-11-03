@@ -98,8 +98,8 @@ describe('VALORANT button recruitment slash command', () => {
     expect(f.followUp.mock.calls[0]![0].components[1].components[0].data.label).toBe(
       '🔊 VC全員参加',
     );
-    const sessionExpiresAt = f.create.mock.calls[0]![0].data.expiresAt as Date;
-    const expiryUnix = Math.floor(sessionExpiresAt.getTime() / 1000);
+    const createdSession = await f.create.mock.results[0]!.value;
+    const expiryUnix = Math.floor(createdSession.expiresAt.getTime() / 1000);
     expect(f.followUp.mock.calls[0]![0].embeds[0].data.description).toContain(
       `募集期限：<t:${expiryUnix}:R>`,
     );
