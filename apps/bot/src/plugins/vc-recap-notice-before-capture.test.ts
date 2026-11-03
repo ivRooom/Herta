@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   startVcRecap: vi.fn(),
   stopVcRecap: vi.fn(),
   isVcRecapActive: vi.fn(() => false),
-  activeVcRecapChannelId: vi.fn(() => null),
+  activeVcRecapChannelId: vi.fn((): string | null => null),
 }));
 
 vi.mock('@herta/db', () => ({
