@@ -27,7 +27,6 @@ function ordered(source, fragments) {
   return true;
 }
 
-
 /** Source-shape drift checks only: these patterns do not execute consent handlers. */
 const OWNER_REFUSAL =
   /if\s*\(\s*interaction\.user\.id\s*!==\s*parsed\.userId\s*\)\s*\{\s*await interaction\.reply\(\{\s*content:[^\n]+,\s*flags:\s*MessageFlags\.Ephemeral,\s*\}\);\s*return;\s*\}/;
