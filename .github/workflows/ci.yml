@@ -50,17 +50,6 @@ jobs:
       - name: Format Check
         run: pnpm format:check
 
-      - name: Temporary Prettier diagnostics for #765 (remove before merge)
-        if: failure()
-        run: |
-          pnpm exec prettier --write 'deploy/scripts/production-provenance*.mjs'
-          for path in deploy/scripts/production-provenance.mjs deploy/scripts/production-provenance-publish.mjs deploy/scripts/production-provenance.test.mjs; do
-            printf 'IVRM_FORMAT_BEGIN %s\n' "${path}"
-            base64 -w0 "${path}"
-            printf '\nIVRM_FORMAT_END %s\n' "${path}"
-          done
-
-
       - name: Lint
         run: pnpm lint
 
