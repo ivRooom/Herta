@@ -47,6 +47,12 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
+      # TEMP #762 formatter diagnostic; remove before merging.
+      - name: Temporary Prettier diff for #762
+        run: |
+          pnpm exec prettier --write .github/workflows/deploy-production.yml deploy/scripts/production-quality-gate.mjs deploy/scripts/production-quality-gate.test.mjs
+          git diff -- .github/workflows/deploy-production.yml deploy/scripts/production-quality-gate.mjs deploy/scripts/production-quality-gate.test.mjs
+
       - name: Format Check
         run: pnpm format:check
 
