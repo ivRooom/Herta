@@ -154,7 +154,9 @@ async function executeStart(
     return;
   }
   if (result.status === 'start_cancelled') {
-    await interaction.editReply('記録の準備中に停止・無効化・同意変更があったため、開始しませんでした。');
+    await interaction.editReply(
+      '記録の準備中に停止・無効化・同意変更があったため、開始しませんでした。',
+    );
     return;
   }
 
