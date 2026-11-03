@@ -47,9 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      - name: Diagnostic Bot picks Prettier diff (temporary)
-        run: pnpm exec prettier apps/bot/src/plugins/valorant.ts | diff -u apps/bot/src/plugins/valorant.ts - || true
-
       - name: Format Check
         run: pnpm format:check
 
