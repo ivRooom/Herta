@@ -215,7 +215,9 @@ async function main() {
         throw new Error('Cannot establish complete deployment job history');
       }
       if (
-        jobs.jobs.some((job) => job.name === 'SSH Deploy to Lightsail' && job.conclusion === 'success')
+        jobs.jobs.some(
+          (job) => job.name === 'SSH Deploy to Lightsail' && job.conclusion === 'success',
+        )
       ) {
         before = candidate.head_sha;
         previousProductionConfirmed = true;
