@@ -47,6 +47,13 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
+      # Temporary branch-only diagnostic: emits the formatter diff; revert
+      # this step before review/merge. Do not alter CI policy on main.
+      - name: Temporary Prettier diff for three new admin-list files
+        run: |
+          pnpm exec prettier --write apps/studio/src/lib/daily-fortune-admin-list.ts apps/studio/src/lib/daily-fortune-admin-list.test.ts apps/studio/src/app/api/ivrm/daily-fortunes/admin-list/route.ts
+          git diff -- apps/studio/src/lib/daily-fortune-admin-list.ts apps/studio/src/lib/daily-fortune-admin-list.test.ts apps/studio/src/app/api/ivrm/daily-fortunes/admin-list/route.ts
+          exit 1
       - name: Format Check
         run: pnpm format:check
 
