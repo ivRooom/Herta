@@ -142,13 +142,15 @@ export async function editExpiredValorantDiscordMessage(
     // Reroll can transfer the public messageId between the DB re-read and
     // this Discord fetch. Never disable a newer draw's controls from an
     // expired historical session. Buttonless/other-session messages are terminal.
-    const hasOwnControls = message.components.some((row) =>
-      row.components.some(
+    const hasOwnControls = message.components.some(
+      (row) =>
+        'components' in row &&
+        row.components.some(
         (component) =>
           'customId' in component &&
           typeof component.customId === 'string' &&
           component.customId.startsWith(VALORANT_SESSION_PREFIX + session.id + ':'),
-      ),
+        ),
     );
     if (!hasOwnControls) return 'gone';
     if (session.status === 'COMPLETED') {
