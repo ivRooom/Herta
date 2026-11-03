@@ -1,7 +1,11 @@
 import { RESTJSONErrorCodes, type Client } from 'discord.js';
 import type { PrismaClient } from '@herta/db';
 import { buildValorantSessionMessage } from './valorant.js';
-import { getValorantSession, type ValorantSessionSnapshot } from './valorant-session-repository.js';
+import {
+  getValorantSession,
+  VALORANT_SESSION_PREFIX,
+  type ValorantSessionSnapshot,
+} from './valorant-session-repository.js';
 
 const MAX_BATCH = 20;
 const MAX_RETRY_MS = 60 * 60 * 1000;
@@ -135,6 +139,18 @@ export async function editExpiredValorantDiscordMessage(
     const channel = await guild.channels.fetch(session.channelId);
     if (!channel || !channel.isTextBased() || !('messages' in channel)) return 'gone';
     const message = await channel.messages.fetch(session.messageId);
+    // Reroll can transfer the public messageId between the DB re-read and
+    // this Discord fetch. Never disable a newer draw's controls from an
+    // expired historical session. Buttonless/other-session messages are terminal.
+    const hasOwnControls = message.components.some((row) =>
+      row.components.some(
+        (component) =>
+          'customId' in component &&
+          typeof component.customId === 'string' &&
+          component.customId.startsWith(VALORANT_SESSION_PREFIX + session.id + ':'),
+      ),
+    );
+    if (!hasOwnControls) return 'gone';
     if (session.status === 'COMPLETED') {
       // Do not wipe the Cinematic PNG/other rich result attachments.
       await message.edit({ components: buildValorantSessionMessage(session).components });
