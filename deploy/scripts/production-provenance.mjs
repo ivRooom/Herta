@@ -164,10 +164,7 @@ export async function loadLatestProductionAttestation(api) {
       runsWithJobs.push({ run, jobs: data.jobs });
     }
     if (result.workflow_runs.length < 100) {
-      if (
-        Number.isSafeInteger(result.total_count) &&
-        result.total_count > runsWithJobs.length
-      ) {
+      if (Number.isSafeInteger(result.total_count) && result.total_count > runsWithJobs.length) {
         throw new Error('Incomplete production workflow run history');
       }
       allRunsRead = true;
