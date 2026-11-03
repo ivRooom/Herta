@@ -1,4 +1,5 @@
 import { appendFileSync, readFileSync } from 'node:fs';
+import { loadLatestProductionAttestation } from './production-provenance.mjs';
 
 const SHA_RE = /^[a-f0-9]{40}$/;
 const REQUIRED_WORKFLOWS = [
@@ -214,34 +215,13 @@ async function main() {
   let before = process.env.DEPLOY_PUSH_BEFORE;
   let previousProductionConfirmed = false;
   if (event === 'workflow_run') {
-    const priorRuns = await api(
-      'actions/workflows/deploy-production.yml/runs?branch=main&status=success&per_page=100',
-    );
-    if (!Array.isArray(priorRuns.workflow_runs)) {
-      throw new Error('Cannot inspect production deployment history');
-    }
-    for (const candidate of priorRuns.workflow_runs) {
-      if (!Number.isSafeInteger(candidate.id)) {
-        throw new Error('Production run history has an invalid run identifier');
-      }
-      const jobs = await api('actions/runs/' + candidate.id + '/jobs?per_page=100');
-      if (!Array.isArray(jobs.jobs)) throw new Error('Cannot inspect deployment jobs');
-      if (jobs.total_count > jobs.jobs.length) {
-        throw new Error('Cannot establish complete deployment job history');
-      }
-      if (
-        jobs.jobs.some(
-          (job) => job.name === 'SSH Deploy to Lightsail' && job.conclusion === 'success',
-        )
-      ) {
-        before = assertAutomaticProductionBaseline(candidate);
-        previousProductionConfirmed = true;
-        break;
-      }
-    }
-  }
-  if (event === 'workflow_run' && !previousProductionConfirmed) {
-    throw new Error('No attested successful production SSH baseline; automatic deployment blocked');
+    // A successful SSH job alone does not prove which commit was deployed.
+    // Protected release records include an actual four-container image-id readback,
+    // pinned SHA, manual rollback target and run attempt. Missing provenance stops
+    // automated deployment before build/GHCR/OIDC/SSH.
+    const attestation = await loadLatestProductionAttestation(api);
+    before = attestation.sha;
+    previousProductionConfirmed = true;
   }
   if (event === 'workflow_dispatch') {
     const commit = await api('commits/' + sha);

@@ -62,6 +62,9 @@ jobs:
       - name: Production CI deployment gate synthetic security tests
         run: node --test deploy/scripts/production-quality-gate.test.mjs
 
+      - name: Production runtime SHA/digest attestation and rollback regression tests
+        run: node --test deploy/scripts/production-provenance.test.mjs
+
       - name: VC Recap S3 safety audit contract tests
         run: python3 deploy/scripts/verify-vc-recap-s3-safety.test.py
 
