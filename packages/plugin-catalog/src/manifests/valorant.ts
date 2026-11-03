@@ -42,6 +42,52 @@ export const VALORANT_AGENTS = [
 ] as const;
 export type ValorantAgent = (typeof VALORANT_AGENTS)[number];
 
+/** Riot-defined agent classes; independent of Herta's tactical lineup ordering. */
+export type ValorantAgentRole = 'DUELIST' | 'CONTROLLER' | 'INITIATOR' | 'SENTINEL';
+export const VALORANT_AGENT_ROLES: Record<ValorantAgent, ValorantAgentRole> = {
+  Astra: 'CONTROLLER',
+  Breach: 'INITIATOR',
+  Brimstone: 'CONTROLLER',
+  Chamber: 'SENTINEL',
+  Clove: 'CONTROLLER',
+  Cypher: 'SENTINEL',
+  Deadlock: 'SENTINEL',
+  Fade: 'INITIATOR',
+  Gekko: 'INITIATOR',
+  Harbor: 'CONTROLLER',
+  Hush: 'DUELIST',
+  Iso: 'DUELIST',
+  Jett: 'DUELIST',
+  'KAY/O': 'INITIATOR',
+  Killjoy: 'SENTINEL',
+  Miks: 'CONTROLLER',
+  Neon: 'DUELIST',
+  Omen: 'CONTROLLER',
+  Phoenix: 'DUELIST',
+  Raze: 'DUELIST',
+  Reyna: 'DUELIST',
+  Sage: 'SENTINEL',
+  Skye: 'INITIATOR',
+  Sova: 'INITIATOR',
+  Tejo: 'INITIATOR',
+  Veto: 'SENTINEL',
+  Viper: 'CONTROLLER',
+  Vyse: 'SENTINEL',
+  Waylay: 'DUELIST',
+  Yoru: 'DUELIST',
+};
+const roleById = new Map(
+  VALORANT_AGENTS.map((agent) => [
+    agent.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+    VALORANT_AGENT_ROLES[agent],
+  ]),
+);
+
+/** Unknown/custom/legacy agent IDs must never be guessed into a role. */
+export function valorantRoleForAgentId(agentId: string): ValorantAgentRole | 'UNKNOWN' {
+  return roleById.get(agentId) ?? 'UNKNOWN';
+}
+
 // Names only, verified against Riot's Japanese agents page. No remote API or artwork dependency.
 const JAPANESE_AGENT_NAMES = [
   'アストラ',
