@@ -85,6 +85,33 @@ test('only a unique exact remote image SHA and config digest becomes provenance'
   );
 });
 
+test('accepts GitHub bot actor logins without admitting arbitrary suffixes', () => {
+  const makePayload = (actorLogin) =>
+    buildProductionDeploymentPayload({
+      runId: 11,
+      runAttempt: 1,
+      sha,
+      imageId,
+      actor: actorLogin,
+    });
+  for (const actorLogin of [
+    'mizzz-ivr',
+    'dependabot[bot]',
+    'github-merge-queue[bot]',
+  ]) {
+    assert.equal(makePayload(actorLogin).actor, actorLogin);
+  }
+  for (const actorLogin of [
+    '',
+    'dependabot[admin]',
+    'github/actions[bot]',
+    'bot[Bot]',
+    'a'.repeat(40),
+  ]) {
+    assert.throws(() => makePayload(actorLogin), /Unverifiable production provenance input/);
+  }
+});
+
 test('manual rollback attestation uses verified runtime SHA, not dispatch head SHA', () => {
   assert.equal(manualRun.head_sha, oldSha);
   assert.equal(
