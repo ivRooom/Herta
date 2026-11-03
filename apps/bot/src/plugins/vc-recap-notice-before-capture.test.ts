@@ -89,7 +89,7 @@ describe('/vc-recap start 録音開始通知ゲート', () => {
       embeds: [expect.anything()],
     });
     expect(channel.send.mock.invocationCallOrder[0]).toBeLessThan(
-      (interaction.editReply as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0],
+      (interaction.editReply as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!,
     );
     expect(interaction.editReply).toHaveBeenCalledWith(
       expect.stringContaining('記録を開始しました'),
