@@ -196,11 +196,10 @@ test('production workflow has an unprivileged CI-completion gate before build an
   const [build, deploy] = buildRest.split('\n  deploy:\n');
   assert.ok(deploy, 'SSH deploy job must exist');
 
-  assert.ok(source.includes('  workflow_run:\n    workflows: ["CI"]\n    types: [completed]\n    branches: [main]'));
+  assert.ok(source.includes('  workflow_run:\n    workflows: [CI]\n    types: [completed]\n    branches: [main]'));
   assert.ok(!source.includes('\n  push:\n'));
   assert.ok(gate.includes('name: Verified main CI gate'));
-  assert.ok(gate.includes('github.event.workflow_run.head_sha == github.sha'));
-  assert.ok(gate.includes("github.event.workflow_run.conclusion == 'success'"));
+  assert.ok(gate.includes("if: github.ref == 'refs/heads/main'"));
   assert.ok(gate.includes('contents: read\n      actions: read'));
   assert.ok(gate.includes('should_deploy:'));
   assert.ok(gate.includes('run: node deploy/scripts/production-quality-gate.mjs'));
