@@ -481,6 +481,396 @@ async function handleRandom(
   }
 }
 
+
+type ValorantManagedInteraction =
+  | ButtonInteraction
+  | UserSelectMenuInteraction
+  | StringSelectMenuInteraction
+  | ChannelSelectMenuInteraction;
+
+function isValorantManager(
+  session: ValorantSessionSnapshot,
+  interaction: ValorantManagedInteraction,
+): boolean {
+  return session.creatorId === interaction.user.id || Boolean(
+    interaction.memberPermissions?.has(PermissionFlagsBits.Administrator) ||
+    interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild),
+  );
+}
+
+function sessionCustomId(sessionId: string, action: string): string {
+  return VALORANT_SESSION_PREFIX + sessionId + ':' + action;
+}
+
+function openValorantSession(session: ValorantSessionSnapshot): boolean {
+  return session.status === 'OPEN' && session.expiresAt > new Date();
+}
+
+/** The GuildVoiceStates intent is enabled in bot.ts. Fetch known voice-state IDs
+ * as GuildMember objects and fail closed on REST errors rather than partially adding users.
+ */
+async function currentValorantVoiceMembers(
+  interaction: ValorantManagedInteraction,
+  channelId: string,
+): Promise<string[]> {
+  const guild = interaction.guild;
+  if (!guild) throw new Error('guild unavailable');
+  const channel = await guild.channels.fetch(channelId);
+  if (!channel || !channel.isVoiceBased() ||
+      (channel.type !== ChannelType.GuildVoice && channel.type !== ChannelType.GuildStageVoice)) {
+    throw new Error('voice channel unavailable');
+  }
+  const voiceIds = [...guild.voiceStates.cache.values()]
+    .filter((voice) => voice.channelId === channelId)
+    .map((voice) => voice.id);
+  if (voiceIds.length > 100) throw new Error('voice channel too large');
+  const members = await Promise.all(voiceIds.map((id) => guild.members.fetch(id)));
+  return members
+    .filter((member) => !member.user.bot && member.voice.channelId === channelId)
+    .map((member) => member.id)
+    .sort();
+}
+
+function voiceCandidateSnapshot(session: ValorantSessionSnapshot, voiceIds: string[]) {
+  const joined = session.participants.map(({ userId }) => userId).sort();
+  const optedOut = [...(session.optedOutUserIds ?? [])].sort();
+  const eligible = voiceIds.filter((id) => !joined.includes(id) && !optedOut.includes(id));
+  const digest = createHash('sha256')
+    .update(JSON.stringify([session.id, session.voiceChannelId, voiceIds, joined, optedOut]))
+    .digest('hex')
+    .slice(0, 12);
+  return {
+    eligible,
+    digest,
+    remaining: Math.max(0, session.maxParticipants - session.participants.length),
+    optedOutCount: voiceIds.filter((id) => optedOut.includes(id)).length,
+  };
+}
+
+async function updatePublicValorantRecruitment(
+  interaction: ValorantManagedInteraction,
+  session: ValorantSessionSnapshot,
+): Promise<boolean> {
+  try {
+    if (!interaction.guild || !session.messageId) return false;
+    const channel = await interaction.guild.channels.fetch(session.channelId);
+    if (!channel?.isTextBased() || !('messages' in channel)) return false;
+    const message = await channel.messages.fetch(session.messageId);
+    await message.edit({ ...buildValorantSessionMessage(session), attachments: [] });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function showValorantManagement(
+  interaction: ValorantManagedInteraction,
+  session: ValorantSessionSnapshot,
+): Promise<void> {
+  const count = session.participants.length;
+  const addMenu = new UserSelectMenuBuilder()
+    .setCustomId(sessionCustomId(session.id, 'add-select'))
+    .setPlaceholder('追加するサーバーメンバーを選択')
+    .setMinValues(1)
+    .setMaxValues(1)
+    .setDisabled(count >= session.maxParticipants);
+  const rows: Array<
+    ActionRowBuilder<UserSelectMenuBuilder | StringSelectMenuBuilder | ButtonBuilder>
+  > = [new ActionRowBuilder<UserSelectMenuBuilder | StringSelectMenuBuilder | ButtonBuilder>()
+    .addComponents(addMenu)];
+  if (count > 0) {
+    const removeMenu = new StringSelectMenuBuilder()
+      .setCustomId(sessionCustomId(session.id, 'remove-select'))
+      .setPlaceholder('除外する参加者を選択')
+      .addOptions(session.participants.map(({ userId }, index) => ({
+        label: `参加者 ${index + 1}（ID末尾 ${userId.slice(-4)}）`,
+        value: userId,
+      })));
+    rows.push(new ActionRowBuilder<UserSelectMenuBuilder | StringSelectMenuBuilder | ButtonBuilder>()
+      .addComponents(removeMenu));
+  }
+  rows.push(new ActionRowBuilder<UserSelectMenuBuilder | StringSelectMenuBuilder | ButtonBuilder>()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId(sessionCustomId(session.id, 'vc'))
+        .setLabel('🔊 VC再取得')
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(sessionCustomId(session.id, 'close'))
+        .setLabel('キャンセル・閉じる')
+        .setStyle(ButtonStyle.Secondary),
+    ));
+  await interaction.editReply({
+    content: [
+      '👥 **参加者管理（募集作成者・管理者専用）**',
+      `参加者：${count} / ${session.maxParticipants}`,
+      count ? session.participants.map(({ userId }) => '<@' + userId + '>').join('、') : '現在の参加者はいません。',
+      '追加・除外するメンバーを1人選び、次の画面で確定してください。',
+    ].join('\n'),
+    components: rows,
+    allowedMentions: { parse: [] },
+  });
+}
+
+async function showValorantVoicePreview(
+  interaction: ValorantManagedInteraction,
+  session: ValorantSessionSnapshot,
+): Promise<void> {
+  if (!session.voiceChannelId) {
+    await interaction.editReply({
+      content: '対象VCが未設定です。対象とするボイスチャンネルを選んでください。選択後に確定すると、その募集では変更できません。',
+      components: [new ActionRowBuilder<ChannelSelectMenuBuilder>().addComponents(
+        new ChannelSelectMenuBuilder()
+          .setCustomId(sessionCustomId(session.id, 'select-vc'))
+          .setPlaceholder('対象VCを明示的に選択')
+          .addChannelTypes(ChannelType.GuildVoice, ChannelType.GuildStageVoice),
+      )],
+    });
+    return;
+  }
+  const ids = await currentValorantVoiceMembers(interaction, session.voiceChannelId);
+  const snapshot = voiceCandidateSnapshot(session, ids);
+  const content = [
+    `🔊 **対象VC：<#${session.voiceChannelId}>**`,
+    `VCの人間ユーザー：${ids.length}名 / 新規追加候補：${snapshot.eligible.length}名`,
+    `空き枠：${snapshot.remaining}名`,
+    snapshot.optedOutCount ? `本人が参加取消した${snapshot.optedOutCount}名は一括追加から除外します。` : '',
+    snapshot.eligible.slice(0, 20).map((id) => '<@' + id + '>').join('、') || '追加対象はありません。',
+    snapshot.eligible.length > 20 ? '（表示は先頭20名。参加者を選んでください）' : '',
+  ].filter(Boolean).join('\n');
+  if (snapshot.eligible.length === 0 || snapshot.remaining === 0) {
+    await interaction.editReply({ content: content + '\n現在、一括追加できるメンバーはいません。', components: [], allowedMentions: { parse: [] } });
+    return;
+  }
+  const action = snapshot.eligible.length <= snapshot.remaining
+    ? 'vc-commit-' + snapshot.digest
+    : 'vc-choose-' + snapshot.digest;
+  const components = snapshot.eligible.length <= snapshot.remaining
+    ? [new ActionRowBuilder<ButtonBuilder>().addComponents(
+        new ButtonBuilder().setCustomId(sessionCustomId(session.id, action))
+          .setLabel('表示した候補を追加確定').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId(sessionCustomId(session.id, 'close'))
+          .setLabel('キャンセル').setStyle(ButtonStyle.Secondary),
+      )]
+    : [new ActionRowBuilder<UserSelectMenuBuilder>().addComponents(
+        new UserSelectMenuBuilder().setCustomId(sessionCustomId(session.id, action))
+          .setPlaceholder('定員を超えます。追加する人だけ選んで確定')
+          .setMinValues(1).setMaxValues(Math.min(snapshot.remaining, 5)),
+      )];
+  await interaction.editReply({
+    content: content + (snapshot.eligible.length > snapshot.remaining
+      ? '\n**定員超過：無作為追加は行いません。選択したメンバーのみ登録します。**'
+      : '\n内容を確認して追加を確定してください。'),
+    components,
+    allowedMentions: { parse: [] },
+  });
+}
+
+async function handleValorantManagement(
+  interaction: ValorantManagedInteraction,
+  prisma: PrismaClient,
+  logger: Logger,
+): Promise<void> {
+  const parsed = parseValorantSessionAction(interaction.customId);
+  if (!parsed || !interaction.guildId || !interaction.channelId) return;
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  const guildId = interaction.guildId;
+  try {
+    const session = await getValorantSession(prisma, guildId, parsed.id);
+    if (!session || session.channelId !== interaction.channelId ||
+      (session.messageId && interaction.message.id !== session.messageId &&
+        !interaction.message.flags.has(MessageFlags.Ephemeral))) {
+      await interaction.editReply('対象の募集が見つかりません。');
+      return;
+    }
+    if (!isValorantManager(session, interaction)) {
+      await interaction.editReply('参加者の一括追加・管理は募集作成者またはサーバー管理者のみ可能です。');
+      return;
+    }
+    if (!openValorantSession(session)) {
+      await interaction.editReply('募集は終了済み、または期限切れのため編集できません。');
+      return;
+    }
+    const action = parsed.action;
+    if (action === 'close') {
+      await interaction.editReply({ content: '操作をキャンセルしました。参加者は変更されていません。', components: [] });
+      return;
+    }
+    if (action === 'manage') {
+      await showValorantManagement(interaction, session);
+      return;
+    }
+    if (action === 'vc') {
+      await showValorantVoicePreview(interaction, session);
+      return;
+    }
+    if (action === 'select-vc' && interaction.isChannelSelectMenu()) {
+      const channelId = interaction.values[0];
+      const channel = channelId ? await interaction.guild?.channels.fetch(channelId) : null;
+      if (!channel || !channel.isVoiceBased() ||
+        (channel.type !== ChannelType.GuildVoice && channel.type !== ChannelType.GuildStageVoice)) {
+        await interaction.editReply('このサーバーのボイスチャンネルを選択してください。');
+        return;
+      }
+      await interaction.editReply({
+        content: `<#${channel.id}> を対象VCとして固定します。後から自動で切り替えることはありません。`,
+        components: [new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder().setCustomId(sessionCustomId(session.id, 'vc-bind-' + channel.id))
+            .setLabel('対象VCを確定').setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(sessionCustomId(session.id, 'close'))
+            .setLabel('キャンセル').setStyle(ButtonStyle.Secondary),
+        )],
+        allowedMentions: { parse: [] },
+      });
+      return;
+    }
+    if (action.startsWith('vc-bind-') && interaction.isButton()) {
+      const channelId = action.slice('vc-bind-'.length);
+      const channel = await interaction.guild?.channels.fetch(channelId);
+      if (!channel || !channel.isVoiceBased() ||
+        (channel.type !== ChannelType.GuildVoice && channel.type !== ChannelType.GuildStageVoice)) {
+        await interaction.editReply('対象VCが見つからないため確定できません。');
+        return;
+      }
+      const updated = await bindValorantVoiceChannel(prisma, {
+        guildId, id: session.id, userId: interaction.user.id,
+        isAdmin: isValorantManager(session, interaction), channelId,
+      });
+      if (updated.status !== 'ok') {
+        await interaction.editReply(updated.status === 'voice_changed'
+          ? '対象VCはすでに別のチャンネルで固定されています。'
+          : '対象VCを確定できませんでした。募集状態を確認してください。');
+        return;
+      }
+      const synced = !updated.changed || await updatePublicValorantRecruitment(interaction, updated.session);
+      await interaction.editReply({
+        content: synced
+          ? '対象VCを固定しました。VC全員参加ボタンから候補を確認できます。'
+          : '対象VCはDBに保存されましたが、募集Embedの更新に失敗しました。',
+        components: [new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder().setCustomId(sessionCustomId(session.id, 'vc'))
+            .setLabel('VCメンバーを確認').setStyle(ButtonStyle.Primary),
+        )],
+      });
+      return;
+    }
+    if (action === 'add-select' && interaction.isUserSelectMenu() ||
+        action === 'remove-select' && interaction.isStringSelectMenu()) {
+      const userId = interaction.values[0];
+      if (!userId || !/^[0-9]{17,20}$/.test(userId)) {
+        await interaction.editReply('選択したメンバーを確認できません。');
+        return;
+      }
+      const removing = action === 'remove-select';
+      if (removing && !session.participants.some(({ userId: id }) => id === userId)) {
+        await interaction.editReply('選択したメンバーはすでに参加者ではありません。');
+        return;
+      }
+      if (!removing) {
+        const member = await interaction.guild?.members.fetch(userId).catch(() => null);
+        if (!member || member.user.bot) {
+          await interaction.editReply('追加できるのは、このサーバーの人間ユーザーだけです。');
+          return;
+        }
+      }
+      await interaction.editReply({
+        content: `<@${userId}> を${removing ? '参加者から除外' : '参加者に追加'}します。確定しますか？`,
+        components: [new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setCustomId(sessionCustomId(session.id, (removing ? 'remove-' : 'add-') + userId))
+            .setLabel(removing ? '除外を確定' : '追加を確定').setStyle(removing ? ButtonStyle.Danger : ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(sessionCustomId(session.id, 'close'))
+            .setLabel('キャンセル').setStyle(ButtonStyle.Secondary),
+        )],
+        allowedMentions: { parse: [] },
+      });
+      return;
+    }
+
+    let mutation;
+    if (action.startsWith('vc-commit-') || action.startsWith('vc-choose-')) {
+      if (!session.voiceChannelId) {
+        await interaction.editReply('対象VCが設定されていません。');
+        return;
+      }
+      const isChoosing = action.startsWith('vc-choose-');
+      if ((isChoosing && !interaction.isUserSelectMenu()) ||
+          (!isChoosing && !interaction.isButton())) {
+        await interaction.editReply('操作形式が不正です。');
+        return;
+      }
+      const voiceIds = await currentValorantVoiceMembers(interaction, session.voiceChannelId);
+      const snapshot = voiceCandidateSnapshot(session, voiceIds);
+      const expectedDigest = action.slice(isChoosing ? 'vc-choose-'.length : 'vc-commit-'.length);
+      if (snapshot.digest !== expectedDigest) {
+        await interaction.editReply('VCまたは参加者が変更されました。VC全員参加から候補を再取得してください。');
+        return;
+      }
+      const selected = isChoosing && interaction.isUserSelectMenu()
+        ? interaction.values
+        : snapshot.eligible;
+      if (!selected.length || selected.length > snapshot.remaining ||
+          (isChoosing && snapshot.eligible.length <= snapshot.remaining) ||
+          selected.some((id) => !snapshot.eligible.includes(id))) {
+        await interaction.editReply('選択内容が対象VCや参加枠と一致しません。もう一度やり直してください。');
+        return;
+      }
+      mutation = await manageValorantParticipants(prisma, {
+        guildId, id: session.id, userId: interaction.user.id, isAdmin: true,
+        action: 'bulk', targetIds: selected, expectedVoiceChannelId: session.voiceChannelId,
+      });
+    } else if ((action.startsWith('add-') || action.startsWith('remove-')) &&
+               interaction.isButton()) {
+      const removing = action.startsWith('remove-');
+      const userId = action.slice(removing ? 'remove-'.length : 'add-'.length);
+      if (!removing) {
+        const member = await interaction.guild?.members.fetch(userId).catch(() => null);
+        if (!member || member.user.bot) {
+          await interaction.editReply('追加できるのは、このサーバーの人間ユーザーだけです。');
+          return;
+        }
+      }
+      mutation = await manageValorantParticipants(prisma, {
+        guildId, id: session.id, userId: interaction.user.id, isAdmin: true,
+        action: removing ? 'remove' : 'add', targetIds: [userId],
+      });
+    } else {
+      await interaction.editReply('未対応の参加者管理操作です。');
+      return;
+    }
+
+    if (mutation.status !== 'ok') {
+      const errors: Record<string, string> = {
+        missing: '募集が見つかりません。',
+        closed: '募集は終了済み、または期限切れです。',
+        forbidden: '参加者を変更する権限がありません。',
+        full: '定員を超えるため登録しませんでした。参加者管理から追加対象を選び直してください。',
+        not_joined: '対象メンバーは参加していません。',
+        voice_changed: '対象VCが変更されたため登録を中止しました。',
+        invalid: '参加者の指定内容が正しくありません。',
+      };
+      await interaction.editReply(errors[mutation.status] ?? '参加者を変更できませんでした。');
+      return;
+    }
+    const synced = !mutation.changed || await updatePublicValorantRecruitment(interaction, mutation.session);
+    await interaction.editReply({
+      content: synced
+        ? mutation.changed
+          ? `参加者を更新しました（${mutation.session.participants.length} / ${mutation.session.maxParticipants}名）。`
+          : 'すでに反映済みのため、参加者の変更はありません。'
+        : '参加者の変更はDBへ保存されましたが、募集Embedの更新に失敗しました。',
+      components: [],
+    });
+  } catch (error) {
+    logger.error(
+      { guildId, errorName: error instanceof Error ? error.name : 'UnknownError' },
+      'VALORANT参加者管理に失敗',
+    );
+    await interaction.editReply('VCの取得または参加者管理に失敗しました。権限やVC状態を確認して再試行してください。')
+      .catch(() => undefined);
+  }
+}
+
 async function handleValorantButton(
   interaction: ButtonInteraction,
   prisma: PrismaClient,
@@ -766,10 +1156,17 @@ export const valorantPlugin = definePlugin<ValorantPluginConfig, unknown, Prisma
       {
         event: 'interactionCreate',
         async handler(_context, ...args) {
-          const candidate = args[0] as ButtonInteraction | undefined;
-          if (!candidate?.isButton?.() || !candidate.customId.startsWith(VALORANT_SESSION_PREFIX))
-            return;
-          await handleValorantButton(candidate, context.prisma, context.logger);
+          const candidate = args[0] as ValorantManagedInteraction | undefined;
+          if (!candidate?.customId?.startsWith(VALORANT_SESSION_PREFIX)) return;
+          const parsed = parseValorantSessionAction(candidate.customId);
+          if (!parsed) return;
+          if (candidate.isButton() &&
+              ['join', 'leave', 'draw', 'cancel', 'reroll'].includes(parsed.action)) {
+            await handleValorantButton(candidate, context.prisma, context.logger);
+          } else if (candidate.isButton() || candidate.isUserSelectMenu() ||
+                     candidate.isStringSelectMenu() || candidate.isChannelSelectMenu()) {
+            await handleValorantManagement(candidate, context.prisma, context.logger);
+          }
         },
       },
     ] as PluginEventHandler<ValorantPluginConfig>[];
