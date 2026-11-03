@@ -643,5 +643,7 @@ export function isVcRecapActive(guildId: string): boolean {
 }
 
 export function activeVcRecapChannelId(guildId: string): string | null {
-  return activeSessions.get(guildId)?.channelId ?? pendingGuildStarts.get(guildId)?.channelId ?? null;
+  return (
+    activeSessions.get(guildId)?.channelId ?? pendingGuildStarts.get(guildId)?.channelId ?? null
+  );
 }
