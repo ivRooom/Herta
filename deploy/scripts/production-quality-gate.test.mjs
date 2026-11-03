@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
+  assertHistoricalRollbackEvidence,
   assertSafeCompare,
   determineGateOutcome,
   needsPostgresIntegration,
@@ -76,6 +77,36 @@ test('checks accept only exact commit, main push, and successful completion', ()
   );
 });
 
+test('historical rollback refuses missing or pending main CI immediately', () => {
+  const historical = 'a'.repeat(40);
+  const current = 'b'.repeat(40);
+  const failedStates = [
+    { name: 'CI', state: 'success' },
+    { name: 'Database topology contracts', state: 'pending' },
+  ];
+  assert.throws(
+    () => assertHistoricalRollbackEvidence(failedStates, historical, historical, current),
+    /Database topology contracts/,
+  );
+  assert.doesNotThrow(() =>
+    assertHistoricalRollbackEvidence(failedStates, 'main', historical, current),
+  );
+  assert.doesNotThrow(() =>
+    assertHistoricalRollbackEvidence(failedStates, historical, historical, historical),
+  );
+  assert.doesNotThrow(() =>
+    assertHistoricalRollbackEvidence(
+      [
+        { name: 'CI', state: 'success' },
+        { name: 'Database topology contracts', state: 'success' },
+      ],
+      historical,
+      historical,
+      current,
+    ),
+  );
+});
+
 test('rejects incomplete commit comparisons and unauthorized deployment refs', () => {
   assert.deepEqual(
     assertSafeCompare({
@@ -112,6 +143,7 @@ test('production workflow cannot enter publish or SSH before its non-secret qual
   assert.match(gate, /run: node deploy\/scripts\/production-quality-gate\.mjs/);
   assert.match(build, /    needs: quality-gate/);
   assert.match(build, /ref: \$\{\{ needs\.quality-gate\.outputs\.deploy_sha \}\}/);
+  assert.match(build, /persist-credentials: false/);
   assert.match(build, /if: \$\{\{ github\.event_name == 'push'/);
   assert.match(deploy, /    needs: \[quality-gate, build-image\]/);
   assert.match(deploy, /    environment: production/);
