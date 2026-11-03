@@ -69,12 +69,15 @@ async function main() {
   ) {
     throw new Error('Deployment proof record does not match pinned production SHA');
   }
-  await api('deployments/' + record.id + '/statuses', {
+  const published = await api('deployments/' + record.id + '/statuses', {
     state: 'success',
     description: 'Protected SSH runtime digest and Cloudflare health verified',
     log_url: 'https://github.com/' + repository + '/actions/runs/' + runId,
     auto_inactive: false,
   });
+  if (published.state !== 'success') {
+    throw new Error('Deployment proof status was not accepted as successful');
+  }
   console.log('Verified Lightsail release proof recorded for ' + sha + ' as ' + record.id);
 }
 
