@@ -3,10 +3,11 @@ on:
   pull_request:
     paths:
       ['packages/db/**', 'apps/bot/**', 'apps/studio/**', '.github/workflows/valorant-agents.yml']
+  # Required by the cumulative production-delta gate: a deploy commit may
+  # contain only deploy/scripts changes while earlier Bot/DB changes were not shipped.
+  # Therefore a passing real-PG result must exist on every main SHA.
   push:
     branches: [main]
-    paths:
-      ['packages/db/**', 'apps/bot/**', 'apps/studio/**', '.github/workflows/valorant-agents.yml']
 permissions:
   contents: read
 jobs:

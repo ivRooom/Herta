@@ -1,4 +1,4 @@
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 
 const SHA_RE = /^[a-f0-9]{40}$/;
 const REQUIRED_WORKFLOWS = [
@@ -6,6 +6,71 @@ const REQUIRED_WORKFLOWS = [
   { file: 'database-topology.yml', name: 'Database topology contracts' },
 ];
 const PG_WORKFLOW = { file: 'valorant-agents.yml', name: 'VALORANT PostgreSQL integration' };
+
+// The retired push.paths allowlist is enforced here for workflow_run so
+// docs-only and Agent Skills-only commits never restart production.
+const RUNTIME_DIRS = ['apps/', 'packages/', 'plugins/', 'contracts/', 'deploy/', 'certs/'];
+const RUNTIME_FILES = new Set([
+  'Dockerfile',
+  '.dockerignore',
+  'docker-compose.prod.yml',
+  'docker-compose.common.yml',
+  'docker-compose.external.yml',
+  '.env.example',
+  '.env.production.example',
+  'package.json',
+  'pnpm-lock.yaml',
+  'pnpm-workspace.yaml',
+  'turbo.json',
+  'tsconfig.json',
+]);
+
+export function needsRuntimeDeployment(files) {
+  return files.some(
+    (file) =>
+      RUNTIME_FILES.has(file) ||
+      (RUNTIME_DIRS.some((prefix) => file.startsWith(prefix)) &&
+        !file.startsWith('deploy/aws/backup-monitoring/')),
+  );
+}
+
+/**
+ * workflow_run is a privileged event: neither a PR, a fork, an old main commit,
+ * nor a failed CI run is allowed to launch production build or acquire OIDC.
+ */
+export function validateCompletedMainCi(payload, repository, mainSha) {
+  const run = payload?.workflow_run;
+  if (
+    payload?.action !== 'completed' ||
+    payload?.repository?.full_name !== repository ||
+    !run ||
+    run.name !== 'CI' ||
+    run.event !== 'push' ||
+    run.status !== 'completed' ||
+    run.conclusion !== 'success' ||
+    run.head_branch !== 'main' ||
+    run.repository?.full_name !== repository ||
+    run.head_repository?.full_name !== repository ||
+    run.head_sha !== mainSha ||
+    !SHA_RE.test(run.head_sha)
+  ) {
+    throw new Error('Only successful same-SHA main push CI can trigger production');
+  }
+  return run.head_sha;
+}
+
+/** A successful SSH job alone cannot prove the deployed SHA after a manual rollback. */
+export function assertAutomaticProductionBaseline(run) {
+  if (
+    !run ||
+    !SHA_RE.test(run.head_sha) ||
+    run.head_branch !== 'main' ||
+    (run.event !== 'push' && run.event !== 'workflow_run')
+  ) {
+    throw new Error('Last successful production SSH has no attested automatic main SHA');
+  }
+  return run.head_sha;
+}
 const PG_PATHS = [
   /^packages\/db\//,
   /^apps\/bot\//,
@@ -71,7 +136,7 @@ async function main() {
     !repository ||
     !/^[\w.-]+\/[\w.-]+$/.test(repository) ||
     !token ||
-    !['push', 'workflow_dispatch'].includes(event)
+    !['push', 'workflow_dispatch', 'workflow_run'].includes(event)
   ) {
     throw new Error('Invalid GitHub Actions environment for the production quality gate');
   }
@@ -104,7 +169,27 @@ async function main() {
   const currentMain = async () => (await api('branches/main')).commit.sha;
   const triggeredSha = process.env.GITHUB_SHA;
   const mainSha = await currentMain();
-  const sha = requestedRef === 'main' ? (event === 'push' ? triggeredSha : mainSha) : requestedRef;
+  let workflowRunSha;
+  if (event === 'workflow_run') {
+    if (requestedRef !== 'main' || !process.env.GITHUB_EVENT_PATH) {
+      throw new Error('Automatic workflow_run must deploy current main only');
+    }
+    let payload;
+    try {
+      payload = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+    } catch {
+      throw new Error('Cannot read authenticated GitHub workflow_run event');
+    }
+    workflowRunSha = validateCompletedMainCi(payload, repository, mainSha);
+  }
+  const sha =
+    requestedRef !== 'main'
+      ? requestedRef
+      : event === 'workflow_run'
+        ? workflowRunSha
+        : event === 'push'
+          ? triggeredSha
+          : mainSha;
   if (!SHA_RE.test(sha)) throw new Error('Expected immutable commit SHA');
   if (event === 'push' && requestedRef !== 'main') {
     throw new Error('Automatic production deployments must be from main');
@@ -123,15 +208,64 @@ async function main() {
     }
   }
 
+  // Compare against the last *actually deployed* SHA, not just the current
+  // commit's first parent: an earlier missed deployment may contain Bot changes
+  // even when the current CI trigger is docs-only.
   let before = process.env.DEPLOY_PUSH_BEFORE;
+  let previousProductionConfirmed = false;
+  if (event === 'workflow_run') {
+    const priorRuns = await api(
+      'actions/workflows/deploy-production.yml/runs?branch=main&status=success&per_page=100',
+    );
+    if (!Array.isArray(priorRuns.workflow_runs)) {
+      throw new Error('Cannot inspect production deployment history');
+    }
+    for (const candidate of priorRuns.workflow_runs) {
+      if (!Number.isSafeInteger(candidate.id)) {
+        throw new Error('Production run history has an invalid run identifier');
+      }
+      const jobs = await api('actions/runs/' + candidate.id + '/jobs?per_page=100');
+      if (!Array.isArray(jobs.jobs)) throw new Error('Cannot inspect deployment jobs');
+      if (jobs.total_count > jobs.jobs.length) {
+        throw new Error('Cannot establish complete deployment job history');
+      }
+      if (
+        jobs.jobs.some(
+          (job) => job.name === 'SSH Deploy to Lightsail' && job.conclusion === 'success',
+        )
+      ) {
+        before = assertAutomaticProductionBaseline(candidate);
+        previousProductionConfirmed = true;
+        break;
+      }
+    }
+  }
+  if (event === 'workflow_run' && !previousProductionConfirmed) {
+    throw new Error('No attested successful production SSH baseline; automatic deployment blocked');
+  }
   if (event === 'workflow_dispatch') {
     const commit = await api('commits/' + sha);
     before = commit.parents?.[0]?.sha;
+  }
+  if (event === 'workflow_run' && previousProductionConfirmed && before === sha) {
+    if (!process.env.GITHUB_OUTPUT) throw new Error('Missing GitHub Actions output file');
+    appendFileSync(process.env.GITHUB_OUTPUT, 'should_deploy=false\n');
+    console.log('Exact current SHA was already deployed; duplicate release skipped');
+    return;
   }
   if (!SHA_RE.test(before) || before === sha) {
     throw new Error('Cannot establish production change boundary');
   }
   const files = assertSafeCompare(await api('compare/' + before + '...' + sha));
+  // A docs-only update after a missed Bot deploy MUST still ship the pending
+  // Bot changes. Only skip when an authenticated successful production baseline
+  // establishes that the *whole* delta is docs/skills/monitoring-only.
+  if (event === 'workflow_run' && previousProductionConfirmed && !needsRuntimeDeployment(files)) {
+    if (!process.env.GITHUB_OUTPUT) throw new Error('Missing GitHub Actions output file');
+    appendFileSync(process.env.GITHUB_OUTPUT, 'should_deploy=false\n');
+    console.log('No runtime change since successful production SHA; deployment skipped');
+    return;
+  }
   const required = [...REQUIRED_WORKFLOWS];
   if (needsPostgresIntegration(files)) required.push(PG_WORKFLOW);
   console.log(
@@ -176,7 +310,7 @@ async function main() {
     throw new Error('main moved while checking CI; stale revision must not deploy');
   }
   if (!process.env.GITHUB_OUTPUT) throw new Error('Missing GitHub Actions output file');
-  appendFileSync(process.env.GITHUB_OUTPUT, 'deploy_sha=' + sha + '\n');
+  appendFileSync(process.env.GITHUB_OUTPUT, 'deploy_sha=' + sha + '\nshould_deploy=true\n');
   console.log('Production quality checks passed for ' + sha.slice(0, 12));
 }
 

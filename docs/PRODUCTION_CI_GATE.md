@@ -10,20 +10,19 @@ See #646 for new feature approval and #694, #695, #728, #729, #730 for deletion 
 
 ## Automatic deploy
 
-1. Existing runtime path filters start the Deploy Production workflow on a main push.
-2. The read-only Verified main CI gate pins the current main commit SHA.
-3. It waits for successful main-push CI and Database topology contracts on the same SHA.
-4. DB, Bot, Studio and PostgreSQL workflow changes also require PostgreSQL integration.
-5. Failed, cancelled, missing, malformed and unrelated checks are never accepted.
-6. CI waiting is bounded to 90 minutes; the outer gate job has a 100-minute limit.
-7. The validated SHA is passed to image build, GHCR publish and Lightsail SSH deploy.
-8. A changed main SHA stops normal deployment before publishing and before SSH.
-9. The existing production Environment, AWS OIDC/SSM and health checks are preserved.
+1. A completed **main push CI** triggers `Deploy Production` through `workflow_run` (not the old `push.paths` filter). `workflow_dispatch` remains an independently approved manual path.
+2. The read-only gate validates `workflow_run` origin: same GitHub repository, `push` event, main branch, `completed/success`, exact latest main SHA, and valid payload. PR/fork/stale/failed CI never reach build or SSH.
+3. The current main commit SHA is pinned. A last **successfully executed production SSH job** with provable automatic main SHA is required as the comparison baseline; GitHub workflow run `head_sha` alone cannot attest the image deployed by a **manual rollback**.
+4. Compare the proven production baseline through the pinned main SHA. Runtime source/config/deploy changes require deployment, even when previous main commits were not deployed; docs/Agent Skills/monitoring-only deltas skip build and SSH.
+5. Unknown, manual-rollback or unverifiable production baseline, incomplete commit comparison, API outage and stale main **stop** automatic deployment. Do not fallback to the latest commit parent or an inferred image version. See #765 for an auditable post-rollback resume design.
+6. The gate requires successful same-SHA main-push CI (including ARM64/SBOM/Grype), Database topology contracts, and conditional isolated PostgreSQL integration for DB/Bot/Studio changes. The PostgreSQL workflow itself runs on **every main push**: a deploy may include Bot/DB changes from earlier commits that never reached production, even when the newest push changed only deployment scripts. This intentionally trades some CI cost for a trustworthy same-SHA gate.
+7. CI waiting is bounded to 90 minutes; the outer gate job has a 100-minute limit. All unsuccessful, incomplete or cancelled checks fail closed.
+8. The validated immutable SHA is passed to GHCR build/publish and Lightsail SSH. The normal path rejects main branch moves before image publication and before SSH.
+9. Preserve `environment: production`, existing AWS OIDC/SSM, migrator and Bot/API/Studio/Worker plus Cloudflare health checks.
 
-Main may change after the final pre-SSH check.
-Treat this as a residual race requiring production monitoring, not an atomicity guarantee.
-If a later docs-only push moves main without triggering a new deploy, manually dispatch
-Deploy Production with `ref: main` (not a rerun of the stale failed workflow).
+**Activation:** After merging the workflow change, confirm `Deploy Production` is enabled in GitHub Actions. Confirm main CI completion actually produces a `workflow_run` event, that its gate accepted the same SHA, and that GHCR image, SSH, migrations and external health pass. A passed CI without a Deploy run is **not** a successful release. If it does not start, stop; do not create an unrelated empty commit or bypass the gate. See #762 / release #759.
+
+Main may move after the final pre-SSH check. Treat this residual race as requiring monitoring rather than an atomic deployment guarantee. If the trigger is disabled or approval is pending, the operator must use the approved Actions UI/Environment process; automatic equivalence is not assumed.
 
 ## Human-run rollback
 
@@ -38,6 +37,8 @@ Deploy Production with `ref: main` (not a rerun of the stale failed workflow).
 - Never copy secrets, customer identifiers or audio into GitHub Issues.
 - Check API, Studio/Auth, Bot, Worker, migrator and external Cloudflare health.
 - Confirm the running Bot/API/Studio/Worker image SHAs and Actions run results.
+
+After any historical-SHA manual rollback, the automatic CI-completion workflow is **conservatively blocked** until trustworthy evidence of the actual production SHA can be established (#765). Do not infer it from the manual GitHub workflow run head SHA. Record the running image SHA, approved rollback target and release owner in #759 / incident Issue. An approved manual main deployment is an explicit human action, not proof that automatic provenance is repaired.
 
 A failed GitHub API, unavailable runner, rejected CI or missing approval is a stop condition.
 Do not add a quality-gate bypass or disable environment protection to clear an alert.
@@ -54,6 +55,6 @@ These tests verify metadata and workflow contracts.
 They do not prove privacy-safe restore or full deletion of historical user data.
 External GitHub Environment and OIDC settings require human review.
 
-Tracking: [#700](https://github.com/ivRooom/Herta/issues/700).
+Tracking: [#700](https://github.com/ivRooom/Herta/issues/700), [#762](https://github.com/ivRooom/Herta/issues/762), [#765](https://github.com/ivRooom/Herta/issues/765).
 Release status: [#691](https://github.com/ivRooom/Herta/issues/691).
 Feature approval: [#646](https://github.com/ivRooom/Herta/issues/646).
