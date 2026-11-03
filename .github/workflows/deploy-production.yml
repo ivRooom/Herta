@@ -32,7 +32,7 @@ on:
   workflow_dispatch:
     inputs:
       ref:
-        description: 'デプロイするブランチ / タグ (既定: main)'
+        description: 'デプロイする main または40文字SHA。古いSHAは検証済みmainのrollback専用'
         required: false
         default: main
 
@@ -49,9 +49,36 @@ env:
   IMAGE_REPOSITORY: ghcr.io/ivrooom/herta
 
 jobs:
+  quality-gate:
+    name: Verified main CI gate
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      deploy_sha: ${{ steps.verify.outputs.deploy_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Check same-SHA production CI and data topology before any image upload
+        id: verify
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DEPLOY_REQUESTED_REF: ${{ github.event.inputs.ref || 'main' }}
+          DEPLOY_PUSH_BEFORE: ${{ github.event.before }}
+        run: node deploy/scripts/production-quality-gate.mjs
+
   build-image:
     name: Build and push production image
+    needs: quality-gate
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     timeout-minutes: 60
     outputs:
       image_ref: ${{ steps.image.outputs.image_ref }}
@@ -59,7 +86,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.inputs.ref || github.ref }}
+          ref: ${{ needs.quality-gate.outputs.deploy_sha }}
 
       - name: 配布するimage参照を決定
         id: image
@@ -107,6 +134,19 @@ jobs:
             test "$(id -u)" != "0"
           '
 
+      - name: 古いmainイメージをGHCRへpublishしない（明示rollback除外）
+        if: ${{ github.event.inputs.ref == '' || github.event.inputs.ref == 'main' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ needs.quality-gate.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+          current_sha="$(gh api "repos/${GITHUB_REPOSITORY}/branches/main" --jq '.commit.sha')"
+          if [ "${current_sha}" != "${EXPECTED_SHA}" ]; then
+            echo 'ERROR: main moved before GHCR push. Refusing stale image.' >&2
+            exit 1
+          fi
+
       - name: GHCRへpush
         shell: bash
         run: |
@@ -120,12 +160,16 @@ jobs:
 
   deploy:
     name: SSH Deploy to Lightsail
-    needs: build-image
+    needs: [quality-gate, build-image]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
     timeout-minutes: 20
     environment: production
     env:
-      DEPLOY_REF: ${{ github.event.inputs.ref || 'main' }}
+      DEPLOY_REF: ${{ needs.quality-gate.outputs.deploy_sha }}
       HERTA_IMAGE: ${{ needs.build-image.outputs.image_ref }}
       GHCR_USERNAME: ${{ github.actor }}
       GHCR_TOKEN: ${{ github.token }}
@@ -134,6 +178,18 @@ jobs:
       HERTA_RUNTIME_SECRET_KEY: ${{ secrets.HERTA_RUNTIME_SECRET_KEY }}
 
     steps:
+      - name: 最新mainへの上書きを防止（明示rollback SHAを除く）
+        if: ${{ github.event.inputs.ref == '' || github.event.inputs.ref == 'main' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ needs.quality-gate.outputs.deploy_sha }}
+        run: |
+          set -euo pipefail
+          current_sha="$(gh api "repos/${GITHUB_REPOSITORY}/branches/main" --jq '.commit.sha')"
+          if [ "${current_sha}" != "${EXPECTED_SHA}" ]; then
+            echo 'ERROR: main moved before SSH deploy. Refusing stale revision.' >&2
+            exit 1
+          fi
       - name: AWS credentialsを設定
         uses: aws-actions/configure-aws-credentials@v6.2.3
         with:
