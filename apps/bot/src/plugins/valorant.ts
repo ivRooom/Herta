@@ -1268,7 +1268,9 @@ async function handlePickStatistics(
       }
       if (included) draws++;
     }
-    const labels = new Map(defaultValorantAgents().map((agent) => [agent.agentId, agent.displayName]));
+    const labels = new Map(
+      defaultValorantAgents().map((agent) => [agent.agentId, agent.displayName]),
+    );
     const show = (items: Map<string, number>, names?: ReadonlyMap<string, string>) =>
       [...items.entries()]
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
