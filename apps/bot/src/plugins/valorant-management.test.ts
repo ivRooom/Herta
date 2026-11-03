@@ -74,7 +74,7 @@ function harness() {
     userId = 'creator',
     ephemeral = true,
   ) => {
-    const editReply = vi.fn();
+    const editReply = vi.fn(async () => undefined);
     const deferReply = vi.fn();
     const deferUpdate = vi.fn();
     const value = {
