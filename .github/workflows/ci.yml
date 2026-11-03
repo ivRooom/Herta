@@ -47,6 +47,13 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
+      # Temporary #765 diagnostics; removed before merge. Never trust this
+      # formatted runner workspace as a final source artifact.
+      - name: Diagnostic Prettier patch for release gate
+        run: |
+          pnpm exec prettier --write deploy/scripts/production-quality-gate.mjs deploy/scripts/production-quality-gate.test.mjs
+          git diff -- deploy/scripts/production-quality-gate.mjs deploy/scripts/production-quality-gate.test.mjs
+
       - name: Format Check
         run: pnpm format:check
 
