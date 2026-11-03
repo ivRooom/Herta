@@ -16,36 +16,37 @@ async function main() {
   const runId = Number(process.env.GITHUB_RUN_ID);
   const runAttempt = Number(process.env.GITHUB_RUN_ATTEMPT);
   if (
-    !repository || !/^[\w.-]+\/[\w.-]+$/.test(repository) ||
-    !token || !SHA_RE.test(sha) ||
+    !repository ||
+    !/^[\w.-]+\/[\w.-]+$/.test(repository) ||
+    !token ||
+    !SHA_RE.test(sha) ||
     ref !== 'ghcr.io/ivrooom/herta:' + sha ||
     process.env.GITHUB_JOB !== 'deploy'
   ) {
     throw new Error('Invalid protected production deployment environment');
   }
-  const runtime = parseProductionRuntimeProof(
-    process.env.HERTA_RUNTIME_READBACK ?? '',
-    sha,
-  );
+  const runtime = parseProductionRuntimeProof(process.env.HERTA_RUNTIME_READBACK ?? '', sha);
   const payload = buildProductionDeploymentPayload({
-    runId, runAttempt, sha, imageId: runtime.imageId, actor,
+    runId,
+    runAttempt,
+    sha,
+    imageId: runtime.imageId,
+    actor,
   });
   const api = async (path, body) => {
-    const response = await fetch(
-      'https://api.github.com/repos/' + repository + '/' + path,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: 'Bearer ' + token,
-          Accept: 'application/vnd.github+json',
-          'X-GitHub-Api-Version': '2022-11-28',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(15000),
+    const response = await fetch('https://api.github.com/repos/' + repository + '/' + path, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + token,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
       },
-    );
-    if (!response.ok) throw new Error('Unable to record protected release proof: HTTP ' + response.status);
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!response.ok)
+      throw new Error('Unable to record protected release proof: HTTP ' + response.status);
     return response.json();
   };
   // No deployment record is created until SSH runtime readback AND Cloudflare
@@ -61,8 +62,11 @@ async function main() {
     production_environment: true,
     payload,
   });
-  if (record.sha !== sha || record.environment !== RUNTIME_ATTESTATION_ENVIRONMENT ||
-      !Number.isSafeInteger(record.id)) {
+  if (
+    record.sha !== sha ||
+    record.environment !== RUNTIME_ATTESTATION_ENVIRONMENT ||
+    !Number.isSafeInteger(record.id)
+  ) {
     throw new Error('Deployment proof record does not match pinned production SHA');
   }
   await api('deployments/' + record.id + '/statuses', {
