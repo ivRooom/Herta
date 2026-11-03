@@ -41,12 +41,10 @@ function makeSession(status = 'OPEN'): ValorantSessionSnapshot {
 
 function testPrisma(session: ValorantSessionSnapshot) {
   const findMany = vi.fn().mockResolvedValue([session]);
-  const findFirst = vi
-    .fn()
-    .mockResolvedValue({
-      ...session,
-      status: session.status === 'OPEN' ? 'EXPIRED' : session.status,
-    });
+  const findFirst = vi.fn().mockResolvedValue({
+    ...session,
+    status: session.status === 'OPEN' ? 'EXPIRED' : session.status,
+  });
   const updateMany = vi.fn().mockResolvedValue({ count: 1 });
   const prisma = {
     valorantPickSession: { findMany, findFirst, updateMany },
