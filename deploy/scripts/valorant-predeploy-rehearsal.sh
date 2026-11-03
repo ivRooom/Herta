@@ -157,7 +157,26 @@ if [[ "$ready" != true ]]; then
   echo 'ERROR: 隔離PG16を起動できません。' >&2
   exit 2
 fi
-docker exec "$restore_id" createdb -U postgres valorant_rehearsal
+# Official postgres images briefly start a bootstrap server, stop it, then
+# start the final postmaster. pg_isready may catch the transient phase.
+# Only proceed once a CREATE DATABASE succeeds against the live final server.
+created=false
+for attempt in $(seq 1 30); do
+  if docker exec "$restore_id" createdb -U postgres valorant_rehearsal >/dev/null 2>&1; then
+    created=true
+    break
+  fi
+  sleep 1
+done
+if [[ "$created" != true ]]; then
+  echo 'ERROR: 隔離PG16のデータベースを初期化できません。' >&2
+  exit 2
+fi
+sleep 2
+if ! docker exec "$restore_id" pg_isready -U postgres -q; then
+  echo 'ERROR: 隔離PG16が安定して稼働していません。' >&2
+  exit 2
+fi
 echo '隔離PG16 (network=none) へ同一アーカイブを復元中。'
 docker exec -i "$restore_id" pg_restore --no-owner --no-acl --exit-on-error   -U postgres -d valorant_rehearsal < "$backup"
 before="$(docker exec "$restore_id" psql -X -At -v ON_ERROR_STOP=1 -U postgres -d valorant_rehearsal -c   'SELECT count(*) FROM "_prisma_migrations" WHERE migration_name = '\''20261103160000_valorant_voice_participants'\''')"
