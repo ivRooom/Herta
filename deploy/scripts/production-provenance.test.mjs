@@ -266,6 +266,68 @@ test('automatic main CI can safely no-op against the actual manual deployed SHA'
   assert.deepEqual(proof, { sha, runId: manualRun.id, imageId });
 });
 
+test('manual bootstrap cannot miss an SSH baseline hidden beyond 100 no-op runs', async () => {
+  const noOpRuns = Array.from({ length: 100 }, (_, i) => ({
+    ...manualRun,
+    id: 1000 + i,
+    event: 'workflow_run',
+  }));
+  const api = async (path) => {
+    if (path.startsWith('actions/workflows/')) {
+      return {
+        workflow_runs: path.includes('page=1') ? noOpRuns : [manualRun],
+        total_count: 101,
+      };
+    }
+    if (path.includes('/jobs?')) {
+      const isSshRun = path.includes('/runs/' + manualRun.id + '/jobs?');
+      return {
+        jobs: isSshRun ? [sshJob] : [{ name: 'Verified main CI gate', steps: [] }],
+        total_count: 1,
+      };
+    }
+    if (path.startsWith('deployments?')) return path.includes('page=1') ? [record] : [];
+    if (path.startsWith('deployments/')) return [status];
+    throw new Error('Unexpected fixture API path');
+  };
+  assert.deepEqual(await loadLatestProductionAttestation(api), {
+    sha,
+    runId: manualRun.id,
+    imageId,
+  });
+});
+
+test('manual bootstrap fails closed on truncated or inconsistent workflow history', async () => {
+  const noOpRuns = Array.from({ length: 100 }, (_, i) => ({
+    ...manualRun,
+    id: 3000 + i,
+    event: 'workflow_run',
+  }));
+  const incompleteApi = async (path) => {
+    if (path.startsWith('actions/workflows/')) {
+      return { workflow_runs: noOpRuns, total_count: 2000 };
+    }
+    if (path.includes('/jobs?')) {
+      return { jobs: [{ name: 'Verified main CI gate', steps: [] }], total_count: 1 };
+    }
+    throw new Error('Unexpected fixture API path');
+  };
+  await assert.rejects(
+    loadLatestProductionAttestation(incompleteApi),
+    /Incomplete production workflow run history/,
+  );
+  const mismatchedCountApi = async (path) => {
+    if (path.startsWith('actions/workflows/')) {
+      return { workflow_runs: [], total_count: 1 };
+    }
+    throw new Error('Unexpected fixture API path');
+  };
+  await assert.rejects(
+    loadLatestProductionAttestation(mismatchedCountApi),
+    /Incomplete production workflow run history/,
+  );
+});
+
 test('automatic gate refuses missing, conflicting, incomplete or failed proof', async () => {
   for (const api of [
     apiFixture({ deployments: [] }),
