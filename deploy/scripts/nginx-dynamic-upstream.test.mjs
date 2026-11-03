@@ -28,8 +28,14 @@ test('all proxy targets use re-resolvable internal Docker DNS names', () => {
     (match) => match[1],
   );
   assert.equal(targets.length, 8);
-  assert.equal(targets.filter((target) => target === 'http://$api_backend').length, 5);
-  assert.equal(targets.filter((target) => target === 'http://$studio_backend').length, 3);
+  assert.equal(
+    targets.filter((target) => target === 'http://$api_backend').length,
+    5,
+  );
+  assert.equal(
+    targets.filter((target) => target === 'http://$studio_backend').length,
+    3,
+  );
 });
 
 test('existing NestJS and Studio/Auth.js path ownership is preserved', () => {
