@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   assertSafeCompare,
@@ -94,4 +95,25 @@ test('rejects incomplete commit comparisons and unauthorized deployment refs', (
   assert.doesNotThrow(() => validateDeployRef(sha));
   assert.throws(() => validateDeployRef('feature-branch'));
   assert.throws(() => validateDeployRef('main;curl example'));
+});
+
+test('production workflow cannot enter publish or SSH before its non-secret quality gate', () => {
+  const source = readFileSync(
+    new URL('../../.github/workflows/deploy-production.yml', import.meta.url),
+    'utf8',
+  );
+  const [gate, buildRest] = source.split('\n  build-image:\n');
+  assert.ok(buildRest, 'Build job must exist');
+  const [build, deploy] = buildRest.split('\n  deploy:\n');
+  assert.ok(deploy, 'SSH deploy job must exist');
+
+  assert.match(gate, /  quality-gate:\n    name: Verified main CI gate/);
+  assert.match(gate, /    permissions:\n      contents: read\n      actions: read/);
+  assert.match(gate, /run: node deploy\/scripts\/production-quality-gate\.mjs/);
+  assert.match(build, /    needs: quality-gate/);
+  assert.match(build, /ref: \$\{\{ needs\.quality-gate\.outputs\.deploy_sha \}\}/);
+  assert.match(build, /if: \$\{\{ github\.event_name == 'push'/);
+  assert.match(deploy, /    needs: \[quality-gate, build-image\]/);
+  assert.match(deploy, /    environment: production/);
+  assert.match(deploy, /if: \$\{\{ github\.event_name == 'push'/);
 });
