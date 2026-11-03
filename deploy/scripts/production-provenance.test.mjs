@@ -31,6 +31,7 @@ const sshJob = {
   conclusion: 'success',
   started_at: '2026-11-03T10:00:00Z',
   completed_at: '2026-11-03T10:03:00Z',
+  steps: [{ name: 'LightsailへSSHデプロイ', status: 'completed', conclusion: 'success' }],
 };
 const payload = buildProductionDeploymentPayload({
   runId: manualRun.id,
@@ -105,25 +106,47 @@ test('rejects forged source, actor, image, stale SHA, missing status, tampered d
   }
 });
 
-test('newest successfully deployed job wins over earlier and failed/partial/no-op jobs', () => {
+test('last SSH attempt wins; a failed post-SSH health check blocks older proof', () => {
   const old = {
     run: { ...manualRun, id: 100, event: 'workflow_run' },
     jobs: [{ ...sshJob, completed_at: '2026-11-03T09:50:00Z' }],
   };
-  const failed = {
+  const failedAfterSsh = {
     run: { ...manualRun, id: 300, conclusion: 'failure' },
-    jobs: [{ ...sshJob, conclusion: 'failure', completed_at: '2026-11-03T10:05:00Z' }],
+    jobs: [{
+      ...sshJob,
+      conclusion: 'failure',
+      completed_at: '2026-11-03T10:05:00Z',
+    }],
   };
   const noop = {
     run: { ...manualRun, id: 320 },
     jobs: [{ name: 'Verified main CI gate', conclusion: 'success' }],
   };
-  const latest = selectLatestSuccessfulSshDeployment([
-    old, { run: manualRun, jobs: [sshJob] }, failed, noop,
-  ]);
-  assert.equal(latest.run.id, manualRun.id);
-  assert.equal(latest.completedMs, Date.parse(sshJob.completed_at));
-  assert.equal(selectLatestSuccessfulSshDeployment([failed, noop]), null);
+  assert.equal(
+    selectLatestSuccessfulSshDeployment([
+      old, { run: manualRun, jobs: [sshJob] }, noop,
+    ]).run.id,
+    manualRun.id,
+  );
+  assert.throws(
+    () => selectLatestSuccessfulSshDeployment([
+      old, { run: manualRun, jobs: [sshJob] }, failedAfterSsh,
+    ]),
+    /Latest production SSH attempt failed/,
+  );
+  const failedWithinSsh = {
+    run: { ...manualRun, id: 330, conclusion: 'failure' },
+    jobs: [{
+      ...sshJob, conclusion: 'failure', completed_at: '2026-11-03T10:09:00Z',
+      steps: [{ name: 'LightsailへSSHデプロイ', status: 'completed', conclusion: 'failure' }],
+    }],
+  };
+  assert.throws(
+    () => selectLatestSuccessfulSshDeployment([old, failedWithinSsh]),
+    /Latest production SSH attempt failed/,
+  );
+  assert.equal(selectLatestSuccessfulSshDeployment([noop]), null);
   assert.throws(() => selectLatestSuccessfulSshDeployment([
     { run: manualRun, jobs: [sshJob, sshJob] },
   ]));
