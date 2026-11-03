@@ -161,8 +161,13 @@ test('runtime-only deployment skips docs, skills and monitoring-only changes', (
 test('workflow_run trusts only successful same-SHA main push CI in this repo', () => {
   const repo = 'ivRooom/Herta';
   const run = {
-    name: 'CI', event: 'push', status: 'completed', conclusion: 'success',
-    head_branch: 'main', head_sha: sha, repository: { full_name: repo },
+    name: 'CI',
+    event: 'push',
+    status: 'completed',
+    conclusion: 'success',
+    head_branch: 'main',
+    head_sha: sha,
+    repository: { full_name: repo },
     head_repository: { full_name: repo },
   };
   const valid = { action: 'completed', repository: { full_name: repo }, workflow_run: run };
@@ -196,7 +201,9 @@ test('production workflow has an unprivileged CI-completion gate before build an
   const [build, deploy] = buildRest.split('\n  deploy:\n');
   assert.ok(deploy, 'SSH deploy job must exist');
 
-  assert.ok(source.includes('  workflow_run:\n    workflows: [CI]\n    types: [completed]\n    branches: [main]'));
+  assert.ok(
+    source.includes('  workflow_run:\n    workflows: [CI]\n    types: [completed]\n    branches: [main]'),
+  );
   assert.ok(!source.includes('\n  push:\n'));
   assert.ok(gate.includes('name: Verified main CI gate'));
   assert.ok(gate.includes("if: github.ref == 'refs/heads/main'"));
