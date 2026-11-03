@@ -172,7 +172,10 @@ test('automatic production baseline refuses manual rollback and unverifiable SSH
     { ...automatic, head_branch: 'feature' },
     { ...automatic, head_sha: 'not-a-sha' },
   ]) {
-    assert.throws(() => assertAutomaticProductionBaseline(candidate), /attested automatic main SHA/);
+    assert.throws(
+      () => assertAutomaticProductionBaseline(candidate),
+      /attested automatic main SHA/,
+    );
   }
 });
 
