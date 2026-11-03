@@ -47,6 +47,14 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
+      - name: Diagnostic VALORANT result Prettier diff (temporary)
+        run: |
+          for file in 'apps/studio/src/app/api/guilds/[guildId]/valorant/results/route.ts' 'apps/studio/src/components/valorant-results-manager.tsx' 'apps/studio/src/lib/valorant-match-validation.ts' 'apps/studio/src/lib/valorant-stats.ts'; do
+            echo "::group::Prettier difference for ${file}"
+            pnpm exec prettier "$file" | diff -u "$file" - || true
+            echo "::endgroup::"
+          done
+
       - name: Format Check
         run: pnpm format:check
 
