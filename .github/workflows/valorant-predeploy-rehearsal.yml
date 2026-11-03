@@ -8,6 +8,8 @@ on:
       - '.github/workflows/deploy-production.yml'
       - '.github/workflows/valorant-predeploy-rehearsal.yml'
       - 'packages/db/prisma/migrations/20261103160000_valorant_voice_participants/**'
+      - 'packages/db/prisma/migrations/20261104093000_valorant_expiry_ui_reconcile/**'
+      - 'deploy/scripts/valorant-expiry-predeploy-rehearsal.sh'
   # Every main SHA needs a rehearsal result: cumulative production-delta checks
   # can require an earlier unshipped migration after a docs/nginx-only push.
   # PR runs remain path-scoped for cost control.
@@ -116,4 +118,45 @@ jobs:
             exit 1
           fi
           test "$(find "$HOME/.local/share/herta/release-backups" -maxdepth 1 -type f -name '*.dump' | wc -l)" -eq 1
-          echo 'CI PG16: backup/restore/rehearsal/partial migration/checksum negative tests passed'
+          # Independently verify the new #779 additive UI retry migration against
+          # a source with the previous November migration already applied.
+          docker compose --project-name "herta_val_ci_${GITHUB_RUN_ID}" --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+            psql -X -v ON_ERROR_STOP=1 -U postgres -d herta -v checksum="$checksum" <<'SQL'
+          UPDATE "_prisma_migrations" SET checksum = :'checksum'
+            WHERE migration_name = '20261103160000_valorant_voice_participants';
+          SQL
+          expiry_migration=packages/db/prisma/migrations/20261104093000_valorant_expiry_ui_reconcile/migration.sql
+          bash deploy/scripts/valorant-expiry-predeploy-rehearsal.sh
+          # Source must still have no new columns (new SQL ran offline only).
+          new_column_count="$(docker compose --project-name "herta_val_ci_${GITHUB_RUN_ID}" --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+            psql -X -At -v ON_ERROR_STOP=1 -U postgres -d herta -c "SELECT count(*) FROM information_schema.columns WHERE table_name='valorant_pick_sessions' AND column_name IN ('expiry_ui_synced_at','expiry_ui_retry_at','expiry_ui_retry_count')")"
+          test "$new_column_count" = '0'
+          docker compose --project-name "herta_val_ci_${GITHUB_RUN_ID}" --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+            psql -X -v ON_ERROR_STOP=1 -U postgres -d herta -c \
+            'ALTER TABLE "valorant_pick_sessions" ADD COLUMN expiry_ui_retry_at timestamptz(3)'
+          if bash deploy/scripts/valorant-expiry-predeploy-rehearsal.sh; then
+            echo 'ERROR: partially applied expiry UI migration was not rejected' >&2
+            exit 1
+          fi
+          docker compose --project-name "herta_val_ci_${GITHUB_RUN_ID}" --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+            psql -X -v ON_ERROR_STOP=1 -U postgres -d herta -c \
+            'ALTER TABLE "valorant_pick_sessions" DROP COLUMN expiry_ui_retry_at'
+          docker compose --project-name "herta_val_ci_${GITHUB_RUN_ID}" --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+            psql -X -v ON_ERROR_STOP=1 -U postgres -d herta < "$expiry_migration"
+          expiry_checksum="$(sha256sum "$expiry_migration" | awk '{print $1}')"
+          docker compose --project-name "herta_val_ci_${GITHUB_RUN_ID}" --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+            psql -X -v ON_ERROR_STOP=1 -U postgres -d herta -v checksum="$expiry_checksum" <<'SQL'
+          INSERT INTO "_prisma_migrations"(migration_name, checksum, finished_at)
+            VALUES ('20261104093000_valorant_expiry_ui_reconcile', :'checksum', now());
+          SQL
+          bash deploy/scripts/valorant-expiry-predeploy-rehearsal.sh
+          docker compose --project-name "herta_val_ci_${GITHUB_RUN_ID}" --env-file .env.production -f docker-compose.prod.yml exec -T postgres \
+            psql -X -v ON_ERROR_STOP=1 -U postgres -d herta -c \
+            "UPDATE \"_prisma_migrations\" SET checksum='tampered' WHERE migration_name='20261104093000_valorant_expiry_ui_reconcile'"
+          if bash deploy/scripts/valorant-expiry-predeploy-rehearsal.sh; then
+            echo 'ERROR: tampered applied expiry UI migration checksum was not rejected' >&2
+            exit 1
+          fi
+          test "$(find "$HOME/.local/share/herta/release-backups" -maxdepth 1 -type f -name '*.dump' | wc -l)" -eq 2
+          echo 'CI PG16: both migration rehearsals and partial/checksum negative tests passed'
+
