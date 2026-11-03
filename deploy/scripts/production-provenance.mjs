@@ -9,23 +9,27 @@ export function parseProductionRuntimeProof(stdout, expectedSha) {
   if (!SHA_RE.test(expectedSha) || typeof stdout !== 'string') {
     throw new Error('Invalid expected production SHA or SSH stdout');
   }
-  const proofs = [...stdout.matchAll(
-    /(?:^|\n)(?:out:[ \t]*)?HERTA_RELEASE_PROOF[ \t]+([a-f0-9]{40})[ \t]+(sha256:[a-f0-9]{64})(?:\r?\n|$)/g,
-  )];
+  const proofs = [
+    ...stdout.matchAll(
+      /(?:^|\n)(?:out:[ \t]*)?HERTA_RELEASE_PROOF[ \t]+([a-f0-9]{40})[ \t]+(sha256:[a-f0-9]{64})(?:\r?\n|$)/g,
+    ),
+  ];
   if (proofs.length !== 1 || proofs[0][1] !== expectedSha) {
     throw new Error('Missing, duplicate, stale or malformed Lightsail runtime proof');
   }
   return { sha: expectedSha, imageId: proofs[0][2] };
 }
 
-export function buildProductionDeploymentPayload({
-  runId, runAttempt, sha, imageId, actor,
-}) {
+export function buildProductionDeploymentPayload({ runId, runAttempt, sha, imageId, actor }) {
   if (
-    !Number.isSafeInteger(runId) || runId < 1 ||
-    !Number.isSafeInteger(runAttempt) || runAttempt < 1 ||
-    !SHA_RE.test(sha) || !IMAGE_ID_RE.test(imageId) ||
-    typeof actor !== 'string' || !/^[A-Za-z0-9-]{1,39}$/.test(actor)
+    !Number.isSafeInteger(runId) ||
+    runId < 1 ||
+    !Number.isSafeInteger(runAttempt) ||
+    runAttempt < 1 ||
+    !SHA_RE.test(sha) ||
+    !IMAGE_ID_RE.test(imageId) ||
+    typeof actor !== 'string' ||
+    !/^[A-Za-z0-9-]{1,39}$/.test(actor)
   ) {
     throw new Error('Unverifiable production provenance input');
   }
@@ -72,9 +76,7 @@ export function selectLatestSuccessfulSshDeployment(runsWithJobs) {
       attempts.push({ run, job, completedMs });
     }
   }
-  attempts.sort(
-    (a, b) => b.completedMs - a.completedMs || b.run.id - a.run.id,
-  );
+  attempts.sort((a, b) => b.completedMs - a.completedMs || b.run.id - a.run.id);
   if (attempts.length > 1 && attempts[0].completedMs === attempts[1].completedMs) {
     throw new Error('Cannot uniquely order concurrent production SSH attempts');
   }
@@ -99,12 +101,18 @@ export function selectLatestSuccessfulSshDeployment(runsWithJobs) {
 export function validateProductionDeploymentAttestation({ run, job, deployment, statuses }) {
   const payload = deployment?.payload;
   if (
-    !run || !job || !deployment || deployment.environment !== RUNTIME_ATTESTATION_ENVIRONMENT ||
+    !run ||
+    !job ||
+    !deployment ||
+    deployment.environment !== RUNTIME_ATTESTATION_ENVIRONMENT ||
     deployment.task !== RUNTIME_ATTESTATION_TASK ||
     !SHA_RE.test(deployment.sha) ||
-    !payload || payload.schemaVersion !== 1 ||
-    !Number.isSafeInteger(payload.runId) || payload.runId !== run.id ||
-    !Number.isSafeInteger(payload.runAttempt) || payload.runAttempt !== run.run_attempt ||
+    !payload ||
+    payload.schemaVersion !== 1 ||
+    !Number.isSafeInteger(payload.runId) ||
+    payload.runId !== run.id ||
+    !Number.isSafeInteger(payload.runAttempt) ||
+    payload.runAttempt !== run.run_attempt ||
     payload.sha !== deployment.sha ||
     payload.imageRef !== IMAGE_REPOSITORY + ':' + deployment.sha ||
     !IMAGE_ID_RE.test(payload.imageId) ||
@@ -113,7 +121,8 @@ export function validateProductionDeploymentAttestation({ run, job, deployment, 
     payload.source !== 'lightsail-ssh-container-readback' ||
     !Array.isArray(payload.services) ||
     payload.services.join(',') !== RUNTIME_SERVICES.join(',') ||
-    !Array.isArray(statuses) || statuses.length === 0 ||
+    !Array.isArray(statuses) ||
+    statuses.length === 0 ||
     statuses[0].state !== 'success'
   ) {
     throw new Error('Untrusted, missing or malformed successful deployment attestation');
@@ -124,8 +133,10 @@ export function validateProductionDeploymentAttestation({ run, job, deployment, 
   const statusCreated = Date.parse(statuses[0].created_at ?? '');
   if (
     [created, sshStarted, sshCompleted, statusCreated].some((x) => !Number.isFinite(x)) ||
-    created < sshStarted || created > sshCompleted ||
-    statusCreated < created || statusCreated > sshCompleted
+    created < sshStarted ||
+    created > sshCompleted ||
+    statusCreated < created ||
+    statusCreated > sshCompleted
   ) {
     throw new Error('Runtime proof was not issued during the successful SSH deployment job');
   }
@@ -133,9 +144,7 @@ export function validateProductionDeploymentAttestation({ run, job, deployment, 
 }
 
 export async function loadLatestProductionAttestation(api) {
-  const result = await api(
-    'actions/workflows/deploy-production.yml/runs?branch=main&per_page=100',
-  );
+  const result = await api('actions/workflows/deploy-production.yml/runs?branch=main&per_page=100');
   if (!Array.isArray(result.workflow_runs)) throw new Error('Missing production workflow runs');
   const runsWithJobs = [];
   for (const run of result.workflow_runs) {
@@ -151,14 +160,16 @@ export async function loadLatestProductionAttestation(api) {
   let fullyRead = false;
   for (let page = 1; page <= 10; page++) {
     const records = await api(
-      'deployments?environment=' + RUNTIME_ATTESTATION_ENVIRONMENT +
-        '&per_page=100&page=' + page,
+      'deployments?environment=' + RUNTIME_ATTESTATION_ENVIRONMENT + '&per_page=100&page=' + page,
     );
     if (!Array.isArray(records)) throw new Error('Invalid production proof pagination');
-    matches.push(...records.filter(
-      (item) => item.payload?.runId === latest.run.id &&
-        item.payload?.runAttempt === latest.run.run_attempt,
-    ));
+    matches.push(
+      ...records.filter(
+        (item) =>
+          item.payload?.runId === latest.run.id &&
+          item.payload?.runAttempt === latest.run.run_attempt,
+      ),
+    );
     if (records.length < 100) {
       fullyRead = true;
       break;
@@ -168,11 +179,12 @@ export async function loadLatestProductionAttestation(api) {
     throw new Error('Missing, duplicate or incomplete production provenance record');
   }
   const deployment = matches[0];
-  const statusResult = await api(
-    'deployments/' + deployment.id + '/statuses?per_page=100',
-  );
+  const statusResult = await api('deployments/' + deployment.id + '/statuses?per_page=100');
   const sha = validateProductionDeploymentAttestation({
-    run: latest.run, job: latest.job, deployment, statuses: statusResult,
+    run: latest.run,
+    job: latest.job,
+    deployment,
+    statuses: statusResult,
   });
   return { sha, runId: latest.run.id, imageId: deployment.payload.imageId };
 }
