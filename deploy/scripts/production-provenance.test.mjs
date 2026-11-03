@@ -294,6 +294,20 @@ test('release workflow protects proof publisher behind SSH and Cloudflare health
   const publish = deploy.indexOf('      - name: Publish verified production runtime attestation');
   assert.ok(first >= 0 && first < external && external < readback && readback < publish);
   assert.ok(deploy.includes('capture_stdout: true'));
+  // Both the mutating deploy SSH and the later read-only proof SSH must
+  // verify the same independently established host identity.
+  const pin = 'fingerprint: ${{ vars.LIGHTSAIL_SSH_FINGERPRINT }}';
+  assert.equal(deploy.split(pin).length - 1, 2);
+  const hostKeyGuard = deploy.indexOf(
+    '      - name: Verify pinned Lightsail SSH host key before accessing production',
+  );
+  const credentials = deploy.indexOf('      - name: AWS credentialsを設定');
+  assert.ok(hostKeyGuard >= 0 && hostKeyGuard < credentials && credentials < first);
+  assert.ok(deploy.includes('^SHA256:[A-Za-z0-9+/]{43}  assert.ok(deploy.includes("docker inspect --format '{{.Config.Image}}'"));
+  assert.ok(deploy.includes("docker inspect --format '{{.Image}}'"));
+  assert.ok(deploy.includes('node deploy/scripts/production-provenance-publish.mjs'));
+});
+));
   assert.ok(deploy.includes("docker inspect --format '{{.Config.Image}}'"));
   assert.ok(deploy.includes("docker inspect --format '{{.Image}}'"));
   assert.ok(deploy.includes('node deploy/scripts/production-provenance-publish.mjs'));
