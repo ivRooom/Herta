@@ -166,6 +166,11 @@ jobs:
       HERTA_RUNTIME_SECRET_KEY: ${{ secrets.HERTA_RUNTIME_SECRET_KEY }}
 
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.quality-gate.outputs.deploy_sha }}
+          persist-credentials: false
+
       - name: 最新mainへの上書きを防止（明示rollback SHAを除く）
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.ref == '' || inputs.ref == 'main' }}
         env:
