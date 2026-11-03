@@ -112,10 +112,7 @@ export default async function ValorantStatsPage({
         </div>
       </section>
       <div className="grid gap-4 lg:grid-cols-2">
-        <ValorantFrequencyBars
-          title="ロール別の選出回数"
-          items={data.roles}
-        />
+        <ValorantFrequencyBars title="ロール別の選出回数" items={data.roles} />
         <ValorantFrequencyBars
           title="エージェント別の選出回数"
           items={data.agents.map(({ agentId, selected }) => ({
@@ -138,7 +135,11 @@ export default async function ValorantStatsPage({
           ]}
         />
       </div>
-      <ValorantPickHistory rows={rows.slice(0, 5000)} page={pageNumber} displayNames={displayNames} />
+      <ValorantPickHistory
+        rows={rows.slice(0, 5000)}
+        page={pageNumber}
+        displayNames={displayNames}
+      />
       <section className="rounded-xl border border-border p-4">
         <h2 className="mb-3 font-semibold">試合結果分析（手動登録）</h2>
         <p className="text-sm">
