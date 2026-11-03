@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'deploy/scripts/valorant-predeploy-rehearsal.sh'
+      - 'deploy/scripts/production-quality-gate.mjs'
       - 'deploy/scripts/production-quality-gate.test.mjs'
       - '.github/workflows/deploy-production.yml'
       - '.github/workflows/valorant-predeploy-rehearsal.yml'
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - 'deploy/scripts/valorant-predeploy-rehearsal.sh'
+      - 'deploy/scripts/production-quality-gate.mjs'
       - '.github/workflows/deploy-production.yml'
       - '.github/workflows/valorant-predeploy-rehearsal.yml'
       - 'packages/db/prisma/migrations/20261103160000_valorant_voice_participants/**'
