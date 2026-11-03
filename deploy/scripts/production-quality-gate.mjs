@@ -141,6 +141,26 @@ export function validateDeployRef(ref) {
  * before proceeding, but keep the target's first-parent CI boundary so old main
  * revisions without newer workflow files remain recoverable.
  */
+export function allowExplicitProductionProofRecovery(
+  error,
+  { bootstrapApproved = false, emergencyRollbackApproved = false },
+) {
+  if (!(error instanceof Error) || bootstrapApproved === emergencyRollbackApproved) {
+    return false;
+  }
+  if (bootstrapApproved) {
+    return error.message === 'No successful production SSH deployment baseline';
+  }
+  // These are known, verifiable interrupted-release states; unknown API errors,
+  // incomplete pagination, permission failures and in-flight SSH are not bypassed.
+  return [
+    'Latest production SSH attempt failed or lacks completed health/proof',
+    'Missing, duplicate or incomplete production provenance record',
+    'Untrusted, missing or malformed successful deployment attestation',
+    'No successful production SSH deployment baseline',
+  ].includes(error.message);
+}
+
 export function selectManualDeploymentBoundary({
   requestedRef,
   sha,
@@ -322,21 +342,14 @@ async function main() {
     try {
       attestedSha = (await loadLatestProductionAttestation(api)).sha;
     } catch (error) {
-      if (!(error instanceof Error)) throw error;
-      const firstBootstrap =
-        bootstrapApproved &&
-        error.message === 'No successful production SSH deployment baseline';
-      const emergencyRollback =
-        emergencyRollbackApproved &&
-        [
-          'Latest production SSH attempt failed or lacks completed health/proof',
-          'Missing, duplicate or incomplete production provenance record',
-          'Untrusted, missing or malformed successful deployment attestation',
-          'No successful production SSH deployment baseline',
-        ].includes(error.message);
-      // Do not treat GitHub API failure, pagination truncation, a running SSH
-      // job or an unknown error as permission for a recovery bypass.
-      if (!firstBootstrap && !emergencyRollback) throw error;
+      if (
+        !allowExplicitProductionProofRecovery(error, {
+          bootstrapApproved,
+          emergencyRollbackApproved,
+        })
+      ) {
+        throw error;
+      }
       attestedSha = null;
     }
     const commit = await api('commits/' + sha);
