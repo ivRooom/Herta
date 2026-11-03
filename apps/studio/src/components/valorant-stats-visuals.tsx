@@ -81,10 +81,18 @@ export function ValorantPickHistory({
         <table className="w-full min-w-[620px] text-left text-sm">
           <thead>
             <tr>
-              <th scope="col" className="p-2">抽選日時（UTC）</th>
-              <th scope="col" className="p-2">モード</th>
-              <th scope="col" className="p-2">マップ</th>
-              <th scope="col" className="p-2">抽選構成</th>
+              <th scope="col" className="p-2">
+                抽選日時（UTC）
+              </th>
+              <th scope="col" className="p-2">
+                モード
+              </th>
+              <th scope="col" className="p-2">
+                マップ
+              </th>
+              <th scope="col" className="p-2">
+                抽選構成
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -96,7 +104,11 @@ export function ValorantPickHistory({
                     : '日時不明'}
                 </td>
                 <td className="p-2">
-                  {item.mode === 'RANDOM' ? '完全ランダム' : item.mode === 'TACTICAL' ? '実戦向け' : 'その他'}
+                  {item.mode === 'RANDOM'
+                    ? '完全ランダム'
+                    : item.mode === 'TACTICAL'
+                      ? '実戦向け'
+                      : 'その他'}
                 </td>
                 <td className="p-2">{item.mapId ?? '指定なし'}</td>
                 <td className="p-2">
@@ -122,7 +134,9 @@ export function ValorantPickHistory({
             前へ
           </Link>
         )}
-        <span className="tabular-nums">{current} / {pages} ページ</span>
+        <span className="tabular-nums">
+          {current} / {pages} ページ
+        </span>
         {current < pages && (
           <Link className="underline" href={'?page=' + (current + 1)}>
             次へ
