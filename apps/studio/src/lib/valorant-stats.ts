@@ -182,8 +182,9 @@ export function aggregateValorantMatchStats(reports: readonly ValorantMatchSampl
       target.set(name, team);
     }
   }
-  const sorted = (teams: Map<string, { name: string; count: number; win: number; loss: number; draw: number }>) =>
-    [...teams.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const sorted = (
+    teams: Map<string, { name: string; count: number; win: number; loss: number; draw: number }>,
+  ) => [...teams.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   return {
     ...summary,
     compositions: sorted(teams),
