@@ -56,8 +56,18 @@ test('checks accept only exact commit, main push, and successful completion', ()
   assert.equal(
     determineGateOutcome(
       [
-        { ...baseline, created_at: '2026-11-01T10:00:00Z', run_attempt: 3, conclusion: 'success' },
-        { ...baseline, created_at: '2026-11-02T10:00:00Z', run_attempt: 1, conclusion: 'failure' },
+        {
+          ...baseline,
+          created_at: '2026-11-01T10:00:00Z',
+          run_attempt: 3,
+          conclusion: 'success',
+        },
+        {
+          ...baseline,
+          created_at: '2026-11-02T10:00:00Z',
+          run_attempt: 1,
+          conclusion: 'failure',
+        },
       ],
       sha,
     ),
