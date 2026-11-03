@@ -51,6 +51,8 @@ export async function anonymizeOldValorantSessions(
         },
         data: {
           creatorId: REDACTED,
+          optedOutUserIds: [],
+          voiceChannelId: null,
           ...(session.result === null
             ? {}
             : { result: JSON.parse(JSON.stringify(redactValorantIdentifiers(session.result))) }),
