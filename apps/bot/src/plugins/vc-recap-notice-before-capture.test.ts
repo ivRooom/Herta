@@ -88,12 +88,10 @@ describe('/vc-recap start 録音開始通知ゲート', () => {
     expect(channel.send).toHaveBeenCalledWith({
       embeds: [expect.anything()],
     });
-    expect(
-      channel.send.mock.invocationCallOrder[0],
-    ).toBeLessThan((interaction.editReply as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]);
-    expect(interaction.editReply).toHaveBeenCalledWith(
-      expect.stringContaining('記録を開始しました'),
+    expect(channel.send.mock.invocationCallOrder[0]).toBeLessThan(
+      (interaction.editReply as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0],
     );
+    expect(interaction.editReply).toHaveBeenCalledWith(expect.stringContaining('記録を開始しました'));
   });
 
   it('通知送信に失敗したときは成功を報告せず明示的に失敗を返す', async () => {
