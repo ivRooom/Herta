@@ -11,7 +11,7 @@ export function parseProductionRuntimeProof(stdout, expectedSha) {
   }
   const proofs = [
     ...stdout.matchAll(
-      /(?:^|\n)(?:out:[ \t]*)?HERTA_RELEASE_PROOF[ \t]+([a-f0-9]{40})[ \t]+(sha256:[a-f0-9]{64})(?:\r?\n|$)/g,
+      /(?:^|\n)(?:out:[ \t]*)?HERTA_RELEASE_PROOF[ \t]+([a-f0-9]{40})[ \t]+(sha256:[a-f0-9]{64})(?=\r?\n|$)/g,
     ),
   ];
   if (proofs.length !== 1 || proofs[0][1] !== expectedSha) {
