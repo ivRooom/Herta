@@ -57,6 +57,8 @@ test('90-day retention updates terminal session and match but does not delete hi
   );
   assert.deepEqual(actions[0]?.data, {
     creatorId: 'redacted',
+    optedOutUserIds: [],
+    voiceChannelId: null,
     result: [{ agentId: 'jett' }],
   });
   assert.deepEqual(actions[2]?.data, {
