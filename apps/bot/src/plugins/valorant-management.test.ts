@@ -143,7 +143,7 @@ describe('VALORANT VC member overflow confirmation', () => {
     const message = editReply.mock.calls[0]![0] as ReplyPayload;
     expect(message.content).toContain('最終確認');
     expect(message.content).toContain('<@' + a + '>');
-    const button = message.components[0]!.toJSON().components[0] as { custom_id: string };
+    const button = message.components[0]!.toJSON().components[0]!;
     expect(button.custom_id).toContain(':vc-stage-');
     expect(button.custom_id.length).toBeLessThanOrEqual(100);
 
@@ -214,9 +214,7 @@ describe('VALORANT VC member overflow confirmation', () => {
     const select = h.mockInteraction('vc-choose-' + h.digest(), true);
     await h.dispatch(select.interaction);
     const selectedReply = select.editReply.mock.calls[0]![0] as ReplyPayload;
-    const selectedButton = selectedReply.components[0]!.toJSON().components[0] as {
-      custom_id: string;
-    };
+    const selectedButton = selectedReply.components[0]!.toJSON().components[0]!;
     const staged = selectedButton.custom_id.split(':').at(-1)!;
     h.setVoiceIds([b, c]);
     const confirm = h.mockInteraction(staged, false);
