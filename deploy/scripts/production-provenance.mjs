@@ -144,15 +144,38 @@ export function validateProductionDeploymentAttestation({ run, job, deployment, 
 }
 
 export async function loadLatestProductionAttestation(api) {
-  const result = await api('actions/workflows/deploy-production.yml/runs?branch=main&per_page=100');
-  if (!Array.isArray(result.workflow_runs)) throw new Error('Missing production workflow runs');
+  // GitHub returns workflow runs in pages of at most 100. A first page full
+  // of no-op deployments does NOT prove this installation has never had SSH
+  // success. Never permit manual first-bootstrap based on truncated history.
   const runsWithJobs = [];
-  for (const run of result.workflow_runs) {
-    const data = await api('actions/runs/' + run.id + '/jobs?per_page=100');
-    if (!Array.isArray(data.jobs) || data.total_count > data.jobs.length) {
-      throw new Error('Incomplete production job history');
+  let allRunsRead = false;
+  for (let page = 1; page <= 10; page++) {
+    const result = await api(
+      'actions/workflows/deploy-production.yml/runs?branch=main&per_page=100&page=' + page,
+    );
+    if (!Array.isArray(result.workflow_runs)) {
+      throw new Error('Missing production workflow runs');
     }
-    runsWithJobs.push({ run, jobs: data.jobs });
+    for (const run of result.workflow_runs) {
+      const data = await api('actions/runs/' + run.id + '/jobs?per_page=100');
+      if (!Array.isArray(data.jobs) || data.total_count > data.jobs.length) {
+        throw new Error('Incomplete production job history');
+      }
+      runsWithJobs.push({ run, jobs: data.jobs });
+    }
+    if (result.workflow_runs.length < 100) {
+      if (
+        Number.isSafeInteger(result.total_count) &&
+        result.total_count > runsWithJobs.length
+      ) {
+        throw new Error('Incomplete production workflow run history');
+      }
+      allRunsRead = true;
+      break;
+    }
+  }
+  if (!allRunsRead) {
+    throw new Error('Incomplete production workflow run history');
   }
   const latest = selectLatestSuccessfulSshDeployment(runsWithJobs);
   if (!latest) throw new Error('No successful production SSH deployment baseline');
