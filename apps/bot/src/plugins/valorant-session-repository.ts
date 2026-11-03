@@ -12,6 +12,7 @@ export type ValorantComponentAction =
   | 'close'
   | `vc-commit-${string}`
   | `vc-choose-${string}`
+  | `vc-stage-${string}`
   | `vc-bind-${string}`
   | `add-${string}`
   | `remove-${string}`;
@@ -61,6 +62,7 @@ export function parseValorantSessionAction(
       'close',
     ].includes(action ?? '') &&
     !/^(vc-commit|vc-choose)-[a-f0-9]{12}$/.test(action ?? '') &&
+    !/^vc-stage-[a-f0-9]{12}-[0-9a-z.]{1,20}$/.test(action ?? '') &&
     !/^(vc-bind|add|remove)-[0-9]{17,20}$/.test(action ?? '')
   )
     return null;
