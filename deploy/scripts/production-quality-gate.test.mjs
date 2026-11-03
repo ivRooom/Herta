@@ -234,6 +234,20 @@ test('workflow_run trusts only successful same-SHA main push CI in this repo', (
   }
 });
 
+test('VALORANT predeploy rehearsal always runs on main, even after a later nginx-only push', () => {
+  const source = readFileSync(
+    new URL('../../.github/workflows/valorant-predeploy-rehearsal.yml', import.meta.url),
+    'utf8',
+  );
+  const sections = source.split('\n  push:\n');
+  assert.equal(sections.length, 2, 'Exactly one main push trigger is required');
+  const pullRequest = sections[0].split('\n  pull_request:\n')[1];
+  assert.ok(pullRequest?.includes('    paths:'), 'PR runs should remain path-scoped');
+  const mainPush = sections[1].split('\npermissions:\n')[0];
+  assert.ok(mainPush.includes('    branches: [main]'));
+  assert.ok(!mainPush.includes('    paths:'), 'main must not skip the same-SHA rehearsal');
+});
+
 test('isolated PostgreSQL integration runs for every main SHA, including carryover Bot changes', () => {
   const source = readFileSync(
     new URL('../../.github/workflows/valorant-agents.yml', import.meta.url),
