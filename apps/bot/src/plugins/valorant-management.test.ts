@@ -68,8 +68,15 @@ function harness() {
     context: unknown,
     interaction: ButtonInteraction,
   ) => Promise<void>;
-  const mockInteraction = (action: string, isSelect: boolean, userId = 'creator') => {
+  const mockInteraction = (
+    action: string,
+    isSelect: boolean,
+    userId = 'creator',
+    ephemeral = true,
+  ) => {
     const editReply = vi.fn();
+    const deferReply = vi.fn();
+    const deferUpdate = vi.fn();
     const value = {
       guildId,
       channelId,
@@ -77,16 +84,20 @@ function harness() {
       guild,
       user: { id: userId },
       memberPermissions: null,
-      message: { id: 'ephemeral-message', flags: { has: () => true } },
+      message: {
+        id: ephemeral ? 'ephemeral-message' : 'posted-message',
+        flags: { has: () => ephemeral },
+      },
       values: isSelect ? [a] : [],
       isButton: () => !isSelect,
       isUserSelectMenu: () => isSelect,
       isStringSelectMenu: () => false,
       isChannelSelectMenu: () => false,
-      deferReply: vi.fn(),
+      deferReply,
+      deferUpdate,
       editReply,
     };
-    return { interaction: value as unknown as ButtonInteraction, editReply };
+    return { interaction: value as unknown as ButtonInteraction, editReply, deferReply, deferUpdate };
   };
   const digest = () =>
     createHash('sha256')
@@ -111,8 +122,13 @@ describe('VALORANT VC member overflow confirmation', () => {
 
   it('does NOT write DB on select; requires subsequent button confirmation', async () => {
     const h = harness();
-    const { interaction, editReply } = h.mockInteraction('vc-choose-' + h.digest(), true);
+    const { interaction, editReply, deferUpdate, deferReply } = h.mockInteraction(
+      'vc-choose-' + h.digest(),
+      true,
+    );
     await h.dispatch(interaction);
+    expect(deferUpdate).toHaveBeenCalledOnce();
+    expect(deferReply).not.toHaveBeenCalled();
     expect(manageValorantParticipants).not.toHaveBeenCalled();
     const message = editReply.mock.calls[0]![0];
     expect(message.content).toContain('最終確認');
@@ -138,6 +154,20 @@ describe('VALORANT VC member overflow confirmation', () => {
         expectedVoiceChannelId: voiceChannelId,
       }),
     );
+  });
+
+  it('opens an ephemeral reply from the public VC button, but updates an existing ephemeral menu', async () => {
+    const h = harness();
+    const publicButton = h.mockInteraction('vc', false, 'creator', false);
+    await h.dispatch(publicButton.interaction);
+    expect(publicButton.deferReply).toHaveBeenCalledOnce();
+    expect(publicButton.deferUpdate).not.toHaveBeenCalled();
+
+    const menu = h.mockInteraction('vc-choose-' + h.digest(), true);
+    await h.dispatch(menu.interaction);
+    expect(menu.deferUpdate).toHaveBeenCalledOnce();
+    expect(menu.deferReply).not.toHaveBeenCalled();
+    expect(manageValorantParticipants).not.toHaveBeenCalled();
   });
 
   it('rejects stale VC candidate selection when voice membership changes', async () => {
