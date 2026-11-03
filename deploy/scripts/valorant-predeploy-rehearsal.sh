@@ -63,11 +63,12 @@ SELECT CASE WHEN
      AND format_type(atttypid, atttypmod) = 'text' AND NOT attnotnull
  )
  AND EXISTS (
-   SELECT 1 FROM pg_attribute
-   WHERE attrelid = 'public.valorant_pick_sessions'::regclass
-     AND attname = 'opted_out_user_ids' AND NOT attisdropped
-     AND format_type(atttypid, atttypmod) = 'text[]' AND attnotnull
-     AND pg_get_expr(attdefault, attrelid) IS NOT NULL
+   SELECT 1 FROM pg_attribute a
+   JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+   WHERE a.attrelid = 'public.valorant_pick_sessions'::regclass
+     AND a.attname = 'opted_out_user_ids' AND NOT a.attisdropped
+     AND format_type(a.atttypid, a.atttypmod) = 'text[]' AND a.attnotnull
+     AND pg_get_expr(d.adbin, d.adrelid) IN ('ARRAY[]::text[]', '''{}''::text[]')
  )
  THEN 'ok' ELSE 'invalid' END;
 SQL
