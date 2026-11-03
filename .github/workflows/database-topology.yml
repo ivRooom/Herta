@@ -18,4 +18,5 @@ jobs:
       - run: bash deploy/scripts/deploy-common.test.sh
       - run: bash deploy/scripts/database-mode.test.sh
       - run: node --test deploy/scripts/external-database.test.mjs
+      - run: node --test deploy/scripts/production-quality-gate.test.mjs
       - run: python3 deploy/scripts/compose-database.test.py
