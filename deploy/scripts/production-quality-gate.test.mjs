@@ -8,6 +8,7 @@ import {
   assertSafeCompare,
   determineGateOutcome,
   needsPostgresIntegration,
+  needsValorantPredeployRehearsal,
   needsRuntimeDeployment,
   validateCompletedMainCi,
   validateDeployRef,
@@ -35,6 +36,26 @@ test('production gate needs real PostgreSQL integration for DB, Bot and Studio c
   }
   assert.equal(needsPostgresIntegration(['docs/VC_RECAP_RELEASE_HANDOFF.md']), false);
   assert.equal(needsPostgresIntegration(['deploy/scripts/x.sh']), false);
+});
+
+test('VALORANT migration and deploy guard changes require same-SHA isolated restore CI', () => {
+  const guarded = [
+    'packages/db/prisma/migrations/20261103160000_valorant_voice_participants/migration.sql',
+    'deploy/scripts/valorant-predeploy-rehearsal.sh',
+    'deploy/scripts/production-quality-gate.mjs',
+    '.github/workflows/deploy-production.yml',
+    '.github/workflows/valorant-predeploy-rehearsal.yml',
+  ];
+  for (const path of guarded) {
+    assert.equal(needsValorantPredeployRehearsal([path]), true, path);
+  }
+  assert.equal(needsValorantPredeployRehearsal(['docs/README.md']), false);
+  assert.equal(needsValorantPredeployRehearsal(['apps/bot/src/main.ts']), false);
+  const gate = readFileSync(
+    new URL('./production-quality-gate.mjs', import.meta.url),
+    'utf8',
+  );
+  assert.match(gate, /needsValorantPredeployRehearsal\(files\).*required.push\(VALORANT_REHEARSAL_WORKFLOW\)/);
 });
 
 test('checks accept only exact commit, main push, and successful completion', () => {
