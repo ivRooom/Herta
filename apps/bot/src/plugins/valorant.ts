@@ -194,6 +194,11 @@ function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
       ' / ' +
       session.maxParticipants +
       (members.length === session.maxParticipants ? '（満員）' : ''),
+    ...(session.status === 'OPEN'
+      ? ['募集期限：<t:' + Math.floor(session.expiresAt.getTime() / 1000) + ':R>']
+      : session.status === 'COMPLETED' && session.expiresAt > new Date()
+        ? ['再抽選期限：<t:' + Math.floor(session.expiresAt.getTime() / 1000) + ':R>']
+        : []),
     '',
     lines.length ? lines.join('\n') : '参加者はいません',
   ];
