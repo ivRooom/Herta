@@ -144,13 +144,10 @@ test('manual bootstrap is explicit and permitted only before first attested SSH 
     attestedSha: null,
   };
   assert.throws(() => selectManualDeploymentBoundary(bootstrap), /Missing attested production SHA/);
-  assert.deepEqual(
-    selectManualDeploymentBoundary({ ...bootstrap, bootstrapApproved: true }),
-    {
-      before: firstParent,
-      mode: 'first-bootstrap',
-    },
-  );
+  assert.deepEqual(selectManualDeploymentBoundary({ ...bootstrap, bootstrapApproved: true }), {
+    before: firstParent,
+    mode: 'first-bootstrap',
+  });
   for (const candidate of [
     { ...bootstrap, attestedSha: sha, bootstrapApproved: true },
     { ...bootstrap, attestedSha: 'invalid', bootstrapApproved: true },
@@ -215,10 +212,10 @@ test('explicit operator emergency rollback preserves recovery after failed produ
     () => selectManualDeploymentBoundary(target),
     /requires a verified current production baseline/,
   );
-  assert.deepEqual(
-    selectManualDeploymentBoundary({ ...target, emergencyRollbackApproved: true }),
-    { before: 'a'.repeat(40), mode: 'operator-emergency-rollback' },
-  );
+  assert.deepEqual(selectManualDeploymentBoundary({ ...target, emergencyRollbackApproved: true }), {
+    before: 'a'.repeat(40),
+    mode: 'operator-emergency-rollback',
+  });
   for (const invalid of [
     { ...target, requestedRef: 'main', emergencyRollbackApproved: true },
     { ...target, mainSha: historic, emergencyRollbackApproved: true },
