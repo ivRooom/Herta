@@ -235,7 +235,9 @@ test('production workflow has an unprivileged CI-completion gate before build an
   assert.ok(deploy, 'SSH deploy job must exist');
 
   assert.ok(
-    source.includes('  workflow_run:\n    workflows: [CI]\n    types: [completed]\n    branches: [main]'),
+    source.includes(
+      '  workflow_run:\n    workflows: [CI]\n    types: [completed]\n    branches: [main]',
+    ),
   );
   assert.ok(!source.includes('\n  push:\n'));
   assert.ok(gate.includes('name: Verified main CI gate'));
