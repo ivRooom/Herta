@@ -1293,7 +1293,7 @@ async function handlePickStatistics(
         '※勝率ではなく選出回数です。個人IDは90日で匿名化されます。結果は非公開です。',
       allowedMentions: { parse: [] },
     });
-  } catch (error) {
+  } catch {
     await interaction.editReply({
       content: '抽選統計を取得できません。しばらくしてから再度お試しください。',
     });
