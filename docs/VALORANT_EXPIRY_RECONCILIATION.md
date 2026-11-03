@@ -1,5 +1,15 @@
 # VALORANT 募集期限の公開Discord UI整合（#779 / #789）
 
+## 段階公開（本番初期状態は必ずOFF）
+
+- 新migrationとBot imageの本番デプロイだけではDiscord公開メッセージの期限同期は**開始しません**。
+- Botコンテナで `HERTA_VALORANT_EXPIRY_RECONCILE_ENABLED=true` **かつ** `HERTA_VALORANT_EXPIRY_RECONCILE_GUILD_IDS` が有効なDiscord Guild Snowflakeのカンマ区切り非空一覧である場合のみ、対象Guildの期限切れメッセージを処理します。
+- `docker-compose.common.yml` のBot環境変数はどちらも既定OFF/空です。未設定・typo・不正/空IDは全拒否、タイマー起動・DB期限ステータス更新・Discord editは0。
+- 有人Canary: 運営者が対象の開発GuildのIDだけを確認し、**Lightsail側のBot runtime `.env.production`** に必要な2変数を保護された運用手順で設定→保護されたProduction DeployでBotに反映。GitHubの `production` Environment variablesに値を入れるだけではBot runtimeへ自動反映されません。
+- Canaryで「OPEN期限切れの募集」「COMPLETED再抽選期限切れ」「Bot再起動後の未同期再試行」「未許可GuildのUI不変更」を有人検収してから、対象Guild拡大を別途明示承認してください。承認前は全Guild一括ONは禁止。
+- 停止時はBot runtime環境を `HERTA_VALORANT_EXPIRY_RECONCILE_ENABLED=false` に戻し、保護された再デプロイで反映。DB列をDROPせず、既存募集の参加/抽選時のDB期限判定は常に有効です。
+- Guild IDや運用用 `.env.production`、秘密情報をIssueやCIログへ掲載しないでください。
+
 ## 動作
 
 - DBのexpiresAtを期限の正本とし、期限切れ操作は従来どおりDBで拒否。
