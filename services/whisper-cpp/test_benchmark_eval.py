@@ -109,13 +109,23 @@ class BenchmarkEvaluationTests(unittest.TestCase):
                 with self.assertRaises(bench.InvalidBenchmark):
                     bench.aggregate(payload)
 
-    def test_deeply_nested_json_is_rejected_without_traceback(self):
-        # Under the input-size limit, but deeper than the JSON parser stack.
+    def test_json_recursion_error_is_rejected_without_private_details(self):
+        stdin = io.TextIOWrapper(io.BytesIO(b'{"classification":"synthetic"}'), encoding="utf-8")
+        with patch.object(sys, "stdin", stdin), \
+             patch.object(bench.json, "loads", side_effect=RecursionError("private input")), \
+             patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            self.assertEqual(bench.main(), 2)
+            self.assertEqual(stderr.getvalue(), "benchmark rejected: invalid input\n")
+            self.assertNotIn("private input", stderr.getvalue())
+
+    def test_deeply_nested_json_is_safely_rejected(self):
+        # JSON recursion limits vary between Python builds and versions.
         contents = "[" * 3000 + "0" + "]" * 3000
         stdin = io.TextIOWrapper(io.BytesIO(contents.encode()), encoding="utf-8")
         with patch.object(sys, "stdin", stdin), patch("sys.stderr", new_callable=io.StringIO) as stderr:
             self.assertEqual(bench.main(), 2)
-            self.assertEqual(stderr.getvalue(), "benchmark rejected: invalid input\n")
+            self.assertIn("benchmark rejected:", stderr.getvalue())
+            self.assertNotIn("Traceback", stderr.getvalue())
 
     def test_no_text_identifiers_or_secrets_in_output(self):
         hidden = "合成機密文字列123-FAKE"
