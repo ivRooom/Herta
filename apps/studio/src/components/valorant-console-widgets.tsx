@@ -135,7 +135,12 @@ function selectedAgents(value: unknown, labels: ReadonlyMap<string, string>) {
   if (!Array.isArray(value)) return '記録なし';
   const names = value.flatMap((item): string[] =>
     item && typeof item === 'object' && !Array.isArray(item) && typeof item.agentId === 'string'
-      ? [labels.get(item.agentId) ?? item.agentId]
+      ? [
+          labels.get(item.agentId) ??
+            (typeof item.agentName === 'string' && item.agentName.trim()
+              ? item.agentName
+              : item.agentId),
+        ]
       : [],
   );
   return names.join(' / ') || '記録なし';
@@ -177,7 +182,7 @@ export function ValorantHistoryPreview({
               <tr key={item.id} className="border-t border-border/60">
                 <td className="whitespace-nowrap px-2 py-2.5 tabular-nums text-muted">
                   {item.completedAt
-                    ? item.completedAt.toISOString().slice(5, 16).replace('T', ' ')
+                    ? item.completedAt.toISOString().slice(0, 16).replace('T', ' ')
                     : '日時不明'}
                 </td>
                 <td className="whitespace-nowrap px-2 py-2.5">{item.mapId ?? '未指定'}</td>
