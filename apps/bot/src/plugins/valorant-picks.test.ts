@@ -63,6 +63,9 @@ describe('/valorant picks', () => {
     expect(message).toContain('デュエリスト: 1回');
     expect(message).not.toContain('オーメン');
     expect(message).not.toContain('other-user');
+    const files = subject.editReply.mock.calls[0]![0].files;
+    expect(files).toHaveLength(1);
+    expect(files[0].name).toBe('valorant-picks-chart.png');
   });
 
   it('denies guild-wide statistics to a member without management permission', async () => {
@@ -94,5 +97,15 @@ describe('/valorant picks', () => {
     expect(message).toContain('オーメン: 1回');
     expect(message).toContain('対象抽選: 1件');
     expect(message).not.toContain('other-user');
+    expect(subject.editReply.mock.calls[0]![0].files).toHaveLength(1);
+  });
+
+  it('renders an empty private chart without mentioning users', async () => {
+    const subject = await executePicks({ rows: [] });
+    const payload = subject.editReply.mock.calls[0]![0];
+    expect(subject.deferReply).toHaveBeenCalledWith({ flags: MessageFlags.Ephemeral });
+    expect(payload.content).toContain('対象抽選: 0件');
+    expect(payload.files).toHaveLength(1);
+    expect(payload.allowedMentions).toEqual({ parse: [] });
   });
 });

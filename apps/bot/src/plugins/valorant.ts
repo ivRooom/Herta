@@ -38,6 +38,7 @@ import {
 import { fetchValorantMmr, parseRiotId, type RiotIdInput } from './valorant-client.js';
 import { pickRandomValorantAgents } from './valorant-random.js';
 import { renderValorantPickCard } from './valorant-pick-card.js';
+import { renderValorantPicksChart } from './valorant-picks-chart.js';
 import { VALORANT_META } from './valorant-meta.js';
 import {
   createValorantSession,
@@ -1223,6 +1224,7 @@ function tierEmoji(tierName: string): string {
 async function handlePickStatistics(
   interaction: ChatInputCommandInteraction,
   prisma: PrismaClient,
+  logger: Logger,
 ): Promise<void> {
   const scope = interaction.options.getString('scope') ?? 'self';
   if (scope !== 'self' && scope !== 'guild') {
@@ -1285,6 +1287,28 @@ async function handlePickStatistics(
       ['UNKNOWN', '未分類'],
     ]);
     const title = scope === 'guild' ? 'Guild全体' : 'あなた本人';
+    // Render only the authorized aggregate counts; no identifiers or raw sessions.
+    let files: AttachmentBuilder[] = [];
+    try {
+      const sorted = (items: Map<string, number>, names: ReadonlyMap<string, string>) =>
+        [...items.entries()]
+          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .slice(0, 5)
+          .map(([name, count]) => ({ label: names.get(name) ?? name, count }));
+      const image = await renderValorantPicksChart({
+        scopeLabel: title,
+        draws,
+        truncated: rows.length > 5000,
+        agents: sorted(agents, labels),
+        roles: sorted(roles, roleNames),
+      });
+      files = [new AttachmentBuilder(image, { name: 'valorant-picks-chart.png' })];
+    } catch (error) {
+      logger.warn(
+        { errorName: error instanceof Error ? error.name : 'UnknownError' },
+        'VALORANT抽選グラフ生成失敗、テキストにフォールバック',
+      );
+    }
     await interaction.editReply({
       content:
         `🎮 Hertaの抽選統計（${title}）\n` +
@@ -1293,6 +1317,7 @@ async function handlePickStatistics(
         `Role別: ${show(roles, roleNames)}\n` +
         (rows.length > 5000 ? '※履歴を最新5,000件に制限しています。\n' : '') +
         '※勝率ではなく選出回数です。個人IDは90日で匿名化されます。結果は非公開です。',
+      files,
       allowedMentions: { parse: [] },
     });
   } catch {
@@ -1427,7 +1452,7 @@ export const valorantPlugin = definePlugin<ValorantPluginConfig, unknown, Prisma
           } else if (subcommand === 'stats') {
             await handleStats(interaction, context.prisma);
           } else if (subcommand === 'picks') {
-            await handlePickStatistics(interaction, context.prisma);
+            await handlePickStatistics(interaction, context.prisma, context.logger);
           } else if (subcommand === 'random') {
             await handleRandom(interaction, context.prisma, context.logger);
           } else {
