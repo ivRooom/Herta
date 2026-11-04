@@ -2,44 +2,42 @@
 
 > 正本: [Issue #700](https://github.com/ivRooom/Herta/issues/700)。2026-11-04 の GitHub API にて、Herta は public、`main.protected=false`、Repository Rulesets は `[]`。**このJSONをgitへ追加しただけでは GitHub の保護は有効になりません。** Ruleset は GitHub 管理画面か管理者権限のあるAPIでインポートする必要があります。
 
-## 2026-11-04 実環境確認：既存の有効Rulesetを更新（重複作成禁止）
+## 2026-11-04 実環境確認：既存Rulesetを編集する（重複作成禁止）
 
-> GitHub APIで**すでにActive**を確認：Ruleset ID **26509869**、名前 `ivRooom Herta | main protected (solo maintainer)`、対象 `refs/heads/main`、bypassなし。mainは`protected=true`。**以下の「作成」手順は未作成リポジトリ向けの参考です。Hertaで同じRulesetを再POST/Importしないこと。**
+**最新実測：Ruleset ID `26509869` は既に Active。** 名前は `ivRooom Herta | main protected (solo maintainer)`、対象は `main` のみ、Bypassは空、`main.protected=true`。
 
-### 現在のRulesetとこのPRのJSON（Desired State）の差分
+**Hertaでは新しいRulesetをPOST/Importしない。** 既存IDを編集する。下の新規作成手順は、Rulesetが存在しないリポジトリ向けの参考情報である。
 
-| 項目 | 現在GitHubへ適用済み | `.github/rulesets/main-solo-maintainer.json` の目標 |
-| --- | --- | --- |
-| Ruleset ID/名前 | `26509869` / `ivRooom Herta \| main protected (solo maintainer)` | 名前 `main \| Solo Maintainer PR + CI`（既存IDを変更せず内容だけ同期） |
-| 対象 / Enforcement / bypass | mainのみ / Active / なし | 同じ |
-| PR必須・承認数・thread解決 | 必須 / 0 / 必須 | 同じ |
-| 必須checks | **5件**（下記） | **2件**（下記） |
-| Strict 最新main追従 | 有効 | 有効 |
-| マージ方法 | squash/merge/rebase | **squashのみ** |
-| Linear history | 明示的なruleなし | **有効** |
-| その他 | `dismiss_stale_reviews_on_push=true`、`require_extra_approval_for_unattributed_changes=true` | solo前提の必要最小構成 |
+### 現行GitHub設定とJSONの差分
 
-現在の5件は `Format / Lint / Typecheck / Test / Build`、`ARM64 Production Image / Node / Grype`、`Mobile Config Studio picker`、`postgres`、`topology`。後ろの3件はPRごとの条件付きジョブで存在しない場合があるため、**必須指定のままでは一部PRが永久にマージ不可**となる危険がある。対象PRの追加検査を免除する意味ではなく、当該変更のPR/Deploy品質ゲートで個別に成功を確認する。
+- **一致：** Active、main限定、Bypassなし、PR必須、承認数0、未解決会話の解決必須、Strict CI。
+- **現行のRequired Checksは5件：** `Format / Lint / Typecheck / Test / Build`、`ARM64 Production Image / Node / Grype`、`Mobile Config Studio picker`、`postgres`、`topology`。
+- **JSONのDesired Stateは2件：** `Format / Lint / Typecheck / Test / Build` と `ARM64 Production Image / Node / Grype`。
+- **現行のマージ方法：** squash、merge、rebaseを許可。JSONはsquashのみ。
+- **現行のLinear history：** 明示的なRulesetルールなし。JSONでは必須。
+- **現行の追加レビュー設定：** `dismiss_stale_reviews_on_push=true`、`require_extra_approval_for_unattributed_changes=true`。solo運用で承認デッドロックが起きないか要確認。
 
-### Hertaの管理者が行う安全な更新（新規Ruleset作成禁止）
+3つの追加Checkは変更パスで起動しないPRがあり、Requiredに残すと永久にBlockedとなる可能性がある。削除対象はRulesetの全PR共通Required指定だけであり、対象PRやProduction Deployの安全テストを省略することではない。
 
-1. [既存Ruleset ID 26509869](https://github.com/ivRooom/Herta/rules/26509869) を開く。必要に応じて [Settings → Rules → Rulesets](https://github.com/ivRooom/Herta/settings/rules) から該当する既存Rulesetの編集画面へ進む。
-2. 変更前の現在値と本節の差分を確認する。対象は`main`のみ、Active、Bypassなしを維持。
-3. `Require a pull request`：Approvals **0**、`Require conversation resolution` **ON**、新規録音・Privacy・Whisper本番ONには#646の別Go/No-Goを残す。
-4. `Require status checks`：次の**2件のみ**を必須にし、`Require branches to be up to date before merging`を**ON**。`Format / Lint / Typecheck / Test / Build`、`ARM64 Production Image / Node / Grype`。名前を完全一致で選択。
-5. `Restrict deletions` ON、`Block force pushes` ON、`Require linear history` ON。マージはリポジトリ設定とRulesetの双方で**Squashのみ**を確認（マージ/リベースはオフ）。その他のReviewオプションはsolo運用で不要な承認要求に変わらないことを確認。
-6. `Active` のまま保存。**ID 26509869の同じRuleset**を読み戻し、要件（main限定/approvals0/2checks/strict/thread resolved/no bypass/linear history/forbid deletion-force）を確認。保存が成功してもPRが通らない場合、Rulesetを丸ごとDisableせず、対象のCheck名・条件付き実行・古いHEADをIssue #700に記録して修正する。
-7. GitHub AppにAdministration:write権限がない場合は、本人がWeb UIから操作。Secrets・Tokens・実Guild IDをIssueに掲載しない。
+### 管理者による既存Rulesetの更新手順
 
-読み取り専用検証（既存IDにのみアクセス、POST禁止）：
+1. [既存Ruleset ID 26509869](https://github.com/ivRooom/Herta/rules/26509869) または [Rulesets管理画面](https://github.com/ivRooom/Herta/settings/rules) を開く。
+2. IDと現在の設定を確認し、**既存のRulesetを編集**する。新規作成・削除・全面Disableは行わない。
+3. Targetをmainのみ、EnforcementをActive、Bypassを空のまま維持する。
+4. Require pull requestを有効、Required approving reviewsを0、Require conversation resolutionを有効にする。
+5. Required status checksを上記2件のみに変更し、Require branches to be up to date before mergingを有効にする。
+6. Restrict deletions、Block force pushes、Require linear historyを有効にする。マージ方法はRulesetとRepository Settingsの双方でSquashのみを許可する。
+7. 保存後に同じRuleset IDを読み戻し、main限定・Active・Bypass空・2 Required Checks・Strict・Approvals 0・Thread解決・Linear history・Force/Delete禁止・Squash-onlyを確認する。
+8. GitHub Issue [#700](https://github.com/ivRooom/Herta/issues/700) に、設定日時、Ruleset ID、検証結果、影響したPRのチェック結果を記録する。Token、Secret、実Guild IDは記載しない。
+
+APIで**既存設定を確認するだけ**のコマンド：
 
 ```bash
-gh api repos/ivRooom/Herta/rulesets/26509869 \
-  --jq '{id,name,target,enforcement,conditions,bypass_actors,rules}'
+gh api repos/ivRooom/Herta/rulesets/26509869 --jq '{id,name,target,enforcement,conditions,bypass_actors,rules}'
 gh api repos/ivRooom/Herta/branches/main --jq '{name,protected}'
 ```
 
-**Rollback**：設定変更が意図せず安全なPRまでBlockedした場合、変更前の値を#700に記録してから**同じRuleset ID**の該当項目だけを戻す。Ruleset削除・全体無効化・Required CI一括解除で回避しない。
+**Rollback：** 既存PRを誤ってBlockedした場合、変更前後の差分を#700に残して、同じRuleset IDの該当項目のみを戻す。保護全体を無言でOFFにしない。
 
 ## 目的・決定事項
 
