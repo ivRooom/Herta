@@ -119,9 +119,9 @@ export default async function ValorantStatsPage({
       result: true,
     },
   });
-  const filteredRows = rows.slice(0, 5000).filter((row) =>
-    matchesValorantPartySize(row.result, filters.partySize),
-  );
+  const filteredRows = rows
+    .slice(0, 5000)
+    .filter((row) => matchesValorantPartySize(row.result, filters.partySize));
   const data = aggregateValorantStats(filteredRows);
   const matchRows = await prisma.valorantMatchResult.findMany({
     where: {
@@ -141,9 +141,9 @@ export default async function ValorantStatsPage({
       session: { select: { result: true } },
     },
   });
-  const filteredMatchRows = matchRows.slice(0, 5000).filter((row) =>
-    matchesValorantPartySize(row.session.result, filters.partySize),
-  );
+  const filteredMatchRows = matchRows
+    .slice(0, 5000)
+    .filter((row) => matchesValorantPartySize(row.session.result, filters.partySize));
   const matchData = aggregateValorantMatchStats(filteredMatchRows);
   const names = new Map(defaultValorantAgents().map((agent) => [agent.agentId, agent.displayName]));
   const pageParam = query?.page ?? '1';
@@ -282,12 +282,23 @@ export default async function ValorantStatsPage({
               ? '実戦向け'
               : '全モード'}
         </p>
-        <p>抽選人数: {filters.partySize ? filters.partySize + '人' : 'すべて'} · 抽選の割当人数で判定。勝敗は登録日時（UTC）・実プレイマップで絞り込みます。</p>
+        <p>
+          抽選人数: {filters.partySize ? filters.partySize + '人' : 'すべて'} ·
+          抽選の割当人数で判定。勝敗は登録日時（UTC）・実プレイマップで絞り込みます。
+        </p>
       </div>
 
-      <p className="rounded-xl border border-violet-400/20 bg-violet-400/5 px-4 py-3 text-sm text-violet-100" role="status">
+      <p
+        className="rounded-xl border border-violet-400/20 bg-violet-400/5 px-4 py-3 text-sm text-violet-100"
+        role="status"
+      >
         {filters.partySize
-          ? filters.partySize + '人ピックの抽選 ' + data.totalDraws + '件 / 結果登録 ' + matchData.total + '件'
+          ? filters.partySize +
+            '人ピックの抽選 ' +
+            data.totalDraws +
+            '件 / 結果登録 ' +
+            matchData.total +
+            '件'
           : '全人数の抽選 ' + data.totalDraws + '件 / 結果登録 ' + matchData.total + '件'}
         {' · '}期間・マップ・モード・人数の条件を適用中
       </p>
@@ -320,7 +331,11 @@ export default async function ValorantStatsPage({
           icon={CheckCircle2}
           title="結果登録数"
           value={matchData.total.toLocaleString('ja-JP') + '試合'}
-          note={filters.partySize ? '抽選が' + filters.partySize + '人だった登録済み試合' : '手動登録された試合のみ'}
+          note={
+            filters.partySize
+              ? '抽選が' + filters.partySize + '人だった登録済み試合'
+              : '手動登録された試合のみ'
+          }
         />
         <ConsoleMetric
           icon={Trophy}
