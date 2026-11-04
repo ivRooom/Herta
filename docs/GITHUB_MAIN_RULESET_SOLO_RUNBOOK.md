@@ -26,7 +26,7 @@
 3. Targetをmainのみ、EnforcementをActive、Bypassを空のまま維持する。
 4. Require pull requestを有効、Required approving reviewsを0、Require conversation resolutionを有効にする。
 5. Required status checksを上記2件のみに変更し、Require branches to be up to date before mergingを有効にする。
-6. Restrict deletions、Block force pushes、Require linear historyを有効にする。マージ方法はRulesetとRepository Settingsの双方でSquashのみを許可する。
+6. Restrict deletions、Block force pushes、Require linear historyを有効にする。Repository SettingsではSquashを許可したまま維持し、**mainのSquash-onlyはこの既存RulesetのAllowed merge methodsだけで制限**する。Repository SettingsでMerge/Rebaseを無効にすると`develop`等の他ブランチにも影響するため変更しない。
 7. 保存後に同じRuleset IDを読み戻し、main限定・Active・Bypass空・2 Required Checks・Strict・Approvals 0・Thread解決・Linear history・Force/Delete禁止・Squash-onlyを確認する。
 8. GitHub Issue [#700](https://github.com/ivRooom/Herta/issues/700) に、設定日時、Ruleset ID、検証結果、影響したPRのチェック結果を記録する。Token、Secret、実Guild IDは記載しない。
 
