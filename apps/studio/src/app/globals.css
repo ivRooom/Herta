@@ -56,7 +56,9 @@
   .valorant-panel {
     border: 1px solid rgb(158 142 225 / 25%);
     background: linear-gradient(145deg, rgb(36 44 76 / 89%), rgb(17 24 46 / 94%));
-    box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%), 0 8px 25px rgb(0 0 0 / 12%);
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 5%),
+      0 8px 25px rgb(0 0 0 / 12%);
   }
 
   .valorant-console .input {
