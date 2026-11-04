@@ -47,18 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      - name: Temporary UI formatting diagnosis (remove before merge)
-        run: |
-          pnpm exec prettier --write \
-            'apps/studio/src/app/dashboard/guilds/[guildId]/valorant/stats/page.tsx' \
-            apps/studio/src/app/globals.css \
-            apps/studio/src/components/valorant-console-widgets.tsx \
-            apps/studio/src/components/valorant-results-manager.tsx \
-            apps/studio/src/lib/valorant-console-filters.ts \
-            apps/studio/tests/valorant-console-filters.test.ts
-          git diff -- apps/studio
-          exit 1 # Deliberate diagnostic failure; MUST be removed before release.
-
       - name: Format Check
         run: pnpm format:check
 
