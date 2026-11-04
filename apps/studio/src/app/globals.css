@@ -43,6 +43,8 @@
     --primary: 261 88% 73%;
     --primary-foreground: 229 35% 9%;
     --ring: 261 88% 73%;
+    /* Keep validation and request errors legible on this page's dark panels. */
+    --destructive: 0 92% 77%;
     color: hsl(var(--foreground));
     background:
       radial-gradient(ellipse at 88% -16%, rgb(114 57 186 / 25%), transparent 35%),
