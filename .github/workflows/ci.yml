@@ -47,13 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      - name: Temporary diagnostic - Prettier PNG chart diff
-        shell: bash
-        run: |
-          pnpm exec prettier --write apps/bot/src/plugins/valorant-picks-chart.ts
-          git diff -- apps/bot/src/plugins/valorant-picks-chart.ts
-          exit 1
-
       - name: Format Check
         run: pnpm format:check
 
