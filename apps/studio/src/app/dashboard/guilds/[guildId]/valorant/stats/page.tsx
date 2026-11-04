@@ -189,10 +189,7 @@ export default async function ValorantStatsPage({
         </div>
       </header>
 
-      <nav
-        aria-label="VALORANT画面内移動"
-        className="flex gap-2 overflow-x-auto pb-1 text-xs"
-      >
+      <nav aria-label="VALORANT画面内移動" className="flex gap-2 overflow-x-auto pb-1 text-xs">
         {[
           { href: '#valorant-overview', label: '概要' },
           { href: '#valorant-agents', label: '選出統計' },
