@@ -97,6 +97,26 @@ class BenchmarkEvaluationTests(unittest.TestCase):
         with self.assertRaisesRegex(bench.InvalidBenchmark, "aggregate RTF"):
             bench.aggregate(huge_ratio)
 
+    def test_oversized_json_integer_fails_closed(self):
+        self.assertFalse(bench.positive_number(10**400))
+        for field in ("audio_seconds", "latency_seconds"):
+            payload = {"classification": "synthetic", "samples": [sample()]}
+            if field == "audio_seconds":
+                payload["samples"][0]["audio_seconds"] = 10**400
+            else:
+                payload["samples"][0]["providers"]["whisper"]["latency_seconds"] = 10**400
+            with self.subTest(field=field):
+                with self.assertRaises(bench.InvalidBenchmark):
+                    bench.aggregate(payload)
+
+    def test_deeply_nested_json_is_rejected_without_traceback(self):
+        # Under the input-size limit, but deeper than the JSON parser stack.
+        contents = "[" * 3000 + "0" + "]" * 3000
+        stdin = io.TextIOWrapper(io.BytesIO(contents.encode()), encoding="utf-8")
+        with patch.object(sys, "stdin", stdin), patch("sys.stderr", new_callable=io.StringIO) as stderr:
+            self.assertEqual(bench.main(), 2)
+            self.assertEqual(stderr.getvalue(), "benchmark rejected: invalid input\\n")
+
     def test_no_text_identifiers_or_secrets_in_output(self):
         hidden = "合成機密文字列123-FAKE"
         payload = {"classification": "synthetic", "samples": [sample(hidden, hidden, hidden)]}
