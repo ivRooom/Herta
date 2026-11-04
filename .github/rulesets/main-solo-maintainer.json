@@ -5,7 +5,9 @@
   "bypass_actors": [],
   "conditions": {
     "ref_name": {
-      "include": ["refs/heads/main"],
+      "include": [
+        "refs/heads/main"
+      ],
       "exclude": []
     }
   },
@@ -24,10 +26,18 @@
       "parameters": {
         "required_approving_review_count": 0,
         "dismiss_stale_reviews_on_push": false,
+        "required_reviewers": [],
         "require_code_owner_review": false,
+        "dismissal_restriction": {
+          "enabled": false,
+          "allowed_actors": []
+        },
         "require_last_push_approval": false,
+        "require_extra_approval_for_unattributed_changes": false,
         "required_review_thread_resolution": true,
-        "allowed_merge_methods": ["squash"]
+        "allowed_merge_methods": [
+          "squash"
+        ]
       }
     },
     {
@@ -41,7 +51,8 @@
           {
             "context": "ARM64 Production Image / Node / Grype"
           }
-        ]
+        ],
+        "do_not_enforce_on_create": false
       }
     }
   ]
