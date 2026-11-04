@@ -134,10 +134,7 @@ export function ValorantRoleDonut({ items }: { items: readonly FrequencyItem[] }
 function selectedAgents(value: unknown, labels: ReadonlyMap<string, string>) {
   if (!Array.isArray(value)) return '記録なし';
   const names = value.flatMap((item): string[] =>
-    item &&
-    typeof item === 'object' &&
-    !Array.isArray(item) &&
-    typeof item.agentId === 'string'
+    item && typeof item === 'object' && !Array.isArray(item) && typeof item.agentId === 'string'
       ? [labels.get(item.agentId) ?? item.agentId]
       : [],
   );
@@ -164,9 +161,15 @@ export function ValorantHistoryPreview({
         <table className="w-full min-w-[520px] text-left text-xs">
           <thead className="text-muted">
             <tr>
-              <th scope="col" className="px-2 py-2">日時</th>
-              <th scope="col" className="px-2 py-2">マップ</th>
-              <th scope="col" className="px-2 py-2">抽選構成</th>
+              <th scope="col" className="px-2 py-2">
+                日時
+              </th>
+              <th scope="col" className="px-2 py-2">
+                マップ
+              </th>
+              <th scope="col" className="px-2 py-2">
+                抽選構成
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -183,7 +186,9 @@ export function ValorantHistoryPreview({
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-2 py-4 text-muted">履歴がありません。</td>
+                <td colSpan={3} className="px-2 py-4 text-muted">
+                  履歴がありません。
+                </td>
               </tr>
             )}
           </tbody>
