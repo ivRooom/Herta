@@ -7,6 +7,7 @@ import { resolvePluginConfigStudioAccess } from '@/lib/studio-plugin-permissions
 import { aggregateValorantStats, aggregateValorantMatchStats } from '@/lib/valorant-stats';
 import { ValorantResultsManager } from '@/components/valorant-results-manager';
 import { ValorantFrequencyBars, ValorantPickHistory } from '@/components/valorant-stats-visuals';
+import { ValorantWinRateTrend } from '@/components/valorant-winrate-trend';
 import { defaultValorantAgents } from '@herta/plugin-catalog';
 
 export const dynamic = 'force-dynamic';
@@ -49,6 +50,7 @@ export default async function ValorantStatsPage({
       outcome: true,
       roundsWon: true,
       roundsLost: true,
+      createdAt: true,
       playerResults: true,
       session: { select: { result: true } },
     },
@@ -135,6 +137,7 @@ export default async function ValorantStatsPage({
           ]}
         />
       </div>
+      <ValorantWinRateTrend days={matchData.daily} />
       <ValorantPickHistory
         rows={rows.slice(0, 5000)}
         page={pageNumber}
