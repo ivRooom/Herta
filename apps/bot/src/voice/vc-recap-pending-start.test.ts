@@ -107,6 +107,37 @@ describe('pending VC Recap start fail-closed after Discord announcement', () => 
     expect(activeVcRecapChannelId('guild-1')).toBe(null);
   });
 
+  it('allows a fresh start after cancelling a pending announcement', async () => {
+    const { channel, connection, speaking } = makeChannel();
+    const notice = deferredNotice();
+    const firstStart = startVcRecap(prisma, logger, channel, 'user-1', [], notice.announce);
+    await vi.waitFor(() => expect(notice.announce).toHaveBeenCalledTimes(1));
+
+    expect(await stopVcRecap(prisma, logger, 'guild-1')).toEqual({
+      status: 'start_cancelled',
+    });
+    notice.done();
+    expect(await firstStart).toEqual({ status: 'start_cancelled' });
+    expect(speaking.on).not.toHaveBeenCalled();
+    expect(connection.destroy).toHaveBeenCalledTimes(1);
+    expect(activeVcRecapChannelId('guild-1')).toBe(null);
+
+    // The cancelled attempt must release the guild reservation; its stale
+    // cancellation flag must not suppress a new, independently consented start.
+    const nextAnnouncement = vi.fn().mockResolvedValue(undefined);
+    const nextStart = await startVcRecap(
+      prisma,
+      logger,
+      channel,
+      'user-1',
+      [],
+      nextAnnouncement,
+    );
+    expect(nextStart).toMatchObject({ status: 'started' });
+    expect(nextAnnouncement).toHaveBeenCalledTimes(1);
+    expect(speaking.on).toHaveBeenCalledTimes(1);
+  });
+
   it('does not send a start notice when stopped during voice connection readiness', async () => {
     const { channel, connection, speaking } = makeChannel();
     let markReady!: () => void;
