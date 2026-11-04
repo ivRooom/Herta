@@ -67,17 +67,22 @@ async function main() {
   };
   // No deployment record is created until SSH runtime readback AND Cloudflare
   // health passed. The required SHA has already passed same-SHA main CI.
-  const record = await api('deployments', {
-    ref: sha,
-    task: RUNTIME_ATTESTATION_TASK,
-    environment: RUNTIME_ATTESTATION_ENVIRONMENT,
-    description: 'Herta protected runtime release proof (not a deployment trigger)',
-    auto_merge: false,
-    required_contexts: [],
-    transient_environment: false,
-    production_environment: true,
-    payload,
-  }, 'create');
+  const record = await api(
+    'deployments',
+    {
+      ref: sha,
+      task: RUNTIME_ATTESTATION_TASK,
+      environment: RUNTIME_ATTESTATION_ENVIRONMENT,
+      description: 'Herta protected runtime release proof (not a deployment trigger)',
+      auto_merge: false,
+      required_contexts: [],
+      transient_environment: false,
+      production_environment: true,
+      payload,
+
+    },
+    'create',
+  );
   if (
     record.sha !== sha ||
     record.environment !== RUNTIME_ATTESTATION_ENVIRONMENT ||
@@ -85,12 +90,17 @@ async function main() {
   ) {
     throw new Error('Deployment proof record does not match pinned production SHA');
   }
-  const published = await api('deployments/' + record.id + '/statuses', {
-    state: 'success',
-    description: 'Protected SSH runtime digest and Cloudflare health verified',
-    log_url: 'https://github.com/' + repository + '/actions/runs/' + runId,
-    auto_inactive: false,
-  }, 'status');
+  const published = await api(
+    'deployments/' + record.id + '/statuses',
+    {
+      state: 'success',
+      description: 'Protected SSH runtime digest and Cloudflare health verified',
+      log_url: 'https://github.com/' + repository + '/actions/runs/' + runId,
+      auto_inactive: false,
+
+    },
+    'status',
+  );
   if (published.state !== 'success') {
     throw new Error('Deployment proof status was not accepted as successful');
   }
