@@ -23,3 +23,7 @@ Producer/consumer: Herta operator libraries only; no service API/event contract 
 The explicit local systemd integration fixture is included because the process-unit safety test imports its cleanup guard. CI does not execute real systemd units or the integration fixture main function.
 
 The watchdog also preserves >40 seconds for Source recovery. Its quiescence child receives the full Source end (needed by env rollback), while the parent enforces an earlier execution limit reserving 41 seconds; local timeout is still not remote-stop evidence. Real local adapter deadline/timeout and systemd containment tests passed, with service recovery proofs explicitly synthetic.
+
+## Required checks for tooling-only PRs (#700)
+
+The effective main rules require the normal/ARM CI jobs, topology, Mobile Config Studio picker and postgres. Studio/PostgreSQL PR workflows retain their existing path filters. Manual workflow_dispatch is now available to run these actual checks for a path-filtered tooling head; no status is fabricated and no repository rule is weakened. The workflow-file change itself triggers both real PR tests. Future manual runs must select the exact reviewed branch/head and have any applicable cost approval. Production deploy behavior is unchanged.
