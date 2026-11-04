@@ -79,7 +79,6 @@ async function main() {
       transient_environment: false,
       production_environment: true,
       payload,
-
     },
     'create',
   );
@@ -97,7 +96,6 @@ async function main() {
       description: 'Protected SSH runtime digest and Cloudflare health verified',
       log_url: 'https://github.com/' + repository + '/actions/runs/' + runId,
       auto_inactive: false,
-
     },
     'status',
   );
