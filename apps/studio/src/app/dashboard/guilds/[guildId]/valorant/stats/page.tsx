@@ -82,6 +82,7 @@ export default async function ValorantStatsPage({
     period?: string;
     map?: string;
     mode?: string;
+    details?: string;
   }>;
 }) {
   const { guildId } = await params;
@@ -188,6 +189,28 @@ export default async function ValorantStatsPage({
         </div>
       </header>
 
+      <nav
+        aria-label="VALORANT画面内移動"
+        className="flex gap-2 overflow-x-auto pb-1 text-xs"
+      >
+        {[
+          { href: '#valorant-overview', label: '概要' },
+          { href: '#valorant-agents', label: '選出統計' },
+          { href: '#valorant-compositions', label: '勝率・構成' },
+          { href: '#valorant-history', label: '履歴' },
+          { href: '#valorant-register', label: '結果登録' },
+          { href: '#valorant-commands', label: 'コマンド' },
+        ].map((item) => (
+          <a
+            key={item.href}
+            href={item.href}
+            className="inline-flex min-h-11 shrink-0 items-center rounded-xl border border-violet-400/25 bg-[#151d37]/90 px-3 font-medium text-violet-100 transition hover:border-violet-300/60 hover:bg-violet-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300"
+          >
+            {item.label}
+          </a>
+        ))}
+      </nav>
+
       <form
         method="GET"
         aria-label="VALORANT分析のフィルタ"
@@ -244,7 +267,7 @@ export default async function ValorantStatsPage({
               ? '実戦向け'
               : '全モード'}
         </p>
-        <p>抽選は完了日時、勝敗は結果の登録日時（UTC）で絞り込みます。</p>
+        <p>抽選は完了日時・指定マップ、勝敗は登録日時（UTC）・実プレイマップで絞り込みます。</p>
       </div>
 
       {(data.smallSample || rows.length > 5000 || matchRows.length > 5000) && (
@@ -262,6 +285,7 @@ export default async function ValorantStatsPage({
       )}
 
       <section
+        id="valorant-overview"
         aria-label="分析の主要指標"
         className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 2xl:grid-cols-6"
       >
@@ -305,7 +329,7 @@ export default async function ValorantStatsPage({
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div id="valorant-agents" className="grid gap-4 md:grid-cols-2">
             <ValorantCompactBars
               title="よく当たるエージェント"
               description="抽選での選出回数トップ5 · メンバー合計"
@@ -317,7 +341,7 @@ export default async function ValorantStatsPage({
             <ValorantRoleDonut items={data.roles} />
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div id="valorant-compositions" className="grid gap-4 lg:grid-cols-2">
             <ValorantWinRateTrend days={matchData.daily} />
             <ValorantCompactBars
               title="よく出る構成パターン"
@@ -328,7 +352,11 @@ export default async function ValorantStatsPage({
 
           <ValorantHistoryPreview rows={rows.slice(0, 5000)} labels={names} />
 
-          <details className="valorant-panel group rounded-2xl p-4 sm:p-5" id="valorant-details">
+          <details
+            className="valorant-panel group rounded-2xl p-4 sm:p-5"
+            id="valorant-details"
+            open={query?.details === '1' || pageNumber > 1}
+          >
             <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300">
               <span className="flex items-center gap-2">
                 <BarChart3 className="h-4 w-4 text-violet-300" aria-hidden="true" />
