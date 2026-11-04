@@ -37,6 +37,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Offline paired CER / RTF unit tests (synthetic only)
+        run: python3 -m unittest discover -s services/whisper-cpp -p 'test_benchmark_eval.py'
+
       - name: Build scratch final image on native CPU architecture
         run: |
           set -euo pipefail
