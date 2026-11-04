@@ -77,6 +77,26 @@ class BenchmarkEvaluationTests(unittest.TestCase):
                 with self.assertRaises(bench.InvalidBenchmark):
                     bench.aggregate(invalid)
 
+    def test_finite_individual_timings_cannot_overflow_aggregate(self):
+        baseline = {"classification": "synthetic", "samples": [
+            sample(duration=1e308), sample(duration=1e308),
+        ]}
+        with self.assertRaisesRegex(bench.InvalidBenchmark, "aggregate audio duration"):
+            bench.aggregate(baseline)
+
+        processing = {"classification": "synthetic", "samples": [
+            sample(duration=1.0), sample(duration=1.0),
+        ]}
+        for record in processing["samples"]:
+            record["providers"]["whisper"]["latency_seconds"] = 1e308
+        with self.assertRaisesRegex(bench.InvalidBenchmark, "aggregate processing duration"):
+            bench.aggregate(processing)
+
+        huge_ratio = {"classification": "synthetic", "samples": [sample(duration=1e-308)]}
+        huge_ratio["samples"][0]["providers"]["whisper"]["latency_seconds"] = 1e308
+        with self.assertRaisesRegex(bench.InvalidBenchmark, "aggregate RTF"):
+            bench.aggregate(huge_ratio)
+
     def test_no_text_identifiers_or_secrets_in_output(self):
         hidden = "合成機密文字列123-FAKE"
         payload = {"classification": "synthetic", "samples": [sample(hidden, hidden, hidden)]}
