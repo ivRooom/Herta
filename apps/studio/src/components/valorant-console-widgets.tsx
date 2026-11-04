@@ -163,7 +163,30 @@ export function ValorantHistoryPreview({
       <p className="mt-1 text-xs text-muted">
         抽選時の組合せです。試合で実際に使った構成とは異なる場合があります。
       </p>
-      <div className="mt-3 overflow-x-auto">
+      <ul className="mt-3 space-y-2 sm:hidden" aria-label="最近の抽選構成（モバイル表示）">
+        {rows.slice(0, 6).map((item) => (
+          <li key={item.id} className="rounded-xl border border-violet-400/15 bg-[#161e37]/80 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span className="font-semibold text-violet-100">{item.mapId ?? 'マップ未指定'}</span>
+              <time className="tabular-nums text-muted" dateTime={item.completedAt?.toISOString()}>
+                {item.completedAt
+                  ? item.completedAt.toISOString().slice(0, 16).replace('T', ' ') + ' UTC'
+                  : '日時不明'}
+              </time>
+            </div>
+            <p className="mt-2 text-[11px] text-muted">抽選されたエージェント</p>
+            <p className="mt-1 break-words text-sm leading-relaxed">
+              {selectedAgents(item.result, labels)}
+            </p>
+          </li>
+        ))}
+        {rows.length === 0 && (
+          <li className="rounded-xl border border-border/60 p-3 text-sm text-muted">
+            履歴がありません。
+          </li>
+        )}
+      </ul>
+      <div className="mt-3 hidden overflow-x-auto sm:block">
         <table className="w-full min-w-[520px] text-left text-xs">
           <thead className="text-muted">
             <tr>
