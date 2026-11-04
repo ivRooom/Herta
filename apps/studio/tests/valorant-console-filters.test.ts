@@ -44,7 +44,7 @@ describe('VALORANT console URL filter boundaries', () => {
       mode: 'TACTICAL',
     });
     expect(valorantConsoleHistoryQuery(filters, 2)).toBe(
-      '?period=7&map=Haven&mode=TACTICAL&page=2',
+      '?period=7&map=Haven&mode=TACTICAL&page=2&details=1#valorant-details',
     );
   });
 });
