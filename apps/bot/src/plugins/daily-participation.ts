@@ -327,7 +327,7 @@ export async function handleDailyParticipation(
         alreadyClaimed: claimed.mode === 'already_claimed',
         receipt: { ...receipt, streakReward: receipt.streakReward ?? undefined },
         balance: claimed.balance,
-        message: `${claimed.mode === 'already_claimed' ? '本日は受取済みです。' : 'ボーナスを受け取りました！'}\\n獲得：${receipt.rewardPoints + (receipt.streakReward?.points ?? 0) + (receipt.firstClaimReward?.points ?? 0)}pt / 保有：${claimed.balance}pt / 連続：${receipt.streakDay}日`,
+        message: `${claimed.mode === 'already_claimed' ? '本日は受取済みです。' : 'ボーナスを受け取りました！'}\n獲得：${receipt.rewardPoints + (receipt.streakReward?.points ?? 0) + (receipt.firstClaimReward?.points ?? 0)}pt / 保有：${claimed.balance}pt / 連続：${receipt.streakDay}日`,
       });
       return;
     }
