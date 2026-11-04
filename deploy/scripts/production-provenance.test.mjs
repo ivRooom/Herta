@@ -11,6 +11,21 @@ import {
   validateProductionDeploymentAttestation,
 } from './production-provenance.mjs';
 
+import { protectedProofApiError } from './production-provenance-publish.mjs';
+
+test('production proof failures identify the failing POST without logging response data', () => {
+  assert.equal(
+    protectedProofApiError('create', 500).message,
+    'Unable to record protected release proof (deployment create): HTTP 500',
+  );
+  assert.equal(
+    protectedProofApiError('status', 503).message,
+    'Unable to record protected release proof (deployment status): HTTP 503',
+  );
+  assert.throws(() => protectedProofApiError('unknown', 500), /Invalid protected/);
+  assert.throws(() => protectedProofApiError('create', Number.NaN), /Invalid protected/);
+});
+
 const sha = 'a'.repeat(40);
 const oldSha = 'b'.repeat(40);
 const imageId = 'sha256:' + 'c'.repeat(64);
