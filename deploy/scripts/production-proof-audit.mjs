@@ -62,16 +62,22 @@ export async function inspectProductionProofRecords(api, { sha, runId, runAttemp
     if (!Array.isArray(statuses) || statuses.length >= 100) {
       throw new Error('Incomplete GitHub deployment status history');
     }
+    const states = [];
+    const statusCreatedAts = [];
+    for (const status of statuses) {
+      if (!VALID_STATES.has(status?.state)) {
+        throw new Error('Invalid GitHub deployment status');
+      }
+      states.push(status.state);
+      statusCreatedAts.push(status.created_at ?? null);
+    }
     records.push({
       deploymentId: record.id,
+      deploymentCreatedAt: record.created_at ?? null,
       runMatches: record.payload?.runId === runId,
       attemptMatches: record.payload?.runAttempt === runAttempt,
-      states: statuses.map((status) => {
-        if (!VALID_STATES.has(status?.state)) {
-          throw new Error('Invalid GitHub deployment status');
-        }
-        return status.state;
-      }),
+      states,
+      statusCreatedAts,
     });
   }
   // A GitHub success status alone cannot prove the SSH job's timing,
