@@ -47,13 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      - name: Diagnostic Prettier diff (temporary, fails intentionally)
-        shell: bash
-        run: |
-          pnpm exec prettier --write "apps/studio/src/app/dashboard/guilds/[guildId]/valorant/stats/page.tsx" apps/studio/tests/valorant-console-filters.test.ts
-          git diff -- "apps/studio/src/app/dashboard/guilds/[guildId]/valorant/stats/page.tsx" apps/studio/tests/valorant-console-filters.test.ts
-          exit 1
-
       - name: Format Check
         run: pnpm format:check
 
