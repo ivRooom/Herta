@@ -24,9 +24,9 @@ The explicit local systemd integration fixture is included because the process-u
 
 The watchdog also preserves >40 seconds for Source recovery. Its quiescence child receives the full Source end (needed by env rollback), while the parent enforces an earlier execution limit reserving 41 seconds; local timeout is still not remote-stop evidence. Real local adapter deadline/timeout and systemd containment tests passed, with service recovery proofs explicitly synthetic.
 
-## Required checks for tooling-only PRs (#700)
+## Current required checks (#700)
 
-The effective main rules require the normal/ARM CI jobs, topology, Mobile Config Studio picker and postgres. Studio/PostgreSQL PR workflows retain their existing path filters. Manual workflow_dispatch is now available to run these actual checks for a path-filtered tooling head; no status is fabricated and no repository rule is weakened. The workflow-file change itself triggers both real PR tests. Future manual runs must select the exact reviewed branch/head and have any applicable cost approval. Production deploy behavior is unchanged.
+The initial review observed five required contexts, including path-filtered Studio/PostgreSQL jobs. While this PR was under CI, the maintainer corrected the active main ruleset to the normal and ARM64 CI jobs only, with strict latest-main tracking. The proposed manual workflow_dispatch additions are therefore removed from this PR. No repository rule is changed here. See GITHUB_MAIN_RULESET_SOLO_RUNBOOK.md and live GitHub rules for the current operational state. Applicable topology and integration checks remain part of review even when not globally required.
 
 ## Existing automatic deployment boundary
 

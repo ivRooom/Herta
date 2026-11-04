@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { defaultValorantAgents } from '@herta/plugin-catalog';
 import {
   uniqueActualValorantAgents,
@@ -101,6 +101,7 @@ export function ValorantResultsManager({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [feedback, setFeedback] = useState('');
+  const historyRef = useRef<HTMLDetailsElement>(null);
 
   async function load() {
     setError('');
@@ -160,6 +161,7 @@ export function ValorantResultsManager({
       setSessionId('');
       setPlayers([]);
       await load();
+      if (historyRef.current) historyRef.current.open = true;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '通信に失敗しました。');
     } finally {
@@ -351,8 +353,11 @@ export function ValorantResultsManager({
         </div>
       )}
       {feedback && (
-        <p role="status" className="mt-2">
-          {feedback}
+        <p role="status" className="mt-2 text-teal-200">
+          {feedback}{' '}
+          <a className="underline underline-offset-2" href="#valorant-registered-results">
+            登録履歴を確認
+          </a>
         </p>
       )}
       {error && (
@@ -360,7 +365,12 @@ export function ValorantResultsManager({
           {error}
         </p>
       )}
-      <details className="mt-5 rounded-xl border border-border p-3" open={!compact}>
+      <details
+        ref={historyRef}
+        id="valorant-registered-results"
+        className="mt-5 rounded-xl border border-border p-3 scroll-mt-20"
+        open={!compact}
+      >
         <summary className="cursor-pointer text-sm font-semibold">
           登録済み試合結果（実使用構成・履歴）
         </summary>
@@ -368,7 +378,43 @@ export function ValorantResultsManager({
           登録済みの直近100件。本人の実使用Agentと抽選Agentは異なる場合があります。
           勝率は未登録セッションを分母に含めません。
         </p>
-        <div className="mt-3 overflow-x-auto">
+        <ul className="mt-3 space-y-2 sm:hidden" aria-label="登録済み試合結果（モバイル表示）">
+          {reports.map((item) => (
+            <li
+              key={item.id}
+              className="rounded-xl border border-violet-400/20 bg-[#161e37]/80 p-3"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm font-semibold">{item.mapId}</span>
+                <span className="text-xs font-medium text-violet-200">
+                  {item.outcome === 'WIN' ? '勝利' : item.outcome === 'LOSS' ? '敗北' : '引分'}
+                </span>
+              </div>
+              <p className="mt-1 text-xs tabular-nums text-muted">
+                登録日時（UTC）:{' '}
+                <time dateTime={item.createdAt}>
+                  {item.createdAt?.slice(0, 16).replace('T', ' ') ?? '不明'}
+                </time>
+                {' · '}ラウンド {item.roundsWon}-{item.roundsLost}
+              </p>
+              <p className="mt-2 text-xs text-muted">実使用エージェント（抽選構成とは別）</p>
+              <p className="mt-1 break-words text-sm leading-relaxed">
+                {playedAgents(item.playerResults)
+                  .map((id) => available.find((agent) => agent.id === id)?.title ?? id)
+                  .join(' / ') || '記録なし'}
+              </p>
+              {item.matchId && (
+                <p className="mt-2 break-all text-xs text-muted">Match ID: {item.matchId}</p>
+              )}
+            </li>
+          ))}
+          {reports.length === 0 && (
+            <li className="rounded-xl border border-border/60 p-3 text-sm text-muted">
+              登録済みの試合はありません。
+            </li>
+          )}
+        </ul>
+        <div className="mt-3 hidden overflow-x-auto sm:block">
           <table className="w-full min-w-[750px] text-left text-sm">
             <thead>
               <tr>
