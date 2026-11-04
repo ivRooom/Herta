@@ -47,13 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      - name: Temporary debug - show Prettier difference for B2 UI
-        shell: bash
-        run: |
-          pnpm exec prettier --write apps/studio/src/components/valorant-results-manager.tsx
-          git diff -- apps/studio/src/components/valorant-results-manager.tsx
-          exit 1
-
       - name: Format Check
         run: pnpm format:check
 
