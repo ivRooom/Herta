@@ -59,11 +59,12 @@ def edit_distance(left, right):
 
 
 def positive_number(value):
-    return (
-        type(value) in (float, int)
-        and math.isfinite(value)
-        and value > 0
-    )
+    if type(value) not in (float, int):
+        return False
+    try:
+        return math.isfinite(value) and value > 0
+    except OverflowError:
+        return False
 
 
 def aggregate(data):
@@ -167,7 +168,7 @@ def main():
         # InvalidBenchmark messages are fixed and never include input values.
         print(f"benchmark rejected: {error}", file=sys.stderr)
         return 2
-    except (OSError, UnicodeError, TypeError, ValueError):
+    except (OSError, RecursionError, OverflowError, UnicodeError, TypeError, ValueError):
         print("benchmark rejected: invalid input", file=sys.stderr)
         return 2
     json.dump(metrics, sys.stdout, ensure_ascii=False, indent=2, sort_keys=True)
