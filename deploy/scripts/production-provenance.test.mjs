@@ -40,6 +40,68 @@ test('production proof failures identify the failing POST without logging respon
   assert.throws(() => protectedProofApiError('create', Number.NaN), /Invalid protected/);
 });
 
+import { inspectProductionProofRecords } from './production-proof-audit.mjs';
+
+test('read-only proof audit distinguishes missing, partial, and complete records without mutation', async () => {
+  const sha = 'a'.repeat(40);
+  const proof = {
+    id: 12,
+    sha,
+    task: 'deploy:runtime-proof',
+    environment: 'herta-runtime-attested',
+    payload: { runId: 41807040824, runAttempt: 1 },
+  };
+  const paths = [];
+  const api = async (path) => {
+    paths.push(path);
+    if (path.startsWith('deployments?')) return [proof];
+    if (path === 'deployments/12/statuses?per_page=100') return [];
+    throw new Error('Unexpected audit path');
+  };
+  const input = { sha, runId: 41807040824, runAttempt: 1 };
+  assert.deepEqual(await inspectProductionProofRecords(api, input), {
+    ...input,
+    records: [{ deploymentId: 12, runMatches: true, attemptMatches: true, states: [] }],
+  });
+  assert.ok(paths.every((path) => path.startsWith('deployments')));
+  assert.deepEqual(
+    (await inspectProductionProofRecords(async () => [], input)).records,
+    [],
+  );
+  const completeApi = async (path) => {
+    if (path.startsWith('deployments?')) return [proof];
+    return [{ state: 'success' }];
+  };
+  assert.deepEqual((await inspectProductionProofRecords(completeApi, input)).records[0].states, [
+    'success',
+  ]);
+});
+
+test('read-only proof audit rejects incomplete histories, invalid input, and ambiguous states', async () => {
+  const sha = 'a'.repeat(40);
+  const input = { sha, runId: 1, runAttempt: 1 };
+  const sample = {
+    id: 42,
+    sha,
+    task: 'deploy:runtime-proof',
+    environment: 'herta-runtime-attested',
+  };
+  await assert.rejects(inspectProductionProofRecords(async () => [], { ...input, sha: 'main' }));
+  await assert.rejects(inspectProductionProofRecords(async () => [], { ...input, runId: 0 }));
+  await assert.rejects(
+    inspectProductionProofRecords(async () => Array.from({ length: 100 }, () => sample), input),
+    /Incomplete GitHub deployment history/,
+  );
+  await assert.rejects(
+    inspectProductionProofRecords(async (path) => (path.startsWith('deployments?') ? [sample] : Array.from({ length: 100 }, () => ({ state: 'success' }))), input),
+    /Incomplete GitHub deployment status history/,
+  );
+  await assert.rejects(
+    inspectProductionProofRecords(async (path) => (path.startsWith('deployments?') ? [sample] : [{ state: 'unexpected' }]), input),
+    /Invalid GitHub deployment status/,
+  );
+});
+
 const sha = 'a'.repeat(40);
 const oldSha = 'b'.repeat(40);
 const imageId = 'sha256:' + 'c'.repeat(64);
