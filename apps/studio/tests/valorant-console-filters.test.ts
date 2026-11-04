@@ -9,7 +9,12 @@ import {
 
 describe('VALORANT console URL filter boundaries', () => {
   it('defaults to the latest 30 days and rejects unknown/injected parameters', () => {
-    expect(parseValorantConsoleFilters({})).toEqual({ period: '30', map: '', mode: '', partySize: '' });
+    expect(parseValorantConsoleFilters({})).toEqual({
+      period: '30',
+      map: '',
+      mode: '',
+      partySize: '',
+    });
     expect(
       parseValorantConsoleFilters({
         period: ['all'],
@@ -21,7 +26,9 @@ describe('VALORANT console URL filter boundaries', () => {
   });
 
   it('accepts only exact supported map names, modes and periods', () => {
-    expect(parseValorantConsoleFilters({ period: '90', map: 'Ascent', mode: 'RANDOM', partySize: '3' })).toEqual({
+    expect(
+      parseValorantConsoleFilters({ period: '90', map: 'Ascent', mode: 'RANDOM', partySize: '3' }),
+    ).toEqual({
       period: '90',
       map: 'Ascent',
       mode: 'RANDOM',
