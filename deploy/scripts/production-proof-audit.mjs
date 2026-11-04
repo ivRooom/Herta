@@ -74,7 +74,18 @@ export async function inspectProductionProofRecords(api, { sha, runId, runAttemp
       }),
     });
   }
-  return { sha, runId, runAttempt, records };
+  // A GitHub success status alone cannot prove the SSH job's timing,
+  // current host SHA, image identity, health or restore readiness.
+  const exact = records.filter((record) => record.runMatches && record.attemptMatches);
+  let classification = 'missing';
+  if (exact.length > 1) {
+    classification = 'ambiguous';
+  } else if (exact.length === 1) {
+    classification = exact[0].states.length === 0 ? 'partial' : 'status-present-unverified';
+  } else if (records.length > 0) {
+    classification = 'unmatched';
+  }
+  return { sha, runId, runAttempt, classification, records };
 }
 
 async function main() {
