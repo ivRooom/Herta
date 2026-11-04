@@ -1,11 +1,23 @@
-import { RUNTIME_ATTESTATION_ENVIRONMENT, RUNTIME_ATTESTATION_TASK } from './production-provenance.mjs';
+import {
+  RUNTIME_ATTESTATION_ENVIRONMENT,
+  RUNTIME_ATTESTATION_TASK,
+} from './production-provenance.mjs';
 
 const SHA_RE = /^[a-f0-9]{40}$/;
+const VALID_STATES = new Set([
+  'error',
+  'failure',
+  'inactive',
+  'in_progress',
+  'pending',
+  'queued',
+  'success',
+]);
 
 /**
- * Read-only investigation of partial GitHub Deployment proof publication.
- * This is NOT a release attestation or a recovery tool: never write a status
- * based solely on these records, or assume a failed workflow was successful.
+ * Read-only inspection of partial GitHub Deployment proof publication.
+ * This is not an attestation or recovery operation. Never infer that a
+ * failed workflow succeeded, or mutate remote release status using this data.
  */
 export async function inspectProductionProofRecords(api, { sha, runId, runAttempt }) {
   if (
@@ -20,12 +32,9 @@ export async function inspectProductionProofRecords(api, { sha, runId, runAttemp
   const matches = [];
   let complete = false;
   for (let page = 1; page <= 10; page++) {
-    const records = await api(
-      'deployments?environment=' +
-        RUNTIME_ATTESTATION_ENVIRONMENT +
-        '&per_page=100&page=' +
-        page,
-    );
+    const path =
+      'deployments?environment=' + RUNTIME_ATTESTATION_ENVIRONMENT + '&per_page=100&page=' + page;
+    const records = await api(path);
     if (!Array.isArray(records) || records.length > 100) {
       throw new Error('Invalid GitHub deployment history response');
     }
@@ -58,7 +67,7 @@ export async function inspectProductionProofRecords(api, { sha, runId, runAttemp
       runMatches: record.payload?.runId === runId,
       attemptMatches: record.payload?.runAttempt === runAttempt,
       states: statuses.map((status) => {
-        if (!['error', 'failure', 'inactive', 'in_progress', 'pending', 'queued', 'success'].includes(status?.state)) {
+        if (!VALID_STATES.has(status?.state)) {
           throw new Error('Invalid GitHub deployment status');
         }
         return status.state;
@@ -87,7 +96,9 @@ async function main() {
       },
       signal: AbortSignal.timeout(15000),
     });
-    if (!response.ok) throw new Error('Read-only GitHub proof audit GET failed: HTTP ' + response.status);
+    if (!response.ok) {
+      throw new Error('Read-only GitHub proof audit GET failed: HTTP ' + response.status);
+    }
     return response.json();
   };
   const result = await inspectProductionProofRecords(api, { sha, runId, runAttempt });
