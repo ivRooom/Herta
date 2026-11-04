@@ -28,25 +28,25 @@ export function protectedProofApiError(stage, status, requestId) {
   return error;
 }
 
-async function main() {
-  const repository = process.env.GITHUB_REPOSITORY;
-  const token = process.env.GITHUB_TOKEN;
-  const sha = process.env.DEPLOY_REF;
-  const ref = process.env.HERTA_IMAGE;
-  const actor = process.env.GITHUB_ACTOR;
-  const runId = Number(process.env.GITHUB_RUN_ID);
-  const runAttempt = Number(process.env.GITHUB_RUN_ATTEMPT);
+export async function publishProtectedReleaseProof({ env = process.env, fetchImpl = fetch } = {}) {
+  const repository = env.GITHUB_REPOSITORY;
+  const token = env.GITHUB_TOKEN;
+  const sha = env.DEPLOY_REF;
+  const ref = env.HERTA_IMAGE;
+  const actor = env.GITHUB_ACTOR;
+  const runId = Number(env.GITHUB_RUN_ID);
+  const runAttempt = Number(env.GITHUB_RUN_ATTEMPT);
   if (
     !repository ||
     !/^[\w.-]+\/[\w.-]+$/.test(repository) ||
     !token ||
     !SHA_RE.test(sha) ||
     ref !== 'ghcr.io/ivrooom/herta:' + sha ||
-    process.env.GITHUB_JOB !== 'deploy'
+    env.GITHUB_JOB !== 'deploy'
   ) {
     throw new Error('Invalid protected production deployment environment');
   }
-  const runtime = parseProductionRuntimeProof(process.env.HERTA_RUNTIME_READBACK ?? '', sha);
+  const runtime = parseProductionRuntimeProof(env.HERTA_RUNTIME_READBACK ?? '', sha);
   const payload = buildProductionDeploymentPayload({
     runId,
     runAttempt,
@@ -55,7 +55,7 @@ async function main() {
     actor,
   });
   const api = async (path, body, stage) => {
-    const response = await fetch('https://api.github.com/repos/' + repository + '/' + path, {
+    const response = await fetchImpl('https://api.github.com/repos/' + repository + '/' + path, {
       method: 'POST',
       headers: {
         Authorization: 'Bearer ' + token,
@@ -116,7 +116,7 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === new URL('file://' + process.argv[1]).href) {
-  main().catch((error) => {
+  publishProtectedReleaseProof().catch((error) => {
     console.error(error instanceof Error ? error.message : 'Unknown release proof error');
     process.exitCode = 1;
   });

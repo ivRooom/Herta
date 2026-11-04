@@ -11,7 +11,7 @@ import {
   validateProductionDeploymentAttestation,
 } from './production-provenance.mjs';
 
-import { protectedProofApiError } from './production-provenance-publish.mjs';
+import { protectedProofApiError, publishProtectedReleaseProof } from './production-provenance-publish.mjs';
 import { inspectProductionProofRecords } from './production-proof-audit.mjs';
 
 test('production proof failures identify the failing POST without logging response data', () => {
@@ -39,6 +39,51 @@ test('production proof failures identify the failing POST without logging respon
   );
   assert.throws(() => protectedProofApiError('unknown', 500), /Invalid protected/);
   assert.throws(() => protectedProofApiError('create', Number.NaN), /Invalid protected/);
+});
+
+test('publisher uses correct API stage, safe request ID, and no retry on failed POST', async () => {
+  const sha = 'a'.repeat(40);
+  const env = {
+    GITHUB_REPOSITORY: 'ivRooom/Herta',
+    GITHUB_TOKEN: 'synthetic-not-a-secret',
+    DEPLOY_REF: sha,
+    HERTA_IMAGE: 'ghcr.io/ivrooom/herta:' + sha,
+    GITHUB_ACTOR: 'test-maintainer',
+    GITHUB_RUN_ID: '41807040824',
+    GITHUB_RUN_ATTEMPT: '1',
+    GITHUB_JOB: 'deploy',
+    HERTA_RUNTIME_READBACK: 'HERTA_RELEASE_PROOF ' + sha + ' sha256:' + 'b'.repeat(64),
+  };
+  for (const failingStage of ['create', 'status']) {
+    const paths = [];
+    const fetchImpl = async (url, options) => {
+      const path = url.split('/repos/ivRooom/Herta/')[1];
+      paths.push(path);
+      assert.equal(options.method, 'POST');
+      if (failingStage === 'status' && path === 'deployments') {
+        return {
+          ok: true,
+          json: async () => ({ sha, environment: 'herta-runtime-attested', id: 123 }),
+        };
+      }
+      return {
+        ok: false,
+        status: 500,
+        headers: { get: (key) => key === 'x-github-request-id' ? 'ABCD:1234-TEST' : null },
+      };
+    };
+    const stageLabel = failingStage === 'create' ? 'deployment create' : 'deployment status';
+    await assert.rejects(
+      publishProtectedReleaseProof({ env, fetchImpl }),
+      (error) => error.message ===
+        'Unable to record protected release proof (' + stageLabel +
+        '): HTTP 500 (GitHub request ID: ABCD:1234-TEST)',
+    );
+    assert.deepEqual(
+      paths,
+      failingStage === 'create' ? ['deployments'] : ['deployments', 'deployments/123/statuses'],
+    );
+  }
 });
 
 test('read-only proof audit distinguishes partial and complete states', async () => {
