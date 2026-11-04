@@ -115,7 +115,7 @@ class BenchmarkEvaluationTests(unittest.TestCase):
         stdin = io.TextIOWrapper(io.BytesIO(contents.encode()), encoding="utf-8")
         with patch.object(sys, "stdin", stdin), patch("sys.stderr", new_callable=io.StringIO) as stderr:
             self.assertEqual(bench.main(), 2)
-            self.assertEqual(stderr.getvalue(), "benchmark rejected: invalid input\\n")
+            self.assertEqual(stderr.getvalue(), "benchmark rejected: invalid input\n")
 
     def test_no_text_identifiers_or_secrets_in_output(self):
         hidden = "合成機密文字列123-FAKE"
