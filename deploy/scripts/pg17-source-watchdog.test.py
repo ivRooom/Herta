@@ -35,6 +35,31 @@ class FakeAdapter(w.Adapter):
 
 
 class WatchdogTests(unittest.TestCase):
+    def test_quiescence_keeps_full_end_but_reserves_actual_source_recovery_time(self):
+        self.fence.arm_frozen(self.now, seconds=100)
+        class ContractAdapter(FakeAdapter):
+            def run(adapter, deadline, **kwargs):
+                self.assertEqual(kwargs['reserve_seconds'], 41)
+                self.assertEqual(deadline, 200.)
+                return adapter.callback(deadline)
+        self.quiesce = ContractAdapter(self.quiesce.callback)
+        def recover(deadline):
+            self.assertGreater(deadline-self.now, 40)
+            self.calls.append('recover'); self.now += 41
+            return dict.fromkeys(w.RECOVERY, True)
+        self.recover = FakeAdapter(recover)
+        self.assertTrue(self.run_watch()['source_restarted'])
+
+    def test_slow_quiescence_never_dispatches_recovery_with_40_seconds(self):
+        self.fence.arm_frozen(self.now, seconds=100)
+        def slow(deadline):
+            self.now = deadline-40
+            return dict.fromkeys(w.QUIESCENCE, True)
+        self.quiesce = FakeAdapter(slow)
+        with self.assertRaises(w.WatchdogStop):
+            self.run_watch()
+        self.assertNotIn('recover', self.calls)
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(dir='/root', prefix='herta-watchdog-')
         self.base = Path(self.tmp.name)
@@ -196,6 +221,12 @@ class WatchdogTests(unittest.TestCase):
                     deadlines.append(deadline)
                     return dict.fromkeys(w.RECOVERY, True)
                 self.quiesce, self.recover = FakeAdapter(quiesce), FakeAdapter(recover)
+                if seconds == 20:
+                    with self.assertRaises(w.WatchdogStop):
+                        self.run_watch()
+                    self.assertEqual(self.fence.read()[-1]['deadline'], armed[0])
+                    self.assertEqual(deadlines, [])
+                    continue
                 self.assertTrue(self.run_watch()['source_restarted'])
                 self.assertEqual(deadlines[-1], armed[0])
                 self.assertLessEqual(deadlines[0], armed[0])
@@ -268,6 +299,18 @@ class WatchdogTests(unittest.TestCase):
         with self.assertRaises(w.WatchdogStop):
             adapter.run(w.boottime() + 3)
         self.assertLess(time.monotonic() - before, 4)
+
+    def test_actual_adapter_receives_full_end_while_parent_preserves_reserve(self):
+        adapter = self.adapter('import json,sys,time; p=json.load(sys.stdin); '
+            'print(json.dumps({"fullEnd":p["deadlineBoottime"]-time.clock_gettime(time.CLOCK_BOOTTIME)>40}))')
+        self.assertEqual(adapter.run(w.boottime()+60, reserve_seconds=41), {'fullEnd': True})
+
+    def test_actual_adapter_timeout_reserves_source_recovery_time(self):
+        adapter = self.adapter('import time; time.sleep(30)')
+        before = time.monotonic()
+        with self.assertRaises(w.WatchdogStop):
+            adapter.run(w.boottime()+44, reserve_seconds=41)
+        self.assertLess(time.monotonic()-before, 4)
 
     def test_duplicate_or_nonboolean_output_rejected(self):
         for output in ('{"accepted":true,"accepted":true}', '{"accepted":1}'):

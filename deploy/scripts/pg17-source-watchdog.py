@@ -96,8 +96,10 @@ class Adapter:
         need(hashlib.sha256(self.raw).hexdigest() == sha256)
         compile(self.raw, '<pinned-watchdog-adapter>', 'exec')
 
-    def run(self, deadline, *, clock=boottime):
-        need(deadline - clock() > 2)
+    def run(self, deadline, *, clock=boottime, reserve_seconds=0):
+        need(type(reserve_seconds) is int and 0 <= reserve_seconds <= 60)
+        limit = deadline - reserve_seconds
+        need(limit - clock() > 2)
         script = os.memfd_create('herta-watchdog-adapter')
         output = os.memfd_create('herta-watchdog-result')
         process = None
@@ -108,15 +110,16 @@ class Adapter:
             os.lseek(script, 0, os.SEEK_SET)
             def limits():
                 resource.setrlimit(resource.RLIMIT_FSIZE, (4096, 4096))
+            need(limit - clock() > 2)
             process = subprocess.Popen([sys.executable, '-I', '/proc/self/fd/' + str(script)],
                 stdin=subprocess.PIPE, stdout=output, stderr=subprocess.DEVNULL,
                 env={'PATH': '/usr/bin:/bin'}, pass_fds=(script,),
                 start_new_session=True, preexec_fn=limits)
             process.stdin.write(json.dumps({'deadlineBoottime': deadline}).encode())
             process.stdin.close()
-            while process.poll() is None and clock() < deadline - 2:
-                time.sleep(min(.05, max(.001, deadline - 2 - clock())))
-            need(process.poll() == 0 and clock() < deadline)
+            while process.poll() is None and clock() < limit - 2:
+                time.sleep(min(.05, max(.001, limit - 2 - clock())))
+            need(process.poll() == 0 and clock() < limit)
             os.lseek(output, 0, os.SEEK_SET)
             raw = os.read(output, 4097)
             need(0 < len(raw) <= 4096)
@@ -241,10 +244,12 @@ def watch(fence, quiesce, recover, *, reserve_seconds=60, poll_seconds=.2,
             # Any other failure remains fail-closed, without a retry. The
             # claimed row, not the earlier poll, owns the recovery deadline.
             deadline = claim['deadline']
-            need(deadline - clock() > 6)
-            proof = quiesce.run(clock() + (deadline - clock()) / 2, clock=clock)
+            need(deadline - clock() > 45)
+            # Supply the original end to nested env rollback, but stop the
+            # local quiescence adapter early enough for actual Source recovery.
+            proof = quiesce.run(deadline, clock=clock, reserve_seconds=41)
             need(set(proof) == set(QUIESCENCE) and all(proof[k] is True for k in QUIESCENCE))
-            need(deadline - clock() > 2)
+            need(deadline - clock() > 40)
             result = recover.run(deadline, clock=clock)
             need(set(result) == set(RECOVERY) and all(result[k] is True for k in RECOVERY))
             need(clock() < deadline)
