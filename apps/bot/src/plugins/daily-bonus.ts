@@ -346,7 +346,7 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
         return;
       }
       try {
-        await displayDailyFortune(ctx, interaction, date, 'edit');
+        await displayDailyFortune(ctx, interaction, date);
       } catch {
         await interaction.editReply(
           '運勢を表示できませんでした。/fortune today から再確認できます。',
@@ -435,16 +435,6 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
       result.receipt,
     );
     await replyDailyBonusResult(interaction, result);
-    if (ctx.config.fortuneEnabled) {
-      try {
-        await displayDailyFortune(ctx, interaction, date, 'followUp');
-      } catch {
-        await interaction.followUp({
-          flags: MessageFlags.Ephemeral,
-          content: 'ポイント受取は完了しています。運勢は /fortune today でもう一度確認できます。',
-        });
-      }
-    }
   } catch {
     await interaction.editReply(
       '処理結果を確認できませんでした。同じボタンから再確認してください。重複付与はされません。',
@@ -456,7 +446,6 @@ async function displayDailyFortune(
   ctx: Context,
   interaction: ButtonInteraction,
   date: string,
-  mode: 'edit' | 'followUp',
 ) {
   const source = await fetchIvrmFortuneProfile(ctx.guildId, interaction.user.id, date);
   const fortune = await savedDailyFortune(
@@ -482,9 +471,5 @@ async function displayDailyFortune(
         .setFooter({ text: fortune.disclaimer }),
     ],
   };
-  if (mode === 'followUp') {
-    await interaction.followUp({ ...payload, flags: MessageFlags.Ephemeral });
-  } else {
-    await interaction.editReply(payload);
-  }
+  await interaction.editReply(payload);
 }
