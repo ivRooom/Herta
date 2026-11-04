@@ -159,9 +159,25 @@ export interface ValorantMatchSample {
   roundsLost: number;
   playerResults: unknown;
   session: { result: unknown };
+  // Registration timestamp, not the time at which the match was played.
+  createdAt?: Date | null;
+}
+
+export interface ValorantDailyOutcome {
+  date: string;
+  total: number;
+  win: number;
+  loss: number;
+  draw: number;
+  // Draws do not enter the win-rate denominator.
+  winRate: number | null;
 }
 export function aggregateValorantMatchStats(reports: readonly ValorantMatchSample[]) {
   const summary = { total: reports.length, win: 0, loss: 0, draw: 0 };
+  const registeredDays = new Map<
+    string,
+    { date: string; total: number; win: number; loss: number; draw: number }
+  >();
   const teams = new Map<
     string,
     { name: string; count: number; win: number; loss: number; draw: number }
@@ -173,6 +189,23 @@ export function aggregateValorantMatchStats(reports: readonly ValorantMatchSampl
   for (const report of reports) {
     const outcome = report.outcome === 'WIN' ? 'win' : report.outcome === 'LOSS' ? 'loss' : 'draw';
     summary[outcome]++;
+    // Unknown/legacy timestamps must not create a fake date or an invalid graph.
+    const date =
+      report.createdAt instanceof Date && Number.isFinite(report.createdAt.getTime())
+        ? report.createdAt.toISOString().slice(0, 10)
+        : null;
+    if (date) {
+      const day = registeredDays.get(date) ?? {
+        date,
+        total: 0,
+        win: 0,
+        loss: 0,
+        draw: 0,
+      };
+      day.total++;
+      day[outcome]++;
+      registeredDays.set(date, day);
+    }
     // Match statistics must describe the agents actually played. The original
     // pick is kept as a separately labelled dimension for comparison.
     for (const [source, target] of [
@@ -199,9 +232,16 @@ export function aggregateValorantMatchStats(reports: readonly ValorantMatchSampl
   const sorted = (
     teams: Map<string, { name: string; count: number; win: number; loss: number; draw: number }>,
   ) => [...teams.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+  const daily: ValorantDailyOutcome[] = [...registeredDays.values()]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((day) => ({
+      ...day,
+      winRate: day.win + day.loss ? day.win / (day.win + day.loss) : null,
+    }));
   return {
     ...summary,
     compositions: sorted(teams),
     pickedCompositions: sorted(pickedTeams),
+    daily,
   };
 }
