@@ -125,14 +125,7 @@ describe('pending VC Recap start fail-closed after Discord announcement', () => 
     // The cancelled attempt must release the guild reservation; its stale
     // cancellation flag must not suppress a new, independently consented start.
     const nextAnnouncement = vi.fn().mockResolvedValue(undefined);
-    const nextStart = await startVcRecap(
-      prisma,
-      logger,
-      channel,
-      'user-1',
-      [],
-      nextAnnouncement,
-    );
+    const nextStart = await startVcRecap(prisma, logger, channel, 'user-1', [], nextAnnouncement);
     expect(nextStart).toMatchObject({ status: 'started' });
     expect(nextAnnouncement).toHaveBeenCalledTimes(1);
     expect(speaking.on).toHaveBeenCalledTimes(1);
