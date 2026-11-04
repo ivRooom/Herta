@@ -17,15 +17,14 @@ export function protectedProofApiError(stage, status, requestId) {
     throw new Error('Invalid protected release proof diagnostic');
   }
   const safeRequestId =
-    typeof requestId === 'string' && /^[A-Za-z0-9:-]{1,128}$/.test(requestId)
-      ? requestId
-      : null;
+    typeof requestId === 'string' && /^[A-Za-z0-9:-]{1,128}$/.test(requestId);
+  const requestSuffix = safeRequestId ? ' (GitHub request ID: ' + requestId + ')' : '';
   return new Error(
     'Unable to record protected release proof (' +
       (stage === 'create' ? 'deployment create' : 'deployment status') +
       '): HTTP ' +
       status +
-      (safeRequestId ? ' (GitHub request ID: ' + safeRequestId + ')' : ''),
+      requestSuffix,
   );
 }
 
