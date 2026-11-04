@@ -39,9 +39,9 @@ gh api repos/ivRooom/Herta/branches/main --jq '{name,protected}'
 
 **重要**：0件Reviewは「独立レビューが完了」とは異なる。メンテナーがPRのDiff、Review Thread、脆弱性、テスト、Rollbackを自分で確認し、その結果をPR/Issueに記録する。Privacy/録音/本人削除/長期保存/Whisper本番ON・課金インフラ変更はこのルールだけで公開承認されない。別途 [#646](https://github.com/ivRooom/Herta/issues/646) 等のGo/No-Goと法務・Security Reviewを守る。共同開発者が参加したら approving reviews を `1` 以上へ移行する。
 
-## 参考：未導入リポジトリでの管理画面設定（Hertaでは実施不要）
+## 参考：Hertaの過去の初期導入手順（現行Hertaでは実施禁止）
 
-**Hertaでは既に導入済み。以下は新規リポジトリへ移植する場合だけの参考手順。**
+**これは過去のHerta初期導入手順の記録であり、他Repositoryへそのまま転用できない。** Herta固有のURL、`production`環境、Issue #700を使用している。現行HertaではRulesetを再Import・新規作成しない。
 
 操作URL: https://github.com/ivRooom/Herta/settings/rules
 
@@ -60,7 +60,7 @@ gh api repos/ivRooom/Herta/branches/main --jq '{name,protected}'
 
 ```bash
 gh api repos/ivRooom/Herta/rulesets --jq '.[] | {id,name,enforcement}'
-gh api repos/ivRooom/Herta/rulesets/26515180 --jq '{id,name,conditions,bypass_actors,rules}'
+gh api repos/ivRooom/Herta/rulesets/26515180 --jq '{id,name,target,enforcement,conditions,bypass_actors,rules}'
 gh api repos/ivRooom/Herta/branches/main --jq '{name,protected}'
 ```
 
