@@ -27,7 +27,10 @@ export function ValorantWinRateTrend({ days }: { days: readonly ValorantDailyOut
   if (segment.length) segments.push(segment);
 
   return (
-    <section className="rounded-xl border border-border p-4" aria-labelledby="valorant-winrate-title">
+    <section
+      className="rounded-xl border border-border p-4"
+      aria-labelledby="valorant-winrate-title"
+    >
       <h2 id="valorant-winrate-title" className="font-semibold">
         登録日別の勝率推移
       </h2>
@@ -37,7 +40,9 @@ export function ValorantWinRateTrend({ days }: { days: readonly ValorantDailyOut
         登録のない日は補完せず、引分だけの日は算出不可です。
       </p>
       {visible.length === 0 ? (
-        <p className="mt-4 text-sm text-muted">登録済みの試合結果がないため、グラフはありません。</p>
+        <p className="mt-4 text-sm text-muted">
+          登録済みの試合結果がないため、グラフはありません。
+        </p>
       ) : (
         <>
           <svg
@@ -80,9 +85,15 @@ export function ValorantWinRateTrend({ days }: { days: readonly ValorantDailyOut
               </caption>
               <thead>
                 <tr>
-                  <th scope="col" className="p-2">登録日</th>
-                  <th scope="col" className="p-2">勝・敗・分</th>
-                  <th scope="col" className="p-2">勝率</th>
+                  <th scope="col" className="p-2">
+                    登録日
+                  </th>
+                  <th scope="col" className="p-2">
+                    勝・敗・分
+                  </th>
+                  <th scope="col" className="p-2">
+                    勝率
+                  </th>
                 </tr>
               </thead>
               <tbody>
