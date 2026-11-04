@@ -347,6 +347,7 @@ export default async function ValorantStatsPage({
                 rows={rows.slice(0, 5000)}
                 page={pageNumber}
                 displayNames={names}
+                filters={filters}
               />
             </div>
             <section className="mt-4 rounded-xl border border-border p-3">
