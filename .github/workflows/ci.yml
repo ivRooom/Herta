@@ -47,6 +47,9 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
+      - name: Diagnostic win-rate graph formatting (temporary)
+        run: pnpm exec prettier apps/studio/src/components/valorant-winrate-trend.tsx | diff -u apps/studio/src/components/valorant-winrate-trend.tsx - || true
+
       - name: Format Check
         run: pnpm format:check
 
