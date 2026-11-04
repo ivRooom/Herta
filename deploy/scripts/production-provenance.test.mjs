@@ -22,6 +22,20 @@ test('production proof failures identify the failing POST without logging respon
     protectedProofApiError('status', 503).message,
     'Unable to record protected release proof (deployment status): HTTP 503',
   );
+  assert.equal(
+    protectedProofApiError('create', 500, 'ABCD:1234-TEST').message,
+    'Unable to record protected release proof (deployment create): HTTP 500 (GitHub request ID: ABCD:1234-TEST)',
+  );
+  for (const unsafeId of ['bad id', 'fake\\nSECRET', '<injection>', 'A'.repeat(129), '']) {
+    assert.equal(
+      protectedProofApiError('status', 500, unsafeId).message,
+      'Unable to record protected release proof (deployment status): HTTP 500',
+    );
+  }
+  assert.equal(
+    protectedProofApiError('status', 500, null).message,
+    'Unable to record protected release proof (deployment status): HTTP 500',
+  );
   assert.throws(() => protectedProofApiError('unknown', 500), /Invalid protected/);
   assert.throws(() => protectedProofApiError('create', Number.NaN), /Invalid protected/);
 });
