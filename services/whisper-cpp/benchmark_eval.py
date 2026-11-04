@@ -119,6 +119,15 @@ def aggregate(data):
                 bucket["silence_hallucinations"] += bool(hypothesis)
     if not any(bucket["reference_characters"] for bucket in totals.values()):
         raise InvalidBenchmark("evaluation requires at least one non-silent sample")
+    # Finite per-sample values can overflow after aggregation. Never emit
+    # Infinity/NaN as JSON or claim an unusable RTF is valid evidence.
+    if not math.isfinite(audio_seconds) or audio_seconds <= 0:
+        raise InvalidBenchmark("invalid aggregate audio duration")
+    for bucket in totals.values():
+        if not math.isfinite(bucket["processing_seconds"]) or bucket["processing_seconds"] <= 0:
+            raise InvalidBenchmark("invalid aggregate processing duration")
+        if not math.isfinite(bucket["processing_seconds"] / audio_seconds):
+            raise InvalidBenchmark("invalid aggregate RTF")
 
     metrics = {}
     for name, bucket in totals.items():
