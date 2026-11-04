@@ -31,3 +31,5 @@ The effective main rules require the normal/ARM CI jobs, topology, Mobile Config
 ## Existing automatic deployment boundary
 
 The current runtime-change classifier includes deploy/, so these unused Python tools can still cause Deploy Production (workflow307693350) to consider build/GHCR/SSH after main CI. No-production-change approval therefore requires an explicit operational pause, not merely a docs-only intention: after confirming no queued/in-progress deployment, disable/read back that existing workflow before merge; verify all approved main checks complete; confirm no deployment for the merge SHA; then restore/read back the originally active workflow. Do not merge until that temporary automation-state change is authorized. This does not weaken quality checks or change deployed app/DB configuration.
+
+After the disabled-state readback, re-enumerate all nonterminal Deploy runs (queued/in_progress/waiting/pending/requested) before merge: disabling does not cancel a run that raced the initial check. Abort merge if any exists; do not cancel another deployment. Repeat before re-enable and verify the exact merge SHA has no deployment.
