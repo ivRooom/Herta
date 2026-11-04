@@ -18,9 +18,11 @@ describe('VALORANT console URL filter boundaries', () => {
   });
 
   it('accepts only exact supported map names, modes and periods', () => {
-    expect(
-      parseValorantConsoleFilters({ period: '90', map: 'Ascent', mode: 'RANDOM' }),
-    ).toEqual({ period: '90', map: 'Ascent', mode: 'RANDOM' });
+    expect(parseValorantConsoleFilters({ period: '90', map: 'Ascent', mode: 'RANDOM' })).toEqual({
+      period: '90',
+      map: 'Ascent',
+      mode: 'RANDOM',
+    });
     expect(parseValorantConsoleFilters({ period: 'all', mode: 'TACTICAL' })).toEqual({
       period: 'all',
       map: '',
