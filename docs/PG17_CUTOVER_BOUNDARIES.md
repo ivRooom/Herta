@@ -18,7 +18,7 @@ These libraries require separately verified approval pins, protected paths, actu
 
 ## Order and rollback
 
-Producer/consumer: Herta operator libraries only; no service API/event contract changes. Merge this foundation before the Source/Target provider changes; no production deploy follows this merge. Reverting these unused tooling files removes the foundation without changing runtime configuration. Actual cutover, DDL, cost and old DB retirement retain their separate approvals. PG16 and Supabase dependency elimination are not accepted by this PR.
+Producer/consumer: Herta operator libraries only; no service API/event contract changes. Merge this foundation before the Source/Target provider changes; production deployment must be prevented for this tooling merge. Reverting these unused tooling files removes the foundation without changing runtime configuration. Actual cutover, DDL, cost and old DB retirement retain their separate approvals. PG16 and Supabase dependency elimination are not accepted by this PR.
 
 The explicit local systemd integration fixture is included because the process-unit safety test imports its cleanup guard. CI does not execute real systemd units or the integration fixture main function.
 
@@ -27,3 +27,7 @@ The watchdog also preserves >40 seconds for Source recovery. Its quiescence chil
 ## Required checks for tooling-only PRs (#700)
 
 The effective main rules require the normal/ARM CI jobs, topology, Mobile Config Studio picker and postgres. Studio/PostgreSQL PR workflows retain their existing path filters. Manual workflow_dispatch is now available to run these actual checks for a path-filtered tooling head; no status is fabricated and no repository rule is weakened. The workflow-file change itself triggers both real PR tests. Future manual runs must select the exact reviewed branch/head and have any applicable cost approval. Production deploy behavior is unchanged.
+
+## Existing automatic deployment boundary
+
+The current runtime-change classifier includes deploy/, so these unused Python tools can still cause Deploy Production (workflow307693350) to consider build/GHCR/SSH after main CI. No-production-change approval therefore requires an explicit operational pause, not merely a docs-only intention: after confirming no queued/in-progress deployment, disable/read back that existing workflow before merge; verify all approved main checks complete; confirm no deployment for the merge SHA; then restore/read back the originally active workflow. Do not merge until that temporary automation-state change is authorized. This does not weaken quality checks or change deployed app/DB configuration.
