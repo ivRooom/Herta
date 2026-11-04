@@ -95,6 +95,24 @@ it('already-received subject opens unanswered question without claiming again', 
     expect.objectContaining({ flags: 64, components: expect.any(Array) }),
   );
 });
+it('unclaimed subject can open standalone question without invoking the login claim', async () => {
+  mocks.status.mockResolvedValue({
+    ...f.status,
+    bonusClaimed: false,
+    questions: [{ ...f.publicQuestion, requiresClaim: false }],
+    responses: [],
+  });
+  const i = interaction('daily-participation:questions:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  expect(mocks.claim).not.toHaveBeenCalled();
+  expect(mocks.status).toHaveBeenCalledOnce();
+  expect(i.followUp).toHaveBeenCalledWith(
+    expect.objectContaining({
+      content: expect.stringContaining('今日の問題'),
+      components: expect.any(Array),
+    }),
+  );
+});
 it('keeps a maximum Unicode prompt in an embed within Discord content limits', async () => {
   const prompt = '🎮'.repeat(1000);
   mocks.status.mockResolvedValue({ ...f.status, questions: [{ ...f.publicQuestion, prompt }] });
