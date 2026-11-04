@@ -7,6 +7,23 @@ import {
 
 const SHA_RE = /^[a-f0-9]{40}$/;
 
+/**
+ * Keep diagnostics useful without logging GitHub response bodies, deployment
+ * payloads or credentials. A 5xx can leave a partial deployment record, so do
+ * not blindly retry either POST and risk creating duplicate runtime proofs.
+ */
+export function protectedProofApiError(stage, status) {
+  if (!['create', 'status'].includes(stage) || !Number.isInteger(status)) {
+    throw new Error('Invalid protected release proof diagnostic');
+  }
+  return new Error(
+    'Unable to record protected release proof (' +
+      (stage === 'create' ? 'deployment create' : 'deployment status') +
+      '): HTTP ' +
+      status,
+  );
+}
+
 async function main() {
   const repository = process.env.GITHUB_REPOSITORY;
   const token = process.env.GITHUB_TOKEN;
@@ -33,7 +50,7 @@ async function main() {
     imageId: runtime.imageId,
     actor,
   });
-  const api = async (path, body) => {
+  const api = async (path, body, stage) => {
     const response = await fetch('https://api.github.com/repos/' + repository + '/' + path, {
       method: 'POST',
       headers: {
@@ -45,8 +62,7 @@ async function main() {
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(15000),
     });
-    if (!response.ok)
-      throw new Error('Unable to record protected release proof: HTTP ' + response.status);
+    if (!response.ok) throw protectedProofApiError(stage, response.status);
     return response.json();
   };
   // No deployment record is created until SSH runtime readback AND Cloudflare
@@ -61,7 +77,7 @@ async function main() {
     transient_environment: false,
     production_environment: true,
     payload,
-  });
+  }, 'create');
   if (
     record.sha !== sha ||
     record.environment !== RUNTIME_ATTESTATION_ENVIRONMENT ||
@@ -74,7 +90,7 @@ async function main() {
     description: 'Protected SSH runtime digest and Cloudflare health verified',
     log_url: 'https://github.com/' + repository + '/actions/runs/' + runId,
     auto_inactive: false,
-  });
+  }, 'status');
   if (published.state !== 'success') {
     throw new Error('Deployment proof status was not accepted as successful');
   }
