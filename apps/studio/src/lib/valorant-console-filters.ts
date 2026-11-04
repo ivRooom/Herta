@@ -60,5 +60,6 @@ export function valorantConsoleHistoryQuery(filters: ValorantConsoleFilters, pag
   if (filters.map) params.set('map', filters.map);
   if (filters.mode) params.set('mode', filters.mode);
   params.set('page', String(page));
-  return '?' + params.toString();
+  params.set('details', '1');
+  return '?' + params.toString() + '#valorant-details';
 }
