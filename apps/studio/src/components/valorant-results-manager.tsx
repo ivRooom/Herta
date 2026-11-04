@@ -170,7 +170,9 @@ export function ValorantResultsManager({
   return (
     <section
       id="valorant-register"
-      className={compact ? 'valorant-panel rounded-2xl p-4 sm:p-5' : 'rounded-xl border border-border p-4'}
+      className={
+        compact ? 'valorant-panel rounded-2xl p-4 sm:p-5' : 'rounded-xl border border-border p-4'
+      }
     >
       <h2 className="text-lg font-semibold">試合結果を登録</h2>
       <p className="mt-2 text-sm text-muted">
@@ -278,7 +280,9 @@ export function ValorantResultsManager({
                       : 'grid gap-2 rounded-lg border border-border p-3 sm:grid-cols-4'
                   }
                 >
-                  <label className={compact ? 'col-span-3 break-all text-xs' : 'text-sm sm:col-span-4'}>
+                  <label
+                    className={compact ? 'col-span-3 break-all text-xs' : 'text-sm sm:col-span-4'}
+                  >
                     ユーザーID: {player.userId}
                   </label>
                   <select
@@ -360,65 +364,65 @@ export function ValorantResultsManager({
         <summary className="cursor-pointer text-sm font-semibold">
           登録済み試合結果（実使用構成・履歴）
         </summary>
-      <p className="mt-1 text-xs text-muted">
-        登録済みの直近100件。本人の実使用Agentと抽選Agentは異なる場合があります。
-        勝率は未登録セッションを分母に含めません。
-      </p>
-      <div className="mt-3 overflow-x-auto">
-        <table className="w-full min-w-[750px] text-left text-sm">
-          <thead>
-            <tr>
-              <th scope="col" className="p-2">
-                登録日時（UTC）
-              </th>
-              <th scope="col" className="p-2">
-                マップ
-              </th>
-              <th scope="col" className="p-2">
-                実使用構成
-              </th>
-              <th scope="col" className="p-2">
-                勝敗
-              </th>
-              <th scope="col" className="p-2">
-                ラウンド
-              </th>
-              <th scope="col" className="p-2">
-                Match ID
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {reports.map((item) => (
-              <tr key={item.id} className="border-t border-border">
-                <td className="whitespace-nowrap p-2">
-                  {item.createdAt?.slice(0, 16).replace('T', ' ') ?? '不明'}
-                </td>
-                <td className="p-2">{item.mapId}</td>
-                <td className="p-2">
-                  {playedAgents(item.playerResults)
-                    .map((id) => available.find((agent) => agent.id === id)?.title ?? id)
-                    .join(' / ') || '記録なし'}
-                </td>
-                <td className="p-2">
-                  {item.outcome === 'WIN' ? '勝利' : item.outcome === 'LOSS' ? '敗北' : '引分'}
-                </td>
-                <td className="p-2 tabular-nums">
-                  {item.roundsWon}-{item.roundsLost}
-                </td>
-                <td className="break-all p-2">{item.matchId ?? '—'}</td>
-              </tr>
-            ))}
-            {reports.length === 0 && (
+        <p className="mt-1 text-xs text-muted">
+          登録済みの直近100件。本人の実使用Agentと抽選Agentは異なる場合があります。
+          勝率は未登録セッションを分母に含めません。
+        </p>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[750px] text-left text-sm">
+            <thead>
               <tr>
-                <td colSpan={6} className="p-3 text-muted">
-                  登録済みの試合はありません。
-                </td>
+                <th scope="col" className="p-2">
+                  登録日時（UTC）
+                </th>
+                <th scope="col" className="p-2">
+                  マップ
+                </th>
+                <th scope="col" className="p-2">
+                  実使用構成
+                </th>
+                <th scope="col" className="p-2">
+                  勝敗
+                </th>
+                <th scope="col" className="p-2">
+                  ラウンド
+                </th>
+                <th scope="col" className="p-2">
+                  Match ID
+                </th>
               </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody>
+              {reports.map((item) => (
+                <tr key={item.id} className="border-t border-border">
+                  <td className="whitespace-nowrap p-2">
+                    {item.createdAt?.slice(0, 16).replace('T', ' ') ?? '不明'}
+                  </td>
+                  <td className="p-2">{item.mapId}</td>
+                  <td className="p-2">
+                    {playedAgents(item.playerResults)
+                      .map((id) => available.find((agent) => agent.id === id)?.title ?? id)
+                      .join(' / ') || '記録なし'}
+                  </td>
+                  <td className="p-2">
+                    {item.outcome === 'WIN' ? '勝利' : item.outcome === 'LOSS' ? '敗北' : '引分'}
+                  </td>
+                  <td className="p-2 tabular-nums">
+                    {item.roundsWon}-{item.roundsLost}
+                  </td>
+                  <td className="break-all p-2">{item.matchId ?? '—'}</td>
+                </tr>
+              ))}
+              {reports.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="p-3 text-muted">
+                    登録済みの試合はありません。
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </details>
     </section>
   );
