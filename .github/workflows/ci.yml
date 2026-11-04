@@ -47,12 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      - name: Temporary VALORANT page formatter diff (remove before merge)
-        run: |
-          pnpm exec prettier --write 'apps/studio/src/app/dashboard/guilds/[guildId]/valorant/stats/page.tsx'
-          git diff -- 'apps/studio/src/app/dashboard/guilds/[guildId]/valorant/stats/page.tsx'
-          exit 1 # Diagnostic only; release must use pristine CI.
-
       - name: Format Check
         run: pnpm format:check
 
