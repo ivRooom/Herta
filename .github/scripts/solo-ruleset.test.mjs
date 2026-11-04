@@ -31,12 +31,17 @@ test('solo ruleset uses pull requests and avoids impossible self-approval', () =
   assert.equal(pr.require_code_owner_review, false);
   assert.equal(pr.require_last_push_approval, false);
   assert.equal(pr.required_review_thread_resolution, true);
+  assert.equal(pr.dismiss_stale_reviews_on_push, false);
+  assert.deepEqual(pr.required_reviewers, []);
+  assert.deepEqual(pr.dismissal_restriction, { enabled: false, allowed_actors: [] });
+  assert.equal(pr.require_extra_approval_for_unattributed_changes, false);
   assert.deepEqual(pr.allowed_merge_methods, ['squash']);
 });
 
 test('strict required CI jobs must exist and run for every PR to main', () => {
   const checks = rules.rules.find(({ type }) => type === 'required_status_checks').parameters;
   assert.equal(checks.strict_required_status_checks_policy, true);
+  assert.equal(checks.do_not_enforce_on_create, false);
   const names = checks.required_status_checks.map(({ context }) => context);
   assert.deepEqual(names, [
     'Format / Lint / Typecheck / Test / Build',
