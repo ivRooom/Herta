@@ -125,17 +125,22 @@ test('read-only proof audit distinguishes partial and complete states', async ()
   assert.equal(complete.classification, 'status-present-unverified');
   assert.deepEqual(complete.records[0].states, ['success']);
 
-  const unmatched = await inspectProductionProofRecords(
-    async (path) => (path.startsWith('deployments?') ? [{ ...proof, payload: { runId: 7, runAttempt: 1 } }] : []),
-    input,
-  );
+  const unmatchedApi = async (path) => {
+    if (path.startsWith('deployments?')) {
+      return [{ ...proof, payload: { runId: 7, runAttempt: 1 } }];
+    }
+    return [];
+  };
+  const unmatched = await inspectProductionProofRecords(unmatchedApi, input);
   assert.equal(unmatched.classification, 'unmatched');
 
-  const ambiguous = await inspectProductionProofRecords(
-    async (path) =>
-      path.startsWith('deployments?') ? [proof, { ...proof, id: 13 }] : [],
-    input,
-  );
+  const ambiguousApi = async (path) => {
+    if (path.startsWith('deployments?')) {
+      return [proof, { ...proof, id: 13 }];
+    }
+    return [];
+  };
+  const ambiguous = await inspectProductionProofRecords(ambiguousApi, input);
   assert.equal(ambiguous.classification, 'ambiguous');
 });
 
