@@ -10,7 +10,10 @@ export interface ValorantPicksChartInput {
 
 let activeRenders = 0;
 const xml = (value: string) =>
-  value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]!);
+  value.replace(
+    /[&<>"']/g,
+    (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[char]!,
+  );
 const countLabel = (value: number) => Math.max(0, Math.floor(value)).toLocaleString('ja-JP');
 const safeLabel = (value: string) => Array.from(value).slice(0, 20).join('');
 
