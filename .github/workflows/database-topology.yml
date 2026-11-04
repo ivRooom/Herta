@@ -20,3 +20,7 @@ jobs:
       - run: node --test deploy/scripts/external-database.test.mjs
       - run: node --test deploy/scripts/production-quality-gate.test.mjs
       - run: python3 deploy/scripts/compose-database.test.py
+      - run: python3 deploy/scripts/pg17-cutover-controller.test.py
+      - run: sudo python3 deploy/scripts/pg17-source-fence.test.py
+      - run: sudo python3 deploy/scripts/pg17-process-unit.test.py
+      - run: sudo python3 deploy/scripts/pg17-source-watchdog.test.py
