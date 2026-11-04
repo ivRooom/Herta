@@ -16,16 +16,16 @@ export function protectedProofApiError(stage, status, requestId) {
   if (!['create', 'status'].includes(stage) || !Number.isInteger(status)) {
     throw new Error('Invalid protected release proof diagnostic');
   }
-  const safeRequestId =
-    typeof requestId === 'string' && /^[A-Za-z0-9:-]{1,128}$/.test(requestId);
-  const requestSuffix = safeRequestId ? ' (GitHub request ID: ' + requestId + ')' : '';
-  return new Error(
+  const error = new Error(
     'Unable to record protected release proof (' +
       (stage === 'create' ? 'deployment create' : 'deployment status') +
       '): HTTP ' +
-      status +
-      requestSuffix,
+      status,
   );
+  if (typeof requestId === 'string' && /^[A-Za-z0-9:-]{1,128}$/.test(requestId)) {
+    error.message += ' (GitHub request ID: ' + requestId + ')';
+  }
+  return error;
 }
 
 async function main() {
