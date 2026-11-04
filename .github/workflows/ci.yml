@@ -57,6 +57,7 @@ jobs:
             apps/studio/src/lib/valorant-console-filters.ts \
             apps/studio/tests/valorant-console-filters.test.ts
           git diff -- apps/studio
+          exit 1 # Deliberate diagnostic failure; MUST be removed before release.
 
       - name: Format Check
         run: pnpm format:check
