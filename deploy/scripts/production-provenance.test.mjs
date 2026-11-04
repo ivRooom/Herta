@@ -79,9 +79,11 @@ test('publisher reports failed POST stage and sanitized request ID without retri
       assert.equal(error.message, expected + requestId);
       return true;
     });
-    const expectedPaths =
-      failingStage === 'create' ? ['deployments'] : ['deployments', 'deployments/123/statuses'];
-    assert.deepEqual(paths, expectedPaths);
+    assert.equal(paths[0], 'deployments');
+    assert.equal(paths.length, failingStage === 'create' ? 1 : 2);
+    if (failingStage === 'status') {
+      assert.equal(paths[1], 'deployments/123/statuses');
+    }
   }
 });
 
