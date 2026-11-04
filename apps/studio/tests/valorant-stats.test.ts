@@ -63,6 +63,44 @@ describe('VALORANT stats aggregation', () => {
     expect(output.compositions[0]).toMatchObject({ name: 'omen', count: 1, win: 1 });
     expect(output.pickedCompositions[0]).toMatchObject({ name: 'jett', count: 1, win: 1 });
   });
+  it('counts wins only among registered decisive results and groups by registration UTC date', () => {
+    const make = (outcome: string, date: Date | null) => ({
+      outcome,
+      roundsWon: 13,
+      roundsLost: 10,
+      playerResults: [],
+      session: { result: [] },
+      createdAt: date,
+    });
+    const result = aggregateValorantMatchStats([
+      make('WIN', new Date('2026-11-01T23:59:59.999Z')),
+      make('LOSS', new Date('2026-11-01T01:00:00.000Z')),
+      make('DRAW', new Date('2026-11-01T11:00:00.000Z')),
+      make('DRAW', new Date('2026-11-02T00:00:00.000Z')),
+      make('WIN', null),
+      make('LOSS', new Date(Number.NaN)),
+    ]);
+    expect(result).toMatchObject({ total: 6, win: 2, loss: 2, draw: 2 });
+    expect(result.daily).toEqual([
+      { date: '2026-11-01', total: 3, win: 1, loss: 1, draw: 1, winRate: 0.5 },
+      { date: '2026-11-02', total: 1, win: 0, loss: 0, draw: 1, winRate: null },
+    ]);
+  });
+
+  it('does not invent registration dates for legacy match records', () => {
+    const output = aggregateValorantMatchStats([
+      {
+        outcome: 'WIN',
+        roundsWon: 13,
+        roundsLost: 8,
+        playerResults: [],
+        session: { result: [] },
+      },
+    ]);
+    expect(output.win).toBe(1);
+    expect(output.daily).toEqual([]);
+  });
+
   it('classifies unknown or custom agent IDs without inventing a canonical role', () => {
     const stats = aggregateValorantStats([
       {
