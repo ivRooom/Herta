@@ -13,7 +13,6 @@ import {
   type Client,
 } from 'discord.js';
 import { dailyServiceFetch } from './daily-bonus-wallet.js';
-import { participationFortune } from './daily-participation-fortune.js';
 import {
   createDailyQuizSession,
   getDailyQuizSession,
@@ -307,8 +306,8 @@ export async function handleDailyParticipation(
       });
       return;
     }
-    let state: ParticipationStatus;
-    let claimConfirmed = false;
+    // Claim is a standalone action. Neither question retrieval nor Fortune
+    // rendering is an implicit side effect of accepting a login bonus.
     const wantsClaim = interaction.customId.startsWith('daily-bonus:');
     if (wantsClaim) {
       ensureCurrent();
@@ -328,43 +327,20 @@ export async function handleDailyParticipation(
         alreadyClaimed: claimed.mode === 'already_claimed',
         receipt: { ...receipt, streakReward: receipt.streakReward ?? undefined },
         balance: claimed.balance,
-        message: `${claimed.mode === 'already_claimed' ? '本日は受取済みです。' : 'ボーナスを受け取りました！'}\n獲得：${receipt.rewardPoints + (receipt.streakReward?.points ?? 0) + (receipt.firstClaimReward?.points ?? 0)}pt / 保有：${claimed.balance}pt / 連続：${receipt.streakDay}日`,
+        message: `${claimed.mode === 'already_claimed' ? '本日は受取済みです。' : 'ボーナスを受け取りました！'}\\n獲得：${receipt.rewardPoints + (receipt.streakReward?.points ?? 0) + (receipt.firstClaimReward?.points ?? 0)}pt / 保有：${claimed.balance}pt / 連続：${receipt.streakDay}日`,
       });
-      claimConfirmed = true;
-      try {
-        state = await participationStatus(ctx.guildId, interaction.user.id);
-      } catch {
-        await interaction.followUp({
-          flags: MessageFlags.Ephemeral,
-          allowedMentions: { parse: [] },
-          content:
-            'ボーナスの受取は確定しています。今日の問題を取得できませんでした。時間をおいて「今日の問題に挑戦」から再試行してください。',
-        });
-        return;
-      }
-    } else {
-      state = await participationStatus(ctx.guildId, interaction.user.id);
-      ensureCurrent();
-      await interaction.editReply({
-        content: state.bonusClaimed
-          ? '今日の回答状態を確認しました。'
-          : '先に「ボーナスを受け取る」から受け取ってください。',
-        allowedMentions: { parse: [] },
-      });
+      return;
     }
-    try {
-      await showParticipationQuestions(ctx, interaction, state, messageId);
-      if (wantsClaim && ctx.config.fortuneEnabled)
-        await participationFortune(ctx, interaction, date);
-    } catch (error) {
-      if (!claimConfirmed) throw error;
-      await interaction.followUp({
-        flags: MessageFlags.Ephemeral,
-        allowedMentions: { parse: [] },
-        content:
-          'ボーナスの受取は確定しています。問題・運勢の表示を完了できませんでした。時間をおいて再試行してください。',
-      });
-    }
+
+    // Independent question button: a publication may explicitly require
+    // claiming, but an ordinary standalone question must not trigger it.
+    const state: ParticipationStatus = await participationStatus(ctx.guildId, interaction.user.id);
+    ensureCurrent();
+    await interaction.editReply({
+      content: '今日の問題を確認します。',
+      allowedMentions: { parse: [] },
+    });
+    await showParticipationQuestions(ctx, interaction, state, messageId);
   } catch (error) {
     const code = error instanceof Error ? error.message : '';
     await interaction.editReply({
