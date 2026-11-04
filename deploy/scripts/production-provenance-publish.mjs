@@ -12,15 +12,20 @@ const SHA_RE = /^[a-f0-9]{40}$/;
  * payloads or credentials. A 5xx can leave a partial deployment record, so do
  * not blindly retry either POST and risk creating duplicate runtime proofs.
  */
-export function protectedProofApiError(stage, status) {
+export function protectedProofApiError(stage, status, requestId) {
   if (!['create', 'status'].includes(stage) || !Number.isInteger(status)) {
     throw new Error('Invalid protected release proof diagnostic');
   }
+  const safeRequestId =
+    typeof requestId === 'string' && /^[A-Za-z0-9:-]{1,128}$/.test(requestId)
+      ? requestId
+      : null;
   return new Error(
     'Unable to record protected release proof (' +
       (stage === 'create' ? 'deployment create' : 'deployment status') +
       '): HTTP ' +
-      status,
+      status +
+      (safeRequestId ? ' (GitHub request ID: ' + safeRequestId + ')' : ''),
   );
 }
 
@@ -62,7 +67,13 @@ async function main() {
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(15000),
     });
-    if (!response.ok) throw protectedProofApiError(stage, response.status);
+    if (!response.ok) {
+      throw protectedProofApiError(
+        stage,
+        response.status,
+        response.headers.get('x-github-request-id'),
+      );
+    }
     return response.json();
   };
   // No deployment record is created until SSH runtime readback AND Cloudflare
