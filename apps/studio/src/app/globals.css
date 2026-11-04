@@ -32,6 +32,44 @@
   .input {
     @apply w-full rounded-xl border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring;
   }
+
+  /* Local palette: the other Herta Studio pages keep their existing theme. */
+  .valorant-console {
+    --background: 229 35% 8%;
+    --surface: 231 33% 13%;
+    --border: 237 28% 28%;
+    --foreground: 222 31% 96%;
+    --muted: 223 17% 69%;
+    --primary: 261 88% 73%;
+    --primary-foreground: 229 35% 9%;
+    --ring: 261 88% 73%;
+    color: hsl(var(--foreground));
+    background:
+      radial-gradient(ellipse at 88% -16%, rgb(114 57 186 / 25%), transparent 35%),
+      radial-gradient(ellipse at -10% 110%, rgb(41 151 187 / 13%), transparent 35%),
+      linear-gradient(135deg, #10172d 0%, #0b1021 46%, #110f29 100%);
+    border: 1px solid rgb(160 132 245 / 23%);
+    border-radius: 1.5rem;
+    box-shadow: 0 16px 65px rgb(0 0 0 / 28%);
+  }
+
+  .valorant-panel {
+    border: 1px solid rgb(158 142 225 / 25%);
+    background: linear-gradient(145deg, rgb(36 44 76 / 89%), rgb(17 24 46 / 94%));
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%), 0 8px 25px rgb(0 0 0 / 12%);
+  }
+
+  .valorant-console .input {
+    min-height: 2.75rem;
+    border-radius: 0.75rem;
+    background: #131c35;
+    color: hsl(var(--foreground));
+  }
+
+  .valorant-console .input:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
 }
 
 @layer base {
