@@ -1,3 +1,4 @@
+import * as React from 'react';
 import type { DrawSample } from '@/lib/valorant-stats';
 
 type FrequencyItem = { name: string; count: number };
