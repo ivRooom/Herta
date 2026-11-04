@@ -41,7 +41,7 @@ test('production proof failures identify the failing POST without logging respon
   assert.throws(() => protectedProofApiError('create', Number.NaN), /Invalid protected/);
 });
 
-test('publisher uses correct API stage, safe request ID, and no retry on failed POST', async () => {
+test('publisher reports failed POST stage and sanitized request ID without retries', async () => {
   const sha = 'a'.repeat(40);
   const env = {
     GITHUB_REPOSITORY: 'ivRooom/Herta',
@@ -69,20 +69,19 @@ test('publisher uses correct API stage, safe request ID, and no retry on failed 
       return {
         ok: false,
         status: 500,
-        headers: { get: (key) => key === 'x-github-request-id' ? 'ABCD:1234-TEST' : null },
+        headers: { get: () => 'ABCD:1234-TEST' },
       };
     };
-    const stageLabel = failingStage === 'create' ? 'deployment create' : 'deployment status';
-    await assert.rejects(
-      publishProtectedReleaseProof({ env, fetchImpl }),
-      (error) => error.message ===
-        'Unable to record protected release proof (' + stageLabel +
-        '): HTTP 500 (GitHub request ID: ABCD:1234-TEST)',
-    );
-    assert.deepEqual(
-      paths,
-      failingStage === 'create' ? ['deployments'] : ['deployments', 'deployments/123/statuses'],
-    );
+    const phase = failingStage === 'create' ? 'deployment create' : 'deployment status';
+    const expected = 'Unable to record protected release proof (' + phase + '): HTTP 500';
+    const requestId = ' (GitHub request ID: ABCD:1234-TEST)';
+    await assert.rejects(publishProtectedReleaseProof({ env, fetchImpl }), (error) => {
+      assert.equal(error.message, expected + requestId);
+      return true;
+    });
+    const expectedPaths =
+      failingStage === 'create' ? ['deployments'] : ['deployments', 'deployments/123/statuses'];
+    assert.deepEqual(paths, expectedPaths);
   }
 });
 
