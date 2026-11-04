@@ -145,8 +145,7 @@ export default async function ValorantStatsPage({
     matchData.win + matchData.loss > 0
       ? ((matchData.win / (matchData.win + matchData.loss)) * 100).toFixed(1) + '%'
       : '算出不可';
-  const periodLabel =
-    filters.period === 'all' ? '全期間' : '直近' + filters.period + '日';
+  const periodLabel = filters.period === 'all' ? '全期間' : '直近' + filters.period + '日';
   const compositions = data.compositions.map((team) => ({
     name: team.name
       .split(', ')
@@ -158,7 +157,10 @@ export default async function ValorantStatsPage({
   return (
     <main className="valorant-console relative space-y-4 p-3 sm:p-5 lg:left-1/2 lg:w-[calc(100vw-20rem)] lg:max-w-[1680px] lg:-translate-x-1/2 lg:p-6">
       <header className="relative overflow-hidden rounded-2xl border border-violet-400/20 bg-gradient-to-r from-[#222444] via-[#171b35] to-[#191633] p-4 sm:p-6">
-        <div aria-hidden="true" className="pointer-events-none absolute -right-8 -top-20 h-56 w-56 rounded-full bg-violet-500/20 blur-3xl" />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-8 -top-20 h-56 w-56 rounded-full bg-violet-500/20 blur-3xl"
+        />
         <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="min-w-0">
             <Link
@@ -209,7 +211,9 @@ export default async function ValorantStatsPage({
           <select name="map" className="input" defaultValue={filters.map}>
             <option value="">すべてのマップ</option>
             {VALORANT_CONSOLE_MAPS.map((map) => (
-              <option key={map} value={map}>{map}</option>
+              <option key={map} value={map}>
+                {map}
+              </option>
             ))}
           </select>
         </label>
@@ -244,21 +248,59 @@ export default async function ValorantStatsPage({
       </div>
 
       {(data.smallSample || rows.length > 5000 || matchRows.length > 5000) && (
-        <p role="status" className="rounded-xl border border-amber-300/20 bg-amber-200/5 p-3 text-xs text-amber-100">
-          {data.smallSample ? '抽選の標本数は30件未満です。割合を優劣や傾向の確証として解釈しないでください。 ' : ''}
+        <p
+          role="status"
+          className="rounded-xl border border-amber-300/20 bg-amber-200/5 p-3 text-xs text-amber-100"
+        >
+          {data.smallSample
+            ? '抽選の標本数は30件未満です。割合を優劣や傾向の確証として解釈しないでください。 '
+            : ''}
           {rows.length > 5000 || matchRows.length > 5000
             ? '集計は各データの最新5,000件に制限しています。'
             : ''}
         </p>
       )}
 
-      <section aria-label="分析の主要指標" className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 2xl:grid-cols-6">
-        <ConsoleMetric icon={Layers3} title="完了した抽選" value={data.totalDraws.toLocaleString('ja-JP') + '回'} note="Guildの抽選セッション" />
-        <ConsoleMetric icon={CheckCircle2} title="結果登録数" value={matchData.total.toLocaleString('ja-JP') + '試合'} note="手動登録された試合のみ" />
-        <ConsoleMetric icon={Trophy} title="登録済み勝率" value={winRate} note={matchData.win + '勝 / ' + matchData.loss + '敗 / ' + matchData.draw + '分'} />
-        <ConsoleMetric icon={Dice5} title="最多選出エージェント" value={topAgent ? (names.get(topAgent.agentId) ?? topAgent.agentId) : '未記録'} note={topAgent ? topAgent.selected + '回選出' : '抽選データなし'} />
-        <ConsoleMetric icon={Activity} title="最多選出ロール" value={topRole ? (ROLE_NAMES[topRole.name] ?? topRole.name) : '未記録'} note={topRole ? topRole.count + '回割当' : '抽選データなし'} />
-        <ConsoleMetric icon={Sparkles} title="抽選された組合せ" value={data.compositions.length.toLocaleString('ja-JP') + '種'} note="実プレイ構成とは別" />
+      <section
+        aria-label="分析の主要指標"
+        className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 2xl:grid-cols-6"
+      >
+        <ConsoleMetric
+          icon={Layers3}
+          title="完了した抽選"
+          value={data.totalDraws.toLocaleString('ja-JP') + '回'}
+          note="Guildの抽選セッション"
+        />
+        <ConsoleMetric
+          icon={CheckCircle2}
+          title="結果登録数"
+          value={matchData.total.toLocaleString('ja-JP') + '試合'}
+          note="手動登録された試合のみ"
+        />
+        <ConsoleMetric
+          icon={Trophy}
+          title="登録済み勝率"
+          value={winRate}
+          note={matchData.win + '勝 / ' + matchData.loss + '敗 / ' + matchData.draw + '分'}
+        />
+        <ConsoleMetric
+          icon={Dice5}
+          title="最多選出エージェント"
+          value={topAgent ? (names.get(topAgent.agentId) ?? topAgent.agentId) : '未記録'}
+          note={topAgent ? topAgent.selected + '回選出' : '抽選データなし'}
+        />
+        <ConsoleMetric
+          icon={Activity}
+          title="最多選出ロール"
+          value={topRole ? (ROLE_NAMES[topRole.name] ?? topRole.name) : '未記録'}
+          note={topRole ? topRole.count + '回割当' : '抽選データなし'}
+        />
+        <ConsoleMetric
+          icon={Sparkles}
+          title="抽選された組合せ"
+          value={data.compositions.length.toLocaleString('ja-JP') + '種'}
+          note="実プレイ構成とは別"
+        />
       </section>
 
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -292,7 +334,10 @@ export default async function ValorantStatsPage({
                 <BarChart3 className="h-4 w-4 text-violet-300" aria-hidden="true" />
                 詳細分析・全抽選履歴を表示
               </span>
-              <ChevronDown className="h-4 w-4 text-muted transition-transform group-open:rotate-180" aria-hidden="true" />
+              <ChevronDown
+                className="h-4 w-4 text-muted transition-transform group-open:rotate-180"
+                aria-hidden="true"
+              />
             </summary>
             <p className="mt-2 text-xs leading-relaxed text-muted">
               選出率＝エージェント選出回数÷そのエージェントが候補に入ったセッション数。
@@ -302,10 +347,18 @@ export default async function ValorantStatsPage({
               <table className="w-full min-w-[450px] text-left text-xs">
                 <thead className="text-muted">
                   <tr>
-                    <th scope="col" className="p-2">Agent</th>
-                    <th scope="col" className="p-2">選出数</th>
-                    <th scope="col" className="p-2">候補入り</th>
-                    <th scope="col" className="p-2">選出率</th>
+                    <th scope="col" className="p-2">
+                      Agent
+                    </th>
+                    <th scope="col" className="p-2">
+                      選出数
+                    </th>
+                    <th scope="col" className="p-2">
+                      候補入り
+                    </th>
+                    <th scope="col" className="p-2">
+                      選出率
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -322,7 +375,11 @@ export default async function ValorantStatsPage({
                     </tr>
                   ))}
                   {data.agents.length === 0 && (
-                    <tr><td colSpan={4} className="p-3 text-muted">集計対象がありません。</td></tr>
+                    <tr>
+                      <td colSpan={4} className="p-3 text-muted">
+                        集計対象がありません。
+                      </td>
+                    </tr>
                   )}
                 </tbody>
               </table>
@@ -358,21 +415,34 @@ export default async function ValorantStatsPage({
               <ul className="mt-3 space-y-2 text-xs">
                 {data.players.slice(0, 100).map((player) => (
                   <li key={player.userId} className="border-t border-border/70 pt-2">
-                    <p className="break-all font-medium">{player.userId} · {player.draws}回選出</p>
-                    <p className="mt-1 text-muted">
-                      Agent: {player.agentCounts.map((a) => (names.get(a.agentId) ?? a.agentId) + ' ' + a.count + '回').join(' / ')}
+                    <p className="break-all font-medium">
+                      {player.userId} · {player.draws}回選出
                     </p>
                     <p className="mt-1 text-muted">
-                      Role: {player.roleCounts.map((r) => (ROLE_NAMES[r.name] ?? r.name) + ' ' + r.count + '回').join(' / ')}
+                      Agent:{' '}
+                      {player.agentCounts
+                        .map((a) => (names.get(a.agentId) ?? a.agentId) + ' ' + a.count + '回')
+                        .join(' / ')}
+                    </p>
+                    <p className="mt-1 text-muted">
+                      Role:{' '}
+                      {player.roleCounts
+                        .map((r) => (ROLE_NAMES[r.name] ?? r.name) + ' ' + r.count + '回')
+                        .join(' / ')}
                     </p>
                   </li>
                 ))}
-                {data.players.length === 0 && <li className="text-muted">メンバー別の有効な記録はありません。</li>}
+                {data.players.length === 0 && (
+                  <li className="text-muted">メンバー別の有効な記録はありません。</li>
+                )}
               </ul>
             </section>
           </details>
 
-          <section className="valorant-panel rounded-2xl p-4 sm:p-5" aria-labelledby="valorant-commands">
+          <section
+            className="valorant-panel rounded-2xl p-4 sm:p-5"
+            aria-labelledby="valorant-commands"
+          >
             <h2 id="valorant-commands" className="flex items-center gap-2 text-sm font-semibold">
               <ClipboardPlus className="h-4 w-4 text-violet-300" aria-hidden="true" />
               Discordコマンドで確認
@@ -381,9 +451,15 @@ export default async function ValorantStatsPage({
               Guildの抽選統計は非公開応答です。外部ランク/RRと結果登録済み勝率は別指標です。
             </p>
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
-              <code className="rounded-lg border border-border bg-[#101a32] p-3 text-xs text-violet-200">/valorant picks</code>
-              <code className="rounded-lg border border-border bg-[#101a32] p-3 text-xs text-violet-200">/valorant random</code>
-              <code className="rounded-lg border border-border bg-[#101a32] p-3 text-xs text-violet-200">/valorant stats</code>
+              <code className="rounded-lg border border-border bg-[#101a32] p-3 text-xs text-violet-200">
+                /valorant picks
+              </code>
+              <code className="rounded-lg border border-border bg-[#101a32] p-3 text-xs text-violet-200">
+                /valorant random
+              </code>
+              <code className="rounded-lg border border-border bg-[#101a32] p-3 text-xs text-violet-200">
+                /valorant stats
+              </code>
             </div>
             <p className="mt-2 text-xs text-muted">
               構成履歴の専用コマンド・Discordでの結果登録・VCT/上位ランクの統計表示は別Issueで管理しています。
@@ -391,7 +467,10 @@ export default async function ValorantStatsPage({
           </section>
         </div>
 
-        <aside className="min-w-0 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto" aria-label="試合結果登録">
+        <aside
+          className="min-w-0 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto"
+          aria-label="試合結果登録"
+        >
           <ValorantResultsManager guildId={guildId} compact />
         </aside>
       </div>
