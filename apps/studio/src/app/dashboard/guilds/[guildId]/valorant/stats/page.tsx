@@ -22,6 +22,7 @@ import { resolvePluginConfigStudioAccess } from '@/lib/studio-plugin-permissions
 import { aggregateValorantStats, aggregateValorantMatchStats } from '@/lib/valorant-stats';
 import {
   parseValorantConsoleFilters,
+  matchesValorantPartySize,
   valorantConsoleSince,
   VALORANT_CONSOLE_MAPS,
 } from '@/lib/valorant-console-filters';
@@ -82,6 +83,7 @@ export default async function ValorantStatsPage({
     period?: string;
     map?: string;
     mode?: string;
+    partySize?: string;
     details?: string;
   }>;
 }) {
@@ -117,7 +119,10 @@ export default async function ValorantStatsPage({
       result: true,
     },
   });
-  const data = aggregateValorantStats(rows.slice(0, 5000));
+  const filteredRows = rows.slice(0, 5000).filter((row) =>
+    matchesValorantPartySize(row.result, filters.partySize),
+  );
+  const data = aggregateValorantStats(filteredRows);
   const matchRows = await prisma.valorantMatchResult.findMany({
     where: {
       guildId,
@@ -136,7 +141,10 @@ export default async function ValorantStatsPage({
       session: { select: { result: true } },
     },
   });
-  const matchData = aggregateValorantMatchStats(matchRows.slice(0, 5000));
+  const filteredMatchRows = matchRows.slice(0, 5000).filter((row) =>
+    matchesValorantPartySize(row.session.result, filters.partySize),
+  );
+  const matchData = aggregateValorantMatchStats(filteredMatchRows);
   const names = new Map(defaultValorantAgents().map((agent) => [agent.agentId, agent.displayName]));
   const pageParam = query?.page ?? '1';
   const pageNumber = /^\d{1,3}$/.test(pageParam) ? Number(pageParam) : 1;
@@ -211,7 +219,7 @@ export default async function ValorantStatsPage({
       <form
         method="GET"
         aria-label="VALORANT分析のフィルタ"
-        className="grid grid-cols-2 gap-2 rounded-2xl border border-border bg-[#111a31]/90 p-3 sm:grid-cols-[1fr_1fr_1fr_auto] sm:items-end"
+        className="grid grid-cols-2 gap-3 rounded-2xl border border-violet-400/25 bg-[#111a31]/95 p-4 sm:grid-cols-[repeat(4,minmax(0,1fr))_auto] sm:items-end"
       >
         <label className="min-w-0 text-xs text-muted">
           <span className="mb-1 flex items-center gap-1.5">
@@ -247,6 +255,16 @@ export default async function ValorantStatsPage({
             <option value="TACTICAL">実戦向け</option>
           </select>
         </label>
+        <label className="min-w-0 text-xs text-muted">
+          <span className="mb-1 flex items-center gap-1.5">
+            <Layers3 className="h-3.5 w-3.5" aria-hidden="true" /> 抽選人数
+          </span>
+          <select name="partySize" className="input" defaultValue={filters.partySize}>
+            <option value="">すべての人数</option>
+            <option value="3">3人ピック</option>
+            <option value="5">5人ピック</option>
+          </select>
+        </label>
         <button
           type="submit"
           className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-violet-600 to-purple-500 px-4 text-sm font-semibold text-white transition hover:from-violet-500 hover:to-purple-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-200"
@@ -264,9 +282,15 @@ export default async function ValorantStatsPage({
               ? '実戦向け'
               : '全モード'}
         </p>
-        <p>抽選は完了日時・指定マップ、勝敗は登録日時（UTC）・実プレイマップで絞り込みます。</p>
+        <p>抽選人数: {filters.partySize ? filters.partySize + '人' : 'すべて'} · 抽選の割当人数で判定。勝敗は登録日時（UTC）・実プレイマップで絞り込みます。</p>
       </div>
 
+      <p className="rounded-xl border border-violet-400/20 bg-violet-400/5 px-4 py-3 text-sm text-violet-100" role="status">
+        {filters.partySize
+          ? filters.partySize + '人ピックの抽選 ' + data.totalDraws + '件 / 結果登録 ' + matchData.total + '件'
+          : '全人数の抽選 ' + data.totalDraws + '件 / 結果登録 ' + matchData.total + '件'}
+        {' · '}期間・マップ・モード・人数の条件を適用中
+      </p>
       {(data.smallSample || rows.length > 5000 || matchRows.length > 5000) && (
         <p
           role="status"
@@ -290,13 +314,13 @@ export default async function ValorantStatsPage({
           icon={Layers3}
           title="完了した抽選"
           value={data.totalDraws.toLocaleString('ja-JP') + '回'}
-          note="Guildの抽選セッション"
+          note={filters.partySize ? filters.partySize + '人ピックの抽選' : 'Guildの抽選セッション'}
         />
         <ConsoleMetric
           icon={CheckCircle2}
           title="結果登録数"
           value={matchData.total.toLocaleString('ja-JP') + '試合'}
-          note="手動登録された試合のみ"
+          note={filters.partySize ? '抽選が' + filters.partySize + '人だった登録済み試合' : '手動登録された試合のみ'}
         />
         <ConsoleMetric
           icon={Trophy}
@@ -347,7 +371,7 @@ export default async function ValorantStatsPage({
             />
           </div>
 
-          <ValorantHistoryPreview rows={rows.slice(0, 5000)} labels={names} />
+          <ValorantHistoryPreview rows={filteredRows} labels={names} />
 
           <details
             className="valorant-panel group rounded-2xl p-4 sm:p-5"
@@ -426,7 +450,7 @@ export default async function ValorantStatsPage({
             </div>
             <div className="mt-4">
               <ValorantPickHistory
-                rows={rows.slice(0, 5000)}
+                rows={filteredRows}
                 page={pageNumber}
                 displayNames={names}
                 filters={filters}
