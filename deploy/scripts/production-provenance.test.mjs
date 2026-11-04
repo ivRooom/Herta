@@ -109,17 +109,34 @@ test('read-only proof audit distinguishes partial and complete states', async ()
   const input = { sha, runId: 41807040824, runAttempt: 1 };
   assert.deepEqual(await inspectProductionProofRecords(api, input), {
     ...input,
+    classification: 'partial',
     records: [{ deploymentId: 12, runMatches: true, attemptMatches: true, states: [] }],
   });
   assert.ok(paths.every((path) => path.startsWith('deployments')));
-  assert.deepEqual((await inspectProductionProofRecords(async () => [], input)).records, []);
+  const missing = await inspectProductionProofRecords(async () => [], input);
+  assert.equal(missing.classification, 'missing');
+  assert.deepEqual(missing.records, []);
 
   const completeApi = async (path) => {
     if (path.startsWith('deployments?')) return [proof];
     return [{ state: 'success' }];
   };
   const complete = await inspectProductionProofRecords(completeApi, input);
+  assert.equal(complete.classification, 'status-present-unverified');
   assert.deepEqual(complete.records[0].states, ['success']);
+
+  const unmatched = await inspectProductionProofRecords(
+    async (path) => (path.startsWith('deployments?') ? [{ ...proof, payload: { runId: 7, runAttempt: 1 } }] : []),
+    input,
+  );
+  assert.equal(unmatched.classification, 'unmatched');
+
+  const ambiguous = await inspectProductionProofRecords(
+    async (path) =>
+      path.startsWith('deployments?') ? [proof, { ...proof, id: 13 }] : [],
+    input,
+  );
+  assert.equal(ambiguous.classification, 'ambiguous');
 });
 
 test('read-only proof audit refuses truncated histories and invalid states', async () => {
