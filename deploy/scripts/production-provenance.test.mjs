@@ -110,7 +110,16 @@ test('read-only proof audit distinguishes partial and complete states', async ()
   assert.deepEqual(await inspectProductionProofRecords(api, input), {
     ...input,
     classification: 'partial',
-    records: [{ deploymentId: 12, runMatches: true, attemptMatches: true, states: [] }],
+    records: [
+      {
+        deploymentId: 12,
+        deploymentCreatedAt: null,
+        runMatches: true,
+        attemptMatches: true,
+        states: [],
+        statusCreatedAts: [],
+      },
+    ],
   });
   assert.ok(paths.every((path) => path.startsWith('deployments')));
   const missing = await inspectProductionProofRecords(async () => [], input);
@@ -124,6 +133,17 @@ test('read-only proof audit distinguishes partial and complete states', async ()
   const complete = await inspectProductionProofRecords(completeApi, input);
   assert.equal(complete.classification, 'status-present-unverified');
   assert.deepEqual(complete.records[0].states, ['success']);
+  assert.deepEqual(complete.records[0].statusCreatedAts, [null]);
+
+  const timedApi = async (path) => {
+    if (path.startsWith('deployments?')) {
+      return [{ ...proof, created_at: '2026-11-04T10:00:00Z' }];
+    }
+    return [{ state: 'success', created_at: '2026-11-04T10:01:00Z' }];
+  };
+  const timed = await inspectProductionProofRecords(timedApi, input);
+  assert.equal(timed.records[0].deploymentCreatedAt, '2026-11-04T10:00:00Z');
+  assert.deepEqual(timed.records[0].statusCreatedAts, ['2026-11-04T10:01:00Z']);
 
   const unmatchedApi = async (path) => {
     if (path.startsWith('deployments?')) {
