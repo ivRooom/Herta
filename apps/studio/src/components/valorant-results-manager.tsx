@@ -380,7 +380,10 @@ export function ValorantResultsManager({
         </p>
         <ul className="mt-3 space-y-2 sm:hidden" aria-label="登録済み試合結果（モバイル表示）">
           {reports.map((item) => (
-            <li key={item.id} className="rounded-xl border border-violet-400/20 bg-[#161e37]/80 p-3">
+            <li
+              key={item.id}
+              className="rounded-xl border border-violet-400/20 bg-[#161e37]/80 p-3"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-sm font-semibold">{item.mapId}</span>
                 <span className="text-xs font-medium text-violet-200">
