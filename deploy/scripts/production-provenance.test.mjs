@@ -491,7 +491,7 @@ test('release workflow protects proof publisher behind SSH and Cloudflare health
     new URL('../../.github/workflows/deploy-production.yml', import.meta.url),
     'utf8',
   );
-  const deploy = source.split('\n  deploy:\n')[1];
+  const deploy = source.replace(/\r\n/g, '\n').split('\n  deploy:\n')[1];
   assert.ok(deploy.includes('environment: production'));
   assert.ok(deploy.includes('deployments: write'));
   assert.ok(deploy.includes('ref: ${{ github.sha }}'));
