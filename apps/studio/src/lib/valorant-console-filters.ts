@@ -54,10 +54,7 @@ export function valorantConsoleSince(
 }
 
 /** Keep filters when the SSR history table moves to a different page. */
-export function valorantConsoleHistoryQuery(
-  filters: ValorantConsoleFilters,
-  page: number,
-): string {
+export function valorantConsoleHistoryQuery(filters: ValorantConsoleFilters, page: number): string {
   const params = new URLSearchParams();
   params.set('period', filters.period);
   if (filters.map) params.set('map', filters.map);
