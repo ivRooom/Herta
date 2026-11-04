@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const rules = JSON.parse(readFileSync(new URL('../rulesets/main-solo-maintainer.json', import.meta.url), 'utf8'));
+const rules = JSON.parse(
+  readFileSync(new URL('../rulesets/main-solo-maintainer.json', import.meta.url), 'utf8'),
+);
 const ci = readFileSync(new URL('../workflows/ci.yml', import.meta.url), 'utf8');
 
 test('solo maintainer protection only targets main and disallows bypass', () => {
@@ -12,7 +14,13 @@ test('solo maintainer protection only targets main and disallows bypass', () => 
   assert.deepEqual(rules.conditions.ref_name.include, ['refs/heads/main']);
   assert.deepEqual(rules.conditions.ref_name.exclude, []);
   const types = rules.rules.map(({ type }) => type);
-  for (const required of ['deletion', 'non_fast_forward', 'required_linear_history', 'pull_request', 'required_status_checks']) {
+  for (const required of [
+    'deletion',
+    'non_fast_forward',
+    'required_linear_history',
+    'pull_request',
+    'required_status_checks',
+  ]) {
     assert.ok(types.includes(required), required);
   }
 });
