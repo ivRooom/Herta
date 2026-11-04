@@ -195,7 +195,6 @@ describe('canonical streak reward extension', () => {
   });
 });
 
-
 describe('daily answer embargo V1 response compatibility (#802 / #864)', () => {
   it('accepts legacy revealed and new redacted receipts without rendering the answer', async () => {
     configure();
