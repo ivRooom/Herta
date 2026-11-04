@@ -47,11 +47,6 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
-      - name: Temporary Prettier exact-format diagnostic
-        run: |
-          pnpm exec prettier --write deploy/scripts/production-provenance.test.mjs
-          git diff -- deploy/scripts/production-provenance.test.mjs
-
       - name: Format Check
         run: pnpm format:check
 

@@ -11,7 +11,10 @@ import {
   validateProductionDeploymentAttestation,
 } from './production-provenance.mjs';
 
-import { protectedProofApiError, publishProtectedReleaseProof } from './production-provenance-publish.mjs';
+import {
+  protectedProofApiError,
+  publishProtectedReleaseProof,
+} from './production-provenance-publish.mjs';
 import { inspectProductionProofRecords } from './production-proof-audit.mjs';
 
 test('production proof failures identify the failing POST without logging response data', () => {
