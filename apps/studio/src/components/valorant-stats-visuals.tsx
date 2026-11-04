@@ -1,5 +1,9 @@
 import Link from 'next/link';
 import type { DrawSample } from '@/lib/valorant-stats';
+import {
+  valorantConsoleHistoryQuery,
+  type ValorantConsoleFilters,
+} from '@/lib/valorant-console-filters';
 
 type FrequencyItem = { name: string; count: number };
 const ROLE_LABELS: Record<string, string> = {
@@ -62,10 +66,12 @@ export function ValorantPickHistory({
   rows,
   page,
   displayNames,
+  filters,
 }: {
   rows: readonly DrawSample[];
   page: number;
   displayNames: ReadonlyMap<string, string>;
+  filters: ValorantConsoleFilters;
 }) {
   const pages = Math.max(1, Math.ceil(rows.length / 25));
   const current = Number.isInteger(page) ? Math.max(1, Math.min(page, pages)) : 1;
@@ -130,7 +136,7 @@ export function ValorantPickHistory({
       </div>
       <nav aria-label="抽選履歴のページ切替" className="mt-4 flex items-center gap-4 text-sm">
         {current > 1 && (
-          <Link className="underline" href={'?page=' + (current - 1)}>
+          <Link className="underline" href={valorantConsoleHistoryQuery(filters, current - 1)}>
             前へ
           </Link>
         )}
@@ -138,7 +144,7 @@ export function ValorantPickHistory({
           {current} / {pages} ページ
         </span>
         {current < pages && (
-          <Link className="underline" href={'?page=' + (current + 1)}>
+          <Link className="underline" href={valorantConsoleHistoryQuery(filters, current + 1)}>
             次へ
           </Link>
         )}
