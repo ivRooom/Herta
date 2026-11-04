@@ -41,14 +41,24 @@ gh auth status
 gh api repos/ivRooom/Herta/rulesets --jq '.[] | {id,name,enforcement}'
 gh api repos/ivRooom/Herta/commits/main/check-runs --jq '.check_runs[].name'
 # 同名既存Rulesetがないことを確かめてから一度だけPOST
-gh api -X POST repos/ivRooom/Herta/rulesets --input .github/rulesets/main-solo-maintainer.json
-# 反映を読戻す
-gh api repos/ivRooom/Herta/rulesets --jq '.[] | {id,name,enforcement}'
+RULESET_ID="$(gh api -X POST repos/ivRooom/Herta/rulesets --input .github/rulesets/main-solo-maintainer.json --jq '.id')"
+test -n "$RULESET_ID"
+# 作成した個別Ruleset IDの条件・権限・チェック設定を読み取り、JSONと照合
+gh api "repos/ivRooom/Herta/rulesets/$RULESET_ID" --jq '{name,target,enforcement,bypass_actors,conditions,rules}'
+# 参考: mainへ実際に適用されているRule。これは固有Rulesetの検証の代わりにはならない
 gh api repos/ivRooom/Herta/rules/branches/main --jq '.[].type'
 gh api repos/ivRooom/Herta/branches/main --jq '.protected'
 ```
 
 GitHub APIのRuleset作成にはRepository **Administration: write** が必要。現在の接続されたGitHub Appはその権限を持たないため、ここから直接Rulesetを作成・有効化したとは主張しない。HTTP 403ならリポジトリの管理者本人で実行する。CLIによるPOSTを何度も実行すると重複Ruleができるため、成功したら再実行しない。
+
+管理画面から既にImportしている場合はPOSTしない。次で既存RulesetのIDを検索し、**同名が1件だけ**であることを確認してから `gh api "repos/ivRooom/Herta/rulesets/<確認したID>" --jq '{name,target,enforcement,bypass_actors,conditions,rules}'` を実行する。
+
+```bash
+gh api repos/ivRooom/Herta/rulesets --jq '.[] | select(.name == "main | Solo Maintainer PR + CI") | {id,name,enforcement}'
+```
+
+**必ず新しく作成した個別Rulesetの詳細をJSONと照合する**：`main`限定、`active`、Bypass空、PR必須・approvals=0・review thread解決必須、Force Push/削除禁止、上記2つのRequired CI名、Strict=true、Squashのみ。別の保護ルールが適用されているだけで合格としない。
 
 ## 検証・復旧
 
