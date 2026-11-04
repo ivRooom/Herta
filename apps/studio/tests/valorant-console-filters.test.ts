@@ -31,7 +31,7 @@ describe('VALORANT console URL filter boundaries', () => {
       period: 'all',
       map: '',
       mode: 'TACTICAL',
-      partySize: '5',
+      partySize: '',
     });
   });
 
@@ -47,7 +47,7 @@ describe('VALORANT console URL filter boundaries', () => {
       period: '7',
       map: 'Haven',
       mode: 'TACTICAL',
-      partySize: '',
+      partySize: '5',
     });
     expect(valorantConsoleHistoryQuery(filters, 2)).toBe(
       '?period=7&map=Haven&mode=TACTICAL&partySize=5&page=2&details=1#valorant-details',
