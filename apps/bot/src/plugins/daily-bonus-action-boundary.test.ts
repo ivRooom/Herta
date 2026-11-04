@@ -19,6 +19,8 @@ describe('daily action side effects (source contract)', () => {
     expect(claim).toBeGreaterThan(0);
     expect(questions).toBeGreaterThan(claim);
     expect(v2.slice(claim, questions)).toContain('await replyDailyBonusResult(');
-    expect(v2.slice(claim, questions)).toMatch(/await replyDailyBonusResult\([\s\S]*?\);\s*return;\s*}/);
+    expect(v2.slice(claim, questions)).toMatch(
+      /await replyDailyBonusResult\([\s\S]*?\);\s*return;\s*}/,
+    );
   });
 });
