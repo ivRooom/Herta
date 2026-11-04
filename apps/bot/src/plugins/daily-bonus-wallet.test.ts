@@ -194,3 +194,56 @@ describe('canonical streak reward extension', () => {
     }
   });
 });
+
+
+describe('daily answer embargo V1 response compatibility (#802 / #864)', () => {
+  it('accepts legacy revealed and new redacted receipts without rendering the answer', async () => {
+    configure();
+    for (const quiz of [
+      { quizId: 'synthetic_quiz', choiceIndex: 1, correct: true },
+      {
+        quizId: 'synthetic_quiz',
+        choiceIndex: 1,
+        correct: true,
+        correctIndex: 1,
+        explanation: 'Synthetic post-reveal text',
+      },
+    ]) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          Response.json({
+            status: 'ok',
+            guildId: guild,
+            discordUserId: user,
+            mode: 'created',
+            claim: {
+              claimDateJst: '2026-11-04',
+              streakDay: 1,
+              rollPoints: 5,
+              quizBonusPoints: 10,
+              rewardPoints: 15,
+              channel: 'discord',
+              quiz,
+            },
+            account: { balance: 115 },
+          }),
+        ),
+      );
+      const result = await claimDailyBonus(
+        guild,
+        user,
+        '2026-11-04',
+        '323456789012345678',
+        'synthetic_quiz',
+        1,
+      );
+      expect(result.status).toBe('confirmed');
+      if (result.status === 'confirmed') {
+        expect(result.receipt.rewardPoints).toBe(15);
+        expect(result.message).not.toContain('Synthetic post-reveal');
+        expect(JSON.stringify(result.receipt)).not.toMatch(/correctIndex|explanation/);
+      }
+    }
+  });
+});
