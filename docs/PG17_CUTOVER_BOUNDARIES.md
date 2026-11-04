@@ -12,7 +12,7 @@ The previous production attempt restored the original writers after manual hando
 
 ## Validation and limits
 
-Local controller19, Source fence23, process-unit11 and watchdog26 tests pass. Tests cover deadline exhaustion, lost acknowledgements, competing processes, durable reservations and foreign unit rejection. No SQL/cloud operation or application writer is started by the unit suites.
+Local controller22, Source fence23, process-unit11 and watchdog26 tests pass. Tests cover deadline exhaustion, lost acknowledgements, competing processes, durable reservations and foreign unit rejection. No SQL/cloud operation or application writer is started by the unit suites.
 
 These libraries require separately verified approval pins, protected paths, actual Source freeze/watchdog, cancellation-aware nonblocking providers, remote quiescence, env rollback and live recovery evidence. Those providers and full unaccelerated cutover rehearsal are follow-up work under #675. Migration capture/transfer/restore/crypto/backup helpers remain in the separate operator worktree until subsequent reviewed changes. No production execute entrypoint is added here.
 
@@ -33,3 +33,5 @@ The initial review observed five required contexts, including path-filtered Stud
 The current runtime-change classifier includes deploy/, so these unused Python tools can still cause Deploy Production (workflow307693350) to consider build/GHCR/SSH after main CI. No-production-change approval therefore requires an explicit operational pause, not merely a docs-only intention: after confirming no queued/in-progress deployment, disable/read back that existing workflow before merge; verify all approved main checks complete; confirm no deployment for the merge SHA; then restore/read back the originally active workflow. Do not merge until that temporary automation-state change is authorized. This does not weaken quality checks or change deployed app/DB configuration.
 
 After the disabled-state readback, re-enumerate all nonterminal Deploy runs (queued/in_progress/waiting/pending/requested) before merge: disabling does not cancel a run that raced the initial check. Abort merge if any exists; do not cancel another deployment. Repeat before re-enable and verify the exact merge SHA has no deployment.
+
+Recovery reporting preserves acknowledged four-service PG16 restart even when backup/workflow acknowledgement, deadlines or receipt writes fail; those failures still require manual reconciliation and never accept the cutover. A false restart flag is not proof that a remote Source is down after a lost acknowledgement. Operators must reconcile actual service state before any new recovery attempt.

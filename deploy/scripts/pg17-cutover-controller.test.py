@@ -65,6 +65,50 @@ class Harness:
 
 
 class ControllerTests(unittest.TestCase):
+    def test_partial_recovery_ack_preserves_known_running_services(self):
+        for missing in ('old_backup_active', 'workflow_restored'):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:
+                h = Harness(directory)
+                h.failure = 'restore'
+                async def partial(deadline):
+                    return {key: key != missing for key in ('four_services_pg16', 'old_backup_active', 'workflow_restored')}
+                h.recover = partial
+                result = h.execute()
+                self.assertTrue(result['source_restarted'])
+                self.assertTrue(result['manual_reconciliation_required'])
+                self.assertFalse(result['cutover_accepted'])
+
+    def test_acknowledged_restart_remains_true_after_deadline_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            h = Harness(directory)
+            h.failure = 'restore'
+            original = h.recover
+            async def late(deadline):
+                result = await original(deadline)
+                h.now = deadline+1
+                return result
+            h.recover = late
+            result = h.execute()
+            self.assertTrue(result['source_restarted'])
+            self.assertTrue(result['manual_reconciliation_required'])
+            self.assertFalse(result['cutover_accepted'])
+
+    def test_acknowledged_restart_survives_receipt_and_reconciliation_log_failure(self):
+        for fail_both in (False, True):
+            with self.subTest(fail_both=fail_both), tempfile.TemporaryDirectory() as directory:
+                h = Harness(directory)
+                h.failure = 'restore'
+                original = h.journal.record
+                def failed(event, **facts):
+                    if event == 'SOURCE_RECOVERED' or (fail_both and event == 'RECOVERY_UNPROVEN'):
+                        raise OSError('synthetic-private-journal-failure')
+                    original(event, **facts)
+                h.journal.record = failed
+                result = h.execute()
+                self.assertTrue(result['source_restarted'])
+                self.assertTrue(result['manual_reconciliation_required'])
+                self.assertFalse(result['cutover_accepted'])
+
     def test_invalid_prepared_deadline_never_invokes_any_adapter(self):
         for value in (float('nan'), 999, True, 'invalid'):
             with self.subTest(value=value), tempfile.TemporaryDirectory() as directory:

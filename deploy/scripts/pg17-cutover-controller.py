@@ -182,6 +182,7 @@ async def execute(stages, journal, *, freeze, authorize_start, claim_recovery,
             return {"cutover_accepted": False, "reconciliation_required": True,
                     "source_restarted": False}
         if freeze_intent:
+            restarted = False
             try:
                 # Source remote fence must be claimed before old env restoration
                 # or recovery. It serializes this path against business start.
@@ -209,13 +210,25 @@ async def execute(stages, journal, *, freeze, authorize_start, claim_recovery,
                 available = recovery_end - clock()
                 require(available > 40)
                 restored = await asyncio.wait_for(recover_source(recovery_end), timeout=available)
+                # Physical service recovery and complete recovery acceptance
+                # differ: backup/workflow acknowledgement may still fail.
+                restarted = isinstance(restored, dict) and restored.get("four_services_pg16") is True
                 require(isinstance(restored, dict) and all(restored.get(k) is True for k in
                     ("four_services_pg16", "old_backup_active", "workflow_restored")))
+                # Physical recovery is known even if later deadline/receipt
+                # acceptance fails. Never report an acknowledged restart as down.
                 require(clock() < recovery_end)
                 journal.record("SOURCE_RECOVERED")
                 require(clock() < recovery_end)
                 return {"cutover_accepted": False, "source_restarted": True}
             except BaseException:
-                journal.record("RECOVERY_UNPROVEN")
+                try:
+                    journal.record("RECOVERY_UNPROVEN", source_restarted=restarted)
+                except BaseException:
+                    if not restarted:
+                        raise
+                if restarted:
+                    return {"cutover_accepted": False, "source_restarted": True,
+                            "manual_reconciliation_required": True}
         return {"cutover_accepted": False, "source_restarted": False,
                 "manual_reconciliation_required": True}
