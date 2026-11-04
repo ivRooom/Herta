@@ -33,7 +33,10 @@ test('solo ruleset uses pull requests and avoids impossible self-approval', () =
   assert.equal(pr.required_review_thread_resolution, true);
   assert.equal(pr.dismiss_stale_reviews_on_push, false);
   assert.deepEqual(pr.required_reviewers, []);
-  assert.deepEqual(pr.dismissal_restriction, { enabled: false, allowed_actors: [] });
+  assert.deepEqual(pr.dismissal_restriction, {
+    enabled: false,
+    allowed_actors: [],
+  });
   assert.equal(pr.require_extra_approval_for_unattributed_changes, false);
   assert.deepEqual(pr.allowed_merge_methods, ['squash']);
 });
