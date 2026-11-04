@@ -442,11 +442,7 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
   }
 }
 
-async function displayDailyFortune(
-  ctx: Context,
-  interaction: ButtonInteraction,
-  date: string,
-) {
+async function displayDailyFortune(ctx: Context, interaction: ButtonInteraction, date: string) {
   const source = await fetchIvrmFortuneProfile(ctx.guildId, interaction.user.id, date);
   const fortune = await savedDailyFortune(
     ctx.prisma,
