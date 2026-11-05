@@ -113,6 +113,46 @@ it('unclaimed subject can open standalone question without invoking the login cl
     }),
   );
 });
+it('explains the claim prerequisite without awarding login points', async () => {
+  mocks.status.mockResolvedValue({
+    ...f.status,
+    bonusClaimed: false,
+    questions: [{ ...f.publicQuestion, requiresClaim: true }],
+    responses: [],
+  });
+  const i = interaction('daily-participation:questions:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  expect(mocks.claim).not.toHaveBeenCalled();
+  expect(mocks.createSession).not.toHaveBeenCalled();
+  expect(i.followUp).toHaveBeenCalledWith(
+    expect.objectContaining({
+      content: expect.stringContaining('受取が必要です'),
+      allowedMentions: { parse: [] },
+    }),
+  );
+});
+
+it('still offers an independent question alongside claim-required questions', async () => {
+  mocks.status.mockResolvedValue({
+    ...f.status,
+    bonusClaimed: false,
+    questions: [
+      { ...f.publicQuestion, id: 'blocked-question', requiresClaim: true },
+      { ...f.publicQuestion, requiresClaim: false },
+    ],
+    responses: [],
+  });
+  const i = interaction('daily-participation:questions:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  expect(mocks.claim).not.toHaveBeenCalled();
+  expect(mocks.createSession).toHaveBeenCalledOnce();
+  expect(i.followUp).toHaveBeenCalledWith(
+    expect.objectContaining({ components: expect.any(Array) }),
+  );
+  expect(i.followUp).not.toHaveBeenCalledWith(
+    expect.objectContaining({ content: expect.stringContaining('受取が必要です') }),
+  );
+});
 it('keeps a maximum Unicode prompt in an embed within Discord content limits', async () => {
   const prompt = '🎮'.repeat(1000);
   mocks.status.mockResolvedValue({ ...f.status, questions: [{ ...f.publicQuestion, prompt }] });
