@@ -1,23 +1,91 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import {
+  Activity,
+  BarChart3,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  ClipboardPlus,
+  Dice5,
+  Layers3,
+  ListFilter,
+  Sparkles,
+  Target,
+  Trophy,
+  type LucideIcon,
+} from 'lucide-react';
 import { auth } from '@/auth';
 import { prisma } from '@/lib/db';
 import { resolveStudioAccess } from '@/lib/studio-access';
 import { resolvePluginConfigStudioAccess } from '@/lib/studio-plugin-permissions';
 import { aggregateValorantStats, aggregateValorantMatchStats } from '@/lib/valorant-stats';
+import {
+  parseValorantConsoleFilters,
+  matchesValorantPartySize,
+  valorantConsoleSince,
+  VALORANT_CONSOLE_MAPS,
+} from '@/lib/valorant-console-filters';
 import { ValorantResultsManager } from '@/components/valorant-results-manager';
 import { ValorantFrequencyBars, ValorantPickHistory } from '@/components/valorant-stats-visuals';
+import {
+  ValorantCompactBars,
+  ValorantHistoryPreview,
+  ValorantRoleDonut,
+} from '@/components/valorant-console-widgets';
 import { ValorantWinRateTrend } from '@/components/valorant-winrate-trend';
 import { defaultValorantAgents } from '@herta/plugin-catalog';
 
 export const dynamic = 'force-dynamic';
+
+const ROLE_NAMES: Record<string, string> = {
+  DUELIST: 'デュエリスト',
+  CONTROLLER: 'コントローラー',
+  INITIATOR: 'イニシエーター',
+  SENTINEL: 'センチネル',
+  UNKNOWN: '未分類',
+};
+
+function ConsoleMetric({
+  icon: Icon,
+  title,
+  value,
+  note,
+}: {
+  icon: LucideIcon;
+  title: string;
+  value: string;
+  note: string;
+}) {
+  return (
+    <article className="valorant-panel min-w-0 rounded-2xl p-3 sm:p-4">
+      <div className="mb-3 flex items-center gap-2 text-violet-300">
+        <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <h2 className="truncate text-[11px] font-medium text-muted sm:text-xs">{title}</h2>
+      </div>
+      <p className="truncate text-xl font-bold tracking-tight text-white sm:text-2xl" title={value}>
+        {value}
+      </p>
+      <p className="mt-1 truncate text-[11px] text-muted" title={note}>
+        {note}
+      </p>
+    </article>
+  );
+}
 
 export default async function ValorantStatsPage({
   params,
   searchParams,
 }: {
   params: Promise<{ guildId: string }>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    period?: string;
+    map?: string;
+    mode?: string;
+    partySize?: string;
+    details?: string;
+  }>;
 }) {
   const { guildId } = await params;
   const session = await auth();
@@ -28,8 +96,18 @@ export default async function ValorantStatsPage({
     'enabledAgents',
   ]);
   if (!permission.readableConfigPaths.includes('enabledAgents')) notFound();
+
+  const query = await searchParams;
+  const filters = parseValorantConsoleFilters(query);
+  const since = valorantConsoleSince(filters.period);
   const rows = await prisma.valorantPickSession.findMany({
-    where: { guildId, status: 'COMPLETED' },
+    where: {
+      guildId,
+      status: 'COMPLETED',
+      ...(since ? { completedAt: { gte: since } } : {}),
+      ...(filters.map ? { mapId: filters.map } : {}),
+      ...(filters.mode ? { mode: filters.mode } : {}),
+    },
     orderBy: { completedAt: 'desc' },
     take: 5001,
     select: {
@@ -41,9 +119,17 @@ export default async function ValorantStatsPage({
       result: true,
     },
   });
-  const data = aggregateValorantStats(rows.slice(0, 5000));
+  const filteredRows = rows
+    .slice(0, 5000)
+    .filter((row) => matchesValorantPartySize(row.result, filters.partySize));
+  const data = aggregateValorantStats(filteredRows);
   const matchRows = await prisma.valorantMatchResult.findMany({
-    where: { guildId },
+    where: {
+      guildId,
+      ...(since ? { createdAt: { gte: since } } : {}),
+      ...(filters.map ? { mapId: filters.map } : {}),
+      ...(filters.mode ? { session: { mode: filters.mode } } : {}),
+    },
     orderBy: { createdAt: 'desc' },
     take: 5001,
     select: {
@@ -55,139 +141,403 @@ export default async function ValorantStatsPage({
       session: { select: { result: true } },
     },
   });
-  const matchData = aggregateValorantMatchStats(matchRows.slice(0, 5000));
-  const displayNames = new Map(defaultValorantAgents().map((a) => [a.agentId, a.displayName]));
-  const pageParam = (await searchParams)?.page ?? '1';
-  const pageNumber = /^\\d{1,3}$/.test(pageParam) ? Number(pageParam) : 1;
+  const filteredMatchRows = matchRows
+    .slice(0, 5000)
+    .filter((row) => matchesValorantPartySize(row.session.result, filters.partySize));
+  const matchData = aggregateValorantMatchStats(filteredMatchRows);
+  const names = new Map(defaultValorantAgents().map((agent) => [agent.agentId, agent.displayName]));
+  const pageParam = query?.page ?? '1';
+  const pageNumber = /^\d{1,3}$/.test(pageParam) ? Number(pageParam) : 1;
+  const topAgent = data.agents[0];
+  const topRole = data.roles[0];
+  const winRate =
+    matchData.win + matchData.loss > 0
+      ? ((matchData.win / (matchData.win + matchData.loss)) * 100).toFixed(1) + '%'
+      : '算出不可';
+  const periodLabel = filters.period === 'all' ? '全期間' : '直近' + filters.period + '日';
+  const compositions = data.compositions.map((team) => ({
+    name: team.name
+      .split(', ')
+      .map((id) => names.get(id) ?? id)
+      .join(' / '),
+    count: team.count,
+  }));
+
   return (
-    <main className="space-y-7">
-      <Link
-        className="text-sm text-muted hover:underline"
-        href={'/dashboard/guilds/' + guildId + '/plugins/valorant'}
-      >
-        ← VALORANT設定へ戻る
-      </Link>
-      <header>
-        <h1 className="text-2xl font-semibold">VALORANT 抽選統計</h1>
-        <p className="mt-2 text-sm text-muted">
-          Guild内の完了済み抽選（最大5,000件）。総抽選回数: {data.totalDraws}
-        </p>
+    <main className="valorant-console relative space-y-4 p-3 sm:p-5 lg:left-1/2 lg:w-[calc(100vw-20rem)] lg:max-w-[1680px] lg:-translate-x-1/2 lg:p-6">
+      <header className="relative overflow-hidden rounded-2xl border border-violet-400/20 bg-gradient-to-r from-[#222444] via-[#171b35] to-[#191633] p-4 sm:p-6">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-8 -top-20 h-56 w-56 rounded-full bg-violet-500/20 blur-3xl"
+        />
+        <div className="relative flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div className="min-w-0">
+            <Link
+              href={'/dashboard/guilds/' + guildId + '/plugins/valorant'}
+              className="inline-flex items-center gap-2 text-xs text-violet-200 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300"
+            >
+              <Layers3 className="h-4 w-4" aria-hidden="true" />
+              Herta Studio / VALORANT
+            </Link>
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-3xl">
+              VALORANT <span className="text-violet-300">分析コンソール</span>
+            </h1>
+            <p className="mt-2 max-w-2xl text-xs leading-relaxed text-slate-300 sm:text-sm">
+              抽選されたエージェント・ロール・構成と、手動登録された試合結果をGuild単位で分析します。
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-[11px]">
+            <span className="inline-flex items-center gap-1.5 rounded-xl border border-violet-400/30 bg-violet-400/10 px-3 py-2 text-violet-100">
+              <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" /> 抽選履歴・分析
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-xl border border-teal-400/25 bg-teal-400/10 px-3 py-2 text-teal-100">
+              <ClipboardPlus className="h-3.5 w-3.5" aria-hidden="true" /> 手動試合登録
+            </span>
+          </div>
+        </div>
       </header>
-      {(data.smallSample || rows.length > 5000) && (
-        <p role="status" className="rounded-xl border border-border p-4 text-sm">
+
+      <nav aria-label="VALORANT画面内移動" className="flex gap-2 overflow-x-auto pb-1 text-xs">
+        {[
+          { href: '#valorant-overview', label: '概要' },
+          { href: '#valorant-agents', label: '選出統計' },
+          { href: '#valorant-compositions', label: '勝率・構成' },
+          { href: '#valorant-history', label: '履歴' },
+          { href: '#valorant-register', label: '結果登録' },
+          { href: '#valorant-commands', label: 'コマンド' },
+        ].map((item) => (
+          <a
+            key={item.href}
+            href={item.href}
+            className="inline-flex min-h-11 shrink-0 items-center rounded-xl border border-violet-400/25 bg-[#151d37]/90 px-3 font-medium text-violet-100 transition hover:border-violet-300/60 hover:bg-violet-500/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300"
+          >
+            {item.label}
+          </a>
+        ))}
+      </nav>
+
+      <form
+        method="GET"
+        aria-label="VALORANT分析のフィルタ"
+        className="grid grid-cols-2 gap-3 rounded-2xl border border-violet-400/25 bg-[#111a31]/95 p-4 sm:grid-cols-[repeat(4,minmax(0,1fr))_auto] sm:items-end"
+      >
+        <label className="min-w-0 text-xs text-muted">
+          <span className="mb-1 flex items-center gap-1.5">
+            <CalendarDays className="h-3.5 w-3.5" aria-hidden="true" /> 期間
+          </span>
+          <select name="period" className="input" defaultValue={filters.period}>
+            <option value="7">直近7日</option>
+            <option value="30">直近30日</option>
+            <option value="90">直近90日</option>
+            <option value="all">全期間</option>
+          </select>
+        </label>
+        <label className="min-w-0 text-xs text-muted">
+          <span className="mb-1 flex items-center gap-1.5">
+            <Target className="h-3.5 w-3.5" aria-hidden="true" /> マップ
+          </span>
+          <select name="map" className="input" defaultValue={filters.map}>
+            <option value="">すべてのマップ</option>
+            {VALORANT_CONSOLE_MAPS.map((map) => (
+              <option key={map} value={map}>
+                {map}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="min-w-0 text-xs text-muted">
+          <span className="mb-1 flex items-center gap-1.5">
+            <ListFilter className="h-3.5 w-3.5" aria-hidden="true" /> 抽選モード
+          </span>
+          <select name="mode" className="input" defaultValue={filters.mode}>
+            <option value="">すべて</option>
+            <option value="RANDOM">完全ランダム</option>
+            <option value="TACTICAL">実戦向け</option>
+          </select>
+        </label>
+        <label className="min-w-0 text-xs text-muted">
+          <span className="mb-1 flex items-center gap-1.5">
+            <Layers3 className="h-3.5 w-3.5" aria-hidden="true" /> 抽選人数
+          </span>
+          <select name="partySize" className="input" defaultValue={filters.partySize}>
+            <option value="">すべての人数</option>
+            <option value="3">3人ピック</option>
+            <option value="5">5人ピック</option>
+          </select>
+        </label>
+        <button
+          type="submit"
+          className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-violet-600 to-purple-500 px-4 text-sm font-semibold text-white transition hover:from-violet-500 hover:to-purple-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-200"
+        >
+          <ListFilter className="h-4 w-4" aria-hidden="true" /> 適用
+        </button>
+      </form>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-muted">
+        <p>
+          表示範囲: {periodLabel} · {filters.map || '全マップ'} ·{' '}
+          {filters.mode === 'RANDOM'
+            ? '完全ランダム'
+            : filters.mode === 'TACTICAL'
+              ? '実戦向け'
+              : '全モード'}
+        </p>
+        <p>
+          抽選人数: {filters.partySize ? filters.partySize + '人' : 'すべて'} ·
+          抽選の割当人数で判定。勝敗は登録日時（UTC）・実プレイマップで絞り込みます。
+        </p>
+      </div>
+
+      <p
+        className="rounded-xl border border-violet-400/20 bg-violet-400/5 px-4 py-3 text-sm text-violet-100"
+        role="status"
+      >
+        {filters.partySize
+          ? filters.partySize +
+            '人ピックの抽選 ' +
+            data.totalDraws +
+            '件 / 結果登録 ' +
+            matchData.total +
+            '件'
+          : '全人数の抽選 ' + data.totalDraws + '件 / 結果登録 ' + matchData.total + '件'}
+        {' · '}期間・マップ・モード・人数の条件を適用中
+      </p>
+      {(data.smallSample || rows.length > 5000 || matchRows.length > 5000) && (
+        <p
+          role="status"
+          className="rounded-xl border border-amber-300/20 bg-amber-200/5 p-3 text-xs text-amber-100"
+        >
           {data.smallSample
-            ? '標本数が30件未満のため、選出率に意味のある傾向があるとは判断できません。'
+            ? '抽選の標本数は30件未満です。割合を優劣や傾向の確証として解釈しないでください。 '
             : ''}
-          {rows.length > 5000 ? '集計は最新5,000件に制限しています。' : ''}
+          {rows.length > 5000 || matchRows.length > 5000
+            ? '集計は各データの最新5,000件に制限しています。'
+            : ''}
         </p>
       )}
-      <section className="rounded-xl border border-border p-4">
-        <h2 className="mb-3 font-semibold">エージェント別選出率</h2>
-        <p className="mb-3 text-xs text-muted">
-          選出率=選出回数÷候補入り抽選回数。実戦向け構成は候補の選出機会に偏りがあるため、完全ランダムと同じ確率とは解釈できません。
-        </p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left">
-                <th className="p-2">Agent</th>
-                <th className="p-2">選出</th>
-                <th className="p-2">候補入り</th>
-                <th className="p-2">選出率</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.agents.map((agent) => (
-                <tr key={agent.agentId} className="border-t border-border">
-                  <td className="p-2">{displayNames.get(agent.agentId) ?? agent.agentName}</td>
-                  <td className="p-2">{agent.selected}</td>
-                  <td className="p-2">{agent.eligibleSessions}</td>
-                  <td className="p-2">
-                    {agent.selectedPerEligibleSession === null
-                      ? '算出不可'
-                      : (agent.selectedPerEligibleSession * 100).toFixed(1) + '%'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <ValorantFrequencyBars title="ロール別の選出回数" items={data.roles} />
-        <ValorantFrequencyBars
-          title="エージェント別の選出回数"
-          items={data.agents.map(({ agentId, selected }) => ({
-            name: displayNames.get(agentId) ?? agentId,
-            count: selected,
-          }))}
+
+      <section
+        id="valorant-overview"
+        aria-label="分析の主要指標"
+        className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:gap-3 2xl:grid-cols-6"
+      >
+        <ConsoleMetric
+          icon={Layers3}
+          title="完了した抽選"
+          value={data.totalDraws.toLocaleString('ja-JP') + '回'}
+          note={filters.partySize ? filters.partySize + '人ピックの抽選' : 'Guildの抽選セッション'}
         />
-        <ValorantFrequencyBars title="よく生成された構成（抽選結果）" items={data.compositions} />
-        <ValorantFrequencyBars title="抽選モード" items={data.modes} />
-        <ValorantFrequencyBars title="マップ別" items={data.maps} />
-        <ValorantFrequencyBars title="日別推移（UTC）" items={data.daily} />
-        <ValorantFrequencyBars title="週別推移（UTC月曜開始）" items={data.weekly} />
-        <ValorantFrequencyBars title="月別推移（UTC）" items={data.monthly} />
-        <ValorantFrequencyBars
-          title="手動登録済み試合の勝敗（未登録は除外）"
-          items={[
-            { name: '勝利', count: matchData.win },
-            { name: '敗北', count: matchData.loss },
-            { name: '引分', count: matchData.draw },
-          ]}
+        <ConsoleMetric
+          icon={CheckCircle2}
+          title="結果登録数"
+          value={matchData.total.toLocaleString('ja-JP') + '試合'}
+          note={
+            filters.partySize
+              ? '抽選が' + filters.partySize + '人だった登録済み試合'
+              : '手動登録された試合のみ'
+          }
         />
-      </div>
-      <ValorantWinRateTrend days={matchData.daily} />
-      <ValorantPickHistory
-        rows={rows.slice(0, 5000)}
-        page={pageNumber}
-        displayNames={displayNames}
-      />
-      <section className="rounded-xl border border-border p-4">
-        <h2 className="mb-3 font-semibold">試合結果分析（手動登録）</h2>
-        <p className="text-sm">
-          登録 {matchData.total}試合 / 勝利 {matchData.win} / 敗北 {matchData.loss} / 引分{' '}
-          {matchData.draw}
-        </p>
-        <p className="mt-2 text-sm">
-          勝率（引分除外）:
-          {matchData.win + matchData.loss
-            ? ((matchData.win / (matchData.win + matchData.loss)) * 100).toFixed(1) + '%'
-            : '算出不可'}
-        </p>
-        <p className="mt-2 text-xs text-muted">
-          少数サンプルは傾向と解釈しません。抽選エージェントと実使用エージェントは別管理です。
-        </p>
-        <ul className="mt-3 space-y-1 text-sm">
-          {matchData.compositions.slice(0, 20).map((t) => (
-            <li key={t.name}>
-              {t.name}: {t.win}勝 / {t.loss}敗 / {t.draw}分（{t.count}件）
-            </li>
-          ))}
-        </ul>
+        <ConsoleMetric
+          icon={Trophy}
+          title="登録済み勝率"
+          value={winRate}
+          note={matchData.win + '勝 / ' + matchData.loss + '敗 / ' + matchData.draw + '分'}
+        />
+        <ConsoleMetric
+          icon={Dice5}
+          title="最多選出エージェント"
+          value={topAgent ? (names.get(topAgent.agentId) ?? topAgent.agentId) : '未記録'}
+          note={topAgent ? topAgent.selected + '回選出' : '抽選データなし'}
+        />
+        <ConsoleMetric
+          icon={Activity}
+          title="最多選出ロール"
+          value={topRole ? (ROLE_NAMES[topRole.name] ?? topRole.name) : '未記録'}
+          note={topRole ? topRole.count + '回割当' : '抽選データなし'}
+        />
+        <ConsoleMetric
+          icon={Sparkles}
+          title="抽選された組合せ"
+          value={data.compositions.length.toLocaleString('ja-JP') + '種'}
+          note="実プレイ構成とは別"
+        />
       </section>
-      <section className="rounded-xl border border-border p-4">
-        <h2 className="mb-3 font-semibold">プレイヤー別の選出傾向</h2>
-        <p className="mb-2 text-xs text-muted">
-          サーバー管理権限で表示。識別子は収集期間内のDiscordユーザーIDです。
-        </p>
-        <ul className="space-y-3 text-sm">
-          {data.players.slice(0, 100).map((player) => (
-            <li key={player.userId} className="border-t border-border pt-3">
-              <span className="font-medium">
-                {player.userId}（{player.draws}回）
+
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 space-y-4">
+          <div id="valorant-agents" className="grid gap-4 md:grid-cols-2">
+            <ValorantCompactBars
+              title="よく当たるエージェント"
+              description="抽選での選出回数トップ5 · メンバー合計"
+              items={data.agents.map((agent) => ({
+                name: names.get(agent.agentId) ?? agent.agentName,
+                count: agent.selected,
+              }))}
+            />
+            <ValorantRoleDonut items={data.roles} />
+          </div>
+
+          <div id="valorant-compositions" className="grid gap-4 lg:grid-cols-2">
+            <ValorantWinRateTrend days={matchData.daily} />
+            <ValorantCompactBars
+              title="よく出る構成パターン"
+              description="抽選時のAgent組合せ · 試合結果の勝率ではありません"
+              items={compositions}
+            />
+          </div>
+
+          <ValorantHistoryPreview rows={filteredRows} labels={names} />
+
+          <details
+            className="valorant-panel group rounded-2xl p-4 sm:p-5"
+            id="valorant-details"
+            open={query?.details === '1' || pageNumber > 1}
+          >
+            <summary className="flex min-h-9 cursor-pointer list-none items-center justify-between gap-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300">
+              <span className="flex items-center gap-2">
+                <BarChart3 className="h-4 w-4 text-violet-300" aria-hidden="true" />
+                詳細分析・全抽選履歴を表示
               </span>
-              <p className="mt-1 text-muted">
-                {player.agentCounts.map((a) => a.agentId + ': ' + a.count + '回').join(' / ')}
+              <ChevronDown
+                className="h-4 w-4 text-muted transition-transform group-open:rotate-180"
+                aria-hidden="true"
+              />
+            </summary>
+            <p className="mt-2 text-xs leading-relaxed text-muted">
+              選出率＝エージェント選出回数÷そのエージェントが候補に入ったセッション数。
+              完全ランダムと戦術構成では候補条件が異なります。
+            </p>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[450px] text-left text-xs">
+                <thead className="text-muted">
+                  <tr>
+                    <th scope="col" className="p-2">
+                      Agent
+                    </th>
+                    <th scope="col" className="p-2">
+                      選出数
+                    </th>
+                    <th scope="col" className="p-2">
+                      候補入り
+                    </th>
+                    <th scope="col" className="p-2">
+                      選出率
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.agents.map((agent) => (
+                    <tr key={agent.agentId} className="border-t border-border/60">
+                      <td className="p-2">{names.get(agent.agentId) ?? agent.agentName}</td>
+                      <td className="p-2 tabular-nums">{agent.selected}</td>
+                      <td className="p-2 tabular-nums">{agent.eligibleSessions}</td>
+                      <td className="p-2 tabular-nums">
+                        {agent.selectedPerEligibleSession === null
+                          ? '算出不可'
+                          : (agent.selectedPerEligibleSession * 100).toFixed(1) + '%'}
+                      </td>
+                    </tr>
+                  ))}
+                  {data.agents.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="p-3 text-muted">
+                        集計対象がありません。
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <ValorantFrequencyBars title="抽選モード別" items={data.modes} />
+              <ValorantFrequencyBars title="マップ別抽選数" items={data.maps} />
+              <ValorantFrequencyBars title="日別抽選数（UTC）" items={data.daily} />
+              <ValorantFrequencyBars title="週別抽選数（UTC月曜開始）" items={data.weekly} />
+              <ValorantFrequencyBars title="月別抽選数（UTC）" items={data.monthly} />
+              <ValorantFrequencyBars
+                title="登録済みの勝敗"
+                items={[
+                  { name: '勝利', count: matchData.win },
+                  { name: '敗北', count: matchData.loss },
+                  { name: '引分', count: matchData.draw },
+                ]}
+              />
+            </div>
+            <div className="mt-4">
+              <ValorantPickHistory
+                rows={filteredRows}
+                page={pageNumber}
+                displayNames={names}
+                filters={filters}
+              />
+            </div>
+            <section className="mt-4 rounded-xl border border-border p-3">
+              <h3 className="text-sm font-semibold">メンバー別の抽選傾向</h3>
+              <p className="mt-1 text-xs text-muted">
+                Guild認可画面内のみ。個人識別子は90日匿名化の対象で、匿名化済みの記録は集計しません。
               </p>
-              <p className="mt-1 text-muted">
-                ロール：{player.roleCounts.map((r) => r.name + ': ' + r.count + '回').join(' / ')}
-              </p>
-            </li>
-          ))}
-        </ul>
-      </section>
-      <ValorantResultsManager guildId={guildId} />
+              <ul className="mt-3 space-y-2 text-xs">
+                {data.players.slice(0, 100).map((player) => (
+                  <li key={player.userId} className="border-t border-border/70 pt-2">
+                    <p className="break-all font-medium">
+                      {player.userId} · {player.draws}回選出
+                    </p>
+                    <p className="mt-1 text-muted">
+                      Agent:{' '}
+                      {player.agentCounts
+                        .map((a) => (names.get(a.agentId) ?? a.agentId) + ' ' + a.count + '回')
+                        .join(' / ')}
+                    </p>
+                    <p className="mt-1 text-muted">
+                      Role:{' '}
+                      {player.roleCounts
+                        .map((r) => (ROLE_NAMES[r.name] ?? r.name) + ' ' + r.count + '回')
+                        .join(' / ')}
+                    </p>
+                  </li>
+                ))}
+                {data.players.length === 0 && (
+                  <li className="text-muted">メンバー別の有効な記録はありません。</li>
+                )}
+              </ul>
+            </section>
+          </details>
+
+          <section
+            className="valorant-panel rounded-2xl p-4 sm:p-5"
+            aria-labelledby="valorant-commands"
+          >
+            <h2 id="valorant-commands" className="flex items-center gap-2 text-sm font-semibold">
+              <ClipboardPlus className="h-4 w-4 text-violet-300" aria-hidden="true" />
+              Discordコマンドで確認
+            </h2>
+            <p className="mt-1 text-xs text-muted">
+              Guildの抽選統計は非公開応答です。外部ランク/RRと結果登録済み勝率は別指標です。
+            </p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              <code className="rounded-lg border border-border bg-[#101a32] p-3 text-xs text-violet-200">
+                /valorant picks
+              </code>
+              <code className="rounded-lg border border-border bg-[#101a32] p-3 text-xs text-violet-200">
+                /valorant random
+              </code>
+              <code className="rounded-lg border border-border bg-[#101a32] p-3 text-xs text-violet-200">
+                /valorant stats
+              </code>
+            </div>
+            <p className="mt-2 text-xs text-muted">
+              構成履歴の専用コマンド・Discordでの結果登録・VCT/上位ランクの統計表示は別Issueで管理しています。
+            </p>
+          </section>
+        </div>
+
+        <aside
+          className="min-w-0 xl:sticky xl:top-20 xl:max-h-[calc(100vh-6rem)] xl:overflow-y-auto"
+          aria-label="試合結果登録"
+        >
+          <ValorantResultsManager guildId={guildId} compact />
+        </aside>
+      </div>
     </main>
   );
 }
