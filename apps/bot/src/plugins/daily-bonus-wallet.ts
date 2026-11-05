@@ -173,10 +173,7 @@ function confirmed(
       streakDay: receipt.streakDay,
       rollPoints: receipt.rollPoints,
       quizBonusPoints: receipt.quizBonusPoints,
-      quizCorrect:
-        receipt.quiz && typeof receipt.quiz.correct === 'boolean'
-          ? receipt.quiz.correct
-          : null,
+      quizCorrect: typeof receipt.quiz?.correct === 'boolean' ? receipt.quiz.correct : null,
       channel: receipt.channel,
       ...(streakReward ? { streakReward } : {}),
       ...(firstClaimReward ? { firstClaimReward } : {}),
