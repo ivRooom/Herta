@@ -98,7 +98,7 @@ function confirmed(
   )
     return { status: value.setupRequired };
   if (value?.unlinked) return { status: 'unlinked' };
-  const receipt = value?.claim as DailyWalletReceipt | undefined,
+  const receipt = value?.claim as (DailyWalletReceipt & { quiz?: { correct?: unknown } | null }) | undefined,
     account = value?.account as { balance?: number } | undefined;
   if (
     !receipt ||
