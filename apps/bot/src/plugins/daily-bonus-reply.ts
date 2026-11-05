@@ -7,16 +7,24 @@ export async function replyDailyBonusResult(
   result: ConfirmedDailyBonus,
   render = renderDailyBonusCard,
 ) {
+  const total =
+    result.receipt.rewardPoints +
+    (result.receipt.streakReward?.points ?? 0) +
+    (result.receipt.firstClaimReward?.points ?? 0);
   const fallback = {
     content: dailyBonusResultText(result),
     embeds: [
       new EmbedBuilder()
         .setColor(0xb9a2ff)
-        .setTitle(result.alreadyClaimed ? '🎁 本日のログインボーナス（受取済み）' : '🎁 ログインボーナス獲得！')
+        .setTitle(
+          result.alreadyClaimed
+            ? '🎁 本日のログインボーナス（受取済み）'
+            : '🎁 ログインボーナス獲得！',
+        )
         .addFields(
           {
             name: '獲得ポイント',
-            value: `+${(result.receipt.rewardPoints + (result.receipt.streakReward?.points ?? 0) + (result.receipt.firstClaimReward?.points ?? 0)).toLocaleString('ja-JP')}pt`,
+            value: `+${total.toLocaleString('ja-JP')}pt`,
             inline: true,
           },
           {
@@ -30,7 +38,9 @@ export async function replyDailyBonusResult(
             inline: true,
           },
         )
-        .setFooter({ text: `受取日 ${result.receipt.claimDateJst} JST ・ 問題の回答は「今日の問題に挑戦」から` }),
+        .setFooter({
+          text: `受取日 ${result.receipt.claimDateJst} JST ・ 問題の回答は「今日の問題に挑戦」から`,
+        }),
     ],
     components: [],
     allowedMentions: { parse: [] as never[] },
