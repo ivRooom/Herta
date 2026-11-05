@@ -91,10 +91,13 @@ export async function showParticipationQuestions(
   messageId: string,
 ) {
   const date = dailyBonusDate(new Date());
+  let shown = false;
+  let claimRequired = false;
   for (const question of state.questions) {
     if (question.dateJst !== date || Date.parse(question.closesAt) <= Date.now()) continue;
     const response = state.responses.find((r) => r.questionId === question.id);
     if (response) {
+      shown = true;
       await interaction.followUp({
         flags: MessageFlags.Ephemeral,
         allowedMentions: { parse: [] },
@@ -106,7 +109,10 @@ export async function showParticipationQuestions(
       });
       continue;
     }
-    if (question.requiresClaim && !state.bonusClaimed) continue;
+    if (question.requiresClaim && !state.bonusClaimed) {
+      claimRequired = true;
+      continue;
+    }
     const session = await createDailyQuizSession(
       ctx.prisma,
       ctx.guildId,
@@ -130,6 +136,7 @@ export async function showParticipationQuestions(
               .setStyle(ButtonStyle.Primary),
           );
     if (!buttons.length) continue;
+    shown = true;
     for (const media of question.media) {
       try {
         const response = await dailyServiceFetch(
@@ -199,11 +206,15 @@ export async function showParticipationQuestions(
       components: [new ActionRowBuilder<ButtonBuilder>().addComponents(buttons)],
     });
   }
-  if (!state.questions.length)
+  if (!shown && (claimRequired || !state.questions.length)) {
     await interaction.followUp({
       flags: MessageFlags.Ephemeral,
-      content: '本日の問題は準備中です。ボーナスはそのまま受け取れます。',
+      allowedMentions: { parse: [] },
+      content: claimRequired
+        ? 'この問題への回答にはログインボーナスの受取が必要です。🎁 ボーナスを受け取るボタンで受取後、もう一度「今日の問題に挑戦」を押してください。'
+        : '本日の問題は準備中です。ボーナスはそのまま受け取れます。',
     });
+  }
 }
 
 export async function handleDailyParticipation(
