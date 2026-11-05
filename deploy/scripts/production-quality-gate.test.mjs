@@ -441,7 +441,7 @@ test('production workflow has an unprivileged CI-completion gate before build an
   assert.ok(gate.includes('name: Verified main CI gate'));
   assert.ok(gate.includes("github.ref == 'refs/heads/main' &&"));
   assert.ok(gate.includes("github.event_name == 'workflow_dispatch'"));
-  assert.ok(gate.includes("vars.HERTA_PRODUCTION_AUTO_DEPLOY_ENABLED == 'true'"));
+  assert.ok(!gate.includes("vars.HERTA_PRODUCTION_AUTO_DEPLOY_ENABLED"));
   assert.ok(gate.includes('contents: read\n      actions: read'));
   assert.ok(gate.includes('should_deploy:'));
   assert.ok(gate.includes('run: node deploy/scripts/production-quality-gate.mjs'));
@@ -503,7 +503,7 @@ test('VALORANT production migration is fenced by protected backup and isolated r
   );
 });
 
-test('production workflow holds automatic deployment unless explicitly enabled', () => {
+test('production workflow is manual-only until the daily batch is released', () => {
   const workflow = readFileSync(
     new URL('../../.github/workflows/deploy-production.yml', import.meta.url),
     'utf8',
@@ -511,6 +511,6 @@ test('production workflow holds automatic deployment unless explicitly enabled',
   assert.match(workflow, /workflow_run:/);
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /github\.event_name == 'workflow_dispatch'/);
-  assert.match(workflow, /vars\.HERTA_PRODUCTION_AUTO_DEPLOY_ENABLED == 'true'/);
+  assert.doesNotMatch(workflow, /vars\.HERTA_PRODUCTION_AUTO_DEPLOY_ENABLED/);
   assert.match(workflow, /environment: production/);
 });
