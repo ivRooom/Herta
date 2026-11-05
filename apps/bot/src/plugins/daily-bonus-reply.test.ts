@@ -72,7 +72,7 @@ it('does not render while the feature flag is disabled', async () => {
   expect(card.title).toContain('ログインボーナス');
   expect(card.fields).toEqual(
     expect.arrayContaining([
-      expect.objectContaining({ name: '獲得ポイント', value: '+44pt' }),
+      expect.objectContaining({ name: 'ログイン関連獲得ポイント', value: '+44pt' }),
       expect.objectContaining({ name: '現在の保有ポイント', value: '320pt' }),
       expect.objectContaining({
         name: '本日の受取順位・追加報酬',
@@ -113,3 +113,33 @@ it.each([
     expect(payload.components).toEqual([]);
   },
 );
+
+it('does not mislabel a legacy combined quiz award as a login bonus', async () => {
+  vi.stubEnv('DAILY_BONUS_RESULT_CARD_ENABLED', 'false');
+  const editReply = vi.fn().mockResolvedValue({});
+  await replyDailyBonusResult(
+    { editReply } as unknown as Pick<ButtonInteraction, 'editReply'>,
+    {
+      ...result,
+      receipt: {
+        ...result.receipt,
+        rewardPoints: 44,
+        rollPoints: 34,
+        quizBonusPoints: 10,
+        firstClaimReward: { rank: 2, points: 5, scope: 'global' },
+      },
+    },
+  );
+  const payload = editReply.mock.calls[0]![0];
+  const fields = payload.embeds[0].toJSON().fields;
+  expect(fields).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: 'ログイン関連獲得ポイント', value: '+39pt' }),
+      expect.objectContaining({ name: 'ログイン基本分', value: '+34pt' }),
+      expect.objectContaining({ name: 'クイズ正解追加（別枠）', value: '+10pt' }),
+    ]),
+  );
+  expect(payload.content).toContain('ログイン基本分：+34pt / ログイン関連合計：+39pt');
+  expect(payload.content).toContain('クイズ正解追加：+10pt');
+  expect(payload.content).not.toContain('獲得：49pt');
+});
