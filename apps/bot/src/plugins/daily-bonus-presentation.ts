@@ -19,9 +19,52 @@ export function nextDailyBonusDate(date: string): string {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(next);
 }
 
+/** Display confirmed global claim rank without inventing a position for legacy receipts. */
+export function dailyFirstClaimLabel(
+  first: ConfirmedDailyBonus['receipt']['firstClaimReward'],
+): string {
+  if (!first) return '受取順位：記録なし / 追加報酬なし';
+  const position =
+    first.rank === 1
+      ? '🥇 1番乗り'
+      : first.rank === 2
+        ? '🥈 2番乗り'
+        : first.rank === 3
+          ? '🥉 3番乗り'
+          : `受取順位：${first.rank}位`;
+  return `${position} / ${first.points > 0 ? `追加報酬 +${first.points}pt` : '追加報酬なし'}`;
+}
+
+/** Never count the legacy combined quiz award as a login bonus. */
+export function loginBonusEarned(result: ConfirmedDailyBonus): number {
+  return (
+    result.receipt.rollPoints +
+    (result.receipt.streakReward?.points ?? 0) +
+    (result.receipt.firstClaimReward?.points ?? 0)
+  );
+}
+
 export function dailyBonusResultText(result: ConfirmedDailyBonus): string {
-  const first = result.receipt.firstClaimReward;
-  return `${result.message}\n一番乗りボーナス：${first ? `${first.points}pt / ${first.rank}位` : '本日の追加報酬なし'}\n次回受取：${nextDailyBonusDate(result.receipt.claimDateJst)} 00:00 JST（Member）／09:00 JSTの通知後（Discord）\nhttps://member.ivrm.jp/login-bonus`;
+  const receipt = result.receipt;
+  const parts = [
+    result.alreadyClaimed
+      ? '🎉 本日のログインボーナスは受取済みです。'
+      : '🎉 ログインボーナスを受け取りました！',
+    `ログイン基本分：+${receipt.rollPoints}pt / ログイン関連合計：+${loginBonusEarned(result)}pt`,
+    `保有：${result.balance}pt / 連続：${receipt.streakDay}日`,
+    `連続ログイン追加：+${receipt.streakReward?.points ?? 0}pt`,
+    dailyFirstClaimLabel(receipt.firstClaimReward),
+  ];
+  if (receipt.quizCorrect !== null && receipt.quizCorrect !== undefined) {
+    parts.push(
+      `デイリー問題：${receipt.quizCorrect ? '正解' : '不正解'} / 正解追加：+${receipt.quizBonusPoints}pt（ログイン分とは別）`,
+    );
+  } else if (receipt.quizBonusPoints > 0) {
+    parts.push(
+      `デイリー問題の追加：+${receipt.quizBonusPoints}pt（正誤は確認できません。ログイン分とは別）`,
+    );
+  }
+  return `${parts.join('\n')}\n次回受取：${nextDailyBonusDate(receipt.claimDateJst)} 00:00 JST（Member）／09:00 JSTの通知後（Discord）\nhttps://member.ivrm.jp/login-bonus`;
 }
 
 /** Empty days do not fabricate anniversaries. Source URLs and annual calculations stay in selection. */

@@ -12,10 +12,16 @@ export interface DailyWalletReceipt {
   streakDay: number;
   rollPoints: number;
   quizBonusPoints: number;
+  /** The V1 receipt may provide correct/incorrect, never disclose the answer index here. */
+  quizCorrect?: boolean | null;
   channel: string;
   streakReward?: { points: number; streakDay: number };
   firstClaimReward?: { points: number; rank: number; scope: 'global' } | null;
 }
+type V1ClaimWithQuiz = DailyWalletReceipt & {
+  quiz?: { correct?: unknown } | null;
+};
+
 export type DailyWalletResult =
   | {
       status: 'confirmed';
@@ -96,7 +102,7 @@ function confirmed(
   )
     return { status: value.setupRequired };
   if (value?.unlinked) return { status: 'unlinked' };
-  const receipt = value?.claim as DailyWalletReceipt | undefined,
+  const receipt = value?.claim as V1ClaimWithQuiz | undefined,
     account = value?.account as { balance?: number } | undefined;
   if (
     !receipt ||
@@ -167,6 +173,7 @@ function confirmed(
       streakDay: receipt.streakDay,
       rollPoints: receipt.rollPoints,
       quizBonusPoints: receipt.quizBonusPoints,
+      quizCorrect: typeof receipt.quiz?.correct === 'boolean' ? receipt.quiz.correct : null,
       channel: receipt.channel,
       ...(streakReward ? { streakReward } : {}),
       ...(firstClaimReward ? { firstClaimReward } : {}),

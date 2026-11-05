@@ -4,6 +4,7 @@ import { renderDailyBonusCard } from './daily-bonus-card.js';
 import {
   dailyBonusFailureMessage,
   dailyBonusResultText,
+  dailyFirstClaimLabel,
   nextDailyBonusDate,
   type ConfirmedDailyBonus,
 } from './daily-bonus-presentation.js';
@@ -18,6 +19,7 @@ const result: ConfirmedDailyBonus = {
     rewardPoints: 44,
     rollPoints: 34,
     quizBonusPoints: 10,
+    quizCorrect: true,
     streakDay: 3,
     channel: 'discord',
   },
@@ -30,6 +32,21 @@ describe('private daily bonus presentation', () => {
     expect(
       (await renderDailyBonusCard({ ...result, balance: Number.MAX_SAFE_INTEGER })).length,
     ).toBeGreaterThan(0);
+  });
+  it('labels first, second and third ranked claim receipts from the confirmed ledger', () => {
+    expect(dailyFirstClaimLabel({ rank: 1, points: 10, scope: 'global' })).toBe(
+      '🥇 1番乗り / 追加報酬 +10pt',
+    );
+    expect(dailyFirstClaimLabel({ rank: 2, points: 5, scope: 'global' })).toBe(
+      '🥈 2番乗り / 追加報酬 +5pt',
+    );
+    expect(dailyFirstClaimLabel({ rank: 3, points: 3, scope: 'global' })).toBe(
+      '🥉 3番乗り / 追加報酬 +3pt',
+    );
+    expect(dailyFirstClaimLabel({ rank: 4, points: 0, scope: 'global' })).toBe(
+      '受取順位：4位 / 追加報酬なし',
+    );
+    expect(dailyFirstClaimLabel(null)).toBe('受取順位：記録なし / 追加報酬なし');
   });
   it('bounds concurrent rendering and recovers after busy fallback', async () => {
     const cards = await Promise.allSettled([
@@ -47,6 +64,10 @@ describe('private daily bonus presentation', () => {
     expect(nextDailyBonusDate('2026-10-31')).toBe('2026-11-01');
     expect(dailyBonusResultText(result)).toContain('2026-10-31 00:00 JST');
     expect(dailyBonusResultText(result)).toContain('09:00 JST');
+    expect(dailyBonusResultText(result)).toContain(
+      'ログイン基本分：+34pt / ログイン関連合計：+34pt',
+    );
+    expect(dailyBonusResultText(result)).toContain('デイリー問題：正解 / 正解追加：+10pt');
   });
   it('does not label identity/baseline failures as a missing profile', () => {
     expect(dailyBonusFailureMessage('profile_required')).toContain(
