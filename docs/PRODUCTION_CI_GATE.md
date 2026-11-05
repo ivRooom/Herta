@@ -130,13 +130,28 @@ The proof contains no secrets, raw audio, ticket contents, or PII.
 
 **No-Go until separately approved:** do not rerun the failed deployment workflow (it can create duplicate records or redeploy), create another Deployment, manually add `success` to deployment `7542865017`, disable Ruleset/Environment protection, re-enable a failed quality gate, or perform an emergency rollback without an approved incident plan. The normal proof validator intentionally requires a valid status issued during a successful SSH job; a later manually backfilled status may fail temporal checks even if the host is still healthy. A recovery design must explicitly address that invariant, not bypass it.
 
-**2026-11-05 automated gate evidence and manual-mode boundary.** After main advanced, [Deploy Production run #41957566912](https://github.com/ivRooom/Herta/actions/runs/41957566912) failed the *Verified main CI gate* at `Latest production SSH attempt failed or lacks completed health/proof`. Its image build and SSH deploy jobs were **skipped**: this is an intended fail-closed stop, not evidence that the newer main SHA was deployed. Do not respond by repeatedly dispatching the same run.
+**2026-11-05 fail-closed evidence.** Deploy Production run
+[#41957566912](https://github.com/ivRooom/Herta/actions/runs/41957566912)
+stopped at the quality gate with
+`Latest production SSH attempt failed or lacks completed health/proof`.
+Image build and SSH deploy were both skipped. The newer main SHA was not deployed by this run.
 
-The existing `production-quality-gate.mjs` distinguishes the two exceptional manual approvals:
-- `DEPLOY_BOOTSTRAP_APPROVED=true` applies only where **no prior production SSH deployment baseline exists**. A recent failed/partial SSH is **not** a first bootstrap.
-- `DEPLOY_EMERGENCY_ROLLBACK_APPROVED=true` is a separately approved recovery targeting a **pinned 40-character historical SHA in main ancestry**, not `ref=main` and not an arbitrary PR commit. It still requires historic same-SHA main-push CI, valid workflow checks, protected Environment approval and an independently assessed DB/data rollback plan. The two approval flags are mutually exclusive; neither authorizes a new proof for a failed historic job or permits skipping backup, health or independent owner Go/No-Go.
+**Manual approval boundary.** The existing quality gate allows
+`DEPLOY_BOOTSTRAP_APPROVED=true` only when there is no earlier successful SSH
+baseline. It is not a remedy for this partial deployment.
+`DEPLOY_EMERGENCY_ROLLBACK_APPROVED=true` requires an operator-approved,
+pinned historical main-ancestry SHA (not `ref=main`), historical passing CI,
+the protected production Environment, and a verified data rollback plan.
+The two flags are mutually exclusive. Neither repairs the failed old job.
 
-An operator's November 5 read-only host inspection found the four running Herta services on image tag `7a3e8ed67fefb84014787527910cf500519b6c0d` with identical Docker image config ID `sha256:86f7957db49186a1911dbad25563f2ffa4abf9234d6e75fd04ed6c52df20eec6`; the API and Bot were Docker-healthy. Public API health and Auth.js provider discovery returned valid JSON. These checks do **not** verify Studio/Worker business behavior, the active DB write target, the freshness of a valid PostgreSQL backup, isolated restore, or a production proof. The app Lightsail host had seven successful automatic snapshots in the read-only window, but the dedicated DB host showed none; S3 backup metadata exists without proof of a recent restorable database dump. Track restore readiness in [Herta #506](https://github.com/ivRooom/Herta/issues/506) and [ivrm-infrastructure #3](https://github.com/ivRooom/ivrm-infrastructure/issues/3).
+**Observed runtime.** An authorized read-only check found all four Herta
+containers running the same image tag and Docker image config ID recorded
+by failed run #41807040824. API/Bot Docker health and public API/Auth
+provider endpoints were also checked. Studio/Worker business health,
+current database write target, and isolated restore remain unverified.
+App-host Lightsail snapshots do not replace a verified PostgreSQL backup.
+Track recovery readiness in [Herta #506](https://github.com/ivRooom/Herta/issues/506)
+and [infrastructure #3](https://github.com/ivRooom/ivrm-infrastructure/issues/3).
 
 **Exit criteria:** the owner approves the plan; current runtime and health are independently verified; backup/restore/rollback are ready; any recovery PR passes exact-head CI/security checks and review; the official deployment path produces a consistent, unambiguous runtime proof and an independently verified production smoke check. Close #765 only after these have actually completed.
 
