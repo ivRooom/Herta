@@ -4,7 +4,7 @@
 name: Deploy Production
 
 on:
-  # Always wait for the *completed main push CI* before considering production.
+  # Automatic deployment is opt-in; the manual release stays protected.
   # A privileged workflow_run never trusts PR artifacts or external forks.
   workflow_run:
     workflows: [CI]
@@ -44,7 +44,10 @@ env:
 jobs:
   quality-gate:
     name: Verified main CI gate
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+       vars.HERTA_PRODUCTION_AUTO_DEPLOY_ENABLED == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 100
     permissions:
