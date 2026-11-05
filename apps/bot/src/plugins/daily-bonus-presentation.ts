@@ -60,7 +60,7 @@ export function dailyBonusResultText(result: ConfirmedDailyBonus): string {
       `過去の結合取引に含まれるクイズ正解追加：+${receipt.quizBonusPoints}pt（上記ログイン関連合計には含みません）`,
     );
   }
-  return `${parts.join('\\n')}\\n次回受取：${nextDailyBonusDate(receipt.claimDateJst)} 00:00 JST（Member）／09:00 JSTの通知後（Discord）\\nhttps://member.ivrm.jp/login-bonus`;
+  return `${parts.join('\n')}\n次回受取：${nextDailyBonusDate(receipt.claimDateJst)} 00:00 JST（Member）／09:00 JSTの通知後（Discord）\nhttps://member.ivrm.jp/login-bonus`;
 }
 
 /** Empty days do not fabricate anniversaries. Source URLs and annual calculations stay in selection. */
