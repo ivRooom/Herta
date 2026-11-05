@@ -110,7 +110,9 @@ export async function inspectProductionProofJobTiming(api, audit) {
   ) {
     throw new Error('Invalid read-only SSH timing audit input');
   }
-  const result = await api('actions/runs/' + runId + '/attempts/' + runAttempt + '/jobs?per_page=100');
+  const result = await api(
+    'actions/runs/' + runId + '/attempts/' + runAttempt + '/jobs?per_page=100',
+  );
   if (
     !Array.isArray(result?.jobs) ||
     !Number.isSafeInteger(result.total_count) ||
