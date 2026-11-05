@@ -2,6 +2,7 @@ import { AttachmentBuilder, EmbedBuilder, type ButtonInteraction } from 'discord
 import { renderDailyBonusCard } from './daily-bonus-card.js';
 import {
   dailyBonusResultText,
+  loginBonusEarned,
   dailyFirstClaimLabel,
   type ConfirmedDailyBonus,
 } from './daily-bonus-presentation.js';
@@ -11,10 +12,7 @@ export async function replyDailyBonusResult(
   result: ConfirmedDailyBonus,
   render = renderDailyBonusCard,
 ) {
-  const total =
-    result.receipt.rewardPoints +
-    (result.receipt.streakReward?.points ?? 0) +
-    (result.receipt.firstClaimReward?.points ?? 0);
+  const loginTotal = loginBonusEarned(result);
   const fallback = {
     content: dailyBonusResultText(result),
     embeds: [
@@ -27,8 +25,18 @@ export async function replyDailyBonusResult(
         )
         .addFields(
           {
-            name: '獲得ポイント',
-            value: `+${total.toLocaleString('ja-JP')}pt`,
+            name: 'ログイン関連獲得ポイント',
+            value: `+${loginTotal.toLocaleString('ja-JP')}pt`,
+            inline: true,
+          },
+          {
+            name: 'ログイン基本分',
+            value: `+${result.receipt.rollPoints}pt`,
+            inline: true,
+          },
+          {
+            name: 'クイズ正解追加（別枠）',
+            value: `+${result.receipt.quizBonusPoints}pt`,
             inline: true,
           },
           {
