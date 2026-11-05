@@ -4,6 +4,7 @@ import { renderDailyBonusCard } from './daily-bonus-card.js';
 import {
   dailyBonusFailureMessage,
   dailyBonusResultText,
+  dailyFirstClaimLabel,
   nextDailyBonusDate,
   type ConfirmedDailyBonus,
 } from './daily-bonus-presentation.js';
@@ -30,6 +31,21 @@ describe('private daily bonus presentation', () => {
     expect(
       (await renderDailyBonusCard({ ...result, balance: Number.MAX_SAFE_INTEGER })).length,
     ).toBeGreaterThan(0);
+  });
+  it('labels first, second and third ranked claim receipts from the confirmed ledger', () => {
+    expect(dailyFirstClaimLabel({ rank: 1, points: 10, scope: 'global' })).toBe(
+      '🥇 1番乗り / 追加報酬 +10pt',
+    );
+    expect(dailyFirstClaimLabel({ rank: 2, points: 5, scope: 'global' })).toBe(
+      '🥈 2番乗り / 追加報酬 +5pt',
+    );
+    expect(dailyFirstClaimLabel({ rank: 3, points: 3, scope: 'global' })).toBe(
+      '🥉 3番乗り / 追加報酬 +3pt',
+    );
+    expect(dailyFirstClaimLabel({ rank: 4, points: 0, scope: 'global' })).toBe(
+      '受取順位：4位 / 追加報酬なし',
+    );
+    expect(dailyFirstClaimLabel(null)).toBe('受取順位：記録なし / 追加報酬なし');
   });
   it('bounds concurrent rendering and recovers after busy fallback', async () => {
     const cards = await Promise.allSettled([
