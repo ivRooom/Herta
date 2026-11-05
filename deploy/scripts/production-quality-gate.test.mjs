@@ -441,7 +441,7 @@ test('production workflow has an unprivileged CI-completion gate before build an
   assert.ok(gate.includes('name: Verified main CI gate'));
   assert.ok(gate.includes("github.ref == 'refs/heads/main' &&"));
   assert.ok(gate.includes("github.event_name == 'workflow_dispatch'"));
-  assert.ok(!gate.includes("vars.HERTA_PRODUCTION_AUTO_DEPLOY_ENABLED"));
+  assert.ok(!gate.includes('vars.HERTA_PRODUCTION_AUTO_DEPLOY_ENABLED'));
   assert.ok(gate.includes('contents: read\n      actions: read'));
   assert.ok(gate.includes('should_deploy:'));
   assert.ok(gate.includes('run: node deploy/scripts/production-quality-gate.mjs'));
