@@ -159,3 +159,104 @@ External GitHub Environment and OIDC settings require human review.
 Tracking: [#700](https://github.com/ivRooom/Herta/issues/700), [#762](https://github.com/ivRooom/Herta/issues/762), [#765](https://github.com/ivRooom/Herta/issues/765).
 Release status: [#691](https://github.com/ivRooom/Herta/issues/691).
 Feature approval: [#646](https://github.com/ivRooom/Herta/issues/646).
+
+## Incident: GitHub Deployment created but no status (2026-11-05)
+
+This section is a **read-only incident triage**, not authorization to deploy, to
+retroactively mark a failed release successful, or to bypass the production
+Environment. Tracking: [#765](https://github.com/ivRooom/Herta/issues/765).
+
+### Evidence and distinction
+
+For the 2026-11-04 failed [Deploy Production run
+#41807040824](https://github.com/ivRooom/Herta/actions/runs/41807040824),
+an operator's authenticated read-only audit reported:
+
+- Expected SHA: \`7a3e8ed67fefb84014787527910cf500519b6c0d\`
+- Run ID: \`41807040824\`; attempt: \`1\`
+- GitHub Deployment ID: \`7542865017\`
+- The Deployment run/attempt matched; the returned statuses array was empty.
+
+This establishes an existing, **partial** Deployment record at the time of
+that audit. It does **not** independently establish the current running host
+SHA, the present Deployment status, backup restorability, or a successful
+protected release. Never replace a failed SSH or status-publication result
+with a success status created after the original job.
+
+### Read-only GitHub checks (PowerShell)
+
+Use an authenticated GitHub CLI session with access to this repository. These
+commands only **GET** GitHub data; they do not publish statuses or trigger jobs.
+Do not paste authentication tokens or sensitive response fields into Issues.
+
+\`\`\`powershell
+$repo = "ivRooom/Herta"
+$run = gh api "repos/$repo/actions/runs/41807040824" |
+  ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or -not $run) {
+  throw "Cannot verify original Actions run; stop."
+}
+$deployment = gh api "repos/$repo/deployments/7542865017" |
+  ConvertFrom-Json
+if ($LASTEXITCODE -ne 0 -or -not $deployment) {
+  throw "Cannot verify original Deployment; stop."
+}
+$statuses = @(gh api "repos/$repo/deployments/7542865017/statuses?per_page=100" |
+  ConvertFrom-Json)
+if ($LASTEXITCODE -ne 0) {
+  throw "Cannot verify Deployment statuses; stop."
+}
+[pscustomobject]@{
+  RunId = $run.id
+  RunAttempt = $run.run_attempt
+  RunConclusion = $run.conclusion
+  DeploymentId = $deployment.id
+  DeploymentSha = $deployment.sha
+  StatusCountFirstPage = $statuses.Count
+}
+\`\`\`
+
+The status endpoint is paginated. A full audit must refuse incomplete
+pagination, unexpected records, mismatched run/attempt, API errors, and unknown
+status values. Prefer the PR #819 read-only
+\`deploy/scripts/production-proof-audit.mjs\` for exhaustive audit, after
+reviewing the exact PR HEAD. Do not interpret the abbreviated GET above as a
+complete proof when the first page contains 100 records.
+
+### Mandatory operator evidence before any release decision
+
+1. Verify the **current** Bot/API/Studio/Worker image refs and immutable image
+   IDs on Lightsail via an approved read-only channel, and compare to
+   the expected SHA and signed/source-matched provenance. Check health and
+   recent errors, including the known Prisma P2010 incident [#559](https://github.com/ivRooom/Herta/issues/559).
+2. Check most recent Lightsail snapshot date, PostgreSQL data backup,
+   restore-test evidence, rollback image and their ownership. A visible
+   snapshot is **not** proof of successful restoration.
+3. Review current GitHub production Environment approval and required
+   CI/ARM64/Grype rules. Snyk's optional free-tier quota does not authorize
+   bypassing required security checks.
+4. Record run/attempt, deployment/status observations, host SHA/image IDs,
+   backup/restore confidence, approver, rollback target, and the **GO/NO-GO**
+   decision in #765. Omit all secrets and personal data.
+
+**NO-GO if** the host cannot be authenticated/read back, a required backup
+cannot be trusted, the existing proof is partial/ambiguous, the latest SSH
+attempt is unsuccessful, API pagination is incomplete, or approval is missing.
+
+### Recovery boundary
+
+The original run failed after SSH/health/readback and before complete
+protected proof publication. The trust gate intentionally checks the latest
+SSH attempt and requires a timely status from a successful run. Creating a
+\`success\` status today for that old failed run cannot satisfy the same
+trust boundary and would misrepresent historical release provenance.
+
+Any **new** production deployment, even to the same SHA, requires a separately
+reviewed incident recovery design, documented authorization, verified backup
+and rollback readiness, passing exact-SHA CI, and approval through the existing
+protected workflow. Do not use \`bootstrap_without_proof\` as a shortcut:
+that option is for instances with no prior production SSH deployment.
+\`emergency_rollback_without_proof\` is not a forward-deployment bypass.
+Do not invoke \`Re-run failed jobs\` on the prior SSH deployment as a repair.
+Keep #765 open until a new, independently verifiable proof and live smoke/UAT
+have been established.
