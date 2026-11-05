@@ -4,7 +4,7 @@
 name: Deploy Production
 
 on:
-  # Automatic deployment is opt-in; the manual release stays protected.
+  # Batch release hold: only protected manual production deployments are allowed.
   # A privileged workflow_run never trusts PR artifacts or external forks.
   workflow_run:
     workflows: [CI]
@@ -46,8 +46,7 @@ jobs:
     name: Verified main CI gate
     if: >-
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'workflow_dispatch' ||
-       vars.HERTA_PRODUCTION_AUTO_DEPLOY_ENABLED == 'true')
+      github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 100
     permissions:
