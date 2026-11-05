@@ -167,7 +167,7 @@ test('read-only proof audit distinguishes partial and complete states', async ()
   assert.equal(ambiguous.classification, 'ambiguous');
 });
 
-test('GET-only SSH timing audit correlates an exact failed job without verifying release', async () => {
+test('GET-only SSH job timing never verifies a failed release', async () => {
   const audit = {
     runId: 41807040824,
     runAttempt: 1,
