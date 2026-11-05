@@ -1,9 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
   AttachmentBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
   EmbedBuilder,
   MessageFlags,
   PermissionFlagsBits,
@@ -18,8 +15,6 @@ import {
   setDailyAnnouncement,
   listAnniversaries,
   recordDailyClaim,
-  createDailyQuizSession,
-  getDailyQuizSession,
   type PrismaClient,
 } from '@herta/db';
 import { dailyBonusManifest } from '@herta/plugin-catalog';
@@ -287,22 +282,19 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
       await interaction.editReply('デイリーボーナスは現在準備中です。');
       return;
     }
-    const answer = /^daily-bonus:answer:([0-9a-f-]{36}):([0-3])$/.exec(interaction.customId);
-    const quizSession = answer
-      ? await getDailyQuizSession(ctx.prisma, answer[1]!, ctx.guildId, interaction.user.id)
-      : null;
-    if (answer && !quizSession) {
-      await interaction.editReply('この回答ボタンは期限切れ、または本人のものではありません。');
+    // Legacy V1 quiz answers used to claim login points as a side effect.
+    // Never revive this combined flow on old ephemeral messages.
+    if (/^daily-bonus:answer:[0-9a-f-]{36}:[0-3]$/.test(interaction.customId)) {
+      await interaction.editReply(
+        '旧方式の回答は終了しました。新しい「今日の問題に挑戦」から回答してください。',
+      );
       return;
     }
     const auxiliary = /^daily-bonus:(questions|fortune):(\d{4}-\d{2}-\d{2})$/.exec(
       interaction.customId,
     );
-    const date =
-      quizSession?.target_date ??
-      auxiliary?.[2] ??
-      interaction.customId.slice('daily-bonus:'.length);
-    const originalMessage = quizSession?.announcement_message_id ?? interaction.message.id;
+    const date = auxiliary?.[2] ?? interaction.customId.slice('daily-bonus:'.length);
+    const originalMessage = interaction.message.id;
     const announcement = await getDailyAnnouncement(ctx.prisma, ctx.guildId, date);
     const member =
       interaction.guildId === ctx.guildId
@@ -346,7 +338,7 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
         return;
       }
       try {
-        await displayDailyFortune(ctx, interaction, date, 'edit');
+        await displayDailyFortune(ctx, interaction, date);
       } catch {
         await interaction.editReply(
           '運勢を表示できませんでした。/fortune today から再確認できます。',
@@ -354,45 +346,18 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
       }
       return;
     }
-    if (!answer) {
-      const status = await dailyBonusStatus(ctx.guildId, interaction.user.id);
-      if (status.status === 'quiz') {
-        const id = await createDailyQuizSession(
-          ctx.prisma,
-          ctx.guildId,
-          interaction.user.id,
-          date,
-          originalMessage,
-          status.quiz.quizId,
-        );
-        await interaction.editReply({
-          content: `${status.quiz.question}\n最初の回答で受取が確定します。不正解でも基本報酬を受け取れます。`,
-          allowedMentions: { parse: [] },
-          components: [
-            new ActionRowBuilder<ButtonBuilder>().addComponents(
-              status.quiz.choices.map((choice, index) =>
-                new ButtonBuilder()
-                  .setCustomId(`daily-bonus:answer:${id}:${index}`)
-                  .setLabel(choice)
-                  .setStyle(ButtonStyle.Primary),
-              ),
-            ),
-          ],
-        });
-        return;
-      }
-      if (auxiliary?.[1] === 'questions') {
-        await interaction.editReply(
-          status.status === 'ready' || status.status === 'confirmed'
-            ? '本日は出題できる問題がありません。または回答済みです。受取状況はボーナスボタンで確認してください。'
-            : dailyBonusFailureMessage(status.status),
-        );
-        return;
-      }
-      if (status.status !== 'ready' && status.status !== 'confirmed') {
-        await interaction.editReply(dailyBonusFailureMessage(status.status));
-        return;
-      }
+    if (auxiliary?.[1] === 'questions') {
+      // V1 answer calls still award a combined login+quiz transaction.
+      // The independent quiz entrypoint is participation v2 only.
+      await interaction.editReply(
+        'この通知の旧方式クイズは利用できません。新しい日次参加が有効になるまで回答は受け付けません。',
+      );
+      return;
+    }
+    const status = await dailyBonusStatus(ctx.guildId, interaction.user.id);
+    if (status.status !== 'quiz' && status.status !== 'ready' && status.status !== 'confirmed') {
+      await interaction.editReply(dailyBonusFailureMessage(status.status));
+      return;
     }
     await recordDailyClaim(ctx.prisma, ctx.guildId, interaction.user.id, date, 'pending');
     if (
@@ -405,14 +370,9 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
       );
       return;
     }
-    const result = await claimDailyBonus(
-      ctx.guildId,
-      interaction.user.id,
-      date,
-      originalMessage,
-      quizSession?.quiz_id ?? null,
-      answer ? Number(answer[2]) : null,
-    );
+    // Paired with Web #862: only a null/null claim skips the legacy quiz.
+    // No daily question or fortune may be awarded by this button.
+    const result = await claimDailyBonus(ctx.guildId, interaction.user.id, date, originalMessage);
     if (result.status !== 'confirmed') {
       await recordDailyClaim(
         ctx.prisma,
@@ -435,16 +395,6 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
       result.receipt,
     );
     await replyDailyBonusResult(interaction, result);
-    if (ctx.config.fortuneEnabled) {
-      try {
-        await displayDailyFortune(ctx, interaction, date, 'followUp');
-      } catch {
-        await interaction.followUp({
-          flags: MessageFlags.Ephemeral,
-          content: 'ポイント受取は完了しています。運勢は /fortune today でもう一度確認できます。',
-        });
-      }
-    }
   } catch {
     await interaction.editReply(
       '処理結果を確認できませんでした。同じボタンから再確認してください。重複付与はされません。',
@@ -452,12 +402,7 @@ async function handleDailyBonus(ctx: Context, interaction: ButtonInteraction) {
   }
 }
 
-async function displayDailyFortune(
-  ctx: Context,
-  interaction: ButtonInteraction,
-  date: string,
-  mode: 'edit' | 'followUp',
-) {
+async function displayDailyFortune(ctx: Context, interaction: ButtonInteraction, date: string) {
   const source = await fetchIvrmFortuneProfile(ctx.guildId, interaction.user.id, date);
   const fortune = await savedDailyFortune(
     ctx.prisma,
@@ -482,9 +427,5 @@ async function displayDailyFortune(
         .setFooter({ text: fortune.disclaimer }),
     ],
   };
-  if (mode === 'followUp') {
-    await interaction.followUp({ ...payload, flags: MessageFlags.Ephemeral });
-  } else {
-    await interaction.editReply(payload);
-  }
+  await interaction.editReply(payload);
 }
