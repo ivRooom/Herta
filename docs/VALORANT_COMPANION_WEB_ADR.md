@@ -25,23 +25,19 @@ Hostnameと配置方式はCloudflare read-only と実際のSession/OAuth/Origin�
 
 ## Alternatives
 
-| 案 | 内容 | メリット | リスク・採否 |
-| --- | --- | --- | --- |
-| A | 既存Herta Studioの同一origin配下にVALORANT入口を置く | 既存cookie/OAuth・RBAC・APIが最も再利用しやすい | 専用サブドメインなし。**最小リスクの初期案** |
-| B | `valorant.ivrm.jp` から既存Studioへedge reverse proxy | 専用ブランドURL、独立コンテナ不要の可能性 | Host/redirect/cookie/CSRF/Cache/WebSocket等の安全性検証が必須。Provider証拠が揃うまでNo-Go |
-| C | `ivrm-web` Member Portalへ直接統合 | 公開Web基盤とのUX統一 | Herta RBAC/API/同意・データ境界を越えるため二重実装と運用負担の可能性。既存Member実装確認まで保留 |
+- **A（同一オリジン）:** 既存Herta Studio配下にVALORANT入口を設ける。既存cookie/OAuth・RBAC・APIの再利用が容易で、最小リスクの初期案。
+- **B（専用サブドメイン）:** `valorant.ivrm.jp` から既存Studioへedge reverse proxy。専用ブランドURLを確保できる一方、Host/redirect/cookie/CSRF/Cache/WebSocketの検証が必要。Provider readbackまではNo-Go。
+- **C（Member統合）:** `ivrm-web` Member Portalへ直接統合。UXを統一できるが、Herta RBAC/API/同意の重複と運用負担が懸念されるため、Member実装確認まで保留。
 
 **判断規則:** Aを先に実装可能な安全な最小構成として評価し、Bへ移行する必要性・安全性が検証できて初めてDNS変更を検討。Cは重複実装が発生しない場合だけ再評価。
 
 ## Public / Private Routes（候補、未実装）
 
-| ルート | 公開範囲 | 内容 |
-| --- | --- | --- |
-| `/` | 匿名 | 概要・機能一覧・提供条件・ログイン導線 |
-| `/guide` | 匿名 | DiscordコマンドとWeb操作の案内 |
-| `/privacy` / `/terms` | 匿名 | 審査・利用者向け方針（法務内容は承認必要） |
-| `/dashboard` | Discord OAuth + Guild membership | データ取得可能性とGuildに紐づく操作入口 |
-| `/banpick/:id` | Session＋Guild/Team/Roleの両方 | Riot API非依存ドラフト。Domain未実装につき予約ルートのみ |
+- `/`（匿名）: 概要・機能一覧・提供条件・ログイン導線。
+- `/guide`（匿名）: DiscordコマンドとWeb操作の案内。
+- `/privacy` と `/terms`（匿名）: 審査・利用者向け方針。法務内容は承認が必要。
+- `/dashboard`（Discord OAuth＋Guild membership）: 取得可能なデータとGuild限定操作の入口。
+- `/banpick/:id`（Session＋Guild/Team/Role）: Riot API非依存ドラフト。Domain未実装のため予約ルートのみ。
 
 具体的なNext.js Route、公開URL、Riot商標・画像素材は本番で採用する前にIssueで確定する。
 
