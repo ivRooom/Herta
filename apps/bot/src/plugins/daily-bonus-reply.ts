@@ -1,4 +1,4 @@
-import { AttachmentBuilder, type ButtonInteraction } from 'discord.js';
+import { AttachmentBuilder, EmbedBuilder, type ButtonInteraction } from 'discord.js';
 import { renderDailyBonusCard } from './daily-bonus-card.js';
 import { dailyBonusResultText, type ConfirmedDailyBonus } from './daily-bonus-presentation.js';
 
@@ -9,6 +9,29 @@ export async function replyDailyBonusResult(
 ) {
   const fallback = {
     content: dailyBonusResultText(result),
+    embeds: [
+      new EmbedBuilder()
+        .setColor(0xb9a2ff)
+        .setTitle(result.alreadyClaimed ? '🎁 本日のログインボーナス（受取済み）' : '🎁 ログインボーナス獲得！')
+        .addFields(
+          {
+            name: '獲得ポイント',
+            value: `+${(result.receipt.rewardPoints + (result.receipt.streakReward?.points ?? 0) + (result.receipt.firstClaimReward?.points ?? 0)).toLocaleString('ja-JP')}pt`,
+            inline: true,
+          },
+          {
+            name: '現在の保有ポイント',
+            value: `${result.balance.toLocaleString('ja-JP')}pt`,
+            inline: true,
+          },
+          {
+            name: '連続ログイン',
+            value: `${result.receipt.streakDay.toLocaleString('ja-JP')}日`,
+            inline: true,
+          },
+        )
+        .setFooter({ text: `受取日 ${result.receipt.claimDateJst} JST ・ 問題の回答は「今日の問題に挑戦」から` }),
+    ],
     components: [],
     allowedMentions: { parse: [] as never[] },
   };
@@ -17,6 +40,7 @@ export async function replyDailyBonusResult(
       const card = await render(result);
       await interaction.editReply({
         ...fallback,
+        embeds: [],
         files: [new AttachmentBuilder(card, { name: 'herta-daily-bonus.png' })],
       });
       return;
