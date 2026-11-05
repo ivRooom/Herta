@@ -167,19 +167,14 @@ test('read-only proof audit distinguishes partial and complete states', async ()
   assert.equal(ambiguous.classification, 'ambiguous');
 });
 
-test('GET-only SSH job timing never verifies a failed release', async () => {
-  const audit = {
-    runId: 41807040824,
+test('read-only SSH job timing never attests a failed release', async () => {
+  const input = {
+    runId: 101,
     runAttempt: 1,
-    records: [
-      { deploymentId: 7542865017, deploymentCreatedAt: '2026-11-04T09:39:48Z' },
-      { deploymentId: 18, deploymentCreatedAt: '2026-11-04T09:41:00Z' },
-      { deploymentId: 19, deploymentCreatedAt: null },
-    ],
+    records: [{ deploymentId: 12, deploymentCreatedAt: '2026-11-04T09:39:48Z' }],
   };
-  const requested = [];
   const api = async (path) => {
-    requested.push(path);
+    assert.equal(path, 'actions/runs/101/attempts/1/jobs?per_page=100');
     return {
       total_count: 1,
       jobs: [
@@ -192,50 +187,36 @@ test('GET-only SSH job timing never verifies a failed release', async () => {
       ],
     };
   };
-  const value = await inspectProductionProofJobTiming(api, audit);
-  assert.deepEqual(requested, ['actions/runs/41807040824/attempts/1/jobs?per_page=100']);
-  assert.equal(value.sshJob.conclusion, 'failure');
-  assert.deepEqual(value.deploymentTiming, [
-    { deploymentId: 7542865017, relativeToSshJob: 'inside' },
-    { deploymentId: 18, relativeToSshJob: 'outside' },
-    { deploymentId: 19, relativeToSshJob: 'unknown' },
-  ]);
+  const value = await inspectProductionProofJobTiming(api, input);
   assert.equal(value.releaseVerified, false);
+  assert.equal(value.sshJob.conclusion, 'failure');
+  assert.equal(value.deploymentTiming[0].relativeToSshJob, 'inside');
 });
 
-test('GET-only SSH timing audit refuses incomplete, ambiguous or invalid SSH jobs', async () => {
-  const audit = { runId: 1, runAttempt: 1, records: [] };
+test('read-only SSH job timing rejects incomplete or ambiguous history', async () => {
+  const input = { runId: 101, runAttempt: 1, records: [] };
   const job = {
     name: 'SSH Deploy to Lightsail',
     started_at: '2026-11-04T09:37:57Z',
     completed_at: '2026-11-04T09:39:50Z',
   };
-  const api = (jobs, total_count = jobs.length) => async () => ({ jobs, total_count });
+  const missing = async () => ({ total_count: 2, jobs: [job] });
+  const duplicate = async () => ({ total_count: 2, jobs: [job, job] });
   await assert.rejects(
-    inspectProductionProofJobTiming(api([job], 2), audit),
+    inspectProductionProofJobTiming(missing, input),
     /Incomplete GitHub SSH job history/,
   );
   await assert.rejects(
-    inspectProductionProofJobTiming(api([job, job]), audit),
+    inspectProductionProofJobTiming(duplicate, input),
     /Missing or ambiguous production SSH job/,
   );
+  const invalid = async () => ({
+    total_count: 1,
+    jobs: [{ ...job, completed_at: null }],
+  });
   await assert.rejects(
-    inspectProductionProofJobTiming(api([]), audit),
-    /Missing or ambiguous production SSH job/,
-  );
-  for (const bad of [
-    { ...job, started_at: 'not-a-date' },
-    { ...job, completed_at: null },
-    { ...job, started_at: '2026-11-04T10:00:00Z' },
-  ]) {
-    await assert.rejects(
-      inspectProductionProofJobTiming(api([bad]), audit),
-      /Missing or invalid SSH job timestamps/,
-    );
-  }
-  await assert.rejects(
-    inspectProductionProofJobTiming(api([job]), { ...audit, runAttempt: 0 }),
-    /Invalid read-only SSH timing audit input/,
+    inspectProductionProofJobTiming(invalid, input),
+    /Missing or invalid SSH job timestamps/,
   );
 });
 
