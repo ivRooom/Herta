@@ -126,6 +126,7 @@ it('does not mislabel a legacy combined quiz award as a login bonus', async () =
         rewardPoints: 44,
         rollPoints: 34,
         quizBonusPoints: 10,
+        quizCorrect: true,
         firstClaimReward: { rank: 2, points: 5, scope: 'global' },
       },
     },
@@ -140,6 +141,28 @@ it('does not mislabel a legacy combined quiz award as a login bonus', async () =
     ]),
   );
   expect(payload.content).toContain('ログイン基本分：+34pt / ログイン関連合計：+39pt');
-  expect(payload.content).toContain('クイズ正解追加：+10pt');
+  expect(payload.content).toContain('デイリー問題：正解 / 正解追加：+10pt');
   expect(payload.content).not.toContain('獲得：49pt');
+});
+
+it('uses authoritative correctness for an incorrect V1 answer with zero quiz points', async () => {
+  vi.stubEnv('DAILY_BONUS_RESULT_CARD_ENABLED', 'false');
+  const editReply = vi.fn().mockResolvedValue({});
+  await replyDailyBonusResult(
+    { editReply } as unknown as Pick<ButtonInteraction, 'editReply'>,
+    {
+      ...result,
+      receipt: {
+        ...result.receipt,
+        rewardPoints: 34,
+        rollPoints: 34,
+        quizBonusPoints: 0,
+        quizCorrect: false,
+      },
+    },
+  );
+  const payload = editReply.mock.calls[0]![0];
+  expect(payload.content).toContain('デイリー問題：不正解 / 正解追加：+0pt');
+  expect(payload.content).toContain('ログイン関連合計：+34pt');
+  expect(payload.content).not.toContain('ログイン関連合計：+44pt');
 });
