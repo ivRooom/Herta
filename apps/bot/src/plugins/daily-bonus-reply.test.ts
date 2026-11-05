@@ -133,10 +133,9 @@ it('does not mislabel a legacy combined quiz award as a login bonus', async () =
   );
   const payload = editReply.mock.calls[0]![0];
   const fields = payload.embeds[0].toJSON().fields;
-  const byName = Object.fromEntries(fields.map((field: { name: string; value: string }) => [
-    field.name,
-    field.value,
-  ]));
+  const byName = Object.fromEntries(
+    fields.map((field: { name: string; value: string }) => [field.name, field.value]),
+  );
   expect(byName['ログイン関連獲得ポイント']).toBe('+39pt');
   expect(byName['ログイン基本分']).toBe('+34pt');
   expect(byName['クイズ正解追加（別枠）']).toBe('+10pt');
