@@ -16,7 +16,7 @@ describe('achievement manual revoke suppression', () => {
   it('手動取消されたAchievementを自動同期で再解除しない', async () => {
     const inserted: string[] = [];
     const tx = {
-      async $queryRaw(strings: TemplateStringsArray) {
+      async $queryRaw() {
         return [{ achievementId: 'blocked:first-message' }];
       },
       async $executeRaw(strings: TemplateStringsArray, ...values: unknown[]) {
