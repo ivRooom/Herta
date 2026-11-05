@@ -63,6 +63,10 @@ describe('private daily bonus presentation', () => {
     expect(nextDailyBonusDate('2026-10-31')).toBe('2026-11-01');
     expect(dailyBonusResultText(result)).toContain('2026-10-31 00:00 JST');
     expect(dailyBonusResultText(result)).toContain('09:00 JST');
+    expect(dailyBonusResultText(result)).toContain(
+      'ログイン基本分：+34pt / ログイン関連合計：+34pt',
+    );
+    expect(dailyBonusResultText(result)).toContain('クイズ正解追加：+10pt');
   });
   it('does not label identity/baseline failures as a missing profile', () => {
     expect(dailyBonusFailureMessage('profile_required')).toContain(
