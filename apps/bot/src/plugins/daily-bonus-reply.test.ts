@@ -133,19 +133,22 @@ it('does not mislabel a legacy combined quiz award as a login bonus', async () =
   );
   const payload = editReply.mock.calls[0]![0];
   const fields = payload.embeds[0].toJSON().fields;
-  expect(fields).toEqual(
-    expect.arrayContaining([
-      expect.objectContaining({ name: 'ログイン関連獲得ポイント', value: '+39pt' }),
-      expect.objectContaining({ name: 'ログイン基本分', value: '+34pt' }),
-      expect.objectContaining({ name: 'クイズ正解追加（別枠）', value: '+10pt' }),
-    ]),
-  );
-  expect(payload.content).toContain('ログイン基本分：+34pt / ログイン関連合計：+39pt');
-  expect(payload.content).toContain('デイリー問題：正解 / 正解追加：+10pt');
-  expect(payload.content).not.toContain('獲得：49pt');
+  const byName = Object.fromEntries(fields.map((field: { name: string; value: string }) => [
+    field.name,
+    field.value,
+  ]));
+  expect(byName['ログイン関連獲得ポイント']).toBe('+39pt');
+  expect(byName['ログイン基本分']).toBe('+34pt');
+  expect(byName['クイズ正解追加（別枠）']).toBe('+10pt');
+  const content: string = payload.content;
+  expect(content).toContain('ログイン基本分：+34pt');
+  expect(content).toContain('ログイン関連合計：+39pt');
+  expect(content).toContain('デイリー問題：正解');
+  expect(content).toContain('正解追加：+10pt');
+  expect(content).not.toContain('獲得：49pt');
 });
 
-it('uses authoritative correctness for an incorrect V1 answer with zero quiz points', async () => {
+it('shows an incorrect V1 answer with zero quiz bonus', async () => {
   vi.stubEnv('DAILY_BONUS_RESULT_CARD_ENABLED', 'false');
   const editReply = vi.fn().mockResolvedValue({});
   await replyDailyBonusResult(
@@ -162,7 +165,9 @@ it('uses authoritative correctness for an incorrect V1 answer with zero quiz poi
     },
   );
   const payload = editReply.mock.calls[0]![0];
-  expect(payload.content).toContain('デイリー問題：不正解 / 正解追加：+0pt');
-  expect(payload.content).toContain('ログイン関連合計：+34pt');
-  expect(payload.content).not.toContain('ログイン関連合計：+44pt');
+  const content: string = payload.content;
+  expect(content).toContain('デイリー問題：不正解');
+  expect(content).toContain('正解追加：+0pt');
+  expect(content).toContain('ログイン関連合計：+34pt');
+  expect(content).not.toContain('ログイン関連合計：+44pt');
 });
