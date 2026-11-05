@@ -74,7 +74,10 @@ it('does not render while the feature flag is disabled', async () => {
     expect.arrayContaining([
       expect.objectContaining({ name: '獲得ポイント', value: '+44pt' }),
       expect.objectContaining({ name: '現在の保有ポイント', value: '320pt' }),
-      expect.objectContaining({ name: '本日の受取順位・追加報酬', value: expect.stringContaining('記録なし') }),
+      expect.objectContaining({
+        name: '本日の受取順位・追加報酬',
+        value: expect.stringContaining('記録なし'),
+      }),
     ]),
   );
   expect(payload.components).toEqual([]);
@@ -85,23 +88,28 @@ it.each([
   { rank: 2, points: 5, position: '🥈 2番乗り', bonus: '+5pt' },
   { rank: 3, points: 3, position: '🥉 3番乗り', bonus: '+3pt' },
   { rank: 4, points: 0, position: '受取順位：4位', bonus: '追加報酬なし' },
-])('shows the confirmed global rank $rank without inventing points', async ({ rank, points, position, bonus }) => {
-  vi.stubEnv('DAILY_BONUS_RESULT_CARD_ENABLED', 'false');
-  const editReply = vi.fn().mockResolvedValue({});
-  await replyDailyBonusResult(
-    { editReply } as unknown as Pick<ButtonInteraction, 'editReply'>,
-    {
-      ...result,
-      receipt: {
-        ...result.receipt,
-        firstClaimReward: { rank, points, scope: 'global' },
+])(
+  'shows the confirmed global rank $rank without inventing points',
+  async ({ rank, points, position, bonus }) => {
+    vi.stubEnv('DAILY_BONUS_RESULT_CARD_ENABLED', 'false');
+    const editReply = vi.fn().mockResolvedValue({});
+    await replyDailyBonusResult(
+      { editReply } as unknown as Pick<ButtonInteraction, 'editReply'>,
+      {
+        ...result,
+        receipt: {
+          ...result.receipt,
+          firstClaimReward: { rank, points, scope: 'global' },
+        },
       },
-    },
-  );
-  const payload = editReply.mock.calls[0]![0];
-  const fields = payload.embeds[0].toJSON().fields;
-  const rankText = fields?.find((field: { name: string }) => field.name === '本日の受取順位・追加報酬')?.value;
-  expect(rankText).toContain(position);
-  expect(rankText).toContain(bonus);
-  expect(payload.components).toEqual([]);
-});
+    );
+    const payload = editReply.mock.calls[0]![0];
+    const fields = payload.embeds[0].toJSON().fields;
+    const rankText = fields?.find(
+      (field: { name: string }) => field.name === '本日の受取順位・追加報酬',
+    )?.value;
+    expect(rankText).toContain(position);
+    expect(rankText).toContain(bonus);
+    expect(payload.components).toEqual([]);
+  },
+);
