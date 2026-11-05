@@ -500,3 +500,15 @@ test('VALORANT production migration is fenced by protected backup and isolated r
     /docker volume rm|docker system prune|pg_restore.*\$COMPOSE|DROP DATABASE/,
   );
 });
+
+test('production workflow holds automatic deployment unless explicitly enabled', () => {
+  const workflow = readFileSync(
+    new URL('../../.github/workflows/deploy-production.yml', import.meta.url),
+    'utf8',
+  );
+  assert.match(workflow, /workflow_run:/);
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /github\.event_name == 'workflow_dispatch'/);
+  assert.match(workflow, /vars\.HERTA_PRODUCTION_AUTO_DEPLOY_ENABLED == 'true'/);
+  assert.match(workflow, /environment: production/);
+});
