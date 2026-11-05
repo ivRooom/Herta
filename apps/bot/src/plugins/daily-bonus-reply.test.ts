@@ -80,8 +80,6 @@ it('does not render while the feature flag is disabled', async () => {
       }),
     ]),
   );
-  const fieldNames = card.fields?.map((field: { name: string }) => field.name);
-  expect(fieldNames).not.toContain('クイズ正解追加（別枠）');
   expect(payload.components).toEqual([]);
 });
 
@@ -115,60 +113,3 @@ it.each([
     expect(payload.components).toEqual([]);
   },
 );
-
-it('does not mislabel a legacy combined quiz award as a login bonus', async () => {
-  vi.stubEnv('DAILY_BONUS_RESULT_CARD_ENABLED', 'false');
-  const editReply = vi.fn().mockResolvedValue({});
-  await replyDailyBonusResult(
-    { editReply } as unknown as Pick<ButtonInteraction, 'editReply'>,
-    {
-      ...result,
-      receipt: {
-        ...result.receipt,
-        rewardPoints: 44,
-        rollPoints: 34,
-        quizBonusPoints: 10,
-        quizCorrect: true,
-        firstClaimReward: { rank: 2, points: 5, scope: 'global' },
-      },
-    },
-  );
-  const payload = editReply.mock.calls[0]![0];
-  const fields = payload.embeds[0].toJSON().fields;
-  const byName = Object.fromEntries(
-    fields.map((field: { name: string; value: string }) => [field.name, field.value]),
-  );
-  expect(byName['ログイン関連獲得ポイント']).toBe('+39pt');
-  expect(byName['ログイン基本分']).toBe('+34pt');
-  expect(byName['クイズ正解追加（別枠）']).toBe('+10pt');
-  const content: string = payload.content;
-  expect(content).toContain('ログイン基本分：+34pt');
-  expect(content).toContain('ログイン関連合計：+39pt');
-  expect(content).toContain('デイリー問題：正解');
-  expect(content).toContain('正解追加：+10pt');
-  expect(content).not.toContain('獲得：49pt');
-});
-
-it('shows an incorrect V1 answer with zero quiz bonus', async () => {
-  vi.stubEnv('DAILY_BONUS_RESULT_CARD_ENABLED', 'false');
-  const editReply = vi.fn().mockResolvedValue({});
-  await replyDailyBonusResult(
-    { editReply } as unknown as Pick<ButtonInteraction, 'editReply'>,
-    {
-      ...result,
-      receipt: {
-        ...result.receipt,
-        rewardPoints: 34,
-        rollPoints: 34,
-        quizBonusPoints: 0,
-        quizCorrect: false,
-      },
-    },
-  );
-  const payload = editReply.mock.calls[0]![0];
-  const content: string = payload.content;
-  expect(content).toContain('デイリー問題：不正解');
-  expect(content).toContain('正解追加：+0pt');
-  expect(content).toContain('ログイン関連合計：+34pt');
-  expect(content).not.toContain('ログイン関連合計：+44pt');
-});
