@@ -35,8 +35,32 @@ export function dailyFirstClaimLabel(
   return `${position} / ${first.points > 0 ? `追加報酬 +${first.points}pt` : '追加報酬なし'}`;
 }
 
+/** Never count the legacy combined quiz award as a login bonus. */
+export function loginBonusEarned(result: ConfirmedDailyBonus): number {
+  return (
+    result.receipt.rollPoints +
+    (result.receipt.streakReward?.points ?? 0) +
+    (result.receipt.firstClaimReward?.points ?? 0)
+  );
+}
+
 export function dailyBonusResultText(result: ConfirmedDailyBonus): string {
-  return `${result.message}\n${dailyFirstClaimLabel(result.receipt.firstClaimReward)}\n次回受取：${nextDailyBonusDate(result.receipt.claimDateJst)} 00:00 JST（Member）／09:00 JSTの通知後（Discord）\nhttps://member.ivrm.jp/login-bonus`;
+  const receipt = result.receipt;
+  const parts = [
+    result.alreadyClaimed
+      ? '🎉 本日のログインボーナスは受取済みです。'
+      : '🎉 ログインボーナスを受け取りました！',
+    `ログイン基本分：+${receipt.rollPoints}pt / ログイン関連合計：+${loginBonusEarned(result)}pt`,
+    `保有：${result.balance}pt / 連続：${receipt.streakDay}日`,
+    `連続ログイン追加：+${receipt.streakReward?.points ?? 0}pt`,
+    dailyFirstClaimLabel(receipt.firstClaimReward),
+  ];
+  if (receipt.quizBonusPoints > 0) {
+    parts.push(
+      `過去の結合取引に含まれるクイズ正解追加：+${receipt.quizBonusPoints}pt（上記ログイン関連合計には含みません）`,
+    );
+  }
+  return `${parts.join('\\n')}\\n次回受取：${nextDailyBonusDate(receipt.claimDateJst)} 00:00 JST（Member）／09:00 JSTの通知後（Discord）\\nhttps://member.ivrm.jp/login-bonus`;
 }
 
 /** Empty days do not fabricate anniversaries. Source URLs and annual calculations stay in selection. */
