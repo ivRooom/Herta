@@ -98,7 +98,9 @@ function confirmed(
   )
     return { status: value.setupRequired };
   if (value?.unlinked) return { status: 'unlinked' };
-  const receipt = value?.claim as (DailyWalletReceipt & { quiz?: { correct?: unknown } | null }) | undefined,
+  const receipt = value?.claim as
+      | (DailyWalletReceipt & { quiz?: { correct?: unknown } | null })
+      | undefined,
     account = value?.account as { balance?: number } | undefined;
   if (
     !receipt ||
@@ -170,8 +172,8 @@ function confirmed(
       rollPoints: receipt.rollPoints,
       quizBonusPoints: receipt.quizBonusPoints,
       quizCorrect:
-        receipt.quiz && typeof (receipt.quiz as { correct?: unknown }).correct === 'boolean'
-          ? (receipt.quiz as { correct: boolean }).correct
+        receipt.quiz && typeof receipt.quiz.correct === 'boolean'
+          ? receipt.quiz.correct
           : null,
       channel: receipt.channel,
       ...(streakReward ? { streakReward } : {}),
