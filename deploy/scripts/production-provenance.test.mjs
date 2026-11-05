@@ -182,12 +182,14 @@ test('GET-only SSH timing audit correlates an exact failed job without verifying
     requested.push(path);
     return {
       total_count: 1,
-      jobs: [{
-        name: 'SSH Deploy to Lightsail',
-        started_at: '2026-11-04T09:37:57Z',
-        completed_at: '2026-11-04T09:39:50Z',
-        conclusion: 'failure',
-      }],
+      jobs: [
+        {
+          name: 'SSH Deploy to Lightsail',
+          started_at: '2026-11-04T09:37:57Z',
+          completed_at: '2026-11-04T09:39:50Z',
+          conclusion: 'failure',
+        },
+      ],
     };
   };
   const value = await inspectProductionProofJobTiming(api, audit);
