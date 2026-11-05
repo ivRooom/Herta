@@ -1,5 +1,4 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import type { ButtonInteraction } from 'discord.js';
 import { replyDailyBonusResult } from './daily-bonus-reply.js';
 import type { ConfirmedDailyBonus } from './daily-bonus-presentation.js';
 
