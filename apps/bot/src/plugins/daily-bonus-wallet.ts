@@ -18,6 +18,10 @@ export interface DailyWalletReceipt {
   streakReward?: { points: number; streakDay: number };
   firstClaimReward?: { points: number; rank: number; scope: 'global' } | null;
 }
+type V1ClaimWithQuiz = DailyWalletReceipt & {
+  quiz?: { correct?: unknown } | null;
+};
+
 export type DailyWalletResult =
   | {
       status: 'confirmed';
@@ -98,9 +102,7 @@ function confirmed(
   )
     return { status: value.setupRequired };
   if (value?.unlinked) return { status: 'unlinked' };
-  const receipt = value?.claim as
-      | (DailyWalletReceipt & { quiz?: { correct?: unknown } | null })
-      | undefined,
+  const receipt = value?.claim as V1ClaimWithQuiz | undefined,
     account = value?.account as { balance?: number } | undefined;
   if (
     !receipt ||
