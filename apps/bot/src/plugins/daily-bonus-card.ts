@@ -1,6 +1,7 @@
 import sharp from 'sharp';
 import {
   dailyFirstClaimLabel,
+  loginBonusEarned,
   nextDailyBonusDate,
   type ConfirmedDailyBonus,
 } from './daily-bonus-presentation.js';
@@ -12,10 +13,7 @@ export async function renderDailyBonusCard(result: ConfirmedDailyBonus): Promise
   activeRenders++;
   try {
     const { receipt, balance, alreadyClaimed } = result;
-    const total =
-      receipt.rewardPoints +
-      (receipt.streakReward?.points ?? 0) +
-      (receipt.firstClaimReward?.points ?? 0);
+    const loginTotal = loginBonusEarned(result);
     const escape = (value: string) =>
       value.replace(
         /[&<>"']/g,
@@ -33,11 +31,12 @@ export async function renderDailyBonusCard(result: ConfirmedDailyBonus): Promise
       ${text(alreadyClaimed ? '本日は受取済みです' : 'ボーナスを受け取りました！', 58, 144, 34)}
       <rect x="48" y="180" width="440" height="158" rx="20" fill="#242638"/>
       <rect x="510" y="180" width="440" height="158" rx="20" fill="#242638"/>
-      ${text('本日の獲得', 76, 225, 24, '#abb7c9')}
-      ${text(`${total.toLocaleString('ja-JP')} pt`, 76, 300, 52, '#b9a2ff')}
+      ${text('ログイン関連獲得', 76, 225, 24, '#abb7c9')}
+      ${text(`${loginTotal.toLocaleString('ja-JP')} pt`, 76, 300, 52, '#b9a2ff')}
       ${text('現在の保有ポイント', 538, 225, 24, '#abb7c9')}
       ${text(`${balance.toLocaleString('ja-JP')} pt`, 538, 300, Math.min(44, Math.floor(560 / `${balance.toLocaleString('ja-JP')} pt`.length)))}
       ${text(`連続ログイン  ${receipt.streakDay.toLocaleString('ja-JP')} 日`, 58, 398, 32)}
+      ${text(`ログイン基本分：+${receipt.rollPoints} pt / クイズ追加（別枠）：+${receipt.quizBonusPoints} pt`, 58, 421, 22, '#abb7c9')}
       ${text(`連続ボーナス：${receipt.streakReward ? `+${receipt.streakReward.points} pt 獲得済み` : '本日の追加報酬なし'}`, 58, 451)}
       ${text(dailyFirstClaimLabel(receipt.firstClaimReward), 58, 498, 24)}
       <path d="M58 535 H942" stroke="#b9a2ff" stroke-opacity="0.4"/>
