@@ -34,11 +34,15 @@ export async function replyDailyBonusResult(
             value: `+${result.receipt.rollPoints}pt`,
             inline: true,
           },
-          {
-            name: 'クイズ正解追加（別枠）',
-            value: `+${result.receipt.quizBonusPoints}pt`,
-            inline: true,
-          },
+          ...(result.receipt.quizCorrect != null || result.receipt.quizBonusPoints > 0
+            ? [
+                {
+                  name: 'クイズ正解追加（別枠）',
+                  value: `+${result.receipt.quizBonusPoints}pt`,
+                  inline: true,
+                },
+              ]
+            : []),
           {
             name: '現在の保有ポイント',
             value: `${result.balance.toLocaleString('ja-JP')}pt`,
