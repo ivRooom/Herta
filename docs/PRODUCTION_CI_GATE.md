@@ -231,7 +231,10 @@ complete proof when the first page contains 100 records.
    recent errors, including the known Prisma P2010 incident [#559](https://github.com/ivRooom/Herta/issues/559).
 2. Check most recent Lightsail snapshot date, PostgreSQL data backup,
    restore-test evidence, rollback image and their ownership. A visible
-   snapshot is **not** proof of successful restoration.
+   snapshot is **not** proof of successful restoration. In the 2026-11-05
+   read-only check, the app host had seven successful auto snapshots while
+   separate PostgreSQL host `ivrm-db-postgres-01` had zero Lightsail auto
+   snapshots; independently verify the DB's other backup mechanism (#506).
 3. Review current GitHub production Environment approval and required
    CI/ARM64/Grype rules. Snyk's optional free-tier quota does not authorize
    bypassing required security checks.
