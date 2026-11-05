@@ -68,5 +68,4 @@ describe('Achievement repository', () => {
     expect(steps[0]).toContain('execute:SELECT pg_advisory_xact_lock');
     expect(steps[1]).toContain('query:');
   });
-
 });

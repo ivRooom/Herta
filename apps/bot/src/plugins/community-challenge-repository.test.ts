@@ -15,8 +15,8 @@ describe('Community Challenge transaction advisory locks', () => {
       createdAt: new Date('2026-11-05T00:00:00Z'),
     };
     const tx = {
-      $executeRaw: async (sql: TemplateStringsArray) => {
-        lockCalls.push(sql.join('?'));
+      $executeRaw: async (sql: TemplateStringsArray, ...values: unknown[]) => {
+        lockCalls.push(sql.join('?') + ' ' + String(values[0]));
         return 1;
       },
       $queryRaw: async (sql: TemplateStringsArray) => {
@@ -29,7 +29,11 @@ describe('Community Challenge transaction advisory locks', () => {
       $transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
     } as unknown as PrismaClient;
     const assignment = await ensureCommunityChallengeAssignment(
-      prisma, 'guild', 'daily', '2026-11-05', ['message-1'],
+      prisma,
+      'guild',
+      'daily',
+      '2026-11-05',
+      ['message-1'],
     );
     expect(assignment).toEqual(record);
     const definition = {

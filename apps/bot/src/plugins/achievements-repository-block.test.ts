@@ -17,10 +17,10 @@ describe('achievement manual revoke suppression', () => {
     const inserted: string[] = [];
     const tx = {
       async $queryRaw(strings: TemplateStringsArray) {
-        if (strings.join('').includes('pg_advisory_xact_lock')) return [];
         return [{ achievementId: 'blocked:first-message' }];
       },
-      async $executeRaw(_strings: TemplateStringsArray, ...values: unknown[]) {
+      async $executeRaw(strings: TemplateStringsArray, ...values: unknown[]) {
+        if (strings.join('').includes('pg_advisory_xact_lock')) return 1;
         const achievementId = values.at(-1);
         if (typeof achievementId === 'string') inserted.push(achievementId);
         return 1;
