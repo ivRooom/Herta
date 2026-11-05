@@ -47,6 +47,11 @@ jobs:
       - name: Prisma Generate
         run: pnpm db:generate
 
+      - name: Temporary exact Prettier diagnostic for Bot lock regression
+        run: |
+          pnpm exec prettier --write apps/bot/src/plugins/achievements-repository.test.ts apps/bot/src/plugins/community-challenge-repository.test.ts
+          git diff -- apps/bot/src/plugins/achievements-repository.test.ts apps/bot/src/plugins/community-challenge-repository.test.ts
+
       - name: Format Check
         run: pnpm format:check
 
