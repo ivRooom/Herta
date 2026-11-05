@@ -36,7 +36,7 @@ export async function renderDailyBonusCard(result: ConfirmedDailyBonus): Promise
       ${text('現在の保有ポイント', 538, 225, 24, '#abb7c9')}
       ${text(`${balance.toLocaleString('ja-JP')} pt`, 538, 300, Math.min(44, Math.floor(560 / `${balance.toLocaleString('ja-JP')} pt`.length)))}
       ${text(`連続ログイン  ${receipt.streakDay.toLocaleString('ja-JP')} 日`, 58, 398, 32)}
-      ${text(`ログイン基本分：+${receipt.rollPoints} pt / クイズ追加（別枠）：+${receipt.quizBonusPoints} pt`, 58, 421, 22, '#abb7c9')}
+      ${text(`ログイン基本分：+${receipt.rollPoints} pt${receipt.quizCorrect != null || receipt.quizBonusPoints > 0 ? ` / クイズ追加（別枠）：+${receipt.quizBonusPoints} pt` : ''}`, 58, 421, 22, '#abb7c9')}
       ${text(`連続ボーナス：${receipt.streakReward ? `+${receipt.streakReward.points} pt 獲得済み` : '本日の追加報酬なし'}`, 58, 451)}
       ${text(dailyFirstClaimLabel(receipt.firstClaimReward), 58, 498, 24)}
       <path d="M58 535 H942" stroke="#b9a2ff" stroke-opacity="0.4"/>
