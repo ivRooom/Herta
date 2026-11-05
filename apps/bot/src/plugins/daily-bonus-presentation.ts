@@ -55,9 +55,13 @@ export function dailyBonusResultText(result: ConfirmedDailyBonus): string {
     `連続ログイン追加：+${receipt.streakReward?.points ?? 0}pt`,
     dailyFirstClaimLabel(receipt.firstClaimReward),
   ];
-  if (receipt.quizBonusPoints > 0) {
+  if (receipt.quizCorrect !== null && receipt.quizCorrect !== undefined) {
     parts.push(
-      `過去の結合取引に含まれるクイズ正解追加：+${receipt.quizBonusPoints}pt（上記ログイン関連合計には含みません）`,
+      `デイリー問題：${receipt.quizCorrect ? '正解' : '不正解'} / 正解追加：+${receipt.quizBonusPoints}pt（ログイン分とは別）`,
+    );
+  } else if (receipt.quizBonusPoints > 0) {
+    parts.push(
+      `デイリー問題の追加：+${receipt.quizBonusPoints}pt（正誤は確認できません。ログイン分とは別）`,
     );
   }
   return `${parts.join('\n')}\n次回受取：${nextDailyBonusDate(receipt.claimDateJst)} 00:00 JST（Member）／09:00 JSTの通知後（Discord）\nhttps://member.ivrm.jp/login-bonus`;
