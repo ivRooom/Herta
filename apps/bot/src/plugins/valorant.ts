@@ -166,7 +166,7 @@ async function handleMyId(
   );
 }
 
-function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
+export function buildValorantSessionMessage(session: ValorantSessionSnapshot) {
   const expiryMs = session.expiresAt.getTime();
   // A corrupt or missing timestamp must not create a malformed Discord tag
   // or leave participant/reroll buttons enabled.
