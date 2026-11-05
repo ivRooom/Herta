@@ -12,6 +12,8 @@ export interface DailyWalletReceipt {
   streakDay: number;
   rollPoints: number;
   quizBonusPoints: number;
+  /** The V1 receipt may provide correct/incorrect, never disclose the answer index here. */
+  quizCorrect?: boolean | null;
   channel: string;
   streakReward?: { points: number; streakDay: number };
   firstClaimReward?: { points: number; rank: number; scope: 'global' } | null;
@@ -167,6 +169,10 @@ function confirmed(
       streakDay: receipt.streakDay,
       rollPoints: receipt.rollPoints,
       quizBonusPoints: receipt.quizBonusPoints,
+      quizCorrect:
+        receipt.quiz && typeof (receipt.quiz as { correct?: unknown }).correct === 'boolean'
+          ? (receipt.quiz as { correct: boolean }).correct
+          : null,
       channel: receipt.channel,
       ...(streakReward ? { streakReward } : {}),
       ...(firstClaimReward ? { firstClaimReward } : {}),
