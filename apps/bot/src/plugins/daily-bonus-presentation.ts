@@ -19,9 +19,24 @@ export function nextDailyBonusDate(date: string): string {
   return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(next);
 }
 
+/** Display confirmed global claim rank without inventing a position for legacy receipts. */
+export function dailyFirstClaimLabel(
+  first: ConfirmedDailyBonus['receipt']['firstClaimReward'],
+): string {
+  if (!first) return '受取順位：記録なし / 追加報酬なし';
+  const position =
+    first.rank === 1
+      ? '🥇 1番乗り'
+      : first.rank === 2
+        ? '🥈 2番乗り'
+        : first.rank === 3
+          ? '🥉 3番乗り'
+          : `受取順位：${first.rank}位`;
+  return `${position} / ${first.points > 0 ? `追加報酬 +${first.points}pt` : '追加報酬なし'}`;
+}
+
 export function dailyBonusResultText(result: ConfirmedDailyBonus): string {
-  const first = result.receipt.firstClaimReward;
-  return `${result.message}\n一番乗りボーナス：${first ? `${first.points}pt / ${first.rank}位` : '本日の追加報酬なし'}\n次回受取：${nextDailyBonusDate(result.receipt.claimDateJst)} 00:00 JST（Member）／09:00 JSTの通知後（Discord）\nhttps://member.ivrm.jp/login-bonus`;
+  return `${result.message}\n${dailyFirstClaimLabel(result.receipt.firstClaimReward)}\n次回受取：${nextDailyBonusDate(result.receipt.claimDateJst)} 00:00 JST（Member）／09:00 JSTの通知後（Discord）\nhttps://member.ivrm.jp/login-bonus`;
 }
 
 /** Empty days do not fabricate anniversaries. Source URLs and annual calculations stay in selection. */
