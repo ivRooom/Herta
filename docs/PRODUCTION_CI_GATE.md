@@ -234,7 +234,14 @@ complete proof when the first page contains 100 records.
    snapshot is **not** proof of successful restoration. In the 2026-11-05
    read-only check, the app host had seven successful auto snapshots while
    separate PostgreSQL host `ivrm-db-postgres-01` had zero Lightsail auto
-   snapshots; independently verify the DB's other backup mechanism (#506).
+   snapshots. A separate S3 read-only inventory (2026-11-05 JST) confirmed
+   `postgres/` dump and sha256 sidecar objects in the Herta production backup
+   bucket (latest dump: 2026-11-05 03:00 JST) and PostgreSQL backup artifacts
+   under a separate `postgresql/` prefix (latest: 03:20 JST). Both buckets had
+   S3 Versioning enabled. This proves object presence and timestamps, **not**
+   checksum validity, successful restore, database provenance or RPO/RTO.
+   The separate PostgreSQL backup bucket's ownership/target DB is unverified.
+   Independently verify backup jobs and an isolated restore (#506).
 3. Review current GitHub production Environment approval and required
    CI/ARM64/Grype rules. Snyk's optional free-tier quota does not authorize
    bypassing required security checks.
