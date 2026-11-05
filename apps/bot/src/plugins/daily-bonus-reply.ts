@@ -1,6 +1,10 @@
 import { AttachmentBuilder, EmbedBuilder, type ButtonInteraction } from 'discord.js';
 import { renderDailyBonusCard } from './daily-bonus-card.js';
-import { dailyBonusResultText, type ConfirmedDailyBonus } from './daily-bonus-presentation.js';
+import {
+  dailyBonusResultText,
+  dailyFirstClaimLabel,
+  type ConfirmedDailyBonus,
+} from './daily-bonus-presentation.js';
 
 export async function replyDailyBonusResult(
   interaction: Pick<ButtonInteraction, 'editReply'>,
@@ -36,6 +40,11 @@ export async function replyDailyBonusResult(
             name: '連続ログイン',
             value: `${result.receipt.streakDay.toLocaleString('ja-JP')}日`,
             inline: true,
+          },
+          {
+            name: '本日の受取順位・追加報酬',
+            value: dailyFirstClaimLabel(result.receipt.firstClaimReward),
+            inline: false,
           },
         )
         .setFooter({
