@@ -29,6 +29,7 @@ it('falls back to text after render failure without replaying any award', async 
   expect(editReply).toHaveBeenCalledOnce();
   expect(editReply.mock.calls[0]![0]).toMatchObject({
     content: expect.stringContaining('受取済み'),
+    embeds: expect.arrayContaining([expect.anything()]),
     files: [],
     attachments: [],
     allowedMentions: { parse: [] },
@@ -48,7 +49,11 @@ it('retries an attachment upload failure as text and preserves the original resu
   );
   expect(render).toHaveBeenCalledOnce();
   expect(editReply).toHaveBeenCalledTimes(2);
-  expect(editReply.mock.calls[1]![0]).toMatchObject({ files: [], attachments: [] });
+  expect(editReply.mock.calls[1]![0]).toMatchObject({
+    files: [],
+    attachments: [],
+    embeds: expect.arrayContaining([expect.anything()]),
+  });
 });
 it('does not render while the feature flag is disabled', async () => {
   vi.stubEnv('DAILY_BONUS_RESULT_CARD_ENABLED', 'false');
@@ -61,4 +66,15 @@ it('does not render while the feature flag is disabled', async () => {
   );
   expect(render).not.toHaveBeenCalled();
   expect(editReply).toHaveBeenCalledOnce();
+  const payload = editReply.mock.calls[0]![0];
+  expect(payload.embeds).toHaveLength(1);
+  const card = payload.embeds[0].toJSON();
+  expect(card.title).toContain('ログインボーナス');
+  expect(card.fields).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ name: '獲得ポイント', value: '+44pt' }),
+      expect.objectContaining({ name: '現在の保有ポイント', value: '320pt' }),
+    ]),
+  );
+  expect(payload.components).toEqual([]);
 });
