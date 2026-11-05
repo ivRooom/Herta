@@ -1,9 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
   AttachmentBuilder,
-  ActionRowBuilder,
-  ButtonBuilder,
-  ButtonStyle,
   EmbedBuilder,
   MessageFlags,
   PermissionFlagsBits,
@@ -18,8 +15,6 @@ import {
   setDailyAnnouncement,
   listAnniversaries,
   recordDailyClaim,
-  createDailyQuizSession,
-  getDailyQuizSession,
   type PrismaClient,
 } from '@herta/db';
 import { dailyBonusManifest } from '@herta/plugin-catalog';
