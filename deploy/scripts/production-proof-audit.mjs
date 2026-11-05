@@ -119,7 +119,7 @@ export async function inspectProductionProofJobTiming(api, audit) {
   const job = jobs[0];
   const validDate = (value) =>
     typeof value === 'string' &&
-    /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$/.test(value) &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value) &&
     Number.isFinite(Date.parse(value));
   if (!validDate(job.started_at) || !validDate(job.completed_at) ||
       Date.parse(job.started_at) > Date.parse(job.completed_at)) {
