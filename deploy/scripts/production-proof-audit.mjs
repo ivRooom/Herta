@@ -94,6 +94,60 @@ export async function inspectProductionProofRecords(api, { sha, runId, runAttemp
   return { sha, runId, runAttempt, classification, records };
 }
 
+/**
+ * Optional incident correlation only. A time match is NOT proof of a
+ * successful release: the SSH job can fail after creating the deployment.
+ * Read only the exact GitHub Actions run attempt and refuse ambiguous jobs.
+ */
+export async function inspectProductionProofJobTiming(api, audit) {
+  const { runId, runAttempt, records } = audit;
+  if (!Number.isSafeInteger(runId) || runId < 1 || !Number.isSafeInteger(runAttempt) ||
+      runAttempt < 1 || !Array.isArray(records)) {
+    throw new Error('Invalid read-only SSH timing audit input');
+  }
+  const result = await api(
+    'actions/runs/' + runId + '/attempts/' + runAttempt + '/jobs?per_page=100',
+  );
+  if (!Array.isArray(result?.jobs) || !Number.isSafeInteger(result.total_count) ||
+      result.total_count !== result.jobs.length || result.jobs.length > 100) {
+    throw new Error('Incomplete GitHub SSH job history');
+  }
+  const jobs = result.jobs.filter((job) => job?.name === 'SSH Deploy to Lightsail');
+  if (jobs.length !== 1) {
+    throw new Error('Missing or ambiguous production SSH job');
+  }
+  const job = jobs[0];
+  const validDate = (value) =>
+    typeof value === 'string' &&
+    /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z$/.test(value) &&
+    Number.isFinite(Date.parse(value));
+  if (!validDate(job.started_at) || !validDate(job.completed_at) ||
+      Date.parse(job.started_at) > Date.parse(job.completed_at)) {
+    throw new Error('Missing or invalid SSH job timestamps');
+  }
+  return {
+    sshJob: {
+      startedAt: job.started_at,
+      completedAt: job.completed_at,
+      conclusion: job.conclusion ?? null,
+    },
+    deploymentTiming: records.map((record) => {
+      if (!validDate(record.deploymentCreatedAt)) {
+        return { deploymentId: record.deploymentId, relativeToSshJob: 'unknown' };
+      }
+      const created = Date.parse(record.deploymentCreatedAt);
+      return {
+        deploymentId: record.deploymentId,
+        relativeToSshJob:
+          created >= Date.parse(job.started_at) && created <= Date.parse(job.completed_at)
+            ? 'inside'
+            : 'outside',
+      };
+    }),
+    releaseVerified: false,
+  };
+}
+
 async function main() {
   const repo = process.env.GITHUB_REPOSITORY;
   const token = process.env.GITHUB_TOKEN;
@@ -119,6 +173,12 @@ async function main() {
     return response.json();
   };
   const result = await inspectProductionProofRecords(api, { sha, runId, runAttempt });
+  if (process.env.PROOF_AUDIT_INCLUDE_JOB_TIMING === 'true') {
+    result.jobTiming = await inspectProductionProofJobTiming(api, result);
+  } else if (process.env.PROOF_AUDIT_INCLUDE_JOB_TIMING &&
+      process.env.PROOF_AUDIT_INCLUDE_JOB_TIMING !== 'false') {
+    throw new Error('Invalid read-only SSH timing audit option');
+  }
   console.log('READ_ONLY_PROOF_AUDIT ' + JSON.stringify(result));
 }
 
