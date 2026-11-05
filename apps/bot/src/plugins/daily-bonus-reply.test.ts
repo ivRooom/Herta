@@ -80,6 +80,8 @@ it('does not render while the feature flag is disabled', async () => {
       }),
     ]),
   );
+  const fieldNames = card.fields?.map((field: { name: string }) => field.name);
+  expect(fieldNames).not.toContain('クイズ正解追加（別枠）');
   expect(payload.components).toEqual([]);
 });
 
