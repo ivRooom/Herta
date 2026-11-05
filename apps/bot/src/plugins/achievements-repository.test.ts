@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PrismaClient } from '@herta/db';
-import { getAchievementMetrics } from './achievements-repository.js';
+import { getAchievementMetrics, syncAchievementUnlocks } from './achievements-repository.js';
 
 describe('Achievement repository', () => {
   it('Mini Games MetricsのSQL aliasを閉じて値を正しく返す', async () => {
@@ -48,4 +48,25 @@ describe('Achievement repository', () => {
     expect(metrics.blackjackWins).toBe(3);
     expect(metrics.blackjackNaturals).toBe(1);
   });
+  it('advisory lock uses executeRaw without deserializing void', async () => {
+    const steps: string[] = [];
+    const tx = {
+      $executeRaw: async (sql: TemplateStringsArray) => {
+        steps.push('execute:' + sql.join('?'));
+        return 1;
+      },
+      $queryRaw: async (sql: TemplateStringsArray) => {
+        steps.push('query:' + sql.join('?'));
+        return [{ achievementId: 'already-unlocked' }];
+      },
+    };
+    const prisma = {
+      $transaction: async (callback: (client: typeof tx) => Promise<string[]>) => callback(tx),
+    } as unknown as PrismaClient;
+    const unlocked = await syncAchievementUnlocks(prisma, 'guild', 'member', ['already-unlocked']);
+    expect(unlocked).toEqual([]);
+    expect(steps[0]).toContain('execute:SELECT pg_advisory_xact_lock');
+    expect(steps[1]).toContain('query:');
+  });
+
 });
