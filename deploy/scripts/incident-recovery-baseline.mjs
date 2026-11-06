@@ -3,12 +3,7 @@ import { parseProductionRuntimeProof } from './production-provenance.mjs';
 
 const SHA_RE = /^[a-f0-9]{40}$/;
 
-export function validateProtectedIncidentReadback({
-  expectedSha,
-  stdout,
-  eventName,
-  jobName,
-}) {
+export function validateProtectedIncidentReadback({ expectedSha, stdout, eventName, jobName }) {
   if (
     eventName !== 'workflow_dispatch' ||
     jobName !== 'incident_baseline' ||
