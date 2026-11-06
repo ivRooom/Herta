@@ -50,20 +50,20 @@ Hostnameと配置方式はCloudflare read-only と実際のSession/OAuth/Origin�
 5. Edge -> Origin: Cloudflare設定実測とTLS/ingress/Origin path readback。DNSだけ先行作成して404/誤Originを公開しない。
 6. Riot data sources: approved capability と本人の同意を優先。現行 `/valorant stats` やDiscord抽選頻度を未取得の公式戦績値と混同しない。
 
-## Verified OAuth / authorization constraints (2026-11-06)
+## OAuth・認可境界のコード確認（2026-11-06）
 
-These constraints are confirmed in repository code and documentation; live provider configuration is still unverified.
+以下はRepositoryの実装・文書から確認した内容であり、Providerの本番設定を実測したものではない。
 
-- `docs/AUTH.md`: Herta Studio uses Auth.js/NextAuth v5 with Discord OAuth and a JWT cookie. The callback URL is derived from `NEXTAUTH_URL` as `{NEXTAUTH_URL}/api/auth/callback/discord`. The current documented production callback is `https://herta.ivrm.jp/api/auth/callback/discord`; this is a **documented configuration**, not a live provider readback.
-- `apps/studio/src/lib/session.ts`: session cookie decoding depends on `NEXTAUTH_URL` or `AUTH_URL` for the secure-cookie name and uses server-side credentials. The session token cannot be assumed reusable at another hostname.
-- `apps/studio/src/lib/request-origin.ts` and `request-origin.test.ts`: browser mutation requests are accepted only when their Origin matches the request URL or the configured `NEXTAUTH_URL`. Arbitrary forwarded Host/Proto headers do not authorize a different Origin. A new hostname would therefore require explicit, tested handling of the OAuth/cookie/origin boundary.
-- `docs/AUTH.md` and `apps/studio/src/lib/studio-access.ts`: Studio management access requires Discord owner/Administrator/Manage Guild or a suitable policy. This is **not a general community-member authorization model**. Companion's member-facing pages must introduce a scoped guild membership check separate from Studio admin privileges, without weakening any existing admin route.
+- `docs/AUTH.md`: StudioはAuth.js / NextAuth v5とDiscord OAuth、JWT Cookieを採用。Callbackは `{NEXTAUTH_URL}/api/auth/callback/discord` で構成する。文書上の本番Callback `https://herta.ivrm.jp/api/auth/callback/discord` は**記載された設定例**であり、現行Provider設定の証明ではない。
+- `apps/studio/src/lib/session.ts`: `NEXTAUTH_URL` / `AUTH_URL` をHTTPS判定とSecure Cookie名の決定に利用し、トークンはサーバー側で復号する。別ホスト名へのセッション自動共有を前提としない。
+- `apps/studio/src/lib/request-origin.ts` と同テスト: 書き込みリクエストのOriginはRequest URLまたは設定済み `NEXTAUTH_URL` と一致する場合のみ許可。転送されたHost/Protoヘッダーのみでは別Originを許可しない。新サブドメインではCookie/OAuth/CSRFの一体検証が必要。
+- `docs/AUTH.md` と `apps/studio/src/lib/studio-access.ts`: 既存StudioはGuild管理者または管理ポリシーを前提に認可する。**コミュニティ一般メンバー向けの認可契約ではない**。既存の管理画面を緩めず、Companion専用にGuild所属と操作単位の権限を判定する必要がある。
 
-### Consequences for the proposed domain
+### 専用入口への影響
 
-1. Use **A (existing Studio origin)** as the first implementation candidate, without relaxing the existing Studio management boundary. Put member features behind a dedicated member-scoped server authorization check, not a reused administrative gate.
-2. Treat **B (dedicated hostname)** as blocked until DNS/TLS/Origin, Discord OAuth redirects, Secure/HttpOnly/SameSite cookie behavior, CSRF/CORS and cross-origin sign-in/out have been reviewed together. A reverse proxy alone does not prove session continuity.
-3. Before a web MVP Issue is implemented, require negative tests for anonymous users, ordinary guild members, unrelated guild members, former members, and other-guild resource IDs, alongside administrator access regression tests.
+1. **A（既存Studio同一Origin）** を初期実装候補として優先する。ただし既存管理権限を一般メンバーへ広げず、別のメンバー用サーバー認可を設計する。
+2. **B（独立ホスト名）** はDNS/TLS/Origin・Discord OAuth Callback・Secure/HttpOnly/SameSite Cookie・CSRF/CORS・ログイン/ログアウトの境界を検証するまで採用しない。Reverse proxyだけでCookie共有を保証しない。
+3. Web MVPの実装Issueでは、匿名・正常なGuildメンバー・他Guild・脱退済みメンバー・異なるGuild IDの拒否と、既存Studio管理者の回帰テストを受入条件に含める。
 
 ## Acceptance / Rollout
 
