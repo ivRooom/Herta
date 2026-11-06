@@ -64,7 +64,9 @@ describe('selectDailyQuizResultAsset', () => {
       const receiptId = `receipt-${index}`;
       expect(
         selectDailyQuizResultAsset(withDuplicate, 'correct', receiptId),
-      ).toEqual(selectDailyQuizResultAsset(withoutDuplicate, 'correct', receiptId));
+      ).toEqual(
+        selectDailyQuizResultAsset(withoutDuplicate, 'correct', receiptId),
+      );
     }
   });
 
