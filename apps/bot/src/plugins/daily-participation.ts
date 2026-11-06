@@ -42,7 +42,7 @@ const sessionPattern = /^daily-participation:(answer|text|submit):([0-9a-f-]{36}
 export function isParticipationInteraction(interaction: { customId: string }) {
   return (
     interaction.customId.startsWith('daily-participation:') ||
-    /^daily-bonus:\d{4}-\d\d-\d\d$/.test(interaction.customId)
+    /^daily-bonus:(?:questions:)?\d{4}-\d\d-\d\d$/.test(interaction.customId)
   );
 }
 async function admission(ctx: Context, interaction: Interaction) {
@@ -319,7 +319,7 @@ export async function handleDailyParticipation(
     }
     // Claim is a standalone action. Neither question retrieval nor Fortune
     // rendering is an implicit side effect of accepting a login bonus.
-    const wantsClaim = interaction.customId.startsWith('daily-bonus:');
+    const wantsClaim = /^daily-bonus:\d{4}-\d\d-\d\d$/.test(interaction.customId);
     if (wantsClaim) {
       ensureCurrent();
       const claimed = await participationClaim(ctx.guildId, interaction.user.id, date, messageId);
