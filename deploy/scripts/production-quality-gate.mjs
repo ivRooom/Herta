@@ -161,7 +161,6 @@ export function allowExplicitProductionProofRecovery(
   ].includes(error.message);
 }
 
-
 /**
  * One-time protected manual incident recovery is not a retroactive GitHub
  * deployment status. The source is a fresh, pinned-SSH, production-Environment
