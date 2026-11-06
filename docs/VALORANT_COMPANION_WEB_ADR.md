@@ -50,6 +50,21 @@ Hostnameと配置方式はCloudflare read-only と実際のSession/OAuth/Origin�
 5. Edge -> Origin: Cloudflare設定実測とTLS/ingress/Origin path readback。DNSだけ先行作成して404/誤Originを公開しない。
 6. Riot data sources: approved capability と本人の同意を優先。現行 `/valorant stats` やDiscord抽選頻度を未取得の公式戦績値と混同しない。
 
+## Verified OAuth / authorization constraints (2026-11-06)
+
+These constraints are confirmed in repository code and documentation; live provider configuration is still unverified.
+
+- `docs/AUTH.md`: Herta Studio uses Auth.js/NextAuth v5 with Discord OAuth and a JWT cookie. The callback URL is derived from `NEXTAUTH_URL` as `{NEXTAUTH_URL}/api/auth/callback/discord`. The current documented production callback is `https://herta.ivrm.jp/api/auth/callback/discord`; this is a **documented configuration**, not a live provider readback.
+- `apps/studio/src/lib/session.ts`: session cookie decoding depends on `NEXTAUTH_URL` or `AUTH_URL` for the secure-cookie name and uses server-side credentials. The session token cannot be assumed reusable at another hostname.
+- `apps/studio/src/lib/request-origin.ts` and `request-origin.test.ts`: browser mutation requests are accepted only when their Origin matches the request URL or the configured `NEXTAUTH_URL`. Arbitrary forwarded Host/Proto headers do not authorize a different Origin. A new hostname would therefore require explicit, tested handling of the OAuth/cookie/origin boundary.
+- `docs/AUTH.md` and `apps/studio/src/lib/studio-access.ts`: Studio management access requires Discord owner/Administrator/Manage Guild or a suitable policy. This is **not a general community-member authorization model**. Companion's member-facing pages must introduce a scoped guild membership check separate from Studio admin privileges, without weakening any existing admin route.
+
+### Consequences for the proposed domain
+
+1. Use **A (existing Studio origin)** as the first implementation candidate, without relaxing the existing Studio management boundary. Put member features behind a dedicated member-scoped server authorization check, not a reused administrative gate.
+2. Treat **B (dedicated hostname)** as blocked until DNS/TLS/Origin, Discord OAuth redirects, Secure/HttpOnly/SameSite cookie behavior, CSRF/CORS and cross-origin sign-in/out have been reviewed together. A reverse proxy alone does not prove session continuity.
+3. Before a web MVP Issue is implemented, require negative tests for anonymous users, ordinary guild members, unrelated guild members, former members, and other-guild resource IDs, alongside administrator access regression tests.
+
 ## Acceptance / Rollout
 
 - [ ] Cloudflare `ivrm.jp` zone、既存DNS/Caddy/Tunnel/Studio originと証明書設定をProviderから読み取り確認
