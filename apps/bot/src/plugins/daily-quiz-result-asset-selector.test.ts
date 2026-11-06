@@ -22,7 +22,9 @@ describe('selectDailyQuizResultAsset', () => {
     const selected = selectDailyQuizResultAsset(pool, 'correct', 'receipt-123');
     expect(selected).not.toBeNull();
     for (let repeat = 0; repeat < 5; repeat++) {
-      expect(selectDailyQuizResultAsset(pool, 'correct', 'receipt-123')).toEqual(selected);
+      expect(selectDailyQuizResultAsset(pool, 'correct', 'receipt-123')).toEqual(
+        selected,
+      );
     }
   });
 
@@ -60,19 +62,27 @@ describe('selectDailyQuizResultAsset', () => {
     };
     for (let index = 0; index < 20; index++) {
       const receiptId = `receipt-${index}`;
-      expect(selectDailyQuizResultAsset(withDuplicate, 'correct', receiptId)).toEqual(
-        selectDailyQuizResultAsset(withoutDuplicate, 'correct', receiptId),
-      );
+      expect(
+        selectDailyQuizResultAsset(withDuplicate, 'correct', receiptId),
+      ).toEqual(selectDailyQuizResultAsset(withoutDuplicate, 'correct', receiptId));
     }
   });
 
   it('fails closed when no active assets or stable IDs are available', () => {
     expect(
-      selectDailyQuizResultAsset({ ...pool, correctAssets: [] }, 'correct', 'receipt-1'),
+      selectDailyQuizResultAsset(
+        { ...pool, correctAssets: [] },
+        'correct',
+        'receipt-1',
+      ),
     ).toBeNull();
     expect(selectDailyQuizResultAsset(pool, 'correct', '')).toBeNull();
     expect(
-      selectDailyQuizResultAsset({ ...pool, revision: '' }, 'correct', 'receipt-1'),
+      selectDailyQuizResultAsset(
+        { ...pool, revision: '' },
+        'correct',
+        'receipt-1',
+      ),
     ).toBeNull();
   });
 
