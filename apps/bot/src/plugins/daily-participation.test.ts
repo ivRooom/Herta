@@ -22,7 +22,7 @@ vi.mock('./daily-participation-client.js', () => ({
   participationAnswer: mocks.answer,
 }));
 vi.mock('./daily-bonus-reply.js', () => ({ replyDailyBonusResult: mocks.reply }));
-import { handleDailyParticipation } from './daily-participation.js';
+import { handleDailyParticipation, isParticipationInteraction } from './daily-participation.js';
 const f = JSON.parse(
   readFileSync(
     new URL('../../../../contracts/ivrm/daily-participation.v2.fixture.json', import.meta.url),
@@ -86,6 +86,44 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllEnvs();
+});
+it('accepts only canonical legacy claim and question IDs as V2 migration entrypoints', () => {
+  expect(isParticipationInteraction({ customId: 'daily-bonus:2026-10-31' })).toBe(true);
+  expect(isParticipationInteraction({ customId: 'daily-bonus:questions:2026-10-31' })).toBe(
+    true,
+  );
+  expect(isParticipationInteraction({ customId: 'daily-bonus:fortune:2026-10-31' })).toBe(
+    false,
+  );
+  expect(
+    isParticipationInteraction({
+      customId: 'daily-bonus:answer:11111111-1111-4111-8111-111111111111:0',
+    }),
+  ).toBe(false);
+  expect(isParticipationInteraction({ customId: 'daily-bonus:questions:invalid' })).toBe(
+    false,
+  );
+});
+it('opens an old announcement question with V2 without claiming the login bonus', async () => {
+  const i = interaction('daily-bonus:questions:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  expect(mocks.claim).not.toHaveBeenCalled();
+  expect(mocks.record).not.toHaveBeenCalled();
+  expect(mocks.status).toHaveBeenCalledOnce();
+  expect(i.followUp).toHaveBeenCalled();
+});
+it('rejects an old question button whose announcement does not match', async () => {
+  mocks.announcement.mockResolvedValueOnce({
+    message_id: '999999999999999999',
+    channel_id: channel,
+    role_id: role,
+    status: 'sent',
+  });
+  const i = interaction('daily-bonus:questions:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  expect(mocks.claim).not.toHaveBeenCalled();
+  expect(mocks.status).not.toHaveBeenCalled();
+  expect(i.followUp).not.toHaveBeenCalled();
 });
 it('already-received subject opens unanswered question without claiming again', async () => {
   const i = interaction('daily-participation:questions:2026-10-31');
