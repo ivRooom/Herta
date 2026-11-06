@@ -2,8 +2,10 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { validateProtectedIncidentReadback } from './incident-recovery-baseline.mjs';
 import {
   allowExplicitProductionProofRecovery,
+  selectProtectedIncidentBaseline,
   assertAutomaticProductionBaseline,
   assertHistoricalRollbackEvidence,
   assertSafeCompare,
@@ -513,4 +515,64 @@ test('production workflow is manual-only until the daily batch is released', () 
   assert.match(workflow, /github\.event_name == 'workflow_dispatch'/);
   assert.doesNotMatch(workflow, /vars\.HERTA_PRODUCTION_AUTO_DEPLOY_ENABLED/);
   assert.match(workflow, /environment: production/);
+});
+
+test('incident recovery refuses untrusted GitHub errors and missing or forged live SHAs', () => {
+  const allowed = new Error('Latest production SSH attempt failed or lacks completed health/proof');
+  assert.equal(selectProtectedIncidentBaseline(allowed, sha), sha);
+  for (const denied of [
+    new Error('GitHub Actions metadata request failed: HTTP 500'),
+    new Error('Incomplete production workflow run history'),
+    new Error('No successful production SSH deployment baseline'),
+    new Error('Normal production proof exists; incident recovery must be disabled'),
+    null,
+  ]) {
+    assert.throws(() => selectProtectedIncidentBaseline(denied, sha), /no verified live baseline/);
+  }
+  assert.throws(() => selectProtectedIncidentBaseline(allowed, 'invalid'), /no verified live baseline/);
+});
+
+test('protected incident readback binds exact runtime SHA, image ID and privileged job', () => {
+  const proof = 'out: HERTA_RELEASE_PROOF ' + sha + ' sha256:' + 'c'.repeat(64) + '\n';
+  const args = {
+    expectedSha: sha,
+    stdout: proof,
+    eventName: 'workflow_dispatch',
+    jobName: 'incident_baseline',
+  };
+  assert.deepEqual(validateProtectedIncidentReadback(args), {
+    sha,
+    imageId: 'sha256:' + 'c'.repeat(64),
+  });
+  for (const broken of [
+    { ...args, expectedSha: 'b'.repeat(40) },
+    { ...args, eventName: 'workflow_run' },
+    { ...args, jobName: 'quality-gate' },
+    { ...args, stdout: '' },
+    { ...args, stdout: proof + proof },
+  ]) {
+    assert.throws(() => validateProtectedIncidentReadback(broken));
+  }
+});
+
+test('recovery gate cannot run without protected same-run readback success', () => {
+  const source = readFileSync(
+    new URL('../../.github/workflows/deploy-production.yml', import.meta.url),
+    'utf8',
+  );
+  const recovery = source.split('\n  incident_baseline:\n')[1]?.split('\n  quality-gate:\n')[0];
+  const gate = source.split('\n  quality-gate:\n')[1]?.split('\n  build-image:\n')[0];
+  assert.ok(recovery && gate, 'Both protected recovery and normal CI gate must exist');
+  assert.match(recovery, /environment: production/);
+  assert.match(recovery, /fingerprint: \$\{\{ vars\.LIGHTSAIL_SSH_FINGERPRINT \}\}/);
+  assert.match(recovery, /capture_stdout: true/);
+  assert.match(recovery, /git rev-parse HEAD/);
+  assert.match(recovery, /Verify public API and Studio health/);
+  assert.match(recovery, /node deploy\/scripts\/incident-recovery-baseline\.mjs/);
+  assert.match(gate, /needs: \[incident_baseline\]/);
+  assert.match(gate, /needs\.incident_baseline\.result == 'success'/);
+  assert.match(gate, /needs\.incident_baseline\.result == 'skipped'/);
+  assert.match(gate, /DEPLOY_INCIDENT_RECOVERY_APPROVED:/);
+  assert.match(gate, /DEPLOY_INCIDENT_BASELINE_SHA:/);
+  assert.match(gate, /node deploy\/scripts\/production-quality-gate\.mjs/);
 });

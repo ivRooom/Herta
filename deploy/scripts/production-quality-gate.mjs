@@ -161,6 +161,27 @@ export function allowExplicitProductionProofRecovery(
   ].includes(error.message);
 }
 
+
+/**
+ * One-time protected manual incident recovery is not a retroactive GitHub
+ * deployment status. The source is a fresh, pinned-SSH, production-Environment
+ * readback from the same workflow run. Unknown GitHub errors still fail closed.
+ */
+export function selectProtectedIncidentBaseline(error, liveSha) {
+  if (
+    !(error instanceof Error) ||
+    ![
+      'Latest production SSH attempt failed or lacks completed health/proof',
+      'Missing, duplicate or incomplete production provenance record',
+      'Untrusted, missing or malformed successful deployment attestation',
+    ].includes(error.message) ||
+    !SHA_RE.test(liveSha ?? '')
+  ) {
+    throw new Error('Protected Herta incident recovery has no verified live baseline');
+  }
+  return liveSha;
+}
+
 export function selectManualDeploymentBoundary({
   requestedRef,
   sha,
@@ -244,6 +265,25 @@ async function main() {
     throw new Error('Invalid emergency rollback approval value');
   }
   const emergencyRollbackApproved = rawEmergencyRollback === 'true';
+  const rawIncidentRecovery = process.env.DEPLOY_INCIDENT_RECOVERY_APPROVED ?? 'false';
+  if (!['true', 'false'].includes(rawIncidentRecovery)) {
+    throw new Error('Invalid protected incident recovery input');
+  }
+  const incidentRecoveryApproved = rawIncidentRecovery === 'true';
+  const verifiedIncidentSha = process.env.DEPLOY_INCIDENT_BASELINE_SHA ?? '';
+  if (
+    incidentRecoveryApproved &&
+    (event !== 'workflow_dispatch' ||
+      requestedRef !== 'main' ||
+      bootstrapApproved ||
+      emergencyRollbackApproved ||
+      !SHA_RE.test(verifiedIncidentSha))
+  ) {
+    throw new Error('Protected incident recovery requires a verified main live baseline');
+  }
+  if (!incidentRecoveryApproved && verifiedIncidentSha) {
+    throw new Error('Unexpected protected incident proof without recovery authorization');
+  }
   if ((bootstrapApproved || emergencyRollbackApproved) && event !== 'workflow_dispatch') {
     throw new Error('Recovery approvals require a manual dispatch');
   }
@@ -342,16 +382,24 @@ async function main() {
     let attestedSha;
     try {
       attestedSha = (await loadLatestProductionAttestation(api)).sha;
-    } catch (error) {
-      if (
-        !allowExplicitProductionProofRecovery(error, {
-          bootstrapApproved,
-          emergencyRollbackApproved,
-        })
-      ) {
-        throw error;
+      if (incidentRecoveryApproved) {
+        throw new Error('Normal production proof exists; incident recovery must be disabled');
       }
-      attestedSha = null;
+    } catch (error) {
+      if (incidentRecoveryApproved) {
+        attestedSha = selectProtectedIncidentBaseline(error, verifiedIncidentSha);
+        console.log('Protected live baseline readback accepted for incident-only comparison');
+      } else {
+        if (
+          !allowExplicitProductionProofRecovery(error, {
+            bootstrapApproved,
+            emergencyRollbackApproved,
+          })
+        ) {
+          throw error;
+        }
+        attestedSha = null;
+      }
     }
     const commit = await api('commits/' + sha);
     const boundary = selectManualDeploymentBoundary({
