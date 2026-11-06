@@ -28,6 +28,15 @@ on:
         type: boolean
         required: true
         default: false
+      incident_recovery:
+        description: 'インシデント #765 限定。保護された実稼働4サービス読取でSSH証跡を再検証（通常はOFF）'
+        type: boolean
+        required: true
+        default: false
+      expected_live_sha:
+        description: 'incident_recovery 時のみ必須：別途読取確認した現在稼働中の40文字SHA'
+        required: false
+        default: ''
 
 permissions:
   contents: read
@@ -42,11 +51,91 @@ env:
   IMAGE_REPOSITORY: ghcr.io/ivrooom/herta
 
 jobs:
+  incident_baseline:
+    name: Protected read-only Herta incident baseline
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main' &&
+      inputs.incident_recovery == true &&
+      (inputs.ref == 'main' || inputs.ref == '') &&
+      inputs.bootstrap_without_proof != true &&
+      inputs.emergency_rollback_without_proof != true
+    environment: production
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      live_sha: ${{ steps.verify.outputs.live_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Validate protected recovery input and pinned host fingerprint
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_live_sha }}
+          SSH_HOST_FINGERPRINT: ${{ vars.LIGHTSAIL_SSH_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          [[ "${EXPECTED_SHA}" =~ ^[a-f0-9]{40}$ ]] || { echo 'Invalid expected live SHA' >&2; exit 1; }
+          [[ "${SSH_HOST_FINGERPRINT}" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]] || { echo 'Invalid trusted SSH host fingerprint' >&2; exit 1; }
+      - name: Independently read running four-service SHA and immutable image ID
+        id: runtime
+        uses: appleboy/ssh-action@v1.2.5
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_live_sha }}
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          fingerprint: ${{ vars.LIGHTSAIL_SSH_FINGERPRINT }}
+          envs: EXPECTED_SHA
+          capture_stdout: true
+          command_timeout: 2m
+          script: |
+            set -euo pipefail
+            [[ "${EXPECTED_SHA}" =~ ^[a-f0-9]{40}$ ]]
+            cd "${{ secrets.LIGHTSAIL_APP_DIR }}"
+            source deploy/scripts/_common.sh
+            require_env_file
+            test "$(git rev-parse HEAD)" = "${EXPECTED_SHA}"
+            image_ref="ghcr.io/ivrooom/herta:${EXPECTED_SHA}"
+            image_id="$(docker image inspect --format '{{.Id}}' "${image_ref}")"
+            [[ "${image_id}" =~ ^sha256:[a-f0-9]{64}$ ]]
+            for service in api bot studio worker; do
+              cid="$(${COMPOSE} ps -q "${service}")"
+              test -n "${cid}"
+              test "$(docker inspect --format '{{.State.Running}}' "${cid}")" = true
+              test "$(docker inspect --format '{{.Config.Image}}' "${cid}")" = "${image_ref}"
+              test "$(docker inspect --format '{{.Image}}' "${cid}")" = "${image_id}"
+              if [[ "${service}" = api || "${service}" = bot ]]; then
+                test "$(docker inspect --format '{{.State.Health.Status}}' "${cid}")" = healthy
+              fi
+            done
+            printf 'HERTA_RELEASE_PROOF %s %s\n' "${EXPECTED_SHA}" "${image_id}"
+      - name: Verify public API and Studio health without mutations
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --show-error --silent --retry 3 --retry-delay 3 https://herta.ivrm.jp/api/v1/health > /dev/null
+          curl --fail --show-error --silent --retry 3 --retry-delay 3 https://herta.ivrm.jp/api/auth/providers > /dev/null
+      - name: Verify and export only the independently authenticated live SHA
+        id: verify
+        env:
+          EXPECTED_LIVE_SHA: ${{ inputs.expected_live_sha }}
+          HERTA_RUNTIME_READBACK: ${{ steps.runtime.outputs.stdout }}
+        run: node deploy/scripts/incident-recovery-baseline.mjs
   quality-gate:
     name: Verified main CI gate
+    needs: [incident_baseline]
     if: >-
+      always() &&
       github.ref == 'refs/heads/main' &&
-      github.event_name == 'workflow_dispatch'
+      github.event_name == 'workflow_dispatch' &&
+      ((inputs.incident_recovery == true && needs.incident_baseline.result == 'success') ||
+       (inputs.incident_recovery != true && needs.incident_baseline.result == 'skipped'))
     runs-on: ubuntu-latest
     timeout-minutes: 100
     permissions:
@@ -69,6 +158,8 @@ jobs:
           DEPLOY_PUSH_BEFORE: ${{ github.event.before }}
           DEPLOY_BOOTSTRAP_APPROVED: ${{ github.event.inputs.bootstrap_without_proof || 'false' }}
           DEPLOY_EMERGENCY_ROLLBACK_APPROVED: ${{ github.event.inputs.emergency_rollback_without_proof || 'false' }}
+          DEPLOY_INCIDENT_RECOVERY_APPROVED: ${{ inputs.incident_recovery && 'true' || 'false' }}
+          DEPLOY_INCIDENT_BASELINE_SHA: ${{ needs.incident_baseline.outputs.live_sha }}
         run: node deploy/scripts/production-quality-gate.mjs
 
   build-image:
