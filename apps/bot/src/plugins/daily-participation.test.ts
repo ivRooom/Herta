@@ -89,20 +89,14 @@ afterEach(() => {
 });
 it('accepts only canonical legacy claim and question IDs as V2 migration entrypoints', () => {
   expect(isParticipationInteraction({ customId: 'daily-bonus:2026-10-31' })).toBe(true);
-  expect(isParticipationInteraction({ customId: 'daily-bonus:questions:2026-10-31' })).toBe(
-    true,
-  );
-  expect(isParticipationInteraction({ customId: 'daily-bonus:fortune:2026-10-31' })).toBe(
-    false,
-  );
+  expect(isParticipationInteraction({ customId: 'daily-bonus:questions:2026-10-31' })).toBe(true);
+  expect(isParticipationInteraction({ customId: 'daily-bonus:fortune:2026-10-31' })).toBe(false);
   expect(
     isParticipationInteraction({
       customId: 'daily-bonus:answer:11111111-1111-4111-8111-111111111111:0',
     }),
   ).toBe(false);
-  expect(isParticipationInteraction({ customId: 'daily-bonus:questions:invalid' })).toBe(
-    false,
-  );
+  expect(isParticipationInteraction({ customId: 'daily-bonus:questions:invalid' })).toBe(false);
 });
 it('opens an old announcement question with V2 without claiming the login bonus', async () => {
   const i = interaction('daily-bonus:questions:2026-10-31');
