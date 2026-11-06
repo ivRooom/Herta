@@ -529,7 +529,10 @@ test('incident recovery refuses untrusted GitHub errors and missing or forged li
   ]) {
     assert.throws(() => selectProtectedIncidentBaseline(denied, sha), /no verified live baseline/);
   }
-  assert.throws(() => selectProtectedIncidentBaseline(allowed, 'invalid'), /no verified live baseline/);
+  assert.throws(
+    () => selectProtectedIncidentBaseline(allowed, 'invalid'),
+    /no verified live baseline/,
+  );
 });
 
 test('protected incident readback binds exact runtime SHA, image ID and privileged job', () => {
