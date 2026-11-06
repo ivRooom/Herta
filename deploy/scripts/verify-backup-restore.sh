@@ -104,7 +104,7 @@ trap on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-for command_name in aws docker flock mktemp date hostname; do
+for command_name in aws docker flock mktemp date hostname sha256sum; do
   require_command "${command_name}"
 done
 
@@ -150,6 +150,7 @@ fi
 
 TEMP_DIR="$(mktemp -d "${WORK_ROOT%/}/herta-backup-restore.XXXXXX")"
 DUMP_PATH="${TEMP_DIR}/latest.dump"
+CHECKSUM_PATH="${TEMP_DIR}/latest.dump.sha256"
 
 CURRENT_STEP="最新バックアップのダウンロード"
 echo "=== 最新バックアップを取得 ==="
@@ -166,6 +167,38 @@ if [ ! -s "${DUMP_PATH}" ]; then
   echo "ERROR: ダウンロードしたバックアップが空です。" >&2
   exit 1
 fi
+
+CURRENT_STEP="バックアップSHA256整合性の検証"
+aws s3 cp \
+  "s3://${S3_BUCKET}/${LATEST_KEY}.sha256" \
+  "${CHECKSUM_PATH}" \
+  --region "${AWS_REGION}" \
+  --only-show-errors
+
+if [ ! -s "${CHECKSUM_PATH}" ]; then
+  echo "ERROR: バックアップSHA256 sidecarが空です。" >&2
+  exit 1
+fi
+
+IFS= read -r CHECKSUM_LINE < "${CHECKSUM_PATH}" || [ -n "${CHECKSUM_LINE:-}" ]
+if [[ ! "${CHECKSUM_LINE}" =~ ^([0-9a-fA-F]{64})[[:space:]][[:space:]](.+)$ ]]; then
+  echo "ERROR: バックアップSHA256 sidecarの書式が不正です。" >&2
+  exit 1
+fi
+EXPECTED_SHA256="${BASH_REMATCH[1],,}"
+EXPECTED_FILENAME="${BASH_REMATCH[2]}"
+if [ "${EXPECTED_FILENAME}" != "${LATEST_KEY##*/}" ]; then
+  echo "ERROR: SHA256 sidecarが別のバックアップを参照しています。" >&2
+  exit 1
+fi
+ACTUAL_SHA256="$(sha256sum "${DUMP_PATH}")"
+ACTUAL_SHA256="${ACTUAL_SHA256%% *}"
+if [ "${EXPECTED_SHA256}" != "${ACTUAL_SHA256}" ]; then
+  echo "ERROR: バックアップSHA256が一致しません。" >&2
+  exit 1
+fi
+unset EXPECTED_SHA256 ACTUAL_SHA256 CHECKSUM_LINE
+echo "INFO: バックアップSHA256一致を確認しました。"
 
 CURRENT_STEP="dumpアーカイブ構造の検証"
 echo "=== pg_restore --listでアーカイブ構造を検証 ==="
