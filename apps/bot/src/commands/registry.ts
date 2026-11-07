@@ -10,6 +10,7 @@ import { coreInformationCommands } from './core-info.js';
 import { communityActivityCommands } from './community-activity.js';
 import { communityActivityExportCommands } from './community-activity-export.js';
 import { communityStatsCommands } from './community-stats.js';
+import { commonPointsCommands } from './common-points.js';
 import { configureHelpCommandProvider, helpV2Command } from './help-v2.js';
 import { leaderboardCommands } from './leaderboard.js';
 import { privacyCommands } from './privacy.js';
@@ -117,6 +118,7 @@ export class CommandRegistry {
       ...communityActivityCommands,
       ...communityActivityExportCommands,
       ...communityStatsCommands,
+      ...commonPointsCommands,
       ...leaderboardCommands,
       ...privacyCommands,
     ]) {
