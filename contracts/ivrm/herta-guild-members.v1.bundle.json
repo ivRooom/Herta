@@ -1,0 +1,209 @@
+{
+  "bundleVersion": 1,
+  "contract": {
+    "id": "herta-guild-members",
+    "version": "1.0.0",
+    "sourceRepository": "ivRooom/ivrm-contracts"
+  },
+  "operations": {
+    "searchGuildMembers": {
+      "method": "GET",
+      "pathTemplate": "/api/integrations/ivrm/guilds/{guildId}/members",
+      "parameters": [
+        {
+          "name": "guildId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[0-9]{17,20}$"
+          }
+        },
+        {
+          "name": "query",
+          "in": "query",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Trimmed query echoed from the request. Length must be 2–64 UTF-16 code units, matching the existing Bot search behavior.",
+            "x-ivrm-min-utf16-length": 2,
+            "x-ivrm-max-utf16-length": 64,
+            "x-ivrm-equals-query-parameter": "query"
+          }
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "required": false,
+          "schema": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 20
+          }
+        }
+      ],
+      "authentication": {
+        "type": "http",
+        "scheme": "bearer",
+        "guildScoped": true
+      },
+      "cacheControl": "private, no-store",
+      "errorStatusCodes": [400, 401, 404, 503],
+      "responseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://ivrm.jp/contracts/herta/guild-members/v1/search.schema.json",
+        "type": "object",
+        "additionalProperties": false,
+        "title": "Configured-guild member search v1",
+        "required": ["status", "guildId", "query", "members", "fetchedAt"],
+        "properties": {
+          "status": {
+            "const": "ok"
+          },
+          "guildId": {
+            "type": "string",
+            "pattern": "^[0-9]{17,20}$",
+            "description": "Must equal the authenticated guildId path parameter.",
+            "x-ivrm-equals-path-parameter": "guildId"
+          },
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Trimmed query echoed from the request. Length must be 2–64 UTF-16 code units, matching the existing Bot search behavior.",
+            "x-ivrm-min-utf16-length": 2,
+            "x-ivrm-max-utf16-length": 64,
+            "x-ivrm-equals-query-parameter": "query"
+          },
+          "members": {
+            "type": "array",
+            "maxItems": 20,
+            "description": "Unique member IDs; count must not exceed the requested limit. Search results are for selection, never an authorization snapshot.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "username", "displayName", "bot"],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9]{17,20}$"
+                },
+                "username": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "displayName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "bot": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "fetchedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Time the producer returned the directory. Name search may reuse results for up to 15 seconds."
+          }
+        }
+      }
+    },
+    "readGuildMemberSnapshot": {
+      "method": "GET",
+      "pathTemplate": "/api/integrations/ivrm/guilds/{guildId}/members/{userId}",
+      "parameters": [
+        {
+          "name": "guildId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[0-9]{17,20}$"
+          }
+        },
+        {
+          "name": "userId",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[0-9]{17,20}$"
+          }
+        }
+      ],
+      "authentication": {
+        "type": "http",
+        "scheme": "bearer",
+        "guildScoped": true
+      },
+      "cacheControl": "private, no-store",
+      "errorStatusCodes": [400, 401, 404, 503],
+      "responseSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://ivrm.jp/contracts/herta/guild-members/v1/snapshot.schema.json",
+        "type": "object",
+        "additionalProperties": false,
+        "title": "Current configured-guild member snapshot v1",
+        "required": ["status", "guildId", "member", "fetchedAt"],
+        "properties": {
+          "status": {
+            "const": "ok"
+          },
+          "guildId": {
+            "type": "string",
+            "pattern": "^[0-9]{17,20}$",
+            "description": "Must equal the authenticated guildId path parameter.",
+            "x-ivrm-equals-path-parameter": "guildId"
+          },
+          "member": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "username", "displayName", "bot", "roleIds"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[0-9]{17,20}$",
+                "x-ivrm-equals-path-parameter": "userId"
+              },
+              "username": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "displayName": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "bot": {
+                "type": "boolean"
+              },
+              "roleIds": {
+                "type": "array",
+                "maxItems": 250,
+                "uniqueItems": true,
+                "description": "Current additional role IDs; excludes @everyone. Exact member lookup must bypass the name-search cache.",
+                "items": {
+                  "type": "string",
+                  "pattern": "^[0-9]{1,20}$"
+                }
+              }
+            }
+          },
+          "fetchedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Time after a force/exact membership lookup completed. No name-search cache reuse."
+          }
+        }
+      }
+    }
+  }
+}
