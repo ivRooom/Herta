@@ -107,6 +107,38 @@ describe('pending VC Recap start fail-closed after Discord announcement', () => 
     expect(activeVcRecapChannelId('guild-1')).toBe(null);
   });
 
+  it('allows a new pending attempt after a cancelled announcement', async () => {
+    const { channel, connection, speaking } = makeChannel();
+    const firstNotice = deferredNotice();
+    const firstStart = startVcRecap(prisma, logger, channel, 'user-1', [], firstNotice.announce);
+    await vi.waitFor(() => expect(firstNotice.announce).toHaveBeenCalledTimes(1));
+
+    expect(await stopVcRecap(prisma, logger, 'guild-1')).toEqual({
+      status: 'start_cancelled',
+    });
+    firstNotice.done();
+    expect(await firstStart).toEqual({ status: 'start_cancelled' });
+    expect(speaking.on).not.toHaveBeenCalled();
+    expect(connection.destroy).toHaveBeenCalledTimes(1);
+    expect(activeVcRecapChannelId('guild-1')).toBe(null);
+
+    // Reuse the same Guild. The first cancellation must not poison its new
+    // reservation, which is independently stoppable before audio capture.
+    const secondNotice = deferredNotice();
+    const secondStart = startVcRecap(prisma, logger, channel, 'user-1', [], secondNotice.announce);
+    await vi.waitFor(() => expect(secondNotice.announce).toHaveBeenCalledTimes(1));
+    expect(activeVcRecapChannelId('guild-1')).toBe('voice-1');
+
+    expect(await stopVcRecap(prisma, logger, 'guild-1')).toEqual({
+      status: 'start_cancelled',
+    });
+    secondNotice.done();
+    expect(await secondStart).toEqual({ status: 'start_cancelled' });
+    expect(speaking.on).not.toHaveBeenCalled();
+    expect(connection.destroy).toHaveBeenCalledTimes(2);
+    expect(activeVcRecapChannelId('guild-1')).toBe(null);
+  });
+
   it('does not send a start notice when stopped during voice connection readiness', async () => {
     const { channel, connection, speaking } = makeChannel();
     let markReady!: () => void;
