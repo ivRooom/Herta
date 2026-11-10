@@ -193,6 +193,36 @@ describe('Minecraft Status v1', () => {
     expect(embed?.title).toContain('IVRM Main');
   });
 
+  it('本文に状態文・IP・稼働状況リンクを含む', () => {
+    const embed = buildMinecraftStatusImageEmbed(
+      current,
+      runtime,
+      normalizeMinecraftStatusConfig(undefined),
+      now,
+    );
+    expect(embed?.description).toContain('稼働中ですが、一部サーバーが停止・スリープしています。');
+    expect(embed?.description).toContain('IP: mc.ivrm.jp');
+    expect(embed?.description).toContain('稼働状況: https://status.ivrm.jp/');
+
+    const healthyRuntime: MinecraftRuntimeStatus = {
+      ...runtime,
+      status: 'running_healthy',
+      servers: runtime.servers?.map((s) => ({
+        ...s,
+        containerState: 'running',
+        health: 'healthy',
+        runtimeStatus: 'running',
+      })),
+    };
+    const healthy = buildMinecraftStatusImageEmbed(
+      current,
+      healthyRuntime,
+      normalizeMinecraftStatusConfig(undefined),
+      now,
+    );
+    expect(healthy?.description).toContain('正常稼働中です。');
+  });
+
   it('オフライン状態を表示する', () => {
     const offline: MinecraftCurrentStatus = {
       status: 'offline',
