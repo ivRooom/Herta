@@ -343,9 +343,10 @@ export function buildMinecraftStatusCardModel(
   if (current?.versions?.minecraft) model.version = current.versions.minecraft;
   const hostLabel = hostLabelOf(current);
   if (hostLabel) model.hostLabel = hostLabel;
-  if (config.showBackup && current?.backup?.latest_local?.mtime) {
-    const backup = current.backup.latest_local;
-    model.backupLabel = `${formatBackupTime(backup.mtime)}${backup.size ? `（${backup.size}）` : ''}`;
+  const backupMtime = current?.backup?.latest_local?.mtime;
+  if (config.showBackup && backupMtime) {
+    const backupSize = current?.backup?.latest_local?.size;
+    model.backupLabel = `${formatBackupTime(backupMtime)}${backupSize ? `（${backupSize}）` : ''}`;
   }
   return model;
 }
