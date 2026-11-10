@@ -94,7 +94,8 @@ describe('Minecraft Status v1', () => {
     );
     expect(embed?.title).toContain('IVRM Main — 🟢 オンライン');
     expect(embed?.url).toBe('https://status.ivrm.jp/');
-    expect(embed?.description).toContain('接続先: `mc.ivrm.jp`');
+    expect(embed?.description).toContain('IP: mc.ivrm.jp');
+    expect(embed?.description).toContain('Minecraft 26.1.2 / NeoForge / Main');
     expect(field(embed, '👥 プレイヤー')?.value).toContain('**2 / 10**');
     expect(field(embed, '👥 プレイヤー')?.value).toContain('██░░░░░░░░');
     expect(field(embed, '🎮 オンライン')?.value).toBe('ivurugg, kanata');
@@ -191,6 +192,45 @@ describe('Minecraft Status v1', () => {
     );
     expect(embed?.image?.url).toBe('attachment://herta-minecraft-status.png');
     expect(embed?.title).toContain('IVRM Main');
+  });
+
+  it('本文に状態文・IP・稼働状況リンクを含む', () => {
+    const embed = buildMinecraftStatusImageEmbed(
+      current,
+      runtime,
+      normalizeMinecraftStatusConfig(undefined),
+      now,
+    );
+    expect(embed?.description).toContain('稼働中ですが、一部に異常があります。');
+    expect(embed?.description).toContain('IP: mc.ivrm.jp');
+    expect(embed?.description).toContain('稼働状況: https://status.ivrm.jp/');
+
+    const fieldsEmbed = buildMinecraftStatusEmbed(
+      current,
+      runtime,
+      normalizeMinecraftStatusConfig(undefined),
+      now,
+    );
+    expect(fieldsEmbed?.description).toContain('稼働中ですが、一部に異常があります。');
+    expect(fieldsEmbed?.description).toContain('稼働状況: https://status.ivrm.jp/');
+
+    const healthyRuntime: MinecraftRuntimeStatus = {
+      ...runtime,
+      status: 'operational',
+      servers: runtime.servers?.map((s) => ({
+        ...s,
+        containerState: 'running',
+        health: 'healthy',
+        runtimeStatus: 'running',
+      })),
+    };
+    const healthy = buildMinecraftStatusImageEmbed(
+      current,
+      healthyRuntime,
+      normalizeMinecraftStatusConfig(undefined),
+      now,
+    );
+    expect(healthy?.description).toContain('正常稼働中です。');
   });
 
   it('オフライン状態を表示する', () => {
