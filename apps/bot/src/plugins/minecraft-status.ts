@@ -330,9 +330,10 @@ function serverStateLabel(server: MinecraftRuntimeServer): string {
 }
 
 function serverStateDot(server: MinecraftRuntimeServer): string {
+  if (server.health === 'unhealthy') return '🔴';
   const running = server.runtimeStatus === 'running' || server.containerState === 'running';
-  if (running && server.health !== 'unhealthy') return '🟢';
-  if (!running && server.runtimeStatus === 'sleeping') return '🟡';
+  if (running) return '🟢';
+  if (server.runtimeStatus === 'sleeping') return '🟡';
   return '🔴';
 }
 
