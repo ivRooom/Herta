@@ -61,6 +61,8 @@ interface MinecraftStatusInteraction {
   guildId: string | null;
   options: MinecraftStatusOptions;
   reply(options: ReplyOptions): Promise<unknown>;
+  deferReply(options?: { flags?: number }): Promise<unknown>;
+  editReply(options: { content: string; allowedMentions: { parse: [] } }): Promise<unknown>;
 }
 
 interface ReplyOptions {
@@ -224,8 +226,15 @@ async function executeMinecraftCommand(
     return;
   }
 
+  // 取得に時間がかかる場合でも応答期限（約3秒）を切らないよう、先に defer する
+  await interaction.deferReply({
+    flags: config.ephemeralResponses ? EPHEMERAL_FLAG : undefined,
+  });
   const [current, runtime] = await Promise.all([fetchCurrentStatus(), fetchRuntimeStatus()]);
-  await reply(context, interaction, formatMinecraftStatus(current, runtime, config));
+  await interaction.editReply({
+    content: formatMinecraftStatus(current, runtime, config),
+    allowedMentions: { parse: [] },
+  });
 }
 
 async function fetchCurrentStatus(): Promise<MinecraftCurrentStatus | null> {
