@@ -123,7 +123,8 @@ export function formatMinecraftStatus(
     );
     if (names.length > 0) {
       const shown = names.slice(0, MAX_PLAYER_NAMES).join(', ');
-      const rest = names.length > MAX_PLAYER_NAMES ? ` ほか${names.length - MAX_PLAYER_NAMES}名` : '';
+      const rest =
+        names.length > MAX_PLAYER_NAMES ? ` ほか${names.length - MAX_PLAYER_NAMES}名` : '';
       lines.push(`オンライン: ${shown}${rest}`);
     }
   }

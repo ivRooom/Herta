@@ -11,7 +11,11 @@ const now = new Date('2026-11-10T01:00:00.000Z');
 const current: MinecraftCurrentStatus = {
   status: 'online',
   collected_at: '2026-11-10T00:59:00.000Z',
-  server: { name: 'IVRM Main', mode: 'Minecraft 26.1.2 / NeoForge / Main', connection: 'mc.ivrm.jp' },
+  server: {
+    name: 'IVRM Main',
+    mode: 'Minecraft 26.1.2 / NeoForge / Main',
+    connection: 'mc.ivrm.jp',
+  },
   players: { online: 2, max: 10, names: ['ivurugg', 'kanata'] },
   uptime: { container: '12時間 36分' },
   resources: {
@@ -22,7 +26,11 @@ const current: MinecraftCurrentStatus = {
   },
   versions: { minecraft: 'Minecraft 26.1.2 / NeoForge 26.1.2.87', java: 'openjdk 25' },
   backup: {
-    latest_local: { file: 'minecraft-main-20261110-030000.tar.gz', size: '937M', mtime: '2026-11-10 03:00:46' },
+    latest_local: {
+      file: 'minecraft-main-20261110-030000.tar.gz',
+      size: '937M',
+      mtime: '2026-11-10 03:00:46',
+    },
   },
 };
 
@@ -54,7 +62,12 @@ describe('Minecraft Status v1', () => {
   });
 
   it('稼働状態・プレイヤー・リソース・サーバー状態を表示する', () => {
-    const output = formatMinecraftStatus(current, runtime, normalizeMinecraftStatusConfig(undefined), now);
+    const output = formatMinecraftStatus(
+      current,
+      runtime,
+      normalizeMinecraftStatusConfig(undefined),
+      now,
+    );
     expect(output).toContain('IVRM Main — 🟢 オンライン');
     expect(output).toContain('接続先: `mc.ivrm.jp`');
     expect(output).toContain('プレイヤー: **2 / 10**');
@@ -80,7 +93,12 @@ describe('Minecraft Status v1', () => {
   });
 
   it('表示フラグOFFの項目を省略する', () => {
-    const config = { ...normalizeMinecraftStatusConfig(undefined), showResources: false, showServers: false, showBackup: false };
+    const config = {
+      ...normalizeMinecraftStatusConfig(undefined),
+      showResources: false,
+      showServers: false,
+      showBackup: false,
+    };
     const output = formatMinecraftStatus(current, runtime, config, now);
     expect(output).not.toContain('リソース:');
     expect(output).not.toContain('サーバー状態:');
@@ -88,7 +106,12 @@ describe('Minecraft Status v1', () => {
   });
 
   it('片方のデータだけでも表示し、両方欠けたら取得失敗を返す', () => {
-    const onlyRuntime = formatMinecraftStatus(null, runtime, normalizeMinecraftStatusConfig(undefined), now);
+    const onlyRuntime = formatMinecraftStatus(
+      null,
+      runtime,
+      normalizeMinecraftStatusConfig(undefined),
+      now,
+    );
     expect(onlyRuntime).toContain('🟢 オンライン');
     expect(onlyRuntime).toContain('プレイヤー: **2 / 10**');
 
@@ -97,8 +120,16 @@ describe('Minecraft Status v1', () => {
   });
 
   it('オフライン状態を表示する', () => {
-    const offline: MinecraftCurrentStatus = { status: 'offline', collected_at: '2026-11-10T00:59:00.000Z' };
-    const output = formatMinecraftStatus(offline, null, normalizeMinecraftStatusConfig(undefined), now);
+    const offline: MinecraftCurrentStatus = {
+      status: 'offline',
+      collected_at: '2026-11-10T00:59:00.000Z',
+    };
+    const output = formatMinecraftStatus(
+      offline,
+      null,
+      normalizeMinecraftStatusConfig(undefined),
+      now,
+    );
     expect(output).toContain('🔴 オフライン');
   });
 });
