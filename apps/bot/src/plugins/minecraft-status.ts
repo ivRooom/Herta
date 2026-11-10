@@ -221,6 +221,7 @@ export function buildMinecraftStatusEmbed(
     title: `🎮 ${serverName} — ${statusLabel(current, runtime)}`,
     url: MINECRAFT_STATUS_PAGE_URL,
     color: statusColor(current, runtime),
+    description: statusSummaryDescription(current, runtime),
     fields,
   };
   if (descriptionLines.length > 0) {
@@ -234,6 +235,23 @@ export function buildMinecraftStatusEmbed(
   }
 
   return embed;
+}
+
+export function statusSummaryDescription(
+  current: MinecraftCurrentStatus | null,
+  runtime: MinecraftRuntimeStatus | null,
+): string {
+  const tone = statusTone(current, runtime);
+  const sentence =
+    tone === 'online'
+      ? '正常稼働中です。'
+      : tone === 'attention'
+        ? '稼働中ですが、一部サーバーが停止・スリープしています。'
+        : tone === 'offline'
+          ? '現在オフラインです。'
+          : '状態を取得できませんでした。';
+  const connection = current?.server?.connection ?? 'mc.ivrm.jp';
+  return `${sentence}\n\nIP: ${connection}\n稼働状況: ${MINECRAFT_STATUS_PAGE_URL}`;
 }
 
 export function buildMinecraftStatusImageEmbed(
@@ -250,6 +268,7 @@ export function buildMinecraftStatusImageEmbed(
     title: `🎮 ${serverName} — ${statusLabel(current, runtime)}`,
     url: MINECRAFT_STATUS_PAGE_URL,
     color: statusColor(current, runtime),
+    description: statusSummaryDescription(current, runtime),
     image: { url: 'attachment://herta-minecraft-status.png' },
   };
   const footer = updatedFooter(current, runtime, config, now);
