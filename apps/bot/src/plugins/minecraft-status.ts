@@ -379,12 +379,20 @@ function serverStateTone(server: MinecraftRuntimeServer): MinecraftServerTone {
 /** "Oracle Linux Server 9.7" + Neoverse-N1 + 2コア → "Oracle Cloud · Oracle Linux 9.7 · Neoverse-N1 · 2コア" */
 function hostLabelOf(current: MinecraftCurrentStatus | null): string | null {
   const runtime = current?.runtime;
-  if (!runtime?.os && !runtime?.cpu_model) return null;
+  const os = typeof runtime?.os === 'string' ? runtime.os : undefined;
+  const cpuModel = typeof runtime?.cpu_model === 'string' ? runtime.cpu_model : undefined;
+  const cpuCores =
+    typeof runtime?.cpu_cores === 'string'
+      ? runtime.cpu_cores
+      : typeof runtime?.cpu_cores === 'number'
+        ? String(runtime.cpu_cores)
+        : undefined;
+  if (!os && !cpuModel) return null;
   const parts: string[] = [];
-  if (runtime.os?.includes('Oracle')) parts.push('Oracle Cloud');
-  if (runtime.os) parts.push(runtime.os.replace(' Server', ''));
-  if (runtime.cpu_model) parts.push(runtime.cpu_model);
-  if (runtime.cpu_cores) parts.push(`${runtime.cpu_cores}コア`);
+  if (os?.includes('Oracle')) parts.push('Oracle Cloud');
+  if (os) parts.push(os.replace(' Server', ''));
+  if (cpuModel) parts.push(cpuModel);
+  if (cpuCores) parts.push(`${cpuCores}コア`);
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
@@ -519,9 +527,9 @@ async function executeMinecraftCommand(
     flags: config.ephemeralResponses ? EPHEMERAL_FLAG : undefined,
   });
   const [current, runtime] = await Promise.all([fetchCurrentStatus(), fetchRuntimeStatus()]);
-  const cardModel = buildMinecraftStatusCardModel(current, runtime, config);
-  if (cardModel) {
-    try {
+  try {
+    const cardModel = buildMinecraftStatusCardModel(current, runtime, config);
+    if (cardModel) {
       const card = await renderMinecraftStatusCard(cardModel);
       const imageEmbed = buildMinecraftStatusImageEmbed(current, runtime, config);
       if (imageEmbed) {
@@ -532,9 +540,9 @@ async function executeMinecraftCommand(
         });
         return;
       }
-    } catch {
-      // 画像描画に失敗した場合はフィールド形式の Embed にフォールバックする
     }
+  } catch {
+    // モデル構築・画像描画に失敗した場合はフィールド形式の Embed にフォールバックする
   }
   const embed = buildMinecraftStatusEmbed(current, runtime, config);
   if (embed) {

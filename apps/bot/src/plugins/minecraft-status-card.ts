@@ -111,7 +111,8 @@ export async function renderMinecraftStatusCard(model: MinecraftStatusCardModel)
     );
     if (model.players.ratio !== null) {
       y += 30;
-      const filled = Math.round(model.players.ratio * contentWidth);
+      const ratio = Math.min(1, Math.max(0, model.players.ratio));
+      const filled = Math.round(ratio * contentWidth);
       parts.push(
         `<rect x="${pad}" y="${y}" width="${contentWidth}" height="24" rx="12" fill="${BAR_TRACK}"/>`,
       );
