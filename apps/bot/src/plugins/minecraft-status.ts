@@ -294,7 +294,7 @@ export function buildMinecraftStatusCardModel(
   }
   const model: MinecraftStatusCardModel = {
     serverName: current?.server?.name ?? 'Minecraft',
-    statusText: statusLabel(current, runtime).replace(/^[🟢🔴⚠️]\s*/, ''),
+    statusText: statusTextOf(current),
     statusTone: statusTone(current, runtime),
   };
   if (current?.server?.connection) model.connection = current.server.connection;
@@ -351,6 +351,12 @@ export function buildMinecraftStatusCardModel(
   return model;
 }
 
+function statusTextOf(current: MinecraftCurrentStatus | null): string {
+  if (current?.status === 'offline') return 'オフライン';
+  if (current?.status === 'online') return 'オンライン';
+  return '状態不明';
+}
+
 function statusTone(
   current: MinecraftCurrentStatus | null,
   runtime: MinecraftRuntimeStatus | null,
@@ -382,17 +388,11 @@ function hostLabelOf(current: MinecraftCurrentStatus | null): string | null {
   return parts.length > 0 ? parts.join(' · ') : null;
 }
 
-/** "2026-11-10 15:00:45" → "11/10 15:00"（解釈できなければ元の表記） */
+/** "2026-11-10 15:00:45" → "11/10 15:00"（収集ホストの壁時計表記をそのまま整形し、解釈できなければ元の表記） */
 function formatBackupTime(mtime: string): string {
-  const parsed = new Date(mtime.replace(' ', 'T'));
-  if (Number.isNaN(parsed.getTime())) return mtime;
-  return new Intl.DateTimeFormat('ja-JP', {
-    timeZone: 'Asia/Tokyo',
-    month: 'numeric',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(parsed);
+  const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(mtime);
+  if (!match) return mtime;
+  return `${Number(match[2])}/${Number(match[3])} ${match[4]}:${match[5]}`;
 }
 
 /** 0..1 の割合を10セルのバーで表す（例: ████░░░░░░） */
