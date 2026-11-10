@@ -22,6 +22,7 @@ import { dailyBonusManifest } from './manifests/daily-bonus.js';
 export { dailyBonusManifest } from './manifests/daily-bonus.js';
 import { mbtiManifest } from './manifests/mbti.js';
 import { miniGamesManifest } from './manifests/mini-games.js';
+import { minecraftStatusManifest } from './manifests/minecraft-status.js';
 import { onboardingManifest } from './manifests/onboarding.js';
 import { pollManifest } from './manifests/poll.js';
 import { reminderManifest } from './manifests/reminder.js';
@@ -46,6 +47,7 @@ export { giveawayManifest } from './manifests/giveaway.js';
 export { fortuneManifest } from './manifests/fortune.js';
 export { mbtiManifest, MBTI_TYPE_KEYS, mbtiRoleConfigKey } from './manifests/mbti.js';
 export { miniGamesManifest } from './manifests/mini-games.js';
+export { minecraftStatusManifest } from './manifests/minecraft-status.js';
 export { onboardingManifest } from './manifests/onboarding.js';
 export { pollManifest } from './manifests/poll.js';
 export { reminderManifest } from './manifests/reminder.js';
@@ -159,6 +161,7 @@ const rawPluginManifests: PluginManifest[] = [
   fortuneManifest,
   dailyBonusManifest,
   miniGamesManifest,
+  minecraftStatusManifest,
   moderationManifest,
   onboardingManifest,
   pollManifest,

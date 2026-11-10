@@ -24,6 +24,7 @@ import { fortunePlugin } from './fortune.js';
 import { dailyBonusPlugin } from './daily-bonus.js';
 import { mbtiPlugin } from './mbti.js';
 import { miniGamesPlugin } from './mini-games.js';
+import { minecraftStatusPlugin } from './minecraft-status.js';
 import { onboardingPlugin } from './onboarding.js';
 import { pollPlugin } from './poll.js';
 import { reminderPlugin } from './reminder.js';
@@ -256,6 +257,7 @@ const officialPluginIds = [
   'mbti',
   'fortune',
   'mini-games',
+  'minecraft-status',
   'moderation',
   'onboarding',
   'poll',
@@ -710,6 +712,23 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
           }) as Parameters<NonNullable<typeof serverStatsPlugin.onEnable>>[0],
       )
     : undefined;
+  const minecraftStatusEntry = deps
+    ? toRuntimePluginEntry(
+        minecraftStatusPlugin,
+        (plugin, guildId, config) =>
+          createPluginContext({
+            client: deps.client,
+            prisma: deps.prisma,
+            logger: deps.logger,
+            guildId,
+            config,
+            manifest: plugin.manifest,
+            onCommunityAction: deps.onCommunityAction
+              ? (metric: string, userId: string) => deps.onCommunityAction!(guildId, metric, userId)
+              : undefined,
+          }) as Parameters<NonNullable<typeof minecraftStatusPlugin.onEnable>>[0],
+      )
+    : undefined;
   const teamSplitEntry = deps
     ? toRuntimePluginEntry(
         teamSplitPlugin,
@@ -790,6 +809,7 @@ function createOfficialEntries(deps?: DefaultPluginRegistryDeps): RuntimePluginE
     if (pluginId === 'role-manager' && roleManagerEntry) return [roleManagerEntry];
     if (pluginId === 'suggestion' && suggestionEntry) return [suggestionEntry];
     if (pluginId === 'server-stats' && serverStatsEntry) return [serverStatsEntry];
+    if (pluginId === 'minecraft-status' && minecraftStatusEntry) return [minecraftStatusEntry];
     if (pluginId === 'team-split' && teamSplitEntry) return [teamSplitEntry];
     if (pluginId === 'valorant' && valorantEntry) return [valorantEntry];
     if (pluginId === 'vc-recap' && vcRecapEntry) return [vcRecapEntry];
