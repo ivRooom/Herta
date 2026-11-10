@@ -99,7 +99,7 @@ url_percent_decode() {
     c="${s:i:1}"
     if [[ "$c" == '%' && "${s:i+1:2}" =~ ^[0-9A-Fa-f]{2}$ ]]; then
       hex="${s:i+1:2}"
-      out+="$(printf '\\x%s' "$hex")"
+      out+="$(printf '%b' "\\x$hex")"
       i=$(( i + 2 ))
     else
       out+="$c"
