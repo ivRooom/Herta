@@ -94,7 +94,8 @@ describe('Minecraft Status v1', () => {
     );
     expect(embed?.title).toContain('IVRM Main — 🟢 オンライン');
     expect(embed?.url).toBe('https://status.ivrm.jp/');
-    expect(embed?.description).toContain('接続先: `mc.ivrm.jp`');
+    expect(embed?.description).toContain('IP: mc.ivrm.jp');
+    expect(embed?.description).toContain('Minecraft 26.1.2 / NeoForge / Main');
     expect(field(embed, '👥 プレイヤー')?.value).toContain('**2 / 10**');
     expect(field(embed, '👥 プレイヤー')?.value).toContain('██░░░░░░░░');
     expect(field(embed, '🎮 オンライン')?.value).toBe('ivurugg, kanata');
@@ -200,9 +201,18 @@ describe('Minecraft Status v1', () => {
       normalizeMinecraftStatusConfig(undefined),
       now,
     );
-    expect(embed?.description).toContain('稼働中ですが、一部サーバーが停止・スリープしています。');
+    expect(embed?.description).toContain('稼働中ですが、一部に異常があります。');
     expect(embed?.description).toContain('IP: mc.ivrm.jp');
     expect(embed?.description).toContain('稼働状況: https://status.ivrm.jp/');
+
+    const fieldsEmbed = buildMinecraftStatusEmbed(
+      current,
+      runtime,
+      normalizeMinecraftStatusConfig(undefined),
+      now,
+    );
+    expect(fieldsEmbed?.description).toContain('稼働中ですが、一部に異常があります。');
+    expect(fieldsEmbed?.description).toContain('稼働状況: https://status.ivrm.jp/');
 
     const healthyRuntime: MinecraftRuntimeStatus = {
       ...runtime,

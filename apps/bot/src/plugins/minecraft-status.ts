@@ -137,9 +137,6 @@ export function buildMinecraftStatusEmbed(
   const fields: APIEmbed['fields'] = [];
 
   const descriptionLines: string[] = [];
-  if (current?.server?.connection) {
-    descriptionLines.push(`接続先: \`${current.server.connection}\``);
-  }
   if (current?.server?.mode) {
     descriptionLines.push(current.server.mode);
   }
@@ -225,7 +222,7 @@ export function buildMinecraftStatusEmbed(
     fields,
   };
   if (descriptionLines.length > 0) {
-    embed.description = descriptionLines.join('\n');
+    embed.description = `${embed.description}\n${descriptionLines.join('\n')}`;
   }
 
   const footer = updatedFooter(current, runtime, config, now);
@@ -246,11 +243,12 @@ export function statusSummaryDescription(
     tone === 'online'
       ? '正常稼働中です。'
       : tone === 'attention'
-        ? '稼働中ですが、一部サーバーが停止・スリープしています。'
+        ? '稼働中ですが、一部に異常があります。'
         : tone === 'offline'
           ? '現在オフラインです。'
           : '状態を取得できませんでした。';
-  const connection = current?.server?.connection ?? 'mc.ivrm.jp';
+  const rawConnection = current?.server?.connection;
+  const connection = rawConnection && rawConnection.length > 0 ? rawConnection : 'mc.ivrm.jp';
   return `${sentence}\n\nIP: ${connection}\n稼働状況: ${MINECRAFT_STATUS_PAGE_URL}`;
 }
 
