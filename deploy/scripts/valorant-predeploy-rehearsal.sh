@@ -2,6 +2,12 @@
 # VALORANT additive migration release fence. No live SQL mutation here.
 # Must run on the reviewed production SSH host, after config validation and
 # BEFORE Docker image pull / Compose up (which starts the Prisma migrator).
+#
+# In both database modes an already-applied migration is verified read-only
+# against the selected database (status, checksum, expected columns). The
+# backup / isolated-restore rehearsal path remains local-only: a pending
+# migration on an external PostgreSQL stays blocked until an approved
+# external backup/restore path exists.
 set -euo pipefail
 script_dir="$(cd "$(dirname "$0")" && pwd)"
 source "$script_dir/_common.sh"
@@ -12,10 +18,6 @@ if [[ ! -f "$migration" ]]; then
   echo 'VALORANT新規migrationなし: 事前DB復元ゲートをスキップします。'
   exit 0
 fi
-if [[ "$HERTA_SELECTED_DATABASE_MODE" != local ]]; then
-  echo 'ERROR: 外部PostgreSQLの本番バックアップ/隔離復元経路は未承認です。デプロイを停止します。' >&2
-  exit 2
-fi
 if [[ ! "${DEPLOY_REF:-}" =~ ^[a-f0-9]{40}$ ]]; then
   echo 'ERROR: immutable deploy SHAが不正です。' >&2
   exit 2
@@ -25,18 +27,101 @@ if ! docker image inspect postgres:16-alpine >/dev/null 2>&1; then
   exit 2
 fi
 
-source_container="$("$COMPOSE" ps -q postgres)"
-if [[ -z "$source_container" ]] ||
-   [[ "$(docker inspect --format '{{.State.Running}}' "$source_container")" != true ]]; then
-  echo 'ERROR: 対象Composeの本番PG16が稼働していません。' >&2
-  exit 2
+external_private_ip=''
+external_ca_file=''
+if [[ "$HERTA_SELECTED_DATABASE_MODE" == external ]]; then
+  external_private_ip="$(deployment_literal HERTA_DATABASE_PRIVATE_IP '')"
+  external_ca_file="$(deployment_literal HERTA_DATABASE_CA_FILE '')"
+  if [[ -z "$external_private_ip" || -z "$external_ca_file" || ! -f "$external_ca_file" ]]; then
+    echo 'ERROR: 外部PostgreSQLの接続前提（CA/到達先）を確認できません。' >&2
+    exit 2
+  fi
 fi
-source_version="$("$COMPOSE" exec -T postgres sh -ec 'exec psql -X -At -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SHOW server_version_num"')"
-if [[ ! "$source_version" =~ ^[0-9]+$ ]] || (( source_version < 160000 || source_version >= 170000 )); then
-  echo 'ERROR: 本番PostgreSQLのmajor versionが想定16と異なります。' >&2
-  exit 2
+
+# Read-only verification queries against the selected database. Local mode
+# uses the Compose PostgreSQL container. External mode uses a one-off psql
+# container (the host has no psql and the database hostname only resolves
+# through the Compose extra_hosts mapping, so it is pinned explicitly).
+# Credentials never appear in process arguments: DATABASE_URL is split into
+# libpq environment variables, forwarded to the container by name only, and
+# TLS is verified in full against the pinned CA.
+run_migration_query() {
+  if [[ "$HERTA_SELECTED_DATABASE_MODE" == local ]]; then
+    "$COMPOSE" exec -T postgres sh -ec 'exec psql -X -At -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+    return
+  fi
+  local database_url rest authority path_part userinfo host_port
+  local db_user db_password db_host db_port db_name hex
+  database_url="$(deployment_literal DATABASE_URL '')"
+  if [[ -z "$database_url" || "$database_url" != *"://"* || "$database_url" != *"@"* ]]; then
+    echo 'ERROR: 外部PostgreSQLの接続情報を確認できません。' >&2
+    return 2
+  fi
+  rest="${database_url#*://}"
+  authority="${rest%%/*}"
+  path_part="${rest#*/}"
+  db_name="${path_part%%\?*}"
+  userinfo="${authority%@*}"
+  host_port="${authority##*@}"
+  db_user="${userinfo%%:*}"
+  db_password=''
+  if [[ "$userinfo" == *":"* ]]; then
+    db_password="${userinfo#*:}"
+  fi
+  db_host="${host_port%%:*}"
+  db_port=5432
+  if [[ "$host_port" == *":"* ]]; then
+    db_port="${host_port##*:}"
+  fi
+  if [[ -z "$db_user" || -z "$db_host" || -z "$db_name" || ! "$db_port" =~ ^[0-9]+$ ]]; then
+    echo 'ERROR: 外部PostgreSQLの接続情報を確認できません。' >&2
+    return 2
+  fi
+  # Percent-decode the userinfo segments (URL encoding is mandatory for
+  # credentials in a valid connection string).
+  db_user="$(url_percent_decode "$db_user")"
+  db_password="$(url_percent_decode "$db_password")"
+  PGHOST="$db_host" PGPORT="$db_port" PGDATABASE="$db_name" \
+    PGUSER="$db_user" PGPASSWORD="$db_password" \
+    PGSSLMODE=verify-full PGSSLROOTCERT=/run/ivrm/postgresql-ca.crt \
+    PGCONNECT_TIMEOUT=5 \
+    docker run --rm -i \
+      --add-host "ivrm-db-postgres.internal:${external_private_ip}" \
+      -v "${external_ca_file}:/run/ivrm/postgresql-ca.crt:ro" \
+      -e PGHOST -e PGPORT -e PGDATABASE -e PGUSER -e PGPASSWORD \
+      -e PGSSLMODE -e PGSSLROOTCERT -e PGCONNECT_TIMEOUT \
+      postgres:16-alpine psql -X -At -v ON_ERROR_STOP=1
+}
+
+url_percent_decode() {
+  local s="$1" out='' i c hex
+  for (( i = 0; i < ${#s}; i++ )); do
+    c="${s:i:1}"
+    if [[ "$c" == '%' && "${s:i+1:2}" =~ ^[0-9A-Fa-f]{2}$ ]]; then
+      hex="${s:i+1:2}"
+      out+="$(printf '%b' "\\x$hex")"
+      i=$(( i + 2 ))
+    else
+      out+="$c"
+    fi
+  done
+  printf '%s' "$out"
+}
+
+if [[ "$HERTA_SELECTED_DATABASE_MODE" == local ]]; then
+  source_container="$("$COMPOSE" ps -q postgres)"
+  if [[ -z "$source_container" ]] ||
+     [[ "$(docker inspect --format '{{.State.Running}}' "$source_container")" != true ]]; then
+    echo 'ERROR: 対象Composeの本番PG16が稼働していません。' >&2
+    exit 2
+  fi
+  source_version="$("$COMPOSE" exec -T postgres sh -ec 'exec psql -X -At -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SHOW server_version_num"')"
+  if [[ ! "$source_version" =~ ^[0-9]+$ ]] || (( source_version < 160000 || source_version >= 170000 )); then
+    echo 'ERROR: 本番PostgreSQLのmajor versionが想定16と異なります。' >&2
+    exit 2
+  fi
 fi
-migration_status="$("$COMPOSE" exec -T postgres sh -ec 'exec psql -X -At -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+migration_status="$(run_migration_query <<'SQL'
 SELECT CASE
   WHEN count(*) = 0 THEN 'pending'
   WHEN count(*) = 1
@@ -82,7 +167,7 @@ if [[ ! "$migration_checksum" =~ ^[0-9a-f]{64}$ ]]; then
   exit 2
 fi
 if [[ "$migration_status" == applied ]]; then
-  recorded_checksum="$("$COMPOSE" exec -T postgres sh -ec 'exec psql -X -At -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+  recorded_checksum="$(run_migration_query <<'SQL'
 SELECT checksum FROM "_prisma_migrations"
 WHERE migration_name = '20261103160000_valorant_voice_participants'
   AND finished_at IS NOT NULL AND rolled_back_at IS NULL;
@@ -92,7 +177,7 @@ SQL
     echo 'ERROR: 適用済みmigrationのチェックサムが現在のSQLと異なります。デプロイを停止します。' >&2
     exit 2
   fi
-  check="$(expected_schema_sql | "$COMPOSE" exec -T postgres sh -ec 'exec psql -X -At -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"')"
+  check="$(expected_schema_sql | run_migration_query)"
   if [[ "$check" != ok ]]; then
     echo 'ERROR: 本番migrationは適用済みですが列定義が一致しません。' >&2
     exit 2
@@ -104,10 +189,14 @@ if [[ "$migration_status" != pending ]]; then
   echo 'ERROR: migration状態を確認できません。' >&2
   exit 2
 fi
+if [[ "$HERTA_SELECTED_DATABASE_MODE" != local ]]; then
+  echo 'ERROR: 外部PostgreSQLの本番バックアップ/隔離復元経路は未承認です。デプロイを停止します。' >&2
+  exit 2
+fi
 
 # Pending migration must start from the exact unmodified pre-migration shape.
 # Do not create backups or start a migrator on a partially applied schema.
-partial_columns="$("$COMPOSE" exec -T postgres sh -ec 'exec psql -X -At -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+partial_columns="$(run_migration_query <<'SQL'
 SELECT count(*) FROM pg_attribute
 WHERE attrelid = 'public.valorant_pick_sessions'::regclass
   AND attname IN ('voice_channel_id', 'opted_out_user_ids')
