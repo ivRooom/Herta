@@ -257,17 +257,22 @@ function parsePercent(value: string | undefined): number | null {
 }
 
 const MEMORY_UNIT_BYTES: Record<string, number> = {
+  B: 1,
   K: 1024,
   KB: 1024,
+  KI: 1024,
   KIB: 1024,
   M: 1024 ** 2,
   MB: 1024 ** 2,
+  MI: 1024 ** 2,
   MIB: 1024 ** 2,
   G: 1024 ** 3,
   GB: 1024 ** 3,
+  GI: 1024 ** 3,
   GIB: 1024 ** 3,
   T: 1024 ** 4,
   TB: 1024 ** 4,
+  TI: 1024 ** 4,
   TIB: 1024 ** 4,
 };
 

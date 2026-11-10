@@ -101,6 +101,8 @@ describe('Minecraft Status v1', () => {
     expect(resources).toContain('1.09%');
     expect(resources).toContain('メモリ');
     expect(resources).toContain('27%');
+    expect(resources).toContain('ホストメモリ');
+    expect(resources).toContain('56%');
     expect(resources).toContain('Load `0.31, 0.34, 0.53`');
     expect(field(embed, '💾 最新バックアップ')?.value).toBe('2026-11-10 03:00:46（937M）');
     const servers = field(embed, '🖥 サーバー状態')?.value ?? '';
