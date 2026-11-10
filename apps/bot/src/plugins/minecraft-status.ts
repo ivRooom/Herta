@@ -1,14 +1,24 @@
 import type { PrismaClient } from '@herta/db';
 import { minecraftStatusManifest } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
+import type { APIEmbed } from 'discord.js';
 
 const EPHEMERAL_FLAG = 64;
 const FETCH_TIMEOUT_MS = 5_000;
 const MAX_PLAYER_NAMES = 20;
+const BAR_CELLS = 10;
 
-export const MINECRAFT_STATUS_CURRENT_URL_DEFAULT = 'https://stats.ivrm.jp/api/current.json';
+export const MINECRAFT_STATUS_CURRENT_URL_DEFAULT = 'https://status.ivrm.jp/api/current.json';
 export const MINECRAFT_STATUS_RUNTIME_URL_DEFAULT =
-  'https://stats.ivrm.jp/api/minecraft-runtime.json';
+  'https://status.ivrm.jp/api/minecraft-runtime.json';
+export const MINECRAFT_STATUS_PAGE_URL = 'https://status.ivrm.jp/';
+export const MINECRAFT_STATUS_UNAVAILABLE_MESSAGE =
+  'Minecraftサーバーの状態を取得できませんでした。時間をおいて再度お試しください。';
+
+const COLOR_ONLINE = 0x57f287;
+const COLOR_OFFLINE = 0xed4245;
+const COLOR_ATTENTION = 0xfee75c;
+const COLOR_UNKNOWN = 0x95a5a6;
 
 export interface MinecraftStatusConfig {
   enabled: boolean;
@@ -19,7 +29,7 @@ export interface MinecraftStatusConfig {
   staleAfterMinutes: number;
 }
 
-/** stats.ivrm.jp/api/current.json の形（収集側の都合で欠ける場合があるため全て任意） */
+/** status.ivrm.jp/api/current.json の形（収集側の都合で欠ける場合があるため全て任意） */
 export interface MinecraftCurrentStatus {
   status?: string;
   collected_at?: string;
@@ -36,7 +46,7 @@ export interface MinecraftCurrentStatus {
   backup?: { latest_local?: { file?: string; size?: string; mtime?: string } };
 }
 
-/** stats.ivrm.jp/api/minecraft-runtime.json の形 */
+/** status.ivrm.jp/api/minecraft-runtime.json の形 */
 export interface MinecraftRuntimeServer {
   id?: string;
   name?: string;
@@ -62,12 +72,18 @@ interface MinecraftStatusInteraction {
   options: MinecraftStatusOptions;
   reply(options: ReplyOptions): Promise<unknown>;
   deferReply(options?: { flags?: number }): Promise<unknown>;
-  editReply(options: { content: string; allowedMentions: { parse: [] } }): Promise<unknown>;
+  editReply(options: EditReplyOptions): Promise<unknown>;
 }
 
 interface ReplyOptions {
   content: string;
   flags?: number;
+  allowedMentions: { parse: [] };
+}
+
+interface EditReplyOptions {
+  content?: string;
+  embeds?: APIEmbed[];
   allowedMentions: { parse: [] };
 }
 
@@ -99,27 +115,35 @@ export function normalizeMinecraftStatusConfig(value: unknown): MinecraftStatusC
   };
 }
 
-export function formatMinecraftStatus(
+export function buildMinecraftStatusEmbed(
   current: MinecraftCurrentStatus | null,
   runtime: MinecraftRuntimeStatus | null,
   config: MinecraftStatusConfig,
   now: Date = new Date(),
-): string {
+): APIEmbed | null {
   if (!current && !runtime) {
-    return 'Minecraftサーバーの状態を取得できませんでした。時間をおいて再度お試しください。';
+    return null;
   }
 
   const serverName = current?.server?.name ?? 'Minecraft';
-  const lines: string[] = [`**🎮 ${serverName} — ${statusLabel(current, runtime)}**`];
+  const fields: APIEmbed['fields'] = [];
 
+  const descriptionLines: string[] = [];
   if (current?.server?.connection) {
-    lines.push(`接続先: \`${current.server.connection}\``);
+    descriptionLines.push(`接続先: \`${current.server.connection}\``);
+  }
+  if (current?.server?.mode) {
+    descriptionLines.push(current.server.mode);
   }
 
   const players = current?.players ?? runtime?.players;
   if (players && typeof players.online === 'number') {
-    const max = typeof players.max === 'number' ? ` / ${players.max}` : '';
-    lines.push(`プレイヤー: **${players.online}${max}**`);
+    const maxLabel = typeof players.max === 'number' ? ` / ${players.max}` : '';
+    let value = `**${players.online}${maxLabel}** 人`;
+    if (typeof players.max === 'number' && players.max > 0) {
+      value += `\n${bar(players.online / players.max)}`;
+    }
+    fields.push({ name: '👥 プレイヤー', value, inline: true });
     const names = (current?.players?.names ?? []).filter(
       (name): name is string => typeof name === 'string' && name.length > 0,
     );
@@ -127,37 +151,72 @@ export function formatMinecraftStatus(
       const shown = names.slice(0, MAX_PLAYER_NAMES).join(', ');
       const rest =
         names.length > MAX_PLAYER_NAMES ? ` ほか${names.length - MAX_PLAYER_NAMES}名` : '';
-      lines.push(`オンライン: ${shown}${rest}`);
+      fields.push({ name: '🎮 オンライン', value: `${shown}${rest}`, inline: false });
     }
   }
 
   if (current?.uptime?.container) {
-    lines.push(`稼働時間: **${current.uptime.container}**`);
+    fields.push({ name: '⏱ 稼働時間', value: current.uptime.container, inline: true });
   }
   if (current?.versions?.minecraft) {
-    lines.push(`バージョン: ${current.versions.minecraft}`);
+    fields.push({ name: '🧩 バージョン', value: current.versions.minecraft, inline: true });
   }
 
   if (config.showResources && current?.resources) {
     const resources = current.resources;
-    const parts: string[] = [];
-    if (resources.docker_cpu) parts.push(`CPU ${resources.docker_cpu}`);
-    if (resources.docker_memory) parts.push(`メモリ ${resources.docker_memory}`);
-    if (resources.load_average) parts.push(`Load ${resources.load_average}`);
-    if (parts.length > 0) lines.push(`リソース: ${parts.join(' / ')}`);
+    const lines: string[] = [];
+    const cpuPercent = parsePercent(resources.docker_cpu);
+    if (resources.docker_cpu) {
+      lines.push(
+        cpuPercent === null
+          ? `CPU ${resources.docker_cpu}`
+          : `CPU ${bar(cpuPercent / 100)} ${resources.docker_cpu}`,
+      );
+    }
+    const dockerMemory = parseMemoryUsage(resources.docker_memory);
+    if (resources.docker_memory) {
+      lines.push(
+        dockerMemory === null
+          ? `メモリ ${resources.docker_memory}`
+          : `メモリ ${bar(dockerMemory.ratio)} ${dockerMemory.percent}%（${resources.docker_memory}）`,
+      );
+    }
+    const hostMemory = parseMemoryUsage(resources.host_memory);
+    if (resources.host_memory) {
+      lines.push(
+        hostMemory === null
+          ? `ホストメモリ ${resources.host_memory}`
+          : `ホストメモリ ${bar(hostMemory.ratio)} ${hostMemory.percent}%（${resources.host_memory}）`,
+      );
+    }
+    if (resources.load_average) lines.push(`Load \`${resources.load_average}\``);
+    if (lines.length > 0) {
+      fields.push({ name: '📊 リソース', value: lines.join('\n'), inline: false });
+    }
+  }
+
+  if (config.showServers && runtime?.servers && runtime.servers.length > 0) {
+    const lines = runtime.servers.map(
+      (server) =>
+        `${serverStateDot(server)} **${server.id ?? server.name ?? 'unknown'}** — ${serverStateLabel(server)}`,
+    );
+    fields.push({ name: '🖥 サーバー状態', value: lines.join('\n'), inline: false });
   }
 
   if (config.showBackup && current?.backup?.latest_local?.mtime) {
     const backup = current.backup.latest_local;
     const size = backup.size ? `（${backup.size}）` : '';
-    lines.push(`最新バックアップ: ${backup.mtime}${size}`);
+    fields.push({ name: '💾 最新バックアップ', value: `${backup.mtime}${size}`, inline: true });
   }
 
-  if (config.showServers && runtime?.servers && runtime.servers.length > 0) {
-    lines.push('サーバー状態:');
-    for (const server of runtime.servers) {
-      lines.push(`• ${server.id ?? server.name ?? 'unknown'}: ${serverStateLabel(server)}`);
-    }
+  const embed: APIEmbed = {
+    title: `🎮 ${serverName} — ${statusLabel(current, runtime)}`,
+    url: MINECRAFT_STATUS_PAGE_URL,
+    color: statusColor(current, runtime),
+    fields,
+  };
+  if (descriptionLines.length > 0) {
+    embed.description = descriptionLines.join('\n');
   }
 
   const updatedAt = current?.collected_at ?? runtime?.generatedAt;
@@ -172,11 +231,65 @@ export function formatMinecraftStatus(
         hour: '2-digit',
         minute: '2-digit',
       }).format(parsed);
-      lines.push(`最終更新: ${formatted}${stale ? '（⚠️ データが古い可能性があります）' : ''}`);
+      embed.footer = {
+        text: `最終更新 ${formatted}${stale ? ' · ⚠️ データが古い可能性があります' : ''}`,
+      };
+      embed.timestamp = parsed.toISOString();
     }
   }
 
-  return lines.join('\n');
+  return embed;
+}
+
+/** 0..1 の割合を10セルのバーで表す（例: ████░░░░░░） */
+export function bar(ratio: number): string {
+  const clamped = Math.min(1, Math.max(0, Number.isFinite(ratio) ? ratio : 0));
+  const filled = Math.round(clamped * BAR_CELLS);
+  return `\`${'█'.repeat(filled)}${'░'.repeat(BAR_CELLS - filled)}\``;
+}
+
+function parsePercent(value: string | undefined): number | null {
+  if (!value) return null;
+  const match = /([\d.]+)\s*%/.exec(value);
+  if (!match) return null;
+  const parsed = Number.parseFloat(match[1]!);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+const MEMORY_UNIT_BYTES: Record<string, number> = {
+  B: 1,
+  K: 1024,
+  KB: 1024,
+  KI: 1024,
+  KIB: 1024,
+  M: 1024 ** 2,
+  MB: 1024 ** 2,
+  MI: 1024 ** 2,
+  MIB: 1024 ** 2,
+  G: 1024 ** 3,
+  GB: 1024 ** 3,
+  GI: 1024 ** 3,
+  GIB: 1024 ** 3,
+  T: 1024 ** 4,
+  TB: 1024 ** 4,
+  TI: 1024 ** 4,
+  TIB: 1024 ** 4,
+};
+
+/** "2.821GiB / 10.64GiB" のような使用量表記から割合と%を取り出す */
+function parseMemoryUsage(value: string | undefined): { ratio: number; percent: number } | null {
+  if (!value) return null;
+  const match = /([\d.]+)\s*([A-Za-z]+)\s*\/\s*([\d.]+)\s*([A-Za-z]+)/.exec(value);
+  if (!match) return null;
+  const usedUnit = MEMORY_UNIT_BYTES[match[2]!.toUpperCase()];
+  const totalUnit = MEMORY_UNIT_BYTES[match[4]!.toUpperCase()];
+  const used = Number.parseFloat(match[1]!);
+  const total = Number.parseFloat(match[3]!);
+  if (!usedUnit || !totalUnit || !Number.isFinite(used) || !Number.isFinite(total) || total <= 0) {
+    return null;
+  }
+  const ratio = (used * usedUnit) / (total * totalUnit);
+  return { ratio, percent: Math.round(ratio * 100) };
 }
 
 function statusLabel(
@@ -191,6 +304,22 @@ function statusLabel(
   return '⚠️ 状態不明';
 }
 
+function statusColor(
+  current: MinecraftCurrentStatus | null,
+  runtime: MinecraftRuntimeStatus | null,
+): number {
+  if (current?.status === 'offline') return COLOR_OFFLINE;
+  if (current?.status === 'online') {
+    return runtime?.status && runtime.status !== 'operational' && runtime.status !== 'online'
+      ? COLOR_ATTENTION
+      : COLOR_ONLINE;
+  }
+  if (current?.status) return COLOR_ATTENTION;
+  const main = runtime?.servers?.find((server) => server.id === 'mc-main');
+  if (main) return main.runtimeStatus === 'running' ? COLOR_ONLINE : COLOR_OFFLINE;
+  return COLOR_UNKNOWN;
+}
+
 function serverStateLabel(server: MinecraftRuntimeServer): string {
   let state: string;
   if (server.runtimeStatus === 'running' || server.containerState === 'running') {
@@ -203,6 +332,14 @@ function serverStateLabel(server: MinecraftRuntimeServer): string {
   if (server.health === 'healthy') return `${state}（正常）`;
   if (server.health === 'unhealthy') return `${state}（異常）`;
   return server.health ? `${state}（${server.health}）` : state;
+}
+
+function serverStateDot(server: MinecraftRuntimeServer): string {
+  if (server.health === 'unhealthy') return '🔴';
+  const running = server.runtimeStatus === 'running' || server.containerState === 'running';
+  if (running) return '🟢';
+  if (server.runtimeStatus === 'sleeping') return '🟡';
+  return '🔴';
 }
 
 async function executeMinecraftCommand(
@@ -231,10 +368,15 @@ async function executeMinecraftCommand(
     flags: config.ephemeralResponses ? EPHEMERAL_FLAG : undefined,
   });
   const [current, runtime] = await Promise.all([fetchCurrentStatus(), fetchRuntimeStatus()]);
-  await interaction.editReply({
-    content: formatMinecraftStatus(current, runtime, config),
-    allowedMentions: { parse: [] },
-  });
+  const embed = buildMinecraftStatusEmbed(current, runtime, config);
+  if (embed) {
+    await interaction.editReply({ embeds: [embed], allowedMentions: { parse: [] } });
+  } else {
+    await interaction.editReply({
+      content: MINECRAFT_STATUS_UNAVAILABLE_MESSAGE,
+      allowedMentions: { parse: [] },
+    });
+  }
 }
 
 async function fetchCurrentStatus(): Promise<MinecraftCurrentStatus | null> {
