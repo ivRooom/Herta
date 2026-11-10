@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   bar,
+  buildMinecraftStatusCardModel,
   buildMinecraftStatusEmbed,
+  buildMinecraftStatusImageEmbed,
   MINECRAFT_STATUS_CURRENT_URL_DEFAULT,
   MINECRAFT_STATUS_RUNTIME_URL_DEFAULT,
   normalizeMinecraftStatusConfig,
@@ -28,6 +30,7 @@ const current: MinecraftCurrentStatus = {
     load_average: '0.31, 0.34, 0.53',
   },
   versions: { minecraft: 'Minecraft 26.1.2 / NeoForge 26.1.2.87', java: 'openjdk 25' },
+  runtime: { os: 'Oracle Linux Server 9.7', cpu_model: 'Neoverse-N1', cpu_cores: '2' },
   backup: {
     latest_local: {
       file: 'minecraft-main-20261110-030000.tar.gz',
@@ -153,6 +156,41 @@ describe('Minecraft Status v1', () => {
       now,
     );
     expect(none).toBeNull();
+  });
+
+  it('画像カード用のモデルを組み立てる', () => {
+    const model = buildMinecraftStatusCardModel(
+      current,
+      runtime,
+      normalizeMinecraftStatusConfig(undefined),
+    );
+    expect(model?.serverName).toBe('IVRM Main');
+    expect(model?.statusText).toBe('オンライン');
+    expect(model?.statusTone).toBe('attention');
+    expect(model?.players).toMatchObject({ online: 2, max: 10, ratio: 0.2 });
+    expect(model?.players?.namesLine).toBe('ivurugg, kanata');
+    expect(model?.resources).toMatchObject({
+      cpuPercent: 1.09,
+      memoryPercent: 27,
+      hostMemoryPercent: 56,
+    });
+    expect(model?.servers?.map((s) => s.tone)).toEqual(['ok', 'ok', 'bad']);
+    expect(model?.hostLabel).toBe('Oracle Cloud · Oracle Linux 9.7 · Neoverse-N1 · 2コア');
+    expect(model?.backupLabel).toBe('11/10 03:00（937M）');
+    expect(
+      buildMinecraftStatusCardModel(null, null, normalizeMinecraftStatusConfig(undefined)),
+    ).toBeNull();
+  });
+
+  it('画像Embedは attachment を指す', () => {
+    const embed = buildMinecraftStatusImageEmbed(
+      current,
+      runtime,
+      normalizeMinecraftStatusConfig(undefined),
+      now,
+    );
+    expect(embed?.image?.url).toBe('attachment://herta-minecraft-status.png');
+    expect(embed?.title).toContain('IVRM Main');
   });
 
   it('オフライン状態を表示する', () => {
