@@ -42,26 +42,70 @@ fi
 # uses the Compose PostgreSQL container. External mode uses a one-off psql
 # container (the host has no psql and the database hostname only resolves
 # through the Compose extra_hosts mapping, so it is pinned explicitly).
-# The stored DATABASE_URL carries Prisma-only query parameters that libpq
-# rejects, so the connection string is rebuilt with libpq parameters only
-# and full TLS verification against the pinned CA.
+# Credentials never appear in process arguments: DATABASE_URL is split into
+# libpq environment variables, forwarded to the container by name only, and
+# TLS is verified in full against the pinned CA.
 run_migration_query() {
   if [[ "$HERTA_SELECTED_DATABASE_MODE" == local ]]; then
     "$COMPOSE" exec -T postgres sh -ec 'exec psql -X -At -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
     return
   fi
-  local database_url base conn
+  local database_url rest authority path_part userinfo host_port
+  local db_user db_password db_host db_port db_name hex
   database_url="$(deployment_literal DATABASE_URL '')"
-  if [[ -z "$database_url" ]]; then
+  if [[ -z "$database_url" || "$database_url" != *"://"* || "$database_url" != *"@"* ]]; then
     echo 'ERROR: 外部PostgreSQLの接続情報を確認できません。' >&2
     return 2
   fi
-  base="${database_url%%\?*}"
-  conn="${base}?sslmode=verify-full&sslrootcert=/run/ivrm/postgresql-ca.crt&connect_timeout=5"
-  docker run --rm -i \
-    --add-host "ivrm-db-postgres.internal:${external_private_ip}" \
-    -v "${external_ca_file}:/run/ivrm/postgresql-ca.crt:ro" \
-    postgres:16-alpine psql -X -At -v ON_ERROR_STOP=1 "$conn"
+  rest="${database_url#*://}"
+  authority="${rest%%/*}"
+  path_part="${rest#*/}"
+  db_name="${path_part%%\?*}"
+  userinfo="${authority%@*}"
+  host_port="${authority##*@}"
+  db_user="${userinfo%%:*}"
+  db_password=''
+  if [[ "$userinfo" == *":"* ]]; then
+    db_password="${userinfo#*:}"
+  fi
+  db_host="${host_port%%:*}"
+  db_port=5432
+  if [[ "$host_port" == *":"* ]]; then
+    db_port="${host_port##*:}"
+  fi
+  if [[ -z "$db_user" || -z "$db_host" || -z "$db_name" || ! "$db_port" =~ ^[0-9]+$ ]]; then
+    echo 'ERROR: 外部PostgreSQLの接続情報を確認できません。' >&2
+    return 2
+  fi
+  # Percent-decode the userinfo segments (URL encoding is mandatory for
+  # credentials in a valid connection string).
+  db_user="$(url_percent_decode "$db_user")"
+  db_password="$(url_percent_decode "$db_password")"
+  PGHOST="$db_host" PGPORT="$db_port" PGDATABASE="$db_name" \
+    PGUSER="$db_user" PGPASSWORD="$db_password" \
+    PGSSLMODE=verify-full PGSSLROOTCERT=/run/ivrm/postgresql-ca.crt \
+    PGCONNECT_TIMEOUT=5 \
+    docker run --rm -i \
+      --add-host "ivrm-db-postgres.internal:${external_private_ip}" \
+      -v "${external_ca_file}:/run/ivrm/postgresql-ca.crt:ro" \
+      -e PGHOST -e PGPORT -e PGDATABASE -e PGUSER -e PGPASSWORD \
+      -e PGSSLMODE -e PGSSLROOTCERT -e PGCONNECT_TIMEOUT \
+      postgres:16-alpine psql -X -At -v ON_ERROR_STOP=1
+}
+
+url_percent_decode() {
+  local s="$1" out='' i c hex
+  for (( i = 0; i < ${#s}; i++ )); do
+    c="${s:i:1}"
+    if [[ "$c" == '%' && "${s:i+1:2}" =~ ^[0-9A-Fa-f]{2}$ ]]; then
+      hex="${s:i+1:2}"
+      out+="$(printf '\\x%s' "$hex")"
+      i=$(( i + 2 ))
+    else
+      out+="$c"
+    fi
+  done
+  printf '%s' "$out"
 }
 
 if [[ "$HERTA_SELECTED_DATABASE_MODE" == local ]]; then
