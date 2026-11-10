@@ -162,10 +162,19 @@ jobs:
           DEPLOY_INCIDENT_BASELINE_SHA: ${{ needs.incident_baseline.outputs.live_sha }}
         run: node deploy/scripts/production-quality-gate.mjs
 
+      - name: ゲート判定を記録する
+        if: always()
+        run: |
+          echo "should_deploy=${{ steps.verify.outputs.should_deploy }}"
+          echo "deploy_sha=${{ steps.verify.outputs.deploy_sha }}"
+
   build-image:
     name: Build and push production image
     needs: quality-gate
-    if: needs.quality-gate.outputs.should_deploy == 'true'
+    if: >-
+      always() &&
+      needs.quality-gate.result == 'success' &&
+      needs.quality-gate.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -253,6 +262,11 @@ jobs:
   deploy:
     name: SSH Deploy to Lightsail
     needs: [quality-gate, build-image]
+    if: >-
+      always() &&
+      needs.quality-gate.result == 'success' &&
+      needs.build-image.result == 'success' &&
+      needs.quality-gate.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
