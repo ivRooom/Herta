@@ -7,12 +7,14 @@
 - 最終更新 / Last Reviewed: 2026-11-10 / 承認者: 未（Phase 4 で repo 配置時に承認）
 
 ## 現在の状態
+
 - Prisma model **80件**（全て @@map でテーブル名を明示）、フィールド総数 **821件**、enum **1件**（VcRecapSessionStatus）。
 - 実 DB（PG17 `herta`）は復元検証で **101テーブル**が確認されている。schema の80との差分21は `_prisma_migrations` 等の管理テーブルと、schema から削除済みの旧テーブルの残存が候補だが、**内訳は未検証**（実 DB のテーブル一覧との突合が次の照合タスク）。
 - 明示 `@relation`（実 FK）を持つ model は30件のみ。残りは guildId / userId 等のスカラー列による**論理参照**で、DB レベルの FK 制約は無い。ER図では実 FK を実線、論理参照は本書では省略し各テーブルの備考で扱う。
 - 状態系フィールドは enum 化が VcRecapSession のみで、他は全て String＋既定値で表現されている。
 
 ## ER図（主要リレーションのみ、実 FK）
+
 ```mermaid
 erDiagram
   guilds ||--o{ guild_members : "所属"
@@ -47,95 +49,98 @@ erDiagram
 ```
 
 ## テーブル一覧（80件）
-| テーブル | model | フィールド数 | 領域 |
-|---|---|---|---|
-| guilds | Guild | 28 | コア |
-| users | User | 11 | コア |
-| guild_members | GuildMember | 8 | コア |
-| roles | Role | 9 | コア |
-| user_roles | UserRole | 7 | コア |
-| guild_settings | GuildSettings | 10 | コア |
-| audit_logs | AuditLog | 14 | コア |
-| birthday_card_backgrounds | BirthdayCardBackground | 12 | Daily/誕生日 |
-| birthday_card_assets | BirthdayCardAsset | 15 | Daily/誕生日 |
-| valorant_rosters | ValorantRoster | 4 | Valorant |
-| valorant_agents | ValorantAgent | 8 | Valorant |
-| command_execution_events | CommandExecutionEvent | 8 | 分析イベント |
-| ai_generation_events | AiGenerationEvent | 14 | AI |
-| ai_guild_monthly_budget_usage | AiGuildMonthlyBudgetUsage | 3 | AI |
-| ai_user_model_preferences | AiUserModelPreference | 5 | AI |
-| mbti_quiz_result_events | MbtiQuizResultEvent | 9 | MBTI |
-| mbti_question_answer_events | MbtiQuestionAnswerEvent | 7 | MBTI |
-| mbti_web_quiz_sessions | MbtiWebQuizSession | 13 | MBTI |
-| mbti_personal_results | MbtiPersonalResult | 12 | MBTI |
-| mbti_result_access | MbtiResultAccess | 4 | MBTI |
-| plugins | Plugin | 10 | プラグイン |
-| guild_plugins | GuildPlugin | 10 | プラグイン |
-| guild_plugin_config_history | GuildPluginConfigHistory | 9 | プラグイン |
-| rules | Rule | 19 | ルール |
-| rule_execution_logs | RuleExecutionLog | 10 | ルール |
-| service_health_snapshots | ServiceHealthSnapshot | 15 | 運用 |
-| community_activity_daily | CommunityActivityDaily | 6 | コミュニティ |
-| community_voice_sessions | CommunityVoiceSession | 5 | コミュニティ |
-| community_activity_channel_daily | CommunityActivityChannelDaily | 7 | コミュニティ |
-| community_presence_sessions | CommunityPresenceSession | 4 | コミュニティ |
-| community_game_sessions | CommunityGameSession | 5 | コミュニティ |
-| community_game_activity_daily | CommunityGameActivityDaily | 6 | コミュニティ |
-| achievement_unlocks | AchievementUnlock | 4 | コミュニティ |
-| community_profile_preferences | CommunityProfilePreference | 6 | コミュニティ |
-| community_challenge_assignments | CommunityChallengeAssignment | 5 | コミュニティ |
-| community_challenge_completions | CommunityChallengeCompletion | 8 | コミュニティ |
-| community_season_snapshots | CommunitySeasonSnapshot | 9 | コミュニティ |
-| community_season_snapshot_entries | CommunitySeasonSnapshotEntry | 7 | コミュニティ |
-| auto_responses | AutoResponse | 22 | モデレーション |
-| auto_response_execution_events | AutoResponseExecutionEvent | 8 | モデレーション |
-| mod_actions | ModAction | 10 | モデレーション |
-| word_filters | WordFilter | 14 | モデレーション |
-| spam_settings | SpamSettings | 9 | モデレーション |
-| moderation_settings | ModerationSettings | 10 | モデレーション |
-| moderation_detection_events | ModerationDetectionEvent | 20 | モデレーション |
-| moderation_blacklist_entries | ModerationBlacklistEntry | 8 | モデレーション |
-| quotes | Quote | 16 | コンテンツ |
-| lfg_posts | LfgPost | 23 | コンテンツ |
-| lfg_participants | LfgParticipant | 8 | コンテンツ |
-| team_split_sessions | TeamSplitSession | 27 | コンテンツ |
-| team_split_participants | TeamSplitParticipant | 9 | コンテンツ |
-| daily_contents | DailyContent | 23 | コンテンツ |
-| daily_content_deliveries | DailyContentDelivery | 18 | コンテンツ |
-| community_events | CommunityEvent | 22 | コンテンツ |
-| event_rsvps | EventRsvp | 6 | コンテンツ |
-| studio_user_preferences | StudioUserPreference | 4 | Studio |
-| bot_presence_settings | BotPresenceSetting | 6 | Studio/運用 |
-| studio_access_policies | StudioAccessPolicy | 11 | Studio |
-| studio_access_groups | StudioAccessGroup | 9 | Studio |
-| studio_access_group_members | StudioAccessGroupMember | 6 | Studio |
-| studio_access_policy_attachments | StudioAccessPolicyAttachment | 8 | Studio |
-| runtime_secrets | RuntimeSecret | 8 | 運用 |
-| valorant_account_links | ValorantAccountLink | 7 | Valorant |
-| member_activity_events | MemberActivityEvent | 10 | 分析イベント |
-| fortune_profiles | FortuneProfile | 10 | Daily/占い |
-| user_data_consents | UserDataConsent | 4 | 同意/VC Recap |
-| vc_recap_explicit_consents | VcRecapExplicitConsent | 6 | 同意/VC Recap |
-| vc_recap_erasure_requests | VcRecapErasureRequest | 4 | 同意/VC Recap |
-| vc_recap_storage_objects | VcRecapStorageObject | 11 | VC Recap |
-| voice_consent_access | VoiceConsentAccess | 3 | 同意/VC Recap |
-| vc_recap_sessions | VcRecapSession | 14 | VC Recap |
-| vc_recap_transcript_segments | VcRecapTranscriptSegment | 8 | VC Recap |
-| daily_bonus_announcements | DailyBonusAnnouncement | 12 | Daily |
-| daily_bonus_claims | DailyBonusClaim | 8 | Daily |
-| anniversary_events | DailyAnniversaryEvent | 19 | Daily |
-| daily_bonus_quiz_sessions | DailyBonusQuizSession | 8 | Daily |
-| daily_fortune_results | DailyFortuneResult | 7 | Daily |
-| valorant_pick_sessions | ValorantPickSession | 21 | Valorant |
-| valorant_pick_participants | ValorantPickParticipant | 4 | Valorant |
-| valorant_match_results | ValorantMatchResult | 14 | Valorant |
+
+| テーブル                          | model                         | フィールド数 | 領域           |
+| --------------------------------- | ----------------------------- | ------------ | -------------- |
+| guilds                            | Guild                         | 28           | コア           |
+| users                             | User                          | 11           | コア           |
+| guild_members                     | GuildMember                   | 8            | コア           |
+| roles                             | Role                          | 9            | コア           |
+| user_roles                        | UserRole                      | 7            | コア           |
+| guild_settings                    | GuildSettings                 | 10           | コア           |
+| audit_logs                        | AuditLog                      | 14           | コア           |
+| birthday_card_backgrounds         | BirthdayCardBackground        | 12           | Daily/誕生日   |
+| birthday_card_assets              | BirthdayCardAsset             | 15           | Daily/誕生日   |
+| valorant_rosters                  | ValorantRoster                | 4            | Valorant       |
+| valorant_agents                   | ValorantAgent                 | 8            | Valorant       |
+| command_execution_events          | CommandExecutionEvent         | 8            | 分析イベント   |
+| ai_generation_events              | AiGenerationEvent             | 14           | AI             |
+| ai_guild_monthly_budget_usage     | AiGuildMonthlyBudgetUsage     | 3            | AI             |
+| ai_user_model_preferences         | AiUserModelPreference         | 5            | AI             |
+| mbti_quiz_result_events           | MbtiQuizResultEvent           | 9            | MBTI           |
+| mbti_question_answer_events       | MbtiQuestionAnswerEvent       | 7            | MBTI           |
+| mbti_web_quiz_sessions            | MbtiWebQuizSession            | 13           | MBTI           |
+| mbti_personal_results             | MbtiPersonalResult            | 12           | MBTI           |
+| mbti_result_access                | MbtiResultAccess              | 4            | MBTI           |
+| plugins                           | Plugin                        | 10           | プラグイン     |
+| guild_plugins                     | GuildPlugin                   | 10           | プラグイン     |
+| guild_plugin_config_history       | GuildPluginConfigHistory      | 9            | プラグイン     |
+| rules                             | Rule                          | 19           | ルール         |
+| rule_execution_logs               | RuleExecutionLog              | 10           | ルール         |
+| service_health_snapshots          | ServiceHealthSnapshot         | 15           | 運用           |
+| community_activity_daily          | CommunityActivityDaily        | 6            | コミュニティ   |
+| community_voice_sessions          | CommunityVoiceSession         | 5            | コミュニティ   |
+| community_activity_channel_daily  | CommunityActivityChannelDaily | 7            | コミュニティ   |
+| community_presence_sessions       | CommunityPresenceSession      | 4            | コミュニティ   |
+| community_game_sessions           | CommunityGameSession          | 5            | コミュニティ   |
+| community_game_activity_daily     | CommunityGameActivityDaily    | 6            | コミュニティ   |
+| achievement_unlocks               | AchievementUnlock             | 4            | コミュニティ   |
+| community_profile_preferences     | CommunityProfilePreference    | 6            | コミュニティ   |
+| community_challenge_assignments   | CommunityChallengeAssignment  | 5            | コミュニティ   |
+| community_challenge_completions   | CommunityChallengeCompletion  | 8            | コミュニティ   |
+| community_season_snapshots        | CommunitySeasonSnapshot       | 9            | コミュニティ   |
+| community_season_snapshot_entries | CommunitySeasonSnapshotEntry  | 7            | コミュニティ   |
+| auto_responses                    | AutoResponse                  | 22           | モデレーション |
+| auto_response_execution_events    | AutoResponseExecutionEvent    | 8            | モデレーション |
+| mod_actions                       | ModAction                     | 10           | モデレーション |
+| word_filters                      | WordFilter                    | 14           | モデレーション |
+| spam_settings                     | SpamSettings                  | 9            | モデレーション |
+| moderation_settings               | ModerationSettings            | 10           | モデレーション |
+| moderation_detection_events       | ModerationDetectionEvent      | 20           | モデレーション |
+| moderation_blacklist_entries      | ModerationBlacklistEntry      | 8            | モデレーション |
+| quotes                            | Quote                         | 16           | コンテンツ     |
+| lfg_posts                         | LfgPost                       | 23           | コンテンツ     |
+| lfg_participants                  | LfgParticipant                | 8            | コンテンツ     |
+| team_split_sessions               | TeamSplitSession              | 27           | コンテンツ     |
+| team_split_participants           | TeamSplitParticipant          | 9            | コンテンツ     |
+| daily_contents                    | DailyContent                  | 23           | コンテンツ     |
+| daily_content_deliveries          | DailyContentDelivery          | 18           | コンテンツ     |
+| community_events                  | CommunityEvent                | 22           | コンテンツ     |
+| event_rsvps                       | EventRsvp                     | 6            | コンテンツ     |
+| studio_user_preferences           | StudioUserPreference          | 4            | Studio         |
+| bot_presence_settings             | BotPresenceSetting            | 6            | Studio/運用    |
+| studio_access_policies            | StudioAccessPolicy            | 11           | Studio         |
+| studio_access_groups              | StudioAccessGroup             | 9            | Studio         |
+| studio_access_group_members       | StudioAccessGroupMember       | 6            | Studio         |
+| studio_access_policy_attachments  | StudioAccessPolicyAttachment  | 8            | Studio         |
+| runtime_secrets                   | RuntimeSecret                 | 8            | 運用           |
+| valorant_account_links            | ValorantAccountLink           | 7            | Valorant       |
+| member_activity_events            | MemberActivityEvent           | 10           | 分析イベント   |
+| fortune_profiles                  | FortuneProfile                | 10           | Daily/占い     |
+| user_data_consents                | UserDataConsent               | 4            | 同意/VC Recap  |
+| vc_recap_explicit_consents        | VcRecapExplicitConsent        | 6            | 同意/VC Recap  |
+| vc_recap_erasure_requests         | VcRecapErasureRequest         | 4            | 同意/VC Recap  |
+| vc_recap_storage_objects          | VcRecapStorageObject          | 11           | VC Recap       |
+| voice_consent_access              | VoiceConsentAccess            | 3            | 同意/VC Recap  |
+| vc_recap_sessions                 | VcRecapSession                | 14           | VC Recap       |
+| vc_recap_transcript_segments      | VcRecapTranscriptSegment      | 8            | VC Recap       |
+| daily_bonus_announcements         | DailyBonusAnnouncement        | 12           | Daily          |
+| daily_bonus_claims                | DailyBonusClaim               | 8            | Daily          |
+| anniversary_events                | DailyAnniversaryEvent         | 19           | Daily          |
+| daily_bonus_quiz_sessions         | DailyBonusQuizSession         | 8            | Daily          |
+| daily_fortune_results             | DailyFortuneResult            | 7            | Daily          |
+| valorant_pick_sessions            | ValorantPickSession           | 21           | Valorant       |
+| valorant_pick_participants        | ValorantPickParticipant       | 4            | Valorant       |
+| valorant_match_results            | ValorantMatchResult           | 14           | Valorant       |
 
 enum: `VcRecapSessionStatus` = active / summarizing / completed / failed（VcRecapSession.status、既定 active）
 
 ## テーブル定義（全80件、フィールド詳細）
+
 表記: `列名: 型`、PK=主キー、UQ=ユニーク、FK=実リレーション（参照先と削除時挙動）。型は Prisma 型（String/Int/BigInt/Float/Boolean/DateTime/Json/Bytes/String[]/Int[]）。`?` は NULL 可。既定値があるものは主なもののみ括弧書き。
 
 ### コア
+
 - **guilds** (Guild): id: String PK / name / icon? / ownerId? / plan (既定 "free") / locale ("ja") / timezone ("Asia/Tokyo") / features: Json ("[]") / createdAt (now) / updatedAt
 - **users** (User): id PK / username / discriminator? / avatar? / email? / locale? / isAdmin (false) / createdAt / updatedAt
 - **guild_members** (GuildMember): PK=(guildId, userId) / nickname? / joinedAt? / roles: String[] / FK guild→guilds (Cascade), user→users (Cascade)
@@ -145,6 +150,7 @@ enum: `VcRecapSessionStatus` = active / summarizing / completed / failed（VcRec
 - **audit_logs** (AuditLog): id PK (uuid) / guildId FK→guilds (Cascade) / actorId / actorType ("user") / event / targetType? / targetId? / changes: Json? / metadata: Json? / severity ("info") / ipAddress? / sessionId? / createdAt
 
 ### プラグイン / ルール
+
 - **plugins** (Plugin): id PK / name / description? / version / author? / category? / isOfficial (false) / manifest: Json / createdAt
 - **guild_plugins** (GuildPlugin): PK=(guildId, pluginId) / enabled (true) / config: Json ("{}") / configVersion (1) / installedAt / updatedAt / FK guild→guilds (Cascade), plugin→plugins
 - **guild_plugin_config_history**: id PK (uuid) / guildId / pluginId / version / config: Json / changedBy / changeReason? / createdAt / FK→guild_plugins (Cascade)
@@ -152,6 +158,7 @@ enum: `VcRecapSessionStatus` = active / summarizing / completed / failed（VcRec
 - **rule_execution_logs**: id PK (uuid) / ruleId FK→rules (Cascade) / guildId / triggerEvent: Json / conditionsMet: Boolean / actionsResult: Json? / error? / durationMs? / executedAt
 
 ### モデレーション
+
 - **auto_responses**: id PK (uuid) / guildId / name / triggerType / triggerValue / matchMode ("partial") / responseType ("text") / responseContent / channelIds: String[] / roleIds: String[] / cooldownSeconds (0) / priority (0) / caseSensitive (false) / responseCount (0) / failureCount (0) / lastTriggeredAt? / enabled (true) / createdBy? / updatedBy? / createdAt / updatedAt
 - **auto_response_execution_events**: id PK (uuid) / guildId / ruleId FK→auto_responses (Cascade) / status / durationMs / errorName? / executedAt
 - **mod_actions**: id PK (uuid) / guildId / targetId / moderatorId / actionType / reason? / durationMs: BigInt? / expiresAt? / active (true) / createdAt
@@ -162,6 +169,7 @@ enum: `VcRecapSessionStatus` = active / summarizing / completed / failed（VcRec
 - **moderation_blacklist_entries**: PK=(guildId, userId) / reason? / originDetectionId? / createdBy / active (true) / createdAt / updatedAt
 
 ### コミュニティ活動
+
 - **community_activity_daily**: PK=(guildId, userId, activityDate, metric) / value: BigInt (0) / updatedAt
 - **community_voice_sessions**: PK=(guildId, userId) / channelId / startedAt / updatedAt
 - **community_activity_channel_daily**: PK=(guildId, channelId, userId, activityDate, metric) / value: BigInt (0) / updatedAt
@@ -176,6 +184,7 @@ enum: `VcRecapSessionStatus` = active / summarizing / completed / failed（VcRec
 - **community_season_snapshot_entries**: PK=(guildId, seasonKey, userId)、UQ=(guildId, seasonKey, rank) / rank / points / awardTier? / FK→community_season_snapshots (Cascade)
 
 ### コンテンツ / イベント
+
 - **quotes**: id PK (uuid) / guildId / quoteNumber、UQ=(guildId, quoteNumber) / quoteText / sourceMessageId? / sourceChannelId? / sourceMessageUrl? / sourceAuthorId? / sourceAuthorName? / registeredById / registeredByName / tags: String[] / status ("public") / isNsfw (false) / createdAt / updatedAt
 - **lfg_posts**: id PK (uuid) / guildId / creatorId / channelId / messageId? / game / title / description ("") / maxPlayers (5) / participantCount (1) / startTime? / expiresAt / status ("open") / messageState ("pending") / lastErrorName? / closedAt? / createdBy? / updatedBy? / deletedAt? / version (1) / createdAt / updatedAt
 - **lfg_participants**: PK=(lfgId, userId) / guildId / status ("joined") / joinedAt / leftAt? / updatedAt / FK→lfg_posts (Cascade)
@@ -187,6 +196,7 @@ enum: `VcRecapSessionStatus` = active / summarizing / completed / failed（VcRec
 - **event_rsvps**: PK=(eventId, userId) / status / createdAt / updatedAt / FK→community_events (Cascade)
 
 ### MBTI / AI / 分析イベント
+
 - **mbti_quiz_result_events**: id PK / completionId / guildId / resultType / eiScore / snScore / tfScore / jpScore / completedAt
 - **mbti_question_answer_events**: id PK / completionId / guildId / questionIndex / axis / answer / answeredAt
 - **mbti_web_quiz_sessions**: id PK (uuid) / guildId / discordUserId / status ("pending") / questionOrder: Json / answers: Json ("[]") / scores: Json ("{}") / resultType? / resultIdentity? / completedAt? / expiresAt / createdAt / updatedAt
@@ -200,6 +210,7 @@ enum: `VcRecapSessionStatus` = active / summarizing / completed / failed（VcRec
 - **service_health_snapshots**: id PK (uuid) / serviceId / version / status / discordStatus / databaseStatus / redisStatus / workerStatus / databaseLatencyMs? / redisLatencyMs? / workerLatencyMs? / guildCount (0) / uptimeSeconds (0) / checkedAt / createdAt
 
 ### Studio / アクセス / 運用
+
 - **studio_user_preferences**: userId PK・FK→users (Cascade) / defaultGuildId? / updatedAt
 - **bot_presence_settings**: id PK ("default") / status ("online") / activityType ("playing") / activityText ("Herta") / updatedBy? / updatedAt
 - **studio_access_policies**: id PK / guildId / name、UQ=(guildId, name)・(id, guildId) / description? / document: Json / revision (1) / createdBy / updatedBy / createdAt / updatedAt
@@ -209,6 +220,7 @@ enum: `VcRecapSessionStatus` = active / summarizing / completed / failed（VcRec
 - **runtime_secrets**: name PK / ciphertext: Bytes / iv: Bytes / authTag: Bytes / keyVersion (1) / updatedBy / createdAt / updatedAt（値は暗号化保管。本文書に実値は書かない）
 
 ### 同意 / VC Recap
+
 - **user_data_consents**: userId PK / voiceTranscriptionConsent (false) / voiceTranscriptRetentionConsentedAt? / updatedAt
 - **vc_recap_explicit_consents**: PK=(userId, purpose) / policyVersion / consentedAt? / revokedAt? / updatedAt
 - **vc_recap_erasure_requests**: userId PK / requestedAt / storageDeletionVerifiedAt? / updatedAt
@@ -218,6 +230,7 @@ enum: `VcRecapSessionStatus` = active / summarizing / completed / failed（VcRec
 - **vc_recap_transcript_segments**: id PK (uuid) / sessionId FK→vc_recap_sessions (Cascade) / userId / text / startedAt / endedAt / createdAt
 
 ### Daily / 占い / 誕生日
+
 - **birthday_card_backgrounds**: guildId PK・FK→guilds (Cascade) / contentType / fileName / content: Bytes / sizeBytes / width / height / sha256 / updatedBy / createdAt / updatedAt
 - **birthday_card_assets**: id PK / guildId FK→guilds (Cascade) / name / contentType / content: Bytes / sizeBytes / width / height / sha256 / isPreset (false) / createdBy / updatedBy / createdAt / updatedAt
 - **fortune_profiles**: PK=(guildId, userId) / birthday? / bloodType? / mbti? / zodiac? / ageGroup? / eto? / updatedAt / FK→guilds (Cascade)
@@ -228,6 +241,7 @@ enum: `VcRecapSessionStatus` = active / summarizing / completed / failed（VcRec
 - **daily_fortune_results**: PK=(guildId, discordUserId, targetDate) / algorithmVersion / resultJson: Json / createdAt / FK→guilds (Cascade)
 
 ### Valorant
+
 - **valorant_rosters**: guildId PK・FK→guilds (Cascade) / createdAt
 - **valorant_agents**: PK=(guildId, agentId)、UQ=(guildId, agentName) / agentName / displayName / enabled (true) / createdAt / updatedAt / FK→valorant_rosters (Cascade)
 - **valorant_account_links**: PK=(guildId, userId) / riotName / riotTag / region / linkedAt / updatedAt
@@ -236,36 +250,39 @@ enum: `VcRecapSessionStatus` = active / summarizing / completed / failed（VcRec
 - **valorant_match_results**: id PK (uuid) / sessionId UQ / guildId / mapId / matchId?、UQ=(guildId, matchId) / source ("MANUAL") / outcome / roundsWon / roundsLost / playerResults: Json ("[]") / enteredBy / createdAt / updatedAt / FK→valorant_pick_sessions (Cascade)
 
 ## CRUD 表（機能単位）
+
 行＝機能、列＝代表テーブル。C/R/U/D はその機能が通常行う操作（コードのエンドポイント単位の精査は未実施＝「機能レベルの論理 CRUD」であり、Phase 4 の repo 配置時にコード照合で確定させる）。
 
-| 機能 | 対象テーブル | C | R | U | D |
-|---|---|---|---|---|---|
-| ギルド登録・設定 | guilds, guild_settings, spam_settings, moderation_settings | ✓ | ✓ | ✓ | |
-| メンバー・ロール管理 | users, guild_members, roles, user_roles | ✓ | ✓ | ✓ | ✓ |
-| 監査ログ | audit_logs | ✓ | ✓ | | |
-| プラグイン管理 | plugins, guild_plugins, guild_plugin_config_history | ✓ | ✓ | ✓ | |
-| ルールエンジン | rules, rule_execution_logs | ✓ | ✓ | ✓ | ✓ |
-| 自動応答 | auto_responses, auto_response_execution_events | ✓ | ✓ | ✓ | ✓ |
-| モデレーション | mod_actions, word_filters, moderation_detection_events, moderation_blacklist_entries | ✓ | ✓ | ✓ | |
-| 名言 | quotes | ✓ | ✓ | ✓ | ✓ |
-| 募集 (LFG) | lfg_posts, lfg_participants | ✓ | ✓ | ✓ | ✓（論理削除 deletedAt） |
-| チーム分け | team_split_sessions, team_split_participants | ✓ | ✓ | ✓ | ✓（論理削除） |
-| 日次配信 | daily_contents, daily_content_deliveries | ✓ | ✓ | ✓ | ✓（論理削除） |
-| イベント | community_events, event_rsvps | ✓ | ✓ | ✓ | |
-| コミュニティ集計 | community_*_daily, *_sessions, achievement_unlocks, challenge_*, season_snapshots* | ✓ | ✓ | ✓ | |
-| MBTI | mbti_* | ✓ | ✓ | ✓ | |
-| AI 生成・予算 | ai_generation_events, ai_guild_monthly_budget_usage, ai_user_model_preferences | ✓ | ✓ | ✓ | |
-| Studio アクセス制御 | studio_access_policies, studio_access_groups, *_members, *_attachments, studio_user_preferences | ✓ | ✓ | ✓ | ✓ |
-| ランタイム秘密 | runtime_secrets | ✓ | ✓（復号は実行時のみ） | ✓ | |
-| VC Recap・同意 | vc_recap_*, user_data_consents, voice_consent_access | ✓ | ✓ | ✓ | ✓（消去リクエスト経由） |
-| Daily ボーナス・占い | daily_bonus_*, anniversary_events, fortune_profiles, birthday_card_* | ✓ | ✓ | ✓ | |
-| Valorant | valorant_rosters, valorant_agents, valorant_account_links, valorant_pick_*, valorant_match_results | ✓ | ✓ | ✓ | |
+| 機能                 | 対象テーブル                                                                                       | C   | R                     | U   | D                       |
+| -------------------- | -------------------------------------------------------------------------------------------------- | --- | --------------------- | --- | ----------------------- |
+| ギルド登録・設定     | guilds, guild_settings, spam_settings, moderation_settings                                         | ✓   | ✓                     | ✓   |                         |
+| メンバー・ロール管理 | users, guild_members, roles, user_roles                                                            | ✓   | ✓                     | ✓   | ✓                       |
+| 監査ログ             | audit_logs                                                                                         | ✓   | ✓                     |     |                         |
+| プラグイン管理       | plugins, guild_plugins, guild_plugin_config_history                                                | ✓   | ✓                     | ✓   |                         |
+| ルールエンジン       | rules, rule_execution_logs                                                                         | ✓   | ✓                     | ✓   | ✓                       |
+| 自動応答             | auto_responses, auto_response_execution_events                                                     | ✓   | ✓                     | ✓   | ✓                       |
+| モデレーション       | mod_actions, word_filters, moderation_detection_events, moderation_blacklist_entries               | ✓   | ✓                     | ✓   |                         |
+| 名言                 | quotes                                                                                             | ✓   | ✓                     | ✓   | ✓                       |
+| 募集 (LFG)           | lfg_posts, lfg_participants                                                                        | ✓   | ✓                     | ✓   | ✓（論理削除 deletedAt） |
+| チーム分け           | team_split_sessions, team_split_participants                                                       | ✓   | ✓                     | ✓   | ✓（論理削除）           |
+| 日次配信             | daily_contents, daily_content_deliveries                                                           | ✓   | ✓                     | ✓   | ✓（論理削除）           |
+| イベント             | community_events, event_rsvps                                                                      | ✓   | ✓                     | ✓   |                         |
+| コミュニティ集計     | `community_*_daily`, `*_sessions`, achievement_unlocks, `challenge_*`, `season_snapshots*`         | ✓   | ✓                     | ✓   |                         |
+| MBTI                 | mbti_*                                                                                             | ✓   | ✓                     | ✓   |                         |
+| AI 生成・予算        | ai_generation_events, ai_guild_monthly_budget_usage, ai_user_model_preferences                     | ✓   | ✓                     | ✓   |                         |
+| Studio アクセス制御  | studio_access_policies, studio_access_groups, *_members, *_attachments, studio_user_preferences    | ✓   | ✓                     | ✓   | ✓                       |
+| ランタイム秘密       | runtime_secrets                                                                                    | ✓   | ✓（復号は実行時のみ） | ✓   |                         |
+| VC Recap・同意       | vc_recap_*, user_data_consents, voice_consent_access                                               | ✓   | ✓                     | ✓   | ✓（消去リクエスト経由） |
+| Daily ボーナス・占い | `daily_bonus_*`, anniversary_events, fortune_profiles, `birthday_card_*`                           | ✓   | ✓                     | ✓   |                         |
+| Valorant             | valorant_rosters, valorant_agents, valorant_account_links, valorant_pick_*, valorant_match_results | ✓   | ✓                     | ✓   |                         |
 
 ## 変更管理
+
 - 正本は Prisma schema と `packages/db/prisma/migrations/`。本書は生成物であり、schema が変わったら再生成して版を上げる（生成元の commit を改版履歴に残す）。
 - 実 DB との突合（101 vs 80 の差分内訳）は未実施の照合タスクとして台帳に残す。
 
 ## 改版履歴
-| 版 | 日付 | 変更内容 | 変更者 | 承認者 |
-|---|---|---|---|---|
-| v1.0.0 | 2026-11-10 | 初版。schema.prisma (bd6cbabb) から ER図・全80テーブルの定義・機能 CRUD を生成 | Muse | 未（Phase 4 配置時） |
+
+| 版     | 日付       | 変更内容                                                                       | 変更者 | 承認者               |
+| ------ | ---------- | ------------------------------------------------------------------------------ | ------ | -------------------- |
+| v1.0.0 | 2026-11-10 | 初版。schema.prisma (bd6cbabb) から ER図・全80テーブルの定義・機能 CRUD を生成 | Muse   | 未（Phase 4 配置時） |
