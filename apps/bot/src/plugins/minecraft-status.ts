@@ -1,7 +1,13 @@
 import type { PrismaClient } from '@herta/db';
 import { minecraftStatusManifest } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
-import type { APIEmbed } from 'discord.js';
+import { AttachmentBuilder, type APIEmbed } from 'discord.js';
+import {
+  renderMinecraftStatusCard,
+  type MinecraftServerTone,
+  type MinecraftStatusCardModel,
+  type MinecraftStatusTone,
+} from './minecraft-status-card.js';
 
 const EPHEMERAL_FLAG = 64;
 const FETCH_TIMEOUT_MS = 5_000;
@@ -43,6 +49,7 @@ export interface MinecraftCurrentStatus {
     load_average?: string;
   };
   versions?: { minecraft?: string; java?: string };
+  runtime?: { os?: string; cpu_model?: string; cpu_cores?: string };
   backup?: { latest_local?: { file?: string; size?: string; mtime?: string } };
 }
 
@@ -84,6 +91,7 @@ interface ReplyOptions {
 interface EditReplyOptions {
   content?: string;
   embeds?: APIEmbed[];
+  files?: AttachmentBuilder[];
   allowedMentions: { parse: [] };
 }
 
@@ -178,7 +186,7 @@ export function buildMinecraftStatusEmbed(
       lines.push(
         dockerMemory === null
           ? `メモリ ${resources.docker_memory}`
-          : `メモリ ${bar(dockerMemory.ratio)} ${dockerMemory.percent}%（${resources.docker_memory}）`,
+          : `メモリ ${bar(dockerMemory.ratio)} ${dockerMemory.percent}%`,
       );
     }
     const hostMemory = parseMemoryUsage(resources.host_memory);
@@ -186,7 +194,7 @@ export function buildMinecraftStatusEmbed(
       lines.push(
         hostMemory === null
           ? `ホストメモリ ${resources.host_memory}`
-          : `ホストメモリ ${bar(hostMemory.ratio)} ${hostMemory.percent}%（${resources.host_memory}）`,
+          : `ホストメモリ ${bar(hostMemory.ratio)} ${hostMemory.percent}%`,
       );
     }
     if (resources.load_average) lines.push(`Load \`${resources.load_average}\``);
@@ -219,26 +227,180 @@ export function buildMinecraftStatusEmbed(
     embed.description = descriptionLines.join('\n');
   }
 
-  const updatedAt = current?.collected_at ?? runtime?.generatedAt;
-  if (updatedAt) {
-    const parsed = new Date(updatedAt);
-    if (!Number.isNaN(parsed.getTime())) {
-      const stale = now.getTime() - parsed.getTime() > config.staleAfterMinutes * 60_000;
-      const formatted = new Intl.DateTimeFormat('ja-JP', {
-        timeZone: 'Asia/Tokyo',
-        month: 'numeric',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(parsed);
-      embed.footer = {
-        text: `最終更新 ${formatted}${stale ? ' · ⚠️ データが古い可能性があります' : ''}`,
-      };
-      embed.timestamp = parsed.toISOString();
-    }
+  const footer = updatedFooter(current, runtime, config, now);
+  if (footer) {
+    embed.footer = { text: footer.text };
+    embed.timestamp = footer.iso;
   }
 
   return embed;
+}
+
+export function buildMinecraftStatusImageEmbed(
+  current: MinecraftCurrentStatus | null,
+  runtime: MinecraftRuntimeStatus | null,
+  config: MinecraftStatusConfig,
+  now: Date = new Date(),
+): APIEmbed | null {
+  if (!current && !runtime) {
+    return null;
+  }
+  const serverName = current?.server?.name ?? 'Minecraft';
+  const embed: APIEmbed = {
+    title: `🎮 ${serverName} — ${statusLabel(current, runtime)}`,
+    url: MINECRAFT_STATUS_PAGE_URL,
+    color: statusColor(current, runtime),
+    image: { url: 'attachment://herta-minecraft-status.png' },
+  };
+  const footer = updatedFooter(current, runtime, config, now);
+  if (footer) {
+    embed.footer = { text: footer.text };
+    embed.timestamp = footer.iso;
+  }
+  return embed;
+}
+
+function updatedFooter(
+  current: MinecraftCurrentStatus | null,
+  runtime: MinecraftRuntimeStatus | null,
+  config: MinecraftStatusConfig,
+  now: Date,
+): { text: string; iso: string } | null {
+  const updatedAt = current?.collected_at ?? runtime?.generatedAt;
+  if (!updatedAt) return null;
+  const parsed = new Date(updatedAt);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const stale = now.getTime() - parsed.getTime() > config.staleAfterMinutes * 60_000;
+  const formatted = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(parsed);
+  return {
+    text: `最終更新 ${formatted}${stale ? ' · ⚠️ データが古い可能性があります' : ''}`,
+    iso: parsed.toISOString(),
+  };
+}
+
+export function buildMinecraftStatusCardModel(
+  current: MinecraftCurrentStatus | null,
+  runtime: MinecraftRuntimeStatus | null,
+  config: MinecraftStatusConfig,
+): MinecraftStatusCardModel | null {
+  if (!current && !runtime) {
+    return null;
+  }
+  const model: MinecraftStatusCardModel = {
+    serverName: current?.server?.name ?? 'Minecraft',
+    statusText: statusTextOf(current),
+    statusTone: statusTone(current, runtime),
+  };
+  if (current?.server?.connection) model.connection = current.server.connection;
+  if (current?.server?.mode) model.mode = current.server.mode;
+
+  const players = current?.players ?? runtime?.players;
+  if (players && typeof players.online === 'number') {
+    const names = (current?.players?.names ?? []).filter(
+      (name): name is string => typeof name === 'string' && name.length > 0,
+    );
+    model.players = {
+      online: players.online,
+      ratio:
+        typeof players.max === 'number' && players.max > 0 ? players.online / players.max : null,
+    };
+    if (typeof players.max === 'number') model.players.max = players.max;
+    if (names.length > 0) {
+      const shown = names.slice(0, MAX_PLAYER_NAMES).join(', ');
+      const rest =
+        names.length > MAX_PLAYER_NAMES ? ` ほか${names.length - MAX_PLAYER_NAMES}名` : '';
+      model.players.namesLine = `${shown}${rest}`;
+    }
+  }
+
+  if (config.showResources && current?.resources) {
+    const resources: NonNullable<MinecraftStatusCardModel['resources']> = {};
+    const cpu = parsePercent(current.resources.docker_cpu);
+    if (cpu !== null) resources.cpuPercent = cpu;
+    const memory = parseMemoryUsage(current.resources.docker_memory);
+    if (memory !== null) resources.memoryPercent = memory.percent;
+    const hostMemory = parseMemoryUsage(current.resources.host_memory);
+    if (hostMemory !== null) resources.hostMemoryPercent = hostMemory.percent;
+    if (current.resources.load_average) resources.loadAverage = current.resources.load_average;
+    if (Object.keys(resources).length > 0) model.resources = resources;
+  }
+
+  if (config.showServers && runtime?.servers && runtime.servers.length > 0) {
+    model.servers = runtime.servers.map((server) => ({
+      name: server.id ?? server.name ?? 'unknown',
+      stateLabel: serverStateLabel(server),
+      tone: serverStateTone(server),
+    }));
+  }
+
+  if (current?.uptime?.container) model.uptime = current.uptime.container;
+  if (current?.versions?.minecraft) model.version = current.versions.minecraft;
+  const hostLabel = hostLabelOf(current);
+  if (hostLabel) model.hostLabel = hostLabel;
+  const backupMtime = current?.backup?.latest_local?.mtime;
+  if (config.showBackup && backupMtime) {
+    const backupSize = current?.backup?.latest_local?.size;
+    model.backupLabel = `${formatBackupTime(backupMtime)}${backupSize ? `（${backupSize}）` : ''}`;
+  }
+  return model;
+}
+
+function statusTextOf(current: MinecraftCurrentStatus | null): string {
+  if (current?.status === 'offline') return 'オフライン';
+  if (current?.status === 'online') return 'オンライン';
+  return '状態不明';
+}
+
+function statusTone(
+  current: MinecraftCurrentStatus | null,
+  runtime: MinecraftRuntimeStatus | null,
+): MinecraftStatusTone {
+  const color = statusColor(current, runtime);
+  if (color === COLOR_ONLINE) return 'online';
+  if (color === COLOR_OFFLINE) return 'offline';
+  if (color === COLOR_ATTENTION) return 'attention';
+  return 'unknown';
+}
+
+function serverStateTone(server: MinecraftRuntimeServer): MinecraftServerTone {
+  if (server.health === 'unhealthy') return 'bad';
+  const running = server.runtimeStatus === 'running' || server.containerState === 'running';
+  if (running) return 'ok';
+  if (server.runtimeStatus === 'sleeping') return 'warn';
+  return 'bad';
+}
+
+/** "Oracle Linux Server 9.7" + Neoverse-N1 + 2コア → "Oracle Cloud · Oracle Linux 9.7 · Neoverse-N1 · 2コア" */
+function hostLabelOf(current: MinecraftCurrentStatus | null): string | null {
+  const runtime = current?.runtime;
+  const os = typeof runtime?.os === 'string' ? runtime.os : undefined;
+  const cpuModel = typeof runtime?.cpu_model === 'string' ? runtime.cpu_model : undefined;
+  const cpuCores =
+    typeof runtime?.cpu_cores === 'string'
+      ? runtime.cpu_cores
+      : typeof runtime?.cpu_cores === 'number'
+        ? String(runtime.cpu_cores)
+        : undefined;
+  if (!os && !cpuModel) return null;
+  const parts: string[] = [];
+  if (os?.includes('Oracle')) parts.push('Oracle Cloud');
+  if (os) parts.push(os.replace(' Server', ''));
+  if (cpuModel) parts.push(cpuModel);
+  if (cpuCores) parts.push(`${cpuCores}コア`);
+  return parts.length > 0 ? parts.join(' · ') : null;
+}
+
+/** "2026-11-10 15:00:45" → "11/10 15:00"（収集ホストの壁時計表記をそのまま整形し、解釈できなければ元の表記） */
+function formatBackupTime(mtime: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/.exec(mtime);
+  if (!match) return mtime;
+  return `${Number(match[2])}/${Number(match[3])} ${match[4]}:${match[5]}`;
 }
 
 /** 0..1 の割合を10セルのバーで表す（例: ████░░░░░░） */
@@ -335,11 +497,8 @@ function serverStateLabel(server: MinecraftRuntimeServer): string {
 }
 
 function serverStateDot(server: MinecraftRuntimeServer): string {
-  if (server.health === 'unhealthy') return '🔴';
-  const running = server.runtimeStatus === 'running' || server.containerState === 'running';
-  if (running) return '🟢';
-  if (server.runtimeStatus === 'sleeping') return '🟡';
-  return '🔴';
+  const tone = serverStateTone(server);
+  return tone === 'ok' ? '🟢' : tone === 'warn' ? '🟡' : '🔴';
 }
 
 async function executeMinecraftCommand(
@@ -368,6 +527,23 @@ async function executeMinecraftCommand(
     flags: config.ephemeralResponses ? EPHEMERAL_FLAG : undefined,
   });
   const [current, runtime] = await Promise.all([fetchCurrentStatus(), fetchRuntimeStatus()]);
+  try {
+    const cardModel = buildMinecraftStatusCardModel(current, runtime, config);
+    if (cardModel) {
+      const card = await renderMinecraftStatusCard(cardModel);
+      const imageEmbed = buildMinecraftStatusImageEmbed(current, runtime, config);
+      if (imageEmbed) {
+        await interaction.editReply({
+          embeds: [imageEmbed],
+          files: [new AttachmentBuilder(card, { name: 'herta-minecraft-status.png' })],
+          allowedMentions: { parse: [] },
+        });
+        return;
+      }
+    }
+  } catch {
+    // モデル構築・画像描画に失敗した場合はフィールド形式の Embed にフォールバックする
+  }
   const embed = buildMinecraftStatusEmbed(current, runtime, config);
   if (embed) {
     await interaction.editReply({ embeds: [embed], allowedMentions: { parse: [] } });
