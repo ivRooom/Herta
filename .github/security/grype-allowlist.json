@@ -8,5 +8,15 @@
       "name": "zlib",
       "type": "apk"
     }
+  },
+  {
+    "id": "CVE-2026-4738",
+    "reason": "zlib 1.3.2-r1のCritical。修正版1.4-r0は存在するが、ベースイメージAlpine 3.21への適用可否が未検証で、ベースイメージ移行は別判断。恒久対処はIssue #840で期限までに判断する。",
+    "issue": "https://github.com/ivRooom/Herta/issues/840",
+    "expires": "2026-12-15",
+    "package": {
+      "name": "zlib",
+      "type": "apk"
+    }
   }
 ]
