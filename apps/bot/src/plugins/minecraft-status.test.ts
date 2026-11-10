@@ -206,7 +206,7 @@ describe('Minecraft Status v1', () => {
 
     const healthyRuntime: MinecraftRuntimeStatus = {
       ...runtime,
-      status: 'running_healthy',
+      status: 'operational',
       servers: runtime.servers?.map((s) => ({
         ...s,
         containerState: 'running',
