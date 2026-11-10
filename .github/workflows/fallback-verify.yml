@@ -57,10 +57,10 @@ jobs:
         run: pnpm lint
 
       - name: Typecheck
-        run: pnpm typecheck -- --concurrency=1
+        run: pnpm typecheck --concurrency=1
 
       - name: Test
-        run: pnpm test -- --concurrency=1
+        run: pnpm test --concurrency=1
 
       - name: Build
-        run: pnpm build -- --concurrency=1
+        run: pnpm build --concurrency=1
