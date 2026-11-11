@@ -1,18 +1,48 @@
-# Herta DB 設計書（ER図・テーブル定義・CRUD）v1.1
+# Herta DB 設計書（ER図・テーブル定義・CRUD）v1.2
 
 - 文書ID: DOC-HERTA-DB-001
-- 版: v1.1.0
+- 版: v1.2.0
 - 状態: Current（生成物）
 - 生成元: `ivRooom/Herta` の `packages/db/prisma/schema.prisma`（ファイル SHA `0eb4ef721bf953e145bbe8243aaf0be942982a8a`、1,580行）を 2026-11-10 に全文取得して生成。main の commit は初版生成時の `bd6cbabb` から `d9d1c48c` へ進んだが、schema.prisma 自体に変更はない（SHA 一致で確認）。手書き転記ではなく schema からの機械的抽出を基に編集
-- 最終更新 / Last Reviewed: 2026-11-10 / 承認者: 未（Phase 4 で repo 配置時に承認）
+- 最終更新 / Last Reviewed: 2026-11-11 / 承認者: Kanata
 
 ## 現在の状態
 
 - Prisma model **80件**（全て @@map でテーブル名を明示）、フィールド総数 **821件**、enum **1件**（VcRecapSessionStatus）。
-- 実 DB（PG17 `herta`）は復元検証で **101テーブル**が確認されている。schema の80との差分21は `_prisma_migrations` 等の管理テーブルと、schema から削除済みの旧テーブルの残存が候補だが、**内訳は未検証**（実 DB のテーブル一覧との突合が次の照合タスク）。
+- 実 DB（Lightsail PG17 `herta`）のテーブル数は **101件**で、本書の対象である Prisma schema の model は **80件**。差分 21 件は 2026-11-11 に実 DB との突合で検証済み（次節「schema 外テーブル」）。schema にあって実 DB に無いテーブルはない。
 - 明示 `@relation`（実 FK）を持つ model は34件（@relation の総数は37件）。残りは guildId / userId 等のスカラー列による**論理参照**で、DB レベルの FK 制約は無い。ER図では実 FK を実線、論理参照は本書では省略し各テーブルの備考で扱う。
 - 状態系フィールド（名前に status を含む列）は17件あり、enum 化されているのは VcRecapSession.status（VcRecapSessionStatus）のみで、他は String。デフォルト値は `@default` が指定されたフィールドにのみ存在する（status では17件中12件）。デフォルトのない status は必須であり、event_rsvps.status と daily_bonus_claims.status（いずれも String、デフォルトなし）を含め、登録時に値を明示する必要がある。
 - 複合外部キー（複合 FK）は6件ある。参照元・参照先の列ペアは「複合外部キー（複合 FK）一覧」に明記した。
+
+## schema 外テーブル（実 DB にのみ存在する 21 件）
+
+本書の生成元である Prisma schema には model が無いが、実 DB に存在するテーブルが 21 件ある（2026-11-11 実測）。内訳は Prisma の管理テーブル 1 件と、現行コードが参照するテーブル 20 件で、旧機能の残存や削除候補は含まれない。
+
+この repo では、プラグイン群（AFK・誕生日・リマインダー・投票・景品・提案・XP/レベル等）と Studio/運用系の一部が、Prisma model を持たず migration でテーブルを作成し、専用リポジトリから raw SQL（`$queryRaw` / `$executeRaw`）で直接参照する設計を採っている。したがって schema.prisma は Prisma model の正本であり、DB 全体の正本ではない。本書のテーブル定義（80 件）に加え、DB 全体像は本節と合わせて読むこと。
+
+| テーブル                      | 作成 migration                            | 主な参照コード                                                    |
+| ----------------------------- | ----------------------------------------- | ----------------------------------------------------------------- |
+| `_prisma_migrations`          | Prisma 自動管理                           | Prisma CLI / 復元 ACL チェック                                    |
+| `afk_statuses`                | 20260811081500_afk_plugin_v1              | apps/bot: afk-repository                                          |
+| `birthday_registrations`      | 20260810190000_birthday_role_v1           | apps/bot: birthday-role-repository                                |
+| `birthday_celebrations`       | 20260810190000_birthday_role_v1           | apps/bot: birthday-role-repository                                |
+| `birthday_deliveries`         | 20260810190000_birthday_role_v1           | apps/bot: birthday-role-repository                                |
+| `guild_anniversaries`         | 20260819095000_birthday_card_v2           | apps/studio: guild-anniversary                                    |
+| `bot_presence_media_settings` | 20260816123000_add_bot_presence_media     | apps/studio: bot-presence-store                                   |
+| `discord_role_operations`     | 20260817170500_discord_role_operations_v1 | packages/db: discord-role-operations                              |
+| `giveaways`                   | 20260811030000_giveaway_plugin_v1         | apps/bot: giveaway-repository                                     |
+| `giveaway_entries`            | 20260811030000_giveaway_plugin_v1         | apps/bot: giveaway-repository                                     |
+| `giveaway_winners`            | 20260811030000_giveaway_plugin_v1         | apps/bot: giveaway-repository                                     |
+| `message_studio_drafts`       | 20260817133000_message_studio_drafts      | apps/studio: message-studio-drafts                                |
+| `moderation_cases`            | 20260728150000_add_moderation_cases       | plugins/moderation: detection-case                                |
+| `polls`                       | 20260811022000_poll_plugin_v1             | apps/bot: poll-repository                                         |
+| `poll_options`                | 20260811022000_poll_plugin_v1             | apps/bot: poll-repository                                         |
+| `poll_votes`                  | 20260811022000_poll_plugin_v1             | apps/bot: poll-repository                                         |
+| `reminders`                   | 20260811005000_reminder_plugin_v1         | apps/bot: reminder-repository                                     |
+| `runtime_configurations`      | 20260827080000_runtime_configurations     | packages/db: runtime-configurations                               |
+| `suggestions`                 | 20260811050000_suggestion_plugin_v1       | apps/bot: suggestion-repository                                   |
+| `suggestion_votes`            | 20260811050000_suggestion_plugin_v1       | apps/bot: suggestion-repository                                   |
+| `xp_profiles`                 | 20260811053000_xp_level_plugin_v1         | apps/bot: xp-level-repository、packages/db: community-leaderboard |
 
 ## ER図（主要リレーションのみ、実 FK）
 
@@ -1667,11 +1697,12 @@ enum: `VcRecapSessionStatus` = active / summarizing / completed / failed（VcRec
 ## 変更管理
 
 - 正本は Prisma schema と `packages/db/prisma/migrations/`。本書は生成物であり、schema が変わったら再生成して版を上げる（生成元の commit を改版履歴に残す）。
-- 実 DB との突合（101 vs 80 の差分内訳）は未実施の照合タスクとして台帳に残す。
+- 実 DB との突合は 2026-11-11 に実施済みで、差分 21 件は全件説明済み（「schema 外テーブル」節）。今後 schema や migration が変わったら再突合する。
 
 ## 改版履歴
 
-| 版     | 日付       | 変更内容                                                                                                                   | 変更者 | 承認者               |
-| ------ | ---------- | -------------------------------------------------------------------------------------------------------------------------- | ------ | -------------------- |
-| v1.1.0 | 2026-11-10 | CodeRabbit 指摘対応: 全フィールドへの型・実列名併記、複合 FK 列ペア明記、ER カーディナリティと status デフォルト記述の是正 | Muse   | 未（Phase 4 配置時） |
-| v1.0.0 | 2026-11-10 | 初版。schema.prisma (bd6cbabb) から ER図・全80テーブルの定義・機能 CRUD を生成                                             | Muse   | 未（Phase 4 配置時） |
+| 版     | 日付       | 変更内容                                                                                                                                                                    | 変更者 | 承認者               |
+| ------ | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | -------------------- |
+| v1.2.0 | 2026-11-11 | 実 DB との突合を実施し、schema 外テーブル 21 件（Prisma 管理 1 件＋現行コードが raw SQL で参照する 20 件）を検証のうえ節を追加。schema 側の欠落・不要な残存は無いことを確認 | Muse   | Kanata               |
+| v1.1.0 | 2026-11-10 | CodeRabbit 指摘対応: 全フィールドへの型・実列名併記、複合 FK 列ペア明記、ER カーディナリティと status デフォルト記述の是正                                                  | Muse   | 未（Phase 4 配置時） |
+| v1.0.0 | 2026-11-10 | 初版。schema.prisma (bd6cbabb) から ER図・全80テーブルの定義・機能 CRUD を生成                                                                                              | Muse   | 未（Phase 4 配置時） |
