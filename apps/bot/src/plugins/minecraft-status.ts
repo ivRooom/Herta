@@ -78,6 +78,7 @@ export interface MinecraftRuntimeStatus {
 
 interface MinecraftStatusOptions {
   getSubcommand(): string;
+  getString(name: string): string | null;
 }
 
 interface MinecraftStatusInteraction {
@@ -575,8 +576,8 @@ async function executeMinecraftCommand(
   }
 
   const subcommand = interaction.options.getSubcommand();
-  if (subcommand === 'start') {
-    await executeMinecraftStart(context, interaction, config);
+  if (subcommand === 'main' || subcommand === 'resource') {
+    await executeMinecraftControl(context, interaction, config, subcommand);
     return;
   }
   if (subcommand !== 'status') {
@@ -617,23 +618,13 @@ async function executeMinecraftCommand(
   }
 }
 
-const MINECRAFT_RESOURCE_START_PATH = '/v1/servers/mc-resource/start';
-const START_COOLDOWN_MS = 180_000;
-const START_POLL_INTERVAL_MS = 10_000;
-const START_POLL_ATTEMPTS = 15;
-
-const lastStartRequestByGuild = new Map<string, number>();
-
-type MinecraftStartResult =
-  { kind: 'started' } | { kind: 'already_running' } | { kind: 'unconfigured' } | { kind: 'error' };
-
 /**
- * /mc start の実行に必要な Discord ロール（当面はコード管理。
+ * サーバー操作（/mc main・/mc resource）の実行に必要な Discord ロール（当面はコード管理。
  * 将来的にプラグイン設定や環境変数へ移す前提で、設定側の追加ロールとは和集合で判定する）
  */
 export const MINECRAFT_START_REQUIRED_ROLE_ID = '1114417432346501130';
 
-export function canStartMinecraftResource(
+export function canControlMinecraftServer(
   interaction: { member?: unknown },
   config: MinecraftStatusConfig,
 ): boolean {
@@ -641,7 +632,7 @@ export function canStartMinecraftResource(
   return memberRoleIds(interaction).some((role) => allowed.has(role));
 }
 
-/** 起動エンドポイント向けの HMAC 署名（サーバー側 ivrm-mc-control と同じ署名対象文字列） */
+/** 操作エンドポイント向けの HMAC 署名（サーバー側 ivrm-mc-control と同じ署名対象文字列） */
 export function buildMinecraftControlSignature(
   secret: string,
   method: string,
@@ -655,102 +646,223 @@ export function buildMinecraftControlSignature(
     .digest('hex');
 }
 
-async function requestMinecraftResourceStart(): Promise<MinecraftStartResult> {
+export type MinecraftControlServer = 'main' | 'resource';
+export type MinecraftControlAction = 'start' | 'stop' | 'restart' | 'save' | 'regenerate';
+
+const MINECRAFT_SERVER_IDS: Record<MinecraftControlServer, string> = {
+  main: 'mc-main',
+  resource: 'mc-resource',
+};
+const MINECRAFT_SERVER_LABELS: Record<MinecraftControlServer, string> = {
+  main: 'メインワールド',
+  resource: '資源サーバー',
+};
+const MINECRAFT_CONTROL_ACTIONS: Record<MinecraftControlServer, MinecraftControlAction[]> = {
+  main: ['start', 'stop', 'restart', 'save'],
+  resource: ['start', 'stop', 'restart', 'save', 'regenerate'],
+};
+const CONTROL_COOLDOWN_MS: Record<MinecraftControlAction, number> = {
+  start: 180_000,
+  stop: 60_000,
+  restart: 180_000,
+  save: 30_000,
+  regenerate: 180_000,
+};
+const CONTROL_POLL_INTERVAL_MS = 10_000;
+const CONTROL_POLL_ATTEMPTS = 15;
+const REGENERATE_POLL_INTERVAL_MS = 20_000;
+const REGENERATE_POLL_ATTEMPTS = 30;
+
+const lastControlRequest = new Map<string, number>();
+
+type MinecraftControlResult =
+  | { kind: 'responded'; status: number; result: string; jobState?: string }
+  | { kind: 'unconfigured' }
+  | { kind: 'error' };
+
+export function minecraftControlPath(
+  server: MinecraftControlServer,
+  action: MinecraftControlAction | 'status',
+): string {
+  return `/v1/servers/${server}/${action}`;
+}
+
+async function requestMinecraftControl(
+  server: MinecraftControlServer,
+  action: MinecraftControlAction | 'status',
+  timeoutMs: number,
+): Promise<MinecraftControlResult> {
   const baseUrl = process.env.MINECRAFT_CONTROL_URL;
   const secret = process.env.MINECRAFT_CONTROL_SECRET;
   if (!baseUrl || !secret) return { kind: 'unconfigured' };
+  const path = minecraftControlPath(server, action);
+  const method = action === 'status' ? 'GET' : 'POST';
   const timestamp = String(Math.floor(Date.now() / 1000));
-  const body = '';
   try {
-    const response = await fetch(`${baseUrl.replace(/\/$/, '')}${MINECRAFT_RESOURCE_START_PATH}`, {
-      method: 'POST',
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}${path}`, {
+      method,
       headers: {
         'x-ivrm-timestamp': timestamp,
-        'x-ivrm-signature': buildMinecraftControlSignature(
-          secret,
-          'POST',
-          MINECRAFT_RESOURCE_START_PATH,
-          timestamp,
-          body,
-        ),
+        'x-ivrm-signature': buildMinecraftControlSignature(secret, method, path, timestamp, ''),
       },
-      signal: AbortSignal.timeout(15_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!response.ok) return { kind: 'error' };
-    const data: unknown = await response.json();
-    if (isRecord(data) && data.result === 'already_running') return { kind: 'already_running' };
-    if (isRecord(data) && data.result === 'started') return { kind: 'started' };
-    return { kind: 'error' };
+    const data: unknown = await response.json().catch(() => null);
+    if (!isRecord(data)) return { kind: 'error' };
+    const job = isRecord(data.job) ? data.job : undefined;
+    return {
+      kind: 'responded',
+      status: response.status,
+      result: typeof data.result === 'string' ? data.result : '',
+      jobState: typeof job?.state === 'string' ? job.state : undefined,
+    };
   } catch {
     return { kind: 'error' };
   }
 }
 
-async function executeMinecraftStart(
+/** エンドポイントの結果コードをユーザー向け文へ変換する（ポーリングで確定するものは null） */
+export function minecraftControlImmediateMessage(
+  server: MinecraftControlServer,
+  action: MinecraftControlAction,
+  outcome: MinecraftControlResult,
+): string | null {
+  const label = MINECRAFT_SERVER_LABELS[server];
+  if (outcome.kind === 'unconfigured')
+    return '操作の受け口が未設定です。管理者に連絡してください。';
+  if (outcome.kind === 'error') {
+    return `${label}の操作リクエストに失敗しました。時間をおいて再度お試しください。`;
+  }
+  if (outcome.status === 409) {
+    return '他の操作が実行中です。終わってからお試しください。';
+  }
+  switch (outcome.result) {
+    case 'already_running':
+      return `${label}は既に起動しています。`;
+    case 'already_stopped':
+      return `${label}は既に停止しています。`;
+    case 'not_running':
+      return `${label}は起動していないため、セーブは行われませんでした。`;
+    case 'saved':
+      return `${label}をセーブしました。`;
+    case 'stopped':
+      return `${label}をセーブして停止しました。`;
+    case 'save_failed':
+      return `${label}のセーブに失敗したため、操作を中止しました。`;
+    case 'start_failed':
+    case 'stop_failed':
+      return `${label}の操作に失敗しました。/mc status で状態を確認してください。`;
+    default:
+      return null;
+  }
+}
+
+async function waitForServerRunning(server: MinecraftControlServer): Promise<boolean> {
+  const serverId = MINECRAFT_SERVER_IDS[server];
+  for (let attempt = 0; attempt < CONTROL_POLL_ATTEMPTS; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, CONTROL_POLL_INTERVAL_MS));
+    const runtime = await fetchRuntimeStatus();
+    const target = runtime?.servers?.find((item) => item.id === serverId);
+    if (target?.runtimeStatus === 'running') return true;
+    if (target?.startability === 'unavailable') return false;
+  }
+  return false;
+}
+
+async function executeMinecraftControl(
   context: MinecraftStatusContext,
   interaction: MinecraftStatusInteraction,
   config: MinecraftStatusConfig,
+  server: MinecraftControlServer,
 ): Promise<void> {
-  if (!canStartMinecraftResource(interaction, config)) {
+  const label = MINECRAFT_SERVER_LABELS[server];
+  const rawAction = interaction.options.getString('action');
+  const action = MINECRAFT_CONTROL_ACTIONS[server].find((item) => item === rawAction);
+  if (!action) {
+    await reply(context, interaction, '不明な操作です。');
+    return;
+  }
+  if (!canControlMinecraftServer(interaction, config)) {
     await reply(context, interaction, 'この操作には運営ロールが必要です。');
     return;
   }
 
-  const guildId = interaction.guildId!;
+  const cooldownKey = `${interaction.guildId}:${server}:${action}`;
   const nowMs = Date.now();
-  const last = lastStartRequestByGuild.get(guildId) ?? 0;
-  if (nowMs - last < START_COOLDOWN_MS) {
+  const last = lastControlRequest.get(cooldownKey) ?? 0;
+  if (nowMs - last < CONTROL_COOLDOWN_MS[action]) {
     await reply(
       context,
       interaction,
-      '起動リクエストを受け付けたばかりです。少し時間をおいてからお試しください。',
+      'その操作を受け付けたばかりです。少し時間をおいてからお試しください。',
     );
     return;
   }
-  lastStartRequestByGuild.set(guildId, nowMs);
+  lastControlRequest.set(cooldownKey, nowMs);
 
   await interaction.deferReply({
     flags: config.ephemeralResponses ? EPHEMERAL_FLAG : undefined,
   });
-  const result = await requestMinecraftResourceStart();
-  if (result.kind === 'unconfigured') {
-    await interaction.editReply({
-      content: '起動の受け口が未設定です。管理者に連絡してください。',
-      allowedMentions: { parse: [] },
-    });
+
+  // stop / restart はエンドポイント側でセーブと停止完了まで待つため、長めのタイムアウトにする
+  const timeoutMs = action === 'stop' || action === 'restart' ? 300_000 : 30_000;
+  const outcome = await requestMinecraftControl(server, action, timeoutMs);
+  const immediate = minecraftControlImmediateMessage(server, action, outcome);
+  if (immediate) {
+    await interaction.editReply({ content: immediate, allowedMentions: { parse: [] } });
     return;
   }
-  if (result.kind === 'error') {
+  if (outcome.kind !== 'responded') {
     await interaction.editReply({
-      content: '資源サーバーの起動リクエストに失敗しました。時間をおいて再度お試しください。',
-      allowedMentions: { parse: [] },
-    });
-    return;
-  }
-  if (result.kind === 'already_running') {
-    await interaction.editReply({
-      content: '資源サーバーは既に起動しています。',
+      content: `${label}の操作に失敗しました。`,
       allowedMentions: { parse: [] },
     });
     return;
   }
 
-  // 起動完了（collector の状態が running になる）までポーリングする
-  let running = false;
-  for (let attempt = 0; attempt < START_POLL_ATTEMPTS; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, START_POLL_INTERVAL_MS));
-    const runtime = await fetchRuntimeStatus();
-    const resource = runtime?.servers?.find((server) => server.id === 'mc-resource');
-    if (resource?.runtimeStatus === 'running') {
-      running = true;
-      break;
-    }
-    if (resource?.startability === 'unavailable') break;
+  if (action === 'start' || action === 'restart') {
+    const running = await waitForServerRunning(server);
+    const verb = action === 'start' ? '起動' : '再起動';
+    await interaction.editReply({
+      content: running
+        ? server === 'resource'
+          ? `資源サーバーが${verb}しました。接続先: mc.ivrm.jp:25999（ゲーム内では /server resource でも移動できます）`
+          : `メインワールドが${verb}しました。接続先: mc.ivrm.jp`
+        : `${verb}を開始しましたが、完了を確認できませんでした。/mc status で状態を確認してください。`,
+      allowedMentions: { parse: [] },
+    });
+    return;
   }
+
+  if (action === 'regenerate' && outcome.result === 'regenerate_started') {
+    await interaction.editReply({
+      content:
+        '資源ワールドの再生成を開始しました。プレイヤーがいる場合は警告のうえ約5分後に実行されます。完了までそのままお待ちください。',
+      allowedMentions: { parse: [] },
+    });
+    let finalState = 'timeout';
+    for (let attempt = 0; attempt < REGENERATE_POLL_ATTEMPTS; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, REGENERATE_POLL_INTERVAL_MS));
+      const status = await requestMinecraftControl('resource', 'status', 15_000);
+      if (status.kind === 'responded' && status.jobState && status.jobState !== 'running') {
+        finalState = status.jobState;
+        break;
+      }
+    }
+    await interaction.editReply({
+      content:
+        finalState === 'done'
+          ? '資源ワールドを再生成しました（旧ワールドはアーカイブ済みです）。接続すると新しいワールドで起動します。'
+          : finalState === 'failed'
+            ? '資源ワールドの再生成に失敗しました。管理者に連絡してください。'
+            : '再生成の完了を確認できませんでした。/mc status で状態を確認してください。',
+      allowedMentions: { parse: [] },
+    });
+    return;
+  }
+
   await interaction.editReply({
-    content: running
-      ? '資源サーバーが起動しました。接続先: mc.ivrm.jp:25999（ゲーム内では /server resource でも移動できます）'
-      : '起動を開始しましたが、完了を確認できませんでした。/mc status で状態を確認してください。',
+    content: `${label}の操作結果を確認できませんでした。/mc status で状態を確認してください。`,
     allowedMentions: { parse: [] },
   });
 }
