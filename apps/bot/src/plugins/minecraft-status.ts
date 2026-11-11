@@ -101,7 +101,7 @@ interface EditReplyOptions {
   content?: string;
   embeds?: APIEmbed[];
   files?: AttachmentBuilder[];
-  allowedMentions: { parse: [] };
+  allowedMentions: { parse: [] } | { users: string[] };
 }
 
 type MinecraftStatusContext = PluginRuntimeContext<MinecraftStatusConfig, unknown, PrismaClient>;
@@ -806,6 +806,13 @@ async function executeMinecraftControl(
     flags: config.ephemeralResponses ? EPHEMERAL_FLAG : undefined,
   });
 
+  // 処理完了の報告では実行者へメンション通知する
+  const executorId = interaction.user?.id;
+  const mention = executorId ? `<@${executorId}> ` : '';
+  const mentionAllowed: { parse: [] } | { users: string[] } = executorId
+    ? { users: [executorId] }
+    : { parse: [] };
+
   // stop / restart はエンドポイント側でセーブと停止完了まで待つため、長めのタイムアウトにする
   const timeoutMs = action === 'stop' || action === 'restart' ? 300_000 : 30_000;
   const outcome = await requestMinecraftControl(server, action, timeoutMs);
@@ -815,13 +822,16 @@ async function executeMinecraftControl(
   }
   const immediate = minecraftControlImmediateMessage(server, outcome);
   if (immediate) {
-    await interaction.editReply({ content: immediate, allowedMentions: { parse: [] } });
+    await interaction.editReply({
+      content: `${mention}${immediate}`,
+      allowedMentions: mentionAllowed,
+    });
     return;
   }
   if (outcome.kind !== 'responded') {
     await interaction.editReply({
-      content: `${label}の操作に失敗しました。`,
-      allowedMentions: { parse: [] },
+      content: `${mention}${label}の操作に失敗しました。`,
+      allowedMentions: mentionAllowed,
     });
     return;
   }
@@ -830,12 +840,14 @@ async function executeMinecraftControl(
     const running = await waitForServerRunning(server);
     const verb = action === 'start' ? '起動' : '再起動';
     await interaction.editReply({
-      content: running
-        ? server === 'resource'
-          ? `資源サーバーが${verb}しました。接続先: mc.ivrm.jp:25999（ゲーム内では /server resource でも移動できます）`
-          : `メインワールドが${verb}しました。接続先: mc.ivrm.jp`
-        : `${verb}を開始しましたが、完了を確認できませんでした。/mc status で状態を確認してください。`,
-      allowedMentions: { parse: [] },
+      content:
+        mention +
+        (running
+          ? server === 'resource'
+            ? `資源サーバーが${verb}しました。接続先: mc.ivrm.jp:25999（ゲーム内では /server resource でも移動できます）`
+            : `メインワールドが${verb}しました。接続先: mc.ivrm.jp`
+          : `${verb}を開始しましたが、完了を確認できませんでした。/mc status で状態を確認してください。`),
+      allowedMentions: mentionAllowed,
     });
     return;
   }
@@ -857,19 +869,20 @@ async function executeMinecraftControl(
     }
     await interaction.editReply({
       content:
-        finalState === 'done'
+        mention +
+        (finalState === 'done'
           ? '資源ワールドを再生成しました（旧ワールドはアーカイブ済みです）。接続すると新しいワールドで起動します。'
           : finalState === 'failed'
             ? '資源ワールドの再生成に失敗しました。管理者に連絡してください。'
-            : '再生成の完了を確認できませんでした。/mc status で状態を確認してください。',
-      allowedMentions: { parse: [] },
+            : '再生成の完了を確認できませんでした。/mc status で状態を確認してください。'),
+      allowedMentions: mentionAllowed,
     });
     return;
   }
 
   await interaction.editReply({
-    content: `${label}の操作結果を確認できませんでした。/mc status で状態を確認してください。`,
-    allowedMentions: { parse: [] },
+    content: `${mention}${label}の操作結果を確認できませんでした。/mc status で状態を確認してください。`,
+    allowedMentions: mentionAllowed,
   });
 }
 
