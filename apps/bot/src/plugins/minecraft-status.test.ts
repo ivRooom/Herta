@@ -76,6 +76,7 @@ describe('Minecraft Status v1', () => {
       enabled: true,
       ephemeralResponses: false,
       showResources: true,
+      showPerformanceGraph: true,
       showServers: true,
       showBackup: true,
       staleAfterMinutes: 3,
