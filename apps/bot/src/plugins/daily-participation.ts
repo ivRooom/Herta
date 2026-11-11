@@ -31,6 +31,7 @@ import {
   type ParticipationQuestion,
 } from './daily-participation-client.js';
 import { renderDailyQuestionCard } from './daily-question-card.js';
+import { replyDailyParticipationAnswer } from './daily-result-card-reply.js';
 
 interface Context {
   guildId: string;
@@ -428,10 +429,22 @@ export async function handleDailyParticipation(
         option?.id ?? null,
         text,
       );
-      await interaction.editReply({
+      await replyDailyParticipationAnswer(interaction, {
+        guildId: ctx.guildId,
+        userId: interaction.user.id,
         content: `${answer.mode === 'already_answered' ? 'この問題は回答済みです。' : answer.response.state === 'pending' ? '回答を受け付けました。結果の確定をお待ちください。' : answer.response.isCorrect === true ? '正解です！' : answer.response.isCorrect === false ? '今回は不正解です。' : '回答を受け付けました。'}\n獲得：${answer.response.rewardPoints}pt / 保有：${answer.balance}pt\nhttps://member.ivrm.jp/login-bonus`,
-        allowedMentions: { parse: [] },
-        components: [],
+        // The result card is presentation over the committed answer (#803).
+        // Only a graded outcome is carded; the selector seed is derived from
+        // server-finalized answer values so re-displays stay stable.
+        result:
+          answer.response.state === 'graded' && answer.response.isCorrect !== null
+            ? answer.response.isCorrect
+              ? 'correct'
+              : 'incorrect'
+            : null,
+        rewardPoints: answer.response.rewardPoints,
+        balance: answer.balance,
+        finalizedReceiptId: `daily-participation-answer:${interaction.user.id}:${answer.response.questionId}:${answer.response.submittedAt}`,
       });
       return;
     }
