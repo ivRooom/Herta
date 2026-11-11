@@ -47,7 +47,16 @@ const runtime: MinecraftRuntimeStatus = {
   servers: [
     { id: 'mc-main', containerState: 'running', health: 'healthy', runtimeStatus: 'running' },
     { id: 'ivrm-velocity', containerState: 'running', health: 'healthy', runtimeStatus: 'running' },
-    { id: 'mc-resource', containerState: 'exited', health: 'unhealthy', runtimeStatus: 'sleeping' },
+    {
+      id: 'mc-resource',
+      containerState: 'exited',
+      health: 'unhealthy',
+      runtimeStatus: 'sleeping',
+      startability: 'startable',
+      startable: true,
+      autoScaleUp: true,
+      reason: '休止中です。接続すると自動起動します',
+    },
   ],
 };
 
@@ -111,8 +120,48 @@ describe('Minecraft Status v1', () => {
     expect(field(embed, '💾 最新バックアップ')?.value).toBe('2026-11-10 03:00:46（937M）');
     const servers = field(embed, '🖥 サーバー状態')?.value ?? '';
     expect(servers).toContain('🟢 **mc-main** — 稼働中（正常）');
-    expect(servers).toContain('🔴 **mc-resource** — スリープ中（異常）');
+    expect(servers).toContain('💤 **mc-resource** — 休止中（接続で自動起動）');
     expect(embed?.footer?.text).not.toContain('データが古い可能性があります');
+  });
+
+  it('停止中サーバーは起動可否で表示を変える', () => {
+    const stoppedRuntime: MinecraftRuntimeStatus = {
+      ...runtime,
+      servers: [
+        {
+          id: 'mc-resource',
+          containerState: 'exited',
+          health: 'unhealthy',
+          runtimeStatus: 'stopped',
+          startability: 'unavailable',
+          startable: false,
+          reason: 'メモリ不足による停止を確認しました',
+        },
+        {
+          id: 'mc-optional',
+          containerState: 'exited',
+          health: 'unhealthy',
+          runtimeStatus: 'stopped',
+          startability: 'startable',
+          startable: true,
+        },
+      ],
+    };
+    const embed = buildMinecraftStatusEmbed(
+      current,
+      stoppedRuntime,
+      normalizeMinecraftStatusConfig(undefined),
+      now,
+    );
+    const servers = field(embed, '🖥 サーバー状態')?.value ?? '';
+    expect(servers).toContain('🔴 **mc-resource** — 停止中（異常）');
+    expect(servers).toContain('🟡 **mc-optional** — 停止中');
+    const model = buildMinecraftStatusCardModel(
+      current,
+      stoppedRuntime,
+      normalizeMinecraftStatusConfig(undefined),
+    );
+    expect(model?.servers?.map((s) => s.tone)).toEqual(['bad', 'warn']);
   });
 
   it('古いデータには stale 警告を付ける', () => {
@@ -167,7 +216,7 @@ describe('Minecraft Status v1', () => {
     );
     expect(model?.serverName).toBe('IVRM Main');
     expect(model?.statusText).toBe('オンライン');
-    expect(model?.statusTone).toBe('attention');
+    expect(model?.statusTone).toBe('online');
     expect(model?.players).toMatchObject({ online: 2, max: 10, ratio: 0.2 });
     expect(model?.players?.namesLine).toBe('ivurugg, kanata');
     expect(model?.resources).toMatchObject({
@@ -175,7 +224,7 @@ describe('Minecraft Status v1', () => {
       memoryPercent: 27,
       hostMemoryPercent: 56,
     });
-    expect(model?.servers?.map((s) => s.tone)).toEqual(['ok', 'ok', 'bad']);
+    expect(model?.servers?.map((s) => s.tone)).toEqual(['ok', 'ok', 'sleep']);
     expect(model?.hostLabel).toBe('Oracle Cloud · Oracle Linux 9.7 · Neoverse-N1 · 2コア');
     expect(model?.backupLabel).toBe('11/10 03:00（937M）');
     expect(
@@ -201,7 +250,7 @@ describe('Minecraft Status v1', () => {
       normalizeMinecraftStatusConfig(undefined),
       now,
     );
-    expect(embed?.description).toContain('稼働中ですが、一部に異常があります。');
+    expect(embed?.description).toContain('正常稼働中です。');
     expect(embed?.description).toContain('IP: mc.ivrm.jp');
     expect(embed?.description).toContain('稼働状況: https://status.ivrm.jp/');
 
@@ -211,7 +260,7 @@ describe('Minecraft Status v1', () => {
       normalizeMinecraftStatusConfig(undefined),
       now,
     );
-    expect(fieldsEmbed?.description).toContain('稼働中ですが、一部に異常があります。');
+    expect(fieldsEmbed?.description).toContain('正常稼働中です。');
     expect(fieldsEmbed?.description).toContain('稼働状況: https://status.ivrm.jp/');
 
     const healthyRuntime: MinecraftRuntimeStatus = {

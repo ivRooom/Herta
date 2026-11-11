@@ -14,7 +14,7 @@ const model: MinecraftStatusCardModel = {
   resources: { cpuPercent: 1.09, memoryPercent: 27, hostMemoryPercent: 56, loadAverage: '0.31' },
   servers: [
     { name: 'mc-main', stateLabel: '稼働中（正常）', tone: 'ok' },
-    { name: 'mc-resource', stateLabel: 'スリープ中（異常）', tone: 'bad' },
+    { name: 'mc-resource', stateLabel: '休止中（接続で自動起動）', tone: 'sleep' },
   ],
   uptime: '12時間 36分',
   hostLabel: 'Oracle Cloud · Oracle Linux 9.7 · Neoverse-N1 · 2コア',

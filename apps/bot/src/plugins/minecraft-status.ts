@@ -61,6 +61,10 @@ export interface MinecraftRuntimeServer {
   containerState?: string;
   health?: string;
   runtimeStatus?: string;
+  startability?: string;
+  startable?: boolean;
+  reason?: string;
+  autoScaleUp?: boolean;
 }
 
 export interface MinecraftRuntimeStatus {
@@ -386,11 +390,15 @@ function statusTone(
 }
 
 function serverStateTone(server: MinecraftRuntimeServer): MinecraftServerTone {
-  if (server.health === 'unhealthy') return 'bad';
+  // 休止（設計どおりのスリープ）は異常ではないので、health より優先して判定する
+  if (server.runtimeStatus === 'sleeping') return 'sleep';
   const running = server.runtimeStatus === 'running' || server.containerState === 'running';
-  if (running) return 'ok';
-  if (server.runtimeStatus === 'sleeping') return 'warn';
-  return 'bad';
+  if (running) return server.health === 'unhealthy' ? 'bad' : 'ok';
+  if (server.runtimeStatus === 'starting') return 'warn';
+  // 停止中コンテナの health は未稼働ゆえに unhealthy になりがちで当てにならない。
+  // 異常かどうかは collector の startability（OOM・マウント不備・メモリ不足の判定）で決める。
+  if (server.startability === 'unavailable') return 'bad';
+  return 'warn';
 }
 
 /** "Oracle Linux Server 9.7" + Neoverse-N1 + 2コア → "Oracle Cloud · Oracle Linux 9.7 · Neoverse-N1 · 2コア" */
@@ -489,9 +497,9 @@ function statusColor(
 ): number {
   if (current?.status === 'offline') return COLOR_OFFLINE;
   if (current?.status === 'online') {
-    return runtime?.status && runtime.status !== 'operational' && runtime.status !== 'online'
-      ? COLOR_ATTENTION
-      : COLOR_ONLINE;
+    // 全体色は Minecraft サーバー群の状態だけで決める。runtime 側の総合ステータスは
+    // ボイスチャット等の周辺要素でも partial_outage になるため、色には使わない。
+    return COLOR_ONLINE;
   }
   if (current?.status) return COLOR_ATTENTION;
   const main = runtime?.servers?.find((server) => server.id === 'mc-main');
@@ -500,13 +508,19 @@ function statusColor(
 }
 
 function serverStateLabel(server: MinecraftRuntimeServer): string {
+  // 休止中は「接続すると自動起動する」設計どおりの状態なので、異常とは表示しない
+  if (server.runtimeStatus === 'sleeping') {
+    return server.startable === false ? '休止中' : '休止中（接続で自動起動）';
+  }
   let state: string;
   if (server.runtimeStatus === 'running' || server.containerState === 'running') {
     state = '稼働中';
-  } else if (server.runtimeStatus === 'sleeping') {
-    state = 'スリープ中';
+  } else if (server.runtimeStatus === 'starting') {
+    state = '起動中';
   } else {
     state = '停止中';
+    // 停止中は health でなく startability で異常を判定する（serverStateTone と同じ理由）
+    return server.startability === 'unavailable' ? `${state}（異常）` : state;
   }
   if (server.health === 'healthy') return `${state}（正常）`;
   if (server.health === 'unhealthy') return `${state}（異常）`;
@@ -515,7 +529,7 @@ function serverStateLabel(server: MinecraftRuntimeServer): string {
 
 function serverStateDot(server: MinecraftRuntimeServer): string {
   const tone = serverStateTone(server);
-  return tone === 'ok' ? '🟢' : tone === 'warn' ? '🟡' : '🔴';
+  return tone === 'ok' ? '🟢' : tone === 'warn' ? '🟡' : tone === 'sleep' ? '💤' : '🔴';
 }
 
 async function executeMinecraftCommand(

@@ -1,7 +1,7 @@
 import sharp from 'sharp';
 
 export type MinecraftStatusTone = 'online' | 'offline' | 'attention' | 'unknown';
-export type MinecraftServerTone = 'ok' | 'warn' | 'bad';
+export type MinecraftServerTone = 'ok' | 'warn' | 'bad' | 'sleep';
 
 export interface MinecraftStatusCardServer {
   name: string;
@@ -45,6 +45,7 @@ const SERVER_TONE_COLORS: Record<MinecraftServerTone, string> = {
   ok: '#57f287',
   warn: '#fee75c',
   bad: '#ed4245',
+  sleep: '#95a5a6',
 };
 
 const TEXT_MAIN = '#e9e7f5';
