@@ -492,6 +492,12 @@ describe('サーバーイベント通知', () => {
     expect(events.map((event) => event.seq)).toEqual([1, 3]);
     expect(parseServerEvents(null)).toEqual([]);
     expect(parseServerEvents({})).toEqual([]);
+    // 不正な日時は埋め込みを拒否させるため空に落とす
+    expect(
+      parseServerEvents({
+        events: [{ seq: 5, at: 'not-a-date', server: 'main', action: 'start' }],
+      })[0]?.at,
+    ).toBe('');
   });
 
   it('picks only events newer than the cursor', () => {

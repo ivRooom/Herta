@@ -1166,7 +1166,7 @@ async function runReportCycle(context: MinecraftStatusContext): Promise<void> {
   const run = (async () => {
     try {
       const config = normalizeMinecraftStatusConfig((context as { config?: unknown }).config ?? {});
-      if (!config.announceReports || !config.reportChannelId) return;
+      if (!config.enabled || !config.announceReports || !config.reportChannelId) return;
       const url = process.env.MINECRAFT_STATUS_REPORTS_URL ?? MINECRAFT_STATUS_REPORTS_URL_DEFAULT;
       const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
       if (!response.ok) return;
@@ -1181,6 +1181,7 @@ async function runReportCycle(context: MinecraftStatusContext): Promise<void> {
       if (announcedReportDates.get(context.guildId) === target.date) return;
       const channel = await context.client.channels.fetch(config.reportChannelId);
       if (!channel || !channel.isTextBased()) return;
+      if ((channel as { guildId?: string | null }).guildId !== context.guildId) return;
       const recent = await channel.messages.fetch({ limit: 50 });
       if (reportAlreadyPosted(recent.values(), target.url)) {
         announcedReportDates.set(context.guildId, target.date);
@@ -1234,9 +1235,11 @@ export function parseServerEvents(payload: unknown): MinecraftServerEvent[] {
     if (seq <= 0) continue;
     if (item.server !== 'main' && item.server !== 'resource') continue;
     if (item.action !== 'start' && item.action !== 'die' && item.action !== 'oom') continue;
+    const atRaw = typeof item.at === 'string' ? item.at : '';
     events.push({
       seq,
-      at: typeof item.at === 'string' ? item.at : '',
+      // 不正な日時は Discord が埋め込みを拒否し通知全体が止まるため、検証して捨てる
+      at: atRaw !== '' && !Number.isNaN(Date.parse(atRaw)) ? atRaw : '',
       server: item.server,
       action: item.action,
       exitCode: item.exitCode === undefined ? undefined : toInteger(item.exitCode, 0),
@@ -1321,7 +1324,7 @@ async function runEventCycle(context: MinecraftStatusContext): Promise<void> {
   const stillCurrent = () => (eventWorkerEpochs.get(context.guildId) ?? 0) === epoch;
   try {
     const config = normalizeMinecraftStatusConfig(context.config);
-    if (!config.announceEvents || !config.eventChannelId) return;
+    if (!config.enabled || !config.announceEvents || !config.eventChannelId) return;
     const response = await fetch(eventsUrl(), {
       headers: { accept: 'application/json' },
       signal: AbortSignal.timeout(10_000),
@@ -1343,6 +1346,7 @@ async function runEventCycle(context: MinecraftStatusContext): Promise<void> {
     if (fresh.length === 0) return;
     const channel = await context.client.channels.fetch(config.eventChannelId);
     if (!channel || !channel.isTextBased()) return;
+    if ((channel as { guildId?: string | null }).guildId !== context.guildId) return;
     for (const event of fresh) {
       if (!stillCurrent()) return;
       await channel.send({
@@ -1356,5 +1360,12 @@ async function runEventCycle(context: MinecraftStatusContext): Promise<void> {
     // 通知の失敗でワーカーを落とさない（次周期で再試行する）
   } finally {
     eventWorkerRuns.delete(context.guildId);
+    // 無効化→再有効化で世代が変わっていたら、後継サイクルを待たずに実行する
+    // （停止したままならタイマーが無いので再実行しない）
+    if (!stillCurrent() && eventTimers.has(context.guildId)) {
+      setTimeout(() => {
+        void runEventCycle(context);
+      }, 0);
+    }
   }
 }
