@@ -5,14 +5,19 @@ describe('09:00 Discord daily bonus action row', () => {
   it.each([
     [false, 'daily-bonus:questions:2026-11-02'],
     [true, 'daily-participation:questions:2026-11-02'],
-  ])('shows all three buttons with V2 enabled=%s', (enabled, questionId) => {
+  ])('shows all four buttons with V2 enabled=%s', (enabled, questionId) => {
     const row = dailyBonusActionRow('2026-11-02', enabled).toJSON();
-    expect(row.components).toHaveLength(3);
+    expect(row.components).toHaveLength(4);
     expect(
       row.components.map((component) => ('custom_id' in component ? component.custom_id : null)),
-    ).toEqual(['daily-bonus:2026-11-02', questionId, 'daily-bonus:fortune:2026-11-02']);
+    ).toEqual([
+      'daily-bonus:2026-11-02',
+      questionId,
+      'daily-participation:yesterday:2026-11-02',
+      'daily-bonus:fortune:2026-11-02',
+    ]);
     expect(
       row.components.map((component) => ('label' in component ? component.label : null)),
-    ).toEqual(['🎁 ボーナスを受け取る', '🧠 今日の問題に挑戦', '🔮 今日の運勢']);
+    ).toEqual(['🎁 ボーナスを受け取る', '🧠 今日の問題に挑戦', '📚 昨日の問題', '🔮 今日の運勢']);
   });
 });

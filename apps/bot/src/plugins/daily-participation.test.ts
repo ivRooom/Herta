@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   status: vi.fn(),
   claim: vi.fn(),
   answer: vi.fn(),
+  yesterday: vi.fn(),
   reply: vi.fn(),
   renderCard: vi.fn(),
 }));
@@ -21,6 +22,7 @@ vi.mock('./daily-participation-client.js', () => ({
   participationStatus: mocks.status,
   participationClaim: mocks.claim,
   participationAnswer: mocks.answer,
+  yesterdayReview: mocks.yesterday,
 }));
 vi.mock('./daily-bonus-reply.js', () => ({ replyDailyBonusResult: mocks.reply }));
 vi.mock('./daily-question-card.js', () => ({ renderDailyQuestionCard: mocks.renderCard }));
@@ -68,6 +70,29 @@ function interaction(customId: string) {
     fields: { getTextInputValue: () => 'synthetic answer' },
   } as unknown as Parameters<typeof handleDailyParticipation>[1];
 }
+const yesterdayReviewFixture = {
+  status: 'ok',
+  guildId: f.status.guildId,
+  discordUserId: f.status.discordUserId,
+  dateJst: '2026-10-30',
+  revealed: true,
+  entries: [
+    {
+      question: { ...f.publicQuestion, dateJst: '2026-10-30' },
+      userResponse: {
+        optionId: 'b',
+        text: null,
+        state: 'graded',
+        isCorrect: false,
+        rewardPoints: 0,
+        submittedAt: '2026-10-30T01:00:00.000Z',
+        origin: 'discord',
+      },
+      correctOptionId: 'a',
+      explanation: 'A が正解です。',
+    },
+  ],
+};
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
@@ -84,6 +109,7 @@ beforeEach(() => {
   mocks.status.mockResolvedValue(f.status);
   mocks.claim.mockResolvedValue(f.claimResponse);
   mocks.answer.mockResolvedValue(f.answerResponse);
+  mocks.yesterday.mockResolvedValue(yesterdayReviewFixture);
   mocks.renderCard.mockResolvedValue(Buffer.from('answered-card-png'));
 });
 afterEach(() => {
@@ -317,5 +343,70 @@ it('never loads questions or fortune after a confirmed login-only claim', async 
   expect(mocks.reply).toHaveBeenCalledOnce();
   expect(mocks.record).toHaveBeenCalledOnce();
   expect(mocks.status).not.toHaveBeenCalled();
+  expect(i.followUp).not.toHaveBeenCalled();
+});
+it('renders the yesterday review card with answer markers when revealed (#820)', async () => {
+  vi.stubEnv('DAILY_QUESTION_CARD_ENABLED', 'true');
+  const i = interaction('daily-participation:yesterday:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  expect(mocks.yesterday).toHaveBeenCalledWith(f.status.guildId, f.status.discordUserId);
+  expect(mocks.status).not.toHaveBeenCalled();
+  expect(mocks.claim).not.toHaveBeenCalled();
+  expect(mocks.renderCard).toHaveBeenCalledWith(
+    expect.objectContaining({
+      heading: '昨日の問題',
+      result: expect.objectContaining({
+        selectedOptionIndex: 1,
+        correctOptionIndex: 0,
+        isCorrect: false,
+      }),
+    }),
+  );
+  const sent = vi.mocked(i.followUp).mock.calls[0]![0] as {
+    content: string;
+    files?: { name: string }[];
+  };
+  expect(sent.content).toContain('不正解でした。');
+  expect(sent.content).toContain('💡 解説：A が正解です。');
+  expect(sent.files).toHaveLength(1);
+  expect(sent.files![0]!.name).toBe('daily-question-yesterday.png');
+});
+it('falls back to a marked embed for the yesterday review when the card flag is off (#820)', async () => {
+  const i = interaction('daily-participation:yesterday:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  expect(mocks.renderCard).not.toHaveBeenCalled();
+  const sent = vi.mocked(i.followUp).mock.calls[0]![0] as {
+    embeds: { toJSON: () => { fields?: { name: string }[] } }[];
+  };
+  const names = sent.embeds[0]!.toJSON().fields!.map((field) => field.name);
+  expect(names).toEqual(['選択肢 1（正解）', '選択肢 2（あなたの回答）']);
+});
+it('reports when there were no questions yesterday (#820)', async () => {
+  mocks.yesterday.mockResolvedValue({ ...yesterdayReviewFixture, entries: [] });
+  const i = interaction('daily-participation:yesterday:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  expect(i.editReply).toHaveBeenCalledWith(
+    expect.objectContaining({ content: '昨日の問題はありませんでした。' }),
+  );
+  expect(i.followUp).not.toHaveBeenCalled();
+});
+it('withholds the yesterday answers before the 09:00 reveal (#820)', async () => {
+  mocks.yesterday.mockResolvedValue({ ...yesterdayReviewFixture, revealed: false });
+  const i = interaction('daily-participation:yesterday:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  expect(i.editReply).toHaveBeenCalledWith(
+    expect.objectContaining({ content: '答え合わせは 9:00 以降に確認できます。' }),
+  );
+  expect(i.followUp).not.toHaveBeenCalled();
+});
+it('reports a friendly error when the yesterday review cannot be fetched (#820)', async () => {
+  mocks.yesterday.mockRejectedValueOnce(new Error('synthetic outage'));
+  const i = interaction('daily-participation:yesterday:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  expect(i.editReply).toHaveBeenCalledWith(
+    expect.objectContaining({
+      content: '昨日の問題を取得できませんでした。時間をおいて再試行してください。',
+    }),
+  );
   expect(i.followUp).not.toHaveBeenCalled();
 });

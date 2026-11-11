@@ -27,10 +27,12 @@ import {
   participationStatus,
   participationClaim,
   participationAnswer,
+  yesterdayReview,
   type ParticipationStatus,
   type ParticipationQuestion,
+  type YesterdayReview,
 } from './daily-participation-client.js';
-import { renderDailyQuestionCard } from './daily-question-card.js';
+import { renderDailyQuestionCard, type DailyQuestionCardResult } from './daily-question-card.js';
 import { replyDailyParticipationAnswer } from './daily-result-card-reply.js';
 
 interface Context {
@@ -336,6 +338,139 @@ export async function showParticipationQuestions(
   }
 }
 
+/**
+ * Yesterday review (#820): a read-only look back at the previous day's
+ * questions with the member's own answer, the correct answer and the
+ * explanation. It never claims, answers or opens a session, and answers
+ * stay hidden until the API reports them revealed (09:00 JST).
+ */
+export async function showYesterdayReview(ctx: Context, interaction: Interaction) {
+  let review: YesterdayReview;
+  try {
+    review = await yesterdayReview(ctx.guildId, interaction.user.id);
+  } catch {
+    await interaction.editReply({
+      content: '昨日の問題を取得できませんでした。時間をおいて再試行してください。',
+      allowedMentions: { parse: [] },
+      components: [],
+    });
+    return;
+  }
+  if (!review.entries.length) {
+    await interaction.editReply({
+      content: '昨日の問題はありませんでした。',
+      allowedMentions: { parse: [] },
+      components: [],
+    });
+    return;
+  }
+  if (!review.revealed) {
+    await interaction.editReply({
+      content: '答え合わせは 9:00 以降に確認できます。',
+      allowedMentions: { parse: [] },
+      components: [],
+    });
+    return;
+  }
+  await interaction.editReply({
+    content: '昨日の答え合わせです。',
+    allowedMentions: { parse: [] },
+  });
+  for (const entry of review.entries) {
+    const { question, userResponse } = entry;
+    const heading = question.slot === 'bonus' ? '昨日のボーナス問題' : '昨日の問題';
+    const selectedIndex = userResponse
+      ? question.options.findIndex((o) => o.id === userResponse.optionId)
+      : -1;
+    const correctIndex = question.options.findIndex((o) => o.id === entry.correctOptionId);
+    const result: DailyQuestionCardResult = userResponse
+      ? {
+          state: userResponse.state,
+          isCorrect: userResponse.isCorrect,
+          selectedOptionIndex: selectedIndex >= 0 ? selectedIndex : null,
+          selectedText: userResponse.text,
+          rewardPoints: userResponse.rewardPoints,
+          correctOptionIndex: correctIndex >= 0 ? correctIndex : null,
+        }
+      : {
+          state: 'graded',
+          isCorrect: null,
+          selectedOptionIndex: null,
+          selectedText: null,
+          rewardPoints: 0,
+          correctOptionIndex: correctIndex >= 0 ? correctIndex : null,
+          unanswered: true,
+        };
+    const verdict = !userResponse
+      ? '昨日は未回答でした。'
+      : userResponse.state === 'pending'
+        ? '昨日の問題は結果確定待ちです。'
+        : userResponse.isCorrect === true
+          ? `正解でした！ / 獲得 ${userResponse.rewardPoints}pt`
+          : userResponse.isCorrect === false
+            ? `不正解でした。 / 獲得 ${userResponse.rewardPoints}pt`
+            : `回答済み / 獲得 ${userResponse.rewardPoints}pt`;
+    const explanation = entry.explanation
+      ? `\n💡 解説：${Array.from(entry.explanation).slice(0, 500).join('')}`
+      : '';
+    const content = verdict + explanation;
+    if (process.env.DAILY_QUESTION_CARD_ENABLED === 'true') {
+      try {
+        const card = await renderDailyQuestionCard({
+          slot: question.slot,
+          heading,
+          prompt: question.prompt,
+          options: question.options,
+          format: question.format,
+          maxTextLength: question.maxTextLength,
+          result,
+        });
+        await interaction.followUp({
+          flags: MessageFlags.Ephemeral,
+          allowedMentions: { parse: [] },
+          content,
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0xb9a2ff)
+              .setImage('attachment://daily-question-yesterday.png'),
+          ],
+          files: [new AttachmentBuilder(card, { name: 'daily-question-yesterday.png' })],
+        });
+        continue;
+      } catch {
+        // Card rendering is presentation only; fall back to the Embed below.
+      }
+    }
+    await interaction.followUp({
+      flags: MessageFlags.Ephemeral,
+      allowedMentions: { parse: [] },
+      content,
+      embeds: [
+        new EmbedBuilder()
+          .setColor(0xb9a2ff)
+          .setTitle(heading)
+          .setDescription(question.prompt)
+          .addFields(
+            question.format === 'free_text' || !question.options.length
+              ? [
+                  {
+                    name: 'あなたの回答',
+                    value: (userResponse?.text ?? '（未回答）').slice(0, 1024),
+                  },
+                ]
+              : question.options.map((o, i) => ({
+                  name:
+                    `選択肢 ${i + 1}` +
+                    (result.selectedOptionIndex === i ? '（あなたの回答）' : '') +
+                    (result.correctOptionIndex === i ? '（正解）' : ''),
+                  value: o.label,
+                })),
+          ),
+      ],
+    });
+  }
+}
+
 export async function handleDailyParticipation(
   ctx: Context,
   interaction: Interaction,
@@ -448,6 +583,14 @@ export async function handleDailyParticipation(
       });
       return;
     }
+    // Yesterday review is a standalone read-only action (#820). It must not
+    // fall through to today's status/questions or trigger a claim.
+    if (interaction.customId.startsWith('daily-participation:yesterday:')) {
+      ensureCurrent();
+      await showYesterdayReview(ctx, interaction);
+      return;
+    }
+
     // Claim is a standalone action. Neither question retrieval nor Fortune
     // rendering is an implicit side effect of accepting a login bonus.
     const wantsClaim = /^daily-bonus:\d{4}-\d\d-\d\d$/.test(interaction.customId);

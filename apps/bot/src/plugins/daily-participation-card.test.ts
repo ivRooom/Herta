@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   status: vi.fn(),
   claim: vi.fn(),
   answer: vi.fn(),
+  yesterday: vi.fn(),
   reply: vi.fn(),
   media: vi.fn(),
 }));
@@ -21,6 +22,7 @@ vi.mock('./daily-participation-client.js', () => ({
   participationStatus: mocks.status,
   participationClaim: mocks.claim,
   participationAnswer: mocks.answer,
+  yesterdayReview: mocks.yesterday,
 }));
 vi.mock('./daily-bonus-reply.js', () => ({ replyDailyBonusResult: mocks.reply }));
 vi.mock('./daily-bonus-wallet.js', () => ({ dailyServiceFetch: mocks.media }));

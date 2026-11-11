@@ -84,6 +84,31 @@ describe('daily question card (#851, 1920x1080 chalkboard redesign)', () => {
           rewardPoints: 5,
         },
       },
+      {
+        ...choice4,
+        heading: '昨日の問題',
+        result: {
+          state: 'graded',
+          isCorrect: false,
+          selectedOptionIndex: 0,
+          selectedText: null,
+          rewardPoints: 0,
+          correctOptionIndex: 3,
+        },
+      },
+      {
+        ...choice4,
+        heading: '昨日の問題',
+        result: {
+          state: 'graded',
+          isCorrect: null,
+          selectedOptionIndex: null,
+          selectedText: null,
+          rewardPoints: 0,
+          correctOptionIndex: 1,
+          unanswered: true,
+        },
+      },
     ];
     for (const input of variants) {
       const svg = buildDailyQuestionCardSvg(input);
@@ -333,6 +358,82 @@ describe('daily question card (#851, 1920x1080 chalkboard redesign)', () => {
     const meta = await sharp(card).metadata();
     expect(meta).toMatchObject({ width: 1920, height: 1080, format: 'png' });
     expect(card.byteLength).toBeLessThan(2 * 1024 * 1024);
+  });
+
+  it('uses the heading override instead of the slot title (#820)', () => {
+    const svg = buildDailyQuestionCardSvg({ ...choice4, heading: '昨日の問題' });
+    expect(svg).toContain('昨日の問題');
+    expect(svg).not.toContain('今日の問題');
+    const bonus = buildDailyQuestionCardSvg({
+      ...choice4,
+      slot: 'bonus',
+      heading: '昨日のボーナス問題',
+    });
+    expect(bonus).toContain('昨日のボーナス問題');
+    expect(bonus).not.toContain('今日の問題');
+  });
+
+  it('badges the selected row when it is also the correct row (#820)', () => {
+    const svg = buildDailyQuestionCardSvg({
+      ...choice4,
+      heading: '昨日の問題',
+      result: {
+        state: 'graded',
+        isCorrect: true,
+        selectedOptionIndex: 3,
+        selectedText: null,
+        rewardPoints: 10,
+        correctOptionIndex: 3,
+      },
+    });
+    expect(svg.match(/<rect[^>]*width="700"[^>]*fill="#EF8FB5"/g)).toHaveLength(1);
+    expect(svg).toContain('fill="#9FE8C1"');
+    // Status pill plus the badge on the selected row.
+    expect(svg.match(/>正解</g)).toHaveLength(2);
+    expect(svg).toContain('獲得 10pt');
+  });
+
+  it('outlines and badges the correct row when another option was picked (#820)', () => {
+    const svg = buildDailyQuestionCardSvg({
+      ...choice4,
+      heading: '昨日の問題',
+      result: {
+        state: 'graded',
+        isCorrect: false,
+        selectedOptionIndex: 0,
+        selectedText: null,
+        rewardPoints: 0,
+        correctOptionIndex: 3,
+      },
+    });
+    expect(svg).toContain('>不正解<');
+    expect(svg).toContain('stroke="#9FE8C1"');
+    // Badge only; the pill reports the member's own miss.
+    expect(svg.match(/>正解</g)).toHaveLength(1);
+    // The two untouched rows keep their dashed chalk outline.
+    expect(svg.match(/stroke-dasharray="14 10"/g)).toHaveLength(2);
+  });
+
+  it('shows no pill or points for an unanswered review and names the correct option (#820)', () => {
+    const svg = buildDailyQuestionCardSvg({
+      ...choice4,
+      heading: '昨日の問題',
+      result: {
+        state: 'graded',
+        isCorrect: null,
+        selectedOptionIndex: null,
+        selectedText: null,
+        rewardPoints: 0,
+        correctOptionIndex: 1,
+        unanswered: true,
+      },
+    });
+    expect(svg).not.toContain('回答済み');
+    expect(svg).not.toContain('獲得');
+    expect(svg).not.toMatch(/<rect[^>]*width="700"[^>]*fill="#EF8FB5"/);
+    expect(svg).toContain('stroke="#9FE8C1"');
+    expect(svg).toContain('正解は 2 番です');
+    expect(svg.match(/stroke-dasharray="14 10"/g)).toHaveLength(3);
   });
 
   it('escapes markup in prompt and option labels', () => {
