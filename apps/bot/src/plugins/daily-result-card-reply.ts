@@ -11,7 +11,7 @@ import {
   fetchDailyResultCardConfig,
   fetchDailyResultCardMedia,
 } from './daily-result-card-config.js';
-import { renderDailyResultCard } from './daily-result-card.js';
+import { renderDailyResultCardAttachment } from './daily-result-card.js';
 
 export interface DailyResultCardReplyInput {
   guildId: string;
@@ -34,13 +34,13 @@ export interface DailyResultCardReplyInput {
 interface DailyResultCardReplyDeps {
   fetchConfig: typeof fetchDailyResultCardConfig;
   fetchMedia: typeof fetchDailyResultCardMedia;
-  render: typeof renderDailyResultCard;
+  render: typeof renderDailyResultCardAttachment;
 }
 
 const defaultDeps: DailyResultCardReplyDeps = {
   fetchConfig: fetchDailyResultCardConfig,
   fetchMedia: fetchDailyResultCardMedia,
-  render: renderDailyResultCard,
+  render: renderDailyResultCardAttachment,
 };
 
 type EditReplyInteraction = Pick<ButtonInteraction, 'editReply'>;
@@ -86,8 +86,10 @@ export async function replyDailyParticipationAnswer(
       await interaction.editReply({
         ...fallback,
         files: [
-          new AttachmentBuilder(card, {
-            name: 'herta-daily-result.png',
+          new AttachmentBuilder(card.data, {
+            // Fixed filename (PNG for still artwork, WebP for animated);
+            // it carries neither the outcome nor any answer content.
+            name: card.fileName,
             // The pool asset's Admin-registered alt text. It describes the
             // artwork only; answer content never reaches the attachment.
             description: asset.alt,
