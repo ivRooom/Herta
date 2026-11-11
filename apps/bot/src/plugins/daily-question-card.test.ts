@@ -20,24 +20,83 @@ const choice4: DailyQuestionCardInput = {
   maxTextLength: 500,
 };
 
-describe('daily question card (#851)', () => {
-  it('separates the prompt and numbered options into explicit sections', () => {
+// The production host fonts lack color emoji, so no pictograph glyph may
+// appear in the SVG; status and markers are drawn shapes instead.
+const FORBIDDEN_GLYPHS = ['❓', '🔢', '✍', '✅', '❌', '⏳', '▶'];
+
+describe('daily question card (#851, 1920x1080 chalkboard redesign)', () => {
+  it('uses a fixed 1920x1080 landscape canvas with separate question and choices zones', () => {
     const svg = buildDailyQuestionCardSvg(choice4);
-    expect(svg).toContain('❓ 問題');
-    expect(svg).toContain('🔢 選択肢');
-    expect(svg.indexOf('❓ 問題')).toBeLessThan(svg.indexOf('🔢 選択肢'));
-    choice4.options.forEach((option, index) =>
-      expect(svg).toContain(`${index + 1}.  ${option.label}`),
-    );
-    expect(svg).toContain('番号は選択肢と対応しています');
+    expect(svg).toContain('width="1920"');
+    expect(svg).toContain('height="1080"');
+    expect(svg).toContain('HERTA / DAILY QUESTION');
+    expect(svg).toContain('今日の問題');
+    expect(svg).toContain('QUESTION');
+    expect(svg).toContain('CHOICES');
+    choice4.options.forEach((option) => expect(svg).toContain(option.label));
+    expect(svg).toContain('回答は下のボタンから。番号は選択肢と対応しています。');
   });
 
-  it('renders a bounded PNG for four choices', async () => {
+  it('contains no emoji or pictograph characters anywhere', () => {
+    const variants: DailyQuestionCardInput[] = [
+      choice4,
+      {
+        ...choice4,
+        result: {
+          state: 'graded',
+          isCorrect: true,
+          selectedOptionIndex: 3,
+          selectedText: null,
+          rewardPoints: 10,
+        },
+      },
+      {
+        ...choice4,
+        result: {
+          state: 'graded',
+          isCorrect: false,
+          selectedOptionIndex: 0,
+          selectedText: null,
+          rewardPoints: 0,
+        },
+      },
+      {
+        ...choice4,
+        result: {
+          state: 'pending',
+          isCorrect: null,
+          selectedOptionIndex: 1,
+          selectedText: null,
+          rewardPoints: 0,
+        },
+      },
+      {
+        slot: 'daily',
+        prompt: '今日の感想を教えてください',
+        options: [],
+        format: 'free_text',
+        maxTextLength: 300,
+        result: {
+          state: 'graded',
+          isCorrect: null,
+          selectedOptionIndex: null,
+          selectedText: 'とても楽しかった',
+          rewardPoints: 5,
+        },
+      },
+    ];
+    for (const input of variants) {
+      const svg = buildDailyQuestionCardSvg(input);
+      for (const glyph of FORBIDDEN_GLYPHS) expect(svg).not.toContain(glyph);
+      expect(svg).not.toMatch(/\p{Extended_Pictographic}/u);
+    }
+  });
+
+  it('renders a 1920x1080 PNG for four choices', async () => {
     const card = await renderDailyQuestionCard(choice4);
     const meta = await sharp(card).metadata();
-    expect(meta).toMatchObject({ width: 1000, format: 'png' });
-    expect(meta.height).toBeGreaterThan(400);
-    expect(card.byteLength).toBeLessThan(1024 * 1024);
+    expect(meta).toMatchObject({ width: 1920, height: 1080, format: 'png' });
+    expect(card.byteLength).toBeLessThan(2 * 1024 * 1024);
   });
 
   it('renders two choices and the bonus slot heading', async () => {
@@ -54,18 +113,18 @@ describe('daily question card (#851)', () => {
 
   it('bounds a maximum-length prompt instead of overflowing the card', async () => {
     const prompt = 'あ'.repeat(1000);
-    const lines = wrapCardText(prompt, 30, 884, 8);
-    expect(lines.length).toBeLessThanOrEqual(8);
+    const lines = wrapCardText(prompt, 46, 830, 6);
+    expect(lines.length).toBeLessThanOrEqual(6);
     expect(lines.at(-1)).toContain('…');
     const card = await renderDailyQuestionCard({ ...choice4, prompt });
     const meta = await sharp(card).metadata();
-    expect(meta.height).toBeLessThan(1200);
-    expect(card.byteLength).toBeLessThan(1024 * 1024);
+    expect(meta).toMatchObject({ width: 1920, height: 1080 });
+    expect(card.byteLength).toBeLessThan(2 * 1024 * 1024);
   });
 
-  it('wraps long option labels and ellipsizes beyond three lines', () => {
-    const lines = wrapCardText('選'.repeat(200), 28, 840, 3);
-    expect(lines.length).toBe(3);
+  it('wraps long option labels and ellipsizes beyond two lines', () => {
+    const lines = wrapCardText('選'.repeat(200), 38, 510, 2);
+    expect(lines.length).toBe(2);
     expect(lines.at(-1)).toContain('…');
   });
 
@@ -77,9 +136,9 @@ describe('daily question card (#851)', () => {
       format: 'free_text',
       maxTextLength: 300,
     });
-    expect(svg).toContain('✍ 回答方法');
+    expect(svg).toContain('回答方法');
     expect(svg).toContain('最大300文字');
-    expect(svg).not.toContain('🔢 選択肢');
+    expect(svg).not.toContain('CHOICES');
   });
 
   it('bounds concurrent rendering and recovers after busy fallback', async () => {
@@ -93,15 +152,56 @@ describe('daily question card (#851)', () => {
     expect((await renderDailyQuestionCard(choice4)).length).toBeGreaterThan(0);
   });
 
-  it('leaves the unanswered card free of answered-state markers', () => {
-    const svg = buildDailyQuestionCardSvg(choice4);
-    expect(svg).not.toContain('▶');
-    expect(svg).not.toContain('正解');
-    expect(svg).not.toContain('獲得');
-    expect(svg).not.toContain('#ffd479');
+  it('uses a flat chalkboard design with no gradients or filters anywhere', () => {
+    const variants: DailyQuestionCardInput[] = [
+      choice4,
+      {
+        ...choice4,
+        result: {
+          state: 'graded',
+          isCorrect: true,
+          selectedOptionIndex: 3,
+          selectedText: null,
+          rewardPoints: 10,
+        },
+      },
+      {
+        ...choice4,
+        result: {
+          state: 'pending',
+          isCorrect: null,
+          selectedOptionIndex: 0,
+          selectedText: null,
+          rewardPoints: 0,
+        },
+      },
+    ];
+    for (const input of variants) {
+      const svg = buildDailyQuestionCardSvg(input);
+      expect(svg).not.toContain('<linearGradient');
+      expect(svg).not.toContain('<radialGradient');
+      expect(svg).not.toContain('Gradient');
+      expect(svg).not.toContain('<filter');
+      expect(svg).toContain('fill="#2E4B3F"');
+      expect(svg).toContain('fill="#9C6B43"');
+      expect(svg).toContain('fill="#7C5233"');
+    }
   });
 
-  it('marks only the selected option and shows the verdict on a correct answered card', () => {
+  it('outlines unanswered rows with a dashed chalk stroke', () => {
+    const svg = buildDailyQuestionCardSvg(choice4);
+    expect(svg.match(/stroke-dasharray="14 10"/g)).toHaveLength(4);
+    expect(svg).toContain('stroke="#F7F3E6"');
+  });
+
+  it('leaves the unanswered card free of answered-state markers', () => {
+    const svg = buildDailyQuestionCardSvg(choice4);
+    expect(svg).not.toMatch(/<rect[^>]*width="700"[^>]*fill="#EF8FB5"/);
+    expect(svg).not.toContain('正解');
+    expect(svg).not.toContain('獲得');
+  });
+
+  it('fills only the selected row with saturated pink on a correct card', () => {
     const svg = buildDailyQuestionCardSvg({
       ...choice4,
       result: {
@@ -112,18 +212,15 @@ describe('daily question card (#851)', () => {
         rewardPoints: 10,
       },
     });
-    expect(svg).toContain('✅ 正解');
-    expect(svg).toContain('▶ 4.  大島優子');
-    expect(svg).not.toContain('▶ 1.');
-    expect(svg).not.toContain('▶ 2.');
-    expect(svg).not.toContain('▶ 3.');
-    expect(svg).toContain('fill="#ffd479"');
-    expect(svg).toContain('fill="#abb7c9"');
+    expect(svg).toContain('>正解<');
+    expect(svg).toContain('fill="#7ED6A5"');
+    expect(svg.match(/<rect[^>]*width="700"[^>]*fill="#EF8FB5"/g)).toHaveLength(1);
+    expect(svg).toContain('fill="#F5D76E"');
     expect(svg).toContain('獲得 10pt');
     expect(svg).not.toContain('番号は選択肢と対応しています');
   });
 
-  it('shows the incorrect verdict and the pending and void footers', () => {
+  it('shows the incorrect pill, the pending pill and the void pill with their footers', () => {
     const incorrect = buildDailyQuestionCardSvg({
       ...choice4,
       result: {
@@ -134,8 +231,8 @@ describe('daily question card (#851)', () => {
         rewardPoints: 0,
       },
     });
-    expect(incorrect).toContain('❌ 不正解');
-    expect(incorrect).toContain('▶ 1.  前田敦子');
+    expect(incorrect).toContain('>不正解<');
+    expect(incorrect).toContain('fill="#F2A7C3"');
     expect(incorrect).toContain('獲得 0pt');
 
     const pending = buildDailyQuestionCardSvg({
@@ -148,9 +245,11 @@ describe('daily question card (#851)', () => {
         rewardPoints: 0,
       },
     });
-    expect(pending).toContain('回答済み（結果待ち）');
-    expect(pending).toContain('▶ 2.  渡辺麻友');
+    expect(pending).toContain('>結果待ち<');
+    expect(pending).toContain('fill="#F5D76E"');
+    expect(pending.match(/<rect[^>]*width="700"[^>]*fill="#EF8FB5"/g)).toHaveLength(1);
     expect(pending).toContain('結果が確定したらお知らせします。');
+    expect(pending).not.toContain('獲得');
 
     const voided = buildDailyQuestionCardSvg({
       ...choice4,
@@ -162,12 +261,13 @@ describe('daily question card (#851)', () => {
         rewardPoints: 0,
       },
     });
-    expect(voided).toContain('この問題は無効化されました');
+    expect(voided).toContain('>無効化<');
+    expect(voided).toContain('fill="#8FAF9F"');
     expect(voided).toContain('ポイントは付与されません。');
-    expect(voided).not.toContain('▶');
+    expect(voided).not.toMatch(/<rect[^>]*width="700"[^>]*fill="#EF8FB5"/);
   });
 
-  it('shows a plain answered status when a graded result has no verdict', () => {
+  it('shows a plain answered pill when a graded result has no verdict', () => {
     const svg = buildDailyQuestionCardSvg({
       ...choice4,
       result: {
@@ -197,9 +297,9 @@ describe('daily question card (#851)', () => {
         rewardPoints: 5,
       },
     });
-    expect(svg).toContain('✍ あなたの回答');
+    expect(svg).toContain('あなたの回答');
     expect(svg).toContain('とても楽しかった');
-    expect(svg).not.toContain('✍ 回答方法');
+    expect(svg).not.toContain('回答方法');
     expect(svg).toContain('獲得 5pt');
 
     const missing = buildDailyQuestionCardSvg({
@@ -219,7 +319,7 @@ describe('daily question card (#851)', () => {
     expect(missing).toContain('（回答なし）');
   });
 
-  it('renders an answered card to a bounded PNG', async () => {
+  it('renders an answered card to a 1920x1080 PNG', async () => {
     const card = await renderDailyQuestionCard({
       ...choice4,
       result: {
@@ -231,8 +331,8 @@ describe('daily question card (#851)', () => {
       },
     });
     const meta = await sharp(card).metadata();
-    expect(meta).toMatchObject({ width: 1000, format: 'png' });
-    expect(card.byteLength).toBeLessThan(1024 * 1024);
+    expect(meta).toMatchObject({ width: 1920, height: 1080, format: 'png' });
+    expect(card.byteLength).toBeLessThan(2 * 1024 * 1024);
   });
 
   it('escapes markup in prompt and option labels', () => {
