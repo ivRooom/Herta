@@ -379,6 +379,44 @@ export async function showYesterdayReview(ctx: Context, interaction: Interaction
   for (const entry of review.entries) {
     const { question, userResponse } = entry;
     const heading = question.slot === 'bonus' ? '昨日のボーナス問題' : '昨日の問題';
+    // Question media rides along in the review payload, and the media route
+    // is keyed by media ID alone (contract mediaRequest carries no date or
+    // question ID), so the same authenticated fetch as today's flow serves
+    // yesterday's questions. Any media failure degrades to the no-media
+    // review below; it must never hide the answer check itself.
+    const hero = questionHeroImage(question);
+    let heroFile: AttachmentBuilder | null = null;
+    let heroName: string | null = null;
+    if (hero) {
+      try {
+        const buffer = await fetchQuestionMedia(ctx, interaction.user.id, hero);
+        heroName = `${hero.id}.webp`;
+        heroFile = new AttachmentBuilder(buffer, { name: heroName });
+      } catch {
+        // Degrade to the no-media review.
+      }
+    }
+    for (const media of question.media.filter((m) => m !== hero)) {
+      try {
+        const buffer = await fetchQuestionMedia(ctx, interaction.user.id, media);
+        await interaction.followUp({
+          flags: MessageFlags.Ephemeral,
+          allowedMentions: { parse: [] },
+          content:
+            question.options
+              .filter((o) => o.mediaId === media.id)
+              .map((o) => o.label)
+              .join(' / ') || '問題の素材',
+          files: [
+            new AttachmentBuilder(buffer, {
+              name: `${media.id}.${media.kind === 'audio' ? 'wav' : 'webp'}`,
+            }),
+          ],
+        });
+      } catch {
+        // Skip this attachment; the review itself still follows.
+      }
+    }
     const selectedIndex = userResponse
       ? question.options.findIndex((o) => o.id === userResponse.optionId)
       : -1;
@@ -401,15 +439,20 @@ export async function showYesterdayReview(ctx: Context, interaction: Interaction
           correctOptionIndex: correctIndex >= 0 ? correctIndex : null,
           unanswered: true,
         };
+    // A void response was invalidated: the card renders its own 無効化 pill
+    // and no points chip, so the text must agree — no verdict, and the raw
+    // rewardPoints must not be presented as earned.
     const verdict = !userResponse
       ? '昨日は未回答でした。'
-      : userResponse.state === 'pending'
-        ? '昨日の問題は結果確定待ちです。'
-        : userResponse.isCorrect === true
-          ? `正解でした！ / 獲得 ${userResponse.rewardPoints}pt`
-          : userResponse.isCorrect === false
-            ? `不正解でした。 / 獲得 ${userResponse.rewardPoints}pt`
-            : `回答済み / 獲得 ${userResponse.rewardPoints}pt`;
+      : userResponse.state === 'void'
+        ? 'この回答は無効化されました。'
+        : userResponse.state === 'pending'
+          ? '昨日の問題は結果確定待ちです。'
+          : userResponse.isCorrect === true
+            ? `正解でした！ / 獲得 ${userResponse.rewardPoints}pt`
+            : userResponse.isCorrect === false
+              ? `不正解でした。 / 獲得 ${userResponse.rewardPoints}pt`
+              : `回答済み / 獲得 ${userResponse.rewardPoints}pt`;
     const explanation = entry.explanation
       ? `\n💡 解説：${Array.from(entry.explanation).slice(0, 500).join('')}`
       : '';
@@ -433,39 +476,47 @@ export async function showYesterdayReview(ctx: Context, interaction: Interaction
             new EmbedBuilder()
               .setColor(0xb9a2ff)
               .setImage('attachment://daily-question-yesterday.png'),
+            ...(heroName
+              ? [new EmbedBuilder().setColor(0xb9a2ff).setImage(`attachment://${heroName}`)]
+              : []),
           ],
-          files: [new AttachmentBuilder(card, { name: 'daily-question-yesterday.png' })],
+          files: [
+            new AttachmentBuilder(card, { name: 'daily-question-yesterday.png' }),
+            ...(heroFile ? [heroFile] : []),
+          ],
         });
         continue;
       } catch {
         // Card rendering is presentation only; fall back to the Embed below.
       }
     }
+    const fallbackEmbed = new EmbedBuilder()
+      .setColor(0xb9a2ff)
+      .setTitle(heading)
+      .setDescription(question.prompt);
+    if (heroName) fallbackEmbed.setImage(`attachment://${heroName}`);
     await interaction.followUp({
       flags: MessageFlags.Ephemeral,
       allowedMentions: { parse: [] },
       content,
+      ...(heroFile ? { files: [heroFile] } : {}),
       embeds: [
-        new EmbedBuilder()
-          .setColor(0xb9a2ff)
-          .setTitle(heading)
-          .setDescription(question.prompt)
-          .addFields(
-            question.format === 'free_text' || !question.options.length
-              ? [
-                  {
-                    name: 'あなたの回答',
-                    value: (userResponse?.text ?? '（未回答）').slice(0, 1024),
-                  },
-                ]
-              : question.options.map((o, i) => ({
-                  name:
-                    `選択肢 ${i + 1}` +
-                    (result.selectedOptionIndex === i ? '（あなたの回答）' : '') +
-                    (result.correctOptionIndex === i ? '（正解）' : ''),
-                  value: o.label,
-                })),
-          ),
+        fallbackEmbed.addFields(
+          question.format === 'free_text' || !question.options.length
+            ? [
+                {
+                  name: 'あなたの回答',
+                  value: (userResponse?.text ?? '（未回答）').slice(0, 1024),
+                },
+              ]
+            : question.options.map((o, i) => ({
+                name:
+                  `選択肢 ${i + 1}` +
+                  (result.selectedOptionIndex === i ? '（あなたの回答）' : '') +
+                  (result.correctOptionIndex === i ? '（正解）' : ''),
+                value: o.label,
+              })),
+        ),
       ],
     });
   }

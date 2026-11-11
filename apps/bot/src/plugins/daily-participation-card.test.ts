@@ -210,3 +210,82 @@ describe('question presentation (#851)', () => {
     expect(payloads[0]!.embeds![0]!.toJSON().description).toBe(f.publicQuestion.prompt);
   });
 });
+
+const yesterdayHeroReview = {
+  status: 'ok',
+  guildId: f.status.guildId,
+  discordUserId: f.status.discordUserId,
+  dateJst: '2026-10-30',
+  revealed: true,
+  entries: [
+    {
+      question: { ...heroQuestion, dateJst: '2026-10-30' },
+      userResponse: {
+        optionId: 'o3',
+        text: null,
+        state: 'graded',
+        isCorrect: true,
+        rewardPoints: 10,
+        submittedAt: '2026-10-30T01:00:00.000Z',
+        origin: 'discord',
+      },
+      correctOptionId: 'o3',
+      explanation: null,
+    },
+  ],
+};
+const allPayloads = (i: ReturnType<typeof interaction>) =>
+  vi.mocked(i.followUp).mock.calls.map((c) => c[0]) as Payload[];
+const reviewPayload = (i: ReturnType<typeof interaction>) =>
+  allPayloads(i).find((p) => p.files?.some((file) => file.name === 'daily-question-yesterday.png'));
+
+describe('yesterday review question media (#820)', () => {
+  it('attaches the question hero image to the review card follow-up', async () => {
+    vi.stubEnv('DAILY_QUESTION_CARD_ENABLED', 'true');
+    mocks.yesterday.mockResolvedValue(yesterdayHeroReview);
+    mocks.media.mockResolvedValue(mediaResponse(Buffer.from([1, 2, 3, 4])));
+    const i = interaction('daily-participation:yesterday:2026-10-31');
+    await handleDailyParticipation(context(), i);
+    expect(mocks.media).toHaveBeenCalledWith(
+      f.status.guildId,
+      f.status.discordUserId,
+      '/v2/participation/herta/media',
+      { mediaId: 'heroimg' },
+    );
+    const payload = reviewPayload(i);
+    expect(payload).toBeDefined();
+    expect(payload!.content).toContain('正解でした！');
+    expect(payload!.files!.map((file) => file.name)).toEqual([
+      'daily-question-yesterday.png',
+      'heroimg.webp',
+    ]);
+    expect(payload!.files![1]!.attachment).toEqual(Buffer.from([1, 2, 3, 4]));
+    expect(payload!.embeds).toHaveLength(2);
+    expect(payload!.embeds![1]!.toJSON().image?.url).toBe('attachment://heroimg.webp');
+  });
+
+  it('shows the hero image on the embed fallback when the card flag is off', async () => {
+    mocks.yesterday.mockResolvedValue(yesterdayHeroReview);
+    mocks.media.mockResolvedValue(mediaResponse(Buffer.from([1, 2, 3, 4])));
+    const i = interaction('daily-participation:yesterday:2026-10-31');
+    await handleDailyParticipation(context(), i);
+    const payload = allPayloads(i).find((p) => p.embeds?.[0]?.toJSON().description);
+    expect(payload).toBeDefined();
+    expect(payload!.content).toContain('正解でした！');
+    expect(payload!.files!.map((file) => file.name)).toEqual(['heroimg.webp']);
+    expect(payload!.embeds![0]!.toJSON().image?.url).toBe('attachment://heroimg.webp');
+  });
+
+  it('still returns the review when the question media cannot be fetched', async () => {
+    vi.stubEnv('DAILY_QUESTION_CARD_ENABLED', 'true');
+    mocks.yesterday.mockResolvedValue(yesterdayHeroReview);
+    mocks.media.mockResolvedValue(null);
+    const i = interaction('daily-participation:yesterday:2026-10-31');
+    await handleDailyParticipation(context(), i);
+    const payload = reviewPayload(i);
+    expect(payload).toBeDefined();
+    expect(payload!.content).toContain('正解でした！');
+    expect(payload!.files!.map((file) => file.name)).toEqual(['daily-question-yesterday.png']);
+    expect(payload!.embeds).toHaveLength(1);
+  });
+});

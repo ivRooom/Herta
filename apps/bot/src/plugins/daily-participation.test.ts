@@ -93,6 +93,23 @@ const yesterdayReviewFixture = {
     },
   ],
 };
+const voidReviewFixture = {
+  ...yesterdayReviewFixture,
+  entries: [
+    {
+      ...yesterdayReviewFixture.entries[0]!,
+      userResponse: {
+        optionId: 'b',
+        text: null,
+        state: 'void',
+        isCorrect: null,
+        rewardPoints: 5,
+        submittedAt: '2026-10-30T01:00:00.000Z',
+        origin: 'discord',
+      },
+    },
+  ],
+};
 beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
@@ -378,6 +395,40 @@ it('falls back to a marked embed for the yesterday review when the card flag is 
   const sent = vi.mocked(i.followUp).mock.calls[0]![0] as {
     embeds: { toJSON: () => { fields?: { name: string }[] } }[];
   };
+  const names = sent.embeds[0]!.toJSON().fields!.map((field) => field.name);
+  expect(names).toEqual(['選択肢 1（正解）', '選択肢 2（あなたの回答）']);
+});
+it('reports a void yesterday response as invalidated on the card path (#820)', async () => {
+  vi.stubEnv('DAILY_QUESTION_CARD_ENABLED', 'true');
+  mocks.yesterday.mockResolvedValue(voidReviewFixture);
+  const i = interaction('daily-participation:yesterday:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  expect(mocks.renderCard).toHaveBeenCalledWith(
+    expect.objectContaining({
+      result: expect.objectContaining({ state: 'void' }),
+    }),
+  );
+  const sent = vi.mocked(i.followUp).mock.calls[0]![0] as { content: string };
+  expect(sent.content).toContain('この回答は無効化されました。');
+  expect(sent.content).not.toContain('獲得');
+  expect(sent.content).not.toContain('正解でした');
+  expect(sent.content).not.toContain('不正解でした');
+});
+it('reports a void yesterday response as invalidated on the embed fallback (#820)', async () => {
+  mocks.yesterday.mockResolvedValue(voidReviewFixture);
+  const i = interaction('daily-participation:yesterday:2026-10-31');
+  await handleDailyParticipation(context(), i);
+  expect(mocks.renderCard).not.toHaveBeenCalled();
+  const sent = vi.mocked(i.followUp).mock.calls[0]![0] as {
+    content: string;
+    embeds: { toJSON: () => { fields?: { name: string }[] } }[];
+  };
+  expect(sent.content).toContain('この回答は無効化されました。');
+  expect(sent.content).not.toContain('獲得');
+  expect(sent.content).not.toContain('正解でした');
+  expect(sent.content).not.toContain('不正解でした');
+  // The embed mirrors the card's factual markers (own answer / correct
+  // option) without turning them into a verdict for the void response.
   const names = sent.embeds[0]!.toJSON().fields!.map((field) => field.name);
   expect(names).toEqual(['選択肢 1（正解）', '選択肢 2（あなたの回答）']);
 });
