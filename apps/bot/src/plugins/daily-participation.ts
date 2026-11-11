@@ -28,7 +28,9 @@ import {
   participationClaim,
   participationAnswer,
   type ParticipationStatus,
+  type ParticipationQuestion,
 } from './daily-participation-client.js';
+import { renderDailyQuestionCard } from './daily-question-card.js';
 
 interface Context {
   guildId: string;
@@ -84,6 +86,55 @@ async function admission(ctx: Context, interaction: Interaction) {
   return { date, messageId, session, sessionMatch };
 }
 
+type QuestionMedia = ParticipationQuestion['media'][number];
+
+async function fetchQuestionMedia(
+  ctx: Context,
+  userId: string,
+  media: QuestionMedia,
+): Promise<Buffer> {
+  const response = await dailyServiceFetch(ctx.guildId, userId, '/v2/participation/herta/media', {
+    mediaId: media.id,
+  });
+  if (
+    !response?.ok ||
+    response.headers.get('X-IVRM-Media-Id') !== media.id ||
+    response.headers.get('Content-Type') !== media.mimeType ||
+    !['image/webp', 'audio/wav'].includes(media.mimeType) ||
+    Number(response.headers.get('Content-Length')) !== media.byteSize ||
+    !response.headers.get('Cache-Control')?.includes('private') ||
+    !response.headers.get('Cache-Control')?.includes('no-store') ||
+    !response.body
+  )
+    throw Error('Invalid media response');
+  const reader = response.body.getReader(),
+    chunks: Uint8Array[] = [];
+  let total = 0;
+  while (true) {
+    const part = await reader.read();
+    if (part.done) break;
+    total += part.value.length;
+    if (total > 10485760) {
+      await reader.cancel();
+      throw Error('Media too large');
+    }
+    chunks.push(part.value);
+  }
+  if (total !== media.byteSize) throw Error('Media size mismatch');
+  return Buffer.concat(chunks);
+}
+
+/**
+ * An image attached to the question itself (not to one of its options) is the
+ * author-provided visual for the question and overrides the default card (#851).
+ */
+export function questionHeroImage(question: ParticipationQuestion): QuestionMedia | null {
+  const referenced = new Set(
+    question.options.map((o) => o.mediaId).filter((id): id is string => id !== null),
+  );
+  return question.media.find((m) => m.kind === 'image' && !referenced.has(m.id)) ?? null;
+}
+
 export async function showParticipationQuestions(
   ctx: Context,
   interaction: Interaction,
@@ -137,39 +188,16 @@ export async function showParticipationQuestions(
           );
     if (!buttons.length) continue;
     shown = true;
-    for (const media of question.media) {
+    const header = `${question.slot === 'bonus' ? '🎭 ボーナス問題' : '🧠 今日の問題'}
+締切：<t:${Math.floor(Date.parse(question.closesAt) / 1000)}:f>
+最初の回答で確定します。${question.format === 'free_text' ? `最大${question.maxTextLength}文字。` : ''}${question.scoring === 'instant' ? '即時採点します。' : '確定後に結果を確認できます。'}`;
+    const components = [new ActionRowBuilder<ButtonBuilder>().addComponents(buttons)];
+    const hero = questionHeroImage(question);
+    // Option media (image_choice artwork, audio) stays attached to its option.
+    // A fetch failure must no longer hide the whole question (#851).
+    for (const media of question.media.filter((m) => m !== hero)) {
       try {
-        const response = await dailyServiceFetch(
-          ctx.guildId,
-          interaction.user.id,
-          '/v2/participation/herta/media',
-          { mediaId: media.id },
-        );
-        if (
-          !response?.ok ||
-          response.headers.get('X-IVRM-Media-Id') !== media.id ||
-          response.headers.get('Content-Type') !== media.mimeType ||
-          !['image/webp', 'audio/wav'].includes(media.mimeType) ||
-          Number(response.headers.get('Content-Length')) !== media.byteSize ||
-          !response.headers.get('Cache-Control')?.includes('private') ||
-          !response.headers.get('Cache-Control')?.includes('no-store') ||
-          !response.body
-        )
-          throw Error('Invalid media response');
-        const reader = response.body.getReader(),
-          chunks: Uint8Array[] = [];
-        let total = 0;
-        while (true) {
-          const part = await reader.read();
-          if (part.done) break;
-          total += part.value.length;
-          if (total > 10485760) {
-            await reader.cancel();
-            throw Error('Media too large');
-          }
-          chunks.push(part.value);
-        }
-        if (total !== media.byteSize) throw Error('Media size mismatch');
+        const buffer = await fetchQuestionMedia(ctx, interaction.user.id, media);
         await interaction.followUp({
           flags: MessageFlags.Ephemeral,
           allowedMentions: { parse: [] },
@@ -179,7 +207,7 @@ export async function showParticipationQuestions(
               .map((o) => o.label)
               .join(' / ') || '問題の素材',
           files: [
-            new AttachmentBuilder(Buffer.concat(chunks), {
+            new AttachmentBuilder(buffer, {
               name: `${media.id}.${media.kind === 'audio' ? 'wav' : 'webp'}`,
             }),
           ],
@@ -190,20 +218,76 @@ export async function showParticipationQuestions(
           content:
             '問題の素材を取得できませんでした。Memberページで確認するか、時間をおいて再試行してください。\nhttps://member.ivrm.jp/participation',
         });
-        return;
+      }
+    }
+    // An author-provided question image replaces the default card image (#851).
+    if (hero) {
+      try {
+        const buffer = await fetchQuestionMedia(ctx, interaction.user.id, hero);
+        const name = `${hero.id}.webp`;
+        await interaction.followUp({
+          flags: MessageFlags.Ephemeral,
+          allowedMentions: { parse: [] },
+          content: header,
+          embeds: [
+            new EmbedBuilder()
+              .setColor(0xb9a2ff)
+              .setImage(`attachment://${name}`)
+              .addFields(
+                { name: '❓ 問題', value: question.prompt.slice(0, 1024) },
+                ...(question.format === 'free_text'
+                  ? [
+                      {
+                        name: '✍ 回答方法',
+                        value: `下のボタンから最大${question.maxTextLength}文字で回答してください`,
+                      },
+                    ]
+                  : question.options.map((o, i) => ({
+                      name: `選択肢 ${i + 1}`,
+                      value: o.label,
+                    }))),
+              ),
+          ],
+          files: [new AttachmentBuilder(buffer, { name })],
+          components,
+        });
+        continue;
+      } catch {
+        // Fall through to the default presentation; never block answering on media.
+      }
+    }
+    if (process.env.DAILY_QUESTION_CARD_ENABLED === 'true') {
+      try {
+        const card = await renderDailyQuestionCard({
+          slot: question.slot,
+          prompt: question.prompt,
+          options: question.options,
+          format: question.format,
+          maxTextLength: question.maxTextLength,
+        });
+        await interaction.followUp({
+          flags: MessageFlags.Ephemeral,
+          allowedMentions: { parse: [] },
+          content: header,
+          files: [new AttachmentBuilder(card, { name: 'herta-daily-question.png' })],
+          components,
+        });
+        continue;
+      } catch {
+        // Card rendering is presentation only; fall back to the Embed below.
       }
     }
     await interaction.followUp({
       flags: MessageFlags.Ephemeral,
       allowedMentions: { parse: [] },
-      content: `${question.slot === 'bonus' ? '🎭 ボーナス問題' : '🧠 今日の問題'}\n締切：<t:${Math.floor(Date.parse(question.closesAt) / 1000)}:f>\n最初の回答で確定します。${question.format === 'free_text' ? `最大${question.maxTextLength}文字。` : ''}${question.scoring === 'instant' ? '即時採点します。' : '確定後に結果を確認できます。'}`,
+      content: header,
       embeds: [
         new EmbedBuilder()
           .setColor(0xb9a2ff)
           .setDescription(question.prompt)
           .addFields(question.options.map((o, i) => ({ name: `選択肢 ${i + 1}`, value: o.label }))),
       ],
-      components: [new ActionRowBuilder<ButtonBuilder>().addComponents(buttons)],
+      components,
     });
   }
   if (!shown && (claimRequired || !state.questions.length)) {
