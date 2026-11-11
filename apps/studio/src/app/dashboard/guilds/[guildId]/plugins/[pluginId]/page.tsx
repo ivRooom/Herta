@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
@@ -7,8 +8,9 @@ import { PluginConfigForm } from '@/components/plugin-config-form';
 import { ValorantConfigForm } from '@/components/valorant-config-form';
 import { PluginSetupOverview } from '@/components/plugin-setup-overview';
 import { RestrictedPluginConfigForm } from '@/components/restricted-plugin-config-form';
-import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { getGuildConfigurationOptionsCached } from '@/lib/bot-guild-options';
 import { getGuildPlugin } from '@/lib/guild-plugins';
+import { schemaNeedsDiscordOptions } from '@/lib/plugin-config-studio';
 import { resolveModerationConfigSection } from '@/lib/moderation-config-ui';
 import { pluginConfigPermissionPaths } from '@/lib/plugin-config-paths';
 import { resolveStudioAccess } from '@/lib/studio-access';
@@ -35,10 +37,7 @@ async function PluginDetailPage({
   const access = await resolveStudioAccess(guildId, session.user.id);
   if (!access.ok) notFound();
 
-  const [plugin, discordOptions] = await Promise.all([
-    getGuildPlugin(guildId, pluginId),
-    getGuildConfigurationOptions(guildId),
-  ]);
+  const plugin = await getGuildPlugin(guildId, pluginId);
   if (!plugin) notFound();
   const configPaths = pluginConfigPermissionPaths(plugin.manifest.configSchema);
   const configAccess = resolvePluginConfigStudioAccess(
@@ -87,43 +86,22 @@ async function PluginDetailPage({
           config={visibleConfig}
         />
 
-        {canUseModerationGuidedEditor ? (
-          <ModerationConfigForm
-            guildId={guildId}
-            initialEnabled={plugin.enabled}
-            initialConfig={visibleConfig}
-            initialSection={resolveModerationConfigSection(query.section)}
-            discordOptions={discordOptions}
-          />
-        ) : canUseValorantGuidedEditor ? (
-          <ValorantConfigForm
-            guildId={guildId}
-            initialEnabled={plugin.enabled}
-            initialConfig={visibleConfig}
-            canManagePlugin={canManageValorantPlugin}
-          />
-        ) : allFieldsReadable && allFieldsEditable ? (
-          <div className="rounded-2xl border border-border bg-surface p-6 shadow-card">
-            <PluginConfigForm
-              guildId={guildId}
-              pluginId={pluginId}
-              initialEnabled={plugin.enabled}
-              initialConfig={visibleConfig}
-              schema={plugin.manifest.configSchema}
-              discordOptions={discordOptions}
-              configAccess={configAccess}
-            />
-          </div>
-        ) : (
-          <RestrictedPluginConfigForm
+        <Suspense fallback={<PluginConfigFormSkeleton />}>
+          <PluginConfigSection
             guildId={guildId}
             pluginId={pluginId}
-            initialEnabled={plugin.enabled}
-            initialConfig={visibleConfig}
-            schema={plugin.manifest.configSchema}
+            enabled={plugin.enabled}
+            configSchema={plugin.manifest.configSchema}
+            visibleConfig={visibleConfig}
             configAccess={configAccess}
+            initialSection={resolveModerationConfigSection(query.section)}
+            canUseModerationGuidedEditor={canUseModerationGuidedEditor}
+            canUseValorantGuidedEditor={canUseValorantGuidedEditor}
+            canManageValorantPlugin={canManageValorantPlugin}
+            allFieldsReadable={allFieldsReadable}
+            allFieldsEditable={allFieldsEditable}
           />
-        )}
+        </Suspense>
       </div>
 
       {pluginId === 'moderation' ? (
@@ -235,6 +213,111 @@ async function PluginDetailPage({
           description="参加者、score、random・balanced分割、再抽選、Discordメッセージを管理します。"
         />
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * 設定フォーム部分。Guild options の取得はこの中だけで行い、Suspense で
+ * 遅延させることで、ヘッダーや概要を options の応答を待たずに表示する。
+ * options は候補 picker を使うフォームでだけ取得し、それ以外では Bot へ
+ * 問い合わせ自体を行わない。
+ */
+async function PluginConfigSection({
+  guildId,
+  pluginId,
+  enabled,
+  configSchema,
+  visibleConfig,
+  configAccess,
+  initialSection,
+  canUseModerationGuidedEditor,
+  canUseValorantGuidedEditor,
+  canManageValorantPlugin,
+  allFieldsReadable,
+  allFieldsEditable,
+}: {
+  guildId: string;
+  pluginId: string;
+  enabled: boolean;
+  configSchema: Record<string, unknown>;
+  visibleConfig: Record<string, unknown>;
+  configAccess: ReturnType<typeof resolvePluginConfigStudioAccess>;
+  initialSection: ReturnType<typeof resolveModerationConfigSection>;
+  canUseModerationGuidedEditor: boolean;
+  canUseValorantGuidedEditor: boolean;
+  canManageValorantPlugin: boolean;
+  allFieldsReadable: boolean;
+  allFieldsEditable: boolean;
+}) {
+  const optionsRequired =
+    canUseModerationGuidedEditor ||
+    (allFieldsReadable && allFieldsEditable && schemaNeedsDiscordOptions(configSchema));
+  const discordOptions = optionsRequired ? await getGuildConfigurationOptionsCached(guildId) : null;
+
+  if (canUseModerationGuidedEditor) {
+    return (
+      <ModerationConfigForm
+        guildId={guildId}
+        initialEnabled={enabled}
+        initialConfig={visibleConfig}
+        initialSection={initialSection}
+        discordOptions={discordOptions}
+      />
+    );
+  }
+  if (canUseValorantGuidedEditor) {
+    return (
+      <ValorantConfigForm
+        guildId={guildId}
+        initialEnabled={enabled}
+        initialConfig={visibleConfig}
+        canManagePlugin={canManageValorantPlugin}
+      />
+    );
+  }
+  if (allFieldsReadable && allFieldsEditable) {
+    return (
+      <div className="rounded-2xl border border-border bg-surface p-6 shadow-card">
+        <PluginConfigForm
+          guildId={guildId}
+          pluginId={pluginId}
+          initialEnabled={enabled}
+          initialConfig={visibleConfig}
+          schema={configSchema}
+          discordOptions={discordOptions}
+          configAccess={configAccess}
+          optionsRequired={optionsRequired}
+        />
+      </div>
+    );
+  }
+  return (
+    <RestrictedPluginConfigForm
+      guildId={guildId}
+      pluginId={pluginId}
+      initialEnabled={enabled}
+      initialConfig={visibleConfig}
+      schema={configSchema}
+      configAccess={configAccess}
+    />
+  );
+}
+
+function PluginConfigFormSkeleton() {
+  return (
+    <div
+      className="rounded-2xl border border-border bg-surface p-6 shadow-card"
+      role="status"
+      aria-label="設定フォームを読み込み中"
+    >
+      <div className="animate-pulse space-y-4" aria-hidden="true">
+        <div className="h-5 w-40 rounded bg-border/60" />
+        <div className="h-10 w-full rounded bg-border/60" />
+        <div className="h-10 w-full rounded bg-border/60" />
+        <div className="h-10 w-2/3 rounded bg-border/60" />
+      </div>
+      <p className="mt-4 text-sm text-muted">設定フォームを読み込んでいます…</p>
     </div>
   );
 }

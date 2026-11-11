@@ -3,7 +3,7 @@ import { ArrowLeft, Workflow } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import { auth } from '@/auth';
 import { RuleStudioManager } from '@/components/rule-studio-manager';
-import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { getGuildConfigurationOptionsCached } from '@/lib/bot-guild-options';
 import { prisma } from '@/lib/db';
 import { parseStoredRuleStudioView } from '@/lib/rule-studio';
 import { authorizeStudioPermission } from '@/lib/studio-access';
@@ -35,7 +35,7 @@ export default async function GuildRuleStudioPage({
       orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }],
       take: 200,
     }),
-    getGuildConfigurationOptions(guildId),
+    getGuildConfigurationOptionsCached(guildId),
   ]);
   if (!options) return <AccessUnavailable guildId={guildId} status={503} />;
 

@@ -21,7 +21,7 @@ import { prisma } from '@/lib/db';
 import { getGuildPlugin } from '@/lib/guild-plugins';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getDiscordAccessToken } from '@/lib/session';
-import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { getGuildConfigurationOptionsCached } from '@/lib/bot-guild-options';
 import {
   buildMessageStudioCalendarDays,
   buildMessageStudioCalendarEntries,
@@ -57,7 +57,7 @@ async function MessageStudioCalendarPage({
 
   const [plugin, discordOptions] = await Promise.all([
     getGuildPlugin(guildId, 'daily-content'),
-    getGuildConfigurationOptions(guildId),
+    getGuildConfigurationOptionsCached(guildId),
   ]);
   if (!plugin) notFound();
   const config = normalizeDailyContentConfig(plugin.config);

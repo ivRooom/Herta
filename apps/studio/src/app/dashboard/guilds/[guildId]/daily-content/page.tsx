@@ -26,7 +26,7 @@ import { MessageStudioQuickSend } from '@/components/message-studio-quick-send';
 import { prisma } from '@/lib/db';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
-import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { getGuildConfigurationOptionsCached } from '@/lib/bot-guild-options';
 import { getDiscordAccessToken } from '@/lib/session';
 import { withStudioPagePermission } from '@/components/studio-page-permission-boundary';
 
@@ -44,7 +44,7 @@ async function DailyContentPage({ params }: { params: Promise<{ guildId: string 
 
   const [plugin, discordOptions] = await Promise.all([
     getGuildPlugin(guildId, 'daily-content'),
-    getGuildConfigurationOptions(guildId),
+    getGuildConfigurationOptionsCached(guildId),
   ]);
   if (!plugin) notFound();
   const config = normalizeDailyContentConfig(plugin.config);

@@ -11,7 +11,7 @@ import { TeamSplitManager, type TeamSplitSessionItem } from '@/components/team-s
 import { prisma } from '@/lib/db';
 import { getManageableGuild, persistSelectedGuild } from '@/lib/guilds';
 import { getGuildPlugin } from '@/lib/guild-plugins';
-import { getGuildConfigurationOptions } from '@/lib/bot-guild-options';
+import { getGuildConfigurationOptionsCached } from '@/lib/bot-guild-options';
 import { getDiscordAccessToken } from '@/lib/session';
 
 export const dynamic = 'force-dynamic';
@@ -28,7 +28,7 @@ export default async function TeamSplitPage({ params }: { params: Promise<{ guil
 
   const [plugin, discordOptions] = await Promise.all([
     getGuildPlugin(guildId, 'team-split'),
-    getGuildConfigurationOptions(guildId),
+    getGuildConfigurationOptionsCached(guildId),
   ]);
   if (!plugin) notFound();
   const config = normalizeTeamSplitConfig(plugin.config);
