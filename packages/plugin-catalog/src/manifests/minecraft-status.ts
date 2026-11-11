@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const minecraftStatusManifest: PluginManifest = {
   id: 'minecraft-status',
   name: 'Minecraft Status',
-  version: '1.0.0',
+  version: '1.1.0',
   description: 'Minecraftサーバーの稼働状態・プレイヤー・リソースを確認できます',
   author: { name: 'Herta' },
   category: 'utility',
@@ -12,6 +12,11 @@ export const minecraftStatusManifest: PluginManifest = {
       id: 'minecraft-status.view',
       name: 'Minecraft Status 閲覧',
       description: 'Minecraftサーバーの稼働状態を確認します',
+    },
+    {
+      id: 'minecraft-status.start',
+      name: 'Minecraft 資源サーバー起動',
+      description: '資源サーバー（mc-resource）を起動します（運営ロール限定）',
     },
   ],
   dependencies: [],
@@ -66,6 +71,25 @@ export const minecraftStatusManifest: PluginManifest = {
           help: '状態データの最終更新からこの分数を超えたら、古い可能性を表示します。',
         },
       },
+      startEnabled: {
+        type: 'boolean',
+        title: '資源サーバーの起動コマンドを有効化する',
+        default: false,
+        'x-herta-ui': {
+          section: '起動コマンド',
+          help: 'ONにすると /mc start で資源サーバー（mc-resource）を起動できます。運営ロールIDの設定が別途必要です。',
+        },
+      },
+      operatorRoleIds: {
+        type: 'array',
+        title: '起動を許可する運営ロールID',
+        items: { type: 'string' },
+        default: [],
+        'x-herta-ui': {
+          section: '起動コマンド',
+          help: 'DiscordのロールIDを指定します。ここに含まれるロールを持つメンバーだけが /mc start を実行できます。',
+        },
+      },
     },
     required: [
       'enabled',
@@ -83,6 +107,7 @@ export const minecraftStatusManifest: PluginManifest = {
       description: 'Minecraftサーバーの状態を確認します',
       subcommands: [
         { name: 'status', description: '現在の稼働状態・プレイヤー・リソースを表示します' },
+        { name: 'start', description: '資源サーバーを起動します（運営ロール限定）' },
       ],
     },
   ],

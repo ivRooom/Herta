@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   bar,
+  buildMinecraftControlSignature,
   buildMinecraftStatusCardModel,
   buildMinecraftStatusEmbed,
   buildMinecraftStatusImageEmbed,
+  memberRoleIds,
   MINECRAFT_STATUS_CURRENT_URL_DEFAULT,
   MINECRAFT_STATUS_RUNTIME_URL_DEFAULT,
   normalizeMinecraftStatusConfig,
@@ -73,11 +75,49 @@ describe('Minecraft Status v1', () => {
       showServers: true,
       showBackup: true,
       staleAfterMinutes: 3,
+      startEnabled: false,
+      operatorRoleIds: [],
     });
+    expect(
+      normalizeMinecraftStatusConfig({
+        startEnabled: true,
+        operatorRoleIds: ['123456789012345678', 'abc', '123456789012345678', 42],
+      }),
+    ).toMatchObject({ startEnabled: true, operatorRoleIds: ['123456789012345678'] });
     expect(normalizeMinecraftStatusConfig({ staleAfterMinutes: 999 })).toMatchObject({
       staleAfterMinutes: 60,
     });
     expect(normalizeMinecraftStatusConfig({ enabled: false })).toMatchObject({ enabled: false });
+  });
+
+  it('メンバーのロールIDを両形式から取り出す', () => {
+    expect(memberRoleIds({ member: { roles: ['11111', '22222'] } })).toEqual(['11111', '22222']);
+    expect(
+      memberRoleIds({
+        member: {
+          roles: {
+            cache: new Map([
+              ['33333', {}],
+              ['44444', {}],
+            ]),
+          },
+        },
+      }),
+    ).toEqual(['33333', '44444']);
+    expect(memberRoleIds({ member: null })).toEqual([]);
+    expect(memberRoleIds({})).toEqual([]);
+  });
+
+  it('起動エンドポイント向け署名が固定ベクタと一致する', () => {
+    expect(
+      buildMinecraftControlSignature(
+        'test-secret',
+        'POST',
+        '/v1/servers/mc-resource/start',
+        '1760000000',
+        '',
+      ),
+    ).toBe('04deb3b47ced43ec925d091c195ed41d2fed6d9ba0410a1841566b20364bcb0a');
   });
 
   it('取得先は稼働中の status.ivrm.jp を既定値にする', () => {
