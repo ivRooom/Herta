@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const minecraftStatusManifest: PluginManifest = {
   id: 'minecraft-status',
   name: 'Minecraft Status',
-  version: '1.3.0',
+  version: '1.4.0',
   description: 'Minecraftサーバーの稼働状態・プレイヤー・リソースを確認できます',
   author: { name: 'Herta' },
   category: 'utility',
@@ -81,6 +81,24 @@ export const minecraftStatusManifest: PluginManifest = {
           help: '状態データの最終更新からこの分数を超えたら、古い可能性を表示します。',
         },
       },
+      announceReports: {
+        type: 'boolean',
+        title: '日次レポートをDiscordに通知する',
+        default: false,
+        'x-herta-ui': {
+          section: '通知設定',
+          help: 'ONにすると、毎朝生成される Minecraft 日次レポートのリンクを指定チャンネルへ投稿します。',
+        },
+      },
+      reportChannelId: {
+        type: 'string',
+        title: 'レポート通知先チャンネルID',
+        default: '',
+        'x-herta-ui': {
+          section: '通知設定',
+          help: '日次レポートのリンクを投稿するテキストチャンネルのIDを指定します。',
+        },
+      },
       operatorRoleIds: {
         type: 'array',
         title: 'サーバー操作を追加で許可するロールID',
@@ -97,6 +115,8 @@ export const minecraftStatusManifest: PluginManifest = {
       'ephemeralResponses',
       'showResources',
       'showPerformanceGraph',
+      'announceReports',
+      'reportChannelId',
       'showServers',
       'showBackup',
       'staleAfterMinutes',

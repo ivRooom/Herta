@@ -20,6 +20,7 @@ export const MINECRAFT_STATUS_RUNTIME_URL_DEFAULT =
   'https://status.ivrm.jp/api/minecraft-runtime.json';
 export const MINECRAFT_STATUS_HISTORY_URL_DEFAULT =
   'https://status.ivrm.jp/api/metrics-history.json';
+export const MINECRAFT_STATUS_REPORTS_URL_DEFAULT = 'https://status.ivrm.jp/api/reports.json';
 export const MINECRAFT_STATUS_PAGE_URL = 'https://status.ivrm.jp/';
 export const MINECRAFT_STATUS_UNAVAILABLE_MESSAGE =
   'Minecraftサーバーの状態を取得できませんでした。時間をおいて再度お試しください。';
@@ -37,6 +38,8 @@ export interface MinecraftStatusConfig {
   showServers: boolean;
   showBackup: boolean;
   staleAfterMinutes: number;
+  announceReports: boolean;
+  reportChannelId: string;
   operatorRoleIds: string[];
 }
 
@@ -116,10 +119,41 @@ interface EditReplyOptions {
   allowedMentions: { parse: [] } | { users: string[] };
 }
 
-type MinecraftStatusContext = PluginRuntimeContext<MinecraftStatusConfig, unknown, PrismaClient>;
+interface MinecraftReportChannel {
+  isTextBased(): boolean;
+  send(options: { embeds: APIEmbed[]; allowedMentions: { parse: [] } }): Promise<unknown>;
+  messages: {
+    fetch(options: { limit: number }): Promise<{
+      values(): Iterable<{
+        content?: string;
+        embeds?: { url?: string; description?: string }[];
+      }>;
+    }>;
+  };
+}
 
-export const minecraftStatusPlugin = definePlugin<MinecraftStatusConfig, unknown, PrismaClient>({
+interface MinecraftReportClient {
+  channels: { fetch(channelId: string): Promise<MinecraftReportChannel | null> };
+}
+
+type MinecraftStatusContext = PluginRuntimeContext<
+  MinecraftStatusConfig,
+  MinecraftReportClient,
+  PrismaClient
+>;
+
+export const minecraftStatusPlugin = definePlugin<
+  MinecraftStatusConfig,
+  MinecraftReportClient,
+  PrismaClient
+>({
   manifest: minecraftStatusManifest,
+  async onEnable(context) {
+    startReportWorker(context);
+  },
+  async onDisable(context) {
+    stopReportWorker(context.guildId);
+  },
   provideCommands(context) {
     const command: CommandHandler<MinecraftStatusInteraction> = {
       definition: minecraftStatusManifest.commands[0]!,
@@ -143,6 +177,11 @@ export function normalizeMinecraftStatusConfig(value: unknown): MinecraftStatusC
     showServers: source.showServers === undefined ? true : source.showServers === true,
     showBackup: source.showBackup === undefined ? true : source.showBackup === true,
     staleAfterMinutes: clamp(toInteger(source.staleAfterMinutes, 3), 1, 60),
+    announceReports: source.announceReports === true,
+    reportChannelId:
+      typeof source.reportChannelId === 'string' && /^\d{15,25}$/.test(source.reportChannelId)
+        ? source.reportChannelId
+        : '',
     operatorRoleIds: normalizeRoleIds(source.operatorRoleIds),
   };
 }
@@ -1027,4 +1066,130 @@ function clamp(value: number, min: number, max: number): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** 日次レポート（status.ivrm.jp/reports）の Discord 通知ワーカー */
+
+export interface MinecraftReportEntry {
+  date: string;
+  url: string;
+  tpsAvg?: number | null;
+  tpsMin?: number | null;
+  cpuMaxHost?: number | null;
+  playersMax?: number | null;
+}
+
+const REPORT_WORKER_INTERVAL_MS = 10 * 60 * 1000;
+const announcedReportDates = new Map<string, string>();
+const reportWorkerTimers = new Map<string, NodeJS.Timeout>();
+const reportWorkerRuns = new Map<string, Promise<void>>();
+
+function startReportWorker(context: MinecraftStatusContext): void {
+  stopReportWorker(context.guildId);
+  void runReportCycle(context);
+  const timer = setInterval(() => {
+    void runReportCycle(context);
+  }, REPORT_WORKER_INTERVAL_MS);
+  timer.unref();
+  reportWorkerTimers.set(context.guildId, timer);
+}
+
+function stopReportWorker(guildId: string): void {
+  const timer = reportWorkerTimers.get(guildId);
+  if (timer) clearInterval(timer);
+  reportWorkerTimers.delete(guildId);
+}
+
+/** 通知対象は「今日（JST）より前の最新レポート」。当日の部分レポートは通知しない。 */
+export function pickReportToAnnounce(
+  entries: MinecraftReportEntry[],
+  todayJst: string,
+): MinecraftReportEntry | null {
+  const past = entries
+    .filter((entry) => /^\d{4}-\d{2}-\d{2}$/.test(entry.date) && entry.date < todayJst)
+    .sort((a, b) => (a.date < b.date ? 1 : -1));
+  return past[0] ?? null;
+}
+
+export function reportAlreadyPosted(
+  messages: Iterable<{ content?: string; embeds?: { url?: string; description?: string }[] }>,
+  url: string,
+): boolean {
+  for (const message of messages) {
+    if (message.content && message.content.includes(url)) return true;
+    for (const embed of message.embeds ?? []) {
+      if (embed.url === url) return true;
+      if (embed.description && embed.description.includes(url)) return true;
+    }
+  }
+  return false;
+}
+
+export function todayInTokyo(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+}
+
+export function buildReportAnnouncement(entry: MinecraftReportEntry): APIEmbed {
+  const lines = [
+    `TPS 平均 ${entry.tpsAvg ?? '—'} / 最低 ${entry.tpsMin ?? '—'}`,
+    `ホストCPU 最大 ${entry.cpuMaxHost ?? '—'}%`,
+    `プレイヤー 最大 ${entry.playersMax ?? '—'} 人`,
+    '',
+    `[レポートを開く](${entry.url})`,
+  ];
+  return {
+    title: `📊 Minecraft 日次レポート ${entry.date}`,
+    url: entry.url,
+    description: lines.join('\n'),
+    color: COLOR_ONLINE,
+    footer: { text: 'status.ivrm.jp' },
+  };
+}
+
+async function runReportCycle(context: MinecraftStatusContext): Promise<void> {
+  const existing = reportWorkerRuns.get(context.guildId);
+  if (existing) return existing;
+  const run = (async () => {
+    try {
+      const config = normalizeMinecraftStatusConfig((context as { config?: unknown }).config ?? {});
+      if (!config.announceReports || !config.reportChannelId) return;
+      const url = process.env.MINECRAFT_STATUS_REPORTS_URL ?? MINECRAFT_STATUS_REPORTS_URL_DEFAULT;
+      const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+      if (!response.ok) return;
+      const data: unknown = await response.json();
+      if (!Array.isArray(data)) return;
+      const entries = data.filter(
+        (item): item is MinecraftReportEntry =>
+          isRecord(item) && typeof item.date === 'string' && typeof item.url === 'string',
+      );
+      const target = pickReportToAnnounce(entries, todayInTokyo());
+      if (!target) return;
+      if (announcedReportDates.get(context.guildId) === target.date) return;
+      const channel = await context.client.channels.fetch(config.reportChannelId);
+      if (!channel || !channel.isTextBased()) return;
+      const recent = await channel.messages.fetch({ limit: 50 });
+      if (reportAlreadyPosted(recent.values(), target.url)) {
+        announcedReportDates.set(context.guildId, target.date);
+        return;
+      }
+      await channel.send({
+        embeds: [buildReportAnnouncement(target)],
+        allowedMentions: { parse: [] },
+      });
+      announcedReportDates.set(context.guildId, target.date);
+    } catch {
+      // 通知の失敗は次周期で再試行する（ここでは落とさない）
+    }
+  })();
+  reportWorkerRuns.set(context.guildId, run);
+  try {
+    await run;
+  } finally {
+    reportWorkerRuns.delete(context.guildId);
+  }
 }

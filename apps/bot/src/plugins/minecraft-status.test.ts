@@ -13,6 +13,10 @@ import {
   MINECRAFT_STATUS_CURRENT_URL_DEFAULT,
   MINECRAFT_STATUS_RUNTIME_URL_DEFAULT,
   normalizeMinecraftStatusConfig,
+  buildReportAnnouncement,
+  pickReportToAnnounce,
+  reportAlreadyPosted,
+  todayInTokyo,
   type MinecraftCurrentStatus,
   type MinecraftRuntimeStatus,
 } from './minecraft-status.js';
@@ -80,6 +84,8 @@ describe('Minecraft Status v1', () => {
       showServers: true,
       showBackup: true,
       staleAfterMinutes: 3,
+      announceReports: false,
+      reportChannelId: '',
       operatorRoleIds: [],
     });
     expect(
@@ -464,5 +470,51 @@ describe('Minecraft Status v1', () => {
     );
     expect(embed?.title).toContain('🔴 オフライン');
     expect(embed?.color).toBe(0xed4245);
+  });
+});
+
+describe('日次レポート通知', () => {
+  const entries = [
+    { date: '2026-11-11', url: 'https://status.ivrm.jp/reports/2026-11-11.html' },
+    { date: '2026-11-10', url: 'https://status.ivrm.jp/reports/2026-11-10.html' },
+    { date: '2026-11-09', url: 'https://status.ivrm.jp/reports/2026-11-09.html' },
+  ];
+
+  it('当日の部分レポートは通知せず、前日の最新を選ぶ', () => {
+    expect(pickReportToAnnounce(entries, '2026-11-11')?.date).toBe('2026-11-10');
+    expect(pickReportToAnnounce(entries, '2026-11-09')).toBeNull();
+    expect(pickReportToAnnounce([], '2026-11-11')).toBeNull();
+  });
+
+  it('チャンネル履歴に同じ URL があれば投稿済みとみなす', () => {
+    const url = 'https://status.ivrm.jp/reports/2026-11-10.html';
+    expect(reportAlreadyPosted([{ content: `see ${url}` }], url)).toBe(true);
+    expect(reportAlreadyPosted([{ embeds: [{ url }] }], url)).toBe(true);
+    expect(reportAlreadyPosted([{ content: 'unrelated' }], url)).toBe(false);
+    // discord.js の Collection は values() で反復する形もカバーする
+    const collection = new Map([
+      ['1', { content: 'hello' }],
+      ['2', { embeds: [{ url }] }],
+    ]);
+    expect(reportAlreadyPosted(collection.values(), url)).toBe(true);
+  });
+
+  it('通知 Embed にハイライトとリンクが入る', () => {
+    const embed = buildReportAnnouncement({
+      date: '2026-11-10',
+      url: 'https://status.ivrm.jp/reports/2026-11-10.html',
+      tpsAvg: 19.8,
+      tpsMin: 17.2,
+      cpuMaxHost: 87.5,
+      playersMax: 6,
+    });
+    expect(embed.title).toContain('2026-11-10');
+    expect(embed.url).toContain('2026-11-10');
+    expect(embed.description).toContain('19.8');
+    expect(embed.description).toContain('6 人');
+  });
+
+  it('JST の今日を返す', () => {
+    expect(todayInTokyo(new Date('2026-11-10T16:30:00.000Z'))).toBe('2026-11-11');
   });
 });
