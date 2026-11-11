@@ -10,6 +10,10 @@ declare module 'sharp' {
     width?: number;
     height?: number;
     format?: string;
+    pages?: number;
+    pageHeight?: number;
+    delay?: number[];
+    loop?: number;
   }
 
   export interface SharpOutputInfo {
@@ -30,6 +34,8 @@ declare module 'sharp' {
     ): Sharp;
     composite(overlays: OverlayOptions[]): Sharp;
     png(options?: { compressionLevel?: number; adaptiveFiltering?: boolean }): Sharp;
+    webp(options?: { quality?: number; delay?: number | number[]; loop?: number }): Sharp;
+    gif(options?: { delay?: number | number[]; loop?: number }): Sharp;
     raw(): Sharp;
     metadata(): Promise<SharpMetadata>;
     toBuffer(): Promise<Buffer>;
@@ -50,10 +56,16 @@ declare module 'sharp' {
 
   export interface SharpFactoryOptions {
     limitInputPixels?: number | boolean;
+    animated?: boolean;
+    page?: number;
+    join?: { animated?: boolean };
   }
 
   export interface SharpFactory {
-    (input?: Buffer | Uint8Array | string | SharpCreateInput, options?: SharpFactoryOptions): Sharp;
+    (
+      input?: Buffer | Uint8Array | string | SharpCreateInput | Buffer[],
+      options?: SharpFactoryOptions,
+    ): Sharp;
   }
 
   const sharp: SharpFactory;
