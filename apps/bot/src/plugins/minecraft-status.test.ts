@@ -89,6 +89,8 @@ describe('Minecraft Status v1', () => {
       staleAfterMinutes: 3,
       announceReports: false,
       reportChannelId: '',
+      announceEvents: false,
+      eventChannelId: '',
       operatorRoleIds: [],
     });
     expect(
