@@ -27,11 +27,21 @@ export interface MinecraftStatusCardModel {
     hostMemoryPercent?: number;
     loadAverage?: string;
   };
+  performance?: {
+    cpu: MinecraftPerformanceSeries[];
+    memory: MinecraftPerformanceSeries[];
+  };
   servers?: MinecraftStatusCardServer[];
   uptime?: string;
   version?: string;
   hostLabel?: string;
   backupLabel?: string;
+}
+
+export interface MinecraftPerformanceSeries {
+  label: string;
+  color: string;
+  points: (number | null)[];
 }
 
 const TONE_COLORS: Record<MinecraftStatusTone, string> = {
@@ -161,6 +171,73 @@ export async function renderMinecraftStatusCard(model: MinecraftStatusCardModel)
     if (model.resources.loadAverage) {
       y += 44;
       parts.push(text(`Load ${model.resources.loadAverage}`, pad, y, 24, TEXT_SUB));
+    }
+  }
+
+  // パフォーマンスグラフ（直近30分の推移、タスクマネージャー風）
+  if (
+    model.performance &&
+    (model.performance.cpu.length > 0 || model.performance.memory.length > 0)
+  ) {
+    y += 62;
+    parts.push(text('パフォーマンス（直近30分）', pad, y, 26, TEXT_SUB));
+    const charts: { label: string; series: MinecraftPerformanceSeries[] }[] = [
+      { label: 'CPU', series: model.performance.cpu },
+      { label: 'メモリ', series: model.performance.memory },
+    ];
+    for (const chart of charts) {
+      if (chart.series.length === 0) continue;
+      y += 46;
+      parts.push(text(chart.label, pad, y, 28));
+      const plotX0 = pad + 52;
+      const plotX1 = width - pad;
+      const plotTop = y + 12;
+      const plotHeight = 92;
+      for (const gridValue of [0, 50, 100]) {
+        const gridY = plotTop + plotHeight - (gridValue / 100) * plotHeight;
+        parts.push(
+          `<line x1="${plotX0}" y1="${gridY}" x2="${plotX1}" y2="${gridY}" stroke="${BAR_TRACK}" stroke-width="1"/>`,
+        );
+        parts.push(text(String(gridValue), pad, gridY + 7, 20, TEXT_SUB));
+      }
+      for (const series of chart.series) {
+        const count = series.points.length;
+        if (count < 2) continue;
+        let segment: string[] = [];
+        const flush = () => {
+          if (segment.length > 1) {
+            parts.push(
+              `<polyline points="${segment.join(' ')}" fill="none" stroke="${series.color}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>`,
+            );
+          }
+          segment = [];
+        };
+        series.points.forEach((value, index) => {
+          if (value === null || !Number.isFinite(value)) {
+            flush();
+            return;
+          }
+          const px = plotX0 + (index / (count - 1)) * (plotX1 - plotX0);
+          const py = plotTop + plotHeight - (Math.min(100, Math.max(0, value)) / 100) * plotHeight;
+          segment.push(`${px.toFixed(1)},${py.toFixed(1)}`);
+        });
+        flush();
+      }
+      y = plotTop + plotHeight + 8;
+    }
+    // 凡例（CPU・メモリ両方に現れる系列を重複なく並べる）
+    const legend = new Map<string, string>();
+    for (const chart of charts) {
+      for (const series of chart.series) legend.set(series.label, series.color);
+    }
+    if (legend.size > 0) {
+      y += 30;
+      let legendX = pad;
+      for (const [label, color] of legend) {
+        parts.push(`<circle cx="${legendX + 9}" cy="${y - 8}" r="9" fill="${color}"/>`);
+        parts.push(text(label, legendX + 28, y, 24, TEXT_SUB));
+        legendX += 28 + estimateTextWidth(label, 24) + 36;
+      }
     }
   }
 

@@ -18,6 +18,8 @@ const BAR_CELLS = 10;
 export const MINECRAFT_STATUS_CURRENT_URL_DEFAULT = 'https://status.ivrm.jp/api/current.json';
 export const MINECRAFT_STATUS_RUNTIME_URL_DEFAULT =
   'https://status.ivrm.jp/api/minecraft-runtime.json';
+export const MINECRAFT_STATUS_HISTORY_URL_DEFAULT =
+  'https://status.ivrm.jp/api/metrics-history.json';
 export const MINECRAFT_STATUS_PAGE_URL = 'https://status.ivrm.jp/';
 export const MINECRAFT_STATUS_UNAVAILABLE_MESSAGE =
   'Minecraftサーバーの状態を取得できませんでした。時間をおいて再度お試しください。';
@@ -31,6 +33,7 @@ export interface MinecraftStatusConfig {
   enabled: boolean;
   ephemeralResponses: boolean;
   showResources: boolean;
+  showPerformanceGraph: boolean;
   showServers: boolean;
   showBackup: boolean;
   staleAfterMinutes: number;
@@ -74,6 +77,15 @@ export interface MinecraftRuntimeStatus {
   status?: string;
   players?: { online?: number; max?: number };
   servers?: MinecraftRuntimeServer[];
+}
+
+/** /api/metrics-history.json の形（ivrm-mc-metricsd が生成する階層化時系列） */
+export interface MinecraftMetricsHistory {
+  tiers?: {
+    '10s'?: {
+      series?: Record<string, [number, number | null, number | null][]>;
+    };
+  };
 }
 
 interface MinecraftStatusOptions {
@@ -126,6 +138,8 @@ export function normalizeMinecraftStatusConfig(value: unknown): MinecraftStatusC
     ephemeralResponses:
       source.ephemeralResponses === undefined ? false : source.ephemeralResponses === true,
     showResources: source.showResources === undefined ? true : source.showResources === true,
+    showPerformanceGraph:
+      source.showPerformanceGraph === undefined ? true : source.showPerformanceGraph === true,
     showServers: source.showServers === undefined ? true : source.showServers === true,
     showBackup: source.showBackup === undefined ? true : source.showBackup === true,
     staleAfterMinutes: clamp(toInteger(source.staleAfterMinutes, 3), 1, 60),
@@ -339,6 +353,7 @@ export function buildMinecraftStatusCardModel(
   current: MinecraftCurrentStatus | null,
   runtime: MinecraftRuntimeStatus | null,
   config: MinecraftStatusConfig,
+  history?: MinecraftMetricsHistory | null,
 ): MinecraftStatusCardModel | null {
   if (!current && !runtime) {
     return null;
@@ -382,6 +397,11 @@ export function buildMinecraftStatusCardModel(
     if (Object.keys(resources).length > 0) model.resources = resources;
   }
 
+  if (config.showPerformanceGraph && history) {
+    const performance = buildPerformanceModel(history);
+    if (performance) model.performance = performance;
+  }
+
   if (config.showServers && runtime?.servers && runtime.servers.length > 0) {
     model.servers = runtime.servers.map((server) => ({
       name: server.id ?? server.name ?? 'unknown',
@@ -400,6 +420,50 @@ export function buildMinecraftStatusCardModel(
     model.backupLabel = `${formatBackupTime(backupMtime)}${backupSize ? `（${backupSize}）` : ''}`;
   }
   return model;
+}
+
+const PERFORMANCE_SERIES_DEFS: { key: string; label: string; color: string }[] = [
+  { key: 'mc-main', label: '生活', color: '#57f287' },
+  { key: 'mc-resource', label: '資源', color: '#60a5fa' },
+  { key: 'host', label: 'ホスト', color: '#f59e0b' },
+];
+const PERFORMANCE_MAX_POINTS = 180; // 10秒階層で30分ぶん
+
+export function buildPerformanceModel(
+  history: MinecraftMetricsHistory,
+): MinecraftStatusCardModel['performance'] | null {
+  const series = history.tiers?.['10s']?.series;
+  if (!series) return null;
+  const cpu: NonNullable<MinecraftStatusCardModel['performance']>['cpu'] = [];
+  const memory: NonNullable<MinecraftStatusCardModel['performance']>['memory'] = [];
+  for (const def of PERFORMANCE_SERIES_DEFS) {
+    const entries = series[def.key];
+    if (!Array.isArray(entries) || entries.length < 2) continue;
+    const sorted = [...entries]
+      .filter(
+        (entry): entry is [number, number | null, number | null] =>
+          Array.isArray(entry) && typeof entry[0] === 'number',
+      )
+      .sort((a, b) => a[0] - b[0])
+      .slice(-PERFORMANCE_MAX_POINTS);
+    if (sorted.length < 2) continue;
+    const toPoints = (index: 1 | 2): (number | null)[] =>
+      sorted.map((entry) =>
+        typeof entry[index] === 'number' && Number.isFinite(entry[index])
+          ? (entry[index] as number)
+          : null,
+      );
+    const cpuPoints = toPoints(1);
+    const memoryPoints = toPoints(2);
+    if (cpuPoints.filter((value) => value !== null).length >= 2) {
+      cpu.push({ label: def.label, color: def.color, points: cpuPoints });
+    }
+    if (memoryPoints.filter((value) => value !== null).length >= 2) {
+      memory.push({ label: def.label, color: def.color, points: memoryPoints });
+    }
+  }
+  if (cpu.length === 0 && memory.length === 0) return null;
+  return { cpu, memory };
 }
 
 function statusTextOf(current: MinecraftCurrentStatus | null): string {
@@ -607,9 +671,13 @@ async function executeMinecraftCommand(
   await interaction.deferReply({
     flags: config.ephemeralResponses ? EPHEMERAL_FLAG : undefined,
   });
-  const [current, runtime] = await Promise.all([fetchCurrentStatus(), fetchRuntimeStatus()]);
+  const [current, runtime, history] = await Promise.all([
+    fetchCurrentStatus(),
+    fetchRuntimeStatus(),
+    config.showPerformanceGraph ? fetchMetricsHistory() : Promise.resolve(null),
+  ]);
   try {
-    const cardModel = buildMinecraftStatusCardModel(current, runtime, config);
+    const cardModel = buildMinecraftStatusCardModel(current, runtime, config, history);
     if (cardModel) {
       const card = await renderMinecraftStatusCard(cardModel);
       const imageEmbed = buildMinecraftStatusImageEmbed(current, runtime, config);
@@ -914,6 +982,12 @@ async function fetchRuntimeStatus(): Promise<MinecraftRuntimeStatus | null> {
   const url = process.env.MINECRAFT_STATUS_RUNTIME_URL ?? MINECRAFT_STATUS_RUNTIME_URL_DEFAULT;
   const data = await fetchJson(url);
   return isRecord(data) ? (data as MinecraftRuntimeStatus) : null;
+}
+
+async function fetchMetricsHistory(): Promise<MinecraftMetricsHistory | null> {
+  const url = process.env.MINECRAFT_STATUS_HISTORY_URL ?? MINECRAFT_STATUS_HISTORY_URL_DEFAULT;
+  const data = await fetchJson(url);
+  return isRecord(data) ? (data as MinecraftMetricsHistory) : null;
 }
 
 async function fetchJson(url: string): Promise<unknown> {
