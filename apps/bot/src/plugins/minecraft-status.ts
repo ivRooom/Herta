@@ -40,6 +40,8 @@ export interface MinecraftStatusConfig {
   staleAfterMinutes: number;
   announceReports: boolean;
   reportChannelId: string;
+  announceEvents: boolean;
+  eventChannelId: string;
   operatorRoleIds: string[];
 }
 
@@ -150,9 +152,11 @@ export const minecraftStatusPlugin = definePlugin<
   manifest: minecraftStatusManifest,
   async onEnable(context) {
     startReportWorker(context);
+    startEventWorker(context);
   },
   async onDisable(context) {
     stopReportWorker(context.guildId);
+    stopEventWorker(context.guildId);
   },
   provideCommands(context) {
     const command: CommandHandler<MinecraftStatusInteraction> = {
@@ -181,6 +185,11 @@ export function normalizeMinecraftStatusConfig(value: unknown): MinecraftStatusC
     reportChannelId:
       typeof source.reportChannelId === 'string' && /^\d{15,25}$/.test(source.reportChannelId)
         ? source.reportChannelId
+        : '',
+    announceEvents: source.announceEvents === true,
+    eventChannelId:
+      typeof source.eventChannelId === 'string' && /^\d{15,25}$/.test(source.eventChannelId)
+        ? source.eventChannelId
         : '',
     operatorRoleIds: normalizeRoleIds(source.operatorRoleIds),
   };
@@ -1157,7 +1166,7 @@ async function runReportCycle(context: MinecraftStatusContext): Promise<void> {
   const run = (async () => {
     try {
       const config = normalizeMinecraftStatusConfig((context as { config?: unknown }).config ?? {});
-      if (!config.announceReports || !config.reportChannelId) return;
+      if (!config.enabled || !config.announceReports || !config.reportChannelId) return;
       const url = process.env.MINECRAFT_STATUS_REPORTS_URL ?? MINECRAFT_STATUS_REPORTS_URL_DEFAULT;
       const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
       if (!response.ok) return;
@@ -1172,6 +1181,7 @@ async function runReportCycle(context: MinecraftStatusContext): Promise<void> {
       if (announcedReportDates.get(context.guildId) === target.date) return;
       const channel = await context.client.channels.fetch(config.reportChannelId);
       if (!channel || !channel.isTextBased()) return;
+      if ((channel as { guildId?: string | null }).guildId !== context.guildId) return;
       const recent = await channel.messages.fetch({ limit: 50 });
       if (reportAlreadyPosted(recent.values(), target.url)) {
         announcedReportDates.set(context.guildId, target.date);
@@ -1191,5 +1201,171 @@ async function runReportCycle(context: MinecraftStatusContext): Promise<void> {
     await run;
   } finally {
     reportWorkerRuns.delete(context.guildId);
+  }
+}
+
+// サーバー起動/停止イベント通知（#865 案2）
+
+export interface MinecraftServerEvent {
+  seq: number;
+  at: string;
+  server: 'main' | 'resource';
+  action: 'start' | 'die' | 'oom';
+  exitCode?: number;
+}
+
+const EVENT_WORKER_INTERVAL_MS = 60 * 1000;
+const EVENT_POST_LIMIT_PER_CYCLE = 10;
+const eventTimers = new Map<string, ReturnType<typeof setInterval>>();
+const eventCursors = new Map<string, number>();
+const eventWorkerRuns = new Set<string>();
+const eventWorkerEpochs = new Map<string, number>();
+
+const SERVER_LABELS: Record<MinecraftServerEvent['server'], string> = {
+  main: '生活サーバー',
+  resource: '資源サーバー',
+};
+
+export function parseServerEvents(payload: unknown): MinecraftServerEvent[] {
+  if (!isRecord(payload) || !Array.isArray(payload.events)) return [];
+  const events: MinecraftServerEvent[] = [];
+  for (const item of payload.events) {
+    if (!isRecord(item)) continue;
+    const seq = toInteger(item.seq, 0);
+    if (seq <= 0) continue;
+    if (item.server !== 'main' && item.server !== 'resource') continue;
+    if (item.action !== 'start' && item.action !== 'die' && item.action !== 'oom') continue;
+    const atRaw = typeof item.at === 'string' ? item.at : '';
+    events.push({
+      seq,
+      // 不正な日時は Discord が埋め込みを拒否し通知全体が止まるため、検証して捨てる
+      at: atRaw !== '' && !Number.isNaN(Date.parse(atRaw)) ? atRaw : '',
+      server: item.server,
+      action: item.action,
+      exitCode: item.exitCode === undefined ? undefined : toInteger(item.exitCode, 0),
+    });
+  }
+  return events.sort((a, b) => a.seq - b.seq);
+}
+
+export function pickNewServerEvents(
+  events: MinecraftServerEvent[],
+  lastSeq: number,
+): MinecraftServerEvent[] {
+  return events.filter((event) => event.seq > lastSeq);
+}
+
+export function describeServerEvent(event: MinecraftServerEvent): {
+  title: string;
+  color: number;
+  description?: string;
+} {
+  const label = SERVER_LABELS[event.server];
+  if (event.action === 'start') {
+    return { title: `🟢 ${label}が起動しました`, color: 0x2ecc71 };
+  }
+  if (event.action === 'oom') {
+    return {
+      title: `⚠️ ${label}がメモリ不足で終了しました`,
+      color: 0xe74c3c,
+      description: 'OOM（メモリ不足）によりプロセスが終了しました。',
+    };
+  }
+  if (event.exitCode !== undefined && event.exitCode !== 0) {
+    return {
+      title: `⚠️ ${label}が異常終了しました`,
+      color: 0xe74c3c,
+      description: `終了コード: ${event.exitCode}`,
+    };
+  }
+  return { title: `⏹️ ${label}が停止しました`, color: 0x95a5a6 };
+}
+
+export function buildServerEventAnnouncement(event: MinecraftServerEvent): APIEmbed {
+  const described = describeServerEvent(event);
+  return {
+    title: described.title,
+    description: described.description,
+    color: described.color,
+    timestamp: event.at || undefined,
+    footer: { text: 'status.ivrm.jp' },
+  };
+}
+
+function eventsUrl(): string {
+  return process.env.MINECRAFT_STATUS_EVENTS_URL ?? 'https://status.ivrm.jp/api/events.json';
+}
+
+function startEventWorker(context: MinecraftStatusContext): void {
+  stopEventWorker(context.guildId);
+  eventWorkerEpochs.set(context.guildId, (eventWorkerEpochs.get(context.guildId) ?? 0) + 1);
+  void runEventCycle(context);
+  const timer = setInterval(() => {
+    void runEventCycle(context);
+  }, EVENT_WORKER_INTERVAL_MS);
+  timer.unref?.();
+  eventTimers.set(context.guildId, timer);
+}
+
+function stopEventWorker(guildId: string): void {
+  const timer = eventTimers.get(guildId);
+  if (timer) {
+    clearInterval(timer);
+    eventTimers.delete(guildId);
+  }
+  // 実行中のサイクルを無効化する（旧設定への投稿・カーソル前進を防ぐ）
+  eventWorkerEpochs.set(guildId, (eventWorkerEpochs.get(guildId) ?? 0) + 1);
+}
+
+async function runEventCycle(context: MinecraftStatusContext): Promise<void> {
+  if (eventWorkerRuns.has(context.guildId)) return;
+  eventWorkerRuns.add(context.guildId);
+  const epoch = eventWorkerEpochs.get(context.guildId) ?? 0;
+  const stillCurrent = () => (eventWorkerEpochs.get(context.guildId) ?? 0) === epoch;
+  try {
+    const config = normalizeMinecraftStatusConfig(context.config);
+    if (!config.enabled || !config.announceEvents || !config.eventChannelId) return;
+    const response = await fetch(eventsUrl(), {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) return;
+    const payload: unknown = await response.json();
+    if (!isRecord(payload) || !Array.isArray(payload.events)) return;
+    const events = parseServerEvents(payload);
+    const lastSeq = eventCursors.get(context.guildId);
+    if (lastSeq === undefined) {
+      // 初回はカーソル同期のみ（過去イベントを投稿しない）。空でも 0 で初期化し、
+      // 次に来る最初のイベントを取りこぼさない
+      if (!stillCurrent()) return;
+      eventCursors.set(context.guildId, events.length === 0 ? 0 : events[events.length - 1]!.seq);
+      return;
+    }
+    if (events.length === 0) return;
+    const fresh = pickNewServerEvents(events, lastSeq).slice(0, EVENT_POST_LIMIT_PER_CYCLE);
+    if (fresh.length === 0) return;
+    const channel = await context.client.channels.fetch(config.eventChannelId);
+    if (!channel || !channel.isTextBased()) return;
+    if ((channel as { guildId?: string | null }).guildId !== context.guildId) return;
+    for (const event of fresh) {
+      if (!stillCurrent()) return;
+      await channel.send({
+        embeds: [buildServerEventAnnouncement(event)],
+        allowedMentions: { parse: [] },
+      });
+      if (!stillCurrent()) return;
+      eventCursors.set(context.guildId, event.seq);
+    }
+  } catch {
+    // 通知の失敗でワーカーを落とさない（次周期で再試行する）
+  } finally {
+    eventWorkerRuns.delete(context.guildId);
+    // 無効化→再有効化で世代が変わっていたら、後継サイクルを待たずに実行する
+    // （停止したままならタイマーが無いので再実行しない）
+    if (!stillCurrent() && eventTimers.has(context.guildId)) {
+      setTimeout(() => {
+        void runEventCycle(context);
+      }, 0);
+    }
   }
 }
