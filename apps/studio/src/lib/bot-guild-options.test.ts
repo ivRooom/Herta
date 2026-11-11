@@ -163,6 +163,27 @@ test('キャッシュ版は同時リクエストを1回の取得へ合流させ�
   assert.equal(second, first);
 });
 
+test('キャッシュ版はTTLを過ぎたら再取得する', async (t) => {
+  prepareBotEnv(t);
+  t.mock.timers.enable({ apis: ['Date'], now: 1_700_000_000_000 });
+  t.after(() => t.mock.timers.reset());
+  const guildId = '100000000000000004';
+  let calls = 0;
+  stubGlobalFetch(t, async () => {
+    calls += 1;
+    return Response.json(validOptionsPayload(guildId));
+  });
+
+  await getGuildConfigurationOptionsCached(guildId);
+  t.mock.timers.tick(29_000);
+  await getGuildConfigurationOptionsCached(guildId);
+  assert.equal(calls, 1);
+
+  t.mock.timers.tick(2_000);
+  await getGuildConfigurationOptionsCached(guildId);
+  assert.equal(calls, 2);
+});
+
 test('キャッシュ版は取得失敗をキャッシュせず次回再取得する', async (t) => {
   prepareBotEnv(t);
   const guildId = '100000000000000003';
