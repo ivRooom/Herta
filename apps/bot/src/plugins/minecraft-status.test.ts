@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   bar,
   buildMinecraftControlSignature,
+  canStartMinecraftResource,
   buildMinecraftStatusCardModel,
   buildMinecraftStatusEmbed,
   buildMinecraftStatusImageEmbed,
@@ -75,15 +76,13 @@ describe('Minecraft Status v1', () => {
       showServers: true,
       showBackup: true,
       staleAfterMinutes: 3,
-      startEnabled: false,
       operatorRoleIds: [],
     });
     expect(
       normalizeMinecraftStatusConfig({
-        startEnabled: true,
         operatorRoleIds: ['123456789012345678', 'abc', '123456789012345678', 42],
       }),
-    ).toMatchObject({ startEnabled: true, operatorRoleIds: ['123456789012345678'] });
+    ).toMatchObject({ operatorRoleIds: ['123456789012345678'] });
     expect(normalizeMinecraftStatusConfig({ staleAfterMinutes: 999 })).toMatchObject({
       staleAfterMinutes: 60,
     });
@@ -106,6 +105,18 @@ describe('Minecraft Status v1', () => {
     ).toEqual(['33333', '44444']);
     expect(memberRoleIds({ member: null })).toEqual([]);
     expect(memberRoleIds({})).toEqual([]);
+  });
+
+  it('起動権限は必須ロールと設定ロールの和集合で判定する', () => {
+    const config = normalizeMinecraftStatusConfig({ operatorRoleIds: ['999999999999999999'] });
+    expect(canStartMinecraftResource({ member: { roles: ['1114417432346501130'] } }, config)).toBe(
+      true,
+    );
+    expect(canStartMinecraftResource({ member: { roles: ['999999999999999999'] } }, config)).toBe(
+      true,
+    );
+    expect(canStartMinecraftResource({ member: { roles: ['12345'] } }, config)).toBe(false);
+    expect(canStartMinecraftResource({ member: null }, config)).toBe(false);
   });
 
   it('起動エンドポイント向け署名が固定ベクタと一致する', () => {

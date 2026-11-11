@@ -71,23 +71,14 @@ export const minecraftStatusManifest: PluginManifest = {
           help: '状態データの最終更新からこの分数を超えたら、古い可能性を表示します。',
         },
       },
-      startEnabled: {
-        type: 'boolean',
-        title: '資源サーバーの起動コマンドを有効化する',
-        default: false,
-        'x-herta-ui': {
-          section: '起動コマンド',
-          help: 'ONにすると /mc start で資源サーバー（mc-resource）を起動できます。運営ロールIDの設定が別途必要です。',
-        },
-      },
       operatorRoleIds: {
         type: 'array',
-        title: '起動を許可する運営ロールID',
+        title: '起動を追加で許可するロールID',
         items: { type: 'string' },
         default: [],
         'x-herta-ui': {
           section: '起動コマンド',
-          help: 'DiscordのロールIDを指定します。ここに含まれるロールを持つメンバーだけが /mc start を実行できます。',
+          help: '必須ロール（コードで指定）に加えて /mc start を許可するロールIDを指定します。',
         },
       },
     },

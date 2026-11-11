@@ -34,7 +34,6 @@ export interface MinecraftStatusConfig {
   showServers: boolean;
   showBackup: boolean;
   staleAfterMinutes: number;
-  startEnabled: boolean;
   operatorRoleIds: string[];
 }
 
@@ -129,7 +128,6 @@ export function normalizeMinecraftStatusConfig(value: unknown): MinecraftStatusC
     showServers: source.showServers === undefined ? true : source.showServers === true,
     showBackup: source.showBackup === undefined ? true : source.showBackup === true,
     staleAfterMinutes: clamp(toInteger(source.staleAfterMinutes, 3), 1, 60),
-    startEnabled: source.startEnabled === undefined ? false : source.startEnabled === true,
     operatorRoleIds: normalizeRoleIds(source.operatorRoleIds),
   };
 }
@@ -629,6 +627,20 @@ const lastStartRequestByGuild = new Map<string, number>();
 type MinecraftStartResult =
   { kind: 'started' } | { kind: 'already_running' } | { kind: 'unconfigured' } | { kind: 'error' };
 
+/**
+ * /mc start の実行に必要な Discord ロール（当面はコード管理。
+ * 将来的にプラグイン設定や環境変数へ移す前提で、設定側の追加ロールとは和集合で判定する）
+ */
+export const MINECRAFT_START_REQUIRED_ROLE_ID = '1114417432346501130';
+
+export function canStartMinecraftResource(
+  interaction: { member?: unknown },
+  config: MinecraftStatusConfig,
+): boolean {
+  const allowed = new Set([MINECRAFT_START_REQUIRED_ROLE_ID, ...config.operatorRoleIds]);
+  return memberRoleIds(interaction).some((role) => allowed.has(role));
+}
+
 /** 起動エンドポイント向けの HMAC 署名（サーバー側 ivrm-mc-control と同じ署名対象文字列） */
 export function buildMinecraftControlSignature(
   secret: string,
@@ -679,20 +691,7 @@ async function executeMinecraftStart(
   interaction: MinecraftStatusInteraction,
   config: MinecraftStatusConfig,
 ): Promise<void> {
-  if (!config.startEnabled) {
-    await reply(context, interaction, '資源サーバーの起動コマンドは現在無効です。');
-    return;
-  }
-  if (config.operatorRoleIds.length === 0) {
-    await reply(
-      context,
-      interaction,
-      '起動を許可する運営ロールが未設定のため、起動できません。StudioでロールIDを設定してください。',
-    );
-    return;
-  }
-  const roles = memberRoleIds(interaction);
-  if (!roles.some((role) => config.operatorRoleIds.includes(role))) {
+  if (!canStartMinecraftResource(interaction, config)) {
     await reply(context, interaction, 'この操作には運営ロールが必要です。');
     return;
   }
