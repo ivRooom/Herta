@@ -222,7 +222,7 @@ describe('Minecraft Status v1', () => {
     expect(field(embed, '⏱ 稼働時間')?.value).toBe('12時間 36分');
     const resources = field(embed, '📊 リソース')?.value ?? '';
     expect(resources).toContain('CPU');
-    expect(resources).toContain('1.09%');
+    expect(resources).toContain('CPU `░░░░░░░░░░` 1%'); // 1.09% を2コアで正規化し四捨五入
     expect(resources).toContain('メモリ');
     expect(resources).toContain('27%');
     expect(resources).toContain('ホストメモリ');
