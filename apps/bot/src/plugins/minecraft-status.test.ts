@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   bar,
+  buildMinecraftControlSignature,
+  canStartMinecraftResource,
   buildMinecraftStatusCardModel,
   buildMinecraftStatusEmbed,
   buildMinecraftStatusImageEmbed,
+  memberRoleIds,
   MINECRAFT_STATUS_CURRENT_URL_DEFAULT,
   MINECRAFT_STATUS_RUNTIME_URL_DEFAULT,
   normalizeMinecraftStatusConfig,
@@ -73,11 +76,59 @@ describe('Minecraft Status v1', () => {
       showServers: true,
       showBackup: true,
       staleAfterMinutes: 3,
+      operatorRoleIds: [],
     });
+    expect(
+      normalizeMinecraftStatusConfig({
+        operatorRoleIds: ['123456789012345678', 'abc', '123456789012345678', 42],
+      }),
+    ).toMatchObject({ operatorRoleIds: ['123456789012345678'] });
     expect(normalizeMinecraftStatusConfig({ staleAfterMinutes: 999 })).toMatchObject({
       staleAfterMinutes: 60,
     });
     expect(normalizeMinecraftStatusConfig({ enabled: false })).toMatchObject({ enabled: false });
+  });
+
+  it('メンバーのロールIDを両形式から取り出す', () => {
+    expect(memberRoleIds({ member: { roles: ['11111', '22222'] } })).toEqual(['11111', '22222']);
+    expect(
+      memberRoleIds({
+        member: {
+          roles: {
+            cache: new Map([
+              ['33333', {}],
+              ['44444', {}],
+            ]),
+          },
+        },
+      }),
+    ).toEqual(['33333', '44444']);
+    expect(memberRoleIds({ member: null })).toEqual([]);
+    expect(memberRoleIds({})).toEqual([]);
+  });
+
+  it('起動権限は必須ロールと設定ロールの和集合で判定する', () => {
+    const config = normalizeMinecraftStatusConfig({ operatorRoleIds: ['999999999999999999'] });
+    expect(canStartMinecraftResource({ member: { roles: ['1114417432346501130'] } }, config)).toBe(
+      true,
+    );
+    expect(canStartMinecraftResource({ member: { roles: ['999999999999999999'] } }, config)).toBe(
+      true,
+    );
+    expect(canStartMinecraftResource({ member: { roles: ['12345'] } }, config)).toBe(false);
+    expect(canStartMinecraftResource({ member: null }, config)).toBe(false);
+  });
+
+  it('起動エンドポイント向け署名が固定ベクタと一致する', () => {
+    expect(
+      buildMinecraftControlSignature(
+        'test-secret',
+        'POST',
+        '/v1/servers/mc-resource/start',
+        '1760000000',
+        '',
+      ),
+    ).toBe('04deb3b47ced43ec925d091c195ed41d2fed6d9ba0410a1841566b20364bcb0a');
   });
 
   it('取得先は稼働中の status.ivrm.jp を既定値にする', () => {

@@ -1,3 +1,4 @@
+import { createHash, createHmac } from 'node:crypto';
 import type { PrismaClient } from '@herta/db';
 import { minecraftStatusManifest } from '@herta/plugin-catalog';
 import { definePlugin, type CommandHandler, type PluginRuntimeContext } from '@herta/plugin-sdk';
@@ -33,6 +34,7 @@ export interface MinecraftStatusConfig {
   showServers: boolean;
   showBackup: boolean;
   staleAfterMinutes: number;
+  operatorRoleIds: string[];
 }
 
 /** status.ivrm.jp/api/current.json の形（収集側の都合で欠ける場合があるため全て任意） */
@@ -81,6 +83,8 @@ interface MinecraftStatusOptions {
 interface MinecraftStatusInteraction {
   guildId: string | null;
   options: MinecraftStatusOptions;
+  user?: { id?: string };
+  member?: unknown;
   reply(options: ReplyOptions): Promise<unknown>;
   deferReply(options?: { flags?: number }): Promise<unknown>;
   editReply(options: EditReplyOptions): Promise<unknown>;
@@ -124,7 +128,30 @@ export function normalizeMinecraftStatusConfig(value: unknown): MinecraftStatusC
     showServers: source.showServers === undefined ? true : source.showServers === true,
     showBackup: source.showBackup === undefined ? true : source.showBackup === true,
     staleAfterMinutes: clamp(toInteger(source.staleAfterMinutes, 3), 1, 60),
+    operatorRoleIds: normalizeRoleIds(source.operatorRoleIds),
   };
+}
+
+function normalizeRoleIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const ids = value.filter(
+    (item): item is string => typeof item === 'string' && /^\d{5,25}$/.test(item),
+  );
+  return [...new Set(ids)].slice(0, 20);
+}
+
+/** 実行メンバーのロールID一覧を取り出す（discord.js の GuildMember と生の API メンバー両対応） */
+export function memberRoleIds(interaction: { member?: unknown }): string[] {
+  const member = isRecord(interaction.member) ? interaction.member : null;
+  if (!member) return [];
+  const roles = member.roles;
+  if (Array.isArray(roles)) {
+    return roles.filter((role): role is string => typeof role === 'string');
+  }
+  if (isRecord(roles) && roles.cache instanceof Map) {
+    return [...roles.cache.keys()].filter((key): key is string => typeof key === 'string');
+  }
+  return [];
 }
 
 export function buildMinecraftStatusEmbed(
@@ -548,6 +575,10 @@ async function executeMinecraftCommand(
   }
 
   const subcommand = interaction.options.getSubcommand();
+  if (subcommand === 'start') {
+    await executeMinecraftStart(context, interaction, config);
+    return;
+  }
   if (subcommand !== 'status') {
     await reply(context, interaction, '不明なMinecraft Status操作です。');
     return;
@@ -584,6 +615,144 @@ async function executeMinecraftCommand(
       allowedMentions: { parse: [] },
     });
   }
+}
+
+const MINECRAFT_RESOURCE_START_PATH = '/v1/servers/mc-resource/start';
+const START_COOLDOWN_MS = 180_000;
+const START_POLL_INTERVAL_MS = 10_000;
+const START_POLL_ATTEMPTS = 15;
+
+const lastStartRequestByGuild = new Map<string, number>();
+
+type MinecraftStartResult =
+  { kind: 'started' } | { kind: 'already_running' } | { kind: 'unconfigured' } | { kind: 'error' };
+
+/**
+ * /mc start の実行に必要な Discord ロール（当面はコード管理。
+ * 将来的にプラグイン設定や環境変数へ移す前提で、設定側の追加ロールとは和集合で判定する）
+ */
+export const MINECRAFT_START_REQUIRED_ROLE_ID = '1114417432346501130';
+
+export function canStartMinecraftResource(
+  interaction: { member?: unknown },
+  config: MinecraftStatusConfig,
+): boolean {
+  const allowed = new Set([MINECRAFT_START_REQUIRED_ROLE_ID, ...config.operatorRoleIds]);
+  return memberRoleIds(interaction).some((role) => allowed.has(role));
+}
+
+/** 起動エンドポイント向けの HMAC 署名（サーバー側 ivrm-mc-control と同じ署名対象文字列） */
+export function buildMinecraftControlSignature(
+  secret: string,
+  method: string,
+  path: string,
+  timestamp: string,
+  body: string,
+): string {
+  const bodyHash = createHash('sha256').update(body).digest('hex');
+  return createHmac('sha256', secret)
+    .update(`${method}\n${path}\n${timestamp}\n${bodyHash}`)
+    .digest('hex');
+}
+
+async function requestMinecraftResourceStart(): Promise<MinecraftStartResult> {
+  const baseUrl = process.env.MINECRAFT_CONTROL_URL;
+  const secret = process.env.MINECRAFT_CONTROL_SECRET;
+  if (!baseUrl || !secret) return { kind: 'unconfigured' };
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const body = '';
+  try {
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}${MINECRAFT_RESOURCE_START_PATH}`, {
+      method: 'POST',
+      headers: {
+        'x-ivrm-timestamp': timestamp,
+        'x-ivrm-signature': buildMinecraftControlSignature(
+          secret,
+          'POST',
+          MINECRAFT_RESOURCE_START_PATH,
+          timestamp,
+          body,
+        ),
+      },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) return { kind: 'error' };
+    const data: unknown = await response.json();
+    if (isRecord(data) && data.result === 'already_running') return { kind: 'already_running' };
+    if (isRecord(data) && data.result === 'started') return { kind: 'started' };
+    return { kind: 'error' };
+  } catch {
+    return { kind: 'error' };
+  }
+}
+
+async function executeMinecraftStart(
+  context: MinecraftStatusContext,
+  interaction: MinecraftStatusInteraction,
+  config: MinecraftStatusConfig,
+): Promise<void> {
+  if (!canStartMinecraftResource(interaction, config)) {
+    await reply(context, interaction, 'この操作には運営ロールが必要です。');
+    return;
+  }
+
+  const guildId = interaction.guildId!;
+  const nowMs = Date.now();
+  const last = lastStartRequestByGuild.get(guildId) ?? 0;
+  if (nowMs - last < START_COOLDOWN_MS) {
+    await reply(
+      context,
+      interaction,
+      '起動リクエストを受け付けたばかりです。少し時間をおいてからお試しください。',
+    );
+    return;
+  }
+  lastStartRequestByGuild.set(guildId, nowMs);
+
+  await interaction.deferReply({
+    flags: config.ephemeralResponses ? EPHEMERAL_FLAG : undefined,
+  });
+  const result = await requestMinecraftResourceStart();
+  if (result.kind === 'unconfigured') {
+    await interaction.editReply({
+      content: '起動の受け口が未設定です。管理者に連絡してください。',
+      allowedMentions: { parse: [] },
+    });
+    return;
+  }
+  if (result.kind === 'error') {
+    await interaction.editReply({
+      content: '資源サーバーの起動リクエストに失敗しました。時間をおいて再度お試しください。',
+      allowedMentions: { parse: [] },
+    });
+    return;
+  }
+  if (result.kind === 'already_running') {
+    await interaction.editReply({
+      content: '資源サーバーは既に起動しています。',
+      allowedMentions: { parse: [] },
+    });
+    return;
+  }
+
+  // 起動完了（collector の状態が running になる）までポーリングする
+  let running = false;
+  for (let attempt = 0; attempt < START_POLL_ATTEMPTS; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, START_POLL_INTERVAL_MS));
+    const runtime = await fetchRuntimeStatus();
+    const resource = runtime?.servers?.find((server) => server.id === 'mc-resource');
+    if (resource?.runtimeStatus === 'running') {
+      running = true;
+      break;
+    }
+    if (resource?.startability === 'unavailable') break;
+  }
+  await interaction.editReply({
+    content: running
+      ? '資源サーバーが起動しました。接続先: mc.ivrm.jp:25999（ゲーム内では /server resource でも移動できます）'
+      : '起動を開始しましたが、完了を確認できませんでした。/mc status で状態を確認してください。',
+    allowedMentions: { parse: [] },
+  });
 }
 
 async function fetchCurrentStatus(): Promise<MinecraftCurrentStatus | null> {

@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const minecraftStatusManifest: PluginManifest = {
   id: 'minecraft-status',
   name: 'Minecraft Status',
-  version: '1.0.0',
+  version: '1.1.0',
   description: 'Minecraftサーバーの稼働状態・プレイヤー・リソースを確認できます',
   author: { name: 'Herta' },
   category: 'utility',
@@ -12,6 +12,11 @@ export const minecraftStatusManifest: PluginManifest = {
       id: 'minecraft-status.view',
       name: 'Minecraft Status 閲覧',
       description: 'Minecraftサーバーの稼働状態を確認します',
+    },
+    {
+      id: 'minecraft-status.start',
+      name: 'Minecraft 資源サーバー起動',
+      description: '資源サーバー（mc-resource）を起動します（運営ロール限定）',
     },
   ],
   dependencies: [],
@@ -66,6 +71,16 @@ export const minecraftStatusManifest: PluginManifest = {
           help: '状態データの最終更新からこの分数を超えたら、古い可能性を表示します。',
         },
       },
+      operatorRoleIds: {
+        type: 'array',
+        title: '起動を追加で許可するロールID',
+        items: { type: 'string' },
+        default: [],
+        'x-herta-ui': {
+          section: '起動コマンド',
+          help: '必須ロール（コードで指定）に加えて /mc start を許可するロールIDを指定します。',
+        },
+      },
     },
     required: [
       'enabled',
@@ -83,6 +98,7 @@ export const minecraftStatusManifest: PluginManifest = {
       description: 'Minecraftサーバーの状態を確認します',
       subcommands: [
         { name: 'status', description: '現在の稼働状態・プレイヤー・リソースを表示します' },
+        { name: 'start', description: '資源サーバーを起動します（運営ロール限定）' },
       ],
     },
   ],
