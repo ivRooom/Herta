@@ -343,6 +343,63 @@ describe('Minecraft Status v1', () => {
     ).toBeNull();
   });
 
+  it('履歴があればパフォーマンスグラフ用の系列を組み立てる', () => {
+    const base = 1_700_000_000;
+    const history = {
+      tiers: {
+        '10s': {
+          series: {
+            'mc-main': [
+              [base, 10, 27],
+              [base + 10, 20, 27.5],
+              [base + 20, null, 28],
+            ] as [number, number | null, number | null][],
+            'mc-resource': [
+              [base, null, null],
+              [base + 10, null, null],
+            ] as [number, number | null, number | null][],
+            host: [
+              [base, 30, 55],
+              [base + 10, 40, 56],
+            ] as [number, number | null, number | null][],
+          },
+        },
+      },
+    };
+    const model = buildMinecraftStatusCardModel(
+      current,
+      runtime,
+      normalizeMinecraftStatusConfig(undefined),
+      history,
+    );
+    // 資源は全て null なので系列に入らない。生活CPUは null を保持して途切れを表す
+    expect(model?.performance?.cpu.map((s) => s.label)).toEqual(['生活', 'ホスト']);
+    expect(model?.performance?.cpu[0]?.points).toEqual([10, 20, null]);
+    expect(model?.performance?.memory.map((s) => s.label)).toEqual(['生活', 'ホスト']);
+    // 設定で無効化したら履歴があっても付けない
+    const disabled = buildMinecraftStatusCardModel(
+      current,
+      runtime,
+      normalizeMinecraftStatusConfig({ showPerformanceGraph: false }),
+      history,
+    );
+    expect(disabled?.performance).toBeUndefined();
+    // 履歴が無い・空なら付けない
+    expect(
+      buildMinecraftStatusCardModel(
+        current,
+        runtime,
+        normalizeMinecraftStatusConfig(undefined),
+        null,
+      )?.performance,
+    ).toBeUndefined();
+    expect(
+      buildMinecraftStatusCardModel(current, runtime, normalizeMinecraftStatusConfig(undefined), {
+        tiers: {},
+      })?.performance,
+    ).toBeUndefined();
+  });
+
   it('画像Embedは attachment を指す', () => {
     const embed = buildMinecraftStatusImageEmbed(
       current,

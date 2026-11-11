@@ -3,7 +3,7 @@ import type { PluginManifest } from '@herta/shared';
 export const minecraftStatusManifest: PluginManifest = {
   id: 'minecraft-status',
   name: 'Minecraft Status',
-  version: '1.2.0',
+  version: '1.3.0',
   description: 'Minecraftサーバーの稼働状態・プレイヤー・リソースを確認できます',
   author: { name: 'Herta' },
   category: 'utility',
@@ -46,6 +46,15 @@ export const minecraftStatusManifest: PluginManifest = {
         default: true,
         'x-herta-ui': { section: '表示設定' },
       },
+      showPerformanceGraph: {
+        type: 'boolean',
+        title: 'パフォーマンスグラフを表示する',
+        default: true,
+        'x-herta-ui': {
+          section: '表示設定',
+          help: 'ONにすると /mc status のカードに直近30分の CPU・メモリ推移グラフを表示します。',
+        },
+      },
       showServers: {
         type: 'boolean',
         title: '各サーバーの状態を表示する',
@@ -87,6 +96,7 @@ export const minecraftStatusManifest: PluginManifest = {
       'enabled',
       'ephemeralResponses',
       'showResources',
+      'showPerformanceGraph',
       'showServers',
       'showBackup',
       'staleAfterMinutes',
