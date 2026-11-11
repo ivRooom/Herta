@@ -5,6 +5,7 @@ import {
   canControlMinecraftServer,
   minecraftControlImmediateMessage,
   minecraftControlPath,
+  normalizeCpuPercent,
   buildMinecraftStatusCardModel,
   buildMinecraftStatusEmbed,
   buildMinecraftStatusImageEmbed,
@@ -183,6 +184,13 @@ describe('Minecraft Status v1', () => {
     ).toContain('受け付けられませんでした');
   });
 
+  it('CPU% はホスト全体を100%として正規化する', () => {
+    expect(normalizeCpuPercent(114, 2)).toBe(57);
+    expect(normalizeCpuPercent(250, 2)).toBe(100);
+    expect(normalizeCpuPercent(30, 1)).toBe(30);
+    expect(normalizeCpuPercent(30, 0)).toBe(30);
+  });
+
   it('取得先は稼働中の status.ivrm.jp を既定値にする', () => {
     expect(MINECRAFT_STATUS_CURRENT_URL_DEFAULT).toBe('https://status.ivrm.jp/api/current.json');
     expect(MINECRAFT_STATUS_RUNTIME_URL_DEFAULT).toBe(
@@ -323,7 +331,7 @@ describe('Minecraft Status v1', () => {
     expect(model?.players).toMatchObject({ online: 2, max: 10, ratio: 0.2 });
     expect(model?.players?.namesLine).toBe('ivurugg, kanata');
     expect(model?.resources).toMatchObject({
-      cpuPercent: 1.09,
+      cpuPercent: 0.545,
       memoryPercent: 27,
       hostMemoryPercent: 56,
     });
