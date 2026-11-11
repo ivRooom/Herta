@@ -1217,6 +1217,8 @@ const EVENT_WORKER_INTERVAL_MS = 60 * 1000;
 const EVENT_POST_LIMIT_PER_CYCLE = 10;
 const eventTimers = new Map<string, ReturnType<typeof setInterval>>();
 const eventCursors = new Map<string, number>();
+const eventWorkerRuns = new Set<string>();
+const eventWorkerEpochs = new Map<string, number>();
 
 const SERVER_LABELS: Record<MinecraftServerEvent['server'], string> = {
   main: '生活サーバー',
@@ -1293,6 +1295,7 @@ function eventsUrl(): string {
 
 function startEventWorker(context: MinecraftStatusContext): void {
   stopEventWorker(context.guildId);
+  eventWorkerEpochs.set(context.guildId, (eventWorkerEpochs.get(context.guildId) ?? 0) + 1);
   void runEventCycle(context);
   const timer = setInterval(() => {
     void runEventCycle(context);
@@ -1307,9 +1310,15 @@ function stopEventWorker(guildId: string): void {
     clearInterval(timer);
     eventTimers.delete(guildId);
   }
+  // 実行中のサイクルを無効化する（旧設定への投稿・カーソル前進を防ぐ）
+  eventWorkerEpochs.set(guildId, (eventWorkerEpochs.get(guildId) ?? 0) + 1);
 }
 
 async function runEventCycle(context: MinecraftStatusContext): Promise<void> {
+  if (eventWorkerRuns.has(context.guildId)) return;
+  eventWorkerRuns.add(context.guildId);
+  const epoch = eventWorkerEpochs.get(context.guildId) ?? 0;
+  const stillCurrent = () => (eventWorkerEpochs.get(context.guildId) ?? 0) === epoch;
   try {
     const config = normalizeMinecraftStatusConfig(context.config);
     if (!config.announceEvents || !config.eventChannelId) return;
@@ -1318,26 +1327,34 @@ async function runEventCycle(context: MinecraftStatusContext): Promise<void> {
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) return;
-    const events = parseServerEvents(await response.json());
-    if (events.length === 0) return;
+    const payload: unknown = await response.json();
+    if (!isRecord(payload) || !Array.isArray(payload.events)) return;
+    const events = parseServerEvents(payload);
     const lastSeq = eventCursors.get(context.guildId);
     if (lastSeq === undefined) {
-      // 初回はカーソル同期のみ（過去イベントを投稿しない）
-      eventCursors.set(context.guildId, events[events.length - 1]!.seq);
+      // 初回はカーソル同期のみ（過去イベントを投稿しない）。空でも 0 で初期化し、
+      // 次に来る最初のイベントを取りこぼさない
+      if (!stillCurrent()) return;
+      eventCursors.set(context.guildId, events.length === 0 ? 0 : events[events.length - 1]!.seq);
       return;
     }
+    if (events.length === 0) return;
     const fresh = pickNewServerEvents(events, lastSeq).slice(0, EVENT_POST_LIMIT_PER_CYCLE);
     if (fresh.length === 0) return;
     const channel = await context.client.channels.fetch(config.eventChannelId);
     if (!channel || !channel.isTextBased()) return;
     for (const event of fresh) {
+      if (!stillCurrent()) return;
       await channel.send({
         embeds: [buildServerEventAnnouncement(event)],
         allowedMentions: { parse: [] },
       });
+      if (!stillCurrent()) return;
       eventCursors.set(context.guildId, event.seq);
     }
   } catch {
     // 通知の失敗でワーカーを落とさない（次周期で再試行する）
+  } finally {
+    eventWorkerRuns.delete(context.guildId);
   }
 }
