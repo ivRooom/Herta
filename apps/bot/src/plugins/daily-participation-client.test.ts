@@ -6,6 +6,8 @@ import {
   participationAnswer,
   participationClaim,
   participationStatusSchema,
+  yesterdayReview,
+  yesterdayReviewSchema,
 } from './daily-participation-client.js';
 const fixture = JSON.parse(
   readFileSync(
@@ -63,6 +65,85 @@ it('signs v2 exact bytes and binds the canonical answer key', async () => {
   expect((await participationAnswer(guild, user, fixture.publicQuestion.id, 'a', null)).mode).toBe(
     'created',
   );
+});
+const yesterdayEntry = {
+  question: { ...fixture.publicQuestion, dateJst: '2026-10-30' },
+  userResponse: {
+    optionId: 'b',
+    text: null,
+    state: 'graded',
+    isCorrect: false,
+    rewardPoints: 0,
+    submittedAt: '2026-10-30T01:00:00.000Z',
+    origin: 'discord',
+  },
+  correctOptionId: 'a',
+  explanation: 'A が正解です。',
+};
+const yesterdayPayload = {
+  status: 'ok',
+  guildId: guild,
+  discordUserId: user,
+  dateJst: '2026-10-30',
+  revealed: true,
+  entries: [yesterdayEntry],
+};
+it('fetches the yesterday review with the canonical body and validates it (#820)', async () => {
+  configure();
+  let seenPath = '',
+    seenBody: unknown;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: URL, options: RequestInit) => {
+      seenPath = input.pathname;
+      seenBody = JSON.parse(String(options.body));
+      return Response.json(yesterdayPayload);
+    }),
+  );
+  const review = await yesterdayReview(guild, user);
+  expect(seenPath).toBe('/v2/participation/herta/yesterday');
+  expect(seenBody).toEqual({ guildId: guild, discordUserId: user });
+  expect(review.dateJst).toBe('2026-10-30');
+  expect(review.revealed).toBe(true);
+  expect(review.entries[0]!.correctOptionId).toBe('a');
+  expect(review.entries[0]!.userResponse?.optionId).toBe('b');
+});
+it('rejects malformed yesterday payloads and any date other than yesterday JST (#820)', async () => {
+  configure();
+  expect(yesterdayReviewSchema.safeParse(yesterdayPayload).success).toBe(true);
+  expect(yesterdayReviewSchema.safeParse({ ...yesterdayPayload, extra: 1 }).success).toBe(false);
+  for (const payload of [
+    // Today instead of yesterday: pinned by the client-side date check.
+    {
+      ...yesterdayPayload,
+      dateJst: '2026-10-31',
+      entries: [
+        { ...yesterdayEntry, question: { ...yesterdayEntry.question, dateJst: '2026-10-31' } },
+      ],
+    },
+    { ...yesterdayPayload, revealed: 'yes' },
+    { ...yesterdayPayload, entries: [{ ...yesterdayEntry, correctOptionId: 42 }] },
+    // The review response carries no questionId; the strict schema rejects it.
+    {
+      ...yesterdayPayload,
+      entries: [
+        { ...yesterdayEntry, userResponse: { ...yesterdayEntry.userResponse, questionId: 'q' } },
+      ],
+    },
+    // The public question itself must not leak the correct option.
+    {
+      ...yesterdayPayload,
+      entries: [
+        { ...yesterdayEntry, question: { ...yesterdayEntry.question, correctOptionId: 'a' } },
+      ],
+    },
+  ]) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json(payload)),
+    );
+    await expect(yesterdayReview(guild, user)).rejects.toThrow();
+  }
 });
 it('rejects wrong subject/question/date and accepts Unicode answer receipt', async () => {
   configure();

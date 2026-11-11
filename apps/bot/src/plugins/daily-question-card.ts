@@ -6,10 +6,24 @@ export interface DailyQuestionCardResult {
   selectedOptionIndex: number | null;
   selectedText: string | null;
   rewardPoints: number;
+  /**
+   * Index of the correct option, once answers are revealed (#820 review).
+   * The correct row gets a solid mint chalk outline plus a star/正解 badge;
+   * when it is also the selected row, the badge sits on the pink fill.
+   */
+  correctOptionIndex?: number | null;
+  /**
+   * True when the member never answered (yesterday review of an unanswered
+   * question). There is no verdict to report, so no status pill and no
+   * points chip are drawn; the footer names the correct option instead.
+   */
+  unanswered?: boolean;
 }
 
 export interface DailyQuestionCardInput {
   slot: 'daily' | 'bonus';
+  /** Overrides the slot-based title (e.g. 昨日の問題 for the #820 review). */
+  heading?: string;
   prompt: string;
   options: { label: string }[];
   format: 'choice2' | 'choice3' | 'choice4' | 'image_choice' | 'audio_choice' | 'free_text';
@@ -230,6 +244,10 @@ function answeredStatusPill(result: DailyQuestionCardResult): StatusPill {
 }
 
 function answeredFooterLine(result: DailyQuestionCardResult): string {
+  if (result.unanswered)
+    return typeof result.correctOptionIndex === 'number'
+      ? `正解は ${result.correctOptionIndex + 1} 番です`
+      : '未回答でした。';
   if (result.state === 'pending') return '結果が確定したらお知らせします。';
   if (result.state === 'void') return 'ポイントは付与されません。';
   return '';
@@ -240,7 +258,10 @@ function answeredFooterLine(result: DailyQuestionCardResult): string {
  * styling — a wooden frame around a deep-green board, the prompt zone on
  * the left, dashed chalk choice rows on the right, and a footer band. When
  * `result` is present the selected choice row is filled with solid chalk
- * pink and marked with a drawn white heart.
+ * pink and marked with a drawn white heart. When the result also carries
+ * `correctOptionIndex` (#820 review), the correct row is outlined in mint
+ * and badged; an `unanswered` result draws neither the status pill nor the
+ * points chip.
  */
 export function buildDailyQuestionCardSvg(input: DailyQuestionCardInput): string {
   const result = input.result;
@@ -268,7 +289,7 @@ export function buildDailyQuestionCardSvg(input: DailyQuestionCardInput): string
   parts.push(
     text('HERTA / DAILY QUESTION', LEFT_X + 40, 170, 28, CHALK_BLUE, `${bold} letter-spacing="6"`),
   );
-  const title = input.slot === 'bonus' ? 'ボーナス問題' : '今日の問題';
+  const title = input.heading ?? (input.slot === 'bonus' ? 'ボーナス問題' : '今日の問題');
   const titleX = LEFT_X + 52;
   parts.push(
     `<path d="${starPath(LEFT_X + 18, 238, 17)}" fill="none" stroke="${CHALK_YELLOW}" stroke-width="3" stroke-linejoin="round"/>`,
@@ -278,7 +299,7 @@ export function buildDailyQuestionCardSvg(input: DailyQuestionCardInput): string
   parts.push(
     `<path d="${squigglePath(titleX + 2, titleWidth, 306)}" fill="none" stroke="${CHALK_YELLOW}" stroke-width="5" stroke-linecap="round"/>`,
   );
-  if (result) {
+  if (result && !result.unanswered) {
     const pill = answeredStatusPill(result);
     const pillTop = 332;
     const pillHeight = 66;
@@ -334,15 +355,22 @@ export function buildDailyQuestionCardSvg(input: DailyQuestionCardInput): string
     const rows = input.options.slice(0, 4);
     const totalHeight = rows.length * ROW_HEIGHT + (rows.length - 1) * ROW_GAP;
     const startY = ROWS_TOP + (ROWS_HEIGHT - totalHeight) / 2;
+    const correctIndex = result?.correctOptionIndex ?? null;
+    // Mint badge pinned to the right end of the correct row (#820): a drawn
+    // star plus the text 正解 on a solid mint chalk pill.
+    const correctBadgeWidth = 48 + textWidth('正解', 28) + 24;
     rows.forEach((option, index) => {
       const rowY = startY + index * (ROW_HEIGHT + ROW_GAP);
       const rowCy = rowY + ROW_HEIGHT / 2;
       const selected = result?.selectedOptionIndex === index;
-      const dimmed = result && !selected;
+      const isCorrect = correctIndex === index;
+      const dimmed = result && !selected && !isCorrect;
       parts.push(
         selected
           ? `<rect x="${RIGHT_X}" y="${rowY}" width="${RIGHT_WIDTH}" height="${ROW_HEIGHT}" rx="40" fill="${SELECTED_FILL}" stroke="#ffffff" stroke-width="3.5"/>`
-          : `<rect x="${RIGHT_X}" y="${rowY}" width="${RIGHT_WIDTH}" height="${ROW_HEIGHT}" rx="40" fill="none" stroke="${CHALK}" stroke-width="3" stroke-opacity="0.85" stroke-dasharray="14 10"/>`,
+          : isCorrect
+            ? `<rect x="${RIGHT_X}" y="${rowY}" width="${RIGHT_WIDTH}" height="${ROW_HEIGHT}" rx="40" fill="none" stroke="${CHALK_MINT}" stroke-width="4"/>`
+            : `<rect x="${RIGHT_X}" y="${rowY}" width="${RIGHT_WIDTH}" height="${ROW_HEIGHT}" rx="40" fill="none" stroke="${CHALK}" stroke-width="3" stroke-opacity="0.85" stroke-dasharray="14 10"/>`,
       );
       if (selected) {
         parts.push(`<path d="${heartPath(RIGHT_X + 38, rowCy - 2, 13)}" fill="#ffffff"/>`);
@@ -373,7 +401,12 @@ export function buildDailyQuestionCardSvg(input: DailyQuestionCardInput): string
           ),
         );
       }
-      const labelLines = wrapCardText(option.label, 38, RIGHT_WIDTH - 190, 2);
+      const labelLines = wrapCardText(
+        option.label,
+        38,
+        RIGHT_WIDTH - 190 - (isCorrect ? correctBadgeWidth + 16 : 0),
+        2,
+      );
       const firstBaseline = labelLines.length > 1 ? rowY + 47 : rowY + 70;
       labelLines.forEach((line, lineIndex) => {
         parts.push(
@@ -387,6 +420,14 @@ export function buildDailyQuestionCardSvg(input: DailyQuestionCardInput): string
           ),
         );
       });
+      if (isCorrect) {
+        const badgeX = RIGHT_X + RIGHT_WIDTH - correctBadgeWidth - 22;
+        parts.push(
+          `<rect x="${badgeX}" y="${rowCy - 22}" width="${correctBadgeWidth}" height="44" rx="22" fill="${CHALK_MINT}"/>`,
+        );
+        parts.push(`<path d="${starPath(badgeX + 27, rowCy, 11)}" fill="${DARK}"/>`);
+        parts.push(text('正解', badgeX + 48, rowCy + 10, 28, DARK, bold));
+      }
     });
   }
 
@@ -398,7 +439,7 @@ export function buildDailyQuestionCardSvg(input: DailyQuestionCardInput): string
     ? answeredFooterLine(result)
     : '回答は下のボタンから。番号は選択肢と対応しています。';
   if (footerText) parts.push(text(footerText, LEFT_X + 16, 992, 29, CHALK, ' fill-opacity="0.75"'));
-  if (result && result.state === 'graded') {
+  if (result && result.state === 'graded' && !result.unanswered) {
     const chipText = `獲得 ${result.rewardPoints}pt`;
     const chipWidth = 62 + textWidth(chipText, 32) + 32;
     const chipX = FOOTER_RIGHT - chipWidth;

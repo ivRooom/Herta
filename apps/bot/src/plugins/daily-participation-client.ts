@@ -166,6 +166,45 @@ export async function participationClaim(
   if (parsed.receipt.claimDateJst !== date) throw new Error('expired');
   return parsed;
 }
+const reviewResponseSchema = responseSchema.omit({ questionId: true }).strict();
+export const yesterdayReviewSchema = z
+  .object({
+    status: z.literal('ok'),
+    guildId: z.string(),
+    discordUserId: z.string(),
+    dateJst: jstDate,
+    revealed: z.boolean(),
+    entries: z
+      .array(
+        z
+          .object({
+            question: publicDailyQuestion,
+            userResponse: reviewResponseSchema.nullable(),
+            correctOptionId: id.nullable(),
+            explanation: text(10000).nullable(),
+          })
+          .strict(),
+      )
+      .max(2),
+  })
+  .strict()
+  .refine(
+    (r) =>
+      r.entries.every((e) => e.question.dateJst === r.dateJst) &&
+      new Set(r.entries.map((e) => e.question.slot)).size === r.entries.length,
+  );
+export type YesterdayReview = z.infer<typeof yesterdayReviewSchema>;
+export type YesterdayReviewEntry = YesterdayReview['entries'][number];
+export async function yesterdayReview(guild: string, user: string): Promise<YesterdayReview> {
+  const raw = await request(guild, user, '/v2/participation/herta/yesterday');
+  if (raw?.setupRequired) throw new Error(String(raw.setupRequired));
+  const parsed = yesterdayReviewSchema.parse(raw);
+  // The review is pinned to yesterday JST. A stale or replayed payload for
+  // any other date must never be presented as yesterday's answers (#820).
+  const yesterdayJst = new Date(Date.now() + 32400000 - 86400000).toISOString().slice(0, 10);
+  if (parsed.dateJst !== yesterdayJst) throw new Error('expired');
+  return parsed;
+}
 export async function participationAnswer(
   guild: string,
   user: string,
